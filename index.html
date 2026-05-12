@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Solitaire</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; overscroll-behavior: contain; }
+    body {
+      background-color: #FBF8F2;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    input, button, textarea { font-family: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    @keyframes pulse {
+      0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1); }
+    }
+    #root { height: 100dvh; }
+    .tabstrip::-webkit-scrollbar { display: none; }
+    .mapscroll::-webkit-scrollbar { height: 6px; width: 6px; }
+    .mapscroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

@@ -1,0 +1,516 @@
+import React, { useState, useEffect, useRef } from "react";
+
+import { STORAGE_KEY } from "./config.js";
+import { TERRAINS } from "./data/terrains.js";
+import { makeInitialState } from "./data/initial-state.js";
+
+import { storeGet, storeDel } from "./engine/storage.js";
+import { callNarrator } from "$api";
+import { onAuthChange, signOut, linkEmail } from "$auth";
+import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "$campaigns";
+import { applyBeat } from "./engine/beat.js";
+import {
+  getTile, travelMinutes, currentLocationName,
+  squareToAxial, computeSightFrom, computeSightFromRadius,
+  findPath, pathMinutes,
+} from "./engine/world.js";
+import { rollPathEncounter } from "./engine/encounters.js";
+
+import { CompactHeader } from "./components/CompactHeader.jsx";
+import { VitalsStrip, InputBar, LoadingDots } from "./components/primitives.jsx";
+import { BeatRender } from "./components/beats/BeatRender.jsx";
+import { MenuSheet } from "./components/MenuSheet.jsx";
+import { MapView } from "./components/MapView.jsx";
+import { CodexView } from "./components/CodexView.jsx";
+import { AuthScreen } from "./components/AuthScreen.jsx";
+import { CampaignsList } from "./components/CampaignsList.jsx";
+
+const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
+
+// One-shot migrator for legacy v10 single-save blobs (square odd-r offset coords).
+// Re-keys world.tiles + world.seen and bumps currentTile into axial space, then
+// refreshes hex-sight from the migrated position so the visible area is
+// hex-shaped going forward.
+function convertLegacyV10ToHex(legacy) {
+  const out = JSON.parse(JSON.stringify(legacy));
+  const w = out.world;
+  const newCur = squareToAxial(w.currentTile.x, w.currentTile.y);
+  w.currentTile = newCur;
+  const newTiles = {};
+  for (const [key, tile] of Object.entries(w.tiles || {})) {
+    const [x, y] = key.split(",").map(Number);
+    const a = squareToAxial(x, y);
+    newTiles[`${a.x},${a.y}`] = tile;
+  }
+  w.tiles = newTiles;
+  const newSeen = {};
+  for (const key of Object.keys(w.seen || {})) {
+    const [x, y] = key.split(",").map(Number);
+    const a = squareToAxial(x, y);
+    newSeen[`${a.x},${a.y}`] = true;
+  }
+  w.seen = computeSightFrom(newCur.x, newCur.y, newSeen);
+  return out;
+}
+
+function CenteredLoader() {
+  return (
+    <div style={{
+      backgroundColor: "#FBF8F2", height: "100dvh", width: "100%",
+      maxWidth: "640px", margin: "0 auto",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <LoadingDots />
+    </div>
+  );
+}
+
+export function Solitaire() {
+  // Auth
+  const [user, setUser] = useState(__SOLITAIRE_MODE__ === "web" ? null : { id: "artifact" });
+  const [authChecked, setAuthChecked] = useState(__SOLITAIRE_MODE__ !== "web");
+
+  // Campaigns
+  const [campaigns, setCampaigns] = useState([]);
+  const [campaignsLoaded, setCampaignsLoaded] = useState(false);
+  const [currentCampaignId, setCurrentCampaignId] = useState(null);
+  const [campaignBusy, setCampaignBusy] = useState(false);
+  const [campaignError, setCampaignError] = useState(null);
+  const autoResumedRef = useRef(false);
+
+  // Game
+  const [state, setState] = useState(makeInitialState());
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [codexOpen, setCodexOpen] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const logRef = useRef(null);
+
+  // ----- Auth subscription (web mode) -----
+  useEffect(() => {
+    if (__SOLITAIRE_MODE__ !== "web") return;
+    let mounted = true;
+    const unsubscribe = onAuthChange((u) => {
+      if (!mounted) return;
+      setUser(u);
+      setAuthChecked(true);
+    });
+    return () => { mounted = false; unsubscribe(); };
+  }, []);
+
+  // ----- Fetch campaigns list when user appears -----
+  useEffect(() => {
+    if (!user) {
+      setCampaigns([]);
+      setCampaignsLoaded(false);
+      autoResumedRef.current = false;
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listCampaigns();
+        if (!cancelled) {
+          setCampaigns(list);
+          setCampaignsLoaded(true);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setCampaignError(e.message || String(e));
+          setCampaignsLoaded(true); // unblock UI even on failure
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  // ----- Auto-resume / legacy-import on first load -----
+  useEffect(() => {
+    if (autoResumedRef.current || !campaignsLoaded || !user) return;
+    autoResumedRef.current = true;
+    const snapshotCampaigns = campaigns;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        // 1. Legacy import: if no campaigns and a legacy single-save blob exists,
+        //    convert it into a campaign. Don't auto-open it — user sees it in the list.
+        if (snapshotCampaigns.length === 0) {
+          const legacyRaw = await storeGet(STORAGE_KEY);
+          if (legacyRaw) {
+            let legacy = null;
+            try { legacy = JSON.parse(legacyRaw); } catch {}
+            const looksLikeState = legacy?.beats
+              && legacy?.character?.attributes
+              && legacy?.character?.needs;
+            if (looksLikeState) {
+              setCampaignBusy(true);
+              try {
+                const charName = legacy.character.name || "Imported save";
+                const migrated = convertLegacyV10ToHex(legacy);
+                await saveCampaign(null, migrated, { name: charName });
+                await storeDel(STORAGE_KEY);
+                const refreshed = await listCampaigns();
+                if (!cancelled) setCampaigns(refreshed);
+              } catch (e) {
+                if (!cancelled) setCampaignError(`Import failed: ${e.message || e}`);
+              } finally {
+                if (!cancelled) setCampaignBusy(false);
+              }
+              return; // stop here; user sees the campaigns list with the imported entry
+            }
+          }
+        }
+
+        const isCancelled = () => cancelled;
+
+        // 2. Standard auto-resume: open the last-opened campaign if it still exists.
+        const lastOpened = localStorage.getItem(LAST_OPENED_KEY);
+        if (lastOpened && snapshotCampaigns.some((c) => c.id === lastOpened)) {
+          await openCampaign(lastOpened, isCancelled);
+          return;
+        }
+
+        // 3. First-launch auto-create: no campaigns at all → make one and dive in.
+        if (snapshotCampaigns.length === 0) {
+          await createCampaign(isCancelled);
+          return;
+        }
+
+        // 4. Otherwise: campaigns exist but no lastOpened → stay on list.
+      } catch (e) {
+        if (!cancelled) setCampaignError(e.message || String(e));
+      }
+    })();
+    return () => { cancelled = true; };
+    // We intentionally depend only on campaignsLoaded + user; the campaigns
+    // snapshot is captured at the moment campaignsLoaded becomes true.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignsLoaded, user]);
+
+  // ----- Save on state change (when a campaign is active) -----
+  useEffect(() => {
+    if (!hydrated || !currentCampaignId) return;
+    let cancelled = false;
+    saveCampaign(currentCampaignId, state).catch((e) => {
+      if (!cancelled) setCampaignError(`Save failed: ${e.message || e}`);
+    });
+    return () => { cancelled = true; };
+  }, [state, hydrated, currentCampaignId]);
+
+  // ----- Scroll the beat log -----
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [state.beats.length, loading]);
+
+  // ----- Campaign handlers -----
+
+  // Internal helpers shared by handlers + auto-resume. isCancelled is a getter
+  // (not a snapshot) so callers from useEffect can flip cancellation atomically
+  // when their cleanup fires.
+  async function openCampaign(id, isCancelled = () => false) {
+    setCampaignBusy(true);
+    setHydrated(false);
+    setCampaignError(null);
+    try {
+      const loaded = await loadCampaign(id);
+      if (isCancelled()) return;
+      if (!loaded) {
+        // Stale id; drop the lastOpened pointer and let the list show.
+        localStorage.removeItem(LAST_OPENED_KEY);
+        const refreshed = await listCampaigns();
+        if (!isCancelled()) setCampaigns(refreshed);
+        return;
+      }
+      setState(loaded);
+      setCurrentCampaignId(id);
+      localStorage.setItem(LAST_OPENED_KEY, id);
+      setHydrated(true);
+    } catch (e) {
+      if (!isCancelled()) setCampaignError(e.message || String(e));
+    } finally {
+      if (!isCancelled()) setCampaignBusy(false);
+    }
+  }
+
+  async function createCampaign(isCancelled = () => false) {
+    setCampaignBusy(true);
+    setHydrated(false);
+    setCampaignError(null);
+    try {
+      const fresh = makeInitialState();
+      const name = fresh.character?.name || "Untitled";
+      const { id } = await saveCampaign(null, fresh, { name });
+      if (isCancelled()) return;
+      setState(fresh);
+      setCurrentCampaignId(id);
+      localStorage.setItem(LAST_OPENED_KEY, id);
+      setHydrated(true);
+      // Refresh the list in the background so the new entry shows when user navigates back.
+      listCampaigns().then((list) => {
+        if (!isCancelled()) setCampaigns(list);
+      }).catch(() => {});
+    } catch (e) {
+      if (!isCancelled()) setCampaignError(e.message || String(e));
+    } finally {
+      if (!isCancelled()) setCampaignBusy(false);
+    }
+  }
+
+  function handleSelectCampaign(id) {
+    openCampaign(id);
+  }
+
+  function handleNewCampaign() {
+    createCampaign();
+  }
+
+  async function handleDeleteCampaign(id) {
+    if (!window.confirm("Delete this campaign? This cannot be undone.")) return;
+    setCampaignError(null);
+    try {
+      await deleteCampaign(id);
+      setCampaigns((prev) => prev.filter((c) => c.id !== id));
+      if (currentCampaignId === id) {
+        setCurrentCampaignId(null);
+        setHydrated(false);
+        localStorage.removeItem(LAST_OPENED_KEY);
+      }
+    } catch (e) {
+      setCampaignError(`Delete failed: ${e.message || e}`);
+    }
+  }
+
+  async function handleRenameCampaign(id, name) {
+    setCampaignError(null);
+    try {
+      await renameCampaign(id, name);
+      setCampaigns((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
+    } catch (e) {
+      setCampaignError(`Rename failed: ${e.message || e}`);
+    }
+  }
+
+  function handleBackToCampaigns() {
+    setMenuOpen(false);
+    setCurrentCampaignId(null);
+    setHydrated(false);
+    localStorage.removeItem(LAST_OPENED_KEY);
+    // Refresh list to pick up the latest last_played_at from this session.
+    listCampaigns().then(setCampaigns).catch(() => {});
+  }
+
+  async function handleSignOut() {
+    setMenuOpen(false);
+    setCurrentCampaignId(null);
+    setHydrated(false);
+    localStorage.removeItem(LAST_OPENED_KEY);
+    try {
+      await signOut();
+    } catch (e) {
+      setCampaignError(`Sign-out failed: ${e.message || e}`);
+    }
+  }
+
+  // ----- Game handlers (unchanged behavior, kept inline) -----
+
+  async function handleSubmit() {
+    const action = input.trim();
+    if (!action || loading) return;
+    setInput("");
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: action };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const beat = await callNarrator(stateWithPlayer, `[PLAYER ACTION] ${action}`);
+      setState((s) => applyBeat(s, beat));
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleTravel(dest, providedPath) {
+    if (loading) return;
+    const cur = state.world.currentTile;
+    const path = providedPath || findPath(state, cur, dest);
+    if (!path || path.length < 2) return;
+    const fromTile = getTile(state, cur.x, cur.y);
+    const toTile = getTile(state, dest.x, dest.y);
+    setMapOpen(false);
+    setError(null);
+    setLoading(true);
+    const fromName = currentLocationName(state);
+    const toName = toTile.poi?.name || `${TERRAINS[toTile.terrain]?.label} (${dest.x},${dest.y})`;
+    const isHidden = toTile.poi?.type === "hidden";
+    const totalMins = pathMinutes(state, path);
+    const hexes = path.length - 1;
+
+    // Summarize the route's terrain mix for the narrator.
+    const terrainCounts = {};
+    for (let i = 1; i < path.length; i++) {
+      const tile = getTile(state, path[i].x, path[i].y);
+      terrainCounts[tile.terrain] = (terrainCounts[tile.terrain] || 0) + 1;
+    }
+    const terrainSummary = Object.entries(terrainCounts)
+      .map(([t, n]) => `${TERRAINS[t]?.label || t} ×${n}`)
+      .join(", ");
+
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Travel from ${fromName} to ${toName}.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+
+    // One encounter roll for the whole journey (Phase 3 decision 1a).
+    const pathEnc = isHidden ? null : rollPathEncounter(state, path);
+
+    const destDescription = isHidden
+      ? "HIDDEN — generate a random event appropriate to the terrain. Set tile_discovery."
+      : toTile.poi
+        ? `known ${toTile.poi.type} (${toTile.poi.name})`
+        : "open wilderness";
+
+    let travelMsg;
+    if (hexes === 1) {
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${toName} (${TERRAINS[toTile.terrain]?.label}). Estimated time: ${totalMins} minutes. Destination type: ${destDescription}. Narrate journey + arrival in one beat. Use minutes_passed = ${totalMins}.`;
+    } else {
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${toName} (${TERRAINS[toTile.terrain]?.label}). Total: ${hexes} hexes, ${totalMins} minutes. Route crosses: ${terrainSummary}. Destination type: ${destDescription}. Narrate the whole journey in a single beat — brief sensory passes through each terrain, then arrival. Use minutes_passed = ${totalMins}.`;
+    }
+
+    let encounterLine = "";
+    if (pathEnc) {
+      const encTile = getTile(state, pathEnc.atTile.x, pathEnc.atTile.y);
+      const encTerrainLabel = TERRAINS[encTile.terrain]?.label?.toLowerCase() || "wilderness";
+      const placement = hexes === 1
+        ? "during the journey or arrival"
+        : `partway along, at a ${encTerrainLabel} stretch`;
+      encounterLine = `\n\n[ENCOUNTER] kind: ${pathEnc.encounter.kind}; posture: ${pathEnc.encounter.posture}; flavor: "${pathEnc.encounter.desc}". Weave this into the journey ${placement}.`;
+    }
+
+    const fullMsg = travelMsg + encounterLine;
+
+    try {
+      const beat = await callNarrator(stateWithPlayer, fullMsg);
+      if (!beat.minutes_passed || Math.abs(beat.minutes_passed - totalMins) > totalMins * 0.5) {
+        beat.minutes_passed = totalMins;
+      }
+      setState((s) => {
+        let next = applyBeat(s, beat, {
+          travelFrom: fromName,
+          travelTo: toName,
+          travelToCoords: { x: dest.x, y: dest.y },
+        });
+        // Multi-tile travel: mark intermediate path tiles as visited and refresh
+        // sight from each so the player's seen area expands along the route.
+        if (hexes > 1) {
+          const newTiles = { ...next.world.tiles };
+          let newSeen = next.world.seen;
+          for (let i = 1; i < path.length - 1; i++) {
+            const p = path[i];
+            const k = `${p.x},${p.y}`;
+            if (!newTiles[k]) newTiles[k] = getTile(s, p.x, p.y);
+            newSeen = computeSightFrom(p.x, p.y, newSeen);
+          }
+          next = { ...next, world: { ...next.world, tiles: newTiles, seen: newSeen } };
+        }
+        // Vista: arriving at a tile with vistaRadius reveals a wide hex.
+        const destTileNow = getTile(s, dest.x, dest.y);
+        if (destTileNow?.vistaRadius && destTileNow.vistaRadius > 0) {
+          const wider = computeSightFromRadius(dest.x, dest.y, destTileNow.vistaRadius, next.world.seen);
+          next = { ...next, world: { ...next.world, seen: wider } };
+        }
+        return next;
+      });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleResetCampaign() {
+    if (!window.confirm("Reset this campaign to the beginning? Your current progress here will be erased.")) return;
+    setState(makeInitialState());
+    setMenuOpen(false);
+  }
+
+  // ----- Render flow -----
+
+  if (!authChecked) return <CenteredLoader />;
+  if (!user) return <AuthScreen />;
+  if (!campaignsLoaded || campaignBusy) return <CenteredLoader />;
+  if (!currentCampaignId) {
+    return (
+      <CampaignsList
+        campaigns={campaigns}
+        onSelect={handleSelectCampaign}
+        onNew={handleNewCampaign}
+        onDelete={handleDeleteCampaign}
+        onRename={handleRenameCampaign}
+        onSignOut={__SOLITAIRE_MODE__ === "web" ? handleSignOut : undefined}
+        busy={campaignBusy}
+        error={campaignError}
+      />
+    );
+  }
+
+  return (
+    <div style={{
+      backgroundColor: "#FBF8F2",
+      height: "100dvh", width: "100%", maxWidth: "640px", margin: "0 auto",
+      display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
+    }}>
+      <CompactHeader
+        state={state}
+        onMap={() => setMapOpen(true)}
+        onCodex={() => setCodexOpen(true)}
+        onMenu={() => setMenuOpen(true)}
+      />
+      <VitalsStrip character={state.character} />
+      <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
+        {state.beats.map((b) => <BeatRender key={b.id} beat={b} />)}
+        {loading && <LoadingDots />}
+        {error && (
+          <div style={{ margin: "8px 0", padding: "10px 12px", borderRadius: "10px", backgroundColor: "#FBE3DC", border: "1px solid #D9A89A", color: "#7A2C18", fontSize: "12px", lineHeight: "1.4" }}>
+            {error}
+          </div>
+        )}
+        {campaignError && (
+          <div style={{ margin: "8px 0", padding: "10px 12px", borderRadius: "10px", backgroundColor: "#FBE3DC", border: "1px solid #D9A89A", color: "#7A2C18", fontSize: "12px", lineHeight: "1.4" }}>
+            {campaignError}
+          </div>
+        )}
+      </div>
+      <InputBar value={input} onChange={setInput} onSubmit={handleSubmit} loading={loading} />
+
+      {menuOpen && (
+        <MenuSheet
+          state={state}
+          user={user}
+          onClose={() => setMenuOpen(false)}
+          onReset={handleResetCampaign}
+          onOpenCodex={() => { setMenuOpen(false); setCodexOpen(true); }}
+          onBackToCampaigns={handleBackToCampaigns}
+          onSignOut={__SOLITAIRE_MODE__ === "web" ? handleSignOut : undefined}
+          onLinkEmail={__SOLITAIRE_MODE__ === "web" ? linkEmail : undefined}
+        />
+      )}
+      {mapOpen && (
+        <MapView
+          state={state}
+          onClose={() => setMapOpen(false)}
+          onTravel={handleTravel}
+          loading={loading}
+        />
+      )}
+      {codexOpen && (
+        <CodexView state={state} onClose={() => setCodexOpen(false)} />
+      )}
+    </div>
+  );
+}
