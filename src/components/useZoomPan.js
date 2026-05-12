@@ -1,23 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 // Reusable zoom + pan hook for SVG / canvas-style map views.
 //
-// - Mouse wheel zooms toward the cursor.
-// - Touch pinch zooms toward the live midpoint between the two fingers AND
-//   pans by the midpoint's translation, so the world stays anchored under
-//   the fingertips even when both fingers are moving.
-// - Mouse and single-finger drag pan the content.
-// - `lastWasDragRef` tracks whether the most recently completed gesture moved
-//   far enough to count as a drag; click handlers on hexes check this so a
-//   pan doesn't also select a tile.
-// - Touch updates are coalesced via requestAnimationFrame so a 120 Hz
-//   touchmove stream produces one re-render per displayed frame, not one
-//   per native event. This is the main fix for stutter on Android.
+// Performance model:
+// During a gesture the hook writes `style.transform` directly to a DOM node
+// via `transformRef` on each rAF. React state (`zoom`, `pan`) is intentionally
+// NOT updated mid-gesture — that would re-render the entire consumer
+// (potentially hundreds of SVG hexes) at 60–120 Hz and produce the
+// jump-back/glitch behavior. State commits once at gesture end so labels
+// stay correct.
 //
-// The hook only owns zoom/pan state and gesture wiring. Callers apply the
-// transform themselves (e.g. via CSS `transform: scale() translate()`) and
-// should set `touch-action: none` on the gesture container so the browser
-// doesn't intercept the pinch.
+// The caller MUST:
+//   - attach `transformRef` to the element they want transformed
+//   - NOT include `transform` in that element's React-controlled inline style
+//     (React would otherwise fight the imperative DOM writes during a gesture)
+//   - apply `touch-action: none` to the gesture container so the browser
+//     doesn't claim the pinch
+//
+// Gesture model:
+//   - Mouse wheel zooms toward the cursor.
+//   - Touch pinch zooms toward the PREVIOUS midpoint between fingers AND
+//     pans by the midpoint translation, so the world point under the
+//     fingertips at frame T-1 lands exactly under the fingertips at frame T
+//     (the math derivation lives in the commit history).
+//   - Mouse and single-finger drag pan.
+//   - `lastWasDragRef` tracks whether the just-finished gesture moved far
+//     enough to count as a drag; click handlers on hexes check it so a pan
+//     doesn't also select a tile.
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 3.0;
@@ -27,25 +36,53 @@ function clampZoom(z) {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
 }
 
+function buildTransform(panX, panY, zoom) {
+  return `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${zoom})`;
+}
+
 export function useZoomPan(containerRef) {
+  // Visible React state, used for UI labels and any external consumer.
+  // Updated only on gesture end / reset — NEVER mid-gesture.
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
-  // Refs let the event listeners read the freshest state without re-binding.
-  const zoomRef = useRef(zoom);
-  const panRef = useRef(pan);
-  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-  useEffect(() => { panRef.current = pan; }, [pan]);
+  // The live truth — refs the gesture handlers read and write. The DOM
+  // transform is derived from these, not from React state.
+  const zoomRef = useRef(1);
+  const panRef = useRef({ x: 0, y: 0 });
+
+  // Caller attaches this to the element they want transformed.
+  const transformRef = useRef(null);
 
   const dragRef = useRef(null);
   const pinchRef = useRef(null);
   const lastWasDragRef = useRef(false);
 
-  // rAF coalescing — pending holds the next zoom/pan target, rafIdRef is the
-  // scheduled frame. Multiple touchmove events between frames overwrite the
-  // pending values; only the last one applies, eliminating mid-gesture stutter.
-  const pendingRef = useRef(null);
+  // rAF coalescing — many touchmove events between frames collapse into one
+  // DOM write per displayed frame.
   const rafIdRef = useRef(0);
+
+  function writeTransform() {
+    const el = transformRef.current;
+    if (!el) return;
+    el.style.transform = buildTransform(panRef.current.x, panRef.current.y, zoomRef.current);
+  }
+
+  function scheduleWrite() {
+    if (rafIdRef.current) return;
+    rafIdRef.current = requestAnimationFrame(() => {
+      rafIdRef.current = 0;
+      writeTransform();
+    });
+  }
+
+  // Sync DOM to React state on mount and on any state-driven change (reset,
+  // end-of-gesture commit). Idempotent when state already matches refs.
+  useLayoutEffect(() => {
+    zoomRef.current = zoom;
+    panRef.current = pan;
+    writeTransform();
+  }, [zoom, pan]);
 
   function getContainerCenter() {
     const el = containerRef.current;
@@ -53,60 +90,36 @@ export function useZoomPan(containerRef) {
     return { cx: el.clientWidth / 2, cy: el.clientHeight / 2 };
   }
 
-  function flushPending() {
-    rafIdRef.current = 0;
-    const p = pendingRef.current;
-    pendingRef.current = null;
-    if (!p) return;
-    // Write the freshest values back to refs so the next frame reads them.
-    zoomRef.current = p.zoom;
-    panRef.current = p.pan;
-    setZoom(p.zoom);
-    setPan(p.pan);
-  }
-
-  function scheduleApply(nextZoom, nextPan) {
-    pendingRef.current = { zoom: nextZoom, pan: nextPan };
-    // Optimistically update the refs so further gesture math in the same
-    // frame composes on the freshest values rather than the stale state.
-    zoomRef.current = nextZoom;
-    panRef.current = nextPan;
-    if (!rafIdRef.current) {
-      rafIdRef.current = requestAnimationFrame(flushPending);
-    }
-  }
-
-  // Apply a zoom factor anchored at screen point (sx, sy), plus an optional
-  // pan delta (dxPan, dyPan). Both screen points are relative to the
-  // container's top-left.
-  //
-  // Convention: (sx, sy) is the OLD anchor — the screen point whose
-  // currently-underlying world point should stay still during the zoom.
-  // The pan delta is then applied on top, separately, so for pinch
-  // gestures pass the PREVIOUS midpoint as anchor and (newMid - oldMid)
-  // as the pan delta. This keeps the world point under the user's
-  // fingertips at frame T-1 anchored to the fingertips at frame T even
-  // when the midpoint translates during the zoom.
-  //
-  // Used by:
-  //  - wheel  (sx, sy = cursor, no pan delta)
-  //  - pinch  (sx, sy = previous midpoint, dxPan/dyPan = midpoint delta)
-  //  - pan    (factor = 1, no anchor effect, dxPan/dyPan = drag delta)
+  // applyZoomPan composes a zoom factor anchored at screen point (sx, sy)
+  // — relative to the container's top-left — with an optional pan delta.
+  // CONVENTION: (sx, sy) is the OLD anchor; the world point currently under
+  // it should remain under it through the zoom. The pan delta then layers
+  // on top. For pinch, sx/sy is the PREVIOUS midpoint and (dxPan, dyPan)
+  // is (newMidpoint − oldMidpoint).
   function applyZoomPan(factor, sx, sy, dxPan = 0, dyPan = 0) {
     const { cx, cy } = getContainerCenter();
     const prevZoom = zoomRef.current;
     const prevPan = panRef.current;
     const newZoom = clampZoom(prevZoom * factor);
     const f = newZoom / prevZoom; // may not equal `factor` after clamp
-    const newPanX = (sx - cx) * (1 - f) + prevPan.x * f + dxPan;
-    const newPanY = (sy - cy) * (1 - f) + prevPan.y * f + dyPan;
-    scheduleApply(newZoom, { x: newPanX, y: newPanY });
+    zoomRef.current = newZoom;
+    panRef.current = {
+      x: (sx - cx) * (1 - f) + prevPan.x * f + dxPan,
+      y: (sy - cy) * (1 - f) + prevPan.y * f + dyPan,
+    };
+    scheduleWrite();
   }
 
   function panBy(dx, dy) {
-    const prev = panRef.current;
-    const next = { x: prev.x + dx, y: prev.y + dy };
-    scheduleApply(zoomRef.current, next);
+    panRef.current = { x: panRef.current.x + dx, y: panRef.current.y + dy };
+    scheduleWrite();
+  }
+
+  // commitToState fires after a gesture ends, so React state matches refs
+  // and downstream consumers (UI labels) see the final values.
+  function commitToState() {
+    setZoom(zoomRef.current);
+    setPan({ x: panRef.current.x, y: panRef.current.y });
   }
 
   function reset() {
@@ -114,15 +127,15 @@ export function useZoomPan(containerRef) {
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = 0;
     }
-    pendingRef.current = null;
     zoomRef.current = 1;
     panRef.current = { x: 0, y: 0 };
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    // useLayoutEffect will write the DOM.
   }
 
-  // Wheel + touch listeners need passive:false to preventDefault; attach via
-  // ref so React's synthetic events (which are passive) don't interfere.
+  // Wheel + touch listeners need passive:false to preventDefault. Attached
+  // via ref so React's synthetic events (which are passive) don't interfere.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -134,6 +147,10 @@ export function useZoomPan(containerRef) {
       const sy = e.clientY - rect.top;
       const factor = Math.exp(-e.deltaY * 0.0015);
       applyZoomPan(factor, sx, sy);
+      // Wheel events arrive in bursts then stop. Commit on a debounced
+      // tail; for simplicity we commit on every wheel — it's a single
+      // event per tick rather than a sustained gesture.
+      commitToState();
     };
 
     const onTouchStart = (e) => {
@@ -168,12 +185,9 @@ export function useZoomPan(containerRef) {
         const cx = (t1.clientX + t2.clientX) / 2 - rect.left;
         const cy = (t1.clientY + t2.clientY) / 2 - rect.top;
 
-        // Two-finger gesture = zoom-around-the-old-midpoint + pan-by-midpoint-delta.
-        // Passing the OLD midpoint as the zoom anchor (lastCx, lastCy) and the
-        // midpoint delta as the pan keeps the world point that was under the
-        // user's fingers in the previous frame glued to where the fingers are
-        // in this frame. Using the new midpoint as the anchor instead would
-        // leak (M2 − M1)·(1 − f) of jitter per frame.
+        // Zoom around the OLD midpoint, then translate by the midpoint delta.
+        // This keeps the world point under the user's fingers at frame T-1
+        // glued to the fingers' new position at frame T.
         const factor = dist / pinchRef.current.lastDist;
         const dcx = cx - pinchRef.current.lastCx;
         const dcy = cy - pinchRef.current.lastCy;
@@ -204,9 +218,12 @@ export function useZoomPan(containerRef) {
         if (dragRef.current) lastWasDragRef.current = dragRef.current.moved;
         dragRef.current = null;
         pinchRef.current = null;
+        commitToState();
       } else if (e.touches.length === 1) {
-        // One finger left after a pinch — resume tracking as a drag from
-        // the remaining finger's position so the transition is seamless.
+        // One finger left after a pinch — commit and resume tracking as a
+        // drag from the remaining finger's position so the transition is
+        // seamless.
+        commitToState();
         pinchRef.current = null;
         const t = e.touches[0];
         dragRef.current = {
@@ -231,7 +248,6 @@ export function useZoomPan(containerRef) {
       if (rafIdRef.current) {
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = 0;
-        pendingRef.current = null;
       }
     };
   }, [containerRef]);
@@ -262,13 +278,17 @@ export function useZoomPan(containerRef) {
   }
 
   function onMouseUp() {
-    if (dragRef.current) lastWasDragRef.current = dragRef.current.moved;
+    if (dragRef.current) {
+      lastWasDragRef.current = dragRef.current.moved;
+      if (dragRef.current.moved) commitToState();
+    }
     dragRef.current = null;
   }
 
   return {
     zoom,
     pan,
+    transformRef,
     reset,
     lastWasDragRef,
     mouseHandlers: { onMouseDown, onMouseMove, onMouseUp, onMouseLeave: onMouseUp },

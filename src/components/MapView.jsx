@@ -145,7 +145,7 @@ function collectHexes(cur) {
 export function MapView({ state, onClose, onTravel, loading }) {
   const [selected, setSelected] = useState(null);
   const containerRef = useRef(null);
-  const { zoom, pan, reset, lastWasDragRef, mouseHandlers } = useZoomPan(containerRef);
+  const { zoom, transformRef, reset, lastWasDragRef, mouseHandlers } = useZoomPan(containerRef);
   const cur = state.world.currentTile;
 
   const hexes = collectHexes(cur);
@@ -273,10 +273,13 @@ export function MapView({ state, onClose, onTravel, loading }) {
           userSelect: "none",
         }}
       >
-        <div style={{
+        <div ref={transformRef} style={{
           position: "absolute",
           top: "50%", left: "50%",
-          transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          // NOTE: `transform` is NOT controlled by React here. useZoomPan
+          // writes it imperatively via transformRef so a gesture doesn't
+          // require re-rendering the SVG below. The initial transform is
+          // set by useLayoutEffect in the hook.
           transformOrigin: "center center",
           willChange: "transform",
         }}>
