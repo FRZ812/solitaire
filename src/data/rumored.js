@@ -61,6 +61,33 @@ export const RUMORED = {
   "-22,-3":  { name: "Tannic Mill",         kind: "village",   direction: "west",      description: "A milling-hamlet on a side-channel of the Tannic. The miller takes a tenth in flour and a thirteenth in talk." },
   "-25,10":  { name: "Briarcross",          kind: "village",   direction: "west",      description: "A crossroads-village in the Bramblewych. Hedge-witches teach there openly; the Wardens leave it alone." },
   "-30,-5":  { name: "The Black Mound",     kind: "ruin",      direction: "west",      description: "A black-earth tumulus the size of a barn. Locals warn that nothing planted near it grows; carrion crows nest on it summer-long." },
+
+  // ============================================================
+  // PEACEFUL PEOPLES — racial and civic settlements within reach
+  // ============================================================
+  "35,18":   { name: "Stonebrook Hold",     kind: "town",      direction: "southeast", description: "A working dwarven hold in the Spine Foothills — a gate cut into a hillside, a smokehouse market-square below, three hundred stone-folk who keep a trade-tongue and a long memory. They buy iron, sell finished steel, and tolerate visitors who follow the posted rules." },
+  "-15,8":   { name: "Greenshaw",           kind: "village",   direction: "south",     description: "A village of the small folk on the inland edge of the Bramblewych Reach. Trim hedges, bee-skeps, and houses with the doors set into the hillside. The Greenshaw keep careful neutrality with the Bramble Witches and feed any traveller who asks politely." },
+  "-28,12":  { name: "Selenyan Edge",       kind: "village",   direction: "southwest", description: "A border outpost of the Selenyan Court at the edge of the Witchwood Deep — a clearing of bowyer-trees, a low timber hall, and a wary patrol of two or three. Strangers are welcome to wait at the threshold; passage further west requires invitation." },
+  "12,-3":   { name: "Halfborn Hold",       kind: "town",      direction: "east",      description: "A walled town of half-orcs and the freed-from-coffles, on rising ground above the Mire's eastern edge. The matriarchy governs by election; the smithy is busy; the gate is open by day and watched by night. Tribute-banners of three war-bands they helped break hang inside the main gate." },
+
+  // ============================================================
+  // MAGIC-UNLOCK SITES — places that map to the system prompt's
+  // five magic-acquisition paths (leyline, patron, grimoire, master,
+  // bloodline). The narrator should recognise each from context.
+  // ============================================================
+  "-20,-10": { name: "The Standing Stones of Anwen", kind: "shrine", direction: "northwest", description: "A circle of nine standing stones on a low rise in the Tannic Wood. A leyline crosses the inner ring; those who fast at the centre stone for a dawn and a dusk have been known to wake with something they did not have. Most who try it wake with nothing." },
+  "32,8":    { name: "The Heron Tower",     kind: "fortress",  direction: "east",      description: "A grey stone tower on a knoll in the Spine Foothills — the seat of a master of the Heron School of sorcery. The master takes one apprentice at a time and rejects most who ask. Letters arrive there by white-bird; apprenticeship is years, not months." },
+  "-18,-8":  { name: "The Fae Crossing",    kind: "shrine",    direction: "north",     description: "A glade in the Tannic Wood where the Court of Hawthorn is said to hold their dusk-rites. Travellers who step inside the toadstool ring at twilight may be addressed by a thing that looks like a tall fair child. A bargain there is binding in ways the Vale does not have words for." },
+  "-8,-15":  { name: "The Library of Old Tannic", kind: "shrine", direction: "north", description: "A Wood-Cult library hidden in a clearing of black firs north of the Charwood Burn. The mundane stacks are open to any patient reader; the inner stacks hold grimoires that the Cult will lend to those they trust, after a season or two of trust-building." },
+  "-12,12":  { name: "The Bloodline Cairn", kind: "ruin",      direction: "south",     description: "An ancient stone-and-turf barrow at the inner edge of the Bramblewych Reach. The slab inside is older than the names of the bloodlines. Those whose blood already carries the thread are known to wake on it changed. Those whose blood does not, simply wake cold." },
+  "8,8":     { name: "Shrine of the Pale God", kind: "shrine", direction: "southeast", description: "A small stone shrine on the southern edge of Crowsmoor Reach, kept in seven-day shifts by an order of seven servants. The Pale God answers, sometimes, those who fast, bleed, and wait through the appointed vigil." },
+
+  // ============================================================
+  // OTHER PEACEFUL LANDMARKS — neutral commerce, vista, hermitage
+  // ============================================================
+  "10,-5":   { name: "The Travellers' Meet", kind: "camp",     direction: "east",      description: "A neutral crossroads-market on a knoll between the Mire's edge and Crowsmoor Reach. Tents and wagons spring up for ten days four times a year; in between, a sturdy circle of cleared ground and three permanent fire-rings waits." },
+  "22,5":    { name: "Stargazer's Hill",    kind: "landmark",  direction: "east",      description: "A high knoll in Crowsmoor Reach with a small stone observatory at its crown — three rooms, a brass quadrant, an astronomer of the Heron School in summer residence. The view at night is the best for ten leagues." },
+  "-15,0":   { name: "Mendicant Bridge",    kind: "landmark",  direction: "west",      description: "A timber bridge across a Mire-channel west of the Inn. A kindly mendicant keeps a fire under it through the cold months and asks travellers for a story, not coin. Some say the stories are kept somewhere." },
 };
 
 export function getRumored(x, y) {

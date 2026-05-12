@@ -704,4 +704,232 @@ export const HANDCRAFTED = {
   "-90,-110": { terrain: "plains",    poi: { type: "ruin",       name: "The Whitebone Plain",   description: "A plain where two armies fell at once in the Long Smoke and no one buried either of them. The grass grows in white tufts there, rooted in old marrow. Pilgrims walk it without speaking." } },
   "-90,-111": { terrain: "plains",    poi: { type: "shrine",     name: "The Pikemen's Field",   description: "A patch of plain where iron pikes still stand, half-rotted. The pikes appear to be exactly the number of pikemen that fell. They have never been miscounted." } },
   "-91,-110": { terrain: "plains",    poi: { type: "shrine",     name: "The Two Cairns",        description: "Two long cairns, set parallel — the only burials on the Plain. Said to hold the two captains who agreed to draw their armies up here. Said to be empty." } },
+
+  // ============================================================================
+  // ============================================================================
+  // PEACEFUL PEOPLES — racial settlements, civic places, magic-unlock sites,
+  // and the fabled royal cities. All follow Ruling 2 of docs/WORLDBUILDING.md:
+  // sprawling layouts; the leader / key NPC at an interior hex, never at the
+  // threshold; the player walks room-to-room via the map.
+  // ============================================================================
+  // ============================================================================
+
+  // ============================================================
+  // STONEBROOK HOLD — working dwarven hold (~13 tiles)
+  // Threshold (35,18) is the hill-gate. Hold-Father's chamber at (35,21).
+  // ============================================================
+  "35,18": { terrain: "settlement", poi: { type: "gate",       name: "Stonebrook Gate",         description: "An iron-banded oak door set into a hillside, flanked by carved stone jambs and two short, blunt-faced dwarven gatewardens. The posted rules — short, numbered, in three languages — are nailed beside the door." } },
+  "34,18": { terrain: "road",       poi: null },
+  "36,18": { terrain: "settlement", poi: { type: "yard",       name: "Smokehouse Market",       description: "A wide square dug into the hill below the gate, three smokehouses around it. Cured ham, hard cheese, hammered iron, and the occasional book change hands here on market days. Dwarven measures; honest weight." } },
+  "35,19": { terrain: "indoor",     poi: { type: "smithy",     name: "Stonebrook Forge",        description: "A working forge of four hearths, three of them always lit. Boards on the wall list the year's commissions in painstaking block script. Apprentices oil tools; masters argue temperature." } },
+  "34,19": { terrain: "indoor",     poi: { type: "inn",        name: "The Anvil-and-Ale",       description: "The hold's ale-house — low ceilings, longer benches than tables, dark beer that has soured better men. Travellers are welcome; loud travellers are escorted out by the bouncer, who is short and very strong." } },
+  "36,19": { terrain: "indoor",     poi: { type: "shop",       name: "Trade-Counter",           description: "The hold's import-export office. A long stone counter, three clerks behind it, ledgers older than the clerks. They will buy iron ore at posted prices and sell finished steel at a careful margin." } },
+  "35,20": { terrain: "indoor",     poi: { type: "warren",     name: "Mine-Mouth",              description: "A wide tunnel angling down into the hill, lit by gas-lamps with mirrors at every turn. Wheeled carts run a track of polished steel rails — the hold's pride." } },
+  "34,20": { terrain: "indoor",     poi: { type: "warren",     name: "Lower Galleries",         description: "Working galleries — iron-veins still being followed. The air tastes of stone-dust. Two dozen miners on shift; the foreman calls out tonnage every bell." } },
+  "36,20": { terrain: "indoor",     poi: { type: "armoury",    name: "The Steel-Vault",         description: "A locked stone room where the hold's finished steel is kept until sale-day. The keys are with the Hold-Father; the keys to the keys are with the Council." } },
+  "35,21": { terrain: "indoor",     poi: { type: "throne_room", name: "Hold-Father's Chamber",   description: "The chamber of the elected Hold-Father — a stone room with a single carved chair, a fire-pit, a low table for visitors. The current Hold-Father (term: three years left) prefers visitors to sit; he takes the chair only when ruling." } },
+  "34,21": { terrain: "indoor",     poi: { type: "hall",       name: "Council Chamber",         description: "The chamber of the Stonebrook Council — twelve seats, a stone table, a brass bell. Decisions are taken by acclaim; ties are broken by the eldest member, who has not lost a tie in nineteen years." } },
+  "36,21": { terrain: "indoor",     poi: { type: "shrine",     name: "Ancestor Hall",           description: "A side-chamber lined with name-stones — every Stonebrook dwarf who has died in the hold's three centuries. New names are added below; very old names are polished by the hands of countless descendants." } },
+  "35,17": { terrain: "hills",      poi: { type: "landmark",   name: "Stonebrook Pasture",      description: "Steep terraced pasture above the hold, kept by the hold's surface-shepherds (dwarves who don't quite take to the deep). Goats and a few hardy sheep." } },
+
+  // ============================================================
+  // GREENSHAW — halfling-equivalent village (~9 tiles)
+  // Threshold (-15,8) green. Council Green-house at (-15,11).
+  // ============================================================
+  "-15,8":  { terrain: "settlement", poi: { type: "village",    name: "Greenshaw Green",         description: "The village green of Greenshaw — a circle of close-trimmed grass with a single old hawthorn at the centre, a stone trough beside it. The houses around have doors set into the hillside and chimneys poking from the heather above." } },
+  "-14,8":  { terrain: "road",       poi: null },
+  "-16,8":  { terrain: "settlement", poi: { type: "garden",     name: "Greenshaw Hedges",        description: "Trim hawthorn-and-blackthorn hedges that double as the village's outer wall. Bees in white-painted skeps the height of a tall child; honey-jars stacked on every south-facing windowsill." } },
+  "-15,9":  { terrain: "indoor",     poi: { type: "inn",        name: "The Honeyed Crust",       description: "The village inn — low-ceilinged, smelling of warm bread and beeswax candles. Two long tables. Outsiders are welcome and watched; the small folk love a story and weigh every visitor against the last one." } },
+  "-14,9":  { terrain: "indoor",     poi: { type: "shop",       name: "The Baker's",             description: "The village bakery — three ovens, all wood-fired. Bread is on the counter from dawn; by noon the small folk have bought it; by sunset the baker is starting the next day's sponge." } },
+  "-16,9":  { terrain: "indoor",     poi: { type: "shop",       name: "Herb-Witch's Cottage",    description: "A small cottage on the edge of the green, run by a Greenshaw matron who keeps an arrangement with the Bramble Witches. Tinctures, salves, dried herbs, and the occasional dangerous bottle on the high shelf." } },
+  "-15,10": { terrain: "indoor",     poi: { type: "cellar",     name: "Root-Cellars",            description: "A network of cellars under the hill, used for stores and (in bad winters) for hiding travellers from larger folk who arrive at the gate with knives." } },
+  "-14,10": { terrain: "indoor",     poi: { type: "stable",     name: "Pony-Stable",             description: "A stable of fat, calm ponies the size of large dogs. The small folk ride them when they ride; visitors borrow them for a copper, and they will not be hurried." } },
+  "-15,11": { terrain: "indoor",     poi: { type: "throne_room", name: "Council Green-house",     description: "The Greenshaw council-house, half-buried in the hillside. A round room with a domed turf roof and a single round table. The Speaker-of-the-Green (currently a grey-bearded matron in her hundredth year) sits at the south seat; the council fills the rest by careful rotation." } },
+
+  // ============================================================
+  // SELENYAN EDGE — elven outpost (~10 tiles)
+  // Threshold (-28,12) at the bowyer-grove. Speaker's clearing (-28,15).
+  // Liminal: the inner clearings are in the Witchwood Deep biome but the
+  // outpost itself sits inside Bramblewych Reach.
+  // ============================================================
+  "-28,12": { terrain: "forest",    poi: { type: "village",    name: "Selenyan Edge",            description: "A clearing of bowyer-trees and silver birches just inside the Reach's western marches. Two timber houses of long-planed plank, two slender Selenyans at watch. A polished stone marks the threshold beyond which permission is required." } },
+  "-27,12": { terrain: "forest",    poi: { type: "landmark",   name: "Threshold Stone",          description: "A waist-high stone of polished marble, the Selenyan glyph for 'wait' worked into its top face. Visitors set their packs against it and announce themselves; the patrol comes when it chooses." } },
+  "-29,12": { terrain: "forest",    poi: { type: "landmark",   name: "Archer's Glade",           description: "A long clearing kept open for archery practice. Targets of straw and hide at twenty, fifty, and a hundred paces. A Selenyan-fletched arrow in the dirt — left for the next practitioner, by custom." } },
+  "-28,13": { terrain: "indoor",    poi: { type: "hall",       name: "The Hall of Names",        description: "A long timber hall whose walls are inscribed, floor to roof-beam, with every Selenyan name spoken in this outpost since its founding. Names are added when a Selenyan first arrives; they are not removed when one leaves, only marked with a thin gold line." } },
+  "-27,13": { terrain: "indoor",    poi: { type: "stable",     name: "Bowyer's Shed",            description: "A workshop where Selenyan bows are slowly made — single-piece yew, drawn against the grain over years. Three half-finished bows on the rack, marked with the maker's gold-leaf glyph." } },
+  "-29,13": { terrain: "indoor",    poi: { type: "shop",       name: "Trade-Pavilion",           description: "A modest open-sided pavilion where the Selenyans exchange the few goods they spare with the few visitors they welcome. Bows, salves, fine linen; in return, iron, salt, and (occasionally) human news." } },
+  "-28,14": { terrain: "forest",    poi: { type: "landmark",   name: "The Listening Birches",    description: "A copse of pale birches near the inner clearing. Whisper a true thing here; it will be remembered by the trees. Whisper a false thing; the trees will remember that too." } },
+  "-27,14": { terrain: "forest",    poi: { type: "shrine",     name: "Star-Watching Glade",      description: "A small open glade kept clear for night-sky observance — the Selenyans read what is overhead. A flat stone, polished featureless, lies in the centre as a sky-mirror in clear weather." } },
+  "-29,14": { terrain: "forest",    poi: { type: "hidden", description: null } },
+  "-28,15": { terrain: "indoor",    poi: { type: "throne_room", name: "Speaker's Clearing",       description: "A small inner hall — half-clearing, half-roofed pavilion — where the Speaker-of-the-Edge receives. The current Speaker, a Selenyan of evident long age, sits on a low cushion at the north of the room. Visitors sit opposite and are heard out before they are answered." } },
+
+  // ============================================================
+  // HALFBORN HOLD — half-orc free settlement (~10 tiles)
+  // Threshold (12,-3) gate. Matriarch's hall (12,-6).
+  // ============================================================
+  "12,-3":  { terrain: "settlement", poi: { type: "gate",       name: "Halfborn Gate",           description: "A double-timber gate set into a low earth-and-stone wall. The wood is hung with three tattered banners — the broken iron-rings of Sundered Crown war-bands the Hold has helped break. The wardens at the gate are tall, half-tusked, and friendly." } },
+  "11,-3":  { terrain: "road",       poi: null },
+  "13,-3":  { terrain: "settlement", poi: { type: "yard",       name: "Wall Walk",               description: "The earth-and-stone wall's walkable parapet — half a circuit of the Hold. The view is good; the wardens are talkative, in their slow careful way." }, vistaRadius: 5 },
+  "12,-4":  { terrain: "settlement", poi: { type: "square",     name: "Council Ring",            description: "A circle of long flat stones, used for the open council. Any Halfborn may speak; the matriarchs hear, weigh, and answer. Outsiders may petition by raising a hand and waiting until called." } },
+  "11,-4":  { terrain: "indoor",     poi: { type: "smithy",     name: "Halfborn Forge",          description: "A working forge run by a half-orc smith of much repute. She has shod, hammered, and re-welded most of the iron the Hold owns. Three apprentices; three more on a year's waiting list." } },
+  "13,-4":  { terrain: "indoor",     poi: { type: "inn",        name: "The Broken Ring",         description: "The Hold's only inn, named for the broken iron-rings of Sundered Crown wargear that hang from its beams. Plain food, strong beer; the gathering point for caravan-passers and the place to hire honest blades cheap." } },
+  "12,-5":  { terrain: "indoor",     poi: { type: "hall",       name: "Forge of Agreement",      description: "A larger ceremonial hall, with a stone forge at its centre — used in the Hold's binding rites. Marriages, partnerships, peace-treaties: a token is heated, struck, and cooled in the bound parties' presence. The cooled iron goes home with each side." } },
+  "11,-5":  { terrain: "indoor",     poi: { type: "hall",       name: "Freed-Hall",              description: "A long-hall where the recently freed are housed and fed until they decide where to go next. Some stay; some don't. The hall has fed and lodged a thousand who later remembered it kindly." } },
+  "13,-5":  { terrain: "indoor",     poi: { type: "shop",       name: "Stores",                  description: "A common store-house, stocked by collective effort and drawn from at need. The store-keeper records taken-and-given in a single ledger, never balanced and never demanded to balance." } },
+  "12,-6":  { terrain: "indoor",     poi: { type: "throne_room", name: "Matriarch's Hall",        description: "The hall of the elected Matriarch — currently a tall, broad-shouldered Halfborn in her fifth year of office. She holds court at a long table, not a throne, and prefers questions to petitions. Outsiders are heard out and often answered same-day." } },
+
+  // ============================================================
+  // STANDING STONES OF ANWEN — leyline awakening site (~5 tiles)
+  // ============================================================
+  "-20,-10": { terrain: "hills",    poi: { type: "shrine",     name: "Standing Stones of Anwen", description: "A circle of nine standing stones on a low rise. The outer ring is silent; the centre hums faintly to those attuned to leyline. Three small altars at the ring's western edge — older than the stones, perhaps." }, vistaRadius: 5 },
+  "-19,-10": { terrain: "hills",    poi: { type: "shrine",     name: "The Old Altars",           description: "Three flat altar-stones older than the standing ring — half-buried, lichened, scarred at one edge. Old offerings of copper, hawthorn-berry, knotted hair have been left by hands long gone." } },
+  "-21,-10": { terrain: "hills",    poi: { type: "landmark",   name: "Dawn-Aligned Passage",     description: "A low passage between two of the standing stones, oriented exactly to the midwinter sunrise. On that morning the light passes through and strikes the centre stone; on every other morning it merely points." } },
+  "-20,-11": { terrain: "hills",    poi: { type: "shrine",     name: "The Centre Stone",         description: "The largest of the nine stones, set in the middle of the ring. It hums in the bones of those who fast there a dawn and a dusk. Many have fasted; few have woken with anything; some have woken with everything." } },
+  "-20,-9":  { terrain: "hills",    poi: { type: "hidden", description: null } },
+
+  // ============================================================
+  // THE HERON TOWER — sorcerer's tower, master's teaching path (~7 tiles)
+  // Threshold (32,8) approach. Master's chamber (32,11).
+  // ============================================================
+  "32,8":   { terrain: "settlement", poi: { type: "yard",       name: "Heron Tower Approach",    description: "A path winding up to a stone tower set on a knoll above the foothills. A small walled courtyard at the base. The tower is plain on the outside; the windows are arranged in a way that does not quite match the floor-count." } },
+  "31,8":   { terrain: "road",       poi: null },
+  "33,8":   { terrain: "indoor",    poi: { type: "stable",     name: "Tower Stable",             description: "A small stable for the master's mount and any visitor's. Currently: one black mare with no patience for casual handling and a herald-bird's perch by the lantern-hook." } },
+  "32,9":   { terrain: "indoor",    poi: { type: "hall",       name: "Tower Hall",               description: "The ground-floor hall — a long table, three chairs, a wide hearth. The master receives here when receiving at all. Three books on the table at any one time, never the same three." } },
+  "32,10":  { terrain: "indoor",    poi: { type: "shop",       name: "Tower Library",            description: "A spiral stair leading to the library proper — three storeys of shelves running the inner wall of the tower. The cataloguing rule is private; the master finds anything within seconds; no one else finds anything in less than an afternoon." } },
+  "32,11":  { terrain: "indoor",    poi: { type: "throne_room", name: "Master's Study",           description: "The master's working room — a desk under a north-facing window, a heavy iron-bound chest beside it, a leather chair worn into the master's shape. The master of the Heron Tower, an old woman in plain grey, sits here most days and most nights." } },
+  "33,11":  { terrain: "indoor",    poi: { type: "shrine",     name: "The Observatory",          description: "A small domed room at the tower's top. A brass quadrant, a polished black-stone scrying basin, a single high stool. The view from the parapet is sublime." }, vistaRadius: 12 },
+
+  // ============================================================
+  // THE FAE CROSSING — patron pact site (~5 tiles)
+  // ============================================================
+  "-18,-8": { terrain: "forest",    poi: { type: "shrine",     name: "The Fae Crossing",         description: "A clearing in the Tannic Wood ringed with red-capped toadstools. At dusk the ring sometimes contains things that did not enter from outside it. A bargain struck here is binding in ways the Vale does not have words for." } },
+  "-17,-8": { terrain: "forest",    poi: { type: "landmark",   name: "Hawthorn Watch",           description: "A single hawthorn at the clearing's eastern edge, hung with strips of green and pale silver cloth left as offerings by previous visitors. The wind moves them more than the wind explains." } },
+  "-19,-8": { terrain: "forest",    poi: { type: "landmark",   name: "Toadstool Ring",           description: "The outer ring of red-capped toadstools, set so symmetrically the eye refuses to call them natural. Crossing the ring is a choice; crossing back is sometimes a gift." } },
+  "-18,-9": { terrain: "forest",    poi: { type: "shrine",     name: "The Dusk-Altar",           description: "A flat moss-stone in the clearing's centre. Offerings left here at twilight are sometimes gone by dawn — and sometimes the giver is too." } },
+  "-18,-7": { terrain: "forest",    poi: { type: "throne_room", name: "The Court of Hawthorn",    description: "The inner glade — visible only when invited. A circle of tall pale folk in dim livery, the Hawthorn Lord at their centre. He is courteous, listens carefully, and offers a small thing for a small thing or a large thing for a large thing." } },
+
+  // ============================================================
+  // LIBRARY OF OLD TANNIC — grimoire study site (~6 tiles)
+  // ============================================================
+  "-8,-15": { terrain: "forest",    poi: { type: "shrine",     name: "Library of Old Tannic",    description: "A library hidden in a clearing of black firs north of the Charwood Burn — the Wood-Cult's outer archive. The threshold is a moss-stone arch; visitors are catalogued before they catalogue any book." } },
+  "-7,-15": { terrain: "indoor",    poi: { type: "hall",       name: "The Public Stacks",        description: "The library's open hall — three rows of reading-tables, long shelves of mundane texts on plants, weather, the Cult's quiet histories. Anyone patient may read here. The Cult's librarians keep the silence." } },
+  "-9,-15": { terrain: "indoor",    poi: { type: "shop",       name: "The Cataloguer's Desk",    description: "Where new visitors register and where the trusted apply for inner-stack access. The cataloguer is a thin, courteous Wood-Cult brother who refuses no one — but refuses to hurry, and a Cult application takes a season." } },
+  "-8,-16": { terrain: "indoor",    poi: { type: "vault",      name: "The Inner Library",        description: "A locked side-room of grimoires lent only to the Cult's trusted readers. The titles on the spines are in five languages, two of them no longer spoken. The brothers take down what's been requested; visitors do not browse." } },
+  "-8,-14": { terrain: "indoor",    poi: { type: "shrine",     name: "The Reader's Cell",        description: "A small private reading cell with a desk, a lamp, and a comfortable chair. Grimoires lent from the Inner Library are read here, never elsewhere. The chair is older than the building." } },
+  "-9,-16": { terrain: "indoor",    poi: { type: "throne_room", name: "The Locked Stacks",        description: "A small inner vault, opened only by the Master Archivist. Three locked cabinets. The Master Archivist will open the cabinets for the right student at the right hour; very few students have been right." } },
+
+  // ============================================================
+  // THE BLOODLINE CAIRN — bloodline awakening site (~4 tiles)
+  // ============================================================
+  "-12,12": { terrain: "hills",     poi: { type: "ruin",       name: "The Bloodline Cairn",      description: "An old stone-and-turf barrow on the inner edge of Bramblewych Reach. The capstone at its head is carved with a pattern the eye keeps trying to resolve. Those whose blood already carries the thread are known to wake on the inner slab changed." } },
+  "-11,12": { terrain: "forest",    poi: { type: "landmark",   name: "Approach Hawthorn",        description: "A single ancient hawthorn at the cairn's eastern approach — older than the barrow, perhaps. Strips of cloth tied to its branches, left by those who have lain on the slab inside and woken." } },
+  "-13,12": { terrain: "hills",     poi: { type: "hidden", description: null } },
+  "-12,13": { terrain: "indoor",    poi: { type: "throne_room", name: "The Sleeping Slab",        description: "Inside the cairn — a single stone slab, the length of a tall man, polished by centuries of seekers. Three carved blood-grooves run its length. The chamber smells of stone-dust and old hawthorn. Sleep here is a choice with consequences." } },
+
+  // ============================================================
+  // SHRINE OF THE PALE GOD — god patron pact site (~5 tiles)
+  // ============================================================
+  "8,8":   { terrain: "settlement", poi: { type: "shrine",     name: "Shrine of the Pale God",   description: "A small stone shrine on the southern edge of Crowsmoor Reach. Three thin pillars hold up a tiled roof; a stone wash-basin sits before the threshold. One of the Pale God's seven servants attends day and night." } },
+  "7,8":   { terrain: "road",       poi: null },
+  "9,8":   { terrain: "indoor",     poi: { type: "hall",       name: "Servants' Quarters",       description: "The seven small cells of the servants — one cell per servant of the seven-day cycle. Plain pallets, a single brass lantern shared, a copy of the Order's text on each desk." } },
+  "8,9":   { terrain: "indoor",     poi: { type: "shrine",     name: "Vigil Chamber",            description: "A cold square chamber where the supplicant fasts and bleeds through the appointed hours. A single hard bench, a low stone bowl, a chalk line on the floor that no one but the supplicant may cross." } },
+  "8,7":   { terrain: "indoor",     poi: { type: "throne_room", name: "The Altar",                description: "The inner altar of the Pale God — a single curved stone the colour of unbleached linen. The Pale God answers, sometimes. The vigil is the asking; the answer (if it comes) is a quiet certainty in the supplicant, which they will know on rising." } },
+
+  // ============================================================
+  // THE TRAVELLERS' MEET — neutral market crossroads (~5 tiles)
+  // ============================================================
+  "10,-5":  { terrain: "settlement", poi: { type: "camp",       name: "The Travellers' Meet",    description: "A neutral crossroads-market on a low knoll. In the ten-day fair-weeks four times a year, the green is crowded with tents, mules, and three different languages of haggling. In the long weeks between, three permanent fire-rings and a swept circle of ground wait." } },
+  "9,-5":   { terrain: "road",       poi: null },
+  "11,-5":  { terrain: "road",       poi: null },
+  "10,-4":  { terrain: "settlement", poi: { type: "stable",     name: "Off-Season Stable",       description: "A long open-sided shelter — three rows of hitching-rails, water-trough, hay-bales. Free use for any traveller, by the unwritten rule of the Meet. Theft from the stable is punished by community out-of-band." } },
+  "10,-6":  { terrain: "settlement", poi: { type: "landmark",   name: "Long-Table",              description: "A row of three trestle-tables under a wide awning, kept up between fair-weeks. The trestles are bolted to the ground; the awning is patched. Traveller meets traveller here, and stories are exchanged for tea." } },
+
+  // ============================================================
+  // STARGAZER'S HILL — observatory with vista (~4 tiles)
+  // ============================================================
+  "22,5":  { terrain: "hills",      poi: { type: "landmark",   name: "Stargazer's Hill",         description: "A high knoll in Crowsmoor Reach with a small stone observatory at its crown. The view at night is the best for ten leagues. The astronomer in residence is of the Heron School and will explain anything if asked nicely." }, vistaRadius: 10 },
+  "21,5":  { terrain: "plains",     poi: { type: "landmark",   name: "Star-Path",                description: "A foot-path winding up the hill, marked with small white-painted stones at every dozen paces. Pilgrims (mostly children with their grandparents) follow it in clear evenings." } },
+  "22,4":  { terrain: "indoor",     poi: { type: "shop",       name: "The Quadrant Room",        description: "A small room of the observatory — a brass quadrant on a stone pedestal, a row of star-charts, and a careful astronomer in plain grey who will mark a horoscope for a copper." } },
+  "22,6":  { terrain: "indoor",     poi: { type: "throne_room", name: "The Lens Room",            description: "The observatory's upper room — a single large polished-glass lens on a pivot, mounted to read the southern sky. The astronomer trains it on whatever the visitor asks; sometimes she trains it on what the visitor needs." } },
+
+  // ============================================================
+  // MENDICANT BRIDGE — small hermitage (~3 tiles)
+  // ============================================================
+  "-15,0": { terrain: "settlement", poi: { type: "landmark",   name: "Mendicant Bridge",         description: "A timber bridge across a Mire-channel. A fire-pit under the western abutment — the mendicant's. He asks travellers for a story, not coin; he keeps the fire going through cold months." } },
+  "-14,0": { terrain: "road",       poi: null },
+  "-16,0": { terrain: "indoor",     poi: { type: "throne_room", name: "Mendicant's Hollow",       description: "A small under-bridge hollow where the mendicant sleeps and writes. A single oiled book, half full, in which (he says) the stories he has been told are kept. He will read from it on request, if he likes you, if it is raining." } },
+
+  // ============================================================================
+  // FABLED — peaceful royal cities and the wizards' academy. Far coords;
+  // not reachable by ordinary travel. Layouts exist so NPCs can speak with
+  // internal geography and so a long-arc quest finds real ground.
+  // ============================================================================
+
+  // ============================================================
+  // ASALAN — seat of the Vale-King, southern walled city (~22 tiles)
+  // Threshold (-30,150). Throne (-30,153).
+  // ============================================================
+  // Outer wall + gates
+  "-30,148": { terrain: "settlement", poi: { type: "gate",       name: "Asalan North Gate",       description: "The North Gate of Asalan — three sets of doors, a double portcullis, and a queue of carts that begins forming three hours before dawn. Customs-officers in royal red collect duty and gossip in equal measure." } },
+  "-31,149": { terrain: "settlement", poi: { type: "gate",       name: "Asalan West Gate",        description: "The West Gate — narrower, used mostly by Banner-couriers and the city's market-gardeners. The wall here is the original Asalan stone, two storeys high and never breached." } },
+  "-29,149": { terrain: "settlement", poi: { type: "gate",       name: "Asalan East Gate",        description: "The East Gate — wider, for the great trade-caravans. A statue of the city's founding queen at the inner side; pigeons live in the crook of her arm." } },
+  "-30,149": { terrain: "settlement", poi: { type: "yard",       name: "Outer Plaza",             description: "The first square inside the walls — wide stone paving, a fountain, four streets fanning out. The smell of the south: warm stone, jacaranda blossom, charcoal-smoke." } },
+
+  // The city itself
+  "-30,150": { terrain: "settlement", poi: { type: "city",       name: "Asalan",                  description: "Seat of the Vale-King — a southern walled city of warm honey-coloured stone, jacaranda streets, and a population of forty thousand. The Crown's writ runs the southern provinces; the city is the writ's heart." } },
+  "-31,150": { terrain: "settlement", poi: { type: "yard",       name: "Trade Quarter",           description: "The largest of the city's quarters — three concentric markets around a central exchange. Spice, cloth, copper, salt-fish, books, wine, and (in season) the kingdom's famous oranges." } },
+  "-29,150": { terrain: "settlement", poi: { type: "yard",       name: "Temple Quarter",          description: "A quarter of nine temples — one for each of the southern gods, plus the eighth and ninth, which are foreign and small and tolerated. Bells ring at conflicting intervals all day." } },
+  "-30,151": { terrain: "settlement", poi: { type: "yard",       name: "Workshops Quarter",       description: "Where the city makes the things the city sells. Bronze-smiths' lane, glassblower's row, the leather-yards, the textile sheds. The noise is famous; the apprentices are famous-er." } },
+
+  // Approach to the Royal Court
+  "-30,152": { terrain: "settlement", poi: { type: "gate",       name: "Royal Court Gate",        description: "The gate to the inner city — a pair of bronze-bound oak doors, guards in royal red and pale linen. Petitioners queue at a side door, by appointment; merchants come and go through the main gate." } },
+  "-31,151": { terrain: "indoor",    poi: { type: "shop",       name: "The Royal Library",        description: "Asalan's royal library — three storeys of polished cedar shelves, a thousand titles in the open stacks, more in the locked. The Royal Librarian is an elderly courteous man who has read most of what he keeps." } },
+  "-29,151": { terrain: "indoor",    poi: { type: "hall",       name: "Mages' Court",             description: "The Royal Court's small school of sorcery — not the Glass Spire, but Asalan keeps a handful of court-mages who train one or two apprentices apiece. Library, study-rooms, an indifferent practice-yard." } },
+  "-31,152": { terrain: "indoor",    poi: { type: "shop",       name: "The Royal Mews",           description: "Where the Crown's hawks, courier-doves, and the kingdom's two trained eagles are kept. The Falconer-Royal is a slight woman with a perpetual leather glove; the birds love her." } },
+  "-29,152": { terrain: "indoor",    poi: { type: "hall",       name: "Privy Council Chamber",    description: "A long polished room where the Vale-King meets his Privy Council. A single round oak table, twelve chairs, a wide south-facing window. The Council meets daily in the second hour after dawn." } },
+
+  // Inner court
+  "-30,153": { terrain: "indoor",    poi: { type: "throne_room", name: "The Vale-King's Throne",   description: "The Throne Hall of Asalan. A long stone hall, sun-lit through clerestory windows; the throne itself a chair of polished sandstone on a dais of three steps, draped in royal red. The Vale-King sits on petition-mornings and at the rare full court; he is courteous, slow, and very hard to mislead." } },
+  "-31,153": { terrain: "indoor",    poi: { type: "hall",       name: "King's Solar",             description: "The Vale-King's private solar — a sun-warmed room above the throne hall, where the King reads and dictates between audiences. Three chairs; a single south window; a wine-cup on the desk usually half full." } },
+  "-29,153": { terrain: "indoor",    poi: { type: "hall",       name: "Queen's Chambers",         description: "The Queen-Consort's private chambers — a suite of three rooms, sun-bright and well-loved. The Queen, when in residence, holds her own small court here for the kingdom's matrons and the city's heads-of-house." } },
+  "-30,154": { terrain: "indoor",    poi: { type: "vault",      name: "Royal Vault",              description: "The kingdom's treasury — beneath the throne hall, guarded around the clock. The royal regalia (a single crown of plain silver, a sceptre of jade) live here when not in use, which is most days." } },
+  "-30,147": { terrain: "road",      poi: null },
+  "-31,148": { terrain: "road",      poi: null },
+  "-29,148": { terrain: "road",      poi: null },
+
+  // ============================================================
+  // CAER SELENYA — fabled tree-built elven city (~16 tiles)
+  // Threshold (-200,50). Speakers' Spire (-200,53).
+  // ============================================================
+  "-201,49": { terrain: "forest",   poi: { type: "gate",       name: "Canopy Gate",              description: "A gate of woven living branches arching over the inland road. Two Selenyan wardens; a single polished stone underfoot inscribed with the Selenyan glyph for welcome." } },
+  "-199,49": { terrain: "forest",   poi: { type: "landmark",   name: "Singer Court",             description: "A circular court where Selenyan singers practise in the long evenings. A polished spiral of moss-stone underfoot; benches of carved oak for those listening." } },
+  "-200,50": { terrain: "forest",   poi: { type: "city",       name: "Caer Selenya",             description: "The tree-built city of the Selenyan Court. Spires of living wood rise from the floor of an ancient forest; bridges of woven branch span the canopies. The city has stood, by Selenyan reckoning, eleven ages." } },
+  "-201,50": { terrain: "forest",   poi: { type: "yard",       name: "Archer Court",             description: "A long oval clearing kept for the city's archery — both ritual and practical. The straw targets are renewed at the first of every season; the discarded targets are burned with ceremony." } },
+  "-199,50": { terrain: "forest",   poi: { type: "yard",       name: "Bowyer Court",             description: "Where the city's master bowyers work, slowly, over years. A single bow may take seven seasons; the bow is named for the maker and the year of completion." } },
+  "-200,51": { terrain: "indoor",   poi: { type: "hall",       name: "The Council of Names",     description: "A great hall under the canopy — the city's central council. The walls are inscribed (still being inscribed) with every Selenyan name spoken in Caer Selenya since the city's founding. The Council reads names aloud at the changing of every season." } },
+  "-201,51": { terrain: "indoor",   poi: { type: "shop",       name: "The Library of Leaves",    description: "A library whose 'books' are pressed and bound leaves, each leaf inscribed with a Selenyan record in glyph and quiet ink. The catalogue is in the librarian's head; the librarian has held the post seven hundred years." } },
+  "-199,51": { terrain: "indoor",   poi: { type: "garden",     name: "The Mirror Pool",          description: "A circular pool of perfectly still water at the city's heart — the Selenyans consult it on questions they do not wish to ask aloud. The pool gives no answer in words; what visitors see in it differs between visitors." } },
+  "-200,52": { terrain: "indoor",   poi: { type: "hall",       name: "The High Glades",          description: "The roofless inner court of the city — a circle of immense ash-trees with their lower branches woven into a vaulted ceiling. The Council meets here on the highest matters. The acoustics are deliberate; a whisper carries." } },
+  "-201,52": { terrain: "indoor",   poi: { type: "shrine",     name: "The Star-Reader's Glade",  description: "A small private clearing kept clear of canopy. The city's chief star-reader receives here in the long evenings. The same flat moss-stone serves as her seat and her instrument." } },
+  "-199,52": { terrain: "indoor",   poi: { type: "armoury",    name: "The Bow-Vault",            description: "A locked chamber where the city's named bows are stored when their makers or owners are abroad. Three hundred bows, each in its own velvet sleeve; the room is colder than the city, and quiet." } },
+  "-200,53": { terrain: "indoor",   poi: { type: "throne_room", name: "The Speakers' Spire",      description: "The Spire — a single tall living-wood tower at the city's centre. The Speaker-of-the-Court (the Selenyan kindred's nearest equivalent to a queen, though they would correct the word) holds court at its top. A circular room of polished pale wood; a low cushion; a view that takes in the whole canopy." } },
+  "-201,53": { terrain: "indoor",   poi: { type: "hall",       name: "The Counsellors' Room",    description: "Below the Speaker's chamber, a hall for the Court's permanent counsellors. Seven seats, a polished wood floor, a single round table. The Counsellors brief the Speaker each morning and answer her questions each evening." } },
+  "-199,53": { terrain: "indoor",   poi: { type: "shrine",     name: "The Memory-Branch",        description: "A single carved branch hung from the Spire's central beam, inscribed with the names of every Speaker-of-the-Court since the founding. New names are added by the next Speaker, when she takes the post." } },
+  "-200,48": { terrain: "forest",   poi: { type: "landmark",   name: "Outer Welcoming",          description: "The first clearing inside the city's outer trees — visitors rest here while a courier carries word to the Council. A long wooden bench, three deep cups of clear water set on a low table when expected." } },
+  "-200,54": { terrain: "forest",   poi: { type: "shrine",     name: "The Dawn Wall",            description: "The eastern edge of the inner city — a wall of living birches kept pale by careful attention. Selenyan custom: visitors who depart at dawn touch the wall once before leaving, and are remembered." } },
+
+  // ============================================================
+  // THE GLASS SPIRE — fabled wizards' academy (~10 tiles)
+  // Threshold (90,-90). High Master (90,-93).
+  // ============================================================
+  "89,-89":  { terrain: "water",    poi: { type: "landmark",   name: "Lake Crossing",            description: "A landing-stage on the shore of a lake no two maps draw the same. Three flat-bottomed boats and a single ferryman who works for whatever the Spire pays him, which is little but punctual." } },
+  "91,-89":  { terrain: "water",    poi: { type: "landmark",   name: "Spire Approach",           description: "The lake's calm middle reach. From here the Glass Spire is fully visible — a single pale tower rising from a small island. The tower's surfaces refract sunlight into shifting bands no two visitors describe alike." } },
+  "90,-90":  { terrain: "settlement", poi: { type: "fortress",   name: "The Glass Spire",         description: "The fabled academy of sorcerers — a single tower of pale fused glass, two hundred feet tall, on an island in a lake no map agrees on. The threshold is a single iron-bound oak door at the tower's base. Visitors knock and are let in by a porter who looks tired and unsurprised." }, vistaRadius: 20 },
+  "89,-90":  { terrain: "indoor",   poi: { type: "hall",       name: "The Porter's Hall",        description: "The Spire's ground-floor hall — a long stone room, a single fire, three plain benches for waiting. The porter (an elderly sorcerer who took the post to keep his hands busy) takes names and ages of visitors and disappears upstairs for ten minutes at a time." } },
+  "91,-90":  { terrain: "indoor",   poi: { type: "shop",       name: "The Scriptorium",          description: "Where the Spire's apprentices spend their first years copying. Three rows of high desks under tall north windows. The smell of ink and binder's glue and old paper, never quite the same intensity." } },
+  "90,-91":  { terrain: "indoor",   poi: { type: "shop",       name: "The Library Wing",         description: "The Spire's working library — three storeys of shelves spiralling up the tower's inner wall. The cataloguing is by colour, smell, and an internal logic only librarians grasp. New apprentices need a week to find anything." } },
+  "89,-91":  { terrain: "indoor",   poi: { type: "shrine",     name: "The Scrying Wing",         description: "A floor of the tower dedicated to scrying — basins of black water on stone pedestals, copper mirrors in iron frames, a long bench of star-glass spheres. Apprentices learn here under the eye of the Master-of-Mirrors." } },
+  "91,-91":  { terrain: "indoor",   poi: { type: "shrine",     name: "The Summoning Wing",       description: "A heavily-warded floor for the Spire's higher work. The chalk-circles in the floor are reinforced by silver inlay. Visitors are not admitted; apprentices are admitted after seven years, occasionally." } },
+  "90,-92":  { terrain: "indoor",   poi: { type: "shrine",     name: "The Open Eye",             description: "An observatory at the Spire's penultimate floor — open to the sky through a retracting copper-and-leaded-glass dome. The Open Eye is for star-work and for the long calculations the Spire's masters love." }, vistaRadius: 8 },
+  "90,-93":  { terrain: "indoor",   poi: { type: "throne_room", name: "The High Master's Chamber", description: "The topmost room of the Glass Spire. A single round chamber under the tower's apex. A low desk, a single high-backed chair, a wide circular window. The High Master, an elderly figure of indeterminate gender, sits and reads and occasionally writes letters that change kingdoms." } },
 };

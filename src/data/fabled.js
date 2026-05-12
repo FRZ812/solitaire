@@ -130,6 +130,29 @@ export const FABLED = {
     coord: { x: -220, y: 90 },
     description: "A white tower on a shore no living captain can chart twice. It has never not been lit; its keeper has never been found. Sailors who claim to have seen its light at sea give different bearings every time.",
   },
+
+  // ---------- PEACEFUL LEGENDS — friendly courts and academies ----------
+  "asalan": {
+    name: "Asalan",
+    direction: "far south, past the Hollow Coast",
+    kind: "city",
+    coord: { x: -30, y: 150 },
+    description: "Seat of the Vale-King — a southern walled city of warm stone, jacaranda streets, and the only sitting human monarch the continent acknowledges. The Crown's writ runs the southern provinces; the Vale gets word from Asalan only twice a year, and answers it with a single courier in spring.",
+  },
+  "caer-selenya": {
+    name: "Caer Selenya",
+    direction: "far west, on a coast no human cartographer has named twice",
+    kind: "city",
+    coord: { x: -200, y: 50 },
+    description: "The tree-built city of the Selenyan Court — the elven kindred. Spires of living wood, bridges of woven branch, and the long Council of Names in the city's central grove. Visitors are extended every courtesy and very few invitations.",
+  },
+  "glass-spire": {
+    name: "The Glass Spire",
+    direction: "east, in the marches beyond Tellmar",
+    kind: "fortress",
+    coord: { x: 90, y: -90 },
+    description: "The fabled academy of sorcerers — a single tower of pale glass two hundred feet tall, on an island in a lake no map agrees on. The Heron School's masters were trained there; the school's masters' masters were too. The Spire takes new students by invitation, never by request.",
+  },
 };
 
 export function summarizeFabled() {
