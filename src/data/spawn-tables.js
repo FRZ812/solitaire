@@ -1,6 +1,10 @@
 // Terrain-based spawn tables for random encounters. Each entry has a kind,
 // weight (relative), posture (hostile|neutral|friendly), and a short flavor.
 // chance = probability of ANY encounter when entering this terrain.
+//
+// Per-biome extras (defined in data/biomes.js) are appended on top of these
+// terrain bases; the engine sums the weights. So a forest tile in the Witchwood
+// Deep can roll a wolf/bandit/goblin/orc/treekin-watcher etc., weighted.
 export const SPAWN_TABLES = {
   marsh: {
     chance: 0.05,
@@ -13,6 +17,10 @@ export const SPAWN_TABLES = {
       { kind: "lost-pilgrim",    weight: 12, posture: "friendly", desc: "a lost pilgrim, soaked and shivering" },
       { kind: "drowned-corpse",  weight: 8,  posture: "neutral",  desc: "a bloated corpse half-emerged from the muck, still clothed" },
       { kind: "leech-cloud",     weight: 6,  posture: "hostile",  desc: "a dense cloud of fat leeches dropping from a sagging bough" },
+      { kind: "stirge-flight",   weight: 6,  posture: "hostile",  desc: "a flight of long-beaked stirges peeling off a dead alder" },
+      { kind: "lizardman-scout", weight: 8,  posture: "neutral",  desc: "a green-scaled scout in reed-armour, motionless on a hummock" },
+      { kind: "bog-skeleton",    weight: 5,  posture: "hostile",  desc: "a sodden skeleton dragging itself out of the peat, still wearing a belt" },
+      { kind: "salt-eel",        weight: 4,  posture: "hostile",  desc: "a black eel as long as a man, sliding across the path" },
     ],
   },
   forest: {
@@ -26,6 +34,13 @@ export const SPAWN_TABLES = {
       { kind: "hunter",          weight: 13, posture: "friendly", desc: "a lone hunter checking his snares" },
       { kind: "lost-traveler",   weight: 10, posture: "friendly", desc: "a lost traveler clutching a torn map" },
       { kind: "charcoaler",      weight: 4,  posture: "friendly", desc: "a soot-stained charcoaler tending a smoldering mound" },
+      { kind: "orc-scout",       weight: 8,  posture: "hostile",  desc: "an orc scout in stolen mail, bow strung" },
+      { kind: "boar",            weight: 9,  posture: "hostile",  desc: "a tusked sow with three half-grown striped piglets" },
+      { kind: "giant-spider",    weight: 5,  posture: "hostile",  desc: "a leg-span the breadth of a wagon-wheel, set in old webbing" },
+      { kind: "fey-court",       weight: 4,  posture: "neutral",  desc: "a slow procession of pale folk in dim livery, ignoring you" },
+      { kind: "owlbear",         weight: 3,  posture: "hostile",  desc: "a hulking shape of fur and feathers, the snap of its beak unmistakable" },
+      { kind: "wandering-monk",  weight: 6,  posture: "friendly", desc: "a barefoot monk walking with a brass begging-bowl" },
+      { kind: "carrion-thrall",  weight: 4,  posture: "hostile",  desc: "a slack-faced thrall in rotted clothes, mouth full of beetles" },
     ],
   },
   hills: {
@@ -38,6 +53,10 @@ export const SPAWN_TABLES = {
       { kind: "wandering-cleric",weight: 10, posture: "friendly", desc: "a wandering cleric, robe muddied" },
       { kind: "wild-goats",      weight: 10, posture: "neutral",  desc: "a herd of wild goats on the slope" },
       { kind: "hawk",            weight: 6,  posture: "neutral",  desc: "a circling hawk far overhead, screaming" },
+      { kind: "orc-raiders",     weight: 8,  posture: "hostile",  desc: "four orcs and two goblins working a saddle for ambush" },
+      { kind: "lone-troll",      weight: 4,  posture: "hostile",  desc: "a moss-grey troll dragging itself toward a sheep-track" },
+      { kind: "courier",         weight: 6,  posture: "neutral",  desc: "a sweating courier on a hill-bred pony, in a hurry" },
+      { kind: "ruined-shrine",   weight: 4,  posture: "neutral",  desc: "a half-fallen wayside shrine — its candle freshly lit" },
     ],
   },
   mountains: {
@@ -50,6 +69,13 @@ export const SPAWN_TABLES = {
       { kind: "hermit",          weight: 12, posture: "neutral",  desc: "a wild-eyed hermit sheltering in an alcove" },
       { kind: "ibex",            weight: 12, posture: "neutral",  desc: "a herd of ibex on a high ledge, motionless" },
       { kind: "ravens",          weight: 10, posture: "neutral",  desc: "a wheel of ravens, three or four of them, circling" },
+      { kind: "ogre",            weight: 5,  posture: "hostile",  desc: "a single ogre at a switchback, chewing on something with a boot still attached" },
+      { kind: "stone-troll",     weight: 5,  posture: "hostile",  desc: "what you took for a boulder unfolds — a stone-troll, slow and very large" },
+      { kind: "wyvern-passage",  weight: 4,  posture: "hostile",  desc: "the shadow of long wings on the rock — a wyvern passing low" },
+      { kind: "drakeling",       weight: 4,  posture: "hostile",  desc: "a drakeling the size of a hound sunning on a slab, smoke in its nostrils" },
+      { kind: "gryphon",         weight: 3,  posture: "neutral",  desc: "a gryphon on a high outcrop, gold eyes tracking you in passing" },
+      { kind: "pass-pilgrim",    weight: 6,  posture: "friendly", desc: "a pilgrim with frost-rimed beard, walking down out of the col" },
+      { kind: "mountain-monk",   weight: 5,  posture: "friendly", desc: "a stone-cult monk in grey, hands in opposite sleeves" },
     ],
   },
   plains: {
@@ -62,6 +88,10 @@ export const SPAWN_TABLES = {
       { kind: "outrider",        weight: 14, posture: "neutral",  desc: "a roaming outrider on patrol" },
       { kind: "messenger",       weight: 10, posture: "friendly", desc: "a lone rider on urgent business" },
       { kind: "lark",            weight: 8,  posture: "neutral",  desc: "a lark startled from the grass, climbing in song" },
+      { kind: "cattle-drive",    weight: 10, posture: "friendly", desc: "a slow cattle-drive of twenty head and three handlers" },
+      { kind: "broken-knight",   weight: 6,  posture: "neutral",  desc: "a lone rider in dented plate, no banner, no obvious purpose" },
+      { kind: "hare-courser",    weight: 6,  posture: "friendly", desc: "two riders coursing hares with long lurchers — they wave and keep going" },
+      { kind: "raven-omen",      weight: 4,  posture: "neutral",  desc: "a single black bird on a fence-post that does not move as you pass" },
     ],
   },
   road: {
@@ -74,6 +104,10 @@ export const SPAWN_TABLES = {
       { kind: "messenger",       weight: 10, posture: "neutral",  desc: "a lone rider in haste" },
       { kind: "pilgrim",         weight: 10, posture: "friendly", desc: "a pilgrim walking with a staff" },
       { kind: "fallen-cart",     weight: 8,  posture: "neutral",  desc: "an overturned cart by the verge, abandoned" },
+      { kind: "company-band",    weight: 8,  posture: "neutral",  desc: "a dozen mercenaries marching in loose order, contract-bound somewhere" },
+      { kind: "burning-rider",   weight: 4,  posture: "neutral",  desc: "a Burning Order rider in a bronze mask, asking after the road north" },
+      { kind: "tax-collector",   weight: 6,  posture: "neutral",  desc: "a city tax-collector and his two guards, scale and ledger ready" },
+      { kind: "stray-animal",    weight: 6,  posture: "neutral",  desc: "an unattended ox standing in the middle of the road, chewing" },
     ],
   },
   settlement: {
@@ -86,6 +120,9 @@ export const SPAWN_TABLES = {
       { kind: "cutthroats",      weight: 8,  posture: "hostile",  desc: "two cutthroats peeling out of a back alley with intent" },
       { kind: "guard",           weight: 8,  posture: "neutral",  desc: "a guard giving you a hard look" },
       { kind: "messenger",       weight: 4,  posture: "neutral",  desc: "a sweating messenger pushing through the crowd" },
+      { kind: "street-preacher", weight: 6,  posture: "neutral",  desc: "a preacher on a barrel, hoarse and certain" },
+      { kind: "press-gang",      weight: 3,  posture: "hostile",  desc: "a press-gang of three burly men eyeing your shoulders" },
+      { kind: "lost-child",      weight: 6,  posture: "friendly", desc: "a child standing in the street, looking up at the wrong houses" },
     ],
   },
   indoor: { chance: 0, entries: [] },
