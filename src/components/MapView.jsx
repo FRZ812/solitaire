@@ -457,24 +457,40 @@ export function MapView({ state, onClose, onTravel, loading }) {
               />
             )}
             {labels.map((l) => (
-              <text
-                key={l.key}
-                x={l.x} y={l.y}
-                textAnchor="middle"
-                fontFamily="'Instrument Serif', serif"
-                fontStyle="italic"
-                fontSize="14"
-                fontWeight="700"
-                fill={l.fill}
-                pointerEvents="none"
-                paintOrder="stroke"
-                stroke="#FBF8F2"
-                strokeWidth="4"
-                strokeOpacity={1}
-                strokeLinejoin="round"
-              >
-                {l.name}
-              </text>
+              // Two passes per label so the halo is dense enough to read on
+              // both light terrain (plains, sand) and dark (forest, mountain).
+              // First pass: thick white outline-only; second pass: solid text.
+              // The two-pass approach reads cleaner than a single stroked text
+              // (which can look fuzzy at small SVG zooms on mobile).
+              <g key={l.key} pointerEvents="none">
+                <text
+                  x={l.x} y={l.y}
+                  textAnchor="middle"
+                  fontFamily="'Instrument Serif', serif"
+                  fontStyle="italic"
+                  fontSize="16"
+                  fontWeight="700"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="6"
+                  strokeOpacity={1}
+                  strokeLinejoin="round"
+                  paintOrder="stroke"
+                >
+                  {l.name}
+                </text>
+                <text
+                  x={l.x} y={l.y}
+                  textAnchor="middle"
+                  fontFamily="'Instrument Serif', serif"
+                  fontStyle="italic"
+                  fontSize="16"
+                  fontWeight="700"
+                  fill={l.fill}
+                >
+                  {l.name}
+                </text>
+              </g>
             ))}
           </svg>
         </div>
