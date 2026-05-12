@@ -120,6 +120,56 @@ Use this for regional flavor (e.g. drake-wyrmlings in the Drakeholt, pale
 acolytes in the Bonemarsh). Don't replicate base entries; just add what's
 characteristic.
 
+## **Ruling 7 — Access control with `doors`**
+
+Every interior hex of a sealed structure declares the neighbours it can be entered from or exited to. An interior tile *without* `doors` is a bug — it lets the player walk in from a wilderness adjacency.
+
+### Schema
+
+```js
+"-120,-63": {
+  terrain: "indoor",
+  poi: { type: "throne_room", name: "Goblin King's Throne" },
+  doors: [{ x: -120, y: -62 }],   // only from the Imperial Hall
+},
+```
+
+`doors` is an array of `{x, y}` neighbours. Default (no `doors`): all 6 neighbours are open — what wilderness and open settlements want.
+
+### Symmetric check
+
+The engine refuses a map-move A → B unless BOTH ends permit:
+
+- `A.doors` is unspecified, OR `A.doors` includes B.
+- `B.doors` is unspecified, OR `B.doors` includes A.
+
+So if you forget to add A to B's `doors` list, the wall still holds — the asymmetric mistake reads as "no entry" rather than "free entry".
+
+### Layout rules per zone
+
+For each sealed structure:
+
+| Tile role | `doors` |
+|---|---|
+| Wilderness around the structure | none |
+| Threshold (the gate hex named in `rumored.js`) | lists exterior approach hexes + the first interior hex |
+| Outer ward / yard | lists only interior neighbours (no wilderness) |
+| Inner halls, chambers | lists only interior neighbours |
+| Sanctum / boss tile | a single door (back through the antechamber) |
+
+The map renders any blocked edge as a dark wall segment so the player can see the geometry without thinking about coords.
+
+### Extreme entry — when the door graph is wrong
+
+The player can always *attempt* a non-door entry by freeform action. The narrator adjudicates and uses the new `tile_move` beat field on success:
+
+- **Scaling**: roll d20 + Reflex + climbing skill vs DC 16–20. On success, `tile_move` to the interior; condition "Bruised" probable.
+- **Breaching**: loud, alerts inhabitants. Vitality cost, time cost, narrative consequences.
+- **Magic**: requires the player has acquired the relevant spell via one of the magic paths. Resolve cost, time cost.
+- **NPC-granted / secret passage**: narrative, no roll.
+
+The system-prompt section ACCESS CONTROL covers the narrator side. See `src/engine/beat.js` for the `tile_move` handler.
+
 ## Quick smoke test
 
 After data edits, run:

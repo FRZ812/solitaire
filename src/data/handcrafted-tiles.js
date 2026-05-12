@@ -3,11 +3,25 @@
 // and Crowsmoor spans more than 20 hexes of mostly procedural country — a
 // half-day's walk, not a stroll. The handcrafted entries are concrete vantages
 // (a shrine, a gibbet, a knoll); everything else fills in procedurally per
+//
+// Access control (Ruling 7 / docs/WORLDBUILDING.md): sealed structures
+// declare their interior tile sets in data/sealed-structures.js; this file
+// auto-applies a `doors` array to each interior tile at module-load (see
+// bottom of file). Default (no doors) = all 6 neighbours open, which is
+// what wilderness and open settlements want.
+//
 // biome weights.
 //
 // `vistaRadius` on a tile means arriving there expands sight by that hex
 // radius (handled in handleTravel). Use sparingly — only for genuine high
 // points or named overlooks.
+
+import { SEALED_STRUCTURES } from "./sealed-structures.js";
+
+const HEX_DIRS = [
+  { x: 1, y: 0 }, { x: 1, y: -1 }, { x: 0, y: -1 },
+  { x: -1, y: 0 }, { x: -1, y: 1 }, { x: 0, y: 1 },
+];
 //
 // Sections are organised by region. Multi-tile clusters give a sense of place
 // — a village isn't one hex, it's a cluster (gate, square, smithy, inn).
@@ -185,7 +199,7 @@ export const HANDCRAFTED = {
 
   // Interior
   "-11,-29": { terrain: "indoor", poi: { type: "hall",     name: "The Sitting-Room",   description: "A single low room with a peat fire and a chair pulled to face the door. A teacup sits on the floor by the chair, full." } },
-  "-13,-29": { terrain: "indoor", poi: { type: "shrine",   name: "The Names-Wall",     description: "A wall scratched with names — hundreds, layered, in different hands and tools. Some have been crossed through; some are very recent." } },
+  "-12,-29": { terrain: "indoor", poi: { type: "shrine",   name: "The Names-Wall",     description: "A wall scratched with names — hundreds, layered, in different hands and tools. Some have been crossed through; some are very recent." } },
   "-12,-30": { terrain: "indoor", poi: { type: "throne_room", name: "The Cellar",       description: "Down a short stair into peat-cool dark. A pallet, a kettle, a long table. The Hag is here — old as roots, polite, terribly attentive. There is a price for what she does. Some people pay it twice without knowing." } },
 
   // ============================================================
@@ -933,3 +947,22 @@ export const HANDCRAFTED = {
   "90,-92":  { terrain: "indoor",   poi: { type: "shrine",     name: "The Open Eye",             description: "An observatory at the Spire's penultimate floor — open to the sky through a retracting copper-and-leaded-glass dome. The Open Eye is for star-work and for the long calculations the Spire's masters love." }, vistaRadius: 8 },
   "90,-93":  { terrain: "indoor",   poi: { type: "throne_room", name: "The High Master's Chamber", description: "The topmost room of the Glass Spire. A single round chamber under the tower's apex. A low desk, a single high-backed chair, a wide circular window. The High Master, an elderly figure of indeterminate gender, sits and reads and occasionally writes letters that change kingdoms." } },
 };
+
+// Auto-apply `doors` to every interior tile of every sealed structure. The
+// generated array lists the threshold + interior neighbours; the engine
+// blocks crossing any edge to a hex not in this list (see world.js
+// edgeAllowed / findPath).
+for (const s of SEALED_STRUCTURES) {
+  const all = new Set([...s.threshold, ...s.interior].map(c => `${c.x},${c.y}`));
+  for (const c of s.interior) {
+    const k = `${c.x},${c.y}`;
+    const tile = HANDCRAFTED[k];
+    if (!tile) continue; // soft-fail: structure-list out of sync with tiles
+    const doors = [];
+    for (const d of HEX_DIRS) {
+      const nk = `${c.x + d.x},${c.y + d.y}`;
+      if (all.has(nk)) doors.push({ x: c.x + d.x, y: c.y + d.y });
+    }
+    HANDCRAFTED[k] = { ...tile, doors };
+  }
+}

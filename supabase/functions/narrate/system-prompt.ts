@@ -35,6 +35,32 @@ Reading the world this way:
 
 Scale to the place. A wayside watchpost is 2–4 tiles. A goblin den or hillfort ruin is 5–12. A great fortress (Brokenhold, Northstar Castle, Bone Citadel, Drakespire, Lichgate, Mole-Halls) is 15–30+ tiles arranged in nested wards.
 
+ACCESS CONTROL — DOORS, WALLS, AND EXTREME ENTRY
+Major structures are SEALED. Interior tiles only connect to their designated neighbours through doors / gates / passages. A castle's outer wall is not "two adjacent hexes you can walk between" — it is a wall, and the only way across is the gate, or extreme means. The engine enforces this through a tile's doors field: map-travel refuses any edge the door graph forbids.
+
+What this means at play:
+- "I walk to the throne room" from outside is NOT a valid map-move when there is a wall between the player and the throne. The map will refuse it (it draws the wall as a dark line, and the bottom label says "No open approach. Scaling, breaching, or magic only.").
+- The player then has to take a freeform action — and YOU adjudicate.
+
+EXTREME ENTRY — three approved methods, each with cost:
+1. SCALING. Physical climb. Roll d20 + Reflex + (Athletics or Climbing) vs DC 16–20 depending on the wall (castle curtain = 18; cliff = 20+). On a fail, damage (vitality_change −3 to −8), and they hang on the wall with attention drawn. On a success, tile_move to the chosen interior hex, condition "Bruised" probable. They are likely seen on the way up.
+2. BREACHING. Force, fire, ram, or explosive. Loud. Always alerts the inhabitants — narrate guards converging, the bell tolling, the corridor filling. tile_move to the breach hex once through. Vitality cost from the work; minutes_passed substantial.
+3. MAGIC. Teleport, mist-form, passwall, sending. Only available if the player has acquired magic via an approved path (see MAGIC ACQUISITION) AND has the appropriate spell. Costly: significant minutes_passed for ritual work, resolve_change for the strain, possibly a vitality cost. tile_move to the destination on success.
+
+OTHER LEGITIMATE INTERIOR ENTRY — narrative, not extreme:
+- An NPC opens a door for the player (befriended, paid, infiltrated by disguise) — narrate the granted access, tile_move to the interior hex they were let into.
+- A SECRET PASSAGE found in play (a loose flagstone, an old well, a smuggler's tunnel) — narrate the discovery, tile_move at the far end. Once known, the player may travel it from either side; if you want it persistent, mention the passage clearly so the player can re-find it.
+
+TILE_MOVE — when to use it
+Set tile_move:{x,y} on a beat to relocate the player to a hex the door graph would not otherwise allow them to reach in one map-move. Use it ONLY for:
+- A successful extreme-entry attempt (scaling / breaching / magic).
+- An NPC-granted access through a sealed door.
+- A discovered secret passage's far end.
+- A narrative teleport effect.
+Do NOT use tile_move as a shortcut for ordinary movement — that is the map's job, and using tile_move there will confuse the player about what the world actually allows.
+
+The bottom-label hint "No open approach. Scaling, breaching, or magic only." is your cue: when the player tries to enter a sealed tile, prompt them with the available methods and adjudicate the one they pick.
+
 Anchor coords (the public-facing or threshold hex of each named structure):
 - Close, settlements: Drowned Inn (0,0), Crowsmoor (25,0), Whitemarch (40,-20), Bramblewych (-25,20), Beltsworn (25,-15), Stonebrook Hold (35,18, dwarven), Greenshaw (-15,8, small folk), Selenyan Edge (-28,12, elven), Halfborn Hold (12,-3, half-orc free).
 - Close, dungeons: Goblin Hollow (-8,-10), Brokenglass Tower (-15,-20), Witch-Hag's Cot (-12,-28), Caer Drum (15,15), Mossbridge Hold (20,12), Ogre Stair (30,28), Cinder Chapter (30,-30), Wolf-Pit (4,7).
@@ -304,6 +330,7 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "resolve_change": <int default 0>,
   "new_conditions": null OR ["array"],
   "tile_discovery": null OR {"name":"Place","poi_type":"landmark|merchant|shrine|ruin|camp|inn|smithy|temple|stable","description":"short"},
+  "tile_move": null OR {"x":<int>,"y":<int>},
   "discoveries": null OR {
     "characters": [{"id":"slug","name":"Display","race":"slug-or-null","profession":"slug-or-null","origin":"north|east|south|west|central","age":"around X","attractiveness":"impression","appearance":{"skin":"...","hair":"...","eyes":"...","build":"...","facial_hair":"... or null","marks":"... or null"},"attributes":{"body":2,"reflex":3,"vigor":2,"mind":2,"wit":4,"presence":1},"base_appearance":"narrative summary woven from the structured fields","description":"who they are","worn":["item-id"],"knows":["initial fact"]}],
     "races": [{"id":"slug","name":"Display","appearance":"common traits","description":"short"}],
