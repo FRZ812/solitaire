@@ -11,7 +11,7 @@ import {
   getTile, isSeen, isVisited,
   currentLocationName, hexDistance,
   findPath, pathMinutes,
-  HEX_DIRECTIONS,
+  HEX_DIRECTIONS, edgeAllowed, isPassable,
 } from "../engine/world.js";
 import { describeEncounterPotential, pathRiskPercent } from "../engine/encounters.js";
 import { useZoomPan } from "./useZoomPan.js";
@@ -41,6 +41,29 @@ function hexCornerPoints(cx, cy) {
     points.push(`${x.toFixed(2)},${y.toFixed(2)}`);
   }
   return points.join(" ");
+}
+
+// For each HEX_DIRECTIONS index, which two of the six hex corners form
+// the edge shared with that neighbour. Hex corners are indexed by the
+// angle 60·i − 30 in degrees (i = 0..5).
+//
+// Verified geometry: the neighbour in direction d sits on the side of
+// the current hex bounded by the two adjacent corners listed below.
+const EDGE_CORNERS = [
+  [0, 1], // E
+  [5, 0], // NE
+  [4, 5], // NW
+  [3, 4], // W
+  [2, 3], // SW
+  [1, 2], // SE
+];
+
+function hexCorner(cx, cy, i) {
+  const angle = (Math.PI / 180) * (60 * i - 30);
+  return {
+    x: cx + HEX_SIZE * Math.cos(angle),
+    y: cy + HEX_SIZE * Math.sin(angle),
+  };
 }
 
 function glyphForTile(tile) {
@@ -185,6 +208,36 @@ export function MapView({ state, onClose, onTravel, loading }) {
     }
   }
 
+  // Wall segments — render along edges between two seen, passable hexes
+  // where the doors graph forbids the crossing. Visualises access control
+  // (a city's outer wall, a fortress curtain, a sealed inner sanctum).
+  // Drawn from the hex of lower (x,y) so each wall appears once.
+  const wallSet = new Set();
+  const wallSegments = [];
+  for (const h of hexes) {
+    if (!isSeen(state, h.x, h.y)) continue;
+    const tile = getTile(state, h.x, h.y);
+    if (!isPassable(tile)) continue;
+    for (let dir = 0; dir < HEX_DIRECTIONS.length; dir++) {
+      const d = HEX_DIRECTIONS[dir];
+      const nx = h.x + d.x;
+      const ny = h.y + d.y;
+      if (!isSeen(state, nx, ny)) continue;
+      const nTile = getTile(state, nx, ny);
+      if (!isPassable(nTile)) continue;
+      if (edgeAllowed(tile, h.x, h.y, nTile, nx, ny)) continue;
+      const key = (h.x < nx || (h.x === nx && h.y < ny))
+        ? `${h.x},${h.y}|${nx},${ny}`
+        : `${nx},${ny}|${h.x},${h.y}`;
+      if (wallSet.has(key)) continue;
+      wallSet.add(key);
+      const [ca, cb] = EDGE_CORNERS[dir];
+      const a = hexCorner(h.px, h.py, ca);
+      const b = hexCorner(h.px, h.py, cb);
+      wallSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+    }
+  }
+
   // Landmark labels — named places that read at a glance on the map. Built
   // from getTile so handcrafted city/village/town centres surface here, and
   // rumored/fabled coords fall through getTile to the same poi types.
@@ -236,6 +289,13 @@ export function MapView({ state, onClose, onTravel, loading }) {
       else bottomDetail = T?.flavor || "";
       biomeLabel = getBiome(selected.x, selected.y).name;
       encounterHint = describeEncounterPotential(selTile, selected.x, selected.y);
+      // If the tile is seen and passable but the door graph forbids any
+      // approach, surface that. The player can still attempt entry via
+      // freeform action (scaling, breaching, magic) — the narrator handles
+      // the roll and may use tile_move to relocate on success.
+      if (!isSelf && !path && isPassable(selTile)) {
+        bottomDetail += "  · No open approach. Scaling, breaching, or magic only.";
+      }
     }
   } else {
     biomeLabel = getBiome(cur.x, cur.y).name;
@@ -367,6 +427,17 @@ export function MapView({ state, onClose, onTravel, loading }) {
                 pointerEvents="none"
               />
             ))}
+            {wallSegments.map((s, i) => (
+              <line
+                key={`wall-${i}`}
+                x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                stroke="#3A2E22"
+                strokeWidth={3.5}
+                strokeOpacity={0.85}
+                strokeLinecap="butt"
+                pointerEvents="none"
+              />
+            ))}
             {path && path.length > 1 && (
               <polyline
                 points={path.map(p => {
@@ -392,14 +463,14 @@ export function MapView({ state, onClose, onTravel, loading }) {
                 textAnchor="middle"
                 fontFamily="'Instrument Serif', serif"
                 fontStyle="italic"
-                fontSize="12"
-                fontWeight="600"
+                fontSize="14"
+                fontWeight="700"
                 fill={l.fill}
                 pointerEvents="none"
                 paintOrder="stroke"
                 stroke="#FBF8F2"
-                strokeWidth="2.4"
-                strokeOpacity={0.9}
+                strokeWidth="4"
+                strokeOpacity={1}
                 strokeLinejoin="round"
               >
                 {l.name}

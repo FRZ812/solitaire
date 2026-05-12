@@ -136,6 +136,23 @@ export function applyBeat(state, beat, options = {}) {
     world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFrom(x, y, world.seen) };
   }
 
+  // Narrator-driven relocation (no map-travel involved). Used for extreme
+  // entry — wall-scaling, breaching, teleportation, secret-passage — where
+  // the player ends up at a hex they couldn't reach via the door graph.
+  // The narrator outputs tile_move:{x,y} on a successful attempt; the
+  // engine moves the player there and expands sight. The narrator's prose
+  // carries the move context (no travel card synthesized — it would read
+  // strangely with no "from").
+  if (beat.tile_move && !options.travelToCoords) {
+    const { x, y } = beat.tile_move;
+    if (typeof x === "number" && typeof y === "number") {
+      const arrivedTile = getTile(state, x, y);
+      const tiles = { ...world.tiles };
+      tiles[`${x},${y}`] = arrivedTile;
+      world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFrom(x, y, world.seen) };
+    }
+  }
+
   const newHistory = [...state.apiHistory];
   if (beat._userMsg) newHistory.push({ role: "user", content: beat._userMsg });
   if (beat._raw)     newHistory.push({ role: "assistant", content: beat._raw });

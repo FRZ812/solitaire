@@ -236,6 +236,29 @@ export function isPassable(tile) {
   return tile.terrain !== "water";
 }
 
+// Access control — doors. A tile may declare `doors: [{x,y}, ...]` listing
+// the neighbors that are valid entry/exit points. Default (no `doors`
+// field): every adjacent passable hex is open, which is what wilderness
+// and open settlements want. Interior tiles of a structure list only the
+// neighbors inside the same structure plus the threshold(s); this seals
+// the structure against ad-hoc wall-crossings.
+//
+// The engine enforces doors on map travel (findPath). Narrator-driven
+// "extreme" entry — scaling, breaching, teleporting — bypasses this via
+// the `tile_move` beat field (see engine/beat.js).
+//
+// An edge between A and B is traversable iff BOTH ends permit it:
+// each end either has no `doors` (default open) or includes the other
+// in its list.
+export function hasDoorTo(tile, toX, toY) {
+  if (!tile || !tile.doors) return true;
+  return tile.doors.some(d => d.x === toX && d.y === toY);
+}
+
+export function edgeAllowed(fromTile, fromX, fromY, toTile, toX, toY) {
+  return hasDoorTo(fromTile, toX, toY) && hasDoorTo(toTile, fromX, fromY);
+}
+
 export function currentLocationName(state) {
   const t = getTile(state, state.world.currentTile.x, state.world.currentTile.y);
   if (t.poi?.name) return t.poi.name;
@@ -292,6 +315,7 @@ export function findPath(state, from, to) {
       if (!isSeen(state, nx, ny)) continue;
       const nTile = getTile(state, nx, ny);
       if (!isPassable(nTile)) continue;
+      if (!edgeAllowed(curTile, cur.x, cur.y, nTile, nx, ny)) continue;
       const tentativeG = cur.g + travelMinutes(curTile, nTile);
       if (tentativeG < (gScore.get(nKey) ?? Infinity)) {
         cameFrom.set(nKey, { x: cur.x, y: cur.y });
