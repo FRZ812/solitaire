@@ -36,9 +36,18 @@ Reading the world this way:
 Scale to the place. A wayside watchpost is 2–4 tiles. A goblin den or hillfort ruin is 5–12. A great fortress (Brokenhold, Northstar Castle, Bone Citadel, Drakespire, Lichgate, Mole-Halls) is 15–30+ tiles arranged in nested wards.
 
 Anchor coords (the public-facing or threshold hex of each named structure):
-- Close: Drowned Inn (0,0), Crowsmoor (25,0), Whitemarch (40,-20), Bramblewych (-25,20), Beltsworn (25,-15).
-- Dungeons within reach: Goblin Hollow (-8,-10), Brokenglass Tower (-15,-20), Witch-Hag's Cot (-12,-28), Caer Drum (15,15), Mossbridge Hold (20,12), Ogre Stair (30,28), Cinder Chapter (30,-30), Wolf-Pit (4,7).
-- Fabled (the player will not arrive at these by ordinary travel; reference only): Brokenhold (-120,-60), Northstar Castle (30,-150), Drakespire (0,-130), Bone Citadel (-100,-90), Lichgate (-130,-100), Mole-Halls (-150,-20), Sunken Crown (-100,130), Tellmar (200,0), Star-Forge (140,90), Heartwood (-180,30).
+- Close, settlements: Drowned Inn (0,0), Crowsmoor (25,0), Whitemarch (40,-20), Bramblewych (-25,20), Beltsworn (25,-15), Stonebrook Hold (35,18, dwarven), Greenshaw (-15,8, small folk), Selenyan Edge (-28,12, elven), Halfborn Hold (12,-3, half-orc free).
+- Close, dungeons: Goblin Hollow (-8,-10), Brokenglass Tower (-15,-20), Witch-Hag's Cot (-12,-28), Caer Drum (15,15), Mossbridge Hold (20,12), Ogre Stair (30,28), Cinder Chapter (30,-30), Wolf-Pit (4,7).
+- Close, magic-unlock sites — each maps to ONE of the magic acquisition paths above. When the player visits with the right intent, the narrator should honor the path:
+  - Standing Stones of Anwen (-20,-10) — LEYLINE AWAKENING. Fast at the centre stone for a dawn and a dusk.
+  - The Heron Tower (32,8) — MASTER'S TEACHING. Apprenticeship is years, not months.
+  - The Fae Crossing (-18,-8) — PATRON PACT (fae). The Hawthorn Lord will deal.
+  - Library of Old Tannic (-8,-15) — GRIMOIRE STUDY. Trust-building precedes access.
+  - The Bloodline Cairn (-12,12) — BLOODLINE/ARTIFACT. Wakes those already carrying the thread.
+  - Shrine of the Pale God (8,8) — PATRON PACT (god). Fast, bleed, vigil through the appointed hours.
+- Fabled (the player will not arrive at these by ordinary travel; reference only):
+  - Hostile/cold legends: Brokenhold (-120,-60), Northstar Castle (30,-150), Drakespire (0,-130), Bone Citadel (-100,-90), Lichgate (-130,-100), Mole-Halls (-150,-20), Sunken Crown (-100,130), Tellmar (200,0), Star-Forge (140,90), Heartwood (-180,30).
+  - Peaceful royal legends: Asalan (-30,150, Vale-King), Caer Selenya (-200,50, Speaker of the Selenyan Court), Glass Spire (90,-90, wizards' academy / High Master).
 
 RANDOM ENCOUNTERS
 Each terrain has a spawn table (wolves and goblins in forest; brigands and goblins in hills; wargs in mountains; bog-hounds and fey in marsh; refugees and wild dogs on plains; merchants and brigands on roads; beggars, pickpockets, and rare cutthroats in settlements).

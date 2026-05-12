@@ -149,6 +149,57 @@ export const FACTIONS = [
     color: "#2D4E6E",
     description: "What the Sunken Crown became. They are not said to be hostile, only to sing — and to call up, sometimes, those who answer them. Coastal hamlets know not to drift too close at the slack tide.",
   },
+
+  // ---------- Peaceful peoples — non-human and civic settlements ----------
+  {
+    id: "stonebrook-holds",
+    name: "The Stonebrook Holds",
+    short: "Stonebrook",
+    color: "#7A6248",
+    description: "A working dwarven hold in the Spine Foothills — not the legendary Mole-Halls but a practical mining-and-smithing community of three hundred. Plain dealings, fair prices, long memories. The Hold-Father is elected for a term of seven years and traditionally complains about it.",
+  },
+  {
+    id: "greenshaw-folk",
+    name: "The Greenshaw Folk",
+    short: "Greenshaw",
+    color: "#7A9A5C",
+    description: "Small folk of the Bramblewych Reach — half the height of a man and twice the patience. Greenshaw villages keep gardens, bee-skeps, and a careful neutrality with the Bramble Witches. They will hide a traveller without question; they will not always tell that traveller where they've hidden them.",
+  },
+  {
+    id: "selenyan-court",
+    name: "The Selenyan Court",
+    short: "Selenya",
+    color: "#5A7C7A",
+    description: "The sylvan kindred — elves, by the names lowlanders use. They keep a sparse outpost at Selenyan Edge near the Witchwood and a sprawling tree-built city, Caer Selenya, far west on a coast no human map names. Quiet, formal, slow to take offence and slower to forgive it.",
+  },
+  {
+    id: "halfborn-hold",
+    name: "The Halfborn Free Hold",
+    short: "Halfborn",
+    color: "#6C5B7A",
+    description: "Half-orcs, escapees from the Sundered Crown's coffles, and those born of such escapees. They keep a single walled town in the marches between the Mire and Crowsmoor Reach, governed by an elected matriarchy. Hostile to slavers, friendly to most others, and quick to recognize their own.",
+  },
+  {
+    id: "asalan-crown",
+    name: "The Asalan Crown",
+    short: "Asalan",
+    color: "#A53E3E",
+    description: "The royal house of Asalan — a southern kingdom past the Hollow Coast. The Vale-King's writ has not run this far north in three reigns, but Asalan banners still appear at midsummer fairs and Asalan coin still passes at southern crossings. Tellmar treats the Crown as a peer; the Vale treats it as a rumour.",
+  },
+  {
+    id: "heron-school",
+    name: "The Heron School",
+    short: "Heron",
+    color: "#4A6E8A",
+    description: "A loose lineage of sorcerers descending from the Glass Spire — masters who keep their own towers, take occasional apprentices, and exchange letters and grimoires by herald-bird. The Heron Tower in the Spine Foothills is the only Heron seat in walking distance of the Vale.",
+  },
+  {
+    id: "pale-god-servants",
+    name: "Servants of the Pale God",
+    short: "Pale God",
+    color: "#C8B6A0",
+    description: "A devotional order with a single small shrine on the edge of Crowsmoor Reach. The Pale God is silent, listens long, and answers — sometimes — those who fast, bleed, and wait. The order keeps the shrine in shifts of seven days; nobody serves longer than seven years.",
+  },
 ];
 
 export function getFaction(id) {
