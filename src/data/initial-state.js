@@ -502,3 +502,26 @@ export function makeInitialState() {
     apiHistory: [],
   };
 }
+
+// Merge any codex entries that exist in the fresh initial state but are
+// missing from a loaded campaign — races, professions, named NPCs, etc.
+// added to initial-state.js after the campaign was created. The player's
+// own discoveries are preserved (we only add what's missing). Mutates +
+// returns a new state object; safe to call repeatedly.
+export function migrateCodex(state) {
+  if (!state?.world?.codex) return state;
+  const fresh = makeInitialState();
+  const next = JSON.parse(JSON.stringify(state));
+  const ownCodex = next.world.codex;
+  for (const sub of ["characters", "races", "professions", "items", "spells", "skills"]) {
+    const freshSub = fresh.world.codex[sub] || {};
+    if (!ownCodex[sub]) ownCodex[sub] = {};
+    for (const [k, v] of Object.entries(freshSub)) {
+      // Don't overwrite the player's wanderer entry — they may have grown,
+      // updated their worn list, etc. Add everything else that's missing.
+      if (sub === "characters" && k === "wanderer") continue;
+      if (!ownCodex[sub][k]) ownCodex[sub][k] = v;
+    }
+  }
+  return next;
+}

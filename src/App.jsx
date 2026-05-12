@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 
 import { STORAGE_KEY } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
-import { makeInitialState } from "./data/initial-state.js";
+import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 
 import { storeGet, storeDel } from "./engine/storage.js";
 import { callNarrator } from "$api";
@@ -225,7 +225,11 @@ export function Solitaire() {
         if (!isCancelled()) setCampaigns(refreshed);
         return;
       }
-      setState(loaded);
+      // Pull forward any codex entries (races, professions, named NPCs)
+      // added to initial-state.js since this campaign was last opened.
+      // Doesn't touch the player's own discoveries.
+      const migrated = migrateCodex(loaded);
+      setState(migrated);
       setCurrentCampaignId(id);
       localStorage.setItem(LAST_OPENED_KEY, id);
       setHydrated(true);
