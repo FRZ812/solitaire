@@ -3,14 +3,21 @@ import { useEffect, useRef, useState } from "react";
 // Reusable zoom + pan hook for SVG / canvas-style map views.
 //
 // - Mouse wheel zooms toward the cursor.
-// - Touch pinch zooms toward the midpoint between the two fingers.
+// - Touch pinch zooms toward the live midpoint between the two fingers AND
+//   pans by the midpoint's translation, so the world stays anchored under
+//   the fingertips even when both fingers are moving.
 // - Mouse and single-finger drag pan the content.
 // - `lastWasDragRef` tracks whether the most recently completed gesture moved
 //   far enough to count as a drag; click handlers on hexes check this so a
 //   pan doesn't also select a tile.
+// - Touch updates are coalesced via requestAnimationFrame so a 120 Hz
+//   touchmove stream produces one re-render per displayed frame, not one
+//   per native event. This is the main fix for stutter on Android.
 //
 // The hook only owns zoom/pan state and gesture wiring. Callers apply the
-// transform themselves (e.g. via CSS `transform: scale() translate()`).
+// transform themselves (e.g. via CSS `transform: scale() translate()`) and
+// should set `touch-action: none` on the gesture container so the browser
+// doesn't intercept the pinch.
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 3.0;
@@ -34,32 +41,69 @@ export function useZoomPan(containerRef) {
   const pinchRef = useRef(null);
   const lastWasDragRef = useRef(false);
 
+  // rAF coalescing — pending holds the next zoom/pan target, rafIdRef is the
+  // scheduled frame. Multiple touchmove events between frames overwrite the
+  // pending values; only the last one applies, eliminating mid-gesture stutter.
+  const pendingRef = useRef(null);
+  const rafIdRef = useRef(0);
+
   function getContainerCenter() {
     const el = containerRef.current;
     if (!el) return { cx: 400, cy: 300 };
     return { cx: el.clientWidth / 2, cy: el.clientHeight / 2 };
   }
 
-  // Zoom by `factor`, keeping the screen point (sx, sy) — measured from the
-  // container's top-left — anchored under the cursor/pinch midpoint.
-  function zoomAt(factor, sx, sy) {
+  function flushPending() {
+    rafIdRef.current = 0;
+    const p = pendingRef.current;
+    pendingRef.current = null;
+    if (!p) return;
+    // Write the freshest values back to refs so the next frame reads them.
+    zoomRef.current = p.zoom;
+    panRef.current = p.pan;
+    setZoom(p.zoom);
+    setPan(p.pan);
+  }
+
+  function scheduleApply(nextZoom, nextPan) {
+    pendingRef.current = { zoom: nextZoom, pan: nextPan };
+    // Optimistically update the refs so further gesture math in the same
+    // frame composes on the freshest values rather than the stale state.
+    zoomRef.current = nextZoom;
+    panRef.current = nextPan;
+    if (!rafIdRef.current) {
+      rafIdRef.current = requestAnimationFrame(flushPending);
+    }
+  }
+
+  // Apply a zoom factor anchored at screen point (sx, sy) plus an optional
+  // pan delta (dxPan, dyPan) — both relative to the container's top-left.
+  // Used by wheel, pinch, and (with factor=1) pure pan.
+  function applyZoomPan(factor, sx, sy, dxPan = 0, dyPan = 0) {
     const { cx, cy } = getContainerCenter();
     const prevZoom = zoomRef.current;
     const prevPan = panRef.current;
     const newZoom = clampZoom(prevZoom * factor);
-    if (newZoom === prevZoom) return;
-    const f = newZoom / prevZoom;
-    const newPanX = (sx - cx) * (1 - f) + prevPan.x * f;
-    const newPanY = (sy - cy) * (1 - f) + prevPan.y * f;
-    setZoom(newZoom);
-    setPan({ x: newPanX, y: newPanY });
+    const f = newZoom / prevZoom; // may not equal `factor` after clamp
+    const newPanX = (sx - cx) * (1 - f) + prevPan.x * f + dxPan;
+    const newPanY = (sy - cy) * (1 - f) + prevPan.y * f + dyPan;
+    scheduleApply(newZoom, { x: newPanX, y: newPanY });
   }
 
   function panBy(dx, dy) {
-    setPan(p => ({ x: p.x + dx, y: p.y + dy }));
+    const prev = panRef.current;
+    const next = { x: prev.x + dx, y: prev.y + dy };
+    scheduleApply(zoomRef.current, next);
   }
 
   function reset() {
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = 0;
+    }
+    pendingRef.current = null;
+    zoomRef.current = 1;
+    panRef.current = { x: 0, y: 0 };
     setZoom(1);
     setPan({ x: 0, y: 0 });
   }
@@ -76,7 +120,7 @@ export function useZoomPan(containerRef) {
       const sx = e.clientX - rect.left;
       const sy = e.clientY - rect.top;
       const factor = Math.exp(-e.deltaY * 0.0015);
-      zoomAt(factor, sx, sy);
+      applyZoomPan(factor, sx, sy);
     };
 
     const onTouchStart = (e) => {
@@ -94,8 +138,8 @@ export function useZoomPan(containerRef) {
         const rect = el.getBoundingClientRect();
         pinchRef.current = {
           lastDist: Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY),
-          cx: (t1.clientX + t2.clientX) / 2 - rect.left,
-          cy: (t1.clientY + t2.clientY) / 2 - rect.top,
+          lastCx: (t1.clientX + t2.clientX) / 2 - rect.left,
+          lastCy: (t1.clientY + t2.clientY) / 2 - rect.top,
         };
         dragRef.current = null;
       }
@@ -106,10 +150,24 @@ export function useZoomPan(containerRef) {
         e.preventDefault();
         const t1 = e.touches[0];
         const t2 = e.touches[1];
+        const rect = el.getBoundingClientRect();
         const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        const cx = (t1.clientX + t2.clientX) / 2 - rect.left;
+        const cy = (t1.clientY + t2.clientY) / 2 - rect.top;
+
+        // Two-finger gestures decompose into:
+        //   1. zoom factor from distance change
+        //   2. pan delta from midpoint translation (so the gesture pans
+        //      when both fingers slide together, not just zooms)
         const factor = dist / pinchRef.current.lastDist;
+        const dcx = cx - pinchRef.current.lastCx;
+        const dcy = cy - pinchRef.current.lastCy;
+
         pinchRef.current.lastDist = dist;
-        zoomAt(factor, pinchRef.current.cx, pinchRef.current.cy);
+        pinchRef.current.lastCx = cx;
+        pinchRef.current.lastCy = cy;
+
+        applyZoomPan(factor, cx, cy, dcx, dcy);
       } else if (dragRef.current && e.touches.length === 1) {
         e.preventDefault();
         const t = e.touches[0];
@@ -132,7 +190,8 @@ export function useZoomPan(containerRef) {
         dragRef.current = null;
         pinchRef.current = null;
       } else if (e.touches.length === 1) {
-        // One finger left after a pinch — resume tracking as a drag from here.
+        // One finger left after a pinch — resume tracking as a drag from
+        // the remaining finger's position so the transition is seamless.
         pinchRef.current = null;
         const t = e.touches[0];
         dragRef.current = {
@@ -154,6 +213,11 @@ export function useZoomPan(containerRef) {
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("touchcancel", onTouchEnd);
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = 0;
+        pendingRef.current = null;
+      }
     };
   }, [containerRef]);
 
