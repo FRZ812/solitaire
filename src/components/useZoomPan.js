@@ -76,9 +76,22 @@ export function useZoomPan(containerRef) {
     }
   }
 
-  // Apply a zoom factor anchored at screen point (sx, sy) plus an optional
-  // pan delta (dxPan, dyPan) — both relative to the container's top-left.
-  // Used by wheel, pinch, and (with factor=1) pure pan.
+  // Apply a zoom factor anchored at screen point (sx, sy), plus an optional
+  // pan delta (dxPan, dyPan). Both screen points are relative to the
+  // container's top-left.
+  //
+  // Convention: (sx, sy) is the OLD anchor — the screen point whose
+  // currently-underlying world point should stay still during the zoom.
+  // The pan delta is then applied on top, separately, so for pinch
+  // gestures pass the PREVIOUS midpoint as anchor and (newMid - oldMid)
+  // as the pan delta. This keeps the world point under the user's
+  // fingertips at frame T-1 anchored to the fingertips at frame T even
+  // when the midpoint translates during the zoom.
+  //
+  // Used by:
+  //  - wheel  (sx, sy = cursor, no pan delta)
+  //  - pinch  (sx, sy = previous midpoint, dxPan/dyPan = midpoint delta)
+  //  - pan    (factor = 1, no anchor effect, dxPan/dyPan = drag delta)
   function applyZoomPan(factor, sx, sy, dxPan = 0, dyPan = 0) {
     const { cx, cy } = getContainerCenter();
     const prevZoom = zoomRef.current;
@@ -155,19 +168,21 @@ export function useZoomPan(containerRef) {
         const cx = (t1.clientX + t2.clientX) / 2 - rect.left;
         const cy = (t1.clientY + t2.clientY) / 2 - rect.top;
 
-        // Two-finger gestures decompose into:
-        //   1. zoom factor from distance change
-        //   2. pan delta from midpoint translation (so the gesture pans
-        //      when both fingers slide together, not just zooms)
+        // Two-finger gesture = zoom-around-the-old-midpoint + pan-by-midpoint-delta.
+        // Passing the OLD midpoint as the zoom anchor (lastCx, lastCy) and the
+        // midpoint delta as the pan keeps the world point that was under the
+        // user's fingers in the previous frame glued to where the fingers are
+        // in this frame. Using the new midpoint as the anchor instead would
+        // leak (M2 − M1)·(1 − f) of jitter per frame.
         const factor = dist / pinchRef.current.lastDist;
         const dcx = cx - pinchRef.current.lastCx;
         const dcy = cy - pinchRef.current.lastCy;
 
+        applyZoomPan(factor, pinchRef.current.lastCx, pinchRef.current.lastCy, dcx, dcy);
+
         pinchRef.current.lastDist = dist;
         pinchRef.current.lastCx = cx;
         pinchRef.current.lastCy = cy;
-
-        applyZoomPan(factor, cx, cy, dcx, dcy);
       } else if (dragRef.current && e.touches.length === 1) {
         e.preventDefault();
         const t = e.touches[0];
