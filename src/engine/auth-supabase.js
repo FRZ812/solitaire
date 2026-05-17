@@ -8,6 +8,22 @@ export async function getCurrentUser() {
   return session?.user ?? null;
 }
 
+// Manual-allowlist subscription gate. Reads the caller's own row in
+// public.subscriptions (RLS lets a user read only their own). Returns true
+// only for an explicit is_subscribed=true row. The narrate edge function
+// enforces the same check server-side — this is just for the UI.
+export async function isSubscribed() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return false;
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .select("is_subscribed")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (error) return false;
+  return data?.is_subscribed === true;
+}
+
 export function onAuthChange(cb) {
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     (_event, session) => cb(session?.user ?? null)

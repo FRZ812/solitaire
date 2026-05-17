@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 import { SYSTEM_PROMPT } from "./system-prompt.ts";
 
 // Web-mode narrator backend. Talks to Google's Gemini API and re-emits the
@@ -6,7 +7,13 @@ import { SYSTEM_PROMPT } from "./system-prompt.ts";
 // (data: {"type":"content_block_delta","delta":{"type":"text_delta",...}}),
 // so src/engine/api-supabase.js needs no knowledge of the provider.
 //
-// Requires the GEMINI_API_KEY edge-function secret.
+// Hard-gated: every request must carry a valid Supabase auth JWT AND the
+// caller must have an active row in public.subscriptions (is_subscribed =
+// true). This is the real abuse barrier — the UI gate is cosmetic; this is
+// not bypassable from the client.
+//
+// Requires the GEMINI_API_KEY edge-function secret. SUPABASE_URL and
+// SUPABASE_ANON_KEY are provided automatically by the edge runtime.
 
 const MODEL = "gemini-3.1-pro-preview";
 const HISTORY_LIMIT = 100;
@@ -80,9 +87,51 @@ function geminiToAnthropicSSE(): TransformStream<string, string> {
   });
 }
 
+// Verify the caller's JWT and confirm an active subscription. Returns the
+// user id on success, or a ready-to-send error Response.
+async function gate(req: Request): Promise<string | Response> {
+  const authHeader = req.headers.get("Authorization") ?? "";
+  if (!authHeader.startsWith("Bearer ")) {
+    return json({ error: "not authenticated" }, 401);
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !anonKey) {
+    return json({ error: "auth backend not configured on the edge function" }, 500);
+  }
+
+  // Client scoped to the caller's token: auth.getUser() verifies the JWT and
+  // the subscriptions read runs under that user's RLS (read own row only).
+  const sb = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const { data: { user }, error: userErr } = await sb.auth.getUser();
+  if (userErr || !user) return json({ error: "not authenticated" }, 401);
+
+  const { data: sub, error: subErr } = await sb
+    .from("subscriptions")
+    .select("is_subscribed")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (subErr) {
+    return json({ error: "subscription check failed", detail: subErr.message }, 502);
+  }
+  if (!sub?.is_subscribed) {
+    return json({ error: "subscription required" }, 402);
+  }
+  return user.id;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
   if (req.method !== "POST")    return json({ error: "method not allowed" }, 405);
+
+  const gated = await gate(req);
+  if (gated instanceof Response) return gated;
 
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) return json({ error: "GEMINI_API_KEY not configured on the edge function" }, 500);

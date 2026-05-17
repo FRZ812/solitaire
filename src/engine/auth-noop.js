@@ -7,6 +7,12 @@ export async function getCurrentUser() {
   return SYNTHETIC_USER;
 }
 
+// Artifact build runs in the Claude artifact pane on subscription auth;
+// there is no Supabase user or Gemini key to abuse. Always allowed.
+export async function isSubscribed() {
+  return true;
+}
+
 export function onAuthChange(cb) {
   queueMicrotask(() => cb(SYNTHETIC_USER));
   return () => {};

@@ -6,7 +6,7 @@ import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 
 import { storeGet, storeDel } from "./engine/storage.js";
 import { callNarrator } from "$api";
-import { onAuthChange, signOut, linkEmail } from "$auth";
+import { onAuthChange, signOut, linkEmail, isSubscribed } from "$auth";
 import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "$campaigns";
 import { applyBeat } from "./engine/beat.js";
 import {
@@ -23,6 +23,7 @@ import { MenuSheet } from "./components/MenuSheet.jsx";
 import { MapView } from "./components/MapView.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
+import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
 import { CampaignsList } from "./components/CampaignsList.jsx";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
@@ -70,6 +71,11 @@ export function Solitaire() {
   const [user, setUser] = useState(__SOLITAIRE_MODE__ === "web" ? null : { id: "artifact" });
   const [authChecked, setAuthChecked] = useState(__SOLITAIRE_MODE__ !== "web");
 
+  // Subscription gate (web only). Artifact mode is always allowed.
+  const [subChecked, setSubChecked] = useState(__SOLITAIRE_MODE__ !== "web");
+  const [subscribed, setSubscribed] = useState(__SOLITAIRE_MODE__ !== "web");
+  const [subBusy, setSubBusy] = useState(false);
+
   // Campaigns
   const [campaigns, setCampaigns] = useState([]);
   const [campaignsLoaded, setCampaignsLoaded] = useState(false);
@@ -101,6 +107,33 @@ export function Solitaire() {
     return () => { mounted = false; unsubscribe(); };
   }, []);
 
+  // ----- Subscription check when user appears (web mode) -----
+  useEffect(() => {
+    if (__SOLITAIRE_MODE__ !== "web") return;
+    if (!user) { setSubChecked(false); setSubscribed(false); return; }
+    let cancelled = false;
+    setSubChecked(false);
+    isSubscribed()
+      .then((ok) => { if (!cancelled) { setSubscribed(!!ok); setSubChecked(true); } })
+      .catch(() => { if (!cancelled) { setSubscribed(false); setSubChecked(true); } });
+    return () => { cancelled = true; };
+  }, [user]);
+
+  async function handleRecheckSubscription() {
+    if (subBusy) return;
+    setSubBusy(true);
+    try {
+      const ok = await isSubscribed();
+      setSubscribed(!!ok);
+      setSubChecked(true);
+    } catch {
+      setSubscribed(false);
+      setSubChecked(true);
+    } finally {
+      setSubBusy(false);
+    }
+  }
+
   // ----- Fetch campaigns list when user appears -----
   useEffect(() => {
     if (!user) {
@@ -109,6 +142,9 @@ export function Solitaire() {
       autoResumedRef.current = false;
       return;
     }
+    // Don't touch campaigns until the subscription gate has passed — a
+    // locked user shouldn't auto-create or auto-resume anything.
+    if (!subscribed) return;
     let cancelled = false;
     (async () => {
       try {
@@ -125,7 +161,7 @@ export function Solitaire() {
       }
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, subscribed]);
 
   // ----- Auto-resume / legacy-import on first load -----
   useEffect(() => {
@@ -447,6 +483,17 @@ export function Solitaire() {
 
   if (!authChecked) return <CenteredLoader />;
   if (!user) return <AuthScreen />;
+  if (__SOLITAIRE_MODE__ === "web" && !subChecked) return <CenteredLoader />;
+  if (__SOLITAIRE_MODE__ === "web" && !subscribed) {
+    return (
+      <SubscriptionScreen
+        email={user.email}
+        onRecheck={handleRecheckSubscription}
+        onSignOut={handleSignOut}
+        busy={subBusy}
+      />
+    );
+  }
   if (!campaignsLoaded || campaignBusy) return <CenteredLoader />;
   if (!currentCampaignId) {
     return (
