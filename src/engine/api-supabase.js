@@ -1,7 +1,9 @@
-// Web-mode narrator call: invokes the `narrate` edge function, reads Anthropic's
-// SSE stream pass-through, and accumulates the text content before parsing JSON.
-// Buffering for now — typewriter rendering can subscribe to the same stream later
-// without changing the function shape.
+// Web-mode narrator call: invokes the `narrate` edge function and accumulates
+// the streamed text before parsing JSON. The edge function normalises whatever
+// upstream provider it uses (currently Gemini) into Anthropic-style SSE
+// (content_block_delta / text_delta), so this client stays provider-agnostic.
+// Buffering for now — typewriter rendering can subscribe to the same stream
+// later without changing the function shape.
 import { HISTORY_LIMIT } from "../config.js";
 import { supabase } from "./supabase-client.js";
 import { buildStateContext } from "./api.js";
