@@ -1,8 +1,64 @@
-// MIRROR of src/system-prompt.js. Source of truth lives in src/ (the artifact build uses it
-// directly). When src/system-prompt.js changes, copy the SYSTEM_PROMPT body into this file
-// and redeploy the narrate function. Two-file pattern keeps the artifact build working
-// without bundling Supabase imports into it.
-export const SYSTEM_PROMPT = `You are the narrator for SOLITAIRE, a solo RPG narrative engine. The player has total freedom; you respond to whatever they do.
+-- Web-build narrator backend as a Postgres RPC.
+--
+-- Replaces the Deno edge function (supabase/functions/narrate) so the whole
+-- backend can be managed from the Supabase SQL editor — no CLI, no function
+-- deploy, phone-friendly. Auth + the manual subscription allowlist are
+-- enforced INSIDE this function (security definer), so it is the real
+-- abuse barrier; the client UI gate is cosmetic.
+--
+-- ============================ ONE-TIME SETUP ============================
+-- Run once (SQL editor is fine):
+--   1. The http extension (this migration tries to enable it; if it fails
+--      on permissions, enable "http" in Dashboard -> Database -> Extensions).
+--   2. Store the Gemini key in Vault (NEVER in git):
+--        select vault.create_secret('YOUR_GEMINI_KEY', 'gemini_api_key');
+--      Rotate later:
+--        select vault.update_secret(
+--          (select id from vault.secrets where name = 'gemini_api_key'),
+--          'NEW_KEY');
+--   3. Grant yourself access (manual allowlist):
+--        insert into public.subscriptions (user_id, is_subscribed, note)
+--        values ('<your auth.users id>', true, 'owner')
+--        on conflict (user_id) do update
+--          set is_subscribed = excluded.is_subscribed;
+--
+-- ===================== TWEAKS FROM YOUR PHONE (tiny SQL) ================
+--   change model : update public.narrator_config set model = 'gemini-x' where id = 1;
+--   token cap    : update public.narrator_config set max_output_tokens = 4000 where id = 1;
+--   edit prompt  : update public.narrator_config
+--                    set system_prompt = $SYSPROMPT$ ...new prompt... $SYSPROMPT$
+--                  where id = 1;
+--
+-- Caveat: this is a blocking (non-streaming) call. The web client already
+-- buffers the whole response before parsing, so behaviour is unchanged;
+-- only future typewriter rendering would need the old SSE path.
+
+create extension if not exists http with schema extensions;
+
+-- subscriptions may already exist (created by the earlier migration). Kept
+-- here idempotently so this migration is self-contained.
+create table if not exists public.subscriptions (
+  user_id       uuid primary key references auth.users (id) on delete cascade,
+  is_subscribed boolean     not null default false,
+  note          text,
+  updated_at    timestamptz not null default now()
+);
+alter table public.subscriptions enable row level security;
+drop policy if exists "read own subscription" on public.subscriptions;
+create policy "read own subscription"
+  on public.subscriptions for select
+  using (auth.uid() = user_id);
+
+create table if not exists public.narrator_config (
+  id                int  primary key default 1,
+  model             text not null default 'gemini-3.1-pro-preview',
+  system_prompt     text not null,
+  max_output_tokens int  not null default 4000,
+  constraint narrator_config_singleton check (id = 1)
+);
+
+insert into public.narrator_config (id, model, system_prompt, max_output_tokens)
+values (1, 'gemini-3.1-pro-preview', $SYSPROMPT$You are the narrator for SOLITAIRE, a solo RPG narrative engine. The player has total freedom; you respond to whatever they do.
 
 VOICE
 - Second person, present tense.
@@ -287,7 +343,7 @@ When player loots/buys/equips:
 - For looting from NPC: discoveries.characters update for that NPC with FULL updated worn list.
 
 NPC KNOWLEDGE — STRICT
-Each character has \`knows\` — facts they personally learned. When voicing a character, they may ONLY reference:
+Each character has `knows` — facts they personally learned. When voicing a character, they may ONLY reference:
 1. Facts in their OWN knows list.
 2. Cultural baseline + geography-by-reputation.
 3. What they can plausibly observe right now.
@@ -349,4 +405,114 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "needs_changes": null OR {"hunger":<delta>,"thirst":<delta>,"sleep":<delta>}
 }
 
-Output ONLY the JSON object. No prose outside it, no fences, no preamble. dialogues=[] if nobody speaks.`;
+Output ONLY the JSON object. No prose outside it, no fences, no preamble. dialogues=[] if nobody speaks.$SYSPROMPT$, 4000)
+on conflict (id) do update
+  set model             = excluded.model,
+      system_prompt     = excluded.system_prompt,
+      max_output_tokens = excluded.max_output_tokens;
+
+-- Server-only; clients never read it.
+alter table public.narrator_config enable row level security;
+
+create or replace function public.narrate(
+  state_context text,
+  user_msg      text,
+  history       jsonb default '[]'::jsonb
+) returns text
+language plpgsql
+security definer
+set search_path = public, extensions, vault
+as $FN$
+declare
+  v_uid      uuid := auth.uid();
+  v_cfg      public.narrator_config%rowtype;
+  v_key      text;
+  v_contents jsonb;
+  v_body     jsonb;
+  v_status   int;
+  v_resp     text;
+  v_json     jsonb;
+  v_text     text;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated' using errcode = '28000';
+  end if;
+
+  if not exists (
+    select 1 from public.subscriptions
+    where user_id = v_uid and is_subscribed
+  ) then
+    raise exception 'subscription required' using errcode = '42501';
+  end if;
+
+  select * into v_cfg from public.narrator_config where id = 1;
+  if not found then
+    raise exception 'narrator_config not seeded';
+  end if;
+
+  select decrypted_secret into v_key
+  from vault.decrypted_secrets
+  where name = 'gemini_api_key';
+  if v_key is null then
+    raise exception 'gemini_api_key not set in Vault';
+  end if;
+
+  -- Anthropic-style history [{role,content}] -> Gemini contents.
+  select coalesce(jsonb_agg(
+           jsonb_build_object(
+             'role',  case when e->>'role' = 'assistant' then 'model' else 'user' end,
+             'parts', jsonb_build_array(jsonb_build_object('text', coalesce(e->>'content', '')))
+           )), '[]'::jsonb)
+  into v_contents
+  from jsonb_array_elements(coalesce(history, '[]'::jsonb)) e;
+
+  v_contents := v_contents || jsonb_build_array(
+    jsonb_build_object(
+      'role',  'user',
+      'parts', jsonb_build_array(jsonb_build_object(
+                 'text', state_context || E'\n\n' || user_msg))
+    ));
+
+  v_body := jsonb_build_object(
+    'systemInstruction', jsonb_build_object(
+      'parts', jsonb_build_array(jsonb_build_object('text', v_cfg.system_prompt))),
+    'contents', v_contents,
+    'generationConfig', jsonb_build_object('maxOutputTokens', v_cfg.max_output_tokens)
+  );
+
+  -- LLM calls are slow: lift the per-statement timeout and curl timeout.
+  perform set_config('statement_timeout', '120000', true);
+  perform extensions.http_set_curlopt('CURLOPT_TIMEOUT', '115');
+
+  select r.status, r.content
+  into v_status, v_resp
+  from extensions.http((
+    'POST',
+    'https://generativelanguage.googleapis.com/v1beta/models/'
+      || v_cfg.model || ':generateContent',
+    array[ extensions.http_header('x-goog-api-key', v_key) ],
+    'application/json',
+    v_body::text
+  )::extensions.http_request) r;
+
+  if v_status is null or v_status < 200 or v_status >= 300 then
+    raise exception 'gemini % : %', coalesce(v_status, 0), left(coalesce(v_resp, ''), 500);
+  end if;
+
+  v_json := v_resp::jsonb;
+
+  select string_agg(p->>'text', '')
+  into v_text
+  from jsonb_array_elements(
+    coalesce(v_json #> '{candidates,0,content,parts}', '[]'::jsonb)) p;
+
+  if v_text is null or v_text = '' then
+    raise exception 'gemini returned no text: %', left(v_resp, 500);
+  end if;
+
+  return v_text;
+end;
+$FN$;
+
+revoke all on function public.narrate(text, text, jsonb) from public, anon;
+grant execute on function public.narrate(text, text, jsonb) to authenticated;

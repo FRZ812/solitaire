@@ -1,4 +1,8 @@
-// The narrator's instructions. Edit here only.
+// The narrator's instructions for the ARTIFACT build (api-anthropic.js).
+// The web build's prompt lives in the public.narrator_config table, seeded
+// from this file by supabase/migrations/*_narrate_rpc.sql — regenerate that
+// migration (see its header) if you change this and want the web path to
+// match, or just UPDATE narrator_config from the SQL editor.
 export const SYSTEM_PROMPT = `You are the narrator for SOLITAIRE, a solo RPG narrative engine. The player has total freedom; you respond to whatever they do.
 
 VOICE
