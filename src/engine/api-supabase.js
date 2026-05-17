@@ -9,6 +9,7 @@ import { HISTORY_LIMIT } from "../config.js";
 import { supabase } from "./supabase-client.js";
 import { buildStateContext } from "./api.js";
 import { extractJSON } from "./json.js";
+import { SYSTEM_PROMPT } from "../system-prompt.js";
 
 export async function callNarrator(state, userMsgRaw) {
   const state_context = buildStateContext(state);
@@ -19,10 +20,14 @@ export async function callNarrator(state, userMsgRaw) {
 
   // supabase-js attaches the user's JWT automatically, so auth.uid() and the
   // subscription check resolve inside the function.
+  // The prompt isn't secret (it ships in the artifact build verbatim) and
+  // the client already bundles it, so we send it rather than storing 27 KB
+  // in the migration. The auth + subscription gates stay server-side.
   const { data, error } = await supabase.rpc("narrate", {
     state_context,
     user_msg: userMsgRaw,
     history: trimmedHistory,
+    system_prompt: SYSTEM_PROMPT,
   });
 
   if (error) {
