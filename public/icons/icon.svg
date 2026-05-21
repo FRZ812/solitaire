@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Solitaire">
+  <!-- Maskable + any: dark cream-bordered tile with an italic-serif S in the
+       inner 80% safe zone so adaptive-icon mask crops never clip the mark. -->
+  <rect width="512" height="512" fill="#1A1A1A"/>
+  <text x="256" y="372"
+        text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-style="italic"
+        font-weight="400"
+        font-size="360"
+        fill="#FBF8F2">S</text>
+</svg>
