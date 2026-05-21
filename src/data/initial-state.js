@@ -69,7 +69,7 @@ export function makeInitialState() {
             worn: ["wool-cloak", "linen-tunic", "leather-boots"],
             knows: [
               "My sister carved this wooden bird before she vanished seven years ago.",
-              "I came to the Drowned Inn out of the rain on the afternoon of Day 3.",
+              "I came to the Drowned Inn out of the rain on the afternoon of the third of Hollowsmonth, in the year 803.",
             ],
           },
 

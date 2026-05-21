@@ -7,7 +7,7 @@ import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
 import { getTile, isSeen, HEX_DIRECTIONS } from "./world.js";
 import { getBiome } from "../data/biomes.js";
-import { formatTime } from "./time.js";
+import { formatTime, formatDate } from "./time.js";
 
 export function summarizeCodex(codex) {
   const lines = [];
@@ -70,7 +70,7 @@ export function buildStateContext(state) {
     else if (nt.poi?.type === "hidden") nearby.push(`?(${TERRAINS[nt.terrain]?.label})`);
   }
   const nearbyStr = nearby.length ? `; Nearby: ${nearby.join(", ")}` : "";
-  return `[STATE — Day ${time.day}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]
+  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(character.attributes)}]
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]
