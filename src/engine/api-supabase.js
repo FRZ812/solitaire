@@ -14,7 +14,12 @@ import { SYSTEM_PROMPT } from "../system-prompt.js";
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/narrate`;
 
-export async function callNarrator(state, userMsgRaw) {
+// onProgress (optional): called with { thinking, text } chunks as they
+// stream in from the edge function. `thinking` chunks fire as Gemini emits
+// reasoning summaries; `text` chunks fire as the answer JSON streams. Both
+// are partial — concatenate to build the full string. The final narrator
+// beat is returned from this function after the stream completes.
+export async function callNarrator(state, userMsgRaw, onProgress) {
   const state_context = buildStateContext(state);
   const trimmedHistory = state.apiHistory.slice(-HISTORY_LIMIT);
 
@@ -46,45 +51,55 @@ export async function callNarrator(state, userMsgRaw) {
     throw new Error(`narrate ${response.status}: ${detail}`);
   }
 
-  const text = await accumulateAnthropicSSE(response.body);
+  const { text, thinking } = await accumulateAnthropicSSE(response.body, onProgress);
   const userMsg = `${state_context}\n\n${userMsgRaw}`;
   const parsed = extractJSON(text);
   if (!parsed) {
-    return { narration: text || "(The narrator stumbles.)", minutes_passed: 1, _raw: text, _userMsg: userMsg };
+    return { narration: text || "(The narrator stumbles.)", minutes_passed: 1, _raw: text, _thinking: thinking, _userMsg: userMsg };
   }
-  return { ...parsed, _raw: text, _userMsg: userMsg };
+  return { ...parsed, _raw: text, _thinking: thinking, _userMsg: userMsg };
 }
 
-async function accumulateAnthropicSSE(body) {
+async function accumulateAnthropicSSE(body, onProgress) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
+  let thinking = "";
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    let idx;
-    while ((idx = buffer.indexOf("\n\n")) !== -1) {
-      const rawEvent = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
+    // Match both LF and CRLF event delimiters — the edge function should
+    // emit LF, but Gemini upstream sometimes leaks CRLF and we want to
+    // stay tolerant.
+    let m;
+    while ((m = buffer.match(/\r?\n\r?\n/))) {
+      const rawEvent = buffer.slice(0, m.index);
+      buffer = buffer.slice(m.index + m[0].length);
       const dataPayload = rawEvent
-        .split("\n")
+        .split(/\r?\n/)
         .filter(l => l.startsWith("data:"))
         .map(l => l.slice(5).trimStart())
         .join("\n");
       if (!dataPayload) continue;
       try {
         const evt = JSON.parse(dataPayload);
-        if (evt.type === "content_block_delta" && evt.delta?.type === "text_delta") {
-          text += evt.delta.text;
+        if (evt.type === "content_block_delta") {
+          if (evt.delta?.type === "text_delta") {
+            text += evt.delta.text;
+            onProgress?.({ text: evt.delta.text });
+          } else if (evt.delta?.type === "thinking_delta") {
+            thinking += evt.delta.thinking;
+            onProgress?.({ thinking: evt.delta.thinking });
+          }
         }
       } catch {
         // skip malformed events
       }
     }
   }
-  return text;
+  return { text, thinking };
 }

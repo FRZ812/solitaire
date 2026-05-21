@@ -1,6 +1,7 @@
 import React from "react";
 import { Icon } from "./Icon.jsx";
-import { iconButtonStyle } from "./primitives.jsx";
+import { headerButtonStyle } from "./primitives.jsx";
+import { colors, radius, fonts, metaStyle } from "./tokens.js";
 import { TERRAINS } from "../data/terrains.js";
 import { getTile, currentLocationName } from "../engine/world.js";
 import { getBiome } from "../data/biomes.js";
@@ -13,29 +14,54 @@ export function CompactHeader({ state, onMap, onCodex, onMenu }) {
   const terrainLabel = TERRAINS[t.terrain]?.label || "Wilderness";
   const biome = getBiome(cur.x, cur.y);
   const time = formatTime(state.time);
+
   return (
     <div style={{
-      padding: "calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px 14px",
+      padding: "calc(env(safe-area-inset-top, 0px) + 12px) 12px 8px 14px",
       display: "flex", alignItems: "center", gap: "10px",
-      borderBottom: "1px solid #EBE5D6",
+      color: colors.parchment,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "7px 11px", backgroundColor: "#1A1A1A", borderRadius: "9px", color: "#FBF8F2", flexShrink: 0 }}>
-        <Icon name="sun" size={11} color="#E8B98C" strokeWidth={2} />
-        <span style={{ fontSize: "10px", letterSpacing: "0.14em", opacity: 0.65, fontWeight: 500 }}>D{state.time.day}</span>
-        <span style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px" }}>{time}</span>
+      {/* Day / time block */}
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        width: "54px", height: "44px",
+        backgroundColor: "rgba(20, 29, 29, 0.6)",
+        border: `1px solid rgba(215, 167, 111, 0.28)`,
+        borderRadius: radius.panelCompact,
+        flexShrink: 0,
+        backdropFilter: "blur(14px)",
+        WebkitBackdropFilter: "blur(14px)",
+        boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.02)",
+      }}>
+        <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.14em", color: colors.gold, textShadow: "0 0 4px rgba(215, 167, 111, 0.2)" }}>D{state.time.day}</span>
+        <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "16px", lineHeight: 1, color: colors.parchment }}>{time}</span>
       </div>
+
+      {/* Scene title */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "17px", color: "#1A1A1A", lineHeight: "1.1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <div style={{
+          fontFamily: fonts.serif, fontStyle: "italic",
+          fontSize: "22px", color: colors.parchment, lineHeight: "1.05",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          textShadow: "0 2px 10px rgba(0,0,0,0.8)",
+        }}>
           {sceneTitle}
         </div>
-        <div style={{ fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase", color: "#8B5A2B", marginTop: "2px", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {terrainLabel} · {biome.name} · ({cur.x},{cur.y})
+        <div style={{
+          ...metaStyle, fontSize: "9px", letterSpacing: "0.14em",
+          color: "rgba(237, 228, 208, 0.72)", marginTop: "4px",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          textShadow: "0 1px 6px rgba(0,0,0,0.8)",
+        }}>
+          {terrainLabel} / {biome.name}
         </div>
       </div>
-      <div style={{ display: "flex", gap: "5px", flexShrink: 0 }}>
-        <button onClick={onMap}   style={iconButtonStyle} aria-label="Map">  <Icon name="map"  size={14} color="#1A1A1A" strokeWidth={1.5} /></button>
-        <button onClick={onCodex} style={iconButtonStyle} aria-label="Codex"><Icon name="book" size={14} color="#1A1A1A" strokeWidth={1.5} /></button>
-        <button onClick={onMenu}  style={iconButtonStyle} aria-label="Menu"> <Icon name="menu" size={14} color="#1A1A1A" strokeWidth={1.5} /></button>
+
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+        <button onClick={onMap}   style={headerButtonStyle} aria-label="Map">  <Icon name="map"  size={17} color={colors.gold} strokeWidth={1.8} /></button>
+        <button onClick={onCodex} style={headerButtonStyle} aria-label="Codex"><Icon name="book" size={17} color={colors.gold} strokeWidth={1.8} /></button>
+        <button onClick={onMenu}  style={headerButtonStyle} aria-label="Menu"> <Icon name="woodenBird" size={17} color={colors.gold} strokeWidth={1.8} /></button>
       </div>
     </div>
   );

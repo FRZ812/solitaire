@@ -1,7 +1,80 @@
 import React, { useState } from "react";
 import { Icon } from "./Icon.jsx";
-import { iconButtonStyle, ConditionPill, NeedBar, AttrBlock, StatBlock } from "./primitives.jsx";
+import {
+  iconButtonStyle, ConditionPill, NeedBar, AttrBlock, StatBlock,
+  SectionHeader, ErrorBanner,
+} from "./primitives.jsx";
+import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
+
+// Item-specific inline icon. The wooden bird is a meaningful in-fiction
+// item, so it gets a custom glyph; everything else falls back to a
+// pouch/scroll outline.
+function renderItemIcon(itemId) {
+  if (itemId === "wooden-bird") {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={colors.gold} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px", display: "inline-block", verticalAlign: "middle" }}>
+        <path d="M20 4 C16 4 13 7 11 9 C9 7 6 4 2 4 C5 9 8 11 11 12 C11 15 13 18 16 20 C16 16 15 13 14 11 C16 9 19 6 20 4 Z" fill="rgba(215, 167, 111, 0.25)" />
+        <line x1="16" y1="10" x2="19" y2="7" stroke={colors.parchmentMuted} strokeWidth="1.2" />
+        <line x1="15" y1="12" x2="17.5" y2="9.5" stroke={colors.parchmentMuted} strokeWidth="1.2" />
+        <circle cx="11.5" cy="11.5" r="0.75" fill={colors.parchmentLight} />
+      </svg>
+    );
+  }
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(215, 167, 111, 0.75)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px", display: "inline-block", verticalAlign: "middle" }}>
+      <path d="M6 20a6 6 0 0 0 12 0V10a6 6 0 0 0-12 0v10z" fill="rgba(215, 167, 111, 0.05)" />
+      <path d="M6 10c0-2.5 1.5-4 6-4s6 1.5 6 4" />
+      <path d="M9 6a3 3 0 0 1 6 0" />
+      <line x1="8" x2="16" y1="12" y2="12" />
+    </svg>
+  );
+}
+
+// Inset gold-tinted container reused for Wealth / Wearing / Carrying.
+const insetBoxStyle = {
+  background: "rgba(215, 167, 111, 0.03)",
+  border: `1px solid rgba(215, 167, 111, 0.08)`,
+  borderRadius: radius.chip,
+  padding: "8px 12px",
+};
+
+// Pill-shaped action button at the foot of the sheet.
+function actionButtonStyle({ danger = false, ghost = false } = {}) {
+  if (ghost) {
+    return {
+      display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+      padding: "12px",
+      border: "none", borderRadius: radius.panelCompact,
+      backgroundColor: "transparent",
+      color: "rgba(215, 167, 111, 0.6)",
+      fontSize: "12px", fontWeight: 700,
+      cursor: "pointer", fontFamily: "inherit",
+    };
+  }
+  if (danger) {
+    return {
+      display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+      padding: "13px",
+      border: `1px solid rgba(239, 68, 68, 0.35)`,
+      borderRadius: radius.panelCompact,
+      backgroundColor: "rgba(239, 68, 68, 0.08)",
+      color: alert.dangerAccent,
+      fontSize: "13px", fontWeight: 700,
+      cursor: "pointer", fontFamily: "inherit",
+    };
+  }
+  return {
+    display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+    padding: "13px",
+    border: `1px solid rgba(215, 167, 111, 0.25)`,
+    borderRadius: radius.panelCompact,
+    backgroundColor: "rgba(215, 167, 111, 0.08)",
+    color: colors.parchmentLight,
+    fontSize: "13px", fontWeight: 700,
+    cursor: "pointer", fontFamily: "inherit",
+  };
+}
 
 export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail }) {
   const inv = state.character.inventory;
@@ -13,104 +86,181 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
 
   return (
     <div
-      style={{ position: "absolute", inset: 0, backgroundColor: "rgba(26, 26, 26, 0.4)", backdropFilter: "blur(4px)", zIndex: 20, display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
+      style={{
+        position: "absolute", inset: 0,
+        backgroundColor: "rgba(11, 15, 14, 0.65)",
+        backdropFilter: "blur(6px)",
+        zIndex: 20,
+        display: "flex", flexDirection: "column", justifyContent: "flex-end",
+      }}
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ backgroundColor: "#FBF8F2", borderTopLeftRadius: "24px", borderTopRightRadius: "24px", padding: "20px 24px calc(env(safe-area-inset-bottom, 0px) + 28px) 24px", display: "flex", flexDirection: "column", gap: "14px", maxHeight: "88dvh", overflowY: "auto" }}
+        className="slide-up custom-scroll"
+        style={{
+          backgroundColor: "rgba(20, 29, 29, 0.92)",
+          border: `1px solid rgba(215, 167, 111, 0.22)`,
+          borderBottom: "none",
+          borderTopLeftRadius: "24px",
+          borderTopRightRadius: "24px",
+          padding: "20px 22px calc(env(safe-area-inset-bottom, 0px) + 24px) 22px",
+          display: "flex", flexDirection: "column", gap: "15px",
+          maxHeight: "85dvh", overflowY: "auto",
+          ...glass,
+          boxShadow: shadow.sheet,
+          color: colors.parchment,
+        }}
       >
+        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "22px", color: "#1A1A1A" }}>{state.character.name}</div>
-          <button onClick={onClose} style={iconButtonStyle}>
-            <Icon name="x" size={15} color="#1A1A1A" strokeWidth={1.5} />
+          <div style={{
+            fontFamily: fonts.serif, fontStyle: "italic",
+            fontSize: "26px", color: colors.parchmentLight,
+            textShadow: "0 2px 10px rgba(0,0,0,0.3)",
+          }}>
+            {state.character.name}
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              ...iconButtonStyle,
+              width: "30px", height: "30px",
+              backgroundColor: "rgba(215, 167, 111, 0.08)",
+              border: `1px solid rgba(215, 167, 111, 0.2)`,
+            }}
+          >
+            <Icon name="x" size={13} color={colors.parchmentMuted} strokeWidth={2} />
           </button>
         </div>
 
-        <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", lineHeight: "1.5", color: "#3A3A3A", paddingLeft: "12px", borderLeft: "2px solid #C9A876" }}>
+        {/* Bond */}
+        <div style={{
+          fontFamily: fonts.serif, fontStyle: "italic",
+          fontSize: "15px", lineHeight: "1.5",
+          color: colors.parchmentMuted,
+          paddingLeft: "12px",
+          borderLeft: `2px solid rgba(215, 167, 111, 0.4)`,
+          opacity: 0.95,
+        }}>
           {state.character.bond}
         </div>
 
+        {/* Vitality / Resolve */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
           <StatBlock label="Vitality" value={`${Math.round(state.character.vitality)} / ${state.character.vitalityMax}`} />
           <StatBlock label="Resolve"  value={`${state.character.resolve} / ${state.character.resolveMax}`} />
         </div>
 
-        <div style={{ fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: "#8B857A" }}>Attributes</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginTop: "-6px" }}>
-          {ATTR_KEYS.map(k => <AttrBlock key={k} label={ATTR_LABELS[k]} score={attrs[k]} />)}
+        {/* Attributes */}
+        <div>
+          <SectionHeader>Attributes</SectionHeader>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
+            {ATTR_KEYS.map(k => <AttrBlock key={k} label={ATTR_LABELS[k]} score={attrs[k]} />)}
+          </div>
         </div>
 
-        <div style={{ fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", color: "#8B857A" }}>Conditions</div>
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "-8px" }}>
-          {state.character.conditions.length === 0
-            ? <span style={{ fontSize: "12px", color: "#A8A199" }}>None</span>
-            : state.character.conditions.map((c) => <ConditionPill key={c} label={c} />)}
+        {/* Conditions */}
+        <div>
+          <SectionHeader>Conditions</SectionHeader>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            {state.character.conditions.length === 0
+              ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.5)", fontStyle: "italic" }}>None</span>
+              : state.character.conditions.map((c) => <ConditionPill key={c} label={c} />)}
+          </div>
         </div>
 
-        <div style={{ fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", color: "#8B857A" }}>Needs</div>
-        <div style={{ marginTop: "-8px", display: "flex", flexDirection: "column", gap: "8px" }}>
-          <NeedBar label="Hunger" value={state.character.needs.hunger} />
-          <NeedBar label="Thirst" value={state.character.needs.thirst} />
-          <NeedBar label="Sleep"  value={state.character.needs.sleep}  />
+        {/* Needs */}
+        <div>
+          <SectionHeader>Needs</SectionHeader>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <NeedBar label="Hunger" value={state.character.needs.hunger} />
+            <NeedBar label="Thirst" value={state.character.needs.thirst} />
+            <NeedBar label="Sleep"  value={state.character.needs.sleep}  />
+          </div>
         </div>
 
-        <div style={{ fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", color: "#8B857A" }}>Coin</div>
-        <div style={{ marginTop: "-8px", fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "16px", color: "#1A1A1A" }}>
-          {inv.coins.gold}gp · {inv.coins.silver}sp · {inv.coins.copper}cp
+        {/* Wealth */}
+        <div>
+          <SectionHeader>Wealth</SectionHeader>
+          <div style={{
+            ...insetBoxStyle,
+            fontFamily: fonts.serif, fontStyle: "italic",
+            fontSize: "17px", color: colors.parchmentLight,
+            display: "flex", gap: "12px",
+          }}>
+            <span><strong style={{ color: "#ffd700", fontWeight: "bold" }}>{inv.coins.gold}</strong> gp</span>
+            <span style={{ opacity: 0.3 }}>|</span>
+            <span><strong style={{ color: "#d1d5db", fontWeight: "bold" }}>{inv.coins.silver}</strong> sp</span>
+            <span style={{ opacity: 0.3 }}>|</span>
+            <span><strong style={{ color: "#cd7f32", fontWeight: "bold" }}>{inv.coins.copper}</strong> cp</span>
+          </div>
         </div>
 
-        <div style={{ fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", color: "#8B857A" }}>Wearing</div>
-        <div style={{ marginTop: "-8px", display: "flex", flexDirection: "column", gap: "4px" }}>
-          {wornIds.length === 0
-            ? <span style={{ fontSize: "12px", color: "#A8A199", fontStyle: "italic" }}>Nothing.</span>
-            : wornIds.map((id) => <div key={id} style={{ fontSize: "13px", color: "#1A1A1A" }}>{codex.items[id]?.name || id}</div>)}
+        {/* Wearing */}
+        <div>
+          <SectionHeader>Wearing</SectionHeader>
+          <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "2px" }}>
+            {wornIds.length === 0
+              ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.4)", fontStyle: "italic" }}>No equipped gear.</span>
+              : wornIds.map((id) => (
+                  <div key={id} style={{
+                    fontSize: "13px", color: colors.parchment,
+                    padding: "4px 0",
+                    borderBottom: `1px dotted rgba(215, 167, 111, 0.1)`,
+                    display: "flex", alignItems: "center",
+                  }}>
+                    {renderItemIcon(id)}
+                    {codex.items[id]?.name || id}
+                  </div>
+                ))}
+          </div>
         </div>
 
-        <div style={{ fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", color: "#8B857A" }}>Carrying (pack)</div>
-        <div style={{ marginTop: "-8px", display: "flex", flexDirection: "column", gap: "4px" }}>
-          {inv.carried.length === 0
-            ? <span style={{ fontSize: "12px", color: "#A8A199", fontStyle: "italic" }}>Empty.</span>
-            : inv.carried.map((c) => (
-                <div key={c.itemId} style={{ fontSize: "13px", color: "#1A1A1A", display: "flex", justifyContent: "space-between" }}>
-                  <span>{codex.items[c.itemId]?.name || c.itemId}</span>
-                  <span style={{ color: "#8B857A" }}>×{c.quantity}</span>
-                </div>
-              ))}
+        {/* Carrying */}
+        <div>
+          <SectionHeader>Carrying (Pack)</SectionHeader>
+          <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "2px" }}>
+            {inv.carried.length === 0
+              ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.4)", fontStyle: "italic" }}>Pack is empty.</span>
+              : inv.carried.map((c) => (
+                  <div key={c.itemId} style={{
+                    fontSize: "13px", color: colors.parchment,
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "4px 0",
+                    borderBottom: `1px dotted rgba(215, 167, 111, 0.1)`,
+                  }}>
+                    <span style={{ display: "flex", alignItems: "center" }}>
+                      {renderItemIcon(c.itemId)}
+                      {codex.items[c.itemId]?.name || c.itemId}
+                    </span>
+                    <span style={{ color: colors.parchmentMuted, fontWeight: "bold" }}>×{c.quantity}</span>
+                  </div>
+                ))}
+          </div>
         </div>
 
         {showGuestNag && <GuestNagSection onLinkEmail={onLinkEmail} />}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
-          <button
-            onClick={onOpenCodex}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "12px", border: "1px solid #E5DFD2", borderRadius: "12px", backgroundColor: "transparent", color: "#1A1A1A", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}
-          >
+        {/* Actions */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+          <button onClick={onOpenCodex} style={actionButtonStyle()}>
             <Icon name="book" size={14} strokeWidth={1.5} />
-            Open codex
+            Open Codex
           </button>
           {onBackToCampaigns && (
-            <button
-              onClick={onBackToCampaigns}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "12px", border: "1px solid #E5DFD2", borderRadius: "12px", backgroundColor: "transparent", color: "#1A1A1A", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}
-            >
+            <button onClick={onBackToCampaigns} style={actionButtonStyle()}>
               <Icon name="arrowLeft" size={14} strokeWidth={1.5} />
-              Back to campaigns
+              Back to Campaigns
             </button>
           )}
-          <button
-            onClick={onReset}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "12px", border: "1px solid #E5DFD2", borderRadius: "12px", backgroundColor: "transparent", color: "#7A2C18", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}
-          >
+          <button onClick={onReset} style={actionButtonStyle({ danger: true })}>
             <Icon name="reset" size={14} strokeWidth={1.5} />
-            Reset this campaign
+            Reset Campaign
           </button>
           {onSignOut && (
-            <button
-              onClick={onSignOut}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "12px", border: "1px solid #E5DFD2", borderRadius: "12px", backgroundColor: "transparent", color: "#8B857A", fontSize: "12px", fontWeight: 500, cursor: "pointer" }}
-            >
-              Sign out
+            <button onClick={onSignOut} style={actionButtonStyle({ ghost: true })}>
+              Sign Out
             </button>
           )}
         </div>
@@ -143,25 +293,34 @@ function GuestNagSection({ onLinkEmail }) {
 
   return (
     <div style={{
-      marginTop: "4px", padding: "12px 14px",
-      backgroundColor: "#F4EFE3", border: "1px solid #E5DFD2",
-      borderRadius: "12px",
+      marginTop: "4px",
+      padding: "14px 16px",
+      backgroundColor: "rgba(215, 167, 111, 0.06)",
+      border: `1px solid rgba(215, 167, 111, 0.22)`,
+      borderRadius: radius.panelCompact,
     }}>
       <div style={{
-        fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase",
-        color: "#8B5A2B", fontWeight: 500, marginBottom: "6px",
+        ...metaStyle, fontSize: "10px", letterSpacing: "0.12em",
+        color: colors.parchmentMuted, fontWeight: 700, marginBottom: "6px",
       }}>
         Playing as guest
       </div>
-      <p style={{ margin: "0 0 10px 0", fontSize: "12px", color: "#3A3A3A", lineHeight: "1.45" }}>
+      <p style={{ margin: "0 0 10px 0", fontSize: "12px", color: "rgba(237, 228, 208, 0.75)", lineHeight: "1.45" }}>
         Link an email so you can resume your campaigns from another device.
       </p>
       {sent ? (
-        <div style={{ fontSize: "12px", color: "#3a4a26", padding: "8px 10px", backgroundColor: "#e9efde", border: "1px solid #b5c69b", borderRadius: "8px" }}>
+        <div style={{
+          fontSize: "12px",
+          color: alert.successText,
+          padding: "8px 12px",
+          backgroundColor: alert.successBg,
+          border: `1px solid ${alert.successBorder}`,
+          borderRadius: radius.chip,
+        }}>
           Check <strong>{email}</strong> for a confirmation link.
         </div>
       ) : (
-        <form onSubmit={handleSubmit} style={{ display: "flex", gap: "6px" }}>
+        <form onSubmit={handleSubmit} style={{ display: "flex", gap: "8px" }}>
           <input
             type="email"
             value={email}
@@ -169,10 +328,12 @@ function GuestNagSection({ onLinkEmail }) {
             placeholder="you@example.com"
             disabled={busy}
             required
+            className="custom-input"
             style={{
-              flex: 1, padding: "8px 10px", fontSize: "13px",
-              backgroundColor: "white", color: "#1A1A1A",
-              border: "1px solid #E5DFD2", borderRadius: "8px",
+              flex: 1, padding: "9px 12px", fontSize: "13px",
+              backgroundColor: "rgba(10, 15, 15, 0.65)", color: colors.parchment,
+              border: `1px solid rgba(215, 167, 111, 0.2)`,
+              borderRadius: radius.chip,
               fontFamily: "inherit", outline: "none", minWidth: 0,
             }}
           />
@@ -180,9 +341,9 @@ function GuestNagSection({ onLinkEmail }) {
             type="submit"
             disabled={busy || !email.trim()}
             style={{
-              padding: "8px 12px", fontSize: "12px", fontWeight: 500,
-              backgroundColor: "#1A1A1A", color: "#FBF8F2",
-              border: "none", borderRadius: "8px",
+              padding: "9px 15px", fontSize: "12px", fontWeight: 700,
+              backgroundColor: colors.gold, color: colors.ink,
+              border: "none", borderRadius: radius.chip,
               cursor: (busy || !email.trim()) ? "default" : "pointer",
               opacity: (busy || !email.trim()) ? 0.4 : 1,
               fontFamily: "inherit", whiteSpace: "nowrap",
@@ -192,15 +353,7 @@ function GuestNagSection({ onLinkEmail }) {
           </button>
         </form>
       )}
-      {error && (
-        <div style={{
-          marginTop: "8px", padding: "8px 10px", borderRadius: "8px",
-          backgroundColor: "#FBE3DC", border: "1px solid #D9A89A",
-          color: "#7A2C18", fontSize: "11px", lineHeight: "1.4",
-        }}>
-          {error}
-        </div>
-      )}
+      {error && <ErrorBanner style={{ margin: "8px 0 0" }}>{error}</ErrorBanner>}
     </div>
   );
 }

@@ -66,57 +66,155 @@ function hexCorner(cx, cy, i) {
   };
 }
 
-function glyphForTile(tile) {
+// ==================== CUSTOM VECTOR LANDMARKS & MAP ART ====================
+const MAP_ASSETS = {
+  // bldg (Building, inn, tavern, shop, stable, mill): Cozy hand-timbered cottage
+  bldg: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M3 21h18M3 10l9-7 9 7v11H3V10z" fill="rgba(215, 167, 111, 0.1)" />
+      <path d="M9 21v-8h6v8M9 10h6" />
+    </svg>
+  ),
+  // smithy: Crossed blacksmith hammers with a small anvil
+  smithy: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M18 10h-2V7l2-3M6 10h2V7L6 4" />
+      <path d="M7 10h10v6a4 4 0 0 1-4 4h-2a4 4 0 0 1-4-4v-6z" fill="rgba(215, 167, 111, 0.1)" />
+      <path d="M12 10v10M9 13h6" />
+    </svg>
+  ),
+  // temple / shrine / cathedral: A gothic cathedral spire with a runic star
+  temple: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M12 2v20M5 12h14" />
+      <path d="M12 2L6 8h12L12 2zM8 12v9h8v-9" fill="rgba(215, 167, 111, 0.1)" />
+      <circle cx="12" cy="15" r="1.5" />
+    </svg>
+  ),
+  // town / hall / square: A mini walled stone keep
+  town: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M4 21h16M5 21V8l3-3 4 3 4-3 3 3v13H5z" fill="rgba(215, 167, 111, 0.1)" />
+      <path d="M10 21v-5h4v5M9 12h6" />
+    </svg>
+  ),
+  // gate: A classical stone archway with portcullis bars
+  gate: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M4 21V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v15" fill="rgba(215, 167, 111, 0.1)" />
+      <path d="M8 8h8M8 12h8M8 16h8M9 4v17M15 4v17" />
+    </svg>
+  ),
+  // site / camp / landmark: Ancient standing stone / monolith with runic engravings
+  site: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M8 22l2-16 2-4 2 4 2 16H8z" fill="rgba(215, 167, 111, 0.1)" />
+      <path d="M12 6v10M10 12h4" />
+    </svg>
+  ),
+  // unknown / hidden: Shrouded mystery emblem — glowing eye inside a diamond seal
+  unknown: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 4px rgba(239, 68, 68, 0.4))" }}>
+      <path d="M12 2L2 12l10 10 10-10L12 2z" fill="rgba(215, 167, 111, 0.05)" />
+      <circle cx="12" cy="12" r="3" />
+      <circle cx="12" cy="12" r="0.75" fill={color} />
+    </svg>
+  ),
+  // city / palace / mint: Grand royal fortress with three high towers
+  city: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M3 21h18" />
+      <path d="M5 21V10h4V7h6v3h4v11H5z" fill="rgba(215, 167, 111, 0.1)" />
+      <path d="M11 21v-4h2v4M8 13h8" />
+    </svg>
+  ),
+  // river: Double wavy flowing stream lines
+  river: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M2 8c4-3 6 3 10 0s6 3 10 0M2 16c4-3 6 3 10 0s6 3 10 0" />
+    </svg>
+  ),
+  // mountains: Three overlapping mountain peaks with cross-hatch shading
+  mtns: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M4 22L12 5l8 17H4z" fill="rgba(215, 167, 111, 0.05)" />
+      <path d="M2 22l6-11 4 7.5M10 22l4-7.5" />
+    </svg>
+  ),
+  // ruin: Crumbling, cracked stone tower
+  ruin: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M6 21V8l6-4v4h6v13H6z" fill="rgba(215, 167, 111, 0.1)" />
+      <path d="M6 12h6M12 16h6" />
+      <path d="M9 8v4M15 12v4" />
+      <path d="M12 4v4" />
+      <path d="M10 12l2 2" stroke={color} strokeWidth="1.2" />
+    </svg>
+  ),
+  // lake: Wavy, fluid organic shoreline with ripples
+  lake: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgba(46, 74, 110, 0.25)" />
+      <path d="M8 12c2-1 4 1 6 0s2-1 2-1" />
+    </svg>
+  ),
+};
+
+function assetKeyForTile(tile) {
   if (!tile.poi) return null;
   const t = tile.poi.type;
-  if (t === "hidden") return "?";
+  if (t === "hidden") return "unknown";
   if (tile.terrain === "indoor") {
-    if (t === "inn" || t === "tavern") return "⌂";
-    if (t === "smithy") return "⚒";
-    if (t === "temple") return "✦";
-    if (t === "stable") return "♞";
-    if (t === "mill") return "✻";
-    if (t === "shop") return "▤";
-    return "⌂";
+    if (t === "inn" || t === "tavern" || t === "stable" || t === "mill" || t === "shop") return "bldg";
+    if (t === "smithy") return "smithy";
+    if (t === "temple" || t === "shrine" || t === "cathedral") return "temple";
+    return "bldg";
   }
-  if (t === "town") return "■";
-  if (t === "hall") return "■";
-  if (t === "gate") return "║";
-  if (t === "square") return "◇";
-  if (t === "garden") return "❀";
-  if (t === "landmark" || t === "camp") return "◆";
-  if (t === "yard") return "·";
-  if (t === "shrine") return "✦";
-  if (t === "cathedral") return "✚";
-  if (t === "palace") return "▣";
-  if (t === "mint") return "◉";
-  // Landmark kinds — rumored and fabled tiles route through here too once
-  // they're seen.
-  if (t === "city") return "▦";
-  if (t === "village") return "▪";
-  if (t === "lake") return "◯";
-  if (t === "mountains") return "▲";
-  if (t === "ruin") return "⛌";
-  if (t === "river") return "≈";
-  if (t === "fortress") return "✦";
-  return "•";
+  if (t === "town" || t === "hall" || t === "square" || t === "garden" || t === "yard") return "town";
+  if (t === "gate") return "gate";
+  if (t === "landmark" || t === "camp") return "site";
+  if (t === "shrine" || t === "cathedral" || t === "fortress") return "temple";
+  if (t === "palace" || t === "mint" || t === "city") return "city";
+  if (t === "village") return "town";
+  if (t === "lake") return "lake";
+  if (t === "mountains") return "mtns";
+  if (t === "ruin") return "ruin";
+  if (t === "river") return "river";
+  return "site";
 }
 
 function MapLegend() {
   const items = [
-    { glyph: "⌂", label: "bldg" }, { glyph: "⚒", label: "smithy" },
-    { glyph: "✦", label: "temple" }, { glyph: "■", label: "town" },
-    { glyph: "║", label: "gate" }, { glyph: "◆", label: "site" },
-    { glyph: "?", label: "unknown" }, { glyph: "▦", label: "city" },
-    { glyph: "≈", label: "river" }, { glyph: "▲", label: "mtns" },
-    { glyph: "⛌", label: "ruin" }, { glyph: "◯", label: "lake" },
+    { key: "bldg", label: "bldg" }, { key: "smithy", label: "smithy" },
+    { key: "temple", label: "temple" }, { key: "town", label: "town" },
+    { key: "gate", label: "gate" }, { key: "site", label: "site" },
+    { key: "unknown", label: "unknown" }, { key: "city", label: "city" },
+    { key: "river", label: "river" }, { key: "mtns", label: "mtns" },
+    { key: "ruin", label: "ruin" }, { key: "lake", label: "lake" },
   ];
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 12px", padding: "8px 12px", borderTop: "1px solid #EBE5D6", borderBottom: "1px solid #EBE5D6", backgroundColor: "#F7F1E2", fontSize: "11px", color: "#6B655B", justifyContent: "center" }}>
+    <div style={{
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "8px 12px",
+      padding: "8px 12px",
+      borderTop: "1px solid rgba(215, 167, 111, 0.15)",
+      borderBottom: "1px solid rgba(215, 167, 111, 0.15)",
+      backgroundColor: "rgba(20, 29, 29, 0.95)",
+      fontSize: "11px",
+      color: "rgba(237, 228, 208, 0.72)",
+      justifyContent: "center"
+    }}>
       {items.map((it) => (
-        <span key={it.glyph + it.label} style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-          <span style={{ fontFamily: "'Instrument Serif', serif", fontSize: "14px", color: "#1A1A1A" }}>{it.glyph}</span>
-          {it.label}
+        <span key={it.key + it.label} style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+          <span style={{ display: "inline-flex", width: "16px", height: "16px", alignItems: "center", justifyContent: "center" }}>
+            {MAP_ASSETS[it.key] && (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d7a76f" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                {MAP_ASSETS[it.key]("#d7a76f").props.children}
+              </svg>
+            )}
+          </span>
+          <span style={{ letterSpacing: "0.06em" }}>{it.label}</span>
         </span>
       ))}
     </div>
@@ -268,7 +366,7 @@ export function MapView({ state, onClose, onTravel, loading }) {
   const totalMins = canTravel ? pathMinutes(state, path) : 0;
   const riskPct = canTravel ? pathRiskPercent(state, path) : 0;
 
-  let bottomLabel = "Tap a tile to inspect; drag to pan, pinch / wheel to zoom.";
+  let bottomLabel = "Tap a tile to inspect. Drag to pan, pinch or wheel to zoom.";
   let bottomDetail = currentLocationName(state) + " · You are here.";
   let biomeLabel = null;
   let encounterHint = null;
@@ -303,20 +401,70 @@ export function MapView({ state, onClose, onTravel, loading }) {
   }
 
   return (
-    <div style={{ position: "absolute", inset: 0, backgroundColor: "#FBF8F2", zIndex: 30, display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 14px) 20px 12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #EBE5D6" }}>
-        <button onClick={onClose} style={iconButtonStyle}>
-          <Icon name="arrowLeft" size={15} color="#1A1A1A" strokeWidth={1.5} />
+    <div style={{
+      position: "absolute",
+      inset: 0,
+      backgroundColor: "#0d1312",
+      zIndex: 30,
+      display: "flex",
+      flexDirection: "column",
+      maxWidth: "480px",
+      margin: "0 auto",
+      borderLeft: "1px solid rgba(215, 167, 111, 0.12)",
+      borderRight: "1px solid rgba(215, 167, 111, 0.12)",
+      boxShadow: "0 0 50px rgba(0,0,0,0.9)",
+    }}>
+      <div style={{
+        padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px 16px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        borderBottom: "1px solid rgba(215, 167, 111, 0.15)",
+        backgroundColor: "rgba(20, 29, 29, 0.95)"
+      }}>
+        <button
+          onClick={onClose}
+          style={{
+            ...iconButtonStyle,
+            backgroundColor: "rgba(215, 167, 111, 0.08)",
+            border: "1px solid rgba(215, 167, 111, 0.2)",
+            borderRadius: "50%",
+            width: "30px",
+            height: "30px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer"
+          }}
+        >
+          <Icon name="arrowLeft" size={13} color="#e6b98c" strokeWidth={2} />
         </button>
-        <div style={{ fontFamily: "'Instrument Serif', serif", fontSize: "20px", fontStyle: "italic", color: "#1A1A1A" }}>
-          Map{zoom !== 1 ? ` · ${(zoom * 100).toFixed(0)}%` : ""}
+        <div style={{
+          fontFamily: "'Instrument Serif', serif",
+          fontSize: "24px",
+          fontStyle: "italic",
+          color: "#f5dcb8",
+          textShadow: "0 1px 6px rgba(0,0,0,0.4)"
+        }}>
+          World Map{zoom !== 1 ? ` · ${(zoom * 100).toFixed(0)}%` : ""}
         </div>
         <button
           onClick={reset}
-          style={iconButtonStyle}
+          style={{
+            ...iconButtonStyle,
+            backgroundColor: "rgba(215, 167, 111, 0.08)",
+            border: "1px solid rgba(215, 167, 111, 0.2)",
+            borderRadius: "50%",
+            width: "30px",
+            height: "30px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer"
+          }}
           aria-label="Recenter on player"
         >
-          <Icon name="crosshair" size={14} color="#1A1A1A" strokeWidth={1.5} />
+          <Icon name="crosshair" size={13} color="#e6b98c" strokeWidth={2} />
         </button>
       </div>
 
@@ -326,7 +474,7 @@ export function MapView({ state, onClose, onTravel, loading }) {
         style={{
           flex: 1,
           overflow: "hidden",
-          backgroundColor: "#F4EEDC",
+          backgroundColor: "#111716",
           touchAction: "none",
           position: "relative",
           cursor: "grab",
@@ -336,10 +484,6 @@ export function MapView({ state, onClose, onTravel, loading }) {
         <div ref={transformRef} style={{
           position: "absolute",
           top: "50%", left: "50%",
-          // NOTE: `transform` is NOT controlled by React here. useZoomPan
-          // writes it imperatively via transformRef so a gesture doesn't
-          // require re-rendering the SVG below. The initial transform is
-          // set by useLayoutEffect in the hook.
           transformOrigin: "center center",
           willChange: "transform",
         }}>
@@ -352,44 +496,52 @@ export function MapView({ state, onClose, onTravel, loading }) {
               const isSel = selected && selected.x === x && selected.y === y;
               const T = TERRAINS[tile.terrain];
 
-              // Fog of war shows the same terrain colour at low opacity — the
-              // shape of the country bleeds through the fog. Seen tiles are
-              // fully saturated; visited ones a touch brighter than just-seen.
-              let fill = T?.color || "#888";
-              let textColor = T?.dark ? "#FBF4DE" : "#1F1611";
-              let glyph = null;
+              // Color mapping adjustments for premium dark theme:
+              // Make light terrains darker & high contrast
+              let fill = T?.color || "#222";
+              // Tone down high saturation and map to dark fantasy tones
+              if (tile.terrain === "plains") fill = "rgba(42, 64, 52, 0.55)";
+              else if (tile.terrain === "forest") fill = "rgba(24, 46, 32, 0.75)";
+              else if (tile.terrain === "hills") fill = "rgba(58, 64, 46, 0.7)";
+              else if (tile.terrain === "mountains") fill = "rgba(68, 54, 48, 0.75)";
+              else if (tile.terrain === "sand" || tile.terrain === "desert") fill = "rgba(79, 68, 48, 0.6)";
+              else if (tile.terrain === "swamp" || tile.terrain === "water") fill = "rgba(22, 42, 54, 0.65)";
+              else if (tile.terrain === "indoor") fill = "rgba(36, 42, 42, 0.85)";
+
+              let textColor = "#f5dcb8";
+              let assetKey = null;
               let opacity;
-              let stroke = "rgba(0,0,0,0.08)";
+              let stroke = "rgba(215, 167, 111, 0.08)";
               let strokeWidth = 1;
 
               if (seen) {
-                opacity = visited ? 1 : 0.85;
-                glyph = glyphForTile(tile);
+                opacity = visited ? 1 : 0.8;
+                assetKey = assetKeyForTile(tile);
               } else {
-                opacity = 0.32;
+                opacity = 0.22;
               }
 
               if (isCurrent) {
-                stroke = "#E8B98C";
-                strokeWidth = 3;
+                stroke = "#d7a76f";
+                strokeWidth = 2.5;
                 opacity = 1;
               } else if (isSel) {
-                stroke = "#1A1A1A";
-                strokeWidth = 2.25;
-                opacity = Math.max(opacity, 0.7);
+                stroke = "#f5dcb8";
+                strokeWidth = 2;
+                opacity = Math.max(opacity, 0.75);
               }
 
               return (
                 <g
-                  key={`${x},${y}`}
-                  onClick={() => {
-                    if (lastWasDragRef.current) {
-                      lastWasDragRef.current = false;
-                      return;
-                    }
-                    setSelected({ x, y });
-                  }}
-                  style={{ cursor: "pointer", opacity }}
+                   key={`${x},${y}`}
+                   onClick={() => {
+                     if (lastWasDragRef.current) {
+                       lastWasDragRef.current = false;
+                       return;
+                     }
+                     setSelected({ x, y });
+                   }}
+                   style={{ cursor: "pointer", opacity }}
                 >
                   <polygon
                     points={hexCornerPoints(px, py)}
@@ -398,20 +550,10 @@ export function MapView({ state, onClose, onTravel, loading }) {
                     strokeWidth={strokeWidth}
                     strokeLinejoin="round"
                   />
-                  {glyph && (
-                    <text
-                      x={px}
-                      y={py + 7}
-                      textAnchor="middle"
-                      fontFamily="'Instrument Serif', serif"
-                      fontStyle={glyph === "?" ? "italic" : "normal"}
-                      fontSize="19"
-                      fontWeight="500"
-                      fill={textColor}
-                      pointerEvents="none"
-                    >
-                      {glyph}
-                    </text>
+                  {assetKey && MAP_ASSETS[assetKey] && (
+                    <g transform={`translate(${px - 11}, ${py - 11})`} pointerEvents="none">
+                      {MAP_ASSETS[assetKey](textColor)}
+                    </g>
                   )}
                 </g>
               );
@@ -421,8 +563,8 @@ export function MapView({ state, onClose, onTravel, loading }) {
                 key={`road-${i}`}
                 x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
                 stroke="#6B4A2E"
-                strokeWidth={4}
-                strokeOpacity={0.78}
+                strokeWidth={3}
+                strokeOpacity={0.65}
                 strokeLinecap="round"
                 pointerEvents="none"
               />
@@ -431,9 +573,9 @@ export function MapView({ state, onClose, onTravel, loading }) {
               <line
                 key={`wall-${i}`}
                 x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
-                stroke="#3A2E22"
-                strokeWidth={3.5}
-                strokeOpacity={0.85}
+                stroke="#443525"
+                strokeWidth={3}
+                strokeOpacity={0.75}
                 strokeLinecap="butt"
                 pointerEvents="none"
               />
@@ -448,20 +590,16 @@ export function MapView({ state, onClose, onTravel, loading }) {
                   return `${ppx.toFixed(2)},${ppy.toFixed(2)}`;
                 }).join(" ")}
                 fill="none"
-                stroke="#E8B98C"
-                strokeWidth={3}
-                strokeOpacity={0.9}
+                stroke="#d7a76f"
+                strokeWidth={3.5}
+                strokeOpacity={0.95}
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 pointerEvents="none"
+                style={{ filter: "drop-shadow(0 0 6px rgba(215, 167, 111, 0.6))" }}
               />
             )}
             {labels.map((l) => (
-              // Two passes per label so the halo is dense enough to read on
-              // both light terrain (plains, sand) and dark (forest, mountain).
-              // First pass: thick white outline-only; second pass: solid text.
-              // The two-pass approach reads cleaner than a single stroked text
-              // (which can look fuzzy at small SVG zooms on mobile).
               <g key={l.key} pointerEvents="none">
                 <text
                   x={l.x} y={l.y}
@@ -471,9 +609,9 @@ export function MapView({ state, onClose, onTravel, loading }) {
                   fontSize="16"
                   fontWeight="700"
                   fill="none"
-                  stroke="#FFFFFF"
-                  strokeWidth="6"
-                  strokeOpacity={1}
+                  stroke="#111716"
+                  strokeWidth="5"
+                  strokeOpacity={0.92}
                   strokeLinejoin="round"
                   paintOrder="stroke"
                 >
@@ -486,7 +624,7 @@ export function MapView({ state, onClose, onTravel, loading }) {
                   fontStyle="italic"
                   fontSize="16"
                   fontWeight="700"
-                  fill={l.fill}
+                  fill="#f5dcb8"
                 >
                   {l.name}
                 </text>
@@ -498,36 +636,72 @@ export function MapView({ state, onClose, onTravel, loading }) {
 
       <MapLegend />
 
-      <div style={{ padding: "12px 20px calc(env(safe-area-inset-bottom, 0px) + 14px) 20px", backgroundColor: "rgba(251, 248, 242, 0.98)" }}>
-        <div style={{ fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: "#8B5A2B", marginBottom: "4px", fontWeight: 500 }}>
-          {selected ? "Selected" : "You are here"}
+      <div 
+        className="slide-up"
+        style={{ 
+          padding: "16px 20px calc(env(safe-area-inset-bottom, 0px) + 20px) 20px", 
+          backgroundColor: "rgba(20, 29, 29, 0.95)", 
+          backdropFilter: "blur(12px)",
+          borderTop: "1px solid rgba(215, 167, 111, 0.22)", 
+          boxShadow: "0 -16px 48px rgba(0,0,0,0.5)" 
+        }}
+      >
+        <div style={{ fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase", color: "#e6b98c", marginBottom: "4px", fontWeight: 800 }}>
+          {selected ? "Selected" : "Here"}
         </div>
-        <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "16px", color: "#1A1A1A", lineHeight: "1.3" }}>
+        <div style={{ 
+          fontFamily: "'Instrument Serif', serif", 
+          fontStyle: "italic", 
+          fontSize: "18px", 
+          color: "#f5dcb8", 
+          lineHeight: "1.3" 
+        }}>
           {bottomLabel}
         </div>
-        <div style={{ fontSize: "12px", color: "#6B655B", lineHeight: "1.45", marginTop: "4px" }}>{bottomDetail}</div>
-        {biomeLabel && (
-          <div style={{ fontSize: "10px", color: "#8B857A", letterSpacing: "0.08em", marginTop: "4px", fontStyle: "italic" }}>in {biomeLabel}</div>
-        )}
-        {encounterHint && (
-          <div style={{ fontSize: "10px", color: "#8B5A2B", letterSpacing: "0.06em", marginTop: "4px", fontWeight: 500 }}>{encounterHint}</div>
-        )}
-        <div style={{ marginBottom: "10px" }} />
+        <div style={{ fontSize: "13px", color: "rgba(237, 228, 208, 0.85)", lineHeight: "1.45", marginTop: "4px" }}>{bottomDetail}</div>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "6px" }}>
+          {biomeLabel && (
+            <div style={{ fontSize: "10px", color: "rgba(215, 167, 111, 0.7)", letterSpacing: "0.08em", fontStyle: "italic" }}>Region: {biomeLabel}</div>
+          )}
+          {biomeLabel && encounterHint && <span style={{ color: "rgba(215, 167, 111, 0.3)", fontSize: "10px" }}>•</span>}
+          {encounterHint && (
+            <div style={{ fontSize: "10px", color: "rgba(239, 68, 68, 0.85)", letterSpacing: "0.06em", fontWeight: 800 }}>{encounterHint}</div>
+          )}
+        </div>
+        <div style={{ marginBottom: "14px" }} />
         <button
           onClick={() => canTravel && onTravel(selected, path)} disabled={!canTravel}
           style={{
-            width: "100%", height: "40px", borderRadius: "20px", border: "none",
-            backgroundColor: canTravel ? "#1A1A1A" : "#D7D1C2",
-            color: canTravel ? "#FBF8F2" : "#8B857A",
-            fontSize: "13px", fontWeight: 500,
+            width: "100%", 
+            height: "44px", 
+            borderRadius: "22px", 
+            border: canTravel ? "none" : "1px solid rgba(215, 167, 111, 0.15)",
+            backgroundColor: canTravel ? "#d7a76f" : "rgba(215, 167, 111, 0.08)",
+            color: canTravel ? "#111716" : "rgba(215, 167, 111, 0.35)",
+            fontSize: "13px", 
+            fontWeight: 800,
             cursor: canTravel ? "pointer" : "not-allowed",
+            transition: "all 0.15s cubic-bezier(0.4, 0, 0.2, 1)",
+            boxShadow: canTravel ? "0 4px 12px rgba(215, 167, 111, 0.2)" : "none"
+          }}
+          onMouseOver={(e) => {
+            if (canTravel) {
+              e.currentTarget.style.backgroundColor = "#e6b98c";
+              e.currentTarget.style.boxShadow = "0 4px 20px rgba(215, 167, 111, 0.4)";
+            }
+          }}
+          onMouseOut={(e) => {
+            if (canTravel) {
+              e.currentTarget.style.backgroundColor = "#d7a76f";
+              e.currentTarget.style.boxShadow = "0 4px 12px rgba(215, 167, 111, 0.2)";
+            }
           }}
         >
-          {!selected ? "Tap a tile" :
-            isSelf ? "You are here" :
-            selRumored && !selSeen ? `Too far · ${hexDistance(cur, selected)} hexes by reputation` :
-            !selSeen ? "Beyond sight" :
-            !canTravel ? "No route" :
+          {!selected ? "Choose a destination" :
+            isSelf ? "You're here" :
+            selRumored && !selSeen ? `Too distant · ${hexDistance(cur, selected)} hexes by rumor` :
+            !selSeen ? "Beyond vision" :
+            !canTravel ? "No passable path" :
             `Travel · ${path.length - 1} hex${path.length - 1 === 1 ? "" : "es"} · ~${totalMins} min · risk ${riskPct}%`}
         </button>
       </div>

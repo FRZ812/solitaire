@@ -10,14 +10,15 @@ import { onAuthChange, signOut, linkEmail, isSubscribed } from "$auth";
 import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "$campaigns";
 import { applyBeat } from "./engine/beat.js";
 import {
-  getTile, travelMinutes, currentLocationName,
+  getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
   findPath, pathMinutes,
 } from "./engine/world.js";
 import { rollPathEncounter } from "./engine/encounters.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
-import { VitalsStrip, InputBar, LoadingDots } from "./components/primitives.jsx";
+import { VitalsStrip, InputBar, LoadingDots, ErrorBanner } from "./components/primitives.jsx";
+import { colors } from "./components/tokens.js";
 import { BeatRender } from "./components/beats/BeatRender.jsx";
 import { MenuSheet } from "./components/MenuSheet.jsx";
 import { MapView } from "./components/MapView.jsx";
@@ -25,6 +26,8 @@ import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
 import { CampaignsList } from "./components/CampaignsList.jsx";
+import { InitialBackdrop } from "./components/InitialBackdrop.jsx";
+import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
 
@@ -57,11 +60,17 @@ function convertLegacyV10ToHex(legacy) {
 function CenteredLoader() {
   return (
     <div style={{
-      backgroundColor: "#FBF8F2", height: "100dvh", width: "100%",
-      maxWidth: "640px", margin: "0 auto",
+      backgroundColor: colors.inkDeep,
+      height: "100dvh", width: "100%",
+      maxWidth: "480px", margin: "0 auto",
       display: "flex", alignItems: "center", justifyContent: "center",
+      position: "relative",
+      overflow: "hidden",
     }}>
-      <LoadingDots />
+      <InitialBackdrop />
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <LoadingDots />
+      </div>
     </div>
   );
 }
@@ -512,32 +521,27 @@ export function Solitaire() {
 
   return (
     <div style={{
-      backgroundColor: "#FBF8F2",
+      backgroundColor: colors.ink,
       height: "100dvh", width: "100%", maxWidth: "640px", margin: "0 auto",
       display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
     }}>
-      <CompactHeader
-        state={state}
-        onMap={() => setMapOpen(true)}
-        onCodex={() => setCodexOpen(true)}
-        onMenu={() => setMenuOpen(true)}
-      />
-      <VitalsStrip character={state.character} />
-      <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
-        {state.beats.map((b) => <BeatRender key={b.id} beat={b} />)}
-        {loading && <LoadingDots />}
-        {error && (
-          <div style={{ margin: "8px 0", padding: "10px 12px", borderRadius: "10px", backgroundColor: "#FBE3DC", border: "1px solid #D9A89A", color: "#7A2C18", fontSize: "12px", lineHeight: "1.4" }}>
-            {error}
-          </div>
-        )}
-        {campaignError && (
-          <div style={{ margin: "8px 0", padding: "10px 12px", borderRadius: "10px", backgroundColor: "#FBE3DC", border: "1px solid #D9A89A", color: "#7A2C18", fontSize: "12px", lineHeight: "1.4" }}>
-            {campaignError}
-          </div>
-        )}
+      <SceneBackdrop state={state} />
+      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+        <CompactHeader
+          state={state}
+          onMap={() => setMapOpen(true)}
+          onCodex={() => setCodexOpen(true)}
+          onMenu={() => setMenuOpen(true)}
+        />
+        <VitalsStrip character={state.character} />
+        <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
+          {state.beats.map((b) => <BeatRender key={b.id} beat={b} />)}
+          {loading && <LoadingDots />}
+          {error && <ErrorBanner>{error}</ErrorBanner>}
+          {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
+        </div>
+        <InputBar value={input} onChange={setInput} onSubmit={handleSubmit} loading={loading} />
       </div>
-      <InputBar value={input} onChange={setInput} onSubmit={handleSubmit} loading={loading} />
 
       {menuOpen && (
         <MenuSheet
