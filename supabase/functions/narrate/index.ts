@@ -1,25 +1,22 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// Web-mode narrator backend. Talks to Google's Gemini API and re-emits the
-// stream as the minimal Anthropic-style SSE the client already parses
-// (data: {"type":"content_block_delta","delta":{"type":"text_delta",...}}),
+// Web-mode narrator backend. Streams Gemini's response (thinking + answer
+// parts) and re-emits it as the minimal Anthropic-style SSE the client
+// already parses (data: {"type":"content_block_delta","delta":{"type":"text_delta"|"thinking_delta",...}}),
 // so src/engine/api-supabase.js stays provider-agnostic.
+//
+// Event delimiters: handle BOTH LF (\n\n) and CRLF (\r\n\r\n). Gemini emits
+// CRLF; a previous parser only split on \n\n and never drained.
 //
 // Hard-gated: every request must carry a valid Supabase auth JWT AND the
 // caller must have an active row in public.subscriptions (is_subscribed =
 // true). This is the real abuse barrier; the UI gate is cosmetic.
-//
-// The system prompt comes IN the request body (the web client already
-// bundles src/system-prompt.js — single source of truth, no mirror file).
-//
-// Requires GEMINI_API_KEY edge-function secret. SUPABASE_URL and
-// SUPABASE_ANON_KEY are provided automatically by the edge runtime.
 
 const MODEL = "gemini-3.1-pro-preview";
 const HISTORY_LIMIT = 100;
-const MAX_BODY_BYTES = 8_000_000; // bumped — request includes the system prompt
-const MAX_OUTPUT_TOKENS = 4000;
+const MAX_BODY_BYTES = 8_000_000;
+const MAX_OUTPUT_TOKENS = 65536;
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -33,8 +30,6 @@ const json = (body: unknown, status: number) =>
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
 
-// Verify the caller's JWT and confirm an active subscription. Returns the
-// user id on success, or a ready-to-send error Response.
 async function gate(req: Request): Promise<string | Response> {
   const authHeader = req.headers.get("Authorization") ?? "";
   if (!authHeader.startsWith("Bearer ")) return json({ error: "not authenticated" }, 401);
@@ -70,7 +65,15 @@ function emitFromGeminiPayload(dataPayload: string, controller: TransformStreamD
   try { evt = JSON.parse(dataPayload); } catch { return; }
   const parts = evt?.candidates?.[0]?.content?.parts ?? [];
   for (const p of parts) {
-    if (typeof p?.text === "string" && p.text.length) {
+    if (typeof p?.text !== "string" || !p.text.length) continue;
+    if (p.thought === true) {
+      controller.enqueue(
+        `data: ${JSON.stringify({
+          type: "content_block_delta",
+          delta: { type: "thinking_delta", thinking: p.text },
+        })}\n\n`,
+      );
+    } else {
       controller.enqueue(
         `data: ${JSON.stringify({
           type: "content_block_delta",
@@ -81,15 +84,21 @@ function emitFromGeminiPayload(dataPayload: string, controller: TransformStreamD
   }
 }
 
+// SSE event delimiter regex — matches both \n\n and \r\n\r\n. Inside an
+// event, individual lines can be separated by either \n or \r\n.
+const EVENT_DELIM = /\r?\n\r?\n/;
+const LINE_DELIM = /\r?\n/;
+
 function geminiToAnthropicSSE(): TransformStream<string, string> {
   let buffer = "";
   const drain = (controller: TransformStreamDefaultController<string>) => {
-    let idx: number;
-    while ((idx = buffer.indexOf("\n\n")) !== -1) {
-      const rawEvent = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
+    while (true) {
+      const m = buffer.match(EVENT_DELIM);
+      if (!m || m.index === undefined) break;
+      const rawEvent = buffer.slice(0, m.index);
+      buffer = buffer.slice(m.index + m[0].length);
       const dataPayload = rawEvent
-        .split("\n")
+        .split(LINE_DELIM)
         .filter((l) => l.startsWith("data:"))
         .map((l) => l.slice(5).trimStart())
         .join("\n");
@@ -105,7 +114,7 @@ function geminiToAnthropicSSE(): TransformStream<string, string> {
       const rawEvent = buffer.trim();
       if (!rawEvent) return;
       const dataPayload = rawEvent
-        .split("\n")
+        .split(LINE_DELIM)
         .filter((l) => l.startsWith("data:"))
         .map((l) => l.slice(5).trimStart())
         .join("\n");
@@ -156,7 +165,10 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system_prompt }] },
         contents,
-        generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
+        generationConfig: {
+          maxOutputTokens: MAX_OUTPUT_TOKENS,
+          thinkingConfig: { thinkingBudget: -1, includeThoughts: true },
+        },
       }),
     },
   );

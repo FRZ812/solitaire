@@ -1,11 +1,12 @@
 import React, { useState } from "react";
-import { signInAnonymously, signInWithEmail, signInWithGoogle } from "$auth";
+import { signInWithGoogle } from "$auth";
+import { InitialBackdrop } from "./InitialBackdrop.jsx";
+import { ErrorBanner } from "./primitives.jsx";
+import { colors, shadow, radius, fonts } from "./tokens.js";
 
 export function AuthScreen() {
-  const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [linkSent, setLinkSent] = useState(false);
 
   async function handleGoogle() {
     setBusy(true);
@@ -19,172 +20,100 @@ export function AuthScreen() {
     }
   }
 
-  async function handleGuest() {
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await signInAnonymously();
-    } catch (e) {
-      setError(e.message || String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleMagicLink(e) {
-    e.preventDefault();
-    const addr = email.trim();
-    if (!addr || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await signInWithEmail(addr);
-      setLinkSent(true);
-    } catch (e) {
-      setError(e.message || String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
-    <div style={{
-      backgroundColor: "#FBF8F2",
-      minHeight: "100dvh", width: "100%", maxWidth: "640px", margin: "0 auto",
+    <div className="fade-in" style={{
+      backgroundColor: colors.ink,
+      backgroundImage: "radial-gradient(circle at 50% 30%, #152422 0%, #0a0f0e 80%)",
+      minHeight: "100dvh", width: "100%", maxWidth: "480px", margin: "0 auto",
       display: "flex", flexDirection: "column",
-      padding: "calc(env(safe-area-inset-top, 0px) + 56px) 28px calc(env(safe-area-inset-bottom, 0px) + 28px) 28px",
+      justifyContent: "center",
+      padding: "calc(env(safe-area-inset-top, 0px) + 32px) 24px calc(env(safe-area-inset-bottom, 0px) + 24px) 24px",
       boxSizing: "border-box",
+      position: "relative",
+      overflow: "hidden",
     }}>
-      {/* Hero */}
-      <div style={{ flex: "0 1 auto", textAlign: "center", marginBottom: "44px" }}>
-        <div style={{
-          fontSize: "11px", letterSpacing: "0.22em", textTransform: "uppercase",
-          color: "#A8A199", marginBottom: "10px", fontWeight: 500,
-        }}>
-          A solo RPG narrative engine
-        </div>
-        <h1 style={{
-          fontFamily: "'Instrument Serif', serif", fontStyle: "italic",
-          fontSize: "64px", margin: "0 0 16px", letterSpacing: "-1px",
-          lineHeight: 1, color: "#1A1A1A",
-        }}>
-          Solitaire
-        </h1>
-        <p style={{
-          fontFamily: "'Instrument Serif', serif", fontStyle: "italic",
-          fontSize: "16px", color: "#5B554C", margin: "0",
-          lineHeight: 1.5, maxWidth: "320px", marginLeft: "auto", marginRight: "auto",
-        }}>
-          Rain whispers against warped shutters. The hooded figure in the corner has been watching you for the better part of an hour.
-        </p>
-      </div>
+      <InitialBackdrop />
+      <div style={{
+        position: "absolute",
+        inset: "12px",
+        border: `1px solid rgba(215, 167, 111, 0.08)`,
+        pointerEvents: "none",
+        borderRadius: "20px",
+      }} />
 
-      {/* Sign-in actions */}
-      <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", gap: "10px" }}>
-        <button
-          onClick={handleGoogle}
-          disabled={busy}
-          style={{
-            width: "100%", padding: "14px 18px", fontSize: "14px", fontWeight: 500,
-            backgroundColor: "#1A1A1A", color: "#FBF8F2", border: "none",
-            borderRadius: "12px", cursor: busy ? "default" : "pointer",
-            opacity: busy ? 0.6 : 1, fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
-            <circle cx="9" cy="9" r="9" fill="#FBF8F2" />
-            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
-            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
-            <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
-            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
-          </svg>
-          {busy ? "..." : "Continue with Google"}
-        </button>
-
-        <div style={{
-          display: "flex", alignItems: "center", margin: "14px 0 4px",
-          color: "#A8A199", fontSize: "11px", letterSpacing: "0.14em",
-          textTransform: "uppercase",
-        }}>
-          <div style={{ flex: 1, height: 1, backgroundColor: "#E5DFD2" }} />
-          <span style={{ margin: "0 12px" }}>or with email</span>
-          <div style={{ flex: 1, height: 1, backgroundColor: "#E5DFD2" }} />
+      <div className="scale-in" style={{
+        backgroundColor: "rgba(20, 29, 29, 0.72)",
+        backdropFilter: "blur(20px)",
+        WebkitBackdropFilter: "blur(20px)",
+        border: `1px solid rgba(215, 167, 111, 0.18)`,
+        borderRadius: "24px",
+        padding: "36px 24px 28px 24px",
+        boxShadow: `0 24px 48px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)`,
+        display: "flex", flexDirection: "column", gap: "24px",
+        zIndex: 1,
+      }}>
+        {/* Hero */}
+        <div style={{ textAlign: "center" }}>
+          <div style={{
+            fontSize: "9px", letterSpacing: "0.26em", textTransform: "uppercase",
+            color: colors.gold, marginBottom: "8px", fontWeight: 700,
+            textShadow: "0 0 8px rgba(215, 167, 111, 0.25)",
+          }}>
+            A Solo RPG Narrative Engine
+          </div>
+          <h1 style={{
+            fontFamily: fonts.serif, fontStyle: "italic",
+            fontSize: "56px", margin: "0 0 12px",
+            letterSpacing: "-0.5px", lineHeight: 1,
+            color: colors.parchment,
+            textShadow: "0 2px 12px rgba(0,0,0,0.6)",
+          }}>
+            Solitaire
+          </h1>
+          <p style={{
+            fontFamily: fonts.serif, fontStyle: "italic",
+            fontSize: "15px", color: "rgba(237, 228, 208, 0.72)",
+            margin: "0 auto", lineHeight: 1.5, maxWidth: "290px",
+          }}>
+            "Rain whispers against warped shutters. The hooded figure in the corner has been watching you for the better part of an hour."
+          </p>
         </div>
 
-        {linkSent ? (
-          <div style={{
-            padding: "14px 16px", backgroundColor: "#F1ECDE",
-            border: "1px solid #E5DFD2", color: "#5B554C",
-            borderRadius: "12px", fontSize: "13px", lineHeight: 1.5, textAlign: "center",
-          }}>
-            Check <strong>{email}</strong> for a sign-in link.
-          </div>
-        ) : (
-          <form onSubmit={handleMagicLink} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              disabled={busy}
-              required
-              autoComplete="email"
-              style={{
-                width: "100%", padding: "13px 14px", fontSize: "14px",
-                backgroundColor: "#FFFFFF", color: "#1A1A1A",
-                border: "1px solid #E5DFD2", borderRadius: "12px",
-                fontFamily: "inherit", boxSizing: "border-box", outline: "none",
-              }}
-            />
-            <button
-              type="submit"
-              disabled={busy || !email.trim()}
-              style={{
-                width: "100%", padding: "13px 18px", fontSize: "14px",
-                backgroundColor: "transparent", color: "#1A1A1A",
-                border: "1px solid #1A1A1A", borderRadius: "12px",
-                cursor: (busy || !email.trim()) ? "default" : "pointer",
-                opacity: (busy || !email.trim()) ? 0.4 : 1,
-                fontFamily: "inherit", fontWeight: 500,
-              }}
-            >
-              {busy ? "..." : "Send magic link"}
-            </button>
-          </form>
-        )}
+        {/* Sign-in */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <button
+            onClick={handleGoogle}
+            disabled={busy}
+            style={{
+              width: "100%", padding: "14px 18px", fontSize: "14px", fontWeight: 700,
+              backgroundColor: "rgba(255, 255, 255, 0.08)",
+              color: colors.parchment,
+              border: `1px solid rgba(215, 167, 111, 0.25)`,
+              borderRadius: radius.control,
+              cursor: busy ? "default" : "pointer",
+              opacity: busy ? 0.6 : 1, fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
+              boxShadow: shadow.subtle,
+            }}
+          >
+            <div style={{
+              width: "20px", height: "20px", borderRadius: "50%",
+              backgroundColor: "#FFFFFF",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+              boxShadow: "0 1px 2px rgba(0,0,0,0.15)",
+            }}>
+              <svg width="12" height="12" viewBox="0 0 18 18" aria-hidden="true">
+                <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+                <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+                <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+                <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+              </svg>
+            </div>
+            {busy ? "..." : "Continue with Google"}
+          </button>
 
-        {error && (
-          <div style={{
-            marginTop: "8px", padding: "10px 12px", borderRadius: "10px",
-            backgroundColor: "#FBE3DC", border: "1px solid #D9A89A",
-            color: "#7A2C18", fontSize: "12px", lineHeight: 1.4,
-          }}>
-            {error}
-          </div>
-        )}
-      </div>
-
-      {/* Guest fallback — small, low priority */}
-      <div style={{ flex: "1 0 auto" }} />
-      <div style={{ textAlign: "center", marginTop: "32px" }}>
-        <button
-          onClick={handleGuest}
-          disabled={busy}
-          style={{
-            background: "none", border: "none", padding: "8px 12px",
-            color: "#8B857A", fontSize: "13px", fontFamily: "inherit",
-            cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1,
-            textDecoration: "underline", textUnderlineOffset: "3px",
-          }}
-        >
-          Continue as guest
-        </button>
-        <div style={{
-          marginTop: "10px", fontSize: "11px", color: "#A8A199", lineHeight: 1.5,
-        }}>
-          Guest sessions live only in this browser. Sign in to keep your campaigns.
+          {error && <ErrorBanner style={{ marginTop: "8px" }}>{error}</ErrorBanner>}
         </div>
       </div>
     </div>

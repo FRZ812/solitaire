@@ -17,6 +17,14 @@ const ICONS = {
   arrowUp: <><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></>,
   globe: <><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>,
   zoomOut: <><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></>,
+  woodenBird: (
+    <>
+      <path d="M20 4 C16 4 13 7 11 9 C9 7 6 4 2 4 C5 9 8 11 11 12 C11 15 13 18 16 20 C16 16 15 13 14 11 C16 9 19 6 20 4 Z" fill="rgba(215, 167, 111, 0.2)" />
+      <line x1="16" y1="10" x2="19" y2="7" stroke="rgba(230, 185, 140, 0.85)" strokeWidth="1.2" />
+      <line x1="15" y1="12" x2="17.5" y2="9.5" stroke="rgba(230, 185, 140, 0.85)" strokeWidth="1.2" />
+      <circle cx="11.5" cy="11.5" r="0.75" fill="#f5dcb8" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.5, fill = "none" }) {

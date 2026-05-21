@@ -1,4 +1,7 @@
 import React, { useState } from "react";
+import { InitialBackdrop } from "./InitialBackdrop.jsx";
+import { ErrorBanner } from "./primitives.jsx";
+import { colors, shadow, radius, fonts } from "./tokens.js";
 
 function formatRelativeTime(iso) {
   if (!iso) return "moments ago";
@@ -33,19 +36,33 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
   }
 
   return (
-    <div style={{
-      backgroundColor: "#FBF8F2",
-      height: "100dvh", width: "100%", maxWidth: "640px", margin: "0 auto",
+    <div className="fade-in" style={{
+      backgroundColor: colors.ink,
+      backgroundImage: "radial-gradient(circle at 50% 30%, #152422 0%, #0a0f0e 80%)",
+      height: "100dvh", width: "100%", maxWidth: "480px", margin: "0 auto",
       display: "flex", flexDirection: "column", overflow: "hidden",
+      position: "relative",
     }}>
+      <InitialBackdrop />
       <div style={{
-        padding: "20px 24px 14px 24px",
+        position: "absolute",
+        inset: "12px",
+        border: `1px solid rgba(215, 167, 111, 0.06)`,
+        pointerEvents: "none",
+        borderRadius: "20px",
+        zIndex: 0,
+      }} />
+
+      <div style={{
+        padding: "calc(env(safe-area-inset-top, 0px) + 20px) 20px 14px 20px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        borderBottom: "1px solid #EBE5D6",
+        borderBottom: `1px solid rgba(215, 167, 111, 0.14)`,
+        zIndex: 1,
       }}>
         <div style={{
-          fontFamily: "'Instrument Serif', serif", fontStyle: "italic",
-          fontSize: "28px", color: "#1A1A1A",
+          fontFamily: fonts.serif, fontStyle: "italic",
+          fontSize: "26px", color: colors.parchment,
+          textShadow: "0 2px 10px rgba(0,0,0,0.5)",
         }}>
           Solitaire
         </div>
@@ -54,10 +71,13 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
             onClick={onSignOut}
             disabled={busy}
             style={{
-              padding: "8px 14px", fontSize: "12px",
-              border: "1px solid #E5DFD2", borderRadius: "20px",
-              backgroundColor: "transparent", color: "#1A1A1A",
-              cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1,
+              padding: "7px 12px", fontSize: "11px", fontWeight: 700,
+              border: `1px solid rgba(215, 167, 111, 0.28)`,
+              borderRadius: radius.chip,
+              backgroundColor: "rgba(255, 255, 255, 0.05)",
+              color: colors.gold,
+              cursor: busy ? "default" : "pointer",
+              opacity: busy ? 0.5 : 1,
               fontFamily: "inherit",
             }}
           >
@@ -66,29 +86,24 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
         )}
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px" }}>
-        {error && (
-          <div style={{
-            marginBottom: "16px", padding: "10px 12px",
-            borderRadius: "10px", backgroundColor: "#FBE3DC",
-            border: "1px solid #D9A89A", color: "#7A2C18",
-            fontSize: "12px", lineHeight: "1.4",
-          }}>
-            {error}
-          </div>
-        )}
+      <div className="custom-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px", zIndex: 1 }}>
+        {error && <ErrorBanner style={{ margin: "0 0 16px" }}>{error}</ErrorBanner>}
 
         <button
           onClick={onNew}
           disabled={busy}
           style={{
-            width: "100%", padding: "14px 18px", marginBottom: "16px",
-            fontSize: "14px", fontWeight: 500,
-            backgroundColor: "#1A1A1A", color: "#FBF8F2",
-            border: "none", borderRadius: "12px",
-            cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1,
+            width: "100%", padding: "14px 18px", marginBottom: "20px",
+            fontSize: "14px", fontWeight: 700,
+            backgroundColor: "rgba(215, 167, 111, 0.12)",
+            color: colors.gold,
+            border: `1px solid rgba(215, 167, 111, 0.4)`,
+            borderRadius: radius.control,
+            cursor: busy ? "default" : "pointer",
+            opacity: busy ? 0.5 : 1,
             fontFamily: "inherit",
             display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+            boxShadow: shadow.subtle,
           }}
         >
           <span style={{ fontSize: "18px", fontWeight: 400, lineHeight: 1 }}>+</span>
@@ -97,18 +112,24 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
 
         {campaigns.length === 0 && !busy && (
           <div style={{
-            textAlign: "center", padding: "32px 16px",
-            color: "#8B857A", fontSize: "13px", lineHeight: "1.5",
+            textAlign: "center", padding: "48px 16px",
+            color: "rgba(237, 228, 208, 0.58)", lineHeight: "1.6",
+            fontFamily: fonts.serif, fontStyle: "italic", fontSize: "16px",
           }}>
-            No campaigns yet. Tap "New campaign" to begin.
+            No campaigns yet.<br />
+            Tap "New campaign" to begin.
           </div>
         )}
 
         {campaigns.map(c => (
           <div key={c.id} style={{
-            marginBottom: "10px",
-            backgroundColor: "#F4EFE3", border: "1px solid #E5DFD2",
-            borderRadius: "12px", overflow: "hidden",
+            marginBottom: "12px",
+            backgroundColor: "rgba(20, 29, 29, 0.45)",
+            border: `1px solid rgba(215, 167, 111, 0.16)`,
+            borderRadius: radius.control,
+            overflow: "hidden",
+            boxShadow: shadow.subtle,
+            transition: "border-color 0.2s, box-shadow 0.2s",
           }}>
             {renamingId === c.id ? (
               <div style={{ padding: "14px 16px 6px 16px" }}>
@@ -123,10 +144,12 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
                     if (e.key === "Escape") cancelRename();
                   }}
                   style={{
-                    width: "100%", padding: "6px 10px", fontSize: "18px",
-                    fontFamily: "'Instrument Serif', serif", fontStyle: "italic",
-                    border: "1px solid #C9A876", borderRadius: "8px",
-                    backgroundColor: "white", color: "#1A1A1A", outline: "none",
+                    width: "100%", padding: "8px 12px", fontSize: "18px",
+                    fontFamily: fonts.serif, fontStyle: "italic",
+                    border: `1px solid rgba(215, 167, 111, 0.4)`,
+                    borderRadius: radius.chip,
+                    backgroundColor: "rgba(0, 0, 0, 0.38)",
+                    color: colors.parchment, outline: "none",
                     boxSizing: "border-box",
                   }}
                 />
@@ -139,13 +162,15 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
                   display: "block", width: "100%", textAlign: "left",
                   padding: "14px 16px 4px 16px",
                   backgroundColor: "transparent", border: "none",
-                  cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1,
+                  cursor: busy ? "default" : "pointer",
+                  opacity: busy ? 0.5 : 1,
                   fontFamily: "inherit",
                 }}
               >
                 <div style={{
-                  fontFamily: "'Instrument Serif', serif", fontStyle: "italic",
-                  fontSize: "18px", color: "#1A1A1A",
+                  fontFamily: fonts.serif, fontStyle: "italic",
+                  fontSize: "20px", color: colors.parchment,
+                  textShadow: "0 1px 4px rgba(0,0,0,0.2)",
                 }}>
                   {c.name || "Untitled"}
                 </div>
@@ -154,9 +179,9 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
             <div style={{
               padding: "0 16px 12px 16px",
               display: "flex", justifyContent: "space-between", alignItems: "center",
-              fontSize: "11px", color: "#8B857A",
+              fontSize: "11px", color: "rgba(237, 228, 208, 0.54)",
             }}>
-              <span>Last played {formatRelativeTime(c.last_played_at)}</span>
+              <span style={{ fontSize: "10px" }}>Last played {formatRelativeTime(c.last_played_at)}</span>
               {renamingId !== c.id && (
                 <div style={{ display: "flex", gap: "12px" }}>
                   <button
@@ -164,7 +189,7 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
                     disabled={busy}
                     style={{
                       background: "transparent", border: "none", padding: 0,
-                      fontSize: "11px", color: "#8B5A2B",
+                      fontSize: "11px", color: colors.gold, fontWeight: 700,
                       cursor: busy ? "default" : "pointer",
                       fontFamily: "inherit", opacity: busy ? 0.5 : 1,
                     }}
@@ -176,7 +201,7 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
                     disabled={busy}
                     style={{
                       background: "transparent", border: "none", padding: 0,
-                      fontSize: "11px", color: "#7A2C18",
+                      fontSize: "11px", color: "#f87171", fontWeight: 700,
                       cursor: busy ? "default" : "pointer",
                       fontFamily: "inherit", opacity: busy ? 0.5 : 1,
                     }}
