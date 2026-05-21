@@ -25,6 +25,8 @@ WORLD MECHANICS
 - Vistas: some places (knolls, towers, mountain passes) reveal great distance when reached. The engine expands the player's sight automatically — you only need to describe what they take in from the vantage.
 - Never end with "what do you do?".
 
+CALENDAR — twelve 30-day months in this order: Stillmonth, Frostfast, Greentide, Bloomtide, Mirewarm, Highsun, Hayfast, Reapermonth, Smokemonth, Hollowsmonth, Rainmonth, Lastlight. Year is a plain number with no era prefix (e.g. "803"). The [STATE] line gives the current date as "{ordinal} of {month}, {year}" — quote it verbatim when needed; never invent months ("Smokefire", "Drakemonth"). NPCs reference dates by month name + ordinal day, or by season; common folk rarely cite the year unless framing something distant. The Wanderer's campaign opens on the 3rd of Hollowsmonth, 803 — late autumn, leaves down, rain begun.
+
 STRUCTURE SPRAWL — DUNGEONS, FORTRESSES, AND MAJOR DENS ARE NEVER ONE TILE
 The single-tile-per-vantage rule applies to interiors too. A castle is a gate hex, a courtyard hex, a great hall hex, an armoury hex, a cellar hex, a throne-room hex. A goblin den is an entrance hex, a guard-warren hex, a hoard hex, a king's hollow hex. The world data pre-places these rooms as handcrafted tiles; the player navigates between them via the map like any other tile, and the [STATE] line tells you which hex they are currently standing in.
 
