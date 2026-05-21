@@ -77,10 +77,11 @@ export function PwaDiagnostics() {
             <Row label="Display mode" value={data.displayMode} ok={data.displayMode === "standalone" || data.displayMode === "fullscreen" ? true : null} />
             <Row label="iOS standalone" value={String(data.iosStandalone ?? false)} />
             <Row label="Service Worker support" value={data.sw.supported ? "yes" : "no"} ok={data.sw.supported} />
+            <Row label="Base URL (build)" value={data.base} />
             <Row label="User agent" value={data.userAgent} mono />
           </Section>
 
-          <Section title="Manifest (/manifest.webmanifest)">
+          <Section title={`Manifest (${data.manifestUrl})`}>
             {data.manifest?.error ? (
               <Row label="fetch error" value={data.manifest.error} ok={false} />
             ) : (
@@ -115,16 +116,16 @@ export function PwaDiagnostics() {
               <Row
                 key={n}
                 label={`${i.sizes} (${i.purpose || "any"})`}
-                value={`${i.src} → ${i.status}${i.contentType ? ` · ${i.contentType}` : ""}${i.error ? ` · ${i.error}` : ""}`}
+                value={`${i.resolvedUrl || i.src} → ${i.status}${i.contentType ? ` · ${i.contentType}` : ""}${i.error ? ` · ${i.error}` : ""}`}
                 ok={i.ok && (i.contentType || "").startsWith("image/")}
               />
             ))}
             <Row label="Needs ≥1 of" value="192x192 AND 512x512 PNG" />
           </Section>
 
-          <Section title="Service Worker">
-            <Row label="/sw.js HTTP status" value={data.sw.fileStatus ?? data.sw.fileError ?? "(unfetched)"} ok={data.sw.fileStatus === 200} />
-            <Row label="/sw.js Content-Type" value={data.sw.fileContentType || "(none)"} ok={(data.sw.fileContentType || "").includes("javascript")} />
+          <Section title={`Service Worker (${data.swUrl})`}>
+            <Row label="HTTP status" value={data.sw.fileStatus ?? data.sw.fileError ?? "(unfetched)"} ok={data.sw.fileStatus === 200} />
+            <Row label="Content-Type" value={data.sw.fileContentType || "(none)"} ok={(data.sw.fileContentType || "").includes("javascript")} />
             <Row label="Registrations" value={String(data.sw.registrations.length)} ok={data.sw.registrations.length > 0} />
             {data.sw.registrations.map((r, n) => (
               <div key={n} style={{ marginLeft: "14px", marginTop: "6px" }}>
@@ -193,7 +194,21 @@ function Row({ label, value, ok = null, mono = false }) {
 }
 
 async function collect() {
+  // Probe the actual manifest URL Chrome would use (from <link rel="manifest">),
+  // and the actual SW URL the app registers (built with import.meta.env.BASE_URL).
+  // Hardcoding "/manifest.webmanifest" lies on subpath deploys (GitHub Pages
+  // /solitaire/), and previously made the diagnostic itself misleading.
+  const base = typeof import.meta !== "undefined" ? (import.meta.env?.BASE_URL || "/") : "/";
+  const manifestLink = typeof document !== "undefined"
+    ? document.querySelector('link[rel="manifest"]')
+    : null;
+  const manifestUrl = manifestLink?.href || (base + "manifest.webmanifest");
+  const swUrl = base + "sw.js";
+
   const out = {
+    base,
+    manifestUrl,
+    swUrl,
     https: typeof location !== "undefined" && location.protocol === "https:",
     userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
     displayMode: matchDisplayMode(),
@@ -204,7 +219,7 @@ async function collect() {
   };
 
   try {
-    const r = await fetch("/manifest.webmanifest", { cache: "no-cache" });
+    const r = await fetch(manifestUrl, { cache: "no-cache" });
     const text = await r.text();
     let json = null;
     try { json = JSON.parse(text); } catch {}
@@ -217,15 +232,17 @@ async function collect() {
     };
     if (json?.icons?.length) {
       for (const icon of json.icons) {
+        // Resolve icon.src against the manifest URL (spec behaviour).
+        const iconUrl = new URL(icon.src, manifestUrl).toString();
         try {
-          const ir = await fetch(icon.src, { cache: "no-cache" });
+          const ir = await fetch(iconUrl, { cache: "no-cache" });
           out.icons.push({
-            ...icon,
+            ...icon, resolvedUrl: iconUrl,
             status: ir.status, ok: ir.ok,
             contentType: ir.headers.get("content-type"),
           });
         } catch (e) {
-          out.icons.push({ ...icon, status: 0, error: String(e) });
+          out.icons.push({ ...icon, resolvedUrl: iconUrl, status: 0, error: String(e) });
         }
       }
     }
@@ -246,7 +263,7 @@ async function collect() {
       out.sw.error = String(e);
     }
     try {
-      const swr = await fetch("/sw.js", { cache: "no-cache" });
+      const swr = await fetch(swUrl, { cache: "no-cache" });
       out.sw.fileStatus = swr.status;
       out.sw.fileContentType = swr.headers.get("content-type");
     } catch (e) {
