@@ -26,6 +26,10 @@ export async function signInWithEmail() {
   throw new Error("Email sign-in is not available in artifact mode.");
 }
 
+export async function signInWithGoogle() {
+  throw new Error("Google sign-in is not available in artifact mode.");
+}
+
 export async function signOut() {
   // no-op
 }
