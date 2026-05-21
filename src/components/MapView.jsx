@@ -14,6 +14,7 @@ import {
   HEX_DIRECTIONS, edgeAllowed, isPassable,
 } from "../engine/world.js";
 import { describeEncounterPotential, pathRiskPercent } from "../engine/encounters.js";
+import { formatTime, formatDate } from "../engine/time.js";
 import { useZoomPan } from "./useZoomPan.js";
 
 // Pointy-top hex geometry.
@@ -440,13 +441,30 @@ export function MapView({ state, onClose, onTravel, loading }) {
           <Icon name="arrowLeft" size={13} color="#e6b98c" strokeWidth={2} />
         </button>
         <div style={{
-          fontFamily: "'Instrument Serif', serif",
-          fontSize: "24px",
-          fontStyle: "italic",
-          color: "#f5dcb8",
-          textShadow: "0 1px 6px rgba(0,0,0,0.4)"
+          display: "flex", flexDirection: "column", alignItems: "center",
+          textAlign: "center", lineHeight: 1.15, minWidth: 0, padding: "0 6px",
         }}>
-          World Map{zoom !== 1 ? ` · ${(zoom * 100).toFixed(0)}%` : ""}
+          <div style={{
+            fontFamily: "'Instrument Serif', serif",
+            fontSize: "22px",
+            fontStyle: "italic",
+            color: "#f5dcb8",
+            textShadow: "0 1px 6px rgba(0,0,0,0.4)",
+            whiteSpace: "nowrap",
+          }}>
+            World Map{zoom !== 1 ? ` · ${(zoom * 100).toFixed(0)}%` : ""}
+          </div>
+          {/* Full date + time lives here — the header chip in the game view
+              is kept tight, so this is where the player sees the long form. */}
+          <div style={{
+            fontSize: "10px", letterSpacing: "0.14em",
+            textTransform: "uppercase", fontWeight: 600,
+            color: "rgba(215, 167, 111, 0.78)", marginTop: "3px",
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            maxWidth: "240px",
+          }}>
+            {formatDate(state.time)} · {formatTime(state.time)}
+          </div>
         </div>
         <button
           onClick={reset}

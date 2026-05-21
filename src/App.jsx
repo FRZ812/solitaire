@@ -530,7 +530,6 @@ export function Solitaire() {
         <CompactHeader
           state={state}
           onMap={() => setMapOpen(true)}
-          onCodex={() => setCodexOpen(true)}
           onMenu={() => setMenuOpen(true)}
         />
         <VitalsStrip character={state.character} />
