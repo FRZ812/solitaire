@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { Solitaire } from "./App.jsx";
 import { InstallPill } from "./components/InstallPill.jsx";
+import { PwaDiagnostics } from "./components/PwaDiagnostics.jsx";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <>
@@ -10,6 +11,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(
         Chrome has fired beforeinstallprompt. position: fixed so it floats
         over whatever screen is active. */}
     <InstallPill />
+    {/* In-page diagnostic panel. Visit /#pwa on the phone to see why
+        Chrome isn't classifying the site as installable. */}
+    <PwaDiagnostics />
   </>
 );
 
