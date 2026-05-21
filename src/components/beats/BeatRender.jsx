@@ -3,13 +3,14 @@ import { Icon } from "../Icon.jsx";
 import { Panel } from "../primitives.jsx";
 import { colors, alert, shadow, radius, fonts, metaStyle } from "../tokens.js";
 
-// Collapsible thinking trace beneath a narration beat. Default-closed —
-// the live-stream thinking is shown separately while the response is in
-// flight (see LiveThinking in primitives).
+// Collapsible thinking trace for a narration beat. Rendered at the TOP of
+// the beat (before the prose) so its position matches where LiveThinking
+// sat while the response was streaming — no jump from top to bottom once
+// the answer lands. Default-closed.
 function Thinking({ text }) {
   if (!text) return null;
   return (
-    <details style={{ marginTop: "10px" }} className="fade-in">
+    <details style={{ marginBottom: "10px" }} className="fade-in">
       <summary style={{
         ...metaStyle,
         color: "rgba(215, 167, 111, 0.65)",
@@ -24,7 +25,7 @@ function Thinking({ text }) {
         backgroundColor: "rgba(10, 15, 15, 0.45)",
         border: `1px solid rgba(215, 167, 111, 0.12)`,
         borderRadius: radius.panelCompact,
-        fontSize: "12px", lineHeight: 1.5,
+        fontSize: "11px", lineHeight: 1.5,
         color: "rgba(237, 228, 208, 0.8)",
         fontStyle: "italic",
         fontFamily: fonts.serif,
@@ -41,6 +42,7 @@ export function BeatRender({ beat }) {
     case "narration":
       return (
         <Panel>
+          <Thinking text={beat.thinking} />
           {beat.timeStamp && (
             <div style={{ ...metaStyle, color: "rgba(215, 167, 111, 0.45)", marginBottom: "7px" }}>
               {beat.timeStamp}
@@ -49,15 +51,14 @@ export function BeatRender({ beat }) {
           <div style={{
             fontFamily: fonts.serif,
             fontStyle: "italic",
-            fontSize: "18px",
-            lineHeight: "1.48",
+            fontSize: "16px",
+            lineHeight: "1.46",
             color: colors.parchment,
             whiteSpace: "pre-wrap",
             textShadow: "0 2px 10px rgba(0,0,0,0.24)",
           }}>
             {beat.content}
           </div>
-          <Thinking text={beat.thinking} />
         </Panel>
       );
 
@@ -74,7 +75,7 @@ export function BeatRender({ beat }) {
             boxShadow: shadow.cardDeep,
           }}>
             <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginBottom: "4px" }}>You</div>
-            <div style={{ fontSize: "14px", lineHeight: 1.45, color: colors.parchment }}>{beat.content}</div>
+            <div style={{ fontSize: "13px", lineHeight: 1.45, color: colors.parchment }}>{beat.content}</div>
           </div>
         </div>
       );
@@ -161,7 +162,7 @@ export function BeatRender({ beat }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ ...metaStyle, color: colors.parchmentMuted, marginBottom: "3px" }}>{beat.name}</div>
               <div style={{
-                fontSize: "17px",
+                fontSize: "15px",
                 lineHeight: 1.42,
                 color: colors.parchment,
                 fontStyle: "italic",
