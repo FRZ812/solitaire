@@ -17,15 +17,14 @@ const ICONS = {
   arrowUp: <><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></>,
   globe: <><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></>,
   zoomOut: <><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></>,
-  // Needs glyphs — small enough to live inside a 32-36px radial meter.
+  // Needs glyphs — small enough to live inside a compact radial meter.
   droplet: <path d="M12 2.5c-3.5 5-5.5 8-5.5 11a5.5 5.5 0 1 0 11 0c0-3-2-6-5.5-11Z" />,
   moon:    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />,
-  wheat: (
+  // Chicken drumstick (Lucide). Reads instantly as "food/hunger".
+  drumstick: (
     <>
-      <path d="M12 22V8" />
-      <path d="M8 10l4-4 4 4" />
-      <path d="M7 14l5-5 5 5" />
-      <path d="M6 18l6-6 6 6" />
+      <path d="M15.45 15.4c-2.13.65-4.3.32-5.7-1.1-2.29-2.27-1.76-6.5 1.17-9.42 2.93-2.93 7.15-3.46 9.43-1.18 1.41 1.41 1.74 3.57 1.1 5.71-1.4-.51-3.26-.02-4.64 1.36-1.38 1.38-1.87 3.23-1.36 4.63z" />
+      <path d="m11.25 15.6-2.16 2.16a2.5 2.5 0 1 1-4.56 1.73 2.49 2.49 0 0 1-1.41-4.24 2.5 2.5 0 0 1 3.14-.32l2.16-2.16" />
     </>
   ),
   woodenBird: (

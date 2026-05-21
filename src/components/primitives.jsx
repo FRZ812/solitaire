@@ -165,8 +165,8 @@ export function VitalsStrip({ character }) {
   return (
     <div style={{
       margin: "0 12px",
-      padding: "10px 12px",
-      display: "flex", flexDirection: "column", gap: "8px",
+      padding: "6px 10px",
+      display: "flex", flexDirection: "column", gap: "5px",
       backgroundColor: "rgba(20, 29, 29, 0.58)",
       border: `1px solid rgba(215, 167, 111, 0.18)`,
       borderRadius: radius.control,
@@ -196,7 +196,7 @@ export function VitalsStrip({ character }) {
           ariaLabel={`Resolve ${character.resolve} of ${resMax}`}
         />
         <RadialMeter
-          iconName="wheat"
+          iconName="drumstick"
           value={needs.hunger} max={100}
           label={Math.round(needs.hunger)}
           ariaLabel={`Hunger ${Math.round(needs.hunger)} of 100`}
@@ -247,15 +247,15 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
     pct <= 30 ? "#f5b97a" :
     colors.gold;
 
-  // Geometry: 36×36 box, ring radius 15, stroke 3. Circumference = 2πr.
-  const SIZE = 36;
-  const R = 15;
+  // Geometry: 28×28 box, ring radius 12, stroke 2.5. Circumference = 2πr.
+  const SIZE = 28;
+  const R = 12;
   const C = 2 * Math.PI * R;
   const dashOffset = C * (1 - pct / 100);
 
   return (
     <div
-      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", minWidth: 0 }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", minWidth: 0 }}
       title={ariaLabel}
       aria-label={ariaLabel}
     >
@@ -266,14 +266,14 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
         >
           {/* faint background ring */}
           <circle cx={SIZE/2} cy={SIZE/2} r={R}
-                  fill="none" stroke="rgba(215, 167, 111, 0.14)" strokeWidth="3" />
+                  fill="none" stroke="rgba(215, 167, 111, 0.14)" strokeWidth="2.5" />
           {/* progress arc */}
           <circle cx={SIZE/2} cy={SIZE/2} r={R}
-                  fill="none" stroke={color} strokeWidth="3" strokeLinecap="round"
+                  fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"
                   strokeDasharray={C} strokeDashoffset={dashOffset}
                   style={{
                     transition: "stroke-dashoffset 0.4s cubic-bezier(0.16,1,0.3,1), stroke 0.2s",
-                    filter: `drop-shadow(0 0 4px ${color}66)`,
+                    filter: `drop-shadow(0 0 3px ${color}66)`,
                   }} />
         </svg>
         <div style={{
@@ -281,11 +281,11 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
           display: "flex", alignItems: "center", justifyContent: "center",
           pointerEvents: "none",
         }}>
-          <Icon name={iconName} size={14} color={color} fill={iconFill || "none"} strokeWidth={1.8} />
+          <Icon name={iconName} size={11} color={color} fill={iconFill || "none"} strokeWidth={1.8} />
         </div>
       </div>
       <span style={{
-        fontSize: "9px", letterSpacing: "0.06em", color,
+        fontSize: "8px", letterSpacing: "0.04em", color,
         fontWeight: 700, lineHeight: 1, whiteSpace: "nowrap",
       }}>{label}</span>
     </div>

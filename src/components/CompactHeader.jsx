@@ -21,14 +21,14 @@ export function CompactHeader({ state, onMap, onMenu }) {
 
   return (
     <div style={{
-      padding: "calc(env(safe-area-inset-top, 0px) + 12px) 12px 8px 14px",
-      display: "flex", alignItems: "center", gap: "10px",
+      padding: "calc(env(safe-area-inset-top, 0px) + 8px) 12px 6px 12px",
+      display: "flex", alignItems: "center", gap: "9px",
       color: colors.parchment,
     }}>
       {/* Date / time block — kept compact (full date is on the map). */}
       <div style={{
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        width: "60px", height: "44px",
+        width: "54px", height: "36px",
         backgroundColor: "rgba(20, 29, 29, 0.6)",
         border: `1px solid rgba(215, 167, 111, 0.28)`,
         borderRadius: radius.panelCompact,
@@ -39,13 +39,13 @@ export function CompactHeader({ state, onMap, onMenu }) {
         lineHeight: 1,
       }} title={`${date.dayOfMonth} ${date.monthName}, ${date.year}`}>
         <span style={{
-          ...metaStyle, fontSize: "9px", letterSpacing: "0.12em",
+          ...metaStyle, fontSize: "8px", letterSpacing: "0.1em",
           color: colors.gold, textShadow: "0 0 4px rgba(215, 167, 111, 0.2)",
           whiteSpace: "nowrap",
         }}>{date.dayOfMonth} {monthAbbr}</span>
         <span style={{
           fontFamily: fonts.serif, fontStyle: "italic",
-          fontSize: "16px", color: colors.parchment, marginTop: "3px",
+          fontSize: "14px", color: colors.parchment, marginTop: "2px",
         }}>{time}</span>
       </div>
 
@@ -53,15 +53,15 @@ export function CompactHeader({ state, onMap, onMenu }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontFamily: fonts.serif, fontStyle: "italic",
-          fontSize: "22px", color: colors.parchment, lineHeight: "1.05",
+          fontSize: "19px", color: colors.parchment, lineHeight: "1.05",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           textShadow: "0 2px 10px rgba(0,0,0,0.8)",
         }}>
           {sceneTitle}
         </div>
         <div style={{
-          ...metaStyle, fontSize: "9px", letterSpacing: "0.14em",
-          color: "rgba(237, 228, 208, 0.72)", marginTop: "4px",
+          ...metaStyle, fontSize: "8px", letterSpacing: "0.14em",
+          color: "rgba(237, 228, 208, 0.72)", marginTop: "3px",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           textShadow: "0 1px 6px rgba(0,0,0,0.8)",
         }}>
@@ -71,8 +71,8 @@ export function CompactHeader({ state, onMap, onMenu }) {
 
       {/* Action buttons — codex dropped (it's reachable from the menu sheet) */}
       <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-        <button onClick={onMap}  style={headerButtonStyle} aria-label="Map">  <Icon name="map"        size={17} color={colors.gold} strokeWidth={1.8} /></button>
-        <button onClick={onMenu} style={headerButtonStyle} aria-label="Menu"> <Icon name="woodenBird" size={17} color={colors.gold} strokeWidth={1.8} /></button>
+        <button onClick={onMap}  style={headerButtonStyle} aria-label="Map">  <Icon name="map"        size={16} color={colors.gold} strokeWidth={1.8} /></button>
+        <button onClick={onMenu} style={headerButtonStyle} aria-label="Menu"> <Icon name="woodenBird" size={16} color={colors.gold} strokeWidth={1.8} /></button>
       </div>
     </div>
   );
