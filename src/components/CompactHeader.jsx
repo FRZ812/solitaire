@@ -72,7 +72,7 @@ export function CompactHeader({ state, onMap, onMenu }) {
       {/* Action buttons — codex dropped (it's reachable from the menu sheet) */}
       <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
         <button onClick={onMap}  style={headerButtonStyle} aria-label="Map">  <Icon name="map"        size={16} color={colors.gold} strokeWidth={1.8} /></button>
-        <button onClick={onMenu} style={headerButtonStyle} aria-label="Menu"> <Icon name="woodenBird" size={16} color={colors.gold} strokeWidth={1.8} /></button>
+        <button onClick={onMenu} style={headerButtonStyle} aria-label="Character"> <Icon name="user" size={16} color={colors.gold} strokeWidth={1.8} /></button>
       </div>
     </div>
   );

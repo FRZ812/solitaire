@@ -75,7 +75,7 @@ export function AuthScreen() {
             fontSize: "15px", color: "rgba(237, 228, 208, 0.72)",
             margin: "0 auto", lineHeight: 1.5, maxWidth: "290px",
           }}>
-            "Rain whispers against warped shutters. The hooded figure in the corner has been watching you for the better part of an hour."
+            A lone traveller, an open road, and a world that answers back — and remembers.
           </p>
         </div>
 
