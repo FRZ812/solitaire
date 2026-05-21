@@ -3,6 +3,14 @@
 // can be surfaced clearly.
 import { supabase } from "./supabase-client.js";
 
+// `window.location.origin` is scheme + host only — it strips the path. On
+// GitHub Pages the app lives at `<origin>/solitaire/`, so we must rebuild
+// the deployed URL ourselves. Vite's `import.meta.env.BASE_URL` is "/" in
+// dev and "/solitaire/" in the production web build (set via vite.config.js).
+function appUrl() {
+  return `${window.location.origin}${import.meta.env.BASE_URL}`;
+}
+
 export async function getCurrentUser() {
   const { data: { session } } = await supabase.auth.getSession();
   return session?.user ?? null;
@@ -51,7 +59,7 @@ export async function signInAnonymously() {
 export async function signInWithGoogle() {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: window.location.origin },
+    options: { redirectTo: appUrl() },
   });
   if (error) {
     if (/provider|disabled|google/i.test(error.message)) {
@@ -66,7 +74,7 @@ export async function signInWithGoogle() {
 export async function signInWithEmail(email) {
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: window.location.origin },
+    options: { emailRedirectTo: appUrl() },
   });
   if (error) throw error;
 }
