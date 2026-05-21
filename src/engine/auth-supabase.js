@@ -43,6 +43,26 @@ export async function signInAnonymously() {
   }
 }
 
+// Starts Google OAuth. The supabase-js call returns immediately and then
+// redirects the browser to Google's consent screen; on success Google
+// redirects back to `redirectTo`, supabase-js exchanges the code, and the
+// onAuthChange listener picks up the new session. No session is set here
+// synchronously.
+export async function signInWithGoogle() {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: window.location.origin },
+  });
+  if (error) {
+    if (/provider|disabled|google/i.test(error.message)) {
+      throw new Error(
+        "Google sign-in is not enabled on this project. Turn it on in Supabase: Auth → Sign In / Providers → Google (you need a Google Cloud OAuth Client ID + Secret)."
+      );
+    }
+    throw error;
+  }
+}
+
 export async function signInWithEmail(email) {
   const { error } = await supabase.auth.signInWithOtp({
     email,
