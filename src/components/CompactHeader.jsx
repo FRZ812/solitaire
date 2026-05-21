@@ -7,7 +7,7 @@ import { getTile, currentLocationName } from "../engine/world.js";
 import { getBiome } from "../data/biomes.js";
 import { formatTime, getCalendarDate } from "../engine/time.js";
 
-export function CompactHeader({ state, onMap, onCodex, onMenu }) {
+export function CompactHeader({ state, onMap, onMenu }) {
   const cur = state.world.currentTile;
   const t = getTile(state, cur.x, cur.y);
   const sceneTitle = currentLocationName(state);
@@ -15,6 +15,9 @@ export function CompactHeader({ state, onMap, onCodex, onMenu }) {
   const biome = getBiome(cur.x, cur.y);
   const time = formatTime(state.time);
   const date = getCalendarDate(state.time);
+  // Compact 3-letter month abbreviation for the header chip. The map view
+  // shows the full date + year — this stays tight so the scene title has room.
+  const monthAbbr = date.monthName.slice(0, 3);
 
   return (
     <div style={{
@@ -22,11 +25,10 @@ export function CompactHeader({ state, onMap, onCodex, onMenu }) {
       display: "flex", alignItems: "center", gap: "10px",
       color: colors.parchment,
     }}>
-      {/* Date / time block — day + month on top in gold, time underneath
-          (italic serif), with the year as a small tail. */}
+      {/* Date / time block — kept compact (full date is on the map). */}
       <div style={{
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        minWidth: "108px", padding: "4px 10px", height: "44px",
+        width: "60px", height: "44px",
         backgroundColor: "rgba(20, 29, 29, 0.6)",
         border: `1px solid rgba(215, 167, 111, 0.28)`,
         borderRadius: radius.panelCompact,
@@ -35,21 +37,16 @@ export function CompactHeader({ state, onMap, onCodex, onMenu }) {
         WebkitBackdropFilter: "blur(14px)",
         boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.02)",
         lineHeight: 1,
-      }}>
+      }} title={`${date.dayOfMonth} ${date.monthName}, ${date.year}`}>
         <span style={{
-          ...metaStyle,
-          fontSize: "9px", letterSpacing: "0.12em", color: colors.gold,
-          textShadow: "0 0 4px rgba(215, 167, 111, 0.2)",
+          ...metaStyle, fontSize: "9px", letterSpacing: "0.12em",
+          color: colors.gold, textShadow: "0 0 4px rgba(215, 167, 111, 0.2)",
           whiteSpace: "nowrap",
-        }} title={`${date.dayOfMonth} ${date.monthName}, Year ${date.year}`}>
-          {date.dayOfMonth} {date.monthName}
-        </span>
+        }}>{date.dayOfMonth} {monthAbbr}</span>
         <span style={{
           fontFamily: fonts.serif, fontStyle: "italic",
           fontSize: "16px", color: colors.parchment, marginTop: "3px",
-        }}>
-          {time} <span style={{ fontSize: "10px", fontStyle: "normal", color: "rgba(237, 228, 208, 0.5)", letterSpacing: "0.05em" }}>· {date.year}</span>
-        </span>
+        }}>{time}</span>
       </div>
 
       {/* Scene title */}
@@ -72,11 +69,10 @@ export function CompactHeader({ state, onMap, onCodex, onMenu }) {
         </div>
       </div>
 
-      {/* Action buttons */}
+      {/* Action buttons — codex dropped (it's reachable from the menu sheet) */}
       <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-        <button onClick={onMap}   style={headerButtonStyle} aria-label="Map">  <Icon name="map"  size={17} color={colors.gold} strokeWidth={1.8} /></button>
-        <button onClick={onCodex} style={headerButtonStyle} aria-label="Codex"><Icon name="book" size={17} color={colors.gold} strokeWidth={1.8} /></button>
-        <button onClick={onMenu}  style={headerButtonStyle} aria-label="Menu"> <Icon name="woodenBird" size={17} color={colors.gold} strokeWidth={1.8} /></button>
+        <button onClick={onMap}  style={headerButtonStyle} aria-label="Map">  <Icon name="map"        size={17} color={colors.gold} strokeWidth={1.8} /></button>
+        <button onClick={onMenu} style={headerButtonStyle} aria-label="Menu"> <Icon name="woodenBird" size={17} color={colors.gold} strokeWidth={1.8} /></button>
       </div>
     </div>
   );

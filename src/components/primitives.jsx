@@ -159,27 +159,79 @@ export function ConditionPill({ label }) {
 }
 
 export function VitalsStrip({ character }) {
+  const needs = character.needs || { hunger: 100, thirst: 100, sleep: 100 };
   return (
     <div style={{
       margin: "0 12px",
       padding: "10px 14px",
-      display: "flex", justifyContent: "space-between", alignItems: "center",
+      display: "flex", flexDirection: "column", gap: "8px",
       backgroundColor: "rgba(20, 29, 29, 0.58)",
       border: `1px solid rgba(215, 167, 111, 0.18)`,
       borderRadius: radius.control,
       fontSize: "11px", fontWeight: 600,
-      color: colors.parchment, gap: "8px", flexWrap: "wrap",
+      color: colors.parchment,
       ...glass,
       boxShadow: `0 10px 28px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.02)`,
     }}>
-      <Vital icon={<Icon name="heart" size={12} color={colors.gold} strokeWidth={2} fill={colors.gold} />} label="Vit" value={`${Math.round(character.vitality)}/${character.vitalityMax}`} />
-      <Vital icon={<Icon name="flame" size={12} color={colors.gold} strokeWidth={2} />} label="Res" value={`${character.resolve}/${character.resolveMax}`} />
-      <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-        {character.conditions.length === 0 ? (
-          <span style={{ fontSize: "9px", color: "rgba(237, 228, 208, 0.36)", letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 700 }}>Clear</span>
-        ) : (
-          character.conditions.map((c) => <ConditionPill key={c} label={c} />)
-        )}
+      {/* Row 1: vital pools + condition pills. */}
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        gap: "8px", flexWrap: "wrap",
+      }}>
+        <Vital icon={<Icon name="heart" size={12} color={colors.gold} strokeWidth={2} fill={colors.gold} />} label="Vit" value={`${Math.round(character.vitality)}/${character.vitalityMax}`} />
+        <Vital icon={<Icon name="flame" size={12} color={colors.gold} strokeWidth={2} />} label="Res" value={`${character.resolve}/${character.resolveMax}`} />
+        <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+          {character.conditions.length === 0 ? (
+            <span style={{ fontSize: "9px", color: "rgba(237, 228, 208, 0.36)", letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 700 }}>Clear</span>
+          ) : (
+            character.conditions.map((c) => <ConditionPill key={c} label={c} />)
+          )}
+        </div>
+      </div>
+      {/* Row 2: hunger / thirst / sleep as compact bars. Engine thresholds
+          (engine/needs.js): ≤30 = warning, ≤10 = critical. */}
+      <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+        <MiniNeedBar label="Hgr" value={needs.hunger} ariaLabel={`Hunger ${Math.round(needs.hunger)} of 100`} />
+        <MiniNeedBar label="Thr" value={needs.thirst} ariaLabel={`Thirst ${Math.round(needs.thirst)} of 100`} />
+        <MiniNeedBar label="Slp" value={needs.sleep}  ariaLabel={`Sleep ${Math.round(needs.sleep)} of 100`} />
+      </div>
+    </div>
+  );
+}
+
+// Compact one-line needs meter for the HUD. The fuller `NeedBar` further
+// down is used in the character panel and renders the numeric value too;
+// MiniNeedBar drops the number so three of them fit comfortably on a
+// single row of the VitalsStrip on a phone.
+function MiniNeedBar({ label, value, ariaLabel }) {
+  const pct = Math.max(0, Math.min(100, value));
+  const color =
+    pct <= 10 ? "#fca5a5" :   // critical (Starving / Parched / Exhausted)
+    pct <= 30 ? "#f5b97a" :   // low      (Hungry / Thirsty / Tired)
+    colors.gold;              // ok
+  return (
+    <div
+      style={{ flex: 1, display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}
+      title={ariaLabel}
+      aria-label={ariaLabel}
+    >
+      <span style={{
+        fontSize: "9px", letterSpacing: "0.14em", textTransform: "uppercase",
+        color: "rgba(237, 228, 208, 0.55)", fontWeight: 700,
+        flexShrink: 0, minWidth: "20px",
+      }}>{label}</span>
+      <div style={{
+        flex: 1, height: "5px", borderRadius: "999px",
+        backgroundColor: "rgba(10, 15, 14, 0.6)",
+        border: "1px solid rgba(215, 167, 111, 0.10)",
+        overflow: "hidden",
+      }}>
+        <div style={{
+          height: "100%", width: `${pct}%`,
+          backgroundColor: color,
+          boxShadow: `0 0 6px ${color}55`,
+          transition: "width 0.3s ease-out, background-color 0.2s",
+        }} />
       </div>
     </div>
   );
