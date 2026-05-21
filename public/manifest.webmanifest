@@ -1,0 +1,23 @@
+{
+  "name": "Solitaire",
+  "short_name": "Solitaire",
+  "description": "A solo RPG narrative engine. The world is waiting.",
+  "start_url": "/",
+  "scope": "/",
+  "id": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
+  "orientation": "portrait",
+  "background_color": "#FBF8F2",
+  "theme_color": "#FBF8F2",
+  "lang": "en",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
