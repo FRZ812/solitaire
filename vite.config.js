@@ -7,8 +7,15 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 // `web` produces a normal multi-file Vite build that talks to Supabase.
 const MODE = process.env.SOLITAIRE_MODE === "web" ? "web" : "artifact";
 
+// GitHub Pages serves the deployed site under https://<user>.github.io/solitaire/,
+// so the web build needs its asset URLs scoped to that subpath. Override with
+// SOLITAIRE_BASE if the site moves (custom domain, different repo name, etc.).
+// Artifact mode inlines everything, so its base is irrelevant.
+const WEB_BASE = process.env.SOLITAIRE_BASE || "/solitaire/";
+
 export default defineConfig({
   plugins: [react(), ...(MODE === "artifact" ? [viteSingleFile()] : [])],
+  base: MODE === "web" ? WEB_BASE : "/",
   define: {
     __SOLITAIRE_MODE__: JSON.stringify(MODE),
   },
