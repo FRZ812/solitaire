@@ -1,8 +1,17 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { Solitaire } from "./App.jsx";
+import { InstallPill } from "./components/InstallPill.jsx";
 
-ReactDOM.createRoot(document.getElementById("root")).render(<Solitaire />);
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <>
+    <Solitaire />
+    {/* Floating PWA install pill — renders only in web mode and only when
+        Chrome has fired beforeinstallprompt. position: fixed so it floats
+        over whatever screen is active. */}
+    <InstallPill />
+  </>
+);
 
 // Register the PWA service worker only in the web build. The artifact build
 // runs inside a Claude artifact pane with no static-file serving, so /sw.js
