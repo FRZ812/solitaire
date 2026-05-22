@@ -12,12 +12,12 @@ import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, turnForBeatIndex, editBeat } from "./engine/timeline.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
-import { buyGood, sellGood, formatCopper } from "./engine/economy.js";
+import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { buildingForTile } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
-import { tierLabel } from "./data/tiers.js";
+import { tierLabel, tierOrder } from "./data/tiers.js";
 import { rollShopStock } from "./engine/town-gen.js";
 import {
   getTile, currentLocationName,
@@ -47,6 +47,7 @@ import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
 import { CampaignsList } from "./components/CampaignsList.jsx";
+import { GameOverScreen } from "./components/GameOverScreen.jsx";
 import { InitialBackdrop } from "./components/InitialBackdrop.jsx";
 import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 
@@ -86,6 +87,21 @@ function groupFlavor(enemies) {
   if (enemies.length === 1) return enemies[0].name;
   const base = enemies[0].name.replace(/\s+\d+$/, "");
   return `${enemies.length} ${base}s`;
+}
+
+// An "important" fight where death is allowed to be real and final: the toughest
+// foe is legendary-tier or above (the Demon King, a fabled beast, etc.). Ordinary
+// bandits/goblins never kill — they rob, abduct, or enslave instead.
+function isEpicEncounter(cs) {
+  return (cs.enemies || []).some((e) => tierOrder(e.tier) >= tierOrder("legendary"));
+}
+
+// Snapshot a pack as { itemId: quantity } so two snapshots can be diffed into a
+// bought/sold list (used to flavor the trader's parting reaction).
+function invQtyMap(carried) {
+  const m = {};
+  for (const c of carried || []) m[c.itemId] = (m[c.itemId] || 0) + c.quantity;
+  return m;
 }
 
 // Apply a travel narration to `base`: clamp the journey time, move the player to
@@ -211,6 +227,9 @@ export function Solitaire() {
   const [pendingLoot, setPendingLoot] = useState(null); // spoils to deliberately Search
   const [pendingEngage, setPendingEngage] = useState(null); // narrator start_combat awaiting the player's go-ahead
   const combatCtxRef = useRef(null);
+  // Pack + purse snapshot taken when a trader counter opens, so leaving it can
+  // diff what was bought/sold and let the keeper react to the actual haul.
+  const tradeStartRef = useRef(null);
 
   // Long-press a narration/dialogue bubble to Rewrite / Edit / Rewind it. The
   // per-turn timeline (state.turns + state.pools) is saved with the campaign, so
@@ -613,7 +632,60 @@ export function Solitaire() {
     setShopView("trade");
     // Fresh refund slate when stepping into a different shop than last time.
     setReceipts((r) => (r.tileKey === key ? r : { tileKey: key, items: {} }));
+    const inv = state.character.inventory;
+    tradeStartRef.current = { qty: invQtyMap(inv.carried), copper: coinsToCopper(inv.coins) };
     setShopTile({ x: state.world.currentTile.x, y: state.world.currentTile.y });
+  }
+
+  // Leaving the counter. If anything was actually traded, the keeper reacts to the
+  // whole haul in one recorded (steerable) beat — diffed from the open-time
+  // snapshot so a bulk buy/sell gets a single, specific comment.
+  async function closeShop() {
+    const start = tradeStartRef.current;
+    tradeStartRef.current = null;
+    const here = shopTile;
+    setShopTile(null);
+    if (!start || !here || loading) return;
+    const tile = getTile(state, here.x, here.y);
+    const building = buildingForTile(tile);
+    if (!building) return;
+
+    const codex = state.world.codex;
+    const endQty = invQtyMap(state.character.inventory.carried);
+    const ids = new Set([...Object.keys(start.qty), ...Object.keys(endQty)]);
+    const bought = [], sold = [];
+    for (const id of ids) {
+      const d = (endQty[id] || 0) - (start.qty[id] || 0);
+      const name = codex.items[id]?.name || id;
+      if (d > 0) bought.push(`${d}× ${name}`);
+      else if (d < 0) sold.push(`${-d}× ${name}`);
+    }
+    if (bought.length === 0 && sold.length === 0) return; // browsed, traded nothing
+
+    const spent = start.copper - coinsToCopper(state.character.inventory.coins);
+    const place = tile.poi?.name || building.label;
+    const ledger = [
+      bought.length ? `Bought: ${bought.join(", ")}` : "",
+      sold.length ? `Sold: ${sold.join(", ")}` : "",
+      spent > 0 ? `Net paid ${formatCopper(spent)}` : spent < 0 ? `Net earned ${formatCopper(-spent)}` : "",
+    ].filter(Boolean).join(". ");
+
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You settle up with ${building.keeper} at ${place}.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[TRADE] You have just finished trading with ${building.keeper} at ${place} (${building.label}). ${ledger}. Narrate a SHORT closing exchange (1–3 sentences, you may include a line of the keeper's dialogue) in which ${building.keeper} reacts to THIS specific haul: name an item or two, read what the player seems to be planning or doing from what they took or unloaded, and respond in character — offer fitting help (e.g. a healer asking if you need a hand setting that splint), a knowing remark about the trade (a doctor? an alchemist? or did you rob an apothecary?), gratitude, or wary curiosity. The coin is already settled at the counter, so do NOT tally or change it, and do not invent items beyond those listed.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
   }
 
   // Forge an item at a resolved tier (the minigame decided the grade). Pure
@@ -683,6 +755,7 @@ export function Solitaire() {
     if (loading || !shopTile) return;
     const tile = getTile(state, shopTile.x, shopTile.y);
     const building = buildingForTile(tile);
+    tradeStartRef.current = null; // the conversation supersedes a parting trade reaction
     if (!building) { setShopTile(null); return; }
     setShopTile(null);
     setError(null);
@@ -861,11 +934,14 @@ export function Solitaire() {
     const cs = combat;
     const ctx = combatCtxRef.current || {};
     const next = applyCombatResult(state, cs, ctx);
+    // A defeat by a legendary-tier+ foe is a real, final death; any other defeat is
+    // a survivable scenario (robbed, abducted, enslaved…).
+    const epicDeath = cs.phase === "defeat" && isEpicEncounter(cs) && (cs.lethal || cs.escalated);
     setState(next);
     setCombat(null);
     combatCtxRef.current = null;
-    // Spoils aren't auto-taken — offer a deliberate Search the fallen.
-    if (next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: cs.lethal });
+    // Spoils aren't auto-taken — offer a deliberate Search the fallen (never when dead).
+    if (!epicDeath && next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: cs.lethal });
 
     // The story always continues from the result, so the player can react.
     setError(null);
@@ -873,9 +949,11 @@ export function Solitaire() {
     try {
       const place = currentLocationName(next);
       let msg;
-      if (cs.phase === "defeat") {
+      if (epicDeath) {
+        msg = `[DEATH] You have fallen — slain by ${ctx.flavor || "a foe far beyond your strength"} at ${place}. This is the end of ${next.character.name || "the Wanderer"}'s story, and it must land like one: narrate a single, unflinching final passage — the killing blow given its full weight, what you did with your last breath, and the silence after. Make it heroic, terrible, and earned. This death is PERMANENT: offer no rescue, no miraculous reprieve, no "but somehow you survive." End the tale.`;
+      } else if (cs.phase === "defeat") {
         const wasLethal = cs.lethal || cs.escalated;
-        msg = `[DEFEATED] You were beaten ${wasLethal ? "down with weapons drawn" : "senseless in a bare-knuckle brawl"} by ${ctx.flavor || "your foe"} at ${place} and lost consciousness — you are NOT dead. ${wasLethal ? "This was a bloody, weapons-out fight, so the aftermath can be harsher (grave wounds, captured, left for dead but breathing)." : "It was only fists, so this is a humbling, not a killing — expect to be thrown out, robbed of loose coin, or hauled off to sober up."} Decide a fitting non-lethal aftermath for who beat you and where: robbed (inventory_changes), hauled to the watch/jailed, thrown out, or captured and moved (tile_move). Apply wounds as conditions and location_update if the place changed. The player wakes to face what's left; death-and-reload is not the goal.`;
+        msg = `[DEFEATED] You were beaten ${wasLethal ? "down with weapons drawn" : "senseless in a bare-knuckle brawl"} by ${ctx.flavor || "your foe"} at ${place} and lost consciousness — you are NOT dead, and this is not where your story ends. Choose a fate that fits WHO beat you and WHERE, then narrate the player waking to face it: robbed of coin and goods (inventory_changes), beaten and thrown out, hauled to the watch or thrown in a cell, or abducted and moved elsewhere (tile_move) — dragged off by goblins to their warren, pressed into a labor gang or a ship's galley, sold to slavers, held for ransom, or left for dead in a ditch but breathing. ${wasLethal ? "Weapons were out, so the aftermath can be brutal — grave wounds, a maiming, waking somewhere far worse." : "It was only fists, so keep it a humbling, not a maiming."} Apply wounds as conditions, location_update if the place changed, and inventory_changes for what was taken. Death-and-reload is not the goal; the player survives to claw their way back.`;
       } else {
         const result = cs.phase === "victory" ? "You won — every foe is slain or down."
           : cs.phase === "resolved" ? "The fight ended without a slaughter — see the report for each foe's fate (yielded / fled / knocked out)."
@@ -884,8 +962,17 @@ export function Solitaire() {
       }
       const beat = await callNarrator(next, msg);
       const after = applyBeat(next, beat);
-      setState(recordTurn(next, msg, after));
-      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+      if (epicDeath) {
+        const ended = {
+          cause: "fallen in battle",
+          foe: ctx.flavor || "a foe beyond their strength",
+          place, day: after.time?.day || null,
+        };
+        setState({ ...recordTurn(next, msg, after), ended });
+      } else {
+        setState(recordTurn(next, msg, after));
+        if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+      }
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -955,6 +1042,12 @@ export function Solitaire() {
         error={campaignError}
       />
     );
+  }
+
+  // The run has ended — the player fell in an epic encounter. A memorial replaces
+  // the game; the only way on is back to the campaigns list.
+  if (state.ended) {
+    return <GameOverScreen state={state} onExit={handleBackToCampaigns} />;
   }
 
   // A wired town building (poi.service) at the player's current tile, if any —
@@ -1136,7 +1229,7 @@ export function Solitaire() {
               onApprentice={handleApprentice}
               onForge={handleForge}
               onBack={() => setShopView("trade")}
-              onClose={() => setShopTile(null)}
+              onClose={closeShop}
               loading={loading}
             />
           );
@@ -1150,7 +1243,7 @@ export function Solitaire() {
               tileKey={key}
               stock={stock}
               receipts={receipts.tileKey === key ? receipts.items : {}}
-              onClose={() => setShopTile(null)}
+              onClose={closeShop}
               onBuy={handleBuy}
               onSell={handleSell}
               onTalk={handleShopTalk}
