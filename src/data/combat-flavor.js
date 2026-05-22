@@ -10,16 +10,20 @@
 //   canYield / canFlee / canParley — which resolutions are even possible
 //   proud    — resents being bullied (control-spam); may demand a fair fight
 //   fleeAt   — beasts only: HP% under which they bolt
+//   yieldHp  — HP% at/under which a thinking foe, when losing or hopeless, will
+//              break (flee/yield). Brave folk fight to near-death (low value);
+//              the timid — a craven, a frightened noble — break early (high
+//              value). People don't surrender just because a fight is uncertain.
 
 export const DEMEANOR_CONFIG = {
-  feral:     { morale: 60,  breakAt: -1, fleeAt: 0.22, prefer: "flee",  canYield: false, canFlee: true,  canParley: false, proud: false },
-  cowardly:  { morale: 45,  breakAt: 42, prefer: "flee",  canYield: true,  canFlee: true,  canParley: true,  proud: false },
-  wary:      { morale: 60,  breakAt: 30, prefer: "either",canYield: true,  canFlee: true,  canParley: true,  proud: false },
-  fierce:    { morale: 72,  breakAt: 18, prefer: "yield", canYield: true,  canFlee: true,  canParley: true,  proud: true  },
-  brutish:   { morale: 65,  breakAt: 24, prefer: "flee",  canYield: false, canFlee: true,  canParley: true,  proud: false },
-  honorable: { morale: 78,  breakAt: 26, prefer: "yield", canYield: true,  canFlee: false, canParley: true,  proud: true  },
-  fanatic:   { morale: 100, breakAt: -1, prefer: "none",  canYield: false, canFlee: false, canParley: false, proud: false },
-  mindless:  { morale: 100, breakAt: -1, prefer: "none",  canYield: false, canFlee: false, canParley: false, proud: false },
+  feral:     { morale: 60,  breakAt: -1, fleeAt: 0.22, yieldHp: 0.22, prefer: "flee",  canYield: false, canFlee: true,  canParley: false, proud: false },
+  cowardly:  { morale: 45,  breakAt: 42, yieldHp: 0.55, prefer: "flee",  canYield: true,  canFlee: true,  canParley: true,  proud: false },
+  wary:      { morale: 60,  breakAt: 30, yieldHp: 0.30, prefer: "either",canYield: true,  canFlee: true,  canParley: true,  proud: false },
+  fierce:    { morale: 72,  breakAt: 18, yieldHp: 0.18, prefer: "yield", canYield: true,  canFlee: true,  canParley: true,  proud: true  },
+  brutish:   { morale: 65,  breakAt: 24, yieldHp: 0.20, prefer: "flee",  canYield: false, canFlee: true,  canParley: true,  proud: false },
+  honorable: { morale: 78,  breakAt: 26, yieldHp: 0.18, prefer: "yield", canYield: true,  canFlee: false, canParley: true,  proud: true  },
+  fanatic:   { morale: 100, breakAt: -1, yieldHp: 0,    prefer: "none",  canYield: false, canFlee: false, canParley: false, proud: false },
+  mindless:  { morale: 100, breakAt: -1, yieldHp: 0,    prefer: "none",  canYield: false, canFlee: false, canParley: false, proud: false },
 };
 
 export const DEMEANOR_LABEL = {

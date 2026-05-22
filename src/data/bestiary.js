@@ -166,6 +166,36 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
   };
 }
 
+// Turn a recruited companion (a full codex character) into an allied combatant
+// on the player's side — same derivation as enemyFromNPC, but tagged as an ally
+// and given a brave bearing (companions don't break and run; they fall fighting).
+export function allyFromCompanion(npc, codex, { tierId = "common" } = {}) {
+  const base = enemyFromNPC(npc, codex, { tierId });
+  // Companions' worn gear is descriptive (not codex items), so no weapon
+  // resolves — give a competent weapon scaled to their martial attribute.
+  if (!base.weapon || base.weapon.category === "unarmed") {
+    const a = npc.attributes || {};
+    const force = Math.max(a.body || 0, a.reflex || 0);
+    const m = tierMult(tierId);
+    base.weapon = {
+      min: Math.max(2, Math.round((2 + force * 0.4) * m)),
+      max: Math.max(4, Math.round((5 + force * 0.7) * m)),
+      type: "physical", pen: Math.floor((a.body || 0) / 4),
+      category: (a.reflex || 0) > (a.body || 0) ? "dagger" : "sword",
+    };
+  }
+  return {
+    ...base,
+    id: `ally-${npc.id}-${Math.random().toString(36).slice(2, 6)}`,
+    npcId: null,
+    companionId: npc.id,
+    side: "player",
+    demeanor: "fierce", morale: 100, moraleMax: 100,
+    health: base.maxHealth, // companions arrive fresh; we don't carry their wounds
+    combatState: undefined,
+  };
+}
+
 // Build a whole hostile group for a spawn kind. `power` (0..1) is the rollTier
 // luck (nudge toward the high end); `maxTier` caps the tier (a region's
 // enemyTier ceiling). `count` forces an exact group size (the narrator's roster

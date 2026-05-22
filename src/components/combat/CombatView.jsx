@@ -136,6 +136,37 @@ function EnemyCard({ enemy, selected, onSelect }) {
   );
 }
 
+// Allied companion card — read-only; they take their own AI turns.
+function AllyCard({ ally }) {
+  const dead = ally._dead || ally.resolved === "ko";
+  return (
+    <div style={{
+      flex: "1 1 120px", minWidth: 0, padding: "8px 10px", borderRadius: radius.panelCompact,
+      backgroundColor: dead ? "rgba(20,29,29,0.35)" : "rgba(24,40,30,0.5)",
+      border: `1px solid ${dead ? "rgba(215,167,111,0.15)" : "rgba(116,198,107,0.3)"}`,
+      opacity: dead ? 0.5 : 1,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+        <span style={{
+          fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px",
+          color: dead ? colors.parchmentMuted : "#bfe6b5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          textDecoration: ally._dead ? "line-through" : "none",
+        }}>{ally.name}</span>
+        <Icon name="users" size={11} color={dead ? colors.parchmentMuted : "#74c66b"} strokeWidth={1.8} />
+      </div>
+      {dead ? (
+        <div style={{ fontSize: "11px", fontStyle: "italic", color: colors.parchmentMuted }}>{ally._dead ? "Slain" : "Down"}</div>
+      ) : (
+        <>
+          <Bar value={ally.health} max={ally.maxHealth} color="linear-gradient(90deg,#4a7a44,#74c66b)" height={6} />
+          <div style={{ fontSize: "9px", color: colors.parchmentMuted, marginTop: "2px" }}>{Math.ceil(ally.health)}/{ally.maxHealth}</div>
+        </>
+      )}
+      <StatusRow statuses={ally.statuses} />
+    </div>
+  );
+}
+
 function AbilityButton({ entry, combat, onAct }) {
   const def = getAbilityDef(entry.id);
   if (!def) return null;
@@ -253,6 +284,13 @@ export function CombatView({ combat, onAct, onTalk, onEnvironment, onDraw, onSet
           <EnemyCard key={e.id} enemy={e} selected={combat.target === i} onSelect={() => onSetTarget(i)} />
         ))}
       </div>
+
+      {/* Allies — companions fighting at your side (they act on their own) */}
+      {combat.allies && combat.allies.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
+          {combat.allies.map((a) => <AllyCard key={a.id} ally={a} />)}
+        </div>
+      )}
 
       {/* Log */}
       <div ref={logRef} className="custom-scroll" style={{
