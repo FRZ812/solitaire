@@ -47,9 +47,13 @@ export function recruitOutlook(standing, choosiness = "mid") {
 }
 
 // Add a companion to the party from their template, no fee gate (the join was
-// won through conversation). Files the full person into the codex.
+// won through conversation). Files the full person into the codex the FIRST time;
+// on a re-recruit it keeps their existing entry so accumulated memories and bond
+// survive a parting and return — no re-introduction needed.
 export function addCompanionToParty(state, tmpl) {
   if (!tmpl || isRecruited(state, tmpl.id)) return state;
+  const existing = state.world.codex.characters?.[tmpl.id];
+  if (existing) return { ...state, party: [...(state.party || []), tmpl.id] };
   const entry = companionCodexEntry(tmpl);
   return {
     ...state,

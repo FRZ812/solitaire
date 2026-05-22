@@ -11,6 +11,7 @@ import { getTile, isSeen, HEX_DIRECTIONS } from "./world.js";
 import { getBiome } from "../data/biomes.js";
 import { buildingForTile, isBuildingOpen, buildingHours } from "../data/town.js";
 import { formatTime, formatDate } from "./time.js";
+import { relationshipTier } from "./relationships.js";
 
 export function summarizeCodex(codex) {
   const lines = [];
@@ -55,6 +56,22 @@ export function summarizeAbilities(character) {
   if (spells.length) parts.push(`Spells (magic): ${spells.join(", ")}`);
   if (techniques.length) parts.push(`Techniques: ${techniques.join(", ")}`);
   return parts.join("; ") || "none learned";
+}
+
+// Bonds + recent shared memories for everyone the player has a relationship or
+// history with — so re-meetings need no re-introduction and carry their weight.
+export function summarizeBonds(codex) {
+  const out = [];
+  for (const c of Object.values(codex.characters)) {
+    if (c.kind === "player") continue;
+    const rel = c.relationship || 0;
+    const mems = c.memories || [];
+    if (rel === 0 && mems.length === 0) continue;
+    const tier = relationshipTier(rel).label;
+    const recent = mems.slice(-4).map((m) => `"${m}"`).join("; ");
+    out.push(`${c.name}: ${tier} (${rel > 0 ? "+" : ""}${rel})${recent ? ` — remembers: ${recent}` : ""}`);
+  }
+  return out.length ? out.join("\n") : "(no one knows you yet)";
 }
 
 export function summarizeKnowledge(codex) {
@@ -141,6 +158,8 @@ export function buildStateContext(state) {
 [GEOGRAPHY KNOWN BY REPUTATION — ${summarizeRumored()}]
 [GEOGRAPHY KNOWN BY LEGEND — ${summarizeFabled()}]
 [KNOWLEDGE BY CHARACTER]
-${summarizeKnowledge(world.codex)}`;
+${summarizeKnowledge(world.codex)}
+[BONDS & MEMORIES — the player's standing with people met, and what each remembers of their shared history. Honour these on every re-encounter: a person who knows the player does NOT need re-introducing, and treats them per their bond. Deepen or sour them with relationship_changes; record significant shared moments with memory_updates.]
+${summarizeBonds(world.codex)}`;
 }
 

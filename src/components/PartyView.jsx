@@ -4,6 +4,7 @@ import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { partyMembers } from "../engine/party.js";
+import { relationshipTier } from "../engine/relationships.js";
 
 // The party roster: every recruited companion as a full person — appearance,
 // attributes, gear, and what they know — with the option to part ways.
@@ -51,6 +52,11 @@ export function PartyView({ state, onDismiss, onClose }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.1 }}>{c.name}</div>
                 <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>{c.race} · {c.profession}</div>
+                {(() => { const t = relationshipTier(c.relationship || 0); return (
+                  <span style={{ display: "inline-block", marginTop: "5px", fontSize: "9px", fontWeight: 800, letterSpacing: "0.04em", padding: "2px 8px", borderRadius: radius.pill, color: t.color, border: `1px solid ${t.color}55`, backgroundColor: `${t.color}14` }}>
+                    {t.label} · {(c.relationship || 0) > 0 ? "+" : ""}{c.relationship || 0}
+                  </span>
+                ); })()}
               </div>
               <button onClick={() => onDismiss(c.id)} style={{
                 padding: "6px 12px", borderRadius: radius.pill, flexShrink: 0,
@@ -75,6 +81,16 @@ export function PartyView({ state, onDismiss, onClose }) {
               <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.6)", lineHeight: 1.4 }}>
                 <span style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted }}>Carries </span>
                 {c.worn.map((w) => w.replace(/-/g, " ")).join(", ")}
+              </div>
+            )}
+            {(c.memories?.length > 0) && (
+              <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px dashed rgba(215,167,111,0.2)" }}>
+                <div style={{ ...metaStyle, fontSize: "8px", color: colors.gold, marginBottom: "5px" }}>Shared history</div>
+                <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "12px", color: colors.parchment, lineHeight: 1.5 }}>
+                  {c.memories.slice(-8).map((m, i) => (
+                    <li key={i} style={{ fontFamily: fonts.serif, fontStyle: "italic", marginBottom: "2px", color: colors.parchmentLight }}>{m}</li>
+                  ))}
+                </ul>
               </div>
             )}
           </Panel>
