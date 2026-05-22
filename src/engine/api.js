@@ -9,7 +9,7 @@ import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
 import { getTile, isSeen, HEX_DIRECTIONS } from "./world.js";
 import { getBiome } from "../data/biomes.js";
-import { buildingForTile } from "../data/town.js";
+import { buildingForTile, isBuildingOpen, buildingHours } from "../data/town.js";
 import { formatTime, formatDate } from "./time.js";
 
 export function summarizeCodex(codex) {
@@ -99,9 +99,15 @@ export function buildStateContext(state) {
   // A wired service building (a trader, etc.) at this tile. Its goods and prices
   // are handled by the counter UI; the narrator only flavors the keeper/place.
   const bld = buildingForTile(t);
-  const svcLine = bld
-    ? `\n[SERVICE — you are at ${bld.label}${bld.kind === "trader" ? `, a trader (${bld.keeper})` : ""}. Buying and selling happen at the counter UI; flavor the keeper and the place, react, or haggle in words, but do not tally coin or invent the transaction here.]`
-    : "";
+  let svcLine = "";
+  if (bld) {
+    const open = isBuildingOpen(bld, time.hour);
+    const h = buildingHours(bld);
+    const pad = (n) => String(n).padStart(2, "0");
+    svcLine = open
+      ? `\n[SERVICE — ${bld.label} (${bld.keeper}); open ${pad(h.open)}:00–${pad(h.close)}:00, currently OPEN. Trade and training happen at the counter UI — flavor the keeper and the place, react, or haggle in words, but don't tally coin or invent transactions. If the player loiters past closing or badly overstays, the keeper winds down, refuses further custom, and ushers them out.]`
+      : `\n[SERVICE — ${bld.label} (${bld.keeper}); open ${pad(h.open)}:00–${pad(h.close)}:00, currently CLOSED. Door barred, shutters down — no trade until it opens. The player may knock, wait, or come back; do not run a sale or service now.]`;
+  }
   // Tasks the player has taken from a quest board — leads the narrator can
   // weave in and reward when fulfilled.
   const quests = (world.quests || []).filter((q) => q.status === "active");

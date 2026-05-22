@@ -3,13 +3,15 @@ import { Icon } from "./Icon.jsx";
 import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle, glass } from "./tokens.js";
 import { canAfford, formatCopper, formatCoins, SELLABLE_KINDS, usedSellPrice, DEFAULT_RESALE_RATE } from "../engine/economy.js";
+import { trainingOffer } from "../engine/training.js";
+import { TRAIN_CAP } from "../data/town.js";
 
 // A standard trader menu: a Buy ledger rolled from the shop's stock and a Sell
 // ledger of the player's saleable goods. Reused by every trader building
 // (healer now; market stalls, the smith's counter, etc. later). Transactions
 // are deterministic and local — App applies them via engine/economy.js. The
 // "Speak with…" hook hands off to the narrator for flavor and haggling.
-export function TraderView({ state, building, tileKey, stock, receipts = {}, onClose, onBuy, onSell, onTalk, onForge, loading }) {
+export function TraderView({ state, building, tileKey, stock, receipts = {}, onClose, onBuy, onSell, onTalk, onForge, onTrain, loading }) {
   const [tab, setTab] = useState("buy");
 
   const codex = state.world.codex;
@@ -109,6 +111,38 @@ export function TraderView({ state, building, tileKey, stock, receipts = {}, onC
             {building.blurb}
           </div>
         </Panel>
+
+        {/* Expert training — pay to fast-track a grindy proficiency a step. */}
+        {building.trains?.length > 0 && (
+          <>
+            <SectionHeader>Training</SectionHeader>
+            {building.trains.map((profId) => {
+              const offer = trainingOffer(state, profId, TRAIN_CAP);
+              return (
+                <div key={profId} style={{
+                  display: "flex", alignItems: "center", gap: "10px",
+                  padding: "11px 13px", marginBottom: "8px", borderRadius: radius.panelCompact,
+                  backgroundColor: "rgba(20, 29, 29, 0.5)", border: "1px solid rgba(215, 167, 111, 0.14)",
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "16px", color: colors.parchmentLight }}>{offer.name}</div>
+                    <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "2px" }}>
+                      {offer.capped ? `rating ${offer.cur} · mastered here` : `rating ${offer.cur} → ${offer.next} · ${offer.hours}h`}
+                    </div>
+                  </div>
+                  {offer.capped ? (
+                    <span style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.45)", flexShrink: 0 }}>Mastered</span>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", flexShrink: 0 }}>
+                      <PriceTag cp={offer.costCp} />
+                      <ActionButton label="Train" enabled={canAfford(coins, offer.costCp) && !loading} onClick={() => onTrain(profId)} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        )}
 
         {tab === "buy" && (
           <>

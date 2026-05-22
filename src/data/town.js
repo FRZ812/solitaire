@@ -3,11 +3,16 @@
 // A building is wired to a tile by giving that tile's poi a `service` id
 // (see handcrafted-tiles.js, e.g. The Healer's House carries service:"healer").
 // BUILDINGS[service] then describes what kind of place it is, how it renders on
-// the map, and — for traders — the weighted stock table its inventory is rolled
-// from (engine/town-gen.js). This keeps services opt-in per tile, so not every
-// smithy or inn in the world silently becomes a shop.
+// the map, its open hours, and — for traders — the weighted stock table its
+// inventory is rolled from (engine/town-gen.js). Services are opt-in per tile,
+// so not every smithy or inn in the world silently becomes a shop.
+//
+// `trains` marks an EXPERT trader: a list of proficiency ids it will drill for a
+// fee + time (engine/training.js), so the player can fast-track a grindy skill.
+// Only experts (healer, smith) carry it — the wet-market sellers do not.
 
 export const RESTOCK_DAYS = 4; // a trader's stock refreshes every 4 game-days
+export const TRAIN_CAP = 5;    // how far an expert can take a proficiency
 
 export const BUILDINGS = {
   tavern: {
@@ -16,6 +21,7 @@ export const BUILDINGS = {
     label: "The Drowned Inn",
     keeper: "the innkeeper",
     icon: "bldg",
+    hours: { open: 6, close: 1 }, // wraps past midnight — last call at 1am
     blurb: "The common room hums — low talk, a peat fire, and a board by the door thick with curling notices held on by knives and nails.",
   },
 
@@ -25,11 +31,9 @@ export const BUILDINGS = {
     label: "The Healer's House",
     keeper: "the healer",      // used to flavor the "speak with…" narrator hook
     icon: "healer",            // MapView MAP_ASSETS key
+    hours: { open: 7, close: 20 },
+    trains: ["endurance"],     // an expert: drills resilience / field-hardiness
     blurb: "Bundles of drying herbs hang from the rafters; the air is thick with comfrey, tallow, and woodsmoke.",
-    // Resale uses the fair default (economy.DEFAULT_RESALE_RATE); a just-bought
-    // item is refunded in full while you're still in the shop.
-    // Weighted stock: `chance` it appears this restock, `qty` range [min,max],
-    // `priceMult` against the good's base value (goods.js).
     stock: [
       { id: "healing-salve",   chance: 1.0, qty: [2, 5], priceMult: 1.2 },
       { id: "blood-staunch",   chance: 1.0, qty: [2, 4], priceMult: 1.2 },
@@ -49,9 +53,10 @@ export const BUILDINGS = {
     label: "Mirecross Smithy",
     keeper: "the smith",
     icon: "smithy",
-    blurb: "A banked forge throws orange light up the soot-black walls; a wall of tongs, a barrel of quench-water, the ring of a hammer on cooling iron.",
-    // What the smith will buy back: gear and raw stock (not the player's potions).
+    hours: { open: 7, close: 19 },
+    trains: ["mastery-mace"],  // an expert: drills you on the arms they make
     buys: ["weapon", "armor", "shield", "clothing", "material"],
+    blurb: "A banked forge throws orange light up the soot-black walls; a wall of tongs, a barrel of quench-water, the ring of a hammer on cooling iron.",
     stock: [
       // Raw forge-stock — the materials the player needs to craft.
       { id: "iron-ingot",      chance: 1.0,  qty: [4, 9], priceMult: 1.3 },
@@ -67,46 +72,53 @@ export const BUILDINGS = {
     ],
   },
 
-  // ---- The Wet Market: three separate merchants, each its own stall ----
-  butcher: {
-    id: "butcher", kind: "trader",
-    label: "The Butcher's Stall", keeper: "the butcher", icon: "market",
-    blurb: "A scarred block, a row of hooks, and the iron smell of the day's slaughter.",
+  // The Wet Market: a single open-air stall, not a building — the butcher,
+  // fruit-peddler, and greengrocer all cry their wares from the same square.
+  // A plain seller (no training).
+  market: {
+    id: "market",
+    kind: "trader",
+    label: "The Wet Market",
+    keeper: "the market-sellers",
+    icon: "market",
+    hours: { open: 6, close: 18 },
     buys: ["food"],
+    blurb: "Plank stalls under oiled canvas — a butcher's block, baskets of fruit, crates of root-vegetables, three sellers crying over one another.",
     stock: [
-      { id: "fresh-meat",   chance: 1.0,  qty: [3, 8], priceMult: 1.2 },
-      { id: "sausage-links",chance: 0.9,  qty: [2, 6], priceMult: 1.2 },
-      { id: "soup-bones",   chance: 1.0,  qty: [4, 10], priceMult: 1.2 },
-      { id: "dressed-fowl", chance: 0.8,  qty: [1, 4], priceMult: 1.25 },
-      { id: "smoked-ham",   chance: 0.6,  qty: [1, 3], priceMult: 1.3 },
-    ],
-  },
-  fruit: {
-    id: "fruit", kind: "trader",
-    label: "The Fruit-Peddler's Cart", keeper: "the fruit-peddler", icon: "market",
-    blurb: "A handcart heaped with the season's fruit, a wasp or two circling the sweetest of it.",
-    buys: ["food"],
-    stock: [
-      { id: "apples",     chance: 1.0,  qty: [4, 10], priceMult: 1.2 },
-      { id: "pears",      chance: 0.9,  qty: [3, 8], priceMult: 1.2 },
-      { id: "berries",    chance: 0.8,  qty: [2, 6], priceMult: 1.25 },
-      { id: "dried-figs", chance: 0.7,  qty: [2, 5], priceMult: 1.3 },
-    ],
-  },
-  greengrocer: {
-    id: "greengrocer", kind: "trader",
-    label: "The Greengrocer", keeper: "the greengrocer", icon: "market",
-    blurb: "Crates and baskets of root-vegetables and greens, still cool and damp from the morning.",
-    buys: ["food"],
-    stock: [
-      { id: "turnips",     chance: 1.0,  qty: [4, 10], priceMult: 1.2 },
-      { id: "onions",      chance: 1.0,  qty: [3, 8], priceMult: 1.2 },
-      { id: "carrots",     chance: 0.9,  qty: [3, 8], priceMult: 1.2 },
-      { id: "cabbage",     chance: 0.8,  qty: [2, 5], priceMult: 1.2 },
-      { id: "dried-beans", chance: 0.7,  qty: [2, 5], priceMult: 1.25 },
+      { id: "fresh-meat",   chance: 1.0,  qty: [2, 6], priceMult: 1.2 },
+      { id: "sausage-links",chance: 0.9,  qty: [2, 5], priceMult: 1.2 },
+      { id: "soup-bones",   chance: 1.0,  qty: [3, 8], priceMult: 1.2 },
+      { id: "dressed-fowl", chance: 0.7,  qty: [1, 3], priceMult: 1.25 },
+      { id: "smoked-ham",   chance: 0.5,  qty: [1, 2], priceMult: 1.3 },
+      { id: "apples",       chance: 1.0,  qty: [3, 8], priceMult: 1.2 },
+      { id: "pears",        chance: 0.8,  qty: [2, 6], priceMult: 1.2 },
+      { id: "berries",      chance: 0.7,  qty: [2, 5], priceMult: 1.25 },
+      { id: "dried-figs",   chance: 0.6,  qty: [2, 4], priceMult: 1.3 },
+      { id: "turnips",      chance: 1.0,  qty: [4, 9], priceMult: 1.2 },
+      { id: "onions",       chance: 1.0,  qty: [3, 8], priceMult: 1.2 },
+      { id: "carrots",      chance: 0.9,  qty: [3, 8], priceMult: 1.2 },
+      { id: "cabbage",      chance: 0.7,  qty: [2, 5], priceMult: 1.2 },
+      { id: "dried-beans",  chance: 0.6,  qty: [2, 5], priceMult: 1.25 },
     ],
   },
 };
+
+const DEFAULT_HOURS_BY_KIND = {
+  trader: { open: 7, close: 19 },
+  smith: { open: 7, close: 19 },
+  tavern: { open: 6, close: 1 },
+};
+
+export function buildingHours(building) {
+  return building?.hours || DEFAULT_HOURS_BY_KIND[building?.kind] || { open: 7, close: 19 };
+}
+
+// Open if the hour falls in [open, close). A close <= open wraps past midnight
+// (e.g. a tavern open 6:00 to 01:00).
+export function isBuildingOpen(building, hour) {
+  const { open, close } = buildingHours(building);
+  return close > open ? (hour >= open && hour < close) : (hour >= open || hour < close);
+}
 
 export function buildingForService(service) {
   return service ? BUILDINGS[service] || null : null;
