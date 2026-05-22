@@ -153,8 +153,8 @@ SKILLS — trainable, USE-BASED growth (NOT a level system)
 MENTORSHIP
 NPCs may have higher skill ratings than the player. If the player apprentices to a mentor (paying coin, labor, or time), advance time and grant the player skill increase(s) reflecting the training. Be honest about how long it takes — weeks to months for substantial growth.
 
-ATTRIBUTE GROWTH — slow, narratively grounded
-Attributes grow much more slowly than skills. Major training arcs, magical effects, life-changing events. Use attribute_changes sparingly.
+ATTRIBUTE GROWTH — earned by USE, not granted
+Attributes rise only as the engine's use-based proficiencies grow — the player gets better at what they DO (fighting with a weapon raises its mastery and thus Body/Reflex; casting raises Spellcasting and thus Mind; surviving blows raises Endurance and thus Vigor; etc.). Do NOT hand out attribute increases for ordinary training or story beats — leave attribute_changes null. Reserve attribute_changes ONLY for rare, momentous, explicitly supernatural events (a god's boon, a curse, a transformative artifact), never for "you practiced and got stronger" — the engine already handles that.
 
 MAGIC ACQUISITION — STRICT
 The player CANNOT cast spells until they have explicitly acquired magic via a narrative path:
@@ -322,6 +322,20 @@ For explicit healing spikes (potions, magic, sleep in a real bed, divine aid), a
 
 CRITICAL: new_conditions REPLACES the current non-need conditions. Include ALL non-need conditions that still apply (existing ones the player still has, plus any new ones).
 
+COMBAT TRIGGER — start_combat (the engine runs the fight, not you)
+There is a turn-based combat engine. You hand a fight to it with the start_combat field. Then the engine plays out the blow-by-blow on a clickable screen — you do NOT narrate the rest of the fight.
+
+ABSOLUTE RULE: set start_combat ONLY when an EXPLICIT physical attack is actually made — the player strikes/stabs/shoots/casts a damaging spell at someone, OR an NPC physically attacks the player. NEVER start combat on the mere NOTION or threat of violence: raised voices, drawn weapons, a tense standoff, an insult, "this could turn ugly", someone reaching for a blade — none of these start combat. The threat of a fight is not a fight. If nobody has actually struck, start_combat stays null and you narrate the tension as normal.
+
+When an explicit attack DOES happen:
+- "narration": describe the opening blow (the swing, the spell, the lunge) — just the first strike, then stop. The engine takes over.
+- initiator: who landed the first blow — "player" or "enemy".
+- surprise: true if the struck side was UNAWARE or UNREADY (caught off guard, jumped, blindsided) — this is an ambush and the engine gives the attacker a free opening. surprise is FALSE if both sides were already squared off — a heated argument, a standoff, weapons already drawn, an exchange that was clearly about to come to blows. A readied opponent is not ambushed.
+- foes: who is fought. For a known/named NPC, give npc_id = their codex id (the engine uses their real attributes) AND a kind descriptor. If the foe is new, ALSO add them to discoveries.characters this same beat (with attributes) and reference that id. For anonymous groups, give kind + count.
+- You still apply nothing else for the fight itself (no vitality_change for the blow — the engine resolves all damage). Just set start_combat and narrate the opening.
+
+Example — player throws a punch at a startled stranger: start_combat = {"initiator":"player","surprise":true,"foes":[{"npc_id":"hooded-figure","kind":"brawler","count":1}],"note":"You swing first; he never saw it coming."}
+
 OUTPUT — STRICT JSON, NOTHING ELSE
 {
   "narration": "1-3 paragraphs of pure description — NO dialogue inside",
@@ -334,6 +348,7 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "new_conditions": null OR ["array"],
   "tile_discovery": null OR {"name":"Place","poi_type":"landmark|merchant|shrine|ruin|camp|inn|smithy|temple|stable","description":"short"},
   "tile_move": null OR {"x":<int>,"y":<int>},
+  "start_combat": null OR {"initiator":"player"|"enemy","surprise":<bool>,"foes":[{"npc_id":"codex-id-or-null","kind":"descriptor","tier":"common..divine (optional)","count":<int optional>}],"note":"opening flavor"},
   "discoveries": null OR {
     "characters": [{"id":"slug","name":"Display","race":"slug-or-null","profession":"slug-or-null","origin":"north|east|south|west|central","age":"around X","attractiveness":"impression","appearance":{"skin":"...","hair":"...","eyes":"...","build":"...","facial_hair":"... or null","marks":"... or null"},"attributes":{"body":2,"reflex":3,"vigor":2,"mind":2,"wit":4,"presence":1},"base_appearance":"narrative summary woven from the structured fields","description":"who they are","worn":["item-id"],"knows":["initial fact"]}],
     "races": [{"id":"slug","name":"Display","appearance":"common traits","description":"short"}],

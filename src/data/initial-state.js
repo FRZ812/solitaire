@@ -40,6 +40,9 @@ export function makeInitialState() {
       // Learned combat abilities (stored as { id, tier }); Strike + Brace are
       // always available and not listed here. More are obtained from victories.
       abilities: [{ id: "power-strike", tier: "common" }],
+      // Use-based proficiencies { id: xp }. Grow through combat; their XP is what
+      // raises the governing attributes (attributes don't grow any other way).
+      proficiencies: {},
       inventory: {
         carried: [{ itemId: "wooden-bird", quantity: 1 }],
         coins: { copper: 8, silver: 3, gold: 0 },

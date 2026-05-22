@@ -15,10 +15,15 @@
 // allies, being stun-locked or out-classed — they may waver, plead, demand a
 // fair fight, flee, or yield. The player can also Demand Surrender (parley).
 
-import { getAbilityDef, attrFactor, BASIC_ATTACK, DEFEND, PARLEY, randomAbilityId } from "../data/abilities.js";
+import { getAbilityDef, attrFactor, abilityScaling, abilityRequiredStat, BASIC_ATTACK, DEFEND, TALK, randomAbilityId } from "../data/abilities.js";
 import { tierMult, rollTier, tierLabel, tier as tierInfo } from "../data/tiers.js";
 import { DEMEANOR_CONFIG, flavorLine } from "../data/combat-flavor.js";
-import { deriveCombatStats } from "./combat-stats.js";
+import { ITEM_DROP_CHANCE, ABILITY_DROP_CHANCE, UNIQUE_DROP_CHANCE } from "../data/balance.js";
+import { rollUniques } from "../data/uniques.js";
+import { rollItemPassives } from "../data/passives.js";
+import { effectiveAttributes, ratingFromXp, proficiencyName, weaponMasteryId, XP } from "../data/proficiencies.js";
+import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
+import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -50,14 +55,14 @@ function enemyThreat(e) {
   return e.maxHealth * 0.25 + e.weapon.max + tierInfo(e.tier).order * 2;
 }
 
-export function initCombat(character, codex, enemies) {
+export function initCombat(character, codex, enemies, opts = {}) {
   LOG_SEQ = 0;
   const cs = deriveCombatStats(character, codex);
   const learned = Array.isArray(character.abilities) ? character.abilities : [];
   const abilities = [
     { id: BASIC_ATTACK.id, tier: "common" },
     { id: DEFEND.id, tier: "common" },
-    { id: PARLEY.id, tier: "common" },
+    { id: TALK.id, tier: "common" },
     ...learned.map((e) => (typeof e === "string" ? { id: e, tier: "common" } : { id: e.id, tier: e.tier || "common" })),
   ].filter((a) => getAbilityDef(a.id));
 
@@ -68,10 +73,14 @@ export function initCombat(character, codex, enemies) {
     stamina: cs.maxStamina,
     maxStamina: cs.maxStamina,
     staminaRegen: cs.staminaRegen,
+    resolve: Math.round(character.resolve ?? 0),
+    resolveMax: character.resolveMax ?? 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed,
-    attrs: { ...character.attributes },
+    triggers: cs.triggers || {},
+    prof: cs.prof || {},
+    attrs: cs.attrs || { ...character.attributes },
     abilities, cooldowns: {}, statuses: [],
   };
 
@@ -90,33 +99,121 @@ export function initCombat(character, codex, enemies) {
   }
 
   const flavor = foes.length === 1 ? foes[0].name : `${foes.length} foes`;
-  return {
+  const combatState = {
     player,
     enemies: foes,
     target: 0,
     turn: 1,
     phase: "player",
     powerRatio,
+    maxLootTier: opts.maxLootTier || null,
+    region: opts.region || 1,
+    ownedUniques: opts.ownedUniques || [],
+    coinBonus: opts.coinBonus || 0,
+    environment: opts.environment || [],
+    revivedUsed: false,
+    profGains: {},
     log: [logEntry(`Combat begins — ${flavor}.`, "system")],
     loot: null,
   };
+  if (opts.ambush) applyAmbush(combatState, opts.ambush);
+  return combatState;
+}
+
+function addProf(cs, id, xp) { cs.profGains[id] = (cs.profGains[id] || 0) + xp; }
+const alertness = (d) => ({ feral: 4, honorable: 3, wary: 3, fierce: 2, fanatic: 2, brutish: 1, cowardly: 0, mindless: 0 }[d] ?? 1);
+
+// A surprise strike is CONTESTED, not free — so you can't just ambush everyone.
+// Player ambush: your stealth (Reflex + ½Wit + Ambush proficiency) vs the foes'
+// awareness (their accuracy + demeanor alertness, harder per extra foe). Win →
+// they reel and lose their first turn. Enemy ambush: contested by your Wit + ½
+// Reflex + Awareness proficiency; lose the read and they get a free opening
+// blow. Either way you train the relevant proficiency.
+function applyAmbush(cs, side) {
+  const a = cs.player.attrs || {};
+  const living = livingEnemies(cs);
+  if (side === "player") {
+    const stealth = (a.reflex || 0) + Math.floor((a.wit || 0) / 2) + (cs.player.prof?.ambush || 0);
+    const awareness = Math.max(...living.map((e) => (e.accuracy || 0) + alertness(e.demeanor)), 0);
+    const chance = clamp(40 + (stealth - awareness) * 6 - (living.length - 1) * 12, 5, 95);
+    addProf(cs, "ambush", XP.AMBUSH_TRY);
+    if (rand100() <= chance) {
+      for (const e of cs.enemies) addStatus(e, { type: "stun", value: 1, duration: 1 });
+      cs.log.push(logEntry("You strike first — they reel, caught unaware.", "system"));
+      addProf(cs, "ambush", XP.AMBUSH_WIN);
+    } else {
+      cs.log.push(logEntry("They were readier than you thought — no opening blow.", "system"));
+    }
+  } else if (side === "enemy") {
+    const enemyStealth = Math.max(...living.map((e) => (e.speed || 4) + tierInfo(e.tier).order), 0);
+    const perception = (a.wit || 0) + Math.floor((a.reflex || 0) / 2) + (cs.player.prof?.awareness || 0);
+    addProf(cs, "awareness", XP.AWARENESS);
+    const chance = clamp(50 + (enemyStealth - perception) * 6, 5, 95);
+    if (rand100() > chance) {
+      cs.log.push(logEntry("You sense it coming and meet them ready.", "system"));
+      return;
+    }
+    cs.log.push(logEntry("Ambush — they strike before you're ready!", "enemy"));
+    for (const e of cs.enemies) {
+      if (e.health <= 0) continue;
+      const profile = attackProfile(e, BASIC_ATTACK, e.tier, false);
+      if (profile) cs.log.push(resolveHit(e, cs.player, profile));
+      if (cs.player.health <= 0) break;
+    }
+    if (cs.player.health <= 0) finishDefeat(cs);
+  }
 }
 
 // ----- damage resolution -----
 
+// Build the damage profile. Weapon-scaling techniques are built from the
+// attacker's weapon (+ a stat modifier that grows with the ability's tier);
+// stat-scaling spells are built from the attribute × tier, with a staff/wand
+// adding only a small bonus.
 function attackProfile(attacker, def, tierId, isPlayer) {
-  if (def.damageType === "weapon") {
+  const scaling = abilityScaling(def);
+  const order = tierInfo(tierId).order;
+
+  if (scaling === "weapon" || def.damageType === "weapon") {
     const w = attacker.weapon || { min: 1, max: 2, type: "physical", pen: 0 };
-    return { min: w.min, max: w.max, type: w.type, pen: w.pen || 0, critBonus: def.critBonus || 0 };
+    const techMult = 1 + order * 0.15;
+    const govAttr = isPlayer ? (attacker.attrs?.[def.scaleAttr] ?? attacker.attrs?.body ?? 0) : 0;
+    const statMod = isPlayer ? Math.round(govAttr * (0.5 + order * 0.25)) : Math.round(order * 1.5);
+    const type = def.damageType && def.damageType !== "weapon" ? def.damageType : w.type;
+    return {
+      min: Math.max(1, Math.round(w.min * techMult) + statMod),
+      max: Math.max(1, Math.round(w.max * techMult) + statMod),
+      type, pen: (w.pen || 0) + (def.pen || 0), critBonus: def.critBonus || 0,
+    };
   }
-  if (!def.dmg) return null;
-  const m = tierMult(tierId);
-  const f = isPlayer && def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
-  return {
-    min: Math.max(1, Math.round(def.dmg[0] * m * f)),
-    max: Math.max(1, Math.round(def.dmg[1] * m * f)),
-    type: def.damageType, pen: def.pen || 0, critBonus: def.critBonus || 0,
-  };
+
+  if (scaling === "stat") {
+    if (!def.dmg) return null;
+    const m = tierMult(tierId);
+    const f = isPlayer && def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
+    const castBonus = isPlayer ? 1 + (attacker.prof?.spellcasting || 0) * 0.05 : 1; // Spellcasting proficiency
+    let focus = 0;
+    if (isPlayer && (attacker.weapon?.category === "staff" || attacker.weapon?.category === "wand")) {
+      focus = Math.round((attacker.weapon.max || 0) * 0.3);
+    }
+    return {
+      min: Math.max(1, Math.round(def.dmg[0] * m * f * castBonus) + focus),
+      max: Math.max(1, Math.round(def.dmg[1] * m * f * castBonus) + focus),
+      type: def.damageType, pen: def.pen || 0, critBonus: def.critBonus || 0,
+    };
+  }
+  return null; // no direct damage
+}
+
+// Soft requirement multiplier for a player's ability use: stat shortfall scales
+// damage down (floor 20%), and an off-type weapon technique is penalised.
+function abilityEffectiveness(player, def, tierId) {
+  const statEff = reqEffectiveness(player.attrs || {}, abilityRequiredStat(def, tierId));
+  let weaponEff = 1;
+  if (abilityScaling(def) === "weapon" && def.weaponReq && def.weaponReq.length) {
+    if (!def.weaponReq.includes(player.weapon?.category)) weaponEff = 0.6;
+  }
+  return statEff * weaponEff;
 }
 
 function resolveHit(attacker, defender, profile) {
@@ -125,6 +222,7 @@ function resolveHit(attacker, defender, profile) {
     return logEntry(`${attacker.name} attacks ${defender.name} — dodged.`, "miss");
   }
   let raw = randInt(profile.min, profile.max);
+  if (profile.eff != null) raw *= profile.eff;
   raw *= 1 + sumStatus(attacker, "rally") / 100 - sumStatus(attacker, "weaken") / 100;
 
   const critChance = (attacker.critChance || 0) + (profile.critBonus || 0) + sumStatus(attacker, "focus");
@@ -206,7 +304,9 @@ function moraleCheck(cs, e) {
     return true;
   }
 
-  const broke = e.morale <= cfg.breakAt || hp < 0.12;
+  // A goaded foe is too enraged to flee or yield for a couple of turns.
+  const goaded = (e.noFleeUntil || 0) >= cs.turn;
+  const broke = !goaded && (e.morale <= cfg.breakAt || hp < 0.12);
   if (broke) {
     // A proud foe being bullied with control demands a fair fight before it breaks.
     if (cfg.proud && (e.controlPressure || 0) >= 2 && !e.provoked && e.morale > cfg.breakAt - 12 && hp > 0.15) {
@@ -256,6 +356,19 @@ function tickStatuses(c) {
   return logs;
 }
 
+// Player at/below 0 — but an Undying passive can cheat death once per fight.
+function playerDown(cs) {
+  if (cs.player.health > 0) return false;
+  const rev = cs.player.triggers?.reviveOnce;
+  if (rev && !cs.revivedUsed) {
+    cs.revivedUsed = true;
+    cs.player.health = Math.max(1, Math.round(cs.player.maxHealth * rev));
+    cs.log.push(logEntry(`${cs.player.name} cheats death and rises!`, "status"));
+    return false;
+  }
+  return true;
+}
+
 // ----- end-of-combat checks -----
 
 function checkCombatEnd(cs) {
@@ -273,27 +386,48 @@ export function abilityUsable(cs, abilityId) {
   const def = getAbilityDef(abilityId);
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
   if (cs.player.stamina < (def.cost || 0)) return false;
+  if ((cs.player.resolve ?? 0) < (def.resolveCost || 0)) return false;
   return true;
 }
 
 export function playerAct(cs0, abilityId, targetIndex) {
-  if (abilityId === PARLEY.id) return playerParley(cs0);
+  if (abilityId === TALK.id) return playerTalk(cs0, "surrender", targetIndex);
   if (!abilityUsable(cs0, abilityId)) return cs0;
   const cs = clone(cs0);
   const def = getAbilityDef(abilityId);
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   const tierId = entry.tier || "common";
+  const scaling = abilityScaling(def);
   cs.player.stamina -= def.cost || 0;
+  // Spellcasting proficiency makes casting cheaper on Resolve.
+  const resoCost = Math.max(0, (def.resolveCost || 0) - Math.floor((cs.player.prof?.spellcasting || 0) / 4));
+  cs.player.resolve = Math.max(0, (cs.player.resolve ?? 0) - resoCost);
   if (def.cooldown) cs.player.cooldowns[abilityId] = def.cooldown;
   if (abilityId === DEFEND.id) cs.player.stamina = Math.min(cs.player.maxStamina, cs.player.stamina + 2);
 
+  // Train the proficiency this action exercises (do-it-get-better).
+  if (def.dmg || def.damageType === "weapon") {
+    if (scaling === "stat") addProf(cs, "spellcasting", XP.SPELL_CAST);
+    else if (scaling === "weapon") addProf(cs, weaponMasteryId(cs.player.weapon?.category), XP.WEAPON_HIT);
+  }
+
   const profile = attackProfile(cs.player, def, tierId, true);
+  if (profile) profile.eff = abilityEffectiveness(cs.player, def, tierId);
+  const lifesteal = cs.player.triggers?.lifesteal || 0;
   const isControl = def.effect && CONTROL_TYPES.has(def.effect.type) && def.effect.target === "enemy";
 
   const hitEnemy = (target) => {
     const before = target.health;
     if (profile) cs.log.push(resolveHit(cs.player, target, profile));
-    if (target.health < before) onEnemyDamaged(target, before - target.health);
+    const dealt = before - target.health;
+    if (dealt > 0) {
+      onEnemyDamaged(target, dealt);
+      if (lifesteal > 0 && cs.player.health > 0) {
+        const heal = Math.max(1, Math.round(dealt * lifesteal / 100));
+        cs.player.health = Math.min(cs.player.maxHealth, cs.player.health + heal);
+        cs.log.push(logEntry(`${cs.player.name} drains ${heal} health.`, "status"));
+      }
+    }
     if (target.health > 0 && def.effect && def.effect.target === "enemy") {
       addStatus(target, def.effect);
       if (isControl) onEnemyControlled(target);
@@ -324,27 +458,56 @@ export function playerAct(cs0, abilityId, targetIndex) {
   return checkCombatEnd(cs);
 }
 
-// Demand surrender. Each foe is checked against a yield chance built from your
-// Presence/Wit, its remaining morale and wounds, how outmatched it is, fallen
-// allies, and whether you've fought it with honor (control-spam hardens the
-// proud against you).
-export function playerParley(cs0) {
-  if (!abilityUsable(cs0, PARLEY.id)) return cs0;
+const canCommunicate = (e) => e.canTalk !== false && DEMEANOR_CONFIG[e.demeanor]?.canParley;
+
+// Talk to the foe. Intent: "surrender" (demand they yield), "demoralize" (sap
+// the will to fight of all who can hear), or "provoke" (goad one foe into a
+// reckless fight and keep it from fleeing). Only thinking foes can be reached.
+export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
+  if (!abilityUsable(cs0, TALK.id)) return cs0;
   const cs = clone(cs0);
-  cs.player.stamina -= PARLEY.cost || 0;
-  cs.player.cooldowns[PARLEY.id] = PARLEY.cooldown;
-  cs.log.push(logEntry(`${cs.player.name} calls on the foe to yield.`, "player"));
-
+  cs.player.stamina -= TALK.cost || 0;
+  cs.player.cooldowns[TALK.id] = TALK.cooldown;
+  addProf(cs, "command", XP.COMMAND);
   const a = cs.player.attrs || {};
-  const fallen = cs.enemies.filter((e) => e.health <= 0).length;
 
+  if (intent === "demoralize") {
+    cs.log.push(logEntry(`${cs.player.name} hurls threats and grim promises.`, "player"));
+    const hit = livingEnemies(cs).filter(canCommunicate);
+    if (hit.length === 0) cs.log.push(logEntry(`No one here can be cowed.`, "system"));
+    for (const e of hit) {
+      let dmg = 8 + (a.presence || 0) * 3 + (a.wit || 0) * 1.5;
+      if (cs.powerRatio > 1.4) dmg += 10;
+      if (e.demeanor === "cowardly") dmg += 8;
+      if (DEMEANOR_CONFIG[e.demeanor]?.proud) dmg *= 0.5;
+      e.morale = Math.max(0, e.morale - Math.round(dmg));
+      pushFlavor(cs, e, "waver");
+    }
+    return checkCombatEnd(cs);
+  }
+
+  if (intent === "provoke") {
+    let idx = targetIndex;
+    if (idx == null || !cs.enemies[idx] || cs.enemies[idx].health <= 0 || cs.enemies[idx].resolved) idx = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
+    const e = cs.enemies[idx];
+    if (!e) return cs0;
+    if (!canCommunicate(e)) { cs.log.push(logEntry(`${e.name} cannot be goaded.`, "system")); return cs; }
+    addStatus(e, { type: "vulnerable", value: 30, duration: 2 });
+    addStatus(e, { type: "rally", value: 15, duration: 2 });
+    e.noFleeUntil = cs.turn + 2;
+    e.provoked = true;
+    cs.log.push(logEntry(flavorLine("provoke", e.demeanor, e.name) || `${e.name} is goaded into a reckless fury.`, "enemy"));
+    cs.log.push(logEntry(`${e.name} drops its guard in anger.`, "status"));
+    return cs;
+  }
+
+  // surrender (default)
+  cs.log.push(logEntry(`${cs.player.name} calls on the foe to yield.`, "player"));
+  const fallen = cs.enemies.filter((e) => e.health <= 0).length;
   for (const e of cs.enemies) {
     if (e.health <= 0 || e.resolved) continue;
     const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
-    if (!cfg.canParley) {
-      cs.log.push(logEntry(`${e.name} cannot be reasoned with.`, "system"));
-      continue;
-    }
+    if (!canCommunicate(e)) { cs.log.push(logEntry(`${e.name} cannot be reasoned with.`, "system")); continue; }
     const hp = e.health / e.maxHealth;
     let chance = 6 + (a.presence || 0) * 4 + (a.wit || 0) * 1.5;
     chance += (e.moraleMax - e.morale) * 0.5;
@@ -355,9 +518,56 @@ export function playerParley(cs0) {
     if (e.demeanor === "honorable") chance += (e.controlPressure || 0) >= 2 ? 0 : 18;
     if (cfg.proud && (e.controlPressure || 0) >= 2 && cs.powerRatio < 2) chance -= 35;
     chance = clamp(chance, 0, 95);
-
     if (rand100() <= chance) resolveYield(cs, e);
     else { cs.log.push(logEntry(flavorLine("defy", e.demeanor, e.name) || `${e.name} refuses to yield.`, "enemy")); e.morale = Math.max(0, e.morale - 3); }
+  }
+  return checkCombatEnd(cs);
+}
+
+// Use a battlefield feature (flip a table, hurl a stool, topple a log…).
+export function playerUseEnvironment(cs0, featureId, targetIndex = null) {
+  if (cs0.phase !== "player") return cs0;
+  const f0 = cs0.environment.find((f) => f.id === featureId);
+  if (!f0 || f0.uses <= 0) return cs0;
+  const ENV_COST = 1;
+  if (cs0.player.stamina < ENV_COST) return cs0;
+  const cs = clone(cs0);
+  const feat = cs.environment.find((f) => f.id === featureId);
+  cs.player.stamina -= ENV_COST;
+  feat.uses -= 1;
+  const act = feat.action;
+  cs.log.push(logEntry(`${cs.player.name}: ${feat.name}.`, "player"));
+
+  const hurt = (e, range, type = "physical") => {
+    const armor = type === "physical" ? (e.armor || 0) : 0;
+    const dmg = Math.max(0, randInt(range[0], range[1]) + Math.floor((cs.player.attrs?.body || 0) / 3) - armor);
+    e.health = Math.max(0, e.health - dmg);
+    cs.log.push(logEntry(`${e.name} takes ${dmg} from ${feat.name.toLowerCase()}.`, "hit"));
+    if (dmg > 0) onEnemyDamaged(e, dmg);
+  };
+  const pickTarget = () => {
+    let idx = targetIndex;
+    if (idx == null || !cs.enemies[idx] || cs.enemies[idx].health <= 0 || cs.enemies[idx].resolved) idx = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
+    return cs.enemies[idx];
+  };
+
+  if (act.type === "cover") {
+    addStatus(cs.player, { type: "guard", value: act.armor || 5, duration: act.dur || 2 });
+    cs.log.push(logEntry(`You take cover — armour raised.`, "status"));
+  } else if (act.type === "throw" || act.type === "shove" || act.type === "topple") {
+    const e = pickTarget();
+    if (e) {
+      hurt(e, act.dmg);
+      const stun = act.stun || (act.stunChance && Math.random() < act.stunChance ? 1 : 0);
+      if (e.health > 0 && stun) { addStatus(e, { type: "stun", value: 1, duration: 1 }); onEnemyControlled(e); cs.log.push(logEntry(`${e.name} is knocked off balance.`, "status")); }
+      if (e.health <= 0) markDead(cs, e);
+    }
+  } else if (act.type === "hazard") {
+    for (const e of livingEnemies(cs)) {
+      hurt(e, act.dmg, "true");
+      if (e.health > 0 && act.dot) addStatus(e, { ...act.dot, target: "enemy" });
+      if (e.health <= 0) markDead(cs, e);
+    }
   }
   return checkCombatEnd(cs);
 }
@@ -410,10 +620,22 @@ export function endTurn(cs0) {
     } else {
       if (choice) cs.log.push(logEntry(`${e.name} uses ${def.name}.`, "enemy"));
       const profile = attackProfile(e, def, tId, false);
+      const before = cs.player.health;
       if (profile) cs.log.push(resolveHit(e, cs.player, profile));
+      const dealt = before - cs.player.health;
+      addProf(cs, "evasion", XP.EVASION);
+      if (dealt > 0) addProf(cs, "endurance", XP.ENDURANCE);
       if (cs.player.health > 0 && def.effect && def.effect.target === "enemy") addStatus(cs.player, def.effect);
+      // Thornmail reflects a share of damage taken back at the attacker.
+      const thorns = cs.player.triggers?.thorns || 0;
+      if (dealt > 0 && thorns > 0 && e.health > 0) {
+        const ref = Math.max(1, Math.round(dealt * thorns / 100));
+        e.health = Math.max(0, e.health - ref);
+        cs.log.push(logEntry(`${e.name} takes ${ref} from thornmail.`, "status"));
+        if (e.health <= 0) markDead(cs, e);
+      }
     }
-    if (cs.player.health <= 0) return finishDefeat(cs);
+    if (playerDown(cs)) return finishDefeat(cs);
   }
 
   // Combat may have ended via flight/yield during the enemy phase.
@@ -422,8 +644,14 @@ export function endTurn(cs0) {
   cs.turn += 1;
   cs.phase = "player";
   tickStatuses(cs.player).forEach((l) => cs.log.push(l));
-  if (cs.player.health <= 0) return finishDefeat(cs);
-  cs.player.stamina = Math.min(cs.player.maxStamina, cs.player.stamina + cs.player.staminaRegen);
+  if (playerDown(cs)) return finishDefeat(cs);
+  const tr = cs.player.triggers || {};
+  if (tr.turnRegen && cs.player.health > 0) {
+    cs.player.health = Math.min(cs.player.maxHealth, cs.player.health + tr.turnRegen);
+    cs.log.push(logEntry(`${cs.player.name} mends ${tr.turnRegen}.`, "status"));
+  }
+  if (tr.resolveRegen) cs.player.resolve = Math.min(cs.player.resolveMax, (cs.player.resolve || 0) + tr.resolveRegen);
+  cs.player.stamina = Math.min(cs.player.maxStamina, cs.player.stamina + cs.player.staminaRegen + (tr.burst || 0));
   for (const id of Object.keys(cs.player.cooldowns)) cs.player.cooldowns[id] = Math.max(0, cs.player.cooldowns[id] - 1);
   if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
   cs.log.push(logEntry(`— Turn ${cs.turn} —`, "system"));
@@ -447,9 +675,12 @@ export function playerFlee(cs0) {
 
 // ----- outcomes + loot -----
 
+function lootCtx(cs) {
+  return { maxLootTier: cs.maxLootTier, region: cs.region, owned: new Set(cs.ownedUniques || []), coinBonus: cs.coinBonus || 0 };
+}
 function finishVictory(cs) {
   cs.phase = "victory";
-  cs.loot = rollLoot(cs.enemies);
+  cs.loot = rollLoot(cs.enemies, lootCtx(cs));
   cs.log.push(logEntry(`Victory.`, "system"));
   return cs;
 }
@@ -457,7 +688,7 @@ function finishResolved(cs) {
   cs.phase = "resolved";
   const yielded = cs.enemies.some((e) => e.resolved === "yielded");
   const sources = cs.enemies.filter((e) => e.health <= 0 || e.resolved === "yielded");
-  cs.loot = rollLoot(sources);
+  cs.loot = rollLoot(sources, lootCtx(cs));
   cs.log.push(logEntry(yielded ? `The fight is over — they will trouble you no further.` : `The field is yours; the rest have scattered.`, "system"));
   return cs;
 }
@@ -496,11 +727,13 @@ function generateLootItem(tierId) {
       appearance: `${tierLabel(tierId)}-grade ${noun.toLowerCase()}, taken in battle.`,
       description: `A ${tierLabel(tierId).toLowerCase()} ${kind} recovered from a foe.`,
       combat,
+      passives: rollItemPassives(tierId, { luck: 0.1 }),
     },
   };
 }
 
-export function rollLoot(sources) {
+export function rollLoot(sources, opts = {}) {
+  const { maxLootTier = null, region = 1, owned = new Set(), coinBonus = 0 } = opts;
   let copper = 0;
   let maxTier = "common";
   for (const e of sources) {
@@ -509,17 +742,30 @@ export function rollLoot(sources) {
     if (tierInfo(e.tier).order > tierInfo(maxTier).order) maxTier = e.tier;
     if (tierInfo(e.maxLootTier).order > tierInfo(maxTier).order) maxTier = e.maxLootTier;
   }
+  // Region ceiling caps the loot tier — a Settled-region foe never drops epic.
+  if (maxLootTier && tierInfo(maxTier).order > tierInfo(maxLootTier).order) maxTier = maxLootTier;
+
   const items = [];
-  if (sources.length > 0 && Math.random() < 0.55) {
+  if (sources.length > 0 && Math.random() < ITEM_DROP_CHANCE) {
     const li = generateLootItem(rollTier(maxTier, 0.1));
     items.push({ itemId: li.id, entry: li.entry, quantity: 1 });
   }
   let ability = null;
-  if (sources.length > 0 && Math.random() < 0.22) {
+  if (sources.length > 0 && Math.random() < ABILITY_DROP_CHANCE) {
     const id = randomAbilityId();
     const def = getAbilityDef(id);
     ability = { id, tier: rollTier(maxTier, 0.2), name: def?.name || id };
   }
+
+  // Named/unique drops from specific foe kinds + deep regions (never the random
+  // pool). A unique ability supersedes the random one; a unique item is extra.
+  if (sources.length > 0) {
+    const uniq = rollUniques({ kinds: sources.map((e) => e.kind), region, owned, mult: UNIQUE_DROP_CHANCE });
+    if (uniq.item) items.push(uniq.item);
+    if (uniq.ability) ability = uniq.ability;
+  }
+
+  copper = Math.round(copper * (1 + coinBonus));
   const silver = Math.floor(copper / 10);
   return { coins: { copper: copper % 10, silver, gold: 0 }, items, ability };
 }
@@ -534,6 +780,31 @@ export function applyCombatResult(state, cs, context = {}) {
 
   next.character.vitality = clamp(Math.round(cs.player.health), 0, next.character.vitalityMax);
   if (cs.phase === "defeat") next.character.vitality = Math.max(1, next.character.vitality);
+
+  // Proficiency XP earned this fight → ratings up → attribute growth (the only
+  // way attributes rise). Surface what improved as growth beats.
+  if (cs.profGains && Object.keys(cs.profGains).length) {
+    const beforeProf = { ...(next.character.proficiencies || {}) };
+    const beforeEff = effectiveAttributes(next.character);
+    const profLines = [];
+    next.character.proficiencies = { ...beforeProf };
+    for (const [id, xp] of Object.entries(cs.profGains)) {
+      const before = beforeProf[id] || 0;
+      const after = before + xp;
+      next.character.proficiencies[id] = after;
+      const r0 = ratingFromXp(before), r1 = ratingFromXp(after);
+      if (r1 > r0) profLines.push(`${proficiencyName(id)} ${r0} → ${r1}`);
+    }
+    const afterEff = effectiveAttributes(next.character);
+    const attrLines = [];
+    for (const k of ATTR_KEYS) if (afterEff[k] > beforeEff[k]) attrLines.push(`${ATTR_LABELS[k]} ${beforeEff[k]} → ${afterEff[k]}`);
+    if (profLines.length) beats.push({ id: `pg${now}`, type: "growth", text: profLines.join(" · ") });
+    if (attrLines.length) beats.push({ id: `ag${now}`, type: "growth", text: `Attributes — ${attrLines.join(" · ")}` });
+  }
+  // Spent Resolve (spellcasting drain) persists out of the fight.
+  if (typeof cs.player.resolve === "number") {
+    next.character.resolve = clamp(Math.round(cs.player.resolve), 0, next.character.resolveMax);
+  }
 
   const conds = new Set((next.character.conditions || []));
   if (hasStatus(cs.player, "bleed")) conds.add("Bleeding");

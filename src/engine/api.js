@@ -2,6 +2,7 @@
 // the artifact build, api-supabase.js for the web build). The narrator call
 // itself lives in those files; this module is helpers only.
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
+import { effectiveAttributes } from "../data/proficiencies.js";
 import { TERRAINS } from "../data/terrains.js";
 import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
@@ -72,7 +73,7 @@ export function buildStateContext(state) {
   const nearbyStr = nearby.length ? `; Nearby: ${nearby.join(", ")}` : "";
   return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]
 [BIOME — ${biome.name}: ${biome.description}]
-[ATTRIBUTES — ${summarizeAttributes(character.attributes)}]
+[ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]
 [CODEX — ${summarizeCodex(world.codex)}]
 [INVENTORY — ${summarizeInventory(character, world.codex)}]

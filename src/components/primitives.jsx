@@ -423,18 +423,27 @@ export function AttrBlock({ label, score }) {
 }
 
 export function NeedBar({ label, value }) {
+  return <StatBar label={label} value={value} max={100} />;
+}
+
+// Labelled progress bar showing value / max. Default colouring follows the
+// need-threshold convention (green > 50% > amber > 25% > red); pass `gradient`
+// to override (e.g. Resolve's violet).
+export function StatBar({ label, value, max = 100, gradient }) {
   const v = Math.round(value);
-  const barColor = v > 50
+  const m = Math.max(1, max);
+  const pct = Math.max(0, Math.min(100, (v / m) * 100));
+  const barColor = gradient || (pct > 50
     ? "linear-gradient(90deg, #606d43 0%, #7B8460 100%)"
-    : v > 25
+    : pct > 25
       ? "linear-gradient(90deg, #b09156 0%, #C0A46C 100%)"
-      : "linear-gradient(90deg, #7c3b2d 0%, #8F4C3C 100%)";
+      : "linear-gradient(90deg, #7c3b2d 0%, #8F4C3C 100%)");
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px", alignItems: "baseline" }}>
         <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.14em", color: "rgba(237, 228, 208, 0.72)" }}>{label}</span>
-        <span style={{ fontSize: "11px", color: colors.parchment, fontWeight: 700 }}>{v}/100</span>
+        <span style={{ fontSize: "11px", color: colors.parchment, fontWeight: 700 }}>{v}/{m}</span>
       </div>
       <div style={{
         width: "100%", height: "7px",
@@ -444,11 +453,11 @@ export function NeedBar({ label, value }) {
         boxShadow: "inset 0 1px 3px rgba(0,0,0,0.4)",
       }}>
         <div style={{
-          width: `${v}%`, height: "100%",
+          width: `${pct}%`, height: "100%",
           background: barColor,
           borderRadius: "3px",
           transition: "width 0.4s cubic-bezier(0.16, 1, 0.3, 1), background 0.4s",
-          boxShadow: v > 25 ? "0 0 6px rgba(215,167,111,0.2)" : "0 0 6px rgba(143,76,60,0.4)",
+          boxShadow: pct > 25 ? "0 0 6px rgba(215,167,111,0.2)" : "0 0 6px rgba(143,76,60,0.4)",
         }} />
       </div>
     </div>

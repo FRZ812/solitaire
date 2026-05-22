@@ -5,6 +5,7 @@
 
 import { tierMult, rollTier } from "./tiers.js";
 import { DEMEANOR_CONFIG, defaultDemeanor } from "./combat-flavor.js";
+import { itemCombatStats } from "../engine/combat-stats.js";
 
 const T = (min, max, type = "physical", pen = 0) => ({ min, max, type, pen });
 
@@ -87,7 +88,8 @@ export function generateEnemy(kind, { tierId = "common", index = 0, total = 1 } 
     id: `enemy-${kind}-${index}-${Math.random().toString(36).slice(2, 7)}`,
     kind, name, race: tmpl.race || null, tier: tierId,
     demeanor, morale: dcfg.morale, moraleMax: dcfg.morale,
-    controlPressure: 0, provoked: false, resolved: null, lastFlavorTurn: 0,
+    canTalk: !(demeanor === "mindless" || demeanor === "feral"),
+    controlPressure: 0, provoked: false, resolved: null, lastFlavorTurn: 0, noFleeUntil: 0,
     maxHealth, health: maxHealth,
     armor: scale(tmpl.armor, m), ward: scale(tmpl.ward, m),
     dodge: Math.min(60, (tmpl.dodge || 0) + tierOf * 2),
@@ -105,16 +107,70 @@ export function generateEnemy(kind, { tierId = "common", index = 0, total = 1 } 
 
 const TIERS_ORDER = { common: 0, uncommon: 1, rare: 2, "very-rare": 3, epic: 4, legendary: 5, mythical: 6, divine: 7 };
 
-// Build a whole hostile group for a spawn kind. `power` (0..1) raises the tier
-// ceiling and luck so deeper/wilder places throw rarer, tougher foes.
-export function generateEnemyGroup(kind, { power = 0 } = {}) {
+// Demeanor for a named NPC turned combatant, inferred from profession/race.
+function npcDemeanor(npc) {
+  const p = `${npc.profession || ""} ${npc.race || ""}`.toLowerCase();
+  if (/(undead|skeleton|wraith|thrall)/.test(p)) return "mindless";
+  if (/(beast|wolf|bear|hound|animal)/.test(p)) return "feral";
+  if (/(knight|guard|soldier|paladin|warden|captain|monarch|noble|hold-father|matriarch|chapter-master|speaker)/.test(p)) return "honorable";
+  if (/(warlord|orc|wyrm|warrior|raider)/.test(p)) return "fierce";
+  if (/(thief|cutthroat|bandit|brigand|pickpocket|beggar)/.test(p)) return "cowardly";
+  return "wary";
+}
+
+// Turn a known/named codex NPC into a combat enemy using their real attributes
+// + worn gear, so a fight against "the hooded figure" reflects who they are.
+export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
+  const a = npc.attributes || {};
+  const body = a.body || 0, reflex = a.reflex || 0, vigor = a.vigor || 0, mind = a.mind || 0, wit = a.wit || 0;
+  const worn = (npc.worn || []).map((id) => codex?.items?.[id]).filter(Boolean);
+  const m = tierMult(tierId);
+
+  let armor = Math.floor(body / 3), ward = Math.floor(mind / 3), dodgeGear = 0, weaponDmg = null, weaponType = "unarmed";
+  for (const it of worn) {
+    const cs = itemCombatStats(it);
+    armor += cs.armor; ward += cs.ward; dodgeGear += cs.dodge;
+    if (cs.damage && !weaponDmg) { weaponDmg = cs.damage; weaponType = cs.weaponType || "sword"; }
+  }
+  const base = weaponDmg || { min: 2, max: 4, type: "physical", pen: 0 };
+  const govF = 1 + (base.type === "magical" ? mind : body) * 0.08;
+  const weapon = {
+    min: Math.max(1, Math.round(base.min * govF)), max: Math.max(1, Math.round(base.max * govF)),
+    type: base.type || "physical", pen: (base.pen || 0) + Math.floor(body / 4), category: weaponType,
+  };
+  const demeanor = npcDemeanor(npc);
+  const dcfg = DEMEANOR_CONFIG[demeanor] || DEMEANOR_CONFIG.wary;
+  const abilities = [];
+  if (body >= 6) abilities.push({ id: "power-strike", tier: tierId });
+  if (mind >= 8) abilities.push({ id: "firebolt", tier: tierId });
+  const maxHealth = Math.max(1, Math.round((12 + vigor * 2 + body) * m));
+
+  return {
+    id: `enemy-npc-${npc.id}-${Math.random().toString(36).slice(2, 6)}`,
+    kind: npc.profession || npc.race || "foe", name: npc.name || "Foe", race: npc.race || null, tier: tierId,
+    demeanor, morale: dcfg.morale, moraleMax: dcfg.morale,
+    canTalk: !(demeanor === "mindless" || demeanor === "feral"),
+    controlPressure: 0, provoked: false, resolved: null, lastFlavorTurn: 0, noFleeUntil: 0,
+    maxHealth, health: maxHealth,
+    armor: Math.round(armor * m), ward: Math.round(ward * m),
+    dodge: Math.min(60, reflex * 2 + dodgeGear),
+    accuracy: reflex + wit, critChance: Math.min(50, Math.round(wit * 1.5 + reflex)), critMult: 1.5,
+    speed: reflex + Math.floor(wit / 2),
+    weapon, abilities, maxLootTier: tierId, statuses: [], cooldowns: {},
+  };
+}
+
+// Build a whole hostile group for a spawn kind. `power` (0..1) is the rollTier
+// luck (nudge toward the high end); `maxTier` caps the tier (a region's
+// enemyTier ceiling). When maxTier is omitted it's derived from power.
+export function generateEnemyGroup(kind, { power = 0, maxTier = null } = {}) {
   const tmpl = BESTIARY[kind] || inferTemplate(kind);
   const [lo, hi] = tmpl.count || [1, 1];
   const count = randInt(lo, hi);
-  const maxTier = power >= 0.75 ? "legendary" : power >= 0.5 ? "epic" : power >= 0.25 ? "very-rare" : "rare";
+  const cap = maxTier || (power >= 0.75 ? "legendary" : power >= 0.5 ? "epic" : power >= 0.25 ? "very-rare" : "rare");
   const enemies = [];
   for (let i = 0; i < count; i++) {
-    const tierId = rollTier(maxTier, power);
+    const tierId = rollTier(cap, power);
     enemies.push(generateEnemy(kind, { tierId, index: i, total: count }));
   }
   return enemies;

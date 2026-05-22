@@ -187,6 +187,53 @@ Each tier has a power multiplier (`mult`) applied to base stat blocks and a drop
 `weight` (rarer = exponentially less likely). `rollTier(maxTierId, luck)` does
 weighted, capped rolls for loot and enemy generation.
 
+### Balance mapping (single source of truth)
+
+No level system: power comes only from slow attribute growth and the **tier** of
+gear/abilities. The world is gated by **region**, not player level.
+
+**Tier ladder** (`src/data/tiers.js`) — ~+34% power per step, top-heavy rarity:
+
+| Tier | mult | drop weight |
+|---|---|---|
+| Common | 1.0 | 1000 |
+| Uncommon | 1.35 | 420 |
+| Rare | 1.8 | 170 |
+| Very Rare | 2.4 | 64 |
+| Epic | 3.2 | 24 |
+| Legendary | 4.3 | 8 |
+| Mythical | 5.8 | 2.4 |
+| Divine | 8.0 | 0.5 |
+
+**Drop odds per victory** (`src/data/balance.js`): item 55%, ability 22%; tier of
+each drop is `rollTier(cap, luck)` where the cap is the region's loot ceiling.
+
+**Region difficulty bands** (`src/data/balance.js` + `src/data/regions.js`) — each
+biome is assigned a band that caps its foe/loot tier and sets rollTier luck:
+
+| Band | Regions | tier ceiling | power |
+|---|---|---|---|
+| 1 Settled | Mire, Crowsmoor Reach | Uncommon | 0.05 |
+| 2 Borderlands | Tannic Wood, Whitemarch March, Bramblewych Reach | Rare | 0.15 |
+| 3 Wilds | Spine Foothills, Iron Plateau, Tellmar Road, Witchwood Deep | Very Rare | 0.30 |
+| 4 Marches | Hollow Coast, Bonemarsh, Pale Steppe | Epic | 0.50 |
+| 5 Far Reaches | Sundered Wastes, Drakeholt | Legendary | 0.70 |
+| 6 Fabled | Far Wild (beyond the named world) | Divine | 0.90 |
+
+Walk into a high band early and you'll be out-classed — intended. To rebalance,
+edit the tier curve in `tiers.js`, the bands in `balance.js`, or biome→band in
+`regions.js`. Nothing else needs to change.
+
+### Named / unique items & abilities
+
+`src/data/uniques.js` holds hand-authored, fixed-stat, fixed-tier rewards with
+lore (e.g. **Skullcleaver** from ogres/trolls, **Drakeheart Ember** &
+**Dragonbreath** from Drakeholt wyrms, **The Broken Ring** from Sundered-Crown
+war-bands). They drop ONLY from their `dropFrom` foe kinds and/or `minRegion`
+band, never from the random generator, never twice for one character (the
+engine passes the player's owned ids in). Unique abilities are registered for
+lookup but excluded from the random drop pool.
+
 ### Stats — derived, attributes stay the backbone
 
 The six attributes (body/reflex/vigor/mind/wit/presence) are unchanged. Combat
@@ -203,6 +250,63 @@ stats are DERIVED from them plus equipped gear (`deriveCombatStats`):
 
 Items get combat values from an explicit `combat` block on the codex item, else
 inferred from kind/name keywords (`itemCombatStats`).
+
+### Weapon vs caster, requirements, passives
+
+**Scaling style** (`data/abilities.js`):
+- **Weapon techniques** (martial) — `scaling:"weapon"`. Damage = equipped weapon ×
+  a tier-mult `+ a stat modifier` (governing attribute, grows with ability tier).
+  Require a weapon category. Cost Stamina. Consistent.
+- **Spells** — `scaling:"stat"`. Damage = base × tier × `attrFactor(Mind/Presence)`;
+  a staff/wand adds only a small flat bonus. Cost a little Stamina **and drain
+  Resolve** (which does NOT regen in combat and persists after) — so casters
+  burst hard then run dry, while fighters stay steady.
+
+**Requirements are soft** (`combat-stats.js reqEffectiveness`): each ability has a
+`weaponReq` (categories) and `statReq` (`base + tier_order×2`). Under-stat scales
+the ability down by `playerStat/required` (floor 20%); off-type weapon techniques
+take a 0.6× hit. Items carry the same kind of stat requirement (by tier); an
+under-req item still works at reduced base stats but **its passives switch off**.
+
+**Passives** (`data/passives.js`): slot count by item tier — Common/Uncommon 0 ·
+Rare 1 · Epic 2 · Legendary+ 3. Each passive carries its own tier (magnitude
+scales with it) and can't exceed the item's tier, so a divine-grade passive only
+appears on a divine item. Scope is `combat` (stat mods + triggers: lifesteal,
+thornmail, regen, resolve-regen, extra stamina, revive-once) or `world` (slower
+need decay, faster travel, out-of-combat regen, extra coin). Passives only apply
+on equipped, requirement-met gear. To rebalance, edit the magnitude table in
+`passives.js`.
+
+### Proficiencies — the "get better by doing" pillar
+
+No levels. Besides loot, the ONLY progression is use-based proficiencies
+(`data/proficiencies.js`), stored on the character as `{ id: xp }`:
+
+- **Per-weapon mastery** (Swordsmanship, Archery, Bludgeon…), **Ambush**,
+  **Evasion**, **Awareness**, **Spellcasting**, **Endurance**, **Command**.
+- Every combat action trains the matching proficiency a little (XP). Rating
+  climbs with √XP (6→1, 24→2, 54→3…). Ratings give small direct bonuses:
+  mastery → weapon damage/accuracy, Evasion → dodge, Awareness → accuracy +
+  spotting ambushes, Spellcasting → spell power + cheaper Resolve, Endurance →
+  stamina, Command → Talk, Ambush → surprise odds.
+- **Attributes grow ONLY from this.** Each proficiency feeds its governing
+  attribute (e.g. sword/dagger/bow/Ambush/Evasion → Reflex; Spellcasting →
+  Mind; Endurance → Vigor; Command → Presence). An attribute's growth = the sum
+  of its proficiencies' XP on a slow √ curve (+1 at 40 total, +2 at 160 …).
+  `effectiveAttributes()` = base + growth; everything (combat, the [STATE] line)
+  uses the effective value. The narrator no longer grants attribute increases —
+  the prompt reserves `attribute_changes` for rare supernatural events only.
+
+`applyCombatResult` writes the fight's XP back and surfaces rating-ups and
+attribute gains as growth beats. Old saves without `proficiencies` read as `{}`.
+
+### Ambush is contested
+
+A `surprise` strike is never automatic. Player ambush rolls your stealth
+(Reflex + ½Wit + Ambush rating) vs the foes' awareness (their accuracy +
+demeanor alertness, −12% per extra foe); win → they're stunned a turn, lose →
+even start. An enemy ambush is contested by your Wit + ½Reflex + Awareness, so a
+perceptive character isn't auto-jumped. Both train the relevant proficiency.
 
 ### Damage pipeline (one hit)
 
@@ -243,17 +347,42 @@ fight** (and digs in). When it breaks, the foe **flees** or **yields** by
 demeanor: craven bolt early, the honorable yield with honor when beaten fairly,
 beasts run at low HP, fanatics/undead never break.
 
-The player has a third option beyond attack/defend: **Demand Surrender**
-(`playerParley`). Yield chance scales with Presence/Wit, the foe's morale and
-wounds, fallen allies, how outmatched it is, and whether you fought it with
-honor — control-spamming the proud hardens them against you unless you're
-overwhelmingly stronger. A fight that ends in surrender/flight resolves as
-**"Stood Down"** (non-lethal) rather than a kill; yielded foes still give spoils.
+**Talk** (`playerTalk`) is a third pillar beyond attack/defend, with three
+intents — but only on foes that can understand you (`canTalk`; beasts and the
+mindless can't be reasoned with):
+- **Demand Surrender** — yield chance scales with Presence/Wit, the foe's morale
+  and wounds, fallen allies, how outmatched it is, and whether you fought with
+  honor (control-spamming the proud hardens them unless you're far stronger).
+- **Demoralize** — saps the morale of everyone who can hear, pushing waverers
+  toward flight/surrender; it's not just for the near-dead.
+- **Provoke** — goads one foe into a reckless fury (vulnerable + rally) and stops
+  it fleeing for a couple of turns, so you can bait and finish a runner.
+
+A fight that ends in surrender/flight resolves as **"Stood Down"** (non-lethal)
+rather than a kill; yielded foes still give spoils.
+
+**Environment** (`data/environment.js`, `playerUseEnvironment`): each fight rolls
+1–3 single-use battlefield features from the terrain — flip a table for cover,
+hurl a stool, topple a log, kick over a brazier (area fire), shove a boulder.
+Each costs a stamina and does something distinct (cover / throw+stagger /
+topple+stun / area burn / heavy shove), so combat isn't only attack-vs-defend.
 
 ### Entry & outcome
 
-A hostile travel encounter raises a Fight/Avoid banner; the header's swords
-button seeks a fight against a hostile drawn from the current tile's spawn table.
+Three ways in:
+1. **Narrator-flagged** — the only way combat starts from the fiction. The
+   narrator emits `start_combat` (system-prompt.js) ONLY on an *explicit* strike
+   (the player or an NPC actually attacks), never on threats/standoffs. It names
+   the foe(s) — a codex `npc_id` (built via `enemyFromNPC` from their real
+   attributes + gear) or a spawn `kind` — plus `initiator` and `surprise`.
+   `App.startCombatFromDirective` builds the foes and opens the fight. **Ambush:**
+   `surprise:true` gives the striker a free opening — if the player struck, foes
+   are stunned and lose their first turn; if an NPC struck, every foe lands a free
+   opening blow. `surprise:false` (both already squared off — heated argument,
+   standoff) starts even.
+2. **Hostile travel encounter** — raises a Fight/Avoid banner.
+3. **Header swords button** — seeks a fight from the current tile's spawn table.
+
 `applyCombatResult` folds the fight back into the campaign: HP → `vitality`,
 lingering DoT → Bleeding/Poisoned conditions (defeat → Gravely Wounded, min 1 HP),
 loot → inventory/codex, a learned ability → `character.abilities` + a codex skill,

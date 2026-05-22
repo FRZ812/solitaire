@@ -20,8 +20,9 @@ export function getNeedConditions(needs) {
 
 function clampNeed(v) { return Math.max(0, Math.min(100, v)); }
 
-export function depleteNeeds(needs, minutes) {
-  const h = minutes / 60;
+// decayMult < 1 slows depletion (e.g. an Enduring item passive).
+export function depleteNeeds(needs, minutes, decayMult = 1) {
+  const h = (minutes / 60) * decayMult;
   return {
     hunger: clampNeed(needs.hunger - NEEDS_DRAIN.hunger * h),
     thirst: clampNeed(needs.thirst - NEEDS_DRAIN.thirst * h),
