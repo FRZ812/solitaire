@@ -31,7 +31,7 @@ import {
 import { rollPathEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
-import { generateEnemyGroup, enemyFromNPC } from "./data/bestiary.js";
+import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
 import { initCombat, playerAct, playerTalk, playerUseEnvironment, playerDrawWeapon, setTarget, endTurn, playerFlee, applyCombatResult, applyLoot } from "./engine/combat.js";
@@ -955,12 +955,18 @@ export function Solitaire() {
     const wp = activeWorldPassives(st.character, st.world.codex);
     const cur = st.world.currentTile;
     const terrain = getTile(st, cur.x, cur.y).terrain;
+    // Recruited companions fight at your side, scaled to the region's enemy tier.
+    const allies = (st.party || [])
+      .map((id) => st.world.codex.characters?.[id])
+      .filter((c) => c && c.combatState?.status !== "dead")
+      .map((c) => allyFromCompanion(c, st.world.codex, { tierId: region.enemyTier || "common" }));
     setCombat(initCombat(st.character, st.world.codex, enemies, {
       maxLootTier: region.lootTier,
       region: region.level,
       ownedUniques: ownedUniqueIds(st),
       coinBonus: wp.coinBonus || 0,
       environment: generateEnvironment(terrain),
+      allies,
       ...extraOpts,
     }));
   }
