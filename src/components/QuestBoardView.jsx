@@ -4,7 +4,15 @@ import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle, glass } from "./tokens.js";
 import { formatCopper } from "../engine/economy.js";
 import { activeQuests } from "../engine/quests.js";
-import { isRecruited } from "../engine/party.js";
+import { isRecruited, partyStanding, recruitOutlook } from "../engine/party.js";
+import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
+
+const OUTLOOK = {
+  eager:    { label: "keen to join",            color: "#a7f3d0" },
+  open:     { label: "willing to hear you out",  color: colors.gold },
+  wary:     { label: "will take real convincing", color: "#e0913a" },
+  scornful: { label: "unimpressed by your lot",   color: "#fca5a5" },
+};
 
 const TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
 
@@ -81,20 +89,17 @@ export function QuestBoardView({ state, building, board, onAccept, onAbandon, on
           );
         })}
 
-        {/* For hire — real people who'll join your company for good. */}
+        {/* For hire — real people. Approaching only OPENS the talk; you must win
+            them round, and your party's standing colours how they receive you. */}
         <SectionHeader>Looking to join</SectionHeader>
-        {board.recruits.map((r) => {
-          const joined = isRecruited(state, r.id);
-          return (
-            <Row key={r.id}
-              title={`${r.name} — ${r.role}`}
-              meta={`${r.race} · ${r.terms}`}
-              desc={r.desc}
-              reward={r.feeCp || undefined}
-              action={<ActionButton label={joined ? "With you" : "Recruit"} enabled={!joined && !loading} onClick={() => onRecruit(r)} />}
-            />
-          );
-        })}
+        {(() => {
+          const standing = partyStanding(state);
+          return board.recruits.map((r) => (
+            <RecruitCard key={r.id} r={r} joined={isRecruited(state, r.id)}
+              outlook={recruitOutlook(standing, r.choosiness)} loading={loading}
+              onApproach={() => onRecruit(r)} />
+          ));
+        })()}
 
         {/* Day labour — hire yourself out, here and now. */}
         <SectionHeader>Hire yourself out</SectionHeader>
@@ -109,6 +114,42 @@ export function QuestBoardView({ state, building, board, onAccept, onAbandon, on
         ))}
         <div style={{ height: "8px" }} />
       </div>
+    </div>
+  );
+}
+
+// A recruit on the board — shows who they are, their stats and kit, their terms,
+// and how they're likely to take to being approached (their choosiness vs your
+// party's standing). "Approach" only opens the conversation.
+function RecruitCard({ r, joined, outlook, loading, onApproach }) {
+  const ol = OUTLOOK[outlook] || OUTLOOK.open;
+  const skills = (r.skills || []).map((s) => s.name).join(", ");
+  return (
+    <div style={{
+      padding: "11px 13px", marginBottom: "8px", borderRadius: radius.panelCompact,
+      backgroundColor: "rgba(20, 29, 29, 0.5)", border: "1px solid rgba(215, 167, 111, 0.14)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "16px", color: colors.parchmentLight, lineHeight: 1.2 }}>{r.name} — {r.role}</div>
+          <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "2px" }}>{r.race} · {r.terms}</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", flexShrink: 0 }}>
+          {!joined && <span style={{ fontSize: "9px", fontWeight: 800, color: ol.color, textAlign: "right", maxWidth: "96px" }}>{ol.label}</span>}
+          <ActionButton label={joined ? "With you" : "Approach"} enabled={!joined && !loading} onClick={onApproach} />
+        </div>
+      </div>
+      <div style={{ fontSize: "11px", color: "rgba(237, 228, 208, 0.7)", lineHeight: 1.35, margin: "6px 0" }}>{r.desc}</div>
+      {/* Attributes */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "3px", marginBottom: "6px" }}>
+        {ATTR_KEYS.map((k) => (
+          <div key={k} style={{ textAlign: "center", padding: "3px 1px", borderRadius: radius.chip, backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.12)" }}>
+            <div style={{ ...metaStyle, fontSize: "6px", color: colors.gold }}>{ATTR_LABELS[k].slice(0, 3)}</div>
+            <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color: colors.parchment }}>{r.attributes?.[k] ?? 0}</div>
+          </div>
+        ))}
+      </div>
+      {skills && <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.6)" }}><span style={{ ...metaStyle, fontSize: "7px", color: colors.parchmentMuted }}>Skilled in </span>{skills}</div>}
     </div>
   );
 }

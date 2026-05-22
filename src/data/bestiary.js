@@ -184,12 +184,18 @@ export function allyFromCompanion(npc, codex, { tierId = "common" } = {}) {
       category: (a.reflex || 0) > (a.body || 0) ? "dagger" : "sword",
     };
   }
+  // Use the companion's OWN defined kit of abilities (not attribute-inferred),
+  // so what they do in a fight matches what they tell you they can do.
+  const abilities = (npc.abilities && npc.abilities.length)
+    ? npc.abilities.map((id) => ({ id, tier: tierId }))
+    : base.abilities;
   return {
     ...base,
     id: `ally-${npc.id}-${Math.random().toString(36).slice(2, 6)}`,
     npcId: null,
     companionId: npc.id,
     side: "player",
+    abilities,
     demeanor: "fierce", morale: 100, moraleMax: 100,
     health: base.maxHealth, // companions arrive fresh; we don't carry their wounds
     combatState: undefined,

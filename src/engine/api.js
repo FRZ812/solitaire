@@ -118,8 +118,18 @@ export function buildStateContext(state) {
     : "";
   // Companions recruited into the party — real people travelling with the player.
   const companions = (world.party || []).map((id) => world.codex.characters[id]).filter(Boolean);
+  const companionDetail = (c) => {
+    const abil = (c.abilities || []).map((id) => getAbilityDef(id)?.name || id);
+    const sk = (c.skills || []).map((s) => `${s.name}${s.rating ? ` ${s.rating}` : ""}`);
+    const gear = (c.worn || []).map((id) => world.codex.items[id]?.name || String(id).replace(/-/g, " "));
+    const bits = [];
+    if (abil.length) bits.push(`fights with ${abil.join(", ")}`);
+    if (sk.length) bits.push(`skilled in ${sk.join(", ")}`);
+    if (gear.length) bits.push(`carries ${gear.join(", ")}`);
+    return `${c.name} (${c.race} ${c.profession}${bits.length ? `; ${bits.join("; ")}` : ""})`;
+  };
   const partyLine = companions.length
-    ? `\n[COMPANIONS — travelling with you: ${companions.map((c) => `${c.name} (${c.race} ${c.profession})`).join("; ")}. They are present in scenes, act and speak on their own, fight and help at your side in freeform action, and share your fortunes — they can be wounded, killed, or choose to leave. Don't drop or forget them.]`
+    ? `\n[COMPANIONS — travelling with you: ${companions.map(companionDetail).join(" · ")}. They are present in scenes, act and speak on their own, fight at your side, and share your fortunes (they can be wounded, killed, or leave). When the player asks a companion what they can do, ANSWER CONCRETELY from this kit — their real abilities, skills, and gear — never vague hand-waving. You may move gear between the player and a companion when they share loot (use companion_gear). Don't drop or forget them.]`
     : "";
   return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}${questLine}${partyLine}
 [BIOME — ${biome.name}: ${biome.description}]

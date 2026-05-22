@@ -18,6 +18,9 @@ export const COMPANIONS = {
     base_appearance: "Big and slab-shouldered. Weathered tan, grey-shot black hair cropped short. Broken nose, brown eyes, a long forearm scar.",
     description: "A sellsword between contracts, drinking cheap and watching the door. Loyal to coin first — and, slowly, to people who hold a line beside him.",
     attributes: { body: 7, reflex: 5, vigor: 6, mind: 3, wit: 4, presence: 4 },
+    abilities: ["power-strike", "cleave"],
+    skills: [{ name: "Soldiering", rating: 3, desc: "formations, sieges, holding a line" }, { name: "Intimidation", rating: 2 }],
+    choosiness: "mid", // a veteran wants a band that can pay and hold its own
     worn: ["boiled-leather-jerkin", "arming-sword", "dented-iron-cap"],
     knows: ["I've soldiered under three banners and buried friends under all of them.", "I'll hold a line for coin; I'll hold it longer for someone who holds it with me."],
   },
@@ -30,6 +33,9 @@ export const COMPANIONS = {
     base_appearance: "Lean and wiry, wind-burned. Dark-blonde hair in a tight braid, pale grey eyes. A bowstring callus on the draw hand.",
     description: "A marsh-hunter who can read water and weather and put an arrow where she looks. Quiet, dry, and quietly tired of the Mire.",
     attributes: { body: 4, reflex: 8, vigor: 5, mind: 5, wit: 6, presence: 3 },
+    abilities: ["rapid-jabs", "venom-strike"],
+    skills: [{ name: "Archery", rating: 4 }, { name: "Tracking", rating: 3 }, { name: "Marsh-lore", rating: 3 }],
+    choosiness: "low", // bored of the Mire, wants a way out
     worn: ["oiled-hunting-leathers", "yew-longbow", "skinning-knife"],
     knows: ["The Mire feeds you if you listen to it and drowns you if you don't.", "I've never missed twice at what mattered."],
   },
@@ -42,6 +48,9 @@ export const COMPANIONS = {
     base_appearance: "Short and barrel-round, ruddy-faced. Curly chestnut hair thinning on top, mutton-chop whiskers, hazel eyes.",
     description: "A hedgerow halfling who's portered for caravans up and down the road. Carries more than looks possible, cooks better than anyone expects, and grumbles the whole way.",
     attributes: { body: 4, reflex: 4, vigor: 6, mind: 5, wit: 6, presence: 5 },
+    abilities: ["second-wind"],
+    skills: [{ name: "Cooking", rating: 3 }, { name: "Portering", rating: 3, desc: "carries a staggering load" }, { name: "Haggling", rating: 2 }],
+    choosiness: "low", // amiable; happy for steady work and good company
     worn: ["padded-coat", "heavy-pack", "iron-skillet", "long-knife"],
     knows: ["A full belly wins more marches than a sharp sword.", "I know every dry camp and cheap bed between here and Whitemarch."],
   },
@@ -54,6 +63,9 @@ export const COMPANIONS = {
     base_appearance: "Thin and upright, winter-pale. Iron-grey hair pinned back, steady amber eyes, stained fingertips. Tally-scars on the left forearm.",
     description: "A hedge-witch of charms, births, and quieter work, moved on from too many parishes. Useful, unsettling, and entirely worth the tenth she asks.",
     attributes: { body: 3, reflex: 4, vigor: 5, mind: 8, wit: 7, presence: 6 },
+    abilities: ["hex", "venom-strike"],
+    skills: [{ name: "Herblore", rating: 4, desc: "salves, draughts, poisons" }, { name: "Charms & Curses", rating: 3, desc: "hedge-magic — blood, root, and spite, not fire or lightning" }, { name: "Midwifery", rating: 2 }],
+    choosiness: "mid", // sizes you up; asks her tenth and no questions
     worn: ["black-shawl", "charm-strung-belt", "bone-handled-knife"],
     knows: ["Every cure is a poison measured kindly.", "I owe two debts I do not speak of, and I am owed a great many more."],
   },
@@ -66,6 +78,9 @@ export const COMPANIONS = {
     base_appearance: "Tall and rangy, tan and lined before his time. Ragged-grown brown hair, grey-green eyes, a few days' beard. A covered brand on the arm.",
     description: "A Whitemarch spearman who walked away from a war he wouldn't name. Disciplined, steady under pressure, and watching the road behind as much as ahead.",
     attributes: { body: 6, reflex: 6, vigor: 6, mind: 4, wit: 5, presence: 4 },
+    abilities: ["power-strike", "piercing-thrust"],
+    skills: [{ name: "Spear-drill", rating: 3 }, { name: "Soldiering", rating: 3, desc: "shield-wall, watch-craft, discipline" }],
+    choosiness: "high", // a wary deserter; won't follow a weakling or anyone reckless
     worn: ["worn-gambeson", "footman-spear", "round-shield", "iron-cap"],
     knows: ["I held a wall at Whitemarch and I will not do it again for any lord's coin.", "Keep your spacing, watch the flanks, and never let them get behind you."],
   },
@@ -82,6 +97,10 @@ export function companionCodexEntry(tmpl) {
     age: tmpl.age, attractiveness: tmpl.attractiveness,
     appearance: tmpl.appearance, base_appearance: tmpl.base_appearance,
     description: tmpl.description, attributes: tmpl.attributes,
-    worn: tmpl.worn, knows: tmpl.knows,
+    worn: [...(tmpl.worn || [])], knows: [...(tmpl.knows || [])],
+    // A companion's full kit — set but not shown; the player can ASK and the
+    // narrator answers from this (no vague hand-waving), and combat uses it.
+    abilities: [...(tmpl.abilities || [])],
+    skills: (tmpl.skills || []).map((s) => ({ ...s })),
   };
 }
