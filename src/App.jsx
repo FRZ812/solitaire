@@ -530,7 +530,9 @@ export function Solitaire() {
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const message = `[PLAYER ACTION] ${action}`;
+      // Until the opening interview finishes, every answer feeds character
+      // creation; the narrator asks a few questions then finalizes the build.
+      const message = state.created === false ? `[CHARACTER CREATION] ${action}` : `[PLAYER ACTION] ${action}`;
       const beat = await callNarrator(stateWithPlayer, message);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, message, next));
