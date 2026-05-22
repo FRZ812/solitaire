@@ -8,6 +8,7 @@
 
 import { advanceTime } from "./time.js";
 import { coinsToCopper, copperToCoins, formatCopper } from "./economy.js";
+import { spoilState } from "./spoilage.js";
 import { makeRng } from "./town-gen.js";
 import { TASK_POOL, JOB_POOL, BOARD_REFRESH_DAYS } from "../data/postings.js";
 import { COMPANION_LIST } from "../data/companions.js";
@@ -77,14 +78,14 @@ export function applyDayLabour(state, job) {
     thirst: clamp100((cur.thirst || 0) + (cost.thirst || 0)),
     sleep: clamp100((cur.sleep || 0) + (cost.sleep || 0)),
   };
-  const summary = `You ${job.title.toLowerCase()} for ${job.hours} hours and earn ${formatCopper(job.payCp || 0)}.`;
-  return {
-    ok: true,
-    summary,
-    state: {
-      ...state,
-      time,
-      character: { ...state.character, needs, inventory: { ...state.character.inventory, coins } },
-    },
+  let summary = `You ${job.title.toLowerCase()} for ${job.hours} hours and earn ${formatCopper(job.payCp || 0)}.`;
+  const worked = {
+    ...state,
+    time,
+    character: { ...state.character, needs, inventory: { ...state.character.inventory, coins } },
   };
+  // A stretch of work can carry past a day's turn — spoil any food that's gone off.
+  const sp = spoilState(worked);
+  if (sp.spoiled.length) summary += ` While you worked, ${sp.spoiled.map((s) => `${s.quantity}× ${s.name}`).join(", ")} spoiled in your pack.`;
+  return { ok: true, summary, state: sp.state };
 }

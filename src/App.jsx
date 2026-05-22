@@ -729,9 +729,10 @@ export function Solitaire() {
     if (!(await askConfirm({ title: "Apprentice to the smith", body: `Train as ${step.title}? This costs ${formatCopper(step.costCp)} and ${step.days} days bound to the forge.`, confirmLabel: "Train" }))) return;
     const r = applyApprentice(state, step);
     if (!r.ok) { setError(r.reason || "You can't pay the smith."); return; }
-    const beat = { id: `appr${Date.now()}`, type: "narration", content: `You bind yourself to the smith as ${step.title}. The days blur into bellows-heat, ruined billets, and the slow grammar of the hammer — and you come away knowing more than you did.` };
+    const beats = [{ id: `appr${Date.now()}`, type: "narration", content: `You bind yourself to the smith as ${step.title}. The days blur into bellows-heat, ruined billets, and the slow grammar of the hammer — and you come away knowing more than you did.` }];
+    if (r.spoiled?.length) beats.push({ id: `spoil${Date.now()}`, type: "spoilage", lines: r.spoiled.map((s) => `${s.quantity}× ${s.name}`) });
     setShopTile(null); // the long apprenticeship ends the visit
-    setState({ ...r.state, beats: [...r.state.beats, beat] });
+    setState({ ...r.state, beats: [...r.state.beats, ...beats] });
   }
 
   // Pay an expert to drill a proficiency a rating step (engine/training.js).
@@ -822,7 +823,7 @@ export function Solitaire() {
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[APPROACH RECRUIT] At ${place} the player approaches ${tmpl.name} (id: ${tmpl.id}), a ${tmpl.race} ${tmpl.role} — "${tmpl.desc}" — who is posted as willing to take the road for ${tmpl.terms}. They are ${tmpl.choosiness}-choosiness about who they'll follow. The player's company right now reads as ${standing.descriptor}; its strongest qualities: ${standing.bestLine}. Weighing that, ${tmpl.name}'s likely reception is "${outlook}". Open the conversation in ${tmpl.name}'s voice — size up the player and their band, state interest/terms/skepticism. Do NOT have them join yet; the player must talk them round across the exchange. Only set recruit_companion:{"id":"${tmpl.id}"} once they are GENUINELY won over by what the player says and shows — and a scornful, unimpressed prospect (a strong fighter eyeing a lone weakling) may refuse outright. Keep it grounded; let the player's words decide.`;
+      const msg = `[APPROACH RECRUIT] At ${place} the player approaches ${tmpl.name} (id: ${tmpl.id}), a ${tmpl.race} ${tmpl.role} — "${tmpl.desc}" — who is posted as willing to take the road for ${tmpl.terms}. They are ${tmpl.choosiness}-choosiness about who they'll follow. The player's company right now reads as ${standing.descriptor}; its strongest qualities: ${standing.bestLine}. Weighing that, ${tmpl.name}'s likely reception is "${outlook}". This is a FIRST meeting: ${tmpl.name} does NOT know the player's name (a name given earlier to the innkeeper did not reach them) — they address the player by look, bearing, or role until the player offers it, and only learn it if the player actually gives it during this exchange. Open the conversation in ${tmpl.name}'s voice — size up the player and their band, state interest/terms/skepticism. Do NOT have them join yet; the player must talk them round across the exchange. Only set recruit_companion:{"id":"${tmpl.id}"} once they are GENUINELY won over by what the player says and shows — and a scornful, unimpressed prospect (a strong fighter eyeing a lone weakling) may refuse outright. Keep it grounded; let the player's words decide.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));

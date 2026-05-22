@@ -123,6 +123,10 @@ export const BUILDINGS = {
       { id: "carrots",      chance: 0.9,  qty: [3, 8], priceMult: 1.2 },
       { id: "cabbage",      chance: 0.7,  qty: [2, 5], priceMult: 1.2 },
       { id: "dried-beans",  chance: 0.6,  qty: [2, 5], priceMult: 1.25 },
+      // Preserved travel rations — the provisioner's keep-anywhere staples.
+      { id: "hardtack",     chance: 0.9,  qty: [3, 8], priceMult: 1.25 },
+      { id: "jerky",        chance: 0.8,  qty: [2, 5], priceMult: 1.3 },
+      { id: "salt-pork",    chance: 0.7,  qty: [1, 4], priceMult: 1.3 },
     ],
   },
 };

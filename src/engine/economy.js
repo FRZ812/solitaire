@@ -6,6 +6,7 @@
 // { copper, silver, gold } object (the shape inventory.js already clamps).
 
 import { getTile } from "./world.js";
+import { stampFreshUntil } from "./spoilage.js";
 
 export const CP_PER_SP = 10;
 export const CP_PER_GP = 100;
@@ -79,9 +80,10 @@ export function buyGood(state, { tileKey, bucket, itemDef, priceCp, qty = 1 }) {
 
   const coins = copperToCoins(coinsToCopper(inv.coins) - total);
   const carried = inv.carried.map((c) => ({ ...c }));
+  const day = state.time?.day || 0;
   const ex = carried.find((c) => c.itemId === itemDef.id);
-  if (ex) ex.quantity += qty;
-  else carried.push({ itemId: itemDef.id, quantity: qty });
+  if (ex) { ex.quantity += qty; stampFreshUntil(ex, itemDef, day); }
+  else { const stack = { itemId: itemDef.id, quantity: qty }; stampFreshUntil(stack, itemDef, day); carried.push(stack); }
 
   const items = { ...state.world.codex.items };
   if (!items[itemDef.id]) items[itemDef.id] = cleanDef(itemDef);
