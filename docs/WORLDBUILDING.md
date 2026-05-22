@@ -365,9 +365,14 @@ mindless can't be reasoned with):
 **Lethality** — `start_combat.lethal` decides the fight's nature. A **brawl**
 (`lethal:false` — barfights, "teach him a lesson", guards subduing) stows both
 sides' weapons and is fought bare-knuckle (`fistsProfile`, ~half damage); a foe
-at 0 HP is **knocked out** (alive), not killed. **Draw Weapon**
-(`playerDrawWeapon`) escalates a brawl to lethal — real steel, real death, worse
-aftermath. Wilderness/monster/assassin fights start `lethal:true`.
+at 0 HP is **knocked out** (alive), not killed. It **auto-escalates to lethal**
+the moment anyone commits a killing act: casting a spell or using a real weapon
+technique (`escalateToLethal`), or the explicit **Draw Weapon** button. Once
+lethal, real steel, real death, worse aftermath. Wilderness/monster/assassin
+fights start `lethal:true`. Casting also sets `cs.magicCast`, and the
+[COMBAT REPORT] flags it — **magic is rare and dreaded**, so working it in front
+of common folk draws panic/terror/cries of witchcraft far beyond mere violence
+(see the prompt's MAGIC IS RARE AND DREADED note).
 
 **Item grants (on-equip spells).** An item may carry a `grants` block (combat
 `abilities`, narrative `spells`, a `magicKnows` line). `equipItem` applies it and

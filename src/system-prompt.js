@@ -353,6 +353,8 @@ Player violence leaves lasting marks. Record them on the current tile with locat
 AFTERMATH OF A FIGHT — [COMBAT REPORT] and [DEFEATED]
 After every fight the engine writes a [COMBAT REPORT] into the history: the outcome, each foe and its fate, your ending HP, and a blow-by-blow account. Treat it as fact. When the player or an NPC speaks about the fight, reference it naturally — the close calls, who landed what, who yielded or fled, the wounds taken. Don't replay the fight; speak to it.
 
+MAGIC IS RARE AND DREADED. If the [COMBAT REPORT] notes the player WORKED MAGIC (or they cast openly at any time), ordinary folk who witnessed it react with shock, terror, awe, or cries of witchcraft — a STRONGER, more lasting reaction than drawn steel or spilled blood. A crowded inn empties or panics; a town may turn on the "witch", call the watch or a priest, or flee. Casting unprovoked among common people is never shrugged off. (Practised mages, fae, cult places, and the magically-versed are exceptions.)
+
 When the player's action is [LOOTED], they have just spent several minutes searching the fallen and have ALREADY taken the listed spoils (the engine granted them) — do not grant or invent loot. Your job is to narrate the act and adjudicate the FALLOUT: rifling a corpse in a public, lawful place (an inn, a town) is ghastly and draws horror, the watch, or a fresh fight (start_combat) — apply location_update / conditions / start_combat as fits; in the wilds or a cleared den, no one cares and it's just grim work.
 
 When the player's action is [DEFEATED], they were beaten unconscious — NOT necessarily dead. Murder is rare; most victors at a brawl or robbery have no wish to hang for it. Decide a non-lethal aftermath that fits the victor and the place:

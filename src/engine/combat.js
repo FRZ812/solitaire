@@ -145,19 +145,29 @@ function fistsProfile(w) {
   };
 }
 
+// Escalate a brawl to a lethal fight — you and any armed foes switch to real
+// weapons, deaths become possible, and the aftermath gets far worse.
+function escalateToLethal(cs, reason) {
+  if (cs.lethal) return;
+  cs.lethal = true;
+  cs.escalated = true;
+  if (cs.player.stowedWeapon) cs.player.weapon = cs.player.stowedWeapon;
+  for (const e of cs.enemies) {
+    if (e.health > 0 && !e.resolved && e.armed && e.stowedWeapon) e.weapon = e.stowedWeapon;
+  }
+  cs.log.push(logEntry(
+    reason === "magic"
+      ? "You work a spell — the room recoils; this is no brawl now."
+      : "Steel is drawn — the brawl turns to a killing matter.", "system"));
+}
+
 // Draw steel mid-brawl — escalates to a lethal fight (you and any armed foes
 // switch to real weapons; the aftermath gets far worse).
 export function playerDrawWeapon(cs0) {
   if (cs0.phase !== "player" || cs0.lethal) return cs0;
   if (!cs0.player.stowedWeapon || cs0.player.stowedWeapon.category === "unarmed") return cs0;
   const cs = clone(cs0);
-  cs.lethal = true;
-  cs.escalated = true;
-  cs.player.weapon = cs.player.stowedWeapon;
-  for (const e of cs.enemies) {
-    if (e.health > 0 && !e.resolved && e.armed && e.stowedWeapon) e.weapon = e.stowedWeapon;
-  }
-  cs.log.push(logEntry("You draw your weapon — the brawl turns to a killing matter.", "system"));
+  escalateToLethal(cs, "weapon");
   return cs;
 }
 
@@ -444,6 +454,12 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   const tierId = entry.tier || "common";
   const scaling = abilityScaling(def);
+  // A spell or a real weapon technique is inherently a killing act — using one
+  // in a brawl escalates it to lethal on its own (no separate Draw needed).
+  const isSpell = scaling === "stat";
+  const isWeaponTech = scaling === "weapon" && def.weaponReq && def.weaponReq.length > 0;
+  if (isSpell) cs.magicCast = true;
+  if (!cs.lethal && (isSpell || isWeaponTech)) escalateToLethal(cs, isSpell ? "magic" : "weapon");
   cs.player.stamina -= def.cost || 0;
   // Spellcasting proficiency makes casting cheaper on Resolve.
   const resoCost = Math.max(0, (def.resolveCost || 0) - Math.floor((cs.player.prof?.spellcasting || 0) / 4));
@@ -976,5 +992,8 @@ function buildCombatRecap(cs, context) {
     .slice(-22)
     .map((l) => l.text)
     .join(" ");
-  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. Foes: ${foes}. You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}`.slice(0, 1600);
+  const magicNote = cs.magicCast
+    ? " NOTE: the player WORKED MAGIC in this fight — magic is rare and dreaded, so any ordinary folk who witnessed it should react with shock, panic, even cries of witchcraft, far beyond their reaction to mere violence."
+    : "";
+  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. Foes: ${foes}. You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}.${magicNote}`.slice(0, 1700);
 }
