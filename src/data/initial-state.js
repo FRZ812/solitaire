@@ -34,7 +34,7 @@ export function makeInitialState() {
       vitality: 24, vitalityMax: 30,
       resolve: 4, resolveMax: 6,
       conditions: ["Wet"],
-      bond: "A small wooden bird carved by your sister, who vanished seven years ago.",
+      bond: "Newly come to the road — your name, your past, and your reasons are still your own to tell.",
       attributes: { body: 2, reflex: 3, vigor: 2, mind: 2, wit: 4, presence: 1 },
       needs: { hunger: 60, thirst: 75, sleep: 70 },
       // Learned combat abilities (stored as { id, tier }); Strike + Brace are
@@ -45,7 +45,7 @@ export function makeInitialState() {
       proficiencies: {},
       inventory: {
         // grimoire-firstflame is a [DEV/TEST] item — equip it to try magic.
-        carried: [{ itemId: "wooden-bird", quantity: 1 }, { itemId: "grimoire-firstflame", quantity: 1 }],
+        carried: [{ itemId: "grimoire-firstflame", quantity: 1 }],
         coins: { copper: 8, silver: 3, gold: 10 }, // [DEV/TEST] bumped so expert training/apprenticeship is easy to try
       },
     },
@@ -71,13 +71,10 @@ export function makeInitialState() {
               marks: "a small healed scar near the right temple",
             },
             base_appearance: "Lean and road-hardened. Weathered tan, dark brown hair cropped short. Hazel eyes. A small old scar near the right temple.",
-            description: "You. A traveler bearing a wooden bird and a long sorrow.",
+            description: "You — newly come to the Mire. Who you are is still being written.",
             attributes: { body: 2, reflex: 3, vigor: 2, mind: 2, wit: 4, presence: 1 },
             worn: ["wool-cloak", "linen-tunic", "leather-boots"],
-            knows: [
-              "My sister carved this wooden bird before she vanished seven years ago.",
-              "I came to the Drowned Rat, the tavern at Mirecross, out of the rain on the afternoon of the third of Hollowsmonth, in the year 803.",
-            ],
+            knows: [],
           },
 
           // ---------------------------------------------------------------
@@ -492,7 +489,6 @@ export function makeInitialState() {
           "matriarch":      { id: "matriarch",      name: "Matriarch",      description: "Elected female leader; used in matriarchies like the Halfborn Hold." },
         },
         items: {
-          "wooden-bird":   { id: "wooden-bird",   name: "Wooden Bird",  appearance: "A small dark-stained bird the length of a thumb. The right wing is split where you gripped it too hard once.", description: "Carved by your sister.", kind: "trinket" },
           "wool-cloak":    { id: "wool-cloak",    name: "Wool Cloak",   appearance: "Heavy charcoal-grey wool, dark across the shoulders from the rain. Frayed hem.", description: "A traveler's cloak.", kind: "clothing" },
           "linen-tunic":   { id: "linen-tunic",   name: "Linen Tunic",  appearance: "Undyed linen, the colour of old milk. Mended at one elbow.", description: "A plain undershirt.", kind: "clothing" },
           "leather-boots": { id: "leather-boots", name: "Leather Boots",appearance: "Cracked dark leather. The left sole is wearing through.", description: "Worn but serviceable.", kind: "clothing" },
@@ -529,9 +525,10 @@ export function makeInitialState() {
       },
     },
     party: [], // recruited companion ids (full people in world.codex.characters)
+    created: false, // false until the opening character-creation interview finishes
     beats: [{
       id: "b0", type: "narration",
-      content: "Rain whispers against warped shutters. The innkeeper, a stooped woman with ink-stained fingers, slides a pewter cup toward you without looking up. The hooded figure in the corner has been watching you for the better part of an hour.",
+      content: "Rain hammers the warped shutters of the Drowned Rat. You shoulder in out of the wet — another stranger washed into the Mire — and the stooped, ink-fingered innkeeper looks you over without quite looking up. \"New face,\" she says. \"Before the Mire decides what to make of you — what do they call you, where do you hail from, and what road brought you to my door?\"",
       timeStamp: "13:30",
     }],
     apiHistory: [],

@@ -17,7 +17,7 @@ export const COMPANIONS = {
     appearance: { skin: "weathered tan", hair: "black shot with grey, cropped short", eyes: "brown", build: "big, slab-shouldered", facial_hair: "perpetual stubble", marks: "a broken nose and a long scar down the right forearm" },
     base_appearance: "Big and slab-shouldered. Weathered tan, grey-shot black hair cropped short. Broken nose, brown eyes, a long forearm scar.",
     description: "A sellsword between contracts, drinking cheap and watching the door. Loyal to coin first — and, slowly, to people who hold a line beside him.",
-    attributes: { body: 7, reflex: 5, vigor: 6, mind: 3, wit: 4, presence: 4 },
+    attributes: { body: 4, reflex: 2, vigor: 2, mind: 1, wit: 2, presence: 1 }, // ordinary backwater muscle, below the player
     abilities: ["power-strike", "cleave"],
     skills: [{ name: "Soldiering", rating: 3, desc: "formations, sieges, holding a line" }, { name: "Intimidation", rating: 2 }],
     choosiness: "mid", // a veteran wants a band that can pay and hold its own
@@ -32,7 +32,7 @@ export const COMPANIONS = {
     appearance: { skin: "wind-burned", hair: "dark blonde in a tight braid", eyes: "pale grey", build: "lean and wiry", facial_hair: "none", marks: "a bowstring callus and a fish-hook scar at the thumb" },
     base_appearance: "Lean and wiry, wind-burned. Dark-blonde hair in a tight braid, pale grey eyes. A bowstring callus on the draw hand.",
     description: "A marsh-hunter who can read water and weather and put an arrow where she looks. Quiet, dry, and quietly tired of the Mire.",
-    attributes: { body: 4, reflex: 8, vigor: 5, mind: 5, wit: 6, presence: 3 },
+    attributes: { body: 1, reflex: 4, vigor: 2, mind: 2, wit: 3, presence: 1 }, // a marsh-hunter's quick eye, otherwise ordinary
     abilities: ["rapid-jabs", "venom-strike"],
     skills: [{ name: "Archery", rating: 4 }, { name: "Tracking", rating: 3 }, { name: "Marsh-lore", rating: 3 }],
     choosiness: "low", // bored of the Mire, wants a way out
@@ -47,7 +47,7 @@ export const COMPANIONS = {
     appearance: { skin: "ruddy", hair: "curly chestnut, thinning on top", eyes: "hazel", build: "short and barrel-round", facial_hair: "mutton-chop whiskers", marks: "burn-scars on both forearms from a hundred campfires" },
     base_appearance: "Short and barrel-round, ruddy-faced. Curly chestnut hair thinning on top, mutton-chop whiskers, hazel eyes.",
     description: "A hedgerow halfling who's portered for caravans up and down the road. Carries more than looks possible, cooks better than anyone expects, and grumbles the whole way.",
-    attributes: { body: 4, reflex: 4, vigor: 6, mind: 5, wit: 6, presence: 5 },
+    attributes: { body: 2, reflex: 2, vigor: 3, mind: 2, wit: 2, presence: 2 }, // a sturdy porter, no fighter
     abilities: ["second-wind"],
     skills: [{ name: "Cooking", rating: 3 }, { name: "Portering", rating: 3, desc: "carries a staggering load" }, { name: "Haggling", rating: 2 }],
     choosiness: "low", // amiable; happy for steady work and good company
@@ -62,7 +62,7 @@ export const COMPANIONS = {
     appearance: { skin: "winter-pale", hair: "iron-grey, pinned back hard", eyes: "pale amber, very steady", build: "thin and upright", facial_hair: "none", marks: "tally-scars along the left forearm and stained fingertips" },
     base_appearance: "Thin and upright, winter-pale. Iron-grey hair pinned back, steady amber eyes, stained fingertips. Tally-scars on the left forearm.",
     description: "A hedge-witch of charms, births, and quieter work, moved on from too many parishes. Useful, unsettling, and entirely worth the tenth she asks.",
-    attributes: { body: 3, reflex: 4, vigor: 5, mind: 8, wit: 7, presence: 6 },
+    attributes: { body: 1, reflex: 2, vigor: 1, mind: 4, wit: 3, presence: 2 }, // hedge-craft and a sharp eye, frail otherwise
     abilities: ["hex", "venom-strike"],
     skills: [{ name: "Herblore", rating: 4, desc: "salves, draughts, poisons" }, { name: "Charms & Curses", rating: 3, desc: "hedge-magic — blood, root, and spite, not fire or lightning" }, { name: "Midwifery", rating: 2 }],
     choosiness: "mid", // sizes you up; asks her tenth and no questions
@@ -77,7 +77,7 @@ export const COMPANIONS = {
     appearance: { skin: "tan, weather-lined young", hair: "brown, regulation-short grown out ragged", eyes: "grey-green", build: "tall and rangy", facial_hair: "a few days' beard", marks: "a faded Whitemarch brand he keeps covered, and a stiff left shoulder" },
     base_appearance: "Tall and rangy, tan and lined before his time. Ragged-grown brown hair, grey-green eyes, a few days' beard. A covered brand on the arm.",
     description: "A Whitemarch spearman who walked away from a war he wouldn't name. Disciplined, steady under pressure, and watching the road behind as much as ahead.",
-    attributes: { body: 6, reflex: 6, vigor: 6, mind: 4, wit: 5, presence: 4 },
+    attributes: { body: 3, reflex: 3, vigor: 2, mind: 1, wit: 2, presence: 1 }, // a deserter with some drill left in him
     abilities: ["power-strike", "piercing-thrust"],
     skills: [{ name: "Spear-drill", rating: 3 }, { name: "Soldiering", rating: 3, desc: "shield-wall, watch-craft, discipline" }],
     choosiness: "high", // a wary deserter; won't follow a weakling or anyone reckless

@@ -227,5 +227,49 @@ export function applyBeat(state, beat, options = {}) {
     world = { ...world, codex: { ...world.codex, characters: chars } };
   }
 
-  return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party };
+  // Opening character-creation interview result: set the player's identity and
+  // a balanced starting attribute spread from the narrator's read of the player.
+  let created = state.created;
+  const clampAttr = (v) => Math.max(1, Math.min(10, Math.round(v || 0)));
+  if (beat.character_setup) {
+    const cs = beat.character_setup;
+    if (cs.name) character.name = cs.name;
+    if (cs.bond) character.bond = cs.bond;
+    if (cs.attributes) {
+      const a = {};
+      for (const k of ["body", "reflex", "vigor", "mind", "wit", "presence"]) a[k] = clampAttr(cs.attributes[k] ?? character.attributes[k]);
+      character.attributes = a;
+    }
+    if (cs.ability) {
+      const list = Array.isArray(character.abilities) ? [...character.abilities] : [];
+      const idOf = (x) => (typeof x === "string" ? x : x.id);
+      if (!list.some((x) => idOf(x) === cs.ability)) list.push({ id: cs.ability, tier: "common" });
+      character.abilities = list;
+    }
+    const w = world.codex.characters.wanderer || {};
+    const merged = {
+      ...w,
+      name: cs.name || w.name,
+      race: cs.race || w.race,
+      profession: cs.profession || w.profession,
+      age: cs.age || w.age,
+      attractiveness: cs.attractiveness || w.attractiveness,
+      appearance: cs.appearance || w.appearance,
+      base_appearance: cs.base_appearance || w.base_appearance,
+      attributes: character.attributes,
+      knows: cs.knows ? [...(w.knows || []), ...cs.knows] : (w.knows || []),
+    };
+    world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, wanderer: merged } } };
+    created = true;
+  }
+
+  // The player's name/bond becoming established (or changing) in the fiction.
+  if (beat.player_update) {
+    if (beat.player_update.name) character.name = beat.player_update.name;
+    if (beat.player_update.bond) character.bond = beat.player_update.bond;
+    const w = world.codex.characters.wanderer || {};
+    world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, wanderer: { ...w, name: character.name } } } };
+  }
+
+  return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created };
 }
