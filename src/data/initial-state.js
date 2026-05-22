@@ -89,20 +89,19 @@ export function makeInitialState() {
           // -------- Legendary rulers (fabled, distant) --------
           "demon-king": {
             id: "demon-king", kind: "npc",
-            name: "The Demon King", race: "demonborn", profession: "monarch",
-            origin: "north",
+            name: "The Demon King", race: "demon", profession: "monarch",
             age: "older than any kingdom",
-            attractiveness: "terrible and difficult to look at directly",
+            attractiveness: "terrible; the eye refuses to hold him",
             appearance: {
-              skin: "alabaster, faintly warm even in the cold",
-              hair: "black, falling past the shoulders",
-              eyes: "two different colours, neither human",
-              build: "tall and broad, of soldier-noble line",
+              skin: "not flesh — a banked, shifting heat the colour of cooling iron, darker at the edges",
+              hair: "slow black smoke that never quite settles into anything",
+              eyes: "too many embers, and not set in a face the way a face should be set",
+              build: "vast and never the same shape twice; a presence that bends the cold air around it",
               facial_hair: "none",
-              marks: "two slow-growing horns at the temples; old burn-scar at the throat",
+              marks: "an old binding-sigil seared across the chest, still faintly smoking",
             },
-            base_appearance: "Tall and broad. Alabaster skin warm in winter. Long black hair. Eyes mismatched and not quite human. Two horns at the temples; an old burn-mark at the throat.",
-            description: "Sits the Polestar Throne at Northstar Castle in the far north. The continent's oldest binding power and its quietest one. Pilgrims walk toward him. Few come back; none come back the same.",
+            base_appearance: "Not a man with horns — a TRUE demon. A banked heat the colour of cooling iron, wreathed in slow black smoke, with too many embers for eyes. The shape will not hold still in the eye, and the cold air bends around it.",
+            description: "Sits the Polestar Throne at Northstar Castle in the far north — a TRUE demon, the abyssal power the demon-blooded merely descend from, NOT one of them. The continent's oldest binding power and its quietest one. Pilgrims walk toward him. Few come back; none come back the same.",
             attributes: { body: 18, reflex: 14, vigor: 22, mind: 18, wit: 16, presence: 24 },
             worn: ["frost-crown", "black-robe", "polestar-sword"],
             knows: [
@@ -137,7 +136,6 @@ export function makeInitialState() {
           "goblin-king": {
             id: "goblin-king", kind: "npc",
             name: "The Goblin King", race: "goblin", profession: "warlord",
-            origin: "north",
             age: "old, by goblin reckoning — perhaps thirty",
             attractiveness: "unsettling — too still",
             appearance: {
@@ -205,8 +203,7 @@ export function makeInitialState() {
           },
           "great-wyrm": {
             id: "great-wyrm", kind: "npc",
-            name: "Vyrnholt, the Great Wyrm", race: "drakeborn", profession: "wyrm",
-            origin: "north",
+            name: "Vyrnholt, the Great Wyrm", race: "wyrm", profession: "wyrm",
             age: "older than every kingdom",
             attractiveness: "magnificent; terrible",
             appearance: {
@@ -218,7 +215,7 @@ export function makeInitialState() {
               marks: "an old lance-scar across the brow; gold-leaf melted into the right foreclaws",
             },
             base_appearance: "Longer than a wagon-train. Smoke-black scale. Gold slit eyes. A lance-scar across the brow. Gold leaf melted into the right foreclaws.",
-            description: "The great wyrm of Drakespire — the Vyrgun's lord and the Drakeholt's oldest authority. Wakes seldom; is always aware. Tribute climbs the road in his name.",
+            description: "The great wyrm of Drakespire — a TRUE dragon, the Vyrgun's lord and the Drakeholt's oldest authority, NOT one of the diluted drake-blooded who merely claim his line. Wakes seldom; is always aware. Tribute climbs the road in his name.",
             attributes: { body: 24, reflex: 12, vigor: 26, mind: 18, wit: 22, presence: 22 },
             worn: ["hoard-melted-into-the-floor"],
             knows: [
@@ -440,7 +437,6 @@ export function makeInitialState() {
           "king-of-three": {
             id: "king-of-three", kind: "npc",
             name: "The King-of-Three", race: "goblin", profession: "warlord",
-            origin: "northwest",
             age: "old for a goblin — perhaps twenty-five",
             attractiveness: "unpleasant",
             appearance: {
@@ -469,9 +465,11 @@ export function makeInitialState() {
           "goblin":    { id: "goblin",    name: "Goblin",    appearance: "Thigh-high. Lean, wiry, broad of mouth. Skin in shades of grey or moss; eyes large and over-attentive. Sharp small teeth.", description: "Tribal raiders and warren-keepers, feared and hated by the other peoples. Quick, bitter, and clannish. The Sundered Crown gathers them under the Goblin King and trades in slaves; others keep smaller dens." },
           "orc":       { id: "orc",       name: "Orc",       appearance: "Taller than a man, heavier, with lower-canine tusks and slate-grey or olive skin. Build varies from lean-quick to broad-massive.", description: "Warlike kin of the Sundered Crown, dreaded across the marches. Most ride and raid for the Goblin King and keep thralls; some have broken with the Crown and live otherwise." },
           "half-orc":  { id: "half-orc",  name: "Half-Orc",  appearance: "Tall and broad like an orc but with a softer brow and small or absent tusks. Skin in mixed greys and tans. Many bear the marks of slavery or its breaking.", description: "Half-blood folk of human and orc parentage — scorned by both peoples and belonging to neither, many born of raids or bondage. The Halfborn Hold gathers them and their freed kin into a Vale-edge town under elected matriarchy." },
-          "drakeborn": { id: "drakeborn", name: "Drake-Blooded", appearance: "Visibly scaled along forearms and jaw, slit-pupiled, blunt-clawed. Heights and colours vary — desert-bright to mountain-dark.", description: "Descendants of the Drakeholt wyrms. Rare anywhere south of the Spine. The Vyrgun warlords claim full blood; most so-called drake-blooded are diluted." },
-          "fae":       { id: "fae",       name: "Fae",       appearance: "Tall, slim, fair to the point of cold. Eyes one slightly wrong colour; smiles that do not reach the rest of the face. Pulled out of sight at the corner of the eye, then in front of you again.", description: "Old folk of the deep wood. Bargain-keepers. The Court of Hawthorn is their nearest seat to the Vale; others are spoken of and not named." },
-          "demonborn": { id: "demonborn", name: "Demon-Blooded", appearance: "Tall, broad-shouldered, hot-skinned. Two slow-growing horns at the temples (some hide them under hair); eyes that don't match. The skin too warm to touch in winter.", description: "Spawned, made, or descended from the Demon-King's court. Rare in the Vale; less rare in the marches and along Tellmar's eastern trade." },
+          "drakeborn": { id: "drakeborn", name: "Drake-Blooded", appearance: "A mortal humanoid, visibly scaled along forearms and jaw, slit-pupiled, blunt-clawed. Heights and colours vary — desert-bright to mountain-dark.", description: "MORTALS who carry a thin, diluted trace of wyrm-blood — descendants and claimants of the Drakeholt line, NOT dragons themselves. People with mixed heritage who live, age, and die as people. Rare anywhere south of the Spine; the Vyrgun warlords claim fuller blood. Not to be confused with a TRUE wyrm (see Wyrm)." },
+          "fae":       { id: "fae",       name: "Fae",       appearance: "Tall, slim, fair to the point of cold. Eyes one slightly wrong colour; smiles that do not reach the rest of the face. Pulled out of sight at the corner of the eye, then in front of you again.", description: "Old folk of the deep wood — NOT humans, but a wholly other kindred bound by bargain and rule. The Court of Hawthorn is their nearest seat to the Vale; others are spoken of and not named." },
+          "demonborn": { id: "demonborn", name: "Demon-Blooded", appearance: "A mortal humanoid: tall, broad-shouldered, hot-skinned. Two slow-growing horns at the temples (some hide them under hair); eyes that don't match. The skin too warm to touch in winter.", description: "MORTALS spawned of, made by, or descended from the Demon-King's court — people of mixed/tainted heritage who live and die as people, scorned and watched. NOT demons themselves (see Demon). Rare in the Vale; less rare in the marches and along Tellmar's eastern trade." },
+          "demon":     { id: "demon",     name: "Demon",        appearance: "Not humanoid. A true abyssal entity whose form will not hold still in the eye — heat, smoke, embers, and wrongness where a body should be; the air itself bends around it. Any human-seeming shape is a worn mask, not its nature.", description: "A TRUE demon — an entity of the Demon-King's infernal order, an order of being wholly apart from mortals. Its presence alone unsettles, sickens, or awes; it does not age, hunger, or die as the living do. The demon-blooded merely descend from such things — a demon is NOT a person with mixed race but a different entity entirely. Vanishingly rare in the mortal world; its appearance is an event." },
+          "wyrm":      { id: "wyrm",      name: "Wyrm",         appearance: "A true dragon. Vast — larger than a hall — scaled, winged, ridge-quilled, with molten-coin eyes and a presence that weights the air. Emphatically NOT a humanoid.", description: "A TRUE wyrm of the Drakeholt — an ancient apex entity older than kingdoms, hoard-keeper and tribute-lord, always aware. A wholly different order of being from the drake-blooded mortals who carry a thin trace of its line. Write it as a dragon, never as a tall person with scales." },
         },
         professions: {
           "innkeeper":      { id: "innkeeper",      name: "Innkeeper",      description: "Keeper of an inn or tavern.", common: true },

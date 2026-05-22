@@ -1,7 +1,7 @@
 // State-context builders shared by both narrator backends (api-anthropic.js for
 // the artifact build, api-supabase.js for the web build). The narrator call
 // itself lives in those files; this module is helpers only.
-import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
+import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { TERRAINS } from "../data/terrains.js";
@@ -190,7 +190,11 @@ export function buildStateContext(state) {
   const partyLine = companions.length
     ? `\n[COMPANIONS — travelling with you: ${companions.map(companionDetail).join(" · ")}. They are present in scenes, act and speak on their own, fight at your side, and share your fortunes (they can be wounded, killed, or leave). When the player asks a companion what they can do, ANSWER CONCRETELY from this kit — their real abilities, skills, and gear — never vague hand-waving. You may move gear between the player and a companion when they share loot (use companion_gear). Don't drop or forget them.]`
     : "";
-  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}${questLine}${partyLine}${buildSurroundings(state, t)}
+  const you = world.codex.characters.wanderer || {};
+  const youDesc = [originLabel(you.origin), you.race, you.profession].filter(Boolean).join(" ");
+  const playerLine = `[PLAYER — You are ${character.name}${youDesc ? `, a ${youDesc}` : ""}. Keep this identity consistent (do not drift the player's race or origin). Your NAME is PRIVATE: another character knows it ONLY if you have told THEM in the fiction (or it has plausibly reached them — a poster, a mutual friend, your own renown). A stranger, someone freshly met, or a companion you have only just recruited does NOT know your name until you give it — they address you by look, bearing, or role ("the swordsman", "stranger", "you with the bow") until then. The name you gave one person (the innkeeper) did not travel to anyone else on its own.]`;
+  return `${playerLine}
+[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}${questLine}${partyLine}${buildSurroundings(state, t)}
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]
