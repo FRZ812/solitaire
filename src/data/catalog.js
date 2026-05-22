@@ -5,8 +5,9 @@
 
 import { GOODS } from "./goods.js";
 import { EQUIPMENT, MATERIALS } from "./equipment.js";
+import { TOOLS } from "./tools.js";
 
-export const ALL_ITEMS = { ...GOODS, ...MATERIALS, ...EQUIPMENT };
+export const ALL_ITEMS = { ...GOODS, ...MATERIALS, ...TOOLS, ...EQUIPMENT };
 
 export function itemTemplate(id) {
   return ALL_ITEMS[id] || null;

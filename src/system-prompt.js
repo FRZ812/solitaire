@@ -405,6 +405,27 @@ The [SURROUNDINGS] line tells you whether the player stands in a safe/settled pl
 INVENTORY MECHANICS
 Player has carried (pack) and worn items. Only items in inventory or worn can be used. Track via inventory_changes.
 
+ITEMS & LOOT RULESET — how to generate balanced gear in the fiction
+Every weapon, piece of armour, tool, or consumable you award (loot, gift, shop find, reward) goes in via inventory_changes.added as { "itemId", "quantity" }. Prefer a CANONICAL item id when one fits (the engine knows it) — the catalog already covers the families below at every grade. When you INVENT an item, give it a descriptive id and let the engine infer its power: the engine reads the NAME's keywords + the item's tier, so the name must carry the right family/heft/armour word, and you must pick a sane kind, tier, and value.
+
+POWER COMES FROM TIER. Tiers and their rough power multiplier: common ×1 · uncommon ×1.35 · rare ×1.8 · very-rare ×2.4 · epic ×3.2 · legendary ×4.3 · mythical ×5.8 · divine ×8. Rarer = exponentially scarcer and stronger. Match tier to source and place: a Mire bandit or village smith deals in common (rare uncommon); rare+ gear is a named blade, a lord's armoury, a wyrm's hoard, a deep-delve reward — NEVER common drops or backwater stock. Loot from a foe never exceeds what that foe could own.
+
+WEAPON FAMILIES (the name's family word sets the role; tier scales it):
+- dagger/knife/dirk/stiletto — fast, low base, a little armour-pierce; a finesse/ambush sidearm (Reflex), poor against armour.
+- sword/blade/sabre/rapier/falchion — balanced all-rounder (Body; rapier favours Reflex).
+- axe/cleaver/hatchet — high raw damage, no armour bonus (Body).
+- mace/hammer/maul/war-hammer/club — lower raw damage but PENETRATES armour (Body); the anti-armour pick.
+- spear/lance/pike/halberd/glaive — reach + some pierce (Body).
+- bow/crossbow/sling — ranged (Reflex).
+- staff/wand/rod/focus — MAGICAL damage (Mind) — caster gear; don't hand magic weapons to ordinary folk.
+HEFT: a "great-"/"war-"/"heavy"/two-handed weapon (greatsword, greataxe, maul, war-hammer, longbow, halberd) hits markedly harder; a "short"/"hand"/"light"/throwing one hits softer. Two-handers cost the shield slot — a real trade-off.
+
+ARMOUR (kind "armor" body slot; helms/bracers/greaves/coif/cloak are kind "clothing" and stack; shields are kind "shield"). The name's class word sets protection, low→high: padded/gambeson ≈ leather/jerkin/hide < studded < brigandine/scale < chain/mail/hauberk < banded/splint < half-plate < plate < full-plate. Shields: buckler < round/kite/heater < tower. Amulet/charm/circlet/talisman = kind "trinket" (a ward; Mind-governed). Heavier armour protects more; the fiction should treat it as heavier/hotter/louder.
+
+TOOLS (kind "tool") are multi-purpose kit used through NARRATION, not the combat engine — they sit in the pack and you check for them when the player attempts what they enable. Rope: climb, lower a companion, lash, bind, span a gap. Pitons + hammer: descend or ascend a sheer rock face (driven in and left). Grappling hook: scale a wall or rail. Crampons: ice and frozen scree. Torch/lantern/lamp-oil/tinderbox: light a black hex. Lockpicks: a barred door or chest. Crowbar: pry. Shovel: dig. Whetstone/repair-kit: keep gear serviceable. Bedroll/cook-pot: a proper camp restores more. Waterskin: carry water. Spyglass: scout far. Manacles: hold a prisoner. When the player tries to climb, descend, force a door, or light the dark, CHECK the pack: with the right tool it's routine (a roll at most); WITHOUT it, it's far harder, improvised, or impossible, and you should say what's missing ("you've no rope for this drop"). Reward the prepared.
+
+PRICE ANCHORS (copper; 1gp=100cp). Common: dagger ~20 · sword ~100–200 · axe/mace ~40–130 · spear ~80 · bow ~70–120 · leather ~80 · mail ~300–500 · helm ~40 · shield ~50 · rope ~35 · torch ~6 · lockpicks ~70. Scale value up roughly with the tier multiplier (an uncommon blade ~×1.5–2 a common one, a rare ~×3–4). Don't re-tally coin for counter trades (that's the engine) — these anchors are for loot worth and casual barter you narrate.
+
 CONSEQUENCES & HEALING
 - Combat and accidents cost vitality. Apply vitality_change with negative deltas.
 - For serious wounds, ALSO apply a blocking condition (see below) via new_conditions.
