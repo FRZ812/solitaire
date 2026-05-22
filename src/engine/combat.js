@@ -924,6 +924,16 @@ export function applyCombatResult(state, cs, context = {}) {
   const hasSpoils = loot && deadCount > 0 && ((loot.items && loot.items.length) || loot.ability || loot.coins.silver || loot.coins.copper || loot.coins.gold);
   next.pendingLoot = hasSpoils ? { ...loot, deadCount, flavor: context.flavor || enemyName } : null;
 
+  // Persist named foes' combat state so a re-fight continues from their wounds
+  // (no full-HP reset) and a foe who yielded/died stays that way.
+  for (const e of cs.enemies) {
+    if (!e.npcId) continue;
+    const ch = next.world.codex.characters?.[e.npcId];
+    if (!ch) continue;
+    const status = e._dead ? "dead" : e.resolved === "yielded" ? "yielded" : e.resolved === "fled" ? "fled" : (e.health < e.maxHealth ? "wounded" : "ok");
+    ch.combatState = { health: Math.max(0, Math.ceil(e.health)), maxHealth: e.maxHealth, status };
+  }
+
   // Hand the narrator a blow-by-blow account so the fight can be referenced
   // afterward (and so a [DEFEATED] follow-up knows exactly what happened).
   next.apiHistory = [...(next.apiHistory || []), { role: "user", content: buildCombatRecap(cs, context) }];

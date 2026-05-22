@@ -422,7 +422,11 @@ Three ways in:
    narrator emits `start_combat` (system-prompt.js) ONLY on an *explicit* strike
    (the player or an NPC actually attacks), never on threats/standoffs. It names
    the foe(s) — a codex `npc_id` (built via `enemyFromNPC` from their real
-   attributes + gear) or a spawn `kind` — plus `initiator` and `surprise`.
+   attributes + gear; their HP/status **persists** on `character.combatState`, so
+   a foe you left wounded re-engages wounded, and one who yielded/died stays so —
+   no full-HP reset) or a spawn `kind` — plus `initiator` and `surprise`. A foe
+   that has already yielded is at the player's mercy (spare/kill/rob/capture,
+   narrated directly) — the prompt forbids re-fighting or re-surrender loops.
    `App.startCombatFromDirective` builds the foes and opens the fight. **Ambush:**
    `surprise:true` gives the striker a free opening — if the player struck, foes
    are stunned and lose their first turn; if an NPC struck, every foe lands a free
