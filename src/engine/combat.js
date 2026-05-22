@@ -49,7 +49,8 @@ const livingEnemies = (cs) => cs.enemies.filter((e) => e.health > 0 && !e.resolv
 // ----- setup -----
 
 function playerThreat(p) {
-  return p.weapon.max + p.maxHealth * 0.2 + p.critChance * 0.1 + (p.abilities?.length || 0) * 1.5;
+  const learned = (p.abilities || []).filter((a) => !["basic-attack", "defend", "talk"].includes(a.id)).length;
+  return p.weapon.max + p.maxHealth * 0.2 + p.critChance * 0.1 + learned * 1.5;
 }
 function enemyThreat(e) {
   return e.maxHealth * 0.25 + e.weapon.max + tierInfo(e.tier).order * 2;
@@ -304,9 +305,12 @@ function moraleCheck(cs, e) {
     return true;
   }
 
-  // A goaded foe is too enraged to flee or yield for a couple of turns.
+  // A goaded foe is too enraged to flee or yield for a couple of turns. A foe
+  // that is clearly WINNING (much healthier than the player) presses the
+  // advantage and won't break either — it can smell the kill.
   const goaded = (e.noFleeUntil || 0) >= cs.turn;
-  const broke = !goaded && (e.morale <= cfg.breakAt || hp < 0.12);
+  const winning = (hp - cs.player.health / cs.player.maxHealth) > 0.25;
+  const broke = !goaded && !winning && (e.morale <= cfg.breakAt || hp < 0.12);
   if (broke) {
     // A proud foe being bullied with control demands a fair fight before it breaks.
     if (cfg.proud && (e.controlPressure || 0) >= 2 && !e.provoked && e.morale > cfg.breakAt - 12 && hp > 0.15) {
@@ -474,11 +478,14 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
     cs.log.push(logEntry(`${cs.player.name} hurls threats and grim promises.`, "player"));
     const hit = livingEnemies(cs).filter(canCommunicate);
     if (hit.length === 0) cs.log.push(logEntry(`No one here can be cowed.`, "system"));
+    const playerHp = cs.player.health / cs.player.maxHealth;
     for (const e of hit) {
       let dmg = 8 + (a.presence || 0) * 3 + (a.wit || 0) * 1.5;
       if (cs.powerRatio > 1.4) dmg += 10;
       if (e.demeanor === "cowardly") dmg += 8;
       if (DEMEANOR_CONFIG[e.demeanor]?.proud) dmg *= 0.5;
+      // A foe who's winning isn't impressed by threats.
+      if ((e.health / e.maxHealth) - playerHp > 0.25) dmg *= 0.4;
       e.morale = Math.max(0, e.morale - Math.round(dmg));
       pushFlavor(cs, e, "waver");
     }
@@ -503,6 +510,7 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
   // surrender (default)
   cs.log.push(logEntry(`${cs.player.name} calls on the foe to yield.`, "player"));
   const fallen = cs.enemies.filter((e) => e.health <= 0).length;
+  const playerHp = cs.player.health / cs.player.maxHealth;
   for (const e of cs.enemies) {
     if (e.health <= 0 || e.resolved) continue;
     const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
@@ -512,13 +520,23 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
     chance += (e.moraleMax - e.morale) * 0.5;
     if (hp < 0.3) chance += 28; else if (hp < 0.5) chance += 14;
     chance += fallen * 10;
-    if (cs.powerRatio > 1.6) chance += 25; else if (cs.powerRatio > 1.15) chance += 10;
+    // Who's actually winning? A foe in better shape than you scoffs at a demand
+    // to yield (an unscathed sellsword does not surrender to a half-dead man);
+    // a foe doing worse than you is far likelier to give up.
+    const standing = hp - playerHp; // >0: foe winning · <0: foe losing
+    // The "you outclass them" bonus only counts when you're NOT currently losing
+    // the exchange — being stronger on paper means nothing while you're bleeding out.
+    if (standing <= 0) {
+      if (cs.powerRatio > 1.6) chance += 25; else if (cs.powerRatio > 1.15) chance += 10;
+    }
     if (e.demeanor === "cowardly") chance += 18;
     if (e.demeanor === "honorable") chance += (e.controlPressure || 0) >= 2 ? 0 : 18;
     if (cfg.proud && (e.controlPressure || 0) >= 2 && cs.powerRatio < 2) chance -= 35;
+    if (standing > 0) chance -= Math.round(standing * 70);
+    else chance += Math.round(-standing * 25);
     chance = clamp(chance, 0, 95);
     if (rand100() <= chance) resolveYield(cs, e);
-    else { cs.log.push(logEntry(flavorLine("defy", e.demeanor, e.name) || `${e.name} refuses to yield.`, "enemy")); e.morale = Math.max(0, e.morale - 3); }
+    else { cs.log.push(logEntry(flavorLine("defy", e.demeanor, e.name) || `${e.name} scoffs — you're in no position to make demands.`, "enemy")); e.morale = Math.max(0, e.morale - 2); }
   }
   return checkCombatEnd(cs);
 }
@@ -825,7 +843,9 @@ export function applyCombatResult(state, cs, context = {}) {
   } else if (cs.phase === "playerFled") {
     beats.push({ id: `cb${now}`, type: "narration", content: `You break off the fight and slip away, heart pounding, before it can be finished.` });
   } else if (cs.phase === "defeat") {
-    beats.push({ id: `cb${now}`, type: "narration", content: `The fight goes against you. You fall — and the world narrows to dark. That you draw breath at all is its own small mercy.` });
+    // Brief — the narrator decides the actual aftermath (robbed, jailed, hauled
+    // off…) in the [DEFEATED] follow-up, so we don't presume death here.
+    beats.push({ id: `cb${now}`, type: "narration", content: `The fight goes against you. A last blow lands, your legs fold, and the world tips into black.` });
   }
 
   const loot = cs.loot;
@@ -863,6 +883,28 @@ export function applyCombatResult(state, cs, context = {}) {
     }
   }
 
+  // Hand the narrator a blow-by-blow account so the fight can be referenced
+  // afterward (and so a [DEFEATED] follow-up knows exactly what happened).
+  next.apiHistory = [...(next.apiHistory || []), { role: "user", content: buildCombatRecap(cs, context) }];
+
   next.beats = [...next.beats, ...beats];
   return next;
+}
+
+function buildCombatRecap(cs, context) {
+  const outcome =
+    cs.phase === "victory" ? "you won" :
+    cs.phase === "defeat" ? "you were beaten down and went under" :
+    cs.phase === "resolved" ? "it ended without a slaughter" :
+    cs.phase === "playerFled" ? "you broke off and fled" : "it ended";
+  const foes = cs.enemies.map((e) => {
+    const st = e.health <= 0 ? "slain" : e.resolved === "yielded" ? "yielded" : e.resolved === "fled" ? "fled" : `still standing (${Math.ceil(e.health)}/${e.maxHealth})`;
+    return `${e.name} [${e.tier}, ${e.demeanor}] — ${st}`;
+  }).join("; ");
+  const account = cs.log
+    .filter((l) => !/^—\s*Turn/.test(l.text))
+    .slice(-22)
+    .map((l) => l.text)
+    .join(" ");
+  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. Foes: ${foes}. You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}`.slice(0, 1600);
 }

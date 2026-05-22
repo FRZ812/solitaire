@@ -618,11 +618,33 @@ export function Solitaire() {
     startCombat(enemies, { flavor: pendingCombat.desc || groupFlavor(enemies) });
   }
 
-  function handleResolveCombat() {
+  async function handleResolveCombat() {
     if (!combat) return;
-    setState((s) => applyCombatResult(s, combat, combatCtxRef.current || {}));
+    const cs = combat;
+    const ctx = combatCtxRef.current || {};
+    const next = applyCombatResult(state, cs, ctx);
+    setState(next);
     setCombat(null);
     combatCtxRef.current = null;
+
+    // Defeat isn't game-over — hand the aftermath to the narrator, which has the
+    // combat report in history and decides a fitting non-lethal consequence.
+    if (cs.phase === "defeat") {
+      setError(null);
+      setLoading(true);
+      try {
+        const place = currentLocationName(next);
+        const msg = `[DEFEATED] You were beaten down by ${ctx.flavor || "your foe"} at ${place} and lost consciousness — you are NOT necessarily dead. Most folk don't murder over a brawl (it brings the noose). Decide a fitting non-lethal aftermath given who beat you and where: robbed and dumped in an alley, hauled before the watch or jailed, thrown out into the rain, or taken along/captured and moved elsewhere if your foe had reason. Apply the consequences — inventory_changes if robbed, conditions for wounds, tile_move if relocated, location_update if it changed the place. The player wakes to face what's left; death-and-reload is not the goal.`;
+        const beat = await callNarrator(next, msg);
+        const after = applyBeat(next, beat);
+        setState(after);
+        if (beat.start_combat) startCombatFromDirective(beat.start_combat, after);
+      } catch (e) {
+        setError(e.message || String(e));
+      } finally {
+        setLoading(false);
+      }
+    }
   }
 
   const onCombatAct = (abilityId) => setCombat((c) => (c ? playerAct(c, abilityId, c.target) : c));
