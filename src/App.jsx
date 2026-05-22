@@ -17,6 +17,7 @@ import { useConsumable } from "./engine/consumables.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
 import { generateGaol, acceptBounty, buyPrisonerRights } from "./engine/gaol.js";
+import { recruitCompanion, dismissCompanion, isRecruited, partyMembers } from "./engine/party.js";
 import { applyTraining, trainingOffer } from "./engine/training.js";
 import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
@@ -48,6 +49,7 @@ import { TraderView } from "./components/TraderView.jsx";
 import { ForgeView } from "./components/ForgeView.jsx";
 import { QuestBoardView } from "./components/QuestBoardView.jsx";
 import { PrisonView } from "./components/PrisonView.jsx";
+import { PartyView } from "./components/PartyView.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
@@ -218,6 +220,7 @@ export function Solitaire() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [codexOpen, setCodexOpen] = useState(false);
+  const [partyOpen, setPartyOpen] = useState(false);
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
   // Recent purchases at the current shop, for full refunds until you leave the
@@ -796,19 +799,26 @@ export function Solitaire() {
     setShopTile(null); // a stretch of work ends the visit
     setState({ ...r.state, beats: [...r.state.beats, { id: `lab${Date.now()}`, type: "narration", content: r.summary }] });
   }
-  // Recruiting is narrative: the narrator plays the scene and, if it lands,
-  // introduces the companion via discoveries. No party machinery here.
-  async function handleRecruit(recruit) {
-    if (loading || !shopTile) return;
+  // Recruiting brings a real, persistent person into the party (engine/party.js
+  // files them into the codex and adds them to state.party). After the
+  // deterministic add, the narrator plays the brief joining scene.
+  async function handleRecruit(tmpl) {
+    if (loading || !shopTile || isRecruited(state, tmpl.id)) return;
+    const body = tmpl.feeCp
+      ? `Take ${tmpl.name} the ${tmpl.role} into your company? They ask ${formatCopper(tmpl.feeCp)} up front, then ${tmpl.terms}.`
+      : `Take ${tmpl.name} the ${tmpl.role} into your company? Their terms: ${tmpl.terms}.`;
+    if (!(await askConfirm({ title: `Recruit ${tmpl.name}`, body, confirmLabel: "Recruit" }))) return;
+    const r = recruitCompanion(state, tmpl);
+    if (!r.ok) { setError(r.reason || "They won't join."); return; }
     const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the tavern";
     setShopTile(null);
     setError(null);
     setLoading(true);
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You sit down across from ${recruit.name}, the ${recruit.role}.` };
-    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You take ${tmpl.name} on. They join your company.` };
+    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] At ${place}'s quest board you approach ${recruit.name}, a ${recruit.race} ${recruit.role} hoping to be recruited (${recruit.desc}). Play the conversation — who they are, what they want (pay, a share, a cause) — and let it land naturally. If they join, introduce them as a companion via discoveries.characters and a knowledge update; otherwise let them beg off. Don't fabricate combat or coin transactions.`;
+      const msg = `[PLAYER ACTION] At ${place} you have just recruited ${tmpl.name}, a ${tmpl.race} ${tmpl.role} (${tmpl.desc}). They are now a COMPANION travelling with you — already established in the codex and your party; do NOT undo it. Narrate the brief moment they take up with you: a term struck, a handshake, a first word between you. Keep it to a sentence or three. From now on they are present in scenes and act and speak on their own.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
@@ -818,6 +828,13 @@ export function Solitaire() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Part ways with a companion (they stay in the codex as a known person).
+  async function handleDismiss(id) {
+    const c = state.world.codex.characters[id];
+    if (!(await askConfirm({ title: "Part ways", body: `Tell ${c?.name || "this companion"} you're parting ways? They'll go their own road — you can find them again.`, confirmLabel: "Part ways", danger: true }))) return;
+    setState(dismissCompanion(state, id).state);
   }
 
   // ----- Gaol: bounties + buying prisoner rights -----
@@ -1143,6 +1160,7 @@ export function Solitaire() {
           state={state}
           onMap={() => setMapOpen(true)}
           onMenu={() => setMenuOpen(true)}
+          onParty={() => setPartyOpen(true)}
         />
         <VitalsStrip character={state.character} />
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
@@ -1295,6 +1313,9 @@ export function Solitaire() {
       )}
       {codexOpen && (
         <CodexView state={state} onClose={() => setCodexOpen(false)} />
+      )}
+      {partyOpen && (
+        <PartyView state={state} onDismiss={handleDismiss} onClose={() => setPartyOpen(false)} />
       )}
       {shopTile && (() => {
         const tile = getTile(state, shopTile.x, shopTile.y);

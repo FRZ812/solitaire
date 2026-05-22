@@ -4,6 +4,7 @@ import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle, glass } from "./tokens.js";
 import { formatCopper } from "../engine/economy.js";
 import { activeQuests } from "../engine/quests.js";
+import { isRecruited } from "../engine/party.js";
 
 const TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
 
@@ -80,16 +81,20 @@ export function QuestBoardView({ state, building, board, onAccept, onAbandon, on
           );
         })}
 
-        {/* For hire — folk who'll take the road with you (narrator-run). */}
+        {/* For hire — real people who'll join your company for good. */}
         <SectionHeader>Looking to join</SectionHeader>
-        {board.recruits.map((r) => (
-          <Row key={r.id}
-            title={`${r.name} — ${r.role}`}
-            meta={r.race}
-            desc={r.desc}
-            action={<ActionButton label="Speak" enabled={!loading} onClick={() => onRecruit(r)} />}
-          />
-        ))}
+        {board.recruits.map((r) => {
+          const joined = isRecruited(state, r.id);
+          return (
+            <Row key={r.id}
+              title={`${r.name} — ${r.role}`}
+              meta={`${r.race} · ${r.terms}`}
+              desc={r.desc}
+              reward={r.feeCp || undefined}
+              action={<ActionButton label={joined ? "With you" : "Recruit"} enabled={!joined && !loading} onClick={() => onRecruit(r)} />}
+            />
+          );
+        })}
 
         {/* Day labour — hire yourself out, here and now. */}
         <SectionHeader>Hire yourself out</SectionHeader>

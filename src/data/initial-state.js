@@ -528,6 +528,7 @@ export function makeInitialState() {
         skills: {},
       },
     },
+    party: [], // recruited companion ids (full people in world.codex.characters)
     beats: [{
       id: "b0", type: "narration",
       content: "Rain whispers against warped shutters. The innkeeper, a stooped woman with ink-stained fingers, slides a pewter cup toward you without looking up. The hooded figure in the corner has been watching you for the better part of an hour.",
