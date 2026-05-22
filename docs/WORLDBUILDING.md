@@ -231,6 +231,25 @@ always available; learned abilities are stored on `character.abilities` as
 keyword-inferred fallback); `generateEnemyGroup(kind, {power})` rolls group size
 and per-enemy tiers, scaling stats by `power` (terrain threat).
 
+### Living foes — morale, surrender, flight
+
+Foes are not stat sheets (`src/data/combat-flavor.js`). Each carries a
+**demeanor** (feral · craven · wary · fierce · brutish · honorable · fanatic ·
+mindless) and a **morale** pool. Morale erodes from wounds, dropping below HP
+thresholds, fallen allies, being stun-/control-locked, and being visibly
+out-classed (`powerRatio` lowers starting nerve). As it frays a foe **wavers**,
+**pleads**, or — if proud and bullied with control/tricks — **demands a fair
+fight** (and digs in). When it breaks, the foe **flees** or **yields** by
+demeanor: craven bolt early, the honorable yield with honor when beaten fairly,
+beasts run at low HP, fanatics/undead never break.
+
+The player has a third option beyond attack/defend: **Demand Surrender**
+(`playerParley`). Yield chance scales with Presence/Wit, the foe's morale and
+wounds, fallen allies, how outmatched it is, and whether you fought it with
+honor — control-spamming the proud hardens them against you unless you're
+overwhelmingly stronger. A fight that ends in surrender/flight resolves as
+**"Stood Down"** (non-lethal) rather than a kill; yielded foes still give spoils.
+
 ### Entry & outcome
 
 A hostile travel encounter raises a Fight/Avoid banner; the header's swords

@@ -28,6 +28,16 @@ export const DEFEND = {
   desc: "Plant and guard. Adds armour until your next turn and recovers a little stamina.",
 };
 
+// Social action — demand surrender. Resolution is handled specially by the
+// combat engine (playerParley), scaling off Presence/Wit, the foe's morale and
+// wounds, how outmatched it is, and whether you fought it fairly.
+export const PARLEY = {
+  id: "parley", name: "Demand Surrender", school: "social", icon: "user",
+  target: "all-enemies", damageType: null, scaleAttr: "presence",
+  dmg: null, pen: 0, critBonus: 0, cost: 1, cooldown: 1, effect: null,
+  desc: "Call on your foes to yield. Works best on the wounded, the outmatched, and those you've fought with honor.",
+};
+
 export const ABILITY_LIBRARY = [
   {
     id: "power-strike", name: "Power Strike", school: "martial", icon: "swords",
@@ -131,7 +141,7 @@ export const ABILITY_LIBRARY = [
 ];
 
 const LIBRARY_BY_ID = Object.fromEntries(ABILITY_LIBRARY.map((a) => [a.id, a]));
-const ALL_BY_ID = { ...LIBRARY_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND };
+const ALL_BY_ID = { ...LIBRARY_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [PARLEY.id]: PARLEY };
 
 export function getAbilityDef(id) { return ALL_BY_ID[id] || null; }
 

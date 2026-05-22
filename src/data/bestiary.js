@@ -4,6 +4,7 @@
 // the kind name, so every hostile spawn can resolve to a fightable foe.
 
 import { tierMult, rollTier } from "./tiers.js";
+import { DEMEANOR_CONFIG, defaultDemeanor } from "./combat-flavor.js";
 
 const T = (min, max, type = "physical", pen = 0) => ({ min, max, type, pen });
 
@@ -80,9 +81,13 @@ export function generateEnemy(kind, { tierId = "common", index = 0, total = 1 } 
   const dmg = tmpl.damage || T(2, 5);
   const name = total > 1 ? `${tmpl.name} ${index + 1}` : tmpl.name;
   const maxHealth = Math.max(1, scale(tmpl.health, m));
+  const demeanor = tmpl.demeanor || defaultDemeanor(kind, tmpl.race);
+  const dcfg = DEMEANOR_CONFIG[demeanor] || DEMEANOR_CONFIG.wary;
   return {
     id: `enemy-${kind}-${index}-${Math.random().toString(36).slice(2, 7)}`,
     kind, name, race: tmpl.race || null, tier: tierId,
+    demeanor, morale: dcfg.morale, moraleMax: dcfg.morale,
+    controlPressure: 0, provoked: false, resolved: null, lastFlavorTurn: 0,
     maxHealth, health: maxHealth,
     armor: scale(tmpl.armor, m), ward: scale(tmpl.ward, m),
     dodge: Math.min(60, (tmpl.dodge || 0) + tierOf * 2),

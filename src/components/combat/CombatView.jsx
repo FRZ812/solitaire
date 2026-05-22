@@ -3,7 +3,17 @@ import { Icon } from "../Icon.jsx";
 import { colors, radius, fonts, metaStyle, shadow, glass } from "../tokens.js";
 import { tierColor, tierLabel } from "../../data/tiers.js";
 import { getAbilityDef } from "../../data/abilities.js";
+import { demeanorLabel } from "../../data/combat-flavor.js";
 import { abilityUsable } from "../../engine/combat.js";
+
+function moodOf(enemy) {
+  if (enemy.demeanor === "mindless") return { label: "unfeeling", color: "#8a8f8f" };
+  const r = enemy.morale / (enemy.moraleMax || 100);
+  if (r > 0.66) return { label: "steadfast", color: "#9ab0b0" };
+  if (r > 0.4) return { label: "wary", color: "#f5b97a" };
+  if (r > 0.18) return { label: "wavering", color: "#e0913a" };
+  return { label: "breaking", color: "#fca5a5" };
+}
 
 const STATUS_LABEL = {
   bleed: "Bleed", poison: "Poison", stun: "Stun", weaken: "Weakened",
@@ -59,35 +69,51 @@ function StatusRow({ statuses }) {
 
 function EnemyCard({ enemy, selected, onSelect }) {
   const dead = enemy.health <= 0;
+  const resolvedWord = enemy.resolved === "yielded" ? "Yielded" : enemy.resolved === "fled" ? "Fled" : null;
+  const inactive = dead || !!enemy.resolved;
+  const mood = inactive ? null : moodOf(enemy);
+  const resolvedColor = enemy.resolved === "yielded" ? "#a7f3d0" : "#9ab0b0";
   return (
     <button
-      onClick={() => !dead && onSelect()}
-      disabled={dead}
+      onClick={() => !inactive && onSelect()}
+      disabled={inactive}
       style={{
         flex: "1 1 130px", minWidth: 0, textAlign: "left",
         padding: "9px 11px", borderRadius: radius.panelCompact,
-        backgroundColor: dead ? "rgba(20,29,29,0.35)" : "rgba(35,15,15,0.55)",
-        border: selected && !dead ? `1px solid ${colors.gold}` : `1px solid rgba(239,68,68,0.3)`,
-        boxShadow: selected && !dead ? `0 0 12px rgba(215,167,111,0.3)` : "none",
-        opacity: dead ? 0.4 : 1, cursor: dead ? "default" : "pointer",
+        backgroundColor: inactive ? "rgba(20,29,29,0.35)" : "rgba(35,15,15,0.55)",
+        border: selected && !inactive ? `1px solid ${colors.gold}` : `1px solid rgba(239,68,68,0.3)`,
+        boxShadow: selected && !inactive ? `0 0 12px rgba(215,167,111,0.3)` : "none",
+        opacity: inactive ? 0.5 : 1, cursor: inactive ? "default" : "pointer",
         fontFamily: "inherit", transition: "border-color 0.2s, box-shadow 0.2s",
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", marginBottom: "5px" }}>
         <span style={{
           fontFamily: fonts.serif, fontStyle: "italic", fontSize: "14px",
-          color: dead ? colors.parchmentMuted : "#fde8e4", overflow: "hidden",
+          color: dead ? colors.parchmentMuted : resolvedWord ? resolvedColor : "#fde8e4", overflow: "hidden",
           textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: dead ? "line-through" : "none",
         }}>{enemy.name}</span>
         <TierBadge tier={enemy.tier} />
       </div>
-      <Bar value={enemy.health} max={enemy.maxHealth} color="linear-gradient(90deg,#8f4c3c,#c75b48)" height={7} />
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "3px" }}>
-        <span style={{ fontSize: "9px", color: colors.parchmentMuted }}>{Math.ceil(enemy.health)}/{enemy.maxHealth}</span>
-        <span style={{ fontSize: "8px", color: "rgba(237,228,208,0.5)" }}>
-          {enemy.armor > 0 ? `AR ${enemy.armor} ` : ""}{enemy.ward > 0 ? `WD ${enemy.ward}` : ""}
-        </span>
-      </div>
+      {resolvedWord ? (
+        <div style={{ fontSize: "12px", fontStyle: "italic", color: resolvedColor, padding: "4px 0" }}>{resolvedWord}</div>
+      ) : (
+        <>
+          <Bar value={enemy.health} max={enemy.maxHealth} color="linear-gradient(90deg,#8f4c3c,#c75b48)" height={7} />
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: "3px" }}>
+            <span style={{ fontSize: "9px", color: colors.parchmentMuted }}>{Math.ceil(enemy.health)}/{enemy.maxHealth}</span>
+            <span style={{ fontSize: "8px", color: "rgba(237,228,208,0.5)" }}>
+              {enemy.armor > 0 ? `AR ${enemy.armor} ` : ""}{enemy.ward > 0 ? `WD ${enemy.ward}` : ""}
+            </span>
+          </div>
+          {mood && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "3px" }}>
+              <span style={{ fontSize: "8px", fontStyle: "italic", color: mood.color }}>{mood.label}</span>
+              <span style={{ fontSize: "7px", letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(237,228,208,0.4)" }}>{demeanorLabel(enemy.demeanor)}</span>
+            </div>
+          )}
+        </>
+      )}
       <StatusRow statuses={enemy.statuses} />
     </button>
   );
@@ -136,9 +162,11 @@ function AbilityButton({ entry, combat, onAct }) {
 
 function ResolveOverlay({ combat, onResolve }) {
   const win = combat.phase === "victory";
-  const fled = combat.phase === "fled";
-  const title = win ? "Victory" : fled ? "Escaped" : "Defeat";
-  const color = win ? "#a7f3d0" : fled ? colors.gold : "#fca5a5";
+  const resolved = combat.phase === "resolved";
+  const fled = combat.phase === "playerFled";
+  const title = win ? "Victory" : resolved ? "Stood Down" : fled ? "Escaped" : "Defeat";
+  const color = win ? "#a7f3d0" : resolved ? "#a7f3d0" : fled ? colors.gold : "#fca5a5";
+  const showLoot = win || resolved;
   const loot = combat.loot;
   return (
     <div style={{
@@ -147,7 +175,7 @@ function ResolveOverlay({ combat, onResolve }) {
       backgroundColor: "rgba(8,12,12,0.82)", backdropFilter: "blur(6px)",
     }}>
       <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "40px", color, textShadow: "0 2px 14px rgba(0,0,0,0.6)" }}>{title}</div>
-      {win && loot && (
+      {showLoot && loot && (
         <div style={{
           width: "100%", maxWidth: "320px", padding: "14px 16px", borderRadius: radius.panel,
           backgroundColor: "rgba(20,29,29,0.7)", border: `1px solid rgba(215,167,111,0.2)`, ...glass,
@@ -188,7 +216,7 @@ export function CombatView({ combat, onAct, onSetTarget, onEndTurn, onFlee, onRe
   }, [combat.log.length]);
 
   const { player } = combat;
-  const over = combat.phase === "victory" || combat.phase === "defeat" || combat.phase === "fled";
+  const over = ["victory", "defeat", "resolved", "playerFled"].includes(combat.phase);
 
   return (
     <div style={{

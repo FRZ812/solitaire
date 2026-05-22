@@ -245,7 +245,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
               Abilities · {combat.weapon.name}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {[{ id: "basic-attack", tier: "common" }, { id: "defend", tier: "common" }, ...learnedAbilities].map((a, i) => {
+              {[{ id: "basic-attack", tier: "common" }, { id: "defend", tier: "common" }, { id: "parley", tier: "common" }, ...learnedAbilities].map((a, i) => {
                 const def = getAbilityDef(typeof a === "string" ? a : a.id);
                 if (!def) return null;
                 return <AbilityChip key={i} name={def.name} tier={(typeof a === "object" && a.tier) || "common"} />;
