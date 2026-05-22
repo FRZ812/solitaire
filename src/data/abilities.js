@@ -30,9 +30,9 @@ export const DEFEND = {
   id: "defend", name: "Brace", school: "martial", icon: "shield",
   target: "self", damageType: null, scaling: "none", scaleAttr: "vigor",
   weaponReq: null, statReq: null, dmg: null, pen: 0, critBonus: 0,
-  cost: 0, resolveCost: 0, cooldown: 0,
+  cost: 1, resolveCost: 0, cooldown: 1,
   effect: { type: "guard", value: 4, duration: 1, target: "self" },
-  desc: "Plant and guard. Adds armour until your next turn and recovers a little stamina.",
+  desc: "Plant and guard — raises armour until your next turn.",
 };
 
 // Social action with several intents (resolved by the engine, not as damage):
