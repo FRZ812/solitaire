@@ -389,6 +389,67 @@ export function InputBar({ value, onChange, onSubmit, loading }) {
   );
 }
 
+// Lets the player steer the last narration: a collapsed pill that opens into a
+// feedback box. Submitting re-rolls the same moment with the player's direction,
+// so they can trigger story turns the narrator wouldn't reach on its own.
+export function RewriteControl({ open, value, onChange, onSubmit, onOpen, onCancel, loading }) {
+  if (!open) {
+    return (
+      <div style={{ padding: "0 12px 8px", display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={onOpen} style={{
+          display: "inline-flex", alignItems: "center", gap: "6px",
+          padding: "6px 12px", borderRadius: radius.pill,
+          backgroundColor: "rgba(28, 22, 38, 0.5)",
+          border: "1px solid rgba(168, 132, 211, 0.3)",
+          color: "rgba(201, 179, 232, 0.9)", fontSize: "11px", fontWeight: 700,
+          fontFamily: "inherit", cursor: "pointer", letterSpacing: "0.04em",
+        }}>
+          <Icon name="reset" size={12} color="rgba(201, 179, 232, 0.9)" strokeWidth={2} />
+          Steer this moment
+        </button>
+      </div>
+    );
+  }
+  const disabled = loading || !value.trim();
+  return (
+    <div className="fade-in" style={{
+      margin: "0 12px 8px", padding: "11px 12px",
+      backgroundColor: "rgba(28, 22, 38, 0.72)",
+      border: "1px solid rgba(168, 132, 211, 0.4)",
+      borderRadius: 14, boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+        <div style={{ ...metaStyle, fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: "#c9b3e8" }}>Rewrite — steer the story</div>
+        <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}>
+          <Icon name="x" size={14} color="rgba(201, 179, 232, 0.7)" strokeWidth={2} />
+        </button>
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!disabled) onSubmit(); } }}
+        placeholder="What should change? e.g. 'the innkeeper recognizes me', 'she refuses and calls the guards', 'make this turn turn grim'"
+        rows={2} autoFocus disabled={loading}
+        style={{
+          width: "100%", boxSizing: "border-box", resize: "none",
+          borderRadius: radius.control,
+          border: "1px solid rgba(168, 132, 211, 0.3)",
+          backgroundColor: "rgba(10, 12, 18, 0.6)",
+          padding: "10px 12px", fontSize: "13px", color: colors.parchment,
+          outline: "none", fontFamily: "inherit", lineHeight: 1.4,
+        }}
+      />
+      <button onClick={onSubmit} disabled={disabled} style={{
+        width: "100%", marginTop: "8px", padding: "9px 16px", borderRadius: 12,
+        backgroundColor: disabled ? "rgba(168,132,211,0.18)" : "#a884d3",
+        color: disabled ? "rgba(255,255,255,0.4)" : colors.ink,
+        border: "none", fontSize: "13px", fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit",
+      }}>{loading ? "Rewriting…" : "Rewrite"}</button>
+    </div>
+  );
+}
+
 // ----- Character sheet blocks -----
 
 export function StatBlock({ label, value }) {
