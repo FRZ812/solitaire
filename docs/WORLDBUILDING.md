@@ -362,8 +362,21 @@ mindless can't be reasoned with):
 - **Provoke** — goads one foe into a reckless fury (vulnerable + rally) and stops
   it fleeing for a couple of turns, so you can bait and finish a runner.
 
-A fight that ends in surrender/flight resolves as **"Stood Down"** (non-lethal)
-rather than a kill; yielded foes still give spoils.
+**Lethality** — `start_combat.lethal` decides the fight's nature. A **brawl**
+(`lethal:false` — barfights, "teach him a lesson", guards subduing) stows both
+sides' weapons and is fought bare-knuckle (`fistsProfile`, ~half damage); a foe
+at 0 HP is **knocked out** (alive), not killed. **Draw Weapon**
+(`playerDrawWeapon`) escalates a brawl to lethal — real steel, real death, worse
+aftermath. Wilderness/monster/assassin fights start `lethal:true`.
+
+**Loot is never automatic.** Only actual corpses (lethal kills) carry spoils;
+yielded / fled / knocked-out foes give nothing. `applyCombatResult` stashes the
+spoils as `pendingLoot` instead of granting them — the player must choose to
+**Search the fallen**, which (a) grants the items via `applyLoot` and (b) fires a
+`[LOOTED]` narrator beat that narrates it and adjudicates the fallout (rifling a
+corpse in a public, lawful place draws horror/the watch; in the wilds nobody
+cares). So a surrender no longer mysteriously pays coin, and you can't strip a
+dead man's whole rig in a crowded tavern without consequence.
 
 **Aftermath** — every fight appends a `[COMBAT REPORT]` to `apiHistory` (outcome,
 each foe's fate, ending HP, a blow-by-blow) so the narrator can speak to what

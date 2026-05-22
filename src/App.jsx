@@ -21,7 +21,7 @@ import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup, enemyFromNPC } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
-import { initCombat, playerAct, playerTalk, playerUseEnvironment, setTarget, endTurn, playerFlee, applyCombatResult } from "./engine/combat.js";
+import { initCombat, playerAct, playerTalk, playerUseEnvironment, playerDrawWeapon, setTarget, endTurn, playerFlee, applyCombatResult, applyLoot } from "./engine/combat.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
@@ -153,6 +153,7 @@ export function Solitaire() {
   // `pendingCombat` is a hostile encounter offering a fight before it starts.
   const [combat, setCombat] = useState(null);
   const [pendingCombat, setPendingCombat] = useState(null);
+  const [pendingLoot, setPendingLoot] = useState(null); // spoils to deliberately Search
   const combatCtxRef = useRef(null);
 
   // ----- Auth subscription (web mode) -----
@@ -584,7 +585,9 @@ export function Solitaire() {
     }
     if (enemies.length === 0) return;
     const ambush = dir.surprise ? (dir.initiator === "enemy" ? "enemy" : "player") : null;
-    startCombat(enemies, { flavor: dir.note || groupFlavor(enemies) }, { ambush }, st);
+    // Brawls (a barfight, "teach him a lesson") are bare-knuckle unless the
+    // narrator flags it lethal; weapons can still be drawn mid-fight.
+    startCombat(enemies, { flavor: dir.note || groupFlavor(enemies) }, { ambush, lethal: dir.lethal !== false }, st);
   }
 
   // Looking for a fight goes through the narrator — it decides whether there's
@@ -626,15 +629,17 @@ export function Solitaire() {
     setState(next);
     setCombat(null);
     combatCtxRef.current = null;
+    // Spoils aren't auto-taken — offer a deliberate Search the fallen.
+    if (next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: cs.lethal });
 
-    // Defeat isn't game-over — hand the aftermath to the narrator, which has the
-    // combat report in history and decides a fitting non-lethal consequence.
+    // Defeat isn't game-over — hand the aftermath to the narrator.
     if (cs.phase === "defeat") {
       setError(null);
       setLoading(true);
       try {
         const place = currentLocationName(next);
-        const msg = `[DEFEATED] You were beaten down by ${ctx.flavor || "your foe"} at ${place} and lost consciousness — you are NOT necessarily dead. Most folk don't murder over a brawl (it brings the noose). Decide a fitting non-lethal aftermath given who beat you and where: robbed and dumped in an alley, hauled before the watch or jailed, thrown out into the rain, or taken along/captured and moved elsewhere if your foe had reason. Apply the consequences — inventory_changes if robbed, conditions for wounds, tile_move if relocated, location_update if it changed the place. The player wakes to face what's left; death-and-reload is not the goal.`;
+        const wasLethal = cs.lethal || cs.escalated;
+        const msg = `[DEFEATED] You were beaten ${wasLethal ? "down with weapons drawn" : "senseless in a bare-knuckle brawl"} by ${ctx.flavor || "your foe"} at ${place} and lost consciousness — you are NOT dead. ${wasLethal ? "This was a bloody, weapons-out fight, so the aftermath can be harsher (grave wounds, captured, left for dead but breathing)." : "It was only fists, so this is a humbling, not a killing — expect to be thrown out, robbed of loose coin, or hauled off to sober up."} Decide a fitting non-lethal aftermath for who beat you and where: robbed (inventory_changes), hauled to the watch/jailed, thrown out, or captured and moved (tile_move). Apply wounds as conditions and location_update if the place changed. The player wakes to face what's left; death-and-reload is not the goal.`;
         const beat = await callNarrator(next, msg);
         const after = applyBeat(next, beat);
         setState(after);
@@ -647,9 +652,35 @@ export function Solitaire() {
     }
   }
 
+  // Deliberately search the fallen: grant the spoils, then let the narrator
+  // narrate it and adjudicate the fallout (it takes time; robbing corpses in
+  // public draws the watch).
+  async function handleLootFallen() {
+    const manifest = pendingLoot;
+    if (!manifest || loading) return;
+    setPendingLoot(null);
+    const { state: looted, taken } = applyLoot(state, manifest);
+    setState(looted);
+    setError(null);
+    setLoading(true);
+    try {
+      const place = currentLocationName(looted);
+      const msg = `[LOOTED] You take the time to search the ${manifest.deadCount > 1 ? `${manifest.deadCount} bodies` : "body"} and come away with: ${taken || "little of worth"}. This happens at ${place} and takes several minutes in plain sight. Narrate it, and adjudicate the fallout — rifling a corpse in a public, lawful place draws horror and the watch; in the wilds or a den, no one cares. Apply consequences (location_update, conditions, start_combat with guards, or tile_move) as fits.`;
+      const beat = await callNarrator(looted, msg);
+      const after = applyBeat(looted, beat);
+      setState(after);
+      if (beat.start_combat) startCombatFromDirective(beat.start_combat, after);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const onCombatAct = (abilityId) => setCombat((c) => (c ? playerAct(c, abilityId, c.target) : c));
   const onCombatTalk = (intent) => setCombat((c) => (c ? playerTalk(c, intent, c.target) : c));
   const onCombatEnvironment = (id) => setCombat((c) => (c ? playerUseEnvironment(c, id, c.target) : c));
+  const onCombatDraw = () => setCombat((c) => (c ? playerDrawWeapon(c) : c));
   const onCombatTarget = (idx) => setCombat((c) => (c ? setTarget(c, idx) : c));
   const onCombatEndTurn = () => setCombat((c) => (c ? endTurn(c) : c));
   const onCombatFlee = () => setCombat((c) => (c ? playerFlee(c) : c));
@@ -726,6 +757,29 @@ export function Solitaire() {
             }}>Avoid</button>
           </div>
         )}
+        {pendingLoot && !combat && (
+          <div className="fade-in" style={{
+            margin: "0 12px 8px", padding: "11px 14px",
+            backgroundColor: "rgba(20,29,29,0.8)", border: `1px solid rgba(215,167,111,0.4)`,
+            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: colors.gold, marginBottom: "2px" }}>The fallen</div>
+              <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
+                {pendingLoot.deadCount > 1 ? `${pendingLoot.deadCount} bodies lie` : "A body lies"} where they fell. Searching takes time — and watching eyes.
+              </div>
+            </div>
+            <button onClick={handleLootFallen} disabled={loading} style={{
+              padding: "9px 16px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
+              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, opacity: loading ? 0.5 : 1,
+            }}>Search</button>
+            <button onClick={() => setPendingLoot(null)} style={{
+              padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
+              border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+            }}>Leave</button>
+          </div>
+        )}
         <InputBar value={input} onChange={setInput} onSubmit={handleSubmit} loading={loading} />
       </div>
 
@@ -761,6 +815,7 @@ export function Solitaire() {
           onAct={onCombatAct}
           onTalk={onCombatTalk}
           onEnvironment={onCombatEnvironment}
+          onDraw={onCombatDraw}
           onSetTarget={onCombatTarget}
           onEndTurn={onCombatEndTurn}
           onFlee={onCombatFlee}
