@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Icon } from "./Icon.jsx";
 import {
-  iconButtonStyle, ConditionPill, NeedBar, AttrBlock, StatBlock,
+  iconButtonStyle, ConditionPill, NeedBar, StatBar, AttrBlock,
   SectionHeader, ErrorBanner,
 } from "./primitives.jsx";
 import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
@@ -162,15 +162,12 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           <div style={{ width: "38px", height: "4px", borderRadius: radius.pill, backgroundColor: "rgba(215, 167, 111, 0.28)" }} />
         </div>
 
-        {/* Header */}
+        {/* Header — character name + bond. */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.18em", color: "rgba(215, 167, 111, 0.6)", marginBottom: "5px" }}>
-              Character
-            </div>
             <div style={{
               fontFamily: fonts.serif, fontStyle: "italic",
-              fontSize: "26px", color: colors.parchmentLight, lineHeight: 1,
+              fontSize: "26px", color: colors.parchmentLight, lineHeight: 1.05,
               textShadow: "0 2px 10px rgba(0,0,0,0.3)",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>
@@ -205,16 +202,30 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
 
         <Divider />
 
-        {/* Vitals — the two pools (Vitality / Resolve) and the three survival
-            needs read as one "how am I holding up" block instead of two
-            separate sections sitting apart in the stack. */}
+        {/* Conditions — surfaced first. */}
+        <div>
+          <SectionHeader>Conditions</SectionHeader>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            {state.character.conditions.length === 0
+              ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.5)", fontStyle: "italic" }}>None</span>
+              : state.character.conditions.map((c) => <ConditionPill key={c} label={c} />)}
+          </div>
+        </div>
+
+        {/* Vitals — Vitality + Resolve as bars, grouped with the needs below. */}
         <div>
           <SectionHeader>Vitals</SectionHeader>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-            <StatBlock label="Vitality" value={`${Math.round(state.character.vitality)} / ${state.character.vitalityMax}`} />
-            <StatBlock label="Resolve"  value={`${state.character.resolve} / ${state.character.resolveMax}`} />
+          <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
+            <StatBar label="Vitality" value={state.character.vitality} max={state.character.vitalityMax} />
+            <StatBar label="Resolve" value={state.character.resolve} max={state.character.resolveMax}
+                     gradient="linear-gradient(90deg, #6d4a8a 0%, #a06fc4 100%)" />
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "9px", marginTop: "12px" }}>
+        </div>
+
+        {/* Needs */}
+        <div>
+          <SectionHeader>Needs</SectionHeader>
+          <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
             <NeedBar label="Hunger" value={state.character.needs.hunger} />
             <NeedBar label="Thirst" value={state.character.needs.thirst} />
             <NeedBar label="Sleep"  value={state.character.needs.sleep}  />
@@ -251,16 +262,6 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
                 return <AbilityChip key={i} name={def.name} tier={(typeof a === "object" && a.tier) || "common"} />;
               })}
             </div>
-          </div>
-        </div>
-
-        {/* Conditions */}
-        <div>
-          <SectionHeader>Conditions</SectionHeader>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {state.character.conditions.length === 0
-              ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.5)", fontStyle: "italic" }}>None</span>
-              : state.character.conditions.map((c) => <ConditionPill key={c} label={c} />)}
           </div>
         </div>
 
