@@ -33,7 +33,7 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 let LOG_SEQ = 0;
 const logEntry = (text, kind = "system") => ({ id: `l${Date.now()}-${LOG_SEQ++}`, text, kind });
 
-const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable"]);
+const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse"]);
 const ALLY_LOSS = { cowardly: 22, wary: 14, fierce: 8, brutish: 10, honorable: 10, feral: 8, fanatic: 0, mindless: 0 };
 
 function sumStatus(c, type) {
@@ -87,11 +87,16 @@ export function initCombat(character, codex, enemies, opts = {}) {
     staminaRegen: cs.staminaRegen,
     resolve: Math.round(character.resolve ?? 0),
     resolveMax: character.resolveMax ?? 0,
-    dr: cs.dr || 0,
+    dr: cs.dr || 0, fortify: cs.fortify || 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed,
     triggers: cs.triggers || {},
+    procs: cs.triggers?.procs || [],
+    actionsPerTurn: cs.actionsPerTurn || 1,
+    actionsLeft: cs.actionsPerTurn || 1,
+    cooldownReduction: cs.cooldownReduction || 0,
+    shield: 0, magicShield: 0, invuln: 0,
     prof: cs.prof || {},
     attrs: cs.attrs || { ...character.attributes },
     abilities, cooldowns: {}, statuses: [], side: "player",
@@ -99,10 +104,20 @@ export function initCombat(character, codex, enemies, opts = {}) {
 
   // Allied companions fight at the player's side, AI-driven (engine/combat-ai).
   // They're built by the caller (allyFromCompanion) into the same combatant shape.
-  const allies = (opts.allies || []).map((a) => ({ ...clone(a), side: "player", statuses: a.statuses || [], cooldowns: a.cooldowns || {} }));
+  const allies = (opts.allies || []).map((a) => ({
+    ...clone(a), side: "player", statuses: a.statuses || [], cooldowns: a.cooldowns || {},
+    actionsPerTurn: a.actionsPerTurn || 1, actionsLeft: a.actionsPerTurn || 1,
+    procs: a.procs || a.triggers?.procs || [], shield: 0, magicShield: 0, invuln: 0,
+  }));
 
   const foes = clone(enemies);
-  for (const e of foes) e.side = "enemy";
+  for (const e of foes) {
+    e.side = "enemy";
+    e.actionsPerTurn = e.actionsPerTurn || 1;
+    e.actionsLeft = e.actionsPerTurn;
+    e.procs = e.procs || e.triggers?.procs || [];
+    e.shield = e.shield || 0; e.magicShield = e.magicShield || 0; e.invuln = e.invuln || 0;
+  }
   // How outmatched are they? Lower the nerve of foes who can see they're outclassed.
   const pThreat = playerThreat(player) + allies.reduce((s, a) => s + enemyThreat(a), 0);
   const eThreatAvg = foes.reduce((s, e) => s + enemyThreat(e), 0) / Math.max(1, foes.length);
@@ -234,7 +249,7 @@ function applyAmbush(cs, side) {
     for (const e of cs.enemies) {
       if (e.health <= 0) continue;
       const profile = attackProfile(e, BASIC_ATTACK, e.tier, false);
-      if (profile) cs.log.push(resolveHit(e, cs.player, profile));
+      if (profile) cs.log.push(resolveHit(e, cs.player, profile).log);
       if (cs.player.health <= 0) break;
     }
     if (cs.player.health <= 0) finishDefeat(cs);
@@ -289,10 +304,15 @@ function abilityEffectiveness(player, def, tierId) {
   return reqEffectiveness(player.attrs || {}, abilityRequiredStat(def, tierId));
 }
 
+// Resolve a single hit. Returns { log, dmg, crit, dodged } so callers can fire
+// procs (on-crit / on-hit / on-dodge / on-kill) off the outcome.
 function resolveHit(attacker, defender, profile) {
-  const hitChance = 100 - clamp((defender.dodge || 0) - (attacker.accuracy || 0), 0, 90);
+  // Chill saps the attacker's accuracy; dodge-stacks add to the defender's dodge.
+  const acc = (attacker.accuracy || 0) - sumStatus(attacker, "chill");
+  const dodge = (defender.dodge || 0) + sumStatus(defender, "dodgeStack");
+  const hitChance = 100 - clamp(dodge - acc, 0, 90);
   if (rand100() > hitChance) {
-    return logEntry(`${attacker.name} attacks ${defender.name} — dodged.`, "miss");
+    return { log: logEntry(`${attacker.name} attacks ${defender.name} — dodged.`, "miss"), dmg: 0, crit: false, dodged: true };
   }
   let raw = randInt(profile.min, profile.max);
   if (profile.eff != null) raw *= profile.eff;
@@ -303,21 +323,166 @@ function resolveHit(attacker, defender, profile) {
   if (crit) raw *= attacker.critMult || 1.5;
   if (hasStatus(attacker, "focus")) attacker.statuses = attacker.statuses.filter((s) => s.type !== "focus");
 
-  raw *= 1 + sumStatus(defender, "vulnerable") / 100;
+  // Vulnerable and Curse both amplify incoming damage.
+  raw *= 1 + (sumStatus(defender, "vulnerable") + sumStatus(defender, "curse")) / 100;
   raw = Math.max(0, Math.round(raw));
 
   let mitig = 0;
   if (profile.type === "physical") mitig = Math.max(0, (defender.armor || 0) + sumStatus(defender, "guard") - (profile.pen || 0));
   else if (profile.type === "magical") mitig = Math.max(0, (defender.ward || 0) - (profile.pen || 0));
-  // Flat % damage-reduction (Stoneskin / Godward) applies after armour, capped.
+  // Flat % damage-reduction (Stoneskin / Godward), plus Bastion fortify while
+  // badly wounded. Capped so it can never fully negate a blow.
   let dmg = Math.max(0, raw - mitig);
-  if (defender.dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.6, defender.dr))));
+  let dr = defender.dr || 0;
+  if (defender.fortify && defender.maxHealth && defender.health / defender.maxHealth < 0.35) dr += defender.fortify;
+  if (dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.7, dr))));
+
+  // Invulnerability turns the blow aside entirely; otherwise a shield pool soaks
+  // it before health (physical → shield, magical → magicShield).
+  let blocked = false, absorbed = 0;
+  if ((defender.invuln || 0) > 0) { blocked = true; dmg = 0; }
+  else if (dmg > 0) {
+    if (profile.type === "magical" && (defender.magicShield || 0) > 0) {
+      absorbed = Math.min(defender.magicShield, dmg); defender.magicShield -= absorbed; dmg -= absorbed;
+    } else if (profile.type !== "magical" && (defender.shield || 0) > 0) {
+      absorbed = Math.min(defender.shield, dmg); defender.shield -= absorbed; dmg -= absorbed;
+    }
+  }
   defender.health = Math.max(0, defender.health - dmg);
 
   const typeTag = profile.type === "true" ? " true" : profile.type === "magical" ? " magical" : "";
   const critTag = crit ? " CRIT" : "";
-  const tail = dmg === 0 ? " — absorbed." : ".";
-  return logEntry(`${attacker.name} hits ${defender.name} for ${dmg}${typeTag}${critTag}${tail}`, crit ? "crit" : "hit");
+  const tail = blocked ? " — turned aside (invulnerable)." : (absorbed > 0 && dmg === 0) ? " — shielded." : dmg === 0 ? " — absorbed." : ".";
+  return { log: logEntry(`${attacker.name} hits ${defender.name} for ${dmg}${typeTag}${critTag}${tail}`, crit ? "crit" : "hit"), dmg, crit, dodged: false };
+}
+
+// The shared per-hit resolution used by BOTH the player and NPCs (the unified
+// combat path). Pushes the hit log, applies lifesteal/thorns, fires the
+// attacker's on-hit/on-crit/on-kill procs and the defender's on-dodge procs, and
+// applies any ability-borne status. Returns { dealt, crit }.
+function dealHit(cs, attacker, target, profile, def) {
+  const before = target.health;
+  const res = resolveHit(attacker, target, profile);
+  cs.log.push(res.log);
+  const dealt = before - target.health;
+  const targetIsPlayer = target === cs.player;
+  if (targetIsPlayer) addProf(cs, "evasion", XP.EVASION); // exercising evasion (even on a dodge)
+
+  if (res.dodged) {
+    fireProcs(cs, target, "onDodge", {});
+    return { dealt: 0, crit: false };
+  }
+
+  if (dealt > 0) {
+    const ls = attacker.triggers?.lifesteal || 0;
+    if (ls > 0 && attacker.health > 0) {
+      const heal = Math.max(1, Math.round(dealt * ls / 100));
+      attacker.health = Math.min(attacker.maxHealth, attacker.health + heal);
+      cs.log.push(logEntry(`${attacker.name} ${attacker.side === "player" ? "drains" : "leeches"} ${heal} health.`, "status"));
+    }
+    if (target.side === "enemy") onEnemyDamaged(target, dealt);
+    if (targetIsPlayer) {
+      addProf(cs, "endurance", XP.ENDURANCE);
+      const thorns = cs.player.triggers?.thorns || 0;
+      if (thorns > 0 && attacker.health > 0) {
+        const ref = Math.max(1, Math.round(dealt * thorns / 100));
+        attacker.health = Math.max(0, attacker.health - ref);
+        cs.log.push(logEntry(`${attacker.name} takes ${ref} from thornmail.`, "status"));
+      }
+    }
+    fireProcs(cs, attacker, "onHit", { target, dealt, crit: res.crit });
+    if (res.crit) fireProcs(cs, attacker, "onCrit", { target, dealt, crit: true });
+  }
+
+  if (target.health > 0 && def && def.effect && def.effect.target === "enemy") {
+    addStatus(target, def.effect);
+    if (CONTROL_TYPES.has(def.effect.type) && target.side === "enemy") onEnemyControlled(target);
+  }
+
+  if (target.health <= 0 && !targetIsPlayer) fireProcs(cs, attacker, "onKill", { target });
+  return { dealt, crit: res.crit };
+}
+
+// Data-driven synergy procs. Iterates the actor's affix procs; on a matching
+// hook (and chance roll + condition) applies the effect. Symmetric: the player
+// and NPCs carry procs the same way (combatant.procs).
+function fireProcs(cs, actor, hook, ctx = {}) {
+  const procs = actor.procs || actor.triggers?.procs;
+  if (!procs || !procs.length) return;
+  for (const p of procs) {
+    if (p.hook !== hook) continue;
+    if (p.chance != null && p.chance < 1 && rand100() > p.chance * 100) continue;
+    applyProc(cs, actor, p, ctx);
+  }
+}
+
+function applyProc(cs, actor, p, ctx) {
+  const target = ctx.target;
+  switch (p.kind) {
+    case "status": {
+      if (!target || target.health <= 0) return;
+      if (p.cond === "targetLow" && target.health / target.maxHealth >= 0.3) return;
+      addStatus(target, { type: p.status, value: p.value, duration: p.duration });
+      if (CONTROL_TYPES.has(p.status) && target.side === "enemy") onEnemyControlled(target);
+      cs.log.push(logEntry(`${actor.name}'s ${p.name} afflicts ${target.name} with ${p.status}.`, "status"));
+      break;
+    }
+    case "buff": {
+      addStatus(actor, { type: p.status, value: p.value, duration: p.duration });
+      break;
+    }
+    case "execute": {
+      if (!target || target.health <= 0) return;
+      if (target.health / target.maxHealth >= 0.3) return; // only finishes the badly wounded
+      target.health = Math.max(0, target.health - p.value);
+      cs.log.push(logEntry(`${actor.name}'s ${p.name} tears into ${target.name} for ${p.value}.`, "hit"));
+      break; // onKill is fired by dealHit's post-hit check (avoids a double-trigger)
+    }
+    case "bonusHit": {
+      if (!target || target.health <= 0) return;
+      target.health = Math.max(0, target.health - p.value);
+      cs.log.push(logEntry(`${actor.name}'s ${p.name} lands a bonus strike for ${p.value}.`, "hit"));
+      break; // onKill is fired by dealHit's post-hit check (avoids a double-trigger)
+    }
+    case "refund": {
+      if (p.stamina) actor.stamina = Math.min(actor.maxStamina || actor.stamina, (actor.stamina || 0) + p.value);
+      if (p.action) actor.actionsLeft = (actor.actionsLeft || 0) + 1;
+      if (p.heal && actor.health > 0) actor.health = Math.min(actor.maxHealth, actor.health + p.value);
+      cs.log.push(logEntry(`${actor.name}'s ${p.name} surges with fresh vigour.`, "status"));
+      break;
+    }
+    case "shield": {
+      actor.shield = (actor.shield || 0) + p.value;
+      cs.log.push(logEntry(`${actor.name}'s ${p.name} throws up a shield (${p.value}).`, "status"));
+      break;
+    }
+  }
+}
+
+// Start-of-turn proc tick (turn-ramp buffs, low-health panic procs, and the
+// divine invuln cadence). Called once per combatant per round.
+function startOfTurn(cs, actor) {
+  const procs = actor.procs || actor.triggers?.procs || [];
+  for (const p of procs) {
+    if (p.hook === "turnRamp") {
+      if (p.chance != null && p.chance < 1 && rand100() > p.chance * 100) continue;
+      addStatus(actor, { type: p.status, value: p.value, duration: p.duration });
+    } else if (p.hook === "lowHealth") {
+      if (actor.health > 0 && actor.maxHealth && actor.health / actor.maxHealth < (p.threshold || 0.35)) {
+        actor._lowFired = actor._lowFired || {};
+        if (!actor._lowFired[p.name]) { actor._lowFired[p.name] = true; applyProc(cs, actor, p, {}); }
+      }
+    }
+  }
+  // Aegis Eternal (divine): brief invulnerability when near death, limited charges.
+  const invG = actor.triggers?.invulnCharges || 0;
+  if (invG > 0 && actor.health > 0 && actor.maxHealth && actor.health / actor.maxHealth < 0.35) {
+    actor._invulnUsed = actor._invulnUsed || 0;
+    if (actor._invulnUsed < invG && (actor.invuln || 0) <= 0) {
+      actor._invulnUsed += 1; actor.invuln = 1;
+      cs.log.push(logEntry(`${actor.name} flares with untouchable light.`, "status"));
+    }
+  }
 }
 
 // ----- morale -----
@@ -369,59 +534,59 @@ function downAlly(cs, a) {
   else { a.resolved = "ko"; cs.log.push(logEntry(`${a.name} is knocked senseless.`, "system")); }
 }
 
-// Usable abilities for an NPC (ally or enemy): off cooldown only — NPCs don't
-// track stamina/resolve (consistent with the original enemy turn).
+// Self-targeted ability effects — shared by the player and NPCs so defensive and
+// tempo abilities (shields, ward, invuln, an extra action) work the same for all.
+function applySelfEffect(actor, effect) {
+  if (!effect) return;
+  switch (effect.type) {
+    case "shield":      actor.shield = (actor.shield || 0) + (effect.value || 0); break;
+    case "magicShield": actor.magicShield = (actor.magicShield || 0) + (effect.value || 0); break;
+    case "invuln":      actor.invuln = Math.max(actor.invuln || 0, effect.duration || 1); break;
+    case "bonusAction": actor.actionsLeft = (actor.actionsLeft || 0) + (effect.value || 1); break;
+    default:            addStatus(actor, effect);
+  }
+}
+
+// Usable abilities for an NPC (ally or enemy): off cooldown AND affordable on the
+// actor's stamina (NPCs now pay stamina too, so the action economy is symmetric).
 function npcCandidates(actor) {
   const out = [];
   for (const a of (actor.abilities || [])) {
     if ((actor.cooldowns?.[a.id] || 0) > 0) continue;
     const def = getAbilityDef(a.id);
-    if (def) out.push({ id: a.id, tier: a.tier || actor.tier || "common", def });
+    if (!def) continue;
+    if (actor.stamina != null && (def.cost || 0) > actor.stamina) continue;
+    out.push({ id: a.id, tier: a.tier || actor.tier || "common", def });
   }
   return out;
 }
 
-// Execute one AI turn for an NPC actor (ally or enemy) against `opponents`.
-// Shared by both sides so enemies fight as cannily as companions. Mutates cs.
+// Execute ONE action for an NPC actor (ally or enemy) against `opponents`. The
+// caller (endTurn) loops this up to the actor's actionsPerTurn — the same action
+// economy the player uses. Spends stamina + cooldown + one action. Returns true
+// if it acted (so the caller can keep spending action points), false if not.
 function npcPerform(cs, actor, opponents) {
+  if ((actor.actionsLeft || 0) <= 0) return false;
   const choice = chooseAction(actor, opponents, npcCandidates(actor));
-  if (!choice) return;
+  if (!choice) return false;
   const { def, ability, mode } = choice;
   const tId = ability.tier || actor.tier || "common";
   if (def.cooldown) actor.cooldowns[ability.id] = def.cooldown;
+  if (actor.stamina != null) actor.stamina = Math.max(0, actor.stamina - (def.cost || 0));
+  actor.actionsLeft = (actor.actionsLeft || 1) - 1;
   const sideKind = actor.side === "player" ? "player" : "enemy";
 
   const hitOne = (target) => {
     const profile = attackProfile(actor, def, tId, false);
-    const before = target.health;
-    if (profile) cs.log.push(resolveHit(actor, target, profile));
-    const dealt = before - target.health;
-    // Lifesteal applies to any bearer (a fabled foe in vampiric arms heals as it
-    // hits — the sustained-damage threat the affix caps are tuned around).
-    const ls = actor.triggers?.lifesteal || 0;
-    if (dealt > 0 && ls > 0 && actor.health > 0) {
-      actor.health = Math.min(actor.maxHealth, actor.health + Math.max(1, Math.round(dealt * ls / 100)));
-    }
-    if (dealt > 0 && target.side === "enemy") onEnemyDamaged(target, dealt);
-    if (target.health > 0 && def.effect && def.effect.target === "enemy") {
+    if (profile) dealHit(cs, actor, target, profile, def);
+    else if (def.effect && def.effect.target === "enemy" && target.health > 0) {
       addStatus(target, def.effect);
       if (CONTROL_TYPES.has(def.effect.type) && target.side === "enemy") onEnemyControlled(target);
-    }
-    // Player-only reactions when the player is the one struck.
-    if (target === cs.player) {
-      addProf(cs, "evasion", XP.EVASION);
-      if (dealt > 0) addProf(cs, "endurance", XP.ENDURANCE);
-      const thorns = cs.player.triggers?.thorns || 0;
-      if (dealt > 0 && thorns > 0 && actor.health > 0) {
-        const ref = Math.max(1, Math.round(dealt * thorns / 100));
-        actor.health = Math.max(0, actor.health - ref);
-        cs.log.push(logEntry(`${actor.name} takes ${ref} from thornmail.`, "status"));
-      }
     }
   };
 
   if (mode === "self") {
-    if (def.effect) addStatus(actor, def.effect);
+    applySelfEffect(actor, def.effect);
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
   } else if (mode === "aoe") {
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
@@ -429,7 +594,7 @@ function npcPerform(cs, actor, opponents) {
   } else {
     let target = choice.target;
     if (!target || target.health <= 0 || target.resolved || target._dead) target = opponents.find((o) => o.health > 0 && !o.resolved && !o._dead);
-    if (!target) return;
+    if (!target) { actor.actionsLeft = 0; return false; }
     if (ability.id !== BASIC_ATTACK.id) cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
     const hits = def.hits || 1;
     for (let h = 0; h < hits; h++) { if (target.health <= 0) break; hitOne(target); }
@@ -440,6 +605,7 @@ function npcPerform(cs, actor, opponents) {
     if (t.health > 0 || t === cs.player) continue;
     if (t.side === "enemy") downEnemy(cs, t); else downAlly(cs, t);
   }
+  return true;
 }
 
 function resolveYield(cs, e) {
@@ -527,16 +693,23 @@ function moraleCheck(cs, e) {
 
 function tickStatuses(c) {
   const logs = [];
-  const dot = sumStatus(c, "bleed") + sumStatus(c, "poison");
+  const dot = sumStatus(c, "bleed") + sumStatus(c, "poison") + sumStatus(c, "burn");
   if (dot > 0) {
     c.health = Math.max(0, c.health - dot);
-    logs.push(logEntry(`${c.name} suffers ${dot} from bleeding/poison.`, "status"));
+    logs.push(logEntry(`${c.name} suffers ${dot} from bleed/poison/burn.`, "status"));
   }
   const heal = sumStatus(c, "regen");
   if (heal > 0 && c.health > 0) {
     c.health = Math.min(c.maxHealth, c.health + heal);
     logs.push(logEntry(`${c.name} recovers ${heal}.`, "status"));
   }
+  // Shield/ward-shield regenerate from affixes, capped at three turns' worth so a
+  // pool can't accumulate without bound. Invulnerability counts down each turn.
+  const sg = c.triggers?.shieldGen || 0;
+  if (sg > 0) c.shield = Math.min((c.shield || 0) + sg, sg * 3);
+  const msg = c.triggers?.magicShieldGen || 0;
+  if (msg > 0) c.magicShield = Math.min((c.magicShield || 0) + msg, msg * 3);
+  if ((c.invuln || 0) > 0) c.invuln -= 1;
   c.statuses = (c.statuses || []).map((s) => ({ ...s, duration: s.duration - 1 })).filter((s) => s.duration > 0);
   return logs;
 }
@@ -577,6 +750,7 @@ export function abilityUsable(cs, abilityId) {
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   if (!entry) return false;
   const def = getAbilityDef(abilityId);
+  if ((cs.player.actionsLeft || 0) < (def.actionCost || 1)) return false; // one action point per ability
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
   if (cs.player.stamina < (def.cost || 0)) return false;
   if ((cs.player.resolve ?? 0) < (def.resolveCost || 0)) return false;
@@ -598,6 +772,7 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const isWeaponTech = scaling === "weapon" && def.weaponReq && def.weaponReq.length > 0;
   if (isSpell) cs.magicCast = true;
   if (!cs.lethal && (isSpell || isWeaponTech)) escalateToLethal(cs, isSpell ? "magic" : "weapon");
+  cs.player.actionsLeft = (cs.player.actionsLeft || 1) - (def.actionCost || 1); // spend one action point
   cs.player.stamina -= def.cost || 0;
   // Spellcasting proficiency makes casting cheaper on Resolve.
   const resoCost = Math.max(0, (def.resolveCost || 0) - Math.floor((cs.player.prof?.spellcasting || 0) / 4));
@@ -612,29 +787,20 @@ export function playerAct(cs0, abilityId, targetIndex) {
 
   const profile = attackProfile(cs.player, def, tierId, true);
   if (profile) profile.eff = abilityEffectiveness(cs.player, def, tierId);
-  const lifesteal = cs.player.triggers?.lifesteal || 0;
-  const isControl = def.effect && CONTROL_TYPES.has(def.effect.type) && def.effect.target === "enemy";
 
+  // Shared resolution path: lifesteal, thorns, statuses, and synergy procs all
+  // run through dealHit, exactly as they do for NPCs. No-damage debuffs (Hex,
+  // Curse…) have no profile — apply their effect directly.
   const hitEnemy = (target) => {
-    const before = target.health;
-    if (profile) cs.log.push(resolveHit(cs.player, target, profile));
-    const dealt = before - target.health;
-    if (dealt > 0) {
-      onEnemyDamaged(target, dealt);
-      if (lifesteal > 0 && cs.player.health > 0) {
-        const heal = Math.max(1, Math.round(dealt * lifesteal / 100));
-        cs.player.health = Math.min(cs.player.maxHealth, cs.player.health + heal);
-        cs.log.push(logEntry(`${cs.player.name} drains ${heal} health.`, "status"));
-      }
-    }
-    if (target.health > 0 && def.effect && def.effect.target === "enemy") {
+    if (profile) dealHit(cs, cs.player, target, profile, def);
+    else if (def.effect && def.effect.target === "enemy" && target.health > 0) {
       addStatus(target, def.effect);
-      if (isControl) onEnemyControlled(target);
+      if (CONTROL_TYPES.has(def.effect.type) && target.side === "enemy") onEnemyControlled(target);
     }
   };
 
   if (def.target === "self") {
-    if (def.effect) addStatus(cs.player, def.effect);
+    applySelfEffect(cs.player, def.effect);
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
   } else if (def.target === "all-enemies") {
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
@@ -665,6 +831,7 @@ const canCommunicate = (e) => e.canTalk !== false && DEMEANOR_CONFIG[e.demeanor]
 export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
   if (!abilityUsable(cs0, TALK.id)) return cs0;
   const cs = clone(cs0);
+  cs.player.actionsLeft = (cs.player.actionsLeft || 1) - 1; // talking is your action this turn
   cs.player.stamina -= TALK.cost || 0;
   cs.player.cooldowns[TALK.id] = TALK.cooldown;
   addProf(cs, "command", XP.COMMAND);
@@ -855,7 +1022,12 @@ export function applyCombatEffect(cs0, effect) {
     }
   }
 
-  if (effect.player_damage > 0) p.health = Math.max(0, p.health - Math.round(effect.player_damage));
+  if (effect.player_damage > 0) {
+    let dmg = Math.round(effect.player_damage);
+    if ((p.invuln || 0) > 0) dmg = 0;                       // invulnerability turns it aside
+    else if (p.shield > 0) { const ab = Math.min(p.shield, dmg); p.shield -= ab; dmg -= ab; } // shield soaks first
+    p.health = Math.max(0, p.health - dmg);
+  }
 
   for (const e of cs.enemies) if (e.health <= 0) downEnemy(cs, e);
   if (playerDown(cs)) return finishDefeat(cs);
@@ -883,9 +1055,14 @@ export function endTurn(cs0) {
     }
     tickStatuses(a).forEach((l) => cs.log.push(l));
     if (a.health <= 0) { downAlly(cs, a); continue; }
-    for (const id of Object.keys(a.cooldowns)) a.cooldowns[id] = Math.max(0, a.cooldowns[id] - 1);
+    const aCdr = 1 + (a.cooldownReduction || 0);
+    for (const id of Object.keys(a.cooldowns)) a.cooldowns[id] = Math.max(0, a.cooldowns[id] - aCdr);
     if (livingEnemies(cs).length === 0) break;
-    npcPerform(cs, a, livingEnemies(cs));
+    startOfTurn(cs, a);
+    if (a.maxStamina != null) a.stamina = Math.min(a.maxStamina, (a.stamina || 0) + (a.staminaRegen || 0));
+    // Spend action points like the player — a swift-geared ally acts several times.
+    a.actionsLeft = a.actionsPerTurn || 1;
+    while (a.actionsLeft > 0 && livingEnemies(cs).length > 0) { if (!npcPerform(cs, a, livingEnemies(cs))) break; }
     if (livingEnemies(cs).length === 0) break;
   }
   if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
@@ -902,12 +1079,20 @@ export function endTurn(cs0) {
     }
     tickStatuses(e).forEach((l) => cs.log.push(l));
     if (e.health <= 0) { downEnemy(cs, e); continue; }
-    for (const id of Object.keys(e.cooldowns)) e.cooldowns[id] = Math.max(0, e.cooldowns[id] - 1);
+    const eCdr = 1 + (e.cooldownReduction || 0);
+    for (const id of Object.keys(e.cooldowns)) e.cooldowns[id] = Math.max(0, e.cooldowns[id] - eCdr);
 
     // React to how the fight is going before deciding to strike.
     if (!moraleCheck(cs, e)) continue;
 
-    npcPerform(cs, e, playerSide(cs));
+    startOfTurn(cs, e);
+    if (e.maxStamina != null) e.stamina = Math.min(e.maxStamina, (e.stamina || 0) + (e.staminaRegen || 0));
+    // Spend action points like the player — a swift-geared foe acts several times.
+    e.actionsLeft = e.actionsPerTurn || 1;
+    while (e.actionsLeft > 0 && cs.player.health > 0) {
+      if (!npcPerform(cs, e, playerSide(cs))) break;
+      if (playerDown(cs)) return finishDefeat(cs);
+    }
     if (playerDown(cs)) return finishDefeat(cs);
   }
 
@@ -916,8 +1101,9 @@ export function endTurn(cs0) {
 
   cs.turn += 1;
   cs.phase = "player";
-  tickStatuses(cs.player).forEach((l) => cs.log.push(l));
+  tickStatuses(cs.player).forEach((l) => cs.log.push(l)); // also regens player shields, ticks invuln
   if (playerDown(cs)) return finishDefeat(cs);
+  startOfTurn(cs, cs.player); // turn-ramp buffs, low-health panic procs, invuln cadence
   const tr = cs.player.triggers || {};
   if (tr.turnRegen && cs.player.health > 0) {
     cs.player.health = Math.min(cs.player.maxHealth, cs.player.health + tr.turnRegen);
@@ -925,7 +1111,9 @@ export function endTurn(cs0) {
   }
   if (tr.resolveRegen) cs.player.resolve = Math.min(cs.player.resolveMax, (cs.player.resolve || 0) + tr.resolveRegen);
   cs.player.stamina = Math.min(cs.player.maxStamina, cs.player.stamina + cs.player.staminaRegen + (tr.burst || 0));
-  for (const id of Object.keys(cs.player.cooldowns)) cs.player.cooldowns[id] = Math.max(0, cs.player.cooldowns[id] - 1);
+  cs.player.actionsLeft = cs.player.actionsPerTurn || 1; // refresh action points for the new turn
+  const cdr = 1 + (cs.player.cooldownReduction || 0);
+  for (const id of Object.keys(cs.player.cooldowns)) cs.player.cooldowns[id] = Math.max(0, cs.player.cooldowns[id] - cdr);
   if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
   cs.log.push(logEntry(`— Turn ${cs.turn} —`, "system"));
   return cs;

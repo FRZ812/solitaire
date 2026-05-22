@@ -1,5 +1,11 @@
 // Forgeable / purchasable gear and the raw materials it's made from.
 //
+// (Forge-runes for affix Fusion live in passives.js and are folded into MATERIALS
+//  below so they stack, sell, and buy like any other crafting stock.)
+//
+
+import { RUNES } from "./passives.js";
+
 // Equipment carries NO explicit `combat` block (with rare unique exceptions):
 // itemCombatStats (engine/combat-stats.js) infers a weapon's damage / armour's
 // protection from the item's NAME (weapon family + heft keywords, armour class
@@ -191,4 +197,5 @@ export const MATERIALS = {
   "yew-stave":      { id: "yew-stave",      name: "Yew Stave",      kind: "material", value: 12,  appearance: "A straight-grained billet of seasoned yew.", description: "Worked down into bows." },
   "bowstring":      { id: "bowstring",      name: "Waxed Bowstring", kind: "material", value: 5,   appearance: "A hank of waxed linen bowstring.", description: "Strings a bow; spares for the road." },
   "whetstone-grit": { id: "whetstone-grit", name: "Sharpening Grit", kind: "material", value: 3,   appearance: "A twist of coarse grinding grit.", description: "Consumed in finishing an edge at the forge." },
+  ...RUNES,
 };

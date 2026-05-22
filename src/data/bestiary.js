@@ -102,6 +102,11 @@ export function generateEnemy(kind, { tierId = "common", index = 0, total = 1 } 
     weapon: { min: Math.max(1, scale(dmg.min, m)), max: Math.max(1, scale(dmg.max, m)), type: dmg.type || "physical", pen: scale(dmg.pen, m) },
     abilities: (tmpl.abilities || []).map((id) => ({ id, tier: tierId })),
     maxLootTier: tmpl.maxLootTier || "uncommon",
+    // Action economy + stamina, same model as the player: one action a turn, paid
+    // for out of a stamina pool. Template foes carry no affixes, so no extras.
+    maxStamina: 4 + tierOf, stamina: 4 + tierOf, staminaRegen: 2,
+    actionsPerTurn: 1, actionsLeft: 1, cooldownReduction: 0,
+    procs: [], shield: 0, magicShield: 0, invuln: 0,
     statuses: [],
     cooldowns: {},
   };
@@ -170,11 +175,19 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     controlPressure: 0, provoked: false, resolved: null, lastFlavorTurn: 0, noFleeUntil: 0,
     maxHealth, health,
     armor: Math.round(attrArmor * m) + gearArmor + (sm.armor || 0), ward: Math.round(attrWard * m) + gearWard + (sm.ward || 0),
-    dr: Math.min(0.6, sm.drPct || 0),
+    dr: Math.min(0.6, sm.drPct || 0), fortify: Math.min(0.25, sm.fortify || 0),
     dodge: Math.min(70, reflex * 2 + dodgeGear + (sm.dodge || 0)),
     accuracy: reflex + wit + (sm.accuracy || 0), critChance: Math.min(60, Math.round(wit * 1.5 + reflex) + (sm.critChance || 0)), critMult: 1.5 + (sm.critMult || 0),
     speed: reflex + Math.floor(wit / 2),
     triggers: tr,
+    // Same action economy + stamina model as the player; swift-geared foes (extra
+    // actions affixes) act several times a turn, paid out of their stamina pool.
+    maxStamina: 4 + Math.floor((vigor + reflex) / 3) + (sm.maxStamina || 0),
+    stamina: 4 + Math.floor((vigor + reflex) / 3) + (sm.maxStamina || 0),
+    staminaRegen: 2 + Math.floor(vigor / 4) + (tr.staminaRegen || 0),
+    actionsPerTurn: 1 + Math.min(3, Math.max(0, sm.extraActions || 0)), actionsLeft: 1,
+    cooldownReduction: Math.min(3, sm.cooldownReduction || 0),
+    procs: tr.procs || [], shield: 0, magicShield: 0, invuln: 0,
     weapon, abilities, maxLootTier: tierId, statuses: [], cooldowns: {},
   };
 }
