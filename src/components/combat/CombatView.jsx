@@ -6,7 +6,8 @@ import { getAbilityDef, abilityRequiredStat, abilityScaling } from "../../data/a
 import { demeanorLabel } from "../../data/combat-flavor.js";
 import { abilityUsable } from "../../engine/combat.js";
 
-// Soft-requirement readout for the ability bar: stat shortfall + off-weapon.
+// Requirement readout for the ability bar. Stat shortfall is a soft % dropoff;
+// a weapon-type mismatch hard-blocks the ability (we show what weapon it needs).
 function abilityEff(player, def, tierId) {
   let statEff = 1, reqLabel = null;
   const req = abilityRequiredStat(def, tierId || "common");
@@ -15,9 +16,11 @@ function abilityEff(player, def, tierId) {
     statEff = Math.max(0.2, Math.min(1, have / req.value));
     if (have < req.value) reqLabel = `${req.attr.slice(0, 3).toUpperCase()} ${have}/${req.value}`;
   }
-  let weaponBad = false;
-  if (abilityScaling(def) === "weapon" && def.weaponReq?.length && !def.weaponReq.includes(player.weapon?.category)) weaponBad = true;
-  return { eff: statEff * (weaponBad ? 0.6 : 1), reqLabel, weaponBad };
+  let needWeapon = null;
+  if (abilityScaling(def) === "weapon" && def.weaponReq?.length && !def.weaponReq.includes(player.weapon?.category)) {
+    needWeapon = def.weaponReq.join("/");
+  }
+  return { eff: statEff, reqLabel, needWeapon };
 }
 
 function moodOf(enemy) {
@@ -139,8 +142,8 @@ function AbilityButton({ entry, combat, onAct }) {
   const cd = combat.player.cooldowns[entry.id] || 0;
   const usable = abilityUsable(combat, entry.id);
   const tcolor = tierColor(entry.tier || "common");
-  const { eff, reqLabel, weaponBad } = abilityEff(combat.player, def, entry.tier);
-  const penalised = eff < 1;
+  const { eff, reqLabel, needWeapon } = abilityEff(combat.player, def, entry.tier);
+  const penalised = eff < 1 && !needWeapon;
   const costParts = [];
   if (def.cost > 0) costParts.push(`${def.cost} stam`);
   if (def.resolveCost > 0) costParts.push(`${def.resolveCost} res`);
@@ -149,7 +152,7 @@ function AbilityButton({ entry, combat, onAct }) {
     <button
       onClick={() => onAct(entry.id)}
       disabled={!usable}
-      title={`${def.desc}${reqLabel ? ` · needs ${reqLabel}` : ""}${weaponBad ? " · wrong weapon" : ""}`}
+      title={`${def.desc}${reqLabel ? ` · needs ${reqLabel}` : ""}${needWeapon ? ` · needs ${needWeapon}` : ""}`}
       style={{
         position: "relative", textAlign: "left",
         padding: "8px 9px", borderRadius: radius.chip,
@@ -171,9 +174,9 @@ function AbilityButton({ entry, combat, onAct }) {
         </span>
         {(entry.tier && entry.tier !== "common") && <TierBadge tier={entry.tier} />}
       </div>
-      {(reqLabel || weaponBad) && (
-        <div style={{ fontSize: "7px", color: "#e0913a", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {weaponBad ? "off-weapon" : reqLabel}
+      {(reqLabel || needWeapon) && (
+        <div style={{ fontSize: "7px", color: needWeapon ? "#fca5a5" : "#e0913a", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {needWeapon ? `needs ${needWeapon}` : reqLabel}
         </div>
       )}
       {cd > 0 && (

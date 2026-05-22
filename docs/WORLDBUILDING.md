@@ -262,11 +262,14 @@ inferred from kind/name keywords (`itemCombatStats`).
   Resolve** (which does NOT regen in combat and persists after) — so casters
   burst hard then run dry, while fighters stay steady.
 
-**Requirements are soft** (`combat-stats.js reqEffectiveness`): each ability has a
-`weaponReq` (categories) and `statReq` (`base + tier_order×2`). Under-stat scales
-the ability down by `playerStat/required` (floor 20%); off-type weapon techniques
-take a 0.6× hit. Items carry the same kind of stat requirement (by tier); an
-under-req item still works at reduced base stats but **its passives switch off**.
+**Requirements:** each ability has a `weaponReq` (categories) and `statReq`
+(`base + tier_order×2`). The **stat** requirement is soft — under-stat scales the
+ability down by `playerStat/required` (floor 20%). The **weapon** requirement is
+a HARD gate (`weaponReqMet`/`abilityUsable`): a melee technique is unusable
+without a matching weapon in hand — you can't Power Strike with a grimoire or
+bare fists (in a brawl you must Draw Weapon first). Items carry a stat
+requirement (by tier); an under-req item still works at reduced base stats but
+**its passives switch off**.
 
 **Passives** (`data/passives.js`): slot count by item tier — Common/Uncommon 0 ·
 Rare 1 · Epic 2 · Legendary+ 3. Each passive carries its own tier (magnitude

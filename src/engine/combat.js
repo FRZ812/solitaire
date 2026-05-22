@@ -256,15 +256,11 @@ function attackProfile(attacker, def, tierId, isPlayer) {
   return null; // no direct damage
 }
 
-// Soft requirement multiplier for a player's ability use: stat shortfall scales
-// damage down (floor 20%), and an off-type weapon technique is penalised.
+// Soft requirement multiplier: stat shortfall scales damage down (floor 20%).
+// Weapon-type mismatch is no longer a penalty — it hard-blocks use (see
+// weaponReqMet/abilityUsable), so anything that reaches here has its weapon.
 function abilityEffectiveness(player, def, tierId) {
-  const statEff = reqEffectiveness(player.attrs || {}, abilityRequiredStat(def, tierId));
-  let weaponEff = 1;
-  if (abilityScaling(def) === "weapon" && def.weaponReq && def.weaponReq.length) {
-    if (!def.weaponReq.includes(player.weapon?.category)) weaponEff = 0.6;
-  }
-  return statEff * weaponEff;
+  return reqEffectiveness(player.attrs || {}, abilityRequiredStat(def, tierId));
 }
 
 function resolveHit(attacker, defender, profile) {
@@ -435,6 +431,14 @@ function checkCombatEnd(cs) {
 
 // ----- player actions -----
 
+// A weapon technique HARD-requires a compatible weapon in hand — you can't
+// Power Strike with a grimoire or bare fists. (Stat shortfalls stay soft.)
+export function weaponReqMet(def, weapon) {
+  if (abilityScaling(def) !== "weapon") return true;       // spells/utility need no weapon
+  if (!def.weaponReq || def.weaponReq.length === 0) return true; // basic attack — any weapon/fists
+  return def.weaponReq.includes(weapon?.category);
+}
+
 export function abilityUsable(cs, abilityId) {
   if (cs.phase !== "player") return false;
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
@@ -443,6 +447,7 @@ export function abilityUsable(cs, abilityId) {
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
   if (cs.player.stamina < (def.cost || 0)) return false;
   if ((cs.player.resolve ?? 0) < (def.resolveCost || 0)) return false;
+  if (!weaponReqMet(def, cs.player.weapon)) return false;
   return true;
 }
 
