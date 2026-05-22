@@ -338,8 +338,20 @@ topple+stun / area burn / heavy shove), so combat isn't only attack-vs-defend.
 
 ### Entry & outcome
 
-A hostile travel encounter raises a Fight/Avoid banner; the header's swords
-button seeks a fight against a hostile drawn from the current tile's spawn table.
+Three ways in:
+1. **Narrator-flagged** — the only way combat starts from the fiction. The
+   narrator emits `start_combat` (system-prompt.js) ONLY on an *explicit* strike
+   (the player or an NPC actually attacks), never on threats/standoffs. It names
+   the foe(s) — a codex `npc_id` (built via `enemyFromNPC` from their real
+   attributes + gear) or a spawn `kind` — plus `initiator` and `surprise`.
+   `App.startCombatFromDirective` builds the foes and opens the fight. **Ambush:**
+   `surprise:true` gives the striker a free opening — if the player struck, foes
+   are stunned and lose their first turn; if an NPC struck, every foe lands a free
+   opening blow. `surprise:false` (both already squared off — heated argument,
+   standoff) starts even.
+2. **Hostile travel encounter** — raises a Fight/Avoid banner.
+3. **Header swords button** — seeks a fight from the current tile's spawn table.
+
 `applyCombatResult` folds the fight back into the campaign: HP → `vitality`,
 lingering DoT → Bleeding/Poisoned conditions (defeat → Gravely Wounded, min 1 HP),
 loot → inventory/codex, a learned ability → `character.abilities` + a codex skill,

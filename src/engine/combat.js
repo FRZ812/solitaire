@@ -96,7 +96,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
   }
 
   const flavor = foes.length === 1 ? foes[0].name : `${foes.length} foes`;
-  return {
+  const combatState = {
     player,
     enemies: foes,
     target: 0,
@@ -112,6 +112,27 @@ export function initCombat(character, codex, enemies, opts = {}) {
     log: [logEntry(`Combat begins — ${flavor}.`, "system")],
     loot: null,
   };
+  if (opts.ambush) applyAmbush(combatState, opts.ambush);
+  return combatState;
+}
+
+// Opening advantage from a surprise strike. "player" = you caught them unaware
+// (they reel — each foe loses its first turn). "enemy" = you were ambushed
+// (every foe lands a free opening blow before you can act).
+function applyAmbush(cs, side) {
+  if (side === "player") {
+    for (const e of cs.enemies) addStatus(e, { type: "stun", value: 1, duration: 1 });
+    cs.log.push(logEntry("You strike first — they reel, caught unaware.", "system"));
+  } else if (side === "enemy") {
+    cs.log.push(logEntry("Ambush — they strike before you're ready!", "enemy"));
+    for (const e of cs.enemies) {
+      if (e.health <= 0) continue;
+      const profile = attackProfile(e, BASIC_ATTACK, e.tier, false);
+      if (profile) cs.log.push(resolveHit(e, cs.player, profile));
+      if (cs.player.health <= 0) break;
+    }
+    if (cs.player.health <= 0) finishDefeat(cs);
+  }
 }
 
 // ----- damage resolution -----

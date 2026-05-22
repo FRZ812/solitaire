@@ -17,7 +17,7 @@ import {
 import { rollPathEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
-import { generateEnemyGroup } from "./data/bestiary.js";
+import { generateEnemyGroup, enemyFromNPC } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
 import { initCombat, playerAct, playerTalk, playerUseEnvironment, setTarget, endTurn, playerFlee, applyCombatResult } from "./engine/combat.js";
@@ -427,7 +427,10 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const beat = await callNarrator(stateWithPlayer, `[PLAYER ACTION] ${action}`);
-      setState((s) => applyBeat(s, beat));
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(next);
+      // An explicit strike in the fiction hands off to the turn-based engine.
+      if (beat.start_combat) startCombatFromDirective(beat.start_combat, next);
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -545,22 +548,39 @@ export function Solitaire() {
 
   // ----- Combat handlers -----
 
-  function startCombat(enemies, context) {
+  function startCombat(enemies, context, extraOpts = {}, st = state) {
     if (!enemies || enemies.length === 0) return;
     combatCtxRef.current = context || { flavor: enemies[0].name };
     setMenuOpen(false); setMapOpen(false); setCodexOpen(false);
     setPendingCombat(null);
-    const region = regionHere(state);
-    const wp = activeWorldPassives(state.character, state.world.codex);
-    const cur = state.world.currentTile;
-    const terrain = getTile(state, cur.x, cur.y).terrain;
-    setCombat(initCombat(state.character, state.world.codex, enemies, {
+    const region = regionHere(st);
+    const wp = activeWorldPassives(st.character, st.world.codex);
+    const cur = st.world.currentTile;
+    const terrain = getTile(st, cur.x, cur.y).terrain;
+    setCombat(initCombat(st.character, st.world.codex, enemies, {
       maxLootTier: region.lootTier,
       region: region.level,
-      ownedUniques: ownedUniqueIds(state),
+      ownedUniques: ownedUniqueIds(st),
       coinBonus: wp.coinBonus || 0,
       environment: generateEnvironment(terrain),
+      ...extraOpts,
     }));
+  }
+
+  // Narrator-flagged combat: an explicit strike in the fiction (start_combat).
+  // Built from the post-beat state `st` so a foe just added to the codex resolves.
+  function startCombatFromDirective(dir, st) {
+    const region = regionHere(st);
+    const foes = (dir.foes && dir.foes.length) ? dir.foes : [{ kind: "bandits" }];
+    const enemies = [];
+    for (const f of foes) {
+      const npc = f.npc_id && st.world.codex.characters[f.npc_id];
+      if (npc) enemies.push(enemyFromNPC(npc, st.world.codex, { tierId: f.tier || "common" }));
+      else enemies.push(...generateEnemyGroup(f.kind || "bandits", { power: region.power, maxTier: f.tier || region.enemyTier }));
+    }
+    if (enemies.length === 0) return;
+    const ambush = dir.surprise ? (dir.initiator === "enemy" ? "enemy" : "player") : null;
+    startCombat(enemies, { flavor: dir.note || groupFlavor(enemies) }, { ambush }, st);
   }
 
   function handleSeekCombat() {
