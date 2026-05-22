@@ -76,6 +76,20 @@ const MAP_ASSETS = {
       <path d="M9 21v-8h6v8M9 10h6" />
     </svg>
   ),
+  // healer / apothecary: A remedy flask marked with a cross
+  healer: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M10 3h4M11 3v5l-3 6.5A3.5 3.5 0 0 0 11.2 20h1.6A3.5 3.5 0 0 0 16 14.5L13 8V3" fill="rgba(215, 167, 111, 0.1)" />
+      <path d="M12 12v4M10 14h4" />
+    </svg>
+  ),
+  // market: A market stall with a striped awning over a counter
+  market: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M3 9l2-5h14l2 5z" fill="rgba(215, 167, 111, 0.12)" />
+      <path d="M5 9v11M19 9v11M4 20h16M9 4l-1 5M14 4l1 5" />
+    </svg>
+  ),
   // smithy: Crossed blacksmith hammers with a small anvil
   smithy: (color) => (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
@@ -166,11 +180,13 @@ function assetKeyForTile(tile) {
   const t = tile.poi.type;
   if (t === "hidden") return "unknown";
   if (tile.terrain === "indoor") {
+    if (t === "healer" || t === "apothecary") return "healer";
     if (t === "inn" || t === "tavern" || t === "stable" || t === "mill" || t === "shop") return "bldg";
     if (t === "smithy") return "smithy";
     if (t === "temple" || t === "shrine" || t === "cathedral") return "temple";
     return "bldg";
   }
+  if (t === "market") return "market";
   if (t === "town" || t === "hall" || t === "square" || t === "garden" || t === "yard") return "town";
   if (t === "gate") return "gate";
   if (t === "landmark" || t === "camp") return "site";
@@ -187,6 +203,7 @@ function assetKeyForTile(tile) {
 function MapLegend() {
   const items = [
     { key: "bldg", label: "bldg" }, { key: "smithy", label: "smithy" },
+    { key: "healer", label: "healer" }, { key: "market", label: "market" },
     { key: "temple", label: "temple" }, { key: "town", label: "town" },
     { key: "gate", label: "gate" }, { key: "site", label: "site" },
     { key: "unknown", label: "unknown" }, { key: "city", label: "city" },
