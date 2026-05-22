@@ -15,12 +15,13 @@
 // allies, being stun-locked or out-classed — they may waver, plead, demand a
 // fair fight, flee, or yield. The player can also Demand Surrender (parley).
 
-import { getAbilityDef, attrFactor, BASIC_ATTACK, DEFEND, PARLEY, randomAbilityId } from "../data/abilities.js";
+import { getAbilityDef, attrFactor, abilityScaling, abilityRequiredStat, BASIC_ATTACK, DEFEND, PARLEY, randomAbilityId } from "../data/abilities.js";
 import { tierMult, rollTier, tierLabel, tier as tierInfo } from "../data/tiers.js";
 import { DEMEANOR_CONFIG, flavorLine } from "../data/combat-flavor.js";
 import { ITEM_DROP_CHANCE, ABILITY_DROP_CHANCE, UNIQUE_DROP_CHANCE } from "../data/balance.js";
 import { rollUniques } from "../data/uniques.js";
-import { deriveCombatStats } from "./combat-stats.js";
+import { rollItemPassives } from "../data/passives.js";
+import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -70,9 +71,12 @@ export function initCombat(character, codex, enemies, opts = {}) {
     stamina: cs.maxStamina,
     maxStamina: cs.maxStamina,
     staminaRegen: cs.staminaRegen,
+    resolve: Math.round(character.resolve ?? 0),
+    resolveMax: character.resolveMax ?? 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed,
+    triggers: cs.triggers || {},
     attrs: { ...character.attributes },
     abilities, cooldowns: {}, statuses: [],
   };
@@ -102,6 +106,8 @@ export function initCombat(character, codex, enemies, opts = {}) {
     maxLootTier: opts.maxLootTier || null,
     region: opts.region || 1,
     ownedUniques: opts.ownedUniques || [],
+    coinBonus: opts.coinBonus || 0,
+    revivedUsed: false,
     log: [logEntry(`Combat begins — ${flavor}.`, "system")],
     loot: null,
   };
@@ -109,19 +115,53 @@ export function initCombat(character, codex, enemies, opts = {}) {
 
 // ----- damage resolution -----
 
+// Build the damage profile. Weapon-scaling techniques are built from the
+// attacker's weapon (+ a stat modifier that grows with the ability's tier);
+// stat-scaling spells are built from the attribute × tier, with a staff/wand
+// adding only a small bonus.
 function attackProfile(attacker, def, tierId, isPlayer) {
-  if (def.damageType === "weapon") {
+  const scaling = abilityScaling(def);
+  const order = tierInfo(tierId).order;
+
+  if (scaling === "weapon" || def.damageType === "weapon") {
     const w = attacker.weapon || { min: 1, max: 2, type: "physical", pen: 0 };
-    return { min: w.min, max: w.max, type: w.type, pen: w.pen || 0, critBonus: def.critBonus || 0 };
+    const techMult = 1 + order * 0.15;
+    const govAttr = isPlayer ? (attacker.attrs?.[def.scaleAttr] ?? attacker.attrs?.body ?? 0) : 0;
+    const statMod = isPlayer ? Math.round(govAttr * (0.5 + order * 0.25)) : Math.round(order * 1.5);
+    const type = def.damageType && def.damageType !== "weapon" ? def.damageType : w.type;
+    return {
+      min: Math.max(1, Math.round(w.min * techMult) + statMod),
+      max: Math.max(1, Math.round(w.max * techMult) + statMod),
+      type, pen: (w.pen || 0) + (def.pen || 0), critBonus: def.critBonus || 0,
+    };
   }
-  if (!def.dmg) return null;
-  const m = tierMult(tierId);
-  const f = isPlayer && def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
-  return {
-    min: Math.max(1, Math.round(def.dmg[0] * m * f)),
-    max: Math.max(1, Math.round(def.dmg[1] * m * f)),
-    type: def.damageType, pen: def.pen || 0, critBonus: def.critBonus || 0,
-  };
+
+  if (scaling === "stat") {
+    if (!def.dmg) return null;
+    const m = tierMult(tierId);
+    const f = isPlayer && def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
+    let focus = 0;
+    if (isPlayer && (attacker.weapon?.category === "staff" || attacker.weapon?.category === "wand")) {
+      focus = Math.round((attacker.weapon.max || 0) * 0.3);
+    }
+    return {
+      min: Math.max(1, Math.round(def.dmg[0] * m * f) + focus),
+      max: Math.max(1, Math.round(def.dmg[1] * m * f) + focus),
+      type: def.damageType, pen: def.pen || 0, critBonus: def.critBonus || 0,
+    };
+  }
+  return null; // no direct damage
+}
+
+// Soft requirement multiplier for a player's ability use: stat shortfall scales
+// damage down (floor 20%), and an off-type weapon technique is penalised.
+function abilityEffectiveness(player, def, tierId) {
+  const statEff = reqEffectiveness(player.attrs || {}, abilityRequiredStat(def, tierId));
+  let weaponEff = 1;
+  if (abilityScaling(def) === "weapon" && def.weaponReq && def.weaponReq.length) {
+    if (!def.weaponReq.includes(player.weapon?.category)) weaponEff = 0.6;
+  }
+  return statEff * weaponEff;
 }
 
 function resolveHit(attacker, defender, profile) {
@@ -130,6 +170,7 @@ function resolveHit(attacker, defender, profile) {
     return logEntry(`${attacker.name} attacks ${defender.name} — dodged.`, "miss");
   }
   let raw = randInt(profile.min, profile.max);
+  if (profile.eff != null) raw *= profile.eff;
   raw *= 1 + sumStatus(attacker, "rally") / 100 - sumStatus(attacker, "weaken") / 100;
 
   const critChance = (attacker.critChance || 0) + (profile.critBonus || 0) + sumStatus(attacker, "focus");
@@ -261,6 +302,19 @@ function tickStatuses(c) {
   return logs;
 }
 
+// Player at/below 0 — but an Undying passive can cheat death once per fight.
+function playerDown(cs) {
+  if (cs.player.health > 0) return false;
+  const rev = cs.player.triggers?.reviveOnce;
+  if (rev && !cs.revivedUsed) {
+    cs.revivedUsed = true;
+    cs.player.health = Math.max(1, Math.round(cs.player.maxHealth * rev));
+    cs.log.push(logEntry(`${cs.player.name} cheats death and rises!`, "status"));
+    return false;
+  }
+  return true;
+}
+
 // ----- end-of-combat checks -----
 
 function checkCombatEnd(cs) {
@@ -278,6 +332,7 @@ export function abilityUsable(cs, abilityId) {
   const def = getAbilityDef(abilityId);
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
   if (cs.player.stamina < (def.cost || 0)) return false;
+  if ((cs.player.resolve ?? 0) < (def.resolveCost || 0)) return false;
   return true;
 }
 
@@ -289,16 +344,27 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   const tierId = entry.tier || "common";
   cs.player.stamina -= def.cost || 0;
+  cs.player.resolve = Math.max(0, (cs.player.resolve ?? 0) - (def.resolveCost || 0));
   if (def.cooldown) cs.player.cooldowns[abilityId] = def.cooldown;
   if (abilityId === DEFEND.id) cs.player.stamina = Math.min(cs.player.maxStamina, cs.player.stamina + 2);
 
   const profile = attackProfile(cs.player, def, tierId, true);
+  if (profile) profile.eff = abilityEffectiveness(cs.player, def, tierId);
+  const lifesteal = cs.player.triggers?.lifesteal || 0;
   const isControl = def.effect && CONTROL_TYPES.has(def.effect.type) && def.effect.target === "enemy";
 
   const hitEnemy = (target) => {
     const before = target.health;
     if (profile) cs.log.push(resolveHit(cs.player, target, profile));
-    if (target.health < before) onEnemyDamaged(target, before - target.health);
+    const dealt = before - target.health;
+    if (dealt > 0) {
+      onEnemyDamaged(target, dealt);
+      if (lifesteal > 0 && cs.player.health > 0) {
+        const heal = Math.max(1, Math.round(dealt * lifesteal / 100));
+        cs.player.health = Math.min(cs.player.maxHealth, cs.player.health + heal);
+        cs.log.push(logEntry(`${cs.player.name} drains ${heal} health.`, "status"));
+      }
+    }
     if (target.health > 0 && def.effect && def.effect.target === "enemy") {
       addStatus(target, def.effect);
       if (isControl) onEnemyControlled(target);
@@ -415,10 +481,20 @@ export function endTurn(cs0) {
     } else {
       if (choice) cs.log.push(logEntry(`${e.name} uses ${def.name}.`, "enemy"));
       const profile = attackProfile(e, def, tId, false);
+      const before = cs.player.health;
       if (profile) cs.log.push(resolveHit(e, cs.player, profile));
+      const dealt = before - cs.player.health;
       if (cs.player.health > 0 && def.effect && def.effect.target === "enemy") addStatus(cs.player, def.effect);
+      // Thornmail reflects a share of damage taken back at the attacker.
+      const thorns = cs.player.triggers?.thorns || 0;
+      if (dealt > 0 && thorns > 0 && e.health > 0) {
+        const ref = Math.max(1, Math.round(dealt * thorns / 100));
+        e.health = Math.max(0, e.health - ref);
+        cs.log.push(logEntry(`${e.name} takes ${ref} from thornmail.`, "status"));
+        if (e.health <= 0) markDead(cs, e);
+      }
     }
-    if (cs.player.health <= 0) return finishDefeat(cs);
+    if (playerDown(cs)) return finishDefeat(cs);
   }
 
   // Combat may have ended via flight/yield during the enemy phase.
@@ -427,8 +503,14 @@ export function endTurn(cs0) {
   cs.turn += 1;
   cs.phase = "player";
   tickStatuses(cs.player).forEach((l) => cs.log.push(l));
-  if (cs.player.health <= 0) return finishDefeat(cs);
-  cs.player.stamina = Math.min(cs.player.maxStamina, cs.player.stamina + cs.player.staminaRegen);
+  if (playerDown(cs)) return finishDefeat(cs);
+  const tr = cs.player.triggers || {};
+  if (tr.turnRegen && cs.player.health > 0) {
+    cs.player.health = Math.min(cs.player.maxHealth, cs.player.health + tr.turnRegen);
+    cs.log.push(logEntry(`${cs.player.name} mends ${tr.turnRegen}.`, "status"));
+  }
+  if (tr.resolveRegen) cs.player.resolve = Math.min(cs.player.resolveMax, (cs.player.resolve || 0) + tr.resolveRegen);
+  cs.player.stamina = Math.min(cs.player.maxStamina, cs.player.stamina + cs.player.staminaRegen + (tr.burst || 0));
   for (const id of Object.keys(cs.player.cooldowns)) cs.player.cooldowns[id] = Math.max(0, cs.player.cooldowns[id] - 1);
   if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
   cs.log.push(logEntry(`— Turn ${cs.turn} —`, "system"));
@@ -453,7 +535,7 @@ export function playerFlee(cs0) {
 // ----- outcomes + loot -----
 
 function lootCtx(cs) {
-  return { maxLootTier: cs.maxLootTier, region: cs.region, owned: new Set(cs.ownedUniques || []) };
+  return { maxLootTier: cs.maxLootTier, region: cs.region, owned: new Set(cs.ownedUniques || []), coinBonus: cs.coinBonus || 0 };
 }
 function finishVictory(cs) {
   cs.phase = "victory";
@@ -504,12 +586,13 @@ function generateLootItem(tierId) {
       appearance: `${tierLabel(tierId)}-grade ${noun.toLowerCase()}, taken in battle.`,
       description: `A ${tierLabel(tierId).toLowerCase()} ${kind} recovered from a foe.`,
       combat,
+      passives: rollItemPassives(tierId, { luck: 0.1 }),
     },
   };
 }
 
 export function rollLoot(sources, opts = {}) {
-  const { maxLootTier = null, region = 1, owned = new Set() } = opts;
+  const { maxLootTier = null, region = 1, owned = new Set(), coinBonus = 0 } = opts;
   let copper = 0;
   let maxTier = "common";
   for (const e of sources) {
@@ -541,6 +624,7 @@ export function rollLoot(sources, opts = {}) {
     if (uniq.ability) ability = uniq.ability;
   }
 
+  copper = Math.round(copper * (1 + coinBonus));
   const silver = Math.floor(copper / 10);
   return { coins: { copper: copper % 10, silver, gold: 0 }, items, ability };
 }
@@ -555,6 +639,10 @@ export function applyCombatResult(state, cs, context = {}) {
 
   next.character.vitality = clamp(Math.round(cs.player.health), 0, next.character.vitalityMax);
   if (cs.phase === "defeat") next.character.vitality = Math.max(1, next.character.vitality);
+  // Spent Resolve (spellcasting drain) persists out of the fight.
+  if (typeof cs.player.resolve === "number") {
+    next.character.resolve = clamp(Math.round(cs.player.resolve), 0, next.character.resolveMax);
+  }
 
   const conds = new Set((next.character.conditions || []));
   if (hasStatus(cs.player, "bleed")) conds.add("Bleeding");

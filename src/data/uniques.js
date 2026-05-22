@@ -18,7 +18,8 @@ export const UNIQUE_ITEMS = [
       id: "skullcleaver", name: "Skullcleaver", kind: "weapon", tier: "legendary",
       appearance: "A slab of black iron on a haft of bound sinew, far too heavy for any but the strongest to swing.",
       description: "The maul of some long-dead giant-killer, taken back from the things it was meant to kill.",
-      combat: { damage: { min: 14, max: 22, type: "physical", pen: 6 } },
+      combat: { damage: { min: 14, max: 22, type: "physical", pen: 6 }, weaponType: "mace" },
+      passives: [{ id: "savage", tier: "legendary" }, { id: "piercing", tier: "epic" }, { id: "vampiric", tier: "rare" }],
     },
   },
   {
@@ -27,7 +28,8 @@ export const UNIQUE_ITEMS = [
       id: "wargfang", name: "Wargfang", kind: "weapon", tier: "epic",
       appearance: "A curved blade set with a great grey fang along the spine, still warm to the touch.",
       description: "Carried by the warg-rider whose pack you broke. It hungers a little.",
-      combat: { damage: { min: 8, max: 13, type: "physical", pen: 3 } },
+      combat: { damage: { min: 8, max: 13, type: "physical", pen: 3 }, weaponType: "sword" },
+      passives: [{ id: "keen-edge", tier: "epic" }, { id: "vampiric", tier: "rare" }],
     },
   },
   {
@@ -37,6 +39,7 @@ export const UNIQUE_ITEMS = [
       appearance: "A cloak woven from pale, impossibly strong silk that turns a blade and shrugs off poison.",
       description: "Spun from the silk of the brood-mother. Light as breath, hard as horn.",
       combat: { armor: 8, ward: 4, dodge: 6 },
+      passives: [{ id: "evasion", tier: "epic" }, { id: "enduring", tier: "rare" }],
     },
   },
   {
@@ -46,6 +49,7 @@ export const UNIQUE_ITEMS = [
       appearance: "Grave-linen stiffened with bog-salt, marked with the Pale Hand's nine sigils.",
       description: "Taken off the walking dead of the Bonemarsh. It wards the mind as much as the body.",
       combat: { armor: 6, ward: 10 },
+      passives: [{ id: "aegis", tier: "epic" }, { id: "mending", tier: "rare" }],
     },
   },
   {
@@ -55,6 +59,7 @@ export const UNIQUE_ITEMS = [
       appearance: "A circlet of cold iron, snapped and re-welded, stamped with the Sundered Crown's broken ring.",
       description: "A warlord's badge from the Sundered Wastes. Those who wear it find others slower to defy them.",
       combat: { ward: 8, dodge: 8 },
+      passives: [{ id: "evasion", tier: "legendary" }, { id: "fortunate", tier: "epic" }, { id: "precise", tier: "rare" }],
     },
   },
   {
@@ -64,6 +69,7 @@ export const UNIQUE_ITEMS = [
       appearance: "A coal that never cools, caged in gold melted around it.",
       description: "Cut from the breast of a wyrm of the Drakeholt. It drinks magic meant for you.",
       combat: { ward: 16, armor: 4 },
+      passives: [{ id: "aegis", tier: "mythical" }, { id: "clearmind", tier: "epic" }, { id: "savage", tier: "rare" }],
     },
   },
 ];

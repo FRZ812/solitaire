@@ -13,8 +13,8 @@ export function canHeal(conditions) {
   return true;
 }
 
-export function passiveHealVitality(vitality, vitalityMax, conditions, minutes) {
+export function passiveHealVitality(vitality, vitalityMax, conditions, minutes, bonusPerHour = 0) {
   if (!canHeal(conditions)) return vitality;
-  const rate = 1; // HP per hour
+  const rate = 1 + bonusPerHour; // base 1 HP/hour + Mending-style passives
   return Math.min(vitalityMax, vitality + rate * (minutes / 60));
 }

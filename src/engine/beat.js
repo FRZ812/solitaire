@@ -8,6 +8,7 @@ import { passiveHealVitality } from "./healing.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
 import { applyAttributeChanges } from "./attributes.js";
+import { activeWorldPassives } from "./combat-stats.js";
 
 // applyBeat is the heart of the engine. Given the current state and a beat
 // from the narrator, it returns the next state plus the new beat entries to
@@ -97,9 +98,12 @@ export function applyBeat(state, beat, options = {}) {
   if (beat.vitality_change) character.vitality = Math.max(0, Math.min(character.vitalityMax, character.vitality + beat.vitality_change));
   if (beat.resolve_change)  character.resolve  = Math.max(0, Math.min(character.resolveMax,  character.resolve  + beat.resolve_change));
 
+  // Equipped world passives (Enduring slows needs, Mending speeds regen, etc.).
+  const wp = activeWorldPassives(state.character, state.world.codex);
+
   // Needs deplete by time, then narrator-driven changes apply, then conditions auto-update.
   const prevNeedConds = getNeedConditions(state.character.needs);
-  const drained = depleteNeeds(state.character.needs, beat.minutes_passed || 0);
+  const drained = depleteNeeds(state.character.needs, beat.minutes_passed || 0, Math.max(0.2, 1 - (wp.needDecayMult || 0)));
   const newNeeds = applyNeedsChanges(drained, beat.needs_changes);
   character.needs = newNeeds;
 
@@ -116,7 +120,7 @@ export function applyBeat(state, beat, options = {}) {
   // Passive regen comes after final conditions, so a freshly-applied "Bleeding" blocks it.
   character.vitality = passiveHealVitality(
     character.vitality, character.vitalityMax,
-    character.conditions, beat.minutes_passed || 0
+    character.conditions, beat.minutes_passed || 0, wp.healPerHour || 0
   );
 
   let world = { ...state.world, codex };

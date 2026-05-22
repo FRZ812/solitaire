@@ -251,6 +251,32 @@ stats are DERIVED from them plus equipped gear (`deriveCombatStats`):
 Items get combat values from an explicit `combat` block on the codex item, else
 inferred from kind/name keywords (`itemCombatStats`).
 
+### Weapon vs caster, requirements, passives
+
+**Scaling style** (`data/abilities.js`):
+- **Weapon techniques** (martial) — `scaling:"weapon"`. Damage = equipped weapon ×
+  a tier-mult `+ a stat modifier` (governing attribute, grows with ability tier).
+  Require a weapon category. Cost Stamina. Consistent.
+- **Spells** — `scaling:"stat"`. Damage = base × tier × `attrFactor(Mind/Presence)`;
+  a staff/wand adds only a small flat bonus. Cost a little Stamina **and drain
+  Resolve** (which does NOT regen in combat and persists after) — so casters
+  burst hard then run dry, while fighters stay steady.
+
+**Requirements are soft** (`combat-stats.js reqEffectiveness`): each ability has a
+`weaponReq` (categories) and `statReq` (`base + tier_order×2`). Under-stat scales
+the ability down by `playerStat/required` (floor 20%); off-type weapon techniques
+take a 0.6× hit. Items carry the same kind of stat requirement (by tier); an
+under-req item still works at reduced base stats but **its passives switch off**.
+
+**Passives** (`data/passives.js`): slot count by item tier — Common/Uncommon 0 ·
+Rare 1 · Epic 2 · Legendary+ 3. Each passive carries its own tier (magnitude
+scales with it) and can't exceed the item's tier, so a divine-grade passive only
+appears on a divine item. Scope is `combat` (stat mods + triggers: lifesteal,
+thornmail, regen, resolve-regen, extra stamina, revive-once) or `world` (slower
+need decay, faster travel, out-of-combat regen, extra coin). Passives only apply
+on equipped, requirement-met gear. To rebalance, edit the magnitude table in
+`passives.js`.
+
 ### Damage pipeline (one hit)
 
 `dodge check → roll base damage → rally/weaken → crit → vulnerable → mitigate`.

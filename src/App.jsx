@@ -20,6 +20,7 @@ import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { initCombat, playerAct, setTarget, endTurn, playerFlee, applyCombatResult } from "./engine/combat.js";
+import { activeWorldPassives } from "./engine/combat-stats.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
 import { CombatView } from "./components/combat/CombatView.jsx";
@@ -446,7 +447,8 @@ export function Solitaire() {
     const fromName = currentLocationName(state);
     const toName = toTile.poi?.name || `${TERRAINS[toTile.terrain]?.label} (${dest.x},${dest.y})`;
     const isHidden = toTile.poi?.type === "hidden";
-    const totalMins = pathMinutes(state, path);
+    const travelWp = activeWorldPassives(state.character, state.world.codex);
+    const totalMins = Math.max(1, Math.round(pathMinutes(state, path) * (1 - (travelWp.travelMult || 0))));
     const hexes = path.length - 1;
 
     // Summarize the route's terrain mix for the narrator.
@@ -548,10 +550,12 @@ export function Solitaire() {
     setMenuOpen(false); setMapOpen(false); setCodexOpen(false);
     setPendingCombat(null);
     const region = regionHere(state);
+    const wp = activeWorldPassives(state.character, state.world.codex);
     setCombat(initCombat(state.character, state.world.codex, enemies, {
       maxLootTier: region.lootTier,
       region: region.level,
       ownedUniques: ownedUniqueIds(state),
+      coinBonus: wp.coinBonus || 0,
     }));
   }
 

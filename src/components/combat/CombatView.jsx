@@ -2,9 +2,23 @@ import React, { useRef, useEffect } from "react";
 import { Icon } from "../Icon.jsx";
 import { colors, radius, fonts, metaStyle, shadow, glass } from "../tokens.js";
 import { tierColor, tierLabel } from "../../data/tiers.js";
-import { getAbilityDef } from "../../data/abilities.js";
+import { getAbilityDef, abilityRequiredStat, abilityScaling } from "../../data/abilities.js";
 import { demeanorLabel } from "../../data/combat-flavor.js";
 import { abilityUsable } from "../../engine/combat.js";
+
+// Soft-requirement readout for the ability bar: stat shortfall + off-weapon.
+function abilityEff(player, def, tierId) {
+  let statEff = 1, reqLabel = null;
+  const req = abilityRequiredStat(def, tierId || "common");
+  if (req && req.value) {
+    const have = player.attrs?.[req.attr] || 0;
+    statEff = Math.max(0.2, Math.min(1, have / req.value));
+    if (have < req.value) reqLabel = `${req.attr.slice(0, 3).toUpperCase()} ${have}/${req.value}`;
+  }
+  let weaponBad = false;
+  if (abilityScaling(def) === "weapon" && def.weaponReq?.length && !def.weaponReq.includes(player.weapon?.category)) weaponBad = true;
+  return { eff: statEff * (weaponBad ? 0.6 : 1), reqLabel, weaponBad };
+}
 
 function moodOf(enemy) {
   if (enemy.demeanor === "mindless") return { label: "unfeeling", color: "#8a8f8f" };
@@ -125,11 +139,17 @@ function AbilityButton({ entry, combat, onAct }) {
   const cd = combat.player.cooldowns[entry.id] || 0;
   const usable = abilityUsable(combat, entry.id);
   const tcolor = tierColor(entry.tier || "common");
+  const { eff, reqLabel, weaponBad } = abilityEff(combat.player, def, entry.tier);
+  const penalised = eff < 1;
+  const costParts = [];
+  if (def.cost > 0) costParts.push(`${def.cost} stam`);
+  if (def.resolveCost > 0) costParts.push(`${def.resolveCost} res`);
+  if (def.cooldown) costParts.push(`cd ${def.cooldown}`);
   return (
     <button
       onClick={() => onAct(entry.id)}
       disabled={!usable}
-      title={def.desc}
+      title={`${def.desc}${reqLabel ? ` · needs ${reqLabel}` : ""}${weaponBad ? " · wrong weapon" : ""}`}
       style={{
         position: "relative", textAlign: "left",
         padding: "8px 9px", borderRadius: radius.chip,
@@ -143,13 +163,19 @@ function AbilityButton({ entry, combat, onAct }) {
       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
         <Icon name={def.icon || "swords"} size={13} color={tcolor} strokeWidth={1.8} />
         <span style={{ fontSize: "12px", fontWeight: 700, color: colors.parchment, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{def.name}</span>
+        {penalised && <span style={{ fontSize: "8px", fontWeight: 800, color: "#e0913a", marginLeft: "auto" }}>{Math.round(eff * 100)}%</span>}
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "3px" }}>
         <span style={{ fontSize: "8px", color: "rgba(237,228,208,0.55)" }}>
-          {def.cost > 0 ? `${def.cost} stam` : "free"}{def.cooldown ? ` · cd ${def.cooldown}` : ""}
+          {costParts.length ? costParts.join(" · ") : "free"}
         </span>
         {(entry.tier && entry.tier !== "common") && <TierBadge tier={entry.tier} />}
       </div>
+      {(reqLabel || weaponBad) && (
+        <div style={{ fontSize: "7px", color: "#e0913a", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {weaponBad ? "off-weapon" : reqLabel}
+        </div>
+      )}
       {cd > 0 && (
         <div style={{
           position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
@@ -271,7 +297,7 @@ export function CombatView({ combat, onAct, onSetTarget, onEndTurn, onFlee, onRe
           </div>
           <span style={{ fontSize: "11px", color: colors.parchment, fontWeight: 700, flexShrink: 0 }}>{Math.ceil(player.health)}/{player.maxHealth}</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px", flexWrap: "wrap" }}>
           <span style={{ ...metaStyle, fontSize: "8px", color: "rgba(237,228,208,0.55)" }}>Stamina</span>
           <div style={{ display: "flex", gap: "3px" }}>
             {Array.from({ length: player.maxStamina }).map((_, i) => (
@@ -282,10 +308,23 @@ export function CombatView({ combat, onAct, onSetTarget, onEndTurn, onFlee, onRe
               }} />
             ))}
           </div>
-          <div style={{ flex: 1 }} />
-          <span style={{ fontSize: "9px", color: "rgba(237,228,208,0.5)" }}>
-            AR {player.armor} · WD {player.ward} · DODGE {player.dodge}%
-          </span>
+          {player.resolveMax > 0 && (
+            <>
+              <span style={{ ...metaStyle, fontSize: "8px", color: "rgba(176,114,230,0.7)", marginLeft: "4px" }}>Resolve</span>
+              <div style={{ display: "flex", gap: "3px" }}>
+                {Array.from({ length: player.resolveMax }).map((_, i) => (
+                  <div key={i} style={{
+                    width: "10px", height: "10px", borderRadius: "50%",
+                    backgroundColor: i < player.resolve ? "#b072e6" : "rgba(176,114,230,0.15)",
+                    border: `1px solid rgba(176,114,230,0.4)`,
+                  }} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+        <div style={{ fontSize: "9px", color: "rgba(237,228,208,0.5)", marginBottom: "6px" }}>
+          AR {player.armor} · WD {player.ward} · DODGE {player.dodge}% · {player.weapon?.name}
         </div>
         <StatusRow statuses={player.statuses} />
 
