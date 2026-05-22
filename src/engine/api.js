@@ -71,7 +71,14 @@ export function buildStateContext(state) {
     else if (nt.poi?.type === "hidden") nearby.push(`?(${TERRAINS[nt.terrain]?.label})`);
   }
   const nearbyStr = nearby.length ? `; Nearby: ${nearby.join(", ")}` : "";
-  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]
+  // Lasting state the player's actions left on this spot (razed, emptied, tense…).
+  let locLine = "";
+  if (t.status) {
+    const ago = Math.max(0, (time.day || 0) - (t.status.day || 0));
+    const when = ago <= 0 ? "today" : ago === 1 ? "yesterday" : `${ago} days ago`;
+    locLine = `\n[LOCATION STATE — ${t.status.note || t.status.status} (since ${when}${t.status.depopulated ? "; depopulated" : ""})]`;
+  }
+  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]

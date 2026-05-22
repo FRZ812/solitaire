@@ -161,5 +161,16 @@ export function applyBeat(state, beat, options = {}) {
   if (beat._userMsg) newHistory.push({ role: "user", content: beat._userMsg });
   if (beat._raw)     newHistory.push({ role: "assistant", content: beat._raw });
 
+  // Lasting consequences the player left on this place (razed, emptied, tense…).
+  // Recorded on the current tile with the game-day so the narrator can pace a
+  // slow, immersive recovery (or keep it dead).
+  if (beat.location_update && world.currentTile) {
+    const k = `${world.currentTile.x},${world.currentTile.y}`;
+    const tiles = { ...world.tiles };
+    const existing = tiles[k] || getTile({ ...state, world }, world.currentTile.x, world.currentTile.y);
+    tiles[k] = { ...existing, status: { ...beat.location_update, day: newTime.day } };
+    world = { ...world, tiles };
+  }
+
   return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory };
 }

@@ -381,7 +381,18 @@ Three ways in:
    opening blow. `surprise:false` (both already squared off — heated argument,
    standoff) starts even.
 2. **Hostile travel encounter** — raises a Fight/Avoid banner.
-3. **Header swords button** — seeks a fight from the current tile's spawn table.
+3. **"Look for a fight"** (swords button in the map panel) — sends a `[SEEK COMBAT]`
+   action to the narrator, which decides what the place holds: a willing foe
+   (`start_combat`), nobody interested, or consequences (guards/patrons step in).
+   It is NOT a guaranteed fight and there are no endless hordes — a cleared place
+   has nothing left, so the player must look elsewhere.
+
+**Location consequences** — player violence persists. The narrator records lasting
+changes to the current tile via `location_update` (emptied / razed / tense…),
+stored with the game-day; the `[LOCATION STATE]` context line tells it what was
+done and how long ago, so an emptied inn stays empty and only recovers slowly
+(narrator-paced) over days/weeks. See `applyBeat` (tile `status`) and
+`buildStateContext`.
 
 `applyCombatResult` folds the fight back into the campaign: HP → `vitality`,
 lingering DoT → Bleeding/Poisoned conditions (defeat → Gravely Wounded, min 1 HP),

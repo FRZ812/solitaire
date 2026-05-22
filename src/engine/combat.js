@@ -403,7 +403,6 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const resoCost = Math.max(0, (def.resolveCost || 0) - Math.floor((cs.player.prof?.spellcasting || 0) / 4));
   cs.player.resolve = Math.max(0, (cs.player.resolve ?? 0) - resoCost);
   if (def.cooldown) cs.player.cooldowns[abilityId] = def.cooldown;
-  if (abilityId === DEFEND.id) cs.player.stamina = Math.min(cs.player.maxStamina, cs.player.stamina + 2);
 
   // Train the proficiency this action exercises (do-it-get-better).
   if (def.dmg || def.damageType === "weapon") {

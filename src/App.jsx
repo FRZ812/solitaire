@@ -9,6 +9,7 @@ import { callNarrator } from "$api";
 import { onAuthChange, signOut, linkEmail, isSubscribed } from "$auth";
 import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "$campaigns";
 import { applyBeat } from "./engine/beat.js";
+import { equipItem, unequipItem } from "./engine/inventory.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
@@ -546,6 +547,9 @@ export function Solitaire() {
     setMenuOpen(false);
   }
 
+  function handleEquip(itemId) { setState((s) => equipItem(s, itemId)); }
+  function handleUnequip(itemId) { setState((s) => unequipItem(s, itemId)); }
+
   // ----- Combat handlers -----
 
   function startCombat(enemies, context, extraOpts = {}, st = state) {
@@ -583,12 +587,28 @@ export function Solitaire() {
     startCombat(enemies, { flavor: dir.note || groupFlavor(enemies) }, { ambush }, st);
   }
 
-  function handleSeekCombat() {
+  // Looking for a fight goes through the narrator — it decides whether there's
+  // anyone worth fighting, or whether stirring trouble brings consequences.
+  // It may (or may not) hand off to the combat engine via start_combat.
+  async function handleSeekCombat() {
     if (loading || combat) return;
-    const region = regionHere(state);
-    const kind = pickHostileKind(state);
-    const enemies = generateEnemyGroup(kind, { power: region.power, maxTier: region.enemyTier });
-    startCombat(enemies, { flavor: groupFlavor(enemies) });
+    setMapOpen(false);
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: "You look for a fight." };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[PLAYER ACTION] You go looking for a fight here — sizing up who might be willing to cross blades.\n\n[SEEK COMBAT] The player is trying to pick a fight at this location. Decide naturally what it holds right now: a willing opponent (set start_combat), no one interested (start_combat null), or consequences for disturbing the peace (guards/patrons step in — start_combat against them). Respect this place's current state; do NOT invent an endless supply of enemies, and if it has already been cleared or emptied there is nothing to fight.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(next);
+      if (beat.start_combat) startCombatFromDirective(beat.start_combat, next);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleFightPending() {
@@ -655,7 +675,6 @@ export function Solitaire() {
           state={state}
           onMap={() => setMapOpen(true)}
           onMenu={() => setMenuOpen(true)}
-          onCombat={handleSeekCombat}
         />
         <VitalsStrip character={state.character} />
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
@@ -693,6 +712,8 @@ export function Solitaire() {
           state={state}
           user={user}
           onClose={() => setMenuOpen(false)}
+          onEquip={handleEquip}
+          onUnequip={handleUnequip}
           onReset={handleResetCampaign}
           onOpenCodex={() => { setMenuOpen(false); setCodexOpen(true); }}
           onBackToCampaigns={handleBackToCampaigns}
@@ -705,6 +726,7 @@ export function Solitaire() {
           state={state}
           onClose={() => setMapOpen(false)}
           onTravel={handleTravel}
+          onSeekCombat={handleSeekCombat}
           loading={loading}
         />
       )}
