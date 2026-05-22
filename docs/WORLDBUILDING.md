@@ -369,6 +369,13 @@ at 0 HP is **knocked out** (alive), not killed. **Draw Weapon**
 (`playerDrawWeapon`) escalates a brawl to lethal — real steel, real death, worse
 aftermath. Wilderness/monster/assassin fights start `lethal:true`.
 
+**Item grants (on-equip spells).** An item may carry a `grants` block (combat
+`abilities`, narrative `spells`, a `magicKnows` line). `equipItem` applies it and
+records exactly what was NEWLY added on the item as `_granted`; `unequipItem`
+revokes precisely that — so taking off a teaching item (e.g. the dev
+`grimoire-firstflame`) disables the magic it gave, while spells you already knew
+by other means are left untouched. Spell power still scales with Mind/Spellcasting.
+
 **Loot is never automatic.** Only actual corpses (lethal kills) carry spoils;
 yielded / fled / knocked-out foes give nothing. `applyCombatResult` stashes the
 spoils as `pendingLoot` instead of granting them — the player must choose to

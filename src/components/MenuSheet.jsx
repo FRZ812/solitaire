@@ -148,6 +148,25 @@ function ItemDetail({ item, id, location, attrs, onEquip, onUnequip, onClose }) 
           </div>
         )}
 
+        {item.grants && (
+          <div style={{ ...insetBoxStyle, border: `1px solid rgba(176,114,230,0.4)` }}>
+            <div style={{ ...metaStyle, fontSize: "8px", color: "#b072e6", marginBottom: "5px" }}>{worn ? "Granting (while equipped)" : "On equip — awakens magic"}</div>
+            {(item.grants.abilities?.length > 0) && (
+              <div style={{ fontSize: "11px", color: colors.parchment, marginBottom: "4px" }}>
+                Spells in battle: {item.grants.abilities.map((a) => getAbilityDef(a.id)?.name || a.id).join(", ")}
+              </div>
+            )}
+            {(item.grants.spells?.length > 0) && (
+              <div style={{ fontSize: "11px", color: colors.parchment }}>
+                Cantrips: {item.grants.spells.map((s) => s.name).join(", ")}
+              </div>
+            )}
+            <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.5)", fontStyle: "italic", marginTop: "5px" }}>
+              {worn ? "Unequip to set the gift aside." : "Spells scale with Mind — grind Spellcasting to grow it."}
+            </div>
+          </div>
+        )}
+
         {equippable && (
           worn
             ? <button onClick={() => { onUnequip(id); onClose(); }} style={actionButtonStyle()}>Unequip</button>
