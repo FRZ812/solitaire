@@ -82,6 +82,20 @@ export const BUILDINGS = {
     blurb: "A squat blockhouse of damp stone — a wanted board by the door, a smell of straw and iron, and the warden watching from a stool worn smooth.",
   },
 
+  // The Block: Crowsmoor's auction-yard — the slave market. A grimmer counterpart
+  // to the lawful gaol, deliberately kept in a rougher town, not in Mirecross. The
+  // auctioneer holds people for sale; buying a bond is a coin deal, the rest is
+  // played in the world (free them, press them to service, ransom or resell).
+  slavemarket: {
+    id: "slavemarket",
+    kind: "slavemarket",       // the auctioneer: a roster of captives whose bonds are for sale
+    label: "The Block",
+    keeper: "the auctioneer",
+    icon: "slavemarket",
+    hours: { open: 8, close: 17 },
+    blurb: "A fenced yard hard against the stockyards — a raised auction-block of weathered oak, a row of the bonded chained to a rail in its shade, and an auctioneer with a tally-stick and a flat, appraising eye.",
+  },
+
   // The Wet Market: a single open-air stall, not a building — the butcher,
   // fruit-peddler, and greengrocer all cry their wares from the same square.
   // A plain seller (no training).

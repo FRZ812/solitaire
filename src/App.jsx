@@ -17,6 +17,7 @@ import { useConsumable } from "./engine/consumables.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
 import { generateGaol, acceptBounty, buyPrisonerRights } from "./engine/gaol.js";
+import { generateSlaveMarket, buyCaptive } from "./engine/slaves.js";
 import { partyStanding, recruitOutlook, dismissCompanion, isRecruited, partyMembers } from "./engine/party.js";
 import { applyTraining, trainingOffer } from "./engine/training.js";
 import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./data/town.js";
@@ -49,6 +50,7 @@ import { TraderView } from "./components/TraderView.jsx";
 import { ForgeView } from "./components/ForgeView.jsx";
 import { QuestBoardView } from "./components/QuestBoardView.jsx";
 import { PrisonView } from "./components/PrisonView.jsx";
+import { SlaveMarketView } from "./components/SlaveMarketView.jsx";
 import { PartyView } from "./components/PartyView.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { CodexView } from "./components/CodexView.jsx";
@@ -872,6 +874,35 @@ export function Solitaire() {
     }
   }
 
+  // ----- Slave market (The Block): buying a captive's bond -----
+
+  // Buying a bond is a coin transaction; the custody scene (free, press to
+  // service, ransom, resell) is narrated. Crowsmoor only — never Mirecross.
+  async function handleBuyCaptive(c) {
+    if (loading || !shopTile) return;
+    if (!(await askConfirm({ title: "Buy a bond", body: `Pay ${formatCopper(c.priceCp)} to the auctioneer for ${c.name}'s bond (${c.origin})? Their fate becomes yours — to free, to keep, or to sell on.`, confirmLabel: "Pay", danger: true }))) return;
+    const r = buyCaptive(state, c);
+    if (!r.ok) { setError(r.reason || "You can't pay the auctioneer."); return; }
+    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the block";
+    setShopTile(null);
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You pay the auctioneer for ${c.name}'s bond.` };
+    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[PLAYER ACTION] At ${place} you have just paid the auctioneer ${formatCopper(c.priceCp)} for the bond of ${c.name} — ${c.origin}, ${c.taken} (${c.desc}). They can ${c.skills}. Their spirit reads as ${c.spirit}. The coin is already settled — do not re-tally it. Play the moment the auctioneer strikes the irons and hands them over: who ${c.name} is in their own voice, how they react to the player given their spirit, and leave it OPEN for the player to decide their fate — free them outright (they may then walk their own road or, if moved, ask to travel with you), keep them in service, ransom them home, or sell them on. Do not have them simply join as a willing companion unless the player earns it. Don't fabricate combat.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // ----- Long-press a bubble: Rewrite / Edit / Rewind -----
 
   function openBeatMenu(beat, index) {
@@ -1288,11 +1319,11 @@ export function Solitaire() {
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: buildingOpenNow ? colors.gold : "rgba(215,167,111,0.55)", marginBottom: "2px" }}>
-                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : buildingHere.kind === "tavern" ? "Tavern" : buildingHere.kind === "gaol" ? "Gaol" : "Building"}
+                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : buildingHere.kind === "tavern" ? "Tavern" : buildingHere.kind === "gaol" ? "Gaol" : buildingHere.kind === "slavemarket" ? "Auction" : "Building"}
               </div>
               <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
                 {buildingOpenNow
-                  ? `${buildingHere.label} — ${(buildingHere.kind === "tavern" || buildingHere.kind === "gaol") ? "read the board." : "step up to the counter."}`
+                  ? `${buildingHere.label} — ${(buildingHere.kind === "tavern" || buildingHere.kind === "gaol") ? "read the board." : buildingHere.kind === "slavemarket" ? "look over the lots." : "step up to the counter."}`
                   : `${buildingHere.label} is shut — it opens at ${String(buildingHours(buildingHere).open).padStart(2, "0")}:00.`}
               </div>
             </div>
@@ -1402,6 +1433,19 @@ export function Solitaire() {
               onAccept={handleAcceptBounty}
               onAbandon={handleAbandonTask}
               onBuyRights={handleBuyRights}
+              onClose={() => setShopTile(null)}
+              loading={loading}
+            />
+          );
+        }
+        if (building.kind === "slavemarket") {
+          const board = generateSlaveMarket(key, state.time.day);
+          return (
+            <SlaveMarketView
+              state={state}
+              building={building}
+              board={board}
+              onBuy={handleBuyCaptive}
               onClose={() => setShopTile(null)}
               loading={loading}
             />

@@ -7,7 +7,8 @@ import { getAbilityDef } from "../data/abilities.js";
 import { TERRAINS } from "../data/terrains.js";
 import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
-import { getTile, isSeen, HEX_DIRECTIONS } from "./world.js";
+import { getTile, isSeen, HEX_DIRECTIONS, hexDistance } from "./world.js";
+import { hostileProfile } from "./encounters.js";
 import { getBiome } from "../data/biomes.js";
 import { buildingForTile, isBuildingOpen, buildingHours } from "../data/town.js";
 import { formatTime, formatDate } from "./time.js";
@@ -60,6 +61,40 @@ export function summarizeAbilities(character) {
 
 // Bonds + recent shared memories for everyone the player has a relationship or
 // history with — so re-meetings need no re-introduction and carry their weight.
+// 8-wind compass bearing from one axial hex to another.
+export function compassDir(from, to) {
+  const dq = to.x - from.x, dr = to.y - from.y;
+  if (dq === 0 && dr === 0) return "here";
+  const ex = dq + dr / 2, ey = dr; // y grows south
+  const ang = ((Math.atan2(-ey, ex) * 180 / Math.PI) % 360 + 360) % 360; // 0=E, 90=N
+  return ["E", "NE", "N", "NW", "W", "SW", "S", "SE"][Math.round(ang / 45) % 8];
+}
+
+// What the player can sense around them right now: whether this is safe/settled
+// or open wilds (with the real encounter risk + likely hostiles HERE), and the
+// bearing + distance to each accepted objective. Lets the narrator foreshadow a
+// quest's dangers only when actually near it, not three hexes from the tavern.
+function buildSurroundings(state, t) {
+  const cur = state.world.currentTile;
+  const near = HEX_DIRECTIONS.some((d) => {
+    const nt = getTile(state, cur.x + d.x, cur.y + d.y);
+    return nt.terrain === "settlement" || nt.terrain === "indoor";
+  });
+  const safe = t.terrain === "settlement" || t.terrain === "indoor" || near;
+  const hp = hostileProfile(t, cur.x, cur.y);
+  const here = safe
+    ? "a settled, watched place — safe; no wilderness ambush here"
+    : `open country — encounter risk ~${hp.chancePercent}%${hp.kinds.length ? `, likely: ${hp.kinds.join(", ")}` : ""}`;
+  const objectives = (state.world.quests || [])
+    .filter((q) => q.status === "active" && q.loc)
+    .map((q) => {
+      const dist = hexDistance(cur, q.loc);
+      return `${q.title} → ${q.locName || "target"} (${dist} hex${dist === 1 ? "" : "es"} ${compassDir(cur, q.loc)}${dist <= 3 ? ", NEAR" : ""})`;
+    });
+  const objLine = objectives.length ? ` Objectives: ${objectives.join("; ")}.` : "";
+  return `\n[SURROUNDINGS — Here: ${here}.${objLine} Foreshadow a quest's specific dangers (goblin-sign, good cover, fresh tracks) ONLY when its target is NEAR (≤3 hexes) AND you are on a dangerous wilderness hex — never while far off or safe in a settlement. If the player heads AWAY from an accepted objective or lets things drag, companions may notice and react per their bond and nature.]`;
+}
+
 export function summarizeBonds(codex) {
   const out = [];
   for (const c of Object.values(codex.characters)) {
@@ -148,7 +183,7 @@ export function buildStateContext(state) {
   const partyLine = companions.length
     ? `\n[COMPANIONS — travelling with you: ${companions.map(companionDetail).join(" · ")}. They are present in scenes, act and speak on their own, fight at your side, and share your fortunes (they can be wounded, killed, or leave). When the player asks a companion what they can do, ANSWER CONCRETELY from this kit — their real abilities, skills, and gear — never vague hand-waving. You may move gear between the player and a companion when they share loot (use companion_gear). Don't drop or forget them.]`
     : "";
-  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}${questLine}${partyLine}
+  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}${questLine}${partyLine}${buildSurroundings(state, t)}
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]
