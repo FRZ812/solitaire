@@ -659,7 +659,6 @@ export function Solitaire() {
           state={state}
           onMap={() => setMapOpen(true)}
           onMenu={() => setMenuOpen(true)}
-          onCombat={handleSeekCombat}
         />
         <VitalsStrip character={state.character} />
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
@@ -711,6 +710,7 @@ export function Solitaire() {
           state={state}
           onClose={() => setMapOpen(false)}
           onTravel={handleTravel}
+          onSeekCombat={handleSeekCombat}
           loading={loading}
         />
       )}

@@ -264,7 +264,7 @@ function collectHexes(cur) {
   return out;
 }
 
-export function MapView({ state, onClose, onTravel, loading }) {
+export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
   const [selected, setSelected] = useState(null);
   const containerRef = useRef(null);
   const { zoom, transformRef, reset, lastWasDragRef, mouseHandlers } = useZoomPan(containerRef);
@@ -466,24 +466,44 @@ export function MapView({ state, onClose, onTravel, loading }) {
             {formatDate(state.time)} · {formatTime(state.time)}
           </div>
         </div>
-        <button
-          onClick={reset}
-          style={{
-            ...iconButtonStyle,
-            backgroundColor: "rgba(215, 167, 111, 0.08)",
-            border: "1px solid rgba(215, 167, 111, 0.2)",
-            borderRadius: "50%",
-            width: "30px",
-            height: "30px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer"
-          }}
-          aria-label="Recenter on player"
-        >
-          <Icon name="crosshair" size={13} color="#e6b98c" strokeWidth={2} />
-        </button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          {onSeekCombat && (
+            <button
+              onClick={onSeekCombat}
+              disabled={loading}
+              aria-label="Look for a fight"
+              title="Look for trouble in this area"
+              style={{
+                ...iconButtonStyle,
+                backgroundColor: "rgba(239, 68, 68, 0.1)",
+                border: "1px solid rgba(239, 68, 68, 0.3)",
+                borderRadius: "50%", width: "30px", height: "30px",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: loading ? "default" : "pointer", opacity: loading ? 0.5 : 1,
+              }}
+            >
+              <Icon name="swords" size={14} color="#fca5a5" strokeWidth={2} />
+            </button>
+          )}
+          <button
+            onClick={reset}
+            style={{
+              ...iconButtonStyle,
+              backgroundColor: "rgba(215, 167, 111, 0.08)",
+              border: "1px solid rgba(215, 167, 111, 0.2)",
+              borderRadius: "50%",
+              width: "30px",
+              height: "30px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer"
+            }}
+            aria-label="Recenter on player"
+          >
+            <Icon name="crosshair" size={13} color="#e6b98c" strokeWidth={2} />
+          </button>
+        </div>
       </div>
 
       <div
