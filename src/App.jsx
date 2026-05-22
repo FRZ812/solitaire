@@ -17,7 +17,7 @@ import { useConsumable } from "./engine/consumables.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
 import { generateGaol, acceptBounty, buyPrisonerRights } from "./engine/gaol.js";
-import { recruitCompanion, dismissCompanion, isRecruited, partyMembers } from "./engine/party.js";
+import { partyStanding, recruitOutlook, dismissCompanion, isRecruited, partyMembers } from "./engine/party.js";
 import { applyTraining, trainingOffer } from "./engine/training.js";
 import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
@@ -800,26 +800,25 @@ export function Solitaire() {
     setShopTile(null); // a stretch of work ends the visit
     setState({ ...r.state, beats: [...r.state.beats, { id: `lab${Date.now()}`, type: "narration", content: r.summary }] });
   }
-  // Recruiting brings a real, persistent person into the party (engine/party.js
-  // files them into the codex and adds them to state.party). After the
-  // deterministic add, the narrator plays the brief joining scene.
-  async function handleRecruit(tmpl) {
+  // Recruiting is a CONVERSATION, not a button. "Approach" only opens the
+  // exchange — the player must actually talk the person round. The party's
+  // standing (size, best attributes, how well-armed) vs the recruit's choosiness
+  // is handed to the narrator, who plays their reception and, only once genuinely
+  // won over, sets recruit_companion (applied in applyBeat). Folk don't follow a
+  // lone, weak wanderer.
+  async function handleApproachRecruit(tmpl) {
     if (loading || !shopTile || isRecruited(state, tmpl.id)) return;
-    const body = tmpl.feeCp
-      ? `Take ${tmpl.name} the ${tmpl.role} into your company? They ask ${formatCopper(tmpl.feeCp)} up front, then ${tmpl.terms}.`
-      : `Take ${tmpl.name} the ${tmpl.role} into your company? Their terms: ${tmpl.terms}.`;
-    if (!(await askConfirm({ title: `Recruit ${tmpl.name}`, body, confirmLabel: "Recruit" }))) return;
-    const r = recruitCompanion(state, tmpl);
-    if (!r.ok) { setError(r.reason || "They won't join."); return; }
     const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the tavern";
+    const standing = partyStanding(state);
+    const outlook = recruitOutlook(standing, tmpl.choosiness);
     setShopTile(null);
     setError(null);
     setLoading(true);
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You take ${tmpl.name} on. They join your company.` };
-    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You cross to ${tmpl.name}, the ${tmpl.role}, to feel them out about joining you.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] At ${place} you have just recruited ${tmpl.name}, a ${tmpl.race} ${tmpl.role} (${tmpl.desc}). They are now a COMPANION travelling with you — already established in the codex and your party; do NOT undo it. Narrate the brief moment they take up with you: a term struck, a handshake, a first word between you. Keep it to a sentence or three. From now on they are present in scenes and act and speak on their own.`;
+      const msg = `[APPROACH RECRUIT] At ${place} the player approaches ${tmpl.name} (id: ${tmpl.id}), a ${tmpl.race} ${tmpl.role} — "${tmpl.desc}" — who is posted as willing to take the road for ${tmpl.terms}. They are ${tmpl.choosiness}-choosiness about who they'll follow. The player's company right now reads as ${standing.descriptor}; its strongest qualities: ${standing.bestLine}. Weighing that, ${tmpl.name}'s likely reception is "${outlook}". Open the conversation in ${tmpl.name}'s voice — size up the player and their band, state interest/terms/skepticism. Do NOT have them join yet; the player must talk them round across the exchange. Only set recruit_companion:{"id":"${tmpl.id}"} once they are GENUINELY won over by what the player says and shows — and a scornful, unimpressed prospect (a strong fighter eyeing a lone weakling) may refuse outright. Keep it grounded; let the player's words decide.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
@@ -1385,7 +1384,7 @@ export function Solitaire() {
               onAccept={handleAcceptTask}
               onAbandon={handleAbandonTask}
               onLabour={handleDayLabour}
-              onRecruit={handleRecruit}
+              onRecruit={handleApproachRecruit}
               onClose={() => setShopTile(null)}
               loading={loading}
             />

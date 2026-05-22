@@ -9,6 +9,7 @@ import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
 import { applyAttributeChanges } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
+import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
 
 // applyBeat is the heart of the engine. Given the current state and a beat
 // from the narrator, it returns the next state plus the new beat entries to
@@ -172,5 +173,31 @@ export function applyBeat(state, beat, options = {}) {
     world = { ...world, tiles };
   }
 
-  return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory };
+  // A companion the narrator just won over joins the party (the player talked
+  // them into it — see [APPROACH RECRUIT] doctrine).
+  let party = state.party || [];
+  if (beat.recruit_companion?.id) {
+    const tmpl = COMPANIONS[beat.recruit_companion.id];
+    if (tmpl && !party.includes(tmpl.id)) {
+      party = [...party, tmpl.id];
+      world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: companionCodexEntry(tmpl) } } };
+    }
+  }
+
+  // Sharing loot with the party: move worn gear onto/off a companion. Pair with
+  // inventory_changes (remove from the player) when handing something over.
+  if (Array.isArray(beat.companion_gear) && beat.companion_gear.length) {
+    const chars = { ...world.codex.characters };
+    for (const g of beat.companion_gear) {
+      const ch = chars[g?.id];
+      if (!ch) continue;
+      let worn = [...(ch.worn || [])];
+      for (const rid of (g.remove || [])) worn = worn.filter((w) => w !== rid);
+      for (const aid of (g.add || [])) if (!worn.includes(aid)) worn.push(aid);
+      chars[g.id] = { ...ch, worn };
+    }
+    world = { ...world, codex: { ...world.codex, characters: chars } };
+  }
+
+  return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party };
 }
