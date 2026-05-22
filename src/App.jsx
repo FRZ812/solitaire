@@ -581,7 +581,7 @@ export function Solitaire() {
     for (const f of foes) {
       const npc = f.npc_id && st.world.codex.characters[f.npc_id];
       if (npc) enemies.push(enemyFromNPC(npc, st.world.codex, { tierId: f.tier || "common" }));
-      else enemies.push(...generateEnemyGroup(f.kind || "bandits", { power: region.power, maxTier: f.tier || region.enemyTier }));
+      else enemies.push(...generateEnemyGroup(f.kind || "bandits", { power: region.power, maxTier: f.tier || region.enemyTier, count: f.count, name: f.name }));
     }
     if (enemies.length === 0) return;
     const ambush = dir.surprise ? (dir.initiator === "enemy" ? "enemy" : "player") : null;

@@ -393,6 +393,12 @@ corpse in a public, lawful place draws horror/the watch; in the wilds nobody
 cares). So a surrender no longer mysteriously pays coin, and you can't strip a
 dead man's whole rig in a crowded tavern without consequence.
 
+The narrator names and counts the foes in `start_combat.foes` (`name`, `count`),
+and the engine honours them exactly (`generateEnemyGroup`) so the roster matches
+the fiction — one laborer fought is one foe, not the template's range. The
+`[COMBAT REPORT]` states the exact roster + fates and the prompt treats it as
+authoritative, so the narrator can't invent extra bodies afterward.
+
 **Aftermath** — every fight appends a `[COMBAT REPORT]` to `apiHistory` (outcome,
 each foe's fate, ending HP, a blow-by-blow) so the narrator can speak to what
 happened. **Defeat is not game-over:** `handleResolveCombat` hands a `[DEFEATED]`

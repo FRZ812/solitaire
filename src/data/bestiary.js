@@ -162,16 +162,20 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
 
 // Build a whole hostile group for a spawn kind. `power` (0..1) is the rollTier
 // luck (nudge toward the high end); `maxTier` caps the tier (a region's
-// enemyTier ceiling). When maxTier is omitted it's derived from power.
-export function generateEnemyGroup(kind, { power = 0, maxTier = null } = {}) {
+// enemyTier ceiling). `count` forces an exact group size (the narrator's roster
+// wins over the template's range); `name` overrides the displayed name so the
+// foes match the fiction the narrator set up.
+export function generateEnemyGroup(kind, { power = 0, maxTier = null, count = null, name = null } = {}) {
   const tmpl = BESTIARY[kind] || inferTemplate(kind);
   const [lo, hi] = tmpl.count || [1, 1];
-  const count = randInt(lo, hi);
+  const n = count != null ? Math.max(1, Math.round(count)) : randInt(lo, hi);
   const cap = maxTier || (power >= 0.75 ? "legendary" : power >= 0.5 ? "epic" : power >= 0.25 ? "very-rare" : "rare");
   const enemies = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < n; i++) {
     const tierId = rollTier(cap, power);
-    enemies.push(generateEnemy(kind, { tierId, index: i, total: count }));
+    const e = generateEnemy(kind, { tierId, index: i, total: n });
+    if (name) e.name = n > 1 ? `${name} ${i + 1}` : name;
+    enemies.push(e);
   }
   return enemies;
 }

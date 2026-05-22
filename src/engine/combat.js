@@ -995,5 +995,6 @@ function buildCombatRecap(cs, context) {
   const magicNote = cs.magicCast
     ? " NOTE: the player WORKED MAGIC in this fight — magic is rare and dreaded, so any ordinary folk who witnessed it should react with shock, panic, even cries of witchcraft, far beyond their reaction to mere violence."
     : "";
-  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. Foes: ${foes}. You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}.${magicNote}`.slice(0, 1700);
+  const n = cs.enemies.length;
+  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. You fought exactly ${n} foe${n === 1 ? "" : "s"} (this is the full roster — narrate only these, by these fates): ${foes}. You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}.${magicNote}`.slice(0, 1700);
 }
