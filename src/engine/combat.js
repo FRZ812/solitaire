@@ -21,6 +21,8 @@ import { DEMEANOR_CONFIG, flavorLine } from "../data/combat-flavor.js";
 import { ITEM_DROP_CHANCE, ABILITY_DROP_CHANCE, UNIQUE_DROP_CHANCE } from "../data/balance.js";
 import { rollUniques } from "../data/uniques.js";
 import { rollItemPassives } from "../data/passives.js";
+import { effectiveAttributes, ratingFromXp, proficiencyName, weaponMasteryId, XP } from "../data/proficiencies.js";
+import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -77,7 +79,8 @@ export function initCombat(character, codex, enemies, opts = {}) {
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed,
     triggers: cs.triggers || {},
-    attrs: { ...character.attributes },
+    prof: cs.prof || {},
+    attrs: cs.attrs || { ...character.attributes },
     abilities, cooldowns: {}, statuses: [],
   };
 
@@ -109,6 +112,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     coinBonus: opts.coinBonus || 0,
     environment: opts.environment || [],
     revivedUsed: false,
+    profGains: {},
     log: [logEntry(`Combat begins — ${flavor}.`, "system")],
     loot: null,
   };
@@ -116,14 +120,39 @@ export function initCombat(character, codex, enemies, opts = {}) {
   return combatState;
 }
 
-// Opening advantage from a surprise strike. "player" = you caught them unaware
-// (they reel — each foe loses its first turn). "enemy" = you were ambushed
-// (every foe lands a free opening blow before you can act).
+function addProf(cs, id, xp) { cs.profGains[id] = (cs.profGains[id] || 0) + xp; }
+const alertness = (d) => ({ feral: 4, honorable: 3, wary: 3, fierce: 2, fanatic: 2, brutish: 1, cowardly: 0, mindless: 0 }[d] ?? 1);
+
+// A surprise strike is CONTESTED, not free — so you can't just ambush everyone.
+// Player ambush: your stealth (Reflex + ½Wit + Ambush proficiency) vs the foes'
+// awareness (their accuracy + demeanor alertness, harder per extra foe). Win →
+// they reel and lose their first turn. Enemy ambush: contested by your Wit + ½
+// Reflex + Awareness proficiency; lose the read and they get a free opening
+// blow. Either way you train the relevant proficiency.
 function applyAmbush(cs, side) {
+  const a = cs.player.attrs || {};
+  const living = livingEnemies(cs);
   if (side === "player") {
-    for (const e of cs.enemies) addStatus(e, { type: "stun", value: 1, duration: 1 });
-    cs.log.push(logEntry("You strike first — they reel, caught unaware.", "system"));
+    const stealth = (a.reflex || 0) + Math.floor((a.wit || 0) / 2) + (cs.player.prof?.ambush || 0);
+    const awareness = Math.max(...living.map((e) => (e.accuracy || 0) + alertness(e.demeanor)), 0);
+    const chance = clamp(40 + (stealth - awareness) * 6 - (living.length - 1) * 12, 5, 95);
+    addProf(cs, "ambush", XP.AMBUSH_TRY);
+    if (rand100() <= chance) {
+      for (const e of cs.enemies) addStatus(e, { type: "stun", value: 1, duration: 1 });
+      cs.log.push(logEntry("You strike first — they reel, caught unaware.", "system"));
+      addProf(cs, "ambush", XP.AMBUSH_WIN);
+    } else {
+      cs.log.push(logEntry("They were readier than you thought — no opening blow.", "system"));
+    }
   } else if (side === "enemy") {
+    const enemyStealth = Math.max(...living.map((e) => (e.speed || 4) + tierInfo(e.tier).order), 0);
+    const perception = (a.wit || 0) + Math.floor((a.reflex || 0) / 2) + (cs.player.prof?.awareness || 0);
+    addProf(cs, "awareness", XP.AWARENESS);
+    const chance = clamp(50 + (enemyStealth - perception) * 6, 5, 95);
+    if (rand100() > chance) {
+      cs.log.push(logEntry("You sense it coming and meet them ready.", "system"));
+      return;
+    }
     cs.log.push(logEntry("Ambush — they strike before you're ready!", "enemy"));
     for (const e of cs.enemies) {
       if (e.health <= 0) continue;
@@ -162,13 +191,14 @@ function attackProfile(attacker, def, tierId, isPlayer) {
     if (!def.dmg) return null;
     const m = tierMult(tierId);
     const f = isPlayer && def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
+    const castBonus = isPlayer ? 1 + (attacker.prof?.spellcasting || 0) * 0.05 : 1; // Spellcasting proficiency
     let focus = 0;
     if (isPlayer && (attacker.weapon?.category === "staff" || attacker.weapon?.category === "wand")) {
       focus = Math.round((attacker.weapon.max || 0) * 0.3);
     }
     return {
-      min: Math.max(1, Math.round(def.dmg[0] * m * f) + focus),
-      max: Math.max(1, Math.round(def.dmg[1] * m * f) + focus),
+      min: Math.max(1, Math.round(def.dmg[0] * m * f * castBonus) + focus),
+      max: Math.max(1, Math.round(def.dmg[1] * m * f * castBonus) + focus),
       type: def.damageType, pen: def.pen || 0, critBonus: def.critBonus || 0,
     };
   }
@@ -367,10 +397,19 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const def = getAbilityDef(abilityId);
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   const tierId = entry.tier || "common";
+  const scaling = abilityScaling(def);
   cs.player.stamina -= def.cost || 0;
-  cs.player.resolve = Math.max(0, (cs.player.resolve ?? 0) - (def.resolveCost || 0));
+  // Spellcasting proficiency makes casting cheaper on Resolve.
+  const resoCost = Math.max(0, (def.resolveCost || 0) - Math.floor((cs.player.prof?.spellcasting || 0) / 4));
+  cs.player.resolve = Math.max(0, (cs.player.resolve ?? 0) - resoCost);
   if (def.cooldown) cs.player.cooldowns[abilityId] = def.cooldown;
   if (abilityId === DEFEND.id) cs.player.stamina = Math.min(cs.player.maxStamina, cs.player.stamina + 2);
+
+  // Train the proficiency this action exercises (do-it-get-better).
+  if (def.dmg || def.damageType === "weapon") {
+    if (scaling === "stat") addProf(cs, "spellcasting", XP.SPELL_CAST);
+    else if (scaling === "weapon") addProf(cs, weaponMasteryId(cs.player.weapon?.category), XP.WEAPON_HIT);
+  }
 
   const profile = attackProfile(cs.player, def, tierId, true);
   if (profile) profile.eff = abilityEffectiveness(cs.player, def, tierId);
@@ -429,6 +468,7 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
   const cs = clone(cs0);
   cs.player.stamina -= TALK.cost || 0;
   cs.player.cooldowns[TALK.id] = TALK.cooldown;
+  addProf(cs, "command", XP.COMMAND);
   const a = cs.player.attrs || {};
 
   if (intent === "demoralize") {
@@ -583,6 +623,8 @@ export function endTurn(cs0) {
       const before = cs.player.health;
       if (profile) cs.log.push(resolveHit(e, cs.player, profile));
       const dealt = before - cs.player.health;
+      addProf(cs, "evasion", XP.EVASION);
+      if (dealt > 0) addProf(cs, "endurance", XP.ENDURANCE);
       if (cs.player.health > 0 && def.effect && def.effect.target === "enemy") addStatus(cs.player, def.effect);
       // Thornmail reflects a share of damage taken back at the attacker.
       const thorns = cs.player.triggers?.thorns || 0;
@@ -738,6 +780,27 @@ export function applyCombatResult(state, cs, context = {}) {
 
   next.character.vitality = clamp(Math.round(cs.player.health), 0, next.character.vitalityMax);
   if (cs.phase === "defeat") next.character.vitality = Math.max(1, next.character.vitality);
+
+  // Proficiency XP earned this fight → ratings up → attribute growth (the only
+  // way attributes rise). Surface what improved as growth beats.
+  if (cs.profGains && Object.keys(cs.profGains).length) {
+    const beforeProf = { ...(next.character.proficiencies || {}) };
+    const beforeEff = effectiveAttributes(next.character);
+    const profLines = [];
+    next.character.proficiencies = { ...beforeProf };
+    for (const [id, xp] of Object.entries(cs.profGains)) {
+      const before = beforeProf[id] || 0;
+      const after = before + xp;
+      next.character.proficiencies[id] = after;
+      const r0 = ratingFromXp(before), r1 = ratingFromXp(after);
+      if (r1 > r0) profLines.push(`${proficiencyName(id)} ${r0} → ${r1}`);
+    }
+    const afterEff = effectiveAttributes(next.character);
+    const attrLines = [];
+    for (const k of ATTR_KEYS) if (afterEff[k] > beforeEff[k]) attrLines.push(`${ATTR_LABELS[k]} ${beforeEff[k]} → ${afterEff[k]}`);
+    if (profLines.length) beats.push({ id: `pg${now}`, type: "growth", text: profLines.join(" · ") });
+    if (attrLines.length) beats.push({ id: `ag${now}`, type: "growth", text: `Attributes — ${attrLines.join(" · ")}` });
+  }
   // Spent Resolve (spellcasting drain) persists out of the fight.
   if (typeof cs.player.resolve === "number") {
     next.character.resolve = clamp(Math.round(cs.player.resolve), 0, next.character.resolveMax);

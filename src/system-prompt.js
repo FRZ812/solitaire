@@ -153,8 +153,8 @@ SKILLS — trainable, USE-BASED growth (NOT a level system)
 MENTORSHIP
 NPCs may have higher skill ratings than the player. If the player apprentices to a mentor (paying coin, labor, or time), advance time and grant the player skill increase(s) reflecting the training. Be honest about how long it takes — weeks to months for substantial growth.
 
-ATTRIBUTE GROWTH — slow, narratively grounded
-Attributes grow much more slowly than skills. Major training arcs, magical effects, life-changing events. Use attribute_changes sparingly.
+ATTRIBUTE GROWTH — earned by USE, not granted
+Attributes rise only as the engine's use-based proficiencies grow — the player gets better at what they DO (fighting with a weapon raises its mastery and thus Body/Reflex; casting raises Spellcasting and thus Mind; surviving blows raises Endurance and thus Vigor; etc.). Do NOT hand out attribute increases for ordinary training or story beats — leave attribute_changes null. Reserve attribute_changes ONLY for rare, momentous, explicitly supernatural events (a god's boon, a curse, a transformative artifact), never for "you practiced and got stronger" — the engine already handles that.
 
 MAGIC ACQUISITION — STRICT
 The player CANNOT cast spells until they have explicitly acquired magic via a narrative path:

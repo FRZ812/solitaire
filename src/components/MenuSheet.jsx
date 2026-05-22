@@ -9,6 +9,7 @@ import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats } from "../engine/combat-stats.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel } from "../data/tiers.js";
+import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
 
 // Item-specific inline icon. The wooden bird is a meaningful in-fiction
 // item, so it gets a custom glyph; everything else falls back to a
@@ -123,9 +124,13 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
   const inv = state.character.inventory;
   const codex = state.world.codex;
   const wornIds = codex.characters.wanderer?.worn || [];
-  const attrs = state.character.attributes;
+  const attrs = effectiveAttributes(state.character);
   const combat = deriveCombatStats(state.character, codex);
   const learnedAbilities = state.character.abilities || [];
+  const trainedProfs = PROFICIENCIES
+    .map((p) => ({ name: p.name, rating: ratingFromXp(state.character.proficiencies?.[p.id] || 0), xp: state.character.proficiencies?.[p.id] || 0 }))
+    .filter((p) => p.xp > 0)
+    .sort((a, b) => b.rating - a.rating || b.xp - a.xp);
 
   const showGuestNag = user?.is_anonymous && onLinkEmail;
 
@@ -232,11 +237,33 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           </div>
         </div>
 
-        {/* Attributes */}
+        {/* Attributes — effective (base + growth earned by grinding proficiencies). */}
         <div>
           <SectionHeader>Attributes</SectionHeader>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
             {ATTR_KEYS.map(k => <AttrBlock key={k} label={ATTR_LABELS[k]} score={attrs[k]} />)}
+          </div>
+        </div>
+
+        {/* Proficiencies — what you've trained by doing. Raise these to grow attributes. */}
+        <div>
+          <SectionHeader>Proficiencies</SectionHeader>
+          <div style={insetBoxStyle}>
+            {trainedProfs.length === 0
+              ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.45)", fontStyle: "italic" }}>None yet — fight, cast, and survive to improve.</span>
+              : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {trainedProfs.map((p) => (
+                    <span key={p.name} style={{
+                      fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: radius.pill,
+                      color: colors.parchment, border: `1px solid rgba(215, 167, 111, 0.28)`,
+                      backgroundColor: "rgba(215, 167, 111, 0.08)",
+                    }}>
+                      {p.name} <span style={{ color: colors.gold }}>{p.rating}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
           </div>
         </div>
 

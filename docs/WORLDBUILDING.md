@@ -277,6 +277,37 @@ need decay, faster travel, out-of-combat regen, extra coin). Passives only apply
 on equipped, requirement-met gear. To rebalance, edit the magnitude table in
 `passives.js`.
 
+### Proficiencies — the "get better by doing" pillar
+
+No levels. Besides loot, the ONLY progression is use-based proficiencies
+(`data/proficiencies.js`), stored on the character as `{ id: xp }`:
+
+- **Per-weapon mastery** (Swordsmanship, Archery, Bludgeon…), **Ambush**,
+  **Evasion**, **Awareness**, **Spellcasting**, **Endurance**, **Command**.
+- Every combat action trains the matching proficiency a little (XP). Rating
+  climbs with √XP (6→1, 24→2, 54→3…). Ratings give small direct bonuses:
+  mastery → weapon damage/accuracy, Evasion → dodge, Awareness → accuracy +
+  spotting ambushes, Spellcasting → spell power + cheaper Resolve, Endurance →
+  stamina, Command → Talk, Ambush → surprise odds.
+- **Attributes grow ONLY from this.** Each proficiency feeds its governing
+  attribute (e.g. sword/dagger/bow/Ambush/Evasion → Reflex; Spellcasting →
+  Mind; Endurance → Vigor; Command → Presence). An attribute's growth = the sum
+  of its proficiencies' XP on a slow √ curve (+1 at 40 total, +2 at 160 …).
+  `effectiveAttributes()` = base + growth; everything (combat, the [STATE] line)
+  uses the effective value. The narrator no longer grants attribute increases —
+  the prompt reserves `attribute_changes` for rare supernatural events only.
+
+`applyCombatResult` writes the fight's XP back and surfaces rating-ups and
+attribute gains as growth beats. Old saves without `proficiencies` read as `{}`.
+
+### Ambush is contested
+
+A `surprise` strike is never automatic. Player ambush rolls your stealth
+(Reflex + ½Wit + Ambush rating) vs the foes' awareness (their accuracy +
+demeanor alertness, −12% per extra foe); win → they're stunned a turn, lose →
+even start. An enemy ambush is contested by your Wit + ½Reflex + Awareness, so a
+perceptive character isn't auto-jumped. Both train the relevant proficiency.
+
 ### Damage pipeline (one hit)
 
 `dodge check → roll base damage → rally/weaken → crit → vulnerable → mitigate`.

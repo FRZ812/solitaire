@@ -10,6 +10,7 @@
 import { attrFactor } from "../data/abilities.js";
 import { tierMult, tier as tierInfo } from "../data/tiers.js";
 import { aggregateCombatPassives, aggregateWorldPassives } from "../data/passives.js";
+import { effectiveAttributes, proficiencyRating, weaponMasteryId } from "../data/proficiencies.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -112,7 +113,7 @@ export function reqEffectiveness(attrs, req) {
 // All passives from equipped gear, split by whether their item's requirement is
 // met. Used by both combat-stat derivation and the world (exploration) loop.
 export function collectEquippedPassives(character, codex) {
-  const attrs = character.attributes || {};
+  const attrs = effectiveAttributes(character);
   const gear = equippedItems(character, codex);
   const enabled = [];
   const disabled = [];
@@ -125,8 +126,8 @@ export function collectEquippedPassives(character, codex) {
   return { enabled, disabled };
 }
 
-function weaponProfile(character, codex) {
-  const attrs = character.attributes || {};
+function weaponProfile(character, codex, eff) {
+  const attrs = eff || effectiveAttributes(character);
   const gear = equippedItems(character, codex);
   const weapon = gear.find((it) => itemCombatStats(it).damage);
   const cs = weapon ? itemCombatStats(weapon) : null;
@@ -135,21 +136,33 @@ function weaponProfile(character, codex) {
   const gov = base.type === "magical" ? attrs.mind : attrs.body;
   const f = attrFactor(gov);
   const reqEff = weapon ? reqEffectiveness(attrs, itemRequirement(weapon)) : 1;
+  const mastery = proficiencyRating(character, weaponMasteryId(category)); // weapon mastery → damage
   return {
-    min: Math.max(1, Math.round(base.min * f * reqEff)),
-    max: Math.max(1, Math.round(base.max * f * reqEff)),
+    min: Math.max(1, Math.round(base.min * f * reqEff) + Math.floor(mastery / 2)),
+    max: Math.max(1, Math.round(base.max * f * reqEff) + mastery),
     type: base.type || "physical",
     pen: (base.pen || 0) + Math.floor((attrs.body || 0) / 4),
     category,
+    mastery,
     name: weapon ? (weapon.name || weapon.id) : "Unarmed",
   };
 }
 
 export function deriveCombatStats(character, codex) {
-  const a = character.attributes || {};
+  const a = effectiveAttributes(character);
   const body = a.body || 0, reflex = a.reflex || 0, vigor = a.vigor || 0;
   const mind = a.mind || 0, wit = a.wit || 0;
   const gear = equippedItems(character, codex);
+
+  // Proficiency domain bonuses (the gradual, do-it-get-better effects).
+  const prof = {
+    ambush: proficiencyRating(character, "ambush"),
+    awareness: proficiencyRating(character, "awareness"),
+    evasion: proficiencyRating(character, "evasion"),
+    spellcasting: proficiencyRating(character, "spellcasting"),
+    endurance: proficiencyRating(character, "endurance"),
+    command: proficiencyRating(character, "command"),
+  };
 
   let armor = Math.floor(body / 3);
   let ward = Math.floor(mind / 3);
@@ -166,21 +179,24 @@ export function deriveCombatStats(character, codex) {
   const { enabled } = collectEquippedPassives(character, codex);
   const { statMods, triggers } = aggregateCombatPassives(enabled);
 
-  const weapon = weaponProfile(character, codex);
+  const weapon = weaponProfile(character, codex, a);
   weapon.pen += statMods.penetration || 0;
+  prof.weaponMastery = weapon.mastery;
 
   return {
     maxHealth: character.vitalityMax,
     armor: armor + (statMods.armor || 0),
     ward: ward + (statMods.ward || 0),
-    dodge: clamp(reflex * 2 + dodgeGear + (statMods.dodge || 0), 0, 70),
-    accuracy: reflex + wit + (statMods.accuracy || 0),
+    dodge: clamp(reflex * 2 + dodgeGear + prof.evasion + (statMods.dodge || 0), 0, 70),
+    accuracy: reflex + wit + prof.awareness + weapon.mastery + (statMods.accuracy || 0),
     critChance: clamp(Math.round(wit * 1.5 + reflex) + (statMods.critChance || 0), 0, 60),
     critMult: 1.5 + (statMods.critMult || 0),
     weapon,
-    maxStamina: 4 + Math.floor((vigor + reflex) / 3) + (statMods.maxStamina || 0),
+    maxStamina: 4 + Math.floor((vigor + reflex) / 3) + Math.floor(prof.endurance / 2) + (statMods.maxStamina || 0),
     staminaRegen: 2 + Math.floor(vigor / 4) + (triggers.staminaRegen || 0),
     speed: reflex + Math.floor(wit / 2),
+    attrs: a,
+    prof,
     triggers,
   };
 }
