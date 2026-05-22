@@ -37,8 +37,10 @@ export const HANDCRAFTED = {
   "0,-1": { terrain: "indoor",     poi: { type: "stable",   name: "Mirecross Stable",   description: "A low stable smelling of hay and old leather, hard against the inn." } },
   "0,1":  { terrain: "settlement", poi: { type: "landmark", name: "Ferry Landing",      description: "A wooden quay where the ferry meets the river. Porters and fishwives crowd the boards." } },
   "-1,1": { terrain: "indoor",     poi: { type: "healer",   name: "The Healer's House",  service: "healer", description: "Bundles of drying herbs hang from the rafters; a low room that smells of comfrey, tallow, and woodsmoke." } },
-  "1,-1": { terrain: "indoor",     poi: { type: "smithy",   name: "Mirecross Smithy",    description: "The town smith's. A banked forge, a wall of tongs, the ring of a hammer on cooling iron." } },
-  "-2,1": { terrain: "settlement", poi: { type: "market",   name: "The Wet Market",      description: "Plank stalls under oiled canvas — a butcher's block, baskets of bruised fruit, crates of root-vegetables, three sellers crying their wares at once." } },
+  "1,-1": { terrain: "indoor",     poi: { type: "smithy",   name: "Mirecross Smithy",    service: "blacksmith", description: "The town smith's. A banked forge, a wall of tongs, the ring of a hammer on cooling iron." } },
+  "-2,1": { terrain: "settlement", poi: { type: "market",   name: "The Wet Market",      description: "The market square proper — plank stalls under oiled canvas, mud and cabbage-leaves underfoot, three sellers crying their wares at once." } },
+  "-2,2": { terrain: "indoor",     poi: { type: "market",   name: "The Butcher's Stall", service: "butcher",     description: "A scarred block, a row of hooks, and the iron smell of the day's slaughter." } },
+  "-3,2": { terrain: "indoor",     poi: { type: "market",   name: "Fruit-Peddler's Cart", service: "fruit",      description: "A handcart heaped with the season's fruit, a wasp or two circling the sweetest of it." } },
   "-1,2": { terrain: "water",      poi: null },
 
   // ============================================================
@@ -47,7 +49,7 @@ export const HANDCRAFTED = {
   "-2,0": { terrain: "road",       poi: null },
   "-3,0": { terrain: "road",       poi: { type: "landmark", name: "The Crossroads",   description: "Three tracks meet under a leaning stone." } },
   "-2,-1":{ terrain: "forest",     poi: null },
-  "-3,1": { terrain: "marsh",      poi: { type: "hidden", description: null } },
+  "-3,1": { terrain: "indoor",     poi: { type: "market",   name: "The Greengrocer", service: "greengrocer", description: "Crates and baskets of root-vegetables and greens, still cool and damp from the morning." } },
   "-4,0": { terrain: "road",       poi: null },
   "-5,0": { terrain: "road",       poi: { type: "shrine",   name: "Way-shrine of the Three", description: "A wooden three-faced shrine where the road first dips into the Mire. The carvings are sun-bleached and lichened." } },
   "-6,0": { terrain: "road",       poi: null },

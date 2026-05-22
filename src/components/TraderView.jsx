@@ -2,20 +2,22 @@ import React, { useState } from "react";
 import { Icon } from "./Icon.jsx";
 import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle, glass } from "./tokens.js";
-import { canAfford, formatCopper, formatCoins, SELLABLE_KINDS } from "../engine/economy.js";
+import { canAfford, formatCopper, formatCoins, SELLABLE_KINDS, usedSellPrice, DEFAULT_RESALE_RATE } from "../engine/economy.js";
 
 // A standard trader menu: a Buy ledger rolled from the shop's stock and a Sell
 // ledger of the player's saleable goods. Reused by every trader building
 // (healer now; market stalls, the smith's counter, etc. later). Transactions
 // are deterministic and local — App applies them via engine/economy.js. The
 // "Speak with…" hook hands off to the narrator for flavor and haggling.
-export function TraderView({ state, building, tileKey, stock, onClose, onBuy, onSell, onTalk, loading }) {
+export function TraderView({ state, building, tileKey, stock, receipts = {}, onClose, onBuy, onSell, onTalk, onForge, loading }) {
   const [tab, setTab] = useState("buy");
 
   const codex = state.world.codex;
   const inv = state.character.inventory;
   const coins = inv.coins;
   const worn = new Set(codex.characters.wanderer?.worn || []);
+  const buys = building.buys ? new Set(building.buys) : SELLABLE_KINDS;
+  const resaleRate = building.sellRate ?? DEFAULT_RESALE_RATE;
 
   const tile = state.world.tiles[tileKey];
   const sold = (tile?.shop && tile.shop.bucket === stock.bucket) ? tile.shop.sold : {};
@@ -28,15 +30,23 @@ export function TraderView({ state, building, tileKey, stock, onClose, onBuy, on
   // Sell ledger: carried goods the trader will buy back (not worn equipment).
   const sellRows = inv.carried
     .map((c) => ({ c, def: codex.items[c.itemId] }))
-    // Only real trade goods sell: a saleable kind, a set worth, and not worn.
-    // Keepsakes and storied items (no `value`) stay in the pack.
-    .filter(({ c, def }) => def && def.value > 0 && SELLABLE_KINDS.has(def.kind) && !worn.has(c.itemId))
-    .map(({ c, def }) => ({
-      itemId: c.itemId,
-      def,
-      have: c.quantity,
-      price: Math.max(1, Math.floor((def.value || 0) * (building.sellRate ?? 0.4))),
-    }));
+    // Only real trade goods sell: a kind this trader buys, a set worth, and not
+    // worn. Keepsakes and storied items (no `value`) stay in the pack.
+    .filter(({ c, def }) => def && def.value > 0 && buys.has(def.kind) && !worn.has(c.itemId))
+    .map(({ c, def }) => {
+      // Items bought this visit (and not yet carried out) are refunded in full,
+      // at exactly what you paid; anything else sells at the used-goods price.
+      const refundStack = receipts[c.itemId] || [];
+      const isRefund = refundStack.length > 0;
+      return {
+        itemId: c.itemId,
+        def,
+        have: c.quantity,
+        isRefund,
+        refundCount: refundStack.length,
+        price: isRefund ? refundStack[refundStack.length - 1] : usedSellPrice(def.value, resaleRate),
+      };
+    });
 
   return (
     <div style={{
@@ -123,21 +133,33 @@ export function TraderView({ state, building, tileKey, stock, onClose, onBuy, on
             {sellRows.length === 0 ? (
               <EmptyNote>You carry nothing this trader wants to buy.</EmptyNote>
             ) : sellRows.map((row) => (
-              <GoodRow key={row.itemId} def={row.def} meta={`${row.have} in pack`}>
-                <PriceTag cp={row.price} />
-                <ActionButton label="Sell" enabled={!loading} onClick={() => onSell(row.itemId, row.price)} />
+              <GoodRow key={row.itemId} def={row.def} meta={row.isRefund ? `${row.have} in pack · refundable ×${row.refundCount}` : `${row.have} in pack`}>
+                <PriceTag cp={row.price} refund={row.isRefund} />
+                <ActionButton label={row.isRefund ? "Refund" : "Sell"} enabled={!loading} onClick={() => onSell(row.itemId, row.price, row.isRefund)} />
               </GoodRow>
             ))}
           </>
         )}
       </div>
 
-      {/* Footer — narrator hand-off for flavor / haggling (the "AI" half). */}
+      {/* Footer — the forge hand-off (smiths), and the narrator hand-off for
+          flavor / haggling (the "AI" half). */}
       <div style={{
         padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 16px)",
         borderTop: "1px solid rgba(215, 167, 111, 0.22)",
         backgroundColor: "rgba(20, 29, 29, 0.95)", ...glass,
+        display: "flex", flexDirection: "column", gap: "8px",
       }}>
+        {onForge && (
+          <button onClick={onForge} style={{
+            width: "100%", height: "44px", borderRadius: radius.control, border: "none",
+            backgroundColor: colors.gold, color: colors.ink,
+            fontSize: "13px", fontWeight: 800, letterSpacing: "0.04em",
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            To the Forge
+          </button>
+        )}
         <button onClick={onTalk} disabled={loading} style={{
           width: "100%", height: "44px", borderRadius: radius.control,
           border: "1px solid rgba(215, 167, 111, 0.28)",
@@ -174,11 +196,12 @@ function GoodRow({ def, meta, children }) {
   );
 }
 
-function PriceTag({ cp }) {
+function PriceTag({ cp, refund = false }) {
+  const color = refund ? "#a7f3d0" : colors.gold;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-      <Icon name="sparkle" size={10} color={colors.gold} />
-      <span style={{ fontSize: "12px", fontWeight: 800, color: colors.gold }}>{formatCopper(cp)}</span>
+      <Icon name="sparkle" size={10} color={color} />
+      <span style={{ fontSize: "12px", fontWeight: 800, color }}>{formatCopper(cp)}</span>
     </div>
   );
 }

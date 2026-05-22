@@ -44,6 +44,15 @@ export function formatCoins(coins) {
 // Item kinds that a trader will buy back (and that aren't worn equipment).
 export const SELLABLE_KINDS = new Set(["remedy", "food", "drink", "material", "supply", "trinket"]);
 
+// Used-goods buy-back as a fraction of an item's value. A merchant gives a fair
+// (not fleecing) price for second-hand goods. A piece you JUST bought and
+// haven't carried out of the shop is refunded in full instead (see App receipts).
+export const DEFAULT_RESALE_RATE = 0.65;
+
+export function usedSellPrice(value, rate = DEFAULT_RESALE_RATE) {
+  return Math.max(1, Math.round((value || 0) * rate));
+}
+
 // Strip any runtime-only fields before an item template is filed into the codex.
 function cleanDef(def) {
   const { _granted, ...rest } = def;
