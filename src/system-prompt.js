@@ -336,6 +336,19 @@ When an explicit attack DOES happen:
 
 Example — player throws a punch at a startled stranger: start_combat = {"initiator":"player","surprise":true,"foes":[{"npc_id":"hooded-figure","kind":"brawler","count":1}],"note":"You swing first; he never saw it coming."}
 
+PICKING A FIGHT — [SEEK COMBAT]
+When the player's action includes [SEEK COMBAT], they are actively trying to start a fight here. Decide what this place plausibly offers RIGHT NOW — never guarantee a fight, never invent an endless supply of foes:
+- If someone here would credibly cross blades (a hot-headed drunk, a rival, a lurking cutthroat, a wild beast in the wilds), narrate it and set start_combat.
+- If no one is willing, say so plainly — the room ignores them, the road is empty, the moment passes. start_combat stays null.
+- Disturbing the peace has consequences. In a settled, lawful place (an inn, a town square), repeatedly stirring violence draws the guards, the patrons, the watch — narrate them stepping in and set start_combat against THEM (a lone troublemaker is usually outnumbered and will likely be beaten or arrested).
+- A place holds FINITE trouble. Once the player has beaten or driven off whoever was here, there is nothing left to fight — say so and prompt them to look elsewhere. NEVER respawn fresh enemies in a cleared room. An inn is not an endless horde.
+
+LOCATION STATE & CONSEQUENCES — location_update
+Player violence leaves lasting marks. Record them on the current tile with location_update; the [LOCATION STATE] line in the context tells you what was done and how long ago, so you honor it across visits:
+- Kill or drive out the people here → location_update {status:"emptied", depopulated:true, note:"..."}; the place stays empty and future [SEEK COMBAT] finds no one.
+- Burn or wreck it → {status:"razed", depopulated:true, note:"a burnt shell"}; it stays ruined.
+- Recovery is SLOW and you pace it from the elapsed time shown in [LOCATION STATE]. People may trickle back to an emptied place over a week or more; a razed building is rebuilt over many weeks, or never. Only when enough time has plausibly passed, narrate the recovery and set location_update to a recovering/normal status. Never snap a razed inn back to bustling overnight, and don't upgrade a status without time and fiction to justify it.
+
 OUTPUT — STRICT JSON, NOTHING ELSE
 {
   "narration": "1-3 paragraphs of pure description — NO dialogue inside",
@@ -349,6 +362,7 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "tile_discovery": null OR {"name":"Place","poi_type":"landmark|merchant|shrine|ruin|camp|inn|smithy|temple|stable","description":"short"},
   "tile_move": null OR {"x":<int>,"y":<int>},
   "start_combat": null OR {"initiator":"player"|"enemy","surprise":<bool>,"foes":[{"npc_id":"codex-id-or-null","kind":"descriptor","tier":"common..divine (optional)","count":<int optional>}],"note":"opening flavor"},
+  "location_update": null OR {"status":"normal|tense|hostile|emptied|razed|recovering","depopulated":<bool>,"note":"short lasting change to this place"},
   "discoveries": null OR {
     "characters": [{"id":"slug","name":"Display","race":"slug-or-null","profession":"slug-or-null","origin":"north|east|south|west|central","age":"around X","attractiveness":"impression","appearance":{"skin":"...","hair":"...","eyes":"...","build":"...","facial_hair":"... or null","marks":"... or null"},"attributes":{"body":2,"reflex":3,"vigor":2,"mind":2,"wit":4,"presence":1},"base_appearance":"narrative summary woven from the structured fields","description":"who they are","worn":["item-id"],"knows":["initial fact"]}],
     "races": [{"id":"slug","name":"Display","appearance":"common traits","description":"short"}],
