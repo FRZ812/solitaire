@@ -83,6 +83,44 @@ function groupFlavor(enemies) {
   return `${enemies.length} ${base}s`;
 }
 
+// Apply a travel narration to `base`: clamp the journey time, move the player to
+// the destination, expand sight along the whole route, and reveal any vista at
+// arrival. Shared by the live travel handler and the Rewrite path so a rewritten
+// journey still lands the player where they were headed (travel = the context
+// recorded with the turn: from/to names, dest coords, route path, minutes).
+function applyTravelArrival(base, beat, travel) {
+  const mins = travel.totalMins;
+  if (!beat.minutes_passed || Math.abs(beat.minutes_passed - mins) > mins * 0.5) {
+    beat.minutes_passed = mins;
+  }
+  let next = applyBeat(base, beat, {
+    travelFrom: travel.fromName,
+    travelTo: travel.toName,
+    travelToCoords: { x: travel.dest.x, y: travel.dest.y },
+  });
+  const path = travel.path || [];
+  // Multi-tile travel: mark intermediate path tiles as visited and refresh sight
+  // from each so the player's seen area expands along the route.
+  if (path.length > 2) {
+    const newTiles = { ...next.world.tiles };
+    let newSeen = next.world.seen;
+    for (let i = 1; i < path.length - 1; i++) {
+      const p = path[i];
+      const k = `${p.x},${p.y}`;
+      if (!newTiles[k]) newTiles[k] = getTile(base, p.x, p.y);
+      newSeen = computeSightFrom(p.x, p.y, newSeen);
+    }
+    next = { ...next, world: { ...next.world, tiles: newTiles, seen: newSeen } };
+  }
+  // Vista: arriving at a tile with vistaRadius reveals a wide hex.
+  const destTile = getTile(base, travel.dest.x, travel.dest.y);
+  if (destTile?.vistaRadius && destTile.vistaRadius > 0) {
+    const wider = computeSightFromRadius(travel.dest.x, travel.dest.y, destTile.vistaRadius, next.world.seen);
+    next = { ...next, world: { ...next.world, seen: wider } };
+  }
+  return next;
+}
+
 // One-shot migrator for legacy v10 single-save blobs (square odd-r offset coords).
 // Re-keys world.tiles + world.seen and bumps currentTile into axial space, then
 // refreshes hex-sight from the migrated position so the visible area is
@@ -166,9 +204,9 @@ export function Solitaire() {
   const combatCtxRef = useRef(null);
 
   // Long-press a narration/dialogue bubble to Rewrite / Edit / Rewind it. The
-  // per-turn timeline (state.turns + state.worldPool) is saved with the campaign,
-  // so any recorded moment stays steerable across reloads. beatMenu holds the
-  // targeted beat; beatMode switches the sheet between menu and editors.
+  // per-turn timeline (state.turns + state.pools) is saved with the campaign, so
+  // any recorded moment — including travel — stays steerable across reloads.
+  // beatMenu holds the targeted beat; beatMode switches the sheet between menu and editors.
   const [beatMenu, setBeatMenu] = useState(null); // { beatId, index, turnK }
   const [beatMode, setBeatMode] = useState("menu"); // "menu" | "rewrite" | "edit"
   const [rewriteText, setRewriteText] = useState("");
@@ -521,43 +559,25 @@ export function Solitaire() {
 
     const fullMsg = travelMsg + encounterLine;
 
+    // Everything needed to reproduce this journey if the player later rewrites it,
+    // and to undo it cleanly on a rewind: the route (sight), the destination
+    // (arrival + vista), and the rolled encounter (re-offer a fight). Recorded
+    // with the turn so travel moments are steerable like any other.
+    const travel = {
+      fromName, toName,
+      dest: { x: dest.x, y: dest.y },
+      path: path.map((p) => ({ x: p.x, y: p.y })),
+      totalMins,
+      encounter: pathEnc ? pathEnc.encounter : null,
+    };
+
     try {
       const beat = await callNarrator(stateWithPlayer, fullMsg);
-      if (!beat.minutes_passed || Math.abs(beat.minutes_passed - totalMins) > totalMins * 0.5) {
-        beat.minutes_passed = totalMins;
-      }
-      setState((s) => {
-        let next = applyBeat(s, beat, {
-          travelFrom: fromName,
-          travelTo: toName,
-          travelToCoords: { x: dest.x, y: dest.y },
-        });
-        // Multi-tile travel: mark intermediate path tiles as visited and refresh
-        // sight from each so the player's seen area expands along the route.
-        if (hexes > 1) {
-          const newTiles = { ...next.world.tiles };
-          let newSeen = next.world.seen;
-          for (let i = 1; i < path.length - 1; i++) {
-            const p = path[i];
-            const k = `${p.x},${p.y}`;
-            if (!newTiles[k]) newTiles[k] = getTile(s, p.x, p.y);
-            newSeen = computeSightFrom(p.x, p.y, newSeen);
-          }
-          next = { ...next, world: { ...next.world, tiles: newTiles, seen: newSeen } };
-        }
-        // Vista: arriving at a tile with vistaRadius reveals a wide hex.
-        const destTileNow = getTile(s, dest.x, dest.y);
-        if (destTileNow?.vistaRadius && destTileNow.vistaRadius > 0) {
-          const wider = computeSightFromRadius(dest.x, dest.y, destTileNow.vistaRadius, next.world.seen);
-          next = { ...next, world: { ...next.world, seen: wider } };
-        }
-        // Travel narration isn't rewritable (its sight/encounter side effects
-        // don't survive a rewind), so drop any rewind point carried forward.
-        return { ...next, rewind: null };
-      });
+      const next = applyTravelArrival(stateWithPlayer, beat, travel);
+      setState(recordTurn(stateWithPlayer, fullMsg, next, { travel }));
       // A hostile encounter along the way offers a fight once the player lands.
-      if (pathEnc && pathEnc.encounter.posture === "hostile") {
-        setPendingCombat(pathEnc.encounter);
+      if (travel.encounter && travel.encounter.posture === "hostile") {
+        setPendingCombat(travel.encounter);
       }
     } catch (e) {
       setError(e.message || String(e));
@@ -655,6 +675,8 @@ export function Solitaire() {
     setError(null);
     setLoading(true);
     setPendingEngage(null);
+    setPendingCombat(null);
+    setPendingLoot(null);
     const base = stateBeforeTurn(state, menu.turnK);
     setState(base); // roll the rejected beat (and any later ones) out of the log + memory
     try {
@@ -663,8 +685,13 @@ export function Solitaire() {
       // Keep memory clean of the steer scaffolding so later turns don't treat the
       // rejected version as canon.
       beat._userMsg = `${buildStateContext(base)}\n\n${cp.message}`;
-      const next = applyBeat(base, beat);
-      setState(recordTurn(base, cp.message, next));
+      // A travel turn re-lands the player at the destination (and re-reveals the
+      // route); any other turn just re-applies its beat.
+      const next = cp.travel
+        ? applyTravelArrival(base, beat, cp.travel)
+        : applyBeat(base, beat);
+      setState(recordTurn(base, cp.message, next, cp.travel ? { travel: cp.travel } : {}));
+      if (cp.travel?.encounter?.posture === "hostile") setPendingCombat(cp.travel.encounter);
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
