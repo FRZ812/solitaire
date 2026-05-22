@@ -112,6 +112,7 @@ export const HANDCRAFTED = {
   "24,-1":{ terrain: "plains",     poi: { type: "hidden", description: null } },
   "27,0": { terrain: "road",       poi: null },
   "28,-1":{ terrain: "plains",     poi: null },
+  "27,1": { terrain: "settlement", poi: { type: "slavemarket", name: "The Block", service: "slavemarket", description: "Crowsmoor's auction-yard, set apart by the stockyards at the town's edge — a raised oak block, a chained rail in its shade, and an auctioneer with a tally-stick and a flat, appraising eye. Mirecross keeps no such place; Crowsmoor does." } },
 
   // ============================================================
   // TANNIC WOOD (north of the Mire) — and the road to the Ford
