@@ -65,12 +65,6 @@ export const BUILDINGS = {
       { id: "steel-ingot",     chance: 0.7,  qty: [1, 4], priceMult: 1.35 },
       { id: "thick-hide",      chance: 0.4,  qty: [1, 2], priceMult: 1.35 },
       { id: "whetstone-grit",  chance: 0.6,  qty: [2, 5], priceMult: 1.3 },
-      // Forge-runes for affix Fusion — scarce and dear; a master smith keeps a few.
-      { id: "rune-of-rupture", chance: 0.25, qty: [1, 1], priceMult: 1.5 },
-      { id: "rune-of-storms",  chance: 0.22, qty: [1, 1], priceMult: 1.5 },
-      { id: "rune-of-flame",   chance: 0.22, qty: [1, 1], priceMult: 1.5 },
-      { id: "rune-of-aegis",   chance: 0.22, qty: [1, 1], priceMult: 1.5 },
-      { id: "rune-of-souls",   chance: 0.12, qty: [1, 1], priceMult: 1.6 },
       // Finished melee arms on the rack — buy outright, or forge your own.
       { id: "iron-dagger",     chance: 0.9,  qty: [1, 3], priceMult: 1.25 },
       { id: "steel-dagger",    chance: 0.4,  qty: [1, 1], priceMult: 1.3 },

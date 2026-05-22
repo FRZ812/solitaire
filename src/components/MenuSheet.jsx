@@ -10,7 +10,7 @@ import { deriveCombatStats, itemCombatStats, itemRequirement } from "../engine/c
 import { EQUIPPABLE } from "../engine/inventory.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
-import { passiveLabel } from "../data/passives.js";
+import { passiveLabel, isFusionRune } from "../data/passives.js";
 import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
 import { useEffectChips } from "../data/goods.js";
 import { freshnessLabel, perishDescriptor } from "../engine/spoilage.js";
@@ -100,7 +100,7 @@ const itemRowStyle = {
 };
 
 // Item detail modal: stats, requirement, passives, and equip/unequip.
-function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUnequip, onUse, onClose }) {
+function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUnequip, onUse, onBindRune, onClose }) {
   if (!item) return null;
   const cs = itemCombatStats(item);
   const req = itemRequirement(item);
@@ -108,6 +108,7 @@ function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUne
   const equippable = EQUIPPABLE.has(item.kind);
   const worn = location === "worn";
   const usable = !worn && !!item.use;
+  const bindable = isFusionRune(id);
   const tcolor = tierColor(item.tier || "common");
   const effectChips = useEffectChips(item);
   const keeps = perishDescriptor(item);
@@ -208,6 +209,14 @@ function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUne
         {usable && (
           <button onClick={() => { onUse(id); onClose(); }} style={actionButtonStyle()}>{item.use.verb || "Use"}</button>
         )}
+        {bindable && (
+          <>
+            <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(199,155,224,0.8)", margin: "2px 2px 6px", lineHeight: 1.4 }}>
+              Bind this rune to gear that bears two enchantments it can fuse.
+            </div>
+            <button onClick={() => { onBindRune?.(id); onClose(); }} style={actionButtonStyle()}>Bind Rune…</button>
+          </>
+        )}
         {equippable && (
           worn
             ? <button onClick={() => { onUnequip(id); onClose(); }} style={actionButtonStyle()}>Unequip</button>
@@ -268,7 +277,7 @@ function Divider() {
   );
 }
 
-export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip, onUse }) {
+export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip, onUse, onBindRune }) {
   const [detail, setDetail] = useState(null); // { id, location: "worn"|"carried" }
   const [arsenalOpen, setArsenalOpen] = useState(false);
   const inv = state.character.inventory;
@@ -556,6 +565,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           onEquip={onEquip}
           onUnequip={onUnequip}
           onUse={onUse}
+          onBindRune={onBindRune}
           onClose={() => setDetail(null)}
         />
       )}

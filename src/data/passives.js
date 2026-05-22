@@ -229,6 +229,11 @@ export const FUSIONS = [
   { id: "fuse-revenant", a: "bloodthirst",b: "bloodhunt",  rune: "rune-of-souls",   result: "revenant",  minTier: "legendary" },
 ];
 
+// Is this item id a forge-rune (the catalyst the Fusion ritual consumes)?
+export function isFusionRune(id) {
+  return FUSIONS.some((f) => f.rune === id);
+}
+
 const hasAffix = (list, id) => (list || []).some((p) => p.id === id);
 const affixTier = (list, id) => (list || []).find((p) => p.id === id)?.tier || "common";
 

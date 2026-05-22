@@ -13,6 +13,11 @@ export const ITEM_DROP_CHANCE = 0.55;     // a generic item drops
 export const ABILITY_DROP_CHANCE = 0.22;  // a learnable ability drops
 export const UNIQUE_DROP_CHANCE = 1.0;    // gate is per-unique `chance`; this is a global multiplier
 
+// Forge-runes (the affix-Fusion catalyst) are rare trophies of the mighty: only
+// from deep regions, off foes whose loot ceiling is epic+, at a low chance.
+export const RUNE_DROP_CHANCE = 0.05;
+export const RUNE_DROP_MIN_REGION = 3;
+
 // Difficulty bands, easiest (1) to deadliest (6). `power` feeds rollTier's luck
 // (nudges toward the high end of the allowed range); `enemyTier` caps the tier
 // of generated foes; `lootTier` caps the tier of their drops.

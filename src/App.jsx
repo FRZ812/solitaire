@@ -14,7 +14,8 @@ import { recordTurn, stateBeforeTurn, turnForBeatIndex, editBeat } from "./engin
 import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
-import { applyForge, applyApprentice, blacksmithRank, fusableItems, applyFusionToItem } from "./engine/forge.js";
+import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
+import { applyFusionToItem, fusionOptionsForRune } from "./engine/fusion.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
 import { generateGaol, acceptBounty, buyPrisonerRights } from "./engine/gaol.js";
 import { generateSlaveMarket, buyCaptive } from "./engine/slaves.js";
@@ -48,6 +49,8 @@ import { MenuSheet } from "./components/MenuSheet.jsx";
 import { MapView } from "./components/MapView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
 import { ForgeView } from "./components/ForgeView.jsx";
+import { RuneFusionView } from "./components/RuneFusionView.jsx";
+import { itemTemplate } from "./data/catalog.js";
 import { QuestBoardView } from "./components/QuestBoardView.jsx";
 import { PrisonView } from "./components/PrisonView.jsx";
 import { SlaveMarketView } from "./components/SlaveMarketView.jsx";
@@ -149,6 +152,29 @@ function applyTravelArrival(base, beat, travel) {
     const wider = computeSightFromRadius(travel.dest.x, travel.dest.y, destTile.vistaRadius, next.world.seen);
     next = { ...next, world: { ...next.world, seen: wider } };
   }
+
+  // Ancient-site cache: a forge-rune (the Fusion catalyst) lies at a few old
+  // places, claimed once on first arrival.
+  const cacheKey = `${travel.dest.x},${travel.dest.y}`;
+  const looted = next.world.lootedCaches || {};
+  const tmpl = destTile?.cache?.itemId ? itemTemplate(destTile.cache.itemId) : null;
+  if (tmpl && !looted[cacheKey]) {
+    const runeId = destTile.cache.itemId;
+    const carried = next.character.inventory.carried.map((c) => ({ ...c }));
+    const ex = carried.find((c) => c.itemId === runeId);
+    if (ex) ex.quantity += 1; else carried.push({ itemId: runeId, quantity: 1 });
+    const now = Date.now();
+    next = {
+      ...next,
+      beats: [
+        ...next.beats,
+        { id: `cache${now}`, type: "narration", content: `Among the old stones something waits, left for whoever should find it: a ${tmpl.name}. You take it.` },
+        { id: `cachei${now}`, type: "inventory_delta", lines: [`+1× ${tmpl.name}`] },
+      ],
+      character: { ...next.character, inventory: { ...next.character.inventory, carried } },
+      world: { ...next.world, codex: { ...next.world.codex, items: { ...next.world.codex.items, [runeId]: tmpl } }, lootedCaches: { ...looted, [cacheKey]: true } },
+    };
+  }
   return next;
 }
 
@@ -220,6 +246,7 @@ export function Solitaire() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [fusionRune, setFusionRune] = useState(null); // forge-rune id being bound in the fusion ritual
   const [mapOpen, setMapOpen] = useState(false);
   const [codexOpen, setCodexOpen] = useState(false);
   const [partyOpen, setPartyOpen] = useState(false);
@@ -722,12 +749,13 @@ export function Solitaire() {
     return r.item;
   }
 
-  // Fuse two affixes on an item into a signature power, spending a forge-rune.
+  // Bind a forge-rune: fuse two affixes on a piece of gear into one signature power.
   function handleFusion(itemId, recipeId) {
     const r = applyFusionToItem(state, itemId, recipeId);
     if (!r.ok) { setError(r.reason || "The fusion failed."); return; }
-    const beat = { id: `fuse${Date.now()}`, type: "narration", content: `You set the rune into ${r.item.name} and stoke the fire. The two enchantments scream, twist, and fuse into one — ${r.label}.` };
+    const beat = { id: `fuse${Date.now()}`, type: "narration", content: `You set the rune against ${r.item.name} and speak the binding. The two enchantments scream, twist, and fuse into one — ${r.label}.` };
     setState({ ...r.state, beats: [...r.state.beats, beat] });
+    setFusionRune(null);
   }
 
   // Take the next apprenticeship step (coin + days at the forge). Confirmed
@@ -1374,11 +1402,20 @@ export function Solitaire() {
           onEquip={handleEquip}
           onUnequip={handleUnequip}
           onUse={handleUse}
+          onBindRune={(id) => { setMenuOpen(false); setFusionRune(id); }}
           onReset={handleResetCampaign}
           onOpenCodex={() => { setMenuOpen(false); setCodexOpen(true); }}
           onBackToCampaigns={handleBackToCampaigns}
           onSignOut={__SOLITAIRE_MODE__ === "web" ? handleSignOut : undefined}
           onLinkEmail={__SOLITAIRE_MODE__ === "web" ? linkEmail : undefined}
+        />
+      )}
+      {fusionRune && (
+        <RuneFusionView
+          runeName={state.world.codex.items?.[fusionRune]?.name || itemTemplate(fusionRune)?.name || "Forge-Rune"}
+          options={fusionOptionsForRune(state, fusionRune)}
+          onFuse={handleFusion}
+          onClose={() => setFusionRune(null)}
         />
       )}
       {mapOpen && (
@@ -1408,10 +1445,8 @@ export function Solitaire() {
               building={building}
               schematics={schematicsForBuilding(building)}
               rank={blacksmithRank(state)}
-              fusions={fusableItems(state)}
               onApprentice={handleApprentice}
               onForge={handleForge}
-              onFuse={handleFusion}
               onBack={() => setShopView("trade")}
               onClose={closeShop}
               loading={loading}

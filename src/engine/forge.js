@@ -11,60 +11,6 @@ import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
 import { spoilState } from "./spoilage.js";
 import { itemTemplate } from "../data/catalog.js";
 import { TIERS, tierOrder, tierMult, tierLabel } from "../data/tiers.js";
-import { FUSIONS, applyFusion, availableFusions, passiveLabel, passiveDef } from "../data/passives.js";
-
-// ----- affix Fusion (forge-runes combine two affixes into a signature power) -----
-
-// Every fusion the player could perform right now: an owned/worn item carries
-// BOTH components of a recipe. `hasRune` flags whether the matching rune is in
-// the pack (so the UI can show what's craftable vs. what needs a rune).
-export function fusableItems(state) {
-  const items = state.world?.codex?.items || {};
-  const carried = state.character?.inventory?.carried || [];
-  const hasRune = (rid) => (carried.find((c) => c.itemId === rid)?.quantity || 0) > 0;
-  const out = [];
-  for (const it of Object.values(items)) {
-    if (!it.passives || !it.passives.length) continue;
-    for (const recipe of availableFusions(it.passives)) {
-      out.push({
-        itemId: it.id, itemName: it.name, recipe,
-        resultName: passiveDef(recipe.result)?.name || recipe.result,
-        runeName: itemTemplate(recipe.rune)?.name || recipe.rune,
-        aName: passiveDef(recipe.a)?.name || recipe.a,
-        bName: passiveDef(recipe.b)?.name || recipe.b,
-        hasRune: hasRune(recipe.rune),
-      });
-    }
-  }
-  return out;
-}
-
-// Forge a fusion onto an item: consume the rune, replace the two component
-// affixes with the fused signature affix (applyFusion keeps the higher tier).
-export function applyFusionToItem(state, itemId, recipeId) {
-  const recipe = FUSIONS.find((f) => f.id === recipeId);
-  const items = state.world?.codex?.items || {};
-  const it = items[itemId];
-  if (!recipe || !it) return { state, ok: false, reason: "Nothing to fuse here." };
-  const carried = state.character.inventory.carried.map((c) => ({ ...c }));
-  const idx = carried.findIndex((c) => c.itemId === recipe.rune);
-  if (idx < 0 || carried[idx].quantity <= 0) return { state, ok: false, reason: `You lack a ${itemTemplate(recipe.rune)?.name || "rune"}.` };
-  carried[idx].quantity -= 1;
-  if (carried[idx].quantity <= 0) carried.splice(idx, 1);
-  const fused = { ...it, passives: applyFusion(it.passives, recipe) };
-  const newItems = { ...items, [itemId]: fused };
-  const resultTier = fused.passives.find((p) => p.id === recipe.result)?.tier;
-  return {
-    ok: true,
-    item: fused,
-    label: passiveLabel(recipe.result, resultTier),
-    state: {
-      ...state,
-      character: { ...state.character, inventory: { ...state.character.inventory, carried } },
-      world: { ...state.world, codex: { ...state.world.codex, items: newItems } },
-    },
-  };
-}
 
 export function blacksmithRank(state) {
   return state.character?.crafting?.blacksmith?.rank || 0;

@@ -167,7 +167,7 @@ export const HANDCRAFTED = {
   "-3,-18": { terrain: "plains",   poi: { type: "ruin",     name: "Charwood Burn",      description: "A long blackened scar through the Tannic Wood. The trees on its edge are bone-white; the centre is grown over only in coarse fireweed. The Wood-Cult does not enter." } },
   "-2,-18": { terrain: "plains",   poi: { type: "hidden", description: null } },
   "-4,-17": { terrain: "forest",   poi: null },
-  "-3,-19": { terrain: "plains",   poi: { type: "landmark", name: "The Burnt Shrine",   description: "What used to be a Wood-Shrine, now a ring of fire-cracked stone. The Cult has not rebuilt it; they say it was offered to the burn." } },
+  "-3,-19": { terrain: "plains",   poi: { type: "landmark", name: "The Burnt Shrine",   description: "What used to be a Wood-Shrine, now a ring of fire-cracked stone. The Cult has not rebuilt it; they say it was offered to the burn." }, cache: { itemId: "rune-of-rupture" } },
 
   // ============================================================
   // BROKENGLASS TOWER (NW glass blade) — surface ruin + buried hall
@@ -189,7 +189,7 @@ export const HANDCRAFTED = {
   "-15,-19": { terrain: "indoor", poi: { type: "hall",     name: "The Glass Stair",      description: "Steps cut into the hillside, faintly green where the lamp-light catches them. They descend further than the tower's height would suggest." } },
   "-16,-22": { terrain: "indoor", poi: { type: "hall",     name: "The Light-Vault",      description: "A low vault domed in green glass, lit by sunlight that should not reach here. The walls hum faintly when you breathe." } },
   "-14,-22": { terrain: "indoor", poi: { type: "shrine",   name: "The Bowing Stones",    description: "A semicircle of small kneeling-stones, each polished by a thousand prostrations. One faces the wrong way." } },
-  "-15,-22": { terrain: "indoor", poi: { type: "throne_room", name: "The Reliquary",     description: "The deepest chamber. A pedestal of green glass holds a single thing wrapped in white cloth — and a figure seated cross-legged opposite it, who has been waiting longer than any name remembers. Watch the cloth, not the figure." } },
+  "-15,-22": { terrain: "indoor", poi: { type: "throne_room", name: "The Reliquary",     description: "The deepest chamber. A pedestal of green glass holds a single thing wrapped in white cloth — and a figure seated cross-legged opposite it, who has been waiting longer than any name remembers. Watch the cloth, not the figure." }, cache: { itemId: "rune-of-aegis" } },
 
   // ============================================================
   // WITCH-HAG'S COT (NW Bonemarsh edge) — the Hag herself at the cellar
@@ -206,7 +206,7 @@ export const HANDCRAFTED = {
 
   // Interior
   "-11,-29": { terrain: "indoor", poi: { type: "hall",     name: "The Sitting-Room",   description: "A single low room with a peat fire and a chair pulled to face the door. A teacup sits on the floor by the chair, full." } },
-  "-12,-29": { terrain: "indoor", poi: { type: "shrine",   name: "The Names-Wall",     description: "A wall scratched with names — hundreds, layered, in different hands and tools. Some have been crossed through; some are very recent." } },
+  "-12,-29": { terrain: "indoor", poi: { type: "shrine",   name: "The Names-Wall",     description: "A wall scratched with names — hundreds, layered, in different hands and tools. Some have been crossed through; some are very recent." }, cache: { itemId: "rune-of-souls" } },
   "-12,-30": { terrain: "indoor", poi: { type: "throne_room", name: "The Cellar",       description: "Down a short stair into peat-cool dark. A pallet, a kettle, a long table. The Hag is here — old as roots, polite, terribly attentive. There is a price for what she does. Some people pay it twice without knowing." } },
 
   // ============================================================
@@ -251,7 +251,7 @@ export const HANDCRAFTED = {
   "28,-30": { terrain: "indoor",     poi: { type: "hall",     name: "Archive Room",     description: "Wall-cases of bound ledgers — every dragon-walk since the founding, every brother lost, every confirmed kill." } },
 
   // Inner — master's cell
-  "30,-32": { terrain: "indoor",     poi: { type: "throne_room", name: "The Chapter-Master's Cell", description: "A small windowless chamber behind the Hearth. The Chapter-Master sleeps here on a plain pallet. A bronze mask older than the Chapter rests on his nightstand. He is permitted no visitors and entertains them anyway." } },
+  "30,-32": { terrain: "indoor",     poi: { type: "throne_room", name: "The Chapter-Master's Cell", description: "A small windowless chamber behind the Hearth. The Chapter-Master sleeps here on a plain pallet. A bronze mask older than the Chapter rests on his nightstand. He is permitted no visitors and entertains them anyway." }, cache: { itemId: "rune-of-storms" } },
 
   // ============================================================
   // BURNT CROFT (E ruin)
@@ -286,7 +286,7 @@ export const HANDCRAFTED = {
   // Inner ring
   "14,16": { terrain: "indoor",    poi: { type: "hall",     name: "The Mead-Hall",       description: "A roofless great-hall of fallen black timbers, the hearth still recognisable in the centre. Crows nest in what was the rafters." } },
   "16,14": { terrain: "indoor",    poi: { type: "armoury",  name: "The Armoury",         description: "A half-buried stone vault. Empty racks, an iron-bound chest with the lock broken, three skulls in a corner laid out neat." } },
-  "15,13": { terrain: "indoor",    poi: { type: "shrine",   name: "The Hawk-Shrine",     description: "A small stone shrine set into the north wall. A worn carving of a hawk on a man's shoulder; offerings of small bones." } },
+  "15,13": { terrain: "indoor",    poi: { type: "shrine",   name: "The Hawk-Shrine",     description: "A small stone shrine set into the north wall. A worn carving of a hawk on a man's shoulder; offerings of small bones." }, cache: { itemId: "rune-of-flame" } },
   "16,16": { terrain: "indoor",    poi: { type: "stable",   name: "The Sheep-Pen",       description: "What was a stable, now used as a pen. Hay piled at one end; a Spine herder's hat hangs from a nail by the door." } },
   "14,14": { terrain: "indoor",    poi: { type: "cellar",   name: "The Drum Cellar",     description: "A deep barrel-vault below the hall — the fort's namesake, said to be where they kept the war-drum that called the levy. The drum is gone." } },
 

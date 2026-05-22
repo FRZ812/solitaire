@@ -18,9 +18,9 @@
 import { getAbilityDef, attrFactor, abilityScaling, abilityRequiredStat, BASIC_ATTACK, DEFEND, TALK, randomAbilityId } from "../data/abilities.js";
 import { tierMult, rollTier, tierLabel, tier as tierInfo } from "../data/tiers.js";
 import { DEMEANOR_CONFIG, flavorLine } from "../data/combat-flavor.js";
-import { ITEM_DROP_CHANCE, ABILITY_DROP_CHANCE, UNIQUE_DROP_CHANCE } from "../data/balance.js";
+import { ITEM_DROP_CHANCE, ABILITY_DROP_CHANCE, UNIQUE_DROP_CHANCE, RUNE_DROP_CHANCE, RUNE_DROP_MIN_REGION } from "../data/balance.js";
 import { rollUniques } from "../data/uniques.js";
-import { rollItemPassives } from "../data/passives.js";
+import { rollItemPassives, RUNES } from "../data/passives.js";
 import { effectiveAttributes, ratingFromXp, proficiencyName, weaponMasteryId, XP } from "../data/proficiencies.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
@@ -1229,6 +1229,14 @@ export function rollLoot(sources, opts = {}) {
     const uniq = rollUniques({ kinds: sources.map((e) => e.kind), region, owned, mult: UNIQUE_DROP_CHANCE });
     if (uniq.item) items.push(uniq.item);
     if (uniq.ability) ability = uniq.ability;
+  }
+
+  // Forge-runes (affix-Fusion catalyst) — rare trophies of the mighty: deep
+  // regions, epic+ loot ceiling, low chance. Never bought; only earned.
+  if (sources.length > 0 && region >= RUNE_DROP_MIN_REGION && tierInfo(maxTier).order >= tierInfo("epic").order && Math.random() < RUNE_DROP_CHANCE) {
+    const runeIds = Object.keys(RUNES);
+    const rune = RUNES[runeIds[Math.floor(Math.random() * runeIds.length)]];
+    items.push({ itemId: rune.id, entry: rune, quantity: 1 });
   }
 
   copper = Math.round(copper * (1 + coinBonus));
