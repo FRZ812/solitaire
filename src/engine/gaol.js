@@ -41,6 +41,7 @@ export function acceptBounty(state, b) {
     id: b.id, title: `Bounty: ${b.name}`, giver: "the warden", type: "bounty",
     target: b.name, crime: b.crime, desc: b.desc,
     rewardCp: b.rewardAliveCp, rewardDeadCp: b.rewardDeadCp,
+    loc: b.target || null, locName: b.targetName || null, // last-seen haunt for the map
     day: state.time.day, status: "active",
   };
   return { ok: true, state: { ...state, world: { ...state.world, quests: [...quests, q] } } };
