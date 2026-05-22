@@ -76,6 +76,19 @@ function actionButtonStyle({ danger = false, ghost = false } = {}) {
   };
 }
 
+// Hairline rule used to separate the sheet's major groups (identity /
+// stats / possessions / actions) so the section headers don't all read as
+// one undifferentiated stack.
+function Divider() {
+  return (
+    <div style={{
+      height: "1px",
+      margin: "2px 0",
+      background: "linear-gradient(90deg, transparent, rgba(215, 167, 111, 0.2), transparent)",
+    }} />
+  );
+}
+
 export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail }) {
   const inv = state.character.inventory;
   const codex = state.world.codex;
@@ -112,20 +125,32 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           color: colors.parchment,
         }}
       >
+        {/* Grab handle — reads as a dismissable bottom sheet. */}
+        <div style={{ display: "flex", justifyContent: "center", marginTop: "-8px", marginBottom: "2px" }}>
+          <div style={{ width: "38px", height: "4px", borderRadius: radius.pill, backgroundColor: "rgba(215, 167, 111, 0.28)" }} />
+        </div>
+
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{
-            fontFamily: fonts.serif, fontStyle: "italic",
-            fontSize: "26px", color: colors.parchmentLight,
-            textShadow: "0 2px 10px rgba(0,0,0,0.3)",
-          }}>
-            {state.character.name}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.18em", color: "rgba(215, 167, 111, 0.6)", marginBottom: "5px" }}>
+              Character
+            </div>
+            <div style={{
+              fontFamily: fonts.serif, fontStyle: "italic",
+              fontSize: "26px", color: colors.parchmentLight, lineHeight: 1,
+              textShadow: "0 2px 10px rgba(0,0,0,0.3)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {state.character.name}
+            </div>
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             style={{
               ...iconButtonStyle,
-              width: "30px", height: "30px",
+              width: "30px", height: "30px", flexShrink: 0,
               backgroundColor: "rgba(215, 167, 111, 0.08)",
               border: `1px solid rgba(215, 167, 111, 0.2)`,
             }}
@@ -146,10 +171,22 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           {state.character.bond}
         </div>
 
-        {/* Vitality / Resolve */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-          <StatBlock label="Vitality" value={`${Math.round(state.character.vitality)} / ${state.character.vitalityMax}`} />
-          <StatBlock label="Resolve"  value={`${state.character.resolve} / ${state.character.resolveMax}`} />
+        <Divider />
+
+        {/* Vitals — the two pools (Vitality / Resolve) and the three survival
+            needs read as one "how am I holding up" block instead of two
+            separate sections sitting apart in the stack. */}
+        <div>
+          <SectionHeader>Vitals</SectionHeader>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <StatBlock label="Vitality" value={`${Math.round(state.character.vitality)} / ${state.character.vitalityMax}`} />
+            <StatBlock label="Resolve"  value={`${state.character.resolve} / ${state.character.resolveMax}`} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "9px", marginTop: "12px" }}>
+            <NeedBar label="Hunger" value={state.character.needs.hunger} />
+            <NeedBar label="Thirst" value={state.character.needs.thirst} />
+            <NeedBar label="Sleep"  value={state.character.needs.sleep}  />
+          </div>
         </div>
 
         {/* Attributes */}
@@ -170,15 +207,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           </div>
         </div>
 
-        {/* Needs */}
-        <div>
-          <SectionHeader>Needs</SectionHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <NeedBar label="Hunger" value={state.character.needs.hunger} />
-            <NeedBar label="Thirst" value={state.character.needs.thirst} />
-            <NeedBar label="Sleep"  value={state.character.needs.sleep}  />
-          </div>
-        </div>
+        <Divider />
 
         {/* Wealth */}
         <div>
@@ -187,12 +216,13 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
             ...insetBoxStyle,
             fontFamily: fonts.serif, fontStyle: "italic",
             fontSize: "17px", color: colors.parchmentLight,
-            display: "flex", gap: "12px",
+            display: "grid", gridTemplateColumns: "1fr 1px 1fr 1px 1fr",
+            alignItems: "center", textAlign: "center",
           }}>
             <span><strong style={{ color: "#ffd700", fontWeight: "bold" }}>{inv.coins.gold}</strong> gp</span>
-            <span style={{ opacity: 0.3 }}>|</span>
+            <span style={{ width: "1px", height: "16px", background: "rgba(215, 167, 111, 0.18)", justifySelf: "center" }} />
             <span><strong style={{ color: "#d1d5db", fontWeight: "bold" }}>{inv.coins.silver}</strong> sp</span>
-            <span style={{ opacity: 0.3 }}>|</span>
+            <span style={{ width: "1px", height: "16px", background: "rgba(215, 167, 111, 0.18)", justifySelf: "center" }} />
             <span><strong style={{ color: "#cd7f32", fontWeight: "bold" }}>{inv.coins.copper}</strong> cp</span>
           </div>
         </div>
@@ -242,8 +272,10 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
 
         {showGuestNag && <GuestNagSection onLinkEmail={onLinkEmail} />}
 
+        <Divider />
+
         {/* Actions */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "8px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           <button onClick={onOpenCodex} style={actionButtonStyle()}>
             <Icon name="book" size={14} strokeWidth={1.5} />
             Open Codex
