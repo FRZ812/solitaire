@@ -38,6 +38,17 @@ export function describeEncounterPotential(tile, x, y) {
   return `Risk ~${chancePercent}% · ${top3.join(", ")}…`;
 }
 
+// Danger profile of a hex for the narrator's surroundings awareness: how likely
+// an encounter is here and which HOSTILE kinds dominate (so it knows, e.g., that
+// goblins are a real threat HERE — only near the den — and not three hexes from
+// the tavern).
+export function hostileProfile(tile, x, y) {
+  const table = effectiveTable(tile, x, y);
+  if (!table || table.chance <= 0) return { chancePercent: 0, kinds: [] };
+  const hostiles = table.entries.filter((e) => e.posture === "hostile").sort((a, b) => b.weight - a.weight);
+  return { chancePercent: Math.round(table.chance * 100), kinds: hostiles.slice(0, 3).map((e) => e.kind.replace(/-/g, " ")) };
+}
+
 // Walk the path (excluding the starting tile), roll each tile's encounter
 // independently, return the first hit. One beat per journey means at most one
 // encounter even if multiple rolls would have fired.

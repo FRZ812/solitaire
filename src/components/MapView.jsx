@@ -15,7 +15,11 @@ import {
 } from "../engine/world.js";
 import { describeEncounterPotential, pathRiskPercent } from "../engine/encounters.js";
 import { formatTime, formatDate } from "../engine/time.js";
+import { formatCopper } from "../engine/economy.js";
+import { compassDir } from "../engine/api.js";
 import { useZoomPan } from "./useZoomPan.js";
+
+const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
 
 // Pointy-top hex geometry.
 const HEX_SIZE = 22;
@@ -292,6 +296,10 @@ function collectHexes(cur) {
 
 export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
   const [selected, setSelected] = useState(null);
+  const [journalOpen, setJournalOpen] = useState(false);
+  // Accepted quests, and those with a known place to put a marker on the map.
+  const activeQuests = (state.world.quests || []).filter((q) => q.status === "active");
+  const questMarks = activeQuests.filter((q) => q.loc);
   const containerRef = useRef(null);
   const { zoom, transformRef, reset, lastWasDragRef, mouseHandlers } = useZoomPan(containerRef);
   const cur = state.world.currentTile;
@@ -493,6 +501,23 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            onClick={() => setJournalOpen((v) => !v)}
+            aria-label="Quest journal"
+            title="Quest journal"
+            style={{
+              ...iconButtonStyle, position: "relative",
+              backgroundColor: journalOpen ? "rgba(215, 167, 111, 0.22)" : "rgba(215, 167, 111, 0.08)",
+              border: "1px solid rgba(215, 167, 111, 0.3)",
+              borderRadius: "50%", width: "30px", height: "30px",
+              display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+            }}
+          >
+            <Icon name="book" size={14} color="#e6b98c" strokeWidth={2} />
+            {activeQuests.length > 0 && (
+              <span style={{ position: "absolute", top: "-4px", right: "-4px", minWidth: "15px", height: "15px", padding: "0 3px", borderRadius: "999px", backgroundColor: "#d7a76f", color: "#111716", fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{activeQuests.length}</span>
+            )}
+          </button>
           {onSeekCombat && (
             <button
               onClick={onSeekCombat}
@@ -694,9 +719,56 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
                 </text>
               </g>
             ))}
+            {/* Quest markers — an objective ring + label at each accepted quest's place */}
+            {questMarks.map((q) => {
+              const qx = SVG_CENTER + HSPACING * ((q.loc.x - cur.x) + (q.loc.y - cur.y) / 2);
+              const qy = SVG_CENTER + VSPACING * (q.loc.y - cur.y);
+              return (
+                <g key={`q-${q.id}`} pointerEvents="none">
+                  <circle cx={qx} cy={qy} r="15" fill="none" stroke="#f5d76e" strokeWidth="2.5" strokeOpacity="0.95" style={{ filter: "drop-shadow(0 0 5px rgba(245,215,110,0.7))" }} />
+                  <path d={`M${qx} ${qy - 9} L${qx + 5} ${qy} L${qx} ${qy + 9} L${qx - 5} ${qy} Z`} fill="#f5d76e" stroke="#111716" strokeWidth="1" />
+                  <text x={qx} y={qy + 27} textAnchor="middle" fontFamily="'Instrument Serif', serif" fontStyle="italic" fontSize="13" fontWeight="700" fill="none" stroke="#111716" strokeWidth="4" strokeOpacity="0.92" paintOrder="stroke">{q.locName || q.title}</text>
+                  <text x={qx} y={qy + 27} textAnchor="middle" fontFamily="'Instrument Serif', serif" fontStyle="italic" fontSize="13" fontWeight="700" fill="#f5d76e">{q.locName || q.title}</text>
+                </g>
+              );
+            })}
           </svg>
         </div>
       </div>
+
+      {journalOpen && (
+        <div style={{
+          position: "absolute", top: "calc(env(safe-area-inset-top, 0px) + 70px)", left: "12px", right: "12px",
+          maxHeight: "55%", overflowY: "auto", zIndex: 6,
+          backgroundColor: "rgba(12, 17, 17, 0.97)", backdropFilter: "blur(12px)",
+          border: "1px solid rgba(215, 167, 111, 0.3)", borderRadius: "14px",
+          padding: "14px 16px", boxShadow: "0 18px 44px rgba(0,0,0,0.6)",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+            <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "19px", color: "#f5dcb8" }}>Quest Journal</div>
+            <button onClick={() => setJournalOpen(false)} style={{ ...iconButtonStyle, width: "26px", height: "26px" }}><Icon name="x" size={12} color="#e6b98c" strokeWidth={2} /></button>
+          </div>
+          {activeQuests.length === 0 ? (
+            <div style={{ fontSize: "12px", fontStyle: "italic", color: "rgba(237,228,208,0.5)", padding: "8px 0" }}>No quests taken. Read the boards at the tavern and the gaol.</div>
+          ) : activeQuests.map((q) => {
+            const dist = q.loc ? hexDistance(cur, q.loc) : null;
+            return (
+              <div key={q.id} style={{ padding: "9px 0", borderTop: "1px solid rgba(215,167,111,0.12)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "baseline" }}>
+                  <span style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "15px", color: "#f5dcb8" }}>{q.title}</span>
+                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#d7a76f", flexShrink: 0 }}>
+                    {q.type === "bounty" ? `${formatCopper(q.rewardCp)} / ${formatCopper(q.rewardDeadCp || 0)} dead` : formatCopper(q.rewardCp || 0)}
+                  </span>
+                </div>
+                <div style={{ fontSize: "8px", letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(215,167,111,0.7)", margin: "2px 0 3px" }}>
+                  {QUEST_TYPE_LABEL[q.type] || "Task"} · {q.giver}{q.loc ? ` · ${q.locName} (${dist} hex${dist === 1 ? "" : "es"} ${compassDir(cur, q.loc)})` : ""}
+                </div>
+                <div style={{ fontSize: "12px", color: "rgba(237,228,208,0.8)", lineHeight: 1.4 }}>{q.desc}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <MapLegend />
 

@@ -12,13 +12,13 @@
 // Coin is COPPER. Each entry needs a stable `key`.
 
 export const WANTED_POOL = [
-  { key: "redhand",   name: "Red-Hand Mott",      crime: "highway robbery on the Mire road",        rewardAliveCp: 100, rewardDeadCp: 60,  desc: "Robbed three carters this month. The warden wants him to stand before the baron." },
-  { key: "eel",       name: "The Eel",            crime: "smuggling and a knifing at the ferry",     rewardAliveCp: 140, rewardDeadCp: 80,  desc: "Slippery as his name. Last seen working the reed-channels east of town." },
+  { key: "redhand",   name: "Red-Hand Mott",      crime: "highway robbery on the Mire road",        rewardAliveCp: 100, rewardDeadCp: 60,  desc: "Robbed three carters this month. The warden wants him to stand before the baron.", target: { x: -5, y: 0 }, targetName: "the Mire road west" },
+  { key: "eel",       name: "The Eel",            crime: "smuggling and a knifing at the ferry",     rewardAliveCp: 140, rewardDeadCp: 80,  desc: "Slippery as his name. Last seen working the reed-channels east of town.", target: { x: 3, y: 1 }, targetName: "the reed-channels east of town" },
   { key: "vane",      name: "Goodwife Vane",      crime: "poisoning a neighbour's well",             rewardAliveCp: 120, rewardDeadCp: 40,  desc: "Wanted ALIVE — the warden means to learn who paid her." },
-  { key: "crows",     name: "Deserter Crows",     crime: "desertion and theft from Whitemarch",      rewardAliveCp: 200, rewardDeadCp: 120, desc: "A trained spearman gone to ground in the Mire. Dangerous, and he knows it." },
+  { key: "crows",     name: "Deserter Crows",     crime: "desertion and theft from Whitemarch",      rewardAliveCp: 200, rewardDeadCp: 120, desc: "A trained spearman gone to ground in the Mire. Dangerous, and he knows it.", target: { x: -7, y: 0 }, targetName: "the western marsh" },
   { key: "appr",      name: "The Hag's Apprentice", crime: "grave-robbing in the marsh",             rewardAliveCp: 90,  rewardDeadCp: 90,  desc: "Dead or alive, the warden isn't fussy about this one." },
   { key: "sael",      name: "Three-Finger Sael",  crime: "cutpursing and a fatal brawl",             rewardAliveCp: 110, rewardDeadCp: 70,  desc: "Works the market crowds. Quick with a blade when cornered." },
-  { key: "rider",     name: "The Masked Rider",   crime: "holding up the Crowsmoor coach",           rewardAliveCp: 260, rewardDeadCp: 150, desc: "Bold, mounted, and named in three counties. The warden's richest poster." },
+  { key: "rider",     name: "The Masked Rider",   crime: "holding up the Crowsmoor coach",           rewardAliveCp: 260, rewardDeadCp: 150, desc: "Bold, mounted, and named in three counties. The warden's richest poster.", target: { x: 14, y: 0 }, targetName: "the long road toward Crowsmoor" },
 ];
 
 export const PRISONER_POOL = [

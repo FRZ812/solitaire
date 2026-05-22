@@ -55,6 +55,7 @@ export function acceptTask(state, posting) {
   const q = {
     id: posting.id, title: posting.title, giver: posting.giver, type: posting.type,
     desc: posting.desc, rewardCp: posting.rewardCp, day: state.time.day, status: "active",
+    loc: posting.target || null, locName: posting.targetName || null, // map marker + bearings
   };
   return { ok: true, state: { ...state, world: { ...state.world, quests: [...quests, q] } } };
 }

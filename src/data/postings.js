@@ -11,13 +11,13 @@
 
 export const TASK_POOL = [
   { key: "cellar-rats",   type: "errand",   title: "Rats in the cellar",        giver: "the innkeeper", rewardCp: 8,  desc: "Something's been at the inn's stores. Clear the cellar." },
-  { key: "marsh-ferns",   type: "errand",   title: "Marsh-ferns for the healer", giver: "the healer",    rewardCp: 15, desc: "Cut-leaf fern grows out past the ferry. Bring back a bundle." },
-  { key: "lost-mule",     type: "errand",   title: "A carter's lost mule",      giver: "a carter",      rewardCp: 20, desc: "Strayed off the east road two nights gone. Bring it back, or word of it." },
-  { key: "letter-reed",   type: "delivery", title: "Letter to Reedmarsh",       giver: "a merchant",    rewardCp: 12, desc: "A sealed letter for old Hareth's camp out east. Discreet, mind." },
-  { key: "ford-ring",     type: "delivery", title: "A drowned man's ring",      giver: "a widow",       rewardCp: 30, desc: "Lost at the ford when he went under. Recover it if the river will give it back." },
-  { key: "wolves-south",  type: "hunt",     title: "Wolves taking sheep",       giver: "a shepherd",    rewardCp: 30, desc: "A pack works the pasture south of the road. Thin them." },
-  { key: "goblin-scout",  type: "hunt",     title: "Goblin-sign to the north",  giver: "the warden",    rewardCp: 40, desc: "Scout the Hollow's edge and bring back what you see. Don't get clever." },
-  { key: "marsh-bandit",  type: "bounty",   title: "Bounty: the marsh-bandit",  giver: "the warden",    rewardCp: 50, desc: "Robbing travellers on the Mire road. Dead or alive — the warden isn't fussy." },
+  { key: "marsh-ferns",   type: "errand",   title: "Marsh-ferns for the healer", giver: "the healer",    rewardCp: 15, desc: "Cut-leaf fern grows out past the ferry. Bring back a bundle.", target: { x: 1, y: 1 }, targetName: "the reed-marsh past the ferry" },
+  { key: "lost-mule",     type: "errand",   title: "A carter's lost mule",      giver: "a carter",      rewardCp: 20, desc: "Strayed off the east road two nights gone. Bring it back, or word of it.", target: { x: 3, y: 0 }, targetName: "the east road by Reedmarsh" },
+  { key: "letter-reed",   type: "delivery", title: "Letter to Reedmarsh",       giver: "a merchant",    rewardCp: 12, desc: "A sealed letter for old Hareth's camp out east. Discreet, mind.", target: { x: 3, y: 0 }, targetName: "Reedmarsh" },
+  { key: "ford-ring",     type: "delivery", title: "A drowned man's ring",      giver: "a widow",       rewardCp: 30, desc: "Lost at the ford when he went under. Recover it if the river will give it back.", target: { x: 0, y: 1 }, targetName: "the Ferry Landing" },
+  { key: "wolves-south",  type: "hunt",     title: "Wolves taking sheep",       giver: "a shepherd",    rewardCp: 30, desc: "A pack works the pasture south of the road. Thin them.", target: { x: 4, y: 7 }, targetName: "the Wolf-Pit, south of the road" },
+  { key: "goblin-scout",  type: "hunt",     title: "Goblin-sign to the north",  giver: "the warden",    rewardCp: 40, desc: "Scout the Hollow's edge and bring back what you see. Don't get clever.", target: { x: -7, y: -9 }, targetName: "the Hollow's edge, north" },
+  { key: "marsh-bandit",  type: "bounty",   title: "Bounty: the marsh-bandit",  giver: "the warden",    rewardCp: 50, desc: "Robbing travellers on the Mire road. Dead or alive — the warden isn't fussy.", target: { x: -5, y: 0 }, targetName: "the Mire road, by the Way-shrine" },
 ];
 
 export const JOB_POOL = [
