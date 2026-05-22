@@ -37,7 +37,7 @@ export const HANDCRAFTED = {
   "0,-1": { terrain: "indoor",     poi: { type: "stable",   name: "Mirecross Stable",   description: "A low stable smelling of hay and old leather, hard against the inn." } },
   "0,1":  { terrain: "settlement", poi: { type: "landmark", name: "Ferry Landing",      description: "A wooden quay where the ferry meets the river. Porters and fishwives crowd the boards." } },
   "-1,1": { terrain: "indoor",     poi: { type: "healer",   name: "The Healer's House",  service: "healer", description: "Bundles of drying herbs hang from the rafters; a low room that smells of comfrey, tallow, and woodsmoke." } },
-  "1,-1": { terrain: "indoor",     poi: { type: "smithy",   name: "Mirecross Smithy",    description: "The town smith's. A banked forge, a wall of tongs, the ring of a hammer on cooling iron." } },
+  "1,-1": { terrain: "indoor",     poi: { type: "smithy",   name: "Mirecross Smithy",    service: "blacksmith", description: "The town smith's. A banked forge, a wall of tongs, the ring of a hammer on cooling iron." } },
   "-2,1": { terrain: "settlement", poi: { type: "market",   name: "The Wet Market",      description: "Plank stalls under oiled canvas — a butcher's block, baskets of bruised fruit, crates of root-vegetables, three sellers crying their wares at once." } },
   "-1,2": { terrain: "water",      poi: null },
 
