@@ -3,6 +3,34 @@
 How the world data is shaped so the engine + narrator produce a real, walkable
 fantasy. These are the rules content additions must follow.
 
+## Tone & mature content (adult)
+
+The game is **grimdark fantasy for an adult audience** — harsh, unjust,
+unsentimental. The narrator prompt (`src/system-prompt.js`) sets the rulings;
+content data (codex races, factions) grounds them:
+
+- **Race relations** — peoples openly distrust and disdain each other. Humans/
+  elves carry old grievances; elves and dwarves hold mutual contempt; orcs &
+  goblins are feared/hated; half-bloods belong to neither parent's people; the
+  fae are untrusted; the demon-blooded shunned or hunted. A character's race
+  changes how strangers treat them (stares, slurs, refused service, worse). It's
+  bigotry portrayed, not endorsed.
+- **Drow** are a **matriarchal sub-elf** (a subculture of elvenkind, like human
+  cardinal ethnicities — not a standalone race); surface elves and drow loathe
+  each other.
+- **Gender & power** — culture-specific. Most peoples are patriarchies (male
+  leadership default; women hold power informally/against resistance); some are
+  matriarchies (drow, the Halfborn Hold, witch-courts). Render each order, not a
+  single modern norm.
+- **Slavery** exists and its legality varies — the Sundered Crown and some
+  southern/eastern powers trade or keep slaves; freer holds (the Halfborn) and
+  many northern towns outlaw it. Treated with grim weight, never titillation.
+- **Mature content** — vulgarity in dialogue, visceral/consequential gore in
+  combat, and frank (not cut-to-black) intimacy are all in scope, but kept in
+  the engine's restrained literary voice. Sexual content is **only between
+  consenting adults**; anything involving minors or non-consent-as-titillation
+  is refused and steered elsewhere.
+
 ## Coordinate system
 
 Pointy-top hex, axial coords (`x = q`, `y = r`). +x is east, +y is south.
@@ -354,7 +382,11 @@ out-classed (`powerRatio` lowers starting nerve). As it frays a foe **wavers**,
 **pleads**, or — if proud and bullied with control/tricks — **demands a fair
 fight** (and digs in). When it breaks, the foe **flees** or **yields** by
 demeanor: craven bolt early, the honorable yield with honor when beaten fairly,
-beasts run at low HP, fanatics/undead never break.
+beasts run at low HP, fanatics/undead never break. **Fleeing requires a real
+chance to get away** — a foe can only flee if it's at least as fast as you AND
+you aren't dominating (`powerRatio < 1.4`); otherwise it's cornered and **yields
+instead** (you can't outrun someone who's already beaten you). So overpowering a
+foe — e.g. with magic — leaves them at your mercy, not cleanly escaped.
 
 **Talk** (`playerTalk`) is a third pillar beyond attack/defend, with three
 intents — but only on foes that can understand you (`canTalk`; beasts and the
@@ -409,11 +441,15 @@ the fiction — one laborer fought is one foe, not the template's range. The
 authoritative, so the narrator can't invent extra bodies afterward.
 
 **Aftermath** — every fight appends a `[COMBAT REPORT]` to `apiHistory` (outcome,
-each foe's fate, ending HP, a blow-by-blow) so the narrator can speak to what
-happened. **Defeat is not game-over:** `handleResolveCombat` hands a `[DEFEATED]`
-prompt to the narrator, which decides a non-lethal consequence fitting the victor
-and place — robbed, jailed, thrown out, or captured and moved (`tile_move`) — and
-the player wakes to face it. Actual death is reserved for cold killers.
+each foe's fate, ending HP, a blow-by-blow). The story ALWAYS continues from the
+result: `handleResolveCombat` follows every outcome with a narrator call —
+`[COMBAT OVER]` for win/stand-down/flee (narrate the aftermath strictly from the
+report, name the actual beaten foe, leave room to react) or `[DEFEATED]` for a
+loss. **Defeat is not game-over:** the narrator picks a non-lethal consequence
+fitting the victor and place — robbed, jailed, thrown out, or captured and moved
+(`tile_move`) — and the player wakes to face it. Actual death is reserved for
+cold killers. The prompt forbids substituting a different character for the
+beaten foe's role (the Karn→Silas bug).
 
 **Environment** (`data/environment.js`, `playerUseEnvironment`): each fight rolls
 1–3 single-use battlefield features from the terrain — flip a table for cover,
@@ -433,7 +469,10 @@ Three ways in:
    no full-HP reset) or a spawn `kind` — plus `initiator` and `surprise`. A foe
    that has already yielded is at the player's mercy (spare/kill/rob/capture,
    narrated directly) — the prompt forbids re-fighting or re-surrender loops.
-   `App.startCombatFromDirective` builds the foes and opens the fight. **Ambush:**
+   A `start_combat` never drops you straight into the tactical screen — it raises
+   an **engage prompt** (`pendingEngage`: "To arms / Engage", or "Under attack /
+   Defend") so the player consents to / navigates into combat after reading the
+   opening; `App.startCombatFromDirective` then builds the foes. **Ambush:**
    `surprise:true` gives the striker a free opening — if the player struck, foes
    are stunned and lose their first turn; if an NPC struck, every foe lands a free
    opening blow. `surprise:false` (both already squared off — heated argument,

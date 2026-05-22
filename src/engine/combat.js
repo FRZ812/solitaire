@@ -371,8 +371,13 @@ function moraleCheck(cs, e) {
     if (mode === "either") mode = Math.random() < 0.5 ? "flee" : "yield";
     if (mode === "yield" && !cfg.canYield) mode = cfg.canFlee ? "flee" : "yield";
     if (mode === "flee" && !cfg.canFlee) mode = cfg.canYield ? "yield" : "flee";
-    if (mode === "flee" && cfg.canFlee) { resolveFlee(cs, e); return false; }
-    if (cfg.canYield) { resolveYield(cs, e); return false; }
+    // You can't outrun someone who's already beaten you. A foe only gets away if
+    // it's at least as fast AND you're not dominating; otherwise it's cornered
+    // and yields (at your mercy) instead of cleanly escaping.
+    const canEscape = (e.speed || 4) >= (cs.player.speed || 4) && cs.powerRatio < 1.4;
+    if (mode === "flee" && cfg.canFlee && canEscape) { resolveFlee(cs, e); return false; }
+    if (cfg.canYield) { resolveYield(cs, e); return false; }   // cornered → at your mercy
+    if (cfg.canFlee) { resolveFlee(cs, e); return false; }     // can't yield (e.g. a beast) → bolts anyway
     return true;
   }
 
@@ -897,22 +902,9 @@ export function applyCombatResult(state, cs, context = {}) {
   if (cs.phase === "defeat") { conds.add("Gravely Wounded"); conds.add("Bleeding"); }
   next.character.conditions = Array.from(conds);
 
-  const enemyName = context.flavor || cs.enemies[0]?.name || "the enemy";
-  const yielded = cs.enemies.filter((e) => e.resolved === "yielded").length;
-  const fled = cs.enemies.filter((e) => e.resolved === "fled").length;
-
-  if (cs.phase === "victory") {
-    beats.push({ id: `cb${now}`, type: "narration", content: `The fight ends. ${enemyName} lies defeated. You stand, breathing hard, and take stock of your wounds.` });
-  } else if (cs.phase === "resolved") {
-    const parts = [];
-    if (yielded) parts.push(`${yielded === 1 ? "one foe lays" : `${yielded} foes lay`} down arms`);
-    if (fled) parts.push(`${fled === 1 ? "another flees" : `${fled} flee`} into the distance`);
-    beats.push({ id: `cb${now}`, type: "narration", content: `The fighting stops without a slaughter — ${parts.join(", ") || "the foe stands down"}. You let out a breath and lower your guard.` });
-  } else if (cs.phase === "playerFled") {
-    beats.push({ id: `cb${now}`, type: "narration", content: `You break off the fight and slip away, heart pounding, before it can be finished.` });
-  } else if (cs.phase === "defeat") {
-    // Brief — the narrator decides the actual aftermath (robbed, jailed, hauled
-    // off…) in the [DEFEATED] follow-up, so we don't presume death here.
+  // The detailed aftermath is narrated by the narrator ([COMBAT OVER]/[DEFEATED])
+  // right after this, so we only drop a brief lead-in for defeat.
+  if (cs.phase === "defeat") {
     beats.push({ id: `cb${now}`, type: "narration", content: `The fight goes against you. A last blow lands, your legs fold, and the world tips into black.` });
   }
 
@@ -922,7 +914,7 @@ export function applyCombatResult(state, cs, context = {}) {
   const loot = cs.loot;
   const deadCount = cs.enemies.filter((e) => e._dead).length;
   const hasSpoils = loot && deadCount > 0 && ((loot.items && loot.items.length) || loot.ability || loot.coins.silver || loot.coins.copper || loot.coins.gold);
-  next.pendingLoot = hasSpoils ? { ...loot, deadCount, flavor: context.flavor || enemyName } : null;
+  next.pendingLoot = hasSpoils ? { ...loot, deadCount, flavor: context.flavor || cs.enemies[0]?.name || "the fallen" } : null;
 
   // Persist named foes' combat state so a re-fight continues from their wounds
   // (no full-HP reset) and a foe who yielded/died stays that way.

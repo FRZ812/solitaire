@@ -154,6 +154,7 @@ export function Solitaire() {
   const [combat, setCombat] = useState(null);
   const [pendingCombat, setPendingCombat] = useState(null);
   const [pendingLoot, setPendingLoot] = useState(null); // spoils to deliberately Search
+  const [pendingEngage, setPendingEngage] = useState(null); // narrator start_combat awaiting the player's go-ahead
   const combatCtxRef = useRef(null);
 
   // ----- Auth subscription (web mode) -----
@@ -432,7 +433,7 @@ export function Solitaire() {
       const next = applyBeat(stateWithPlayer, beat);
       setState(next);
       // An explicit strike in the fiction hands off to the turn-based engine.
-      if (beat.start_combat) startCombatFromDirective(beat.start_combat, next);
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -606,7 +607,7 @@ export function Solitaire() {
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(next);
-      if (beat.start_combat) startCombatFromDirective(beat.start_combat, next);
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -621,6 +622,14 @@ export function Solitaire() {
     startCombat(enemies, { flavor: pendingCombat.desc || groupFlavor(enemies) });
   }
 
+  // Begin combat the player has agreed to via the engage prompt.
+  function handleEngage() {
+    if (!pendingEngage || combat) return;
+    const dir = pendingEngage.dir;
+    setPendingEngage(null);
+    startCombatFromDirective(dir, state);
+  }
+
   async function handleResolveCombat() {
     if (!combat) return;
     const cs = combat;
@@ -632,23 +641,29 @@ export function Solitaire() {
     // Spoils aren't auto-taken — offer a deliberate Search the fallen.
     if (next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: cs.lethal });
 
-    // Defeat isn't game-over — hand the aftermath to the narrator.
-    if (cs.phase === "defeat") {
-      setError(null);
-      setLoading(true);
-      try {
-        const place = currentLocationName(next);
+    // The story always continues from the result, so the player can react.
+    setError(null);
+    setLoading(true);
+    try {
+      const place = currentLocationName(next);
+      let msg;
+      if (cs.phase === "defeat") {
         const wasLethal = cs.lethal || cs.escalated;
-        const msg = `[DEFEATED] You were beaten ${wasLethal ? "down with weapons drawn" : "senseless in a bare-knuckle brawl"} by ${ctx.flavor || "your foe"} at ${place} and lost consciousness — you are NOT dead. ${wasLethal ? "This was a bloody, weapons-out fight, so the aftermath can be harsher (grave wounds, captured, left for dead but breathing)." : "It was only fists, so this is a humbling, not a killing — expect to be thrown out, robbed of loose coin, or hauled off to sober up."} Decide a fitting non-lethal aftermath for who beat you and where: robbed (inventory_changes), hauled to the watch/jailed, thrown out, or captured and moved (tile_move). Apply wounds as conditions and location_update if the place changed. The player wakes to face what's left; death-and-reload is not the goal.`;
-        const beat = await callNarrator(next, msg);
-        const after = applyBeat(next, beat);
-        setState(after);
-        if (beat.start_combat) startCombatFromDirective(beat.start_combat, after);
-      } catch (e) {
-        setError(e.message || String(e));
-      } finally {
-        setLoading(false);
+        msg = `[DEFEATED] You were beaten ${wasLethal ? "down with weapons drawn" : "senseless in a bare-knuckle brawl"} by ${ctx.flavor || "your foe"} at ${place} and lost consciousness — you are NOT dead. ${wasLethal ? "This was a bloody, weapons-out fight, so the aftermath can be harsher (grave wounds, captured, left for dead but breathing)." : "It was only fists, so this is a humbling, not a killing — expect to be thrown out, robbed of loose coin, or hauled off to sober up."} Decide a fitting non-lethal aftermath for who beat you and where: robbed (inventory_changes), hauled to the watch/jailed, thrown out, or captured and moved (tile_move). Apply wounds as conditions and location_update if the place changed. The player wakes to face what's left; death-and-reload is not the goal.`;
+      } else {
+        const result = cs.phase === "victory" ? "You won — every foe is slain or down."
+          : cs.phase === "resolved" ? "The fight ended without a slaughter — see the report for each foe's fate (yielded / fled / knocked out)."
+          : "You broke off and fled the fight.";
+        msg = `[COMBAT OVER] ${result} At ${place}. Narrate the immediate aftermath STRICTLY from the [COMBAT REPORT] — name the actual foe(s) and their exact fates, the room's reaction, your state — then leave the moment open for the player to react. A foe that yielded is present, beaten, and at your mercy: refer to THEM by name; do NOT introduce or substitute a different character to take the foe's place. Do not restart combat.`;
       }
+      const beat = await callNarrator(next, msg);
+      const after = applyBeat(next, beat);
+      setState(after);
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -669,7 +684,7 @@ export function Solitaire() {
       const beat = await callNarrator(looted, msg);
       const after = applyBeat(looted, beat);
       setState(after);
-      if (beat.start_combat) startCombatFromDirective(beat.start_combat, after);
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -755,6 +770,33 @@ export function Solitaire() {
               padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
               border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
             }}>Avoid</button>
+          </div>
+        )}
+        {pendingEngage && !combat && (
+          <div className="fade-in" style={{
+            margin: "0 12px 8px", padding: "11px 14px",
+            backgroundColor: "rgba(35,15,15,0.7)", border: `1px solid rgba(239,68,68,0.45)`,
+            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: "#fca5a5", marginBottom: "2px" }}>
+                {pendingEngage.dir?.initiator === "enemy" ? "Under attack" : "To arms"}
+              </div>
+              <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: "#fde8e4", lineHeight: 1.3 }}>
+                {pendingEngage.dir?.note || "Blades are about to be drawn."}
+              </div>
+            </div>
+            <button onClick={handleEngage} style={{
+              padding: "9px 16px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
+              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+            }}>{pendingEngage.dir?.initiator === "enemy" ? "Defend" : "Engage"}</button>
+            {pendingEngage.dir?.initiator !== "enemy" && (
+              <button onClick={() => setPendingEngage(null)} style={{
+                padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
+                border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+              }}>Hold</button>
+            )}
           </div>
         )}
         {pendingLoot && !combat && (
