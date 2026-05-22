@@ -15,6 +15,7 @@ import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
+import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
 import { buildingForTile } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
 import { tierLabel, tierOrder } from "./data/tiers.js";
@@ -43,6 +44,7 @@ import { MenuSheet } from "./components/MenuSheet.jsx";
 import { MapView } from "./components/MapView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
 import { ForgeView } from "./components/ForgeView.jsx";
+import { QuestBoardView } from "./components/QuestBoardView.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
@@ -749,6 +751,46 @@ export function Solitaire() {
     setState({ ...r.state, beats: [...r.state.beats, { id: `use${Date.now()}`, type: "narration", content: r.summary }] });
   }
 
+  // ----- Tavern quest board: tasks, day-labour, recruiting -----
+
+  function handleAcceptTask(posting) {
+    const r = acceptTask(state, posting);
+    if (!r.ok) return;
+    setState({ ...r.state, beats: [...r.state.beats, { id: `q${Date.now()}`, type: "narration", content: `You take down the notice — "${posting.title}", posted by ${posting.giver}. It's yours to see through.` }] });
+  }
+  function handleAbandonTask(id) {
+    setState(abandonTask(state, id).state);
+  }
+  // Hire yourself out for a stretch of labour — deterministic time + coin + wear.
+  function handleDayLabour(job) {
+    const r = applyDayLabour(state, job);
+    if (!r.ok) return;
+    setState({ ...r.state, beats: [...r.state.beats, { id: `lab${Date.now()}`, type: "narration", content: r.summary }] });
+  }
+  // Recruiting is narrative: the narrator plays the scene and, if it lands,
+  // introduces the companion via discoveries. No party machinery here.
+  async function handleRecruit(recruit) {
+    if (loading || !shopTile) return;
+    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the tavern";
+    setShopTile(null);
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You sit down across from ${recruit.name}, the ${recruit.role}.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[PLAYER ACTION] At ${place}'s quest board you approach ${recruit.name}, a ${recruit.race} ${recruit.role} hoping to be recruited (${recruit.desc}). Play the conversation — who they are, what they want (pay, a share, a cause) — and let it land naturally. If they join, introduce them as a companion via discoveries.characters and a knowledge update; otherwise let them beg off. Don't fabricate combat or coin transactions.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // The "AI flavor" half of the hybrid: hand the conversation to the narrator
   // (the counter handles the actual trade). Mirrors handleSeekCombat's flow.
   async function handleShopTalk() {
@@ -1154,10 +1196,10 @@ export function Solitaire() {
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: colors.gold, marginBottom: "2px" }}>
-                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : "Building"}
+                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : buildingHere.kind === "tavern" ? "Tavern" : "Building"}
               </div>
               <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
-                {buildingHere.label} — step up to the counter.
+                {buildingHere.label} — {buildingHere.kind === "tavern" ? "read the board." : "step up to the counter."}
               </div>
             </div>
             <button onClick={openShop} style={{
@@ -1230,6 +1272,22 @@ export function Solitaire() {
               onForge={handleForge}
               onBack={() => setShopView("trade")}
               onClose={closeShop}
+              loading={loading}
+            />
+          );
+        }
+        if (building.kind === "tavern") {
+          const board = generateBoard(key, state.time.day);
+          return (
+            <QuestBoardView
+              state={state}
+              building={building}
+              board={board}
+              onAccept={handleAcceptTask}
+              onAbandon={handleAbandonTask}
+              onLabour={handleDayLabour}
+              onRecruit={handleRecruit}
+              onClose={() => setShopTile(null)}
               loading={loading}
             />
           );

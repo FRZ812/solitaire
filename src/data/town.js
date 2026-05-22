@@ -10,6 +10,15 @@
 export const RESTOCK_DAYS = 4; // a trader's stock refreshes every 4 game-days
 
 export const BUILDINGS = {
+  tavern: {
+    id: "tavern",
+    kind: "tavern",            // a quest board: tasks, folk for hire, day-labour
+    label: "The Drowned Inn",
+    keeper: "the innkeeper",
+    icon: "bldg",
+    blurb: "The common room hums — low talk, a peat fire, and a board by the door thick with curling notices held on by knives and nails.",
+  },
+
   healer: {
     id: "healer",
     kind: "trader",            // a standard buy/sell trader menu

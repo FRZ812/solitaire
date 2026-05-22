@@ -102,7 +102,13 @@ export function buildStateContext(state) {
   const svcLine = bld
     ? `\n[SERVICE — you are at ${bld.label}${bld.kind === "trader" ? `, a trader (${bld.keeper})` : ""}. Buying and selling happen at the counter UI; flavor the keeper and the place, react, or haggle in words, but do not tally coin or invent the transaction here.]`
     : "";
-  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}
+  // Tasks the player has taken from a quest board — leads the narrator can
+  // weave in and reward when fulfilled.
+  const quests = (world.quests || []).filter((q) => q.status === "active");
+  const questLine = quests.length
+    ? `\n[ACTIVE TASKS — ${quests.map((q) => `"${q.title}" (from ${q.giver}; reward ${q.rewardCp}cp)`).join("; ")}]`
+    : "";
+  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}${questLine}
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]

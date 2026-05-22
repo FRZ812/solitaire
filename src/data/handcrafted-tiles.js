@@ -32,7 +32,7 @@ export const HANDCRAFTED = {
   // wet market and ferry cluster around it. Buildings carry a poi.service id
   // when they have a wired menu (see data/town.js, e.g. The Healer's House).
   // ============================================================
-  "0,0":  { terrain: "indoor",     poi: { type: "inn",      name: "The Drowned Inn",    description: "The town tavern. Smoke-darkened beams, a peat fire, a long oak bar, and the market's noise spilling in whenever the door opens." } },
+  "0,0":  { terrain: "indoor",     poi: { type: "inn",      name: "The Drowned Inn",    service: "tavern", description: "The town tavern. Smoke-darkened beams, a peat fire, a long oak bar, and the market's noise spilling in whenever the door opens." } },
   "-1,0": { terrain: "settlement", poi: { type: "town",     name: "Mirecross",          description: "The market square of Mirecross, busy at the river-crossing — a stone well, hawkers' stalls, mud churned by cart-wheels and boots." } },
   "0,-1": { terrain: "indoor",     poi: { type: "stable",   name: "Mirecross Stable",   description: "A low stable smelling of hay and old leather, hard against the inn." } },
   "0,1":  { terrain: "settlement", poi: { type: "landmark", name: "Ferry Landing",      description: "A wooden quay where the ferry meets the river. Porters and fishwives crowd the boards." } },
