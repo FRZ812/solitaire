@@ -3,6 +3,34 @@
 How the world data is shaped so the engine + narrator produce a real, walkable
 fantasy. These are the rules content additions must follow.
 
+## Tone & mature content (adult)
+
+The game is **grimdark fantasy for an adult audience** — harsh, unjust,
+unsentimental. The narrator prompt (`src/system-prompt.js`) sets the rulings;
+content data (codex races, factions) grounds them:
+
+- **Race relations** — peoples openly distrust and disdain each other. Humans/
+  elves carry old grievances; elves and dwarves hold mutual contempt; orcs &
+  goblins are feared/hated; half-bloods belong to neither parent's people; the
+  fae are untrusted; the demon-blooded shunned or hunted. A character's race
+  changes how strangers treat them (stares, slurs, refused service, worse). It's
+  bigotry portrayed, not endorsed.
+- **Drow** are a **matriarchal sub-elf** (a subculture of elvenkind, like human
+  cardinal ethnicities — not a standalone race); surface elves and drow loathe
+  each other.
+- **Gender & power** — culture-specific. Most peoples are patriarchies (male
+  leadership default; women hold power informally/against resistance); some are
+  matriarchies (drow, the Halfborn Hold, witch-courts). Render each order, not a
+  single modern norm.
+- **Slavery** exists and its legality varies — the Sundered Crown and some
+  southern/eastern powers trade or keep slaves; freer holds (the Halfborn) and
+  many northern towns outlaw it. Treated with grim weight, never titillation.
+- **Mature content** — vulgarity in dialogue, visceral/consequential gore in
+  combat, and frank (not cut-to-black) intimacy are all in scope, but kept in
+  the engine's restrained literary voice. Sexual content is **only between
+  consenting adults**; anything involving minors or non-consent-as-titillation
+  is refused and steered elsewhere.
+
 ## Coordinate system
 
 Pointy-top hex, axial coords (`x = q`, `y = r`). +x is east, +y is south.
