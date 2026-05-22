@@ -21,7 +21,7 @@ export function weaponCategory(item) {
   if (item.combat?.weaponType) return item.combat.weaponType;
   const name = `${item.name || ""} ${item.id || ""}`.toLowerCase();
   const has = (...w) => w.some((s) => name.includes(s));
-  if (has("dagger", "knife", "dirk")) return "dagger";
+  if (has("dagger", "knife", "dirk", "stiletto", "rondel", "main-gauche", "poignard", "kris")) return "dagger";
   if (has("axe", "cleaver", "hatchet")) return "axe";
   if (has("hammer", "mace", "maul", "warhammer", "club")) return "mace";
   if (has("spear", "lance", "pike", "halberd", "glaive")) return "spear";
