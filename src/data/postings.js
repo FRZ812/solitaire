@@ -1,4 +1,4 @@
-// Quest-board posting pools for the tavern (The Drowned Inn). Three kinds:
+// Quest-board posting pools for the tavern (The Drowned Rat). Three kinds:
 //   TASK_POOL   — work to pursue out in the world (errands, hunts, bounties);
 //                 accepting one tracks it and tells the narrator about it.
 //   RECRUIT_POOL— folk looking to take the road with you (narrative companions

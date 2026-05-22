@@ -226,7 +226,7 @@ export function SceneBackdrop({ state }) {
   const location = currentLocationName(state);
   const terrainLabel = TERRAINS[terrain]?.label || terrain;
 
-  const isDrownedInn = tile.poi?.name === "The Drowned Inn" || (cur.x === 0 && cur.y === 0);
+  const isDrownedInn = tile.poi?.name === "The Drowned Rat" || (cur.x === 0 && cur.y === 0);
 
   if (isDrownedInn) {
     return (

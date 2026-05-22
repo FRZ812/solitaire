@@ -112,7 +112,9 @@ export function buildStateContext(state) {
   // weave in and reward when fulfilled.
   const quests = (world.quests || []).filter((q) => q.status === "active");
   const questLine = quests.length
-    ? `\n[ACTIVE TASKS — ${quests.map((q) => `"${q.title}" (from ${q.giver}; reward ${q.rewardCp}cp)`).join("; ")}]`
+    ? `\n[ACTIVE TASKS — ${quests.map((q) => q.type === "bounty"
+        ? `bounty on ${q.target} (${q.crime}; ${q.rewardCp}cp alive / ${q.rewardDeadCp}cp dead — pay the warden on delivery)`
+        : `"${q.title}" (from ${q.giver}; reward ${q.rewardCp}cp)`).join("; ")}]`
     : "";
   return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}${questLine}
 [BIOME — ${biome.name}: ${biome.description}]

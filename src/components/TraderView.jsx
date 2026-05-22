@@ -10,8 +10,7 @@ import { TRAIN_CAP } from "../data/town.js";
 // ledger of the player's saleable goods. Reused by every trader building
 // (healer now; market stalls, the smith's counter, etc. later). Transactions
 // are deterministic and local — App applies them via engine/economy.js. The
-// "Speak with…" hook hands off to the narrator for flavor and haggling.
-export function TraderView({ state, building, tileKey, stock, receipts = {}, onClose, onBuy, onSell, onTalk, onForge, onTrain, loading }) {
+export function TraderView({ state, building, tileKey, stock, receipts = {}, onClose, onBuy, onSell, onForge, onTrain, loading }) {
   const [tab, setTab] = useState("buy");
 
   const codex = state.world.codex;
@@ -176,15 +175,14 @@ export function TraderView({ state, building, tileKey, stock, receipts = {}, onC
         )}
       </div>
 
-      {/* Footer — the forge hand-off (smiths), and the narrator hand-off for
-          flavor / haggling (the "AI" half). */}
-      <div style={{
-        padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 16px)",
-        borderTop: "1px solid rgba(215, 167, 111, 0.22)",
-        backgroundColor: "rgba(20, 29, 29, 0.95)", ...glass,
-        display: "flex", flexDirection: "column", gap: "8px",
-      }}>
-        {onForge && (
+      {/* Footer — the forge hand-off (smiths only). Talking to a keeper isn't a
+          panel action; the player just types it in the world. */}
+      {onForge && (
+        <div style={{
+          padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 16px)",
+          borderTop: "1px solid rgba(215, 167, 111, 0.22)",
+          backgroundColor: "rgba(20, 29, 29, 0.95)", ...glass,
+        }}>
           <button onClick={onForge} style={{
             width: "100%", height: "44px", borderRadius: radius.control, border: "none",
             backgroundColor: colors.gold, color: colors.ink,
@@ -193,18 +191,8 @@ export function TraderView({ state, building, tileKey, stock, receipts = {}, onC
           }}>
             To the Forge
           </button>
-        )}
-        <button onClick={onTalk} disabled={loading} style={{
-          width: "100%", height: "44px", borderRadius: radius.control,
-          border: "1px solid rgba(215, 167, 111, 0.28)",
-          backgroundColor: "rgba(215, 167, 111, 0.1)",
-          color: loading ? "rgba(215,167,111,0.4)" : colors.parchmentLight,
-          fontSize: "13px", fontWeight: 800, letterSpacing: "0.04em",
-          cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit",
-        }}>
-          Speak with {building.keeper}
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

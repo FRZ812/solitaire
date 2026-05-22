@@ -73,7 +73,7 @@ RIGHT:  narration: "The innkeeper slides a cup forward, the clay scraping wood."
 
 WORLD MECHANICS
 - Tile grid at fine resolution: each hex is roughly 250m of ground — a single vantage, e.g. a stretch of road, a copse, a courtyard, the inn's common room.
-- Towns and large features SPAN MANY tiles. The Drowned Inn is a tile, its yard another, its stable another. Crowsmoor is a cluster of buildings several kilometres east. NPCs are tied to specific tiles; walking past a building does NOT auto-reveal who is inside.
+- Towns and large features SPAN MANY tiles. The Drowned Rat tavern is a tile, the market square another, the stable another. Crowsmoor is a cluster of buildings several kilometres east. NPCs are tied to specific tiles; walking past a building does NOT auto-reveal who is inside.
 - "Hidden" tiles contain a random event when first visited.
 - Vistas: some places (knolls, towers, mountain passes) reveal great distance when reached. The engine expands the player's sight automatically — you only need to describe what they take in from the vantage.
 - Never end with "what do you do?".
@@ -118,7 +118,7 @@ Do NOT use tile_move as a shortcut for ordinary movement — that is the map's j
 The bottom-label hint "No open approach. Scaling, breaching, or magic only." is your cue: when the player tries to enter a sealed tile, prompt them with the available methods and adjudicate the one they pick.
 
 Anchor coords (the public-facing or threshold hex of each named structure):
-- Close, settlements: Drowned Inn (0,0), Crowsmoor (25,0), Whitemarch (40,-20), Bramblewych (-25,20), Beltsworn (25,-15), Stonebrook Hold (35,18, dwarven), Greenshaw (-15,8, small folk), Selenyan Edge (-28,12, elven), Halfborn Hold (12,-3, half-orc free).
+- Close, settlements: Mirecross — the market town, with The Drowned Rat tavern at its heart (0,0), Crowsmoor (25,0), Whitemarch (40,-20), Bramblewych (-25,20), Beltsworn (25,-15), Stonebrook Hold (35,18, dwarven), Greenshaw (-15,8, small folk), Selenyan Edge (-28,12, elven), Halfborn Hold (12,-3, half-orc free).
 - Close, dungeons: Goblin Hollow (-8,-10), Brokenglass Tower (-15,-20), Witch-Hag's Cot (-12,-28), Caer Drum (15,15), Mossbridge Hold (20,12), Ogre Stair (30,28), Cinder Chapter (30,-30), Wolf-Pit (4,7).
 - Close, magic-unlock sites — each maps to ONE of the magic acquisition paths above. When the player visits with the right intent, the narrator should honor the path:
   - Standing Stones of Anwen (-20,-10) — LEYLINE AWAKENING. Fast at the centre stone for a dawn and a dusk.

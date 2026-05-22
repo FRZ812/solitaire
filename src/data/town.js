@@ -18,7 +18,7 @@ export const BUILDINGS = {
   tavern: {
     id: "tavern",
     kind: "tavern",            // a quest board: tasks, folk for hire, day-labour
-    label: "The Drowned Inn",
+    label: "The Drowned Rat",
     keeper: "the innkeeper",
     icon: "bldg",
     hours: { open: 6, close: 1 }, // wraps past midnight — last call at 1am
@@ -70,6 +70,16 @@ export const BUILDINGS = {
       { id: "iron-helm",       chance: 0.6,  qty: [1, 2], priceMult: 1.25 },
       { id: "round-shield",    chance: 0.6,  qty: [1, 1], priceMult: 1.25 },
     ],
+  },
+
+  prison: {
+    id: "prison",
+    kind: "gaol",              // the warden: a wanted board + cells
+    label: "Mirecross Gaol",
+    keeper: "the warden",
+    icon: "gaol",
+    hours: { open: 6, close: 22 },
+    blurb: "A squat blockhouse of damp stone — a wanted board by the door, a smell of straw and iron, and the warden watching from a stool worn smooth.",
   },
 
   // The Wet Market: a single open-air stall, not a building — the butcher,

@@ -28,16 +28,17 @@ const HEX_DIRS = [
 export const HANDCRAFTED = {
   // ============================================================
   // MIRECROSS — the river-crossing market town (centred on 0,0)
-  // The Drowned Inn is the town's tavern; the market square, healer, smithy,
+  // The Drowned Rat is the town's tavern; the market square, healer, smithy,
   // wet market and ferry cluster around it. Buildings carry a poi.service id
   // when they have a wired menu (see data/town.js, e.g. The Healer's House).
   // ============================================================
-  "0,0":  { terrain: "indoor",     poi: { type: "inn",      name: "The Drowned Inn",    service: "tavern", description: "The town tavern. Smoke-darkened beams, a peat fire, a long oak bar, and the market's noise spilling in whenever the door opens." } },
+  "0,0":  { terrain: "indoor",     poi: { type: "inn",      name: "The Drowned Rat",    service: "tavern", description: "The town tavern. Smoke-darkened beams, a peat fire, a long oak bar, and the market's noise spilling in whenever the door opens." } },
   "-1,0": { terrain: "settlement", poi: { type: "town",     name: "Mirecross",          description: "The market square of Mirecross, busy at the river-crossing — a stone well, hawkers' stalls, mud churned by cart-wheels and boots." } },
   "0,-1": { terrain: "indoor",     poi: { type: "stable",   name: "Mirecross Stable",   description: "A low stable smelling of hay and old leather, hard against the inn." } },
   "0,1":  { terrain: "settlement", poi: { type: "landmark", name: "Ferry Landing",      description: "A wooden quay where the ferry meets the river. Porters and fishwives crowd the boards." } },
   "-1,1": { terrain: "indoor",     poi: { type: "healer",   name: "The Healer's House",  service: "healer", description: "Bundles of drying herbs hang from the rafters; a low room that smells of comfrey, tallow, and woodsmoke." } },
   "1,-1": { terrain: "indoor",     poi: { type: "smithy",   name: "Mirecross Smithy",    service: "blacksmith", description: "The town smith's. A banked forge, a wall of tongs, the ring of a hammer on cooling iron." } },
+  "-1,-1":{ terrain: "indoor",     poi: { type: "gaol",     name: "Mirecross Gaol",      service: "prison", description: "A squat stone blockhouse with a barred window and a wanted board by the door. The warden keeps the town's cells." } },
   "-2,1": { terrain: "settlement", poi: { type: "market",   name: "The Wet Market",      service: "market", description: "The market square — plank stalls under oiled canvas, mud and cabbage-leaves underfoot, a butcher, a fruit-cart, and a greengrocer all crying their wares at once." } },
   "-1,2": { terrain: "water",      poi: null },
 
