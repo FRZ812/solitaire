@@ -3,6 +3,7 @@
 // itself lives in those files; this module is helpers only.
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
+import { getAbilityDef } from "../data/abilities.js";
 import { TERRAINS } from "../data/terrains.js";
 import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
@@ -37,6 +38,22 @@ export function summarizeInventory(character, codex) {
 
 export function summarizeAttributes(attrs) {
   return ATTR_KEYS.map(k => `${ATTR_LABELS[k]} ${attrs[k] ?? 0}`).join(", ");
+}
+
+// What the player can DO in a fight: combat spells (magic — schools arcane/divine,
+// dreaded if cast in public) vs martial techniques. Granted abilities (e.g. from an
+// equipped grimoire) live here too, so the narrator knows the player can cast them.
+export function summarizeAbilities(character) {
+  const spells = [], techniques = [];
+  for (const entry of (character.abilities || [])) {
+    const def = getAbilityDef(typeof entry === "string" ? entry : entry?.id);
+    if (!def) continue;
+    (def.school === "arcane" || def.school === "divine" ? spells : techniques).push(def.name);
+  }
+  const parts = [];
+  if (spells.length) parts.push(`Spells (magic): ${spells.join(", ")}`);
+  if (techniques.length) parts.push(`Techniques: ${techniques.join(", ")}`);
+  return parts.join("; ") || "none learned";
 }
 
 export function summarizeKnowledge(codex) {
@@ -81,6 +98,7 @@ export function buildStateContext(state) {
   return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
+[ABILITIES KNOWN — ${summarizeAbilities(character)}]
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]
 [CODEX — ${summarizeCodex(world.codex)}]
 [INVENTORY — ${summarizeInventory(character, world.codex)}]
