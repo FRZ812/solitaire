@@ -1,12 +1,13 @@
 import React, { useRef, useEffect, useState } from "react";
 import { Icon } from "../Icon.jsx";
 import { colors, radius, fonts, metaStyle, shadow, glass } from "../tokens.js";
-import { tierColor, tierLabel } from "../../data/tiers.js";
+import { tierColor, tierLabel, tierOrder } from "../../data/tiers.js";
 import { getAbilityDef, abilityRequiredStat, abilityScaling } from "../../data/abilities.js";
 import { demeanorLabel } from "../../data/combat-flavor.js";
 import { abilityUsable } from "../../engine/combat.js";
 
-// Soft-requirement readout for the ability bar: stat shortfall + off-weapon.
+// Requirement readout for the ability bar. Stat shortfall is a soft % dropoff;
+// a weapon-type mismatch hard-blocks the ability (we show what weapon it needs).
 function abilityEff(player, def, tierId) {
   let statEff = 1, reqLabel = null;
   const req = abilityRequiredStat(def, tierId || "common");
@@ -15,9 +16,11 @@ function abilityEff(player, def, tierId) {
     statEff = Math.max(0.2, Math.min(1, have / req.value));
     if (have < req.value) reqLabel = `${req.attr.slice(0, 3).toUpperCase()} ${have}/${req.value}`;
   }
-  let weaponBad = false;
-  if (abilityScaling(def) === "weapon" && def.weaponReq?.length && !def.weaponReq.includes(player.weapon?.category)) weaponBad = true;
-  return { eff: statEff * (weaponBad ? 0.6 : 1), reqLabel, weaponBad };
+  let needWeapon = null;
+  if (abilityScaling(def) === "weapon" && def.weaponReq?.length && !def.weaponReq.includes(player.weapon?.category)) {
+    needWeapon = def.weaponReq.join("/");
+  }
+  return { eff: statEff, reqLabel, needWeapon };
 }
 
 function moodOf(enemy) {
@@ -139,8 +142,8 @@ function AbilityButton({ entry, combat, onAct }) {
   const cd = combat.player.cooldowns[entry.id] || 0;
   const usable = abilityUsable(combat, entry.id);
   const tcolor = tierColor(entry.tier || "common");
-  const { eff, reqLabel, weaponBad } = abilityEff(combat.player, def, entry.tier);
-  const penalised = eff < 1;
+  const { eff, reqLabel, needWeapon } = abilityEff(combat.player, def, entry.tier);
+  const penalised = eff < 1 && !needWeapon;
   const costParts = [];
   if (def.cost > 0) costParts.push(`${def.cost} stam`);
   if (def.resolveCost > 0) costParts.push(`${def.resolveCost} res`);
@@ -149,7 +152,7 @@ function AbilityButton({ entry, combat, onAct }) {
     <button
       onClick={() => onAct(entry.id)}
       disabled={!usable}
-      title={`${def.desc}${reqLabel ? ` · needs ${reqLabel}` : ""}${weaponBad ? " · wrong weapon" : ""}`}
+      title={`${def.desc}${reqLabel ? ` · needs ${reqLabel}` : ""}${needWeapon ? ` · needs ${needWeapon}` : ""}`}
       style={{
         position: "relative", textAlign: "left",
         padding: "8px 9px", borderRadius: radius.chip,
@@ -171,9 +174,9 @@ function AbilityButton({ entry, combat, onAct }) {
         </span>
         {(entry.tier && entry.tier !== "common") && <TierBadge tier={entry.tier} />}
       </div>
-      {(reqLabel || weaponBad) && (
-        <div style={{ fontSize: "7px", color: "#e0913a", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {weaponBad ? "off-weapon" : reqLabel}
+      {(reqLabel || needWeapon) && (
+        <div style={{ fontSize: "7px", color: needWeapon ? "#fca5a5" : "#e0913a", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {needWeapon ? `needs ${needWeapon}` : reqLabel}
         </div>
       )}
       {cd > 0 && (
@@ -225,6 +228,14 @@ export function CombatView({ combat, onAct, onTalk, onEnvironment, onDraw, onSet
   const talkUsable = abilityUsable(combat, "talk");
   const environment = combat.environment || [];
   const doTalk = (intent) => { setTalkOpen(false); onTalk(intent); };
+  // Core actions stay pinned; learned abilities sort by tier (best first) and
+  // scroll, so the bar never overruns the screen as the kit grows.
+  const CORE = ["basic-attack", "defend", "talk"];
+  const strikeEntry = player.abilities.find((a) => a.id === "basic-attack");
+  const braceEntry = player.abilities.find((a) => a.id === "defend");
+  const learned = player.abilities
+    .filter((a) => !CORE.includes(a.id))
+    .sort((x, y) => tierOrder(y.tier || "common") - tierOrder(x.tier || "common"));
 
   return (
     <div style={{
@@ -310,30 +321,38 @@ export function CombatView({ combat, onAct, onTalk, onEnvironment, onDraw, onSet
         </div>
         <StatusRow statuses={player.statuses} />
 
-        {/* Ability grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginTop: "9px" }}>
-          {player.abilities.map((entry, i) => entry.id === "talk" ? (
-            <button
-              key={`talk-${i}`}
-              onClick={() => setTalkOpen((v) => !v)}
-              disabled={!talkUsable}
-              title="Demand surrender, demoralize, or provoke"
-              style={{
-                textAlign: "left", padding: "8px 9px", borderRadius: radius.chip,
-                backgroundColor: talkOpen ? "rgba(176,114,230,0.18)" : (talkUsable ? "rgba(20,29,29,0.7)" : "rgba(20,29,29,0.3)"),
-                border: `1px solid ${talkUsable ? "#b072e6" : "rgba(215,167,111,0.12)"}`,
-                opacity: talkUsable ? 1 : 0.45, cursor: talkUsable ? "pointer" : "default", fontFamily: "inherit",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <Icon name="user" size={13} color="#b072e6" strokeWidth={1.8} />
-                <span style={{ fontSize: "12px", fontWeight: 700, color: colors.parchment }}>Talk</span>
-              </div>
-              <div style={{ fontSize: "8px", color: "rgba(237,228,208,0.55)", marginTop: "3px" }}>1 stam · cd 1 · pick intent</div>
-            </button>
-          ) : (
-            <AbilityButton key={`${entry.id}-${i}`} entry={entry} combat={combat} onAct={onAct} />
-          ))}
+        {/* Learned abilities — sorted by tier, scrollable so the bar stays bounded */}
+        {learned.length > 0 && (
+          <div className="custom-scroll" style={{ maxHeight: "164px", overflowY: "auto", marginTop: "9px", paddingRight: "2px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+              {learned.map((entry, i) => (
+                <AbilityButton key={`${entry.id}-${i}`} entry={entry} combat={combat} onAct={onAct} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Core actions — always available */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginTop: "8px" }}>
+          {strikeEntry && <AbilityButton entry={strikeEntry} combat={combat} onAct={onAct} />}
+          {braceEntry && <AbilityButton entry={braceEntry} combat={combat} onAct={onAct} />}
+          <button
+            onClick={() => setTalkOpen((v) => !v)}
+            disabled={!talkUsable}
+            title="Demand surrender, demoralize, or provoke"
+            style={{
+              textAlign: "left", padding: "8px 9px", borderRadius: radius.chip,
+              backgroundColor: talkOpen ? "rgba(176,114,230,0.18)" : (talkUsable ? "rgba(20,29,29,0.7)" : "rgba(20,29,29,0.3)"),
+              border: `1px solid ${talkUsable ? "#b072e6" : "rgba(215,167,111,0.12)"}`,
+              opacity: talkUsable ? 1 : 0.45, cursor: talkUsable ? "pointer" : "default", fontFamily: "inherit",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <Icon name="user" size={13} color="#b072e6" strokeWidth={1.8} />
+              <span style={{ fontSize: "12px", fontWeight: 700, color: colors.parchment }}>Talk</span>
+            </div>
+            <div style={{ fontSize: "8px", color: "rgba(237,228,208,0.55)", marginTop: "3px" }}>intent</div>
+          </button>
         </div>
 
         {/* Talk intents */}

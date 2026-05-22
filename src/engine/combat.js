@@ -145,19 +145,29 @@ function fistsProfile(w) {
   };
 }
 
+// Escalate a brawl to a lethal fight — you and any armed foes switch to real
+// weapons, deaths become possible, and the aftermath gets far worse.
+function escalateToLethal(cs, reason) {
+  if (cs.lethal) return;
+  cs.lethal = true;
+  cs.escalated = true;
+  if (cs.player.stowedWeapon) cs.player.weapon = cs.player.stowedWeapon;
+  for (const e of cs.enemies) {
+    if (e.health > 0 && !e.resolved && e.armed && e.stowedWeapon) e.weapon = e.stowedWeapon;
+  }
+  cs.log.push(logEntry(
+    reason === "magic"
+      ? "You work a spell — the room recoils; this is no brawl now."
+      : "Steel is drawn — the brawl turns to a killing matter.", "system"));
+}
+
 // Draw steel mid-brawl — escalates to a lethal fight (you and any armed foes
 // switch to real weapons; the aftermath gets far worse).
 export function playerDrawWeapon(cs0) {
   if (cs0.phase !== "player" || cs0.lethal) return cs0;
   if (!cs0.player.stowedWeapon || cs0.player.stowedWeapon.category === "unarmed") return cs0;
   const cs = clone(cs0);
-  cs.lethal = true;
-  cs.escalated = true;
-  cs.player.weapon = cs.player.stowedWeapon;
-  for (const e of cs.enemies) {
-    if (e.health > 0 && !e.resolved && e.armed && e.stowedWeapon) e.weapon = e.stowedWeapon;
-  }
-  cs.log.push(logEntry("You draw your weapon — the brawl turns to a killing matter.", "system"));
+  escalateToLethal(cs, "weapon");
   return cs;
 }
 
@@ -246,15 +256,11 @@ function attackProfile(attacker, def, tierId, isPlayer) {
   return null; // no direct damage
 }
 
-// Soft requirement multiplier for a player's ability use: stat shortfall scales
-// damage down (floor 20%), and an off-type weapon technique is penalised.
+// Soft requirement multiplier: stat shortfall scales damage down (floor 20%).
+// Weapon-type mismatch is no longer a penalty — it hard-blocks use (see
+// weaponReqMet/abilityUsable), so anything that reaches here has its weapon.
 function abilityEffectiveness(player, def, tierId) {
-  const statEff = reqEffectiveness(player.attrs || {}, abilityRequiredStat(def, tierId));
-  let weaponEff = 1;
-  if (abilityScaling(def) === "weapon" && def.weaponReq && def.weaponReq.length) {
-    if (!def.weaponReq.includes(player.weapon?.category)) weaponEff = 0.6;
-  }
-  return statEff * weaponEff;
+  return reqEffectiveness(player.attrs || {}, abilityRequiredStat(def, tierId));
 }
 
 function resolveHit(attacker, defender, profile) {
@@ -425,6 +431,14 @@ function checkCombatEnd(cs) {
 
 // ----- player actions -----
 
+// A weapon technique HARD-requires a compatible weapon in hand — you can't
+// Power Strike with a grimoire or bare fists. (Stat shortfalls stay soft.)
+export function weaponReqMet(def, weapon) {
+  if (abilityScaling(def) !== "weapon") return true;       // spells/utility need no weapon
+  if (!def.weaponReq || def.weaponReq.length === 0) return true; // basic attack — any weapon/fists
+  return def.weaponReq.includes(weapon?.category);
+}
+
 export function abilityUsable(cs, abilityId) {
   if (cs.phase !== "player") return false;
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
@@ -433,6 +447,7 @@ export function abilityUsable(cs, abilityId) {
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
   if (cs.player.stamina < (def.cost || 0)) return false;
   if ((cs.player.resolve ?? 0) < (def.resolveCost || 0)) return false;
+  if (!weaponReqMet(def, cs.player.weapon)) return false;
   return true;
 }
 
@@ -444,6 +459,12 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   const tierId = entry.tier || "common";
   const scaling = abilityScaling(def);
+  // A spell or a real weapon technique is inherently a killing act — using one
+  // in a brawl escalates it to lethal on its own (no separate Draw needed).
+  const isSpell = scaling === "stat";
+  const isWeaponTech = scaling === "weapon" && def.weaponReq && def.weaponReq.length > 0;
+  if (isSpell) cs.magicCast = true;
+  if (!cs.lethal && (isSpell || isWeaponTech)) escalateToLethal(cs, isSpell ? "magic" : "weapon");
   cs.player.stamina -= def.cost || 0;
   // Spellcasting proficiency makes casting cheaper on Resolve.
   const resoCost = Math.max(0, (def.resolveCost || 0) - Math.floor((cs.player.prof?.spellcasting || 0) / 4));
@@ -903,6 +924,16 @@ export function applyCombatResult(state, cs, context = {}) {
   const hasSpoils = loot && deadCount > 0 && ((loot.items && loot.items.length) || loot.ability || loot.coins.silver || loot.coins.copper || loot.coins.gold);
   next.pendingLoot = hasSpoils ? { ...loot, deadCount, flavor: context.flavor || enemyName } : null;
 
+  // Persist named foes' combat state so a re-fight continues from their wounds
+  // (no full-HP reset) and a foe who yielded/died stays that way.
+  for (const e of cs.enemies) {
+    if (!e.npcId) continue;
+    const ch = next.world.codex.characters?.[e.npcId];
+    if (!ch) continue;
+    const status = e._dead ? "dead" : e.resolved === "yielded" ? "yielded" : e.resolved === "fled" ? "fled" : (e.health < e.maxHealth ? "wounded" : "ok");
+    ch.combatState = { health: Math.max(0, Math.ceil(e.health)), maxHealth: e.maxHealth, status };
+  }
+
   // Hand the narrator a blow-by-blow account so the fight can be referenced
   // afterward (and so a [DEFEATED] follow-up knows exactly what happened).
   next.apiHistory = [...(next.apiHistory || []), { role: "user", content: buildCombatRecap(cs, context) }];
@@ -976,5 +1007,9 @@ function buildCombatRecap(cs, context) {
     .slice(-22)
     .map((l) => l.text)
     .join(" ");
-  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. Foes: ${foes}. You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}`.slice(0, 1600);
+  const magicNote = cs.magicCast
+    ? " NOTE: the player WORKED MAGIC in this fight — magic is rare and dreaded, so any ordinary folk who witnessed it should react with shock, panic, even cries of witchcraft, far beyond their reaction to mere violence."
+    : "";
+  const n = cs.enemies.length;
+  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. You fought exactly ${n} foe${n === 1 ? "" : "s"} (this is the full roster — narrate only these, by these fates): ${foes}. You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}.${magicNote}`.slice(0, 1700);
 }

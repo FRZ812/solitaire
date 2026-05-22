@@ -144,14 +144,20 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
   if (body >= 6) abilities.push({ id: "power-strike", tier: tierId });
   if (mind >= 8) abilities.push({ id: "firebolt", tier: tierId });
   const maxHealth = Math.max(1, Math.round((12 + vigor * 2 + body) * m));
+  // Named foes carry their wounds between encounters — re-engaging doesn't reset
+  // them to full. A previously-yielded foe is already cowed (low morale).
+  const cstate = npc.combatState;
+  const health = (cstate && typeof cstate.health === "number") ? Math.max(0, Math.min(maxHealth, cstate.health)) : maxHealth;
+  const morale = cstate?.status === "yielded" ? Math.min(dcfg.morale, 10) : dcfg.morale;
 
   return {
     id: `enemy-npc-${npc.id}-${Math.random().toString(36).slice(2, 6)}`,
+    npcId: npc.id,
     kind: npc.profession || npc.race || "foe", name: npc.name || "Foe", race: npc.race || null, tier: tierId,
-    demeanor, morale: dcfg.morale, moraleMax: dcfg.morale,
+    demeanor, morale, moraleMax: dcfg.morale,
     canTalk: !(demeanor === "mindless" || demeanor === "feral"),
     controlPressure: 0, provoked: false, resolved: null, lastFlavorTurn: 0, noFleeUntil: 0,
-    maxHealth, health: maxHealth,
+    maxHealth, health,
     armor: Math.round(armor * m), ward: Math.round(ward * m),
     dodge: Math.min(60, reflex * 2 + dodgeGear),
     accuracy: reflex + wit, critChance: Math.min(50, Math.round(wit * 1.5 + reflex)), critMult: 1.5,
@@ -162,16 +168,20 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
 
 // Build a whole hostile group for a spawn kind. `power` (0..1) is the rollTier
 // luck (nudge toward the high end); `maxTier` caps the tier (a region's
-// enemyTier ceiling). When maxTier is omitted it's derived from power.
-export function generateEnemyGroup(kind, { power = 0, maxTier = null } = {}) {
+// enemyTier ceiling). `count` forces an exact group size (the narrator's roster
+// wins over the template's range); `name` overrides the displayed name so the
+// foes match the fiction the narrator set up.
+export function generateEnemyGroup(kind, { power = 0, maxTier = null, count = null, name = null } = {}) {
   const tmpl = BESTIARY[kind] || inferTemplate(kind);
   const [lo, hi] = tmpl.count || [1, 1];
-  const count = randInt(lo, hi);
+  const n = count != null ? Math.max(1, Math.round(count)) : randInt(lo, hi);
   const cap = maxTier || (power >= 0.75 ? "legendary" : power >= 0.5 ? "epic" : power >= 0.25 ? "very-rare" : "rare");
   const enemies = [];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < n; i++) {
     const tierId = rollTier(cap, power);
-    enemies.push(generateEnemy(kind, { tierId, index: i, total: count }));
+    const e = generateEnemy(kind, { tierId, index: i, total: n });
+    if (name) e.name = n > 1 ? `${name} ${i + 1}` : name;
+    enemies.push(e);
   }
   return enemies;
 }

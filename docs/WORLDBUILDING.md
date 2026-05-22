@@ -262,11 +262,14 @@ inferred from kind/name keywords (`itemCombatStats`).
   Resolve** (which does NOT regen in combat and persists after) — so casters
   burst hard then run dry, while fighters stay steady.
 
-**Requirements are soft** (`combat-stats.js reqEffectiveness`): each ability has a
-`weaponReq` (categories) and `statReq` (`base + tier_order×2`). Under-stat scales
-the ability down by `playerStat/required` (floor 20%); off-type weapon techniques
-take a 0.6× hit. Items carry the same kind of stat requirement (by tier); an
-under-req item still works at reduced base stats but **its passives switch off**.
+**Requirements:** each ability has a `weaponReq` (categories) and `statReq`
+(`base + tier_order×2`). The **stat** requirement is soft — under-stat scales the
+ability down by `playerStat/required` (floor 20%). The **weapon** requirement is
+a HARD gate (`weaponReqMet`/`abilityUsable`): a melee technique is unusable
+without a matching weapon in hand — you can't Power Strike with a grimoire or
+bare fists (in a brawl you must Draw Weapon first). Items carry a stat
+requirement (by tier); an under-req item still works at reduced base stats but
+**its passives switch off**.
 
 **Passives** (`data/passives.js`): slot count by item tier — Common/Uncommon 0 ·
 Rare 1 · Epic 2 · Legendary+ 3. Each passive carries its own tier (magnitude
@@ -299,6 +302,12 @@ No levels. Besides loot, the ONLY progression is use-based proficiencies
 
 `applyCombatResult` writes the fight's XP back and surfaces rating-ups and
 attribute gains as growth beats. Old saves without `proficiencies` read as `{}`.
+
+**UI:** the character panel shows only a tier-sorted preview of abilities and
+the top proficiencies; "All N …" opens the dedicated **Arsenal** panel
+(`ArsenalView.jsx`) with the full lists sorted highest-tier/rating first. In
+combat, learned abilities sort by tier and live in a bounded scroll area, with
+Strike / Brace / Talk pinned as a core row — so neither cluttering as the kit grows.
 
 ### Ambush is contested
 
@@ -365,9 +374,14 @@ mindless can't be reasoned with):
 **Lethality** — `start_combat.lethal` decides the fight's nature. A **brawl**
 (`lethal:false` — barfights, "teach him a lesson", guards subduing) stows both
 sides' weapons and is fought bare-knuckle (`fistsProfile`, ~half damage); a foe
-at 0 HP is **knocked out** (alive), not killed. **Draw Weapon**
-(`playerDrawWeapon`) escalates a brawl to lethal — real steel, real death, worse
-aftermath. Wilderness/monster/assassin fights start `lethal:true`.
+at 0 HP is **knocked out** (alive), not killed. It **auto-escalates to lethal**
+the moment anyone commits a killing act: casting a spell or using a real weapon
+technique (`escalateToLethal`), or the explicit **Draw Weapon** button. Once
+lethal, real steel, real death, worse aftermath. Wilderness/monster/assassin
+fights start `lethal:true`. Casting also sets `cs.magicCast`, and the
+[COMBAT REPORT] flags it — **magic is rare and dreaded**, so working it in front
+of common folk draws panic/terror/cries of witchcraft far beyond mere violence
+(see the prompt's MAGIC IS RARE AND DREADED note).
 
 **Item grants (on-equip spells).** An item may carry a `grants` block (combat
 `abilities`, narrative `spells`, a `magicKnows` line). `equipItem` applies it and
@@ -387,6 +401,12 @@ spoils as `pendingLoot` instead of granting them — the player must choose to
 corpse in a public, lawful place draws horror/the watch; in the wilds nobody
 cares). So a surrender no longer mysteriously pays coin, and you can't strip a
 dead man's whole rig in a crowded tavern without consequence.
+
+The narrator names and counts the foes in `start_combat.foes` (`name`, `count`),
+and the engine honours them exactly (`generateEnemyGroup`) so the roster matches
+the fiction — one laborer fought is one foe, not the template's range. The
+`[COMBAT REPORT]` states the exact roster + fates and the prompt treats it as
+authoritative, so the narrator can't invent extra bodies afterward.
 
 **Aftermath** — every fight appends a `[COMBAT REPORT]` to `apiHistory` (outcome,
 each foe's fate, ending HP, a blow-by-blow) so the narrator can speak to what
@@ -408,7 +428,11 @@ Three ways in:
    narrator emits `start_combat` (system-prompt.js) ONLY on an *explicit* strike
    (the player or an NPC actually attacks), never on threats/standoffs. It names
    the foe(s) — a codex `npc_id` (built via `enemyFromNPC` from their real
-   attributes + gear) or a spawn `kind` — plus `initiator` and `surprise`.
+   attributes + gear; their HP/status **persists** on `character.combatState`, so
+   a foe you left wounded re-engages wounded, and one who yielded/died stays so —
+   no full-HP reset) or a spawn `kind` — plus `initiator` and `surprise`. A foe
+   that has already yielded is at the player's mercy (spare/kill/rob/capture,
+   narrated directly) — the prompt forbids re-fighting or re-surrender loops.
    `App.startCombatFromDirective` builds the foes and opens the fight. **Ambush:**
    `surprise:true` gives the striker a free opening — if the player struck, foes
    are stunned and lose their first turn; if an NPC struck, every foe lands a free
