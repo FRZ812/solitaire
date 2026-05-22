@@ -10,6 +10,7 @@ import { applyInventoryChanges } from "./inventory.js";
 import { applyAttributeChanges } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
 import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
+import { clampRel, MEMORY_CAP } from "./relationships.js";
 
 // applyBeat is the heart of the engine. Given the current state and a beat
 // from the narrator, it returns the next state plus the new beat entries to
@@ -180,8 +181,35 @@ export function applyBeat(state, beat, options = {}) {
     const tmpl = COMPANIONS[beat.recruit_companion.id];
     if (tmpl && !party.includes(tmpl.id)) {
       party = [...party, tmpl.id];
-      world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: companionCodexEntry(tmpl) } } };
+      // Only file a fresh entry if they're new; a returning companion keeps their
+      // accumulated memories + bond (no re-introduction).
+      if (!world.codex.characters[tmpl.id]) {
+        world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: companionCodexEntry(tmpl) } } };
+      }
     }
+  }
+
+  // Bond shifts and shared memories — kept per-character on the codex and
+  // surfaced back to the narrator so relationships persist and deepen over time.
+  if (Array.isArray(beat.relationship_changes) && beat.relationship_changes.length) {
+    const chars = { ...world.codex.characters };
+    for (const rc of beat.relationship_changes) {
+      const ch = chars[rc?.id];
+      if (!ch) continue;
+      chars[rc.id] = { ...ch, relationship: clampRel((ch.relationship || 0) + (rc.delta || 0)) };
+    }
+    world = { ...world, codex: { ...world.codex, characters: chars } };
+  }
+  if (Array.isArray(beat.memory_updates) && beat.memory_updates.length) {
+    const chars = { ...world.codex.characters };
+    for (const mu of beat.memory_updates) {
+      const ch = chars[mu?.id];
+      if (!ch || !Array.isArray(mu.adds)) continue;
+      const mems = [...(ch.memories || [])];
+      for (const m of mu.adds) if (m && !mems.includes(m)) mems.push(m);
+      chars[mu.id] = { ...ch, memories: mems.slice(-MEMORY_CAP) };
+    }
+    world = { ...world, codex: { ...world.codex, characters: chars } };
   }
 
   // Sharing loot with the party: move worn gear onto/off a companion. Pair with

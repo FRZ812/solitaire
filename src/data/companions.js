@@ -102,5 +102,9 @@ export function companionCodexEntry(tmpl) {
     // narrator answers from this (no vague hand-waving), and combat uses it.
     abilities: [...(tmpl.abilities || [])],
     skills: (tmpl.skills || []).map((s) => ({ ...s })),
+    // Bond + shared history — start blank (a new recruit needs introducing);
+    // both grow through play and PERSIST in the codex even after parting ways.
+    relationship: 0,
+    memories: [],
   };
 }

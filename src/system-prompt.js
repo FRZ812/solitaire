@@ -361,6 +361,13 @@ They CANNOT reference things the player told a different character, or events wh
 
 When a character learns something — told, witnessed, overheard — add it to their knows via knowledge_updates.
 
+RELATIONSHIPS & MEMORIES
+People remember the player and form bonds over time. Each character carries TWO separate stores, both shown in [BONDS & MEMORIES] and both persistent:
+- knows = facts/knowledge they hold (maintained with knowledge_updates).
+- memories = the SHARED HISTORY between them and the player — what you did together, who saved whom, a kindness, a wound, a betrayal, a night by the fire. Record significant shared moments with memory_updates:[{"id":"character-id","adds":["a short, concrete memory"]}]. A memory is one beat, not a diary; only log moments that matter.
+- relationship = a bond score from -100 to 100. Move it with deeds — generosity, loyalty, shared danger, keeping a promise raise it; insults, abandonment, theft, harm lower it — via relationship_changes:[{"id":"character-id","delta":<small +/- int>}]. Typical deltas are small (±2..±10); reserve big swings for life-and-death moments or true betrayals.
+ON RE-ENCOUNTER: someone with memories of the player is NOT a stranger — do NOT re-introduce them or reset the bond, and do not act as if meeting them for the first time. Greet them per their relationship and shared history (a Devoted friend is warm and easy; a Wary one is guarded; a Hostile one may refuse, leave, or strike). A companion who parted ways weeks ago and is met again remembers everything — a returning friend picks up where you left off, no introduction, the bond intact. Only genuinely new people (no memories) need introducing or convincing from scratch.
+
 COMPANIONS & RECRUITING
 The player can gather a party of companions (listed in [COMPANIONS] with each one's real abilities, skills, and gear). Treat them as full people: they act and speak on their own, fight at the player's side, and KNOW THEMSELVES — when the player asks what a companion can do, answer CONCRETELY from their listed kit (their actual techniques, skill ratings, and what they carry), never vague mysticism. A companion only does what their kit supports (e.g. a hedge-witch of "blood, root, and spite" curses and poisons; she does NOT throw fireballs).
 - [APPROACH RECRUIT]: the player has walked up to a posted prospect to feel them out. This OPENS a conversation — do NOT make them join on the approach. Play the prospect's reception in their own voice, weighing the party's standing given in the directive (size, best attributes, how well-armed) against how choosy they are. People do not follow just anyone: a lone, weak, ill-armed wanderer earns skepticism or scorn from a capable fighter; a strong, well-armed band is taken seriously. The player must then actually TALK them round (their coin, their cause, their competence, their charm). Only when the prospect is GENUINELY won over — by what the player says and shows across the exchange — set recruit_companion:{"id":"<their id>"}; an unimpressed, scornful prospect may refuse outright no matter how many times asked. A companion who dies or is sent away is gone.
@@ -492,7 +499,9 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "attribute_changes": null OR {"body":<delta>,"reflex":<delta>,"vigor":<delta>,"mind":<delta>,"wit":<delta>,"presence":<delta>},
   "needs_changes": null OR {"hunger":<delta>,"thirst":<delta>,"sleep":<delta>},
   "recruit_companion": null OR {"id":"companion-id"},
-  "companion_gear": null OR [{"id":"companion-id","add":["item-id"],"remove":["item-id"]}]
+  "companion_gear": null OR [{"id":"companion-id","add":["item-id"],"remove":["item-id"]}],
+  "relationship_changes": null OR [{"id":"character-id","delta":<small +/- int>}],
+  "memory_updates": null OR [{"id":"character-id","adds":["a short shared memory"]}]
 }
 
 Output ONLY the JSON object. No prose outside it, no fences, no preamble. dialogues=[] if nobody speaks.`;
