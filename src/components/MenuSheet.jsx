@@ -98,13 +98,14 @@ const itemRowStyle = {
 };
 
 // Item detail modal: stats, requirement, passives, and equip/unequip.
-function ItemDetail({ item, id, location, attrs, onEquip, onUnequip, onClose }) {
+function ItemDetail({ item, id, location, attrs, onEquip, onUnequip, onUse, onClose }) {
   if (!item) return null;
   const cs = itemCombatStats(item);
   const req = itemRequirement(item);
   const reqMet = (attrs[req.attr] || 0) >= req.value;
   const equippable = EQUIPPABLE.has(item.kind);
   const worn = location === "worn";
+  const usable = !worn && !!item.use;
   const tcolor = tierColor(item.tier || "common");
   const statLine = (label, value) => (
     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: colors.parchment, padding: "2px 0" }}>
@@ -182,6 +183,9 @@ function ItemDetail({ item, id, location, attrs, onEquip, onUnequip, onClose }) 
           </div>
         )}
 
+        {usable && (
+          <button onClick={() => { onUse(id); onClose(); }} style={actionButtonStyle()}>{item.use.verb || "Use"}</button>
+        )}
         {equippable && (
           worn
             ? <button onClick={() => { onUnequip(id); onClose(); }} style={actionButtonStyle()}>Unequip</button>
@@ -242,7 +246,7 @@ function Divider() {
   );
 }
 
-export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip }) {
+export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip, onUse }) {
   const [detail, setDetail] = useState(null); // { id, location: "worn"|"carried" }
   const [arsenalOpen, setArsenalOpen] = useState(false);
   const inv = state.character.inventory;
@@ -520,6 +524,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           attrs={attrs}
           onEquip={onEquip}
           onUnequip={onUnequip}
+          onUse={onUse}
           onClose={() => setDetail(null)}
         />
       )}
