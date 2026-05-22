@@ -187,6 +187,53 @@ Each tier has a power multiplier (`mult`) applied to base stat blocks and a drop
 `weight` (rarer = exponentially less likely). `rollTier(maxTierId, luck)` does
 weighted, capped rolls for loot and enemy generation.
 
+### Balance mapping (single source of truth)
+
+No level system: power comes only from slow attribute growth and the **tier** of
+gear/abilities. The world is gated by **region**, not player level.
+
+**Tier ladder** (`src/data/tiers.js`) — ~+34% power per step, top-heavy rarity:
+
+| Tier | mult | drop weight |
+|---|---|---|
+| Common | 1.0 | 1000 |
+| Uncommon | 1.35 | 420 |
+| Rare | 1.8 | 170 |
+| Very Rare | 2.4 | 64 |
+| Epic | 3.2 | 24 |
+| Legendary | 4.3 | 8 |
+| Mythical | 5.8 | 2.4 |
+| Divine | 8.0 | 0.5 |
+
+**Drop odds per victory** (`src/data/balance.js`): item 55%, ability 22%; tier of
+each drop is `rollTier(cap, luck)` where the cap is the region's loot ceiling.
+
+**Region difficulty bands** (`src/data/balance.js` + `src/data/regions.js`) — each
+biome is assigned a band that caps its foe/loot tier and sets rollTier luck:
+
+| Band | Regions | tier ceiling | power |
+|---|---|---|---|
+| 1 Settled | Mire, Crowsmoor Reach | Uncommon | 0.05 |
+| 2 Borderlands | Tannic Wood, Whitemarch March, Bramblewych Reach | Rare | 0.15 |
+| 3 Wilds | Spine Foothills, Iron Plateau, Tellmar Road, Witchwood Deep | Very Rare | 0.30 |
+| 4 Marches | Hollow Coast, Bonemarsh, Pale Steppe | Epic | 0.50 |
+| 5 Far Reaches | Sundered Wastes, Drakeholt | Legendary | 0.70 |
+| 6 Fabled | Far Wild (beyond the named world) | Divine | 0.90 |
+
+Walk into a high band early and you'll be out-classed — intended. To rebalance,
+edit the tier curve in `tiers.js`, the bands in `balance.js`, or biome→band in
+`regions.js`. Nothing else needs to change.
+
+### Named / unique items & abilities
+
+`src/data/uniques.js` holds hand-authored, fixed-stat, fixed-tier rewards with
+lore (e.g. **Skullcleaver** from ogres/trolls, **Drakeheart Ember** &
+**Dragonbreath** from Drakeholt wyrms, **The Broken Ring** from Sundered-Crown
+war-bands). They drop ONLY from their `dropFrom` foe kinds and/or `minRegion`
+band, never from the random generator, never twice for one character (the
+engine passes the player's owned ids in). Unique abilities are registered for
+lookup but excluded from the random drop pool.
+
 ### Stats — derived, attributes stay the backbone
 
 The six attributes (body/reflex/vigor/mind/wit/presence) are unchanged. Combat

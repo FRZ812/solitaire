@@ -105,16 +105,17 @@ export function generateEnemy(kind, { tierId = "common", index = 0, total = 1 } 
 
 const TIERS_ORDER = { common: 0, uncommon: 1, rare: 2, "very-rare": 3, epic: 4, legendary: 5, mythical: 6, divine: 7 };
 
-// Build a whole hostile group for a spawn kind. `power` (0..1) raises the tier
-// ceiling and luck so deeper/wilder places throw rarer, tougher foes.
-export function generateEnemyGroup(kind, { power = 0 } = {}) {
+// Build a whole hostile group for a spawn kind. `power` (0..1) is the rollTier
+// luck (nudge toward the high end); `maxTier` caps the tier (a region's
+// enemyTier ceiling). When maxTier is omitted it's derived from power.
+export function generateEnemyGroup(kind, { power = 0, maxTier = null } = {}) {
   const tmpl = BESTIARY[kind] || inferTemplate(kind);
   const [lo, hi] = tmpl.count || [1, 1];
   const count = randInt(lo, hi);
-  const maxTier = power >= 0.75 ? "legendary" : power >= 0.5 ? "epic" : power >= 0.25 ? "very-rare" : "rare";
+  const cap = maxTier || (power >= 0.75 ? "legendary" : power >= 0.5 ? "epic" : power >= 0.25 ? "very-rare" : "rare");
   const enemies = [];
   for (let i = 0; i < count; i++) {
-    const tierId = rollTier(maxTier, power);
+    const tierId = rollTier(cap, power);
     enemies.push(generateEnemy(kind, { tierId, index: i, total: count }));
   }
   return enemies;

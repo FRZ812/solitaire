@@ -11,6 +11,7 @@
 //             rally (+outgoing damage). Effects carry a duration in turns.
 
 import { tierMult } from "./tiers.js";
+import { UNIQUE_ABILITIES } from "./uniques.js";
 
 // Always-available actions — not learned, every combatant has them.
 export const BASIC_ATTACK = {
@@ -141,7 +142,10 @@ export const ABILITY_LIBRARY = [
 ];
 
 const LIBRARY_BY_ID = Object.fromEntries(ABILITY_LIBRARY.map((a) => [a.id, a]));
-const ALL_BY_ID = { ...LIBRARY_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [PARLEY.id]: PARLEY };
+const UNIQUE_BY_ID = Object.fromEntries(UNIQUE_ABILITIES.map((a) => [a.id, a]));
+// Unique abilities resolve like any other (once learned), but are NOT in the
+// random drop pool — they only come from their authored sources (data/uniques.js).
+const ALL_BY_ID = { ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [PARLEY.id]: PARLEY };
 
 export function getAbilityDef(id) { return ALL_BY_ID[id] || null; }
 

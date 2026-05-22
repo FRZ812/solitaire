@@ -18,6 +18,8 @@
 import { getAbilityDef, attrFactor, BASIC_ATTACK, DEFEND, PARLEY, randomAbilityId } from "../data/abilities.js";
 import { tierMult, rollTier, tierLabel, tier as tierInfo } from "../data/tiers.js";
 import { DEMEANOR_CONFIG, flavorLine } from "../data/combat-flavor.js";
+import { ITEM_DROP_CHANCE, ABILITY_DROP_CHANCE, UNIQUE_DROP_CHANCE } from "../data/balance.js";
+import { rollUniques } from "../data/uniques.js";
 import { deriveCombatStats } from "./combat-stats.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -50,7 +52,7 @@ function enemyThreat(e) {
   return e.maxHealth * 0.25 + e.weapon.max + tierInfo(e.tier).order * 2;
 }
 
-export function initCombat(character, codex, enemies) {
+export function initCombat(character, codex, enemies, opts = {}) {
   LOG_SEQ = 0;
   const cs = deriveCombatStats(character, codex);
   const learned = Array.isArray(character.abilities) ? character.abilities : [];
@@ -97,6 +99,9 @@ export function initCombat(character, codex, enemies) {
     turn: 1,
     phase: "player",
     powerRatio,
+    maxLootTier: opts.maxLootTier || null,
+    region: opts.region || 1,
+    ownedUniques: opts.ownedUniques || [],
     log: [logEntry(`Combat begins — ${flavor}.`, "system")],
     loot: null,
   };
@@ -447,9 +452,12 @@ export function playerFlee(cs0) {
 
 // ----- outcomes + loot -----
 
+function lootCtx(cs) {
+  return { maxLootTier: cs.maxLootTier, region: cs.region, owned: new Set(cs.ownedUniques || []) };
+}
 function finishVictory(cs) {
   cs.phase = "victory";
-  cs.loot = rollLoot(cs.enemies);
+  cs.loot = rollLoot(cs.enemies, lootCtx(cs));
   cs.log.push(logEntry(`Victory.`, "system"));
   return cs;
 }
@@ -457,7 +465,7 @@ function finishResolved(cs) {
   cs.phase = "resolved";
   const yielded = cs.enemies.some((e) => e.resolved === "yielded");
   const sources = cs.enemies.filter((e) => e.health <= 0 || e.resolved === "yielded");
-  cs.loot = rollLoot(sources);
+  cs.loot = rollLoot(sources, lootCtx(cs));
   cs.log.push(logEntry(yielded ? `The fight is over — they will trouble you no further.` : `The field is yours; the rest have scattered.`, "system"));
   return cs;
 }
@@ -500,7 +508,8 @@ function generateLootItem(tierId) {
   };
 }
 
-export function rollLoot(sources) {
+export function rollLoot(sources, opts = {}) {
+  const { maxLootTier = null, region = 1, owned = new Set() } = opts;
   let copper = 0;
   let maxTier = "common";
   for (const e of sources) {
@@ -509,17 +518,29 @@ export function rollLoot(sources) {
     if (tierInfo(e.tier).order > tierInfo(maxTier).order) maxTier = e.tier;
     if (tierInfo(e.maxLootTier).order > tierInfo(maxTier).order) maxTier = e.maxLootTier;
   }
+  // Region ceiling caps the loot tier — a Settled-region foe never drops epic.
+  if (maxLootTier && tierInfo(maxTier).order > tierInfo(maxLootTier).order) maxTier = maxLootTier;
+
   const items = [];
-  if (sources.length > 0 && Math.random() < 0.55) {
+  if (sources.length > 0 && Math.random() < ITEM_DROP_CHANCE) {
     const li = generateLootItem(rollTier(maxTier, 0.1));
     items.push({ itemId: li.id, entry: li.entry, quantity: 1 });
   }
   let ability = null;
-  if (sources.length > 0 && Math.random() < 0.22) {
+  if (sources.length > 0 && Math.random() < ABILITY_DROP_CHANCE) {
     const id = randomAbilityId();
     const def = getAbilityDef(id);
     ability = { id, tier: rollTier(maxTier, 0.2), name: def?.name || id };
   }
+
+  // Named/unique drops from specific foe kinds + deep regions (never the random
+  // pool). A unique ability supersedes the random one; a unique item is extra.
+  if (sources.length > 0) {
+    const uniq = rollUniques({ kinds: sources.map((e) => e.kind), region, owned, mult: UNIQUE_DROP_CHANCE });
+    if (uniq.item) items.push(uniq.item);
+    if (uniq.ability) ability = uniq.ability;
+  }
+
   const silver = Math.floor(copper / 10);
   return { coins: { copper: copper % 10, silver, gold: 0 }, items, ability };
 }

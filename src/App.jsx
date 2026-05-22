@@ -18,6 +18,7 @@ import { rollPathEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup } from "./data/bestiary.js";
+import { regionDifficulty } from "./data/regions.js";
 import { initCombat, playerAct, setTarget, endTurn, playerFlee, applyCombatResult } from "./engine/combat.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
@@ -36,13 +37,18 @@ import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
 
-// Rough threat level by terrain — raises the tier ceiling/luck of generated
-// foes so wilder ground throws tougher, rarer enemies.
-const TERRAIN_POWER = { settlement: 0.05, road: 0.1, plains: 0.1, indoor: 0.1, forest: 0.15, marsh: 0.2, hills: 0.2, mountains: 0.4 };
-function terrainPower(state) {
+// Difficulty profile of the current location (region-gated, not level-scaled).
+function regionHere(state) {
   const cur = state.world.currentTile;
-  const tile = getTile(state, cur.x, cur.y);
-  return TERRAIN_POWER[tile.terrain] ?? 0.12;
+  return regionDifficulty(cur.x, cur.y);
+}
+// Unique ids the character already holds, so the same named drop can't repeat.
+function ownedUniqueIds(state) {
+  const set = new Set();
+  for (const c of state.character.inventory.carried) set.add(c.itemId);
+  for (const id of (state.world.codex.characters.wanderer?.worn || [])) set.add(id);
+  for (const a of (state.character.abilities || [])) set.add(typeof a === "string" ? a : a.id);
+  return Array.from(set);
 }
 // Hostile spawn entries available at the current tile (terrain base + biome extras).
 function hostileEntriesHere(state) {
@@ -541,19 +547,26 @@ export function Solitaire() {
     combatCtxRef.current = context || { flavor: enemies[0].name };
     setMenuOpen(false); setMapOpen(false); setCodexOpen(false);
     setPendingCombat(null);
-    setCombat(initCombat(state.character, state.world.codex, enemies));
+    const region = regionHere(state);
+    setCombat(initCombat(state.character, state.world.codex, enemies, {
+      maxLootTier: region.lootTier,
+      region: region.level,
+      ownedUniques: ownedUniqueIds(state),
+    }));
   }
 
   function handleSeekCombat() {
     if (loading || combat) return;
+    const region = regionHere(state);
     const kind = pickHostileKind(state);
-    const enemies = generateEnemyGroup(kind, { power: terrainPower(state) });
+    const enemies = generateEnemyGroup(kind, { power: region.power, maxTier: region.enemyTier });
     startCombat(enemies, { flavor: groupFlavor(enemies) });
   }
 
   function handleFightPending() {
     if (!pendingCombat) return;
-    const enemies = generateEnemyGroup(pendingCombat.kind, { power: terrainPower(state) });
+    const region = regionHere(state);
+    const enemies = generateEnemyGroup(pendingCombat.kind, { power: region.power, maxTier: region.enemyTier });
     startCombat(enemies, { flavor: pendingCombat.desc || groupFlavor(enemies) });
   }
 
