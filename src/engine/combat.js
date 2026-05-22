@@ -15,7 +15,7 @@
 // allies, being stun-locked or out-classed — they may waver, plead, demand a
 // fair fight, flee, or yield. The player can also Demand Surrender (parley).
 
-import { getAbilityDef, attrFactor, abilityScaling, abilityRequiredStat, BASIC_ATTACK, DEFEND, PARLEY, randomAbilityId } from "../data/abilities.js";
+import { getAbilityDef, attrFactor, abilityScaling, abilityRequiredStat, BASIC_ATTACK, DEFEND, TALK, randomAbilityId } from "../data/abilities.js";
 import { tierMult, rollTier, tierLabel, tier as tierInfo } from "../data/tiers.js";
 import { DEMEANOR_CONFIG, flavorLine } from "../data/combat-flavor.js";
 import { ITEM_DROP_CHANCE, ABILITY_DROP_CHANCE, UNIQUE_DROP_CHANCE } from "../data/balance.js";
@@ -60,7 +60,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
   const abilities = [
     { id: BASIC_ATTACK.id, tier: "common" },
     { id: DEFEND.id, tier: "common" },
-    { id: PARLEY.id, tier: "common" },
+    { id: TALK.id, tier: "common" },
     ...learned.map((e) => (typeof e === "string" ? { id: e, tier: "common" } : { id: e.id, tier: e.tier || "common" })),
   ].filter((a) => getAbilityDef(a.id));
 
@@ -107,6 +107,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     region: opts.region || 1,
     ownedUniques: opts.ownedUniques || [],
     coinBonus: opts.coinBonus || 0,
+    environment: opts.environment || [],
     revivedUsed: false,
     log: [logEntry(`Combat begins — ${flavor}.`, "system")],
     loot: null,
@@ -252,7 +253,9 @@ function moraleCheck(cs, e) {
     return true;
   }
 
-  const broke = e.morale <= cfg.breakAt || hp < 0.12;
+  // A goaded foe is too enraged to flee or yield for a couple of turns.
+  const goaded = (e.noFleeUntil || 0) >= cs.turn;
+  const broke = !goaded && (e.morale <= cfg.breakAt || hp < 0.12);
   if (broke) {
     // A proud foe being bullied with control demands a fair fight before it breaks.
     if (cfg.proud && (e.controlPressure || 0) >= 2 && !e.provoked && e.morale > cfg.breakAt - 12 && hp > 0.15) {
@@ -337,7 +340,7 @@ export function abilityUsable(cs, abilityId) {
 }
 
 export function playerAct(cs0, abilityId, targetIndex) {
-  if (abilityId === PARLEY.id) return playerParley(cs0);
+  if (abilityId === TALK.id) return playerTalk(cs0, "surrender", targetIndex);
   if (!abilityUsable(cs0, abilityId)) return cs0;
   const cs = clone(cs0);
   const def = getAbilityDef(abilityId);
@@ -395,27 +398,55 @@ export function playerAct(cs0, abilityId, targetIndex) {
   return checkCombatEnd(cs);
 }
 
-// Demand surrender. Each foe is checked against a yield chance built from your
-// Presence/Wit, its remaining morale and wounds, how outmatched it is, fallen
-// allies, and whether you've fought it with honor (control-spam hardens the
-// proud against you).
-export function playerParley(cs0) {
-  if (!abilityUsable(cs0, PARLEY.id)) return cs0;
+const canCommunicate = (e) => e.canTalk !== false && DEMEANOR_CONFIG[e.demeanor]?.canParley;
+
+// Talk to the foe. Intent: "surrender" (demand they yield), "demoralize" (sap
+// the will to fight of all who can hear), or "provoke" (goad one foe into a
+// reckless fight and keep it from fleeing). Only thinking foes can be reached.
+export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
+  if (!abilityUsable(cs0, TALK.id)) return cs0;
   const cs = clone(cs0);
-  cs.player.stamina -= PARLEY.cost || 0;
-  cs.player.cooldowns[PARLEY.id] = PARLEY.cooldown;
-  cs.log.push(logEntry(`${cs.player.name} calls on the foe to yield.`, "player"));
-
+  cs.player.stamina -= TALK.cost || 0;
+  cs.player.cooldowns[TALK.id] = TALK.cooldown;
   const a = cs.player.attrs || {};
-  const fallen = cs.enemies.filter((e) => e.health <= 0).length;
 
+  if (intent === "demoralize") {
+    cs.log.push(logEntry(`${cs.player.name} hurls threats and grim promises.`, "player"));
+    const hit = livingEnemies(cs).filter(canCommunicate);
+    if (hit.length === 0) cs.log.push(logEntry(`No one here can be cowed.`, "system"));
+    for (const e of hit) {
+      let dmg = 8 + (a.presence || 0) * 3 + (a.wit || 0) * 1.5;
+      if (cs.powerRatio > 1.4) dmg += 10;
+      if (e.demeanor === "cowardly") dmg += 8;
+      if (DEMEANOR_CONFIG[e.demeanor]?.proud) dmg *= 0.5;
+      e.morale = Math.max(0, e.morale - Math.round(dmg));
+      pushFlavor(cs, e, "waver");
+    }
+    return checkCombatEnd(cs);
+  }
+
+  if (intent === "provoke") {
+    let idx = targetIndex;
+    if (idx == null || !cs.enemies[idx] || cs.enemies[idx].health <= 0 || cs.enemies[idx].resolved) idx = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
+    const e = cs.enemies[idx];
+    if (!e) return cs0;
+    if (!canCommunicate(e)) { cs.log.push(logEntry(`${e.name} cannot be goaded.`, "system")); return cs; }
+    addStatus(e, { type: "vulnerable", value: 30, duration: 2 });
+    addStatus(e, { type: "rally", value: 15, duration: 2 });
+    e.noFleeUntil = cs.turn + 2;
+    e.provoked = true;
+    cs.log.push(logEntry(flavorLine("provoke", e.demeanor, e.name) || `${e.name} is goaded into a reckless fury.`, "enemy"));
+    cs.log.push(logEntry(`${e.name} drops its guard in anger.`, "status"));
+    return cs;
+  }
+
+  // surrender (default)
+  cs.log.push(logEntry(`${cs.player.name} calls on the foe to yield.`, "player"));
+  const fallen = cs.enemies.filter((e) => e.health <= 0).length;
   for (const e of cs.enemies) {
     if (e.health <= 0 || e.resolved) continue;
     const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
-    if (!cfg.canParley) {
-      cs.log.push(logEntry(`${e.name} cannot be reasoned with.`, "system"));
-      continue;
-    }
+    if (!canCommunicate(e)) { cs.log.push(logEntry(`${e.name} cannot be reasoned with.`, "system")); continue; }
     const hp = e.health / e.maxHealth;
     let chance = 6 + (a.presence || 0) * 4 + (a.wit || 0) * 1.5;
     chance += (e.moraleMax - e.morale) * 0.5;
@@ -426,9 +457,56 @@ export function playerParley(cs0) {
     if (e.demeanor === "honorable") chance += (e.controlPressure || 0) >= 2 ? 0 : 18;
     if (cfg.proud && (e.controlPressure || 0) >= 2 && cs.powerRatio < 2) chance -= 35;
     chance = clamp(chance, 0, 95);
-
     if (rand100() <= chance) resolveYield(cs, e);
     else { cs.log.push(logEntry(flavorLine("defy", e.demeanor, e.name) || `${e.name} refuses to yield.`, "enemy")); e.morale = Math.max(0, e.morale - 3); }
+  }
+  return checkCombatEnd(cs);
+}
+
+// Use a battlefield feature (flip a table, hurl a stool, topple a log…).
+export function playerUseEnvironment(cs0, featureId, targetIndex = null) {
+  if (cs0.phase !== "player") return cs0;
+  const f0 = cs0.environment.find((f) => f.id === featureId);
+  if (!f0 || f0.uses <= 0) return cs0;
+  const ENV_COST = 1;
+  if (cs0.player.stamina < ENV_COST) return cs0;
+  const cs = clone(cs0);
+  const feat = cs.environment.find((f) => f.id === featureId);
+  cs.player.stamina -= ENV_COST;
+  feat.uses -= 1;
+  const act = feat.action;
+  cs.log.push(logEntry(`${cs.player.name}: ${feat.name}.`, "player"));
+
+  const hurt = (e, range, type = "physical") => {
+    const armor = type === "physical" ? (e.armor || 0) : 0;
+    const dmg = Math.max(0, randInt(range[0], range[1]) + Math.floor((cs.player.attrs?.body || 0) / 3) - armor);
+    e.health = Math.max(0, e.health - dmg);
+    cs.log.push(logEntry(`${e.name} takes ${dmg} from ${feat.name.toLowerCase()}.`, "hit"));
+    if (dmg > 0) onEnemyDamaged(e, dmg);
+  };
+  const pickTarget = () => {
+    let idx = targetIndex;
+    if (idx == null || !cs.enemies[idx] || cs.enemies[idx].health <= 0 || cs.enemies[idx].resolved) idx = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
+    return cs.enemies[idx];
+  };
+
+  if (act.type === "cover") {
+    addStatus(cs.player, { type: "guard", value: act.armor || 5, duration: act.dur || 2 });
+    cs.log.push(logEntry(`You take cover — armour raised.`, "status"));
+  } else if (act.type === "throw" || act.type === "shove" || act.type === "topple") {
+    const e = pickTarget();
+    if (e) {
+      hurt(e, act.dmg);
+      const stun = act.stun || (act.stunChance && Math.random() < act.stunChance ? 1 : 0);
+      if (e.health > 0 && stun) { addStatus(e, { type: "stun", value: 1, duration: 1 }); onEnemyControlled(e); cs.log.push(logEntry(`${e.name} is knocked off balance.`, "status")); }
+      if (e.health <= 0) markDead(cs, e);
+    }
+  } else if (act.type === "hazard") {
+    for (const e of livingEnemies(cs)) {
+      hurt(e, act.dmg, "true");
+      if (e.health > 0 && act.dot) addStatus(e, { ...act.dot, target: "enemy" });
+      if (e.health <= 0) markDead(cs, e);
+    }
   }
   return checkCombatEnd(cs);
 }

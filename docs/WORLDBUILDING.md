@@ -316,12 +316,25 @@ fight** (and digs in). When it breaks, the foe **flees** or **yields** by
 demeanor: craven bolt early, the honorable yield with honor when beaten fairly,
 beasts run at low HP, fanatics/undead never break.
 
-The player has a third option beyond attack/defend: **Demand Surrender**
-(`playerParley`). Yield chance scales with Presence/Wit, the foe's morale and
-wounds, fallen allies, how outmatched it is, and whether you fought it with
-honor — control-spamming the proud hardens them against you unless you're
-overwhelmingly stronger. A fight that ends in surrender/flight resolves as
-**"Stood Down"** (non-lethal) rather than a kill; yielded foes still give spoils.
+**Talk** (`playerTalk`) is a third pillar beyond attack/defend, with three
+intents — but only on foes that can understand you (`canTalk`; beasts and the
+mindless can't be reasoned with):
+- **Demand Surrender** — yield chance scales with Presence/Wit, the foe's morale
+  and wounds, fallen allies, how outmatched it is, and whether you fought with
+  honor (control-spamming the proud hardens them unless you're far stronger).
+- **Demoralize** — saps the morale of everyone who can hear, pushing waverers
+  toward flight/surrender; it's not just for the near-dead.
+- **Provoke** — goads one foe into a reckless fury (vulnerable + rally) and stops
+  it fleeing for a couple of turns, so you can bait and finish a runner.
+
+A fight that ends in surrender/flight resolves as **"Stood Down"** (non-lethal)
+rather than a kill; yielded foes still give spoils.
+
+**Environment** (`data/environment.js`, `playerUseEnvironment`): each fight rolls
+1–3 single-use battlefield features from the terrain — flip a table for cover,
+hurl a stool, topple a log, kick over a brazier (area fire), shove a boulder.
+Each costs a stamina and does something distinct (cover / throw+stagger /
+topple+stun / area burn / heavy shove), so combat isn't only attack-vs-defend.
 
 ### Entry & outcome
 

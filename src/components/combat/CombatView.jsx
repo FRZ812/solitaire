@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { Icon } from "../Icon.jsx";
 import { colors, radius, fonts, metaStyle, shadow, glass } from "../tokens.js";
 import { tierColor, tierLabel } from "../../data/tiers.js";
@@ -235,14 +235,19 @@ function ResolveOverlay({ combat, onResolve }) {
   );
 }
 
-export function CombatView({ combat, onAct, onSetTarget, onEndTurn, onFlee, onResolve }) {
+export function CombatView({ combat, onAct, onTalk, onEnvironment, onSetTarget, onEndTurn, onFlee, onResolve }) {
   const logRef = useRef(null);
+  const [talkOpen, setTalkOpen] = useState(false);
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [combat.log.length]);
 
   const { player } = combat;
   const over = ["victory", "defeat", "resolved", "playerFled"].includes(combat.phase);
+  const isPlayerPhase = combat.phase === "player";
+  const talkUsable = abilityUsable(combat, "talk");
+  const environment = combat.environment || [];
+  const doTalk = (intent) => { setTalkOpen(false); onTalk(intent); };
 
   return (
     <div style={{
@@ -330,10 +335,67 @@ export function CombatView({ combat, onAct, onSetTarget, onEndTurn, onFlee, onRe
 
         {/* Ability grid */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginTop: "9px" }}>
-          {player.abilities.map((entry, i) => (
+          {player.abilities.map((entry, i) => entry.id === "talk" ? (
+            <button
+              key={`talk-${i}`}
+              onClick={() => setTalkOpen((v) => !v)}
+              disabled={!talkUsable}
+              title="Demand surrender, demoralize, or provoke"
+              style={{
+                textAlign: "left", padding: "8px 9px", borderRadius: radius.chip,
+                backgroundColor: talkOpen ? "rgba(176,114,230,0.18)" : (talkUsable ? "rgba(20,29,29,0.7)" : "rgba(20,29,29,0.3)"),
+                border: `1px solid ${talkUsable ? "#b072e6" : "rgba(215,167,111,0.12)"}`,
+                opacity: talkUsable ? 1 : 0.45, cursor: talkUsable ? "pointer" : "default", fontFamily: "inherit",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <Icon name="user" size={13} color="#b072e6" strokeWidth={1.8} />
+                <span style={{ fontSize: "12px", fontWeight: 700, color: colors.parchment }}>Talk</span>
+              </div>
+              <div style={{ fontSize: "8px", color: "rgba(237,228,208,0.55)", marginTop: "3px" }}>1 stam · cd 1 · pick intent</div>
+            </button>
+          ) : (
             <AbilityButton key={`${entry.id}-${i}`} entry={entry} combat={combat} onAct={onAct} />
           ))}
         </div>
+
+        {/* Talk intents */}
+        {talkOpen && isPlayerPhase && (
+          <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+            {[["surrender", "Demand Surrender"], ["demoralize", "Demoralize"], ["provoke", "Provoke"]].map(([intent, label]) => (
+              <button key={intent} onClick={() => doTalk(intent)} style={{
+                flex: 1, padding: "9px 6px", borderRadius: radius.chip, fontSize: "11px", fontWeight: 700,
+                backgroundColor: "rgba(176,114,230,0.12)", color: "#d9bdf2",
+                border: `1px solid rgba(176,114,230,0.45)`, cursor: "pointer", fontFamily: "inherit",
+              }}>{label}</button>
+            ))}
+          </div>
+        )}
+
+        {/* Environment — dynamic, single-use battlefield features */}
+        {environment.some((f) => f.uses > 0) && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
+            {environment.filter((f) => f.uses > 0).map((f) => (
+              <button
+                key={f.id}
+                onClick={() => onEnvironment(f.id)}
+                disabled={!isPlayerPhase || player.stamina < 1}
+                title="Battlefield feature (1 stamina)"
+                style={{
+                  display: "flex", alignItems: "center", gap: "5px",
+                  padding: "7px 10px", borderRadius: radius.pill, fontSize: "11px", fontWeight: 700,
+                  backgroundColor: "rgba(120,90,50,0.2)", color: "#e6c89a",
+                  border: `1px dashed rgba(215,167,111,0.45)`,
+                  cursor: isPlayerPhase && player.stamina >= 1 ? "pointer" : "default",
+                  opacity: isPlayerPhase && player.stamina >= 1 ? 1 : 0.5, fontFamily: "inherit",
+                }}
+              >
+                <Icon name={f.icon || "swords"} size={12} color="#e6c89a" strokeWidth={1.8} />
+                {f.name}{f.uses > 1 ? ` (${f.uses})` : ""}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Turn controls */}
         <div style={{ display: "flex", gap: "8px", marginTop: "9px" }}>

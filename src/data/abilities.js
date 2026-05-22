@@ -35,12 +35,16 @@ export const DEFEND = {
   desc: "Plant and guard. Adds armour until your next turn and recovers a little stamina.",
 };
 
-export const PARLEY = {
-  id: "parley", name: "Demand Surrender", school: "social", icon: "user",
+// Social action with several intents (resolved by the engine, not as damage):
+// surrender (demand they yield), demoralize (sap the will to fight), provoke
+// (goad a foe into a reckless fight and stop it fleeing). Only works on foes
+// that can understand you.
+export const TALK = {
+  id: "talk", name: "Talk", school: "social", icon: "user",
   target: "all-enemies", damageType: null, scaling: "none", scaleAttr: "presence",
   weaponReq: null, statReq: null, dmg: null, pen: 0, critBonus: 0,
   cost: 1, resolveCost: 0, cooldown: 1, effect: null,
-  desc: "Call on your foes to yield. Works best on the wounded, the outmatched, and those you've fought with honor.",
+  desc: "Speak to your foes — demand surrender, demoralize them, or provoke them. Only the thinking can be reasoned with.",
 };
 
 export const ABILITY_LIBRARY = [
@@ -68,7 +72,7 @@ const LIBRARY_BY_ID = Object.fromEntries(ABILITY_LIBRARY.map((a) => [a.id, a]));
 const UNIQUE_BY_ID = Object.fromEntries(UNIQUE_ABILITIES.map((a) => [a.id, a]));
 // Unique abilities resolve like any other (once learned), but are NOT in the
 // random drop pool — they only come from their authored sources (data/uniques.js).
-const ALL_BY_ID = { ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [PARLEY.id]: PARLEY };
+const ALL_BY_ID = { ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
 
 export function getAbilityDef(id) { return ALL_BY_ID[id] || null; }
 
