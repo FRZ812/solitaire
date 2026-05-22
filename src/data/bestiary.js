@@ -6,6 +6,7 @@
 import { tierMult, rollTier } from "./tiers.js";
 import { DEMEANOR_CONFIG, defaultDemeanor } from "./combat-flavor.js";
 import { itemCombatStats } from "../engine/combat-stats.js";
+import { itemTemplate } from "./catalog.js";
 
 const T = (min, max, type = "physical", pen = 0) => ({ min, max, type, pen });
 
@@ -123,13 +124,16 @@ function npcDemeanor(npc) {
 export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
   const a = npc.attributes || {};
   const body = a.body || 0, reflex = a.reflex || 0, vigor = a.vigor || 0, mind = a.mind || 0, wit = a.wit || 0;
-  const worn = (npc.worn || []).map((id) => codex?.items?.[id]).filter(Boolean);
+  const worn = (npc.worn || []).map((id) => codex?.items?.[id] || itemTemplate(id)).filter(Boolean);
   const m = tierMult(tierId);
 
-  let armor = Math.floor(body / 3), ward = Math.floor(mind / 3), dodgeGear = 0, weaponDmg = null, weaponType = "unarmed";
+  // Gear stats are ALREADY tier-scaled by itemCombatStats; only the attribute-
+  // derived base scales by tier (m) below — otherwise worn gear double-scales.
+  let attrArmor = Math.floor(body / 3), attrWard = Math.floor(mind / 3);
+  let gearArmor = 0, gearWard = 0, dodgeGear = 0, weaponDmg = null, weaponType = "unarmed";
   for (const it of worn) {
     const cs = itemCombatStats(it);
-    armor += cs.armor; ward += cs.ward; dodgeGear += cs.dodge;
+    gearArmor += cs.armor; gearWard += cs.ward; dodgeGear += cs.dodge;
     if (cs.damage && !weaponDmg) { weaponDmg = cs.damage; weaponType = cs.weaponType || "sword"; }
   }
   const base = weaponDmg || { min: 2, max: 4, type: "physical", pen: 0 };
@@ -158,7 +162,7 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     canTalk: !(demeanor === "mindless" || demeanor === "feral"),
     controlPressure: 0, provoked: false, resolved: null, lastFlavorTurn: 0, noFleeUntil: 0,
     maxHealth, health,
-    armor: Math.round(armor * m), ward: Math.round(ward * m),
+    armor: Math.round(attrArmor * m) + gearArmor, ward: Math.round(attrWard * m) + gearWard,
     dodge: Math.min(60, reflex * 2 + dodgeGear),
     accuracy: reflex + wit, critChance: Math.min(50, Math.round(wit * 1.5 + reflex)), critMult: 1.5,
     speed: reflex + Math.floor(wit / 2),

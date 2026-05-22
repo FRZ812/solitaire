@@ -130,6 +130,52 @@ export const EQUIPMENT = {
   "silver-amulet":    { id: "silver-amulet",    name: "Silver Amulet",      kind: "trinket", tier: "rare",     value: 480, appearance: "A worked silver disc on a fine chain.", description: "Old wards worked into the silver. Turns more than the eye can see." },
   "scholars-circlet": { id: "scholars-circlet", name: "Scholar's Circlet",  kind: "trinket", tier: "rare",     value: 520, appearance: "A thin silver circlet set with a clear stone.", description: "Clears and steadies the mind. A caster's ward." },
   "iron-ring":        { id: "iron-ring",        name: "Iron Signet Ring",   kind: "trinket", tier: "common",   value: 60,  appearance: "A heavy iron ring with a worn seal.", description: "A small thing of office or family. More worth than ward." },
+
+  // ============================================================
+  // HIGH TIERS — very-rare → divine. The top end is mostly NAMED uniques,
+  // including the signature arms of the world's important figures (see their
+  // codex `worn` lists), so every grade has concrete anchors to normalise
+  // narrator-invented loot against. These are NOT shop stock — they're hoard,
+  // relic, reward, and the gear of the great.
+  // ============================================================
+
+  // ---- very-rare (×2.4) — masterwork / silvered / kindred-forged ----
+  "silvered-longsword": { id: "silvered-longsword", name: "Silvered Longsword", kind: "weapon", tier: "very-rare", hands: 1, value: 1200, appearance: "A pattern-welded blade washed in silver, cold to the touch.", description: "A masterwork sword, silver-edged against the unnatural." },
+  "frost-greataxe":     { id: "frost-greataxe",     name: "Frost-Iron Greataxe", kind: "weapon", tier: "very-rare", hands: 2, value: 1300, appearance: "A two-handed axe of pale northern iron that never quite warms.", description: "Northern war-iron. Splits shields and the cold air alike." },
+  "war-pick":           { id: "war-pick",           name: "Steel War-Pick",      kind: "weapon", tier: "very-rare", hands: 1, value: 1100, appearance: "A vicious beaked war-pick of bright steel.", description: "Made to punch clean through plate. Fearsome penetration." },
+  "elven-warbow":       { id: "elven-warbow",       name: "Elven War-Bow",       kind: "weapon", tier: "very-rare", hands: 2, value: 1300, appearance: "A tall recurve of silver-grey wood, strung with shimmering cord.", description: "Selenyan craft — drives an arrow further and truer than any human bow." },
+  "sorcerers-staff":    { id: "sorcerers-staff",    name: "Sorcerer's Staff",    kind: "weapon", tier: "very-rare", hands: 2, value: 1200, appearance: "A black staff crowned with a caged, pulsing stone.", description: "A potent arcane focus (needs Mind)." },
+  "elven-mail":         { id: "elven-mail",         name: "Elven Mail",          kind: "armor",  tier: "very-rare", value: 2100, appearance: "Mail of fine silver rings, light as cloth.", description: "Selenyan-woven — a plate's protection at a shirt's weight." },
+  "dwarven-scale":      { id: "dwarven-scale",      name: "Dwarven Scale",       kind: "armor",  tier: "very-rare", value: 1900, appearance: "Overlapping scales of blue-grey hold-steel.", description: "Stonehold work. Heavy, and all but uncuttable." },
+
+  // ---- epic (×3.2) — relic-grade ----
+  "blacksteel-greatsword": { id: "blacksteel-greatsword", name: "Blacksteel Greatsword", kind: "weapon", tier: "epic", hands: 2, value: 3200, appearance: "A vast two-hander of light-drinking blacksteel.", description: "A relic-blade. Cleaves armour and men in a single sweep." },
+  "rune-etched-maul":      { id: "rune-etched-maul",      name: "Rune-Etched Maul",      kind: "weapon", tier: "epic", hands: 2, value: 3000, appearance: "A great maul whose head crawls with cut runes.", description: "Shatters plate, shields, and bone with contemptuous ease." },
+  "dragonfang-spear":      { id: "dragonfang-spear",      name: "Dragonfang Spear",      kind: "weapon", tier: "epic", hands: 1, value: 2800, appearance: "A spear tipped with a honed drake's fang.", description: "Reach and a point that bites through any harness." },
+  "deathsong-bow":         { id: "deathsong-bow",         name: "Deathsong Bow",         kind: "weapon", tier: "epic", hands: 2, value: 3000, appearance: "A black bow that hums faintly as it draws.", description: "Its arrows find the gap in any armour." },
+  "staff-of-embers":       { id: "staff-of-embers",       name: "Staff of Embers",       kind: "weapon", tier: "epic", hands: 2, value: 3000, appearance: "A staff capped with a coal that never dies.", description: "A burning arcane focus (needs Mind)." },
+  "dragonscale-mail":      { id: "dragonscale-mail",      name: "Dragonscale Mail",      kind: "armor",  tier: "epic", value: 4200, appearance: "A hauberk of overlapping drake-scales.", description: "Turns fire and steel alike. The spoil of a slain wyrmling." },
+
+  // ---- legendary (×4.3) — named arms of the great ----
+  "imperial-cleaver":   { id: "imperial-cleaver",   name: "The Imperial Cleaver", kind: "weapon", tier: "legendary", hands: 2, value: 6000, appearance: "A huge notched cleaver of old imperial steel, taller than a goblin.", description: "A relic of the Sundered Crown, borne by the Goblin King at Brokenhold." },
+  "bow-of-her-mother":  { id: "bow-of-her-mother",  name: "Bow of Her Mother",    kind: "weapon", tier: "legendary", hands: 2, value: 6500, appearance: "An ancient Selenyan bow of heartwood and silver, named for its first bearer.", description: "Lirilin of the Long Note carries it; it has loosed arrows for eleven ages." },
+  "dragon-lance-old":   { id: "dragon-lance-old",   name: "The Old Dragon-Lance",  kind: "weapon", tier: "legendary", hands: 2, value: 6000, appearance: "A long, fire-scarred lance with a leaf of star-metal at its head.", description: "Brother-Master Anders' lance, that has stood close enough to a wyrm to feel its breath." },
+  "warhammer-of-the-breaking": { id: "warhammer-of-the-breaking", name: "Warhammer of the Breaking", kind: "weapon", tier: "legendary", hands: 2, value: 6200, appearance: "A great dwarven war-maul, its head a block of rune-cut hold-steel.", description: "Hold-Father Druin Ironvein's hammer of office — it has broken gates and wyrm-scale both." },
+  "patchwork-mail":     { id: "patchwork-mail",     name: "Patchwork Mail",       kind: "armor",  tier: "legendary", value: 6000, appearance: "A hauberk pieced from a hundred fallen foes' armour, riveted into one.", description: "The Goblin King's mail — every plate a kill, and proof against nearly all of them." },
+
+  "spire-staff":        { id: "spire-staff",        name: "Staff of the Glass Spire", kind: "weapon", tier: "legendary", hands: 2, value: 7000, appearance: "A staff of fused glass that holds a slow, turning light.", description: "The High Master's focus — the arcane power that trained a continent's sorcerers (needs Mind)." },
+
+  // ---- mythical (×5.8) — robes of power, fell relics ----
+  "black-robe":         { id: "black-robe",         name: "The Black Robe",       kind: "clothing", tier: "mythical", value: 9000, appearance: "A robe of smoke-dark cloth that the eye slides off.", description: "Worn by the Demon King; a ward woven of something older than weaving." },
+  "godsteel-greatsword":{ id: "godsteel-greatsword",name: "Godsteel Greatsword",  kind: "weapon", tier: "mythical", hands: 2, value: 11000, appearance: "A two-hander of pale, faintly singing metal that no forge of this age could make.", description: "An apex relic. Anchors the mythical grade." },
+  "starsteel-mail":     { id: "starsteel-mail",     name: "Starsteel Mail",       kind: "armor",  tier: "mythical", value: 12000, appearance: "Mail of metal fallen from the sky, blue-black and weightless.", description: "A king's-ransom harness. Anchors the mythical grade." },
+  "staff-of-storms":    { id: "staff-of-storms",    name: "Staff of Storms",      kind: "weapon", tier: "mythical", hands: 2, value: 13000, appearance: "A staff that crackles, the air around it always faintly charged.", description: "A mythical arcane focus that calls the sky's own violence (needs Mind)." },
+
+  // ---- divine (×8) — the apex; the arms of fabled powers ----
+  "polestar-sword":     { id: "polestar-sword",     name: "The Polestar Sword",   kind: "weapon", tier: "divine", hands: 2, value: 20000, appearance: "A blade of fixed cold light, like a star drawn down and edged.", description: "The Demon King's sword on the Polestar Throne. The single deadliest arm in the known world." },
+  "sunforged-blade":    { id: "sunforged-blade",    name: "The Sunforged Blade",  kind: "weapon", tier: "divine", hands: 1, value: 18000, appearance: "A one-handed sword that holds a kept ember of daylight.", description: "A divine relic-sword. Anchors the divine grade for one-handers." },
+  "aegis-plate":        { id: "aegis-plate",        name: "The Aegis Harness",    kind: "armor",  tier: "divine", value: 24000, appearance: "A full harness of seamless white metal that no blow has marked.", description: "A divine harness said to have never been pierced. Anchors the divine grade." },
+  "godflame-staff":     { id: "godflame-staff",     name: "The Godflame Staff",   kind: "weapon", tier: "divine", hands: 2, value: 22000, appearance: "A staff crowned with a flame that was never lit and will never go out.", description: "A divine focus on the level of the Polestar Sword — the apex of arcane arms (needs Mind)." },
 };
 
 // Crafting materials — kind "material", so they stack in the pack, sell to a
