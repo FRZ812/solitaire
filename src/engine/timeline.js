@@ -18,9 +18,11 @@ function poolPush(pool, obj) {
 }
 
 // Record a finished narrator turn. base = the state the beat was applied to,
-// message = the prompt that produced it, next = the result. Returns next with a
-// checkpoint appended (or next unchanged if the turn produced no rewritable text).
-export function recordTurn(base, message, next) {
+// message = the prompt that produced it, next = the result. extra.travel carries
+// the journey context (route, destination, encounter) so a rewritten travel turn
+// can re-land the player. Returns next with a checkpoint appended (or next
+// unchanged if the turn produced no rewritable text).
+export function recordTurn(base, message, next, extra = {}) {
   const startLen = base.beats.length;
   const turnBeats = next.beats.slice(startLen);
   const textBeats = turnBeats.filter((b) => b.type === "narration" || b.type === "dialogue");
@@ -43,6 +45,7 @@ export function recordTurn(base, message, next) {
     time: base.time,
     world: { codexIdx: c.idx, seenIdx: s.idx, tilesIdx: t.idx, currentTile: base.world.currentTile },
   };
+  if (extra.travel) checkpoint.travel = extra.travel;
   return { ...next, pools, turns: [...(next.turns || []), checkpoint] };
 }
 
