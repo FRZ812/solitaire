@@ -46,7 +46,7 @@ export function makeInitialState() {
       inventory: {
         // grimoire-firstflame is a [DEV/TEST] item — equip it to try magic.
         carried: [{ itemId: "wooden-bird", quantity: 1 }, { itemId: "grimoire-firstflame", quantity: 1 }],
-        coins: { copper: 8, silver: 3, gold: 0 },
+        coins: { copper: 8, silver: 3, gold: 10 }, // [DEV/TEST] bumped so expert training/apprenticeship is easy to try
       },
     },
     time: { day: 3, hour: 13, minute: 30 },
@@ -76,7 +76,7 @@ export function makeInitialState() {
             worn: ["wool-cloak", "linen-tunic", "leather-boots"],
             knows: [
               "My sister carved this wooden bird before she vanished seven years ago.",
-              "I came to the Drowned Inn out of the rain on the afternoon of the third of Hollowsmonth, in the year 803.",
+              "I came to the Drowned Rat, the tavern at Mirecross, out of the rain on the afternoon of the third of Hollowsmonth, in the year 803.",
             ],
           },
 
@@ -528,6 +528,7 @@ export function makeInitialState() {
         skills: {},
       },
     },
+    party: [], // recruited companion ids (full people in world.codex.characters)
     beats: [{
       id: "b0", type: "narration",
       content: "Rain whispers against warped shutters. The innkeeper, a stooped woman with ink-stained fingers, slides a pewter cup toward you without looking up. The hooded figure in the corner has been watching you for the better part of an hour.",

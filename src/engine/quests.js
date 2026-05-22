@@ -9,7 +9,8 @@
 import { advanceTime } from "./time.js";
 import { coinsToCopper, copperToCoins, formatCopper } from "./economy.js";
 import { makeRng } from "./town-gen.js";
-import { TASK_POOL, RECRUIT_POOL, JOB_POOL, BOARD_REFRESH_DAYS } from "../data/postings.js";
+import { TASK_POOL, JOB_POOL, BOARD_REFRESH_DAYS } from "../data/postings.js";
+import { COMPANION_LIST } from "../data/companions.js";
 
 const clamp100 = (v) => Math.max(0, Math.min(100, v));
 
@@ -38,7 +39,7 @@ export function generateBoard(tileKey, day) {
   const bucket = boardBucket(day);
   const rng = makeRng(`board:${tileKey}:${bucket}`);
   const tasks = pickN(TASK_POOL, 4, rng).map((t) => ({ ...t, id: `task-${bucket}-${t.key}` }));
-  const recruits = pickN(RECRUIT_POOL, 3, rng).map((t) => ({ ...t, id: `rec-${bucket}-${t.key}` }));
+  const recruits = pickN(COMPANION_LIST, 3, rng); // full companion templates (keep their real ids)
   const jobs = pickN(JOB_POOL, 4, rng).map((t) => ({ ...t, id: `job-${bucket}-${t.key}` }));
   return { bucket, tasks, recruits, jobs };
 }

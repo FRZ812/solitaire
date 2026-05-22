@@ -16,6 +16,8 @@ import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy
 import { useConsumable } from "./engine/consumables.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
+import { generateGaol, acceptBounty, buyPrisonerRights } from "./engine/gaol.js";
+import { recruitCompanion, dismissCompanion, isRecruited, partyMembers } from "./engine/party.js";
 import { applyTraining, trainingOffer } from "./engine/training.js";
 import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
@@ -46,6 +48,8 @@ import { MapView } from "./components/MapView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
 import { ForgeView } from "./components/ForgeView.jsx";
 import { QuestBoardView } from "./components/QuestBoardView.jsx";
+import { PrisonView } from "./components/PrisonView.jsx";
+import { PartyView } from "./components/PartyView.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
@@ -216,6 +220,7 @@ export function Solitaire() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [codexOpen, setCodexOpen] = useState(false);
+  const [partyOpen, setPartyOpen] = useState(false);
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
   // Recent purchases at the current shop, for full refunds until you leave the
@@ -794,19 +799,26 @@ export function Solitaire() {
     setShopTile(null); // a stretch of work ends the visit
     setState({ ...r.state, beats: [...r.state.beats, { id: `lab${Date.now()}`, type: "narration", content: r.summary }] });
   }
-  // Recruiting is narrative: the narrator plays the scene and, if it lands,
-  // introduces the companion via discoveries. No party machinery here.
-  async function handleRecruit(recruit) {
-    if (loading || !shopTile) return;
+  // Recruiting brings a real, persistent person into the party (engine/party.js
+  // files them into the codex and adds them to state.party). After the
+  // deterministic add, the narrator plays the brief joining scene.
+  async function handleRecruit(tmpl) {
+    if (loading || !shopTile || isRecruited(state, tmpl.id)) return;
+    const body = tmpl.feeCp
+      ? `Take ${tmpl.name} the ${tmpl.role} into your company? They ask ${formatCopper(tmpl.feeCp)} up front, then ${tmpl.terms}.`
+      : `Take ${tmpl.name} the ${tmpl.role} into your company? Their terms: ${tmpl.terms}.`;
+    if (!(await askConfirm({ title: `Recruit ${tmpl.name}`, body, confirmLabel: "Recruit" }))) return;
+    const r = recruitCompanion(state, tmpl);
+    if (!r.ok) { setError(r.reason || "They won't join."); return; }
     const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the tavern";
     setShopTile(null);
     setError(null);
     setLoading(true);
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You sit down across from ${recruit.name}, the ${recruit.role}.` };
-    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You take ${tmpl.name} on. They join your company.` };
+    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] At ${place}'s quest board you approach ${recruit.name}, a ${recruit.race} ${recruit.role} hoping to be recruited (${recruit.desc}). Play the conversation — who they are, what they want (pay, a share, a cause) — and let it land naturally. If they join, introduce them as a companion via discoveries.characters and a knowledge update; otherwise let them beg off. Don't fabricate combat or coin transactions.`;
+      const msg = `[PLAYER ACTION] At ${place} you have just recruited ${tmpl.name}, a ${tmpl.race} ${tmpl.role} (${tmpl.desc}). They are now a COMPANION travelling with you — already established in the codex and your party; do NOT undo it. Narrate the brief moment they take up with you: a term struck, a handshake, a first word between you. Keep it to a sentence or three. From now on they are present in scenes and act and speak on their own.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
@@ -818,23 +830,35 @@ export function Solitaire() {
     }
   }
 
-  // The "AI flavor" half of the hybrid: hand the conversation to the narrator
-  // (the counter handles the actual trade). Mirrors handleSeekCombat's flow.
-  async function handleShopTalk() {
+  // Part ways with a companion (they stay in the codex as a known person).
+  async function handleDismiss(id) {
+    const c = state.world.codex.characters[id];
+    if (!(await askConfirm({ title: "Part ways", body: `Tell ${c?.name || "this companion"} you're parting ways? They'll go their own road — you can find them again.`, confirmLabel: "Part ways", danger: true }))) return;
+    setState(dismissCompanion(state, id).state);
+  }
+
+  // ----- Gaol: bounties + buying prisoner rights -----
+
+  function handleAcceptBounty(b) {
+    const r = acceptBounty(state, b);
+    if (!r.ok) return;
+    setState({ ...r.state, beats: [...r.state.beats, { id: `bty${Date.now()}`, type: "narration", content: `You take the warden's contract on ${b.name} — wanted for ${b.crime}. Dead or alive.` }] });
+  }
+  // Buying rights is a coin transaction; the custody scene is narrated.
+  async function handleBuyRights(p) {
     if (loading || !shopTile) return;
-    const tile = getTile(state, shopTile.x, shopTile.y);
-    const building = buildingForTile(tile);
-    tradeStartRef.current = null; // the conversation supersedes a parting trade reaction
-    if (!building) { setShopTile(null); return; }
+    if (!(await askConfirm({ title: "Buy prisoner's rights", body: `Pay ${formatCopper(p.rightsCp)} to the warden for the rights to ${p.name} (held for ${p.crime})? Their fate becomes yours.`, confirmLabel: "Pay" }))) return;
+    const r = buyPrisonerRights(state, p);
+    if (!r.ok) { setError(r.reason || "You can't pay the warden."); return; }
+    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the gaol";
     setShopTile(null);
     setError(null);
     setLoading(true);
-    const place = tile.poi?.name || building.label;
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You speak with ${building.keeper} at ${place}.` };
-    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You pay the warden for the rights to ${p.name}.` };
+    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] You speak with ${building.keeper} at ${place} — passing the time, asking after their wares, the town, or the road. Buying and selling is handled separately at the counter, so don't tally coin here; just play the conversation, grounded in this place and the current state.`;
+      const msg = `[PLAYER ACTION] At ${place} you have just paid the warden ${formatCopper(p.rightsCp)} for the rights to ${p.name}, held for ${p.crime} (${p.desc}). The coin is already settled — do not re-tally it. Play the moment the warden hands them over: who ${p.name} is, how they react, and leave it open for the player to decide their fate (free them, press them to service, ransom them, or take them elsewhere to sell). Don't fabricate combat.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
@@ -1136,6 +1160,7 @@ export function Solitaire() {
           state={state}
           onMap={() => setMapOpen(true)}
           onMenu={() => setMenuOpen(true)}
+          onParty={() => setPartyOpen(true)}
         />
         <VitalsStrip character={state.character} />
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
@@ -1224,11 +1249,11 @@ export function Solitaire() {
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: buildingOpenNow ? colors.gold : "rgba(215,167,111,0.55)", marginBottom: "2px" }}>
-                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : buildingHere.kind === "tavern" ? "Tavern" : "Building"}
+                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : buildingHere.kind === "tavern" ? "Tavern" : buildingHere.kind === "gaol" ? "Gaol" : "Building"}
               </div>
               <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
                 {buildingOpenNow
-                  ? `${buildingHere.label} — ${buildingHere.kind === "tavern" ? "read the board." : "step up to the counter."}`
+                  ? `${buildingHere.label} — ${(buildingHere.kind === "tavern" || buildingHere.kind === "gaol") ? "read the board." : "step up to the counter."}`
                   : `${buildingHere.label} is shut — it opens at ${String(buildingHours(buildingHere).open).padStart(2, "0")}:00.`}
               </div>
             </div>
@@ -1289,6 +1314,9 @@ export function Solitaire() {
       {codexOpen && (
         <CodexView state={state} onClose={() => setCodexOpen(false)} />
       )}
+      {partyOpen && (
+        <PartyView state={state} onDismiss={handleDismiss} onClose={() => setPartyOpen(false)} />
+      )}
       {shopTile && (() => {
         const tile = getTile(state, shopTile.x, shopTile.y);
         const building = buildingForTile(tile);
@@ -1325,6 +1353,21 @@ export function Solitaire() {
             />
           );
         }
+        if (building.kind === "gaol") {
+          const board = generateGaol(key, state.time.day);
+          return (
+            <PrisonView
+              state={state}
+              building={building}
+              board={board}
+              onAccept={handleAcceptBounty}
+              onAbandon={handleAbandonTask}
+              onBuyRights={handleBuyRights}
+              onClose={() => setShopTile(null)}
+              loading={loading}
+            />
+          );
+        }
         if (building.kind === "trader" || building.kind === "smith") {
           const stock = rollShopStock(building, key, state.time.day);
           return (
@@ -1337,7 +1380,6 @@ export function Solitaire() {
               onClose={closeShop}
               onBuy={handleBuy}
               onSell={handleSell}
-              onTalk={handleShopTalk}
               onForge={building.forge ? () => setShopView("forge") : undefined}
               onTrain={handleTrain}
               loading={loading}

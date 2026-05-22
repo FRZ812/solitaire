@@ -90,6 +90,13 @@ const MAP_ASSETS = {
       <path d="M5 9v11M19 9v11M4 20h16M9 4l-1 5M14 4l1 5" />
     </svg>
   ),
+  // gaol: A barred cell window
+  gaol: (color) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
+      <path d="M4 5h16v16H4z" fill="rgba(215, 167, 111, 0.1)" />
+      <path d="M8 5v16M12 5v16M16 5v16M4 11h16" />
+    </svg>
+  ),
   // smithy: Crossed blacksmith hammers with a small anvil
   smithy: (color) => (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
@@ -180,6 +187,7 @@ function assetKeyForTile(tile) {
   const t = tile.poi.type;
   if (t === "hidden") return "unknown";
   if (tile.terrain === "indoor") {
+    if (t === "gaol" || t === "prison") return "gaol";
     if (t === "healer" || t === "apothecary") return "healer";
     if (t === "inn" || t === "tavern" || t === "stable" || t === "mill" || t === "shop") return "bldg";
     if (t === "smithy") return "smithy";
@@ -204,6 +212,7 @@ function MapLegend() {
   const items = [
     { key: "bldg", label: "bldg" }, { key: "smithy", label: "smithy" },
     { key: "healer", label: "healer" }, { key: "market", label: "market" },
+    { key: "gaol", label: "gaol" },
     { key: "temple", label: "temple" }, { key: "town", label: "town" },
     { key: "gate", label: "gate" }, { key: "site", label: "site" },
     { key: "unknown", label: "unknown" }, { key: "city", label: "city" },

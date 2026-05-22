@@ -7,7 +7,8 @@ import { getTile, currentLocationName } from "../engine/world.js";
 import { getBiome } from "../data/biomes.js";
 import { formatTime, getCalendarDate } from "../engine/time.js";
 
-export function CompactHeader({ state, onMap, onMenu }) {
+export function CompactHeader({ state, onMap, onMenu, onParty }) {
+  const partyCount = (state.party || []).length;
   const cur = state.world.currentTile;
   const t = getTile(state, cur.x, cur.y);
   const sceneTitle = currentLocationName(state);
@@ -71,6 +72,17 @@ export function CompactHeader({ state, onMap, onMenu }) {
 
       {/* Action buttons — codex dropped (it's reachable from the menu sheet) */}
       <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+        {partyCount > 0 && (
+          <button onClick={onParty} style={{ ...headerButtonStyle, position: "relative" }} aria-label="Company">
+            <Icon name="users" size={16} color={colors.gold} strokeWidth={1.8} />
+            <span style={{
+              position: "absolute", top: "-4px", right: "-4px", minWidth: "16px", height: "16px",
+              padding: "0 4px", borderRadius: "999px", backgroundColor: colors.gold, color: colors.ink,
+              fontSize: "9px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
+            }}>{partyCount}</span>
+          </button>
+        )}
         <button onClick={onMap}  style={headerButtonStyle} aria-label="Map">  <Icon name="map"        size={16} color={colors.gold} strokeWidth={1.8} /></button>
         <button onClick={onMenu} style={headerButtonStyle} aria-label="Character"> <Icon name="user" size={16} color={colors.gold} strokeWidth={1.8} /></button>
       </div>

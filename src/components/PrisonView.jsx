@@ -1,19 +1,15 @@
 import React from "react";
 import { Icon } from "./Icon.jsx";
 import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
-import { colors, radius, fonts, metaStyle, glass } from "./tokens.js";
-import { formatCopper } from "../engine/economy.js";
-import { activeQuests } from "../engine/quests.js";
-import { isRecruited } from "../engine/party.js";
+import { colors, radius, fonts, metaStyle } from "./tokens.js";
+import { formatCopper, formatCoins } from "../engine/economy.js";
 
-const TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
-
-// The tavern quest board: leads to pursue (tasks you accept and track), folk
-// looking to take the road with you (narrative recruits, handed to the
-// narrator), and day-labour you can take on the spot for coin + time.
-export function QuestBoardView({ state, building, board, onAccept, onAbandon, onLabour, onRecruit, onClose, loading }) {
+// The gaol: the warden's wanted board (take bounties, dead or alive — settled in
+// the world by the narrator on delivery) and the cells (buy a prisoner's rights).
+export function PrisonView({ state, building, board, onAccept, onAbandon, onBuyRights, onClose, loading }) {
+  const coins = state.character.inventory.coins;
   const taken = new Set((state.world.quests || []).map((q) => q.id));
-  const active = activeQuests(state).filter((q) => q.type !== "bounty"); // bounties live at the gaol
+  const activeBounties = (state.world.quests || []).filter((q) => q.status === "active" && q.type === "bounty");
 
   return (
     <div style={{
@@ -40,9 +36,12 @@ export function QuestBoardView({ state, building, board, onAccept, onAbandon, on
         </button>
         <div style={{ textAlign: "center", minWidth: 0, padding: "0 6px" }}>
           <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "22px", color: colors.parchmentLight }}>{building.label}</div>
-          <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.78)", marginTop: "3px" }}>Quest Board</div>
+          <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.78)", marginTop: "3px" }}>The Warden</div>
         </div>
-        <div style={{ width: "30px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: "5px", padding: "6px 10px", borderRadius: radius.pill, border: "1px solid rgba(215, 167, 111, 0.28)", backgroundColor: "rgba(215, 167, 111, 0.08)" }}>
+          <Icon name="sparkle" size={11} color={colors.gold} />
+          <span style={{ fontSize: "12px", fontWeight: 800, color: colors.parchmentLight }}>{formatCoins(coins)}</span>
+        </div>
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px 16px", WebkitOverflowScrolling: "touch" }}>
@@ -50,62 +49,35 @@ export function QuestBoardView({ state, building, board, onAccept, onAbandon, on
           <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "14px", color: colors.parchment, lineHeight: 1.4 }}>{building.blurb}</div>
         </Panel>
 
-        {/* Accepted — what you're already carrying. */}
-        {active.length > 0 && (
+        {/* Bounties already taken — pursue them in the world; the warden pays on delivery. */}
+        {activeBounties.length > 0 && (
           <>
-            <SectionHeader>Taken on</SectionHeader>
-            {active.map((q) => (
-              <Row key={q.id}
-                title={q.title}
-                meta={`${TYPE_LABEL[q.type] || "Task"} · ${q.giver}`}
-                desc={q.desc}
-                reward={q.rewardCp}
-                action={<ActionButton label="Abandon" ghost enabled={!loading} onClick={() => onAbandon(q.id)} />}
-              />
+            <SectionHeader>Contracts you hold</SectionHeader>
+            {activeBounties.map((q) => (
+              <Row key={q.id} title={q.title.replace(/^Bounty: /, "")} meta={q.crime} desc={q.desc}
+                reward={`${formatCopper(q.rewardCp)} alive · ${formatCopper(q.rewardDeadCp)} dead`}
+                action={<ActionButton label="Drop" ghost enabled={!loading} onClick={() => onAbandon(q.id)} />} />
             ))}
           </>
         )}
 
-        {/* Work — leads to pursue out in the world. */}
-        <SectionHeader>Work posted</SectionHeader>
-        {board.tasks.map((t) => {
-          const isTaken = taken.has(t.id);
+        {/* Wanted board. */}
+        <SectionHeader>Wanted — dead or alive</SectionHeader>
+        {board.bounties.map((b) => {
+          const isTaken = taken.has(b.id);
           return (
-            <Row key={t.id}
-              title={t.title}
-              meta={`${TYPE_LABEL[t.type] || "Task"} · ${t.giver}`}
-              desc={t.desc}
-              reward={t.rewardCp}
-              action={<ActionButton label={isTaken ? "Taken" : "Take"} enabled={!isTaken && !loading} onClick={() => onAccept(t)} />}
-            />
+            <Row key={b.id} title={b.name} meta={b.crime} desc={b.desc}
+              reward={`${formatCopper(b.rewardAliveCp)} alive · ${formatCopper(b.rewardDeadCp)} dead`}
+              action={<ActionButton label={isTaken ? "Taken" : "Take"} enabled={!isTaken && !loading} onClick={() => onAccept(b)} />} />
           );
         })}
 
-        {/* For hire — real people who'll join your company for good. */}
-        <SectionHeader>Looking to join</SectionHeader>
-        {board.recruits.map((r) => {
-          const joined = isRecruited(state, r.id);
-          return (
-            <Row key={r.id}
-              title={`${r.name} — ${r.role}`}
-              meta={`${r.race} · ${r.terms}`}
-              desc={r.desc}
-              reward={r.feeCp || undefined}
-              action={<ActionButton label={joined ? "With you" : "Recruit"} enabled={!joined && !loading} onClick={() => onRecruit(r)} />}
-            />
-          );
-        })}
-
-        {/* Day labour — hire yourself out, here and now. */}
-        <SectionHeader>Hire yourself out</SectionHeader>
-        {board.jobs.map((j) => (
-          <Row key={j.id}
-            title={j.title}
-            meta={`${j.hours} hours`}
-            desc={j.desc}
-            reward={j.payCp}
-            action={<ActionButton label="Work" enabled={!loading} onClick={() => onLabour(j)} />}
-          />
+        {/* The cells — buy a prisoner's rights. */}
+        <SectionHeader>In the cells</SectionHeader>
+        {board.prisoners.map((p) => (
+          <Row key={p.id} title={p.name} meta={p.crime} desc={p.desc}
+            reward={`rights ${formatCopper(p.rightsCp)}`}
+            action={<ActionButton label="Buy rights" enabled={!loading} onClick={() => onBuyRights(p)} />} />
         ))}
         <div style={{ height: "8px" }} />
       </div>
@@ -128,10 +100,10 @@ function Row({ title, meta, desc, reward, action }) {
         <div style={{ fontSize: "11px", color: "rgba(237, 228, 208, 0.7)", lineHeight: 1.35 }}>{desc}</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", flexShrink: 0 }}>
-        {reward != null && (
+        {reward && (
           <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
             <Icon name="sparkle" size={10} color={colors.gold} />
-            <span style={{ fontSize: "12px", fontWeight: 800, color: colors.gold }}>{formatCopper(reward)}</span>
+            <span style={{ fontSize: "11px", fontWeight: 800, color: colors.gold, textAlign: "right" }}>{reward}</span>
           </div>
         )}
         {action}
@@ -143,11 +115,11 @@ function Row({ title, meta, desc, reward, action }) {
 function ActionButton({ label, enabled, ghost = false, onClick }) {
   return (
     <button onClick={enabled ? onClick : undefined} disabled={!enabled} style={{
-      padding: "7px 16px", borderRadius: radius.pill,
+      padding: "7px 14px", borderRadius: radius.pill,
       border: ghost ? "1px solid rgba(215,167,111,0.3)" : "none",
       backgroundColor: ghost ? "transparent" : enabled ? colors.gold : "rgba(215, 167, 111, 0.1)",
       color: ghost ? "rgba(215,167,111,0.8)" : enabled ? colors.ink : "rgba(215, 167, 111, 0.4)",
-      fontSize: "12px", fontWeight: 800, cursor: enabled ? "pointer" : "not-allowed", fontFamily: "inherit",
+      fontSize: "12px", fontWeight: 800, cursor: enabled ? "pointer" : "not-allowed", fontFamily: "inherit", whiteSpace: "nowrap",
     }}>{label}</button>
   );
 }

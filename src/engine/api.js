@@ -112,9 +112,16 @@ export function buildStateContext(state) {
   // weave in and reward when fulfilled.
   const quests = (world.quests || []).filter((q) => q.status === "active");
   const questLine = quests.length
-    ? `\n[ACTIVE TASKS — ${quests.map((q) => `"${q.title}" (from ${q.giver}; reward ${q.rewardCp}cp)`).join("; ")}]`
+    ? `\n[ACTIVE TASKS — ${quests.map((q) => q.type === "bounty"
+        ? `bounty on ${q.target} (${q.crime}; ${q.rewardCp}cp alive / ${q.rewardDeadCp}cp dead — pay the warden on delivery)`
+        : `"${q.title}" (from ${q.giver}; reward ${q.rewardCp}cp)`).join("; ")}]`
     : "";
-  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}${questLine}
+  // Companions recruited into the party — real people travelling with the player.
+  const companions = (world.party || []).map((id) => world.codex.characters[id]).filter(Boolean);
+  const partyLine = companions.length
+    ? `\n[COMPANIONS — travelling with you: ${companions.map((c) => `${c.name} (${c.race} ${c.profession})`).join("; ")}. They are present in scenes, act and speak on their own, fight and help at your side in freeform action, and share your fortunes — they can be wounded, killed, or choose to leave. Don't drop or forget them.]`
+    : "";
+  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}${questLine}${partyLine}
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]
