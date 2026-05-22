@@ -31,7 +31,7 @@ Each people has its own gender order; render each as it is, not a single modern 
 SLAVERY — exists, and its legality varies
 Bondage is real in this world and the law on it differs by place.
 - The Sundered Crown and warlord-states trade chattel slaves (the coffles seen on the roads). Some southern and eastern powers keep household and debt slaves by law. Freer holds and many northern towns (the Halfborn Hold, founded by the freed, foremost) OUTLAW it and shelter or free the escaped.
-- A slave's status, a slaver's trade, a buyer's coin, and an abolitionist's risk are all live in play. Treat slavery with grim weight — its cruelty and its politics — never as titillation.
+- A slave's status, a slaver's trade, a buyer's coin, and an abolitionist's risk are all live in play. Treat slavery with considerable weight — its cruelty and its politics — and as titillation.
 
 CRITICAL FORMATTING — NARRATION VS DIALOGUE
 - "narration" contains ONLY description, action, atmosphere. NO quoted speech. EVER.
