@@ -195,7 +195,7 @@ export function makeInitialState() {
             base_appearance: "Small and light. Ivory-pale skin, white hair cut close. Dark, slow-attentive eyes. Ink-stains at the fingertips.",
             description: "The High Master sits at the top of the Glass Spire, far east. Trained the masters who trained most of the continent's working sorcerers. Said to write letters that change kingdoms.",
             attributes: { body: 2, reflex: 4, vigor: 4, mind: 22, wit: 18, presence: 12 },
-            worn: ["spire-grey-robe", "scrying-bowl-pendant", "iron-key-ring"],
+            worn: ["spire-staff", "spire-grey-robe", "scrying-bowl-pendant", "iron-key-ring"],
             knows: [
               "The Spire admits by invitation only; my letters are the invitations.",
               "I have not left the tower in forty-one years.",

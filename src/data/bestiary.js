@@ -6,6 +6,8 @@
 import { tierMult, rollTier } from "./tiers.js";
 import { DEMEANOR_CONFIG, defaultDemeanor } from "./combat-flavor.js";
 import { itemCombatStats } from "../engine/combat-stats.js";
+import { itemTemplate } from "./catalog.js";
+import { aggregateCombatPassives } from "./passives.js";
 
 const T = (min, max, type = "physical", pen = 0) => ({ min, max, type, pen });
 
@@ -123,27 +125,36 @@ function npcDemeanor(npc) {
 export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
   const a = npc.attributes || {};
   const body = a.body || 0, reflex = a.reflex || 0, vigor = a.vigor || 0, mind = a.mind || 0, wit = a.wit || 0;
-  const worn = (npc.worn || []).map((id) => codex?.items?.[id]).filter(Boolean);
+  const worn = (npc.worn || []).map((id) => codex?.items?.[id] || itemTemplate(id)).filter(Boolean);
   const m = tierMult(tierId);
 
-  let armor = Math.floor(body / 3), ward = Math.floor(mind / 3), dodgeGear = 0, weaponDmg = null, weaponType = "unarmed";
+  // Gear stats are ALREADY tier-scaled by itemCombatStats; only the attribute-
+  // derived base scales by tier (m) below — otherwise worn gear double-scales.
+  let attrArmor = Math.floor(body / 3), attrWard = Math.floor(mind / 3);
+  let gearArmor = 0, gearWard = 0, dodgeGear = 0, weaponDmg = null, weaponType = "unarmed";
   for (const it of worn) {
     const cs = itemCombatStats(it);
-    armor += cs.armor; ward += cs.ward; dodgeGear += cs.dodge;
+    gearArmor += cs.armor; gearWard += cs.ward; dodgeGear += cs.dodge;
     if (cs.damage && !weaponDmg) { weaponDmg = cs.damage; weaponType = cs.weaponType || "sword"; }
   }
+  // Worn gear's affixes apply to the bearer too — so a fabled boss in divine arms
+  // fights with their game-breaking powers (Worldbreaker, Sundering, Undying…),
+  // not just big base numbers. Their req is assumed met (it's their own gear).
+  const { statMods: sm, triggers: tr } = aggregateCombatPassives(worn.flatMap((it) => it.passives || []));
   const base = weaponDmg || { min: 2, max: 4, type: "physical", pen: 0 };
   const govF = 1 + (base.type === "magical" ? mind : body) * 0.08;
+  const dFlat = sm.damageFlat || 0, dMult = 1 + (sm.damageMult || 0);
   const weapon = {
-    min: Math.max(1, Math.round(base.min * govF)), max: Math.max(1, Math.round(base.max * govF)),
-    type: base.type || "physical", pen: (base.pen || 0) + Math.floor(body / 4), category: weaponType,
+    min: Math.max(1, Math.round((base.min * govF + dFlat) * dMult)),
+    max: Math.max(1, Math.round((base.max * govF + dFlat) * dMult)),
+    type: base.type || "physical", pen: (base.pen || 0) + Math.floor(body / 4) + (sm.penetration || 0), category: weaponType,
   };
   const demeanor = npcDemeanor(npc);
   const dcfg = DEMEANOR_CONFIG[demeanor] || DEMEANOR_CONFIG.wary;
   const abilities = [];
   if (body >= 6) abilities.push({ id: "power-strike", tier: tierId });
   if (mind >= 8) abilities.push({ id: "firebolt", tier: tierId });
-  const maxHealth = Math.max(1, Math.round((12 + vigor * 2 + body) * m));
+  const maxHealth = Math.max(1, Math.round((12 + vigor * 2 + body) * m) + (sm.maxHealth || 0));
   // Named foes carry their wounds between encounters — re-engaging doesn't reset
   // them to full. A previously-yielded foe is already cowed (low morale).
   const cstate = npc.combatState;
@@ -158,10 +169,12 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     canTalk: !(demeanor === "mindless" || demeanor === "feral"),
     controlPressure: 0, provoked: false, resolved: null, lastFlavorTurn: 0, noFleeUntil: 0,
     maxHealth, health,
-    armor: Math.round(armor * m), ward: Math.round(ward * m),
-    dodge: Math.min(60, reflex * 2 + dodgeGear),
-    accuracy: reflex + wit, critChance: Math.min(50, Math.round(wit * 1.5 + reflex)), critMult: 1.5,
+    armor: Math.round(attrArmor * m) + gearArmor + (sm.armor || 0), ward: Math.round(attrWard * m) + gearWard + (sm.ward || 0),
+    dr: Math.min(0.6, sm.drPct || 0),
+    dodge: Math.min(70, reflex * 2 + dodgeGear + (sm.dodge || 0)),
+    accuracy: reflex + wit + (sm.accuracy || 0), critChance: Math.min(60, Math.round(wit * 1.5 + reflex) + (sm.critChance || 0)), critMult: 1.5 + (sm.critMult || 0),
     speed: reflex + Math.floor(wit / 2),
+    triggers: tr,
     weapon, abilities, maxLootTier: tierId, statuses: [], cooldowns: {},
   };
 }

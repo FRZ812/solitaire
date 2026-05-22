@@ -75,15 +75,19 @@ export function initCombat(character, codex, enemies, opts = {}) {
     ...learned.map((e) => (typeof e === "string" ? { id: e, tier: "common" } : { id: e.id, tier: e.tier || "common" })),
   ].filter((a) => getAbilityDef(a.id));
 
+  // +life affixes (cs.maxHealth above character.vitalityMax) are granted filled,
+  // so a wounded player still benefits from extra health gear at full value.
+  const healthBonus = Math.max(0, cs.maxHealth - (character.vitalityMax || cs.maxHealth));
   const player = {
     name: character.name || "You",
-    health: Math.round(character.vitality),
+    health: Math.min(cs.maxHealth, Math.round(character.vitality) + healthBonus),
     maxHealth: cs.maxHealth,
     stamina: cs.maxStamina,
     maxStamina: cs.maxStamina,
     staminaRegen: cs.staminaRegen,
     resolve: Math.round(character.resolve ?? 0),
     resolveMax: character.resolveMax ?? 0,
+    dr: cs.dr || 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed,
@@ -305,7 +309,9 @@ function resolveHit(attacker, defender, profile) {
   let mitig = 0;
   if (profile.type === "physical") mitig = Math.max(0, (defender.armor || 0) + sumStatus(defender, "guard") - (profile.pen || 0));
   else if (profile.type === "magical") mitig = Math.max(0, (defender.ward || 0) - (profile.pen || 0));
-  const dmg = Math.max(0, raw - mitig);
+  // Flat % damage-reduction (Stoneskin / Godward) applies after armour, capped.
+  let dmg = Math.max(0, raw - mitig);
+  if (defender.dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.6, defender.dr))));
   defender.health = Math.max(0, defender.health - dmg);
 
   const typeTag = profile.type === "true" ? " true" : profile.type === "magical" ? " magical" : "";
@@ -336,6 +342,14 @@ function onEnemyControlled(e) {
 // bare-knuckle brawl it means knocked senseless (alive — nothing to loot).
 function downEnemy(cs, e) {
   if (e._dead || e.resolved === "ko") return;
+  // Undying (divine): a fabled foe cheats death once, clawing back at half health.
+  const rev = e.triggers?.reviveOnce;
+  if (rev && !e._revived && e.health <= 0) {
+    e._revived = true;
+    e.health = Math.max(1, Math.round(e.maxHealth * rev));
+    cs.log.push(logEntry(`${e.name} should be dead — and rises anyway.`, "enemy"));
+    return;
+  }
   if (cs.lethal) { e._dead = true; cs.log.push(logEntry(`${e.name} falls, dead.`, "system")); }
   else { e.resolved = "ko"; cs.log.push(logEntry(`${e.name} is knocked senseless.`, "system")); }
   let lined = false;
@@ -382,6 +396,12 @@ function npcPerform(cs, actor, opponents) {
     const before = target.health;
     if (profile) cs.log.push(resolveHit(actor, target, profile));
     const dealt = before - target.health;
+    // Lifesteal applies to any bearer (a fabled foe in vampiric arms heals as it
+    // hits — the sustained-damage threat the affix caps are tuned around).
+    const ls = actor.triggers?.lifesteal || 0;
+    if (dealt > 0 && ls > 0 && actor.health > 0) {
+      actor.health = Math.min(actor.maxHealth, actor.health + Math.max(1, Math.round(dealt * ls / 100)));
+    }
     if (dealt > 0 && target.side === "enemy") onEnemyDamaged(target, dealt);
     if (target.health > 0 && def.effect && def.effect.target === "enemy") {
       addStatus(target, def.effect);

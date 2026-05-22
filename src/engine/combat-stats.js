@@ -100,6 +100,48 @@ export function itemCombatStats(item) {
   return { armor, ward, dodge, damage: null, weaponType: null };
 }
 
+// How many hands a weapon needs. Two-handers (greatswords, mauls, polearms) and
+// all bows/crossbows/staves occupy BOTH hands — so they can't be paired with a
+// shield. Honours an explicit `hands`, else infers from family + name.
+export function weaponHands(item) {
+  if (!item) return 1;
+  if (item.hands === 2 || item.hands === 1) return item.hands;
+  const wt = weaponCategory(item);
+  if (wt === "bow" || wt === "staff") return 2;
+  const n = `${item.name || ""} ${item.id || ""}`.toLowerCase();
+  if (/great|maul|halberd|glaive|pike|two-hand|zweihander|claymore|greataxe|greatsword|longbow|war ?bow|bardiche|partisan|poleaxe|lance/.test(n)) return 2;
+  return 1;
+}
+
+// The equipment SLOT an item occupies. One item per slot (two rings) — equipping
+// a new one displaces the slot's current occupant back to the pack, so combat
+// effects can't be stacked by piling on duplicate gear. clothing is split into
+// real slots (head/hands/legs/feet/back/over/torso) so you can't wear five helms.
+export function equipSlot(item) {
+  if (!item) return null;
+  const k = item.kind;
+  const n = `${item.name || ""} ${item.id || ""}`.toLowerCase();
+  if (k === "weapon") return "mainhand";
+  if (k === "shield") return "offhand";
+  if (k === "armor") return "body";
+  if (k === "trinket") return /\bring\b|signet|band/.test(n) ? "ring" : "neck";
+  if (k === "clothing") {
+    if (/helm|helmet|cap|coif|hood|circlet|crown|mask|\bhat\b/.test(n)) return "head";
+    if (/bracer|vambrace|gauntlet|glove/.test(n)) return "hands";
+    if (/greave|legging|chausse|cuisse/.test(n)) return "legs";
+    if (/boot|shoe|sabaton|sandal/.test(n)) return "feet";
+    if (/cloak|cape|mantle|shawl/.test(n)) return "back";
+    if (/robe|tabard|livery|surcoat|vestment/.test(n)) return "over";
+    return "torso";
+  }
+  return null;
+}
+
+// How many items a slot can hold (two rings; everything else one).
+export function slotCapacity(slot) {
+  return slot === "ring" ? 2 : 1;
+}
+
 // The attribute + minimum score an item demands, scaled by tier. Met → full
 // power + passives; unmet → reduced base stats + passives off.
 export function itemRequirement(item) {
@@ -201,10 +243,16 @@ export function deriveCombatStats(character, codex) {
 
   const weapon = weaponProfile(character, codex, a);
   weapon.pen += statMods.penetration || 0;
+  // Affix offence: flat damage adds, then % damage multiplies (Diablo-style).
+  const dFlat = statMods.damageFlat || 0;
+  const dMult = 1 + (statMods.damageMult || 0);
+  weapon.min = Math.max(1, Math.round((weapon.min + dFlat) * dMult));
+  weapon.max = Math.max(weapon.min, Math.round((weapon.max + dFlat) * dMult));
   prof.weaponMastery = weapon.mastery;
 
   return {
-    maxHealth: character.vitalityMax,
+    maxHealth: character.vitalityMax + (statMods.maxHealth || 0),
+    dr: clamp(statMods.drPct || 0, 0, 0.6), // flat % damage reduction, capped
     armor: armor + (statMods.armor || 0),
     ward: ward + (statMods.ward || 0),
     dodge: clamp(reflex * 2 + dodgeGear + prof.evasion + (statMods.dodge || 0), 0, 70),

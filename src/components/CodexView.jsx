@@ -4,6 +4,7 @@ import { iconButtonStyle } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { relationshipTier } from "../engine/relationships.js";
+import { itemTemplate } from "../data/catalog.js";
 
 const CODEX_TABS = [
   { key: "characters",  label: "Characters" },
@@ -38,7 +39,7 @@ const serifInlineValue = {
 
 export function CodexEntry({ entry, kind, codex }) {
   const wornNames = (kind === "characters" && entry.worn?.length)
-    ? entry.worn.map(id => codex.items[id]?.name || id) : [];
+    ? entry.worn.map(id => (codex.items[id] || itemTemplate(id))?.name || id) : [];
   const knowsList = (kind === "characters" && entry.knows?.length) ? entry.knows : [];
   const memoriesList = (kind === "characters" && entry.memories?.length) ? entry.memories : [];
   const hasBond = kind === "characters" && entry.kind !== "player" && ((entry.relationship || 0) !== 0 || memoriesList.length > 0);
