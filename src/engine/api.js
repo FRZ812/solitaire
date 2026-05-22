@@ -9,6 +9,7 @@ import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
 import { getTile, isSeen, HEX_DIRECTIONS } from "./world.js";
 import { getBiome } from "../data/biomes.js";
+import { buildingForTile } from "../data/town.js";
 import { formatTime, formatDate } from "./time.js";
 
 export function summarizeCodex(codex) {
@@ -95,7 +96,13 @@ export function buildStateContext(state) {
     const when = ago <= 0 ? "today" : ago === 1 ? "yesterday" : `${ago} days ago`;
     locLine = `\n[LOCATION STATE — ${t.status.note || t.status.status} (since ${when}${t.status.depopulated ? "; depopulated" : ""})]`;
   }
-  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}
+  // A wired service building (a trader, etc.) at this tile. Its goods and prices
+  // are handled by the counter UI; the narrator only flavors the keeper/place.
+  const bld = buildingForTile(t);
+  const svcLine = bld
+    ? `\n[SERVICE — you are at ${bld.label}${bld.kind === "trader" ? `, a trader (${bld.keeper})` : ""}. Buying and selling happen at the counter UI; flavor the keeper and the place, react, or haggle in words, but do not tally coin or invent the transaction here.]`
+    : "";
+  return `[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Bond: ${character.bond}${nearbyStr}]${locLine}${svcLine}
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]

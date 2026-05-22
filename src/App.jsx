@@ -12,6 +12,9 @@ import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, turnForBeatIndex, editBeat } from "./engine/timeline.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
+import { buyGood, sellGood } from "./engine/economy.js";
+import { buildingForTile } from "./data/town.js";
+import { rollShopStock } from "./engine/town-gen.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
@@ -34,6 +37,7 @@ import { colors } from "./components/tokens.js";
 import { BeatRender } from "./components/beats/BeatRender.jsx";
 import { MenuSheet } from "./components/MenuSheet.jsx";
 import { MapView } from "./components/MapView.jsx";
+import { TraderView } from "./components/TraderView.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
@@ -149,6 +153,7 @@ export function Solitaire() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [codexOpen, setCodexOpen] = useState(false);
+  const [shopTile, setShopTile] = useState(null); // {x,y} of an open trader building, or null
   const [hydrated, setHydrated] = useState(false);
   const logRef = useRef(null);
 
@@ -571,6 +576,57 @@ export function Solitaire() {
   function handleEquip(itemId) { setState((s) => equipItem(s, itemId)); }
   function handleUnequip(itemId) { setState((s) => unequipItem(s, itemId)); }
 
+  // ----- Town buildings: trader menus (buy / sell / talk) -----
+
+  function openShop() {
+    setShopTile({ x: state.world.currentTile.x, y: state.world.currentTile.y });
+  }
+
+  // Deterministic, local transactions (engine/economy.js). The shop's stock is
+  // rolled from a ruleset table (engine/town-gen.js); buying records the sale so
+  // stock depletes until the next restock. `bucket` ties the sale to the current
+  // restock window.
+  function handleBuy(itemDef, priceCp, bucket) {
+    setState((s) => {
+      const key = `${s.world.currentTile.x},${s.world.currentTile.y}`;
+      const r = buyGood(s, { tileKey: key, bucket, itemDef, priceCp, qty: 1 });
+      return r.ok ? r.state : s;
+    });
+  }
+  function handleSell(itemId, priceCp) {
+    setState((s) => {
+      const r = sellGood(s, { itemId, priceCp, qty: 1 });
+      return r.ok ? r.state : s;
+    });
+  }
+
+  // The "AI flavor" half of the hybrid: hand the conversation to the narrator
+  // (the counter handles the actual trade). Mirrors handleSeekCombat's flow.
+  async function handleShopTalk() {
+    if (loading || !shopTile) return;
+    const tile = getTile(state, shopTile.x, shopTile.y);
+    const building = buildingForTile(tile);
+    if (!building) { setShopTile(null); return; }
+    setShopTile(null);
+    setError(null);
+    setLoading(true);
+    const place = tile.poi?.name || building.label;
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You speak with ${building.keeper} at ${place}.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[PLAYER ACTION] You speak with ${building.keeper} at ${place} — passing the time, asking after their wares, the town, or the road. Buying and selling is handled separately at the counter, so don't tally coin here; just play the conversation, grounded in this place and the current state.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // ----- Long-press a bubble: Rewrite / Edit / Rewind -----
 
   function openBeatMenu(beat, index) {
@@ -642,7 +698,7 @@ export function Solitaire() {
   function startCombat(enemies, context, extraOpts = {}, st = state) {
     if (!enemies || enemies.length === 0) return;
     combatCtxRef.current = context || { flavor: enemies[0].name };
-    setMenuOpen(false); setMapOpen(false); setCodexOpen(false);
+    setMenuOpen(false); setMapOpen(false); setCodexOpen(false); setShopTile(null);
     setPendingCombat(null);
     closeBeatMenu();
     const region = regionHere(st);
@@ -817,6 +873,10 @@ export function Solitaire() {
     );
   }
 
+  // A wired town building (poi.service) at the player's current tile, if any —
+  // surfaces an "Enter" affordance to open its menu. Hidden during combat.
+  const buildingHere = combat ? null : buildingForTile(getTile(state, state.world.currentTile.x, state.world.currentTile.y));
+
   return (
     <div style={{
       backgroundColor: colors.ink,
@@ -908,6 +968,27 @@ export function Solitaire() {
             }}>Leave</button>
           </div>
         )}
+        {buildingHere && !shopTile && (
+          <div className="fade-in" style={{
+            margin: "0 12px 8px", padding: "11px 14px",
+            backgroundColor: "rgba(20,29,29,0.8)", border: `1px solid rgba(215,167,111,0.4)`,
+            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: colors.gold, marginBottom: "2px" }}>
+                {buildingHere.kind === "trader" ? "Trader" : "Building"}
+              </div>
+              <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
+                {buildingHere.label} — step up to the counter.
+              </div>
+            </div>
+            <button onClick={openShop} style={{
+              padding: "9px 16px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
+              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+            }}>Enter</button>
+          </div>
+        )}
         <InputBar value={input} onChange={setInput} onSubmit={handleSubmit} loading={loading} />
       </div>
 
@@ -955,6 +1036,26 @@ export function Solitaire() {
       {codexOpen && (
         <CodexView state={state} onClose={() => setCodexOpen(false)} />
       )}
+      {shopTile && (() => {
+        const tile = getTile(state, shopTile.x, shopTile.y);
+        const building = buildingForTile(tile);
+        if (!building || building.kind !== "trader") return null;
+        const key = `${shopTile.x},${shopTile.y}`;
+        const stock = rollShopStock(building, key, state.time.day);
+        return (
+          <TraderView
+            state={state}
+            building={building}
+            tileKey={key}
+            stock={stock}
+            onClose={() => setShopTile(null)}
+            onBuy={handleBuy}
+            onSell={handleSell}
+            onTalk={handleShopTalk}
+            loading={loading}
+          />
+        );
+      })()}
       {combat && (
         <CombatView
           combat={combat}
