@@ -243,10 +243,16 @@ export function deriveCombatStats(character, codex) {
 
   const weapon = weaponProfile(character, codex, a);
   weapon.pen += statMods.penetration || 0;
+  // Affix offence: flat damage adds, then % damage multiplies (Diablo-style).
+  const dFlat = statMods.damageFlat || 0;
+  const dMult = 1 + (statMods.damageMult || 0);
+  weapon.min = Math.max(1, Math.round((weapon.min + dFlat) * dMult));
+  weapon.max = Math.max(weapon.min, Math.round((weapon.max + dFlat) * dMult));
   prof.weaponMastery = weapon.mastery;
 
   return {
-    maxHealth: character.vitalityMax,
+    maxHealth: character.vitalityMax + (statMods.maxHealth || 0),
+    dr: clamp(statMods.drPct || 0, 0, 0.6), // flat % damage reduction, capped
     armor: armor + (statMods.armor || 0),
     ward: ward + (statMods.ward || 0),
     dodge: clamp(reflex * 2 + dodgeGear + prof.evasion + (statMods.dodge || 0), 0, 70),
