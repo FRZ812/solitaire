@@ -28,19 +28,18 @@ const HEX_DIRS = [
 export const HANDCRAFTED = {
   // ============================================================
   // MIRECROSS — the river-crossing market town (centred on 0,0)
-  // The Drowned Inn is the town's tavern; the market square, healer, smithy,
+  // The Drowned Rat is the town's tavern; the market square, healer, smithy,
   // wet market and ferry cluster around it. Buildings carry a poi.service id
   // when they have a wired menu (see data/town.js, e.g. The Healer's House).
   // ============================================================
-  "0,0":  { terrain: "indoor",     poi: { type: "inn",      name: "The Drowned Inn",    description: "The town tavern. Smoke-darkened beams, a peat fire, a long oak bar, and the market's noise spilling in whenever the door opens." } },
+  "0,0":  { terrain: "indoor",     poi: { type: "inn",      name: "The Drowned Rat",    service: "tavern", description: "The town tavern. Smoke-darkened beams, a peat fire, a long oak bar, and the market's noise spilling in whenever the door opens." } },
   "-1,0": { terrain: "settlement", poi: { type: "town",     name: "Mirecross",          description: "The market square of Mirecross, busy at the river-crossing — a stone well, hawkers' stalls, mud churned by cart-wheels and boots." } },
   "0,-1": { terrain: "indoor",     poi: { type: "stable",   name: "Mirecross Stable",   description: "A low stable smelling of hay and old leather, hard against the inn." } },
   "0,1":  { terrain: "settlement", poi: { type: "landmark", name: "Ferry Landing",      description: "A wooden quay where the ferry meets the river. Porters and fishwives crowd the boards." } },
   "-1,1": { terrain: "indoor",     poi: { type: "healer",   name: "The Healer's House",  service: "healer", description: "Bundles of drying herbs hang from the rafters; a low room that smells of comfrey, tallow, and woodsmoke." } },
   "1,-1": { terrain: "indoor",     poi: { type: "smithy",   name: "Mirecross Smithy",    service: "blacksmith", description: "The town smith's. A banked forge, a wall of tongs, the ring of a hammer on cooling iron." } },
-  "-2,1": { terrain: "settlement", poi: { type: "market",   name: "The Wet Market",      description: "The market square proper — plank stalls under oiled canvas, mud and cabbage-leaves underfoot, three sellers crying their wares at once." } },
-  "-2,2": { terrain: "indoor",     poi: { type: "market",   name: "The Butcher's Stall", service: "butcher",     description: "A scarred block, a row of hooks, and the iron smell of the day's slaughter." } },
-  "-3,2": { terrain: "indoor",     poi: { type: "market",   name: "Fruit-Peddler's Cart", service: "fruit",      description: "A handcart heaped with the season's fruit, a wasp or two circling the sweetest of it." } },
+  "-1,-1":{ terrain: "indoor",     poi: { type: "gaol",     name: "Mirecross Gaol",      service: "prison", description: "A squat stone blockhouse with a barred window and a wanted board by the door. The warden keeps the town's cells." } },
+  "-2,1": { terrain: "settlement", poi: { type: "market",   name: "The Wet Market",      service: "market", description: "The market square — plank stalls under oiled canvas, mud and cabbage-leaves underfoot, a butcher, a fruit-cart, and a greengrocer all crying their wares at once." } },
   "-1,2": { terrain: "water",      poi: null },
 
   // ============================================================
@@ -49,7 +48,7 @@ export const HANDCRAFTED = {
   "-2,0": { terrain: "road",       poi: null },
   "-3,0": { terrain: "road",       poi: { type: "landmark", name: "The Crossroads",   description: "Three tracks meet under a leaning stone." } },
   "-2,-1":{ terrain: "forest",     poi: null },
-  "-3,1": { terrain: "indoor",     poi: { type: "market",   name: "The Greengrocer", service: "greengrocer", description: "Crates and baskets of root-vegetables and greens, still cool and damp from the morning." } },
+  "-3,1": { terrain: "marsh",      poi: { type: "hidden", description: null } },
   "-4,0": { terrain: "road",       poi: null },
   "-5,0": { terrain: "road",       poi: { type: "shrine",   name: "Way-shrine of the Three", description: "A wooden three-faced shrine where the road first dips into the Mire. The carvings are sun-bleached and lichened." } },
   "-6,0": { terrain: "road",       poi: null },
@@ -113,6 +112,7 @@ export const HANDCRAFTED = {
   "24,-1":{ terrain: "plains",     poi: { type: "hidden", description: null } },
   "27,0": { terrain: "road",       poi: null },
   "28,-1":{ terrain: "plains",     poi: null },
+  "27,1": { terrain: "settlement", poi: { type: "slavemarket", name: "The Block", service: "slavemarket", description: "Crowsmoor's auction-yard, set apart by the stockyards at the town's edge — a raised oak block, a chained rail in its shade, and an auctioneer with a tally-stick and a flat, appraising eye. Mirecross keeps no such place; Crowsmoor does." } },
 
   // ============================================================
   // TANNIC WOOD (north of the Mire) — and the road to the Ford

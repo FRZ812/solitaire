@@ -7,8 +7,11 @@ import {
 import { passiveHealVitality } from "./healing.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
+import { spoilCarried } from "./spoilage.js";
 import { applyAttributeChanges } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
+import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
+import { clampRel, MEMORY_CAP } from "./relationships.js";
 
 // applyBeat is the heart of the engine. Given the current state and a beat
 // from the narrator, it returns the next state plus the new beat entries to
@@ -72,7 +75,7 @@ export function applyBeat(state, beat, options = {}) {
     }
   }
 
-  const inventory = applyInventoryChanges(state.character.inventory, beat.inventory_changes);
+  const inventory = applyInventoryChanges(state.character.inventory, beat.inventory_changes, newTime.day);
   if (beat.inventory_changes) {
     const ch = beat.inventory_changes;
     const lines = [];
@@ -172,5 +175,116 @@ export function applyBeat(state, beat, options = {}) {
     world = { ...world, tiles };
   }
 
-  return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory };
+  // A companion the narrator just won over joins the party (the player talked
+  // them into it — see [APPROACH RECRUIT] doctrine).
+  let party = state.party || [];
+  if (beat.recruit_companion?.id) {
+    const tmpl = COMPANIONS[beat.recruit_companion.id];
+    if (tmpl && !party.includes(tmpl.id)) {
+      party = [...party, tmpl.id];
+      // Only file a fresh entry if they're new; a returning companion keeps their
+      // accumulated memories + bond (no re-introduction).
+      if (!world.codex.characters[tmpl.id]) {
+        world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: companionCodexEntry(tmpl) } } };
+      }
+    }
+  }
+
+  // Bond shifts and shared memories — kept per-character on the codex and
+  // surfaced back to the narrator so relationships persist and deepen over time.
+  if (Array.isArray(beat.relationship_changes) && beat.relationship_changes.length) {
+    const chars = { ...world.codex.characters };
+    for (const rc of beat.relationship_changes) {
+      const ch = chars[rc?.id];
+      if (!ch) continue;
+      chars[rc.id] = { ...ch, relationship: clampRel((ch.relationship || 0) + (rc.delta || 0)) };
+    }
+    world = { ...world, codex: { ...world.codex, characters: chars } };
+  }
+  if (Array.isArray(beat.memory_updates) && beat.memory_updates.length) {
+    const chars = { ...world.codex.characters };
+    for (const mu of beat.memory_updates) {
+      const ch = chars[mu?.id];
+      if (!ch || !Array.isArray(mu.adds)) continue;
+      const mems = [...(ch.memories || [])];
+      for (const m of mu.adds) if (m && !mems.includes(m)) mems.push(m);
+      chars[mu.id] = { ...ch, memories: mems.slice(-MEMORY_CAP) };
+    }
+    world = { ...world, codex: { ...world.codex, characters: chars } };
+  }
+
+  // Sharing loot with the party: move worn gear onto/off a companion. Pair with
+  // inventory_changes (remove from the player) when handing something over.
+  if (Array.isArray(beat.companion_gear) && beat.companion_gear.length) {
+    const chars = { ...world.codex.characters };
+    for (const g of beat.companion_gear) {
+      const ch = chars[g?.id];
+      if (!ch) continue;
+      let worn = [...(ch.worn || [])];
+      for (const rid of (g.remove || [])) worn = worn.filter((w) => w !== rid);
+      for (const aid of (g.add || [])) if (!worn.includes(aid)) worn.push(aid);
+      chars[g.id] = { ...ch, worn };
+    }
+    world = { ...world, codex: { ...world.codex, characters: chars } };
+  }
+
+  // Opening character-creation interview result: set the player's identity and
+  // a balanced starting attribute spread from the narrator's read of the player.
+  let created = state.created;
+  const clampAttr = (v) => Math.max(1, Math.min(10, Math.round(v || 0)));
+  if (beat.character_setup) {
+    const cs = beat.character_setup;
+    if (cs.name) character.name = cs.name;
+    if (cs.bond) character.bond = cs.bond;
+    if (cs.attributes) {
+      const a = {};
+      for (const k of ["body", "reflex", "vigor", "mind", "wit", "presence"]) a[k] = clampAttr(cs.attributes[k] ?? character.attributes[k]);
+      character.attributes = a;
+    }
+    if (cs.ability) {
+      const list = Array.isArray(character.abilities) ? [...character.abilities] : [];
+      const idOf = (x) => (typeof x === "string" ? x : x.id);
+      if (!list.some((x) => idOf(x) === cs.ability)) list.push({ id: cs.ability, tier: "common" });
+      character.abilities = list;
+    }
+    const w = world.codex.characters.wanderer || {};
+    const merged = {
+      ...w,
+      name: cs.name || w.name,
+      race: cs.race || w.race,
+      origin: cs.origin || w.origin,
+      profession: cs.profession || w.profession,
+      age: cs.age || w.age,
+      attractiveness: cs.attractiveness || w.attractiveness,
+      appearance: cs.appearance || w.appearance,
+      base_appearance: cs.base_appearance || w.base_appearance,
+      attributes: character.attributes,
+      knows: cs.knows ? [...(w.knows || []), ...cs.knows] : (w.knows || []),
+    };
+    world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, wanderer: merged } } };
+    created = true;
+  }
+
+  // The player's name/bond/identity becoming established (or corrected) in the
+  // fiction — name, driving bond, and an origin/race fix if the codex got it
+  // wrong (e.g. an eastern player mislabelled central at creation).
+  if (beat.player_update) {
+    if (beat.player_update.name) character.name = beat.player_update.name;
+    if (beat.player_update.bond) character.bond = beat.player_update.bond;
+    const w = world.codex.characters.wanderer || {};
+    const wm = { ...w, name: character.name };
+    if (beat.player_update.origin) wm.origin = beat.player_update.origin;
+    if (beat.player_update.race) wm.race = beat.player_update.race;
+    world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, wanderer: wm } } };
+  }
+
+  // Food spoils as the clock turns. Any perishable stack past its freshUntil is
+  // tossed, with a quiet log notice so the player isn't surprised by an empty pack.
+  const sp = spoilCarried(character.inventory.carried, newTime.day, codex.items);
+  if (sp.spoiled.length) {
+    character.inventory = { ...character.inventory, carried: sp.carried };
+    newBeats.push({ id: `spoil${Date.now()}`, type: "spoilage", lines: sp.spoiled.map((s) => `${s.quantity}× ${s.name}`) });
+  }
+
+  return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created };
 }

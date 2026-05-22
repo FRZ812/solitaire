@@ -12,12 +12,17 @@ import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, turnForBeatIndex, editBeat } from "./engine/timeline.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
-import { buyGood, sellGood, formatCopper } from "./engine/economy.js";
+import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
-import { buildingForTile } from "./data/town.js";
+import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
+import { generateGaol, acceptBounty, buyPrisonerRights } from "./engine/gaol.js";
+import { generateSlaveMarket, buyCaptive } from "./engine/slaves.js";
+import { partyStanding, recruitOutlook, dismissCompanion, isRecruited, partyMembers } from "./engine/party.js";
+import { applyTraining, trainingOffer } from "./engine/training.js";
+import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
-import { tierLabel } from "./data/tiers.js";
+import { tierLabel, tierOrder } from "./data/tiers.js";
 import { rollShopStock } from "./engine/town-gen.js";
 import {
   getTile, currentLocationName,
@@ -27,10 +32,10 @@ import {
 import { rollPathEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
-import { generateEnemyGroup, enemyFromNPC } from "./data/bestiary.js";
+import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
-import { initCombat, playerAct, playerTalk, playerUseEnvironment, playerDrawWeapon, setTarget, endTurn, playerFlee, applyCombatResult, applyLoot } from "./engine/combat.js";
+import { initCombat, playerAct, playerDrawWeapon, setTarget, endTurn, playerFlee, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
@@ -43,10 +48,16 @@ import { MenuSheet } from "./components/MenuSheet.jsx";
 import { MapView } from "./components/MapView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
 import { ForgeView } from "./components/ForgeView.jsx";
+import { QuestBoardView } from "./components/QuestBoardView.jsx";
+import { PrisonView } from "./components/PrisonView.jsx";
+import { SlaveMarketView } from "./components/SlaveMarketView.jsx";
+import { PartyView } from "./components/PartyView.jsx";
+import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
 import { CampaignsList } from "./components/CampaignsList.jsx";
+import { GameOverScreen } from "./components/GameOverScreen.jsx";
 import { InitialBackdrop } from "./components/InitialBackdrop.jsx";
 import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 
@@ -86,6 +97,59 @@ function groupFlavor(enemies) {
   if (enemies.length === 1) return enemies[0].name;
   const base = enemies[0].name.replace(/\s+\d+$/, "");
   return `${enemies.length} ${base}s`;
+}
+
+// An "important" fight where death is allowed to be real and final: the toughest
+// foe is legendary-tier or above (the Demon King, a fabled beast, etc.). Ordinary
+// bandits/goblins never kill — they rob, abduct, or enslave instead.
+function isEpicEncounter(cs) {
+  return (cs.enemies || []).some((e) => tierOrder(e.tier) >= tierOrder("legendary"));
+}
+
+// Snapshot a pack as { itemId: quantity } so two snapshots can be diffed into a
+// bought/sold list (used to flavor the trader's parting reaction).
+function invQtyMap(carried) {
+  const m = {};
+  for (const c of carried || []) m[c.itemId] = (m[c.itemId] || 0) + c.quantity;
+  return m;
+}
+
+// Apply a travel narration to `base`: clamp the journey time, move the player to
+// the destination, expand sight along the whole route, and reveal any vista at
+// arrival. Shared by the live travel handler and the Rewrite path so a rewritten
+// journey still lands the player where they were headed (travel = the context
+// recorded with the turn: from/to names, dest coords, route path, minutes).
+function applyTravelArrival(base, beat, travel) {
+  const mins = travel.totalMins;
+  if (!beat.minutes_passed || Math.abs(beat.minutes_passed - mins) > mins * 0.5) {
+    beat.minutes_passed = mins;
+  }
+  let next = applyBeat(base, beat, {
+    travelFrom: travel.fromName,
+    travelTo: travel.toName,
+    travelToCoords: { x: travel.dest.x, y: travel.dest.y },
+  });
+  const path = travel.path || [];
+  // Multi-tile travel: mark intermediate path tiles as visited and refresh sight
+  // from each so the player's seen area expands along the route.
+  if (path.length > 2) {
+    const newTiles = { ...next.world.tiles };
+    let newSeen = next.world.seen;
+    for (let i = 1; i < path.length - 1; i++) {
+      const p = path[i];
+      const k = `${p.x},${p.y}`;
+      if (!newTiles[k]) newTiles[k] = getTile(base, p.x, p.y);
+      newSeen = computeSightFrom(p.x, p.y, newSeen);
+    }
+    next = { ...next, world: { ...next.world, tiles: newTiles, seen: newSeen } };
+  }
+  // Vista: arriving at a tile with vistaRadius reveals a wide hex.
+  const destTile = getTile(base, travel.dest.x, travel.dest.y);
+  if (destTile?.vistaRadius && destTile.vistaRadius > 0) {
+    const wider = computeSightFromRadius(travel.dest.x, travel.dest.y, destTile.vistaRadius, next.world.seen);
+    next = { ...next, world: { ...next.world, seen: wider } };
+  }
+  return next;
 }
 
 // One-shot migrator for legacy v10 single-save blobs (square odd-r offset coords).
@@ -158,26 +222,37 @@ export function Solitaire() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [codexOpen, setCodexOpen] = useState(false);
+  const [partyOpen, setPartyOpen] = useState(false);
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
   // Recent purchases at the current shop, for full refunds until you leave the
   // scene: { tileKey, items: { [itemId]: [pricePaid, ...] } }.
   const [receipts, setReceipts] = useState({ tileKey: null, items: {} });
+  // Themed confirm dialog (replaces window.confirm). askConfirm() resolves a
+  // promise when the player chooses; the component is rendered near the root.
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  function askConfirm(opts) {
+    return new Promise((resolve) => setConfirmDialog({ ...opts, resolve }));
+  }
   const [hydrated, setHydrated] = useState(false);
   const logRef = useRef(null);
 
   // Combat: `combat` holds the active turn-state (null = not fighting);
   // `pendingCombat` is a hostile encounter offering a fight before it starts.
   const [combat, setCombat] = useState(null);
+  const [combatBusy, setCombatBusy] = useState(false); // awaiting the narrator for an improvised combat action
   const [pendingCombat, setPendingCombat] = useState(null);
   const [pendingLoot, setPendingLoot] = useState(null); // spoils to deliberately Search
   const [pendingEngage, setPendingEngage] = useState(null); // narrator start_combat awaiting the player's go-ahead
   const combatCtxRef = useRef(null);
+  // Pack + purse snapshot taken when a trader counter opens, so leaving it can
+  // diff what was bought/sold and let the keeper react to the actual haul.
+  const tradeStartRef = useRef(null);
 
   // Long-press a narration/dialogue bubble to Rewrite / Edit / Rewind it. The
-  // per-turn timeline (state.turns + state.worldPool) is saved with the campaign,
-  // so any recorded moment stays steerable across reloads. beatMenu holds the
-  // targeted beat; beatMode switches the sheet between menu and editors.
+  // per-turn timeline (state.turns + state.pools) is saved with the campaign, so
+  // any recorded moment — including travel — stays steerable across reloads.
+  // beatMenu holds the targeted beat; beatMode switches the sheet between menu and editors.
   const [beatMenu, setBeatMenu] = useState(null); // { beatId, index, turnK }
   const [beatMode, setBeatMode] = useState("menu"); // "menu" | "rewrite" | "edit"
   const [rewriteText, setRewriteText] = useState("");
@@ -399,7 +474,7 @@ export function Solitaire() {
   }
 
   async function handleDeleteCampaign(id) {
-    if (!window.confirm("Delete this campaign? This cannot be undone.")) return;
+    if (!(await askConfirm({ title: "Delete campaign", body: "Delete this campaign? This cannot be undone.", confirmLabel: "Delete", danger: true }))) return;
     setCampaignError(null);
     try {
       await deleteCampaign(id);
@@ -457,7 +532,9 @@ export function Solitaire() {
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const message = `[PLAYER ACTION] ${action}`;
+      // Until the opening interview finishes, every answer feeds character
+      // creation; the narrator asks a few questions then finalizes the build.
+      const message = state.created === false ? `[CHARACTER CREATION] ${action}` : `[PLAYER ACTION] ${action}`;
       const beat = await callNarrator(stateWithPlayer, message);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, message, next));
@@ -531,43 +608,25 @@ export function Solitaire() {
 
     const fullMsg = travelMsg + encounterLine;
 
+    // Everything needed to reproduce this journey if the player later rewrites it,
+    // and to undo it cleanly on a rewind: the route (sight), the destination
+    // (arrival + vista), and the rolled encounter (re-offer a fight). Recorded
+    // with the turn so travel moments are steerable like any other.
+    const travel = {
+      fromName, toName,
+      dest: { x: dest.x, y: dest.y },
+      path: path.map((p) => ({ x: p.x, y: p.y })),
+      totalMins,
+      encounter: pathEnc ? pathEnc.encounter : null,
+    };
+
     try {
       const beat = await callNarrator(stateWithPlayer, fullMsg);
-      if (!beat.minutes_passed || Math.abs(beat.minutes_passed - totalMins) > totalMins * 0.5) {
-        beat.minutes_passed = totalMins;
-      }
-      setState((s) => {
-        let next = applyBeat(s, beat, {
-          travelFrom: fromName,
-          travelTo: toName,
-          travelToCoords: { x: dest.x, y: dest.y },
-        });
-        // Multi-tile travel: mark intermediate path tiles as visited and refresh
-        // sight from each so the player's seen area expands along the route.
-        if (hexes > 1) {
-          const newTiles = { ...next.world.tiles };
-          let newSeen = next.world.seen;
-          for (let i = 1; i < path.length - 1; i++) {
-            const p = path[i];
-            const k = `${p.x},${p.y}`;
-            if (!newTiles[k]) newTiles[k] = getTile(s, p.x, p.y);
-            newSeen = computeSightFrom(p.x, p.y, newSeen);
-          }
-          next = { ...next, world: { ...next.world, tiles: newTiles, seen: newSeen } };
-        }
-        // Vista: arriving at a tile with vistaRadius reveals a wide hex.
-        const destTileNow = getTile(s, dest.x, dest.y);
-        if (destTileNow?.vistaRadius && destTileNow.vistaRadius > 0) {
-          const wider = computeSightFromRadius(dest.x, dest.y, destTileNow.vistaRadius, next.world.seen);
-          next = { ...next, world: { ...next.world, seen: wider } };
-        }
-        // Travel narration isn't rewritable (its sight/encounter side effects
-        // don't survive a rewind), so drop any rewind point carried forward.
-        return { ...next, rewind: null };
-      });
+      const next = applyTravelArrival(stateWithPlayer, beat, travel);
+      setState(recordTurn(stateWithPlayer, fullMsg, next, { travel }));
       // A hostile encounter along the way offers a fight once the player lands.
-      if (pathEnc && pathEnc.encounter.posture === "hostile") {
-        setPendingCombat(pathEnc.encounter);
+      if (travel.encounter && travel.encounter.posture === "hostile") {
+        setPendingCombat(travel.encounter);
       }
     } catch (e) {
       setError(e.message || String(e));
@@ -576,8 +635,8 @@ export function Solitaire() {
     }
   }
 
-  function handleResetCampaign() {
-    if (!window.confirm("Reset this campaign to the beginning? Your current progress here will be erased.")) return;
+  async function handleResetCampaign() {
+    if (!(await askConfirm({ title: "Reset campaign", body: "Reset this campaign to the beginning? Your current progress here will be erased.", confirmLabel: "Reset", danger: true }))) return;
     setState(makeInitialState());
     closeBeatMenu();
     setMenuOpen(false);
@@ -589,11 +648,67 @@ export function Solitaire() {
   // ----- Town buildings: trader menus (buy / sell / talk) -----
 
   function openShop() {
-    const key = `${state.world.currentTile.x},${state.world.currentTile.y}`;
+    const cur = state.world.currentTile;
+    const b = buildingForTile(getTile(state, cur.x, cur.y));
+    if (b && !isBuildingOpen(b, state.time.hour)) return; // shut for the night
+    const key = `${cur.x},${cur.y}`;
     setShopView("trade");
     // Fresh refund slate when stepping into a different shop than last time.
     setReceipts((r) => (r.tileKey === key ? r : { tileKey: key, items: {} }));
+    const inv = state.character.inventory;
+    tradeStartRef.current = { qty: invQtyMap(inv.carried), copper: coinsToCopper(inv.coins) };
     setShopTile({ x: state.world.currentTile.x, y: state.world.currentTile.y });
+  }
+
+  // Leaving the counter. If anything was actually traded, the keeper reacts to the
+  // whole haul in one recorded (steerable) beat — diffed from the open-time
+  // snapshot so a bulk buy/sell gets a single, specific comment.
+  async function closeShop() {
+    const start = tradeStartRef.current;
+    tradeStartRef.current = null;
+    const here = shopTile;
+    setShopTile(null);
+    if (!start || !here || loading) return;
+    const tile = getTile(state, here.x, here.y);
+    const building = buildingForTile(tile);
+    if (!building) return;
+
+    const codex = state.world.codex;
+    const endQty = invQtyMap(state.character.inventory.carried);
+    const ids = new Set([...Object.keys(start.qty), ...Object.keys(endQty)]);
+    const bought = [], sold = [];
+    for (const id of ids) {
+      const d = (endQty[id] || 0) - (start.qty[id] || 0);
+      const name = codex.items[id]?.name || id;
+      if (d > 0) bought.push(`${d}× ${name}`);
+      else if (d < 0) sold.push(`${-d}× ${name}`);
+    }
+    if (bought.length === 0 && sold.length === 0) return; // browsed, traded nothing
+
+    const spent = start.copper - coinsToCopper(state.character.inventory.coins);
+    const place = tile.poi?.name || building.label;
+    const ledger = [
+      bought.length ? `Bought: ${bought.join(", ")}` : "",
+      sold.length ? `Sold: ${sold.join(", ")}` : "",
+      spent > 0 ? `Net paid ${formatCopper(spent)}` : spent < 0 ? `Net earned ${formatCopper(-spent)}` : "",
+    ].filter(Boolean).join(". ");
+
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You settle up with ${building.keeper} at ${place}.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[TRADE] You have just finished trading with ${building.keeper} at ${place} (${building.label}). ${ledger}. Narrate a SHORT closing exchange (1–3 sentences, you may include a line of the keeper's dialogue) in which ${building.keeper} reacts to THIS specific haul: name an item or two, read what the player seems to be planning or doing from what they took or unloaded, and respond in character — offer fitting help (e.g. a healer asking if you need a hand setting that splint), a knowing remark about the trade (a doctor? an alchemist? or did you rob an apothecary?), gratitude, or wary curiosity. The coin is already settled at the counter, so do NOT tally or change it, and do not invent items beyond those listed.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
   }
 
   // Forge an item at a resolved tier (the minigame decided the grade). Pure
@@ -609,13 +724,29 @@ export function Solitaire() {
 
   // Take the next apprenticeship step (coin + days at the forge). Confirmed
   // because it jumps the calendar significantly.
-  function handleApprentice(step) {
+  async function handleApprentice(step) {
     if (loading) return;
-    if (!window.confirm(`Train as ${step.title}? This costs ${formatCopper(step.costCp)} and ${step.days} days bound to the forge.`)) return;
+    if (!(await askConfirm({ title: "Apprentice to the smith", body: `Train as ${step.title}? This costs ${formatCopper(step.costCp)} and ${step.days} days bound to the forge.`, confirmLabel: "Train" }))) return;
     const r = applyApprentice(state, step);
     if (!r.ok) { setError(r.reason || "You can't pay the smith."); return; }
-    const beat = { id: `appr${Date.now()}`, type: "narration", content: `You bind yourself to the smith as ${step.title}. The days blur into bellows-heat, ruined billets, and the slow grammar of the hammer — and you come away knowing more than you did.` };
-    setState({ ...r.state, beats: [...r.state.beats, beat] });
+    const beats = [{ id: `appr${Date.now()}`, type: "narration", content: `You bind yourself to the smith as ${step.title}. The days blur into bellows-heat, ruined billets, and the slow grammar of the hammer — and you come away knowing more than you did.` }];
+    if (r.spoiled?.length) beats.push({ id: `spoil${Date.now()}`, type: "spoilage", lines: r.spoiled.map((s) => `${s.quantity}× ${s.name}`) });
+    setShopTile(null); // the long apprenticeship ends the visit
+    setState({ ...r.state, beats: [...r.state.beats, ...beats] });
+  }
+
+  // Pay an expert to drill a proficiency a rating step (engine/training.js).
+  async function handleTrain(profId) {
+    if (loading || !shopTile) return;
+    const tile = getTile(state, shopTile.x, shopTile.y);
+    const building = buildingForTile(tile);
+    const offer = trainingOffer(state, profId, TRAIN_CAP);
+    if (offer.capped) { setError("There's nothing more they can teach you."); return; }
+    if (!(await askConfirm({ title: `Train ${offer.name}`, body: `Have ${building?.keeper || "the expert"} drill you in ${offer.name} (rating ${offer.cur} → ${offer.next})? This costs ${formatCopper(offer.costCp)} and ${offer.hours} hours.`, confirmLabel: "Train" }))) return;
+    const r = applyTraining(state, profId, TRAIN_CAP);
+    if (!r.ok) { setError(r.reason || "Training failed."); return; }
+    setShopTile(null); // a long session ends the visit
+    setState({ ...r.state, beats: [...r.state.beats, { id: `train${Date.now()}`, type: "narration", content: `Under ${building?.keeper || "an expert"}'s eye you drill ${r.offer.name} for hours — it sharpens from ${r.offer.cur} to ${r.offer.next}.` }] });
   }
 
   // Deterministic, local transactions (engine/economy.js). The shop's stock is
@@ -657,22 +788,111 @@ export function Solitaire() {
     setState({ ...r.state, beats: [...r.state.beats, { id: `use${Date.now()}`, type: "narration", content: r.summary }] });
   }
 
-  // The "AI flavor" half of the hybrid: hand the conversation to the narrator
-  // (the counter handles the actual trade). Mirrors handleSeekCombat's flow.
-  async function handleShopTalk() {
-    if (loading || !shopTile) return;
-    const tile = getTile(state, shopTile.x, shopTile.y);
-    const building = buildingForTile(tile);
-    if (!building) { setShopTile(null); return; }
+  // ----- Tavern quest board: tasks, day-labour, recruiting -----
+
+  function handleAcceptTask(posting) {
+    const r = acceptTask(state, posting);
+    if (!r.ok) return;
+    setState({ ...r.state, beats: [...r.state.beats, { id: `q${Date.now()}`, type: "narration", content: `You take down the notice — "${posting.title}", posted by ${posting.giver}. It's yours to see through.` }] });
+  }
+  function handleAbandonTask(id) {
+    setState(abandonTask(state, id).state);
+  }
+  // Hire yourself out for a stretch of labour — deterministic time + coin + wear.
+  function handleDayLabour(job) {
+    const r = applyDayLabour(state, job);
+    if (!r.ok) return;
+    setShopTile(null); // a stretch of work ends the visit
+    setState({ ...r.state, beats: [...r.state.beats, { id: `lab${Date.now()}`, type: "narration", content: r.summary }] });
+  }
+  // Recruiting is a CONVERSATION, not a button. "Approach" only opens the
+  // exchange — the player must actually talk the person round. The party's
+  // standing (size, best attributes, how well-armed) vs the recruit's choosiness
+  // is handed to the narrator, who plays their reception and, only once genuinely
+  // won over, sets recruit_companion (applied in applyBeat). Folk don't follow a
+  // lone, weak wanderer.
+  async function handleApproachRecruit(tmpl) {
+    if (loading || !shopTile || isRecruited(state, tmpl.id)) return;
+    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the tavern";
+    const standing = partyStanding(state);
+    const outlook = recruitOutlook(standing, tmpl.choosiness);
     setShopTile(null);
     setError(null);
     setLoading(true);
-    const place = tile.poi?.name || building.label;
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You speak with ${building.keeper} at ${place}.` };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You cross to ${tmpl.name}, the ${tmpl.role}, to feel them out about joining you.` };
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] You speak with ${building.keeper} at ${place} — passing the time, asking after their wares, the town, or the road. Buying and selling is handled separately at the counter, so don't tally coin here; just play the conversation, grounded in this place and the current state.`;
+      const msg = `[APPROACH RECRUIT] At ${place} the player approaches ${tmpl.name} (id: ${tmpl.id}), a ${tmpl.race} ${tmpl.role} — "${tmpl.desc}" — who is posted as willing to take the road for ${tmpl.terms}. They are ${tmpl.choosiness}-choosiness about who they'll follow. The player's company right now reads as ${standing.descriptor}; its strongest qualities: ${standing.bestLine}. Weighing that, ${tmpl.name}'s likely reception is "${outlook}". This is a FIRST meeting: ${tmpl.name} does NOT know the player's name (a name given earlier to the innkeeper did not reach them) — they address the player by look, bearing, or role until the player offers it, and only learn it if the player actually gives it during this exchange. Open the conversation in ${tmpl.name}'s voice — size up the player and their band, state interest/terms/skepticism. Do NOT have them join yet; the player must talk them round across the exchange. Only set recruit_companion:{"id":"${tmpl.id}"} once they are GENUINELY won over by what the player says and shows — and a scornful, unimpressed prospect (a strong fighter eyeing a lone weakling) may refuse outright. Keep it grounded; let the player's words decide.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Part ways with a companion (they stay in the codex as a known person).
+  async function handleDismiss(id) {
+    const c = state.world.codex.characters[id];
+    if (!(await askConfirm({ title: "Part ways", body: `Tell ${c?.name || "this companion"} you're parting ways? They'll go their own road — you can find them again.`, confirmLabel: "Part ways", danger: true }))) return;
+    setState(dismissCompanion(state, id).state);
+  }
+
+  // ----- Gaol: bounties + buying prisoner rights -----
+
+  function handleAcceptBounty(b) {
+    const r = acceptBounty(state, b);
+    if (!r.ok) return;
+    setState({ ...r.state, beats: [...r.state.beats, { id: `bty${Date.now()}`, type: "narration", content: `You take the warden's contract on ${b.name} — wanted for ${b.crime}. Dead or alive.` }] });
+  }
+  // Buying rights is a coin transaction; the custody scene is narrated.
+  async function handleBuyRights(p) {
+    if (loading || !shopTile) return;
+    if (!(await askConfirm({ title: "Buy prisoner's rights", body: `Pay ${formatCopper(p.rightsCp)} to the warden for the rights to ${p.name} (held for ${p.crime})? Their fate becomes yours.`, confirmLabel: "Pay" }))) return;
+    const r = buyPrisonerRights(state, p);
+    if (!r.ok) { setError(r.reason || "You can't pay the warden."); return; }
+    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the gaol";
+    setShopTile(null);
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You pay the warden for the rights to ${p.name}.` };
+    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[PLAYER ACTION] At ${place} you have just paid the warden ${formatCopper(p.rightsCp)} for the rights to ${p.name}, held for ${p.crime} (${p.desc}). The coin is already settled — do not re-tally it. Play the moment the warden hands them over: who ${p.name} is, how they react, and leave it open for the player to decide their fate (free them, press them to service, ransom them, or take them elsewhere to sell). Don't fabricate combat.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ----- Slave market (The Block): buying a captive's bond -----
+
+  // Buying a bond is a coin transaction; the custody scene (free, press to
+  // service, ransom, resell) is narrated. Crowsmoor only — never Mirecross.
+  async function handleBuyCaptive(c) {
+    if (loading || !shopTile) return;
+    if (!(await askConfirm({ title: "Buy a bond", body: `Pay ${formatCopper(c.priceCp)} to the auctioneer for ${c.name}'s bond (${c.origin})? Their fate becomes yours — to free, to keep, or to sell on.`, confirmLabel: "Pay", danger: true }))) return;
+    const r = buyCaptive(state, c);
+    if (!r.ok) { setError(r.reason || "You can't pay the auctioneer."); return; }
+    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the block";
+    setShopTile(null);
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You pay the auctioneer for ${c.name}'s bond.` };
+    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[PLAYER ACTION] At ${place} you have just paid the auctioneer ${formatCopper(c.priceCp)} for the bond of ${c.name} — ${c.origin}, ${c.taken} (${c.desc}). They can ${c.skills}. Their spirit reads as ${c.spirit}. The coin is already settled — do not re-tally it. Play the moment the auctioneer strikes the irons and hands them over: who ${c.name} is in their own voice, how they react to the player given their spirit, and leave it OPEN for the player to decide their fate — free them outright (they may then walk their own road or, if moved, ask to travel with you), keep them in service, ransom them home, or sell them on. Do not have them simply join as a willing companion unless the player earns it. Don't fabricate combat.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
@@ -712,6 +932,8 @@ export function Solitaire() {
     setError(null);
     setLoading(true);
     setPendingEngage(null);
+    setPendingCombat(null);
+    setPendingLoot(null);
     const base = stateBeforeTurn(state, menu.turnK);
     setState(base); // roll the rejected beat (and any later ones) out of the log + memory
     try {
@@ -720,8 +942,13 @@ export function Solitaire() {
       // Keep memory clean of the steer scaffolding so later turns don't treat the
       // rejected version as canon.
       beat._userMsg = `${buildStateContext(base)}\n\n${cp.message}`;
-      const next = applyBeat(base, beat);
-      setState(recordTurn(base, cp.message, next));
+      // A travel turn re-lands the player at the destination (and re-reveals the
+      // route); any other turn just re-applies its beat.
+      const next = cp.travel
+        ? applyTravelArrival(base, beat, cp.travel)
+        : applyBeat(base, beat);
+      setState(recordTurn(base, cp.message, next, cp.travel ? { travel: cp.travel } : {}));
+      if (cp.travel?.encounter?.posture === "hostile") setPendingCombat(cp.travel.encounter);
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -762,12 +989,18 @@ export function Solitaire() {
     const wp = activeWorldPassives(st.character, st.world.codex);
     const cur = st.world.currentTile;
     const terrain = getTile(st, cur.x, cur.y).terrain;
+    // Recruited companions fight at your side, scaled to the region's enemy tier.
+    const allies = (st.party || [])
+      .map((id) => st.world.codex.characters?.[id])
+      .filter((c) => c && c.combatState?.status !== "dead")
+      .map((c) => allyFromCompanion(c, st.world.codex, { tierId: region.enemyTier || "common" }));
     setCombat(initCombat(st.character, st.world.codex, enemies, {
       maxLootTier: region.lootTier,
       region: region.level,
       ownedUniques: ownedUniqueIds(st),
       coinBonus: wp.coinBonus || 0,
       environment: generateEnvironment(terrain),
+      allies,
       ...extraOpts,
     }));
   }
@@ -834,11 +1067,14 @@ export function Solitaire() {
     const cs = combat;
     const ctx = combatCtxRef.current || {};
     const next = applyCombatResult(state, cs, ctx);
+    // A defeat by a legendary-tier+ foe is a real, final death; any other defeat is
+    // a survivable scenario (robbed, abducted, enslaved…).
+    const epicDeath = cs.phase === "defeat" && isEpicEncounter(cs) && (cs.lethal || cs.escalated);
     setState(next);
     setCombat(null);
     combatCtxRef.current = null;
-    // Spoils aren't auto-taken — offer a deliberate Search the fallen.
-    if (next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: cs.lethal });
+    // Spoils aren't auto-taken — offer a deliberate Search the fallen (never when dead).
+    if (!epicDeath && next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: cs.lethal });
 
     // The story always continues from the result, so the player can react.
     setError(null);
@@ -846,9 +1082,11 @@ export function Solitaire() {
     try {
       const place = currentLocationName(next);
       let msg;
-      if (cs.phase === "defeat") {
+      if (epicDeath) {
+        msg = `[DEATH] You have fallen — slain by ${ctx.flavor || "a foe far beyond your strength"} at ${place}. This is the end of ${next.character.name || "the Wanderer"}'s story, and it must land like one: narrate a single, unflinching final passage — the killing blow given its full weight, what you did with your last breath, and the silence after. Make it heroic, terrible, and earned. This death is PERMANENT: offer no rescue, no miraculous reprieve, no "but somehow you survive." End the tale.`;
+      } else if (cs.phase === "defeat") {
         const wasLethal = cs.lethal || cs.escalated;
-        msg = `[DEFEATED] You were beaten ${wasLethal ? "down with weapons drawn" : "senseless in a bare-knuckle brawl"} by ${ctx.flavor || "your foe"} at ${place} and lost consciousness — you are NOT dead. ${wasLethal ? "This was a bloody, weapons-out fight, so the aftermath can be harsher (grave wounds, captured, left for dead but breathing)." : "It was only fists, so this is a humbling, not a killing — expect to be thrown out, robbed of loose coin, or hauled off to sober up."} Decide a fitting non-lethal aftermath for who beat you and where: robbed (inventory_changes), hauled to the watch/jailed, thrown out, or captured and moved (tile_move). Apply wounds as conditions and location_update if the place changed. The player wakes to face what's left; death-and-reload is not the goal.`;
+        msg = `[DEFEATED] You were beaten ${wasLethal ? "down with weapons drawn" : "senseless in a bare-knuckle brawl"} by ${ctx.flavor || "your foe"} at ${place} and lost consciousness — you are NOT dead, and this is not where your story ends. Choose a fate that fits WHO beat you and WHERE, then narrate the player waking to face it: robbed of coin and goods (inventory_changes), beaten and thrown out, hauled to the watch or thrown in a cell, or abducted and moved elsewhere (tile_move) — dragged off by goblins to their warren, pressed into a labor gang or a ship's galley, sold to slavers, held for ransom, or left for dead in a ditch but breathing. ${wasLethal ? "Weapons were out, so the aftermath can be brutal — grave wounds, a maiming, waking somewhere far worse." : "It was only fists, so keep it a humbling, not a maiming."} Apply wounds as conditions, location_update if the place changed, and inventory_changes for what was taken. Death-and-reload is not the goal; the player survives to claw their way back.`;
       } else {
         const result = cs.phase === "victory" ? "You won — every foe is slain or down."
           : cs.phase === "resolved" ? "The fight ended without a slaughter — see the report for each foe's fate (yielded / fled / knocked out)."
@@ -857,8 +1095,17 @@ export function Solitaire() {
       }
       const beat = await callNarrator(next, msg);
       const after = applyBeat(next, beat);
-      setState(recordTurn(next, msg, after));
-      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+      if (epicDeath) {
+        const ended = {
+          cause: "fallen in battle",
+          foe: ctx.flavor || "a foe beyond their strength",
+          place, day: after.time?.day || null,
+        };
+        setState({ ...recordTurn(next, msg, after), ended });
+      } else {
+        setState(recordTurn(next, msg, after));
+        if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+      }
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -892,8 +1139,39 @@ export function Solitaire() {
   }
 
   const onCombatAct = (abilityId) => setCombat((c) => (c ? playerAct(c, abilityId, c.target) : c));
-  const onCombatTalk = (intent) => setCombat((c) => (c ? playerTalk(c, intent, c.target) : c));
-  const onCombatEnvironment = (id) => setCombat((c) => (c ? playerUseEnvironment(c, id, c.target) : c));
+
+  // A snapshot of the fight for the narrator to adjudicate an improvised action.
+  function combatContext(c) {
+    const p = c.player;
+    const en = c.enemies.filter((e) => e.health > 0 && !e.resolved)
+      .map((e) => `${e.name} [${e.tier}, ${e.demeanor}] ${Math.ceil(e.health)}/${e.maxHealth}hp${(e.statuses || []).length ? ` (${e.statuses.map((s) => s.type).join(",")})` : ""}`).join("; ");
+    const allies = (c.allies || []).filter((a) => a.health > 0 && !a._dead && !a.resolved).map((a) => `${a.name} ${Math.ceil(a.health)}/${a.maxHealth}`).join("; ");
+    const env = (c.environment || []).filter((f) => f.uses > 0).map((f) => f.name).join(", ");
+    return `[FIGHT STATE] You: ${Math.ceil(p.health)}/${p.maxHealth}hp, ${c.lethal ? `wielding ${p.weapon?.name || "fists"}` : "in a bare-handed brawl"}. Foes: ${en || "none left"}.${allies ? ` Allies: ${allies}.` : ""}${env ? ` Around you: ${env}.` : ""}`;
+  }
+
+  // The player types a freeform combat move (improvise with the surroundings,
+  // demand surrender, taunt, terrify…). The narrator adjudicates it into a
+  // bounded combat_effect; the engine applies it as the player's turn.
+  async function handleCombatAction(text) {
+    const action = (text || "").trim();
+    if (!action || combatBusy || !combat || combat.phase !== "player") return;
+    setCombatBusy(true);
+    setError(null);
+    try {
+      const msg = `[COMBAT ACTION] ${combatContext(combat)}\nThe player's improvised action this turn: "${action}". Adjudicate it from the fiction and return ONLY a combat_effect.`;
+      const beat = await callNarrator(state, msg);
+      const eff = beat.combat_effect || (beat.narration ? { narration: beat.narration, kind: "miss" } : null);
+      let next = eff ? applyCombatEffect(combat, eff) : combat;
+      if (!["victory", "defeat", "resolved", "playerFled"].includes(next.phase)) next = endTurn(next);
+      setCombat(next);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setCombatBusy(false);
+    }
+  }
+
   const onCombatDraw = () => setCombat((c) => (c ? playerDrawWeapon(c) : c));
   const onCombatTarget = (idx) => setCombat((c) => (c ? setTarget(c, idx) : c));
   const onCombatEndTurn = () => setCombat((c) => (c ? endTurn(c) : c));
@@ -930,9 +1208,16 @@ export function Solitaire() {
     );
   }
 
+  // The run has ended — the player fell in an epic encounter. A memorial replaces
+  // the game; the only way on is back to the campaigns list.
+  if (state.ended) {
+    return <GameOverScreen state={state} onExit={handleBackToCampaigns} />;
+  }
+
   // A wired town building (poi.service) at the player's current tile, if any —
   // surfaces an "Enter" affordance to open its menu. Hidden during combat.
   const buildingHere = combat ? null : buildingForTile(getTile(state, state.world.currentTile.x, state.world.currentTile.y));
+  const buildingOpenNow = buildingHere ? isBuildingOpen(buildingHere, state.time.hour) : false;
 
   return (
     <div style={{
@@ -946,6 +1231,7 @@ export function Solitaire() {
           state={state}
           onMap={() => setMapOpen(true)}
           onMenu={() => setMenuOpen(true)}
+          onParty={() => setPartyOpen(true)}
         />
         <VitalsStrip character={state.character} />
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
@@ -1033,17 +1319,22 @@ export function Solitaire() {
             boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: colors.gold, marginBottom: "2px" }}>
-                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : "Building"}
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: buildingOpenNow ? colors.gold : "rgba(215,167,111,0.55)", marginBottom: "2px" }}>
+                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : buildingHere.kind === "tavern" ? "Tavern" : buildingHere.kind === "gaol" ? "Gaol" : buildingHere.kind === "slavemarket" ? "Auction" : "Building"}
               </div>
               <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
-                {buildingHere.label} — step up to the counter.
+                {buildingOpenNow
+                  ? `${buildingHere.label} — ${(buildingHere.kind === "tavern" || buildingHere.kind === "gaol") ? "read the board." : buildingHere.kind === "slavemarket" ? "look over the lots." : "step up to the counter."}`
+                  : `${buildingHere.label} is shut — it opens at ${String(buildingHours(buildingHere).open).padStart(2, "0")}:00.`}
               </div>
             </div>
-            <button onClick={openShop} style={{
-              padding: "9px 16px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
-              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
-            }}>Enter</button>
+            <button onClick={buildingOpenNow ? openShop : undefined} disabled={!buildingOpenNow} style={{
+              padding: "9px 16px", borderRadius: 12,
+              backgroundColor: buildingOpenNow ? colors.gold : "rgba(215,167,111,0.12)",
+              color: buildingOpenNow ? colors.ink : "rgba(215,167,111,0.45)",
+              border: "none", fontSize: "13px", fontWeight: 800,
+              cursor: buildingOpenNow ? "pointer" : "not-allowed", fontFamily: "inherit", flexShrink: 0,
+            }}>{buildingOpenNow ? "Enter" : "Closed"}</button>
           </div>
         )}
         <InputBar value={input} onChange={setInput} onSubmit={handleSubmit} loading={loading} />
@@ -1094,6 +1385,9 @@ export function Solitaire() {
       {codexOpen && (
         <CodexView state={state} onClose={() => setCodexOpen(false)} />
       )}
+      {partyOpen && (
+        <PartyView state={state} onDismiss={handleDismiss} onClose={() => setPartyOpen(false)} />
+      )}
       {shopTile && (() => {
         const tile = getTile(state, shopTile.x, shopTile.y);
         const building = buildingForTile(tile);
@@ -1109,6 +1403,50 @@ export function Solitaire() {
               onApprentice={handleApprentice}
               onForge={handleForge}
               onBack={() => setShopView("trade")}
+              onClose={closeShop}
+              loading={loading}
+            />
+          );
+        }
+        if (building.kind === "tavern") {
+          const board = generateBoard(key, state.time.day);
+          return (
+            <QuestBoardView
+              state={state}
+              building={building}
+              board={board}
+              onAccept={handleAcceptTask}
+              onAbandon={handleAbandonTask}
+              onLabour={handleDayLabour}
+              onRecruit={handleApproachRecruit}
+              onClose={() => setShopTile(null)}
+              loading={loading}
+            />
+          );
+        }
+        if (building.kind === "gaol") {
+          const board = generateGaol(key, state.time.day);
+          return (
+            <PrisonView
+              state={state}
+              building={building}
+              board={board}
+              onAccept={handleAcceptBounty}
+              onAbandon={handleAbandonTask}
+              onBuyRights={handleBuyRights}
+              onClose={() => setShopTile(null)}
+              loading={loading}
+            />
+          );
+        }
+        if (building.kind === "slavemarket") {
+          const board = generateSlaveMarket(key, state.time.day);
+          return (
+            <SlaveMarketView
+              state={state}
+              building={building}
+              board={board}
+              onBuy={handleBuyCaptive}
               onClose={() => setShopTile(null)}
               loading={loading}
             />
@@ -1123,11 +1461,11 @@ export function Solitaire() {
               tileKey={key}
               stock={stock}
               receipts={receipts.tileKey === key ? receipts.items : {}}
-              onClose={() => setShopTile(null)}
+              onClose={closeShop}
               onBuy={handleBuy}
               onSell={handleSell}
-              onTalk={handleShopTalk}
               onForge={building.forge ? () => setShopView("forge") : undefined}
+              onTrain={handleTrain}
               loading={loading}
             />
           );
@@ -1138,13 +1476,23 @@ export function Solitaire() {
         <CombatView
           combat={combat}
           onAct={onCombatAct}
-          onTalk={onCombatTalk}
-          onEnvironment={onCombatEnvironment}
+          onAction={handleCombatAction}
+          busy={combatBusy}
           onDraw={onCombatDraw}
           onSetTarget={onCombatTarget}
           onEndTurn={onCombatEndTurn}
           onFlee={onCombatFlee}
           onResolve={handleResolveCombat}
+        />
+      )}
+      {confirmDialog && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          body={confirmDialog.body}
+          confirmLabel={confirmDialog.confirmLabel}
+          cancelLabel={confirmDialog.cancelLabel}
+          danger={confirmDialog.danger}
+          onResolve={(v) => { confirmDialog.resolve(v); setConfirmDialog(null); }}
         />
       )}
     </div>

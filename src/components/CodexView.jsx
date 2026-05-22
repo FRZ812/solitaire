@@ -3,6 +3,8 @@ import { Icon } from "./Icon.jsx";
 import { iconButtonStyle } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
+import { relationshipTier } from "../engine/relationships.js";
+import { itemTemplate } from "../data/catalog.js";
 
 const CODEX_TABS = [
   { key: "characters",  label: "Characters" },
@@ -37,8 +39,11 @@ const serifInlineValue = {
 
 export function CodexEntry({ entry, kind, codex }) {
   const wornNames = (kind === "characters" && entry.worn?.length)
-    ? entry.worn.map(id => codex.items[id]?.name || id) : [];
+    ? entry.worn.map(id => (codex.items[id] || itemTemplate(id))?.name || id) : [];
   const knowsList = (kind === "characters" && entry.knows?.length) ? entry.knows : [];
+  const memoriesList = (kind === "characters" && entry.memories?.length) ? entry.memories : [];
+  const hasBond = kind === "characters" && entry.kind !== "player" && ((entry.relationship || 0) !== 0 || memoriesList.length > 0);
+  const bondTier = hasBond ? relationshipTier(entry.relationship || 0) : null;
   const hasAttrs = kind === "characters" && entry.attributes;
   const narrativeAppearance = entry.base_appearance || (typeof entry.appearance === "string" ? entry.appearance : null);
   const structuredAppearance = kind === "characters" && entry.appearance && typeof entry.appearance === "object" ? entry.appearance : null;
@@ -61,7 +66,12 @@ export function CodexEntry({ entry, kind, codex }) {
         }}>
           {entry.name}
         </div>
-        <div style={{ display: "flex", gap: "6px" }}>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          {bondTier && (
+            <span style={{ fontSize: "9px", fontWeight: 800, padding: "2px 8px", borderRadius: "8px", color: bondTier.color, border: `1px solid ${bondTier.color}55`, backgroundColor: `${bondTier.color}14` }}>
+              {bondTier.label} {(entry.relationship || 0) > 0 ? "+" : ""}{entry.relationship || 0}
+            </span>
+          )}
           {entry.common && <span style={{ ...subtleMeta, fontSize: "8px", letterSpacing: "0.12em" }}>Baseline</span>}
           {entry.kind === "player" && <span style={{ ...accentMeta, fontSize: "8px" }}>You</span>}
           {kind === "skills" && typeof entry.rating === "number" && (
@@ -158,6 +168,17 @@ export function CodexEntry({ entry, kind, codex }) {
           <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "13px", color: colors.parchment, lineHeight: "1.5" }}>
             {knowsList.map((f, i) => (
               <li key={i} style={{ fontFamily: fonts.serif, fontStyle: "italic", marginBottom: "2px", color: colors.parchmentLight }}>{f}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {memoriesList.length > 0 && (
+        <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: `1px dashed rgba(215, 167, 111, 0.2)` }}>
+          <div style={{ ...accentMeta, marginBottom: "6px", fontWeight: 600 }}>Shared history</div>
+          <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "13px", color: colors.parchment, lineHeight: "1.5" }}>
+            {memoriesList.map((m, i) => (
+              <li key={i} style={{ fontFamily: fonts.serif, fontStyle: "italic", marginBottom: "2px", color: colors.parchmentLight }}>{m}</li>
             ))}
           </ul>
         </div>

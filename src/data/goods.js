@@ -11,6 +11,10 @@
 // Applying it spends one and resolves the effect deterministically. `kind` for
 // consumables is remedy / food / drink — none are in inventory.js EQUIPPABLE,
 // so they stack in the pack and show a Use button instead of Equip.
+//
+// `perish` (food only) is the shelf life in DAYS — fresh food spoils that many
+// days after you acquire it (engine/spoilage.js). Preserved staples (hardtack,
+// jerky, salt-pork, dried beans, onions…) omit `perish` and never spoil.
 
 export const GOODS = {
   // ---- Healer / apothecary remedies ----
@@ -65,44 +69,44 @@ export const GOODS = {
 
   // ---- Butcher (meat) ----
   "fresh-meat": {
-    id: "fresh-meat", name: "Cut of Meat", kind: "food", value: 4,
+    id: "fresh-meat", name: "Cut of Meat", kind: "food", value: 4, perish: 2,
     appearance: "A red cut of fresh meat wrapped in waxed cloth.", description: "Cooked over a fire, a filling meal.",
     use: { verb: "Eat", needs: { hunger: 35 } },
   },
   "sausage-links": {
-    id: "sausage-links", name: "Sausage Links", kind: "food", value: 3,
+    id: "sausage-links", name: "Sausage Links", kind: "food", value: 3, perish: 4,
     appearance: "A coil of fat pork sausages.", description: "Fry or grill them. Quick and filling on the road.",
     use: { verb: "Eat", needs: { hunger: 25 } },
   },
   "smoked-ham": {
-    id: "smoked-ham", name: "Smoked Ham", kind: "food", value: 8,
+    id: "smoked-ham", name: "Smoked Ham", kind: "food", value: 8, perish: 45,
     appearance: "A dense joint of smoked ham, dark at the rind.", description: "Keeps for weeks. A hearty meal's worth.",
     use: { verb: "Eat", needs: { hunger: 40 } },
   },
   "soup-bones": {
-    id: "soup-bones", name: "Soup Bones", kind: "food", value: 1,
+    id: "soup-bones", name: "Soup Bones", kind: "food", value: 1, perish: 3,
     appearance: "A bundle of marrow bones.", description: "Boiled into a broth, they stretch a thin meal.",
     use: { verb: "Eat", needs: { hunger: 15, thirst: 5 } },
   },
   "dressed-fowl": {
-    id: "dressed-fowl", name: "Dressed Fowl", kind: "food", value: 6,
+    id: "dressed-fowl", name: "Dressed Fowl", kind: "food", value: 6, perish: 2,
     appearance: "A plucked and dressed bird, trussed with twine.", description: "Roasted whole, a generous meal.",
     use: { verb: "Eat", needs: { hunger: 40 } },
   },
 
   // ---- Fruit peddler ----
   "apples": {
-    id: "apples", name: "Handful of Apples", kind: "food", value: 2,
+    id: "apples", name: "Handful of Apples", kind: "food", value: 2, perish: 18,
     appearance: "A few russet apples, a little bruised.", description: "Crisp and sweet. A light bite that also slakes thirst.",
     use: { verb: "Eat", needs: { hunger: 10, thirst: 8 } },
   },
   "pears": {
-    id: "pears", name: "Ripe Pears", kind: "food", value: 2,
+    id: "pears", name: "Ripe Pears", kind: "food", value: 2, perish: 6,
     appearance: "Three soft pears, fragrant and heavy.", description: "Juicy enough to ease thirst as well as hunger.",
     use: { verb: "Eat", needs: { hunger: 10, thirst: 12 } },
   },
   "berries": {
-    id: "berries", name: "Punnet of Berries", kind: "food", value: 2,
+    id: "berries", name: "Punnet of Berries", kind: "food", value: 2, perish: 3,
     appearance: "A leaf-lined punnet of dark berries.", description: "A sweet handful — a treat more than a meal.",
     use: { verb: "Eat", needs: { hunger: 8, thirst: 4 } },
   },
@@ -114,7 +118,7 @@ export const GOODS = {
 
   // ---- Greengrocer (vegetables) ----
   "turnips": {
-    id: "turnips", name: "Bunch of Turnips", kind: "food", value: 1,
+    id: "turnips", name: "Bunch of Turnips", kind: "food", value: 1, perish: 30,
     appearance: "A muddy bunch of turnips, greens still on.", description: "Cheap and filling, stewed or roasted.",
     use: { verb: "Eat", needs: { hunger: 12 } },
   },
@@ -124,12 +128,12 @@ export const GOODS = {
     use: { verb: "Eat", needs: { hunger: 8 } },
   },
   "cabbage": {
-    id: "cabbage", name: "Cabbage", kind: "food", value: 2,
+    id: "cabbage", name: "Cabbage", kind: "food", value: 2, perish: 14,
     appearance: "A tight, heavy head of green cabbage.", description: "Boiled or fermented, it feeds a camp.",
     use: { verb: "Eat", needs: { hunger: 15 } },
   },
   "carrots": {
-    id: "carrots", name: "Bunch of Carrots", kind: "food", value: 1,
+    id: "carrots", name: "Bunch of Carrots", kind: "food", value: 1, perish: 30,
     appearance: "A bunch of earthy carrots.", description: "Sweet and keeping. Good raw or in the pot.",
     use: { verb: "Eat", needs: { hunger: 10 } },
   },
@@ -138,8 +142,67 @@ export const GOODS = {
     appearance: "A small sack of dried beans.", description: "Soaked and simmered, many filling meals.",
     use: { verb: "Eat", needs: { hunger: 25 } },
   },
+
+  // ---- Preserved travel rations (never spoil — the road-keeper's staples) ----
+  "hardtack": {
+    id: "hardtack", name: "Hardtack", kind: "food", value: 2,
+    appearance: "A box of pale, rock-hard ship's biscuit.", description: "Dull, dense, and all but immortal — soak it or break a tooth. The traveller's standby.",
+    use: { verb: "Eat", needs: { hunger: 18 } },
+  },
+  "jerky": {
+    id: "jerky", name: "Strips of Jerky", kind: "food", value: 5,
+    appearance: "A handful of dark, dried meat strips, tough as leather.", description: "Wind-dried and smoked hard. Keeps for months and travels in a pocket.",
+    use: { verb: "Eat", needs: { hunger: 22 } },
+  },
+  "salt-pork": {
+    id: "salt-pork", name: "Salt Pork", kind: "food", value: 6,
+    appearance: "A waxed cloth of pork packed grey-white with curing salt.", description: "Salted to keep through any season. Hearty — but the salt leaves you thirsty.",
+    use: { verb: "Eat", needs: { hunger: 30, thirst: -8 } },
+  },
+  "trail-rations": {
+    id: "trail-rations", name: "Day's Trail Rations", kind: "food", value: 10,
+    appearance: "A wrapped day's ration — hardtack, cheese, dried meat, and nuts.", description: "A balanced day's food for the road, packed to keep. The traveller's standby.",
+    use: { verb: "Eat", needs: { hunger: 45 } },
+  },
+
+  // ---- Tavern & market drinks (kind "drink") ----
+  "ale": {
+    id: "ale", name: "Jug of Ale", kind: "drink", value: 2,
+    appearance: "A stoppered earthenware jug of brown ale.", description: "Slakes thirst and loosens the shoulders. A mild lift to the spirits.",
+    use: { verb: "Drink", needs: { thirst: 20 }, resolve: 1 },
+  },
+  "wine": {
+    id: "wine", name: "Skin of Wine", kind: "drink", value: 3,
+    appearance: "A leather skin of rough red wine.", description: "Sour and warming. Eases thirst and steadies the nerves a little.",
+    use: { verb: "Drink", needs: { thirst: 15 }, resolve: 1 },
+  },
+  "spirits": {
+    id: "spirits", name: "Flask of Spirits", kind: "drink", value: 6,
+    appearance: "A small flask of clear, fierce grain-spirit.", description: "Burns going down. Little for thirst, but it braces a man for what's coming.",
+    use: { verb: "Drink", needs: { thirst: 4 }, resolve: 2 },
+  },
 };
 
 export function goodDef(id) {
   return GOODS[id] || null;
+}
+
+const NEED_LABEL = { hunger: "Hunger", thirst: "Thirst", sleep: "Rest" };
+
+// Short, concrete chips of what a consumable's `use` does — the actual numbers,
+// so the player sees "+6 Vitality" / "Hunger +35" / "Clears Bleeding" instead of
+// vague flavour. Shared by the trader counter and the pack detail panel.
+export function useEffectChips(def) {
+  const u = def?.use;
+  if (!u) return [];
+  const chips = [];
+  if (u.vitality) chips.push(`${u.vitality > 0 ? "+" : ""}${u.vitality} Vitality`);
+  if (u.resolve) chips.push(`${u.resolve > 0 ? "+" : ""}${u.resolve} Resolve`);
+  if (u.needs) {
+    for (const k of ["hunger", "thirst", "sleep"]) {
+      if (u.needs[k]) chips.push(`${NEED_LABEL[k]} ${u.needs[k] > 0 ? "+" : ""}${u.needs[k]}`);
+    }
+  }
+  for (const c of (u.removeConditions || [])) chips.push(`Clears ${c}`);
+  return chips;
 }

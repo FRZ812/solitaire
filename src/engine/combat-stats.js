@@ -21,11 +21,11 @@ export function weaponCategory(item) {
   if (item.combat?.weaponType) return item.combat.weaponType;
   const name = `${item.name || ""} ${item.id || ""}`.toLowerCase();
   const has = (...w) => w.some((s) => name.includes(s));
-  if (has("dagger", "knife", "dirk")) return "dagger";
+  if (has("dagger", "knife", "dirk", "stiletto", "rondel", "main-gauche", "poignard", "kris")) return "dagger";
   if (has("axe", "cleaver", "hatchet")) return "axe";
-  if (has("hammer", "mace", "maul", "warhammer", "club")) return "mace";
+  if (has("hammer", "mace", "maul", "warhammer", "club", "morningstar", "flail")) return "mace";
   if (has("spear", "lance", "pike", "halberd", "glaive")) return "spear";
-  if (has("bow", "sling", "crossbow")) return "bow";
+  if (has("bow", "sling", "crossbow", "arbalest")) return "bow";
   if (has("staff", "stave")) return "staff";
   if (has("wand", "rod", "scepter", "focus")) return "wand";
   if (has("sword", "blade", "sabre", "saber", "rapier", "falchion")) return "sword";
@@ -59,6 +59,18 @@ export function itemCombatStats(item) {
     else if (weaponType === "staff" || weaponType === "wand") damage = { min: 2, max: 4, type: "magical", pen: 1 };
     else if (has("long", "great"))    damage = { min: 5, max: 9, type: "physical", pen: 0 };
     else                              damage = { min: 4, max: 7, type: "physical", pen: 0 };
+    // Heft within a family (name keywords): a two-handed/heavy weapon hits harder
+    // (and a war-pick/maul punches through more), a light one hits softer but is
+    // implicitly faster. Applied to the family base BEFORE tier scaling, so the
+    // tier curve still drives overall power.
+    const HEAVY = ["great", "greater", "two-handed", "twohanded", "maul", "halberd", "glaive", "poleaxe", "bardiche", "partisan", "pike", "zweihander", "claymore", "executioner", "warhammer", "war hammer", "war-hammer", "war bow", "war-bow", "longbow", "heavy", "arbalest", "battle"];
+    const LIGHT = ["short", "hand axe", "hand-axe", "throwing", "light", "stiletto", "main-gauche", "hatchet", "sling", "buckler"];
+    if (HEAVY.some((w) => name.includes(w))) {
+      damage = { ...damage, min: Math.round(damage.min * 1.3), max: Math.round(damage.max * 1.3) };
+      if (weaponType === "mace" || has("war", "maul", "pick")) damage.pen += 1;
+    } else if (LIGHT.some((w) => name.includes(w))) {
+      damage = { ...damage, min: Math.max(1, Math.round(damage.min * 0.82)), max: Math.max(2, Math.round(damage.max * 0.82)) };
+    }
     if (item.tier) {
       const m = tierMult(item.tier);
       damage = { ...damage, min: Math.round(damage.min * m), max: Math.round(damage.max * m) };
@@ -66,18 +78,68 @@ export function itemCombatStats(item) {
     return { armor: 0, ward: 0, dodge: 0, damage, weaponType: weaponType || "sword" };
   }
 
+  // Armour class by name keyword (most specific first), scaled by tier.
   let armor = 0, ward = 0, dodge = 0;
-  if (has("plate", "full plate")) armor = 8;
+  if (has("full plate", "full-plate", "field plate")) armor = 9;
+  else if (has("half plate", "half-plate")) armor = 7;
+  else if (has("plate")) armor = 8;
+  else if (has("banded", "splint")) armor = 6;
   else if (has("chain", "mail", "hauberk")) armor = 5;
-  else if (has("brigandine", "scale")) armor = 4;
-  else if (has("leather", "jerkin", "hide")) armor = 3;
-  else if (has("shield", "buckler")) armor = 3;
-  else if (has("helm", "helmet", "cap", "bracers", "greaves", "gauntlet")) armor = 1;
+  else if (has("brigandine", "scale", "lamellar")) armor = 4;
+  else if (has("studded")) armor = 3;
+  else if (has("leather", "jerkin", "hide", "gambeson", "padded", "quilted")) armor = 3;
+  else if (has("tower shield", "tower")) armor = 4;
+  else if (has("kite", "heater", "shield")) armor = 3;
+  else if (has("buckler")) armor = 2;
+  else if (has("coif", "vambrace", "greaves", "gauntlet")) armor = 2;
+  else if (has("helm", "helmet", "cap", "bracers")) armor = 1;
   else if (has("cloak", "robe", "coat")) armor = 1;
-  if (has("robe", "circlet", "amulet", "pendant", "charm")) ward += 2;
+  if (has("robe", "circlet", "amulet", "pendant", "charm", "talisman")) ward += 2;
   if (has("boots", "shoes")) dodge += 2;
   if (item.tier) { const m = tierMult(item.tier); armor = Math.round(armor * m); ward = Math.round(ward * m); }
   return { armor, ward, dodge, damage: null, weaponType: null };
+}
+
+// How many hands a weapon needs. Two-handers (greatswords, mauls, polearms) and
+// all bows/crossbows/staves occupy BOTH hands — so they can't be paired with a
+// shield. Honours an explicit `hands`, else infers from family + name.
+export function weaponHands(item) {
+  if (!item) return 1;
+  if (item.hands === 2 || item.hands === 1) return item.hands;
+  const wt = weaponCategory(item);
+  if (wt === "bow" || wt === "staff") return 2;
+  const n = `${item.name || ""} ${item.id || ""}`.toLowerCase();
+  if (/great|maul|halberd|glaive|pike|two-hand|zweihander|claymore|greataxe|greatsword|longbow|war ?bow|bardiche|partisan|poleaxe|lance/.test(n)) return 2;
+  return 1;
+}
+
+// The equipment SLOT an item occupies. One item per slot (two rings) — equipping
+// a new one displaces the slot's current occupant back to the pack, so combat
+// effects can't be stacked by piling on duplicate gear. clothing is split into
+// real slots (head/hands/legs/feet/back/over/torso) so you can't wear five helms.
+export function equipSlot(item) {
+  if (!item) return null;
+  const k = item.kind;
+  const n = `${item.name || ""} ${item.id || ""}`.toLowerCase();
+  if (k === "weapon") return "mainhand";
+  if (k === "shield") return "offhand";
+  if (k === "armor") return "body";
+  if (k === "trinket") return /\bring\b|signet|band/.test(n) ? "ring" : "neck";
+  if (k === "clothing") {
+    if (/helm|helmet|cap|coif|hood|circlet|crown|mask|\bhat\b/.test(n)) return "head";
+    if (/bracer|vambrace|gauntlet|glove/.test(n)) return "hands";
+    if (/greave|legging|chausse|cuisse/.test(n)) return "legs";
+    if (/boot|shoe|sabaton|sandal/.test(n)) return "feet";
+    if (/cloak|cape|mantle|shawl/.test(n)) return "back";
+    if (/robe|tabard|livery|surcoat|vestment/.test(n)) return "over";
+    return "torso";
+  }
+  return null;
+}
+
+// How many items a slot can hold (two rings; everything else one).
+export function slotCapacity(slot) {
+  return slot === "ring" ? 2 : 1;
 }
 
 // The attribute + minimum score an item demands, scaled by tier. Met → full
@@ -181,10 +243,16 @@ export function deriveCombatStats(character, codex) {
 
   const weapon = weaponProfile(character, codex, a);
   weapon.pen += statMods.penetration || 0;
+  // Affix offence: flat damage adds, then % damage multiplies (Diablo-style).
+  const dFlat = statMods.damageFlat || 0;
+  const dMult = 1 + (statMods.damageMult || 0);
+  weapon.min = Math.max(1, Math.round((weapon.min + dFlat) * dMult));
+  weapon.max = Math.max(weapon.min, Math.round((weapon.max + dFlat) * dMult));
   prof.weaponMastery = weapon.mastery;
 
   return {
-    maxHealth: character.vitalityMax,
+    maxHealth: character.vitalityMax + (statMods.maxHealth || 0),
+    dr: clamp(statMods.drPct || 0, 0, 0.6), // flat % damage reduction, capped
     armor: armor + (statMods.armor || 0),
     ward: ward + (statMods.ward || 0),
     dodge: clamp(reflex * 2 + dodgeGear + prof.evasion + (statMods.dodge || 0), 0, 70),

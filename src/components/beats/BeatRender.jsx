@@ -276,6 +276,20 @@ export function BeatRender({ beat, onMenu }) {
         </Panel>
       );
 
+    case "spoilage":
+      return (
+        <Panel tone="pale" compact>
+          <div style={{ ...metaStyle, fontSize: "8px", color: "rgba(150, 140, 110, 0.85)", marginBottom: "4px" }}>Spoiled</div>
+          <div style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.55)", lineHeight: 1.5, display: "flex", flexWrap: "wrap", gap: "7px 10px" }}>
+            {beat.lines.map((l, i) => (
+              <span key={i} style={{ background: "rgba(120, 110, 80, 0.1)", padding: "2px 7px", borderRadius: "6px", border: "1px solid rgba(120, 110, 80, 0.18)", textDecoration: "line-through" }}>
+                {l}
+              </span>
+            ))}
+          </div>
+        </Panel>
+      );
+
     case "needs_delta":
     case "need_alert":
       return (

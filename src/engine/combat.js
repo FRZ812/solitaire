@@ -24,6 +24,7 @@ import { rollItemPassives } from "../data/passives.js";
 import { effectiveAttributes, ratingFromXp, proficiencyName, weaponMasteryId, XP } from "../data/proficiencies.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
+import { chooseAction } from "./combat-ai.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -45,6 +46,13 @@ function addStatus(c, effect) {
   c.statuses.push({ type: effect.type, value: effect.value || 0, duration: effect.duration || 1 });
 }
 const livingEnemies = (cs) => cs.enemies.filter((e) => e.health > 0 && !e.resolved);
+const livingAllies = (cs) => (cs.allies || []).filter((a) => a.health > 0 && !a.resolved && !a._dead);
+// The player's side as a target list for enemies: the player plus living allies.
+const playerSide = (cs) => [cs.player, ...livingAllies(cs)].filter((c) => c.health > 0);
+const sideHpFrac = (list) => {
+  const liv = list.filter((c) => c.health > 0);
+  return liv.length ? liv.reduce((s, c) => s + c.health / Math.max(1, c.maxHealth), 0) / liv.length : 0;
+};
 
 // ----- setup -----
 
@@ -67,27 +75,36 @@ export function initCombat(character, codex, enemies, opts = {}) {
     ...learned.map((e) => (typeof e === "string" ? { id: e, tier: "common" } : { id: e.id, tier: e.tier || "common" })),
   ].filter((a) => getAbilityDef(a.id));
 
+  // +life affixes (cs.maxHealth above character.vitalityMax) are granted filled,
+  // so a wounded player still benefits from extra health gear at full value.
+  const healthBonus = Math.max(0, cs.maxHealth - (character.vitalityMax || cs.maxHealth));
   const player = {
     name: character.name || "You",
-    health: Math.round(character.vitality),
+    health: Math.min(cs.maxHealth, Math.round(character.vitality) + healthBonus),
     maxHealth: cs.maxHealth,
     stamina: cs.maxStamina,
     maxStamina: cs.maxStamina,
     staminaRegen: cs.staminaRegen,
     resolve: Math.round(character.resolve ?? 0),
     resolveMax: character.resolveMax ?? 0,
+    dr: cs.dr || 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed,
     triggers: cs.triggers || {},
     prof: cs.prof || {},
     attrs: cs.attrs || { ...character.attributes },
-    abilities, cooldowns: {}, statuses: [],
+    abilities, cooldowns: {}, statuses: [], side: "player",
   };
 
+  // Allied companions fight at the player's side, AI-driven (engine/combat-ai).
+  // They're built by the caller (allyFromCompanion) into the same combatant shape.
+  const allies = (opts.allies || []).map((a) => ({ ...clone(a), side: "player", statuses: a.statuses || [], cooldowns: a.cooldowns || {} }));
+
   const foes = clone(enemies);
+  for (const e of foes) e.side = "enemy";
   // How outmatched are they? Lower the nerve of foes who can see they're outclassed.
-  const pThreat = playerThreat(player);
+  const pThreat = playerThreat(player) + allies.reduce((s, a) => s + enemyThreat(a), 0);
   const eThreatAvg = foes.reduce((s, e) => s + enemyThreat(e), 0) / Math.max(1, foes.length);
   const powerRatio = pThreat / Math.max(1, eThreatAvg);
   if (powerRatio > 1.2) {
@@ -111,11 +128,17 @@ export function initCombat(character, codex, enemies, opts = {}) {
       e.stowedWeapon = e.weapon;
       e.weapon = fistsProfile(e.weapon);
     }
+    for (const a of allies) {
+      a.armed = !!(a.weapon && a.weapon.category && a.weapon.category !== "unarmed");
+      a.stowedWeapon = a.weapon;
+      a.weapon = fistsProfile(a.weapon);
+    }
   }
 
   const flavor = foes.length === 1 ? foes[0].name : `${foes.length} foes`;
   const combatState = {
     player,
+    allies,
     enemies: foes,
     target: 0,
     turn: 1,
@@ -154,6 +177,9 @@ function escalateToLethal(cs, reason) {
   if (cs.player.stowedWeapon) cs.player.weapon = cs.player.stowedWeapon;
   for (const e of cs.enemies) {
     if (e.health > 0 && !e.resolved && e.armed && e.stowedWeapon) e.weapon = e.stowedWeapon;
+  }
+  for (const a of cs.allies || []) {
+    if (a.health > 0 && !a.resolved && a.armed && a.stowedWeapon) a.weapon = a.stowedWeapon;
   }
   cs.log.push(logEntry(
     reason === "magic"
@@ -283,7 +309,9 @@ function resolveHit(attacker, defender, profile) {
   let mitig = 0;
   if (profile.type === "physical") mitig = Math.max(0, (defender.armor || 0) + sumStatus(defender, "guard") - (profile.pen || 0));
   else if (profile.type === "magical") mitig = Math.max(0, (defender.ward || 0) - (profile.pen || 0));
-  const dmg = Math.max(0, raw - mitig);
+  // Flat % damage-reduction (Stoneskin / Godward) applies after armour, capped.
+  let dmg = Math.max(0, raw - mitig);
+  if (defender.dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.6, defender.dr))));
   defender.health = Math.max(0, defender.health - dmg);
 
   const typeTag = profile.type === "true" ? " true" : profile.type === "magical" ? " magical" : "";
@@ -314,6 +342,14 @@ function onEnemyControlled(e) {
 // bare-knuckle brawl it means knocked senseless (alive — nothing to loot).
 function downEnemy(cs, e) {
   if (e._dead || e.resolved === "ko") return;
+  // Undying (divine): a fabled foe cheats death once, clawing back at half health.
+  const rev = e.triggers?.reviveOnce;
+  if (rev && !e._revived && e.health <= 0) {
+    e._revived = true;
+    e.health = Math.max(1, Math.round(e.maxHealth * rev));
+    cs.log.push(logEntry(`${e.name} should be dead — and rises anyway.`, "enemy"));
+    return;
+  }
   if (cs.lethal) { e._dead = true; cs.log.push(logEntry(`${e.name} falls, dead.`, "system")); }
   else { e.resolved = "ko"; cs.log.push(logEntry(`${e.name} is knocked senseless.`, "system")); }
   let lined = false;
@@ -326,6 +362,86 @@ function downEnemy(cs, e) {
     }
   }
 }
+// An allied companion drops to 0 — dead in a lethal fight, knocked out in a brawl.
+function downAlly(cs, a) {
+  if (a._dead || a.resolved === "ko") return;
+  if (cs.lethal) { a._dead = true; cs.log.push(logEntry(`${a.name} falls, slain.`, "enemy")); }
+  else { a.resolved = "ko"; cs.log.push(logEntry(`${a.name} is knocked senseless.`, "system")); }
+}
+
+// Usable abilities for an NPC (ally or enemy): off cooldown only — NPCs don't
+// track stamina/resolve (consistent with the original enemy turn).
+function npcCandidates(actor) {
+  const out = [];
+  for (const a of (actor.abilities || [])) {
+    if ((actor.cooldowns?.[a.id] || 0) > 0) continue;
+    const def = getAbilityDef(a.id);
+    if (def) out.push({ id: a.id, tier: a.tier || actor.tier || "common", def });
+  }
+  return out;
+}
+
+// Execute one AI turn for an NPC actor (ally or enemy) against `opponents`.
+// Shared by both sides so enemies fight as cannily as companions. Mutates cs.
+function npcPerform(cs, actor, opponents) {
+  const choice = chooseAction(actor, opponents, npcCandidates(actor));
+  if (!choice) return;
+  const { def, ability, mode } = choice;
+  const tId = ability.tier || actor.tier || "common";
+  if (def.cooldown) actor.cooldowns[ability.id] = def.cooldown;
+  const sideKind = actor.side === "player" ? "player" : "enemy";
+
+  const hitOne = (target) => {
+    const profile = attackProfile(actor, def, tId, false);
+    const before = target.health;
+    if (profile) cs.log.push(resolveHit(actor, target, profile));
+    const dealt = before - target.health;
+    // Lifesteal applies to any bearer (a fabled foe in vampiric arms heals as it
+    // hits — the sustained-damage threat the affix caps are tuned around).
+    const ls = actor.triggers?.lifesteal || 0;
+    if (dealt > 0 && ls > 0 && actor.health > 0) {
+      actor.health = Math.min(actor.maxHealth, actor.health + Math.max(1, Math.round(dealt * ls / 100)));
+    }
+    if (dealt > 0 && target.side === "enemy") onEnemyDamaged(target, dealt);
+    if (target.health > 0 && def.effect && def.effect.target === "enemy") {
+      addStatus(target, def.effect);
+      if (CONTROL_TYPES.has(def.effect.type) && target.side === "enemy") onEnemyControlled(target);
+    }
+    // Player-only reactions when the player is the one struck.
+    if (target === cs.player) {
+      addProf(cs, "evasion", XP.EVASION);
+      if (dealt > 0) addProf(cs, "endurance", XP.ENDURANCE);
+      const thorns = cs.player.triggers?.thorns || 0;
+      if (dealt > 0 && thorns > 0 && actor.health > 0) {
+        const ref = Math.max(1, Math.round(dealt * thorns / 100));
+        actor.health = Math.max(0, actor.health - ref);
+        cs.log.push(logEntry(`${actor.name} takes ${ref} from thornmail.`, "status"));
+      }
+    }
+  };
+
+  if (mode === "self") {
+    if (def.effect) addStatus(actor, def.effect);
+    cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
+  } else if (mode === "aoe") {
+    cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
+    for (const t of opponents) if (t.health > 0 && !t.resolved && !t._dead) hitOne(t);
+  } else {
+    let target = choice.target;
+    if (!target || target.health <= 0 || target.resolved || target._dead) target = opponents.find((o) => o.health > 0 && !o.resolved && !o._dead);
+    if (!target) return;
+    if (ability.id !== BASIC_ATTACK.id) cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
+    const hits = def.hits || 1;
+    for (let h = 0; h < hits; h++) { if (target.health <= 0) break; hitOne(target); }
+  }
+
+  // Down anyone reduced to 0 (the player is left for the caller's playerDown).
+  for (const t of opponents) {
+    if (t.health > 0 || t === cs.player) continue;
+    if (t.side === "enemy") downEnemy(cs, t); else downAlly(cs, t);
+  }
+}
+
 function resolveYield(cs, e) {
   e.resolved = "yielded";
   cs.log.push(logEntry(flavorLine("yield", e.demeanor, e.name) || `${e.name} yields.`, "enemy"));
@@ -348,20 +464,32 @@ function moraleCheck(cs, e) {
   const hp = e.health / e.maxHealth;
 
   if (e.demeanor === "feral") {
-    if (cfg.canFlee && hp < cfg.fleeAt && e.morale < 50) { resolveFlee(cs, e); return false; }
+    if (cfg.canFlee && hp < (cfg.fleeAt ?? 0.22)) { resolveFlee(cs, e); return false; }
     if (hp < 0.3 && cs.turn - (e.lastFlavorTurn || 0) >= 2) { e.lastFlavorTurn = cs.turn; pushFlavor(cs, e, "waver"); }
     return true;
   }
 
-  // A goaded foe is too enraged to flee or yield for a couple of turns. A foe
-  // that is clearly WINNING (much healthier than the player) presses the
-  // advantage and won't break either — it can smell the kill.
+  // People don't surrender because a fight is merely uncertain — they break when
+  // they're badly hurt, the situation is hopeless, or they're timid by nature
+  // (a craven, a frightened noble). Yielding is gated on HP + hopelessness, not
+  // on a morale meter ticking down from a few hits.
+  const opp = playerSide(cs);
+  const ownSide = livingEnemies(cs);
+  const oppHp = sideHpFrac(opp), ownHp = sideHpFrac(ownSide);
+  const outnumbered = opp.length >= ownSide.length * 2;
+  // Hopeless: heavily outnumbered and not winning the exchange, or the last one
+  // standing against a healthy group.
+  const hopeless = (outnumbered && oppHp >= ownHp - 0.05) || (ownSide.length === 1 && opp.length >= 2 && oppHp > 0.4);
+
   const goaded = (e.noFleeUntil || 0) >= cs.turn;
-  const winning = (hp - cs.player.health / cs.player.maxHealth) > 0.25;
-  const broke = !goaded && !winning && (e.morale <= cfg.breakAt || hp < 0.12);
+  const winning = (hp - oppHp) > 0.25; // personally well ahead — smells the kill
+  const yieldHp = cfg.yieldHp ?? 0.25;
+  // Only even consider breaking when actually in trouble.
+  const inTrouble = hp <= yieldHp || hp < 0.1 || (hopeless && hp < 0.5);
+  const broke = !goaded && !winning && inTrouble;
   if (broke) {
     // A proud foe being bullied with control demands a fair fight before it breaks.
-    if (cfg.proud && (e.controlPressure || 0) >= 2 && !e.provoked && e.morale > cfg.breakAt - 12 && hp > 0.15) {
+    if (cfg.proud && (e.controlPressure || 0) >= 2 && !e.provoked && hp > 0.15) {
       e.provoked = true;
       addStatus(e, { type: "rally", value: 20, duration: 2 });
       pushFlavor(cs, e, "provoke");
@@ -381,8 +509,8 @@ function moraleCheck(cs, e) {
     return true;
   }
 
-  // Warning zone: telegraph the fraying nerve so the player sees it coming.
-  if (e.morale <= cfg.breakAt + 20 && cs.turn - (e.lastFlavorTurn || 0) >= 2) {
+  // Warning zone: telegraph the fraying nerve as they near their breaking point.
+  if (hp <= yieldHp + 0.18 && cs.turn - (e.lastFlavorTurn || 0) >= 2) {
     e.lastFlavorTurn = cs.turn;
     if (cfg.proud && (e.controlPressure || 0) >= 2 && !e.provoked) {
       e.provoked = true;
@@ -662,22 +790,107 @@ export function setTarget(cs0, idx) {
   return { ...cs0, target: idx };
 }
 
-// ----- enemy phase + turn advance -----
+// Apply a narrator-adjudicated improvised action ([COMBAT ACTION]) to the
+// fight. The narrator decides WHAT happens and whether it works; the engine
+// keeps the NUMBERS in bounds — a magnitude band is scaled to the player's
+// strength so a freeform line can't hand out arbitrary damage. Counts as the
+// player's action; the caller advances the turn afterward.
+export function applyCombatEffect(cs0, effect) {
+  if (cs0.phase !== "player" || !effect) return cs0;
+  const cs = clone(cs0);
+  const p = cs.player;
+  if (effect.narration) cs.log.push(logEntry(effect.narration, "player"));
 
-function enemyChooseAbility(enemy) {
-  const usable = (enemy.abilities || []).filter((a) => (enemy.cooldowns[a.id] || 0) <= 0 && getAbilityDef(a.id));
-  const heal = usable.find((a) => getAbilityDef(a.id).effect?.type === "regen");
-  if (heal && enemy.health < enemy.maxHealth * 0.4) return heal;
-  const offensive = usable.filter((a) => getAbilityDef(a.id).target !== "self");
-  if (offensive.length && Math.random() < 0.6) return offensive[Math.floor(Math.random() * offensive.length)];
-  return null;
+  const living = livingEnemies(cs);
+  let targets;
+  if (effect.target === "all") targets = living;
+  else if (effect.target === "self" || effect.target == null) targets = [];
+  else {
+    const byName = living.find((e) => e.name.toLowerCase() === String(effect.target).toLowerCase());
+    const cur = cs.enemies[cs.target];
+    targets = byName ? [byName] : (cur && cur.health > 0 && !cur.resolved ? [cur] : (living[0] ? [living[0]] : []));
+  }
+
+  const magDmg = (mag) => {
+    const w = p.weapon || { min: 2, max: 4 };
+    const body = p.attrs?.body || 0;
+    const avg = (w.min + w.max) / 2;
+    const base = mag === "major" ? avg * 1.6 + body : mag === "moderate" ? avg + body * 0.5 : avg * 0.5;
+    return Math.max(1, Math.round(base * (0.85 + Math.random() * 0.3)));
+  };
+
+  if ((effect.kind === "attack" || effect.kind === "control") && effect.magnitude) {
+    const type = effect.damage_type || "physical";
+    for (const t of targets) {
+      let dmg = magDmg(effect.magnitude);
+      if (type === "physical") dmg = Math.max(0, dmg - (t.armor || 0));
+      else if (type === "magical") dmg = Math.max(0, dmg - (t.ward || 0));
+      const before = t.health;
+      t.health = Math.max(0, t.health - dmg);
+      const dealt = before - t.health;
+      cs.log.push(logEntry(`${t.name} takes ${dealt}${type === "true" ? " true" : type === "magical" ? " magical" : ""}.`, "hit"));
+      if (dealt > 0) onEnemyDamaged(t, dealt);
+    }
+  }
+
+  // Status from the action (on a target or on the player).
+  if (effect.status && effect.status.type) {
+    const st = { type: effect.status.type, value: effect.status.value || 0, duration: effect.status.duration || 1 };
+    if (effect.status.who === "self") addStatus(p, st);
+    else for (const t of targets) { if (t.health > 0) { addStatus(t, st); if (CONTROL_TYPES.has(st.type)) onEnemyControlled(t); } }
+  }
+
+  // Social / will outcome the narrator judged earned.
+  if (effect.social) {
+    for (const t of targets) {
+      if (t.health <= 0 || t.resolved) continue;
+      if (effect.social === "yield") resolveYield(cs, t);
+      else if (effect.social === "flee") resolveFlee(cs, t);
+      else if (effect.social === "demoralize") t.morale = Math.max(0, (t.morale || 0) - 30);
+      else if (effect.social === "provoke") {
+        addStatus(t, { type: "vulnerable", value: 30, duration: 2 });
+        addStatus(t, { type: "rally", value: 15, duration: 2 });
+        t.noFleeUntil = cs.turn + 2; t.provoked = true;
+      }
+    }
+  }
+
+  if (effect.player_damage > 0) p.health = Math.max(0, p.health - Math.round(effect.player_damage));
+
+  for (const e of cs.enemies) if (e.health <= 0) downEnemy(cs, e);
+  if (playerDown(cs)) return finishDefeat(cs);
+  const firstAlive = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
+  if (firstAlive >= 0 && (cs.enemies[cs.target]?.health <= 0 || cs.enemies[cs.target]?.resolved)) cs.target = firstAlive;
+  return checkCombatEnd(cs);
 }
+
+// ----- enemy phase + turn advance -----
 
 export function endTurn(cs0) {
   if (cs0.phase !== "player") return cs0;
   const cs = clone(cs0);
   cs.phase = "enemy";
 
+  // --- Ally phase: companions take their own AI turns against the foes ---
+  for (const a of cs.allies || []) {
+    if (a.health <= 0 || a.resolved || a._dead) continue;
+    if (hasStatus(a, "stun")) {
+      cs.log.push(logEntry(`${a.name} is stunned and cannot act.`, "status"));
+      a.statuses = a.statuses.filter((s) => s.type !== "stun");
+      tickStatuses(a).forEach((l) => cs.log.push(l));
+      if (a.health <= 0) downAlly(cs, a);
+      continue;
+    }
+    tickStatuses(a).forEach((l) => cs.log.push(l));
+    if (a.health <= 0) { downAlly(cs, a); continue; }
+    for (const id of Object.keys(a.cooldowns)) a.cooldowns[id] = Math.max(0, a.cooldowns[id] - 1);
+    if (livingEnemies(cs).length === 0) break;
+    npcPerform(cs, a, livingEnemies(cs));
+    if (livingEnemies(cs).length === 0) break;
+  }
+  if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
+
+  // --- Enemy phase: foes take AI turns against the player + living allies ---
   for (const e of cs.enemies) {
     if (e.health <= 0 || e.resolved) continue;
     if (hasStatus(e, "stun")) {
@@ -694,32 +907,7 @@ export function endTurn(cs0) {
     // React to how the fight is going before deciding to strike.
     if (!moraleCheck(cs, e)) continue;
 
-    const choice = enemyChooseAbility(e);
-    const def = choice ? getAbilityDef(choice.id) : BASIC_ATTACK;
-    const tId = choice ? (choice.tier || e.tier) : e.tier;
-    if (choice && def.cooldown) e.cooldowns[choice.id] = def.cooldown;
-
-    if (def.target === "self") {
-      if (def.effect) addStatus(e, def.effect);
-      cs.log.push(logEntry(`${e.name} uses ${def.name}.`, "enemy"));
-    } else {
-      if (choice) cs.log.push(logEntry(`${e.name} uses ${def.name}.`, "enemy"));
-      const profile = attackProfile(e, def, tId, false);
-      const before = cs.player.health;
-      if (profile) cs.log.push(resolveHit(e, cs.player, profile));
-      const dealt = before - cs.player.health;
-      addProf(cs, "evasion", XP.EVASION);
-      if (dealt > 0) addProf(cs, "endurance", XP.ENDURANCE);
-      if (cs.player.health > 0 && def.effect && def.effect.target === "enemy") addStatus(cs.player, def.effect);
-      // Thornmail reflects a share of damage taken back at the attacker.
-      const thorns = cs.player.triggers?.thorns || 0;
-      if (dealt > 0 && thorns > 0 && e.health > 0) {
-        const ref = Math.max(1, Math.round(dealt * thorns / 100));
-        e.health = Math.max(0, e.health - ref);
-        cs.log.push(logEntry(`${e.name} takes ${ref} from thornmail.`, "status"));
-        if (e.health <= 0) downEnemy(cs, e);
-      }
-    }
+    npcPerform(cs, e, playerSide(cs));
     if (playerDown(cs)) return finishDefeat(cs);
   }
 
@@ -926,6 +1114,19 @@ export function applyCombatResult(state, cs, context = {}) {
     ch.combatState = { health: Math.max(0, Math.ceil(e.health)), maxHealth: e.maxHealth, status };
   }
 
+  // A companion slain in a lethal fight is gone — mark the codex character dead
+  // and remove them from the party. (Survivors recover fully; we don't carry
+  // their wounds, so attrition can't slowly doom the whole company.)
+  const fallen = (cs.allies || []).filter((a) => a._dead && a.companionId);
+  if (fallen.length) {
+    const fallenIds = new Set(fallen.map((a) => a.companionId));
+    next.party = (next.party || []).filter((id) => !fallenIds.has(id));
+    for (const a of fallen) {
+      const ch = next.world.codex.characters?.[a.companionId];
+      if (ch) ch.combatState = { health: 0, maxHealth: a.maxHealth, status: "dead" };
+    }
+  }
+
   // Hand the narrator a blow-by-blow account so the fight can be referenced
   // afterward (and so a [DEFEATED] follow-up knows exactly what happened).
   next.apiHistory = [...(next.apiHistory || []), { role: "user", content: buildCombatRecap(cs, context) }];
@@ -1003,5 +1204,9 @@ function buildCombatRecap(cs, context) {
     ? " NOTE: the player WORKED MAGIC in this fight — magic is rare and dreaded, so any ordinary folk who witnessed it should react with shock, panic, even cries of witchcraft, far beyond their reaction to mere violence."
     : "";
   const n = cs.enemies.length;
-  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. You fought exactly ${n} foe${n === 1 ? "" : "s"} (this is the full roster — narrate only these, by these fates): ${foes}. You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}.${magicNote}`.slice(0, 1700);
+  const allies = (cs.allies || []);
+  const allyNote = allies.length
+    ? ` Fighting at your side: ${allies.map((a) => `${a.name} (${a._dead ? "slain" : a.resolved === "ko" ? "knocked out" : a.health < a.maxHealth ? `wounded, ${Math.ceil(a.health)}/${a.maxHealth}` : "unhurt"})`).join("; ")}.`
+    : "";
+  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. You fought exactly ${n} foe${n === 1 ? "" : "s"} (this is the full roster — narrate only these, by these fates): ${foes}.${allyNote} You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}.${magicNote}`.slice(0, 1800);
 }

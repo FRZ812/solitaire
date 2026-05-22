@@ -12,6 +12,8 @@ import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { passiveLabel } from "../data/passives.js";
 import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
+import { useEffectChips } from "../data/goods.js";
+import { freshnessLabel, perishDescriptor } from "../engine/spoilage.js";
 import { ArsenalView } from "./ArsenalView.jsx";
 
 // Item-specific inline icon. The wooden bird is a meaningful in-fiction
@@ -98,7 +100,7 @@ const itemRowStyle = {
 };
 
 // Item detail modal: stats, requirement, passives, and equip/unequip.
-function ItemDetail({ item, id, location, attrs, onEquip, onUnequip, onUse, onClose }) {
+function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUnequip, onUse, onClose }) {
   if (!item) return null;
   const cs = itemCombatStats(item);
   const req = itemRequirement(item);
@@ -107,6 +109,10 @@ function ItemDetail({ item, id, location, attrs, onEquip, onUnequip, onUse, onCl
   const worn = location === "worn";
   const usable = !worn && !!item.use;
   const tcolor = tierColor(item.tier || "common");
+  const effectChips = useEffectChips(item);
+  const keeps = perishDescriptor(item);
+  const fresh = freshnessLabel(freshUntil, day);
+  const freshColor = fresh ? (fresh.tone === "bad" ? "#fca5a5" : fresh.tone === "warn" ? "#e6a878" : "#a7f3d0") : null;
   const statLine = (label, value) => (
     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: colors.parchment, padding: "2px 0" }}>
       <span style={{ color: colors.parchmentMuted }}>{label}</span><span>{value}</span>
@@ -180,6 +186,22 @@ function ItemDetail({ item, id, location, attrs, onEquip, onUnequip, onUse, onCl
             <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.5)", fontStyle: "italic", marginTop: "5px" }}>
               {worn ? "Unequip to set the gift aside." : "Spells scale with Mind — grind Spellcasting to grow it."}
             </div>
+          </div>
+        )}
+
+        {effectChips.length > 0 && (
+          <div style={insetBoxStyle}>
+            <div style={{ ...metaStyle, fontSize: "8px", color: colors.gold, marginBottom: "6px" }}>When used</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+              {effectChips.map((c, i) => (
+                <span key={i} style={{ fontSize: "11px", fontWeight: 700, color: "#a7f3d0", border: "1px solid rgba(167,243,208,0.35)", padding: "2px 8px", borderRadius: radius.pill }}>{c}</span>
+              ))}
+            </div>
+            {(keeps || fresh) && (
+              <div style={{ fontSize: "11px", marginTop: "8px", color: freshColor || "rgba(237,228,208,0.55)" }}>
+                {fresh ? `Freshness: ${fresh.text}` : keeps}
+              </div>
+            )}
           </div>
         )}
 
@@ -476,15 +498,22 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "2px" }}>
             {inv.carried.length === 0
               ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.4)", fontStyle: "italic" }}>Pack is empty.</span>
-              : inv.carried.map((c) => (
-                  <button key={c.itemId} onClick={() => setDetail({ id: c.itemId, location: "carried" })} style={itemRowStyle}>
-                    <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                      {renderItemIcon(c.itemId)}
-                      <span style={{ color: tierColor(codex.items[c.itemId]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[c.itemId]?.name || c.itemId}</span>
-                    </span>
-                    <span style={{ color: colors.parchmentMuted, fontWeight: "bold", flexShrink: 0 }}>×{c.quantity}</span>
-                  </button>
-                ))}
+              : inv.carried.map((c) => {
+                  const fresh = freshnessLabel(c.freshUntil, state.time?.day || 0);
+                  const fc = fresh ? (fresh.tone === "bad" ? "#fca5a5" : fresh.tone === "warn" ? "#e6a878" : "rgba(167,243,208,0.65)") : null;
+                  return (
+                    <button key={c.itemId} onClick={() => setDetail({ id: c.itemId, location: "carried" })} style={itemRowStyle}>
+                      <span style={{ display: "flex", alignItems: "center", minWidth: 0, gap: "6px" }}>
+                        {renderItemIcon(c.itemId)}
+                        <span style={{ color: tierColor(codex.items[c.itemId]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[c.itemId]?.name || c.itemId}</span>
+                        {fresh && fresh.tone !== "ok" && (
+                          <span style={{ fontSize: "9px", fontStyle: "italic", color: fc, flexShrink: 0 }}>· {fresh.text}</span>
+                        )}
+                      </span>
+                      <span style={{ color: colors.parchmentMuted, fontWeight: "bold", flexShrink: 0 }}>×{c.quantity}</span>
+                    </button>
+                  );
+                })}
           </div>
         </div>
 
@@ -522,6 +551,8 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           id={detail.id}
           location={detail.location}
           attrs={attrs}
+          freshUntil={inv.carried.find((c) => c.itemId === detail.id)?.freshUntil}
+          day={state.time?.day || 0}
           onEquip={onEquip}
           onUnequip={onUnequip}
           onUse={onUse}

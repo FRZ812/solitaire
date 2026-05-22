@@ -3,13 +3,16 @@ import { Icon } from "./Icon.jsx";
 import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle, glass } from "./tokens.js";
 import { canAfford, formatCopper, formatCoins, SELLABLE_KINDS, usedSellPrice, DEFAULT_RESALE_RATE } from "../engine/economy.js";
+import { trainingOffer } from "../engine/training.js";
+import { TRAIN_CAP } from "../data/town.js";
+import { useEffectChips } from "../data/goods.js";
+import { perishDescriptor } from "../engine/spoilage.js";
 
 // A standard trader menu: a Buy ledger rolled from the shop's stock and a Sell
 // ledger of the player's saleable goods. Reused by every trader building
 // (healer now; market stalls, the smith's counter, etc. later). Transactions
 // are deterministic and local — App applies them via engine/economy.js. The
-// "Speak with…" hook hands off to the narrator for flavor and haggling.
-export function TraderView({ state, building, tileKey, stock, receipts = {}, onClose, onBuy, onSell, onTalk, onForge, loading }) {
+export function TraderView({ state, building, tileKey, stock, receipts = {}, onClose, onBuy, onSell, onForge, onTrain, loading }) {
   const [tab, setTab] = useState("buy");
 
   const codex = state.world.codex;
@@ -110,6 +113,38 @@ export function TraderView({ state, building, tileKey, stock, receipts = {}, onC
           </div>
         </Panel>
 
+        {/* Expert training — pay to fast-track a grindy proficiency a step. */}
+        {building.trains?.length > 0 && (
+          <>
+            <SectionHeader>Training</SectionHeader>
+            {building.trains.map((profId) => {
+              const offer = trainingOffer(state, profId, TRAIN_CAP);
+              return (
+                <div key={profId} style={{
+                  display: "flex", alignItems: "center", gap: "10px",
+                  padding: "11px 13px", marginBottom: "8px", borderRadius: radius.panelCompact,
+                  backgroundColor: "rgba(20, 29, 29, 0.5)", border: "1px solid rgba(215, 167, 111, 0.14)",
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "16px", color: colors.parchmentLight }}>{offer.name}</div>
+                    <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "2px" }}>
+                      {offer.capped ? `rating ${offer.cur} · mastered here` : `rating ${offer.cur} → ${offer.next} · ${offer.hours}h`}
+                    </div>
+                  </div>
+                  {offer.capped ? (
+                    <span style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.45)", flexShrink: 0 }}>Mastered</span>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", flexShrink: 0 }}>
+                      <PriceTag cp={offer.costCp} />
+                      <ActionButton label="Train" enabled={canAfford(coins, offer.costCp) && !loading} onClick={() => onTrain(profId)} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        )}
+
         {tab === "buy" && (
           <>
             <SectionHeader>Wares</SectionHeader>
@@ -142,15 +177,14 @@ export function TraderView({ state, building, tileKey, stock, receipts = {}, onC
         )}
       </div>
 
-      {/* Footer — the forge hand-off (smiths), and the narrator hand-off for
-          flavor / haggling (the "AI" half). */}
-      <div style={{
-        padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 16px)",
-        borderTop: "1px solid rgba(215, 167, 111, 0.22)",
-        backgroundColor: "rgba(20, 29, 29, 0.95)", ...glass,
-        display: "flex", flexDirection: "column", gap: "8px",
-      }}>
-        {onForge && (
+      {/* Footer — the forge hand-off (smiths only). Talking to a keeper isn't a
+          panel action; the player just types it in the world. */}
+      {onForge && (
+        <div style={{
+          padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 16px)",
+          borderTop: "1px solid rgba(215, 167, 111, 0.22)",
+          backgroundColor: "rgba(20, 29, 29, 0.95)", ...glass,
+        }}>
           <button onClick={onForge} style={{
             width: "100%", height: "44px", borderRadius: radius.control, border: "none",
             backgroundColor: colors.gold, color: colors.ink,
@@ -159,23 +193,15 @@ export function TraderView({ state, building, tileKey, stock, receipts = {}, onC
           }}>
             To the Forge
           </button>
-        )}
-        <button onClick={onTalk} disabled={loading} style={{
-          width: "100%", height: "44px", borderRadius: radius.control,
-          border: "1px solid rgba(215, 167, 111, 0.28)",
-          backgroundColor: "rgba(215, 167, 111, 0.1)",
-          color: loading ? "rgba(215,167,111,0.4)" : colors.parchmentLight,
-          fontSize: "13px", fontWeight: 800, letterSpacing: "0.04em",
-          cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit",
-        }}>
-          Speak with {building.keeper}
-        </button>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function GoodRow({ def, meta, children }) {
+  const chips = useEffectChips(def);
+  const keeps = perishDescriptor(def);
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: "10px",
@@ -188,6 +214,16 @@ function GoodRow({ def, meta, children }) {
         <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "16px", color: colors.parchmentLight, lineHeight: 1.2 }}>{def.name}</div>
         <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, margin: "2px 0 4px" }}>{def.kind} · {meta}</div>
         <div style={{ fontSize: "11px", color: "rgba(237, 228, 208, 0.7)", lineHeight: 1.35 }}>{def.description}</div>
+        {chips.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "5px" }}>
+            {chips.map((c, i) => (
+              <span key={i} style={{ fontSize: "10px", fontWeight: 700, color: "#a7f3d0", background: "rgba(167,243,208,0.08)", border: "1px solid rgba(167,243,208,0.22)", padding: "1px 6px", borderRadius: radius.pill }}>{c}</span>
+            ))}
+          </div>
+        )}
+        {keeps && (
+          <div style={{ fontSize: "9.5px", fontStyle: "italic", color: typeof def.perish === "number" && def.perish <= 4 ? "rgba(230,160,120,0.85)" : "rgba(237,228,208,0.45)", marginTop: "4px" }}>{keeps}</div>
+        )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", flexShrink: 0 }}>
         {children}

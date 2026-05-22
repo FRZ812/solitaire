@@ -1,7 +1,13 @@
 // Applies inventory_changes from the AI: added/removed items and coin deltas.
-// Clamps coins at zero; collapses zero-quantity entries.
+// Clamps coins at zero; collapses zero-quantity entries. `day` (the current
+// campaign day) stamps freshUntil on any perishable food added, so narrator-
+// granted food (foraging, gifts, loot) spoils like bought food.
 
-export function applyInventoryChanges(inv, changes) {
+import { goodDef } from "../data/goods.js";
+import { stampFreshUntil } from "./spoilage.js";
+import { equipSlot, slotCapacity, weaponHands } from "./combat-stats.js";
+
+export function applyInventoryChanges(inv, changes, day = 0) {
   if (!changes) return inv;
   const next = {
     carried: inv.carried.map(c => ({ ...c })),
@@ -10,8 +16,8 @@ export function applyInventoryChanges(inv, changes) {
   for (const add of (changes.added || [])) {
     if (!add?.itemId) continue;
     const existing = next.carried.find(c => c.itemId === add.itemId);
-    if (existing) existing.quantity += add.quantity || 1;
-    else next.carried.push({ itemId: add.itemId, quantity: add.quantity || 1 });
+    if (existing) { existing.quantity += add.quantity || 1; stampFreshUntil(existing, goodDef(add.itemId), day); }
+    else { const stack = { itemId: add.itemId, quantity: add.quantity || 1 }; stampFreshUntil(stack, goodDef(add.itemId), day); next.carried.push(stack); }
   }
   for (const rem of (changes.removed || [])) {
     if (!rem?.itemId) continue;
@@ -29,13 +35,12 @@ export function applyInventoryChanges(inv, changes) {
   return next;
 }
 
-// Kinds that occupy a single slot — equipping one displaces the worn item of
-// the same kind back to the pack. Clothing and others stack freely.
-const SINGLE_SLOT = { weapon: "weapon", armor: "armor", trinket: "trinket", shield: "armor" };
 export const EQUIPPABLE = new Set(["weapon", "armor", "clothing", "trinket", "shield"]);
 
-// Move a carried item onto the wanderer's worn list (codex), displacing the
-// current item in that slot back to the pack. Returns a new state.
+// Move a carried item onto the wanderer's worn list (codex), enforcing equipment
+// SLOTS so combat effects can't be stacked: one item per slot (two rings), a
+// two-handed weapon and a shield are mutually exclusive (a 2H weapon needs both
+// hands). Equipping into a full slot displaces the current occupant to the pack.
 export function equipItem(state, itemId) {
   const codex = state.world.codex;
   const item = codex.items?.[itemId];
@@ -48,17 +53,26 @@ export function equipItem(state, itemId) {
   if (idx < 0) return state;
   carried[idx].quantity -= 1;
 
-  let newWorn = worn;
-  const slot = SINGLE_SLOT[item.kind];
+  const defOf = (id) => codex.items?.[id];
+  const toPack = (id) => { const i = carried.findIndex((c) => c.itemId === id); if (i >= 0) carried[i].quantity += 1; else carried.push({ itemId: id, quantity: 1 }); };
+
+  const slot = equipSlot(item);
+  // Items that fill a slot displace the slot's current occupant(s) past capacity.
+  const displaced = new Set();
   if (slot) {
-    const displaced = worn.find((id) => SINGLE_SLOT[codex.items?.[id]?.kind] === slot);
-    if (displaced) {
-      newWorn = worn.filter((id) => id !== displaced);
-      const dIdx = carried.findIndex((c) => c.itemId === displaced);
-      if (dIdx >= 0) carried[dIdx].quantity += 1;
-      else carried.push({ itemId: displaced, quantity: 1 });
-    }
+    const inSlot = worn.filter((id) => equipSlot(defOf(id)) === slot);
+    const cap = slotCapacity(slot);
+    // Drop the oldest until there's room for the newcomer.
+    for (let i = 0; inSlot.length - displaced.size >= cap && i < inSlot.length; i++) displaced.add(inSlot[i]);
   }
+  // A two-handed weapon clears the shield (offhand); a shield clears a 2H weapon.
+  if (item.kind === "weapon" && weaponHands(item) === 2) {
+    for (const id of worn) if (equipSlot(defOf(id)) === "offhand") displaced.add(id);
+  } else if (item.kind === "shield") {
+    for (const id of worn) { const d = defOf(id); if (d?.kind === "weapon" && weaponHands(d) === 2) displaced.add(id); }
+  }
+  for (const id of displaced) toPack(id);
+  let newWorn = worn.filter((id) => !displaced.has(id));
   newWorn = [...newWorn, itemId];
 
   // On-equip grants (e.g. a grimoire that awakens magic + teaches spells). Only
