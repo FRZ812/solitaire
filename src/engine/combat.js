@@ -371,8 +371,13 @@ function moraleCheck(cs, e) {
     if (mode === "either") mode = Math.random() < 0.5 ? "flee" : "yield";
     if (mode === "yield" && !cfg.canYield) mode = cfg.canFlee ? "flee" : "yield";
     if (mode === "flee" && !cfg.canFlee) mode = cfg.canYield ? "yield" : "flee";
-    if (mode === "flee" && cfg.canFlee) { resolveFlee(cs, e); return false; }
-    if (cfg.canYield) { resolveYield(cs, e); return false; }
+    // You can't outrun someone who's already beaten you. A foe only gets away if
+    // it's at least as fast AND you're not dominating; otherwise it's cornered
+    // and yields (at your mercy) instead of cleanly escaping.
+    const canEscape = (e.speed || 4) >= (cs.player.speed || 4) && cs.powerRatio < 1.4;
+    if (mode === "flee" && cfg.canFlee && canEscape) { resolveFlee(cs, e); return false; }
+    if (cfg.canYield) { resolveYield(cs, e); return false; }   // cornered → at your mercy
+    if (cfg.canFlee) { resolveFlee(cs, e); return false; }     // can't yield (e.g. a beast) → bolts anyway
     return true;
   }
 

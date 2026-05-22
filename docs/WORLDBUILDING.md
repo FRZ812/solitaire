@@ -354,7 +354,11 @@ out-classed (`powerRatio` lowers starting nerve). As it frays a foe **wavers**,
 **pleads**, or — if proud and bullied with control/tricks — **demands a fair
 fight** (and digs in). When it breaks, the foe **flees** or **yields** by
 demeanor: craven bolt early, the honorable yield with honor when beaten fairly,
-beasts run at low HP, fanatics/undead never break.
+beasts run at low HP, fanatics/undead never break. **Fleeing requires a real
+chance to get away** — a foe can only flee if it's at least as fast as you AND
+you aren't dominating (`powerRatio < 1.4`); otherwise it's cornered and **yields
+instead** (you can't outrun someone who's already beaten you). So overpowering a
+foe — e.g. with magic — leaves them at your mercy, not cleanly escaped.
 
 **Talk** (`playerTalk`) is a third pillar beyond attack/defend, with three
 intents — but only on foes that can understand you (`canTalk`; beasts and the
