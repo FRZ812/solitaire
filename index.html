@@ -89,6 +89,9 @@
     .custom-scroll::-webkit-scrollbar-thumb:hover {
       background: rgba(215, 167, 111, 0.45);
     }
+    /* Scrolls, but with no visible scrollbar (character sheet). */
+    .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
     input:focus {
       border-color: rgba(215, 167, 111, 0.5) !important;
       box-shadow: 0 0 12px rgba(215, 167, 111, 0.2) !important;
