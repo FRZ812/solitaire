@@ -15,7 +15,9 @@ import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
-import { buildingForTile } from "./data/town.js";
+import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
+import { applyTraining, trainingOffer } from "./engine/training.js";
+import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
 import { tierLabel, tierOrder } from "./data/tiers.js";
 import { rollShopStock } from "./engine/town-gen.js";
@@ -43,6 +45,8 @@ import { MenuSheet } from "./components/MenuSheet.jsx";
 import { MapView } from "./components/MapView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
 import { ForgeView } from "./components/ForgeView.jsx";
+import { QuestBoardView } from "./components/QuestBoardView.jsx";
+import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
@@ -217,6 +221,12 @@ export function Solitaire() {
   // Recent purchases at the current shop, for full refunds until you leave the
   // scene: { tileKey, items: { [itemId]: [pricePaid, ...] } }.
   const [receipts, setReceipts] = useState({ tileKey: null, items: {} });
+  // Themed confirm dialog (replaces window.confirm). askConfirm() resolves a
+  // promise when the player chooses; the component is rendered near the root.
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  function askConfirm(opts) {
+    return new Promise((resolve) => setConfirmDialog({ ...opts, resolve }));
+  }
   const [hydrated, setHydrated] = useState(false);
   const logRef = useRef(null);
 
@@ -456,7 +466,7 @@ export function Solitaire() {
   }
 
   async function handleDeleteCampaign(id) {
-    if (!window.confirm("Delete this campaign? This cannot be undone.")) return;
+    if (!(await askConfirm({ title: "Delete campaign", body: "Delete this campaign? This cannot be undone.", confirmLabel: "Delete", danger: true }))) return;
     setCampaignError(null);
     try {
       await deleteCampaign(id);
@@ -615,8 +625,8 @@ export function Solitaire() {
     }
   }
 
-  function handleResetCampaign() {
-    if (!window.confirm("Reset this campaign to the beginning? Your current progress here will be erased.")) return;
+  async function handleResetCampaign() {
+    if (!(await askConfirm({ title: "Reset campaign", body: "Reset this campaign to the beginning? Your current progress here will be erased.", confirmLabel: "Reset", danger: true }))) return;
     setState(makeInitialState());
     closeBeatMenu();
     setMenuOpen(false);
@@ -628,7 +638,10 @@ export function Solitaire() {
   // ----- Town buildings: trader menus (buy / sell / talk) -----
 
   function openShop() {
-    const key = `${state.world.currentTile.x},${state.world.currentTile.y}`;
+    const cur = state.world.currentTile;
+    const b = buildingForTile(getTile(state, cur.x, cur.y));
+    if (b && !isBuildingOpen(b, state.time.hour)) return; // shut for the night
+    const key = `${cur.x},${cur.y}`;
     setShopView("trade");
     // Fresh refund slate when stepping into a different shop than last time.
     setReceipts((r) => (r.tileKey === key ? r : { tileKey: key, items: {} }));
@@ -701,13 +714,28 @@ export function Solitaire() {
 
   // Take the next apprenticeship step (coin + days at the forge). Confirmed
   // because it jumps the calendar significantly.
-  function handleApprentice(step) {
+  async function handleApprentice(step) {
     if (loading) return;
-    if (!window.confirm(`Train as ${step.title}? This costs ${formatCopper(step.costCp)} and ${step.days} days bound to the forge.`)) return;
+    if (!(await askConfirm({ title: "Apprentice to the smith", body: `Train as ${step.title}? This costs ${formatCopper(step.costCp)} and ${step.days} days bound to the forge.`, confirmLabel: "Train" }))) return;
     const r = applyApprentice(state, step);
     if (!r.ok) { setError(r.reason || "You can't pay the smith."); return; }
     const beat = { id: `appr${Date.now()}`, type: "narration", content: `You bind yourself to the smith as ${step.title}. The days blur into bellows-heat, ruined billets, and the slow grammar of the hammer — and you come away knowing more than you did.` };
+    setShopTile(null); // the long apprenticeship ends the visit
     setState({ ...r.state, beats: [...r.state.beats, beat] });
+  }
+
+  // Pay an expert to drill a proficiency a rating step (engine/training.js).
+  async function handleTrain(profId) {
+    if (loading || !shopTile) return;
+    const tile = getTile(state, shopTile.x, shopTile.y);
+    const building = buildingForTile(tile);
+    const offer = trainingOffer(state, profId, TRAIN_CAP);
+    if (offer.capped) { setError("There's nothing more they can teach you."); return; }
+    if (!(await askConfirm({ title: `Train ${offer.name}`, body: `Have ${building?.keeper || "the expert"} drill you in ${offer.name} (rating ${offer.cur} → ${offer.next})? This costs ${formatCopper(offer.costCp)} and ${offer.hours} hours.`, confirmLabel: "Train" }))) return;
+    const r = applyTraining(state, profId, TRAIN_CAP);
+    if (!r.ok) { setError(r.reason || "Training failed."); return; }
+    setShopTile(null); // a long session ends the visit
+    setState({ ...r.state, beats: [...r.state.beats, { id: `train${Date.now()}`, type: "narration", content: `Under ${building?.keeper || "an expert"}'s eye you drill ${r.offer.name} for hours — it sharpens from ${r.offer.cur} to ${r.offer.next}.` }] });
   }
 
   // Deterministic, local transactions (engine/economy.js). The shop's stock is
@@ -747,6 +775,47 @@ export function Solitaire() {
     const r = useConsumable(state, itemId);
     if (!r.ok) return;
     setState({ ...r.state, beats: [...r.state.beats, { id: `use${Date.now()}`, type: "narration", content: r.summary }] });
+  }
+
+  // ----- Tavern quest board: tasks, day-labour, recruiting -----
+
+  function handleAcceptTask(posting) {
+    const r = acceptTask(state, posting);
+    if (!r.ok) return;
+    setState({ ...r.state, beats: [...r.state.beats, { id: `q${Date.now()}`, type: "narration", content: `You take down the notice — "${posting.title}", posted by ${posting.giver}. It's yours to see through.` }] });
+  }
+  function handleAbandonTask(id) {
+    setState(abandonTask(state, id).state);
+  }
+  // Hire yourself out for a stretch of labour — deterministic time + coin + wear.
+  function handleDayLabour(job) {
+    const r = applyDayLabour(state, job);
+    if (!r.ok) return;
+    setShopTile(null); // a stretch of work ends the visit
+    setState({ ...r.state, beats: [...r.state.beats, { id: `lab${Date.now()}`, type: "narration", content: r.summary }] });
+  }
+  // Recruiting is narrative: the narrator plays the scene and, if it lands,
+  // introduces the companion via discoveries. No party machinery here.
+  async function handleRecruit(recruit) {
+    if (loading || !shopTile) return;
+    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the tavern";
+    setShopTile(null);
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You sit down across from ${recruit.name}, the ${recruit.role}.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[PLAYER ACTION] At ${place}'s quest board you approach ${recruit.name}, a ${recruit.race} ${recruit.role} hoping to be recruited (${recruit.desc}). Play the conversation — who they are, what they want (pay, a share, a cause) — and let it land naturally. If they join, introduce them as a companion via discoveries.characters and a knowledge update; otherwise let them beg off. Don't fabricate combat or coin transactions.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
   }
 
   // The "AI flavor" half of the hybrid: hand the conversation to the narrator
@@ -1053,6 +1122,7 @@ export function Solitaire() {
   // A wired town building (poi.service) at the player's current tile, if any —
   // surfaces an "Enter" affordance to open its menu. Hidden during combat.
   const buildingHere = combat ? null : buildingForTile(getTile(state, state.world.currentTile.x, state.world.currentTile.y));
+  const buildingOpenNow = buildingHere ? isBuildingOpen(buildingHere, state.time.hour) : false;
 
   return (
     <div style={{
@@ -1153,17 +1223,22 @@ export function Solitaire() {
             boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: colors.gold, marginBottom: "2px" }}>
-                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : "Building"}
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: buildingOpenNow ? colors.gold : "rgba(215,167,111,0.55)", marginBottom: "2px" }}>
+                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : buildingHere.kind === "tavern" ? "Tavern" : "Building"}
               </div>
               <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
-                {buildingHere.label} — step up to the counter.
+                {buildingOpenNow
+                  ? `${buildingHere.label} — ${buildingHere.kind === "tavern" ? "read the board." : "step up to the counter."}`
+                  : `${buildingHere.label} is shut — it opens at ${String(buildingHours(buildingHere).open).padStart(2, "0")}:00.`}
               </div>
             </div>
-            <button onClick={openShop} style={{
-              padding: "9px 16px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
-              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
-            }}>Enter</button>
+            <button onClick={buildingOpenNow ? openShop : undefined} disabled={!buildingOpenNow} style={{
+              padding: "9px 16px", borderRadius: 12,
+              backgroundColor: buildingOpenNow ? colors.gold : "rgba(215,167,111,0.12)",
+              color: buildingOpenNow ? colors.ink : "rgba(215,167,111,0.45)",
+              border: "none", fontSize: "13px", fontWeight: 800,
+              cursor: buildingOpenNow ? "pointer" : "not-allowed", fontFamily: "inherit", flexShrink: 0,
+            }}>{buildingOpenNow ? "Enter" : "Closed"}</button>
           </div>
         )}
         <InputBar value={input} onChange={setInput} onSubmit={handleSubmit} loading={loading} />
@@ -1234,6 +1309,22 @@ export function Solitaire() {
             />
           );
         }
+        if (building.kind === "tavern") {
+          const board = generateBoard(key, state.time.day);
+          return (
+            <QuestBoardView
+              state={state}
+              building={building}
+              board={board}
+              onAccept={handleAcceptTask}
+              onAbandon={handleAbandonTask}
+              onLabour={handleDayLabour}
+              onRecruit={handleRecruit}
+              onClose={() => setShopTile(null)}
+              loading={loading}
+            />
+          );
+        }
         if (building.kind === "trader" || building.kind === "smith") {
           const stock = rollShopStock(building, key, state.time.day);
           return (
@@ -1248,6 +1339,7 @@ export function Solitaire() {
               onSell={handleSell}
               onTalk={handleShopTalk}
               onForge={building.forge ? () => setShopView("forge") : undefined}
+              onTrain={handleTrain}
               loading={loading}
             />
           );
@@ -1265,6 +1357,16 @@ export function Solitaire() {
           onEndTurn={onCombatEndTurn}
           onFlee={onCombatFlee}
           onResolve={handleResolveCombat}
+        />
+      )}
+      {confirmDialog && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          body={confirmDialog.body}
+          confirmLabel={confirmDialog.confirmLabel}
+          cancelLabel={confirmDialog.cancelLabel}
+          danger={confirmDialog.danger}
+          onResolve={(v) => { confirmDialog.resolve(v); setConfirmDialog(null); }}
         />
       )}
     </div>

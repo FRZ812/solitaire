@@ -35,6 +35,11 @@ export function bucketForDay(day) {
   return Math.floor((day || 0) / RESTOCK_DAYS);
 }
 
+// Seeded PRNG from an arbitrary string — shared by other generators (quests).
+export function makeRng(seedStr) {
+  return mulberry32(hashStr(seedStr));
+}
+
 // Roll the building's current stock for the day. Returns
 // { bucket, restockDay, items: [{ itemId, def, qty, price }] }.
 export function rollShopStock(building, tileKey, day) {
