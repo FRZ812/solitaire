@@ -413,11 +413,15 @@ the fiction — one laborer fought is one foe, not the template's range. The
 authoritative, so the narrator can't invent extra bodies afterward.
 
 **Aftermath** — every fight appends a `[COMBAT REPORT]` to `apiHistory` (outcome,
-each foe's fate, ending HP, a blow-by-blow) so the narrator can speak to what
-happened. **Defeat is not game-over:** `handleResolveCombat` hands a `[DEFEATED]`
-prompt to the narrator, which decides a non-lethal consequence fitting the victor
-and place — robbed, jailed, thrown out, or captured and moved (`tile_move`) — and
-the player wakes to face it. Actual death is reserved for cold killers.
+each foe's fate, ending HP, a blow-by-blow). The story ALWAYS continues from the
+result: `handleResolveCombat` follows every outcome with a narrator call —
+`[COMBAT OVER]` for win/stand-down/flee (narrate the aftermath strictly from the
+report, name the actual beaten foe, leave room to react) or `[DEFEATED]` for a
+loss. **Defeat is not game-over:** the narrator picks a non-lethal consequence
+fitting the victor and place — robbed, jailed, thrown out, or captured and moved
+(`tile_move`) — and the player wakes to face it. Actual death is reserved for
+cold killers. The prompt forbids substituting a different character for the
+beaten foe's role (the Karn→Silas bug).
 
 **Environment** (`data/environment.js`, `playerUseEnvironment`): each fight rolls
 1–3 single-use battlefield features from the terrain — flip a table for cover,
@@ -437,7 +441,10 @@ Three ways in:
    no full-HP reset) or a spawn `kind` — plus `initiator` and `surprise`. A foe
    that has already yielded is at the player's mercy (spare/kill/rob/capture,
    narrated directly) — the prompt forbids re-fighting or re-surrender loops.
-   `App.startCombatFromDirective` builds the foes and opens the fight. **Ambush:**
+   A `start_combat` never drops you straight into the tactical screen — it raises
+   an **engage prompt** (`pendingEngage`: "To arms / Engage", or "Under attack /
+   Defend") so the player consents to / navigates into combat after reading the
+   opening; `App.startCombatFromDirective` then builds the foes. **Ambush:**
    `surprise:true` gives the striker a free opening — if the player struck, foes
    are stunned and lose their first turn; if an NPC struck, every foe lands a free
    opening blow. `surprise:false` (both already squared off — heated argument,
