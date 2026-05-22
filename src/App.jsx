@@ -13,6 +13,7 @@ import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, turnForBeatIndex, editBeat } from "./engine/timeline.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper } from "./engine/economy.js";
+import { useConsumable } from "./engine/consumables.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { buildingForTile } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
@@ -159,6 +160,9 @@ export function Solitaire() {
   const [codexOpen, setCodexOpen] = useState(false);
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
+  // Recent purchases at the current shop, for full refunds until you leave the
+  // scene: { tileKey, items: { [itemId]: [pricePaid, ...] } }.
+  const [receipts, setReceipts] = useState({ tileKey: null, items: {} });
   const [hydrated, setHydrated] = useState(false);
   const logRef = useRef(null);
 
@@ -474,6 +478,7 @@ export function Solitaire() {
     const fromTile = getTile(state, cur.x, cur.y);
     const toTile = getTile(state, dest.x, dest.y);
     setMapOpen(false);
+    setReceipts({ tileKey: null, items: {} }); // leaving the scene ends refunds
     setError(null);
     setLoading(true);
     closeBeatMenu();
@@ -584,7 +589,10 @@ export function Solitaire() {
   // ----- Town buildings: trader menus (buy / sell / talk) -----
 
   function openShop() {
+    const key = `${state.world.currentTile.x},${state.world.currentTile.y}`;
     setShopView("trade");
+    // Fresh refund slate when stepping into a different shop than last time.
+    setReceipts((r) => (r.tileKey === key ? r : { tileKey: key, items: {} }));
     setShopTile({ x: state.world.currentTile.x, y: state.world.currentTile.y });
   }
 
@@ -613,19 +621,40 @@ export function Solitaire() {
   // Deterministic, local transactions (engine/economy.js). The shop's stock is
   // rolled from a ruleset table (engine/town-gen.js); buying records the sale so
   // stock depletes until the next restock. `bucket` ties the sale to the current
-  // restock window.
+  // restock window. Each purchase is receipted so it can be refunded in full
+  // while the player is still at the stall.
   function handleBuy(itemDef, priceCp, bucket) {
-    setState((s) => {
-      const key = `${s.world.currentTile.x},${s.world.currentTile.y}`;
-      const r = buyGood(s, { tileKey: key, bucket, itemDef, priceCp, qty: 1 });
-      return r.ok ? r.state : s;
+    const key = `${state.world.currentTile.x},${state.world.currentTile.y}`;
+    const r = buyGood(state, { tileKey: key, bucket, itemDef, priceCp, qty: 1 });
+    if (!r.ok) return;
+    setState(r.state);
+    setReceipts((rec) => {
+      const items = rec.tileKey === key ? { ...rec.items } : {};
+      items[itemDef.id] = [...(items[itemDef.id] || []), priceCp];
+      return { tileKey: key, items };
     });
   }
-  function handleSell(itemId, priceCp) {
-    setState((s) => {
-      const r = sellGood(s, { itemId, priceCp, qty: 1 });
-      return r.ok ? r.state : s;
-    });
+  // Sell one unit. A refund consumes a receipt (full price paid); a plain sale
+  // uses the used-goods price the trader view computed.
+  function handleSell(itemId, priceCp, isRefund) {
+    const r = sellGood(state, { itemId, priceCp, qty: 1 });
+    if (!r.ok) return;
+    setState(r.state);
+    if (isRefund) {
+      setReceipts((rec) => {
+        const stack = rec.items[itemId];
+        if (!stack || stack.length === 0) return rec;
+        return { ...rec, items: { ...rec.items, [itemId]: stack.slice(0, -1) } };
+      });
+    }
+  }
+
+  // Use a consumable from the pack (engine/consumables.js) — applies its effect
+  // and logs a short beat of what changed.
+  function handleUse(itemId) {
+    const r = useConsumable(state, itemId);
+    if (!r.ok) return;
+    setState({ ...r.state, beats: [...r.state.beats, { id: `use${Date.now()}`, type: "narration", content: r.summary }] });
   }
 
   // The "AI flavor" half of the hybrid: hand the conversation to the narrator
@@ -1045,6 +1074,7 @@ export function Solitaire() {
           onClose={() => setMenuOpen(false)}
           onEquip={handleEquip}
           onUnequip={handleUnequip}
+          onUse={handleUse}
           onReset={handleResetCampaign}
           onOpenCodex={() => { setMenuOpen(false); setCodexOpen(true); }}
           onBackToCampaigns={handleBackToCampaigns}
@@ -1092,6 +1122,7 @@ export function Solitaire() {
               building={building}
               tileKey={key}
               stock={stock}
+              receipts={receipts.tileKey === key ? receipts.items : {}}
               onClose={() => setShopTile(null)}
               onBuy={handleBuy}
               onSell={handleSell}

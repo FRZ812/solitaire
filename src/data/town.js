@@ -17,7 +17,8 @@ export const BUILDINGS = {
     keeper: "the healer",      // used to flavor the "speak with…" narrator hook
     icon: "healer",            // MapView MAP_ASSETS key
     blurb: "Bundles of drying herbs hang from the rafters; the air is thick with comfrey, tallow, and woodsmoke.",
-    sellRate: 0.4,             // buy-back at 40% of an item's value
+    // Resale uses the fair default (economy.DEFAULT_RESALE_RATE); a just-bought
+    // item is refunded in full while you're still in the shop.
     // Weighted stock: `chance` it appears this restock, `qty` range [min,max],
     // `priceMult` against the good's base value (goods.js).
     stock: [
@@ -40,7 +41,6 @@ export const BUILDINGS = {
     keeper: "the smith",
     icon: "smithy",
     blurb: "A banked forge throws orange light up the soot-black walls; a wall of tongs, a barrel of quench-water, the ring of a hammer on cooling iron.",
-    sellRate: 0.35,
     // What the smith will buy back: gear and raw stock (not the player's potions).
     buys: ["weapon", "armor", "shield", "clothing", "material"],
     stock: [
@@ -63,7 +63,7 @@ export const BUILDINGS = {
     id: "butcher", kind: "trader",
     label: "The Butcher's Stall", keeper: "the butcher", icon: "market",
     blurb: "A scarred block, a row of hooks, and the iron smell of the day's slaughter.",
-    sellRate: 0.4, buys: ["food"],
+    buys: ["food"],
     stock: [
       { id: "fresh-meat",   chance: 1.0,  qty: [3, 8], priceMult: 1.2 },
       { id: "sausage-links",chance: 0.9,  qty: [2, 6], priceMult: 1.2 },
@@ -76,7 +76,7 @@ export const BUILDINGS = {
     id: "fruit", kind: "trader",
     label: "The Fruit-Peddler's Cart", keeper: "the fruit-peddler", icon: "market",
     blurb: "A handcart heaped with the season's fruit, a wasp or two circling the sweetest of it.",
-    sellRate: 0.4, buys: ["food"],
+    buys: ["food"],
     stock: [
       { id: "apples",     chance: 1.0,  qty: [4, 10], priceMult: 1.2 },
       { id: "pears",      chance: 0.9,  qty: [3, 8], priceMult: 1.2 },
@@ -88,7 +88,7 @@ export const BUILDINGS = {
     id: "greengrocer", kind: "trader",
     label: "The Greengrocer", keeper: "the greengrocer", icon: "market",
     blurb: "Crates and baskets of root-vegetables and greens, still cool and damp from the morning.",
-    sellRate: 0.4, buys: ["food"],
+    buys: ["food"],
     stock: [
       { id: "turnips",     chance: 1.0,  qty: [4, 10], priceMult: 1.2 },
       { id: "onions",      chance: 1.0,  qty: [3, 8], priceMult: 1.2 },
