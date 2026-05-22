@@ -37,29 +37,75 @@ function Thinking({ text }) {
   );
 }
 
-export function BeatRender({ beat }) {
+// Three-dot affordance for the long-press / tap action menu.
+function Dots() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="rgba(215,167,111,0.85)">
+      <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
+    </svg>
+  );
+}
+
+// Wraps a bubble so a long-press (or right-click, or the corner button) opens the
+// Rewrite / Edit / Rewind menu for that beat.
+function Pressable({ onMenu, children }) {
+  const timer = React.useRef(null);
+  const start = () => { timer.current = setTimeout(() => { timer.current = null; onMenu?.(); }, 480); };
+  const cancel = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
+  if (!onMenu) return children;
+  return (
+    <div
+      style={{ position: "relative" }}
+      onTouchStart={start}
+      onTouchEnd={cancel}
+      onTouchMove={cancel}
+      onContextMenu={(e) => { e.preventDefault(); onMenu(); }}
+    >
+      {children}
+      <button
+        onClick={(e) => { e.stopPropagation(); onMenu(); }}
+        aria-label="Edit, rewrite, or rewind this moment"
+        style={{
+          position: "absolute", top: 8, right: 8,
+          width: 28, height: 28, borderRadius: 9,
+          background: "rgba(14, 20, 20, 0.55)",
+          border: "1px solid rgba(215, 167, 111, 0.22)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer", opacity: 0.55, padding: 0,
+        }}
+      >
+        <Dots />
+      </button>
+    </div>
+  );
+}
+
+export function BeatRender({ beat, onMenu }) {
   switch (beat.type) {
     case "narration":
       return (
-        <Panel>
-          <Thinking text={beat.thinking} />
-          {beat.timeStamp && (
-            <div style={{ ...metaStyle, color: "rgba(215, 167, 111, 0.45)", marginBottom: "7px" }}>
-              {beat.timeStamp}
+        <Pressable onMenu={onMenu}>
+          <Panel>
+            <Thinking text={beat.thinking} />
+            {beat.timeStamp && (
+              <div style={{ ...metaStyle, color: "rgba(215, 167, 111, 0.45)", marginBottom: "7px" }}>
+                {beat.timeStamp}
+              </div>
+            )}
+            <div style={{
+              fontFamily: fonts.serif,
+              fontStyle: "italic",
+              fontSize: "16px",
+              lineHeight: "1.46",
+              color: colors.parchment,
+              whiteSpace: "pre-wrap",
+              textShadow: "0 2px 10px rgba(0,0,0,0.24)",
+              paddingRight: "28px",
+            }}>
+              {beat.content}
             </div>
-          )}
-          <div style={{
-            fontFamily: fonts.serif,
-            fontStyle: "italic",
-            fontSize: "16px",
-            lineHeight: "1.46",
-            color: colors.parchment,
-            whiteSpace: "pre-wrap",
-            textShadow: "0 2px 10px rgba(0,0,0,0.24)",
-          }}>
-            {beat.content}
-          </div>
-        </Panel>
+          </Panel>
+        </Pressable>
       );
 
     case "player":
@@ -143,37 +189,39 @@ export function BeatRender({ beat }) {
 
     case "dialogue":
       return (
-        <Panel tone="pale" compact>
-          <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
-            <div style={{
-              width: "36px", height: "36px",
-              borderRadius: "50%",
-              flexShrink: 0,
-              background: "linear-gradient(135deg, #3a2d1e 0%, #151d1d 100%)",
-              border: `1px solid rgba(215, 167, 111, 0.4)`,
-              boxShadow: "inset 0 0 8px rgba(0,0,0,0.6)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(215, 167, 111, 0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ ...metaStyle, color: colors.parchmentMuted, marginBottom: "3px" }}>{beat.name}</div>
+        <Pressable onMenu={onMenu}>
+          <Panel tone="pale" compact>
+            <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
               <div style={{
-                fontSize: "15px",
-                lineHeight: 1.42,
-                color: colors.parchment,
-                fontStyle: "italic",
-                fontFamily: fonts.serif,
-                textShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                width: "36px", height: "36px",
+                borderRadius: "50%",
+                flexShrink: 0,
+                background: "linear-gradient(135deg, #3a2d1e 0%, #151d1d 100%)",
+                border: `1px solid rgba(215, 167, 111, 0.4)`,
+                boxShadow: "inset 0 0 8px rgba(0,0,0,0.6)",
+                display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                "{beat.line}"
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(215, 167, 111, 0.7)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              </div>
+              <div style={{ flex: 1, minWidth: 0, paddingRight: "24px" }}>
+                <div style={{ ...metaStyle, color: colors.parchmentMuted, marginBottom: "3px" }}>{beat.name}</div>
+                <div style={{
+                  fontSize: "15px",
+                  lineHeight: 1.42,
+                  color: colors.parchment,
+                  fontStyle: "italic",
+                  fontFamily: fonts.serif,
+                  textShadow: "0 1px 4px rgba(0,0,0,0.3)",
+                }}>
+                  "{beat.line}"
+                </div>
               </div>
             </div>
-          </div>
-        </Panel>
+          </Panel>
+        </Pressable>
       );
 
     case "travel_card":

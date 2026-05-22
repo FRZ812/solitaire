@@ -10,6 +10,7 @@ import { onAuthChange, signOut, linkEmail, isSubscribed } from "$auth";
 import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "$campaigns";
 import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
+import { recordTurn, stateBeforeTurn, turnForBeatIndex, editBeat } from "./engine/timeline.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
 import {
   getTile, currentLocationName,
@@ -27,7 +28,8 @@ import { activeWorldPassives } from "./engine/combat-stats.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
 import { CombatView } from "./components/combat/CombatView.jsx";
-import { VitalsStrip, InputBar, LoadingDots, ErrorBanner, RewriteControl } from "./components/primitives.jsx";
+import { VitalsStrip, InputBar, LoadingDots, ErrorBanner } from "./components/primitives.jsx";
+import { BeatActionSheet } from "./components/BeatActionSheet.jsx";
 import { colors } from "./components/tokens.js";
 import { BeatRender } from "./components/beats/BeatRender.jsx";
 import { MenuSheet } from "./components/MenuSheet.jsx";
@@ -158,12 +160,14 @@ export function Solitaire() {
   const [pendingEngage, setPendingEngage] = useState(null); // narrator start_combat awaiting the player's go-ahead
   const combatCtxRef = useRef(null);
 
-  // Rewrite/steer: lets the player redirect the last narration. The rewind point
-  // (state.rewind) is persisted with the save, so a loaded run's last narration
-  // is steerable too. A rewrite rolls the rejected beat out of the log AND the
-  // api history, then re-rolls the same moment with the player's steer folded in.
-  const [rewriteOpen, setRewriteOpen] = useState(false);
+  // Long-press a narration/dialogue bubble to Rewrite / Edit / Rewind it. The
+  // per-turn timeline (state.turns + state.worldPool) is saved with the campaign,
+  // so any recorded moment stays steerable across reloads. beatMenu holds the
+  // targeted beat; beatMode switches the sheet between menu and editors.
+  const [beatMenu, setBeatMenu] = useState(null); // { beatId, index, turnK }
+  const [beatMode, setBeatMode] = useState("menu"); // "menu" | "rewrite" | "edit"
   const [rewriteText, setRewriteText] = useState("");
+  const [editText, setEditText] = useState("");
 
   // ----- Auth subscription (web mode) -----
   useEffect(() => {
@@ -336,7 +340,7 @@ export function Solitaire() {
       // Doesn't touch the player's own discoveries.
       const migrated = migrateCodex(loaded);
       setState(migrated);
-      clearRewrite();
+      closeBeatMenu();
       setCurrentCampaignId(id);
       localStorage.setItem(LAST_OPENED_KEY, id);
       setHydrated(true);
@@ -357,7 +361,7 @@ export function Solitaire() {
       const { id } = await saveCampaign(null, fresh, { name });
       if (isCancelled()) return;
       setState(fresh);
-      clearRewrite();
+      closeBeatMenu();
       setCurrentCampaignId(id);
       localStorage.setItem(LAST_OPENED_KEY, id);
       setHydrated(true);
@@ -442,7 +446,7 @@ export function Solitaire() {
       const message = `[PLAYER ACTION] ${action}`;
       const beat = await callNarrator(stateWithPlayer, message);
       const next = applyBeat(stateWithPlayer, beat);
-      setState(withRewind(stateWithPlayer, message, next));
+      setState(recordTurn(stateWithPlayer, message, next));
       // An explicit strike in the fiction hands off to the turn-based engine.
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
@@ -462,7 +466,7 @@ export function Solitaire() {
     setMapOpen(false);
     setError(null);
     setLoading(true);
-    clearRewrite();
+    closeBeatMenu();
     const fromName = currentLocationName(state);
     const toName = toTile.poi?.name || `${TERRAINS[toTile.terrain]?.label} (${dest.x},${dest.y})`;
     const isHidden = toTile.poi?.type === "hidden";
@@ -560,89 +564,77 @@ export function Solitaire() {
   function handleResetCampaign() {
     if (!window.confirm("Reset this campaign to the beginning? Your current progress here will be erased.")) return;
     setState(makeInitialState());
-    clearRewrite();
+    closeBeatMenu();
     setMenuOpen(false);
   }
 
   function handleEquip(itemId) { setState((s) => equipItem(s, itemId)); }
   function handleUnequip(itemId) { setState((s) => unequipItem(s, itemId)); }
 
-  // ----- Rewrite / steer the last narration -----
+  // ----- Long-press a bubble: Rewrite / Edit / Rewind -----
 
-  // Attach a rewind point to a finished turn: `base` is the state the narrator
-  // beat was applied to, `message` the prompt that produced it, `next` the
-  // result. We persist a COMPACT descriptor (the beats/api-history are restored
-  // by slicing the saved arrays back to their pre-turn lengths) plus the small
-  // character/time snapshots; the heavy world is only snapshotted when the turn
-  // actually changed it. The rejected text is stashed so a rewrite can tell the
-  // model what it's replacing.
-  function withRewind(base, message, next) {
-    const turnBeats = next.beats.slice(base.beats.length);
-    const textBeats = turnBeats.filter((b) => b.type === "narration" || b.type === "dialogue");
-    if (textBeats.length === 0) return { ...next, rewind: null };
-    const prevText = textBeats
-      .map((b) => (b.type === "dialogue" ? `${b.name}: "${b.line}"` : b.content))
-      .join("\n\n");
-    // applyBeat only swaps these sub-objects when the beat actually changed them,
-    // so a reference check tells us whether we must keep a world snapshot.
-    const worldChanged =
-      base.world.codex !== next.world.codex ||
-      base.world.tiles !== next.world.tiles ||
-      base.world.currentTile !== next.world.currentTile ||
-      base.world.seen !== next.world.seen;
-    return {
-      ...next,
-      rewind: {
-        message, prevText,
-        beatsLen: base.beats.length,
-        historyLen: base.apiHistory.length,
-        char: base.character,
-        time: base.time,
-        world: worldChanged ? base.world : null,
-      },
-    };
-  }
-
-  function clearRewrite() {
-    setRewriteOpen(false);
+  function openBeatMenu(beat, index) {
+    if (beat.type !== "narration" && beat.type !== "dialogue") return;
+    setBeatMenu({ beatId: beat.id, index, turnK: turnForBeatIndex(state, index) });
+    setBeatMode("menu");
     setRewriteText("");
+    setEditText(beat.type === "dialogue" ? beat.line : beat.content);
   }
 
-  async function handleRewrite() {
-    const rw = state.rewind;
+  function closeBeatMenu() {
+    setBeatMenu(null);
+    setBeatMode("menu");
+    setRewriteText("");
+    setEditText("");
+  }
+
+  // Rewrite the turn that produced this bubble: rewind to just before it (dropping
+  // it and everything after), then re-roll that moment with the player's steer.
+  async function handleRewriteBeat() {
+    const menu = beatMenu;
     const feedback = rewriteText.trim();
-    if (!rw || !feedback || loading) return;
-    setRewriteOpen(false);
-    setRewriteText("");
+    if (!menu || menu.turnK < 0 || !feedback || loading) return;
+    const cp = state.turns[menu.turnK];
+    closeBeatMenu();
     setError(null);
     setLoading(true);
-    setPendingEngage(null); // drop any combat offer from the rejected version
-    // Reconstruct the pre-narration state from the persisted rewind point.
-    const base = {
-      ...state,
-      character: rw.char,
-      time: rw.time,
-      world: rw.world || state.world,
-      beats: state.beats.slice(0, rw.beatsLen),
-      apiHistory: state.apiHistory.slice(0, rw.historyLen),
-      rewind: null,
-    };
-    setState(base); // roll the rejected beat out of the log + api history
+    setPendingEngage(null);
+    const base = stateBeforeTurn(state, menu.turnK);
+    setState(base); // roll the rejected beat (and any later ones) out of the log + memory
     try {
-      const directive = `\n\n[REWRITE — author's steer] The player is exercising author's privilege over your PREVIOUS narration of this exact moment and wants it taken in a different direction. Your previous version was:\n"""\n${rw.prevText}\n"""\nWrite a NEW version of this same moment from the same game state, fully honoring the player's steer: "${feedback}". This is how the player nudges the story toward turns it would not take on its own — a trope, a twist, a character's choice. Lean into it as far as the established world, characters, and state plausibly allow, and keep continuity with everything before this moment. Your output REPLACES the previous version; do not mention that it was rewritten.`;
-      const beat = await callNarrator(base, rw.message + directive);
-      // Keep api history clean of the steer scaffolding so later turns don't
-      // treat the rejected version as canon.
-      beat._userMsg = `${buildStateContext(base)}\n\n${rw.message}`;
+      const directive = `\n\n[REWRITE — author's steer] The player is exercising author's privilege over your PREVIOUS narration of this exact moment and wants it taken in a different direction. Your previous version was:\n"""\n${cp.prevText}\n"""\nWrite a NEW version of this same moment from the same game state, fully honoring the player's steer: "${feedback}". This is how the player nudges the story toward turns it would not take on its own — a trope, a twist, a character's choice. Lean into it as far as the established world, characters, and state plausibly allow, and keep continuity with everything before this moment. Your output REPLACES the previous version; do not mention that it was rewritten.`;
+      const beat = await callNarrator(base, cp.message + directive);
+      // Keep memory clean of the steer scaffolding so later turns don't treat the
+      // rejected version as canon.
+      beat._userMsg = `${buildStateContext(base)}\n\n${cp.message}`;
       const next = applyBeat(base, beat);
-      setState(withRewind(base, rw.message, next)); // allow re-steering from the same point
+      setState(recordTurn(base, cp.message, next));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
-      setState((s) => ({ ...s, rewind: rw })); // restore the rewind point so they can retry
     } finally {
       setLoading(false);
     }
+  }
+
+  // Rewind the story to just before this bubble — drop it and everything after.
+  function handleRewindBeat() {
+    const menu = beatMenu;
+    if (!menu || menu.turnK < 0 || loading) return;
+    closeBeatMenu();
+    setPendingEngage(null);
+    setPendingCombat(null);
+    setPendingLoot(null);
+    setState(stateBeforeTurn(state, menu.turnK));
+  }
+
+  // Manually edit the bubble's text (synced into the model's memory).
+  function handleEditBeat() {
+    const menu = beatMenu;
+    const text = editText.trim();
+    if (!menu || !text) return;
+    setState((s) => editBeat(s, menu.beatId, text));
+    closeBeatMenu();
   }
 
   // ----- Combat handlers -----
@@ -652,7 +644,7 @@ export function Solitaire() {
     combatCtxRef.current = context || { flavor: enemies[0].name };
     setMenuOpen(false); setMapOpen(false); setCodexOpen(false);
     setPendingCombat(null);
-    clearRewrite();
+    closeBeatMenu();
     const region = regionHere(st);
     const wp = activeWorldPassives(st.character, st.world.codex);
     const cur = st.world.currentTile;
@@ -700,7 +692,7 @@ export function Solitaire() {
       const msg = `[PLAYER ACTION] You go looking for a fight here — sizing up who might be willing to cross blades.\n\n[SEEK COMBAT] The player is trying to pick a fight at this location. Decide naturally what it holds right now: a willing opponent (set start_combat), no one interested (start_combat null), or consequences for disturbing the peace (guards/patrons step in — start_combat against them). Respect this place's current state; do NOT invent an endless supply of enemies, and if it has already been cleared or emptied there is nothing to fight.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
-      setState(withRewind(stateWithPlayer, msg, next));
+      setState(recordTurn(stateWithPlayer, msg, next));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -752,7 +744,7 @@ export function Solitaire() {
       }
       const beat = await callNarrator(next, msg);
       const after = applyBeat(next, beat);
-      setState(withRewind(next, msg, after));
+      setState(recordTurn(next, msg, after));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -777,7 +769,7 @@ export function Solitaire() {
       const msg = `[LOOTED] You take the time to search the ${manifest.deadCount > 1 ? `${manifest.deadCount} bodies` : "body"} and come away with: ${taken || "little of worth"}. This happens at ${place} and takes several minutes in plain sight. Narrate it, and adjudicate the fallout — rifling a corpse in a public, lawful place draws horror and the watch; in the wilds or a den, no one cares. Apply consequences (location_update, conditions, start_combat with guards, or tile_move) as fits.`;
       const beat = await callNarrator(looted, msg);
       const after = applyBeat(looted, beat);
-      setState(withRewind(looted, msg, after));
+      setState(recordTurn(looted, msg, after));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -840,7 +832,7 @@ export function Solitaire() {
         />
         <VitalsStrip character={state.character} />
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
-          {state.beats.map((b) => <BeatRender key={b.id} beat={b} />)}
+          {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
           {loading && <LoadingDots />}
           {error && <ErrorBanner>{error}</ErrorBanner>}
           {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
@@ -916,19 +908,26 @@ export function Solitaire() {
             }}>Leave</button>
           </div>
         )}
-        {state.rewind && !loading && !combat && !pendingCombat && !pendingEngage && !pendingLoot && (
-          <RewriteControl
-            open={rewriteOpen}
-            value={rewriteText}
-            onChange={setRewriteText}
-            onSubmit={handleRewrite}
-            onOpen={() => setRewriteOpen(true)}
-            onCancel={() => { setRewriteOpen(false); setRewriteText(""); }}
-            loading={loading}
-          />
-        )}
         <InputBar value={input} onChange={setInput} onSubmit={handleSubmit} loading={loading} />
       </div>
+
+      {beatMenu && (
+        <BeatActionSheet
+          mode={beatMode}
+          canRewindRewrite={beatMenu.turnK >= 0}
+          loading={loading}
+          rewriteText={rewriteText}
+          editText={editText}
+          onRewriteText={setRewriteText}
+          onEditText={setEditText}
+          onChooseRewrite={() => setBeatMode("rewrite")}
+          onChooseEdit={() => setBeatMode("edit")}
+          onRewind={handleRewindBeat}
+          onSubmitRewrite={handleRewriteBeat}
+          onSubmitEdit={handleEditBeat}
+          onClose={closeBeatMenu}
+        />
+      )}
 
       {menuOpen && (
         <MenuSheet
