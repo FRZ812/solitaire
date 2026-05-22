@@ -12,8 +12,11 @@ import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, turnForBeatIndex, editBeat } from "./engine/timeline.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
-import { buyGood, sellGood } from "./engine/economy.js";
+import { buyGood, sellGood, formatCopper } from "./engine/economy.js";
+import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { buildingForTile } from "./data/town.js";
+import { schematicsForBuilding } from "./data/schematics.js";
+import { tierLabel } from "./data/tiers.js";
 import { rollShopStock } from "./engine/town-gen.js";
 import {
   getTile, currentLocationName,
@@ -38,6 +41,7 @@ import { BeatRender } from "./components/beats/BeatRender.jsx";
 import { MenuSheet } from "./components/MenuSheet.jsx";
 import { MapView } from "./components/MapView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
+import { ForgeView } from "./components/ForgeView.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
@@ -191,7 +195,8 @@ export function Solitaire() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [codexOpen, setCodexOpen] = useState(false);
-  const [shopTile, setShopTile] = useState(null); // {x,y} of an open trader building, or null
+  const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
+  const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
   const [hydrated, setHydrated] = useState(false);
   const logRef = useRef(null);
 
@@ -599,7 +604,30 @@ export function Solitaire() {
   // ----- Town buildings: trader menus (buy / sell / talk) -----
 
   function openShop() {
+    setShopView("trade");
     setShopTile({ x: state.world.currentTile.x, y: state.world.currentTile.y });
+  }
+
+  // Forge an item at a resolved tier (the minigame decided the grade). Pure
+  // apply + a narration beat; returns the produced def so the forge view can
+  // show the result. Materials/coin are consumed and time advances in applyForge.
+  function handleForge(schematic, tier) {
+    const r = applyForge(state, schematic, tier);
+    if (!r.ok) { setError(r.reason || "The forge failed."); return null; }
+    const beat = { id: `forge${Date.now()}`, type: "narration", content: `At the anvil you work ${r.item.name} (${tierLabel(tier)}) from raw stock — heat, hammer, quench, and a long look down the edge.` };
+    setState({ ...r.state, beats: [...r.state.beats, beat] });
+    return r.item;
+  }
+
+  // Take the next apprenticeship step (coin + days at the forge). Confirmed
+  // because it jumps the calendar significantly.
+  function handleApprentice(step) {
+    if (loading) return;
+    if (!window.confirm(`Train as ${step.title}? This costs ${formatCopper(step.costCp)} and ${step.days} days bound to the forge.`)) return;
+    const r = applyApprentice(state, step);
+    if (!r.ok) { setError(r.reason || "You can't pay the smith."); return; }
+    const beat = { id: `appr${Date.now()}`, type: "narration", content: `You bind yourself to the smith as ${step.title}. The days blur into bellows-heat, ruined billets, and the slow grammar of the hammer — and you come away knowing more than you did.` };
+    setState({ ...r.state, beats: [...r.state.beats, beat] });
   }
 
   // Deterministic, local transactions (engine/economy.js). The shop's stock is
@@ -1004,7 +1032,7 @@ export function Solitaire() {
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: colors.gold, marginBottom: "2px" }}>
-                {buildingHere.kind === "trader" ? "Trader" : "Building"}
+                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : "Building"}
               </div>
               <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
                 {buildingHere.label} — step up to the counter.
@@ -1066,22 +1094,41 @@ export function Solitaire() {
       {shopTile && (() => {
         const tile = getTile(state, shopTile.x, shopTile.y);
         const building = buildingForTile(tile);
-        if (!building || building.kind !== "trader") return null;
+        if (!building) return null;
         const key = `${shopTile.x},${shopTile.y}`;
-        const stock = rollShopStock(building, key, state.time.day);
-        return (
-          <TraderView
-            state={state}
-            building={building}
-            tileKey={key}
-            stock={stock}
-            onClose={() => setShopTile(null)}
-            onBuy={handleBuy}
-            onSell={handleSell}
-            onTalk={handleShopTalk}
-            loading={loading}
-          />
-        );
+        if (shopView === "forge" && building.forge) {
+          return (
+            <ForgeView
+              state={state}
+              building={building}
+              schematics={schematicsForBuilding(building)}
+              rank={blacksmithRank(state)}
+              onApprentice={handleApprentice}
+              onForge={handleForge}
+              onBack={() => setShopView("trade")}
+              onClose={() => setShopTile(null)}
+              loading={loading}
+            />
+          );
+        }
+        if (building.kind === "trader" || building.kind === "smith") {
+          const stock = rollShopStock(building, key, state.time.day);
+          return (
+            <TraderView
+              state={state}
+              building={building}
+              tileKey={key}
+              stock={stock}
+              onClose={() => setShopTile(null)}
+              onBuy={handleBuy}
+              onSell={handleSell}
+              onTalk={handleShopTalk}
+              onForge={building.forge ? () => setShopView("forge") : undefined}
+              loading={loading}
+            />
+          );
+        }
+        return null;
       })()}
       {combat && (
         <CombatView

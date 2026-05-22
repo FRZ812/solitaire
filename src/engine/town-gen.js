@@ -9,7 +9,7 @@
 // but seeded for stability instead of fresh per call.
 
 import { RESTOCK_DAYS } from "../data/town.js";
-import { goodDef } from "../data/goods.js";
+import { itemTemplate } from "../data/catalog.js";
 
 function hashStr(s) {
   let h = 2166136261 >>> 0;
@@ -45,7 +45,7 @@ export function rollShopStock(building, tileKey, day) {
     for (const entry of building.stock) {
       const chance = entry.chance ?? 1;
       if (rng() > chance) continue;
-      const def = goodDef(entry.id);
+      const def = itemTemplate(entry.id);
       if (!def) continue;
       const [qmin, qmax] = entry.qty || [1, 1];
       const qty = qmin + Math.floor(rng() * (qmax - qmin + 1));

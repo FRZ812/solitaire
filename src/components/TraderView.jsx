@@ -9,13 +9,14 @@ import { canAfford, formatCopper, formatCoins, SELLABLE_KINDS } from "../engine/
 // (healer now; market stalls, the smith's counter, etc. later). Transactions
 // are deterministic and local — App applies them via engine/economy.js. The
 // "Speak with…" hook hands off to the narrator for flavor and haggling.
-export function TraderView({ state, building, tileKey, stock, onClose, onBuy, onSell, onTalk, loading }) {
+export function TraderView({ state, building, tileKey, stock, onClose, onBuy, onSell, onTalk, onForge, loading }) {
   const [tab, setTab] = useState("buy");
 
   const codex = state.world.codex;
   const inv = state.character.inventory;
   const coins = inv.coins;
   const worn = new Set(codex.characters.wanderer?.worn || []);
+  const buys = building.buys ? new Set(building.buys) : SELLABLE_KINDS;
 
   const tile = state.world.tiles[tileKey];
   const sold = (tile?.shop && tile.shop.bucket === stock.bucket) ? tile.shop.sold : {};
@@ -28,9 +29,9 @@ export function TraderView({ state, building, tileKey, stock, onClose, onBuy, on
   // Sell ledger: carried goods the trader will buy back (not worn equipment).
   const sellRows = inv.carried
     .map((c) => ({ c, def: codex.items[c.itemId] }))
-    // Only real trade goods sell: a saleable kind, a set worth, and not worn.
-    // Keepsakes and storied items (no `value`) stay in the pack.
-    .filter(({ c, def }) => def && def.value > 0 && SELLABLE_KINDS.has(def.kind) && !worn.has(c.itemId))
+    // Only real trade goods sell: a kind this trader buys, a set worth, and not
+    // worn. Keepsakes and storied items (no `value`) stay in the pack.
+    .filter(({ c, def }) => def && def.value > 0 && buys.has(def.kind) && !worn.has(c.itemId))
     .map(({ c, def }) => ({
       itemId: c.itemId,
       def,
@@ -132,12 +133,24 @@ export function TraderView({ state, building, tileKey, stock, onClose, onBuy, on
         )}
       </div>
 
-      {/* Footer — narrator hand-off for flavor / haggling (the "AI" half). */}
+      {/* Footer — the forge hand-off (smiths), and the narrator hand-off for
+          flavor / haggling (the "AI" half). */}
       <div style={{
         padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 16px)",
         borderTop: "1px solid rgba(215, 167, 111, 0.22)",
         backgroundColor: "rgba(20, 29, 29, 0.95)", ...glass,
+        display: "flex", flexDirection: "column", gap: "8px",
       }}>
+        {onForge && (
+          <button onClick={onForge} style={{
+            width: "100%", height: "44px", borderRadius: radius.control, border: "none",
+            backgroundColor: colors.gold, color: colors.ink,
+            fontSize: "13px", fontWeight: 800, letterSpacing: "0.04em",
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            To the Forge
+          </button>
+        )}
         <button onClick={onTalk} disabled={loading} style={{
           width: "100%", height: "44px", borderRadius: radius.control,
           border: "1px solid rgba(215, 167, 111, 0.28)",
