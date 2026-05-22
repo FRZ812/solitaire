@@ -37,6 +37,9 @@ export function makeInitialState() {
       bond: "A small wooden bird carved by your sister, who vanished seven years ago.",
       attributes: { body: 2, reflex: 3, vigor: 2, mind: 2, wit: 4, presence: 1 },
       needs: { hunger: 60, thirst: 75, sleep: 70 },
+      // Learned combat abilities (stored as { id, tier }); Strike + Brace are
+      // always available and not listed here. More are obtained from victories.
+      abilities: [{ id: "power-strike", tier: "common" }],
       inventory: {
         carried: [{ itemId: "wooden-bird", quantity: 1 }],
         coins: { copper: 8, silver: 3, gold: 0 },

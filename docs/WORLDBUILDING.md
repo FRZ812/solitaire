@@ -170,6 +170,76 @@ The player can always *attempt* a non-door entry by freeform action. The narrato
 
 The system-prompt section ACCESS CONTROL covers the narrator side. See `src/engine/beat.js` for the `tile_move` handler.
 
+## Combat system (turn-based, client-side)
+
+Combat is resolved entirely in the browser — fast, clickable, lightly random.
+The narrator is NOT in the loop during a fight; it only sets the scene before
+and can react to the aftermath afterward. Files: `src/engine/combat.js` (turn
+engine), `src/engine/combat-stats.js` (attribute → combat-stat derivation),
+`src/data/abilities.js`, `src/data/bestiary.js`, `src/data/tiers.js`,
+`src/components/combat/CombatView.jsx`.
+
+### Tiers (universal)
+
+Everything gradable carries a tier from one ladder (`src/data/tiers.js`):
+**common · uncommon · rare · very rare · epic · legendary · mythical · divine**.
+Each tier has a power multiplier (`mult`) applied to base stat blocks and a drop
+`weight` (rarer = exponentially less likely). `rollTier(maxTierId, luck)` does
+weighted, capped rolls for loot and enemy generation.
+
+### Stats — derived, attributes stay the backbone
+
+The six attributes (body/reflex/vigor/mind/wit/presence) are unchanged. Combat
+stats are DERIVED from them plus equipped gear (`deriveCombatStats`):
+
+- **maxHealth** = `vitalityMax` (combat reads/writes `character.vitality`).
+- **armor** (physical flat DR) = `floor(body/3)` + worn armour values.
+- **ward** (magical flat DR) = `floor(mind/3)` + worn ward values.
+- **dodge%** = `reflex*2` + gear (cap 60). **accuracy** = `reflex+wit` (offsets dodge).
+- **critChance%** = `wit*1.5 + reflex` (cap 50); **critMult** 1.5.
+- **weapon damage** = equipped weapon (or unarmed) range × `attrFactor(gov)` where
+  gov = body for physical, mind for magical; **penetration** = weapon pen + `floor(body/4)`.
+- **stamina** (per-fight resource) = `4 + floor((vigor+reflex)/3)`, regen `2 + floor(vigor/4)`.
+
+Items get combat values from an explicit `combat` block on the codex item, else
+inferred from kind/name keywords (`itemCombatStats`).
+
+### Damage pipeline (one hit)
+
+`dodge check → roll base damage → rally/weaken → crit → vulnerable → mitigate`.
+Mitigation: **physical** subtracts `armor − penetration`; **magical** subtracts
+`ward − penetration`; **true** ignores both. No AC, no attack d20 — dodge is a
+flat % chance.
+
+### Turn structure
+
+Per-fight Stamina gates actions; most abilities also have a cooldown. A turn:
+player spends stamina on clickable abilities (multiple per turn), then **End
+Turn** → each enemy acts (simple AI: heal when low, else ~60% use an ability) →
+new turn regens stamina and ticks cooldowns. **Flee** chance scales with speed.
+
+Status effects: bleed/poison (true damage-over-time), stun (skip), weaken
+(−outgoing), vulnerable (+incoming), guard (+armour), rally (+outgoing), regen
+(heal-over-time), focus (+crit, consumed on next hit).
+
+### Abilities & enemies (generative, tiered)
+
+Abilities live in `ABILITY_LIBRARY` (martial/arcane/shadow/survival/divine), each
+a common-tier baseline scaled by tier × governing attribute. Strike + Brace are
+always available; learned abilities are stored on `character.abilities` as
+`{ id, tier }`. Enemies come from `BESTIARY` keyed by spawn `kind` (with a
+keyword-inferred fallback); `generateEnemyGroup(kind, {power})` rolls group size
+and per-enemy tiers, scaling stats by `power` (terrain threat).
+
+### Entry & outcome
+
+A hostile travel encounter raises a Fight/Avoid banner; the header's swords
+button seeks a fight against a hostile drawn from the current tile's spawn table.
+`applyCombatResult` folds the fight back into the campaign: HP → `vitality`,
+lingering DoT → Bleeding/Poisoned conditions (defeat → Gravely Wounded, min 1 HP),
+loot → inventory/codex, a learned ability → `character.abilities` + a codex skill,
+and summary beats into the log.
+
 ## Quick smoke test
 
 After data edits, run:
