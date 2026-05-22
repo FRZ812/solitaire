@@ -49,7 +49,8 @@ const livingEnemies = (cs) => cs.enemies.filter((e) => e.health > 0 && !e.resolv
 // ----- setup -----
 
 function playerThreat(p) {
-  return p.weapon.max + p.maxHealth * 0.2 + p.critChance * 0.1 + (p.abilities?.length || 0) * 1.5;
+  const learned = (p.abilities || []).filter((a) => !["basic-attack", "defend", "talk"].includes(a.id)).length;
+  return p.weapon.max + p.maxHealth * 0.2 + p.critChance * 0.1 + learned * 1.5;
 }
 function enemyThreat(e) {
   return e.maxHealth * 0.25 + e.weapon.max + tierInfo(e.tier).order * 2;
@@ -98,6 +99,20 @@ export function initCombat(character, codex, enemies, opts = {}) {
     }
   }
 
+  // Lethality. A brawl (lethal:false) is bare-knuckle — both sides stow real
+  // weapons and fight with fists; nobody dies (0 HP = knocked out). Drawing a
+  // weapon escalates it to a killing matter (see playerDrawWeapon).
+  const lethal = opts.lethal !== false;
+  if (!lethal) {
+    player.stowedWeapon = player.weapon;
+    player.weapon = fistsProfile(player.weapon);
+    for (const e of foes) {
+      e.armed = !!(e.weapon && e.weapon.category && e.weapon.category !== "unarmed");
+      e.stowedWeapon = e.weapon;
+      e.weapon = fistsProfile(e.weapon);
+    }
+  }
+
   const flavor = foes.length === 1 ? foes[0].name : `${foes.length} foes`;
   const combatState = {
     player,
@@ -106,6 +121,8 @@ export function initCombat(character, codex, enemies, opts = {}) {
     turn: 1,
     phase: "player",
     powerRatio,
+    lethal,
+    escalated: false,
     maxLootTier: opts.maxLootTier || null,
     region: opts.region || 1,
     ownedUniques: opts.ownedUniques || [],
@@ -113,11 +130,35 @@ export function initCombat(character, codex, enemies, opts = {}) {
     environment: opts.environment || [],
     revivedUsed: false,
     profGains: {},
-    log: [logEntry(`Combat begins — ${flavor}.`, "system")],
+    log: [logEntry(lethal ? `Combat begins — ${flavor}.` : `A brawl breaks out — ${flavor}. Bare hands, for now.`, "system")],
     loot: null,
   };
   if (opts.ambush) applyAmbush(combatState, opts.ambush);
   return combatState;
+}
+
+function fistsProfile(w) {
+  return {
+    min: Math.max(1, Math.round((w?.min || 2) * 0.5)),
+    max: Math.max(2, Math.round((w?.max || 4) * 0.5)),
+    type: "physical", pen: 0, category: "unarmed", name: "Fists",
+  };
+}
+
+// Draw steel mid-brawl — escalates to a lethal fight (you and any armed foes
+// switch to real weapons; the aftermath gets far worse).
+export function playerDrawWeapon(cs0) {
+  if (cs0.phase !== "player" || cs0.lethal) return cs0;
+  if (!cs0.player.stowedWeapon || cs0.player.stowedWeapon.category === "unarmed") return cs0;
+  const cs = clone(cs0);
+  cs.lethal = true;
+  cs.escalated = true;
+  cs.player.weapon = cs.player.stowedWeapon;
+  for (const e of cs.enemies) {
+    if (e.health > 0 && !e.resolved && e.armed && e.stowedWeapon) e.weapon = e.stowedWeapon;
+  }
+  cs.log.push(logEntry("You draw your weapon — the brawl turns to a killing matter.", "system"));
+  return cs;
 }
 
 function addProf(cs, id, xp) { cs.profGains[id] = (cs.profGains[id] || 0) + xp; }
@@ -263,10 +304,12 @@ function onEnemyControlled(e) {
   if (e.demeanor === "cowardly") loss = 9;
   e.morale = Math.max(0, e.morale - loss);
 }
-function markDead(cs, e) {
-  if (e._dead) return;
-  e._dead = true;
-  cs.log.push(logEntry(`${e.name} falls.`, "system"));
+// A foe drops to 0. In a lethal fight that means death (lootable corpse); in a
+// bare-knuckle brawl it means knocked senseless (alive — nothing to loot).
+function downEnemy(cs, e) {
+  if (e._dead || e.resolved === "ko") return;
+  if (cs.lethal) { e._dead = true; cs.log.push(logEntry(`${e.name} falls, dead.`, "system")); }
+  else { e.resolved = "ko"; cs.log.push(logEntry(`${e.name} is knocked senseless.`, "system")); }
   let lined = false;
   for (const s of cs.enemies) {
     if (s === e || s.health <= 0 || s.resolved) continue;
@@ -304,9 +347,12 @@ function moraleCheck(cs, e) {
     return true;
   }
 
-  // A goaded foe is too enraged to flee or yield for a couple of turns.
+  // A goaded foe is too enraged to flee or yield for a couple of turns. A foe
+  // that is clearly WINNING (much healthier than the player) presses the
+  // advantage and won't break either — it can smell the kill.
   const goaded = (e.noFleeUntil || 0) >= cs.turn;
-  const broke = !goaded && (e.morale <= cfg.breakAt || hp < 0.12);
+  const winning = (hp - cs.player.health / cs.player.maxHealth) > 0.25;
+  const broke = !goaded && !winning && (e.morale <= cfg.breakAt || hp < 0.12);
   if (broke) {
     // A proud foe being bullied with control demands a fair fight before it breaks.
     if (cfg.proud && (e.controlPressure || 0) >= 2 && !e.provoked && e.morale > cfg.breakAt - 12 && hp > 0.15) {
@@ -373,8 +419,8 @@ function playerDown(cs) {
 
 function checkCombatEnd(cs) {
   if (livingEnemies(cs).length > 0) return cs;
-  if (cs.enemies.every((e) => e.health <= 0)) return finishVictory(cs);
-  return finishResolved(cs);
+  if (cs.enemies.every((e) => e._dead)) return finishVictory(cs);
+  return finishResolved(cs); // some yielded / fled / knocked out (non-lethal)
 }
 
 // ----- player actions -----
@@ -451,7 +497,7 @@ export function playerAct(cs0, abilityId, targetIndex) {
     for (let h = 0; h < hits; h++) { if (target.health <= 0) break; hitEnemy(target); }
   }
 
-  for (const e of cs.enemies) if (e.health <= 0) markDead(cs, e);
+  for (const e of cs.enemies) if (e.health <= 0) downEnemy(cs, e);
   const firstAlive = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
   if (firstAlive >= 0 && (cs.enemies[cs.target]?.health <= 0 || cs.enemies[cs.target]?.resolved)) cs.target = firstAlive;
   return checkCombatEnd(cs);
@@ -474,11 +520,14 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
     cs.log.push(logEntry(`${cs.player.name} hurls threats and grim promises.`, "player"));
     const hit = livingEnemies(cs).filter(canCommunicate);
     if (hit.length === 0) cs.log.push(logEntry(`No one here can be cowed.`, "system"));
+    const playerHp = cs.player.health / cs.player.maxHealth;
     for (const e of hit) {
       let dmg = 8 + (a.presence || 0) * 3 + (a.wit || 0) * 1.5;
       if (cs.powerRatio > 1.4) dmg += 10;
       if (e.demeanor === "cowardly") dmg += 8;
       if (DEMEANOR_CONFIG[e.demeanor]?.proud) dmg *= 0.5;
+      // A foe who's winning isn't impressed by threats.
+      if ((e.health / e.maxHealth) - playerHp > 0.25) dmg *= 0.4;
       e.morale = Math.max(0, e.morale - Math.round(dmg));
       pushFlavor(cs, e, "waver");
     }
@@ -503,6 +552,7 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
   // surrender (default)
   cs.log.push(logEntry(`${cs.player.name} calls on the foe to yield.`, "player"));
   const fallen = cs.enemies.filter((e) => e.health <= 0).length;
+  const playerHp = cs.player.health / cs.player.maxHealth;
   for (const e of cs.enemies) {
     if (e.health <= 0 || e.resolved) continue;
     const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
@@ -512,13 +562,23 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
     chance += (e.moraleMax - e.morale) * 0.5;
     if (hp < 0.3) chance += 28; else if (hp < 0.5) chance += 14;
     chance += fallen * 10;
-    if (cs.powerRatio > 1.6) chance += 25; else if (cs.powerRatio > 1.15) chance += 10;
+    // Who's actually winning? A foe in better shape than you scoffs at a demand
+    // to yield (an unscathed sellsword does not surrender to a half-dead man);
+    // a foe doing worse than you is far likelier to give up.
+    const standing = hp - playerHp; // >0: foe winning · <0: foe losing
+    // The "you outclass them" bonus only counts when you're NOT currently losing
+    // the exchange — being stronger on paper means nothing while you're bleeding out.
+    if (standing <= 0) {
+      if (cs.powerRatio > 1.6) chance += 25; else if (cs.powerRatio > 1.15) chance += 10;
+    }
     if (e.demeanor === "cowardly") chance += 18;
     if (e.demeanor === "honorable") chance += (e.controlPressure || 0) >= 2 ? 0 : 18;
     if (cfg.proud && (e.controlPressure || 0) >= 2 && cs.powerRatio < 2) chance -= 35;
+    if (standing > 0) chance -= Math.round(standing * 70);
+    else chance += Math.round(-standing * 25);
     chance = clamp(chance, 0, 95);
     if (rand100() <= chance) resolveYield(cs, e);
-    else { cs.log.push(logEntry(flavorLine("defy", e.demeanor, e.name) || `${e.name} refuses to yield.`, "enemy")); e.morale = Math.max(0, e.morale - 3); }
+    else { cs.log.push(logEntry(flavorLine("defy", e.demeanor, e.name) || `${e.name} scoffs — you're in no position to make demands.`, "enemy")); e.morale = Math.max(0, e.morale - 2); }
   }
   return checkCombatEnd(cs);
 }
@@ -559,13 +619,13 @@ export function playerUseEnvironment(cs0, featureId, targetIndex = null) {
       hurt(e, act.dmg);
       const stun = act.stun || (act.stunChance && Math.random() < act.stunChance ? 1 : 0);
       if (e.health > 0 && stun) { addStatus(e, { type: "stun", value: 1, duration: 1 }); onEnemyControlled(e); cs.log.push(logEntry(`${e.name} is knocked off balance.`, "status")); }
-      if (e.health <= 0) markDead(cs, e);
+      if (e.health <= 0) downEnemy(cs, e);
     }
   } else if (act.type === "hazard") {
     for (const e of livingEnemies(cs)) {
       hurt(e, act.dmg, "true");
       if (e.health > 0 && act.dot) addStatus(e, { ...act.dot, target: "enemy" });
-      if (e.health <= 0) markDead(cs, e);
+      if (e.health <= 0) downEnemy(cs, e);
     }
   }
   return checkCombatEnd(cs);
@@ -598,11 +658,11 @@ export function endTurn(cs0) {
       cs.log.push(logEntry(`${e.name} is stunned and cannot act.`, "status"));
       e.statuses = e.statuses.filter((s) => s.type !== "stun");
       tickStatuses(e).forEach((l) => cs.log.push(l));
-      if (e.health <= 0) markDead(cs, e);
+      if (e.health <= 0) downEnemy(cs, e);
       continue;
     }
     tickStatuses(e).forEach((l) => cs.log.push(l));
-    if (e.health <= 0) { markDead(cs, e); continue; }
+    if (e.health <= 0) { downEnemy(cs, e); continue; }
     for (const id of Object.keys(e.cooldowns)) e.cooldowns[id] = Math.max(0, e.cooldowns[id] - 1);
 
     // React to how the fight is going before deciding to strike.
@@ -631,7 +691,7 @@ export function endTurn(cs0) {
         const ref = Math.max(1, Math.round(dealt * thorns / 100));
         e.health = Math.max(0, e.health - ref);
         cs.log.push(logEntry(`${e.name} takes ${ref} from thornmail.`, "status"));
-        if (e.health <= 0) markDead(cs, e);
+        if (e.health <= 0) downEnemy(cs, e);
       }
     }
     if (playerDown(cs)) return finishDefeat(cs);
@@ -677,24 +737,29 @@ export function playerFlee(cs0) {
 function lootCtx(cs) {
   return { maxLootTier: cs.maxLootTier, region: cs.region, owned: new Set(cs.ownedUniques || []), coinBonus: cs.coinBonus || 0 };
 }
+// Only actual corpses (lethal kills) carry spoils — yielded/fled/knocked-out
+// foes are alive and not auto-looted.
 function finishVictory(cs) {
   cs.phase = "victory";
-  cs.loot = rollLoot(cs.enemies, lootCtx(cs));
+  cs.loot = rollLoot(cs.enemies.filter((e) => e._dead), lootCtx(cs));
   cs.log.push(logEntry(`Victory.`, "system"));
   return cs;
 }
 function finishResolved(cs) {
   cs.phase = "resolved";
   const yielded = cs.enemies.some((e) => e.resolved === "yielded");
-  const sources = cs.enemies.filter((e) => e.health <= 0 || e.resolved === "yielded");
-  cs.loot = rollLoot(sources, lootCtx(cs));
-  cs.log.push(logEntry(yielded ? `The fight is over — they will trouble you no further.` : `The field is yours; the rest have scattered.`, "system"));
+  const ko = cs.enemies.some((e) => e.resolved === "ko");
+  cs.loot = rollLoot(cs.enemies.filter((e) => e._dead), lootCtx(cs));
+  cs.log.push(logEntry(
+    ko ? `The brawl is done — they're down but breathing.` :
+    yielded ? `The fight is over — they will trouble you no further.` :
+    `The field is yours; the rest have scattered.`, "system"));
   return cs;
 }
 function finishDefeat(cs) {
   cs.phase = "defeat";
   cs.player.health = 0;
-  cs.log.push(logEntry(`You fall.`, "system"));
+  cs.log.push(logEntry(cs.lethal ? `You fall.` : `You're beaten down and the world goes black.`, "system"));
   return cs;
 }
 
@@ -825,44 +890,91 @@ export function applyCombatResult(state, cs, context = {}) {
   } else if (cs.phase === "playerFled") {
     beats.push({ id: `cb${now}`, type: "narration", content: `You break off the fight and slip away, heart pounding, before it can be finished.` });
   } else if (cs.phase === "defeat") {
-    beats.push({ id: `cb${now}`, type: "narration", content: `The fight goes against you. You fall — and the world narrows to dark. That you draw breath at all is its own small mercy.` });
+    // Brief — the narrator decides the actual aftermath (robbed, jailed, hauled
+    // off…) in the [DEFEATED] follow-up, so we don't presume death here.
+    beats.push({ id: `cb${now}`, type: "narration", content: `The fight goes against you. A last blow lands, your legs fold, and the world tips into black.` });
   }
 
+  // Spoils are NOT auto-granted. Only actual corpses carry anything, and even
+  // then the player must deliberately Search the fallen (a timed, public act the
+  // narrator can complicate). Stash what's available for that choice.
   const loot = cs.loot;
-  if ((cs.phase === "victory" || cs.phase === "resolved") && loot) {
-    next.world.codex.items = { ...next.world.codex.items };
-    const invLines = [];
-    for (const it of (loot.items || [])) {
-      if (it.entry) next.world.codex.items[it.itemId] = it.entry;
-      const existing = next.character.inventory.carried.find((c) => c.itemId === it.itemId);
-      if (existing) existing.quantity += it.quantity || 1;
-      else next.character.inventory.carried.push({ itemId: it.itemId, quantity: it.quantity || 1 });
-      invLines.push(`+${it.quantity || 1}× ${it.entry?.name || it.itemId}`);
-    }
-    const coins = loot.coins || {};
-    next.character.inventory.coins.copper += coins.copper || 0;
-    next.character.inventory.coins.silver += coins.silver || 0;
-    next.character.inventory.coins.gold += coins.gold || 0;
-    const coinParts = [];
-    if (coins.silver) coinParts.push(`+${coins.silver}sp`);
-    if (coins.copper) coinParts.push(`+${coins.copper}cp`);
-    if (coinParts.length) invLines.push(coinParts.join(", "));
-    if (invLines.length) beats.push({ id: `cl${now}`, type: "inventory_delta", lines: invLines });
+  const deadCount = cs.enemies.filter((e) => e._dead).length;
+  const hasSpoils = loot && deadCount > 0 && ((loot.items && loot.items.length) || loot.ability || loot.coins.silver || loot.coins.copper || loot.coins.gold);
+  next.pendingLoot = hasSpoils ? { ...loot, deadCount, flavor: context.flavor || enemyName } : null;
 
-    if (loot.ability) {
-      next.character.abilities = Array.isArray(next.character.abilities) ? [...next.character.abilities] : [];
-      next.character.abilities.push({ id: loot.ability.id, tier: loot.ability.tier });
-      const def = getAbilityDef(loot.ability.id);
-      next.world.codex.skills = { ...next.world.codex.skills };
-      next.world.codex.skills[loot.ability.id] = {
-        id: loot.ability.id, name: `${loot.ability.name} (${tierLabel(loot.ability.tier)})`,
-        description: def?.desc || "A combat ability.", rating: tierInfo(loot.ability.tier).order + 1,
-        combatAbility: true, tier: loot.ability.tier,
-      };
-      beats.push({ id: `ca${now}`, type: "discovery", items: [{ kind: "ability", name: `${loot.ability.name} · ${tierLabel(loot.ability.tier)}` }] });
-    }
-  }
+  // Hand the narrator a blow-by-blow account so the fight can be referenced
+  // afterward (and so a [DEFEATED] follow-up knows exactly what happened).
+  next.apiHistory = [...(next.apiHistory || []), { role: "user", content: buildCombatRecap(cs, context) }];
 
   next.beats = [...next.beats, ...beats];
   return next;
+}
+
+// Deliberately loot the fallen (the player chose to search the corpses). Grants
+// the stashed spoils, records what was taken, and returns { state, taken } so
+// the caller can narrate it + adjudicate fallout. Clears pendingLoot.
+export function applyLoot(state, manifest) {
+  const next = clone(state);
+  next.pendingLoot = null;
+  const beats = [];
+  const now = Date.now();
+  if (!manifest) return { state: { ...next, beats: [...next.beats] }, taken: "" };
+
+  next.world.codex.items = { ...next.world.codex.items };
+  const invLines = [];
+  const takenParts = [];
+  for (const it of (manifest.items || [])) {
+    if (it.entry) next.world.codex.items[it.itemId] = it.entry;
+    const existing = next.character.inventory.carried.find((c) => c.itemId === it.itemId);
+    if (existing) existing.quantity += it.quantity || 1;
+    else next.character.inventory.carried.push({ itemId: it.itemId, quantity: it.quantity || 1 });
+    invLines.push(`+${it.quantity || 1}× ${it.entry?.name || it.itemId}`);
+    takenParts.push(it.entry?.name || it.itemId);
+  }
+  const coins = manifest.coins || {};
+  next.character.inventory.coins.copper += coins.copper || 0;
+  next.character.inventory.coins.silver += coins.silver || 0;
+  next.character.inventory.coins.gold += coins.gold || 0;
+  const coinParts = [];
+  if (coins.gold) coinParts.push(`+${coins.gold}gp`);
+  if (coins.silver) coinParts.push(`+${coins.silver}sp`);
+  if (coins.copper) coinParts.push(`+${coins.copper}cp`);
+  if (coinParts.length) { invLines.push(coinParts.join(", ")); takenParts.push(coinParts.join(", ")); }
+  if (invLines.length) beats.push({ id: `lt${now}`, type: "inventory_delta", lines: invLines });
+
+  if (manifest.ability) {
+    next.character.abilities = Array.isArray(next.character.abilities) ? [...next.character.abilities] : [];
+    next.character.abilities.push({ id: manifest.ability.id, tier: manifest.ability.tier });
+    const def = getAbilityDef(manifest.ability.id);
+    next.world.codex.skills = { ...next.world.codex.skills };
+    next.world.codex.skills[manifest.ability.id] = {
+      id: manifest.ability.id, name: `${manifest.ability.name} (${tierLabel(manifest.ability.tier)})`,
+      description: def?.desc || "A combat ability.", rating: tierInfo(manifest.ability.tier).order + 1,
+      combatAbility: true, tier: manifest.ability.tier,
+    };
+    beats.push({ id: `la${now}`, type: "discovery", items: [{ kind: "ability", name: `${manifest.ability.name} · ${tierLabel(manifest.ability.tier)}` }] });
+    takenParts.push(`the technique ${manifest.ability.name}`);
+  }
+
+  next.beats = [...next.beats, ...beats];
+  return { state: next, taken: takenParts.join(", ") };
+}
+
+function buildCombatRecap(cs, context) {
+  const outcome =
+    cs.phase === "victory" ? "you won" :
+    cs.phase === "defeat" ? "you were beaten down and went under" :
+    cs.phase === "resolved" ? "it ended without a slaughter" :
+    cs.phase === "playerFled" ? "you broke off and fled" : "it ended";
+  const foes = cs.enemies.map((e) => {
+    const st = e.health <= 0 ? "slain" : e.resolved === "yielded" ? "yielded" : e.resolved === "fled" ? "fled" : `still standing (${Math.ceil(e.health)}/${e.maxHealth})`;
+    return `${e.name} [${e.tier}, ${e.demeanor}] — ${st}`;
+  }).join("; ");
+  const account = cs.log
+    .filter((l) => !/^—\s*Turn/.test(l.text))
+    .slice(-22)
+    .map((l) => l.text)
+    .join(" ");
+  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. Foes: ${foes}. You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}`.slice(0, 1600);
 }

@@ -44,7 +44,8 @@ export function makeInitialState() {
       // raises the governing attributes (attributes don't grow any other way).
       proficiencies: {},
       inventory: {
-        carried: [{ itemId: "wooden-bird", quantity: 1 }],
+        // grimoire-firstflame is a [DEV/TEST] item — equip it to try magic.
+        carried: [{ itemId: "wooden-bird", quantity: 1 }, { itemId: "grimoire-firstflame", quantity: 1 }],
         coins: { copper: 8, silver: 3, gold: 0 },
       },
     },
@@ -495,6 +496,33 @@ export function makeInitialState() {
           "wool-cloak":    { id: "wool-cloak",    name: "Wool Cloak",   appearance: "Heavy charcoal-grey wool, dark across the shoulders from the rain. Frayed hem.", description: "A traveler's cloak.", kind: "clothing" },
           "linen-tunic":   { id: "linen-tunic",   name: "Linen Tunic",  appearance: "Undyed linen, the colour of old milk. Mended at one elbow.", description: "A plain undershirt.", kind: "clothing" },
           "leather-boots": { id: "leather-boots", name: "Leather Boots",appearance: "Cracked dark leather. The left sole is wearing through.", description: "Worn but serviceable.", kind: "clothing" },
+          // [DEV/TEST] Equip to awaken magic and learn spells (combat, crowd
+          // control, and utility). Unequipping disables the magic again (unless
+          // you've acquired it by other means). Remove from carried below to
+          // ship without it.
+          "grimoire-firstflame": {
+            id: "grimoire-firstflame", name: "Grimoire of the First Flame", kind: "weapon", tier: "epic",
+            appearance: "A heavy black-bound tome clasped with a coil of cooled lava; its pages hum and warm when opened.",
+            description: "[Dev] A teaching grimoire. Equip it to awaken the arcane arts — while you carry it open you can cast the spells it holds; set it aside and the gift sleeps.",
+            combat: { weaponType: "staff", damage: { min: 6, max: 10, type: "magical", pen: 2 }, ward: 6 },
+            passives: [{ id: "aegis", tier: "epic" }, { id: "clearmind", tier: "rare" }],
+            grants: {
+              abilities: [
+                { id: "firebolt", tier: "rare" },         // combat
+                { id: "chain-lightning", tier: "uncommon" }, // combat (AoE)
+                { id: "frost-lance", tier: "rare" },      // crowd control (weaken/slow)
+                { id: "hex", tier: "uncommon" },          // crowd control (vulnerable)
+              ],
+              spells: [
+                { id: "witchlight",  name: "Witchlight",  description: "Conjure a cool floating light that follows you.", acquisition: "the Grimoire of the First Flame" },
+                { id: "mending-word",name: "Mending Word",description: "Knit a small wound or mend a broken object with a spoken word.", acquisition: "the Grimoire of the First Flame" },
+                { id: "unseen-hand", name: "Unseen Hand", description: "Move, fetch, or manipulate objects at a short distance.", acquisition: "the Grimoire of the First Flame" },
+                { id: "passkey",     name: "Passkey",     description: "Coax mundane locks and bars open.", acquisition: "the Grimoire of the First Flame" },
+                { id: "farsight",    name: "Farsight",    description: "Glimpse a distant place you have already seen.", acquisition: "the Grimoire of the First Flame" },
+              ],
+              magicKnows: "I have awakened magic by studying the Grimoire of the First Flame; while I carry it open I can cast the spells it holds.",
+            },
+          },
         },
         spells: {},
         skills: {},

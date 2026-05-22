@@ -61,14 +61,44 @@ export function equipItem(state, itemId) {
   }
   newWorn = [...newWorn, itemId];
 
+  // On-equip grants (e.g. a grimoire that awakens magic + teaches spells). Only
+  // what's NEWLY granted is recorded on the item as `_granted`, so unequip can
+  // revoke exactly that and leave anything obtained by other (regular) means.
+  let abilities = state.character.abilities;
+  let spells = codex.spells;
+  let knows = wanderer.knows;
+  let itemEntry = item;
+  if (item.grants) {
+    const g = item.grants;
+    const idOf = (a) => (typeof a === "string" ? a : a.id);
+    const addedAbilities = [];
+    const addedSpells = [];
+    abilities = Array.isArray(abilities) ? [...abilities] : [];
+    for (const ga of (g.abilities || [])) {
+      if (!abilities.some((a) => idOf(a) === ga.id)) { abilities.push({ id: ga.id, tier: ga.tier || "common" }); addedAbilities.push(ga.id); }
+    }
+    spells = { ...(codex.spells || {}) };
+    for (const sp of (g.spells || [])) {
+      if (!spells[sp.id]) { spells[sp.id] = { ...sp }; addedSpells.push(sp.id); }
+    }
+    let addedKnows = null;
+    if (g.magicKnows) {
+      const k = wanderer.knows || [];
+      if (!k.includes(g.magicKnows)) { knows = [...k, g.magicKnows]; addedKnows = g.magicKnows; }
+    }
+    itemEntry = { ...item, _granted: { abilities: addedAbilities, spells: addedSpells, knows: addedKnows } };
+  }
+
   return {
     ...state,
-    character: { ...state.character, inventory: { ...state.character.inventory, carried: carried.filter((c) => c.quantity > 0) } },
-    world: { ...state.world, codex: { ...codex, characters: { ...codex.characters, wanderer: { ...wanderer, worn: newWorn } } } },
+    character: { ...state.character, abilities, inventory: { ...state.character.inventory, carried: carried.filter((c) => c.quantity > 0) } },
+    world: { ...state.world, codex: { ...codex, items: { ...codex.items, [itemId]: itemEntry }, spells, characters: { ...codex.characters, wanderer: { ...wanderer, worn: newWorn, knows } } } },
   };
 }
 
-// Move a worn item back into the pack. Returns a new state.
+// Move a worn item back into the pack. Returns a new state. Revokes anything the
+// item granted on equip (its `_granted` record) — so taking off a grimoire
+// disables the magic it gave, while spells learned by other means persist.
 export function unequipItem(state, itemId) {
   const codex = state.world.codex;
   const wanderer = codex.characters?.wanderer;
@@ -78,9 +108,25 @@ export function unequipItem(state, itemId) {
   const idx = carried.findIndex((c) => c.itemId === itemId);
   if (idx >= 0) carried[idx].quantity += 1;
   else carried.push({ itemId, quantity: 1 });
+
+  const item = codex.items?.[itemId];
+  const g = item?._granted;
+  let abilities = state.character.abilities;
+  let spells = codex.spells;
+  let knows = wanderer.knows;
+  let items = codex.items;
+  if (g) {
+    const idOf = (a) => (typeof a === "string" ? a : a.id);
+    if (g.abilities?.length) abilities = (abilities || []).filter((a) => !g.abilities.includes(idOf(a)));
+    if (g.spells?.length) { spells = { ...(codex.spells || {}) }; for (const id of g.spells) delete spells[id]; }
+    if (g.knows) knows = (wanderer.knows || []).filter((f) => f !== g.knows);
+    const { _granted, ...clean } = item;
+    items = { ...codex.items, [itemId]: clean };
+  }
+
   return {
     ...state,
-    character: { ...state.character, inventory: { ...state.character.inventory, carried } },
-    world: { ...state.world, codex: { ...codex, characters: { ...codex.characters, wanderer: { ...wanderer, worn: newWorn } } } },
+    character: { ...state.character, abilities, inventory: { ...state.character.inventory, carried } },
+    world: { ...state.world, codex: { ...codex, items, spells, characters: { ...codex.characters, wanderer: { ...wanderer, worn: newWorn, knows } } } },
   };
 }

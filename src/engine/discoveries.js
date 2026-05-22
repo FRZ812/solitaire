@@ -24,6 +24,29 @@ export function mergeDiscoveries(existing, incoming) {
       }
     }
   }
+
+  // Claiming: anything (re)acquired through the narrator's discoveries is now
+  // owned by REGULAR means — untag it from any equipped item's `_granted` so it
+  // survives that item being unequipped (e.g. a grimoire cantrip you later truly
+  // learn stays with you when you set the book down).
+  const claimed = [
+    ...(incoming.spells || []).map((s) => s.id),
+    ...(incoming.skills || []).map((s) => s.id),
+  ].filter(Boolean);
+  if (claimed.length && out.items) {
+    let cloned = false;
+    for (const [iid, it] of Object.entries(out.items)) {
+      const g = it?._granted;
+      if (!g) continue;
+      const spells = (g.spells || []).filter((id) => !claimed.includes(id));
+      const abilities = (g.abilities || []).filter((id) => !claimed.includes(id));
+      if (spells.length !== (g.spells || []).length || abilities.length !== (g.abilities || []).length) {
+        if (!cloned) { out.items = { ...out.items }; cloned = true; }
+        out.items[iid] = { ...it, _granted: { ...g, spells, abilities } };
+      }
+    }
+  }
+
   return { codex: out, newlyDiscovered };
 }
 

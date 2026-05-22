@@ -192,41 +192,18 @@ function ResolveOverlay({ combat, onResolve }) {
   const fled = combat.phase === "playerFled";
   const title = win ? "Victory" : resolved ? "Stood Down" : fled ? "Escaped" : "Defeat";
   const color = win ? "#a7f3d0" : resolved ? "#a7f3d0" : fled ? colors.gold : "#fca5a5";
-  const showLoot = win || resolved;
-  const loot = combat.loot;
+  const subtitle =
+    win ? "The fallen lie where they dropped." :
+    resolved ? "They're done — down, yielded, or fled." :
+    fled ? "You slipped away." : "You went under.";
   return (
     <div style={{
       position: "absolute", inset: 0, zIndex: 5, display: "flex", flexDirection: "column",
-      alignItems: "center", justifyContent: "center", gap: "16px", padding: "24px",
+      alignItems: "center", justifyContent: "center", gap: "14px", padding: "24px",
       backgroundColor: "rgba(8,12,12,0.82)", backdropFilter: "blur(6px)",
     }}>
       <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "40px", color, textShadow: "0 2px 14px rgba(0,0,0,0.6)" }}>{title}</div>
-      {showLoot && loot && (
-        <div style={{
-          width: "100%", maxWidth: "320px", padding: "14px 16px", borderRadius: radius.panel,
-          backgroundColor: "rgba(20,29,29,0.7)", border: `1px solid rgba(215,167,111,0.2)`, ...glass,
-        }}>
-          <div style={{ ...metaStyle, fontSize: "9px", color: colors.gold, marginBottom: "8px" }}>Spoils</div>
-          {(loot.coins.silver > 0 || loot.coins.copper > 0) && (
-            <div style={{ fontSize: "13px", color: colors.parchment, marginBottom: "5px" }}>
-              {loot.coins.silver > 0 ? `${loot.coins.silver} sp ` : ""}{loot.coins.copper > 0 ? `${loot.coins.copper} cp` : ""}
-            </div>
-          )}
-          {(loot.items || []).map((it, i) => (
-            <div key={i} style={{ fontSize: "13px", color: tierColor(it.entry?.tier || "common"), marginBottom: "3px" }}>
-              {it.entry?.name} <span style={{ fontSize: "9px" }}>· {tierLabel(it.entry?.tier || "common")}</span>
-            </div>
-          ))}
-          {loot.ability && (
-            <div style={{ fontSize: "13px", color: tierColor(loot.ability.tier), marginTop: "6px" }}>
-              Learned: {loot.ability.name} <span style={{ fontSize: "9px" }}>· {tierLabel(loot.ability.tier)}</span>
-            </div>
-          )}
-          {!loot.items?.length && !loot.ability && loot.coins.silver === 0 && loot.coins.copper === 0 && (
-            <div style={{ fontSize: "12px", color: colors.parchmentMuted, fontStyle: "italic" }}>Nothing of worth.</div>
-          )}
-        </div>
-      )}
+      <div style={{ fontSize: "13px", color: "rgba(237,228,208,0.7)", fontStyle: "italic", textAlign: "center", maxWidth: "300px" }}>{subtitle}</div>
       <button onClick={onResolve} style={{
         padding: "13px 28px", borderRadius: radius.control, backgroundColor: colors.gold,
         color: colors.ink, border: "none", fontSize: "14px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
@@ -235,7 +212,7 @@ function ResolveOverlay({ combat, onResolve }) {
   );
 }
 
-export function CombatView({ combat, onAct, onTalk, onEnvironment, onSetTarget, onEndTurn, onFlee, onResolve }) {
+export function CombatView({ combat, onAct, onTalk, onEnvironment, onDraw, onSetTarget, onEndTurn, onFlee, onResolve }) {
   const logRef = useRef(null);
   const [talkOpen, setTalkOpen] = useState(false);
   useEffect(() => {
@@ -395,6 +372,16 @@ export function CombatView({ combat, onAct, onTalk, onEnvironment, onSetTarget, 
               </button>
             ))}
           </div>
+        )}
+
+        {/* Draw weapon — only in a bare-knuckle brawl, when you have steel to draw. */}
+        {!combat.lethal && player.stowedWeapon && player.stowedWeapon.category !== "unarmed" && (
+          <button onClick={onDraw} disabled={!isPlayerPhase} style={{
+            width: "100%", marginTop: "8px", padding: "9px", borderRadius: radius.panelCompact,
+            backgroundColor: "rgba(239,68,68,0.12)", color: "#fca5a5",
+            border: `1px solid rgba(239,68,68,0.4)`, fontSize: "12px", fontWeight: 800,
+            cursor: isPlayerPhase ? "pointer" : "default", fontFamily: "inherit", opacity: isPlayerPhase ? 1 : 0.5,
+          }}>Draw {player.stowedWeapon.name} — make it lethal</button>
         )}
 
         {/* Turn controls */}

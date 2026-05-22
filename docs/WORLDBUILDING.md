@@ -350,16 +350,50 @@ beasts run at low HP, fanatics/undead never break.
 **Talk** (`playerTalk`) is a third pillar beyond attack/defend, with three
 intents — but only on foes that can understand you (`canTalk`; beasts and the
 mindless can't be reasoned with):
-- **Demand Surrender** — yield chance scales with Presence/Wit, the foe's morale
-  and wounds, fallen allies, how outmatched it is, and whether you fought with
-  honor (control-spamming the proud hardens them unless you're far stronger).
+- **Demand Surrender** — yield chance weighs WHO IS WINNING above all: a foe in
+  better shape than you (`enemy HP% − your HP%`) scoffs and won't yield, while a
+  foe you've beaten down readily gives up. It also scales with Presence/Wit, the
+  foe's morale, fallen allies, and honor — but the "you outclass them" bonus only
+  applies when you're not currently losing the exchange (a dying man can't coerce
+  a surrender just because he's stronger on paper). Likewise a winning foe never
+  flees/yields on its own and shrugs off demoralize.
 - **Demoralize** — saps the morale of everyone who can hear, pushing waverers
   toward flight/surrender; it's not just for the near-dead.
 - **Provoke** — goads one foe into a reckless fury (vulnerable + rally) and stops
   it fleeing for a couple of turns, so you can bait and finish a runner.
 
-A fight that ends in surrender/flight resolves as **"Stood Down"** (non-lethal)
-rather than a kill; yielded foes still give spoils.
+**Lethality** — `start_combat.lethal` decides the fight's nature. A **brawl**
+(`lethal:false` — barfights, "teach him a lesson", guards subduing) stows both
+sides' weapons and is fought bare-knuckle (`fistsProfile`, ~half damage); a foe
+at 0 HP is **knocked out** (alive), not killed. **Draw Weapon**
+(`playerDrawWeapon`) escalates a brawl to lethal — real steel, real death, worse
+aftermath. Wilderness/monster/assassin fights start `lethal:true`.
+
+**Item grants (on-equip spells).** An item may carry a `grants` block (combat
+`abilities`, narrative `spells`, a `magicKnows` line). `equipItem` applies it and
+records exactly what was NEWLY added on the item as `_granted`; `unequipItem`
+revokes precisely that — so taking off a teaching item (e.g. the dev
+`grimoire-firstflame`) disables the magic it gave, while spells you already knew
+by other means are left untouched. **Claiming:** if you later acquire a granted
+spell through regular means (the narrator emits it in `discoveries.spells`),
+`mergeDiscoveries` untags it from `_granted`, so it stays with you when the item
+comes off. Spell power still scales with Mind/Spellcasting.
+
+**Loot is never automatic.** Only actual corpses (lethal kills) carry spoils;
+yielded / fled / knocked-out foes give nothing. `applyCombatResult` stashes the
+spoils as `pendingLoot` instead of granting them — the player must choose to
+**Search the fallen**, which (a) grants the items via `applyLoot` and (b) fires a
+`[LOOTED]` narrator beat that narrates it and adjudicates the fallout (rifling a
+corpse in a public, lawful place draws horror/the watch; in the wilds nobody
+cares). So a surrender no longer mysteriously pays coin, and you can't strip a
+dead man's whole rig in a crowded tavern without consequence.
+
+**Aftermath** — every fight appends a `[COMBAT REPORT]` to `apiHistory` (outcome,
+each foe's fate, ending HP, a blow-by-blow) so the narrator can speak to what
+happened. **Defeat is not game-over:** `handleResolveCombat` hands a `[DEFEATED]`
+prompt to the narrator, which decides a non-lethal consequence fitting the victor
+and place — robbed, jailed, thrown out, or captured and moved (`tile_move`) — and
+the player wakes to face it. Actual death is reserved for cold killers.
 
 **Environment** (`data/environment.js`, `playerUseEnvironment`): each fight rolls
 1–3 single-use battlefield features from the terrain — flip a table for cover,
