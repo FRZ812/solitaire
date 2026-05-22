@@ -303,6 +303,12 @@ No levels. Besides loot, the ONLY progression is use-based proficiencies
 `applyCombatResult` writes the fight's XP back and surfaces rating-ups and
 attribute gains as growth beats. Old saves without `proficiencies` read as `{}`.
 
+**UI:** the character panel shows only a tier-sorted preview of abilities and
+the top proficiencies; "All N …" opens the dedicated **Arsenal** panel
+(`ArsenalView.jsx`) with the full lists sorted highest-tier/rating first. In
+combat, learned abilities sort by tier and live in a bounded scroll area, with
+Strike / Brace / Talk pinned as a core row — so neither cluttering as the kit grows.
+
 ### Ambush is contested
 
 A `surprise` strike is never automatic. Player ambush rolls your stealth

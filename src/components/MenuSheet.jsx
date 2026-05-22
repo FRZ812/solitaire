@@ -9,9 +9,10 @@ import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
 import { EQUIPPABLE } from "../engine/inventory.js";
 import { getAbilityDef } from "../data/abilities.js";
-import { tierColor, tierLabel } from "../data/tiers.js";
+import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { passiveLabel } from "../data/passives.js";
 import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
+import { ArsenalView } from "./ArsenalView.jsx";
 
 // Item-specific inline icon. The wooden bird is a meaningful in-fiction
 // item, so it gets a custom glyph; everything else falls back to a
@@ -50,6 +51,20 @@ function CombatStat({ label, value }) {
       <div style={{ ...metaStyle, fontSize: "8px", letterSpacing: "0.1em", color: colors.gold }}>{label}</div>
       <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "17px", color: colors.parchment, lineHeight: 1.1, marginTop: "2px" }}>{value}</div>
     </div>
+  );
+}
+
+// "View all N →" link to open the Arsenal panel.
+function ViewAll({ label, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      marginTop: "8px", display: "flex", alignItems: "center", gap: "5px",
+      background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit",
+      color: "rgba(215, 167, 111, 0.85)", fontSize: "11px", fontWeight: 700,
+      letterSpacing: "0.04em", padding: 0,
+    }}>
+      {label} <span style={{ fontSize: "13px" }}>→</span>
+    </button>
   );
 }
 
@@ -229,6 +244,7 @@ function Divider() {
 
 export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip }) {
   const [detail, setDetail] = useState(null); // { id, location: "worn"|"carried" }
+  const [arsenalOpen, setArsenalOpen] = useState(false);
   const inv = state.character.inventory;
   const codex = state.world.codex;
   const wornIds = codex.characters.wanderer?.worn || [];
@@ -239,6 +255,14 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
     .map((p) => ({ name: p.name, rating: ratingFromXp(state.character.proficiencies?.[p.id] || 0), xp: state.character.proficiencies?.[p.id] || 0 }))
     .filter((p) => p.xp > 0)
     .sort((a, b) => b.rating - a.rating || b.xp - a.xp);
+
+  // Abilities, highest tier first — the panel shows a short preview; the full
+  // sorted list lives in the Arsenal panel.
+  const sortedAbilities = [
+    { id: "basic-attack", tier: "common" }, { id: "defend", tier: "common" }, { id: "talk", tier: "common" },
+    ...learnedAbilities.map((a) => (typeof a === "string" ? { id: a, tier: "common" } : a)),
+  ].filter((a) => getAbilityDef(a.id)).sort((x, y) => tierOrder(y.tier || "common") - tierOrder(x.tier || "common"));
+  const PREVIEW = 4;
 
   const showGuestNag = user?.is_anonymous && onLinkEmail;
 
@@ -360,17 +384,20 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
             {trainedProfs.length === 0
               ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.45)", fontStyle: "italic" }}>None yet — fight, cast, and survive to improve.</span>
               : (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                  {trainedProfs.map((p) => (
-                    <span key={p.name} style={{
-                      fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: radius.pill,
-                      color: colors.parchment, border: `1px solid rgba(215, 167, 111, 0.28)`,
-                      backgroundColor: "rgba(215, 167, 111, 0.08)",
-                    }}>
-                      {p.name} <span style={{ color: colors.gold }}>{p.rating}</span>
-                    </span>
-                  ))}
-                </div>
+                <>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {trainedProfs.slice(0, PREVIEW).map((p) => (
+                      <span key={p.name} style={{
+                        fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: radius.pill,
+                        color: colors.parchment, border: `1px solid rgba(215, 167, 111, 0.28)`,
+                        backgroundColor: "rgba(215, 167, 111, 0.08)",
+                      }}>
+                        {p.name} <span style={{ color: colors.gold }}>{p.rating}</span>
+                      </span>
+                    ))}
+                  </div>
+                  {trainedProfs.length > PREVIEW && <ViewAll label={`All ${trainedProfs.length} proficiencies`} onClick={() => setArsenalOpen(true)} />}
+                </>
               )}
           </div>
         </div>
@@ -391,12 +418,13 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
               Abilities · {combat.weapon.name}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {[{ id: "basic-attack", tier: "common" }, { id: "defend", tier: "common" }, { id: "talk", tier: "common" }, ...learnedAbilities].map((a, i) => {
-                const def = getAbilityDef(typeof a === "string" ? a : a.id);
+              {sortedAbilities.slice(0, PREVIEW).map((a, i) => {
+                const def = getAbilityDef(a.id);
                 if (!def) return null;
-                return <AbilityChip key={i} name={def.name} tier={(typeof a === "object" && a.tier) || "common"} />;
+                return <AbilityChip key={i} name={def.name} tier={a.tier || "common"} />;
               })}
             </div>
+            {sortedAbilities.length > PREVIEW && <ViewAll label={`All ${sortedAbilities.length} abilities`} onClick={() => setArsenalOpen(true)} />}
           </div>
         </div>
 
@@ -495,6 +523,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           onClose={() => setDetail(null)}
         />
       )}
+      {arsenalOpen && <ArsenalView character={state.character} onClose={() => setArsenalOpen(false)} />}
     </div>
   );
 }
