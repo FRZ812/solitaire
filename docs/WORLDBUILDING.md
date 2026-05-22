@@ -374,7 +374,10 @@ aftermath. Wilderness/monster/assassin fights start `lethal:true`.
 records exactly what was NEWLY added on the item as `_granted`; `unequipItem`
 revokes precisely that — so taking off a teaching item (e.g. the dev
 `grimoire-firstflame`) disables the magic it gave, while spells you already knew
-by other means are left untouched. Spell power still scales with Mind/Spellcasting.
+by other means are left untouched. **Claiming:** if you later acquire a granted
+spell through regular means (the narrator emits it in `discoveries.spells`),
+`mergeDiscoveries` untags it from `_granted`, so it stays with you when the item
+comes off. Spell power still scales with Mind/Spellcasting.
 
 **Loot is never automatic.** Only actual corpses (lethal kills) carry spoils;
 yielded / fled / knocked-out foes give nothing. `applyCombatResult` stashes the
