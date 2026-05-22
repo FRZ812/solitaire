@@ -110,7 +110,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="slide-up custom-scroll"
+        className="slide-up no-scrollbar"
         style={{
           backgroundColor: "rgba(20, 29, 29, 0.92)",
           border: `1px solid rgba(215, 167, 111, 0.22)`,
