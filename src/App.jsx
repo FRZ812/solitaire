@@ -15,8 +15,13 @@ import {
   findPath, pathMinutes,
 } from "./engine/world.js";
 import { rollPathEncounter } from "./engine/encounters.js";
+import { SPAWN_TABLES } from "./data/spawn-tables.js";
+import { getBiome } from "./data/biomes.js";
+import { generateEnemyGroup } from "./data/bestiary.js";
+import { initCombat, playerAct, setTarget, endTurn, playerFlee, applyCombatResult } from "./engine/combat.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
+import { CombatView } from "./components/combat/CombatView.jsx";
 import { VitalsStrip, InputBar, LoadingDots, ErrorBanner } from "./components/primitives.jsx";
 import { colors } from "./components/tokens.js";
 import { BeatRender } from "./components/beats/BeatRender.jsx";
@@ -30,6 +35,37 @@ import { InitialBackdrop } from "./components/InitialBackdrop.jsx";
 import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
+
+// Rough threat level by terrain — raises the tier ceiling/luck of generated
+// foes so wilder ground throws tougher, rarer enemies.
+const TERRAIN_POWER = { settlement: 0.05, road: 0.1, plains: 0.1, indoor: 0.1, forest: 0.15, marsh: 0.2, hills: 0.2, mountains: 0.4 };
+function terrainPower(state) {
+  const cur = state.world.currentTile;
+  const tile = getTile(state, cur.x, cur.y);
+  return TERRAIN_POWER[tile.terrain] ?? 0.12;
+}
+// Hostile spawn entries available at the current tile (terrain base + biome extras).
+function hostileEntriesHere(state) {
+  const cur = state.world.currentTile;
+  const tile = getTile(state, cur.x, cur.y);
+  const base = SPAWN_TABLES[tile.terrain];
+  if (!base) return [];
+  const extras = getBiome(cur.x, cur.y).extraSpawns?.[tile.terrain] || [];
+  return [...base.entries, ...extras].filter((e) => e.posture === "hostile");
+}
+function pickHostileKind(state) {
+  const hostile = hostileEntriesHere(state);
+  if (hostile.length === 0) return "bandits";
+  const total = hostile.reduce((s, e) => s + e.weight, 0);
+  let r = Math.random() * total;
+  for (const e of hostile) { r -= e.weight; if (r <= 0) return e.kind; }
+  return hostile[0].kind;
+}
+function groupFlavor(enemies) {
+  if (enemies.length === 1) return enemies[0].name;
+  const base = enemies[0].name.replace(/\s+\d+$/, "");
+  return `${enemies.length} ${base}s`;
+}
 
 // One-shot migrator for legacy v10 single-save blobs (square odd-r offset coords).
 // Re-keys world.tiles + world.seen and bumps currentTile into axial space, then
@@ -103,6 +139,12 @@ export function Solitaire() {
   const [codexOpen, setCodexOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const logRef = useRef(null);
+
+  // Combat: `combat` holds the active turn-state (null = not fighting);
+  // `pendingCombat` is a hostile encounter offering a fight before it starts.
+  const [combat, setCombat] = useState(null);
+  const [pendingCombat, setPendingCombat] = useState(null);
+  const combatCtxRef = useRef(null);
 
   // ----- Auth subscription (web mode) -----
   useEffect(() => {
@@ -475,6 +517,10 @@ export function Solitaire() {
         }
         return next;
       });
+      // A hostile encounter along the way offers a fight once the player lands.
+      if (pathEnc && pathEnc.encounter.posture === "hostile") {
+        setPendingCombat(pathEnc.encounter);
+      }
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -487,6 +533,41 @@ export function Solitaire() {
     setState(makeInitialState());
     setMenuOpen(false);
   }
+
+  // ----- Combat handlers -----
+
+  function startCombat(enemies, context) {
+    if (!enemies || enemies.length === 0) return;
+    combatCtxRef.current = context || { flavor: enemies[0].name };
+    setMenuOpen(false); setMapOpen(false); setCodexOpen(false);
+    setPendingCombat(null);
+    setCombat(initCombat(state.character, state.world.codex, enemies));
+  }
+
+  function handleSeekCombat() {
+    if (loading || combat) return;
+    const kind = pickHostileKind(state);
+    const enemies = generateEnemyGroup(kind, { power: terrainPower(state) });
+    startCombat(enemies, { flavor: groupFlavor(enemies) });
+  }
+
+  function handleFightPending() {
+    if (!pendingCombat) return;
+    const enemies = generateEnemyGroup(pendingCombat.kind, { power: terrainPower(state) });
+    startCombat(enemies, { flavor: pendingCombat.desc || groupFlavor(enemies) });
+  }
+
+  function handleResolveCombat() {
+    if (!combat) return;
+    setState((s) => applyCombatResult(s, combat, combatCtxRef.current || {}));
+    setCombat(null);
+    combatCtxRef.current = null;
+  }
+
+  const onCombatAct = (abilityId) => setCombat((c) => (c ? playerAct(c, abilityId, c.target) : c));
+  const onCombatTarget = (idx) => setCombat((c) => (c ? setTarget(c, idx) : c));
+  const onCombatEndTurn = () => setCombat((c) => (c ? endTurn(c) : c));
+  const onCombatFlee = () => setCombat((c) => (c ? playerFlee(c) : c));
 
   // ----- Render flow -----
 
@@ -531,6 +612,7 @@ export function Solitaire() {
           state={state}
           onMap={() => setMapOpen(true)}
           onMenu={() => setMenuOpen(true)}
+          onCombat={handleSeekCombat}
         />
         <VitalsStrip character={state.character} />
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
@@ -539,6 +621,27 @@ export function Solitaire() {
           {error && <ErrorBanner>{error}</ErrorBanner>}
           {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
         </div>
+        {pendingCombat && !combat && (
+          <div className="fade-in" style={{
+            margin: "0 12px 8px", padding: "11px 14px",
+            backgroundColor: "rgba(35,15,15,0.7)", border: `1px solid rgba(239,68,68,0.4)`,
+            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: "#fca5a5", marginBottom: "2px" }}>Hostile</div>
+              <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: "#fde8e4", lineHeight: 1.3 }}>{pendingCombat.desc}</div>
+            </div>
+            <button onClick={handleFightPending} style={{
+              padding: "9px 16px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
+              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+            }}>Fight</button>
+            <button onClick={() => setPendingCombat(null)} style={{
+              padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
+              border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+            }}>Avoid</button>
+          </div>
+        )}
         <InputBar value={input} onChange={setInput} onSubmit={handleSubmit} loading={loading} />
       </div>
 
@@ -564,6 +667,16 @@ export function Solitaire() {
       )}
       {codexOpen && (
         <CodexView state={state} onClose={() => setCodexOpen(false)} />
+      )}
+      {combat && (
+        <CombatView
+          combat={combat}
+          onAct={onCombatAct}
+          onSetTarget={onCombatTarget}
+          onEndTurn={onCombatEndTurn}
+          onFlee={onCombatFlee}
+          onResolve={handleResolveCombat}
+        />
       )}
     </div>
   );

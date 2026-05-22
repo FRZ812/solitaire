@@ -6,6 +6,9 @@ import {
 } from "./primitives.jsx";
 import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
+import { deriveCombatStats } from "../engine/combat-stats.js";
+import { getAbilityDef } from "../data/abilities.js";
+import { tierColor, tierLabel } from "../data/tiers.js";
 
 // Item-specific inline icon. The wooden bird is a meaningful in-fiction
 // item, so it gets a custom glyph; everything else falls back to a
@@ -28,6 +31,33 @@ function renderItemIcon(itemId) {
       <path d="M9 6a3 3 0 0 1 6 0" />
       <line x1="8" x2="16" y1="12" y2="12" />
     </svg>
+  );
+}
+
+// Compact label/value cell for the derived combat stats grid.
+function CombatStat({ label, value }) {
+  return (
+    <div style={{
+      padding: "7px 8px",
+      backgroundColor: "rgba(20, 29, 29, 0.35)",
+      border: `1px solid rgba(215, 167, 111, 0.14)`,
+      borderRadius: "10px",
+      display: "flex", flexDirection: "column", alignItems: "center",
+    }}>
+      <div style={{ ...metaStyle, fontSize: "8px", letterSpacing: "0.1em", color: colors.gold }}>{label}</div>
+      <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "17px", color: colors.parchment, lineHeight: 1.1, marginTop: "2px" }}>{value}</div>
+    </div>
+  );
+}
+
+// Tier-coloured ability pill.
+function AbilityChip({ name, tier }) {
+  const c = tierColor(tier);
+  return (
+    <span title={tierLabel(tier)} style={{
+      fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: radius.pill,
+      color: c, border: `1px solid ${c}`, backgroundColor: `${c}18`,
+    }}>{name}</span>
   );
 }
 
@@ -94,6 +124,8 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
   const codex = state.world.codex;
   const wornIds = codex.characters.wanderer?.worn || [];
   const attrs = state.character.attributes;
+  const combat = deriveCombatStats(state.character, codex);
+  const learnedAbilities = state.character.abilities || [];
 
   const showGuestNag = user?.is_anonymous && onLinkEmail;
 
@@ -194,6 +226,31 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           <SectionHeader>Attributes</SectionHeader>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
             {ATTR_KEYS.map(k => <AttrBlock key={k} label={ATTR_LABELS[k]} score={attrs[k]} />)}
+          </div>
+        </div>
+
+        {/* Combat — stats derived from attributes + equipped gear. */}
+        <div>
+          <SectionHeader>Combat</SectionHeader>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginBottom: "8px" }}>
+            <CombatStat label="Armor" value={combat.armor} />
+            <CombatStat label="Ward" value={combat.ward} />
+            <CombatStat label="Dodge" value={`${combat.dodge}%`} />
+            <CombatStat label="Crit" value={`${combat.critChance}%`} />
+            <CombatStat label="Pen" value={combat.weapon.pen} />
+            <CombatStat label="Damage" value={`${combat.weapon.min}–${combat.weapon.max}`} />
+          </div>
+          <div style={insetBoxStyle}>
+            <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: "rgba(215, 167, 111, 0.7)", marginBottom: "7px" }}>
+              Abilities · {combat.weapon.name}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {[{ id: "basic-attack", tier: "common" }, { id: "defend", tier: "common" }, { id: "parley", tier: "common" }, ...learnedAbilities].map((a, i) => {
+                const def = getAbilityDef(typeof a === "string" ? a : a.id);
+                if (!def) return null;
+                return <AbilityChip key={i} name={def.name} tier={(typeof a === "object" && a.tier) || "common"} />;
+              })}
+            </div>
           </div>
         </div>
 
