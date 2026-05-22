@@ -729,9 +729,10 @@ export function Solitaire() {
     if (!(await askConfirm({ title: "Apprentice to the smith", body: `Train as ${step.title}? This costs ${formatCopper(step.costCp)} and ${step.days} days bound to the forge.`, confirmLabel: "Train" }))) return;
     const r = applyApprentice(state, step);
     if (!r.ok) { setError(r.reason || "You can't pay the smith."); return; }
-    const beat = { id: `appr${Date.now()}`, type: "narration", content: `You bind yourself to the smith as ${step.title}. The days blur into bellows-heat, ruined billets, and the slow grammar of the hammer — and you come away knowing more than you did.` };
+    const beats = [{ id: `appr${Date.now()}`, type: "narration", content: `You bind yourself to the smith as ${step.title}. The days blur into bellows-heat, ruined billets, and the slow grammar of the hammer — and you come away knowing more than you did.` }];
+    if (r.spoiled?.length) beats.push({ id: `spoil${Date.now()}`, type: "spoilage", lines: r.spoiled.map((s) => `${s.quantity}× ${s.name}`) });
     setShopTile(null); // the long apprenticeship ends the visit
-    setState({ ...r.state, beats: [...r.state.beats, beat] });
+    setState({ ...r.state, beats: [...r.state.beats, ...beats] });
   }
 
   // Pay an expert to drill a proficiency a rating step (engine/training.js).

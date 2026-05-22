@@ -31,9 +31,16 @@ export function summarizeCodex(codex) {
   return lines.join("; ");
 }
 
-export function summarizeInventory(character, codex) {
+export function summarizeInventory(character, codex, day = 0) {
   const inv = character.inventory;
-  const carried = inv.carried.map(c => `${c.quantity}× ${codex.items[c.itemId]?.name || c.itemId}`);
+  const carried = inv.carried.map(c => {
+    const base = `${c.quantity}× ${codex.items[c.itemId]?.name || c.itemId}`;
+    if (c.freshUntil == null) return base;
+    const left = c.freshUntil - day;
+    if (left <= 0) return `${base} (spoiling)`;
+    if (left <= 3) return `${base} (${left}d to spoil)`;
+    return base;
+  });
   const wornIds = codex.characters.wanderer?.worn || [];
   const worn = wornIds.map(id => codex.items[id]?.name || id);
   return `Pack: ${carried.join(", ") || "nothing"}. Worn: ${worn.join(", ") || "nothing"}. Coins: ${inv.coins.copper}cp/${inv.coins.silver}sp/${inv.coins.gold}gp.`;
@@ -189,7 +196,7 @@ export function buildStateContext(state) {
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]
 [CODEX — ${summarizeCodex(world.codex)}]
-[INVENTORY — ${summarizeInventory(character, world.codex)}]
+[INVENTORY — ${summarizeInventory(character, world.codex, state.time?.day || 0)}]
 [GEOGRAPHY KNOWN BY REPUTATION — ${summarizeRumored()}]
 [GEOGRAPHY KNOWN BY LEGEND — ${summarizeFabled()}]
 [KNOWLEDGE BY CHARACTER]

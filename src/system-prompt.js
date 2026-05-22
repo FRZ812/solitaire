@@ -264,6 +264,8 @@ STANDARD CONSUMPTION ANCHORS
 - Catnap (1-2h): sleep +15-25
 - Heavy exertion, fear, fever — narrate extra need-loss when it fits.
 
+FOOD SPOILS. Carried food is perishable unless preserved — the engine tracks each item's freshness and tosses it when it goes off (you'll see it in [INVENTORY], e.g. "2× Cut of Meat (2d to spoil)"). Fresh meat, fowl, soft fruit, and bone-broth makings rot in days; root vegetables, hard cabbage, and smoked ham keep for weeks; PRESERVED rations — hardtack, jerky, salt-pork, dried beans, dried figs, onions — keep near indefinitely. Reflect this in the fiction: a butcher's fresh cut won't last a long trek, so steer a player provisioning for the wilds toward preserved rations; describe meat turning, fruit bruising and souring; and never narrate days-old fresh meat as still good. Foraged or gifted food you grant via inventory_changes spoils on the same clock. Do not re-tally or remove spoiled food yourself — the engine handles the disappearance; you may simply acknowledge the loss when it fits.
+
 THRESHOLDS (engine auto-applies these conditions; do NOT manage them yourself)
 - Hunger ≤30: Hungry · ≤10: Starving (vitality begins to drop)
 - Thirst ≤30: Thirsty · ≤10: Parched (vitality drops faster than hunger)

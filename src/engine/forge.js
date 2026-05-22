@@ -8,6 +8,7 @@
 
 import { advanceTime } from "./time.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
+import { spoilState } from "./spoilage.js";
 import { itemTemplate } from "../data/catalog.js";
 import { TIERS, tierOrder, tierMult, tierLabel } from "../data/tiers.js";
 
@@ -125,12 +126,12 @@ export function applyApprentice(state, step) {
     thirst: Math.max(cur.thirst || 0, 80),
     sleep: Math.max(cur.sleep || 0, 80),
   };
-  return {
-    ok: true,
-    state: {
-      ...state,
-      time,
-      character: { ...state.character, crafting, needs, inventory: { ...state.character.inventory, coins: newCoins } },
-    },
+  const trained = {
+    ...state,
+    time,
+    character: { ...state.character, crafting, needs, inventory: { ...state.character.inventory, coins: newCoins } },
   };
+  // Days bound to the forge — perishable food in the pack goes off meanwhile.
+  const sp = spoilState(trained);
+  return { ok: true, state: sp.state, spoiled: sp.spoiled };
 }

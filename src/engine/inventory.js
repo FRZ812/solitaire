@@ -1,7 +1,12 @@
 // Applies inventory_changes from the AI: added/removed items and coin deltas.
-// Clamps coins at zero; collapses zero-quantity entries.
+// Clamps coins at zero; collapses zero-quantity entries. `day` (the current
+// campaign day) stamps freshUntil on any perishable food added, so narrator-
+// granted food (foraging, gifts, loot) spoils like bought food.
 
-export function applyInventoryChanges(inv, changes) {
+import { goodDef } from "../data/goods.js";
+import { stampFreshUntil } from "./spoilage.js";
+
+export function applyInventoryChanges(inv, changes, day = 0) {
   if (!changes) return inv;
   const next = {
     carried: inv.carried.map(c => ({ ...c })),
@@ -10,8 +15,8 @@ export function applyInventoryChanges(inv, changes) {
   for (const add of (changes.added || [])) {
     if (!add?.itemId) continue;
     const existing = next.carried.find(c => c.itemId === add.itemId);
-    if (existing) existing.quantity += add.quantity || 1;
-    else next.carried.push({ itemId: add.itemId, quantity: add.quantity || 1 });
+    if (existing) { existing.quantity += add.quantity || 1; stampFreshUntil(existing, goodDef(add.itemId), day); }
+    else { const stack = { itemId: add.itemId, quantity: add.quantity || 1 }; stampFreshUntil(stack, goodDef(add.itemId), day); next.carried.push(stack); }
   }
   for (const rem of (changes.removed || [])) {
     if (!rem?.itemId) continue;

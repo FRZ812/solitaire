@@ -7,6 +7,7 @@ import {
 import { passiveHealVitality } from "./healing.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
+import { spoilCarried } from "./spoilage.js";
 import { applyAttributeChanges } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
 import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
@@ -74,7 +75,7 @@ export function applyBeat(state, beat, options = {}) {
     }
   }
 
-  const inventory = applyInventoryChanges(state.character.inventory, beat.inventory_changes);
+  const inventory = applyInventoryChanges(state.character.inventory, beat.inventory_changes, newTime.day);
   if (beat.inventory_changes) {
     const ch = beat.inventory_changes;
     const lines = [];
@@ -269,6 +270,14 @@ export function applyBeat(state, beat, options = {}) {
     if (beat.player_update.bond) character.bond = beat.player_update.bond;
     const w = world.codex.characters.wanderer || {};
     world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, wanderer: { ...w, name: character.name } } } };
+  }
+
+  // Food spoils as the clock turns. Any perishable stack past its freshUntil is
+  // tossed, with a quiet log notice so the player isn't surprised by an empty pack.
+  const sp = spoilCarried(character.inventory.carried, newTime.day, codex.items);
+  if (sp.spoiled.length) {
+    character.inventory = { ...character.inventory, carried: sp.carried };
+    newBeats.push({ id: `spoil${Date.now()}`, type: "spoilage", lines: sp.spoiled.map((s) => `${s.quantity}× ${s.name}`) });
   }
 
   return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created };
