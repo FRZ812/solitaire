@@ -28,3 +28,59 @@ export function applyInventoryChanges(inv, changes) {
   }
   return next;
 }
+
+// Kinds that occupy a single slot — equipping one displaces the worn item of
+// the same kind back to the pack. Clothing and others stack freely.
+const SINGLE_SLOT = { weapon: "weapon", armor: "armor", trinket: "trinket", shield: "armor" };
+export const EQUIPPABLE = new Set(["weapon", "armor", "clothing", "trinket", "shield"]);
+
+// Move a carried item onto the wanderer's worn list (codex), displacing the
+// current item in that slot back to the pack. Returns a new state.
+export function equipItem(state, itemId) {
+  const codex = state.world.codex;
+  const item = codex.items?.[itemId];
+  const wanderer = codex.characters?.wanderer;
+  if (!item || !wanderer) return state;
+  const worn = [...(wanderer.worn || [])];
+  if (worn.includes(itemId)) return state;
+  const carried = state.character.inventory.carried.map((c) => ({ ...c }));
+  const idx = carried.findIndex((c) => c.itemId === itemId);
+  if (idx < 0) return state;
+  carried[idx].quantity -= 1;
+
+  let newWorn = worn;
+  const slot = SINGLE_SLOT[item.kind];
+  if (slot) {
+    const displaced = worn.find((id) => SINGLE_SLOT[codex.items?.[id]?.kind] === slot);
+    if (displaced) {
+      newWorn = worn.filter((id) => id !== displaced);
+      const dIdx = carried.findIndex((c) => c.itemId === displaced);
+      if (dIdx >= 0) carried[dIdx].quantity += 1;
+      else carried.push({ itemId: displaced, quantity: 1 });
+    }
+  }
+  newWorn = [...newWorn, itemId];
+
+  return {
+    ...state,
+    character: { ...state.character, inventory: { ...state.character.inventory, carried: carried.filter((c) => c.quantity > 0) } },
+    world: { ...state.world, codex: { ...codex, characters: { ...codex.characters, wanderer: { ...wanderer, worn: newWorn } } } },
+  };
+}
+
+// Move a worn item back into the pack. Returns a new state.
+export function unequipItem(state, itemId) {
+  const codex = state.world.codex;
+  const wanderer = codex.characters?.wanderer;
+  if (!wanderer || !(wanderer.worn || []).includes(itemId)) return state;
+  const newWorn = (wanderer.worn || []).filter((id) => id !== itemId);
+  const carried = state.character.inventory.carried.map((c) => ({ ...c }));
+  const idx = carried.findIndex((c) => c.itemId === itemId);
+  if (idx >= 0) carried[idx].quantity += 1;
+  else carried.push({ itemId, quantity: 1 });
+  return {
+    ...state,
+    character: { ...state.character, inventory: { ...state.character.inventory, carried } },
+    world: { ...state.world, codex: { ...codex, characters: { ...codex.characters, wanderer: { ...wanderer, worn: newWorn } } } },
+  };
+}

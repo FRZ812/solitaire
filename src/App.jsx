@@ -9,6 +9,7 @@ import { callNarrator } from "$api";
 import { onAuthChange, signOut, linkEmail, isSubscribed } from "$auth";
 import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "$campaigns";
 import { applyBeat } from "./engine/beat.js";
+import { equipItem, unequipItem } from "./engine/inventory.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
@@ -546,6 +547,9 @@ export function Solitaire() {
     setMenuOpen(false);
   }
 
+  function handleEquip(itemId) { setState((s) => equipItem(s, itemId)); }
+  function handleUnequip(itemId) { setState((s) => unequipItem(s, itemId)); }
+
   // ----- Combat handlers -----
 
   function startCombat(enemies, context, extraOpts = {}, st = state) {
@@ -693,6 +697,8 @@ export function Solitaire() {
           state={state}
           user={user}
           onClose={() => setMenuOpen(false)}
+          onEquip={handleEquip}
+          onUnequip={handleUnequip}
           onReset={handleResetCampaign}
           onOpenCodex={() => { setMenuOpen(false); setCodexOpen(true); }}
           onBackToCampaigns={handleBackToCampaigns}

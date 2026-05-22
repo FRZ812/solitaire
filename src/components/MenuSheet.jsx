@@ -6,9 +6,11 @@ import {
 } from "./primitives.jsx";
 import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
-import { deriveCombatStats } from "../engine/combat-stats.js";
+import { deriveCombatStats, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
+import { EQUIPPABLE } from "../engine/inventory.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel } from "../data/tiers.js";
+import { passiveLabel } from "../data/passives.js";
 import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
 
 // Item-specific inline icon. The wooden bird is a meaningful in-fiction
@@ -70,6 +72,92 @@ const insetBoxStyle = {
   padding: "8px 12px",
 };
 
+// Tappable inventory row.
+const itemRowStyle = {
+  display: "flex", justifyContent: "space-between", alignItems: "center",
+  width: "100%", textAlign: "left", gap: "8px",
+  fontSize: "13px", color: colors.parchment,
+  padding: "6px 2px", background: "transparent",
+  border: "none", borderBottom: `1px dotted rgba(215, 167, 111, 0.1)`,
+  cursor: "pointer", fontFamily: "inherit",
+};
+
+// Item detail modal: stats, requirement, passives, and equip/unequip.
+function ItemDetail({ item, id, location, attrs, onEquip, onUnequip, onClose }) {
+  if (!item) return null;
+  const cs = itemCombatStats(item);
+  const req = itemRequirement(item);
+  const reqMet = (attrs[req.attr] || 0) >= req.value;
+  const equippable = EQUIPPABLE.has(item.kind);
+  const worn = location === "worn";
+  const tcolor = tierColor(item.tier || "common");
+  const statLine = (label, value) => (
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: colors.parchment, padding: "2px 0" }}>
+      <span style={{ color: colors.parchmentMuted }}>{label}</span><span>{value}</span>
+    </div>
+  );
+  return (
+    <div onClick={(e) => { e.stopPropagation(); onClose(); }} style={{
+      position: "absolute", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center",
+      backgroundColor: "rgba(8,12,12,0.7)", backdropFilter: "blur(4px)", padding: "20px",
+    }}>
+      <div onClick={(e) => e.stopPropagation()} className="scale-in" style={{
+        width: "100%", maxWidth: "340px", maxHeight: "80%", overflowY: "auto",
+        backgroundColor: "rgba(20,29,29,0.96)", border: `1px solid ${tcolor}`,
+        borderRadius: radius.panel, padding: "18px", boxShadow: shadow.sheet,
+        display: "flex", flexDirection: "column", gap: "10px", ...glass,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "20px", color: tcolor, lineHeight: 1.1 }}>{item.name || id}</div>
+            <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>{tierLabel(item.tier || "common")} · {item.kind || "item"}</div>
+          </div>
+          <button onClick={onClose} style={{ ...iconButtonStyle, width: "28px", height: "28px", flexShrink: 0, backgroundColor: "rgba(215,167,111,0.08)", border: `1px solid rgba(215,167,111,0.2)` }}>
+            <Icon name="x" size={12} color={colors.parchmentMuted} strokeWidth={2} />
+          </button>
+        </div>
+
+        {item.appearance && <div style={{ fontSize: "12px", fontStyle: "italic", color: "rgba(237,228,208,0.7)", lineHeight: 1.45 }}>{item.appearance}</div>}
+        {item.description && <div style={{ fontSize: "12px", color: colors.parchment, lineHeight: 1.45 }}>{item.description}</div>}
+
+        {(cs.damage || cs.armor > 0 || cs.ward > 0 || cs.dodge > 0) && (
+          <div style={insetBoxStyle}>
+            {cs.damage && statLine("Damage", `${cs.damage.min}–${cs.damage.max} ${cs.damage.type}${cs.damage.pen ? ` · pen ${cs.damage.pen}` : ""}`)}
+            {cs.weaponType && statLine("Type", cs.weaponType)}
+            {cs.armor > 0 && statLine("Armor", `+${cs.armor}`)}
+            {cs.ward > 0 && statLine("Ward", `+${cs.ward}`)}
+            {cs.dodge > 0 && statLine("Dodge", `+${cs.dodge}%`)}
+            {req.value > 0 && (
+              <div style={{ fontSize: "11px", marginTop: "5px", color: reqMet ? "#a7f3d0" : "#fca5a5" }}>
+                Requires {ATTR_LABELS[req.attr]} {req.value}{reqMet ? "" : " — under-req: reduced, passives off"}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(item.passives && item.passives.length > 0) && (
+          <div>
+            <div style={{ ...metaStyle, fontSize: "8px", color: colors.gold, marginBottom: "5px" }}>Passives</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+              {item.passives.map((p, i) => (
+                <span key={i} style={{ fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: radius.pill, color: tierColor(p.tier), border: `1px solid ${tierColor(p.tier)}` }}>
+                  {passiveLabel(p.id, p.tier)}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {equippable && (
+          worn
+            ? <button onClick={() => { onUnequip(id); onClose(); }} style={actionButtonStyle()}>Unequip</button>
+            : <button onClick={() => { onEquip(id); onClose(); }} style={actionButtonStyle()}>Equip</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Pill-shaped action button at the foot of the sheet.
 function actionButtonStyle({ danger = false, ghost = false } = {}) {
   if (ghost) {
@@ -120,7 +208,8 @@ function Divider() {
   );
 }
 
-export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail }) {
+export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip }) {
+  const [detail, setDetail] = useState(null); // { id, location: "worn"|"carried" }
   const inv = state.character.inventory;
   const codex = state.world.codex;
   const wornIds = codex.characters.wanderer?.worn || [];
@@ -312,45 +401,38 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           </div>
         </div>
 
-        {/* Wearing */}
+        {/* Wearing — tap an item for details / to unequip. */}
         <div>
           <SectionHeader>Wearing</SectionHeader>
           <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "2px" }}>
             {wornIds.length === 0
               ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.4)", fontStyle: "italic" }}>No equipped gear.</span>
               : wornIds.map((id) => (
-                  <div key={id} style={{
-                    fontSize: "13px", color: colors.parchment,
-                    padding: "4px 0",
-                    borderBottom: `1px dotted rgba(215, 167, 111, 0.1)`,
-                    display: "flex", alignItems: "center",
-                  }}>
-                    {renderItemIcon(id)}
-                    {codex.items[id]?.name || id}
-                  </div>
+                  <button key={id} onClick={() => setDetail({ id, location: "worn" })} style={itemRowStyle}>
+                    <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+                      {renderItemIcon(id)}
+                      <span style={{ color: tierColor(codex.items[id]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[id]?.name || id}</span>
+                    </span>
+                    <Icon name="arrowLeft" size={11} color="rgba(215,167,111,0.4)" strokeWidth={2} />
+                  </button>
                 ))}
           </div>
         </div>
 
-        {/* Carrying */}
+        {/* Carrying — tap an item for details / to equip. */}
         <div>
           <SectionHeader>Carrying (Pack)</SectionHeader>
           <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "2px" }}>
             {inv.carried.length === 0
               ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.4)", fontStyle: "italic" }}>Pack is empty.</span>
               : inv.carried.map((c) => (
-                  <div key={c.itemId} style={{
-                    fontSize: "13px", color: colors.parchment,
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                    padding: "4px 0",
-                    borderBottom: `1px dotted rgba(215, 167, 111, 0.1)`,
-                  }}>
-                    <span style={{ display: "flex", alignItems: "center" }}>
+                  <button key={c.itemId} onClick={() => setDetail({ id: c.itemId, location: "carried" })} style={itemRowStyle}>
+                    <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
                       {renderItemIcon(c.itemId)}
-                      {codex.items[c.itemId]?.name || c.itemId}
+                      <span style={{ color: tierColor(codex.items[c.itemId]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[c.itemId]?.name || c.itemId}</span>
                     </span>
-                    <span style={{ color: colors.parchmentMuted, fontWeight: "bold" }}>×{c.quantity}</span>
-                  </div>
+                    <span style={{ color: colors.parchmentMuted, fontWeight: "bold", flexShrink: 0 }}>×{c.quantity}</span>
+                  </button>
                 ))}
           </div>
         </div>
@@ -382,6 +464,18 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           )}
         </div>
       </div>
+
+      {detail && (
+        <ItemDetail
+          item={codex.items[detail.id]}
+          id={detail.id}
+          location={detail.location}
+          attrs={attrs}
+          onEquip={onEquip}
+          onUnequip={onUnequip}
+          onClose={() => setDetail(null)}
+        />
+      )}
     </div>
   );
 }
