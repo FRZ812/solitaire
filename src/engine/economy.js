@@ -43,7 +43,7 @@ export function formatCoins(coins) {
 }
 
 // Item kinds that a trader will buy back (and that aren't worn equipment).
-export const SELLABLE_KINDS = new Set(["remedy", "food", "drink", "material", "supply", "trinket"]);
+export const SELLABLE_KINDS = new Set(["remedy", "food", "drink", "material", "supply", "trinket", "tool"]);
 
 // Used-goods buy-back as a fraction of an item's value. A merchant gives a fair
 // (not fleecing) price for second-hand goods. A piece you JUST bought and

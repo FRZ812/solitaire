@@ -159,6 +159,28 @@ export const GOODS = {
     appearance: "A waxed cloth of pork packed grey-white with curing salt.", description: "Salted to keep through any season. Hearty — but the salt leaves you thirsty.",
     use: { verb: "Eat", needs: { hunger: 30, thirst: -8 } },
   },
+  "trail-rations": {
+    id: "trail-rations", name: "Day's Trail Rations", kind: "food", value: 10,
+    appearance: "A wrapped day's ration — hardtack, cheese, dried meat, and nuts.", description: "A balanced day's food for the road, packed to keep. The traveller's standby.",
+    use: { verb: "Eat", needs: { hunger: 45 } },
+  },
+
+  // ---- Tavern & market drinks (kind "drink") ----
+  "ale": {
+    id: "ale", name: "Jug of Ale", kind: "drink", value: 2,
+    appearance: "A stoppered earthenware jug of brown ale.", description: "Slakes thirst and loosens the shoulders. A mild lift to the spirits.",
+    use: { verb: "Drink", needs: { thirst: 20 }, resolve: 1 },
+  },
+  "wine": {
+    id: "wine", name: "Skin of Wine", kind: "drink", value: 3,
+    appearance: "A leather skin of rough red wine.", description: "Sour and warming. Eases thirst and steadies the nerves a little.",
+    use: { verb: "Drink", needs: { thirst: 15 }, resolve: 1 },
+  },
+  "spirits": {
+    id: "spirits", name: "Flask of Spirits", kind: "drink", value: 6,
+    appearance: "A small flask of clear, fierce grain-spirit.", description: "Burns going down. Little for thirst, but it braces a man for what's coming.",
+    use: { verb: "Drink", needs: { thirst: 4 }, resolve: 2 },
+  },
 };
 
 export function goodDef(id) {
