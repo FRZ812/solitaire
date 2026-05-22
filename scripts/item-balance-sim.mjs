@@ -51,6 +51,7 @@ function makeDummy(hp, armor = 0) {
     maxHealth: hp, health: hp, armor, ward: 0, dodge: 0, accuracy: 0, critChance: 0, critMult: 1,
     speed: 1, weapon: { min: 0, max: 0, type: "physical", pen: 0 }, abilities: [],
     maxLootTier: "common", statuses: [], cooldowns: {},
+    actionsPerTurn: 1, actionsLeft: 1, procs: [], shield: 0, magicShield: 0, invuln: 0,
   }];
 }
 

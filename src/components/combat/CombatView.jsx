@@ -35,10 +35,12 @@ function moodOf(enemy) {
 const STATUS_LABEL = {
   bleed: "Bleed", poison: "Poison", stun: "Stun", weaken: "Weakened",
   vulnerable: "Vulnerable", guard: "Guard", rally: "Rallied", regen: "Regen", focus: "Focused",
+  burn: "Burning", chill: "Chilled", curse: "Cursed", dodgeStack: "Evasion",
 };
 const STATUS_COLOR = {
   bleed: "#d97a6c", poison: "#86b34a", stun: "#e6c84a", weaken: "#8fb0c9",
   vulnerable: "#e09a5a", guard: "#9ab0b0", rally: "#f5b97a", regen: "#74c66b", focus: "#b072e6",
+  burn: "#f07b3f", chill: "#7fc7e0", curse: "#a86fd0", dodgeStack: "#8fd0b0",
 };
 
 function TierBadge({ tier }) {
@@ -84,6 +86,26 @@ function StatusRow({ statuses }) {
   );
 }
 
+// Defensive overlays: a physical shield, a magic ward-shield, and a brief
+// invulnerability. Shown as small chips next to a combatant's health.
+function DefenseBadges({ c, compact = false }) {
+  const badges = [];
+  if ((c.invuln || 0) > 0) badges.push(["INVULN", "#ffe08a"]);
+  if ((c.shield || 0) > 0) badges.push([`◈${Math.round(c.shield)}`, "#7fb6e0"]);
+  if ((c.magicShield || 0) > 0) badges.push([`✦${Math.round(c.magicShield)}`, "#b08fe0"]);
+  if (badges.length === 0) return null;
+  return (
+    <span style={{ display: "inline-flex", gap: "3px", flexShrink: 0 }}>
+      {badges.map(([txt, col], i) => (
+        <span key={i} style={{
+          fontSize: compact ? "7px" : "8px", fontWeight: 800, padding: "1px 4px", borderRadius: radius.pill,
+          color: col, border: `1px solid ${col}66`, backgroundColor: `${col}1f`, whiteSpace: "nowrap",
+        }}>{txt}</span>
+      ))}
+    </span>
+  );
+}
+
 function EnemyCard({ enemy, selected, onSelect }) {
   const dead = enemy.health <= 0;
   const resolvedWord = enemy.resolved === "yielded" ? "Yielded" : enemy.resolved === "fled" ? "Fled" : null;
@@ -117,8 +139,9 @@ function EnemyCard({ enemy, selected, onSelect }) {
       ) : (
         <>
           <Bar value={enemy.health} max={enemy.maxHealth} color="linear-gradient(90deg,#8f4c3c,#c75b48)" height={7} />
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: "3px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "3px", gap: "4px" }}>
             <span style={{ fontSize: "9px", color: colors.parchmentMuted }}>{Math.ceil(enemy.health)}/{enemy.maxHealth}</span>
+            <DefenseBadges c={enemy} compact />
             <span style={{ fontSize: "8px", color: "rgba(237,228,208,0.5)" }}>
               {enemy.armor > 0 ? `AR ${enemy.armor} ` : ""}{enemy.ward > 0 ? `WD ${enemy.ward}` : ""}
             </span>
@@ -159,7 +182,10 @@ function AllyCard({ ally }) {
       ) : (
         <>
           <Bar value={ally.health} max={ally.maxHealth} color="linear-gradient(90deg,#4a7a44,#74c66b)" height={6} />
-          <div style={{ fontSize: "9px", color: colors.parchmentMuted, marginTop: "2px" }}>{Math.ceil(ally.health)}/{ally.maxHealth}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "4px", marginTop: "2px" }}>
+            <span style={{ fontSize: "9px", color: colors.parchmentMuted }}>{Math.ceil(ally.health)}/{ally.maxHealth}</span>
+            <DefenseBadges c={ally} compact />
+          </div>
         </>
       )}
       <StatusRow statuses={ally.statuses} />
@@ -329,10 +355,21 @@ export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget,
           <div style={{ flex: 1 }}>
             <Bar value={player.health} max={player.maxHealth} color="linear-gradient(90deg,#606d43,#7B8460)" height={9} />
           </div>
+          <DefenseBadges c={player} />
           <span style={{ fontSize: "11px", color: colors.parchment, fontWeight: 700, flexShrink: 0 }}>{Math.ceil(player.health)}/{player.maxHealth}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px", flexWrap: "wrap" }}>
-          <span style={{ ...metaStyle, fontSize: "8px", color: "rgba(237,228,208,0.55)" }}>Stamina</span>
+          <span style={{ ...metaStyle, fontSize: "8px", color: "rgba(127,199,224,0.85)" }}>Actions</span>
+          <div style={{ display: "flex", gap: "3px" }}>
+            {Array.from({ length: Math.max(1, player.actionsPerTurn || 1) }).map((_, i) => (
+              <div key={i} style={{
+                width: "11px", height: "11px", borderRadius: "3px",
+                backgroundColor: i < (player.actionsLeft || 0) ? "#7fc7e0" : "rgba(127,199,224,0.15)",
+                border: `1px solid rgba(127,199,224,0.45)`,
+              }} />
+            ))}
+          </div>
+          <span style={{ ...metaStyle, fontSize: "8px", color: "rgba(237,228,208,0.55)", marginLeft: "4px" }}>Stamina</span>
           <div style={{ display: "flex", gap: "3px" }}>
             {Array.from({ length: player.maxStamina }).map((_, i) => (
               <div key={i} style={{

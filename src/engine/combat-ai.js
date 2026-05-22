@@ -88,18 +88,28 @@ export function chooseAction(actor, opponents, candidates, opts = {}) {
   const heal = candidates.find((c) => c.def.target === "self" && c.def.effect?.type === "regen");
   if (heal && hpFrac < 0.35) return { ability: heal, def: heal.def, mode: "self", target: null };
 
+  // 1b) Defensive cover when hurt: a shield, ward-shield, or brief invulnerability.
+  const cover = candidates.find((c) => c.def.target === "self" && ["shield", "magicShield", "invuln"].includes(c.def.effect?.type));
+  if (cover && hpFrac < 0.45 && !(cover.def.effect.type === "invuln" && (actor.invuln || 0) > 0) && Math.random() < 0.5) {
+    return { ability: cover, def: cover.def, mode: "self", target: null };
+  }
+
   // 2) Control a dangerous, uncontrolled target (set up the kill).
   const control = candidates.find((c) =>
     c.def.effect && c.def.effect.target === "enemy" &&
-    ["stun", "weaken", "vulnerable"].includes(c.def.effect.type) && c.def.target !== "all-enemies");
-  if (control && !has(target, "stun") && !has(target, "vulnerable") && living.length >= 1 && Math.random() < 0.6) {
+    ["stun", "weaken", "vulnerable", "chill", "curse"].includes(c.def.effect.type) && c.def.target !== "all-enemies");
+  if (control && !has(target, "stun") && !has(target, "vulnerable") && !has(target, control.def.effect.type) && living.length >= 1 && Math.random() < 0.6) {
     return { ability: control, def: control.def, mode: "single", target };
   }
 
-  // 3) Self-buff occasionally when healthy (rally/focus).
+  // 3) Self-buff occasionally when healthy (rally/focus); grab an extra action.
   const buff = candidates.find((c) => c.def.target === "self" && ["rally", "focus", "guard"].includes(c.def.effect?.type));
   if (buff && hpFrac > 0.5 && !has(actor, buff.def.effect.type) && Math.random() < 0.3) {
     return { ability: buff, def: buff.def, mode: "self", target: null };
+  }
+  const haste = candidates.find((c) => c.def.effect?.type === "bonusAction");
+  if (haste && hpFrac > 0.4 && (actor.actionsLeft || 1) <= 1 && Math.random() < 0.4) {
+    return { ability: haste, def: haste.def, mode: "self", target: null };
   }
 
   // 4) AoE when it hits 2+ and roughly matches single-target value.

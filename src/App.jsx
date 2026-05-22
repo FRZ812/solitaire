@@ -14,7 +14,7 @@ import { recordTurn, stateBeforeTurn, turnForBeatIndex, editBeat } from "./engin
 import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
-import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
+import { applyForge, applyApprentice, blacksmithRank, fusableItems, applyFusionToItem } from "./engine/forge.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
 import { generateGaol, acceptBounty, buyPrisonerRights } from "./engine/gaol.js";
 import { generateSlaveMarket, buyCaptive } from "./engine/slaves.js";
@@ -722,6 +722,14 @@ export function Solitaire() {
     return r.item;
   }
 
+  // Fuse two affixes on an item into a signature power, spending a forge-rune.
+  function handleFusion(itemId, recipeId) {
+    const r = applyFusionToItem(state, itemId, recipeId);
+    if (!r.ok) { setError(r.reason || "The fusion failed."); return; }
+    const beat = { id: `fuse${Date.now()}`, type: "narration", content: `You set the rune into ${r.item.name} and stoke the fire. The two enchantments scream, twist, and fuse into one — ${r.label}.` };
+    setState({ ...r.state, beats: [...r.state.beats, beat] });
+  }
+
   // Take the next apprenticeship step (coin + days at the forge). Confirmed
   // because it jumps the calendar significantly.
   async function handleApprentice(step) {
@@ -1400,8 +1408,10 @@ export function Solitaire() {
               building={building}
               schematics={schematicsForBuilding(building)}
               rank={blacksmithRank(state)}
+              fusions={fusableItems(state)}
               onApprentice={handleApprentice}
               onForge={handleForge}
+              onFuse={handleFusion}
               onBack={() => setShopView("trade")}
               onClose={closeShop}
               loading={loading}

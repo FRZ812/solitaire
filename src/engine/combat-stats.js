@@ -263,6 +263,11 @@ export function deriveCombatStats(character, codex) {
     maxStamina: 4 + Math.floor((vigor + reflex) / 3) + Math.floor(prof.endurance / 2) + (statMods.maxStamina || 0),
     staminaRegen: 2 + Math.floor(vigor / 4) + (triggers.staminaRegen || 0),
     speed: reflex + Math.floor(wit / 2),
+    // Action economy: everyone gets 1 action point a turn; "swift" affixes add up
+    // to +3 (capped). Cooldown-reduction and fortify ride along for the engine.
+    actionsPerTurn: 1 + clamp(statMods.extraActions || 0, 0, 3),
+    cooldownReduction: clamp(statMods.cooldownReduction || 0, 0, 3),
+    fortify: clamp(statMods.fortify || 0, 0, 0.25),
     attrs: a,
     prof,
     triggers,
