@@ -770,6 +770,80 @@ export function setTarget(cs0, idx) {
   return { ...cs0, target: idx };
 }
 
+// Apply a narrator-adjudicated improvised action ([COMBAT ACTION]) to the
+// fight. The narrator decides WHAT happens and whether it works; the engine
+// keeps the NUMBERS in bounds — a magnitude band is scaled to the player's
+// strength so a freeform line can't hand out arbitrary damage. Counts as the
+// player's action; the caller advances the turn afterward.
+export function applyCombatEffect(cs0, effect) {
+  if (cs0.phase !== "player" || !effect) return cs0;
+  const cs = clone(cs0);
+  const p = cs.player;
+  if (effect.narration) cs.log.push(logEntry(effect.narration, "player"));
+
+  const living = livingEnemies(cs);
+  let targets;
+  if (effect.target === "all") targets = living;
+  else if (effect.target === "self" || effect.target == null) targets = [];
+  else {
+    const byName = living.find((e) => e.name.toLowerCase() === String(effect.target).toLowerCase());
+    const cur = cs.enemies[cs.target];
+    targets = byName ? [byName] : (cur && cur.health > 0 && !cur.resolved ? [cur] : (living[0] ? [living[0]] : []));
+  }
+
+  const magDmg = (mag) => {
+    const w = p.weapon || { min: 2, max: 4 };
+    const body = p.attrs?.body || 0;
+    const avg = (w.min + w.max) / 2;
+    const base = mag === "major" ? avg * 1.6 + body : mag === "moderate" ? avg + body * 0.5 : avg * 0.5;
+    return Math.max(1, Math.round(base * (0.85 + Math.random() * 0.3)));
+  };
+
+  if ((effect.kind === "attack" || effect.kind === "control") && effect.magnitude) {
+    const type = effect.damage_type || "physical";
+    for (const t of targets) {
+      let dmg = magDmg(effect.magnitude);
+      if (type === "physical") dmg = Math.max(0, dmg - (t.armor || 0));
+      else if (type === "magical") dmg = Math.max(0, dmg - (t.ward || 0));
+      const before = t.health;
+      t.health = Math.max(0, t.health - dmg);
+      const dealt = before - t.health;
+      cs.log.push(logEntry(`${t.name} takes ${dealt}${type === "true" ? " true" : type === "magical" ? " magical" : ""}.`, "hit"));
+      if (dealt > 0) onEnemyDamaged(t, dealt);
+    }
+  }
+
+  // Status from the action (on a target or on the player).
+  if (effect.status && effect.status.type) {
+    const st = { type: effect.status.type, value: effect.status.value || 0, duration: effect.status.duration || 1 };
+    if (effect.status.who === "self") addStatus(p, st);
+    else for (const t of targets) { if (t.health > 0) { addStatus(t, st); if (CONTROL_TYPES.has(st.type)) onEnemyControlled(t); } }
+  }
+
+  // Social / will outcome the narrator judged earned.
+  if (effect.social) {
+    for (const t of targets) {
+      if (t.health <= 0 || t.resolved) continue;
+      if (effect.social === "yield") resolveYield(cs, t);
+      else if (effect.social === "flee") resolveFlee(cs, t);
+      else if (effect.social === "demoralize") t.morale = Math.max(0, (t.morale || 0) - 30);
+      else if (effect.social === "provoke") {
+        addStatus(t, { type: "vulnerable", value: 30, duration: 2 });
+        addStatus(t, { type: "rally", value: 15, duration: 2 });
+        t.noFleeUntil = cs.turn + 2; t.provoked = true;
+      }
+    }
+  }
+
+  if (effect.player_damage > 0) p.health = Math.max(0, p.health - Math.round(effect.player_damage));
+
+  for (const e of cs.enemies) if (e.health <= 0) downEnemy(cs, e);
+  if (playerDown(cs)) return finishDefeat(cs);
+  const firstAlive = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
+  if (firstAlive >= 0 && (cs.enemies[cs.target]?.health <= 0 || cs.enemies[cs.target]?.resolved)) cs.target = firstAlive;
+  return checkCombatEnd(cs);
+}
+
 // ----- enemy phase + turn advance -----
 
 export function endTurn(cs0) {

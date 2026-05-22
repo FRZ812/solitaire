@@ -34,7 +34,7 @@ import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
-import { initCombat, playerAct, playerTalk, playerUseEnvironment, playerDrawWeapon, setTarget, endTurn, playerFlee, applyCombatResult, applyLoot } from "./engine/combat.js";
+import { initCombat, playerAct, playerDrawWeapon, setTarget, endTurn, playerFlee, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
@@ -238,6 +238,7 @@ export function Solitaire() {
   // Combat: `combat` holds the active turn-state (null = not fighting);
   // `pendingCombat` is a hostile encounter offering a fight before it starts.
   const [combat, setCombat] = useState(null);
+  const [combatBusy, setCombatBusy] = useState(false); // awaiting the narrator for an improvised combat action
   const [pendingCombat, setPendingCombat] = useState(null);
   const [pendingLoot, setPendingLoot] = useState(null); // spoils to deliberately Search
   const [pendingEngage, setPendingEngage] = useState(null); // narrator start_combat awaiting the player's go-ahead
@@ -1105,8 +1106,39 @@ export function Solitaire() {
   }
 
   const onCombatAct = (abilityId) => setCombat((c) => (c ? playerAct(c, abilityId, c.target) : c));
-  const onCombatTalk = (intent) => setCombat((c) => (c ? playerTalk(c, intent, c.target) : c));
-  const onCombatEnvironment = (id) => setCombat((c) => (c ? playerUseEnvironment(c, id, c.target) : c));
+
+  // A snapshot of the fight for the narrator to adjudicate an improvised action.
+  function combatContext(c) {
+    const p = c.player;
+    const en = c.enemies.filter((e) => e.health > 0 && !e.resolved)
+      .map((e) => `${e.name} [${e.tier}, ${e.demeanor}] ${Math.ceil(e.health)}/${e.maxHealth}hp${(e.statuses || []).length ? ` (${e.statuses.map((s) => s.type).join(",")})` : ""}`).join("; ");
+    const allies = (c.allies || []).filter((a) => a.health > 0 && !a._dead && !a.resolved).map((a) => `${a.name} ${Math.ceil(a.health)}/${a.maxHealth}`).join("; ");
+    const env = (c.environment || []).filter((f) => f.uses > 0).map((f) => f.name).join(", ");
+    return `[FIGHT STATE] You: ${Math.ceil(p.health)}/${p.maxHealth}hp, ${c.lethal ? `wielding ${p.weapon?.name || "fists"}` : "in a bare-handed brawl"}. Foes: ${en || "none left"}.${allies ? ` Allies: ${allies}.` : ""}${env ? ` Around you: ${env}.` : ""}`;
+  }
+
+  // The player types a freeform combat move (improvise with the surroundings,
+  // demand surrender, taunt, terrify…). The narrator adjudicates it into a
+  // bounded combat_effect; the engine applies it as the player's turn.
+  async function handleCombatAction(text) {
+    const action = (text || "").trim();
+    if (!action || combatBusy || !combat || combat.phase !== "player") return;
+    setCombatBusy(true);
+    setError(null);
+    try {
+      const msg = `[COMBAT ACTION] ${combatContext(combat)}\nThe player's improvised action this turn: "${action}". Adjudicate it from the fiction and return ONLY a combat_effect.`;
+      const beat = await callNarrator(state, msg);
+      const eff = beat.combat_effect || (beat.narration ? { narration: beat.narration, kind: "miss" } : null);
+      let next = eff ? applyCombatEffect(combat, eff) : combat;
+      if (!["victory", "defeat", "resolved", "playerFled"].includes(next.phase)) next = endTurn(next);
+      setCombat(next);
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setCombatBusy(false);
+    }
+  }
+
   const onCombatDraw = () => setCombat((c) => (c ? playerDrawWeapon(c) : c));
   const onCombatTarget = (idx) => setCombat((c) => (c ? setTarget(c, idx) : c));
   const onCombatEndTurn = () => setCombat((c) => (c ? endTurn(c) : c));
@@ -1398,8 +1430,8 @@ export function Solitaire() {
         <CombatView
           combat={combat}
           onAct={onCombatAct}
-          onTalk={onCombatTalk}
-          onEnvironment={onCombatEnvironment}
+          onAction={handleCombatAction}
+          busy={combatBusy}
           onDraw={onCombatDraw}
           onSetTarget={onCombatTarget}
           onEndTurn={onCombatEndTurn}

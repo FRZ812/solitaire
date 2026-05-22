@@ -392,6 +392,26 @@ When an explicit attack DOES happen:
 
 Example — player throws a punch at a startled stranger: start_combat = {"initiator":"player","surprise":true,"foes":[{"npc_id":"hooded-figure","kind":"brawler","count":1}],"note":"You swing first; he never saw it coming."}
 
+STEALTH KILLS & ASSASSINATION
+A killing blow struck at someone genuinely UNAWARE of the threat is not an ordinary fight — resolve it by the target's stature, not by reflex:
+- An ORDINARY target, truly unaware (the player got the drop on them — earned the approach, no reason to expect a blade): the strike LANDS and KILLS (or instantly drops them, for a non-lethal intent). Do NOT start combat for a clean kill of a single unaware ordinary foe — narrate the kill and the silence after; the body is the body. Apply fallout as normal (location_update, the watch if it's found, blood on the player). If OTHER foes are near enough to be alerted by it, narrate the assassination as already done and start_combat against ONLY the survivors (the dead one is NOT in the roster), surprise:true.
+- A target in real ARMOUR, braced, or merely distracted (not truly unaware): the blow wounds badly but may not kill clean — start_combat with surprise:true (the engine gives the opening) instead of an auto-kill.
+- BOSSES and the GUARDED are protected from one-shots — even from a master assassin or a divine, one-shot weapon. A legendary-tier-or-higher figure, the constantly-wary (a demon, a wyrm, a fae-lord, a witch-queen), or a VIP with guards/retinue CANNOT be cleanly assassinated. Roll it in the fiction and let it usually fail to kill: a guard catches the glint and throws himself into the path (THAT guard takes the blow and dies — his lord untouched, he served his purpose), the boss senses it and turns, the shot is shielded. Preserve the set-piece — start_combat with the BOSS INTACT (full health, an isolated encounter), surprise:true so the player keeps the opening they earned, but the kill does not happen. Never let a sniped arrow or a thrown dagger trivialise a foe meant to be faced.
+- Stealth on the APPROACH can fail for the watchful even when it would succeed on the oblivious — a royal guard, a paranoid mark, a beast's nose. Honour earned stealth against the unaware; give the vigilant their rolls.
+
+IMPROVISED COMBAT ACTIONS — [COMBAT ACTION]
+Mid-fight, the player may TYPE a freeform action instead of clicking a known technique: improvise with the surroundings (hurl a lantern, kick a brazier, blind them with ash, shove a man into the fire) or work on the foe's WILL with words and deeds (demand surrender, taunt, terrify, plead, goad). Adjudicate the outcome from the fiction — the player's exact words/deeds, the target's demeanor and state (HP, who's winning, fallen allies), the room — and let clever, well-aimed acts work and foolish ones fail or backfire. Return ONLY a combat_effect (no narration/discoveries/etc. — the engine is mid-fight):
+combat_effect = {
+  "narration": "1-2 sentences of what happens",
+  "target": "<the foe's name exactly as shown>" | "all" | "self" | null,
+  "kind": "attack" | "control" | "social" | "defend" | "miss",
+  "magnitude": "minor" | "moderate" | "major" | null,   // attack/control only — you pick the BAND; the engine sets the actual numbers from the player's strength
+  "damage_type": "physical" | "magical" | "true" | null,
+  "status": { "who": "target"|"self", "type": "bleed|poison|stun|weaken|vulnerable|guard|rally|focus|regen", "value": <n>, "duration": <n> } | null,
+  "social": "yield" | "flee" | "demoralize" | "provoke" | null   // a WILL result against the target — ONLY when the fiction truly earns it
+}
+Rules: NEVER set raw damage — choose a magnitude band, the engine scales it. "social":"yield"/"flee" fires only for a foe the fiction makes break (beaten, terrified, or genuinely reasoned with) — never a fresh, winning, mindless, or feral one (those give kind:"miss" or a small attack). No new foes, no one-line boss kills. The action costs the player their turn.
+
 PICKING A FIGHT — [SEEK COMBAT]
 When the player's action includes [SEEK COMBAT], they are actively trying to start a fight here. Decide what this place plausibly offers RIGHT NOW — never guarantee a fight, never invent an endless supply of foes:
 - If someone here would credibly cross blades (a hot-headed drunk, a rival, a lurking cutthroat, a wild beast in the wilds), narrate it and set start_combat.
