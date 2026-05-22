@@ -246,9 +246,9 @@ function ResolveOverlay({ combat, onResolve }) {
   );
 }
 
-export function CombatView({ combat, onAct, onTalk, onEnvironment, onDraw, onSetTarget, onEndTurn, onFlee, onResolve }) {
+export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget, onEndTurn, onFlee, onResolve }) {
   const logRef = useRef(null);
-  const [talkOpen, setTalkOpen] = useState(false);
+  const [actionText, setActionText] = useState("");
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [combat.log.length]);
@@ -256,9 +256,12 @@ export function CombatView({ combat, onAct, onTalk, onEnvironment, onDraw, onSet
   const { player } = combat;
   const over = ["victory", "defeat", "resolved", "playerFled"].includes(combat.phase);
   const isPlayerPhase = combat.phase === "player";
-  const talkUsable = abilityUsable(combat, "talk");
-  const environment = combat.environment || [];
-  const doTalk = (intent) => { setTalkOpen(false); onTalk(intent); };
+  const submitAction = () => {
+    const t = actionText.trim();
+    if (!t || busy || !isPlayerPhase) return;
+    setActionText("");
+    onAction(t);
+  };
   // Core actions stay pinned; learned abilities sort by tier (best first) and
   // scroll, so the bar never overruns the screen as the kit grows.
   const CORE = ["basic-attack", "defend", "talk"];
@@ -370,66 +373,42 @@ export function CombatView({ combat, onAct, onTalk, onEnvironment, onDraw, onSet
           </div>
         )}
 
-        {/* Core actions — always available */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginTop: "8px" }}>
+        {/* Core actions — your trained techniques */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginTop: "8px" }}>
           {strikeEntry && <AbilityButton entry={strikeEntry} combat={combat} onAct={onAct} />}
           {braceEntry && <AbilityButton entry={braceEntry} combat={combat} onAct={onAct} />}
-          <button
-            onClick={() => setTalkOpen((v) => !v)}
-            disabled={!talkUsable}
-            title="Demand surrender, demoralize, or provoke"
-            style={{
-              textAlign: "left", padding: "8px 9px", borderRadius: radius.chip,
-              backgroundColor: talkOpen ? "rgba(176,114,230,0.18)" : (talkUsable ? "rgba(20,29,29,0.7)" : "rgba(20,29,29,0.3)"),
-              border: `1px solid ${talkUsable ? "#b072e6" : "rgba(215,167,111,0.12)"}`,
-              opacity: talkUsable ? 1 : 0.45, cursor: talkUsable ? "pointer" : "default", fontFamily: "inherit",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <Icon name="user" size={13} color="#b072e6" strokeWidth={1.8} />
-              <span style={{ fontSize: "12px", fontWeight: 700, color: colors.parchment }}>Talk</span>
-            </div>
-            <div style={{ fontSize: "8px", color: "rgba(237,228,208,0.55)", marginTop: "3px" }}>intent</div>
-          </button>
         </div>
 
-        {/* Talk intents */}
-        {talkOpen && isPlayerPhase && (
-          <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
-            {[["surrender", "Demand Surrender"], ["demoralize", "Demoralize"], ["provoke", "Provoke"]].map(([intent, label]) => (
-              <button key={intent} onClick={() => doTalk(intent)} style={{
-                flex: 1, padding: "9px 6px", borderRadius: radius.chip, fontSize: "11px", fontWeight: 700,
-                backgroundColor: "rgba(176,114,230,0.12)", color: "#d9bdf2",
-                border: `1px solid rgba(176,114,230,0.45)`, cursor: "pointer", fontFamily: "inherit",
-              }}>{label}</button>
-            ))}
+        {/* Improvise — type what you do or say; the narrator adjudicates it.
+            Use the surroundings, demand surrender, taunt, terrify, plead, goad. */}
+        {combat.environment?.some((f) => f.uses > 0) && (
+          <div style={{ fontSize: "9px", color: "rgba(230,200,154,0.75)", marginTop: "8px", fontStyle: "italic" }}>
+            Around you: {combat.environment.filter((f) => f.uses > 0).map((f) => f.name).join(", ")}
           </div>
         )}
-
-        {/* Environment — dynamic, single-use battlefield features */}
-        {environment.some((f) => f.uses > 0) && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
-            {environment.filter((f) => f.uses > 0).map((f) => (
-              <button
-                key={f.id}
-                onClick={() => onEnvironment(f.id)}
-                disabled={!isPlayerPhase || player.stamina < 1}
-                title="Battlefield feature (1 stamina)"
-                style={{
-                  display: "flex", alignItems: "center", gap: "5px",
-                  padding: "7px 10px", borderRadius: radius.pill, fontSize: "11px", fontWeight: 700,
-                  backgroundColor: "rgba(120,90,50,0.2)", color: "#e6c89a",
-                  border: `1px dashed rgba(215,167,111,0.45)`,
-                  cursor: isPlayerPhase && player.stamina >= 1 ? "pointer" : "default",
-                  opacity: isPlayerPhase && player.stamina >= 1 ? 1 : 0.5, fontFamily: "inherit",
-                }}
-              >
-                <Icon name={f.icon || "swords"} size={12} color="#e6c89a" strokeWidth={1.8} />
-                {f.name}{f.uses > 1 ? ` (${f.uses})` : ""}
-              </button>
-            ))}
-          </div>
-        )}
+        <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+          <input
+            type="text" value={actionText}
+            onChange={(e) => setActionText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitAction(); } }}
+            placeholder={busy ? "The moment unfolds…" : isPlayerPhase ? "Improvise — do or say something…" : "Not your turn"}
+            disabled={!isPlayerPhase || busy}
+            style={{
+              flex: 1, height: "40px", borderRadius: radius.control,
+              border: `1px solid rgba(176,114,230,0.4)`, backgroundColor: "rgba(10,15,15,0.65)",
+              padding: "0 14px", fontSize: "13px", color: colors.parchment, outline: "none",
+              opacity: isPlayerPhase && !busy ? 1 : 0.5, fontFamily: "inherit",
+            }}
+          />
+          <button onClick={submitAction} disabled={!isPlayerPhase || busy || !actionText.trim()} title="Improvise (uses your turn)" style={{
+            width: "44px", height: "40px", borderRadius: radius.control, border: "none",
+            backgroundColor: (!isPlayerPhase || busy || !actionText.trim()) ? "rgba(176,114,230,0.15)" : "#b072e6",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: (!isPlayerPhase || busy || !actionText.trim()) ? "default" : "pointer", flexShrink: 0,
+          }}>
+            <Icon name="send" size={16} color={(!isPlayerPhase || busy || !actionText.trim()) ? "rgba(176,114,230,0.4)" : colors.ink} strokeWidth={2.2} />
+          </button>
+        </div>
 
         {/* Draw weapon — only in a bare-knuckle brawl, when you have steel to draw. */}
         {!combat.lethal && player.stowedWeapon && player.stowedWeapon.category !== "unarmed" && (
