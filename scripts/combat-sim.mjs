@@ -6,12 +6,13 @@
 //
 // Pure Node — no React in the import chain.
 
-import { initCombat, playerAct, endTurn, abilityUsable } from "../src/engine/combat.js";
+import { initCombat, playerAct, endTurn, abilityUsable, rollLoot } from "../src/engine/combat.js";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 import { generateEnemyGroup, allyFromCompanion } from "../src/data/bestiary.js";
 import { COMPANIONS } from "../src/data/companions.js";
-import { aggregateCombatPassives, applyFusion, FUSIONS, PASSIVE_CAPS } from "../src/data/passives.js";
+import { aggregateCombatPassives, applyFusion, FUSIONS, PASSIVE_CAPS, RUNES } from "../src/data/passives.js";
+import { fusionOptionsForRune, applyFusionToItem } from "../src/engine/fusion.js";
 
 const RUNS = Number(process.argv[2] || 2000);
 
@@ -205,6 +206,29 @@ console.log("\nToW SYSTEMS — fusion + caps");
   const after = applyFusion(before, recipe);
   const ok = after.some((p) => p.id === "rupture") && !after.some((p) => p.id === recipe.a) && !after.some((p) => p.id === recipe.b);
   console.log(`  fusion ${recipe.a}+${recipe.b} → rupture: ${ok ? "OK" : "FAILED"} (${after.map((p) => p.id).join(", ")})`);
+}
+{
+  // Rune-triggered ritual: a state holding the rune + gear with both components.
+  const recipe = FUSIONS.find((f) => f.result === "rupture");
+  const state = {
+    character: { inventory: { carried: [{ itemId: recipe.rune, quantity: 1 }] } },
+    world: { codex: { items: { sword1: { id: "sword1", name: "Old Sword", kind: "weapon", tier: "epic", passives: [{ id: recipe.a, tier: "epic" }, { id: recipe.b, tier: "rare" }] } } } },
+  };
+  const opts = fusionOptionsForRune(state, recipe.rune);
+  const r = opts.length ? applyFusionToItem(state, opts[0].itemId, opts[0].recipe.id) : { ok: false };
+  const fused = r.ok && r.state.world.codex.items.sword1.passives.some((p) => p.id === "rupture");
+  const runeGone = r.ok && !(r.state.character.inventory.carried.find((c) => c.itemId === recipe.rune));
+  console.log(`  ritual (bind rune → fuse, consume rune): ${opts.length === 1 && fused && runeGone ? "OK" : "FAILED"}`);
+}
+{
+  // Rare rune drops from mighty foes (deep region, epic+ ceiling).
+  let drops = 0;
+  for (let i = 0; i < 4000; i++) {
+    const loot = rollLoot([{ kind: "ogre", tier: "epic", maxLootTier: "legendary" }], { maxLootTier: "legendary", region: 5 });
+    if (loot.items.some((it) => RUNES[it.itemId])) drops++;
+  }
+  const pct = (drops / 4000) * 100;
+  console.log(`  rune drop @ region5/epic foe: ${pct.toFixed(1)}% (expect ~5%) — ${pct > 1 && pct < 12 ? "OK" : "CHECK"}`);
 }
 {
   // Stack five extra-action affixes; the cap must hold at +3 (→ 4 actions total).

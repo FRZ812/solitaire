@@ -14,7 +14,7 @@ const STRIKES = 3;
 // then play the anvil minigame — three timed strikes whose accuracy sets the
 // piece's grade (and so its tier, capped by your rank). Locked schematics need
 // a higher apprenticeship rank, bought with coin + time at the counter.
-export function ForgeView({ state, building, schematics, rank, fusions = [], onApprentice, onForge, onFuse, onBack, onClose, loading }) {
+export function ForgeView({ state, building, schematics, rank, onApprentice, onForge, onBack, onClose, loading }) {
   const [forging, setForging] = useState(null); // active schematic in the minigame
   const [result, setResult] = useState(null);   // { item, tier, quality } after a forge
 
@@ -103,17 +103,6 @@ export function ForgeView({ state, building, schematics, rank, fusions = [], onA
           </div>
         )}
 
-        {/* Fusion — combine two affixes on a piece into one signature power. */}
-        {fusions.length > 0 && (
-          <>
-            <SectionHeader>Rune Fusion</SectionHeader>
-            {fusions.map((f, i) => (
-              <FusionRow key={`${f.itemId}-${f.recipe.id}-${i}`} fusion={f} onFuse={onFuse} loading={loading} />
-            ))}
-            <div style={{ height: "6px" }} />
-          </>
-        )}
-
         {/* Schematics */}
         <SectionHeader>Schematics</SectionHeader>
         {schematics.map((sch) => {
@@ -142,36 +131,6 @@ export function ForgeView({ state, building, schematics, rank, fusions = [], onA
           onCancel={() => setForging(null)}
         />
       )}
-    </div>
-  );
-}
-
-function FusionRow({ fusion, onFuse, loading }) {
-  const { itemName, recipe, resultName, runeName, aName, bName, hasRune } = fusion;
-  return (
-    <div style={{
-      padding: "11px 13px", marginBottom: "8px", borderRadius: radius.panelCompact,
-      backgroundColor: "rgba(40, 24, 40, 0.5)", border: "1px solid rgba(168, 111, 208, 0.28)",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "15px", color: colors.parchmentLight }}>
-            {itemName}
-          </div>
-          <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.7)", marginTop: "2px" }}>
-            {aName} + {bName} → <span style={{ color: "#c79be0", fontWeight: 700 }}>{resultName}</span>
-          </div>
-          <div style={{ ...metaStyle, fontSize: "8px", color: hasRune ? "#c79be0" : "#fca5a5", marginTop: "3px" }}>
-            needs {runeName}{hasRune ? "" : " — not in pack"}
-          </div>
-        </div>
-        <button onClick={hasRune && !loading ? () => onFuse(fusion.itemId, recipe.id) : undefined} disabled={!hasRune || loading} style={{
-          padding: "7px 16px", borderRadius: radius.pill, border: "none",
-          backgroundColor: hasRune && !loading ? "#a86fd0" : "rgba(168,111,208,0.12)",
-          color: hasRune && !loading ? "#1a1018" : "rgba(199,155,224,0.4)",
-          fontSize: "12px", fontWeight: 800, cursor: hasRune && !loading ? "pointer" : "not-allowed", fontFamily: "inherit", flexShrink: 0,
-        }}>Fuse</button>
-      </div>
     </div>
   );
 }
