@@ -11,13 +11,15 @@ import { ATTR_KEYS } from "../config.js";
 
 export const PROFICIENCIES = [
   // Weapon masteries (one per category) — feed Reflex (finesse) or Body (force).
-  { id: "mastery-sword",   name: "Swordsmanship",  attr: "reflex", domain: "weapon", category: "sword" },
-  { id: "mastery-dagger",  name: "Knife-Fighting", attr: "reflex", domain: "weapon", category: "dagger" },
-  { id: "mastery-bow",     name: "Archery",        attr: "reflex", domain: "weapon", category: "bow" },
-  { id: "mastery-axe",     name: "Axe-Craft",      attr: "body",   domain: "weapon", category: "axe" },
-  { id: "mastery-mace",    name: "Bludgeon",       attr: "body",   domain: "weapon", category: "mace" },
-  { id: "mastery-spear",   name: "Spearcraft",     attr: "body",   domain: "weapon", category: "spear" },
-  { id: "mastery-unarmed", name: "Brawling",       attr: "body",   domain: "weapon", category: "unarmed" },
+  { id: "mastery-sword",    name: "Swordsmanship",  attr: "reflex", domain: "weapon", category: "sword" },
+  { id: "mastery-dagger",   name: "Knife-Fighting", attr: "reflex", domain: "weapon", category: "dagger" },
+  { id: "mastery-bow",      name: "Archery",        attr: "reflex", domain: "weapon", category: "bow" },
+  { id: "mastery-crossbow", name: "Marksmanship",   attr: "reflex", domain: "weapon", category: "crossbow" },
+  { id: "mastery-axe",      name: "Axe-Craft",      attr: "body",   domain: "weapon", category: "axe" },
+  { id: "mastery-mace",     name: "Bludgeon",       attr: "body",   domain: "weapon", category: "mace" },
+  { id: "mastery-spear",    name: "Spearcraft",     attr: "body",   domain: "weapon", category: "spear" },
+  { id: "mastery-arcane",   name: "Arcana",         attr: "mind",   domain: "weapon", category: "arcane" },
+  { id: "mastery-unarmed",  name: "Brawling",       attr: "body",   domain: "weapon", category: "unarmed" },
   { id: "ambush",          name: "Ambush",         attr: "reflex", domain: "ambush" },
   { id: "evasion",         name: "Evasion",        attr: "reflex", domain: "evasion" },
   { id: "awareness",       name: "Awareness",      attr: "wit",    domain: "awareness" },

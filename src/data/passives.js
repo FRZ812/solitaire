@@ -62,14 +62,14 @@ export const PASSIVES = [
   { id: "renewing",   name: "Renewing",     cat: "sustain", scope: "combat", type: "trigger", key: "turnRegen", minTier: "epic",     amount: (n) => 1 + Math.floor(n / 2), desc: "Knits a few wounds each turn." },
   { id: "thorned",    name: "Thornmail",    cat: "sustain", scope: "combat", type: "trigger", key: "thorns",    minTier: "rare",      amount: (n) => 6 + n * 3,            desc: "Reflects a share of damage taken." },
 
-  // ---------- RESOURCE (stamina / resolve) ----------
-  { id: "tireless",   name: "Tireless",     cat: "resource", scope: "combat", type: "stat", key: "maxStamina", minTier: "uncommon",  amount: (n) => 1 + Math.floor(n / 2), desc: "Increases max stamina." },
-  { id: "swift",      name: "Swift",        cat: "resource", scope: "combat", type: "trigger", key: "staminaRegen", minTier: "uncommon", amount: (n) => 1 + Math.floor(n / 2), desc: "Recovers extra stamina each turn." },
+  // ---------- RESOURCE / TEMPO (resolve, initiative, action economy) ----------
+  { id: "tireless",   name: "Fleet-Footed", cat: "tempo", scope: "combat", type: "stat", key: "speed",       minTier: "uncommon",  amount: (n) => 1 + Math.floor(n / 2), desc: "Acts sooner — raises initiative." },
+  { id: "swift",      name: "Swift",        cat: "tempo", scope: "combat", type: "stat", key: "swiftChance", minTier: "uncommon",  amount: (n) => 0.05 + n * 0.02,      desc: "Chance each turn to act again." },
   { id: "clearmind",  name: "Clear Mind",   cat: "resource", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "epic",  amount: (n) => 1,                    desc: "Recovers resolve each turn (sustains casting)." },
 
   // ---------- LEGENDARY+ POWERS — build-defining ----------
   { id: "colossus",   name: "Colossus",     cat: "power", scope: "combat", type: "stat", key: "maxHealth",     minTier: "legendary", amount: (n) => 12 + n * 4,           desc: "Vastly increases maximum health." },
-  { id: "echo",       name: "Echo",         cat: "power", scope: "combat", type: "trigger", key: "burst",      minTier: "legendary", amount: (n) => 1 + Math.max(0, n - 5), desc: "Begin each turn with extra stamina." },
+  { id: "echo",       name: "Echo",         cat: "tempo", scope: "combat", type: "stat", key: "extraActions", minTier: "legendary", amount: () => 1, desc: "Begin each turn with an extra action." },
   { id: "sunder",     name: "Sundering",    cat: "power", scope: "combat", type: "stat", key: "penetration",   minTier: "legendary", amount: (n) => 4 + n * 2,            desc: "Cleaves through most armour." },
   { id: "bloodthirst",name: "Bloodthirst",  cat: "power", scope: "combat", type: "trigger", key: "lifesteal",  minTier: "legendary", amount: (n) => 6 + n,                desc: "Heals for a large share of damage dealt (capped)." },
 
@@ -77,10 +77,16 @@ export const PASSIVES = [
   { id: "undying",    name: "Undying",      cat: "divine", scope: "combat", type: "trigger", key: "reviveOnce", minTier: "divine",   amount: (n) => 0.5,                  desc: "Once per fight, cheat death at half health." },
   { id: "worldbreaker",name: "Worldbreaker",cat: "divine", scope: "combat", type: "stat", key: "damageMult",   minTier: "divine",    amount: (n) => 0.45,                 desc: "Devastatingly increases all damage." },
   { id: "godward",    name: "Godward",      cat: "divine", scope: "combat", type: "stat", key: "drPct",        minTier: "divine",    amount: (n) => 0.18,                 desc: "Shrugs off a fifth of all damage." },
+  // Playstyle-anchor divine affixes — each makes a divine piece serve one build.
+  { id: "tempest",    name: "Tempest",      cat: "divine", scope: "combat", type: "stat", key: "swiftChance",  minTier: "divine",    amount: (n) => 0.25,                 desc: "A blur of motion — great chance to act again." },
+  { id: "deadeye",    name: "Deadeye",      cat: "divine", scope: "combat", type: "stat", key: "critChance",   minTier: "divine",    amount: (n) => 22,                   desc: "Every shot finds the eye — vast critical chance." },
+  { id: "archmage",   name: "Archmage",     cat: "divine", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "divine",  amount: (n) => 3,                    desc: "Bottomless will — restores great resolve each turn." },
+  { id: "phantom",    name: "Phantom",      cat: "divine", scope: "combat", type: "stat", key: "dodge",        minTier: "divine",    amount: (n) => 28,                   desc: "Half-real — devastating evasion." },
+  { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: (n) => 40,                   desc: "A mountain of vitality." },
 
   // ---------- TEMPO (action economy) — the swift build, capped at +3 ----------
   // extraActions grants generic ACTION POINTS the bearer spends on anything; with
-  // enough stamina a swift build acts several times a turn (ToW Wandering Blade).
+  // enough action points a swift build acts several times a turn (ToW Wandering Blade).
   { id: "quickened",  name: "Quickened",    cat: "tempo", scope: "combat", type: "stat",    key: "extraActions",      minTier: "epic",      amount: () => 1,                     desc: "Grants an extra action each turn." },
   { id: "nimble",     name: "Nimble",       cat: "tempo", scope: "combat", type: "stat",    key: "extraActions",      minTier: "legendary", amount: (n) => 1 + (n >= 7 ? 1 : 0), desc: "Grants extra actions each turn (two at divine grade)." },
   { id: "efficient",  name: "Efficient",    cat: "tempo", scope: "combat", type: "stat",    key: "cooldownReduction", minTier: "epic",      amount: () => 1,                     desc: "Ability cooldowns recover faster." },
@@ -93,7 +99,7 @@ export const PASSIVES = [
   { id: "incendiary", name: "Incendiary",   cat: "offence", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "burn", duration: 2 }, chance: 0.4, minTier: "rare", amount: (n) => 2 + n, desc: "Chance on hit to set ablaze (burn)." },
   { id: "executioner",name: "Executioner",  cat: "offence", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "execute" }, cond: "targetLow", chance: 1, minTier: "epic", amount: (n) => 3 + n * 2, desc: "Deals bonus damage to badly wounded foes." },
   { id: "rampage",    name: "Rampage",      cat: "offence", scope: "combat", type: "proc",  hook: "turnRamp", apply: { kind: "buff", status: "rally", duration: 2 }, chance: 1, minTier: "epic", amount: (n) => 3 + n, desc: "Builds momentum (rally) each turn." },
-  { id: "bloodhunt",  name: "Bloodhunt",    cat: "power", scope: "combat", type: "proc",    hook: "onKill", apply: { kind: "refund", stamina: true, action: true }, chance: 1, minTier: "legendary", amount: (n) => 2 + Math.floor(n / 2), desc: "Killing a foe refunds stamina and an action." },
+  { id: "bloodhunt",  name: "Bloodhunt",    cat: "power", scope: "combat", type: "proc",    hook: "onKill", apply: { kind: "refund", resolve: true, action: true }, chance: 1, minTier: "legendary", amount: (n) => 2 + Math.floor(n / 2), desc: "Killing a foe refunds resolve and an action." },
 
   // ---------- CONTROL (proc) — chill, curse, stun ----------
   { id: "frostbrand", name: "Frostbrand",   cat: "control", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "chill", duration: 2 }, chance: 0.4, minTier: "rare", amount: (n) => 2 + n, desc: "Chance on hit to chill (saps accuracy)." },
@@ -113,7 +119,12 @@ export const PASSIVES = [
   { id: "stormrend",  name: "Stormrend",    cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onCrit", apply: { kind: "status", status: "stun", duration: 1 }, chance: 1, minTier: "epic", amount: () => 1, desc: "FUSION: every critical hit stuns." },
   { id: "soulflame",  name: "Soulflame",    cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onHit", apply: { kind: "status", status: "burn", duration: 3 }, chance: 1, minTier: "epic", amount: (n) => 3 + n * 2, desc: "FUSION: cursed flame — every hit burns and the burn bites deep." },
   { id: "phalanx",    name: "Phalanx",      cat: "fusion", scope: "combat", type: "trigger", noRoll: true, key: "shieldGen", minTier: "epic", amount: (n) => 6 + n * 2, desc: "FUSION: an ever-renewing bulwark of overlapping shields." },
-  { id: "revenant",   name: "Revenant",     cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onKill", apply: { kind: "refund", stamina: true, action: true, heal: true }, chance: 1, minTier: "legendary", amount: (n) => 3 + n, desc: "FUSION: every kill restores stamina, an action, and health." },
+  { id: "revenant",   name: "Revenant",     cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onKill", apply: { kind: "refund", resolve: true, action: true, heal: true }, chance: 1, minTier: "legendary", amount: (n) => 3 + n, desc: "FUSION: every kill restores resolve, an action, and health." },
+  { id: "volley",     name: "Volley",       cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onHit", apply: { kind: "bonusHit" }, chance: 0.5, minTier: "epic", amount: (n) => 5 + n, desc: "FUSION (ranged): a second shaft looses with every shot." },
+  { id: "overload",   name: "Overload",     cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onHit", apply: { kind: "status", status: "burn", duration: 3 }, chance: 1, minTier: "epic", amount: (n) => 3 + n * 2, desc: "FUSION (caster): spellfire — every hit ignites and the burn bites deep." },
+  { id: "blitz",      name: "Blitz",        cat: "fusion", scope: "combat", type: "stat", key: "swiftChance", noRoll: true, minTier: "legendary", amount: (n) => 0.3, desc: "FUSION (tempo): relentless speed — high chance to act again." },
+  { id: "umbra",      name: "Umbra",        cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onDodge", apply: { kind: "buff", status: "dodgeStack", duration: 3 }, chance: 1, minTier: "epic", amount: (n) => 6 + n, desc: "FUSION (evasion): each dodge makes the next surer — snowballing into the unhittable." },
+  { id: "ascendant",  name: "Ascendant",    cat: "fusion", scope: "combat", type: "stat", key: "damageMult", noRoll: true, minTier: "divine", amount: (n) => 0.6, desc: "FUSION (divine apex): ascend — overwhelming, world-ending force." },
 
   // ---------- WORLD (exploration) ----------
   { id: "fleet",      name: "Fleet",        cat: "world", scope: "world", type: "world", key: "travelMult",    minTier: "uncommon",  amount: (n) => 0.06 + n * 0.03,      desc: "Travel takes less time." },
@@ -139,7 +150,7 @@ export function passiveLabel(id, tierId) {
   const v = def.amount(o(tierId));
   if (def.type === "proc") return def.name; // proc magnitude is contextual — name carries it
   if (def.key === "reviveOnce") return def.name;
-  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify"]; // stored 0..1
+  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance"]; // stored 0..1
   const pctKeys = ["lifesteal", "thorns", "coinBonus"];                                 // stored as whole %
   if (fracKeys.includes(def.key)) return `${def.name} ${Math.round(v * 100)}%`;
   if (pctKeys.includes(def.key)) return `${def.name} ${Math.round(v)}%`;
@@ -180,8 +191,8 @@ export function rollItemPassives(itemTierId, { luck = 0, scopeFilter = null } = 
 // Combine a list of ENABLED {id,tier} passives into combat effects, applying the
 // snowball caps so no amount of stacking can run away.
 export function aggregateCombatPassives(list) {
-  const statMods = {};   // armor/ward/dodge/accuracy/penetration/critChance/critMult/maxStamina/damageFlat/damageMult/maxHealth/drPct/extraActions/cooldownReduction/fortify
-  const triggers = {};   // lifesteal/thorns/staminaRegen/resolveRegen/turnRegen/burst/reviveOnce/shieldGen/magicShieldGen/invulnCharges
+  const statMods = {};   // armor/ward/dodge/accuracy/penetration/critChance/critMult/speed/swiftChance/damageFlat/damageMult/maxHealth/drPct/extraActions/cooldownReduction/fortify
+  const triggers = {};   // lifesteal/thorns/resolveRegen/turnRegen/reviveOnce/shieldGen/magicShieldGen/invulnCharges
   const procs = [];      // {hook, kind, status?, duration?, value, chance, cond?, threshold?, name} — fired by the engine
   for (const { id, tier } of (list || [])) {
     const def = BY_ID[id];
@@ -219,6 +230,11 @@ export const RUNES = {
   "rune-of-flame":   { id: "rune-of-flame",   name: "Rune of Flame",   kind: "material", value: 400, appearance: "An ember-cored rune that never quite cools.", description: "A forge-rune. Fuses two affixes into a signature power." },
   "rune-of-aegis":   { id: "rune-of-aegis",   name: "Rune of Aegis",   kind: "material", value: 400, appearance: "A pale shield-graven stone, cold and steady.", description: "A forge-rune. Fuses two affixes into a signature power." },
   "rune-of-souls":   { id: "rune-of-souls",   name: "Rune of Souls",   kind: "material", value: 600, appearance: "A black rune that drinks the light around it.", description: "A forge-rune. Fuses two affixes into a signature power." },
+  "rune-of-the-hunt":{ id: "rune-of-the-hunt",name: "Rune of the Hunt",kind: "material", value: 450, appearance: "A green-grey stone cut with a running hart.", description: "A forge-rune. Fuses two affixes into a signature power." },
+  "rune-of-the-mind":{ id: "rune-of-the-mind",name: "Rune of the Mind",kind: "material", value: 450, appearance: "A violet crystal that hums against thought.", description: "A forge-rune. Fuses two affixes into a signature power." },
+  "rune-of-haste":   { id: "rune-of-haste",   name: "Rune of Haste",   kind: "material", value: 500, appearance: "A quicksilver sigil that will not hold still.", description: "A forge-rune. Fuses two affixes into a signature power." },
+  "rune-of-shadows": { id: "rune-of-shadows", name: "Rune of Shadows", kind: "material", value: 500, appearance: "A rune the eye keeps sliding off.", description: "A forge-rune. Fuses two affixes into a signature power." },
+  "greater-rune-of-ascension": { id: "greater-rune-of-ascension", name: "Greater Rune of Ascension", kind: "material", value: 2000, appearance: "A rune of white fire that aches to look upon.", description: "A god-forged rune. Fuses two DIVINE powers into one apex force." },
 };
 
 export const FUSIONS = [
@@ -227,6 +243,11 @@ export const FUSIONS = [
   { id: "fuse-soulflame",a: "incendiary", b: "cursed",     rune: "rune-of-flame",   result: "soulflame", minTier: "epic" },
   { id: "fuse-phalanx",  a: "barrier",    b: "bulwark",    rune: "rune-of-aegis",   result: "phalanx",   minTier: "epic" },
   { id: "fuse-revenant", a: "bloodthirst",b: "bloodhunt",  rune: "rune-of-souls",   result: "revenant",  minTier: "legendary" },
+  { id: "fuse-volley",   a: "piercing",   b: "keen-edge",  rune: "rune-of-the-hunt",result: "volley",    minTier: "epic" },
+  { id: "fuse-overload", a: "brutal",     b: "clearmind",  rune: "rune-of-the-mind",result: "overload",  minTier: "epic" },
+  { id: "fuse-blitz",    a: "swift",      b: "quickened",  rune: "rune-of-haste",   result: "blitz",     minTier: "legendary" },
+  { id: "fuse-umbra",    a: "evasion",    b: "evasive",    rune: "rune-of-shadows", result: "umbra",     minTier: "epic" },
+  { id: "fuse-ascend",   a: "worldbreaker", b: "undying",  rune: "greater-rune-of-ascension", result: "ascendant", minTier: "divine" },
 ];
 
 // Is this item id a forge-rune (the catalyst the Fusion ritual consumes)?

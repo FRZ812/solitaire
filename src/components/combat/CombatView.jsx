@@ -145,6 +145,9 @@ function EnemyCard({ enemy, selected, onSelect }) {
             <span style={{ fontSize: "8px", color: "rgba(237,228,208,0.5)" }}>
               {enemy.armor > 0 ? `AR ${enemy.armor} ` : ""}{enemy.ward > 0 ? `WD ${enemy.ward}` : ""}
             </span>
+            <span style={{ fontSize: "8px", color: (enemy.distance || 0) <= 1 ? "rgba(199,91,72,0.85)" : "rgba(127,199,224,0.85)" }} title="engagement distance">
+              {(enemy.distance || 0) <= 1 ? "engaged" : `dist ${enemy.distance}`}
+            </span>
           </div>
           {mood && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "3px" }}>
@@ -202,7 +205,7 @@ function AbilityButton({ entry, combat, onAct }) {
   const { eff, reqLabel, needWeapon } = abilityEff(combat.player, def, entry.tier);
   const penalised = eff < 1 && !needWeapon;
   const costParts = [];
-  if (def.cost > 0) costParts.push(`${def.cost} stam`);
+  if ((def.actionCost || 1) > 1) costParts.push(`${def.actionCost} AP`);
   if (def.resolveCost > 0) costParts.push(`${def.resolveCost} res`);
   if (def.cooldown) costParts.push(`cd ${def.cooldown}`);
   return (
@@ -272,7 +275,7 @@ function ResolveOverlay({ combat, onResolve }) {
   );
 }
 
-export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget, onEndTurn, onFlee, onResolve }) {
+export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget, onEndTurn, onFlee, onWithdraw, onAdvance, onResolve }) {
   const logRef = useRef(null);
   const [actionText, setActionText] = useState("");
   useEffect(() => {
@@ -369,16 +372,6 @@ export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget,
               }} />
             ))}
           </div>
-          <span style={{ ...metaStyle, fontSize: "8px", color: "rgba(237,228,208,0.55)", marginLeft: "4px" }}>Stamina</span>
-          <div style={{ display: "flex", gap: "3px" }}>
-            {Array.from({ length: player.maxStamina }).map((_, i) => (
-              <div key={i} style={{
-                width: "10px", height: "10px", borderRadius: "50%",
-                backgroundColor: i < player.stamina ? colors.gold : "rgba(215,167,111,0.15)",
-                border: `1px solid rgba(215,167,111,0.3)`,
-              }} />
-            ))}
-          </div>
           {player.resolveMax > 0 && (
             <>
               <span style={{ ...metaStyle, fontSize: "8px", color: "rgba(176,114,230,0.7)", marginLeft: "4px" }}>Resolve</span>
@@ -395,7 +388,11 @@ export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget,
           )}
         </div>
         <div style={{ fontSize: "9px", color: "rgba(237,228,208,0.5)", marginBottom: "6px" }}>
-          AR {player.armor} · WD {player.ward} · DODGE {player.dodge}% · {player.weapon?.name}
+          AR {player.armor} · WD {player.ward} · DODGE {player.dodge}% · SPD {player.speed}
+          {player.weapon?.name ? ` · ${player.weapon.name}` : ""}
+          {player.weapon?.category && player.weapon.category !== "unarmed"
+            ? ` [${player.weapon.category}${(player.weapon.range || 0) > 0 ? ` · rng ${player.weapon.range}` : (player.weapon.reach || 1) > 1 ? ` · reach ${player.weapon.reach}` : ""}]`
+            : ""}
         </div>
         <StatusRow statuses={player.statuses} />
 
@@ -455,6 +452,23 @@ export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget,
             border: `1px solid rgba(239,68,68,0.4)`, fontSize: "12px", fontWeight: 800,
             cursor: isPlayerPhase ? "pointer" : "default", fontFamily: "inherit", opacity: isPlayerPhase ? 1 : 0.5,
           }}>Draw {player.stowedWeapon.name} — make it lethal</button>
+        )}
+
+        {/* Reposition — each costs an action point: charge in or kite away */}
+        {(onAdvance || onWithdraw) && (
+          <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+            {[["Advance", onAdvance], ["Withdraw", onWithdraw]].map(([label, fn]) => {
+              const canMove = isPlayerPhase && (player.actionsLeft || 0) >= 1;
+              return (
+                <button key={label} onClick={fn} disabled={!canMove} style={{
+                  flex: 1, padding: "8px", borderRadius: radius.panelCompact,
+                  backgroundColor: "rgba(127,199,224,0.1)", color: "rgba(127,199,224,0.9)",
+                  border: `1px solid rgba(127,199,224,0.3)`, fontSize: "11px", fontWeight: 700,
+                  cursor: canMove ? "pointer" : "default", fontFamily: "inherit", opacity: canMove ? 1 : 0.4,
+                }}>{label}</button>
+              );
+            })}
+          </div>
         )}
 
         {/* Turn controls */}

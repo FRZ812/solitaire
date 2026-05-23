@@ -1,10 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Icon } from "./Icon.jsx";
 import { iconButtonStyle } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { itemTemplate } from "../data/catalog.js";
+import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
+import { tier as tierInfo, tierLabel, tierOrder } from "../data/tiers.js";
+import { weaponCategory, armorClass, itemCombatStats } from "../engine/combat-stats.js";
+import { passiveLabel, isFusionRune } from "../data/passives.js";
 
 const CODEX_TABS = [
   { key: "characters",  label: "Characters" },
@@ -36,6 +40,184 @@ const serifInlineValue = {
   fontSize: "14px",
   color: colors.parchmentLight,
 };
+
+// ===========================================================================
+// ITEM CATALOG — the full gear table (EQUIPMENT + MATERIALS), grouped by content
+// type (weapon family, light/heavy armour, shields, clothing, trinkets, runes,
+// materials) and, within each, by TIER. Lets you review every added item in one
+// place, whether or not it's been discovered in play.
+// ===========================================================================
+
+const TYPE_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "weapon", label: "Weapons" },
+  { key: "armor", label: "Armour" },
+  { key: "shield", label: "Shields" },
+  { key: "clothing", label: "Clothing" },
+  { key: "trinket", label: "Trinkets" },
+  { key: "rune", label: "Runes" },
+  { key: "material", label: "Materials" },
+];
+
+const WEAPON_FAMILY_ORDER = ["dagger", "sword", "axe", "mace", "spear", "bow", "crossbow", "arcane", "unarmed"];
+const WEAPON_FAMILY_LABEL = {
+  dagger: "Daggers & Knives", sword: "Swords", axe: "Axes", mace: "Maces & Hammers",
+  spear: "Spears & Polearms", bow: "Bows", crossbow: "Crossbows", arcane: "Arcane Foci", unarmed: "Other",
+};
+
+const sortByTier = (items) =>
+  items.slice().sort((a, b) => (tierOrder(a.tier || "common") - tierOrder(b.tier || "common")) || a.name.localeCompare(b.name));
+
+const CATALOG_ITEM_COUNT = Object.keys({ ...EQUIPMENT, ...MATERIALS }).length;
+
+function buildCatalogSections() {
+  const all = Object.values({ ...EQUIPMENT, ...MATERIALS });
+  const sections = [];
+  for (const fam of WEAPON_FAMILY_ORDER) {
+    const items = all.filter((it) => it.kind === "weapon" && weaponCategory(it) === fam);
+    if (items.length) sections.push({ group: "weapon", key: `weapon-${fam}`, label: `Weapons · ${WEAPON_FAMILY_LABEL[fam]}`, items: sortByTier(items) });
+  }
+  for (const band of ["light", "heavy"]) {
+    const items = all.filter((it) => it.kind === "armor" && (armorClass(it) || "light") === band);
+    if (items.length) sections.push({ group: "armor", key: `armor-${band}`, label: `Armour · ${band === "light" ? "Light" : "Heavy"}`, items: sortByTier(items) });
+  }
+  for (const [kind, label] of [["shield", "Shields"], ["clothing", "Clothing"], ["trinket", "Trinkets"]]) {
+    const items = all.filter((it) => it.kind === kind);
+    if (items.length) sections.push({ group: kind, key: kind, label, items: sortByTier(items) });
+  }
+  const runes = all.filter((it) => it.kind === "material" && isFusionRune(it.id));
+  if (runes.length) sections.push({ group: "rune", key: "rune", label: "Runes · Fusion", items: sortByTier(runes) });
+  const mats = all.filter((it) => it.kind === "material" && !isFusionRune(it.id));
+  if (mats.length) sections.push({ group: "material", key: "material", label: "Materials", items: sortByTier(mats) });
+  return sections;
+}
+
+// One-line stat summary for a catalog item, drawn from the same inference the
+// combat engine uses (tier-scaled), so the table reads as the item really plays.
+function catalogStatLine(item) {
+  const cs = itemCombatStats(item);
+  if (cs.damage) {
+    const d = cs.damage;
+    const reach = (d.range || 0) > 0 ? `rng ${d.range}` : `reach ${d.reach || 1}`;
+    const spd = `spd ${(d.speed || 0) >= 0 ? "+" : ""}${d.speed || 0}`;
+    return `dmg ${d.min}–${d.max} · pen ${d.pen || 0} · ${reach} · ${spd} · ${d.type}`;
+  }
+  if (item.kind === "armor") {
+    const cls = armorClass(item);
+    return [`AR ${cs.armor}`, cls ? cls : null, cs.ward ? `WD ${cs.ward}` : null].filter(Boolean).join(" · ");
+  }
+  if (item.kind === "shield") return `AR ${cs.armor} (offhand)`;
+  if (item.kind === "clothing") return [cs.armor ? `AR ${cs.armor}` : null, cs.ward ? `WD ${cs.ward}` : null, cs.dodge ? `dodge ${cs.dodge}` : null].filter(Boolean).join(" · ") || "worn";
+  if (item.kind === "trinket") return [cs.ward ? `WD ${cs.ward}` : null, cs.dodge ? `dodge ${cs.dodge}` : null].filter(Boolean).join(" · ") || "trinket";
+  if (item.kind === "material") return `${item.value || 0}cp`;
+  return null;
+}
+
+function TierChip({ tierId }) {
+  const t = tierInfo(tierId || "common");
+  return (
+    <span style={{ fontSize: "8px", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", padding: "1px 6px", borderRadius: "6px", color: t.color, border: `1px solid ${t.color}55`, backgroundColor: `${t.color}14`, flexShrink: 0 }}>
+      {t.label}
+    </span>
+  );
+}
+
+function CatalogRow({ item, seen }) {
+  const t = tierInfo(item.tier || "common");
+  const stat = catalogStatLine(item);
+  const passives = item.passives || [];
+  return (
+    <div style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid ${t.color}33`, display: "flex", flexDirection: "column", gap: "3px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "space-between" }}>
+        <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color: t.color }}>{item.name}</span>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center", flexShrink: 0 }}>
+          {seen && <span title="Discovered in play" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: colors.gold }} />}
+          <TierChip tierId={item.tier} />
+        </div>
+      </div>
+      {stat && <div style={{ fontSize: "9px", color: "rgba(237,228,208,0.6)", letterSpacing: "0.03em" }}>{stat}</div>}
+      {passives.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+          {passives.map((p, i) => (
+            <span key={i} style={{ fontSize: "8px", padding: "1px 5px", borderRadius: "5px", backgroundColor: "rgba(176,114,230,0.12)", color: "rgba(214,188,250,0.95)", border: "1px solid rgba(176,114,230,0.3)" }}>
+              {passiveLabel(p.id, p.tier) || p.id}
+            </span>
+          ))}
+        </div>
+      )}
+      {item.description && <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.5)", lineHeight: 1.4 }}>{item.description}</div>}
+    </div>
+  );
+}
+
+function ItemCatalog({ codex }) {
+  const [type, setType] = useState("all");
+  const [discoveredOnly, setDiscoveredOnly] = useState(false);
+  const seen = useMemo(() => new Set(Object.keys(codex.items || {})), [codex.items]);
+  const sections = useMemo(() => buildCatalogSections(), []);
+
+  const visible = sections
+    .filter((s) => type === "all" || s.group === type)
+    .map((s) => ({ ...s, items: discoveredOnly ? s.items.filter((it) => seen.has(it.id)) : s.items }))
+    .filter((s) => s.items.length);
+  const total = visible.reduce((n, s) => n + s.items.length, 0);
+
+  return (
+    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      {/* content-type filter + discovered toggle */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+        {TYPE_FILTERS.map((f) => {
+          const active = f.key === type;
+          return (
+            <button key={f.key} onClick={() => setType(f.key)} style={{
+              padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
+              borderColor: active ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
+              backgroundColor: active ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
+              color: active ? colors.parchmentLight : "rgba(215,167,111,0.55)",
+              fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+            }}>{f.label}</button>
+          );
+        })}
+        <button onClick={() => setDiscoveredOnly((v) => !v)} title="Show only items discovered in play" style={{
+          marginLeft: "auto", padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
+          borderColor: discoveredOnly ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
+          backgroundColor: discoveredOnly ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
+          color: discoveredOnly ? colors.gold : "rgba(215,167,111,0.5)",
+          fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+        }}>{discoveredOnly ? "● Discovered" : "○ Discovered"}</button>
+      </div>
+      <div style={{ ...accentMeta, fontSize: "9px" }}>{total} item{total === 1 ? "" : "s"}{discoveredOnly ? " discovered" : " in catalog"}</div>
+
+      {total === 0 ? (
+        <div style={{ marginTop: "40px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215,167,111,0.45)", fontSize: "15px" }}>
+          Nothing to show here.
+        </div>
+      ) : visible.map((s) => (
+        <div key={s.key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
+            <div style={{ ...subtleMeta, fontSize: "10px", letterSpacing: "0.12em", color: "rgba(215,167,111,0.85)" }}>{s.label}</div>
+            <div style={{ flex: 1, height: "1px", backgroundColor: "rgba(215,167,111,0.15)" }} />
+            <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
+          </div>
+          {s.items.map((it, i) => {
+            const prev = s.items[i - 1];
+            const showTier = !prev || (prev.tier || "common") !== (it.tier || "common");
+            return (
+              <React.Fragment key={it.id}>
+                {showTier && (
+                  <div style={{ ...accentMeta, fontSize: "8px", letterSpacing: "0.14em", color: tierInfo(it.tier || "common").color, marginTop: i ? "4px" : 0, opacity: 0.8 }}>
+                    {tierLabel(it.tier || "common")}
+                  </div>
+                )}
+                <CatalogRow item={it} seen={seen.has(it.id)} />
+              </React.Fragment>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function CodexEntry({ entry, kind, codex }) {
   const wornNames = (kind === "characters" && entry.worn?.length)
@@ -217,7 +399,7 @@ export function CodexView({ state, onClose }) {
 
       <div className="tabstrip" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
         {CODEX_TABS.map((tab) => {
-          const count = Object.keys(codex[tab.key] || {}).length;
+          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
           return (
             <button
@@ -242,7 +424,9 @@ export function CodexView({ state, onClose }) {
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px calc(env(safe-area-inset-bottom, 0px) + 24px) 14px", background: "linear-gradient(180deg, #111716 0%, #0b0f0e 100%)" }}>
-        {entries.length === 0 ? (
+        {activeTab === "items" ? (
+          <ItemCatalog codex={codex} />
+        ) : entries.length === 0 ? (
           <div style={{ marginTop: "80px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215, 167, 111, 0.45)", fontSize: "16px", lineHeight: "1.6", padding: "0 24px" }}>
             Nothing recorded here yet.<br />
             <span style={{ fontSize: "13px", color: "rgba(215, 167, 111, 0.3)" }}>Discover lore by wandering the realm.</span>

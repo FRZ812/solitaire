@@ -64,7 +64,7 @@ export function pickTarget(actor, opponents, bestHit) {
 }
 
 // candidates: [{ id, tier, def }] already filtered to USABLE by the caller
-// (cooldowns; plus stamina/resolve/weaponReq for the player). Returns a chosen
+// (cooldowns; plus resolve/weaponReq for the player). Returns a chosen
 // action: { ability:{id,tier}, def, mode:"self"|"aoe"|"single", target }.
 export function chooseAction(actor, opponents, candidates, opts = {}) {
   const living = opponents.filter((o) => o.health > 0 && !o.resolved && !o._dead);
