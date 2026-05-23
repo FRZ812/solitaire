@@ -1575,8 +1575,16 @@ function buildCombatRecap(cs, context) {
     cs.phase === "defeat" ? "you were beaten down and went under" :
     cs.phase === "resolved" ? "it ended without a slaughter" :
     cs.phase === "playerFled" ? "you broke off and fled" : "it ended";
+  // Fate is the foe's ACTUAL resolution, not raw HP — a foe that yielded, fled,
+  // or was knocked out is ALIVE even at 0-ish health, and must never be narrated
+  // (or have a companion narrated) as killed.
   const foes = cs.enemies.map((e) => {
-    const st = e.health <= 0 ? "slain" : e.resolved === "yielded" ? "yielded" : e.resolved === "fled" ? "fled" : `still standing (${Math.ceil(e.health)}/${e.maxHealth})`;
+    const st = e._dead ? "slain"
+      : e.resolved === "yielded" ? "YIELDED — alive, disarmed, at your mercy (do NOT kill it unless the player chooses to)"
+      : e.resolved === "fled" ? "FLED — escaped alive, off the field"
+      : e.resolved === "ko" ? "knocked out — alive, unconscious"
+      : e.health <= 0 ? "down, gravely wounded but not dead"
+      : `still standing (${Math.ceil(e.health)}/${e.maxHealth})`;
     return `${e.name} [${e.tier}, ${e.demeanor}] — ${st}`;
   }).join("; ");
   const account = cs.log
@@ -1592,5 +1600,5 @@ function buildCombatRecap(cs, context) {
   const allyNote = allies.length
     ? ` Fighting at your side: ${allies.map((a) => `${a.name} (${a._dead ? "slain" : a.resolved === "ko" ? "knocked out" : a.health < a.maxHealth ? `wounded, ${Math.ceil(a.health)}/${a.maxHealth}` : "unhurt"})`).join("; ")}.`
     : "";
-  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. You fought exactly ${n} foe${n === 1 ? "" : "s"} (this is the full roster — narrate only these, by these fates): ${foes}.${allyNote} You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}.${magicNote}`.slice(0, 1800);
+  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. You fought exactly ${n} foe${n === 1 ? "" : "s"} (this is the full roster — narrate only these, by these EXACT fates): ${foes}.${allyNote} Honour each fate precisely: do NOT kill a foe that yielded, fled, or was knocked out, do not have a companion finish one off, and do not raise, revive, or invent foes. Only foes marked "slain" died. You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}.${magicNote}`.slice(0, 1800);
 }
