@@ -25,45 +25,105 @@ export function attrDescriptor(key, value) {
   return label;
 }
 
-// TIERED stat-threshold passives: each attribute, at a breakpoint, grants a
-// single tier-graded boon — and a STRONGER one than a gear passive of the same
-// grade, because reaching a high attribute is a brutal grind that should pay a
-// hero's dividend. The grind ladder:
-//   5 → rare · 10 → very-rare · 15 → epic · 20 → legendary · 25 → mythic · 30 → divine
-// You get the boon for your HIGHEST threshold per attribute (not a sum). Applied
-// to NPCs too, so a high-attribute foe (a boss) is innately mighty.
-const THRESHOLD_TIER = [[30, 7], [25, 6], [20, 5], [15, 4], [10, 3], [5, 2]]; // [attr value, tier order]
-// Tier power multipliers by order (common→divine), mirroring data/tiers.js.
-const TIER_MULT = [1, 1.35, 1.8, 2.4, 3.2, 5.2, 7.6, 12];
-const tierOrderFor = (v) => { for (const [val, ord] of THRESHOLD_TIER) if ((v || 0) >= val) return ord; return 0; };
-const geo = (base, o) => Math.round(base * TIER_MULT[o]);
+// Attributes pay off two ways:
+//
+// 1) SMOOTH stat scaling — a back-loaded (quadratic-ish) curve so low/mid stats
+//    stay modest (the punishing mob balance holds) while a maxed stat is huge:
+//    vigor 30 → +840 HP. No 5x gating; it just inflates with the attribute.
+//
+// 2) UNIQUE-EFFECT unlocks at the grind thresholds — a distinct mechanic at each
+//    of 5/10/15/20/25/30 (rare/very-rare/epic/legendary/mythic/divine), CUMULATIVE
+//    (you keep every one you've passed). These are qualitative powers (cheat death,
+//    shrug off control, cap big hits, reflect, drain, regen, extra actions,
+//    ward-shields…), not just numbers. Applied to NPCs too, so a high-attribute
+//    boss is innately mighty.
 
-// The per-attribute boon at tier order `o` (≥2). Magnitudes are deliberately
-// above an equivalent-tier gear affix (e.g. vigor-30 maxHealth 840 > Juggernaut
-// 720). `s` → statMods, `t` → triggers.
-function thresholdBoon(key, o) {
-  const s = {}, t = {};
+const addInto = (dst, src) => { for (const k in src) dst[k] = (dst[k] || 0) + src[k]; };
+
+// Smooth, always-on stat scaling per attribute — back-loaded with an OFFSET so the
+// first few points add nothing (an attribute of ≤4 contributes 0, keeping the
+// punishing low/mid baseline exactly as tuned) and it ramps hard toward a maxed 30.
+// q = max(0, v²-16); coefficient = target / (30²-16) = target / 884.
+function smoothStats(key, v) {
+  const q = Math.max(0, v * v - 16), s = {};
   switch (key) {
-    case "vigor":    s.maxHealth = geo(70, o); s.drPct = 0.03 + 0.012 * o; break;       // the hero's innate vitality + mitigation
-    case "body":     s.damageMult = 0.05 * o; s.armor = geo(2, o); s.penetration = Math.round(o * 0.9); break;
-    case "reflex":   s.dodge = geo(2, o); s.swiftChance = 0.02 * o; s.accuracy = o; break;
-    case "mind":     s.ward = geo(2, o); s.damageMult = 0.025 * o; s.cooldownReduction = o >= 6 ? 1 : 0.5; break;
-    case "wit":      s.critChance = 3 * o; s.accuracy = o; s.speed = Math.floor(o / 2); break;
-    case "presence": s.fortify = Math.min(0.2, 0.02 * o); t.resolveRegen = o >= 5 ? 2 : 1; break; // mostly narrative
+    case "vigor":    s.maxHealth = Math.round(q * 0.95); s.drPct = +(q * 0.0001).toFixed(4); break;          // 30 → +840 HP, +9% DR
+    case "body":     s.damageMult = +(q * 0.00041).toFixed(4); s.armor = Math.round(q * 0.0271); s.penetration = Math.round(q * 0.0068); break; // 30 → +36% dmg, +24 armor, +6 pen
+    case "reflex":   s.dodge = Math.round(q * 0.0339); s.accuracy = Math.round(q * 0.0136); break;            // 30 → +30 dodge, +12 acc
+    case "mind":     s.ward = Math.round(q * 0.0238); s.damageMult = +(q * 0.0002).toFixed(4); break;         // 30 → +21 ward, +18% (caster)
+    case "wit":      s.critChance = Math.round(q * 0.0407); s.accuracy = Math.round(q * 0.0136); break;       // 30 → +36 crit, +12 acc
+    case "presence": s.fortify = +Math.min(0.2, q * 0.00017).toFixed(4); break;                              // 30 → +15% fortify
   }
-  return { s, t };
+  return s;
 }
 
-// Each attribute contributes the boon of its highest threshold → { statMods,
-// triggers } folded into the combat pipeline (same keys aggregateCombatPassives uses).
+// Unique-effect unlocks at [5,10,15,20,25,30], cumulative. `s` → statMods,
+// `t` → triggers (same keys the gear-affix engine already honors).
+const UNIQUE = {
+  vigor: [
+    { t: { turnRegen: 0.02 } },       // 5  rare      — second wind: regenerate each turn
+    { s: { controlResist: 0.25 } },   // 10 very-rare — hardy: shrug off stun/slow
+    { t: { reviveOnce: 0.35 } },      // 15 epic      — stalwart: survive one fatal blow
+    { s: { damageCap: 0.40 } },       // 20 legendary — unbreakable: no hit exceeds 40% max HP
+    { t: { turnRegen: 0.03 } },       // 25 mythic    — regeneration deepens
+    { s: { controlResist: 0.35 } },   // 30 divine    — indomitable: near control-immune
+  ],
+  body: [
+    { t: { thorns: 10 } },            // 5  — your might punishes attackers
+    { t: { lifesteal: 6 } },          // 10 — rend the life from foes
+    { t: { thorns: 12 } },            // 15
+    { t: { lifesteal: 6 } },          // 20
+    { t: { thorns: 14 } },            // 25
+    { t: { lifesteal: 8 } },          // 30 — a reaver who heals on every blow
+  ],
+  reflex: [
+    { s: { swiftChance: 0.06 } },     // 5  — flurry: chance to act again
+    { s: { swiftChance: 0.06 } },     // 10
+    { s: { swiftChance: 0.08 } },     // 15
+    { s: { extraActions: 1 } },       // 20 — move between heartbeats: an extra action
+    { s: { swiftChance: 0.10 } },     // 25
+    { s: { extraActions: 1 } },       // 30 — two extra actions
+  ],
+  mind: [
+    { t: { magicShieldGen: 0.03 } },  // 5  — a self-renewing ward
+    { t: { shieldGen: 0.03 } },       // 10 — a conjured shield each turn
+    { s: { cooldownReduction: 1 } },  // 15 — quick study: tricks recover faster
+    { t: { magicShieldGen: 0.04 } },  // 20
+    { s: { cooldownReduction: 1 } },  // 25
+    { t: { shieldGen: 0.05 } },       // 30 — an ever-renewing bulwark
+  ],
+  wit: [
+    { s: { critMult: 0.10 } },        // 5  — find the openings: harder crits
+    { s: { critMult: 0.10 } },        // 10
+    { s: { critMult: 0.15 } },        // 15
+    { s: { critMult: 0.15 } },        // 20
+    { s: { critMult: 0.20 } },        // 25
+    { s: { critMult: 0.30 } },        // 30 — uncanny: devastating critical strikes
+  ],
+  presence: [
+    { t: { resolveRegen: 1 } },       // 5  — force of will fuels you
+    { s: { fortify: 0.05 } },         // 10 — composure under fire
+    { t: { resolveRegen: 1 } },       // 15
+    { s: { drPct: 0.05 } },           // 20 — sheer presence turns blows aside
+    { s: { fortify: 0.05 } },         // 25
+    { s: { drPct: 0.05 } },           // 30 — world-shaping aura
+  ],
+};
+const THRESHOLDS = [5, 10, 15, 20, 25, 30];
+
+// Smooth stats + every unique unlock the attributes have passed → { statMods,
+// triggers } folded into the combat pipeline.
 export function attributeThresholdMods(attrs = {}) {
   const statMods = {}, triggers = {};
   for (const key of ["body", "reflex", "vigor", "mind", "wit", "presence"]) {
-    const o = tierOrderFor(attrs[key] || 0);
-    if (!o) continue;
-    const { s, t } = thresholdBoon(key, o);
-    for (const k in s) statMods[k] = (statMods[k] || 0) + s[k];
-    for (const k in t) triggers[k] = (triggers[k] || 0) + t[k];
+    const v = attrs[key] || 0;
+    addInto(statMods, smoothStats(key, v));
+    const ladder = UNIQUE[key] || [];
+    THRESHOLDS.forEach((th, i) => {
+      if (v < th || !ladder[i]) return;
+      if (ladder[i].s) addInto(statMods, ladder[i].s);
+      if (ladder[i].t) addInto(triggers, ladder[i].t);
+    });
   }
   return { statMods, triggers };
 }

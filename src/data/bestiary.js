@@ -5,7 +5,7 @@
 
 import { tierMult, rollTier } from "./tiers.js";
 import { DEMEANOR_CONFIG, defaultDemeanor } from "./combat-flavor.js";
-import { itemCombatStats, weaponFamilyBase } from "../engine/combat-stats.js";
+import { itemCombatStats, weaponFamilyBase, mergeThresholdMods } from "../engine/combat-stats.js";
 import { itemTemplate } from "./catalog.js";
 import { aggregateCombatPassives } from "./passives.js";
 import { attributeThresholdMods } from "./attribute-tiers.js";
@@ -165,12 +165,9 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     ...worn.flatMap((it) => it.passives || []),
     ...(npc.innatePassives || []),
   ], a);
-  // Attribute-threshold breakpoints (symmetric with the player): a foe with high
-  // attributes — a boss — is dangerous by its very nature. Fold into sm/tr so the
-  // existing stat lines below pick the bonuses up.
-  const _th = attributeThresholdMods(a);
-  for (const k in _th.statMods) sm[k] = (sm[k] || 0) + _th.statMods[k];
-  for (const k in _th.triggers) tr[k] = (tr[k] || 0) + _th.triggers[k];
+  // Attribute thresholds (symmetric with the player): smooth stat scaling + unique
+  // unlocks — a high-attribute foe (a boss) is dangerous by its very nature.
+  mergeThresholdMods(sm, tr, attributeThresholdMods(a));
   // Weapon: a worn weapon (already tier-scaled by itemCombatStats) wins; else a
   // NATURAL weapon (fang/claw/breath) — tier-scaled HERE (m) since it's an innate
   // stat, not a pre-scaled item — so an item-less foe hits at its tier instead of

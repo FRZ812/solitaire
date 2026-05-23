@@ -17,8 +17,21 @@
 
 import { attrFactor } from "../data/abilities.js";
 import { tierMult, tier as tierInfo } from "../data/tiers.js";
-import { aggregateCombatPassives, aggregateWorldPassives } from "../data/passives.js";
+import { aggregateCombatPassives, aggregateWorldPassives, PASSIVE_CAPS } from "../data/passives.js";
 import { attributeThresholdMods } from "../data/attribute-tiers.js";
+
+// Fold attribute-threshold mods into a passive statMods/triggers bundle: most
+// stats sum, damageCap is lowest-wins, and the snowball trigger caps are re-applied
+// so threshold bonuses can't push lifesteal/thorns/regen/shields past their limits.
+const _TRIGGER_CAP_KEYS = ["lifesteal", "thorns", "turnRegen", "shieldGen", "magicShieldGen"];
+export function mergeThresholdMods(statMods, triggers, th) {
+  for (const k in th.statMods) {
+    if (k === "damageCap") statMods.damageCap = statMods.damageCap ? Math.min(statMods.damageCap, th.statMods[k]) : th.statMods[k];
+    else statMods[k] = (statMods[k] || 0) + th.statMods[k];
+  }
+  for (const k in th.triggers) triggers[k] = (triggers[k] || 0) + th.triggers[k];
+  for (const k of _TRIGGER_CAP_KEYS) if (triggers[k] != null && PASSIVE_CAPS[k] != null) triggers[k] = Math.min(triggers[k], PASSIVE_CAPS[k]);
+}
 import { effectiveAttributes, proficiencyRating, weaponMasteryId } from "../data/proficiencies.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -360,11 +373,9 @@ export function deriveCombatStats(character, codex) {
   // Req-met passives modify stats and add triggers (attrs gate threshold passives).
   const { enabled } = collectEquippedPassives(character, codex);
   const { statMods, triggers } = aggregateCombatPassives(enabled, a);
-  // Attribute-threshold breakpoints: a strong bump at each band (5/10/15/20) on
-  // top of the gentle per-point scaling, folded into the same statMods/triggers.
-  const th = attributeThresholdMods(a);
-  for (const k in th.statMods) statMods[k] = (statMods[k] || 0) + th.statMods[k];
-  for (const k in th.triggers) triggers[k] = (triggers[k] || 0) + th.triggers[k];
+  // Attribute thresholds: smooth stat scaling + unique-effect unlocks, folded into
+  // the same statMods/triggers (damageCap is lowest-wins; trigger caps re-applied).
+  mergeThresholdMods(statMods, triggers, attributeThresholdMods(a));
 
   const weapon = weaponProfile(character, codex, a);
   weapon.pen += statMods.penetration || 0;
