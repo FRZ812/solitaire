@@ -79,18 +79,17 @@ export function initCombat(character, codex, enemies, opts = {}) {
   // so a wounded player still benefits from extra health gear at full value.
   const healthBonus = Math.max(0, cs.maxHealth - (character.vitalityMax || cs.maxHealth));
   const player = {
+    uid: "p",
     name: character.name || "You",
     health: Math.min(cs.maxHealth, Math.round(character.vitality) + healthBonus),
     maxHealth: cs.maxHealth,
-    stamina: cs.maxStamina,
-    maxStamina: cs.maxStamina,
-    staminaRegen: cs.staminaRegen,
     resolve: Math.round(character.resolve ?? 0),
     resolveMax: character.resolveMax ?? 0,
+    resolveRegen: cs.resolveRegen || 0,
     dr: cs.dr || 0, fortify: cs.fortify || 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
-    weapon: cs.weapon, speed: cs.speed,
+    weapon: cs.weapon, speed: cs.speed, swiftChance: cs.swiftChance || 0, reloadLeft: 0,
     triggers: cs.triggers || {},
     procs: cs.triggers?.procs || [],
     actionsPerTurn: cs.actionsPerTurn || 1,
@@ -104,20 +103,26 @@ export function initCombat(character, codex, enemies, opts = {}) {
 
   // Allied companions fight at the player's side, AI-driven (engine/combat-ai).
   // They're built by the caller (allyFromCompanion) into the same combatant shape.
-  const allies = (opts.allies || []).map((a) => ({
-    ...clone(a), side: "player", statuses: a.statuses || [], cooldowns: a.cooldowns || {},
+  const allies = (opts.allies || []).map((a, i) => ({
+    ...clone(a), uid: `a${i}`, side: "player", statuses: a.statuses || [], cooldowns: a.cooldowns || {},
     actionsPerTurn: a.actionsPerTurn || 1, actionsLeft: a.actionsPerTurn || 1,
+    speed: a.speed ?? 4, swiftChance: a.swiftChance || 0, resolveRegen: a.resolveRegen || 0, reloadLeft: 0,
     procs: a.procs || a.triggers?.procs || [], shield: 0, magicShield: 0, invuln: 0,
   }));
 
   const foes = clone(enemies);
-  for (const e of foes) {
+  foes.forEach((e, i) => {
+    e.uid = `e${i}`;
     e.side = "enemy";
     e.actionsPerTurn = e.actionsPerTurn || 1;
     e.actionsLeft = e.actionsPerTurn;
+    e.speed = e.speed ?? 4; e.swiftChance = e.swiftChance || 0; e.resolveRegen = e.resolveRegen || 0; e.reloadLeft = 0;
+    // Engagement distance from the player. Most foes open a step out (melee must
+    // close; ranged & reach weapons can already strike). An ambush starts closer.
+    e.distance = e.distance ?? (opts.startDistance ?? (opts.ambush === "player" ? 1 : 2));
     e.procs = e.procs || e.triggers?.procs || [];
     e.shield = e.shield || 0; e.magicShield = e.magicShield || 0; e.invuln = e.invuln || 0;
-  }
+  });
   // How outmatched are they? Lower the nerve of foes who can see they're outclassed.
   const pThreat = playerThreat(player) + allies.reduce((s, a) => s + enemyThreat(a), 0);
   const eThreatAvg = foes.reduce((s, e) => s + enemyThreat(e), 0) / Math.max(1, foes.length);
@@ -158,6 +163,8 @@ export function initCombat(character, codex, enemies, opts = {}) {
     target: 0,
     turn: 1,
     phase: "player",
+    order: [],
+    orderIdx: 0,
     powerRatio,
     lethal,
     escalated: false,
@@ -172,7 +179,138 @@ export function initCombat(character, codex, enemies, opts = {}) {
     loot: null,
   };
   if (opts.ambush) applyAmbush(combatState, opts.ambush);
+  // Roll initiative and let any faster foes open before the player's first turn.
+  if (combatState.phase === "player") {
+    rollInitiative(combatState);
+    return advanceQueue(combatState);
+  }
   return combatState;
+}
+
+// ----- initiative -----
+
+const allCombatants = (cs) => [cs.player, ...(cs.allies || []), ...cs.enemies];
+const byUid = (cs, uid) => allCombatants(cs).find((c) => c.uid === uid);
+const canAct = (c) => c && c.health > 0 && !c.resolved && !c._dead;
+
+// ----- distance / reach -----
+
+const MAX_DISTANCE = 6;
+
+// The reach (melee) / range (ranged) of an action: an explicit ability range, a
+// medium range for spells, else the wielded weapon's reach/range.
+function abilityReach(actor, def) {
+  if (def.range != null) return def.range;
+  if (abilityScaling(def) === "stat") return 3; // spells carry at medium range
+  const w = actor.weapon || {};
+  return w.range || w.reach || 1;
+}
+
+// The gap to bridge for an actor↔target interaction is always the ENEMY's
+// distance from the player's line (the player/allies hold the line at 0).
+function gap(actor, target) {
+  const e = actor.side === "enemy" ? actor : target;
+  return e ? (e.distance || 0) : 0;
+}
+
+// Take one step to close on a specific foe. A foe steps itself toward the line;
+// the player/ally advances on the foe they're engaging.
+function closeStep(cs, actor, target) {
+  if (actor.side === "enemy") { actor.distance = Math.max(0, (actor.distance || 0) - 1); return; }
+  if (target) target.distance = Math.max(0, (target.distance || 0) - 1);
+}
+
+// Order every living combatant for the round by speed (initiative), highest
+// first. Light armour + fast weapons + Reflex/Wit act sooner; heavy/slow act
+// later. A small jitter breaks ties and the player edges ties on their side.
+function rollInitiative(cs) {
+  const ranked = allCombatants(cs).filter(canAct).map((c) => ({
+    uid: c.uid,
+    key: (c.speed || 0) + (c.side === "player" ? 0.25 : 0) + Math.random(),
+  }));
+  ranked.sort((x, y) => y.key - x.key);
+  cs.order = ranked.map((o) => o.uid);
+  cs.orderIdx = 0;
+}
+
+function downActor(cs, actor) {
+  if (actor === cs.player) return; // player death is handled by playerDown/finishDefeat
+  if (actor.side === "enemy") downEnemy(cs, actor); else downAlly(cs, actor);
+}
+
+// Begin one combatant's turn: tick statuses/cooldowns/reload, regen resolve and
+// turn-heal, fire start-of-turn procs, resolve stun, and set action points
+// (base + swift "act-again" rolls). Returns "dead" | "stun" | "ok".
+function beginTurnFor(cs, actor) {
+  tickStatuses(actor).forEach((l) => cs.log.push(l));
+  if (actor.health <= 0) {
+    if (actor === cs.player) { if (playerDown(cs)) return "dead"; }
+    else { downActor(cs, actor); return "dead"; }
+  }
+  const cdr = 1 + (actor.cooldownReduction || 0);
+  for (const id of Object.keys(actor.cooldowns || {})) actor.cooldowns[id] = Math.max(0, actor.cooldowns[id] - cdr);
+  if (actor.reloadLeft > 0) actor.reloadLeft = Math.max(0, actor.reloadLeft - 1);
+  startOfTurn(cs, actor);
+  const rr = actor.resolveRegen != null ? actor.resolveRegen : (actor.triggers?.resolveRegen || 0);
+  if (actor.resolveMax != null) actor.resolve = Math.min(actor.resolveMax, (actor.resolve || 0) + rr);
+  const tr = actor.triggers || {};
+  if (tr.turnRegen && actor.health > 0) {
+    actor.health = Math.min(actor.maxHealth, actor.health + tr.turnRegen);
+    cs.log.push(logEntry(`${actor.name} mends ${tr.turnRegen}.`, "status"));
+  }
+  if (hasStatus(actor, "stun")) {
+    cs.log.push(logEntry(`${actor.name} is stunned and cannot act.`, "status"));
+    actor.statuses = actor.statuses.filter((s) => s.type !== "stun");
+    return "stun";
+  }
+  // Action points: base + swift "act-again" rolls (each less likely, capped).
+  let extra = 0, chance = actor.swiftChance || 0;
+  while (chance > 0 && extra < 3 && Math.random() < chance) { extra += 1; chance *= 0.5; }
+  if (extra > 0 && actor === cs.player) cs.log.push(logEntry(`You move with uncanny speed — an extra action.`, "status"));
+  actor.actionsLeft = (actor.actionsPerTurn || 1) + extra;
+  return "ok";
+}
+
+// Walk the initiative order, resolving NPC turns, until it's the player's turn
+// (hand control to the UI with phase "player") or combat ends. Recomputes the
+// order at the top of each new round.
+function advanceQueue(cs) {
+  for (let guard = 0; guard < 2000; guard++) {
+    if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
+    if (!cs.order || cs.orderIdx >= cs.order.length) {
+      cs.turn += 1;
+      rollInitiative(cs);
+      cs.log.push(logEntry(`— Turn ${cs.turn} —`, "system"));
+      continue;
+    }
+    const actor = byUid(cs, cs.order[cs.orderIdx]);
+    if (!actor || !canAct(actor)) { cs.orderIdx += 1; continue; }
+
+    if (actor === cs.player) {
+      const r = beginTurnFor(cs, actor);
+      if (r === "dead") return finishDefeat(cs);
+      if (r === "stun") { cs.orderIdx += 1; continue; }
+      cs.phase = "player";
+      return cs; // hand control to the UI
+    }
+
+    // NPC turn (ally or enemy)
+    const r = beginTurnFor(cs, actor);
+    cs.orderIdx += 1;
+    if (r === "dead") { if (playerDown(cs)) return finishDefeat(cs); continue; }
+    if (r === "stun") continue;
+    if (actor.side === "enemy" && !moraleCheck(cs, actor)) continue;
+    while ((actor.actionsLeft || 0) > 0) {
+      const opponents = actor.side === "player" ? livingEnemies(cs) : playerSide(cs);
+      if (opponents.length === 0) break;
+      if (actor.side !== "player" && cs.player.health <= 0) break;
+      if (!npcPerform(cs, actor, opponents)) break;
+      if (playerDown(cs)) return finishDefeat(cs);
+    }
+    if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
+    if (playerDown(cs)) return finishDefeat(cs);
+  }
+  return cs;
 }
 
 function fistsProfile(w) {
@@ -285,7 +423,7 @@ function attackProfile(attacker, def, tierId, isPlayer) {
     const f = isPlayer && def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
     const castBonus = isPlayer ? 1 + (attacker.prof?.spellcasting || 0) * 0.05 : 1; // Spellcasting proficiency
     let focus = 0;
-    if (isPlayer && (attacker.weapon?.category === "staff" || attacker.weapon?.category === "wand")) {
+    if (isPlayer && attacker.weapon?.category === "arcane") {
       focus = Math.round((attacker.weapon.max || 0) * 0.3);
     }
     return {
@@ -445,8 +583,8 @@ function applyProc(cs, actor, p, ctx) {
       break; // onKill is fired by dealHit's post-hit check (avoids a double-trigger)
     }
     case "refund": {
-      if (p.stamina) actor.stamina = Math.min(actor.maxStamina || actor.stamina, (actor.stamina || 0) + p.value);
       if (p.action) actor.actionsLeft = (actor.actionsLeft || 0) + 1;
+      if (p.resolve && actor.resolveMax != null) actor.resolve = Math.min(actor.resolveMax, (actor.resolve || 0) + (p.value || 0));
       if (p.heal && actor.health > 0) actor.health = Math.min(actor.maxHealth, actor.health + p.value);
       cs.log.push(logEntry(`${actor.name}'s ${p.name} surges with fresh vigour.`, "status"));
       break;
@@ -548,32 +686,49 @@ function applySelfEffect(actor, effect) {
 }
 
 // Usable abilities for an NPC (ally or enemy): off cooldown AND affordable on the
-// actor's stamina (NPCs now pay stamina too, so the action economy is symmetric).
+// actor's resolve (spells drain resolve; martial techniques are gated by action
+// points + cooldown only — the same economy the player uses).
 function npcCandidates(actor) {
   const out = [];
   for (const a of (actor.abilities || [])) {
     if ((actor.cooldowns?.[a.id] || 0) > 0) continue;
     const def = getAbilityDef(a.id);
     if (!def) continue;
-    if (actor.stamina != null && (def.cost || 0) > actor.stamina) continue;
+    if (actor.resolve != null && (def.resolveCost || 0) > actor.resolve) continue;
     out.push({ id: a.id, tier: a.tier || actor.tier || "common", def });
   }
   return out;
 }
 
 // Execute ONE action for an NPC actor (ally or enemy) against `opponents`. The
-// caller (endTurn) loops this up to the actor's actionsPerTurn — the same action
-// economy the player uses. Spends stamina + cooldown + one action. Returns true
-// if it acted (so the caller can keep spending action points), false if not.
+// caller (advanceQueue) loops this up to the actor's action points — the same
+// economy the player uses. Spends resolve (spells) + cooldown + one action.
+// Returns true if it acted (so the caller can keep spending action points).
 function npcPerform(cs, actor, opponents) {
   if ((actor.actionsLeft || 0) <= 0) return false;
   const choice = chooseAction(actor, opponents, npcCandidates(actor));
   if (!choice) return false;
   const { def, ability, mode } = choice;
   const tId = ability.tier || actor.tier || "common";
+  // Distance gate: charge the last step (close + strike) when one step out, else
+  // spend the action just closing in.
+  if (mode === "single") {
+    let mt = choice.target;
+    if (!mt || mt.health <= 0 || mt.resolved || mt._dead) mt = opponents.find((o) => o.health > 0 && !o.resolved && !o._dead);
+    if (mt) {
+      const reach = abilityReach(actor, def);
+      if (gap(actor, mt) > reach + 1) {
+        actor.actionsLeft = (actor.actionsLeft || 1) - 1;
+        closeStep(cs, actor, mt);
+        cs.log.push(logEntry(`${actor.name} ${actor.side === "enemy" ? "advances" : "closes in"}.`, actor.side === "player" ? "player" : "enemy"));
+        return true;
+      }
+      if (gap(actor, mt) > reach) closeStep(cs, actor, mt); // charge the final step, then strike below
+    }
+  }
   if (def.cooldown) actor.cooldowns[ability.id] = def.cooldown;
-  if (actor.stamina != null) actor.stamina = Math.max(0, actor.stamina - (def.cost || 0));
-  actor.actionsLeft = (actor.actionsLeft || 1) - 1;
+  if (actor.resolve != null) actor.resolve = Math.max(0, actor.resolve - (def.resolveCost || 0));
+  actor.actionsLeft = (actor.actionsLeft || 1) - (def.actionCost || 1);
   const sideKind = actor.side === "player" ? "player" : "enemy";
 
   const hitOne = (target) => {
@@ -750,9 +905,8 @@ export function abilityUsable(cs, abilityId) {
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   if (!entry) return false;
   const def = getAbilityDef(abilityId);
-  if ((cs.player.actionsLeft || 0) < (def.actionCost || 1)) return false; // one action point per ability
+  if ((cs.player.actionsLeft || 0) < (def.actionCost || 1)) return false; // action points gate everything now
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
-  if (cs.player.stamina < (def.cost || 0)) return false;
   if ((cs.player.resolve ?? 0) < (def.resolveCost || 0)) return false;
   if (!weaponReqMet(def, cs.player.weapon)) return false;
   return true;
@@ -766,14 +920,31 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   const tierId = entry.tier || "common";
   const scaling = abilityScaling(def);
+  // Distance gate: a single-target action only lands within the ability's
+  // reach/range. One step out → CHARGE (close the last step and strike in the
+  // same action). Farther → spend the action just closing in (no cost).
+  if (def.target !== "self" && def.target !== "all-enemies") {
+    let gi = targetIndex;
+    if (gi == null || !cs.enemies[gi] || cs.enemies[gi].health <= 0 || cs.enemies[gi].resolved) gi = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
+    const gt = gi >= 0 ? cs.enemies[gi] : null;
+    if (gt) {
+      const reach = abilityReach(cs.player, def);
+      if ((gt.distance || 0) > reach + 1) {
+        cs.player.actionsLeft = (cs.player.actionsLeft || 1) - (def.actionCost || 1);
+        closeStep(cs, cs.player, gt);
+        cs.log.push(logEntry(`${cs.player.name} closes the distance.`, "player"));
+        return cs;
+      }
+      if ((gt.distance || 0) > reach) closeStep(cs, cs.player, gt); // charge the final step, then strike
+    }
+  }
   // A spell or a real weapon technique is inherently a killing act — using one
   // in a brawl escalates it to lethal on its own (no separate Draw needed).
   const isSpell = scaling === "stat";
   const isWeaponTech = scaling === "weapon" && def.weaponReq && def.weaponReq.length > 0;
   if (isSpell) cs.magicCast = true;
   if (!cs.lethal && (isSpell || isWeaponTech)) escalateToLethal(cs, isSpell ? "magic" : "weapon");
-  cs.player.actionsLeft = (cs.player.actionsLeft || 1) - (def.actionCost || 1); // spend one action point
-  cs.player.stamina -= def.cost || 0;
+  cs.player.actionsLeft = (cs.player.actionsLeft || 1) - (def.actionCost || 1); // action points gate actions
   // Spellcasting proficiency makes casting cheaper on Resolve.
   const resoCost = Math.max(0, (def.resolveCost || 0) - Math.floor((cs.player.prof?.spellcasting || 0) / 4));
   cs.player.resolve = Math.max(0, (cs.player.resolve ?? 0) - resoCost);
@@ -832,7 +1003,6 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
   if (!abilityUsable(cs0, TALK.id)) return cs0;
   const cs = clone(cs0);
   cs.player.actionsLeft = (cs.player.actionsLeft || 1) - 1; // talking is your action this turn
-  cs.player.stamina -= TALK.cost || 0;
   cs.player.cooldowns[TALK.id] = TALK.cooldown;
   addProf(cs, "command", XP.COMMAND);
   const a = cs.player.attrs || {};
@@ -909,11 +1079,10 @@ export function playerUseEnvironment(cs0, featureId, targetIndex = null) {
   if (cs0.phase !== "player") return cs0;
   const f0 = cs0.environment.find((f) => f.id === featureId);
   if (!f0 || f0.uses <= 0) return cs0;
-  const ENV_COST = 1;
-  if (cs0.player.stamina < ENV_COST) return cs0;
+  if ((cs0.player.actionsLeft || 0) < 1) return cs0; // costs an action point
   const cs = clone(cs0);
   const feat = cs.environment.find((f) => f.id === featureId);
-  cs.player.stamina -= ENV_COST;
+  cs.player.actionsLeft = (cs.player.actionsLeft || 1) - 1;
   feat.uses -= 1;
   const act = feat.action;
   cs.log.push(logEntry(`${cs.player.name}: ${feat.name}.`, "player"));
@@ -1038,85 +1207,15 @@ export function applyCombatEffect(cs0, effect) {
 
 // ----- enemy phase + turn advance -----
 
+// The player has finished their turn (spent their actions or chose to end it).
+// Step past the player's slot and resolve the rest of the initiative order —
+// allies and foes acting in speed order, round after round — until it's the
+// player's turn again or the fight ends.
 export function endTurn(cs0) {
   if (cs0.phase !== "player") return cs0;
   const cs = clone(cs0);
-  cs.phase = "enemy";
-
-  // --- Ally phase: companions take their own AI turns against the foes ---
-  for (const a of cs.allies || []) {
-    if (a.health <= 0 || a.resolved || a._dead) continue;
-    if (hasStatus(a, "stun")) {
-      cs.log.push(logEntry(`${a.name} is stunned and cannot act.`, "status"));
-      a.statuses = a.statuses.filter((s) => s.type !== "stun");
-      tickStatuses(a).forEach((l) => cs.log.push(l));
-      if (a.health <= 0) downAlly(cs, a);
-      continue;
-    }
-    tickStatuses(a).forEach((l) => cs.log.push(l));
-    if (a.health <= 0) { downAlly(cs, a); continue; }
-    const aCdr = 1 + (a.cooldownReduction || 0);
-    for (const id of Object.keys(a.cooldowns)) a.cooldowns[id] = Math.max(0, a.cooldowns[id] - aCdr);
-    if (livingEnemies(cs).length === 0) break;
-    startOfTurn(cs, a);
-    if (a.maxStamina != null) a.stamina = Math.min(a.maxStamina, (a.stamina || 0) + (a.staminaRegen || 0));
-    // Spend action points like the player — a swift-geared ally acts several times.
-    a.actionsLeft = a.actionsPerTurn || 1;
-    while (a.actionsLeft > 0 && livingEnemies(cs).length > 0) { if (!npcPerform(cs, a, livingEnemies(cs))) break; }
-    if (livingEnemies(cs).length === 0) break;
-  }
-  if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
-
-  // --- Enemy phase: foes take AI turns against the player + living allies ---
-  for (const e of cs.enemies) {
-    if (e.health <= 0 || e.resolved) continue;
-    if (hasStatus(e, "stun")) {
-      cs.log.push(logEntry(`${e.name} is stunned and cannot act.`, "status"));
-      e.statuses = e.statuses.filter((s) => s.type !== "stun");
-      tickStatuses(e).forEach((l) => cs.log.push(l));
-      if (e.health <= 0) downEnemy(cs, e);
-      continue;
-    }
-    tickStatuses(e).forEach((l) => cs.log.push(l));
-    if (e.health <= 0) { downEnemy(cs, e); continue; }
-    const eCdr = 1 + (e.cooldownReduction || 0);
-    for (const id of Object.keys(e.cooldowns)) e.cooldowns[id] = Math.max(0, e.cooldowns[id] - eCdr);
-
-    // React to how the fight is going before deciding to strike.
-    if (!moraleCheck(cs, e)) continue;
-
-    startOfTurn(cs, e);
-    if (e.maxStamina != null) e.stamina = Math.min(e.maxStamina, (e.stamina || 0) + (e.staminaRegen || 0));
-    // Spend action points like the player — a swift-geared foe acts several times.
-    e.actionsLeft = e.actionsPerTurn || 1;
-    while (e.actionsLeft > 0 && cs.player.health > 0) {
-      if (!npcPerform(cs, e, playerSide(cs))) break;
-      if (playerDown(cs)) return finishDefeat(cs);
-    }
-    if (playerDown(cs)) return finishDefeat(cs);
-  }
-
-  // Combat may have ended via flight/yield during the enemy phase.
-  if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
-
-  cs.turn += 1;
-  cs.phase = "player";
-  tickStatuses(cs.player).forEach((l) => cs.log.push(l)); // also regens player shields, ticks invuln
-  if (playerDown(cs)) return finishDefeat(cs);
-  startOfTurn(cs, cs.player); // turn-ramp buffs, low-health panic procs, invuln cadence
-  const tr = cs.player.triggers || {};
-  if (tr.turnRegen && cs.player.health > 0) {
-    cs.player.health = Math.min(cs.player.maxHealth, cs.player.health + tr.turnRegen);
-    cs.log.push(logEntry(`${cs.player.name} mends ${tr.turnRegen}.`, "status"));
-  }
-  if (tr.resolveRegen) cs.player.resolve = Math.min(cs.player.resolveMax, (cs.player.resolve || 0) + tr.resolveRegen);
-  cs.player.stamina = Math.min(cs.player.maxStamina, cs.player.stamina + cs.player.staminaRegen + (tr.burst || 0));
-  cs.player.actionsLeft = cs.player.actionsPerTurn || 1; // refresh action points for the new turn
-  const cdr = 1 + (cs.player.cooldownReduction || 0);
-  for (const id of Object.keys(cs.player.cooldowns)) cs.player.cooldowns[id] = Math.max(0, cs.player.cooldowns[id] - cdr);
-  if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
-  cs.log.push(logEntry(`— Turn ${cs.turn} —`, "system"));
-  return cs;
+  cs.orderIdx = (cs.orderIdx || 0) + 1; // move past the player's slot
+  return advanceQueue(cs);
 }
 
 export function playerFlee(cs0) {
@@ -1132,6 +1231,25 @@ export function playerFlee(cs0) {
   }
   cs.log.push(logEntry(`You fail to escape!`, "system"));
   return endTurn(cs);
+}
+
+// Reposition: give ground (open the distance from every foe — the ranged kiting
+// lever) or close in. Both cost an action point.
+export function playerWithdraw(cs0) {
+  if (cs0.phase !== "player" || (cs0.player.actionsLeft || 0) < 1) return cs0;
+  const cs = clone(cs0);
+  cs.player.actionsLeft -= 1;
+  for (const e of cs.enemies) if (e.health > 0 && !e.resolved) e.distance = Math.min(MAX_DISTANCE, (e.distance || 0) + 1);
+  cs.log.push(logEntry(`${cs.player.name} gives ground, opening the distance.`, "player"));
+  return cs;
+}
+export function playerAdvance(cs0) {
+  if (cs0.phase !== "player" || (cs0.player.actionsLeft || 0) < 1) return cs0;
+  const cs = clone(cs0);
+  cs.player.actionsLeft -= 1;
+  for (const e of cs.enemies) if (e.health > 0 && !e.resolved) e.distance = Math.max(0, (e.distance || 0) - 1);
+  cs.log.push(logEntry(`${cs.player.name} closes in.`, "player"));
+  return cs;
 }
 
 // ----- outcomes + loot -----
@@ -1234,9 +1352,15 @@ export function rollLoot(sources, opts = {}) {
   // Forge-runes (affix-Fusion catalyst) — rare trophies of the mighty: deep
   // regions, epic+ loot ceiling, low chance. Never bought; only earned.
   if (sources.length > 0 && region >= RUNE_DROP_MIN_REGION && tierInfo(maxTier).order >= tierInfo("epic").order && Math.random() < RUNE_DROP_CHANCE) {
-    const runeIds = Object.keys(RUNES);
+    const runeIds = Object.keys(RUNES).filter((id) => id !== "greater-rune-of-ascension");
     const rune = RUNES[runeIds[Math.floor(Math.random() * runeIds.length)]];
     items.push({ itemId: rune.id, entry: rune, quantity: 1 });
+  }
+  // The god-forged apex rune (divine-tier fusion catalyst) — only off divine-grade
+  // kills, vanishingly rare. The reward for slaying the fabled.
+  if (sources.length > 0 && tierInfo(maxTier).order >= tierInfo("divine").order && Math.random() < RUNE_DROP_CHANCE * 0.4) {
+    const gr = RUNES["greater-rune-of-ascension"];
+    items.push({ itemId: gr.id, entry: gr, quantity: 1 });
   }
 
   copper = Math.round(copper * (1 + coinBonus));

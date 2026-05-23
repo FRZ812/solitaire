@@ -126,7 +126,7 @@ console.log("");
 // ===========================================================================
 
 // A capable hero who meets epic/legendary item requirements (so affixes switch
-// on) and has the stamina to spend several action points a turn.
+// on) and the action points to act several times a turn.
 function hero(extra = []) {
   return {
     name: "Hero", vitality: 70, vitalityMax: 70, resolve: 12, resolveMax: 12,

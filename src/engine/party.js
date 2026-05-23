@@ -8,7 +8,7 @@ import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 
-const WEAPON_RE = /sword|blade|bow|spear|axe|mace|maul|hammer|knife|dagger|staff|lance|halberd|cleaver|sling/i;
+const WEAPON_RE = /sword|blade|bow|crossbow|spear|axe|mace|maul|hammer|knife|dagger|staff|wand|grimoire|lance|halberd|cleaver/i;
 
 // How impressive the player's company looks to someone weighing whether to throw
 // in with them: party size, the BEST score in each attribute across everyone

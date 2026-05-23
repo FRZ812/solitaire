@@ -36,7 +36,7 @@ import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
-import { initCombat, playerAct, playerDrawWeapon, setTarget, endTurn, playerFlee, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
+import { initCombat, playerAct, playerDrawWeapon, setTarget, endTurn, playerFlee, playerWithdraw, playerAdvance, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
@@ -1212,6 +1212,8 @@ export function Solitaire() {
   const onCombatTarget = (idx) => setCombat((c) => (c ? setTarget(c, idx) : c));
   const onCombatEndTurn = () => setCombat((c) => (c ? endTurn(c) : c));
   const onCombatFlee = () => setCombat((c) => (c ? playerFlee(c) : c));
+  const onCombatWithdraw = () => setCombat((c) => (c ? playerWithdraw(c) : c));
+  const onCombatAdvance = () => setCombat((c) => (c ? playerAdvance(c) : c));
 
   // ----- Render flow -----
 
@@ -1527,6 +1529,8 @@ export function Solitaire() {
           onSetTarget={onCombatTarget}
           onEndTurn={onCombatEndTurn}
           onFlee={onCombatFlee}
+          onWithdraw={onCombatWithdraw}
+          onAdvance={onCombatAdvance}
           onResolve={handleResolveCombat}
         />
       )}

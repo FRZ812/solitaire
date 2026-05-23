@@ -414,17 +414,22 @@ NORMALISE AGAINST THE CATALOG. The engine catalog spans common→DIVINE with con
 
 DIVINE IS GODHOOD — the rarest, most reserved tier. Divine items are not "very good gear"; they are a handful of named god-arms (the Demon King's Polestar Sword, the Daybringer, the Aegis Harness, the Godflame Staff) and the engine gives them GAME-BREAKING passives (devastating damage, cleave-through-armour, cheat-death, near-immunity), not just big numbers. A divine item is the reward for slaying a FABLED power or a god — never sold, never a common reward, never carried by an ordinary foe. Conversely, the fabled themselves fight at this level: the Demon King and his kind wield divine arms and should feel UNFAIR — a player matching them only in raw stats, without divine gear of their own, will almost always lose, and the prose should make that gulf felt. Pushing into divine territory is the campaign's apex achievement; treat it with that weight.
 
-WEAPON FAMILIES (the name's family word sets the role; tier scales it):
-- dagger/knife/dirk/stiletto — fast, low base, a little armour-pierce; a finesse/ambush sidearm (Reflex), poor against armour.
-- sword/blade/sabre/rapier/falchion — balanced all-rounder (Body; rapier favours Reflex).
-- axe/cleaver/hatchet — high raw damage, no armour bonus (Body).
-- mace/hammer/maul/war-hammer/club — lower raw damage but PENETRATES armour (Body); the anti-armour pick.
-- spear/lance/pike/halberd/glaive — reach + some pierce (Body).
-- bow/crossbow/sling — ranged (Reflex).
-- staff/wand/rod/focus — MAGICAL damage (Mind) — caster gear; don't hand magic weapons to ordinary folk.
-HEFT: a "great-"/"war-"/"heavy"/two-handed weapon (greatsword, greataxe, maul, war-hammer, longbow, halberd) hits markedly harder; a "short"/"hand"/"light"/throwing one hits softer. Two-handers cost the shield slot — a real trade-off.
+WEAPON FAMILIES (the name's family word sets the role; tier scales it). Families differ on damage, armour-PENETRATION, SPEED (initiative + the swift "act-again"), and REACH/RANGE:
+- dagger/knife/dirk/stiletto — very fast, low base, a little pierce; a finesse/assassin sidearm (Reflex), poor vs armour. Melee.
+- sword/blade/sabre/rapier/falchion — balanced all-rounder, medium speed (Body). Melee.
+- axe/cleaver/hatchet — high raw damage, no pierce, a touch slow (Body). Melee.
+- mace/hammer/maul/war-hammer/club — slow, but PENETRATES armour best (Body); the anti-armour pick. Melee.
+- spear/lance/pike/halberd/glaive — REACH (strikes from a step away, before a sword closes), some pierce (Body). Melee.
+- bow — fast RANGED, modest base, a little pierce (Reflex); strikes from afar, no reload.
+- crossbow/arbalest — SLOW ranged, high base + high pierce + the longest range (Reflex). Bow ≠ crossbow: the bow is light & fast, the crossbow slow & punishing.
+- arcane: staff/wand/grimoire/rod/scepter/focus — MAGICAL damage at range (Mind), caster gear; don't hand magic arms to ordinary folk. A staff is two-handed and hits hardest; a wand or grimoire is one-handed and faster — that distinction is on the ITEM, not the family. (There is NO sling.)
+HEFT: a "great-"/"war-"/"heavy"/two-handed weapon hits markedly harder but slower; a "short"/"hand"/"light" one hits softer but faster. Two-handers (greatswords, mauls, polearms, ALL bows & crossbows, staves) cost the shield slot — a real trade-off.
 
-ARMOUR (kind "armor" = body slot; helms/bracers/greaves/coif/cloak are kind "clothing"; shields are kind "shield"). The name's class word sets protection, low→high: padded/gambeson ≈ leather/jerkin/hide < studded < brigandine/scale < chain/mail/hauberk < banded/splint < half-plate < plate < full-plate. Shields: buckler < round/kite/heater < tower. Amulet/charm/circlet/talisman = kind "trinket" (a ward; Mind-governed). Heavier armour protects more; the fiction should treat it as heavier/hotter/louder.
+ARMOUR comes in two PLAYSTYLE-DEFINING bands (kind "armor" = body slot; helms/bracers/greaves/coif/cloak are kind "clothing"; shields are kind "shield"):
+- LIGHT (padded/gambeson, leather/jerkin/hide, studded, brigandine, chain-shirt): little protection, but keeps you fast, evasive, and free to cast — the skirmisher's, archer's, and caster's choice.
+- HEAVY (scale, chain/mail/hauberk, banded/splint, half-plate, plate, full-plate): the most protection, more health, an ever-renewing aegis, and harder blows — but it CRUSHES dodge, speed, and tempo, hampers ranged aim & casting, and demands real Body to wear. The tank's choice.
+Shields: buckler < round/kite/heater < tower. Amulet/charm/circlet/talisman = kind "trinket" (a ward; Mind-governed). Narrate heavy armour as heavier/hotter/slower, light armour as quick and quiet.
+COMBAT FEEL (engine-driven — narrate to match): there is no stamina. Fighters act on ACTION POINTS and spend RESOLVE on spells/techniques; the SWIFT (fast weapons, light armour, high Reflex) act first and may act again, while the HEAVY hit hardest but act last. DISTANCE matters: bows and crossbows open from afar, spears reach a step further than blades, and a kiting ranged fighter keeps melee at bay while a slow, heavy foe must spend its turns closing.
 
 EQUIPMENT SLOTS — the engine enforces these on the PLAYER, so honour them in the fiction (no stacking duplicate gear to pile up effects). One item per slot: mainhand (weapon), offhand (shield), body (armour), head, hands, legs, feet, back (cloak), torso/over (tunic/robe), neck (amulet) — plus up to TWO rings. A TWO-HANDED weapon (greatsword, maul, polearm, any bow or crossbow, a staff) fills both hands, so it CANNOT be paired with a shield — equipping one stows the other. Equipping into a full slot displaces what was there. So never narrate the player fighting with two swords at once, wearing five helms or three amulets, or a greatsword AND a shield; describe choices and trade-offs, not stacks.
 

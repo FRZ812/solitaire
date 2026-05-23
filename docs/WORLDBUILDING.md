@@ -270,11 +270,15 @@ stats are DERIVED from them plus equipped gear (`deriveCombatStats`):
 - **maxHealth** = `vitalityMax` (combat reads/writes `character.vitality`).
 - **armor** (physical flat DR) = `floor(body/3)` + worn armour values.
 - **ward** (magical flat DR) = `floor(mind/3)` + worn ward values.
-- **dodge%** = `reflex*2` + gear (cap 60). **accuracy** = `reflex+wit` (offsets dodge).
-- **critChance%** = `wit*1.5 + reflex` (cap 50); **critMult** 1.5.
+- **dodge%** = `reflex*2` + gear + Evasion (cap 70; **light armour adds, heavy armour crushes it to a fifth**). **accuracy** = `reflex+wit` (offsets dodge).
+- **critChance%** = `wit*1.5 + reflex` (cap 60); **critMult** 1.5.
 - **weapon damage** = equipped weapon (or unarmed) range × `attrFactor(gov)` where
   gov = body for physical, mind for magical; **penetration** = weapon pen + `floor(body/4)`.
-- **stamina** (per-fight resource) = `4 + floor((vigor+reflex)/3)`, regen `2 + floor(vigor/4)`.
+- **action points** per turn = `1` + swift affixes (cap +3) + a speed-driven "act-again" chance; **heavy armour −1**. There is NO stamina — action points gate everything.
+- **initiative (speed)** = `reflex + floor(wit/2)` + weapon speed + armour band (light +, heavy −); high speed acts first each round.
+- **resolve** is the only ability resource (persists out of fight): spells cost `resolveCost`; martial techniques are gated by action points + cooldown only. Regens a little each turn (+light armour, Clear-Mind).
+- **armour bands:** body armour is **light** (low armour, +dodge/+speed/+resolve, no penalty) or **heavy** (high armour + health + aegis + damage, but −dodge/−speed/−action and a Body requirement).
+- **distance/reach:** each foe carries an engagement `distance`; a weapon strikes within its **reach** (melee) or **range** (ranged). Out of range you close in (charge the last step) or kite via Withdraw.
 
 Items get combat values from an explicit `combat` block on the codex item, else
 inferred from kind/name keywords (`itemCombatStats`).
@@ -284,11 +288,11 @@ inferred from kind/name keywords (`itemCombatStats`).
 **Scaling style** (`data/abilities.js`):
 - **Weapon techniques** (martial) — `scaling:"weapon"`. Damage = equipped weapon ×
   a tier-mult `+ a stat modifier` (governing attribute, grows with ability tier).
-  Require a weapon category. Cost Stamina. Consistent.
+  Require a weapon category. Gated by an action point + cooldown (no resolve).
 - **Spells** — `scaling:"stat"`. Damage = base × tier × `attrFactor(Mind/Presence)`;
-  a staff/wand adds only a small flat bonus. Cost a little Stamina **and drain
-  Resolve** (which does NOT regen in combat and persists after) — so casters
-  burst hard then run dry, while fighters stay steady.
+  an arcane focus adds a small flat bonus. **Drain Resolve** (regens a little in
+  combat now, slowly, and persists after) — so casters burst hard then run dry,
+  while fighters stay steady on the action economy.
 
 **Requirements:** each ability has a `weaponReq` (categories) and `statReq`
 (`base + tier_order×2`). The **stat** requirement is soft — under-stat scales the
@@ -300,10 +304,11 @@ requirement (by tier); an under-req item still works at reduced base stats but
 **its passives switch off**.
 
 **Passives** (`data/passives.js`): slot count by item tier — Common/Uncommon 0 ·
-Rare 1 · Epic 2 · Legendary+ 3. Each passive carries its own tier (magnitude
-scales with it) and can't exceed the item's tier, so a divine-grade passive only
-appears on a divine item. Scope is `combat` (stat mods + triggers: lifesteal,
-thornmail, regen, resolve-regen, extra stamina, revive-once) or `world` (slower
+Rare/Very-Rare 1 · Epic 2 · Legendary/Mythical 3 · Divine 4. Each passive carries
+its own tier (magnitude scales with it) and can't exceed the item's tier, so a
+divine-grade passive only appears on a divine item. Scope is `combat` (stat mods +
+triggers: lifesteal, thornmail, regen, resolve-regen, initiative/act-again,
+revive-once) or `world` (slower
 need decay, faster travel, out-of-combat regen, extra coin). Passives only apply
 on equipped, requirement-met gear. To rebalance, edit the magnitude table in
 `passives.js`.
@@ -319,7 +324,7 @@ No levels. Besides loot, the ONLY progression is use-based proficiencies
   climbs with √XP (6→1, 24→2, 54→3…). Ratings give small direct bonuses:
   mastery → weapon damage/accuracy, Evasion → dodge, Awareness → accuracy +
   spotting ambushes, Spellcasting → spell power + cheaper Resolve, Endurance →
-  stamina, Command → Talk, Ambush → surprise odds.
+  Vigor (toughness), Command → Talk, Ambush → surprise odds.
 - **Attributes grow ONLY from this.** Each proficiency feeds its governing
   attribute (e.g. sword/dagger/bow/Ambush/Evasion → Reflex; Spellcasting →
   Mind; Endurance → Vigor; Command → Presence). An attribute's growth = the sum
@@ -352,12 +357,16 @@ Mitigation: **physical** subtracts `armor − penetration`; **magical** subtract
 `ward − penetration`; **true** ignores both. No AC, no attack d20 — dodge is a
 flat % chance.
 
-### Turn structure
+### Turn structure — initiative + distance
 
-Per-fight Stamina gates actions; most abilities also have a cooldown. A turn:
-player spends stamina on clickable abilities (multiple per turn), then **End
-Turn** → each enemy acts (simple AI: heal when low, else ~60% use an ability) →
-new turn regens stamina and ticks cooldowns. **Flee** chance scales with speed.
+Combatants act in **initiative order** each round (by speed). On your turn you
+spend **action points** on clickable abilities (a swift build gets several; heavy
+armour fewer), reposition (**Advance**/**Withdraw**), or **End Turn** → the engine
+resolves every other combatant in speed order until it's your turn again. There is
+no stamina; cooldowns and the action economy gate the kit, and spells drain
+Resolve. **Distance** matters: each foe has an engagement distance; melee strikes
+within its weapon's **reach** (charge the last step in), ranged within its
+**range** (and can kite). **Flee** chance scales with speed.
 
 Status effects: bleed/poison (true damage-over-time), stun (skip), weaken
 (−outgoing), vulnerable (+incoming), guard (+armour), rally (+outgoing), regen
@@ -454,7 +463,7 @@ beaten foe's role (the Karn→Silas bug).
 **Environment** (`data/environment.js`, `playerUseEnvironment`): each fight rolls
 1–3 single-use battlefield features from the terrain — flip a table for cover,
 hurl a stool, topple a log, kick over a brazier (area fire), shove a boulder.
-Each costs a stamina and does something distinct (cover / throw+stagger /
+Each costs an action point and does something distinct (cover / throw+stagger /
 topple+stun / area burn / heavy shove), so combat isn't only attack-vs-defend.
 
 ### Entry & outcome

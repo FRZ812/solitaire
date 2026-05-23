@@ -5,7 +5,7 @@
 
 import { tierMult, rollTier } from "./tiers.js";
 import { DEMEANOR_CONFIG, defaultDemeanor } from "./combat-flavor.js";
-import { itemCombatStats } from "../engine/combat-stats.js";
+import { itemCombatStats, weaponFamilyBase } from "../engine/combat-stats.js";
 import { itemTemplate } from "./catalog.js";
 import { aggregateCombatPassives } from "./passives.js";
 
@@ -99,13 +99,13 @@ export function generateEnemy(kind, { tierId = "common", index = 0, total = 1 } 
     critChance: Math.min(50, (tmpl.critChance || 4) + tierOf * 2),
     critMult: 1.5,
     speed: (tmpl.speed || 4) + Math.floor(tierOf / 2),
-    weapon: { min: Math.max(1, scale(dmg.min, m)), max: Math.max(1, scale(dmg.max, m)), type: dmg.type || "physical", pen: scale(dmg.pen, m) },
+    weapon: { min: Math.max(1, scale(dmg.min, m)), max: Math.max(1, scale(dmg.max, m)), type: dmg.type || "physical", pen: scale(dmg.pen, m), reach: dmg.reach || 1, range: dmg.range || 0 },
     abilities: (tmpl.abilities || []).map((id) => ({ id, tier: tierId })),
     maxLootTier: tmpl.maxLootTier || "uncommon",
-    // Action economy + stamina, same model as the player: one action a turn, paid
-    // for out of a stamina pool. Template foes carry no affixes, so no extras.
-    maxStamina: 4 + tierOf, stamina: 4 + tierOf, staminaRegen: 2,
-    actionsPerTurn: 1, actionsLeft: 1, cooldownReduction: 0,
+    // Action economy: one action a turn (no stamina). Template foes carry no
+    // affixes, so no swift extras; caster foes spend Resolve on their spells.
+    resolve: 6 + tierOf, resolveMax: 6 + tierOf, resolveRegen: 1,
+    actionsPerTurn: 1, actionsLeft: 1, cooldownReduction: 0, swiftChance: 0,
     procs: [], shield: 0, magicShield: 0, invuln: 0,
     statuses: [],
     cooldowns: {},
@@ -149,10 +149,13 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
   const base = weaponDmg || { min: 2, max: 4, type: "physical", pen: 0 };
   const govF = 1 + (base.type === "magical" ? mind : body) * 0.08;
   const dFlat = sm.damageFlat || 0, dMult = 1 + (sm.damageMult || 0);
+  const fam = weaponFamilyBase(weaponType);
   const weapon = {
     min: Math.max(1, Math.round((base.min * govF + dFlat) * dMult)),
     max: Math.max(1, Math.round((base.max * govF + dFlat) * dMult)),
     type: base.type || "physical", pen: (base.pen || 0) + Math.floor(body / 4) + (sm.penetration || 0), category: weaponType,
+    reach: base.reach ?? fam.reach ?? 1, range: base.range ?? fam.range ?? 0,
+    speed: base.speed ?? fam.speed ?? 0, reload: base.reload ?? fam.reload ?? 0,
   };
   const demeanor = npcDemeanor(npc);
   const dcfg = DEMEANOR_CONFIG[demeanor] || DEMEANOR_CONFIG.wary;
@@ -180,11 +183,11 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     accuracy: reflex + wit + (sm.accuracy || 0), critChance: Math.min(60, Math.round(wit * 1.5 + reflex) + (sm.critChance || 0)), critMult: 1.5 + (sm.critMult || 0),
     speed: reflex + Math.floor(wit / 2),
     triggers: tr,
-    // Same action economy + stamina model as the player; swift-geared foes (extra
-    // actions affixes) act several times a turn, paid out of their stamina pool.
-    maxStamina: 4 + Math.floor((vigor + reflex) / 3) + (sm.maxStamina || 0),
-    stamina: 4 + Math.floor((vigor + reflex) / 3) + (sm.maxStamina || 0),
-    staminaRegen: 2 + Math.floor(vigor / 4) + (tr.staminaRegen || 0),
+    // Same action economy as the player (no stamina); swift-geared foes (extra-
+    // action / swift affixes) act several times a turn. Casters spend Resolve.
+    resolve: 6 + Math.floor(mind / 2), resolveMax: 6 + Math.floor(mind / 2),
+    resolveRegen: 1 + (tr.resolveRegen || 0),
+    swiftChance: Math.min(0.5, sm.swiftChance || 0),
     actionsPerTurn: 1 + Math.min(3, Math.max(0, sm.extraActions || 0)), actionsLeft: 1,
     cooldownReduction: Math.min(3, sm.cooldownReduction || 0),
     procs: tr.procs || [], shield: 0, magicShield: 0, invuln: 0,
