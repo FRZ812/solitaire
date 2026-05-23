@@ -45,15 +45,15 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // finesse/aimed arms (daggers, bows) are precise; heavy choppers (axes, mauls)
 // are not. `reach`/`range` gate striking distance; `speed` feeds initiative.
 const WEAPON_BASE = {
-  dagger:   { min: 2, max: 4, type: "physical", pen: 1, reach: 1, speed: 3,  acc: 2 },
-  sword:    { min: 4, max: 7, type: "physical", pen: 0, reach: 1, speed: 1,  acc: 1 },
-  axe:      { min: 5, max: 9, type: "physical", pen: 0, reach: 1, speed: -1, acc: -2 },
-  mace:     { min: 5, max: 8, type: "physical", pen: 2, reach: 1, speed: -2, acc: -1 },
-  spear:    { min: 3, max: 7, type: "physical", pen: 2, reach: 2, speed: 0,  acc: 1 },
-  bow:      { min: 3, max: 6, type: "physical", pen: 1, range: 4, speed: 1,  acc: 3 },
-  crossbow: { min: 5, max: 9, type: "physical", pen: 3, range: 5, speed: -2, reload: 1, acc: 2 },
-  arcane:   { min: 2, max: 4, type: "magical",  pen: 1, range: 3, speed: 0,  acc: 0 },
-  unarmed:  { min: 2, max: 4, type: "physical", pen: 0, reach: 1, speed: 2,  acc: 0 },
+  dagger:   { min: 2, max: 4, type: "physical", pen: 1, reach: 1, speed: 3,  acc: 2, crit: 12 }, // low base, FAR highest crit — a finesse killer
+  sword:    { min: 4, max: 7, type: "physical", pen: 0, reach: 1, speed: 1,  acc: 1, crit: 4 },
+  axe:      { min: 5, max: 9, type: "physical", pen: 0, reach: 1, speed: -1, acc: -2, crit: 2 },
+  mace:     { min: 5, max: 8, type: "physical", pen: 2, reach: 1, speed: -2, acc: -1, crit: 0 },
+  spear:    { min: 3, max: 7, type: "physical", pen: 2, reach: 2, speed: 0,  acc: 1, crit: 3 },
+  bow:      { min: 3, max: 6, type: "physical", pen: 1, range: 4, speed: 1,  acc: 3, crit: 8 },
+  crossbow: { min: 5, max: 9, type: "physical", pen: 3, range: 5, speed: -2, reload: 1, acc: 2, crit: 4 },
+  arcane:   { min: 2, max: 4, type: "magical",  pen: 1, range: 3, speed: 0,  acc: 0, crit: 2 },
+  unarmed:  { min: 2, max: 4, type: "physical", pen: 0, reach: 1, speed: 2,  acc: 0, crit: 0 },
 };
 
 // Arcane foci sub-types differ on the ITEM (one family, one mastery): a STAFF is
@@ -318,6 +318,7 @@ function weaponProfile(character, codex, eff) {
     speed: base.speed ?? fam.speed ?? 0,
     reload: base.reload ?? fam.reload ?? 0,
     acc: base.acc ?? fam.acc ?? 0,
+    crit: fam.crit ?? 0, // weapon-family crit chance (daggers/finesse arms crit most)
     name: weapon ? (weapon.name || weapon.id) : "Unarmed",
   };
 }
@@ -407,8 +408,8 @@ export function deriveCombatStats(character, codex) {
     ward: ward + (statMods.ward || 0) + (band.ward || 0),
     dodge,
     accuracy: reflex + wit + prof.awareness + weapon.mastery + (weapon.acc || 0) + (statMods.accuracy || 0) + (band.accuracy || 0),
-    critChance: clamp(Math.round(wit * 1.5 + reflex) + (statMods.critChance || 0), 0, 60),
-    critMult: 1.5 + (statMods.critMult || 0),
+    critChance: clamp(Math.round(wit * 1.5 + reflex) + (weapon.crit || 0) + (statMods.critChance || 0), 0, 100), // stackable to a guaranteed crit
+    critMult: Math.min(9.99, 1.5 + (statMods.critMult || 0)), // crit damage caps at 999%, not a token ceiling
     weapon,
     speed,
     resolveRegen,

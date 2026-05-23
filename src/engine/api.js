@@ -91,13 +91,12 @@ export function summarizeGrantableAbilities() {
 }
 
 // The COMPLETE pool of item ids the narrator may grant (loot/gift/shop/reward),
-// grouped by kind. Legendary+ named relics are excluded — those are engine-only
-// boss drops, never narrator-handed. Built live from the catalog so it never drifts.
+// grouped by kind. Spans every tier up to divine — exactly like grantable
+// ABILITIES — so the grade is gated by narrative justification (see the preamble),
+// not hard-capped. Built live from the catalog so it never drifts.
 export function summarizeGrantableItems() {
-  const EPIC = tierOrder("epic");
   const byKind = {};
   for (const it of Object.values(ALL_ITEMS)) {
-    if (it.tier && tierOrder(it.tier) > EPIC) continue; // reserved relics — boss drops only
     const k = it.kind || "other";
     (byKind[k] = byKind[k] || []).push(it.id);
   }
@@ -242,7 +241,7 @@ export function buildStateContext(state) {
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]
 [CODEX — ${summarizeCodex(world.codex)}]
 [INVENTORY — ${summarizeInventory(character, world.codex, state.time?.day || 0)}]
-[ITEM CATALOG — the COMPLETE set of item ids you may grant (loot, gift, shop find, reward), by kind. Grant ONLY these ids via inventory_changes.added; do NOT invent items — the engine DISCARDS any grant whose id is not a catalog id. Pick the closest fit and let tier/place guide which grade is appropriate. (Legendary+ named relics are engine-only boss drops and are intentionally not listed.)
+[ITEM CATALOG — the COMPLETE set of item ids you may grant (loot, gift, shop find, reward), by kind. Grant ONLY these ids via inventory_changes.added; do NOT invent items — the engine DISCARDS any grant whose id is not a catalog id. Items carry a TIER (common→divine) that scales their power exactly like abilities — so gate the GRADE by narrative justification, NOT by handing out relics freely: common/uncommon is everyday kit; rare/epic is a fine smith, a guild, or hard-won loot; legendary+ is a fabled forge, a king's hoard, or a god's boon, and divine is godhood — almost never given. A NAMED legendary+ relic is a specific figure's signature arm (e.g. the Demon King's sword) — grant one ONLY when the fiction truly supports it (you ARE that figure, you slew its bearer); otherwise prefer a generic high-tier piece. Earn the grade in the fiction, exactly as you would a high-tier ability.
 ${summarizeGrantableItems()}]
 [GEOGRAPHY KNOWN BY REPUTATION — ${summarizeRumored()}]
 [GEOGRAPHY KNOWN BY LEGEND — ${summarizeFabled()}]
