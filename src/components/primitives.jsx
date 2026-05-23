@@ -346,26 +346,39 @@ export function LiveThinking({ thinking }) {
 
 export function InputBar({ value, onChange, onSubmit, loading }) {
   const disabled = loading || !value.trim();
+  const ref = React.useRef(null);
+  // Grow the field with its content (up to a cap, then it scrolls), so a longer
+  // action is easy to write and read back before sending.
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [value]);
   return (
     <div style={{
       padding: "10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px) 12px",
       background: "linear-gradient(180deg, rgba(11,15,14,0) 0%, rgba(11,15,14,0.62) 20%, rgba(11,15,14,0.92) 100%)",
-      display: "flex", alignItems: "center", gap: "9px",
+      display: "flex", alignItems: "flex-end", gap: "9px",
     }}>
-      <input
-        type="text" value={value}
+      <textarea
+        ref={ref}
+        rows={1}
+        value={value}
         onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSubmit(); } }}
+        // Enter adds a new line (there's a Send button); ⌘/Ctrl+Enter sends.
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!disabled) onSubmit(); } }}
         placeholder="What do you do?" disabled={loading}
         style={{
-          flex: 1, height: "48px",
+          flex: 1, minHeight: "48px", maxHeight: "160px",
+          boxSizing: "border-box", resize: "none", overflowY: "auto",
           borderRadius: radius.control,
           border: `1px solid rgba(215, 167, 111, 0.22)`,
           backgroundColor: "rgba(10, 15, 15, 0.65)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
-          padding: "0 18px", fontSize: "14px", color: colors.parchment,
-          outline: "none",
+          padding: "13px 18px", fontSize: "14px", lineHeight: 1.4, color: colors.parchment,
+          outline: "none", fontFamily: "inherit",
           transition: "border-color 0.2s, box-shadow 0.2s",
           boxShadow: `0 10px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.02)`,
         }}

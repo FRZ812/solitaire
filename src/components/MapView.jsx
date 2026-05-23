@@ -233,19 +233,30 @@ function MapLegend() {
     { key: "river", label: "river" }, { key: "mtns", label: "mtns" },
     { key: "ruin", label: "ruin" }, { key: "lake", label: "lake" },
   ];
+  // Floats over the map (above the Legend toggle) rather than taking layout
+  // space — toggling it never resizes or shifts the map. Swallows pointer-downs
+  // so reading the legend can't start a map pan.
   return (
-    <div style={{
-      display: "flex",
-      flexWrap: "wrap",
-      gap: "8px 12px",
-      padding: "8px 12px",
-      borderTop: "1px solid rgba(215, 167, 111, 0.15)",
-      borderBottom: "1px solid rgba(215, 167, 111, 0.15)",
-      backgroundColor: "rgba(20, 29, 29, 0.95)",
-      fontSize: "11px",
-      color: "rgba(237, 228, 208, 0.72)",
-      justifyContent: "center"
-    }}>
+    <div
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      style={{
+        position: "absolute", left: "12px", right: "12px", bottom: "52px", zIndex: 6,
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "8px 12px",
+        padding: "10px 12px",
+        maxHeight: "45%", overflowY: "auto",
+        borderRadius: "14px",
+        border: "1px solid rgba(215, 167, 111, 0.22)",
+        backgroundColor: "rgba(12, 17, 17, 0.95)",
+        backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+        boxShadow: "0 12px 32px rgba(0,0,0,0.55)",
+        fontSize: "11px",
+        color: "rgba(237, 228, 208, 0.72)",
+        justifyContent: "center",
+      }}>
       {items.map((it) => (
         <span key={it.key + it.label} style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
           <span style={{ display: "inline-flex", width: "16px", height: "16px", alignItems: "center", justifyContent: "center" }}>
@@ -715,6 +726,8 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
           <Icon name="map" size={15} color="#e6b98c" strokeWidth={2} />
           <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", color: "#e6b98c" }}>{legendOpen ? "Hide" : "Legend"}</span>
         </button>
+        {/* Floating overlay anchored to the map area — never reflows the map. */}
+        {legendOpen && <MapLegend />}
       </div>
 
       {journalOpen && (
@@ -807,9 +820,7 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
         </button>
       </div>
 
-      {legendOpen && <MapLegend />}
-
-      <div 
+      <div
         className="slide-up"
         style={{ 
           padding: "16px 20px calc(env(safe-area-inset-bottom, 0px) + 20px) 20px", 
