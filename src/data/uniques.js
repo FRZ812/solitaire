@@ -55,7 +55,7 @@ export const UNIQUE_ITEMS = [
   {
     drop: { dropFrom: ["goblin-raiders", "orc-raiders", "orc-warband"], minRegion: 5, chance: 0.06 },
     entry: {
-      id: "broken-ring-crown", name: "The Broken Ring", kind: "trinket", tier: "legendary",
+      id: "broken-ring-crown", name: "The Broken Ring", kind: "trinket", slot: "head", tier: "legendary",
       appearance: "A circlet of cold iron, snapped and re-welded, stamped with the Sundered Crown's broken ring.",
       description: "A warlord's badge from the Sundered Wastes. Those who wear it find others slower to defy them.",
       combat: { ward: 8, dodge: 8 },
@@ -65,7 +65,7 @@ export const UNIQUE_ITEMS = [
   {
     drop: { dropFrom: ["drakeling", "drake-wyrmling", "wyvern-passage", "wyrm-shadow"], minRegion: 5, chance: 0.07 },
     entry: {
-      id: "drakeheart-ember", name: "Drakeheart Ember", kind: "trinket", tier: "mythical",
+      id: "drakeheart-ember", name: "Drakeheart Ember", kind: "trinket", slot: "neck", tier: "mythical",
       appearance: "A coal that never cools, caged in gold melted around it.",
       description: "Cut from the breast of a wyrm of the Drakeholt. It drinks magic meant for you.",
       combat: { ward: 16, armor: 4 },

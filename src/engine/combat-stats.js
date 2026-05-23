@@ -180,8 +180,29 @@ export function weaponHands(item) {
 // a new one displaces the slot's current occupant back to the pack, so combat
 // effects can't be stacked by piling on duplicate gear. clothing is split into
 // real slots (head/hands/legs/feet/back/over/torso) so you can't wear five helms.
+// The wearable slots, in head-to-toe paper-doll order. `cap` is how many items
+// the slot holds (two rings). Weapons/shields/body-armour map cleanly from
+// `kind`; the finer clothing/trinket slots are ambiguous by name, so those items
+// carry an explicit `slot` (read first by equipSlot below).
+export const SLOTS = [
+  { id: "head",     label: "Head" },
+  { id: "neck",     label: "Neck" },
+  { id: "over",     label: "Over-robe" },
+  { id: "body",     label: "Body" },
+  { id: "back",     label: "Back" },
+  { id: "hands",    label: "Hands" },
+  { id: "ring",     label: "Rings", cap: 2 },
+  { id: "legs",     label: "Legs" },
+  { id: "feet",     label: "Feet" },
+  { id: "torso",    label: "Torso" },
+  { id: "mainhand", label: "Main Hand" },
+  { id: "offhand",  label: "Off Hand" },
+];
+const SLOT_IDS = new Set(SLOTS.map((s) => s.id));
+
 export function equipSlot(item) {
   if (!item) return null;
+  if (item.slot && SLOT_IDS.has(item.slot)) return item.slot; // explicit wins
   const k = item.kind;
   const n = `${item.name || ""} ${item.id || ""}`.toLowerCase();
   if (k === "weapon") return "mainhand";
@@ -189,7 +210,7 @@ export function equipSlot(item) {
   if (k === "armor") return "body";
   if (k === "trinket") return /\bring\b|signet|band/.test(n) ? "ring" : "neck";
   if (k === "clothing") {
-    if (/helm|helmet|cap|coif|hood|circlet|crown|mask|\bhat\b/.test(n)) return "head";
+    if (/helm|helmet|cap|coif|hood|circlet|crown|diadem|tiara|mask|\bhat\b/.test(n)) return "head";
     if (/bracer|vambrace|gauntlet|glove/.test(n)) return "hands";
     if (/greave|legging|chausse|cuisse/.test(n)) return "legs";
     if (/boot|shoe|sabaton|sandal/.test(n)) return "feet";
@@ -202,7 +223,7 @@ export function equipSlot(item) {
 
 // How many items a slot can hold (two rings; everything else one).
 export function slotCapacity(slot) {
-  return slot === "ring" ? 2 : 1;
+  return SLOTS.find((s) => s.id === slot)?.cap || 1;
 }
 
 // The attribute + minimum score an item demands, scaled by tier. Met → full

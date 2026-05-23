@@ -427,10 +427,18 @@ export function Solitaire() {
     return () => { cancelled = true; };
   }, [state, hydrated, currentCampaignId]);
 
-  // ----- Scroll the beat log -----
+  // ----- Scroll the beat log to the latest beat -----
+  // Loading a campaign renders its whole history at once, so the first scroll
+  // measures a height that late layout (fonts, images, beat art) then grows past
+  // — re-pin on the next frame, and also when a campaign is opened/hydrated.
   useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [state.beats.length, loading]);
+    const el = logRef.current;
+    if (!el) return;
+    const toBottom = () => { el.scrollTop = el.scrollHeight; };
+    toBottom();
+    const r = requestAnimationFrame(toBottom);
+    return () => cancelAnimationFrame(r);
+  }, [state.beats.length, loading, hydrated, currentCampaignId]);
 
   // ----- Campaign handlers -----
 
