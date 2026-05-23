@@ -47,7 +47,7 @@ const addInto = (dst, src) => { for (const k in src) dst[k] = (dst[k] || 0) + sr
 function smoothStats(key, v) {
   const q = Math.max(0, v * v - 16), s = {};
   switch (key) {
-    case "vigor":    s.maxHealth = Math.round(q * 0.95); s.drPct = +(q * 0.0001).toFixed(4); break;          // 30 → +840 HP, +9% DR
+    case "vigor":    s.drPct = +(q * 0.0001).toFixed(4); break;          // 30 → +9% DR (vigor's HP lives in vitalityMax now)
     case "body":     s.damageMult = +(q * 0.00041).toFixed(4); s.armor = Math.round(q * 0.0271); s.penetration = Math.round(q * 0.0068); break; // 30 → +36% dmg, +24 armor, +6 pen
     case "reflex":   s.dodge = Math.round(q * 0.0339); s.accuracy = Math.round(q * 0.0136); break;            // 30 → +30 dodge, +12 acc
     case "mind":     s.ward = Math.round(q * 0.0238); s.damageMult = +(q * 0.0002).toFixed(4); break;         // 30 → +21 ward, +18% (caster)

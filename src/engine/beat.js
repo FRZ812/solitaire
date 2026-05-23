@@ -74,7 +74,11 @@ export function applyBeat(state, beat, options = {}) {
   if (beat.discoveries) {
     const merged = mergeDiscoveries(codex, beat.discoveries);
     codex = merged.codex;
-    const discoveryItems = merged.newlyDiscovered.filter(d => d.kind !== "skill_growth");
+    // A granted SPELL is filed as BOTH a spell (lore) and a skill (the ability), so
+    // it surfaces twice in the feed — show it once: drop the skill chip when a spell
+    // of the same name is present (the ability itself is still recorded in the codex).
+    const spellNames = new Set(merged.newlyDiscovered.filter(d => d.kind === "spells").map(d => d.name));
+    const discoveryItems = merged.newlyDiscovered.filter(d => d.kind !== "skill_growth" && !(d.kind === "skills" && spellNames.has(d.name)));
     const growthItems = merged.newlyDiscovered.filter(d => d.kind === "skill_growth");
     if (discoveryItems.length > 0) {
       newBeats.push({ id: `disc${Date.now()}`, type: "discovery", items: discoveryItems });
@@ -132,6 +136,23 @@ export function applyBeat(state, beat, options = {}) {
   }
 
   const character = { ...state.character, inventory, attributes };
+  // Reconcile the narrator's equip-doubling: if it both granted an item to the pack
+  // (inventory_changes) AND put it on the player's WORN list this beat, the item is
+  // in both. Equipping moves it OUT of the pack — drop each NEWLY-worn id from the
+  // carried pile (only the new ones, so a worn item + a legit spare aren't eroded).
+  {
+    const oldWorn = new Set(state.world.codex.characters?.wanderer?.worn || []);
+    const newlyWorn = (codex.characters?.wanderer?.worn || []).filter((id) => !oldWorn.has(id));
+    if (newlyWorn.length && character.inventory?.carried?.length) {
+      const carried = character.inventory.carried.map((c) => ({ ...c }));
+      let changed = false;
+      for (const id of newlyWorn) {
+        const i = carried.findIndex((c) => c.itemId === id);
+        if (i >= 0) { carried[i].quantity -= 1; if (carried[i].quantity <= 0) carried.splice(i, 1); changed = true; }
+      }
+      if (changed) character.inventory = { ...character.inventory, carried };
+    }
+  }
   // Max HP derives from vigor — keep it in sync whenever attributes may have
   // changed (also lazily migrates older saves). A vigor gain heals by the delta.
   recomputeVitalityMax(character);

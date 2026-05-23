@@ -2,14 +2,18 @@ import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
 
 // The player's max HP is derived from VIGOR (so toughness is a real, investable
-// stat — mirroring how NPCs get HP from vigor). Tuned so a starting build
-// (effective vigor ≈ 2) ≈ 30, the legacy baseline.
+// stat — mirroring how NPCs get HP from vigor). A linear floor keeps early builds
+// near the legacy baseline (vigor ≈ 2 → ~30), plus a back-loaded curve that pays
+// off the grind: vigor 30 → ~+840 on top, so a maxed build reads ~1010 max HP.
+// (This is the ONE home for vigor's HP — combat reads vitalityMax, and the
+// attribute-threshold table no longer adds vigor maxHealth, to avoid double-count.)
 export const BASE_VITALITY = 20;
 export const HP_PER_VIGOR = 5;
 
 export function maxVitalityFor(character) {
   const vigor = effectiveAttributes(character).vigor || 0;
-  return Math.round(BASE_VITALITY + vigor * HP_PER_VIGOR);
+  const curve = Math.round(Math.max(0, vigor * vigor - 16) * 0.95); // ~0 at vigor ≤4, ~+840 at 30
+  return Math.round(BASE_VITALITY + vigor * HP_PER_VIGOR + curve);
 }
 
 // Recompute and store `vitalityMax` from current (effective) vigor — call wherever
