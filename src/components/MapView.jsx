@@ -694,6 +694,27 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
             })}
           </svg>
         </div>
+        {/* Legend toggle — bottom-center of the map. Lives inside the map area
+            so it always clears the location panel below; stops the press from
+            starting a map pan. */}
+        <button
+          onClick={() => setLegendOpen((v) => !v)}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          aria-label="Toggle map legend" title="Map legend"
+          style={{
+            position: "absolute", bottom: "12px", left: "50%", transform: "translateX(-50%)",
+            zIndex: 7, display: "flex", alignItems: "center", gap: "6px",
+            height: "32px", padding: "0 14px", borderRadius: "999px",
+            backgroundColor: legendOpen ? "rgba(215, 167, 111, 0.28)" : "rgba(20, 29, 29, 0.78)",
+            border: "1px solid rgba(215, 167, 111, 0.28)", cursor: "pointer",
+            backdropFilter: "blur(8px)", boxShadow: "0 4px 14px rgba(0,0,0,0.45)",
+          }}
+        >
+          <Icon name="map" size={15} color="#e6b98c" strokeWidth={2} />
+          <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", color: "#e6b98c" }}>{legendOpen ? "Hide" : "Legend"}</span>
+        </button>
       </div>
 
       {journalOpen && (
@@ -737,22 +758,8 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
         position: "absolute", top: "calc(env(safe-area-inset-top, 0px) + 64px)", right: "16px",
         zIndex: 7, display: "flex", gap: "8px",
       }}>
-        <button
-          onClick={() => setJournalOpen((v) => !v)}
-          aria-label="Quest journal" title="Quest journal"
-          style={{
-            ...iconButtonStyle, position: "relative",
-            backgroundColor: journalOpen ? "rgba(215, 167, 111, 0.28)" : "rgba(20, 29, 29, 0.72)",
-            border: "1px solid rgba(215, 167, 111, 0.3)", borderRadius: "50%",
-            width: "34px", height: "34px", display: "flex", alignItems: "center",
-            justifyContent: "center", cursor: "pointer", backdropFilter: "blur(8px)",
-          }}
-        >
-          <Icon name="book" size={15} color="#e6b98c" strokeWidth={2} />
-          {activeQuests.length > 0 && (
-            <span style={{ position: "absolute", top: "-4px", right: "-4px", minWidth: "15px", height: "15px", padding: "0 3px", borderRadius: "999px", backgroundColor: "#d7a76f", color: "#111716", fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{activeQuests.length}</span>
-          )}
-        </button>
+        {/* order left→right: look-for-fights, journal, recenter — so recenter
+            sits at the very top-right corner. */}
         {onSeekCombat && (
           <button
             onClick={onSeekCombat} disabled={loading}
@@ -770,6 +777,22 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
           </button>
         )}
         <button
+          onClick={() => setJournalOpen((v) => !v)}
+          aria-label="Quest journal" title="Quest journal"
+          style={{
+            ...iconButtonStyle, position: "relative",
+            backgroundColor: journalOpen ? "rgba(215, 167, 111, 0.28)" : "rgba(20, 29, 29, 0.72)",
+            border: "1px solid rgba(215, 167, 111, 0.3)", borderRadius: "50%",
+            width: "34px", height: "34px", display: "flex", alignItems: "center",
+            justifyContent: "center", cursor: "pointer", backdropFilter: "blur(8px)",
+          }}
+        >
+          <Icon name="book" size={15} color="#e6b98c" strokeWidth={2} />
+          {activeQuests.length > 0 && (
+            <span style={{ position: "absolute", top: "-4px", right: "-4px", minWidth: "15px", height: "15px", padding: "0 3px", borderRadius: "999px", backgroundColor: "#d7a76f", color: "#111716", fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{activeQuests.length}</span>
+          )}
+        </button>
+        <button
           onClick={reset}
           aria-label="Recenter on player" title="Recenter on player"
           style={{
@@ -781,19 +804,6 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
           }}
         >
           <Icon name="crosshair" size={14} color="#e6b98c" strokeWidth={2} />
-        </button>
-        <button
-          onClick={() => setLegendOpen((v) => !v)}
-          aria-label="Map legend" title="Map legend"
-          style={{
-            ...iconButtonStyle,
-            backgroundColor: legendOpen ? "rgba(215, 167, 111, 0.28)" : "rgba(20, 29, 29, 0.72)",
-            border: "1px solid rgba(215, 167, 111, 0.2)", borderRadius: "50%",
-            width: "34px", height: "34px", display: "flex", alignItems: "center",
-            justifyContent: "center", cursor: "pointer", backdropFilter: "blur(8px)",
-          }}
-        >
-          <Icon name="map" size={15} color="#e6b98c" strokeWidth={2} />
         </button>
       </div>
 
