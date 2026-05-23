@@ -59,8 +59,14 @@ function gainHealth(c, amt) {
 
 function addStatus(c, effect) {
   if (!effect) return;
-  // Unbowed (controlResist): a chance to shrug off hard control (stun/slow).
-  if (c && c.controlResist && RESISTABLE_CONTROL.has(effect.type) && Math.random() < c.controlResist) return;
+  // Hard control (stun/slow) has DIMINISHING RETURNS: Unbowed (controlResist) plus
+  // a stacking resist from how often this foe has already been controlled this
+  // fight (+20% per prior control, capped). So you can chain a couple of locks to
+  // set up a kill, but you can't perma-stun a boss out of the fight.
+  if (c && RESISTABLE_CONTROL.has(effect.type)) {
+    const resist = Math.min(0.8, (c.controlResist || 0) + (c.controlPressure || 0) * 0.2);
+    if (resist > 0 && Math.random() < resist) return;
+  }
   c.statuses = c.statuses || [];
   c.statuses.push({ type: effect.type, value: effect.value || 0, duration: effect.duration || 1 });
 }
@@ -746,13 +752,25 @@ function downAlly(cs, a) {
 
 // Self-targeted ability effects — shared by the player and NPCs so defensive and
 // tempo abilities (shields, ward, invuln, an extra action) work the same for all.
+// Living combatants on the actor's own side (for party-target support spells).
+function sideAllies(cs, actor) {
+  const list = actor.side === "enemy"
+    ? cs.enemies
+    : [cs.player, ...(cs.allies || [])];
+  return list.filter((c) => c && c.health > 0 && !c.resolved && !c._dead);
+}
+
 function applySelfEffect(actor, effect) {
   if (!effect) return;
+  // `pctMax` heals/shields are a FRACTION of the target's max health, so support
+  // stays meaningful at every scale (a flat +16 is noise next to a raid's HP).
+  const val = effect.pctMax ? Math.max(1, Math.round((actor.maxHealth || 0) * (effect.value || 0))) : (effect.value || 0);
   switch (effect.type) {
-    case "shield":      actor.shield = (actor.shield || 0) + (effect.value || 0); break;
-    case "magicShield": actor.magicShield = (actor.magicShield || 0) + (effect.value || 0); break;
+    case "shield":      actor.shield = (actor.shield || 0) + val; break;
+    case "magicShield": actor.magicShield = (actor.magicShield || 0) + val; break;
     case "invuln":      actor.invuln = Math.max(actor.invuln || 0, effect.duration || 1); break;
     case "bonusAction": actor.actionsLeft = (actor.actionsLeft || 0) + (effect.value || 1); break;
+    case "regen":       addStatus(actor, { ...effect, value: val, pctMax: false }); break; // bank the %-of-max as flat/turn
     default:            addStatus(actor, effect);
   }
 }
@@ -778,7 +796,7 @@ function npcCandidates(actor) {
 // Returns true if it acted (so the caller can keep spending action points).
 function npcPerform(cs, actor, opponents) {
   if ((actor.actionsLeft || 0) <= 0) return false;
-  const choice = chooseAction(actor, opponents, npcCandidates(actor));
+  const choice = chooseAction(actor, opponents, npcCandidates(actor), { allies: sideAllies(cs, actor) });
   if (!choice) return false;
   const { def, ability, mode } = choice;
   const tId = ability.tier || actor.tier || "common";
@@ -815,6 +833,9 @@ function npcPerform(cs, actor, opponents) {
   if (mode === "self") {
     applySelfEffect(actor, def.effect);
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
+  } else if (mode === "all-allies") {
+    cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
+    for (const al of sideAllies(cs, actor)) applySelfEffect(al, def.effect);
   } else if (mode === "aoe") {
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
     for (const t of opponents) if (t.health > 0 && !t.resolved && !t._dead) hitOne(t);
@@ -1063,7 +1084,7 @@ export function playerAct(cs0, abilityId, targetIndex) {
   // Distance gate: a single-target action only lands within the ability's
   // reach/range. One step out → CHARGE (close the last step and strike in the
   // same action). Farther → spend the action just closing in (no cost).
-  if (def.target !== "self" && def.target !== "all-enemies") {
+  if (def.target !== "self" && def.target !== "all-enemies" && def.target !== "all-allies") {
     let gi = targetIndex;
     if (gi == null || !playerTargetable(cs.enemies[gi])) gi = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
     const gt = gi >= 0 ? cs.enemies[gi] : null;
@@ -1115,6 +1136,9 @@ export function playerAct(cs0, abilityId, targetIndex) {
   if (def.target === "self") {
     applySelfEffect(cs.player, def.effect);
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
+  } else if (def.target === "all-allies") {
+    cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
+    for (const al of sideAllies(cs, cs.player)) applySelfEffect(al, def.effect);
   } else if (def.target === "all-enemies") {
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
     for (const e of cs.enemies) { if (e.health > 0 && !e.resolved) hitEnemy(e); }

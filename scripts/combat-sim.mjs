@@ -55,7 +55,8 @@ function choosePlayerAction(cs) {
     .filter((c) => c.def && c.id !== "talk" && abilityUsable(cs, c.id));
   const opp = cs.enemies.filter((e) => e.health > 0 && !e.resolved);
   if (opp.length === 0) return null;
-  const choice = chooseAction(cs.player, opp, candidates);
+  const party = [cs.player, ...(cs.allies || [])].filter((a) => a.health > 0 && !a._dead && !a.resolved);
+  const choice = chooseAction(cs.player, opp, candidates, { allies: party });
   if (!choice) return { abilityId: BASIC_ATTACK.id, targetIndex: cs.enemies.indexOf(opp[0]) };
   const targetIndex = choice.target ? cs.enemies.indexOf(choice.target) : cs.enemies.indexOf(opp[0]);
   return { abilityId: choice.ability.id, targetIndex };

@@ -216,7 +216,10 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     if (body >= 6) abilities.push({ id: "power-strike", tier: tierId });
     if (mind >= 8) abilities.push({ id: "firebolt", tier: tierId });
   }
-  const maxHealth = Math.max(1, Math.round((12 + vigor * 2 + body) * m) + (sm.maxHealth || 0));
+  // HP from vigor/body, OR an authored base pool for designed raid bosses
+  // (npc.health) — both tier-scaled, like a template mob's base health.
+  const baseHp = npc.health != null ? npc.health : (12 + vigor * 2 + body);
+  const maxHealth = Math.max(1, Math.round(baseHp * m) + (sm.maxHealth || 0));
   // Named foes carry their wounds between encounters — re-engaging doesn't reset
   // them to full. A previously-yielded foe is already cowed (low morale).
   const cstate = npc.combatState;
@@ -242,7 +245,9 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     resolve: 6 + Math.floor(mind / 2), resolveMax: 6 + Math.floor(mind / 2),
     resolveRegen: 1 + (tr.resolveRegen || 0),
     swiftChance: Math.min(0.5, sm.swiftChance || 0),
-    actionsPerTurn: 1 + Math.min(3, Math.max(0, sm.extraActions || 0)), actionsLeft: 1,
+    // A designed raid boss acts several times a turn (npc.actionsPerTurn) so it
+    // threatens a whole PARTY each round — that's how it's meant to be fought.
+    actionsPerTurn: npc.actionsPerTurn != null ? npc.actionsPerTurn : (1 + Math.min(3, Math.max(0, sm.extraActions || 0))), actionsLeft: 1,
     cooldownReduction: Math.min(3, sm.cooldownReduction || 0),
     procs: tr.procs || [], shield: 0, magicShield: 0, invuln: 0,
     weapon, abilities, maxLootTier: tierId, statuses: [], cooldowns: {},

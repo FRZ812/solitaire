@@ -94,6 +94,19 @@ export function chooseAction(actor, opponents, candidates, opts = {}) {
     return { ability: cover, def: cover.def, mode: "self", target: null };
   }
 
+  // 1c) PARTY SUPPORT (a healer/support's role): heal/shield/rally the whole side,
+  // or spend the costly invulnerability when an ally is about to die. Gated on the
+  // actual party state passed in opts.allies.
+  const party = (opts.allies && opts.allies.length) ? opts.allies : [actor];
+  const woundedAllies = party.filter((a) => a.health > 0 && a.health / Math.max(1, a.maxHealth) < 0.55);
+  const direAlly = party.some((a) => a.health > 0 && a.health / Math.max(1, a.maxHealth) < 0.3);
+  const partyOf = (type) => candidates.find((c) => c.def.target === "all-allies" && (Array.isArray(type) ? type.includes(c.def.effect?.type) : c.def.effect?.type === type));
+  const partyInvuln = partyOf("invuln"), partyHeal = partyOf("regen"), partyShield = partyOf(["shield", "magicShield"]), partyRally = partyOf("rally");
+  if (partyInvuln && direAlly) return { ability: partyInvuln, def: partyInvuln.def, mode: "all-allies", target: null };
+  if (partyHeal && woundedAllies.length >= 2) return { ability: partyHeal, def: partyHeal.def, mode: "all-allies", target: null };
+  if (partyShield && woundedAllies.length >= 1 && Math.random() < 0.6) return { ability: partyShield, def: partyShield.def, mode: "all-allies", target: null };
+  if (partyRally && hpFrac > 0.5 && !has(actor, "rally") && Math.random() < 0.4) return { ability: partyRally, def: partyRally.def, mode: "all-allies", target: null };
+
   // 2) Control a dangerous, uncontrolled target (set up the kill).
   const control = candidates.find((c) =>
     c.def.effect && c.def.effect.target === "enemy" &&
