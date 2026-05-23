@@ -8,6 +8,7 @@ import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, itemCombatStats, itemRequirement, equipSlot, slotCapacity, SLOTS } from "../engine/combat-stats.js";
 import { EQUIPPABLE } from "../engine/inventory.js";
+import { itemTemplate } from "../data/catalog.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { passiveLabel, passiveEffectText, passiveDef, isFusionRune } from "../data/passives.js";
@@ -598,7 +599,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
 
       {detail && (
         <ItemDetail
-          item={codex.items[detail.id]}
+          item={{ ...itemTemplate(detail.id), ...codex.items[detail.id] }}
           id={detail.id}
           location={detail.location}
           attrs={attrs}

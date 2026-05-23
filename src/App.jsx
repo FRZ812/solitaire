@@ -828,7 +828,10 @@ export function Solitaire() {
   // and logs a short beat of what changed.
   function handleUse(itemId) {
     const r = useConsumable(state, itemId);
-    if (!r.ok) return;
+    if (!r.ok) {
+      if (r.reason) setState({ ...state, beats: [...state.beats, { id: `use${Date.now()}`, type: "narration", content: r.reason }] });
+      return;
+    }
     setState({ ...r.state, beats: [...r.state.beats, { id: `use${Date.now()}`, type: "narration", content: r.summary }] });
   }
 

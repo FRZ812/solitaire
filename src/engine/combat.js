@@ -1332,34 +1332,42 @@ function finishDefeat(cs) {
   return cs;
 }
 
-const LOOT_NAMES = {
-  weapon: ["Blade", "Edge", "Fang", "Cleaver", "Spike", "Talon"],
-  armor: ["Guard", "Plate", "Hauberk", "Carapace", "Ward"],
-  trinket: ["Charm", "Sigil", "Token", "Knot", "Bead"],
-};
 const TIER_ADJ = {
   common: "Plain", uncommon: "Fine", rare: "Keen", "very-rare": "Runed",
   epic: "Storied", legendary: "Fabled", mythical: "Mythic", divine: "Hallowed",
 };
 
+// Every wearable slot is droppable at every tier, so loot can fill the whole
+// paper-doll — not just weapon/armor/trinket. Each entry carries its `kind`,
+// explicit `slot`, name nouns, and a tier-scaled stat block (m = tier multiplier).
+const r = (v) => Math.max(1, Math.round(v));
+const LOOT_TYPES = [
+  { kind: "weapon",   slot: "mainhand", nouns: ["Blade", "Edge", "Fang", "Cleaver", "Spike", "Talon"], combat: (m) => ({ damage: { min: r(3 * m), max: r(6 * m), type: "physical", pen: Math.round(m) } }) },
+  { kind: "shield",   slot: "offhand",  nouns: ["Buckler", "Targe", "Roundshield", "Wall"],            combat: (m) => ({ armor: r(2.4 * m) }) },
+  { kind: "armor",    slot: "body",     nouns: ["Hauberk", "Cuirass", "Carapace", "Brigandine"],       combat: (m) => ({ armor: r(3 * m) }) },
+  { kind: "clothing", slot: "head",     nouns: ["Helm", "Cap", "Coif", "Circlet"],                     combat: (m) => ({ armor: r(1.2 * m) }) },
+  { kind: "clothing", slot: "hands",    nouns: ["Gauntlets", "Bracers", "Gloves"],                     combat: (m) => ({ armor: r(1 * m) }) },
+  { kind: "clothing", slot: "legs",     nouns: ["Greaves", "Leggings", "Chausses"],                    combat: (m) => ({ armor: r(1.5 * m) }) },
+  { kind: "clothing", slot: "feet",     nouns: ["Boots", "Sabatons", "Treads"],                        combat: (m) => ({ armor: r(0.8 * m), dodge: r(0.6 * m) }) },
+  { kind: "clothing", slot: "back",     nouns: ["Cloak", "Cape", "Mantle"],                            combat: (m) => ({ ward: r(1 * m), dodge: r(0.8 * m) }) },
+  { kind: "clothing", slot: "over",     nouns: ["Robe", "Vestment", "Surcoat"],                        combat: (m) => ({ ward: r(2 * m) }) },
+  { kind: "clothing", slot: "torso",    nouns: ["Tunic", "Jerkin", "Gambeson"],                        combat: (m) => ({ armor: r(1 * m), ward: r(1 * m) }) },
+  { kind: "trinket",  slot: "neck",     nouns: ["Amulet", "Pendant", "Torc", "Charm"],                 combat: (m) => ({ ward: r(2 * m) }) },
+  { kind: "trinket",  slot: "ring",     nouns: ["Ring", "Band", "Signet"],                             combat: (m) => ({ ward: r(1 * m), dodge: r(0.8 * m) }) },
+];
+
 function generateLootItem(tierId) {
-  const kinds = ["weapon", "armor", "trinket"];
-  const kind = kinds[Math.floor(Math.random() * kinds.length)];
-  const noun = LOOT_NAMES[kind][Math.floor(Math.random() * LOOT_NAMES[kind].length)];
+  const t = LOOT_TYPES[Math.floor(Math.random() * LOOT_TYPES.length)];
+  const noun = t.nouns[Math.floor(Math.random() * t.nouns.length)];
   const name = `${TIER_ADJ[tierId] || "Plain"} ${noun}`;
   const id = `${tierId}-${noun.toLowerCase()}-${Math.random().toString(36).slice(2, 6)}`;
-  const m = tierMult(tierId);
-  let combat;
-  if (kind === "weapon") combat = { damage: { min: Math.round(3 * m), max: Math.round(6 * m), type: "physical", pen: Math.round(m) } };
-  else if (kind === "armor") combat = { armor: Math.round(3 * m) };
-  else combat = { ward: Math.round(2 * m), dodge: Math.round(1 * m) };
   return {
     id,
     entry: {
-      id, name, kind: kind === "trinket" ? "trinket" : kind, tier: tierId,
+      id, name, kind: t.kind, slot: t.slot, tier: tierId,
       appearance: `${tierLabel(tierId)}-grade ${noun.toLowerCase()}, taken in battle.`,
-      description: `A ${tierLabel(tierId).toLowerCase()} ${kind} recovered from a foe.`,
-      combat,
+      description: `A ${tierLabel(tierId).toLowerCase()} ${noun.toLowerCase()} recovered from a foe.`,
+      combat: t.combat(tierMult(tierId)),
       passives: rollItemPassives(tierId, { luck: 0.1 }),
     },
   };

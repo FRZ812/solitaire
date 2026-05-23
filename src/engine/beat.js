@@ -7,6 +7,7 @@ import {
 import { passiveHealVitality } from "./healing.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
+import { refillVessels } from "./consumables.js";
 import { itemTemplate } from "../data/catalog.js";
 import { resolveRace } from "../data/races.js";
 import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
@@ -16,6 +17,21 @@ import { applyAttributeChanges } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
 import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
 import { clampRel, MEMORY_CAP } from "./relationships.js";
+
+// Can a waterskin be refilled at this tile? Settlements have wells; water/marsh
+// tiles and any spring/well/stream/river POI are clean enough; an adjacent
+// open-water tile means a stream is within reach.
+function canRefillWater(stateLike, x, y) {
+  const here = getTile(stateLike, x, y);
+  if (!here) return false;
+  if (here.terrain === "settlement" || here.terrain === "water" || here.terrain === "marsh") return true;
+  const poi = `${here.poi?.name || ""} ${here.poi?.type || ""}`.toLowerCase();
+  if (/well|spring|fountain|stream|brook|river|lake|pool|cistern|oasis|ford|creek/.test(poi)) return true;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    if (getTile(stateLike, x + dx, y + dy)?.terrain === "water") return true;
+  }
+  return false;
+}
 
 // applyBeat is the heart of the engine. Given the current state and a beat
 // from the narrator, it returns the next state plus the new beat entries to
@@ -218,6 +234,11 @@ export function applyBeat(state, beat, options = {}) {
     const existing = tiles[k] || getTile({ ...state, world }, world.currentTile.x, world.currentTile.y);
     tiles[k] = { ...existing, status: { ...beat.location_update, day: newTime.day } };
     world = { ...world, tiles };
+  }
+
+  // At a well, settlement, or clean stream the wanderer tops off any waterskin.
+  if (world.currentTile && canRefillWater({ ...state, world }, world.currentTile.x, world.currentTile.y)) {
+    character.inventory = refillVessels(character.inventory);
   }
 
   // A companion the narrator just won over joins the party (the player talked
