@@ -16,6 +16,7 @@ import { makeInitialState } from "../src/data/initial-state.js";
 import { enemyFromNPC, allyFromCompanion } from "../src/data/bestiary.js";
 import { initCombat, playerAct, endTurn, abilityUsable } from "../src/engine/combat.js";
 import { deriveCombatStats } from "../src/engine/combat-stats.js";
+import { recomputeVitalityMax } from "../src/engine/attributes.js";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 
@@ -106,11 +107,11 @@ function refPlayer(arch = "heavy") {
     proficiencies: {},
   };
   if (arch === "light") {
-    return { ...base, vitality: 540, vitalityMax: 540,
-      attributes: { body: 20, reflex: 24, vigor: 18, mind: 16, wit: 20, presence: 14 } };
+    return recomputeVitalityMax({ ...base,
+      attributes: { body: 20, reflex: 24, vigor: 18, mind: 16, wit: 20, presence: 14 } });
   }
-  return { ...base, vitality: 760, vitalityMax: 760,
-    attributes: { body: 26, reflex: 18, vigor: 24, mind: 16, wit: 18, presence: 16 } };
+  return recomputeVitalityMax({ ...base,
+    attributes: { body: 26, reflex: 18, vigor: 24, mind: 16, wit: 18, presence: 16 } });
 }
 
 // Strong divine allies so the boss faces a PARTY (its AoE actually fires).

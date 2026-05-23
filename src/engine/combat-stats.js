@@ -18,6 +18,7 @@
 import { attrFactor } from "../data/abilities.js";
 import { tierMult, tier as tierInfo } from "../data/tiers.js";
 import { aggregateCombatPassives, aggregateWorldPassives } from "../data/passives.js";
+import { attributeThresholdMods } from "../data/attribute-tiers.js";
 import { effectiveAttributes, proficiencyRating, weaponMasteryId } from "../data/proficiencies.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -356,9 +357,14 @@ export function deriveCombatStats(character, codex) {
     if (it.kind === "armor" && stats.armorClass) band = armorBandMods(stats.armorClass);
   }
 
-  // Req-met passives modify stats and add triggers.
+  // Req-met passives modify stats and add triggers (attrs gate threshold passives).
   const { enabled } = collectEquippedPassives(character, codex);
-  const { statMods, triggers } = aggregateCombatPassives(enabled);
+  const { statMods, triggers } = aggregateCombatPassives(enabled, a);
+  // Attribute-threshold breakpoints: a strong bump at each band (5/10/15/20) on
+  // top of the gentle per-point scaling, folded into the same statMods/triggers.
+  const th = attributeThresholdMods(a);
+  for (const k in th.statMods) statMods[k] = (statMods[k] || 0) + th.statMods[k];
+  for (const k in th.triggers) triggers[k] = (triggers[k] || 0) + th.triggers[k];
 
   const weapon = weaponProfile(character, codex, a);
   weapon.pen += statMods.penetration || 0;

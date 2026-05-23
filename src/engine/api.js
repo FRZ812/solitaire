@@ -3,6 +3,7 @@
 // itself lives in those files; this module is helpers only.
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
+import { attrDescriptor } from "../data/attribute-tiers.js";
 import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf } from "../data/abilities.js";
 import { ALL_ITEMS } from "../data/catalog.js";
 import { tierOrder } from "../data/tiers.js";
@@ -49,7 +50,9 @@ export function summarizeInventory(character, codex, day = 0) {
 }
 
 export function summarizeAttributes(attrs) {
-  return ATTR_KEYS.map(k => `${ATTR_LABELS[k]} ${attrs[k] ?? 0}`).join(", ");
+  // Each score carries its named tier (the system-prompt's bands) so the narrator
+  // anchors checks + flavor consistently: e.g. "Body 5 (fit), Vigor 12 (iron-willed)".
+  return ATTR_KEYS.map(k => `${ATTR_LABELS[k]} ${attrs[k] ?? 0} (${attrDescriptor(k, attrs[k] ?? 0)})`).join(", ");
 }
 
 // What the player can DO in a fight: combat spells (magic — schools arcane/divine,

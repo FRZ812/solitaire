@@ -24,8 +24,17 @@
 // while equipped AND the item's stat requirement is met (itemRequirement).
 
 import { TIERS, rollTier, tier as tierInfo } from "./tiers.js";
+import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 
 const o = (tierId) => tierInfo(tierId).order;
+
+// "When Body ≥ 12" suffix for threshold (attrReq) passives, for the codex/labels.
+function reqText(def) {
+  const r = def && def.attrReq;
+  if (!r) return "";
+  const label = r.key === "highest" ? "highest attribute" : (ATTR_LABELS[r.key] || r.key);
+  return ` (when ${label} ≥ ${r.min})`;
+}
 
 // Flat "power" affixes (raw health, flat damage, flat armour/pen) must track the
 // GEOMETRIC tier curve, not grow linearly with tier order — otherwise they go
@@ -92,6 +101,16 @@ export const PASSIVES = [
   { id: "archmage",   name: "Archmage",     cat: "divine", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "divine",  amount: (n) => 3,                    desc: "Bottomless will — restores great resolve each turn." },
   { id: "phantom",    name: "Phantom",      cat: "divine", scope: "combat", type: "stat", key: "dodge",        minTier: "divine",    amount: (n) => 28,                   desc: "Half-real — devastating evasion." },
   { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: () => geo(20, 7),            desc: "A mountain of vitality." },
+
+  // ---------- PARAGON — threshold affixes that only wake for the truly gifted ----------
+  // Distinct from the gentle per-point attribute scaling: a strong, build-defining
+  // bonus that lies DORMANT until the wearer's attribute crosses a high bar (≥12),
+  // rewarding deep investment in a single attribute on top of high-tier gear.
+  { id: "titans-might",    name: "Titan's Might",    cat: "paragon", scope: "combat", type: "stat", key: "damageMult",        minTier: "epic", attrReq: { key: "body", min: 12 },   amount: (n) => 0.12 + n * 0.02, desc: "Raw, mountain-moving power — for the truly mighty alone." },
+  { id: "quicksilver",     name: "Quicksilver",      cat: "paragon", scope: "combat", type: "stat", key: "swiftChance",       minTier: "epic", attrReq: { key: "reflex", min: 12 }, amount: (n) => 0.10 + n * 0.02, desc: "Preternatural speed — extra strikes slip in for the impossibly quick." },
+  { id: "adamant",         name: "Adamant",          cat: "paragon", scope: "combat", type: "stat", key: "drPct",             minTier: "epic", attrReq: { key: "vigor", min: 12 },  amount: (n) => 0.06 + n * 0.012, desc: "An unbreakable body shrugs off what would fell another." },
+  { id: "grand-strategist",name: "Grand Strategist", cat: "paragon", scope: "combat", type: "stat", key: "cooldownReduction", minTier: "epic", attrReq: { key: "mind", min: 12 },   amount: () => 1,                desc: "A brilliant mind reads the fight and recovers its tricks faster." },
+  { id: "hawkeye",         name: "Hawkeye",          cat: "paragon", scope: "combat", type: "stat", key: "critChance",        minTier: "epic", attrReq: { key: "wit", min: 12 },    amount: (n) => 8 + n * 2,       desc: "Uncanny perception finds the gap in any guard." },
 
   // ---------- TEMPO (action economy) — the swift build, capped at +3 ----------
   // extraActions grants generic ACTION POINTS the bearer spends on anything; with
@@ -301,9 +320,9 @@ export function passiveEffectText(id, tierId) {
   const def = BY_ID[id];
   if (!def) return "";
   const n = o(tierId || def.minTier || "common");
-  if (def.type === "proc") return formatProc(def, def.amount(n));
+  if (def.type === "proc") return formatProc(def, def.amount(n)) + reqText(def);
   const k = KEY_EFFECT[def.key];
-  return k ? k.p(numFmt[k.s](def.amount(n))) : (def.desc || "");
+  return (k ? k.p(numFmt[k.s](def.amount(n))) : (def.desc || "")) + reqText(def);
 }
 
 // Effect across an affix's whole grade range (tier floor → divine), for the codex
@@ -312,11 +331,11 @@ export function passiveEffectRange(id) {
   const def = BY_ID[id];
   if (!def) return "";
   const lo = o(def.minTier || "common"), hi = o("divine");
-  if (def.type === "proc") return formatProc(def, def.amount(lo), def.amount(hi));
+  if (def.type === "proc") return formatProc(def, def.amount(lo), def.amount(hi)) + reqText(def);
   const k = KEY_EFFECT[def.key];
   if (!k) return def.desc || "";
   const a = numFmt[k.s](def.amount(lo)), b = numFmt[k.s](def.amount(hi));
-  return k.p(a === b ? a : `${a}–${b}`);
+  return k.p(a === b ? a : `${a}–${b}`) + reqText(def);
 }
 
 // Passive slots an item of this tier carries.
@@ -352,13 +371,22 @@ export function rollItemPassives(itemTierId, { luck = 0, scopeFilter = null } = 
 
 // Combine a list of ENABLED {id,tier} passives into combat effects, applying the
 // snowball caps so no amount of stacking can run away.
-export function aggregateCombatPassives(list) {
+export function aggregateCombatPassives(list, attrs = null) {
   const statMods = {};   // armor/ward/dodge/accuracy/penetration/critChance/critMult/speed/swiftChance/damageFlat/damageMult/maxHealth/drPct/extraActions/cooldownReduction/fortify
   const triggers = {};   // lifesteal/thorns/resolveRegen/turnRegen/reviveOnce/shieldGen/magicShieldGen/invulnCharges
   const procs = [];      // {hook, kind, status?, duration?, value, chance, cond?, threshold?, name} — fired by the engine
   for (const { id, tier } of (list || [])) {
     const def = BY_ID[id];
     if (!def || def.scope !== "combat") continue;
+    // Threshold (Paragon) affixes lie dormant until the wearer's attribute clears
+    // the bar. Without an attributes context they stay off (loot/forge previews).
+    if (def.attrReq) {
+      if (!attrs) continue;
+      const have = def.attrReq.key === "highest"
+        ? Math.max(0, ...ATTR_KEYS.map((k) => attrs[k] || 0))
+        : (attrs[def.attrReq.key] || 0);
+      if (have < def.attrReq.min) continue;
+    }
     const v = def.amount(o(tier));
     if (def.type === "stat") {
       // damageCap is a "lowest wins" cap (stacking shouldn't weaken it); everything else sums.

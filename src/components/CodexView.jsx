@@ -514,6 +514,7 @@ const PASSIVE_CATEGORIES = [
   { key: "resource", label: "Resource",         short: "Resource", color: "#c4a6f0" },
   { key: "control",  label: "Control",          short: "Control",  color: "#86d27a" },
   { key: "power",    label: "Legendary Powers",  short: "Powers",   color: "#f5d76e" },
+  { key: "paragon",  label: "Paragon (Attribute)", short: "Paragon", color: "#f0c674" },
   { key: "divine",   label: "Divine Powers",     short: "Divine",   color: "#fbf5e3" },
   { key: "fusion",   label: "Fusion (Forged)",   short: "Fusion",   color: "#c79be0" },
   { key: "world",    label: "World & Travel",     short: "World",    color: "#8fd0c0" },
