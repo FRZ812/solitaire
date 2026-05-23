@@ -235,7 +235,7 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     dr: Math.min(0.85, sm.drPct || 0), fortify: Math.min(0.25, sm.fortify || 0),
     healPower: Math.min(1.0, sm.healPower || 0), dmgDefer: Math.min(0.6, sm.dmgDefer || 0),
     dodge: Math.min(70, reflex * 2 + dodgeGear + (sm.dodge || 0)),
-    accuracy: reflex + wit + (weapon.acc || 0) + (sm.accuracy || 0), critChance: Math.min(60, Math.round(wit * 1.5 + reflex) + (fam.crit || 0) + (sm.critChance || 0)), critMult: 1.5 + (sm.critMult || 0),
+    accuracy: reflex + wit + (weapon.acc || 0) + (sm.accuracy || 0), critChance: Math.min(100, Math.round(wit * 1.5 + reflex) + (fam.crit || 0) + (sm.critChance || 0)), critMult: Math.min(9.99, 1.5 + (sm.critMult || 0)),
     speed: reflex + Math.floor(wit / 2),
     triggers: tr,
     // Same action economy as the player (no stamina); swift-geared foes (extra-

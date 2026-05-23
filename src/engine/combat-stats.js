@@ -408,8 +408,8 @@ export function deriveCombatStats(character, codex) {
     ward: ward + (statMods.ward || 0) + (band.ward || 0),
     dodge,
     accuracy: reflex + wit + prof.awareness + weapon.mastery + (weapon.acc || 0) + (statMods.accuracy || 0) + (band.accuracy || 0),
-    critChance: clamp(Math.round(wit * 1.5 + reflex) + (weapon.crit || 0) + (statMods.critChance || 0), 0, 60),
-    critMult: 1.5 + (statMods.critMult || 0),
+    critChance: clamp(Math.round(wit * 1.5 + reflex) + (weapon.crit || 0) + (statMods.critChance || 0), 0, 100), // stackable to a guaranteed crit
+    critMult: Math.min(9.99, 1.5 + (statMods.critMult || 0)), // crit damage caps at 999%, not a token ceiling
     weapon,
     speed,
     resolveRegen,
