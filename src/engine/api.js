@@ -76,7 +76,8 @@ export function summarizeGrantableAbilities() {
   const techniques = [], spells = [], cataclysmic = [];
   for (const a of ABILITY_CATALOG) {
     if (a.innate || a.unique) continue; // race-granted / drop-only — not narrator-grantable
-    (abilityCategoryOf(a) === "spell" ? spells : techniques).push(a.id);
+    const label = a.minTier ? `${a.id} (≥${a.minTier})` : a.id; // floored apex powers
+    (abilityCategoryOf(a) === "spell" ? spells : techniques).push(label);
     if (a.cataclysm) cataclysmic.push(a.id);
   }
   const parts = [];
@@ -234,7 +235,7 @@ export function buildStateContext(state) {
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]
-[GRANTABLE ABILITIES — the COMPLETE set you may grant by id (a creation kit, a teacher's lesson, a technique learned in play). Use these ids EXACTLY; grant NOTHING outside this list, and never invent an ability. Innate racial powers are NOT here — the engine grants those from the chosen race. Each may be granted at a TIER from common→divine: the tier scales its power exactly like gear, so match it to the source — a hedge-teacher or short drill gives common/uncommon; a true master or guild gives rare/epic; only a fabled mentor, a legendary relic, or a god's boon confers legendary+; divine is godhood, almost never given. Set the tier on the grant (see ABILITIES & SPELLS). ${summarizeGrantableAbilities()}]
+[GRANTABLE ABILITIES — the COMPLETE set you may grant by id (a creation kit, a teacher's lesson, a technique learned in play). Use these ids EXACTLY; grant NOTHING outside this list, and never invent an ability. Innate racial powers are NOT here — the engine grants those from the chosen race. Each may be granted at a TIER from common→divine: the tier scales its power exactly like gear, so match it to the source — a hedge-teacher or short drill gives common/uncommon; a true master or guild gives rare/epic; only a fabled mentor, a legendary relic, or a god's boon confers legendary+; divine is godhood, almost never given. An id shown as "name (≥tier)" has a FLOOR — never grant or teach it below that tier (the engine clamps it up if you try). Set the tier on the grant (see ABILITIES & SPELLS). ${summarizeGrantableAbilities()}]
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]
 [CODEX — ${summarizeCodex(world.codex)}]
 [INVENTORY — ${summarizeInventory(character, world.codex, state.time?.day || 0)}]

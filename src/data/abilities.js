@@ -163,6 +163,19 @@ export const ABILITY_LIBRARY = [
   { id: "dread-aura", name: "Dread Aura", school: "shadow", icon: "moon", target: "all-enemies", damageType: null, scaling: "none", scaleAttr: "presence", weaponReq: null, statReq: { attr: "presence", base: 3 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 2, cooldown: 4, effect: { type: "weaken", value: 25, duration: 2, target: "enemy" }, innate: true, desc: "Loose the fear in your blood — foes falter, their blows weakened." },
 ];
 
+// TIER FLOORS — apex powers that must never exist below a minimum grade. A
+// world-unmaking spell or a called-down meteor is meaningless as a common/rare
+// trinket, so grants and drops below the floor are clamped up (region-capped
+// loot skips them instead). Stamped onto the def objects so every consumer —
+// the narrator's grantable list, in-play learning, and loot — sees the floor.
+const ABILITY_TIER_FLOOR = {
+  disintegrate: "legendary", meteor: "legendary",
+  tempest: "epic", "time-stop": "epic", "soul-rend": "epic", "mass-terror": "epic",
+  judgment: "epic", dawnburst: "epic", renewal: "epic",
+  earthshatter: "epic", reaping: "epic", wrath: "epic",
+};
+for (const a of ABILITY_LIBRARY) { if (ABILITY_TIER_FLOOR[a.id]) a.minTier = ABILITY_TIER_FLOOR[a.id]; }
+
 const LIBRARY_BY_ID = Object.fromEntries(ABILITY_LIBRARY.map((a) => [a.id, a]));
 const UNIQUE_BY_ID = Object.fromEntries(UNIQUE_ABILITIES.map((a) => [a.id, a]));
 // Unique abilities resolve like any other (once learned), but are NOT in the
@@ -170,6 +183,15 @@ const UNIQUE_BY_ID = Object.fromEntries(UNIQUE_ABILITIES.map((a) => [a.id, a]));
 const ALL_BY_ID = { ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
 
 export function getAbilityDef(id) { return ALL_BY_ID[id] || null; }
+
+// Raise a granted/dropped tier up to an ability's floor (if it has one), so a
+// floored apex power can never be handed out below its minimum grade.
+export function clampAbilityTier(id, tierId) {
+  const def = getAbilityDef(id);
+  const t = tierId || "common";
+  if (!def || !def.minTier) return t;
+  return tierInfo(t).order < tierInfo(def.minTier).order ? def.minTier : t;
+}
 
 // Category for the codex Abilities catalog: innate racial powers, learned spells
 // (magic), or martial techniques.
