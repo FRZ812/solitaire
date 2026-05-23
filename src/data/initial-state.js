@@ -220,7 +220,28 @@ export function makeInitialState() {
             base_appearance: "Longer than a wagon-train. Smoke-black scale. Gold slit eyes. A lance-scar across the brow. Gold leaf melted into the right foreclaws.",
             description: "The great wyrm of Drakespire — a true dragon of the old line, the Vyrgun's lord and the Drakeholt's oldest authority. Wakes seldom; is always aware. Tribute climbs the road in his name.",
             attributes: { body: 24, reflex: 12, vigor: 26, mind: 18, wit: 22, presence: 22 },
-            worn: ["hoard-melted-into-the-floor"],
+            // A true dragon wears no harness — his might is in his nature, not a
+            // hoard strapped on. Lacking the divine ITEMS that carry a fabled foe's
+            // game-breaking affixes, he EMBODIES them: scale like god-plate, fang
+            // and flame like a god-arm. Tuned to stand beside the Demon King.
+            worn: [],
+            naturalArmor: 2,   // scale the size of shields
+            naturalWard: 2,    // the old magic banked in dragon-blood
+            naturalWeapon: { min: 4, max: 7, type: "physical", pen: 3, category: "fang", reach: 2, speed: 0, acc: 1 },
+            innatePassives: [
+              { id: "worldbreaker", tier: "divine" },    // raw, world-ending might
+              { id: "godward",      tier: "divine" },     // scale that shrugs off a fifth of all harm
+              { id: "undying",      tier: "divine" },     // an elder wyrm does not simply die
+              { id: "colossus",     tier: "mythical" },   // immense bulk
+              { id: "sunder",       tier: "mythical" },   // claw and fang cleave any harness
+              { id: "savage",       tier: "legendary" },  // a wyrm's strike is ruin
+            ],
+            // Kit the combat AI actually fields: dragon-breath engulfs a GROUP
+            // (his iconic moment vs a party), beast-shift is his surging wrath that
+            // makes his already-devastating bite deadlier vs a lone foe. His crushing
+            // natural fang IS his single-target signature — no weaker claw-tech can
+            // out-value it, so we don't pad the list with abilities that never fire.
+            abilities: ["dragon-breath", "beast-shift"],
             knows: [
               "I have not flown in eighty-three years.",
               "I taste every coin of tribute. Three were poisoned. The poisoners did not return.",

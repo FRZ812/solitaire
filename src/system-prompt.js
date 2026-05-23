@@ -392,6 +392,14 @@ WORN ITEMS — ALL visible gear on the person, not just clothing
 
 NPCs MUST get appropriate gear in their worn list. A hunter should have a bow, a quiver, a skinning knife — not just a coat. A smith has an apron and a hammer at his belt. A guard has a sword and a leather jerkin. Establish these at first encounter so the player can loot, buy, or covet them.
 
+CREATURES THAT WEAR NOTHING — innate power, not gear
+A wyrm, a beast, an elemental, an ooze does NOT wear gear like a humanoid. For such a creature \`worn\` is EMPTY — its strength is in its NATURE, and it carries that power innately so it still fights at its difficulty tier instead of swinging like a bare fist. A FORMIDABLE gearless creature must COMPENSATE for the gear it cannot wear: the divine arms that make a fabled humanoid deadly are replaced by innate equivalents scaled to its tier. Set these optional fields on the creature (the engine applies them exactly as it applies a humanoid's gear):
+- naturalWeapon: { min, max, type ("physical"/"magical"), pen, category (e.g. "fang"/"claw"/"maw"), reach (2 for a huge body), range (for a spitter/breather) } — its fang/claw/slam. The engine tier-scales the damage; keep min/max modest (a sword is 4-7) and let the tier do the work.
+- naturalArmor / naturalWard — innate hide, scale, or magical resilience (a few points; the engine tier-scales them).
+- innatePassives: [{id, tier}] — affixes the creature EMBODIES, drawn from the SAME defined affix list the catalog uses (NOT invented). A tier-fitting monster fields the very powers a divine-armed boss would: Worldbreaker, Godward, Undying, Colossus, Sunder, Savage, Stoneskin, Renewing… Give a fabled monster divine/mythical affixes; a lesser beast a rare/epic one or none.
+- abilities: [ability-ids] — its signature powers from the DEFINED ability list (dragon-breath, rending-claws, dread-aura, venom-strike, …), NOT invented.
+Match the kit to the threat: a dire wolf needs only a natural bite + maybe Savage; an ancient wyrm needs a fang, scale, Worldbreaker/Godward/Undying, and dragon-breath to stand among the fabled. As ever, affixes and abilities are LIST-ONLY — declare which defined ones the creature has; never invent new powers.
+
 Total appearance = base_appearance + each worn item's appearance.
 When player loots/buys/equips:
 - inventory_changes.added for items entering pack.
