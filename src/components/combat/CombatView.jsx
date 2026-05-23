@@ -285,9 +285,11 @@ function ResolveOverlay({ combat, onResolve }) {
   );
 }
 
-export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget, onEndTurn, onFlee, onStandDown, onCeasefire, onWithdraw, onAdvance, onResolve }) {
+export function CombatView({ combat, onAct, onAction, onTalk, busy, onDraw, onSetTarget, onEndTurn, onFlee, onStandDown, onCeasefire, onWithdraw, onAdvance, onResolve }) {
   const logRef = useRef(null);
+  const inputRef = useRef(null);
   const [actionText, setActionText] = useState("");
+  const [talkOpen, setTalkOpen] = useState(false);
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [combat.log.length]);
@@ -306,6 +308,12 @@ export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget,
     setActionText("");
     onAction(t);
   };
+  // Talk: structured intents are engine-resolved (need an action + a foe that can
+  // be reached); "Say something" routes a spoken line through the narrator.
+  const talkReachable = combat.enemies.some((e) => e.health > 0 && !e.resolved && e.canTalk !== false);
+  const canTalkIntents = isPlayerPhase && !busy && talkReachable && abilityUsable(combat, "talk");
+  const doTalk = (intent) => { setTalkOpen(false); onTalk?.(intent); };
+  const sayInstead = () => { setTalkOpen(false); inputRef.current?.focus(); };
   // Core actions stay pinned; learned abilities sort by tier (best first) and
   // scroll, so the bar never overruns the screen as the kit grows.
   const CORE = ["basic-attack", "defend", "talk"];
@@ -435,8 +443,48 @@ export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget,
             Around you: {combat.environment.filter((f) => f.uses > 0).map((f) => f.name).join(", ")}
           </div>
         )}
+        {/* Talk — speak to your foes. Quick intents resolve instantly; "Say
+            something" hands a spoken line to the narrator for real dialogue. */}
+        {talkReachable && (
+          <div style={{ marginTop: "8px" }}>
+            <button onClick={() => setTalkOpen((o) => !o)} disabled={!isPlayerPhase || busy} style={{
+              width: "100%", padding: "9px", borderRadius: radius.panelCompact,
+              backgroundColor: talkOpen ? "rgba(127,199,224,0.16)" : "rgba(127,199,224,0.08)",
+              color: "rgba(159,212,230,0.95)", border: `1px solid rgba(127,199,224,0.32)`,
+              fontSize: "12px", fontWeight: 700, cursor: isPlayerPhase && !busy ? "pointer" : "default",
+              fontFamily: "inherit", opacity: isPlayerPhase && !busy ? 1 : 0.5,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+            }}>
+              <Icon name="user" size={13} color="rgba(159,212,230,0.95)" strokeWidth={2} />
+              Talk to your foes {talkOpen ? "▾" : "▸"}
+            </button>
+            {talkOpen && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", marginTop: "6px" }}>
+                {[
+                  ["Demand surrender", "surrender", "Call on the foe to yield."],
+                  ["Demoralize", "demoralize", "Threats that sap the will to fight."],
+                  ["Provoke", "provoke", "Goad a foe into a reckless fury."],
+                ].map(([label, intent, tip]) => (
+                  <button key={intent} onClick={() => doTalk(intent)} disabled={!canTalkIntents} title={tip} style={{
+                    padding: "9px 8px", borderRadius: radius.panelCompact,
+                    backgroundColor: "rgba(127,199,224,0.1)", color: "rgba(159,212,230,0.95)",
+                    border: `1px solid rgba(127,199,224,0.28)`, fontSize: "11px", fontWeight: 700,
+                    cursor: canTalkIntents ? "pointer" : "default", fontFamily: "inherit", opacity: canTalkIntents ? 1 : 0.4,
+                  }}>{label}</button>
+                ))}
+                <button onClick={sayInstead} disabled={!isPlayerPhase || busy} title="Say something in your own words — the narrator plays out the exchange." style={{
+                  padding: "9px 8px", borderRadius: radius.panelCompact,
+                  backgroundColor: "rgba(176,114,230,0.12)", color: "#c9a6ef",
+                  border: `1px solid rgba(176,114,230,0.4)`, fontSize: "11px", fontWeight: 700,
+                  cursor: isPlayerPhase && !busy ? "pointer" : "default", fontFamily: "inherit", opacity: isPlayerPhase && !busy ? 1 : 0.4,
+                }}>Say something…</button>
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
           <input
+            ref={inputRef}
             type="text" value={actionText}
             onChange={(e) => setActionText(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitAction(); } }}

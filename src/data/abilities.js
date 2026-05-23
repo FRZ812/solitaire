@@ -125,7 +125,7 @@ export const ABILITY_LIBRARY = [
   { id: "deep-freeze", name: "Deep Freeze", school: "arcane", icon: "droplet", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: [4, 7], pen: 0, critBonus: 0, resolveCost: 2, cooldown: 3, effect: { type: "stun", value: 1, duration: 1, target: "enemy" }, desc: "Ice closes over a foe and holds them fast — they may freeze solid for a beat." },
   { id: "blizzard", name: "Blizzard", school: "arcane", icon: "droplet", target: "all-enemies", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: [3, 5], pen: 0, critBonus: 0, resolveCost: 2, cooldown: 3, effect: { type: "chill", value: 4, duration: 2, target: "enemy" }, desc: "A howling storm of ice that batters and chills every foe, fouling their aim." },
   { id: "plague", name: "Plague", school: "shadow", icon: "droplet", target: "all-enemies", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: [2, 4], pen: 1, critBonus: 0, resolveCost: 2, cooldown: 3, effect: { type: "poison", value: 4, duration: 4, target: "enemy" }, desc: "A roiling miasma that sickens every foe with a wasting, regen-blocking rot." },
-  { id: "doom", name: "Doom", school: "shadow", icon: "moon", target: "all-enemies", damageType: null, scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 2, cooldown: 4, effect: { type: "vulnerable", value: 30, duration: 3, target: "enemy" }, desc: "Mark the WHOLE field for ruin — every foe at once takes far more damage from every source. The mass version of Hex." },
+  { id: "doom", name: "Doom", school: "shadow", icon: "moon", target: "all-enemies", damageType: null, scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 2, cooldown: 4, effect: { type: "vulnerable", value: 30, duration: 3, target: "enemy" }, desc: "Mark the WHOLE field for ruin — every foe at once takes far more damage from every source for a few turns." },
   { id: "life-drain", name: "Life Drain", school: "shadow", icon: "droplet", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 3 }, dmg: [4, 7], pen: 2, critBonus: 0, resolveCost: 1, cooldown: 2, effect: { type: "drain", value: 50, target: "self" }, desc: "Tear the life from a foe and pour it into your own — your wounds close as theirs open." },
 
   // ============================================================
@@ -259,6 +259,43 @@ export function abilityScaling(def) {
 export function abilityRequiredStat(def, tierId) {
   if (!def.statReq) return null;
   return { attr: def.statReq.attr, value: def.statReq.base + tierInfo(tierId).order * REQ_PER_TIER };
+}
+
+const ATTR_FULL = { body: "Body", reflex: "Reflex", vigor: "Vigor", mind: "Mind", wit: "Wit", presence: "Presence" };
+
+// Human-readable combat stat line for an ability at a DISPLAY tier. Spell damage
+// scales by tier (the same curve the engine applies); weapon techniques read
+// "weapon damage" (their hit is built from the equipped weapon); riders, pen, and
+// crit are authored flat. Shared by the Codex catalog and the in-play Arsenal so
+// the two always read identically.
+export function abilityStatLine(def, tierId) {
+  const p = [];
+  const scaling = abilityScaling(def);
+  if (scaling === "weapon" || def.damageType === "weapon") {
+    p.push(def.damageType && def.damageType !== "weapon" && def.damageType !== "physical" ? `weapon damage (${def.damageType})` : "weapon damage");
+  } else if (def.dmg) {
+    const m = tierMult(tierId || def.minTier || def.tier || "common");
+    p.push(`dmg ${Math.round(def.dmg[0] * m)}–${Math.round(def.dmg[1] * m)} ${def.damageType || "physical"}`);
+  }
+  if (def.pen) p.push(`pen ${def.pen}`);
+  if (def.critBonus) p.push(`+${def.critBonus}% crit`);
+  if (def.hits > 1) p.push(`×${def.hits} hits`);
+  p.push(def.target === "all-enemies" ? "all foes" : def.target === "self" ? "self" : "1 foe");
+  if (def.effect && def.effect.type) {
+    const e = def.effect;
+    p.push(`${e.type}${e.value ? ` ${e.value}` : ""}${e.duration ? ` ${e.duration}t` : ""}`);
+  }
+  if (def.resolveCost) p.push(`${def.resolveCost} resolve`);
+  if ((def.actionCost || 1) > 1) p.push(`${def.actionCost} AP`);
+  if (def.cooldown) p.push(`cd ${def.cooldown}`);
+  return p.join(" · ");
+}
+
+export function abilityReqLine(def) {
+  const b = [];
+  if (def.weaponReq && def.weaponReq.length) b.push(`needs ${def.weaponReq.join("/")}`);
+  if (def.statReq) b.push(`${ATTR_FULL[def.statReq.attr] || def.statReq.attr} ${def.statReq.base}+`);
+  return b.join(" · ");
 }
 
 export function resolveLearned(entry) {

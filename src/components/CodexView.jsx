@@ -3,13 +3,14 @@ import { Icon } from "./Icon.jsx";
 import { iconButtonStyle } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
+import { attrDescriptor, smoothStatSummary, attributeLadder } from "../data/attribute-tiers.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { itemTemplate } from "../data/catalog.js";
 import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
-import { tier as tierInfo, tierLabel, tierOrder, tierMult } from "../data/tiers.js";
+import { tier as tierInfo, tierLabel, tierOrder } from "../data/tiers.js";
 import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
 import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIVES, FUSIONS, RUNES, isFusionRune } from "../data/passives.js";
-import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf, abilityScaling } from "../data/abilities.js";
+import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf, abilityStatLine, abilityReqLine } from "../data/abilities.js";
 import { RACES } from "../data/races.js";
 
 // Two kinds of content: "lore" you discover in play, and the full "compendium"
@@ -397,41 +398,6 @@ const ABILITY_CATEGORIES = [
   { key: "racial", label: "Racial & Innate", color: "#86d27a" },
 ];
 
-// Stat line shown at the ability's DISPLAY tier (its floor / your owned grade).
-// Spell damage is the common baseline × the tier multiplier — the same scaling
-// the combat engine applies — so a legendary nuke reads at its real magnitude,
-// not its (never-used) common baseline. Weapon techniques read "weapon damage"
-// since their hit is built from the equipped weapon, not a fixed number. Status
-// riders, pen, and crit are authored flat (the engine doesn't tier-scale them).
-function abilityStatLine(def, tierId) {
-  const p = [];
-  const scaling = abilityScaling(def);
-  if (scaling === "weapon" || def.damageType === "weapon") {
-    p.push(def.damageType && def.damageType !== "weapon" && def.damageType !== "physical" ? `weapon damage (${def.damageType})` : "weapon damage");
-  } else if (def.dmg) {
-    const m = tierMult(tierId || def.minTier || def.tier || "common");
-    p.push(`dmg ${Math.round(def.dmg[0] * m)}–${Math.round(def.dmg[1] * m)} ${def.damageType || "physical"}`);
-  }
-  if (def.pen) p.push(`pen ${def.pen}`);
-  if (def.critBonus) p.push(`+${def.critBonus}% crit`);
-  if (def.hits > 1) p.push(`×${def.hits} hits`);
-  p.push(def.target === "all-enemies" ? "all foes" : def.target === "self" ? "self" : "1 foe");
-  if (def.effect && def.effect.type) {
-    const e = def.effect;
-    p.push(`${e.type}${e.value ? ` ${e.value}` : ""}${e.duration ? ` ${e.duration}t` : ""}`);
-  }
-  if (def.resolveCost) p.push(`${def.resolveCost} resolve`);
-  if ((def.actionCost || 1) > 1) p.push(`${def.actionCost} AP`);
-  if (def.cooldown) p.push(`cd ${def.cooldown}`);
-  return p.join(" · ");
-}
-function abilityReqLine(def) {
-  const b = [];
-  if (def.weaponReq && def.weaponReq.length) b.push(`needs ${def.weaponReq.join("/")}`);
-  if (def.statReq) b.push(`${ATTR_FULL[def.statReq.attr] || def.statReq.attr} ${def.statReq.base}+`);
-  return b.join(" · ");
-}
-
 function AbilityRow({ def, known, tier, owned }) {
   const [open, setOpen] = useState(false);
   const color = tierInfo(tier || "common").color; // name reads as its tier (school is the section)
@@ -580,8 +546,41 @@ function PassiveCatalog() {
   );
 }
 
+// Expanded detail for a tapped attribute: its current always-on bonuses plus the
+// full unique-unlock ladder, marking which thresholds this score has reached.
+function AttributeDetail({ attrKey, value }) {
+  const smooth = smoothStatSummary(attrKey, value);
+  const ladder = attributeLadder(attrKey, value);
+  return (
+    <div style={{ marginTop: "8px", padding: "9px 11px", borderRadius: radius.panelCompact, backgroundColor: "rgba(10,15,15,0.45)", border: `1px solid rgba(215,167,111,0.2)` }}>
+      <div style={{ fontSize: "12px", color: colors.parchmentLight, fontWeight: 700, marginBottom: "5px" }}>
+        {ATTR_LABELS[attrKey]} {value} <span style={{ color: "rgba(215,167,111,0.7)", fontWeight: 400 }}>· {attrDescriptor(attrKey, value)}</span>
+      </div>
+      <div style={{ fontSize: "9px", color: "rgba(215,167,111,0.6)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "3px" }}>Always on</div>
+      <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.85)", lineHeight: 1.45, marginBottom: "8px" }}>
+        {smooth.length ? smooth.join(" · ") : "Nothing yet — this score is too low to bend the fight."}
+      </div>
+      <div style={{ fontSize: "9px", color: "rgba(215,167,111,0.6)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Threshold unlocks</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+        {ladder.map((step) => {
+          const c = tierInfo(step.tier).color;
+          return (
+            <div key={step.at} style={{ display: "flex", gap: "8px", alignItems: "baseline", opacity: step.reached ? 1 : 0.45 }}>
+              <span style={{ flexShrink: 0, fontSize: "10px", fontWeight: 800, color: step.reached ? c : "rgba(237,228,208,0.5)", width: "58px" }}>
+                {step.reached ? "✓ " : ""}{step.at}+ <span style={{ fontSize: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{tierLabel(step.tier)}</span>
+              </span>
+              <span style={{ fontSize: "11px", color: step.reached ? "rgba(237,228,208,0.9)" : "rgba(237,228,208,0.6)", lineHeight: 1.4 }}>{step.text}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function CodexEntry({ entry, kind, codex }) {
   const [open, setOpen] = useState(false);
+  const [openAttr, setOpenAttr] = useState(null);
   const wornNames = (kind === "characters" && entry.worn?.length)
     ? entry.worn.map(id => (codex.items[id] || itemTemplate(id))?.name || id) : [];
   const knowsList = (kind === "characters" && entry.knows?.length) ? entry.knows : [];
@@ -702,15 +701,26 @@ export function CodexEntry({ entry, kind, codex }) {
 
       {hasAttrs && (
         <div style={{ marginBottom: "8px", paddingTop: "8px", borderTop: `1px dashed rgba(215, 167, 111, 0.2)` }}>
-          <div style={{ ...accentMeta, marginBottom: "6px", fontWeight: 600 }}>Attributes</div>
+          <div style={{ ...accentMeta, marginBottom: "6px", fontWeight: 600 }}>Attributes <span style={{ fontWeight: 400, color: "rgba(215,167,111,0.45)", textTransform: "none", letterSpacing: 0 }}>· tap for thresholds</span></div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", fontSize: "12px", color: colors.parchment }}>
-            {ATTR_KEYS.map(k => (
-              <div key={k}>
-                <span style={{ color: "rgba(215, 167, 111, 0.6)" }}>{ATTR_LABELS[k]}</span>{" "}
-                <span style={{ fontWeight: 600, color: colors.parchmentLight }}>{entry.attributes[k] ?? 0}</span>
-              </div>
-            ))}
+            {ATTR_KEYS.map(k => {
+              const v = entry.attributes[k] ?? 0;
+              const active = openAttr === k;
+              return (
+                <button key={k} onClick={() => setOpenAttr(active ? null : k)} style={{
+                  textAlign: "left", cursor: "pointer", fontFamily: "inherit", fontSize: "12px",
+                  padding: "5px 7px", borderRadius: radius.chip,
+                  backgroundColor: active ? "rgba(215,167,111,0.14)" : "rgba(20,29,29,0.5)",
+                  border: `1px solid ${active ? "rgba(215,167,111,0.5)" : "rgba(215,167,111,0.18)"}`,
+                }}>
+                  <span style={{ color: "rgba(215, 167, 111, 0.7)" }}>{ATTR_LABELS[k]}</span>{" "}
+                  <span style={{ fontWeight: 700, color: colors.parchmentLight }}>{v}</span>
+                  <span style={{ display: "block", fontSize: "8px", color: "rgba(237,228,208,0.45)", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: "1px" }}>{attrDescriptor(k, v)}</span>
+                </button>
+              );
+            })}
           </div>
+          {openAttr && <AttributeDetail attrKey={openAttr} value={entry.attributes[openAttr] ?? 0} />}
         </div>
       )}
 
