@@ -112,6 +112,7 @@ export function makeInitialState() {
             // party each round, not one foe. Hopeless solo; a true raid for a party.
             health: 440,
             actionsPerTurn: 2,
+
             innatePassives: [
               { id: "godward",   tier: "divine" },   // the dread that turns aside harm
               { id: "colossus",  tier: "divine" },   // abyssal vitality atop the pool
@@ -253,6 +254,7 @@ export function makeInitialState() {
             worn: [],
             health: 520,            // base pool, ×tier — thousands of HP at divine
             actionsPerTurn: 2,      // a dragon answers the field each round (not a turn-1 wipe)
+
             naturalArmor: 3,   // scale the size of shields
             naturalWard: 3,    // the old magic banked in dragon-blood
             naturalWeapon: { min: 3, max: 5, type: "physical", pen: 4, category: "fang", reach: 2, speed: 0, acc: 2 },

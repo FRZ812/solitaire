@@ -52,6 +52,7 @@ function hasStatus(c, type) { return (c.statuses || []).some((s) => s.type === t
 // in one place. Returns the health actually restored (for honest logs).
 const CURSE_HEAL_MULT = 0.5;
 const DEFER_TURNS = 3; // turns a deferred (dmgDefer) wound bleeds out over
+const CEASEFIRE_TURN = 50; // a grindingly long fight: a thinking foe offers a truce
 function gainHealth(c, amt) {
   if (!c || amt <= 0 || c.health <= 0) return 0;
   let h = amt;
@@ -326,6 +327,17 @@ function beginTurnFor(cs, actor) {
 // Walk the initiative order, resolving NPC turns, until it's the player's turn
 // (hand control to the UI with phase "player") or combat ends. Recomputes the
 // order at the top of each new round.
+// A grinding stalemate: once a fight drags past CEASEFIRE_TURN and a thinking foe
+// is still standing, it offers a truce. The offer then stays on the table — the
+// player can keep swinging, or break it off as a draw (playerCeasefire).
+function maybeOfferCeasefire(cs) {
+  if (cs.ceasefire || cs.turn < CEASEFIRE_TURN) return;
+  const talker = livingEnemies(cs).find((e) => !e.fleeing && e.canTalk !== false && DEMEANOR_CONFIG[e.demeanor]?.canParley);
+  if (!talker) return;
+  cs.ceasefire = true;
+  cs.log.push(logEntry(`${talker.name}, blooded and weary, gives ground and calls for a truce — neither side can best the other here. You may stand down to a wary draw, or fight on.`, "enemy"));
+}
+
 function advanceQueue(cs) {
   for (let guard = 0; guard < 2000; guard++) {
     routCheck(cs); // a foe whose side just lost may break before anyone else acts
@@ -334,6 +346,7 @@ function advanceQueue(cs) {
       cs.turn += 1;
       rollInitiative(cs);
       cs.log.push(logEntry(`— Turn ${cs.turn} —`, "system"));
+      maybeOfferCeasefire(cs);
       continue;
     }
     const actor = byUid(cs, cs.order[cs.orderIdx]);
@@ -1463,6 +1476,22 @@ export function canStandDown(cs) {
   return pendingCaptives(cs).length > 0 || livingEnemies(cs).some((e) => e.fleeing);
 }
 
+// Once a fight has dragged into a stalemate (CEASEFIRE_TURN), a thinking foe's
+// truce offer stays on the table — the player can break off to a wary DRAW.
+export function canCeasefire(cs) {
+  return !!(cs && cs.phase === "player" && cs.ceasefire);
+}
+// Take the truce: both sides disengage. Foes still standing give ground (no kill,
+// no spoils); a foe that had yielded stays a captive. Ends as a standoff.
+export function playerCeasefire(cs0) {
+  if (!canCeasefire(cs0)) return cs0;
+  const cs = clone(cs0);
+  for (const e of cs.enemies) if (e.health > 0 && !e._dead && e.resolved !== "yielded") { e.resolved = "fled"; e.fleeing = false; }
+  cs.standoff = true;
+  cs.log.push(logEntry(`${cs.player.name} lowers their guard; the foe gives ground in kind. A wary draw — no more blood spent today.`, "system"));
+  return finishResolved(cs);
+}
+
 // Stand down: end the fight without finishing the broken foes. Foes that yielded
 // are spared (kept alive, at the player's mercy / as captives); any still fleeing
 // are let go. Refused while a foe is still actively fighting.
@@ -1745,6 +1774,7 @@ export function applyLoot(state, manifest) {
 
 function buildCombatRecap(cs, context) {
   const outcome =
+    cs.standoff ? "it ground to a STALEMATE — neither side could best the other, and both broke off in a wary, exhausted draw (no victor, no spoils)" :
     cs.phase === "victory" ? "you won" :
     cs.phase === "defeat" ? "you were beaten down and went under" :
     cs.phase === "resolved" ? "it ended without a slaughter" :

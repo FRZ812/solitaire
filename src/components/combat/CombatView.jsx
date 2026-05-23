@@ -259,11 +259,13 @@ function AbilityButton({ entry, combat, onAct }) {
 
 function ResolveOverlay({ combat, onResolve }) {
   const win = combat.phase === "victory";
+  const standoff = combat.standoff;
   const resolved = combat.phase === "resolved";
   const fled = combat.phase === "playerFled";
-  const title = win ? "Victory" : resolved ? "Stood Down" : fled ? "Escaped" : "Defeat";
-  const color = win ? "#a7f3d0" : resolved ? "#a7f3d0" : fled ? colors.gold : "#fca5a5";
+  const title = standoff ? "Standoff" : win ? "Victory" : resolved ? "Stood Down" : fled ? "Escaped" : "Defeat";
+  const color = standoff ? colors.gold : win ? "#a7f3d0" : resolved ? "#a7f3d0" : fled ? colors.gold : "#fca5a5";
   const subtitle =
+    standoff ? "A wary draw — neither side could best the other." :
     win ? "The fallen lie where they dropped." :
     resolved ? "They're done — down, yielded, or fled." :
     fled ? "You slipped away." : "You went under.";
@@ -283,7 +285,7 @@ function ResolveOverlay({ combat, onResolve }) {
   );
 }
 
-export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget, onEndTurn, onFlee, onStandDown, onWithdraw, onAdvance, onResolve }) {
+export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget, onEndTurn, onFlee, onStandDown, onCeasefire, onWithdraw, onAdvance, onResolve }) {
   const logRef = useRef(null);
   const [actionText, setActionText] = useState("");
   useEffect(() => {
@@ -485,6 +487,16 @@ export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget,
         )}
 
         {/* Turn controls */}
+        {/* Truce: once a fight grinds past a stalemate, the foe's offer to break off
+            to a draw stays on the table — fight on, or take it. */}
+        {isPlayerPhase && combat.ceasefire && (
+          <button onClick={onCeasefire} style={{
+            width: "100%", marginTop: "9px", padding: "10px", borderRadius: radius.panelCompact,
+            backgroundColor: "rgba(127,199,224,0.14)", color: "#9fd4e6",
+            border: "1px solid rgba(127,199,224,0.4)", fontSize: "13px", fontWeight: 700,
+            cursor: "pointer", fontFamily: "inherit",
+          }} title="Both sides break off — a wary draw. No victor, no spoils.">Call a Truce — break off to a draw</button>
+        )}
         <div style={{ display: "flex", gap: "8px", marginTop: "9px" }}>
           <button onClick={onEndTurn} disabled={combat.phase !== "player"} style={{
             flex: 1, padding: "11px", borderRadius: radius.panelCompact,
