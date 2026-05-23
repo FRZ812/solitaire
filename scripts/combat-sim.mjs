@@ -6,7 +6,7 @@
 //
 // Pure Node — no React in the import chain.
 
-import { initCombat, playerAct, endTurn, abilityUsable, rollLoot } from "../src/engine/combat.js";
+import { initCombat, playerAct, endTurn, abilityUsable, rollLoot, canStandDown, playerStandDown } from "../src/engine/combat.js";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 import { generateEnemyGroup, allyFromCompanion } from "../src/data/bestiary.js";
@@ -68,6 +68,8 @@ function runFight(makeEnemies, allyKeys, tierId) {
   let guard = 0;
   while (!TERMINAL.has(cs.phase) && guard++ < 300) {
     if (cs.phase !== "player") break;
+    // No foe still fighting (the rest yielded or fled) → stand down (spare them).
+    if (canStandDown(cs)) { cs = playerStandDown(cs); break; }
     const act = choosePlayerAction(cs);
     if (act && abilityUsable(cs, act.abilityId)) {
       cs = playerAct(cs, act.abilityId, act.targetIndex);
@@ -154,6 +156,7 @@ function runFull(player, codex, makeEnemies) {
   let guard = 0, acts = 0;
   while (!TERMINAL.has(cs.phase) && guard++ < 400) {
     if (cs.phase !== "player") break;
+    if (canStandDown(cs)) { cs = playerStandDown(cs); break; }
     let acted = true;
     while (acted && !TERMINAL.has(cs.phase)) {
       const a = choosePlayerAction(cs);
