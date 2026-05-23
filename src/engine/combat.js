@@ -518,6 +518,15 @@ function dealHit(cs, attacker, target, profile, def) {
       attacker.health = Math.min(attacker.maxHealth, attacker.health + heal);
       cs.log.push(logEntry(`${attacker.name} ${attacker.side === "player" ? "drains" : "leeches"} ${heal} health.`, "status"));
     }
+    // Ability-borne life-drain (effect.type "drain"): the cast itself heals the
+    // caster for a share of the damage it deals — distinct from the affix lifesteal
+    // above, and the reason a drain spell is worth a slot at high tier.
+    const drainPct = def?.effect?.type === "drain" ? (def.effect.value || 0) : 0;
+    if (drainPct > 0 && attacker.health > 0) {
+      const healed = Math.max(1, Math.round(dealt * drainPct / 100));
+      attacker.health = Math.min(attacker.maxHealth, attacker.health + healed);
+      cs.log.push(logEntry(`${attacker.name} drains ${healed} life.`, "status"));
+    }
     if (target.side === "enemy") onEnemyDamaged(target, dealt);
     if (targetIsPlayer) {
       addProf(cs, "endurance", XP.ENDURANCE);

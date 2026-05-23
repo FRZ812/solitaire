@@ -31,9 +31,15 @@ export function recordTurn(base, message, next, extra = {}) {
     .map((b) => (b.type === "dialogue" ? `${b.name}: "${b.line}"` : b.content))
     .join("\n\n");
   const p0 = next.pools || emptyPools();
-  const c = poolPush(p0.codex, base.world.codex);
-  const s = poolPush(p0.seen, base.world.seen);
-  const t = poolPush(p0.tiles, base.world.tiles);
+  // Heavy parts (codex/seen/tiles) are pooled by index; everything else light on
+  // world (currentTile, quests, lootedCaches, …) is snapshot inline by reference,
+  // so a rewind restores the whole world rather than silently dropping fields no
+  // one remembered to copy. These light fields are replaced wholesale (never
+  // mutated), so holding the pre-turn reference freezes them correctly.
+  const { codex, seen, tiles, ...restWorld } = base.world;
+  const c = poolPush(p0.codex, codex);
+  const s = poolPush(p0.seen, seen);
+  const t = poolPush(p0.tiles, tiles);
   const pools = { codex: c.pool, seen: s.pool, tiles: t.pool };
   const checkpoint = {
     beatsLen: startLen,
@@ -43,7 +49,7 @@ export function recordTurn(base, message, next, extra = {}) {
     prevText,
     char: base.character,
     time: base.time,
-    world: { codexIdx: c.idx, seenIdx: s.idx, tilesIdx: t.idx, currentTile: base.world.currentTile },
+    world: { codexIdx: c.idx, seenIdx: s.idx, tilesIdx: t.idx, ...restWorld },
   };
   if (extra.travel) checkpoint.travel = extra.travel;
   return { ...next, pools, turns: [...(next.turns || []), checkpoint] };
@@ -64,12 +70,15 @@ export function turnForBeatIndex(state, beatIndex) {
 // by reference on the next turn).
 export function stateBeforeTurn(state, k) {
   const cp = state.turns[k];
-  const w = cp.world;
+  // Overlay the pooled heavy parts onto the inline light snapshot (currentTile,
+  // quests, lootedCaches, …). Pre-existing checkpoints carry only currentTile in
+  // restWorld, so they reconstruct exactly as before — no migration needed.
+  const { codexIdx, seenIdx, tilesIdx, ...restWorld } = cp.world;
   const world = {
-    codex: state.pools.codex[w.codexIdx],
-    seen: state.pools.seen[w.seenIdx],
-    tiles: state.pools.tiles[w.tilesIdx],
-    currentTile: w.currentTile,
+    ...restWorld,
+    codex: state.pools.codex[codexIdx],
+    seen: state.pools.seen[seenIdx],
+    tiles: state.pools.tiles[tilesIdx],
   };
   return {
     ...state,

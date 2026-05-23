@@ -3,7 +3,9 @@
 // itself lives in those files; this module is helpers only.
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
-import { getAbilityDef } from "../data/abilities.js";
+import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf } from "../data/abilities.js";
+import { ALL_ITEMS } from "../data/catalog.js";
+import { tierOrder } from "../data/tiers.js";
 import { TERRAINS } from "../data/terrains.js";
 import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
@@ -64,6 +66,40 @@ export function summarizeAbilities(character) {
   if (spells.length) parts.push(`Spells (magic): ${spells.join(", ")}`);
   if (techniques.length) parts.push(`Techniques: ${techniques.join(", ")}`);
   return parts.join("; ") || "none learned";
+}
+
+// The COMPLETE pool of abilities the narrator may teach/grant by id — the engine's
+// defined library, minus innate racial powers (engine grants those by race) and
+// unique drop-only abilities. Surfaced so a starting kit or learned-in-play
+// technique is drawn from real ids, never invented. Built live from the catalog.
+export function summarizeGrantableAbilities() {
+  const techniques = [], spells = [], cataclysmic = [];
+  for (const a of ABILITY_CATALOG) {
+    if (a.innate || a.unique) continue; // race-granted / drop-only — not narrator-grantable
+    (abilityCategoryOf(a) === "spell" ? spells : techniques).push(a.id);
+    if (a.cataclysm) cataclysmic.push(a.id);
+  }
+  const parts = [];
+  if (techniques.length) parts.push(`Techniques: ${techniques.sort().join(", ")}`);
+  if (spells.length) parts.push(`Spells (magic): ${spells.sort().join(", ")}`);
+  if (cataclysmic.length) parts.push(`Cataclysmic (terrain-scale — adjudicate per CATACLYSMIC MAGIC; feasible only with room/sky, hits everyone present, can fail or backfire): ${cataclysmic.sort().join(", ")}`);
+  return parts.join(" | ");
+}
+
+// The COMPLETE pool of item ids the narrator may grant (loot/gift/shop/reward),
+// grouped by kind. Legendary+ named relics are excluded — those are engine-only
+// boss drops, never narrator-handed. Built live from the catalog so it never drifts.
+export function summarizeGrantableItems() {
+  const EPIC = tierOrder("epic");
+  const byKind = {};
+  for (const it of Object.values(ALL_ITEMS)) {
+    if (it.tier && tierOrder(it.tier) > EPIC) continue; // reserved relics — boss drops only
+    const k = it.kind || "other";
+    (byKind[k] = byKind[k] || []).push(it.id);
+  }
+  return Object.entries(byKind)
+    .map(([k, ids]) => `${k} — ${ids.sort().join(", ")}`)
+    .join("\n");
 }
 
 // Bonds + recent shared memories for everyone the player has a relationship or
@@ -198,9 +234,12 @@ export function buildStateContext(state) {
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]
+[GRANTABLE ABILITIES — the COMPLETE set you may grant by id (a creation kit, a teacher's lesson, a technique learned in play). Use these ids EXACTLY; grant NOTHING outside this list, and never invent an ability. Innate racial powers are NOT here — the engine grants those from the chosen race. Each may be granted at a TIER from common→divine: the tier scales its power exactly like gear, so match it to the source — a hedge-teacher or short drill gives common/uncommon; a true master or guild gives rare/epic; only a fabled mentor, a legendary relic, or a god's boon confers legendary+; divine is godhood, almost never given. Set the tier on the grant (see ABILITIES & SPELLS). ${summarizeGrantableAbilities()}]
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]
 [CODEX — ${summarizeCodex(world.codex)}]
 [INVENTORY — ${summarizeInventory(character, world.codex, state.time?.day || 0)}]
+[ITEM CATALOG — the COMPLETE set of item ids you may grant (loot, gift, shop find, reward), by kind. Grant ONLY these ids via inventory_changes.added; do NOT invent items — the engine DISCARDS any grant whose id is not a catalog id. Pick the closest fit and let tier/place guide which grade is appropriate. (Legendary+ named relics are engine-only boss drops and are intentionally not listed.)
+${summarizeGrantableItems()}]
 [GEOGRAPHY KNOWN BY REPUTATION — ${summarizeRumored()}]
 [GEOGRAPHY KNOWN BY LEGEND — ${summarizeFabled()}]
 [KNOWLEDGE BY CHARACTER]
