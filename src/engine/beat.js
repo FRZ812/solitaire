@@ -9,7 +9,7 @@ import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
 import { itemTemplate } from "../data/catalog.js";
 import { resolveRace } from "../data/races.js";
-import { getAbilityDef } from "../data/abilities.js";
+import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
 import { tierOrder } from "../data/tiers.js";
 import { spoilCarried } from "./spoilage.js";
 import { applyAttributeChanges } from "./attributes.js";
@@ -130,7 +130,7 @@ export function applyBeat(state, beat, options = {}) {
       if (!s?.id || !getAbilityDef(s.id)) continue;
       const idx = list.findIndex((a) => idOf(a) === s.id);
       const curTier = idx >= 0 ? ((typeof list[idx] === "object" ? list[idx].tier : "common") || "common") : null;
-      const grantTier = s.tier || "common";
+      const grantTier = clampAbilityTier(s.id, s.tier || "common"); // honour tier floors
       // Re-teaching only ever raises the tier — take the higher of the two.
       const tier = curTier && tierOrder(curTier) >= tierOrder(grantTier) ? curTier : grantTier;
       if (idx < 0) list.push({ id: s.id, tier }); else list[idx] = { id: s.id, tier };
@@ -301,6 +301,7 @@ export function applyBeat(state, beat, options = {}) {
       const idOf = (x) => (typeof x === "string" ? x : x.id);
       for (const ab of startAbilities) {
         const entry = typeof ab === "string" ? { id: ab, tier: "common" } : { id: ab.id, tier: ab.tier || "common" };
+        if (entry.id) entry.tier = clampAbilityTier(entry.id, entry.tier); // honour tier floors
         if (entry.id && !list.some((x) => idOf(x) === entry.id)) list.push(entry);
       }
       character.abilities = list;

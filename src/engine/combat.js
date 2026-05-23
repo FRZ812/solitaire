@@ -1349,7 +1349,14 @@ export function rollLoot(sources, opts = {}) {
   if (sources.length > 0 && Math.random() < ABILITY_DROP_CHANCE) {
     const id = randomAbilityId();
     const def = getAbilityDef(id);
-    ability = { id, tier: rollTier(maxTier, 0.2), name: def?.name || id };
+    // Floor-gated apex abilities only drop where the loot ceiling can support
+    // their minimum grade — never as a weak low-tier copy; otherwise clamp up.
+    const minOrd = def?.minTier ? tierInfo(def.minTier).order : 0;
+    if (tierInfo(maxTier).order >= minOrd) {
+      let tier = rollTier(maxTier, 0.2);
+      if (tierInfo(tier).order < minOrd) tier = def.minTier;
+      ability = { id, tier, name: def?.name || id };
+    }
   }
 
   // Named/unique drops from specific foe kinds + deep regions (never the random

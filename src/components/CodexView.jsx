@@ -114,11 +114,11 @@ function catalogStatLine(item) {
   return null;
 }
 
-function TierChip({ tierId }) {
+function TierChip({ tierId, min }) {
   const t = tierInfo(tierId || "common");
   return (
-    <span style={{ fontSize: "8px", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", padding: "1px 6px", borderRadius: "6px", color: t.color, border: `1px solid ${t.color}55`, backgroundColor: `${t.color}14`, flexShrink: 0 }}>
-      {t.label}
+    <span title={min ? "Lowest grade this can be — its tier floor" : undefined} style={{ fontSize: "8px", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", padding: "1px 6px", borderRadius: "6px", color: t.color, border: `1px solid ${t.color}55`, backgroundColor: `${t.color}14`, flexShrink: 0 }}>
+      {min ? "≥ " : ""}{t.label}
     </span>
   );
 }
@@ -375,7 +375,7 @@ function abilityReqLine(def) {
   return b.join(" · ");
 }
 
-function AbilityRow({ def, known }) {
+function AbilityRow({ def, known, tier, owned }) {
   const [open, setOpen] = useState(false);
   const color = ABILITY_CAT_COLOR[abilityCategoryOf(def)] || colors.parchmentLight;
   const stat = abilityStatLine(def);
@@ -386,7 +386,10 @@ function AbilityRow({ def, known }) {
         <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color }}>
           <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span>{def.name}
         </span>
-        {known && <span title="Known" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: colors.gold, flexShrink: 0 }} />}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+          <TierChip tierId={tier} min={!owned} />
+          {known && <span title="Known" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: colors.gold, flexShrink: 0 }} />}
+        </div>
       </div>
       {stat && <div style={{ fontSize: "9px", color: "rgba(237,228,208,0.6)", letterSpacing: "0.03em" }}>{stat}</div>}
       {req && <div style={{ fontSize: "9px", color: "rgba(127,199,224,0.8)", letterSpacing: "0.03em" }}>{req}</div>}
@@ -404,6 +407,20 @@ function AbilityCatalog({ codex, character }) {
     ...Object.keys(codex.skills || {}),
     ...Object.keys(codex.spells || {}),
   ]), [character, codex.skills, codex.spells]);
+  // The tier the PLAYER actually holds an ability at (their usable list wins, then
+  // a taught codex skill). Undiscovered abilities have no entry here — they show
+  // their tier FLOOR (lowest possible grade) instead.
+  const ownedTier = useMemo(() => {
+    const m = {};
+    for (const a of (character?.abilities || [])) {
+      const id = typeof a === "string" ? a : a.id;
+      if (id && !(id in m)) m[id] = typeof a === "string" ? "common" : (a.tier || "common");
+    }
+    for (const [id, s] of Object.entries(codex.skills || {})) {
+      if (s?.combatAbility && s.tier && !(id in m)) m[id] = s.tier;
+    }
+    return m;
+  }, [character, codex.skills]);
   const sections = useMemo(() => ABILITY_CATEGORIES.map((c) => ({
     ...c, items: ABILITY_CATALOG.filter((d) => abilityCategoryOf(d) === c.key).sort((a, b) => a.name.localeCompare(b.name)),
   })).filter((s) => s.items.length), []);
@@ -467,7 +484,10 @@ function AbilityCatalog({ codex, character }) {
               <span style={{ flex: 1 }} />
               <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
             </button>
-            {isOpen && s.items.map((d) => <AbilityRow key={d.id} def={d} known={known.has(d.id)} />)}
+            {isOpen && s.items.map((d) => {
+              const ot = ownedTier[d.id];
+              return <AbilityRow key={d.id} def={d} known={known.has(d.id)} tier={ot || d.minTier || "common"} owned={ot != null} />;
+            })}
           </div>
         );
       })}
