@@ -112,6 +112,7 @@ export function makeInitialState() {
             // party each round, not one foe. Hopeless solo; a true raid for a party.
             health: 440,
             actionsPerTurn: 2,
+            damageCap: 0.18,        // no single blow exceeds 18% of its HP unless fully broken (vulnerable+cursed+shattered)
 
             innatePassives: [
               { id: "godward",   tier: "divine" },   // the dread that turns aside harm
@@ -254,6 +255,7 @@ export function makeInitialState() {
             worn: [],
             health: 520,            // base pool, ×tier — thousands of HP at divine
             actionsPerTurn: 2,      // a dragon answers the field each round (not a turn-1 wipe)
+            damageCap: 0.18,        // scaled plating: no single blow exceeds 18% of its HP — UNLESS it's vulnerable+cursed+shattered (then the cap breaks)
 
             naturalArmor: 3,   // scale the size of shields
             naturalWard: 3,    // the old magic banked in dragon-blood
