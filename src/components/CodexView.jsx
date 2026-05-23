@@ -340,6 +340,7 @@ function ItemCatalog({ codex }) {
 }
 
 export function CodexEntry({ entry, kind, codex }) {
+  const [open, setOpen] = useState(false);
   const wornNames = (kind === "characters" && entry.worn?.length)
     ? entry.worn.map(id => (codex.items[id] || itemTemplate(id))?.name || id) : [];
   const knowsList = (kind === "characters" && entry.knows?.length) ? entry.knows : [];
@@ -349,6 +350,13 @@ export function CodexEntry({ entry, kind, codex }) {
   const hasAttrs = kind === "characters" && entry.attributes;
   const narrativeAppearance = entry.base_appearance || (typeof entry.appearance === "string" ? entry.appearance : null);
   const structuredAppearance = kind === "characters" && entry.appearance && typeof entry.appearance === "object" ? entry.appearance : null;
+
+  // Brief one-line preview shown while collapsed (keeps the list scannable).
+  const metaLine = kind === "characters"
+    ? [codex.races?.[entry.race]?.name || entry.race, codex.professions?.[entry.profession]?.name || entry.profession, originLabel(entry.origin)].filter(Boolean).join(" · ")
+    : "";
+  const trunc = (s, n = 100) => { const t = (s || "").trim(); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
+  const preview = metaLine || trunc(entry.description || narrativeAppearance || "");
 
   return (
     <div style={{
@@ -360,13 +368,17 @@ export function CodexEntry({ entry, kind, codex }) {
       boxShadow: shadow.cardDeep,
       color: colors.parchment,
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px", gap: "8px" }}>
-        <div style={{
-          fontFamily: fonts.serif, fontStyle: "italic",
-          fontSize: "20px", color: colors.parchmentLight,
-          textShadow: "0 1px 4px rgba(0,0,0,0.25)",
-        }}>
-          {entry.name}
+      <div onClick={() => setOpen((o) => !o)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "7px", minWidth: 0 }}>
+          <span style={{ color: "rgba(215,167,111,0.5)", fontSize: "10px", flexShrink: 0 }}>{open ? "▾" : "▸"}</span>
+          <div style={{
+            fontFamily: fonts.serif, fontStyle: "italic",
+            fontSize: "17px", color: colors.parchmentLight,
+            textShadow: "0 1px 4px rgba(0,0,0,0.25)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {entry.name}
+          </div>
         </div>
         <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
           {bondTier && (
@@ -391,8 +403,13 @@ export function CodexEntry({ entry, kind, codex }) {
         </div>
       </div>
 
+      {!open && preview && (
+        <div onClick={() => setOpen(true)} style={{ fontSize: "10px", color: "rgba(237,228,208,0.5)", lineHeight: 1.4, marginTop: "4px", marginLeft: "17px", cursor: "pointer" }}>{preview}</div>
+      )}
+      {open && (<>
+
       {kind === "characters" && (entry.race || entry.profession || entry.origin) && (
-        <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginBottom: "6px" }}>
+        <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginTop: "6px", marginBottom: "6px" }}>
           {[
             codex.races[entry.race]?.name || entry.race,
             codex.professions[entry.profession]?.name || entry.profession,
@@ -487,6 +504,7 @@ export function CodexEntry({ entry, kind, codex }) {
           </ul>
         </div>
       )}
+      </>)}
     </div>
   );
 }
@@ -494,7 +512,11 @@ export function CodexEntry({ entry, kind, codex }) {
 export function CodexView({ state, onClose }) {
   const codex = state.world.codex;
   const [activeTab, setActiveTab] = useState("characters");
-  const entries = Object.values(codex[activeTab] || {});
+  let entries = Object.values(codex[activeTab] || {});
+  // Characters: always pin the player (self) to the very top.
+  if (activeTab === "characters") {
+    entries = [...entries].sort((a, b) => (a.kind === "player" ? -1 : 0) - (b.kind === "player" ? -1 : 0));
+  }
 
   return (
     <div style={{ position: "absolute", inset: 0, backgroundColor: "#0b0f0e", zIndex: 30, display: "flex", flexDirection: "column" }}>
@@ -554,7 +576,7 @@ export function CodexView({ state, onClose }) {
             <span style={{ fontSize: "13px", color: "rgba(215, 167, 111, 0.3)" }}>Discover lore by wandering the realm.</span>
           </div>
         ) : (
-          <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
             {entries.map((e) => <CodexEntry key={e.id} entry={e} kind={activeTab} codex={codex} />)}
           </div>
         )}
