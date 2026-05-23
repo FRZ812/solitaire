@@ -356,7 +356,6 @@ const ABILITY_CATEGORIES = [
   { key: "spell", label: "Spells (Magic)", color: "#c4a6f0" },
   { key: "racial", label: "Racial & Innate", color: "#86d27a" },
 ];
-const ABILITY_CAT_COLOR = { martial: "#e9d8b8", spell: "#c4a6f0", racial: "#86d27a" };
 
 function abilityStatLine(def) {
   const p = [];
@@ -384,7 +383,7 @@ function abilityReqLine(def) {
 
 function AbilityRow({ def, known, tier, owned }) {
   const [open, setOpen] = useState(false);
-  const color = ABILITY_CAT_COLOR[abilityCategoryOf(def)] || colors.parchmentLight;
+  const color = tierInfo(tier || "common").color; // name reads as its tier (school is the section)
   const stat = abilityStatLine(def);
   const req = abilityReqLine(def);
   return (
@@ -491,10 +490,24 @@ function AbilityCatalog({ codex, character }) {
               <span style={{ flex: 1 }} />
               <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
             </button>
-            {isOpen && s.items.map((d) => {
-              const ot = ownedTier[d.id];
-              return <AbilityRow key={d.id} def={d} known={known.has(d.id)} tier={ot || d.minTier || "common"} owned={ot != null} />;
-            })}
+            {isOpen && (() => {
+              const dispTier = (d) => ownedTier[d.id] || d.minTier || "common";
+              const sorted = s.items.slice().sort((a, b) => (tierOrder(dispTier(a)) - tierOrder(dispTier(b))) || a.name.localeCompare(b.name));
+              return sorted.map((d, i) => {
+                const t = dispTier(d);
+                const showTier = i === 0 || dispTier(sorted[i - 1]) !== t;
+                return (
+                  <React.Fragment key={d.id}>
+                    {showTier && (
+                      <div style={{ ...accentMeta, fontSize: "8px", letterSpacing: "0.14em", color: tierInfo(t).color, marginTop: i ? "4px" : 0, opacity: 0.8, paddingLeft: "4px" }}>
+                        {tierLabel(t)}
+                      </div>
+                    )}
+                    <AbilityRow def={d} known={known.has(d.id)} tier={t} owned={ownedTier[d.id] != null} />
+                  </React.Fragment>
+                );
+              });
+            })()}
           </div>
         );
       })}
@@ -521,7 +534,6 @@ const PASSIVE_CATEGORIES = [
   { key: "fusion",   label: "Fusion (Forged)",   short: "Fusion",   color: "#c79be0" },
   { key: "world",    label: "World & Travel",     short: "World",    color: "#8fd0c0" },
 ];
-const PASSIVE_CAT_COLOR = Object.fromEntries(PASSIVE_CATEGORIES.map((c) => [c.key, c.color]));
 
 // Fusion lineage of an affix: forged-from recipe, or what it can be forged into.
 function fusionNote(id) {
@@ -541,7 +553,7 @@ function fusionNote(id) {
 
 function PassiveRow({ def }) {
   const [open, setOpen] = useState(false);
-  const color = PASSIVE_CAT_COLOR[def.cat] || colors.parchmentLight;
+  const color = tierInfo(def.minTier || "common").color; // name reads as its tier floor (role is the section)
   const effect = passiveEffectRange(def.id);
   const fnote = fusionNote(def.id);
   return (
@@ -618,7 +630,23 @@ function PassiveCatalog() {
               <span style={{ flex: 1 }} />
               <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
             </button>
-            {isOpen && s.items.map((d) => <PassiveRow key={d.id} def={d} />)}
+            {isOpen && (() => {
+              const sorted = s.items.slice().sort((a, b) => (tierOrder(a.minTier || "common") - tierOrder(b.minTier || "common")) || a.name.localeCompare(b.name));
+              return sorted.map((d, i) => {
+                const t = d.minTier || "common";
+                const showTier = i === 0 || (sorted[i - 1].minTier || "common") !== t;
+                return (
+                  <React.Fragment key={d.id}>
+                    {showTier && (
+                      <div style={{ ...accentMeta, fontSize: "8px", letterSpacing: "0.14em", color: tierInfo(t).color, marginTop: i ? "4px" : 0, opacity: 0.8, paddingLeft: "4px" }}>
+                        {tierLabel(t)} floor
+                      </div>
+                    )}
+                    <PassiveRow def={d} />
+                  </React.Fragment>
+                );
+              });
+            })()}
           </div>
         );
       })}

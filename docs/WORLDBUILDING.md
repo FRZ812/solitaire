@@ -313,6 +313,17 @@ need decay, faster travel, out-of-combat regen, extra coin). Passives only apply
 on equipped, requirement-met gear. To rebalance, edit the magnitude table in
 `passives.js`.
 
+Scaling rule (so no affix goes dead at high grade): the game's power curve is
+**geometric** (tier mult 1.0→12.0), so flat affixes scaled linearly with tier
+order fall off. Sustain/shields (`turnRegen`, `shieldGen`, `magicShieldGen`, and
+Lifeward's burst) are therefore stored as a **fraction of max health** and the
+engine multiplies by the wearer's pool — they stay relevant at every tier. Raw
+flat-power affixes (flat health, flat weapon damage, flat armour/penetration —
+Stalwart/Colossus/Juggernaut, Honed, Bulwark/Aegis, Piercing/Sundering) use the
+`geo(base, n)` helper to track the same geometric curve. Percentage affixes
+(lifesteal, thorns, damage %, crit, dodge, swift, drPct, fortify) already scale
+and are the benchmark. Snowball-prone stats stay clamped in `PASSIVE_CAPS`.
+
 ### Proficiencies — the "get better by doing" pillar
 
 No levels. Besides loot, the ONLY progression is use-based proficiencies

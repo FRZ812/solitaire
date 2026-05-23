@@ -294,7 +294,7 @@ function armorBandMods(cls) {
   if (cls === "heavy") {
     return {
       speed: -3, actions: -1, swiftChance: -1, dodgeMult: 0.2,
-      maxHealth: 10, damageMult: 0.1, ward: 2, shieldGen: 2, accuracy: -2, resolveRegen: -1,
+      maxHealth: 10, damageMult: 0.1, ward: 2, shieldGen: 0.03, accuracy: -2, resolveRegen: -1,
     };
   }
   if (cls === "light") {
