@@ -6,10 +6,10 @@ import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { itemTemplate } from "../data/catalog.js";
 import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
-import { tier as tierInfo, tierLabel, tierOrder, tierMult } from "../data/tiers.js";
+import { tier as tierInfo, tierLabel, tierOrder } from "../data/tiers.js";
 import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
 import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIVES, FUSIONS, RUNES, isFusionRune } from "../data/passives.js";
-import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf, abilityScaling } from "../data/abilities.js";
+import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf, abilityStatLine, abilityReqLine } from "../data/abilities.js";
 import { RACES } from "../data/races.js";
 
 // Two kinds of content: "lore" you discover in play, and the full "compendium"
@@ -396,41 +396,6 @@ const ABILITY_CATEGORIES = [
   { key: "spell", label: "Spells (Magic)", color: "#c4a6f0" },
   { key: "racial", label: "Racial & Innate", color: "#86d27a" },
 ];
-
-// Stat line shown at the ability's DISPLAY tier (its floor / your owned grade).
-// Spell damage is the common baseline × the tier multiplier — the same scaling
-// the combat engine applies — so a legendary nuke reads at its real magnitude,
-// not its (never-used) common baseline. Weapon techniques read "weapon damage"
-// since their hit is built from the equipped weapon, not a fixed number. Status
-// riders, pen, and crit are authored flat (the engine doesn't tier-scale them).
-function abilityStatLine(def, tierId) {
-  const p = [];
-  const scaling = abilityScaling(def);
-  if (scaling === "weapon" || def.damageType === "weapon") {
-    p.push(def.damageType && def.damageType !== "weapon" && def.damageType !== "physical" ? `weapon damage (${def.damageType})` : "weapon damage");
-  } else if (def.dmg) {
-    const m = tierMult(tierId || def.minTier || def.tier || "common");
-    p.push(`dmg ${Math.round(def.dmg[0] * m)}–${Math.round(def.dmg[1] * m)} ${def.damageType || "physical"}`);
-  }
-  if (def.pen) p.push(`pen ${def.pen}`);
-  if (def.critBonus) p.push(`+${def.critBonus}% crit`);
-  if (def.hits > 1) p.push(`×${def.hits} hits`);
-  p.push(def.target === "all-enemies" ? "all foes" : def.target === "self" ? "self" : "1 foe");
-  if (def.effect && def.effect.type) {
-    const e = def.effect;
-    p.push(`${e.type}${e.value ? ` ${e.value}` : ""}${e.duration ? ` ${e.duration}t` : ""}`);
-  }
-  if (def.resolveCost) p.push(`${def.resolveCost} resolve`);
-  if ((def.actionCost || 1) > 1) p.push(`${def.actionCost} AP`);
-  if (def.cooldown) p.push(`cd ${def.cooldown}`);
-  return p.join(" · ");
-}
-function abilityReqLine(def) {
-  const b = [];
-  if (def.weaponReq && def.weaponReq.length) b.push(`needs ${def.weaponReq.join("/")}`);
-  if (def.statReq) b.push(`${ATTR_FULL[def.statReq.attr] || def.statReq.attr} ${def.statReq.base}+`);
-  return b.join(" · ");
-}
 
 function AbilityRow({ def, known, tier, owned }) {
   const [open, setOpen] = useState(false);
