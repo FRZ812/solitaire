@@ -3,20 +3,22 @@
 // power multiplier applied to a base stat block to scale it to the tier;
 // `weight` drives random drops (rarer tiers are exponentially less common).
 
-// Retuned curve: ~+34% power per step (a clean geometric ramp for a level-less
-// game where the only progression is gear/ability tier + slow attribute growth),
-// with a punchier top end (divine ≈ ×8). Drop weights roughly ×0.4 per step so
-// the top tiers stay genuinely rare. These multipliers + weights are the single
-// source of truth for tier power and rarity (see docs/WORLDBUILDING.md › Balance).
+// Retuned curve: a clean geometric ramp for a level-less game where the only
+// progression is gear/ability tier + slow attribute growth. The early/mid steps
+// (~+34%) are kept stable for balance; the TOP END accelerates so each high tier
+// is an immediately-noticeable leap — legendary, mythical, and a DIVINE spike
+// (≈ ×12, godhood). Drop weights ×~0.4 per step so the top stays genuinely rare.
+// These multipliers + weights are the single source of truth for tier power and
+// rarity (see docs/WORLDBUILDING.md › Balance).
 export const TIERS = [
   { id: "common",    label: "Common",    order: 0, color: "#b8b0a0", mult: 1.0, weight: 1000 },
   { id: "uncommon",  label: "Uncommon",  order: 1, color: "#74c66b", mult: 1.35, weight: 420 },
   { id: "rare",      label: "Rare",      order: 2, color: "#5aa9e6", mult: 1.8, weight: 170 },
   { id: "very-rare", label: "Very Rare", order: 3, color: "#b072e6", mult: 2.4, weight: 64 },
   { id: "epic",      label: "Epic",      order: 4, color: "#e0913a", mult: 3.2, weight: 24 },
-  { id: "legendary", label: "Legendary", order: 5, color: "#f5d76e", mult: 4.3, weight: 8 },
-  { id: "mythical",  label: "Mythical",  order: 6, color: "#ff6f91", mult: 5.8, weight: 2.4 },
-  { id: "divine",    label: "Divine",    order: 7, color: "#fbf5e3", mult: 8.0, weight: 0.5 },
+  { id: "legendary", label: "Legendary", order: 5, color: "#f5d76e", mult: 5.2, weight: 8 },
+  { id: "mythical",  label: "Mythical",  order: 6, color: "#ff6f91", mult: 7.6, weight: 2.4 },
+  { id: "divine",    label: "Divine",    order: 7, color: "#fbf5e3", mult: 12.0, weight: 0.5 },
 ];
 
 export const TIER_BY_ID = Object.fromEntries(TIERS.map((t) => [t.id, t]));

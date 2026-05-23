@@ -81,6 +81,15 @@ export const ABILITY_LIBRARY = [
   { id: "chain-lightning", name: "Chain Lightning", school: "arcane", icon: "sparkle", target: "all-enemies", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 5 }, dmg: [4, 7], pen: 4, critBonus: 0, resolveCost: 2, cooldown: 3, effect: null, desc: "Arcing current that leaps to every foe, biting through ward." },
   { id: "hex", name: "Hex", school: "arcane", icon: "sparkle", target: "enemy", damageType: null, scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 1, cooldown: 3, effect: { type: "vulnerable", value: 30, duration: 3, target: "enemy" }, desc: "A curse that makes the target take far more damage." },
   { id: "smite", name: "Smite", school: "divine", icon: "sparkle", target: "enemy", damageType: "true", scaling: "stat", scaleAttr: "presence", weaponReq: null, statReq: { attr: "presence", base: 4 }, dmg: [4, 6], pen: 0, critBonus: 10, resolveCost: 2, cooldown: 3, effect: { type: "stun", value: 1, duration: 1, target: "enemy" }, desc: "Searing judgement that ignores defences and may stun." },
+
+  // ---- INNATE (racial) — granted by RACE at creation, never dropped/taught.
+  //      Not "learned magic": these are a kindred's inborn nature (see data/races.js). ----
+  { id: "dragon-breath", name: "Dragon Breath", school: "arcane", icon: "flame", target: "all-enemies", damageType: "magical", scaling: "stat", scaleAttr: "vigor", weaponReq: null, statReq: { attr: "vigor", base: 3 }, dmg: [4, 8], pen: 2, critBonus: 0, resolveCost: 2, cooldown: 3, effect: { type: "burn", value: 4, duration: 3, target: "enemy" }, innate: true, desc: "Exhale the fire (or frost, or storm) in your blood — a cone that sears every foe before you." },
+  { id: "crimson-bite", name: "Crimson Bite", school: "shadow", icon: "droplet", target: "enemy", damageType: "physical", scaling: "stat", scaleAttr: "body", weaponReq: null, statReq: { attr: "body", base: 3 }, dmg: [5, 9], pen: 2, critBonus: 10, resolveCost: 1, cooldown: 2, effect: { type: "bleed", value: 3, duration: 3, target: "enemy" }, innate: true, desc: "Sink your fangs in — a savage, draining bite that leaves the wound weeping." },
+  { id: "rending-claws", name: "Rending Claws", school: "martial", icon: "swords", target: "enemy", damageType: "physical", scaling: "stat", scaleAttr: "body", weaponReq: null, statReq: { attr: "body", base: 3 }, dmg: [4, 7], pen: 1, critBonus: 5, resolveCost: 0, cooldown: 1, effect: { type: "bleed", value: 2, duration: 2, target: "enemy" }, innate: true, desc: "Tear with claw and fang — fast, bloody strikes no smith forged." },
+  { id: "beast-shift", name: "Beast-Shift", school: "survival", icon: "moon", target: "self", damageType: null, scaling: "none", scaleAttr: "vigor", weaponReq: null, statReq: null, dmg: null, pen: 0, critBonus: 0, resolveCost: 1, cooldown: 4, effect: { type: "rally", value: 35, duration: 3, target: "self" }, innate: true, desc: "Let the beast rise — fury and strength surge for a few savage turns." },
+  { id: "hellfire-bolt", name: "Hellfire Bolt", school: "arcane", icon: "flame", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 3 }, dmg: [5, 9], pen: 2, critBonus: 0, resolveCost: 1, cooldown: 1, effect: { type: "burn", value: 3, duration: 2, target: "enemy" }, innate: true, desc: "Hurl a gout of infernal fire from your tainted blood." },
+  { id: "dread-aura", name: "Dread Aura", school: "shadow", icon: "moon", target: "all-enemies", damageType: null, scaling: "none", scaleAttr: "presence", weaponReq: null, statReq: { attr: "presence", base: 3 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 2, cooldown: 4, effect: { type: "weaken", value: 25, duration: 2, target: "enemy" }, innate: true, desc: "Loose the fear in your blood — foes falter, their blows weakened." },
 ];
 
 const LIBRARY_BY_ID = Object.fromEntries(ABILITY_LIBRARY.map((a) => [a.id, a]));
@@ -120,7 +129,9 @@ export function resolveLearned(entry) {
 
 // Random LIBRARY ability id (never a unique), optionally filtered by school.
 export function randomAbilityId(schools = null) {
-  const pool = schools ? ABILITY_LIBRARY.filter((a) => schools.includes(a.school)) : ABILITY_LIBRARY;
-  if (pool.length === 0) return ABILITY_LIBRARY[0].id;
+  // Innate (racial) abilities are never taught or dropped — exclude from the pool.
+  const base = ABILITY_LIBRARY.filter((a) => !a.innate);
+  const pool = schools ? base.filter((a) => schools.includes(a.school)) : base;
+  if (pool.length === 0) return base[0].id;
   return pool[Math.floor(Math.random() * pool.length)].id;
 }

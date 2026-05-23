@@ -27,17 +27,30 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 // weapon may strike anything up to `range`); speed feeds initiative + the swift
 // playstyle; reload is a self-cooldown after firing (crossbows). Damage is tier-
 // scaled later; reach/range/speed/reload are NOT (they're identity, not power).
+// `acc` is the weapon's own accuracy contribution (counters the target's dodge):
+// finesse/aimed arms (daggers, bows) are precise; heavy choppers (axes, mauls)
+// are not. `reach`/`range` gate striking distance; `speed` feeds initiative.
 const WEAPON_BASE = {
-  dagger:   { min: 2, max: 4, type: "physical", pen: 1, reach: 1, speed: 3 },
-  sword:    { min: 4, max: 7, type: "physical", pen: 0, reach: 1, speed: 1 },
-  axe:      { min: 5, max: 9, type: "physical", pen: 0, reach: 1, speed: -1 },
-  mace:     { min: 5, max: 8, type: "physical", pen: 2, reach: 1, speed: -2 },
-  spear:    { min: 3, max: 7, type: "physical", pen: 2, reach: 2, speed: 0 },
-  bow:      { min: 3, max: 6, type: "physical", pen: 1, range: 4, speed: 1 },
-  crossbow: { min: 5, max: 9, type: "physical", pen: 3, range: 5, speed: -2, reload: 1 },
-  arcane:   { min: 2, max: 4, type: "magical",  pen: 1, range: 3, speed: 0 },
-  unarmed:  { min: 2, max: 4, type: "physical", pen: 0, reach: 1, speed: 2 },
+  dagger:   { min: 2, max: 4, type: "physical", pen: 1, reach: 1, speed: 3,  acc: 2 },
+  sword:    { min: 4, max: 7, type: "physical", pen: 0, reach: 1, speed: 1,  acc: 1 },
+  axe:      { min: 5, max: 9, type: "physical", pen: 0, reach: 1, speed: -1, acc: -2 },
+  mace:     { min: 5, max: 8, type: "physical", pen: 2, reach: 1, speed: -2, acc: -1 },
+  spear:    { min: 3, max: 7, type: "physical", pen: 2, reach: 2, speed: 0,  acc: 1 },
+  bow:      { min: 3, max: 6, type: "physical", pen: 1, range: 4, speed: 1,  acc: 3 },
+  crossbow: { min: 5, max: 9, type: "physical", pen: 3, range: 5, speed: -2, reload: 1, acc: 2 },
+  arcane:   { min: 2, max: 4, type: "magical",  pen: 1, range: 3, speed: 0,  acc: 0 },
+  unarmed:  { min: 2, max: 4, type: "physical", pen: 0, reach: 1, speed: 2,  acc: 0 },
 };
+
+// Arcane foci sub-types differ on the ITEM (one family, one mastery): a STAFF is
+// a two-handed artillery focus (highest magical damage + reach, but slow); a WAND
+// is fast, light, and precise (more casts, leaves a hand free); a GRIMOIRE is a
+// one-handed control focus that bites through ward (high magic-pen).
+function arcaneSubProfile(name) {
+  if (/staff|stave/.test(name)) return { min: 3, max: 6, type: "magical", pen: 1, range: 4, speed: -1, acc: 0 };
+  if (/grimoire|tome|spellbook|codex/.test(name)) return { min: 2, max: 5, type: "magical", pen: 3, range: 3, speed: 0, acc: 1 };
+  return { min: 2, max: 4, type: "magical", pen: 1, range: 3, speed: 2, acc: 2 }; // wand / rod / scepter / focus
+}
 
 // The family identity profile (reach/range/speed/reload) for a weapon category —
 // used to give NPC weapons the same positioning identity as the player's.
@@ -59,7 +72,7 @@ export function weaponCategory(item) {
   if (has("hammer", "mace", "maul", "warhammer", "club", "morningstar", "flail")) return "mace";
   if (has("spear", "lance", "pike", "halberd", "glaive", "partisan", "trident")) return "spear";
   if (has("bow")) return "bow";
-  if (has("staff", "stave", "wand", "rod ", "scepter", "sceptre", "focus", "grimoire", "tome", "spellbook")) return "arcane";
+  if (has("staff", "stave", "wand", "rod ", "scepter", "sceptre", "focus", "grimoire", "tome", "spellbook", "codex")) return "arcane";
   if (has("sword", "blade", "sabre", "saber", "rapier", "falchion")) return "sword";
   if (item.kind === "weapon") return "sword";
   return null; // not a weapon
@@ -94,6 +107,7 @@ export function itemCombatStats(item) {
         range: base.range ?? fam.range,
         speed: base.speed ?? fam.speed ?? 0,
         reload: base.reload ?? fam.reload ?? 0,
+        acc: base.acc ?? fam.acc ?? 0,
       } : null,
       weaponType: base ? (weaponType || "sword") : null,
       armorClass: null,
@@ -104,7 +118,7 @@ export function itemCombatStats(item) {
   const has = (...words) => words.some((w) => name.includes(w));
 
   if (kind === "weapon" || weaponType) {
-    const fam = WEAPON_BASE[weaponType] || WEAPON_BASE.sword;
+    const fam = weaponType === "arcane" ? arcaneSubProfile(name) : (WEAPON_BASE[weaponType] || WEAPON_BASE.sword);
     let damage = { ...fam };
     // A nameless great/long blade (no family word) reads heavier.
     if (!WEAPON_BASE[weaponType] && has("long", "great")) damage = { ...damage, min: 5, max: 9 };
@@ -233,6 +247,9 @@ export function collectEquippedPassives(character, codex) {
   const gear = equippedItems(character, codex);
   const enabled = [];
   const disabled = [];
+  // Racial passives are innate and ALWAYS on — no item, no requirement check. They
+  // flow through the same aggregation as gear affixes (combat + world passives).
+  if (Array.isArray(character?.racialPassives) && character.racialPassives.length) enabled.push(...character.racialPassives);
   for (const it of gear) {
     const list = it.passives || [];
     if (list.length === 0) continue;
@@ -265,6 +282,7 @@ function weaponProfile(character, codex, eff) {
     range: base.range ?? fam.range ?? 0,
     speed: base.speed ?? fam.speed ?? 0,
     reload: base.reload ?? fam.reload ?? 0,
+    acc: base.acc ?? fam.acc ?? 0,
     name: weapon ? (weapon.name || weapon.id) : "Unarmed",
   };
 }
@@ -350,7 +368,7 @@ export function deriveCombatStats(character, codex) {
     armor: armor + (statMods.armor || 0),
     ward: ward + (statMods.ward || 0) + (band.ward || 0),
     dodge,
-    accuracy: reflex + wit + prof.awareness + weapon.mastery + (statMods.accuracy || 0) + (band.accuracy || 0),
+    accuracy: reflex + wit + prof.awareness + weapon.mastery + (weapon.acc || 0) + (statMods.accuracy || 0) + (band.accuracy || 0),
     critChance: clamp(Math.round(wit * 1.5 + reflex) + (statMods.critChance || 0), 0, 60),
     critMult: 1.5 + (statMods.critMult || 0),
     weapon,

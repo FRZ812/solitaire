@@ -1263,15 +1263,21 @@ export function Solitaire() {
       height: "100dvh", width: "100%", maxWidth: "640px", margin: "0 auto",
       display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
     }}>
-      <SceneBackdrop state={state} />
+      {/* Limbo (character creation) shows the ethereal between-place backdrop with
+          the HUD hidden; the real world shows the scene backdrop + full HUD. */}
+      {state.created === false ? <InitialBackdrop /> : <SceneBackdrop state={state} />}
       <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
-        <CompactHeader
-          state={state}
-          onMap={() => setMapOpen(true)}
-          onMenu={() => setMenuOpen(true)}
-          onParty={() => setPartyOpen(true)}
-        />
-        <VitalsStrip character={state.character} />
+        {state.created !== false && (
+          <>
+            <CompactHeader
+              state={state}
+              onMap={() => setMapOpen(true)}
+              onMenu={() => setMenuOpen(true)}
+              onParty={() => setPartyOpen(true)}
+            />
+            <VitalsStrip character={state.character} />
+          </>
+        )}
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
           {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
           {loading && <LoadingDots />}
