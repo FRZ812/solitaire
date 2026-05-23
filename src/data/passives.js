@@ -150,11 +150,139 @@ export function passiveLabel(id, tierId) {
   const v = def.amount(o(tierId));
   if (def.type === "proc") return def.name; // proc magnitude is contextual — name carries it
   if (def.key === "reviveOnce") return def.name;
-  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance"]; // stored 0..1
-  const pctKeys = ["lifesteal", "thorns", "coinBonus"];                                 // stored as whole %
+  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance", "coinBonus", "reviveOnce"]; // stored 0..1
+  const wholePctKeys = ["lifesteal", "thorns"];        // stored as whole %, render with a % suffix
+  const pctSuffixKeys = ["critChance", "dodge"];       // whole numbers that ARE percentages
   if (fracKeys.includes(def.key)) return `${def.name} ${Math.round(v * 100)}%`;
-  if (pctKeys.includes(def.key)) return `${def.name} ${Math.round(v)}%`;
+  if (wholePctKeys.includes(def.key)) return `${def.name} ${Math.round(v)}%`;
+  if (pctSuffixKeys.includes(def.key)) return `${def.name} +${Math.round(v)}%`;
   return `${def.name} +${Math.round(v)}`;
+}
+
+// ---------------------------------------------------------------------------
+// PRECISE EFFECT TEXT — the unambiguous answer to "what does this affix DO, and
+// by how much, exactly?" A chip label says "Keen Edge +14"; this says
+// "+14% critical-hit chance". Single source of truth for the item-detail chip
+// reveal and the Passives codex audit. `numFmt` formats the magnitude per the
+// stat's storage convention, `KEY_EFFECT` phrases stat/trigger/world affixes,
+// and `formatProc` phrases on-hit/on-crit/etc. procs.
+// ---------------------------------------------------------------------------
+const numFmt = {
+  flat:  (v) => `${Math.round(v)}`,
+  pct:   (v) => `${Math.round(v * 100)}`,           // stored 0..1, shown as whole %
+  float: (v) => (v % 1 ? v.toFixed(1) : `${Math.round(v)}`),
+};
+const plur = (n) => (Number(n) === 1 ? "" : "s");
+
+// scale: how the magnitude is stored/formatted · p: phrase built from that number.
+const KEY_EFFECT = {
+  // offence
+  damageFlat:  { s: "flat", p: (n) => `+${n} flat weapon damage` },
+  damageMult:  { s: "pct",  p: (n) => `+${n}% damage dealt` },
+  accuracy:    { s: "flat", p: (n) => `+${n} accuracy` },
+  critChance:  { s: "flat", p: (n) => `+${n}% critical-hit chance` },
+  critMult:    { s: "pct",  p: (n) => `+${n}% critical damage` },
+  penetration: { s: "flat", p: (n) => `+${n} armour penetration` },
+  // defence
+  armor:       { s: "flat", p: (n) => `+${n} armour (vs physical)` },
+  ward:        { s: "flat", p: (n) => `+${n} ward (vs magic)` },
+  dodge:       { s: "flat", p: (n) => `+${n}% dodge chance` },
+  maxHealth:   { s: "flat", p: (n) => `+${n} maximum health` },
+  drPct:       { s: "pct",  p: (n) => `${n}% less damage taken from all sources` },
+  fortify:     { s: "pct",  p: (n) => `${n}% less damage taken while below 35% health` },
+  // tempo
+  speed:       { s: "flat", p: (n) => `+${n} initiative (acts sooner)` },
+  swiftChance: { s: "pct",  p: (n) => `+${n}% chance each turn to act a second time` },
+  extraActions:{ s: "flat", p: (n) => `+${n} action point${plur(n)} each turn` },
+  cooldownReduction: { s: "flat", p: (n) => `ability cooldowns recover ${n} turn${plur(n)} sooner` },
+  // sustain / triggers
+  lifesteal:   { s: "flat", p: (n) => `heal for ${n}% of damage dealt (capped at ${PASSIVE_CAPS.lifesteal}% total)` },
+  turnRegen:   { s: "flat", p: (n) => `restore ${n} health each turn` },
+  thorns:      { s: "flat", p: (n) => `reflect ${n}% of damage taken back at the attacker` },
+  resolveRegen:{ s: "flat", p: (n) => `restore ${n} resolve each turn` },
+  shieldGen:   { s: "flat", p: (n) => `gain a ${n}-point physical shield each turn` },
+  magicShieldGen: { s: "flat", p: (n) => `gain a ${n}-point magic ward each turn` },
+  invulnCharges:{ s: "flat", p: (n) => `near death, turn briefly invulnerable (${n} charge${plur(n)} per fight)` },
+  reviveOnce:  { s: "pct",  p: (n) => `once per fight, cheat death and revive at ${n}% health` },
+  // world / exploration
+  travelMult:   { s: "pct", p: (n) => `travel takes ${n}% less time` },
+  coinBonus:    { s: "pct", p: (n) => `+${n}% coin looted from the fallen` },
+  needDecayMult:{ s: "pct", p: (n) => `hunger, thirst & fatigue set in ${n}% slower` },
+  healPerHour:  { s: "float", p: (n) => `recover ${n} extra health per hour out of battle` },
+};
+
+// On-X procs: hook → when it fires, plus its chance/condition.
+const HOOK_PREFIX = {
+  onHit: "On hit", onCrit: "On a critical hit", onKill: "On a kill",
+  onDodge: "On each dodge", turnRamp: "Each turn", lowHealth: "When badly wounded",
+};
+function chancePrefix(def) {
+  const base = HOOK_PREFIX[def.hook] || "On hit";
+  const thr = def.hook === "lowHealth" && def.threshold ? ` (below ${Math.round(def.threshold * 100)}% health)` : "";
+  const cond = def.cond === "targetLow" ? " against badly wounded foes" : "";
+  const c = def.chance ?? 1;
+  const chance = c < 1 ? ` — ${Math.round(c * 100)}% chance` : "";
+  return `${base}${thr}${cond}${chance}`;
+}
+// Status payload → plain text. `n` is the already-formatted magnitude, `d` its duration.
+const STATUS_EFFECT = {
+  bleed:  (n, d) => `inflict bleeding (${n} damage/turn for ${d} turn${plur(d)})`,
+  poison: (n, d) => `inflict poison (${n} damage/turn for ${d} turn${plur(d)})`,
+  burn:   (n, d) => `set ablaze (${n} damage/turn for ${d} turn${plur(d)})`,
+  chill:  (n, d) => `chill the foe (saps ${n} accuracy for ${d} turn${plur(d)})`,
+  curse:  (n, d) => `curse the foe (+${n}% damage they take for ${d} turn${plur(d)})`,
+  stun:   (n, d) => `stun the foe (skips ${d} turn${plur(d)})`,
+  rally:  (n, d) => `gain rally (+${n}% damage dealt for ${d} turn${plur(d)})`,
+  dodgeStack: (n, d) => `gain +${n}% dodge that stacks with each dodge (${d} turn${plur(d)})`,
+};
+function procValueStr(lo, hi) {
+  const a = Math.round(lo);
+  if (hi == null) return `${a}`;
+  const b = Math.round(hi);
+  return a === b ? `${a}` : `${a}–${b}`;
+}
+function formatProc(def, lo, hi) {
+  const a = def.apply || {};
+  const n = procValueStr(lo, hi);
+  let effect;
+  if (a.kind === "status" || a.kind === "buff") {
+    const fn = STATUS_EFFECT[a.status];
+    effect = fn ? fn(n, a.duration || 1) : a.status;
+  } else if (a.kind === "execute") effect = `deal ${n} bonus damage`;
+  else if (a.kind === "bonusHit") effect = `strike again for ${n} damage`;
+  else if (a.kind === "shield") effect = `raise a ${n}-point shield`;
+  else if (a.kind === "refund") {
+    const parts = [];
+    if (a.resolve) parts.push(`${n} resolve`);
+    if (a.action) parts.push("an action");
+    if (a.heal) parts.push(`${n} health`);
+    effect = `refund ${parts.join(", ")}`;
+  } else effect = def.desc || "";
+  return `${chancePrefix(def)}: ${effect}`;
+}
+
+// Precise effect of a passive at a CONCRETE tier — e.g. "+14% critical-hit chance".
+// Falls back to the affix's tier floor when no tier is supplied.
+export function passiveEffectText(id, tierId) {
+  const def = BY_ID[id];
+  if (!def) return "";
+  const n = o(tierId || def.minTier || "common");
+  if (def.type === "proc") return formatProc(def, def.amount(n));
+  const k = KEY_EFFECT[def.key];
+  return k ? k.p(numFmt[k.s](def.amount(n))) : (def.desc || "");
+}
+
+// Effect across an affix's whole grade range (tier floor → divine), for the codex
+// audit — e.g. "+6–14% critical-hit chance". Collapses to a single value when flat.
+export function passiveEffectRange(id) {
+  const def = BY_ID[id];
+  if (!def) return "";
+  const lo = o(def.minTier || "common"), hi = o("divine");
+  if (def.type === "proc") return formatProc(def, def.amount(lo), def.amount(hi));
+  const k = KEY_EFFECT[def.key];
+  if (!k) return def.desc || "";
+  const a = numFmt[k.s](def.amount(lo)), b = numFmt[k.s](def.amount(hi));
+  return k.p(a === b ? a : `${a}–${b}`);
 }
 
 // Passive slots an item of this tier carries.
