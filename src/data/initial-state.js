@@ -107,6 +107,18 @@ export function makeInitialState() {
             description: "Sits the Polestar Throne at Northstar Castle in the far north — a true demon, the abyssal power the demon-blooded merely descend from. The continent's oldest binding power and its quietest one. Pilgrims walk toward him. Few come back; none come back the same.",
             attributes: { body: 18, reflex: 14, vigor: 22, mind: 18, wit: 16, presence: 24 },
             worn: ["frost-crown", "black-robe", "polestar-sword"],
+            // His signature kit (named powers, not the generic attribute-inferred
+            // fallback), tuned at divine to stand level with the great wyrm. Where
+            // the wyrm is brute fire and fury, the demon is dread, binding, and one
+            // annihilating stroke: execute is the Polestar Sword's killing blow that
+            // bypasses all defence (his single-target signature — a stat-scaled
+            // spell would land for a fraction of it); curse is the binding-sigil's
+            // work, marking a foe so that stroke and his Frost Crown's rime bite all
+            // the deeper; dread-aura is his regard made manifest, the fear that makes
+            // every blow against him falter. The COLD rides the Frost Crown's
+            // frostbrand/cursed procs, so the kit needn't spend a slot on a frost
+            // bolt that would barely scratch a divine-tier foe.
+            abilities: ["execute", "dread-aura", "curse"],
             knows: [
               "I have not left the Castle in seven hundred years.",
               "Every petitioner is heard. The cost of being heard is not always the same.",
@@ -206,7 +218,7 @@ export function makeInitialState() {
           },
           "great-wyrm": {
             id: "great-wyrm", kind: "npc",
-            name: "Vyrnholt, the Great Wyrm", race: "wyrm", profession: "wyrm",
+            name: "Vyrnholt, the Great Wyrm", race: "wyrm", profession: null,
             age: "older than every kingdom",
             attractiveness: "magnificent; terrible",
             appearance: {
@@ -218,9 +230,30 @@ export function makeInitialState() {
               marks: "an old lance-scar across the brow; gold-leaf melted into the right foreclaws",
             },
             base_appearance: "Longer than a wagon-train. Smoke-black scale. Gold slit eyes. A lance-scar across the brow. Gold leaf melted into the right foreclaws.",
-            description: "The great wyrm of Drakespire — a TRUE dragon, the Vyrgun's lord and the Drakeholt's oldest authority, NOT one of the diluted drake-blooded who merely claim his line. Wakes seldom; is always aware. Tribute climbs the road in his name.",
+            description: "The great wyrm of Drakespire — a true dragon of the old line, the Vyrgun's lord and the Drakeholt's oldest authority. Wakes seldom; is always aware. Tribute climbs the road in his name.",
             attributes: { body: 24, reflex: 12, vigor: 26, mind: 18, wit: 22, presence: 22 },
-            worn: ["hoard-melted-into-the-floor"],
+            // A true dragon wears no harness — his might is in his nature, not a
+            // hoard strapped on. Lacking the divine ITEMS that carry a fabled foe's
+            // game-breaking affixes, he EMBODIES them: scale like god-plate, fang
+            // and flame like a god-arm. Tuned to stand beside the Demon King.
+            worn: [],
+            naturalArmor: 2,   // scale the size of shields
+            naturalWard: 2,    // the old magic banked in dragon-blood
+            naturalWeapon: { min: 4, max: 7, type: "physical", pen: 3, category: "fang", reach: 2, speed: 0, acc: 1 },
+            innatePassives: [
+              { id: "worldbreaker", tier: "divine" },    // raw, world-ending might
+              { id: "godward",      tier: "divine" },     // scale that shrugs off a fifth of all harm
+              { id: "undying",      tier: "divine" },     // an elder wyrm does not simply die
+              { id: "colossus",     tier: "mythical" },   // immense bulk
+              { id: "sunder",       tier: "mythical" },   // claw and fang cleave any harness
+              { id: "savage",       tier: "legendary" },  // a wyrm's strike is ruin
+            ],
+            // Kit the combat AI actually fields: dragon-breath engulfs a GROUP
+            // (his iconic moment vs a party), beast-shift is his surging wrath that
+            // makes his already-devastating bite deadlier vs a lone foe. His crushing
+            // natural fang IS his single-target signature — no weaker claw-tech can
+            // out-value it, so we don't pad the list with abilities that never fire.
+            abilities: ["dragon-breath", "beast-shift"],
             knows: [
               "I have not flown in eighty-three years.",
               "I taste every coin of tribute. Three were poisoned. The poisoners did not return.",
@@ -486,7 +519,6 @@ export function makeInitialState() {
           "sorcerer":       { id: "sorcerer",       name: "Sorcerer",       description: "Practitioner of binding magic — taught, oathed, or self-discovered." },
           "witch":          { id: "witch",          name: "Witch",          description: "A hedge-magic practitioner working outside the Spire schools — older, less institutional." },
           "speaker":        { id: "speaker",        name: "Speaker",        description: "Selenyan or Greenshaw civic leader; heard, not commanded." },
-          "wyrm":           { id: "wyrm",           name: "Wyrm",           description: "Drake-kin of great age and power; the highest authority a Drakeholt court answers to." },
           "chapter-master": { id: "chapter-master", name: "Chapter-Master", description: "Senior officer of a chapter-house of a militant order." },
           "hold-father":    { id: "hold-father",    name: "Hold-Father",    description: "Elected leader of a dwarven hold for a term of years." },
           "matriarch":      { id: "matriarch",      name: "Matriarch",      description: "Elected female leader; used in matriarchies like the Halfborn Hold." },

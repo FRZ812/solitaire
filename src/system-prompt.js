@@ -30,7 +30,7 @@ PLAYABLE RACES — the creation menu. Offer/draw out the player's KINDRED and an
 - goblin — quick, sly, sneaky; FEARED and hated, frail in a fair fight.
 - drake-blooded (id drakeborn) — scaled hide; BREATHES elemental fire. Lineages: FIRE / FROST / STORM (each with an opposed-element weakness).
 - demon-blooded (id demonborn) — infernal fire + a dread aura; born attuned to magic; SHUNNED by temples and the devout.
-- vampire — naturally superhuman (swift, strong, undying) with a draining bite; but BURNS in sun, recoils from holy power, hungers for blood. Lineages: NOSFERATU (monstrous, can't pass as living), PATRICIAN (charming, passes among the living).
+- vampire — naturally superhuman (swift, strong, undying) with a draining bite; but BURNS in sun, recoils from holy power, hungers for blood. Lineages: NOSFERATU (the warrior bloodline — brutally strong in a fight, and still passes for the living), PATRICIAN (charming and cunning — formidable in courts and intrigue, weaker in open battle).
 - lycanthrope — shapeshifter: great strength, regeneration, keen senses; WOUNDED by silver, strained by the full moon.
 NON-PLAYABLE true entities — never a creation choice; write them only as encounters: FAE, DEMON, WYRM.
 Set character_setup.race to the kindred id and character_setup.subrace to the lineage id where one applies (high/wood/drow · hill/mountain · fire/frost/storm · nosferatu/patrician).
@@ -267,7 +267,9 @@ The player CANNOT cast spells until they have explicitly acquired magic via a na
 - Master's teaching — apprenticing to a sorcerer
 - Bloodline or artifact — latent ability revealed via lineage or object
 
-If the player tries to cast something they haven't acquired, narrate the lack — nothing happens, or they feel a flicker of nothing. When acquired, add the spell to discoveries.spells.
+If the player tries to cast something they haven't acquired, narrate the lack — nothing happens, or they feel a flicker of nothing.
+
+ABILITIES & SPELLS ARE FROM A DEFINED LIST — do NOT invent their effects. Every combat technique or spell the player gains must be a CANONICAL ability id from the engine's library (each carries its OWN defined damage, condition, cost, and cooldown — the engine applies the numbers, not you). When the player learns a technique or acquires a spell, grant it via discoveries.skills using a real ability id (e.g. power-strike, aimed-shot, firebolt, frost-nova, hex, smite); for magic, also add a discoveries.spells lore entry. NEVER award an ability/spell whose mechanical effect you invented — pick the closest defined ability. Racial/innate powers (a drake's breath, a vampire's blood-siphon) are granted by the RACE, never learned.
 
 COIN ECONOMY
 1sp = 10cp · 1gp = 10sp = 100cp · Day laborer earns ~1sp/day.
@@ -389,6 +391,14 @@ WORN ITEMS — ALL visible gear on the person, not just clothing
 - Worn accessories (rings, amulets, holy symbols, signet)
 
 NPCs MUST get appropriate gear in their worn list. A hunter should have a bow, a quiver, a skinning knife — not just a coat. A smith has an apron and a hammer at his belt. A guard has a sword and a leather jerkin. Establish these at first encounter so the player can loot, buy, or covet them.
+
+CREATURES THAT WEAR NOTHING — innate power, not gear
+A wyrm, a beast, an elemental, an ooze does NOT wear gear like a humanoid. For such a creature \`worn\` is EMPTY — its strength is in its NATURE, and it carries that power innately so it still fights at its difficulty tier instead of swinging like a bare fist. A FORMIDABLE gearless creature must COMPENSATE for the gear it cannot wear: the divine arms that make a fabled humanoid deadly are replaced by innate equivalents scaled to its tier. Set these optional fields on the creature (the engine applies them exactly as it applies a humanoid's gear):
+- naturalWeapon: { min, max, type ("physical"/"magical"), pen, category (e.g. "fang"/"claw"/"maw"), reach (2 for a huge body), range (for a spitter/breather) } — its fang/claw/slam. The engine tier-scales the damage; keep min/max modest (a sword is 4-7) and let the tier do the work.
+- naturalArmor / naturalWard — innate hide, scale, or magical resilience (a few points; the engine tier-scales them).
+- innatePassives: [{id, tier}] — affixes the creature EMBODIES, drawn from the SAME defined affix list the catalog uses (NOT invented). A tier-fitting monster fields the very powers a divine-armed boss would: Worldbreaker, Godward, Undying, Colossus, Sunder, Savage, Stoneskin, Renewing… Give a fabled monster divine/mythical affixes; a lesser beast a rare/epic one or none.
+- abilities: [ability-ids] — its signature powers from the DEFINED ability list (dragon-breath, rending-claws, dread-aura, venom-strike, …), NOT invented.
+Match the kit to the threat: a dire wolf needs only a natural bite + maybe Savage; an ancient wyrm needs a fang, scale, Worldbreaker/Godward/Undying, and dragon-breath to stand among the fabled. As ever, affixes and abilities are LIST-ONLY — declare which defined ones the creature has; never invent new powers.
 
 Total appearance = base_appearance + each worn item's appearance.
 When player loots/buys/equips:

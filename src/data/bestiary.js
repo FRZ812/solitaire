@@ -135,7 +135,11 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
 
   // Gear stats are ALREADY tier-scaled by itemCombatStats; only the attribute-
   // derived base scales by tier (m) below — otherwise worn gear double-scales.
-  let attrArmor = Math.floor(body / 3), attrWard = Math.floor(mind / 3);
+  // A creature with no armour ITEM can still be naturally armoured — a wyrm's
+  // scale, a golem's stone (naturalArmor), or an innate magical resilience
+  // (naturalWard). Both are innate, so they ride the attribute base and tier-scale.
+  let attrArmor = Math.floor(body / 3) + (npc.naturalArmor || 0);
+  let attrWard = Math.floor(mind / 3) + (npc.naturalWard || 0);
   let gearArmor = 0, gearWard = 0, dodgeGear = 0, weaponDmg = null, weaponType = "unarmed";
   for (const it of worn) {
     const cs = itemCombatStats(it);
@@ -145,8 +149,35 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
   // Worn gear's affixes apply to the bearer too — so a fabled boss in divine arms
   // fights with their game-breaking powers (Worldbreaker, Sundering, Undying…),
   // not just big base numbers. Their req is assumed met (it's their own gear).
-  const { statMods: sm, triggers: tr } = aggregateCombatPassives(worn.flatMap((it) => it.passives || []));
-  const base = weaponDmg || { min: 2, max: 4, type: "physical", pen: 0 };
+  // INNATE compensation: a creature that wears no gear like a humanoid (a wyrm, an
+  // elemental, a beast) carries its power in its NATURE — `innatePassives` are
+  // affixes it embodies ({id,tier}, with their own tiers exactly like gear affixes),
+  // so a tier-appropriate monster can field the same game-breaking powers a divine-
+  // armed boss would, without pinning fictional "hoard" gear on it.
+  const { statMods: sm, triggers: tr } = aggregateCombatPassives([
+    ...worn.flatMap((it) => it.passives || []),
+    ...(npc.innatePassives || []),
+  ]);
+  // Weapon: a worn weapon (already tier-scaled by itemCombatStats) wins; else a
+  // NATURAL weapon (fang/claw/breath) — tier-scaled HERE (m) since it's an innate
+  // stat, not a pre-scaled item — so an item-less foe hits at its tier instead of
+  // being stuck at bare-fist damage; else bare fists.
+  let base;
+  if (weaponDmg) {
+    base = weaponDmg;
+  } else if (npc.naturalWeapon) {
+    const nw = npc.naturalWeapon;
+    base = {
+      // Only min/max tier-scale (like an item weapon); pen is a flat family-style
+      // identity value — the big armour-cleaving comes from a Sunder innatePassive.
+      min: Math.max(1, scale(nw.min, m)), max: Math.max(1, scale(nw.max, m)),
+      type: nw.type || "physical", pen: nw.pen || 0,
+      reach: nw.reach, range: nw.range, speed: nw.speed, acc: nw.acc,
+    };
+    weaponType = nw.category || "natural";
+  } else {
+    base = { min: 2, max: 4, type: "physical", pen: 0 };
+  }
   const govF = 1 + (base.type === "magical" ? mind : body) * 0.08;
   const dFlat = sm.damageFlat || 0, dMult = 1 + (sm.damageMult || 0);
   const fam = weaponFamilyBase(weaponType);
@@ -160,9 +191,18 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
   };
   const demeanor = npcDemeanor(npc);
   const dcfg = DEMEANOR_CONFIG[demeanor] || DEMEANOR_CONFIG.wary;
-  const abilities = [];
-  if (body >= 6) abilities.push({ id: "power-strike", tier: tierId });
-  if (mind >= 8) abilities.push({ id: "firebolt", tier: tierId });
+  // A named foe's OWN declared abilities win — a wyrm breathes fire because its
+  // kit lists it, not because it cleared a stat threshold; this is also how an
+  // item-less creature gets its signature powers (dragon-breath, dread-aura).
+  // Falls back to a basic attribute-inferred kit for foes that declare none.
+  let abilities;
+  if (Array.isArray(npc.abilities) && npc.abilities.length) {
+    abilities = npc.abilities.map((id) => ({ id, tier: tierId }));
+  } else {
+    abilities = [];
+    if (body >= 6) abilities.push({ id: "power-strike", tier: tierId });
+    if (mind >= 8) abilities.push({ id: "firebolt", tier: tierId });
+  }
   const maxHealth = Math.max(1, Math.round((12 + vigor * 2 + body) * m) + (sm.maxHealth || 0));
   // Named foes carry their wounds between encounters — re-engaging doesn't reset
   // them to full. A previously-yielded foe is already cowed (low morale).

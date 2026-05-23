@@ -1233,16 +1233,31 @@ export function Solitaire() {
   if (!campaignsLoaded || campaignBusy) return <CenteredLoader />;
   if (!currentCampaignId) {
     return (
-      <CampaignsList
-        campaigns={campaigns}
-        onSelect={handleSelectCampaign}
-        onNew={handleNewCampaign}
-        onDelete={handleDeleteCampaign}
-        onRename={handleRenameCampaign}
-        onSignOut={__SOLITAIRE_MODE__ === "web" ? handleSignOut : undefined}
-        busy={campaignBusy}
-        error={campaignError}
-      />
+      <>
+        <CampaignsList
+          campaigns={campaigns}
+          onSelect={handleSelectCampaign}
+          onNew={handleNewCampaign}
+          onDelete={handleDeleteCampaign}
+          onRename={handleRenameCampaign}
+          onSignOut={__SOLITAIRE_MODE__ === "web" ? handleSignOut : undefined}
+          busy={campaignBusy}
+          error={campaignError}
+        />
+        {/* The confirm dialog must render here too — otherwise Delete on the
+            campaigns screen sets the dialog state but nothing shows it (the main
+            game's ConfirmDialog is past this early return). */}
+        {confirmDialog && (
+          <ConfirmDialog
+            title={confirmDialog.title}
+            body={confirmDialog.body}
+            confirmLabel={confirmDialog.confirmLabel}
+            cancelLabel={confirmDialog.cancelLabel}
+            danger={confirmDialog.danger}
+            onResolve={(v) => { confirmDialog.resolve(v); setConfirmDialog(null); }}
+          />
+        )}
+      </>
     );
   }
 
@@ -1284,7 +1299,7 @@ export function Solitaire() {
           {error && <ErrorBanner>{error}</ErrorBanner>}
           {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
         </div>
-        {pendingCombat && !combat && (
+        {state.created !== false && pendingCombat && !combat && (
           <div className="fade-in" style={{
             margin: "0 12px 8px", padding: "11px 14px",
             backgroundColor: "rgba(35,15,15,0.7)", border: `1px solid rgba(239,68,68,0.4)`,
@@ -1305,7 +1320,7 @@ export function Solitaire() {
             }}>Avoid</button>
           </div>
         )}
-        {pendingEngage && !combat && (
+        {state.created !== false && pendingEngage && !combat && (
           <div className="fade-in" style={{
             margin: "0 12px 8px", padding: "11px 14px",
             backgroundColor: "rgba(35,15,15,0.7)", border: `1px solid rgba(239,68,68,0.45)`,
@@ -1332,7 +1347,7 @@ export function Solitaire() {
             )}
           </div>
         )}
-        {pendingLoot && !combat && (
+        {state.created !== false && pendingLoot && !combat && (
           <div className="fade-in" style={{
             margin: "0 12px 8px", padding: "11px 14px",
             backgroundColor: "rgba(20,29,29,0.8)", border: `1px solid rgba(215,167,111,0.4)`,
@@ -1355,7 +1370,7 @@ export function Solitaire() {
             }}>Leave</button>
           </div>
         )}
-        {buildingHere && !shopTile && (
+        {state.created !== false && buildingHere && !shopTile && (
           <div className="fade-in" style={{
             margin: "0 12px 8px", padding: "11px 14px",
             backgroundColor: "rgba(20,29,29,0.8)", border: `1px solid rgba(215,167,111,0.4)`,

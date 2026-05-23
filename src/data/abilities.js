@@ -85,7 +85,7 @@ export const ABILITY_LIBRARY = [
   // ---- INNATE (racial) — granted by RACE at creation, never dropped/taught.
   //      Not "learned magic": these are a kindred's inborn nature (see data/races.js). ----
   { id: "dragon-breath", name: "Dragon Breath", school: "arcane", icon: "flame", target: "all-enemies", damageType: "magical", scaling: "stat", scaleAttr: "vigor", weaponReq: null, statReq: { attr: "vigor", base: 3 }, dmg: [4, 8], pen: 2, critBonus: 0, resolveCost: 2, cooldown: 3, effect: { type: "burn", value: 4, duration: 3, target: "enemy" }, innate: true, desc: "Exhale the fire (or frost, or storm) in your blood — a cone that sears every foe before you." },
-  { id: "crimson-bite", name: "Crimson Bite", school: "shadow", icon: "droplet", target: "enemy", damageType: "physical", scaling: "stat", scaleAttr: "body", weaponReq: null, statReq: { attr: "body", base: 3 }, dmg: [5, 9], pen: 2, critBonus: 10, resolveCost: 1, cooldown: 2, effect: { type: "bleed", value: 3, duration: 3, target: "enemy" }, innate: true, desc: "Sink your fangs in — a savage, draining bite that leaves the wound weeping." },
+  { id: "blood-siphon", name: "Blood Siphon", school: "shadow", icon: "droplet", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "body", weaponReq: null, statReq: { attr: "body", base: 3 }, dmg: [4, 8], pen: 2, critBonus: 5, resolveCost: 1, cooldown: 2, effect: { type: "weaken", value: 20, duration: 2, target: "enemy" }, innate: true, desc: "Tear the vitality from a foe's veins at a distance to feed your own — your wounds close as theirs open (your vampiric nature drinks the spilled blood)." },
   { id: "rending-claws", name: "Rending Claws", school: "martial", icon: "swords", target: "enemy", damageType: "physical", scaling: "stat", scaleAttr: "body", weaponReq: null, statReq: { attr: "body", base: 3 }, dmg: [4, 7], pen: 1, critBonus: 5, resolveCost: 0, cooldown: 1, effect: { type: "bleed", value: 2, duration: 2, target: "enemy" }, innate: true, desc: "Tear with claw and fang — fast, bloody strikes no smith forged." },
   { id: "beast-shift", name: "Beast-Shift", school: "survival", icon: "moon", target: "self", damageType: null, scaling: "none", scaleAttr: "vigor", weaponReq: null, statReq: null, dmg: null, pen: 0, critBonus: 0, resolveCost: 1, cooldown: 4, effect: { type: "rally", value: 35, duration: 3, target: "self" }, innate: true, desc: "Let the beast rise — fury and strength surge for a few savage turns." },
   { id: "hellfire-bolt", name: "Hellfire Bolt", school: "arcane", icon: "flame", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 3 }, dmg: [5, 9], pen: 2, critBonus: 0, resolveCost: 1, cooldown: 1, effect: { type: "burn", value: 3, duration: 2, target: "enemy" }, innate: true, desc: "Hurl a gout of infernal fire from your tainted blood." },
@@ -99,6 +99,20 @@ const UNIQUE_BY_ID = Object.fromEntries(UNIQUE_ABILITIES.map((a) => [a.id, a]));
 const ALL_BY_ID = { ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
 
 export function getAbilityDef(id) { return ALL_BY_ID[id] || null; }
+
+// Category for the codex Abilities catalog: innate racial powers, learned spells
+// (magic), or martial techniques.
+export function abilityCategoryOf(def) {
+  if (!def) return "martial";
+  if (def.innate) return "racial";
+  if (abilityScaling(def) === "stat" || def.school === "arcane" || def.school === "divine") return "spell";
+  return "martial";
+}
+
+// Every DEFINED, grantable ability (library + authored uniques). The single
+// source of truth the codex audits and the narrator must grant from (by id) —
+// each carries its own damage, effects, costs, and requirements.
+export const ABILITY_CATALOG = [...ABILITY_LIBRARY, ...UNIQUE_ABILITIES];
 
 // How much an attribute score amplifies an ability: each point adds 8%.
 export function attrFactor(score) { return 1 + Math.max(0, score || 0) * 0.08; }

@@ -9,7 +9,7 @@ import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
 import { tier as tierInfo, tierLabel, tierOrder } from "../data/tiers.js";
 import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
 import { passiveLabel, passiveDef, isFusionRune } from "../data/passives.js";
-import { getAbilityDef } from "../data/abilities.js";
+import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf } from "../data/abilities.js";
 import { RACES } from "../data/races.js";
 
 const CODEX_TABS = [
@@ -17,8 +17,7 @@ const CODEX_TABS = [
   { key: "races",       label: "Races" },
   { key: "professions", label: "Professions" },
   { key: "items",       label: "Items" },
-  { key: "spells",      label: "Spells" },
-  { key: "skills",      label: "Skills" },
+  { key: "abilities",   label: "Abilities" },
 ];
 
 // Reusable styles inside this view.
@@ -146,7 +145,7 @@ function EffectChip({ kind, id, tier }) {
       <span onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }} title={desc}
         style={{ fontSize: "8px", padding: "1px 5px", borderRadius: "5px", cursor: "pointer",
           backgroundColor: `rgba(${accent},0.12)`, color: `rgba(${accent},0.95)`, border: `1px solid rgba(${accent},0.3)` }}>
-        {label}{desc ? <span style={{ opacity: 0.6, marginLeft: "3px", fontSize: "7px" }}>{open ? "▾" : "?"}</span> : null}
+        {label}{desc ? <span style={{ opacity: 0.55, marginLeft: "3px", fontSize: "8px" }}>{open ? "▾" : "ⓘ"}</span> : null}
       </span>
       {open && desc && (
         <span style={{ flexBasis: "100%", width: "100%", fontSize: "9px", color: "rgba(237,228,208,0.62)", lineHeight: 1.4, margin: "1px 0 2px 3px" }}>{desc}</span>
@@ -339,7 +338,145 @@ function ItemCatalog({ codex }) {
   );
 }
 
+// ===========================================================================
+// ABILITY CATALOG — every DEFINED ability (martial / spell / racial-innate) with
+// its full combat details, so the player can audit exactly what each does and
+// which they know. Mirrors the item catalog (collapsible, Known toggle, click).
+// ===========================================================================
+
+const ABILITY_CATEGORIES = [
+  { key: "martial", label: "Martial Techniques", color: "#e9d8b8" },
+  { key: "spell", label: "Spells (Magic)", color: "#c4a6f0" },
+  { key: "racial", label: "Racial & Innate", color: "#86d27a" },
+];
+const ABILITY_CAT_COLOR = { martial: "#e9d8b8", spell: "#c4a6f0", racial: "#86d27a" };
+
+function abilityStatLine(def) {
+  const p = [];
+  if (def.scaling === "weapon" || def.damageType === "weapon") p.push("weapon damage");
+  else if (def.dmg) p.push(`dmg ${def.dmg[0]}–${def.dmg[1]} ${def.damageType || "physical"}`);
+  if (def.pen) p.push(`pen ${def.pen}`);
+  if (def.critBonus) p.push(`+${def.critBonus}% crit`);
+  if (def.hits > 1) p.push(`×${def.hits} hits`);
+  p.push(def.target === "all-enemies" ? "all foes" : def.target === "self" ? "self" : "1 foe");
+  if (def.effect && def.effect.type) {
+    const e = def.effect;
+    p.push(`${e.type}${e.value ? ` ${e.value}` : ""}${e.duration ? ` ${e.duration}t` : ""}`);
+  }
+  if (def.resolveCost) p.push(`${def.resolveCost} resolve`);
+  if ((def.actionCost || 1) > 1) p.push(`${def.actionCost} AP`);
+  if (def.cooldown) p.push(`cd ${def.cooldown}`);
+  return p.join(" · ");
+}
+function abilityReqLine(def) {
+  const b = [];
+  if (def.weaponReq && def.weaponReq.length) b.push(`needs ${def.weaponReq.join("/")}`);
+  if (def.statReq) b.push(`${ATTR_FULL[def.statReq.attr] || def.statReq.attr} ${def.statReq.base}+`);
+  return b.join(" · ");
+}
+
+function AbilityRow({ def, known }) {
+  const [open, setOpen] = useState(false);
+  const color = ABILITY_CAT_COLOR[abilityCategoryOf(def)] || colors.parchmentLight;
+  const stat = abilityStatLine(def);
+  const req = abilityReqLine(def);
+  return (
+    <div onClick={() => setOpen((o) => !o)} style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.16)`, display: "flex", flexDirection: "column", gap: "3px", cursor: "pointer" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+        <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color }}>
+          <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span>{def.name}
+        </span>
+        {known && <span title="Known" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: colors.gold, flexShrink: 0 }} />}
+      </div>
+      {stat && <div style={{ fontSize: "9px", color: "rgba(237,228,208,0.6)", letterSpacing: "0.03em" }}>{stat}</div>}
+      {req && <div style={{ fontSize: "9px", color: "rgba(127,199,224,0.8)", letterSpacing: "0.03em" }}>{req}</div>}
+      {open && def.desc && <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.85)", lineHeight: 1.45 }}>{def.desc}</div>}
+    </div>
+  );
+}
+
+function AbilityCatalog({ codex, character }) {
+  const [cat, setCat] = useState("all");
+  const [knownOnly, setKnownOnly] = useState(false);
+  const [openSecs, setOpenSecs] = useState(() => new Set());
+  const known = useMemo(() => new Set([
+    ...((character?.abilities) || []).map((a) => (typeof a === "string" ? a : a.id)),
+    ...Object.keys(codex.skills || {}),
+    ...Object.keys(codex.spells || {}),
+  ]), [character, codex.skills, codex.spells]);
+  const sections = useMemo(() => ABILITY_CATEGORIES.map((c) => ({
+    ...c, items: ABILITY_CATALOG.filter((d) => abilityCategoryOf(d) === c.key).sort((a, b) => a.name.localeCompare(b.name)),
+  })).filter((s) => s.items.length), []);
+
+  const visible = sections
+    .filter((s) => cat === "all" || s.key === cat)
+    .map((s) => ({ ...s, items: knownOnly ? s.items.filter((d) => known.has(d.id)) : s.items }))
+    .filter((s) => s.items.length);
+  const total = visible.reduce((n, s) => n + s.items.length, 0);
+  const allKeys = visible.map((s) => s.key);
+  const allOpen = allKeys.length > 0 && allKeys.every((k) => openSecs.has(k));
+  const toggleSec = (k) => setOpenSecs((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+
+  const FILTERS = [{ key: "all", label: "All" }, ...ABILITY_CATEGORIES.map((c) => ({ key: c.key, label: c.label.split(" ")[0] }))];
+
+  return (
+    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+        {FILTERS.map((f) => {
+          const active = f.key === cat;
+          return (
+            <button key={f.key} onClick={() => setCat(f.key)} style={{
+              padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
+              borderColor: active ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
+              backgroundColor: active ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
+              color: active ? colors.parchmentLight : "rgba(215,167,111,0.55)",
+              fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+            }}>{f.label}</button>
+          );
+        })}
+        <button onClick={() => setKnownOnly((v) => !v)} title="Show only abilities you know" style={{
+          marginLeft: "auto", padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
+          borderColor: knownOnly ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
+          backgroundColor: knownOnly ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
+          color: knownOnly ? colors.gold : "rgba(215,167,111,0.5)",
+          fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+        }}>{knownOnly ? "● Known" : "○ Known"}</button>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ ...accentMeta, fontSize: "9px" }}>{total} {knownOnly ? "known" : "defined"} · {visible.length} categor{visible.length === 1 ? "y" : "ies"}</div>
+        {visible.length > 0 && (
+          <button onClick={() => setOpenSecs(allOpen ? new Set() : new Set(allKeys))} style={{ marginLeft: "auto", padding: "4px 9px", borderRadius: radius.panelCompact, border: "1px solid rgba(215,167,111,0.2)", backgroundColor: "rgba(10,15,15,0.4)", color: "rgba(215,167,111,0.7)", fontSize: "10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+            {allOpen ? "Collapse all" : "Expand all"}
+          </button>
+        )}
+      </div>
+
+      {total === 0 ? (
+        <div style={{ marginTop: "40px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215,167,111,0.45)", fontSize: "15px" }}>Nothing to show here.</div>
+      ) : visible.map((s) => {
+        const isOpen = openSecs.has(s.key);
+        return (
+          <div key={s.key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <button onClick={() => toggleSec(s.key)} style={{
+              display: "flex", alignItems: "center", gap: "8px", width: "100%", textAlign: "left",
+              backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.18)",
+              borderRadius: radius.panelCompact, padding: "8px 10px", cursor: "pointer", fontFamily: "inherit",
+            }}>
+              <span style={{ color: "rgba(215,167,111,0.6)", fontSize: "10px" }}>{isOpen ? "▾" : "▸"}</span>
+              <span style={{ ...subtleMeta, fontSize: "10px", letterSpacing: "0.1em", color: s.color }}>{s.label}</span>
+              <span style={{ flex: 1 }} />
+              <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
+            </button>
+            {isOpen && s.items.map((d) => <AbilityRow key={d.id} def={d} known={known.has(d.id)} />)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function CodexEntry({ entry, kind, codex }) {
+  const [open, setOpen] = useState(false);
   const wornNames = (kind === "characters" && entry.worn?.length)
     ? entry.worn.map(id => (codex.items[id] || itemTemplate(id))?.name || id) : [];
   const knowsList = (kind === "characters" && entry.knows?.length) ? entry.knows : [];
@@ -349,6 +486,13 @@ export function CodexEntry({ entry, kind, codex }) {
   const hasAttrs = kind === "characters" && entry.attributes;
   const narrativeAppearance = entry.base_appearance || (typeof entry.appearance === "string" ? entry.appearance : null);
   const structuredAppearance = kind === "characters" && entry.appearance && typeof entry.appearance === "object" ? entry.appearance : null;
+
+  // Brief one-line preview shown while collapsed (keeps the list scannable).
+  const metaLine = kind === "characters"
+    ? [codex.races?.[entry.race]?.name || entry.race, codex.professions?.[entry.profession]?.name || entry.profession, originLabel(entry.origin)].filter(Boolean).join(" · ")
+    : "";
+  const trunc = (s, n = 100) => { const t = (s || "").trim(); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
+  const preview = metaLine || trunc(entry.description || narrativeAppearance || "");
 
   return (
     <div style={{
@@ -360,13 +504,17 @@ export function CodexEntry({ entry, kind, codex }) {
       boxShadow: shadow.cardDeep,
       color: colors.parchment,
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px", gap: "8px" }}>
-        <div style={{
-          fontFamily: fonts.serif, fontStyle: "italic",
-          fontSize: "20px", color: colors.parchmentLight,
-          textShadow: "0 1px 4px rgba(0,0,0,0.25)",
-        }}>
-          {entry.name}
+      <div onClick={() => setOpen((o) => !o)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "7px", minWidth: 0 }}>
+          <span style={{ color: "rgba(215,167,111,0.5)", fontSize: "10px", flexShrink: 0 }}>{open ? "▾" : "▸"}</span>
+          <div style={{
+            fontFamily: fonts.serif, fontStyle: "italic",
+            fontSize: "17px", color: colors.parchmentLight,
+            textShadow: "0 1px 4px rgba(0,0,0,0.25)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {entry.name}
+          </div>
         </div>
         <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
           {bondTier && (
@@ -391,8 +539,13 @@ export function CodexEntry({ entry, kind, codex }) {
         </div>
       </div>
 
+      {!open && preview && (
+        <div onClick={() => setOpen(true)} style={{ fontSize: "10px", color: "rgba(237,228,208,0.5)", lineHeight: 1.4, marginTop: "4px", marginLeft: "17px", cursor: "pointer" }}>{preview}</div>
+      )}
+      {open && (<>
+
       {kind === "characters" && (entry.race || entry.profession || entry.origin) && (
-        <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginBottom: "6px" }}>
+        <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginTop: "6px", marginBottom: "6px" }}>
           {[
             codex.races[entry.race]?.name || entry.race,
             codex.professions[entry.profession]?.name || entry.profession,
@@ -487,6 +640,7 @@ export function CodexEntry({ entry, kind, codex }) {
           </ul>
         </div>
       )}
+      </>)}
     </div>
   );
 }
@@ -494,7 +648,11 @@ export function CodexEntry({ entry, kind, codex }) {
 export function CodexView({ state, onClose }) {
   const codex = state.world.codex;
   const [activeTab, setActiveTab] = useState("characters");
-  const entries = Object.values(codex[activeTab] || {});
+  let entries = Object.values(codex[activeTab] || {});
+  // Characters: always pin the player (self) to the very top.
+  if (activeTab === "characters") {
+    entries = [...entries].sort((a, b) => (a.kind === "player" ? -1 : 0) - (b.kind === "player" ? -1 : 0));
+  }
 
   return (
     <div style={{ position: "absolute", inset: 0, backgroundColor: "#0b0f0e", zIndex: 30, display: "flex", flexDirection: "column" }}>
@@ -521,7 +679,7 @@ export function CodexView({ state, onClose }) {
 
       <div className="tabstrip" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
         {CODEX_TABS.map((tab) => {
-          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : Object.keys(codex[tab.key] || {}).length;
+          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
           return (
             <button
@@ -548,13 +706,15 @@ export function CodexView({ state, onClose }) {
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px calc(env(safe-area-inset-bottom, 0px) + 24px) 14px", background: "linear-gradient(180deg, #111716 0%, #0b0f0e 100%)" }}>
         {activeTab === "items" ? (
           <ItemCatalog codex={codex} />
+        ) : activeTab === "abilities" ? (
+          <AbilityCatalog codex={codex} character={state.character} />
         ) : entries.length === 0 ? (
           <div style={{ marginTop: "80px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215, 167, 111, 0.45)", fontSize: "16px", lineHeight: "1.6", padding: "0 24px" }}>
             Nothing recorded here yet.<br />
             <span style={{ fontSize: "13px", color: "rgba(215, 167, 111, 0.3)" }}>Discover lore by wandering the realm.</span>
           </div>
         ) : (
-          <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
             {entries.map((e) => <CodexEntry key={e.id} entry={e} kind={activeTab} codex={codex} />)}
           </div>
         )}
