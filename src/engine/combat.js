@@ -298,6 +298,7 @@ function beginTurnFor(cs, actor) {
 // order at the top of each new round.
 function advanceQueue(cs) {
   for (let guard = 0; guard < 2000; guard++) {
+    routCheck(cs); // a foe whose side just lost may break before anyone else acts
     if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
     if (!cs.order || cs.orderIdx >= cs.order.length) {
       cs.turn += 1;
@@ -822,6 +823,48 @@ function pushFlavor(cs, e, category) {
   return false;
 }
 
+// A foe is hopelessly placed when its side is badly outnumbered (or it's the lone
+// survivor against a group) AND the player's side clearly outclasses it. Proud
+// foes only count themselves hopeless once bloodied.
+function hopelesslyOutmatched(cs, e) {
+  const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
+  const opp = playerSide(cs);
+  const own = livingEnemies(cs);
+  const outnumbered = opp.length >= own.length * 2 || (own.length === 1 && opp.length >= 2);
+  const hp = e.health / e.maxHealth;
+  const outclassed = (cs.powerRatio || 1) >= 1.5 && (!cfg.proud || hp < 0.6);
+  const winning = (hp - sideHpFrac(opp)) > 0.25; // personally well ahead — smells the kill
+  return outnumbered && outclassed && !winning;
+}
+
+// Break a foe NOW: flee if it can cleanly get away, else yield at the player's
+// mercy (or bolt if it can't yield). Returns true if it resolved.
+function breakFoe(cs, e) {
+  const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
+  const canEscape = (e.speed || 4) >= (cs.player.speed || 4) && (cs.powerRatio || 1) < 2.2;
+  if (cfg.prefer === "flee" && cfg.canFlee && canEscape) { resolveFlee(cs, e); return true; }
+  if (cfg.canYield) { resolveYield(cs, e); return true; }
+  if (cfg.canFlee) { resolveFlee(cs, e); return true; }
+  return false;
+}
+
+// After a foe falls, the survivors take stock. One that's now hopelessly
+// outmatched may break on the spot — yielding or fleeing BEFORE the player's
+// companions take their turn — so a terrified foe isn't cut down when it would
+// have thrown down its arms (and the player keeps the captive). Lethal fights
+// only; mindless/fanatic never break, and a foe just goaded to hold stands fast.
+function routCheck(cs) {
+  if (!cs.lethal) return;
+  if (!cs.enemies.some((e) => e._dead)) return; // a rout is triggered by seeing kin die
+  for (const e of livingEnemies(cs)) {
+    const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
+    if (e.demeanor === "mindless" || e.demeanor === "fanatic") continue;
+    if (!cfg.canYield && !cfg.canFlee) continue;
+    if ((e.noFleeUntil || 0) >= cs.turn) continue;
+    if (hopelesslyOutmatched(cs, e)) breakFoe(cs, e);
+  }
+}
+
 // Decide a foe's reaction at the top of its turn. Returns true if it still
 // acts (attacks); false if it resolved (fled/yielded) and should be skipped.
 function moraleCheck(cs, e) {
@@ -850,8 +893,10 @@ function moraleCheck(cs, e) {
   const goaded = (e.noFleeUntil || 0) >= cs.turn;
   const winning = (hp - oppHp) > 0.25; // personally well ahead — smells the kill
   const yieldHp = cfg.yieldHp ?? 0.25;
-  // Only even consider breaking when actually in trouble.
-  const inTrouble = hp <= yieldHp || hp < 0.1 || (hopeless && hp < 0.5);
+  // Only even consider breaking when actually in trouble — badly hurt, hopeless
+  // and bloodied, or simply outnumbered AND clearly outclassed (a lone, doomed
+  // foe throws down its arms rather than die for nothing, even at full health).
+  const inTrouble = hp <= yieldHp || hp < 0.1 || (hopeless && hp < 0.5) || hopelesslyOutmatched(cs, e);
   const broke = !goaded && !winning && inTrouble;
   if (broke) {
     // A proud foe being bullied with control demands a fair fight before it breaks.
