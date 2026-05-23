@@ -258,6 +258,13 @@ export function itemRequirement(item) {
   else if (item.kind === "armor") {
     attr = "body";
     if (armorClass(item) === "heavy") value += 3; // heavy plate asks more of the wearer
+  } else if (item.kind === "clothing") {
+    // A caster's headpiece wards the MIND, not the body — a circlet that "clears
+    // and sharpens the mind" should ask Mind, like a trinket, not the Body a helm
+    // or vambrace demands. Decide by what the piece actually grants: more ward
+    // than armour ⇒ an arcane focus (Mind); otherwise martial kit (Body).
+    const cs = itemCombatStats(item);
+    attr = (cs.ward || 0) > (cs.armor || 0) ? "mind" : "body";
   } else attr = "body";
   return { attr, value };
 }

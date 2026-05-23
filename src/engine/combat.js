@@ -546,13 +546,11 @@ function resolveHit(attacker, defender, profile) {
   let dr = defender.dr || 0;
   if (defender.fortify && defender.maxHealth && defender.health / defender.maxHealth < 0.35) dr += defender.fortify;
   if (dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.85, dr))));
-  // Per-hit cap (Stonewall / a boss's anti-burst plating): no single blow may
-  // exceed a share of max health — so a crit can't simply delete a raid boss in
-  // one strike. BUT it's BYPASSED when the foe is fully broken down — vulnerable
-  // AND cursed AND shattered all at once. Tear down every defence first and the
-  // killing blow lands uncapped: the deliberate, hard-won one-shot path.
-  const capBroken = hasStatus(defender, "vulnerable") && hasStatus(defender, "curse") && hasStatus(defender, "shatter");
-  if (defender.damageCap && defender.maxHealth && !capBroken) dmg = Math.min(dmg, Math.max(1, Math.round(defender.maxHealth * defender.damageCap)));
+  // Per-hit cap (damageCap): no single blow may exceed a share of max health.
+  // Same rule for every creature — the cap is earned, from a Stonewall affix or a
+  // high-vigor threshold. Nothing is boss-specific; Senna and a great-wyrm obey
+  // the identical line.
+  if (defender.damageCap && defender.maxHealth) dmg = Math.min(dmg, Math.max(1, Math.round(defender.maxHealth * defender.damageCap)));
 
   // Invulnerability turns the blow aside entirely; otherwise a shield pool soaks
   // it before health (physical → shield, magical → magicShield).
