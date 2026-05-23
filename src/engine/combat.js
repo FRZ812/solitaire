@@ -33,15 +33,34 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 let LOG_SEQ = 0;
 const logEntry = (text, kind = "system") => ({ id: `l${Date.now()}-${LOG_SEQ++}`, text, kind });
 
-const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse"]);
+const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow"]);
+const RESISTABLE_CONTROL = new Set(["stun", "slow"]); // hard controls Unbowed (controlResist) can shrug off
 const ALLY_LOSS = { cowardly: 22, wary: 14, fierce: 8, brutish: 10, honorable: 10, feral: 8, fanatic: 0, mindless: 0 };
 
 function sumStatus(c, type) {
   return (c.statuses || []).filter((s) => s.type === type).reduce((s, x) => s + (x.value || 0), 0);
 }
 function hasStatus(c, type) { return (c.statuses || []).some((s) => s.type === type); }
+
+// Curse is distinct from vulnerable: as well as amplifying damage taken, a cursed
+// creature's wounds barely knit — ALL healing it receives is halved. Every heal
+// path routes through gainHealth so the suppression (and the maxHealth clamp) lives
+// in one place. Returns the health actually restored (for honest logs).
+const CURSE_HEAL_MULT = 0.5;
+function gainHealth(c, amt) {
+  if (!c || amt <= 0 || c.health <= 0) return 0;
+  let h = amt;
+  if (hasStatus(c, "curse")) h = Math.round(h * CURSE_HEAL_MULT);
+  if (h <= 0) return 0;
+  const before = c.health;
+  c.health = Math.min(c.maxHealth, c.health + h);
+  return c.health - before;
+}
+
 function addStatus(c, effect) {
   if (!effect) return;
+  // Unbowed (controlResist): a chance to shrug off hard control (stun/slow).
+  if (c && c.controlResist && RESISTABLE_CONTROL.has(effect.type) && Math.random() < c.controlResist) return;
   c.statuses = c.statuses || [];
   c.statuses.push({ type: effect.type, value: effect.value || 0, duration: effect.duration || 1 });
 }
@@ -87,6 +106,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     resolveMax: character.resolveMax ?? 0,
     resolveRegen: cs.resolveRegen || 0,
     dr: cs.dr || 0, fortify: cs.fortify || 0,
+    damageCap: cs.damageCap || 0, controlResist: cs.controlResist || 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed, swiftChance: cs.swiftChance || 0, reloadLeft: 0,
@@ -226,7 +246,7 @@ function closeStep(cs, actor, target) {
 function rollInitiative(cs) {
   const ranked = allCombatants(cs).filter(canAct).map((c) => ({
     uid: c.uid,
-    key: (c.speed || 0) + (c.side === "player" ? 0.25 : 0) + Math.random(),
+    key: (c.speed || 0) - (hasStatus(c, "slow") ? 4 : 0) + (c.side === "player" ? 0.25 : 0) + Math.random(),
   }));
   ranked.sort((x, y) => y.key - x.key);
   cs.order = ranked.map((o) => o.uid);
@@ -255,8 +275,9 @@ function beginTurnFor(cs, actor) {
   if (actor.resolveMax != null) actor.resolve = Math.min(actor.resolveMax, (actor.resolve || 0) + rr);
   const tr = actor.triggers || {};
   if (tr.turnRegen && actor.health > 0) {
-    actor.health = Math.min(actor.maxHealth, actor.health + tr.turnRegen);
-    cs.log.push(logEntry(`${actor.name} mends ${tr.turnRegen}.`, "status"));
+    // turnRegen is a FRACTION of max health (scales with the wearer at every tier).
+    const mended = gainHealth(actor, Math.max(1, Math.round(actor.maxHealth * tr.turnRegen)));
+    if (mended > 0) cs.log.push(logEntry(`${actor.name} mends ${mended}.`, "status"));
   }
   if (hasStatus(actor, "stun")) {
     cs.log.push(logEntry(`${actor.name} is stunned and cannot act.`, "status"));
@@ -264,7 +285,8 @@ function beginTurnFor(cs, actor) {
     return "stun";
   }
   // Action points: base + swift "act-again" rolls (each less likely, capped).
-  let extra = 0, chance = actor.swiftChance || 0;
+  // Slow denies the act-again rolls entirely (and docks initiative, above).
+  let extra = 0, chance = hasStatus(actor, "slow") ? 0 : (actor.swiftChance || 0);
   while (chance > 0 && extra < 3 && Math.random() < chance) { extra += 1; chance *= 0.5; }
   if (extra > 0 && actor === cs.player) cs.log.push(logEntry(`You move with uncanny speed — an extra action.`, "status"));
   actor.actionsLeft = (actor.actionsPerTurn || 1) + extra;
@@ -466,7 +488,8 @@ function resolveHit(attacker, defender, profile) {
   raw = Math.max(0, Math.round(raw));
 
   let mitig = 0;
-  if (profile.type === "physical") mitig = Math.max(0, (defender.armor || 0) + sumStatus(defender, "guard") - (profile.pen || 0));
+  // Shatter (sundered armour) eats into physical mitigation while it lasts.
+  if (profile.type === "physical") mitig = Math.max(0, (defender.armor || 0) + sumStatus(defender, "guard") - sumStatus(defender, "shatter") - (profile.pen || 0));
   else if (profile.type === "magical") mitig = Math.max(0, (defender.ward || 0) - (profile.pen || 0));
   // Flat % damage-reduction (Stoneskin / Godward), plus Bastion fortify while
   // badly wounded. Capped so it can never fully negate a blow.
@@ -474,6 +497,8 @@ function resolveHit(attacker, defender, profile) {
   let dr = defender.dr || 0;
   if (defender.fortify && defender.maxHealth && defender.health / defender.maxHealth < 0.35) dr += defender.fortify;
   if (dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.7, dr))));
+  // Stonewall (damageCap): no single blow may exceed a share of max health.
+  if (defender.damageCap && defender.maxHealth) dmg = Math.min(dmg, Math.max(1, Math.round(defender.maxHealth * defender.damageCap)));
 
   // Invulnerability turns the blow aside entirely; otherwise a shield pool soaks
   // it before health (physical → shield, magical → magicShield).
@@ -514,18 +539,16 @@ function dealHit(cs, attacker, target, profile, def) {
   if (dealt > 0) {
     const ls = attacker.triggers?.lifesteal || 0;
     if (ls > 0 && attacker.health > 0) {
-      const heal = Math.max(1, Math.round(dealt * ls / 100));
-      attacker.health = Math.min(attacker.maxHealth, attacker.health + heal);
-      cs.log.push(logEntry(`${attacker.name} ${attacker.side === "player" ? "drains" : "leeches"} ${heal} health.`, "status"));
+      const heal = gainHealth(attacker, Math.max(1, Math.round(dealt * ls / 100)));
+      if (heal > 0) cs.log.push(logEntry(`${attacker.name} ${attacker.side === "player" ? "drains" : "leeches"} ${heal} health.`, "status"));
     }
     // Ability-borne life-drain (effect.type "drain"): the cast itself heals the
     // caster for a share of the damage it deals — distinct from the affix lifesteal
     // above, and the reason a drain spell is worth a slot at high tier.
     const drainPct = def?.effect?.type === "drain" ? (def.effect.value || 0) : 0;
     if (drainPct > 0 && attacker.health > 0) {
-      const healed = Math.max(1, Math.round(dealt * drainPct / 100));
-      attacker.health = Math.min(attacker.maxHealth, attacker.health + healed);
-      cs.log.push(logEntry(`${attacker.name} drains ${healed} life.`, "status"));
+      const healed = gainHealth(attacker, Math.max(1, Math.round(dealt * drainPct / 100)));
+      if (healed > 0) cs.log.push(logEntry(`${attacker.name} drains ${healed} life.`, "status"));
     }
     if (target.side === "enemy") onEnemyDamaged(target, dealt);
     if (targetIsPlayer) {
@@ -550,6 +573,16 @@ function dealHit(cs, attacker, target, profile, def) {
   return { dealt, crit: res.crit };
 }
 
+// Proc firing condition (beyond hook + chance). targetLow: only badly-wounded
+// foes; targetDot: only foes already bleeding/poisoned/burning (Ravage synergy).
+function condMet(cond, ctx) {
+  if (!cond) return true;
+  const t = ctx.target;
+  if (cond === "targetLow") return !!(t && t.health > 0 && t.maxHealth && t.health / t.maxHealth < 0.3);
+  if (cond === "targetDot") return !!(t && (hasStatus(t, "bleed") || hasStatus(t, "poison") || hasStatus(t, "burn")));
+  return true;
+}
+
 // Data-driven synergy procs. Iterates the actor's affix procs; on a matching
 // hook (and chance roll + condition) applies the effect. Symmetric: the player
 // and NPCs carry procs the same way (combatant.procs).
@@ -558,6 +591,7 @@ function fireProcs(cs, actor, hook, ctx = {}) {
   if (!procs || !procs.length) return;
   for (const p of procs) {
     if (p.hook !== hook) continue;
+    if (p.cond && !condMet(p.cond, ctx)) continue;
     if (p.chance != null && p.chance < 1 && rand100() > p.chance * 100) continue;
     applyProc(cs, actor, p, ctx);
   }
@@ -594,13 +628,15 @@ function applyProc(cs, actor, p, ctx) {
     case "refund": {
       if (p.action) actor.actionsLeft = (actor.actionsLeft || 0) + 1;
       if (p.resolve && actor.resolveMax != null) actor.resolve = Math.min(actor.resolveMax, (actor.resolve || 0) + (p.value || 0));
-      if (p.heal && actor.health > 0) actor.health = Math.min(actor.maxHealth, actor.health + p.value);
+      // pctMax heals scale with the wearer's pool (Feast on-kill, etc.).
+      if (p.heal && actor.health > 0) gainHealth(actor, p.pctMax ? Math.round(actor.maxHealth * (p.value || 0)) : (p.value || 0));
       cs.log.push(logEntry(`${actor.name}'s ${p.name} surges with fresh vigour.`, "status"));
       break;
     }
     case "shield": {
-      actor.shield = (actor.shield || 0) + p.value;
-      cs.log.push(logEntry(`${actor.name}'s ${p.name} throws up a shield (${p.value}).`, "status"));
+      const amt = p.pctMax ? Math.round(actor.maxHealth * (p.value || 0)) : (p.value || 0);
+      actor.shield = (actor.shield || 0) + amt;
+      cs.log.push(logEntry(`${actor.name}'s ${p.name} throws up a shield (${amt}).`, "status"));
       break;
     }
   }
@@ -862,17 +898,19 @@ function tickStatuses(c) {
     c.health = Math.max(0, c.health - dot);
     logs.push(logEntry(`${c.name} suffers ${dot} from bleed/poison/burn.`, "status"));
   }
-  const heal = sumStatus(c, "regen");
-  if (heal > 0 && c.health > 0) {
-    c.health = Math.min(c.maxHealth, c.health + heal);
-    logs.push(logEntry(`${c.name} recovers ${heal}.`, "status"));
+  const healAmt = sumStatus(c, "regen");
+  if (healAmt > 0 && c.health > 0) {
+    const got = gainHealth(c, healAmt);
+    if (got > 0) logs.push(logEntry(`${c.name} recovers ${got}.`, "status"));
   }
   // Shield/ward-shield regenerate from affixes, capped at three turns' worth so a
   // pool can't accumulate without bound. Invulnerability counts down each turn.
+  // shieldGen/magicShieldGen are FRACTIONS of max health per turn (scale with the
+  // wearer); the pool still caps at three turns' worth so it can't accrue forever.
   const sg = c.triggers?.shieldGen || 0;
-  if (sg > 0) c.shield = Math.min((c.shield || 0) + sg, sg * 3);
+  if (sg > 0) { const add = Math.round(c.maxHealth * sg); c.shield = Math.min((c.shield || 0) + add, add * 3); }
   const msg = c.triggers?.magicShieldGen || 0;
-  if (msg > 0) c.magicShield = Math.min((c.magicShield || 0) + msg, msg * 3);
+  if (msg > 0) { const add = Math.round(c.maxHealth * msg); c.magicShield = Math.min((c.magicShield || 0) + add, add * 3); }
   if ((c.invuln || 0) > 0) c.invuln -= 1;
   c.statuses = (c.statuses || []).map((s) => ({ ...s, duration: s.duration - 1 })).filter((s) => s.duration > 0);
   return logs;

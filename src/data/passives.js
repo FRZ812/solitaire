@@ -23,18 +23,29 @@
 // passives feed exploration (need decay, travel, regen, coin). They apply only
 // while equipped AND the item's stat requirement is met (itemRequirement).
 
-import { rollTier, tier as tierInfo } from "./tiers.js";
+import { TIERS, rollTier, tier as tierInfo } from "./tiers.js";
 
 const o = (tierId) => tierInfo(tierId).order;
+
+// Flat "power" affixes (raw health, flat damage, flat armour/pen) must track the
+// GEOMETRIC tier curve, not grow linearly with tier order — otherwise they go
+// dead at high grade while % affixes keep pace. geo(base, n) scales a base value
+// by the tier's power multiplier (common ×1 → divine ×12).
+const MULT_BY_ORDER = TIERS.map((t) => t.mult);
+const geo = (base, n) => Math.round(base * MULT_BY_ORDER[n]);
 
 // Engine caps for snowball-prone stats (aggregate, applied in combat-stats.js).
 // extraActions/shieldGen/etc. are the build-defining tempo & defensive stats, so
 // they are clamped just as hard as lifesteal — a swift build tops out at +3 extra
 // action points (4 total), a shield build at a fixed per-turn absorb, etc.
+// turnRegen / shieldGen / magicShieldGen are FRACTIONS of max health per turn
+// (the engine multiplies by the wearer's maxHealth), so they scale at every tier
+// instead of going dead at high grade. Their caps are fractions too.
 export const PASSIVE_CAPS = {
   lifesteal: 25, drPct: 0.6, thorns: 50,
   extraActions: 3, cooldownReduction: 3, fortify: 0.25,
-  shieldGen: 12, magicShieldGen: 12, invulnCharges: 2,
+  turnRegen: 0.12, shieldGen: 0.12, magicShieldGen: 0.12, invulnCharges: 2,
+  controlResist: 0.6,
 };
 
 // Each passive: scope, type, key (what it modifies), minTier (lowest grade it can
@@ -43,23 +54,23 @@ export const PASSIVE_CAPS = {
 // in-combat reaction; "world" → exploration modifier.
 export const PASSIVES = [
   // ---------- OFFENCE (stat) ----------
-  { id: "honed",      name: "Honed",        cat: "offence", scope: "combat", type: "stat", key: "damageFlat",  minTier: "common",    amount: (n) => 1 + n,                desc: "Adds flat weapon damage." },
+  { id: "honed",      name: "Honed",        cat: "offence", scope: "combat", type: "stat", key: "damageFlat",  minTier: "common",    amount: (n) => geo(1.5, n),          desc: "Adds flat weapon damage (scales with grade)." },
   { id: "brutal",     name: "Brutal",       cat: "offence", scope: "combat", type: "stat", key: "damageMult",  minTier: "uncommon",  amount: (n) => 0.05 + n * 0.025,     desc: "Increases weapon damage by a percentage." },
   { id: "precise",    name: "Precise",      cat: "offence", scope: "combat", type: "stat", key: "accuracy",    minTier: "common",    amount: (n) => 2 + n,                desc: "Improves accuracy." },
   { id: "keen-edge",  name: "Keen Edge",    cat: "offence", scope: "combat", type: "stat", key: "critChance",  minTier: "uncommon",  amount: (n) => 3 + n * 1.5,          desc: "Raises critical chance." },
   { id: "savage",     name: "Savage",       cat: "offence", scope: "combat", type: "stat", key: "critMult",    minTier: "rare",      amount: (n) => 0.1 + n * 0.04,       desc: "Increases critical damage." },
-  { id: "piercing",   name: "Piercing",     cat: "offence", scope: "combat", type: "stat", key: "penetration", minTier: "uncommon",  amount: (n) => 1 + n,                desc: "Adds armour penetration." },
+  { id: "piercing",   name: "Piercing",     cat: "offence", scope: "combat", type: "stat", key: "penetration", minTier: "uncommon",  amount: (n) => geo(1.2, n),          desc: "Adds armour penetration (scales with grade)." },
 
   // ---------- DEFENCE (stat) ----------
-  { id: "bulwark",    name: "Bulwark",      cat: "defence", scope: "combat", type: "stat", key: "armor",       minTier: "common",    amount: (n) => 1 + n,                desc: "Adds armour (vs physical)." },
-  { id: "aegis",      name: "Aegis",        cat: "defence", scope: "combat", type: "stat", key: "ward",        minTier: "common",    amount: (n) => 1 + n,                desc: "Adds ward (vs magic)." },
+  { id: "bulwark",    name: "Bulwark",      cat: "defence", scope: "combat", type: "stat", key: "armor",       minTier: "common",    amount: (n) => geo(1.2, n),          desc: "Adds armour (vs physical), scaling with grade." },
+  { id: "aegis",      name: "Aegis",        cat: "defence", scope: "combat", type: "stat", key: "ward",        minTier: "common",    amount: (n) => geo(1.2, n),          desc: "Adds ward (vs magic), scaling with grade." },
   { id: "evasion",    name: "Evasion",      cat: "defence", scope: "combat", type: "stat", key: "dodge",       minTier: "common",    amount: (n) => 2 + Math.round(n * 1.5), desc: "Raises dodge chance." },
-  { id: "stalwart",   name: "Stalwart",     cat: "defence", scope: "combat", type: "stat", key: "maxHealth",   minTier: "common",    amount: (n) => 3 + n * 2,            desc: "Increases maximum health." },
+  { id: "stalwart",   name: "Stalwart",     cat: "defence", scope: "combat", type: "stat", key: "maxHealth",   minTier: "common",    amount: (n) => geo(4, n),            desc: "Increases maximum health (scales with grade)." },
   { id: "stoneskin",  name: "Stoneskin",    cat: "defence", scope: "combat", type: "stat", key: "drPct",       minTier: "rare",      amount: (n) => 0.03 + n * 0.01,      desc: "Reduces all damage taken by a percentage." },
 
   // ---------- SUSTAIN (trigger) — tuned low; lifesteal is capped in-engine ----------
   { id: "vampiric",   name: "Vampiric",     cat: "sustain", scope: "combat", type: "trigger", key: "lifesteal", minTier: "rare",     amount: (n) => 3 + n,                desc: "Heals for a small share of damage dealt." },
-  { id: "renewing",   name: "Renewing",     cat: "sustain", scope: "combat", type: "trigger", key: "turnRegen", minTier: "epic",     amount: (n) => 1 + Math.floor(n / 2), desc: "Knits a few wounds each turn." },
+  { id: "renewing",   name: "Renewing",     cat: "sustain", scope: "combat", type: "trigger", key: "turnRegen", minTier: "epic",     amount: (n) => 0.04 + n * 0.008, desc: "Knits a share of your wounds each turn — scales with your vitality." },
   { id: "thorned",    name: "Thornmail",    cat: "sustain", scope: "combat", type: "trigger", key: "thorns",    minTier: "rare",      amount: (n) => 6 + n * 3,            desc: "Reflects a share of damage taken." },
 
   // ---------- RESOURCE / TEMPO (resolve, initiative, action economy) ----------
@@ -68,9 +79,9 @@ export const PASSIVES = [
   { id: "clearmind",  name: "Clear Mind",   cat: "resource", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "epic",  amount: (n) => 1,                    desc: "Recovers resolve each turn (sustains casting)." },
 
   // ---------- LEGENDARY+ POWERS — build-defining ----------
-  { id: "colossus",   name: "Colossus",     cat: "power", scope: "combat", type: "stat", key: "maxHealth",     minTier: "legendary", amount: (n) => 12 + n * 4,           desc: "Vastly increases maximum health." },
+  { id: "colossus",   name: "Colossus",     cat: "power", scope: "combat", type: "stat", key: "maxHealth",     minTier: "legendary", amount: (n) => geo(8, n),            desc: "Vastly increases maximum health." },
   { id: "echo",       name: "Echo",         cat: "tempo", scope: "combat", type: "stat", key: "extraActions", minTier: "legendary", amount: () => 1, desc: "Begin each turn with an extra action." },
-  { id: "sunder",     name: "Sundering",    cat: "power", scope: "combat", type: "stat", key: "penetration",   minTier: "legendary", amount: (n) => 4 + n * 2,            desc: "Cleaves through most armour." },
+  { id: "sunder",     name: "Sundering",    cat: "power", scope: "combat", type: "stat", key: "penetration",   minTier: "legendary", amount: (n) => geo(2.7, n),          desc: "Cleaves through most armour (scales with grade)." },
   { id: "bloodthirst",name: "Bloodthirst",  cat: "power", scope: "combat", type: "trigger", key: "lifesteal",  minTier: "legendary", amount: (n) => 6 + n,                desc: "Heals for a large share of damage dealt (capped)." },
 
   // ---------- DIVINE POWERS — the godlike reward ----------
@@ -82,7 +93,7 @@ export const PASSIVES = [
   { id: "deadeye",    name: "Deadeye",      cat: "divine", scope: "combat", type: "stat", key: "accuracy",     minTier: "divine",    amount: (n) => 30,                   desc: "Every shot finds the mark — overwhelming accuracy, dodge be damned." },
   { id: "archmage",   name: "Archmage",     cat: "divine", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "divine",  amount: (n) => 3,                    desc: "Bottomless will — restores great resolve each turn." },
   { id: "phantom",    name: "Phantom",      cat: "divine", scope: "combat", type: "stat", key: "dodge",        minTier: "divine",    amount: (n) => 28,                   desc: "Half-real — devastating evasion." },
-  { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: (n) => 40,                   desc: "A mountain of vitality." },
+  { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: () => geo(10, 7),            desc: "A mountain of vitality." },
 
   // ---------- TEMPO (action economy) — the swift build, capped at +3 ----------
   // extraActions grants generic ACTION POINTS the bearer spends on anything; with
@@ -107,18 +118,33 @@ export const PASSIVES = [
   { id: "concussive", name: "Concussive",   cat: "control", scope: "combat", type: "proc",  hook: "onCrit", apply: { kind: "status", status: "stun", duration: 1 }, chance: 0.5, minTier: "epic", amount: () => 1, desc: "Critical hits may stun." },
 
   // ---------- DEFENCE (shields, ward-shields, fortify, evasion, invuln) ----------
-  { id: "barrier",    name: "Barrier",      cat: "defence", scope: "combat", type: "trigger", key: "shieldGen",      minTier: "rare",      amount: (n) => 3 + n,                desc: "Regenerates a physical shield each turn." },
-  { id: "wardstone",  name: "Wardstone",    cat: "defence", scope: "combat", type: "trigger", key: "magicShieldGen", minTier: "rare",      amount: (n) => 3 + n,                desc: "Regenerates a magic ward-shield each turn." },
+  { id: "barrier",    name: "Barrier",      cat: "defence", scope: "combat", type: "trigger", key: "shieldGen",      minTier: "rare",      amount: (n) => 0.03 + n * 0.006,     desc: "Regenerates a physical shield each turn, sized to your vitality." },
+  { id: "wardstone",  name: "Wardstone",    cat: "defence", scope: "combat", type: "trigger", key: "magicShieldGen", minTier: "rare",      amount: (n) => 0.03 + n * 0.006,     desc: "Regenerates a magic ward-shield each turn, sized to your vitality." },
   { id: "bastion",    name: "Bastion",      cat: "defence", scope: "combat", type: "stat",    key: "fortify",        minTier: "epic",      amount: (n) => 0.05 + n * 0.02,      desc: "Reduces damage sharply while badly wounded." },
   { id: "evasive",    name: "Evasive",      cat: "defence", scope: "combat", type: "proc",    hook: "onDodge", apply: { kind: "buff", status: "dodgeStack", duration: 2 }, chance: 1, minTier: "rare", amount: (n) => 3 + n, desc: "Each dodge stacks more dodge (snowballing evasion)." },
-  { id: "lifeward",   name: "Lifeward",     cat: "defence", scope: "combat", type: "proc",    hook: "lowHealth", apply: { kind: "shield" }, threshold: 0.35, chance: 1, minTier: "epic", amount: (n) => 8 + n * 3, desc: "Bursts a shield when badly wounded (once per fight)." },
+  { id: "lifeward",   name: "Lifeward",     cat: "defence", scope: "combat", type: "proc",    hook: "lowHealth", apply: { kind: "shield", pctMax: true }, threshold: 0.35, chance: 1, minTier: "epic", amount: (n) => 0.12 + n * 0.02, desc: "Bursts a shield scaled to your vitality when badly wounded (once per fight)." },
   { id: "aegis-eternal", name: "Aegis Eternal", cat: "divine", scope: "combat", type: "trigger", key: "invulnCharges", minTier: "divine", amount: () => 1, desc: "When near death, becomes briefly invulnerable (limited charges)." },
+
+  // ---------- EXPANSION — fills tier/role gaps; %-based or geo-scaled so each
+  //            stays relevant at every grade (slow/shatter/cap are new mechanics) ----------
+  { id: "sanguine",   name: "Sanguine",     cat: "sustain", scope: "combat", type: "trigger", key: "lifesteal", minTier: "epic",      amount: (n) => 4 + n,                desc: "Heals for a share of damage dealt — slots between Vampiric and Bloodthirst." },
+  { id: "feast",      name: "Feast",        cat: "sustain", scope: "combat", type: "proc", hook: "onKill", apply: { kind: "refund", heal: true, pctMax: true }, chance: 1, minTier: "rare", amount: (n) => 0.05 + n * 0.01, desc: "Each kill knits back a share of your max health." },
+  { id: "reprieve",   name: "Reprieve",     cat: "sustain", scope: "combat", type: "proc", hook: "lowHealth", apply: { kind: "refund", heal: true, pctMax: true }, threshold: 0.35, chance: 1, minTier: "epic", amount: (n) => 0.15 + n * 0.02, desc: "When badly wounded, surge back a chunk of max health (once per fight)." },
+  { id: "ravage",     name: "Ravage",       cat: "offence", scope: "combat", type: "proc", hook: "onHit", cond: "targetDot", apply: { kind: "bonusHit" }, chance: 1, minTier: "epic", amount: (n) => geo(2, n), desc: "Tears extra deep into foes already bleeding, poisoned, or burning." },
+  { id: "ruinous",    name: "Ruinous",      cat: "power", scope: "combat", type: "stat", key: "damageMult", minTier: "legendary", amount: (n) => 0.12 + n * 0.02, desc: "Greatly increases all damage — slots between Brutal and Worldbreaker." },
+  { id: "resilient",  name: "Resilient",    cat: "defence", scope: "combat", type: "stat", key: "drPct", minTier: "epic", amount: (n) => 0.05 + n * 0.01, desc: "Reduces all damage taken by a percentage — slots between Stoneskin and Godward." },
+  { id: "stonewall",  name: "Stonewall",    cat: "defence", scope: "combat", type: "stat", key: "damageCap", minTier: "legendary", amount: () => 0.33, desc: "No single blow may take more than a third of your max health — burst can't one-shot you." },
+  { id: "unbowed",    name: "Unbowed",      cat: "defence", scope: "combat", type: "stat", key: "controlResist", minTier: "legendary", amount: (n) => 0.2 + n * 0.04, desc: "A growing chance to shrug off stuns and slows." },
+  { id: "frenzy",     name: "Frenzy",       cat: "tempo", scope: "combat", type: "stat", key: "swiftChance", minTier: "legendary", amount: (n) => 0.08 + n * 0.02, desc: "Chance each turn to act again — slots between Swift and Tempest." },
+  { id: "channeler",  name: "Channeler",    cat: "resource", scope: "combat", type: "proc", hook: "onCrit", apply: { kind: "refund", resolve: true }, chance: 1, minTier: "epic", amount: (n) => 1 + Math.floor(n / 2), desc: "Critical hits restore resolve — sustains a caster's burst." },
+  { id: "hobble",     name: "Hobble",       cat: "control", scope: "combat", type: "proc", hook: "onHit", apply: { kind: "status", status: "slow", duration: 2 }, chance: 0.4, minTier: "rare", amount: () => 1, desc: "Chance on hit to slow a foe — they act later and lose their act-again." },
+  { id: "shatterblow",name: "Shatterblow",  cat: "control", scope: "combat", type: "proc", hook: "onHit", apply: { kind: "status", status: "shatter", duration: 2 }, chance: 0.5, minTier: "epic", amount: (n) => geo(2, n), desc: "Chance on hit to sunder a foe's armour for a few turns." },
 
   // ---------- FUSION-ONLY (forged, never rolled) — see FUSIONS below ----------
   { id: "rupture",    name: "Rupture",      cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onHit", apply: { kind: "status", status: "bleed", duration: 3 }, chance: 1, minTier: "epic", amount: (n) => 4 + n * 2, desc: "FUSION: every hit ruptures flesh — guaranteed heavy bleed." },
   { id: "stormrend",  name: "Stormrend",    cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onCrit", apply: { kind: "status", status: "stun", duration: 1 }, chance: 1, minTier: "epic", amount: () => 1, desc: "FUSION: every critical hit stuns." },
   { id: "soulflame",  name: "Soulflame",    cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onHit", apply: { kind: "status", status: "burn", duration: 3 }, chance: 1, minTier: "epic", amount: (n) => 3 + n * 2, desc: "FUSION: cursed flame — every hit burns and the burn bites deep." },
-  { id: "phalanx",    name: "Phalanx",      cat: "fusion", scope: "combat", type: "trigger", noRoll: true, key: "shieldGen", minTier: "epic", amount: (n) => 6 + n * 2, desc: "FUSION: an ever-renewing bulwark of overlapping shields." },
+  { id: "phalanx",    name: "Phalanx",      cat: "fusion", scope: "combat", type: "trigger", noRoll: true, key: "shieldGen", minTier: "epic", amount: (n) => 0.05 + n * 0.008, desc: "FUSION: an ever-renewing bulwark of overlapping shields, sized to your vitality." },
   { id: "revenant",   name: "Revenant",     cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onKill", apply: { kind: "refund", resolve: true, action: true, heal: true }, chance: 1, minTier: "legendary", amount: (n) => 3 + n, desc: "FUSION: every kill restores resolve, an action, and health." },
   { id: "volley",     name: "Volley",       cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onHit", apply: { kind: "bonusHit" }, chance: 0.5, minTier: "epic", amount: (n) => 5 + n, desc: "FUSION (ranged): a second shaft looses with every shot." },
   { id: "overload",   name: "Overload",     cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onHit", apply: { kind: "status", status: "burn", duration: 3 }, chance: 1, minTier: "epic", amount: (n) => 3 + n * 2, desc: "FUSION (caster): spellfire — every hit ignites and the burn bites deep." },
@@ -150,7 +176,7 @@ export function passiveLabel(id, tierId) {
   const v = def.amount(o(tierId));
   if (def.type === "proc") return def.name; // proc magnitude is contextual — name carries it
   if (def.key === "reviveOnce") return def.name;
-  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance", "coinBonus", "reviveOnce"]; // stored 0..1
+  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance", "coinBonus", "reviveOnce", "turnRegen", "shieldGen", "magicShieldGen"]; // stored 0..1
   const wholePctKeys = ["lifesteal", "thorns"];        // stored as whole %, render with a % suffix
   const pctSuffixKeys = ["critChance", "dodge"];       // whole numbers that ARE percentages
   if (fracKeys.includes(def.key)) return `${def.name} ${Math.round(v * 100)}%`;
@@ -190,6 +216,8 @@ const KEY_EFFECT = {
   maxHealth:   { s: "flat", p: (n) => `+${n} maximum health` },
   drPct:       { s: "pct",  p: (n) => `${n}% less damage taken from all sources` },
   fortify:     { s: "pct",  p: (n) => `${n}% less damage taken while below 35% health` },
+  damageCap:   { s: "pct",  p: (n) => `no single hit can exceed ${n}% of your max health` },
+  controlResist:{ s: "pct", p: (n) => `${n}% chance to shrug off stuns and slows` },
   // tempo
   speed:       { s: "flat", p: (n) => `+${n} initiative (acts sooner)` },
   swiftChance: { s: "pct",  p: (n) => `+${n}% chance each turn to act a second time` },
@@ -197,11 +225,11 @@ const KEY_EFFECT = {
   cooldownReduction: { s: "flat", p: (n) => `ability cooldowns recover ${n} turn${plur(n)} sooner` },
   // sustain / triggers
   lifesteal:   { s: "flat", p: (n) => `heal for ${n}% of damage dealt (capped at ${PASSIVE_CAPS.lifesteal}% total)` },
-  turnRegen:   { s: "flat", p: (n) => `restore ${n} health each turn` },
+  turnRegen:   { s: "pct",  p: (n) => `restore ${n}% of max health each turn` },
   thorns:      { s: "flat", p: (n) => `reflect ${n}% of damage taken back at the attacker` },
   resolveRegen:{ s: "flat", p: (n) => `restore ${n} resolve each turn` },
-  shieldGen:   { s: "flat", p: (n) => `gain a ${n}-point physical shield each turn` },
-  magicShieldGen: { s: "flat", p: (n) => `gain a ${n}-point magic ward each turn` },
+  shieldGen:   { s: "pct",  p: (n) => `gain a physical shield worth ${n}% of max health each turn` },
+  magicShieldGen: { s: "pct", p: (n) => `gain a magic ward worth ${n}% of max health each turn` },
   invulnCharges:{ s: "flat", p: (n) => `near death, turn briefly invulnerable (${n} charge${plur(n)} per fight)` },
   reviveOnce:  { s: "pct",  p: (n) => `once per fight, cheat death and revive at ${n}% health` },
   // world / exploration
@@ -219,7 +247,7 @@ const HOOK_PREFIX = {
 function chancePrefix(def) {
   const base = HOOK_PREFIX[def.hook] || "On hit";
   const thr = def.hook === "lowHealth" && def.threshold ? ` (below ${Math.round(def.threshold * 100)}% health)` : "";
-  const cond = def.cond === "targetLow" ? " against badly wounded foes" : "";
+  const cond = def.cond === "targetLow" ? " against badly wounded foes" : def.cond === "targetDot" ? " against bleeding or burning foes" : "";
   const c = def.chance ?? 1;
   const chance = c < 1 ? ` — ${Math.round(c * 100)}% chance` : "";
   return `${base}${thr}${cond}${chance}`;
@@ -232,6 +260,8 @@ const STATUS_EFFECT = {
   chill:  (n, d) => `chill the foe (saps ${n} accuracy for ${d} turn${plur(d)})`,
   curse:  (n, d) => `curse the foe (+${n}% damage they take for ${d} turn${plur(d)})`,
   stun:   (n, d) => `stun the foe (skips ${d} turn${plur(d)})`,
+  slow:   (n, d) => `slow the foe (acts later, no extra actions, ${d} turn${plur(d)})`,
+  shatter:(n, d) => `shatter the foe's armour (−${n} armour for ${d} turn${plur(d)})`,
   rally:  (n, d) => `gain rally (+${n}% damage dealt for ${d} turn${plur(d)})`,
   dodgeStack: (n, d) => `gain +${n}% dodge that stacks with each dodge (${d} turn${plur(d)})`,
 };
@@ -241,22 +271,31 @@ function procValueStr(lo, hi) {
   const b = Math.round(hi);
   return a === b ? `${a}` : `${a}–${b}`;
 }
+// pctMax procs (Lifeward shield, Feast heal) store a fraction of max health.
+function procPctStr(lo, hi) {
+  const a = Math.round(lo * 100);
+  if (hi == null) return `${a}`;
+  const b = Math.round(hi * 100);
+  return a === b ? `${a}` : `${a}–${b}`;
+}
 function formatProc(def, lo, hi) {
   const a = def.apply || {};
   const n = procValueStr(lo, hi);
+  const pm = procPctStr(lo, hi);   // for pctMax payloads
   let effect;
   if (a.kind === "status" || a.kind === "buff") {
     const fn = STATUS_EFFECT[a.status];
     effect = fn ? fn(n, a.duration || 1) : a.status;
   } else if (a.kind === "execute") effect = `deal ${n} bonus damage`;
   else if (a.kind === "bonusHit") effect = `strike again for ${n} damage`;
-  else if (a.kind === "shield") effect = `raise a ${n}-point shield`;
+  else if (a.kind === "shield") effect = a.pctMax ? `raise a shield worth ${pm}% of max health` : `raise a ${n}-point shield`;
   else if (a.kind === "refund") {
     const parts = [];
     if (a.resolve) parts.push(`${n} resolve`);
     if (a.action) parts.push("an action");
-    if (a.heal) parts.push(`${n} health`);
-    effect = `refund ${parts.join(", ")}`;
+    if (a.heal) parts.push(a.pctMax ? `${pm}% of max health` : `${n} health`);
+    const verb = (!a.resolve && !a.action && a.heal) ? "heal" : "refund";
+    effect = `${verb} ${parts.join(", ")}`;
   } else effect = def.desc || "";
   return `${chancePrefix(def)}: ${effect}`;
 }
@@ -326,7 +365,11 @@ export function aggregateCombatPassives(list) {
     const def = BY_ID[id];
     if (!def || def.scope !== "combat") continue;
     const v = def.amount(o(tier));
-    if (def.type === "stat") statMods[def.key] = (statMods[def.key] || 0) + v;
+    if (def.type === "stat") {
+      // damageCap is a "lowest wins" cap (stacking shouldn't weaken it); everything else sums.
+      if (def.key === "damageCap") statMods.damageCap = statMods.damageCap ? Math.min(statMods.damageCap, v) : v;
+      else statMods[def.key] = (statMods[def.key] || 0) + v;
+    }
     else if (def.type === "trigger") triggers[def.key] = (triggers[def.key] || 0) + v;
     else if (def.type === "proc") {
       procs.push({ hook: def.hook, ...def.apply, value: v, chance: def.chance ?? 1, cond: def.cond, threshold: def.threshold, name: def.name });
@@ -337,7 +380,9 @@ export function aggregateCombatPassives(list) {
   if (statMods.extraActions != null) statMods.extraActions = Math.min(statMods.extraActions, PASSIVE_CAPS.extraActions);
   if (statMods.cooldownReduction != null) statMods.cooldownReduction = Math.min(statMods.cooldownReduction, PASSIVE_CAPS.cooldownReduction);
   if (statMods.fortify != null) statMods.fortify = Math.min(statMods.fortify, PASSIVE_CAPS.fortify);
+  if (statMods.controlResist != null) statMods.controlResist = Math.min(statMods.controlResist, PASSIVE_CAPS.controlResist);
   if (triggers.lifesteal != null) triggers.lifesteal = Math.min(triggers.lifesteal, PASSIVE_CAPS.lifesteal);
+  if (triggers.turnRegen != null) triggers.turnRegen = Math.min(triggers.turnRegen, PASSIVE_CAPS.turnRegen);
   if (triggers.thorns != null) triggers.thorns = Math.min(triggers.thorns, PASSIVE_CAPS.thorns);
   if (triggers.shieldGen != null) triggers.shieldGen = Math.min(triggers.shieldGen, PASSIVE_CAPS.shieldGen);
   if (triggers.magicShieldGen != null) triggers.magicShieldGen = Math.min(triggers.magicShieldGen, PASSIVE_CAPS.magicShieldGen);

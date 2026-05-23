@@ -74,12 +74,12 @@ export const ABILITY_LIBRARY = [
   // ---- Status spells (control / DoT) ----
   { id: "combust", name: "Combust", school: "arcane", icon: "flame", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 3 }, dmg: [3, 5], pen: 1, critBonus: 0, resolveCost: 1, cooldown: 2, effect: { type: "burn", value: 4, duration: 3, target: "enemy" }, desc: "Wreathe a foe in flame that keeps burning for several turns." },
   { id: "frost-nova", name: "Frost Nova", school: "arcane", icon: "droplet", target: "all-enemies", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: [2, 4], pen: 0, critBonus: 0, resolveCost: 2, cooldown: 3, effect: { type: "chill", value: 4, duration: 2, target: "enemy" }, desc: "A burst of cold that chills every foe, fouling their aim." },
-  { id: "curse", name: "Curse", school: "shadow", icon: "moon", target: "enemy", damageType: null, scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 1, cooldown: 3, effect: { type: "curse", value: 25, duration: 3, target: "enemy" }, desc: "Lay a curse that makes a foe suffer far more from every wound." },
+  { id: "curse", name: "Curse", school: "shadow", icon: "moon", target: "enemy", damageType: null, scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 1, cooldown: 3, effect: { type: "curse", value: 25, duration: 3, target: "enemy" }, desc: "Lay a wasting curse: the foe takes far more from every wound AND their hurts knit half as fast — sustain and regen falter while it holds." },
   // ---- Arcane / divine (stat-scaled, drains Resolve) ----
   { id: "firebolt", name: "Firebolt", school: "arcane", icon: "flame", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 3 }, dmg: [5, 9], pen: 2, critBonus: 0, resolveCost: 1, cooldown: 1, effect: null, desc: "A bolt of conjured fire — reduced by ward, not armour." },
   { id: "frost-lance", name: "Frost Lance", school: "arcane", icon: "droplet", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: [4, 7], pen: 0, critBonus: 0, resolveCost: 1, cooldown: 2, effect: { type: "weaken", value: 25, duration: 2, target: "enemy" }, desc: "A lance of cold that slows the target's blows." },
   { id: "chain-lightning", name: "Chain Lightning", school: "arcane", icon: "sparkle", target: "all-enemies", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 5 }, dmg: [4, 7], pen: 4, critBonus: 0, resolveCost: 2, cooldown: 3, effect: null, desc: "Arcing current that leaps to every foe, biting through ward." },
-  { id: "hex", name: "Hex", school: "arcane", icon: "sparkle", target: "enemy", damageType: null, scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 1, cooldown: 3, effect: { type: "vulnerable", value: 30, duration: 3, target: "enemy" }, desc: "A curse that makes the target take far more damage." },
+  { id: "hex", name: "Hex", school: "arcane", icon: "sparkle", target: "enemy", damageType: null, scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 1, cooldown: 3, effect: { type: "vulnerable", value: 30, duration: 3, target: "enemy" }, desc: "Pry open a single foe's defences — they take far more damage from every source for a few turns." },
   { id: "smite", name: "Smite", school: "divine", icon: "sparkle", target: "enemy", damageType: "true", scaling: "stat", scaleAttr: "presence", weaponReq: null, statReq: { attr: "presence", base: 4 }, dmg: [4, 6], pen: 0, critBonus: 10, resolveCost: 2, cooldown: 3, effect: { type: "stun", value: 1, duration: 1, target: "enemy" }, desc: "Searing judgement that ignores defences and may stun." },
 
   // ============================================================
@@ -125,7 +125,7 @@ export const ABILITY_LIBRARY = [
   { id: "deep-freeze", name: "Deep Freeze", school: "arcane", icon: "droplet", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: [4, 7], pen: 0, critBonus: 0, resolveCost: 2, cooldown: 3, effect: { type: "stun", value: 1, duration: 1, target: "enemy" }, desc: "Ice closes over a foe and holds them fast — they may freeze solid for a beat." },
   { id: "blizzard", name: "Blizzard", school: "arcane", icon: "droplet", target: "all-enemies", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: [3, 5], pen: 0, critBonus: 0, resolveCost: 2, cooldown: 3, effect: { type: "chill", value: 4, duration: 2, target: "enemy" }, desc: "A howling storm of ice that batters and chills every foe, fouling their aim." },
   { id: "plague", name: "Plague", school: "shadow", icon: "droplet", target: "all-enemies", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: [2, 4], pen: 1, critBonus: 0, resolveCost: 2, cooldown: 3, effect: { type: "poison", value: 4, duration: 4, target: "enemy" }, desc: "A roiling miasma that sickens every foe with a wasting, regen-blocking rot." },
-  { id: "doom", name: "Doom", school: "shadow", icon: "moon", target: "all-enemies", damageType: null, scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 2, cooldown: 4, effect: { type: "vulnerable", value: 30, duration: 3, target: "enemy" }, desc: "Mark every foe for ruin — they take far more from every wound that follows." },
+  { id: "doom", name: "Doom", school: "shadow", icon: "moon", target: "all-enemies", damageType: null, scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 4 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 2, cooldown: 4, effect: { type: "vulnerable", value: 30, duration: 3, target: "enemy" }, desc: "Mark the WHOLE field for ruin — every foe at once takes far more damage from every source. The mass version of Hex." },
   { id: "life-drain", name: "Life Drain", school: "shadow", icon: "droplet", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 3 }, dmg: [4, 7], pen: 2, critBonus: 0, resolveCost: 1, cooldown: 2, effect: { type: "drain", value: 50, target: "self" }, desc: "Tear the life from a foe and pour it into your own — your wounds close as theirs open." },
 
   // ============================================================
@@ -142,7 +142,7 @@ export const ABILITY_LIBRARY = [
   { id: "tempest", name: "Tempest", school: "arcane", icon: "sparkle", target: "all-enemies", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 6 }, dmg: [6, 10], pen: 5, critBonus: 0, resolveCost: 3, cooldown: 4, effect: null, desc: "A storm of lightning that leaps through every foe, biting deep through ward." },
   { id: "time-stop", name: "Time Stop", school: "arcane", icon: "sparkle", target: "self", damageType: null, scaling: "none", scaleAttr: "reflex", weaponReq: null, statReq: { attr: "reflex", base: 5 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 3, cooldown: 5, effect: { type: "bonusAction", value: 2, target: "self" }, desc: "Time bends around you — seize two extra actions this turn." },
   // ---- Shadow apex ----
-  { id: "soul-rend", name: "Soul-Rend", school: "shadow", icon: "moon", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 5 }, dmg: [8, 12], pen: 3, critBonus: 0, resolveCost: 3, cooldown: 4, effect: { type: "curse", value: 30, duration: 3, target: "enemy" }, desc: "Tear at the spirit itself — devastating dark damage that leaves the wound cursed to fester." },
+  { id: "soul-rend", name: "Soul-Rend", school: "shadow", icon: "moon", target: "enemy", damageType: "magical", scaling: "stat", scaleAttr: "mind", weaponReq: null, statReq: { attr: "mind", base: 5 }, dmg: [8, 12], pen: 3, critBonus: 0, resolveCost: 3, cooldown: 4, effect: { type: "curse", value: 30, duration: 3, target: "enemy" }, desc: "Tear at the spirit itself — devastating dark damage that leaves the wound cursed to fester: the foe takes more from every blow and can barely heal." },
   { id: "mass-terror", name: "Mass Terror", school: "shadow", icon: "moon", target: "all-enemies", damageType: null, scaling: "stat", scaleAttr: "presence", weaponReq: null, statReq: { attr: "presence", base: 5 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 3, cooldown: 4, effect: { type: "weaken", value: 35, duration: 3, target: "enemy" }, desc: "Loose overwhelming dread — every foe's strength fails them." },
   // ---- Divine apex ----
   { id: "judgment", name: "Judgment", school: "divine", icon: "sparkle", target: "enemy", damageType: "true", scaling: "stat", scaleAttr: "presence", weaponReq: null, statReq: { attr: "presence", base: 5 }, dmg: [8, 12], pen: 0, critBonus: 15, resolveCost: 3, cooldown: 4, effect: { type: "stun", value: 1, duration: 1, target: "enemy" }, desc: "A pillar of holy fire that ignores all defence, lays the wicked low, and may stun." },
@@ -163,16 +163,42 @@ export const ABILITY_LIBRARY = [
   { id: "dread-aura", name: "Dread Aura", school: "shadow", icon: "moon", target: "all-enemies", damageType: null, scaling: "none", scaleAttr: "presence", weaponReq: null, statReq: { attr: "presence", base: 3 }, dmg: null, pen: 0, critBonus: 0, resolveCost: 2, cooldown: 4, effect: { type: "weaken", value: 25, duration: 2, target: "enemy" }, innate: true, desc: "Loose the fear in your blood — foes falter, their blows weakened." },
 ];
 
-// TIER FLOORS — apex powers that must never exist below a minimum grade. A
-// world-unmaking spell or a called-down meteor is meaningless as a common/rare
-// trinket, so grants and drops below the floor are clamped up (region-capped
-// loot skips them instead). Stamped onto the def objects so every consumer —
-// the narrator's grantable list, in-play learning, and loot — sees the floor.
+// TIER FLOORS — the minimum grade an ability can exist at, graded by raw power so
+// the catalogue spreads across the ladder instead of piling up at Common. A
+// world-unmaking spell is meaningless as a common trinket; an AoE stun or a heavy
+// debuff outclasses a basic strike. Grants/drops below the floor are clamped up
+// (region-capped loot skips them instead). Stamped onto the def objects so every
+// consumer — the narrator's grantable list, in-play learning, and loot — sees it.
+//
+// Unlisted = Common (the starter kit: basic strikes + cheap cantrips). Innate
+// racial powers are deliberately left unfloored — they are kindred identity, not
+// gated loot. Rubric: Uncommon = solid single-target or a clean rider (bleed/
+// burn/weaken/shield/minor heal); Rare = control (stun), AoE, or a strong debuff/
+// nuke; Very-Rare = premium tempo or a heavy single-target nuke; Epic = AoE
+// control/debuff, big heals, signature self-buffs; Legendary = battlefield-enders.
 const ABILITY_TIER_FLOOR = {
-  disintegrate: "legendary", meteor: "legendary",
+  // Uncommon — dependable techniques and riders, a step above the basics.
+  "piercing-thrust": "uncommon", rend: "uncommon", "venom-strike": "uncommon",
+  "aimed-shot": "uncommon", "hamstring-shot": "uncommon", "rallying-shout": "uncommon",
+  "second-wind": "uncommon", shadowstep: "uncommon", "bulwark-stance": "uncommon",
+  "mana-shield": "uncommon", combust: "uncommon", "frost-lance": "uncommon",
+  "disarming-strike": "uncommon", feint: "uncommon", lunge: "uncommon",
+  "piercing-shot": "uncommon", "battle-focus": "uncommon", wither: "uncommon",
+  "ice-shard": "uncommon", "stone-armor": "uncommon", heal: "uncommon", bless: "uncommon",
+  "shield-of-faith": "uncommon", hex: "uncommon", "life-drain": "uncommon",
+  // Rare — control (stun), AoE, strong debuffs and nukes.
+  cleave: "rare", execute: "rare", "frost-nova": "rare", curse: "rare", smite: "rare",
+  "shield-bash": "rare", "concussive-blow": "rare", whirlwind: "rare", "arrow-volley": "rare",
+  "pinning-shot": "rare", snare: "rare", enfeeble: "rare", terrify: "rare", fireball: "rare",
+  radiance: "rare", electrocute: "rare", "deep-freeze": "rare", blizzard: "rare", plague: "rare",
+  // Very-Rare — premium tempo and the heaviest single-target nukes.
+  haste: "very-rare", "chain-lightning": "very-rare", "lightning-bolt": "very-rare",
+  // Epic — AoE control/debuff, big heals, signature self-buffs.
   tempest: "epic", "time-stop": "epic", "soul-rend": "epic", "mass-terror": "epic",
-  judgment: "epic", dawnburst: "epic", renewal: "epic",
-  earthshatter: "epic", reaping: "epic", wrath: "epic",
+  judgment: "epic", dawnburst: "epic", renewal: "epic", earthshatter: "epic",
+  reaping: "epic", wrath: "epic", sanctuary: "epic", doom: "epic",
+  // Legendary — battlefield-enders.
+  disintegrate: "legendary", meteor: "legendary",
 };
 for (const a of ABILITY_LIBRARY) { if (ABILITY_TIER_FLOOR[a.id]) a.minTier = ABILITY_TIER_FLOOR[a.id]; }
 
