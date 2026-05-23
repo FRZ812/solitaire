@@ -127,3 +127,52 @@ export function attributeThresholdMods(attrs = {}) {
   }
   return { statMods, triggers };
 }
+
+// ---- Display helpers (character panel: tap an attribute to see its payoff) ----
+
+const THRESHOLD_TIER = { 5: "rare", 10: "very-rare", 15: "epic", 20: "legendary", 25: "mythic", 30: "divine" };
+
+// One readable phrase per stat/trigger key, used for both the smooth bonuses and
+// the unique unlocks so the panel reads in plain language.
+const EFFECT_FMT = {
+  drPct:            (v) => `+${Math.round(v * 100)}% damage reduction`,
+  damageMult:       (v) => `+${Math.round(v * 100)}% damage`,
+  armor:            (v) => `+${v} armour`,
+  penetration:      (v) => `+${v} penetration`,
+  dodge:            (v) => `+${v}% dodge`,
+  accuracy:         (v) => `+${v} accuracy`,
+  ward:             (v) => `+${v} ward`,
+  critChance:       (v) => `+${v}% crit chance`,
+  critMult:         (v) => `+${Math.round(v * 100)}% crit damage`,
+  healPower:        (v) => `+${Math.round(v * 100)}% healing potency`,
+  swiftChance:      (v) => `${Math.round(v * 100)}% chance to act again`,
+  extraActions:     (v) => `+${v} action each turn`,
+  cooldownReduction:(v) => `abilities recover ${v} turn${v > 1 ? "s" : ""} faster`,
+  controlResist:    (v) => `resist ${Math.round(v * 100)}% of stuns, slows & debuffs`,
+  damageCap:        (v) => `no single hit exceeds ${Math.round(v * 100)}% of your max HP`,
+  dmgDefer:         (v) => `spread ${Math.round(v * 100)}% of incoming damage over time`,
+  turnRegen:        (v) => `regenerate ${Math.round(v * 100)}% max HP each turn`,
+  reviveOnce:       (v) => `once per fight, cheat death (revive at ${Math.round(v * 100)}% HP)`,
+  thorns:           (v) => `attackers take ${v} damage for striking you`,
+  lifesteal:        (v) => `heal for ${v}% of the damage you deal`,
+  shieldGen:        (v) => `conjure a shield worth ${Math.round(v * 100)}% max HP each turn`,
+  magicShieldGen:   (v) => `weave a magic ward worth ${Math.round(v * 100)}% max HP each turn`,
+  resolveRegen:     (v) => `recover +${v} resolve each turn`,
+};
+const fmtEffects = (obj) => Object.entries(obj || {}).map(([k, v]) => (EFFECT_FMT[k] ? EFFECT_FMT[k](v) : `${k} +${v}`));
+
+// The smooth, always-on bonuses an attribute currently grants at value `v`.
+export function smoothStatSummary(key, v) {
+  return fmtEffects(smoothStats(key, v));
+}
+
+// The full unique-unlock ladder for an attribute, each step marked reached or not
+// against `v`. `at` is the score it unlocks at; `tier` its grade; `text` what it does.
+export function attributeLadder(key, v = 0) {
+  const ladder = UNIQUE[key] || [];
+  return THRESHOLDS.map((at, i) => ({
+    at, tier: THRESHOLD_TIER[at],
+    reached: (v || 0) >= at,
+    text: ladder[i] ? [...fmtEffects(ladder[i].s), ...fmtEffects(ladder[i].t)].join("; ") : "",
+  })).filter((x) => x.text);
+}
