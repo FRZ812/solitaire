@@ -52,7 +52,7 @@ function smoothStats(key, v) {
     case "reflex":   s.dodge = Math.round(q * 0.0339); s.accuracy = Math.round(q * 0.0136); break;            // 30 → +30 dodge, +12 acc
     case "mind":     s.ward = Math.round(q * 0.0238); s.damageMult = +(q * 0.0002).toFixed(4); break;         // 30 → +21 ward, +18% (caster)
     case "wit":      s.critChance = Math.round(q * 0.0407); s.accuracy = Math.round(q * 0.0136); break;       // 30 → +36 crit, +12 acc
-    case "presence": s.fortify = +Math.min(0.2, q * 0.00017).toFixed(4); break;                              // 30 → +15% fortify
+    case "presence": s.healPower = +(q * 0.00045).toFixed(4); s.damageMult = +(q * 0.00014).toFixed(4); break; // willpower: 30 → +40% healing potency, +12% damage (intensity)
   }
   return s;
 }
@@ -100,13 +100,13 @@ const UNIQUE = {
     { s: { critMult: 0.20 } },        // 25
     { s: { critMult: 0.30 } },        // 30 — uncanny: devastating critical strikes
   ],
-  presence: [
-    { t: { resolveRegen: 1 } },       // 5  — force of will fuels you
-    { s: { fortify: 0.05 } },         // 10 — composure under fire
-    { t: { resolveRegen: 1 } },       // 15
-    { s: { drPct: 0.05 } },           // 20 — sheer presence turns blows aside
-    { s: { fortify: 0.05 } },         // 25
-    { s: { drPct: 0.05 } },           // 30 — world-shaping aura
+  presence: [ // WILLPOWER & INTENSITY — fuels effects, endures, refuses to break
+    { t: { resolveRegen: 1 } },       // 5  rare      — force of will fuels you
+    { s: { healPower: 0.10 } },       // 10 very-rare — intensity sharpens every heal/shield
+    { s: { dmgDefer: 0.20 } },        // 15 epic      — iron will: endure, spread the pain over time
+    { s: { controlResist: 0.30 } },   // 20 legendary — unbreakable will (shrug off control)
+    { s: { healPower: 0.15 } },       // 25 mythic    — your presence mends all the harder
+    { s: { dmgDefer: 0.20 } },        // 30 divine    — indomitable: defer the brunt of any blow
   ],
 };
 const THRESHOLDS = [5, 10, 15, 20, 25, 30];

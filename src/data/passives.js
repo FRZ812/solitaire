@@ -57,7 +57,7 @@ export const PASSIVE_CAPS = {
   lifesteal: 100, drPct: 0.85, thorns: 50,
   extraActions: 3, cooldownReduction: 3, fortify: 0.25,
   turnRegen: 0.12, shieldGen: 0.12, magicShieldGen: 0.12, invulnCharges: 2,
-  controlResist: 0.6,
+  controlResist: 0.6, healPower: 1.0, dmgDefer: 0.6,
 };
 
 // Each passive: scope, type, key (what it modifies), minTier (lowest grade it can
@@ -79,10 +79,12 @@ export const PASSIVES = [
   { id: "evasion",    name: "Evasion",      cat: "defence", scope: "combat", type: "stat", key: "dodge",       minTier: "common",    amount: (n) => 2 + Math.round(n * 1.5), desc: "Raises dodge chance." },
   { id: "stalwart",   name: "Stalwart",     cat: "defence", scope: "combat", type: "stat", key: "maxHealth",   minTier: "common",    amount: (n) => geo(12, n),           desc: "Increases maximum health (scales with grade)." },
   { id: "stoneskin",  name: "Stoneskin",    cat: "defence", scope: "combat", type: "stat", key: "drPct",       minTier: "rare",      amount: (n) => 0.03 + n * 0.01,      desc: "Reduces all damage taken by a percentage." },
+  { id: "defiance",   name: "Defiance",     cat: "defence", scope: "combat", type: "stat", key: "dmgDefer",    minTier: "epic",      amount: (n) => 0.12 + n * 0.04,      desc: "A share of every blow is held back and bleeds out over a few turns instead of landing at once — burst becomes a wound you can heal through." },
 
   // ---------- SUSTAIN (trigger) — tuned low; lifesteal is capped in-engine ----------
   { id: "vampiric",   name: "Vampiric",     cat: "sustain", scope: "combat", type: "trigger", key: "lifesteal", minTier: "rare",     amount: (n) => 3 + n,                desc: "Heals for a small share of damage dealt." },
   { id: "renewing",   name: "Renewing",     cat: "sustain", scope: "combat", type: "trigger", key: "turnRegen", minTier: "epic",     amount: (n) => 0.04 + n * 0.008, desc: "Knits a share of your wounds each turn — scales with your vitality." },
+  { id: "benediction",name: "Benediction",  cat: "sustain", scope: "combat", type: "stat",    key: "healPower", minTier: "rare",     amount: (n) => 0.10 + n * 0.04,      desc: "Amplifies ALL healing you receive — regen, lifesteal, and mended wounds all hit harder." },
 
   // ---------- RESOURCE / TEMPO (resolve, initiative, action economy) ----------
   { id: "tireless",   name: "Fleet-Footed", cat: "tempo", scope: "combat", type: "stat", key: "speed",       minTier: "uncommon",  amount: (n) => 1 + Math.floor(n / 2), desc: "Acts sooner — raises initiative." },
@@ -193,7 +195,7 @@ export function passiveLabel(id, tierId) {
   const v = def.amount(o(tierId));
   if (def.type === "proc") return def.name; // proc magnitude is contextual — name carries it
   if (def.key === "reviveOnce") return def.name;
-  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance", "coinBonus", "reviveOnce", "turnRegen", "shieldGen", "magicShieldGen"]; // stored 0..1
+  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance", "coinBonus", "reviveOnce", "turnRegen", "shieldGen", "magicShieldGen", "healPower", "dmgDefer"]; // stored 0..1
   const wholePctKeys = ["lifesteal", "thorns"];        // stored as whole %, render with a % suffix
   const pctSuffixKeys = ["critChance", "dodge"];       // whole numbers that ARE percentages
   if (fracKeys.includes(def.key)) return `${def.name} ${Math.round(v * 100)}%`;
@@ -232,6 +234,8 @@ const KEY_EFFECT = {
   dodge:       { s: "flat", p: (n) => `+${n}% dodge chance` },
   maxHealth:   { s: "flat", p: (n) => `+${n} maximum health` },
   drPct:       { s: "pct",  p: (n) => `${n}% less damage taken from all sources` },
+  healPower:   { s: "pct",  p: (n) => `+${n}% to all healing you receive` },
+  dmgDefer:    { s: "pct",  p: (n) => `${n}% of damage taken is deferred, bleeding out over a few turns` },
   fortify:     { s: "pct",  p: (n) => `${n}% less damage taken while below 35% health` },
   damageCap:   { s: "pct",  p: (n) => `no single hit can exceed ${n}% of your max health` },
   controlResist:{ s: "pct", p: (n) => `${n}% chance to shrug off stuns and slows` },
@@ -407,6 +411,8 @@ export function aggregateCombatPassives(list, attrs = null) {
   if (statMods.cooldownReduction != null) statMods.cooldownReduction = Math.min(statMods.cooldownReduction, PASSIVE_CAPS.cooldownReduction);
   if (statMods.fortify != null) statMods.fortify = Math.min(statMods.fortify, PASSIVE_CAPS.fortify);
   if (statMods.controlResist != null) statMods.controlResist = Math.min(statMods.controlResist, PASSIVE_CAPS.controlResist);
+  if (statMods.healPower != null) statMods.healPower = Math.min(statMods.healPower, PASSIVE_CAPS.healPower);
+  if (statMods.dmgDefer != null) statMods.dmgDefer = Math.min(statMods.dmgDefer, PASSIVE_CAPS.dmgDefer);
   if (triggers.lifesteal != null) triggers.lifesteal = Math.min(triggers.lifesteal, PASSIVE_CAPS.lifesteal);
   if (triggers.turnRegen != null) triggers.turnRegen = Math.min(triggers.turnRegen, PASSIVE_CAPS.turnRegen);
   if (triggers.thorns != null) triggers.thorns = Math.min(triggers.thorns, PASSIVE_CAPS.thorns);

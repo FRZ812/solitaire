@@ -422,6 +422,10 @@ export function deriveCombatStats(character, codex) {
     // strongest (lowest) wins, set in aggregateCombatPassives. Unbowed resists control.
     damageCap: statMods.damageCap || 0,
     controlResist: clamp(statMods.controlResist || 0, 0, 0.6),
+    // Healing amplification (all heals ×(1+healPower)) and damage deferral (a share
+    // of each blow bleeds out over a few turns instead of landing at once).
+    healPower: clamp(statMods.healPower || 0, 0, 1.0),
+    dmgDefer: clamp(statMods.dmgDefer || 0, 0, 0.6),
     // Heavy armour layers on a small ever-renewing aegis shield (folded into the
     // shieldGen trigger so the engine's cap still applies).
     triggers: { ...triggers, shieldGen: (triggers.shieldGen || 0) + (band.shieldGen || 0) },

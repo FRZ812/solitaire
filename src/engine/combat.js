@@ -47,10 +47,14 @@ function hasStatus(c, type) { return (c.statuses || []).some((s) => s.type === t
 // path routes through gainHealth so the suppression (and the maxHealth clamp) lives
 // in one place. Returns the health actually restored (for honest logs).
 const CURSE_HEAL_MULT = 0.5;
+const DEFER_TURNS = 3; // turns a deferred (dmgDefer) wound bleeds out over
 function gainHealth(c, amt) {
   if (!c || amt <= 0 || c.health <= 0) return 0;
   let h = amt;
   if (hasStatus(c, "curse")) h = Math.round(h * CURSE_HEAL_MULT);
+  // Healing amplification (healPower): a multiplier on ALL health gained — regen,
+  // lifesteal, ability heals, party heals — so it compounds lifesteal/regen builds.
+  if (c.healPower) h = Math.round(h * (1 + c.healPower));
   if (h <= 0) return 0;
   const before = c.health;
   c.health = Math.min(c.maxHealth, c.health + h);
@@ -125,6 +129,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     resolveRegen: cs.resolveRegen || 0,
     dr: cs.dr || 0, fortify: cs.fortify || 0,
     damageCap: cs.damageCap || 0, controlResist: cs.controlResist || 0,
+    healPower: cs.healPower || 0, dmgDefer: cs.dmgDefer || 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed, swiftChance: cs.swiftChance || 0, reloadLeft: 0,
@@ -533,6 +538,17 @@ function resolveHit(attacker, defender, profile) {
       absorbed = Math.min(defender.magicShield, dmg); defender.magicShield -= absorbed; dmg -= absorbed;
     } else if (profile.type !== "magical" && (defender.shield || 0) > 0) {
       absorbed = Math.min(defender.shield, dmg); defender.shield -= absorbed; dmg -= absorbed;
+    }
+  }
+  // Damage deferral (dmgDefer): a share of the blow that WOULD land is held back
+  // and bled out over a few turns as a "lingering" wound instead of all at once —
+  // anti-burst, so sustain can answer it. Not applied to the lingering tick itself.
+  let deferred = 0;
+  if (dmg > 0 && (defender.dmgDefer || 0) > 0) {
+    deferred = Math.round(dmg * Math.min(0.7, defender.dmgDefer));
+    if (deferred > 0) {
+      dmg -= deferred;
+      addStatus(defender, { type: "lingering", value: Math.max(1, Math.ceil(deferred / DEFER_TURNS)), duration: DEFER_TURNS });
     }
   }
   defender.health = Math.max(0, defender.health - dmg);
@@ -1011,6 +1027,14 @@ function tickStatuses(c) {
   if (dot > 0) {
     c.health = Math.max(0, c.health - dot);
     logs.push(logEntry(`${c.name} suffers ${dot} from bleed/poison/burn.`, "status"));
+  }
+  // Lingering: deferred damage (from dmgDefer) bleeding out over a few turns —
+  // already mitigated, so it lands flat. The point is to turn burst into a wound
+  // you can heal/shield through.
+  const ling = sumStatus(c, "lingering");
+  if (ling > 0) {
+    c.health = Math.max(0, c.health - ling);
+    logs.push(logEntry(`${c.name} bleeds ${ling} from lingering wounds.`, "status"));
   }
   const healAmt = sumStatus(c, "regen");
   if (healAmt > 0 && c.health > 0) {
