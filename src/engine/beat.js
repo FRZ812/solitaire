@@ -10,6 +10,7 @@ import { applyInventoryChanges } from "./inventory.js";
 import { itemTemplate } from "../data/catalog.js";
 import { resolveRace } from "../data/races.js";
 import { getAbilityDef } from "../data/abilities.js";
+import { tierOrder } from "../data/tiers.js";
 import { spoilCarried } from "./spoilage.js";
 import { applyAttributeChanges } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
@@ -78,12 +79,19 @@ export function applyBeat(state, beat, options = {}) {
     }
   }
 
-  // Items granted DURING CREATION must come from the canonical catalog only — the
-  // narrator may not invent gear for the starting kit. (In normal play it may
-  // invent items and the engine infers their power from name + tier.)
+  // Granted items must be CANONICAL catalog items — at creation AND in normal
+  // play. The narrator grants ids from the [ITEM CATALOG]; anything not in the
+  // catalog is an invented item and is dropped here. (Combat spoils are added via
+  // applyLoot, a separate path, so engine-generated drops are unaffected.)
   let invChanges = beat.inventory_changes;
-  if (state.created === false && invChanges && Array.isArray(invChanges.added)) {
+  if (invChanges && Array.isArray(invChanges.added)) {
     invChanges = { ...invChanges, added: invChanges.added.filter((a) => a?.itemId && itemTemplate(a.itemId)) };
+    // Register freshly-granted catalog items into the codex so they display and
+    // persist with their real name/appearance/stats (the narrator no longer
+    // defines gear via discoveries.items).
+    const add = {};
+    for (const a of invChanges.added) if (!codex.items[a.itemId]) add[a.itemId] = itemTemplate(a.itemId);
+    if (Object.keys(add).length) codex = { ...codex, items: { ...codex.items, ...add } };
   }
   const inventory = applyInventoryChanges(state.character.inventory, invChanges, newTime.day);
   if (invChanges) {
@@ -108,6 +116,33 @@ export function applyBeat(state, beat, options = {}) {
   }
 
   const character = { ...state.character, inventory, attributes };
+
+  // A combat ability TAUGHT in play (a discoveries.skills entry whose id is a real
+  // ability) must become USABLE — mergeDiscoveries only records codex lore, so wire
+  // it into character.abilities here, carrying the granted tier (common→divine; the
+  // tier scales its power exactly like gear). Re-teaching at a higher tier upgrades
+  // it. Narrative skills (Stealth, Lockpicking…) have no ability def and are skipped.
+  if (Array.isArray(beat.discoveries?.skills)) {
+    const idOf = (x) => (typeof x === "string" ? x : x.id);
+    const list = Array.isArray(character.abilities) ? [...character.abilities] : [];
+    let skills = codex.skills, skillsTouched = false;
+    for (const s of beat.discoveries.skills) {
+      if (!s?.id || !getAbilityDef(s.id)) continue;
+      const idx = list.findIndex((a) => idOf(a) === s.id);
+      const curTier = idx >= 0 ? ((typeof list[idx] === "object" ? list[idx].tier : "common") || "common") : null;
+      const grantTier = s.tier || "common";
+      // Re-teaching only ever raises the tier — take the higher of the two.
+      const tier = curTier && tierOrder(curTier) >= tierOrder(grantTier) ? curTier : grantTier;
+      if (idx < 0) list.push({ id: s.id, tier }); else list[idx] = { id: s.id, tier };
+      if (codex.skills[s.id]) { // keep the codex entry consistent for display
+        if (!skillsTouched) { skills = { ...codex.skills }; skillsTouched = true; }
+        skills[s.id] = { ...skills[s.id], combatAbility: true, tier };
+      }
+    }
+    character.abilities = list;
+    if (skillsTouched) codex = { ...codex, skills };
+  }
+
   if (beat.vitality_change) character.vitality = Math.max(0, Math.min(character.vitalityMax, character.vitality + beat.vitality_change));
   if (beat.resolve_change)  character.resolve  = Math.max(0, Math.min(character.resolveMax,  character.resolve  + beat.resolve_change));
 
