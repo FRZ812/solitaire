@@ -396,7 +396,9 @@ export function applyBeat(state, beat, options = {}) {
       appearance: cs.appearance || w.appearance,
       base_appearance: cs.base_appearance || w.base_appearance,
       attributes: character.attributes,
-      knows: cs.knows ? [...(w.knows || []), ...cs.knows] : (w.knows || []),
+      // Dedup: a long (manual) creation may have already filed a self-fact via
+      // knowledge_updates before the final sheet repeats it — don't list it twice.
+      knows: [...new Set([...(w.knows || []), ...(cs.knows || [])].filter((f) => typeof f === "string" && f.trim()))],
     };
     world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, wanderer: merged } } };
     // Creation set attributes + racial vigor — derive starting max HP from them.
