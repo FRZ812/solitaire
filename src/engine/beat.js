@@ -7,6 +7,9 @@ import {
 import { passiveHealVitality } from "./healing.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
+import { itemTemplate } from "../data/catalog.js";
+import { resolveRace } from "../data/races.js";
+import { getAbilityDef } from "../data/abilities.js";
 import { spoilCarried } from "./spoilage.js";
 import { applyAttributeChanges } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
@@ -75,9 +78,16 @@ export function applyBeat(state, beat, options = {}) {
     }
   }
 
-  const inventory = applyInventoryChanges(state.character.inventory, beat.inventory_changes, newTime.day);
-  if (beat.inventory_changes) {
-    const ch = beat.inventory_changes;
+  // Items granted DURING CREATION must come from the canonical catalog only — the
+  // narrator may not invent gear for the starting kit. (In normal play it may
+  // invent items and the engine infers their power from name + tier.)
+  let invChanges = beat.inventory_changes;
+  if (state.created === false && invChanges && Array.isArray(invChanges.added)) {
+    invChanges = { ...invChanges, added: invChanges.added.filter((a) => a?.itemId && itemTemplate(a.itemId)) };
+  }
+  const inventory = applyInventoryChanges(state.character.inventory, invChanges, newTime.day);
+  if (invChanges) {
+    const ch = invChanges;
     const lines = [];
     for (const a of (ch.added || [])) {
       const name = codex.items[a.itemId]?.name || a.itemId;
@@ -231,7 +241,10 @@ export function applyBeat(state, beat, options = {}) {
   // Opening character-creation interview result: set the player's identity and
   // a balanced starting attribute spread from the narrator's read of the player.
   let created = state.created;
-  const clampAttr = (v) => Math.max(1, Math.min(10, Math.round(v || 0)));
+  // Creation attributes are set directly from the interview, scaled to the
+  // described concept — NOT hard-capped to a small budget (clamped only to the
+  // engine's effective ceiling of 30 for roleplay freedom).
+  const clampAttr = (v) => Math.max(1, Math.min(30, Math.round(v || 0)));
   if (beat.character_setup) {
     const cs = beat.character_setup;
     if (cs.name) character.name = cs.name;
@@ -241,17 +254,55 @@ export function applyBeat(state, beat, options = {}) {
       for (const k of ["body", "reflex", "vigor", "mind", "wit", "presence"]) a[k] = clampAttr(cs.attributes[k] ?? character.attributes[k]);
       character.attributes = a;
     }
-    if (cs.ability) {
+    // Grant any starting abilities the concept calls for — martial techniques, or
+    // spells if the player explicitly built a magical character. Accepts an
+    // `abilities` array (ids or {id,tier}) and/or a legacy single `ability`.
+    const startAbilities = [
+      ...(Array.isArray(cs.abilities) ? cs.abilities : []),
+      ...(cs.ability ? [cs.ability] : []),
+    ];
+    if (startAbilities.length) {
       const list = Array.isArray(character.abilities) ? [...character.abilities] : [];
       const idOf = (x) => (typeof x === "string" ? x : x.id);
-      if (!list.some((x) => idOf(x) === cs.ability)) list.push({ id: cs.ability, tier: "common" });
+      for (const ab of startAbilities) {
+        const entry = typeof ab === "string" ? { id: ab, tier: "common" } : { id: ab.id, tier: ab.tier || "common" };
+        if (entry.id && !list.some((x) => idOf(x) === entry.id)) list.push(entry);
+      }
       character.abilities = list;
+    }
+    // Apply the chosen RACE/SUBRACE kit (data/races.js) — engine-applied, so racial
+    // powers are list-only. Innate abilities + any innate-magic cantrip join the
+    // ability list; passives, attribute leanings, and learning-speed sit on the
+    // character; an innate-magic kindred starts attuned (spell recorded as known).
+    const kit = cs.race ? resolveRace(cs.race, cs.subrace) : null;
+    if (kit) {
+      character.race = kit.raceId;
+      character.subrace = kit.subraceId;
+      character.racialAttributeModifiers = kit.attributeModifiers;
+      character.proficiencyGrowthMult = kit.proficiencyGrowthMult;
+      character.racialPassives = kit.racialPassives;
+      const rlist = Array.isArray(character.abilities) ? [...character.abilities] : [];
+      const ridOf = (x) => (typeof x === "string" ? x : x.id);
+      for (const ab of [...kit.innateAbilities, ...kit.startingSpells]) {
+        const entry = typeof ab === "string" ? { id: ab, tier: "common" } : { id: ab.id, tier: ab.tier || "common" };
+        if (entry.id && !rlist.some((x) => ridOf(x) === entry.id)) rlist.push(entry);
+      }
+      character.abilities = rlist;
+      if (kit.startingSpells.length) {
+        const spells = { ...(world.codex.spells || {}) };
+        for (const sid of kit.startingSpells) {
+          const def = getAbilityDef(sid);
+          if (def && !spells[sid]) spells[sid] = { id: sid, name: def.name, description: def.desc || "An innate spell of your kindred.", acquisition: "innate to your kindred" };
+        }
+        world = { ...world, codex: { ...world.codex, spells } };
+      }
     }
     const w = world.codex.characters.wanderer || {};
     const merged = {
       ...w,
       name: cs.name || w.name,
       race: cs.race || w.race,
+      subrace: (kit ? kit.subraceId : (cs.subrace ?? w.subrace ?? null)),
       origin: cs.origin || w.origin,
       profession: cs.profession || w.profession,
       age: cs.age || w.age,

@@ -942,7 +942,9 @@ export function playerAct(cs0, abilityId, targetIndex) {
   // in a brawl escalates it to lethal on its own (no separate Draw needed).
   const isSpell = scaling === "stat";
   const isWeaponTech = scaling === "weapon" && def.weaponReq && def.weaponReq.length > 0;
-  if (isSpell) cs.magicCast = true;
+  // Innate racial powers (dragon breath, hellfire, etc.) aren't "witchcraft" — they
+  // don't trigger the dread-of-magic reaction, though they still escalate a brawl.
+  if (isSpell && !def.innate) cs.magicCast = true;
   if (!cs.lethal && (isSpell || isWeaponTech)) escalateToLethal(cs, isSpell ? "magic" : "weapon");
   cs.player.actionsLeft = (cs.player.actionsLeft || 1) - (def.actionCost || 1); // action points gate actions
   // Spellcasting proficiency makes casting cheaper on Resolve.

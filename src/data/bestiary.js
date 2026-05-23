@@ -156,6 +156,7 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     type: base.type || "physical", pen: (base.pen || 0) + Math.floor(body / 4) + (sm.penetration || 0), category: weaponType,
     reach: base.reach ?? fam.reach ?? 1, range: base.range ?? fam.range ?? 0,
     speed: base.speed ?? fam.speed ?? 0, reload: base.reload ?? fam.reload ?? 0,
+    acc: base.acc ?? fam.acc ?? 0,
   };
   const demeanor = npcDemeanor(npc);
   const dcfg = DEMEANOR_CONFIG[demeanor] || DEMEANOR_CONFIG.wary;
@@ -180,7 +181,7 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     armor: Math.round(attrArmor * m) + gearArmor + (sm.armor || 0), ward: Math.round(attrWard * m) + gearWard + (sm.ward || 0),
     dr: Math.min(0.6, sm.drPct || 0), fortify: Math.min(0.25, sm.fortify || 0),
     dodge: Math.min(70, reflex * 2 + dodgeGear + (sm.dodge || 0)),
-    accuracy: reflex + wit + (sm.accuracy || 0), critChance: Math.min(60, Math.round(wit * 1.5 + reflex) + (sm.critChance || 0)), critMult: 1.5 + (sm.critMult || 0),
+    accuracy: reflex + wit + (weapon.acc || 0) + (sm.accuracy || 0), critChance: Math.min(60, Math.round(wit * 1.5 + reflex) + (sm.critChance || 0)), critMult: 1.5 + (sm.critMult || 0),
     speed: reflex + Math.floor(wit / 2),
     triggers: tr,
     // Same action economy as the player (no stamina); swift-geared foes (extra-

@@ -47,18 +47,24 @@ export function ratingFromXp(xp) { return Math.floor(Math.sqrt(Math.max(0, xp ||
 export function attributeGrowth(sumXp) { return Math.floor(Math.sqrt(Math.max(0, sumXp || 0) / 40)); }
 
 export function proficiencyRating(character, id) {
-  return ratingFromXp(character?.proficiencies?.[id] || 0);
+  // Racial fast-learners (e.g. humans) gain ratings faster via a growth multiplier.
+  const mult = character?.proficiencyGrowthMult || 1;
+  return ratingFromXp((character?.proficiencies?.[id] || 0) * mult);
 }
 
-// Effective attribute = base (creation) + growth earned by grinding its profs.
+// Effective attribute = base (creation) + RACIAL modifier + growth earned by
+// grinding its profs. Racial attribute leanings (vampire +Body, etc.) are flat;
+// a racial learning multiplier speeds the use-based growth on top.
 export function effectiveAttributes(character) {
   const base = character?.attributes || {};
   const prof = character?.proficiencies || {};
+  const racial = character?.racialAttributeModifiers || {};
+  const mult = character?.proficiencyGrowthMult || 1;
   const out = {};
   for (const k of ATTR_KEYS) {
     let sum = 0;
     for (const id of (PROFS_BY_ATTR[k] || [])) sum += prof[id] || 0;
-    out[k] = Math.min(30, (base[k] || 0) + attributeGrowth(sum));
+    out[k] = Math.min(30, (base[k] || 0) + (racial[k] || 0) + attributeGrowth(sum * mult));
   }
   return out;
 }

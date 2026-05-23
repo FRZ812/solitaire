@@ -7,8 +7,10 @@ import { relationshipTier } from "../engine/relationships.js";
 import { itemTemplate } from "../data/catalog.js";
 import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
 import { tier as tierInfo, tierLabel, tierOrder } from "../data/tiers.js";
-import { weaponCategory, armorClass, itemCombatStats } from "../engine/combat-stats.js";
-import { passiveLabel, isFusionRune } from "../data/passives.js";
+import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
+import { passiveLabel, passiveDef, isFusionRune } from "../data/passives.js";
+import { getAbilityDef } from "../data/abilities.js";
+import { RACES } from "../data/races.js";
 
 const CODEX_TABS = [
   { key: "characters",  label: "Characters" },
@@ -122,30 +124,129 @@ function TierChip({ tierId }) {
   );
 }
 
+// Explicit gear requirement (the attribute + minimum score the item demands),
+// shown structurally instead of buried in flavour text.
+function reqLine(item) {
+  const r = itemRequirement(item);
+  if (!r || !r.value) return null;
+  return `Requires ${ATTR_LABELS[r.attr] || r.attr} ${r.value}`;
+}
+
+// A tappable affix/ability chip: shows its label (with magnitude for affixes) and,
+// on click, reveals what it ACTUALLY does (passiveDef/getAbilityDef desc). Used by
+// the item catalog and the racial kits so no chip is an opaque label.
+function EffectChip({ kind, id, tier }) {
+  const [open, setOpen] = useState(false);
+  const def = kind === "ability" ? getAbilityDef(id) : passiveDef(id);
+  const label = kind === "ability" ? (def?.name || id) : (passiveLabel(id, tier) || id);
+  const desc = def?.desc || "";
+  const accent = kind === "ability" ? "127,199,224" : "176,114,230";
+  return (
+    <>
+      <span onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }} title={desc}
+        style={{ fontSize: "8px", padding: "1px 5px", borderRadius: "5px", cursor: "pointer",
+          backgroundColor: `rgba(${accent},0.12)`, color: `rgba(${accent},0.95)`, border: `1px solid rgba(${accent},0.3)` }}>
+        {label}{desc ? <span style={{ opacity: 0.6, marginLeft: "3px", fontSize: "7px" }}>{open ? "▾" : "?"}</span> : null}
+      </span>
+      {open && desc && (
+        <span style={{ flexBasis: "100%", width: "100%", fontSize: "9px", color: "rgba(237,228,208,0.62)", lineHeight: 1.4, margin: "1px 0 2px 3px" }}>{desc}</span>
+      )}
+    </>
+  );
+}
+
+const ATTR_FULL = { body: "Body", reflex: "Reflex", vigor: "Vigor", mind: "Mind", wit: "Wit", presence: "Presence" };
+function fmtMods(mods) {
+  return Object.entries(mods || {}).filter(([, v]) => v).map(([k, v]) => `${ATTR_FULL[k] || k} ${v > 0 ? "+" : ""}${v}`).join(" · ");
+}
+function KitList({ label, items, color }) {
+  return (
+    <div style={{ marginBottom: "4px" }}>
+      <span style={{ ...subtleMeta, fontSize: "8px" }}>{label}</span>
+      <ul style={{ margin: "2px 0 0", paddingLeft: "16px", fontSize: "10px", color, lineHeight: 1.4 }}>
+        {items.map((t, i) => <li key={i}>{t}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+// The mechanical kit of a playable race (from data/races.js), shown in the Races
+// codex tab so the player can review every species/lineage by content.
+function RaceKit({ raceId }) {
+  const race = RACES[raceId];
+  if (!race) return null;
+  const mods = fmtMods(race.attributeModifiers);
+  const Chips = ({ items, kind }) => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "3px" }}>
+      {items.map((a, i) => <EffectChip key={i} kind={kind} id={a.id} tier={a.tier} />)}
+    </div>
+  );
+  return (
+    <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: `1px dashed rgba(215,167,111,0.2)` }}>
+      <div style={{ ...accentMeta, marginBottom: "6px", fontWeight: 600 }}>Racial kit</div>
+      <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.7)", marginBottom: "6px" }}>
+        Magic: {race.magic === "innate" ? "born attuned — casts from the start" : "must be learned in play"}
+        {race.social && race.social !== "normal" ? ` · ${race.social} by strangers` : ""}
+        {race.proficiencyGrowthMult && race.proficiencyGrowthMult !== 1 ? ` · learns ${Math.round((race.proficiencyGrowthMult - 1) * 100)}% faster` : ""}
+      </div>
+      {mods && <div style={{ fontSize: "10px", color: "rgba(127,199,224,0.85)", marginBottom: "6px" }}>Attributes: {mods}</div>}
+      {race.innateAbilities?.length > 0 && (<div style={{ marginBottom: "6px" }}><span style={{ ...subtleMeta, fontSize: "8px" }}>Innate abilities</span><Chips items={race.innateAbilities} kind="ability" /></div>)}
+      {race.startingSpells?.length > 0 && (<div style={{ marginBottom: "6px" }}><span style={{ ...subtleMeta, fontSize: "8px" }}>Starting magic</span><Chips items={race.startingSpells.map((id) => ({ id }))} kind="ability" /></div>)}
+      {race.racialPassives?.length > 0 && (<div style={{ marginBottom: "6px" }}><span style={{ ...subtleMeta, fontSize: "8px" }}>Racial passives</span><Chips items={race.racialPassives} kind="passive" /></div>)}
+      {race.traits?.length > 0 && <KitList label="Traits" items={race.traits} color="rgba(116,198,107,0.85)" />}
+      {race.flaws?.length > 0 && <KitList label="Flaws" items={race.flaws} color="rgba(199,91,72,0.85)" />}
+      {race.subraces && Object.keys(race.subraces).length > 0 && (
+        <div style={{ marginTop: "6px" }}>
+          <span style={{ ...subtleMeta, fontSize: "8px" }}>Lineages</span>
+          {Object.entries(race.subraces).map(([sid, sub]) => (
+            <div key={sid} style={{ marginTop: "5px", paddingLeft: "8px", borderLeft: `1px solid rgba(215,167,111,0.2)` }}>
+              <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "12px", color: colors.parchmentLight }}>{sub.name}{sub.magic === "innate" ? " · born to magic" : ""}</div>
+              {fmtMods(sub.attributeModifiers) && <div style={{ fontSize: "9px", color: "rgba(127,199,224,0.8)" }}>{fmtMods(sub.attributeModifiers)}</div>}
+              {((sub.innateAbilities?.length || 0) + (sub.racialPassives?.length || 0) + (sub.startingSpells?.length || 0)) > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "2px" }}>
+                  {(sub.innateAbilities || []).map((a, i) => <EffectChip key={`a${i}`} kind="ability" id={a.id} tier={a.tier} />)}
+                  {(sub.startingSpells || []).map((s, i) => <EffectChip key={`s${i}`} kind="ability" id={s} />)}
+                  {(sub.racialPassives || []).map((p, i) => <EffectChip key={`p${i}`} kind="passive" id={p.id} tier={p.tier} />)}
+                </div>
+              )}
+              {sub.traits?.length > 0 && <div style={{ fontSize: "9px", color: "rgba(116,198,107,0.8)", marginTop: "1px" }}>{sub.traits.join(" ")}</div>}
+              {sub.flaws?.length > 0 && <div style={{ fontSize: "9px", color: "rgba(199,91,72,0.8)" }}>{sub.flaws.join(" ")}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A catalog row. Collapsed: name + tier + stat line + requirement + affix chips.
+// Click to expand the appearance + description (so the list stays scannable).
 function CatalogRow({ item, seen }) {
+  const [open, setOpen] = useState(false);
   const t = tierInfo(item.tier || "common");
   const stat = catalogStatLine(item);
+  const req = reqLine(item);
   const passives = item.passives || [];
   return (
-    <div style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid ${t.color}33`, display: "flex", flexDirection: "column", gap: "3px" }}>
+    <div onClick={() => setOpen((o) => !o)} style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid ${t.color}33`, display: "flex", flexDirection: "column", gap: "3px", cursor: "pointer" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "space-between" }}>
-        <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color: t.color }}>{item.name}</span>
+        <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color: t.color }}>
+          <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span>{item.name}
+        </span>
         <div style={{ display: "flex", gap: "6px", alignItems: "center", flexShrink: 0 }}>
           {seen && <span title="Discovered in play" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: colors.gold }} />}
           <TierChip tierId={item.tier} />
         </div>
       </div>
       {stat && <div style={{ fontSize: "9px", color: "rgba(237,228,208,0.6)", letterSpacing: "0.03em" }}>{stat}</div>}
+      {req && <div style={{ fontSize: "9px", color: "rgba(127,199,224,0.8)", letterSpacing: "0.03em" }}>{req}</div>}
       {passives.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-          {passives.map((p, i) => (
-            <span key={i} style={{ fontSize: "8px", padding: "1px 5px", borderRadius: "5px", backgroundColor: "rgba(176,114,230,0.12)", color: "rgba(214,188,250,0.95)", border: "1px solid rgba(176,114,230,0.3)" }}>
-              {passiveLabel(p.id, p.tier) || p.id}
-            </span>
-          ))}
+          {passives.map((p, i) => <EffectChip key={i} kind="passive" id={p.id} tier={p.tier} />)}
         </div>
       )}
-      {item.description && <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.5)", lineHeight: 1.4 }}>{item.description}</div>}
+      {open && item.appearance && <div style={{ fontSize: "10px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", lineHeight: 1.4, marginTop: "2px" }}>{item.appearance}</div>}
+      {open && item.description && <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.85)", lineHeight: 1.45 }}>{item.description}</div>}
     </div>
   );
 }
@@ -153,6 +254,7 @@ function CatalogRow({ item, seen }) {
 function ItemCatalog({ codex }) {
   const [type, setType] = useState("all");
   const [discoveredOnly, setDiscoveredOnly] = useState(false);
+  const [openSecs, setOpenSecs] = useState(() => new Set());
   const seen = useMemo(() => new Set(Object.keys(codex.items || {})), [codex.items]);
   const sections = useMemo(() => buildCatalogSections(), []);
 
@@ -161,9 +263,12 @@ function ItemCatalog({ codex }) {
     .map((s) => ({ ...s, items: discoveredOnly ? s.items.filter((it) => seen.has(it.id)) : s.items }))
     .filter((s) => s.items.length);
   const total = visible.reduce((n, s) => n + s.items.length, 0);
+  const allKeys = visible.map((s) => s.key);
+  const allOpen = allKeys.length > 0 && allKeys.every((k) => openSecs.has(k));
+  const toggleSec = (k) => setOpenSecs((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
   return (
-    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
       {/* content-type filter + discovered toggle */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
         {TYPE_FILTERS.map((f) => {
@@ -186,35 +291,50 @@ function ItemCatalog({ codex }) {
           fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
         }}>{discoveredOnly ? "● Discovered" : "○ Discovered"}</button>
       </div>
-      <div style={{ ...accentMeta, fontSize: "9px" }}>{total} item{total === 1 ? "" : "s"}{discoveredOnly ? " discovered" : " in catalog"}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ ...accentMeta, fontSize: "9px" }}>{total} item{total === 1 ? "" : "s"}{discoveredOnly ? " discovered" : " in catalog"} · {visible.length} categor{visible.length === 1 ? "y" : "ies"}</div>
+        {visible.length > 0 && (
+          <button onClick={() => setOpenSecs(allOpen ? new Set() : new Set(allKeys))} style={{ marginLeft: "auto", padding: "4px 9px", borderRadius: radius.panelCompact, border: "1px solid rgba(215,167,111,0.2)", backgroundColor: "rgba(10,15,15,0.4)", color: "rgba(215,167,111,0.7)", fontSize: "10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+            {allOpen ? "Collapse all" : "Expand all"}
+          </button>
+        )}
+      </div>
 
       {total === 0 ? (
         <div style={{ marginTop: "40px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215,167,111,0.45)", fontSize: "15px" }}>
           Nothing to show here.
         </div>
-      ) : visible.map((s) => (
-        <div key={s.key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
-            <div style={{ ...subtleMeta, fontSize: "10px", letterSpacing: "0.12em", color: "rgba(215,167,111,0.85)" }}>{s.label}</div>
-            <div style={{ flex: 1, height: "1px", backgroundColor: "rgba(215,167,111,0.15)" }} />
-            <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
+      ) : visible.map((s) => {
+        const isOpen = openSecs.has(s.key);
+        return (
+          <div key={s.key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <button onClick={() => toggleSec(s.key)} style={{
+              display: "flex", alignItems: "center", gap: "8px", width: "100%", textAlign: "left",
+              backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.18)",
+              borderRadius: radius.panelCompact, padding: "8px 10px", cursor: "pointer", fontFamily: "inherit",
+            }}>
+              <span style={{ color: "rgba(215,167,111,0.6)", fontSize: "10px" }}>{isOpen ? "▾" : "▸"}</span>
+              <span style={{ ...subtleMeta, fontSize: "10px", letterSpacing: "0.1em", color: "rgba(215,167,111,0.9)" }}>{s.label}</span>
+              <span style={{ flex: 1 }} />
+              <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
+            </button>
+            {isOpen && s.items.map((it, i) => {
+              const prev = s.items[i - 1];
+              const showTier = !prev || (prev.tier || "common") !== (it.tier || "common");
+              return (
+                <React.Fragment key={it.id}>
+                  {showTier && (
+                    <div style={{ ...accentMeta, fontSize: "8px", letterSpacing: "0.14em", color: tierInfo(it.tier || "common").color, marginTop: i ? "4px" : 0, opacity: 0.8, paddingLeft: "4px" }}>
+                      {tierLabel(it.tier || "common")}
+                    </div>
+                  )}
+                  <CatalogRow item={it} seen={seen.has(it.id)} />
+                </React.Fragment>
+              );
+            })}
           </div>
-          {s.items.map((it, i) => {
-            const prev = s.items[i - 1];
-            const showTier = !prev || (prev.tier || "common") !== (it.tier || "common");
-            return (
-              <React.Fragment key={it.id}>
-                {showTier && (
-                  <div style={{ ...accentMeta, fontSize: "8px", letterSpacing: "0.14em", color: tierInfo(it.tier || "common").color, marginTop: i ? "4px" : 0, opacity: 0.8 }}>
-                    {tierLabel(it.tier || "common")}
-                  </div>
-                )}
-                <CatalogRow item={it} seen={seen.has(it.id)} />
-              </React.Fragment>
-            );
-          })}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -339,6 +459,8 @@ export function CodexEntry({ entry, kind, codex }) {
       {entry.description && (
         <div style={{ fontSize: "13px", color: "rgba(237, 228, 208, 0.88)", lineHeight: "1.5", marginBottom: knowsList.length ? "10px" : 0 }}>{entry.description}</div>
       )}
+
+      {kind === "races" && RACES[entry.id] && <RaceKit raceId={entry.id} />}
 
       {kind === "spells" && entry.acquisition && (
         <div style={{ fontSize: "11px", color: "rgba(215, 167, 111, 0.6)", marginTop: "4px", fontStyle: "italic" }}>Acquired: {entry.acquisition}</div>

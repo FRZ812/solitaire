@@ -79,7 +79,7 @@ export const PASSIVES = [
   { id: "godward",    name: "Godward",      cat: "divine", scope: "combat", type: "stat", key: "drPct",        minTier: "divine",    amount: (n) => 0.18,                 desc: "Shrugs off a fifth of all damage." },
   // Playstyle-anchor divine affixes — each makes a divine piece serve one build.
   { id: "tempest",    name: "Tempest",      cat: "divine", scope: "combat", type: "stat", key: "swiftChance",  minTier: "divine",    amount: (n) => 0.25,                 desc: "A blur of motion — great chance to act again." },
-  { id: "deadeye",    name: "Deadeye",      cat: "divine", scope: "combat", type: "stat", key: "critChance",   minTier: "divine",    amount: (n) => 22,                   desc: "Every shot finds the eye — vast critical chance." },
+  { id: "deadeye",    name: "Deadeye",      cat: "divine", scope: "combat", type: "stat", key: "accuracy",     minTier: "divine",    amount: (n) => 30,                   desc: "Every shot finds the mark — overwhelming accuracy, dodge be damned." },
   { id: "archmage",   name: "Archmage",     cat: "divine", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "divine",  amount: (n) => 3,                    desc: "Bottomless will — restores great resolve each turn." },
   { id: "phantom",    name: "Phantom",      cat: "divine", scope: "combat", type: "stat", key: "dodge",        minTier: "divine",    amount: (n) => 28,                   desc: "Half-real — devastating evasion." },
   { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: (n) => 40,                   desc: "A mountain of vitality." },

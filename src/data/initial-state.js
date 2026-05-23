@@ -33,20 +33,28 @@ export function makeInitialState() {
       name: "Wanderer",
       vitality: 24, vitalityMax: 30,
       resolve: 4, resolveMax: 6,
-      conditions: ["Wet"],
-      bond: "Newly come to the road — your name, your past, and your reasons are still your own to tell.",
+      conditions: [],
+      bond: "Unwritten — your name, your face, and your past are yours to speak into being.",
       attributes: { body: 2, reflex: 3, vigor: 2, mind: 2, wit: 4, presence: 1 },
+      // Race/species — chosen in the limbo interview; the engine then applies the
+      // kit from data/races.js (these defaults are the unformed/back-compat state).
+      race: null, subrace: null,
+      racialAttributeModifiers: {},
+      proficiencyGrowthMult: 1,
+      racialPassives: [],
       needs: { hunger: 60, thirst: 75, sleep: 70 },
       // Learned combat abilities (stored as { id, tier }); Strike + Brace are
-      // always available and not listed here. More are obtained from victories.
-      abilities: [{ id: "power-strike", tier: "common" }],
+      // always available and not listed here. The opening limbo interview grants
+      // any starting abilities; more come from victories and teachers.
+      abilities: [],
       // Use-based proficiencies { id: xp }. Grow through combat; their XP is what
       // raises the governing attributes (attributes don't grow any other way).
       proficiencies: {},
       inventory: {
-        // grimoire-firstflame is a [DEV/TEST] item — equip it to try magic.
-        carried: [{ itemId: "grimoire-firstflame", quantity: 1 }],
-        coins: { copper: 8, silver: 3, gold: 10 }, // [DEV/TEST] bumped so expert training/apprenticeship is easy to try
+        // Empty in limbo — the opening interview grants the starting kit, drawn
+        // from the canonical catalog only (no invented items at creation).
+        carried: [],
+        coins: { copper: 0, silver: 0, gold: 0 },
       },
     },
     time: { day: 3, hour: 13, minute: 30 },
@@ -59,21 +67,16 @@ export function makeInitialState() {
           "wanderer": {
             id: "wanderer", kind: "player",
             name: "Wanderer", race: "human", profession: null,
-            origin: "central",
-            age: "around thirty",
-            attractiveness: "weathered, not unhandsome",
-            appearance: {
-              skin: "weathered tan",
-              hair: "dark brown, cropped travel-short",
-              eyes: "hazel",
-              build: "lean and road-hardened",
-              facial_hair: null,
-              marks: "a small healed scar near the right temple",
-            },
-            base_appearance: "Lean and road-hardened. Weathered tan, dark brown hair cropped short. Hazel eyes. A small old scar near the right temple.",
-            description: "You — newly come to the Mire. Who you are is still being written.",
+            origin: null,
+            age: null,
+            attractiveness: null,
+            // Unset in limbo — the PLAYER authors their own appearance in the
+            // opening interview; the narrator must NOT decide their looks.
+            appearance: null,
+            base_appearance: "Yet unformed — a presence in the grey between-place, with no settled shape until it is named.",
+            description: "You — a soul on the threshold, not yet returned to the world. Who you are is still being spoken.",
             attributes: { body: 2, reflex: 3, vigor: 2, mind: 2, wit: 4, presence: 1 },
-            worn: ["wool-cloak", "linen-tunic", "leather-boots"],
+            worn: [],
             knows: [],
           },
 
@@ -470,6 +473,8 @@ export function makeInitialState() {
           "demonborn": { id: "demonborn", name: "Demon-Blooded", appearance: "A mortal humanoid: tall, broad-shouldered, hot-skinned. Two slow-growing horns at the temples (some hide them under hair); eyes that don't match. The skin too warm to touch in winter.", description: "Mortals spawned of, made by, or descended from the Demon-King's court — people of tainted heritage who live and die as people, scorned and watched. For the true demons of that court, see Demon. Rare in the Vale; less rare in the marches and along Tellmar's eastern trade." },
           "demon":     { id: "demon",     name: "Demon",        appearance: "An abyssal entity whose form will not hold still in the eye — heat, smoke, embers, and wrongness where a body should be; the air itself bends around it. When it wears a human-seeming shape, that shape is a mask.", description: "An entity of the Demon-King's infernal order, an order of being apart from mortals. Its presence alone unsettles, sickens, or awes; it does not age, hunger, or die as the living do. The demon-blooded only descend from such things. Vanishingly rare in the mortal world; its appearance is an event." },
           "wyrm":      { id: "wyrm",      name: "Wyrm",         appearance: "A true dragon — vast, larger than a hall, scaled, winged, ridge-quilled, with molten-coin eyes and a presence that weights the air.", description: "A true wyrm of the Drakeholt — an ancient apex entity older than kingdoms, hoard-keeper and tribute-lord, always aware. A wholly different order of being from the drake-blooded mortals who carry a thin trace of its line." },
+          "vampire":   { id: "vampire",   name: "Vampire",      appearance: "A living corpse of terrible grace — pale, cold, fanged, ageless. The eyes catch light like an animal's; the smile holds too many teeth.", description: "The undying — mortals remade by a blood-curse into something superhuman and damned. Swift, strong, and tireless, they pay for it in sunlight, holy ground, and an endless hunger. Feared and hunted where they are known; most pass unseen among the living." },
+          "lycanthrope": { id: "lycanthrope", name: "Lycanthrope", appearance: "A person who is not only a person — too still, too quick, with a wrongness in the teeth and a glint in the eye. Under the moon, something larger wears the skin.", description: "Shape-cursed folk who carry the beast within — preternaturally strong, fast-healing, keen of sense. Silver wounds them as nothing else does, and the full moon strains their hold on the beast. Shunned and feared where the curse is known." },
         },
         professions: {
           "innkeeper":      { id: "innkeeper",      name: "Innkeeper",      description: "Keeper of an inn or tavern.", common: true },
@@ -526,8 +531,7 @@ export function makeInitialState() {
     created: false, // false until the opening character-creation interview finishes
     beats: [{
       id: "b0", type: "narration",
-      content: "Rain hammers the warped shutters of the Drowned Rat. You shoulder in out of the wet — another stranger washed into the Mire — and the stooped, ink-fingered innkeeper looks you over without quite looking up. \"New face,\" she says. \"Before the Mire decides what to make of you — what do they call you, where do you hail from, and what road brought you to my door?\"",
-      timeStamp: "13:30",
+      content: "There is no floor, yet you are standing. No sky, yet a pale grey light from nowhere at all. You remember nothing — not your name, not your face, not the road that ended here. This is the threshold: the hush between what was and what will be, where a soul must name itself before the world will take it back.\n\nA voice settles around you — everywhere and nowhere at once, patient and very old.\n\n\"Before you step into the Mire and it decides what to make of you, tell me who you are. Begin with your name, and the people and the place you call your own. Take your time — here, there is nothing but the telling.\"",
     }],
     apiHistory: [],
   };
