@@ -12,13 +12,15 @@ import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIV
 import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf } from "../data/abilities.js";
 import { RACES } from "../data/races.js";
 
+// Two kinds of content: "lore" you discover in play, and the full "compendium"
+// catalogs that are always complete. The tabstrip divides them visually.
 const CODEX_TABS = [
-  { key: "characters",  label: "Characters" },
-  { key: "races",       label: "Races" },
-  { key: "professions", label: "Professions" },
-  { key: "items",       label: "Items" },
-  { key: "abilities",   label: "Abilities" },
-  { key: "passives",    label: "Passives" },
+  { key: "characters",  label: "Characters",  group: "lore" },
+  { key: "races",       label: "Races",       group: "lore" },
+  { key: "professions", label: "Professions", group: "lore" },
+  { key: "items",       label: "Items",       group: "compendium" },
+  { key: "abilities",   label: "Abilities",   group: "compendium" },
+  { key: "passives",    label: "Passives",    group: "compendium" },
 ];
 
 // Reusable styles inside this view.
@@ -257,84 +259,100 @@ function CatalogRow({ item, seen }) {
   );
 }
 
-function ItemCatalog({ codex }) {
-  const [type, setType] = useState("all");
-  const [discoveredOnly, setDiscoveredOnly] = useState(false);
-  const [openSecs, setOpenSecs] = useState(() => new Set());
-  const seen = useMemo(() => new Set(Object.keys(codex.items || {})), [codex.items]);
-  const sections = useMemo(() => buildCatalogSections(), []);
+// ===========================================================================
+// SHARED CATALOG SCAFFOLDING — the Items / Abilities / Passives tabs are all the
+// same shape: a filter-chip row (+ optional discovered/known toggle), a count
+// line with expand/collapse-all, then collapsible sections whose rows are grouped
+// by tier with a tier subheader. CatalogShell owns all of that; each catalog just
+// supplies its filtered sections, a tier accessor, and a row renderer.
+// ===========================================================================
 
-  const visible = sections
-    .filter((s) => type === "all" || s.group === type)
-    .map((s) => ({ ...s, items: discoveredOnly ? s.items.filter((it) => seen.has(it.id)) : s.items }))
-    .filter((s) => s.items.length);
-  const total = visible.reduce((n, s) => n + s.items.length, 0);
-  const allKeys = visible.map((s) => s.key);
+const chipBtn = (active) => ({
+  padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
+  borderColor: active ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
+  backgroundColor: active ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
+  color: active ? colors.parchmentLight : "rgba(215,167,111,0.55)",
+  fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+});
+const smallBtn = {
+  padding: "4px 9px", borderRadius: radius.panelCompact, border: "1px solid rgba(215,167,111,0.2)",
+  backgroundColor: "rgba(10,15,15,0.4)", color: "rgba(215,167,111,0.7)", fontSize: "10px",
+  fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+};
+const sectionHeadStyle = {
+  display: "flex", alignItems: "center", gap: "8px", width: "100%", textAlign: "left",
+  backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.18)",
+  borderRadius: radius.panelCompact, padding: "8px 10px", cursor: "pointer", fontFamily: "inherit",
+};
+const plurCat = (n) => (n === 1 ? "category" : "categories");
+
+function FilterChips({ filters, value, onChange }) {
+  return filters.map((f) => (
+    <button key={f.key} onClick={() => onChange(f.key)} style={chipBtn(f.key === value)}>{f.label}</button>
+  ));
+}
+function ToggleChip({ active, label, title, onClick }) {
+  return (
+    <button onClick={onClick} title={title} style={{ ...chipBtn(active), marginLeft: "auto", color: active ? colors.gold : "rgba(215,167,111,0.5)" }}>
+      {active ? "● " : "○ "}{label}
+    </button>
+  );
+}
+function TierSubhead({ tierId, first, suffix }) {
+  return (
+    <div style={{ ...accentMeta, fontSize: "8px", letterSpacing: "0.14em", color: tierInfo(tierId).color, marginTop: first ? 0 : "4px", opacity: 0.8, paddingLeft: "4px" }}>
+      {tierLabel(tierId)}{suffix || ""}
+    </div>
+  );
+}
+const EmptyState = (
+  <div style={{ marginTop: "40px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215,167,111,0.45)", fontSize: "15px" }}>
+    Nothing to show here.
+  </div>
+);
+
+// sections: [{ key, label, color?, items[] }] already filtered by the caller.
+// tierOf(item) → tier id used to sort + group rows; renderRow(item, tierId) → row.
+function CatalogShell({ filters, filter, setFilter, toggle, sections, summary, tierOf, tierSuffix, renderRow, defaultOpen = false }) {
+  const [openSecs, setOpenSecs] = useState(() => (defaultOpen ? new Set(sections.map((s) => s.key)) : new Set()));
+  const total = sections.reduce((n, s) => n + s.items.length, 0);
+  const allKeys = sections.map((s) => s.key);
   const allOpen = allKeys.length > 0 && allKeys.every((k) => openSecs.has(k));
   const toggleSec = (k) => setOpenSecs((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-      {/* content-type filter + discovered toggle */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
-        {TYPE_FILTERS.map((f) => {
-          const active = f.key === type;
-          return (
-            <button key={f.key} onClick={() => setType(f.key)} style={{
-              padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
-              borderColor: active ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
-              backgroundColor: active ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
-              color: active ? colors.parchmentLight : "rgba(215,167,111,0.55)",
-              fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-            }}>{f.label}</button>
-          );
-        })}
-        <button onClick={() => setDiscoveredOnly((v) => !v)} title="Show only items discovered in play" style={{
-          marginLeft: "auto", padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
-          borderColor: discoveredOnly ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
-          backgroundColor: discoveredOnly ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
-          color: discoveredOnly ? colors.gold : "rgba(215,167,111,0.5)",
-          fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-        }}>{discoveredOnly ? "● Discovered" : "○ Discovered"}</button>
+        <FilterChips filters={filters} value={filter} onChange={setFilter} />
+        {toggle}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        <div style={{ ...accentMeta, fontSize: "9px" }}>{total} item{total === 1 ? "" : "s"}{discoveredOnly ? " discovered" : " in catalog"} · {visible.length} categor{visible.length === 1 ? "y" : "ies"}</div>
-        {visible.length > 0 && (
-          <button onClick={() => setOpenSecs(allOpen ? new Set() : new Set(allKeys))} style={{ marginLeft: "auto", padding: "4px 9px", borderRadius: radius.panelCompact, border: "1px solid rgba(215,167,111,0.2)", backgroundColor: "rgba(10,15,15,0.4)", color: "rgba(215,167,111,0.7)", fontSize: "10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+        <div style={{ ...accentMeta, fontSize: "9px" }}>{summary(total, sections.length)}</div>
+        {sections.length > 0 && (
+          <button onClick={() => setOpenSecs(allOpen ? new Set() : new Set(allKeys))} style={{ ...smallBtn, marginLeft: "auto" }}>
             {allOpen ? "Collapse all" : "Expand all"}
           </button>
         )}
       </div>
 
-      {total === 0 ? (
-        <div style={{ marginTop: "40px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215,167,111,0.45)", fontSize: "15px" }}>
-          Nothing to show here.
-        </div>
-      ) : visible.map((s) => {
+      {total === 0 ? EmptyState : sections.map((s) => {
         const isOpen = openSecs.has(s.key);
+        const sorted = s.items.slice().sort((a, b) => (tierOrder(tierOf(a)) - tierOrder(tierOf(b))) || a.name.localeCompare(b.name));
         return (
           <div key={s.key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            <button onClick={() => toggleSec(s.key)} style={{
-              display: "flex", alignItems: "center", gap: "8px", width: "100%", textAlign: "left",
-              backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.18)",
-              borderRadius: radius.panelCompact, padding: "8px 10px", cursor: "pointer", fontFamily: "inherit",
-            }}>
+            <button onClick={() => toggleSec(s.key)} style={sectionHeadStyle}>
               <span style={{ color: "rgba(215,167,111,0.6)", fontSize: "10px" }}>{isOpen ? "▾" : "▸"}</span>
-              <span style={{ ...subtleMeta, fontSize: "10px", letterSpacing: "0.1em", color: "rgba(215,167,111,0.9)" }}>{s.label}</span>
+              <span style={{ ...subtleMeta, fontSize: "10px", letterSpacing: "0.1em", color: s.color || "rgba(215,167,111,0.9)" }}>{s.label}</span>
               <span style={{ flex: 1 }} />
               <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
             </button>
-            {isOpen && s.items.map((it, i) => {
-              const prev = s.items[i - 1];
-              const showTier = !prev || (prev.tier || "common") !== (it.tier || "common");
+            {isOpen && sorted.map((it, i) => {
+              const t = tierOf(it);
+              const showTier = i === 0 || tierOf(sorted[i - 1]) !== t;
               return (
                 <React.Fragment key={it.id}>
-                  {showTier && (
-                    <div style={{ ...accentMeta, fontSize: "8px", letterSpacing: "0.14em", color: tierInfo(it.tier || "common").color, marginTop: i ? "4px" : 0, opacity: 0.8, paddingLeft: "4px" }}>
-                      {tierLabel(it.tier || "common")}
-                    </div>
-                  )}
-                  <CatalogRow item={it} seen={seen.has(it.id)} />
+                  {showTier && <TierSubhead tierId={t} first={i === 0} suffix={tierSuffix} />}
+                  {renderRow(it, t)}
                 </React.Fragment>
               );
             })}
@@ -342,6 +360,28 @@ function ItemCatalog({ codex }) {
         );
       })}
     </div>
+  );
+}
+
+function ItemCatalog({ codex }) {
+  const [type, setType] = useState("all");
+  const [discoveredOnly, setDiscoveredOnly] = useState(false);
+  const seen = useMemo(() => new Set(Object.keys(codex.items || {})), [codex.items]);
+  const allSections = useMemo(() => buildCatalogSections(), []);
+  const sections = allSections
+    .filter((s) => type === "all" || s.group === type)
+    .map((s) => ({ ...s, items: discoveredOnly ? s.items.filter((it) => seen.has(it.id)) : s.items }))
+    .filter((s) => s.items.length);
+
+  return (
+    <CatalogShell
+      filters={TYPE_FILTERS} filter={type} setFilter={setType}
+      toggle={<ToggleChip active={discoveredOnly} label="Discovered" title="Show only items discovered in play" onClick={() => setDiscoveredOnly((v) => !v)} />}
+      sections={sections}
+      summary={(total, cats) => `${total} item${total === 1 ? "" : "s"}${discoveredOnly ? " discovered" : " in catalog"} · ${cats} ${plurCat(cats)}`}
+      tierOf={(it) => it.tier || "common"}
+      renderRow={(it) => <CatalogRow item={it} seen={seen.has(it.id)} />}
+    />
   );
 }
 
@@ -407,7 +447,6 @@ function AbilityRow({ def, known, tier, owned }) {
 function AbilityCatalog({ codex, character }) {
   const [cat, setCat] = useState("all");
   const [knownOnly, setKnownOnly] = useState(false);
-  const [openSecs, setOpenSecs] = useState(() => new Set());
   const known = useMemo(() => new Set([
     ...((character?.abilities) || []).map((a) => (typeof a === "string" ? a : a.id)),
     ...Object.keys(codex.skills || {}),
@@ -427,91 +466,25 @@ function AbilityCatalog({ codex, character }) {
     }
     return m;
   }, [character, codex.skills]);
+  const dispTier = (d) => ownedTier[d.id] || d.minTier || "common";
   const sections = useMemo(() => ABILITY_CATEGORIES.map((c) => ({
-    ...c, items: ABILITY_CATALOG.filter((d) => abilityCategoryOf(d) === c.key).sort((a, b) => a.name.localeCompare(b.name)),
+    ...c, items: ABILITY_CATALOG.filter((d) => abilityCategoryOf(d) === c.key),
   })).filter((s) => s.items.length), []);
-
   const visible = sections
     .filter((s) => cat === "all" || s.key === cat)
     .map((s) => ({ ...s, items: knownOnly ? s.items.filter((d) => known.has(d.id)) : s.items }))
     .filter((s) => s.items.length);
-  const total = visible.reduce((n, s) => n + s.items.length, 0);
-  const allKeys = visible.map((s) => s.key);
-  const allOpen = allKeys.length > 0 && allKeys.every((k) => openSecs.has(k));
-  const toggleSec = (k) => setOpenSecs((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
-
   const FILTERS = [{ key: "all", label: "All" }, ...ABILITY_CATEGORIES.map((c) => ({ key: c.key, label: c.label.split(" ")[0] }))];
 
   return (
-    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
-        {FILTERS.map((f) => {
-          const active = f.key === cat;
-          return (
-            <button key={f.key} onClick={() => setCat(f.key)} style={{
-              padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
-              borderColor: active ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
-              backgroundColor: active ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
-              color: active ? colors.parchmentLight : "rgba(215,167,111,0.55)",
-              fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-            }}>{f.label}</button>
-          );
-        })}
-        <button onClick={() => setKnownOnly((v) => !v)} title="Show only abilities you know" style={{
-          marginLeft: "auto", padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
-          borderColor: knownOnly ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
-          backgroundColor: knownOnly ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
-          color: knownOnly ? colors.gold : "rgba(215,167,111,0.5)",
-          fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-        }}>{knownOnly ? "● Known" : "○ Known"}</button>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        <div style={{ ...accentMeta, fontSize: "9px" }}>{total} {knownOnly ? "known" : "defined"} · {visible.length} categor{visible.length === 1 ? "y" : "ies"}</div>
-        {visible.length > 0 && (
-          <button onClick={() => setOpenSecs(allOpen ? new Set() : new Set(allKeys))} style={{ marginLeft: "auto", padding: "4px 9px", borderRadius: radius.panelCompact, border: "1px solid rgba(215,167,111,0.2)", backgroundColor: "rgba(10,15,15,0.4)", color: "rgba(215,167,111,0.7)", fontSize: "10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-            {allOpen ? "Collapse all" : "Expand all"}
-          </button>
-        )}
-      </div>
-
-      {total === 0 ? (
-        <div style={{ marginTop: "40px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215,167,111,0.45)", fontSize: "15px" }}>Nothing to show here.</div>
-      ) : visible.map((s) => {
-        const isOpen = openSecs.has(s.key);
-        return (
-          <div key={s.key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            <button onClick={() => toggleSec(s.key)} style={{
-              display: "flex", alignItems: "center", gap: "8px", width: "100%", textAlign: "left",
-              backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.18)",
-              borderRadius: radius.panelCompact, padding: "8px 10px", cursor: "pointer", fontFamily: "inherit",
-            }}>
-              <span style={{ color: "rgba(215,167,111,0.6)", fontSize: "10px" }}>{isOpen ? "▾" : "▸"}</span>
-              <span style={{ ...subtleMeta, fontSize: "10px", letterSpacing: "0.1em", color: s.color }}>{s.label}</span>
-              <span style={{ flex: 1 }} />
-              <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
-            </button>
-            {isOpen && (() => {
-              const dispTier = (d) => ownedTier[d.id] || d.minTier || "common";
-              const sorted = s.items.slice().sort((a, b) => (tierOrder(dispTier(a)) - tierOrder(dispTier(b))) || a.name.localeCompare(b.name));
-              return sorted.map((d, i) => {
-                const t = dispTier(d);
-                const showTier = i === 0 || dispTier(sorted[i - 1]) !== t;
-                return (
-                  <React.Fragment key={d.id}>
-                    {showTier && (
-                      <div style={{ ...accentMeta, fontSize: "8px", letterSpacing: "0.14em", color: tierInfo(t).color, marginTop: i ? "4px" : 0, opacity: 0.8, paddingLeft: "4px" }}>
-                        {tierLabel(t)}
-                      </div>
-                    )}
-                    <AbilityRow def={d} known={known.has(d.id)} tier={t} owned={ownedTier[d.id] != null} />
-                  </React.Fragment>
-                );
-              });
-            })()}
-          </div>
-        );
-      })}
-    </div>
+    <CatalogShell
+      filters={FILTERS} filter={cat} setFilter={setCat}
+      toggle={<ToggleChip active={knownOnly} label="Known" title="Show only abilities you know" onClick={() => setKnownOnly((v) => !v)} />}
+      sections={visible}
+      summary={(total, cats) => `${total} ${knownOnly ? "known" : "defined"} · ${cats} ${plurCat(cats)}`}
+      tierOf={dispTier}
+      renderRow={(d, t) => <AbilityRow def={d} known={known.has(d.id)} tier={t} owned={ownedTier[d.id] != null} />}
+    />
   );
 }
 
@@ -577,80 +550,21 @@ function PassiveRow({ def }) {
 
 function PassiveCatalog() {
   const [cat, setCat] = useState("all");
-  const [openSecs, setOpenSecs] = useState(() => new Set(PASSIVE_CATEGORIES.map((c) => c.key)));
   const sections = useMemo(() => PASSIVE_CATEGORIES.map((c) => ({
     ...c, items: PASSIVES.filter((p) => p.cat === c.key),
   })).filter((s) => s.items.length), []);
-
   const visible = sections.filter((s) => cat === "all" || s.key === cat);
-  const total = visible.reduce((n, s) => n + s.items.length, 0);
-  const allKeys = visible.map((s) => s.key);
-  const allOpen = allKeys.length > 0 && allKeys.every((k) => openSecs.has(k));
-  const toggleSec = (k) => setOpenSecs((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const FILTERS = [{ key: "all", label: "All" }, ...PASSIVE_CATEGORIES.map((c) => ({ key: c.key, label: c.short }))];
 
   return (
-    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
-        {FILTERS.map((f) => {
-          const active = f.key === cat;
-          return (
-            <button key={f.key} onClick={() => setCat(f.key)} style={{
-              padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
-              borderColor: active ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
-              backgroundColor: active ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
-              color: active ? colors.parchmentLight : "rgba(215,167,111,0.55)",
-              fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-            }}>{f.label}</button>
-          );
-        })}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        <div style={{ ...accentMeta, fontSize: "9px" }}>{total} affix{total === 1 ? "" : "es"} · {visible.length} categor{visible.length === 1 ? "y" : "ies"} · tap any for flavour & fusion lineage</div>
-        {visible.length > 0 && (
-          <button onClick={() => setOpenSecs(allOpen ? new Set() : new Set(allKeys))} style={{ marginLeft: "auto", padding: "4px 9px", borderRadius: radius.panelCompact, border: "1px solid rgba(215,167,111,0.2)", backgroundColor: "rgba(10,15,15,0.4)", color: "rgba(215,167,111,0.7)", fontSize: "10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-            {allOpen ? "Collapse all" : "Expand all"}
-          </button>
-        )}
-      </div>
-
-      {total === 0 ? (
-        <div style={{ marginTop: "40px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215,167,111,0.45)", fontSize: "15px" }}>Nothing to show here.</div>
-      ) : visible.map((s) => {
-        const isOpen = openSecs.has(s.key);
-        return (
-          <div key={s.key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            <button onClick={() => toggleSec(s.key)} style={{
-              display: "flex", alignItems: "center", gap: "8px", width: "100%", textAlign: "left",
-              backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.18)",
-              borderRadius: radius.panelCompact, padding: "8px 10px", cursor: "pointer", fontFamily: "inherit",
-            }}>
-              <span style={{ color: "rgba(215,167,111,0.6)", fontSize: "10px" }}>{isOpen ? "▾" : "▸"}</span>
-              <span style={{ ...subtleMeta, fontSize: "10px", letterSpacing: "0.1em", color: s.color }}>{s.label}</span>
-              <span style={{ flex: 1 }} />
-              <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
-            </button>
-            {isOpen && (() => {
-              const sorted = s.items.slice().sort((a, b) => (tierOrder(a.minTier || "common") - tierOrder(b.minTier || "common")) || a.name.localeCompare(b.name));
-              return sorted.map((d, i) => {
-                const t = d.minTier || "common";
-                const showTier = i === 0 || (sorted[i - 1].minTier || "common") !== t;
-                return (
-                  <React.Fragment key={d.id}>
-                    {showTier && (
-                      <div style={{ ...accentMeta, fontSize: "8px", letterSpacing: "0.14em", color: tierInfo(t).color, marginTop: i ? "4px" : 0, opacity: 0.8, paddingLeft: "4px" }}>
-                        {tierLabel(t)} floor
-                      </div>
-                    )}
-                    <PassiveRow def={d} />
-                  </React.Fragment>
-                );
-              });
-            })()}
-          </div>
-        );
-      })}
-    </div>
+    <CatalogShell
+      filters={FILTERS} filter={cat} setFilter={setCat}
+      sections={visible}
+      summary={(total, cats) => `${total} affix${total === 1 ? "" : "es"} · ${cats} ${plurCat(cats)} · tap any for detail`}
+      tierOf={(d) => d.minTier || "common"}
+      tierSuffix=" floor"
+      renderRow={(d) => <PassiveRow def={d} />}
+    />
   );
 }
 
@@ -857,27 +771,31 @@ export function CodexView({ state, onClose }) {
       </div>
 
       <div className="tabstrip" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
-        {CODEX_TABS.map((tab) => {
+        {CODEX_TABS.map((tab, i) => {
           const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
+          const divide = i > 0 && CODEX_TABS[i - 1].group !== tab.group; // lore | compendium
           return (
-            <button
-              key={tab.key} onClick={() => setActiveTab(tab.key)}
-              style={{
-                padding: "8px 14px",
-                borderRadius: radius.panelCompact,
-                border: "1px solid",
-                borderColor: active ? `rgba(215, 167, 111, 0.45)` : `rgba(215, 167, 111, 0.08)`,
-                backgroundColor: active ? "rgba(215, 167, 111, 0.12)" : "rgba(10, 15, 15, 0.4)",
-                color: active ? colors.parchmentLight : "rgba(215, 167, 111, 0.55)",
-                textShadow: active ? "0 0 8px rgba(215, 167, 111, 0.4)" : "none",
-                fontSize: "12px", fontWeight: 700,
-                whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0,
-                transition: "all 0.2s",
-              }}
-            >
-              {tab.label}{count > 0 ? ` · ${count}` : ""}
-            </button>
+            <React.Fragment key={tab.key}>
+              {divide && <div aria-hidden style={{ alignSelf: "stretch", width: "1px", backgroundColor: "rgba(215, 167, 111, 0.2)", margin: "3px 5px", flexShrink: 0 }} />}
+              <button
+                onClick={() => setActiveTab(tab.key)}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: radius.panelCompact,
+                  border: "1px solid",
+                  borderColor: active ? `rgba(215, 167, 111, 0.45)` : `rgba(215, 167, 111, 0.08)`,
+                  backgroundColor: active ? "rgba(215, 167, 111, 0.12)" : "rgba(10, 15, 15, 0.4)",
+                  color: active ? colors.parchmentLight : "rgba(215, 167, 111, 0.55)",
+                  textShadow: active ? "0 0 8px rgba(215, 167, 111, 0.4)" : "none",
+                  fontSize: "12px", fontWeight: 700,
+                  whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0,
+                  transition: "all 0.2s",
+                }}
+              >
+                {tab.label}{count > 0 ? ` · ${count}` : ""}
+              </button>
+            </React.Fragment>
           );
         })}
       </div>
