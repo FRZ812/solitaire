@@ -39,7 +39,8 @@ function canRefillWater(stateLike, x, y) {
 export function applyBeat(state, beat, options = {}) {
   const newTime = advanceTime(state.time, beat.minutes_passed || 0);
   const newBeats = [...state.beats];
-  newBeats.push({ id: `t${Date.now()}`, type: "timestamp", content: formatTime(newTime) });
+  // In limbo (pre-creation) the clock is frozen and meaningless — don't stamp it.
+  if (state.created !== false) newBeats.push({ id: `t${Date.now()}`, type: "timestamp", content: formatTime(newTime) });
 
   if (options.travelTo) {
     newBeats.push({
