@@ -10,7 +10,7 @@ import { deriveCombatStats, itemCombatStats, itemRequirement } from "../engine/c
 import { EQUIPPABLE } from "../engine/inventory.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
-import { passiveLabel, isFusionRune } from "../data/passives.js";
+import { passiveLabel, passiveEffectText, passiveDef, isFusionRune } from "../data/passives.js";
 import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
 import { useEffectChips } from "../data/goods.js";
 import { freshnessLabel, perishDescriptor } from "../engine/spoilage.js";
@@ -78,6 +78,34 @@ function AbilityChip({ name, tier }) {
       fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: radius.pill,
       color: c, border: `1px solid ${c}`, backgroundColor: `${c}18`,
     }}>{name}</span>
+  );
+}
+
+// Tier-coloured passive (affix) pill. Tap to reveal exactly what it does and by
+// how much at this item's grade — the magnitude is otherwise opaque on the chip.
+function PassiveChip({ id, tier }) {
+  const [open, setOpen] = useState(false);
+  const c = tierColor(tier);
+  const effect = passiveEffectText(id, tier);
+  const flavour = passiveDef(id)?.desc;
+  return (
+    <div style={{ width: open ? "100%" : "auto" }}>
+      <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }} title={effect}
+        style={{
+          fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: radius.pill,
+          color: c, border: `1px solid ${c}`, cursor: "pointer",
+          display: "inline-flex", alignItems: "center", gap: "4px",
+        }}>
+        {passiveLabel(id, tier)}
+        {effect && <span style={{ opacity: 0.65, fontSize: "9px" }}>{open ? "▾" : "ⓘ"}</span>}
+      </span>
+      {open && effect && (
+        <div style={{ margin: "5px 2px 2px", lineHeight: 1.45 }}>
+          <div style={{ fontSize: "11px", fontWeight: 600, color: c }}>{effect}</div>
+          {flavour && <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", marginTop: "2px" }}>{flavour}</div>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -160,12 +188,10 @@ function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUne
 
         {(item.passives && item.passives.length > 0) && (
           <div>
-            <div style={{ ...metaStyle, fontSize: "8px", color: colors.gold, marginBottom: "5px" }}>Passives</div>
+            <div style={{ ...metaStyle, fontSize: "8px", color: colors.gold, marginBottom: "5px" }}>Passives <span style={{ color: colors.parchmentMuted, fontWeight: 400 }}>· tap for detail</span></div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
               {item.passives.map((p, i) => (
-                <span key={i} style={{ fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: radius.pill, color: tierColor(p.tier), border: `1px solid ${tierColor(p.tier)}` }}>
-                  {passiveLabel(p.id, p.tier)}
-                </span>
+                <PassiveChip key={i} id={p.id} tier={p.tier} />
               ))}
             </div>
           </div>

@@ -8,7 +8,7 @@ import { itemTemplate } from "../data/catalog.js";
 import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
 import { tier as tierInfo, tierLabel, tierOrder } from "../data/tiers.js";
 import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
-import { passiveLabel, passiveDef, isFusionRune } from "../data/passives.js";
+import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIVES, FUSIONS, RUNES, isFusionRune } from "../data/passives.js";
 import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf } from "../data/abilities.js";
 import { RACES } from "../data/races.js";
 
@@ -18,6 +18,7 @@ const CODEX_TABS = [
   { key: "professions", label: "Professions" },
   { key: "items",       label: "Items" },
   { key: "abilities",   label: "Abilities" },
+  { key: "passives",    label: "Passives" },
 ];
 
 // Reusable styles inside this view.
@@ -138,17 +139,23 @@ function EffectChip({ kind, id, tier }) {
   const [open, setOpen] = useState(false);
   const def = kind === "ability" ? getAbilityDef(id) : passiveDef(id);
   const label = kind === "ability" ? (def?.name || id) : (passiveLabel(id, tier) || id);
-  const desc = def?.desc || "";
+  // Abilities reveal their flavour; passives reveal the EXACT effect first, then flavour.
+  const effect = kind === "ability" ? "" : passiveEffectText(id, tier);
+  const flavour = def?.desc || "";
+  const hasDetail = !!(effect || flavour);
   const accent = kind === "ability" ? "127,199,224" : "176,114,230";
   return (
     <>
-      <span onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }} title={desc}
+      <span onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }} title={effect || flavour}
         style={{ fontSize: "8px", padding: "1px 5px", borderRadius: "5px", cursor: "pointer",
           backgroundColor: `rgba(${accent},0.12)`, color: `rgba(${accent},0.95)`, border: `1px solid rgba(${accent},0.3)` }}>
-        {label}{desc ? <span style={{ opacity: 0.55, marginLeft: "3px", fontSize: "8px" }}>{open ? "▾" : "ⓘ"}</span> : null}
+        {label}{hasDetail ? <span style={{ opacity: 0.55, marginLeft: "3px", fontSize: "8px" }}>{open ? "▾" : "ⓘ"}</span> : null}
       </span>
-      {open && desc && (
-        <span style={{ flexBasis: "100%", width: "100%", fontSize: "9px", color: "rgba(237,228,208,0.62)", lineHeight: 1.4, margin: "1px 0 2px 3px" }}>{desc}</span>
+      {open && hasDetail && (
+        <span style={{ flexBasis: "100%", width: "100%", fontSize: "9px", color: "rgba(237,228,208,0.62)", lineHeight: 1.4, margin: "1px 0 2px 3px" }}>
+          {effect && <span style={{ color: `rgba(${accent},0.95)`, fontWeight: 600 }}>{effect}</span>}
+          {effect && flavour ? " — " : ""}{flavour}
+        </span>
       )}
     </>
   );
@@ -495,6 +502,130 @@ function AbilityCatalog({ codex, character }) {
   );
 }
 
+// ===========================================================================
+// PASSIVE CATALOG — every affix the game can roll or forge, grouped by role, with
+// its EXACT effect across its whole grade range (tier floor → divine), its tier
+// floor, scope, and fusion lineage. Built for review/audit: no chip is opaque,
+// no number is guessed at. Mirrors the item & ability catalogs (collapsible).
+// ===========================================================================
+
+const PASSIVE_CATEGORIES = [
+  { key: "offence",  label: "Offence",          short: "Offence",  color: "#e0a3a3" },
+  { key: "defence",  label: "Defence",          short: "Defence",  color: "#9fc7e0" },
+  { key: "sustain",  label: "Sustain",          short: "Sustain",  color: "#a7f3d0" },
+  { key: "tempo",    label: "Tempo & Action",   short: "Tempo",    color: "#e6c878" },
+  { key: "resource", label: "Resource",         short: "Resource", color: "#c4a6f0" },
+  { key: "control",  label: "Control",          short: "Control",  color: "#86d27a" },
+  { key: "power",    label: "Legendary Powers",  short: "Powers",   color: "#f5d76e" },
+  { key: "divine",   label: "Divine Powers",     short: "Divine",   color: "#fbf5e3" },
+  { key: "fusion",   label: "Fusion (Forged)",   short: "Fusion",   color: "#c79be0" },
+  { key: "world",    label: "World & Travel",     short: "World",    color: "#8fd0c0" },
+];
+const PASSIVE_CAT_COLOR = Object.fromEntries(PASSIVE_CATEGORIES.map((c) => [c.key, c.color]));
+
+// Fusion lineage of an affix: forged-from recipe, or what it can be forged into.
+function fusionNote(id) {
+  const result = FUSIONS.find((f) => f.result === id);
+  if (result) {
+    const a = passiveDef(result.a)?.name || result.a;
+    const b = passiveDef(result.b)?.name || result.b;
+    const rune = RUNES[result.rune]?.name || result.rune;
+    return `Forged from ${a} + ${b} + ${rune}.`;
+  }
+  const parts = FUSIONS.filter((f) => f.a === id || f.b === id).map((f) => {
+    const other = passiveDef(f.a === id ? f.b : f.a)?.name || (f.a === id ? f.b : f.a);
+    return `${passiveDef(f.result)?.name || f.result} (with ${other})`;
+  });
+  return parts.length ? `Fuses into ${parts.join("; ")}.` : null;
+}
+
+function PassiveRow({ def }) {
+  const [open, setOpen] = useState(false);
+  const color = PASSIVE_CAT_COLOR[def.cat] || colors.parchmentLight;
+  const effect = passiveEffectRange(def.id);
+  const fnote = fusionNote(def.id);
+  return (
+    <div onClick={() => setOpen((o) => !o)} style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: "1px solid rgba(215,167,111,0.16)", display: "flex", flexDirection: "column", gap: "3px", cursor: "pointer" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+        <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color }}>
+          <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span>{def.name}
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+          {def.noRoll && <span title="Forged only — never drops as loot" style={{ fontSize: "8px", fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", padding: "1px 6px", borderRadius: "6px", color: "#c79be0", border: "1px solid #c79be055", backgroundColor: "#c79be014" }}>Forged</span>}
+          <TierChip tierId={def.minTier} min />
+        </div>
+      </div>
+      {effect && <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.78)", lineHeight: 1.4 }}>{effect}</div>}
+      <div style={{ ...accentMeta, fontSize: "8px" }}>{def.scope === "world" ? "Exploration" : "Combat"} · {def.type}</div>
+      {open && def.desc && <div style={{ fontSize: "10px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", lineHeight: 1.45, marginTop: "2px" }}>{def.desc}</div>}
+      {open && fnote && <div style={{ fontSize: "10px", color: "#c79be0", lineHeight: 1.4 }}>{fnote}</div>}
+    </div>
+  );
+}
+
+function PassiveCatalog() {
+  const [cat, setCat] = useState("all");
+  const [openSecs, setOpenSecs] = useState(() => new Set(PASSIVE_CATEGORIES.map((c) => c.key)));
+  const sections = useMemo(() => PASSIVE_CATEGORIES.map((c) => ({
+    ...c, items: PASSIVES.filter((p) => p.cat === c.key),
+  })).filter((s) => s.items.length), []);
+
+  const visible = sections.filter((s) => cat === "all" || s.key === cat);
+  const total = visible.reduce((n, s) => n + s.items.length, 0);
+  const allKeys = visible.map((s) => s.key);
+  const allOpen = allKeys.length > 0 && allKeys.every((k) => openSecs.has(k));
+  const toggleSec = (k) => setOpenSecs((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const FILTERS = [{ key: "all", label: "All" }, ...PASSIVE_CATEGORIES.map((c) => ({ key: c.key, label: c.short }))];
+
+  return (
+    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+        {FILTERS.map((f) => {
+          const active = f.key === cat;
+          return (
+            <button key={f.key} onClick={() => setCat(f.key)} style={{
+              padding: "5px 10px", borderRadius: radius.panelCompact, border: "1px solid",
+              borderColor: active ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.1)",
+              backgroundColor: active ? "rgba(215,167,111,0.14)" : "rgba(10,15,15,0.4)",
+              color: active ? colors.parchmentLight : "rgba(215,167,111,0.55)",
+              fontSize: "11px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+            }}>{f.label}</button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ ...accentMeta, fontSize: "9px" }}>{total} affix{total === 1 ? "" : "es"} · {visible.length} categor{visible.length === 1 ? "y" : "ies"} · tap any for flavour & fusion lineage</div>
+        {visible.length > 0 && (
+          <button onClick={() => setOpenSecs(allOpen ? new Set() : new Set(allKeys))} style={{ marginLeft: "auto", padding: "4px 9px", borderRadius: radius.panelCompact, border: "1px solid rgba(215,167,111,0.2)", backgroundColor: "rgba(10,15,15,0.4)", color: "rgba(215,167,111,0.7)", fontSize: "10px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+            {allOpen ? "Collapse all" : "Expand all"}
+          </button>
+        )}
+      </div>
+
+      {total === 0 ? (
+        <div style={{ marginTop: "40px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215,167,111,0.45)", fontSize: "15px" }}>Nothing to show here.</div>
+      ) : visible.map((s) => {
+        const isOpen = openSecs.has(s.key);
+        return (
+          <div key={s.key} style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <button onClick={() => toggleSec(s.key)} style={{
+              display: "flex", alignItems: "center", gap: "8px", width: "100%", textAlign: "left",
+              backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.18)",
+              borderRadius: radius.panelCompact, padding: "8px 10px", cursor: "pointer", fontFamily: "inherit",
+            }}>
+              <span style={{ color: "rgba(215,167,111,0.6)", fontSize: "10px" }}>{isOpen ? "▾" : "▸"}</span>
+              <span style={{ ...subtleMeta, fontSize: "10px", letterSpacing: "0.1em", color: s.color }}>{s.label}</span>
+              <span style={{ flex: 1 }} />
+              <span style={{ ...accentMeta, fontSize: "8px" }}>{s.items.length}</span>
+            </button>
+            {isOpen && s.items.map((d) => <PassiveRow key={d.id} def={d} />)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function CodexEntry({ entry, kind, codex }) {
   const [open, setOpen] = useState(false);
   const wornNames = (kind === "characters" && entry.worn?.length)
@@ -699,7 +830,7 @@ export function CodexView({ state, onClose }) {
 
       <div className="tabstrip" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
         {CODEX_TABS.map((tab) => {
-          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : Object.keys(codex[tab.key] || {}).length;
+          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
           return (
             <button
@@ -728,6 +859,8 @@ export function CodexView({ state, onClose }) {
           <ItemCatalog codex={codex} />
         ) : activeTab === "abilities" ? (
           <AbilityCatalog codex={codex} character={state.character} />
+        ) : activeTab === "passives" ? (
+          <PassiveCatalog />
         ) : entries.length === 0 ? (
           <div style={{ marginTop: "80px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215, 167, 111, 0.45)", fontSize: "16px", lineHeight: "1.6", padding: "0 24px" }}>
             Nothing recorded here yet.<br />
