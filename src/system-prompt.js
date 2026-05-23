@@ -267,7 +267,9 @@ The player CANNOT cast spells until they have explicitly acquired magic via a na
 - Master's teaching — apprenticing to a sorcerer
 - Bloodline or artifact — latent ability revealed via lineage or object
 
-If the player tries to cast something they haven't acquired, narrate the lack — nothing happens, or they feel a flicker of nothing. When acquired, add the spell to discoveries.spells.
+If the player tries to cast something they haven't acquired, narrate the lack — nothing happens, or they feel a flicker of nothing.
+
+ABILITIES & SPELLS ARE FROM A DEFINED LIST — do NOT invent their effects. Every combat technique or spell the player gains must be a CANONICAL ability id from the engine's library (each carries its OWN defined damage, condition, cost, and cooldown — the engine applies the numbers, not you). When the player learns a technique or acquires a spell, grant it via discoveries.skills using a real ability id (e.g. power-strike, aimed-shot, firebolt, frost-nova, hex, smite); for magic, also add a discoveries.spells lore entry. NEVER award an ability/spell whose mechanical effect you invented — pick the closest defined ability. Racial/innate powers (a drake's breath, a vampire's blood-siphon) are granted by the RACE, never learned.
 
 COIN ECONOMY
 1sp = 10cp · 1gp = 10sp = 100cp · Day laborer earns ~1sp/day.

@@ -105,11 +105,11 @@ export const RACES = {
     id: "vampire", name: "Vampire", magic: "learned", social: "feared",
     attributeModifiers: { body: 3, reflex: 2, presence: 1 },
     racialPassives: [{ id: "vampiric", tier: "rare" }, { id: "renewing", tier: "rare" }, { id: "tireless", tier: "rare" }],
-    innateAbilities: [{ id: "crimson-bite", tier: "common" }],
+    innateAbilities: [{ id: "blood-siphon", tier: "common" }],
     traits: ["Naturally superhuman — swift, strong, undying.", "Night-sighted; does not age."],
     flaws: ["Burns in sunlight and recoils from holy power.", "Hungers for blood — must feed, or weaken."],
     subraces: {
-      nosferatu: { name: "Nosferatu Bloodline", attributeModifiers: { body: 2, vigor: 1 }, racialPassives: [{ id: "stoneskin", tier: "rare" }, { id: "savage", tier: "rare" }], traits: ["The warrior bloodline — brutally strong and hard to put down.", "Imposing, yet still passes among the living."], flaws: ["Ravenous — the blood-hunger bites harder and sooner."] },
+      nosferatu: { name: "Nosferatu Bloodline", attributeModifiers: { body: 2, vigor: 1 }, racialPassives: [{ id: "stoneskin", tier: "rare" }, { id: "savage", tier: "rare" }], traits: ["The warrior bloodline — brutally strong and hard to put down."], flaws: ["Ravenous — the blood-hunger bites harder and sooner."] },
       patrician: { name: "Patrician Bloodline", attributeModifiers: { presence: 2, wit: 2, body: -1 }, racialPassives: [{ id: "fortunate", tier: "rare" }, { id: "aegis", tier: "rare" }], traits: ["Elegant, charming, and cunning — moves through courts and crowds unseen for what they are.", "A manipulator's bloodline; strongest away from open battle, weaker within it."], flaws: ["No warrior — falters in a straight fight against their own kin."] },
     },
   },
