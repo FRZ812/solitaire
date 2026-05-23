@@ -71,7 +71,6 @@ export const PASSIVES = [
   // ---------- SUSTAIN (trigger) — tuned low; lifesteal is capped in-engine ----------
   { id: "vampiric",   name: "Vampiric",     cat: "sustain", scope: "combat", type: "trigger", key: "lifesteal", minTier: "rare",     amount: (n) => 3 + n,                desc: "Heals for a small share of damage dealt." },
   { id: "renewing",   name: "Renewing",     cat: "sustain", scope: "combat", type: "trigger", key: "turnRegen", minTier: "epic",     amount: (n) => 0.04 + n * 0.008, desc: "Knits a share of your wounds each turn — scales with your vitality." },
-  { id: "thorned",    name: "Thornmail",    cat: "sustain", scope: "combat", type: "trigger", key: "thorns",    minTier: "rare",      amount: (n) => 6 + n * 3,            desc: "Reflects a share of damage taken." },
 
   // ---------- RESOURCE / TEMPO (resolve, initiative, action economy) ----------
   { id: "tireless",   name: "Fleet-Footed", cat: "tempo", scope: "combat", type: "stat", key: "speed",       minTier: "uncommon",  amount: (n) => 1 + Math.floor(n / 2), desc: "Acts sooner — raises initiative." },
@@ -79,8 +78,7 @@ export const PASSIVES = [
   { id: "clearmind",  name: "Clear Mind",   cat: "resource", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "epic",  amount: (n) => 1,                    desc: "Recovers resolve each turn (sustains casting)." },
 
   // ---------- LEGENDARY+ POWERS — build-defining ----------
-  { id: "colossus",   name: "Colossus",     cat: "power", scope: "combat", type: "stat", key: "maxHealth",     minTier: "legendary", amount: (n) => geo(8, n),            desc: "Vastly increases maximum health." },
-  { id: "echo",       name: "Echo",         cat: "tempo", scope: "combat", type: "stat", key: "extraActions", minTier: "legendary", amount: () => 1, desc: "Begin each turn with an extra action." },
+  { id: "colossus",   name: "Colossus",     cat: "power", scope: "combat", type: "stat", key: "maxHealth",     minTier: "legendary", amount: (n) => geo(14, n),           desc: "Vastly increases maximum health." },
   { id: "sunder",     name: "Sundering",    cat: "power", scope: "combat", type: "stat", key: "penetration",   minTier: "legendary", amount: (n) => geo(2.7, n),          desc: "Cleaves through most armour (scales with grade)." },
   { id: "bloodthirst",name: "Bloodthirst",  cat: "power", scope: "combat", type: "trigger", key: "lifesteal",  minTier: "legendary", amount: (n) => 6 + n,                desc: "Heals for a large share of damage dealt (capped)." },
 
@@ -93,7 +91,7 @@ export const PASSIVES = [
   { id: "deadeye",    name: "Deadeye",      cat: "divine", scope: "combat", type: "stat", key: "accuracy",     minTier: "divine",    amount: (n) => 30,                   desc: "Every shot finds the mark — overwhelming accuracy, dodge be damned." },
   { id: "archmage",   name: "Archmage",     cat: "divine", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "divine",  amount: (n) => 3,                    desc: "Bottomless will — restores great resolve each turn." },
   { id: "phantom",    name: "Phantom",      cat: "divine", scope: "combat", type: "stat", key: "dodge",        minTier: "divine",    amount: (n) => 28,                   desc: "Half-real — devastating evasion." },
-  { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: () => geo(10, 7),            desc: "A mountain of vitality." },
+  { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: () => geo(20, 7),            desc: "A mountain of vitality." },
 
   // ---------- TEMPO (action economy) — the swift build, capped at +3 ----------
   // extraActions grants generic ACTION POINTS the bearer spends on anything; with
@@ -123,19 +121,16 @@ export const PASSIVES = [
   { id: "bastion",    name: "Bastion",      cat: "defence", scope: "combat", type: "stat",    key: "fortify",        minTier: "epic",      amount: (n) => 0.05 + n * 0.02,      desc: "Reduces damage sharply while badly wounded." },
   { id: "evasive",    name: "Evasive",      cat: "defence", scope: "combat", type: "proc",    hook: "onDodge", apply: { kind: "buff", status: "dodgeStack", duration: 2 }, chance: 1, minTier: "rare", amount: (n) => 3 + n, desc: "Each dodge stacks more dodge (snowballing evasion)." },
   { id: "lifeward",   name: "Lifeward",     cat: "defence", scope: "combat", type: "proc",    hook: "lowHealth", apply: { kind: "shield", pctMax: true }, threshold: 0.35, chance: 1, minTier: "epic", amount: (n) => 0.12 + n * 0.02, desc: "Bursts a shield scaled to your vitality when badly wounded (once per fight)." },
+  { id: "thorned",    name: "Thornmail",    cat: "defence", scope: "combat", type: "trigger", key: "thorns",         minTier: "rare",      amount: (n) => 6 + n * 3,            desc: "Reflects a share of damage taken back at the attacker." },
   { id: "aegis-eternal", name: "Aegis Eternal", cat: "divine", scope: "combat", type: "trigger", key: "invulnCharges", minTier: "divine", amount: () => 1, desc: "When near death, becomes briefly invulnerable (limited charges)." },
 
   // ---------- EXPANSION — fills tier/role gaps; %-based or geo-scaled so each
   //            stays relevant at every grade (slow/shatter/cap are new mechanics) ----------
-  { id: "sanguine",   name: "Sanguine",     cat: "sustain", scope: "combat", type: "trigger", key: "lifesteal", minTier: "epic",      amount: (n) => 4 + n,                desc: "Heals for a share of damage dealt — slots between Vampiric and Bloodthirst." },
   { id: "feast",      name: "Feast",        cat: "sustain", scope: "combat", type: "proc", hook: "onKill", apply: { kind: "refund", heal: true, pctMax: true }, chance: 1, minTier: "rare", amount: (n) => 0.05 + n * 0.01, desc: "Each kill knits back a share of your max health." },
   { id: "reprieve",   name: "Reprieve",     cat: "sustain", scope: "combat", type: "proc", hook: "lowHealth", apply: { kind: "refund", heal: true, pctMax: true }, threshold: 0.35, chance: 1, minTier: "epic", amount: (n) => 0.15 + n * 0.02, desc: "When badly wounded, surge back a chunk of max health (once per fight)." },
   { id: "ravage",     name: "Ravage",       cat: "offence", scope: "combat", type: "proc", hook: "onHit", cond: "targetDot", apply: { kind: "bonusHit" }, chance: 1, minTier: "epic", amount: (n) => geo(2, n), desc: "Tears extra deep into foes already bleeding, poisoned, or burning." },
-  { id: "ruinous",    name: "Ruinous",      cat: "power", scope: "combat", type: "stat", key: "damageMult", minTier: "legendary", amount: (n) => 0.12 + n * 0.02, desc: "Greatly increases all damage — slots between Brutal and Worldbreaker." },
-  { id: "resilient",  name: "Resilient",    cat: "defence", scope: "combat", type: "stat", key: "drPct", minTier: "epic", amount: (n) => 0.05 + n * 0.01, desc: "Reduces all damage taken by a percentage — slots between Stoneskin and Godward." },
   { id: "stonewall",  name: "Stonewall",    cat: "defence", scope: "combat", type: "stat", key: "damageCap", minTier: "legendary", amount: () => 0.33, desc: "No single blow may take more than a third of your max health — burst can't one-shot you." },
   { id: "unbowed",    name: "Unbowed",      cat: "defence", scope: "combat", type: "stat", key: "controlResist", minTier: "legendary", amount: (n) => 0.2 + n * 0.04, desc: "A growing chance to shrug off stuns and slows." },
-  { id: "frenzy",     name: "Frenzy",       cat: "tempo", scope: "combat", type: "stat", key: "swiftChance", minTier: "legendary", amount: (n) => 0.08 + n * 0.02, desc: "Chance each turn to act again — slots between Swift and Tempest." },
   { id: "channeler",  name: "Channeler",    cat: "resource", scope: "combat", type: "proc", hook: "onCrit", apply: { kind: "refund", resolve: true }, chance: 1, minTier: "epic", amount: (n) => 1 + Math.floor(n / 2), desc: "Critical hits restore resolve — sustains a caster's burst." },
   { id: "hobble",     name: "Hobble",       cat: "control", scope: "combat", type: "proc", hook: "onHit", apply: { kind: "status", status: "slow", duration: 2 }, chance: 0.4, minTier: "rare", amount: () => 1, desc: "Chance on hit to slow a foe — they act later and lose their act-again." },
   { id: "shatterblow",name: "Shatterblow",  cat: "control", scope: "combat", type: "proc", hook: "onHit", apply: { kind: "status", status: "shatter", duration: 2 }, chance: 0.5, minTier: "epic", amount: (n) => geo(2, n), desc: "Chance on hit to sunder a foe's armour for a few turns." },
