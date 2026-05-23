@@ -69,8 +69,8 @@ export const PASSIVES = [
   { id: "honed",      name: "Honed",        cat: "offence", scope: "combat", type: "stat", key: "damageFlat",  minTier: "common",    amount: (n) => geo(1.5, n),          desc: "Adds flat weapon damage (scales with grade)." },
   { id: "brutal",     name: "Brutal",       cat: "offence", scope: "combat", type: "stat", key: "damageMult",  minTier: "uncommon",  amount: (n) => 0.05 + n * 0.025,     desc: "Increases weapon damage by a percentage." },
   { id: "precise",    name: "Precise",      cat: "offence", scope: "combat", type: "stat", key: "accuracy",    minTier: "common",    amount: (n) => 2 + n,                desc: "Improves accuracy." },
-  { id: "keen-edge",  name: "Keen Edge",    cat: "offence", scope: "combat", type: "stat", key: "critChance",  minTier: "uncommon",  amount: (n) => 3 + n * 1.5,          desc: "Raises critical chance." },
-  { id: "savage",     name: "Savage",       cat: "offence", scope: "combat", type: "stat", key: "critMult",    minTier: "rare",      amount: (n) => 0.1 + n * 0.04,       desc: "Increases critical damage." },
+  { id: "keen-edge",  name: "Keen Edge",    cat: "offence", scope: "combat", type: "stat", key: "critChance",  minTier: "uncommon",  amount: (n) => 5 + n * 2.5,          desc: "Raises critical chance sharply." },
+  { id: "savage",     name: "Savage",       cat: "offence", scope: "combat", type: "stat", key: "critMult",    minTier: "rare",      amount: (n) => 0.15 + n * 0.07,      desc: "Greatly increases critical damage." },
   { id: "piercing",   name: "Piercing",     cat: "offence", scope: "combat", type: "stat", key: "penetration", minTier: "uncommon",  amount: (n) => geo(1.2, n),          desc: "Adds armour penetration (scales with grade)." },
 
   // ---------- DEFENCE (stat) ----------
@@ -137,7 +137,7 @@ export const PASSIVES = [
   // ---------- CONTROL (proc) — chill, curse, stun ----------
   { id: "frostbrand", name: "Frostbrand",   cat: "control", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "chill", duration: 2 }, chance: 0.4, minTier: "rare", amount: (n) => 2 + n, desc: "Chance on hit to chill (saps accuracy)." },
   { id: "cursed",     name: "Cursed",       cat: "control", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "curse", duration: 2 }, chance: 0.3, minTier: "rare", amount: (n) => 5 + n * 2, desc: "Chance on hit to curse (amplifies damage taken)." },
-  { id: "silencing",  name: "Silencing",    cat: "control", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "silence", duration: 2 }, chance: 0.4, minTier: "epic", amount: (n) => 1, desc: "Chance on hit to SILENCE — the foe can't use abilities for a turn or two, only flail with basic attacks (assassin's gift; shuts down a spammer)." },
+  { id: "silencing",  name: "Silencing",    cat: "control", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "silence", duration: 2 }, chance: 0.4, minTier: "epic", amount: (n) => 1, desc: "Chance on hit to silence the foe — it can use no abilities, only basic attacks, for a turn or two." },
   { id: "hemorrhage", name: "Hemorrhage",   cat: "offence", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "bleed", pctMax: true, duration: 3 }, chance: 1, minTier: "epic", amount: (n) => 0.012 + n * 0.004, desc: "Every hit opens a wound that bleeds a SHARE OF THE FOE'S MAX HEALTH each turn — the bane of huge-pool monsters that flat damage can't dent." },
   { id: "concussive", name: "Concussive",   cat: "control", scope: "combat", type: "proc",  hook: "onCrit", apply: { kind: "status", status: "stun", duration: 1 }, chance: 0.5, minTier: "epic", amount: () => 1, desc: "Critical hits may stun." },
 
@@ -283,6 +283,7 @@ const STATUS_EFFECT = {
   chill:  (n, d) => `chill the foe (saps ${n} accuracy for ${d} turn${plur(d)})`,
   curse:  (n, d) => `curse the foe (+${n}% damage they take for ${d} turn${plur(d)})`,
   stun:   (n, d) => `stun the foe (skips ${d} turn${plur(d)})`,
+  silence:(n, d) => `silence the foe (no abilities — only basic attacks — for ${d} turn${plur(d)})`,
   slow:   (n, d) => `slow the foe (acts later, no extra actions, ${d} turn${plur(d)})`,
   shatter:(n, d) => `shatter the foe's armour (−${n} armour for ${d} turn${plur(d)})`,
   rally:  (n, d) => `gain rally (+${n}% damage dealt for ${d} turn${plur(d)})`,
