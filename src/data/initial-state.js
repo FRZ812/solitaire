@@ -206,7 +206,7 @@ export function makeInitialState() {
           },
           "great-wyrm": {
             id: "great-wyrm", kind: "npc",
-            name: "Vyrnholt, the Great Wyrm", race: "wyrm", profession: "wyrm",
+            name: "Vyrnholt, the Great Wyrm", race: "wyrm", profession: null,
             age: "older than every kingdom",
             attractiveness: "magnificent; terrible",
             appearance: {
@@ -218,7 +218,7 @@ export function makeInitialState() {
               marks: "an old lance-scar across the brow; gold-leaf melted into the right foreclaws",
             },
             base_appearance: "Longer than a wagon-train. Smoke-black scale. Gold slit eyes. A lance-scar across the brow. Gold leaf melted into the right foreclaws.",
-            description: "The great wyrm of Drakespire — a TRUE dragon, the Vyrgun's lord and the Drakeholt's oldest authority, NOT one of the diluted drake-blooded who merely claim his line. Wakes seldom; is always aware. Tribute climbs the road in his name.",
+            description: "The great wyrm of Drakespire — a true dragon of the old line, the Vyrgun's lord and the Drakeholt's oldest authority. Wakes seldom; is always aware. Tribute climbs the road in his name.",
             attributes: { body: 24, reflex: 12, vigor: 26, mind: 18, wit: 22, presence: 22 },
             worn: ["hoard-melted-into-the-floor"],
             knows: [
@@ -486,7 +486,6 @@ export function makeInitialState() {
           "sorcerer":       { id: "sorcerer",       name: "Sorcerer",       description: "Practitioner of binding magic — taught, oathed, or self-discovered." },
           "witch":          { id: "witch",          name: "Witch",          description: "A hedge-magic practitioner working outside the Spire schools — older, less institutional." },
           "speaker":        { id: "speaker",        name: "Speaker",        description: "Selenyan or Greenshaw civic leader; heard, not commanded." },
-          "wyrm":           { id: "wyrm",           name: "Wyrm",           description: "Drake-kin of great age and power; the highest authority a Drakeholt court answers to." },
           "chapter-master": { id: "chapter-master", name: "Chapter-Master", description: "Senior officer of a chapter-house of a militant order." },
           "hold-father":    { id: "hold-father",    name: "Hold-Father",    description: "Elected leader of a dwarven hold for a term of years." },
           "matriarch":      { id: "matriarch",      name: "Matriarch",      description: "Elected female leader; used in matriarchies like the Halfborn Hold." },
