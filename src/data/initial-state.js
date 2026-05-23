@@ -107,6 +107,18 @@ export function makeInitialState() {
             description: "Sits the Polestar Throne at Northstar Castle in the far north — a true demon, the abyssal power the demon-blooded merely descend from. The continent's oldest binding power and its quietest one. Pilgrims walk toward him. Few come back; none come back the same.",
             attributes: { body: 18, reflex: 14, vigor: 22, mind: 18, wit: 16, presence: 24 },
             worn: ["frost-crown", "black-robe", "polestar-sword"],
+            // His signature kit (named powers, not the generic attribute-inferred
+            // fallback), tuned at divine to stand level with the great wyrm. Where
+            // the wyrm is brute fire and fury, the demon is dread, binding, and one
+            // annihilating stroke: execute is the Polestar Sword's killing blow that
+            // bypasses all defence (his single-target signature — a stat-scaled
+            // spell would land for a fraction of it); curse is the binding-sigil's
+            // work, marking a foe so that stroke and his Frost Crown's rime bite all
+            // the deeper; dread-aura is his regard made manifest, the fear that makes
+            // every blow against him falter. The COLD rides the Frost Crown's
+            // frostbrand/cursed procs, so the kit needn't spend a slot on a frost
+            // bolt that would barely scratch a divine-tier foe.
+            abilities: ["execute", "dread-aura", "curse"],
             knows: [
               "I have not left the Castle in seven hundred years.",
               "Every petitioner is heard. The cost of being heard is not always the same.",
