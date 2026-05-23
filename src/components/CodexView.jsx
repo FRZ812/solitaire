@@ -146,7 +146,7 @@ function EffectChip({ kind, id, tier }) {
       <span onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }} title={desc}
         style={{ fontSize: "8px", padding: "1px 5px", borderRadius: "5px", cursor: "pointer",
           backgroundColor: `rgba(${accent},0.12)`, color: `rgba(${accent},0.95)`, border: `1px solid rgba(${accent},0.3)` }}>
-        {label}{desc ? <span style={{ opacity: 0.6, marginLeft: "3px", fontSize: "7px" }}>{open ? "▾" : "?"}</span> : null}
+        {label}{desc ? <span style={{ opacity: 0.55, marginLeft: "3px", fontSize: "8px" }}>{open ? "▾" : "ⓘ"}</span> : null}
       </span>
       {open && desc && (
         <span style={{ flexBasis: "100%", width: "100%", fontSize: "9px", color: "rgba(237,228,208,0.62)", lineHeight: 1.4, margin: "1px 0 2px 3px" }}>{desc}</span>

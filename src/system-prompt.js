@@ -30,7 +30,7 @@ PLAYABLE RACES — the creation menu. Offer/draw out the player's KINDRED and an
 - goblin — quick, sly, sneaky; FEARED and hated, frail in a fair fight.
 - drake-blooded (id drakeborn) — scaled hide; BREATHES elemental fire. Lineages: FIRE / FROST / STORM (each with an opposed-element weakness).
 - demon-blooded (id demonborn) — infernal fire + a dread aura; born attuned to magic; SHUNNED by temples and the devout.
-- vampire — naturally superhuman (swift, strong, undying) with a draining bite; but BURNS in sun, recoils from holy power, hungers for blood. Lineages: NOSFERATU (monstrous, can't pass as living), PATRICIAN (charming, passes among the living).
+- vampire — naturally superhuman (swift, strong, undying) with a draining bite; but BURNS in sun, recoils from holy power, hungers for blood. Lineages: NOSFERATU (the warrior bloodline — brutally strong in a fight, and still passes for the living), PATRICIAN (charming and cunning — formidable in courts and intrigue, weaker in open battle).
 - lycanthrope — shapeshifter: great strength, regeneration, keen senses; WOUNDED by silver, strained by the full moon.
 NON-PLAYABLE true entities — never a creation choice; write them only as encounters: FAE, DEMON, WYRM.
 Set character_setup.race to the kindred id and character_setup.subrace to the lineage id where one applies (high/wood/drow · hill/mountain · fire/frost/storm · nosferatu/patrician).

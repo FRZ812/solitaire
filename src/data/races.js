@@ -109,8 +109,8 @@ export const RACES = {
     traits: ["Naturally superhuman — swift, strong, undying.", "Night-sighted; does not age."],
     flaws: ["Burns in sunlight and recoils from holy power.", "Hungers for blood — must feed, or weaken."],
     subraces: {
-      nosferatu: { name: "Nosferatu Bloodline", attributeModifiers: { body: 1 }, racialPassives: [{ id: "stoneskin", tier: "rare" }], traits: ["Monstrous and bestial; immensely strong."], flaws: ["Hideous — cannot pass for living."] },
-      patrician: { name: "Patrician Bloodline", attributeModifiers: { presence: 2 }, racialPassives: [{ id: "aegis", tier: "rare" }], traits: ["Elegant and charming; passes among the living."] },
+      nosferatu: { name: "Nosferatu Bloodline", attributeModifiers: { body: 2, vigor: 1 }, racialPassives: [{ id: "stoneskin", tier: "rare" }, { id: "savage", tier: "rare" }], traits: ["The warrior bloodline — brutally strong and hard to put down.", "Imposing, yet still passes among the living."], flaws: ["Ravenous — the blood-hunger bites harder and sooner."] },
+      patrician: { name: "Patrician Bloodline", attributeModifiers: { presence: 2, wit: 2, body: -1 }, racialPassives: [{ id: "fortunate", tier: "rare" }, { id: "aegis", tier: "rare" }], traits: ["Elegant, charming, and cunning — moves through courts and crowds unseen for what they are.", "A manipulator's bloodline; strongest away from open battle, weaker within it."], flaws: ["No warrior — falters in a straight fight against their own kin."] },
     },
   },
   lycanthrope: {
