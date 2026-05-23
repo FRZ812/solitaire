@@ -37,7 +37,7 @@ import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
-import { initCombat, playerAct, playerDrawWeapon, setTarget, endTurn, playerFlee, playerStandDown, playerCeasefire, playerWithdraw, playerAdvance, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
+import { initCombat, playerAct, playerTalk, playerDrawWeapon, setTarget, endTurn, playerFlee, playerStandDown, playerCeasefire, playerWithdraw, playerAdvance, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
@@ -1226,6 +1226,9 @@ export function Solitaire() {
   }
 
   const onCombatAct = (abilityId) => setCombat((c) => (c ? playerAct(c, abilityId, c.target) : c));
+  // Structured Talk intents (Demand Surrender / Demoralize / Provoke) — instant,
+  // engine-resolved. Free-spoken Talk goes through handleCombatAction (narrator).
+  const onCombatTalk = (intent) => setCombat((c) => (c ? playerTalk(c, intent, c.target) : c));
 
   // A snapshot of the fight for the narrator to adjudicate an improvised action.
   function combatContext(c) {
@@ -1615,6 +1618,7 @@ export function Solitaire() {
           combat={combat}
           onAct={onCombatAct}
           onAction={handleCombatAction}
+          onTalk={onCombatTalk}
           busy={combatBusy}
           onDraw={onCombatDraw}
           onSetTarget={onCombatTarget}
