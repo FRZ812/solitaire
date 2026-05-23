@@ -391,7 +391,7 @@ export function deriveCombatStats(character, codex) {
 
   return {
     maxHealth: character.vitalityMax + (statMods.maxHealth || 0) + (band.maxHealth || 0),
-    dr: clamp(statMods.drPct || 0, 0, 0.6), // flat % damage reduction, capped
+    dr: clamp(statMods.drPct || 0, 0, 0.85), // flat % damage reduction, capped (deep DR stacking pays off)
     armor: armor + (statMods.armor || 0),
     ward: ward + (statMods.ward || 0) + (band.ward || 0),
     dodge,

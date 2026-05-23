@@ -264,6 +264,7 @@ export function makeInitialState() {
               { id: "colossus",     tier: "divine" },     // immense bulk
               { id: "sunder",       tier: "divine" },     // claw and fang cleave any harness
               { id: "savage",       tier: "mythical" },   // a wyrm's strike is ruin
+              { id: "cursed",       tier: "divine" },     // a draconic curse — festering wounds halve a foe's healing, breaking any turtle/sustain stack
             ],
             // Kit the combat AI actually fields: dragon-breath engulfs a GROUP
             // (his iconic moment vs a party), beast-shift is his surging wrath that

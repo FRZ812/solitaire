@@ -520,7 +520,7 @@ function resolveHit(attacker, defender, profile) {
   let dmg = Math.max(0, raw - mitig);
   let dr = defender.dr || 0;
   if (defender.fortify && defender.maxHealth && defender.health / defender.maxHealth < 0.35) dr += defender.fortify;
-  if (dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.7, dr))));
+  if (dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.85, dr))));
   // Stonewall (damageCap): no single blow may exceed a share of max health.
   if (defender.damageCap && defender.maxHealth) dmg = Math.min(dmg, Math.max(1, Math.round(defender.maxHealth * defender.damageCap)));
 

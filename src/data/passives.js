@@ -51,7 +51,10 @@ const geo = (base, n) => Math.round(base * MULT_BY_ORDER[n]);
 // (the engine multiplies by the wearer's maxHealth), so they scale at every tier
 // instead of going dead at high grade. Their caps are fractions too.
 export const PASSIVE_CAPS = {
-  lifesteal: 25, drPct: 0.6, thorns: 50,
+  // Lifesteal can reach 100% (you can build a true sustain monster) — it's kept in
+  // check by anti-heal (curse halves healing), armour/DR shrinking the damage it's
+  // a share of, and bosses that out-burst or true-strike faster than you can drink.
+  lifesteal: 100, drPct: 0.85, thorns: 50,
   extraActions: 3, cooldownReduction: 3, fortify: 0.25,
   turnRegen: 0.12, shieldGen: 0.12, magicShieldGen: 0.12, invulnCharges: 2,
   controlResist: 0.6,
@@ -74,7 +77,7 @@ export const PASSIVES = [
   { id: "bulwark",    name: "Bulwark",      cat: "defence", scope: "combat", type: "stat", key: "armor",       minTier: "common",    amount: (n) => geo(1.2, n),          desc: "Adds armour (vs physical), scaling with grade." },
   { id: "aegis",      name: "Aegis",        cat: "defence", scope: "combat", type: "stat", key: "ward",        minTier: "common",    amount: (n) => geo(1.2, n),          desc: "Adds ward (vs magic), scaling with grade." },
   { id: "evasion",    name: "Evasion",      cat: "defence", scope: "combat", type: "stat", key: "dodge",       minTier: "common",    amount: (n) => 2 + Math.round(n * 1.5), desc: "Raises dodge chance." },
-  { id: "stalwart",   name: "Stalwart",     cat: "defence", scope: "combat", type: "stat", key: "maxHealth",   minTier: "common",    amount: (n) => geo(4, n),            desc: "Increases maximum health (scales with grade)." },
+  { id: "stalwart",   name: "Stalwart",     cat: "defence", scope: "combat", type: "stat", key: "maxHealth",   minTier: "common",    amount: (n) => geo(12, n),           desc: "Increases maximum health (scales with grade)." },
   { id: "stoneskin",  name: "Stoneskin",    cat: "defence", scope: "combat", type: "stat", key: "drPct",       minTier: "rare",      amount: (n) => 0.03 + n * 0.01,      desc: "Reduces all damage taken by a percentage." },
 
   // ---------- SUSTAIN (trigger) — tuned low; lifesteal is capped in-engine ----------
@@ -87,7 +90,7 @@ export const PASSIVES = [
   { id: "clearmind",  name: "Clear Mind",   cat: "resource", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "epic",  amount: (n) => 1,                    desc: "Recovers resolve each turn (sustains casting)." },
 
   // ---------- LEGENDARY+ POWERS — build-defining ----------
-  { id: "colossus",   name: "Colossus",     cat: "power", scope: "combat", type: "stat", key: "maxHealth",     minTier: "legendary", amount: (n) => geo(14, n),           desc: "Vastly increases maximum health." },
+  { id: "colossus",   name: "Colossus",     cat: "power", scope: "combat", type: "stat", key: "maxHealth",     minTier: "legendary", amount: (n) => geo(40, n),           desc: "Vastly increases maximum health." },
   { id: "sunder",     name: "Sundering",    cat: "power", scope: "combat", type: "stat", key: "penetration",   minTier: "legendary", amount: (n) => geo(2.7, n),          desc: "Cleaves through most armour (scales with grade)." },
   { id: "bloodthirst",name: "Bloodthirst",  cat: "power", scope: "combat", type: "trigger", key: "lifesteal",  minTier: "legendary", amount: (n) => 6 + n,                desc: "Heals for a large share of damage dealt (capped)." },
 
@@ -100,7 +103,7 @@ export const PASSIVES = [
   { id: "deadeye",    name: "Deadeye",      cat: "divine", scope: "combat", type: "stat", key: "accuracy",     minTier: "divine",    amount: (n) => 30,                   desc: "Every shot finds the mark — overwhelming accuracy, dodge be damned." },
   { id: "archmage",   name: "Archmage",     cat: "divine", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "divine",  amount: (n) => 3,                    desc: "Bottomless will — restores great resolve each turn." },
   { id: "phantom",    name: "Phantom",      cat: "divine", scope: "combat", type: "stat", key: "dodge",        minTier: "divine",    amount: (n) => 28,                   desc: "Half-real — devastating evasion." },
-  { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: () => geo(20, 7),            desc: "A mountain of vitality." },
+  { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: () => geo(60, 7),            desc: "A mountain of vitality." },
 
   // ---------- PARAGON — threshold affixes that only wake for the truly gifted ----------
   // Distinct from the gentle per-point attribute scaling: a strong, build-defining

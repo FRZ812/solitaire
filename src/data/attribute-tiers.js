@@ -25,61 +25,45 @@ export function attrDescriptor(key, value) {
   return label;
 }
 
-// Combat breakpoint increments, granted on REACHING each value (cumulative).
-// `stat` keys merge into the combat statMods; `trig` keys into triggers.
-// (Vigor's HP comes from the per-point vitalityMax in attributes.js; its
-// breakpoints give mitigation instead, so thresholds feel "different".)
-const BREAKPOINTS = {
-  body: [
-    { at: 5,  stat: { armor: 1, damageMult: 0.05 } },
-    { at: 10, stat: { armor: 1, penetration: 1, damageMult: 0.05 } },
-    { at: 15, stat: { armor: 2, penetration: 1, damageMult: 0.08 } },
-    { at: 20, stat: { armor: 2, penetration: 2, damageMult: 0.12 } },
-  ],
-  reflex: [
-    { at: 5,  stat: { dodge: 3, accuracy: 1 } },
-    { at: 10, stat: { dodge: 4, accuracy: 1, critChance: 3 } },
-    { at: 15, stat: { dodge: 5, accuracy: 2, swiftChance: 0.08 } },
-    { at: 20, stat: { dodge: 6, accuracy: 2, swiftChance: 0.10 } },
-  ],
-  vigor: [
-    { at: 5,  stat: { drPct: 0.03 } },
-    { at: 10, stat: { drPct: 0.06 } },
-    { at: 15, stat: { drPct: 0.08, fortify: 0.10 } },
-    { at: 20, stat: { drPct: 0.10, fortify: 0.15 } },
-  ],
-  mind: [
-    { at: 5,  stat: { ward: 1 }, trig: { resolveRegen: 1 } },
-    { at: 10, stat: { ward: 1, cooldownReduction: 0.5 } },
-    { at: 15, stat: { ward: 2, cooldownReduction: 0.5 } },
-    { at: 20, stat: { ward: 2, cooldownReduction: 1 } },
-  ],
-  wit: [
-    { at: 5,  stat: { critChance: 3, accuracy: 1 } },
-    { at: 10, stat: { critChance: 4, accuracy: 1 } },
-    { at: 15, stat: { critChance: 5, accuracy: 2, speed: 2 } },
-    { at: 20, stat: { critChance: 6, speed: 2 } },
-  ],
-  presence: [
-    // Largely narrative; a sliver of will at the high end.
-    { at: 10, trig: { resolveRegen: 1 } },
-    { at: 20, stat: { fortify: 0.05 } },
-  ],
-};
+// TIERED stat-threshold passives: each attribute, at a breakpoint, grants a
+// single tier-graded boon — and a STRONGER one than a gear passive of the same
+// grade, because reaching a high attribute is a brutal grind that should pay a
+// hero's dividend. The grind ladder:
+//   5 → rare · 10 → very-rare · 15 → epic · 20 → legendary · 25 → mythic · 30 → divine
+// You get the boon for your HIGHEST threshold per attribute (not a sum). Applied
+// to NPCs too, so a high-attribute foe (a boss) is innately mighty.
+const THRESHOLD_TIER = [[30, 7], [25, 6], [20, 5], [15, 4], [10, 3], [5, 2]]; // [attr value, tier order]
+// Tier power multipliers by order (common→divine), mirroring data/tiers.js.
+const TIER_MULT = [1, 1.35, 1.8, 2.4, 3.2, 5.2, 7.6, 12];
+const tierOrderFor = (v) => { for (const [val, ord] of THRESHOLD_TIER) if ((v || 0) >= val) return ord; return 0; };
+const geo = (base, o) => Math.round(base * TIER_MULT[o]);
 
-const addInto = (dst, src) => { for (const k in src) dst[k] = (dst[k] || 0) + src[k]; };
+// The per-attribute boon at tier order `o` (≥2). Magnitudes are deliberately
+// above an equivalent-tier gear affix (e.g. vigor-30 maxHealth 840 > Juggernaut
+// 720). `s` → statMods, `t` → triggers.
+function thresholdBoon(key, o) {
+  const s = {}, t = {};
+  switch (key) {
+    case "vigor":    s.maxHealth = geo(70, o); s.drPct = 0.03 + 0.012 * o; break;       // the hero's innate vitality + mitigation
+    case "body":     s.damageMult = 0.05 * o; s.armor = geo(2, o); s.penetration = Math.round(o * 0.9); break;
+    case "reflex":   s.dodge = geo(2, o); s.swiftChance = 0.02 * o; s.accuracy = o; break;
+    case "mind":     s.ward = geo(2, o); s.damageMult = 0.025 * o; s.cooldownReduction = o >= 6 ? 1 : 0.5; break;
+    case "wit":      s.critChance = 3 * o; s.accuracy = o; s.speed = Math.floor(o / 2); break;
+    case "presence": s.fortify = Math.min(0.2, 0.02 * o); t.resolveRegen = o >= 5 ? 2 : 1; break; // mostly narrative
+  }
+  return { s, t };
+}
 
-// Sum every breakpoint each attribute has crossed → { statMods, triggers } to
-// fold into the combat pipeline (same keys aggregateCombatPassives produces).
+// Each attribute contributes the boon of its highest threshold → { statMods,
+// triggers } folded into the combat pipeline (same keys aggregateCombatPassives uses).
 export function attributeThresholdMods(attrs = {}) {
   const statMods = {}, triggers = {};
-  for (const key in BREAKPOINTS) {
-    const v = attrs[key] || 0;
-    for (const bp of BREAKPOINTS[key]) {
-      if (v < bp.at) break; // ascending; nothing higher qualifies
-      if (bp.stat) addInto(statMods, bp.stat);
-      if (bp.trig) addInto(triggers, bp.trig);
-    }
+  for (const key of ["body", "reflex", "vigor", "mind", "wit", "presence"]) {
+    const o = tierOrderFor(attrs[key] || 0);
+    if (!o) continue;
+    const { s, t } = thresholdBoon(key, o);
+    for (const k in s) statMods[k] = (statMods[k] || 0) + s[k];
+    for (const k in t) triggers[k] = (triggers[k] || 0) + t[k];
   }
   return { statMods, triggers };
 }
