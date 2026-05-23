@@ -70,7 +70,7 @@ export const PASSIVES = [
   { id: "brutal",     name: "Brutal",       cat: "offence", scope: "combat", type: "stat", key: "damageMult",  minTier: "uncommon",  amount: (n) => 0.05 + n * 0.025,     desc: "Increases weapon damage by a percentage." },
   { id: "precise",    name: "Precise",      cat: "offence", scope: "combat", type: "stat", key: "accuracy",    minTier: "common",    amount: (n) => 2 + n,                desc: "Improves accuracy." },
   { id: "keen-edge",  name: "Keen Edge",    cat: "offence", scope: "combat", type: "stat", key: "critChance",  minTier: "uncommon",  amount: (n) => 5 + n * 2.5,          desc: "Raises critical chance sharply." },
-  { id: "savage",     name: "Savage",       cat: "offence", scope: "combat", type: "stat", key: "critMult",    minTier: "rare",      amount: (n) => 0.15 + n * 0.07,      desc: "Greatly increases critical damage." },
+  { id: "savage",     name: "Savage",       cat: "offence", scope: "combat", type: "stat", key: "critMult",    minTier: "rare",      amount: (n) => 0.2 + n * 0.15,       desc: "Greatly increases critical damage — stacks hard toward the 999% ceiling." },
   { id: "piercing",   name: "Piercing",     cat: "offence", scope: "combat", type: "stat", key: "penetration", minTier: "uncommon",  amount: (n) => geo(1.2, n),          desc: "Adds armour penetration (scales with grade)." },
 
   // ---------- DEFENCE (stat) ----------
