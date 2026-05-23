@@ -1,6 +1,8 @@
 // Merge AI-declared discoveries into the codex. Tracks newly-added entries
 // and rating increases so the renderer can show "Recorded" / "Growth" beats.
 
+import { COMPANIONS } from "../data/companions.js";
+
 export function mergeDiscoveries(existing, incoming) {
   const out = { ...existing };
   const newlyDiscovered = [];
@@ -16,7 +18,16 @@ export function mergeDiscoveries(existing, incoming) {
       if (!e?.id) continue;
       const isNew = !out[kind][e.id];
       const prev = out[kind][e.id] || {};
-      out[kind][e.id] = { ...prev, ...e };
+      let incoming = e;
+      // The engine owns companions' attributes — the narrator may flavor their
+      // description / knowledge but must not RESTAT an authored companion (their
+      // stats come from data/companions.js, applied on recruit). Drop any
+      // attributes the narrator tries to set on a companion id.
+      if (kind === "characters" && e.attributes && (COMPANIONS[e.id] || prev.kind === "companion")) {
+        const { attributes, ...rest } = e;
+        incoming = rest;
+      }
+      out[kind][e.id] = { ...prev, ...incoming };
       if (isNew) {
         newlyDiscovered.push({ kind, name: e.name, id: e.id });
       } else if (kind === "skills" && typeof e.rating === "number" && typeof prev.rating === "number" && e.rating > prev.rating) {

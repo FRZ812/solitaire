@@ -6,13 +6,14 @@
 //
 // Pure Node — no React in the import chain.
 
-import { initCombat, playerAct, endTurn, abilityUsable, rollLoot } from "../src/engine/combat.js";
+import { initCombat, playerAct, endTurn, abilityUsable, rollLoot, canStandDown, playerStandDown } from "../src/engine/combat.js";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 import { generateEnemyGroup, allyFromCompanion } from "../src/data/bestiary.js";
 import { COMPANIONS } from "../src/data/companions.js";
 import { aggregateCombatPassives, applyFusion, FUSIONS, PASSIVE_CAPS, RUNES } from "../src/data/passives.js";
 import { fusionOptionsForRune, applyFusionToItem } from "../src/engine/fusion.js";
+import { recomputeVitalityMax } from "../src/engine/attributes.js";
 
 const RUNS = Number(process.argv[2] || 2000);
 
@@ -32,15 +33,15 @@ const codex = makeCodex(SWORD, 2);
 // A realistic early-mid wanderer: modest attributes, a plain blade, a couple of
 // learned techniques (no Cleave AoE, so groups can't be wiped in one swing).
 function midPlayer() {
-  return {
-    name: "Player", vitality: 26, vitalityMax: 26, resolve: 5, resolveMax: 5,
+  return recomputeVitalityMax({
+    name: "Player", resolve: 5, resolveMax: 5,
     attributes: { body: 4, reflex: 4, vigor: 4, mind: 2, wit: 3, presence: 2 },
     abilities: [
       { id: "power-strike", tier: "common" }, { id: "rend", tier: "common" },
       { id: "second-wind", tier: "common" },
     ],
     proficiencies: {},
-  };
+  });
 }
 
 function buildAllies(keys, tierId) {
@@ -54,7 +55,8 @@ function choosePlayerAction(cs) {
     .filter((c) => c.def && c.id !== "talk" && abilityUsable(cs, c.id));
   const opp = cs.enemies.filter((e) => e.health > 0 && !e.resolved);
   if (opp.length === 0) return null;
-  const choice = chooseAction(cs.player, opp, candidates);
+  const party = [cs.player, ...(cs.allies || [])].filter((a) => a.health > 0 && !a._dead && !a.resolved);
+  const choice = chooseAction(cs.player, opp, candidates, { allies: party });
   if (!choice) return { abilityId: BASIC_ATTACK.id, targetIndex: cs.enemies.indexOf(opp[0]) };
   const targetIndex = choice.target ? cs.enemies.indexOf(choice.target) : cs.enemies.indexOf(opp[0]);
   return { abilityId: choice.ability.id, targetIndex };
@@ -68,6 +70,8 @@ function runFight(makeEnemies, allyKeys, tierId) {
   let guard = 0;
   while (!TERMINAL.has(cs.phase) && guard++ < 300) {
     if (cs.phase !== "player") break;
+    // No foe still fighting (the rest yielded or fled) → stand down (spare them).
+    if (canStandDown(cs)) { cs = playerStandDown(cs); break; }
     const act = choosePlayerAction(cs);
     if (act && abilityUsable(cs, act.abilityId)) {
       cs = playerAct(cs, act.abilityId, act.targetIndex);
@@ -128,12 +132,12 @@ console.log("");
 // A capable hero who meets epic/legendary item requirements (so affixes switch
 // on) and the action points to act several times a turn.
 function hero(extra = []) {
-  return {
-    name: "Hero", vitality: 70, vitalityMax: 70, resolve: 12, resolveMax: 12,
+  return recomputeVitalityMax({
+    name: "Hero", resolve: 12, resolveMax: 12,
     attributes: { body: 16, reflex: 16, vigor: 16, mind: 16, wit: 12, presence: 12 },
     abilities: [{ id: "power-strike", tier: "common" }, { id: "rend", tier: "common" }, { id: "second-wind", tier: "common" }, ...extra],
     proficiencies: {},
-  };
+  });
 }
 // Codex with a weapon + armour carrying the given affixes (epic-grade so most
 // affixes can ride; req is met by the hero above).
@@ -154,6 +158,7 @@ function runFull(player, codex, makeEnemies) {
   let guard = 0, acts = 0;
   while (!TERMINAL.has(cs.phase) && guard++ < 400) {
     if (cs.phase !== "player") break;
+    if (canStandDown(cs)) { cs = playerStandDown(cs); break; }
     let acted = true;
     while (acted && !TERMINAL.has(cs.phase)) {
       const a = choosePlayerAction(cs);

@@ -5,57 +5,64 @@
 
 import { tierMult, rollTier } from "./tiers.js";
 import { DEMEANOR_CONFIG, defaultDemeanor } from "./combat-flavor.js";
-import { itemCombatStats, weaponFamilyBase } from "../engine/combat-stats.js";
+import { itemCombatStats, weaponFamilyBase, mergeThresholdMods } from "../engine/combat-stats.js";
 import { itemTemplate } from "./catalog.js";
 import { aggregateCombatPassives } from "./passives.js";
+import { attributeThresholdMods } from "./attribute-tiers.js";
 
 const T = (min, max, type = "physical", pen = 0) => ({ min, max, type, pen });
 
+// PUNISHING, GROUNDED COMBAT: ordinary folk (the player/companions at vigor ~2 →
+// ~30 HP) are NOT seasoned killers, but these creatures kill to live and fight
+// like it. Common-tier baselines below lean on DAMAGE + ACCURACY (real threat)
+// with modest HP (a basic foe survives a hit or two, not a one-shot). Relative
+// identity is preserved — a goblin is still far below an ogre — the whole curve
+// just sits higher. Tuned against scripts/combat-sim.mjs.
 const GENERIC = {
-  name: "Assailant", race: null, health: 12, armor: 1, ward: 0,
-  dodge: 8, accuracy: 4, critChance: 5, speed: 4,
-  damage: T(2, 5), abilities: [], count: [1, 1], maxLootTier: "uncommon",
+  name: "Assailant", race: null, health: 16, armor: 1, ward: 0,
+  dodge: 8, accuracy: 6, critChance: 5, speed: 4,
+  damage: T(4, 7), abilities: ["power-strike"], count: [1, 1], maxLootTier: "uncommon",
 };
 
 export const BESTIARY = {
   // --- beasts / packs ---
-  wolves:        { name: "Wolf",         race: "wolf",     health: 9,  armor: 0, dodge: 16, accuracy: 6, critChance: 8, speed: 7, damage: T(2, 5), abilities: ["rend"], count: [2, 4], maxLootTier: "uncommon" },
-  "bog-hounds":  { name: "Bog-Hound",    race: "hound",    health: 8,  armor: 0, dodge: 14, accuracy: 5, critChance: 6, speed: 6, damage: T(2, 4), abilities: ["rend"], count: [2, 4], maxLootTier: "uncommon" },
-  "wild-dogs":   { name: "Wild Dog",     race: "dog",      health: 6,  armor: 0, dodge: 14, accuracy: 5, speed: 6, damage: T(1, 4), abilities: [], count: [2, 5], maxLootTier: "common" },
-  wargs:         { name: "Warg",         race: "warg",     health: 18, armor: 1, dodge: 14, accuracy: 7, critChance: 8, speed: 7, damage: T(4, 7), abilities: ["rend", "power-strike"], count: [1, 3], maxLootTier: "rare" },
-  bear:          { name: "Brown Bear",   race: "bear",     health: 28, armor: 2, dodge: 4,  accuracy: 5, speed: 4, damage: T(5, 9), abilities: ["power-strike"], count: [1, 1], maxLootTier: "rare" },
-  boar:          { name: "Wild Boar",    race: "boar",     health: 16, armor: 1, dodge: 6,  accuracy: 5, speed: 5, damage: T(3, 6, "physical", 2), abilities: [], count: [1, 2], maxLootTier: "uncommon" },
-  owlbear:       { name: "Owlbear",      race: "owlbear",  health: 34, armor: 2, dodge: 6,  accuracy: 6, critChance: 8, speed: 5, damage: T(6, 10), abilities: ["power-strike", "rend"], count: [1, 1], maxLootTier: "epic" },
-  "giant-spider":{ name: "Giant Spider", race: "spider",   health: 14, armor: 1, dodge: 18, accuracy: 7, speed: 6, damage: T(2, 4), abilities: ["venom-strike"], count: [1, 3], maxLootTier: "rare" },
-  "salt-eel":    { name: "Salt-Eel",     race: "eel",      health: 12, armor: 1, dodge: 16, accuracy: 6, speed: 6, damage: T(3, 6), abilities: [], count: [1, 1], maxLootTier: "uncommon" },
-  "leech-cloud": { name: "Blood-Leech",  race: "leech",    health: 4,  armor: 0, dodge: 10, accuracy: 4, speed: 5, damage: T(1, 2), abilities: ["venom-strike"], count: [3, 6], maxLootTier: "common" },
-  "stirge-flight":{name: "Stirge",       race: "stirge",   health: 5,  armor: 0, dodge: 20, accuracy: 6, speed: 8, damage: T(1, 3), abilities: [], count: [3, 5], maxLootTier: "common" },
+  wolves:        { name: "Wolf",         race: "wolf",     health: 13, armor: 0, dodge: 16, accuracy: 7, critChance: 8, speed: 7, damage: T(3, 6), abilities: ["rend"], count: [2, 4], maxLootTier: "uncommon" },
+  "bog-hounds":  { name: "Bog-Hound",    race: "hound",    health: 11, armor: 0, dodge: 14, accuracy: 6, critChance: 6, speed: 6, damage: T(3, 6), abilities: ["rend"], count: [2, 4], maxLootTier: "uncommon" },
+  "wild-dogs":   { name: "Wild Dog",     race: "dog",      health: 9,  armor: 0, dodge: 14, accuracy: 6, speed: 6, damage: T(2, 5), abilities: [], count: [2, 5], maxLootTier: "common" },
+  wargs:         { name: "Warg",         race: "warg",     health: 20, armor: 1, dodge: 14, accuracy: 8, critChance: 8, speed: 7, damage: T(5, 8), abilities: ["rend", "power-strike"], count: [1, 3], maxLootTier: "rare" },
+  bear:          { name: "Brown Bear",   race: "bear",     health: 32, armor: 2, dodge: 4,  accuracy: 6, speed: 4, damage: T(6, 11), abilities: ["power-strike"], count: [1, 1], maxLootTier: "rare" },
+  boar:          { name: "Wild Boar",    race: "boar",     health: 18, armor: 1, dodge: 6,  accuracy: 6, speed: 5, damage: T(4, 8, "physical", 2), abilities: ["power-strike"], count: [1, 2], maxLootTier: "uncommon" },
+  owlbear:       { name: "Owlbear",      race: "owlbear",  health: 38, armor: 2, dodge: 6,  accuracy: 7, critChance: 8, speed: 5, damage: T(7, 12), abilities: ["power-strike", "rend"], count: [1, 1], maxLootTier: "epic" },
+  "giant-spider":{ name: "Giant Spider", race: "spider",   health: 16, armor: 1, dodge: 18, accuracy: 8, speed: 6, damage: T(3, 6), abilities: ["venom-strike"], count: [1, 3], maxLootTier: "rare" },
+  "salt-eel":    { name: "Salt-Eel",     race: "eel",      health: 14, armor: 1, dodge: 16, accuracy: 7, speed: 6, damage: T(4, 7), abilities: [], count: [1, 1], maxLootTier: "uncommon" },
+  "leech-cloud": { name: "Blood-Leech",  race: "leech",    health: 6,  armor: 0, dodge: 10, accuracy: 6, speed: 5, damage: T(2, 4), abilities: ["venom-strike"], count: [3, 6], maxLootTier: "common" },
+  "stirge-flight":{name: "Stirge",       race: "stirge",   health: 7,  armor: 0, dodge: 20, accuracy: 7, speed: 8, damage: T(2, 4), abilities: [], count: [3, 5], maxLootTier: "common" },
 
-  // --- humanoid raiders ---
-  bandits:       { name: "Bandit",       race: "human",    health: 14, armor: 2, dodge: 8,  accuracy: 5, critChance: 5, speed: 5, damage: T(3, 6), abilities: ["power-strike"], count: [2, 3], maxLootTier: "rare" },
-  brigands:      { name: "Brigand",      race: "human",    health: 15, armor: 2, dodge: 8,  accuracy: 5, speed: 5, damage: T(3, 6), abilities: ["power-strike"], count: [2, 4], maxLootTier: "rare" },
-  "lone-bandit": { name: "Cutthroat",    race: "human",    health: 13, armor: 1, dodge: 12, accuracy: 6, critChance: 10, speed: 6, damage: T(3, 6, "physical", 1), abilities: ["piercing-thrust"], count: [1, 1], maxLootTier: "rare" },
-  "highway-brigands":{ name: "Highwayman", race: "human",  health: 15, armor: 2, dodge: 10, accuracy: 6, speed: 5, damage: T(3, 7), abilities: ["piercing-thrust", "power-strike"], count: [2, 4], maxLootTier: "rare" },
-  "mountain-bandits":{ name: "Mountain Bandit", race: "human", health: 16, armor: 3, dodge: 8, accuracy: 5, speed: 4, damage: T(4, 7), abilities: ["power-strike"], count: [2, 3], maxLootTier: "rare" },
-  cutthroats:    { name: "Cutthroat",    race: "human",    health: 13, armor: 1, dodge: 12, accuracy: 6, critChance: 10, speed: 6, damage: T(3, 6, "physical", 1), abilities: ["venom-strike"], count: [2, 2], maxLootTier: "rare" },
-  "press-gang":  { name: "Press-Ganger", race: "human",    health: 16, armor: 2, dodge: 6,  accuracy: 4, speed: 4, damage: T(3, 6), abilities: [], count: [2, 3], maxLootTier: "uncommon" },
-  pickpocket:    { name: "Pickpocket",   race: "human",    health: 9,  armor: 0, dodge: 22, accuracy: 6, speed: 7, damage: T(1, 3), abilities: [], count: [1, 1], maxLootTier: "uncommon" },
+  // --- humanoid raiders (experienced killers — they fight to kill) ---
+  bandits:       { name: "Bandit",       race: "human",    health: 18, armor: 2, dodge: 8,  accuracy: 7, critChance: 5, speed: 5, damage: T(5, 8), abilities: ["power-strike"], count: [2, 3], maxLootTier: "rare" },
+  brigands:      { name: "Brigand",      race: "human",    health: 18, armor: 2, dodge: 8,  accuracy: 7, speed: 5, damage: T(5, 8), abilities: ["power-strike"], count: [2, 4], maxLootTier: "rare" },
+  "lone-bandit": { name: "Cutthroat",    race: "human",    health: 16, armor: 1, dodge: 12, accuracy: 8, critChance: 12, speed: 6, damage: T(4, 8, "physical", 1), abilities: ["piercing-thrust"], count: [1, 1], maxLootTier: "rare" },
+  "highway-brigands":{ name: "Highwayman", race: "human",  health: 19, armor: 2, dodge: 10, accuracy: 7, speed: 5, damage: T(5, 9), abilities: ["piercing-thrust", "power-strike"], count: [2, 4], maxLootTier: "rare" },
+  "mountain-bandits":{ name: "Mountain Bandit", race: "human", health: 21, armor: 3, dodge: 8, accuracy: 7, speed: 4, damage: T(6, 9), abilities: ["power-strike"], count: [2, 3], maxLootTier: "rare" },
+  cutthroats:    { name: "Cutthroat",    race: "human",    health: 16, armor: 1, dodge: 12, accuracy: 8, critChance: 12, speed: 6, damage: T(4, 8, "physical", 1), abilities: ["venom-strike"], count: [2, 2], maxLootTier: "rare" },
+  "press-gang":  { name: "Press-Ganger", race: "human",    health: 20, armor: 2, dodge: 6,  accuracy: 6, speed: 4, damage: T(5, 8), abilities: ["power-strike"], count: [2, 3], maxLootTier: "uncommon" },
+  pickpocket:    { name: "Pickpocket",   race: "human",    health: 12, armor: 0, dodge: 22, accuracy: 7, speed: 7, damage: T(2, 5), abilities: [], count: [1, 1], maxLootTier: "uncommon" },
 
   // --- goblinoids / orcs ---
-  goblins:       { name: "Goblin",       race: "goblin",   health: 7,  armor: 1, dodge: 14, accuracy: 5, speed: 6, damage: T(2, 4), abilities: [], count: [2, 4], maxLootTier: "rare" },
-  "orc-scout":   { name: "Orc Scout",    race: "orc",      health: 18, armor: 3, dodge: 8,  accuracy: 6, speed: 5, damage: T(4, 7), abilities: ["power-strike"], count: [1, 2], maxLootTier: "rare" },
-  "orc-raiders": { name: "Orc Raider",   race: "orc",      health: 20, armor: 4, dodge: 6,  accuracy: 6, critChance: 6, speed: 4, damage: T(5, 8), abilities: ["power-strike", "cleave"], count: [2, 5], maxLootTier: "epic" },
+  goblins:       { name: "Goblin",       race: "goblin",   health: 13, armor: 2, dodge: 14, accuracy: 7, critChance: 8, speed: 6, damage: T(4, 7), abilities: ["power-strike"], count: [2, 4], maxLootTier: "rare" },
+  "orc-scout":   { name: "Orc Scout",    race: "orc",      health: 22, armor: 3, dodge: 8,  accuracy: 7, speed: 5, damage: T(5, 9), abilities: ["power-strike"], count: [1, 2], maxLootTier: "rare" },
+  "orc-raiders": { name: "Orc Raider",   race: "orc",      health: 24, armor: 4, dodge: 6,  accuracy: 7, critChance: 6, speed: 4, damage: T(6, 10), abilities: ["power-strike", "cleave"], count: [2, 5], maxLootTier: "epic" },
 
   // --- big & nasty ---
-  ogre:          { name: "Ogre",         race: "ogre",     health: 46, armor: 3, dodge: 2,  accuracy: 5, speed: 3, damage: T(8, 14, "physical", 2), abilities: ["power-strike", "cleave"], count: [1, 1], maxLootTier: "epic" },
-  "lone-troll":  { name: "Troll",        race: "troll",    health: 50, armor: 2, dodge: 3,  accuracy: 5, speed: 3, damage: T(7, 12), abilities: ["power-strike", "second-wind"], count: [1, 1], maxLootTier: "epic" },
-  "stone-troll": { name: "Stone-Troll",  race: "troll",    health: 60, armor: 6, dodge: 1,  accuracy: 5, speed: 2, damage: T(8, 13, "physical", 1), abilities: ["power-strike"], count: [1, 1], maxLootTier: "legendary" },
-  drakeling:     { name: "Drakeling",    race: "drakeborn",health: 24, armor: 3, ward: 4, dodge: 12, accuracy: 7, critChance: 8, speed: 6, damage: T(4, 8, "magical", 2), abilities: ["firebolt"], count: [1, 2], maxLootTier: "epic" },
-  "wyvern-passage":{ name: "Wyvern",     race: "wyvern",   health: 40, armor: 4, ward: 2, dodge: 16, accuracy: 8, critChance: 10, speed: 8, damage: T(6, 11, "physical", 3), abilities: ["power-strike", "rend"], count: [1, 1], maxLootTier: "legendary" },
+  ogre:          { name: "Ogre",         race: "ogre",     health: 52, armor: 3, dodge: 2,  accuracy: 6, speed: 3, damage: T(9, 15, "physical", 2), abilities: ["power-strike", "cleave"], count: [1, 1], maxLootTier: "epic" },
+  "lone-troll":  { name: "Troll",        race: "troll",    health: 56, armor: 2, dodge: 3,  accuracy: 6, speed: 3, damage: T(8, 13), abilities: ["power-strike", "second-wind"], count: [1, 1], maxLootTier: "epic" },
+  "stone-troll": { name: "Stone-Troll",  race: "troll",    health: 66, armor: 6, dodge: 1,  accuracy: 6, speed: 2, damage: T(9, 14, "physical", 1), abilities: ["power-strike"], count: [1, 1], maxLootTier: "legendary" },
+  drakeling:     { name: "Drakeling",    race: "drakeborn",health: 28, armor: 3, ward: 4, dodge: 12, accuracy: 8, critChance: 8, speed: 6, damage: T(5, 9, "magical", 2), abilities: ["firebolt"], count: [1, 2], maxLootTier: "epic" },
+  "wyvern-passage":{ name: "Wyvern",     race: "wyvern",   health: 44, armor: 4, ward: 2, dodge: 16, accuracy: 9, critChance: 10, speed: 8, damage: T(7, 12, "physical", 3), abilities: ["power-strike", "rend"], count: [1, 1], maxLootTier: "legendary" },
 
   // --- undead / aberrant ---
-  "bog-skeleton":{ name: "Bog-Skeleton", race: "undead",   health: 11, armor: 2, dodge: 6, accuracy: 4, speed: 4, damage: T(2, 5), abilities: [], count: [1, 3], maxLootTier: "uncommon" },
-  "carrion-thrall":{ name: "Carrion-Thrall", race: "undead", health: 13, armor: 1, dodge: 4, accuracy: 4, speed: 3, damage: T(2, 5), abilities: ["venom-strike"], count: [1, 3], maxLootTier: "uncommon" },
+  "bog-skeleton":{ name: "Bog-Skeleton", race: "undead",   health: 15, armor: 2, dodge: 6, accuracy: 5, speed: 4, damage: T(3, 6), abilities: ["power-strike"], count: [1, 3], maxLootTier: "uncommon" },
+  "carrion-thrall":{ name: "Carrion-Thrall", race: "undead", health: 17, armor: 1, dodge: 4, accuracy: 5, speed: 3, damage: T(3, 6), abilities: ["venom-strike"], count: [1, 3], maxLootTier: "uncommon" },
 };
 
 // Fallback inference for any hostile kind without an explicit template.
@@ -63,11 +70,11 @@ function inferTemplate(kind) {
   const k = (kind || "").toLowerCase();
   const has = (...w) => w.some((s) => k.includes(s));
   const t = { ...GENERIC, name: titleCase(k) };
-  if (has("wolf", "hound", "dog", "beast", "boar", "cat", "rat")) { t.dodge = 14; t.speed = 6; t.count = [2, 3]; }
-  if (has("bandit", "brigand", "cutthroat", "thief", "robber", "raider")) { t.race = "human"; t.armor = 2; t.damage = T(3, 6); t.count = [2, 3]; t.abilities = ["power-strike"]; t.maxLootTier = "rare"; }
-  if (has("goblin")) { t.race = "goblin"; t.health = 7; t.dodge = 14; t.count = [2, 4]; }
-  if (has("orc")) { t.race = "orc"; t.health = 18; t.armor = 3; t.damage = T(4, 7); t.abilities = ["power-strike"]; t.maxLootTier = "rare"; }
-  if (has("troll", "ogre", "giant")) { t.health = 46; t.armor = 3; t.damage = T(8, 13); t.dodge = 2; t.maxLootTier = "epic"; }
+  if (has("wolf", "hound", "dog", "beast", "boar", "cat", "rat")) { t.dodge = 14; t.speed = 6; t.count = [2, 3]; t.damage = T(3, 6); }
+  if (has("bandit", "brigand", "cutthroat", "thief", "robber", "raider")) { t.race = "human"; t.health = 18; t.armor = 2; t.damage = T(5, 8); t.count = [2, 3]; t.abilities = ["power-strike"]; t.maxLootTier = "rare"; }
+  if (has("goblin")) { t.race = "goblin"; t.health = 13; t.armor = 2; t.dodge = 14; t.accuracy = 7; t.damage = T(4, 7); t.abilities = ["power-strike"]; t.count = [2, 4]; t.maxLootTier = "rare"; }
+  if (has("orc")) { t.race = "orc"; t.health = 22; t.armor = 3; t.damage = T(5, 9); t.abilities = ["power-strike"]; t.maxLootTier = "rare"; }
+  if (has("troll", "ogre", "giant")) { t.health = 52; t.armor = 3; t.damage = T(9, 14); t.dodge = 2; t.maxLootTier = "epic"; }
   if (has("skeleton", "thrall", "wight", "ghoul", "undead", "corpse")) { t.race = "undead"; t.armor = 2; }
   return t;
 }
@@ -157,7 +164,10 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
   const { statMods: sm, triggers: tr } = aggregateCombatPassives([
     ...worn.flatMap((it) => it.passives || []),
     ...(npc.innatePassives || []),
-  ]);
+  ], a);
+  // Attribute thresholds (symmetric with the player): smooth stat scaling + unique
+  // unlocks — a high-attribute foe (a boss) is dangerous by its very nature.
+  mergeThresholdMods(sm, tr, attributeThresholdMods(a));
   // Weapon: a worn weapon (already tier-scaled by itemCombatStats) wins; else a
   // NATURAL weapon (fang/claw/breath) — tier-scaled HERE (m) since it's an innate
   // stat, not a pre-scaled item — so an item-less foe hits at its tier instead of
@@ -203,7 +213,10 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     if (body >= 6) abilities.push({ id: "power-strike", tier: tierId });
     if (mind >= 8) abilities.push({ id: "firebolt", tier: tierId });
   }
-  const maxHealth = Math.max(1, Math.round((12 + vigor * 2 + body) * m) + (sm.maxHealth || 0));
+  // HP from vigor/body, OR an authored base pool for designed raid bosses
+  // (npc.health) — both tier-scaled, like a template mob's base health.
+  const baseHp = npc.health != null ? npc.health : (12 + vigor * 2 + body);
+  const maxHealth = Math.max(1, Math.round(baseHp * m) + (sm.maxHealth || 0));
   // Named foes carry their wounds between encounters — re-engaging doesn't reset
   // them to full. A previously-yielded foe is already cowed (low morale).
   const cstate = npc.combatState;
@@ -219,7 +232,8 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     controlPressure: 0, provoked: false, resolved: null, lastFlavorTurn: 0, noFleeUntil: 0,
     maxHealth, health,
     armor: Math.round(attrArmor * m) + gearArmor + (sm.armor || 0), ward: Math.round(attrWard * m) + gearWard + (sm.ward || 0),
-    dr: Math.min(0.6, sm.drPct || 0), fortify: Math.min(0.25, sm.fortify || 0),
+    dr: Math.min(0.85, sm.drPct || 0), fortify: Math.min(0.25, sm.fortify || 0),
+    healPower: Math.min(1.0, sm.healPower || 0), dmgDefer: Math.min(0.6, sm.dmgDefer || 0),
     dodge: Math.min(70, reflex * 2 + dodgeGear + (sm.dodge || 0)),
     accuracy: reflex + wit + (weapon.acc || 0) + (sm.accuracy || 0), critChance: Math.min(60, Math.round(wit * 1.5 + reflex) + (sm.critChance || 0)), critMult: 1.5 + (sm.critMult || 0),
     speed: reflex + Math.floor(wit / 2),
@@ -229,7 +243,9 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     resolve: 6 + Math.floor(mind / 2), resolveMax: 6 + Math.floor(mind / 2),
     resolveRegen: 1 + (tr.resolveRegen || 0),
     swiftChance: Math.min(0.5, sm.swiftChance || 0),
-    actionsPerTurn: 1 + Math.min(3, Math.max(0, sm.extraActions || 0)), actionsLeft: 1,
+    // A designed raid boss acts several times a turn (npc.actionsPerTurn) so it
+    // threatens a whole PARTY each round — that's how it's meant to be fought.
+    actionsPerTurn: npc.actionsPerTurn != null ? npc.actionsPerTurn : (1 + Math.min(3, Math.max(0, sm.extraActions || 0))), actionsLeft: 1,
     cooldownReduction: Math.min(3, sm.cooldownReduction || 0),
     procs: tr.procs || [], shield: 0, magicShield: 0, invuln: 0,
     weapon, abilities, maxLootTier: tierId, statuses: [], cooldowns: {},

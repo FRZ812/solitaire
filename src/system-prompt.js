@@ -229,6 +229,8 @@ PRESENCE — social weight, leadership, force of personality
   0 forgettable · 2 polite · 5 commanding (captains attention) · 10 magnetic (leads small armies) · 15 compelling (few refuse) · 20+ world-shaping
   Anchors: at 5 holds a room; at 10 leads soldiers willingly; at 15 sways a council; at 20+ topples kingdoms with a word.
 
+The live [ATTRIBUTES] line carries each score's tier in parentheses — e.g. "Body 5 (fit), Vigor 12 (iron-willed)" — so anchor checks and prose to those bands directly. NOTE: most people (the player, companions, townsfolk) are NOT seasoned killers; even a "lowly" goblin or a common bandit kills to survive and is genuinely dangerous in a fight. Treat violence as lethal and costly, never a foregone win.
+
 NPC SPECIALIZATION — characters differ in SHAPE, not magnitude
 Each NPC has a life-budget of attribute points distributed by specialty. A common adult totals 8-15 points, an experienced/expert 20-30, a master/legendary 35+.
 

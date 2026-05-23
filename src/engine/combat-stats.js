@@ -17,7 +17,21 @@
 
 import { attrFactor } from "../data/abilities.js";
 import { tierMult, tier as tierInfo } from "../data/tiers.js";
-import { aggregateCombatPassives, aggregateWorldPassives } from "../data/passives.js";
+import { aggregateCombatPassives, aggregateWorldPassives, PASSIVE_CAPS } from "../data/passives.js";
+import { attributeThresholdMods } from "../data/attribute-tiers.js";
+
+// Fold attribute-threshold mods into a passive statMods/triggers bundle: most
+// stats sum, damageCap is lowest-wins, and the snowball trigger caps are re-applied
+// so threshold bonuses can't push lifesteal/thorns/regen/shields past their limits.
+const _TRIGGER_CAP_KEYS = ["lifesteal", "thorns", "turnRegen", "shieldGen", "magicShieldGen"];
+export function mergeThresholdMods(statMods, triggers, th) {
+  for (const k in th.statMods) {
+    if (k === "damageCap") statMods.damageCap = statMods.damageCap ? Math.min(statMods.damageCap, th.statMods[k]) : th.statMods[k];
+    else statMods[k] = (statMods[k] || 0) + th.statMods[k];
+  }
+  for (const k in th.triggers) triggers[k] = (triggers[k] || 0) + th.triggers[k];
+  for (const k of _TRIGGER_CAP_KEYS) if (triggers[k] != null && PASSIVE_CAPS[k] != null) triggers[k] = Math.min(triggers[k], PASSIVE_CAPS[k]);
+}
 import { effectiveAttributes, proficiencyRating, weaponMasteryId } from "../data/proficiencies.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -180,8 +194,29 @@ export function weaponHands(item) {
 // a new one displaces the slot's current occupant back to the pack, so combat
 // effects can't be stacked by piling on duplicate gear. clothing is split into
 // real slots (head/hands/legs/feet/back/over/torso) so you can't wear five helms.
+// The wearable slots, in head-to-toe paper-doll order. `cap` is how many items
+// the slot holds (two rings). Weapons/shields/body-armour map cleanly from
+// `kind`; the finer clothing/trinket slots are ambiguous by name, so those items
+// carry an explicit `slot` (read first by equipSlot below).
+export const SLOTS = [
+  { id: "head",     label: "Head" },
+  { id: "neck",     label: "Neck" },
+  { id: "over",     label: "Over-robe" },
+  { id: "body",     label: "Body" },
+  { id: "back",     label: "Back" },
+  { id: "hands",    label: "Hands" },
+  { id: "ring",     label: "Rings", cap: 2 },
+  { id: "legs",     label: "Legs" },
+  { id: "feet",     label: "Feet" },
+  { id: "torso",    label: "Torso" },
+  { id: "mainhand", label: "Main Hand" },
+  { id: "offhand",  label: "Off Hand" },
+];
+const SLOT_IDS = new Set(SLOTS.map((s) => s.id));
+
 export function equipSlot(item) {
   if (!item) return null;
+  if (item.slot && SLOT_IDS.has(item.slot)) return item.slot; // explicit wins
   const k = item.kind;
   const n = `${item.name || ""} ${item.id || ""}`.toLowerCase();
   if (k === "weapon") return "mainhand";
@@ -189,7 +224,7 @@ export function equipSlot(item) {
   if (k === "armor") return "body";
   if (k === "trinket") return /\bring\b|signet|band/.test(n) ? "ring" : "neck";
   if (k === "clothing") {
-    if (/helm|helmet|cap|coif|hood|circlet|crown|mask|\bhat\b/.test(n)) return "head";
+    if (/helm|helmet|cap|coif|hood|circlet|crown|diadem|tiara|mask|\bhat\b/.test(n)) return "head";
     if (/bracer|vambrace|gauntlet|glove/.test(n)) return "hands";
     if (/greave|legging|chausse|cuisse/.test(n)) return "legs";
     if (/boot|shoe|sabaton|sandal/.test(n)) return "feet";
@@ -202,7 +237,7 @@ export function equipSlot(item) {
 
 // How many items a slot can hold (two rings; everything else one).
 export function slotCapacity(slot) {
-  return slot === "ring" ? 2 : 1;
+  return SLOTS.find((s) => s.id === slot)?.cap || 1;
 }
 
 // The attribute + minimum score an item demands, scaled by tier. Met → full
@@ -335,9 +370,12 @@ export function deriveCombatStats(character, codex) {
     if (it.kind === "armor" && stats.armorClass) band = armorBandMods(stats.armorClass);
   }
 
-  // Req-met passives modify stats and add triggers.
+  // Req-met passives modify stats and add triggers (attrs gate threshold passives).
   const { enabled } = collectEquippedPassives(character, codex);
-  const { statMods, triggers } = aggregateCombatPassives(enabled);
+  const { statMods, triggers } = aggregateCombatPassives(enabled, a);
+  // Attribute thresholds: smooth stat scaling + unique-effect unlocks, folded into
+  // the same statMods/triggers (damageCap is lowest-wins; trigger caps re-applied).
+  mergeThresholdMods(statMods, triggers, attributeThresholdMods(a));
 
   const weapon = weaponProfile(character, codex, a);
   weapon.pen += statMods.penetration || 0;
@@ -364,7 +402,7 @@ export function deriveCombatStats(character, codex) {
 
   return {
     maxHealth: character.vitalityMax + (statMods.maxHealth || 0) + (band.maxHealth || 0),
-    dr: clamp(statMods.drPct || 0, 0, 0.6), // flat % damage reduction, capped
+    dr: clamp(statMods.drPct || 0, 0, 0.85), // flat % damage reduction, capped (deep DR stacking pays off)
     armor: armor + (statMods.armor || 0),
     ward: ward + (statMods.ward || 0) + (band.ward || 0),
     dodge,
@@ -384,6 +422,10 @@ export function deriveCombatStats(character, codex) {
     // strongest (lowest) wins, set in aggregateCombatPassives. Unbowed resists control.
     damageCap: statMods.damageCap || 0,
     controlResist: clamp(statMods.controlResist || 0, 0, 0.6),
+    // Healing amplification (all heals ×(1+healPower)) and damage deferral (a share
+    // of each blow bleeds out over a few turns instead of landing at once).
+    healPower: clamp(statMods.healPower || 0, 0, 1.0),
+    dmgDefer: clamp(statMods.dmgDefer || 0, 0, 0.6),
     // Heavy armour layers on a small ever-renewing aegis shield (folded into the
     // shieldGen trigger so the engine's cap still applies).
     triggers: { ...triggers, shieldGen: (triggers.shieldGen || 0) + (band.shieldGen || 0) },

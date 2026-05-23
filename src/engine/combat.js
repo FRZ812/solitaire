@@ -33,8 +33,12 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 let LOG_SEQ = 0;
 const logEntry = (text, kind = "system") => ({ id: `l${Date.now()}-${LOG_SEQ++}`, text, kind });
 
-const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow"]);
+const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence"]);
 const RESISTABLE_CONTROL = new Set(["stun", "slow"]); // hard controls Unbowed (controlResist) can shrug off
+// Debuffs an "unstoppable" combatant (BKB) is flat-out immune to — disables and the
+// anti-heal curse, NOT damage-over-time (a wound still bleeds; you just can't be
+// disabled or cursed). Damage immunity (incl. true) is invuln's job, separately.
+const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence"]);
 const ALLY_LOSS = { cowardly: 22, wary: 14, fierce: 8, brutish: 10, honorable: 10, feral: 8, fanatic: 0, mindless: 0 };
 
 function sumStatus(c, type) {
@@ -47,10 +51,15 @@ function hasStatus(c, type) { return (c.statuses || []).some((s) => s.type === t
 // path routes through gainHealth so the suppression (and the maxHealth clamp) lives
 // in one place. Returns the health actually restored (for honest logs).
 const CURSE_HEAL_MULT = 0.5;
+const DEFER_TURNS = 3; // turns a deferred (dmgDefer) wound bleeds out over
+const CEASEFIRE_TURN = 50; // a grindingly long fight: a thinking foe offers a truce
 function gainHealth(c, amt) {
   if (!c || amt <= 0 || c.health <= 0) return 0;
   let h = amt;
   if (hasStatus(c, "curse")) h = Math.round(h * CURSE_HEAL_MULT);
+  // Healing amplification (healPower): a multiplier on ALL health gained — regen,
+  // lifesteal, ability heals, party heals — so it compounds lifesteal/regen builds.
+  if (c.healPower) h = Math.round(h * (1 + c.healPower));
   if (h <= 0) return 0;
   const before = c.health;
   c.health = Math.min(c.maxHealth, c.health + h);
@@ -59,15 +68,36 @@ function gainHealth(c, amt) {
 
 function addStatus(c, effect) {
   if (!effect) return;
-  // Unbowed (controlResist): a chance to shrug off hard control (stun/slow).
-  if (c && c.controlResist && RESISTABLE_CONTROL.has(effect.type) && Math.random() < c.controlResist) return;
+  // Debuff immunity (Unstoppable / BKB): control, silence, and curse are rejected
+  // outright while it's up.
+  if (c && BKB_BLOCKS.has(effect.type) && hasStatus(c, "unstoppable")) return;
+  // Hard control (stun/slow) has DIMINISHING RETURNS: Unbowed (controlResist) plus
+  // a stacking resist from how often this foe has already been controlled this
+  // fight (+20% per prior control, capped). So you can chain a couple of locks to
+  // set up a kill, but you can't perma-stun a boss out of the fight.
+  if (c && RESISTABLE_CONTROL.has(effect.type)) {
+    const resist = Math.min(0.8, (c.controlResist || 0) + (c.controlPressure || 0) * 0.2);
+    if (resist > 0 && Math.random() < resist) return;
+  }
   c.statuses = c.statuses || [];
-  c.statuses.push({ type: effect.type, value: effect.value || 0, duration: effect.duration || 1 });
+  c.statuses.push({ type: effect.type, value: effect.value || 0, duration: effect.duration || 1, pctMax: !!effect.pctMax });
 }
+// livingEnemies = anything not dead and not resolved (yielded/fled/ko). A FLEEING
+// foe is still "living" — it's on the field, running, until it gets clear.
 const livingEnemies = (cs) => cs.enemies.filter((e) => e.health > 0 && !e.resolved);
 const livingAllies = (cs) => (cs.allies || []).filter((a) => a.health > 0 && !a.resolved && !a._dead);
 // The player's side as a target list for enemies: the player plus living allies.
 const playerSide = (cs) => [cs.player, ...livingAllies(cs)].filter((c) => c.health > 0);
+// Foes still actively FIGHTING — a fleeing foe is on the field but not a threat.
+const liveAttackers = (cs) => livingEnemies(cs).filter((e) => !e.fleeing);
+// Foes that yielded and kneel at the player's mercy — on the field, awaiting the
+// player's verdict (finish or spare). They keep combat from ending on their own.
+const pendingCaptives = (cs) => cs.enemies.filter((e) => e.resolved === "yielded" && !e._dead);
+// Combat is over only when nothing's left fighting or fleeing AND no captive waits.
+const combatOver = (cs) => livingEnemies(cs).length === 0 && pendingCaptives(cs).length === 0;
+// The player may strike anything alive that isn't already gone — including a
+// fleeing foe (to run it down) or a yielded one (to execute it, deliberately).
+const playerTargetable = (e) => !!e && e.health > 0 && !e._dead && (!e.resolved || e.resolved === "yielded");
 const sideHpFrac = (list) => {
   const liv = list.filter((c) => c.health > 0);
   return liv.length ? liv.reduce((s, c) => s + c.health / Math.max(1, c.maxHealth), 0) / liv.length : 0;
@@ -107,6 +137,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     resolveRegen: cs.resolveRegen || 0,
     dr: cs.dr || 0, fortify: cs.fortify || 0,
     damageCap: cs.damageCap || 0, controlResist: cs.controlResist || 0,
+    healPower: cs.healPower || 0, dmgDefer: cs.dmgDefer || 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed, swiftChance: cs.swiftChance || 0, reloadLeft: 0,
@@ -296,13 +327,26 @@ function beginTurnFor(cs, actor) {
 // Walk the initiative order, resolving NPC turns, until it's the player's turn
 // (hand control to the UI with phase "player") or combat ends. Recomputes the
 // order at the top of each new round.
+// A grinding stalemate: once a fight drags past CEASEFIRE_TURN and a thinking foe
+// is still standing, it offers a truce. The offer then stays on the table — the
+// player can keep swinging, or break it off as a draw (playerCeasefire).
+function maybeOfferCeasefire(cs) {
+  if (cs.ceasefire || cs.turn < CEASEFIRE_TURN) return;
+  const talker = livingEnemies(cs).find((e) => !e.fleeing && e.canTalk !== false && DEMEANOR_CONFIG[e.demeanor]?.canParley);
+  if (!talker) return;
+  cs.ceasefire = true;
+  cs.log.push(logEntry(`${talker.name}, blooded and weary, gives ground and calls for a truce — neither side can best the other here. You may stand down to a wary draw, or fight on.`, "enemy"));
+}
+
 function advanceQueue(cs) {
   for (let guard = 0; guard < 2000; guard++) {
-    if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
+    routCheck(cs); // a foe whose side just lost may break before anyone else acts
+    if (combatOver(cs)) return checkCombatEnd(cs);
     if (!cs.order || cs.orderIdx >= cs.order.length) {
       cs.turn += 1;
       rollInitiative(cs);
       cs.log.push(logEntry(`— Turn ${cs.turn} —`, "system"));
+      maybeOfferCeasefire(cs);
       continue;
     }
     const actor = byUid(cs, cs.order[cs.orderIdx]);
@@ -321,15 +365,20 @@ function advanceQueue(cs) {
     cs.orderIdx += 1;
     if (r === "dead") { if (playerDown(cs)) return finishDefeat(cs); continue; }
     if (r === "stun") continue;
+    // A fleeing foe spends its turn putting ground between it and the field; once
+    // it's far enough it's gone. It doesn't fight — the player must run it down.
+    if (actor.side === "enemy" && actor.fleeing) { fleeStep(cs, actor); continue; }
     if (actor.side === "enemy" && !moraleCheck(cs, actor)) continue;
     while ((actor.actionsLeft || 0) > 0) {
-      const opponents = actor.side === "player" ? livingEnemies(cs) : playerSide(cs);
+      // Companions hit only foes still fighting — never a fleeing or yielded foe
+      // (running one down or finishing a captive is the player's call alone).
+      const opponents = actor.side === "player" ? liveAttackers(cs) : playerSide(cs);
       if (opponents.length === 0) break;
       if (actor.side !== "player" && cs.player.health <= 0) break;
       if (!npcPerform(cs, actor, opponents)) break;
       if (playerDown(cs)) return finishDefeat(cs);
     }
-    if (livingEnemies(cs).length === 0) return checkCombatEnd(cs);
+    if (combatOver(cs)) return checkCombatEnd(cs);
     if (playerDown(cs)) return finishDefeat(cs);
   }
   return cs;
@@ -496,7 +545,7 @@ function resolveHit(attacker, defender, profile) {
   let dmg = Math.max(0, raw - mitig);
   let dr = defender.dr || 0;
   if (defender.fortify && defender.maxHealth && defender.health / defender.maxHealth < 0.35) dr += defender.fortify;
-  if (dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.7, dr))));
+  if (dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.85, dr))));
   // Stonewall (damageCap): no single blow may exceed a share of max health.
   if (defender.damageCap && defender.maxHealth) dmg = Math.min(dmg, Math.max(1, Math.round(defender.maxHealth * defender.damageCap)));
 
@@ -509,6 +558,17 @@ function resolveHit(attacker, defender, profile) {
       absorbed = Math.min(defender.magicShield, dmg); defender.magicShield -= absorbed; dmg -= absorbed;
     } else if (profile.type !== "magical" && (defender.shield || 0) > 0) {
       absorbed = Math.min(defender.shield, dmg); defender.shield -= absorbed; dmg -= absorbed;
+    }
+  }
+  // Damage deferral (dmgDefer): a share of the blow that WOULD land is held back
+  // and bled out over a few turns as a "lingering" wound instead of all at once —
+  // anti-burst, so sustain can answer it. Not applied to the lingering tick itself.
+  let deferred = 0;
+  if (dmg > 0 && (defender.dmgDefer || 0) > 0) {
+    deferred = Math.round(dmg * Math.min(0.7, defender.dmgDefer));
+    if (deferred > 0) {
+      dmg -= deferred;
+      addStatus(defender, { type: "lingering", value: Math.max(1, Math.ceil(deferred / DEFER_TURNS)), duration: DEFER_TURNS });
     }
   }
   defender.health = Math.max(0, defender.health - dmg);
@@ -603,7 +663,7 @@ function applyProc(cs, actor, p, ctx) {
     case "status": {
       if (!target || target.health <= 0) return;
       if (p.cond === "targetLow" && target.health / target.maxHealth >= 0.3) return;
-      addStatus(target, { type: p.status, value: p.value, duration: p.duration });
+      addStatus(target, { type: p.status, value: p.value, duration: p.duration, pctMax: p.pctMax });
       if (CONTROL_TYPES.has(p.status) && target.side === "enemy") onEnemyControlled(target);
       cs.log.push(logEntry(`${actor.name}'s ${p.name} afflicts ${target.name} with ${p.status}.`, "status"));
       break;
@@ -698,8 +758,17 @@ function downEnemy(cs, e) {
     cs.log.push(logEntry(`${e.name} should be dead — and rises anyway.`, "enemy"));
     return;
   }
-  if (cs.lethal) { e._dead = true; cs.log.push(logEntry(`${e.name} falls, dead.`, "system")); }
-  else { e.resolved = "ko"; cs.log.push(logEntry(`${e.name} is knocked senseless.`, "system")); }
+  // Cutting down a foe that had thrown down its arms is an execution, not a kill —
+  // flag it so the aftermath can weigh the cold-bloodedness of it.
+  const wasHelpless = e.resolved === "yielded";
+  if (cs.lethal) {
+    e._dead = true;
+    if (wasHelpless) { e.executed = true; cs.executedCount = (cs.executedCount || 0) + 1; }
+    cs.log.push(logEntry(wasHelpless ? `${e.name} is cut down where it kneels.` : `${e.name} falls, dead.`, "system"));
+  } else {
+    e.resolved = "ko";
+    cs.log.push(logEntry(`${e.name} is knocked senseless.`, "system"));
+  }
   let lined = false;
   for (const s of cs.enemies) {
     if (s === e || s.health <= 0 || s.resolved) continue;
@@ -719,13 +788,28 @@ function downAlly(cs, a) {
 
 // Self-targeted ability effects — shared by the player and NPCs so defensive and
 // tempo abilities (shields, ward, invuln, an extra action) work the same for all.
+// Living combatants on the actor's own side (for party-target support spells).
+function sideAllies(cs, actor) {
+  const list = actor.side === "enemy"
+    ? cs.enemies
+    : [cs.player, ...(cs.allies || [])];
+  return list.filter((c) => c && c.health > 0 && !c.resolved && !c._dead);
+}
+
 function applySelfEffect(actor, effect) {
   if (!effect) return;
+  // `pctMax` heals/shields are a FRACTION of the target's max health, so support
+  // stays meaningful at every scale (a flat +16 is noise next to a raid's HP).
+  const val = effect.pctMax ? Math.max(1, Math.round((actor.maxHealth || 0) * (effect.value || 0))) : (effect.value || 0);
   switch (effect.type) {
-    case "shield":      actor.shield = (actor.shield || 0) + (effect.value || 0); break;
-    case "magicShield": actor.magicShield = (actor.magicShield || 0) + (effect.value || 0); break;
+    case "shield":      actor.shield = (actor.shield || 0) + val; break;
+    case "magicShield": actor.magicShield = (actor.magicShield || 0) + val; break;
     case "invuln":      actor.invuln = Math.max(actor.invuln || 0, effect.duration || 1); break;
+    // Unstoppable (BKB): debuff immunity AND damage immunity (invuln already turns
+    // aside ALL damage, true included) for the duration — the answer to an alpha.
+    case "unstoppable": { const d = effect.duration || 2; actor.invuln = Math.max(actor.invuln || 0, d); addStatus(actor, { type: "unstoppable", duration: d }); break; }
     case "bonusAction": actor.actionsLeft = (actor.actionsLeft || 0) + (effect.value || 1); break;
+    case "regen":       addStatus(actor, { ...effect, value: val, pctMax: false }); break; // bank the %-of-max as flat/turn
     default:            addStatus(actor, effect);
   }
 }
@@ -734,6 +818,7 @@ function applySelfEffect(actor, effect) {
 // actor's resolve (spells drain resolve; martial techniques are gated by action
 // points + cooldown only — the same economy the player uses).
 function npcCandidates(actor) {
+  if (hasStatus(actor, "silence")) return []; // silenced foes fall back to basic attacks
   const out = [];
   for (const a of (actor.abilities || [])) {
     if ((actor.cooldowns?.[a.id] || 0) > 0) continue;
@@ -751,7 +836,7 @@ function npcCandidates(actor) {
 // Returns true if it acted (so the caller can keep spending action points).
 function npcPerform(cs, actor, opponents) {
   if ((actor.actionsLeft || 0) <= 0) return false;
-  const choice = chooseAction(actor, opponents, npcCandidates(actor));
+  const choice = chooseAction(actor, opponents, npcCandidates(actor), { allies: sideAllies(cs, actor) });
   if (!choice) return false;
   const { def, ability, mode } = choice;
   const tId = ability.tier || actor.tier || "common";
@@ -788,6 +873,9 @@ function npcPerform(cs, actor, opponents) {
   if (mode === "self") {
     applySelfEffect(actor, def.effect);
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
+  } else if (mode === "all-allies") {
+    cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
+    for (const al of sideAllies(cs, actor)) applySelfEffect(al, def.effect);
   } else if (mode === "aoe") {
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
     for (const t of opponents) if (t.health > 0 && !t.resolved && !t._dead) hitOne(t);
@@ -810,16 +898,80 @@ function npcPerform(cs, actor, opponents) {
 
 function resolveYield(cs, e) {
   e.resolved = "yielded";
-  cs.log.push(logEntry(flavorLine("yield", e.demeanor, e.name) || `${e.name} yields.`, "enemy"));
+  e.weapon = null; // disarmed — drops its weapon as it throws up its hands
+  cs.log.push(logEntry(flavorLine("yield", e.demeanor, e.name) || `${e.name} yields, throwing down its weapon.`, "enemy"));
 }
+// How far a foe must get to be clear away, and how the chase reads.
+const FLEE_ESCAPE_DISTANCE = 6;
+// A foe doesn't vanish — it turns and RUNS, breaking away a step or two. It now
+// gains ground each of its turns (fleeStep) until it's clear or run down. The
+// player can pursue (advance) or shoot it; companions leave it to the player.
 function resolveFlee(cs, e) {
-  e.resolved = "fled";
-  cs.log.push(logEntry(flavorLine("flee", e.demeanor, e.name) || `${e.name} flees.`, "enemy"));
+  if (e.fleeing) return;
+  e.fleeing = true;
+  e.distance = Math.min(FLEE_ESCAPE_DISTANCE - 1, (e.distance || 0) + 2);
+  cs.log.push(logEntry(flavorLine("flee", e.demeanor, e.name) || `${e.name} breaks and runs!`, "enemy"));
+}
+// A fleeing foe's turn: it sprints further off. Faster foes open the gap quicker.
+// Once it's past the escape distance it's gone for good.
+function fleeStep(cs, e) {
+  const step = Math.max(1, Math.round((e.speed || 4) / 3));
+  e.distance = (e.distance || 0) + step;
+  if (e.distance >= FLEE_ESCAPE_DISTANCE) {
+    e.fleeing = false;
+    e.resolved = "fled";
+    cs.log.push(logEntry(`${e.name} gets clear and escapes.`, "enemy"));
+  } else {
+    cs.log.push(logEntry(`${e.name} sprints away — ${e.distance}/${FLEE_ESCAPE_DISTANCE} to clear.`, "enemy"));
+  }
 }
 function pushFlavor(cs, e, category) {
   const l = flavorLine(category, e.demeanor, e.name);
   if (l) { cs.log.push(logEntry(l, "enemy")); return true; }
   return false;
+}
+
+// A foe is hopelessly placed when its side is badly outnumbered (or it's the lone
+// survivor against a group) AND the player's side clearly outclasses it. Proud
+// foes only count themselves hopeless once bloodied.
+function hopelesslyOutmatched(cs, e) {
+  const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
+  const opp = playerSide(cs);
+  const own = livingEnemies(cs);
+  const outnumbered = opp.length >= own.length * 2 || (own.length === 1 && opp.length >= 2);
+  const hp = e.health / e.maxHealth;
+  const outclassed = (cs.powerRatio || 1) >= 1.5 && (!cfg.proud || hp < 0.6);
+  const winning = (hp - sideHpFrac(opp)) > 0.25; // personally well ahead — smells the kill
+  return outnumbered && outclassed && !winning;
+}
+
+// Break a foe NOW: flee if it can cleanly get away, else yield at the player's
+// mercy (or bolt if it can't yield). Returns true if it resolved.
+function breakFoe(cs, e) {
+  const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
+  const canEscape = (e.speed || 4) >= (cs.player.speed || 4) && (cs.powerRatio || 1) < 2.2;
+  if (cfg.prefer === "flee" && cfg.canFlee && canEscape) { resolveFlee(cs, e); return true; }
+  if (cfg.canYield) { resolveYield(cs, e); return true; }
+  if (cfg.canFlee) { resolveFlee(cs, e); return true; }
+  return false;
+}
+
+// After a foe falls, the survivors take stock. One that's now hopelessly
+// outmatched may break on the spot — yielding or fleeing BEFORE the player's
+// companions take their turn — so a terrified foe isn't cut down when it would
+// have thrown down its arms (and the player keeps the captive). Lethal fights
+// only; mindless/fanatic never break, and a foe just goaded to hold stands fast.
+function routCheck(cs) {
+  if (!cs.lethal) return;
+  if (!cs.enemies.some((e) => e._dead)) return; // a rout is triggered by seeing kin die
+  for (const e of livingEnemies(cs)) {
+    if (e.fleeing) continue; // already running — don't re-resolve it
+    const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
+    if (e.demeanor === "mindless" || e.demeanor === "fanatic") continue;
+    if (!cfg.canYield && !cfg.canFlee) continue;
+    if ((e.noFleeUntil || 0) >= cs.turn) continue;
+    if (hopelesslyOutmatched(cs, e)) breakFoe(cs, e);
+  }
 }
 
 // Decide a foe's reaction at the top of its turn. Returns true if it still
@@ -850,8 +1002,10 @@ function moraleCheck(cs, e) {
   const goaded = (e.noFleeUntil || 0) >= cs.turn;
   const winning = (hp - oppHp) > 0.25; // personally well ahead — smells the kill
   const yieldHp = cfg.yieldHp ?? 0.25;
-  // Only even consider breaking when actually in trouble.
-  const inTrouble = hp <= yieldHp || hp < 0.1 || (hopeless && hp < 0.5);
+  // Only even consider breaking when actually in trouble — badly hurt, hopeless
+  // and bloodied, or simply outnumbered AND clearly outclassed (a lone, doomed
+  // foe throws down its arms rather than die for nothing, even at full health).
+  const inTrouble = hp <= yieldHp || hp < 0.1 || (hopeless && hp < 0.5) || hopelesslyOutmatched(cs, e);
   const broke = !goaded && !winning && inTrouble;
   if (broke) {
     // A proud foe being bullied with control demands a fair fight before it breaks.
@@ -893,7 +1047,14 @@ function moraleCheck(cs, e) {
 
 function tickStatuses(c) {
   const logs = [];
-  const dot = sumStatus(c, "bleed") + sumStatus(c, "poison") + sumStatus(c, "burn");
+  // Damage-over-time: bleed/poison/burn (+ lingering deferred wounds). A status can
+  // be FLAT (value) or pctMax (a share of the victim's MAX health each turn) — the
+  // latter is how a build chips down a huge-pool monster (Vyrnholt) it can't burst.
+  let dot = 0;
+  for (const s of (c.statuses || [])) {
+    if (!["bleed", "poison", "burn", "lingering"].includes(s.type)) continue;
+    dot += s.pctMax ? Math.max(1, Math.round(c.maxHealth * (s.value || 0))) : (s.value || 0);
+  }
   if (dot > 0) {
     c.health = Math.max(0, c.health - dot);
     logs.push(logEntry(`${c.name} suffers ${dot} from bleed/poison/burn.`, "status"));
@@ -932,7 +1093,7 @@ function playerDown(cs) {
 // ----- end-of-combat checks -----
 
 function checkCombatEnd(cs) {
-  if (livingEnemies(cs).length > 0) return cs;
+  if (!combatOver(cs)) return cs; // foes still fighting/fleeing, or a captive awaits a verdict
   if (cs.enemies.every((e) => e._dead)) return finishVictory(cs);
   return finishResolved(cs); // some yielded / fled / knocked out (non-lethal)
 }
@@ -953,6 +1114,8 @@ export function abilityUsable(cs, abilityId) {
   if (!entry) return false;
   const def = getAbilityDef(abilityId);
   if ((cs.player.actionsLeft || 0) < (def.actionCost || 1)) return false; // action points gate everything now
+  // Silenced: only the basic strike and brace remain — no learned abilities.
+  if (hasStatus(cs.player, "silence") && abilityId !== BASIC_ATTACK.id && abilityId !== "defend") return false;
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
   if ((cs.player.resolve ?? 0) < (def.resolveCost || 0)) return false;
   if (!weaponReqMet(def, cs.player.weapon)) return false;
@@ -970,9 +1133,9 @@ export function playerAct(cs0, abilityId, targetIndex) {
   // Distance gate: a single-target action only lands within the ability's
   // reach/range. One step out → CHARGE (close the last step and strike in the
   // same action). Farther → spend the action just closing in (no cost).
-  if (def.target !== "self" && def.target !== "all-enemies") {
+  if (def.target !== "self" && def.target !== "all-enemies" && def.target !== "all-allies") {
     let gi = targetIndex;
-    if (gi == null || !cs.enemies[gi] || cs.enemies[gi].health <= 0 || cs.enemies[gi].resolved) gi = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
+    if (gi == null || !playerTargetable(cs.enemies[gi])) gi = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
     const gt = gi >= 0 ? cs.enemies[gi] : null;
     if (gt) {
       const reach = abilityReach(cs.player, def);
@@ -1022,12 +1185,15 @@ export function playerAct(cs0, abilityId, targetIndex) {
   if (def.target === "self") {
     applySelfEffect(cs.player, def.effect);
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
+  } else if (def.target === "all-allies") {
+    cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
+    for (const al of sideAllies(cs, cs.player)) applySelfEffect(al, def.effect);
   } else if (def.target === "all-enemies") {
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
     for (const e of cs.enemies) { if (e.health > 0 && !e.resolved) hitEnemy(e); }
   } else {
     let idx = targetIndex;
-    if (idx == null || !cs.enemies[idx] || cs.enemies[idx].health <= 0 || cs.enemies[idx].resolved) {
+    if (idx == null || !playerTargetable(cs.enemies[idx])) {
       idx = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
     }
     if (idx < 0) return cs0;
@@ -1171,7 +1337,7 @@ export function playerUseEnvironment(cs0, featureId, targetIndex = null) {
 }
 
 export function setTarget(cs0, idx) {
-  if (!cs0.enemies[idx] || cs0.enemies[idx].health <= 0 || cs0.enemies[idx].resolved) return cs0;
+  if (!playerTargetable(cs0.enemies[idx])) return cs0; // alive foes, plus a yielded one to execute
   return { ...cs0, target: idx };
 }
 
@@ -1301,6 +1467,43 @@ export function playerAdvance(cs0) {
   return cs;
 }
 
+// Whether the player can choose to stop the fight: no foe is still attacking, but
+// some foe yielded or is fleeing (so there's a verdict to give — spare them, or
+// let the runners go). Used to gate the Stand Down button.
+export function canStandDown(cs) {
+  if (!cs || cs.phase !== "player") return false;
+  if (liveAttackers(cs).length > 0) return false;
+  return pendingCaptives(cs).length > 0 || livingEnemies(cs).some((e) => e.fleeing);
+}
+
+// Once a fight has dragged into a stalemate (CEASEFIRE_TURN), a thinking foe's
+// truce offer stays on the table — the player can break off to a wary DRAW.
+export function canCeasefire(cs) {
+  return !!(cs && cs.phase === "player" && cs.ceasefire);
+}
+// Take the truce: both sides disengage. Foes still standing give ground (no kill,
+// no spoils); a foe that had yielded stays a captive. Ends as a standoff.
+export function playerCeasefire(cs0) {
+  if (!canCeasefire(cs0)) return cs0;
+  const cs = clone(cs0);
+  for (const e of cs.enemies) if (e.health > 0 && !e._dead && e.resolved !== "yielded") { e.resolved = "fled"; e.fleeing = false; }
+  cs.standoff = true;
+  cs.log.push(logEntry(`${cs.player.name} lowers their guard; the foe gives ground in kind. A wary draw — no more blood spent today.`, "system"));
+  return finishResolved(cs);
+}
+
+// Stand down: end the fight without finishing the broken foes. Foes that yielded
+// are spared (kept alive, at the player's mercy / as captives); any still fleeing
+// are let go. Refused while a foe is still actively fighting.
+export function playerStandDown(cs0) {
+  if (!canStandDown(cs0)) return cs0;
+  const cs = clone(cs0);
+  for (const e of cs.enemies) if (e.fleeing) { e.fleeing = false; e.resolved = "fled"; }
+  cs.spared = cs.enemies.some((e) => e.resolved === "yielded" && !e._dead);
+  cs.log.push(logEntry(`${cs.player.name} lowers their weapon and stands down.`, "player"));
+  return finishResolved(cs);
+}
+
 // ----- outcomes + loot -----
 
 function lootCtx(cs) {
@@ -1332,34 +1535,42 @@ function finishDefeat(cs) {
   return cs;
 }
 
-const LOOT_NAMES = {
-  weapon: ["Blade", "Edge", "Fang", "Cleaver", "Spike", "Talon"],
-  armor: ["Guard", "Plate", "Hauberk", "Carapace", "Ward"],
-  trinket: ["Charm", "Sigil", "Token", "Knot", "Bead"],
-};
 const TIER_ADJ = {
   common: "Plain", uncommon: "Fine", rare: "Keen", "very-rare": "Runed",
   epic: "Storied", legendary: "Fabled", mythical: "Mythic", divine: "Hallowed",
 };
 
+// Every wearable slot is droppable at every tier, so loot can fill the whole
+// paper-doll — not just weapon/armor/trinket. Each entry carries its `kind`,
+// explicit `slot`, name nouns, and a tier-scaled stat block (m = tier multiplier).
+const r = (v) => Math.max(1, Math.round(v));
+const LOOT_TYPES = [
+  { kind: "weapon",   slot: "mainhand", nouns: ["Blade", "Edge", "Fang", "Cleaver", "Spike", "Talon"], combat: (m) => ({ damage: { min: r(3 * m), max: r(6 * m), type: "physical", pen: Math.round(m) } }) },
+  { kind: "shield",   slot: "offhand",  nouns: ["Buckler", "Targe", "Roundshield", "Wall"],            combat: (m) => ({ armor: r(2.4 * m) }) },
+  { kind: "armor",    slot: "body",     nouns: ["Hauberk", "Cuirass", "Carapace", "Brigandine"],       combat: (m) => ({ armor: r(3 * m) }) },
+  { kind: "clothing", slot: "head",     nouns: ["Helm", "Cap", "Coif", "Circlet"],                     combat: (m) => ({ armor: r(1.2 * m) }) },
+  { kind: "clothing", slot: "hands",    nouns: ["Gauntlets", "Bracers", "Gloves"],                     combat: (m) => ({ armor: r(1 * m) }) },
+  { kind: "clothing", slot: "legs",     nouns: ["Greaves", "Leggings", "Chausses"],                    combat: (m) => ({ armor: r(1.5 * m) }) },
+  { kind: "clothing", slot: "feet",     nouns: ["Boots", "Sabatons", "Treads"],                        combat: (m) => ({ armor: r(0.8 * m), dodge: r(0.6 * m) }) },
+  { kind: "clothing", slot: "back",     nouns: ["Cloak", "Cape", "Mantle"],                            combat: (m) => ({ ward: r(1 * m), dodge: r(0.8 * m) }) },
+  { kind: "clothing", slot: "over",     nouns: ["Robe", "Vestment", "Surcoat"],                        combat: (m) => ({ ward: r(2 * m) }) },
+  { kind: "clothing", slot: "torso",    nouns: ["Tunic", "Jerkin", "Gambeson"],                        combat: (m) => ({ armor: r(1 * m), ward: r(1 * m) }) },
+  { kind: "trinket",  slot: "neck",     nouns: ["Amulet", "Pendant", "Torc", "Charm"],                 combat: (m) => ({ ward: r(2 * m) }) },
+  { kind: "trinket",  slot: "ring",     nouns: ["Ring", "Band", "Signet"],                             combat: (m) => ({ ward: r(1 * m), dodge: r(0.8 * m) }) },
+];
+
 function generateLootItem(tierId) {
-  const kinds = ["weapon", "armor", "trinket"];
-  const kind = kinds[Math.floor(Math.random() * kinds.length)];
-  const noun = LOOT_NAMES[kind][Math.floor(Math.random() * LOOT_NAMES[kind].length)];
+  const t = LOOT_TYPES[Math.floor(Math.random() * LOOT_TYPES.length)];
+  const noun = t.nouns[Math.floor(Math.random() * t.nouns.length)];
   const name = `${TIER_ADJ[tierId] || "Plain"} ${noun}`;
   const id = `${tierId}-${noun.toLowerCase()}-${Math.random().toString(36).slice(2, 6)}`;
-  const m = tierMult(tierId);
-  let combat;
-  if (kind === "weapon") combat = { damage: { min: Math.round(3 * m), max: Math.round(6 * m), type: "physical", pen: Math.round(m) } };
-  else if (kind === "armor") combat = { armor: Math.round(3 * m) };
-  else combat = { ward: Math.round(2 * m), dodge: Math.round(1 * m) };
   return {
     id,
     entry: {
-      id, name, kind: kind === "trinket" ? "trinket" : kind, tier: tierId,
+      id, name, kind: t.kind, slot: t.slot, tier: tierId,
       appearance: `${tierLabel(tierId)}-grade ${noun.toLowerCase()}, taken in battle.`,
-      description: `A ${tierLabel(tierId).toLowerCase()} ${kind} recovered from a foe.`,
-      combat,
+      description: `A ${tierLabel(tierId).toLowerCase()} ${noun.toLowerCase()} recovered from a foe.`,
+      combat: t.combat(tierMult(tierId)),
       passives: rollItemPassives(tierId, { luck: 0.1 }),
     },
   };
@@ -1486,7 +1697,7 @@ export function applyCombatResult(state, cs, context = {}) {
     if (!e.npcId) continue;
     const ch = next.world.codex.characters?.[e.npcId];
     if (!ch) continue;
-    const status = e._dead ? "dead" : e.resolved === "yielded" ? "yielded" : e.resolved === "fled" ? "fled" : (e.health < e.maxHealth ? "wounded" : "ok");
+    const status = e._dead ? "dead" : e.resolved === "yielded" ? "yielded" : (e.resolved === "fled" || e.fleeing) ? "fled" : (e.health < e.maxHealth ? "wounded" : "ok");
     ch.combatState = { health: Math.max(0, Math.ceil(e.health)), maxHealth: e.maxHealth, status };
   }
 
@@ -1563,14 +1774,29 @@ export function applyLoot(state, manifest) {
 
 function buildCombatRecap(cs, context) {
   const outcome =
+    cs.standoff ? "it ground to a STALEMATE — neither side could best the other, and both broke off in a wary, exhausted draw (no victor, no spoils)" :
     cs.phase === "victory" ? "you won" :
     cs.phase === "defeat" ? "you were beaten down and went under" :
     cs.phase === "resolved" ? "it ended without a slaughter" :
     cs.phase === "playerFled" ? "you broke off and fled" : "it ended";
+  // Fate is the foe's ACTUAL resolution, not raw HP — a foe that yielded, fled,
+  // or was knocked out is ALIVE even at 0-ish health, and must never be narrated
+  // (or have a companion narrated) as killed.
   const foes = cs.enemies.map((e) => {
-    const st = e.health <= 0 ? "slain" : e.resolved === "yielded" ? "yielded" : e.resolved === "fled" ? "fled" : `still standing (${Math.ceil(e.health)}/${e.maxHealth})`;
+    const st = e.executed ? "EXECUTED — cut down by the player AFTER it had surrendered, disarmed and defenceless (a cold, deliberate killing)"
+      : e._dead ? "slain in the fighting"
+      : e.resolved === "yielded" ? "YIELDED then SPARED — alive, disarmed, a captive at the player's mercy (do NOT kill it)"
+      : e.resolved === "fled" ? "FLED — escaped alive, off the field"
+      : e.fleeing ? "FLEEING — broke and ran"
+      : e.resolved === "ko" ? "knocked out — alive, unconscious"
+      : e.health <= 0 ? "down, gravely wounded but not dead"
+      : `still standing (${Math.ceil(e.health)}/${e.maxHealth})`;
     return `${e.name} [${e.tier}, ${e.demeanor}] — ${st}`;
   }).join("; ");
+  const executeNote = cs.executedCount
+    ? ` NOTE: the player EXECUTED ${cs.executedCount} foe${cs.executedCount === 1 ? "" : "s"} who had already surrendered and were defenceless — a cold, ugly act. Any companions and witnesses should react accordingly (unease, horror, judgement, fear of the player), and it may stain the player's standing or conscience.`
+    : "";
+  const spareNote = cs.spared ? " The player SPARED the foe(s) who yielded — they live, disarmed and at the player's mercy (captive, free to be questioned, ransomed, recruited, or released)." : "";
   const account = cs.log
     .filter((l) => !/^—\s*Turn/.test(l.text))
     .slice(-22)
@@ -1584,5 +1810,5 @@ function buildCombatRecap(cs, context) {
   const allyNote = allies.length
     ? ` Fighting at your side: ${allies.map((a) => `${a.name} (${a._dead ? "slain" : a.resolved === "ko" ? "knocked out" : a.health < a.maxHealth ? `wounded, ${Math.ceil(a.health)}/${a.maxHealth}` : "unhurt"})`).join("; ")}.`
     : "";
-  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. You fought exactly ${n} foe${n === 1 ? "" : "s"} (this is the full roster — narrate only these, by these fates): ${foes}.${allyNote} You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}.${magicNote}`.slice(0, 1800);
+  return `[COMBAT REPORT] ${context.flavor || "A fight"} — ${outcome}. You fought exactly ${n} foe${n === 1 ? "" : "s"} (this is the full roster — narrate only these, by these EXACT fates): ${foes}.${allyNote} Honour each fate precisely: do NOT kill a foe that yielded, fled, or was knocked out, do not have a companion finish one off, and do not raise, revive, or invent foes. Only foes marked "slain" or "executed" died.${executeNote}${spareNote} You ended at ${Math.ceil(cs.player.health)}/${cs.player.maxHealth} HP. Blow-by-blow: ${account}.${magicNote}`.slice(0, 1800);
 }

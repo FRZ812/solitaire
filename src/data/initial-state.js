@@ -105,8 +105,20 @@ export function makeInitialState() {
             },
             base_appearance: "A banked heat the colour of cooling iron, wreathed in slow black smoke, with too many embers for eyes. The shape will not hold still in the eye, and the cold air bends around it.",
             description: "Sits the Polestar Throne at Northstar Castle in the far north — a true demon, the abyssal power the demon-blooded merely descend from. The continent's oldest binding power and its quietest one. Pilgrims walk toward him. Few come back; none come back the same.",
-            attributes: { body: 18, reflex: 14, vigor: 22, mind: 18, wit: 16, presence: 24 },
+            attributes: { body: 18, reflex: 16, vigor: 26, mind: 22, wit: 20, presence: 28 },
             worn: ["frost-crown", "black-robe", "polestar-sword"],
+            // A RAID BOSS by design (see Vyrnholt): a vast authored health pool and
+            // two actions a turn — the demon binds and annihilates across a whole
+            // party each round, not one foe. Hopeless solo; a true raid for a party.
+            health: 440,
+            actionsPerTurn: 2,
+
+            innatePassives: [
+              { id: "godward",   tier: "divine" },   // the dread that turns aside harm
+              { id: "colossus",  tier: "divine" },   // abyssal vitality atop the pool
+              { id: "undying",   tier: "divine" },   // a bound demon does not simply die
+              { id: "worldbreaker", tier: "divine" },// one annihilating stroke
+            ],
             // His signature kit (named powers, not the generic attribute-inferred
             // fallback), tuned at divine to stand level with the great wyrm. Where
             // the wyrm is brute fire and fury, the demon is dread, binding, and one
@@ -231,22 +243,30 @@ export function makeInitialState() {
             },
             base_appearance: "Longer than a wagon-train. Smoke-black scale. Gold slit eyes. A lance-scar across the brow. Gold leaf melted into the right foreclaws.",
             description: "The great wyrm of Drakespire — a true dragon of the old line, the Vyrgun's lord and the Drakeholt's oldest authority. Wakes seldom; is always aware. Tribute climbs the road in his name.",
-            attributes: { body: 24, reflex: 12, vigor: 26, mind: 18, wit: 22, presence: 22 },
-            // A true dragon wears no harness — his might is in his nature, not a
-            // hoard strapped on. Lacking the divine ITEMS that carry a fabled foe's
-            // game-breaking affixes, he EMBODIES them: scale like god-plate, fang
-            // and flame like a god-arm. Tuned to stand beside the Demon King.
+            attributes: { body: 28, reflex: 16, vigor: 30, mind: 20, wit: 24, presence: 26 },
+            // A RAID BOSS by design, not a multiplier — a dragon razes cities. His
+            // might is in his nature: a vast authored health pool (a wyrm is not
+            // burst down in three turns), THREE actions a turn (he answers a whole
+            // party every round, snatching a member up in his jaws while he breathes
+            // on the rest), and god-tier innate affixes since he wears no hoard. He
+            // is meant to be HOPELESS solo and a true raid for a full, well-built
+            // party. Tuned against scripts/boss-parity-sim.mjs.
             worn: [],
-            naturalArmor: 2,   // scale the size of shields
-            naturalWard: 2,    // the old magic banked in dragon-blood
-            naturalWeapon: { min: 4, max: 7, type: "physical", pen: 3, category: "fang", reach: 2, speed: 0, acc: 1 },
+            health: 520,            // base pool, ×tier — thousands of HP at divine
+            actionsPerTurn: 2,      // a dragon answers the field each round (not a turn-1 wipe)
+
+            naturalArmor: 3,   // scale the size of shields
+            naturalWard: 3,    // the old magic banked in dragon-blood
+            naturalWeapon: { min: 3, max: 5, type: "physical", pen: 4, category: "fang", reach: 2, speed: 0, acc: 2 },
             innatePassives: [
               { id: "worldbreaker", tier: "divine" },    // raw, world-ending might
               { id: "godward",      tier: "divine" },     // scale that shrugs off a fifth of all harm
               { id: "undying",      tier: "divine" },     // an elder wyrm does not simply die
-              { id: "colossus",     tier: "mythical" },   // immense bulk
-              { id: "sunder",       tier: "mythical" },   // claw and fang cleave any harness
-              { id: "savage",       tier: "legendary" },  // a wyrm's strike is ruin
+              { id: "juggernaut",   tier: "divine" },     // a mountain of vitality atop the base pool
+              { id: "colossus",     tier: "divine" },     // immense bulk
+              { id: "sunder",       tier: "divine" },     // claw and fang cleave any harness
+              { id: "savage",       tier: "mythical" },   // a wyrm's strike is ruin
+              { id: "cursed",       tier: "divine" },     // a draconic curse — festering wounds halve a foe's healing, breaking any turtle/sustain stack
             ],
             // Kit the combat AI actually fields: dragon-breath engulfs a GROUP
             // (his iconic moment vs a party), beast-shift is his surging wrath that

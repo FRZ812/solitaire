@@ -10,7 +10,8 @@ import { onAuthChange, signOut, linkEmail, isSubscribed } from "$auth";
 import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "$campaigns";
 import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
-import { recordTurn, stateBeforeTurn, turnForBeatIndex, editBeat } from "./engine/timeline.js";
+import { recordTurn, stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt, editBeat, deleteBeat } from "./engine/timeline.js";
+import { recomputeVitalityMax } from "./engine/attributes.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
@@ -36,7 +37,7 @@ import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
-import { initCombat, playerAct, playerDrawWeapon, setTarget, endTurn, playerFlee, playerWithdraw, playerAdvance, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
+import { initCombat, playerAct, playerDrawWeapon, setTarget, endTurn, playerFlee, playerStandDown, playerCeasefire, playerWithdraw, playerAdvance, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
@@ -245,6 +246,9 @@ export function Solitaire() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // A failed player-message send, kept so it can be retried (e.g. the app was
+  // backgrounded mid-request and the connection dropped). { base, message }.
+  const [retry, setRetry] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [fusionRune, setFusionRune] = useState(null); // forge-rune id being bound in the fusion ritual
   const [mapOpen, setMapOpen] = useState(false);
@@ -427,10 +431,18 @@ export function Solitaire() {
     return () => { cancelled = true; };
   }, [state, hydrated, currentCampaignId]);
 
-  // ----- Scroll the beat log -----
+  // ----- Scroll the beat log to the latest beat -----
+  // Loading a campaign renders its whole history at once, so the first scroll
+  // measures a height that late layout (fonts, images, beat art) then grows past
+  // — re-pin on the next frame, and also when a campaign is opened/hydrated.
   useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [state.beats.length, loading]);
+    const el = logRef.current;
+    if (!el) return;
+    const toBottom = () => { el.scrollTop = el.scrollHeight; };
+    toBottom();
+    const r = requestAnimationFrame(toBottom);
+    return () => cancelAnimationFrame(r);
+  }, [state.beats.length, loading, hydrated, currentCampaignId]);
 
   // ----- Campaign handlers -----
 
@@ -455,6 +467,9 @@ export function Solitaire() {
       // added to initial-state.js since this campaign was last opened.
       // Doesn't touch the player's own discoveries.
       const migrated = migrateCodex(loaded);
+      // Bring older saves' max HP onto the vigor-derived formula so the vitals
+      // strip is correct the moment the campaign opens (heals by any gain).
+      if (migrated?.character) recomputeVitalityMax(migrated.character);
       setState(migrated);
       closeBeatMenu();
       setCurrentCampaignId(id);
@@ -553,25 +568,40 @@ export function Solitaire() {
     const action = input.trim();
     if (!action || loading) return;
     setInput("");
-    setError(null);
-    setLoading(true);
+    setRetry(null);
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: action };
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
+    // Until the opening interview finishes, every answer feeds character creation;
+    // the narrator asks a few questions then finalizes the build.
+    const message = state.created === false ? `[CHARACTER CREATION] ${action}` : `[PLAYER ACTION] ${action}`;
+    await runNarratorTurn(stateWithPlayer, message);
+  }
+
+  // Run a player-message turn against the narrator. On failure (dropped network,
+  // backgrounded app…) the message is preserved and stashed for a one-tap Retry —
+  // the typed action is never lost.
+  async function runNarratorTurn(base, message) {
+    setError(null);
+    setLoading(true);
     try {
-      // Until the opening interview finishes, every answer feeds character
-      // creation; the narrator asks a few questions then finalizes the build.
-      const message = state.created === false ? `[CHARACTER CREATION] ${action}` : `[PLAYER ACTION] ${action}`;
-      const beat = await callNarrator(stateWithPlayer, message);
-      const next = applyBeat(stateWithPlayer, beat);
-      setState(recordTurn(stateWithPlayer, message, next));
+      const beat = await callNarrator(base, message);
+      const next = applyBeat(base, beat);
+      setState(recordTurn(base, message, next));
+      setRetry(null);
       // An explicit strike in the fiction hands off to the turn-based engine.
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
+      setRetry({ base, message });
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleRetry() {
+    if (!retry || loading) return;
+    runNarratorTurn(retry.base, retry.message);
   }
 
   async function handleTravel(dest, providedPath) {
@@ -820,7 +850,10 @@ export function Solitaire() {
   // and logs a short beat of what changed.
   function handleUse(itemId) {
     const r = useConsumable(state, itemId);
-    if (!r.ok) return;
+    if (!r.ok) {
+      if (r.reason) setState({ ...state, beats: [...state.beats, { id: `use${Date.now()}`, type: "narration", content: r.reason }] });
+      return;
+    }
     setState({ ...r.state, beats: [...r.state.beats, { id: `use${Date.now()}`, type: "narration", content: r.summary }] });
   }
 
@@ -943,8 +976,15 @@ export function Solitaire() {
   // ----- Long-press a bubble: Rewrite / Edit / Rewind -----
 
   function openBeatMenu(beat, index) {
-    if (beat.type !== "narration" && beat.type !== "dialogue") return;
-    setBeatMenu({ beatId: beat.id, index, turnK: turnForBeatIndex(state, index) });
+    if (!["narration", "dialogue", "player"].includes(beat.type)) return;
+    const turns = state.turns || [];
+    // Rewind keeps the selected bubble's turn and drops everything AFTER it. A
+    // player bubble's turn is the one it kicked off; a narration/dialogue's is the
+    // turn it belongs to. Rewind is possible only if a later turn exists to drop.
+    const turnK = beat.type === "player" ? turnStartedAt(state, index) : turnForBeatIndex(state, index);
+    const canRewind = turnK >= 0 && turnK + 1 < turns.length;
+    const kind = beat.type === "player" ? "player" : "narrative";
+    setBeatMenu({ beatId: beat.id, index, kind, turnK, canRewind });
     setBeatMode("menu");
     setRewriteText("");
     setEditText(beat.type === "dialogue" ? beat.line : beat.content);
@@ -962,7 +1002,7 @@ export function Solitaire() {
   async function handleRewriteBeat() {
     const menu = beatMenu;
     const feedback = rewriteText.trim();
-    if (!menu || menu.turnK < 0 || !feedback || loading) return;
+    if (!menu || menu.kind !== "narrative" || menu.turnK < 0 || !feedback || loading) return;
     const cp = state.turns[menu.turnK];
     closeBeatMenu();
     setError(null);
@@ -993,23 +1033,34 @@ export function Solitaire() {
     }
   }
 
-  // Rewind the story to just before this bubble — drop it and everything after.
+  // Rewind: keep the selected bubble and drop everything AFTER it. A player
+  // message keeps itself and loses its response + later turns; a narration/
+  // dialogue keeps its whole turn and loses only later turns.
   function handleRewindBeat() {
     const menu = beatMenu;
-    if (!menu || menu.turnK < 0 || loading) return;
+    if (!menu || !menu.canRewind || loading) return;
     closeBeatMenu();
     setPendingEngage(null);
     setPendingCombat(null);
     setPendingLoot(null);
-    setState(stateBeforeTurn(state, menu.turnK));
+    setState(stateAfterTurn(state, menu.turnK));
   }
 
-  // Manually edit the bubble's text (synced into the model's memory).
+  // Manually edit the bubble's text in place (synced into the model's memory).
   function handleEditBeat() {
     const menu = beatMenu;
     const text = editText.trim();
     if (!menu || !text) return;
     setState((s) => editBeat(s, menu.beatId, text));
+    closeBeatMenu();
+  }
+
+  // Delete just this one bubble (a stray dialogue line, an unwanted aside),
+  // leaving the rest of the turn in place.
+  function handleDeleteBeat() {
+    const menu = beatMenu;
+    if (!menu) return;
+    setState((s) => deleteBeat(s, menu.beatId));
     closeBeatMenu();
   }
 
@@ -1212,6 +1263,8 @@ export function Solitaire() {
   const onCombatTarget = (idx) => setCombat((c) => (c ? setTarget(c, idx) : c));
   const onCombatEndTurn = () => setCombat((c) => (c ? endTurn(c) : c));
   const onCombatFlee = () => setCombat((c) => (c ? playerFlee(c) : c));
+  const onCombatStandDown = () => setCombat((c) => (c ? playerStandDown(c) : c));
+  const onCombatCeasefire = () => setCombat((c) => (c ? playerCeasefire(c) : c));
   const onCombatWithdraw = () => setCombat((c) => (c ? playerWithdraw(c) : c));
   const onCombatAdvance = () => setCombat((c) => (c ? playerAdvance(c) : c));
 
@@ -1296,7 +1349,21 @@ export function Solitaire() {
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
           {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
           {loading && <LoadingDots />}
-          {error && <ErrorBanner>{error}</ErrorBanner>}
+          {error && (
+            <ErrorBanner>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
+                <span style={{ minWidth: 0 }}>{error}</span>
+                {retry && (
+                  <button onClick={handleRetry} disabled={loading} style={{
+                    flexShrink: 0, padding: "6px 14px", borderRadius: 10,
+                    backgroundColor: "rgba(215,167,111,0.18)", color: colors.parchmentLight,
+                    border: "1px solid rgba(215,167,111,0.4)", fontSize: "12px", fontWeight: 800,
+                    cursor: loading ? "default" : "pointer", fontFamily: "inherit", opacity: loading ? 0.5 : 1,
+                  }}>Retry</button>
+                )}
+              </div>
+            </ErrorBanner>
+          )}
           {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
         </div>
         {state.created !== false && pendingCombat && !combat && (
@@ -1402,7 +1469,9 @@ export function Solitaire() {
       {beatMenu && (
         <BeatActionSheet
           mode={beatMode}
-          canRewindRewrite={beatMenu.turnK >= 0}
+          kind={beatMenu.kind}
+          canRewrite={beatMenu.kind === "narrative" && beatMenu.turnK >= 0}
+          canRewind={beatMenu.canRewind}
           loading={loading}
           rewriteText={rewriteText}
           editText={editText}
@@ -1411,6 +1480,7 @@ export function Solitaire() {
           onChooseRewrite={() => setBeatMode("rewrite")}
           onChooseEdit={() => setBeatMode("edit")}
           onRewind={handleRewindBeat}
+          onDelete={handleDeleteBeat}
           onSubmitRewrite={handleRewriteBeat}
           onSubmitEdit={handleEditBeat}
           onClose={closeBeatMenu}
@@ -1550,6 +1620,8 @@ export function Solitaire() {
           onSetTarget={onCombatTarget}
           onEndTurn={onCombatEndTurn}
           onFlee={onCombatFlee}
+          onStandDown={onCombatStandDown}
+          onCeasefire={onCombatCeasefire}
           onWithdraw={onCombatWithdraw}
           onAdvance={onCombatAdvance}
           onResolve={handleResolveCombat}

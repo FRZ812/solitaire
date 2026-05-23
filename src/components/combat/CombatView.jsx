@@ -107,35 +107,43 @@ function DefenseBadges({ c, compact = false }) {
 }
 
 function EnemyCard({ enemy, selected, onSelect }) {
-  const dead = enemy.health <= 0;
-  const resolvedWord = enemy.resolved === "yielded" ? "Yielded" : enemy.resolved === "fled" ? "Fled" : null;
-  const inactive = dead || !!enemy.resolved;
-  const mood = inactive ? null : moodOf(enemy);
-  const resolvedColor = enemy.resolved === "yielded" ? "#a7f3d0" : "#9ab0b0";
+  const dead = enemy._dead || (enemy.health <= 0 && !enemy.resolved);
+  const yielded = enemy.resolved === "yielded" && !enemy._dead;
+  const fleeing = !!enemy.fleeing && !enemy.resolved && !enemy._dead;
+  const gone = enemy.resolved === "fled" || enemy.resolved === "ko";
+  // A yielded foe is a CHOICE (execute or spare) — keep it selectable. A fleeing
+  // foe can still be run down — selectable too. Dead/fled/KO foes are out.
+  const selectable = !dead && !gone;
+  const inactive = !selectable;
+  const stateWord = dead ? null : yielded ? "Yielded — at your mercy" : enemy.resolved === "fled" ? "Fled" : enemy.resolved === "ko" ? "Out cold" : null;
+  const stateColor = yielded ? "#fcd34d" : "#9ab0b0";
+  const mood = inactive || fleeing ? null : moodOf(enemy);
   return (
     <button
-      onClick={() => !inactive && onSelect()}
+      onClick={() => selectable && onSelect()}
       disabled={inactive}
       style={{
         flex: "1 1 130px", minWidth: 0, textAlign: "left",
         padding: "9px 11px", borderRadius: radius.panelCompact,
-        backgroundColor: inactive ? "rgba(20,29,29,0.35)" : "rgba(35,15,15,0.55)",
-        border: selected && !inactive ? `1px solid ${colors.gold}` : `1px solid rgba(239,68,68,0.3)`,
-        boxShadow: selected && !inactive ? `0 0 12px rgba(215,167,111,0.3)` : "none",
-        opacity: inactive ? 0.5 : 1, cursor: inactive ? "default" : "pointer",
+        backgroundColor: inactive ? "rgba(20,29,29,0.35)" : yielded ? "rgba(45,38,12,0.55)" : "rgba(35,15,15,0.55)",
+        border: selected && selectable ? `1px solid ${colors.gold}` : yielded ? "1px solid rgba(252,211,77,0.4)" : `1px solid rgba(239,68,68,0.3)`,
+        boxShadow: selected && selectable ? `0 0 12px rgba(215,167,111,0.3)` : "none",
+        opacity: inactive ? 0.5 : 1, cursor: selectable ? "pointer" : "default",
         fontFamily: "inherit", transition: "border-color 0.2s, box-shadow 0.2s",
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px", marginBottom: "5px" }}>
         <span style={{
           fontFamily: fonts.serif, fontStyle: "italic", fontSize: "14px",
-          color: dead ? colors.parchmentMuted : resolvedWord ? resolvedColor : "#fde8e4", overflow: "hidden",
+          color: dead ? colors.parchmentMuted : stateWord ? stateColor : "#fde8e4", overflow: "hidden",
           textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: dead ? "line-through" : "none",
         }}>{enemy.name}</span>
         <TierBadge tier={enemy.tier} />
       </div>
-      {resolvedWord ? (
-        <div style={{ fontSize: "12px", fontStyle: "italic", color: resolvedColor, padding: "4px 0" }}>{resolvedWord}</div>
+      {stateWord ? (
+        <div style={{ fontSize: "12px", fontStyle: "italic", color: stateColor, padding: "4px 0" }}>
+          {stateWord}{yielded ? <span style={{ fontSize: "9px", fontStyle: "normal", color: "rgba(237,228,208,0.5)", display: "block", marginTop: "2px" }}>Tap to target — strike to execute, or Stand Down to spare.</span> : null}
+        </div>
       ) : (
         <>
           <Bar value={enemy.health} max={enemy.maxHealth} color="linear-gradient(90deg,#8f4c3c,#c75b48)" height={7} />
@@ -145,8 +153,8 @@ function EnemyCard({ enemy, selected, onSelect }) {
             <span style={{ fontSize: "8px", color: "rgba(237,228,208,0.5)" }}>
               {enemy.armor > 0 ? `AR ${enemy.armor} ` : ""}{enemy.ward > 0 ? `WD ${enemy.ward}` : ""}
             </span>
-            <span style={{ fontSize: "8px", color: (enemy.distance || 0) <= 1 ? "rgba(199,91,72,0.85)" : "rgba(127,199,224,0.85)" }} title="engagement distance">
-              {(enemy.distance || 0) <= 1 ? "engaged" : `dist ${enemy.distance}`}
+            <span style={{ fontSize: "8px", color: fleeing ? "#fcd34d" : (enemy.distance || 0) <= 1 ? "rgba(199,91,72,0.85)" : "rgba(127,199,224,0.85)" }} title={fleeing ? "running — close in or shoot it before it gets clear" : "engagement distance"}>
+              {fleeing ? `FLEEING ${enemy.distance}/6` : (enemy.distance || 0) <= 1 ? "engaged" : `dist ${enemy.distance}`}
             </span>
           </div>
           {mood && (
@@ -251,11 +259,13 @@ function AbilityButton({ entry, combat, onAct }) {
 
 function ResolveOverlay({ combat, onResolve }) {
   const win = combat.phase === "victory";
+  const standoff = combat.standoff;
   const resolved = combat.phase === "resolved";
   const fled = combat.phase === "playerFled";
-  const title = win ? "Victory" : resolved ? "Stood Down" : fled ? "Escaped" : "Defeat";
-  const color = win ? "#a7f3d0" : resolved ? "#a7f3d0" : fled ? colors.gold : "#fca5a5";
+  const title = standoff ? "Standoff" : win ? "Victory" : resolved ? "Stood Down" : fled ? "Escaped" : "Defeat";
+  const color = standoff ? colors.gold : win ? "#a7f3d0" : resolved ? "#a7f3d0" : fled ? colors.gold : "#fca5a5";
   const subtitle =
+    standoff ? "A wary draw — neither side could best the other." :
     win ? "The fallen lie where they dropped." :
     resolved ? "They're done — down, yielded, or fled." :
     fled ? "You slipped away." : "You went under.";
@@ -275,7 +285,7 @@ function ResolveOverlay({ combat, onResolve }) {
   );
 }
 
-export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget, onEndTurn, onFlee, onWithdraw, onAdvance, onResolve }) {
+export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget, onEndTurn, onFlee, onStandDown, onCeasefire, onWithdraw, onAdvance, onResolve }) {
   const logRef = useRef(null);
   const [actionText, setActionText] = useState("");
   useEffect(() => {
@@ -285,6 +295,11 @@ export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget,
   const { player } = combat;
   const over = ["victory", "defeat", "resolved", "playerFled"].includes(combat.phase);
   const isPlayerPhase = combat.phase === "player";
+  // When no foe is still fighting but some have yielded or are fleeing, the player
+  // can Stand Down — sparing the captives and letting the runners go.
+  const liveAttacker = combat.enemies.some((e) => e.health > 0 && !e.resolved && !e.fleeing && !e._dead);
+  const brokenPresent = combat.enemies.some((e) => (e.resolved === "yielded" && !e._dead) || e.fleeing);
+  const canStand = isPlayerPhase && !liveAttacker && brokenPresent;
   const submitAction = () => {
     const t = actionText.trim();
     if (!t || busy || !isPlayerPhase) return;
@@ -472,6 +487,16 @@ export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget,
         )}
 
         {/* Turn controls */}
+        {/* Truce: once a fight grinds past a stalemate, the foe's offer to break off
+            to a draw stays on the table — fight on, or take it. */}
+        {isPlayerPhase && combat.ceasefire && (
+          <button onClick={onCeasefire} style={{
+            width: "100%", marginTop: "9px", padding: "10px", borderRadius: radius.panelCompact,
+            backgroundColor: "rgba(127,199,224,0.14)", color: "#9fd4e6",
+            border: "1px solid rgba(127,199,224,0.4)", fontSize: "13px", fontWeight: 700,
+            cursor: "pointer", fontFamily: "inherit",
+          }} title="Both sides break off — a wary draw. No victor, no spoils.">Call a Truce — break off to a draw</button>
+        )}
         <div style={{ display: "flex", gap: "8px", marginTop: "9px" }}>
           <button onClick={onEndTurn} disabled={combat.phase !== "player"} style={{
             flex: 1, padding: "11px", borderRadius: radius.panelCompact,
@@ -479,12 +504,21 @@ export function CombatView({ combat, onAct, onAction, busy, onDraw, onSetTarget,
             border: `1px solid rgba(215,167,111,0.3)`, fontSize: "13px", fontWeight: 700,
             cursor: combat.phase === "player" ? "pointer" : "default", fontFamily: "inherit", opacity: combat.phase === "player" ? 1 : 0.5,
           }}>End Turn</button>
-          <button onClick={onFlee} disabled={combat.phase !== "player"} style={{
-            padding: "11px 18px", borderRadius: radius.panelCompact,
-            backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
-            border: `1px solid rgba(215,167,111,0.2)`, fontSize: "13px", fontWeight: 700,
-            cursor: combat.phase === "player" ? "pointer" : "default", fontFamily: "inherit", opacity: combat.phase === "player" ? 1 : 0.5,
-          }}>Flee</button>
+          {canStand ? (
+            <button onClick={onStandDown} style={{
+              padding: "11px 18px", borderRadius: radius.panelCompact,
+              backgroundColor: "rgba(252,211,77,0.14)", color: "#fcd34d",
+              border: `1px solid rgba(252,211,77,0.4)`, fontSize: "13px", fontWeight: 700,
+              cursor: "pointer", fontFamily: "inherit",
+            }} title="End the fight — spare the foes that yielded and let any runners go">Stand Down</button>
+          ) : (
+            <button onClick={onFlee} disabled={combat.phase !== "player"} style={{
+              padding: "11px 18px", borderRadius: radius.panelCompact,
+              backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
+              border: `1px solid rgba(215,167,111,0.2)`, fontSize: "13px", fontWeight: 700,
+              cursor: combat.phase === "player" ? "pointer" : "default", fontFamily: "inherit", opacity: combat.phase === "player" ? 1 : 0.5,
+            }}>Flee</button>
+          )}
         </div>
       </div>
 

@@ -65,6 +65,18 @@ export function turnForBeatIndex(state, beatIndex) {
   return -1;
 }
 
+// The checkpoint a PLAYER message kicked off: its narrator beats begin right
+// after the player bubble, so the turn's beatsLen === playerBeatIndex + 1. -1 if
+// none (e.g. a message whose turn produced no rewritable text). Used to rewind
+// from a player bubble — keeping the message, dropping its response and after.
+export function turnStartedAt(state, beatIndex) {
+  const turns = state.turns || [];
+  for (let k = 0; k < turns.length; k++) {
+    if (turns[k].beatsLen === beatIndex + 1) return k;
+  }
+  return -1;
+}
+
 // Reconstruct the state as it was right before turn k — dropping turn k and every
 // later turn. The pools are left intact (unused entries are harmless and re-shared
 // by reference on the next turn).
@@ -91,24 +103,57 @@ export function stateBeforeTurn(state, k) {
   };
 }
 
-// Manually edit a beat's text, syncing the change into the matching assistant
-// entry in apiHistory (the model's memory) when one can be found.
+// Reconstruct the state right AFTER turn k completed — keeping turn k's beats and
+// dropping everything after it (including the next turn's player bubble). Used by
+// "Rewind to here": the selected moment stays, the future is dropped. Returns the
+// state unchanged when k is the last turn (nothing comes after).
+export function stateAfterTurn(state, k) {
+  const turns = state.turns || [];
+  const cur = turns[k];
+  const nextCp = turns[k + 1];
+  if (!cur || !nextCp) return state; // unknown turn, or nothing after it to drop
+  // The snapshot captured before turn k+1 IS the state right after turn k (adding
+  // the k+1 player bubble doesn't touch character/time/world).
+  const { codexIdx, seenIdx, tilesIdx, ...restWorld } = nextCp.world;
+  const world = {
+    ...restWorld,
+    codex: state.pools.codex[codexIdx],
+    seen: state.pools.seen[seenIdx],
+    tiles: state.pools.tiles[tilesIdx],
+  };
+  return {
+    ...state,
+    character: nextCp.char,
+    time: nextCp.time,
+    world,
+    beats: state.beats.slice(0, cur.endLen),       // keep through turn k's last beat
+    apiHistory: state.apiHistory.slice(0, nextCp.historyLen),
+    turns: state.turns.slice(0, k + 1),
+  };
+}
+
+// Manually edit a beat's text in place, syncing the change into the model's
+// memory: narration/dialogue live in an ASSISTANT entry, the player's own words
+// in a USER entry. The story is otherwise untouched (no re-roll).
 export function editBeat(state, beatId, newText) {
   const idx = state.beats.findIndex((b) => b.id === beatId);
   if (idx < 0) return state;
   const beat = state.beats[idx];
-  const field = beat.type === "dialogue" ? "line" : "content";
+  const field = beat.type === "dialogue" ? "line" : "content"; // player + narration use `content`
   const oldText = beat[field];
-  if (oldText === newText) return state;
+  if (oldText === newText || !oldText) return state;
   const beats = [...state.beats];
   beats[idx] = { ...beat, [field]: newText };
 
+  const role = beat.type === "player" ? "user" : "assistant";
   let apiHistory = state.apiHistory;
   for (let i = state.apiHistory.length - 1; i >= 0; i--) {
     const entry = state.apiHistory[i];
-    if (entry.role !== "assistant" || typeof entry.content !== "string") continue;
+    if (entry.role !== role || typeof entry.content !== "string") continue;
     if (!entry.content.includes(oldText)) continue;
-    const patched = patchRaw(entry.content, beat, oldText, newText);
+    const patched = role === "user"
+      ? entry.content.replace(oldText, newText) // player's words appear verbatim
+      : patchRaw(entry.content, beat, oldText, newText);
     if (patched !== entry.content) {
       apiHistory = [...state.apiHistory];
       apiHistory[i] = { ...entry, content: patched };
@@ -116,6 +161,66 @@ export function editBeat(state, beatId, newText) {
     break;
   }
   return { ...state, beats, apiHistory };
+}
+
+// Delete a single bubble from the log — leaving its sibling bubbles in the same
+// turn intact — and best-effort drop it from the model's memory (a dialogue line
+// is pulled from its assistant entry; a narration is blanked). Turn checkpoints
+// are re-indexed for the removed beat so rewind/rewrite still line up.
+export function deleteBeat(state, beatId) {
+  const idx = state.beats.findIndex((b) => b.id === beatId);
+  if (idx < 0) return state;
+  const beat = state.beats[idx];
+  const beats = state.beats.filter((b) => b.id !== beatId);
+
+  let apiHistory = state.apiHistory;
+  if (beat.type === "narration" || beat.type === "dialogue") {
+    const text = beat.type === "dialogue" ? beat.line : beat.content;
+    for (let i = state.apiHistory.length - 1; i >= 0; i--) {
+      const entry = state.apiHistory[i];
+      if (entry.role !== "assistant" || typeof entry.content !== "string") continue;
+      if (text && !entry.content.includes(text)) continue;
+      const patched = removeFromRaw(entry.content, beat, text);
+      if (patched !== entry.content) {
+        apiHistory = [...state.apiHistory];
+        apiHistory[i] = { ...entry, content: patched };
+      }
+      break;
+    }
+  }
+
+  // Beats after `idx` shifted up by one — slide every checkpoint boundary that
+  // sat at or past the removed beat so [beatsLen, endLen) keeps pointing right.
+  const turns = (state.turns || []).map((t) => {
+    const nt = { ...t };
+    if (t.beatsLen > idx) nt.beatsLen -= 1;
+    if (t.endLen > idx) nt.endLen -= 1;
+    return nt;
+  });
+  return { ...state, beats, apiHistory, turns };
+}
+
+function removeFromRaw(raw, beat, text) {
+  try {
+    const obj = JSON.parse(raw);
+    if (beat.type === "narration" && typeof obj.narration === "string") {
+      obj.narration = "";
+      return JSON.stringify(obj);
+    }
+    if (beat.type === "dialogue") {
+      let arr = Array.isArray(obj.dialogues) ? obj.dialogues : (obj.dialogue ? [obj.dialogue] : []);
+      const before = arr.length;
+      arr = arr.filter((d) => !(d && d.name === beat.name && d.line === text));
+      if (arr.length !== before) {
+        if (Array.isArray(obj.dialogues)) obj.dialogues = arr;
+        else obj.dialogue = arr[0] || null;
+        return JSON.stringify(obj);
+      }
+    }
+  } catch {
+    if (text && raw.includes(text)) return raw.replace(text, "");
+  }
+  return raw;
 }
 
 function patchRaw(raw, beat, oldText, newText) {

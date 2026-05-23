@@ -16,6 +16,7 @@ import { makeInitialState } from "../src/data/initial-state.js";
 import { enemyFromNPC, allyFromCompanion } from "../src/data/bestiary.js";
 import { initCombat, playerAct, endTurn, abilityUsable } from "../src/engine/combat.js";
 import { deriveCombatStats } from "../src/engine/combat-stats.js";
+import { recomputeVitalityMax } from "../src/engine/attributes.js";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 
@@ -106,22 +107,60 @@ function refPlayer(arch = "heavy") {
     proficiencies: {},
   };
   if (arch === "light") {
-    return { ...base, vitality: 540, vitalityMax: 540,
-      attributes: { body: 20, reflex: 24, vigor: 18, mind: 16, wit: 20, presence: 14 } };
+    return recomputeVitalityMax({ ...base,
+      attributes: { body: 20, reflex: 24, vigor: 18, mind: 16, wit: 20, presence: 14 } });
   }
-  return { ...base, vitality: 760, vitalityMax: 760,
-    attributes: { body: 26, reflex: 18, vigor: 24, mind: 16, wit: 18, presence: 16 } };
+  return recomputeVitalityMax({ ...base,
+    attributes: { body: 26, reflex: 18, vigor: 24, mind: 16, wit: 18, presence: 16 } });
 }
 
-// Strong divine allies so the boss faces a PARTY (its AoE actually fires).
+// A PROPER raid party of divine, role-built characters — their "class gear" is
+// modeled as innatePassives (a sim ally's worn items don't resolve), and a base
+// `health` pool stands in for a tank's life-stacked kit. Roles: TANK (HP+DR),
+// HEALER (party heal/shield + the costly invuln), DPS (worldbreaker burst). This
+// is what an apex raid boss is meant to be fought BY.
+const RAID_ROLES = {
+  tank: {
+    id: "ally-tank", name: "Bulwark", race: "human",
+    attributes: { body: 24, reflex: 12, vigor: 30, mind: 14, wit: 12, presence: 16 },
+    health: 220, // a tank stacks life — base pool ×tier
+    innatePassives: [
+      { id: "colossus", tier: "divine" }, { id: "juggernaut", tier: "divine" },
+      { id: "godward", tier: "divine" }, { id: "bulwark", tier: "divine" },
+      { id: "stoneskin", tier: "divine" }, { id: "stalwart", tier: "divine" },
+    ],
+    abilities: ["power-strike", "bulwark-stance", "rallying-shout", "second-wind"], worn: [],
+  },
+  healer: {
+    id: "ally-healer", name: "Lightbearer", race: "human",
+    attributes: { body: 12, reflex: 14, vigor: 22, mind: 22, wit: 16, presence: 26 },
+    health: 150,
+    innatePassives: [
+      { id: "aegis", tier: "divine" }, { id: "barrier", tier: "divine" },
+      { id: "wardstone", tier: "divine" }, { id: "godward", tier: "divine" },
+      { id: "stalwart", tier: "divine" }, { id: "colossus", tier: "mythical" },
+    ],
+    abilities: ["sanctify", "guardian-aegis", "last-sanctuary", "battle-hymn", "heal"], worn: [],
+  },
+  dps: {
+    id: "ally-dps", name: "Reaver", race: "human",
+    attributes: { body: 26, reflex: 20, vigor: 18, mind: 14, wit: 18, presence: 12 },
+    health: 130,
+    innatePassives: [
+      { id: "worldbreaker", tier: "divine" }, { id: "savage", tier: "divine" },
+      { id: "sunder", tier: "divine" }, { id: "keen-edge", tier: "divine" },
+      { id: "brutal", tier: "divine" }, { id: "stalwart", tier: "mythical" },
+    ],
+    abilities: ["power-strike", "execute", "rend", "wrath", "second-wind"], worn: [],
+  },
+};
+// allyCount picks how many of the role line-up to field (tank, healer, then dps).
 function buildAllies(n) {
+  const order = ["tank", "healer", "dps", "dps"];
   const out = [];
   for (let i = 0; i < n; i++) {
-    out.push(allyFromCompanion(
-      { id: `ally${i}`, name: `Champion ${i + 1}`, race: "human",
-        attributes: { body: 20, reflex: 16, vigor: 20, mind: 12, wit: 14, presence: 10 },
-        abilities: ["power-strike", "rend", "second-wind"], worn: [] },
-      codex, { tierId: TIER }));
+    const tmpl = RAID_ROLES[order[i] || "dps"];
+    out.push(allyFromCompanion({ ...tmpl, id: `${tmpl.id}-${i}` }, codex, { tierId: TIER }));
   }
   return out;
 }
@@ -136,7 +175,8 @@ function choosePlayerAction(cs) {
     .filter((c) => c.def && c.id !== "talk" && abilityUsable(cs, c.id));
   const opp = cs.enemies.filter((e) => e.health > 0 && !e.resolved);
   if (opp.length === 0) return null;
-  const choice = chooseAction(cs.player, opp, candidates);
+  const party = [cs.player, ...(cs.allies || [])].filter((a) => a.health > 0 && !a._dead && !a.resolved);
+  const choice = chooseAction(cs.player, opp, candidates, { allies: party });
   if (!choice) return { abilityId: BASIC_ATTACK.id, targetIndex: cs.enemies.indexOf(opp[0]) };
   const targetIndex = choice.target ? cs.enemies.indexOf(choice.target) : cs.enemies.indexOf(opp[0]);
   return { abilityId: choice.ability.id, targetIndex };

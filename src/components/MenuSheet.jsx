@@ -6,8 +6,9 @@ import {
 } from "./primitives.jsx";
 import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
-import { deriveCombatStats, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
+import { deriveCombatStats, itemCombatStats, itemRequirement, equipSlot, slotCapacity, SLOTS } from "../engine/combat-stats.js";
 import { EQUIPPABLE } from "../engine/inventory.js";
+import { itemTemplate } from "../data/catalog.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { passiveLabel, passiveEffectText, passiveDef, isFusionRune } from "../data/passives.js";
@@ -509,21 +510,37 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           </div>
         </div>
 
-        {/* Wearing — tap an item for details / to unequip. */}
+        {/* Wearing — a paper-doll of every slot, filled or empty, so you can see
+            at a glance what's equipped and where there's room. Tap a filled slot
+            for details / to unequip. */}
         <div>
           <SectionHeader>Wearing</SectionHeader>
-          <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "2px" }}>
-            {wornIds.length === 0
-              ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.4)", fontStyle: "italic" }}>No equipped gear.</span>
-              : wornIds.map((id) => (
-                  <button key={id} onClick={() => setDetail({ id, location: "worn" })} style={itemRowStyle}>
-                    <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                      {renderItemIcon(id)}
-                      <span style={{ color: tierColor(codex.items[id]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[id]?.name || id}</span>
-                    </span>
-                    <Icon name="arrowLeft" size={11} color="rgba(215,167,111,0.4)" strokeWidth={2} />
-                  </button>
-                ))}
+          <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "3px" }}>
+            {SLOTS.map((slot) => {
+              const inSlot = wornIds.filter((id) => equipSlot(codex.items[id]) === slot.id);
+              const cap = slotCapacity(slot.id);
+              // One row per capacity unit: an occupant, or an empty placeholder.
+              const cells = [];
+              for (let i = 0; i < cap; i++) cells.push(inSlot[i] || null);
+              return cells.map((id, i) => (
+                <div key={`${slot.id}-${i}`} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ ...metaStyle, fontSize: "8px", width: "62px", flexShrink: 0, color: "rgba(215,167,111,0.55)", textAlign: "right" }}>
+                    {cap > 1 ? `${slot.label.replace(/s$/, "")} ${i + 1}` : slot.label}
+                  </span>
+                  {id ? (
+                    <button onClick={() => setDetail({ id, location: "worn" })} style={{ ...itemRowStyle, flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+                        {renderItemIcon(id)}
+                        <span style={{ color: tierColor(codex.items[id]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[id]?.name || id}</span>
+                      </span>
+                      <Icon name="arrowLeft" size={11} color="rgba(215,167,111,0.4)" strokeWidth={2} />
+                    </button>
+                  ) : (
+                    <span style={{ flex: 1, fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.28)", padding: "6px 4px" }}>— empty —</span>
+                  )}
+                </div>
+              ));
+            })}
           </div>
         </div>
 
@@ -582,7 +599,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
 
       {detail && (
         <ItemDetail
-          item={codex.items[detail.id]}
+          item={{ ...itemTemplate(detail.id), ...codex.items[detail.id] }}
           id={detail.id}
           location={detail.location}
           attrs={attrs}

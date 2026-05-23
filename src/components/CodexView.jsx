@@ -6,10 +6,10 @@ import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { itemTemplate } from "../data/catalog.js";
 import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
-import { tier as tierInfo, tierLabel, tierOrder } from "../data/tiers.js";
+import { tier as tierInfo, tierLabel, tierOrder, tierMult } from "../data/tiers.js";
 import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
 import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIVES, FUSIONS, RUNES, isFusionRune } from "../data/passives.js";
-import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf } from "../data/abilities.js";
+import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf, abilityScaling } from "../data/abilities.js";
 import { RACES } from "../data/races.js";
 
 // Two kinds of content: "lore" you discover in play, and the full "compendium"
@@ -397,10 +397,21 @@ const ABILITY_CATEGORIES = [
   { key: "racial", label: "Racial & Innate", color: "#86d27a" },
 ];
 
-function abilityStatLine(def) {
+// Stat line shown at the ability's DISPLAY tier (its floor / your owned grade).
+// Spell damage is the common baseline × the tier multiplier — the same scaling
+// the combat engine applies — so a legendary nuke reads at its real magnitude,
+// not its (never-used) common baseline. Weapon techniques read "weapon damage"
+// since their hit is built from the equipped weapon, not a fixed number. Status
+// riders, pen, and crit are authored flat (the engine doesn't tier-scale them).
+function abilityStatLine(def, tierId) {
   const p = [];
-  if (def.scaling === "weapon" || def.damageType === "weapon") p.push("weapon damage");
-  else if (def.dmg) p.push(`dmg ${def.dmg[0]}–${def.dmg[1]} ${def.damageType || "physical"}`);
+  const scaling = abilityScaling(def);
+  if (scaling === "weapon" || def.damageType === "weapon") {
+    p.push(def.damageType && def.damageType !== "weapon" && def.damageType !== "physical" ? `weapon damage (${def.damageType})` : "weapon damage");
+  } else if (def.dmg) {
+    const m = tierMult(tierId || def.minTier || def.tier || "common");
+    p.push(`dmg ${Math.round(def.dmg[0] * m)}–${Math.round(def.dmg[1] * m)} ${def.damageType || "physical"}`);
+  }
   if (def.pen) p.push(`pen ${def.pen}`);
   if (def.critBonus) p.push(`+${def.critBonus}% crit`);
   if (def.hits > 1) p.push(`×${def.hits} hits`);
@@ -424,7 +435,7 @@ function abilityReqLine(def) {
 function AbilityRow({ def, known, tier, owned }) {
   const [open, setOpen] = useState(false);
   const color = tierInfo(tier || "common").color; // name reads as its tier (school is the section)
-  const stat = abilityStatLine(def);
+  const stat = abilityStatLine(def, tier);
   const req = abilityReqLine(def);
   return (
     <div onClick={() => setOpen((o) => !o)} style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.16)`, display: "flex", flexDirection: "column", gap: "3px", cursor: "pointer" }}>
@@ -433,7 +444,7 @@ function AbilityRow({ def, known, tier, owned }) {
           <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span>{def.name}
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-          <TierChip tierId={tier} min={!owned} />
+          <TierChip tierId={tier} min={!owned && !!def.minTier} />
           {known && <span title="Known" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: colors.gold, flexShrink: 0 }} />}
         </div>
       </div>
@@ -466,7 +477,7 @@ function AbilityCatalog({ codex, character }) {
     }
     return m;
   }, [character, codex.skills]);
-  const dispTier = (d) => ownedTier[d.id] || d.minTier || "common";
+  const dispTier = (d) => ownedTier[d.id] || d.minTier || d.tier || "common";
   const sections = useMemo(() => ABILITY_CATEGORIES.map((c) => ({
     ...c, items: ABILITY_CATALOG.filter((d) => abilityCategoryOf(d) === c.key),
   })).filter((s) => s.items.length), []);
@@ -503,6 +514,7 @@ const PASSIVE_CATEGORIES = [
   { key: "resource", label: "Resource",         short: "Resource", color: "#c4a6f0" },
   { key: "control",  label: "Control",          short: "Control",  color: "#86d27a" },
   { key: "power",    label: "Legendary Powers",  short: "Powers",   color: "#f5d76e" },
+  { key: "paragon",  label: "Paragon (Attribute)", short: "Paragon", color: "#f0c674" },
   { key: "divine",   label: "Divine Powers",     short: "Divine",   color: "#fbf5e3" },
   { key: "fusion",   label: "Fusion (Forged)",   short: "Fusion",   color: "#c79be0" },
   { key: "world",    label: "World & Travel",     short: "World",    color: "#8fd0c0" },

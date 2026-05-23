@@ -7,15 +7,31 @@ import {
 import { passiveHealVitality } from "./healing.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
+import { refillVessels } from "./consumables.js";
 import { itemTemplate } from "../data/catalog.js";
 import { resolveRace } from "../data/races.js";
 import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
 import { tierOrder } from "../data/tiers.js";
 import { spoilCarried } from "./spoilage.js";
-import { applyAttributeChanges } from "./attributes.js";
+import { applyAttributeChanges, recomputeVitalityMax } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
 import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
 import { clampRel, MEMORY_CAP } from "./relationships.js";
+
+// Can a waterskin be refilled at this tile? Settlements have wells; water/marsh
+// tiles and any spring/well/stream/river POI are clean enough; an adjacent
+// open-water tile means a stream is within reach.
+function canRefillWater(stateLike, x, y) {
+  const here = getTile(stateLike, x, y);
+  if (!here) return false;
+  if (here.terrain === "settlement" || here.terrain === "water" || here.terrain === "marsh") return true;
+  const poi = `${here.poi?.name || ""} ${here.poi?.type || ""}`.toLowerCase();
+  if (/well|spring|fountain|stream|brook|river|lake|pool|cistern|oasis|ford|creek/.test(poi)) return true;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    if (getTile(stateLike, x + dx, y + dy)?.terrain === "water") return true;
+  }
+  return false;
+}
 
 // applyBeat is the heart of the engine. Given the current state and a beat
 // from the narrator, it returns the next state plus the new beat entries to
@@ -116,6 +132,9 @@ export function applyBeat(state, beat, options = {}) {
   }
 
   const character = { ...state.character, inventory, attributes };
+  // Max HP derives from vigor — keep it in sync whenever attributes may have
+  // changed (also lazily migrates older saves). A vigor gain heals by the delta.
+  recomputeVitalityMax(character);
 
   // A combat ability TAUGHT in play (a discoveries.skills entry whose id is a real
   // ability) must become USABLE — mergeDiscoveries only records codex lore, so wire
@@ -220,6 +239,11 @@ export function applyBeat(state, beat, options = {}) {
     world = { ...world, tiles };
   }
 
+  // At a well, settlement, or clean stream the wanderer tops off any waterskin.
+  if (world.currentTile && canRefillWater({ ...state, world }, world.currentTile.x, world.currentTile.y)) {
+    character.inventory = refillVessels(character.inventory);
+  }
+
   // A companion the narrator just won over joins the party (the player talked
   // them into it — see [APPROACH RECRUIT] doctrine).
   let party = state.party || [];
@@ -227,11 +251,16 @@ export function applyBeat(state, beat, options = {}) {
     const tmpl = COMPANIONS[beat.recruit_companion.id];
     if (tmpl && !party.includes(tmpl.id)) {
       party = [...party, tmpl.id];
-      // Only file a fresh entry if they're new; a returning companion keeps their
-      // accumulated memories + bond (no re-introduction).
-      if (!world.codex.characters[tmpl.id]) {
-        world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: companionCodexEntry(tmpl) } } };
-      }
+      // File a fresh entry for a new recruit; a returning companion keeps their
+      // accumulated memories + bond. Either way the engine FORCES the authored
+      // template's stats/kit (attributes, abilities, skills) onto the codex entry
+      // — the narrator may have flavored or even restatted them earlier, but the
+      // template is authoritative, so the Company view matches the tavern board.
+      const existing = world.codex.characters[tmpl.id];
+      const entry = existing
+        ? { ...existing, attributes: tmpl.attributes, abilities: [...(tmpl.abilities || [])], skills: (tmpl.skills || []).map((s) => ({ ...s })) }
+        : companionCodexEntry(tmpl);
+      world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
     }
   }
 
@@ -349,6 +378,8 @@ export function applyBeat(state, beat, options = {}) {
       knows: cs.knows ? [...(w.knows || []), ...cs.knows] : (w.knows || []),
     };
     world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, wanderer: merged } } };
+    // Creation set attributes + racial vigor — derive starting max HP from them.
+    recomputeVitalityMax(character);
     created = true;
   }
 

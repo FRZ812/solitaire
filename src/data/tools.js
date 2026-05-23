@@ -115,7 +115,11 @@ export const TOOLS = {
   "waterskin": {
     id: "waterskin", name: "Waterskin", kind: "tool", tier: "common", value: 14,
     appearance: "A stitched leather skin with a horn stopper.",
-    description: "Carries a day's water across dry country. Refilled at any well or clean stream.",
+    description: "Carries a day's water across dry country. Drink to slake thirst; refills itself at any well, settlement, or clean stream.",
+    // A refillable vessel: `capacity` draughts per skin, each drink slakes thirst
+    // without consuming the skin. Refilled to full at water sources (see beat.js).
+    capacity: 3,
+    use: { verb: "Drink", needs: { thirst: 34 } },
     tool: { uses: ["carry-water"] },
   },
   "cook-pot": {
