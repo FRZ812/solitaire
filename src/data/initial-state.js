@@ -609,5 +609,12 @@ export function migrateCodex(state) {
       if (!ownCodex[sub][k]) ownCodex[sub][k] = v;
     }
   }
+  // One-time cleanup for saves made before the creation dedup fix: a self-fact
+  // could be filed twice. Collapse every character's knowledge to unique facts.
+  for (const ch of Object.values(ownCodex.characters || {})) {
+    if (ch && Array.isArray(ch.knows)) {
+      ch.knows = [...new Set(ch.knows.filter((f) => typeof f === "string" && f.trim()))];
+    }
+  }
   return next;
 }

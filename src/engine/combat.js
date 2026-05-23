@@ -546,7 +546,10 @@ function resolveHit(attacker, defender, profile) {
   let dr = defender.dr || 0;
   if (defender.fortify && defender.maxHealth && defender.health / defender.maxHealth < 0.35) dr += defender.fortify;
   if (dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.85, dr))));
-  // Stonewall (damageCap): no single blow may exceed a share of max health.
+  // Per-hit cap (damageCap): no single blow may exceed a share of max health.
+  // Same rule for every creature — the cap is earned, from a Stonewall affix or a
+  // high-vigor threshold. Nothing is boss-specific; Senna and a great-wyrm obey
+  // the identical line.
   if (defender.damageCap && defender.maxHealth) dmg = Math.min(dmg, Math.max(1, Math.round(defender.maxHealth * defender.damageCap)));
 
   // Invulnerability turns the blow aside entirely; otherwise a shield pool soaks
