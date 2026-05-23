@@ -110,20 +110,23 @@ export function BeatRender({ beat, onMenu }) {
 
     case "player":
       return (
-        <div className="fade-in" style={{ display: "flex", justifyContent: "flex-end", marginBottom: "12px" }}>
-          <div style={{
-            maxWidth: "85%",
-            padding: "12px 15px",
-            borderRadius: "18px 18px 4px 18px",
-            backgroundColor: "rgba(35, 48, 48, 0.72)",
-            color: colors.parchmentLight,
-            border: `1px solid rgba(215, 167, 111, 0.28)`,
-            boxShadow: shadow.cardDeep,
-          }}>
-            <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginBottom: "4px" }}>You</div>
-            <div style={{ fontSize: "13px", lineHeight: 1.45, color: colors.parchment }}>{beat.content}</div>
+        <Pressable onMenu={onMenu}>
+          <div className="fade-in" style={{ display: "flex", justifyContent: "flex-end", marginBottom: "12px" }}>
+            <div style={{
+              maxWidth: "85%",
+              padding: "12px 15px",
+              paddingRight: "34px",
+              borderRadius: "18px 18px 4px 18px",
+              backgroundColor: "rgba(35, 48, 48, 0.72)",
+              color: colors.parchmentLight,
+              border: `1px solid rgba(215, 167, 111, 0.28)`,
+              boxShadow: shadow.cardDeep,
+            }}>
+              <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginBottom: "4px" }}>You</div>
+              <div style={{ fontSize: "13px", lineHeight: 1.45, color: colors.parchment }}>{beat.content}</div>
+            </div>
           </div>
-        </div>
+        </Pressable>
       );
 
     case "timestamp":

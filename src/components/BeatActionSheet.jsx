@@ -6,9 +6,9 @@ import { colors, radius } from "./tokens.js";
 // between the action menu, the rewrite (AI re-roll with a steer) editor, and the
 // manual edit editor. Rewrite/Rewind need a recorded turn; Edit always works.
 export function BeatActionSheet({
-  mode, canRewindRewrite, loading,
+  mode, kind = "narrative", canRewrite, canRewind, loading,
   rewriteText, editText, onRewriteText, onEditText,
-  onChooseRewrite, onChooseEdit, onRewind,
+  onChooseRewrite, onChooseEdit, onRewind, onDelete,
   onSubmitRewrite, onSubmitEdit, onClose,
 }) {
   return (
@@ -35,10 +35,13 @@ export function BeatActionSheet({
       >
         {mode === "menu" && (
           <Menu
-            canRewindRewrite={canRewindRewrite}
+            kind={kind}
+            canRewrite={canRewrite}
+            canRewind={canRewind}
             onChooseRewrite={onChooseRewrite}
             onChooseEdit={onChooseEdit}
             onRewind={onRewind}
+            onDelete={onDelete}
             onClose={onClose}
           />
         )}
@@ -73,22 +76,34 @@ export function BeatActionSheet({
   );
 }
 
-function Menu({ canRewindRewrite, onChooseRewrite, onChooseEdit, onRewind, onClose }) {
+function Menu({ kind, canRewrite, canRewind, onChooseRewrite, onChooseEdit, onRewind, onDelete, onClose }) {
+  const isPlayer = kind === "player";
   return (
     <>
       <div style={{
         fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase",
         fontWeight: 800, color: "rgba(215,167,111,0.7)", marginBottom: "10px", textAlign: "center",
-      }}>This moment</div>
-      <Row icon="reset" label="Rewrite" sub="Re-roll with a steer" accent="#c9b3e8"
-        disabled={!canRewindRewrite} onClick={onChooseRewrite} />
-      <Row icon="book" label="Edit" sub="Change the text yourself" accent={colors.parchment}
+      }}>{isPlayer ? "Your message" : "This moment"}</div>
+      {!isPlayer && (
+        <Row icon="reset" label="Rewrite" sub="Re-roll with a steer" accent="#c9b3e8"
+          disabled={!canRewrite} onClick={onChooseRewrite} />
+      )}
+      <Row icon="book" label="Edit" sub={isPlayer ? "Fix your words (story stays)" : "Change the text yourself"} accent={colors.parchment}
         onClick={onChooseEdit} />
-      <Row icon="arrowLeft" label="Rewind here" sub="Drop this moment and everything after" accent="#fca5a5"
-        disabled={!canRewindRewrite} onClick={onRewind} />
-      {!canRewindRewrite && (
+      {!isPlayer && (
+        <Row icon="x" label="Delete this bubble" sub="Remove just this line; keep the rest" accent="#d8a36f"
+          onClick={onDelete} />
+      )}
+      <Row icon="arrowLeft" label="Rewind to here" sub="Keep this, drop everything after" accent="#fca5a5"
+        disabled={!canRewind} onClick={onRewind} />
+      {!isPlayer && !canRewrite && (
         <div style={{ fontSize: "10px", color: "rgba(215,167,111,0.5)", textAlign: "center", margin: "8px 4px 2px", lineHeight: 1.4 }}>
-          Only recorded moments can be rewritten or rewound. You can still edit the text.
+          Only recorded moments can be rewritten. You can still edit, delete, or rewind.
+        </div>
+      )}
+      {!canRewind && (
+        <div style={{ fontSize: "10px", color: "rgba(215,167,111,0.5)", textAlign: "center", margin: "8px 4px 2px", lineHeight: 1.4 }}>
+          Nothing comes after this yet — nothing to rewind.
         </div>
       )}
       <button onClick={onClose} style={{
