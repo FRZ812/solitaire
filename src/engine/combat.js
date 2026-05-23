@@ -33,8 +33,12 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 let LOG_SEQ = 0;
 const logEntry = (text, kind = "system") => ({ id: `l${Date.now()}-${LOG_SEQ++}`, text, kind });
 
-const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow"]);
+const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence"]);
 const RESISTABLE_CONTROL = new Set(["stun", "slow"]); // hard controls Unbowed (controlResist) can shrug off
+// Debuffs an "unstoppable" combatant (BKB) is flat-out immune to — disables and the
+// anti-heal curse, NOT damage-over-time (a wound still bleeds; you just can't be
+// disabled or cursed). Damage immunity (incl. true) is invuln's job, separately.
+const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence"]);
 const ALLY_LOSS = { cowardly: 22, wary: 14, fierce: 8, brutish: 10, honorable: 10, feral: 8, fanatic: 0, mindless: 0 };
 
 function sumStatus(c, type) {
@@ -63,6 +67,9 @@ function gainHealth(c, amt) {
 
 function addStatus(c, effect) {
   if (!effect) return;
+  // Debuff immunity (Unstoppable / BKB): control, silence, and curse are rejected
+  // outright while it's up.
+  if (c && BKB_BLOCKS.has(effect.type) && hasStatus(c, "unstoppable")) return;
   // Hard control (stun/slow) has DIMINISHING RETURNS: Unbowed (controlResist) plus
   // a stacking resist from how often this foe has already been controlled this
   // fight (+20% per prior control, capped). So you can chain a couple of locks to
@@ -72,7 +79,7 @@ function addStatus(c, effect) {
     if (resist > 0 && Math.random() < resist) return;
   }
   c.statuses = c.statuses || [];
-  c.statuses.push({ type: effect.type, value: effect.value || 0, duration: effect.duration || 1 });
+  c.statuses.push({ type: effect.type, value: effect.value || 0, duration: effect.duration || 1, pctMax: !!effect.pctMax });
 }
 // livingEnemies = anything not dead and not resolved (yielded/fled/ko). A FLEEING
 // foe is still "living" — it's on the field, running, until it gets clear.
@@ -643,7 +650,7 @@ function applyProc(cs, actor, p, ctx) {
     case "status": {
       if (!target || target.health <= 0) return;
       if (p.cond === "targetLow" && target.health / target.maxHealth >= 0.3) return;
-      addStatus(target, { type: p.status, value: p.value, duration: p.duration });
+      addStatus(target, { type: p.status, value: p.value, duration: p.duration, pctMax: p.pctMax });
       if (CONTROL_TYPES.has(p.status) && target.side === "enemy") onEnemyControlled(target);
       cs.log.push(logEntry(`${actor.name}'s ${p.name} afflicts ${target.name} with ${p.status}.`, "status"));
       break;
@@ -785,6 +792,9 @@ function applySelfEffect(actor, effect) {
     case "shield":      actor.shield = (actor.shield || 0) + val; break;
     case "magicShield": actor.magicShield = (actor.magicShield || 0) + val; break;
     case "invuln":      actor.invuln = Math.max(actor.invuln || 0, effect.duration || 1); break;
+    // Unstoppable (BKB): debuff immunity AND damage immunity (invuln already turns
+    // aside ALL damage, true included) for the duration — the answer to an alpha.
+    case "unstoppable": { const d = effect.duration || 2; actor.invuln = Math.max(actor.invuln || 0, d); addStatus(actor, { type: "unstoppable", duration: d }); break; }
     case "bonusAction": actor.actionsLeft = (actor.actionsLeft || 0) + (effect.value || 1); break;
     case "regen":       addStatus(actor, { ...effect, value: val, pctMax: false }); break; // bank the %-of-max as flat/turn
     default:            addStatus(actor, effect);
@@ -795,6 +805,7 @@ function applySelfEffect(actor, effect) {
 // actor's resolve (spells drain resolve; martial techniques are gated by action
 // points + cooldown only — the same economy the player uses).
 function npcCandidates(actor) {
+  if (hasStatus(actor, "silence")) return []; // silenced foes fall back to basic attacks
   const out = [];
   for (const a of (actor.abilities || [])) {
     if ((actor.cooldowns?.[a.id] || 0) > 0) continue;
@@ -1023,18 +1034,17 @@ function moraleCheck(cs, e) {
 
 function tickStatuses(c) {
   const logs = [];
-  const dot = sumStatus(c, "bleed") + sumStatus(c, "poison") + sumStatus(c, "burn");
+  // Damage-over-time: bleed/poison/burn (+ lingering deferred wounds). A status can
+  // be FLAT (value) or pctMax (a share of the victim's MAX health each turn) — the
+  // latter is how a build chips down a huge-pool monster (Vyrnholt) it can't burst.
+  let dot = 0;
+  for (const s of (c.statuses || [])) {
+    if (!["bleed", "poison", "burn", "lingering"].includes(s.type)) continue;
+    dot += s.pctMax ? Math.max(1, Math.round(c.maxHealth * (s.value || 0))) : (s.value || 0);
+  }
   if (dot > 0) {
     c.health = Math.max(0, c.health - dot);
     logs.push(logEntry(`${c.name} suffers ${dot} from bleed/poison/burn.`, "status"));
-  }
-  // Lingering: deferred damage (from dmgDefer) bleeding out over a few turns —
-  // already mitigated, so it lands flat. The point is to turn burst into a wound
-  // you can heal/shield through.
-  const ling = sumStatus(c, "lingering");
-  if (ling > 0) {
-    c.health = Math.max(0, c.health - ling);
-    logs.push(logEntry(`${c.name} bleeds ${ling} from lingering wounds.`, "status"));
   }
   const healAmt = sumStatus(c, "regen");
   if (healAmt > 0 && c.health > 0) {
@@ -1091,6 +1101,8 @@ export function abilityUsable(cs, abilityId) {
   if (!entry) return false;
   const def = getAbilityDef(abilityId);
   if ((cs.player.actionsLeft || 0) < (def.actionCost || 1)) return false; // action points gate everything now
+  // Silenced: only the basic strike and brace remain — no learned abilities.
+  if (hasStatus(cs.player, "silence") && abilityId !== BASIC_ATTACK.id && abilityId !== "defend") return false;
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
   if ((cs.player.resolve ?? 0) < (def.resolveCost || 0)) return false;
   if (!weaponReqMet(def, cs.player.weapon)) return false;

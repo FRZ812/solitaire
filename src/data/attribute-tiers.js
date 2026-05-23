@@ -51,8 +51,8 @@ function smoothStats(key, v) {
     case "body":     s.damageMult = +(q * 0.00041).toFixed(4); s.armor = Math.round(q * 0.0271); s.penetration = Math.round(q * 0.0068); break; // 30 → +36% dmg, +24 armor, +6 pen
     case "reflex":   s.dodge = Math.round(q * 0.0339); s.accuracy = Math.round(q * 0.0136); break;            // 30 → +30 dodge, +12 acc
     case "mind":     s.ward = Math.round(q * 0.0238); s.damageMult = +(q * 0.0002).toFixed(4); break;         // 30 → +21 ward, +18% (caster)
-    case "wit":      s.critChance = Math.round(q * 0.0407); s.accuracy = Math.round(q * 0.0136); break;       // 30 → +36 crit, +12 acc
-    case "presence": s.healPower = +(q * 0.00045).toFixed(4); s.damageMult = +(q * 0.00014).toFixed(4); break; // willpower: 30 → +40% healing potency, +12% damage (intensity)
+    case "wit":      s.critChance = Math.round(q * 0.0271); s.healPower = +(q * 0.00045).toFixed(4); break;   // insight: 30 → +24 crit, +40% healing potency
+    case "presence": s.damageMult = +(q * 0.000226).toFixed(4); s.drPct = +(q * 0.00007).toFixed(4); break;  // willpower/intensity: 30 → +20% damage, +6% DR
   }
   return s;
 }
@@ -92,21 +92,21 @@ const UNIQUE = {
     { s: { cooldownReduction: 1 } },  // 25
     { t: { shieldGen: 0.05 } },       // 30 — an ever-renewing bulwark
   ],
-  wit: [
-    { s: { critMult: 0.10 } },        // 5  — find the openings: harder crits
-    { s: { critMult: 0.10 } },        // 10
-    { s: { critMult: 0.15 } },        // 15
-    { s: { critMult: 0.15 } },        // 20
-    { s: { critMult: 0.20 } },        // 25
-    { s: { critMult: 0.30 } },        // 30 — uncanny: devastating critical strikes
+  wit: [ // INSIGHT — clever mending, precision, and quick thinking
+    { s: { healPower: 0.10 } },       // 5  rare      — tend wounds cannily: healing hits harder
+    { s: { critMult: 0.15 } },        // 10 very-rare — read the opening: heavier crits
+    { s: { healPower: 0.15 } },       // 15 epic      — a healer's eye
+    { s: { cooldownReduction: 1 } },  // 20 legendary — quick thinking: tricks recover faster
+    { s: { critMult: 0.20 } },        // 25 mythic    — uncanny precision
+    { s: { healPower: 0.20 } },       // 30 divine    — perfect insight into mending (+45% healing total here)
   ],
-  presence: [ // WILLPOWER & INTENSITY — fuels effects, endures, refuses to break
+  presence: [ // WILLPOWER & INTENSITY — endure, dominate, refuse to break
     { t: { resolveRegen: 1 } },       // 5  rare      — force of will fuels you
-    { s: { healPower: 0.10 } },       // 10 very-rare — intensity sharpens every heal/shield
-    { s: { dmgDefer: 0.20 } },        // 15 epic      — iron will: endure, spread the pain over time
-    { s: { controlResist: 0.30 } },   // 20 legendary — unbreakable will (shrug off control)
-    { s: { healPower: 0.15 } },       // 25 mythic    — your presence mends all the harder
-    { s: { dmgDefer: 0.20 } },        // 30 divine    — indomitable: defer the brunt of any blow
+    { s: { dmgDefer: 0.15 } },        // 10 very-rare — iron will: endure, spread the pain over time
+    { s: { controlResist: 0.30 } },   // 15 epic      — unshakeable: shrug off control
+    { s: { damageMult: 0.10 } },      // 20 legendary — sheer intensity: blows land harder
+    { s: { dmgDefer: 0.15 } },        // 25 mythic    — defer ever more of the brunt
+    { s: { controlResist: 0.30 } },   // 30 divine    — indomitable: near debuff-proof (a poor man's BKB)
   ],
 };
 const THRESHOLDS = [5, 10, 15, 20, 25, 30];

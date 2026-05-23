@@ -84,6 +84,14 @@ export function chooseAction(actor, opponents, candidates, opts = {}) {
   }
   const target = pickTarget(actor, living, bestSingleDmg) || provisional;
 
+  // 1) Unbreakable Will (BKB): pop debuff-immunity + invuln when disabled (stunned/
+  // cursed/silenced) or about to die — the answer to an alpha strike or a curse-lock.
+  const bkb = candidates.find((c) => c.def.target === "self" && c.def.effect?.type === "unstoppable");
+  if (bkb && (actor.invuln || 0) <= 0 && !has(actor, "unstoppable") &&
+      (has(actor, "curse") || has(actor, "stun") || has(actor, "silence") || hpFrac < 0.5)) {
+    return { ability: bkb, def: bkb.def, mode: "self", target: null };
+  }
+
   // 1) Heal when badly hurt and a self-regen is ready.
   const heal = candidates.find((c) => c.def.target === "self" && c.def.effect?.type === "regen");
   if (heal && hpFrac < 0.35) return { ability: heal, def: heal.def, mode: "self", target: null };

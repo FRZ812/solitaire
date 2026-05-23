@@ -137,6 +137,8 @@ export const PASSIVES = [
   // ---------- CONTROL (proc) — chill, curse, stun ----------
   { id: "frostbrand", name: "Frostbrand",   cat: "control", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "chill", duration: 2 }, chance: 0.4, minTier: "rare", amount: (n) => 2 + n, desc: "Chance on hit to chill (saps accuracy)." },
   { id: "cursed",     name: "Cursed",       cat: "control", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "curse", duration: 2 }, chance: 0.3, minTier: "rare", amount: (n) => 5 + n * 2, desc: "Chance on hit to curse (amplifies damage taken)." },
+  { id: "silencing",  name: "Silencing",    cat: "control", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "silence", duration: 2 }, chance: 0.4, minTier: "epic", amount: (n) => 1, desc: "Chance on hit to SILENCE — the foe can't use abilities for a turn or two, only flail with basic attacks (assassin's gift; shuts down a spammer)." },
+  { id: "hemorrhage", name: "Hemorrhage",   cat: "offence", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "bleed", pctMax: true, duration: 3 }, chance: 1, minTier: "epic", amount: (n) => 0.012 + n * 0.004, desc: "Every hit opens a wound that bleeds a SHARE OF THE FOE'S MAX HEALTH each turn — the bane of huge-pool monsters that flat damage can't dent." },
   { id: "concussive", name: "Concussive",   cat: "control", scope: "combat", type: "proc",  hook: "onCrit", apply: { kind: "status", status: "stun", duration: 1 }, chance: 0.5, minTier: "epic", amount: () => 1, desc: "Critical hits may stun." },
 
   // ---------- DEFENCE (shields, ward-shields, fortify, evasion, invuln) ----------
@@ -305,8 +307,12 @@ function formatProc(def, lo, hi) {
   const pm = procPctStr(lo, hi);   // for pctMax payloads
   let effect;
   if (a.kind === "status" || a.kind === "buff") {
-    const fn = STATUS_EFFECT[a.status];
-    effect = fn ? fn(n, a.duration || 1) : a.status;
+    if (a.pctMax && ["bleed", "poison", "burn"].includes(a.status)) {
+      effect = `inflict ${a.status} for ${pm}% of the foe's max health each turn (${a.duration || 1} turns)`;
+    } else {
+      const fn = STATUS_EFFECT[a.status];
+      effect = fn ? fn(n, a.duration || 1) : a.status;
+    }
   } else if (a.kind === "execute") effect = `deal ${n} bonus damage`;
   else if (a.kind === "bonusHit") effect = `strike again for ${n} damage`;
   else if (a.kind === "shield") effect = a.pctMax ? `raise a shield worth ${pm}% of max health` : `raise a ${n}-point shield`;
