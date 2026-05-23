@@ -380,6 +380,10 @@ export function deriveCombatStats(character, codex) {
     swiftChance,
     cooldownReduction: clamp(statMods.cooldownReduction || 0, 0, 3),
     fortify: clamp(statMods.fortify || 0, 0, 0.25),
+    // Stonewall caps any single hit to a share of max health (0 = no cap); the
+    // strongest (lowest) wins, set in aggregateCombatPassives. Unbowed resists control.
+    damageCap: statMods.damageCap || 0,
+    controlResist: clamp(statMods.controlResist || 0, 0, 0.6),
     // Heavy armour layers on a small ever-renewing aegis shield (folded into the
     // shieldGen trigger so the engine's cap still applies).
     triggers: { ...triggers, shieldGen: (triggers.shieldGen || 0) + (band.shieldGen || 0) },

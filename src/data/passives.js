@@ -45,6 +45,7 @@ export const PASSIVE_CAPS = {
   lifesteal: 25, drPct: 0.6, thorns: 50,
   extraActions: 3, cooldownReduction: 3, fortify: 0.25,
   turnRegen: 0.12, shieldGen: 0.12, magicShieldGen: 0.12, invulnCharges: 2,
+  controlResist: 0.6,
 };
 
 // Each passive: scope, type, key (what it modifies), minTier (lowest grade it can
@@ -124,6 +125,21 @@ export const PASSIVES = [
   { id: "lifeward",   name: "Lifeward",     cat: "defence", scope: "combat", type: "proc",    hook: "lowHealth", apply: { kind: "shield", pctMax: true }, threshold: 0.35, chance: 1, minTier: "epic", amount: (n) => 0.12 + n * 0.02, desc: "Bursts a shield scaled to your vitality when badly wounded (once per fight)." },
   { id: "aegis-eternal", name: "Aegis Eternal", cat: "divine", scope: "combat", type: "trigger", key: "invulnCharges", minTier: "divine", amount: () => 1, desc: "When near death, becomes briefly invulnerable (limited charges)." },
 
+  // ---------- EXPANSION — fills tier/role gaps; %-based or geo-scaled so each
+  //            stays relevant at every grade (slow/shatter/cap are new mechanics) ----------
+  { id: "sanguine",   name: "Sanguine",     cat: "sustain", scope: "combat", type: "trigger", key: "lifesteal", minTier: "epic",      amount: (n) => 4 + n,                desc: "Heals for a share of damage dealt — slots between Vampiric and Bloodthirst." },
+  { id: "feast",      name: "Feast",        cat: "sustain", scope: "combat", type: "proc", hook: "onKill", apply: { kind: "refund", heal: true, pctMax: true }, chance: 1, minTier: "rare", amount: (n) => 0.05 + n * 0.01, desc: "Each kill knits back a share of your max health." },
+  { id: "reprieve",   name: "Reprieve",     cat: "sustain", scope: "combat", type: "proc", hook: "lowHealth", apply: { kind: "refund", heal: true, pctMax: true }, threshold: 0.35, chance: 1, minTier: "epic", amount: (n) => 0.15 + n * 0.02, desc: "When badly wounded, surge back a chunk of max health (once per fight)." },
+  { id: "ravage",     name: "Ravage",       cat: "offence", scope: "combat", type: "proc", hook: "onHit", cond: "targetDot", apply: { kind: "bonusHit" }, chance: 1, minTier: "epic", amount: (n) => geo(2, n), desc: "Tears extra deep into foes already bleeding, poisoned, or burning." },
+  { id: "ruinous",    name: "Ruinous",      cat: "power", scope: "combat", type: "stat", key: "damageMult", minTier: "legendary", amount: (n) => 0.12 + n * 0.02, desc: "Greatly increases all damage — slots between Brutal and Worldbreaker." },
+  { id: "resilient",  name: "Resilient",    cat: "defence", scope: "combat", type: "stat", key: "drPct", minTier: "epic", amount: (n) => 0.05 + n * 0.01, desc: "Reduces all damage taken by a percentage — slots between Stoneskin and Godward." },
+  { id: "stonewall",  name: "Stonewall",    cat: "defence", scope: "combat", type: "stat", key: "damageCap", minTier: "legendary", amount: () => 0.33, desc: "No single blow may take more than a third of your max health — burst can't one-shot you." },
+  { id: "unbowed",    name: "Unbowed",      cat: "defence", scope: "combat", type: "stat", key: "controlResist", minTier: "legendary", amount: (n) => 0.2 + n * 0.04, desc: "A growing chance to shrug off stuns and slows." },
+  { id: "frenzy",     name: "Frenzy",       cat: "tempo", scope: "combat", type: "stat", key: "swiftChance", minTier: "legendary", amount: (n) => 0.08 + n * 0.02, desc: "Chance each turn to act again — slots between Swift and Tempest." },
+  { id: "channeler",  name: "Channeler",    cat: "resource", scope: "combat", type: "proc", hook: "onCrit", apply: { kind: "refund", resolve: true }, chance: 1, minTier: "epic", amount: (n) => 1 + Math.floor(n / 2), desc: "Critical hits restore resolve — sustains a caster's burst." },
+  { id: "hobble",     name: "Hobble",       cat: "control", scope: "combat", type: "proc", hook: "onHit", apply: { kind: "status", status: "slow", duration: 2 }, chance: 0.4, minTier: "rare", amount: () => 1, desc: "Chance on hit to slow a foe — they act later and lose their act-again." },
+  { id: "shatterblow",name: "Shatterblow",  cat: "control", scope: "combat", type: "proc", hook: "onHit", apply: { kind: "status", status: "shatter", duration: 2 }, chance: 0.5, minTier: "epic", amount: (n) => geo(2, n), desc: "Chance on hit to sunder a foe's armour for a few turns." },
+
   // ---------- FUSION-ONLY (forged, never rolled) — see FUSIONS below ----------
   { id: "rupture",    name: "Rupture",      cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onHit", apply: { kind: "status", status: "bleed", duration: 3 }, chance: 1, minTier: "epic", amount: (n) => 4 + n * 2, desc: "FUSION: every hit ruptures flesh — guaranteed heavy bleed." },
   { id: "stormrend",  name: "Stormrend",    cat: "fusion", scope: "combat", type: "proc", noRoll: true, hook: "onCrit", apply: { kind: "status", status: "stun", duration: 1 }, chance: 1, minTier: "epic", amount: () => 1, desc: "FUSION: every critical hit stuns." },
@@ -200,6 +216,8 @@ const KEY_EFFECT = {
   maxHealth:   { s: "flat", p: (n) => `+${n} maximum health` },
   drPct:       { s: "pct",  p: (n) => `${n}% less damage taken from all sources` },
   fortify:     { s: "pct",  p: (n) => `${n}% less damage taken while below 35% health` },
+  damageCap:   { s: "pct",  p: (n) => `no single hit can exceed ${n}% of your max health` },
+  controlResist:{ s: "pct", p: (n) => `${n}% chance to shrug off stuns and slows` },
   // tempo
   speed:       { s: "flat", p: (n) => `+${n} initiative (acts sooner)` },
   swiftChance: { s: "pct",  p: (n) => `+${n}% chance each turn to act a second time` },
@@ -229,7 +247,7 @@ const HOOK_PREFIX = {
 function chancePrefix(def) {
   const base = HOOK_PREFIX[def.hook] || "On hit";
   const thr = def.hook === "lowHealth" && def.threshold ? ` (below ${Math.round(def.threshold * 100)}% health)` : "";
-  const cond = def.cond === "targetLow" ? " against badly wounded foes" : "";
+  const cond = def.cond === "targetLow" ? " against badly wounded foes" : def.cond === "targetDot" ? " against bleeding or burning foes" : "";
   const c = def.chance ?? 1;
   const chance = c < 1 ? ` — ${Math.round(c * 100)}% chance` : "";
   return `${base}${thr}${cond}${chance}`;
@@ -242,6 +260,8 @@ const STATUS_EFFECT = {
   chill:  (n, d) => `chill the foe (saps ${n} accuracy for ${d} turn${plur(d)})`,
   curse:  (n, d) => `curse the foe (+${n}% damage they take for ${d} turn${plur(d)})`,
   stun:   (n, d) => `stun the foe (skips ${d} turn${plur(d)})`,
+  slow:   (n, d) => `slow the foe (acts later, no extra actions, ${d} turn${plur(d)})`,
+  shatter:(n, d) => `shatter the foe's armour (−${n} armour for ${d} turn${plur(d)})`,
   rally:  (n, d) => `gain rally (+${n}% damage dealt for ${d} turn${plur(d)})`,
   dodgeStack: (n, d) => `gain +${n}% dodge that stacks with each dodge (${d} turn${plur(d)})`,
 };
@@ -274,7 +294,8 @@ function formatProc(def, lo, hi) {
     if (a.resolve) parts.push(`${n} resolve`);
     if (a.action) parts.push("an action");
     if (a.heal) parts.push(a.pctMax ? `${pm}% of max health` : `${n} health`);
-    effect = `refund ${parts.join(", ")}`;
+    const verb = (!a.resolve && !a.action && a.heal) ? "heal" : "refund";
+    effect = `${verb} ${parts.join(", ")}`;
   } else effect = def.desc || "";
   return `${chancePrefix(def)}: ${effect}`;
 }
@@ -344,7 +365,11 @@ export function aggregateCombatPassives(list) {
     const def = BY_ID[id];
     if (!def || def.scope !== "combat") continue;
     const v = def.amount(o(tier));
-    if (def.type === "stat") statMods[def.key] = (statMods[def.key] || 0) + v;
+    if (def.type === "stat") {
+      // damageCap is a "lowest wins" cap (stacking shouldn't weaken it); everything else sums.
+      if (def.key === "damageCap") statMods.damageCap = statMods.damageCap ? Math.min(statMods.damageCap, v) : v;
+      else statMods[def.key] = (statMods[def.key] || 0) + v;
+    }
     else if (def.type === "trigger") triggers[def.key] = (triggers[def.key] || 0) + v;
     else if (def.type === "proc") {
       procs.push({ hook: def.hook, ...def.apply, value: v, chance: def.chance ?? 1, cond: def.cond, threshold: def.threshold, name: def.name });
@@ -355,6 +380,7 @@ export function aggregateCombatPassives(list) {
   if (statMods.extraActions != null) statMods.extraActions = Math.min(statMods.extraActions, PASSIVE_CAPS.extraActions);
   if (statMods.cooldownReduction != null) statMods.cooldownReduction = Math.min(statMods.cooldownReduction, PASSIVE_CAPS.cooldownReduction);
   if (statMods.fortify != null) statMods.fortify = Math.min(statMods.fortify, PASSIVE_CAPS.fortify);
+  if (statMods.controlResist != null) statMods.controlResist = Math.min(statMods.controlResist, PASSIVE_CAPS.controlResist);
   if (triggers.lifesteal != null) triggers.lifesteal = Math.min(triggers.lifesteal, PASSIVE_CAPS.lifesteal);
   if (triggers.turnRegen != null) triggers.turnRegen = Math.min(triggers.turnRegen, PASSIVE_CAPS.turnRegen);
   if (triggers.thorns != null) triggers.thorns = Math.min(triggers.thorns, PASSIVE_CAPS.thorns);
