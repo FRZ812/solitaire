@@ -256,6 +256,19 @@ for (const a of ABILITY_LIBRARY) {
   a.resolveCost = SPELL_COST_OVERRIDE[a.id] ?? SPELL_COST_BY_FLOOR[a.minTier || "common"];
 }
 
+// MARTIAL techniques cost resolve too — but roughly HALF a spell of the same power
+// tier, so a low-Mind fighter's smaller pool still lasts a fight. The basic Strike,
+// Brace, and Talk (separate defs below ABILITY_LIBRARY) stay free as the always-
+// available fallback when the pool runs dry. Innate racial powers keep their light
+// authored costs. Magnitudes are sim starting points.
+const MARTIAL_COST_BY_FLOOR = {
+  common: 1, uncommon: 2, rare: 3, "very-rare": 4, epic: 5, legendary: 8, mythical: 10, divine: 12,
+};
+for (const a of ABILITY_LIBRARY) {
+  if (a.innate || abilityCategoryOf(a) !== "martial") continue;
+  a.resolveCost = MARTIAL_COST_BY_FLOOR[a.minTier || "common"];
+}
+
 // Every DEFINED, grantable ability (library + authored uniques). The single
 // source of truth the codex audits and the narrator must grant from (by id) —
 // each carries its own damage, effects, costs, and requirements.

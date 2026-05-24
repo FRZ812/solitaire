@@ -89,7 +89,7 @@ export const PASSIVES = [
   // ---------- RESOURCE / TEMPO (resolve, initiative, action economy) ----------
   { id: "tireless",   name: "Fleet-Footed", cat: "tempo", scope: "combat", type: "stat", key: "speed",       minTier: "uncommon",  amount: (n) => 1 + Math.floor(n / 2), desc: "Acts sooner — raises initiative." },
   { id: "swift",      name: "Swift",        cat: "tempo", scope: "combat", type: "stat", key: "swiftChance", minTier: "uncommon",  amount: (n) => 0.05 + n * 0.02,      desc: "Chance each turn to act again." },
-  { id: "clearmind",  name: "Clear Mind",   cat: "resource", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "epic",  amount: (n) => 1,                    desc: "Resolve no longer trickles back on its own — but a clear mind recovers some each turn, sustaining your casting." },
+  { id: "clearmind",  name: "Clear Mind",   cat: "resource", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "epic",  amount: (n) => 1,                    desc: "A clear mind recovers some resolve each turn, sustaining your casting." },
 
   // ---------- LEGENDARY+ POWERS — build-defining ----------
   { id: "colossus",   name: "Colossus",     cat: "power", scope: "combat", type: "stat", key: "maxHealth",     minTier: "legendary", amount: (n) => geo(40, n),           desc: "Vastly increases maximum health." },
@@ -103,7 +103,7 @@ export const PASSIVES = [
   // Playstyle-anchor divine affixes — each makes a divine piece serve one build.
   { id: "tempest",    name: "Tempest",      cat: "divine", scope: "combat", type: "stat", key: "swiftChance",  minTier: "divine",    amount: (n) => 0.25,                 desc: "A blur of motion — great chance to act again." },
   { id: "deadeye",    name: "Deadeye",      cat: "divine", scope: "combat", type: "stat", key: "accuracy",     minTier: "divine",    amount: (n) => 30,                   desc: "Every shot finds the mark — overwhelming accuracy, dodge be damned." },
-  { id: "archmage",   name: "Archmage",     cat: "divine", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "divine",  amount: (n) => 3,                    desc: "Bottomless will — restores great resolve each turn, even in a world where resolve no longer regenerates on its own." },
+  { id: "archmage",   name: "Archmage",     cat: "divine", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "divine",  amount: (n) => 3,                    desc: "Bottomless will — restores great resolve each turn." },
   { id: "phantom",    name: "Phantom",      cat: "divine", scope: "combat", type: "stat", key: "dodge",        minTier: "divine",    amount: (n) => 28,                   desc: "Half-real — devastating evasion." },
   { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: () => geo(60, 7),            desc: "A mountain of vitality." },
 
@@ -250,7 +250,7 @@ const KEY_EFFECT = {
   lifesteal:   { s: "flat", p: (n) => `heal for ${n}% of damage dealt (capped at ${PASSIVE_CAPS.lifesteal}% total)` },
   turnRegen:   { s: "pct",  p: (n) => `restore ${n}% of max health each turn` },
   thorns:      { s: "flat", p: (n) => `reflect ${n}% of damage taken back at the attacker` },
-  resolveRegen:{ s: "flat", p: (n) => `restore ${n} resolve each turn (resolve has no base regen otherwise)` },
+  resolveRegen:{ s: "flat", p: (n) => `restore ${n} resolve each turn` },
   shieldGen:   { s: "pct",  p: (n) => `gain a physical shield worth ${n}% of max health each turn` },
   magicShieldGen: { s: "pct", p: (n) => `gain a magic ward worth ${n}% of max health each turn` },
   invulnCharges:{ s: "flat", p: (n) => `near death, turn briefly invulnerable (${n} charge${plur(n)} per fight)` },

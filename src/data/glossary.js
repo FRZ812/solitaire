@@ -10,7 +10,7 @@ export const GLOSSARY = [
   { id: "vitality", term: "Vitality", category: "Vitals",
     text: "Your life. At 0 you fall. Out of combat it knits back about 1 point per hour (faster with Mending gear) — but it does NOT heal at all while you're Bleeding, Poisoned, Burning, Cursed, Starving, or Parched, so deal with the wound or the need first. Your maximum rises with Vigor." },
   { id: "resolve", term: "Resolve", category: "Vitals",
-    text: "The grit that fuels spells (martial techniques are free, gated by cooldown). It has NO base per-turn regen — you spend down a pool and refill it by RESTING or by drinking (ale, wine, or a hard pull of spirits). The pool itself grows with MIND, the way your health grows with Vigor, so a true mage commands a deep well. A few rare wills DO trickle it back mid-fight — high Presence and traits like Clear Mind or Archmage — and earned procs (a kill via Bloodhunt, a crit via Channeler) hand some back." },
+    text: "The grit your abilities burn through in a fight. It does not come back on its own — you spend it down, then win it back by resting or with a stiff drink. Your reserve runs as deep as your Mind allows, the way your life runs as deep as your Vigor." },
 
   // ---- Survival (needs) ----
   { id: "hunger", term: "Hunger", category: "Survival",

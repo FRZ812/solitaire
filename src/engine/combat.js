@@ -15,7 +15,7 @@
 // allies, being stun-locked or out-classed — they may waver, plead, demand a
 // fair fight, flee, or yield. The player can also Demand Surrender (parley).
 
-import { getAbilityDef, attrFactor, abilityScaling, abilityRequiredStat, BASIC_ATTACK, DEFEND, TALK, randomAbilityId } from "../data/abilities.js";
+import { getAbilityDef, attrFactor, abilityScaling, abilityRequiredStat, abilityCategoryOf, BASIC_ATTACK, DEFEND, TALK, randomAbilityId } from "../data/abilities.js";
 import { tierMult, rollTier, tierLabel, tier as tierInfo } from "../data/tiers.js";
 import { DEMEANOR_CONFIG, flavorLine } from "../data/combat-flavor.js";
 import { ITEM_DROP_CHANCE, ABILITY_DROP_CHANCE, UNIQUE_DROP_CHANCE, RUNE_DROP_CHANCE, RUNE_DROP_MIN_REGION } from "../data/balance.js";
@@ -1124,12 +1124,13 @@ export function weaponReqMet(def, weapon) {
   return def.weaponReq.includes(weapon?.category);
 }
 
-// The Resolve a spell actually costs the player after the spellcasting-proficiency
-// discount (a capped %, never free). Shared by the usable-gate and the spend.
+// The Resolve an ability actually costs the player. SPELLS get the spellcasting-
+// proficiency discount (a capped %, never free); martial techniques and innate
+// powers pay full. Shared by the usable-gate and the spend.
 export function playerResolveCost(cs, def) {
   const base = def?.resolveCost || 0;
   if (base <= 0) return 0;
-  const discount = Math.min(0.4, (cs.player.prof?.spellcasting || 0) * 0.02);
+  const discount = abilityCategoryOf(def) === "spell" ? Math.min(0.4, (cs.player.prof?.spellcasting || 0) * 0.02) : 0;
   return Math.max(1, Math.ceil(base * (1 - discount)));
 }
 
