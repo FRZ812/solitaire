@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 
-import { STORAGE_KEY, originLabel, SIGHT_RADIUS } from "./config.js";
+import { STORAGE_KEY, originLabel, SIGHT_RADIUS, MAX_TRAVEL_HEXES, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
 import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 
@@ -11,7 +11,7 @@ import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampai
 import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt, editBeat, deleteBeat } from "./engine/timeline.js";
-import { recomputeVitalityMax } from "./engine/attributes.js";
+import { recomputeVitalityMax, recomputeResolveMax } from "./engine/attributes.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
@@ -31,9 +31,11 @@ import { rollShopStock } from "./engine/town-gen.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
-  findPath, pathMinutes,
+  findPath, pathMinutes, isSeen, flightPath, flightMinutes,
 } from "./engine/world.js";
-import { rollPathEncounter } from "./engine/encounters.js";
+import { knownTravelSpells } from "./data/travel-spells.js";
+import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
+import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
@@ -139,14 +141,15 @@ function applyTravelArrival(base, beat, travel) {
     travelToCoords: { x: travel.dest.x, y: travel.dest.y },
   });
   const path = travel.path || [];
-  // How far the player can see on arrival — shrunk by darkness (engine/light.js).
-  const r = sightRadius(next);
-  // Multi-tile travel: mark intermediate path tiles as visited and refresh sight
-  // from each so the player's seen area expands along the route (limited by light).
-  if (path.length > 2) {
+  // Reveal radius: flight takes in a wide view from the air; otherwise normal
+  // sight, shrunk by darkness (engine/light.js).
+  const r = travel.mode === "fly" ? FLY_REVEAL_RADIUS : sightRadius(next);
+  // Mark path tiles visited and refresh sight from each (flight reveals the whole
+  // corridor it crossed; walk reveals what the party trudged past).
+  if (path.length > 1) {
     const newTiles = { ...next.world.tiles };
     let newSeen = next.world.seen;
-    for (let i = 1; i < path.length - 1; i++) {
+    for (let i = 1; i < path.length; i++) {
       const p = path[i];
       const k = `${p.x},${p.y}`;
       if (!newTiles[k]) newTiles[k] = getTile(base, p.x, p.y);
@@ -483,7 +486,14 @@ export function Solitaire() {
       const migrated = migrateCodex(loaded);
       // Bring older saves' max HP onto the vigor-derived formula so the vitals
       // strip is correct the moment the campaign opens (heals by any gain).
-      if (migrated?.character) recomputeVitalityMax(migrated.character);
+      // Likewise re-derive the Mind-scaled resolve pool (older saves had flat 6).
+      if (migrated?.character) { recomputeVitalityMax(migrated.character); recomputeResolveMax(migrated.character); }
+      // Companions carry their own Mind-scaled resolve pool too (they can fly the
+      // party) — derive it for any party member saved before pools existed.
+      for (const id of (migrated?.party || [])) {
+        const c = migrated.world?.codex?.characters?.[id];
+        if (c && c.resolveMax == null) recomputeResolveMax(c);
+      }
       setState(migrated);
       closeBeatMenu();
       setCurrentCampaignId(id);
@@ -671,91 +681,207 @@ export function Solitaire() {
   async function handleTravel(dest, providedPath) {
     if (loading) return;
     const cur = state.world.currentTile;
-    const path = providedPath || findPath(state, cur, dest);
-    if (!path || path.length < 2) return;
-    const fromTile = getTile(state, cur.x, cur.y);
-    const toTile = getTile(state, dest.x, dest.y);
+    const fullPath = providedPath || findPath(state, cur, dest);
+    if (!fullPath || fullPath.length < 2) return;
     setMapOpen(false);
     setReceipts({ tileKey: null, items: {} }); // leaving the scene ends refunds
     setError(null);
     setLoading(true);
     closeBeatMenu();
+    const fromTile = getTile(state, cur.x, cur.y);
+    const destTileFull = getTile(state, dest.x, dest.y);
     const fromName = currentLocationName(state);
-    const toName = toTile.poi?.name || `${TERRAINS[toTile.terrain]?.label} (${dest.x},${dest.y})`;
-    const isHidden = toTile.poi?.type === "hidden";
+    const toName = destTileFull.poi?.name || `${TERRAINS[destTileFull.terrain]?.label} (${dest.x},${dest.y})`;
+    const destIsHidden = destTileFull.poi?.type === "hidden";
+
+    // A single travel action covers at most MAX_TRAVEL_HEXES toward the
+    // destination; a rolled encounter HALTS the party at its tile. Either way the
+    // party stops short of a far destination — no skipping the world in one tap.
+    let legPath = fullPath.slice(0, Math.min(fullPath.length, MAX_TRAVEL_HEXES + 1));
+    const pathEnc = rollPathEncounter(state, legPath);
+    if (pathEnc) legPath = legPath.slice(0, pathEnc.atIndex + 1);
+    const legEnd = legPath[legPath.length - 1];
+    const arrived = legEnd.x === dest.x && legEnd.y === dest.y;
+    const legTile = getTile(state, legEnd.x, legEnd.y);
+    const legName = arrived ? toName : (legTile.poi?.name || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
+    const isHidden = arrived && destIsHidden;
+
     const travelWp = activeWorldPassives(state.character, state.world.codex);
-    // Picking your way through the dark without a lit torch is slower going.
+    // Slower going in the dark without light, and slower still when worn out.
     const darkTravel = isNight(state.time) && !isLit(state) && !state.character?.darkvision;
-    const totalMins = Math.max(1, Math.round(pathMinutes(state, path) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1)));
-    const hexes = path.length - 1;
+    const conds = state.character.conditions || [];
+    const wearyMult = conds.includes("Exhausted") ? 1.5 : conds.includes("Tired") ? 1.15 : 1;
+    const legMins = Math.max(1, Math.round(pathMinutes(state, legPath) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1) * wearyMult));
+    const hexes = legPath.length - 1;
 
-    // Summarize the route's terrain mix for the narrator.
+    // Terrain mix of this leg, for the narrator.
     const terrainCounts = {};
-    for (let i = 1; i < path.length; i++) {
-      const tile = getTile(state, path[i].x, path[i].y);
-      terrainCounts[tile.terrain] = (terrainCounts[tile.terrain] || 0) + 1;
+    for (let i = 1; i < legPath.length; i++) {
+      const t = getTile(state, legPath[i].x, legPath[i].y).terrain;
+      terrainCounts[t] = (terrainCounts[t] || 0) + 1;
     }
-    const terrainSummary = Object.entries(terrainCounts)
-      .map(([t, n]) => `${TERRAINS[t]?.label || t} ×${n}`)
-      .join(", ");
+    const terrainSummary = Object.entries(terrainCounts).map(([t, n]) => `${TERRAINS[t]?.label || t} ×${n}`).join(", ");
+    const routeNote = hexes > 1 ? ` Route crosses: ${terrainSummary}.` : "";
 
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Travel from ${fromName} to ${toName}.` };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Travel from ${fromName} ${arrived ? "to" : "toward"} ${toName}.` };
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
 
-    // One encounter roll for the whole journey (Phase 3 decision 1a).
-    const pathEnc = isHidden ? null : rollPathEncounter(state, path);
-
     const destDescription = isHidden
       ? "HIDDEN — generate a random event appropriate to the terrain. Set tile_discovery."
-      : toTile.poi
-        ? `known ${toTile.poi.type} (${toTile.poi.name})`
-        : "open wilderness";
+      : destTileFull.poi ? `known ${destTileFull.poi.type} (${destTileFull.poi.name})` : "open wilderness";
 
     let travelMsg;
-    if (hexes === 1) {
-      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${toName} (${TERRAINS[toTile.terrain]?.label}). Estimated time: ${totalMins} minutes. Destination type: ${destDescription}. Narrate journey + arrival in one beat. Use minutes_passed = ${totalMins}.`;
+    if (arrived) {
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${legName} (${TERRAINS[legTile.terrain]?.label}). ${hexes} hex(es), ${legMins} min.${routeNote} Destination: ${destDescription}. Narrate the journey and ARRIVAL in one beat. Use minutes_passed = ${legMins}.`;
     } else {
-      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${toName} (${TERRAINS[toTile.terrain]?.label}). Total: ${hexes} hexes, ${totalMins} minutes. Route crosses: ${terrainSummary}. Destination type: ${destDescription}. Narrate the whole journey in a single beat — brief sensory passes through each terrain, then arrival. Use minutes_passed = ${totalMins}.`;
+      const why = pathEnc ? "where what follows stops you" : "as far as you press for now — the rest of the way still lies ahead";
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) toward ${toName}, getting as far as ${legName} (${TERRAINS[legTile.terrain]?.label}) — ${hexes} hex(es), ${legMins} min,${routeNote} ${why}. Narrate the journey ONLY up to ${legName} and STOP there — do NOT arrive at ${toName} (it is still ${fullPath.length - legPath.length} hex(es) on). Use minutes_passed = ${legMins}.`;
     }
 
     let encounterLine = "";
     if (pathEnc) {
-      const encTile = getTile(state, pathEnc.atTile.x, pathEnc.atTile.y);
-      const encTerrainLabel = TERRAINS[encTile.terrain]?.label?.toLowerCase() || "wilderness";
-      const placement = hexes === 1
-        ? "during the journey or arrival"
-        : `partway along, at a ${encTerrainLabel} stretch`;
-      encounterLine = `\n\n[ENCOUNTER] kind: ${pathEnc.encounter.kind}; posture: ${pathEnc.encounter.posture}; flavor: "${pathEnc.encounter.desc}". Weave this into the journey ${placement}.`;
+      encounterLine = `\n\n[ENCOUNTER] kind: ${pathEnc.encounter.kind}; posture: ${pathEnc.encounter.posture}; flavor: "${pathEnc.encounter.desc}". This is what halts the party at ${legName} — weave it in as they reach there.`;
     }
-
     const fullMsg = travelMsg + encounterLine;
 
-    // Everything needed to reproduce this journey if the player later rewrites it,
-    // and to undo it cleanly on a rewind: the route (sight), the destination
-    // (arrival + vista), and the rolled encounter (re-offer a fight). Recorded
-    // with the turn so travel moments are steerable like any other.
+    // Recorded with the turn so a rewrite/rewind reproduces this exact leg: the
+    // route (sight), where the party actually LANDS (leg end, not the far dest),
+    // and the rolled encounter. intendedDest remembers where they were bound.
     const travel = {
-      fromName, toName,
-      dest: { x: dest.x, y: dest.y },
-      path: path.map((p) => ({ x: p.x, y: p.y })),
-      totalMins,
+      fromName, toName: legName,
+      dest: { x: legEnd.x, y: legEnd.y },
+      path: legPath.map((p) => ({ x: p.x, y: p.y })),
+      totalMins: legMins,
       encounter: pathEnc ? pathEnc.encounter : null,
+      intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     };
 
+    await finishTravel(stateWithPlayer, fullMsg, travel);
+  }
+
+  // Shared tail for every travel mode: ask the narrator, land via applyTravelArrival
+  // (which reveals sight by travel.mode), record the turn, offer any fight.
+  async function finishTravel(stateWithPlayer, fullMsg, travel) {
     try {
       const beat = await callNarrator(stateWithPlayer, fullMsg);
       const next = applyTravelArrival(stateWithPlayer, beat, travel);
       setState(recordTurn(stateWithPlayer, fullMsg, next, { travel }));
-      // A hostile encounter along the way offers a fight once the player lands.
-      if (travel.encounter && travel.encounter.posture === "hostile") {
-        setPendingCombat(travel.encounter);
-      }
+      if (travel.encounter && travel.encounter.posture === "hostile") setPendingCombat(travel.encounter);
     } catch (e) {
       setError(e.message || String(e));
     } finally {
       setLoading(false);
     }
+  }
+
+  // Fly toward any tile: a single casting keeps the party aloft for an hour, covering
+  // an hour of FLIGHT (FLY_TRAVEL_HEXES) over any terrain with a wide view. If the
+  // destination is farther, the hour lapses and the party sets down — recast to go on.
+  // No ground ambush aloft, but over dangerous country an aerial predator may force you
+  // down (engine/rollAerialEncounter). Flying the PARTY costs one casting per head, the
+  // resolve split across the casters who know Fly (engine/fly.js); `assignment` comes
+  // from the map's Fly panel (else the auto-balanced split is used).
+  async function handleFly(dest, assignment) {
+    if (loading) return;
+    const plan = flyMulticastPlan(state);
+    if (!plan.casters.length) return; // nobody in the party knows Fly
+    const assign = assignment || plan.autoAssign;
+    if (!assignmentValid(assign, plan.casters, plan.flyCost)) {
+      const who = plan.casts > 1 ? "The party hasn't the resolve to take wing together." : "You haven't the resolve left to take wing.";
+      setState({ ...state, beats: [...state.beats, { id: `fly${Date.now()}`, type: "narration", content: who }] });
+      return;
+    }
+    const cur = state.world.currentTile;
+    let legPath = flightPath(cur, dest, FLY_TRAVEL_HEXES);
+    if (legPath.length < 2) return;
+    // The only thing that can reach a flier is another flier, and only over wild,
+    // dangerous country — a hit forces the party down where it strikes.
+    const aerial = rollAerialEncounter(state, legPath);
+    if (aerial) legPath = legPath.slice(0, aerial.atIndex + 1);
+    const legEnd = legPath[legPath.length - 1];
+    const arrived = legEnd.x === dest.x && legEnd.y === dest.y;
+    const legTile = getTile(state, legEnd.x, legEnd.y);
+    const fromName = currentLocationName(state);
+    const destTile = getTile(state, dest.x, dest.y);
+    const toName = destTile.poi?.name || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
+    const legName = arrived ? toName : (legTile.poi?.name || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
+    const mins = flightMinutes(legPath);
+    setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
+
+    // Deduct each caster's share from their PERSISTED resolve (player + companions).
+    const perCaster = assignmentCost(assign, plan.flyCost);
+    const ch = perCaster.wanderer
+      ? { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - perCaster.wanderer) }
+      : state.character;
+    const chars = state.world.codex.characters;
+    let updatedChars = chars, charsTouched = false;
+    for (const [id, spent] of Object.entries(perCaster)) {
+      if (id === "wanderer" || !chars[id]) continue;
+      if (!charsTouched) { updatedChars = { ...chars }; charsTouched = true; }
+      const c = chars[id];
+      updatedChars[id] = { ...c, resolve: Math.max(0, (c.resolve ?? c.resolveMax ?? 0) - spent) };
+    }
+
+    // Overflown settlements remember the party on the wing for a few days (api.js
+    // surfaces it as [SEEN FLYING]). Store the FULL tile so getTile keeps its terrain.
+    const day = state.time?.day ?? 0;
+    const baseTiles = state.world.tiles || {};
+    let updatedTiles = baseTiles, tilesTouched = false;
+    const overflownTowns = [];
+    for (const p of legPath) {
+      const t = getTile(state, p.x, p.y);
+      if (t.terrain !== "settlement") continue;
+      const key = `${p.x},${p.y}`;
+      if (!tilesTouched) { updatedTiles = { ...baseTiles }; tilesTouched = true; }
+      updatedTiles[key] = { ...(updatedTiles[key] || t), aerialSighting: { day } };
+      if (t.poi?.name && !overflownTowns.includes(t.poi.name)) overflownTowns.push(t.poi.name);
+    }
+
+    const world = {
+      ...state.world,
+      ...(charsTouched ? { codex: { ...state.world.codex, characters: updatedChars } } : {}),
+      ...(tilesTouched ? { tiles: updatedTiles } : {}),
+    };
+
+    const casterTally = plan.casters.filter((c) => perCaster[c.id]).map((c) => `${c.name} ×${perCaster[c.id] / plan.flyCost}`);
+    const partyNote = plan.casts > 1 ? ` The whole band takes wing — ${plan.casts} castings of Fly, woven by ${casterTally.join(", ")}.` : "";
+    const townNote = overflownTowns.length ? ` You pass in plain sight over ${overflownTowns.join(", ")} — folk below crane upward and point; word of this will spread.` : "";
+    const endNote = aerial
+      ? `Narrate the flight until ${aerial.encounter.desc} forces the party down at ${legName} — a fight is upon you.`
+      : arrived
+        ? `Narrate the flight and the landing at ${toName}.`
+        : `Narrate the flight; after about an hour aloft the spell lapses and the party glides down to ${legName} to rest the working — they have NOT reached ${toName}, and must take wing again to go on.`;
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Fly ${arrived ? "to" : "toward"} ${toName}${plan.casts > 1 ? " with the party" : ""}.` };
+    const stateWithPlayer = { ...state, character: ch, world, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    const msg = `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).${partyNote}${townNote} ${endNote} It cost ${plan.totalCost} resolve in total${plan.casts > 1 ? " (divided across the casters)" : ""}. Use minutes_passed = ${mins}.`;
+    const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: aerial ? aerial.encounter : null, mode: "fly", intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
+    await finishTravel(stateWithPlayer, msg, travel);
+  }
+
+  // Teleport (Dimension Door / Gate): step straight to the target — no path, no
+  // encounters — paid for in resolve. Eligibility (range/anchor) is gated in MapView.
+  async function handleTeleport(dest, spellId) {
+    if (loading) return;
+    const spell = knownTravelSpells(state.character).find((s) => s.id === spellId);
+    if (!spell) return;
+    if ((state.character.resolve ?? 0) < spell.resolveCost) {
+      setState({ ...state, beats: [...state.beats, { id: `tp${Date.now()}`, type: "narration", content: `You haven't the resolve to work ${spell.name}.` }] });
+      return;
+    }
+    const fromName = currentLocationName(state);
+    const destTile = getTile(state, dest.x, dest.y);
+    const toName = destTile.poi?.name || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
+    const blind = !isSeen(state, dest.x, dest.y); // gating to a rumored place you've never seen
+    setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
+    const ch = { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - spell.resolveCost) };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `${spell.name} to ${toName}.` };
+    const stateWithPlayer = { ...state, character: ch, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    const msg = `[PLAYER ACTION] You work ${spell.name} and step through space, arriving at ${toName}${blind ? " — a place known only by repute, so you arrive without knowing what surrounds you" : ""}. No journey, no road between. It cost ${spell.resolveCost} resolve. Narrate the rush of arrival and what greets you. Use minutes_passed = 5.`;
+    const travel = { fromName, toName, dest: { x: dest.x, y: dest.y }, path: [{ x: dest.x, y: dest.y }], totalMins: 5, encounter: null, mode: "teleport" };
+    await finishTravel(stateWithPlayer, msg, travel);
   }
 
   async function handleResetCampaign() {
@@ -1178,6 +1304,7 @@ export function Solitaire() {
       coinBonus: wp.coinBonus || 0,
       environment: generateEnvironment(terrain),
       dark: inTheDark(st),
+      weary: (st.character.conditions || []).includes("Exhausted"),
       allies,
       ...extraOpts,
     }));
@@ -1661,6 +1788,8 @@ export function Solitaire() {
           state={state}
           onClose={() => setMapOpen(false)}
           onTravel={handleTravel}
+          onFly={handleFly}
+          onTeleport={handleTeleport}
           onSeekCombat={handleSeekCombat}
           loading={loading}
         />

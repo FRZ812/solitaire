@@ -32,7 +32,7 @@ export function makeInitialState() {
     character: {
       name: "Wanderer",
       vitality: 24, vitalityMax: 30,
-      resolve: 4, resolveMax: 6,
+      resolve: 8, resolveMax: 8, // Mind-2 pool (engine/attributes.js); recomputed on creation/load
       conditions: [],
       bond: "Unwritten — your name, your face, and your past are yours to speak into being.",
       attributes: { body: 2, reflex: 3, vigor: 2, mind: 2, wit: 4, presence: 1 },

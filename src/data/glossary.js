@@ -10,7 +10,7 @@ export const GLOSSARY = [
   { id: "vitality", term: "Vitality", category: "Vitals",
     text: "Your life. At 0 you fall. Out of combat it knits back about 1 point per hour (faster with Mending gear) — but it does NOT heal at all while you're Bleeding, Poisoned, Burning, Cursed, Starving, or Parched, so deal with the wound or the need first. Your maximum rises with Vigor." },
   { id: "resolve", term: "Resolve", category: "Vitals",
-    text: "The grit that fuels your special abilities in a fight. It refills about 1 per turn (before modifiers). Heavy armour slows it (−1); light armour and high Presence quicken it (+1); traits like Clear Mind (+1) or Archmage (+3) pour it back faster." },
+    text: "The grit your abilities burn through in a fight. What you spend, you win back by resting or with a stiff drink. Your reserve runs as deep as your Mind allows, the way your life runs as deep as your Vigor." },
 
   // ---- Survival (needs) ----
   { id: "hunger", term: "Hunger", category: "Survival",
@@ -49,6 +49,8 @@ export const GLOSSARY = [
     text: "Daylight lights the open world; after dark, only a flame does (towns keep some ambient glow, the wilds do not). Caves, dungeons, and interiors are dark at any hour. In the dark with NO light you go blind: your aim suffers in a fight and your sight shrinks to a single hex — you can barely map your way and can't travel far. A torch (≈1h, modest pool) or a lantern (≈4h on a flask of oil, steady and bright) pushes it back. Strike either with a tinderbox." },
   { id: "night", term: "Night & ambush", category: "Light",
     text: "More things prowl after dark — encounters are likelier at night and in gloomy country. A burning light lets you see and fight, but it's a BEACON: foes are likelier to ambush you and you can't slip past them. Go unlit and you're blind, but HIDDEN — you can slip away from trouble and break from a fight far more easily. A risk you weigh each night." },
+  { id: "travel-magic", term: "Flight & teleport", category: "Light",
+    text: "Travel magic skips the slow road — if you've learned it. FLY (a known spell) lets you cross any ground from the air, far faster, with a wide view, and above the things that prowl below — each leg aloft costs resolve. DIMENSION DOOR jumps you to a spot you can see a short way off; GATE tears open a way to anywhere you've been or a landmark you know of (gating somewhere you've only heard of, you arrive blind). Teleports cost resolve per jump — and that resolve is gone for whatever waits on the far side. Choose these from the map when you know the spell." },
   { id: "darkvision", term: "Darkvision", category: "Light",
     text: "Some kindreds — drow, vampires, lycanthropes — see in pitch dark. They suffer none of the dark's blindness (full sight, no combat penalty) and can stay unlit to remain hidden: the best of both. Most folk need a flame." },
 

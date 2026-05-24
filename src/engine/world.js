@@ -14,7 +14,7 @@ import { RUMORED } from "../data/rumored.js";
 import { FABLED_BY_COORD } from "../data/fabled.js";
 import { RIVER_BY_COORD } from "../data/rivers.js";
 import { getBiome } from "../data/biomes.js";
-import { SIGHT_RADIUS, TRAVEL_BASE_MIN } from "../config.js";
+import { SIGHT_RADIUS, TRAVEL_BASE_MIN, FLY_MIN_PER_HEX } from "../config.js";
 
 // Settlements for city/village/fortress; water for lakes and rivers; otherwise
 // keep procedural terrain so a "ruin" can sit on hills, plains, or marsh
@@ -338,4 +338,61 @@ export function pathMinutes(state, path) {
     total += travelMinutes(from, to);
   }
   return total;
+}
+
+// ---- Flight & teleport travel (engine for the Fly/Gate spells) ----
+
+// A straight hex line from→to (cube interpolation), crossing ANYTHING — flight
+// ignores passability and terrain. Capped to `maxHexes` so a fly leg is bounded.
+export function flightPath(from, to, maxHexes = Infinity) {
+  const dist = hexDistance(from, to);
+  if (dist === 0) return [{ x: from.x, y: from.y }];
+  const steps = Math.min(dist, maxHexes);
+  const az = -from.x - from.y, bz = -to.x - to.y; // cube z for each end
+  const out = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / dist; // interpolate toward the true destination, then take `steps` of it
+    let qx = from.x + (to.x - from.x) * t;
+    let qy = from.y + (to.y - from.y) * t;
+    let qz = az + (bz - az) * t;
+    // cube round
+    let rx = Math.round(qx), ry = Math.round(qy), rz = Math.round(qz);
+    const dx = Math.abs(rx - qx), dy = Math.abs(ry - qy), dz = Math.abs(rz - qz);
+    if (dx > dy && dx > dz) rx = -ry - rz; else if (dy > dz) ry = -rx - rz; else rz = -rx - ry;
+    out.push({ x: rx, y: ry });
+  }
+  return out;
+}
+
+// Flat, fast air time — ignores terrain speed entirely.
+export function flightMinutes(path) {
+  return Math.max(1, (Math.max(0, (path?.length || 1) - 1)) * FLY_MIN_PER_HEX);
+}
+
+// Places a Gate/Dimension Door may target: everywhere the player has VISITED,
+// plus RUMORED named landmarks they know of (gating there lands them blind),
+// plus any active quest marker. Returns [{ x, y, name, type }].
+export function validTeleportAnchors(state) {
+  const out = [];
+  const seenKeys = new Set();
+  const add = (x, y, name, type) => { const k = `${x},${y}`; if (seenKeys.has(k)) return; seenKeys.add(k); out.push({ x, y, name, type }); };
+  for (const key of Object.keys(state.world.tiles || {})) {
+    const [x, y] = key.split(",").map(Number);
+    const t = state.world.tiles[key];
+    add(x, y, t?.poi?.name || null, "visited");
+  }
+  for (const key of Object.keys(RUMORED)) {
+    const [x, y] = key.split(",").map(Number);
+    add(x, y, RUMORED[key].name, "rumored");
+  }
+  for (const q of (state.world.quests || [])) {
+    if (q.status === "active" && q.loc) add(q.loc.x, q.loc.y, q.locName || q.title, "quest");
+  }
+  return out;
+}
+
+export function isTeleportAnchor(state, x, y) {
+  if (isVisited(state, x, y)) return true;
+  if (RUMORED[`${x},${y}`]) return true;
+  return (state.world.quests || []).some((q) => q.status === "active" && q.loc && q.loc.x === x && q.loc.y === y);
 }

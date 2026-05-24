@@ -89,7 +89,7 @@ export const PASSIVES = [
   // ---------- RESOURCE / TEMPO (resolve, initiative, action economy) ----------
   { id: "tireless",   name: "Fleet-Footed", cat: "tempo", scope: "combat", type: "stat", key: "speed",       minTier: "uncommon",  amount: (n) => 1 + Math.floor(n / 2), desc: "Acts sooner — raises initiative." },
   { id: "swift",      name: "Swift",        cat: "tempo", scope: "combat", type: "stat", key: "swiftChance", minTier: "uncommon",  amount: (n) => 0.05 + n * 0.02,      desc: "Chance each turn to act again." },
-  { id: "clearmind",  name: "Clear Mind",   cat: "resource", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "epic",  amount: (n) => 1,                    desc: "Recovers resolve each turn (sustains casting)." },
+  { id: "clearmind",  name: "Clear Mind",   cat: "resource", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "epic",  amount: (n) => 1,                    desc: "A clear mind recovers some resolve each turn, sustaining your casting." },
 
   // ---------- LEGENDARY+ POWERS — build-defining ----------
   { id: "colossus",   name: "Colossus",     cat: "power", scope: "combat", type: "stat", key: "maxHealth",     minTier: "legendary", amount: (n) => geo(40, n),           desc: "Vastly increases maximum health." },

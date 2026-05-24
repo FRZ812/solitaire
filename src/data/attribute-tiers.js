@@ -167,9 +167,9 @@ const ATTR_PURPOSE = {
   body:     "Raw might. Drives melee damage and the heavy weapons you can wield, and adds Armor (about a third of your Body) against physical hits.",
   reflex:   "Speed and finesse. Raises Dodge and Accuracy, helps you strike first, and powers light, finesse weapons — daggers, bows.",
   vigor:    "Toughness. Sets your maximum Vitality and grants flat damage reduction — how much punishment you can take before you fall.",
-  mind:     "Intellect. Powers spell damage, adds Ward (about a third of your Mind) against magic, and quickens how fast you learn.",
+  mind:     "Intellect. Powers spell damage, sets how deep your Resolve runs, adds Ward (about a third of your Mind) against magic, and quickens how fast you learn.",
   wit:      "Awareness. Raises your critical-hit chance and your perception — spotting ambushes and openings — and sharpens healing and quick thinking.",
-  presence: "Force of will. Feeds Resolve (the fuel for special moves), steadies morale, and sways how others and foes respond to you.",
+  presence: "Force of will. Steadies morale and sways how others and foes respond to you; at high Presence your Resolve recovers even in the thick of a fight.",
 };
 export function attrPurpose(key) { return ATTR_PURPOSE[key] || ""; }
 

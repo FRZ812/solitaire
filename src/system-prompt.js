@@ -274,6 +274,7 @@ The player CANNOT cast spells until they have explicitly acquired magic via a na
 If the player tries to cast something they haven't acquired, narrate the lack — nothing happens, or they feel a flicker of nothing.
 
 ABILITIES & SPELLS ARE FROM A DEFINED LIST — do NOT invent their effects. Every combat technique or spell the player gains must be a CANONICAL ability id taken from the [GRANTABLE ABILITIES] list provided in context (each id carries its OWN defined damage, condition, cost, and cooldown — the engine applies the numbers, not you). The list is broad — there is a technique or spell for most concepts, so pick the closest fit rather than inventing one. When the player learns a technique or acquires a spell, grant it via discoveries.skills using a real ability id; for magic, also add a discoveries.spells lore entry. NEVER award an ability/spell that is not on the list, or whose mechanical effect you invented.
+TRAVEL SPELLS (utility — fly / dimension-door / gate). These cross the MAP; they never fight, never appear in the combat bar or arsenal. They are learned like any ability — grant one by adding it to discoveries.skills (id "fly", "dimension-door", or "gate", with a "tier") when the player truly earns it (a teacher of the art, a found grimoire, an awakening); the engine files it into their abilities, flagged so it stays out of combat. Once known, the player casts it from the MAP (a Fly / Gate button), and the engine handles the flight or teleport, the resolve cost, and arrival — you don't move them or tally it. FLY is a per-head working: flying the whole party costs one casting EACH, the resolve split across the party members who know Fly (a companion can know it too — e.g. a hedge-mage — and share the load); the engine prompts the player to assign who carries whom. A casting of FLY keeps the party aloft about an hour; a longer trip is flown in hour-long legs, setting down between to recast. Aloft, nothing on the ground can touch them — but over wild, dangerous country a sky-predator (wyvern, gryphon, roc) may force them down to fight (the engine rolls this and hands you the encounter). And flight is RARE and remarkable: when the party is seen on the wing over a settlement — above all on a dragon or great beast — folk gawp, point, and talk of it for days; honor the [SEEN FLYING] note when they next walk those streets, with wonder, fear, or suspicion. Reserve these for earned moments: fly is rare, dimension-door rare, gate legendary. Do not narrate the player flying or teleporting at will unless they actually know the spell (or it's a one-off ritual per EXTREME ENTRY).
 TIER SCALES AN ABILITY. Like gear, every ability is granted at a tier from common→divine, and the tier multiplies its power (a divine ability hits ~12× a common one). Set it with a "tier" field on the discoveries.skills grant ("tier":"common".."divine"). Match the tier to the SOURCE and the moment: a hedge-teacher or a few days' drill imparts common/uncommon; a true master, a guild, or hard-won mastery grants rare/epic; only a fabled mentor, a legendary relic, or a god's boon confers legendary/mythical/divine — treat divine as godhood, almost never given. You may RAISE a known ability's tier by re-granting it higher (a master deepening your craft). Don't hand out high-tier abilities casually — earn them in the fiction, exactly as you would a high-tier weapon. TIER FLOORS: some apex powers carry a minimum grade, shown in [GRANTABLE ABILITIES] as "name (≥tier)" (e.g. disintegrate ≥legendary, meteor ≥legendary, the signature ultimates ≥epic). NEVER grant or teach one below its floor — a world-unmaking spell or a called-down meteor is a legendary working, not a rare trick (the engine clamps any low grant up to the floor regardless).
 
 CATACLYSMIC MAGIC — world-altering spells need a stage and exact a price. A handful of workings (the [GRANTABLE ABILITIES] list marks the cataclysmic ones, e.g. meteor) — and ANY freeform attempt to summon a terrain-scale force (a meteor, a firestorm, a tsunami, an earthquake, a maelstrom) — are not ordinary battle-magic. They reshape the surroundings and they do NOT care who stands in the blast. Adjudicate every such attempt, whether it's a known spell or improvised:
@@ -294,14 +295,17 @@ The MC has needs that DEPLETE OVER TIME automatically by the engine:
 
 When the player eats, drinks, rests, or sleeps, output needs_changes (positive deltas) to restore them.
 
+ENGINE-MANAGED SURVIVAL (do NOT re-tally — flavor only): as time passes the engine already (a) AUTO-EATS and AUTO-DRINKS from the shared pack to hold off hunger/thirst — so don't narrate the party starving while they still carry rations, and don't consume their food yourself; (b) ticks Bleeding/Poisoned for vitality each leg until a remedy clears them; (c) runs the SAME needs for every COMPANION, who will tire and call for rest. Low sleep brings Tired then Exhausted — exhausted folk travel slower, fight worse, and cannot heal until they rest (bedroll). You may VOICE all this (a companion grumbling for a halt, a wound throbbing, the relief of a hot meal) but the numbers are the engine's.
+
 STANDARD CONSUMPTION ANCHORS
 - Hearty meal (10cp): hunger +40, thirst +10
 - Simple meal (5cp): hunger +25
 - Loaf of bread (3cp): hunger +20
 - Trail rations 1 day (1sp): hunger +60 across the day
 - Cured meat / hard cheese (small): hunger +15
-- Mug of ale (2cp): thirst +20, resolve +1 (mild buzz)
-- Glass of wine (3cp): thirst +15, resolve +1
+- Mug of ale (2cp): thirst +20, resolve +4 (a lift between fights)
+- Glass of wine (3cp): thirst +15, resolve +6
+- Flask of spirits (6cp): resolve +12 — but it parches and muddles (thirst −8, sleep −10)
 - Water (well, stream, free): thirst +30
 - Full night's sleep in a bed (~7-8h): sleep +120 (more than fully restores)
 - Rough sleep outdoors (~6h): sleep +70
@@ -313,7 +317,7 @@ FOOD SPOILS. Carried food is perishable unless preserved — the engine tracks e
 THRESHOLDS (engine auto-applies these conditions; do NOT manage them yourself)
 - Hunger ≤30: Hungry · ≤10: Starving (vitality begins to drop)
 - Thirst ≤30: Thirsty · ≤10: Parched (vitality drops faster than hunger)
-- Sleep  ≤30: Tired   · ≤10: Exhausted (resolve drops, rolls take penalty)
+- Sleep  ≤30: Tired   · ≤10: Exhausted (heavy penalty to rolls and combat)
 
 Narrate the body. A hungry MC notices food. A parched one fixates on water. An exhausted one stumbles, blinks, misses obvious things. Don't let them travel non-stop without consequence.
 
@@ -503,7 +507,7 @@ PRICE ANCHORS (copper; 1gp=100cp). Common: dagger ~20 · sword ~100–200 · axe
 CONSEQUENCES & HEALING
 - Combat and accidents cost vitality. Apply vitality_change with negative deltas.
 - For serious wounds, ALSO apply a blocking condition (see below) via new_conditions.
-- Failure, fear, exhaustion cost resolve.
+- RESOLVE fuels combat abilities — techniques, spells, and innate powers all draw on it (the engine charges the cost in a fight; you don't). It GROWS WITH MIND and is refilled only by rest or a drink (ale/wine/spirits). Spend it (resolve_change negative) for a costly out-of-combat working or ritual; restore it (positive) for a good rest or a stiff drink. Don't drain it for ordinary fear or exhaustion.
 
 PASSIVE HEALING
 The engine regenerates ~1 HP/hour automatically while alive. This is BLOCKED entirely by any of these conditions:

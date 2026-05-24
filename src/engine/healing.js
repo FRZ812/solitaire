@@ -3,7 +3,7 @@
 
 export const HEALING_BLOCKERS = new Set([
   "Bleeding", "Severed Limb", "Festering Wound", "Infected",
-  "Poisoned", "Cursed", "Starving", "Parched",
+  "Poisoned", "Cursed", "Starving", "Parched", "Exhausted",
 ]);
 
 export function canHeal(conditions) {

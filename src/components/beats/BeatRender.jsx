@@ -279,6 +279,20 @@ export function BeatRender({ beat, onMenu }) {
         </Panel>
       );
 
+    case "upkeep":
+      return (
+        <Panel tone="pale" compact>
+          <div style={{ ...metaStyle, fontSize: "8px", color: "rgba(167, 200, 150, 0.8)", marginBottom: "4px" }}>On the road</div>
+          <div style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.7)", lineHeight: 1.5, display: "flex", flexWrap: "wrap", gap: "6px 10px" }}>
+            {beat.lines.map((l, i) => (
+              <span key={i} style={{ background: "rgba(120, 150, 110, 0.1)", padding: "2px 7px", borderRadius: "6px", border: "1px solid rgba(120, 150, 110, 0.2)" }}>
+                {l}
+              </span>
+            ))}
+          </div>
+        </Panel>
+      );
+
     case "spoilage":
       return (
         <Panel tone="pale" compact>

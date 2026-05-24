@@ -8,6 +8,8 @@
 // Board-only fields (`role`, `desc`, `terms`, `feeCp`) drive the tavern's
 // "Looking to join" list; the rest is the person.
 
+import { resolvePoolForMind } from "../engine/attributes.js";
+
 export const COMPANIONS = {
   bram: {
     id: "bram", key: "bram", role: "sellsword", terms: "a share of the spoils", feeCp: 0,
@@ -98,6 +100,13 @@ export function companionCodexEntry(tmpl) {
     appearance: tmpl.appearance, base_appearance: tmpl.base_appearance,
     description: tmpl.description, attributes: tmpl.attributes,
     worn: [...(tmpl.worn || [])], knows: [...(tmpl.knows || [])],
+    // Companions hunger, thirst, and tire like the player — depleted as the party
+    // travels, topped up from the shared pack, surfaced as rest prompts (engine/upkeep.js).
+    needs: { hunger: 70, thirst: 75, sleep: 70 },
+    // A Mind-scaled resolve pool of their own — the fuel a companion caster spends
+    // (e.g. to fly the party). Refilled by rest, not per turn. Persists in the codex.
+    resolve: resolvePoolForMind(tmpl.attributes?.mind || 0),
+    resolveMax: resolvePoolForMind(tmpl.attributes?.mind || 0),
     // A companion's full kit — set but not shown; the player can ASK and the
     // narrator answers from this (no vague hand-waving), and combat uses it.
     abilities: [...(tmpl.abilities || [])],

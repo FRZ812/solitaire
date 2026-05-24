@@ -6,6 +6,7 @@ import {
   mergeConditions, getNeedAlertText,
 } from "./needs.js";
 import { passiveHealVitality } from "./healing.js";
+import { autoConsume, woundTick, companionUpkeep } from "./upkeep.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
 import { refillVessels } from "./consumables.js";
@@ -14,7 +15,7 @@ import { resolveRace } from "../data/races.js";
 import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
 import { tierOrder } from "../data/tiers.js";
 import { spoilCarried } from "./spoilage.js";
-import { applyAttributeChanges, recomputeVitalityMax } from "./attributes.js";
+import { applyAttributeChanges, recomputeVitalityMax, recomputeResolveMax } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
 import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
 import { clampRel, MEMORY_CAP } from "./relationships.js";
@@ -158,6 +159,7 @@ export function applyBeat(state, beat, options = {}) {
   // Max HP derives from vigor — keep it in sync whenever attributes may have
   // changed (also lazily migrates older saves). A vigor gain heals by the delta.
   recomputeVitalityMax(character);
+  recomputeResolveMax(character); // Mind drives the resolve pool, same pattern
 
   // A combat ability TAUGHT in play (a discoveries.skills entry whose id is a real
   // ability) must become USABLE — mergeDiscoveries only records codex lore, so wire
@@ -192,12 +194,23 @@ export function applyBeat(state, beat, options = {}) {
   const wp = activeWorldPassives(state.character, state.world.codex);
 
   // Needs deplete by time, then narrator-driven changes apply, then conditions auto-update.
+  const decayMult = Math.max(0.2, 1 - (wp.needDecayMult || 0));
+  const minutes = beat.minutes_passed || 0;
+  const upkeepLines = [];
   const prevNeedConds = getNeedConditions(state.character.needs);
-  const drained = depleteNeeds(state.character.needs, beat.minutes_passed || 0, Math.max(0.2, 1 - (wp.needDecayMult || 0)));
-  const newNeeds = applyNeedsChanges(drained, beat.needs_changes);
-  character.needs = newNeeds;
+  const drained = depleteNeeds(state.character.needs, minutes, decayMult);
+  character.needs = applyNeedsChanges(drained, beat.needs_changes);
 
-  const needsConds = getNeedConditions(newNeeds);
+  // As time passes the party eats and drinks from the shared pack to hold off
+  // hunger/thirst — done BEFORE conditions so a fed character isn't marked Hungry.
+  if (minutes > 0) {
+    const fed = autoConsume(character.inventory, character.needs, codex.items, "");
+    character.inventory = fed.inventory;
+    character.needs = fed.needs;
+    upkeepLines.push(...fed.lines);
+  }
+
+  const needsConds = getNeedConditions(character.needs);
   character.conditions = mergeConditions(beat.new_conditions, needsConds, state.character.conditions);
 
   // Need alerts fire only on crossing INTO a worse state.
@@ -229,6 +242,26 @@ export function applyBeat(state, beat, options = {}) {
     character.vitality, character.vitalityMax,
     character.conditions, beat.minutes_passed || 0, wp.healPerHour || 0
   );
+
+  // Wounds bite as the clock turns — Bleeding/Poisoned cost vitality until treated.
+  if (minutes > 0) {
+    const wt = woundTick(character.vitality, character.conditions, minutes);
+    character.vitality = wt.vitality;
+    upkeepLines.push(...wt.lines);
+  }
+
+  // Companions travel the same clock: they hunger, thirst, tire, and call for rest.
+  if (minutes > 0 && (state.party || []).length) {
+    const cu = companionUpkeep(state.party, codex.characters, character.inventory, minutes, decayMult, codex.items);
+    character.inventory = cu.inventory;
+    if (Object.keys(cu.companions).length) {
+      codex = { ...codex, characters: { ...codex.characters, ...cu.companions } };
+    }
+    upkeepLines.push(...cu.lines);
+  }
+
+  // One compact upkeep note per beat: what was eaten/drunk, who's flagging, wounds.
+  if (upkeepLines.length) newBeats.push({ id: `upkeep${Date.now()}`, type: "upkeep", lines: upkeepLines });
 
   let world = { ...state.world, codex };
   if (options.travelToCoords) {
@@ -423,8 +456,9 @@ export function applyBeat(state, beat, options = {}) {
       knows: [...new Set([...(w.knows || []), ...(cs.knows || [])].filter((f) => typeof f === "string" && f.trim()))],
     };
     world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, wanderer: merged } } };
-    // Creation set attributes + racial vigor — derive starting max HP from them.
+    // Creation set attributes + racial vigor/mind — derive starting HP and resolve.
     recomputeVitalityMax(character);
+    recomputeResolveMax(character);
     created = true;
   }
 

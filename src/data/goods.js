@@ -168,18 +168,18 @@ export const GOODS = {
   // ---- Tavern & market drinks (kind "drink") ----
   "ale": {
     id: "ale", name: "Jug of Ale", kind: "drink", value: 2,
-    appearance: "A stoppered earthenware jug of brown ale.", description: "Slakes thirst and loosens the shoulders. A mild lift to the spirits.",
-    use: { verb: "Drink", needs: { thirst: 20 }, resolve: 1 },
+    appearance: "A stoppered earthenware jug of brown ale.", description: "Slakes thirst and loosens the shoulders. A mild lift to the spirits — a little resolve back in the field.",
+    use: { verb: "Drink", needs: { thirst: 20 }, resolve: 4 },
   },
   "wine": {
     id: "wine", name: "Skin of Wine", kind: "drink", value: 3,
-    appearance: "A leather skin of rough red wine.", description: "Sour and warming. Eases thirst and steadies the nerves a little.",
-    use: { verb: "Drink", needs: { thirst: 15 }, resolve: 1 },
+    appearance: "A leather skin of rough red wine.", description: "Sour and warming. Eases thirst and steadies the nerves — restores some resolve between fights.",
+    use: { verb: "Drink", needs: { thirst: 15 }, resolve: 6 },
   },
   "spirits": {
     id: "spirits", name: "Flask of Spirits", kind: "drink", value: 6,
-    appearance: "A small flask of clear, fierce grain-spirit.", description: "Burns going down. Little for thirst, but it braces a man for what's coming.",
-    use: { verb: "Drink", needs: { thirst: 4 }, resolve: 2 },
+    appearance: "A small flask of clear, fierce grain-spirit.", description: "Burns going down. Braces you hard — a deep pull of resolve — but it parches you and muddles the head, so you'll need water and rest the sooner.",
+    use: { verb: "Drink", needs: { thirst: -8, sleep: -10 }, resolve: 12 },
   },
 };
 

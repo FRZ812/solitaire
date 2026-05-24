@@ -1,0 +1,128 @@
+// Travel/time upkeep — the survival layer that ticks as the party moves.
+//
+// On any time-passing beat (a travel leg, a long wait, a rest) the party:
+//   • eats and drinks from the SHARED pack to hold off hunger/thirst (Kingmaker
+//     rations) — perishables first so nothing rots in the bag;
+//   • lets wounds bite — Bleeding/Poisoned cost a little vitality until treated;
+//   • drags its companions along on the same clock — they hunger, thirst, and
+//     tire too, and call out for a rest when they're spent.
+//
+// Returns plain info lines so the UI can show, per leg, what was consumed and
+// who needs a halt. Pure-ish: clones what it changes, mutates nothing passed in.
+
+import { itemTemplate } from "../data/catalog.js";
+import { depleteNeeds, getNeedConditions } from "./needs.js";
+
+const AUTO_EAT_BELOW = 55;    // top hunger up once it dips below this
+const AUTO_DRINK_BELOW = 55;  // …and thirst
+const BLEED_PER_HOUR = 3;     // vitality lost per hour while Bleeding
+const POISON_PER_HOUR = 2;    // …while Poisoned
+const clampNeed = (v) => Math.max(0, Math.min(100, v));
+
+const defOf = (codexItems, id) => codexItems?.[id] || itemTemplate(id);
+const lc = (s) => (s || "").toLowerCase();
+
+function removeOne(carried, itemId) {
+  const i = carried.findIndex((c) => c.itemId === itemId && c.quantity > 0);
+  if (i < 0) return;
+  carried[i].quantity -= 1;
+  if (carried[i].quantity <= 0) carried.splice(i, 1);
+}
+
+// Best food/drink in the pack for a given need — soonest-spoiling first so we
+// burn perishables before the preserved staples.
+function pickByNeed(carried, codexItems, want, kinds) {
+  let best = null;
+  for (const c of carried) {
+    if (c.quantity <= 0) continue;
+    const def = defOf(codexItems, c.itemId);
+    if (!def?.use?.needs || !kinds.includes(def.kind)) continue;
+    if ((def.use.needs[want] || 0) <= 0) continue;
+    const perish = def.perish || Infinity;
+    if (!best || perish < best.perish) best = { itemId: c.itemId, def, perish };
+  }
+  return best;
+}
+
+// One eat + one drink pass to top a single person's needs from the shared pack.
+// Returns a NEW inventory and the updated needs, plus human lines. Drinking
+// prefers a waterskin draught (free, refillable) over consuming ale/wine.
+export function autoConsume(inventory, needs, codexItems, who = "") {
+  const carried = (inventory.carried || []).map((c) => ({ ...c }));
+  const out = { ...needs };
+  const lines = [];
+  const label = who ? `${who} ` : "";
+
+  if (out.thirst < AUTO_DRINK_BELOW) {
+    const vessel = carried.find((c) => {
+      const def = defOf(codexItems, c.itemId);
+      if (!def?.capacity || c.quantity <= 0) return false;
+      return (c.water ?? def.capacity * c.quantity) > 0;
+    });
+    if (vessel) {
+      const def = defOf(codexItems, vessel.itemId);
+      vessel.water = (vessel.water ?? def.capacity * vessel.quantity) - 1;
+      out.thirst = clampNeed(out.thirst + (def.use?.needs?.thirst || 0));
+      lines.push(`${label}drank from a ${lc(def.name)}`);
+    } else {
+      const d = pickByNeed(carried, codexItems, "thirst", ["drink", "food"]);
+      if (d) {
+        removeOne(carried, d.itemId);
+        out.thirst = clampNeed(out.thirst + (d.def.use.needs.thirst || 0));
+        if (d.def.use.needs.hunger) out.hunger = clampNeed(out.hunger + d.def.use.needs.hunger);
+        lines.push(`${label}drank ${lc(d.def.name)}`);
+      }
+    }
+  }
+
+  if (out.hunger < AUTO_EAT_BELOW) {
+    const f = pickByNeed(carried, codexItems, "hunger", ["food"]);
+    if (f) {
+      removeOne(carried, f.itemId);
+      out.hunger = clampNeed(out.hunger + (f.def.use.needs.hunger || 0));
+      if (f.def.use.needs.thirst) out.thirst = clampNeed(out.thirst + f.def.use.needs.thirst);
+      lines.push(`${label}ate ${lc(f.def.name)}`);
+    }
+  }
+
+  return { inventory: { ...inventory, carried }, needs: out, lines };
+}
+
+// Wounds bite as the clock turns. Returns reduced vitality + a line if it ticked.
+export function woundTick(vitality, conditions, minutes) {
+  const hours = (minutes || 0) / 60;
+  if (hours <= 0) return { vitality, lines: [] };
+  let dmg = 0;
+  if (conditions.includes("Bleeding")) dmg += BLEED_PER_HOUR * hours;
+  if (conditions.includes("Poisoned")) dmg += POISON_PER_HOUR * hours;
+  dmg = Math.round(dmg);
+  if (dmg <= 0) return { vitality, lines: [] };
+  const next = Math.max(0, vitality - dmg);
+  const which = [conditions.includes("Bleeding") && "bleeding", conditions.includes("Poisoned") && "poison"].filter(Boolean).join(" & ");
+  return { vitality: next, lines: [`${which} saps you (−${dmg} vitality) — tend it`] };
+}
+
+// Drag each companion along the same clock: deplete their needs, feed them from
+// the shared pack, and flag any who are spent. Returns updated companion entries
+// (by id), the shared inventory after they've eaten, and rest-prompt lines.
+export function companionUpkeep(party, codexCharacters, inventory, minutes, decayMult, codexItems) {
+  const updated = {};
+  let inv = inventory;
+  const lines = [];
+  for (const id of party || []) {
+    const c = codexCharacters?.[id];
+    if (!c || c.combatState?.status === "dead") continue;
+    const baseNeeds = c.needs || { hunger: 70, thirst: 75, sleep: 70 };
+    const drained = depleteNeeds(baseNeeds, minutes, decayMult);
+    const fed = autoConsume(inv, drained, codexItems, c.name);
+    inv = fed.inventory;
+    if (fed.lines.length) lines.push(...fed.lines);
+    updated[id] = { ...c, needs: fed.needs };
+    // Rest prompts: only the worst state, once, so the log isn't spammed.
+    const conds = getNeedConditions(fed.needs);
+    if (conds.includes("Exhausted")) lines.push(`${c.name} is exhausted and needs to rest`);
+    else if (conds.includes("Parched")) lines.push(`${c.name} is parched`);
+    else if (conds.includes("Starving")) lines.push(`${c.name} is starving`);
+  }
+  return { companions: updated, inventory: inv, lines };
+}

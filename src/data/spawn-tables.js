@@ -128,3 +128,14 @@ export const SPAWN_TABLES = {
   indoor: { chance: 0, entries: [] },
   water:  { chance: 0, entries: [] },
 };
+
+// The sky's own predators — the ONLY things that can ambush a flying party. Drawn
+// from only over dangerous country (engine: rollAerialEncounter, gated by region
+// difficulty), all hostile, and scaled to the region's tier like any spawn.
+export const AERIAL_SPAWNS = [
+  { kind: "harpy",          weight: 10, posture: "hostile", desc: "a shrieking flight of harpies stooping out of the glare" },
+  { kind: "wyvern-passage", weight: 8,  posture: "hostile", desc: "a wyvern peels off a distant crag, folds its wings, and dives" },
+  { kind: "gryphon",        weight: 7,  posture: "hostile", desc: "a gryphon climbs fast to meet you, talons spread" },
+  { kind: "drakeling",      weight: 6,  posture: "hostile", desc: "a pair of drakelings spiral up to your height, smoke trailing" },
+  { kind: "roc",            weight: 3,  posture: "hostile", desc: "a vast roc blots the light, its wingspan the breadth of a sail" },
+];

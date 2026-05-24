@@ -9,6 +9,7 @@ import { itemCombatStats, weaponFamilyBase, mergeThresholdMods } from "../engine
 import { itemTemplate } from "./catalog.js";
 import { aggregateCombatPassives } from "./passives.js";
 import { attributeThresholdMods } from "./attribute-tiers.js";
+import { resolvePoolForMind } from "../engine/attributes.js";
 
 const T = (min, max, type = "physical", pen = 0) => ({ min, max, type, pen });
 
@@ -59,6 +60,11 @@ export const BESTIARY = {
   "stone-troll": { name: "Stone-Troll",  race: "troll",    health: 66, armor: 6, dodge: 1,  accuracy: 6, speed: 2, damage: T(9, 14, "physical", 1), abilities: ["power-strike"], count: [1, 1], maxLootTier: "legendary" },
   drakeling:     { name: "Drakeling",    race: "drakeborn",health: 28, armor: 3, ward: 4, dodge: 12, accuracy: 8, critChance: 8, speed: 6, damage: T(5, 9, "magical", 2), abilities: ["firebolt"], count: [1, 2], maxLootTier: "epic" },
   "wyvern-passage":{ name: "Wyvern",     race: "wyvern",   health: 44, armor: 4, ward: 2, dodge: 16, accuracy: 9, critChance: 10, speed: 8, damage: T(7, 12, "physical", 3), abilities: ["power-strike", "rend"], count: [1, 1], maxLootTier: "legendary" },
+
+  // --- aerial predators (the only things that can reach a flier; see AERIAL_SPAWNS) ---
+  gryphon:       { name: "Gryphon",      race: "gryphon",  health: 38, armor: 3, ward: 1, dodge: 18, accuracy: 9, critChance: 10, speed: 9, damage: T(6, 11, "physical", 2), abilities: ["power-strike", "rend"], count: [1, 2], maxLootTier: "legendary" },
+  harpy:         { name: "Harpy",        race: "harpy",    health: 20, armor: 1, ward: 1, dodge: 20, accuracy: 8, critChance: 8, speed: 9, damage: T(4, 7), abilities: ["venom-strike"], count: [2, 4], maxLootTier: "rare" },
+  roc:           { name: "Roc",          race: "roc",      health: 60, armor: 3, ward: 1, dodge: 10, accuracy: 8, critChance: 8, speed: 8, damage: T(9, 15, "physical", 3), abilities: ["power-strike"], count: [1, 1], maxLootTier: "legendary" },
 
   // --- undead / aberrant ---
   "bog-skeleton":{ name: "Bog-Skeleton", race: "undead",   health: 15, armor: 2, dodge: 6, accuracy: 5, speed: 4, damage: T(3, 6), abilities: ["power-strike"], count: [1, 3], maxLootTier: "uncommon" },
@@ -111,7 +117,8 @@ export function generateEnemy(kind, { tierId = "common", index = 0, total = 1 } 
     maxLootTier: tmpl.maxLootTier || "uncommon",
     // Action economy: one action a turn (no stamina). Template foes carry no
     // affixes, so no swift extras; caster foes spend Resolve on their spells.
-    resolve: 6 + tierOf, resolveMax: 6 + tierOf, resolveRegen: 1,
+    // Resolve no longer regenerates, so the pool is a touch deeper to last a fight.
+    resolve: 8 + tierOf * 2, resolveMax: 8 + tierOf * 2,
     actionsPerTurn: 1, actionsLeft: 1, cooldownReduction: 0, swiftChance: 0,
     procs: [], shield: 0, magicShield: 0, invuln: 0,
     statuses: [],
@@ -240,9 +247,9 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     speed: reflex + Math.floor(wit / 2),
     triggers: tr,
     // Same action economy as the player (no stamina); swift-geared foes (extra-
-    // action / swift affixes) act several times a turn. Casters spend Resolve.
-    resolve: 6 + Math.floor(mind / 2), resolveMax: 6 + Math.floor(mind / 2),
-    resolveRegen: 1 + (tr.resolveRegen || 0),
+    // action / swift affixes) act several times a turn. Casters spend Resolve from
+    // a Mind-scaled pool that does NOT regenerate (same economy as the player).
+    resolve: resolvePoolForMind(mind) + (sm.resolveMax || 0), resolveMax: resolvePoolForMind(mind) + (sm.resolveMax || 0),
     swiftChance: Math.min(0.5, sm.swiftChance || 0),
     // A designed raid boss acts several times a turn (npc.actionsPerTurn) so it
     // threatens a whole PARTY each round — that's how it's meant to be fought.

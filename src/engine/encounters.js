@@ -1,8 +1,10 @@
-import { SPAWN_TABLES } from "../data/spawn-tables.js";
+import { SPAWN_TABLES, AERIAL_SPAWNS } from "../data/spawn-tables.js";
 import { getBiome } from "../data/biomes.js";
+import { regionDifficulty } from "../data/regions.js";
 import { getTile } from "./world.js";
 import { TERRAINS } from "../data/terrains.js";
 import { isNight } from "./light.js";
+import { AERIAL_MIN_LEVEL, AERIAL_CHANCE_PER_LEVEL } from "../config.js";
 
 // More things prowl after dark — night (and gloomy ground) raises the odds.
 export const NIGHT_ENCOUNTER_MULT = 1.4;
@@ -68,6 +70,31 @@ export function rollPathEncounter(state, path) {
     const mult = isNight(state.time, gloomy) ? NIGHT_ENCOUNTER_MULT : 1;
     const enc = rollEncounter(tile, p.x, p.y, mult);
     if (enc) return { encounter: enc, atTile: p, atIndex: i };
+  }
+  return null;
+}
+
+// Pick one aerial predator from the sky-ambush pool (weighted, all hostile).
+function pickAerial() {
+  const total = AERIAL_SPAWNS.reduce((s, e) => s + e.weight, 0);
+  let r = Math.random() * total;
+  for (const e of AERIAL_SPAWNS) { r -= e.weight; if (r <= 0) return e; }
+  return AERIAL_SPAWNS[0];
+}
+
+// The flying counterpart to rollPathEncounter: only another flier can reach you
+// aloft, and only over dangerous country. Walk the flight path (excluding the
+// start) and roll a small per-hex chance that scales with the region's danger —
+// nothing below AERIAL_MIN_LEVEL (tamed lands are safe skies). Returns the first
+// hit in the same { encounter, atTile, atIndex } shape the travel flow expects.
+export function rollAerialEncounter(state, path) {
+  if (!path || path.length < 2) return null;
+  for (let i = 1; i < path.length; i++) {
+    const p = path[i];
+    const level = regionDifficulty(p.x, p.y).level || 0;
+    if (level < AERIAL_MIN_LEVEL) continue;
+    const chance = (level - (AERIAL_MIN_LEVEL - 1)) * AERIAL_CHANCE_PER_LEVEL;
+    if (Math.random() < chance) return { encounter: pickAerial(), atTile: p, atIndex: i };
   }
   return null;
 }

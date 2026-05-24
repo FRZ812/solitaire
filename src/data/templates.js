@@ -136,7 +136,7 @@ export const CHARACTER_TEMPLATES = [
       attributes: { body: 2, reflex: 3, vigor: 3, mind: 8, wit: 5, presence: 4 },
       appearance: { skin: "fair", hair: "brown, unbound", eyes: "hazel", build: "slight" },
       base_appearance: "A slight figure of the mixed Vale in a travel-worn robe, ink-stained fingers and eyes that read a room like a page.",
-      abilities: [{ id: "firebolt", tier: "common" }, { id: "arcane-bolt", tier: "common" }, { id: "mana-shield", tier: "uncommon" }, { id: "frost-lance", tier: "uncommon" }],
+      abilities: [{ id: "firebolt", tier: "common" }, { id: "arcane-bolt", tier: "common" }, { id: "mana-shield", tier: "uncommon" }, { id: "frost-lance", tier: "uncommon" }, { id: "fly", tier: "rare" }],
       items: [worn("oak-staff"), worn("black-robe"), worn("scholars-circlet"), worn("traveling-cloak"), packed("lamp-oil")],
       coins: { gold: 2, silver: 8 },
       knows: ["Can read three dead languages but cannot ride a horse."],

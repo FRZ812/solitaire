@@ -17,6 +17,7 @@
 
 import { tierMult, tier as tierInfo } from "./tiers.js";
 import { UNIQUE_ABILITIES } from "./uniques.js";
+import { TRAVEL_SPELLS } from "./travel-spells.js";
 
 export const REQ_PER_TIER = 2;
 
@@ -214,7 +215,10 @@ const LIBRARY_BY_ID = Object.fromEntries(ABILITY_LIBRARY.map((a) => [a.id, a]));
 const UNIQUE_BY_ID = Object.fromEntries(UNIQUE_ABILITIES.map((a) => [a.id, a]));
 // Unique abilities resolve like any other (once learned), but are NOT in the
 // random drop pool — they only come from their authored sources (data/uniques.js).
-const ALL_BY_ID = { ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
+// Travel spells (fly / dimension-door / gate) are real, grantable abilities so the
+// normal grant/known/tier-clamp paths work — but they're flagged `noncombat`, so
+// every combat + ability-list consumer filters them out (they drive map travel only).
+const ALL_BY_ID = { ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, ...TRAVEL_SPELLS, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
 
 export function getAbilityDef(id) { return ALL_BY_ID[id] || null; }
 
@@ -234,6 +238,39 @@ export function abilityCategoryOf(def) {
   if (def.innate) return "racial";
   if (abilityScaling(def) === "stat" || def.school === "arcane" || def.school === "divine") return "spell";
   return "martial";
+}
+
+// SPELL RESOLVE COSTS — Resolve is now a finite, rest-gated pool that GROWS WITH
+// MIND (engine/attributes.js) and does NOT regenerate in a fight, so spell costs
+// are tiered by power to bound the castings a pool yields per rest: a Mind-deep
+// archmage burns through many cheap spells but only a handful of apex ones, then
+// must rest or drink. MARTIAL stays free (gated by action points + cooldown) and
+// INNATE racial powers keep their light authored costs (kindred identity, not
+// gated spend). Magnitudes are sim starting points (scripts/combat-sim.mjs).
+const SPELL_COST_BY_FLOOR = {
+  common: 3, uncommon: 4, rare: 6, "very-rare": 8, epic: 10, legendary: 15, mythical: 20, divine: 25,
+};
+// Hand-tuned overrides — party force-multipliers and apex utility that the floor
+// map under-prices (most aren't tier-floored, so they'd default to Common).
+const SPELL_COST_OVERRIDE = {
+  "battle-hymn": 8, sanctify: 12, "guardian-aegis": 12, "unbreakable-will": 16, "last-sanctuary": 22,
+};
+for (const a of ABILITY_LIBRARY) {
+  if (a.innate || abilityCategoryOf(a) !== "spell") continue;
+  a.resolveCost = SPELL_COST_OVERRIDE[a.id] ?? SPELL_COST_BY_FLOOR[a.minTier || "common"];
+}
+
+// MARTIAL techniques cost resolve too — but roughly HALF a spell of the same power
+// tier, so a low-Mind fighter's smaller pool still lasts a fight. The basic Strike,
+// Brace, and Talk (separate defs below ABILITY_LIBRARY) stay free as the always-
+// available fallback when the pool runs dry. Innate racial powers keep their light
+// authored costs. Magnitudes are sim starting points.
+const MARTIAL_COST_BY_FLOOR = {
+  common: 1, uncommon: 2, rare: 3, "very-rare": 4, epic: 5, legendary: 8, mythical: 10, divine: 12,
+};
+for (const a of ABILITY_LIBRARY) {
+  if (a.innate || abilityCategoryOf(a) !== "martial") continue;
+  a.resolveCost = MARTIAL_COST_BY_FLOOR[a.minTier || "common"];
 }
 
 // Every DEFINED, grantable ability (library + authored uniques). The single

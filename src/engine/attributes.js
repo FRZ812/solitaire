@@ -31,6 +31,39 @@ export function recomputeVitalityMax(character) {
   return character;
 }
 
+// MIND DRIVES RESOLVE the way Vigor drives HP: a back-loaded pool so a low-Mind
+// fighter has little to spend on spells while a true mage commands a deep well.
+// Resolve no longer trickles back each turn — you spend down a big pool and refill
+// it by rest or drink — so the pool itself is generous (mind 30 → ~+44 on top).
+export const BASE_RESOLVE = 6;
+export const RESOLVE_PER_MIND = 1;
+
+// The pool for a raw Mind score — the single source of truth, shared by the
+// player (via effective attributes), companions, and enemies (bestiary).
+export function resolvePoolForMind(mind) {
+  const m = mind || 0;
+  const curve = Math.round(Math.max(0, m * m - 16) * 0.05); // ~0 at mind ≤4, ~+44 at 30
+  return Math.round(BASE_RESOLVE + m * RESOLVE_PER_MIND + curve);
+}
+
+export function maxResolveFor(character) {
+  return resolvePoolForMind(effectiveAttributes(character).mind || 0);
+}
+
+// Mirror recomputeVitalityMax for resolve: gaining Mind tops you up, losing it
+// clamps down. Call wherever Mind can change (creation, kit, growth, load) — and
+// for companions, so every caster carries their own well.
+export function recomputeResolveMax(character) {
+  if (!character) return character;
+  const prevMax = character.resolveMax ?? 0;
+  const nextMax = maxResolveFor(character);
+  const cur = character.resolve ?? nextMax;
+  character.resolveMax = nextMax;
+  const delta = nextMax - prevMax;
+  character.resolve = Math.max(0, Math.min(nextMax, delta > 0 ? cur + delta : cur));
+  return character;
+}
+
 export function applyAttributeChanges(attrs, changes) {
   if (!changes) return { next: attrs, growthLines: [] };
   const next = { ...attrs };
