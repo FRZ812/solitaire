@@ -54,8 +54,17 @@ export function currentRideLoad(mount, state) {
   }, 0);
 }
 
+// A mount's effective carrying limit: its base rideCapacity plus any TRANSIENT
+// buff (`rideCapacityBonus` — a strength spell, a harness). Apply a buff by
+// setting that field and clearing it when it lapses; the checks below read it
+// live, so when it clears an over-loaded mount is flagged at once (isOverloaded)
+// rather than carrying a stale "still fits" verdict.
+export function rideCapacityOf(mount) {
+  return (mount?.rideCapacity || 0) + (mount?.rideCapacityBonus || 0);
+}
+
 export function freeCapacity(mount, state) {
-  return (mount?.rideCapacity || 0) - currentRideLoad(mount, state);
+  return rideCapacityOf(mount) - currentRideLoad(mount, state);
 }
 
 export function carrierOf(state, riderId) {
@@ -107,7 +116,7 @@ function carrierChain(state, mountId) {
 // Is a mount bearing more than it can carry RIGHT NOW? (e.g. its rider picked up
 // heavy loot after mounting — engine/weight.js makes the pack count.)
 export function isOverloaded(mount, state) {
-  return !!mount && currentRideLoad(mount, state) > (mount.rideCapacity || 0);
+  return !!mount && currentRideLoad(mount, state) > rideCapacityOf(mount);
 }
 
 // Every mount in the party currently over its ride capacity.

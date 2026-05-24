@@ -5,7 +5,7 @@ import { colors, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { partyMembers, mountMembers, nonMountPartyMembers } from "../engine/party.js";
 import { relationshipTier } from "../engine/relationships.js";
-import { currentRideLoad, effectiveLoad, canMount } from "../engine/riding.js";
+import { currentRideLoad, effectiveLoad, canMount, rideCapacityOf } from "../engine/riding.js";
 
 // The party roster: every recruited companion AND mount as a full creature —
 // appearance, attributes, gear — with the option to part ways, and (for mounts)
@@ -58,7 +58,7 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onClose }) {
         {mounts.length > 0 && <SectionHeader>Mounts</SectionHeader>}
         {mounts.map((m) => {
           const load = currentRideLoad(m, state);
-          const cap = m.rideCapacity || 0;
+          const cap = rideCapacityOf(m);
           const pct = cap ? Math.min(100, Math.round((load / cap) * 100)) : 0;
           const seatable = candidates.filter((c) => c && c.id !== m.id && c.ridingOn !== m.id && canMount(state, c.id, m.id).ok);
           return (

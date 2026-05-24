@@ -75,7 +75,13 @@ export function carryCapacityFor(character) {
   const a = effectiveAttributes(character);
   const body = a.body || 0, vigor = a.vigor || 0;
   const curve = Math.round(Math.max(0, body * body - 16) * 0.4); // ~0 at body ≤4, back-loaded
-  return Math.round(BASE_CARRY + body * CARRY_PER_BODY + vigor * 2 + curve);
+  // `carryBonus` is a TRANSIENT lift (a spell, a potion, a beast-strength buff).
+  // Apply a temporary buff by setting character.carryBonus and clearing it when it
+  // lapses — NEVER by writing carryCapacityMax directly, which the every-beat
+  // recompute (engine/beat.js) would overwrite. When the bonus clears the cap
+  // falls back, and if the load now exceeds it the bearer is simply flagged
+  // overburdened (no items lost) until they shed weight (engine/weight.js).
+  return Math.round(BASE_CARRY + body * CARRY_PER_BODY + vigor * 2 + curve + (character.carryBonus || 0));
 }
 
 export function recomputeCarryCapacity(character) {

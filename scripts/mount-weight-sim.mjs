@@ -11,7 +11,7 @@ import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 import { allyFromCompanion, generateEnemyGroup } from "../src/data/bestiary.js";
 import { COMPANIONS, companionCodexEntry } from "../src/data/companions.js";
 import { MOUNTS, mountCodexEntry } from "../src/data/mounts.js";
-import { carryCapacityFor, recomputeVitalityMax, recomputeResolveMax } from "../src/engine/attributes.js";
+import { carryCapacityFor, recomputeCarryCapacity, recomputeVitalityMax, recomputeResolveMax } from "../src/engine/attributes.js";
 import { itemWeight, loadOf, isOverCapacity } from "../src/engine/weight.js";
 import { canMount, mount, dismount, effectiveLoad, currentRideLoad, isOverloaded, overloadedMounts } from "../src/engine/riding.js";
 import { itemTemplate } from "../src/data/catalog.js";
@@ -174,6 +174,37 @@ function customState() {
   ok(canMount(s, "wanderer", "dragon").ok, "re-seating a nested rider onto its carrier isn't falsely blocked");
   s = mount(s, "wanderer", "dragon").state;
   ok(s.world.codex.characters.wanderer.ridingOn === "dragon" && !s.world.codex.characters.horse.riders.includes("wanderer"), "the re-seat moved the player and cleared the old seat");
+}
+
+console.log("\n=== TRANSIENT BUFFS (over standard while buffed, then it lapses) ===");
+// A carry/Body buff lets you load past your standard cap; when it lapses the cap
+// falls back and the overflow must degrade gracefully — flagged, never lost.
+{
+  // PLAYER carry buff. base(body4,vigor4) ≈ 80; +80 bonus → 160.
+  const char = { attributes: { body: 4, vigor: 4 }, worn: [], carryBonus: 80 };
+  recomputeCarryCapacity(char);
+  const base = carryCapacityFor({ attributes: { body: 4, vigor: 4 } });
+  ok(char.carryCapacityMax > base, `carryBonus lifts the cap (${base} → ${char.carryCapacityMax})`);
+  const inv = { carried: [{ itemId: "livestock", quantity: 4 }], coins: { copper: 0, silver: 0, gold: 0 } }; // 120
+  ok(!isOverCapacity(char, inv, {}), "a 120 load fits WHILE the buff holds");
+  // Buff lapses.
+  char.carryBonus = 0;
+  recomputeCarryCapacity(char);
+  ok(isOverCapacity(char, inv, {}), "when the buff lapses the same 120 load is now over the standard cap");
+  ok(inv.carried.length === 1 && inv.carried[0].quantity === 4, "nothing is dropped — the loot is intact, just overburdened");
+}
+{
+  // MOUNT ride buff. smol base cap 20; +40 bonus → 60; carry a 50-weight rider.
+  let s = customState();
+  s.world.codex.characters.smol.rideCapacityBonus = 40;
+  ok(canMount(s, "h1", "smol").ok, "a 50-weight rider fits a 20-cap mount WHILE a +40 ride buff holds");
+  s = mount(s, "h1", "smol").state;
+  ok(!isOverloaded(s.world.codex.characters.smol, s), "the buffed mount is not overloaded");
+  // Buff lapses (the field clears).
+  s.world.codex.characters.smol.rideCapacityBonus = 0;
+  ok(isOverloaded(s.world.codex.characters.smol, s), "when the ride buff lapses the mount is over capacity");
+  ok(s.world.codex.characters.smol.riders.includes("h1"), "the rider is NOT auto-thrown — kept aboard, mount just flagged (gates flight)");
+  ok(overloadedMounts(s).some((m) => m.id === "smol"), "overloadedMounts() flags it so App.handleFly refuses to launch");
 }
 
 console.log("\n=== MOUNTED COMBAT (mounts fight as allies) ===");

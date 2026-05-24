@@ -548,8 +548,21 @@ griffon (epic), wyvern (legendary), drake (mythical), dragon (divine).
   (`town.js BUILDINGS.stable`, `StableView`, `economy.buyMount`); exotic/flying
   mounts are **earned** and granted by the narrator via `beat.grant_mount`.
 
-Verify with `node scripts/mount-weight-sim.mjs` (weight math, nesting rules,
-mounted combat, flying gate) plus the build below.
+- **Transient buffs & graceful degradation.** Capacity is *derived*, never a
+  bare number a buff should overwrite. A temporary lift is an additive bonus the
+  formula reads: `character.carryBonus` (folded into `carryCapacityFor`) and
+  `mount.rideCapacityBonus` (folded into `rideCapacityOf`). Set the field when the
+  buff lands, clear it when it lapses. Because the player's `carryCapacityMax` is
+  recomputed every beat and a mount's load is checked live (`isOverloaded`), when
+  a buff lapses and the bearer is now over its standard limit it is simply flagged
+  — `overburdened` (slower travel) for the player, overloaded for a mount (can't
+  fly, no speed bonus) — with **nothing dropped and no rider thrown**; it clears
+  itself the moment weight comes down or the buff returns. Never write
+  `carryCapacityMax` directly (the recompute would wipe it).
+
+Verify with `node scripts/mount-weight-sim.mjs` (weight math, nesting + ancestor
+capacity, pack/overload edge cases, transient-buff expiry, mounted combat, flying
+gate) plus the build below.
 
 ## Quick smoke test
 
