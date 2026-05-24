@@ -240,6 +240,7 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     maxHealth, health,
     armor: Math.round(attrArmor * m) + gearArmor + (sm.armor || 0), ward: Math.round(attrWard * m) + gearWard + (sm.ward || 0),
     dr: Math.min(0.85, sm.drPct || 0), fortify: Math.min(0.25, sm.fortify || 0),
+    phaseChance: Math.min(0.4, sm.phaseChance || 0), dodgeIgnore: Math.min(1, sm.dodgeIgnore || 0),
     healPower: Math.min(1.0, sm.healPower || 0), dmgDefer: Math.min(0.6, sm.dmgDefer || 0),
     damageCap: sm.damageCap || 0, // earned cap only — a Stonewall affix or a high-vigor threshold, same as the player
     dodge: Math.min(70, reflex * 2 + dodgeGear + (sm.dodge || 0)),

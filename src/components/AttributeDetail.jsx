@@ -1,7 +1,7 @@
 import React from "react";
 import { colors, radius } from "./tokens.js";
 import { ATTR_LABELS } from "../config.js";
-import { tier as tierInfo, tierLabel } from "../data/tiers.js";
+import { tier as tierInfo } from "../data/tiers.js";
 import { attrDescriptor, smoothStatSummary, attributeLadder, attrPurpose } from "../data/attribute-tiers.js";
 
 // Expanded detail for a tapped attribute: what it governs mechanically, its
@@ -26,8 +26,8 @@ export function AttributeDetail({ attrKey, value }) {
           const c = tierInfo(step.tier).color;
           return (
             <div key={step.at} style={{ display: "flex", gap: "8px", alignItems: "baseline", opacity: step.reached ? 1 : 0.45 }}>
-              <span style={{ flexShrink: 0, fontSize: "10px", fontWeight: 800, color: step.reached ? c : "rgba(237,228,208,0.5)", width: "58px" }}>
-                {step.reached ? "✓ " : ""}{step.at}+ <span style={{ fontSize: "7px", textTransform: "uppercase", letterSpacing: "0.05em" }}>{tierLabel(step.tier)}</span>
+              <span style={{ flexShrink: 0, fontSize: "10px", fontWeight: 800, color: step.reached ? c : "rgba(237,228,208,0.5)", width: "34px" }}>
+                {step.reached ? "✓ " : ""}{step.at}+
               </span>
               <span style={{ fontSize: "11px", color: step.reached ? "rgba(237,228,208,0.9)" : "rgba(237,228,208,0.6)", lineHeight: 1.4 }}>{step.text}</span>
             </div>

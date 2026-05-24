@@ -408,6 +408,8 @@ export function deriveCombatStats(character, codex) {
   return {
     maxHealth: character.vitalityMax + (statMods.maxHealth || 0) + (band.maxHealth || 0),
     dr: clamp(statMods.drPct || 0, 0, 0.85), // flat % damage reduction, capped (deep DR stacking pays off)
+    phaseChance: clamp(statMods.phaseChance || 0, 0, 0.4), // uncounterable evade (Phantom)
+    dodgeIgnore: clamp(statMods.dodgeIgnore || 0, 0, 1),   // attacks ignore the foe's dodge (Deadeye)
     armor: armor + (statMods.armor || 0),
     ward: ward + (statMods.ward || 0) + (band.ward || 0),
     dodge,

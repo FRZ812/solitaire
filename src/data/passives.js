@@ -56,8 +56,9 @@ export const PASSIVE_CAPS = {
   // a share of, and bosses that out-burst or true-strike faster than you can drink.
   lifesteal: 100, drPct: 0.85, thorns: 50,
   extraActions: 3, cooldownReduction: 3, fortify: 0.25,
-  turnRegen: 0.12, shieldGen: 0.12, magicShieldGen: 0.12, invulnCharges: 2,
+  turnRegen: 0.12, shieldGen: 0.12, magicShieldGen: 0.12, invulnCharges: 3,
   controlResist: 0.6, healPower: 1.0, dmgDefer: 0.6,
+  phaseChance: 0.4, dodgeIgnore: 1, // Phantom's uncounterable evade; Deadeye's no-dodge strikes
 };
 
 // Each passive: scope, type, key (what it modifies), minTier (lowest grade it can
@@ -94,17 +95,17 @@ export const PASSIVES = [
   // ---------- LEGENDARY+ POWERS — build-defining ----------
   { id: "colossus",   name: "Colossus",     cat: "power", scope: "combat", type: "stat", key: "maxHealth",     minTier: "legendary", amount: (n) => geo(40, n),           desc: "Vastly increases maximum health." },
   { id: "sunder",     name: "Sundering",    cat: "power", scope: "combat", type: "stat", key: "penetration",   minTier: "legendary", amount: (n) => geo(2.7, n),          desc: "Cleaves through most armour (scales with grade)." },
-  { id: "bloodthirst",name: "Bloodthirst",  cat: "power", scope: "combat", type: "trigger", key: "lifesteal",  minTier: "legendary", amount: (n) => 6 + n,                desc: "Heals for a large share of damage dealt (capped)." },
+  { id: "bloodthirst",name: "Bloodthirst",  cat: "power", scope: "combat", type: "trigger", key: "lifesteal",  minTier: "legendary", amount: (n) => 8 + n,                desc: "Heals for a large share of damage dealt (capped)." },
 
   // ---------- DIVINE POWERS — the godlike reward ----------
-  { id: "undying",    name: "Undying",      cat: "divine", scope: "combat", type: "trigger", key: "reviveOnce", minTier: "divine",   amount: (n) => 0.5,                  desc: "Once per fight, cheat death at half health." },
+  { id: "undying",    name: "Undying",      cat: "divine", scope: "combat", type: "trigger", key: "reviveOnce", minTier: "divine",   amount: (n) => 0.6,                  desc: "Once per fight, cheat death — rise cleansed and untouchable for a breath." },
   { id: "worldbreaker",name: "Worldbreaker",cat: "divine", scope: "combat", type: "stat", key: "damageMult",   minTier: "divine",    amount: (n) => 0.45,                 desc: "Devastatingly increases all damage." },
-  { id: "godward",    name: "Godward",      cat: "divine", scope: "combat", type: "stat", key: "drPct",        minTier: "divine",    amount: (n) => 0.18,                 desc: "Shrugs off a fifth of all damage." },
+  { id: "godward",    name: "Godward",      cat: "divine", scope: "combat", type: "stat", key: "drPct",        minTier: "divine",    amount: (n) => 0.30,                 desc: "Shrugs off nearly a third of all damage." },
   // Playstyle-anchor divine affixes — each makes a divine piece serve one build.
-  { id: "tempest",    name: "Tempest",      cat: "divine", scope: "combat", type: "stat", key: "swiftChance",  minTier: "divine",    amount: (n) => 0.25,                 desc: "A blur of motion — great chance to act again." },
-  { id: "deadeye",    name: "Deadeye",      cat: "divine", scope: "combat", type: "stat", key: "accuracy",     minTier: "divine",    amount: (n) => 30,                   desc: "Every shot finds the mark — overwhelming accuracy, dodge be damned." },
-  { id: "archmage",   name: "Archmage",     cat: "divine", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "divine",  amount: (n) => 3,                    desc: "Bottomless will — restores great resolve each turn." },
-  { id: "phantom",    name: "Phantom",      cat: "divine", scope: "combat", type: "stat", key: "dodge",        minTier: "divine",    amount: (n) => 28,                   desc: "Half-real — devastating evasion." },
+  { id: "tempest",    name: "Tempest",      cat: "divine", scope: "combat", type: "stat", key: "swiftChance",  minTier: "divine",    amount: (n) => 0.35,                 desc: "A blur of motion — acts again more often than not." },
+  { id: "deadeye",    name: "Deadeye",      cat: "divine", scope: "combat", type: "stat", key: "dodgeIgnore",  minTier: "divine",    amount: (n) => 1,                    desc: "Every shot finds the mark — your attacks cannot be dodged." },
+  { id: "archmage",   name: "Archmage",     cat: "divine", scope: "combat", type: "trigger", key: "resolveRegen", minTier: "divine",  amount: (n) => 4,                    desc: "Bottomless will — restores tremendous resolve each turn." },
+  { id: "phantom",    name: "Phantom",      cat: "divine", scope: "combat", type: "stat", key: "phaseChance",  minTier: "divine",    amount: (n) => 0.25,                 desc: "Half-real — a quarter of all blows pass clean through, accuracy be damned." },
   { id: "juggernaut", name: "Juggernaut",   cat: "divine", scope: "combat", type: "stat", key: "maxHealth",    minTier: "divine",    amount: () => geo(60, 7),            desc: "A mountain of vitality." },
 
   // ---------- PARAGON — threshold affixes that only wake for the truly gifted ----------
@@ -123,7 +124,7 @@ export const PASSIVES = [
   { id: "quickened",  name: "Quickened",    cat: "tempo", scope: "combat", type: "stat",    key: "extraActions",      minTier: "epic",      amount: () => 1,                     desc: "Grants an extra action each turn." },
   { id: "nimble",     name: "Nimble",       cat: "tempo", scope: "combat", type: "stat",    key: "extraActions",      minTier: "legendary", amount: (n) => 1 + (n >= 7 ? 1 : 0), desc: "Grants extra actions each turn (two at divine grade)." },
   { id: "efficient",  name: "Efficient",    cat: "tempo", scope: "combat", type: "stat",    key: "cooldownReduction", minTier: "epic",      amount: () => 1,                     desc: "Ability cooldowns recover faster." },
-  { id: "flurry",     name: "Flurry",       cat: "tempo", scope: "combat", type: "proc",    hook: "onHit", apply: { kind: "bonusHit" },                       chance: 0.3, minTier: "legendary", amount: (n) => 3 + n,        desc: "Chance on hit to land a bonus strike." },
+  { id: "flurry",     name: "Flurry",       cat: "tempo", scope: "combat", type: "proc",    hook: "onHit", apply: { kind: "bonusHit" },                       chance: 0.4, minTier: "legendary", amount: (n) => 3 + n,        desc: "Chance on hit to land a bonus strike." },
 
   // ---------- OFFENCE / DoT (proc) — bleed, poison, burn, execute, ramp ----------
   { id: "serrated",   name: "Serrated",     cat: "offence", scope: "combat", type: "proc",  hook: "onHit", apply: { kind: "status", status: "bleed", duration: 2 }, chance: 0.5, minTier: "uncommon", amount: (n) => 1 + Math.floor(n / 2), desc: "Chance on hit to cause bleeding." },
@@ -148,7 +149,7 @@ export const PASSIVES = [
   { id: "evasive",    name: "Evasive",      cat: "defence", scope: "combat", type: "proc",    hook: "onDodge", apply: { kind: "buff", status: "dodgeStack", duration: 2 }, chance: 1, minTier: "rare", amount: (n) => 3 + n, desc: "Each dodge stacks more dodge (snowballing evasion)." },
   { id: "lifeward",   name: "Lifeward",     cat: "defence", scope: "combat", type: "proc",    hook: "lowHealth", apply: { kind: "shield", pctMax: true }, threshold: 0.35, chance: 1, minTier: "epic", amount: (n) => 0.12 + n * 0.02, desc: "Bursts a shield scaled to your vitality when badly wounded (once per fight)." },
   { id: "thorned",    name: "Thornmail",    cat: "defence", scope: "combat", type: "trigger", key: "thorns",         minTier: "rare",      amount: (n) => 6 + n * 3,            desc: "Reflects a share of damage taken back at the attacker." },
-  { id: "aegis-eternal", name: "Aegis Eternal", cat: "divine", scope: "combat", type: "trigger", key: "invulnCharges", minTier: "divine", amount: () => 1, desc: "When near death, becomes briefly invulnerable (limited charges)." },
+  { id: "aegis-eternal", name: "Inviolate", cat: "divine", scope: "combat", type: "trigger", key: "invulnCharges", minTier: "divine", amount: () => 2, desc: "When near death, turns aside two killing blows — brief invulnerability." },
 
   // ---------- EXPANSION — fills tier/role gaps; %-based or geo-scaled so each
   //            stays relevant at every grade (slow/shatter/cap are new mechanics) ----------
@@ -196,8 +197,8 @@ export function passiveLabel(id, tierId) {
   if (!def) return "";
   const v = def.amount(o(tierId));
   if (def.type === "proc") return def.name; // proc magnitude is contextual — name carries it
-  if (def.key === "reviveOnce") return def.name;
-  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance", "coinBonus", "reviveOnce", "turnRegen", "shieldGen", "magicShieldGen", "healPower", "dmgDefer"]; // stored 0..1
+  if (def.key === "reviveOnce" || def.key === "dodgeIgnore") return def.name;
+  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance", "coinBonus", "reviveOnce", "turnRegen", "shieldGen", "magicShieldGen", "healPower", "dmgDefer", "phaseChance"]; // stored 0..1
   const wholePctKeys = ["lifesteal", "thorns"];        // stored as whole %, render with a % suffix
   const pctSuffixKeys = ["critChance", "dodge"];       // whole numbers that ARE percentages
   if (fracKeys.includes(def.key)) return `${def.name} ${Math.round(v * 100)}%`;
@@ -234,6 +235,8 @@ const KEY_EFFECT = {
   armor:       { s: "flat", p: (n) => `+${n} armour (vs physical)` },
   ward:        { s: "flat", p: (n) => `+${n} ward (vs magic)` },
   dodge:       { s: "flat", p: (n) => `+${n}% dodge chance` },
+  phaseChance: { s: "pct",  p: (n) => `${n}% chance to phase through any blow (uncounterable by accuracy)` },
+  dodgeIgnore: { s: "flat", p: () => `your attacks cannot be dodged` },
   maxHealth:   { s: "flat", p: (n) => `+${n} maximum health` },
   drPct:       { s: "pct",  p: (n) => `${n}% less damage taken from all sources` },
   healPower:   { s: "pct",  p: (n) => `+${n}% to all healing you receive` },
@@ -420,6 +423,8 @@ export function aggregateCombatPassives(list, attrs = null) {
   if (statMods.controlResist != null) statMods.controlResist = Math.min(statMods.controlResist, PASSIVE_CAPS.controlResist);
   if (statMods.healPower != null) statMods.healPower = Math.min(statMods.healPower, PASSIVE_CAPS.healPower);
   if (statMods.dmgDefer != null) statMods.dmgDefer = Math.min(statMods.dmgDefer, PASSIVE_CAPS.dmgDefer);
+  if (statMods.phaseChance != null) statMods.phaseChance = Math.min(statMods.phaseChance, PASSIVE_CAPS.phaseChance);
+  if (statMods.dodgeIgnore != null) statMods.dodgeIgnore = Math.min(statMods.dodgeIgnore, PASSIVE_CAPS.dodgeIgnore);
   if (triggers.lifesteal != null) triggers.lifesteal = Math.min(triggers.lifesteal, PASSIVE_CAPS.lifesteal);
   if (triggers.turnRegen != null) triggers.turnRegen = Math.min(triggers.turnRegen, PASSIVE_CAPS.turnRegen);
   if (triggers.thorns != null) triggers.thorns = Math.min(triggers.thorns, PASSIVE_CAPS.thorns);
