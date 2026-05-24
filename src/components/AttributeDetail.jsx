@@ -2,10 +2,11 @@ import React from "react";
 import { colors, radius } from "./tokens.js";
 import { ATTR_LABELS } from "../config.js";
 import { tier as tierInfo, tierLabel } from "../data/tiers.js";
-import { attrDescriptor, smoothStatSummary, attributeLadder } from "../data/attribute-tiers.js";
+import { attrDescriptor, smoothStatSummary, attributeLadder, attrPurpose } from "../data/attribute-tiers.js";
 
-// Expanded detail for a tapped attribute: its current always-on bonuses plus the
-// full unique-unlock ladder, marking which thresholds this score has reached.
+// Expanded detail for a tapped attribute: what it governs mechanically, its
+// current always-on bonuses, and the full unique-unlock ladder (which thresholds
+// this score has reached).
 export function AttributeDetail({ attrKey, value }) {
   const smooth = smoothStatSummary(attrKey, value);
   const ladder = attributeLadder(attrKey, value);
@@ -14,7 +15,8 @@ export function AttributeDetail({ attrKey, value }) {
       <div style={{ fontSize: "12px", color: colors.parchmentLight, fontWeight: 700, marginBottom: "5px" }}>
         {ATTR_LABELS[attrKey]} {value} <span style={{ color: "rgba(215,167,111,0.7)", fontWeight: 400 }}>· {attrDescriptor(attrKey, value)}</span>
       </div>
-      <div style={{ fontSize: "9px", color: "rgba(215,167,111,0.6)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "3px" }}>Always on</div>
+      <div style={{ fontSize: "11.5px", color: "rgba(237,228,208,0.85)", lineHeight: 1.5, marginBottom: "8px" }}>{attrPurpose(attrKey)}</div>
+      <div style={{ fontSize: "9px", color: "rgba(215,167,111,0.6)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "3px" }}>Always on now</div>
       <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.85)", lineHeight: 1.45, marginBottom: "8px" }}>
         {smooth.length ? smooth.join(" · ") : "Nothing yet — this score is too low to bend the fight."}
       </div>

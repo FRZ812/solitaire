@@ -50,8 +50,10 @@ function ambientDark(state) {
   if (!cur) return false;
   const tile = getTile(state, cur.x, cur.y);
   if (!tile) return false;
-  if (tile.terrain === "indoor" || (tile.poi?.type && INTERIOR_POIS.has(tile.poi.type))) return true; // interiors: always
-  if (isSettlement(tile)) return false; // towns keep braziers and windows lit
+  const poiType = tile.poi?.type;
+  if (poiType && INTERIOR_POIS.has(poiType)) return true; // dungeons, cellars, dens: lightless
+  if (isSettlement(tile)) return false;                   // towns + civilized interiors (inn, shop, market): kept lit
+  if (tile.terrain === "indoor") return false;            // a tended building — hearth, lamps, occupants
   return isNight(state.time, !!TERRAINS[tile.terrain]?.dark); // open wilds: dark at night (sooner if gloomy)
 }
 

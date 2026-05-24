@@ -161,9 +161,25 @@ const EFFECT_FMT = {
 };
 const fmtEffects = (obj) => Object.entries(obj || {}).map(([k, v]) => (EFFECT_FMT[k] ? EFFECT_FMT[k](v) : `${k} +${v}`));
 
+// What each attribute does, mechanically — so tapping a stat always explains
+// itself even when a low score's numeric bonus rounds to nothing yet.
+const ATTR_PURPOSE = {
+  body:     "Raw might. Drives melee damage and the heavy weapons you can wield, and adds Armor (about a third of your Body) against physical hits.",
+  reflex:   "Speed and finesse. Raises Dodge and Accuracy, helps you strike first, and powers light, finesse weapons — daggers, bows.",
+  vigor:    "Toughness. Sets your maximum Vitality and grants flat damage reduction — how much punishment you can take before you fall.",
+  mind:     "Intellect. Powers spell damage, adds Ward (about a third of your Mind) against magic, and quickens how fast you learn.",
+  wit:      "Awareness. Raises your critical-hit chance and your perception — spotting ambushes and openings — and sharpens healing and quick thinking.",
+  presence: "Force of will. Feeds Resolve (the fuel for special moves), steadies morale, and sways how others and foes respond to you.",
+};
+export function attrPurpose(key) { return ATTR_PURPOSE[key] || ""; }
+
 // The smooth, always-on bonuses an attribute currently grants at value `v`.
+// Drops entries whose magnitude rounds to zero (a low score gives "nothing yet").
 export function smoothStatSummary(key, v) {
-  return fmtEffects(smoothStats(key, v));
+  return fmtEffects(smoothStats(key, v)).filter((s) => {
+    const m = s.match(/-?\d+(\.\d+)?/);
+    return !m || parseFloat(m[0]) !== 0;
+  });
 }
 
 // The full unique-unlock ladder for an attribute, each step marked reached or not
