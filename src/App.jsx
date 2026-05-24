@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 
-import { STORAGE_KEY, originLabel, SIGHT_RADIUS, MAX_TRAVEL_HEXES } from "./config.js";
+import { STORAGE_KEY, originLabel, SIGHT_RADIUS, MAX_TRAVEL_HEXES, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
 import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 
@@ -31,8 +31,9 @@ import { rollShopStock } from "./engine/town-gen.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
-  findPath, pathMinutes,
+  findPath, pathMinutes, isSeen, flightPath, flightMinutes,
 } from "./engine/world.js";
+import { knownTravelSpells } from "./data/travel-spells.js";
 import { rollPathEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
@@ -139,14 +140,15 @@ function applyTravelArrival(base, beat, travel) {
     travelToCoords: { x: travel.dest.x, y: travel.dest.y },
   });
   const path = travel.path || [];
-  // How far the player can see on arrival — shrunk by darkness (engine/light.js).
-  const r = sightRadius(next);
-  // Multi-tile travel: mark intermediate path tiles as visited and refresh sight
-  // from each so the player's seen area expands along the route (limited by light).
-  if (path.length > 2) {
+  // Reveal radius: flight takes in a wide view from the air; otherwise normal
+  // sight, shrunk by darkness (engine/light.js).
+  const r = travel.mode === "fly" ? FLY_REVEAL_RADIUS : sightRadius(next);
+  // Mark path tiles visited and refresh sight from each (flight reveals the whole
+  // corridor it crossed; walk reveals what the party trudged past).
+  if (path.length > 1) {
     const newTiles = { ...next.world.tiles };
     let newSeen = next.world.seen;
-    for (let i = 1; i < path.length - 1; i++) {
+    for (let i = 1; i < path.length; i++) {
       const p = path[i];
       const k = `${p.x},${p.y}`;
       if (!newTiles[k]) newTiles[k] = getTile(base, p.x, p.y);
@@ -747,19 +749,77 @@ export function Solitaire() {
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     };
 
+    await finishTravel(stateWithPlayer, fullMsg, travel);
+  }
+
+  // Shared tail for every travel mode: ask the narrator, land via applyTravelArrival
+  // (which reveals sight by travel.mode), record the turn, offer any fight.
+  async function finishTravel(stateWithPlayer, fullMsg, travel) {
     try {
       const beat = await callNarrator(stateWithPlayer, fullMsg);
       const next = applyTravelArrival(stateWithPlayer, beat, travel);
       setState(recordTurn(stateWithPlayer, fullMsg, next, { travel }));
-      // A hostile encounter halts the party at its tile and offers the fight there.
-      if (travel.encounter && travel.encounter.posture === "hostile") {
-        setPendingCombat(travel.encounter);
-      }
+      if (travel.encounter && travel.encounter.posture === "hostile") setPendingCombat(travel.encounter);
     } catch (e) {
       setError(e.message || String(e));
     } finally {
       setLoading(false);
     }
+  }
+
+  // Fly to a seen tile: a long, fast leg over any terrain, a wide view from the
+  // air, no ground encounters — paid for in resolve each leg (the Fly spell).
+  async function handleFly(dest) {
+    if (loading) return;
+    const spell = knownTravelSpells(state).find((s) => s.mode === "fly");
+    if (!spell) return;
+    if ((state.character.resolve ?? 0) < spell.resolveCost) {
+      setState({ ...state, beats: [...state.beats, { id: `fly${Date.now()}`, type: "narration", content: "You haven't the resolve left to take wing." }] });
+      return;
+    }
+    const cur = state.world.currentTile;
+    const legPath = flightPath(cur, dest, FLY_TRAVEL_HEXES);
+    if (legPath.length < 2) return;
+    const legEnd = legPath[legPath.length - 1];
+    const arrived = legEnd.x === dest.x && legEnd.y === dest.y;
+    const legTile = getTile(state, legEnd.x, legEnd.y);
+    const fromName = currentLocationName(state);
+    const destTile = getTile(state, dest.x, dest.y);
+    const toName = destTile.poi?.name || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
+    const legName = arrived ? toName : (legTile.poi?.name || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
+    const mins = flightMinutes(legPath);
+    setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
+    const ch = { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - spell.resolveCost) };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Fly ${arrived ? "to" : "toward"} ${toName}.` };
+    const stateWithPlayer = { ...state, character: ch, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    const msg = `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike). ${arrived ? "Narrate the flight and landing." : `Narrate the flight and setting down at ${legName} — do NOT reach ${toName} yet.`} It cost ${spell.resolveCost} resolve. Use minutes_passed = ${mins}.`;
+    const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: null, mode: "fly", intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
+    await finishTravel(stateWithPlayer, msg, travel);
+  }
+
+  // Teleport (Dimension Door / Gate): step straight to the target — no path, no
+  // encounters — paid for in resolve. Eligibility (range/anchor) is gated in MapView.
+  async function handleTeleport(dest, spellId) {
+    if (loading) return;
+    const spell = knownTravelSpells(state).find((s) => s.id === spellId);
+    if (!spell) return;
+    if ((state.character.resolve ?? 0) < spell.resolveCost) {
+      setState({ ...state, beats: [...state.beats, { id: `tp${Date.now()}`, type: "narration", content: `You haven't the resolve to work ${spell.name}.` }] });
+      return;
+    }
+    const fromName = currentLocationName(state);
+    const destTile = getTile(state, dest.x, dest.y);
+    const toName = destTile.poi?.name || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
+    const blind = !isSeen(state, dest.x, dest.y); // gating to a rumored place you've never seen
+    setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
+    const ch = { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - spell.resolveCost) };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `${spell.name} to ${toName}.` };
+    const stateWithPlayer = { ...state, character: ch, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    const msg = `[PLAYER ACTION] You work ${spell.name} and step through space, arriving at ${toName}${blind ? " — a place known only by repute, so you arrive without knowing what surrounds you" : ""}. No journey, no road between. It cost ${spell.resolveCost} resolve. Narrate the rush of arrival and what greets you. Use minutes_passed = 5.`;
+    const travel = { fromName, toName, dest: { x: dest.x, y: dest.y }, path: [{ x: dest.x, y: dest.y }], totalMins: 5, encounter: null, mode: "teleport" };
+    await finishTravel(stateWithPlayer, msg, travel);
   }
 
   async function handleResetCampaign() {
@@ -1666,6 +1726,8 @@ export function Solitaire() {
           state={state}
           onClose={() => setMapOpen(false)}
           onTravel={handleTravel}
+          onFly={handleFly}
+          onTeleport={handleTeleport}
           onSeekCombat={handleSeekCombat}
           loading={loading}
         />

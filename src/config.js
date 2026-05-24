@@ -12,6 +12,13 @@ export const MAP_VIEW_RADIUS = 30;
 // chosen destination (or until an encounter halts them); farther trips take
 // several legs, so the world can't be skipped in one tap. (engine: handleTravel)
 export const MAX_TRAVEL_HEXES = 6;
+// Flight & teleport travel modes (gated behind learned spells; engine/world.js,
+// data/travel-spells.js). Flight covers more ground per leg, ignores terrain, and
+// reveals a wider view; teleports jump straight to a target.
+export const FLY_TRAVEL_HEXES = 14;     // a flight leg covers far more than a walk
+export const FLY_MIN_PER_HEX = 4;       // fast, flat air time per hex (ignores terrain)
+export const FLY_REVEAL_RADIUS = 5;     // the wide view from the air
+export const DIMENSION_DOOR_RANGE = 8;  // short-hop teleport range (seen tiles)
 export const TRAVEL_BASE_MIN = 12;
 export const TILE_PX = 38;
 

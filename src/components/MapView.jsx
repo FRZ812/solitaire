@@ -10,9 +10,10 @@ import { getBiome } from "../data/biomes.js";
 import {
   getTile, isSeen, isVisited,
   currentLocationName, hexDistance,
-  findPath, pathMinutes,
+  findPath, pathMinutes, isTeleportAnchor,
   HEX_DIRECTIONS, edgeAllowed, isPassable,
 } from "../engine/world.js";
+import { knownTravelSpells } from "../data/travel-spells.js";
 import { describeEncounterPotential, pathRiskPercent } from "../engine/encounters.js";
 import { formatTime, formatDate } from "../engine/time.js";
 import { formatCopper } from "../engine/economy.js";
@@ -315,7 +316,7 @@ function collectHexes(cur) {
   return out;
 }
 
-export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
+export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCombat, loading }) {
   const [selected, setSelected] = useState(null);
   const [journalOpen, setJournalOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false); // legend hidden by default to free map space
@@ -427,6 +428,17 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
   const multiLeg = totalHexes > legHexes;
   const totalMins = canTravel ? pathMinutes(state, legPath) : 0;
   const riskPct = canTravel ? pathRiskPercent(state, legPath) : 0;
+
+  // Travel-magic modes available for the selected tile (engine/data/travel-spells).
+  const resolve = state.character.resolve ?? 0;
+  const travelSpells = knownTravelSpells(state);
+  const flySpell = travelSpells.find((s) => s.mode === "fly");
+  const teleSpells = travelSpells.filter((s) => s.mode === "teleport");
+  const dist = selected ? hexDistance(cur, selected) : 0;
+  const canFly = !!flySpell && selected && selSeen && !isSelf && !loading;
+  const teleOption = (selected && !isSelf && !loading)
+    ? teleSpells.find((s) => (isFinite(s.range) ? (selSeen && dist <= s.range) : isTeleportAnchor(state, selected.x, selected.y)))
+    : null;
 
   let bottomLabel = "Tap a tile to inspect. Drag to pan, pinch or wheel to zoom.";
   let bottomDetail = currentLocationName(state) + " · You are here.";
@@ -857,7 +869,33 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
             <div style={{ fontSize: "10px", color: "rgba(239, 68, 68, 0.85)", letterSpacing: "0.06em", fontWeight: 800 }}>{encounterHint}</div>
           )}
         </div>
-        <div style={{ marginBottom: "14px" }} />
+        <div style={{ marginBottom: "10px" }} />
+        {(canFly || teleOption) && (
+          <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+            {canFly && (() => {
+              const ok = resolve >= flySpell.resolveCost;
+              return (
+                <button onClick={() => ok && onFly(selected)} disabled={!ok} style={{
+                  flex: 1, height: "40px", borderRadius: "20px", fontFamily: "inherit", fontWeight: 800, fontSize: "12px",
+                  border: `1px solid ${ok ? "rgba(127,199,224,0.55)" : "rgba(127,199,224,0.18)"}`,
+                  backgroundColor: ok ? "rgba(127,199,224,0.16)" : "rgba(127,199,224,0.06)",
+                  color: ok ? "#bfe3f2" : "rgba(127,199,224,0.4)", cursor: ok ? "pointer" : "not-allowed",
+                }}>Fly · {flySpell.resolveCost} resolve</button>
+              );
+            })()}
+            {teleOption && (() => {
+              const ok = resolve >= teleOption.resolveCost;
+              return (
+                <button onClick={() => ok && onTeleport(selected, teleOption.id)} disabled={!ok} style={{
+                  flex: 1, height: "40px", borderRadius: "20px", fontFamily: "inherit", fontWeight: 800, fontSize: "12px",
+                  border: `1px solid ${ok ? "rgba(176,114,230,0.55)" : "rgba(176,114,230,0.18)"}`,
+                  backgroundColor: ok ? "rgba(176,114,230,0.16)" : "rgba(176,114,230,0.06)",
+                  color: ok ? "#d9c2f2" : "rgba(176,114,230,0.4)", cursor: ok ? "pointer" : "not-allowed",
+                }}>{teleOption.name} · {teleOption.resolveCost} resolve</button>
+              );
+            })()}
+          </div>
+        )}
         <button
           onClick={() => canTravel && onTravel(selected, path)} disabled={!canTravel}
           style={{
