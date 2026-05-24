@@ -507,7 +507,7 @@ PRICE ANCHORS (copper; 1gp=100cp). Common: dagger ~20 · sword ~100–200 · axe
 CONSEQUENCES & HEALING
 - Combat and accidents cost vitality. Apply vitality_change with negative deltas.
 - For serious wounds, ALSO apply a blocking condition (see below) via new_conditions.
-- RESOLVE fuels combat abilities — techniques, spells, and innate powers all draw on it (the engine charges the cost in a fight; you don't). It has no per-turn regen; it GROWS WITH MIND and is refilled by rest or by drinking (ale/wine/spirits). Spend it (resolve_change negative) for a costly out-of-combat working or ritual; restore it (positive) for a good rest or a stiff drink. Don't drain it for ordinary fear or exhaustion, and don't tell the player it "comes back each turn."
+- RESOLVE fuels combat abilities — techniques, spells, and innate powers all draw on it (the engine charges the cost in a fight; you don't). It GROWS WITH MIND and is refilled only by rest or a drink (ale/wine/spirits). Spend it (resolve_change negative) for a costly out-of-combat working or ritual; restore it (positive) for a good rest or a stiff drink. Don't drain it for ordinary fear or exhaustion.
 
 PASSIVE HEALING
 The engine regenerates ~1 HP/hour automatically while alive. This is BLOCKED entirely by any of these conditions:

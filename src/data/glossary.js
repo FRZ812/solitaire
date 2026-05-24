@@ -10,7 +10,7 @@ export const GLOSSARY = [
   { id: "vitality", term: "Vitality", category: "Vitals",
     text: "Your life. At 0 you fall. Out of combat it knits back about 1 point per hour (faster with Mending gear) — but it does NOT heal at all while you're Bleeding, Poisoned, Burning, Cursed, Starving, or Parched, so deal with the wound or the need first. Your maximum rises with Vigor." },
   { id: "resolve", term: "Resolve", category: "Vitals",
-    text: "The grit your abilities burn through in a fight. It does not come back on its own — you spend it down, then win it back by resting or with a stiff drink. Your reserve runs as deep as your Mind allows, the way your life runs as deep as your Vigor." },
+    text: "The grit your abilities burn through in a fight. What you spend, you win back by resting or with a stiff drink. Your reserve runs as deep as your Mind allows, the way your life runs as deep as your Vigor." },
 
   // ---- Survival (needs) ----
   { id: "hunger", term: "Hunger", category: "Survival",
