@@ -16,6 +16,7 @@ import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/profic
 import { useEffectChips } from "../data/goods.js";
 import { freshnessLabel, perishDescriptor } from "../engine/spoilage.js";
 import { ArsenalView } from "./ArsenalView.jsx";
+import { AttributeDetail } from "./AttributeDetail.jsx";
 
 // Item-specific inline icon. The wooden bird is a meaningful in-fiction
 // item, so it gets a custom glyph; everything else falls back to a
@@ -307,6 +308,7 @@ function Divider() {
 export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip, onUse, onBindRune }) {
   const [detail, setDetail] = useState(null); // { id, location: "worn"|"carried" }
   const [arsenalOpen, setArsenalOpen] = useState(false);
+  const [openAttr, setOpenAttr] = useState(null); // attribute key whose threshold detail is expanded
   const inv = state.character.inventory;
   const codex = state.world.codex;
   const wornIds = codex.characters.wanderer?.worn || [];
@@ -431,12 +433,14 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           </div>
         </div>
 
-        {/* Attributes — effective (base + growth earned by grinding proficiencies). */}
+        {/* Attributes — effective (base + growth earned by grinding proficiencies).
+            Tap one to see its always-on bonuses + the threshold-unlock ladder. */}
         <div>
-          <SectionHeader>Attributes</SectionHeader>
+          <SectionHeader>Attributes <span style={{ fontWeight: 400, fontSize: "9px", color: "rgba(215,167,111,0.5)", letterSpacing: 0, textTransform: "none" }}>· tap for thresholds</span></SectionHeader>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
-            {ATTR_KEYS.map(k => <AttrBlock key={k} label={ATTR_LABELS[k]} score={attrs[k]} />)}
+            {ATTR_KEYS.map(k => <AttrBlock key={k} label={ATTR_LABELS[k]} score={attrs[k]} active={openAttr === k} onClick={() => setOpenAttr((p) => (p === k ? null : k))} />)}
           </div>
+          {openAttr && <AttributeDetail attrKey={openAttr} value={attrs[openAttr] ?? 0} />}
         </div>
 
         {/* Proficiencies — what you've trained by doing. Raise these to grow attributes. */}

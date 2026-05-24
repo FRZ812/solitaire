@@ -419,19 +419,19 @@ export function StatBlock({ label, value }) {
   );
 }
 
-export function AttrBlock({ label, score }) {
+export function AttrBlock({ label, score, active, onClick }) {
   return (
-    <div style={{
-      padding: "9px 10px",
-      backgroundColor: "rgba(20, 29, 29, 0.35)",
-      border: `1px solid rgba(215, 167, 111, 0.14)`,
+    <button onClick={onClick} disabled={!onClick} style={{
+      padding: "9px 10px", width: "100%", fontFamily: "inherit",
+      backgroundColor: active ? "rgba(215, 167, 111, 0.16)" : "rgba(20, 29, 29, 0.35)",
+      border: `1px solid ${active ? "rgba(215, 167, 111, 0.5)" : "rgba(215, 167, 111, 0.14)"}`,
       borderRadius: "12px",
       display: "flex", flexDirection: "column", alignItems: "center",
-      boxShadow: "0 4px 10px rgba(0,0,0,0.12)",
+      boxShadow: "0 4px 10px rgba(0,0,0,0.12)", cursor: onClick ? "pointer" : "default",
     }}>
       <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: colors.gold }}>{label}</div>
       <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "22px", color: colors.parchment, lineHeight: "1.1", marginTop: "2px" }}>{score ?? 0}</div>
-    </div>
+    </button>
   );
 }
 

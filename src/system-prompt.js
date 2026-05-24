@@ -381,6 +381,25 @@ CENTRAL — the Vale where the player begins, mixed and trade-touched
 
 A northerner in Crowsmoor stands out — described as foreign, towering, unmistakable. A central peddler is just "another peddler" to the eye. Half-races blend their other parent's features with whichever cultural-human side they grew up in. Non-human races have their own appearance traits independent of the cardinal cultures — record those in the race's codex entry.
 
+NAMING — a name MUST fit the bearer's culture or kindred. A proper name is a GIVEN name plus, for anyone of consequence, a FAMILY/clan name — and BOTH are names, not descriptions. Do NOT default to descriptive compounds or epithets (Ironhand, Bloodtusk, Skullsplit, Moonwhisper): a descriptive BYNAME is an EARNED title carried by the rare notable figure (a warlord, a legend, a monster), never the common default. Generate any name the player did not give from the conventions below; do not invent a style outside them, and keep made-up detail to what the scene needs.
+  Humans by origin (given + family):
+  - NORTH (Norse/cold): Eirik Vendsson, Sigrun Halvarsdottir, Thyra Aaldsen — patronymics (…sson/…sdottir) common.
+  - EAST (ancient empires; FAMILY name spoken FIRST): Hokaru Renjiro, Saeren Meilin, Tagiro Jun — flowing syllables and honorifics; family names are NAMES, not words.
+  - SOUTH (warm coasts/savannah): Amara Zafari, Keba Oduya, Imani Suresh — open vowels, sometimes a homeland byname.
+  - WEST (frontier): Bram Coltaine, Jessa Harrow, Cole Renner — plain given + rugged surname.
+  - CENTRAL (mixed Vale): Ysolde Varen, Tomas Aldermere, Lena Fitch — ordinary trade-realm names.
+  Non-human kindreds (given + family/line):
+  - ELVES: melodic, multi-syllable — Faelar Sylvareth, Aelwyn Miravel, Caelith Andúrin. DROW darker but still full names — Vaerith Dha'rune, Zedras Ilvaril.
+  - DWARVES: hard sounds + a clan name (a name, not "Stonehand") — Thrain Dunmar, Vondra Belgrun.
+  - SMALL FOLK (halflings): homely given + plain surname — Pell Tarrow, Rosa Quill, Milo Hext.
+  - ORCS & HALF-ORCS: guttural — Gorruk Mazhul, Urzga Thal; a half-orc may pair an orc given name with a clan or a human surname from where it was raised (Karzog Brakka).
+  - GOBLINS: short, sharp — Riznik Gax, Skarn Vex, Nibb Crask.
+  - DRAKEBORN: harsh draconic syllables — Vaxorath Saryndair, Issketh Vorlan.
+  - DEMONBORN: infernal — Malphaz Vethûl, Nyxara Dûl.
+  - VAMPIRES: old aristocratic names — Sabran Vael, Lucretia Vossane, Casimir Droste; a title (Lord, Countess) may PRECEDE the name in address but is never itself the name.
+  - LYCANTHROPES: usually a human-culture name from their mortal life.
+  - FAE: unsettling court-names, riddling titles, or seasonal epithets (the Hawthorn Lord, Lady Brightveil) — strangeness IS the convention.
+
 CHARACTER DISCOVERY — REQUIRED FIELDS
 Every new NPC entry MUST include:
 - name, race, profession (if known), description
