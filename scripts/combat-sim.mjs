@@ -9,7 +9,7 @@
 import { initCombat, playerAct, endTurn, abilityUsable, rollLoot, canStandDown, playerStandDown } from "../src/engine/combat.js";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
-import { generateEnemyGroup, allyFromCompanion } from "../src/data/bestiary.js";
+import { generateEnemy, generateEnemyGroup, allyFromCompanion } from "../src/data/bestiary.js";
 import { COMPANIONS } from "../src/data/companions.js";
 import { aggregateCombatPassives, applyFusion, FUSIONS, PASSIVE_CAPS, RUNES } from "../src/data/passives.js";
 import { fusionOptionsForRune, applyFusionToItem } from "../src/engine/fusion.js";
@@ -252,4 +252,62 @@ console.log("\nToW SYSTEMS — fusion + caps");
   const ls = aggregateCombatPassives(Array.from({ length: 8 }, () => ({ id: "vampiric", tier: "epic" }))).triggers.lifesteal;
   console.log(`  lifesteal cap: ${ls} (cap ${PASSIVE_CAPS.lifesteal}) — ${ls <= PASSIVE_CAPS.lifesteal ? "OK" : "FAILED"}`);
 }
+console.log("");
+
+// ===========================================================================
+// DIVINE PASSIVE REBALANCE — verify the reworked apex affixes on main's structure.
+// ===========================================================================
+
+// A god-tier hero who MEETS the divine item requirement, so divine affixes switch
+// on at full magnitude. HP/resolve derive from attributes via makeFighter.
+function godhero(extra = []) {
+  return makeFighter({
+    name: "Godhero",
+    attributes: { body: 26, reflex: 26, vigor: 26, mind: 26, wit: 22, presence: 18 },
+    abilities: [{ id: "power-strike", tier: "common" }, { id: "rend", tier: "common" }, { id: "second-wind", tier: "common" }, ...extra],
+    proficiencies: {},
+  });
+}
+// Divine-grade gear carrying the given affixes (req met by godhero, so they fire).
+function divineCodex(weaponPassives = [], armorPassives = []) {
+  return {
+    characters: { wanderer: { id: "wanderer", worn: ["w", "a"] } },
+    items: {
+      w: { id: "w", name: "Godblade", kind: "weapon", tier: "divine", combat: { damage: { min: 22, max: 36, type: "physical", pen: 0 } }, passives: weaponPassives },
+      a: { id: "a", name: "Spiritsilk", kind: "armor", tier: "divine", combat: { armor: 4 }, passives: armorPassives },
+    },
+  };
+}
+// True divine foes (rollTier skews low even at max luck, so force the tier).
+const divineFoes = (kind, n) => () => Array.from({ length: n }, (_, i) => generateEnemy(kind, { tierId: "divine", index: i, total: n }));
+
+console.log("PASSIVE REBALANCE — divine stat magnitudes + caps");
+{
+  const one = (id) => aggregateCombatPassives([{ id, tier: "divine" }]);
+  const ok = (label, got, want) => console.log(`  ${label.padEnd(30)} ${got} (want ${want}) — ${got === want ? "OK" : "FAILED"}`);
+  ok("phantom → phaseChance", one("phantom").statMods.phaseChance, 0.25);
+  ok("deadeye → dodgeIgnore", one("deadeye").statMods.dodgeIgnore, 1);
+  ok("godward → drPct", one("godward").statMods.drPct, 0.3);
+  ok("inviolate → invulnCharges", one("aegis-eternal").triggers.invulnCharges, 2);
+  ok("undying → reviveOnce", one("undying").triggers.reviveOnce, 0.6);
+  const cap = (label, list, get, lim) => { const v = get(aggregateCombatPassives(list)); console.log(`  ${label.padEnd(30)} ${v} (cap ${lim}) — ${v <= lim ? "OK" : "FAILED"}`); };
+  cap("phaseChance cap", [{ id: "phantom", tier: "divine" }, { id: "phantom", tier: "divine" }], (a) => a.statMods.phaseChance, PASSIVE_CAPS.phaseChance);
+  cap("dodgeIgnore cap", [{ id: "deadeye", tier: "divine" }, { id: "deadeye", tier: "divine" }], (a) => a.statMods.dodgeIgnore, PASSIVE_CAPS.dodgeIgnore);
+  cap("invulnCharges cap", [{ id: "aegis-eternal", tier: "divine" }, { id: "aegis-eternal", tier: "divine" }], (a) => a.triggers.invulnCharges, PASSIVE_CAPS.invulnCharges);
+}
+
+console.log("\nPASSIVE REBALANCE — divine builds (vs 5 divine orc-raiders)");
+const DFOES = divineFoes("orc-raiders", 5);
+verify("baseline (divine gear)", godhero(), divineCodex(), DFOES);
+verify("phantom (phase 25%)", godhero(), divineCodex([], [{ id: "phantom", tier: "divine" }]), DFOES);
+verify("godward (30% DR)", godhero(), divineCodex([], [{ id: "godward", tier: "divine" }]), DFOES);
+verify("inviolate (2 invuln)", godhero(), divineCodex([], [{ id: "aegis-eternal", tier: "divine" }]), DFOES);
+verify("undying (revive)", godhero(), divineCodex([], [{ id: "undying", tier: "divine" }]), DFOES);
+
+// Deadeye's lane is anti-evasion: vs a max-dodge foe, baseline misses a share of
+// strikes; Deadeye's no-dodge hits land every time (fewer turns to kill).
+console.log("\nPASSIVE REBALANCE — Deadeye vs a max-dodge divine foe");
+const evasiveFoe = () => { const e = generateEnemy("bandits", { tierId: "divine", index: 0, total: 1 }); e.dodge = 70; e.maxHealth = e.health = 2500; e.weapon = { ...e.weapon, min: 4, max: 8 }; return [e]; };
+verify("baseline vs evasive", godhero(), divineCodex(), evasiveFoe);
+verify("deadeye vs evasive", godhero(), divineCodex([{ id: "deadeye", tier: "divine" }]), evasiveFoe);
 console.log("");

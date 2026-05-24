@@ -34,7 +34,7 @@ export function attrDescriptor(key, value) {
 // 2) UNIQUE-EFFECT unlocks at the grind thresholds — a distinct mechanic at each
 //    of 5/10/15/20/25/30 (rare/very-rare/epic/legendary/mythic/divine), CUMULATIVE
 //    (you keep every one you've passed). These are qualitative powers (cheat death,
-//    shrug off control, cap big hits, reflect, drain, regen, extra actions,
+//    shrug off control, cap big hits, cleave armour, regen, extra actions,
 //    ward-shields…), not just numbers. Applied to NPCs too, so a high-attribute
 //    boss is innately mighty.
 
@@ -68,13 +68,13 @@ const UNIQUE = {
     { t: { turnRegen: 0.03 } },       // 25 mythic    — regeneration deepens
     { s: { controlResist: 0.35 } },   // 30 divine    — indomitable: near control-immune
   ],
-  body: [
-    { t: { thorns: 10 } },            // 5  — your might punishes attackers
-    { t: { lifesteal: 6 } },          // 10 — rend the life from foes
-    { t: { thorns: 12 } },            // 15
-    { t: { lifesteal: 6 } },          // 20
-    { t: { thorns: 14 } },            // 25
-    { t: { lifesteal: 8 } },          // 30 — a reaver who heals on every blow
+  body: [ // RAW MIGHT — devastating force: brutal crit damage + crushing blows
+    { s: { critMult: 0.20 } },        // 5  rare      — heavy blows land like a falling hammer
+    { s: { damageMult: 0.08 } },      // 10 very-rare — crushing strength
+    { s: { critMult: 0.30 } },        // 15 epic      — bone-shattering critical force
+    { s: { damageMult: 0.10 } },      // 20 legendary — colossal might
+    { s: { critMult: 0.40 } },        // 25 mythic    — catastrophic, devastating crits
+    { s: { damageMult: 0.12 } },      // 30 divine    — titanic, mountain-moving force
   ],
   reflex: [
     { s: { swiftChance: 0.06 } },     // 5  — flurry: chance to act again

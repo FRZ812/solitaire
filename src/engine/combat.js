@@ -136,6 +136,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     resolve: Math.round(character.resolve ?? 0),
     resolveMax: character.resolveMax ?? 0,
     dr: cs.dr || 0, fortify: cs.fortify || 0,
+    phaseChance: cs.phaseChance || 0, dodgeIgnore: cs.dodgeIgnore || 0,
     damageCap: cs.damageCap || 0, controlResist: cs.controlResist || 0,
     healPower: cs.healPower || 0, dmgDefer: cs.dmgDefer || 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
@@ -529,9 +530,15 @@ function abilityEffectiveness(player, def, tierId) {
 // Resolve a single hit. Returns { log, dmg, crit, dodged } so callers can fire
 // procs (on-crit / on-hit / on-dodge / on-kill) off the outcome.
 function resolveHit(attacker, defender, profile) {
+  // Phantom: a flat, UNCOUNTERABLE chance the blow passes through the half-real
+  // defender — rolled independently of accuracy, so no foe accuracy can negate it.
+  if ((defender.phaseChance || 0) > 0 && rand100() <= defender.phaseChance * 100) {
+    return { log: logEntry(`${attacker.name} attacks ${defender.name} — the blow passes through (half-real).`, "miss"), dmg: 0, crit: false, dodged: true };
+  }
   // Chill saps the attacker's accuracy; dodge-stacks add to the defender's dodge.
+  // Deadeye (dodgeIgnore) erases the defender's dodge so the strike can't be evaded.
   const acc = (attacker.accuracy || 0) - sumStatus(attacker, "chill") - (attacker.darkPenalty || 0);
-  const dodge = (defender.dodge || 0) + sumStatus(defender, "dodgeStack");
+  const dodge = ((defender.dodge || 0) + sumStatus(defender, "dodgeStack")) * (1 - (attacker.dodgeIgnore || 0));
   const hitChance = 100 - clamp(dodge - acc, 0, 90);
   if (rand100() > hitChance) {
     return { log: logEntry(`${attacker.name} attacks ${defender.name} — dodged.`, "miss"), dmg: 0, crit: false, dodged: true };
@@ -762,15 +769,24 @@ function onEnemyControlled(e) {
   if (e.demeanor === "cowardly") loss = 9;
   e.morale = Math.max(0, e.morale - loss);
 }
+// Undying scrubs lingering harm on revive so the cheated-death moment isn't wasted
+// re-dying to leftover damage-over-time.
+const HARMFUL_STATUS = new Set(["bleed", "poison", "burn", "chill", "curse", "vulnerable", "weaken", "stun", "silence", "slow", "shatter"]);
+function cleanseHarm(c) {
+  if (Array.isArray(c.statuses)) c.statuses = c.statuses.filter((s) => !HARMFUL_STATUS.has(s.type));
+}
+
 // A foe drops to 0. In a lethal fight that means death (lootable corpse); in a
 // bare-knuckle brawl it means knocked senseless (alive — nothing to loot).
 function downEnemy(cs, e) {
   if (e._dead || e.resolved === "ko") return;
-  // Undying (divine): a fabled foe cheats death once, clawing back at half health.
+  // Undying (divine): a fabled foe cheats death once, clawing back at a share of
+  // health, cleansed and briefly untouchable so the second life isn't instantly lost.
   const rev = e.triggers?.reviveOnce;
   if (rev && !e._revived && e.health <= 0) {
     e._revived = true;
     e.health = Math.max(1, Math.round(e.maxHealth * rev));
+    cleanseHarm(e); e.invuln = Math.max(e.invuln || 0, 1);
     cs.log.push(logEntry(`${e.name} should be dead — and rises anyway.`, "enemy"));
     return;
   }
@@ -1100,6 +1116,7 @@ function playerDown(cs) {
   if (rev && !cs.revivedUsed) {
     cs.revivedUsed = true;
     cs.player.health = Math.max(1, Math.round(cs.player.maxHealth * rev));
+    cleanseHarm(cs.player); cs.player.invuln = Math.max(cs.player.invuln || 0, 1);
     cs.log.push(logEntry(`${cs.player.name} cheats death and rises!`, "status"));
     return false;
   }
