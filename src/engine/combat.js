@@ -134,9 +134,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     health: Math.min(cs.maxHealth, Math.round(character.vitality) + healthBonus),
     maxHealth: cs.maxHealth,
     resolve: Math.round(character.resolve ?? 0),
-    // Gear/threshold resolveMax affixes (Clear Mind, Archmage, high Presence) raise
-    // the in-fight ceiling above the persistent Mind pool — like +life gear for HP.
-    resolveMax: (character.resolveMax ?? 0) + (cs.resolveMaxBonus || 0),
+    resolveMax: character.resolveMax ?? 0,
     dr: cs.dr || 0, fortify: cs.fortify || 0,
     damageCap: cs.damageCap || 0, controlResist: cs.controlResist || 0,
     healPower: cs.healPower || 0, dmgDefer: cs.dmgDefer || 0,
@@ -301,9 +299,9 @@ function downActor(cs, actor) {
   if (actor.side === "enemy") downEnemy(cs, actor); else downAlly(cs, actor);
 }
 
-// Begin one combatant's turn: tick statuses/cooldowns/reload, turn-heal, fire
-// start-of-turn procs, resolve stun, and set action points (base + swift
-// "act-again" rolls). Returns "dead" | "stun" | "ok".
+// Begin one combatant's turn: tick statuses/cooldowns/reload, trait resolve regen
+// and turn-heal, fire start-of-turn procs, resolve stun, and set action points
+// (base + swift "act-again" rolls). Returns "dead" | "stun" | "ok".
 function beginTurnFor(cs, actor) {
   tickStatuses(actor).forEach((l) => cs.log.push(l));
   if (actor.health <= 0) {
@@ -314,10 +312,12 @@ function beginTurnFor(cs, actor) {
   for (const id of Object.keys(actor.cooldowns || {})) actor.cooldowns[id] = Math.max(0, actor.cooldowns[id] - cdr);
   if (actor.reloadLeft > 0) actor.reloadLeft = Math.max(0, actor.reloadLeft - 1);
   startOfTurn(cs, actor);
-  // Resolve no longer trickles back each turn — it's a rest/consumable-gated pool
-  // (engine/attributes.js). The only in-fight gains are EARNED refund procs
-  // (Bloodhunt on-kill, Channeler on-crit), applied in fireProc.
+  // Resolve is a rest/consumable-gated pool (engine/attributes.js) — no base regen.
+  // The ONLY per-turn trickle is from the rare will-traits Clear Mind / Archmage /
+  // high Presence (triggers.resolveRegen); plus EARNED refund procs in fireProc.
   const tr = actor.triggers || {};
+  const rr = tr.resolveRegen || 0;
+  if (rr && actor.resolveMax != null) actor.resolve = Math.min(actor.resolveMax, (actor.resolve || 0) + rr);
   if (tr.turnRegen && actor.health > 0) {
     // turnRegen is a FRACTION of max health (scales with the wearer at every tier).
     const mended = gainHealth(actor, Math.max(1, Math.round(actor.maxHealth * tr.turnRegen)));

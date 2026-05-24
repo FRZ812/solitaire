@@ -345,7 +345,8 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
     if (id === "resolve") {
       const max = state.character.resolveMax ?? 0;
       const cur = Math.round(state.character.resolve ?? 0);
-      extra = <div style={liveStyle}>Right now: <b>{cur}/{max}</b> — your pool grows with Mind and refills by rest or drink, not each turn.</div>;
+      const rr = combat.triggers?.resolveRegen || 0;
+      extra = <div style={liveStyle}>Right now: <b>{cur}/{max}</b> — your pool grows with Mind and refills by rest or drink{rr > 0 ? `, plus ${rr}/turn from your traits (Clear Mind / Archmage / Presence)` : " (no per-turn regen on its own)"}.</div>;
     } else if (id === "vitality") {
       extra = <div style={liveStyle}>{canHeal(state.character.conditions) ? "Right now: healing normally." : "Right now: NOT healing — a wound or need is blocking it."}</div>;
     } else if (id === "light") {

@@ -416,9 +416,6 @@ export function deriveCombatStats(character, codex) {
     critMult: Math.min(9.99, 1.5 + (statMods.critMult || 0)), // crit damage caps at 999%, not a token ceiling
     weapon,
     speed,
-    // Resolve no longer regenerates per turn; instead Clear Mind / Archmage / high
-    // Presence DEEPEN the pool — folded into the combatant's in-fight resolveMax.
-    resolveMaxBonus: statMods.resolveMax || 0,
     // Action economy: action points spent on anything; swift builds act several
     // times a turn via extra AP and the act-again roll. No stamina.
     actionsPerTurn,

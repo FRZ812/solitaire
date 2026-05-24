@@ -101,7 +101,7 @@ const UNIQUE = {
     { s: { healPower: 0.20 } },       // 30 divine    — perfect insight into mending (+45% healing total here)
   ],
   presence: [ // WILLPOWER & INTENSITY — endure, dominate, refuse to break
-    { s: { resolveMax: 8 } },         // 5  rare      — iron will deepens your resolve pool
+    { t: { resolveRegen: 1 } },       // 5  rare      — force of will fuels you (resolve has no base regen)
     { s: { dmgDefer: 0.15 } },        // 10 very-rare — iron will: endure, spread the pain over time
     { s: { controlResist: 0.30 } },   // 15 epic      — unshakeable: shrug off control
     { s: { damageMult: 0.10 } },      // 20 legendary — sheer intensity: blows land harder
@@ -157,7 +157,7 @@ const EFFECT_FMT = {
   lifesteal:        (v) => `heal for ${v}% of the damage you deal`,
   shieldGen:        (v) => `conjure a shield worth ${Math.round(v * 100)}% max HP each turn`,
   magicShieldGen:   (v) => `weave a magic ward worth ${Math.round(v * 100)}% max HP each turn`,
-  resolveMax:       (v) => `+${v} max resolve`,
+  resolveRegen:     (v) => `recover +${v} resolve each turn`,
 };
 const fmtEffects = (obj) => Object.entries(obj || {}).map(([k, v]) => (EFFECT_FMT[k] ? EFFECT_FMT[k](v) : `${k} +${v}`));
 
@@ -169,7 +169,7 @@ const ATTR_PURPOSE = {
   vigor:    "Toughness. Sets your maximum Vitality and grants flat damage reduction — how much punishment you can take before you fall.",
   mind:     "Intellect. Powers spell damage, sets your Resolve pool (the fuel for spells — it grows with Mind and refills by rest or drink, not each turn), adds Ward (about a third of your Mind) against magic, and quickens how fast you learn.",
   wit:      "Awareness. Raises your critical-hit chance and your perception — spotting ambushes and openings — and sharpens healing and quick thinking.",
-  presence: "Force of will. Deepens your Resolve in battle, steadies morale, and sways how others and foes respond to you.",
+  presence: "Force of will. Trickles Resolve back even mid-fight (which otherwise has no per-turn regen), steadies morale, and sways how others and foes respond to you.",
 };
 export function attrPurpose(key) { return ATTR_PURPOSE[key] || ""; }
 

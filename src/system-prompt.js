@@ -507,7 +507,7 @@ PRICE ANCHORS (copper; 1gp=100cp). Common: dagger ~20 · sword ~100–200 · axe
 CONSEQUENCES & HEALING
 - Combat and accidents cost vitality. Apply vitality_change with negative deltas.
 - For serious wounds, ALSO apply a blocking condition (see below) via new_conditions.
-- RESOLVE is a CASTER'S POOL — the fuel for spells, not a stamina bar. It does NOT regenerate each turn; it GROWS WITH MIND and refills only by resting or by drinking (ale/wine/spirits). Spend it (resolve_change negative) for a costly out-of-combat working or ritual; restore it (positive) for a good rest or a stiff drink. Do NOT drain it for ordinary fear or exhaustion, and never tell the player it "comes back each turn."
+- RESOLVE is a CASTER'S POOL — the fuel for spells, not a stamina bar. It has NO base per-turn regen; it GROWS WITH MIND and refills by resting or by drinking (ale/wine/spirits). (Only rare wills — Clear Mind, Archmage, high Presence — trickle a little back mid-fight.) Spend it (resolve_change negative) for a costly out-of-combat working or ritual; restore it (positive) for a good rest or a stiff drink. Do NOT drain it for ordinary fear or exhaustion, and don't tell the player it simply "comes back each turn."
 
 PASSIVE HEALING
 The engine regenerates ~1 HP/hour automatically while alive. This is BLOCKED entirely by any of these conditions:
