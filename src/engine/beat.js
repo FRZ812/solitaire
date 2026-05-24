@@ -15,7 +15,7 @@ import { resolveRace } from "../data/races.js";
 import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
 import { tierOrder } from "../data/tiers.js";
 import { spoilCarried } from "./spoilage.js";
-import { applyAttributeChanges, recomputeVitalityMax } from "./attributes.js";
+import { applyAttributeChanges, recomputeVitalityMax, recomputeResolveMax } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
 import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
 import { clampRel, MEMORY_CAP } from "./relationships.js";
@@ -159,6 +159,7 @@ export function applyBeat(state, beat, options = {}) {
   // Max HP derives from vigor — keep it in sync whenever attributes may have
   // changed (also lazily migrates older saves). A vigor gain heals by the delta.
   recomputeVitalityMax(character);
+  recomputeResolveMax(character); // Mind drives the resolve pool, same pattern
 
   // A combat ability TAUGHT in play (a discoveries.skills entry whose id is a real
   // ability) must become USABLE — mergeDiscoveries only records codex lore, so wire
@@ -455,8 +456,9 @@ export function applyBeat(state, beat, options = {}) {
       knows: [...new Set([...(w.knows || []), ...(cs.knows || [])].filter((f) => typeof f === "string" && f.trim()))],
     };
     world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, wanderer: merged } } };
-    // Creation set attributes + racial vigor — derive starting max HP from them.
+    // Creation set attributes + racial vigor/mind — derive starting HP and resolve.
     recomputeVitalityMax(character);
+    recomputeResolveMax(character);
     created = true;
   }
 

@@ -343,8 +343,9 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
     if (!g) return;
     let extra = null;
     if (id === "resolve") {
-      const r = combat.resolveRegen;
-      extra = <div style={liveStyle}>Right now: <b>{r}/turn</b>{r > 1 ? " — quickened by your gear or traits." : r < 1 ? " — slowed (heavy armour)." : " (the base rate)."}</div>;
+      const max = state.character.resolveMax ?? 0;
+      const cur = Math.round(state.character.resolve ?? 0);
+      extra = <div style={liveStyle}>Right now: <b>{cur}/{max}</b> — your pool grows with Mind and refills by rest or drink, not each turn.</div>;
     } else if (id === "vitality") {
       extra = <div style={liveStyle}>{canHeal(state.character.conditions) ? "Right now: healing normally." : "Right now: NOT healing — a wound or need is blocking it."}</div>;
     } else if (id === "light") {

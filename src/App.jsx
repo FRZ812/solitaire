@@ -11,7 +11,7 @@ import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampai
 import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt, editBeat, deleteBeat } from "./engine/timeline.js";
-import { recomputeVitalityMax } from "./engine/attributes.js";
+import { recomputeVitalityMax, recomputeResolveMax } from "./engine/attributes.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
@@ -485,7 +485,8 @@ export function Solitaire() {
       const migrated = migrateCodex(loaded);
       // Bring older saves' max HP onto the vigor-derived formula so the vitals
       // strip is correct the moment the campaign opens (heals by any gain).
-      if (migrated?.character) recomputeVitalityMax(migrated.character);
+      // Likewise re-derive the Mind-scaled resolve pool (older saves had flat 6).
+      if (migrated?.character) { recomputeVitalityMax(migrated.character); recomputeResolveMax(migrated.character); }
       setState(migrated);
       closeBeatMenu();
       setCurrentCampaignId(id);

@@ -236,6 +236,26 @@ export function abilityCategoryOf(def) {
   return "martial";
 }
 
+// SPELL RESOLVE COSTS — Resolve is now a finite, rest-gated pool that GROWS WITH
+// MIND (engine/attributes.js) and does NOT regenerate in a fight, so spell costs
+// are tiered by power to bound the castings a pool yields per rest: a Mind-deep
+// archmage burns through many cheap spells but only a handful of apex ones, then
+// must rest or drink. MARTIAL stays free (gated by action points + cooldown) and
+// INNATE racial powers keep their light authored costs (kindred identity, not
+// gated spend). Magnitudes are sim starting points (scripts/combat-sim.mjs).
+const SPELL_COST_BY_FLOOR = {
+  common: 3, uncommon: 4, rare: 6, "very-rare": 8, epic: 10, legendary: 15, mythical: 20, divine: 25,
+};
+// Hand-tuned overrides — party force-multipliers and apex utility that the floor
+// map under-prices (most aren't tier-floored, so they'd default to Common).
+const SPELL_COST_OVERRIDE = {
+  "battle-hymn": 8, sanctify: 12, "guardian-aegis": 12, "unbreakable-will": 16, "last-sanctuary": 22,
+};
+for (const a of ABILITY_LIBRARY) {
+  if (a.innate || abilityCategoryOf(a) !== "spell") continue;
+  a.resolveCost = SPELL_COST_OVERRIDE[a.id] ?? SPELL_COST_BY_FLOOR[a.minTier || "common"];
+}
+
 // Every DEFINED, grantable ability (library + authored uniques). The single
 // source of truth the codex audits and the narrator must grant from (by id) —
 // each carries its own damage, effects, costs, and requirements.

@@ -88,6 +88,13 @@ export function applyRest(state, hours) {
   const vitality = passiveHealVitality(ch.vitality, ch.vitalityMax, ch.conditions, minutes, wp.healPerHour || 0);
   const hpGain = Math.round(vitality - ch.vitality);
 
+  // Resolve refills only by rest (or certain drinks) — a full night restores the
+  // whole Mind-scaled pool; a short nap restores a proportional share.
+  const RESOLVE_FULL_REST_H = 8;
+  const resolveMax = ch.resolveMax ?? 0;
+  const resolve = Math.min(resolveMax, (ch.resolve ?? 0) + Math.ceil(resolveMax * (h / RESOLVE_FULL_REST_H)));
+  const resolveGain = Math.round(resolve - (ch.resolve ?? 0));
+
   // Recompute need-borne conditions (rest can clear Tired/Exhausted, or wake you Hungry).
   const conditions = mergeConditions(null, getNeedConditions(needs), ch.conditions);
   const burned = Math.max(0, lightMinutes(state) - minutes);
@@ -96,11 +103,12 @@ export function applyRest(state, hours) {
   const gains = [];
   if (sleepGain > 0) gains.push(`+${sleepGain} sleep`);
   if (hpGain > 0) gains.push(`+${hpGain} vitality`);
+  if (resolveGain > 0) gains.push(`+${resolveGain} resolve`);
   const summary = `You unroll the bedroll and bed down. You wake ${h} hour${h === 1 ? "" : "s"} later${gains.length ? `, rested — ${gains.join(", ")}` : ""}.`;
 
   return {
     ok: true,
     summary,
-    state: { ...state, time, character: { ...ch, needs, vitality, conditions, light } },
+    state: { ...state, time, character: { ...ch, needs, vitality, resolve, conditions, light } },
   };
 }

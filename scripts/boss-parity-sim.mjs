@@ -16,7 +16,7 @@ import { makeInitialState } from "../src/data/initial-state.js";
 import { enemyFromNPC, allyFromCompanion } from "../src/data/bestiary.js";
 import { initCombat, playerAct, endTurn, abilityUsable } from "../src/engine/combat.js";
 import { deriveCombatStats } from "../src/engine/combat-stats.js";
-import { recomputeVitalityMax } from "../src/engine/attributes.js";
+import { recomputeVitalityMax, recomputeResolveMax } from "../src/engine/attributes.js";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 
@@ -98,7 +98,7 @@ function refCodex(arch = "heavy") {
 }
 function refPlayer(arch = "heavy") {
   const base = {
-    name: "Champion", resolve: 16, resolveMax: 16,
+    name: "Champion",
     abilities: [
       { id: "power-strike", tier: "divine" }, { id: "execute", tier: "divine" },
       { id: "rend", tier: "divine" }, { id: "rallying-shout", tier: "divine" },
@@ -106,11 +106,13 @@ function refPlayer(arch = "heavy") {
     ],
     proficiencies: {},
   };
+  // Live derived pools: HP from Vigor + the Mind-scaled resolve pool, started full.
+  const build = (c) => { recomputeVitalityMax(c); recomputeResolveMax(c); c.resolve = c.resolveMax; return c; };
   if (arch === "light") {
-    return recomputeVitalityMax({ ...base,
+    return build({ ...base,
       attributes: { body: 20, reflex: 24, vigor: 18, mind: 16, wit: 20, presence: 14 } });
   }
-  return recomputeVitalityMax({ ...base,
+  return build({ ...base,
     attributes: { body: 26, reflex: 18, vigor: 24, mind: 16, wit: 18, presence: 16 } });
 }
 

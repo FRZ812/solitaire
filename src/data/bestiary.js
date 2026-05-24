@@ -9,6 +9,7 @@ import { itemCombatStats, weaponFamilyBase, mergeThresholdMods } from "../engine
 import { itemTemplate } from "./catalog.js";
 import { aggregateCombatPassives } from "./passives.js";
 import { attributeThresholdMods } from "./attribute-tiers.js";
+import { resolvePoolForMind } from "../engine/attributes.js";
 
 const T = (min, max, type = "physical", pen = 0) => ({ min, max, type, pen });
 
@@ -111,7 +112,8 @@ export function generateEnemy(kind, { tierId = "common", index = 0, total = 1 } 
     maxLootTier: tmpl.maxLootTier || "uncommon",
     // Action economy: one action a turn (no stamina). Template foes carry no
     // affixes, so no swift extras; caster foes spend Resolve on their spells.
-    resolve: 6 + tierOf, resolveMax: 6 + tierOf, resolveRegen: 1,
+    // Resolve no longer regenerates, so the pool is a touch deeper to last a fight.
+    resolve: 8 + tierOf * 2, resolveMax: 8 + tierOf * 2,
     actionsPerTurn: 1, actionsLeft: 1, cooldownReduction: 0, swiftChance: 0,
     procs: [], shield: 0, magicShield: 0, invuln: 0,
     statuses: [],
@@ -240,9 +242,9 @@ export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
     speed: reflex + Math.floor(wit / 2),
     triggers: tr,
     // Same action economy as the player (no stamina); swift-geared foes (extra-
-    // action / swift affixes) act several times a turn. Casters spend Resolve.
-    resolve: 6 + Math.floor(mind / 2), resolveMax: 6 + Math.floor(mind / 2),
-    resolveRegen: 1 + (tr.resolveRegen || 0),
+    // action / swift affixes) act several times a turn. Casters spend Resolve from
+    // a Mind-scaled pool that does NOT regenerate (same economy as the player).
+    resolve: resolvePoolForMind(mind) + (sm.resolveMax || 0), resolveMax: resolvePoolForMind(mind) + (sm.resolveMax || 0),
     swiftChance: Math.min(0.5, sm.swiftChance || 0),
     // A designed raid boss acts several times a turn (npc.actionsPerTurn) so it
     // threatens a whole PARTY each round — that's how it's meant to be fought.

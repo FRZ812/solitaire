@@ -303,8 +303,9 @@ STANDARD CONSUMPTION ANCHORS
 - Loaf of bread (3cp): hunger +20
 - Trail rations 1 day (1sp): hunger +60 across the day
 - Cured meat / hard cheese (small): hunger +15
-- Mug of ale (2cp): thirst +20, resolve +1 (mild buzz)
-- Glass of wine (3cp): thirst +15, resolve +1
+- Mug of ale (2cp): thirst +20, resolve +4 (a lift between fights)
+- Glass of wine (3cp): thirst +15, resolve +6
+- Flask of spirits (6cp): resolve +12 — but it parches and muddles (thirst −8, sleep −10)
 - Water (well, stream, free): thirst +30
 - Full night's sleep in a bed (~7-8h): sleep +120 (more than fully restores)
 - Rough sleep outdoors (~6h): sleep +70
@@ -316,7 +317,7 @@ FOOD SPOILS. Carried food is perishable unless preserved — the engine tracks e
 THRESHOLDS (engine auto-applies these conditions; do NOT manage them yourself)
 - Hunger ≤30: Hungry · ≤10: Starving (vitality begins to drop)
 - Thirst ≤30: Thirsty · ≤10: Parched (vitality drops faster than hunger)
-- Sleep  ≤30: Tired   · ≤10: Exhausted (resolve drops, rolls take penalty)
+- Sleep  ≤30: Tired   · ≤10: Exhausted (heavy penalty to rolls and combat)
 
 Narrate the body. A hungry MC notices food. A parched one fixates on water. An exhausted one stumbles, blinks, misses obvious things. Don't let them travel non-stop without consequence.
 
@@ -506,7 +507,7 @@ PRICE ANCHORS (copper; 1gp=100cp). Common: dagger ~20 · sword ~100–200 · axe
 CONSEQUENCES & HEALING
 - Combat and accidents cost vitality. Apply vitality_change with negative deltas.
 - For serious wounds, ALSO apply a blocking condition (see below) via new_conditions.
-- Failure, fear, exhaustion cost resolve.
+- RESOLVE is a CASTER'S POOL — the fuel for spells, not a stamina bar. It does NOT regenerate each turn; it GROWS WITH MIND and refills only by resting or by drinking (ale/wine/spirits). Spend it (resolve_change negative) for a costly out-of-combat working or ritual; restore it (positive) for a good rest or a stiff drink. Do NOT drain it for ordinary fear or exhaustion, and never tell the player it "comes back each turn."
 
 PASSIVE HEALING
 The engine regenerates ~1 HP/hour automatically while alive. This is BLOCKED entirely by any of these conditions:

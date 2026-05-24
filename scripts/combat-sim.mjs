@@ -13,7 +13,16 @@ import { generateEnemyGroup, allyFromCompanion } from "../src/data/bestiary.js";
 import { COMPANIONS } from "../src/data/companions.js";
 import { aggregateCombatPassives, applyFusion, FUSIONS, PASSIVE_CAPS, RUNES } from "../src/data/passives.js";
 import { fusionOptionsForRune, applyFusionToItem } from "../src/engine/fusion.js";
-import { recomputeVitalityMax } from "../src/engine/attributes.js";
+import { recomputeVitalityMax, recomputeResolveMax } from "../src/engine/attributes.js";
+
+// Build a sim fighter on the live derived pools: HP from Vigor, the Mind-scaled
+// resolve pool (no per-turn regen now), started full.
+function makeFighter(c) {
+  recomputeVitalityMax(c);
+  recomputeResolveMax(c);
+  c.resolve = c.resolveMax;
+  return c;
+}
 
 const RUNS = Number(process.argv[2] || 2000);
 
@@ -33,8 +42,8 @@ const codex = makeCodex(SWORD, 2);
 // A realistic early-mid wanderer: modest attributes, a plain blade, a couple of
 // learned techniques (no Cleave AoE, so groups can't be wiped in one swing).
 function midPlayer() {
-  return recomputeVitalityMax({
-    name: "Player", resolve: 5, resolveMax: 5,
+  return makeFighter({
+    name: "Player",
     attributes: { body: 4, reflex: 4, vigor: 4, mind: 2, wit: 3, presence: 2 },
     abilities: [
       { id: "power-strike", tier: "common" }, { id: "rend", tier: "common" },
@@ -132,8 +141,8 @@ console.log("");
 // A capable hero who meets epic/legendary item requirements (so affixes switch
 // on) and the action points to act several times a turn.
 function hero(extra = []) {
-  return recomputeVitalityMax({
-    name: "Hero", resolve: 12, resolveMax: 12,
+  return makeFighter({
+    name: "Hero",
     attributes: { body: 16, reflex: 16, vigor: 16, mind: 16, wit: 12, presence: 12 },
     abilities: [{ id: "power-strike", tier: "common" }, { id: "rend", tier: "common" }, { id: "second-wind", tier: "common" }, ...extra],
     proficiencies: {},

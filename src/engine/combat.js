@@ -134,8 +134,9 @@ export function initCombat(character, codex, enemies, opts = {}) {
     health: Math.min(cs.maxHealth, Math.round(character.vitality) + healthBonus),
     maxHealth: cs.maxHealth,
     resolve: Math.round(character.resolve ?? 0),
-    resolveMax: character.resolveMax ?? 0,
-    resolveRegen: cs.resolveRegen || 0,
+    // Gear/threshold resolveMax affixes (Clear Mind, Archmage, high Presence) raise
+    // the in-fight ceiling above the persistent Mind pool — like +life gear for HP.
+    resolveMax: (character.resolveMax ?? 0) + (cs.resolveMaxBonus || 0),
     dr: cs.dr || 0, fortify: cs.fortify || 0,
     damageCap: cs.damageCap || 0, controlResist: cs.controlResist || 0,
     healPower: cs.healPower || 0, dmgDefer: cs.dmgDefer || 0,
@@ -158,7 +159,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
   const allies = (opts.allies || []).map((a, i) => ({
     ...clone(a), uid: `a${i}`, side: "player", statuses: a.statuses || [], cooldowns: a.cooldowns || {},
     actionsPerTurn: a.actionsPerTurn || 1, actionsLeft: a.actionsPerTurn || 1,
-    speed: a.speed ?? 4, swiftChance: a.swiftChance || 0, resolveRegen: a.resolveRegen || 0, reloadLeft: 0,
+    speed: a.speed ?? 4, swiftChance: a.swiftChance || 0, reloadLeft: 0,
     procs: a.procs || a.triggers?.procs || [], shield: 0, magicShield: 0, invuln: 0,
   }));
 
@@ -177,7 +178,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     e.side = "enemy";
     e.actionsPerTurn = e.actionsPerTurn || 1;
     e.actionsLeft = e.actionsPerTurn;
-    e.speed = e.speed ?? 4; e.swiftChance = e.swiftChance || 0; e.resolveRegen = e.resolveRegen || 0; e.reloadLeft = 0;
+    e.speed = e.speed ?? 4; e.swiftChance = e.swiftChance || 0; e.reloadLeft = 0;
     // Engagement distance from the player. Most foes open a step out (melee must
     // close; ranged & reach weapons can already strike). An ambush starts closer.
     e.distance = e.distance ?? (opts.startDistance ?? (opts.ambush === "player" ? 1 : 2));
@@ -300,9 +301,9 @@ function downActor(cs, actor) {
   if (actor.side === "enemy") downEnemy(cs, actor); else downAlly(cs, actor);
 }
 
-// Begin one combatant's turn: tick statuses/cooldowns/reload, regen resolve and
-// turn-heal, fire start-of-turn procs, resolve stun, and set action points
-// (base + swift "act-again" rolls). Returns "dead" | "stun" | "ok".
+// Begin one combatant's turn: tick statuses/cooldowns/reload, turn-heal, fire
+// start-of-turn procs, resolve stun, and set action points (base + swift
+// "act-again" rolls). Returns "dead" | "stun" | "ok".
 function beginTurnFor(cs, actor) {
   tickStatuses(actor).forEach((l) => cs.log.push(l));
   if (actor.health <= 0) {
@@ -313,8 +314,9 @@ function beginTurnFor(cs, actor) {
   for (const id of Object.keys(actor.cooldowns || {})) actor.cooldowns[id] = Math.max(0, actor.cooldowns[id] - cdr);
   if (actor.reloadLeft > 0) actor.reloadLeft = Math.max(0, actor.reloadLeft - 1);
   startOfTurn(cs, actor);
-  const rr = actor.resolveRegen != null ? actor.resolveRegen : (actor.triggers?.resolveRegen || 0);
-  if (actor.resolveMax != null) actor.resolve = Math.min(actor.resolveMax, (actor.resolve || 0) + rr);
+  // Resolve no longer trickles back each turn — it's a rest/consumable-gated pool
+  // (engine/attributes.js). The only in-fight gains are EARNED refund procs
+  // (Bloodhunt on-kill, Channeler on-crit), applied in fireProc.
   const tr = actor.triggers || {};
   if (tr.turnRegen && actor.health > 0) {
     // turnRegen is a FRACTION of max health (scales with the wearer at every tier).
@@ -1122,6 +1124,15 @@ export function weaponReqMet(def, weapon) {
   return def.weaponReq.includes(weapon?.category);
 }
 
+// The Resolve a spell actually costs the player after the spellcasting-proficiency
+// discount (a capped %, never free). Shared by the usable-gate and the spend.
+export function playerResolveCost(cs, def) {
+  const base = def?.resolveCost || 0;
+  if (base <= 0) return 0;
+  const discount = Math.min(0.4, (cs.player.prof?.spellcasting || 0) * 0.02);
+  return Math.max(1, Math.ceil(base * (1 - discount)));
+}
+
 export function abilityUsable(cs, abilityId) {
   if (cs.phase !== "player") return false;
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
@@ -1131,7 +1142,7 @@ export function abilityUsable(cs, abilityId) {
   // Silenced: only the basic strike and brace remain — no learned abilities.
   if (hasStatus(cs.player, "silence") && abilityId !== BASIC_ATTACK.id && abilityId !== "defend") return false;
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
-  if ((cs.player.resolve ?? 0) < (def.resolveCost || 0)) return false;
+  if ((cs.player.resolve ?? 0) < playerResolveCost(cs, def)) return false;
   if (!weaponReqMet(def, cs.player.weapon)) return false;
   return true;
 }
@@ -1171,8 +1182,9 @@ export function playerAct(cs0, abilityId, targetIndex) {
   if (isSpell && !def.innate) cs.magicCast = true;
   if (!cs.lethal && (isSpell || isWeaponTech)) escalateToLethal(cs, isSpell ? "magic" : "weapon");
   cs.player.actionsLeft = (cs.player.actionsLeft || 1) - (def.actionCost || 1); // action points gate actions
-  // Spellcasting proficiency makes casting cheaper on Resolve.
-  const resoCost = Math.max(0, (def.resolveCost || 0) - Math.floor((cs.player.prof?.spellcasting || 0) / 4));
+  // Spellcasting proficiency makes casting cheaper on Resolve — a capped %
+  // discount that stretches the pool but never makes a spell free (see helper).
+  const resoCost = playerResolveCost(cs, def);
   cs.player.resolve = Math.max(0, (cs.player.resolve ?? 0) - resoCost);
   if (def.cooldown) cs.player.cooldowns[abilityId] = def.cooldown;
 

@@ -337,16 +337,16 @@ function armorBandMods(cls) {
   if (cls === "heavy") {
     return {
       speed: -3, actions: -1, swiftChance: -1, dodgeMult: 0.2,
-      maxHealth: 10, damageMult: 0.1, ward: 2, shieldGen: 0.03, accuracy: -2, resolveRegen: -1,
+      maxHealth: 10, damageMult: 0.1, ward: 2, shieldGen: 0.03, accuracy: -2,
     };
   }
   if (cls === "light") {
     return {
       speed: 2, actions: 0, swiftChance: 0.15, dodgeMult: 1,
-      maxHealth: 0, damageMult: 0, ward: 1, shieldGen: 0, accuracy: 1, resolveRegen: 1, dodge: 4,
+      maxHealth: 0, damageMult: 0, ward: 1, shieldGen: 0, accuracy: 1, dodge: 4,
     };
   }
-  return { speed: 0, actions: 0, swiftChance: 0, dodgeMult: 1, maxHealth: 0, damageMult: 0, ward: 0, shieldGen: 0, accuracy: 0, resolveRegen: 0, dodge: 0 };
+  return { speed: 0, actions: 0, swiftChance: 0, dodgeMult: 1, maxHealth: 0, damageMult: 0, ward: 0, shieldGen: 0, accuracy: 0, dodge: 0 };
 }
 
 export function deriveCombatStats(character, codex) {
@@ -401,9 +401,6 @@ export function deriveCombatStats(character, codex) {
   const actionsPerTurn = Math.max(1, 1 + clamp(statMods.extraActions || 0, 0, 3) + (band.actions || 0));
   // Swift "act again" chance: light armour + affixes + a touch of Reflex, capped.
   const swiftChance = clamp((band.swiftChance || 0) + (statMods.swiftChance || 0) + reflex * 0.01, 0, 0.5);
-  // Resolve regen per turn: base + band + Clear-Mind/affix triggers.
-  const resolveRegen = Math.max(0, 1 + (band.resolveRegen || 0) + (triggers.resolveRegen || 0));
-
   // Dodge: light keeps full value, heavy is crushed to a fifth.
   let dodge = reflex * 2 + dodgeGear + prof.evasion + (statMods.dodge || 0) + (band.dodge || 0);
   dodge = clamp(Math.round(dodge * (band.dodgeMult ?? 1)), 0, 70);
@@ -419,7 +416,9 @@ export function deriveCombatStats(character, codex) {
     critMult: Math.min(9.99, 1.5 + (statMods.critMult || 0)), // crit damage caps at 999%, not a token ceiling
     weapon,
     speed,
-    resolveRegen,
+    // Resolve no longer regenerates per turn; instead Clear Mind / Archmage / high
+    // Presence DEEPEN the pool — folded into the combatant's in-fight resolveMax.
+    resolveMaxBonus: statMods.resolveMax || 0,
     // Action economy: action points spent on anything; swift builds act several
     // times a turn via extra AP and the act-again roll. No stamina.
     actionsPerTurn,
