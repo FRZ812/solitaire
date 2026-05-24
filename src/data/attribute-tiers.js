@@ -130,7 +130,7 @@ export function attributeThresholdMods(attrs = {}) {
 
 // ---- Display helpers (character panel: tap an attribute to see its payoff) ----
 
-const THRESHOLD_TIER = { 5: "rare", 10: "very-rare", 15: "epic", 20: "legendary", 25: "mythic", 30: "divine" };
+const THRESHOLD_TIER = { 5: "rare", 10: "very-rare", 15: "epic", 20: "legendary", 25: "mythical", 30: "divine" };
 
 // One readable phrase per stat/trigger key, used for both the smooth bonuses and
 // the unique unlocks so the panel reads in plain language.

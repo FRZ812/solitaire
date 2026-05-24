@@ -64,6 +64,9 @@ import { CampaignsList } from "./components/CampaignsList.jsx";
 import { GameOverScreen } from "./components/GameOverScreen.jsx";
 import { InitialBackdrop } from "./components/InitialBackdrop.jsx";
 import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
+import { CreationHub } from "./components/CreationHub.jsx";
+import { ManualCreation } from "./components/ManualCreation.jsx";
+import { Icon } from "./components/Icon.jsx";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
 
@@ -250,6 +253,11 @@ export function Solitaire() {
   // backgrounded mid-request and the connection dropped). { base, message }.
   const [retry, setRetry] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Character creation UI: the hub (templates vs limbo) shows first on a fresh
+  // campaign; `creationEntered` flips once the player chooses the freeform limbo
+  // path; `manualCreation` opens the FRZKHRX full-manual builder (lives in limbo).
+  const [creationEntered, setCreationEntered] = useState(false);
+  const [manualCreation, setManualCreation] = useState(false);
   const [fusionRune, setFusionRune] = useState(null); // forge-rune id being bound in the fusion ritual
   const [mapOpen, setMapOpen] = useState(false);
   const [codexOpen, setCodexOpen] = useState(false);
@@ -567,6 +575,12 @@ export function Solitaire() {
   async function handleSubmit() {
     const action = input.trim();
     if (!action || loading) return;
+    // The expert token opens the full-manual builder instead of chatting it out.
+    if (state.created === false && action.includes("FRZKHRX")) {
+      setInput("");
+      setManualCreation(true);
+      return;
+    }
     setInput("");
     setRetry(null);
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: action };
@@ -597,6 +611,39 @@ export function Solitaire() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Build a character DETERMINISTICALLY from a menu/template spec (no LLM defines
+  // the sheet), then make a single narrator call only to narrate arriving in the
+  // world. Reuses the engine's character_setup + inventory/worn paths so a manual
+  // build is applied exactly like a narrator-finalized one.
+  async function applyCharacterSetup(setup) {
+    const items = Array.isArray(setup.items) ? setup.items : [];
+    const added = items
+      .filter((i) => i?.itemId)
+      .map((i) => ({ itemId: i.itemId, quantity: Math.max(1, i.quantity || 1) }));
+    const wornIds = items.filter((i) => i?.worn && i.itemId).map((i) => i.itemId);
+    const inv = {};
+    if (added.length) inv.added = added;
+    if (setup.coins && (setup.coins.copper || setup.coins.silver || setup.coins.gold)) inv.coins = setup.coins;
+    const beat = {
+      character_setup: {
+        name: setup.name, bond: setup.bond, attributes: setup.attributes,
+        abilities: setup.abilities || [], race: setup.race, subrace: setup.subrace || null,
+        origin: setup.origin, profession: setup.profession, age: setup.age,
+        attractiveness: setup.attractiveness, appearance: setup.appearance,
+        base_appearance: setup.base_appearance, knows: setup.knows || [],
+      },
+      inventory_changes: Object.keys(inv).length ? inv : undefined,
+      discoveries: wornIds.length ? { characters: [{ id: "wanderer", worn: wornIds }] } : undefined,
+    };
+    const built = applyBeat(state, beat); // created=true; identity, kit, and gear applied
+    setManualCreation(false);
+    setCreationEntered(false);
+    setState(built); // flip out of limbo at once so the chooser can't flash back while the opening loads
+    const kindred = [setup.subrace, setup.race].filter(Boolean).join(" ");
+    const opener = `[CHARACTER CREATION] The character is now fully created and LOCKED via direct selection — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}. Do NOT emit character_setup, do NOT change any values, and do NOT ask further questions. OPEN THE REAL SCENE now: narrate the soul drawn out of limbo into the world, arriving at the Drowned Rat tavern in Mirecross in the rain, then proceed as a normal first beat.`;
+    await runNarratorTurn(built, opener);
   }
 
   function handleRetry() {
@@ -1328,6 +1375,12 @@ export function Solitaire() {
   const buildingHere = combat ? null : buildingForTile(getTile(state, state.world.currentTile.x, state.world.currentTile.y));
   const buildingOpenNow = buildingHere ? isBuildingOpen(buildingHere, state.time.hour) : false;
 
+  // Creation hub: a fresh, untouched limbo shows the templates-vs-limbo chooser.
+  // Once the player picks the freeform path (creationEntered) or has already
+  // spoken a line, the normal limbo interview takes over.
+  const inLimbo = state.created === false;
+  const showCreationHub = inLimbo && !creationEntered && !state.beats.some((b) => b.type === "player");
+
   return (
     <div style={{
       backgroundColor: colors.ink,
@@ -1348,6 +1401,19 @@ export function Solitaire() {
             />
             <VitalsStrip character={state.character} />
           </>
+        )}
+        {/* In the freeform limbo interview, keep a character-panel button so the
+            player can audit the (still-forming) sheet and leave without getting
+            stuck — the hub has its own controls, so it's hidden there. */}
+        {inLimbo && !showCreationHub && (
+          <div style={{ display: "flex", justifyContent: "flex-end", padding: "12px 14px 0" }}>
+            <button onClick={() => setMenuOpen(true)} aria-label="Character" style={{
+              width: "38px", height: "38px", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center",
+              backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.35)`, cursor: "pointer",
+            }}>
+              <Icon name="user" size={16} color={colors.gold} strokeWidth={1.8} />
+            </button>
+          </div>
         )}
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
           {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
@@ -1490,6 +1556,22 @@ export function Solitaire() {
         />
       )}
 
+      {showCreationHub && (
+        <CreationHub
+          onPickTemplate={applyCharacterSetup}
+          onCustom={() => setCreationEntered(true)}
+          onQuit={handleBackToCampaigns}
+          busy={loading}
+        />
+      )}
+      {manualCreation && (
+        <ManualCreation
+          onBegin={applyCharacterSetup}
+          onCancel={() => setManualCreation(false)}
+          onQuit={() => { setManualCreation(false); handleBackToCampaigns(); }}
+          busy={loading}
+        />
+      )}
       {menuOpen && (
         <MenuSheet
           state={state}
