@@ -87,7 +87,38 @@ function subtree(state, id) {
   return out;
 }
 
-// Can `riderId` mount `mountId`? Returns { ok, reason }.
+const isDead = (e) => e?.combatState?.status === "dead";
+
+// Every carrier from `mountId` up the saddle-chain: the mount itself, the mount it
+// rides, and so on. Adding a rider to `mountId` adds its weight to ALL of these,
+// so each must have room (this is what stops a stack of nested mounts overloading
+// the dragon at the bottom).
+function carrierChain(state, mountId) {
+  const chain = [];
+  let cur = resolveEntity(state, mountId);
+  let guard = 0;
+  while (cur && guard++ < 64) {
+    chain.push(cur);
+    cur = cur.ridingOn ? resolveEntity(state, cur.ridingOn) : null;
+  }
+  return chain;
+}
+
+// Is a mount bearing more than it can carry RIGHT NOW? (e.g. its rider picked up
+// heavy loot after mounting — engine/weight.js makes the pack count.)
+export function isOverloaded(mount, state) {
+  return !!mount && currentRideLoad(mount, state) > (mount.rideCapacity || 0);
+}
+
+// Every mount in the party currently over its ride capacity.
+export function overloadedMounts(state) {
+  return (state.party || [])
+    .map((id) => resolveEntity(state, id))
+    .filter((c) => isMount(c) && isOverloaded(c, state));
+}
+
+// Can `riderId` mount `mountId`? Returns { ok, reason }. Enforces weight up the
+// WHOLE carrier chain, not just the immediate mount, so nesting can't be abused.
 export function canMount(state, riderId, mountId) {
   if (riderId === mountId) return { ok: false, reason: "It can't ride itself." };
   const rider = resolveEntity(state, riderId);
@@ -95,13 +126,22 @@ export function canMount(state, riderId, mountId) {
   if (!rider) return { ok: false, reason: "No such rider." };
   if (!mount) return { ok: false, reason: "No such mount." };
   if (!isMount(mount)) return { ok: false, reason: `${mount.name} is not a mount.` };
+  if (isDead(mount)) return { ok: false, reason: `${mount.name} is in no state to be ridden.` };
+  if (isDead(rider)) return { ok: false, reason: `${rider.name} cannot mount.` };
   if (rider.ridingOn === mountId) return { ok: false, reason: "Already mounted." };
   // A loop: you can't ride something that (transitively) rides you.
   if (subtree(state, riderId).has(mountId)) return { ok: false, reason: "That would loop the saddle-chain." };
-  const free = freeCapacity(mount, state);
-  const need = effectiveLoad(rider, state);
-  if (need > free) {
-    return { ok: false, reason: `Too heavy — ${mount.name} can bear ${Math.max(0, Math.round(free))} more, but ${rider.name} is ${Math.round(need)}.` };
+  // Probe on a state where the rider has been lifted off whatever it currently
+  // rides, so a re-seat within the same chain isn't double-counted; then the
+  // rider's full weight must fit the mount AND every carrier above it.
+  const probe = detach(state, riderId);
+  const need = effectiveLoad(resolveEntity(probe, riderId), probe);
+  for (const carrier of carrierChain(probe, mountId)) {
+    const free = freeCapacity(carrier, probe);
+    if (need > free) {
+      const who = carrier.id === mountId ? mount.name : `${carrier.name} (bearing ${mount.name})`;
+      return { ok: false, reason: `Too heavy — ${who} can bear ${Math.max(0, Math.round(free))} more, but ${rider.name} is ${Math.round(need)}.` };
+    }
   }
   return { ok: true };
 }

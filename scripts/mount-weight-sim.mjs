@@ -13,7 +13,7 @@ import { COMPANIONS, companionCodexEntry } from "../src/data/companions.js";
 import { MOUNTS, mountCodexEntry } from "../src/data/mounts.js";
 import { carryCapacityFor, recomputeVitalityMax, recomputeResolveMax } from "../src/engine/attributes.js";
 import { itemWeight, loadOf, isOverCapacity } from "../src/engine/weight.js";
-import { canMount, mount, dismount, effectiveLoad, currentRideLoad } from "../src/engine/riding.js";
+import { canMount, mount, dismount, effectiveLoad, currentRideLoad, isOverloaded, overloadedMounts } from "../src/engine/riding.js";
 import { itemTemplate } from "../src/data/catalog.js";
 
 let failures = 0;
@@ -98,6 +98,82 @@ function ridingState() {
   let s3 = mount(ridingState(), "wanderer", "horse").state;
   s3 = dismount(s3, "wanderer").state;
   ok(!s3.world.codex.characters.wanderer.ridingOn && s3.world.codex.characters.horse.riders.length === 0, "dismount clears rider + carrier links");
+}
+
+console.log("\n=== RIDING EDGE CASES ===");
+// Custom, tiny-number entities so capacities are easy to reason about. riding.js
+// only reads kind/rideCapacity/bodyWeight/riders/ridingOn/combatState.
+function customState() {
+  const mk = (id, rideCapacity, bodyWeight) => ({ id, kind: "mount", name: id, race: "x", worn: [], bodyWeight, rideCapacity, ridingOn: null, riders: [] });
+  const human = (id) => ({ id, kind: "companion", name: id, race: "human", worn: [], bodyWeight: 50, ridingOn: null, riders: [] });
+  const chars = {
+    wanderer: { id: "wanderer", kind: "player", name: "You", race: "human", worn: [], bodyWeight: 14, ridingOn: null, riders: [] },
+    big: mk("big", 100, 20),      // carrier, capacity 100
+    cartA: mk("cartA", 80, 10),   // light nested mounts
+    cartB: mk("cartB", 80, 10),
+    smol: mk("smol", 20, 5),      // tiny mount for the pack-boundary test
+    h1: human("h1"), h2: human("h2"),
+  };
+  return {
+    character: { inventory: { carried: [], coins: { copper: 0, silver: 0, gold: 0 } }, carryCapacityMax: 999 },
+    world: { codex: { characters: chars, items: {} } },
+    party: ["big", "cartA", "cartB", "smol", "h1", "h2"],
+  };
+}
+
+// ANCESTOR-CHAIN capacity: loading nested mounts can't overflow the carrier below.
+{
+  let s = customState();
+  s = mount(s, "cartA", "big").state;   // big bears 10
+  s = mount(s, "cartB", "big").state;   // big bears 20 (both empty carts fit)
+  ok(s.world.codex.characters.big.riders.length === 2, "two empty carts fit on the carrier (20 ≤ 100)");
+  s = mount(s, "h1", "cartA").state;    // +50 → big bears 70, cartA bears 60
+  ok(s.world.codex.characters.cartA.riders.includes("h1"), "a 50-weight rider fits cartA AND the carrier below it");
+  ok(approx(currentRideLoad(s.world.codex.characters.big, s), 70, 1), "carrier load tracks the nested rider (70)");
+  // cartB ALONE has room (80-10=70 ≥ 50), but big does not (100-70=30 < 50).
+  const blocked = canMount(s, "h2", "cartB");
+  ok(!blocked.ok, "ancestor check: a rider that fits the cart is REJECTED when the carrier below is full");
+  ok(/big/.test(blocked.reason || ""), "rejection names the overloaded carrier (big)");
+}
+
+// CHARACTER body fits, body + PACK does not.
+{
+  let s = customState();
+  ok(canMount(s, "wanderer", "smol").ok, "body 14 fits a 20-capacity mount");
+  s.character.inventory.carried = [{ itemId: "fodder", quantity: 2 }]; // +12 → 26 > 20
+  ok(!canMount(s, "wanderer", "smol").ok, "but body 14 + a 12-weight pack (26) does NOT fit (20)");
+  ok(approx(effectiveLoad(s.world.codex.characters.wanderer, s), 26, 1), "the pack counts toward the rider's effective load (26)");
+}
+
+// POST-MOUNT overload: loot picked up after mounting overloads the mount.
+{
+  let s = mount(ridingState(), "wanderer", "horse").state; // light pack, fits horse (150)
+  ok(!isOverloaded(s.world.codex.characters.horse, s), "a freshly-mounted horse is not overloaded");
+  s = { ...s, character: { ...s.character, inventory: { ...s.character.inventory, carried: [{ itemId: "livestock", quantity: 6 }] } } }; // +180
+  ok(isOverloaded(s.world.codex.characters.horse, s), "picking up 180 of loot overloads the horse the player rides");
+  ok(overloadedMounts(s).some((m) => m.id === "horse"), "overloadedMounts() flags the horse (gates flight in App.handleFly)");
+}
+
+// DEAD mounts/riders can't be seated.
+{
+  let s = ridingState();
+  s.world.codex.characters.horse.combatState = { status: "dead" };
+  ok(!canMount(s, "wanderer", "horse").ok, "a dead mount can't be ridden");
+  let s2 = ridingState();
+  s2.world.codex.characters.al.combatState = { status: "dead" };
+  ok(!canMount(s2, "al", "horse").ok, "a dead rider can't mount");
+}
+
+// RE-SEAT within the same chain isn't falsely double-counted.
+{
+  let s = ridingState();
+  s = mount(s, "horse", "dragon").state;     // horse (70) on dragon
+  s = mount(s, "wanderer", "horse").state;   // player on horse, which rides the dragon
+  // Moving the player straight onto the dragon is net-neutral for the dragon, so
+  // it must be allowed (probe-detach prevents a phantom double-count).
+  ok(canMount(s, "wanderer", "dragon").ok, "re-seating a nested rider onto its carrier isn't falsely blocked");
+  s = mount(s, "wanderer", "dragon").state;
+  ok(s.world.codex.characters.wanderer.ridingOn === "dragon" && !s.world.codex.characters.horse.riders.includes("wanderer"), "the re-seat moved the player and cleared the old seat");
 }
 
 console.log("\n=== MOUNTED COMBAT (mounts fight as allies) ===");

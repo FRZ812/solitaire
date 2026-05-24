@@ -36,7 +36,7 @@ import {
 import { knownTravelSpells } from "./data/travel-spells.js";
 import { condNames, hasCondition } from "./data/conditions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
-import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, dismountAllFrom } from "./engine/riding.js";
+import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, dismountAllFrom, isOverloaded } from "./engine/riding.js";
 import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
@@ -720,7 +720,8 @@ export function Solitaire() {
     // terrain it handles (a horse is no faster floundering through deep marsh).
     const groundMount = playerGroundMount(state);
     let mountMult = 1, mountNote = "";
-    if (groundMount?.moveProfile) {
+    // An overladen mount labours — it gives no speed (engine/riding.isOverloaded).
+    if (groundMount?.moveProfile && !isOverloaded(groundMount, state)) {
       const terr = groundMount.moveProfile.terrain;
       const legTerrains = new Set();
       for (let i = 1; i < legPath.length; i++) legTerrains.add(getTile(state, legPath[i].x, legPath[i].y).terrain);
@@ -813,6 +814,12 @@ export function Solitaire() {
       const n = flightMount.needs || {};
       if ((n.hunger ?? 100) <= MOUNT_FLIGHT_MIN_NEED || (n.sleep ?? 100) <= MOUNT_FLIGHT_MIN_NEED) {
         setState({ ...state, beats: [...state.beats, { id: `fly${Date.now()}`, type: "narration", content: `${flightMount.name} is too spent to fly — it must feed and rest before it can bear you aloft.` }] });
+        return;
+      }
+      // Loot piled on after mounting can push a mount past its ride capacity — it
+      // can't take wing until the load comes down (engine/riding.isOverloaded).
+      if (isOverloaded(flightMount, state)) {
+        setState({ ...state, beats: [...state.beats, { id: `fly${Date.now()}`, type: "narration", content: `${flightMount.name} is overladen — it can't get airborne until some weight is shed.` }] });
         return;
       }
     } else {
