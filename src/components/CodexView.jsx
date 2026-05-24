@@ -5,6 +5,7 @@ import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { GLOSSARY, GLOSSARY_CATEGORIES } from "../data/glossary.js";
 import { CONDITIONS } from "../data/conditions.js";
+import { hasCombatEffect } from "../engine/condition-combat.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { itemTemplate } from "../data/catalog.js";
 import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
@@ -606,7 +607,9 @@ function ConditionRow({ name, meta }) {
         </div>
         <span style={{ color: "rgba(215,167,111,0.6)", fontSize: "13px", flexShrink: 0 }}>{open ? "▾" : "▸"}</span>
       </div>
-      <div style={{ ...subtleMeta, marginTop: "6px", letterSpacing: "0.06em", textTransform: "none" }}>{conditionTags(meta)}</div>
+      <div style={{ ...subtleMeta, marginTop: "6px", letterSpacing: "0.06em", textTransform: "none" }}>
+        {conditionTags(meta)}{hasCombatEffect(name) ? " · ⚔ takes effect in battle" : ""}
+      </div>
       {open && (
         <div style={{ marginTop: "9px", display: "flex", flexDirection: "column", gap: "7px" }}>
           {meta.effect && (

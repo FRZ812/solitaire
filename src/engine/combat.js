@@ -25,6 +25,7 @@ import { effectiveAttributes, ratingFromXp, proficiencyName, weaponMasteryId, XP
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
 import { condNames, normalizeConditions } from "../data/conditions.js";
+import { seedConditionStatuses } from "./condition-combat.js";
 import { chooseAction } from "./combat-ai.js";
 import { DARK_ACC_PENALTY, DARK_FLEE_BONUS } from "./light.js";
 
@@ -171,6 +172,10 @@ export function initCombat(character, codex, enemies, opts = {}) {
   }
   // Bone-weary: an exhausted fighter is slower and less sure (heavy, not disabling).
   if (opts.weary) player.accuracy = Math.max(0, (player.accuracy || 0) - 15);
+  // Carry the player's standing buffs & debuffs into the fight as real combat
+  // statuses (Rallied → +damage, Cursed → no healing + extra damage taken, etc.).
+  // Done after armour/ward are set so Guarded/Warded can scale off them.
+  seedConditionStatuses(player, character.conditions);
 
   const foes = clone(enemies);
   foes.forEach((e, i) => {
