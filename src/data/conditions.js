@@ -28,6 +28,10 @@
 //   blocksHealing  — passive vitality regen is halted while this is on you.
 //   dotPerHour     — vitality lost per hour (Bleeding, Poison, disease…).
 //   regenPerHour   — bonus vitality healed per hour (recovery buffs).
+//   travelSpeedMult — multiplies map travel speed (Haste); engine/buffs.js applies
+//                     it as LESS TIME per distance, so it never speeds need drain.
+//   carryBonus / rideCapacityBonus — transient lifts to the bearer's carry cap and
+//                     the mount they ride (engine/buffs.js → attributes/riding).
 // DESCRIPTIVE fields (`tier`, `trigger`, `effect`) document the condition for the
 // codex; combat-only effects (accuracy/damage/stun…) are resolved by the combat
 // engine's status system and adjudicated in the fiction by the narrator.
@@ -246,10 +250,14 @@ export const CONDITIONS = {
     trigger: "a ward spell, a protective charm, a runic sigil",
     effect: "Raised ward — a strong buffer against magical damage.",
     desc: "A shimmer of protection turns aside the worst of hostile magic." },
-  "Hastened":  { polarity: "buff", tier: "very-rare", duration: 10,
+  "Hastened":  { polarity: "buff", tier: "very-rare", duration: 10, travelSpeedMult: 1.5,
     trigger: "a haste spell, an adrenal surge, a time-quickening",
-    effect: "Quickened — you act more often and dodge more readily.",
+    effect: "Quickened — you (and your mount) travel far faster, you act more often, and you dodge more readily. Speed only; it never tires you faster.",
     desc: "The world slows around you while you move at a blur." },
+  "Bear's Strength": { polarity: "buff", tier: "rare", duration: 120, carryBonus: 60, rideCapacityBonus: 80,
+    trigger: "a strength boon, a bestial enchantment, an ogre-might draught",
+    effect: "Beast-thewed — you haul far more weight, and the mount you ride bears a heavier load, until it fades.",
+    desc: "Your muscles swell with borrowed might; burdens feel like nothing." },
   "Empowered": { polarity: "buff", tier: "very-rare", duration: 60,
     trigger: "a power ritual, drawing on ley-lines, a font of magic",
     effect: "Magic surges — increased spell damage and penetration.",

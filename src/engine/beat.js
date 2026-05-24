@@ -19,6 +19,7 @@ import { spoilCarried } from "./spoilage.js";
 import { applyAttributeChanges, recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
 import { loadOf } from "./weight.js";
+import { buffCarryBonus, buffRideBonus } from "./buffs.js";
 import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
 import { MOUNTS, mountCodexEntry } from "../data/mounts.js";
 import { clampRel, MEMORY_CAP } from "./relationships.js";
@@ -269,6 +270,27 @@ export function applyBeat(state, beat, options = {}) {
       codex = { ...codex, characters: { ...codex.characters, ...cu.companions } };
     }
     upkeepLines.push(...cu.lines);
+  }
+
+  // Boon-conditions → engine seams. Derived every beat from the FINAL conditions
+  // (post-tick), so a strength buff lifts the player's carry cap and the mount they
+  // ride while it holds, and BOTH fall back the instant it lapses (graceful, no
+  // items dropped / no rider thrown — engine/weight + riding handle the overflow).
+  character.carryBonus = buffCarryBonus(character.conditions);
+  recomputeCarryCapacity(character);
+  character.overburdened = loadOf(codex.characters?.wanderer, character.inventory, codex.items) > (character.carryCapacityMax ?? Infinity);
+  {
+    const rideBonus = buffRideBonus(character.conditions);
+    const riddenId = codex.characters?.wanderer?.ridingOn || null;
+    const chars2 = { ...codex.characters };
+    let touched = false;
+    for (const id of (state.party || [])) {
+      const c = chars2[id];
+      if (!c || c.kind !== "mount") continue;
+      const want = id === riddenId ? rideBonus : 0; // buff bolsters only the mount you're on
+      if ((c.rideCapacityBonus || 0) !== want) { chars2[id] = { ...c, rideCapacityBonus: want }; touched = true; }
+    }
+    if (touched) codex = { ...codex, characters: chars2 };
   }
 
   // One compact upkeep note per beat: what was eaten/drunk, who's flagging, wounds.

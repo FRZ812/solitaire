@@ -13,6 +13,8 @@ import { COMPANIONS, companionCodexEntry } from "../src/data/companions.js";
 import { MOUNTS, mountCodexEntry } from "../src/data/mounts.js";
 import { carryCapacityFor, recomputeCarryCapacity, recomputeVitalityMax, recomputeResolveMax } from "../src/engine/attributes.js";
 import { itemWeight, loadOf, isOverCapacity } from "../src/engine/weight.js";
+import { buffTravelSpeedMult, buffCarryBonus, buffRideBonus, hastedGroundMinutes, hastedFlightHexes, hastedFlightMinutes } from "../src/engine/buffs.js";
+import { FLY_TRAVEL_HEXES, FLY_MIN_PER_HEX, MOUNT_FLIGHT_NEED_PER_HOUR } from "../src/config.js";
 import { canMount, mount, dismount, effectiveLoad, currentRideLoad, isOverloaded, overloadedMounts } from "../src/engine/riding.js";
 import { itemTemplate } from "../src/data/catalog.js";
 
@@ -205,6 +207,40 @@ console.log("\n=== TRANSIENT BUFFS (over standard while buffed, then it lapses) 
   ok(isOverloaded(s.world.codex.characters.smol, s), "when the ride buff lapses the mount is over capacity");
   ok(s.world.codex.characters.smol.riders.includes("h1"), "the rider is NOT auto-thrown — kept aboard, mount just flagged (gates flight)");
   ok(overloadedMounts(s).some((m) => m.id === "smol"), "overloadedMounts() flags it so App.handleFly refuses to launch");
+}
+
+console.log("\n=== SPEED BUFFS (haste) — faster, but NEVER faster drain ===");
+{
+  const mult = buffTravelSpeedMult([{ name: "Hastened", remaining: 60 }]);
+  ok(mult > 1, `Hastened gives a travel speed multiplier (${mult})`);
+  ok(buffTravelSpeedMult([]) === 1, "no buff = no speed change");
+  ok(buffCarryBonus([{ name: "Bear's Strength" }]) === 60, "Bear's Strength wires +60 carry");
+  ok(buffRideBonus([{ name: "Bear's Strength" }]) === 80, "Bear's Strength wires +80 ride capacity");
+
+  // GROUND: the same leg takes fewer minutes → less need drain (drain is time-based).
+  const baseGround = 60;
+  const fastGround = hastedGroundMinutes(baseGround, mult);
+  ok(fastGround < baseGround, `hasted ground leg is quicker (${fastGround} < ${baseGround} min) → less drain, not more`);
+
+  // FLIGHT: reaches further per leg, and crucially the minutes-per-hex (which
+  // drives BOTH need drain and mount stamina) DROPS — so speed never costs upkeep.
+  const baseHexes = FLY_TRAVEL_HEXES;
+  const fastHexes = hastedFlightHexes(baseHexes, mult);
+  ok(fastHexes > baseHexes, `hasted flight reaches further per leg (${fastHexes} > ${baseHexes} hexes)`);
+  const fastMins = hastedFlightMinutes(fastHexes * FLY_MIN_PER_HEX, mult);
+  const basePerHex = FLY_MIN_PER_HEX;
+  const fastPerHex = fastMins / fastHexes;
+  ok(fastPerHex < basePerHex, `flight time per hex drops (${fastPerHex.toFixed(2)} < ${basePerHex} min/hex) — never drains faster`);
+  const staminaBase = (basePerHex / 60) * MOUNT_FLIGHT_NEED_PER_HOUR;
+  const staminaFast = (fastPerHex / 60) * MOUNT_FLIGHT_NEED_PER_HOUR;
+  ok(staminaFast < staminaBase, `mount stamina per hex drops under haste (${staminaFast.toFixed(2)} < ${staminaBase.toFixed(2)})`);
+  ok(fastMins <= 65, `a full hasted flight leg is still ~one hour aloft (${fastMins} min), not longer — flat per-leg drain`);
+
+  // For a fixed journey, total time (= total drain) can only go DOWN under haste.
+  const tripHexes = 30;
+  const baseTrip = tripHexes * FLY_MIN_PER_HEX;
+  const fastTrip = tripHexes * fastPerHex;
+  ok(fastTrip < baseTrip, `a 30-hex flight costs less total time/drain hasted (${Math.round(fastTrip)} < ${baseTrip} min)`);
 }
 
 console.log("\n=== MOUNTED COMBAT (mounts fight as allies) ===");

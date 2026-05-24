@@ -10,11 +10,12 @@ import { deriveCombatStats } from "../engine/combat-stats.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
+import { knownBuffSpells } from "../data/buff-spells.js";
 import { ArsenalView } from "./ArsenalView.jsx";
 import { AttributeDetail } from "./AttributeDetail.jsx";
 import { InfoButton, InfoModal } from "./InfoTip.jsx";
 import { glossaryById, conditionInfo } from "../data/glossary.js";
-import { condName } from "../data/conditions.js";
+import { condName, condNames } from "../data/conditions.js";
 import { lightStatus } from "../engine/light.js";
 import { canHeal } from "../engine/healing.js";
 
@@ -78,7 +79,7 @@ function Divider() {
   );
 }
 
-export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onExtinguish, onInventory }) {
+export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onExtinguish, onInventory, onCastBuff }) {
   const [arsenalOpen, setArsenalOpen] = useState(false);
   const [openAttr, setOpenAttr] = useState(null); // attribute key whose threshold detail is expanded
   const [info, setInfo] = useState(null); // glossary explanation popover { term, text, extra }
@@ -333,6 +334,39 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
             Open Inventory
           </button>
         </div>
+
+        {/* Boons — castable self-buffs (Haste, Bear's Strength). Spend resolve to
+            lay a timed boon that speeds travel / lifts carrying limits. */}
+        {(() => {
+          const boons = knownBuffSpells(state.character);
+          if (!boons.length) return null;
+          const active = new Set(condNames(state.character.conditions));
+          return (
+            <div>
+              <SectionHeader>Boons</SectionHeader>
+              <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "8px" }}>
+                {boons.map((sp) => {
+                  const on = active.has(sp.applies.condition);
+                  const afford = (state.character.resolve ?? 0) >= sp.resolveCost;
+                  return (
+                    <div key={sp.id} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "15px", color: colors.parchmentLight }}>{sp.name}{on && <span style={{ ...metaStyle, fontSize: "8px", color: "#a7f3d0", marginLeft: "6px" }}>active</span>}</div>
+                        <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.6)", lineHeight: 1.35 }}>{sp.description}</div>
+                      </div>
+                      <button onClick={() => (afford ? onCastBuff?.(sp.id) : null)} disabled={!afford} style={{
+                        flexShrink: 0, padding: "7px 14px", borderRadius: radius.pill, border: "none",
+                        backgroundColor: afford ? colors.gold : "rgba(215,167,111,0.1)",
+                        color: afford ? colors.ink : "rgba(215,167,111,0.4)",
+                        fontSize: "12px", fontWeight: 800, cursor: afford ? "pointer" : "not-allowed", fontFamily: "inherit",
+                      }}>{on ? "Renew" : "Cast"} · {sp.resolveCost}</button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {showGuestNag && <GuestNagSection onLinkEmail={onLinkEmail} />}
 

@@ -560,9 +560,24 @@ griffon (epic), wyvern (legendary), drake (mythical), dragon (divine).
   itself the moment weight comes down or the buff returns. Never write
   `carryCapacityMax` directly (the recompute would wipe it).
 
+- **Boon spells & haste.** Buffs are timed conditions (`data/conditions.js`) laid
+  by **boon spells** (`data/buff-spells.js` — `haste`, `bear-strength`), learned
+  like travel spells (folded into `getAbilityDef`, flagged `noncombat`) and cast
+  from the character sheet (`App.handleCastBuff` spends Resolve, lays the timed
+  condition). A condition's engine-wired fields (`travelSpeedMult`, `carryBonus`,
+  `rideCapacityBonus`) drive effects via `engine/buffs.js`, which `beat.js` reads
+  each beat — so a strength boon lifts the player's carry cap and the **ridden**
+  mount's `rideCapacityBonus`, and both fall back gracefully on expiry.
+  - **Haste covers mounts** (ground + flight) and is **drain-safe by construction**:
+    needs and mount-flight stamina are purely *time*-based, so haste only ever
+    shortens time-per-distance — ground legs take fewer minutes, flight legs reach
+    further within ~the same hour (`hastedGroundMinutes`/`hastedFlightHexes`/
+    `hastedFlightMinutes`). A faster journey therefore costs the same upkeep or
+    less, never more.
+
 Verify with `node scripts/mount-weight-sim.mjs` (weight math, nesting + ancestor
-capacity, pack/overload edge cases, transient-buff expiry, mounted combat, flying
-gate) plus the build below.
+capacity, pack/overload edge cases, transient-buff expiry, speed-buff drain-safety,
+mounted combat, flying gate) plus the build below.
 
 ## Quick smoke test
 

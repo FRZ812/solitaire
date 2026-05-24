@@ -34,7 +34,9 @@ import {
   findPath, pathMinutes, isSeen, flightPath, flightMinutes,
 } from "./engine/world.js";
 import { knownTravelSpells } from "./data/travel-spells.js";
-import { condNames, hasCondition } from "./data/conditions.js";
+import { knownBuffSpells } from "./data/buff-spells.js";
+import { buffTravelSpeedMult, hastedGroundMinutes, hastedFlightHexes, hastedFlightMinutes } from "./engine/buffs.js";
+import { condNames, hasCondition, normalizeConditions } from "./data/conditions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
 import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, dismountAllFrom, isOverloaded } from "./engine/riding.js";
 import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
@@ -731,7 +733,12 @@ export function Solitaire() {
     }
     // Overburdened (past your carry cap) drags every leg out (engine/weight.js).
     const overburdenedMult = state.character.overburdened ? OVERBURDENED_TRAVEL_MULT : 1;
-    const legMins = Math.max(1, Math.round(pathMinutes(state, legPath) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1) * wearyMult * mountMult * overburdenedMult));
+    // Haste (and other speed boons) shorten the leg — fewer minutes for the same
+    // ground, so LESS need drain, never more (engine/buffs.js).
+    const speedMult = buffTravelSpeedMult(state.character.conditions);
+    const rawLegMins = Math.round(pathMinutes(state, legPath) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1) * wearyMult * mountMult * overburdenedMult);
+    const legMins = hastedGroundMinutes(rawLegMins, speedMult);
+    if (speedMult > 1) mountNote = mountNote ? `${mountNote}, hastened` : " hastened";
     const hexes = legPath.length - 1;
 
     // Terrain mix of this leg, for the narrator.
@@ -833,7 +840,11 @@ export function Solitaire() {
       }
     }
     const cur = state.world.currentTile;
-    let legPath = flightPath(cur, dest, FLY_TRAVEL_HEXES);
+    // Haste lets a flight leg REACH FURTHER within ~the same hour aloft — more hexes
+    // per leg, with minutes scaled back by the same factor, so the per-leg stamina/
+    // need toll stays flat while distance grows (engine/buffs.js — never drains faster).
+    const speedMult = buffTravelSpeedMult(state.character.conditions);
+    let legPath = flightPath(cur, dest, hastedFlightHexes(FLY_TRAVEL_HEXES, speedMult));
     if (legPath.length < 2) return;
     // The only thing that can reach a flier is another flier, and only over wild,
     // dangerous country — a hit forces the party down where it strikes.
@@ -846,7 +857,7 @@ export function Solitaire() {
     const destTile = getTile(state, dest.x, dest.y);
     const toName = destTile.poi?.name || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
     const legName = arrived ? toName : (legTile.poi?.name || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
-    const mins = flightMinutes(legPath);
+    const mins = hastedFlightMinutes(flightMinutes(legPath), speedMult);
     setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
 
     // Pay the flight. By MOUNT: the beast spends its OWN stamina (hunger + sleep),
@@ -917,6 +928,25 @@ export function Solitaire() {
     const msg = `${opener}${modeNote}${townNote} ${endNote}${costNote} Use minutes_passed = ${mins}.`;
     const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: aerial ? aerial.encounter : null, mode: "fly", mountId: viaMount ? flightMount.id : null, intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
     await finishTravel(stateWithPlayer, msg, travel);
+  }
+
+  // Cast a self-BOON (Haste, Bear's Strength): spend resolve and lay its timed
+  // condition (data/conditions.js), refreshing the timer if already active. The
+  // condition's engine-wired fields then drive travel speed / carry limits (and
+  // the mount you ride) until it lapses — see engine/buffs.js + beat.js.
+  function handleCastBuff(spellId) {
+    if (loading) return;
+    const spell = knownBuffSpells(state.character).find((s) => s.id === spellId);
+    if (!spell) return;
+    if ((state.character.resolve ?? 0) < spell.resolveCost) {
+      setState({ ...state, beats: [...state.beats, { id: `buff${Date.now()}`, type: "narration", content: `You haven't the resolve to work ${spell.name}.` }] });
+      return;
+    }
+    const name = spell.applies.condition;
+    const conds = normalizeConditions(state.character.conditions).filter((c) => c.name !== name);
+    conds.push({ name, remaining: spell.applies.minutes });
+    const ch = { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - spell.resolveCost), conditions: conds };
+    setState({ ...state, character: ch, beats: [...state.beats, { id: `buff${Date.now()}`, type: "narration", content: `You work ${spell.name}. ${spell.description}` }] });
   }
 
   // Teleport (Dimension Door / Gate): step straight to the target — no path, no
@@ -1851,6 +1881,7 @@ export function Solitaire() {
           onClose={() => setMenuOpen(false)}
           onExtinguish={handleExtinguish}
           onInventory={() => { setMenuOpen(false); setInventoryOpen(true); }}
+          onCastBuff={handleCastBuff}
           onReset={handleResetCampaign}
           onOpenCodex={() => { setMenuOpen(false); setCodexOpen(true); }}
           onBackToCampaigns={handleBackToCampaigns}
