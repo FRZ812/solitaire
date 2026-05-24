@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { Icon } from "./Icon.jsx";
 import { iconButtonStyle } from "./primitives.jsx";
-import { MAP_VIEW_RADIUS } from "../config.js";
+import { MAP_VIEW_RADIUS, MAX_TRAVEL_HEXES } from "../config.js";
 import { TERRAINS } from "../data/terrains.js";
 import { getRumored, RUMORED } from "../data/rumored.js";
 import { FABLED, FABLED_BY_COORD } from "../data/fabled.js";
@@ -420,8 +420,13 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
   const curTile = getTile(state, cur.x, cur.y);
   const path = (selected && selSeen && !isSelf) ? findPath(state, cur, selected) : null;
   const canTravel = !!path && path.length > 1 && !loading;
-  const totalMins = canTravel ? pathMinutes(state, path) : 0;
-  const riskPct = canTravel ? pathRiskPercent(state, path) : 0;
+  // A single action covers at most one leg; time/risk shown are for that leg.
+  const legPath = path ? path.slice(0, Math.min(path.length, MAX_TRAVEL_HEXES + 1)) : null;
+  const totalHexes = path ? path.length - 1 : 0;
+  const legHexes = legPath ? legPath.length - 1 : 0;
+  const multiLeg = totalHexes > legHexes;
+  const totalMins = canTravel ? pathMinutes(state, legPath) : 0;
+  const riskPct = canTravel ? pathRiskPercent(state, legPath) : 0;
 
   let bottomLabel = "Tap a tile to inspect. Drag to pan, pinch or wheel to zoom.";
   let bottomDetail = currentLocationName(state) + " · You are here.";
@@ -886,7 +891,8 @@ export function MapView({ state, onClose, onTravel, onSeekCombat, loading }) {
             selRumored && !selSeen ? `Too distant · ${hexDistance(cur, selected)} hexes by rumor` :
             !selSeen ? "Beyond vision" :
             !canTravel ? "No passable path" :
-            `Travel · ${path.length - 1} hex${path.length - 1 === 1 ? "" : "es"} · ~${totalMins} min · risk ${riskPct}%`}
+            multiLeg ? `Travel · first ${legHexes} of ${totalHexes} hexes · ~${totalMins} min · risk ${riskPct}%`
+            : `Travel · ${legHexes} hex${legHexes === 1 ? "" : "es"} · ~${totalMins} min · risk ${riskPct}%`}
         </button>
       </div>
     </div>

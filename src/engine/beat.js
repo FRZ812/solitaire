@@ -6,6 +6,7 @@ import {
   mergeConditions, getNeedAlertText,
 } from "./needs.js";
 import { passiveHealVitality } from "./healing.js";
+import { autoConsume, woundTick, companionUpkeep } from "./upkeep.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
 import { refillVessels } from "./consumables.js";
@@ -192,12 +193,23 @@ export function applyBeat(state, beat, options = {}) {
   const wp = activeWorldPassives(state.character, state.world.codex);
 
   // Needs deplete by time, then narrator-driven changes apply, then conditions auto-update.
+  const decayMult = Math.max(0.2, 1 - (wp.needDecayMult || 0));
+  const minutes = beat.minutes_passed || 0;
+  const upkeepLines = [];
   const prevNeedConds = getNeedConditions(state.character.needs);
-  const drained = depleteNeeds(state.character.needs, beat.minutes_passed || 0, Math.max(0.2, 1 - (wp.needDecayMult || 0)));
-  const newNeeds = applyNeedsChanges(drained, beat.needs_changes);
-  character.needs = newNeeds;
+  const drained = depleteNeeds(state.character.needs, minutes, decayMult);
+  character.needs = applyNeedsChanges(drained, beat.needs_changes);
 
-  const needsConds = getNeedConditions(newNeeds);
+  // As time passes the party eats and drinks from the shared pack to hold off
+  // hunger/thirst — done BEFORE conditions so a fed character isn't marked Hungry.
+  if (minutes > 0) {
+    const fed = autoConsume(character.inventory, character.needs, codex.items, "");
+    character.inventory = fed.inventory;
+    character.needs = fed.needs;
+    upkeepLines.push(...fed.lines);
+  }
+
+  const needsConds = getNeedConditions(character.needs);
   character.conditions = mergeConditions(beat.new_conditions, needsConds, state.character.conditions);
 
   // Need alerts fire only on crossing INTO a worse state.
@@ -229,6 +241,26 @@ export function applyBeat(state, beat, options = {}) {
     character.vitality, character.vitalityMax,
     character.conditions, beat.minutes_passed || 0, wp.healPerHour || 0
   );
+
+  // Wounds bite as the clock turns — Bleeding/Poisoned cost vitality until treated.
+  if (minutes > 0) {
+    const wt = woundTick(character.vitality, character.conditions, minutes);
+    character.vitality = wt.vitality;
+    upkeepLines.push(...wt.lines);
+  }
+
+  // Companions travel the same clock: they hunger, thirst, tire, and call for rest.
+  if (minutes > 0 && (state.party || []).length) {
+    const cu = companionUpkeep(state.party, codex.characters, character.inventory, minutes, decayMult, codex.items);
+    character.inventory = cu.inventory;
+    if (Object.keys(cu.companions).length) {
+      codex = { ...codex, characters: { ...codex.characters, ...cu.companions } };
+    }
+    upkeepLines.push(...cu.lines);
+  }
+
+  // One compact upkeep note per beat: what was eaten/drunk, who's flagging, wounds.
+  if (upkeepLines.length) newBeats.push({ id: `upkeep${Date.now()}`, type: "upkeep", lines: upkeepLines });
 
   let world = { ...state.world, codex };
   if (options.travelToCoords) {

@@ -294,6 +294,8 @@ The MC has needs that DEPLETE OVER TIME automatically by the engine:
 
 When the player eats, drinks, rests, or sleeps, output needs_changes (positive deltas) to restore them.
 
+ENGINE-MANAGED SURVIVAL (do NOT re-tally — flavor only): as time passes the engine already (a) AUTO-EATS and AUTO-DRINKS from the shared pack to hold off hunger/thirst — so don't narrate the party starving while they still carry rations, and don't consume their food yourself; (b) ticks Bleeding/Poisoned for vitality each leg until a remedy clears them; (c) runs the SAME needs for every COMPANION, who will tire and call for rest. Low sleep brings Tired then Exhausted — exhausted folk travel slower, fight worse, and cannot heal until they rest (bedroll). You may VOICE all this (a companion grumbling for a halt, a wound throbbing, the relief of a hot meal) but the numbers are the engine's.
+
 STANDARD CONSUMPTION ANCHORS
 - Hearty meal (10cp): hunger +40, thirst +10
 - Simple meal (5cp): hunger +25

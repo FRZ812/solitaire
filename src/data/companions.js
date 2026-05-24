@@ -98,6 +98,9 @@ export function companionCodexEntry(tmpl) {
     appearance: tmpl.appearance, base_appearance: tmpl.base_appearance,
     description: tmpl.description, attributes: tmpl.attributes,
     worn: [...(tmpl.worn || [])], knows: [...(tmpl.knows || [])],
+    // Companions hunger, thirst, and tire like the player — depleted as the party
+    // travels, topped up from the shared pack, surfaced as rest prompts (engine/upkeep.js).
+    needs: { hunger: 70, thirst: 75, sleep: 70 },
     // A companion's full kit — set but not shown; the player can ASK and the
     // narrator answers from this (no vague hand-waving), and combat uses it.
     abilities: [...(tmpl.abilities || [])],

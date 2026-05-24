@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 
-import { STORAGE_KEY, originLabel, SIGHT_RADIUS } from "./config.js";
+import { STORAGE_KEY, originLabel, SIGHT_RADIUS, MAX_TRAVEL_HEXES } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
 import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 
@@ -671,83 +671,87 @@ export function Solitaire() {
   async function handleTravel(dest, providedPath) {
     if (loading) return;
     const cur = state.world.currentTile;
-    const path = providedPath || findPath(state, cur, dest);
-    if (!path || path.length < 2) return;
-    const fromTile = getTile(state, cur.x, cur.y);
-    const toTile = getTile(state, dest.x, dest.y);
+    const fullPath = providedPath || findPath(state, cur, dest);
+    if (!fullPath || fullPath.length < 2) return;
     setMapOpen(false);
     setReceipts({ tileKey: null, items: {} }); // leaving the scene ends refunds
     setError(null);
     setLoading(true);
     closeBeatMenu();
+    const fromTile = getTile(state, cur.x, cur.y);
+    const destTileFull = getTile(state, dest.x, dest.y);
     const fromName = currentLocationName(state);
-    const toName = toTile.poi?.name || `${TERRAINS[toTile.terrain]?.label} (${dest.x},${dest.y})`;
-    const isHidden = toTile.poi?.type === "hidden";
+    const toName = destTileFull.poi?.name || `${TERRAINS[destTileFull.terrain]?.label} (${dest.x},${dest.y})`;
+    const destIsHidden = destTileFull.poi?.type === "hidden";
+
+    // A single travel action covers at most MAX_TRAVEL_HEXES toward the
+    // destination; a rolled encounter HALTS the party at its tile. Either way the
+    // party stops short of a far destination — no skipping the world in one tap.
+    let legPath = fullPath.slice(0, Math.min(fullPath.length, MAX_TRAVEL_HEXES + 1));
+    const pathEnc = rollPathEncounter(state, legPath);
+    if (pathEnc) legPath = legPath.slice(0, pathEnc.atIndex + 1);
+    const legEnd = legPath[legPath.length - 1];
+    const arrived = legEnd.x === dest.x && legEnd.y === dest.y;
+    const legTile = getTile(state, legEnd.x, legEnd.y);
+    const legName = arrived ? toName : (legTile.poi?.name || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
+    const isHidden = arrived && destIsHidden;
+
     const travelWp = activeWorldPassives(state.character, state.world.codex);
-    // Picking your way through the dark without a lit torch is slower going.
+    // Slower going in the dark without light, and slower still when worn out.
     const darkTravel = isNight(state.time) && !isLit(state) && !state.character?.darkvision;
-    const totalMins = Math.max(1, Math.round(pathMinutes(state, path) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1)));
-    const hexes = path.length - 1;
+    const conds = state.character.conditions || [];
+    const wearyMult = conds.includes("Exhausted") ? 1.5 : conds.includes("Tired") ? 1.15 : 1;
+    const legMins = Math.max(1, Math.round(pathMinutes(state, legPath) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1) * wearyMult));
+    const hexes = legPath.length - 1;
 
-    // Summarize the route's terrain mix for the narrator.
+    // Terrain mix of this leg, for the narrator.
     const terrainCounts = {};
-    for (let i = 1; i < path.length; i++) {
-      const tile = getTile(state, path[i].x, path[i].y);
-      terrainCounts[tile.terrain] = (terrainCounts[tile.terrain] || 0) + 1;
+    for (let i = 1; i < legPath.length; i++) {
+      const t = getTile(state, legPath[i].x, legPath[i].y).terrain;
+      terrainCounts[t] = (terrainCounts[t] || 0) + 1;
     }
-    const terrainSummary = Object.entries(terrainCounts)
-      .map(([t, n]) => `${TERRAINS[t]?.label || t} ×${n}`)
-      .join(", ");
+    const terrainSummary = Object.entries(terrainCounts).map(([t, n]) => `${TERRAINS[t]?.label || t} ×${n}`).join(", ");
+    const routeNote = hexes > 1 ? ` Route crosses: ${terrainSummary}.` : "";
 
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Travel from ${fromName} to ${toName}.` };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Travel from ${fromName} ${arrived ? "to" : "toward"} ${toName}.` };
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
 
-    // One encounter roll for the whole journey (Phase 3 decision 1a).
-    const pathEnc = isHidden ? null : rollPathEncounter(state, path);
-
     const destDescription = isHidden
       ? "HIDDEN — generate a random event appropriate to the terrain. Set tile_discovery."
-      : toTile.poi
-        ? `known ${toTile.poi.type} (${toTile.poi.name})`
-        : "open wilderness";
+      : destTileFull.poi ? `known ${destTileFull.poi.type} (${destTileFull.poi.name})` : "open wilderness";
 
     let travelMsg;
-    if (hexes === 1) {
-      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${toName} (${TERRAINS[toTile.terrain]?.label}). Estimated time: ${totalMins} minutes. Destination type: ${destDescription}. Narrate journey + arrival in one beat. Use minutes_passed = ${totalMins}.`;
+    if (arrived) {
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${legName} (${TERRAINS[legTile.terrain]?.label}). ${hexes} hex(es), ${legMins} min.${routeNote} Destination: ${destDescription}. Narrate the journey and ARRIVAL in one beat. Use minutes_passed = ${legMins}.`;
     } else {
-      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${toName} (${TERRAINS[toTile.terrain]?.label}). Total: ${hexes} hexes, ${totalMins} minutes. Route crosses: ${terrainSummary}. Destination type: ${destDescription}. Narrate the whole journey in a single beat — brief sensory passes through each terrain, then arrival. Use minutes_passed = ${totalMins}.`;
+      const why = pathEnc ? "where what follows stops you" : "as far as you press for now — the rest of the way still lies ahead";
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) toward ${toName}, getting as far as ${legName} (${TERRAINS[legTile.terrain]?.label}) — ${hexes} hex(es), ${legMins} min,${routeNote} ${why}. Narrate the journey ONLY up to ${legName} and STOP there — do NOT arrive at ${toName} (it is still ${fullPath.length - legPath.length} hex(es) on). Use minutes_passed = ${legMins}.`;
     }
 
     let encounterLine = "";
     if (pathEnc) {
-      const encTile = getTile(state, pathEnc.atTile.x, pathEnc.atTile.y);
-      const encTerrainLabel = TERRAINS[encTile.terrain]?.label?.toLowerCase() || "wilderness";
-      const placement = hexes === 1
-        ? "during the journey or arrival"
-        : `partway along, at a ${encTerrainLabel} stretch`;
-      encounterLine = `\n\n[ENCOUNTER] kind: ${pathEnc.encounter.kind}; posture: ${pathEnc.encounter.posture}; flavor: "${pathEnc.encounter.desc}". Weave this into the journey ${placement}.`;
+      encounterLine = `\n\n[ENCOUNTER] kind: ${pathEnc.encounter.kind}; posture: ${pathEnc.encounter.posture}; flavor: "${pathEnc.encounter.desc}". This is what halts the party at ${legName} — weave it in as they reach there.`;
     }
-
     const fullMsg = travelMsg + encounterLine;
 
-    // Everything needed to reproduce this journey if the player later rewrites it,
-    // and to undo it cleanly on a rewind: the route (sight), the destination
-    // (arrival + vista), and the rolled encounter (re-offer a fight). Recorded
-    // with the turn so travel moments are steerable like any other.
+    // Recorded with the turn so a rewrite/rewind reproduces this exact leg: the
+    // route (sight), where the party actually LANDS (leg end, not the far dest),
+    // and the rolled encounter. intendedDest remembers where they were bound.
     const travel = {
-      fromName, toName,
-      dest: { x: dest.x, y: dest.y },
-      path: path.map((p) => ({ x: p.x, y: p.y })),
-      totalMins,
+      fromName, toName: legName,
+      dest: { x: legEnd.x, y: legEnd.y },
+      path: legPath.map((p) => ({ x: p.x, y: p.y })),
+      totalMins: legMins,
       encounter: pathEnc ? pathEnc.encounter : null,
+      intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     };
 
     try {
       const beat = await callNarrator(stateWithPlayer, fullMsg);
       const next = applyTravelArrival(stateWithPlayer, beat, travel);
       setState(recordTurn(stateWithPlayer, fullMsg, next, { travel }));
-      // A hostile encounter along the way offers a fight once the player lands.
+      // A hostile encounter halts the party at its tile and offers the fight there.
       if (travel.encounter && travel.encounter.posture === "hostile") {
         setPendingCombat(travel.encounter);
       }
@@ -1178,6 +1182,7 @@ export function Solitaire() {
       coinBonus: wp.coinBonus || 0,
       environment: generateEnvironment(terrain),
       dark: inTheDark(st),
+      weary: (st.character.conditions || []).includes("Exhausted"),
       allies,
       ...extraOpts,
     }));

@@ -168,6 +168,8 @@ export function initCombat(character, codex, enemies, opts = {}) {
     player.darkPenalty = DARK_ACC_PENALTY;
     for (const a of allies) a.darkPenalty = DARK_ACC_PENALTY;
   }
+  // Bone-weary: an exhausted fighter is slower and less sure (heavy, not disabling).
+  if (opts.weary) player.accuracy = Math.max(0, (player.accuracy || 0) - 15);
 
   const foes = clone(enemies);
   foes.forEach((e, i) => {
