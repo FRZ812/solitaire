@@ -59,7 +59,7 @@ export const CHARACTER_TEMPLATES = [
     story: "Raised among humans who never let him forget what he was, Karzog answered their fear with the fury they expected — then walked out and never looked back. The rage is honest, at least; it hides nothing and asks nothing. He is hunting a purpose big enough to swing an axe at.",
     highlights: ["Body", "Vigor"],
     setup: {
-      name: "Karzog",
+      name: "Karzog Bloodtusk",
       profession: "reaver",
       race: "half-orc", subrace: null, origin: "half-orc",
       age: "late twenties", attractiveness: "fearsome",
@@ -82,7 +82,7 @@ export const CHARACTER_TEMPLATES = [
     story: "Faelar has walked the green marches alone since the village that raised him burned. He speaks little and misses nothing, putting an arrow through trouble before it knows he is there. He follows rumours of the ones who lit that fire — eastward, always eastward.",
     highlights: ["Reflex", "Wit"],
     setup: {
-      name: "Faelar",
+      name: "Faelar Thornwood",
       profession: "ranger",
       race: "elf", subrace: "wood", origin: "elf",
       age: "ageless, looks thirty", attractiveness: "keen and fair",
@@ -105,7 +105,7 @@ export const CHARACTER_TEMPLATES = [
     story: "Renjiro learned the trade in the silk-and-shadow courts of the eastern empires, where a quick blade and quicker feet kept him breathing. He owes a debt to a house that does not forgive, and the only coin that pays it is the kind of work no one admits to hiring. Trust is a luxury he sold long ago.",
     highlights: ["Reflex", "Body"],
     setup: {
-      name: "Renjiro",
+      name: "Kazan Renjiro",
       profession: "assassin",
       race: "human", subrace: null, origin: "east",
       age: "mid twenties", attractiveness: "coldly handsome",
@@ -128,7 +128,7 @@ export const CHARACTER_TEMPLATES = [
     story: "Turned away from the Glass Spire for asking the wrong questions, Ysolde taught herself the Art from stolen folios and singed fingers. She hoards knowledge the way misers hoard gold and treats every locked door as a personal insult. Somewhere out there is the book that got her expelled — and she means to read it.",
     highlights: ["Mind", "Wit"],
     setup: {
-      name: "Ysolde",
+      name: "Ysolde Varen",
       profession: "hedge-mage",
       race: "human", subrace: null, origin: "central",
       age: "late twenties", attractiveness: "sharp-featured",
@@ -151,7 +151,7 @@ export const CHARACTER_TEMPLATES = [
     story: "Amara left her order over a mercy they called heresy, and now carries her faith on the road instead of behind an altar. Her mace is for the things that prey on the helpless; her hands are for everyone else. She is certain her god still listens — most days.",
     highlights: ["Presence", "Mind"],
     setup: {
-      name: "Amara",
+      name: "Amara Zafari",
       profession: "priest",
       race: "human", subrace: null, origin: "south",
       age: "late thirties", attractiveness: "kind-faced",

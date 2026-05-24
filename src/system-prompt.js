@@ -381,6 +381,20 @@ CENTRAL — the Vale where the player begins, mixed and trade-touched
 
 A northerner in Crowsmoor stands out — described as foreign, towering, unmistakable. A central peddler is just "another peddler" to the eye. Half-races blend their other parent's features with whichever cultural-human side they grew up in. Non-human races have their own appearance traits independent of the cardinal cultures — record those in the race's codex entry.
 
+NAMING — a name MUST fit the bearer's culture or kindred. Do NOT default to bland, modern, or generic names, and do NOT invent a naming style outside the conventions below. A name the player did not give you must be GENERATED from the speaker's origin/kindred; keep invented detail to only what the scene needs.
+  Humans by origin:
+  - NORTH: hard Norse/Germanic sounds, deed- or kin-bynames; patronymics common (Sigvard Helgason, Thora Wolfsdottir, Bjorn Ironhand).
+  - EAST: ancient-empire names, the CLAN/family name placed FIRST then the given, soft flowing syllables and honorifics (Kazan Renjiro, Sorin Meilin, House Tian).
+  - SOUTH: warm-coast/savannah names, open vowels, a lineage or homeland byname (Amara Zafari, Keba Nuru, Imani of the Reed-Coast).
+  - WEST: plain frontier given names with rugged surnames (Bram Coltaine, Jess Harrow, Cole Vance).
+  - CENTRAL: the mixed Vale — ordinary trade-realm names, any blend, usually First + a simple surname (Ysolde Varen, Tom Aldermere).
+  Non-human kindreds:
+  - ELVES: melodic multi-syllable given names + a nature/sky surname, ancient and unhurried (Faelar Thornwood, Aelryn Moonwhisper). Drow lean darker (Vaerith, Zedras).
+  - DWARVES: hard consonants + a clan/stone/forge surname (Durin Stonehand, Bruna Coalbeard).
+  - ORCS & HALF-ORCS: guttural given name + a tusk/blood/deed epithet (Karzog Bloodtusk, Gruul Skullsplit); a half-orc raised among humans may carry a human name uneasily.
+  - GOBLINS, DRAKEBORN, DEMONBORN, VAMPIRES, FAE, etc.: render each from its own kind's sound and custom — never a bland human name; drakeborn and demonborn often bear harsh draconic/infernal syllables, vampires old aristocratic names, the fae names that unsettle.
+  Prefer full names (given + family/clan/epithet) for anyone of consequence; give only a given name or byname to the fleeting and low.
+
 CHARACTER DISCOVERY — REQUIRED FIELDS
 Every new NPC entry MUST include:
 - name, race, profession (if known), description

@@ -50,7 +50,7 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
           <Icon name={tmpl.icon} size={22} color={colors.gold} strokeWidth={1.8} />
           <h1 style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "28px", color: colors.parchmentLight, margin: 0 }}>{finalName}</h1>
         </div>
-        <div style={{ fontSize: "12px", color: "rgba(215,167,111,0.85)", marginBottom: "14px" }}>{metaLine(s)} · {tmpl.label}</div>
+        <div style={{ fontSize: "12px", color: "rgba(215,167,111,0.85)", marginBottom: "12px" }}>{metaLine(s)} · {tmpl.label} · {tmpl.concept}</div>
 
         <div style={{ fontSize: "13px", color: "rgba(237,228,208,0.82)", lineHeight: 1.55, fontStyle: "italic", marginBottom: "16px" }}>{s.story}</div>
 
@@ -172,26 +172,23 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           {CHARACTER_TEMPLATES.map((t) => (
             <button key={t.id} onClick={() => setSelected(t)} disabled={busy} style={{
-              display: "flex", flexDirection: "column", padding: "14px", borderRadius: radius.panelCompact, textAlign: "left",
+              display: "flex", alignItems: "center", gap: "11px", padding: "13px 14px", borderRadius: radius.panelCompact, textAlign: "left", width: "100%",
               backgroundColor: "rgba(20,29,29,0.55)", border: `1px solid rgba(215,167,111,0.22)`, cursor: busy ? "default" : "pointer", fontFamily: "inherit",
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "9px", marginBottom: "6px" }}>
-                <div style={{ width: "32px", height: "32px", borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(215,167,111,0.12)", border: `1px solid rgba(215,167,111,0.3)` }}>
-                  <Icon name={t.icon} size={17} color={colors.gold} strokeWidth={1.8} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.1 }}>{finalNameFor(t)}</div>
-                  <div style={{ fontSize: "10.5px", color: "rgba(215,167,111,0.7)", marginTop: "1px" }}>{metaLine(t.setup)}</div>
-                </div>
-                <span style={{ ...tagPill, flexShrink: 0, color: colors.ink, backgroundColor: colors.gold, padding: "4px 9px" }}>{t.role}</span>
+              <div style={{ width: "36px", height: "36px", borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(215,167,111,0.12)", border: `1px solid rgba(215,167,111,0.3)` }}>
+                <Icon name={t.icon} size={18} color={colors.gold} strokeWidth={1.8} />
               </div>
-              <div style={{ fontSize: "12px", color: "rgba(237,228,208,0.72)", lineHeight: 1.45, marginBottom: "8px" }}>{t.concept}</div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: "7px", flexWrap: "wrap" }}>
+                  <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.15 }}>{finalNameFor(t)}</span>
+                  <span style={{ ...tagPill, color: colors.ink, backgroundColor: colors.gold }}>{t.role}</span>
+                </div>
+                <div style={{ fontSize: "10.5px", color: "rgba(215,167,111,0.7)", marginTop: "2px" }}>{metaLine(t.setup)}</div>
+                <div style={{ display: "flex", gap: "4px", marginTop: "6px", flexWrap: "wrap" }}>
                   {t.highlights.map((h) => <span key={h} style={tagPill}>{h}</span>)}
                 </div>
-                <span style={{ fontSize: "11px", fontWeight: 700, color: "rgba(215,167,111,0.7)" }}>View ›</span>
               </div>
+              <span style={{ flexShrink: 0, fontSize: "20px", color: "rgba(215,167,111,0.55)", lineHeight: 1 }}>›</span>
             </button>
           ))}
         </div>
