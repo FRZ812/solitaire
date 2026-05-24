@@ -3,6 +3,8 @@
 // mirror the engine (engine/healing.js, combat-stats.js, needs.js, economy.js,
 // light.js) — keep them in sync if the engine is retuned.
 
+import { conditionMeta } from "./conditions.js";
+
 export const GLOSSARY_CATEGORIES = ["Vitals", "Survival", "Combat", "Currency", "Light", "Kit"];
 
 export const GLOSSARY = [
@@ -68,29 +70,11 @@ export const GLOSSARY = [
 const BY_ID = Object.fromEntries(GLOSSARY.map((g) => [g.id, g]));
 export function glossaryById(id) { return BY_ID[id] || null; }
 
-// Explanations for the condition pills the menu shows. Keys are the narrative
-// labels the game stores in character.conditions. Anything not listed gets a
-// sensible generic line so even narrator-improvised conditions (e.g. "Wet")
-// still explain themselves.
-const CONDITION_INFO = {
-  Bleeding:  "An open wound bleeds you for damage over time and STOPS all natural healing until it's bound or treated.",
-  Poisoned:  "Toxin saps your Vitality over time and STOPS natural healing until it's cured (an antivenom, a healer).",
-  Burning:   "Flames sear you for a few turns of damage.",
-  Cursed:    "A malign hex — it halves healing you receive and STOPS natural regen until lifted.",
-  Wet:       "Soaked through — miserable and cold, and it can make you vulnerable to chill or slow you down until you dry off.",
-  Stunned:   "Reeling — you lose your action this turn.",
-  Slowed:    "Sluggish — your accuracy and footing suffer for a short while.",
-  Chilled:   "Cold-bitten — your accuracy is dulled for a couple of turns.",
-  Weakened:  "Your blows land softer — reduced outgoing damage for a time.",
-  Hungry:    "Below 30 hunger. A gnawing distraction; eat before it becomes starvation.",
-  Starving:  "Below 10 hunger. You're failing — and STARVATION STOPS your wounds from healing. Eat now.",
-  Thirsty:   "Below 30 thirst. Find water before it gets worse.",
-  Parched:   "Below 10 thirst. Dangerously dry — and it STOPS natural healing. Drink now.",
-  Tired:     "Below 30 sleep. Heavy-eyed; rest in a bedroll before you're exhausted.",
-  Exhausted: "Below 10 sleep. Barely upright — rest, or you'll drop.",
-};
-
+// Condition descriptions live in the condition registry (data/conditions.js) —
+// the single source of truth shared with the engine and UI. Narrator-improvised
+// conditions (not in the registry) fall back to a sensible generic line.
 export function conditionInfo(label) {
-  if (CONDITION_INFO[label]) return { term: label, text: CONDITION_INFO[label] };
+  const meta = conditionMeta(label);
+  if (meta.desc) return { term: label, text: meta.desc };
   return { term: label, text: "A circumstance the story has placed on you. It colours what you can do until it passes or is dealt with." };
 }

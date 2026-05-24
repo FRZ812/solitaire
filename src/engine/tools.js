@@ -5,6 +5,7 @@
 import { applyInventoryChanges } from "./inventory.js";
 import { advanceTime } from "./time.js";
 import { depleteNeeds, getNeedConditions, mergeConditions } from "./needs.js";
+import { tickConditions, conditionMeta } from "../data/conditions.js";
 import { passiveHealVitality } from "./healing.js";
 import { activeWorldPassives } from "./combat-stats.js";
 import { TORCH_MINUTES, LANTERN_MINUTES, lightMinutes } from "./light.js";
@@ -110,8 +111,14 @@ export function applyRest(state, hours) {
     }
   }
 
-  // Recompute need-borne conditions (rest can clear Tired/Exhausted, or wake you Hungry).
-  const conditions = mergeConditions(null, getNeedConditions(needs), ch.conditions);
+  // Recompute need-borne conditions (rest can clear Tired/Exhausted, or wake you
+  // Hungry), counting timed buffs/debuffs down over the hours slept first.
+  const { conditions: tickedConds } = tickConditions(ch.conditions, minutes);
+  let conditions = mergeConditions(null, getNeedConditions(needs), tickedConds);
+  // A proper night's rest leaves you Rested for a while (a boon, not a wound).
+  if (h >= 6 && hpGain >= 0 && !conditions.some((c) => c.name === "Rested")) {
+    conditions = [...conditions, { name: "Rested", remaining: conditionMeta("Rested").duration }];
+  }
   const burned = Math.max(0, lightMinutes(state) - minutes);
   const light = burned > 0 ? { source: ch.light?.source || "torch", minutes: burned } : { source: null, minutes: 0 };
 

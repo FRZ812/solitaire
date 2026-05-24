@@ -5,6 +5,7 @@ import {
   depleteNeeds, applyNeedsChanges, getNeedConditions,
   mergeConditions, getNeedAlertText,
 } from "./needs.js";
+import { tickConditions, condNames, conditionMeta, polarityOf } from "../data/conditions.js";
 import { passiveHealVitality } from "./healing.js";
 import { autoConsume, woundTick, companionUpkeep } from "./upkeep.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
@@ -210,8 +211,11 @@ export function applyBeat(state, beat, options = {}) {
     upkeepLines.push(...fed.lines);
   }
 
+  // Count timed buffs/debuffs down by the elapsed minutes (dropping any that ran
+  // out), then merge with need-borne conditions and the narrator's replace-list.
+  const { conditions: tickedConds, expired } = tickConditions(state.character.conditions, minutes);
   const needsConds = getNeedConditions(character.needs);
-  character.conditions = mergeConditions(beat.new_conditions, needsConds, state.character.conditions);
+  character.conditions = mergeConditions(beat.new_conditions, needsConds, tickedConds);
 
   // Need alerts fire only on crossing INTO a worse state.
   const newlyTriggered = needsConds.filter(c => !prevNeedConds.includes(c));
@@ -262,6 +266,39 @@ export function applyBeat(state, beat, options = {}) {
 
   // One compact upkeep note per beat: what was eaten/drunk, who's flagging, wounds.
   if (upkeepLines.length) newBeats.push({ id: `upkeep${Date.now()}`, type: "upkeep", lines: upkeepLines });
+
+  // Body ledger — surface what just happened to the player's vitals and
+  // conditions (Stoneshard-style), but stay quiet during pre-creation limbo.
+  if (state.created !== false) {
+    // Vitality / resolve / needs deltas. Routine per-hour needs DRIFT stays
+    // hidden — only show a need that was RECOVERED, or DRAINED beyond the routine
+    // (a poison/curse/exertion sapping it), gauged against the post-drift value.
+    const SUDDEN_DRAIN = 12;
+    const chips = [];
+    const dv = Math.round(character.vitality) - Math.round(state.character.vitality ?? 0);
+    if (dv !== 0) chips.push({ stat: "vitality", delta: dv });
+    const dr = (character.resolve || 0) - (state.character.resolve || 0);
+    if (dr !== 0) chips.push({ stat: "resolve", delta: dr });
+    for (const k of ["hunger", "thirst", "sleep"]) {
+      const nonPassive = Math.round((character.needs[k] ?? 0) - (drained[k] ?? 0));
+      if (nonPassive > 0 || nonPassive <= -SUDDEN_DRAIN) chips.push({ stat: k, delta: nonPassive });
+    }
+    if (chips.length) newBeats.push({ id: `vd${Date.now()}`, type: "vitals_delta", chips });
+
+    // Conditions gained / lost / expired (need conditions excepted — their onset
+    // already speaks through need_alert, their relief through the needs chips).
+    const beforeNames = condNames(state.character.conditions);
+    const afterNames = condNames(character.conditions);
+    const gained = afterNames.filter((n) => !beforeNames.includes(n) && !conditionMeta(n).isNeed);
+    const lost = beforeNames.filter((n) => !afterNames.includes(n) && !conditionMeta(n).isNeed);
+    if (gained.length || lost.length) {
+      const entries = [
+        ...gained.map((n) => ({ name: n, dir: "gain", polarity: polarityOf(n) })),
+        ...lost.map((n) => ({ name: n, dir: expired.includes(n) ? "expire" : "lose", polarity: polarityOf(n) })),
+      ];
+      newBeats.push({ id: `cc${Date.now()}`, type: "condition_change", entries });
+    }
+  }
 
   let world = { ...state.world, codex };
   if (options.travelToCoords) {

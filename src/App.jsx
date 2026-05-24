@@ -34,6 +34,7 @@ import {
   findPath, pathMinutes, isSeen, flightPath, flightMinutes,
 } from "./engine/world.js";
 import { knownTravelSpells } from "./data/travel-spells.js";
+import { condNames, hasCondition } from "./data/conditions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
 import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
@@ -709,7 +710,7 @@ export function Solitaire() {
     const travelWp = activeWorldPassives(state.character, state.world.codex);
     // Slower going in the dark without light, and slower still when worn out.
     const darkTravel = isNight(state.time) && !isLit(state) && !state.character?.darkvision;
-    const conds = state.character.conditions || [];
+    const conds = condNames(state.character.conditions);
     const wearyMult = conds.includes("Exhausted") ? 1.5 : conds.includes("Tired") ? 1.15 : 1;
     const legMins = Math.max(1, Math.round(pathMinutes(state, legPath) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1) * wearyMult));
     const hexes = legPath.length - 1;
@@ -1304,7 +1305,7 @@ export function Solitaire() {
       coinBonus: wp.coinBonus || 0,
       environment: generateEnvironment(terrain),
       dark: inTheDark(st),
-      weary: (st.character.conditions || []).includes("Exhausted"),
+      weary: hasCondition(st.character.conditions, "Exhausted"),
       allies,
       ...extraOpts,
     }));

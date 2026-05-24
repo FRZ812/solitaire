@@ -19,6 +19,7 @@ import { ArsenalView } from "./ArsenalView.jsx";
 import { AttributeDetail } from "./AttributeDetail.jsx";
 import { InfoButton, InfoModal } from "./InfoTip.jsx";
 import { glossaryById, conditionInfo } from "../data/glossary.js";
+import { condName } from "../data/conditions.js";
 import { lightStatus } from "../engine/light.js";
 import { canHeal } from "../engine/healing.js";
 
@@ -450,7 +451,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
             {state.character.conditions.length === 0
               ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.5)", fontStyle: "italic" }}>None</span>
               : state.character.conditions.map((c) => (
-                  <button key={c} onClick={() => setInfo(conditionInfo(c))} style={bareBtn}><ConditionPill label={c} /></button>
+                  <button key={condName(c)} onClick={() => setInfo(conditionInfo(condName(c)))} style={bareBtn}><ConditionPill cond={c} /></button>
                 ))}
           </div>
         </div>

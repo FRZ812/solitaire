@@ -12,11 +12,10 @@
 
 import { itemTemplate } from "../data/catalog.js";
 import { depleteNeeds, getNeedConditions } from "./needs.js";
+import { conditionMeta, condNames } from "../data/conditions.js";
 
 const AUTO_EAT_BELOW = 55;    // top hunger up once it dips below this
 const AUTO_DRINK_BELOW = 55;  // …and thirst
-const BLEED_PER_HOUR = 3;     // vitality lost per hour while Bleeding
-const POISON_PER_HOUR = 2;    // …while Poisoned
 const clampNeed = (v) => Math.max(0, Math.min(100, v));
 
 const defOf = (codexItems, id) => codexItems?.[id] || itemTemplate(id);
@@ -88,18 +87,21 @@ export function autoConsume(inventory, needs, codexItems, who = "") {
   return { inventory: { ...inventory, carried }, needs: out, lines };
 }
 
-// Wounds bite as the clock turns. Returns reduced vitality + a line if it ticked.
+// Wounds bite as the clock turns. Returns reduced vitality + a flavour line if it
+// ticked (the actual number is reported by the vitals_delta beat, not here).
 export function woundTick(vitality, conditions, minutes) {
   const hours = (minutes || 0) / 60;
   if (hours <= 0) return { vitality, lines: [] };
   let dmg = 0;
-  if (conditions.includes("Bleeding")) dmg += BLEED_PER_HOUR * hours;
-  if (conditions.includes("Poisoned")) dmg += POISON_PER_HOUR * hours;
+  const which = [];
+  for (const name of condNames(conditions)) {
+    const dot = conditionMeta(name).dotPerHour || 0;
+    if (dot > 0) { dmg += dot * hours; which.push(name.toLowerCase()); }
+  }
   dmg = Math.round(dmg);
   if (dmg <= 0) return { vitality, lines: [] };
   const next = Math.max(0, vitality - dmg);
-  const which = [conditions.includes("Bleeding") && "bleeding", conditions.includes("Poisoned") && "poison"].filter(Boolean).join(" & ");
-  return { vitality: next, lines: [`${which} saps you (−${dmg} vitality) — tend it`] };
+  return { vitality: next, lines: [`${which.join(" & ")} saps you — tend it`] };
 }
 
 // Drag each companion along the same clock: deplete their needs, feed them from

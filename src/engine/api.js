@@ -17,6 +17,7 @@ import { buildingForTile, isBuildingOpen, buildingHours } from "../data/town.js"
 import { formatTime, formatDate } from "./time.js";
 import { relationshipTier } from "./relationships.js";
 import { lightStatus } from "./light.js";
+import { conditionMeta, condName } from "../data/conditions.js";
 
 export function summarizeCodex(codex) {
   const lines = [];
@@ -243,8 +244,16 @@ export function buildStateContext(state) {
   const you = world.codex.characters.wanderer || {};
   const youDesc = [originLabel(you.origin), you.race, you.profession].filter(Boolean).join(" ");
   const playerLine = `[PLAYER — You are ${character.name}${youDesc ? `, a ${youDesc}` : ""}. Keep this identity consistent (do not drift the player's race or origin). Your NAME is PRIVATE: another character knows it ONLY if you have told THEM in the fiction (or it has plausibly reached them — a poster, a mutual friend, your own renown). A stranger, someone freshly met, or a companion you have only just recruited does NOT know your name until you give it — they address you by look, bearing, or role ("the swordsman", "stranger", "you with the bow") until then. The name you gave one person (the innkeeper) did not travel to anyone else on its own.]`;
+  const conditionsLine = (character.conditions || []).map((c) => {
+    const name = condName(c);
+    const meta = conditionMeta(name);
+    const tag = meta.polarity === "buff" ? " [buff]" : "";
+    const rem = (typeof c === "object" && c && c.remaining != null)
+      ? `, ~${Math.max(1, Math.round(c.remaining / 60 * 10) / 10)}h left` : "";
+    return `${name}${tag}${rem}`;
+  }).join(", ") || "none";
   return `${playerLine}
-[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${character.conditions.join(", ") || "none"}; Light: ${lightStatus(state).text}; Bond: ${character.bond}${nearbyStr}]${locLine}${flyLine}${svcLine}${questLine}${partyLine}${buildSurroundings(state, t)}
+[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${conditionsLine}; Light: ${lightStatus(state).text}; Bond: ${character.bond}${nearbyStr}]${locLine}${flyLine}${svcLine}${questLine}${partyLine}${buildSurroundings(state, t)}
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]

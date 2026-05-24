@@ -1,13 +1,15 @@
 import React, { useState, useMemo } from "react";
 import { Icon, ItemIcon } from "./Icon.jsx";
-import { iconButtonStyle } from "./primitives.jsx";
+import { iconButtonStyle, conditionPalette, fmtRemaining } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { GLOSSARY, GLOSSARY_CATEGORIES } from "../data/glossary.js";
+import { CONDITIONS } from "../data/conditions.js";
+import { hasCombatEffect } from "../engine/condition-combat.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { itemTemplate } from "../data/catalog.js";
 import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
-import { tier as tierInfo, tierLabel, tierOrder } from "../data/tiers.js";
+import { tier as tierInfo, tierLabel, tierOrder, tierColor } from "../data/tiers.js";
 import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
 import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIVES, FUSIONS, RUNES, isFusionRune } from "../data/passives.js";
 import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf, abilityStatLine, abilityReqLine } from "../data/abilities.js";
@@ -22,6 +24,7 @@ const CODEX_TABS = [
   { key: "items",       label: "Items",       group: "compendium" },
   { key: "abilities",   label: "Abilities",   group: "compendium" },
   { key: "passives",    label: "Passives",    group: "compendium" },
+  { key: "conditions",  label: "Conditions",  group: "reference" },
   { key: "glossary",    label: "Glossary",    group: "reference" },
 ];
 
@@ -566,6 +569,89 @@ function GlossaryRow({ term, text }) {
   );
 }
 
+// Reference list of every buff and debuff the game can place on you — drawn
+// from the condition registry, grouped by polarity and SORTED BY TIER (rarity),
+// each tapping open to what triggers it, what it does mechanically, and its
+// engine tags (timer / stops-healing / damage- or heal-per-hour).
+function conditionTags(meta) {
+  const tags = [];
+  tags.push(meta.duration != null ? `lasts ~${fmtRemaining(meta.duration)}` : (meta.isNeed ? "while the need lasts" : "until treated"));
+  if (meta.blocksHealing) tags.push("stops natural healing");
+  if (meta.dotPerHour) tags.push(`−${meta.dotPerHour} vitality/hour`);
+  if (meta.regenPerHour) tags.push(`+${meta.regenPerHour} vitality/hour`);
+  return tags.join(" · ");
+}
+
+function ConditionRow({ name, meta }) {
+  const [open, setOpen] = useState(false);
+  const pal = conditionPalette(meta.polarity);
+  const tc = tierColor(meta.tier);
+  return (
+    <button onClick={() => setOpen((o) => !o)} style={{
+      width: "100%", textAlign: "left", fontFamily: "inherit", cursor: "pointer",
+      background: "rgba(20,29,29,0.5)", border: `1px solid rgba(215,167,111,0.18)`,
+      borderRadius: radius.panelCompact, padding: "11px 13px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "7px", minWidth: 0, flexWrap: "wrap" }}>
+          <span style={{
+            ...metaStyle, fontSize: "11px", letterSpacing: "0.12em",
+            color: pal.color, background: pal.bg, border: `1px solid ${pal.border}`,
+            padding: "3px 9px", borderRadius: radius.pill, textShadow: `0 0 6px ${pal.glow}`,
+          }}>{name}</span>
+          <span style={{
+            ...metaStyle, fontSize: "8px", letterSpacing: "0.14em",
+            color: tc, border: `1px solid ${tc}66`, background: `${tc}14`,
+            padding: "2px 7px", borderRadius: radius.pill,
+          }}>{tierLabel(meta.tier)}</span>
+        </div>
+        <span style={{ color: "rgba(215,167,111,0.6)", fontSize: "13px", flexShrink: 0 }}>{open ? "▾" : "▸"}</span>
+      </div>
+      <div style={{ ...subtleMeta, marginTop: "6px", letterSpacing: "0.06em", textTransform: "none" }}>
+        {conditionTags(meta)}{hasCombatEffect(name) ? " · ⚔ takes effect in battle" : ""}
+      </div>
+      {open && (
+        <div style={{ marginTop: "9px", display: "flex", flexDirection: "column", gap: "7px" }}>
+          {meta.effect && (
+            <div style={{ fontSize: "13px", color: "rgba(237,228,208,0.9)", lineHeight: 1.5 }}>
+              <span style={{ ...subtleMeta, color: pal.color, marginRight: "6px", textTransform: "uppercase" }}>Effect</span>{meta.effect}
+            </div>
+          )}
+          {meta.trigger && (
+            <div style={{ fontSize: "13px", color: "rgba(237,228,208,0.78)", lineHeight: 1.5 }}>
+              <span style={{ ...subtleMeta, marginRight: "6px", textTransform: "uppercase" }}>Triggered by</span>{meta.trigger}
+            </div>
+          )}
+          {meta.desc && (
+            <div style={{ fontSize: "13px", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(237,228,208,0.7)", lineHeight: 1.5 }}>{meta.desc}</div>
+          )}
+        </div>
+      )}
+    </button>
+  );
+}
+
+function ConditionsView() {
+  const all = Object.entries(CONDITIONS).map(([name, meta]) => ({ name, meta }));
+  const byTier = (a, b) => tierOrder(a.meta.tier) - tierOrder(b.meta.tier) || a.name.localeCompare(b.name);
+  const groups = [
+    { label: "Buffs", items: all.filter((c) => c.meta.polarity === "buff").sort(byTier) },
+    { label: "Debuffs", items: all.filter((c) => c.meta.polarity !== "buff").sort(byTier) },
+  ];
+  return (
+    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {groups.map((g) => g.items.length ? (
+        <div key={g.label}>
+          <div style={{ ...accentMeta, marginBottom: "8px", fontWeight: 700 }}>{g.label} · {g.items.length}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
+            {g.items.map((c) => <ConditionRow key={c.name} name={c.name} meta={c.meta} />)}
+          </div>
+        </div>
+      ) : null)}
+    </div>
+  );
+}
+
 function GlossaryView() {
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -789,7 +875,7 @@ export function CodexView({ state, onClose }) {
 
       <div className="tabstrip" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
         {CODEX_TABS.map((tab, i) => {
-          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : Object.keys(codex[tab.key] || {}).length;
+          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
           const divide = i > 0 && CODEX_TABS[i - 1].group !== tab.group; // lore | compendium
           return (
@@ -824,6 +910,8 @@ export function CodexView({ state, onClose }) {
           <AbilityCatalog codex={codex} character={state.character} />
         ) : activeTab === "passives" ? (
           <PassiveCatalog />
+        ) : activeTab === "conditions" ? (
+          <ConditionsView />
         ) : activeTab === "glossary" ? (
           <GlossaryView />
         ) : entries.length === 0 ? (

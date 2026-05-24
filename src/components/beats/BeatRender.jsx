@@ -307,7 +307,6 @@ export function BeatRender({ beat, onMenu }) {
         </Panel>
       );
 
-    case "needs_delta":
     case "need_alert":
       return (
         <div className="fade-in" style={{
@@ -318,6 +317,55 @@ export function BeatRender({ beat, onMenu }) {
         }}>
           {beat.text || (beat.lines && beat.lines.join(" · "))}
         </div>
+      );
+
+    case "vitals_delta": {
+      const LABEL = { vitality: "Vitality", resolve: "Resolve", hunger: "Hunger", thirst: "Thirst", sleep: "Sleep" };
+      return (
+        <Panel tone="pale" compact>
+          <div style={{ ...metaStyle, fontSize: "8px", color: "rgba(215, 167, 111, 0.7)", marginBottom: "4px" }}>Vitals</div>
+          <div style={{ fontSize: "12px", lineHeight: 1.5, display: "flex", flexWrap: "wrap", gap: "7px 10px" }}>
+            {beat.chips.map((c, i) => {
+              const up = c.delta > 0;
+              const col = up ? alert.successText : alert.dangerAccent;
+              return (
+                <span key={i} style={{
+                  background: up ? "rgba(16, 185, 129, 0.10)" : "rgba(120, 30, 30, 0.16)",
+                  border: `1px solid ${up ? "rgba(16, 185, 129, 0.28)" : "rgba(252, 165, 165, 0.3)"}`,
+                  color: col, padding: "2px 7px", borderRadius: "6px",
+                }}>
+                  {LABEL[c.stat] || c.stat} {up ? "+" : ""}{c.delta}
+                </span>
+              );
+            })}
+          </div>
+        </Panel>
+      );
+    }
+
+    case "condition_change":
+      return (
+        <Panel tone="pale" compact>
+          <div style={{ ...metaStyle, fontSize: "8px", color: "rgba(215, 167, 111, 0.7)", marginBottom: "4px" }}>Conditions</div>
+          <div style={{ fontSize: "12px", lineHeight: 1.5, display: "flex", flexWrap: "wrap", gap: "7px 10px" }}>
+            {beat.entries.map((e, i) => {
+              const col = e.polarity === "buff" ? alert.successText : e.polarity === "debuff" ? alert.dangerAccent : colors.gold;
+              const ring = e.polarity === "buff" ? "rgba(16, 185, 129, 0.28)" : e.polarity === "debuff" ? "rgba(252, 165, 165, 0.3)" : "rgba(215, 167, 111, 0.24)";
+              const tint = e.polarity === "buff" ? "rgba(16, 185, 129, 0.10)" : e.polarity === "debuff" ? "rgba(120, 30, 30, 0.16)" : "rgba(215, 167, 111, 0.07)";
+              const mark = e.dir === "gain" ? "+ " : e.dir === "expire" ? "⌛ " : "− ";
+              const faded = e.dir !== "gain";
+              return (
+                <span key={i} style={{
+                  background: tint, border: `1px solid ${ring}`, color: col,
+                  padding: "2px 7px", borderRadius: "6px", opacity: faded ? 0.7 : 1,
+                  textDecoration: e.dir === "lose" || e.dir === "expire" ? "line-through" : "none",
+                }}>
+                  {mark}{e.name}
+                </span>
+              );
+            })}
+          </div>
+        </Panel>
       );
 
     default:

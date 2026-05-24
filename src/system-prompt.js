@@ -522,7 +522,9 @@ When the player takes a notable wound, apply an appropriate blocking condition: 
 
 For explicit healing spikes (potions, magic, sleep in a real bed, divine aid), apply vitality_change with positive deltas. Passive regen handles minor cuts knitting back on their own.
 
-CRITICAL: new_conditions REPLACES the current non-need conditions. Include ALL non-need conditions that still apply (existing ones the player still has, plus any new ones).
+CRITICAL: new_conditions REPLACES the current LASTING WOUND conditions (the indefinite, "until-treated" ones — Bleeding, Poisoned, Cursed, Infected, Severed Limb, and the like). Include ALL such conditions that still apply (existing ones the player still has, plus any new ones); omit one to clear it (the player bound the wound, the curse lifted).
+
+BUFFS, DEBUFFS & TIMERS. Conditions carry a POLARITY and a TIER (rarity — match it to how grand or rare the SOURCE is). Debuffs run from common (Bleeding, Bruised, Winded, Wet, the need states) through combat afflictions (Poisoned, Burning, Slowed, Chilled, Weakened, Stunned, Dazed, Vulnerable), sickness and spellcraft (Infected, Diseased, Frightened, Silenced, Hexed, Cursed, Blinded, Enfeebled, Petrified), grievous harm (Severed Limb, Gravely Wounded, Plague-Ridden), up to dooms of the great powers (Soul-Bound, Doomed, Withering Curse, Damned). Buffs run from comfort (Well-Fed, Rested, Warmed) and battle-heat (Rallied, Focused, Emboldened, Guarded) through blessings and sorcery (Blessed, Inspired, Regenerating, Hardy, Warded, Hastened, Empowered) up to the heroic and divine (Heroic, Anointed, Divine Favor, Berserk, Dragon-Heart, Ascendant). Reserve the rare/legendary ones for rare/legendary sources — a god's favor, a dragon's boon, an archfiend's curse. Give a TIMED effect a duration as an object: {"name":"Rallied","duration_minutes":120}. The engine OWNS timed effects — it counts them down and clears them on its own, so you do NOT re-list a timed buff/debuff each beat (re-listing it refreshes the timer). Only LASTING WOUNDS need re-listing under the replace rule above. A bare string with no duration is treated as a lasting condition; a transient one the engine knows gets its own default timer. (The player can browse the full tiered list in the codex.)
 
 COMBAT TRIGGER — start_combat (the engine runs the fight, not you)
 There is a turn-based combat engine. You hand a fight to it with the start_combat field. Then the engine plays out the blow-by-blow on a clickable screen — you do NOT narrate the rest of the fight.
@@ -605,7 +607,7 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "dialogues": [{"name":"NPC","line":"what they say"}],
   "vitality_change": <int default 0>,
   "resolve_change": <int default 0>,
-  "new_conditions": null OR ["array"],
+  "new_conditions": null OR ["Bleeding", {"name":"Rallied","duration_minutes":120}],
   "tile_discovery": null OR {"name":"Place","poi_type":"landmark|merchant|shrine|ruin|camp|inn|smithy|temple|stable","description":"short"},
   "tile_move": null OR {"x":<int>,"y":<int>},
   "start_combat": null OR {"initiator":"player"|"enemy","surprise":<bool>,"lethal":<bool>,"foes":[{"npc_id":"codex-id-or-null","kind":"descriptor","name":"what to call them","tier":"common..divine (optional)","count":<int optional>}],"note":"opening flavor"},
