@@ -206,6 +206,19 @@ export function applyBeat(state, beat, options = {}) {
     if (text) newBeats.push({ id: `alert${Date.now()}-${c}`, type: "need_alert", text });
   }
 
+  // A lit torch burns down with the clock; when it gutters out, say so. Also
+  // lazily seeds the field onto saves made before the light mechanic existed.
+  {
+    const prevTorch = character.light?.torchMinutes || 0;
+    if (prevTorch > 0) {
+      const left = Math.max(0, prevTorch - (beat.minutes_passed || 0));
+      character.light = { ...(character.light || {}), torchMinutes: left };
+      if (left === 0) newBeats.push({ id: `torch${Date.now()}`, type: "narration", content: "Your torch gutters out, and the dark closes back in." });
+    } else if (!character.light) {
+      character.light = { torchMinutes: 0 };
+    }
+  }
+
   // Passive regen comes after final conditions, so a freshly-applied "Bleeding" blocks it.
   character.vitality = passiveHealVitality(
     character.vitality, character.vitalityMax,

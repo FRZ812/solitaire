@@ -15,6 +15,8 @@ import { recomputeVitalityMax } from "./engine/attributes.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
+import { lightTorch, applyRest } from "./engine/tools.js";
+import { inTheDark, isNight, isLit } from "./engine/light.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { applyFusionToItem, fusionOptionsForRune } from "./engine/fusion.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
@@ -673,7 +675,9 @@ export function Solitaire() {
     const toName = toTile.poi?.name || `${TERRAINS[toTile.terrain]?.label} (${dest.x},${dest.y})`;
     const isHidden = toTile.poi?.type === "hidden";
     const travelWp = activeWorldPassives(state.character, state.world.codex);
-    const totalMins = Math.max(1, Math.round(pathMinutes(state, path) * (1 - (travelWp.travelMult || 0))));
+    // Picking your way through the dark without a lit torch is slower going.
+    const darkTravel = isNight(state.time) && !isLit(state);
+    const totalMins = Math.max(1, Math.round(pathMinutes(state, path) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1)));
     const hexes = path.length - 1;
 
     // Summarize the route's terrain mix for the narrator.
@@ -910,6 +914,28 @@ export function Solitaire() {
     setState({ ...r.state, beats: [...r.state.beats, { id: `use${Date.now()}`, type: "narration", content: r.summary }] });
   }
 
+  // Light a torch (needs a tinderbox) — deterministic, logs a narration beat.
+  function handleLightTorch() {
+    const r = lightTorch(state);
+    if (!r.ok) {
+      if (r.reason) setState({ ...state, beats: [...state.beats, { id: `lit${Date.now()}`, type: "narration", content: r.reason }] });
+      return;
+    }
+    setMenuOpen(false);
+    setState({ ...r.state, beats: [...r.state.beats, { id: `lit${Date.now()}`, type: "narration", content: r.summary }] });
+  }
+
+  // Bed down and rest for the chosen hours — skips time, restores the Sleep need.
+  function handleRest(hours) {
+    const r = applyRest(state, hours);
+    if (!r.ok) {
+      if (r.reason) setState({ ...state, beats: [...state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.reason }] });
+      return;
+    }
+    setMenuOpen(false);
+    setState({ ...r.state, beats: [...r.state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.summary }] });
+  }
+
   // ----- Tavern quest board: tasks, day-labour, recruiting -----
 
   function handleAcceptTask(posting) {
@@ -1140,6 +1166,7 @@ export function Solitaire() {
       ownedUniques: ownedUniqueIds(st),
       coinBonus: wp.coinBonus || 0,
       environment: generateEnvironment(terrain),
+      dark: inTheDark(st),
       allies,
       ...extraOpts,
     }));
@@ -1586,6 +1613,8 @@ export function Solitaire() {
           onEquip={handleEquip}
           onUnequip={handleUnequip}
           onUse={handleUse}
+          onLightTorch={handleLightTorch}
+          onRest={handleRest}
           onBindRune={(id) => { setMenuOpen(false); setFusionRune(id); }}
           onReset={handleResetCampaign}
           onOpenCodex={() => { setMenuOpen(false); setCodexOpen(true); }}

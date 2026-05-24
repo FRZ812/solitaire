@@ -43,6 +43,9 @@ export function makeInitialState() {
       proficiencyGrowthMult: 1,
       racialPassives: [],
       needs: { hunger: 60, thirst: 75, sleep: 70 },
+      // Light carried right now — torchMinutes>0 means a torch is burning and
+      // holding back the dark; it counts down as time passes (engine/light.js).
+      light: { torchMinutes: 0 },
       // Learned combat abilities (stored as { id, tier }); Strike + Brace are
       // always available and not listed here. The opening limbo interview grants
       // any starting abilities; more come from victories and teachers.

@@ -25,6 +25,7 @@ import { effectiveAttributes, ratingFromXp, proficiencyName, weaponMasteryId, XP
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
 import { chooseAction } from "./combat-ai.js";
+import { DARK_ACC_PENALTY } from "./light.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -160,6 +161,13 @@ export function initCombat(character, codex, enemies, opts = {}) {
     speed: a.speed ?? 4, swiftChance: a.swiftChance || 0, resolveRegen: a.resolveRegen || 0, reloadLeft: 0,
     procs: a.procs || a.triggers?.procs || [], shield: 0, magicShield: 0, invuln: 0,
   }));
+
+  // Fighting blind: in the dark with no torch lit, your side's aim suffers.
+  // Monsters that haunt the dark are not so hampered, so only the player/allies pay.
+  if (opts.dark) {
+    player.darkPenalty = DARK_ACC_PENALTY;
+    for (const a of allies) a.darkPenalty = DARK_ACC_PENALTY;
+  }
 
   const foes = clone(enemies);
   foes.forEach((e, i) => {
@@ -517,7 +525,7 @@ function abilityEffectiveness(player, def, tierId) {
 // procs (on-crit / on-hit / on-dodge / on-kill) off the outcome.
 function resolveHit(attacker, defender, profile) {
   // Chill saps the attacker's accuracy; dodge-stacks add to the defender's dodge.
-  const acc = (attacker.accuracy || 0) - sumStatus(attacker, "chill");
+  const acc = (attacker.accuracy || 0) - sumStatus(attacker, "chill") - (attacker.darkPenalty || 0);
   const dodge = (defender.dodge || 0) + sumStatus(defender, "dodgeStack");
   const hitChance = 100 - clamp(dodge - acc, 0, 90);
   if (rand100() > hitChance) {
