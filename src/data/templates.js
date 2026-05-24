@@ -59,7 +59,7 @@ export const CHARACTER_TEMPLATES = [
     story: "Raised among humans who never let him forget what he was, Karzog answered their fear with the fury they expected — then walked out and never looked back. The rage is honest, at least; it hides nothing and asks nothing. He is hunting a purpose big enough to swing an axe at.",
     highlights: ["Body", "Vigor"],
     setup: {
-      name: "Karzog Bloodtusk",
+      name: "Karzog Brakka",
       profession: "reaver",
       race: "half-orc", subrace: null, origin: "half-orc",
       age: "late twenties", attractiveness: "fearsome",
@@ -82,7 +82,7 @@ export const CHARACTER_TEMPLATES = [
     story: "Faelar has walked the green marches alone since the village that raised him burned. He speaks little and misses nothing, putting an arrow through trouble before it knows he is there. He follows rumours of the ones who lit that fire — eastward, always eastward.",
     highlights: ["Reflex", "Wit"],
     setup: {
-      name: "Faelar Thornwood",
+      name: "Faelar Sylvareth",
       profession: "ranger",
       race: "elf", subrace: "wood", origin: "elf",
       age: "ageless, looks thirty", attractiveness: "keen and fair",
@@ -105,7 +105,7 @@ export const CHARACTER_TEMPLATES = [
     story: "Renjiro learned the trade in the silk-and-shadow courts of the eastern empires, where a quick blade and quicker feet kept him breathing. He owes a debt to a house that does not forgive, and the only coin that pays it is the kind of work no one admits to hiring. Trust is a luxury he sold long ago.",
     highlights: ["Reflex", "Body"],
     setup: {
-      name: "Kazan Renjiro",
+      name: "Hokaru Renjiro",
       profession: "assassin",
       race: "human", subrace: null, origin: "east",
       age: "mid twenties", attractiveness: "coldly handsome",
