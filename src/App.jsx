@@ -639,7 +639,11 @@ export function Solitaire() {
       inventory_changes: Object.keys(inv).length ? inv : undefined,
       discoveries: wornIds.length ? { characters: [{ id: "wanderer", worn: wornIds }] } : undefined,
     };
-    const built = applyBeat(state, beat); // created=true; identity, kit, and gear applied
+    let built = applyBeat(state, beat); // created=true; identity, kit, and gear applied
+    // Drop the limbo opening narration — a locally-built character skips the
+    // interview entirely, so the log should begin with their arrival, not the
+    // "you are a soul in the grey" intro.
+    built = { ...built, beats: [] };
     setManualCreation(false);
     setCreationEntered(false);
     setState(built); // flip out of limbo at once so the chooser can't flash back while the opening loads
@@ -650,7 +654,8 @@ export function Solitaire() {
       a.hair && `${a.hair} hair`, a.eyes && `${a.eyes} eyes`, a.facial_hair, a.marks,
     ].filter(Boolean).join(", ");
     const originStr = originLabel(setup.origin);
-    const opener = `[CHARACTER CREATION] The character is now fully created and LOCKED via direct selection — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}${originStr ? ` of ${originStr} origin` : ""}. Describe them FAITHFULLY and do NOT contradict these set traits: ${looks || "as the player envisioned"}. Do NOT emit character_setup, do NOT change any values, and do NOT ask further questions. OPEN THE REAL SCENE now: narrate the soul drawn out of limbo into the world, arriving at the Drowned Rat tavern in Mirecross in the rain, then proceed as a normal first beat.`;
+    const backstory = [setup.backstory, ...(Array.isArray(setup.knows) ? setup.knows : [])].filter(Boolean).join(" ");
+    const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving at the Drowned Rat tavern in Mirecross in the rain, grounding the scene in who they are, their origin, and what (from the backstory) has brought them here, then proceed as a normal first beat.`;
     await runNarratorTurn(built, opener);
   }
 
