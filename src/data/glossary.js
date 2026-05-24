@@ -46,7 +46,11 @@ export const GLOSSARY = [
 
   // ---- Light ----
   { id: "light", term: "Light & darkness", category: "Light",
-    text: "Some places are dark: interiors, deep forest, marsh and mountains, and the open road after nightfall. In the dark with no torch lit, your aim suffers in a fight and travel is slower going. Strike a torch with a tinderbox to push the dark back — a torch burns about an hour, then gutters out." },
+    text: "Daylight lights the open world; after dark, only a flame does (towns keep some ambient glow, the wilds do not). Caves, dungeons, and interiors are dark at any hour. In the dark with NO light you go blind: your aim suffers in a fight and your sight shrinks to a single hex — you can barely map your way and can't travel far. A torch (≈1h, modest pool) or a lantern (≈4h on a flask of oil, steady and bright) pushes it back. Strike either with a tinderbox." },
+  { id: "night", term: "Night & ambush", category: "Light",
+    text: "More things prowl after dark — encounters are likelier at night and in gloomy country. A burning light lets you see and fight, but it's a BEACON: foes are likelier to ambush you and you can't slip past them. Go unlit and you're blind, but HIDDEN — you can slip away from trouble and break from a fight far more easily. A risk you weigh each night." },
+  { id: "darkvision", term: "Darkvision", category: "Light",
+    text: "Some kindreds — drow, vampires, lycanthropes — see in pitch dark. They suffer none of the dark's blindness (full sight, no combat penalty) and can stay unlit to remain hidden: the best of both. Most folk need a flame." },
 
   // ---- Starting kit ----
   { id: "kit-torch", term: "Torch & tinderbox", category: "Kit",

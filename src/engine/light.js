@@ -1,49 +1,94 @@
-// Light & darkness. A place is dark when it's an interior, gloomy by nature
-// (forest/marsh/mountains/water), or simply night out in the open. A lit torch
-// (struck with a tinderbox) holds the dark back until it burns down. Fighting or
-// travelling in the dark UNLIT carries penalties; the narrator is told too.
+// Light & darkness — a load-bearing survival system.
 //
-// This reuses the long-unused `terrain.dark` flag (data/terrains.js) and the
-// existing day/night clock (time.hour).
+// A PLACE is ambiently dark when it's an interior/underground, or it's night
+// out in the open (towns keep ambient light; gloomy terrain darkens earlier).
+// A carried LIGHT (torch or lantern) holds the dark back until it burns down.
+// DARKVISION races see in it regardless.
+//
+// Three player-facing states fall out of this:
+//   • inTheDark  — ambiently dark, no light, no darkvision → BLIND: combat
+//                  accuracy penalty and sight shrinks to one hex.
+//   • isHidden   — ambiently dark and carrying NO light → unseen: easier to
+//                  slip past / flee, and foes can't ambush you (darkvision too).
+//   • lit beacon — ambiently dark and carrying a LIGHT → you can see and fight,
+//                  but the flame marks you (more ambushes, can't slip away).
+//
+// Reuses the long-unused `terrain.dark` flag and the day/night clock.
 
 import { TERRAINS } from "../data/terrains.js";
 import { getTile } from "./world.js";
+import { SIGHT_RADIUS } from "../config.js";
 
-export const TORCH_MINUTES = 60;        // one torch ≈ an hour of light
-export const DARK_ACC_PENALTY = 25;     // accuracy lost fighting blind (tunable)
-const NIGHT_START = 20, NIGHT_END = 6;  // 20:00–05:59 counts as night
+export const TORCH_MINUTES = 60;       // a torch ≈ an hour, sight radius 2
+export const LANTERN_MINUTES = 240;    // a lantern on one oil ≈ four hours, full sight
+export const DARK_ACC_PENALTY = 25;    // accuracy lost fighting blind (tunable)
+export const DARK_FLEE_BONUS = 20;     // easier to vanish into the black
 
-// Adventure interiors that are dark at any hour (open-air settlements are not).
+const NIGHT_START = 20, NIGHT_END = 6; // open ground: night is 20:00–05:59
+const GLOOM_START = 18, GLOOM_END = 7; // under canopy / in the crags it comes earlier
+
+// Adventure interiors that are dark at any hour.
 export const INTERIOR_POIS = new Set(["cellar", "dungeon", "hall", "throne_room", "vault", "warren", "den"]);
+// Built places that keep some ambient light through the night.
+export const SETTLEMENT_POIS = new Set(["city", "town", "village", "fortress", "camp", "inn", "market", "square"]);
 
-export function isNight(time) {
+export function isNight(time, gloomy = false) {
   const h = time?.hour ?? 12;
-  return h < NIGHT_END || h >= NIGHT_START;
+  return gloomy ? (h < GLOOM_END || h >= GLOOM_START) : (h < NIGHT_END || h >= NIGHT_START);
 }
 
-// Is the player's CURRENT tile dark right now (ignoring any torch)?
-export function isDarkHere(state) {
+export function isSettlement(tile) {
+  if (!tile) return false;
+  return tile.terrain === "settlement" || (tile.poi?.type && SETTLEMENT_POIS.has(tile.poi.type));
+}
+
+export function hasDarkvision(character) { return !!character?.darkvision; }
+
+// Ambient darkness of the player's tile, ignoring any carried light or darkvision.
+function ambientDark(state) {
   const cur = state?.world?.currentTile;
   if (!cur) return false;
   const tile = getTile(state, cur.x, cur.y);
   if (!tile) return false;
-  const poiType = tile.poi?.type;
-  if (tile.terrain === "indoor" || (poiType && INTERIOR_POIS.has(poiType))) return true; // interiors: always dark
-  if (TERRAINS[tile.terrain]?.dark) return true;  // gloomy by nature, even by day
-  return isNight(state.time);                      // open ground: dark only at night
+  if (tile.terrain === "indoor" || (tile.poi?.type && INTERIOR_POIS.has(tile.poi.type))) return true; // interiors: always
+  if (isSettlement(tile)) return false; // towns keep braziers and windows lit
+  return isNight(state.time, !!TERRAINS[tile.terrain]?.dark); // open wilds: dark at night (sooner if gloomy)
 }
 
-export function torchMinutes(state) { return state?.character?.light?.torchMinutes || 0; }
-export function isLit(state) { return torchMinutes(state) > 0; }
+// ---- carried light ----
+export function lightSource(state) { return state?.character?.light?.source || null; }
+// Minutes of light left (back-compat with the old {torchMinutes} shape).
+export function lightMinutes(state) {
+  const l = state?.character?.light;
+  return (l?.minutes ?? l?.torchMinutes) || 0;
+}
+export function isLit(state) { return lightMinutes(state) > 0; }
 
-// The mechanically meaningful state: you're "in the dark" only when it's dark
-// AND you have no light burning.
-export function inTheDark(state) { return isDarkHere(state) && !isLit(state); }
+// Is it dark for THIS character right now (ambient dark, darkvision sees through)?
+export function isDarkHere(state) { return ambientDark(state) && !hasDarkvision(state.character); }
 
-// A short status for the menu HUD, the glossary, and the narrator context line.
+// ---- the three meaningful states ----
+// Blind: can't see to fight or navigate.
+export function inTheDark(state) { return ambientDark(state) && !isLit(state) && !hasDarkvision(state.character); }
+// Hidden: unseen in the dark (no flame) — darkvision folk count too (they just also see).
+export function isHidden(state) { return ambientDark(state) && !isLit(state); }
+// A flame in the dark — visible to everything out there.
+export function isBeacon(state) { return ambientDark(state) && isLit(state); }
+
+// How far the player reveals the map right now.
+export function sightRadius(state) {
+  if (!ambientDark(state) || hasDarkvision(state.character)) return SIGHT_RADIUS; // daylight / town / darkvision
+  const src = lightSource(state);
+  if (src === "lantern") return SIGHT_RADIUS; // steady, bright
+  if (src === "torch") return 2;              // flickering pool of light
+  return 1;                                   // pitch dark: fumble one hex at a time
+}
+
+// Short status for the menu HUD, glossary, and narrator context line.
 export function lightStatus(state) {
-  const m = torchMinutes(state);
-  if (m > 0) return { lit: true, dark: false, minutes: m, text: `lit by torch (~${m}m left)` };
-  if (isDarkHere(state)) return { lit: false, dark: true, minutes: 0, text: "in darkness" };
-  return { lit: false, dark: false, minutes: 0, text: "daylight" };
+  const m = lightMinutes(state);
+  if (m > 0) return { lit: true, dark: false, source: lightSource(state), minutes: m, text: `lit by ${lightSource(state) || "a flame"} (~${m}m left)` };
+  if (ambientDark(state) && hasDarkvision(state.character)) return { lit: false, dark: false, darkvision: true, text: "dark, but you see in it" };
+  if (ambientDark(state)) return { lit: false, dark: true, text: "in darkness" };
+  return { lit: false, dark: false, text: "daylight" };
 }

@@ -25,7 +25,7 @@ import { effectiveAttributes, ratingFromXp, proficiencyName, weaponMasteryId, XP
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
 import { chooseAction } from "./combat-ai.js";
-import { DARK_ACC_PENALTY } from "./light.js";
+import { DARK_ACC_PENALTY, DARK_FLEE_BONUS } from "./light.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -232,6 +232,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     ownedUniques: opts.ownedUniques || [],
     coinBonus: opts.coinBonus || 0,
     environment: opts.environment || [],
+    dark: !!opts.dark, // fighting blind: accuracy penalty (set on player) + easier flight
     revivedUsed: false,
     profGains: {},
     log: [logEntry(lethal ? `Combat begins — ${flavor}.` : `A brawl breaks out — ${flavor}. Bare hands, for now.`, "system")],
@@ -1449,10 +1450,11 @@ export function playerFlee(cs0) {
   const cs = clone(cs0);
   const speeds = livingEnemies(cs).map((e) => e.speed || 4);
   const enemySpeed = speeds.length ? Math.max(...speeds) : 1;
-  const chance = clamp(45 + (cs.player.speed - enemySpeed) * 6, 15, 90);
+  const darkBonus = cs.dark ? DARK_FLEE_BONUS : 0; // melt into the black
+  const chance = clamp(45 + darkBonus + (cs.player.speed - enemySpeed) * 6, 15, 90);
   if (rand100() <= chance) {
     cs.phase = "playerFled";
-    cs.log.push(logEntry(`You break away and escape.`, "system"));
+    cs.log.push(logEntry(darkBonus ? `You slip into the dark and are gone.` : `You break away and escape.`, "system"));
     return cs;
   }
   cs.log.push(logEntry(`You fail to escape!`, "system"));

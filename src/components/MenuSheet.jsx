@@ -140,7 +140,7 @@ const itemRowStyle = {
 };
 
 // Item detail modal: stats, requirement, passives, and equip/unequip.
-function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUnequip, onUse, onLightTorch, onRest, onBindRune, onClose }) {
+function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUnequip, onUse, onLightTorch, onLightLantern, onRest, onBindRune, onClose }) {
   if (!item) return null;
   const cs = itemCombatStats(item);
   const req = itemRequirement(item);
@@ -247,10 +247,16 @@ function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUne
         {usable && (
           <button onClick={() => { onUse(id); onClose(); }} style={actionButtonStyle()}>{item.use.verb || "Use"}</button>
         )}
-        {(item.tool?.uses || []).includes("light") && (
+        {id === "torch" && (
           <>
-            {id === "torch" && <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", margin: "2px 2px 0", lineHeight: 1.4 }}>Needs a tinderbox to strike the flame.</div>}
+            <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", margin: "2px 2px 0", lineHeight: 1.4 }}>Needs a tinderbox to strike the flame. Burns ~1h; sheds a modest pool of light.</div>
             <button onClick={() => { onLightTorch?.(); onClose(); }} style={actionButtonStyle()}>Light a torch</button>
+          </>
+        )}
+        {id === "lantern" && (
+          <>
+            <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", margin: "2px 2px 0", lineHeight: 1.4 }}>Burns a flask of lamp-oil for ~4h of steady, bright light you can hood at will.</div>
+            <button onClick={() => { onLightLantern?.(); onClose(); }} style={actionButtonStyle()}>Light the lantern</button>
           </>
         )}
         {((item.tool?.uses || []).includes("rest") || (item.tool?.uses || []).includes("camp")) && (
@@ -343,7 +349,7 @@ function Divider() {
   );
 }
 
-export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip, onUse, onLightTorch, onRest, onBindRune }) {
+export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip, onUse, onLightTorch, onLightLantern, onExtinguish, onRest, onBindRune }) {
   const [detail, setDetail] = useState(null); // { id, location: "worn"|"carried" }
   const [arsenalOpen, setArsenalOpen] = useState(false);
   const [openAttr, setOpenAttr] = useState(null); // attribute key whose threshold detail is expanded
@@ -482,11 +488,20 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
               <StatBar label="Resolve" value={state.character.resolve} max={state.character.resolveMax}
                        gradient="linear-gradient(90deg, #6d4a8a 0%, #a06fc4 100%)" />
             </button>
-            <button onClick={() => showInfo("light")} style={{ ...bareBtn, display: "flex", alignItems: "center", gap: "7px", padding: "4px 2px" }}>
-              <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: colors.gold }}>Light</span>
-              <span style={{ fontSize: "12px", color: colors.parchment }}>{lightStatus(state).text}</span>
-              <InfoButton onClick={() => showInfo("light")} />
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "7px", padding: "4px 2px" }}>
+              <button onClick={() => showInfo("light")} style={{ ...bareBtn, display: "flex", alignItems: "center", gap: "7px", flex: 1, minWidth: 0 }}>
+                <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: colors.gold }}>Light</span>
+                <span style={{ fontSize: "12px", color: colors.parchment }}>{lightStatus(state).text}</span>
+                <InfoButton onClick={() => showInfo("light")} />
+              </button>
+              {lightStatus(state).lit && (
+                <button onClick={() => onExtinguish?.()} style={{
+                  flexShrink: 0, padding: "4px 10px", borderRadius: radius.pill, fontFamily: "inherit",
+                  background: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.3)`,
+                  color: "rgba(215,167,111,0.85)", fontSize: "11px", fontWeight: 700, cursor: "pointer",
+                }}>Extinguish</button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -680,6 +695,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           onUnequip={onUnequip}
           onUse={onUse}
           onLightTorch={onLightTorch}
+          onLightLantern={onLightLantern}
           onRest={onRest}
           onBindRune={onBindRune}
           onClose={() => setDetail(null)}

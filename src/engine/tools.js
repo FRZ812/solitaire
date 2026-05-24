@@ -7,7 +7,7 @@ import { advanceTime } from "./time.js";
 import { depleteNeeds, getNeedConditions, mergeConditions } from "./needs.js";
 import { passiveHealVitality } from "./healing.js";
 import { activeWorldPassives } from "./combat-stats.js";
-import { TORCH_MINUTES } from "./light.js";
+import { TORCH_MINUTES, LANTERN_MINUTES, lightMinutes } from "./light.js";
 
 const FIRE_SOURCES = ["tinderbox", "flint-and-steel"]; // something to strike a flame
 const SLEEP_PER_HOUR = 12; // a warm bedroll restores deep rest
@@ -18,20 +18,54 @@ function carriedQty(state, id) {
 }
 
 // Strike a torch alight. Needs a torch AND a fire source — that's why the kit
-// bundles a tinderbox; without it the torch is just a stick.
+// bundles a tinderbox; without it the torch is just a stick. A torch is a quick,
+// short light (≈1h) that sheds a modest pool.
 export function lightTorch(state) {
   const ch = state.character;
-  if ((ch.light?.torchMinutes || 0) > 5) return { state, ok: false, reason: "Your torch still burns — no need to waste another." };
+  if (lightMinutes(state) > 5) return { state, ok: false, reason: "You already carry a burning light — no need to waste another." };
   if (carriedQty(state, "torch") < 1) return { state, ok: false, reason: "You have no torch to light." };
   if (!FIRE_SOURCES.some((id) => carriedQty(state, id) > 0)) {
     return { state, ok: false, reason: "A torch needs a tinderbox to strike a flame — and you have none." };
   }
   const inventory = applyInventoryChanges(ch.inventory, { removed: [{ itemId: "torch", quantity: 1 }] }, state.time.day);
-  const light = { ...(ch.light || {}), torchMinutes: TORCH_MINUTES };
+  const light = { source: "torch", minutes: TORCH_MINUTES };
   return {
     ok: true,
     summary: "You strike the tinderbox; a torch catches and flares, shoving the dark back to the edges of the room.",
     state: { ...state, character: { ...ch, inventory, light } },
+  };
+}
+
+// Light the hooded lantern. Needs the lantern, a flask of lamp-oil (consumed),
+// and a fire source. A lantern is a steady, bright, long light (≈4h) — full
+// sight — and can be hooded (extinguished) at will to go dark for stealth.
+export function lightLantern(state) {
+  const ch = state.character;
+  if (lightMinutes(state) > 5) return { state, ok: false, reason: "You already carry a burning light." };
+  if (carriedQty(state, "lantern") < 1) return { state, ok: false, reason: "You have no lantern." };
+  if (carriedQty(state, "lamp-oil") < 1) return { state, ok: false, reason: "The lantern is dry — you need a flask of lamp-oil." };
+  if (!FIRE_SOURCES.some((id) => carriedQty(state, id) > 0)) {
+    return { state, ok: false, reason: "You need a tinderbox to strike the lantern alight." };
+  }
+  const inventory = applyInventoryChanges(ch.inventory, { removed: [{ itemId: "lamp-oil", quantity: 1 }] }, state.time.day);
+  const light = { source: "lantern", minutes: LANTERN_MINUTES };
+  return {
+    ok: true,
+    summary: "You feed the lantern a flask of oil and strike it alight — a steady, hooded glow you can carry or shutter at will.",
+    state: { ...state, character: { ...ch, inventory, light } },
+  };
+}
+
+// Snuff or hood your light to go dark on purpose (to hide, or to save a torch).
+export function extinguish(state) {
+  const ch = state.character;
+  if (lightMinutes(state) <= 0) return { state, ok: false, reason: "You carry no burning light." };
+  const wasLantern = ch.light?.source === "lantern";
+  const light = { source: null, minutes: 0 };
+  return {
+    ok: true,
+    summary: wasLantern ? "You slide the lantern's hood shut and the dark rushes back in." : "You snuff the torch — the dark rushes back in.",
+    state: { ...state, character: { ...ch, light } },
   };
 }
 
@@ -56,7 +90,8 @@ export function applyRest(state, hours) {
 
   // Recompute need-borne conditions (rest can clear Tired/Exhausted, or wake you Hungry).
   const conditions = mergeConditions(null, getNeedConditions(needs), ch.conditions);
-  const light = { ...(ch.light || {}), torchMinutes: Math.max(0, (ch.light?.torchMinutes || 0) - minutes) };
+  const burned = Math.max(0, lightMinutes(state) - minutes);
+  const light = burned > 0 ? { source: ch.light?.source || "torch", minutes: burned } : { source: null, minutes: 0 };
 
   const gains = [];
   if (sleepGain > 0) gains.push(`+${sleepGain} sleep`);

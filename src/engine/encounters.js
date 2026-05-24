@@ -1,6 +1,11 @@
 import { SPAWN_TABLES } from "../data/spawn-tables.js";
 import { getBiome } from "../data/biomes.js";
 import { getTile } from "./world.js";
+import { TERRAINS } from "../data/terrains.js";
+import { isNight } from "./light.js";
+
+// More things prowl after dark — night (and gloomy ground) raises the odds.
+export const NIGHT_ENCOUNTER_MULT = 1.4;
 
 // Combine the terrain's base spawn table with any biome-specific extras for
 // this coord. Chance comes from the terrain table; entries are concatenated.
@@ -16,10 +21,11 @@ function effectiveTable(tile, x, y) {
   };
 }
 
-export function rollEncounter(tile, x, y) {
+export function rollEncounter(tile, x, y, chanceMult = 1) {
   const table = effectiveTable(tile, x, y);
   if (!table || table.chance <= 0 || table.entries.length === 0) return null;
-  if (Math.random() >= table.chance) return null;
+  const chance = Math.min(1, table.chance * chanceMult);
+  if (Math.random() >= chance) return null;
   const total = table.entries.reduce((s, e) => s + e.weight, 0);
   let r = Math.random() * total;
   for (const e of table.entries) {
@@ -57,7 +63,10 @@ export function rollPathEncounter(state, path) {
   for (let i = 1; i < path.length; i++) {
     const p = path[i];
     const tile = getTile(state, p.x, p.y);
-    const enc = rollEncounter(tile, p.x, p.y);
+    // Gloomy terrain darkens earlier, so its night window (and danger) is wider.
+    const gloomy = !!TERRAINS[tile.terrain]?.dark;
+    const mult = isNight(state.time, gloomy) ? NIGHT_ENCOUNTER_MULT : 1;
+    const enc = rollEncounter(tile, p.x, p.y, mult);
     if (enc) return { encounter: enc, atTile: p, atIndex: i };
   }
   return null;

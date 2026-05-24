@@ -33,7 +33,7 @@ export const RACES = {
     subraces: {
       high: { name: "High Elf", magic: "innate", startingSpells: ["firebolt"], racialPassives: [{ id: "aegis", tier: "rare" }], traits: ["Born to the Art — magic comes as breath."] },
       wood: { name: "Wood Elf", racialPassives: [{ id: "evasion", tier: "rare" }, { id: "fleet", tier: "uncommon" }], traits: ["Forest-silent; reads the wild like a page."] },
-      drow: { name: "Drow", attributeModifiers: { reflex: 1 }, innateAbilities: [{ id: "shadowstep", tier: "common" }], racialPassives: [{ id: "evasion", tier: "rare" }], social: "feared", traits: ["Darkvision — sees in pitch black.", "Deep-folk of a matriarchal court."], flaws: ["Sunlight-sensitive: bright day saps and pains them."] },
+      drow: { name: "Drow", darkvision: true, attributeModifiers: { reflex: 1 }, innateAbilities: [{ id: "shadowstep", tier: "common" }], racialPassives: [{ id: "evasion", tier: "rare" }], social: "feared", traits: ["Darkvision — sees in pitch black.", "Deep-folk of a matriarchal court."], flaws: ["Sunlight-sensitive: bright day saps and pains them."] },
     },
   },
   dwarf: {
@@ -102,7 +102,7 @@ export const RACES = {
     flaws: ["Shunned and watched — temples and the devout meet them with fear or open hostility."],
   },
   vampire: {
-    id: "vampire", name: "Vampire", magic: "learned", social: "feared",
+    id: "vampire", name: "Vampire", magic: "learned", social: "feared", darkvision: true,
     attributeModifiers: { body: 3, reflex: 2, presence: 1 },
     racialPassives: [{ id: "vampiric", tier: "rare" }, { id: "renewing", tier: "rare" }, { id: "tireless", tier: "rare" }],
     innateAbilities: [{ id: "blood-siphon", tier: "common" }],
@@ -114,7 +114,7 @@ export const RACES = {
     },
   },
   lycanthrope: {
-    id: "lycanthrope", name: "Lycanthrope", magic: "learned", social: "feared",
+    id: "lycanthrope", name: "Lycanthrope", magic: "learned", social: "feared", darkvision: true,
     attributeModifiers: { body: 2, vigor: 2, reflex: 1, mind: -1 },
     racialPassives: [{ id: "renewing", tier: "rare" }, { id: "tireless", tier: "uncommon" }],
     innateAbilities: [{ id: "rending-claws", tier: "common" }, { id: "beast-shift", tier: "common" }],
@@ -147,6 +147,7 @@ export function resolveRace(raceId, subraceId) {
     startingSpells: [...(race.startingSpells || []), ...(sub?.startingSpells || [])],
     traits: [...(race.traits || []), ...(sub?.traits || [])],
     flaws: [...(race.flaws || []), ...(sub?.flaws || [])],
+    darkvision: !!(race.darkvision || sub?.darkvision),
   };
 }
 
