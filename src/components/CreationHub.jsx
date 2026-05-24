@@ -60,24 +60,31 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
         </div>
 
         {/* templates */}
-        <div style={{ fontSize: "9px", letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(215,167,111,0.6)", fontWeight: 800, marginBottom: "10px" }}>Ready-made lives</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+        <div style={{ fontSize: "9px", letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(215,167,111,0.6)", fontWeight: 800, marginBottom: "10px" }}>Ready-made lives <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "rgba(215,167,111,0.45)" }}>· a party needs one of each</span></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           {CHARACTER_TEMPLATES.map((t) => (
             <div key={t.id} style={{
-              display: "flex", flexDirection: "column", padding: "13px", borderRadius: radius.panelCompact,
+              display: "flex", flexDirection: "column", padding: "14px", borderRadius: radius.panelCompact,
               backgroundColor: "rgba(20,29,29,0.55)", border: `1px solid rgba(215,167,111,0.22)`,
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "9px", marginBottom: "7px" }}>
                 <div style={{
-                  width: "30px", height: "30px", borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                  width: "32px", height: "32px", borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
                   backgroundColor: "rgba(215,167,111,0.12)", border: `1px solid rgba(215,167,111,0.3)`,
                 }}>
-                  <Icon name={t.icon} size={16} color={colors.gold} strokeWidth={1.8} />
+                  <Icon name={t.icon} size={17} color={colors.gold} strokeWidth={1.8} />
                 </div>
-                <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "18px", color: colors.parchmentLight }}>{t.label}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.1 }}>{t.label}</div>
+                  <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.6)", marginTop: "1px" }}>{t.concept}</div>
+                </div>
+                <span style={{
+                  flexShrink: 0, fontSize: "9px", fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase",
+                  padding: "4px 9px", borderRadius: radius.pill, color: colors.ink, backgroundColor: colors.gold,
+                }}>{t.role}</span>
               </div>
-              <div style={{ fontSize: "11.5px", color: "rgba(237,228,208,0.72)", lineHeight: 1.4, marginBottom: "8px", flex: 1 }}>{t.concept}</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "10px" }}>
+              <div style={{ fontSize: "12px", color: "rgba(237,228,208,0.75)", lineHeight: 1.5, marginBottom: "9px", fontStyle: "italic" }}>{t.story}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "11px" }}>
                 {t.highlights.map((h) => (
                   <span key={h} style={{
                     fontSize: "9px", fontWeight: 800, letterSpacing: "0.04em", textTransform: "uppercase",
@@ -87,9 +94,9 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 ))}
               </div>
               <button onClick={() => begin(t)} disabled={busy} style={{
-                width: "100%", padding: "9px", borderRadius: radius.panelCompact,
+                width: "100%", padding: "10px", borderRadius: radius.panelCompact,
                 backgroundColor: colors.gold, color: colors.ink, border: "none",
-                fontSize: "12px", fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.5 : 1,
+                fontSize: "13px", fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.5 : 1,
               }}>Begin as {(name.trim() || t.setup.name)}</button>
             </div>
           ))}

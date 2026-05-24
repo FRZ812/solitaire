@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 
-import { STORAGE_KEY } from "./config.js";
+import { STORAGE_KEY, originLabel } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
 import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 
@@ -642,7 +642,13 @@ export function Solitaire() {
     setCreationEntered(false);
     setState(built); // flip out of limbo at once so the chooser can't flash back while the opening loads
     const kindred = [setup.subrace, setup.race].filter(Boolean).join(" ");
-    const opener = `[CHARACTER CREATION] The character is now fully created and LOCKED via direct selection — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}. Do NOT emit character_setup, do NOT change any values, and do NOT ask further questions. OPEN THE REAL SCENE now: narrate the soul drawn out of limbo into the world, arriving at the Drowned Rat tavern in Mirecross in the rain, then proceed as a normal first beat.`;
+    const a = setup.appearance || {};
+    const looks = setup.base_appearance || [
+      setup.age, a.build && `${a.build} build`, a.skin && `${a.skin} skin`,
+      a.hair && `${a.hair} hair`, a.eyes && `${a.eyes} eyes`, a.facial_hair, a.marks,
+    ].filter(Boolean).join(", ");
+    const originStr = originLabel(setup.origin);
+    const opener = `[CHARACTER CREATION] The character is now fully created and LOCKED via direct selection — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}${originStr ? ` of ${originStr} origin` : ""}. Describe them FAITHFULLY and do NOT contradict these set traits: ${looks || "as the player envisioned"}. Do NOT emit character_setup, do NOT change any values, and do NOT ask further questions. OPEN THE REAL SCENE now: narrate the soul drawn out of limbo into the world, arriving at the Drowned Rat tavern in Mirecross in the rain, then proceed as a normal first beat.`;
     await runNarratorTurn(built, opener);
   }
 
