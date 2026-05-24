@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from "react";
 import { Icon, ItemIcon } from "./Icon.jsx";
-import { iconButtonStyle } from "./primitives.jsx";
+import { iconButtonStyle, conditionPalette, fmtRemaining } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { GLOSSARY, GLOSSARY_CATEGORIES } from "../data/glossary.js";
+import { CONDITIONS } from "../data/conditions.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { itemTemplate } from "../data/catalog.js";
 import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
@@ -22,6 +23,7 @@ const CODEX_TABS = [
   { key: "items",       label: "Items",       group: "compendium" },
   { key: "abilities",   label: "Abilities",   group: "compendium" },
   { key: "passives",    label: "Passives",    group: "compendium" },
+  { key: "conditions",  label: "Conditions",  group: "reference" },
   { key: "glossary",    label: "Glossary",    group: "reference" },
 ];
 
@@ -566,6 +568,60 @@ function GlossaryRow({ term, text }) {
   );
 }
 
+// Reference list of every buff and debuff the game can place on you — drawn
+// from the condition registry, grouped by polarity, each tapping open to its
+// full description with its effect tags (timer / stops-healing / damage-a-turn).
+function conditionTags(meta) {
+  const tags = [];
+  tags.push(meta.duration != null ? `lasts ~${fmtRemaining(meta.duration)}` : (meta.isNeed ? "while the need lasts" : "until treated"));
+  if (meta.blocksHealing) tags.push("stops natural healing");
+  if (meta.dotPerHour) tags.push(`−${meta.dotPerHour} vitality/hour`);
+  return tags.join(" · ");
+}
+
+function ConditionRow({ name, meta }) {
+  const [open, setOpen] = useState(false);
+  const pal = conditionPalette(meta.polarity);
+  return (
+    <button onClick={() => setOpen((o) => !o)} style={{
+      width: "100%", textAlign: "left", fontFamily: "inherit", cursor: "pointer",
+      background: "rgba(20,29,29,0.5)", border: `1px solid rgba(215,167,111,0.18)`,
+      borderRadius: radius.panelCompact, padding: "11px 13px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+        <span style={{
+          ...metaStyle, fontSize: "11px", letterSpacing: "0.12em",
+          color: pal.color, background: pal.bg, border: `1px solid ${pal.border}`,
+          padding: "3px 9px", borderRadius: radius.pill, textShadow: `0 0 6px ${pal.glow}`,
+        }}>{name}</span>
+        <span style={{ color: "rgba(215,167,111,0.6)", fontSize: "13px", flexShrink: 0 }}>{open ? "▾" : "▸"}</span>
+      </div>
+      <div style={{ ...subtleMeta, marginTop: "6px", letterSpacing: "0.06em", textTransform: "none" }}>{conditionTags(meta)}</div>
+      {open && <div style={{ fontSize: "13px", color: "rgba(237,228,208,0.85)", lineHeight: 1.5, marginTop: "7px" }}>{meta.desc}</div>}
+    </button>
+  );
+}
+
+function ConditionsView() {
+  const all = Object.entries(CONDITIONS).map(([name, meta]) => ({ name, meta }));
+  const groups = [
+    { label: "Buffs", items: all.filter((c) => c.meta.polarity === "buff") },
+    { label: "Debuffs", items: all.filter((c) => c.meta.polarity !== "buff") },
+  ];
+  return (
+    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {groups.map((g) => g.items.length ? (
+        <div key={g.label}>
+          <div style={{ ...accentMeta, marginBottom: "8px", fontWeight: 700 }}>{g.label}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
+            {g.items.map((c) => <ConditionRow key={c.name} name={c.name} meta={c.meta} />)}
+          </div>
+        </div>
+      ) : null)}
+    </div>
+  );
+}
+
 function GlossaryView() {
   return (
     <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -789,7 +845,7 @@ export function CodexView({ state, onClose }) {
 
       <div className="tabstrip" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
         {CODEX_TABS.map((tab, i) => {
-          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : Object.keys(codex[tab.key] || {}).length;
+          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
           const divide = i > 0 && CODEX_TABS[i - 1].group !== tab.group; // lore | compendium
           return (
@@ -824,6 +880,8 @@ export function CodexView({ state, onClose }) {
           <AbilityCatalog codex={codex} character={state.character} />
         ) : activeTab === "passives" ? (
           <PassiveCatalog />
+        ) : activeTab === "conditions" ? (
+          <ConditionsView />
         ) : activeTab === "glossary" ? (
           <GlossaryView />
         ) : entries.length === 0 ? (
