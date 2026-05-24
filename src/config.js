@@ -1,7 +1,7 @@
 // Top-level configuration constants.
 export const MODEL = "claude-opus-4-7";
 export const HISTORY_LIMIT = 100;
-export const STORAGE_KEY = "solitaire-state-v10";
+export const STORAGE_KEY = "solitaire-state-v11";
 
 // v12 scale: hexes are ~250m so each tile is a single concrete vantage rather
 // than a region. Travel base drops accordingly, sight is normally short, and
@@ -28,6 +28,16 @@ export const AERIAL_CHANCE_PER_LEVEL = 0.015; // per-hex ambush chance per level
 export const AERIAL_SIGHTING_DAYS = 4;        // how long a town keeps talking about a flyover
 export const TRAVEL_BASE_MIN = 12;
 export const TILE_PX = 38;
+
+// Mounts. A ridden ground mount divides per-leg travel time by its moveProfile.ground
+// (a destrier ≈2× = half the minutes), gated to terrain it handles (engine: handleTravel).
+// Being over your carry cap (engine/weight.js) drags every leg out by this factor.
+export const OVERBURDENED_TRAVEL_MULT = 1.5;
+// A flying mount flies like the Fly spell but burns its OWN stamina (needs), not the
+// rider's Resolve: this much hunger+sleep per hour aloft (engine: handleFly).
+export const MOUNT_FLIGHT_NEED_PER_HOUR = 12;
+// A mount this spent (hunger or sleep at/below) is too exhausted to fly.
+export const MOUNT_FLIGHT_MIN_NEED = 15;
 
 export const ATTR_KEYS = ["body", "reflex", "vigor", "mind", "wit", "presence"];
 export const ATTR_LABELS = {

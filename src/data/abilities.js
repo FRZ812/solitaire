@@ -18,6 +18,7 @@
 import { tierMult, tier as tierInfo } from "./tiers.js";
 import { UNIQUE_ABILITIES } from "./uniques.js";
 import { TRAVEL_SPELLS } from "./travel-spells.js";
+import { BUFF_SPELLS } from "./buff-spells.js";
 
 export const REQ_PER_TIER = 2;
 
@@ -218,7 +219,7 @@ const UNIQUE_BY_ID = Object.fromEntries(UNIQUE_ABILITIES.map((a) => [a.id, a]));
 // Travel spells (fly / dimension-door / gate) are real, grantable abilities so the
 // normal grant/known/tier-clamp paths work — but they're flagged `noncombat`, so
 // every combat + ability-list consumer filters them out (they drive map travel only).
-const ALL_BY_ID = { ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, ...TRAVEL_SPELLS, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
+const ALL_BY_ID = { ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, ...TRAVEL_SPELLS, ...BUFF_SPELLS, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
 
 export function getAbilityDef(id) { return ALL_BY_ID[id] || null; }
 

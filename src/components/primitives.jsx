@@ -39,6 +39,51 @@ export const headerButtonStyle = {
 
 // ----- Panels -----
 
+// Inset gold-tinted container reused for Wealth / Wearing / Carrying / item cards.
+export const insetBoxStyle = {
+  background: "rgba(215, 167, 111, 0.03)",
+  border: `1px solid rgba(215, 167, 111, 0.08)`,
+  borderRadius: radius.chip,
+  padding: "8px 12px",
+};
+
+// Pill/standard action button at the foot of sheets and in the item detail modal.
+export function actionButtonStyle({ danger = false, ghost = false } = {}) {
+  if (ghost) {
+    return {
+      display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+      padding: "12px",
+      border: "none", borderRadius: radius.panelCompact,
+      backgroundColor: "transparent",
+      color: "rgba(215, 167, 111, 0.6)",
+      fontSize: "12px", fontWeight: 700,
+      cursor: "pointer", fontFamily: "inherit",
+    };
+  }
+  if (danger) {
+    return {
+      display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+      padding: "13px",
+      border: `1px solid rgba(239, 68, 68, 0.35)`,
+      borderRadius: radius.panelCompact,
+      backgroundColor: "rgba(239, 68, 68, 0.08)",
+      color: alert.dangerAccent,
+      fontSize: "13px", fontWeight: 700,
+      cursor: "pointer", fontFamily: "inherit",
+    };
+  }
+  return {
+    display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+    padding: "13px",
+    border: `1px solid rgba(215, 167, 111, 0.25)`,
+    borderRadius: radius.panelCompact,
+    backgroundColor: "rgba(215, 167, 111, 0.08)",
+    color: colors.parchmentLight,
+    fontSize: "13px", fontWeight: 700,
+    cursor: "pointer", fontFamily: "inherit",
+  };
+}
+
 const panelShell = {
   marginBottom: "12px",
   boxShadow: shadow.panel,

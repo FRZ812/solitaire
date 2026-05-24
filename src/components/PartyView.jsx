@@ -3,28 +3,35 @@ import { Icon } from "./Icon.jsx";
 import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
-import { partyMembers } from "../engine/party.js";
+import { partyMembers, mountMembers, nonMountPartyMembers } from "../engine/party.js";
 import { relationshipTier } from "../engine/relationships.js";
+import { currentRideLoad, effectiveLoad, canMount, rideCapacityOf } from "../engine/riding.js";
 
-// The party roster: every recruited companion as a full person — appearance,
-// attributes, gear, and what they know — with the option to part ways.
-export function PartyView({ state, onDismiss, onClose }) {
+// The party roster: every recruited companion AND mount as a full creature —
+// appearance, attributes, gear — with the option to part ways, and (for mounts)
+// to seat riders by weight (engine/riding.js) and ride/dismount.
+export function PartyView({ state, onDismiss, onMount, onDismount, onClose }) {
+  const chars = state.world.codex.characters;
   const members = partyMembers(state);
+  const mounts = mountMembers(state);
+  const people = nonMountPartyMembers(state);
+  const wanderer = chars.wanderer;
+
+  // Everyone who could be seated on a mount: the player, companions, other mounts.
+  const candidates = [wanderer, ...members];
+  const nameOf = (id) => chars[id]?.name || (id === "wanderer" ? "You" : id);
+
   return (
     <div style={{
-      position: "absolute", inset: 0, zIndex: 30,
-      backgroundColor: "#0d1312",
-      display: "flex", flexDirection: "column",
-      maxWidth: "480px", margin: "0 auto",
-      borderLeft: "1px solid rgba(215, 167, 111, 0.12)",
-      borderRight: "1px solid rgba(215, 167, 111, 0.12)",
+      position: "absolute", inset: 0, zIndex: 30, backgroundColor: "#0d1312",
+      display: "flex", flexDirection: "column", maxWidth: "480px", margin: "0 auto",
+      borderLeft: "1px solid rgba(215, 167, 111, 0.12)", borderRight: "1px solid rgba(215, 167, 111, 0.12)",
       boxShadow: "0 0 50px rgba(0,0,0,0.9)",
     }}>
       <div style={{
         padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px 16px",
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        borderBottom: "1px solid rgba(215, 167, 111, 0.15)",
-        backgroundColor: "rgba(20, 29, 29, 0.95)",
+        borderBottom: "1px solid rgba(215, 167, 111, 0.15)", backgroundColor: "rgba(20, 29, 29, 0.95)",
       }}>
         <button onClick={onClose} aria-label="Close" style={{
           ...iconButtonStyle, width: "30px", height: "30px", borderRadius: "50%",
@@ -35,34 +42,96 @@ export function PartyView({ state, onDismiss, onClose }) {
         <div style={{ textAlign: "center" }}>
           <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "22px", color: colors.parchmentLight }}>Your Company</div>
           <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.78)", marginTop: "3px" }}>
-            {members.length === 0 ? "Travelling alone" : `${members.length} companion${members.length === 1 ? "" : "s"}`}
+            {members.length === 0 ? "Travelling alone" : `${people.length} companion${people.length === 1 ? "" : "s"}${mounts.length ? ` · ${mounts.length} mount${mounts.length === 1 ? "" : "s"}` : ""}`}
           </div>
         </div>
         <div style={{ width: "30px" }} />
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px 16px", WebkitOverflowScrolling: "touch" }}>
-        {members.length === 0 ? (
+        {members.length === 0 && (
           <div style={{ padding: "28px 8px", textAlign: "center", fontStyle: "italic", fontSize: "13px", color: "rgba(237,228,208,0.5)", lineHeight: 1.5 }}>
-            You travel alone. Folk looking for a road to walk gather at taverns — find the quest board and see who's willing.
+            You travel alone. Folk for hire gather at taverns; mounts are bought at a stable or won on the road.
           </div>
-        ) : members.map((c) => (
+        )}
+
+        {mounts.length > 0 && <SectionHeader>Mounts</SectionHeader>}
+        {mounts.map((m) => {
+          const load = currentRideLoad(m, state);
+          const cap = rideCapacityOf(m);
+          const pct = cap ? Math.min(100, Math.round((load / cap) * 100)) : 0;
+          const seatable = candidates.filter((c) => c && c.id !== m.id && c.ridingOn !== m.id && canMount(state, c.id, m.id).ok);
+          return (
+            <Panel key={m.id} tone="warm" style={{ marginBottom: "12px" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.1 }}>{m.name}</div>
+                  <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>
+                    {m.race} · {m.tier} · {m.moveProfile?.canFly ? "flies" : `ground ×${m.moveProfile?.ground ?? 1}`}
+                    {m.ridingOn ? ` · riding ${nameOf(m.ridingOn)}` : ""}
+                  </div>
+                </div>
+                <button onClick={() => onDismiss(m.id)} style={partWaysStyle}>Set loose</button>
+              </div>
+
+              <div style={{ fontSize: "12px", fontStyle: "italic", color: "rgba(237,228,208,0.7)", lineHeight: 1.45, margin: "8px 0" }}>{m.description}</div>
+
+              {/* Ride-load gauge */}
+              <div style={{ margin: "6px 0 4px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", ...metaStyle, color: colors.parchmentMuted, marginBottom: "3px" }}>
+                  <span>Bears</span><span>{Math.round(load)} / {cap}</span>
+                </div>
+                <div style={{ height: "6px", borderRadius: "3px", backgroundColor: "rgba(20,29,29,0.7)", overflow: "hidden", border: "1px solid rgba(215,167,111,0.14)" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", backgroundColor: pct >= 100 ? "#d98a6a" : colors.gold }} />
+                </div>
+              </div>
+
+              {/* Needs */}
+              <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginBottom: "6px" }}>
+                hunger {Math.round(m.needs?.hunger ?? 0)} · rest {Math.round(m.needs?.sleep ?? 0)} · eats {m.feed}
+              </div>
+
+              {/* Current riders */}
+              {(m.riders?.length > 0) && (
+                <div style={{ marginBottom: "6px" }}>
+                  {m.riders.map((rid) => (
+                    <div key={rid} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 8px", marginBottom: "4px", borderRadius: radius.chip, backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.14)" }}>
+                      <span style={{ fontSize: "12px", color: colors.parchment }}>{nameOf(rid)} <span style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted }}>· {Math.round(effectiveLoad(chars[rid], state))}</span></span>
+                      <button onClick={() => onDismount(rid)} style={miniBtn}>Dismount</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Seat someone aboard */}
+              {seatable.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                  {seatable.map((c) => (
+                    <button key={c.id} onClick={() => onMount(c.id, m.id)} style={seatBtn}>+ {c.id === "wanderer" ? "Ride" : `Seat ${c.name}`}</button>
+                  ))}
+                </div>
+              )}
+            </Panel>
+          );
+        })}
+
+        {people.length > 0 && <SectionHeader>Companions</SectionHeader>}
+        {people.map((c) => (
           <Panel key={c.id} tone="default" style={{ marginBottom: "12px" }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.1 }}>{c.name}</div>
-                <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>{c.race} · {c.profession}</div>
+                <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>{c.race} · {c.profession}{c.ridingOn ? ` · riding ${nameOf(c.ridingOn)}` : ""}</div>
                 {(() => { const t = relationshipTier(c.relationship || 0); return (
                   <span style={{ display: "inline-block", marginTop: "5px", fontSize: "9px", fontWeight: 800, letterSpacing: "0.04em", padding: "2px 8px", borderRadius: radius.pill, color: t.color, border: `1px solid ${t.color}55`, backgroundColor: `${t.color}14` }}>
                     {t.label} · {(c.relationship || 0) > 0 ? "+" : ""}{c.relationship || 0}
                   </span>
                 ); })()}
               </div>
-              <button onClick={() => onDismiss(c.id)} style={{
-                padding: "6px 12px", borderRadius: radius.pill, flexShrink: 0,
-                border: "1px solid rgba(215,167,111,0.3)", backgroundColor: "transparent",
-                color: "rgba(215,167,111,0.8)", fontSize: "11px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
-              }}>Part ways</button>
+              <div style={{ display: "flex", flexDirection: "column", gap: "5px", alignItems: "flex-end", flexShrink: 0 }}>
+                <button onClick={() => onDismiss(c.id)} style={partWaysStyle}>Part ways</button>
+                {c.ridingOn && <button onClick={() => onDismount(c.id)} style={miniBtn}>Dismount</button>}
+              </div>
             </div>
 
             <div style={{ fontSize: "12px", fontStyle: "italic", color: "rgba(237,228,208,0.7)", lineHeight: 1.45, margin: "8px 0" }}>{c.base_appearance}</div>
@@ -99,3 +168,17 @@ export function PartyView({ state, onDismiss, onClose }) {
     </div>
   );
 }
+
+const partWaysStyle = {
+  padding: "6px 12px", borderRadius: radius.pill, flexShrink: 0,
+  border: "1px solid rgba(215,167,111,0.3)", backgroundColor: "transparent",
+  color: "rgba(215,167,111,0.8)", fontSize: "11px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+};
+const miniBtn = {
+  padding: "4px 10px", borderRadius: radius.pill, border: "1px solid rgba(215,167,111,0.25)",
+  backgroundColor: "transparent", color: "rgba(215,167,111,0.75)", fontSize: "10px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+};
+const seatBtn = {
+  padding: "5px 11px", borderRadius: radius.pill, border: "none",
+  backgroundColor: colors.gold, color: colors.ink, fontSize: "11px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+};

@@ -3,6 +3,8 @@ import { RUMORED } from "./rumored.js";
 import { FABLED } from "./fabled.js";
 import { RIVERS } from "./rivers.js";
 import { computeSightFrom, computeSightFromRadius } from "../engine/world.js";
+import { bodyWeightForRace } from "../engine/weight.js";
+import { carryCapacityFor } from "../engine/attributes.js";
 
 // The player starts knowing the immediate area around the Inn, the riverbank
 // strip along each named river (radius 1 patches so the river plus its banks
@@ -43,6 +45,10 @@ export function makeInitialState() {
       proficiencyGrowthMult: 1,
       racialPassives: [],
       needs: { hunger: 60, thirst: 75, sleep: 70 },
+      // How much you can haul (engine/weight.js) — derived from Body/Vigor and
+      // (re)computed on creation/growth/load (engine/attributes.recomputeCarryCapacity).
+      carryCapacityMax: carryCapacityFor({ attributes: { body: 2, vigor: 2 } }),
+      overburdened: false,
       // Light carried right now — minutes>0 means a torch/lantern is burning and
       // holding back the dark; it counts down as time passes (engine/light.js).
       light: { source: null, minutes: 0 },
@@ -83,6 +89,7 @@ export function makeInitialState() {
             attributes: { body: 2, reflex: 3, vigor: 2, mind: 2, wit: 4, presence: 1 },
             worn: [],
             knows: [],
+            bodyWeight: 14, ridingOn: null, riders: [],
           },
 
           // ---------------------------------------------------------------
@@ -620,6 +627,14 @@ export function migrateCodex(state) {
     if (ch && Array.isArray(ch.knows)) {
       ch.knows = [...new Set(ch.knows.filter((f) => typeof f === "string" && f.trim()))];
     }
+  }
+  // Weight + riding (added with mounts): back-fill the per-character fields so old
+  // saves load. carryCapacityMax for the player is (re)derived in App's load path.
+  for (const ch of Object.values(ownCodex.characters || {})) {
+    if (!ch) continue;
+    if (typeof ch.bodyWeight !== "number") ch.bodyWeight = bodyWeightForRace(ch.race);
+    if (ch.ridingOn === undefined) ch.ridingOn = null;
+    if (!Array.isArray(ch.riders)) ch.riders = [];
   }
   return next;
 }

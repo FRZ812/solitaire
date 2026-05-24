@@ -181,6 +181,27 @@ export const GOODS = {
     appearance: "A small flask of clear, fierce grain-spirit.", description: "Burns going down. Braces you hard — a deep pull of resolve — but it parches you and muddles the head, so you'll need water and rest the sooner.",
     use: { verb: "Drink", needs: { thirst: -8, sleep: -10 }, resolve: 12 },
   },
+
+  // ---- Mount feed (kind "feed") ----
+  // Mounts eat from the pack on the road (engine/upkeep.js) — but their OWN food,
+  // not the party's rations. `feedKind` matches a mount's `feed` (data/mounts.js):
+  // grazers take fodder, beasts take meat, a drake or dragon takes whole livestock.
+  // `nourish` is what one feeding restores. No `use` block, so no player Use button.
+  "fodder": {
+    id: "fodder", name: "Bale of Fodder", kind: "feed", feedKind: "fodder", value: 4, weight: 6,
+    appearance: "A bound bale of hay, oats, and cracked grain.", description: "A day's feed for a horse, pony, mule, or camel. Keeps dry near indefinitely; sold wherever there's a stable.",
+    nourish: { hunger: 45, thirst: 5 },
+  },
+  "raw-meat": {
+    id: "raw-meat", name: "Haunch of Raw Meat", kind: "feed", feedKind: "meat", value: 9, weight: 3, perish: 2,
+    appearance: "A heavy, bloody haunch wrapped in sacking.", description: "Raw red meat to feed a dire wolf or a griffon. Spoils fast — feed it or lose it.",
+    nourish: { hunger: 50 },
+  },
+  "livestock": {
+    id: "livestock", name: "Hobbled Goat", kind: "feed", feedKind: "livestock", value: 70, weight: 30,
+    appearance: "A live goat on a short tether, bleating its dread.", description: "A whole beast — the only thing that fills a drake or a dragon. Bulky, costly, and walks itself until the wyrm wants it.",
+    nourish: { hunger: 95 },
+  },
 };
 
 export function goodDef(id) {

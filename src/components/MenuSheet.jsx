@@ -1,25 +1,21 @@
 import React, { useState } from "react";
-import { Icon, ItemIcon } from "./Icon.jsx";
+import { Icon } from "./Icon.jsx";
 import {
   iconButtonStyle, ConditionPill, NeedBar, StatBar, AttrBlock,
-  SectionHeader, ErrorBanner,
+  SectionHeader, ErrorBanner, actionButtonStyle, insetBoxStyle,
 } from "./primitives.jsx";
 import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
-import { deriveCombatStats, itemCombatStats, itemRequirement, equipSlot, slotCapacity, SLOTS } from "../engine/combat-stats.js";
-import { EQUIPPABLE } from "../engine/inventory.js";
-import { itemTemplate } from "../data/catalog.js";
+import { deriveCombatStats } from "../engine/combat-stats.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
-import { passiveLabel, passiveEffectText, passiveDef, isFusionRune } from "../data/passives.js";
 import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
-import { useEffectChips } from "../data/goods.js";
-import { freshnessLabel, perishDescriptor } from "../engine/spoilage.js";
+import { knownBuffSpells } from "../data/buff-spells.js";
 import { ArsenalView } from "./ArsenalView.jsx";
 import { AttributeDetail } from "./AttributeDetail.jsx";
 import { InfoButton, InfoModal } from "./InfoTip.jsx";
 import { glossaryById, conditionInfo } from "../data/glossary.js";
-import { condName } from "../data/conditions.js";
+import { condName, condNames } from "../data/conditions.js";
 import { lightStatus } from "../engine/light.js";
 import { canHeal } from "../engine/healing.js";
 
@@ -64,254 +60,11 @@ function AbilityChip({ name, tier }) {
   );
 }
 
-// Tier-coloured passive (affix) pill. Tap to reveal exactly what it does and by
-// how much at this item's grade — the magnitude is otherwise opaque on the chip.
-function PassiveChip({ id, tier }) {
-  const [open, setOpen] = useState(false);
-  const c = tierColor(tier);
-  const effect = passiveEffectText(id, tier);
-  const flavour = passiveDef(id)?.desc;
-  return (
-    <div style={{ width: open ? "100%" : "auto" }}>
-      <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }} title={effect}
-        style={{
-          fontSize: "10px", fontWeight: 700, padding: "2px 7px", borderRadius: radius.pill,
-          color: c, border: `1px solid ${c}`, cursor: "pointer",
-          display: "inline-flex", alignItems: "center", gap: "4px",
-        }}>
-        {passiveLabel(id, tier)}
-        {effect && <span style={{ opacity: 0.65, fontSize: "9px" }}>{open ? "▾" : "ⓘ"}</span>}
-      </span>
-      {open && effect && (
-        <div style={{ margin: "5px 2px 2px", lineHeight: 1.45 }}>
-          <div style={{ fontSize: "11px", fontWeight: 600, color: c }}>{effect}</div>
-          {flavour && <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", marginTop: "2px" }}>{flavour}</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Inset gold-tinted container reused for Wealth / Wearing / Carrying.
-const insetBoxStyle = {
-  background: "rgba(215, 167, 111, 0.03)",
-  border: `1px solid rgba(215, 167, 111, 0.08)`,
-  borderRadius: radius.chip,
-  padding: "8px 12px",
-};
-
 // Small "· tap to learn" hint appended to section headers.
 const tapHint = { fontWeight: 400, fontSize: "9px", color: "rgba(215,167,111,0.5)", letterSpacing: 0, textTransform: "none" };
 // Transparent button wrappers so existing display components become tappable.
 const bareBtn = { background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" };
 const barBtn = { ...bareBtn, width: "100%", textAlign: "left", display: "block" };
-
-// Tappable inventory row.
-const itemRowStyle = {
-  display: "flex", justifyContent: "space-between", alignItems: "center",
-  width: "100%", textAlign: "left", gap: "8px",
-  fontSize: "13px", color: colors.parchment,
-  padding: "6px 2px", background: "transparent",
-  border: "none", borderBottom: `1px dotted rgba(215, 167, 111, 0.1)`,
-  cursor: "pointer", fontFamily: "inherit",
-};
-
-// Item detail modal: stats, requirement, passives, and equip/unequip.
-function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUnequip, onUse, onLightTorch, onLightLantern, onRest, onBindRune, onClose }) {
-  if (!item) return null;
-  const cs = itemCombatStats(item);
-  const req = itemRequirement(item);
-  const reqMet = (attrs[req.attr] || 0) >= req.value;
-  const equippable = EQUIPPABLE.has(item.kind);
-  const worn = location === "worn";
-  const usable = !worn && !!item.use;
-  const bindable = isFusionRune(id);
-  const tcolor = tierColor(item.tier || "common");
-  const effectChips = useEffectChips(item);
-  const keeps = perishDescriptor(item);
-  const fresh = freshnessLabel(freshUntil, day);
-  const freshColor = fresh ? (fresh.tone === "bad" ? "#fca5a5" : fresh.tone === "warn" ? "#e6a878" : "#a7f3d0") : null;
-  const statLine = (label, value) => (
-    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: colors.parchment, padding: "2px 0" }}>
-      <span style={{ color: colors.parchmentMuted }}>{label}</span><span>{value}</span>
-    </div>
-  );
-  return (
-    <div onClick={(e) => { e.stopPropagation(); onClose(); }} style={{
-      position: "absolute", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center",
-      backgroundColor: "rgba(8,12,12,0.7)", backdropFilter: "blur(4px)", padding: "20px",
-    }}>
-      <div onClick={(e) => e.stopPropagation()} className="scale-in" style={{
-        width: "100%", maxWidth: "340px", maxHeight: "80%", overflowY: "auto",
-        backgroundColor: "rgba(20,29,29,0.96)", border: `1px solid ${tcolor}`,
-        borderRadius: radius.panel, padding: "18px", boxShadow: shadow.sheet,
-        display: "flex", flexDirection: "column", gap: "10px", ...glass,
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "20px", color: tcolor, lineHeight: 1.1 }}><ItemIcon item={item} itemId={id} size={18} />{item.name || id}</div>
-            <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>{tierLabel(item.tier || "common")} · {item.kind || "item"}</div>
-          </div>
-          <button onClick={onClose} style={{ ...iconButtonStyle, width: "28px", height: "28px", flexShrink: 0, backgroundColor: "rgba(215,167,111,0.08)", border: `1px solid rgba(215,167,111,0.2)` }}>
-            <Icon name="x" size={12} color={colors.parchmentMuted} strokeWidth={2} />
-          </button>
-        </div>
-
-        {item.appearance && <div style={{ fontSize: "12px", fontStyle: "italic", color: "rgba(237,228,208,0.7)", lineHeight: 1.45 }}>{item.appearance}</div>}
-        {item.description && <div style={{ fontSize: "12px", color: colors.parchment, lineHeight: 1.45 }}>{item.description}</div>}
-
-        {(cs.damage || cs.armor > 0 || cs.ward > 0 || cs.dodge > 0) && (
-          <div style={insetBoxStyle}>
-            {cs.damage && statLine("Damage", `${cs.damage.min}–${cs.damage.max} ${cs.damage.type}${cs.damage.pen ? ` · pen ${cs.damage.pen}` : ""}`)}
-            {cs.weaponType && statLine("Type", cs.weaponType)}
-            {cs.armor > 0 && statLine("Armor", `+${cs.armor}`)}
-            {cs.ward > 0 && statLine("Ward", `+${cs.ward}`)}
-            {cs.dodge > 0 && statLine("Dodge", `+${cs.dodge}%`)}
-            {req.value > 0 && (
-              <div style={{ fontSize: "11px", marginTop: "5px", color: reqMet ? "#a7f3d0" : "#fca5a5" }}>
-                Requires {ATTR_LABELS[req.attr]} {req.value}{reqMet ? "" : " — under-req: reduced, passives off"}
-              </div>
-            )}
-          </div>
-        )}
-
-        {(item.passives && item.passives.length > 0) && (
-          <div>
-            <div style={{ ...metaStyle, fontSize: "8px", color: colors.gold, marginBottom: "5px" }}>Passives <span style={{ color: colors.parchmentMuted, fontWeight: 400 }}>· tap for detail</span></div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-              {item.passives.map((p, i) => (
-                <PassiveChip key={i} id={p.id} tier={p.tier} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {item.grants && (
-          <div style={{ ...insetBoxStyle, border: `1px solid rgba(176,114,230,0.4)` }}>
-            <div style={{ ...metaStyle, fontSize: "8px", color: "#b072e6", marginBottom: "5px" }}>{worn ? "Granting (while equipped)" : "On equip — awakens magic"}</div>
-            {(item.grants.abilities?.length > 0) && (
-              <div style={{ fontSize: "11px", color: colors.parchment, marginBottom: "4px" }}>
-                Spells in battle: {item.grants.abilities.map((a) => getAbilityDef(a.id)?.name || a.id).join(", ")}
-              </div>
-            )}
-            {(item.grants.spells?.length > 0) && (
-              <div style={{ fontSize: "11px", color: colors.parchment }}>
-                Cantrips: {item.grants.spells.map((s) => s.name).join(", ")}
-              </div>
-            )}
-            <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.5)", fontStyle: "italic", marginTop: "5px" }}>
-              {worn ? "Unequip to set the gift aside." : "Spells scale with Mind — grind Spellcasting to grow it."}
-            </div>
-          </div>
-        )}
-
-        {effectChips.length > 0 && (
-          <div style={insetBoxStyle}>
-            <div style={{ ...metaStyle, fontSize: "8px", color: colors.gold, marginBottom: "6px" }}>When used</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-              {effectChips.map((c, i) => (
-                <span key={i} style={{ fontSize: "11px", fontWeight: 700, color: "#a7f3d0", border: "1px solid rgba(167,243,208,0.35)", padding: "2px 8px", borderRadius: radius.pill }}>{c}</span>
-              ))}
-            </div>
-            {(keeps || fresh) && (
-              <div style={{ fontSize: "11px", marginTop: "8px", color: freshColor || "rgba(237,228,208,0.55)" }}>
-                {fresh ? `Freshness: ${fresh.text}` : keeps}
-              </div>
-            )}
-          </div>
-        )}
-
-        {usable && (
-          <button onClick={() => { onUse(id); onClose(); }} style={actionButtonStyle()}>{item.use.verb || "Use"}</button>
-        )}
-        {id === "torch" && (
-          <>
-            <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", margin: "2px 2px 0", lineHeight: 1.4 }}>Needs a tinderbox to strike the flame. Burns ~1h; sheds a modest pool of light.</div>
-            <button onClick={() => { onLightTorch?.(); onClose(); }} style={actionButtonStyle()}>Light a torch</button>
-          </>
-        )}
-        {id === "lantern" && (
-          <>
-            <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", margin: "2px 2px 0", lineHeight: 1.4 }}>Burns a flask of lamp-oil for ~4h of steady, bright light you can hood at will.</div>
-            <button onClick={() => { onLightLantern?.(); onClose(); }} style={actionButtonStyle()}>Light the lantern</button>
-          </>
-        )}
-        {((item.tool?.uses || []).includes("rest") || (item.tool?.uses || []).includes("camp")) && (
-          <RestButton onRest={onRest} onClose={onClose} />
-        )}
-        {bindable && (
-          <>
-            <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(199,155,224,0.8)", margin: "2px 2px 6px", lineHeight: 1.4 }}>
-              Bind this rune to gear that bears two enchantments it can fuse.
-            </div>
-            <button onClick={() => { onBindRune?.(id); onClose(); }} style={actionButtonStyle()}>Bind Rune…</button>
-          </>
-        )}
-        {equippable && (
-          worn
-            ? <button onClick={() => { onUnequip(id); onClose(); }} style={actionButtonStyle()}>Unequip</button>
-            : <button onClick={() => { onEquip(id); onClose(); }} style={actionButtonStyle()}>Equip</button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Bedroll rest: tap to reveal duration presets; each skips time and restores sleep.
-function RestButton({ onRest, onClose }) {
-  const [open, setOpen] = useState(false);
-  if (!open) return <button onClick={() => setOpen(true)} style={actionButtonStyle()}>Rest…</button>;
-  const opt = (label, hours) => (
-    <button onClick={() => { onRest?.(hours); onClose(); }} style={{
-      flex: 1, padding: "10px 6px", borderRadius: radius.panelCompact, border: `1px solid rgba(215,167,111,0.35)`,
-      background: "rgba(215,167,111,0.1)", color: colors.parchmentLight, fontSize: "12px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-    }}>{label}</button>
-  );
-  return (
-    <div style={{ display: "flex", gap: "6px" }}>
-      {opt("Nap · 1h", 1)}
-      {opt("Rest · 4h", 4)}
-      {opt("Night · 8h", 8)}
-    </div>
-  );
-}
-
-// Pill-shaped action button at the foot of the sheet.
-function actionButtonStyle({ danger = false, ghost = false } = {}) {
-  if (ghost) {
-    return {
-      display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-      padding: "12px",
-      border: "none", borderRadius: radius.panelCompact,
-      backgroundColor: "transparent",
-      color: "rgba(215, 167, 111, 0.6)",
-      fontSize: "12px", fontWeight: 700,
-      cursor: "pointer", fontFamily: "inherit",
-    };
-  }
-  if (danger) {
-    return {
-      display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-      padding: "13px",
-      border: `1px solid rgba(239, 68, 68, 0.35)`,
-      borderRadius: radius.panelCompact,
-      backgroundColor: "rgba(239, 68, 68, 0.08)",
-      color: alert.dangerAccent,
-      fontSize: "13px", fontWeight: 700,
-      cursor: "pointer", fontFamily: "inherit",
-    };
-  }
-  return {
-    display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-    padding: "13px",
-    border: `1px solid rgba(215, 167, 111, 0.25)`,
-    borderRadius: radius.panelCompact,
-    backgroundColor: "rgba(215, 167, 111, 0.08)",
-    color: colors.parchmentLight,
-    fontSize: "13px", fontWeight: 700,
-    cursor: "pointer", fontFamily: "inherit",
-  };
-}
 
 // Hairline rule used to separate the sheet's major groups (identity /
 // stats / possessions / actions) so the section headers don't all read as
@@ -326,14 +79,12 @@ function Divider() {
   );
 }
 
-export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip, onUse, onLightTorch, onLightLantern, onExtinguish, onRest, onBindRune }) {
-  const [detail, setDetail] = useState(null); // { id, location: "worn"|"carried" }
+export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onExtinguish, onInventory, onCastBuff }) {
   const [arsenalOpen, setArsenalOpen] = useState(false);
   const [openAttr, setOpenAttr] = useState(null); // attribute key whose threshold detail is expanded
   const [info, setInfo] = useState(null); // glossary explanation popover { term, text, extra }
   const inv = state.character.inventory;
   const codex = state.world.codex;
-  const wornIds = codex.characters.wanderer?.worn || [];
   const attrs = effectiveAttributes(state.character);
   const combat = deriveCombatStats(state.character, codex);
   // Tap-to-explain: open a glossary entry, appending a LIVE line for the
@@ -575,64 +326,47 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           </div>
         </div>
 
-        {/* Wearing — a paper-doll of every slot, filled or empty, so you can see
-            at a glance what's equipped and where there's room. Tap a filled slot
-            for details / to unequip. */}
+        {/* Gear & pack live on the dedicated Inventory screen (paper-doll + pack). */}
         <div>
-          <SectionHeader>Wearing</SectionHeader>
-          <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "3px" }}>
-            {SLOTS.map((slot) => {
-              const inSlot = wornIds.filter((id) => equipSlot(codex.items[id]) === slot.id);
-              const cap = slotCapacity(slot.id);
-              // One row per capacity unit: an occupant, or an empty placeholder.
-              const cells = [];
-              for (let i = 0; i < cap; i++) cells.push(inSlot[i] || null);
-              return cells.map((id, i) => (
-                <div key={`${slot.id}-${i}`} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ ...metaStyle, fontSize: "8px", width: "62px", flexShrink: 0, color: "rgba(215,167,111,0.55)", textAlign: "right" }}>
-                    {cap > 1 ? `${slot.label.replace(/s$/, "")} ${i + 1}` : slot.label}
-                  </span>
-                  {id ? (
-                    <button onClick={() => setDetail({ id, location: "worn" })} style={{ ...itemRowStyle, flex: 1, minWidth: 0 }}>
-                      <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                        <ItemIcon item={codex.items[id] || itemTemplate(id)} itemId={id} />
-                        <span style={{ color: tierColor(codex.items[id]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[id]?.name || id}</span>
-                      </span>
-                      <Icon name="arrowLeft" size={11} color="rgba(215,167,111,0.4)" strokeWidth={2} />
-                    </button>
-                  ) : (
-                    <span style={{ flex: 1, fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.28)", padding: "6px 4px" }}>— empty —</span>
-                  )}
-                </div>
-              ));
-            })}
-          </div>
+          <SectionHeader>Possessions</SectionHeader>
+          <button onClick={onInventory} style={actionButtonStyle()}>
+            <Icon name="bag" size={14} strokeWidth={1.6} />
+            Open Inventory
+          </button>
         </div>
 
-        {/* Carrying — tap an item for details / to equip. */}
-        <div>
-          <SectionHeader>Carrying (Pack)</SectionHeader>
-          <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "2px" }}>
-            {inv.carried.length === 0
-              ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.4)", fontStyle: "italic" }}>Pack is empty.</span>
-              : inv.carried.map((c) => {
-                  const fresh = freshnessLabel(c.freshUntil, state.time?.day || 0);
-                  const fc = fresh ? (fresh.tone === "bad" ? "#fca5a5" : fresh.tone === "warn" ? "#e6a878" : "rgba(167,243,208,0.65)") : null;
+        {/* Boons — castable self-buffs (Haste, Bear's Strength). Spend resolve to
+            lay a timed boon that speeds travel / lifts carrying limits. */}
+        {(() => {
+          const boons = knownBuffSpells(state.character);
+          if (!boons.length) return null;
+          const active = new Set(condNames(state.character.conditions));
+          return (
+            <div>
+              <SectionHeader>Boons</SectionHeader>
+              <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "8px" }}>
+                {boons.map((sp) => {
+                  const on = active.has(sp.applies.condition);
+                  const afford = (state.character.resolve ?? 0) >= sp.resolveCost;
                   return (
-                    <button key={c.itemId} onClick={() => setDetail({ id: c.itemId, location: "carried" })} style={itemRowStyle}>
-                      <span style={{ display: "flex", alignItems: "center", minWidth: 0, gap: "6px" }}>
-                        <ItemIcon item={codex.items[c.itemId] || itemTemplate(c.itemId)} itemId={c.itemId} />
-                        <span style={{ color: tierColor(codex.items[c.itemId]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[c.itemId]?.name || c.itemId}</span>
-                        {fresh && fresh.tone !== "ok" && (
-                          <span style={{ fontSize: "9px", fontStyle: "italic", color: fc, flexShrink: 0 }}>· {fresh.text}</span>
-                        )}
-                      </span>
-                      <span style={{ color: colors.parchmentMuted, fontWeight: "bold", flexShrink: 0 }}>×{c.quantity}</span>
-                    </button>
+                    <div key={sp.id} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "15px", color: colors.parchmentLight }}>{sp.name}{on && <span style={{ ...metaStyle, fontSize: "8px", color: "#a7f3d0", marginLeft: "6px" }}>active</span>}</div>
+                        <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.6)", lineHeight: 1.35 }}>{sp.description}</div>
+                      </div>
+                      <button onClick={() => (afford ? onCastBuff?.(sp.id) : null)} disabled={!afford} style={{
+                        flexShrink: 0, padding: "7px 14px", borderRadius: radius.pill, border: "none",
+                        backgroundColor: afford ? colors.gold : "rgba(215,167,111,0.1)",
+                        color: afford ? colors.ink : "rgba(215,167,111,0.4)",
+                        fontSize: "12px", fontWeight: 800, cursor: afford ? "pointer" : "not-allowed", fontFamily: "inherit",
+                      }}>{on ? "Renew" : "Cast"} · {sp.resolveCost}</button>
+                    </div>
                   );
                 })}
-          </div>
-        </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {showGuestNag && <GuestNagSection onLinkEmail={onLinkEmail} />}
 
@@ -662,24 +396,6 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
         </div>
       </div>
 
-      {detail && (
-        <ItemDetail
-          item={{ ...itemTemplate(detail.id), ...codex.items[detail.id] }}
-          id={detail.id}
-          location={detail.location}
-          attrs={attrs}
-          freshUntil={inv.carried.find((c) => c.itemId === detail.id)?.freshUntil}
-          day={state.time?.day || 0}
-          onEquip={onEquip}
-          onUnequip={onUnequip}
-          onUse={onUse}
-          onLightTorch={onLightTorch}
-          onLightLantern={onLightLantern}
-          onRest={onRest}
-          onBindRune={onBindRune}
-          onClose={() => setDetail(null)}
-        />
-      )}
       {info && <InfoModal info={info} onClose={() => setInfo(null)} />}
       {arsenalOpen && <ArsenalView character={state.character} onClose={() => setArsenalOpen(false)} />}
     </div>

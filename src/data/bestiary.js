@@ -289,10 +289,13 @@ export function allyFromCompanion(npc, codex, { tierId = "common" } = {}) {
     id: `ally-${npc.id}-${Math.random().toString(36).slice(2, 6)}`,
     npcId: null,
     companionId: npc.id,
+    // Mounts fight too — tagged so combat can branch (a beast loots nothing) and
+    // so the rider's mounted bonus can be matched to its carrier.
+    mountId: npc.kind === "mount" ? npc.id : null,
     side: "player",
     abilities,
     demeanor: "fierce", morale: 100, moraleMax: 100,
-    health: base.maxHealth, // companions arrive fresh; we don't carry their wounds
+    health: base.maxHealth, // companions/mounts arrive fresh; we don't carry their wounds
     combatState: undefined,
   };
 }

@@ -116,6 +116,22 @@ function enemyThreat(e) {
   return e.maxHealth * 0.25 + e.weapon.max + tierInfo(e.tier).order * 2;
 }
 
+// Lend a rider their mount's charge: better aim and reach, a heavier blow, more
+// speed. The mount itself fights separately; this is purely the rider's lift.
+function applyMountedBonus(c, b) {
+  if (!c || !b) return;
+  c.accuracy = (c.accuracy || 0) + (b.accuracy || 0);
+  c.dodge = (c.dodge || 0) + (b.dodge || 0);
+  c.speed = (c.speed || 0) + (b.speed || 0);
+  if (c.weapon) {
+    const w = { ...c.weapon };
+    if (b.damageMult) { w.min = Math.max(1, Math.round(w.min * (1 + b.damageMult))); w.max = Math.max(1, Math.round(w.max * (1 + b.damageMult))); }
+    if (b.reach) w.reach = Math.max(w.reach || 1, 1 + b.reach);
+    c.weapon = w;
+  }
+  c.mounted = true;
+}
+
 export function initCombat(character, codex, enemies, opts = {}) {
   LOG_SEQ = 0;
   const cs = deriveCombatStats(character, codex);
@@ -163,6 +179,12 @@ export function initCombat(character, codex, enemies, opts = {}) {
     speed: a.speed ?? 4, swiftChance: a.swiftChance || 0, reloadLeft: 0,
     procs: a.procs || a.triggers?.procs || [], shield: 0, magicShield: 0, invuln: 0,
   }));
+
+  // A rider fights with their mount's bulk and speed under them — a charge bonus
+  // (engine/riding.js + data/mounts.js mountedBonus). The mount is its OWN allied
+  // combatant; this is the lift the rider gets from being astride it.
+  if (opts.playerMountedBonus) applyMountedBonus(player, opts.playerMountedBonus);
+  for (const a of allies) if (a._mountedBonus) applyMountedBonus(a, a._mountedBonus);
 
   // Fighting blind: in the dark with no torch lit, your side's aim suffers.
   // Monsters that haunt the dark are not so hampered, so only the player/allies pay.
@@ -1759,10 +1781,23 @@ export function applyCombatResult(state, cs, context = {}) {
   if (fallen.length) {
     const fallenIds = new Set(fallen.map((a) => a.companionId));
     next.party = (next.party || []).filter((id) => !fallenIds.has(id));
+    const chars = next.world.codex.characters || {};
     for (const a of fallen) {
-      const ch = next.world.codex.characters?.[a.companionId];
+      const ch = chars[a.companionId];
       if (ch) ch.combatState = { health: 0, maxHealth: a.maxHealth, status: "dead" };
+      // Falling clears the saddle: a dead mount drops its riders, a dead rider
+      // leaves its seat (engine/riding.js linkage).
+      const dead = chars[a.companionId];
+      if (dead) {
+        if (dead.ridingOn && chars[dead.ridingOn]) chars[dead.ridingOn].riders = (chars[dead.ridingOn].riders || []).filter((x) => x !== a.companionId);
+        dead.ridingOn = null;
+        for (const rid of [...(dead.riders || [])]) if (chars[rid]) chars[rid].ridingOn = null;
+        dead.riders = [];
+      }
     }
+    // If the player's mount fell, the player is afoot now too.
+    const w = chars.wanderer;
+    if (w?.ridingOn && fallenIds.has(w.ridingOn)) w.ridingOn = null;
   }
 
   // Hand the narrator a blow-by-blow account so the fight can be referenced

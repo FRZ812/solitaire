@@ -7,6 +7,8 @@
 
 import { getTile } from "./world.js";
 import { stampFreshUntil } from "./spoilage.js";
+import { itemWeight, loadOf } from "./weight.js";
+import { MOUNTS, mountCodexEntry } from "../data/mounts.js";
 
 export const CP_PER_SP = 10;
 export const CP_PER_GP = 100;
@@ -43,7 +45,7 @@ export function formatCoins(coins) {
 }
 
 // Item kinds that a trader will buy back (and that aren't worn equipment).
-export const SELLABLE_KINDS = new Set(["remedy", "food", "drink", "material", "supply", "trinket", "tool"]);
+export const SELLABLE_KINDS = new Set(["remedy", "food", "drink", "material", "supply", "trinket", "tool", "feed"]);
 
 // Used-goods buy-back as a fraction of an item's value. A merchant gives a fair
 // (not fleecing) price for second-hand goods. A piece you JUST bought and
@@ -78,6 +80,12 @@ export function buyGood(state, { tileKey, bucket, itemDef, priceCp, qty = 1 }) {
   const inv = state.character.inventory;
   if (!canAfford(inv.coins, total)) return { state, ok: false, reason: "Not enough coin." };
 
+  // Hard weight cap: you can't buy what you can't carry (engine/weight.js).
+  const wanderer = state.world.codex.characters?.wanderer;
+  const cap = state.character.carryCapacityMax ?? Infinity;
+  const projected = loadOf(wanderer, inv, state.world.codex.items) + itemWeight(itemDef) * qty;
+  if (projected > cap) return { state, ok: false, reason: "You can't carry that much — too heavy." };
+
   const coins = copperToCoins(coinsToCopper(inv.coins) - total);
   const carried = inv.carried.map((c) => ({ ...c }));
   const day = state.time?.day || 0;
@@ -101,6 +109,30 @@ export function buyGood(state, { tileKey, bucket, itemDef, priceCp, qty = 1 }) {
       ...state,
       character: { ...state.character, inventory: { ...inv, coins, carried } },
       world: { ...state.world, tiles, codex: { ...state.world.codex, items } },
+    },
+  };
+}
+
+// Buy a mundane mount from a stable: pay the price, file the full mount as a
+// kind:"mount" codex character, and add it to the party (it travels, eats, and
+// fights like a companion). Exotic mounts aren't sold — they're earned in play
+// (beat.grant_mount). Returns { state, ok, reason }.
+export function buyMount(state, { mountId, priceCp }) {
+  const tmpl = MOUNTS[mountId];
+  if (!tmpl) return { state, ok: false, reason: "No such mount." };
+  if ((state.party || []).includes(mountId)) return { state, ok: false, reason: "You already have one." };
+  const inv = state.character.inventory;
+  const price = priceCp != null ? priceCp : (tmpl.priceCp || 0);
+  if (!canAfford(inv.coins, price)) return { state, ok: false, reason: "Not enough coin." };
+  const coins = copperToCoins(coinsToCopper(inv.coins) - price);
+  const entry = mountCodexEntry(tmpl);
+  return {
+    ok: true,
+    state: {
+      ...state,
+      party: [...(state.party || []), mountId],
+      character: { ...state.character, inventory: { ...inv, coins } },
+      world: { ...state.world, codex: { ...state.world.codex, characters: { ...state.world.codex.characters, [mountId]: entry } } },
     },
   };
 }

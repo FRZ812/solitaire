@@ -87,6 +87,37 @@ export function autoConsume(inventory, needs, codexItems, who = "") {
   return { inventory: { ...inventory, carried }, needs: out, lines };
 }
 
+// Feed ONE mount from the pack's feed stores — matching its diet (fodder / meat /
+// livestock), soonest-spoiling first. Mounts never touch the party's rations and
+// people never eat fodder, so the two upkeep paths don't raid each other's food.
+// Returns a NEW inventory, updated needs, and human lines.
+export function autoConsumeMount(inventory, mount, needs, codexItems) {
+  const carried = (inventory.carried || []).map((c) => ({ ...c }));
+  const out = { ...needs };
+  const lines = [];
+  const diet = mount.feed || "fodder";
+  const name = mount.name || "the mount";
+
+  if (out.hunger < AUTO_EAT_BELOW) {
+    let best = null;
+    for (const c of carried) {
+      if (c.quantity <= 0) continue;
+      const def = defOf(codexItems, c.itemId);
+      if (def?.kind !== "feed" || def.feedKind !== diet || !def.nourish) continue;
+      const perish = def.perish || Infinity;
+      if (!best || perish < best.perish) best = { itemId: c.itemId, def, perish };
+    }
+    if (best) {
+      removeOne(carried, best.itemId);
+      out.hunger = clampNeed(out.hunger + (best.def.nourish.hunger || 0));
+      if (best.def.nourish.thirst) out.thirst = clampNeed(out.thirst + best.def.nourish.thirst);
+      lines.push(`${name} fed on ${lc(best.def.name)}`);
+    }
+  }
+
+  return { inventory: { ...inventory, carried }, needs: out, lines };
+}
+
 // Wounds bite as the clock turns. Returns reduced vitality + a flavour line if it
 // ticked (the actual number is reported by the vitals_delta beat, not here).
 export function woundTick(vitality, conditions, minutes) {
@@ -116,7 +147,11 @@ export function companionUpkeep(party, codexCharacters, inventory, minutes, deca
     if (!c || c.combatState?.status === "dead") continue;
     const baseNeeds = c.needs || { hunger: 70, thirst: 75, sleep: 70 };
     const drained = depleteNeeds(baseNeeds, minutes, decayMult);
-    const fed = autoConsume(inv, drained, codexItems, c.name);
+    // Mounts eat their own feed (fodder/meat/livestock); everyone else eats from
+    // the shared ration pack.
+    const fed = c.kind === "mount"
+      ? autoConsumeMount(inv, c, drained, codexItems)
+      : autoConsume(inv, drained, codexItems, c.name);
     inv = fed.inventory;
     if (fed.lines.length) lines.push(...fed.lines);
     updated[id] = { ...c, needs: fed.needs };

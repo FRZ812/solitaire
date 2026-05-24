@@ -34,7 +34,7 @@ export const HANDCRAFTED = {
   // ============================================================
   "0,0":  { terrain: "indoor",     poi: { type: "inn",      name: "The Drowned Rat",    service: "tavern", description: "The town tavern. Smoke-darkened beams, a peat fire, a long oak bar, and the market's noise spilling in whenever the door opens." } },
   "-1,0": { terrain: "settlement", poi: { type: "town",     name: "Mirecross",          description: "The market square of Mirecross, busy at the river-crossing — a stone well, hawkers' stalls, mud churned by cart-wheels and boots." } },
-  "0,-1": { terrain: "indoor",     poi: { type: "stable",   name: "Mirecross Stable",   description: "A low stable smelling of hay and old leather, hard against the inn." } },
+  "0,-1": { terrain: "indoor",     poi: { type: "stable",   name: "Mirecross Stable",   service: "stable", description: "A low stable smelling of hay and old leather, hard against the inn." } },
   "0,1":  { terrain: "settlement", poi: { type: "landmark", name: "Ferry Landing",      description: "A wooden quay where the ferry meets the river. Porters and fishwives crowd the boards." } },
   "-1,1": { terrain: "indoor",     poi: { type: "healer",   name: "The Healer's House",  service: "healer", description: "Bundles of drying herbs hang from the rafters; a low room that smells of comfrey, tallow, and woodsmoke." } },
   "1,-1": { terrain: "indoor",     poi: { type: "smithy",   name: "Mirecross Smithy",    service: "blacksmith", description: "The town smith's. A banked forge, a wall of tongs, the ring of a hammer on cooling iron." } },
@@ -107,7 +107,7 @@ export const HANDCRAFTED = {
   "25,1": { terrain: "indoor",     poi: { type: "temple",   name: "Temple",                     description: "A small temple. Stone benches, a single guttering candle." } },
   "25,-1":{ terrain: "indoor",     poi: { type: "mill",     name: "Mill House",                 description: "A working mill, the wheel groaning against the stream." } },
   "24,1": { terrain: "indoor",     poi: { type: "inn",      name: "The Sleeping Crow",          description: "Crowsmoor's tavern. Lower ceiling, lower prices." } },
-  "27,-1":{ terrain: "indoor",     poi: { type: "stable",   name: "Crowsmoor Stable",           description: "Half a dozen stalls." } },
+  "27,-1":{ terrain: "indoor",     poi: { type: "stable",   name: "Crowsmoor Stable",           service: "stable", description: "Half a dozen stalls." } },
   "26,1": { terrain: "settlement", poi: { type: "garden",   name: "Temple Garden",              description: "Walled herb-beds and a few thin apple trees." } },
   "24,-1":{ terrain: "plains",     poi: { type: "hidden", description: null } },
   "27,0": { terrain: "road",       poi: null },

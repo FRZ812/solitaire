@@ -516,6 +516,69 @@ lingering DoT → Bleeding/Poisoned conditions (defeat → Gravely Wounded, min 
 loot → inventory/codex, a learned ability → `character.abilities` + a codex skill,
 and summary beats into the log.
 
+## Mounts & weight
+
+Mounts are **companions you ride** — a `kind:"mount"` codex character in
+`state.party`, built from `data/mounts.js` via `mountCodexEntry` (the same shape
+as a recruited companion, plus a mount block). The ladder runs common→divine:
+pony / horse / mule / camel (stable), warhorse / dire-wolf (rare),
+griffon (epic), wyvern (legendary), drake (mythical), dragon (divine).
+
+- **Weight, not headcount.** Every item has an *inferred* weight
+  (`engine/weight.js`, `itemWeight` — by `kind` + name keyword, mirroring
+  `combat-stats` inference; an explicit `weight` on a template wins; tools are
+  hand-weighted). A character's carry cap is `carryCapacityFor` (Body + Vigor,
+  back-loaded like HP). It's a **hard cap** at player-initiated points (shop buy,
+  `economy.buyGood`); narrator-granted loot may still land but flags
+  `overburdened` (slower travel).
+- **Ride capacity** is the same currency: a mount bears riders up to
+  `rideCapacity`, where a rider costs its `effectiveLoad` (body + worn + pack +
+  everyone riding *it*, recursively — `engine/riding.js`). So a dragon carries a
+  horse and its riders; a horse cannot carry a dragon. Seating is cycle-checked.
+- **Travel.** A ridden **flying** mount (griffon→dragon) is air-travel reusing the
+  Fly plumbing (`App.handleFly`) — no resolve, paid in the mount's own needs
+  (must be fed/rested), same aerial-ambush risk and `[SEEN FLYING]` settlement
+  reaction (emphasised for a dragon). A **ground** mount quickens a leg by its
+  `moveProfile.ground`, over terrain it handles. Mounts eat their own `feed`
+  (fodder / meat / livestock) from the pack (`engine/upkeep.autoConsumeMount`).
+- **Combat.** A mount fights as an ally (`bestiary.allyFromCompanion` consumes its
+  `naturalWeapon`/`naturalArmor`/`innatePassives`/`health`), and a ridden rider
+  gets the mount's `mountedBonus` charge. A slain mount throws its riders.
+- **Acquisition.** Mundane mounts are **bought** at a stable
+  (`town.js BUILDINGS.stable`, `StableView`, `economy.buyMount`); exotic/flying
+  mounts are **earned** and granted by the narrator via `beat.grant_mount`.
+
+- **Transient buffs & graceful degradation.** Capacity is *derived*, never a
+  bare number a buff should overwrite. A temporary lift is an additive bonus the
+  formula reads: `character.carryBonus` (folded into `carryCapacityFor`) and
+  `mount.rideCapacityBonus` (folded into `rideCapacityOf`). Set the field when the
+  buff lands, clear it when it lapses. Because the player's `carryCapacityMax` is
+  recomputed every beat and a mount's load is checked live (`isOverloaded`), when
+  a buff lapses and the bearer is now over its standard limit it is simply flagged
+  — `overburdened` (slower travel) for the player, overloaded for a mount (can't
+  fly, no speed bonus) — with **nothing dropped and no rider thrown**; it clears
+  itself the moment weight comes down or the buff returns. Never write
+  `carryCapacityMax` directly (the recompute would wipe it).
+
+- **Boon spells & haste.** Buffs are timed conditions (`data/conditions.js`) laid
+  by **boon spells** (`data/buff-spells.js` — `haste`, `bear-strength`), learned
+  like travel spells (folded into `getAbilityDef`, flagged `noncombat`) and cast
+  from the character sheet (`App.handleCastBuff` spends Resolve, lays the timed
+  condition). A condition's engine-wired fields (`travelSpeedMult`, `carryBonus`,
+  `rideCapacityBonus`) drive effects via `engine/buffs.js`, which `beat.js` reads
+  each beat — so a strength boon lifts the player's carry cap and the **ridden**
+  mount's `rideCapacityBonus`, and both fall back gracefully on expiry.
+  - **Haste covers mounts** (ground + flight) and is **drain-safe by construction**:
+    needs and mount-flight stamina are purely *time*-based, so haste only ever
+    shortens time-per-distance — ground legs take fewer minutes, flight legs reach
+    further within ~the same hour (`hastedGroundMinutes`/`hastedFlightHexes`/
+    `hastedFlightMinutes`). A faster journey therefore costs the same upkeep or
+    less, never more.
+
+Verify with `node scripts/mount-weight-sim.mjs` (weight math, nesting + ancestor
+capacity, pack/overload edge cases, transient-buff expiry, speed-buff drain-safety,
+mounted combat, flying gate) plus the build below.
+
 ## Quick smoke test
 
 After data edits, run:

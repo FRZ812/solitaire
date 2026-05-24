@@ -17,11 +17,13 @@ const WEAPON_RE = /sword|blade|bow|crossbow|spear|axe|mace|maul|hammer|knife|dag
 export function partyStanding(state) {
   const codex = state.world.codex;
   const members = [{ attrs: effectiveAttributes(state.character), worn: codex.characters.wanderer?.worn || [] }];
-  for (const c of partyMembers(state)) members.push({ attrs: c.attributes || {}, worn: c.worn || [] });
+  for (const c of partyMembers(state)) members.push({ attrs: c.attributes || {}, worn: c.worn || [], natural: !!c.naturalWeapon });
   const size = members.length;
   const bestAttrs = {};
   for (const k of ATTR_KEYS) bestAttrs[k] = Math.max(0, ...members.map((m) => m.attrs[k] || 0));
-  const armed = members.filter((m) => (m.worn || []).some((id) => WEAPON_RE.test(id))).length;
+  // "Armed" counts a worn weapon — or a beast's natural fang/claw (a warhorse or a
+  // dragon is plainly a threat without a sword in hand).
+  const armed = members.filter((m) => m.natural || (m.worn || []).some((id) => WEAPON_RE.test(id))).length;
   const topAttr = Math.max(0, ...Object.values(bestAttrs));
   const attrSum = Object.values(bestAttrs).reduce((a, b) => a + b, 0);
   const score = size * 2 + topAttr + attrSum / 4 + armed * 1.5;
@@ -69,6 +71,16 @@ export function partyIds(state) {
 export function partyMembers(state) {
   const chars = state.world.codex.characters;
   return (state.party || []).map((id) => chars[id]).filter(Boolean);
+}
+
+// The party split by kind — several systems treat mounts differently from people
+// (mounts don't cast Fly, eat their own feed, and aren't "companions" you recruit).
+export function mountMembers(state) {
+  return partyMembers(state).filter((c) => c.kind === "mount");
+}
+
+export function nonMountPartyMembers(state) {
+  return partyMembers(state).filter((c) => c.kind !== "mount");
 }
 
 export function isRecruited(state, id) {
