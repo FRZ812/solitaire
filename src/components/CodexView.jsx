@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Icon } from "./Icon.jsx";
+import { Icon, ItemIcon } from "./Icon.jsx";
 import { iconButtonStyle } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
@@ -241,7 +241,7 @@ function CatalogRow({ item, seen }) {
     <div onClick={() => setOpen((o) => !o)} style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid ${t.color}33`, display: "flex", flexDirection: "column", gap: "3px", cursor: "pointer" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "space-between" }}>
         <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color: t.color }}>
-          <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span>{item.name}
+          <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span><ItemIcon item={item} size={13} />{item.name}
         </span>
         <div style={{ display: "flex", gap: "6px", alignItems: "center", flexShrink: 0 }}>
           {seen && <span title="Discovered in play" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: colors.gold }} />}

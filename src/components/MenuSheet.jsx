@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Icon } from "./Icon.jsx";
+import { Icon, ItemIcon } from "./Icon.jsx";
 import {
   iconButtonStyle, ConditionPill, NeedBar, StatBar, AttrBlock,
   SectionHeader, ErrorBanner,
@@ -21,30 +21,6 @@ import { InfoButton, InfoModal } from "./InfoTip.jsx";
 import { glossaryById, conditionInfo } from "../data/glossary.js";
 import { lightStatus } from "../engine/light.js";
 import { canHeal } from "../engine/healing.js";
-
-// Item-specific inline icon. The wooden bird is a meaningful in-fiction
-// item, so it gets a custom glyph; everything else falls back to a
-// pouch/scroll outline.
-function renderItemIcon(itemId) {
-  if (itemId === "wooden-bird") {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={colors.gold} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px", display: "inline-block", verticalAlign: "middle" }}>
-        <path d="M20 4 C16 4 13 7 11 9 C9 7 6 4 2 4 C5 9 8 11 11 12 C11 15 13 18 16 20 C16 16 15 13 14 11 C16 9 19 6 20 4 Z" fill="rgba(215, 167, 111, 0.25)" />
-        <line x1="16" y1="10" x2="19" y2="7" stroke={colors.parchmentMuted} strokeWidth="1.2" />
-        <line x1="15" y1="12" x2="17.5" y2="9.5" stroke={colors.parchmentMuted} strokeWidth="1.2" />
-        <circle cx="11.5" cy="11.5" r="0.75" fill={colors.parchmentLight} />
-      </svg>
-    );
-  }
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(215, 167, 111, 0.75)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px", display: "inline-block", verticalAlign: "middle" }}>
-      <path d="M6 20a6 6 0 0 0 12 0V10a6 6 0 0 0-12 0v10z" fill="rgba(215, 167, 111, 0.05)" />
-      <path d="M6 10c0-2.5 1.5-4 6-4s6 1.5 6 4" />
-      <path d="M9 6a3 3 0 0 1 6 0" />
-      <line x1="8" x2="16" y1="12" y2="12" />
-    </svg>
-  );
-}
 
 // Compact label/value cell for the derived combat stats grid. Tappable to explain.
 function CombatStat({ label, value, onClick }) {
@@ -172,7 +148,7 @@ function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUne
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "20px", color: tcolor, lineHeight: 1.1 }}>{item.name || id}</div>
+            <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "20px", color: tcolor, lineHeight: 1.1 }}><ItemIcon item={item} itemId={id} size={18} />{item.name || id}</div>
             <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>{tierLabel(item.tier || "common")} · {item.kind || "item"}</div>
           </div>
           <button onClick={onClose} style={{ ...iconButtonStyle, width: "28px", height: "28px", flexShrink: 0, backgroundColor: "rgba(215,167,111,0.08)", border: `1px solid rgba(215,167,111,0.2)` }}>
@@ -616,7 +592,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
                   {id ? (
                     <button onClick={() => setDetail({ id, location: "worn" })} style={{ ...itemRowStyle, flex: 1, minWidth: 0 }}>
                       <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                        {renderItemIcon(id)}
+                        <ItemIcon item={codex.items[id] || itemTemplate(id)} itemId={id} />
                         <span style={{ color: tierColor(codex.items[id]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[id]?.name || id}</span>
                       </span>
                       <Icon name="arrowLeft" size={11} color="rgba(215,167,111,0.4)" strokeWidth={2} />
@@ -642,7 +618,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
                   return (
                     <button key={c.itemId} onClick={() => setDetail({ id: c.itemId, location: "carried" })} style={itemRowStyle}>
                       <span style={{ display: "flex", alignItems: "center", minWidth: 0, gap: "6px" }}>
-                        {renderItemIcon(c.itemId)}
+                        <ItemIcon item={codex.items[c.itemId] || itemTemplate(c.itemId)} itemId={c.itemId} />
                         <span style={{ color: tierColor(codex.items[c.itemId]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[c.itemId]?.name || c.itemId}</span>
                         {fresh && fresh.tone !== "ok" && (
                           <span style={{ fontSize: "9px", fontStyle: "italic", color: fc, flexShrink: 0 }}>· {fresh.text}</span>
