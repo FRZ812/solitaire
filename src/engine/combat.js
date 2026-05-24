@@ -123,7 +123,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     { id: DEFEND.id, tier: "common" },
     { id: TALK.id, tier: "common" },
     ...learned.map((e) => (typeof e === "string" ? { id: e, tier: "common" } : { id: e.id, tier: e.tier || "common" })),
-  ].filter((a) => getAbilityDef(a.id));
+  ].filter((a) => { const d = getAbilityDef(a.id); return d && !d.noncombat; }); // travel spells never fight
 
   // +life affixes (cs.maxHealth above character.vitalityMax) are granted filled,
   // so a wounded player still benefits from extra health gear at full value.

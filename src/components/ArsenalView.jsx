@@ -44,7 +44,7 @@ function AbilityCard({ a, def }) {
 export function ArsenalView({ character, onClose }) {
   const learned = (character.abilities || []).map((a) => (typeof a === "string" ? { id: a, tier: "common" } : { id: a.id, tier: a.tier || "common" }));
   const abilities = [...learned, ...[...CORE].map((id) => ({ id, tier: "common" }))]
-    .filter((a) => getAbilityDef(a.id))
+    .filter((a) => { const d = getAbilityDef(a.id); return d && !d.noncombat; }) // travel spells aren't combat arsenal
     .sort((a, b) => tierOrder(b.tier) - tierOrder(a.tier));
 
   const profs = PROFICIENCIES

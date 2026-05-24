@@ -14,6 +14,7 @@ import {
   HEX_DIRECTIONS, edgeAllowed, isPassable,
 } from "../engine/world.js";
 import { knownTravelSpells } from "../data/travel-spells.js";
+import { flyMulticastPlan, assignmentCost, assignmentValid } from "../engine/fly.js";
 import { describeEncounterPotential, pathRiskPercent } from "../engine/encounters.js";
 import { formatTime, formatDate } from "../engine/time.js";
 import { formatCopper } from "../engine/economy.js";
@@ -318,6 +319,7 @@ function collectHexes(cur) {
 
 export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCombat, loading }) {
   const [selected, setSelected] = useState(null);
+  const [flyPanelDest, setFlyPanelDest] = useState(null); // tile being assigned for a party fly
   const [journalOpen, setJournalOpen] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false); // legend hidden by default to free map space
   // Accepted quests, and those with a known place to put a marker on the map.
@@ -430,12 +432,13 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
   const riskPct = canTravel ? pathRiskPercent(state, legPath) : 0;
 
   // Travel-magic modes available for the selected tile (engine/data/travel-spells).
+  // Teleport is the player's own working; Fly can be a PARTY multicast (engine/fly.js).
   const resolve = state.character.resolve ?? 0;
-  const travelSpells = knownTravelSpells(state);
-  const flySpell = travelSpells.find((s) => s.mode === "fly");
-  const teleSpells = travelSpells.filter((s) => s.mode === "teleport");
+  const playerSpells = knownTravelSpells(state.character);
+  const teleSpells = playerSpells.filter((s) => s.mode === "teleport");
+  const flyPlan = flyMulticastPlan(state);
   const dist = selected ? hexDistance(cur, selected) : 0;
-  const canFly = !!flySpell && selected && selSeen && !isSelf && !loading;
+  const canFly = flyPlan.casters.length > 0 && selected && selSeen && !isSelf && !loading;
   const teleOption = (selected && !isSelf && !loading)
     ? teleSpells.find((s) => (isFinite(s.range) ? (selSeen && dist <= s.range) : isTeleportAnchor(state, selected.x, selected.y)))
     : null;
@@ -873,14 +876,15 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         {(canFly || teleOption) && (
           <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
             {canFly && (() => {
-              const ok = resolve >= flySpell.resolveCost;
+              const party = flyPlan.casts > 1;
+              const ok = flyPlan.feasible;
               return (
-                <button onClick={() => ok && onFly(selected)} disabled={!ok} style={{
+                <button onClick={() => { if (!ok) return; party ? setFlyPanelDest(selected) : onFly(selected); }} disabled={!ok} style={{
                   flex: 1, height: "40px", borderRadius: "20px", fontFamily: "inherit", fontWeight: 800, fontSize: "12px",
                   border: `1px solid ${ok ? "rgba(127,199,224,0.55)" : "rgba(127,199,224,0.18)"}`,
                   backgroundColor: ok ? "rgba(127,199,224,0.16)" : "rgba(127,199,224,0.06)",
                   color: ok ? "#bfe3f2" : "rgba(127,199,224,0.4)", cursor: ok ? "pointer" : "not-allowed",
-                }}>Fly · {flySpell.resolveCost} resolve</button>
+                }}>{party ? `Fly party · ${flyPlan.totalCost} resolve` : `Fly · ${flyPlan.flyCost} resolve`}</button>
               );
             })()}
             {teleOption && (() => {
@@ -932,6 +936,81 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
             multiLeg ? `Travel · first ${legHexes} of ${totalHexes} hexes · ~${totalMins} min · risk ${riskPct}%`
             : `Travel · ${legHexes} hex${legHexes === 1 ? "" : "es"} · ~${totalMins} min · risk ${riskPct}%`}
         </button>
+      </div>
+      {flyPanelDest && (
+        <FlyPanel
+          plan={flyPlan}
+          destName={getTile(state, flyPanelDest.x, flyPanelDest.y).poi?.name || `${TERRAINS[getTile(state, flyPanelDest.x, flyPanelDest.y).terrain]?.label} (${flyPanelDest.x},${flyPanelDest.y})`}
+          onCancel={() => setFlyPanelDest(null)}
+          onConfirm={(assign) => { const d = flyPanelDest; setFlyPanelDest(null); onFly(d, assign); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Party fly-multicast assignment: one casting of Fly per head, the resolve toll
+// split across the casters who know it. Defaults to an even auto-balance; the
+// player can reassign each passenger and see every caster's resolve before/after.
+function FlyPanel({ plan, destName, onConfirm, onCancel }) {
+  const [assign, setAssign] = useState(plan.autoAssign);
+  const cost = assignmentCost(assign, plan.flyCost);
+  const valid = assignmentValid(assign, plan.casters, plan.flyCost);
+  const row = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "6px 0" };
+  const sel = {
+    fontFamily: "inherit", fontSize: "12px", color: "#bfe3f2", background: "rgba(127,199,224,0.10)",
+    border: "1px solid rgba(127,199,224,0.4)", borderRadius: "8px", padding: "5px 8px",
+  };
+  return (
+    <div style={{ position: "absolute", inset: 0, zIndex: 8, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", background: "rgba(6,9,9,0.6)" }}
+         onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        width: "100%", maxWidth: "420px", maxHeight: "82%", overflowY: "auto",
+        backgroundColor: "rgba(12,17,17,0.98)", backdropFilter: "blur(12px)",
+        border: "1px solid rgba(127,199,224,0.35)", borderRadius: "16px",
+        padding: "16px 18px", boxShadow: "0 22px 54px rgba(0,0,0,0.7)",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+          <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "20px", color: "#bfe3f2" }}>Fly the party</div>
+          <button onClick={onCancel} style={{ ...iconButtonStyle, width: "26px", height: "26px" }}><Icon name="x" size={12} color="#bfe3f2" strokeWidth={2} /></button>
+        </div>
+        <div style={{ fontSize: "12px", color: "rgba(237,228,208,0.65)", marginBottom: "10px" }}>
+          To {destName}. One casting per soul — <b>{plan.casts}</b> in all, <b>{plan.flyCost}</b> resolve each. Choose who carries whom.
+        </div>
+
+        <div style={{ fontSize: "11px", letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(127,199,224,0.6)", marginBottom: "2px" }}>Passengers</div>
+        {plan.passengers.map((p) => (
+          <div key={p.id} style={row}>
+            <span style={{ fontSize: "13px", color: "#f5e9d2" }}>{p.name}{p.kind === "player" ? " (you)" : ""}</span>
+            <select value={assign[p.id] ?? ""} onChange={(e) => setAssign({ ...assign, [p.id]: e.target.value })} style={sel}>
+              {plan.casters.map((c) => <option key={c.id} value={c.id} style={{ color: "#111" }}>flown by {c.name}</option>)}
+            </select>
+          </div>
+        ))}
+
+        <div style={{ fontSize: "11px", letterSpacing: "0.06em", textTransform: "uppercase", color: "rgba(127,199,224,0.6)", margin: "12px 0 2px" }}>Casters' resolve</div>
+        {plan.casters.map((c) => {
+          const after = c.resolve - (cost[c.id] || 0);
+          const over = after < 0;
+          return (
+            <div key={c.id} style={row}>
+              <span style={{ fontSize: "13px", color: "#f5e9d2" }}>{c.name} <span style={{ color: "rgba(237,228,208,0.45)" }}>×{(cost[c.id] || 0) / plan.flyCost}</span></span>
+              <span style={{ fontSize: "13px", fontWeight: 800, color: over ? "#e08a8a" : "#9fdcc0" }}>{c.resolve} → {after} <span style={{ color: "rgba(237,228,208,0.4)", fontWeight: 400 }}>/ {c.resolveMax}</span></span>
+            </div>
+          );
+        })}
+
+        <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
+          <button onClick={() => setAssign(plan.autoAssign)} style={{
+            flex: "0 0 auto", height: "40px", padding: "0 14px", borderRadius: "20px", fontFamily: "inherit", fontWeight: 700, fontSize: "12px",
+            border: "1px solid rgba(215,167,111,0.4)", background: "rgba(215,167,111,0.08)", color: "#e6b98c", cursor: "pointer",
+          }}>Auto-balance</button>
+          <button onClick={() => valid && onConfirm(assign)} disabled={!valid} style={{
+            flex: 1, height: "40px", borderRadius: "20px", fontFamily: "inherit", fontWeight: 800, fontSize: "13px",
+            border: "none", background: valid ? "#7fc7e0" : "rgba(127,199,224,0.12)",
+            color: valid ? "#08171c" : "rgba(127,199,224,0.4)", cursor: valid ? "pointer" : "not-allowed",
+          }}>{valid ? `Take wing · ${plan.totalCost} resolve` : "Not enough resolve"}</button>
+        </div>
       </div>
     </div>
   );

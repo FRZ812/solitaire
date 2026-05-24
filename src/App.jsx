@@ -34,6 +34,7 @@ import {
   findPath, pathMinutes, isSeen, flightPath, flightMinutes,
 } from "./engine/world.js";
 import { knownTravelSpells } from "./data/travel-spells.js";
+import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
 import { rollPathEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
@@ -487,6 +488,12 @@ export function Solitaire() {
       // strip is correct the moment the campaign opens (heals by any gain).
       // Likewise re-derive the Mind-scaled resolve pool (older saves had flat 6).
       if (migrated?.character) { recomputeVitalityMax(migrated.character); recomputeResolveMax(migrated.character); }
+      // Companions carry their own Mind-scaled resolve pool too (they can fly the
+      // party) — derive it for any party member saved before pools existed.
+      for (const id of (migrated?.party || [])) {
+        const c = migrated.world?.codex?.characters?.[id];
+        if (c && c.resolveMax == null) recomputeResolveMax(c);
+      }
       setState(migrated);
       closeBeatMenu();
       setCurrentCampaignId(id);
@@ -769,13 +776,18 @@ export function Solitaire() {
   }
 
   // Fly to a seen tile: a long, fast leg over any terrain, a wide view from the
-  // air, no ground encounters — paid for in resolve each leg (the Fly spell).
-  async function handleFly(dest) {
+  // air, no ground encounters. Flying the PARTY costs one casting of Fly per head,
+  // the resolve toll split across the casters who know it (engine/fly.js). The
+  // optional `assignment` ({ passengerId: casterId }) comes from the map's Fly panel;
+  // without one (a lone flier) the auto-balanced split is used.
+  async function handleFly(dest, assignment) {
     if (loading) return;
-    const spell = knownTravelSpells(state).find((s) => s.mode === "fly");
-    if (!spell) return;
-    if ((state.character.resolve ?? 0) < spell.resolveCost) {
-      setState({ ...state, beats: [...state.beats, { id: `fly${Date.now()}`, type: "narration", content: "You haven't the resolve left to take wing." }] });
+    const plan = flyMulticastPlan(state);
+    if (!plan.casters.length) return; // nobody in the party knows Fly
+    const assign = assignment || plan.autoAssign;
+    if (!assignmentValid(assign, plan.casters, plan.flyCost)) {
+      const who = plan.casts > 1 ? "The party hasn't the resolve to take wing together." : "You haven't the resolve left to take wing.";
+      setState({ ...state, beats: [...state.beats, { id: `fly${Date.now()}`, type: "narration", content: who }] });
       return;
     }
     const cur = state.world.currentTile;
@@ -790,11 +802,28 @@ export function Solitaire() {
     const legName = arrived ? toName : (legTile.poi?.name || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
     const mins = flightMinutes(legPath);
     setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
-    const ch = { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - spell.resolveCost) };
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Fly ${arrived ? "to" : "toward"} ${toName}.` };
-    const stateWithPlayer = { ...state, character: ch, beats: [...state.beats, playerBeat] };
+
+    // Deduct each caster's share from their PERSISTED resolve (player + companions).
+    const perCaster = assignmentCost(assign, plan.flyCost);
+    const ch = perCaster.wanderer
+      ? { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - perCaster.wanderer) }
+      : state.character;
+    const chars = state.world.codex.characters;
+    let updatedChars = chars, charsTouched = false;
+    for (const [id, spent] of Object.entries(perCaster)) {
+      if (id === "wanderer" || !chars[id]) continue;
+      if (!charsTouched) { updatedChars = { ...chars }; charsTouched = true; }
+      const c = chars[id];
+      updatedChars[id] = { ...c, resolve: Math.max(0, (c.resolve ?? c.resolveMax ?? 0) - spent) };
+    }
+    const world = charsTouched ? { ...state.world, codex: { ...state.world.codex, characters: updatedChars } } : state.world;
+
+    const casterTally = plan.casters.filter((c) => perCaster[c.id]).map((c) => `${c.name} ×${perCaster[c.id] / plan.flyCost}`);
+    const partyNote = plan.casts > 1 ? ` The whole band takes wing — ${plan.casts} castings of Fly, woven by ${casterTally.join(", ")}.` : "";
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Fly ${arrived ? "to" : "toward"} ${toName}${plan.casts > 1 ? " with the party" : ""}.` };
+    const stateWithPlayer = { ...state, character: ch, world, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
-    const msg = `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike). ${arrived ? "Narrate the flight and landing." : `Narrate the flight and setting down at ${legName} — do NOT reach ${toName} yet.`} It cost ${spell.resolveCost} resolve. Use minutes_passed = ${mins}.`;
+    const msg = `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).${partyNote} ${arrived ? "Narrate the flight and landing." : `Narrate the flight and setting down at ${legName} — do NOT reach ${toName} yet.`} It cost ${plan.totalCost} resolve in total${plan.casts > 1 ? " (divided across the casters)" : ""}. Use minutes_passed = ${mins}.`;
     const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: null, mode: "fly", intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
     await finishTravel(stateWithPlayer, msg, travel);
   }
@@ -803,7 +832,7 @@ export function Solitaire() {
   // encounters — paid for in resolve. Eligibility (range/anchor) is gated in MapView.
   async function handleTeleport(dest, spellId) {
     if (loading) return;
-    const spell = knownTravelSpells(state).find((s) => s.id === spellId);
+    const spell = knownTravelSpells(state.character).find((s) => s.id === spellId);
     if (!spell) return;
     if ((state.character.resolve ?? 0) < spell.resolveCost) {
       setState({ ...state, beats: [...state.beats, { id: `tp${Date.now()}`, type: "narration", content: `You haven't the resolve to work ${spell.name}.` }] });

@@ -365,7 +365,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
   const sortedAbilities = [
     { id: "basic-attack", tier: "common" }, { id: "defend", tier: "common" }, { id: "talk", tier: "common" },
     ...learnedAbilities.map((a) => (typeof a === "string" ? { id: a, tier: "common" } : a)),
-  ].filter((a) => getAbilityDef(a.id)).sort((x, y) => tierOrder(y.tier || "common") - tierOrder(x.tier || "common"));
+  ].filter((a) => { const d = getAbilityDef(a.id); return d && !d.noncombat; }).sort((x, y) => tierOrder(y.tier || "common") - tierOrder(x.tier || "common"));
   const PREVIEW = 4;
 
   const showGuestNag = user?.is_anonymous && onLinkEmail;

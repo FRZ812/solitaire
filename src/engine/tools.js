@@ -91,9 +91,24 @@ export function applyRest(state, hours) {
   // Resolve refills only by rest (or certain drinks) — a full night restores the
   // whole Mind-scaled pool; a short nap restores a proportional share.
   const RESOLVE_FULL_REST_H = 8;
+  const restoreResolve = (cur, max) => Math.min(max ?? 0, (cur ?? 0) + Math.ceil((max ?? 0) * (h / RESOLVE_FULL_REST_H)));
   const resolveMax = ch.resolveMax ?? 0;
-  const resolve = Math.min(resolveMax, (ch.resolve ?? 0) + Math.ceil(resolveMax * (h / RESOLVE_FULL_REST_H)));
+  const resolve = restoreResolve(ch.resolve, resolveMax);
   const resolveGain = Math.round(resolve - (ch.resolve ?? 0));
+
+  // The party rests together — companions refill their own resolve pools too, so a
+  // companion caster can fly the band again after a night's rest.
+  const chars = state.world.codex.characters;
+  let restedChars = chars, charsTouched = false;
+  for (const id of (state.party || [])) {
+    const c = chars?.[id];
+    if (!c || c.resolveMax == null) continue;
+    const r = restoreResolve(c.resolve, c.resolveMax);
+    if (r !== (c.resolve ?? 0)) {
+      if (!charsTouched) { restedChars = { ...chars }; charsTouched = true; }
+      restedChars[id] = { ...c, resolve: r };
+    }
+  }
 
   // Recompute need-borne conditions (rest can clear Tired/Exhausted, or wake you Hungry).
   const conditions = mergeConditions(null, getNeedConditions(needs), ch.conditions);
@@ -106,9 +121,13 @@ export function applyRest(state, hours) {
   if (resolveGain > 0) gains.push(`+${resolveGain} resolve`);
   const summary = `You unroll the bedroll and bed down. You wake ${h} hour${h === 1 ? "" : "s"} later${gains.length ? `, rested — ${gains.join(", ")}` : ""}.`;
 
+  const world = charsTouched
+    ? { ...state.world, codex: { ...state.world.codex, characters: restedChars } }
+    : state.world;
+
   return {
     ok: true,
     summary,
-    state: { ...state, time, character: { ...ch, needs, vitality, resolve, conditions, light } },
+    state: { ...state, time, world, character: { ...ch, needs, vitality, resolve, conditions, light } },
   };
 }
