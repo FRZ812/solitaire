@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Icon } from "./Icon.jsx";
+import { Icon, ItemIcon } from "./Icon.jsx";
 import {
   iconButtonStyle, ConditionPill, NeedBar, StatBar, AttrBlock,
   SectionHeader, ErrorBanner,
@@ -17,44 +17,24 @@ import { useEffectChips } from "../data/goods.js";
 import { freshnessLabel, perishDescriptor } from "../engine/spoilage.js";
 import { ArsenalView } from "./ArsenalView.jsx";
 import { AttributeDetail } from "./AttributeDetail.jsx";
+import { InfoButton, InfoModal } from "./InfoTip.jsx";
+import { glossaryById, conditionInfo } from "../data/glossary.js";
+import { lightStatus } from "../engine/light.js";
+import { canHeal } from "../engine/healing.js";
 
-// Item-specific inline icon. The wooden bird is a meaningful in-fiction
-// item, so it gets a custom glyph; everything else falls back to a
-// pouch/scroll outline.
-function renderItemIcon(itemId) {
-  if (itemId === "wooden-bird") {
-    return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={colors.gold} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px", display: "inline-block", verticalAlign: "middle" }}>
-        <path d="M20 4 C16 4 13 7 11 9 C9 7 6 4 2 4 C5 9 8 11 11 12 C11 15 13 18 16 20 C16 16 15 13 14 11 C16 9 19 6 20 4 Z" fill="rgba(215, 167, 111, 0.25)" />
-        <line x1="16" y1="10" x2="19" y2="7" stroke={colors.parchmentMuted} strokeWidth="1.2" />
-        <line x1="15" y1="12" x2="17.5" y2="9.5" stroke={colors.parchmentMuted} strokeWidth="1.2" />
-        <circle cx="11.5" cy="11.5" r="0.75" fill={colors.parchmentLight} />
-      </svg>
-    );
-  }
+// Compact label/value cell for the derived combat stats grid. Tappable to explain.
+function CombatStat({ label, value, onClick }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(215, 167, 111, 0.75)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px", display: "inline-block", verticalAlign: "middle" }}>
-      <path d="M6 20a6 6 0 0 0 12 0V10a6 6 0 0 0-12 0v10z" fill="rgba(215, 167, 111, 0.05)" />
-      <path d="M6 10c0-2.5 1.5-4 6-4s6 1.5 6 4" />
-      <path d="M9 6a3 3 0 0 1 6 0" />
-      <line x1="8" x2="16" y1="12" y2="12" />
-    </svg>
-  );
-}
-
-// Compact label/value cell for the derived combat stats grid.
-function CombatStat({ label, value }) {
-  return (
-    <div style={{
-      padding: "7px 8px",
+    <button onClick={onClick} disabled={!onClick} style={{
+      padding: "7px 8px", width: "100%", fontFamily: "inherit",
       backgroundColor: "rgba(20, 29, 29, 0.35)",
       border: `1px solid rgba(215, 167, 111, 0.14)`,
-      borderRadius: "10px",
+      borderRadius: "10px", cursor: onClick ? "pointer" : "default",
       display: "flex", flexDirection: "column", alignItems: "center",
     }}>
       <div style={{ ...metaStyle, fontSize: "8px", letterSpacing: "0.1em", color: colors.gold }}>{label}</div>
       <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "17px", color: colors.parchment, lineHeight: 1.1, marginTop: "2px" }}>{value}</div>
-    </div>
+    </button>
   );
 }
 
@@ -119,6 +99,12 @@ const insetBoxStyle = {
   padding: "8px 12px",
 };
 
+// Small "· tap to learn" hint appended to section headers.
+const tapHint = { fontWeight: 400, fontSize: "9px", color: "rgba(215,167,111,0.5)", letterSpacing: 0, textTransform: "none" };
+// Transparent button wrappers so existing display components become tappable.
+const bareBtn = { background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" };
+const barBtn = { ...bareBtn, width: "100%", textAlign: "left", display: "block" };
+
 // Tappable inventory row.
 const itemRowStyle = {
   display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -130,7 +116,7 @@ const itemRowStyle = {
 };
 
 // Item detail modal: stats, requirement, passives, and equip/unequip.
-function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUnequip, onUse, onBindRune, onClose }) {
+function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUnequip, onUse, onLightTorch, onLightLantern, onRest, onBindRune, onClose }) {
   if (!item) return null;
   const cs = itemCombatStats(item);
   const req = itemRequirement(item);
@@ -162,7 +148,7 @@ function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUne
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "20px", color: tcolor, lineHeight: 1.1 }}>{item.name || id}</div>
+            <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "20px", color: tcolor, lineHeight: 1.1 }}><ItemIcon item={item} itemId={id} size={18} />{item.name || id}</div>
             <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>{tierLabel(item.tier || "common")} · {item.kind || "item"}</div>
           </div>
           <button onClick={onClose} style={{ ...iconButtonStyle, width: "28px", height: "28px", flexShrink: 0, backgroundColor: "rgba(215,167,111,0.08)", border: `1px solid rgba(215,167,111,0.2)` }}>
@@ -237,6 +223,21 @@ function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUne
         {usable && (
           <button onClick={() => { onUse(id); onClose(); }} style={actionButtonStyle()}>{item.use.verb || "Use"}</button>
         )}
+        {id === "torch" && (
+          <>
+            <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", margin: "2px 2px 0", lineHeight: 1.4 }}>Needs a tinderbox to strike the flame. Burns ~1h; sheds a modest pool of light.</div>
+            <button onClick={() => { onLightTorch?.(); onClose(); }} style={actionButtonStyle()}>Light a torch</button>
+          </>
+        )}
+        {id === "lantern" && (
+          <>
+            <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", margin: "2px 2px 0", lineHeight: 1.4 }}>Burns a flask of lamp-oil for ~4h of steady, bright light you can hood at will.</div>
+            <button onClick={() => { onLightLantern?.(); onClose(); }} style={actionButtonStyle()}>Light the lantern</button>
+          </>
+        )}
+        {((item.tool?.uses || []).includes("rest") || (item.tool?.uses || []).includes("camp")) && (
+          <RestButton onRest={onRest} onClose={onClose} />
+        )}
         {bindable && (
           <>
             <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(199,155,224,0.8)", margin: "2px 2px 6px", lineHeight: 1.4 }}>
@@ -251,6 +252,25 @@ function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUne
             : <button onClick={() => { onEquip(id); onClose(); }} style={actionButtonStyle()}>Equip</button>
         )}
       </div>
+    </div>
+  );
+}
+
+// Bedroll rest: tap to reveal duration presets; each skips time and restores sleep.
+function RestButton({ onRest, onClose }) {
+  const [open, setOpen] = useState(false);
+  if (!open) return <button onClick={() => setOpen(true)} style={actionButtonStyle()}>Rest…</button>;
+  const opt = (label, hours) => (
+    <button onClick={() => { onRest?.(hours); onClose(); }} style={{
+      flex: 1, padding: "10px 6px", borderRadius: radius.panelCompact, border: `1px solid rgba(215,167,111,0.35)`,
+      background: "rgba(215,167,111,0.1)", color: colors.parchmentLight, fontSize: "12px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+    }}>{label}</button>
+  );
+  return (
+    <div style={{ display: "flex", gap: "6px" }}>
+      {opt("Nap · 1h", 1)}
+      {opt("Rest · 4h", 4)}
+      {opt("Night · 8h", 8)}
     </div>
   );
 }
@@ -305,15 +325,33 @@ function Divider() {
   );
 }
 
-export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip, onUse, onBindRune }) {
+export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onEquip, onUnequip, onUse, onLightTorch, onLightLantern, onExtinguish, onRest, onBindRune }) {
   const [detail, setDetail] = useState(null); // { id, location: "worn"|"carried" }
   const [arsenalOpen, setArsenalOpen] = useState(false);
   const [openAttr, setOpenAttr] = useState(null); // attribute key whose threshold detail is expanded
+  const [info, setInfo] = useState(null); // glossary explanation popover { term, text, extra }
   const inv = state.character.inventory;
   const codex = state.world.codex;
   const wornIds = codex.characters.wanderer?.worn || [];
   const attrs = effectiveAttributes(state.character);
   const combat = deriveCombatStats(state.character, codex);
+  // Tap-to-explain: open a glossary entry, appending a LIVE line for the
+  // concepts whose state actually varies (resolve regen, healing, light).
+  const liveStyle = { fontSize: "12px", color: colors.parchmentMuted, background: "rgba(215,167,111,0.08)", border: "1px solid rgba(215,167,111,0.2)", borderRadius: radius.chip, padding: "6px 9px" };
+  function showInfo(id) {
+    const g = glossaryById(id);
+    if (!g) return;
+    let extra = null;
+    if (id === "resolve") {
+      const r = combat.resolveRegen;
+      extra = <div style={liveStyle}>Right now: <b>{r}/turn</b>{r > 1 ? " — quickened by your gear or traits." : r < 1 ? " — slowed (heavy armour)." : " (the base rate)."}</div>;
+    } else if (id === "vitality") {
+      extra = <div style={liveStyle}>{canHeal(state.character.conditions) ? "Right now: healing normally." : "Right now: NOT healing — a wound or need is blocking it."}</div>;
+    } else if (id === "light") {
+      extra = <div style={liveStyle}>Right now: <b>{lightStatus(state).text}</b>.</div>;
+    }
+    setInfo({ term: g.term, text: g.text, extra });
+  }
   const learnedAbilities = state.character.abilities || [];
   const trainedProfs = PROFICIENCIES
     .map((p) => ({ name: p.name, rating: ratingFromXp(state.character.proficiencies?.[p.id] || 0), xp: state.character.proficiencies?.[p.id] || 0 }))
@@ -403,33 +441,53 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
 
         <Divider />
 
-        {/* Conditions — surfaced first. */}
+        {/* Conditions — surfaced first. Tap any to learn what it does. */}
         <div>
-          <SectionHeader>Conditions</SectionHeader>
+          <SectionHeader>Conditions <span style={tapHint}>· tap to learn</span></SectionHeader>
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
             {state.character.conditions.length === 0
               ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.5)", fontStyle: "italic" }}>None</span>
-              : state.character.conditions.map((c) => <ConditionPill key={c} label={c} />)}
+              : state.character.conditions.map((c) => (
+                  <button key={c} onClick={() => setInfo(conditionInfo(c))} style={bareBtn}><ConditionPill label={c} /></button>
+                ))}
           </div>
         </div>
 
-        {/* Vitals — Vitality + Resolve as bars, grouped with the needs below. */}
+        {/* Vitals — Vitality + Resolve (+ light), grouped with the needs below. Tap to learn. */}
         <div>
-          <SectionHeader>Vitals</SectionHeader>
+          <SectionHeader>Vitals <span style={tapHint}>· tap to learn</span></SectionHeader>
           <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
-            <StatBar label="Vitality" value={state.character.vitality} max={state.character.vitalityMax} />
-            <StatBar label="Resolve" value={state.character.resolve} max={state.character.resolveMax}
-                     gradient="linear-gradient(90deg, #6d4a8a 0%, #a06fc4 100%)" />
+            <button onClick={() => showInfo("vitality")} style={barBtn}>
+              <StatBar label="Vitality" value={state.character.vitality} max={state.character.vitalityMax} />
+            </button>
+            <button onClick={() => showInfo("resolve")} style={barBtn}>
+              <StatBar label="Resolve" value={state.character.resolve} max={state.character.resolveMax}
+                       gradient="linear-gradient(90deg, #6d4a8a 0%, #a06fc4 100%)" />
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "7px", padding: "4px 2px" }}>
+              <button onClick={() => showInfo("light")} style={{ ...bareBtn, display: "flex", alignItems: "center", gap: "7px", flex: 1, minWidth: 0 }}>
+                <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: colors.gold }}>Light</span>
+                <span style={{ fontSize: "12px", color: colors.parchment }}>{lightStatus(state).text}</span>
+                <InfoButton onClick={() => showInfo("light")} />
+              </button>
+              {lightStatus(state).lit && (
+                <button onClick={() => onExtinguish?.()} style={{
+                  flexShrink: 0, padding: "4px 10px", borderRadius: radius.pill, fontFamily: "inherit",
+                  background: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.3)`,
+                  color: "rgba(215,167,111,0.85)", fontSize: "11px", fontWeight: 700, cursor: "pointer",
+                }}>Extinguish</button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Needs */}
+        {/* Needs — tap to learn */}
         <div>
-          <SectionHeader>Needs</SectionHeader>
+          <SectionHeader>Needs <span style={tapHint}>· tap to learn</span></SectionHeader>
           <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
-            <NeedBar label="Hunger" value={state.character.needs.hunger} />
-            <NeedBar label="Thirst" value={state.character.needs.thirst} />
-            <NeedBar label="Sleep"  value={state.character.needs.sleep}  />
+            <button onClick={() => showInfo("hunger")} style={barBtn}><NeedBar label="Hunger" value={state.character.needs.hunger} /></button>
+            <button onClick={() => showInfo("thirst")} style={barBtn}><NeedBar label="Thirst" value={state.character.needs.thirst} /></button>
+            <button onClick={() => showInfo("sleep")} style={barBtn}><NeedBar label="Sleep" value={state.character.needs.sleep} /></button>
           </div>
         </div>
 
@@ -470,14 +528,14 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
 
         {/* Combat — stats derived from attributes + equipped gear. */}
         <div>
-          <SectionHeader>Combat</SectionHeader>
+          <SectionHeader>Combat <span style={tapHint}>· tap to learn</span></SectionHeader>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginBottom: "8px" }}>
-            <CombatStat label="Armor" value={combat.armor} />
-            <CombatStat label="Ward" value={combat.ward} />
-            <CombatStat label="Dodge" value={`${combat.dodge}%`} />
-            <CombatStat label="Crit" value={`${combat.critChance}%`} />
-            <CombatStat label="Pen" value={combat.weapon.pen} />
-            <CombatStat label="Damage" value={`${combat.weapon.min}–${combat.weapon.max}`} />
+            <CombatStat label="Armor" value={combat.armor} onClick={() => showInfo("armor")} />
+            <CombatStat label="Ward" value={combat.ward} onClick={() => showInfo("ward")} />
+            <CombatStat label="Dodge" value={`${combat.dodge}%`} onClick={() => showInfo("dodge")} />
+            <CombatStat label="Crit" value={`${combat.critChance}%`} onClick={() => showInfo("crit")} />
+            <CombatStat label="Pen" value={combat.weapon.pen} onClick={() => showInfo("penetration")} />
+            <CombatStat label="Damage" value={`${combat.weapon.min}–${combat.weapon.max}`} onClick={() => showInfo("damage")} />
           </div>
           <div style={insetBoxStyle}>
             <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: "rgba(215, 167, 111, 0.7)", marginBottom: "7px" }}>
@@ -498,7 +556,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
 
         {/* Wealth */}
         <div>
-          <SectionHeader>Wealth</SectionHeader>
+          <SectionHeader>Wealth <button onClick={() => showInfo("currency")} style={{ ...bareBtn, verticalAlign: "middle", marginLeft: "2px" }}><InfoButton onClick={() => showInfo("currency")} /></button></SectionHeader>
           <div style={{
             ...insetBoxStyle,
             fontFamily: fonts.serif, fontStyle: "italic",
@@ -534,7 +592,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
                   {id ? (
                     <button onClick={() => setDetail({ id, location: "worn" })} style={{ ...itemRowStyle, flex: 1, minWidth: 0 }}>
                       <span style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
-                        {renderItemIcon(id)}
+                        <ItemIcon item={codex.items[id] || itemTemplate(id)} itemId={id} />
                         <span style={{ color: tierColor(codex.items[id]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[id]?.name || id}</span>
                       </span>
                       <Icon name="arrowLeft" size={11} color="rgba(215,167,111,0.4)" strokeWidth={2} />
@@ -560,7 +618,7 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
                   return (
                     <button key={c.itemId} onClick={() => setDetail({ id: c.itemId, location: "carried" })} style={itemRowStyle}>
                       <span style={{ display: "flex", alignItems: "center", minWidth: 0, gap: "6px" }}>
-                        {renderItemIcon(c.itemId)}
+                        <ItemIcon item={codex.items[c.itemId] || itemTemplate(c.itemId)} itemId={c.itemId} />
                         <span style={{ color: tierColor(codex.items[c.itemId]?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{codex.items[c.itemId]?.name || c.itemId}</span>
                         {fresh && fresh.tone !== "ok" && (
                           <span style={{ fontSize: "9px", fontStyle: "italic", color: fc, flexShrink: 0 }}>· {fresh.text}</span>
@@ -612,10 +670,14 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
           onEquip={onEquip}
           onUnequip={onUnequip}
           onUse={onUse}
+          onLightTorch={onLightTorch}
+          onLightLantern={onLightLantern}
+          onRest={onRest}
           onBindRune={onBindRune}
           onClose={() => setDetail(null)}
         />
       )}
+      {info && <InfoModal info={info} onClose={() => setInfo(null)} />}
       {arsenalOpen && <ArsenalView character={state.character} onClose={() => setArsenalOpen(false)} />}
     </div>
   );

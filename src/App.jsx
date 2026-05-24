@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 
-import { STORAGE_KEY, originLabel } from "./config.js";
+import { STORAGE_KEY, originLabel, SIGHT_RADIUS } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
 import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 
@@ -15,6 +15,8 @@ import { recomputeVitalityMax } from "./engine/attributes.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
+import { lightTorch, lightLantern, extinguish, applyRest } from "./engine/tools.js";
+import { inTheDark, isNight, isLit, isHidden, isBeacon, sightRadius } from "./engine/light.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { applyFusionToItem, fusionOptionsForRune } from "./engine/fusion.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
@@ -137,8 +139,10 @@ function applyTravelArrival(base, beat, travel) {
     travelToCoords: { x: travel.dest.x, y: travel.dest.y },
   });
   const path = travel.path || [];
+  // How far the player can see on arrival — shrunk by darkness (engine/light.js).
+  const r = sightRadius(next);
   // Multi-tile travel: mark intermediate path tiles as visited and refresh sight
-  // from each so the player's seen area expands along the route.
+  // from each so the player's seen area expands along the route (limited by light).
   if (path.length > 2) {
     const newTiles = { ...next.world.tiles };
     let newSeen = next.world.seen;
@@ -146,14 +150,16 @@ function applyTravelArrival(base, beat, travel) {
       const p = path[i];
       const k = `${p.x},${p.y}`;
       if (!newTiles[k]) newTiles[k] = getTile(base, p.x, p.y);
-      newSeen = computeSightFrom(p.x, p.y, newSeen);
+      newSeen = computeSightFromRadius(p.x, p.y, r, newSeen);
     }
     next = { ...next, world: { ...next.world, tiles: newTiles, seen: newSeen } };
   }
-  // Vista: arriving at a tile with vistaRadius reveals a wide hex.
+  // Vista: a high point reveals a wide hex — but only if you can actually see far
+  // (daylight/lantern/darkvision). In the dark the grand view is just more black.
   const destTile = getTile(base, travel.dest.x, travel.dest.y);
   if (destTile?.vistaRadius && destTile.vistaRadius > 0) {
-    const wider = computeSightFromRadius(travel.dest.x, travel.dest.y, destTile.vistaRadius, next.world.seen);
+    const vr = r >= SIGHT_RADIUS ? destTile.vistaRadius : r;
+    const wider = computeSightFromRadius(travel.dest.x, travel.dest.y, vr, next.world.seen);
     next = { ...next, world: { ...next.world, seen: wider } };
   }
 
@@ -637,7 +643,11 @@ export function Solitaire() {
       inventory_changes: Object.keys(inv).length ? inv : undefined,
       discoveries: wornIds.length ? { characters: [{ id: "wanderer", worn: wornIds }] } : undefined,
     };
-    const built = applyBeat(state, beat); // created=true; identity, kit, and gear applied
+    let built = applyBeat(state, beat); // created=true; identity, kit, and gear applied
+    // Drop the limbo opening narration — a locally-built character skips the
+    // interview entirely, so the log should begin with their arrival, not the
+    // "you are a soul in the grey" intro.
+    built = { ...built, beats: [] };
     setManualCreation(false);
     setCreationEntered(false);
     setState(built); // flip out of limbo at once so the chooser can't flash back while the opening loads
@@ -648,7 +658,8 @@ export function Solitaire() {
       a.hair && `${a.hair} hair`, a.eyes && `${a.eyes} eyes`, a.facial_hair, a.marks,
     ].filter(Boolean).join(", ");
     const originStr = originLabel(setup.origin);
-    const opener = `[CHARACTER CREATION] The character is now fully created and LOCKED via direct selection — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}${originStr ? ` of ${originStr} origin` : ""}. Describe them FAITHFULLY and do NOT contradict these set traits: ${looks || "as the player envisioned"}. Do NOT emit character_setup, do NOT change any values, and do NOT ask further questions. OPEN THE REAL SCENE now: narrate the soul drawn out of limbo into the world, arriving at the Drowned Rat tavern in Mirecross in the rain, then proceed as a normal first beat.`;
+    const backstory = [setup.backstory, ...(Array.isArray(setup.knows) ? setup.knows : [])].filter(Boolean).join(" ");
+    const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving at the Drowned Rat tavern in Mirecross in the rain, grounding the scene in who they are, their origin, and what (from the backstory) has brought them here, then proceed as a normal first beat.`;
     await runNarratorTurn(built, opener);
   }
 
@@ -673,7 +684,9 @@ export function Solitaire() {
     const toName = toTile.poi?.name || `${TERRAINS[toTile.terrain]?.label} (${dest.x},${dest.y})`;
     const isHidden = toTile.poi?.type === "hidden";
     const travelWp = activeWorldPassives(state.character, state.world.codex);
-    const totalMins = Math.max(1, Math.round(pathMinutes(state, path) * (1 - (travelWp.travelMult || 0))));
+    // Picking your way through the dark without a lit torch is slower going.
+    const darkTravel = isNight(state.time) && !isLit(state) && !state.character?.darkvision;
+    const totalMins = Math.max(1, Math.round(pathMinutes(state, path) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1)));
     const hexes = path.length - 1;
 
     // Summarize the route's terrain mix for the narrator.
@@ -910,6 +923,30 @@ export function Solitaire() {
     setState({ ...r.state, beats: [...r.state.beats, { id: `use${Date.now()}`, type: "narration", content: r.summary }] });
   }
 
+  // Light a torch / lantern, or snuff your light — deterministic, logs a beat.
+  function applyToolResult(r, close = true) {
+    if (!r.ok) {
+      if (r.reason) setState({ ...state, beats: [...state.beats, { id: `lit${Date.now()}`, type: "narration", content: r.reason }] });
+      return;
+    }
+    if (close) setMenuOpen(false);
+    setState({ ...r.state, beats: [...r.state.beats, { id: `lit${Date.now()}`, type: "narration", content: r.summary }] });
+  }
+  function handleLightTorch() { applyToolResult(lightTorch(state)); }
+  function handleLightLantern() { applyToolResult(lightLantern(state)); }
+  function handleExtinguish() { applyToolResult(extinguish(state), false); }
+
+  // Bed down and rest for the chosen hours — skips time, restores the Sleep need.
+  function handleRest(hours) {
+    const r = applyRest(state, hours);
+    if (!r.ok) {
+      if (r.reason) setState({ ...state, beats: [...state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.reason }] });
+      return;
+    }
+    setMenuOpen(false);
+    setState({ ...r.state, beats: [...r.state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.summary }] });
+  }
+
   // ----- Tavern quest board: tasks, day-labour, recruiting -----
 
   function handleAcceptTask(posting) {
@@ -1140,6 +1177,7 @@ export function Solitaire() {
       ownedUniques: ownedUniqueIds(st),
       coinBonus: wp.coinBonus || 0,
       environment: generateEnvironment(terrain),
+      dark: inTheDark(st),
       allies,
       ...extraOpts,
     }));
@@ -1191,7 +1229,19 @@ export function Solitaire() {
     if (!pendingCombat) return;
     const region = regionHere(state);
     const enemies = generateEnemyGroup(pendingCombat.kind, { power: region.power, maxTier: region.enemyTier });
-    startCombat(enemies, { flavor: pendingCombat.desc || groupFlavor(enemies) });
+    // A carried flame in the dark gives you away — the foe gets the jump on you.
+    const ambush = isBeacon(state) ? "enemy" : undefined;
+    startCombat(enemies, { flavor: pendingCombat.desc || groupFlavor(enemies) }, ambush ? { ambush } : {});
+  }
+
+  // Slip past a hostile travel encounter unseen — only reliable when you're
+  // hidden in the dark (no flame). Logs the moment; never starts the fight.
+  function handleSlipAway() {
+    if (!pendingCombat) return;
+    setPendingCombat(null);
+    if (isHidden(state)) {
+      setState((s) => ({ ...s, beats: [...s.beats, { id: `slip${Date.now()}`, type: "narration", content: "Unseen in the dark, you hold still and let the danger pass — then melt away the other direction." }] }));
+    }
   }
 
   // Begin combat the player has agreed to via the engage prompt.
@@ -1455,11 +1505,11 @@ export function Solitaire() {
             <button onClick={handleFightPending} style={{
               padding: "9px 16px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
               border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
-            }}>Fight</button>
-            <button onClick={() => setPendingCombat(null)} style={{
+            }}>{isBeacon(state) ? "Fight (seen!)" : "Fight"}</button>
+            <button onClick={handleSlipAway} style={{
               padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
               border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
-            }}>Avoid</button>
+            }}>{isHidden(state) ? "Slip away" : "Avoid"}</button>
           </div>
         )}
         {state.created !== false && pendingEngage && !combat && (
@@ -1586,6 +1636,10 @@ export function Solitaire() {
           onEquip={handleEquip}
           onUnequip={handleUnequip}
           onUse={handleUse}
+          onLightTorch={handleLightTorch}
+          onLightLantern={handleLightLantern}
+          onExtinguish={handleExtinguish}
+          onRest={handleRest}
           onBindRune={(id) => { setMenuOpen(false); setFusionRune(id); }}
           onReset={handleResetCampaign}
           onOpenCodex={() => { setMenuOpen(false); setCodexOpen(true); }}

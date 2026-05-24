@@ -7,6 +7,8 @@ import { itemTemplate } from "../data/catalog.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel } from "../data/tiers.js";
 import { CHARACTER_TEMPLATES, STANDARD_PROVISIONS } from "../data/templates.js";
+import { InfoModal } from "./InfoTip.jsx";
+import { AttributeDetail } from "./AttributeDetail.jsx";
 
 const isHumanRace = (r) => r === "human";
 function kindredLabel(setup) {
@@ -29,11 +31,14 @@ const metaHead = { fontSize: "9px", letterSpacing: "0.14em", textTransform: "upp
 // (look, story, stats, kit) before committing to begin as them.
 function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
   const s = tmpl.setup;
+  const [info, setInfo] = useState(null);   // tapped ability/gear explanation
+  const [openAttr, setOpenAttr] = useState(null); // tapped attribute → threshold detail
   const appr = s.appearance || {};
   const apprChips = ["skin", "hair", "eyes", "build", "facial_hair", "marks"].map((k) => appr[k]).filter(Boolean);
-  const worn = (s.items || []).filter((i) => i.worn).map((i) => itemTemplate(i.itemId)?.name || i.itemId);
-  const packed = (s.items || []).filter((i) => !i.worn).map((i) => `${i.quantity > 1 ? `${i.quantity}× ` : ""}${itemTemplate(i.itemId)?.name || i.itemId}`);
+  const wornItems = (s.items || []).filter((i) => i.worn).map((i) => ({ ...i, def: itemTemplate(i.itemId) }));
+  const packedItems = (s.items || []).filter((i) => !i.worn).map((i) => ({ ...i, def: itemTemplate(i.itemId) }));
   const coinStr = [s.coins?.gold && `${s.coins.gold}g`, s.coins?.silver && `${s.coins.silver}s`, s.coins?.copper && `${s.coins.copper}c`].filter(Boolean).join(" ");
+  const itemInfo = (it) => setInfo({ term: it.def?.name || it.itemId, text: it.def?.description || it.def?.appearance || "A piece of your kit." });
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(120% 90% at 50% 0%, rgba(28,36,40,0.98), rgba(8,11,12,0.995))", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -65,33 +70,48 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
           <div style={{ fontSize: "13px", color: colors.parchmentLight, fontFamily: fonts.serif, fontStyle: "italic", lineHeight: 1.4 }}>“{s.bond}”</div>
         </Section>
 
-        <Section title="Attributes">
+        <Section title="Attributes" hint="tap for what each grants">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
             {ATTR_KEYS.map((k) => {
               const hot = tmpl.highlights.includes(ATTR_LABELS[k]);
+              const active = openAttr === k;
               return (
-                <div key={k} style={{ padding: "7px 8px", borderRadius: radius.chip, textAlign: "center", backgroundColor: hot ? "rgba(215,167,111,0.14)" : "rgba(20,29,29,0.5)", border: `1px solid ${hot ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.16)"}` }}>
+                <button key={k} onClick={() => setOpenAttr((p) => (p === k ? null : k))} style={{ padding: "7px 8px", borderRadius: radius.chip, textAlign: "center", cursor: "pointer", fontFamily: "inherit", backgroundColor: active ? "rgba(215,167,111,0.2)" : hot ? "rgba(215,167,111,0.14)" : "rgba(20,29,29,0.5)", border: `1px solid ${active || hot ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.16)"}` }}>
                   <div style={{ fontSize: "8px", letterSpacing: "0.1em", textTransform: "uppercase", color: colors.gold, fontWeight: 800 }}>{ATTR_LABELS[k]}</div>
                   <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "20px", color: colors.parchment, lineHeight: 1.1 }}>{s.attributes[k]}</div>
-                </div>
+                </button>
+              );
+            })}
+          </div>
+          {openAttr && <AttributeDetail attrKey={openAttr} value={s.attributes[openAttr] ?? 0} />}
+        </Section>
+
+        <Section title="Abilities" hint="tap for what they do">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {(s.abilities || []).map((a) => {
+              const def = getAbilityDef(a.id);
+              return (
+                <button key={a.id} onClick={() => setInfo({ term: `${def?.name || a.id} · ${tierLabel(a.tier)}`, text: def?.desc || "A learned technique." })} style={{ ...tagPill, cursor: "pointer", fontFamily: "inherit", textTransform: "none", letterSpacing: 0, color: colors.parchmentLight, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.22)` }}>
+                  {def?.name || a.id} <span style={{ color: tierColor(a.tier), fontWeight: 800 }}>{tierLabel(a.tier)}</span>
+                </button>
               );
             })}
           </div>
         </Section>
 
-        <Section title="Abilities">
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-            {(s.abilities || []).map((a) => (
-              <span key={a.id} style={{ ...tagPill, textTransform: "none", letterSpacing: 0, color: colors.parchmentLight, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.22)` }}>
-                {getAbilityDef(a.id)?.name || a.id} <span style={{ color: tierColor(a.tier), fontWeight: 800 }}>{tierLabel(a.tier)}</span>
-              </span>
-            ))}
-          </div>
-        </Section>
-
-        <Section title="Gear">
-          {worn.length > 0 && <div style={{ fontSize: "12px", color: "rgba(237,228,208,0.85)", lineHeight: 1.5 }}><span style={{ color: "rgba(215,167,111,0.6)" }}>Worn — </span>{worn.join(", ")}</div>}
-          {packed.length > 0 && <div style={{ fontSize: "12px", color: "rgba(237,228,208,0.85)", lineHeight: 1.5, marginTop: "3px" }}><span style={{ color: "rgba(215,167,111,0.6)" }}>Packed — </span>{packed.join(", ")}</div>}
+        <Section title="Gear" hint="tap an item">
+          {[["Worn", wornItems], ["Packed", packedItems]].map(([label, list]) => list.length > 0 && (
+            <div key={label} style={{ marginBottom: "6px" }}>
+              <div style={{ fontSize: "10px", color: "rgba(215,167,111,0.6)", marginBottom: "4px" }}>{label}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                {list.map((it) => (
+                  <button key={it.itemId} onClick={() => itemInfo(it)} style={{ ...tagPill, cursor: "pointer", fontFamily: "inherit", textTransform: "none", letterSpacing: 0, color: "rgba(237,228,208,0.85)", backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.2)`, fontWeight: 600 }}>
+                    {it.quantity > 1 ? `${it.quantity}× ` : ""}{it.def?.name || it.itemId}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
           <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.5)", marginTop: "4px" }}>+ standard provisions{coinStr ? ` · ${coinStr}` : ""}</div>
         </Section>
 
@@ -101,13 +121,14 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
           cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1,
         }}>{busy ? "Drawing them into the world…" : `Begin as ${finalName}`}</button>
       </div>
+      {info && <InfoModal info={info} onClose={() => setInfo(null)} />}
     </div>
   );
 }
 
-const Section = ({ title, children }) => (
+const Section = ({ title, hint, children }) => (
   <div style={{ marginBottom: "14px" }}>
-    <div style={metaHead}>{title}</div>
+    <div style={metaHead}>{title}{hint && <span style={{ fontWeight: 400, letterSpacing: 0, textTransform: "none", color: "rgba(215,167,111,0.45)" }}> · {hint}</span>}</div>
     {children}
   </div>
 );
@@ -124,7 +145,8 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
     if (busy) return;
     const have = new Set((tmpl.setup.items || []).map((i) => i.itemId));
     const provisions = STANDARD_PROVISIONS.filter((p) => !have.has(p.itemId)).map((p) => ({ itemId: p.itemId, quantity: p.quantity, worn: false }));
-    onPickTemplate({ ...tmpl.setup, name: finalNameFor(tmpl), items: [...(tmpl.setup.items || []), ...provisions] });
+    // Pass the template's backstory so the opening scene can ground their arrival.
+    onPickTemplate({ ...tmpl.setup, name: finalNameFor(tmpl), backstory: tmpl.story, items: [...(tmpl.setup.items || []), ...provisions] });
   };
 
   if (selected) {

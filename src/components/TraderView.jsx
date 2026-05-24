@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Icon } from "./Icon.jsx";
+import { Icon, ItemIcon } from "./Icon.jsx";
 import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle, glass } from "./tokens.js";
 import { canAfford, formatCopper, formatCoins, SELLABLE_KINDS, usedSellPrice, DEFAULT_RESALE_RATE } from "../engine/economy.js";
@@ -211,7 +211,7 @@ function GoodRow({ def, meta, children }) {
       border: "1px solid rgba(215, 167, 111, 0.14)",
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "16px", color: colors.parchmentLight, lineHeight: 1.2 }}>{def.name}</div>
+        <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "16px", color: colors.parchmentLight, lineHeight: 1.2 }}><ItemIcon item={def} size={15} />{def.name}</div>
         <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, margin: "2px 0 4px" }}>{def.kind} · {meta}</div>
         <div style={{ fontSize: "11px", color: "rgba(237, 228, 208, 0.7)", lineHeight: 1.35 }}>{def.description}</div>
         {chips.length > 0 && (

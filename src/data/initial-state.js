@@ -43,6 +43,11 @@ export function makeInitialState() {
       proficiencyGrowthMult: 1,
       racialPassives: [],
       needs: { hunger: 60, thirst: 75, sleep: 70 },
+      // Light carried right now — minutes>0 means a torch/lantern is burning and
+      // holding back the dark; it counts down as time passes (engine/light.js).
+      light: { source: null, minutes: 0 },
+      // Set from the chosen race kit at creation — drow, vampires see in the dark.
+      darkvision: false,
       // Learned combat abilities (stored as { id, tier }); Strike + Brace are
       // always available and not listed here. The opening limbo interview grants
       // any starting abilities; more come from victories and teachers.

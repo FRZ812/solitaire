@@ -1,5 +1,6 @@
 import { advanceTime, formatTime } from "./time.js";
-import { getTile, computeSightFrom } from "./world.js";
+import { getTile, computeSightFrom, computeSightFromRadius } from "./world.js";
+import { sightRadius } from "./light.js";
 import {
   depleteNeeds, applyNeedsChanges, getNeedConditions,
   mergeConditions, getNeedAlertText,
@@ -206,6 +207,23 @@ export function applyBeat(state, beat, options = {}) {
     if (text) newBeats.push({ id: `alert${Date.now()}-${c}`, type: "need_alert", text });
   }
 
+  // A lit torch burns down with the clock; when it gutters out, say so. Also
+  // lazily seeds the field onto saves made before the light mechanic existed.
+  {
+    const cur = character.light || {};
+    const prev = (cur.minutes ?? cur.torchMinutes) || 0; // back-compat with old {torchMinutes}
+    if (prev > 0) {
+      const left = Math.max(0, prev - (beat.minutes_passed || 0));
+      character.light = left > 0 ? { source: cur.source || "torch", minutes: left } : { source: null, minutes: 0 };
+      if (left === 0) {
+        const what = cur.source === "lantern" ? "Your lantern sputters dry" : "Your torch gutters out";
+        newBeats.push({ id: `torch${Date.now()}`, type: "narration", content: `${what}, and the dark closes back in.` });
+      }
+    } else if (!character.light || character.light.minutes === undefined) {
+      character.light = { source: null, minutes: 0 };
+    }
+  }
+
   // Passive regen comes after final conditions, so a freshly-applied "Bleeding" blocks it.
   character.vitality = passiveHealVitality(
     character.vitality, character.vitalityMax,
@@ -226,7 +244,8 @@ export function applyBeat(state, beat, options = {}) {
       } };
     }
     tiles[`${x},${y}`] = finalTile;
-    world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFrom(x, y, world.seen) };
+    const r = sightRadius({ world: { ...world, tiles, currentTile: { x, y } }, character, time: newTime });
+    world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFromRadius(x, y, r, world.seen) };
   }
 
   // Narrator-driven relocation (no map-travel involved). Used for extreme
@@ -242,7 +261,8 @@ export function applyBeat(state, beat, options = {}) {
       const arrivedTile = getTile(state, x, y);
       const tiles = { ...world.tiles };
       tiles[`${x},${y}`] = arrivedTile;
-      world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFrom(x, y, world.seen) };
+      const r = sightRadius({ world: { ...world, tiles, currentTile: { x, y } }, character, time: newTime });
+      world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFromRadius(x, y, r, world.seen) };
     }
   }
 
@@ -368,6 +388,7 @@ export function applyBeat(state, beat, options = {}) {
       character.racialAttributeModifiers = kit.attributeModifiers;
       character.proficiencyGrowthMult = kit.proficiencyGrowthMult;
       character.racialPassives = kit.racialPassives;
+      character.darkvision = !!kit.darkvision; // drow, vampires, lycanthropes see in the dark
       const rlist = Array.isArray(character.abilities) ? [...character.abilities] : [];
       const ridOf = (x) => (typeof x === "string" ? x : x.id);
       for (const ab of [...kit.innateAbilities, ...kit.startingSpells]) {

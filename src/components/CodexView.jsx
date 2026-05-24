@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from "react";
-import { Icon } from "./Icon.jsx";
+import { Icon, ItemIcon } from "./Icon.jsx";
 import { iconButtonStyle } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
+import { GLOSSARY, GLOSSARY_CATEGORIES } from "../data/glossary.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { itemTemplate } from "../data/catalog.js";
 import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
@@ -21,6 +22,7 @@ const CODEX_TABS = [
   { key: "items",       label: "Items",       group: "compendium" },
   { key: "abilities",   label: "Abilities",   group: "compendium" },
   { key: "passives",    label: "Passives",    group: "compendium" },
+  { key: "glossary",    label: "Glossary",    group: "reference" },
 ];
 
 // Reusable styles inside this view.
@@ -239,7 +241,7 @@ function CatalogRow({ item, seen }) {
     <div onClick={() => setOpen((o) => !o)} style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid ${t.color}33`, display: "flex", flexDirection: "column", gap: "3px", cursor: "pointer" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "space-between" }}>
         <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color: t.color }}>
-          <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span>{item.name}
+          <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span><ItemIcon item={item} size={13} />{item.name}
         </span>
         <div style={{ display: "flex", gap: "6px", alignItems: "center", flexShrink: 0 }}>
           {seen && <span title="Discovered in play" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: colors.gold }} />}
@@ -545,6 +547,44 @@ function PassiveCatalog() {
   );
 }
 
+// Reference glossary — plain-language explanations of the game's concepts,
+// grouped by category, each row tapping open to its detail.
+function GlossaryRow({ term, text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <button onClick={() => setOpen((o) => !o)} style={{
+      width: "100%", textAlign: "left", fontFamily: "inherit", cursor: "pointer",
+      background: "rgba(20,29,29,0.5)", border: `1px solid rgba(215,167,111,0.18)`,
+      borderRadius: radius.panelCompact, padding: "11px 13px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "16px", color: colors.parchmentLight }}>{term}</span>
+        <span style={{ color: "rgba(215,167,111,0.6)", fontSize: "13px" }}>{open ? "▾" : "▸"}</span>
+      </div>
+      {open && <div style={{ fontSize: "13px", color: "rgba(237,228,208,0.85)", lineHeight: 1.5, marginTop: "7px" }}>{text}</div>}
+    </button>
+  );
+}
+
+function GlossaryView() {
+  return (
+    <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {GLOSSARY_CATEGORIES.map((cat) => {
+        const items = GLOSSARY.filter((g) => g.category === cat);
+        if (!items.length) return null;
+        return (
+          <div key={cat}>
+            <div style={{ ...accentMeta, marginBottom: "8px", fontWeight: 700 }}>{cat}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
+              {items.map((g) => <GlossaryRow key={g.id} term={g.term} text={g.text} />)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function CodexEntry({ entry, kind, codex }) {
   const [open, setOpen] = useState(false);
   const wornNames = (kind === "characters" && entry.worn?.length)
@@ -749,7 +789,7 @@ export function CodexView({ state, onClose }) {
 
       <div className="tabstrip" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
         {CODEX_TABS.map((tab, i) => {
-          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : Object.keys(codex[tab.key] || {}).length;
+          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
           const divide = i > 0 && CODEX_TABS[i - 1].group !== tab.group; // lore | compendium
           return (
@@ -784,6 +824,8 @@ export function CodexView({ state, onClose }) {
           <AbilityCatalog codex={codex} character={state.character} />
         ) : activeTab === "passives" ? (
           <PassiveCatalog />
+        ) : activeTab === "glossary" ? (
+          <GlossaryView />
         ) : entries.length === 0 ? (
           <div style={{ marginTop: "80px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215, 167, 111, 0.45)", fontSize: "16px", lineHeight: "1.6", padding: "0 24px" }}>
             Nothing recorded here yet.<br />

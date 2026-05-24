@@ -25,6 +25,7 @@ import { effectiveAttributes, ratingFromXp, proficiencyName, weaponMasteryId, XP
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
 import { chooseAction } from "./combat-ai.js";
+import { DARK_ACC_PENALTY, DARK_FLEE_BONUS } from "./light.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -161,6 +162,13 @@ export function initCombat(character, codex, enemies, opts = {}) {
     procs: a.procs || a.triggers?.procs || [], shield: 0, magicShield: 0, invuln: 0,
   }));
 
+  // Fighting blind: in the dark with no torch lit, your side's aim suffers.
+  // Monsters that haunt the dark are not so hampered, so only the player/allies pay.
+  if (opts.dark) {
+    player.darkPenalty = DARK_ACC_PENALTY;
+    for (const a of allies) a.darkPenalty = DARK_ACC_PENALTY;
+  }
+
   const foes = clone(enemies);
   foes.forEach((e, i) => {
     e.uid = `e${i}`;
@@ -224,6 +232,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     ownedUniques: opts.ownedUniques || [],
     coinBonus: opts.coinBonus || 0,
     environment: opts.environment || [],
+    dark: !!opts.dark, // fighting blind: accuracy penalty (set on player) + easier flight
     revivedUsed: false,
     profGains: {},
     log: [logEntry(lethal ? `Combat begins — ${flavor}.` : `A brawl breaks out — ${flavor}. Bare hands, for now.`, "system")],
@@ -517,7 +526,7 @@ function abilityEffectiveness(player, def, tierId) {
 // procs (on-crit / on-hit / on-dodge / on-kill) off the outcome.
 function resolveHit(attacker, defender, profile) {
   // Chill saps the attacker's accuracy; dodge-stacks add to the defender's dodge.
-  const acc = (attacker.accuracy || 0) - sumStatus(attacker, "chill");
+  const acc = (attacker.accuracy || 0) - sumStatus(attacker, "chill") - (attacker.darkPenalty || 0);
   const dodge = (defender.dodge || 0) + sumStatus(defender, "dodgeStack");
   const hitChance = 100 - clamp(dodge - acc, 0, 90);
   if (rand100() > hitChance) {
@@ -1441,10 +1450,11 @@ export function playerFlee(cs0) {
   const cs = clone(cs0);
   const speeds = livingEnemies(cs).map((e) => e.speed || 4);
   const enemySpeed = speeds.length ? Math.max(...speeds) : 1;
-  const chance = clamp(45 + (cs.player.speed - enemySpeed) * 6, 15, 90);
+  const darkBonus = cs.dark ? DARK_FLEE_BONUS : 0; // melt into the black
+  const chance = clamp(45 + darkBonus + (cs.player.speed - enemySpeed) * 6, 15, 90);
   if (rand100() <= chance) {
     cs.phase = "playerFled";
-    cs.log.push(logEntry(`You break away and escape.`, "system"));
+    cs.log.push(logEntry(darkBonus ? `You slip into the dark and are gone.` : `You break away and escape.`, "system"));
     return cs;
   }
   cs.log.push(logEntry(`You fail to escape!`, "system"));
