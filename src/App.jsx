@@ -63,6 +63,7 @@ import { QuestBoardView } from "./components/QuestBoardView.jsx";
 import { PrisonView } from "./components/PrisonView.jsx";
 import { SlaveMarketView } from "./components/SlaveMarketView.jsx";
 import { PartyView } from "./components/PartyView.jsx";
+import { InventoryView } from "./components/InventoryView.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
@@ -274,6 +275,7 @@ export function Solitaire() {
   const [mapOpen, setMapOpen] = useState(false);
   const [codexOpen, setCodexOpen] = useState(false);
   const [partyOpen, setPartyOpen] = useState(false);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
   // Recent purchases at the current shop, for full refunds until you leave the
@@ -1357,7 +1359,7 @@ export function Solitaire() {
   function startCombat(enemies, context, extraOpts = {}, st = state) {
     if (!enemies || enemies.length === 0) return;
     combatCtxRef.current = context || { flavor: enemies[0].name };
-    setMenuOpen(false); setMapOpen(false); setCodexOpen(false); setShopTile(null);
+    setMenuOpen(false); setMapOpen(false); setCodexOpen(false); setShopTile(null); setInventoryOpen(false); setPartyOpen(false);
     setPendingCombat(null);
     closeBeatMenu();
     const region = regionHere(st);
@@ -1660,6 +1662,7 @@ export function Solitaire() {
               onMap={() => setMapOpen(true)}
               onMenu={() => setMenuOpen(true)}
               onParty={() => setPartyOpen(true)}
+              onInventory={() => setInventoryOpen(true)}
             />
             <VitalsStrip character={state.character} />
           </>
@@ -1839,14 +1842,8 @@ export function Solitaire() {
           state={state}
           user={user}
           onClose={() => setMenuOpen(false)}
-          onEquip={handleEquip}
-          onUnequip={handleUnequip}
-          onUse={handleUse}
-          onLightTorch={handleLightTorch}
-          onLightLantern={handleLightLantern}
           onExtinguish={handleExtinguish}
-          onRest={handleRest}
-          onBindRune={(id) => { setMenuOpen(false); setFusionRune(id); }}
+          onInventory={() => { setMenuOpen(false); setInventoryOpen(true); }}
           onReset={handleResetCampaign}
           onOpenCodex={() => { setMenuOpen(false); setCodexOpen(true); }}
           onBackToCampaigns={handleBackToCampaigns}
@@ -1878,6 +1875,19 @@ export function Solitaire() {
       )}
       {partyOpen && (
         <PartyView state={state} onDismiss={handleDismiss} onMount={handleMount} onDismount={handleDismountRider} onClose={() => setPartyOpen(false)} />
+      )}
+      {inventoryOpen && (
+        <InventoryView
+          state={state}
+          onClose={() => setInventoryOpen(false)}
+          onEquip={handleEquip}
+          onUnequip={handleUnequip}
+          onUse={handleUse}
+          onLightTorch={handleLightTorch}
+          onLightLantern={handleLightLantern}
+          onRest={(h) => { setInventoryOpen(false); handleRest(h); }}
+          onBindRune={(id) => { setInventoryOpen(false); setFusionRune(id); }}
+        />
       )}
       {shopTile && (() => {
         const tile = getTile(state, shopTile.x, shopTile.y);

@@ -7,7 +7,7 @@ import { getTile, currentLocationName } from "../engine/world.js";
 import { getBiome } from "../data/biomes.js";
 import { formatTime, getCalendarDate } from "../engine/time.js";
 
-export function CompactHeader({ state, onMap, onMenu, onParty }) {
+export function CompactHeader({ state, onMap, onMenu, onParty, onInventory }) {
   const partyCount = (state.party || []).length;
   const cur = state.world.currentTile;
   const t = getTile(state, cur.x, cur.y);
@@ -83,6 +83,7 @@ export function CompactHeader({ state, onMap, onMenu, onParty }) {
             }}>{partyCount}</span>
           </button>
         )}
+        <button onClick={onInventory} style={headerButtonStyle} aria-label="Inventory"><Icon name="bag" size={16} color={colors.gold} strokeWidth={1.8} /></button>
         <button onClick={onMap}  style={headerButtonStyle} aria-label="Map">  <Icon name="map"        size={16} color={colors.gold} strokeWidth={1.8} /></button>
         <button onClick={onMenu} style={headerButtonStyle} aria-label="Character"> <Icon name="user" size={16} color={colors.gold} strokeWidth={1.8} /></button>
       </div>
