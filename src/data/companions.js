@@ -9,6 +9,7 @@
 // "Looking to join" list; the rest is the person.
 
 import { resolvePoolForMind } from "../engine/attributes.js";
+import { bodyWeightForRace } from "../engine/weight.js";
 
 export const COMPANIONS = {
   bram: {
@@ -111,6 +112,10 @@ export function companionCodexEntry(tmpl) {
     // narrator answers from this (no vague hand-waving), and combat uses it.
     abilities: [...(tmpl.abilities || [])],
     skills: (tmpl.skills || []).map((s) => ({ ...s })),
+    // A companion's own mass (cargo weight when they ride a mount) and riding
+    // linkage (engine/riding.js): what they ride, and who rides them.
+    bodyWeight: bodyWeightForRace(tmpl.race),
+    ridingOn: null, riders: [],
     // Bond + shared history — start blank (a new recruit needs introducing);
     // both grow through play and PERSIST in the codex even after parting ways.
     relationship: 0,

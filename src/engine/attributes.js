@@ -64,6 +64,26 @@ export function recomputeResolveMax(character) {
   return character;
 }
 
+// BODY (+ a little VIGOR) drives how much you can haul, the same back-loaded way
+// Vigor drives HP — a strong build carries a war's worth of loot, a frail scholar
+// little. The result is `carryCapacityMax`, a HARD cap the pack/shop check against
+// (engine/weight.js). Measured in the same abstract "stone" as item weights.
+export const BASE_CARRY = 40;
+export const CARRY_PER_BODY = 8;
+
+export function carryCapacityFor(character) {
+  const a = effectiveAttributes(character);
+  const body = a.body || 0, vigor = a.vigor || 0;
+  const curve = Math.round(Math.max(0, body * body - 16) * 0.4); // ~0 at body ≤4, back-loaded
+  return Math.round(BASE_CARRY + body * CARRY_PER_BODY + vigor * 2 + curve);
+}
+
+export function recomputeCarryCapacity(character) {
+  if (!character) return character;
+  character.carryCapacityMax = carryCapacityFor(character);
+  return character;
+}
+
 export function applyAttributeChanges(attrs, changes) {
   if (!changes) return { next: attrs, growthLines: [] };
   const next = { ...attrs };

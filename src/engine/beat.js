@@ -16,9 +16,11 @@ import { resolveRace } from "../data/races.js";
 import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
 import { tierOrder } from "../data/tiers.js";
 import { spoilCarried } from "./spoilage.js";
-import { applyAttributeChanges, recomputeVitalityMax, recomputeResolveMax } from "./attributes.js";
+import { applyAttributeChanges, recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
+import { loadOf } from "./weight.js";
 import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
+import { MOUNTS, mountCodexEntry } from "../data/mounts.js";
 import { clampRel, MEMORY_CAP } from "./relationships.js";
 
 // Can a waterskin be refilled at this tile? Settlements have wells; water/marsh
@@ -161,6 +163,11 @@ export function applyBeat(state, beat, options = {}) {
   // changed (also lazily migrates older saves). A vigor gain heals by the delta.
   recomputeVitalityMax(character);
   recomputeResolveMax(character); // Mind drives the resolve pool, same pattern
+  recomputeCarryCapacity(character); // Body/Vigor drive how much you can haul
+  // Narrator-granted loot can push you past the HARD cap (we never silently drop a
+  // gift); being overburdened bites travel speed (engine: handleTravel). Shop buys
+  // and the pack screen block at the cap — this only catches narrative grants.
+  character.overburdened = loadOf(codex.characters?.wanderer, character.inventory, codex.items) > (character.carryCapacityMax ?? Infinity);
 
   // A combat ability TAUGHT in play (a discoveries.skills entry whose id is a real
   // ability) must become USABLE — mergeDiscoveries only records codex lore, so wire
@@ -376,6 +383,21 @@ export function applyBeat(state, beat, options = {}) {
     }
   }
 
+  // An exotic/flying mount EARNED in play (tamed, quest-won, story-gifted) joins
+  // the party as a kind:"mount" codex character. Mundane mounts come from a stable
+  // (engine/economy.buyMount); the narrator only grants the exotic ones, and the
+  // engine FORCES the authored template (bodyWeight, rideCapacity, combat kit) — a
+  // dragon is a dragon, the narrator can't restat it. Unknown ids are dropped, the
+  // same way invented item ids are.
+  if (beat.grant_mount?.id && MOUNTS[beat.grant_mount.id] && !party.includes(beat.grant_mount.id)) {
+    const tmpl = MOUNTS[beat.grant_mount.id];
+    party = [...party, tmpl.id];
+    const existing = world.codex.characters[tmpl.id];
+    const entry = existing ? { ...existing, ...mountCodexEntry(tmpl), relationship: existing.relationship || 0, memories: existing.memories || [] } : mountCodexEntry(tmpl);
+    world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
+    newBeats.push({ id: `mount${Date.now()}`, type: "recruit", text: `${tmpl.name} now bears you.` });
+  }
+
   // Bond shifts and shared memories — kept per-character on the codex and
   // surfaced back to the narrator so relationships persist and deepen over time.
   if (Array.isArray(beat.relationship_changes) && beat.relationship_changes.length) {
@@ -496,6 +518,7 @@ export function applyBeat(state, beat, options = {}) {
     // Creation set attributes + racial vigor/mind — derive starting HP and resolve.
     recomputeVitalityMax(character);
     recomputeResolveMax(character);
+    recomputeCarryCapacity(character);
     created = true;
   }
 

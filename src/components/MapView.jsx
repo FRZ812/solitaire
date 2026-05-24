@@ -15,6 +15,7 @@ import {
 } from "../engine/world.js";
 import { knownTravelSpells } from "../data/travel-spells.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "../engine/fly.js";
+import { playerFlightMount } from "../engine/riding.js";
 import { describeEncounterPotential, pathRiskPercent } from "../engine/encounters.js";
 import { formatTime, formatDate } from "../engine/time.js";
 import { formatCopper } from "../engine/economy.js";
@@ -437,10 +438,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
   const playerSpells = knownTravelSpells(state.character);
   const teleSpells = playerSpells.filter((s) => s.mode === "teleport");
   const flyPlan = flyMulticastPlan(state);
+  const flightMount = playerFlightMount(state); // a ridden flyer enables air travel without the spell
   const dist = selected ? hexDistance(cur, selected) : 0;
   // Fly may aim at ANY tile (you navigate from the air, revealing as you go) — not
   // just ones already in sight. One cast covers an hour of flight (FLY_TRAVEL_HEXES).
-  const canFly = flyPlan.casters.length > 0 && selected && !isSelf && !loading;
+  const canFly = (flyPlan.casters.length > 0 || flightMount) && selected && !isSelf && !loading;
   const flyLeg = Math.min(dist, FLY_TRAVEL_HEXES);
   const flyMins = flyLeg * FLY_MIN_PER_HEX;
   const teleOption = (selected && !isSelf && !loading)
@@ -880,10 +882,20 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         {(canFly || teleOption) && (
           <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
             {canFly && (() => {
-              const party = flyPlan.casts > 1;
-              const ok = flyPlan.feasible;
               const timeStr = flyMins >= 60 ? "~1h" : `~${flyMins}m`;
               const legStr = dist > FLY_TRAVEL_HEXES ? `first ${flyLeg} of ${dist} · ` : "";
+              // A ridden flying mount is preferred — free of resolve, paid in the
+              // beast's stamina (engine handles the fed/rested gate on click).
+              if (flightMount) {
+                return (
+                  <button onClick={() => onFly(selected)} style={{
+                    flex: 1, height: "40px", borderRadius: "20px", fontFamily: "inherit", fontWeight: 800, fontSize: "12px",
+                    border: "1px solid rgba(127,199,224,0.55)", backgroundColor: "rgba(127,199,224,0.16)", color: "#bfe3f2", cursor: "pointer",
+                  }}>{`Fly · ${legStr}${timeStr} · on ${flightMount.name}`}</button>
+                );
+              }
+              const party = flyPlan.casts > 1;
+              const ok = flyPlan.feasible;
               const cost = party ? flyPlan.totalCost : flyPlan.flyCost;
               return (
                 <button onClick={() => { if (!ok) return; party ? setFlyPanelDest(selected) : onFly(selected); }} disabled={!ok} style={{

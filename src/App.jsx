@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 
-import { STORAGE_KEY, originLabel, SIGHT_RADIUS, MAX_TRAVEL_HEXES, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS } from "./config.js";
+import { STORAGE_KEY, originLabel, SIGHT_RADIUS, MAX_TRAVEL_HEXES, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
 import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 
@@ -11,9 +11,9 @@ import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampai
 import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt, editBeat, deleteBeat } from "./engine/timeline.js";
-import { recomputeVitalityMax, recomputeResolveMax } from "./engine/attributes.js";
+import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./engine/attributes.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
-import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
+import { buyGood, buyMount, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
 import { lightTorch, lightLantern, extinguish, applyRest } from "./engine/tools.js";
 import { inTheDark, isNight, isLit, isHidden, isBeacon, sightRadius } from "./engine/light.js";
@@ -36,6 +36,7 @@ import {
 import { knownTravelSpells } from "./data/travel-spells.js";
 import { condNames, hasCondition } from "./data/conditions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
+import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, dismountAllFrom } from "./engine/riding.js";
 import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
@@ -54,6 +55,7 @@ import { BeatRender } from "./components/beats/BeatRender.jsx";
 import { MenuSheet } from "./components/MenuSheet.jsx";
 import { MapView } from "./components/MapView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
+import { StableView } from "./components/StableView.jsx";
 import { ForgeView } from "./components/ForgeView.jsx";
 import { RuneFusionView } from "./components/RuneFusionView.jsx";
 import { itemTemplate } from "./data/catalog.js";
@@ -488,7 +490,7 @@ export function Solitaire() {
       // Bring older saves' max HP onto the vigor-derived formula so the vitals
       // strip is correct the moment the campaign opens (heals by any gain).
       // Likewise re-derive the Mind-scaled resolve pool (older saves had flat 6).
-      if (migrated?.character) { recomputeVitalityMax(migrated.character); recomputeResolveMax(migrated.character); }
+      if (migrated?.character) { recomputeVitalityMax(migrated.character); recomputeResolveMax(migrated.character); recomputeCarryCapacity(migrated.character); }
       // Companions carry their own Mind-scaled resolve pool too (they can fly the
       // party) — derive it for any party member saved before pools existed.
       for (const id of (migrated?.party || [])) {
@@ -712,7 +714,21 @@ export function Solitaire() {
     const darkTravel = isNight(state.time) && !isLit(state) && !state.character?.darkvision;
     const conds = condNames(state.character.conditions);
     const wearyMult = conds.includes("Exhausted") ? 1.5 : conds.includes("Tired") ? 1.15 : 1;
-    const legMins = Math.max(1, Math.round(pathMinutes(state, legPath) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1) * wearyMult));
+    // A ridden mount quickens the leg by its moveProfile.ground — but only over the
+    // terrain it handles (a horse is no faster floundering through deep marsh).
+    const groundMount = playerGroundMount(state);
+    let mountMult = 1, mountNote = "";
+    if (groundMount?.moveProfile) {
+      const terr = groundMount.moveProfile.terrain;
+      const legTerrains = new Set();
+      for (let i = 1; i < legPath.length; i++) legTerrains.add(getTile(state, legPath[i].x, legPath[i].y).terrain);
+      const handlesAll = terr === "any" || (Array.isArray(terr) && [...legTerrains].every((t) => terr.includes(t)));
+      const g = groundMount.moveProfile.ground || 1;
+      if (handlesAll && g > 1) { mountMult = 1 / g; mountNote = ` astride ${groundMount.name}`; }
+    }
+    // Overburdened (past your carry cap) drags every leg out (engine/weight.js).
+    const overburdenedMult = state.character.overburdened ? OVERBURDENED_TRAVEL_MULT : 1;
+    const legMins = Math.max(1, Math.round(pathMinutes(state, legPath) * (1 - (travelWp.travelMult || 0)) * (darkTravel ? 1.3 : 1) * wearyMult * mountMult * overburdenedMult));
     const hexes = legPath.length - 1;
 
     // Terrain mix of this leg, for the narrator.
@@ -724,7 +740,7 @@ export function Solitaire() {
     const terrainSummary = Object.entries(terrainCounts).map(([t, n]) => `${TERRAINS[t]?.label || t} ×${n}`).join(", ");
     const routeNote = hexes > 1 ? ` Route crosses: ${terrainSummary}.` : "";
 
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Travel from ${fromName} ${arrived ? "to" : "toward"} ${toName}.` };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Travel from ${fromName} ${arrived ? "to" : "toward"} ${toName}${mountNote}.` };
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
 
@@ -744,7 +760,7 @@ export function Solitaire() {
     if (pathEnc) {
       encounterLine = `\n\n[ENCOUNTER] kind: ${pathEnc.encounter.kind}; posture: ${pathEnc.encounter.posture}; flavor: "${pathEnc.encounter.desc}". This is what halts the party at ${legName} — weave it in as they reach there.`;
     }
-    const fullMsg = travelMsg + encounterLine;
+    const fullMsg = travelMsg + (mountNote ? ` The party rides${mountNote}.` : "") + encounterLine;
 
     // Recorded with the turn so a rewrite/rewind reproduces this exact leg: the
     // route (sight), where the party actually LANDS (leg end, not the far dest),
@@ -785,13 +801,27 @@ export function Solitaire() {
   // from the map's Fly panel (else the auto-balanced split is used).
   async function handleFly(dest, assignment) {
     if (loading) return;
-    const plan = flyMulticastPlan(state);
-    if (!plan.casters.length) return; // nobody in the party knows Fly
-    const assign = assignment || plan.autoAssign;
-    if (!assignmentValid(assign, plan.casters, plan.flyCost)) {
-      const who = plan.casts > 1 ? "The party hasn't the resolve to take wing together." : "You haven't the resolve left to take wing.";
-      setState({ ...state, beats: [...state.beats, { id: `fly${Date.now()}`, type: "narration", content: who }] });
-      return;
+    // Two ways to take wing: a ridden FLYING MOUNT (free of resolve, but it must be
+    // fed and rested — it spends its own stamina), or the Fly SPELL (one casting per
+    // head, resolve split across casters). A flyer under you is preferred.
+    const flightMount = playerFlightMount(state);
+    const viaMount = !!flightMount;
+    let plan = null, assign = null;
+    if (viaMount) {
+      const n = flightMount.needs || {};
+      if ((n.hunger ?? 100) <= MOUNT_FLIGHT_MIN_NEED || (n.sleep ?? 100) <= MOUNT_FLIGHT_MIN_NEED) {
+        setState({ ...state, beats: [...state.beats, { id: `fly${Date.now()}`, type: "narration", content: `${flightMount.name} is too spent to fly — it must feed and rest before it can bear you aloft.` }] });
+        return;
+      }
+    } else {
+      plan = flyMulticastPlan(state);
+      if (!plan.casters.length) return; // no flyer and nobody knows Fly
+      assign = assignment || plan.autoAssign;
+      if (!assignmentValid(assign, plan.casters, plan.flyCost)) {
+        const who = plan.casts > 1 ? "The party hasn't the resolve to take wing together." : "You haven't the resolve left to take wing.";
+        setState({ ...state, beats: [...state.beats, { id: `fly${Date.now()}`, type: "narration", content: who }] });
+        return;
+      }
     }
     const cur = state.world.currentTile;
     let legPath = flightPath(cur, dest, FLY_TRAVEL_HEXES);
@@ -810,18 +840,27 @@ export function Solitaire() {
     const mins = flightMinutes(legPath);
     setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
 
-    // Deduct each caster's share from their PERSISTED resolve (player + companions).
-    const perCaster = assignmentCost(assign, plan.flyCost);
-    const ch = perCaster.wanderer
-      ? { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - perCaster.wanderer) }
-      : state.character;
+    // Pay the flight. By MOUNT: the beast spends its OWN stamina (hunger + sleep),
+    // no resolve at all. By SPELL: deduct each caster's share of resolve.
     const chars = state.world.codex.characters;
+    let ch = state.character;
     let updatedChars = chars, charsTouched = false;
-    for (const [id, spent] of Object.entries(perCaster)) {
-      if (id === "wanderer" || !chars[id]) continue;
-      if (!charsTouched) { updatedChars = { ...chars }; charsTouched = true; }
-      const c = chars[id];
-      updatedChars[id] = { ...c, resolve: Math.max(0, (c.resolve ?? c.resolveMax ?? 0) - spent) };
+    let perCaster = {};
+    if (viaMount) {
+      const drain = Math.round((mins / 60) * MOUNT_FLIGHT_NEED_PER_HOUR);
+      updatedChars = { ...chars }; charsTouched = true;
+      const m = chars[flightMount.id];
+      const need = m.needs || { hunger: 75, thirst: 80, sleep: 80 };
+      updatedChars[flightMount.id] = { ...m, needs: { ...need, hunger: Math.max(0, need.hunger - drain), sleep: Math.max(0, need.sleep - drain) } };
+    } else {
+      perCaster = assignmentCost(assign, plan.flyCost);
+      if (perCaster.wanderer) ch = { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - perCaster.wanderer) };
+      for (const [id, spent] of Object.entries(perCaster)) {
+        if (id === "wanderer" || !chars[id]) continue;
+        if (!charsTouched) { updatedChars = { ...chars }; charsTouched = true; }
+        const c = chars[id];
+        updatedChars[id] = { ...c, resolve: Math.max(0, (c.resolve ?? c.resolveMax ?? 0) - spent) };
+      }
     }
 
     // Overflown settlements remember the party on the wing for a few days (api.js
@@ -845,19 +884,29 @@ export function Solitaire() {
       ...(tilesTouched ? { tiles: updatedTiles } : {}),
     };
 
-    const casterTally = plan.casters.filter((c) => perCaster[c.id]).map((c) => `${c.name} ×${perCaster[c.id] / plan.flyCost}`);
-    const partyNote = plan.casts > 1 ? ` The whole band takes wing — ${plan.casts} castings of Fly, woven by ${casterTally.join(", ")}.` : "";
-    const townNote = overflownTowns.length ? ` You pass in plain sight over ${overflownTowns.join(", ")} — folk below crane upward and point; word of this will spread.` : "";
+    const onDragon = viaMount && /dragon|drake|wyrm/i.test(`${flightMount.race} ${flightMount.name}`);
+    const casterTally = viaMount ? [] : plan.casters.filter((c) => perCaster[c.id]).map((c) => `${c.name} ×${perCaster[c.id] / plan.flyCost}`);
+    const modeNote = viaMount
+      ? ` You ride ${flightMount.name} aloft — the beast's own wingbeats carry you, no spell, no resolve spent.`
+      : (plan.casts > 1 ? ` The whole band takes wing — ${plan.casts} castings of Fly, woven by ${casterTally.join(", ")}.` : "");
+    const townNote = overflownTowns.length
+      ? ` You pass in plain sight over ${overflownTowns.join(", ")} — folk below crane upward and point${onDragon ? ", aghast, at the great wyrm passing over their roofs" : ""}; word of this will spread${onDragon ? " like wildfire" : ""}.`
+      : "";
+    const lapseNote = viaMount ? `${flightMount.name} tires and glides down to ${legName} to rest and feed` : "the spell lapses and the party glides down to " + legName + " to rest the working";
     const endNote = aerial
       ? `Narrate the flight until ${aerial.encounter.desc} forces the party down at ${legName} — a fight is upon you.`
       : arrived
         ? `Narrate the flight and the landing at ${toName}.`
-        : `Narrate the flight; after about an hour aloft the spell lapses and the party glides down to ${legName} to rest the working — they have NOT reached ${toName}, and must take wing again to go on.`;
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Fly ${arrived ? "to" : "toward"} ${toName}${plan.casts > 1 ? " with the party" : ""}.` };
+        : `Narrate the flight; after about an hour aloft ${lapseNote} — they have NOT reached ${toName}, and must take wing again to go on.`;
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: viaMount ? `Fly ${arrived ? "to" : "toward"} ${toName} on ${flightMount.name}.` : `Fly ${arrived ? "to" : "toward"} ${toName}${plan.casts > 1 ? " with the party" : ""}.` };
     const stateWithPlayer = { ...state, character: ch, world, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
-    const msg = `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).${partyNote}${townNote} ${endNote} It cost ${plan.totalCost} resolve in total${plan.casts > 1 ? " (divided across the casters)" : ""}. Use minutes_passed = ${mins}.`;
-    const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: aerial ? aerial.encounter : null, mode: "fly", intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
+    const opener = viaMount
+      ? `[PLAYER ACTION] You take to the air on ${flightMount.name}, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).`
+      : `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).`;
+    const costNote = viaMount ? "" : ` It cost ${plan.totalCost} resolve in total${plan.casts > 1 ? " (divided across the casters)" : ""}.`;
+    const msg = `${opener}${modeNote}${townNote} ${endNote}${costNote} Use minutes_passed = ${mins}.`;
+    const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: aerial ? aerial.encounter : null, mode: "fly", mountId: viaMount ? flightMount.id : null, intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
     await finishTravel(stateWithPlayer, msg, travel);
   }
 
@@ -1024,6 +1073,13 @@ export function Solitaire() {
       return { tileKey: key, items };
     });
   }
+  // Buy a mount at the stable — it joins the party as a kind:"mount" character
+  // (engine/economy.buyMount). No restock receipt: a mount isn't a stacking good.
+  function handleBuyMount(mountId, priceCp) {
+    const r = buyMount(state, { mountId, priceCp });
+    if (!r.ok) return;
+    setState(r.state);
+  }
   // Sell one unit. A refund consumes a receipt (full price paid); a plain sale
   // uses the used-goods price the trader view computed.
   function handleSell(itemId, priceCp, isRefund) {
@@ -1124,8 +1180,23 @@ export function Solitaire() {
   // Part ways with a companion (they stay in the codex as a known person).
   async function handleDismiss(id) {
     const c = state.world.codex.characters[id];
-    if (!(await askConfirm({ title: "Part ways", body: `Tell ${c?.name || "this companion"} you're parting ways? They'll go their own road — you can find them again.`, confirmLabel: "Part ways", danger: true }))) return;
-    setState(dismissCompanion(state, id).state);
+    const isMount = c?.kind === "mount";
+    const verb = isMount ? "Set loose" : "Part ways";
+    if (!(await askConfirm({ title: verb, body: isMount ? `Set ${c?.name || "this mount"} loose? It'll wander off — you'd have to win it back.` : `Tell ${c?.name || "this companion"} you're parting ways? They'll go their own road — you can find them again.`, confirmLabel: verb, danger: true }))) return;
+    // Clear any saddle links first so no dangling rider/carrier references remain.
+    const cleared = isMount ? dismountAllFrom(state, id) : dismountRider(state, id).state;
+    setState(dismissCompanion(cleared, id).state);
+  }
+
+  // Seat a rider (the player "wanderer", a companion, or a smaller mount) onto a
+  // mount, weight permitting; or get them off (engine/riding.js).
+  function handleMount(riderId, mountId) {
+    const r = mountRider(state, riderId, mountId);
+    if (r.ok) setState(r.state);
+  }
+  function handleDismountRider(riderId) {
+    const r = dismountRider(state, riderId);
+    if (r.ok) setState(r.state);
   }
 
   // ----- Gaol: bounties + buying prisoner rights -----
@@ -1298,7 +1369,14 @@ export function Solitaire() {
       .map((id) => st.world.codex.characters?.[id])
       .filter((c) => c && c.combatState?.status !== "dead")
       .map((c) => allyFromCompanion(c, st.world.codex, { tierId: region.enemyTier || "common" }));
+    // Mounted-rider bonuses: a rider fights with their mount's charge under them.
+    // The mount is also an ally here; this is the lift its rider gets (engine/combat).
+    const chars = st.world.codex.characters || {};
+    const carrierBonus = (entry) => (entry?.ridingOn && chars[entry.ridingOn]?.mountedBonus) || null;
+    for (const a of allies) if (a.companionId) a._mountedBonus = carrierBonus(chars[a.companionId]);
+    const playerMountedBonus = carrierBonus(chars.wanderer);
     setCombat(initCombat(st.character, st.world.codex, enemies, {
+      playerMountedBonus,
       maxLootTier: region.lootTier,
       region: region.level,
       ownedUniques: ownedUniqueIds(st),
@@ -1799,7 +1877,7 @@ export function Solitaire() {
         <CodexView state={state} onClose={() => setCodexOpen(false)} />
       )}
       {partyOpen && (
-        <PartyView state={state} onDismiss={handleDismiss} onClose={() => setPartyOpen(false)} />
+        <PartyView state={state} onDismiss={handleDismiss} onMount={handleMount} onDismount={handleDismountRider} onClose={() => setPartyOpen(false)} />
       )}
       {shopTile && (() => {
         const tile = getTile(state, shopTile.x, shopTile.y);
@@ -1861,6 +1939,21 @@ export function Solitaire() {
               board={board}
               onBuy={handleBuyCaptive}
               onClose={() => setShopTile(null)}
+              loading={loading}
+            />
+          );
+        }
+        if (building.kind === "stable") {
+          const stock = rollShopStock(building, key, state.time.day);
+          return (
+            <StableView
+              state={state}
+              building={building}
+              tileKey={key}
+              stock={stock}
+              onClose={closeShop}
+              onBuy={handleBuy}
+              onBuyMount={handleBuyMount}
               loading={loading}
             />
           );

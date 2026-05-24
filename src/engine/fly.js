@@ -20,12 +20,14 @@ function memberResolve(ch) {
   return { resolve: Math.max(0, Math.round(cur)), resolveMax: max };
 }
 
-// Everyone in the party as {id, char, kind, name} — the player is "wanderer".
+// Everyone the Fly SPELL must carry, as {id, char, kind, name} — the player is
+// "wanderer". MOUNTS are excluded: a mount flies on its own wings (or stays afoot
+// on the ground), so the spell never spends a casting carrying a horse or dragon.
 function roster(state) {
   const player = state.character;
   return [
     { id: "wanderer", char: player, kind: "player", name: player.name || "You" },
-    ...partyMembers(state).map((c) => ({ id: c.id, char: c, kind: "companion", name: c.name })),
+    ...partyMembers(state).filter((c) => c.kind !== "mount").map((c) => ({ id: c.id, char: c, kind: "companion", name: c.name })),
   ];
 }
 

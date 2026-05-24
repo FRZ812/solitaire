@@ -516,6 +516,41 @@ lingering DoT → Bleeding/Poisoned conditions (defeat → Gravely Wounded, min 
 loot → inventory/codex, a learned ability → `character.abilities` + a codex skill,
 and summary beats into the log.
 
+## Mounts & weight
+
+Mounts are **companions you ride** — a `kind:"mount"` codex character in
+`state.party`, built from `data/mounts.js` via `mountCodexEntry` (the same shape
+as a recruited companion, plus a mount block). The ladder runs common→divine:
+pony / horse / mule / camel (stable), warhorse / dire-wolf (rare),
+griffon (epic), wyvern (legendary), drake (mythical), dragon (divine).
+
+- **Weight, not headcount.** Every item has an *inferred* weight
+  (`engine/weight.js`, `itemWeight` — by `kind` + name keyword, mirroring
+  `combat-stats` inference; an explicit `weight` on a template wins; tools are
+  hand-weighted). A character's carry cap is `carryCapacityFor` (Body + Vigor,
+  back-loaded like HP). It's a **hard cap** at player-initiated points (shop buy,
+  `economy.buyGood`); narrator-granted loot may still land but flags
+  `overburdened` (slower travel).
+- **Ride capacity** is the same currency: a mount bears riders up to
+  `rideCapacity`, where a rider costs its `effectiveLoad` (body + worn + pack +
+  everyone riding *it*, recursively — `engine/riding.js`). So a dragon carries a
+  horse and its riders; a horse cannot carry a dragon. Seating is cycle-checked.
+- **Travel.** A ridden **flying** mount (griffon→dragon) is air-travel reusing the
+  Fly plumbing (`App.handleFly`) — no resolve, paid in the mount's own needs
+  (must be fed/rested), same aerial-ambush risk and `[SEEN FLYING]` settlement
+  reaction (emphasised for a dragon). A **ground** mount quickens a leg by its
+  `moveProfile.ground`, over terrain it handles. Mounts eat their own `feed`
+  (fodder / meat / livestock) from the pack (`engine/upkeep.autoConsumeMount`).
+- **Combat.** A mount fights as an ally (`bestiary.allyFromCompanion` consumes its
+  `naturalWeapon`/`naturalArmor`/`innatePassives`/`health`), and a ridden rider
+  gets the mount's `mountedBonus` charge. A slain mount throws its riders.
+- **Acquisition.** Mundane mounts are **bought** at a stable
+  (`town.js BUILDINGS.stable`, `StableView`, `economy.buyMount`); exotic/flying
+  mounts are **earned** and granted by the narrator via `beat.grant_mount`.
+
+Verify with `node scripts/mount-weight-sim.mjs` (weight math, nesting rules,
+mounted combat, flying gate) plus the build below.
+
 ## Quick smoke test
 
 After data edits, run:

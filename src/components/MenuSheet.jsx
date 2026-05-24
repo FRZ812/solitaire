@@ -8,6 +8,7 @@ import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, itemCombatStats, itemRequirement, equipSlot, slotCapacity, SLOTS } from "../engine/combat-stats.js";
 import { EQUIPPABLE } from "../engine/inventory.js";
+import { loadOf } from "../engine/weight.js";
 import { itemTemplate } from "../data/catalog.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
@@ -611,6 +612,23 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
 
         {/* Carrying — tap an item for details / to equip. */}
         <div>
+          {(() => {
+            const cap = state.character.carryCapacityMax ?? 0;
+            const load = Math.round(loadOf(codex.characters?.wanderer, inv, codex.items));
+            const pct = cap ? Math.min(100, Math.round((load / cap) * 100)) : 0;
+            const over = state.character.overburdened || load > cap;
+            return (
+              <div style={{ margin: "0 0 8px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
+                  <span style={{ ...metaStyle, fontSize: "8px", color: over ? "#d98a6a" : colors.parchmentMuted }}>{over ? "Overburdened" : "Load"}</span>
+                  <span style={{ fontSize: "10px", fontWeight: 700, color: over ? "#d98a6a" : colors.parchmentMuted }}>{load} / {cap}</span>
+                </div>
+                <div style={{ height: "5px", borderRadius: "3px", backgroundColor: "rgba(20,29,29,0.7)", overflow: "hidden", border: "1px solid rgba(215,167,111,0.14)" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", backgroundColor: over ? "#d98a6a" : colors.gold }} />
+                </div>
+              </div>
+            );
+          })()}
           <SectionHeader>Carrying (Pack)</SectionHeader>
           <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "2px" }}>
             {inv.carried.length === 0
