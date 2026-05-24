@@ -35,7 +35,7 @@ import {
 } from "./engine/world.js";
 import { knownTravelSpells } from "./data/travel-spells.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
-import { rollPathEncounter } from "./engine/encounters.js";
+import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
@@ -775,11 +775,13 @@ export function Solitaire() {
     }
   }
 
-  // Fly to a seen tile: a long, fast leg over any terrain, a wide view from the
-  // air, no ground encounters. Flying the PARTY costs one casting of Fly per head,
-  // the resolve toll split across the casters who know it (engine/fly.js). The
-  // optional `assignment` ({ passengerId: casterId }) comes from the map's Fly panel;
-  // without one (a lone flier) the auto-balanced split is used.
+  // Fly toward any tile: a single casting keeps the party aloft for an hour, covering
+  // an hour of FLIGHT (FLY_TRAVEL_HEXES) over any terrain with a wide view. If the
+  // destination is farther, the hour lapses and the party sets down — recast to go on.
+  // No ground ambush aloft, but over dangerous country an aerial predator may force you
+  // down (engine/rollAerialEncounter). Flying the PARTY costs one casting per head, the
+  // resolve split across the casters who know Fly (engine/fly.js); `assignment` comes
+  // from the map's Fly panel (else the auto-balanced split is used).
   async function handleFly(dest, assignment) {
     if (loading) return;
     const plan = flyMulticastPlan(state);
@@ -791,8 +793,12 @@ export function Solitaire() {
       return;
     }
     const cur = state.world.currentTile;
-    const legPath = flightPath(cur, dest, FLY_TRAVEL_HEXES);
+    let legPath = flightPath(cur, dest, FLY_TRAVEL_HEXES);
     if (legPath.length < 2) return;
+    // The only thing that can reach a flier is another flier, and only over wild,
+    // dangerous country — a hit forces the party down where it strikes.
+    const aerial = rollAerialEncounter(state, legPath);
+    if (aerial) legPath = legPath.slice(0, aerial.atIndex + 1);
     const legEnd = legPath[legPath.length - 1];
     const arrived = legEnd.x === dest.x && legEnd.y === dest.y;
     const legTile = getTile(state, legEnd.x, legEnd.y);
@@ -816,15 +822,41 @@ export function Solitaire() {
       const c = chars[id];
       updatedChars[id] = { ...c, resolve: Math.max(0, (c.resolve ?? c.resolveMax ?? 0) - spent) };
     }
-    const world = charsTouched ? { ...state.world, codex: { ...state.world.codex, characters: updatedChars } } : state.world;
+
+    // Overflown settlements remember the party on the wing for a few days (api.js
+    // surfaces it as [SEEN FLYING]). Store the FULL tile so getTile keeps its terrain.
+    const day = state.time?.day ?? 0;
+    const baseTiles = state.world.tiles || {};
+    let updatedTiles = baseTiles, tilesTouched = false;
+    const overflownTowns = [];
+    for (const p of legPath) {
+      const t = getTile(state, p.x, p.y);
+      if (t.terrain !== "settlement") continue;
+      const key = `${p.x},${p.y}`;
+      if (!tilesTouched) { updatedTiles = { ...baseTiles }; tilesTouched = true; }
+      updatedTiles[key] = { ...(updatedTiles[key] || t), aerialSighting: { day } };
+      if (t.poi?.name && !overflownTowns.includes(t.poi.name)) overflownTowns.push(t.poi.name);
+    }
+
+    const world = {
+      ...state.world,
+      ...(charsTouched ? { codex: { ...state.world.codex, characters: updatedChars } } : {}),
+      ...(tilesTouched ? { tiles: updatedTiles } : {}),
+    };
 
     const casterTally = plan.casters.filter((c) => perCaster[c.id]).map((c) => `${c.name} ×${perCaster[c.id] / plan.flyCost}`);
     const partyNote = plan.casts > 1 ? ` The whole band takes wing — ${plan.casts} castings of Fly, woven by ${casterTally.join(", ")}.` : "";
+    const townNote = overflownTowns.length ? ` You pass in plain sight over ${overflownTowns.join(", ")} — folk below crane upward and point; word of this will spread.` : "";
+    const endNote = aerial
+      ? `Narrate the flight until ${aerial.encounter.desc} forces the party down at ${legName} — a fight is upon you.`
+      : arrived
+        ? `Narrate the flight and the landing at ${toName}.`
+        : `Narrate the flight; after about an hour aloft the spell lapses and the party glides down to ${legName} to rest the working — they have NOT reached ${toName}, and must take wing again to go on.`;
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Fly ${arrived ? "to" : "toward"} ${toName}${plan.casts > 1 ? " with the party" : ""}.` };
     const stateWithPlayer = { ...state, character: ch, world, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
-    const msg = `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).${partyNote} ${arrived ? "Narrate the flight and landing." : `Narrate the flight and setting down at ${legName} — do NOT reach ${toName} yet.`} It cost ${plan.totalCost} resolve in total${plan.casts > 1 ? " (divided across the casters)" : ""}. Use minutes_passed = ${mins}.`;
-    const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: null, mode: "fly", intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
+    const msg = `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).${partyNote}${townNote} ${endNote} It cost ${plan.totalCost} resolve in total${plan.casts > 1 ? " (divided across the casters)" : ""}. Use minutes_passed = ${mins}.`;
+    const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: aerial ? aerial.encounter : null, mode: "fly", intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
     await finishTravel(stateWithPlayer, msg, travel);
   }
 

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { Icon } from "./Icon.jsx";
 import { iconButtonStyle } from "./primitives.jsx";
-import { MAP_VIEW_RADIUS, MAX_TRAVEL_HEXES } from "../config.js";
+import { MAP_VIEW_RADIUS, MAX_TRAVEL_HEXES, FLY_TRAVEL_HEXES, FLY_MIN_PER_HEX } from "../config.js";
 import { TERRAINS } from "../data/terrains.js";
 import { getRumored, RUMORED } from "../data/rumored.js";
 import { FABLED, FABLED_BY_COORD } from "../data/fabled.js";
@@ -438,7 +438,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
   const teleSpells = playerSpells.filter((s) => s.mode === "teleport");
   const flyPlan = flyMulticastPlan(state);
   const dist = selected ? hexDistance(cur, selected) : 0;
-  const canFly = flyPlan.casters.length > 0 && selected && selSeen && !isSelf && !loading;
+  // Fly may aim at ANY tile (you navigate from the air, revealing as you go) — not
+  // just ones already in sight. One cast covers an hour of flight (FLY_TRAVEL_HEXES).
+  const canFly = flyPlan.casters.length > 0 && selected && !isSelf && !loading;
+  const flyLeg = Math.min(dist, FLY_TRAVEL_HEXES);
+  const flyMins = flyLeg * FLY_MIN_PER_HEX;
   const teleOption = (selected && !isSelf && !loading)
     ? teleSpells.find((s) => (isFinite(s.range) ? (selSeen && dist <= s.range) : isTeleportAnchor(state, selected.x, selected.y)))
     : null;
@@ -878,13 +882,16 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
             {canFly && (() => {
               const party = flyPlan.casts > 1;
               const ok = flyPlan.feasible;
+              const timeStr = flyMins >= 60 ? "~1h" : `~${flyMins}m`;
+              const legStr = dist > FLY_TRAVEL_HEXES ? `first ${flyLeg} of ${dist} · ` : "";
+              const cost = party ? flyPlan.totalCost : flyPlan.flyCost;
               return (
                 <button onClick={() => { if (!ok) return; party ? setFlyPanelDest(selected) : onFly(selected); }} disabled={!ok} style={{
                   flex: 1, height: "40px", borderRadius: "20px", fontFamily: "inherit", fontWeight: 800, fontSize: "12px",
                   border: `1px solid ${ok ? "rgba(127,199,224,0.55)" : "rgba(127,199,224,0.18)"}`,
                   backgroundColor: ok ? "rgba(127,199,224,0.16)" : "rgba(127,199,224,0.06)",
                   color: ok ? "#bfe3f2" : "rgba(127,199,224,0.4)", cursor: ok ? "pointer" : "not-allowed",
-                }}>{party ? `Fly party · ${flyPlan.totalCost} resolve` : `Fly · ${flyPlan.flyCost} resolve`}</button>
+                }}>{`${party ? "Fly party" : "Fly"} · ${legStr}${timeStr} · ${cost} resolve`}</button>
               );
             })()}
             {teleOption && (() => {

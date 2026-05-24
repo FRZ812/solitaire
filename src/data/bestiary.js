@@ -61,6 +61,11 @@ export const BESTIARY = {
   drakeling:     { name: "Drakeling",    race: "drakeborn",health: 28, armor: 3, ward: 4, dodge: 12, accuracy: 8, critChance: 8, speed: 6, damage: T(5, 9, "magical", 2), abilities: ["firebolt"], count: [1, 2], maxLootTier: "epic" },
   "wyvern-passage":{ name: "Wyvern",     race: "wyvern",   health: 44, armor: 4, ward: 2, dodge: 16, accuracy: 9, critChance: 10, speed: 8, damage: T(7, 12, "physical", 3), abilities: ["power-strike", "rend"], count: [1, 1], maxLootTier: "legendary" },
 
+  // --- aerial predators (the only things that can reach a flier; see AERIAL_SPAWNS) ---
+  gryphon:       { name: "Gryphon",      race: "gryphon",  health: 38, armor: 3, ward: 1, dodge: 18, accuracy: 9, critChance: 10, speed: 9, damage: T(6, 11, "physical", 2), abilities: ["power-strike", "rend"], count: [1, 2], maxLootTier: "legendary" },
+  harpy:         { name: "Harpy",        race: "harpy",    health: 20, armor: 1, ward: 1, dodge: 20, accuracy: 8, critChance: 8, speed: 9, damage: T(4, 7), abilities: ["venom-strike"], count: [2, 4], maxLootTier: "rare" },
+  roc:           { name: "Roc",          race: "roc",      health: 60, armor: 3, ward: 1, dodge: 10, accuracy: 8, critChance: 8, speed: 8, damage: T(9, 15, "physical", 3), abilities: ["power-strike"], count: [1, 1], maxLootTier: "legendary" },
+
   // --- undead / aberrant ---
   "bog-skeleton":{ name: "Bog-Skeleton", race: "undead",   health: 15, armor: 2, dodge: 6, accuracy: 5, speed: 4, damage: T(3, 6), abilities: ["power-strike"], count: [1, 3], maxLootTier: "uncommon" },
   "carrion-thrall":{ name: "Carrion-Thrall", race: "undead", health: 17, armor: 1, dodge: 4, accuracy: 5, speed: 3, damage: T(3, 6), abilities: ["venom-strike"], count: [1, 3], maxLootTier: "uncommon" },

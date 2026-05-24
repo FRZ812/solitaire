@@ -15,8 +15,8 @@ export const TRAVEL_SPELLS = {
   fly: {
     id: "fly", name: "Fly", school: "arcane", icon: "sparkle", noncombat: true,
     mode: "fly", resolveCost: 2, minTier: "rare",
-    desc: "Travel magic (cast from the map). Take to the air — cross any ground, even water, see far from on high, and leave what prowls below behind. Flying companions costs a casting for each, split across those who know Fly.",
-    description: "Take to the air — cross any ground (even water), see far from on high, and leave what prowls below behind. Flying others costs a casting for each soul carried; each leg aloft costs resolve.",
+    desc: "Travel magic (cast from the map). Take to the air for about an hour — cross any ground, even water, and see far from on high. What stalks the ground can't reach you, though over wild country things hunt the sky. Flying companions costs a casting for each, split across those who know Fly.",
+    description: "Take to the air for about an hour — cross any ground (even water), see far from on high, and leave what prowls below behind. Over the deep wilds, though, predators hunt the air. Flying others costs a casting for each soul carried.",
   },
   "dimension-door": {
     id: "dimension-door", name: "Dimension Door", school: "arcane", icon: "sparkle", noncombat: true,
