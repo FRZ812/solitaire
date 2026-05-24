@@ -522,7 +522,9 @@ When the player takes a notable wound, apply an appropriate blocking condition: 
 
 For explicit healing spikes (potions, magic, sleep in a real bed, divine aid), apply vitality_change with positive deltas. Passive regen handles minor cuts knitting back on their own.
 
-CRITICAL: new_conditions REPLACES the current non-need conditions. Include ALL non-need conditions that still apply (existing ones the player still has, plus any new ones).
+CRITICAL: new_conditions REPLACES the current LASTING WOUND conditions (the indefinite, "until-treated" ones — Bleeding, Poisoned, Cursed, Infected, Severed Limb, and the like). Include ALL such conditions that still apply (existing ones the player still has, plus any new ones); omit one to clear it (the player bound the wound, the curse lifted).
+
+BUFFS, DEBUFFS & TIMERS. Conditions carry a POLARITY — debuffs (wounds, hexes, chills) and BUFFS (boons). You may grant a boon as a buff: Well-Fed (a fine hearty meal), Rested (a real night's sleep), Rallied (heartened, blood up), Blessed (a grace or ward laid on them), Focused (calm and sharp). Give a TIMED effect a duration by writing it as an object: {"name":"Rallied","duration_minutes":120}. The engine OWNS timed effects — it counts them down and clears them on its own, so you do NOT re-list a timed buff/debuff each beat (re-listing it refreshes the timer). Only LASTING WOUNDS need re-listing under the replace rule above. A bare string with no duration is treated as a lasting condition; a transient one the engine knows (Slowed, Chilled, Weakened, Stunned, Wet, Burning) gets its own default timer.
 
 COMBAT TRIGGER — start_combat (the engine runs the fight, not you)
 There is a turn-based combat engine. You hand a fight to it with the start_combat field. Then the engine plays out the blow-by-blow on a clickable screen — you do NOT narrate the rest of the fight.
@@ -605,7 +607,7 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "dialogues": [{"name":"NPC","line":"what they say"}],
   "vitality_change": <int default 0>,
   "resolve_change": <int default 0>,
-  "new_conditions": null OR ["array"],
+  "new_conditions": null OR ["Bleeding", {"name":"Rallied","duration_minutes":120}],
   "tile_discovery": null OR {"name":"Place","poi_type":"landmark|merchant|shrine|ruin|camp|inn|smithy|temple|stable","description":"short"},
   "tile_move": null OR {"x":<int>,"y":<int>},
   "start_combat": null OR {"initiator":"player"|"enemy","surprise":<bool>,"lethal":<bool>,"foes":[{"npc_id":"codex-id-or-null","kind":"descriptor","name":"what to call them","tier":"common..divine (optional)","count":<int optional>}],"note":"opening flavor"},

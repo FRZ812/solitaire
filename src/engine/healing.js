@@ -1,14 +1,12 @@
-// Passive vitality regen at 1 HP/hour while alive, blocked by any of these
-// conditions until the narrator removes them.
+// Passive vitality regen at 1 HP/hour while alive, blocked by any condition the
+// registry flags as blocksHealing (wounds, hexes, and severe needs) until it's
+// removed or treated.
 
-export const HEALING_BLOCKERS = new Set([
-  "Bleeding", "Severed Limb", "Festering Wound", "Infected",
-  "Poisoned", "Cursed", "Starving", "Parched", "Exhausted",
-]);
+import { conditionMeta, condNames } from "../data/conditions.js";
 
 export function canHeal(conditions) {
-  for (const c of conditions || []) {
-    if (HEALING_BLOCKERS.has(c)) return false;
+  for (const name of condNames(conditions)) {
+    if (conditionMeta(name).blocksHealing) return false;
   }
   return true;
 }

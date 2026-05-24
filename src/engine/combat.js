@@ -24,6 +24,7 @@ import { rollItemPassives, RUNES } from "../data/passives.js";
 import { effectiveAttributes, ratingFromXp, proficiencyName, weaponMasteryId, XP } from "../data/proficiencies.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
+import { condNames, normalizeConditions } from "../data/conditions.js";
 import { chooseAction } from "./combat-ai.js";
 import { DARK_ACC_PENALTY, DARK_FLEE_BONUS } from "./light.js";
 
@@ -1716,11 +1717,11 @@ export function applyCombatResult(state, cs, context = {}) {
     next.character.resolve = clamp(Math.round(cs.player.resolve), 0, next.character.resolveMax);
   }
 
-  const conds = new Set((next.character.conditions || []));
+  const conds = new Set(condNames(next.character.conditions));
   if (hasStatus(cs.player, "bleed")) conds.add("Bleeding");
   if (hasStatus(cs.player, "poison")) conds.add("Poisoned");
   if (cs.phase === "defeat") { conds.add("Gravely Wounded"); conds.add("Bleeding"); }
-  next.character.conditions = Array.from(conds);
+  next.character.conditions = normalizeConditions(Array.from(conds));
 
   // The detailed aftermath is narrated by the narrator ([COMBAT OVER]/[DEFEATED])
   // right after this, so we only drop a brief lead-in for defeat.

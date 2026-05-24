@@ -1,6 +1,13 @@
 import React from "react";
 import { Icon } from "./Icon.jsx";
 import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
+import { condName, conditionMeta } from "../data/conditions.js";
+
+// Short "time left" label for a timed condition (e.g. "2.5h", "12m").
+export function fmtRemaining(minutes) {
+  if (minutes == null) return "";
+  return minutes >= 60 ? `${Math.round((minutes / 60) * 10) / 10}h` : `${Math.max(1, Math.round(minutes))}m`;
+}
 
 // ----- Buttons -----
 
@@ -140,20 +147,30 @@ export function Vital({ icon, label, value }) {
   );
 }
 
-export function ConditionPill({ label }) {
+// Polarity-driven palette: buffs read green, debuffs red, anything else gold.
+export function conditionPalette(polarity) {
+  if (polarity === "buff") return { color: alert.successText, border: "rgba(16, 185, 129, 0.34)", bg: "rgba(16, 185, 129, 0.10)", glow: "rgba(16, 185, 129, 0.2)" };
+  if (polarity === "debuff") return { color: alert.dangerAccent, border: "rgba(252, 165, 165, 0.34)", bg: "rgba(120, 30, 30, 0.16)", glow: "rgba(252, 165, 165, 0.18)" };
+  return { color: colors.gold, border: "rgba(215, 167, 111, 0.24)", bg: "rgba(215, 167, 111, 0.07)", glow: "rgba(215, 167, 111, 0.2)" };
+}
+
+export function ConditionPill({ cond }) {
+  const name = condName(cond);
+  const remaining = typeof cond === "object" && cond ? cond.remaining : null;
+  const pal = conditionPalette(conditionMeta(name).polarity);
   return (
     <div style={{
       padding: "4px 9px",
       borderRadius: radius.pill,
-      backgroundColor: "rgba(215, 167, 111, 0.07)",
-      border: `1px solid rgba(215, 167, 111, 0.24)`,
-      color: colors.gold,
+      backgroundColor: pal.bg,
+      border: `1px solid ${pal.border}`,
+      color: pal.color,
       ...metaStyle,
       letterSpacing: "0.12em",
-      textShadow: "0 0 6px rgba(215, 167, 111, 0.2)",
+      textShadow: `0 0 6px ${pal.glow}`,
       boxShadow: "0 2px 6px rgba(0,0,0,0.1)",
     }}>
-      {label}
+      {name}{remaining != null ? ` · ${fmtRemaining(remaining)}` : ""}
     </div>
   );
 }
@@ -224,7 +241,7 @@ export function VitalsStrip({ character }) {
           paddingTop: "4px",
           borderTop: `1px solid rgba(215, 167, 111, 0.10)`,
         }}>
-          {character.conditions.map((c) => <ConditionPill key={c} label={c} />)}
+          {character.conditions.map((c) => <ConditionPill key={condName(c)} cond={c} />)}
         </div>
       )}
     </div>

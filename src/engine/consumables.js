@@ -4,6 +4,7 @@
 // human-readable line of what changed, for a log beat.
 
 import { itemTemplate } from "../data/catalog.js";
+import { condNames, normalizeConditions } from "../data/conditions.js";
 
 export function useConsumable(state, itemId) {
   // The codex copy carries the player's discovered name/lore; the template is the
@@ -59,9 +60,9 @@ export function useConsumable(state, itemId) {
 
   let conditions = ch.conditions;
   if (u.removeConditions?.length) {
-    const cleared = ch.conditions.filter((c) => u.removeConditions.includes(c));
+    const cleared = condNames(ch.conditions).filter((c) => u.removeConditions.includes(c));
     if (cleared.length) {
-      conditions = ch.conditions.filter((c) => !u.removeConditions.includes(c));
+      conditions = normalizeConditions(ch.conditions).filter((c) => !u.removeConditions.includes(c.name));
       parts.push(`${cleared.join(", ")} cleared`);
     }
   }
