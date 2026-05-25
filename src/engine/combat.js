@@ -90,41 +90,45 @@ function addStatus(c, effect) {
 
 // The will-save chance the SUBJECT resists a mind-control attempt. PURE POWER GAP —
 // no rank, title, or flat immunity wards a mind; only the contest of WILLS decides it
-// (subject's will vs the caster's). An iron will (controlResist) raises the odds; it
-// never grants immunity. Charm is gentler (easier to resist) than Dominate.
-function willSaveChance(caster, target, type) {
+// (subject's will vs the caster's). An iron will (controlResist) raises the odds.
+// DIVINE-tier mind-magic BREAKS THE LAWS — it ignores controlResist, immunity, and the
+// base floor, and is a pure clash of wills: a god's command is answered only by a
+// greater will.
+function willSaveChance(caster, target, type, tier) {
   const potency = (caster?.will || 0) + (caster?.saveDC || 0); // Mind threshold sharpens the caster's save DC
+  if (tier === "divine") return Math.min(0.95, Math.max(0, (target.will || 0) - potency) * 0.05);
   const base = type === "dominated" ? 0.05 : 0.10;
   return Math.min(0.95, base + Math.max(0, (target.will || 0) - potency) * 0.05 + (target.controlResist || 0) + (target.controlPressure || 0) * 0.15);
 }
-// Apply an enemy-targeted ability effect. MIND CONTROL gets ONE will-save: Charm is a
-// brief stand-down; Dominate, if it lands, is PERMANENT — the subject is enthralled
-// (bound to the caster, switched to its side; see enthrall). Everything else applies
-// straight (addStatus owns stun/slow resist).
-function applyEnemyEffect(cs, caster, target, effect) {
+// Apply an enemy-targeted ability effect. MIND CONTROL gets ONE will-save. Below divine:
+// Charm is a brief stand-down, Dominate (if it lands) is a PERMANENT enthrall. At DIVINE
+// both bind FOREVER — Dominate leashes the body (attitude kept), Charm rewrites the heart
+// (artificial devotion). Everything else applies straight (addStatus owns stun/slow resist).
+function applyEnemyEffect(cs, caster, target, effect, tier) {
   if (!effect || !target || target.health <= 0) return;
-  // DISPEL — strips brief control, and BREAKS a permanent enthrall via a CONTEST of
-  // wills between the dispeller and the ORIGINAL dominator (stored dominationWill) —
-  // NOT a save by the thrall. Tier doesn't gate it; raw will does.
+  // DISPEL — strips brief control, and BREAKS a binding via a CONTEST of wills between
+  // the dispeller and the ORIGINAL binder (stored at cast) — NOT a save by the thrall.
   if (effect.type === "dispel") {
     const STRIP = new Set(["charmed", "dominated", "stun", "slow", "weaken", "vulnerable", "chill", "curse", "silence"]);
     if (Array.isArray(target.statuses)) target.statuses = target.statuses.filter((s) => !STRIP.has(s.type));
     if (target.enthralledBy) {
-      const freeChance = Math.min(0.95, Math.max(0.05, 0.5 + ((caster?.will || 0) - (target.dominationWill || 0)) * 0.05));
+      const freeChance = Math.min(0.95, Math.max(0.05, 0.5 + (((caster?.will || 0) + (caster?.saveDC || 0)) - (target.dominationWill || 0)) * 0.05));
       if (Math.random() < freeChance) freeThrall(cs, target);
-      else cs.log.push(logEntry(`The binding on ${target.name} holds — the dominator's will is the stronger.`, "status"));
+      else cs.log.push(logEntry(`The binding on ${target.name} holds — the binder's will is the stronger.`, "status"));
     } else {
       cs.log.push(logEntry(`${target.name} is cleansed of lingering magics.`, "status"));
     }
     return;
   }
   if (MIND_CONTROL.has(effect.type)) {
-    if (Math.random() < willSaveChance(caster, target, effect.type)) {
+    if (Math.random() < willSaveChance(caster, target, effect.type, tier)) {
       cs.log.push(logEntry(`${target.name} shrugs off the ${effect.type === "dominated" ? "domination" : "charm"}.`, "status"));
       if (target.side === "enemy") onEnemyControlled(target); // the failed assault still rattles them
       return;
     }
-    if (effect.type === "dominated") { enthrall(cs, caster, target); return; } // ONE shot — landing it is PERMANENT
+    if (effect.type === "dominated") { bindToCaster(cs, caster, target, "dominate"); return; } // permanent thrall
+    if (effect.type === "charmed" && tier === "divine") { bindToCaster(cs, caster, target, "charm"); return; } // permanent, artificial love
+    // a sub-divine charm is a brief stand-down — falls through to addStatus
   }
   addStatus(target, effect);
   if (CONTROL_TYPES.has(effect.type) && target.side === "enemy") onEnemyControlled(target);
@@ -144,28 +148,32 @@ function moveToSide(cs, c, side) {
   if (side === "player") { cs.allies = cs.allies || []; cs.allies.push(c); }
   else cs.enemies.push(c);
 }
-// ENTHRALL — a landed Dominate. The subject is bound to the caster (forever, until the
-// caster dies/releases it or another wins a Dispel contest) and switches to the
-// caster's side at once. We record dominationWill so a later Dispel can contest the
-// ORIGINAL dominator even if they're long gone.
-function enthrall(cs, caster, target) {
+// BIND a subject to the caster (a landed Dominate, or a divine Charm). Both switch the
+// subject to the caster's side at once and last until the binder dies/releases it or a
+// Dispel beats the binder's will. The KIND differs in the FICTION (engine flavor only):
+// "dominate" is a leash — the subject keeps its attitude and may loathe its master;
+// "charm" rewrites the heart — artificial devotion. dominationWill is the binder's
+// potency, stored so a later Dispel can contest it even if the binder is long gone.
+function bindToCaster(cs, caster, target, kind) {
   const casterSide = (caster === cs.player || caster?.side === "player") ? "player" : "enemy";
   target.enthralledBy = caster === cs.player ? "p" : (caster?.uid || null);
-  target.dominationWill = caster?.will || 0;
+  target.dominationWill = (caster?.will || 0) + (caster?.saveDC || 0);
   target.enthralledFrom = target.side; // where to revert if freed
+  target.bindKind = kind;
   if (Array.isArray(target.statuses)) target.statuses = target.statuses.filter((s) => s.type !== "charmed" && s.type !== "dominated");
   addStatus(target, { type: "enthralled", value: 1, duration: 99999 });
   if (target !== cs.player) moveToSide(cs, target, casterSide);
-  cs.log.push(logEntry(`${target.name} is bound — utterly enthralled, its will no longer its own.`, "status"));
+  cs.log.push(logEntry(kind === "charm"
+    ? `${target.name} turns to ${caster?.name || "the caster"} with sudden, helpless devotion — a love that is not their own.`
+    : `${target.name} is bound — enthralled, their will no longer their own.`, "status"));
 }
-// Break one thrall's binding — drop the marks and revert it to the side it was taken
-// from (a converted foe goes back to fighting its old master).
+// Break one binding — drop the marks and revert the subject to the side it came from.
 function freeThrall(cs, c) {
   const back = c.enthralledFrom || (c.side === "player" ? "enemy" : "player");
-  c.enthralledBy = null; c.dominationWill = 0; c.enthralledFrom = null;
+  c.enthralledBy = null; c.dominationWill = 0; c.enthralledFrom = null; c.bindKind = null;
   if (Array.isArray(c.statuses)) c.statuses = c.statuses.filter((s) => s.type !== "enthralled");
   if (c !== cs.player && c.side !== back) moveToSide(cs, c, back);
-  cs.log.push(logEntry(`${c.name} shudders as the compulsion breaks — their will returns.`, "status"));
+  cs.log.push(logEntry(`${c.name} shudders as the binding breaks — their will returns.`, "status"));
 }
 // Free every thrall bound to `uid` (its dominator died) — see freeThrall.
 function freeThrallsOf(cs, uid) {
@@ -732,7 +740,7 @@ function resolveHit(attacker, defender, profile) {
 // combat path). Pushes the hit log, applies lifesteal/thorns, fires the
 // attacker's on-hit/on-crit/on-kill procs and the defender's on-dodge procs, and
 // applies any ability-borne status. Returns { dealt, crit }.
-function dealHit(cs, attacker, target, profile, def) {
+function dealHit(cs, attacker, target, profile, def, tier) {
   const before = target.health;
   const res = resolveHit(attacker, target, profile);
   cs.log.push(res.log);
@@ -774,7 +782,7 @@ function dealHit(cs, attacker, target, profile, def) {
   }
 
   if (target.health > 0 && def && def.effect && def.effect.target === "enemy") {
-    applyEnemyEffect(cs, attacker, target, def.effect);
+    applyEnemyEffect(cs, attacker, target, def.effect, tier);
   }
 
   if (target.health <= 0 && !targetIsPlayer) fireProcs(cs, attacker, "onKill", { target });
@@ -1022,9 +1030,9 @@ function npcPerform(cs, actor, opponents, opts = {}) {
 
   const hitOne = (target) => {
     const profile = attackProfile(actor, def, tId, false);
-    if (profile) dealHit(cs, actor, target, profile, def);
+    if (profile) dealHit(cs, actor, target, profile, def, tId);
     else if (def.effect && def.effect.target === "enemy" && target.health > 0) {
-      applyEnemyEffect(cs, actor, target, def.effect);
+      applyEnemyEffect(cs, actor, target, def.effect, tId);
     }
   };
 
@@ -1345,9 +1353,9 @@ export function playerAct(cs0, abilityId, targetIndex) {
   // run through dealHit, exactly as they do for NPCs. No-damage debuffs (Hex,
   // Curse…) have no profile — apply their effect directly.
   const hitEnemy = (target) => {
-    if (profile) dealHit(cs, cs.player, target, profile, def);
+    if (profile) dealHit(cs, cs.player, target, profile, def, tierId);
     else if (def.effect && def.effect.target === "enemy" && target.health > 0) {
-      applyEnemyEffect(cs, cs.player, target, def.effect);
+      applyEnemyEffect(cs, cs.player, target, def.effect, tierId);
     }
   };
 
@@ -1920,6 +1928,7 @@ export function applyCombatResult(state, cs, context = {}) {
       const tid = a.npcId || a.id || `thrall-${Math.random().toString(36).slice(2, 8)}`;
       if (chars[tid]) { if (!(next.party || []).includes(tid)) next.party = [...(next.party || []), tid]; continue; }
       const hadGear = (a.gear || []).length > 0;
+      const charmed = a.bindKind === "charm"; // divine Charm — devoted, not leashed
       chars[tid] = {
         id: tid, kind: "thrall", name: a.name, race: a.race || null,
         attributes: { ...(a.attrs || {}) },
@@ -1927,7 +1936,10 @@ export function applyCombatResult(state, cs, context = {}) {
         worn: hadGear ? a.gear.map((g) => g.id) : [],
         naturalWeapon: hadGear ? null : (a.naturalWeaponSpec || null),
         abilities: (a.abilities || []).map((x) => x.id),
-        conditions: [{ name: "Enthralled", remaining: null, by: "wanderer" }],
+        // Charm rewrites the heart (artificial devotion → high relationship); Dominate
+        // is only a leash (attitude unchanged). Both are bound until the binder frees them.
+        conditions: [{ name: charmed ? "Charmed" : "Enthralled", remaining: null, by: "wanderer" }],
+        relationship: charmed ? 80 : 0,
         enthralledBy: "wanderer",
       };
       if (!(next.party || []).includes(tid)) next.party = [...(next.party || []), tid];

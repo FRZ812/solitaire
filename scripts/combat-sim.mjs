@@ -246,6 +246,38 @@ function enchanter() {
   const weak = freedVs(2), strong = freedVs(40);
   console.log(`  Dispel frees a WEAK-binder thrall: ${weak}% — ${weak >= 80 ? "OK" : "LOW"}`);
   console.log(`  Dispel fails vs a STRONG binder: ${strong}% freed — ${strong <= 20 ? "OK" : "HIGH"}`);
+
+  // DIVINE breaks laws: a divine Dominate ignores controlResist (a god's will is pure).
+  // Same foe (will 10, controlResist 0.60) the enchanter out-wills: mythical is capped
+  // by the 0.60 resist, divine ignores it.
+  const dominateLand = (tier) => {
+    let land = 0, A = 400;
+    for (let i = 0; i < A; i++) {
+      let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
+      if (cs.phase !== "player") { A--; continue; }
+      const e = cs.enemies[0]; e.will = 10; e.controlResist = 0.6;
+      cs.player.abilities = cs.player.abilities.map((ab) => ab.id === "dominate" ? { ...ab, tier } : ab);
+      cs = playerAct(cs, "dominate", 0);
+      const bound = [cs.player, ...(cs.allies || []), ...cs.enemies].find((c) => c.uid === e.uid && (c.statuses || []).some((s) => s.type === "enthralled"));
+      if (bound) land++;
+    }
+    return Math.round((land / Math.max(1, A)) * 100);
+  };
+  const myth = dominateLand("mythical"), div = dominateLand("divine");
+  console.log(`  Mythical Dominate vs 0.6-controlResist foe: ${myth}% (capped by resist)`);
+  console.log(`  DIVINE Dominate ignores resist: ${div}% — ${div >= 95 ? "OK" : "LOW"}`);
+
+  // DIVINE Charm binds PERMANENTLY (artificial devotion) — switches the foe to your side.
+  let charmBound = 0, C = 300;
+  for (let i = 0; i < C; i++) {
+    let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
+    if (cs.phase !== "player") { C--; continue; }
+    cs.player.abilities = cs.player.abilities.map((ab) => ab.id === "charm" ? { ...ab, tier: "divine" } : ab);
+    cs = playerAct(cs, "charm", 0);
+    if ((cs.allies || []).some((a) => a.bindKind === "charm" && (a.statuses || []).some((s) => s.type === "enthralled"))) charmBound++;
+  }
+  const cb = Math.round((charmBound / Math.max(1, C)) * 100);
+  console.log(`  DIVINE Charm binds a devotee to your side: ${cb}% — ${cb >= 95 ? "OK" : "LOW"}`);
 }
 console.log("");
 
