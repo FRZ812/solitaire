@@ -253,7 +253,7 @@ export const CHARACTER_TEMPLATES = [
       appearance: { skin: "olive", hair: "black, pinned up", eyes: "dark", build: "lithe" },
       base_appearance: "A lithe, sharp-eyed duelist with a fencer's poise and a blade kept like a vow.",
       abilities: [{ id: "rapid-jabs", tier: "uncommon" }, { id: "feint", tier: "uncommon" }, { id: "lunge", tier: "uncommon" }, { id: "shadowstep", tier: "rare" }],
-      items: [worn("steel-shortsword"), worn("leather-jerkin"), worn("traveling-cloak"), worn("marching-boots")],
+      items: [worn("sabre-maingauche"), worn("leather-jerkin"), worn("traveling-cloak"), worn("marching-boots")],
       coins: { gold: 2, silver: 10 },
       knows: ["Has never lost a formal duel — and never let anyone forget it."],
     },

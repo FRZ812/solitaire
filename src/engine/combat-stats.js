@@ -329,7 +329,7 @@ function weaponProfile(character, codex, eff) {
     // PAIRED (twin/dual) weapons: a matched pair fought as one — the basic attack
     // lands an EXTRA light strike (engine/combat.js). Each blade is lighter, so the
     // base damage stays low; the win is two crit-hungry hits, not one heavy one.
-    paired: !!(weapon && (weapon.combat?.paired || /\b(twin|paired|matched|dual)\b|pair of/i.test(weapon.name || ""))),
+    paired: !!(weapon && (weapon.paired || weapon.combat?.paired || /\b(twin|paired|matched|dual)\b|pair of/i.test(weapon.name || ""))),
     name: weapon ? (weapon.name || weapon.id) : "Unarmed",
   };
 }

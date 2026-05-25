@@ -179,7 +179,7 @@ function combatantFromAttributes(spec, codex, { tierId = "common" } = {}) {
     min: Math.max(1, Math.round((base.min * govF + dFlat) * dMult)),
     max: Math.max(1, Math.round((base.max * govF + dFlat) * dMult)),
     type: base.type || "physical", pen: (base.pen || 0) + Math.floor(body / 4) + (sm.penetration || 0), category: weaponType,
-    paired: !!(weaponItem?.combat?.paired || /\b(twin|paired|matched|dual)\b|pair of/i.test(weaponItem?.name || "") || spec.naturalWeapon?.paired),
+    paired: !!(weaponItem?.paired || weaponItem?.combat?.paired || /\b(twin|paired|matched|dual)\b|pair of/i.test(weaponItem?.name || "") || spec.naturalWeapon?.paired),
     reach: base.reach ?? fam.reach ?? 1, range: base.range ?? fam.range ?? 0,
     speed: base.speed ?? fam.speed ?? 0, reload: base.reload ?? fam.reload ?? 0,
     acc: base.acc ?? fam.acc ?? 0,
