@@ -20,6 +20,7 @@ import { tierMult, rollTier, tierLabel, tier as tierInfo } from "../data/tiers.j
 import { DEMEANOR_CONFIG, flavorLine } from "../data/combat-flavor.js";
 import { ITEM_DROP_CHANCE, ABILITY_DROP_CHANCE, UNIQUE_DROP_CHANCE, RUNE_DROP_CHANCE, RUNE_DROP_MIN_REGION } from "../data/balance.js";
 import { rollUniques } from "../data/uniques.js";
+import { itemTemplate } from "../data/catalog.js";
 import { rollItemPassives, RUNES } from "../data/passives.js";
 import { effectiveAttributes, ratingFromXp, proficiencyName, weaponMasteryId, XP } from "../data/proficiencies.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
@@ -1701,6 +1702,18 @@ export function rollLoot(sources, opts = {}) {
   if (sources.length > 0 && tierInfo(maxTier).order >= tierInfo("divine").order && Math.random() < RUNE_DROP_CHANCE * 0.4) {
     const gr = RUNES["greater-rune-of-ascension"];
     items.push({ itemId: gr.id, entry: gr, quantity: 1 });
+  }
+
+  // A slain person drops the GEAR THEY WERE WEARING — their real kit, not a random
+  // table (bestiary combatants carry `gear:[{id,tier}]`). Each piece drops as its
+  // own instance at the foe's tier, so killing an armed foe arms you.
+  for (const e of sources) {
+    for (const g of (e.gear || [])) {
+      const baseItem = itemTemplate(g.id);
+      if (!baseItem) continue;
+      const uid = `${g.id}-${Math.random().toString(36).slice(2, 6)}`;
+      items.push({ itemId: uid, entry: { ...baseItem, id: uid, tier: g.tier || baseItem.tier || "common" }, quantity: 1 });
+    }
   }
 
   copper = Math.round(copper * (1 + coinBonus));

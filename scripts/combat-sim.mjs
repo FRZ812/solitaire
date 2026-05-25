@@ -36,8 +36,10 @@ function makeCodex(weapon, armor) {
     },
   };
 }
-const SWORD = { name: "Shortsword", dmg: { min: 3, max: 6, type: "physical", pen: 0 } };
-const codex = makeCodex(SWORD, 2);
+// Everyone fights with REAL common gear now (mobs do too), so the protagonist's
+// loadout is a real-grade blade + light armour — the fair baseline to calibrate against.
+const SWORD = { name: "Iron Shortsword", dmg: { min: 5, max: 8, type: "physical", pen: 0 } };
+const codex = makeCodex(SWORD, 3);
 
 // A realistic early-mid wanderer: modest attributes, a plain blade, a couple of
 // learned techniques (no Cleave AoE, so groups can't be wiped in one swing).
@@ -49,6 +51,19 @@ function midPlayer() {
       { id: "power-strike", tier: "common" }, { id: "rend", tier: "common" },
       { id: "second-wind", tier: "common" },
     ],
+    proficiencies: {},
+  });
+}
+
+// CALIBRATION ANCHOR: an AVERAGE person ≈ Senna Rell (companions.js). The world is
+// fantastical but punishing — an average person should be ~40% to win a 1-v-1 vs a
+// lone bandit (bandits are slightly stronger), and ~0% against two. Everyone has to
+// prepare; ganging up is expected.
+function avgPerson() {
+  return makeFighter({
+    name: "Average (Senna)",
+    attributes: { body: 1, reflex: 4, vigor: 2, mind: 2, wit: 3, presence: 1 },
+    abilities: [],
     proficiencies: {},
   });
 }
@@ -73,9 +88,9 @@ function choosePlayerAction(cs) {
 
 const TERMINAL = new Set(["victory", "defeat", "resolved", "playerFled"]);
 
-function runFight(makeEnemies, allyKeys, tierId) {
+function runFight(makeEnemies, allyKeys, tierId, protag = midPlayer) {
   const allies = allyKeys.length ? buildAllies(allyKeys, tierId) : [];
-  let cs = initCombat(midPlayer(), codex, makeEnemies(), { allies });
+  let cs = initCombat(protag(), codex, makeEnemies(), { allies });
   let guard = 0;
   while (!TERMINAL.has(cs.phase) && guard++ < 300) {
     if (cs.phase !== "player") break;
@@ -91,11 +106,11 @@ function runFight(makeEnemies, allyKeys, tierId) {
   return cs;
 }
 
-function scenario(label, makeEnemies, allyKeys = [], tierId = "common") {
+function scenario(label, makeEnemies, allyKeys = [], tierId = "common", protag = midPlayer) {
   let wins = 0, losses = 0, resolved = 0, fled = 0;
   let turns = 0, hpSum = 0, yields = 0, foeCount = 0, allyDeaths = 0, allyCount = 0;
   for (let i = 0; i < RUNS; i++) {
-    const cs = runFight(makeEnemies, allyKeys, tierId);
+    const cs = runFight(makeEnemies, allyKeys, tierId, protag);
     if (cs.phase === "victory") wins++;
     else if (cs.phase === "resolved") { resolved++; wins++; } // resolved = you stood, foes broke
     else if (cs.phase === "defeat") losses++;
@@ -120,7 +135,12 @@ function scenario(label, makeEnemies, allyKeys = [], tierId = "common") {
 }
 
 console.log(`\n=== Combat simulation — ${RUNS} runs/scenario ===\n`);
-console.log("SOLO");
+console.log("CALIBRATION — average person (Senna); target: 1 bandit ~40%, 2 bandits ~0%");
+scenario("avg vs 1 bandit", () => generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), [], "common", avgPerson);
+scenario("avg vs 2 bandits", () => generateEnemyGroup("bandits", { count: 2, maxTier: "common" }), [], "common", avgPerson);
+scenario("avg vs 1 goblin", () => generateEnemyGroup("goblins", { count: 1, maxTier: "common" }), [], "common", avgPerson);
+console.log("");
+console.log("SOLO (above-average wanderer)");
 scenario("solo vs 2 bandits", () => generateEnemyGroup("bandits", { count: 2, maxTier: "common" }));
 scenario("solo vs 3 goblins", () => generateEnemyGroup("goblins", { count: 3, maxTier: "common" }));
 scenario("solo vs 4 bandits", () => generateEnemyGroup("bandits", { count: 4, maxTier: "common" }));
