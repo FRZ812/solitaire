@@ -159,10 +159,15 @@ export const HANDCRAFTED = {
   // wet market and ferry cluster around it. Buildings carry a poi.service id
   // when they have a wired menu (see data/town.js, e.g. The Healer's House).
   // ============================================================
-  "0,0":  { terrain: "indoor",     poi: { ...DROWNED_RAT_FOOTPRINT, part: "common-room", partName: "Common Room", access: "public", description: "The public belly of the Drowned Rat: benches, trestles, road-mud, smoke-dark beams, and every conversation trying to be overheard by someone else." } },
-  "1,0":  { terrain: "indoor",     poi: { ...DROWNED_RAT_FOOTPRINT, part: "long-bar", partName: "Long Bar", access: "public", description: "A polished oak counter with pewter mugs, a knife-scarred till board, keys on hooks, and the innkeeper's reach over the room." } },
-  "0,-1": { terrain: "indoor",     poi: { ...DROWNED_RAT_FOOTPRINT, part: "guest-loft", partName: "Guest Loft", access: "guarded", description: "A cramped loft of rented pallets, travel packs, snores, and the soft threat of theft. The rain taps through two known leaks." } },
-  "1,-1": { terrain: "indoor",     poi: { ...DROWNED_RAT_FOOTPRINT, part: "cellar-yard", partName: "Cellar Yard", access: "restricted", description: "The working back of the inn: cellar hatch, ash barrels, stacked ale, and a narrow yard where private loads arrive before dawn." } },
+  // The Drowned Rat is one building of four merged hexes (see the linked
+  // footprint in data/sealed-structures.js). The common room is the only way
+  // in from the square, and the only way through to the yard, stable, and the
+  // guest rooms behind it — so the map draws one icon, one outline, and walls
+  // around everything but the door.
+  "0,0":  { terrain: "indoor",     poi: { ...DROWNED_RAT_FOOTPRINT, part: "common-room", partName: "Common Room", access: "public", description: "The public belly of the Drowned Rat: benches, trestles, road-mud, smoke-dark beams, a long oak bar with the innkeeper's reach over the room, and every conversation trying to be overheard by someone else." } },
+  "1,0":  { terrain: "indoor",     poi: { ...DROWNED_RAT_FOOTPRINT, part: "yard", partName: "Yard", access: "restricted", description: "The inn's working yard behind the common room: a cart-rut of mud and ale-slop, stacked barrels, ash buckets, a chained dog, and deliveries that arrive before the town is awake." } },
+  "1,-1": { terrain: "indoor",     poi: { ...DROWNED_RAT_FOOTPRINT, part: "stable", partName: "Stable", access: "guarded", description: "A low timber stable off the yard — six close stalls, damp straw, restless travel-beasts, cracked harness on the wall, and a stick-thin boy who sleeps in the loft to mind them." } },
+  "0,-1": { terrain: "indoor",     poi: { ...DROWNED_RAT_FOOTPRINT, part: "guest-rooms", partName: "Guest Rooms", access: "guarded", description: "Rented rooms behind the taproom: rope beds, shuttered windows, a shared piss-pot, and walls thin enough to learn a neighbour's business. The only stair up runs through the common room below." } },
   "-1,0": { terrain: "settlement", poi: { ...MIRECROSS_AREA, role: "square", type: "town", name: "Mirecross Square", description: "The market square of Mirecross, busy at the river-crossing — a stone well, hawkers' stalls, mud churned by cart-wheels and boots." } },
   "0,1":  { terrain: "indoor",     poi: { ...MIRECROSS_STABLE_FOOTPRINT, part: "stall-row", partName: "Stall Row", access: "public", description: "Six close stalls, damp straw, restless hooves, and travel beasts nosing at empty feed-bins." } },
   "1,1":  { terrain: "settlement", poi: { ...MIRECROSS_STABLE_FOOTPRINT, part: "stable-yard", partName: "Stable Yard", access: "public", description: "A muddy working yard for hitching, watering, loading panniers, and arguing over cracked harness." } },
@@ -1096,21 +1101,78 @@ export const HANDCRAFTED = {
   "90,-93":  { terrain: "indoor",   poi: { type: "throne_room", name: "The High Master's Chamber", description: "The topmost room of the Glass Spire. A single round chamber under the tower's apex. A low desk, a single high-backed chair, a wide circular window. The High Master, an elderly figure of indeterminate gender, sits and reads and occasionally writes letters that change kingdoms." } },
 };
 
-// Auto-apply `doors` to every interior tile of every sealed structure. The
-// generated array lists the threshold + interior neighbours; the engine
-// blocks crossing any edge to a hex not in this list (see world.js
-// edgeAllowed / findPath).
-for (const s of SEALED_STRUCTURES) {
-  const all = new Set([...s.threshold, ...s.interior].map(c => `${c.x},${c.y}`));
+// Auto-apply `doors` to sealed structures (see world.js edgeAllowed / findPath:
+// the engine blocks crossing any edge to a hex not in a tile's door list). Two
+// authoring shapes are supported:
+//
+//   - threshold + interior: every interior hex opens to all of its in-structure
+//     neighbours (a fully-connected interior). Good for dungeons and wards.
+//
+//   - entry + outside + links: a building whose interior connectivity is an
+//     explicit graph. Each hex opens ONLY to its linked neighbours, and the
+//     entry hex additionally opens to its `outside` street hex. This lets a
+//     footprint gate movement — e.g. the guest rooms reachable only via the
+//     common room — and the map renders every closed edge as an interior wall.
+function setDoors(key, doors) {
+  const tile = HANDCRAFTED[key];
+  if (!tile) return; // soft-fail: structure-list out of sync with tiles
+  HANDCRAFTED[key] = { ...tile, doors };
+}
+
+function adjacentHex(a, b) {
+  return HEX_DIRS.some((d) => a.x + d.x === b.x && a.y + d.y === b.y);
+}
+
+function applyMeshDoors(s) {
+  const all = new Set([...s.threshold, ...s.interior].map((c) => `${c.x},${c.y}`));
   for (const c of s.interior) {
-    const k = `${c.x},${c.y}`;
-    const tile = HANDCRAFTED[k];
-    if (!tile) continue; // soft-fail: structure-list out of sync with tiles
     const doors = [];
     for (const d of HEX_DIRS) {
       const nk = `${c.x + d.x},${c.y + d.y}`;
       if (all.has(nk)) doors.push({ x: c.x + d.x, y: c.y + d.y });
     }
-    HANDCRAFTED[k] = { ...tile, doors };
+    setDoors(`${c.x},${c.y}`, doors);
   }
+}
+
+function applyLinkedDoors(s) {
+  const doorsByKey = new Map(); // key -> Map(neighbourKey -> {x,y})
+  const link = (a, b) => {
+    if (!adjacentHex(a, b)) {
+      throw new Error(`Footprint "${s.name}": link ${a.x},${a.y} <-> ${b.x},${b.y} is not between adjacent hexes`);
+    }
+    const ka = `${a.x},${a.y}`;
+    if (!doorsByKey.has(ka)) doorsByKey.set(ka, new Map());
+    doorsByKey.get(ka).set(`${b.x},${b.y}`, { x: b.x, y: b.y });
+  };
+  for (const [a, b] of s.links) { link(a, b); link(b, a); }
+  if (s.entry && s.outside) link(s.entry, s.outside); // the door out to the street
+
+  // Connectivity guard: every member hex must be reachable from the entry
+  // through the link graph (the outside street hex is not a member).
+  const outsideKey = s.outside ? `${s.outside.x},${s.outside.y}` : null;
+  const members = new Set([...doorsByKey.keys()].filter((k) => k !== outsideKey));
+  if (s.entry) {
+    const start = `${s.entry.x},${s.entry.y}`;
+    const seen = new Set([start]);
+    const stack = [start];
+    while (stack.length) {
+      for (const nb of (doorsByKey.get(stack.pop())?.keys() || [])) {
+        if (members.has(nb) && !seen.has(nb)) { seen.add(nb); stack.push(nb); }
+      }
+    }
+    for (const m of members) {
+      if (!seen.has(m)) throw new Error(`Footprint "${s.name}": ${m} is not reachable from the entry`);
+    }
+  }
+
+  for (const [key, nbs] of doorsByKey) {
+    if (key === outsideKey) continue; // the street keeps its default-open doors
+    setDoors(key, [...nbs.values()]);
+  }
+}
+
+for (const s of SEALED_STRUCTURES) {
+  if (s.links) applyLinkedDoors(s);
+  else applyMeshDoors(s);
 }
