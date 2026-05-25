@@ -75,6 +75,19 @@ function hexCorner(cx, cy, i) {
   };
 }
 
+// Inverse of the px/py placement: which hex does a pixel point fall inside?
+// (cube-rounds the fractional axial coords). Used to tell whether a footprint's
+// centroid lands on a real member hex or in a concave gap.
+function pixelToHex(px, py, cur) {
+  const rf = (py - SVG_CENTER) / VSPACING;
+  const qf = (px - SVG_CENTER) / HSPACING - rf / 2;
+  let rx = Math.round(qf), ry = Math.round(rf), rz = Math.round(-qf - rf);
+  const dx = Math.abs(rx - qf), dy = Math.abs(ry - rf), dz = Math.abs(rz - (-qf - rf));
+  if (dx > dy && dx > dz) rx = -ry - rz;
+  else if (dy > dz) ry = -rx - rz;
+  return { x: rx + cur.x, y: ry + cur.y };
+}
+
 // ==================== CUSTOM VECTOR LANDMARKS & MAP ART ====================
 const MAP_ASSETS = {
   // bldg (Building, inn, tavern, shop, stable, mill): Cozy hand-timbered cottage
@@ -430,23 +443,27 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     }
     const cx = sx / group.tiles.length;
     const cy = sy / group.tiles.length;
-    // Anchor the icon/label on the member hex nearest the centroid, so it always
-    // sits on a real hex of the footprint. The raw centroid can fall in the
-    // missing notch of an L-shaped group and leave the icon floating off-building.
-    let anchor = group.tiles[0];
-    let best = Infinity;
-    for (const h of group.tiles) {
-      const dd = (h.px - cx) ** 2 + (h.py - cy) ** 2;
-      if (dd < best) { best = dd; anchor = h; }
+    // Put the icon at the section's visual centre (the centroid) when that point
+    // lands on a real member hex. For a concave footprint (e.g. an L-shaped
+    // group) the centroid can fall in a missing hex, so snap to the nearest
+    // member instead — the icon never floats off the building.
+    let iconX = cx, iconY = cy;
+    const mid = pixelToHex(cx, cy, cur);
+    if (!group.keys.has(`${mid.x},${mid.y}`)) {
+      let best = Infinity;
+      for (const h of group.tiles) {
+        const dd = (h.px - cx) ** 2 + (h.py - cy) ** 2;
+        if (dd < best) { best = dd; iconX = h.px; iconY = h.py; }
+      }
     }
     if (group.iconKey && MAP_ASSETS[group.iconKey]) {
-      footprintIcons.push({ key: `foot-icon-${group.id}`, x: anchor.px, y: anchor.py, iconKey: group.iconKey });
+      footprintIcons.push({ key: `foot-icon-${group.id}`, x: iconX, y: iconY, iconKey: group.iconKey });
     }
     if (selectedKey && group.keys.has(selectedKey)) {
       footprintLabels.push({
         key: `foot-label-${group.id}`,
-        x: anchor.px,
-        y: anchor.py + 20,
+        x: iconX,
+        y: iconY + 20,
         name: group.name,
       });
     }

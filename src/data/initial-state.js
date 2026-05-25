@@ -13,7 +13,7 @@ import { carryCapacityFor } from "../engine/attributes.js";
 // patches show up as islands of detail in the otherwise-fogged map — anchors
 // that orient the player in the wider world before they've ever walked there.
 function makeInitialSeen() {
-  let seen = computeSightFrom(0, 0);
+  let seen = computeSightFrom(1, 0);
   for (const r of RIVERS) {
     for (const p of r.path) {
       seen = computeSightFromRadius(p.x, p.y, 1, seen);
@@ -70,8 +70,8 @@ export function makeInitialState() {
     },
     time: { day: 3, hour: 13, minute: 30 },
     world: {
-      tiles: { "0,0": HANDCRAFTED["0,0"] },
-      currentTile: { x: 0, y: 0 },
+      tiles: { "1,0": HANDCRAFTED["1,0"] },
+      currentTile: { x: 1, y: 0 },
       seen: makeInitialSeen(),
       codex: {
         characters: {
