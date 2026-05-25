@@ -21,7 +21,7 @@ import { formatTime, formatDate } from "../engine/time.js";
 import { formatCopper } from "../engine/economy.js";
 import { compassDir } from "../engine/api.js";
 import { useZoomPan } from "./useZoomPan.js";
-import { coordKey, poiMeta, poiSections, sectionAutoEnterAllowed, sectionName, titleFromId } from "../engine/location.js";
+import { poiFootprintName, poiMeta, poiPartName, poiPlaceName, titleFromId } from "../engine/location.js";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
 
@@ -319,7 +319,7 @@ function collectHexes(cur) {
   return out;
 }
 
-export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSection, onSeekCombat, loading }) {
+export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCombat, loading }) {
   const [selected, setSelected] = useState(null);
   const [flyPanelDest, setFlyPanelDest] = useState(null); // tile being assigned for a party fly
   const [journalOpen, setJournalOpen] = useState(false);
@@ -410,18 +410,21 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
     if (!footprintGroups.has(parent)) {
       footprintGroups.set(parent, {
         id: parent,
-        name: tile.poi.parentName || titleFromId(parent) || parent,
+        name: poiFootprintName(tile.poi) || titleFromId(parent) || parent,
         tiles: [],
+        parts: [],
         keys: new Set(),
       });
     }
     const group = footprintGroups.get(parent);
     group.tiles.push(h);
+    group.parts.push({ ...h, name: poiPartName(tile.poi) });
     group.keys.add(`${h.x},${h.y}`);
   }
 
   const footprintSegments = [];
   const footprintLabels = [];
+  const footprintPartLabels = [];
   for (const group of footprintGroups.values()) {
     if (group.tiles.length < 2) continue;
     let sx = 0;
@@ -449,6 +452,15 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
       y: (sy / group.tiles.length) - 6,
       name: group.name,
     });
+    for (const part of group.parts) {
+      if (!part.name) continue;
+      footprintPartLabels.push({
+        key: `foot-part-${group.id}-${part.x},${part.y}`,
+        x: part.px,
+        y: part.py + 6,
+        name: part.name,
+      });
+    }
   }
 
   // Landmark labels — named places that read at a glance on the map. Built
@@ -459,6 +471,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
   for (const { x, y, px, py } of hexes) {
     if (!isSeen(state, x, y)) continue;
     const tile = getTile(state, x, y);
+    if (tile.poi?.parent) continue;
     if (!tile.poi || !LABELABLE_TYPES.has(tile.poi.type)) continue;
     labels.push({ key: `lbl-${x},${y}`, x: px, y: py - 22, name: tile.poi.name, fill: "#1A1A1A" });
   }
@@ -476,18 +489,6 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
   const selSeen = selected ? isSeen(state, selected.x, selected.y) : false;
   const isSelf = selected && selected.x === cur.x && selected.y === cur.y;
   const curTile = getTile(state, cur.x, cur.y);
-  const sectionTile = selected ? (selSeen ? selTile : null) : curTile;
-  const sectionCoord = selected ? (selSeen ? selected : null) : cur;
-  const sectionTileKey = sectionCoord ? coordKey(sectionCoord.x, sectionCoord.y) : null;
-  const sectionState = state.world.currentSection;
-  const activeSectionId = sectionTileKey && sectionState && (
-      (typeof sectionState === "string" && sectionTileKey === coordKey(cur.x, cur.y)) ||
-      (typeof sectionState !== "string" && sectionState.tileKey === sectionTileKey)
-    )
-    ? (typeof sectionState === "string" ? sectionState : sectionState.sectionId)
-    : null;
-  const availableSections = poiSections(sectionTile?.poi);
-  const canChangeSection = !!onEnterSection && (!selected || isSelf) && availableSections.length > 0 && !loading;
   const path = (selected && selSeen && !isSelf) ? findPath(state, cur, selected) : null;
   const canTravel = !!path && path.length > 1 && !loading;
   // A single action covers at most one leg; time/risk shown are for that leg.
@@ -522,7 +523,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
   let areaLabel = null;
   let districtLabel = null;
   let accessLabel = null;
-  let sectionsLabel = null;
+  let footprintLabel = null;
+  let partLabel = null;
   if (selected) {
     if (selRumored && !selSeen) {
       bottomLabel = `${selRumored.name} · ${selRumored.kind}`;
@@ -532,14 +534,15 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
       bottomDetail = "Beyond your sight. Step closer to learn what's there.";
     } else {
       const T = TERRAINS[selTile.terrain];
-      let name = selTile.poi?.name || T?.label || "Wilderness";
+      let name = poiPlaceName(selTile.poi) || T?.label || "Wilderness";
       if (selTile.poi?.type === "hidden") name = `? · ${T?.label}`;
       bottomLabel = `${name} (${selected.x},${selected.y})`;
       const meta = poiMeta(selTile, name);
       areaLabel = meta.area;
       districtLabel = meta.district;
       accessLabel = meta.access;
-      sectionsLabel = meta.sections;
+      footprintLabel = meta.footprint;
+      partLabel = meta.part;
       if (selTile.poi?.description) bottomDetail = selTile.poi.description;
       else if (selTile.poi?.type === "hidden") bottomDetail = "Something here, not yet known.";
       else bottomDetail = T?.flavor || "";
@@ -560,7 +563,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
     areaLabel = meta.area;
     districtLabel = meta.district;
     accessLabel = meta.access;
-    sectionsLabel = meta.sections;
+    footprintLabel = meta.footprint;
+    partLabel = meta.part;
   }
 
   return (
@@ -661,6 +665,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
               const isCurrent = x === cur.x && y === cur.y;
               const isSel = selected && selected.x === x && selected.y === y;
               const T = TERRAINS[tile.terrain];
+              const isFootprintMember = !!tile.poi?.parent && tile.poi?.type !== "hidden";
 
               // Color mapping adjustments for premium dark theme:
               // Make light terrains darker & high contrast
@@ -673,16 +678,17 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
               else if (tile.terrain === "sand" || tile.terrain === "desert") fill = "rgba(79, 68, 48, 0.6)";
               else if (tile.terrain === "swamp" || tile.terrain === "water") fill = "rgba(22, 42, 54, 0.65)";
               else if (tile.terrain === "indoor") fill = "rgba(36, 42, 42, 0.85)";
+              if (isFootprintMember) fill = "rgba(74, 60, 43, 0.9)";
 
               let textColor = "#f5dcb8";
               let assetKey = null;
               let opacity;
-              let stroke = "rgba(215, 167, 111, 0.08)";
+              let stroke = isFootprintMember ? "rgba(215, 167, 111, 0.10)" : "rgba(215, 167, 111, 0.08)";
               let strokeWidth = 1;
 
               if (seen) {
                 opacity = visited ? 1 : 0.8;
-                assetKey = assetKeyForTile(tile);
+                assetKey = isFootprintMember ? null : assetKeyForTile(tile);
               } else {
                 opacity = 0.22;
               }
@@ -740,10 +746,9 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
                 key={s.key}
                 x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
                 stroke="#d7a76f"
-                strokeWidth={2.25}
-                strokeOpacity={0.42}
+                strokeWidth={3.25}
+                strokeOpacity={0.78}
                 strokeLinecap="round"
-                strokeDasharray="6 5"
                 pointerEvents="none"
               />
             ))}
@@ -805,6 +810,35 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
                   fillOpacity="0.78"
                 >
                   {l.name.toUpperCase()}
+                </text>
+              </g>
+            ))}
+            {footprintPartLabels.map((l) => (
+              <g key={l.key} pointerEvents="none">
+                <text
+                  x={l.x} y={l.y}
+                  textAnchor="middle"
+                  fontFamily="'Inter', sans-serif"
+                  fontSize="7"
+                  fontWeight="800"
+                  fill="none"
+                  stroke="#111716"
+                  strokeWidth="3"
+                  strokeOpacity="0.9"
+                  paintOrder="stroke"
+                >
+                  {l.name}
+                </text>
+                <text
+                  x={l.x} y={l.y}
+                  textAnchor="middle"
+                  fontFamily="'Inter', sans-serif"
+                  fontSize="7"
+                  fontWeight="800"
+                  fill="#f5dcb8"
+                  fillOpacity="0.82"
+                >
+                  {l.name}
                 </text>
               </g>
             ))}
@@ -1002,61 +1036,19 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
           {accessLabel && (
             <div style={{ fontSize: "10px", color: "rgba(215, 167, 111, 0.64)", letterSpacing: "0.06em", fontStyle: "italic" }}>Access: {accessLabel}</div>
           )}
+          {footprintLabel && (
+            <div style={{ fontSize: "10px", color: "rgba(215, 167, 111, 0.74)", letterSpacing: "0.06em", fontStyle: "italic" }}>POI: {footprintLabel}</div>
+          )}
+          {partLabel && (
+            <div style={{ fontSize: "10px", color: "rgba(237, 228, 208, 0.66)", letterSpacing: "0.06em", fontStyle: "italic" }}>Hex: {partLabel}</div>
+          )}
           {biomeLabel && (
             <div style={{ fontSize: "10px", color: "rgba(215, 167, 111, 0.7)", letterSpacing: "0.08em", fontStyle: "italic" }}>Region: {biomeLabel}</div>
-          )}
-          {sectionsLabel && (
-            <div style={{ flexBasis: "100%", fontSize: "10px", color: "rgba(237, 228, 208, 0.62)", lineHeight: 1.35 }}>Sections: {sectionsLabel}</div>
           )}
           {encounterHint && (
             <div style={{ fontSize: "10px", color: "rgba(239, 68, 68, 0.85)", letterSpacing: "0.06em", fontWeight: 800 }}>{encounterHint}</div>
           )}
         </div>
-        {availableSections.length > 0 && (
-          <div style={{ marginTop: "8px" }}>
-            <div style={{ fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(215, 167, 111, 0.62)", fontWeight: 800, marginBottom: "6px" }}>
-              Sections
-            </div>
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-              {activeSectionId && canChangeSection && (
-                <button
-                  onClick={() => onEnterSection(null)}
-                  style={{
-                    height: "28px", padding: "0 10px", borderRadius: "14px",
-                    border: "1px solid rgba(215, 167, 111, 0.28)",
-                    background: "rgba(215, 167, 111, 0.08)",
-                    color: "#e6b98c", fontFamily: "inherit", fontSize: "11px",
-                    fontWeight: 800, cursor: "pointer",
-                  }}
-                >
-                  Main vantage
-                </button>
-              )}
-              {availableSections.map((section) => {
-                const allowed = canChangeSection && sectionAutoEnterAllowed(section);
-                const active = activeSectionId === section.id;
-                return (
-                  <button
-                    key={section.id}
-                    onClick={() => allowed && onEnterSection(section.id)}
-                    disabled={!allowed || active}
-                    title={!canChangeSection ? "Move to this tile first" : allowed ? section.description || sectionName(section) : "Requires action in the fiction"}
-                    style={{
-                      height: "28px", padding: "0 10px", borderRadius: "14px",
-                      border: active ? "1px solid rgba(215, 167, 111, 0.72)" : "1px solid rgba(215, 167, 111, 0.24)",
-                      background: active ? "rgba(215, 167, 111, 0.24)" : allowed ? "rgba(20, 29, 29, 0.78)" : "rgba(90, 73, 54, 0.16)",
-                      color: active ? "#f5dcb8" : allowed ? "#e6b98c" : "rgba(215, 167, 111, 0.38)",
-                      fontFamily: "inherit", fontSize: "11px", fontWeight: 800,
-                      cursor: allowed && !active ? "pointer" : "not-allowed",
-                    }}
-                  >
-                    {sectionName(section)}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
         <div style={{ marginBottom: "10px" }} />
         {(canFly || teleOption) && (
           <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
@@ -1138,7 +1130,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSe
       {flyPanelDest && (
         <FlyPanel
           plan={flyPlan}
-          destName={getTile(state, flyPanelDest.x, flyPanelDest.y).poi?.name || `${TERRAINS[getTile(state, flyPanelDest.x, flyPanelDest.y).terrain]?.label} (${flyPanelDest.x},${flyPanelDest.y})`}
+          destName={poiPlaceName(getTile(state, flyPanelDest.x, flyPanelDest.y).poi) || `${TERRAINS[getTile(state, flyPanelDest.x, flyPanelDest.y).terrain]?.label} (${flyPanelDest.x},${flyPanelDest.y})`}
           onCancel={() => setFlyPanelDest(null)}
           onConfirm={(assign) => { const d = flyPanelDest; setFlyPanelDest(null); onFly(d, assign); }}
         />
