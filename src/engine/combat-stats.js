@@ -429,6 +429,7 @@ export function deriveCombatStats(character, codex) {
     damageCap: statMods.damageCap || 0,
     controlResist: clamp(statMods.controlResist || 0, 0, 0.6),
     will: mind + presence, // willpower — feeds the Charm/Dominate save (engine/combat.js)
+    saveDC: statMods.saveDC || 0, // Mind threshold: raises how hard YOUR control magic is to resist
     // Healing amplification (all heals ×(1+healPower)) and damage deferral (a share
     // of each blow bleeds out over a few turns instead of landing at once).
     healPower: clamp(statMods.healPower || 0, 0, 1.0),

@@ -219,6 +219,7 @@ function combatantFromAttributes(spec, codex, { tierId = "common" } = {}) {
     accuracy: reflex + wit + (weapon.acc || 0) + (sm.accuracy || 0), critChance: Math.min(100, Math.round(wit * 1.5 + reflex) + (fam.crit || 0) + (sm.critChance || 0)), critMult: Math.min(9.99, 1.5 + (sm.critMult || 0)),
     speed: reflex + Math.floor(wit / 2),
     will: mind + presence, // willpower — feeds the Charm/Dominate save (engine/combat.js)
+    saveDC: sm.saveDC || 0, // Mind threshold: raises how hard this caster's control magic is to resist
     attrs: a, // source attributes — lets a Dominated foe be filed as a lasting thrall
     naturalWeaponSpec: spec.naturalWeapon || null, // kept so a thrall beast re-derives its bite
     triggers: tr,

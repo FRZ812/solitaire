@@ -93,7 +93,7 @@ function addStatus(c, effect) {
 // (subject's will vs the caster's). An iron will (controlResist) raises the odds; it
 // never grants immunity. Charm is gentler (easier to resist) than Dominate.
 function willSaveChance(caster, target, type) {
-  const potency = caster?.will || 0;
+  const potency = (caster?.will || 0) + (caster?.saveDC || 0); // Mind threshold sharpens the caster's save DC
   const base = type === "dominated" ? 0.05 : 0.10;
   return Math.min(0.95, base + Math.max(0, (target.will || 0) - potency) * 0.05 + (target.controlResist || 0) + (target.controlPressure || 0) * 0.15);
 }

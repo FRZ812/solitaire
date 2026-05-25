@@ -50,7 +50,7 @@ function smoothStats(key, v) {
     case "vigor":    s.drPct = +(q * 0.0001).toFixed(4); break;          // 30 → +9% DR (vigor's HP lives in vitalityMax now)
     case "body":     s.damageMult = +(q * 0.00041).toFixed(4); s.armor = Math.round(q * 0.0271); s.penetration = Math.round(q * 0.0068); break; // 30 → +36% dmg, +24 armor, +6 pen
     case "reflex":   s.dodge = Math.round(q * 0.0339); s.accuracy = Math.round(q * 0.0136); break;            // 30 → +30 dodge, +12 acc
-    case "mind":     s.ward = Math.round(q * 0.0238); s.damageMult = +(q * 0.0002).toFixed(4); break;         // 30 → +21 ward, +18% (caster)
+    case "mind":     s.saveDC = Math.round(q * 0.0079); s.damageMult = +(q * 0.0002).toFixed(4); break;       // 30 → +7 save DC (control harder to resist), +18% (caster)
     case "wit":      s.critChance = Math.round(q * 0.0271); s.healPower = +(q * 0.00045).toFixed(4); break;   // insight: 30 → +24 crit, +40% healing potency
     case "presence": s.damageMult = +(q * 0.000226).toFixed(4); s.drPct = +(q * 0.00007).toFixed(4); break;  // willpower/intensity: 30 → +20% damage, +6% DR
   }
@@ -142,6 +142,7 @@ const EFFECT_FMT = {
   dodge:            (v) => `+${v}% dodge`,
   accuracy:         (v) => `+${v} accuracy`,
   ward:             (v) => `+${v} ward`,
+  saveDC:           (v) => `+${v} spell save DC — your charm, domination & control magic is harder to resist`,
   critChance:       (v) => `+${v}% crit chance`,
   critMult:         (v) => `+${Math.round(v * 100)}% crit damage`,
   healPower:        (v) => `+${Math.round(v * 100)}% healing potency`,
@@ -167,7 +168,7 @@ const ATTR_PURPOSE = {
   body:     "Raw might. Drives melee damage and the heavy weapons you can wield, and adds Armor (about a third of your Body) against physical hits.",
   reflex:   "Speed and finesse. Raises Dodge and Accuracy, helps you strike first, and powers light, finesse weapons — daggers, bows.",
   vigor:    "Toughness. Sets your maximum Vitality and grants flat damage reduction — how much punishment you can take before you fall.",
-  mind:     "Intellect. Powers spell damage, sets how deep your Resolve runs, adds Ward (about a third of your Mind) against magic, and quickens how fast you learn.",
+  mind:     "Intellect. Powers spell damage, sets how deep your Resolve runs, adds Ward (about a third of your Mind) against magic, sharpens your spell save DC so your charm, domination and control magic is harder to resist, and quickens how fast you learn.",
   wit:      "Awareness. Raises your critical-hit chance and your perception — spotting ambushes and openings — and sharpens healing and quick thinking.",
   presence: "Force of will. Steadies morale and sways how others and foes respond to you; at high Presence your Resolve recovers even in the thick of a fight.",
 };
