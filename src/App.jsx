@@ -665,6 +665,21 @@ export function Solitaire() {
       inventory_changes: Object.keys(inv).length ? inv : undefined,
       discoveries: wornIds.length ? { characters: [{ id: "wanderer", worn: wornIds }] } : undefined,
     };
+    // A pick-and-play TEMPLATE ships its own polished opening scene — seed it VERBATIM
+    // (no narrator call), identical every run, and prime apiHistory so the first player
+    // action continues coherently. (The limbo/custom path below still generates live.)
+    if (setup.opening) {
+      const seeded = applyBeat({ ...state, beats: [] }, {
+        ...beat,
+        narration: setup.opening,
+        _userMsg: `[CHARACTER CREATION] ${setup.name} has entered the world; the opening scene is already set (shown to the player). Do NOT emit character_setup, do NOT re-narrate the arrival — continue from here as a normal beat on the player's next action.`,
+        _raw: JSON.stringify({ narration: setup.opening }),
+      });
+      setManualCreation(false);
+      setCreationEntered(false);
+      setState(seeded);
+      return;
+    }
     let built = applyBeat(state, beat); // created=true; identity, kit, and gear applied
     // Drop the limbo opening narration — a locally-built character skips the
     // interview entirely, so the log should begin with their arrival, not the

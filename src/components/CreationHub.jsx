@@ -11,6 +11,18 @@ import { InfoModal } from "./InfoTip.jsx";
 import { AttributeDetail } from "./AttributeDetail.jsx";
 
 const isHumanRace = (r) => r === "human";
+
+// Power rungs for the pick-and-play roster: [tier, heading, blurb, accent hue].
+// Standard is the intended start; everything above begins you already powerful.
+const TEMPLATE_TIERS = [
+  ["standard",  "Standard",  "an ordinary life — the Mire bites",          "#c9a26a"],
+  ["mid",       "Veteran",   "road-tested and capable",                    "#7fb88a"],
+  ["epic",      "Champion",  "a serious power — a softer, faster game",    "#b072e6"],
+  ["legendary", "Legend",    "renowned across the land",                   "#e0913f"],
+  ["mythical",  "Mythic",    "near-divine — the early world cannot hold you", "#54c7c7"],
+  ["divine",    "Divine",    "a god walks the world — pure power fantasy",  "#f2d27a"],
+];
+
 function kindredLabel(setup) {
   const r = RACES[setup.race];
   if (setup.subrace && r?.subraces?.[setup.subrace]) return r.subraces[setup.subrace].name;
@@ -145,8 +157,8 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
     if (busy) return;
     const have = new Set((tmpl.setup.items || []).map((i) => i.itemId));
     const provisions = STANDARD_PROVISIONS.filter((p) => !have.has(p.itemId)).map((p) => ({ itemId: p.itemId, quantity: p.quantity, worn: false }));
-    // Pass the template's backstory so the opening scene can ground their arrival.
-    onPickTemplate({ ...tmpl.setup, name: finalNameFor(tmpl), backstory: tmpl.story, items: [...(tmpl.setup.items || []), ...provisions] });
+    // Pass the backstory (to ground the scene) and the bespoke opening (seeded verbatim).
+    onPickTemplate({ ...tmpl.setup, name: finalNameFor(tmpl), backstory: tmpl.story, opening: tmpl.opening, items: [...(tmpl.setup.items || []), ...provisions] });
   };
 
   if (selected) {
@@ -190,30 +202,43 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
           />
         </div>
 
-        <div style={{ fontSize: "9px", letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(215,167,111,0.6)", fontWeight: 800, marginBottom: "10px" }}>Ready-made lives <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "rgba(215,167,111,0.45)" }}>· a party needs one of each</span></div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {CHARACTER_TEMPLATES.map((t) => (
-            <button key={t.id} onClick={() => setSelected(t)} disabled={busy} style={{
-              display: "flex", alignItems: "center", gap: "11px", padding: "13px 14px", borderRadius: radius.panelCompact, textAlign: "left", width: "100%",
-              backgroundColor: "rgba(20,29,29,0.55)", border: `1px solid rgba(215,167,111,0.22)`, cursor: busy ? "default" : "pointer", fontFamily: "inherit",
-            }}>
-              <div style={{ width: "36px", height: "36px", borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(215,167,111,0.12)", border: `1px solid rgba(215,167,111,0.3)` }}>
-                <Icon name={t.icon} size={18} color={colors.gold} strokeWidth={1.8} />
+        <div style={{ fontSize: "9px", letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(215,167,111,0.6)", fontWeight: 800, marginBottom: "4px" }}>Ready-made lives <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "rgba(215,167,111,0.45)" }}>· a party needs one of each</span></div>
+        <div style={{ fontSize: "10.5px", color: "rgba(215,167,111,0.55)", fontStyle: "italic", lineHeight: 1.4, marginBottom: "12px" }}>Standard is the intended start. Everything above it begins you already powerful — a different, easier experience by choice.</div>
+        {TEMPLATE_TIERS.map(([tier, label, blurb, hue]) => {
+          const list = CHARACTER_TEMPLATES.filter((t) => (t.tier || "standard") === tier);
+          if (!list.length) return null;
+          return (
+            <div key={tier} style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "9px", paddingBottom: "5px", borderBottom: `1px solid ${hue}33` }}>
+                <span style={{ fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase", color: hue, fontWeight: 800 }}>{label}</span>
+                <span style={{ fontSize: "10px", color: "rgba(215,167,111,0.5)", fontStyle: "italic" }}>{blurb}</span>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: "7px", flexWrap: "wrap" }}>
-                  <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.15 }}>{finalNameFor(t)}</span>
-                  <span style={{ ...tagPill, color: colors.ink, backgroundColor: colors.gold }}>{t.role}</span>
-                </div>
-                <div style={{ fontSize: "10.5px", color: "rgba(215,167,111,0.7)", marginTop: "2px" }}>{metaLine(t.setup)}</div>
-                <div style={{ display: "flex", gap: "4px", marginTop: "6px", flexWrap: "wrap" }}>
-                  {t.highlights.map((h) => <span key={h} style={tagPill}>{h}</span>)}
-                </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {list.map((t) => (
+                  <button key={t.id} onClick={() => setSelected(t)} disabled={busy} style={{
+                    display: "flex", alignItems: "center", gap: "11px", padding: "13px 14px", borderRadius: radius.panelCompact, textAlign: "left", width: "100%",
+                    backgroundColor: "rgba(20,29,29,0.55)", border: `1px solid ${hue}33`, cursor: busy ? "default" : "pointer", fontFamily: "inherit",
+                  }}>
+                    <div style={{ width: "36px", height: "36px", borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: `${hue}1f`, border: `1px solid ${hue}4d` }}>
+                      <Icon name={t.icon} size={18} color={hue} strokeWidth={1.8} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: "7px", flexWrap: "wrap" }}>
+                        <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.15 }}>{finalNameFor(t)}</span>
+                        <span style={{ ...tagPill, color: colors.ink, backgroundColor: colors.gold }}>{t.role}</span>
+                      </div>
+                      <div style={{ fontSize: "10.5px", color: "rgba(215,167,111,0.7)", marginTop: "2px" }}>{metaLine(t.setup)}</div>
+                      <div style={{ display: "flex", gap: "4px", marginTop: "6px", flexWrap: "wrap" }}>
+                        {t.highlights.map((h) => <span key={h} style={tagPill}>{h}</span>)}
+                      </div>
+                    </div>
+                    <span style={{ flexShrink: 0, fontSize: "20px", color: "rgba(215,167,111,0.55)", lineHeight: 1 }}>›</span>
+                  </button>
+                ))}
               </div>
-              <span style={{ flexShrink: 0, fontSize: "20px", color: "rgba(215,167,111,0.55)", lineHeight: 1 }}>›</span>
-            </button>
-          ))}
-        </div>
+            </div>
+          );
+        })}
 
         <div style={{ marginTop: "20px", padding: "15px", borderRadius: radius.panelCompact, backgroundColor: "rgba(176,114,230,0.08)", border: `1px solid rgba(176,114,230,0.32)` }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
