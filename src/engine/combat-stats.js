@@ -437,6 +437,7 @@ export function deriveCombatStats(character, codex) {
     // Stonewall caps any single hit to a share of max health (0 = no cap); the
     // strongest (lowest) wins, set in aggregateCombatPassives. Unbowed resists control.
     damageCap: statMods.damageCap || 0,
+    execute: clamp(statMods.execute || 0, 0, 0.5), // Body 30: finish foes below this share of max HP
     controlResist: clamp(statMods.controlResist || 0, 0, 0.6),
     will: mind + presence, // willpower — feeds the Charm/Dominate save (engine/combat.js)
     saveDC: statMods.saveDC || 0, // Mind threshold: raises how hard YOUR control magic is to resist

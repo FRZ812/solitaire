@@ -275,7 +275,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     resolveMax: character.resolveMax ?? 0,
     dr: cs.dr || 0, fortify: cs.fortify || 0,
     phaseChance: cs.phaseChance || 0, dodgeIgnore: cs.dodgeIgnore || 0,
-    damageCap: cs.damageCap || 0, controlResist: cs.controlResist || 0,
+    damageCap: cs.damageCap || 0, execute: cs.execute || 0, controlResist: cs.controlResist || 0,
     will: cs.will || 0, // willpower — Charm/Dominate save (mind+presence)
     healPower: cs.healPower || 0, dmgDefer: cs.dmgDefer || 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
@@ -778,6 +778,13 @@ function dealHit(cs, attacker, target, profile, def, tier) {
   if (res.dodged) {
     fireProcs(cs, target, "onDodge", {});
     return { dealt: 0, crit: false };
+  }
+
+  // Execute (Body 30): a landed blow finishes a foe already at death's door.
+  if (dealt > 0 && (attacker.execute || 0) > 0 && target.health > 0
+      && target.health <= Math.round((target.maxHealth || 0) * attacker.execute)) {
+    target.health = 0;
+    cs.log.push(logEntry(`${attacker.name} executes ${target.name}.`, attacker.side === "player" ? "crit" : "enemy"));
   }
 
   if (dealt > 0) {

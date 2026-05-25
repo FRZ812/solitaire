@@ -13,8 +13,15 @@ export const HP_PER_VIGOR = 5;
 
 export function maxVitalityFor(character) {
   const vigor = effectiveAttributes(character).vigor || 0;
-  const curve = Math.round(Math.max(0, vigor * vigor - 16) * 0.95); // ~0 at vigor ≤4, ~+840 at 30
-  return Math.round(BASE_VITALITY + vigor * HP_PER_VIGOR + curve);
+  return Math.round(BASE_VITALITY + vigorHealthBonus(vigor));
+}
+
+// The max-HP a given Vigor score contributes (beyond the innate base) — surfaced
+// in the attribute panel as Vigor's always-on, since the HP itself lives in
+// vitalityMax rather than the combat statMod table.
+export function vigorHealthBonus(v) {
+  const vigor = v || 0;
+  return Math.round(vigor * HP_PER_VIGOR + Math.max(0, vigor * vigor - 16) * 0.95);
 }
 
 // Recompute and store `vitalityMax` from current (effective) vigor — call wherever
