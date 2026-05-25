@@ -352,7 +352,7 @@ function armorBandMods(cls) {
 export function deriveCombatStats(character, codex) {
   const a = effectiveAttributes(character);
   const body = a.body || 0, reflex = a.reflex || 0, vigor = a.vigor || 0;
-  const mind = a.mind || 0, wit = a.wit || 0;
+  const mind = a.mind || 0, wit = a.wit || 0, presence = a.presence || 0;
   const gear = equippedItems(character, codex);
 
   // Proficiency domain bonuses (the gradual, do-it-get-better effects).
@@ -428,6 +428,8 @@ export function deriveCombatStats(character, codex) {
     // strongest (lowest) wins, set in aggregateCombatPassives. Unbowed resists control.
     damageCap: statMods.damageCap || 0,
     controlResist: clamp(statMods.controlResist || 0, 0, 0.6),
+    will: mind + presence, // willpower — feeds the Charm/Dominate save (engine/combat.js)
+    saveDC: statMods.saveDC || 0, // Mind threshold: raises how hard YOUR control magic is to resist
     // Healing amplification (all heals ×(1+healPower)) and damage deferral (a share
     // of each blow bleeds out over a few turns instead of landing at once).
     healPower: clamp(statMods.healPower || 0, 0, 1.0),

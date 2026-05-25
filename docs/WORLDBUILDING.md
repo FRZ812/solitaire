@@ -544,10 +544,25 @@ griffon (epic), wyvern (legendary), drake (mythical), dragon (divine).
 - **Combat.** A mount fights as an ally (`bestiary.allyFromCompanion` consumes its
   `naturalWeapon`/`naturalArmor`/`innatePassives`/`health`), and a ridden rider
   gets the mount's `mountedBonus` charge. A slain mount throws its riders.
-- **Acquisition.** Mundane mounts are **bought** at a stable
-  (`town.js BUILDINGS.stable`, `StableView`, `economy.buyMount`); exotic/flying
-  mounts are **earned** and granted by the narrator via `beat.grant_mount`
-  (`ground-drake` — a wingless lesser drake — is now earned, not sold).
+- **Acquisition.** Mundane mounts are **haggled for** at a stable — a narrated
+  dealing like recruiting a companion: the player approaches (`StableView` "Haggle"
+  → `App.handleApproachMount` → `[APPROACH MOUNT]`), the stabler shows the beast and
+  names a price, and the sale closes only when the narrator sets
+  `buy_mount:{id, priceCp}` (`beat.js` clamps the agreed price to a sane band of the
+  list and takes the coin). Exotic/flying mounts are **earned** via `beat.grant_mount`
+  (`ground-drake` is earned, not sold). Either way the beast joins as a full
+  `kind:"mount"` codex character (race + breed + combat kit).
+- **Naming.** A mount arrives **already named** — no forced prompt. The name comes
+  from the fiction: the **stabler** names a bought beast (`buy_mount.name`), and the
+  narrator/player names a **tamed** one (`grant_mount.name` — a tamed beast has no
+  trader to name it). When the narrator gives no name, the engine falls back to
+  `generateMountName(race)` (racial name pools in `data/mounts.js`). The player can
+  **rename** anytime from the Codex (per-mount Rename button → `handleRenameMount`).
+- **Ride capacity is by weight, realistically.** A person is ~14 stone, so a
+  `rideCapacity` is sized for **1–2 riders + gear**, not a crowd — a Swamp Nag (36)
+  bears two adults but not three; only large beasts (stag, lizard, drake, dragon)
+  carry more. `bodyWeight` is the creature's own mass (a horse ~70, a dragon ~1500)
+  for nesting (`engine/riding.js`).
 - **Region-gated stable stock.** A stable sells **region-appropriate** mounts: the
   selection is resolved per tile from `STABLE_STOCK_BY_BIOME` / `stableStockFor(biomeId)`
   (`data/mounts.js`, keyed by `getBiome(x,y).id`) — or a handcrafted `poi.mounts`
@@ -594,6 +609,28 @@ griffon (epic), wyvern (legendary), drake (mythical), dragon (divine).
 Verify with `node scripts/mount-weight-sim.mjs` (weight math, nesting + ancestor
 capacity, pack/overload edge cases, transient-buff expiry, speed-buff drain-safety,
 mounted combat, flying gate) plus the build below.
+
+## Character positions & scrying
+
+Every codex character carries a **hidden, mechanically-tracked location** —
+`at:{x,y,day}` plus a `home` — owned by `engine/positions.js`. It is **never shown
+in the normal UI**; the player only learns a whereabouts by **scrying**.
+
+- **Lazy drift.** `characterPosition(state, id)` resolves the player and anyone in
+  the party to the player's current tile (exact); everyone else **drifts** — a slow,
+  homeward-biased random walk — but it's computed *on demand* from `at` + days
+  elapsed (seeded, deterministic), so tracking "everyone" costs nothing per beat.
+- **Stamping.** A parted companion / loosed mount is stamped at the hex you left
+  them (`beat.js` `part_ways`), so they linger and drift from there. The narrator
+  places/moves NPCs by setting `discoveries.characters:[{id, at:{x,y}}]`
+  (`mergeDiscoveries` merges it). A few anchors are seeded in `initial-state.js`
+  (e.g. the Vale-King at Asalan); unplaced characters read as "whereabouts unknown"
+  until staged.
+- **Scrying** is the one reveal (`positions.canScry` — knows Farsight, carries a
+  scrying focus, or stands at a scrying basin/observatory). `App.handleScry`
+  (a Scry button on each character in the Codex) computes `scryResult`, marks the
+  hex seen, and feeds the narrator a `[SCRY]` directive with the hex + nearest
+  place; doctrine forbids the narrator from revealing a location any other way.
 
 ## Quick smoke test
 

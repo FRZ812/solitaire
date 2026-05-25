@@ -8,7 +8,6 @@
 import { getTile } from "./world.js";
 import { stampFreshUntil } from "./spoilage.js";
 import { itemWeight, loadOf } from "./weight.js";
-import { MOUNTS, mountCodexEntry } from "../data/mounts.js";
 
 export const CP_PER_SP = 10;
 export const CP_PER_GP = 100;
@@ -113,30 +112,11 @@ export function buyGood(state, { tileKey, bucket, itemDef, priceCp, qty = 1 }) {
   };
 }
 
-// Buy a mundane mount from a stable: pay the price, file the full mount as a
-// kind:"mount" codex character, and add it to the party (it travels, eats, and
-// fights like a companion). Exotic mounts aren't sold — they're earned in play
-// (beat.grant_mount). Returns { state, ok, reason }.
-export function buyMount(state, { mountId, priceCp }) {
-  const tmpl = MOUNTS[mountId];
-  if (!tmpl) return { state, ok: false, reason: "No such mount." };
-  if (tmpl.acquisition !== "stable") return { state, ok: false, reason: "Not for sale — that one must be earned." };
-  if ((state.party || []).includes(mountId)) return { state, ok: false, reason: "You already have one." };
-  const inv = state.character.inventory;
-  const price = priceCp != null ? priceCp : (tmpl.priceCp || 0);
-  if (!canAfford(inv.coins, price)) return { state, ok: false, reason: "Not enough coin." };
-  const coins = copperToCoins(coinsToCopper(inv.coins) - price);
-  const entry = mountCodexEntry(tmpl);
-  return {
-    ok: true,
-    state: {
-      ...state,
-      party: [...(state.party || []), mountId],
-      character: { ...state.character, inventory: { ...inv, coins } },
-      world: { ...state.world, codex: { ...state.world.codex, characters: { ...state.world.codex.characters, [mountId]: entry } } },
-    },
-  };
-}
+// Buying a mundane mount is a narrated DEALING, not a one-shot function: the player
+// approaches (App.handleApproachMount → [APPROACH MOUNT]) and the stabler haggles;
+// the sale is completed by the narrator's buy_mount directive (engine/beat.js), which
+// takes the agreed coin and files the named mount. Exotic mounts are earned
+// (beat.grant_mount). So there is no buyMount() here.
 
 // Sell `qty` of a carried item for `priceCp` each. Returns { state, ok, reason }.
 export function sellGood(state, { itemId, priceCp, qty = 1 }) {

@@ -6,7 +6,7 @@
 //
 // Pure Node — no React in the import chain.
 
-import { initCombat, playerAct, endTurn, abilityUsable, rollLoot, canStandDown, playerStandDown } from "../src/engine/combat.js";
+import { initCombat, playerAct, endTurn, abilityUsable, rollLoot, canStandDown, playerStandDown, applyCombatResult } from "../src/engine/combat.js";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 import { generateEnemy, generateEnemyGroup, allyFromCompanion } from "../src/data/bestiary.js";
@@ -36,8 +36,10 @@ function makeCodex(weapon, armor) {
     },
   };
 }
-const SWORD = { name: "Shortsword", dmg: { min: 3, max: 6, type: "physical", pen: 0 } };
-const codex = makeCodex(SWORD, 2);
+// Everyone fights with REAL common gear now (mobs do too), so the protagonist's
+// loadout is a real-grade blade + light armour — the fair baseline to calibrate against.
+const SWORD = { name: "Iron Shortsword", dmg: { min: 5, max: 8, type: "physical", pen: 0 } };
+const codex = makeCodex(SWORD, 3);
 
 // A realistic early-mid wanderer: modest attributes, a plain blade, a couple of
 // learned techniques (no Cleave AoE, so groups can't be wiped in one swing).
@@ -49,6 +51,19 @@ function midPlayer() {
       { id: "power-strike", tier: "common" }, { id: "rend", tier: "common" },
       { id: "second-wind", tier: "common" },
     ],
+    proficiencies: {},
+  });
+}
+
+// CALIBRATION ANCHOR: an AVERAGE person ≈ Senna Rell (companions.js). The world is
+// fantastical but punishing — an average person should be ~40% to win a 1-v-1 vs a
+// lone bandit (bandits are slightly stronger), and ~0% against two. Everyone has to
+// prepare; ganging up is expected.
+function avgPerson() {
+  return makeFighter({
+    name: "Average (Senna)",
+    attributes: { body: 1, reflex: 4, vigor: 2, mind: 2, wit: 3, presence: 1 },
+    abilities: [],
     proficiencies: {},
   });
 }
@@ -73,9 +88,9 @@ function choosePlayerAction(cs) {
 
 const TERMINAL = new Set(["victory", "defeat", "resolved", "playerFled"]);
 
-function runFight(makeEnemies, allyKeys, tierId) {
+function runFight(makeEnemies, allyKeys, tierId, protag = midPlayer) {
   const allies = allyKeys.length ? buildAllies(allyKeys, tierId) : [];
-  let cs = initCombat(midPlayer(), codex, makeEnemies(), { allies });
+  let cs = initCombat(protag(), codex, makeEnemies(), { allies });
   let guard = 0;
   while (!TERMINAL.has(cs.phase) && guard++ < 300) {
     if (cs.phase !== "player") break;
@@ -91,11 +106,11 @@ function runFight(makeEnemies, allyKeys, tierId) {
   return cs;
 }
 
-function scenario(label, makeEnemies, allyKeys = [], tierId = "common") {
+function scenario(label, makeEnemies, allyKeys = [], tierId = "common", protag = midPlayer) {
   let wins = 0, losses = 0, resolved = 0, fled = 0;
   let turns = 0, hpSum = 0, yields = 0, foeCount = 0, allyDeaths = 0, allyCount = 0;
   for (let i = 0; i < RUNS; i++) {
-    const cs = runFight(makeEnemies, allyKeys, tierId);
+    const cs = runFight(makeEnemies, allyKeys, tierId, protag);
     if (cs.phase === "victory") wins++;
     else if (cs.phase === "resolved") { resolved++; wins++; } // resolved = you stood, foes broke
     else if (cs.phase === "defeat") losses++;
@@ -120,7 +135,12 @@ function scenario(label, makeEnemies, allyKeys = [], tierId = "common") {
 }
 
 console.log(`\n=== Combat simulation — ${RUNS} runs/scenario ===\n`);
-console.log("SOLO");
+console.log("CALIBRATION — average person (Senna); target: 1 bandit ~40%, 2 bandits ~0%");
+scenario("avg vs 1 bandit", () => generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), [], "common", avgPerson);
+scenario("avg vs 2 bandits", () => generateEnemyGroup("bandits", { count: 2, maxTier: "common" }), [], "common", avgPerson);
+scenario("avg vs 1 goblin", () => generateEnemyGroup("goblins", { count: 1, maxTier: "common" }), [], "common", avgPerson);
+console.log("");
+console.log("SOLO (above-average wanderer)");
 scenario("solo vs 2 bandits", () => generateEnemyGroup("bandits", { count: 2, maxTier: "common" }));
 scenario("solo vs 3 goblins", () => generateEnemyGroup("goblins", { count: 3, maxTier: "common" }));
 scenario("solo vs 4 bandits", () => generateEnemyGroup("bandits", { count: 4, maxTier: "common" }));
@@ -132,6 +152,143 @@ scenario("party vs 4 bandits", () => generateEnemyGroup("bandits", { count: 4, m
 scenario("party vs 6 goblins", () => generateEnemyGroup("goblins", { count: 6, maxTier: "common" }), PARTY);
 scenario("party vs 2 ogres", () => generateEnemyGroup("ogre", { count: 2, maxTier: "common" }), PARTY);
 scenario("party vs 5 orc-raiders", () => generateEnemyGroup("orc-raiders", { count: 5, maxTier: "uncommon" }), PARTY, "uncommon");
+console.log("");
+
+// ---------------------------------------------------------------------------
+// MIND CONTROL — Charm (pacify) / Dominate (turn them on their own), will-save.
+// ---------------------------------------------------------------------------
+console.log("MIND CONTROL (Charm / Dominate)");
+// A high-Will enchanter who ONLY controls (no real attacks) should still win by
+// turning foes on each other / pacifying them — impossible without the mechanic.
+function enchanter() {
+  return makeFighter({
+    name: "Enchanter",
+    attributes: { body: 2, reflex: 3, vigor: 3, mind: 16, wit: 4, presence: 12 },
+    abilities: [{ id: "dominate", tier: "mythical" }, { id: "charm", tier: "epic" }, { id: "dispel", tier: "epic" }],
+    proficiencies: {},
+  });
+}
+{
+  const N = 600;
+  let hasWill = true, landed = 0, converted = 0, ffTrials = 0, friendlyFire = 0;
+  let charmTrials = 0, charmedStoodDown = 0;
+  const findByUid = (cs, uid) => [cs.player, ...(cs.allies || []), ...cs.enemies].find((c) => c.uid === uid);
+  for (let i = 0; i < N; i++) {
+    // DOMINATE: a landed cast PERMANENTLY enthralls the foe — it switches to your side.
+    let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 2, maxTier: "common" }), { allies: [] });
+    if (cs.phase === "player") {
+      if (typeof cs.player.will !== "number" || typeof cs.enemies[0].will !== "number") hasWill = false;
+      const tgt = cs.enemies.find((e) => e.health > 0);
+      const idx = cs.enemies.indexOf(tgt);
+      cs = playerAct(cs, "dominate", idx);
+      const after = findByUid(cs, tgt.uid);
+      if (after && (after.statuses || []).some((s) => s.type === "enthralled")) {
+        landed++;
+        if ((cs.allies || []).some((a) => a.uid === tgt.uid)) converted++; // moved to your side
+        cs = endTurn(cs); // the new thrall should now strike its former ally
+        ffTrials++;
+        if (cs.enemies.some((e) => e.health < e.maxHealth)) friendlyFire++;
+      }
+    }
+    // CHARM: a charmed lone bandit stands down — the player takes no damage from it.
+    let c2 = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
+    if (c2.phase === "player") {
+      c2 = playerAct(c2, "charm", 0);
+      if ((c2.enemies[0]?.statuses || []).some((s) => s.type === "charmed")) {
+        const hp = c2.player.health;
+        c2 = endTurn(c2);
+        charmTrials++;
+        if (c2.player.health >= hp) charmedStoodDown++;
+      }
+    }
+  }
+  const p = (n, d) => `${Math.round((n / Math.max(1, d)) * 100)}%`;
+  console.log(`  will on player + foes: ${hasWill ? "OK" : "FAIL"}`);
+  console.log(`  Dominate lands on a weak-willed bandit: ${p(landed, N)} — ${landed / N >= 0.7 ? "OK" : "LOW"}`);
+  console.log(`  Enthralled foe switches to your side: ${p(converted, landed)} — ${converted / Math.max(1, landed) >= 0.99 ? "OK" : "LOW"}`);
+  console.log(`  New thrall then strikes its former ally: ${p(friendlyFire, ffTrials)} — ${friendlyFire / Math.max(1, ffTrials) >= 0.6 ? "OK" : "LOW"}`);
+  console.log(`  Charmed foe stands down (no damage to you): ${p(charmedStoodDown, charmTrials)} — ${charmedStoodDown / Math.max(1, charmTrials) >= 0.9 ? "OK" : "LOW"}`);
+
+  // PERSISTENCE: enthralling the LAST foe ENDS combat AND files the thrall into the party.
+  let ended = 0, entered = 0, T = 300;
+  for (let i = 0; i < T; i++) {
+    let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
+    if (cs.phase !== "player") continue;
+    cs = playerAct(cs, "dominate", 0);
+    if (cs.phase !== "victory" && cs.phase !== "resolved") continue; // last foe converted → combat must end
+    ended++;
+    const st = { character: { vitality: cs.player.health, vitalityMax: cs.player.maxHealth, proficiencies: {}, resolve: 0, resolveMax: 0, conditions: [], inventory: { carried: [], coins: { copper: 0, silver: 0, gold: 0 } } }, world: { codex: { characters: { wanderer: {} }, items: {} } }, party: [], beats: [], apiHistory: [] };
+    const next = applyCombatResult(st, cs, {});
+    const tid = (next.party || [])[0];
+    const ch = tid && next.world.codex.characters[tid];
+    if (ch && (ch.conditions || []).some((c) => c.name === "Enthralled")) entered++;
+  }
+  console.log(`  Enthralling the LAST foe ends combat: ${ended}/${T} fights resolved`);
+  console.log(`  Thrall enters party w/ Enthralled condition: ${p(entered, ended)} — ${entered / Math.max(1, ended) >= 0.95 ? "OK" : "LOW"}`);
+
+  // DISPEL is a contest of the dispeller's will vs the ORIGINAL binder's (stored
+  // dominationWill) — not a save by the thrall. Mark a foe enthralled by a weak vs a
+  // strong binder, then have the (high-will) enchanter dispel it.
+  const freedVs = (binderWill) => {
+    let freed = 0, A = 400;
+    for (let i = 0; i < A; i++) {
+      let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
+      if (cs.phase !== "player") { A--; continue; }
+      const e = cs.enemies[0];
+      e.enthralledBy = "x"; e.dominationWill = binderWill; e.enthralledFrom = "enemy";
+      e.statuses = [...(e.statuses || []), { type: "enthralled", value: 1, duration: 99999 }];
+      cs = playerAct(cs, "dispel", 0);
+      const still = [cs.player, ...(cs.allies || []), ...cs.enemies].find((c) => c.enthralledBy === "x");
+      if (!still) freed++;
+    }
+    return Math.round((freed / Math.max(1, A)) * 100);
+  };
+  const weak = freedVs(2), strong = freedVs(40);
+  console.log(`  Dispel frees a WEAK-binder thrall: ${weak}% — ${weak >= 80 ? "OK" : "LOW"}`);
+  console.log(`  Dispel fails vs a STRONG binder: ${strong}% freed — ${strong <= 20 ? "OK" : "HIGH"}`);
+
+  // DIVINE breaks laws: a divine Dominate ignores controlResist (a god's will is pure).
+  // Same foe (will 10, controlResist 0.60) the enchanter out-wills: mythical is capped
+  // by the 0.60 resist, divine ignores it.
+  const dominateLand = (tier) => {
+    let land = 0, A = 400;
+    for (let i = 0; i < A; i++) {
+      let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
+      if (cs.phase !== "player") { A--; continue; }
+      const e = cs.enemies[0]; e.will = 10; e.controlResist = 0.6;
+      cs.player.abilities = cs.player.abilities.map((ab) => ab.id === "dominate" ? { ...ab, tier } : ab);
+      cs = playerAct(cs, "dominate", 0);
+      const bound = [cs.player, ...(cs.allies || []), ...cs.enemies].find((c) => c.uid === e.uid && (c.statuses || []).some((s) => s.type === "enthralled"));
+      if (bound) land++;
+    }
+    return Math.round((land / Math.max(1, A)) * 100);
+  };
+  const myth = dominateLand("mythical"), div = dominateLand("divine");
+  console.log(`  Mythical Dominate vs 0.6-controlResist foe: ${myth}% (capped by resist)`);
+  console.log(`  DIVINE Dominate ignores resist: ${div}% — ${div >= 95 ? "OK" : "LOW"}`);
+
+  // DIVINE Charm binds PERMANENTLY (artificial devotion): switches the foe to your side
+  // in-combat AND persists into the party afterward as a Charmed devotee (high relationship).
+  let charmBound = 0, charmFiled = 0, C = 300;
+  for (let i = 0; i < C; i++) {
+    let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
+    if (cs.phase !== "player") { C--; continue; }
+    cs.player.abilities = cs.player.abilities.map((ab) => ab.id === "charm" ? { ...ab, tier: "divine" } : ab);
+    cs = playerAct(cs, "charm", 0);
+    if ((cs.allies || []).some((a) => a.bindKind === "charm" && (a.statuses || []).some((s) => s.type === "enthralled"))) charmBound++;
+    if (cs.phase === "victory" || cs.phase === "resolved") {
+      const st = { character: { vitality: cs.player.health, vitalityMax: cs.player.maxHealth, proficiencies: {}, resolve: 0, resolveMax: 0, conditions: [], inventory: { carried: [], coins: { copper: 0, silver: 0, gold: 0 } } }, world: { codex: { characters: { wanderer: {} }, items: {} } }, party: [], beats: [], apiHistory: [] };
+      const next = applyCombatResult(st, cs, {});
+      const tid = (next.party || [])[0];
+      const ch = tid && next.world.codex.characters[tid];
+      if (ch && (ch.conditions || []).some((c) => c.name === "Charmed") && (ch.relationship || 0) > 0) charmFiled++;
+    }
+  }
+  const cb = Math.round((charmBound / Math.max(1, C)) * 100);
+  const cf = Math.round((charmFiled / Math.max(1, C)) * 100);
+  console.log(`  DIVINE Charm binds a devotee to your side: ${cb}% — ${cb >= 95 ? "OK" : "LOW"}`);
+  console.log(`  DIVINE Charm devotee persists in party (Charmed + bond): ${cf}% — ${cf >= 90 ? "OK" : "LOW"}`);
+}
 console.log("");
 
 // ===========================================================================

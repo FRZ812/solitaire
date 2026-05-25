@@ -13,7 +13,7 @@ import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt, editBeat, deleteBeat } from "./engine/timeline.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./engine/attributes.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
-import { buyGood, buyMount, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
+import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
 import { lightTorch, lightLantern, extinguish, applyRest } from "./engine/tools.js";
 import { inTheDark, isNight, isLit, isHidden, isBeacon, sightRadius } from "./engine/light.js";
@@ -22,13 +22,14 @@ import { applyFusionToItem, fusionOptionsForRune } from "./engine/fusion.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
 import { generateGaol, acceptBounty, buyPrisonerRights } from "./engine/gaol.js";
 import { generateSlaveMarket, buyCaptive } from "./engine/slaves.js";
-import { partyStanding, recruitOutlook, dismissCompanion, isRecruited, partyMembers } from "./engine/party.js";
+import { partyStanding, recruitOutlook, isRecruited, partyMembers } from "./engine/party.js";
 import { applyTraining, trainingOffer } from "./engine/training.js";
 import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
 import { tierLabel, tierOrder } from "./data/tiers.js";
 import { rollShopStock, rollStableMounts } from "./engine/town-gen.js";
-import { stableStockFor } from "./data/mounts.js";
+import { stableStockFor, mountTemplate } from "./data/mounts.js";
+import { scryResult } from "./engine/positions.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
@@ -39,7 +40,7 @@ import { knownBuffSpells } from "./data/buff-spells.js";
 import { buffTravelSpeedMult, hastedGroundMinutes, hastedFlightHexes, hastedFlightMinutes } from "./engine/buffs.js";
 import { condNames, hasCondition, normalizeConditions } from "./data/conditions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
-import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, dismountAllFrom, isOverloaded } from "./engine/riding.js";
+import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, isOverloaded } from "./engine/riding.js";
 import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
@@ -66,6 +67,7 @@ import { QuestBoardView } from "./components/QuestBoardView.jsx";
 import { PrisonView } from "./components/PrisonView.jsx";
 import { SlaveMarketView } from "./components/SlaveMarketView.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
+import { NamePrompt } from "./components/NamePrompt.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
@@ -286,6 +288,11 @@ export function Solitaire() {
   const [confirmDialog, setConfirmDialog] = useState(null);
   function askConfirm(opts) {
     return new Promise((resolve) => setConfirmDialog({ ...opts, resolve }));
+  }
+  // Themed single-line text prompt (name a joining mount). Resolves the string or null.
+  const [namePrompt, setNamePrompt] = useState(null);
+  function askName(opts) {
+    return new Promise((resolve) => setNamePrompt({ ...opts, resolve }));
   }
   const [hydrated, setHydrated] = useState(false);
   const logRef = useRef(null);
@@ -658,6 +665,21 @@ export function Solitaire() {
       inventory_changes: Object.keys(inv).length ? inv : undefined,
       discoveries: wornIds.length ? { characters: [{ id: "wanderer", worn: wornIds }] } : undefined,
     };
+    // A pick-and-play TEMPLATE ships its own polished opening scene — seed it VERBATIM
+    // (no narrator call), identical every run, and prime apiHistory so the first player
+    // action continues coherently. (The limbo/custom path below still generates live.)
+    if (setup.opening) {
+      const seeded = applyBeat({ ...state, beats: [] }, {
+        ...beat,
+        narration: setup.opening,
+        _userMsg: `[CHARACTER CREATION] ${setup.name} has entered the world; the opening scene is already set (shown to the player). Do NOT emit character_setup, do NOT re-narrate the arrival — continue from here as a normal beat on the player's next action.`,
+        _raw: JSON.stringify({ narration: setup.opening }),
+      });
+      setManualCreation(false);
+      setCreationEntered(false);
+      setState(seeded);
+      return;
+    }
     let built = applyBeat(state, beat); // created=true; identity, kit, and gear applied
     // Drop the limbo opening narration — a locally-built character skips the
     // interview entirely, so the log should begin with their arrival, not the
@@ -1111,12 +1133,46 @@ export function Solitaire() {
       return { tileKey: key, items };
     });
   }
-  // Buy a mount at the stable — it joins the party as a kind:"mount" character
-  // (engine/economy.buyMount). No restock receipt: a mount isn't a stacking good.
-  function handleBuyMount(mountId, priceCp) {
-    const r = buyMount(state, { mountId, priceCp });
-    if (!r.ok) return;
-    setState(r.state);
+  // Buy a mount = a DEALING, like recruiting a companion. The player approaches; the
+  // stabler shows the beast, names a price, and haggles. The engine completes the
+  // sale only when the narrator closes it with buy_mount:{id, priceCp} (beat.js).
+  async function handleApproachMount(mountId) {
+    if (loading || !shopTile) return;
+    const tmpl = mountTemplate(mountId);
+    if (!tmpl) return;
+    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the stable";
+    const coins = formatCopper(coinsToCopper(state.character.inventory.coins));
+    setShopTile(null);
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You look over ${tmpl.name} at ${place}.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[APPROACH MOUNT] At ${place} the player looks to buy a ${tmpl.tier} ${tmpl.race} — a ${tmpl.name} (id: ${tmpl.id}): "${tmpl.desc}". The stabler's LISTED price is ${formatCopper(tmpl.priceCp || 0)}. The player has ${coins} on hand. Open the dealing in the stabler's voice per the [APPROACH MOUNT] doctrine — bring the beast out and show it, name the price, and haggle. Do NOT finalize on this beat; close it with buy_mount only when a price is agreed and affordable. The beast already has a name of the stabler's giving.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Rename a mount anytime (the codex/Company panel). No forced naming on join —
+  // beasts come named by their kind's custom; this lets the player make it theirs.
+  async function handleRenameMount(id) {
+    const ch = state.world.codex.characters?.[id];
+    if (!ch) return;
+    const chosen = await askName({ title: "Rename", body: `What will you call ${ch.name}?`, defaultValue: ch.name, placeholder: ch.name, confirmLabel: "Rename" });
+    if (!chosen || chosen === ch.name) return;
+    setState((cur) => {
+      const c = cur.world.codex.characters[id];
+      if (!c) return cur;
+      return { ...cur, world: { ...cur.world, codex: { ...cur.world.codex, characters: { ...cur.world.codex.characters, [id]: { ...c, name: chosen } } } } };
+    });
   }
   // Sell one unit. A refund consumes a receipt (full price paid); a plain sale
   // uses the used-goods price the trader view computed.
@@ -1216,14 +1272,66 @@ export function Solitaire() {
   }
 
   // Part ways with a companion (they stay in the codex as a known person).
+  // Parting with a companion / setting a mount loose isn't a silent toggle — it's a
+  // SCENE. Open it with the narrator (PARTING doctrine): the companion answers in
+  // voice, others weigh in, the party balks at ditching a sound beast — and the
+  // player can argue it out. The engine only removes them when the narrator resolves
+  // it with part_ways:{id}. Closes the deck and plays in the main log.
   async function handleDismiss(id) {
+    if (loading) return;
     const c = state.world.codex.characters[id];
     const isMount = c?.kind === "mount";
-    const verb = isMount ? "Set loose" : "Part ways";
-    if (!(await askConfirm({ title: verb, body: isMount ? `Set ${c?.name || "this mount"} loose? It'll wander off — you'd have to win it back.` : `Tell ${c?.name || "this companion"} you're parting ways? They'll go their own road — you can find them again.`, confirmLabel: verb, danger: true }))) return;
-    // Clear any saddle links first so no dangling rider/carrier references remain.
-    const cleared = isMount ? dismountAllFrom(state, id) : dismountRider(state, id).state;
-    setState(dismissCompanion(cleared, id).state);
+    const name = c?.name || (isMount ? "the beast" : "your companion");
+    setDeckOpen(false);
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: isMount ? `You move to set ${name} loose.` : `You tell ${name} you mean to part ways.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[PLAYER ACTION] [PART WAYS] You move to ${isMount ? `set ${name} loose` : `part ways with ${name}`}. Play the scene per the PARTING doctrine — voices in character, the party weighing in${isMount ? " (and likely objecting to abandoning a sound, paid-for beast — sell it instead?)" : ""}. Do NOT remove anyone yet unless it genuinely resolves now; the player may argue. Only set part_ways:{"id":"${id}"} once the parting is truly settled.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Scry for a character — the ONE way to surface a hidden tracked position
+  // (engine/positions.js). Reveals their last-known/drifted hex on the map and has
+  // the narrator describe the vision. Whereabouts that were never recorded read as
+  // an unsettled, clouded vision.
+  async function handleScry(id) {
+    if (loading) return;
+    const res = scryResult(state, id);
+    setCodexOpen(false);
+    setError(null);
+    const who = state.world.codex.characters?.[id]?.name || "them";
+    if (!res) {
+      setState({ ...state, beats: [...state.beats, { id: `scry${Date.now()}`, type: "narration", content: `You search the glass for ${who}, but the vision will not settle — their whereabouts escape you.` }] });
+      return;
+    }
+    setLoading(true);
+    const key = `${res.pos.x},${res.pos.y}`;
+    const baseState = { ...state, world: { ...state.world, seen: { ...state.world.seen, [key]: true } } };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You scry for ${res.name}.` };
+    const stateWithPlayer = { ...baseState, beats: [...baseState.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const near = res.place ? `${Math.round(res.place.dist)} hex(es) from ${res.place.name}` : `open, unmapped country at (${res.pos.x},${res.pos.y})`;
+      const msg = `[PLAYER ACTION] [SCRY] You work a scrying to seek ${res.name}. The vision finds them ${res.pos.exact ? "" : "roughly "}at hex (${res.pos.x},${res.pos.y}) — ${near}. Describe what shows in the glass: where ${res.name} is now, what they are about, who is near — true to what's known of them and that place. This is the ONLY way the player learns a character's whereabouts; reveal no more than the scrying shows. Use minutes_passed = 10.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
   }
 
   // Seat a rider (the player "wanderer", a companion, or a smaller mount) onto a
@@ -1914,7 +2022,7 @@ export function Solitaire() {
         />
       )}
       {codexOpen && (
-        <CodexView state={state} onClose={() => setCodexOpen(false)} />
+        <CodexView state={state} onClose={() => setCodexOpen(false)} onScry={handleScry} onRenameMount={handleRenameMount} />
       )}
       {shopTile && (() => {
         const tile = getTile(state, shopTile.x, shopTile.y);
@@ -1996,7 +2104,7 @@ export function Solitaire() {
               mounts={mounts}
               onClose={closeShop}
               onBuy={handleBuy}
-              onBuyMount={handleBuyMount}
+              onApproachMount={handleApproachMount}
               loading={loading}
             />
           );
@@ -2047,6 +2155,16 @@ export function Solitaire() {
           cancelLabel={confirmDialog.cancelLabel}
           danger={confirmDialog.danger}
           onResolve={(v) => { confirmDialog.resolve(v); setConfirmDialog(null); }}
+        />
+      )}
+      {namePrompt && (
+        <NamePrompt
+          title={namePrompt.title}
+          body={namePrompt.body}
+          defaultValue={namePrompt.defaultValue}
+          placeholder={namePrompt.placeholder}
+          confirmLabel={namePrompt.confirmLabel}
+          onResolve={(v) => { namePrompt.resolve(v); setNamePrompt(null); }}
         />
       )}
     </div>
