@@ -72,6 +72,7 @@ export function makeInitialState() {
     world: {
       tiles: { "0,0": HANDCRAFTED["0,0"] },
       currentTile: { x: 0, y: 0 },
+      currentSection: null,
       seen: makeInitialSeen(),
       codex: {
         characters: {

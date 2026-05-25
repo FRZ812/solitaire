@@ -21,6 +21,7 @@ import { formatTime, formatDate } from "../engine/time.js";
 import { formatCopper } from "../engine/economy.js";
 import { compassDir } from "../engine/api.js";
 import { useZoomPan } from "./useZoomPan.js";
+import { coordKey, poiMeta, poiSections, sectionAutoEnterAllowed, sectionName, titleFromId } from "../engine/location.js";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
 
@@ -318,7 +319,7 @@ function collectHexes(cur) {
   return out;
 }
 
-export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCombat, loading }) {
+export function MapView({ state, onClose, onTravel, onFly, onTeleport, onEnterSection, onSeekCombat, loading }) {
   const [selected, setSelected] = useState(null);
   const [flyPanelDest, setFlyPanelDest] = useState(null); // tile being assigned for a party fly
   const [journalOpen, setJournalOpen] = useState(false);
@@ -397,6 +398,59 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     }
   }
 
+  // Optional compound-POI footprint outlines. Tiles that share `poi.parent`
+  // render as one larger place (market, dock, citadel ward, castle grounds)
+  // while still preserving individual hex/vantage movement.
+  const footprintGroups = new Map();
+  for (const h of hexes) {
+    if (!isSeen(state, h.x, h.y)) continue;
+    const tile = getTile(state, h.x, h.y);
+    const parent = tile.poi?.parent;
+    if (!parent || tile.poi?.type === "hidden") continue;
+    if (!footprintGroups.has(parent)) {
+      footprintGroups.set(parent, {
+        id: parent,
+        name: tile.poi.parentName || titleFromId(parent) || parent,
+        tiles: [],
+        keys: new Set(),
+      });
+    }
+    const group = footprintGroups.get(parent);
+    group.tiles.push(h);
+    group.keys.add(`${h.x},${h.y}`);
+  }
+
+  const footprintSegments = [];
+  const footprintLabels = [];
+  for (const group of footprintGroups.values()) {
+    if (group.tiles.length < 2) continue;
+    let sx = 0;
+    let sy = 0;
+    for (const h of group.tiles) {
+      sx += h.px;
+      sy += h.py;
+      for (let dir = 0; dir < HEX_DIRECTIONS.length; dir++) {
+        const d = HEX_DIRECTIONS[dir];
+        const nx = h.x + d.x;
+        const ny = h.y + d.y;
+        if (group.keys.has(`${nx},${ny}`)) continue;
+        const [ca, cb] = EDGE_CORNERS[dir];
+        const a = hexCorner(h.px, h.py, ca);
+        const b = hexCorner(h.px, h.py, cb);
+        footprintSegments.push({
+          key: `foot-${group.id}-${h.x},${h.y}-${dir}`,
+          x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+        });
+      }
+    }
+    footprintLabels.push({
+      key: `foot-label-${group.id}`,
+      x: sx / group.tiles.length,
+      y: (sy / group.tiles.length) - 6,
+      name: group.name,
+    });
+  }
+
   // Landmark labels — named places that read at a glance on the map. Built
   // from getTile so handcrafted city/village/town centres surface here, and
   // rumored/fabled coords fall through getTile to the same poi types.
@@ -422,6 +476,18 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
   const selSeen = selected ? isSeen(state, selected.x, selected.y) : false;
   const isSelf = selected && selected.x === cur.x && selected.y === cur.y;
   const curTile = getTile(state, cur.x, cur.y);
+  const sectionTile = selected ? (selSeen ? selTile : null) : curTile;
+  const sectionCoord = selected ? (selSeen ? selected : null) : cur;
+  const sectionTileKey = sectionCoord ? coordKey(sectionCoord.x, sectionCoord.y) : null;
+  const sectionState = state.world.currentSection;
+  const activeSectionId = sectionTileKey && sectionState && (
+      (typeof sectionState === "string" && sectionTileKey === coordKey(cur.x, cur.y)) ||
+      (typeof sectionState !== "string" && sectionState.tileKey === sectionTileKey)
+    )
+    ? (typeof sectionState === "string" ? sectionState : sectionState.sectionId)
+    : null;
+  const availableSections = poiSections(sectionTile?.poi);
+  const canChangeSection = !!onEnterSection && (!selected || isSelf) && availableSections.length > 0 && !loading;
   const path = (selected && selSeen && !isSelf) ? findPath(state, cur, selected) : null;
   const canTravel = !!path && path.length > 1 && !loading;
   // A single action covers at most one leg; time/risk shown are for that leg.
@@ -453,6 +519,10 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
   let bottomDetail = currentLocationName(state) + " · You are here.";
   let biomeLabel = null;
   let encounterHint = null;
+  let areaLabel = null;
+  let districtLabel = null;
+  let accessLabel = null;
+  let sectionsLabel = null;
   if (selected) {
     if (selRumored && !selSeen) {
       bottomLabel = `${selRumored.name} · ${selRumored.kind}`;
@@ -465,6 +535,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       let name = selTile.poi?.name || T?.label || "Wilderness";
       if (selTile.poi?.type === "hidden") name = `? · ${T?.label}`;
       bottomLabel = `${name} (${selected.x},${selected.y})`;
+      const meta = poiMeta(selTile, name);
+      areaLabel = meta.area;
+      districtLabel = meta.district;
+      accessLabel = meta.access;
+      sectionsLabel = meta.sections;
       if (selTile.poi?.description) bottomDetail = selTile.poi.description;
       else if (selTile.poi?.type === "hidden") bottomDetail = "Something here, not yet known.";
       else bottomDetail = T?.flavor || "";
@@ -481,6 +556,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
   } else {
     biomeLabel = getBiome(cur.x, cur.y).name;
     encounterHint = describeEncounterPotential(curTile, cur.x, cur.y);
+    const meta = poiMeta(curTile, currentLocationName(state));
+    areaLabel = meta.area;
+    districtLabel = meta.district;
+    accessLabel = meta.access;
+    sectionsLabel = meta.sections;
   }
 
   return (
@@ -655,6 +735,18 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                 pointerEvents="none"
               />
             ))}
+            {footprintSegments.map((s) => (
+              <line
+                key={s.key}
+                x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+                stroke="#d7a76f"
+                strokeWidth={2.25}
+                strokeOpacity={0.42}
+                strokeLinecap="round"
+                strokeDasharray="6 5"
+                pointerEvents="none"
+              />
+            ))}
             {wallSegments.map((s, i) => (
               <line
                 key={`wall-${i}`}
@@ -685,6 +777,37 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                 style={{ filter: "drop-shadow(0 0 6px rgba(215, 167, 111, 0.6))" }}
               />
             )}
+            {footprintLabels.map((l) => (
+              <g key={l.key} pointerEvents="none">
+                <text
+                  x={l.x} y={l.y}
+                  textAnchor="middle"
+                  fontFamily="'Inter', sans-serif"
+                  fontSize="9"
+                  fontWeight="900"
+                  letterSpacing="1.2"
+                  fill="none"
+                  stroke="#111716"
+                  strokeWidth="4"
+                  strokeOpacity={0.9}
+                  paintOrder="stroke"
+                >
+                  {l.name.toUpperCase()}
+                </text>
+                <text
+                  x={l.x} y={l.y}
+                  textAnchor="middle"
+                  fontFamily="'Inter', sans-serif"
+                  fontSize="9"
+                  fontWeight="900"
+                  letterSpacing="1.2"
+                  fill="#d7a76f"
+                  fillOpacity="0.78"
+                >
+                  {l.name.toUpperCase()}
+                </text>
+              </g>
+            ))}
             {labels.map((l) => (
               <g key={l.key} pointerEvents="none">
                 <text
@@ -870,14 +993,70 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         </div>
         <div style={{ fontSize: "13px", color: "rgba(237, 228, 208, 0.85)", lineHeight: "1.45", marginTop: "4px" }}>{bottomDetail}</div>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "6px" }}>
+          {areaLabel && (
+            <div style={{ fontSize: "10px", color: "rgba(215, 167, 111, 0.78)", letterSpacing: "0.06em", fontStyle: "italic" }}>Area: {areaLabel}</div>
+          )}
+          {districtLabel && (
+            <div style={{ fontSize: "10px", color: "rgba(215, 167, 111, 0.7)", letterSpacing: "0.06em", fontStyle: "italic" }}>District: {districtLabel}</div>
+          )}
+          {accessLabel && (
+            <div style={{ fontSize: "10px", color: "rgba(215, 167, 111, 0.64)", letterSpacing: "0.06em", fontStyle: "italic" }}>Access: {accessLabel}</div>
+          )}
           {biomeLabel && (
             <div style={{ fontSize: "10px", color: "rgba(215, 167, 111, 0.7)", letterSpacing: "0.08em", fontStyle: "italic" }}>Region: {biomeLabel}</div>
           )}
-          {biomeLabel && encounterHint && <span style={{ color: "rgba(215, 167, 111, 0.3)", fontSize: "10px" }}>•</span>}
+          {sectionsLabel && (
+            <div style={{ flexBasis: "100%", fontSize: "10px", color: "rgba(237, 228, 208, 0.62)", lineHeight: 1.35 }}>Sections: {sectionsLabel}</div>
+          )}
           {encounterHint && (
             <div style={{ fontSize: "10px", color: "rgba(239, 68, 68, 0.85)", letterSpacing: "0.06em", fontWeight: 800 }}>{encounterHint}</div>
           )}
         </div>
+        {availableSections.length > 0 && (
+          <div style={{ marginTop: "8px" }}>
+            <div style={{ fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(215, 167, 111, 0.62)", fontWeight: 800, marginBottom: "6px" }}>
+              Sections
+            </div>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {activeSectionId && canChangeSection && (
+                <button
+                  onClick={() => onEnterSection(null)}
+                  style={{
+                    height: "28px", padding: "0 10px", borderRadius: "14px",
+                    border: "1px solid rgba(215, 167, 111, 0.28)",
+                    background: "rgba(215, 167, 111, 0.08)",
+                    color: "#e6b98c", fontFamily: "inherit", fontSize: "11px",
+                    fontWeight: 800, cursor: "pointer",
+                  }}
+                >
+                  Main vantage
+                </button>
+              )}
+              {availableSections.map((section) => {
+                const allowed = canChangeSection && sectionAutoEnterAllowed(section);
+                const active = activeSectionId === section.id;
+                return (
+                  <button
+                    key={section.id}
+                    onClick={() => allowed && onEnterSection(section.id)}
+                    disabled={!allowed || active}
+                    title={!canChangeSection ? "Move to this tile first" : allowed ? section.description || sectionName(section) : "Requires action in the fiction"}
+                    style={{
+                      height: "28px", padding: "0 10px", borderRadius: "14px",
+                      border: active ? "1px solid rgba(215, 167, 111, 0.72)" : "1px solid rgba(215, 167, 111, 0.24)",
+                      background: active ? "rgba(215, 167, 111, 0.24)" : allowed ? "rgba(20, 29, 29, 0.78)" : "rgba(90, 73, 54, 0.16)",
+                      color: active ? "#f5dcb8" : allowed ? "#e6b98c" : "rgba(215, 167, 111, 0.38)",
+                      fontFamily: "inherit", fontSize: "11px", fontWeight: 800,
+                      cursor: allowed && !active ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    {sectionName(section)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div style={{ marginBottom: "10px" }} />
         {(canFly || teleOption) && (
           <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>

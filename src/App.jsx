@@ -49,6 +49,7 @@ import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
 import { initCombat, playerAct, playerTalk, playerDrawWeapon, setTarget, endTurn, playerFlee, playerStandDown, playerCeasefire, playerWithdraw, playerAdvance, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
+import { coordKey, poiSections, sectionAutoEnterAllowed, sectionById, sectionName } from "./engine/location.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
 import { CombatView } from "./components/combat/CombatView.jsx";
@@ -147,6 +148,9 @@ function applyTravelArrival(base, beat, travel) {
     travelTo: travel.toName,
     travelToCoords: { x: travel.dest.x, y: travel.dest.y },
   });
+  if (next.world.currentSection) {
+    next = { ...next, world: { ...next.world, currentSection: null } };
+  }
   const path = travel.path || [];
   // Reveal radius: flight takes in a wide view from the air; otherwise normal
   // sight, shrunk by darkness (engine/light.js).
@@ -992,6 +996,46 @@ export function Solitaire() {
     const msg = `[PLAYER ACTION] You work ${spell.name} and step through space, arriving at ${toName}${blind ? " — a place known only by repute, so you arrive without knowing what surrounds you" : ""}. No journey, no road between. It cost ${spell.resolveCost} resolve. Narrate the rush of arrival and what greets you. Use minutes_passed = 5.`;
     const travel = { fromName, toName, dest: { x: dest.x, y: dest.y }, path: [{ x: dest.x, y: dest.y }], totalMins: 5, encounter: null, mode: "teleport" };
     await finishTravel(stateWithPlayer, msg, travel);
+  }
+
+  function handleEnterSection(sectionId) {
+    if (loading) return;
+    const cur = state.world.currentTile;
+    const tile = getTile(state, cur.x, cur.y);
+    const sections = poiSections(tile.poi);
+    if (!sections.length) return;
+    const tileKey = coordKey(cur.x, cur.y);
+    if (!sectionId) {
+      const current = state.world.currentSection;
+      if (!current) return;
+      if (typeof current !== "string" && current.tileKey !== tileKey) return;
+      const place = tile.poi?.name || TERRAINS[tile.terrain]?.label || "the main vantage";
+      setState({
+        ...state,
+        world: { ...state.world, currentSection: null },
+        beats: [...state.beats, { id: `sec${Date.now()}`, type: "narration", content: `You return to the main vantage of ${place}.` }],
+      });
+      return;
+    }
+    const section = sectionById(tile.poi, sectionId);
+    if (!section) return;
+    const current = state.world.currentSection;
+    if (current && (typeof current === "string" ? current === sectionId : current.tileKey === tileKey && current.sectionId === sectionId)) return;
+    if (!sectionAutoEnterAllowed(section)) {
+      const name = sectionName(section);
+      setState({
+        ...state,
+        beats: [...state.beats, { id: `sec${Date.now()}`, type: "narration", content: `${name} is not a place you simply walk into. You would need permission, stealth, force, magic, or some other fiction-first way through.` }],
+      });
+      return;
+    }
+    const place = tile.poi?.name || TERRAINS[tile.terrain]?.label || "this place";
+    const desc = section.description ? ` ${section.description}` : "";
+    setState({
+      ...state,
+      world: { ...state.world, currentSection: { tileKey, sectionId } },
+      beats: [...state.beats, { id: `sec${Date.now()}`, type: "narration", content: `You move into ${sectionName(section)} within ${place}.${desc}` }],
+    });
   }
 
   async function handleResetCampaign() {
@@ -2017,6 +2061,7 @@ export function Solitaire() {
           onTravel={handleTravel}
           onFly={handleFly}
           onTeleport={handleTeleport}
+          onEnterSection={handleEnterSection}
           onSeekCombat={handleSeekCombat}
           loading={loading}
         />

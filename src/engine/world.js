@@ -15,6 +15,7 @@ import { FABLED_BY_COORD } from "../data/fabled.js";
 import { RIVER_BY_COORD } from "../data/rivers.js";
 import { getBiome } from "../data/biomes.js";
 import { SIGHT_RADIUS, TRAVEL_BASE_MIN, FLY_MIN_PER_HEX } from "../config.js";
+import { currentSectionEntry, sectionName } from "./location.js";
 
 // Settlements for city/village/fortress; water for lakes and rivers; otherwise
 // keep procedural terrain so a "ruin" can sit on hills, plains, or marsh
@@ -261,8 +262,9 @@ export function edgeAllowed(fromTile, fromX, fromY, toTile, toX, toY) {
 
 export function currentLocationName(state) {
   const t = getTile(state, state.world.currentTile.x, state.world.currentTile.y);
-  if (t.poi?.name) return t.poi.name;
-  return TERRAINS[t.terrain]?.label ?? "Wilderness";
+  const base = t.poi?.name || TERRAINS[t.terrain]?.label || "Wilderness";
+  const section = currentSectionEntry(state, t);
+  return section ? `${sectionName(section)}, ${base}` : base;
 }
 
 // A* over the seen, passable hex graph. Returns an array including both
