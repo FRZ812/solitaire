@@ -21,7 +21,8 @@ import { activeWorldPassives } from "./combat-stats.js";
 import { loadOf } from "./weight.js";
 import { buffCarryBonus, buffRideBonus } from "./buffs.js";
 import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
-import { MOUNTS, mountCodexEntry } from "../data/mounts.js";
+import { MOUNTS, mountCodexEntry, generateMountName } from "../data/mounts.js";
+import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
 import { clampRel, MEMORY_CAP } from "./relationships.js";
 
 // Can a waterskin be refilled at this tile? Settlements have wells; water/marsh
@@ -408,7 +409,7 @@ export function applyBeat(state, beat, options = {}) {
 
   // An exotic/flying mount EARNED in play (tamed, quest-won, story-gifted) joins
   // the party as a kind:"mount" codex character. Mundane mounts come from a stable
-  // (engine/economy.buyMount); the narrator only grants the exotic ones, and the
+  // (the buy_mount handler just below); the narrator only grants the exotic ones, and the
   // engine FORCES the authored template (bodyWeight, rideCapacity, combat kit) — a
   // dragon is a dragon, the narrator can't restat it. Unknown ids are dropped, the
   // same way invented item ids are.
@@ -416,13 +417,32 @@ export function applyBeat(state, beat, options = {}) {
     const tmpl = MOUNTS[beat.grant_mount.id];
     party = [...party, tmpl.id];
     const existing = world.codex.characters[tmpl.id];
-    // A brand-new beast is flagged for the player to NAME on join (App prompts);
-    // a returning, already-named mount keeps its name.
+    // A brand-new beast comes already named (its kind's custom); a returning mount
+    // keeps the name it had. The player can rename it anytime.
     const entry = existing
-      ? { ...existing, ...mountCodexEntry(tmpl), name: existing.givenName || existing.name || tmpl.name, givenName: existing.givenName, relationship: existing.relationship || 0, memories: existing.memories || [] }
-      : { ...mountCodexEntry(tmpl), needsNaming: true };
+      ? { ...existing, ...mountCodexEntry(tmpl, existing.name), relationship: existing.relationship || 0, memories: existing.memories || [] }
+      : mountCodexEntry(tmpl, generateMountName(tmpl.race));
     world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
-    newBeats.push({ id: `mount${Date.now()}`, type: "recruit", text: `${entry.name} now bears you.` });
+    newBeats.push({ id: `mount${Date.now()}`, type: "recruit", text: `${entry.name}, ${entry.species || tmpl.name}, now bears you.` });
+  }
+
+  // A mundane mount BOUGHT at a stable, after the haggling scene closes ([APPROACH
+  // MOUNT] doctrine). The narrator names the agreed price; the engine clamps it to a
+  // sane band of the list price, takes the coin, and the (already-named) beast joins.
+  if (beat.buy_mount?.id && MOUNTS[beat.buy_mount.id] && !party.includes(beat.buy_mount.id)) {
+    const tmpl = MOUNTS[beat.buy_mount.id];
+    if (tmpl.acquisition === "stable") {
+      const list = tmpl.priceCp || 0;
+      const agreed = Number.isFinite(beat.buy_mount.priceCp) ? beat.buy_mount.priceCp : list;
+      const price = Math.max(Math.round(list * 0.4), Math.min(agreed, list)); // haggle floor 40%, never above list
+      if (canAfford(character.inventory.coins, price)) {
+        character.inventory = { ...character.inventory, coins: copperToCoins(coinsToCopper(character.inventory.coins) - price) };
+        const entry = mountCodexEntry(tmpl, generateMountName(tmpl.race));
+        world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
+        party = [...party, tmpl.id];
+        newBeats.push({ id: `buy${Date.now()}`, type: "recruit", text: `${entry.name}, ${entry.species}, joins your company.` });
+      }
+    }
   }
 
   // A companion parts ways, or a mount is set loose — the narrator sets this only

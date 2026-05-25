@@ -184,7 +184,7 @@ export const BUILDINGS = {
   },
 
   // The Stable: sells MUNDANE mounts and the feed to keep them. A bought mount
-  // joins the party as a kind:"mount" character (engine/economy.buyMount), not a
+  // joins the party as a kind:"mount" character (haggled via beat.buy_mount), not a
   // pack item. The mount SELECTION is region-gated — resolved per tile from
   // STABLE_STOCK_BY_BIOME / stableStockFor (data/mounts.js) or a poi.mounts
   // override, then seed-rolled by rollStableMounts (engine/town-gen.js) and passed

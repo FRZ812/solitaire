@@ -5,11 +5,11 @@ import { colors, radius, fonts, metaStyle, glass } from "./tokens.js";
 import { canAfford, formatCopper, formatCoins } from "../engine/economy.js";
 import { MOUNTS } from "../data/mounts.js";
 
-// The stable: buy a mundane mount (it joins the party as a kind:"mount" character,
-// engine/economy.buyMount) and the feed to keep it. Exotic/flying mounts are never
-// sold here — they're earned in play (beat.grant_mount). Buy-only and deterministic;
-// App applies the transactions.
-export function StableView({ state, building, tileKey, stock, mounts, onClose, onBuy, onBuyMount, loading }) {
+// The stable: haggle for a mundane mount and buy the feed to keep it. "Haggle"
+// opens a narrated dealing (App.handleApproachMount → [APPROACH MOUNT]); the sale
+// closes via the narrator's buy_mount directive (engine/beat.js). Exotic/flying
+// mounts aren't sold — they're earned in play (beat.grant_mount).
+export function StableView({ state, building, tileKey, stock, mounts, onClose, onBuy, onApproachMount, loading }) {
   const inv = state.character.inventory;
   const coins = inv.coins;
   const owned = new Set(state.party || []);
@@ -76,7 +76,7 @@ export function StableView({ state, building, tileKey, stock, mounts, onClose, o
           return (
             <Row key={m.id} title={t.name} meta={meta} desc={t.desc}>
               <PriceTag cp={price} />
-              <ActionButton label="Buy" enabled={canAfford(coins, price) && !loading} onClick={() => onBuyMount(m.id, price)} />
+              <ActionButton label="Haggle" enabled={!loading} onClick={() => onApproachMount(m.id)} />
             </Row>
           );
         })}

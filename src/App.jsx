@@ -13,7 +13,7 @@ import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt, editBeat, deleteBeat } from "./engine/timeline.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./engine/attributes.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
-import { buyGood, buyMount, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
+import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
 import { lightTorch, lightLantern, extinguish, applyRest } from "./engine/tools.js";
 import { inTheDark, isNight, isLit, isHidden, isBeacon, sightRadius } from "./engine/light.js";
@@ -472,36 +472,6 @@ export function Solitaire() {
     const r = requestAnimationFrame(toBottom);
     return () => cancelAnimationFrame(r);
   }, [state.beats.length, loading, hydrated, currentCampaignId]);
-
-  // A freshly-acquired mount (bought or tamed) is flagged `needsNaming`; prompt the
-  // player to name it, then register the chosen name on its codex entry and clear
-  // the flag. Waits out combat/other prompts; the ref guards against double-prompts.
-  const namingRef = useRef(false);
-  useEffect(() => {
-    if (loading || combat || namePrompt || namingRef.current) return;
-    const chars = state.world?.codex?.characters || {};
-    const id = (state.party || []).find((pid) => chars[pid]?.kind === "mount" && chars[pid]?.needsNaming);
-    if (!id) return;
-    const ch = chars[id];
-    namingRef.current = true;
-    (async () => {
-      const chosen = await askName({
-        title: "Name your mount",
-        body: `A ${ch.race || "beast"} joins your company. What will you call ${ch.name ? `the ${ch.name.toLowerCase()}` : "it"}?`,
-        defaultValue: "",
-        placeholder: ch.name || "a name",
-        confirmLabel: "Name",
-      });
-      setState((cur) => {
-        const c = cur.world.codex.characters[id];
-        if (!c) return cur;
-        const { needsNaming, ...rest } = c;
-        const named = chosen ? { ...rest, name: chosen, givenName: chosen } : rest;
-        return { ...cur, world: { ...cur.world, codex: { ...cur.world.codex, characters: { ...cur.world.codex.characters, [id]: named } } } };
-      });
-      namingRef.current = false;
-    })();
-  }, [state, loading, combat, namePrompt]);
 
   // ----- Campaign handlers -----
 
@@ -1148,24 +1118,23 @@ export function Solitaire() {
       return { tileKey: key, items };
     });
   }
-  // Buy a mount at the stable — a hefty deal AND a full companion joining the party
-  // (engine/economy.buyMount), so it plays out as a beat: the stabler's word on the
-  // bargain, the beast led out, and the party's reaction. No restock receipt.
-  async function handleBuyMount(mountId, priceCp) {
+  // Buy a mount = a DEALING, like recruiting a companion. The player approaches; the
+  // stabler shows the beast, names a price, and haggles. The engine completes the
+  // sale only when the narrator closes it with buy_mount:{id, priceCp} (beat.js).
+  async function handleApproachMount(mountId) {
     if (loading || !shopTile) return;
-    const r = buyMount(state, { mountId, priceCp });
-    if (!r.ok) { setError(r.reason || "You can't buy that mount."); return; }
     const tmpl = mountTemplate(mountId);
-    const name = tmpl?.name || mountId;
+    if (!tmpl) return;
     const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the stable";
+    const coins = formatCopper(coinsToCopper(state.character.inventory.coins));
     setShopTile(null);
     setError(null);
     setLoading(true);
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You buy ${name} at ${place}.` };
-    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You look over ${tmpl.name} at ${place}.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] At ${place} you have just bought ${name} — a ${tmpl?.tier || "common"} ${tmpl?.race || "mount"} (${tmpl?.desc || ""}) — for ${formatCopper(priceCp)}, paid in full. The coin is already settled — do NOT re-tally it, and do NOT charge again. ${name} now joins your company as a mount: it travels with you, is fed and tended, and bears you on the road. Play the moment, briefly: the stabler hands over the lead-rope with a word about the beast and the bargain (its temper, breeding, a care-tip, or shrewd patter), the animal's bearing as it's led into the daylight, and — if companions travel with you — how they react to the new beast (approval, wariness, a porter glad to shed a load, a fighter sizing up a warhorse). Keep it grounded; don't fabricate combat; leave the player free to mount up or move on.`;
+      const msg = `[APPROACH MOUNT] At ${place} the player looks to buy a ${tmpl.tier} ${tmpl.race} — a ${tmpl.name} (id: ${tmpl.id}): "${tmpl.desc}". The stabler's LISTED price is ${formatCopper(tmpl.priceCp || 0)}. The player has ${coins} on hand. Open the dealing in the stabler's voice per the [APPROACH MOUNT] doctrine — bring the beast out and show it, name the price, and haggle. Do NOT finalize on this beat; close it with buy_mount only when a price is agreed and affordable. The beast already has a name of the stabler's giving.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
@@ -1175,6 +1144,20 @@ export function Solitaire() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Rename a mount anytime (the codex/Company panel). No forced naming on join —
+  // beasts come named by their kind's custom; this lets the player make it theirs.
+  async function handleRenameMount(id) {
+    const ch = state.world.codex.characters?.[id];
+    if (!ch) return;
+    const chosen = await askName({ title: "Rename", body: `What will you call ${ch.name}?`, defaultValue: ch.name, placeholder: ch.name, confirmLabel: "Rename" });
+    if (!chosen || chosen === ch.name) return;
+    setState((cur) => {
+      const c = cur.world.codex.characters[id];
+      if (!c) return cur;
+      return { ...cur, world: { ...cur.world, codex: { ...cur.world.codex, characters: { ...cur.world.codex.characters, [id]: { ...c, name: chosen } } } } };
+    });
   }
   // Sell one unit. A refund consumes a receipt (full price paid); a plain sale
   // uses the used-goods price the trader view computed.
@@ -2024,7 +2007,7 @@ export function Solitaire() {
         />
       )}
       {codexOpen && (
-        <CodexView state={state} onClose={() => setCodexOpen(false)} onScry={handleScry} />
+        <CodexView state={state} onClose={() => setCodexOpen(false)} onScry={handleScry} onRenameMount={handleRenameMount} />
       )}
       {shopTile && (() => {
         const tile = getTile(state, shopTile.x, shopTile.y);
@@ -2106,7 +2089,7 @@ export function Solitaire() {
               mounts={mounts}
               onClose={closeShop}
               onBuy={handleBuy}
-              onBuyMount={handleBuyMount}
+              onApproachMount={handleApproachMount}
               loading={loading}
             />
           );

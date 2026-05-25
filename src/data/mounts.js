@@ -18,8 +18,8 @@
 // enemyFromNPC → allyFromCompanion (data/bestiary.js) already consume. A ridden
 // mount also lends its rider a `mountedBonus` in a fight (engine/combat.js).
 //
-// ACQUISITION: mundane mounts (`acquisition:"stable"`) are bought at a stable
-// (engine/economy.buyMount); exotic/flying ones are EARNED — tamed, quest-won, or
+// ACQUISITION: mundane mounts (`acquisition:"stable"`) are haggled for at a stable
+// (beat.buy_mount); exotic/flying ones are EARNED — tamed, quest-won, or
 // story-gifted — and granted by the narrator via beat.grant_mount (engine/beat.js).
 
 import { resolvePoolForMind } from "../engine/attributes.js";
@@ -304,12 +304,37 @@ export function stableStockFor(biomeId) {
   return STABLE_STOCK_BY_BIOME[biomeId] || STABLE_STOCK_DEFAULT;
 }
 
+// A beast comes with a NAME, by the custom of its kind (the trader's name for it).
+// The player can rename it anytime — no forced ritual on joining.
+const MOUNT_NAME_POOLS = {
+  horse: ["Briar", "Ash", "Bracken", "Sorrel", "Dapple", "Bayard", "Hazel", "Comet", "Maple", "Pepper", "Tansy", "Fenwick"],
+  pony: ["Pip", "Nutmeg", "Acorn", "Biscuit", "Clover", "Tuppence", "Cobble", "Mossy", "Button"],
+  stag: ["Thorncrown", "Elkhart", "Bramble", "Hartwood", "Greymane", "Antler", "Brackenhorn"],
+  camel: ["Dune", "Sahel", "Ginger", "Khamsin", "Saffron", "Mirage", "Cardamom"],
+  ram: ["Boulder", "Crag", "Ramsay", "Granite", "Cliff", "Bash", "Scree"],
+  boar: ["Tusk", "Gnash", "Bristle", "Razorback", "Grommash", "Snout", "Gristle"],
+  "axe-beak": ["Snip", "Scythe", "Quill", "Talon", "Cleaver", "Strider", "Kek"],
+  basilisk: ["Silt", "Verdigris", "Hiss", "Cinder", "Scale", "Venn", "Lurk"],
+  salamander: ["Marsh", "Newt", "Bog", "Slick", "Mudd", "Ember", "Reed"],
+  drakeborn: ["Emberwing", "Ashmaw", "Cinder", "Scoria", "Vaelth", "Drurr", "Coalfoot"],
+  dragon: ["Vyrmoth", "Ashendrake", "Caldrith", "Pyraxis", "Norggath", "Saphirex"],
+  wyvern: ["Skreel", "Vexwing", "Talax", "Sleet", "Razix", "Hookmaw"],
+  griffon: ["Skyrend", "Feathermane", "Stormcrest", "Gale", "Wynd", "Cirrus"],
+  wolf: ["Greyfang", "Shadowtooth", "Winter", "Vask", "Hoarfrost", "Lurk"],
+};
+const GENERIC_MOUNT_NAMES = ["Roan", "Shadow", "Lucky", "Storm", "Steadfast", "Pal", "Scout"];
+
+export function generateMountName(race) {
+  const pool = MOUNT_NAME_POOLS[race] || GENERIC_MOUNT_NAMES;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 // The full codex-character entry for a mount — same scaffolding as a recruited
 // companion (companionCodexEntry), plus the mount block and riding linkage.
-export function mountCodexEntry(tmpl) {
+export function mountCodexEntry(tmpl, name) {
   return {
     id: tmpl.id, kind: "mount",
-    name: tmpl.name, race: tmpl.race, profession: "mount", origin: null,
+    name: name || tmpl.name, species: tmpl.name, race: tmpl.race, profession: "mount", origin: null,
     description: tmpl.desc, attributes: tmpl.attributes,
     worn: [], knows: [],
     // Mounts hunger, thirst, and tire like companions — drained on the road and
