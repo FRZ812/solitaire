@@ -63,8 +63,8 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
       {/* Paper-doll */}
       <div>
         <SectionHeader>Equipped</SectionHeader>
-        <div style={{ ...insetBoxStyle, padding: "12px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+        <div style={{ ...insetBoxStyle, padding: "10px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", maxWidth: "264px", margin: "0 auto" }}>
             {DOLL.map((entry, i) => {
               if (!entry) return <div key={`sp${i}`} />;
               const [slotId, idxStr] = entry.split(":");
@@ -77,6 +77,21 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
               );
             })}
           </div>
+        </div>
+      </div>
+
+      {/* Wealth — lives here now (moved off the character sheet), above the pack. */}
+      <div>
+        <SectionHeader>Wealth</SectionHeader>
+        <div style={{
+          ...insetBoxStyle, fontFamily: fonts.serif, fontStyle: "italic", fontSize: "17px", color: colors.parchmentLight,
+          display: "grid", gridTemplateColumns: "1fr 1px 1fr 1px 1fr", alignItems: "center", textAlign: "center",
+        }}>
+          <span><strong style={{ color: "#ffd700" }}>{inv.coins.gold}</strong> gp</span>
+          <span style={{ width: "1px", height: "16px", background: "rgba(215,167,111,0.18)", justifySelf: "center" }} />
+          <span><strong style={{ color: "#d1d5db" }}>{inv.coins.silver}</strong> sp</span>
+          <span style={{ width: "1px", height: "16px", background: "rgba(215,167,111,0.18)", justifySelf: "center" }} />
+          <span><strong style={{ color: "#cd7f32" }}>{inv.coins.copper}</strong> cp</span>
         </div>
       </div>
 
@@ -103,21 +118,6 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
                   </button>
                 );
               })}
-        </div>
-      </div>
-
-      {/* Wealth — lives here now (moved off the character sheet). */}
-      <div>
-        <SectionHeader>Wealth</SectionHeader>
-        <div style={{
-          ...insetBoxStyle, fontFamily: fonts.serif, fontStyle: "italic", fontSize: "17px", color: colors.parchmentLight,
-          display: "grid", gridTemplateColumns: "1fr 1px 1fr 1px 1fr", alignItems: "center", textAlign: "center",
-        }}>
-          <span><strong style={{ color: "#ffd700" }}>{inv.coins.gold}</strong> gp</span>
-          <span style={{ width: "1px", height: "16px", background: "rgba(215,167,111,0.18)", justifySelf: "center" }} />
-          <span><strong style={{ color: "#d1d5db" }}>{inv.coins.silver}</strong> sp</span>
-          <span style={{ width: "1px", height: "16px", background: "rgba(215,167,111,0.18)", justifySelf: "center" }} />
-          <span><strong style={{ color: "#cd7f32" }}>{inv.coins.copper}</strong> cp</span>
         </div>
       </div>
 
@@ -163,8 +163,8 @@ function DollCell({ label, id, def, onTap }) {
       cursor: occupied ? "pointer" : "default",
     }}>
       {occupied
-        ? <ItemIcon item={def} itemId={id} size={24} />
-        : <Icon name="x" size={10} color="rgba(215,167,111,0.18)" strokeWidth={2} />}
+        ? <ItemIcon item={def} itemId={id} size={20} />
+        : <Icon name="x" size={9} color="rgba(215,167,111,0.18)" strokeWidth={2} />}
       <span style={{
         ...metaStyle, fontSize: "7px", letterSpacing: "0.08em",
         color: occupied ? tcolor : "rgba(215,167,111,0.4)",

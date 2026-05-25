@@ -23,17 +23,17 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
 
   const go = (dir) => setPage((p) => (p + dir + PAGES.length) % PAGES.length); // wraps around
 
-  // Horizontal swipe anywhere on the deck changes page (snap), DIRECTIONALLY:
-  // swipe RIGHT → the page on the right (Inventory), swipe LEFT → the page on the
-  // left (Company) — and it loops. Guarded so a mostly-vertical drag (content
-  // scroll) is ignored.
+  // Horizontal swipe anywhere on the deck changes page (snap), content-follows-
+  // finger: swipe LEFT → the page on the right (Inventory), swipe RIGHT → the page
+  // on the left (Company) — and it loops. Guarded so a mostly-vertical drag
+  // (content scroll) is ignored.
   function onTouchStart(e) { const t = e.touches[0]; swipe.current = { x: t.clientX, y: t.clientY }; }
   function onTouchEnd(e) {
     const s = swipe.current; swipe.current = null;
     if (!s) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - s.x, dy = t.clientY - s.y;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) go(dx > 0 ? 1 : -1);
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) go(dx > 0 ? -1 : 1);
   }
 
   // Pull DOWN on the grab handle to dismiss — the sheet follows the finger and
