@@ -54,7 +54,7 @@ import { VitalsStrip, InputBar, LoadingDots, ErrorBanner } from "./components/pr
 import { BeatActionSheet } from "./components/BeatActionSheet.jsx";
 import { colors } from "./components/tokens.js";
 import { BeatRender } from "./components/beats/BeatRender.jsx";
-import { MenuSheet } from "./components/MenuSheet.jsx";
+import { PanelDeck } from "./components/PanelDeck.jsx";
 import { MapView } from "./components/MapView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
 import { StableView } from "./components/StableView.jsx";
@@ -64,8 +64,6 @@ import { itemTemplate } from "./data/catalog.js";
 import { QuestBoardView } from "./components/QuestBoardView.jsx";
 import { PrisonView } from "./components/PrisonView.jsx";
 import { SlaveMarketView } from "./components/SlaveMarketView.jsx";
-import { PartyView } from "./components/PartyView.jsx";
-import { InventoryView } from "./components/InventoryView.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
@@ -267,7 +265,8 @@ export function Solitaire() {
   // A failed player-message send, kept so it can be retried (e.g. the app was
   // backgrounded mid-request and the connection dropped). { base, message }.
   const [retry, setRetry] = useState(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [deckOpen, setDeckOpen] = useState(false);     // the Company/Character/Inventory deck
+  const [deckPage, setDeckPage] = useState("character"); // which page it opens to
   // Character creation UI: the hub (templates vs limbo) shows first on a fresh
   // campaign; `creationEntered` flips once the player chooses the freeform limbo
   // path; `manualCreation` opens the FRZKHRX full-manual builder (lives in limbo).
@@ -276,8 +275,6 @@ export function Solitaire() {
   const [fusionRune, setFusionRune] = useState(null); // forge-rune id being bound in the fusion ritual
   const [mapOpen, setMapOpen] = useState(false);
   const [codexOpen, setCodexOpen] = useState(false);
-  const [partyOpen, setPartyOpen] = useState(false);
-  const [inventoryOpen, setInventoryOpen] = useState(false);
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
   // Recent purchases at the current shop, for full refunds until you leave the
@@ -573,7 +570,7 @@ export function Solitaire() {
   }
 
   function handleBackToCampaigns() {
-    setMenuOpen(false);
+    setDeckOpen(false);
     setCurrentCampaignId(null);
     setHydrated(false);
     localStorage.removeItem(LAST_OPENED_KEY);
@@ -582,7 +579,7 @@ export function Solitaire() {
   }
 
   async function handleSignOut() {
-    setMenuOpen(false);
+    setDeckOpen(false);
     setCurrentCampaignId(null);
     setHydrated(false);
     localStorage.removeItem(LAST_OPENED_KEY);
@@ -977,7 +974,7 @@ export function Solitaire() {
     if (!(await askConfirm({ title: "Reset campaign", body: "Reset this campaign to the beginning? Your current progress here will be erased.", confirmLabel: "Reset", danger: true }))) return;
     setState(makeInitialState());
     closeBeatMenu();
-    setMenuOpen(false);
+    setDeckOpen(false);
   }
 
   function handleEquip(itemId) { setState((s) => equipItem(s, itemId)); }
@@ -1151,7 +1148,7 @@ export function Solitaire() {
       if (r.reason) setState({ ...state, beats: [...state.beats, { id: `lit${Date.now()}`, type: "narration", content: r.reason }] });
       return;
     }
-    if (close) setMenuOpen(false);
+    if (close) setDeckOpen(false);
     setState({ ...r.state, beats: [...r.state.beats, { id: `lit${Date.now()}`, type: "narration", content: r.summary }] });
   }
   function handleLightTorch() { applyToolResult(lightTorch(state)); }
@@ -1165,7 +1162,7 @@ export function Solitaire() {
       if (r.reason) setState({ ...state, beats: [...state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.reason }] });
       return;
     }
-    setMenuOpen(false);
+    setDeckOpen(false);
     setState({ ...r.state, beats: [...r.state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.summary }] });
   }
 
@@ -1396,7 +1393,7 @@ export function Solitaire() {
   function startCombat(enemies, context, extraOpts = {}, st = state) {
     if (!enemies || enemies.length === 0) return;
     combatCtxRef.current = context || { flavor: enemies[0].name };
-    setMenuOpen(false); setMapOpen(false); setCodexOpen(false); setShopTile(null); setInventoryOpen(false); setPartyOpen(false);
+    setDeckOpen(false); setMapOpen(false); setCodexOpen(false); setShopTile(null);
     setPendingCombat(null);
     closeBeatMenu();
     const region = regionHere(st);
@@ -1697,9 +1694,7 @@ export function Solitaire() {
             <CompactHeader
               state={state}
               onMap={() => setMapOpen(true)}
-              onMenu={() => setMenuOpen(true)}
-              onParty={() => setPartyOpen(true)}
-              onInventory={() => setInventoryOpen(true)}
+              onOpenDeck={() => { setDeckPage("character"); setDeckOpen(true); }}
             />
             <VitalsStrip character={state.character} />
           </>
@@ -1709,7 +1704,7 @@ export function Solitaire() {
             stuck — the hub has its own controls, so it's hidden there. */}
         {inLimbo && !showCreationHub && (
           <div style={{ display: "flex", justifyContent: "flex-end", padding: "12px 14px 0" }}>
-            <button onClick={() => setMenuOpen(true)} aria-label="Character" style={{
+            <button onClick={() => { setDeckPage("character"); setDeckOpen(true); }} aria-label="Character" style={{
               width: "38px", height: "38px", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center",
               backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.35)`, cursor: "pointer",
             }}>
@@ -1874,19 +1869,27 @@ export function Solitaire() {
           busy={loading}
         />
       )}
-      {menuOpen && (
-        <MenuSheet
+      {deckOpen && (
+        <PanelDeck
           state={state}
           user={user}
-          onClose={() => setMenuOpen(false)}
-          onExtinguish={handleExtinguish}
-          onInventory={() => { setMenuOpen(false); setInventoryOpen(true); }}
-          onCastBuff={handleCastBuff}
-          onReset={handleResetCampaign}
-          onOpenCodex={() => { setMenuOpen(false); setCodexOpen(true); }}
-          onBackToCampaigns={handleBackToCampaigns}
-          onSignOut={__SOLITAIRE_MODE__ === "web" ? handleSignOut : undefined}
-          onLinkEmail={__SOLITAIRE_MODE__ === "web" ? linkEmail : undefined}
+          initialPage={deckPage}
+          onClose={() => setDeckOpen(false)}
+          handlers={{
+            // Party
+            onDismiss: handleDismiss, onMount: handleMount, onDismount: handleDismountRider,
+            // Character
+            onExtinguish: handleExtinguish, onCastBuff: handleCastBuff, onReset: handleResetCampaign,
+            onOpenCodex: () => { setDeckOpen(false); setCodexOpen(true); },
+            onBackToCampaigns: handleBackToCampaigns,
+            onSignOut: __SOLITAIRE_MODE__ === "web" ? handleSignOut : undefined,
+            onLinkEmail: __SOLITAIRE_MODE__ === "web" ? linkEmail : undefined,
+            // Inventory
+            onEquip: handleEquip, onUnequip: handleUnequip, onUse: handleUse,
+            onLightTorch: handleLightTorch, onLightLantern: handleLightLantern,
+            onRest: (h) => { setDeckOpen(false); handleRest(h); },
+            onBindRune: (id) => { setDeckOpen(false); setFusionRune(id); },
+          }}
         />
       )}
       {fusionRune && (
@@ -1910,22 +1913,6 @@ export function Solitaire() {
       )}
       {codexOpen && (
         <CodexView state={state} onClose={() => setCodexOpen(false)} />
-      )}
-      {partyOpen && (
-        <PartyView state={state} onDismiss={handleDismiss} onMount={handleMount} onDismount={handleDismountRider} onClose={() => setPartyOpen(false)} />
-      )}
-      {inventoryOpen && (
-        <InventoryView
-          state={state}
-          onClose={() => setInventoryOpen(false)}
-          onEquip={handleEquip}
-          onUnequip={handleUnequip}
-          onUse={handleUse}
-          onLightTorch={handleLightTorch}
-          onLightLantern={handleLightLantern}
-          onRest={(h) => { setInventoryOpen(false); handleRest(h); }}
-          onBindRune={(id) => { setInventoryOpen(false); setFusionRune(id); }}
-        />
       )}
       {shopTile && (() => {
         const tile = getTile(state, shopTile.x, shopTile.y);

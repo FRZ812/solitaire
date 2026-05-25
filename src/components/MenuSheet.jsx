@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { Icon } from "./Icon.jsx";
 import {
-  iconButtonStyle, ConditionPill, NeedBar, StatBar, AttrBlock,
+  ConditionPill, NeedBar, StatBar, AttrBlock,
   SectionHeader, ErrorBanner, actionButtonStyle, insetBoxStyle,
 } from "./primitives.jsx";
-import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
+import { colors, alert, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats } from "../engine/combat-stats.js";
 import { getAbilityDef } from "../data/abilities.js";
@@ -79,11 +79,14 @@ function Divider() {
   );
 }
 
-export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onExtinguish, onInventory, onCastBuff }) {
+// Character page of the panel deck — identity, conditions, vitals, needs,
+// attributes, proficiencies, combat, boons, and campaign actions. Content only;
+// the deck supplies the sheet chrome, scroll, and dismissal. (Wealth + gear now
+// live on the Inventory page.)
+export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onExtinguish, onCastBuff }) {
   const [arsenalOpen, setArsenalOpen] = useState(false);
   const [openAttr, setOpenAttr] = useState(null); // attribute key whose threshold detail is expanded
   const [info, setInfo] = useState(null); // glossary explanation popover { term, text, extra }
-  const inv = state.character.inventory;
   const codex = state.world.codex;
   const attrs = effectiveAttributes(state.character);
   const combat = deriveCombatStats(state.character, codex);
@@ -123,62 +126,17 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
   const showGuestNag = user?.is_anonymous && onLinkEmail;
 
   return (
-    <div
-      style={{
-        position: "absolute", inset: 0,
-        backgroundColor: "rgba(11, 15, 14, 0.65)",
-        backdropFilter: "blur(6px)",
-        zIndex: 20,
-        display: "flex", flexDirection: "column", justifyContent: "flex-end",
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="slide-up no-scrollbar"
-        style={{
-          backgroundColor: "rgba(20, 29, 29, 0.92)",
-          border: `1px solid rgba(215, 167, 111, 0.22)`,
-          borderBottom: "none",
-          borderTopLeftRadius: "24px",
-          borderTopRightRadius: "24px",
-          padding: "20px 22px calc(env(safe-area-inset-bottom, 0px) + 24px) 22px",
-          display: "flex", flexDirection: "column", gap: "15px",
-          maxHeight: "85dvh", overflowY: "auto",
-          ...glass,
-          boxShadow: shadow.sheet,
-          color: colors.parchment,
-        }}
-      >
-        {/* Grab handle — reads as a dismissable bottom sheet. */}
-        <div style={{ display: "flex", justifyContent: "center", marginTop: "-8px", marginBottom: "2px" }}>
-          <div style={{ width: "38px", height: "4px", borderRadius: radius.pill, backgroundColor: "rgba(215, 167, 111, 0.28)" }} />
-        </div>
-
-        {/* Header — character name + bond. */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{
-              fontFamily: fonts.serif, fontStyle: "italic",
-              fontSize: "26px", color: colors.parchmentLight, lineHeight: 1.05,
-              textShadow: "0 2px 10px rgba(0,0,0,0.3)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>
-              {state.character.name}
-            </div>
+    <div style={{ padding: "2px 16px 8px", display: "flex", flexDirection: "column", gap: "15px", color: colors.parchment }}>
+        {/* Header — character name. */}
+        <div style={{ minWidth: 0 }}>
+          <div style={{
+            fontFamily: fonts.serif, fontStyle: "italic",
+            fontSize: "26px", color: colors.parchmentLight, lineHeight: 1.05,
+            textShadow: "0 2px 10px rgba(0,0,0,0.3)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {state.character.name}
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              ...iconButtonStyle,
-              width: "30px", height: "30px", flexShrink: 0,
-              backgroundColor: "rgba(215, 167, 111, 0.08)",
-              border: `1px solid rgba(215, 167, 111, 0.2)`,
-            }}
-          >
-            <Icon name="x" size={13} color={colors.parchmentMuted} strokeWidth={2} />
-          </button>
         </div>
 
         {/* Bond */}
@@ -308,33 +266,6 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
 
         <Divider />
 
-        {/* Wealth */}
-        <div>
-          <SectionHeader>Wealth <button onClick={() => showInfo("currency")} style={{ ...bareBtn, verticalAlign: "middle", marginLeft: "2px" }}><InfoButton onClick={() => showInfo("currency")} /></button></SectionHeader>
-          <div style={{
-            ...insetBoxStyle,
-            fontFamily: fonts.serif, fontStyle: "italic",
-            fontSize: "17px", color: colors.parchmentLight,
-            display: "grid", gridTemplateColumns: "1fr 1px 1fr 1px 1fr",
-            alignItems: "center", textAlign: "center",
-          }}>
-            <span><strong style={{ color: "#ffd700", fontWeight: "bold" }}>{inv.coins.gold}</strong> gp</span>
-            <span style={{ width: "1px", height: "16px", background: "rgba(215, 167, 111, 0.18)", justifySelf: "center" }} />
-            <span><strong style={{ color: "#d1d5db", fontWeight: "bold" }}>{inv.coins.silver}</strong> sp</span>
-            <span style={{ width: "1px", height: "16px", background: "rgba(215, 167, 111, 0.18)", justifySelf: "center" }} />
-            <span><strong style={{ color: "#cd7f32", fontWeight: "bold" }}>{inv.coins.copper}</strong> cp</span>
-          </div>
-        </div>
-
-        {/* Gear & pack live on the dedicated Inventory screen (paper-doll + pack). */}
-        <div>
-          <SectionHeader>Possessions</SectionHeader>
-          <button onClick={onInventory} style={actionButtonStyle()}>
-            <Icon name="bag" size={14} strokeWidth={1.6} />
-            Open Inventory
-          </button>
-        </div>
-
         {/* Boons — castable self-buffs (Haste, Bear's Strength). Spend resolve to
             lay a timed boon that speeds travel / lifts carrying limits. */}
         {(() => {
@@ -394,7 +325,6 @@ export function MenuSheet({ state, user, onClose, onReset, onOpenCodex, onBackTo
             </button>
           )}
         </div>
-      </div>
 
       {info && <InfoModal info={info} onClose={() => setInfo(null)} />}
       {arsenalOpen && <ArsenalView character={state.character} onClose={() => setArsenalOpen(false)} />}

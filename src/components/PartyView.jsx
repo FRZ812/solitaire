@@ -1,6 +1,5 @@
 import React from "react";
-import { Icon } from "./Icon.jsx";
-import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
+import { Panel, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { partyMembers, mountMembers, nonMountPartyMembers } from "../engine/party.js";
@@ -10,7 +9,10 @@ import { currentRideLoad, effectiveLoad, canMount, rideCapacityOf } from "../eng
 // The party roster: every recruited companion AND mount as a full creature —
 // appearance, attributes, gear — with the option to part ways, and (for mounts)
 // to seat riders by weight (engine/riding.js) and ride/dismount.
-export function PartyView({ state, onDismiss, onMount, onDismount, onClose }) {
+// Party page of the panel deck — companions and mounts as full creatures, with
+// part-ways and (for mounts) weight-bound seat/ride controls. Content only; the
+// deck supplies the sheet chrome, scroll, and dismissal.
+export function PartyView({ state, onDismiss, onMount, onDismount }) {
   const chars = state.world.codex.characters;
   const members = partyMembers(state);
   const mounts = mountMembers(state);
@@ -22,33 +24,15 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onClose }) {
   const nameOf = (id) => chars[id]?.name || (id === "wanderer" ? "You" : id);
 
   return (
-    <div style={{
-      position: "absolute", inset: 0, zIndex: 30, backgroundColor: "#0d1312",
-      display: "flex", flexDirection: "column", maxWidth: "480px", margin: "0 auto",
-      borderLeft: "1px solid rgba(215, 167, 111, 0.12)", borderRight: "1px solid rgba(215, 167, 111, 0.12)",
-      boxShadow: "0 0 50px rgba(0,0,0,0.9)",
-    }}>
-      <div style={{
-        padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px 16px",
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        borderBottom: "1px solid rgba(215, 167, 111, 0.15)", backgroundColor: "rgba(20, 29, 29, 0.95)",
-      }}>
-        <button onClick={onClose} aria-label="Close" style={{
-          ...iconButtonStyle, width: "30px", height: "30px", borderRadius: "50%",
-          backgroundColor: "rgba(215, 167, 111, 0.08)", border: "1px solid rgba(215, 167, 111, 0.2)",
-        }}>
-          <Icon name="arrowLeft" size={13} color="#e6b98c" strokeWidth={2} />
-        </button>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "22px", color: colors.parchmentLight }}>Your Company</div>
-          <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.78)", marginTop: "3px" }}>
-            {members.length === 0 ? "Travelling alone" : `${people.length} companion${people.length === 1 ? "" : "s"}${mounts.length ? ` · ${mounts.length} mount${mounts.length === 1 ? "" : "s"}` : ""}`}
-          </div>
+    <div style={{ padding: "2px 16px 8px", color: colors.parchment }}>
+      <div style={{ marginBottom: "12px" }}>
+        <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "24px", color: colors.parchmentLight, lineHeight: 1.05 }}>Your Company</div>
+        <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.7)", marginTop: "2px" }}>
+          {members.length === 0 ? "Travelling alone" : `${people.length} companion${people.length === 1 ? "" : "s"}${mounts.length ? ` · ${mounts.length} mount${mounts.length === 1 ? "" : "s"}` : ""}`}
         </div>
-        <div style={{ width: "30px" }} />
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px 16px", WebkitOverflowScrolling: "touch" }}>
+      <div>
         {members.length === 0 && (
           <div style={{ padding: "28px 8px", textAlign: "center", fontStyle: "italic", fontSize: "13px", color: "rgba(237,228,208,0.5)", lineHeight: 1.5 }}>
             You travel alone. Folk for hire gather at taverns; mounts are bought at a stable or won on the road.

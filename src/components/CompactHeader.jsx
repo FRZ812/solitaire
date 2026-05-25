@@ -7,7 +7,7 @@ import { getTile, currentLocationName } from "../engine/world.js";
 import { getBiome } from "../data/biomes.js";
 import { formatTime, getCalendarDate } from "../engine/time.js";
 
-export function CompactHeader({ state, onMap, onMenu, onParty, onInventory }) {
+export function CompactHeader({ state, onMap, onOpenDeck }) {
   const partyCount = (state.party || []).length;
   const cur = state.world.currentTile;
   const t = getTile(state, cur.x, cur.y);
@@ -70,22 +70,22 @@ export function CompactHeader({ state, onMap, onMenu, onParty, onInventory }) {
         </div>
       </div>
 
-      {/* Action buttons — codex dropped (it's reachable from the menu sheet) */}
+      {/* Two buttons only: the Map, and the unified deck (Company · Character ·
+          Inventory — swipe between them; opens at Character). A party-count badge
+          rides the deck button so the company stays glanceable. */}
       <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-        {partyCount > 0 && (
-          <button onClick={onParty} style={{ ...headerButtonStyle, position: "relative" }} aria-label="Company">
-            <Icon name="users" size={16} color={colors.gold} strokeWidth={1.8} />
+        <button onClick={onMap} style={headerButtonStyle} aria-label="Map"><Icon name="map" size={16} color={colors.gold} strokeWidth={1.8} /></button>
+        <button onClick={onOpenDeck} style={{ ...headerButtonStyle, position: "relative" }} aria-label="Character, company & inventory">
+          <Icon name="user" size={16} color={colors.gold} strokeWidth={1.8} />
+          {partyCount > 0 && (
             <span style={{
               position: "absolute", top: "-4px", right: "-4px", minWidth: "16px", height: "16px",
               padding: "0 4px", borderRadius: "999px", backgroundColor: colors.gold, color: colors.ink,
               fontSize: "9px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
               boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
             }}>{partyCount}</span>
-          </button>
-        )}
-        <button onClick={onInventory} style={headerButtonStyle} aria-label="Inventory"><Icon name="bag" size={16} color={colors.gold} strokeWidth={1.8} /></button>
-        <button onClick={onMap}  style={headerButtonStyle} aria-label="Map">  <Icon name="map"        size={16} color={colors.gold} strokeWidth={1.8} /></button>
-        <button onClick={onMenu} style={headerButtonStyle} aria-label="Character"> <Icon name="user" size={16} color={colors.gold} strokeWidth={1.8} /></button>
+          )}
+        </button>
       </div>
     </div>
   );
