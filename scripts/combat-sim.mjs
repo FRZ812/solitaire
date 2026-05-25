@@ -267,17 +267,27 @@ function enchanter() {
   console.log(`  Mythical Dominate vs 0.6-controlResist foe: ${myth}% (capped by resist)`);
   console.log(`  DIVINE Dominate ignores resist: ${div}% — ${div >= 95 ? "OK" : "LOW"}`);
 
-  // DIVINE Charm binds PERMANENTLY (artificial devotion) — switches the foe to your side.
-  let charmBound = 0, C = 300;
+  // DIVINE Charm binds PERMANENTLY (artificial devotion): switches the foe to your side
+  // in-combat AND persists into the party afterward as a Charmed devotee (high relationship).
+  let charmBound = 0, charmFiled = 0, C = 300;
   for (let i = 0; i < C; i++) {
     let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
     if (cs.phase !== "player") { C--; continue; }
     cs.player.abilities = cs.player.abilities.map((ab) => ab.id === "charm" ? { ...ab, tier: "divine" } : ab);
     cs = playerAct(cs, "charm", 0);
     if ((cs.allies || []).some((a) => a.bindKind === "charm" && (a.statuses || []).some((s) => s.type === "enthralled"))) charmBound++;
+    if (cs.phase === "victory" || cs.phase === "resolved") {
+      const st = { character: { vitality: cs.player.health, vitalityMax: cs.player.maxHealth, proficiencies: {}, resolve: 0, resolveMax: 0, conditions: [], inventory: { carried: [], coins: { copper: 0, silver: 0, gold: 0 } } }, world: { codex: { characters: { wanderer: {} }, items: {} } }, party: [], beats: [], apiHistory: [] };
+      const next = applyCombatResult(st, cs, {});
+      const tid = (next.party || [])[0];
+      const ch = tid && next.world.codex.characters[tid];
+      if (ch && (ch.conditions || []).some((c) => c.name === "Charmed") && (ch.relationship || 0) > 0) charmFiled++;
+    }
   }
   const cb = Math.round((charmBound / Math.max(1, C)) * 100);
+  const cf = Math.round((charmFiled / Math.max(1, C)) * 100);
   console.log(`  DIVINE Charm binds a devotee to your side: ${cb}% — ${cb >= 95 ? "OK" : "LOW"}`);
+  console.log(`  DIVINE Charm devotee persists in party (Charmed + bond): ${cf}% — ${cf >= 90 ? "OK" : "LOW"}`);
 }
 console.log("");
 
