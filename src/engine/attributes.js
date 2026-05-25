@@ -1,5 +1,6 @@
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
+import { attributeThresholdMods } from "../data/attribute-tiers.js";
 
 // The player's max HP is derived from VIGOR (so toughness is a real, investable
 // stat — mirroring how NPCs get HP from vigor). A linear floor keeps early builds
@@ -12,8 +13,15 @@ export const HP_PER_VIGOR = 5;
 
 export function maxVitalityFor(character) {
   const vigor = effectiveAttributes(character).vigor || 0;
-  const curve = Math.round(Math.max(0, vigor * vigor - 16) * 0.95); // ~0 at vigor ≤4, ~+840 at 30
-  return Math.round(BASE_VITALITY + vigor * HP_PER_VIGOR + curve);
+  return Math.round(BASE_VITALITY + vigorHealthBonus(vigor));
+}
+
+// The max-HP a given Vigor score contributes (beyond the innate base) — surfaced
+// in the attribute panel as Vigor's always-on, since the HP itself lives in
+// vitalityMax rather than the combat statMod table.
+export function vigorHealthBonus(v) {
+  const vigor = v || 0;
+  return Math.round(vigor * HP_PER_VIGOR + Math.max(0, vigor * vigor - 16) * 0.95);
 }
 
 // Recompute and store `vitalityMax` from current (effective) vigor — call wherever
@@ -47,7 +55,10 @@ export function resolvePoolForMind(mind) {
 }
 
 export function maxResolveFor(character) {
-  return resolvePoolForMind(effectiveAttributes(character).mind || 0);
+  const a = effectiveAttributes(character);
+  // Presence's always-on deepens the pool (attribute-tiers smoothStats.maxResolve).
+  const bonus = attributeThresholdMods(a).statMods.maxResolve || 0;
+  return resolvePoolForMind(a.mind || 0) + bonus;
 }
 
 // Mirror recomputeVitalityMax for resolve: gaining Mind tops you up, losing it

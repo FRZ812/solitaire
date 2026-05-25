@@ -3,12 +3,16 @@ import { colors, radius } from "./tokens.js";
 import { ATTR_LABELS } from "../config.js";
 import { tier as tierInfo } from "../data/tiers.js";
 import { attrDescriptor, smoothStatSummary, attributeLadder, attrPurpose } from "../data/attribute-tiers.js";
+import { vigorHealthBonus } from "../engine/attributes.js";
 
 // Expanded detail for a tapped attribute: what it governs mechanically, its
 // current always-on bonuses, and the full unique-unlock ladder (which thresholds
 // this score has reached).
 export function AttributeDetail({ attrKey, value }) {
   const smooth = smoothStatSummary(attrKey, value);
+  // Vigor's payoff is max HP (it lives in vitalityMax, not the combat statMods),
+  // so surface it here as its always-on line.
+  if (attrKey === "vigor" && vigorHealthBonus(value) > 0) smooth.unshift(`+${vigorHealthBonus(value)} max HP`);
   const ladder = attributeLadder(attrKey, value);
   return (
     <div style={{ marginTop: "8px", padding: "9px 11px", borderRadius: radius.panelCompact, backgroundColor: "rgba(10,15,15,0.45)", border: `1px solid rgba(215,167,111,0.2)` }}>

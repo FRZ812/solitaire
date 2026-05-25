@@ -47,12 +47,12 @@ const addInto = (dst, src) => { for (const k in src) dst[k] = (dst[k] || 0) + sr
 function smoothStats(key, v) {
   const q = Math.max(0, v * v - 16), s = {};
   switch (key) {
-    case "vigor":    s.drPct = +(q * 0.0001).toFixed(4); break;          // 30 → +9% DR (vigor's HP lives in vitalityMax now)
-    case "body":     s.damageMult = +(q * 0.00041).toFixed(4); s.armor = Math.round(q * 0.0271); s.penetration = Math.round(q * 0.0068); break; // 30 → +36% dmg, +24 armor, +6 pen
-    case "reflex":   s.dodge = Math.round(q * 0.0339); s.accuracy = Math.round(q * 0.0136); break;            // 30 → +30 dodge, +12 acc
-    case "mind":     s.saveDC = Math.round(q * 0.0079); s.damageMult = +(q * 0.0002).toFixed(4); break;       // 30 → +7 save DC (control harder to resist), +18% (caster)
-    case "wit":      s.critChance = Math.round(q * 0.0271); s.healPower = +(q * 0.00045).toFixed(4); break;   // insight: 30 → +24 crit, +40% healing potency
-    case "presence": s.damageMult = +(q * 0.000226).toFixed(4); s.drPct = +(q * 0.00007).toFixed(4); break;  // willpower/intensity: 30 → +20% damage, +6% DR
+    case "vigor":    break;                                              // HP lives in vitalityMax (attributes.js) — shown in the panel, no combat statMod here
+    case "body":     s.damageMult = +(q * 0.00041).toFixed(4); break;     // 30 → +36% damage (armour & penetration dropped)
+    case "reflex":   s.dodge = Math.round(q * 0.06787); break;            // 30 → +60 dodge (accuracy dropped)
+    case "mind":     s.saveDC = Math.round(q * 0.0079); break;                // 30 → +7 save DC (control harder to resist)
+    case "wit":      s.critChance = Math.round(q * 0.04525); break;           // 30 → +40 crit chance
+    case "presence": s.maxResolve = Math.round(q * 0.02262); break;           // willpower: 30 → +20 max Resolve
   }
   return s;
 }
@@ -60,13 +60,13 @@ function smoothStats(key, v) {
 // Unique-effect unlocks at [5,10,15,20,25,30], cumulative. `s` → statMods,
 // `t` → triggers (same keys the gear-affix engine already honors).
 const UNIQUE = {
-  vigor: [
-    { t: { turnRegen: 0.02 } },       // 5  rare      — second wind: regenerate each turn
-    { s: { controlResist: 0.25 } },   // 10 very-rare — hardy: shrug off stun/slow
-    { t: { reviveOnce: 0.35 } },      // 15 epic      — stalwart: survive one fatal blow
-    { s: { damageCap: 0.40 } },       // 20 legendary — unbreakable: no hit exceeds 40% max HP
-    { t: { turnRegen: 0.03 } },       // 25 mythic    — regeneration deepens
-    { s: { controlResist: 0.35 } },   // 30 divine    — indomitable: near control-immune
+  vigor: [ // TOUGHNESS — deep HP (always-on) + shrugging off control, capped by Stonewall
+    null,                             // 5
+    { s: { controlResist: 0.25 } },   // 10 — hardy: shrug off stun/slow
+    null,                             // 15
+    { s: { controlResist: 0.35 } },   // 20 — near control-immune
+    null,                             // 25
+    { s: { damageCap: 0.25 } },       // 30 — Stonewall: no single hit exceeds 25% max HP
   ],
   body: [ // RAW MIGHT — devastating force: brutal crit damage + crushing blows
     { s: { critMult: 0.20 } },        // 5  rare      — heavy blows land like a falling hammer
@@ -74,39 +74,39 @@ const UNIQUE = {
     { s: { critMult: 0.30 } },        // 15 epic      — bone-shattering critical force
     { s: { damageMult: 0.10 } },      // 20 legendary — colossal might
     { s: { critMult: 0.40 } },        // 25 mythic    — catastrophic, devastating crits
-    { s: { damageMult: 0.12 } },      // 30 divine    — titanic, mountain-moving force
+    { s: { execute: 0.20 } },         // 30 divine    — Execute: hits finish foes already below 20% HP
   ],
   reflex: [
-    { s: { swiftChance: 0.06 } },     // 5  — flurry: chance to act again
-    { s: { swiftChance: 0.06 } },     // 10
-    { s: { swiftChance: 0.08 } },     // 15
-    { s: { extraActions: 1 } },       // 20 — move between heartbeats: an extra action
-    { s: { swiftChance: 0.10 } },     // 25
-    { s: { extraActions: 1 } },       // 30 — two extra actions
+    { s: { swiftChance: 0.10 } },     // 5  — flurry: chance to act again
+    { s: { swiftChance: 0.10 } },     // 10
+    { s: { extraActions: 1 } },       // 15 — move between heartbeats: an extra action
+    { s: { swiftChance: 0.15 } },     // 20 — act-again totals 35%
+    { s: { extraActions: 1 } },       // 25 — another extra action
+    { s: { phaseChance: 0.25 } },     // 30 — Phantom: a quarter of attacks pass straight through you
   ],
-  mind: [
-    { t: { magicShieldGen: 0.03 } },  // 5  — a self-renewing ward
-    { t: { shieldGen: 0.03 } },       // 10 — a conjured shield each turn
+  mind: [ // CONTROL & CASTING — your control magic lingers; your spells can surge
+    { s: { controlDuration: 0.15 } }, // 5  — control you inflict lasts longer
+    { s: { controlDuration: 0.15 } }, // 10
     { s: { cooldownReduction: 1 } },  // 15 — quick study: tricks recover faster
-    { t: { magicShieldGen: 0.04 } },  // 20
+    { s: { controlDuration: 0.20 } }, // 20
     { s: { cooldownReduction: 1 } },  // 25
-    { t: { shieldGen: 0.05 } },       // 30 — an ever-renewing bulwark
+    { s: { spellSurge: 1 } },         // 30 — ALL abilities cost double Resolve but deal half again as much
   ],
-  wit: [ // INSIGHT — clever mending, precision, and quick thinking
+  wit: [ // INSIGHT — clever mending, quick thinking, and precision crits
     { s: { healPower: 0.10 } },       // 5  rare      — tend wounds cannily: healing hits harder
-    { s: { critMult: 0.15 } },        // 10 very-rare — read the opening: heavier crits
+    { s: { cooldownReduction: 1 } },  // 10 very-rare — quick thinking: tricks recover faster
     { s: { healPower: 0.15 } },       // 15 epic      — a healer's eye
-    { s: { cooldownReduction: 1 } },  // 20 legendary — quick thinking: tricks recover faster
-    { s: { critMult: 0.20 } },        // 25 mythic    — uncanny precision
-    { s: { healPower: 0.20 } },       // 30 divine    — perfect insight into mending (+45% healing total here)
+    { s: { cooldownReduction: 1 } },  // 20 legendary — tricks recover faster still
+    { s: { healPower: 0.20 } },       // 25 mythic    — perfect insight into mending
+    { s: { abilityCrit: 1 } },        // 30 divine    — your abilities can crit, even healing spells
   ],
-  presence: [ // WILLPOWER & INTENSITY — endure, dominate, refuse to break
-    { t: { resolveRegen: 1 } },       // 5  rare      — force of will fuels you
-    { s: { dmgDefer: 0.15 } },        // 10 very-rare — iron will: endure, spread the pain over time
-    { s: { controlResist: 0.30 } },   // 15 epic      — unshakeable: shrug off control
-    { s: { damageMult: 0.10 } },      // 20 legendary — sheer intensity: blows land harder
-    { s: { dmgDefer: 0.15 } },        // 25 mythic    — defer ever more of the brunt
-    { s: { controlResist: 0.30 } },   // 30 divine    — indomitable: near debuff-proof (a poor man's BKB)
+  presence: [ // WILLPOWER — sustain your Resolve, endure, and refuse to break
+    { t: { resolveRegen: 1 } },          // 5  rare      — force of will fuels you
+    { s: { dmgDefer: 0.15 } },           // 10 very-rare — iron will: endure, spread the pain over time
+    { t: { resolveRegen: 1 } },          // 15 epic      — your will keeps fueling you (+1 more/turn)
+    { s: { ccDurationReduction: 0.25 } },// 20 legendary — control & debuffs on you wear off faster
+    { s: { dmgDefer: 0.15 } },           // 25 mythic    — defer ever more of the brunt
+    { t: { lastStand: 1 } },             // 30 divine    — once per fight, a lethal blow can't drop you below 1 HP for 3 turns
   ],
 };
 const THRESHOLDS = [5, 10, 15, 20, 25, 30];
@@ -148,9 +148,11 @@ const EFFECT_FMT = {
   healPower:        (v) => `+${Math.round(v * 100)}% healing potency`,
   swiftChance:      (v) => `${Math.round(v * 100)}% chance to act again`,
   extraActions:     (v) => `+${v} action each turn`,
-  cooldownReduction:(v) => `abilities recover ${v} turn${v > 1 ? "s" : ""} faster`,
+  cooldownReduction:(v) => `${v}-turn cooldown reduction`,
   controlResist:    (v) => `resist ${Math.round(v * 100)}% of stuns, slows & debuffs`,
   damageCap:        (v) => `no single hit exceeds ${Math.round(v * 100)}% of your max HP`,
+  execute:          (v) => `your hits finish foes already below ${Math.round(v * 100)}% HP`,
+  phaseChance:      (v) => `${Math.round(v * 100)}% of attacks pass straight through you`,
   dmgDefer:         (v) => `spread ${Math.round(v * 100)}% of incoming damage over time`,
   turnRegen:        (v) => `regenerate ${Math.round(v * 100)}% max HP each turn`,
   reviveOnce:       (v) => `once per fight, cheat death (revive at ${Math.round(v * 100)}% HP)`,
@@ -159,6 +161,12 @@ const EFFECT_FMT = {
   shieldGen:        (v) => `conjure a shield worth ${Math.round(v * 100)}% max HP each turn`,
   magicShieldGen:   (v) => `weave a magic ward worth ${Math.round(v * 100)}% max HP each turn`,
   resolveRegen:     (v) => `recover +${v} resolve each turn`,
+  controlDuration:  (v) => `+${Math.round(v * 100)}% control duration (stuns, slows & control you inflict last longer)`,
+  ccDurationReduction:(v) => `incoming stuns, slows & debuffs last ${Math.round(v * 100)}% less`,
+  spellSurge:       () => `your abilities cost double Resolve but deal 50% more damage`,
+  maxResolve:       (v) => `+${v} max Resolve`,
+  lastStand:        () => `once per fight, a lethal blow can't drop you below 1 HP for 3 turns`,
+  abilityCrit:      () => `your abilities can land critical hits — even healing spells`,
 };
 const fmtEffects = (obj) => Object.entries(obj || {}).map(([k, v]) => (EFFECT_FMT[k] ? EFFECT_FMT[k](v) : `${k} +${v}`));
 
