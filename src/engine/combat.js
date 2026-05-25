@@ -1050,7 +1050,8 @@ function npcPerform(cs, actor, opponents, opts = {}) {
     if (!target || target.health <= 0 || target.resolved || target._dead) target = opponents.find((o) => o.health > 0 && !o.resolved && !o._dead);
     if (!target) { actor.actionsLeft = 0; return false; }
     if (ability.id !== BASIC_ATTACK.id) cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
-    const hits = def.hits || 1;
+    // Paired weapons add an extra light strike to the BASIC attack (twin blades).
+    const hits = (def.hits || 1) + (ability.id === BASIC_ATTACK.id && actor.weapon?.paired ? 1 : 0);
     for (let h = 0; h < hits; h++) { if (target.health <= 0) break; hitOne(target); }
   }
 
@@ -1376,7 +1377,8 @@ export function playerAct(cs0, abilityId, targetIndex) {
     if (idx < 0) return cs0;
     const target = cs.enemies[idx];
     if (abilityId !== BASIC_ATTACK.id) cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
-    const hits = def.hits || 1;
+    // Paired weapons add an extra light strike to the BASIC attack (twin blades).
+    const hits = (def.hits || 1) + (abilityId === BASIC_ATTACK.id && cs.player.weapon?.paired ? 1 : 0);
     for (let h = 0; h < hits; h++) { if (target.health <= 0) break; hitEnemy(target); }
   }
 
