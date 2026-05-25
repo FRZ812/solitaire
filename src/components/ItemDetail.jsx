@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon, ItemIcon } from "./Icon.jsx";
 import { iconButtonStyle, actionButtonStyle, insetBoxStyle } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle, glass, shadow } from "./tokens.js";
@@ -79,9 +80,12 @@ export function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip
       <span style={{ color: colors.parchmentMuted }}>{label}</span><span>{value}</span>
     </div>
   );
-  return (
+  // Rendered through a portal to document.body so it overlays the whole viewport.
+  // (Inside the panel deck it would otherwise be sized against the transformed,
+  // 300%-wide page track and appear stretched/off-centre.)
+  return createPortal(
     <div onClick={(e) => { e.stopPropagation(); onClose(); }} style={{
-      position: "absolute", inset: 0, zIndex: 30, display: "flex", alignItems: "center", justifyContent: "center",
+      position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center",
       backgroundColor: "rgba(8,12,12,0.7)", backdropFilter: "blur(4px)", padding: "20px",
     }}>
       <div onClick={(e) => e.stopPropagation()} className="scale-in" style={{
@@ -196,6 +200,7 @@ export function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip
             : <button onClick={() => { onEquip(id); onClose(); }} style={actionButtonStyle()}>Equip</button>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

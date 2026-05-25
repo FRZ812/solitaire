@@ -23,14 +23,30 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
 
   const go = (dir) => setPage((p) => (p + dir + PAGES.length) % PAGES.length); // wraps around
 
-  // Horizontal swipe anywhere on the deck changes page (snap), content-follows-
-  // finger: swipe LEFT → the page on the right (Inventory), swipe RIGHT → the page
-  // on the left (Company) — and it loops. Guarded so a mostly-vertical drag
-  // (content scroll) is ignored.
-  function onTouchStart(e) { const t = e.touches[0]; swipe.current = { x: t.clientX, y: t.clientY }; }
+  // One gesture handler for the whole content area. A mostly-horizontal swipe
+  // changes page (snap, loops). A downward pull that STARTS at the top of a page
+  // dismisses the sheet (so you can fling it away from anywhere, not just the
+  // grab handle); otherwise the touch falls through to normal content scroll.
+  function onTouchStart(e) {
+    const t = e.touches[0];
+    const sc = e.target.closest?.(".no-scrollbar");
+    swipe.current = { x: t.clientX, y: t.clientY, atTop: !sc || sc.scrollTop <= 0, mode: null };
+  }
+  function onTouchMove(e) {
+    const s = swipe.current; if (!s) return;
+    const t = e.touches[0];
+    const dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if (!s.mode) {
+      if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) s.mode = "swipe";
+      else if (dy > 8 && s.atTop) s.mode = "pull";
+      else if (Math.abs(dy) > 8) s.mode = "scroll";
+    }
+    if (s.mode === "pull") setDragY(Math.max(0, dy));
+  }
   function onTouchEnd(e) {
     const s = swipe.current; swipe.current = null;
     if (!s) return;
+    if (s.mode === "pull") { const pulled = dragY; setDragY(0); if (pulled > 64) onClose(); return; }
     const t = e.changedTouches[0];
     const dx = t.clientX - s.x, dy = t.clientY - s.y;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) go(dx > 0 ? -1 : 1);
@@ -48,7 +64,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
     const pulled = dragY;
     grab.current = null;
     setDragY(0);
-    if (pulled > 90) onClose();
+    if (pulled > 64) onClose();
   }
 
   return (
@@ -111,7 +127,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
         </div>
 
         {/* Pages — a horizontal track; only the active page is in view. */}
-        <div style={{ flex: 1, overflow: "hidden" }} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <div style={{ flex: 1, overflow: "hidden" }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
           <div style={{
             display: "flex", width: "300%", height: "100%",
             transform: `translateX(-${page * (100 / PAGES.length)}%)`,
@@ -148,7 +164,8 @@ function Page({ children }) {
   return (
     <div className="no-scrollbar" style={{
       width: `${100 / PAGES.length}%`, height: "100%", overflowY: "auto",
-      WebkitOverflowScrolling: "touch", paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
+      WebkitOverflowScrolling: "touch", overscrollBehaviorY: "contain",
+      paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
     }}>
       {children}
     </div>

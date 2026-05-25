@@ -4,7 +4,8 @@ import { colors, radius, fonts } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { RACES } from "../data/races.js";
 import { itemTemplate } from "../data/catalog.js";
-import { getAbilityDef } from "../data/abilities.js";
+import { getAbilityDef, abilityStatLine, abilityReqLine } from "../data/abilities.js";
+import { itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
 import { tierColor, tierLabel } from "../data/tiers.js";
 import { CHARACTER_TEMPLATES, STANDARD_PROVISIONS } from "../data/templates.js";
 import { InfoModal } from "./InfoTip.jsx";
@@ -50,7 +51,39 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
   const wornItems = (s.items || []).filter((i) => i.worn).map((i) => ({ ...i, def: itemTemplate(i.itemId) }));
   const packedItems = (s.items || []).filter((i) => !i.worn).map((i) => ({ ...i, def: itemTemplate(i.itemId) }));
   const coinStr = [s.coins?.gold && `${s.coins.gold}g`, s.coins?.silver && `${s.coins.silver}s`, s.coins?.copper && `${s.coins.copper}c`].filter(Boolean).join(" ");
-  const itemInfo = (it) => setInfo({ term: it.def?.name || it.itemId, text: it.def?.description || it.def?.appearance || "A piece of your kit." });
+  const detailRows = (rows) => rows.length ? (
+    <div style={{ display: "flex", flexDirection: "column", gap: "2px", paddingTop: "2px" }}>
+      {rows.map((r, i) => <div key={i} style={{ fontSize: "12px", color: colors.parchment }}>{r}</div>)}
+    </div>
+  ) : null;
+  const itemInfo = (it) => {
+    const def = it.def;
+    const cs = def ? itemCombatStats(def) : null;
+    const req = def ? itemRequirement(def) : null;
+    const rows = [];
+    if (cs?.damage) rows.push(`Damage ${cs.damage.min}–${cs.damage.max} ${cs.damage.type}${cs.damage.pen ? ` · pen ${cs.damage.pen}` : ""}`);
+    if (cs?.weaponType) rows.push(`Type: ${cs.weaponType}`);
+    if (cs?.armor > 0) rows.push(`Armor +${cs.armor}`);
+    if (cs?.ward > 0) rows.push(`Ward +${cs.ward}`);
+    if (cs?.dodge > 0) rows.push(`Dodge +${cs.dodge}%`);
+    if (req?.value > 0) rows.push(`Requires ${ATTR_LABELS[req.attr]} ${req.value}`);
+    setInfo({ term: it.def?.name || it.itemId, text: it.def?.description || it.def?.appearance || "A piece of your kit.", extra: detailRows(rows) });
+  };
+  const abilityInfo = (a) => {
+    const def = getAbilityDef(a.id);
+    const stat = def ? abilityStatLine(def, a.tier) : "";
+    const reqs = def ? abilityReqLine(def) : "";
+    setInfo({
+      term: `${def?.name || a.id} · ${tierLabel(a.tier)}`,
+      text: def?.desc || "A learned technique.",
+      extra: (stat || reqs) ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: "3px", paddingTop: "2px" }}>
+          {stat && <div style={{ fontSize: "12px", color: colors.parchment }}>{stat}</div>}
+          {reqs && <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.6)" }}>{reqs}</div>}
+        </div>
+      ) : null,
+    });
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(120% 90% at 50% 0%, rgba(28,36,40,0.98), rgba(8,11,12,0.995))", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -103,7 +136,7 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
             {(s.abilities || []).map((a) => {
               const def = getAbilityDef(a.id);
               return (
-                <button key={a.id} onClick={() => setInfo({ term: `${def?.name || a.id} · ${tierLabel(a.tier)}`, text: def?.desc || "A learned technique." })} style={{ ...tagPill, cursor: "pointer", fontFamily: "inherit", textTransform: "none", letterSpacing: 0, color: colors.parchmentLight, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.22)` }}>
+                <button key={a.id} onClick={() => abilityInfo(a)} style={{ ...tagPill, cursor: "pointer", fontFamily: "inherit", textTransform: "none", letterSpacing: 0, color: colors.parchmentLight, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.22)` }}>
                   {def?.name || a.id} <span style={{ color: tierColor(a.tier), fontWeight: 800 }}>{tierLabel(a.tier)}</span>
                 </button>
               );
