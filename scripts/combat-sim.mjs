@@ -154,6 +154,57 @@ scenario("party vs 2 ogres", () => generateEnemyGroup("ogre", { count: 2, maxTie
 scenario("party vs 5 orc-raiders", () => generateEnemyGroup("orc-raiders", { count: 5, maxTier: "uncommon" }), PARTY, "uncommon");
 console.log("");
 
+// ---------------------------------------------------------------------------
+// MIND CONTROL — Charm (pacify) / Dominate (turn them on their own), will-save.
+// ---------------------------------------------------------------------------
+console.log("MIND CONTROL (Charm / Dominate)");
+// A high-Will enchanter who ONLY controls (no real attacks) should still win by
+// turning foes on each other / pacifying them — impossible without the mechanic.
+function enchanter() {
+  return makeFighter({
+    name: "Enchanter",
+    attributes: { body: 2, reflex: 3, vigor: 3, mind: 16, wit: 4, presence: 12 },
+    abilities: [{ id: "dominate", tier: "mythical" }, { id: "charm", tier: "epic" }],
+    proficiencies: {},
+  });
+}
+{
+  const N = 600;
+  let landed = 0, hasWill = true, friendlyFire = 0, charmedStoodDown = 0, charmTrials = 0, ffTrials = 0;
+  for (let i = 0; i < N; i++) {
+    // DOMINATE: a dominated bandit turns on its own side (player deals no damage).
+    let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 2, maxTier: "common" }), { allies: [] });
+    if (cs.phase === "player") {
+      if (typeof cs.player.will !== "number" || typeof cs.enemies[0].will !== "number") hasWill = false;
+      const idx = cs.enemies.findIndex((e) => e.health > 0);
+      cs = playerAct(cs, "dominate", idx);
+      if ((cs.enemies[idx].statuses || []).some((s) => s.type === "dominated")) {
+        landed++;
+        cs = endTurn(cs); // let the enemy side act — the thrall should strike its ally
+        ffTrials++;
+        if (cs.enemies.some((e, j) => j !== idx && e.health < e.maxHealth)) friendlyFire++;
+      }
+    }
+    // CHARM: a charmed lone bandit stands down — the player takes no damage from it.
+    let c2 = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
+    if (c2.phase === "player") {
+      c2 = playerAct(c2, "charm", 0);
+      if ((c2.enemies[0].statuses || []).some((s) => s.type === "charmed")) {
+        const hp = c2.player.health;
+        c2 = endTurn(c2);
+        charmTrials++;
+        if (c2.player.health >= hp) charmedStoodDown++;
+      }
+    }
+  }
+  const p = (n, d) => `${Math.round((n / Math.max(1, d)) * 100)}%`;
+  console.log(`  will on player + foes: ${hasWill ? "OK" : "FAIL"}`);
+  console.log(`  Dominate lands on a weak-willed bandit: ${p(landed, N)} — ${landed / N >= 0.7 ? "OK" : "LOW"}`);
+  console.log(`  Dominated thrall strikes its OWN side: ${p(friendlyFire, ffTrials)} — ${friendlyFire / Math.max(1, ffTrials) >= 0.6 ? "OK" : "LOW"}`);
+  console.log(`  Charmed foe stands down (no damage to you): ${p(charmedStoodDown, charmTrials)} — ${charmedStoodDown / Math.max(1, charmTrials) >= 0.9 ? "OK" : "LOW"}`);
+}
+console.log("");
+
 // ===========================================================================
 // ToW SYSTEMS VERIFICATION — action economy, swift, defence, DoT/crit, fusion.
 // ===========================================================================

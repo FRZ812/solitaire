@@ -118,7 +118,7 @@ export function chooseAction(actor, opponents, candidates, opts = {}) {
   // 2) Control a dangerous, uncontrolled target (set up the kill).
   const control = candidates.find((c) =>
     c.def.effect && c.def.effect.target === "enemy" &&
-    ["stun", "weaken", "vulnerable", "chill", "curse"].includes(c.def.effect.type) && c.def.target !== "all-enemies");
+    ["stun", "weaken", "vulnerable", "chill", "curse", "charmed", "dominated"].includes(c.def.effect.type) && c.def.target !== "all-enemies");
   if (control && !has(target, "stun") && !has(target, "vulnerable") && !has(target, control.def.effect.type) && living.length >= 1 && Math.random() < 0.6) {
     return { ability: control, def: control.def, mode: "single", target };
   }

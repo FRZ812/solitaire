@@ -37,12 +37,13 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 let LOG_SEQ = 0;
 const logEntry = (text, kind = "system") => ({ id: `l${Date.now()}-${LOG_SEQ++}`, text, kind });
 
-const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence"]);
+const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence", "charmed", "dominated"]);
 const RESISTABLE_CONTROL = new Set(["stun", "slow"]); // hard controls Unbowed (controlResist) can shrug off
+const MIND_CONTROL = new Set(["charmed", "dominated"]); // Charm/Dominate — gated by a WILL save (applyEnemyEffect)
 // Debuffs an "unstoppable" combatant (BKB) is flat-out immune to — disables and the
 // anti-heal curse, NOT damage-over-time (a wound still bleeds; you just can't be
 // disabled or cursed). Damage immunity (incl. true) is invuln's job, separately.
-const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence"]);
+const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence", "charmed", "dominated"]);
 const ALLY_LOSS = { cowardly: 22, wary: 14, fierce: 8, brutish: 10, honorable: 10, feral: 8, fanatic: 0, mindless: 0 };
 
 function sumStatus(c, type) {
@@ -85,6 +86,26 @@ function addStatus(c, effect) {
   }
   c.statuses = c.statuses || [];
   c.statuses.push({ type: effect.type, value: effect.value || 0, duration: effect.duration || 1, pctMax: !!effect.pctMax });
+}
+
+// Apply an enemy-targeted ability effect. MIND CONTROL (Charm/Dominate) is gated by
+// a WILL save: a target whose will (mind+presence) meets or beats the caster's
+// shrugs it off, and each prior control this fight stacks resistance (controlPressure)
+// — so you can't perma-thrall a strong-willed boss. Dominate is harder to land than
+// the gentle Charm. Everything else applies straight (addStatus owns stun/slow resist).
+function applyEnemyEffect(cs, caster, target, effect) {
+  if (!effect || !target || target.health <= 0) return;
+  if (MIND_CONTROL.has(effect.type)) {
+    const potency = caster?.will || 0;
+    const base = effect.type === "dominated" ? 0.05 : 0.10;
+    const save = Math.min(0.95, base + Math.max(0, (target.will || 0) - potency) * 0.05 + (target.controlResist || 0) + (target.controlPressure || 0) * 0.15);
+    if (hasStatus(target, "unstoppable") || Math.random() < save) {
+      cs.log.push(logEntry(`${target.name} shrugs off the ${effect.type === "dominated" ? "domination" : "charm"}.`, "status"));
+      return;
+    }
+  }
+  addStatus(target, effect);
+  if (CONTROL_TYPES.has(effect.type) && target.side === "enemy") onEnemyControlled(target);
 }
 // livingEnemies = anything not dead and not resolved (yielded/fled/ko). A FLEEING
 // foe is still "living" — it's on the field, running, until it gets clear.
@@ -157,6 +178,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     dr: cs.dr || 0, fortify: cs.fortify || 0,
     phaseChance: cs.phaseChance || 0, dodgeIgnore: cs.dodgeIgnore || 0,
     damageCap: cs.damageCap || 0, controlResist: cs.controlResist || 0,
+    will: cs.will || 0, // willpower — Charm/Dominate save (mind+presence)
     healPower: cs.healPower || 0, dmgDefer: cs.dmgDefer || 0,
     armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
@@ -399,6 +421,9 @@ function advanceQueue(cs) {
       const r = beginTurnFor(cs, actor);
       if (r === "dead") return finishDefeat(cs);
       if (r === "stun") { cs.orderIdx += 1; continue; }
+      // Charmed/dominated player loses the turn — the will isn't theirs to command.
+      if (hasStatus(actor, "dominated")) { cs.log.push(logEntry("Your body moves against your will — you cannot act.", "status")); cs.orderIdx += 1; continue; }
+      if (hasStatus(actor, "charmed")) { cs.log.push(logEntry("A strange calm stays your hand — you cannot raise a weapon.", "status")); cs.orderIdx += 1; continue; }
       cs.phase = "player";
       return cs; // hand control to the UI
     }
@@ -412,13 +437,19 @@ function advanceQueue(cs) {
     // it's far enough it's gone. It doesn't fight — the player must run it down.
     if (actor.side === "enemy" && actor.fleeing) { fleeStep(cs, actor); continue; }
     if (actor.side === "enemy" && !moraleCheck(cs, actor)) continue;
+    // Mind-control: a CHARMED combatant stands down (it won't act against the side
+    // that swayed it); a DOMINATED one is turned — it attacks its OWN side.
+    if (hasStatus(actor, "charmed")) { cs.log.push(logEntry(`${actor.name} stands down, held by the charm.`, "status")); continue; }
+    const dominated = hasStatus(actor, "dominated");
     while ((actor.actionsLeft || 0) > 0) {
       // Companions hit only foes still fighting — never a fleeing or yielded foe
       // (running one down or finishing a captive is the player's call alone).
-      const opponents = actor.side === "player" ? liveAttackers(cs) : playerSide(cs);
+      const opponents = dominated
+        ? (actor.side === "player" ? playerSide(cs) : livingEnemies(cs)).filter((c) => c !== actor)
+        : (actor.side === "player" ? liveAttackers(cs) : playerSide(cs));
       if (opponents.length === 0) break;
-      if (actor.side !== "player" && cs.player.health <= 0) break;
-      if (!npcPerform(cs, actor, opponents)) break;
+      if (actor.side !== "player" && !dominated && cs.player.health <= 0) break;
+      if (!npcPerform(cs, actor, opponents, dominated ? { allies: [] } : {})) break;
       if (playerDown(cs)) return finishDefeat(cs);
     }
     if (combatOver(cs)) return checkCombatEnd(cs);
@@ -677,8 +708,7 @@ function dealHit(cs, attacker, target, profile, def) {
   }
 
   if (target.health > 0 && def && def.effect && def.effect.target === "enemy") {
-    addStatus(target, def.effect);
-    if (CONTROL_TYPES.has(def.effect.type) && target.side === "enemy") onEnemyControlled(target);
+    applyEnemyEffect(cs, attacker, target, def.effect);
   }
 
   if (target.health <= 0 && !targetIsPlayer) fireProcs(cs, attacker, "onKill", { target });
@@ -895,9 +925,10 @@ function npcCandidates(actor) {
 // caller (advanceQueue) loops this up to the actor's action points — the same
 // economy the player uses. Spends resolve (spells) + cooldown + one action.
 // Returns true if it acted (so the caller can keep spending action points).
-function npcPerform(cs, actor, opponents) {
+function npcPerform(cs, actor, opponents, opts = {}) {
   if ((actor.actionsLeft || 0) <= 0) return false;
-  const choice = chooseAction(actor, opponents, npcCandidates(actor), { allies: sideAllies(cs, actor) });
+  // A dominated actor gets allies:[] so it won't "support" the side it's now fighting.
+  const choice = chooseAction(actor, opponents, npcCandidates(actor), { allies: opts.allies ?? sideAllies(cs, actor) });
   if (!choice) return false;
   const { def, ability, mode } = choice;
   const tId = ability.tier || actor.tier || "common";
@@ -926,8 +957,7 @@ function npcPerform(cs, actor, opponents) {
     const profile = attackProfile(actor, def, tId, false);
     if (profile) dealHit(cs, actor, target, profile, def);
     else if (def.effect && def.effect.target === "enemy" && target.health > 0) {
-      addStatus(target, def.effect);
-      if (CONTROL_TYPES.has(def.effect.type) && target.side === "enemy") onEnemyControlled(target);
+      applyEnemyEffect(cs, actor, target, def.effect);
     }
   };
 
@@ -1250,8 +1280,7 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const hitEnemy = (target) => {
     if (profile) dealHit(cs, cs.player, target, profile, def);
     else if (def.effect && def.effect.target === "enemy" && target.health > 0) {
-      addStatus(target, def.effect);
-      if (CONTROL_TYPES.has(def.effect.type) && target.side === "enemy") onEnemyControlled(target);
+      applyEnemyEffect(cs, cs.player, target, def.effect);
     }
   };
 
