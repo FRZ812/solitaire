@@ -146,7 +146,10 @@ export function companionUpkeep(party, codexCharacters, inventory, minutes, deca
     const c = codexCharacters?.[id];
     if (!c || c.combatState?.status === "dead") continue;
     const baseNeeds = c.needs || { hunger: 70, thirst: 75, sleep: 70 };
-    const drained = depleteNeeds(baseNeeds, minutes, decayMult);
+    // A mount's endurance scales its own decay — a thrifty courser/camel drains
+    // slower, a hungry carnivore faster (data/mounts.js needsDecayMult, <1 = hardy).
+    const endure = c.kind === "mount" ? (c.needsDecayMult ?? 1) : 1;
+    const drained = depleteNeeds(baseNeeds, minutes, decayMult * endure);
     // Mounts eat their own feed (fodder/meat/livestock); everyone else eats from
     // the shared ration pack.
     const fed = c.kind === "mount"

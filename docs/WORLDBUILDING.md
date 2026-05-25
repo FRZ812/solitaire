@@ -546,7 +546,23 @@ griffon (epic), wyvern (legendary), drake (mythical), dragon (divine).
   gets the mount's `mountedBonus` charge. A slain mount throws its riders.
 - **Acquisition.** Mundane mounts are **bought** at a stable
   (`town.js BUILDINGS.stable`, `StableView`, `economy.buyMount`); exotic/flying
-  mounts are **earned** and granted by the narrator via `beat.grant_mount`.
+  mounts are **earned** and granted by the narrator via `beat.grant_mount`
+  (`ground-drake` — a wingless lesser drake — is now earned, not sold).
+- **Region-gated stable stock.** A stable sells **region-appropriate** mounts: the
+  selection is resolved per tile from `STABLE_STOCK_BY_BIOME` / `stableStockFor(biomeId)`
+  (`data/mounts.js`, keyed by `getBiome(x,y).id`) — or a handcrafted `poi.mounts`
+  override (the hook for a future great human capital) — then **seed-rolled** per
+  tile per restock window by `rollStableMounts` (`town-gen.js`, mirroring
+  `rollShopStock`): the `signature` mount is always in stock, the rest rotate by
+  chance. So the swamp Mire sells nags, the steppe sells camels/axe-beaks, the
+  Drakeholt sells ridge-ponies, human lands carry the premium Courser, etc. The
+  expanded roster adds fantasy GROUND mounts (war-stag, ram, axe-beak, dire-boar,
+  Saddle Basilisk) that bridge horse → earned flyer; camel is now an arid/steppe
+  beast (the dead "desert" terrain is gone).
+- **Per-mount endurance** (`needsDecayMult`, default 1; `data/mounts.js`): scales how
+  fast a mount's needs drain in `companionUpkeep` and its flight stamina in
+  `App.handleFly` (a courser/camel is thrifty <1; a hungry carnivore >1). A courser
+  is *faster + needs-thriftier*; a war-stag *fights harder + carries more*.
 
 - **Transient buffs & graceful degradation.** Capacity is *derived*, never a
   bare number a buff should overwrite. A temporary lift is an additive bonus the

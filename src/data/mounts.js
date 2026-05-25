@@ -27,6 +27,8 @@ import { resolvePoolForMind } from "../engine/attributes.js";
 const hoof = (min, max, pen = 0) => ({ min, max, type: "physical", pen, category: "hoof", reach: 1, speed: 0, acc: 0 });
 const fang = (min, max, pen = 1) => ({ min, max, type: "physical", pen, category: "fang", reach: 1, speed: 0, acc: 1 });
 const talon = (min, max, pen = 2) => ({ min, max, type: "physical", pen, category: "claw", reach: 1, speed: 0, acc: 1 });
+const gore = (min, max, pen = 1) => ({ min, max, type: "physical", pen, category: "horn", reach: 1, speed: 0, acc: 0 });
+const beak = (min, max, pen = 1) => ({ min, max, type: "physical", pen, category: "beak", reach: 1, speed: 0, acc: 1 });
 
 export const MOUNTS = {
   // ============================================================
@@ -35,7 +37,7 @@ export const MOUNTS = {
   pony: {
     id: "pony", kind: "mount", name: "Pony", race: "pony", tier: "common",
     desc: "A shaggy, sure-footed pony — cheap, placid, and tireless on a good road.",
-    bodyWeight: 45, rideCapacity: 95, feed: "fodder", acquisition: "stable", priceCp: 250,
+    bodyWeight: 45, rideCapacity: 95, feed: "fodder", acquisition: "stable", priceCp: 250, needsDecayMult: 0.9,
     moveProfile: { ground: 1.3, canFly: false, terrain: ["plains", "road", "hills", "settlement"], graze: ["plains", "hills"] },
     attributes: { body: 3, reflex: 3, vigor: 3, mind: 0, wit: 2, presence: 1 },
     health: 24, naturalWeapon: hoof(2, 4), abilities: [],
@@ -44,7 +46,7 @@ export const MOUNTS = {
   horse: {
     id: "horse", kind: "mount", name: "Riding Horse", race: "horse", tier: "common",
     desc: "A steady saddle-horse — the traveller's standard, swift on open ground.",
-    bodyWeight: 70, rideCapacity: 150, feed: "fodder", acquisition: "stable", priceCp: 500,
+    bodyWeight: 70, rideCapacity: 150, feed: "fodder", acquisition: "stable", priceCp: 500, needsDecayMult: 0.85,
     moveProfile: { ground: 1.8, canFly: false, terrain: ["plains", "road", "hills", "settlement"], graze: ["plains", "hills"] },
     attributes: { body: 4, reflex: 3, vigor: 4, mind: 0, wit: 2, presence: 1 },
     health: 34, naturalWeapon: hoof(3, 5), abilities: [],
@@ -53,7 +55,7 @@ export const MOUNTS = {
   mule: {
     id: "mule", kind: "mount", name: "Pack Mule", race: "mule", tier: "common",
     desc: "A stubborn, immensely strong pack-mule — slow, but it hauls a fortune in stores.",
-    bodyWeight: 60, rideCapacity: 175, feed: "fodder", acquisition: "stable", priceCp: 200,
+    bodyWeight: 60, rideCapacity: 175, feed: "fodder", acquisition: "stable", priceCp: 200, needsDecayMult: 0.7,
     moveProfile: { ground: 1.2, canFly: false, terrain: ["plains", "road", "hills", "mountains", "settlement"], graze: ["plains", "hills"] },
     attributes: { body: 4, reflex: 2, vigor: 5, mind: 0, wit: 2, presence: 1 },
     health: 32, naturalWeapon: hoof(2, 5), abilities: [],
@@ -61,9 +63,9 @@ export const MOUNTS = {
   },
   camel: {
     id: "camel", kind: "mount", name: "Camel", race: "camel", tier: "uncommon",
-    desc: "A spitting, water-thrifty camel — born for dry country where horses founder.",
-    bodyWeight: 75, rideCapacity: 175, feed: "fodder", acquisition: "stable", priceCp: 450,
-    moveProfile: { ground: 1.6, canFly: false, terrain: ["plains", "road", "desert", "hills"], graze: ["desert", "plains"] },
+    desc: "A spitting, water-thrifty camel — born for dry steppe and badland where horses founder.",
+    bodyWeight: 75, rideCapacity: 175, feed: "fodder", acquisition: "stable", priceCp: 450, needsDecayMult: 0.6,
+    moveProfile: { ground: 1.6, canFly: false, terrain: ["plains", "road", "hills"], graze: ["plains", "hills"] },
     attributes: { body: 5, reflex: 2, vigor: 6, mind: 0, wit: 2, presence: 1 },
     health: 40, naturalWeapon: hoof(3, 5), abilities: [],
     mountedBonus: { accuracy: 0, damageMult: 0, reach: 0, dodge: 0, speed: 1 },
@@ -71,11 +73,103 @@ export const MOUNTS = {
   warhorse: {
     id: "warhorse", kind: "mount", name: "Destrier", race: "horse", tier: "rare",
     desc: "A barded warhorse trained to the charge — it tramples a shield-wall and does not shy from blood.",
-    bodyWeight: 95, rideCapacity: 195, feed: "fodder", acquisition: "stable", priceCp: 4500,
+    bodyWeight: 95, rideCapacity: 195, feed: "fodder", acquisition: "stable", priceCp: 4500, needsDecayMult: 0.95,
     moveProfile: { ground: 2.0, canFly: false, terrain: ["plains", "road", "hills", "settlement"], graze: ["plains"] },
     attributes: { body: 7, reflex: 4, vigor: 7, mind: 1, wit: 3, presence: 2 },
     health: 64, naturalArmor: 1, naturalWeapon: hoof(5, 9, 1), abilities: ["power-strike"],
     mountedBonus: { accuracy: 2, damageMult: 0.18, reach: 1, dodge: 0, speed: 2 },
+  },
+  nag: {
+    id: "nag", kind: "mount", name: "Swamp Nag", race: "horse", tier: "common",
+    desc: "A swaybacked, bog-bred nag — cheap, plodding, and unbothered by mud. The poorest stable's best.",
+    bodyWeight: 60, rideCapacity: 110, feed: "fodder", acquisition: "stable", priceCp: 120, needsDecayMult: 1.1,
+    moveProfile: { ground: 1.3, canFly: false, terrain: ["plains", "road", "marsh", "hills", "settlement"], graze: ["plains", "marsh", "hills"] },
+    attributes: { body: 3, reflex: 2, vigor: 3, mind: 0, wit: 2, presence: 0 },
+    health: 22, naturalWeapon: hoof(2, 4), abilities: [],
+    mountedBonus: { accuracy: 0, damageMult: 0, reach: 0, dodge: 0, speed: 1 },
+  },
+  "marsh-pony": {
+    id: "marsh-pony", kind: "mount", name: "Fen Pony", race: "pony", tier: "common",
+    desc: "A wetland pony that crosses reed and bog where a plains-horse founders.",
+    bodyWeight: 45, rideCapacity: 95, feed: "fodder", acquisition: "stable", priceCp: 220, needsDecayMult: 0.9,
+    moveProfile: { ground: 1.3, canFly: false, terrain: ["marsh", "forest", "hills", "plains", "road", "settlement"], graze: ["marsh", "hills", "plains"] },
+    attributes: { body: 3, reflex: 3, vigor: 3, mind: 0, wit: 2, presence: 1 },
+    health: 24, naturalWeapon: hoof(2, 4), abilities: [],
+    mountedBonus: { accuracy: 0, damageMult: 0, reach: 0, dodge: 1, speed: 1 },
+  },
+  "ridge-pony": {
+    id: "ridge-pony", kind: "mount", name: "Ridge Pony", race: "pony", tier: "common",
+    desc: "A stocky, sure-footed pony of the high country — placid, long-lived, and tireless on a climb.",
+    bodyWeight: 50, rideCapacity: 110, feed: "fodder", acquisition: "stable", priceCp: 300, needsDecayMult: 0.8,
+    moveProfile: { ground: 1.4, canFly: false, terrain: ["hills", "mountains", "plains", "road", "settlement"], graze: ["hills", "mountains", "plains"] },
+    attributes: { body: 4, reflex: 3, vigor: 4, mind: 0, wit: 2, presence: 1 },
+    health: 28, naturalWeapon: hoof(2, 5), abilities: [],
+    mountedBonus: { accuracy: 0, damageMult: 0, reach: 0, dodge: 0, speed: 1 },
+  },
+  courser: {
+    id: "courser", kind: "mount", name: "Courser", race: "horse", tier: "rare",
+    desc: "A highbred courser — long-striding, deep-winded, and tireless; the pride of a great human stable.",
+    bodyWeight: 75, rideCapacity: 150, feed: "fodder", acquisition: "stable", priceCp: 5500, needsDecayMult: 0.55,
+    moveProfile: { ground: 2.4, canFly: false, terrain: ["plains", "road", "hills", "settlement"], graze: ["plains", "hills"] },
+    attributes: { body: 5, reflex: 5, vigor: 6, mind: 1, wit: 3, presence: 3 },
+    health: 50, naturalWeapon: hoof(4, 7), abilities: [],
+    mountedBonus: { accuracy: 2, damageMult: 0.1, reach: 0, dodge: 2, speed: 4 },
+  },
+  "war-stag": {
+    id: "war-stag", kind: "mount", name: "War-Stag", race: "stag", tier: "uncommon",
+    desc: "A great antlered war-stag, broken to the saddle by the wood-cults — it gores a line and bears a heavy load.",
+    bodyWeight: 90, rideCapacity: 185, feed: "fodder", acquisition: "stable", priceCp: 900, needsDecayMult: 0.9,
+    moveProfile: { ground: 1.7, canFly: false, terrain: ["forest", "hills", "plains", "marsh", "road"], graze: ["forest", "plains", "hills"] },
+    attributes: { body: 5, reflex: 5, vigor: 5, mind: 1, wit: 3, presence: 2 },
+    health: 44, naturalWeapon: gore(4, 7, 1), abilities: ["power-strike"],
+    mountedBonus: { accuracy: 1, damageMult: 0.12, reach: 1, dodge: 1, speed: 2 },
+  },
+  "fen-strider": {
+    id: "fen-strider", kind: "mount", name: "Fen-Strider", race: "salamander", tier: "uncommon",
+    desc: "A horse-broad giant salamander — the only saddle-beast that swims as well as it wades; it eats meat.",
+    bodyWeight: 120, rideCapacity: 170, feed: "meat", acquisition: "stable", priceCp: 1100, needsDecayMult: 1.1,
+    moveProfile: { ground: 1.5, canFly: false, terrain: ["marsh", "water", "forest", "plains"], graze: [] },
+    attributes: { body: 6, reflex: 4, vigor: 6, mind: 1, wit: 2, presence: 2 },
+    health: 52, naturalArmor: 1, naturalWeapon: fang(4, 7, 1), abilities: ["power-strike"],
+    mountedBonus: { accuracy: 0, damageMult: 0.08, reach: 0, dodge: 2, speed: 1 },
+  },
+  "mountain-ram": {
+    id: "mountain-ram", kind: "mount", name: "Greathorn Ram", race: "ram", tier: "rare",
+    desc: "A massive curl-horned ram for true mountain country — it charges a foe off a ledge and never slips.",
+    bodyWeight: 110, rideCapacity: 180, feed: "fodder", acquisition: "stable", priceCp: 2800, needsDecayMult: 0.9,
+    moveProfile: { ground: 1.6, canFly: false, terrain: ["mountains", "hills", "plains", "road"], graze: ["mountains", "hills"] },
+    attributes: { body: 7, reflex: 4, vigor: 7, mind: 1, wit: 3, presence: 2 },
+    health: 60, naturalArmor: 1, naturalWeapon: gore(5, 9, 1), abilities: ["power-strike"],
+    mountedBonus: { accuracy: 1, damageMult: 0.16, reach: 0, dodge: 0, speed: 2 },
+  },
+  "axe-beak": {
+    id: "axe-beak", kind: "mount", name: "Axe-Beak", race: "axe-beak", tier: "rare",
+    desc: "A flightless giant bird, hatchet-beaked and fast as a galloping horse — the steppe-riders' killer.",
+    bodyWeight: 80, rideCapacity: 150, feed: "meat", acquisition: "stable", priceCp: 3200, needsDecayMult: 1.15,
+    moveProfile: { ground: 2.2, canFly: false, terrain: ["plains", "hills", "forest", "road"], graze: [] },
+    attributes: { body: 6, reflex: 7, vigor: 6, mind: 1, wit: 4, presence: 2 },
+    health: 54, naturalWeapon: beak(5, 9, 1), abilities: ["power-strike", "rapid-jabs"],
+    mountedBonus: { accuracy: 2, damageMult: 0.12, reach: 0, dodge: 3, speed: 3 },
+  },
+  "dire-boar": {
+    id: "dire-boar", kind: "mount", name: "Dire Boar", race: "boar", tier: "rare",
+    desc: "A tusked badlands brute — the goblin and orc war-pig; thick-hided, foul-tempered, and unstoppable downhill.",
+    bodyWeight: 130, rideCapacity: 185, feed: "meat", acquisition: "stable", priceCp: 3000, needsDecayMult: 1.1,
+    moveProfile: { ground: 1.6, canFly: false, terrain: ["hills", "forest", "plains", "mountains", "marsh"], graze: [] },
+    attributes: { body: 8, reflex: 4, vigor: 8, mind: 0, wit: 3, presence: 2 },
+    health: 68, naturalArmor: 2, naturalWeapon: gore(6, 10, 2), abilities: ["power-strike", "rend"],
+    mountedBonus: { accuracy: 1, damageMult: 0.2, reach: 1, dodge: -1, speed: 1 },
+  },
+  "giant-lizard": {
+    id: "giant-lizard", kind: "mount", name: "Saddle Basilisk", race: "basilisk", tier: "epic",
+    desc: "A great venomous riding-lizard — the finest beast a coin can buy, and the step below a true drake.",
+    bodyWeight: 200, rideCapacity: 240, feed: "livestock", acquisition: "stable", priceCp: 6500, needsDecayMult: 1.0,
+    moveProfile: { ground: 1.8, canFly: false, terrain: ["hills", "mountains", "forest", "marsh", "plains"], graze: [] },
+    attributes: { body: 10, reflex: 6, vigor: 9, mind: 2, wit: 4, presence: 4 },
+    health: 90, naturalArmor: 2, naturalWard: 1, naturalWeapon: fang(7, 12, 2),
+    innatePassives: [{ id: "savage", tier: "epic" }],
+    abilities: ["power-strike", "rend", "venom-strike"],
+    mountedBonus: { accuracy: 2, damageMult: 0.2, reach: 1, dodge: 1, speed: 2 },
   },
 
   // ============================================================
@@ -90,10 +184,21 @@ export const MOUNTS = {
     health: 50, naturalWeapon: fang(5, 8, 1), abilities: ["rend", "rapid-jabs"],
     mountedBonus: { accuracy: 2, damageMult: 0.12, reach: 0, dodge: 3, speed: 3 },
   },
+  "ground-drake": {
+    id: "ground-drake", kind: "mount", name: "Wingless Drake", race: "drakeborn", tier: "epic",
+    desc: "A wingless lesser drake — broken to the saddle in Drakeholt; the closest to a true drake before you earn a flying one. Tamed, never bought.",
+    bodyWeight: 300, rideCapacity: 300, feed: "livestock", acquisition: "tame", needsDecayMult: 0.8,
+    moveProfile: { ground: 2.0, canFly: false, terrain: ["mountains", "hills", "plains", "forest", "road"], graze: [] },
+    attributes: { body: 12, reflex: 7, vigor: 11, mind: 3, wit: 5, presence: 6 },
+    health: 110, naturalArmor: 3, naturalWard: 1, naturalWeapon: fang(8, 13, 2),
+    innatePassives: [{ id: "savage", tier: "epic" }],
+    abilities: ["power-strike", "rend"],
+    mountedBonus: { accuracy: 3, damageMult: 0.24, reach: 1, dodge: 1, speed: 3 },
+  },
   griffon: {
     id: "griffon", kind: "mount", name: "Griffon", race: "gryphon", tier: "epic",
     desc: "An eagle-lion of the high crags, broken to the saddle — the first true wing a rider earns.",
-    bodyWeight: 160, rideCapacity: 220, feed: "meat", acquisition: "tame",
+    bodyWeight: 160, rideCapacity: 220, feed: "meat", acquisition: "tame", needsDecayMult: 0.9,
     moveProfile: { ground: 1.6, canFly: true, terrain: "any", graze: [] },
     attributes: { body: 9, reflex: 8, vigor: 7, mind: 2, wit: 5, presence: 4 },
     health: 84, naturalArmor: 2, naturalWeapon: talon(7, 12, 2), abilities: ["power-strike", "rend"],
@@ -113,7 +218,7 @@ export const MOUNTS = {
   drake: {
     id: "drake", kind: "mount", name: "Fire-Drake", race: "drakeborn", tier: "mythical",
     desc: "A lesser dragon of the old blood — it breathes fire, bears a rider into legend, and is courted, never bought.",
-    bodyWeight: 600, rideCapacity: 450, feed: "livestock", acquisition: "quest",
+    bodyWeight: 600, rideCapacity: 450, feed: "livestock", acquisition: "quest", needsDecayMult: 0.8,
     moveProfile: { ground: 2.0, canFly: true, terrain: "any", graze: [] },
     attributes: { body: 16, reflex: 10, vigor: 16, mind: 6, wit: 10, presence: 12 },
     health: 280, actionsPerTurn: 1, naturalArmor: 3, naturalWard: 2, naturalWeapon: fang(3, 5, 3),
@@ -124,7 +229,7 @@ export const MOUNTS = {
   dragon: {
     id: "dragon", kind: "mount", name: "Dragon", race: "dragon", tier: "divine",
     desc: "A true wyrm that has chosen to bear you — the apex mount, a moving disaster the world points at and dreads.",
-    bodyWeight: 1500, rideCapacity: 900, feed: "livestock", acquisition: "narrative",
+    bodyWeight: 1500, rideCapacity: 900, feed: "livestock", acquisition: "narrative", needsDecayMult: 0.4,
     moveProfile: { ground: 2.2, canFly: true, terrain: "any", graze: [] },
     attributes: { body: 20, reflex: 14, vigor: 24, mind: 8, wit: 12, presence: 18 },
     health: 420, actionsPerTurn: 2, naturalArmor: 3, naturalWard: 3,
@@ -156,8 +261,48 @@ export function isFlyer(m) {
   return !!m?.moveProfile?.canFly;
 }
 
-// The mounts a stable will sell (mundane only). Used by data/town.js stock.
+// The mounts a stable will sell (mundane only — acquisition "stable").
 export const STABLE_MOUNTS = MOUNT_LIST.filter((m) => m.acquisition === "stable");
+
+// What each REGION's stables sell — keyed by biome id (data/biomes.js getBiome).
+// `signature` is always in stock; the rest appear by seeded chance and rotate each
+// restock window (engine/town-gen.rollStableMounts). Far/dangerous lands sell
+// stranger, stronger ground beasts — the bridge toward the EARNED flyers. A swamp
+// stable sells nags, never destriers or drakes; human civilized lands carry the
+// premium Courser; the Drakeholt sells ridge-ponies (the ground-drake is tamed,
+// not bought). A handcrafted stable tile may override this via poi.mounts.
+export const STABLE_STOCK_BY_BIOME = {
+  // Vale core — home ground.
+  mire:               { signature: "nag",         stock: [{ id: "nag", chance: 1.0 }, { id: "marsh-pony", chance: 0.6 }, { id: "mule", chance: 0.5 }, { id: "fen-strider", chance: 0.2 }] },
+  "crowsmoor-reach":  { signature: "horse",       stock: [{ id: "horse", chance: 1.0 }, { id: "pony", chance: 0.7 }, { id: "mule", chance: 0.6 }, { id: "courser", chance: 0.15 }] },
+  // Settled frontier.
+  "tannic-wood":      { signature: "war-stag",    stock: [{ id: "war-stag", chance: 1.0 }, { id: "marsh-pony", chance: 0.6 }, { id: "pony", chance: 0.5 }, { id: "dire-boar", chance: 0.15 }] },
+  "whitemarch-march": { signature: "warhorse",    stock: [{ id: "warhorse", chance: 1.0 }, { id: "horse", chance: 0.9 }, { id: "courser", chance: 0.3 }, { id: "war-stag", chance: 0.3 }] },
+  "bramblewych-reach":{ signature: "marsh-pony",  stock: [{ id: "marsh-pony", chance: 1.0 }, { id: "nag", chance: 0.6 }, { id: "mule", chance: 0.5 }, { id: "war-stag", chance: 0.3 }] },
+  // The wilds.
+  "spine-foothills":  { signature: "ridge-pony",  stock: [{ id: "ridge-pony", chance: 1.0 }, { id: "mule", chance: 0.7 }, { id: "mountain-ram", chance: 0.4 }, { id: "dire-boar", chance: 0.2 }] },
+  "iron-plateau":     { signature: "warhorse",    stock: [{ id: "warhorse", chance: 1.0 }, { id: "horse", chance: 1.0 }, { id: "courser", chance: 0.4 }, { id: "camel", chance: 0.4 }] },
+  "tellmar-road":     { signature: "horse",       stock: [{ id: "horse", chance: 1.0 }, { id: "camel", chance: 0.6 }, { id: "courser", chance: 0.3 }, { id: "axe-beak", chance: 0.3 }, { id: "giant-lizard", chance: 0.12 }] },
+  "witchwood-deep":   { signature: "war-stag",    stock: [{ id: "war-stag", chance: 1.0 }, { id: "marsh-pony", chance: 0.6 }, { id: "dire-boar", chance: 0.25 }, { id: "fen-strider", chance: 0.15 }] },
+  // The cursed marches.
+  "hollow-coast":     { signature: "marsh-pony",  stock: [{ id: "marsh-pony", chance: 1.0 }, { id: "fen-strider", chance: 0.5 }, { id: "nag", chance: 0.6 }, { id: "mule", chance: 0.4 }] },
+  bonemarsh:          { signature: "fen-strider", stock: [{ id: "fen-strider", chance: 1.0 }, { id: "nag", chance: 0.7 }, { id: "marsh-pony", chance: 0.5 }, { id: "dire-boar", chance: 0.2 }] },
+  "pale-steppe":      { signature: "camel",       stock: [{ id: "camel", chance: 1.0 }, { id: "axe-beak", chance: 0.5 }, { id: "horse", chance: 0.6 }, { id: "dire-boar", chance: 0.2 }] },
+  // The far reaches.
+  "sundered-wastes":  { signature: "dire-boar",   stock: [{ id: "dire-boar", chance: 1.0 }, { id: "axe-beak", chance: 0.5 }, { id: "camel", chance: 0.5 }, { id: "giant-lizard", chance: 0.15 }] },
+  "drakeholt-peaks":  { signature: "ridge-pony",  stock: [{ id: "ridge-pony", chance: 1.0 }, { id: "mountain-ram", chance: 0.5 }, { id: "dire-boar", chance: 0.3 }] },
+  // Past the named world.
+  "far-wild":         { signature: "horse",       stock: [{ id: "horse", chance: 1.0 }, { id: "mule", chance: 0.5 }, { id: "axe-beak", chance: 0.3 }, { id: "giant-lizard", chance: 0.2 }] },
+};
+
+export const STABLE_STOCK_DEFAULT = {
+  signature: "horse",
+  stock: [{ id: "horse", chance: 1.0 }, { id: "pony", chance: 1.0 }, { id: "mule", chance: 0.8 }],
+};
+
+export function stableStockFor(biomeId) {
+  return STABLE_STOCK_BY_BIOME[biomeId] || STABLE_STOCK_DEFAULT;
+}
 
 // The full codex-character entry for a mount — same scaffolding as a recruited
 // companion (companionCodexEntry), plus the mount block and riding linkage.
@@ -175,6 +320,7 @@ export function mountCodexEntry(tmpl) {
     // The mount block.
     bodyWeight: tmpl.bodyWeight, rideCapacity: tmpl.rideCapacity,
     moveProfile: tmpl.moveProfile, feed: tmpl.feed, tier: tmpl.tier,
+    needsDecayMult: tmpl.needsDecayMult ?? 1, // endurance: <1 drains slower (engine/upkeep + App flight)
     mountedBonus: tmpl.mountedBonus || null,
     // Combat kit (consumed by enemyFromNPC → allyFromCompanion).
     health: tmpl.health, actionsPerTurn: tmpl.actionsPerTurn,

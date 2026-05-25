@@ -9,7 +9,7 @@ import { MOUNTS } from "../data/mounts.js";
 // engine/economy.buyMount) and the feed to keep it. Exotic/flying mounts are never
 // sold here — they're earned in play (beat.grant_mount). Buy-only and deterministic;
 // App applies the transactions.
-export function StableView({ state, building, tileKey, stock, onClose, onBuy, onBuyMount, loading }) {
+export function StableView({ state, building, tileKey, stock, mounts, onClose, onBuy, onBuyMount, loading }) {
   const inv = state.character.inventory;
   const coins = inv.coins;
   const owned = new Set(state.party || []);
@@ -17,7 +17,8 @@ export function StableView({ state, building, tileKey, stock, onClose, onBuy, on
   const tile = state.world.tiles[tileKey];
   const sold = (tile?.shop && stock && tile.shop.bucket === stock.bucket) ? tile.shop.sold : {};
 
-  const mountRows = (building.mounts || [])
+  // Region-gated, seed-rolled mount list (App resolves biome/override + roll).
+  const mountRows = (mounts || [])
     .map((m) => ({ ...m, tmpl: MOUNTS[m.id] }))
     .filter((m) => m.tmpl && !owned.has(m.id));
 
