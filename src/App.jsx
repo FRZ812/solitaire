@@ -29,6 +29,7 @@ import { schematicsForBuilding } from "./data/schematics.js";
 import { tierLabel, tierOrder } from "./data/tiers.js";
 import { rollShopStock, rollStableMounts } from "./engine/town-gen.js";
 import { stableStockFor, mountTemplate } from "./data/mounts.js";
+import { scryResult } from "./engine/positions.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
@@ -1266,6 +1267,39 @@ export function Solitaire() {
     }
   }
 
+  // Scry for a character — the ONE way to surface a hidden tracked position
+  // (engine/positions.js). Reveals their last-known/drifted hex on the map and has
+  // the narrator describe the vision. Whereabouts that were never recorded read as
+  // an unsettled, clouded vision.
+  async function handleScry(id) {
+    if (loading) return;
+    const res = scryResult(state, id);
+    setCodexOpen(false);
+    setError(null);
+    const who = state.world.codex.characters?.[id]?.name || "them";
+    if (!res) {
+      setState({ ...state, beats: [...state.beats, { id: `scry${Date.now()}`, type: "narration", content: `You search the glass for ${who}, but the vision will not settle — their whereabouts escape you.` }] });
+      return;
+    }
+    setLoading(true);
+    const key = `${res.pos.x},${res.pos.y}`;
+    const baseState = { ...state, world: { ...state.world, seen: { ...state.world.seen, [key]: true } } };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You scry for ${res.name}.` };
+    const stateWithPlayer = { ...baseState, beats: [...baseState.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const near = res.place ? `${Math.round(res.place.dist)} hex(es) from ${res.place.name}` : `open, unmapped country at (${res.pos.x},${res.pos.y})`;
+      const msg = `[PLAYER ACTION] [SCRY] You work a scrying to seek ${res.name}. The vision finds them ${res.pos.exact ? "" : "roughly "}at hex (${res.pos.x},${res.pos.y}) — ${near}. Describe what shows in the glass: where ${res.name} is now, what they are about, who is near — true to what's known of them and that place. This is the ONLY way the player learns a character's whereabouts; reveal no more than the scrying shows. Use minutes_passed = 10.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // Seat a rider (the player "wanderer", a companion, or a smaller mount) onto a
   // mount, weight permitting; or get them off (engine/riding.js).
   function handleMount(riderId, mountId) {
@@ -1954,7 +1988,7 @@ export function Solitaire() {
         />
       )}
       {codexOpen && (
-        <CodexView state={state} onClose={() => setCodexOpen(false)} />
+        <CodexView state={state} onClose={() => setCodexOpen(false)} onScry={handleScry} />
       )}
       {shopTile && (() => {
         const tile = getTile(state, shopTile.x, shopTile.y);

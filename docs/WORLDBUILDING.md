@@ -595,6 +595,28 @@ Verify with `node scripts/mount-weight-sim.mjs` (weight math, nesting + ancestor
 capacity, pack/overload edge cases, transient-buff expiry, speed-buff drain-safety,
 mounted combat, flying gate) plus the build below.
 
+## Character positions & scrying
+
+Every codex character carries a **hidden, mechanically-tracked location** —
+`at:{x,y,day}` plus a `home` — owned by `engine/positions.js`. It is **never shown
+in the normal UI**; the player only learns a whereabouts by **scrying**.
+
+- **Lazy drift.** `characterPosition(state, id)` resolves the player and anyone in
+  the party to the player's current tile (exact); everyone else **drifts** — a slow,
+  homeward-biased random walk — but it's computed *on demand* from `at` + days
+  elapsed (seeded, deterministic), so tracking "everyone" costs nothing per beat.
+- **Stamping.** A parted companion / loosed mount is stamped at the hex you left
+  them (`beat.js` `part_ways`), so they linger and drift from there. The narrator
+  places/moves NPCs by setting `discoveries.characters:[{id, at:{x,y}}]`
+  (`mergeDiscoveries` merges it). A few anchors are seeded in `initial-state.js`
+  (e.g. the Vale-King at Asalan); unplaced characters read as "whereabouts unknown"
+  until staged.
+- **Scrying** is the one reveal (`positions.canScry` — knows Farsight, carries a
+  scrying focus, or stands at a scrying basin/observatory). `App.handleScry`
+  (a Scry button on each character in the Codex) computes `scryResult`, marks the
+  hex seen, and feeds the narrator a `[SCRY]` directive with the hex + nearest
+  place; doctrine forbids the narrator from revealing a location any other way.
+
 ## Quick smoke test
 
 After data edits, run:

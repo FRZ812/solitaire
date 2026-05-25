@@ -13,6 +13,8 @@ import { COMPANIONS, companionCodexEntry } from "../src/data/companions.js";
 import { MOUNTS, mountCodexEntry, STABLE_MOUNTS, stableStockFor, STABLE_STOCK_BY_BIOME } from "../src/data/mounts.js";
 import { rollStableMounts } from "../src/engine/town-gen.js";
 import { depleteNeeds } from "../src/engine/needs.js";
+import { characterPosition, canScry, scryResult } from "../src/engine/positions.js";
+import { hexDistance } from "../src/engine/world.js";
 import { carryCapacityFor, recomputeCarryCapacity, recomputeVitalityMax, recomputeResolveMax } from "../src/engine/attributes.js";
 import { itemWeight, loadOf, isOverCapacity } from "../src/engine/weight.js";
 import { buffTravelSpeedMult, buffCarryBonus, buffRideBonus, hastedGroundMinutes, hastedFlightHexes, hastedFlightMinutes } from "../src/engine/buffs.js";
@@ -353,6 +355,42 @@ console.log("\n=== REGION-GATED STABLE MOUNTS ===");
   const thrifty = depleteNeeds(start, 600, 1 * (MOUNTS.courser.needsDecayMult ?? 1)); // courser 0.55
   const plain = depleteNeeds(start, 600, 1 * 1);
   ok(thrifty.hunger > plain.hunger, `courser (thrifty) keeps more hunger than a default mount (${thrifty.hunger.toFixed(0)} > ${plain.hunger.toFixed(0)})`);
+}
+
+console.log("\n=== CHARACTER POSITIONS & SCRYING ===");
+{
+  const st = {
+    time: { day: 30 },
+    party: ["bram"],
+    character: { abilities: [], inventory: { carried: [] } },
+    world: {
+      currentTile: { x: 5, y: 5 },
+      seen: {},
+      tiles: { "0,0": { poi: { name: "Mirecross" } }, "10,10": { poi: { name: "Crowsmoor" } } },
+      codex: { spells: {}, characters: {
+        wanderer: { id: "wanderer", kind: "player", name: "You" },
+        bram: { id: "bram", kind: "companion", name: "Bram" },
+        hermit: { id: "hermit", kind: "npc", name: "Hermit", at: { x: 1, y: 1, day: 0 }, home: { x: 1, y: 1 } },
+        ghost: { id: "ghost", kind: "npc", name: "Ghost" }, // never located
+      } },
+    },
+  };
+  const pp = characterPosition(st, "wanderer");
+  ok(pp && pp.x === 5 && pp.y === 5 && pp.exact, "the player resolves to the current tile (exact)");
+  const bp = characterPosition(st, "bram");
+  ok(bp && bp.x === 5 && bp.y === 5 && bp.exact, "a party member resolves to the player's tile (exact)");
+  const h1 = characterPosition(st, "hermit");
+  const h2 = characterPosition(st, "hermit");
+  ok(h1 && !h1.exact, "an off-map character's position is a drifted estimate (not exact)");
+  ok(JSON.stringify(h1) === JSON.stringify(h2), "drift is deterministic for a given day");
+  ok(hexDistance(h1, { x: 1, y: 1 }) <= 6, `drift stays near home (within the wander radius — ${hexDistance(h1, { x: 1, y: 1 })})`);
+  ok(characterPosition(st, "ghost") === null, "a character never located reads as whereabouts-unknown");
+  ok(!canScry(st), "no means to scry by default");
+  st.world.codex.spells.farsight = { id: "farsight" };
+  ok(canScry(st), "knowing Farsight enables scrying");
+  const r = scryResult(st, "hermit");
+  ok(r && r.pos && r.place && r.place.name, "scryResult gives a position + nearest known place");
+  ok(scryResult(st, "ghost") === null, "scrying an unlocated character returns nothing");
 }
 
 console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : failures + " CHECK(S) FAILED"}\n`);

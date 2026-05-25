@@ -171,6 +171,7 @@ export function makeInitialState() {
               "I read every petition that reaches the throne — every one.",
               "My grandfather signed the trade-peace with Tellmar; I will not be the one to break it.",
             ],
+            at: { x: -30, y: 150, day: 0 }, home: { x: -30, y: 150 }, // his seat at Asalan (engine/positions.js)
           },
           "goblin-king": {
             id: "goblin-king", kind: "npc",

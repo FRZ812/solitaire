@@ -429,10 +429,14 @@ export function applyBeat(state, beat, options = {}) {
     const id = beat.part_ways.id;
     const chars = { ...world.codex.characters };
     const leaver = chars[id];
+    const cur = world.currentTile || { x: 0, y: 0 };
     if (leaver) {
       if (leaver.ridingOn && chars[leaver.ridingOn]) chars[leaver.ridingOn] = { ...chars[leaver.ridingOn], riders: (chars[leaver.ridingOn].riders || []).filter((x) => x !== id) };
       for (const rid of (leaver.riders || [])) if (chars[rid]) chars[rid] = { ...chars[rid], ridingOn: null };
-      chars[id] = { ...leaver, ridingOn: null, riders: [] };
+      // They leave the party but remain IN THE WORLD: stamp where you left them as
+      // their last-known position + home, so they linger/drift near here and can be
+      // scryed or found again (engine/positions.js). Whereabouts hidden from the UI.
+      chars[id] = { ...leaver, ridingOn: null, riders: [], at: { x: cur.x, y: cur.y, day: newTime.day }, home: leaver.home || { x: cur.x, y: cur.y } };
     }
     if (chars.wanderer?.ridingOn === id) chars.wanderer = { ...chars.wanderer, ridingOn: null };
     world = { ...world, codex: { ...world.codex, characters: chars } };

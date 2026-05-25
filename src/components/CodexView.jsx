@@ -8,6 +8,7 @@ import { CONDITIONS } from "../data/conditions.js";
 import { hasCombatEffect } from "../engine/condition-combat.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { itemTemplate } from "../data/catalog.js";
+import { canScry } from "../engine/positions.js";
 import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
 import { tier as tierInfo, tierLabel, tierOrder, tierColor } from "../data/tiers.js";
 import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
@@ -671,7 +672,7 @@ function GlossaryView() {
   );
 }
 
-export function CodexEntry({ entry, kind, codex }) {
+export function CodexEntry({ entry, kind, codex, onScry }) {
   const [open, setOpen] = useState(false);
   const wornNames = (kind === "characters" && entry.worn?.length)
     ? entry.worn.map(id => (codex.items[id] || itemTemplate(id))?.name || id) : [];
@@ -713,6 +714,13 @@ export function CodexEntry({ entry, kind, codex }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          {onScry && (
+            <button onClick={(ev) => { ev.stopPropagation(); onScry(); }} style={{
+              fontSize: "9px", fontWeight: 800, letterSpacing: "0.06em", padding: "3px 9px", borderRadius: "8px",
+              color: "#bfe3f2", border: "1px solid rgba(127,199,224,0.5)", backgroundColor: "rgba(127,199,224,0.12)",
+              cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+            }}>Scry</button>
+          )}
           {bondTier && (
             <span style={{ fontSize: "9px", fontWeight: 800, padding: "2px 8px", borderRadius: "8px", color: bondTier.color, border: `1px solid ${bondTier.color}55`, backgroundColor: `${bondTier.color}14` }}>
               {bondTier.label} {(entry.relationship || 0) > 0 ? "+" : ""}{entry.relationship || 0}
@@ -841,8 +849,10 @@ export function CodexEntry({ entry, kind, codex }) {
   );
 }
 
-export function CodexView({ state, onClose }) {
+export function CodexView({ state, onClose, onScry }) {
   const codex = state.world.codex;
+  const scryable = onScry && canScry(state);
+  const partyIds = new Set(state.party || []);
   const [activeTab, setActiveTab] = useState("characters");
   let entries = Object.values(codex[activeTab] || {});
   // Characters: always pin the player (self) to the very top.
@@ -921,7 +931,8 @@ export function CodexView({ state, onClose }) {
           </div>
         ) : (
           <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
-            {entries.map((e) => <CodexEntry key={e.id} entry={e} kind={activeTab} codex={codex} />)}
+            {entries.map((e) => <CodexEntry key={e.id} entry={e} kind={activeTab} codex={codex}
+              onScry={scryable && activeTab === "characters" && e.kind !== "player" && !partyIds.has(e.id) ? () => onScry(e.id) : null} />)}
           </div>
         )}
       </div>
