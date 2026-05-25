@@ -345,7 +345,7 @@ export function applyBeat(state, beat, options = {}) {
     }
     tiles[`${x},${y}`] = finalTile;
     const r = sightRadius({ world: { ...world, tiles, currentTile: { x, y } }, character, time: newTime });
-    world = { ...world, tiles, currentTile: { x, y }, currentSection: null, seen: computeSightFromRadius(x, y, r, world.seen) };
+    world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFromRadius(x, y, r, world.seen) };
   }
 
   // Narrator-driven relocation (no map-travel involved). Used for extreme
@@ -362,7 +362,7 @@ export function applyBeat(state, beat, options = {}) {
       const tiles = { ...world.tiles };
       tiles[`${x},${y}`] = arrivedTile;
       const r = sightRadius({ world: { ...world, tiles, currentTile: { x, y } }, character, time: newTime });
-      world = { ...world, tiles, currentTile: { x, y }, currentSection: null, seen: computeSightFromRadius(x, y, r, world.seen) };
+      world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFromRadius(x, y, r, world.seen) };
     }
   }
 

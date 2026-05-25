@@ -59,28 +59,29 @@ Examples:
 This avoids shrinking important places into one tile while staying compatible
 with the current engine.
 
-## Merged Hexes And Sectioned Hexes
+## Footprinted POIs, Not Menus Inside A Tile
 
-Two complementary ideas should carry the next map iteration:
+The clarified rule: a sectioned building is not a world tile with a little
+submenu inside it. If a building, compound, market, gate, or other POI has
+meaningful internal parts, those parts should occupy real adjacent hexes on the
+map. The map should literally say: these several hexes are the same building or
+POI.
 
-- **Merged hex / footprint:** several world hexes visually and logically grouped
-  as one larger named place.
-- **Sectioned hex:** one world hex with internal sublocations that are smaller
-  than a regional map tile.
-
-They solve different problems.
+Use `parent` only for that actual shared POI footprint. Do not use `parent` for
+loose city districts or whole settlement clusters. Districts belong in
+`district`; cities/regions belong in `area`.
 
 ### Merged Hexes
 
 A merged hex is not literally one larger mathematical hex. It is a footprint:
 several normal hexes that the map outlines, labels, and treats as parts of one
-place. The player still stands on a specific vantage, but the UI makes clear the
-vantage belongs to a larger area.
+place. The player still stands on a specific hex, but every member hex is a
+named part of the same POI.
 
 Example:
 
 - Area: The Grand Market
-- Vantages: Grain Square, Butchers' Row, Cloth Awnings, Coin Scales, Night
+- Member hexes: Grain Square, Butchers' Row, Cloth Awnings, Coin Scales, Night
   Market
 
 Use merged footprints for:
@@ -89,29 +90,22 @@ Use merged footprints for:
 - docks
 - castle grounds
 - citadel wards
-- city districts
 - graveyards
 - large temples
 - noble estates
 - large camps
 - battlefield ruins
 
-This lets important places sprawl without forcing every stall, room, or doorway
-to become a world-scale tile.
+This lets important places sprawl without hiding the spatial logic in a modal or
+button row.
 
-### Sectioned Hexes
+### Building Footprints
 
-A sectioned hex is a single world tile with internal sublocations. It represents
-a building, gatehouse, tower, warehouse, ship, inn, or dense structure where the
-player needs local choices but the whole thing should not consume several
-regional hexes.
+Any building or compound with multiple rooms, floors, service counters, cells,
+work areas, or an attached yard should become a footprint by default. Each member
+hex gets a `part` / `partName` and a description of what that part does.
 
-Example:
-
-- World tile: Crown Gatehouse
-- Sections: Toll Hall, Guard Room, Wall Stair, Holding Cell
-
-Use sectioned hexes for:
+Use building footprints for:
 
 - inns
 - shops
@@ -125,13 +119,11 @@ Use sectioned hexes for:
 - individual noble houses
 - sewer chambers
 
-Sectioning is the default for any building or compound that has multiple rooms,
-floors, service counters, cells, work areas, or an attached yard. The section
-list does not need to make every room clickable; it should name the parts of the
-building that change what the player can do, who can see them, what authority
-applies, and what risks follow.
+The member hexes do not need to represent every closet. They should represent
+the parts of the building that change what the player can do, who can see them,
+what authority applies, and what risks follow.
 
-Required section candidates:
+Required footprint part candidates:
 
 - public-facing rooms: common rooms, counters, toll halls, petition desks
 - controlled work areas: kitchens, workshops, counting rooms, tack rooms
@@ -140,32 +132,31 @@ Required section candidates:
 - hidden/restricted routes: archive doors, sewer grates, private yards
 - attached yards: stable yards, work yards, holding yards, wagon yards, courts
 
-Only skip sectioning for disposable huts, flavor-only stalls, ordinary
-single-room houses, and shrines that truly function as one room. Mark such
-exceptions explicitly in data with `singleRoom: true` or `sections: false` once
-they matter.
+Only keep a building as one hex for disposable huts, flavor-only stalls,
+ordinary single-room houses, and shrines that truly function as one room. Mark
+such exceptions explicitly in data with `singleRoom: true` once they matter.
 
-Local movement between sections should usually cost little time compared to
-regional travel. It may still matter for guards, locks, stealth, light, pursuit,
-and narrative positioning.
+Movement between member hexes can remain ordinary map movement for now. Later it
+may get local movement timing, guard response, stealth pressure, light,
+pursuit, or lock rules.
 
 ### Combined Model
 
 A large place can use both:
 
 1. **World hex:** Whitemarch, Crown Gate Ward.
-2. **Merged footprint:** Crown Gate Complex.
-3. **Specific tile/vantage:** Crown Gatehouse.
-4. **Sections inside the tile:** Toll Hall, Guard Room, Wall Stair.
+2. **POI footprint:** Crown Gate Complex.
+3. **Member hex:** Toll Hall, Inspection Yard, Guard Room, Wall Stair.
+4. **Future local map:** only if a footprint later needs finer-than-hex detail.
 
 That model avoids two bad extremes:
 
 - every building becomes a whole regional hex;
 - every large district becomes a single icon with no spatial life.
 
-The map can gradually support this without breaking current data. First, render
-footprint outlines and display parent/district metadata. Later, add an actual
-section navigation panel or local-map mode.
+The map should render footprint outlines, shared labels, and member-hex labels
+first. A future local-map mode is optional and should not replace the footprint
+when the footprint itself is important to navigation.
 
 ## Footprint Metadata Proposal
 
@@ -176,7 +167,9 @@ Future handcrafted tiles may need shared footprint metadata:
   terrain: "settlement",
   poi: {
     type: "market",
-    name: "Grand Market - Grain Square",
+    name: "The Grand Market",
+    part: "grain-square",
+    partName: "Grain Square",
     area: "whitemarch",
     areaName: "Whitemarch",
     parent: "whitemarch-grand-market",
@@ -194,23 +187,16 @@ Useful fields:
 - `parentName`: display name of the larger POI.
 - `area` / `areaName`: larger city or region containing the footprint.
 - `district`: district id.
-- `role`: subarea role.
+- `part` / `partName`: the member hex inside the shared POI.
 - `access`: public, guarded, restricted, hidden, sealed.
 - `interior`: true/false if it should behave as an interior.
-- `sections`: sectioned-hex sublocations, either as an object keyed by id or an
-  array of section records.
 - `localMap`: optional id for future local exploration map.
 
-The UI could eventually show both:
+The UI should show:
 
-- Current tile: "Grain Square"
-- Area: "The Grand Market, Whitemarch"
-
-For sectioned hexes the UI could show:
-
-- Current tile: "Crown Gatehouse"
-- Area: "Crown Gate Complex"
-- Sections: Toll Hall, Guard Room, Wall Stair
+- POI: "The Grand Market"
+- Hex: "Grain Square"
+- Area/District: "Whitemarch / Grand Market"
 
 Example:
 
@@ -219,26 +205,14 @@ Example:
   terrain: "settlement",
   poi: {
     type: "gate",
-    name: "Crown Gatehouse",
+    name: "Crown Gate Complex",
     parent: "whitemarch-crown-gate",
     parentName: "Crown Gate Complex",
+    part: "toll-hall",
+    partName: "Toll Hall",
     district: "crown-gate-ward",
-    role: "gatehouse",
     access: "guarded",
-    sections: {
-      "toll-hall": {
-        name: "Toll Hall",
-        access: "public",
-        exits: ["inspection-yard", "wall-stair"],
-        description: "A stone throat of chained ledgers, stamp blocks, and pikes."
-      },
-      "guard-room": {
-        name: "Guard Room",
-        access: "restricted",
-        exits: ["wall-stair"],
-        description: "A low room of weapon racks, damp cloaks, and off-duty suspicion."
-      }
-    }
+    description: "A stone throat of chained ledgers, stamp blocks, and pikes."
   }
 }
 ```
@@ -366,8 +340,7 @@ When standing inside a major POI, the map panel could show:
 Before full local maps exist, the current map can still improve by showing:
 
 - footprint outlines around hexes that share a `poi.parent`;
-- parent area and district text in the selected-tile panel;
-- a small section count/list when a tile has `poi.sections`;
+- POI, member-hex, area, and district text in the selected-tile panel;
 - labels centered on multi-hex footprints rather than only on individual tiles.
 
 The player should always know whether they are moving locally or traveling
@@ -423,18 +396,18 @@ later if the engine changes.
 
 - Implement Whitemarch as many handcrafted hexes.
 - Use shared `parent` ids in POI metadata.
+- Give each member hex a `part` / `partName`.
 - Use `doors` only where access control matters.
 - Use labels/icons carefully so multiple tiles can read as one larger place.
-- Support `sections` metadata for buildings and compact interiors even before
-  section navigation is fully interactive.
 
 ### Phase 3: UI Improvements For Footprints
 
-- Show area/district/parent names in the map detail panel.
+- Show area/district/POI/member-hex names in the map detail panel.
 - Add landmark outlines or district shading.
 - Make major POIs visually read as clusters instead of isolated icons.
 - Improve wall rendering so boundaries feel structural.
-- Display section summaries for tiles that contain building interiors.
+- Display member-hex labels for buildings with rooms, yards, counters, cells,
+  and work areas.
 
 ### Phase 4: Local Exploration Layer
 

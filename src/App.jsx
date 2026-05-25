@@ -49,7 +49,7 @@ import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
 import { initCombat, playerAct, playerTalk, playerDrawWeapon, setTarget, endTurn, playerFlee, playerStandDown, playerCeasefire, playerWithdraw, playerAdvance, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
-import { coordKey, poiSections, sectionAutoEnterAllowed, sectionById, sectionName } from "./engine/location.js";
+import { poiPlaceName } from "./engine/location.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
 import { CombatView } from "./components/combat/CombatView.jsx";
@@ -148,9 +148,6 @@ function applyTravelArrival(base, beat, travel) {
     travelTo: travel.toName,
     travelToCoords: { x: travel.dest.x, y: travel.dest.y },
   });
-  if (next.world.currentSection) {
-    next = { ...next, world: { ...next.world, currentSection: null } };
-  }
   const path = travel.path || [];
   // Reveal radius: flight takes in a wide view from the air; otherwise normal
   // sight, shrunk by darkness (engine/light.js).
@@ -722,7 +719,7 @@ export function Solitaire() {
     const fromTile = getTile(state, cur.x, cur.y);
     const destTileFull = getTile(state, dest.x, dest.y);
     const fromName = currentLocationName(state);
-    const toName = destTileFull.poi?.name || `${TERRAINS[destTileFull.terrain]?.label} (${dest.x},${dest.y})`;
+    const toName = poiPlaceName(destTileFull.poi) || `${TERRAINS[destTileFull.terrain]?.label} (${dest.x},${dest.y})`;
     const destIsHidden = destTileFull.poi?.type === "hidden";
 
     // A single travel action covers at most MAX_TRAVEL_HEXES toward the
@@ -734,7 +731,7 @@ export function Solitaire() {
     const legEnd = legPath[legPath.length - 1];
     const arrived = legEnd.x === dest.x && legEnd.y === dest.y;
     const legTile = getTile(state, legEnd.x, legEnd.y);
-    const legName = arrived ? toName : (legTile.poi?.name || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
+    const legName = arrived ? toName : (poiPlaceName(legTile.poi) || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
     const isHidden = arrived && destIsHidden;
 
     const travelWp = activeWorldPassives(state.character, state.world.codex);
@@ -780,7 +777,7 @@ export function Solitaire() {
 
     const destDescription = isHidden
       ? "HIDDEN — generate a random event appropriate to the terrain. Set tile_discovery."
-      : destTileFull.poi ? `known ${destTileFull.poi.type} (${destTileFull.poi.name})` : "open wilderness";
+      : destTileFull.poi ? `known ${destTileFull.poi.type} (${poiPlaceName(destTileFull.poi) || destTileFull.poi.name})` : "open wilderness";
 
     let travelMsg;
     if (arrived) {
@@ -879,8 +876,8 @@ export function Solitaire() {
     const legTile = getTile(state, legEnd.x, legEnd.y);
     const fromName = currentLocationName(state);
     const destTile = getTile(state, dest.x, dest.y);
-    const toName = destTile.poi?.name || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
-    const legName = arrived ? toName : (legTile.poi?.name || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
+    const toName = poiPlaceName(destTile.poi) || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
+    const legName = arrived ? toName : (poiPlaceName(legTile.poi) || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
     const mins = hastedFlightMinutes(flightMinutes(legPath), speedMult);
     setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
 
@@ -920,7 +917,8 @@ export function Solitaire() {
       const key = `${p.x},${p.y}`;
       if (!tilesTouched) { updatedTiles = { ...baseTiles }; tilesTouched = true; }
       updatedTiles[key] = { ...(updatedTiles[key] || t), aerialSighting: { day } };
-      if (t.poi?.name && !overflownTowns.includes(t.poi.name)) overflownTowns.push(t.poi.name);
+      const overflownName = poiPlaceName(t.poi);
+      if (overflownName && !overflownTowns.includes(overflownName)) overflownTowns.push(overflownName);
     }
 
     const world = {
@@ -986,7 +984,7 @@ export function Solitaire() {
     }
     const fromName = currentLocationName(state);
     const destTile = getTile(state, dest.x, dest.y);
-    const toName = destTile.poi?.name || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
+    const toName = poiPlaceName(destTile.poi) || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
     const blind = !isSeen(state, dest.x, dest.y); // gating to a rumored place you've never seen
     setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
     const ch = { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - spell.resolveCost) };
@@ -996,46 +994,6 @@ export function Solitaire() {
     const msg = `[PLAYER ACTION] You work ${spell.name} and step through space, arriving at ${toName}${blind ? " — a place known only by repute, so you arrive without knowing what surrounds you" : ""}. No journey, no road between. It cost ${spell.resolveCost} resolve. Narrate the rush of arrival and what greets you. Use minutes_passed = 5.`;
     const travel = { fromName, toName, dest: { x: dest.x, y: dest.y }, path: [{ x: dest.x, y: dest.y }], totalMins: 5, encounter: null, mode: "teleport" };
     await finishTravel(stateWithPlayer, msg, travel);
-  }
-
-  function handleEnterSection(sectionId) {
-    if (loading) return;
-    const cur = state.world.currentTile;
-    const tile = getTile(state, cur.x, cur.y);
-    const sections = poiSections(tile.poi);
-    if (!sections.length) return;
-    const tileKey = coordKey(cur.x, cur.y);
-    if (!sectionId) {
-      const current = state.world.currentSection;
-      if (!current) return;
-      if (typeof current !== "string" && current.tileKey !== tileKey) return;
-      const place = tile.poi?.name || TERRAINS[tile.terrain]?.label || "the main vantage";
-      setState({
-        ...state,
-        world: { ...state.world, currentSection: null },
-        beats: [...state.beats, { id: `sec${Date.now()}`, type: "narration", content: `You return to the main vantage of ${place}.` }],
-      });
-      return;
-    }
-    const section = sectionById(tile.poi, sectionId);
-    if (!section) return;
-    const current = state.world.currentSection;
-    if (current && (typeof current === "string" ? current === sectionId : current.tileKey === tileKey && current.sectionId === sectionId)) return;
-    if (!sectionAutoEnterAllowed(section)) {
-      const name = sectionName(section);
-      setState({
-        ...state,
-        beats: [...state.beats, { id: `sec${Date.now()}`, type: "narration", content: `${name} is not a place you simply walk into. You would need permission, stealth, force, magic, or some other fiction-first way through.` }],
-      });
-      return;
-    }
-    const place = tile.poi?.name || TERRAINS[tile.terrain]?.label || "this place";
-    const desc = section.description ? ` ${section.description}` : "";
-    setState({
-      ...state,
-      world: { ...state.world, currentSection: { tileKey, sectionId } },
-      beats: [...state.beats, { id: `sec${Date.now()}`, type: "narration", content: `You move into ${sectionName(section)} within ${place}.${desc}` }],
-    });
   }
 
   async function handleResetCampaign() {
@@ -1089,7 +1047,7 @@ export function Solitaire() {
     if (bought.length === 0 && sold.length === 0) return; // browsed, traded nothing
 
     const spent = start.copper - coinsToCopper(state.character.inventory.coins);
-    const place = tile.poi?.name || building.label;
+    const place = poiPlaceName(tile.poi) || building.label;
     const ledger = [
       bought.length ? `Bought: ${bought.join(", ")}` : "",
       sold.length ? `Sold: ${sold.join(", ")}` : "",
@@ -1184,7 +1142,7 @@ export function Solitaire() {
     if (loading || !shopTile) return;
     const tmpl = mountTemplate(mountId);
     if (!tmpl) return;
-    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the stable";
+    const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the stable";
     const coins = formatCopper(coinsToCopper(state.character.inventory.coins));
     setShopTile(null);
     setError(null);
@@ -1293,7 +1251,7 @@ export function Solitaire() {
   // lone, weak wanderer.
   async function handleApproachRecruit(tmpl) {
     if (loading || !shopTile || isRecruited(state, tmpl.id)) return;
-    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the tavern";
+    const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the tavern";
     const standing = partyStanding(state);
     const outlook = recruitOutlook(standing, tmpl.choosiness);
     setShopTile(null);
@@ -1402,7 +1360,7 @@ export function Solitaire() {
     if (!(await askConfirm({ title: "Buy prisoner's rights", body: `Pay ${formatCopper(p.rightsCp)} to the warden for the rights to ${p.name} (held for ${p.crime})? Their fate becomes yours.`, confirmLabel: "Pay" }))) return;
     const r = buyPrisonerRights(state, p);
     if (!r.ok) { setError(r.reason || "You can't pay the warden."); return; }
-    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the gaol";
+    const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the gaol";
     setShopTile(null);
     setError(null);
     setLoading(true);
@@ -1431,7 +1389,7 @@ export function Solitaire() {
     if (!(await askConfirm({ title: "Buy a bond", body: `Pay ${formatCopper(c.priceCp)} to the auctioneer for ${c.name}'s bond (${c.origin})? Their fate becomes yours — to free, to keep, or to sell on.`, confirmLabel: "Pay", danger: true }))) return;
     const r = buyCaptive(state, c);
     if (!r.ok) { setError(r.reason || "You can't pay the auctioneer."); return; }
-    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the block";
+    const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the block";
     setShopTile(null);
     setError(null);
     setLoading(true);
@@ -2061,7 +2019,6 @@ export function Solitaire() {
           onTravel={handleTravel}
           onFly={handleFly}
           onTeleport={handleTeleport}
-          onEnterSection={handleEnterSection}
           onSeekCombat={handleSeekCombat}
           loading={loading}
         />

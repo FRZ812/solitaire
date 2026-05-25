@@ -11,7 +11,7 @@ import { TERRAINS } from "../data/terrains.js";
 import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
 import { getTile, isSeen, HEX_DIRECTIONS, hexDistance, currentLocationName } from "./world.js";
-import { currentSectionEntry, poiMeta, sectionName } from "./location.js";
+import { poiMeta, poiPlaceName } from "./location.js";
 import { hostileProfile } from "./encounters.js";
 import { getBiome } from "../data/biomes.js";
 import { buildingForTile, isBuildingOpen, buildingHours } from "../data/town.js";
@@ -181,26 +181,22 @@ export function buildStateContext(state) {
   const t = getTile(state, world.currentTile.x, world.currentTile.y);
   const biome = getBiome(world.currentTile.x, world.currentTile.y);
   const place = currentLocationName(state) || `${TERRAINS[t.terrain]?.label || "Wilderness"} (${world.currentTile.x},${world.currentTile.y})`;
-  const basePlace = t.poi?.name || `${TERRAINS[t.terrain]?.label || "Wilderness"} (${world.currentTile.x},${world.currentTile.y})`;
+  const basePlace = poiPlaceName(t.poi) || `${TERRAINS[t.terrain]?.label || "Wilderness"} (${world.currentTile.x},${world.currentTile.y})`;
   const locMeta = poiMeta(t, basePlace);
-  const section = currentSectionEntry(state, t);
   const locBits = [];
   if (locMeta.area) locBits.push(`Area: ${locMeta.area}`);
   if (locMeta.district) locBits.push(`District: ${locMeta.district}`);
+  if (locMeta.footprint) locBits.push(`POI footprint: ${locMeta.footprint}`);
+  if (locMeta.part) locBits.push(`Current hex: ${locMeta.part}`);
   if (locMeta.access) locBits.push(`Access: ${locMeta.access}`);
-  if (section) {
-    const secBits = [`Current section: ${sectionName(section)}`];
-    if (section.access) secBits.push(`access ${section.access}`);
-    if (section.description) secBits.push(section.description);
-    locBits.push(secBits.join(" — "));
-  }
   const localLine = locBits.length ? `\n[LOCAL PLACE — ${locBits.join("; ")}]` : "";
   const nearby = [];
   for (const d of HEX_DIRECTIONS) {
     const nx = world.currentTile.x + d.x, ny = world.currentTile.y + d.y;
     if (!isSeen(state, nx, ny)) continue;
     const nt = getTile(state, nx, ny);
-    if (nt.poi?.name) nearby.push(nt.poi.name);
+    const nearbyName = poiPlaceName(nt.poi);
+    if (nearbyName) nearby.push(nearbyName);
     else if (nt.poi?.type === "hidden") nearby.push(`?(${TERRAINS[nt.terrain]?.label})`);
   }
   const nearbyStr = nearby.length ? `; Nearby: ${nearby.join(", ")}` : "";

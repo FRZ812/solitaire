@@ -1,7 +1,7 @@
 // Top-level configuration constants.
 export const MODEL = "claude-opus-4-7";
 export const HISTORY_LIMIT = 100;
-export const STORAGE_KEY = "solitaire-state-v12";
+export const STORAGE_KEY = "solitaire-state-v13";
 
 // v12 scale: hexes are ~250m so each tile is a single concrete vantage rather
 // than a region. Travel base drops accordingly, sight is normally short, and

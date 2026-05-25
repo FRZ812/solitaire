@@ -62,12 +62,14 @@ Whitemarch should eventually support many handcrafted tiles. First-pass
 implementation can build fewer, but the districts below should remain the
 organizing structure.
 
-Important planning rule: major districts and POIs are footprints, not single
-hexes. A "Grand Market" label should cover several vantages; the player moves
-through Grain Square, Butchers' Row, Cloth Awnings, Coin Scales, and Night
-Market rather than stepping onto one generic market tile. The same principle
-applies to gates, docks, citadels, cathedrals, castles, and dense undercity
-spaces.
+Important planning rule: major POIs are footprints, not single hexes, and not
+menus inside a single hex. A "Grand Market" label should cover several adjacent
+member hexes; the player moves through Grain Square, Butchers' Row, Cloth
+Awnings, Coin Scales, and Night Market rather than stepping onto one generic
+market tile. The same principle applies to gates, docks, citadels, cathedrals,
+castles, inns with yards, prisons, and dense undercity spaces. Use `district`
+for broad city organization; reserve `parent` for the actual shared POI
+footprint.
 
 Suggested city districts:
 

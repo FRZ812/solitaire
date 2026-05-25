@@ -108,21 +108,21 @@ defenses should read as footprints. If the first build must be smaller, fold
 `Coin Scales` into `Grain Square`; do not reduce the Grand Market below four
 tiles.
 
-## Sectioning Pass
+## Building Footprint Pass
 
 All Whitemarch buildings with multiple rooms, service counters, floors, cells,
-work areas, or attached yards should be sectioned hexes by default. A section is
-smaller than a world tile: it is a room, yard, counter, stair, cell, archive, or
-hidden threshold inside the tile. The map still shows the building as one hex,
-but the player can occupy meaningful parts of it.
+work areas, or attached yards should become grouped map footprints by default.
+A "section" is not a button list inside one hex. It is an actual adjacent member
+hex belonging to the same building or POI, marked with `parent`, `parentName`,
+`part`, and `partName`.
 
-Use sections where position changes authority, access, witnesses, services, or
-escape routes. Do not section every decorative room, but do section every
-building or compound that clearly contains more than one meaningful part.
+Use footprint parts where position changes authority, access, witnesses,
+services, or escape routes. Do not map every decorative closet, but do map every
+room, yard, counter, stair, cell, archive, or threshold that changes play.
 
-First-pass section targets:
+First-pass footprint part targets:
 
-| Tile | Sections |
+| POI Footprint | Member hexes / parts |
 |---|---|
 | Toll Hall | Tariff Counter, Papers Queue, Livestock Desk, Guard Rail, Wall Stair |
 | Inspection Yard | Search Tables, Confiscation Cart, Dog Run, Sergeant's Awning |
@@ -148,9 +148,9 @@ First-pass section targets:
 | Embassy Lane | Interpreter Stalls, Treaty Inn, Compound Gates, Hostage House |
 | Outer Slums | Tin-Roof Lane, Cookfire Court, Scrap Shed, Wall Shadow |
 
-Access should be per section. A public tile can still contain restricted
-sections, such as a stable's tack room, a gatehouse guard room, or the
-Registry's archive doors.
+Access should be per member hex. A public footprint can still contain restricted
+parts, such as a stable's tack room, a gatehouse guard room, or the Registry's
+archive doors.
 
 ## Tile Details
 
