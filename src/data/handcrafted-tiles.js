@@ -22,6 +22,84 @@ const HEX_DIRS = [
   { x: 1, y: 0 }, { x: 1, y: -1 }, { x: 0, y: -1 },
   { x: -1, y: 0 }, { x: -1, y: 1 }, { x: 0, y: 1 },
 ];
+
+const MIRECROSS_FOOTPRINT = {
+  parent: "mirecross-crossing",
+  parentName: "Mirecross",
+  district: "mirecross-crossing",
+  districtName: "Mirecross Crossing",
+  access: "public",
+};
+
+const WHITEMARCH_AREA = {
+  area: "whitemarch",
+  areaName: "Whitemarch",
+};
+
+const WHITEMARCH_CROWN_GATE = {
+  ...WHITEMARCH_AREA,
+  parent: "whitemarch-crown-gate",
+  parentName: "Crown Gate Complex",
+  district: "crown-gate-ward",
+  districtName: "Crown Gate Ward",
+};
+
+const WHITEMARCH_GRAND_MARKET = {
+  ...WHITEMARCH_AREA,
+  parent: "whitemarch-grand-market",
+  parentName: "The Grand Market",
+  district: "grand-market",
+  districtName: "Grand Market",
+  access: "public",
+};
+
+const WHITEMARCH_RIVER_DOCKS = {
+  ...WHITEMARCH_AREA,
+  parent: "whitemarch-river-docks",
+  parentName: "River Docks",
+  district: "river-docks",
+  districtName: "River Docks",
+};
+
+const WHITEMARCH_CHAIN_WARD = {
+  ...WHITEMARCH_AREA,
+  parent: "whitemarch-chain-ward",
+  parentName: "Chain Ward",
+  district: "chain-ward",
+  districtName: "Chain Ward",
+};
+
+const WHITEMARCH_CITADEL = {
+  ...WHITEMARCH_AREA,
+  parent: "whitemarch-citadel",
+  parentName: "Citadel Ward",
+  district: "citadel-ward",
+  districtName: "Citadel Ward",
+};
+
+const WHITEMARCH_IRON_QUARTER = {
+  ...WHITEMARCH_AREA,
+  parent: "whitemarch-iron-quarter",
+  parentName: "Iron Quarter",
+  district: "iron-quarter",
+  districtName: "Iron Quarter",
+};
+
+const WHITEMARCH_COURT_TEMPLE = {
+  ...WHITEMARCH_AREA,
+  parent: "whitemarch-court-temple",
+  parentName: "Court And Temple Steps",
+  district: "court-temple",
+  districtName: "Court And Temple Steps",
+};
+
+const WHITEMARCH_LOW_WARDS = {
+  ...WHITEMARCH_AREA,
+  parent: "whitemarch-low-wards",
+  parentName: "Low Wards",
+  district: "low-wards",
+  districtName: "Low Wards",
+};
 //
 // Sections are organised by region. Multi-tile clusters give a sense of place
 // — a village isn't one hex, it's a cluster (gate, square, smithy, inn).
@@ -32,14 +110,23 @@ export const HANDCRAFTED = {
   // wet market and ferry cluster around it. Buildings carry a poi.service id
   // when they have a wired menu (see data/town.js, e.g. The Healer's House).
   // ============================================================
-  "0,0":  { terrain: "indoor",     poi: { type: "inn",      name: "The Drowned Rat",    service: "tavern", description: "The town tavern. Smoke-darkened beams, a peat fire, a long oak bar, and the market's noise spilling in whenever the door opens." } },
-  "-1,0": { terrain: "settlement", poi: { type: "town",     name: "Mirecross",          description: "The market square of Mirecross, busy at the river-crossing — a stone well, hawkers' stalls, mud churned by cart-wheels and boots." } },
-  "0,-1": { terrain: "indoor",     poi: { type: "stable",   name: "Mirecross Stable",   service: "stable", description: "A low stable smelling of hay and old leather, hard against the inn." } },
-  "0,1":  { terrain: "settlement", poi: { type: "landmark", name: "Ferry Landing",      description: "A wooden quay where the ferry meets the river. Porters and fishwives crowd the boards." } },
-  "-1,1": { terrain: "indoor",     poi: { type: "healer",   name: "The Healer's House",  service: "healer", description: "Bundles of drying herbs hang from the rafters; a low room that smells of comfrey, tallow, and woodsmoke." } },
-  "1,-1": { terrain: "indoor",     poi: { type: "smithy",   name: "Mirecross Smithy",    service: "blacksmith", description: "The town smith's. A banked forge, a wall of tongs, the ring of a hammer on cooling iron." } },
-  "-1,-1":{ terrain: "indoor",     poi: { type: "gaol",     name: "Mirecross Gaol",      service: "prison", description: "A squat stone blockhouse with a barred window and a wanted board by the door. The warden keeps the town's cells." } },
-  "-2,1": { terrain: "settlement", poi: { type: "market",   name: "The Wet Market",      service: "market", description: "The market square — plank stalls under oiled canvas, mud and cabbage-leaves underfoot, a butcher, a fruit-cart, and a greengrocer all crying their wares at once." } },
+  "0,0":  { terrain: "indoor",     poi: { ...MIRECROSS_FOOTPRINT, role: "tavern", type: "inn", name: "The Drowned Rat", service: "tavern", description: "The town tavern. Smoke-darkened beams, a peat fire, a long oak bar, and the market's noise spilling in whenever the door opens.", sections: {
+    "common-room": { name: "Common Room", access: "public", description: "Benches, trestles, road-mud, smoke-dark beams, and every conversation trying to be overheard by someone else." },
+    "long-bar": { name: "Long Bar", access: "public", description: "A polished oak counter with pewter mugs, a knife-scarred till board, and the innkeeper's reach over the room." },
+    "peat-hearth": { name: "Peat Hearth", access: "public", description: "A low fire of black peat, warm enough to loosen wet boots and quiet enough for dangerous talk." },
+    "guest-loft": { name: "Guest Loft", access: "guarded", description: "A cramped loft of rented pallets, travel packs, snores, and the soft threat of theft." },
+    "cellar-door": { name: "Cellar Door", access: "restricted", description: "A locked plank door behind the bar; ale, ledgers, and whatever the innkeeper does not want counted in public." },
+  } } },
+  "-1,0": { terrain: "settlement", poi: { ...MIRECROSS_FOOTPRINT, role: "square", type: "town", name: "Mirecross", description: "The market square of Mirecross, busy at the river-crossing — a stone well, hawkers' stalls, mud churned by cart-wheels and boots." } },
+  "0,-1": { terrain: "indoor",     poi: { ...MIRECROSS_FOOTPRINT, role: "stable", type: "stable", name: "Mirecross Stable", service: "stable", description: "A low stable smelling of hay and old leather, hard against the inn.", sections: {
+    "stall-row": { name: "Stall Row", access: "public", description: "Six close stalls, damp straw, restless hooves, and travel beasts nosing at empty feed-bins." },
+    "tack-room": { name: "Tack Room", access: "guarded", description: "Saddles, straps, repair hooks, and a stable lock that has been forced before." },
+  } } },
+  "0,1":  { terrain: "settlement", poi: { ...MIRECROSS_FOOTPRINT, role: "ferry", type: "landmark", name: "Ferry Landing", description: "A wooden quay where the ferry meets the river. Porters and fishwives crowd the boards." } },
+  "-1,1": { terrain: "indoor",     poi: { ...MIRECROSS_FOOTPRINT, role: "healer", type: "healer", name: "The Healer's House", service: "healer", description: "Bundles of drying herbs hang from the rafters; a low room that smells of comfrey, tallow, and woodsmoke." } },
+  "1,-1": { terrain: "indoor",     poi: { ...MIRECROSS_FOOTPRINT, role: "smithy", type: "smithy", name: "Mirecross Smithy", service: "blacksmith", description: "The town smith's. A banked forge, a wall of tongs, the ring of a hammer on cooling iron." } },
+  "-1,-1":{ terrain: "indoor",     poi: { ...MIRECROSS_FOOTPRINT, role: "gaol", type: "gaol", name: "Mirecross Gaol", service: "prison", description: "A squat stone blockhouse with a barred window and a wanted board by the door. The warden keeps the town's cells." } },
+  "-2,1": { terrain: "settlement", poi: { ...MIRECROSS_FOOTPRINT, role: "wet-market", type: "market", name: "The Wet Market", service: "market", description: "The market square — plank stalls under oiled canvas, mud and cabbage-leaves underfoot, a butcher, a fruit-cart, and a greengrocer all crying their wares at once." } },
   "-1,2": { terrain: "water",      poi: null },
 
   // ============================================================
@@ -100,9 +187,9 @@ export const HANDCRAFTED = {
   // ============================================================
   // CROWSMOOR TOWN CLUSTER
   // ============================================================
-  "24,0": { terrain: "settlement", poi: { type: "gate",     name: "Crowsmoor West Gate",        description: "Stone posts, no doors. A militia ledger nailed to one." } },
+  "24,0": { terrain: "settlement", poi: { type: "gate",     name: "Crowsmoor West Gate",        description: "Stone posts, no doors. A militia ledger nailed to one.", sections: false } },
   "25,0": { terrain: "settlement", poi: { type: "town",     name: "Crowsmoor",                  description: "The walled town of Crowsmoor. A market square at its centre with a stone well; three roads converge at the gates." } },
-  "26,0": { terrain: "settlement", poi: { type: "gate",     name: "Crowsmoor East Gate",        description: "The road north leaves the town here." } },
+  "26,0": { terrain: "settlement", poi: { type: "gate",     name: "Crowsmoor East Gate",        description: "The road north leaves the town here.", sections: false } },
   "26,-1":{ terrain: "indoor",     poi: { type: "smithy",   name: "The Smithy",                 description: "Crowsmoor's only smith." } },
   "25,1": { terrain: "indoor",     poi: { type: "temple",   name: "Temple",                     description: "A small temple. Stone benches, a single guttering candle." } },
   "25,-1":{ terrain: "indoor",     poi: { type: "mill",     name: "Mill House",                 description: "A working mill, the wheel groaning against the stream." } },
@@ -399,27 +486,165 @@ export const HANDCRAFTED = {
   // ============================================================
   // WHITEMARCH (city, Whitemarch Iron)
   // ============================================================
-  "40,-20": { terrain: "settlement", poi: { type: "city",      name: "Whitemarch",            description: "The walled iron-city. Tax-farmers and militiamen, the Cathedral bell that times the workers, the smell of iron-shavings on the wind." } },
-  "41,-20": { terrain: "settlement", poi: { type: "gate",      name: "Whitemarch East Gate",  description: "Stone-arched, double-doored, manned by a pair of bored militiamen with the iron crest at their shoulders." } },
-  "40,-21": { terrain: "indoor",     poi: { type: "cathedral", name: "The Iron Cathedral",    description: "A vault of iron and white stone. The bell weighs three tons; iron-workers throughout the city orient their day by its tolls." } },
-  "39,-20": { terrain: "settlement", poi: { type: "gate",      name: "Whitemarch West Gate",  description: "The road from Crowsmoor and Beltsworn enters here. Always a queue of carts at midday." } },
-  "40,-19": { terrain: "settlement", poi: { type: "gate",      name: "Whitemarch South Gate", description: "Wagon-rutted ground, the road south toward the Mire." } },
-  "41,-21": { terrain: "indoor",     poi: { type: "mint",      name: "The Royal Mint",        description: "Where the Whitemarch iron-shilling is struck. Guarded around the clock." } },
-  "39,-21": { terrain: "indoor",     poi: { type: "hall",      name: "Knights' Hall",         description: "The garrison of the city's small standing army. Three banners hang inside; only one of them is current." } },
-  "39,-19": { terrain: "indoor",     poi: { type: "smithy",    name: "The Forges",            description: "Twenty-three forges crowd this district, all bound to the city's iron monopoly." } },
-  "41,-19": { terrain: "indoor",     poi: { type: "hall",      name: "The Counting House",    description: "The city's mercantile heart. Where ledgers are reconciled and quiet ruin is contracted." } },
-  "41,-22": { terrain: "indoor",     poi: { type: "palace",    name: "The Iron Palace",       description: "Seat of the Lord-Treasurer. Less a palace than an over-large counting-house with battlements." } },
-  "40,-22": { terrain: "settlement", poi: { type: "gate",      name: "Whitemarch North Gate", description: "The road northeast toward the Tannic Fords and the broader empire." } },
-  "38,-20": { terrain: "road",       poi: null },
-  "42,-20": { terrain: "road",       poi: null },
-  "42,-21": { terrain: "settlement", poi: { type: "square",    name: "Trade Quarter",         description: "A wider square where the iron-merchants hold their accounts. Crowded at dawn, empty by noon." } },
-  "42,-22": { terrain: "indoor",     poi: { type: "hall",      name: "Iron Counting House",   description: "Smaller than the central Counting House — this annex deals with retail and small loans." } },
-  "39,-22": { terrain: "indoor",     poi: { type: "inn",       name: "The Sleeping Knight",   description: "An inn for visiting nobles. Marble lintels, real fires, prices to match." } },
-  "38,-19": { terrain: "indoor",     poi: { type: "shop",      name: "Cobblers' Row",         description: "A row of shoe-makers and harness-mongers along the inner wall." } },
-  "38,-21": { terrain: "settlement", poi: { type: "yard",      name: "Beggars' Row",          description: "Where the city's beggars are licensed and tolerated. A queue forms before each Cathedral bell." } },
-  "38,-18": { terrain: "settlement", poi: { type: "yard",      name: "Outer Slums",           description: "Beyond the inner wall. Tin-roofed shacks; the iron-shavings dust the children." } },
-  "40,-18": { terrain: "settlement", poi: { type: "yard",      name: "South Wagon-Yard",      description: "The unloading-yard for southbound caravans. Stained brown with mule-dung." } },
-  "39,-18": { terrain: "indoor",     poi: { type: "shop",      name: "Tannery Lane",          description: "Where the city's hides are processed. The smell is famous and worse than its reputation." } },
+  "38,-20": { terrain: "road",       poi: { ...WHITEMARCH_CROWN_GATE, role: "approach", type: "gate", name: "Crown Road Approach", access: "public", description: "The road broadens into Whitemarch's shadow. Carts wait in ranked lines, paper-sellers move through the crowd, and the white-and-iron wall rises beyond the smoke like a cliff with bells.", sections: false } },
+  "39,-20": { terrain: "indoor",     poi: { ...WHITEMARCH_CROWN_GATE, role: "toll-hall", type: "gate", name: "Crown Gate Toll Hall", access: "guarded", description: "A stone throat under the gatehouse. Ledgers are chained to barred counters; stamp blocks crack down in rhythm while guards keep pike-points low enough to teach patience.", sections: {
+    "tariff-counter": { name: "Tariff Counter", access: "public", description: "Coin scales, chained ledgers, and posted rates that seem to have changed since the traveler ahead joined the queue." },
+    "papers-queue": { name: "Papers Queue", access: "public", description: "A press of damp cloaks, safe-conducts, guild seals, and people trying to look less poor than they are." },
+    "livestock-desk": { name: "Livestock Desk", access: "public", description: "Drovers argue weights while clerks value hooves, horns, hides, and anything else that can be taxed." },
+    "guard-rail": { name: "Guard Rail", access: "guarded", description: "A waist-high iron rail where gate soldiers decide who waits, who pays, and who gets pulled aside." },
+    "wall-stair": { name: "Wall Stair", access: "restricted", description: "A narrow stair climbing toward the wall walk, watched by a bored soldier with a very sharp halberd." },
+  } } },
+  "40,-20": { terrain: "settlement", poi: { ...WHITEMARCH_CROWN_GATE, role: "inspection-yard", type: "yard", name: "Inspection Yard", access: "guarded", description: "The yard stinks of wet wool, opened crates, dung, oilcloth, and fear. Soldiers prod wagon beds with hooked rods while a sergeant decides whose delay will ruin the day.", sections: {
+    "search-tables": { name: "Search Tables", access: "public", description: "Boards scarred by knives and iron rods, where bags are emptied under witness." },
+    "confiscation-cart": { name: "Confiscation Cart", access: "guarded", description: "A high-sided cart of seized blades, false seals, strange jars, and goods nobody is eager to claim." },
+    "dog-run": { name: "Dog Run", access: "guarded", description: "Lean gate dogs nose through straw and seams, more interested in fear than food." },
+    "sergeants-awning": { name: "Sergeant's Awning", access: "restricted", description: "A dry square of canvas where the gate sergeant keeps the seal-box and the power to make small lives difficult." },
+  } } },
+  "40,-21": { terrain: "settlement", poi: { ...WHITEMARCH_CROWN_GATE, role: "wall-walk", type: "gate", name: "Wall Walk", access: "restricted", description: "The wall walk is broad enough for an ammunition cart. Scorpions sit under oiled covers between crenels, and soldiers pause by bell code to look north.", sections: {
+    "crenel-walk": { name: "Crenel Walk", access: "restricted", description: "The exposed path between merlons, high enough for the city noise to fall away." },
+    "scorpion-bay": { name: "Scorpion Bay", access: "restricted", description: "A covered siege engine bay with oiled cranks, bolt racks, and posted range marks." },
+    "bell-post": { name: "Bell Post", access: "guarded", description: "A signal bell and code plaque where every ring has a consequence." },
+    "ammunition-locker": { name: "Ammunition Locker", access: "sealed", description: "A locked iron chest for quarrels, firepots, and things signed out only in alarm." },
+  } } },
+  "41,-21": { terrain: "indoor",     poi: { ...WHITEMARCH_CROWN_GATE, role: "dragon-watch", type: "tower", name: "Dragon-Watch Tower", access: "restricted", description: "Oil, cold iron, and old smoke cling to the tower. Harpoon frames point through open shutters; signal mirrors wait under wool covers; a black-headed bolt rests on the central rack.", sections: {
+    "lower-watchroom": { name: "Lower Watchroom", access: "guarded", description: "Sky charts, bell-code slates, stale tea, and watchers who mark clouds like creditors mark debt." },
+    "harpoon-gallery": { name: "Harpoon Gallery", access: "restricted", description: "Heavy frames face the sky through shuttered slots, each crank greased and counted." },
+    "signal-mirror-loft": { name: "Signal Mirror Loft", access: "restricted", description: "Covered mirrors and colored shutters send warnings faster than riders can breathe." },
+    "bolt-rack": { name: "Relic Bolt Rack", access: "sealed", description: "A locked rack for alchemical dragon-bolts, each one signed out under two officers' seals." },
+  } }, vistaRadius: 14 },
+  "41,-20": { terrain: "settlement", poi: { ...WHITEMARCH_GRAND_MARKET, role: "caravan-yard", type: "yard", name: "East Caravan Yard", access: "public", description: "A fenced acre of mud, canvas, wagon wheels, and languages shouted over animals. Guards sleep with boots on beneath a hiring board pinned with work, lies, and one bloodstained scrap.", sections: {
+    "hiring-board": { name: "Hiring Board", access: "public", description: "Rain-curled notices, caravan work, threats disguised as wages, and old blood on one corner." },
+    "wagon-lines": { name: "Wagon Lines", access: "public", description: "Ranked carts, canvas tilts, sleeping drivers, and cargo nobody wants searched twice." },
+    "guard-fires": { name: "Guard Fires", access: "public", description: "Armed travelers warming hands while they price one another's courage." },
+    "repair-lean-to": { name: "Repair Lean-To", access: "guarded", description: "Axle grease, spare wheel rims, snapped traces, and someone listening from under a wagon." },
+  } } },
+  "41,-19": { terrain: "indoor",     poi: { ...WHITEMARCH_GRAND_MARKET, role: "public-stable", type: "stable", name: "Public Stable", access: "public", description: "The stable runs hotter than the street: horses stamping under striped blankets, farriers burning hoof in blue smoke, and a factor arguing over whether a courser is lame or merely insulted.", sections: {
+    "stall-row": { name: "Stall Row", access: "public", description: "Crowded stalls, damp straw, nervous mounts, and handlers who know exactly which beast bites." },
+    "farrier-lane": { name: "Farrier Lane", access: "public", description: "A strip of wet stone where hooves smoke under tongs and boys pump the bellows." },
+    "fodder-loft": { name: "Fodder Loft", access: "guarded", description: "Dusty hay, feed tallies, and a ladder with more eyes on it than it deserves." },
+    "remount-pen": { name: "Remount Pen", access: "restricted", description: "Military horses behind a locked rail, branded with the iron crest." },
+    "tack-room": { name: "Tack Room", access: "guarded", description: "Saddles, harness, courier bags, and repair hooks laid out in exacting order." },
+  } } },
+  "42,-20": { terrain: "settlement", poi: { ...WHITEMARCH_GRAND_MARKET, role: "grain-square", type: "city", name: "Whitemarch - Grain Square", access: "public", description: "The center of the capital is noise given stone. Flour dust drifts from sacks stacked taller than children; bakers argue quotas under guard eyes while every crowd watches the bins with private arithmetic." } },
+  "43,-20": { terrain: "settlement", poi: { ...WHITEMARCH_GRAND_MARKET, role: "butchers-row", type: "market", name: "Butchers' Row", access: "public", description: "The row runs red by noon no matter how often apprentices throw water. Meat hooks creak, dogs nose the gutters, and inspectors mark carcasses with chalk." } },
+  "42,-21": { terrain: "settlement", poi: { ...WHITEMARCH_GRAND_MARKET, role: "cloth-awnings", type: "market", name: "Cloth Awnings", access: "public", description: "Dyed awnings turn the market light into stained color. Wool, linen, foreign silk, boot stalls, knife trays, charm strings, lamp oil, and pickpockets all press into the same shade." } },
+  "43,-21": { terrain: "settlement", poi: { ...WHITEMARCH_GRAND_MARKET, role: "coin-scales", type: "market", name: "Coin Scales", access: "public", description: "Brass pans click under money changers, pawnbrokers, appraisers, and contract witnesses. Here a thing becomes a price, and a price becomes somebody else's problem." } },
+  "42,-22": { terrain: "settlement", poi: { ...WHITEMARCH_GRAND_MARKET, role: "night-market", type: "market", name: "Night Market Lane", access: "guarded", description: "By day it is shuttered backs and overflow. By night the lamps are hooded, the stalls unfold, and the city sells what it denies owning." } },
+  "44,-20": { terrain: "settlement", poi: { ...WHITEMARCH_RIVER_DOCKS, role: "high-quay", type: "dock", name: "High Quay", access: "public", description: "Stone piles stand above brown river water dark with tar. Barges crowd the cranes while customs officers work beneath armed awnings and dock gangs watch the tally sticks.", sections: {
+    "quay-edge": { name: "Quay Edge", access: "public", description: "Tar-black stone, wet ropes, barge poles, and one bad shove between ground and river." },
+    "crane-line": { name: "Crane Line", access: "guarded", description: "Cargo hooks swing over shouting crews and loads heavy enough to end a quarrel." },
+    "customs-awning": { name: "Customs Awning", access: "guarded", description: "Tally sticks, wax seals, officers, and goods waiting to become legal." },
+    "river-stairs": { name: "River Stairs", access: "hidden", description: "Narrow wet steps down below the honest height of the quay." },
+  } } },
+  "44,-21": { terrain: "settlement", poi: { ...WHITEMARCH_RIVER_DOCKS, role: "warehouse-row", type: "yard", name: "Warehouse Row", access: "guarded", description: "Numbered doors, wet rope, customs wax, guild chains, cart ramps, and private locks. Goods wait here between river, market, court, and theft.", sections: {
+    "cart-ramp": { name: "Cart Ramp", access: "public", description: "Mud-slick planks where haulers curse wheels into motion." },
+    "customs-sealed-door": { name: "Customs-Sealed Door", access: "guarded", description: "A warehouse door marked with red wax and the customs mark." },
+    "guild-chain-door": { name: "Guild Chain Door", access: "guarded", description: "A door barred by a heavy chain and a guild lock with no interest in excuses." },
+    "smuggler-stair": { name: "Smuggler Stair", access: "hidden", description: "A narrow stair tucked behind stacked barrels, leading lower than the quay should allow." },
+  } } },
+  "43,-22": { terrain: "settlement", poi: { ...WHITEMARCH_CHAIN_WARD, role: "chain-market-steps", type: "slavemarket", name: "Chain Market Steps", access: "guarded", description: "Pale stone steps climb to a raised sale platform. Status criers call lots over the market noise while families press papers through the petition rail and guards watch the crowd.", sections: {
+    "sale-platform": { name: "Sale Platform", access: "guarded", description: "The raised stone where status criers stand, papers in hand, while buyers wait under awnings." },
+    "petition-rail": { name: "Petition Rail", access: "public", description: "A barred rail where families, advocates, and desperate friends try to push documents into official hands." },
+    "viewing-yard": { name: "Viewing Yard", access: "guarded", description: "A controlled yard for inspection before a sale bell." },
+    "collar-stalls": { name: "Collar Stalls", access: "public", description: "Collar-smiths measure iron, brass plates, and legal marks with a craftsman's calm." },
+    "physician-booth": { name: "Physician Booth", access: "guarded", description: "A curtained booth where health is priced as another column in the ledger." },
+  } } },
+  "44,-22": { terrain: "indoor",     poi: { ...WHITEMARCH_CHAIN_WARD, role: "registry-hall", type: "hall", name: "Registry Hall", access: "guarded", description: "Shelves of status rolls climb into the gloom. Clerks move brass weights from name to name below a mural of Whitemarch raising a wall.", sections: {
+    "public-counters": { name: "Public Counters", access: "public", description: "Counters for petitions, lease fees, manumission claims, and arguments that clerks can delay with a fingertip." },
+    "lease-desk": { name: "Lease Desk", access: "guarded", description: "A narrow desk where labor terms are copied, stamped, and priced." },
+    "collar-archive": { name: "Collar Archive", access: "restricted", description: "Locked shelves of collar plates, status rolls, recovery marks, and old corrections." },
+    "recovery-writ-office": { name: "Recovery Writ Office", access: "restricted", description: "The office that dispatches Flesh Wardens when property, punishment, and paperwork all point at the same person." },
+  } } },
+  "43,-23": { terrain: "settlement", poi: { ...WHITEMARCH_CHAIN_WARD, role: "holding-yard", type: "yard", name: "Holding Yard", access: "restricted", description: "A walled yard behind the sale steps. Water buckets, numbered rails, watch benches, and a narrow gate toward the prison make the market's machinery plain.", sections: {
+    "numbered-rails": { name: "Numbered Rails", access: "restricted", description: "Iron rails marked by number, not name, watched by men with short clubs." },
+    "water-buckets": { name: "Water Buckets", access: "guarded", description: "A row of buckets under a guard's eye, mercy reduced to ration." },
+    "watch-bench": { name: "Watch Bench", access: "restricted", description: "A bench where Flesh Wardens sit close enough to hear a whisper." },
+    "prison-gate": { name: "Prison Gate", access: "restricted", description: "A narrow gate toward the workhouse and the next office in the machine." },
+  } } },
+  "42,-23": { terrain: "settlement", poi: { ...WHITEMARCH_LOW_WARDS, role: "tenement-row", type: "yard", name: "Tenement Row", access: "public", description: "Timber, plaster, laundry rope, smoke, and faces at every window until looked at directly. A public pump knocks in the courtyard below three different warnings chalked beside the same alley.", sections: {
+    "public-pump": { name: "Public Pump", access: "public", description: "The courtyard pump where gossip, debt, thirst, and watching faces gather." },
+    "pawn-stair": { name: "Pawn Stair", access: "public", description: "A stair crowded with pledges, pawn tickets, and neighbors pretending not to hear." },
+    "roof-bridges": { name: "Roof Bridges", access: "guarded", description: "Narrow planks between leaning buildings, useful to children, thieves, and the desperate." },
+    "alley-mouth": { name: "Alley Mouth", access: "guarded", description: "Three chalk warnings beside the same dark turn." },
+  } } },
+  "41,-23": { terrain: "indoor",     poi: { ...WHITEMARCH_LOW_WARDS, role: "sewer-mouth", type: "sewer", name: "Sewer Mouth", access: "hidden", description: "A rusted grate crouches below the Low Wards, half-hidden by broken baskets and old ash. Warm stink breathes from the dark, and fresh arrows are scratched beside older marks.", sections: {
+    "rusted-grate": { name: "Rusted Grate", access: "hidden", description: "The street-level mouth, half-choked by refuse and watched by people pretending not to watch." },
+    "brick-descent": { name: "Brick Descent", access: "guarded", description: "Old brick steps sweating into the dark below newer streetwork." },
+    "guide-markings": { name: "Guide Markings", access: "public", description: "Fresh scratches that might be directions, warnings, or bait." },
+    "drain-junction": { name: "Drain Junction", access: "restricted", description: "A low junction where voices carry too well and water hides footprints." },
+  } } },
+  "39,-21": { terrain: "settlement", poi: { ...WHITEMARCH_IRON_QUARTER, role: "public-smith-row", type: "smithy", name: "Public Smith Row", access: "public", description: "Sparks skitter across wet stone beneath guild signs. Behind the open forges, taller chimneys mark state foundries where no customer is allowed to ask what is being cast.", sections: {
+    "forge-floor": { name: "Forge Floor", access: "public", description: "Hammer-rhythm, orange heat, guild marks, and apprentices moving like sparks." },
+    "sales-bench": { name: "Sales Bench", access: "public", description: "Finished tools, common arms, repair tags, and hard bargaining." },
+    "work-yard": { name: "Work Yard", access: "guarded", description: "Quench tubs, scrap stacks, charcoal, and iron too hot to step around carelessly." },
+    "state-foundry-door": { name: "State Foundry Door", access: "restricted", description: "A heavy side door toward the foundries where no customer is allowed to ask what is being cast." },
+  } } },
+  "38,-21": { terrain: "indoor",     poi: { ...WHITEMARCH_IRON_QUARTER, role: "guild-court", type: "hall", name: "Guild Court", access: "guarded", description: "Polished slate, painted tools, expensive doors, and masters who speak of honor while clerks record fines large enough to starve anyone who works without permission.", sections: {
+    "license-counter": { name: "License Counter", access: "public", description: "Applications, seals, waiting benches, and guild clerks who can smell desperation." },
+    "masters-benches": { name: "Masters' Benches", access: "guarded", description: "Raised seats beneath painted tools and stern family marks." },
+    "fine-ledger-desk": { name: "Fine Ledger Desk", access: "guarded", description: "A desk where numbers quietly become hunger." },
+    "apprentice-rolls": { name: "Apprentice Rolls", access: "restricted", description: "Bound names, contract years, deaths, transfers, and fees." },
+  } } },
+  "38,-22": { terrain: "settlement", poi: { ...WHITEMARCH_COURT_TEMPLE, role: "granary-court", type: "granary", name: "Granary Court", access: "guarded", description: "Tall bins stand behind barred galleries. Bakers argue quotas at one window while guards watch the crowd count sacks with the exact arithmetic of hunger.", sections: {
+    "ration-window": { name: "Ration Window", access: "public", description: "A barred counter where hunger learns procedure." },
+    "bin-gallery": { name: "Bin Gallery", access: "guarded", description: "Raised galleries overlooking grain bins, mouse poison, and emergency seals." },
+    "rat-catcher-corner": { name: "Rat-Catcher Corner", access: "public", description: "Traps, small dogs, bitter jokes, and people who know which tunnels bite back." },
+    "seal-room": { name: "Seal Room", access: "restricted", description: "Keys, tallies, emergency marks, and the power to open food." },
+  } } },
+  "39,-22": { terrain: "settlement", poi: { ...WHITEMARCH_CITADEL, role: "inner-gate", type: "gate", name: "Inner Gate", access: "restricted", description: "Smaller than the Crown Gate and harder to pass. Beyond the bars, the city noise drops into courtyards where messengers run and every door has a second guard.", sections: {
+    "permit-arch": { name: "Permit Arch", access: "guarded", description: "The first barred arch, where seals are read twice and faces a third time." },
+    "messenger-bench": { name: "Messenger Bench", access: "guarded", description: "A narrow bench for runners waiting to be sent inward or turned away." },
+    "guard-room": { name: "Guard Room", access: "restricted", description: "A clean room of weapon racks, shift boards, and quiet soldiers." },
+    "inner-portcullis": { name: "Inner Portcullis", access: "restricted", description: "Iron teeth between the city and the state's hard center." },
+  } } },
+  "40,-22": { terrain: "settlement", poi: { ...WHITEMARCH_COURT_TEMPLE, role: "great-oath-steps", type: "temple", name: "Great Oath Steps", access: "public", description: "Steps worn hollow by knees and court shoes. Priests mark contracts with ash, oil, blood, or salt while petitioners wait where temple shade meets city law.", sections: {
+    "oath-altars": { name: "Oath Altars", access: "public", description: "Ash, oil, blood, salt, and priests who know which god hears which promise." },
+    "hospital-cloister": { name: "Hospital Cloister", access: "guarded", description: "Bells, bandages, quiet beds, and petitions that arrive wounded." },
+    "sanctuary-rail": { name: "Sanctuary Rail", access: "public", description: "The rail where temple shade meets city law and neither side likes yielding." },
+    "scribe-desk": { name: "Temple Scribe Desk", access: "public", description: "Oaths copied, witnessed, priced, and made hard to deny." },
+  } } },
+  "40,-23": { terrain: "settlement", poi: { ...WHITEMARCH_CITADEL, role: "prison-gate", type: "gaol", name: "Prison Gate", access: "restricted", description: "No ornament except old nail scars. Intake clerks sort names under an all-day lantern while work gangs leave by one arch and return by another.", sections: {
+    "intake-desk": { name: "Intake Desk", access: "guarded", description: "Names, crimes, debts, warrants, and mistakes copied under an all-day lantern." },
+    "chain-room": { name: "Chain Room", access: "restricted", description: "Racks of irons, counted twice per shift." },
+    "family-rail": { name: "Family Rail", access: "public", description: "A rail for food parcels, appeals, last words, and bribes disguised as care." },
+    "work-gang-side-arch": { name: "Work-Gang Side Arch", access: "restricted", description: "The side arch where counted bodies leave before dawn and return at dusk." },
+  } } },
+  "39,-23": { terrain: "indoor",     poi: { ...WHITEMARCH_CITADEL, role: "iron-palace", type: "palace", name: "The Iron Palace", access: "restricted", description: "Seat of the Lord-Treasurer. Less a palace than an over-large counting house with battlements, clean hinges, and ledgers deep enough to ruin bloodlines.", sections: {
+    "outer-hall": { name: "Outer Hall", access: "guarded", description: "A severe hall of petition benches, guards, runners, and people waiting to learn they are early or too late." },
+    "ledger-gallery": { name: "Ledger Gallery", access: "restricted", description: "Tall ledgers, sealed shelves, clerks on ladders, and fortunes pinned to paper." },
+    "council-room": { name: "Council Room", access: "restricted", description: "A clean room where trade, war, grain, and punishment become one conversation." },
+    "treasurers-office": { name: "Treasurer's Office", access: "sealed", description: "The private office of the Lord-Treasurer, quieter than power has any right to be." },
+  } } },
+  "41,-22": { terrain: "indoor",     poi: { ...WHITEMARCH_CITADEL, role: "muster-court", type: "hall", name: "Muster Court", access: "restricted", description: "The garrison's hard court: drilled gravel, racks of practice spears, messenger doors, and banners from wars Whitemarch claims it never wanted.", sections: {
+    "drill-ground": { name: "Drill Ground", access: "restricted", description: "Packed gravel, shouted counts, and soldiers moving as if the city itself were breathing." },
+    "weapons-rack": { name: "Weapons Rack", access: "restricted", description: "Practice spears, shields, blunted swords, and one rack that is not practice at all." },
+    "messenger-door": { name: "Messenger Door", access: "guarded", description: "A narrow door that runners use when the palace wants speed without spectators." },
+    "officers-gallery": { name: "Officer's Gallery", access: "restricted", description: "A raised walk where officers watch the court and pretend not to count favorites." },
+  } } },
+  "40,-19": { terrain: "settlement", poi: { ...WHITEMARCH_GRAND_MARKET, role: "south-wagon-yard", type: "yard", name: "South Wagon-Yard", access: "public", description: "The unloading yard for southern caravans, brown with mule-dung and loud with drivers trying to keep their place in the market queue.", sections: {
+    "wagon-lines": { name: "Wagon Lines", access: "public", description: "Southern carts ranked nose to tail, each driver guarding their place like inheritance." },
+    "mule-trough": { name: "Mule Trough", access: "public", description: "A splashed trough where animals, porters, and overheard road-rumors gather." },
+    "load-scale": { name: "Load Scale", access: "guarded", description: "A heavy scale, a chalk board, and arguments over weight that never stay about weight." },
+    "factors-awning": { name: "Factor's Awning", access: "guarded", description: "A canvas shade where caravan factors convert road fatigue into fees." },
+  } } },
+  "39,-19": { terrain: "settlement", poi: { ...WHITEMARCH_IRON_QUARTER, role: "tannery-lane", type: "shop", name: "Tannery Lane", access: "public", description: "Hide vats, scraping beams, brine barrels, and a smell famous enough that locals give directions by how bad the air has become.", sections: {
+    "soak-vats": { name: "Soak Vats", access: "guarded", description: "Dark vats breathing lime, rot, and the kind of accident that leaves marks forever." },
+    "scraping-beam": { name: "Scraping Beam", access: "public", description: "Workers scrape hides in practiced strokes while apprentices try not to gag." },
+    "drying-yard": { name: "Drying Yard", access: "guarded", description: "Stretched hides, wind, flies, and guild boys guarding the better pieces." },
+    "guild-shed": { name: "Guild Shed", access: "restricted", description: "Tally boards, tanning marks, and locked forms for licensed output." },
+  } } },
+  "42,-19": { terrain: "settlement", poi: { ...WHITEMARCH_AREA, parent: "whitemarch-foreign-quarter", parentName: "Foreign Quarter", district: "foreign-quarter", districtName: "Foreign Quarter", role: "embassy-lane", type: "yard", name: "Embassy Lane", access: "guarded", description: "Flags from distant courts hang beside Whitemarch seals. Interpreters walk faster than soldiers here, and every compound gate has someone watching from both sides.", sections: {
+    "interpreter-stalls": { name: "Interpreter Stalls", access: "public", description: "Small desks where languages become coin, favors, mistakes, and shields." },
+    "treaty-inn": { name: "Treaty Inn", access: "public", description: "A guarded inn for foreign visitors, too polite to be comfortable." },
+    "compound-gates": { name: "Compound Gates", access: "guarded", description: "Foreign guards and Whitemarch guards watching one another across polished thresholds." },
+    "hostage-house": { name: "Hostage House", access: "restricted", description: "A fine house with excellent locks and children taught to smile at captors." },
+  } } },
+  "38,-19": { terrain: "settlement", poi: { ...WHITEMARCH_LOW_WARDS, role: "outer-slums", type: "yard", name: "Outer Slums", access: "public", description: "Tin roofs, patched doors, cook-smoke, iron dust on children's hands, and a view of walls close enough to feel personal.", sections: {
+    "tin-roof-lane": { name: "Tin-Roof Lane", access: "public", description: "A lane of patched doors, cooking smoke, and roofs that rattle when the wind shifts." },
+    "cookfire-court": { name: "Cookfire Court", access: "public", description: "Shared pots, ash, hunger, neighborly suspicion, and children with iron dust on their hands." },
+    "scrap-shed": { name: "Scrap Shed", access: "guarded", description: "Bent nails, broken tools, scavenged plate, and someone deciding what can be sold twice." },
+    "wall-shadow": { name: "Wall Shadow", access: "guarded", description: "The strip under the city wall where watchmen, beggars, and messengers all pretend they are passing through." },
+  } } },
 
   // ============================================================
   // BRAMBLEWYCH (village, Bramble Witches)

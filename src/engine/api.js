@@ -10,7 +10,8 @@ import { tierOrder } from "../data/tiers.js";
 import { TERRAINS } from "../data/terrains.js";
 import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
-import { getTile, isSeen, HEX_DIRECTIONS, hexDistance } from "./world.js";
+import { getTile, isSeen, HEX_DIRECTIONS, hexDistance, currentLocationName } from "./world.js";
+import { currentSectionEntry, poiMeta, sectionName } from "./location.js";
 import { hostileProfile } from "./encounters.js";
 import { getBiome } from "../data/biomes.js";
 import { buildingForTile, isBuildingOpen, buildingHours } from "../data/town.js";
@@ -179,7 +180,21 @@ export function buildStateContext(state) {
   const { character, time, world } = state;
   const t = getTile(state, world.currentTile.x, world.currentTile.y);
   const biome = getBiome(world.currentTile.x, world.currentTile.y);
-  const place = t.poi?.name || `${TERRAINS[t.terrain]?.label || "Wilderness"} (${world.currentTile.x},${world.currentTile.y})`;
+  const place = currentLocationName(state) || `${TERRAINS[t.terrain]?.label || "Wilderness"} (${world.currentTile.x},${world.currentTile.y})`;
+  const basePlace = t.poi?.name || `${TERRAINS[t.terrain]?.label || "Wilderness"} (${world.currentTile.x},${world.currentTile.y})`;
+  const locMeta = poiMeta(t, basePlace);
+  const section = currentSectionEntry(state, t);
+  const locBits = [];
+  if (locMeta.area) locBits.push(`Area: ${locMeta.area}`);
+  if (locMeta.district) locBits.push(`District: ${locMeta.district}`);
+  if (locMeta.access) locBits.push(`Access: ${locMeta.access}`);
+  if (section) {
+    const secBits = [`Current section: ${sectionName(section)}`];
+    if (section.access) secBits.push(`access ${section.access}`);
+    if (section.description) secBits.push(section.description);
+    locBits.push(secBits.join(" — "));
+  }
+  const localLine = locBits.length ? `\n[LOCAL PLACE — ${locBits.join("; ")}]` : "";
   const nearby = [];
   for (const d of HEX_DIRECTIONS) {
     const nx = world.currentTile.x + d.x, ny = world.currentTile.y + d.y;
@@ -253,7 +268,7 @@ export function buildStateContext(state) {
     return `${name}${tag}${rem}`;
   }).join(", ") || "none";
   return `${playerLine}
-[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${conditionsLine}; Light: ${lightStatus(state).text}; Bond: ${character.bond}${nearbyStr}]${locLine}${flyLine}${svcLine}${questLine}${partyLine}${buildSurroundings(state, t)}
+[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${conditionsLine}; Light: ${lightStatus(state).text}; Bond: ${character.bond}${nearbyStr}]${localLine}${locLine}${flyLine}${svcLine}${questLine}${partyLine}${buildSurroundings(state, t)}
 [BIOME — ${biome.name}: ${biome.description}]
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]

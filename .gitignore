@@ -3,6 +3,7 @@ dist/
 .vite/
 *.log
 .DS_Store
+supabase/.temp/
 
 # Local Claude Code settings (per-machine permissions allowlist, MCP enables, etc.)
 .claude/settings.local.json
