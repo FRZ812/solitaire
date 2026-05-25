@@ -57,13 +57,14 @@ export const HANDCRAFTED = {
   "-1,3":  { terrain: "road", poi: null },
 
   // ============================================================
-  // THE DROWNED RAT — a lone roadside inn (east of the lane). Common room is the
-  // only door; the yard, stable, and guest rooms open off it.
+  // THE DROWNED RAT — a lone roadside inn (east of the lane). You come off the
+  // road into the YARD; the common room and stable open off the yard, and the
+  // guest rooms open only off the common room.
   // ============================================================
-  "0,0":  { terrain: "indoor", poi: { ...DROWNED_RAT, part: "common-room", partName: "Common Room", access: "public", description: "The public belly of the Drowned Rat: benches, trestles, road-mud, smoke-dark beams, a long oak bar with the innkeeper's reach over the room, and every conversation trying to be overheard by someone else." } },
-  "1,0":  { terrain: "indoor", poi: { ...DROWNED_RAT, part: "yard", partName: "Yard", access: "restricted", description: "The inn's working yard behind the common room: a cart-rut of mud and ale-slop, stacked barrels, ash buckets, a chained dog, and deliveries that arrive before the road is awake." } },
+  "0,0":  { terrain: "indoor", poi: { ...DROWNED_RAT, part: "yard", partName: "Yard", access: "public", description: "The inn's yard, open to the road: cart-ruts and ale-slop, a horse-trough, stacked barrels, a chained dog, and the lit doorway of the common room across the mud." } },
+  "1,0":  { terrain: "indoor", poi: { ...DROWNED_RAT, part: "common-room", partName: "Common Room", access: "public", description: "The public belly of the Drowned Rat: benches, trestles, smoke-dark beams, a long oak bar with the innkeeper's reach over the room, and every conversation trying to be overheard by someone else." } },
   "1,-1": { terrain: "indoor", poi: { ...DROWNED_RAT, part: "stable", partName: "Stable", access: "guarded", description: "A low timber stable off the yard — six close stalls, damp straw, restless travel-beasts, cracked harness on the wall, and a stick-thin boy who sleeps in the loft to mind them." } },
-  "0,-1": { terrain: "indoor", poi: { ...DROWNED_RAT, part: "guest-rooms", partName: "Guest Rooms", access: "guarded", description: "Rented rooms behind the taproom: rope beds, shuttered windows, a shared piss-pot, and walls thin enough to learn a neighbour's business. The only stair up runs through the common room below." } },
+  "2,-1": { terrain: "indoor", poi: { ...DROWNED_RAT, part: "guest-rooms", partName: "Guest Rooms", access: "guarded", description: "Rented rooms behind the taproom: rope beds, shuttered windows, a shared piss-pot, and walls thin enough to learn a neighbour's business. The only way up runs through the common room." } },
 
   // ============================================================
   // THE ROADSIDE SMITHY (west of the lane). Forge floor is the door; the work

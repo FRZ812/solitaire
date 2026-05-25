@@ -25,14 +25,14 @@ export const SEALED_STRUCTURES = [
   // ---------- ROADSIDE SANDBOX (three buildings on one road) ----------
   {
     name: "The Drowned Rat",
-    // Common room (0,0) is the only door in from the road (-1,0), and the only
-    // way through to the yard, stable, and the guest rooms behind it.
+    // You enter the YARD (0,0) off the road (-1,0). The common room and stable
+    // open off the yard; the guest rooms open only off the common room.
     entry: { x: 0, y: 0 },
     outside: { x: -1, y: 0 },
     links: [
-      [{ x: 0, y: 0 }, { x: 1, y: 0 }],   // common room -> yard
-      [{ x: 0, y: 0 }, { x: 1, y: -1 }],  // common room -> stable
-      [{ x: 0, y: 0 }, { x: 0, y: -1 }],  // common room -> guest rooms
+      [{ x: 0, y: 0 }, { x: 1, y: 0 }],   // yard -> common room
+      [{ x: 0, y: 0 }, { x: 1, y: -1 }],  // yard -> stable
+      [{ x: 1, y: 0 }, { x: 2, y: -1 }],  // common room -> guest rooms
     ],
   },
   {
