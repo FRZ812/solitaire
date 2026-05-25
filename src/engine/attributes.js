@@ -1,5 +1,6 @@
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
+import { attributeThresholdMods } from "../data/attribute-tiers.js";
 
 // The player's max HP is derived from VIGOR (so toughness is a real, investable
 // stat — mirroring how NPCs get HP from vigor). A linear floor keeps early builds
@@ -47,7 +48,10 @@ export function resolvePoolForMind(mind) {
 }
 
 export function maxResolveFor(character) {
-  return resolvePoolForMind(effectiveAttributes(character).mind || 0);
+  const a = effectiveAttributes(character);
+  // Presence's always-on deepens the pool (attribute-tiers smoothStats.maxResolve).
+  const bonus = attributeThresholdMods(a).statMods.maxResolve || 0;
+  return resolvePoolForMind(a.mind || 0) + bonus;
 }
 
 // Mirror recomputeVitalityMax for resolve: gaining Mind tops you up, losing it

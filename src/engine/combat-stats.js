@@ -427,6 +427,12 @@ export function deriveCombatStats(character, codex) {
     actionsPerTurn,
     swiftChance,
     cooldownReduction: clamp(statMods.cooldownReduction || 0, 0, 3),
+    // Mind: control YOU inflict lasts longer; spell-surge (×2 resolve, ×1.5 dmg).
+    controlDuration: clamp(statMods.controlDuration || 0, 0, 1),
+    spellSurge: (statMods.spellSurge || 0) > 0,
+    // Presence: control/debuffs on you wear off faster. Wit: abilities can crit.
+    ccDurationReduction: clamp(statMods.ccDurationReduction || 0, 0, 0.9),
+    abilityCrit: (statMods.abilityCrit || 0) > 0,
     fortify: clamp(statMods.fortify || 0, 0, 0.25),
     // Stonewall caps any single hit to a share of max health (0 = no cap); the
     // strongest (lowest) wins, set in aggregateCombatPassives. Unbowed resists control.

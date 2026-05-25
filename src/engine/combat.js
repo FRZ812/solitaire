@@ -44,6 +44,9 @@ const MIND_CONTROL = new Set(["charmed", "dominated"]); // Charm/Dominate — ga
 // anti-heal curse, NOT damage-over-time (a wound still bleeds; you just can't be
 // disabled or cursed). Damage immunity (incl. true) is invuln's job, separately.
 const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence"]); // NOT mind-control: no flat immunity wards a mind, only the will gap
+// Control + debuff statuses whose duration scales with the caster's controlDuration
+// (Mind) and the target's ccDurationReduction (Presence). DOTs are excluded.
+const CONTROL_DEBUFF = new Set(["stun", "slow", "weaken", "vulnerable", "chill", "curse", "silence", "charmed", "dominated"]);
 const ALLY_LOSS = { cowardly: 22, wary: 14, fierce: 8, brutish: 10, honorable: 10, feral: 8, fanatic: 0, mindless: 0 };
 
 function sumStatus(c, type) {
@@ -71,6 +74,16 @@ function gainHealth(c, amt) {
   return c.health - before;
 }
 
+// Last Stand (Presence 30): once per fight, a lethal blow can't drop the bearer
+// below 1 HP — it opens a 3-turn window during which they can't be killed.
+// Returns true if a lethal result is held off (the caller floors health at 1).
+function lastStandHolds(c) {
+  if (!c) return false;
+  if ((c.deathlessTurns || 0) > 0) return true;
+  if (c.triggers?.lastStand && !c._lastStand) { c._lastStand = true; c.deathlessTurns = 3; return true; }
+  return false;
+}
+
 function addStatus(c, effect) {
   if (!effect) return;
   // Debuff immunity (Unstoppable / BKB): control, silence, and curse are rejected
@@ -85,7 +98,13 @@ function addStatus(c, effect) {
     if (resist > 0 && Math.random() < resist) return;
   }
   c.statuses = c.statuses || [];
-  c.statuses.push({ type: effect.type, value: effect.value || 0, duration: effect.duration || 1, pctMax: !!effect.pctMax });
+  // Presence: control & debuffs applied to a bearer with ccDurationReduction wear
+  // off sooner (their duration is shaved, floored at 1 turn).
+  let dur = effect.duration || 1;
+  if (CONTROL_DEBUFF.has(effect.type) && (c.ccDurationReduction || 0) > 0) {
+    dur = Math.max(1, Math.round(dur * (1 - Math.min(0.9, c.ccDurationReduction))));
+  }
+  c.statuses.push({ type: effect.type, value: effect.value || 0, duration: dur, pctMax: !!effect.pctMax });
 }
 
 // The will-save chance the SUBJECT resists a mind-control attempt. PURE POWER GAP —
@@ -106,6 +125,10 @@ function willSaveChance(caster, target, type, tier) {
 // (artificial devotion). Everything else applies straight (addStatus owns stun/slow resist).
 function applyEnemyEffect(cs, caster, target, effect, tier) {
   if (!effect || !target || target.health <= 0) return;
+  // Mind: control & debuffs the caster inflicts last longer (controlDuration).
+  if (effect && CONTROL_DEBUFF.has(effect.type) && (caster?.controlDuration || 0) > 0) {
+    effect = { ...effect, duration: Math.max(1, Math.round((effect.duration || 1) * (1 + caster.controlDuration))) };
+  }
   // DISPEL — strips brief control, and BREAKS a binding via a CONTEST of wills between
   // the dispeller and the ORIGINAL binder (stored at cast) — NOT a save by the thrall.
   if (effect.type === "dispel") {
@@ -263,6 +286,8 @@ export function initCombat(character, codex, enemies, opts = {}) {
     actionsPerTurn: cs.actionsPerTurn || 1,
     actionsLeft: cs.actionsPerTurn || 1,
     cooldownReduction: cs.cooldownReduction || 0,
+    controlDuration: cs.controlDuration || 0, ccDurationReduction: cs.ccDurationReduction || 0,
+    spellSurge: !!cs.spellSurge, abilityCrit: !!cs.abilityCrit,
     shield: 0, magicShield: 0, invuln: 0,
     prof: cs.prof || {},
     attrs: cs.attrs || { ...character.attributes },
@@ -645,9 +670,10 @@ function attackProfile(attacker, def, tierId, isPlayer) {
     if (isPlayer && attacker.weapon?.category === "arcane") {
       focus = Math.round((attacker.weapon.max || 0) * 0.3);
     }
+    const surge = attacker.spellSurge ? 1.5 : 1; // Mind 30: spells hit half again as hard
     return {
-      min: Math.max(1, Math.round(def.dmg[0] * m * f * castBonus) + focus),
-      max: Math.max(1, Math.round(def.dmg[1] * m * f * castBonus) + focus),
+      min: Math.max(1, Math.round(def.dmg[0] * m * f * castBonus * surge) + focus),
+      max: Math.max(1, Math.round(def.dmg[1] * m * f * castBonus * surge) + focus),
       type: def.damageType, pen: def.pen || 0, critBonus: def.critBonus || 0,
     };
   }
@@ -728,7 +754,8 @@ function resolveHit(attacker, defender, profile) {
       addStatus(defender, { type: "lingering", value: Math.max(1, Math.ceil(deferred / DEFER_TURNS)), duration: DEFER_TURNS });
     }
   }
-  defender.health = Math.max(0, defender.health - dmg);
+  const nextHealth = defender.health - dmg;
+  defender.health = (nextHealth <= 0 && lastStandHolds(defender)) ? 1 : Math.max(0, nextHealth);
 
   const typeTag = profile.type === "true" ? " true" : profile.type === "magical" ? " magical" : "";
   const critTag = crit ? " CRIT" : "";
@@ -913,6 +940,9 @@ function cleanseHarm(c) {
 // bare-knuckle brawl it means knocked senseless (alive — nothing to loot).
 function downEnemy(cs, e) {
   if (e._dead || e.resolved === "ko") return;
+  // Last Stand: a foe with the Presence-30 trigger can't be dropped below 1 HP
+  // for 3 turns (held off by any damage path), once per fight.
+  if (e.health <= 0 && lastStandHolds(e)) { e.health = 1; return; }
   // Undying (divine): a fabled foe cheats death once, clawing back at a share of
   // health, cleansed and briefly untouchable so the second life isn't instantly lost.
   const rev = e.triggers?.reviveOnce;
@@ -975,7 +1005,12 @@ function applySelfEffect(actor, effect) {
     // aside ALL damage, true included) for the duration — the answer to an alpha.
     case "unstoppable": { const d = effect.duration || 2; actor.invuln = Math.max(actor.invuln || 0, d); addStatus(actor, { type: "unstoppable", duration: d }); break; }
     case "bonusAction": actor.actionsLeft = (actor.actionsLeft || 0) + (effect.value || 1); break;
-    case "regen":       addStatus(actor, { ...effect, value: val, pctMax: false }); break; // bank the %-of-max as flat/turn
+    case "regen": {     // bank the %-of-max as flat/turn — Wit's abilityCrit lets a heal crit
+      let hv = val;
+      if (actor.abilityCrit && rand100() <= (actor.critChance || 0)) hv = Math.round(hv * (actor.critMult || 1.5));
+      addStatus(actor, { ...effect, value: hv, pctMax: false });
+      break;
+    }
     default:            addStatus(actor, effect);
   }
 }
@@ -1240,6 +1275,9 @@ function tickStatuses(c) {
   const msg = c.triggers?.magicShieldGen || 0;
   if (msg > 0) { const add = Math.round(c.maxHealth * msg); c.magicShield = Math.min((c.magicShield || 0) + add, add * 3); }
   if ((c.invuln || 0) > 0) c.invuln -= 1;
+  // Last Stand window: while it's open, damage-over-time can't kill either; tick it down.
+  if (c.health <= 0 && lastStandHolds(c)) c.health = 1;
+  if ((c.deathlessTurns || 0) > 0) c.deathlessTurns -= 1;
   c.statuses = (c.statuses || []).map((s) => ({ ...s, duration: s.duration - 1 })).filter((s) => s.duration > 0);
   return logs;
 }
@@ -1247,6 +1285,8 @@ function tickStatuses(c) {
 // Player at/below 0 — but an Undying passive can cheat death once per fight.
 function playerDown(cs) {
   if (cs.player.health > 0) return false;
+  // Last Stand (Presence 30): held off by any path, not just direct hits.
+  if (lastStandHolds(cs.player)) { cs.player.health = 1; return false; }
   const rev = cs.player.triggers?.reviveOnce;
   if (rev && !cs.revivedUsed) {
     cs.revivedUsed = true;
@@ -1280,9 +1320,11 @@ export function weaponReqMet(def, weapon) {
 // proficiency discount (a capped %, never free); martial techniques and innate
 // powers pay full. Shared by the usable-gate and the spend.
 export function playerResolveCost(cs, def) {
-  const base = def?.resolveCost || 0;
+  let base = def?.resolveCost || 0;
   if (base <= 0) return 0;
-  const discount = abilityCategoryOf(def) === "spell" ? Math.min(0.4, (cs.player.prof?.spellcasting || 0) * 0.02) : 0;
+  const isSpell = abilityCategoryOf(def) === "spell";
+  if (isSpell && cs.player?.spellSurge) base *= 2; // Mind 30: spells cost double Resolve
+  const discount = isSpell ? Math.min(0.4, (cs.player.prof?.spellcasting || 0) * 0.02) : 0;
   return Math.max(1, Math.ceil(base * (1 - discount)));
 }
 
