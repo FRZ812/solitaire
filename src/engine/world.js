@@ -170,8 +170,22 @@ function generateTile(x, y) {
 
 export function getTile(state, x, y) {
   const key = `${x},${y}`;
-  if (state.world.tiles[key]) return state.world.tiles[key];
-  if (HANDCRAFTED[key]) return HANDCRAFTED[key];
+  const visited = state.world.tiles[key];
+  // Authored content wins over a saved snapshot, so edits to the handcrafted map
+  // show up in games started before the change (a saved tile would otherwise
+  // shadow it forever). Carry over only the dynamic per-tile fields the game
+  // writes at runtime: narrator location status and generated shop stock.
+  if (HANDCRAFTED[key]) {
+    if (visited && (visited.status || visited.shop)) {
+      return {
+        ...HANDCRAFTED[key],
+        ...(visited.status ? { status: visited.status } : {}),
+        ...(visited.shop ? { shop: visited.shop } : {}),
+      };
+    }
+    return HANDCRAFTED[key];
+  }
+  if (visited) return visited;
   // Rivers are continuous water-terrain features. Always water; POI carries
   // the river's name/description so tapping a river tile names it.
   const river = RIVER_BY_COORD[key];
