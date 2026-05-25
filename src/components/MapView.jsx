@@ -386,6 +386,12 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       const nTile = getTile(state, nx, ny);
       if (!isPassable(nTile)) continue;
       if (edgeAllowed(tile, h.x, h.y, nTile, nx, ny)) continue;
+      // Skip a footprint's outer perimeter — the golden footprint outline
+      // already draws it. Keep dark walls only for interior partitions (both
+      // hexes in a footprint) and plain access walls (neither in one).
+      const aMember = !!tile.poi?.parent && tile.poi?.type !== "hidden";
+      const bMember = !!nTile.poi?.parent && nTile.poi?.type !== "hidden";
+      if (aMember !== bMember) continue;
       const key = (h.x < nx || (h.x === nx && h.y < ny))
         ? `${h.x},${h.y}|${nx},${ny}`
         : `${nx},${ny}|${h.x},${h.y}`;
@@ -422,9 +428,10 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
   }
 
   // A footprint reads as one building: a golden perimeter outline (broken at the
-  // entry door, where the graph lets you cross into a reachable neighbour), a
-  // single icon at the centroid, and one name label below it. Sub-area names
-  // live in the detail panel, not on the map.
+  // entry door, where the graph lets you cross into a reachable neighbour) and a
+  // single icon at the centroid. The building name shows only while one of its
+  // hexes is selected; sub-area names live in the detail panel.
+  const selectedKey = selected ? `${selected.x},${selected.y}` : null;
   const footprintSegments = [];
   const footprintLabels = [];
   const footprintIcons = [];
@@ -461,33 +468,30 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     if (group.iconKey && MAP_ASSETS[group.iconKey]) {
       footprintIcons.push({ key: `foot-icon-${group.id}`, x: cx, y: cy, iconKey: group.iconKey });
     }
-    footprintLabels.push({
-      key: `foot-label-${group.id}`,
-      x: cx,
-      y: cy + 20,
-      name: group.name,
-    });
+    if (selectedKey && group.keys.has(selectedKey)) {
+      footprintLabels.push({
+        key: `foot-label-${group.id}`,
+        x: cx,
+        y: cy + 20,
+        name: group.name,
+      });
+    }
   }
 
-  // Landmark labels — named places that read at a glance on the map. Built
-  // from getTile so handcrafted city/village/town centres surface here, and
-  // rumored/fabled coords fall through getTile to the same poi types.
-  const LABELABLE_TYPES = new Set(["city", "village", "town", "fortress", "ruin", "mountains", "lake"]);
+  // Place names are otherwise hidden — show one label only for the selected hex
+  // (a non-footprint named POI: landmark, river, signpost, etc.). Footprint
+  // buildings get their name via footprintLabels above; sub-area and terrain
+  // detail live in the panel. This keeps the map text-free until you tap.
   const labels = [];
-  for (const { x, y, px, py } of hexes) {
-    if (!isSeen(state, x, y)) continue;
-    const tile = getTile(state, x, y);
-    if (tile.poi?.parent) continue;
-    if (!tile.poi || !LABELABLE_TYPES.has(tile.poi.type)) continue;
-    labels.push({ key: `lbl-${x},${y}`, x: px, y: py - 22, name: tile.poi.name, fill: "#1A1A1A" });
-  }
-  // One label per river at its midpoint, painted in a watery hue.
-  for (const r of RIVERS) {
-    const mid = r.path[Math.floor(r.path.length / 2)];
-    if (!isSeen(state, mid.x, mid.y)) continue;
-    const mpx = SVG_CENTER + HSPACING * ((mid.x - cur.x) + (mid.y - cur.y) / 2);
-    const mpy = SVG_CENTER + VSPACING * (mid.y - cur.y);
-    labels.push({ key: `lbl-river-${r.id}`, x: mpx, y: mpy - 14, name: r.name, fill: "#2E4A6E" });
+  if (selected && isSeen(state, selected.x, selected.y)) {
+    const st = getTile(state, selected.x, selected.y);
+    if (!st.poi?.parent && st.poi?.type !== "hidden" && st.poi?.name) {
+      const dq = selected.x - cur.x;
+      const dr = selected.y - cur.y;
+      const px = SVG_CENTER + HSPACING * (dq + dr / 2);
+      const py = SVG_CENTER + VSPACING * dr;
+      labels.push({ key: "lbl-selected", x: px, y: py - 22, name: st.poi.name, fill: "#f5dcb8" });
+    }
   }
 
   const selTile = selected ? getTile(state, selected.x, selected.y) : null;

@@ -50,7 +50,7 @@ export const BUILDINGS = {
     id: "blacksmith",
     kind: "smith",             // a trader counter PLUS a forge
     forge: true,
-    label: "Mirecross Smithy",
+    label: "The Roadside Smithy",
     keeper: "the smith",
     icon: "smithy",
     hours: { open: 7, close: 19 },
