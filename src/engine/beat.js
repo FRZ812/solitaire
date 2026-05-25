@@ -416,9 +416,13 @@ export function applyBeat(state, beat, options = {}) {
     const tmpl = MOUNTS[beat.grant_mount.id];
     party = [...party, tmpl.id];
     const existing = world.codex.characters[tmpl.id];
-    const entry = existing ? { ...existing, ...mountCodexEntry(tmpl), relationship: existing.relationship || 0, memories: existing.memories || [] } : mountCodexEntry(tmpl);
+    // A brand-new beast is flagged for the player to NAME on join (App prompts);
+    // a returning, already-named mount keeps its name.
+    const entry = existing
+      ? { ...existing, ...mountCodexEntry(tmpl), name: existing.givenName || existing.name || tmpl.name, givenName: existing.givenName, relationship: existing.relationship || 0, memories: existing.memories || [] }
+      : { ...mountCodexEntry(tmpl), needsNaming: true };
     world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
-    newBeats.push({ id: `mount${Date.now()}`, type: "recruit", text: `${tmpl.name} now bears you.` });
+    newBeats.push({ id: `mount${Date.now()}`, type: "recruit", text: `${entry.name} now bears you.` });
   }
 
   // A companion parts ways, or a mount is set loose — the narrator sets this only

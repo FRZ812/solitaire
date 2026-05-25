@@ -126,7 +126,8 @@ export function buyMount(state, { mountId, priceCp }) {
   const price = priceCp != null ? priceCp : (tmpl.priceCp || 0);
   if (!canAfford(inv.coins, price)) return { state, ok: false, reason: "Not enough coin." };
   const coins = copperToCoins(coinsToCopper(inv.coins) - price);
-  const entry = mountCodexEntry(tmpl);
+  // Flag it for the player to NAME on join (App prompts; clears the flag).
+  const entry = { ...mountCodexEntry(tmpl), needsNaming: true };
   return {
     ok: true,
     state: {

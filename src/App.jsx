@@ -67,6 +67,7 @@ import { QuestBoardView } from "./components/QuestBoardView.jsx";
 import { PrisonView } from "./components/PrisonView.jsx";
 import { SlaveMarketView } from "./components/SlaveMarketView.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
+import { NamePrompt } from "./components/NamePrompt.jsx";
 import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
@@ -288,6 +289,11 @@ export function Solitaire() {
   function askConfirm(opts) {
     return new Promise((resolve) => setConfirmDialog({ ...opts, resolve }));
   }
+  // Themed single-line text prompt (name a joining mount). Resolves the string or null.
+  const [namePrompt, setNamePrompt] = useState(null);
+  function askName(opts) {
+    return new Promise((resolve) => setNamePrompt({ ...opts, resolve }));
+  }
   const [hydrated, setHydrated] = useState(false);
   const logRef = useRef(null);
 
@@ -466,6 +472,36 @@ export function Solitaire() {
     const r = requestAnimationFrame(toBottom);
     return () => cancelAnimationFrame(r);
   }, [state.beats.length, loading, hydrated, currentCampaignId]);
+
+  // A freshly-acquired mount (bought or tamed) is flagged `needsNaming`; prompt the
+  // player to name it, then register the chosen name on its codex entry and clear
+  // the flag. Waits out combat/other prompts; the ref guards against double-prompts.
+  const namingRef = useRef(false);
+  useEffect(() => {
+    if (loading || combat || namePrompt || namingRef.current) return;
+    const chars = state.world?.codex?.characters || {};
+    const id = (state.party || []).find((pid) => chars[pid]?.kind === "mount" && chars[pid]?.needsNaming);
+    if (!id) return;
+    const ch = chars[id];
+    namingRef.current = true;
+    (async () => {
+      const chosen = await askName({
+        title: "Name your mount",
+        body: `A ${ch.race || "beast"} joins your company. What will you call ${ch.name ? `the ${ch.name.toLowerCase()}` : "it"}?`,
+        defaultValue: "",
+        placeholder: ch.name || "a name",
+        confirmLabel: "Name",
+      });
+      setState((cur) => {
+        const c = cur.world.codex.characters[id];
+        if (!c) return cur;
+        const { needsNaming, ...rest } = c;
+        const named = chosen ? { ...rest, name: chosen, givenName: chosen } : rest;
+        return { ...cur, world: { ...cur.world, codex: { ...cur.world.codex, characters: { ...cur.world.codex.characters, [id]: named } } } };
+      });
+      namingRef.current = false;
+    })();
+  }, [state, loading, combat, namePrompt]);
 
   // ----- Campaign handlers -----
 
@@ -2121,6 +2157,16 @@ export function Solitaire() {
           cancelLabel={confirmDialog.cancelLabel}
           danger={confirmDialog.danger}
           onResolve={(v) => { confirmDialog.resolve(v); setConfirmDialog(null); }}
+        />
+      )}
+      {namePrompt && (
+        <NamePrompt
+          title={namePrompt.title}
+          body={namePrompt.body}
+          defaultValue={namePrompt.defaultValue}
+          placeholder={namePrompt.placeholder}
+          confirmLabel={namePrompt.confirmLabel}
+          onResolve={(v) => { namePrompt.resolve(v); setNamePrompt(null); }}
         />
       )}
     </div>

@@ -79,18 +79,19 @@ function ridingState() {
   ok(canMount(s, "wanderer", "horse").ok, "a person can mount a horse");
   ok(!canMount(s, "dragon", "horse").ok, "a horse CANNOT carry a dragon (weight)");
 
-  // Seat rider + two companions on the horse (14×3 = 42 ≤ 150).
+  // Realistic capacity: a riding horse (cap 40) bears ~two adults (14×2 = 28), not
+  // three (42) — a horse is not a hay-cart. Seat rider + one companion; reject a third.
   s = mount(s, "wanderer", "horse").state;
   s = mount(s, "al", "horse").state;
-  s = mount(s, "bo", "horse").state;
-  ok(s.world.codex.characters.horse.riders.length === 3, "horse bears three riders by weight");
-  ok(approx(currentRideLoad(s.world.codex.characters.horse, s), 42, 1), "horse ride-load is the sum of rider weights (42)");
+  ok(s.world.codex.characters.horse.riders.length === 2, "horse bears two adult riders by weight");
+  ok(approx(currentRideLoad(s.world.codex.characters.horse, s), 28, 1), "horse ride-load is the sum of rider weights (28)");
+  ok(!canMount(s, "bo", "horse").ok, "a THIRD adult won't fit a horse (42 > cap) — not physically possible");
 
-  // The horse (with its three riders) rides the dragon — nesting.
+  // The horse (with its two riders) rides the dragon — nesting.
   const nest = canMount(s, "horse", "dragon");
   ok(nest.ok, "a horse + its riders can ride a dragon (nesting within capacity)");
   s = mount(s, "horse", "dragon").state;
-  ok(approx(currentRideLoad(s.world.codex.characters.dragon, s), 70 + 42, 1), "dragon bears the horse AND its riders (nested load)");
+  ok(approx(currentRideLoad(s.world.codex.characters.dragon, s), 70 + 28, 1), "dragon bears the horse AND its riders (nested load)");
 
   // Cycle: the dragon can't now ride the horse it carries.
   ok(!canMount(s, "dragon", "horse").ok, "no saddle-loop: dragon can't ride the horse it carries");
@@ -98,7 +99,16 @@ function ridingState() {
   // Overload a horse with a heavy pack on the player.
   let s2 = ridingState();
   s2.character.inventory.carried = [{ itemId: "livestock", quantity: 5 }]; // 150 + 14 body = 164
-  ok(!canMount(s2, "wanderer", "horse").ok, "an over-laden rider (164) won't fit a horse (150)");
+  ok(!canMount(s2, "wanderer", "horse").ok, "an over-laden rider (164) won't fit a horse (cap 40)");
+
+  // The reported case: a Swamp Nag (cap 36) bears two adults but NOT three.
+  let sn = ridingState();
+  sn.world.codex.characters.nag = mountCodexEntry(MOUNTS.nag);
+  sn.party = [...sn.party, "nag"];
+  sn = mount(sn, "wanderer", "nag").state;
+  sn = mount(sn, "al", "nag").state;
+  ok(sn.world.codex.characters.nag.riders.length === 2, "a nag bears two adults");
+  ok(!canMount(sn, "bo", "nag").ok, "a nag CANNOT bear a third adult (the reported bug — now blocked)");
 
   // Dismount clears both links.
   let s3 = mount(ridingState(), "wanderer", "horse").state;

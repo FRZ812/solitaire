@@ -22,9 +22,11 @@ export function StableView({ state, building, tileKey, stock, mounts, onClose, o
     .map((m) => ({ ...m, tmpl: MOUNTS[m.id] }))
     .filter((m) => m.tmpl && !owned.has(m.id));
 
+  // Use the rolled stock's own template def (always present) — fodder/raw-meat
+  // usually aren't in the player's codex.items yet, so don't depend on that.
   const feedRows = (stock?.items || [])
-    .map((s) => ({ ...s, remaining: s.qty - (sold[s.itemId] || 0), def: state.world.codex.items[s.itemId] }))
-    .filter((s) => s.remaining > 0);
+    .map((s) => ({ ...s, remaining: s.qty - (sold[s.itemId] || 0), def: s.def || state.world.codex.items[s.itemId] }))
+    .filter((s) => s.remaining > 0 && s.def);
 
   return (
     <div style={{

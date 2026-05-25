@@ -547,7 +547,15 @@ griffon (epic), wyvern (legendary), drake (mythical), dragon (divine).
 - **Acquisition.** Mundane mounts are **bought** at a stable
   (`town.js BUILDINGS.stable`, `StableView`, `economy.buyMount`); exotic/flying
   mounts are **earned** and granted by the narrator via `beat.grant_mount`
-  (`ground-drake` — a wingless lesser drake — is now earned, not sold).
+  (`ground-drake` — a wingless lesser drake — is now earned, not sold). Either way
+  a new mount is flagged `needsNaming`; App prompts the player to **name** it, then
+  registers the given name on its codex entry (it's a full `kind:"mount"` character
+  with race + combat kit, like a companion).
+- **Ride capacity is by weight, realistically.** A person is ~14 stone, so a
+  `rideCapacity` is sized for **1–2 riders + gear**, not a crowd — a Swamp Nag (36)
+  bears two adults but not three; only large beasts (stag, lizard, drake, dragon)
+  carry more. `bodyWeight` is the creature's own mass (a horse ~70, a dragon ~1500)
+  for nesting (`engine/riding.js`).
 - **Region-gated stable stock.** A stable sells **region-appropriate** mounts: the
   selection is resolved per tile from `STABLE_STOCK_BY_BIOME` / `stableStockFor(biomeId)`
   (`data/mounts.js`, keyed by `getBiome(x,y).id`) — or a handcrafted `poi.mounts`
