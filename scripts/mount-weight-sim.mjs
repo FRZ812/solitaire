@@ -10,7 +10,9 @@ import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 import { allyFromCompanion, generateEnemyGroup } from "../src/data/bestiary.js";
 import { COMPANIONS, companionCodexEntry } from "../src/data/companions.js";
-import { MOUNTS, mountCodexEntry } from "../src/data/mounts.js";
+import { MOUNTS, mountCodexEntry, STABLE_MOUNTS, stableStockFor, STABLE_STOCK_BY_BIOME } from "../src/data/mounts.js";
+import { rollStableMounts } from "../src/engine/town-gen.js";
+import { depleteNeeds } from "../src/engine/needs.js";
 import { carryCapacityFor, recomputeCarryCapacity, recomputeVitalityMax, recomputeResolveMax } from "../src/engine/attributes.js";
 import { itemWeight, loadOf, isOverCapacity } from "../src/engine/weight.js";
 import { buffTravelSpeedMult, buffCarryBonus, buffRideBonus, hastedGroundMinutes, hastedFlightHexes, hastedFlightMinutes } from "../src/engine/buffs.js";
@@ -304,6 +306,53 @@ console.log("\n=== FLYING GATE ===");
   const canFly = (m) => (m.needs.hunger ?? 100) > MIN && (m.needs.sleep ?? 100) > MIN;
   ok(canFly(fed), "a fed, rested flyer can take wing");
   ok(!canFly(spent), "a starving flyer is grounded");
+}
+
+console.log("\n=== REGION-GATED STABLE MOUNTS ===");
+{
+  // 1. Every stable mount is a valid combat ally (catches a bad ability/passive id).
+  let allOk = true;
+  for (const m of STABLE_MOUNTS) {
+    const a = allyFromCompanion(m, codex, { tierId: m.tier || "common" });
+    if (!a || !(a.health > 0) || !a.weapon) { allOk = false; console.log(`    bad ally: ${m.id}`); }
+  }
+  ok(allOk, `all ${STABLE_MOUNTS.length} stable mounts build a valid combat ally`);
+
+  // 2. Every stock id exists and is acquisition:"stable" (no earned mount leaks in).
+  let stockOk = true;
+  const entries = [...Object.values(STABLE_STOCK_BY_BIOME)];
+  for (const e of entries) {
+    if (!MOUNTS[e.signature] || MOUNTS[e.signature].acquisition !== "stable") { stockOk = false; console.log(`    bad signature: ${e.signature}`); }
+    for (const s of e.stock) if (!MOUNTS[s.id] || MOUNTS[s.id].acquisition !== "stable") { stockOk = false; console.log(`    bad stock id: ${s.id}`); }
+  }
+  ok(stockOk, "every biome stock id is a real, stable-acquisition mount");
+
+  // 3. All 15 biomes covered; mire is humble; ground-drake never sold.
+  ok(Object.keys(STABLE_STOCK_BY_BIOME).length === 15, "all 15 biomes have a stable stock");
+  const mire = stableStockFor("mire");
+  ok(mire.signature === "nag" && mire.stock.every((s) => !["camel", "warhorse", "courser"].includes(s.id)) && mire.stock.some((s) => s.id === "nag"),
+    "mire sells the nag, never camel/warhorse/courser");
+  const anySellsDrake = Object.values(STABLE_STOCK_BY_BIOME).some((e) => e.signature === "ground-drake" || e.stock.some((s) => s.id === "ground-drake"));
+  ok(!anySellsDrake && MOUNTS["ground-drake"].acquisition === "tame", "ground-drake is EARNED — sold by no stable");
+
+  // 4. Human civilized region carries the premium Courser; steppe carries camel + axe-beak.
+  ok(stableStockFor("iron-plateau").stock.some((s) => s.id === "courser"), "iron-plateau (human) carries the Courser");
+  const steppe = stableStockFor("pale-steppe");
+  ok(steppe.stock.some((s) => s.id === "camel") && steppe.stock.some((s) => s.id === "axe-beak"), "pale-steppe carries camel + axe-beak");
+
+  // 5. Seeded roll: signature always in; deterministic within a day; rotates across windows.
+  const r0 = rollStableMounts(mire, "0,-1", 0);
+  const r0b = rollStableMounts(mire, "0,-1", 0);
+  ok(r0.some((m) => m.id === "nag"), "rolled mire stock always includes the signature nag");
+  ok(JSON.stringify(r0) === JSON.stringify(r0b), "the roll is deterministic within a restock window");
+  const override = { signature: "ground-drake", stock: [{ id: "ground-drake", chance: 1.0 }] };
+  ok(JSON.stringify(rollStableMounts(override, "31,-150", 0)) === JSON.stringify([{ id: "ground-drake" }]), "a poi.mounts override yields exactly its forced list");
+
+  // 6. Needs/endurance modifier: a thrifty mount loses less hunger over the same time.
+  const start = { hunger: 80, thirst: 80, sleep: 80 };
+  const thrifty = depleteNeeds(start, 600, 1 * (MOUNTS.courser.needsDecayMult ?? 1)); // courser 0.55
+  const plain = depleteNeeds(start, 600, 1 * 1);
+  ok(thrifty.hunger > plain.hunger, `courser (thrifty) keeps more hunger than a default mount (${thrifty.hunger.toFixed(0)} > ${plain.hunger.toFixed(0)})`);
 }
 
 console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : failures + " CHECK(S) FAILED"}\n`);

@@ -183,10 +183,12 @@ export const BUILDINGS = {
     ],
   },
 
-  // The Stable: sells MUNDANE mounts (a horse, a mule, a pony — exotic and flying
-  // mounts are earned in play, never sold) and the feed to keep them. A bought
-  // mount joins the party as a kind:"mount" character (engine/economy.buyMount),
-  // not a pack item, so the stable carries a `mounts` list rendered by StableView.
+  // The Stable: sells MUNDANE mounts and the feed to keep them. A bought mount
+  // joins the party as a kind:"mount" character (engine/economy.buyMount), not a
+  // pack item. The mount SELECTION is region-gated — resolved per tile from
+  // STABLE_STOCK_BY_BIOME / stableStockFor (data/mounts.js) or a poi.mounts
+  // override, then seed-rolled by rollStableMounts (engine/town-gen.js) and passed
+  // to StableView by App. Only the feed `stock` below is rolled here.
   stable: {
     id: "stable",
     kind: "stable",
@@ -196,15 +198,6 @@ export const BUILDINGS = {
     hours: { open: 6, close: 20 },
     buys: ["feed", "tool"],
     blurb: "Stalls of warm straw and the steady sound of feeding; tack on pegs, a stabler with hay in his sleeves, and the smell of horse and leather.",
-    // priceCp comes from each mount's template (data/mounts.js); chance gates the
-    // rarer/dearer stock so a small-town stable rarely has a destrier on hand.
-    mounts: [
-      { id: "horse",    chance: 1.0 },
-      { id: "pony",     chance: 1.0 },
-      { id: "mule",     chance: 1.0 },
-      { id: "camel",    chance: 0.4 },
-      { id: "warhorse", chance: 0.25 },
-    ],
     stock: [
       { id: "fodder",   chance: 1.0, qty: [4, 10], priceMult: 1.15 },
       { id: "raw-meat", chance: 0.5, qty: [1, 3],  priceMult: 1.2 },

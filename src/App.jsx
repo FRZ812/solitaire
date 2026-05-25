@@ -27,7 +27,8 @@ import { applyTraining, trainingOffer } from "./engine/training.js";
 import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
 import { tierLabel, tierOrder } from "./data/tiers.js";
-import { rollShopStock } from "./engine/town-gen.js";
+import { rollShopStock, rollStableMounts } from "./engine/town-gen.js";
+import { stableStockFor } from "./data/mounts.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
@@ -864,7 +865,8 @@ export function Solitaire() {
     let updatedChars = chars, charsTouched = false;
     let perCaster = {};
     if (viaMount) {
-      const drain = Math.round((mins / 60) * MOUNT_FLIGHT_NEED_PER_HOUR);
+      // Endurance scales flight stamina too — a hardy flyer (low needsDecayMult) tires slower aloft.
+      const drain = Math.round((mins / 60) * MOUNT_FLIGHT_NEED_PER_HOUR * (flightMount.needsDecayMult ?? 1));
       updatedChars = { ...chars }; charsTouched = true;
       const m = chars[flightMount.id];
       const need = m.needs || { hunger: 75, thirst: 80, sleep: 80 };
@@ -1980,12 +1982,18 @@ export function Solitaire() {
         }
         if (building.kind === "stable") {
           const stock = rollShopStock(building, key, state.time.day);
+          // Mounts are gated by REGION (the stable's biome), with a per-tile
+          // override; the signature is always in, the rest seed-roll per window.
+          const biome = getBiome(shopTile.x, shopTile.y);
+          const stockEntry = tile.poi?.mounts || stableStockFor(biome.id);
+          const mounts = rollStableMounts(stockEntry, key, state.time.day);
           return (
             <StableView
               state={state}
               building={building}
               tileKey={key}
               stock={stock}
+              mounts={mounts}
               onClose={closeShop}
               onBuy={handleBuy}
               onBuyMount={handleBuyMount}

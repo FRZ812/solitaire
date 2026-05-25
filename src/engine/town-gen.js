@@ -62,3 +62,22 @@ export function rollShopStock(building, tileKey, day) {
   }
   return { bucket, restockDay: (bucket + 1) * RESTOCK_DAYS, items };
 }
+
+// Roll a stable's mount selection for the current restock window (data/mounts.js
+// stableStockFor / poi.mounts override). Mirrors rollShopStock but with a distinct
+// `:mounts:` seed so it doesn't correlate with the feed roll at the same tile. The
+// signature mount is ALWAYS in stock; the rest appear by their chance and rotate
+// across restock windows. Returns [{ id }] — exactly what StableView maps over.
+export function rollStableMounts(stockEntry, tileKey, day) {
+  if (!stockEntry?.stock?.length) return [];
+  const bucket = bucketForDay(day);
+  const rng = mulberry32(hashStr(`${tileKey}:mounts:${bucket}`));
+  const out = [];
+  for (const entry of stockEntry.stock) {
+    const chance = entry.chance ?? 1;
+    const forced = entry.id === stockEntry.signature || chance >= 1;
+    if (!forced && rng() > chance) continue;
+    out.push({ id: entry.id });
+  }
+  return out;
+}

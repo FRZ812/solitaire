@@ -120,6 +120,7 @@ export function buyGood(state, { tileKey, bucket, itemDef, priceCp, qty = 1 }) {
 export function buyMount(state, { mountId, priceCp }) {
   const tmpl = MOUNTS[mountId];
   if (!tmpl) return { state, ok: false, reason: "No such mount." };
+  if (tmpl.acquisition !== "stable") return { state, ok: false, reason: "Not for sale — that one must be earned." };
   if ((state.party || []).includes(mountId)) return { state, ok: false, reason: "You already have one." };
   const inv = state.character.inventory;
   const price = priceCp != null ? priceCp : (tmpl.priceCp || 0);
