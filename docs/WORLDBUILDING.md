@@ -552,10 +552,12 @@ griffon (epic), wyvern (legendary), drake (mythical), dragon (divine).
   list and takes the coin). Exotic/flying mounts are **earned** via `beat.grant_mount`
   (`ground-drake` is earned, not sold). Either way the beast joins as a full
   `kind:"mount"` codex character (race + breed + combat kit).
-- **Naming.** A mount arrives **already named** by its kind's custom
-  (`generateMountName(race)` — racial name pools in `data/mounts.js`); no forced
-  prompt. The player can **rename** it anytime from the Codex (the per-mount Rename
-  button → `handleRenameMount`).
+- **Naming.** A mount arrives **already named** — no forced prompt. The name comes
+  from the fiction: the **stabler** names a bought beast (`buy_mount.name`), and the
+  narrator/player names a **tamed** one (`grant_mount.name` — a tamed beast has no
+  trader to name it). When the narrator gives no name, the engine falls back to
+  `generateMountName(race)` (racial name pools in `data/mounts.js`). The player can
+  **rename** anytime from the Codex (per-mount Rename button → `handleRenameMount`).
 - **Ride capacity is by weight, realistically.** A person is ~14 stone, so a
   `rideCapacity` is sized for **1–2 riders + gear**, not a crowd — a Swamp Nag (36)
   bears two adults but not three; only large beasts (stag, lizard, drake, dragon)

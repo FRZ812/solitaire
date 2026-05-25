@@ -417,11 +417,13 @@ export function applyBeat(state, beat, options = {}) {
     const tmpl = MOUNTS[beat.grant_mount.id];
     party = [...party, tmpl.id];
     const existing = world.codex.characters[tmpl.id];
-    // A brand-new beast comes already named (its kind's custom); a returning mount
+    // A tamed/earned beast is named in the fiction — by the player who tamed it (the
+    // narrator passes grant_mount.name), else a fitting fallback. A returning mount
     // keeps the name it had. The player can rename it anytime.
+    const granted = (beat.grant_mount.name || "").trim();
     const entry = existing
       ? { ...existing, ...mountCodexEntry(tmpl, existing.name), relationship: existing.relationship || 0, memories: existing.memories || [] }
-      : mountCodexEntry(tmpl, generateMountName(tmpl.race));
+      : mountCodexEntry(tmpl, granted || generateMountName(tmpl.race));
     world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
     newBeats.push({ id: `mount${Date.now()}`, type: "recruit", text: `${entry.name}, ${entry.species || tmpl.name}, now bears you.` });
   }
@@ -437,7 +439,8 @@ export function applyBeat(state, beat, options = {}) {
       const price = Math.max(Math.round(list * 0.4), Math.min(agreed, list)); // haggle floor 40%, never above list
       if (canAfford(character.inventory.coins, price)) {
         character.inventory = { ...character.inventory, coins: copperToCoins(coinsToCopper(character.inventory.coins) - price) };
-        const entry = mountCodexEntry(tmpl, generateMountName(tmpl.race));
+        const named = (beat.buy_mount.name || "").trim(); // the stabler's name for it, if given
+        const entry = mountCodexEntry(tmpl, named || generateMountName(tmpl.race));
         world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
         party = [...party, tmpl.id];
         newBeats.push({ id: `buy${Date.now()}`, type: "recruit", text: `${entry.name}, ${entry.species}, joins your company.` });
