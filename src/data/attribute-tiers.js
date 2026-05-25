@@ -90,7 +90,7 @@ const UNIQUE = {
     { s: { cooldownReduction: 1 } },  // 15 — quick study: tricks recover faster
     { s: { controlDuration: 0.20 } }, // 20
     { s: { cooldownReduction: 1 } },  // 25
-    { s: { spellSurge: 1 } },         // 30 — spells cost double Resolve but deal half again as much
+    { s: { spellSurge: 1 } },         // 30 — ALL abilities cost double Resolve but deal half again as much
   ],
   wit: [ // INSIGHT — clever mending, quick thinking, and precision crits
     { s: { healPower: 0.10 } },       // 5  rare      — tend wounds cannily: healing hits harder
@@ -161,7 +161,7 @@ const EFFECT_FMT = {
   resolveRegen:     (v) => `recover +${v} resolve each turn`,
   controlDuration:  (v) => `+${Math.round(v * 100)}% control duration (stuns, slows & control you inflict last longer)`,
   ccDurationReduction:(v) => `incoming stuns, slows & debuffs last ${Math.round(v * 100)}% less`,
-  spellSurge:       () => `your spells cost double Resolve but deal 50% more damage`,
+  spellSurge:       () => `your abilities cost double Resolve but deal 50% more damage`,
   maxResolve:       (v) => `+${v} max Resolve`,
   lastStand:        () => `once per fight, a lethal blow can't drop you below 1 HP for 3 turns`,
   abilityCrit:      () => `your abilities can land critical hits — even healing spells`,

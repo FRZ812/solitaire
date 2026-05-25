@@ -647,6 +647,7 @@ function applyAmbush(cs, side) {
 function attackProfile(attacker, def, tierId, isPlayer) {
   const scaling = abilityScaling(def);
   const order = tierInfo(tierId).order;
+  const surge = attacker.spellSurge ? 1.5 : 1; // Mind 30: ALL abilities hit half again as hard
 
   if (scaling === "weapon" || def.damageType === "weapon") {
     const w = attacker.weapon || { min: 1, max: 2, type: "physical", pen: 0 };
@@ -655,8 +656,8 @@ function attackProfile(attacker, def, tierId, isPlayer) {
     const statMod = isPlayer ? Math.round(govAttr * (0.5 + order * 0.25)) : Math.round(order * 1.5);
     const type = def.damageType && def.damageType !== "weapon" ? def.damageType : w.type;
     return {
-      min: Math.max(1, Math.round(w.min * techMult) + statMod),
-      max: Math.max(1, Math.round(w.max * techMult) + statMod),
+      min: Math.max(1, Math.round((w.min * techMult + statMod) * surge)),
+      max: Math.max(1, Math.round((w.max * techMult + statMod) * surge)),
       type, pen: (w.pen || 0) + (def.pen || 0), critBonus: def.critBonus || 0,
     };
   }
@@ -670,7 +671,6 @@ function attackProfile(attacker, def, tierId, isPlayer) {
     if (isPlayer && attacker.weapon?.category === "arcane") {
       focus = Math.round((attacker.weapon.max || 0) * 0.3);
     }
-    const surge = attacker.spellSurge ? 1.5 : 1; // Mind 30: spells hit half again as hard
     return {
       min: Math.max(1, Math.round(def.dmg[0] * m * f * castBonus * surge) + focus),
       max: Math.max(1, Math.round(def.dmg[1] * m * f * castBonus * surge) + focus),
@@ -1323,7 +1323,7 @@ export function playerResolveCost(cs, def) {
   let base = def?.resolveCost || 0;
   if (base <= 0) return 0;
   const isSpell = abilityCategoryOf(def) === "spell";
-  if (isSpell && cs.player?.spellSurge) base *= 2; // Mind 30: spells cost double Resolve
+  if (cs.player?.spellSurge) base *= 2; // Mind 30: ALL abilities cost double Resolve
   const discount = isSpell ? Math.min(0.4, (cs.player.prof?.spellcasting || 0) * 0.02) : 0;
   return Math.max(1, Math.ceil(base * (1 - discount)));
 }
