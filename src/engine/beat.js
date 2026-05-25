@@ -402,6 +402,7 @@ export function applyBeat(state, beat, options = {}) {
         ? { ...existing, attributes: tmpl.attributes, abilities: [...(tmpl.abilities || [])], skills: (tmpl.skills || []).map((s) => ({ ...s })) }
         : companionCodexEntry(tmpl);
       world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
+      newBeats.push({ id: `join${Date.now()}`, type: "recruit", text: `${tmpl.name} joins your company.` });
     }
   }
 
@@ -418,6 +419,25 @@ export function applyBeat(state, beat, options = {}) {
     const entry = existing ? { ...existing, ...mountCodexEntry(tmpl), relationship: existing.relationship || 0, memories: existing.memories || [] } : mountCodexEntry(tmpl);
     world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
     newBeats.push({ id: `mount${Date.now()}`, type: "recruit", text: `${tmpl.name} now bears you.` });
+  }
+
+  // A companion parts ways, or a mount is set loose — the narrator sets this only
+  // once the scene resolves (see PARTING doctrine; the player can argue it out).
+  // The leaver drops from the party but stays known in the codex (re-findable). Any
+  // saddle links are cleared so no dangling rider/carrier reference remains.
+  if (beat.part_ways?.id && party.includes(beat.part_ways.id)) {
+    const id = beat.part_ways.id;
+    const chars = { ...world.codex.characters };
+    const leaver = chars[id];
+    if (leaver) {
+      if (leaver.ridingOn && chars[leaver.ridingOn]) chars[leaver.ridingOn] = { ...chars[leaver.ridingOn], riders: (chars[leaver.ridingOn].riders || []).filter((x) => x !== id) };
+      for (const rid of (leaver.riders || [])) if (chars[rid]) chars[rid] = { ...chars[rid], ridingOn: null };
+      chars[id] = { ...leaver, ridingOn: null, riders: [] };
+    }
+    if (chars.wanderer?.ridingOn === id) chars.wanderer = { ...chars.wanderer, ridingOn: null };
+    world = { ...world, codex: { ...world.codex, characters: chars } };
+    party = party.filter((x) => x !== id);
+    newBeats.push({ id: `leave${Date.now()}`, type: "recruit", text: leaver?.kind === "mount" ? `${leaver?.name || id} is set loose.` : `${leaver?.name || id} parts ways.` });
   }
 
   // Bond shifts and shared memories — kept per-character on the codex and

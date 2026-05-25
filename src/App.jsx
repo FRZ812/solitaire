@@ -22,7 +22,7 @@ import { applyFusionToItem, fusionOptionsForRune } from "./engine/fusion.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
 import { generateGaol, acceptBounty, buyPrisonerRights } from "./engine/gaol.js";
 import { generateSlaveMarket, buyCaptive } from "./engine/slaves.js";
-import { partyStanding, recruitOutlook, dismissCompanion, isRecruited, partyMembers } from "./engine/party.js";
+import { partyStanding, recruitOutlook, isRecruited, partyMembers } from "./engine/party.js";
 import { applyTraining, trainingOffer } from "./engine/training.js";
 import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./data/town.js";
 import { schematicsForBuilding } from "./data/schematics.js";
@@ -39,7 +39,7 @@ import { knownBuffSpells } from "./data/buff-spells.js";
 import { buffTravelSpeedMult, hastedGroundMinutes, hastedFlightHexes, hastedFlightMinutes } from "./engine/buffs.js";
 import { condNames, hasCondition, normalizeConditions } from "./data/conditions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
-import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, dismountAllFrom, isOverloaded } from "./engine/riding.js";
+import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, isOverloaded } from "./engine/riding.js";
 import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
@@ -1237,14 +1237,33 @@ export function Solitaire() {
   }
 
   // Part ways with a companion (they stay in the codex as a known person).
+  // Parting with a companion / setting a mount loose isn't a silent toggle — it's a
+  // SCENE. Open it with the narrator (PARTING doctrine): the companion answers in
+  // voice, others weigh in, the party balks at ditching a sound beast — and the
+  // player can argue it out. The engine only removes them when the narrator resolves
+  // it with part_ways:{id}. Closes the deck and plays in the main log.
   async function handleDismiss(id) {
+    if (loading) return;
     const c = state.world.codex.characters[id];
     const isMount = c?.kind === "mount";
-    const verb = isMount ? "Set loose" : "Part ways";
-    if (!(await askConfirm({ title: verb, body: isMount ? `Set ${c?.name || "this mount"} loose? It'll wander off — you'd have to win it back.` : `Tell ${c?.name || "this companion"} you're parting ways? They'll go their own road — you can find them again.`, confirmLabel: verb, danger: true }))) return;
-    // Clear any saddle links first so no dangling rider/carrier references remain.
-    const cleared = isMount ? dismountAllFrom(state, id) : dismountRider(state, id).state;
-    setState(dismissCompanion(cleared, id).state);
+    const name = c?.name || (isMount ? "the beast" : "your companion");
+    setDeckOpen(false);
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: isMount ? `You move to set ${name} loose.` : `You tell ${name} you mean to part ways.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[PLAYER ACTION] [PART WAYS] You move to ${isMount ? `set ${name} loose` : `part ways with ${name}`}. Play the scene per the PARTING doctrine — voices in character, the party weighing in${isMount ? " (and likely objecting to abandoning a sound, paid-for beast — sell it instead?)" : ""}. Do NOT remove anyone yet unless it genuinely resolves now; the player may argue. Only set part_ways:{"id":"${id}"} once the parting is truly settled.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
   }
 
   // Seat a rider (the player "wanderer", a companion, or a smaller mount) onto a
