@@ -28,7 +28,7 @@ import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./dat
 import { schematicsForBuilding } from "./data/schematics.js";
 import { tierLabel, tierOrder } from "./data/tiers.js";
 import { rollShopStock, rollStableMounts } from "./engine/town-gen.js";
-import { stableStockFor } from "./data/mounts.js";
+import { stableStockFor, mountTemplate } from "./data/mounts.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
@@ -1111,12 +1111,33 @@ export function Solitaire() {
       return { tileKey: key, items };
     });
   }
-  // Buy a mount at the stable — it joins the party as a kind:"mount" character
-  // (engine/economy.buyMount). No restock receipt: a mount isn't a stacking good.
-  function handleBuyMount(mountId, priceCp) {
+  // Buy a mount at the stable — a hefty deal AND a full companion joining the party
+  // (engine/economy.buyMount), so it plays out as a beat: the stabler's word on the
+  // bargain, the beast led out, and the party's reaction. No restock receipt.
+  async function handleBuyMount(mountId, priceCp) {
+    if (loading || !shopTile) return;
     const r = buyMount(state, { mountId, priceCp });
-    if (!r.ok) return;
-    setState(r.state);
+    if (!r.ok) { setError(r.reason || "You can't buy that mount."); return; }
+    const tmpl = mountTemplate(mountId);
+    const name = tmpl?.name || mountId;
+    const place = getTile(state, shopTile.x, shopTile.y).poi?.name || "the stable";
+    setShopTile(null);
+    setError(null);
+    setLoading(true);
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You buy ${name} at ${place}.` };
+    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
+    setState(stateWithPlayer);
+    try {
+      const msg = `[PLAYER ACTION] At ${place} you have just bought ${name} — a ${tmpl?.tier || "common"} ${tmpl?.race || "mount"} (${tmpl?.desc || ""}) — for ${formatCopper(priceCp)}, paid in full. The coin is already settled — do NOT re-tally it, and do NOT charge again. ${name} now joins your company as a mount: it travels with you, is fed and tended, and bears you on the road. Play the moment, briefly: the stabler hands over the lead-rope with a word about the beast and the bargain (its temper, breeding, a care-tip, or shrewd patter), the animal's bearing as it's led into the daylight, and — if companions travel with you — how they react to the new beast (approval, wariness, a porter glad to shed a load, a fighter sizing up a warhorse). Keep it grounded; don't fabricate combat; leave the player free to mount up or move on.`;
+      const beat = await callNarrator(stateWithPlayer, msg);
+      const next = applyBeat(stateWithPlayer, beat);
+      setState(recordTurn(stateWithPlayer, msg, next));
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
   }
   // Sell one unit. A refund consumes a receipt (full price paid); a plain sale
   // uses the used-goods price the trader view computed.
