@@ -51,7 +51,7 @@ export const HANDCRAFTED = {
   "-1,-3": { terrain: "road", poi: null },
   "-1,-2": { terrain: "road", poi: null },
   "-1,-1": { terrain: "road", poi: null },
-  "-1,0":  { terrain: "road", poi: { type: "landmark", name: "The Crossing", description: "Where the track passes the inn — wheel-ruts, a horse-trough, and a leaning signpost no one has repainted in years." } },
+  "-1,0":  { terrain: "road", poi: null },
   "-1,1":  { terrain: "road", poi: null },
   "-1,2":  { terrain: "road", poi: null },
   "-1,3":  { terrain: "road", poi: null },

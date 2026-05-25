@@ -333,41 +333,6 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
 
   const hexes = collectHexes(cur);
 
-  // Road segments connect adjacent seen tiles in the road network. At least
-  // one end must be road or settlement, and both must be connectable
-  // (road / settlement / indoor). That draws roads between hexes, town squares
-  // to their gates, and gates to outer roads — while skipping pairs of
-  // adjacent indoor buildings that don't share a street between them.
-  function isConnectable(t) {
-    return t.terrain === "road" || t.terrain === "settlement" || t.terrain === "indoor";
-  }
-  function isStreet(t) {
-    return t.terrain === "road" || t.terrain === "settlement";
-  }
-  const segmentSet = new Set();
-  const roadSegments = [];
-  for (const h of hexes) {
-    if (!isSeen(state, h.x, h.y)) continue;
-    const tile = getTile(state, h.x, h.y);
-    if (!isConnectable(tile)) continue;
-    for (const dir of HEX_DIRECTIONS) {
-      const nx = h.x + dir.x;
-      const ny = h.y + dir.y;
-      if (!isSeen(state, nx, ny)) continue;
-      const nTile = getTile(state, nx, ny);
-      if (!isConnectable(nTile)) continue;
-      if (!isStreet(tile) && !isStreet(nTile)) continue;
-      const key = (h.x < nx || (h.x === nx && h.y < ny))
-        ? `${h.x},${h.y}|${nx},${ny}`
-        : `${nx},${ny}|${h.x},${h.y}`;
-      if (segmentSet.has(key)) continue;
-      segmentSet.add(key);
-      const npx = SVG_CENTER + HSPACING * ((nx - cur.x) + (ny - cur.y) / 2);
-      const npy = SVG_CENTER + VSPACING * (ny - cur.y);
-      roadSegments.push({ x1: h.px, y1: h.py, x2: npx, y2: npy });
-    }
-  }
-
   // Wall segments — render along edges between two seen, passable hexes
   // where the doors graph forbids the crossing. Visualises access control
   // (a city's outer wall, a fortress curtain, a sealed inner sanctum).
@@ -465,14 +430,23 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     }
     const cx = sx / group.tiles.length;
     const cy = sy / group.tiles.length;
+    // Anchor the icon/label on the member hex nearest the centroid, so it always
+    // sits on a real hex of the footprint. The raw centroid can fall in the
+    // missing notch of an L-shaped group and leave the icon floating off-building.
+    let anchor = group.tiles[0];
+    let best = Infinity;
+    for (const h of group.tiles) {
+      const dd = (h.px - cx) ** 2 + (h.py - cy) ** 2;
+      if (dd < best) { best = dd; anchor = h; }
+    }
     if (group.iconKey && MAP_ASSETS[group.iconKey]) {
-      footprintIcons.push({ key: `foot-icon-${group.id}`, x: cx, y: cy, iconKey: group.iconKey });
+      footprintIcons.push({ key: `foot-icon-${group.id}`, x: anchor.px, y: anchor.py, iconKey: group.iconKey });
     }
     if (selectedKey && group.keys.has(selectedKey)) {
       footprintLabels.push({
         key: `foot-label-${group.id}`,
-        x: cx,
-        y: cy + 20,
+        x: anchor.px,
+        y: anchor.py + 20,
         name: group.name,
       });
     }
@@ -743,17 +717,6 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                 </g>
               );
             })}
-            {roadSegments.map((s, i) => (
-              <line
-                key={`road-${i}`}
-                x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
-                stroke="#6B4A2E"
-                strokeWidth={3}
-                strokeOpacity={0.65}
-                strokeLinecap="round"
-                pointerEvents="none"
-              />
-            ))}
             {footprintSegments.map((s) => (
               <line
                 key={s.key}
