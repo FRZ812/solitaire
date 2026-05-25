@@ -2,7 +2,7 @@
 //
 // The world uses a 12-month, 30-day-per-month, 360-day-per-year calendar.
 // Campaign day 1 corresponds to the 1st of Hollowsmonth, year 803; the
-// Wanderer's opening at the Drowned Rat (day 3) is the 3rd of Hollowsmonth.
+// Wanderer's opening in Whitemarch's Grand Market (day 3) is the 3rd of Hollowsmonth.
 // Month names are evocative-English (Le Guin / McCarthy register) rather
 // than invented fantasy syllables.
 //

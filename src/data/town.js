@@ -18,7 +18,7 @@ export const BUILDINGS = {
   tavern: {
     id: "tavern",
     kind: "tavern",            // a quest board: tasks, folk for hire, day-labour
-    label: "The Drowned Rat",
+    label: "The Iron Tankard",
     keeper: "the innkeeper",
     icon: "bldg",
     hours: { open: 6, close: 1 }, // wraps past midnight — last call at 1am
@@ -28,7 +28,7 @@ export const BUILDINGS = {
   healer: {
     id: "healer",
     kind: "trader",            // a standard buy/sell trader menu
-    label: "The Healer's House",
+    label: "The Hospital Cloister",
     keeper: "the healer",      // used to flavor the "speak with…" narrator hook
     icon: "healer",            // MapView MAP_ASSETS key
     hours: { open: 7, close: 20 },
@@ -50,7 +50,7 @@ export const BUILDINGS = {
     id: "blacksmith",
     kind: "smith",             // a trader counter PLUS a forge
     forge: true,
-    label: "The Roadside Smithy",
+    label: "Public Smith Row",
     keeper: "the smith",
     icon: "smithy",
     hours: { open: 7, close: 19 },
@@ -105,25 +105,25 @@ export const BUILDINGS = {
   prison: {
     id: "prison",
     kind: "gaol",              // the warden: a wanted board + cells
-    label: "Mirecross Gaol",
-    keeper: "the warden",
+    label: "Prison Gate",
+    keeper: "the gaoler",
     icon: "gaol",
     hours: { open: 6, close: 22 },
-    blurb: "A squat blockhouse of damp stone — a wanted board by the door, a smell of straw and iron, and the warden watching from a stool worn smooth.",
+    blurb: "A threshold of old stone scarred by nails — an intake desk under a lantern that burns all day, a wanted-board by the door, the smell of straw and iron, and a work-gang's side-arch barred until dawn.",
   },
 
-  // The Block: Crowsmoor's auction-yard — the slave market. A grimmer counterpart
-  // to the lawful gaol, deliberately kept in a rougher town, not in Mirecross. The
-  // auctioneer holds people for sale; buying a bond is a coin deal, the rest is
-  // played in the world (free them, press them to service, ransom or resell).
+  // Chain Market Steps: Whitemarch's public slave-sale, in the Chain Ward at the
+  // heart of the city — the trade as civic routine, not a rougher town's secret.
+  // The Chain Factor holds people for sale; buying a bond is a coin deal, the rest
+  // is played in the world (free them, press them to service, ransom or resell).
   slavemarket: {
     id: "slavemarket",
-    kind: "slavemarket",       // the auctioneer: a roster of captives whose bonds are for sale
-    label: "The Block",
-    keeper: "the auctioneer",
+    kind: "slavemarket",       // the Chain Factor: a roster of captives whose bonds are for sale
+    label: "Chain Market Steps",
+    keeper: "the Chain Factor",
     icon: "slavemarket",
     hours: { open: 8, close: 17 },
-    blurb: "A fenced yard hard against the stockyards — a raised auction-block of weathered oak, a row of the bonded chained to a rail in its shade, and an auctioneer with a tally-stick and a flat, appraising eye.",
+    blurb: "Pale stone steps washed between bells so the stains do not show — a raised platform where status-criers call the lots, buyers waiting under awnings, the bonded chained at a viewing-rail, and a Chain Factor with a tally-stick and a flat, appraising eye.",
   },
 
   // The Wet Market: a single open-air stall, not a building — the butcher,
@@ -132,7 +132,7 @@ export const BUILDINGS = {
   market: {
     id: "market",
     kind: "trader",
-    label: "The Wet Market",
+    label: "The Grand Market",
     keeper: "the market-sellers",
     icon: "market",
     hours: { open: 6, close: 18 },
@@ -192,7 +192,7 @@ export const BUILDINGS = {
   stable: {
     id: "stable",
     kind: "stable",
-    label: "The Stable",
+    label: "Caravan Yard & Stable",
     keeper: "the stabler",
     icon: "bldg",
     hours: { open: 6, close: 20 },

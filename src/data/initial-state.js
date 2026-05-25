@@ -6,14 +6,13 @@ import { computeSightFrom, computeSightFromRadius } from "../engine/world.js";
 import { bodyWeightForRace } from "../engine/weight.js";
 import { carryCapacityFor } from "../engine/attributes.js";
 
-// The player starts knowing the immediate area around the Inn, the riverbank
-// strip along each named river (radius 1 patches so the river plus its banks
-// are visible end to end), plus small patches of country around each rumored
-// landmark (radius 2) and each fabled landmark (radius 3). These pre-revealed
-// patches show up as islands of detail in the otherwise-fogged map — anchors
-// that orient the player in the wider world before they've ever walked there.
+// The player starts inside Whitemarch, at Grain Square in the heart of the Grand
+// Market (0,0). Sight reveals the immediate market and the nearest wards; the
+// rest of the walled city — and everything beyond the Great Wall — is fogged
+// until walked. (RIVERS/RUMORED/FABLED are cleared to a clean slate, so those
+// loops are no-ops; the city's own river is authored as handcrafted tiles.)
 function makeInitialSeen() {
-  let seen = computeSightFrom(1, 0);
+  let seen = computeSightFrom(0, 0);
   for (const r of RIVERS) {
     for (const p of r.path) {
       seen = computeSightFromRadius(p.x, p.y, 1, seen);
@@ -70,8 +69,8 @@ export function makeInitialState() {
     },
     time: { day: 3, hour: 13, minute: 30 },
     world: {
-      tiles: { "1,0": HANDCRAFTED["1,0"] },
-      currentTile: { x: 1, y: 0 },
+      tiles: { "0,0": HANDCRAFTED["0,0"] },
+      currentTile: { x: 0, y: 0 },
       seen: makeInitialSeen(),
       codex: {
         characters: {

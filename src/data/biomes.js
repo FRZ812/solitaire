@@ -28,7 +28,31 @@ function rect({ xmin, xmax, ymin, ymax }) {
 
 export const BIOMES = [
   // ===================================================================
-  // VALE CORE — the player's starting neighbourhood
+  // WHITEMARCH — the walled capital at the origin and the player's starting
+  // ground. Listed FIRST so its tight box wins over the regional biomes it
+  // overlaps; every hex of the handcrafted city (data/handcrafted-tiles.js)
+  // reports as Whitemarch rather than the surrounding march/marsh.
+  // ===================================================================
+  {
+    id: "whitemarch",
+    name: "Whitemarch",
+    faction: "whitemarch-iron",
+    description: "The walled capital where the iron-shilling is minted — black-and-white gate-towers over a Great Wall that rings wards of market, dock, chain, court, and citadel, with the Whitewend running brown beneath the quays. Inside the wall the country gives way wholly to stone, smoke, and crowd.",
+    ...rect({ xmin: -2, xmax: 3, ymin: -3, ymax: 4 }),
+    terrainWeights: { settlement: 0.72, road: 0.14, plains: 0.09, water: 0.05 },
+    poiChance: 0.02,
+    extraSpawns: {
+      settlement: [
+        { kind: "market-watch",  weight: 12, posture: "neutral",  desc: "a pair of Market Watch in iron-grey, eyes moving over the crowd" },
+        { kind: "porter",        weight: 12, posture: "friendly", desc: "a sweating porter bent under a corded load, calling for room" },
+        { kind: "gate-clerk",    weight: 8,  posture: "neutral",  desc: "a clerk with an inkhorn and a chained ledger, reading papers aloud" },
+        { kind: "flesh-warden",  weight: 6,  posture: "neutral",  desc: "a Flesh Warden of the Chain Ward, collar-keys heavy at the belt" },
+        { kind: "cutpurse",      weight: 6,  posture: "hostile",  desc: "a quick hand working the awning-shadows of the market crowd" },
+      ],
+    },
+  },
+  // ===================================================================
+  // VALE CORE — the country beyond Whitemarch's wall
   // ===================================================================
   {
     id: "mire",

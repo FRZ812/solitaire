@@ -8,6 +8,8 @@ import { difficultyBand } from "./balance.js";
 
 // biome id → difficulty band level (1 easiest … 6 deadliest).
 export const BIOME_DIFFICULTY = {
+  // The capital — the player's starting ground.
+  whitemarch: 2,
   // Vale core — home ground.
   mire: 1,
   "crowsmoor-reach": 1,

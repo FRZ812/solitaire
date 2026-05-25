@@ -190,8 +190,9 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
     if (busy) return;
     const have = new Set((tmpl.setup.items || []).map((i) => i.itemId));
     const provisions = STANDARD_PROVISIONS.filter((p) => !have.has(p.itemId)).map((p) => ({ itemId: p.itemId, quantity: p.quantity, worn: false }));
-    // Pass the backstory (to ground the scene) and the bespoke opening (seeded verbatim).
-    onPickTemplate({ ...tmpl.setup, name: finalNameFor(tmpl), backstory: tmpl.story, opening: tmpl.opening, items: [...(tmpl.setup.items || []), ...provisions] });
+    // Pass the backstory so the narrator can ground the opening scene (now a live
+    // narrator call that arrives the character inside Whitemarch, like the custom path).
+    onPickTemplate({ ...tmpl.setup, name: finalNameFor(tmpl), backstory: tmpl.story, items: [...(tmpl.setup.items || []), ...provisions] });
   };
 
   if (selected) {
