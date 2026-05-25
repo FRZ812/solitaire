@@ -1,18 +1,40 @@
 // Sealed structures — interior + threshold tile sets for access-control
 // doors (see docs/WORLDBUILDING.md, Ruling 7).
 //
-// For each structure:
-//   - `threshold` lists the public-facing gate / mouth hex(es). These keep
-//     default-open doors so they can be entered from wilderness.
-//   - `interior` lists every interior hex. Each gets a `doors:` array
-//     listing the threshold + interior neighbours; every other adjacent
+// Two authoring shapes (the auto-application at the bottom of
+// data/handcrafted-tiles.js picks based on which fields are present):
+//
+//   threshold + interior — dungeons / wards. `threshold` lists the
+//     public-facing gate / mouth hex(es) (these keep default-open doors so they
+//     can be entered from wilderness); `interior` lists every interior hex, each
+//     of which opens to all of its in-structure neighbours. Every other adjacent
 //     hex is a wall.
 //
-// The auto-application lives at the bottom of data/handcrafted-tiles.js.
-// Smoke-test (/tmp/gen-doors.mjs in dev) verifies no interior tile is
-// orphaned from the threshold via the interior+threshold graph.
+//   entry + outside + links — a single building whose interior connectivity is
+//     an explicit graph. `links` is a list of [a, b] hex pairs that connect;
+//     each hex opens ONLY to its linked neighbours. `entry` is the doorway hex
+//     and `outside` the adjacent street hex it opens onto. Use this to gate
+//     movement inside a footprint (e.g. rooms reachable only via a common room);
+//     the closed edges render as interior walls and the open door as a gap.
+//
+// The auto-application validates that links are between adjacent hexes and that
+// every member is reachable from the entry.
 
 export const SEALED_STRUCTURES = [
+  // ---------- LINKED BUILDING FOOTPRINTS ----------
+  {
+    name: "The Drowned Rat",
+    // Common room (0,0) is the only door in from Mirecross Square (-1,0), and
+    // the only way through to the yard, stable, and the guest rooms behind it.
+    entry: { x: 0, y: 0 },
+    outside: { x: -1, y: 0 },
+    links: [
+      [{ x: 0, y: 0 }, { x: 1, y: 0 }],   // common room -> yard
+      [{ x: 0, y: 0 }, { x: 1, y: -1 }],  // common room -> stable
+      [{ x: 0, y: 0 }, { x: 0, y: -1 }],  // common room -> guest rooms
+    ],
+  },
+
   // ---------- CLOSE-IN DUNGEONS ----------
   {
     name: "Goblin Hollow",

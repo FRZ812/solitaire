@@ -21,7 +21,7 @@ import { formatTime, formatDate } from "../engine/time.js";
 import { formatCopper } from "../engine/economy.js";
 import { compassDir } from "../engine/api.js";
 import { useZoomPan } from "./useZoomPan.js";
-import { poiFootprintName, poiMeta, poiPartName, poiPlaceName, titleFromId } from "../engine/location.js";
+import { poiFootprintName, poiMeta, poiPlaceName, titleFromId } from "../engine/location.js";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
 
@@ -411,20 +411,23 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       footprintGroups.set(parent, {
         id: parent,
         name: poiFootprintName(tile.poi) || titleFromId(parent) || parent,
+        iconKey: assetKeyForTile(tile),
         tiles: [],
-        parts: [],
         keys: new Set(),
       });
     }
     const group = footprintGroups.get(parent);
     group.tiles.push(h);
-    group.parts.push({ ...h, name: poiPartName(tile.poi) });
     group.keys.add(`${h.x},${h.y}`);
   }
 
+  // A footprint reads as one building: a golden perimeter outline (broken at the
+  // entry door, where the graph lets you cross into a reachable neighbour), a
+  // single icon at the centroid, and one name label below it. Sub-area names
+  // live in the detail panel, not on the map.
   const footprintSegments = [];
   const footprintLabels = [];
-  const footprintPartLabels = [];
+  const footprintIcons = [];
   for (const group of footprintGroups.values()) {
     if (group.tiles.length < 2) continue;
     let sx = 0;
@@ -432,11 +435,18 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     for (const h of group.tiles) {
       sx += h.px;
       sy += h.py;
+      const tile = getTile(state, h.x, h.y);
       for (let dir = 0; dir < HEX_DIRECTIONS.length; dir++) {
         const d = HEX_DIRECTIONS[dir];
         const nx = h.x + d.x;
         const ny = h.y + d.y;
         if (group.keys.has(`${nx},${ny}`)) continue;
+        // Leave a gap at the doorway: an external edge the door graph lets you
+        // cross into a reachable neighbour is the way in, not a wall.
+        if (isSeen(state, nx, ny)) {
+          const nTile = getTile(state, nx, ny);
+          if (isPassable(nTile) && edgeAllowed(tile, h.x, h.y, nTile, nx, ny)) continue;
+        }
         const [ca, cb] = EDGE_CORNERS[dir];
         const a = hexCorner(h.px, h.py, ca);
         const b = hexCorner(h.px, h.py, cb);
@@ -446,21 +456,17 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         });
       }
     }
+    const cx = sx / group.tiles.length;
+    const cy = sy / group.tiles.length;
+    if (group.iconKey && MAP_ASSETS[group.iconKey]) {
+      footprintIcons.push({ key: `foot-icon-${group.id}`, x: cx, y: cy, iconKey: group.iconKey });
+    }
     footprintLabels.push({
       key: `foot-label-${group.id}`,
-      x: sx / group.tiles.length,
-      y: (sy / group.tiles.length) - 6,
+      x: cx,
+      y: cy + 20,
       name: group.name,
     });
-    for (const part of group.parts) {
-      if (!part.name) continue;
-      footprintPartLabels.push({
-        key: `foot-part-${group.id}-${part.x},${part.y}`,
-        x: part.px,
-        y: part.py + 6,
-        name: part.name,
-      });
-    }
   }
 
   // Landmark labels — named places that read at a glance on the map. Built
@@ -683,7 +689,10 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               let textColor = "#f5dcb8";
               let assetKey = null;
               let opacity;
-              let stroke = isFootprintMember ? "rgba(215, 167, 111, 0.10)" : "rgba(215, 167, 111, 0.08)";
+              // Footprint members drop their per-hex outline so the group reads
+              // as one merged building; the golden perimeter + interior walls
+              // carry the edges. The current/selected highlight still applies.
+              let stroke = isFootprintMember ? "transparent" : "rgba(215, 167, 111, 0.08)";
               let strokeWidth = 1;
 
               if (seen) {
@@ -782,6 +791,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                 style={{ filter: "drop-shadow(0 0 6px rgba(215, 167, 111, 0.6))" }}
               />
             )}
+            {footprintIcons.map((ic) => (
+              <g key={ic.key} transform={`translate(${ic.x - 11}, ${ic.y - 11})`} pointerEvents="none">
+                {MAP_ASSETS[ic.iconKey]("#f5dcb8")}
+              </g>
+            ))}
             {footprintLabels.map((l) => (
               <g key={l.key} pointerEvents="none">
                 <text
@@ -810,35 +824,6 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                   fillOpacity="0.78"
                 >
                   {l.name.toUpperCase()}
-                </text>
-              </g>
-            ))}
-            {footprintPartLabels.map((l) => (
-              <g key={l.key} pointerEvents="none">
-                <text
-                  x={l.x} y={l.y}
-                  textAnchor="middle"
-                  fontFamily="'Inter', sans-serif"
-                  fontSize="7"
-                  fontWeight="800"
-                  fill="none"
-                  stroke="#111716"
-                  strokeWidth="3"
-                  strokeOpacity="0.9"
-                  paintOrder="stroke"
-                >
-                  {l.name}
-                </text>
-                <text
-                  x={l.x} y={l.y}
-                  textAnchor="middle"
-                  fontFamily="'Inter', sans-serif"
-                  fontSize="7"
-                  fontWeight="800"
-                  fill="#f5dcb8"
-                  fillOpacity="0.82"
-                >
-                  {l.name}
                 </text>
               </g>
             ))}
