@@ -43,7 +43,7 @@ const MIND_CONTROL = new Set(["charmed", "dominated"]); // Charm/Dominate — ga
 // Debuffs an "unstoppable" combatant (BKB) is flat-out immune to — disables and the
 // anti-heal curse, NOT damage-over-time (a wound still bleeds; you just can't be
 // disabled or cursed). Damage immunity (incl. true) is invuln's job, separately.
-const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence", "charmed", "dominated"]);
+const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence"]); // NOT mind-control: no flat immunity wards a mind, only the will gap
 const ALLY_LOSS = { cowardly: 22, wary: 14, fierce: 8, brutish: 10, honorable: 10, feral: 8, fanatic: 0, mindless: 0 };
 
 function sumStatus(c, type) {
@@ -88,24 +88,89 @@ function addStatus(c, effect) {
   c.statuses.push({ type: effect.type, value: effect.value || 0, duration: effect.duration || 1, pctMax: !!effect.pctMax });
 }
 
-// Apply an enemy-targeted ability effect. MIND CONTROL (Charm/Dominate) is gated by
-// a WILL save: a target whose will (mind+presence) meets or beats the caster's
-// shrugs it off, and each prior control this fight stacks resistance (controlPressure)
-// — so you can't perma-thrall a strong-willed boss. Dominate is harder to land than
-// the gentle Charm. Everything else applies straight (addStatus owns stun/slow resist).
+// The will-save chance the SUBJECT resists a mind-control attempt. PURE POWER GAP —
+// no rank, title, or flat immunity wards a mind; only the contest of WILLS decides it
+// (subject's will vs the caster's). An iron will (controlResist) raises the odds; it
+// never grants immunity. Charm is gentler (easier to resist) than Dominate.
+function willSaveChance(caster, target, type) {
+  const potency = caster?.will || 0;
+  const base = type === "dominated" ? 0.05 : 0.10;
+  return Math.min(0.95, base + Math.max(0, (target.will || 0) - potency) * 0.05 + (target.controlResist || 0) + (target.controlPressure || 0) * 0.15);
+}
+// Apply an enemy-targeted ability effect. MIND CONTROL gets ONE will-save: Charm is a
+// brief stand-down; Dominate, if it lands, is PERMANENT — the subject is enthralled
+// (bound to the caster, switched to its side; see enthrall). Everything else applies
+// straight (addStatus owns stun/slow resist).
 function applyEnemyEffect(cs, caster, target, effect) {
   if (!effect || !target || target.health <= 0) return;
+  // DISPEL — strips brief control, and BREAKS a permanent enthrall via a CONTEST of
+  // wills between the dispeller and the ORIGINAL dominator (stored dominationWill) —
+  // NOT a save by the thrall. Tier doesn't gate it; raw will does.
+  if (effect.type === "dispel") {
+    const STRIP = new Set(["charmed", "dominated", "stun", "slow", "weaken", "vulnerable", "chill", "curse", "silence"]);
+    if (Array.isArray(target.statuses)) target.statuses = target.statuses.filter((s) => !STRIP.has(s.type));
+    if (target.enthralledBy) {
+      const freeChance = Math.min(0.95, Math.max(0.05, 0.5 + ((caster?.will || 0) - (target.dominationWill || 0)) * 0.05));
+      if (Math.random() < freeChance) freeThrall(cs, target);
+      else cs.log.push(logEntry(`The binding on ${target.name} holds — the dominator's will is the stronger.`, "status"));
+    } else {
+      cs.log.push(logEntry(`${target.name} is cleansed of lingering magics.`, "status"));
+    }
+    return;
+  }
   if (MIND_CONTROL.has(effect.type)) {
-    const potency = caster?.will || 0;
-    const base = effect.type === "dominated" ? 0.05 : 0.10;
-    const save = Math.min(0.95, base + Math.max(0, (target.will || 0) - potency) * 0.05 + (target.controlResist || 0) + (target.controlPressure || 0) * 0.15);
-    if (hasStatus(target, "unstoppable") || Math.random() < save) {
+    if (Math.random() < willSaveChance(caster, target, effect.type)) {
       cs.log.push(logEntry(`${target.name} shrugs off the ${effect.type === "dominated" ? "domination" : "charm"}.`, "status"));
+      if (target.side === "enemy") onEnemyControlled(target); // the failed assault still rattles them
       return;
     }
+    if (effect.type === "dominated") { enthrall(cs, caster, target); return; } // ONE shot — landing it is PERMANENT
   }
   addStatus(target, effect);
   if (CONTROL_TYPES.has(effect.type) && target.side === "enemy") onEnemyControlled(target);
+}
+
+// Move a non-player combatant to a side, splicing it between cs.enemies/cs.allies.
+function combatantArray(cs, c) {
+  if (cs.enemies.includes(c)) return cs.enemies;
+  if ((cs.allies || []).includes(c)) return cs.allies;
+  return null;
+}
+function moveToSide(cs, c, side) {
+  if (c === cs.player) return; // the player never leaves their slot
+  const from = combatantArray(cs, c);
+  if (from) { const i = from.indexOf(c); if (i >= 0) from.splice(i, 1); }
+  c.side = side;
+  if (side === "player") { cs.allies = cs.allies || []; cs.allies.push(c); }
+  else cs.enemies.push(c);
+}
+// ENTHRALL — a landed Dominate. The subject is bound to the caster (forever, until the
+// caster dies/releases it or another wins a Dispel contest) and switches to the
+// caster's side at once. We record dominationWill so a later Dispel can contest the
+// ORIGINAL dominator even if they're long gone.
+function enthrall(cs, caster, target) {
+  const casterSide = (caster === cs.player || caster?.side === "player") ? "player" : "enemy";
+  target.enthralledBy = caster === cs.player ? "p" : (caster?.uid || null);
+  target.dominationWill = caster?.will || 0;
+  target.enthralledFrom = target.side; // where to revert if freed
+  if (Array.isArray(target.statuses)) target.statuses = target.statuses.filter((s) => s.type !== "charmed" && s.type !== "dominated");
+  addStatus(target, { type: "enthralled", value: 1, duration: 99999 });
+  if (target !== cs.player) moveToSide(cs, target, casterSide);
+  cs.log.push(logEntry(`${target.name} is bound — utterly enthralled, its will no longer its own.`, "status"));
+}
+// Break one thrall's binding — drop the marks and revert it to the side it was taken
+// from (a converted foe goes back to fighting its old master).
+function freeThrall(cs, c) {
+  const back = c.enthralledFrom || (c.side === "player" ? "enemy" : "player");
+  c.enthralledBy = null; c.dominationWill = 0; c.enthralledFrom = null;
+  if (Array.isArray(c.statuses)) c.statuses = c.statuses.filter((s) => s.type !== "enthralled");
+  if (c !== cs.player && c.side !== back) moveToSide(cs, c, back);
+  cs.log.push(logEntry(`${c.name} shudders as the compulsion breaks — their will returns.`, "status"));
+}
+// Free every thrall bound to `uid` (its dominator died) — see freeThrall.
+function freeThrallsOf(cs, uid) {
+  if (!uid) return;
+  for (const c of allCombatants(cs)) if (c.enthralledBy === uid) freeThrall(cs, c);
 }
 // livingEnemies = anything not dead and not resolved (yielded/fled/ko). A FLEEING
 // foe is still "living" — it's on the field, running, until it gets clear.
@@ -118,8 +183,10 @@ const liveAttackers = (cs) => livingEnemies(cs).filter((e) => !e.fleeing);
 // Foes that yielded and kneel at the player's mercy — on the field, awaiting the
 // player's verdict (finish or spare). They keep combat from ending on their own.
 const pendingCaptives = (cs) => cs.enemies.filter((e) => e.resolved === "yielded" && !e._dead);
-// Combat is over only when nothing's left fighting or fleeing AND no captive waits.
-const combatOver = (cs) => livingEnemies(cs).length === 0 && pendingCaptives(cs).length === 0;
+// Combat is over when nothing's left fighting AND no captive waits. A CHARMED foe is
+// stood down (no longer a threat) — once every remaining foe is charmed the field is
+// yours. (Dominated foes are already gone — they've switched to the caster's side.)
+const combatOver = (cs) => livingEnemies(cs).filter((e) => !hasStatus(e, "charmed")).length === 0 && pendingCaptives(cs).length === 0;
 // The player may strike anything alive that isn't already gone — including a
 // fleeing foe (to run it down) or a yielded one (to execute it, deliberately).
 const playerTargetable = (e) => !!e && e.health > 0 && !e._dead && (!e.resolved || e.resolved === "yielded");
@@ -421,8 +488,9 @@ function advanceQueue(cs) {
       const r = beginTurnFor(cs, actor);
       if (r === "dead") return finishDefeat(cs);
       if (r === "stun") { cs.orderIdx += 1; continue; }
-      // Charmed/dominated player loses the turn — the will isn't theirs to command.
-      if (hasStatus(actor, "dominated")) { cs.log.push(logEntry("Your body moves against your will — you cannot act.", "status")); cs.orderIdx += 1; continue; }
+      // An enthralled/charmed player loses the turn — the will isn't theirs to command
+      // (freed when the dominator dies or an ally's Dispel wins the contest).
+      if (hasStatus(actor, "enthralled")) { cs.log.push(logEntry("Your body is not your own — you stand frozen, enthralled.", "status")); cs.orderIdx += 1; continue; }
       if (hasStatus(actor, "charmed")) { cs.log.push(logEntry("A strange calm stays your hand — you cannot raise a weapon.", "status")); cs.orderIdx += 1; continue; }
       cs.phase = "player";
       return cs; // hand control to the UI
@@ -437,19 +505,17 @@ function advanceQueue(cs) {
     // it's far enough it's gone. It doesn't fight — the player must run it down.
     if (actor.side === "enemy" && actor.fleeing) { fleeStep(cs, actor); continue; }
     if (actor.side === "enemy" && !moraleCheck(cs, actor)) continue;
-    // Mind-control: a CHARMED combatant stands down (it won't act against the side
-    // that swayed it); a DOMINATED one is turned — it attacks its OWN side.
+    // Mind-control: a CHARMED foe stands down (it won't act against the side that
+    // swayed it). An enthralled (dominated) creature has already switched sides, so it
+    // simply fights for its new side below — no special retarget needed.
     if (hasStatus(actor, "charmed")) { cs.log.push(logEntry(`${actor.name} stands down, held by the charm.`, "status")); continue; }
-    const dominated = hasStatus(actor, "dominated");
     while ((actor.actionsLeft || 0) > 0) {
       // Companions hit only foes still fighting — never a fleeing or yielded foe
       // (running one down or finishing a captive is the player's call alone).
-      const opponents = dominated
-        ? (actor.side === "player" ? playerSide(cs) : livingEnemies(cs)).filter((c) => c !== actor)
-        : (actor.side === "player" ? liveAttackers(cs) : playerSide(cs));
+      const opponents = actor.side === "player" ? liveAttackers(cs) : playerSide(cs);
       if (opponents.length === 0) break;
-      if (actor.side !== "player" && !dominated && cs.player.health <= 0) break;
-      if (!npcPerform(cs, actor, opponents, dominated ? { allies: [] } : {})) break;
+      if (actor.side !== "player" && cs.player.health <= 0) break;
+      if (!npcPerform(cs, actor, opponents)) break;
       if (playerDown(cs)) return finishDefeat(cs);
     }
     if (combatOver(cs)) return checkCombatEnd(cs);
@@ -860,6 +926,7 @@ function downEnemy(cs, e) {
     e.resolved = "ko";
     cs.log.push(logEntry(`${e.name} is knocked senseless.`, "system"));
   }
+  freeThrallsOf(cs, e.uid); // a dominator's death frees everything it had enthralled
   let lined = false;
   for (const s of cs.enemies) {
     if (s === e || s.health <= 0 || s.resolved) continue;
@@ -1840,6 +1907,31 @@ export function applyCombatResult(state, cs, context = {}) {
     // If the player's mount fell, the player is afoot now too.
     const w = chars.wanderer;
     if (w?.ridingOn && fallenIds.has(w.ridingOn)) w.ridingOn = null;
+  }
+
+  // DOMINATED THRALLS — a foe the player permanently enthralled (Dominate landed)
+  // joins the party and persists OUTSIDE combat, bound until the binder (wanderer)
+  // dies/releases it or a Dispel breaks it. File a codex character from its combat
+  // stats + a permanent Enthralled condition. (Thralls slain in the fight are skipped.)
+  {
+    const chars = next.world.codex.characters || (next.world.codex.characters = {});
+    for (const a of (cs.allies || [])) {
+      if (a.enthralledBy !== "p" || a.companionId || a._dead || a.health <= 0) continue;
+      const tid = a.npcId || a.id || `thrall-${Math.random().toString(36).slice(2, 8)}`;
+      if (chars[tid]) { if (!(next.party || []).includes(tid)) next.party = [...(next.party || []), tid]; continue; }
+      const hadGear = (a.gear || []).length > 0;
+      chars[tid] = {
+        id: tid, kind: "thrall", name: a.name, race: a.race || null,
+        attributes: { ...(a.attrs || {}) },
+        health: a.maxHealth, // explicit so HP is preserved on refight
+        worn: hadGear ? a.gear.map((g) => g.id) : [],
+        naturalWeapon: hadGear ? null : (a.naturalWeaponSpec || null),
+        abilities: (a.abilities || []).map((x) => x.id),
+        conditions: [{ name: "Enthralled", remaining: null, by: "wanderer" }],
+        enthralledBy: "wanderer",
+      };
+      if (!(next.party || []).includes(tid)) next.party = [...(next.party || []), tid];
+    }
   }
 
   // Hand the narrator a blow-by-blow account so the fight can be referenced

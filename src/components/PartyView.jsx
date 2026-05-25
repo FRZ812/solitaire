@@ -111,9 +111,14 @@ export function PartyView({ state, onDismiss, onMount, onDismount }) {
                     {t.label} · {(c.relationship || 0) > 0 ? "+" : ""}{c.relationship || 0}
                   </span>
                 ); })()}
+                {(c.kind === "thrall" || (c.conditions || []).some((x) => (x.name || x) === "Enthralled")) && (
+                  <span style={{ display: "inline-block", marginLeft: "6px", marginTop: "5px", fontSize: "9px", fontWeight: 800, letterSpacing: "0.04em", padding: "2px 8px", borderRadius: radius.pill, color: "#c98bdb", border: "1px solid #c98bdb55", backgroundColor: "#c98bdb14" }}>
+                    ⛓ Enthralled
+                  </span>
+                )}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "5px", alignItems: "flex-end", flexShrink: 0 }}>
-                <button onClick={() => onDismiss(c.id)} style={partWaysStyle}>Part ways</button>
+                <button onClick={() => onDismiss(c.id)} style={partWaysStyle}>{c.kind === "thrall" ? "Release" : "Part ways"}</button>
                 {c.ridingOn && <button onClick={() => onDismount(c.id)} style={miniBtn}>Dismount</button>}
               </div>
             </div>

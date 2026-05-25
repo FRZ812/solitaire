@@ -6,7 +6,7 @@
 //
 // Pure Node — no React in the import chain.
 
-import { initCombat, playerAct, endTurn, abilityUsable, rollLoot, canStandDown, playerStandDown } from "../src/engine/combat.js";
+import { initCombat, playerAct, endTurn, abilityUsable, rollLoot, canStandDown, playerStandDown, applyCombatResult } from "../src/engine/combat.js";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 import { generateEnemy, generateEnemyGroup, allyFromCompanion } from "../src/data/bestiary.js";
@@ -164,32 +164,37 @@ function enchanter() {
   return makeFighter({
     name: "Enchanter",
     attributes: { body: 2, reflex: 3, vigor: 3, mind: 16, wit: 4, presence: 12 },
-    abilities: [{ id: "dominate", tier: "mythical" }, { id: "charm", tier: "epic" }],
+    abilities: [{ id: "dominate", tier: "mythical" }, { id: "charm", tier: "epic" }, { id: "dispel", tier: "epic" }],
     proficiencies: {},
   });
 }
 {
   const N = 600;
-  let landed = 0, hasWill = true, friendlyFire = 0, charmedStoodDown = 0, charmTrials = 0, ffTrials = 0;
+  let hasWill = true, landed = 0, converted = 0, ffTrials = 0, friendlyFire = 0;
+  let charmTrials = 0, charmedStoodDown = 0;
+  const findByUid = (cs, uid) => [cs.player, ...(cs.allies || []), ...cs.enemies].find((c) => c.uid === uid);
   for (let i = 0; i < N; i++) {
-    // DOMINATE: a dominated bandit turns on its own side (player deals no damage).
+    // DOMINATE: a landed cast PERMANENTLY enthralls the foe — it switches to your side.
     let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 2, maxTier: "common" }), { allies: [] });
     if (cs.phase === "player") {
       if (typeof cs.player.will !== "number" || typeof cs.enemies[0].will !== "number") hasWill = false;
-      const idx = cs.enemies.findIndex((e) => e.health > 0);
+      const tgt = cs.enemies.find((e) => e.health > 0);
+      const idx = cs.enemies.indexOf(tgt);
       cs = playerAct(cs, "dominate", idx);
-      if ((cs.enemies[idx].statuses || []).some((s) => s.type === "dominated")) {
+      const after = findByUid(cs, tgt.uid);
+      if (after && (after.statuses || []).some((s) => s.type === "enthralled")) {
         landed++;
-        cs = endTurn(cs); // let the enemy side act — the thrall should strike its ally
+        if ((cs.allies || []).some((a) => a.uid === tgt.uid)) converted++; // moved to your side
+        cs = endTurn(cs); // the new thrall should now strike its former ally
         ffTrials++;
-        if (cs.enemies.some((e, j) => j !== idx && e.health < e.maxHealth)) friendlyFire++;
+        if (cs.enemies.some((e) => e.health < e.maxHealth)) friendlyFire++;
       }
     }
     // CHARM: a charmed lone bandit stands down — the player takes no damage from it.
     let c2 = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
     if (c2.phase === "player") {
       c2 = playerAct(c2, "charm", 0);
-      if ((c2.enemies[0].statuses || []).some((s) => s.type === "charmed")) {
+      if ((c2.enemies[0]?.statuses || []).some((s) => s.type === "charmed")) {
         const hp = c2.player.health;
         c2 = endTurn(c2);
         charmTrials++;
@@ -200,8 +205,47 @@ function enchanter() {
   const p = (n, d) => `${Math.round((n / Math.max(1, d)) * 100)}%`;
   console.log(`  will on player + foes: ${hasWill ? "OK" : "FAIL"}`);
   console.log(`  Dominate lands on a weak-willed bandit: ${p(landed, N)} — ${landed / N >= 0.7 ? "OK" : "LOW"}`);
-  console.log(`  Dominated thrall strikes its OWN side: ${p(friendlyFire, ffTrials)} — ${friendlyFire / Math.max(1, ffTrials) >= 0.6 ? "OK" : "LOW"}`);
+  console.log(`  Enthralled foe switches to your side: ${p(converted, landed)} — ${converted / Math.max(1, landed) >= 0.99 ? "OK" : "LOW"}`);
+  console.log(`  New thrall then strikes its former ally: ${p(friendlyFire, ffTrials)} — ${friendlyFire / Math.max(1, ffTrials) >= 0.6 ? "OK" : "LOW"}`);
   console.log(`  Charmed foe stands down (no damage to you): ${p(charmedStoodDown, charmTrials)} — ${charmedStoodDown / Math.max(1, charmTrials) >= 0.9 ? "OK" : "LOW"}`);
+
+  // PERSISTENCE: enthralling the LAST foe ENDS combat AND files the thrall into the party.
+  let ended = 0, entered = 0, T = 300;
+  for (let i = 0; i < T; i++) {
+    let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
+    if (cs.phase !== "player") continue;
+    cs = playerAct(cs, "dominate", 0);
+    if (cs.phase !== "victory" && cs.phase !== "resolved") continue; // last foe converted → combat must end
+    ended++;
+    const st = { character: { vitality: cs.player.health, vitalityMax: cs.player.maxHealth, proficiencies: {}, resolve: 0, resolveMax: 0, conditions: [], inventory: { carried: [], coins: { copper: 0, silver: 0, gold: 0 } } }, world: { codex: { characters: { wanderer: {} }, items: {} } }, party: [], beats: [], apiHistory: [] };
+    const next = applyCombatResult(st, cs, {});
+    const tid = (next.party || [])[0];
+    const ch = tid && next.world.codex.characters[tid];
+    if (ch && (ch.conditions || []).some((c) => c.name === "Enthralled")) entered++;
+  }
+  console.log(`  Enthralling the LAST foe ends combat: ${ended}/${T} fights resolved`);
+  console.log(`  Thrall enters party w/ Enthralled condition: ${p(entered, ended)} — ${entered / Math.max(1, ended) >= 0.95 ? "OK" : "LOW"}`);
+
+  // DISPEL is a contest of the dispeller's will vs the ORIGINAL binder's (stored
+  // dominationWill) — not a save by the thrall. Mark a foe enthralled by a weak vs a
+  // strong binder, then have the (high-will) enchanter dispel it.
+  const freedVs = (binderWill) => {
+    let freed = 0, A = 400;
+    for (let i = 0; i < A; i++) {
+      let cs = initCombat(enchanter(), codex, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), { allies: [] });
+      if (cs.phase !== "player") { A--; continue; }
+      const e = cs.enemies[0];
+      e.enthralledBy = "x"; e.dominationWill = binderWill; e.enthralledFrom = "enemy";
+      e.statuses = [...(e.statuses || []), { type: "enthralled", value: 1, duration: 99999 }];
+      cs = playerAct(cs, "dispel", 0);
+      const still = [cs.player, ...(cs.allies || []), ...cs.enemies].find((c) => c.enthralledBy === "x");
+      if (!still) freed++;
+    }
+    return Math.round((freed / Math.max(1, A)) * 100);
+  };
+  const weak = freedVs(2), strong = freedVs(40);
+  console.log(`  Dispel frees a WEAK-binder thrall: ${weak}% — ${weak >= 80 ? "OK" : "LOW"}`);
+  console.log(`  Dispel fails vs a STRONG binder: ${strong}% freed — ${strong <= 20 ? "OK" : "HIGH"}`);
 }
 console.log("");
 
