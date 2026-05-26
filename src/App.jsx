@@ -666,21 +666,10 @@ export function Solitaire() {
       inventory_changes: Object.keys(inv).length ? inv : undefined,
       discoveries: wornIds.length ? { characters: [{ id: "wanderer", worn: wornIds }] } : undefined,
     };
-    // A pick-and-play TEMPLATE ships its own polished opening scene — seed it VERBATIM
-    // (no narrator call), identical every run, and prime apiHistory so the first player
-    // action continues coherently. (The limbo/custom path below still generates live.)
-    if (setup.opening) {
-      const seeded = applyBeat({ ...state, beats: [] }, {
-        ...beat,
-        narration: setup.opening,
-        _userMsg: `[CHARACTER CREATION] ${setup.name} has entered the world; the opening scene is already set (shown to the player). Do NOT emit character_setup, do NOT re-narrate the arrival — continue from here as a normal beat on the player's next action.`,
-        _raw: JSON.stringify({ narration: setup.opening }),
-      });
-      setManualCreation(false);
-      setCreationEntered(false);
-      setState(seeded);
-      return;
-    }
+    // Both template and custom builds open the same way: a single narrator call
+    // that arrives the character INSIDE Whitemarch (the global start), weaving in
+    // their backstory. (Templates' old verbatim Drowned-Rat openings were retired
+    // when the map was rebuilt around the city — see the opener below.)
     let built = applyBeat(state, beat); // created=true; identity, kit, and gear applied
     // Drop the limbo opening narration — a locally-built character skips the
     // interview entirely, so the log should begin with their arrival, not the
@@ -697,7 +686,7 @@ export function Solitaire() {
     ].filter(Boolean).join(", ");
     const originStr = originLabel(setup.origin);
     const backstory = [setup.backstory, ...(Array.isArray(setup.knows) ? setup.knows : [])].filter(Boolean).join(" ");
-    const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving at the Drowned Rat — a lone roadside inn far from any town — in the rain, grounding the scene in who they are, their origin, and what (from the backstory) has brought them here, then proceed as a normal first beat.`;
+    const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving INSIDE the walled capital of Whitemarch, in the press and clamour of the Grand Market's Grain Square (the city's heart, behind the Great Wall), grounding the scene in who they are, their origin, and what (from the backstory) has brought them to the city, then proceed as a normal first beat.`;
     await runNarratorTurn(built, opener);
   }
 

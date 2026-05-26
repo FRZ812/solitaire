@@ -5,5 +5,8 @@ dist/
 .DS_Store
 supabase/.temp/
 
+# Regenerable verification render (scripts/render-whitemarch.mjs)
+scripts/whitemarch-map.png
+
 # Local Claude Code settings (per-machine permissions allowlist, MCP enables, etc.)
 .claude/settings.local.json

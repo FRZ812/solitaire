@@ -1,5 +1,4 @@
 import React from "react";
-import drownedInnBg from "../assets/drowned_inn_bg.png";
 
 import { TERRAINS } from "../data/terrains.js";
 import { getBiome } from "../data/biomes.js";
@@ -225,32 +224,6 @@ export function SceneBackdrop({ state }) {
   const poiType = tile.poi?.type || null;
   const location = currentLocationName(state);
   const terrainLabel = TERRAINS[terrain]?.label || terrain;
-
-  const isDrownedInn = tile.poi?.name === "The Drowned Rat" || (cur.x === 0 && cur.y === 0);
-
-  if (isDrownedInn) {
-    return (
-      <div
-        aria-label={`${location}, ${terrainLabel}, ${biome.name}`}
-        style={{
-          position: "absolute",
-          inset: 0,
-          overflow: "hidden",
-          backgroundColor: "#171411",
-          backgroundImage: `radial-gradient(circle at 50% 30%, rgba(20, 29, 29, 0.45) 0%, rgba(11, 15, 14, 0.9) 90%), url(${drownedInnBg})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-        }}
-      >
-        <div style={{
-          position: "absolute",
-          inset: 0,
-          background: "linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%)",
-        }} />
-      </div>
-    );
-  }
 
   return (
     <div
