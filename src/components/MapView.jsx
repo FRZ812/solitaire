@@ -637,6 +637,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
           position: "relative",
           cursor: "grab",
           userSelect: "none",
+          perspective: "2400px",
+          perspectiveOrigin: "center center",
         }}
       >
         <div ref={transformRef} style={{
@@ -644,7 +646,19 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
           top: "50%", left: "50%",
           transformOrigin: "center center",
           willChange: "transform",
+          transformStyle: "preserve-3d",
         }}>
+          {/* Semi-3D isometric tilt — rotated as a child of transformRef so
+              the zoom/pan transform (written imperatively by useZoomPan in
+              screen space) composes cleanly with the tilt. The container
+              supplies the perspective; transformRef preserves 3D so this
+              child's rotateX isn't flattened by the 2D parent. */}
+          <div style={{
+            transform: "rotateX(52deg)",
+            transformOrigin: "center center",
+            transformStyle: "preserve-3d",
+            filter: "drop-shadow(0 28px 36px rgba(0,0,0,0.55))",
+          }}>
           <svg width={SVG_SIZE} height={SVG_SIZE} style={{ display: "block" }}>
             {hexes.map(({ x, y, px, py }) => {
               const tile = getTile(state, x, y);
@@ -843,6 +857,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               );
             })}
           </svg>
+          </div>
         </div>
         {/* Legend toggle — bottom-center of the map. Lives inside the map area
             so it always clears the location panel below; stops the press from
