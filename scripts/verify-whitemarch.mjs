@@ -1,6 +1,7 @@
 // Throwaway verifier for the Whitemarch rebuild. Exercises the REAL engine
 // (findPath / edgeAllowed / getTile) against the REAL data so the wall + gate
-// + high-wall behaviour is proven, not assumed. Run: node scripts/verify-whitemarch.mjs
+// + high-wall + streets-vs-buildings partition is proven, not assumed.
+// Run: node scripts/verify-whitemarch.mjs
 import { HANDCRAFTED } from "../src/data/handcrafted-tiles.js";
 import { getTile, findPath, edgeAllowed, isPassable } from "../src/engine/world.js";
 
@@ -12,41 +13,85 @@ const HEX_DIRS = [
 // A state where everything in a generous box is "seen" so findPath can route
 // freely — the ONLY thing that should stop it is the doors graph (the walls).
 const seen = {};
-for (let x = -8; x <= 8; x++) for (let y = -9; y <= 9; y++) seen[`${x},${y}`] = true;
+for (let x = -14; x <= 14; x++) for (let y = -14; y <= 14; y++) seen[`${x},${y}`] = true;
 const state = { world: { tiles: {}, currentTile: { x: 0, y: 0 }, seen } };
 
 const k = (c) => `${c.x},${c.y}`;
 const tile = (c) => getTile(state, c.x, c.y);
 
-// The interior list mirrors sealed-structures WHITEMARCH_INTERIOR.
+// Authored hex partitions. "Interior" = walkable city ground BEHIND the
+// wall (streets + buildings + gate complex). "Wall-top" hexes are the
+// walkway on top of the wall — passable, but isolated from city streets
+// except via stairs (handled separately). Wall faces and water are
+// impassable; the road approach is outside the wall.
+const APPROACH_KEY = "0,-7";
 const INTERIOR = Object.keys(HANDCRAFTED)
   .filter((key) => {
     const t = HANDCRAFTED[key];
-    return t.terrain !== "water" && key !== "0,-3"; // exclude river + outside approach
+    if (t.terrain === "water") return false;
+    if (t.terrain === "wall") return false;
+    if (t.terrain === "wall_top") return false;
+    if (key === APPROACH_KEY) return false;
+    return true;
   })
   .map((key) => { const [x, y] = key.split(",").map(Number); return { x, y }; });
 
+const STREETS = INTERIOR.filter((c) => tile(c).terrain === "street");
+const BUILDINGS = INTERIOR.filter((c) => tile(c).terrain !== "street");
+const WALL_TOPS = Object.keys(HANDCRAFTED)
+  .filter((key) => HANDCRAFTED[key].terrain === "wall_top")
+  .map((key) => { const [x, y] = key.split(",").map(Number); return { x, y }; });
+const STAIRS = Object.keys(HANDCRAFTED)
+  .filter((key) => HANDCRAFTED[key].poi?.type === "stair")
+  .map((key) => { const [x, y] = key.split(",").map(Number); return { x, y }; });
+
 const GRAIN = { x: 0, y: 0 };
-const APPROACH = { x: 0, y: -3 };
-const TOLL = { x: 0, y: -2 };
+const APPROACH = { x: 0, y: -7 };
+const OUTER_GATE = { x: 0, y: -6 }; // Outer Ward W — the wall-crossing hex
 const INNER_GATE = { x: 0, y: 3 };
 const COUNCIL = { x: 0, y: 4 };
-const SEWER = { x: 1, y: 2 };
+const SEWER = { x: 3, y: 5 };
 const OATH = { x: -1, y: 3 };
+
+// Buildings that are EXEMPT from the no-building-to-building rule because
+// a sealed structure deliberately links them: the Citadel's internal pair
+// (Inner Gate ↔ Iron Palace) and every internal edge of the Crown Gate's
+// 6-hex complex (Inner Ward / Gatehouse / Outer Ward, west and east).
+const GATE_COMPLEX_INTERNAL_LINKS = [
+  [{ x: 0, y: -4 }, { x: 1, y: -4 }], // Inner Ward W ↔ E
+  [{ x: 0, y: -4 }, { x: 0, y: -5 }], // Inner Ward W ↔ Gatehouse W
+  [{ x: 1, y: -4 }, { x: 1, y: -5 }], // Inner Ward E ↔ Gatehouse E
+  [{ x: 0, y: -5 }, { x: 1, y: -5 }], // Gatehouse W ↔ E
+  [{ x: 0, y: -5 }, { x: 0, y: -6 }], // Gatehouse W ↔ Outer Ward W
+  [{ x: 1, y: -5 }, { x: 1, y: -6 }], // Gatehouse E ↔ Outer Ward E
+  [{ x: 0, y: -6 }, { x: 1, y: -6 }], // Outer Ward W ↔ E
+];
+const LINKED_BUILDING_PAIRS = new Set([
+  `${k(INNER_GATE)}|${k(COUNCIL)}`,
+  `${k(COUNCIL)}|${k(INNER_GATE)}`,
+  ...GATE_COMPLEX_INTERNAL_LINKS.flatMap(([a, b]) => [
+    `${k(a)}|${k(b)}`,
+    `${k(b)}|${k(a)}`,
+  ]),
+]);
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.log("  FAIL:", msg); } };
 
 console.log("Whitemarch rebuild — engine verification\n");
+console.log(`  ${STREETS.length} streets + ${BUILDINGS.length} buildings (interior total ${INTERIOR.length})`);
+console.log(`  ${WALL_TOPS.length} wall-top hexes + ${STAIRS.length} wall-stairs`);
+console.log(`  Grain Square at (0,0); player starts here.\n`);
 
 // 1) Every PUBLIC interior tile reachable from Grain Square (start inside).
 console.log("1) Reachability from Grain Square (start):");
-const RESTRICTED = new Set(["0,4"]); // Council Hall sits behind the High Wall
+const RESTRICTED = new Set([k(COUNCIL)]); // Iron Palace sits behind the High Wall
 for (const c of INTERIOR) {
   if (k(c) === k(GRAIN)) continue;
   if (k(c) === k(SEWER)) continue; // hidden descent — tested separately below
   const path = findPath(state, GRAIN, c);
-  const name = tile(c).poi?.name || tile(c).poi?.partName || k(c);
+  const t = tile(c);
+  const name = t.poi?.name || t.poi?.partName || k(c);
   if (RESTRICTED.has(k(c))) {
     ok(!!path, `${name} (${k(c)}) reachable via its gate`);
   } else {
@@ -58,35 +103,39 @@ for (const c of INTERIOR) {
 console.log("\n2) Sewer Mouth is sealed off the street:");
 ok(findPath(state, GRAIN, SEWER) === null, "Sewer Mouth has no open approach");
 
-// 3) The Great Wall: the ONLY open edge from interior to outside is the gate.
+// 3) The Great Wall: the ONLY open edge from the city system (interior +
+// wall-walk + stairs) to the OUTSIDE world is the Crown Gate. Stair ↔
+// wall-top edges and gatehouse ↔ wall-top edges are internal to the wall
+// infrastructure — they aren't wall breaches.
 console.log("\n3) Great Wall — only the Crown Gate breaches it:");
 const interiorSet = new Set(INTERIOR.map(k));
+const citySystem = new Set([...INTERIOR.map(k), ...WALL_TOPS.map(k)]);
 const crossings = [];
-for (const c of INTERIOR) {
+for (const c of [...INTERIOR, ...WALL_TOPS]) {
   for (const d of HEX_DIRS) {
     const n = { x: c.x + d.x, y: c.y + d.y };
-    if (interiorSet.has(k(n))) continue;            // inside-inside, ignore
+    if (citySystem.has(k(n))) continue;             // inside the wall system, not a breach
     const nt = getTile(state, n.x, n.y);
-    if (!isPassable(nt)) continue;                   // water/impassable: not a crossing
+    if (!isPassable(nt)) continue;                   // water/wall/impassable: not a crossing
     if (edgeAllowed(tile(c), c.x, c.y, nt, n.x, n.y)) crossings.push(`${k(c)} -> ${k(n)}`);
   }
 }
 ok(crossings.length === 1, `exactly one open wall crossing (found ${crossings.length}: ${crossings.join(", ")})`);
-ok(crossings[0] === `${k(TOLL)} -> ${k(APPROACH)}`, "the open crossing is Toll Hall -> Crown Road Approach");
+ok(crossings[0] === `${k(OUTER_GATE)} -> ${k(APPROACH)}`, "the open crossing is Outer Ward W -> Crown Road Approach");
 
 // 4) You can actually leave the city — and only through the gate.
 console.log("\n4) Leaving the city:");
-const out = findPath(state, GRAIN, { x: 0, y: -6 });
+const out = findPath(state, GRAIN, { x: 0, y: -9 });
 ok(!!out, "a route from Grain Square out to the open country exists");
-ok(out && out.some((p) => p.x === TOLL.x && p.y === TOLL.y), "the route passes through Toll Hall (the gate)");
+ok(out && out.some((p) => p.x === OUTER_GATE.x && p.y === OUTER_GATE.y), "the route passes through the Outer Ward (the gate)");
 ok(out && out.some((p) => p.x === APPROACH.x && p.y === APPROACH.y), "the route passes through the Crown Road Approach");
 
-// 5) The High Wall: Council Hall reachable ONLY through the Inner Gate.
-console.log("\n5) High Wall — Council Hall only via the Inner Gate:");
+// 5) The High Wall: Iron Palace reachable ONLY through the Inner Gate.
+console.log("\n5) High Wall — Iron Palace only via the Inner Gate:");
 const toCouncil = findPath(state, GRAIN, COUNCIL);
-ok(!!toCouncil, "Council Hall is reachable (through the Inner Gate)");
-ok(toCouncil && toCouncil.some((p) => p.x === INNER_GATE.x && p.y === INNER_GATE.y), "the route to the Council passes through the Inner Gate");
-// Every open edge into the Council must come from the Inner Gate.
+ok(!!toCouncil, "Iron Palace is reachable (through the Inner Gate)");
+ok(toCouncil && toCouncil.some((p) => p.x === INNER_GATE.x && p.y === INNER_GATE.y), "the route to the Iron Palace passes through the Inner Gate");
+// Every open edge into Iron Palace must come from the Inner Gate.
 const councilOpenFrom = [];
 for (const d of HEX_DIRS) {
   const n = { x: COUNCIL.x + d.x, y: COUNCIL.y + d.y };
@@ -95,7 +144,7 @@ for (const d of HEX_DIRS) {
   if (edgeAllowed(tile(COUNCIL), COUNCIL.x, COUNCIL.y, nt, n.x, n.y)) councilOpenFrom.push(k(n));
 }
 ok(councilOpenFrom.length === 1 && councilOpenFrom[0] === k(INNER_GATE),
-   `Council opens only to the Inner Gate (found: ${councilOpenFrom.join(", ") || "none"})`);
+   `Iron Palace opens only to the Inner Gate (found: ${councilOpenFrom.join(", ") || "none"})`);
 // And the Inner Gate's only street-side opening is the Great Oath Steps.
 const gateOpenFrom = [];
 for (const d of HEX_DIRS) {
@@ -105,7 +154,153 @@ for (const d of HEX_DIRS) {
   if (edgeAllowed(tile(INNER_GATE), INNER_GATE.x, INNER_GATE.y, nt, n.x, n.y)) gateOpenFrom.push(k(n));
 }
 ok(gateOpenFrom.length === 2 && gateOpenFrom.includes(k(COUNCIL)) && gateOpenFrom.includes(k(OATH)),
-   `Inner Gate opens only to Council + Great Oath Steps (found: ${gateOpenFrom.join(", ")})`);
+   `Inner Gate opens only to Iron Palace + Great Oath Steps (found: ${gateOpenFrom.join(", ")})`);
+
+// 6) Streets-vs-buildings invariants — the core of the rescope.
+console.log("\n6) Streets vs buildings — the path graph routes over streets:");
+
+// 6a) No building <-> building edges in the doors graph (the rule that stops
+// findPath from cutting diagonally through chains of districts). The High
+// Wall's internal Citadel link is the only sanctioned exception.
+const illegalBuildingEdges = [];
+const buildingSet = new Set(BUILDINGS.map(k));
+for (const c of BUILDINGS) {
+  for (const d of HEX_DIRS) {
+    const n = { x: c.x + d.x, y: c.y + d.y };
+    if (!buildingSet.has(k(n))) continue;
+    if (LINKED_BUILDING_PAIRS.has(`${k(c)}|${k(n)}`)) continue;
+    if (edgeAllowed(tile(c), c.x, c.y, tile(n), n.x, n.y)) {
+      illegalBuildingEdges.push(`${k(c)} -> ${k(n)}`);
+    }
+  }
+}
+ok(illegalBuildingEdges.length === 0,
+   `no building-to-building edges (found: ${illegalBuildingEdges.join(", ") || "none"})`);
+
+// 6b) Every reachable-from-the-street building has at least one open edge
+// to a street OR (for gate-complex member hexes) an open passable edge —
+// the gate complex connects internally and to the outside road, neither
+// of which is a street. Sanctioned exemptions: Iron Palace (behind the
+// High Wall) and Sewer Mouth (explicitly sealed).
+const streetSet = new Set(STREETS.map(k));
+const GATE_COMPLEX = new Set([
+  "0,-4", "1,-4", "0,-5", "1,-5", "0,-6", "1,-6",
+]);
+for (const c of BUILDINGS) {
+  if (RESTRICTED.has(k(c))) continue; // Iron Palace is behind the High Wall
+  const tt = tile(c);
+  if (tt.doors && tt.doors.length === 0) continue; // explicitly sealed (Sewer Mouth)
+  const streetDoors = [];
+  for (const d of HEX_DIRS) {
+    const n = { x: c.x + d.x, y: c.y + d.y };
+    if (!streetSet.has(k(n))) continue;
+    if (edgeAllowed(tile(c), c.x, c.y, tile(n), n.x, n.y)) streetDoors.push(k(n));
+  }
+  let hasDoor = streetDoors.length > 0;
+  // Gate-complex hexes open to other gate-complex hexes and (for the
+  // outermost layer) to the road outside. Treat any open passable edge as
+  // a valid door for them.
+  if (!hasDoor && GATE_COMPLEX.has(k(c))) {
+    for (const d of HEX_DIRS) {
+      const n = { x: c.x + d.x, y: c.y + d.y };
+      const nt = getTile(state, n.x, n.y);
+      if (!isPassable(nt)) continue;
+      if (edgeAllowed(tile(c), c.x, c.y, nt, n.x, n.y)) { hasDoor = true; break; }
+    }
+  }
+  const t = tile(c);
+  const name = t.poi?.name || t.poi?.partName || k(c);
+  ok(hasDoor, `${name} (${k(c)}) has a street door`);
+}
+
+// 6c) Every street meshes with at least one adjacent interior hex (so it
+// actually carries traffic — a street with no neighbours is just a tile).
+for (const c of STREETS) {
+  let degree = 0;
+  for (const d of HEX_DIRS) {
+    const n = { x: c.x + d.x, y: c.y + d.y };
+    if (!interiorSet.has(k(n))) continue;
+    if (edgeAllowed(tile(c), c.x, c.y, tile(n), n.x, n.y)) degree++;
+  }
+  const t = tile(c);
+  const name = t.poi?.name || t.poi?.partName || k(c);
+  ok(degree > 0, `${name} (${k(c)}) is connected to the city`);
+}
+
+// 7) Movement-cost sanity — paths should now visibly route through streets,
+// so the shortest route from Grain Square to Prison Gate (far west wall)
+// should step on at least one street hex past the start.
+console.log("\n7) Paths route through streets:");
+const PRISON = { x: -2, y: 3 };
+const toPrison = findPath(state, GRAIN, PRISON);
+ok(!!toPrison, "Prison Gate is reachable");
+const streetStops = (toPrison || []).slice(1, -1).filter((p) => tile(p).terrain === "street").length;
+ok(streetStops > 0, `the route to Prison Gate uses at least one street hex (used ${streetStops})`);
+
+// 8) STAGE 2 — the wall-walk: stairs let you up, the wall-top meshes along
+// the ring, and the walk does NOT connect to the outside.
+console.log("\n8) Wall-walk — stairs + wall-top ring:");
+
+// 8a) Every stair has an open edge BOTH to its city-side street and to its
+// wall-top neighbour (the climb works in both directions).
+for (const s of STAIRS) {
+  const t = tile(s);
+  const name = t.poi?.name || k(s);
+  if (!Array.isArray(t.doors) || t.doors.length < 2) {
+    ok(false, `${name} (${k(s)}) declares fewer than 2 doors`);
+    continue;
+  }
+  let openStreet = false, openTop = false;
+  for (const d of t.doors) {
+    const nt = getTile(state, d.x, d.y);
+    if (!edgeAllowed(t, s.x, s.y, nt, d.x, d.y)) continue;
+    if (nt.terrain === "street") openStreet = true;
+    else if (nt.terrain === "wall_top") openTop = true;
+  }
+  ok(openStreet && openTop, `${name} (${k(s)}) opens to BOTH a street and a wall-top`);
+}
+
+// 8b) Every wall-top hex meshes with at least one other wall-top hex (the
+// ring carries traffic — an isolated wall-top is just a tile).
+const topSet = new Set(WALL_TOPS.map(k));
+let ringEdges = 0;
+for (const c of WALL_TOPS) {
+  let topNeighbours = 0;
+  for (const d of HEX_DIRS) {
+    const n = { x: c.x + d.x, y: c.y + d.y };
+    if (!topSet.has(k(n))) continue;
+    if (edgeAllowed(tile(c), c.x, c.y, tile(n), n.x, n.y)) topNeighbours++;
+  }
+  if (topNeighbours > 0) ringEdges++;
+  ok(topNeighbours > 0, `wall-top ${k(c)} meshes with at least one other wall-top hex`);
+}
+
+// 8c) From Grain Square you can reach a wall-top hex (the wall-walk is
+// accessible). Test by routing to the wall-top right of the Dragon Stair.
+const dragonTop = { x: 3, y: -5 };
+const toTop = findPath(state, GRAIN, dragonTop);
+ok(!!toTop, "Grain Square → wall-top at Dragon Stair is reachable");
+const usedStair = (toTop || []).some((p) => tile(p).poi?.type === "stair");
+ok(usedStair, "the route to the wall-top passes through a stair");
+
+// 8d) The wall-walk does NOT cross the outer wall — no wall-top hex has an
+// open edge to anything beyond the wall (outside the biome interior).
+const wallTopExternalCrossings = [];
+for (const c of WALL_TOPS) {
+  for (const d of HEX_DIRS) {
+    const n = { x: c.x + d.x, y: c.y + d.y };
+    const nt = getTile(state, n.x, n.y);
+    if (!isPassable(nt)) continue;
+    if (nt.terrain === "wall_top") continue;
+    if (HANDCRAFTED[k(n)]?.poi?.type === "stair") continue;
+    if (HANDCRAFTED[k(n)]?.poi?.parent === "whitemarch-crown-gate") continue;
+    if (edgeAllowed(tile(c), c.x, c.y, nt, n.x, n.y)) {
+      wallTopExternalCrossings.push(`${k(c)} -> ${k(n)}`);
+    }
+  }
+}
+ok(wallTopExternalCrossings.length === 0,
+   `no wall-top opens to anything other than wall-top / stair / gatehouse (found: ${wallTopExternalCrossings.join(", ") || "none"})`);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed.`);
 process.exit(fail === 0 ? 0 : 1);

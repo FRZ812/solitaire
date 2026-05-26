@@ -13,7 +13,7 @@ import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/profic
 import { knownBuffSpells } from "../data/buff-spells.js";
 import { ArsenalView } from "./ArsenalView.jsx";
 import { AttributeDetail } from "./AttributeDetail.jsx";
-import { InfoButton, InfoModal } from "./InfoTip.jsx";
+import { InfoModal } from "./InfoTip.jsx";
 import { glossaryById, conditionInfo } from "../data/glossary.js";
 import { condName, condNames } from "../data/conditions.js";
 import { lightStatus } from "../engine/light.js";
@@ -60,8 +60,6 @@ function AbilityChip({ name, tier }) {
   );
 }
 
-// Small "· tap to learn" hint appended to section headers.
-const tapHint = { fontWeight: 400, fontSize: "9px", color: "rgba(215,167,111,0.5)", letterSpacing: 0, textTransform: "none" };
 // Transparent button wrappers so existing display components become tappable.
 const bareBtn = { background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" };
 const barBtn = { ...bareBtn, width: "100%", textAlign: "left", display: "block" };
@@ -155,7 +153,7 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
 
         {/* Conditions — surfaced first. Tap any to learn what it does. */}
         <div>
-          <SectionHeader>Conditions <span style={tapHint}>· tap to learn</span></SectionHeader>
+          <SectionHeader>Conditions</SectionHeader>
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
             {state.character.conditions.length === 0
               ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.5)", fontStyle: "italic" }}>None</span>
@@ -167,7 +165,7 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
 
         {/* Vitals — Vitality + Resolve (+ light), grouped with the needs below. Tap to learn. */}
         <div>
-          <SectionHeader>Vitals <span style={tapHint}>· tap to learn</span></SectionHeader>
+          <SectionHeader>Vitals</SectionHeader>
           <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
             <button onClick={() => showInfo("vitality")} style={barBtn}>
               <StatBar label="Vitality" value={state.character.vitality} max={state.character.vitalityMax} />
@@ -176,11 +174,14 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
               <StatBar label="Resolve" value={state.character.resolve} max={state.character.resolveMax}
                        gradient="linear-gradient(90deg, #6d4a8a 0%, #a06fc4 100%)" />
             </button>
-            <div style={{ display: "flex", alignItems: "center", gap: "7px", padding: "4px 2px" }}>
-              <button onClick={() => showInfo("light")} style={{ ...bareBtn, display: "flex", alignItems: "center", gap: "7px", flex: 1, minWidth: 0 }}>
-                <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: colors.gold }}>Light</span>
-                <span style={{ fontSize: "12px", color: colors.parchment }}>{lightStatus(state).text}</span>
-                <InfoButton onClick={() => showInfo("light")} />
+            <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+              <button onClick={() => showInfo("light")} style={{
+                ...bareBtn,
+                flex: 1, minWidth: 0,
+                display: "flex", justifyContent: "space-between", alignItems: "baseline",
+              }}>
+                <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.14em", color: "rgba(237, 228, 208, 0.72)" }}>Light</span>
+                <span style={{ fontSize: "11px", color: colors.parchment, fontWeight: 700 }}>{lightStatus(state).text}</span>
               </button>
               {lightStatus(state).lit && (
                 <button onClick={() => onExtinguish?.()} style={{
@@ -195,7 +196,7 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
 
         {/* Needs — tap to learn */}
         <div>
-          <SectionHeader>Needs <span style={tapHint}>· tap to learn</span></SectionHeader>
+          <SectionHeader>Needs</SectionHeader>
           <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
             <button onClick={() => showInfo("hunger")} style={barBtn}><NeedBar label="Hunger" value={state.character.needs.hunger} /></button>
             <button onClick={() => showInfo("thirst")} style={barBtn}><NeedBar label="Thirst" value={state.character.needs.thirst} /></button>
@@ -206,7 +207,7 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
         {/* Attributes — effective (base + growth earned by grinding proficiencies).
             Tap one to see its always-on bonuses + the threshold-unlock ladder. */}
         <div>
-          <SectionHeader>Attributes <span style={{ fontWeight: 400, fontSize: "9px", color: "rgba(215,167,111,0.5)", letterSpacing: 0, textTransform: "none" }}>· tap for thresholds</span></SectionHeader>
+          <SectionHeader>Attributes</SectionHeader>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
             {ATTR_KEYS.map(k => <AttrBlock key={k} label={ATTR_LABELS[k]} score={attrs[k]} active={openAttr === k} onClick={() => setOpenAttr((p) => (p === k ? null : k))} />)}
           </div>
@@ -240,7 +241,7 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
 
         {/* Combat — stats derived from attributes + equipped gear. */}
         <div>
-          <SectionHeader>Combat <span style={tapHint}>· tap to learn</span></SectionHeader>
+          <SectionHeader>Combat</SectionHeader>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginBottom: "8px" }}>
             <CombatStat label="Armor" value={combat.armor} onClick={() => showInfo("armor")} />
             <CombatStat label="Ward" value={combat.ward} onClick={() => showInfo("ward")} />

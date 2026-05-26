@@ -5,14 +5,38 @@ import { RIVERS } from "./rivers.js";
 import { computeSightFrom, computeSightFromRadius } from "../engine/world.js";
 import { bodyWeightForRace } from "../engine/weight.js";
 import { carryCapacityFor } from "../engine/attributes.js";
+import { getBiome, BIOMES } from "./biomes.js";
 
-// The player starts inside Whitemarch, at Grain Square in the heart of the Grand
-// Market (0,0). Sight reveals the immediate market and the nearest wards; the
-// rest of the walled city — and everything beyond the Great Wall — is fogged
-// until walked. (RIVERS/RUMORED/FABLED are cleared to a clean slate, so those
-// loops are no-ops; the city's own river is authored as handcrafted tiles.)
+// The player starts inside Whitemarch, at Grain Square in the heart of the
+// Grand Market (0,0). Whitemarch is their home city — they grew up here,
+// every lane is known, every wall-tower is named — so the WHOLE biome rect
+// is revealed on start (and re-revealed on load via the migrator below).
+// That covers the interior, the 3-hex Great Wall band (so the wall is
+// visible, not fogged), the gate complex, the Approach, the river, and the
+// immediate procedural surroundings inside the biome. Everything beyond
+// the biome (the wider continent) stays fogged until walked.
+function revealWhitemarch(seen) {
+  const whitemarch = BIOMES.find((b) => b.id === "whitemarch");
+  if (whitemarch?.bounds) {
+    const { xmin, xmax, ymin, ymax } = whitemarch.bounds;
+    for (let x = xmin; x <= xmax; x++) {
+      for (let y = ymin; y <= ymax; y++) {
+        seen[`${x},${y}`] = true;
+      }
+    }
+  }
+  // Defensive backstop — also reveal any HANDCRAFTED Whitemarch hex that
+  // somehow falls outside the bbox (shouldn't happen with the current
+  // rect, but cheap insurance against authoring drift).
+  for (const key of Object.keys(HANDCRAFTED)) {
+    const [x, y] = key.split(",").map(Number);
+    if (getBiome(x, y).id === "whitemarch") seen[key] = true;
+  }
+  return seen;
+}
 function makeInitialSeen() {
   let seen = computeSightFrom(0, 0);
+  seen = revealWhitemarch(seen);
   for (const r of RIVERS) {
     for (const p of r.path) {
       seen = computeSightFromRadius(p.x, p.y, 1, seen);
@@ -628,6 +652,12 @@ export function migrateCodex(state) {
       ch.knows = [...new Set(ch.knows.filter((f) => typeof f === "string" && f.trim()))];
     }
   }
+  // Reveal Whitemarch on every load — even saves made before this migration
+  // existed get the city's full footprint added to their seen set. The
+  // player has lived in this city; the streetlamps are lit; fog of war
+  // inside the wall is just friction. (Hexes outside the wall stay fogged
+  // until walked.)
+  if (next.world.seen) next.world.seen = revealWhitemarch(next.world.seen);
   // Weight + riding (added with mounts): back-fill the per-character fields so old
   // saves load. carryCapacityMax for the player is (re)derived in App's load path.
   for (const ch of Object.values(ownCodex.characters || {})) {
