@@ -780,9 +780,12 @@ function dealHit(cs, attacker, target, profile, def, tier) {
     return { dealt: 0, crit: false };
   }
 
-  // Execute (Body 30): a landed blow finishes a foe already at death's door.
+  // Execute (Body 30): any landed hit on a foe already below the threshold
+  // (pre-damage HP) is an instant kill. The threshold is checked against
+  // `before` — the foe must already be in execute range when the swing lands,
+  // not arrive there because of it.
   if (dealt > 0 && (attacker.execute || 0) > 0 && target.health > 0
-      && target.health <= Math.round((target.maxHealth || 0) * attacker.execute)) {
+      && before <= Math.round((target.maxHealth || 0) * attacker.execute)) {
     target.health = 0;
     cs.log.push(logEntry(`${attacker.name} executes ${target.name}.`, attacker.side === "player" ? "crit" : "enemy"));
   }

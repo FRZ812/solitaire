@@ -3,12 +3,45 @@
 // can be surfaced clearly.
 import { supabase } from "./supabase-client.js";
 
-// `window.location.origin` is scheme + host only — it strips the path. On
-// GitHub Pages the app lives at `<origin>/solitaire/`, so we must rebuild
-// the deployed URL ourselves. Vite's `import.meta.env.BASE_URL` is "/" in
-// dev and "/solitaire/" in the production web build (set via vite.config.js).
+// Return-to URL for OAuth / email-link redirects. Uses the FULL current URL
+// (origin + path) the user was on when they clicked sign-in, stripped of any
+// existing query/hash so we don't carry an old auth payload back through the
+// round-trip. This keeps the redirect dynamic across every environment —
+// `localhost:5174/`, an installed PWA at a custom port, the GitHub Pages
+// deploy at `<user>.github.io/solitaire/`, a custom domain — without
+// hard-coding any of them.
+//
+// For this to actually work, every origin the app may run from must also be
+// listed in the Supabase dashboard under Auth → URL Configuration →
+// "Redirect URLs" (Site URL is the SILENT FALLBACK when no allowed match is
+// found — which is exactly why an un-listed localhost dev URL bounces back
+// to the deployed GitHub Pages URL instead of returning to dev). The
+// recommended dev allowlist entry is the wildcard `http://localhost:*/**`,
+// which covers every Vite port and any path.
+//
+// .env.local escape hatch: VITE_AUTH_REDIRECT_URL lets you force a specific
+// redirect URL (one you've verified is in the allowlist), useful if you
+// want to test the prod-allowed URL from a dev build without editing the
+// Supabase dashboard.
 function appUrl() {
-  return `${window.location.origin}${import.meta.env.BASE_URL}`;
+  const override = import.meta.env.VITE_AUTH_REDIRECT_URL;
+  if (override) {
+    if (import.meta.env.DEV) console.info("[auth] redirectTo (env override):", override);
+    return override;
+  }
+  const u = new URL(window.location.href);
+  u.search = "";
+  u.hash = "";
+  const url = u.toString();
+  if (import.meta.env.DEV) {
+    console.info(
+      "[auth] redirectTo:", url,
+      "\n[auth] If sign-in bounces to the prod URL, this exact value (or a wildcard like " +
+      `"${u.origin}/**" or "http://localhost:*/**") must be in Supabase dashboard → ` +
+      "Authentication → URL Configuration → Redirect URLs."
+    );
+  }
+  return url;
 }
 
 export async function getCurrentUser() {

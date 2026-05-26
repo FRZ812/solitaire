@@ -38,8 +38,8 @@ export const BIOMES = [
     name: "Whitemarch",
     faction: "whitemarch-iron",
     description: "The walled capital where the iron-shilling is minted — black-and-white gate-towers over a Great Wall that rings wards of market, dock, chain, court, and citadel, with the Whitewend running brown beneath the quays. Inside the wall the country gives way wholly to stone, smoke, and crowd.",
-    ...rect({ xmin: -2, xmax: 3, ymin: -3, ymax: 4 }),
-    terrainWeights: { settlement: 0.72, road: 0.14, plains: 0.09, water: 0.05 },
+    ...rect({ xmin: -8, xmax: 9, ymin: -10, ymax: 10 }),
+    terrainWeights: { settlement: 0.34, street: 0.24, wall: 0.18, road: 0.10, plains: 0.08, water: 0.06 },
     poiChance: 0.02,
     extraSpawns: {
       settlement: [

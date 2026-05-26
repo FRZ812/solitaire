@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./Icon.jsx";
 import { iconButtonStyle, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle, glass, shadow } from "./tokens.js";
@@ -52,13 +53,18 @@ export function ArsenalView({ character, onClose }) {
     .filter((p) => p.xp > 0)
     .sort((a, b) => b.rating - a.rating || b.xp - a.xp);
 
-  return (
+  // Rendered through a portal to document.body so it overlays the whole viewport.
+  // (Inside the panel deck it would otherwise be sized against the transformed,
+  // 300%-wide page track — same bug ItemDetail fixed — making the sheet stretch
+  // beyond the visible area and clipping the abilities list. See PanelDeck.jsx.)
+  return createPortal(
     <div onClick={onClose} style={{
-      position: "absolute", inset: 0, zIndex: 40,
+      position: "fixed", inset: 0, zIndex: 50,
       backgroundColor: "rgba(8, 12, 12, 0.86)", backdropFilter: "blur(8px)",
       display: "flex", flexDirection: "column", justifyContent: "flex-end",
     }}>
       <div onClick={(e) => e.stopPropagation()} className="slide-up custom-scroll" style={{
+        width: "100%", maxWidth: "480px", margin: "0 auto",
         backgroundColor: "rgba(20, 29, 29, 0.96)",
         border: `1px solid rgba(215, 167, 111, 0.22)`, borderBottom: "none",
         borderTopLeftRadius: "24px", borderTopRightRadius: "24px",
@@ -111,6 +117,7 @@ export function ArsenalView({ character, onClose }) {
             )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

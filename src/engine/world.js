@@ -248,7 +248,7 @@ export function isAdjacent(a, b) {
 }
 
 export function isPassable(tile) {
-  return tile.terrain !== "water";
+  return tile.terrain !== "water" && tile.terrain !== "wall";
 }
 
 // Access control — doors. A tile may declare `doors: [{x,y}, ...]` listing

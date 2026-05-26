@@ -74,7 +74,7 @@ const UNIQUE = {
     { s: { critMult: 0.30 } },        // 15 epic      — bone-shattering critical force
     { s: { damageMult: 0.10 } },      // 20 legendary — colossal might
     { s: { critMult: 0.40 } },        // 25 mythic    — catastrophic, devastating crits
-    { s: { execute: 0.20 } },         // 30 divine    — Execute: hits finish foes already below 20% HP
+    { s: { execute: 0.20 } },         // 30 divine    — Execute: damaging a foe below 20% HP instantly kills it
   ],
   reflex: [
     { s: { swiftChance: 0.10 } },     // 5  — flurry: chance to act again
@@ -142,7 +142,7 @@ const EFFECT_FMT = {
   dodge:            (v) => `+${v}% dodge`,
   accuracy:         (v) => `+${v} accuracy`,
   ward:             (v) => `+${v} ward`,
-  saveDC:           (v) => `+${v} spell save DC — your charm, domination & control magic is harder to resist`,
+  saveDC:           (v) => `+${v} spell save DC`,
   critChance:       (v) => `+${v}% crit chance`,
   critMult:         (v) => `+${Math.round(v * 100)}% crit damage`,
   healPower:        (v) => `+${Math.round(v * 100)}% healing potency`,
@@ -151,7 +151,7 @@ const EFFECT_FMT = {
   cooldownReduction:(v) => `${v}-turn cooldown reduction`,
   controlResist:    (v) => `resist ${Math.round(v * 100)}% of stuns, slows & debuffs`,
   damageCap:        (v) => `no single hit exceeds ${Math.round(v * 100)}% of your max HP`,
-  execute:          (v) => `your hits finish foes already below ${Math.round(v * 100)}% HP`,
+  execute:          (v) => `dealing damage to foes below ${Math.round(v * 100)}% HP instantly kills them`,
   phaseChance:      (v) => `${Math.round(v * 100)}% of attacks pass straight through you`,
   dmgDefer:         (v) => `spread ${Math.round(v * 100)}% of incoming damage over time`,
   turnRegen:        (v) => `regenerate ${Math.round(v * 100)}% max HP each turn`,
@@ -161,7 +161,7 @@ const EFFECT_FMT = {
   shieldGen:        (v) => `conjure a shield worth ${Math.round(v * 100)}% max HP each turn`,
   magicShieldGen:   (v) => `weave a magic ward worth ${Math.round(v * 100)}% max HP each turn`,
   resolveRegen:     (v) => `recover +${v} resolve each turn`,
-  controlDuration:  (v) => `+${Math.round(v * 100)}% control duration (stuns, slows & control you inflict last longer)`,
+  controlDuration:  (v) => `+${Math.round(v * 100)}% control duration`,
   ccDurationReduction:(v) => `incoming stuns, slows & debuffs last ${Math.round(v * 100)}% less`,
   spellSurge:       () => `your abilities cost double Resolve but deal 50% more damage`,
   maxResolve:       (v) => `+${v} max Resolve`,
@@ -176,7 +176,7 @@ const ATTR_PURPOSE = {
   body:     "Raw might. Drives melee damage and the heavy weapons you can wield, and adds Armor (about a third of your Body) against physical hits.",
   reflex:   "Speed and finesse. Raises Dodge and Accuracy, helps you strike first, and powers light, finesse weapons — daggers, bows.",
   vigor:    "Toughness. Sets your maximum Vitality and grants flat damage reduction — how much punishment you can take before you fall.",
-  mind:     "Intellect. Powers spell damage, sets how deep your Resolve runs, adds Ward (about a third of your Mind) against magic, sharpens your spell save DC so your charm, domination and control magic is harder to resist, and quickens how fast you learn.",
+  mind:     "Intellect. Powers spell damage, sets how deep your Resolve runs, adds Ward (about a third of your Mind) against magic, sharpens your spell save DC, and quickens how fast you learn.",
   wit:      "Awareness. Raises your critical-hit chance and your perception — spotting ambushes and openings — and sharpens healing and quick thinking.",
   presence: "Force of will. Steadies morale and sways how others and foes respond to you; at high Presence your Resolve recovers even in the thick of a fight.",
 };
