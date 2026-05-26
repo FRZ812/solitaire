@@ -51,11 +51,17 @@ const INTERIOR = Object.keys(HANDCRAFTED)
   })
   .map((key) => { const [x, y] = key.split(",").map(Number); return { x, y }; });
 
-const STREETS = INTERIOR.filter((c) => tile(c).terrain === "street");
-const BUILDINGS = INTERIOR.filter((c) => tile(c).terrain !== "street");
+// "Streets" for the partition tests = the authored street network PLUS
+// the generated intramural ring. Both are open thoroughfares that mesh
+// with their neighbours; neither should be treated as a destination
+// "building" by the no-building-to-building rule.
+const STREETS = INTERIOR.filter((c) => tile(c).terrain === "street" || !!HANDCRAFTED[k(c)]?.intramural);
+const BUILDINGS = INTERIOR.filter((c) => tile(c).terrain !== "street" && !HANDCRAFTED[k(c)]?.intramural);
 const WALL_TOPS = Object.keys(HANDCRAFTED)
   .filter((key) => HANDCRAFTED[key].terrain === "wall_top")
   .map((key) => { const [x, y] = key.split(",").map(Number); return { x, y }; });
+// Wall-stairs are wall_top tiles tagged with poi.type === "stair" — the
+// six single-tile chokepoints that bridge the city to the wall-walk ring.
 const STAIRS = Object.keys(HANDCRAFTED)
   .filter((key) => HANDCRAFTED[key].poi?.type === "stair")
   .map((key) => { const [x, y] = key.split(",").map(Number); return { x, y }; });
@@ -324,22 +330,26 @@ ok(usedStair, "the route to the wall-top passes through a stair");
 
 // 8d) The wall-walk does NOT cross the outer wall — no wall-top hex has an
 // open edge to anything beyond the wall (outside the biome interior).
+// Stair-tagged wall_top tiles are the single exception: each opens to
+// exactly one adjacent city street (its declared chokepoint).
 const wallTopExternalCrossings = [];
 for (const c of WALL_TOPS) {
+  const ct = tile(c);
+  const isStair = ct.poi?.type === "stair";
   for (const d of HEX_DIRS) {
     const n = { x: c.x + d.x, y: c.y + d.y };
     const nt = getTile(state, n.x, n.y);
     if (!isPassable(nt)) continue;
     if (nt.terrain === "wall_top") continue;
-    if (HANDCRAFTED[k(n)]?.poi?.type === "stair") continue;
     if (HANDCRAFTED[k(n)]?.poi?.parent === "whitemarch-crown-gate") continue;
-    if (edgeAllowed(tile(c), c.x, c.y, nt, n.x, n.y)) {
+    if (isStair && nt.terrain === "street") continue; // stair's declared chokepoint
+    if (edgeAllowed(ct, c.x, c.y, nt, n.x, n.y)) {
       wallTopExternalCrossings.push(`${k(c)} -> ${k(n)}`);
     }
   }
 }
 ok(wallTopExternalCrossings.length === 0,
-   `no wall-top opens to anything other than wall-top / stair / gatehouse (found: ${wallTopExternalCrossings.join(", ") || "none"})`);
+   `no wall-top opens to anything other than wall-top / gatehouse / (stair's one street) (found: ${wallTopExternalCrossings.join(", ") || "none"})`);
 
 // 9) Footprint groupings — every authored multi-hex POI reads as one
 // place on the map. We check that each declared parent has the

@@ -708,6 +708,22 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                 opacity = Math.max(opacity, 0.75);
               }
 
+              // Elevation in the isometric tilt — walls + buildings sit
+              // visually higher than ground tiles. We layer a darker
+              // "base" hex offset down by `lift` SVG pixels and draw the
+              // main hex on top; after the rotateX(52deg) tilt at the
+              // container level, the darker base reads as the vertical
+              // face of a stone extrusion (the part of the wall below
+              // the walk, or the lower storey of a building). Ground
+              // tiles (plains, intramural, streets, water) skip this.
+              const lift = (
+                tile.terrain === "wall_top" ? 7 :
+                tile.terrain === "indoor"   ? 5 :
+                isFootprintMember           ? 4 :
+                0
+              );
+              const baseFill = lift > 0 ? "rgba(8, 6, 4, 0.62)" : null;
+
               return (
                 <g
                    key={`${x},${y}`}
@@ -720,15 +736,23 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                    }}
                    style={{ cursor: "pointer", opacity }}
                 >
+                  {lift > 0 && (
+                    <polygon
+                      points={hexCornerPoints(px, py + lift)}
+                      fill={baseFill}
+                      stroke="none"
+                      pointerEvents="none"
+                    />
+                  )}
                   <polygon
-                    points={hexCornerPoints(px, py)}
+                    points={hexCornerPoints(px, py - (lift > 0 ? lift * 0.25 : 0))}
                     fill={fill}
                     stroke={stroke}
                     strokeWidth={strokeWidth}
                     strokeLinejoin="round"
                   />
                   {assetKey && MAP_ASSETS[assetKey] && (
-                    <g transform={`translate(${px - 11}, ${py - 11})`} pointerEvents="none">
+                    <g transform={`translate(${px - 11}, ${py - 11 - (lift > 0 ? lift * 0.25 : 0)})`} pointerEvents="none">
                       {MAP_ASSETS[assetKey](textColor)}
                     </g>
                   )}
