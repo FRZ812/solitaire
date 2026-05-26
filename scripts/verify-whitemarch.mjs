@@ -286,8 +286,11 @@ ok(streetStops > 0, `the route to Prison Gate uses at least one street hex (used
 // the ring, and the walk does NOT connect to the outside.
 console.log("\n8) Wall-walk — stairs + wall-top ring:");
 
-// 8a) Every stair has an open edge BOTH to its city-side street and to its
-// wall-top neighbour (the climb works in both directions).
+// 8a) Every stair has an open edge BOTH to an intramural yard tile (the
+// chokepoint up from ground level) and to another wall-top hex along the
+// ring (the climb works in both directions). The street is no longer the
+// immediate city-side neighbour — the player walks street → intramural →
+// stair-wall_top → ring.
 for (const s of STAIRS) {
   const t = tile(s);
   const name = t.poi?.name || k(s);
@@ -295,14 +298,14 @@ for (const s of STAIRS) {
     ok(false, `${name} (${k(s)}) declares fewer than 2 doors`);
     continue;
   }
-  let openStreet = false, openTop = false;
+  let openIntramural = false, openTop = false;
   for (const d of t.doors) {
     const nt = getTile(state, d.x, d.y);
     if (!edgeAllowed(t, s.x, s.y, nt, d.x, d.y)) continue;
-    if (nt.terrain === "street") openStreet = true;
+    if (HANDCRAFTED[k(d)]?.intramural) openIntramural = true;
     else if (nt.terrain === "wall_top") openTop = true;
   }
-  ok(openStreet && openTop, `${name} (${k(s)}) opens to BOTH a street and a wall-top`);
+  ok(openIntramural && openTop, `${name} (${k(s)}) opens to BOTH the intramural yard and another wall-top`);
 }
 
 // 8b) Every wall-top hex meshes with at least one other wall-top hex (the
@@ -330,8 +333,8 @@ ok(usedStair, "the route to the wall-top passes through a stair");
 
 // 8d) The wall-walk does NOT cross the outer wall — no wall-top hex has an
 // open edge to anything beyond the wall (outside the biome interior).
-// Stair-tagged wall_top tiles are the single exception: each opens to
-// exactly one adjacent city street (its declared chokepoint).
+// Stair-tagged wall_top tiles are the single exception: each opens to the
+// adjacent intramural yard tile(s) (its declared chokepoint).
 const wallTopExternalCrossings = [];
 for (const c of WALL_TOPS) {
   const ct = tile(c);
@@ -342,14 +345,14 @@ for (const c of WALL_TOPS) {
     if (!isPassable(nt)) continue;
     if (nt.terrain === "wall_top") continue;
     if (HANDCRAFTED[k(n)]?.poi?.parent === "whitemarch-crown-gate") continue;
-    if (isStair && nt.terrain === "street") continue; // stair's declared chokepoint
+    if (isStair && HANDCRAFTED[k(n)]?.intramural) continue; // stair's intramural chokepoint
     if (edgeAllowed(ct, c.x, c.y, nt, n.x, n.y)) {
       wallTopExternalCrossings.push(`${k(c)} -> ${k(n)}`);
     }
   }
 }
 ok(wallTopExternalCrossings.length === 0,
-   `no wall-top opens to anything other than wall-top / gatehouse / (stair's one street) (found: ${wallTopExternalCrossings.join(", ") || "none"})`);
+   `no wall-top opens to anything other than wall-top / gatehouse / (stair's intramural) (found: ${wallTopExternalCrossings.join(", ") || "none"})`);
 
 // 9) Footprint groupings — every authored multi-hex POI reads as one
 // place on the map. We check that each declared parent has the

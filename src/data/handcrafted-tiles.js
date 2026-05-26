@@ -326,21 +326,29 @@ export const HANDCRAFTED = {
   "7,8":  { terrain: "water", poi: { type: "river", name: "The Whitewend", description: "The Whitewend, well clear of the city now — the bank dark with reed and only the occasional fisher-skiff working the slack water." } },
 
   // ============================================================
-  // WALL STAIRS — six wall-walk chokepoints set into the Great Wall's
-  // inner ring. Each stair IS a wall_top tile (so climbing it = entering
-  // the wall) that opens to exactly one adjacent city street and the
-  // next wall_top hex along the ring. All other wall_top tiles connect
-  // only to other wall_top + the gatehouse roof, so these six tiles are
-  // the only way up from inside the city. By writ the wall-walk is for
-  // the watch, but the stairs themselves are not gated; anyone can
-  // climb, and any of the wall-watch above will notice.
+  // WALL STAIRS — six wall-walk chokepoints. Each stair IS a wall_top
+  // tile sitting on the wall ring at distance 2 from the city interior;
+  // climbing the stair = stepping onto the wall. The doors are wired by
+  // the wall_top doors generator (below): each stair-wall_top opens to
+  // its adjacent wall_top neighbours along the ring AND to the adjacent
+  // intramural yard tile (the single chokepoint into the wall from
+  // ground level). All other wall_top tiles connect only to other
+  // wall_top + the gatehouse roof, so these six are the only way up.
+  //
+  // The stair positions are the d=2 ring neighbours of the old (pre-
+  // ring-reshape) d=1 stair tiles, so the named geography still lines
+  // up — Crown Stair sits just west of the Crown Gate, Dragon Stair
+  // beside the Dragon-Watch Tower, Quay Stair above the foundries, and
+  // so on. By writ the wall-walk is for the watch, but the stairs
+  // themselves are not gated; anyone can climb, and any of the wall-
+  // watch above will notice.
   // ============================================================
-  "-1,-4": { terrain: "wall_top", doors: [{ x: -1, y: -3 }, { x: -1, y: -5 }], poi: { type: "stair", name: "Crown Stair", access: "restricted", description: "A worked stone stair set into the wall just west of the Crown Gate's inner ward, the climb wide enough for two abreast. Guards take it morning and dusk to relieve the wall-watch; civilians may use it but draw eyes from the gate-towers." } },
-  "3,-4":  { terrain: "wall_top", doors: [{ x: 2, y: -3 }, { x: 3, y: -5 }],  poi: { type: "stair", name: "Dragon Stair", access: "restricted", description: "A narrow stone stair built into the wall's inner face beside the Dragon-Watch Tower. The wall-walk above is guard-only by writ; the stair itself is open to anyone bold enough to climb where the harpoon-watchers can see." } },
-  "4,0":   { terrain: "wall_top", doors: [{ x: 3, y: 0 }, { x: 5, y: 0 }],   poi: { type: "stair", name: "Quay Stair", access: "restricted", description: "A stair on the east wall above the foundries, half-stained by forge-smoke. The wall-walk here looks across the Whitewend to the chain-tower and the barge-traffic working downstream." } },
-  "-4,0":  { terrain: "wall_top", doors: [{ x: -3, y: 0 }, { x: -5, y: 0 }], poi: { type: "stair", name: "West Stair", access: "restricted", description: "A narrow stair set into the west wall above the Halfborn Hostel, used by the wall-watch and by anyone with cause to look out over the country toward the Tannic Wood." } },
-  "1,6":   { terrain: "wall_top", doors: [{ x: 1, y: 5 }, { x: 1, y: 7 }],   poi: { type: "stair", name: "South Stair", access: "restricted", description: "A broad stair on the south wall behind the Tenement Row, opening onto the south wall-walk. The view here takes in the kitchen-scrap line on the river and the long road south." } },
-  "-1,6":  { terrain: "wall_top", doors: [{ x: -1, y: 5 }, { x: -1, y: 7 }], poi: { type: "stair", name: "Prison Stair", access: "restricted", description: "A stair on the south-west wall, hard by Prison Gate. The work-gangs pass beneath it twice a day; the wall-watch above keeps a count of every chain that goes in and out." } },
+  "-1,-5": { terrain: "wall_top", poi: { type: "stair", name: "Crown Stair", access: "restricted", description: "A worked stone stair set into the wall just west of the Crown Gate's inner ward, the climb wide enough for two abreast. Guards take it morning and dusk to relieve the wall-watch; civilians may use it but draw eyes from the gate-towers." } },
+  "3,-5":  { terrain: "wall_top", poi: { type: "stair", name: "Dragon Stair", access: "restricted", description: "A narrow stone stair built into the wall's inner face beside the Dragon-Watch Tower. The wall-walk above is guard-only by writ; the stair itself is open to anyone bold enough to climb where the harpoon-watchers can see." } },
+  "5,0":   { terrain: "wall_top", poi: { type: "stair", name: "Quay Stair", access: "restricted", description: "A stair on the east wall above the foundries, half-stained by forge-smoke. The wall-walk here looks across the Whitewend to the chain-tower and the barge-traffic working downstream." } },
+  "-5,0":  { terrain: "wall_top", poi: { type: "stair", name: "West Stair", access: "restricted", description: "A narrow stair set into the west wall above the Halfborn Hostel, used by the wall-watch and by anyone with cause to look out over the country toward the Tannic Wood." } },
+  "1,7":   { terrain: "wall_top", poi: { type: "stair", name: "South Stair", access: "restricted", description: "A broad stair on the south wall behind the Tenement Row, opening onto the south wall-walk. The view here takes in the kitchen-scrap line on the river and the long road south." } },
+  "-1,7":  { terrain: "wall_top", poi: { type: "stair", name: "Prison Stair", access: "restricted", description: "A stair on the south-west wall, hard by Prison Gate. The work-gangs pass beneath it twice a day; the wall-watch above keeps a count of every chain that goes in and out." } },
 
   // ============================================================
   // THE UNDERWORKS — first descent beyond the Sewer Mouth. Five sealed
@@ -591,12 +599,12 @@ function applyLinkedDoors(s) {
   // that is walkable city ground BEHIND the wall — not water, not the road
   // approach outside the wall, not the Crown Gate complex itself (gate sits
   // ACROSS the wall ring, replacing the wall-walk at the gate's gatehouse
-  // hexes), and not the wall-stairs (which sit just inside the wall-walk
-  // hex they connect to), and not the Underworks (which conceptually sits
+  // hexes), and not the wall-stairs (which sit ON the ring at d=2 and
+  // would otherwise count themselves as interior and push another ring
+  // out around them), and not the Underworks (which conceptually sits
   // below the surface — we don't want it pushing the ring outward around
   // itself). Including any of these in the distance set would push the
-  // ring outward and turn the road's first hexes (or the wall-top adjacent
-  // to a stair) into more wall-walk.
+  // ring outward.
   const interiorCoords = [];
   for (const key of Object.keys(HANDCRAFTED)) {
     const t = HANDCRAFTED[key];
@@ -653,16 +661,15 @@ function applyLinkedDoors(s) {
   // Wall-top doors — each wall_top hex meshes with adjacent wall_top hexes
   // (forming a continuous walk along the wall) and with the Crown Gate's
   // gatehouse middle hexes (so the walk crosses the gate's roof rather
-  // than ending at the gate). Stairs are wall_top tiles themselves and
-  // are caught by the wall_top match (their own authored doors keep the
-  // chokepoint to a single street tile). The wall-walk is its own
-  // sub-network: isolated from city streets except via stairs, isolated
-  // from the intramural yard entirely, and isolated from the outside.
+  // than ending at the gate). Stair-tagged wall_tops also open to their
+  // adjacent intramural neighbours — that edge is the single chokepoint
+  // from ground level up to the ring. All other wall_top tiles stay
+  // sealed off from the intramural yard and from city streets.
   for (const key of Object.keys(HANDCRAFTED)) {
     const t = HANDCRAFTED[key];
     if (t.terrain !== "wall_top") continue;
-    if (t.poi?.type === "stair") continue;   // stairs keep their authored doors (chokepoint)
     const [x, y] = key.split(",").map(Number);
+    const isStair = t.poi?.type === "stair";
     const doors = [];
     for (const d of HEX_DIRS) {
       const nx = x + d.x, ny = y + d.y;
@@ -673,15 +680,15 @@ function applyLinkedDoors(s) {
       else if (nt.poi?.parent === "whitemarch-crown-gate" && nt.poi?.part?.startsWith("gatehouse")) {
         doors.push({ x: nx, y: ny });
       }
+      else if (isStair && nt.intramural) doors.push({ x: nx, y: ny });
     }
     HANDCRAFTED[key].doors = doors;
   }
   // Intramural doors — each intramural settlement hex meshes with
   // adjacent intramural hexes (so you can walk the yard around the
-  // ring) and with adjacent city streets (so you can step out of the
-  // city into the yard). It does NOT open to wall_top or to stairs:
-  // the wall is still the wall, and the chokepoint is still the
-  // specific street + stair pair, not the whole yard.
+  // ring), with adjacent city streets (so you can step out of the
+  // city into the yard), and with adjacent stair-tagged wall_tops (the
+  // single climb-up tile per side). Regular wall_top tiles stay sealed.
   for (const key of Object.keys(HANDCRAFTED)) {
     const t = HANDCRAFTED[key];
     if (!t.intramural) continue;
@@ -693,6 +700,7 @@ function applyLinkedDoors(s) {
       if (!nt) continue;
       if (nt.intramural) doors.push({ x: nx, y: ny });
       else if (nt.terrain === "street") doors.push({ x: nx, y: ny });
+      else if (nt.terrain === "wall_top" && nt.poi?.type === "stair") doors.push({ x: nx, y: ny });
     }
     HANDCRAFTED[key].doors = doors;
   }
@@ -707,41 +715,20 @@ for (const s of SEALED_STRUCTURES) {
 }
 
 // ============================================================
-// STREET ↔ STAIR + INTRAMURAL + WALL-WALK BRIDGES — after the Crown
-// Gate's doors are authored, three passes finish the city-perimeter
-// graph:
-//   1. Each city street adjacent to a wall-stair gets the stair added to
-//      its doors (the stair was authored with an explicit doors list, but
-//      wasn't in the streets list, so the street's mesh-doors don't see
-//      it without this step). The reverse direction was set when the
-//      stair tile was authored.
-//   2. Each city street adjacent to a generated intramural settlement
-//      hex gets that intramural hex added to its doors. Symmetric to (1):
-//      the intramural side was wired when the wall generator ran; this
-//      pass wires the street side so the edge is bidirectional.
-//   3. The gatehouse middle hexes get extended doors to adjacent wall-top
+// STREET ↔ INTRAMURAL + WALL-WALK BRIDGES — after the Crown Gate's doors
+// are authored, two passes finish the city-perimeter graph:
+//   1. Each city street adjacent to a generated intramural settlement
+//      hex gets that intramural hex added to its doors. The intramural
+//      side was wired when the wall generator ran; this pass wires the
+//      street side so the edge is bidirectional.
+//   2. The gatehouse middle hexes get extended doors to adjacent wall-top
 //      hexes on either side. The wall-walk thus crosses the gatehouse
 //      roof, so a guard on the wall walks continuously over the gate
 //      rather than dead-ending at it.
+// Stairs no longer touch streets directly — they sit on the wall ring
+// at d=2 and open to the intramural yard at d=1, which the streets
+// reach via pass (1). So there is no separate street ↔ stair bridge.
 // ============================================================
-for (const key of Object.keys(HANDCRAFTED)) {
-  const t = HANDCRAFTED[key];
-  if (t.poi?.type !== "stair") continue;
-  if (!Array.isArray(t.doors) || t.doors.length === 0) continue;
-  const [sx, sy] = key.split(",").map(Number);
-  // By authoring convention the FIRST door is the adjacent city street.
-  // Walk all of the stair's declared doors and add each that is itself a
-  // street tile to that street's outgoing doors, so the edge is bidirectional.
-  for (const door of t.doors) {
-    const streetKey = `${door.x},${door.y}`;
-    const streetTile = HANDCRAFTED[streetKey];
-    if (!streetTile || streetTile.terrain !== "street") continue;
-    if (!Array.isArray(streetTile.doors)) continue;
-    const existing = new Set(streetTile.doors.map((d) => `${d.x},${d.y}`));
-    if (existing.has(key)) continue;
-    HANDCRAFTED[streetKey] = { ...streetTile, doors: [...streetTile.doors, { x: sx, y: sy }] };
-  }
-}
 for (const key of Object.keys(HANDCRAFTED)) {
   const tile = HANDCRAFTED[key];
   if (tile.terrain !== "street") continue;
