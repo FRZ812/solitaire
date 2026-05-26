@@ -45,6 +45,43 @@ const CITADEL = {
   parent: "whitemarch-citadel",
   parentName: "The Citadel",
 };
+const CHAIN_MARKET_STEPS = {
+  parent: "whitemarch-chain-market-steps",
+  parentName: "Chain Market Steps",
+  type: "slavemarket",
+};
+const REGISTRY_HALL = {
+  parent: "whitemarch-registry-hall",
+  parentName: "Registry Hall",
+  type: "hall",
+};
+const PRISON_GATE = {
+  parent: "whitemarch-prison-gate",
+  parentName: "Prison Gate",
+  type: "prison",
+};
+const CARAVAN_YARD = {
+  parent: "whitemarch-caravan-yard",
+  parentName: "Caravan Yard & Stable",
+  type: "yard",
+};
+const GUILD_COURT = {
+  parent: "whitemarch-guild-court",
+  parentName: "Guild Court",
+  type: "court",
+};
+// The Underworks sit beyond the Sewer Mouth's `doors:[]` seal — entry is
+// action-gated (narrator-driven) by design. Each member hex carries
+// `area: "underworks"` so the wall generator can recognise and skip them
+// when computing the city's wall band (see exclusion below). Members
+// otherwise look like ordinary indoor tiles.
+const UNDERWORKS = {
+  area: "underworks",
+  areaName: "The Underworks",
+  parent: "whitemarch-underworks",
+  parentName: "The Underworks",
+  type: "sewer",
+};
 
 export const HANDCRAFTED = {
   // ============================================================
@@ -94,11 +131,14 @@ export const HANDCRAFTED = {
   "3,-3": { terrain: "indoor", poi: { type: "tower", name: "Dragon-Watch Tower", access: "restricted", description: "The tower smells of oil, cold iron, and old smoke. Harpoon-frames point through open shutters; signal-mirrors hang under wool covers. On the central rack rests a bolt as long as a man, its head blackened by an alchemy no one in the room jokes about. Veteran watchers look north, where every clear sky is treated as a question." } },
 
   // ============================================================
-  // CARAVAN YARD ROW — Caravan Yard sits in the NW with streets on every
-  // side; Wagon Lane is the unloading street beside the gate-yard.
+  // CARAVAN YARD ROW — the Caravan Yard & Stable is a 2-hex footprint:
+  // Wagon Lines & Stalls at (-2,-1) is the fenced yard proper (the wagon
+  // park and the stable behind it); Hiring Board at (-3,-1) is the
+  // open street-corner where the day's escort work is pinned. Wagon
+  // Lane at (-1,-1) is the unloading street beside the gate-yard.
   // ============================================================
-  "-3,-1": { terrain: "street", poi: null },
-  "-2,-1": { terrain: "settlement", poi: { type: "yard", name: "Caravan Yard & Stable", service: "stable", access: "public", description: "A fenced acre of mud, canvas, and languages shouted over animals. Drivers cook beside their loads; guards sleep with boots on. A hiring-board under a rain-hood is pinned with work, lies, and one bloodstained scrap nobody has taken down. Past the wagon-lines the stable runs hot — horses under striped blankets, mules biting the rails, a farrier burning hoof in blue smoke, and a military remount-pen behind a locked rail." } },
+  "-3,-1": { terrain: "street", poi: { ...CARAVAN_YARD, part: "hiring-board", partName: "Hiring Board", name: "Caravan Yard & Stable", access: "public", description: "The west corner of the Caravan Yard, where the city's hiring-board is set under a rain-hood and the day's escort-work is pinned each morning. Guards loiter for the recruiter; brokers walk the line reading the postings aloud for those who cannot. One bloodstained scrap stays pinned past every weather; nobody has taken it down, and nobody will say why." } },
+  "-2,-1": { terrain: "settlement", poi: { ...CARAVAN_YARD, part: "wagon-lines", partName: "Wagon Lines & Stalls", name: "Caravan Yard & Stable", service: "stable", access: "public", description: "A fenced acre of mud, canvas, and languages shouted over animals. Drivers cook beside their loads; guards sleep with boots on. Past the wagon-lines the stable runs hot — horses under striped blankets, mules biting the rails, a farrier burning hoof in blue smoke, and a military remount-pen behind a locked rail." } },
   "-1,-1": { terrain: "street", poi: null }, // Wagon Lane
 
   // ============================================================
@@ -121,11 +161,15 @@ export const HANDCRAFTED = {
   "0,1":  { terrain: "settlement", poi: { ...GRAND_MARKET, part: "cloth-awnings", partName: "Cloth Awnings", name: "The Grand Market", access: "public", description: "The southern stall-row of the market, roofed over in stitched awnings that turn the light to stained colour — bolts of wool, linen, and foreign silk beside boot-stalls, knife-trays, charm-strings, lamp-oil, and patched cloaks. Peddlers' voices are trained to find the coin in any passer-by, and pickpockets work the awning-shadows. The stalls open onto Grain Square; through traffic uses the square or the lanes around the market, not the rows themselves." } },
 
   // ============================================================
-  // MARKET RING — the streets that ring the four-hex Grand Market.
+  // MARKET RING — the streets that ring the five-hex Grand Market. The
+  // Coin Scales sit at the market's western corner: still a street (the
+  // ring routing runs through it), but tagged as the market's quiet
+  // money-changers' bay where price becomes debt becomes someone else's
+  // problem.
   // ============================================================
   "-3,0": { terrain: "street", poi: null },
-  "-1,0": { terrain: "street", poi: null },
-  "2,0":  { terrain: "street", poi: null }, // Quay Lane
+  "-1,0": { terrain: "street", poi: { ...GRAND_MARKET, part: "coin-scales", partName: "Coin Scales", name: "The Grand Market", access: "public", description: "The market's quiet western corner. Brass pans click under the hands of money-changers, pawnbrokers, appraisers, and contract witnesses; here a thing becomes a price, a price becomes a debt, and a debt becomes someone else's problem. Armed private guards stand close at the benches; the quiet brokers watch the Chain Ward traffic across the square and write the day's odds against any name they recognise." } },
+  "2,0":  { terrain: "street", poi: { ...REGISTRY_HALL, part: "lease-desk", partName: "Lease Desk", name: "Registry Hall", access: "conditional", description: "An open street-counter set into Quay Lane south of the Hall's main door, where labour-lease contracts are written, witnessed, and stamped under an awning the city has never repaired. A clerk's bench, a sand-box for ink-blotting, and a queue of men with thumb-prints inked dark before they know what they have signed." } },
   "3,0":  { terrain: "street", poi: null },
 
   // ============================================================
@@ -144,10 +188,15 @@ export const HANDCRAFTED = {
   // ============================================================
   // CHAIN WARD — the public sale-plaza (Chain Market Steps) flanked by
   // Registry Hall to the east and the Grand Market's south wing to the
-  // west. The plaza itself is a street.
+  // west. The Chain Market is a 3-hex L-shaped footprint: the Sale
+  // Platform (the central plaza), the Petition Rail (where families
+  // press papers through the bars), and the Viewing Yard (the covered
+  // inspection yard east of the platform). All three remain street
+  // terrain so the city's south-east through-traffic still routes
+  // through the Chain Ward.
   // ============================================================
-  "1,1": { terrain: "street", poi: { type: "slavemarket", name: "Chain Market Steps", service: "slavemarket", access: "guarded", description: "Paved in pale stone so stains show quickly and wash before the next bell. Status-criers stand on a raised platform at the centre; buyers wait under awnings around it. At the petition-rail families press papers through the bars while guards keep their faces toward the crowd. It is run as civic routine — and the horror is in how ordinary it looks." } },
-  "2,1": { terrain: "indoor", poi: { type: "hall", name: "Registry Hall", access: "conditional", description: "Quieter than the steps and worse for it. Shelves of bound status-rolls climb into the gloom; clerks shift brass weights from name to name. A mural shows Whitemarch raising a wall; below it, people argue whether a seal makes someone free. Public counters open; the collar-archive and recovery-writ office stay barred behind armed Flesh Wardens." } },
+  "1,1": { terrain: "street", poi: { ...CHAIN_MARKET_STEPS, part: "sale-platform", partName: "Sale Platform", name: "Chain Market Steps", service: "slavemarket", access: "guarded", description: "The raised stone platform at the centre of the steps, paved in pale stone that shows stains quickly and is washed before the next bell. Status-criers work the platform under awnings; buyers stand close with their bidding-clerks at their elbow; the horror in this hex is its civic ordinariness — the bell-clock, the brass weights, the polite paperwork." } },
+  "2,1": { terrain: "indoor", poi: { ...REGISTRY_HALL, part: "public-counters", partName: "Public Counters", name: "Registry Hall", access: "conditional", description: "Quieter than the Chain Market steps next door and worse for it. Shelves of bound status-rolls climb into the gloom; clerks shift brass weights from name to name across the public counters. A mural shows Whitemarch raising a wall; below it, people argue whether a seal makes someone free. The collar-archive and recovery-writ offices stay barred behind armed Flesh Wardens further inside." } },
 
   // ============================================================
   // PUBLIC SMITH ROW — the riverside foundries. Smoke billows out over
@@ -157,15 +206,18 @@ export const HANDCRAFTED = {
 
   // ============================================================
   // IRON WAY ROW — the central east-west avenue. Lower Petition Steps is
-  // the open court-plaza on the west; Guild Court the single building on
-  // the row; the rest is paved lane.
+  // the open court-plaza on the west; the Chain Market's Petition Rail
+  // and Viewing Yard occupy the eastern two hexes (parented to the Chain
+  // Market footprint above, but kept as street terrain so the city's
+  // east-west avenue still routes through the row); the rest is paved
+  // lane.
   // ============================================================
   "-3,2": { terrain: "street", poi: null },
   "-2,2": { terrain: "street", poi: null },
   "-1,2": { terrain: "street", poi: { type: "hall", name: "Lower Petition Steps", access: "public", description: "A broad paved approach crowded from sunrise: widows with petitions, debtors with sponsors, merchants with sealed cases, foreigners with interpreters, and soldiers escorting people who learned too late that law moves faster than mercy. The advocate-cloister stands above; debt-collectors wait below." } },
   "0,2":  { terrain: "street", poi: null }, // Iron Way (unnamed central avenue)
-  "1,2":  { terrain: "street", poi: null }, // bridge lane east of Iron Way
-  "2,2":  { terrain: "street", poi: null },
+  "1,2":  { terrain: "street", poi: { ...CHAIN_MARKET_STEPS, part: "petition-rail", partName: "Petition Rail", name: "Chain Market Steps", access: "public", description: "An iron rail set into the southern edge of the steps, where families press papers through the bars to the clerks beyond. Guards keep their faces toward the crowd, not the rail. Charters of birth, contested manumissions, payments-in-arrears all change hands here under the gaze of the Flesh Wardens, and one in ten papers is the only thing standing between a name and a collar." } },
+  "2,2":  { terrain: "street", poi: { ...CHAIN_MARKET_STEPS, part: "viewing-yard", partName: "Viewing Yard", name: "Chain Market Steps", access: "guarded", description: "A covered yard east of the platform where buyers inspect lots before the bell. Physicians work a booth along the back wall — teeth, lungs, the marks under sleeves — and a small line of collar-stalls catches the morning sun beside it. Buyers walk the lines slowly; sellers stand with their lots and try to read prices in the buyers' silences." } },
   "3,2":  { terrain: "street", poi: null },
 
   // ============================================================
@@ -196,17 +248,21 @@ export const HANDCRAFTED = {
   // ============================================================
   "1,3": { terrain: "street", poi: null },
   "2,3": { terrain: "street", poi: null },
-  "3,3": { terrain: "indoor", poi: { type: "court", name: "Guild Court", access: "conditional", description: "Polished slate, ringed by doors that cost more than village houses. Masters sit beneath painted tools and speak of honour while clerks record fines large enough to starve anyone who works without their leave. The court's east face looks out over the Whitewend." } },
+  "3,3": { terrain: "indoor", poi: { ...GUILD_COURT, part: "masters-benches", partName: "Masters' Benches", name: "Guild Court", access: "conditional", description: "Polished slate, ringed by doors that cost more than village houses. Masters sit beneath painted tools and speak of honour while clerks record fines large enough to starve anyone who works without their leave. The court's east face looks out over the Whitewend." } },
 
   // ============================================================
-  // SOUTHERN WARDS — Prison Gate west of the citadel, Tenement Row east.
+  // SOUTHERN WARDS — Prison Gate west of the citadel (a 2-hex footprint:
+  // Intake Desk at (-1,4) is the door, Family Rail at (-2,4) is the
+  // street-side rail where families wait); Tenement Row east; Guild
+  // Court's Apprentice Rolls hex at (3,4) is the open-court extension of
+  // the Guild Court footprint above.
   // ============================================================
   "-3,4": { terrain: "street", poi: null },
-  "-2,4": { terrain: "street", poi: null },
-  "-1,4": { terrain: "indoor", poi: { type: "prison", name: "Prison Gate", service: "gaol", access: "restricted", description: "No ornament but old nail-scars. Intake clerks sort names under a lantern that burns all day; the chain-room waits behind, and the work-gangs leave by the side-arch before dawn and return at dusk, counted twice — once by the gaolers, once by the Registry man. Families wait at the rail with food." } },
+  "-2,4": { terrain: "street", poi: { ...PRISON_GATE, part: "family-rail", partName: "Family Rail", name: "Prison Gate", access: "public", description: "An iron rail set in the street west of the Prison's main door, where families wait with food, bedding, and writs that may or may not be read inside. Children play between the bars; old women keep their place by knitting on stools they own by tenancy of return. The watch on the wall above takes no count of who comes here, only of who leaves." } },
+  "-1,4": { terrain: "indoor", poi: { ...PRISON_GATE, part: "intake-desk", partName: "Intake Desk", name: "Prison Gate", service: "gaol", access: "restricted", description: "No ornament but old nail-scars on the door. Intake clerks sort names under a lantern that burns all day; the chain-room waits behind, and the work-gangs leave by the side-arch before dawn and return at dusk, counted twice — once by the gaolers, once by the Registry man." } },
   "1,4":  { terrain: "street", poi: null },
   "2,4":  { terrain: "settlement", poi: { type: "town", name: "Tenement Row", access: "public", description: "Timber, plaster, laundry-rope and smoke leaning over itself. Every window has a face until you look at it directly. A public pump knocks in the courtyard, roof-bridges cross overhead, and someone has chalked three different warnings beside the same alley-mouth." } },
-  "3,4":  { terrain: "street", poi: null },
+  "3,4":  { terrain: "street", poi: { ...GUILD_COURT, part: "apprentice-rolls", partName: "Apprentice Rolls", name: "Guild Court", access: "public", description: "An open court south of the Guild Court's door, where the apprentice rolls are pinned to a covered board under the eaves. A clerk reads names at the bell; sponsors mark off attendance; failed apprentices come to argue with him and find the next clerk already at the desk. Past the board a flight of slate steps leads back up to the masters' chamber where the names mean fines or letters of leave." } },
 
   // ============================================================
   // SOUTH WALL WALK — the lane along the inside of the south wall, with
@@ -285,6 +341,27 @@ export const HANDCRAFTED = {
   "-4,0":  { terrain: "street", doors: [{ x: -3, y: 0 }, { x: -5, y: 0 }], poi: { type: "stair", name: "West Stair", access: "restricted", description: "A narrow stair set into the west wall above the Halfborn Hostel, used by the wall-watch and by anyone with cause to look out over the country toward the Tannic Wood." } },
   "1,6":   { terrain: "street", doors: [{ x: 1, y: 5 }, { x: 1, y: 7 }],   poi: { type: "stair", name: "South Stair", access: "restricted", description: "A broad stair on the south wall behind the Tenement Row, opening onto the south wall-walk. The view here takes in the kitchen-scrap line on the river and the long road south." } },
   "-1,6":  { terrain: "street", doors: [{ x: -1, y: 5 }, { x: -1, y: 7 }], poi: { type: "stair", name: "Prison Stair", access: "restricted", description: "A stair on the south-west wall, hard by Prison Gate. The work-gangs pass beneath it twice a day; the wall-watch above keeps a count of every chain that goes in and out." } },
+
+  // ============================================================
+  // THE UNDERWORKS — first descent beyond the Sewer Mouth. Five sealed
+  // chambers reached only through the rusted grate at (3,5); the gate
+  // is one-way by design (Sewer Mouth keeps its empty doors list, so
+  // findPath cannot route DOWN OR UP through it — entry and return are
+  // narrator-driven). Each member hex carries `area: "underworks"` so
+  // the wall generator below can recognise and skip them when computing
+  // the city's wall band. The Brick Descent overwrites a wall hex at
+  // (3,6); Drain Junction (3,7), Old Cistern (2,7), and Smuggler Stair
+  // (4,7) overwrite three south-ring wall-top hexes — the wall walk
+  // dips inland here (the wall thickens over the stairhead and the walk
+  // routes around). Guide Markings at (3,8) overwrites another wall hex
+  // at the band's outer face. Mesh connectivity is wired by the
+  // UNDERWORKS sealed-structure entry (data/sealed-structures.js).
+  // ============================================================
+  "3,6": { terrain: "indoor", poi: { ...UNDERWORKS, part: "brick-descent", partName: "Brick Descent", name: "The Underworks", access: "conditional", description: "The first turn of the stair below the Sewer Mouth — older brick under newer city-work, the rusted grate creaking shut above when the wind takes it. Warm stink rises; cold seeps down past the boots. A guide-mark scratched at eye-level reads as an arrow until you see the loops, which mean something else to the people who come down here on purpose." } },
+  "3,7": { terrain: "indoor", poi: { ...UNDERWORKS, part: "drain-junction", partName: "Drain Junction", name: "The Underworks", access: "conditional", description: "Where the city's main outfall meets the older brick. Three drains feed the channel here — the foundries' hot run, the slaughterhouse stand, and the south-wall cistern's overflow — and the smell shifts by the hour. A walkway of cracked slabs runs above the water; a chain hangs over the lip, fastened to no winch anyone remembers." } },
+  "2,7": { terrain: "indoor", poi: { ...UNDERWORKS, part: "old-cistern", partName: "Old Cistern", name: "The Underworks", access: "hidden", description: "A drowned chamber where one of the city's foundation-cisterns failed and the floor has sat for a century underwater. Standing water past the knees in places; a broken stair angles down into deeper black. Bones of fish that did not belong in any cistern lie in the silt, and a boot-print in the dust at the rim is fresher than the city above would explain." } },
+  "3,8": { terrain: "indoor", poi: { ...UNDERWORKS, part: "guide-markings", partName: "Guide Markings", name: "The Underworks", access: "hidden", description: "A run of older brick where the smugglers' alphabet has been kept up by every generation that has used these tunnels. Scratched arrows under soot-marks under the older signs; a tally-count beside one passage; an eye-shape gouged into the brick at chest height, watched and watching. To know what they mean is to be one of the people who comes back." } },
+  "4,7": { terrain: "indoor", poi: { ...UNDERWORKS, part: "smuggler-stair", partName: "Smuggler Stair", name: "The Underworks", access: "hidden", description: "A bricked-up stair-shaft that climbs back up beneath the dock-warehouses, sealed at the top by a flagstone the customs-men do not know is loose. A rope-line still hangs against the wall; a hand-print on the brick stays soot-dark and shoulder-high however often the smugglers wipe down their tracks." } },
 };
 
 // Auto-apply `doors` to sealed structures (see world.js edgeAllowed / findPath:
@@ -492,7 +569,10 @@ function applyLinkedDoors(s) {
   // that is walkable city ground BEHIND the wall — not water, not the road
   // approach outside the wall, not the Crown Gate complex itself (gate sits
   // IN the wall band, replacing wall at the gate's x-positions), and not
-  // the wall-stairs (which also sit IN the wall band's inner face).
+  // the wall-stairs (which also sit IN the wall band's inner face), and not
+  // the Underworks (which sits IN the wall band's footprint but is
+  // conceptually below the surface — we don't want it pushing the wall
+  // band outward around itself).
   // Including any of these in the distance set would push the wall outward
   // and turn the road's first hexes (or the wall-top adjacent to a stair)
   // into stone.
@@ -503,6 +583,7 @@ function applyLinkedDoors(s) {
     if (t.terrain === "road") continue;                          // Crown Road Approach
     if (t.poi?.parent === "whitemarch-crown-gate") continue;      // gate is IN the wall
     if (t.poi?.type === "stair") continue;                        // stairs are IN the wall
+    if (t.poi?.area === "underworks") continue;                   // the Underworks sit IN the wall band
     const [x, y] = key.split(",").map(Number);
     interiorCoords.push({ x, y });
   }

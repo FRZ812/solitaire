@@ -202,4 +202,25 @@ export const SEALED_STRUCTURES = [
       [{ x: 0, y: 3 }, { x: 0, y: 4 }], // Inner Gate -> Iron Palace
     ],
   },
+  // ---------- WHITEMARCH — THE UNDERWORKS ----------
+  // Five sealed chambers beyond the Sewer Mouth, meshed internally and
+  // gated one-way out to the Mouth. The mesh wires every adjacent pair
+  // among the interior hexes; the single gate adds Brick Descent's door
+  // to (3,5) Sewer Mouth WITHOUT touching Sewer Mouth's own empty doors
+  // list — so findPath stays blocked at the Mouth in both directions
+  // and entry/return remain narrator-driven (Sewer Mouth carries
+  // `doors:[]` as authored in data/handcrafted-tiles.js).
+  {
+    name: "The Underworks",
+    interior: [
+      { x: 3, y: 6 }, // Brick Descent
+      { x: 3, y: 7 }, // Drain Junction
+      { x: 2, y: 7 }, // Old Cistern
+      { x: 3, y: 8 }, // Guide Markings
+      { x: 4, y: 7 }, // Smuggler Stair
+    ],
+    gates: [
+      [{ x: 3, y: 6 }, { x: 3, y: 5 }], // Brick Descent ↔ Sewer Mouth (one-way out per Sewer Mouth's doors:[])
+    ],
+  },
 ];

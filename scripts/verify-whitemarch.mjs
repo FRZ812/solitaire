@@ -25,6 +25,20 @@ const tile = (c) => getTile(state, c.x, c.y);
 // except via stairs (handled separately). Wall faces and water are
 // impassable; the road approach is outside the wall.
 const APPROACH_KEY = "0,-7";
+// The Underworks — five sealed chambers beyond Sewer Mouth. Entry and
+// return are narrator-driven (Sewer Mouth keeps `doors:[]`), so the
+// Underworks are unreachable from Grain Square by findPath; their
+// internal mesh connectivity and one-way gate are tested separately.
+// Defined before INTERIOR so the partition can exclude them.
+const UNDERWORKS_COORDS = [
+  { x: 3, y: 6 }, // Brick Descent
+  { x: 3, y: 7 }, // Drain Junction
+  { x: 2, y: 7 }, // Old Cistern
+  { x: 3, y: 8 }, // Guide Markings
+  { x: 4, y: 7 }, // Smuggler Stair
+];
+const UNDERWORKS_KEYS = new Set(UNDERWORKS_COORDS.map(k));
+
 const INTERIOR = Object.keys(HANDCRAFTED)
   .filter((key) => {
     const t = HANDCRAFTED[key];
@@ -32,6 +46,7 @@ const INTERIOR = Object.keys(HANDCRAFTED)
     if (t.terrain === "wall") return false;
     if (t.terrain === "wall_top") return false;
     if (key === APPROACH_KEY) return false;
+    if (UNDERWORKS_KEYS.has(key)) return false; // Underworks tested separately
     return true;
   })
   .map((key) => { const [x, y] = key.split(",").map(Number); return { x, y }; });
@@ -52,6 +67,7 @@ const INNER_GATE = { x: 0, y: 3 };
 const COUNCIL = { x: 0, y: 4 };
 const SEWER = { x: 3, y: 5 };
 const OATH = { x: -1, y: 3 };
+const BRICK_DESCENT = UNDERWORKS_COORDS[0];
 
 // Buildings that are EXEMPT from the no-building-to-building rule because
 // a sealed structure deliberately links them: the Citadel's internal pair
@@ -66,10 +82,33 @@ const GATE_COMPLEX_INTERNAL_LINKS = [
   [{ x: 1, y: -5 }, { x: 1, y: -6 }], // Gatehouse E ↔ Outer Ward E
   [{ x: 0, y: -6 }, { x: 1, y: -6 }], // Outer Ward W ↔ E
 ];
+// The Underworks mesh — every adjacent pair among the five interior
+// hexes is an authored internal edge (see UNDERWORKS in
+// data/sealed-structures.js, applied via applyMeshDoors). These are
+// not city building-to-building edges and must be exempted from test
+// 6a, which guards against findPath cutting diagonally through chains
+// of city buildings.
+const UNDERWORKS_INTERNAL_LINKS = (() => {
+  const links = [];
+  for (let i = 0; i < UNDERWORKS_COORDS.length; i++) {
+    for (let j = i + 1; j < UNDERWORKS_COORDS.length; j++) {
+      const a = UNDERWORKS_COORDS[i], b = UNDERWORKS_COORDS[j];
+      const dq = a.x - b.x, dr = a.y - b.y;
+      if ((Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2 === 1) {
+        links.push([a, b]);
+      }
+    }
+  }
+  return links;
+})();
 const LINKED_BUILDING_PAIRS = new Set([
   `${k(INNER_GATE)}|${k(COUNCIL)}`,
   `${k(COUNCIL)}|${k(INNER_GATE)}`,
   ...GATE_COMPLEX_INTERNAL_LINKS.flatMap(([a, b]) => [
+    `${k(a)}|${k(b)}`,
+    `${k(b)}|${k(a)}`,
+  ]),
+  ...UNDERWORKS_INTERNAL_LINKS.flatMap(([a, b]) => [
     `${k(a)}|${k(b)}`,
     `${k(b)}|${k(a)}`,
   ]),
@@ -301,6 +340,121 @@ for (const c of WALL_TOPS) {
 }
 ok(wallTopExternalCrossings.length === 0,
    `no wall-top opens to anything other than wall-top / stair / gatehouse (found: ${wallTopExternalCrossings.join(", ") || "none"})`);
+
+// 9) Footprint groupings — every authored multi-hex POI reads as one
+// place on the map. We check that each declared parent has the
+// expected member count and that every member tile shares the same
+// `parent` id.
+console.log("\n9) Footprint groupings — multi-hex places:");
+const FOOTPRINTS = {
+  "whitemarch-grand-market":      { name: "The Grand Market",      expected: 5 },
+  "whitemarch-crown-gate":        { name: "The Crown Gate",        expected: 6 },
+  "whitemarch-citadel":           { name: "The Citadel",           expected: 2 },
+  "whitemarch-chain-market-steps":{ name: "Chain Market Steps",    expected: 3 },
+  "whitemarch-registry-hall":     { name: "Registry Hall",         expected: 2 },
+  "whitemarch-prison-gate":       { name: "Prison Gate",           expected: 2 },
+  "whitemarch-caravan-yard":      { name: "Caravan Yard & Stable", expected: 2 },
+  "whitemarch-guild-court":       { name: "Guild Court",           expected: 2 },
+  "whitemarch-underworks":        { name: "The Underworks",        expected: 5 },
+};
+const groups = new Map();
+for (const key of Object.keys(HANDCRAFTED)) {
+  const parent = HANDCRAFTED[key].poi?.parent;
+  if (!parent) continue;
+  if (!groups.has(parent)) groups.set(parent, []);
+  groups.get(parent).push(key);
+}
+for (const [id, spec] of Object.entries(FOOTPRINTS)) {
+  const members = groups.get(id) || [];
+  ok(members.length === spec.expected,
+     `${spec.name} (${id}) has ${spec.expected} member hexes (found ${members.length}: ${members.join(", ") || "none"})`);
+}
+
+// 10) The Underworks — five chambers, sealed off the surface except by
+// the narrator-opened Sewer Mouth gate, internally walkable.
+console.log("\n10) The Underworks — sealed descent beyond Sewer Mouth:");
+
+// 10a) The five member hexes are all authored, with `area: "underworks"`
+// (the marker the wall generator uses to skip them in the interior set).
+for (const c of UNDERWORKS_COORDS) {
+  const t = tile(c);
+  const name = t.poi?.partName || k(c);
+  ok(t.poi?.area === "underworks", `Underworks member ${name} (${k(c)}) is tagged area:"underworks"`);
+}
+
+// 10b) Sewer Mouth keeps its sealed `doors:[]` so findPath can neither
+// descend nor ascend through it.
+const sewerTile = tile(SEWER);
+ok(Array.isArray(sewerTile.doors) && sewerTile.doors.length === 0,
+   `Sewer Mouth keeps its empty doors list (found: ${JSON.stringify(sewerTile.doors)})`);
+
+// 10c) From any Underworks hex you cannot path back up to Sewer Mouth
+// (the Mouth's empty doors list blocks the return side of the gate too).
+for (const c of UNDERWORKS_COORDS) {
+  const t = tile(c);
+  const name = t.poi?.partName || k(c);
+  ok(!edgeAllowed(t, c.x, c.y, sewerTile, SEWER.x, SEWER.y),
+     `${name} (${k(c)}) cannot path to Sewer Mouth (return is narrator-only)`);
+}
+
+// 10d) From the surface side, no city tile (street, building, wall-top,
+// stair) has an open edge into any Underworks hex.
+const underworksBreaches = [];
+for (const key of Object.keys(HANDCRAFTED)) {
+  if (UNDERWORKS_KEYS.has(key)) continue;
+  if (key === k(SEWER)) continue; // tested above
+  const [sx, sy] = key.split(",").map(Number);
+  const st = HANDCRAFTED[key];
+  for (const c of UNDERWORKS_COORDS) {
+    const dq = sx - c.x, dr = sy - c.y;
+    if ((Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2 !== 1) continue;
+    if (edgeAllowed(st, sx, sy, tile(c), c.x, c.y)) {
+      underworksBreaches.push(`${key} -> ${k(c)}`);
+    }
+  }
+}
+ok(underworksBreaches.length === 0,
+   `no city tile opens into the Underworks (found: ${underworksBreaches.join(", ") || "none"})`);
+
+// 10e) Within the Underworks, every member hex is reachable from every
+// other — the mesh wires the full graph. (We pretend Brick Descent is
+// the player start for this sub-test by checking each pair directly via
+// edgeAllowed-aware BFS over the Underworks set.)
+const reachable = new Set([k(BRICK_DESCENT)]);
+const stack = [BRICK_DESCENT];
+while (stack.length) {
+  const c = stack.pop();
+  const t = tile(c);
+  for (const d of HEX_DIRS) {
+    const n = { x: c.x + d.x, y: c.y + d.y };
+    if (!UNDERWORKS_KEYS.has(k(n))) continue;
+    if (reachable.has(k(n))) continue;
+    if (!edgeAllowed(t, c.x, c.y, tile(n), n.x, n.y)) continue;
+    reachable.add(k(n));
+    stack.push(n);
+  }
+}
+for (const c of UNDERWORKS_COORDS) {
+  const t = tile(c);
+  const name = t.poi?.partName || k(c);
+  ok(reachable.has(k(c)), `${name} (${k(c)}) is reachable inside the Underworks mesh`);
+}
+
+// 11) Grand Market Coin Scales — the 5th part — sits adjacent to at
+// least one other Grand Market hex so the outline is contiguous.
+console.log("\n11) Grand Market Coin Scales — contiguous with the rest:");
+const grandMarketHexes = (groups.get("whitemarch-grand-market") || []).map((key) => {
+  const [x, y] = key.split(",").map(Number);
+  return { x, y };
+});
+const coinScales = { x: -1, y: 0 };
+const coinScalesNeighbours = grandMarketHexes.filter((c) => {
+  if (c.x === coinScales.x && c.y === coinScales.y) return false;
+  const dq = c.x - coinScales.x, dr = c.y - coinScales.y;
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2 === 1;
+});
+ok(coinScalesNeighbours.length > 0,
+   `Coin Scales (-1,0) is adjacent to ${coinScalesNeighbours.length} other Grand Market hex(es)`);
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"} — ${pass} passed, ${fail} failed.`);
 process.exit(fail === 0 ? 0 : 1);
