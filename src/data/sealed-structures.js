@@ -66,6 +66,14 @@ const WHITEMARCH_STREETS = [
   { x: 1, y: -3 },
   { x: 2, y: -3 },
 
+  // ---- Gate-side perimeter lanes (the two hexes immediately inside the
+  // Toll Hall). Authored explicitly so the gatehouse `door` validation
+  // accepts them. The wall generator also places them as perimeter
+  // streets; sealed-structures' applyStreetBuildingDoors then re-wires
+  // their doors to mesh with the gatehouse + adjacent interior. ----
+  { x: 0, y: -4 },
+  { x: 1, y: -4 },
+
   // ---- North row (between wall and gate-yard) ----
   { x: -3, y: -2 },
   { x: -2, y: -2 },
@@ -127,18 +135,15 @@ const WHITEMARCH_BUILDINGS = [
   { x: 0, y: -2, door: { x: 0, y: -3 } },    // Customs Hall — onto Gate Square
   { x: 3, y: -3, door: { x: 3, y: -2 } },   // Dragon-Watch Tower — onto the east-wall walk
 
-  // ---- Crown Gate complex (6 hexes, 3 deep × 2 wide, set INTO the wall).
-  // Each hex carries an explicit doors list so the path graph follows the
-  // gate's spine (Approach → Outer Ward → Gatehouse → Inner Ward → Gate
-  // Square) and can also cross the gate's east/west pair at every layer.
-  // The gate-out edge (Outer Ward W ↔ Approach) is the structure's only
-  // breach of the Great Wall and is declared in the `gates` field below. ----
-  { x: 0, y: -4, doors: [{ x: 1, y: -4 }, { x: 0, y: -5 }, { x: 0, y: -3 }] }, // Inner Ward W (opens to Gate Square)
-  { x: 1, y: -4, doors: [{ x: 0, y: -4 }, { x: 1, y: -5 }, { x: 1, y: -3 }] }, // Inner Ward E (opens to north-walk lane)
-  { x: 0, y: -5, doors: [{ x: 1, y: -5 }, { x: 0, y: -4 }, { x: 0, y: -6 }] }, // Gatehouse W (Toll Hall)
-  { x: 1, y: -5, doors: [{ x: 0, y: -5 }, { x: 1, y: -4 }, { x: 1, y: -6 }] }, // Gatehouse E
-  { x: 0, y: -6, doors: [{ x: 1, y: -6 }, { x: 0, y: -5 }] },                  // Outer Ward W (gate-out added via gates field)
-  { x: 1, y: -6, doors: [{ x: 0, y: -6 }, { x: 1, y: -5 }] },                  // Outer Ward E
+  // ---- Crown Gate (2 hexes, 1 deep × 2 wide, set straight through the
+  // wall ring). Each hex carries an explicit doors list so the path
+  // graph follows the gate's spine (Approach → Toll Hall → perimeter
+  // street → city) and can also cross the gate's east/west pair. The
+  // gate-out edge (Toll Hall ↔ Approach) is the structure's only
+  // breach of the Great Wall and is declared in the `gates` field
+  // below. ----
+  { x: 0, y: -5, doors: [{ x: 1, y: -5 }, { x: 0, y: -4 }] }, // Toll Hall — gate-out (0,-6) added via gates field
+  { x: 1, y: -5, doors: [{ x: 0, y: -5 }, { x: 1, y: -4 }] }, // Toll Hall (East)
 
   // ---- Caravan / market wards ----
   { x: -2, y: -1 },                          // Caravan Yard — open yard with gates
@@ -174,6 +179,12 @@ const WHITEMARCH_BUILDINGS = [
   // ---- Southern wards ----
   { x: -1, y: 4, door: { x: -1, y: 3 } },   // Prison Gate — onto Great Oath Steps
   { x: 2, y: 4, door: { x: 2, y: 5 } },     // Tenement Row — onto Fountain Court
+
+  // ---- Wall-side buildings (cornered against the inside of the wall,
+  // each opening to a city street through the d=1 perimeter ring) ----
+  { x: -2, y: -4, door: { x: -2, y: -3 } }, // Watch Bunkhouse — onto the north wall-walk lane
+  { x: 4, y: 2,   door: { x: 3, y: 2 } },   // Forge Annex — onto the eastern Iron Way row
+  { x: -2, y: 5,  door: { x: -1, y: 5 } },  // Wallside Almshouse — onto the south wall-walk lane
 ];
 
 export const SEALED_STRUCTURES = [
@@ -187,7 +198,7 @@ export const SEALED_STRUCTURES = [
     streets: WHITEMARCH_STREETS,
     buildings: WHITEMARCH_BUILDINGS,
     gates: [
-      [{ x: 0, y: -6 }, { x: 0, y: -7 }], // Outer Ward W opens out to the Crown Road Approach
+      [{ x: 0, y: -5 }, { x: 0, y: -6 }], // Toll Hall opens out to the Crown Road Approach
     ],
   },
   // ---------- WHITEMARCH — THE HIGH WALL (CITADEL) ----------

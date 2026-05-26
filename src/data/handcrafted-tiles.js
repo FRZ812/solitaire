@@ -282,26 +282,29 @@ export const HANDCRAFTED = {
   "3,5": { terrain: "indoor", doors: [], poi: { type: "sewer", name: "Sewer Mouth", access: "hidden", description: "A rusted grate at the city's southeastern corner, half-hidden by broken baskets and old ash beside the south-wall stone. Warm stink breathes from the dark; fresh arrows are scratched into the brick beside older marks that read less like directions than warnings. No casual road leads down — only those who know the way, or force it, go below." } },
 
   // ============================================================
-  // CROWN GATE COMPLEX — the 6-hex passage through the Great Wall, 3 hexes
-  // deep × 2 hexes wide. Three layers: Inner Ward (city-side bailey,
-  // wagons clear here), Gatehouse (the gate-towers, where toll is paid
-  // under the murder-holes), Outer Ward (queue-yard between the outer
-  // portcullis and the gatehouse). All 6 hexes share the Crown Gate
-  // parent and carry explicit `doors` lists — the path graph runs only
-  // along the complex's spine, not jumping wall-thickness diagonally.
+  // CROWN GATE — the 2-hex gatehouse straight through the Great Wall,
+  // matching the wall's new single-ring thickness. The old Inner Ward
+  // (city-side bailey) and Outer Ward (queue-yard) were trimmed when
+  // the wall was thinned; their functions consolidated into the deeper
+  // gatehouse, with Customs Hall (kept at (0,-2) inside the city) and
+  // the Crown Road Approach immediately outside handling overflow.
+  // Both gatehouse hexes share the Crown Gate parent and carry explicit
+  // `doors` lists so the path graph follows the spine
+  // (Approach → Toll Hall → city street) and can cross the gate's
+  // east/west pair. The gate-out edge (Toll Hall ↔ Approach) is the
+  // structure's only breach of the Great Wall, declared in the `gates`
+  // field of sealed-structures.js.
   // ============================================================
-  "0,-4": { terrain: "settlement", doors: [{ x: 1, y: -4 }, { x: 0, y: -5 }, { x: 0, y: -3 }],                                  poi: { ...CROWN_GATE, part: "inner-ward-w", partName: "Inspection Yard", name: "The Crown Gate", access: "conditional", description: "The city-side bailey of the gate complex, paved in slabs the size of dinner-tables. Wagons that have cleared the gatehouse pull up here under armed awnings; clerks with chained ledgers walk the lines while inspectors prod beds and beasts. The square's far gate opens onto Gate Square inside the city." } },
-  "1,-4": { terrain: "settlement", doors: [{ x: 0, y: -4 }, { x: 1, y: -5 }, { x: 1, y: -3 }],                                  poi: { ...CROWN_GATE, part: "inner-ward-e", partName: "Inspection Yard (East)", name: "The Crown Gate", access: "conditional", description: "The east half of the inner ward — pilgrim-counters, bonded-traffic counters, and the side-gate where livestock are quartered before being released into the city. A roof-bridge crosses overhead to the gatehouse battlements." } },
-  "0,-5": { terrain: "settlement", doors: [{ x: 1, y: -5 }, { x: 0, y: -4 }, { x: 0, y: -6 }],                                  poi: { ...CROWN_GATE, part: "gatehouse-w", partName: "Toll Hall", name: "The Crown Gate", access: "conditional", description: "A long stone throat beneath the gate-towers. Clerks sit behind barred counters, ledgers chained to the desks; every stamp echoes and every coin is bitten or weighed while guards keep pike-points low enough to remind the crowd that patience is cheaper than injury. Separate counters sort guild, citizen, foreigner, livestock, and bonded traffic. Murder-holes in the vault overhead are unstoppered when the bell warns of trouble." } },
-  "1,-5": { terrain: "settlement", doors: [{ x: 0, y: -5 }, { x: 1, y: -4 }, { x: 1, y: -6 }],                                  poi: { ...CROWN_GATE, part: "gatehouse-e", partName: "Toll Hall (East)", name: "The Crown Gate", access: "conditional", description: "The east bay of the gatehouse — guild and bonded counters, the seal-press room, the chained tally-rope down to the under-vault. The east gate-tower lifts above; somewhere up the stairwell, the watch-bell hangs on its blackened beam." } },
-  "0,-6": { terrain: "settlement", doors: [{ x: 1, y: -6 }, { x: 0, y: -5 }],                                                    poi: { ...CROWN_GATE, part: "outer-ward-w", partName: "Pilgrims' Wait", name: "The Crown Gate", access: "conditional", description: "The outer bailey, between the road's portcullis behind and the gatehouse's portcullis ahead. A queue-yard floored in trampled stone, with stalls cooking thin soup for travellers, a chapel-niche of the Pale God at the wall, and a board of stamped notices nailed to the gate-tower's foot. The portcullis behind drops at curfew and only the watch can raise it." } },
-  "1,-6": { terrain: "settlement", doors: [{ x: 0, y: -6 }, { x: 1, y: -5 }],                                                    poi: { ...CROWN_GATE, part: "outer-ward-e", partName: "Carter's Yard", name: "The Crown Gate", access: "conditional", description: "The east bay of the outer bailey — wagons park nose-in beside the wall, carters water their teams from a stone trough fed by the gatehouse's cistern, and the bonded sit roped to the east-tower's bolted ring while their papers are walked through to the counters." } },
+  "0,-5": { terrain: "settlement", doors: [{ x: 1, y: -5 }, { x: 0, y: -4 }, { x: 0, y: -6 }], poi: { ...CROWN_GATE, part: "gatehouse-w", partName: "Toll Hall", name: "The Crown Gate", access: "conditional", description: "A long stone throat through the wall. Clerks sit behind barred counters, ledgers chained to the desks; every stamp echoes and every coin is bitten or weighed while guards keep pike-points low enough to remind the crowd that patience is cheaper than injury. Separate counters sort guild, citizen, foreigner, livestock, and bonded traffic. Murder-holes in the vault overhead are unstoppered when the bell warns of trouble." } },
+  "1,-5": { terrain: "settlement", doors: [{ x: 0, y: -5 }, { x: 1, y: -4 }],                  poi: { ...CROWN_GATE, part: "gatehouse-e", partName: "Toll Hall (East)", name: "The Crown Gate", access: "conditional", description: "The east bay of the gatehouse — guild and bonded counters, the seal-press room, the chained tally-rope down to the under-vault. The east gate-tower lifts above; somewhere up the stairwell, the watch-bell hangs on its blackened beam." } },
 
   // ============================================================
   // CROWN ROAD APPROACH — the road outside the Great Wall, where the
-  // queue forms before the outer portcullis lifts.
+  // queue forms before the gate. Now sits at (0,-6) immediately beyond
+  // the Toll Hall (was at (0,-7), one hex further out, when the gate
+  // ran a 3-deep complex with an Outer Ward bailey in between).
   // ============================================================
-  "0,-7": { terrain: "road", poi: { type: "gate", name: "Crown Road Approach", access: "public", description: "The road widens into trampled stone before Whitemarch's outer portcullis. Carts wait in ranked lines, oxen steaming; pilgrims sleep against bundles. The gate-towers rise black and white through the chimney smoke, signal-bells hung under iron roofs, and Road Wardens watch the queue long before any official does." } },
+  "0,-6": { terrain: "road", poi: { type: "gate", name: "Crown Road Approach", access: "public", description: "The road widens into trampled stone before Whitemarch's gate. Carts wait in ranked lines, oxen steaming; pilgrims sleep against bundles. The gate-towers rise black and white through the chimney smoke, signal-bells hung under iron roofs, and Road Wardens watch the queue long before any official does." } },
 
   // ============================================================
   // THE WHITEWEND — pushed east of the wall band. The 3-hex-thick east
@@ -324,6 +327,19 @@ export const HANDCRAFTED = {
   "7,6":  { terrain: "water", poi: { type: "river", name: "The Whitewend", description: "The Whitewend at the city's southern shoulder, where reed-beds take over and the gulls thin out." } },
   "7,7":  { terrain: "water", poi: { type: "river", name: "The Whitewend", description: "The Whitewend, broad and slow past the city, headed for the sea no one in Whitemarch has personally seen." } },
   "7,8":  { terrain: "water", poi: { type: "river", name: "The Whitewend", description: "The Whitewend, well clear of the city now — the bank dark with reed and only the occasional fisher-skiff working the slack water." } },
+
+  // ============================================================
+  // WALL-SIDE BUILDINGS — buildings sat right against the inside of the
+  // Great Wall, so the perimeter reads as city all the way out instead
+  // of a uniform yard ring. Each is authored at distance 1 from a city
+  // street (the wall generator skips them) and is registered in
+  // WHITEMARCH_BUILDINGS with a single declared `door` onto the nearest
+  // interior street. Generated d=1 streets pick up the rest of the
+  // perimeter and mesh around them.
+  // ============================================================
+  "-2,-4": { terrain: "indoor", wallside: true, poi: { type: "barracks", name: "Watch Bunkhouse", access: "restricted", description: "A long stone bunkhouse with its back built straight into the wall. Two rows of three-deep cots, lockers stamped with watch-numbers, and a stove always banked. Off-shift watchmen pull boots up here between gate-watch and wall-watch; the sergeants drink at the table by the door where they can see everyone come and go." } },
+  "4,2":   { terrain: "indoor", wallside: true, poi: { type: "smithy", name: "Forge Annex", access: "restricted", description: "An outwork of the Public Smith Row, set hard against the east wall so the smoke can vent through high louvres without filling the city. Two charcoal hearths and an oil-bath under hung tongs; the forge-master takes work the main row can't fit and quietly turns out the city's quenched-blade orders for the wall-watch." } },
+  "-2,5":  { terrain: "indoor", wallside: true, poi: { type: "town", name: "Wallside Almshouse", access: "public", description: "A two-storey almshouse cornered against the south-west wall behind the Prison Stair. Plain wooden bunks, a soup-line in the morning, and a chaplain who keeps the lamps trimmed. The poor of the southern wards take their bowls here when the courts are sitting and there is no work to be had." } },
 
   // ============================================================
   // WALL STAIRS — six wall-walk chokepoints. Each stair IS a wall_top
@@ -565,54 +581,56 @@ function applyLinkedDoors(s) {
 
 // ============================================================
 // WALL GENERATOR — fills the Great Wall as a SINGLE ring of walkable
-// "wall_top" hexes at distance 2 from every interior hex, plus an
-// "intramural" ring of open settlement ground at distance 1 (the
-// pomerium between the city's streets and the inner face of the wall).
-// The intramural ring kills the "empty plains inside the city walls"
-// look that fell out of removing the inner stone face — the d=1 hexes
-// now read as built city ground instead of falling through to
-// procedural plains.
+// "wall_top" hexes at distance 2 from every interior hex, plus a
+// generated perimeter ring of STREET tiles at distance 1 (the lanes
+// running just inside the wall). The d=1 streets are interrupted by
+// the wall-side buildings authored above (Watch Bunkhouse, Forge
+// Annex, Wallside Almshouse), so the perimeter reads as city lanes
+// with the occasional building cornered against the wall — not a
+// uniform yard ring.
 //
 // The wall itself is a single hex thick — there is no impassable stone
-// mass anymore, only the wall-walk. It still functions as a wall: every
-// wall_top hex's `doors` list (set below) opens ONLY to adjacent
-// wall_top and to the Crown Gate's gatehouse middle hexes. Neither the
-// city streets nor the intramural ring nor procedural exterior hexes
+// mass anymore, only the wall-walk. It still functions as a wall:
+// every wall_top hex's `doors` list (set below) opens ONLY to adjacent
+// wall_top and to the Crown Gate's gatehouse hexes. Neither the city
+// streets nor the d=1 perimeter streets nor procedural exterior hexes
 // appear in that list, so edgeAllowed blocks every edge that would
 // cross the ring in either direction. The six wall-stairs (authored as
-// wall_top tiles with `poi.type === "stair"` and an explicit doors list
-// `[adjacent street, next wall_top]`) are the single-tile chokepoints —
-// climbing them = entering the wall.
+// wall_top tiles with `poi.type === "stair"` at the d=2 ring) are the
+// single-tile chokepoints — each opens to its adjacent d=1 street and
+// the next wall_top along the ring.
 //
-// To climb the wall from inside the city you must reach one of the
-// six wall-stairs' street neighbours and step onto the stair-wall_top
-// (or cross via the gatehouse roof); to climb it from outside you must
-// first enter the city through the Crown Gate. The intramural ring is
-// just walkable yard space; it does not open to the wall.
+// To climb the wall from inside the city you walk to a d=1 perimeter
+// street next to a stair and step onto the stair-wall_top (or cross
+// via the gatehouse roof); to climb it from outside you must first
+// enter the city through the Crown Gate.
 //
 // The generator runs AFTER the per-tile authoring so it can see what's
-// already placed (interior, gate complex, river, approach, stairs) and
-// fill only the gaps that fall at distance 1 or 2 from any interior hex.
+// already placed (interior, gate complex, river, approach, stairs,
+// wall-side buildings) and fill only the gaps that fall at distance 1
+// or 2 from any interior hex.
 // ============================================================
 {
   // "Interior" for wall-distance purposes = every hex already in HANDCRAFTED
-  // that is walkable city ground BEHIND the wall — not water, not the road
-  // approach outside the wall, not the Crown Gate complex itself (gate sits
-  // ACROSS the wall ring, replacing the wall-walk at the gate's gatehouse
-  // hexes), and not the wall-stairs (which sit ON the ring at d=2 and
-  // would otherwise count themselves as interior and push another ring
-  // out around them), and not the Underworks (which conceptually sits
-  // below the surface — we don't want it pushing the ring outward around
-  // itself). Including any of these in the distance set would push the
-  // ring outward.
+  // that is walkable CITY-CORE ground — not water, not the road approach
+  // outside the wall, not the Crown Gate complex itself (gate sits ACROSS
+  // the wall ring), not the wall-stairs (which sit ON the ring at d=2),
+  // not the Underworks (conceptually below the surface), and not the
+  // wall-side buildings (which sit AT d=1 against the wall — counting
+  // them as interior would push the ring outward around each one and
+  // leave the wall lumpy. They're handcrafted so the wall generator
+  // skips them anyway; we just want the ring's GEOMETRY computed from
+  // the city core).
+  // Including any of these in the distance set would push the ring out.
   const interiorCoords = [];
   for (const key of Object.keys(HANDCRAFTED)) {
     const t = HANDCRAFTED[key];
     if (t.terrain === "water") continue;
     if (t.terrain === "road") continue;                          // Crown Road Approach
     if (t.poi?.parent === "whitemarch-crown-gate") continue;      // gate crosses the ring
-    if (t.poi?.type === "stair") continue;                        // stairs sit beside the ring
+    if (t.poi?.type === "stair") continue;                        // stairs sit on the ring
     if (t.poi?.area === "underworks") continue;                   // the Underworks sit beside the ring
+    if (t.wallside) continue;                                     // wall-side buildings sit at d=1
     const [x, y] = key.split(",").map(Number);
     interiorCoords.push({ x, y });
   }
@@ -635,23 +653,23 @@ function applyLinkedDoors(s) {
     if (c.y < ymin) ymin = c.y;
     if (c.y > ymax) ymax = c.y;
   }
-  // Place intramural + wall_top hexes:
-  //   distance 1 from interior → intramural settlement (the pomerium —
-  //     open built ground between the city's streets and the wall;
-  //     doors wired below to mesh with adjacent intramural and to the
-  //     adjacent street tiles).
+  // Place perimeter + wall_top hexes:
+  //   distance 1 from interior → STREET (a generated perimeter lane —
+  //     mesh-connected to other perimeter streets, to the city's
+  //     interior streets, to the adjacent stair-wall_top above, and to
+  //     the gatehouse where it abuts the gate).
   //   distance 2 from interior → wall-walk (passable; doors set below).
   // Distance 3 (where the outer stone face once sat) is no longer placed;
   // that ring falls through to procedural exterior generation.
-  let wallTopCount = 0, intramuralCount = 0;
+  let wallTopCount = 0, perimeterCount = 0;
   for (let x = xmin - 3; x <= xmax + 3; x++) {
     for (let y = ymin - 3; y <= ymax + 3; y++) {
       const key = `${x},${y}`;
-      if (HANDCRAFTED[key]) continue;        // interior, gate, river, road, stair — already placed
+      if (HANDCRAFTED[key]) continue;        // interior, gate, river, road, stair, wall-side building — already placed
       const d = minDistToInterior(x, y);
       if (d === 1) {
-        HANDCRAFTED[key] = { terrain: "settlement", poi: null, intramural: true }; // doors set below
-        intramuralCount++;
+        HANDCRAFTED[key] = { terrain: "street", poi: null, perimeter: true }; // doors set below
+        perimeterCount++;
       } else if (d === 2) {
         HANDCRAFTED[key] = { terrain: "wall_top", poi: null }; // doors set below
         wallTopCount++;
@@ -660,11 +678,11 @@ function applyLinkedDoors(s) {
   }
   // Wall-top doors — each wall_top hex meshes with adjacent wall_top hexes
   // (forming a continuous walk along the wall) and with the Crown Gate's
-  // gatehouse middle hexes (so the walk crosses the gate's roof rather
-  // than ending at the gate). Stair-tagged wall_tops also open to their
-  // adjacent intramural neighbours — that edge is the single chokepoint
+  // gatehouse hexes (so the walk crosses the gate's roof rather than
+  // ending at the gate). Stair-tagged wall_tops also open to their
+  // adjacent perimeter street(s) — that edge is the single chokepoint
   // from ground level up to the ring. All other wall_top tiles stay
-  // sealed off from the intramural yard and from city streets.
+  // sealed off from the perimeter streets.
   for (const key of Object.keys(HANDCRAFTED)) {
     const t = HANDCRAFTED[key];
     if (t.terrain !== "wall_top") continue;
@@ -680,32 +698,37 @@ function applyLinkedDoors(s) {
       else if (nt.poi?.parent === "whitemarch-crown-gate" && nt.poi?.part?.startsWith("gatehouse")) {
         doors.push({ x: nx, y: ny });
       }
-      else if (isStair && nt.intramural) doors.push({ x: nx, y: ny });
+      else if (isStair && nt.perimeter) doors.push({ x: nx, y: ny });
     }
     HANDCRAFTED[key].doors = doors;
   }
-  // Intramural doors — each intramural settlement hex meshes with
-  // adjacent intramural hexes (so you can walk the yard around the
-  // ring), with adjacent city streets (so you can step out of the
-  // city into the yard), and with adjacent stair-tagged wall_tops (the
-  // single climb-up tile per side). Regular wall_top tiles stay sealed.
+  // Perimeter-street doors — each generated d=1 street meshes with
+  // adjacent perimeter streets (so you can walk the full perimeter),
+  // with adjacent interior city streets (the lanes that bring you
+  // out from the city), with adjacent stair-tagged wall_tops (the
+  // chokepoints up), and with the gatehouse hexes (so the perimeter
+  // street touching the gate is the inside-of-the-gate hex). It does
+  // NOT door to the wall-side buildings authored above — those use
+  // their own front door to the city interior, per the standard
+  // streets-and-buildings rule.
   for (const key of Object.keys(HANDCRAFTED)) {
     const t = HANDCRAFTED[key];
-    if (!t.intramural) continue;
+    if (!t.perimeter) continue;
     const [x, y] = key.split(",").map(Number);
     const doors = [];
     for (const d of HEX_DIRS) {
       const nx = x + d.x, ny = y + d.y;
       const nt = HANDCRAFTED[`${nx},${ny}`];
       if (!nt) continue;
-      if (nt.intramural) doors.push({ x: nx, y: ny });
+      if (nt.perimeter) doors.push({ x: nx, y: ny });
       else if (nt.terrain === "street") doors.push({ x: nx, y: ny });
       else if (nt.terrain === "wall_top" && nt.poi?.type === "stair") doors.push({ x: nx, y: ny });
+      else if (nt.poi?.parent === "whitemarch-crown-gate") doors.push({ x: nx, y: ny });
     }
     HANDCRAFTED[key].doors = doors;
   }
   // Comment retained for any future debugging.
-  // console.log(`[whitemarch] generated ${wallTopCount} wall-walk + ${intramuralCount} intramural hexes`);
+  // console.log(`[whitemarch] generated ${wallTopCount} wall-walk + ${perimeterCount} perimeter hexes`);
 }
 
 for (const s of SEALED_STRUCTURES) {
@@ -715,23 +738,25 @@ for (const s of SEALED_STRUCTURES) {
 }
 
 // ============================================================
-// STREET ↔ INTRAMURAL + WALL-WALK BRIDGES — after the Crown Gate's doors
+// STREET ↔ PERIMETER + WALL-WALK BRIDGES — after the Crown Gate's doors
 // are authored, two passes finish the city-perimeter graph:
-//   1. Each city street adjacent to a generated intramural settlement
-//      hex gets that intramural hex added to its doors. The intramural
-//      side was wired when the wall generator ran; this pass wires the
-//      street side so the edge is bidirectional.
-//   2. The gatehouse middle hexes get extended doors to adjacent wall-top
-//      hexes on either side. The wall-walk thus crosses the gatehouse
-//      roof, so a guard on the wall walks continuously over the gate
-//      rather than dead-ending at it.
+//   1. Each authored city street adjacent to a generated perimeter
+//      street gets that perimeter hex added to its doors. The
+//      perimeter side was wired when the wall generator ran; this pass
+//      wires the city-street side so the edge is bidirectional.
+//   2. The gatehouse middle hexes get extended doors to adjacent
+//      wall-top hexes on either side. The wall-walk thus crosses the
+//      gatehouse roof, so a guard on the wall walks continuously over
+//      the gate rather than dead-ending at it.
 // Stairs no longer touch streets directly — they sit on the wall ring
-// at d=2 and open to the intramural yard at d=1, which the streets
-// reach via pass (1). So there is no separate street ↔ stair bridge.
+// at d=2 and open to the perimeter street at d=1, which the city
+// streets reach via pass (1). So there is no separate street ↔ stair
+// bridge.
 // ============================================================
 for (const key of Object.keys(HANDCRAFTED)) {
   const tile = HANDCRAFTED[key];
   if (tile.terrain !== "street") continue;
+  if (tile.perimeter) continue; // perimeter streets already wired
   if (!Array.isArray(tile.doors)) continue;
   const [x, y] = key.split(",").map(Number);
   const existing = new Set(tile.doors.map((d) => `${d.x},${d.y}`));
@@ -741,7 +766,7 @@ for (const key of Object.keys(HANDCRAFTED)) {
     const nk = `${nx},${ny}`;
     if (existing.has(nk)) continue;
     const nt = HANDCRAFTED[nk];
-    if (nt && nt.intramural) extra.push({ x: nx, y: ny });
+    if (nt && nt.perimeter) extra.push({ x: nx, y: ny });
   }
   if (extra.length) HANDCRAFTED[key] = { ...tile, doors: [...tile.doors, ...extra] };
 }

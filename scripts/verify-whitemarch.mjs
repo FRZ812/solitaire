@@ -24,7 +24,7 @@ const tile = (c) => getTile(state, c.x, c.y);
 // walkway on top of the wall — passable, but isolated from city streets
 // except via stairs (handled separately). Wall faces and water are
 // impassable; the road approach is outside the wall.
-const APPROACH_KEY = "0,-7";
+const APPROACH_KEY = "0,-6";
 // The Underworks — five sealed chambers beyond Sewer Mouth. Entry and
 // return are narrator-driven (Sewer Mouth keeps `doors:[]`), so the
 // Underworks are unreachable from Grain Square by findPath; their
@@ -52,11 +52,10 @@ const INTERIOR = Object.keys(HANDCRAFTED)
   .map((key) => { const [x, y] = key.split(",").map(Number); return { x, y }; });
 
 // "Streets" for the partition tests = the authored street network PLUS
-// the generated intramural ring. Both are open thoroughfares that mesh
-// with their neighbours; neither should be treated as a destination
-// "building" by the no-building-to-building rule.
-const STREETS = INTERIOR.filter((c) => tile(c).terrain === "street" || !!HANDCRAFTED[k(c)]?.intramural);
-const BUILDINGS = INTERIOR.filter((c) => tile(c).terrain !== "street" && !HANDCRAFTED[k(c)]?.intramural);
+// the generated perimeter ring (terrain === "street" catches both, since
+// the wall generator now places perimeter tiles as street terrain).
+const STREETS = INTERIOR.filter((c) => tile(c).terrain === "street");
+const BUILDINGS = INTERIOR.filter((c) => tile(c).terrain !== "street");
 const WALL_TOPS = Object.keys(HANDCRAFTED)
   .filter((key) => HANDCRAFTED[key].terrain === "wall_top")
   .map((key) => { const [x, y] = key.split(",").map(Number); return { x, y }; });
@@ -67,8 +66,8 @@ const STAIRS = Object.keys(HANDCRAFTED)
   .map((key) => { const [x, y] = key.split(",").map(Number); return { x, y }; });
 
 const GRAIN = { x: 0, y: 0 };
-const APPROACH = { x: 0, y: -7 };
-const OUTER_GATE = { x: 0, y: -6 }; // Outer Ward W — the wall-crossing hex
+const APPROACH = { x: 0, y: -6 };  // Crown Road Approach (was 0,-7 when the gate had a 3-deep complex)
+const OUTER_GATE = { x: 0, y: -5 }; // Toll Hall — the single wall-crossing gate hex
 const INNER_GATE = { x: 0, y: 3 };
 const COUNCIL = { x: 0, y: 4 };
 const SEWER = { x: 3, y: 5 };
@@ -77,16 +76,11 @@ const BRICK_DESCENT = UNDERWORKS_COORDS[0];
 
 // Buildings that are EXEMPT from the no-building-to-building rule because
 // a sealed structure deliberately links them: the Citadel's internal pair
-// (Inner Gate ↔ Iron Palace) and every internal edge of the Crown Gate's
-// 6-hex complex (Inner Ward / Gatehouse / Outer Ward, west and east).
+// (Inner Gate ↔ Iron Palace) and the Crown Gate's single internal edge
+// (Toll Hall W ↔ E, the only remaining link after the gate was trimmed
+// to a 2-hex straight-through gatehouse).
 const GATE_COMPLEX_INTERNAL_LINKS = [
-  [{ x: 0, y: -4 }, { x: 1, y: -4 }], // Inner Ward W ↔ E
-  [{ x: 0, y: -4 }, { x: 0, y: -5 }], // Inner Ward W ↔ Gatehouse W
-  [{ x: 1, y: -4 }, { x: 1, y: -5 }], // Inner Ward E ↔ Gatehouse E
-  [{ x: 0, y: -5 }, { x: 1, y: -5 }], // Gatehouse W ↔ E
-  [{ x: 0, y: -5 }, { x: 0, y: -6 }], // Gatehouse W ↔ Outer Ward W
-  [{ x: 1, y: -5 }, { x: 1, y: -6 }], // Gatehouse E ↔ Outer Ward E
-  [{ x: 0, y: -6 }, { x: 1, y: -6 }], // Outer Ward W ↔ E
+  [{ x: 0, y: -5 }, { x: 1, y: -5 }], // Toll Hall W ↔ E
 ];
 // The Underworks mesh — every adjacent pair among the five interior
 // hexes is an authored internal edge (see UNDERWORKS in
@@ -229,7 +223,7 @@ ok(illegalBuildingEdges.length === 0,
 // High Wall) and Sewer Mouth (explicitly sealed).
 const streetSet = new Set(STREETS.map(k));
 const GATE_COMPLEX = new Set([
-  "0,-4", "1,-4", "0,-5", "1,-5", "0,-6", "1,-6",
+  "0,-5", "1,-5",
 ]);
 for (const c of BUILDINGS) {
   if (RESTRICTED.has(k(c))) continue; // Iron Palace is behind the High Wall
@@ -286,11 +280,11 @@ ok(streetStops > 0, `the route to Prison Gate uses at least one street hex (used
 // the ring, and the walk does NOT connect to the outside.
 console.log("\n8) Wall-walk — stairs + wall-top ring:");
 
-// 8a) Every stair has an open edge BOTH to an intramural yard tile (the
+// 8a) Every stair has an open edge BOTH to a perimeter street tile (the
 // chokepoint up from ground level) and to another wall-top hex along the
-// ring (the climb works in both directions). The street is no longer the
-// immediate city-side neighbour — the player walks street → intramural →
-// stair-wall_top → ring.
+// ring (the climb works in both directions). The city street is no longer
+// the immediate ground-side neighbour — the player walks interior street
+// → perimeter street → stair-wall_top → ring.
 for (const s of STAIRS) {
   const t = tile(s);
   const name = t.poi?.name || k(s);
@@ -298,14 +292,14 @@ for (const s of STAIRS) {
     ok(false, `${name} (${k(s)}) declares fewer than 2 doors`);
     continue;
   }
-  let openIntramural = false, openTop = false;
+  let openPerimeter = false, openTop = false;
   for (const d of t.doors) {
     const nt = getTile(state, d.x, d.y);
     if (!edgeAllowed(t, s.x, s.y, nt, d.x, d.y)) continue;
-    if (HANDCRAFTED[k(d)]?.intramural) openIntramural = true;
+    if (HANDCRAFTED[k(d)]?.perimeter) openPerimeter = true;
     else if (nt.terrain === "wall_top") openTop = true;
   }
-  ok(openIntramural && openTop, `${name} (${k(s)}) opens to BOTH the intramural yard and another wall-top`);
+  ok(openPerimeter && openTop, `${name} (${k(s)}) opens to BOTH a perimeter street and another wall-top`);
 }
 
 // 8b) Every wall-top hex meshes with at least one other wall-top hex (the
@@ -334,7 +328,7 @@ ok(usedStair, "the route to the wall-top passes through a stair");
 // 8d) The wall-walk does NOT cross the outer wall — no wall-top hex has an
 // open edge to anything beyond the wall (outside the biome interior).
 // Stair-tagged wall_top tiles are the single exception: each opens to the
-// adjacent intramural yard tile(s) (its declared chokepoint).
+// adjacent perimeter street tile(s) (its declared chokepoint).
 const wallTopExternalCrossings = [];
 for (const c of WALL_TOPS) {
   const ct = tile(c);
@@ -345,14 +339,14 @@ for (const c of WALL_TOPS) {
     if (!isPassable(nt)) continue;
     if (nt.terrain === "wall_top") continue;
     if (HANDCRAFTED[k(n)]?.poi?.parent === "whitemarch-crown-gate") continue;
-    if (isStair && HANDCRAFTED[k(n)]?.intramural) continue; // stair's intramural chokepoint
+    if (isStair && HANDCRAFTED[k(n)]?.perimeter) continue; // stair's perimeter chokepoint
     if (edgeAllowed(ct, c.x, c.y, nt, n.x, n.y)) {
       wallTopExternalCrossings.push(`${k(c)} -> ${k(n)}`);
     }
   }
 }
 ok(wallTopExternalCrossings.length === 0,
-   `no wall-top opens to anything other than wall-top / gatehouse / (stair's intramural) (found: ${wallTopExternalCrossings.join(", ") || "none"})`);
+   `no wall-top opens to anything other than wall-top / gatehouse / (stair's perimeter) (found: ${wallTopExternalCrossings.join(", ") || "none"})`);
 
 // 9) Footprint groupings — every authored multi-hex POI reads as one
 // place on the map. We check that each declared parent has the
@@ -361,7 +355,7 @@ ok(wallTopExternalCrossings.length === 0,
 console.log("\n9) Footprint groupings — multi-hex places:");
 const FOOTPRINTS = {
   "whitemarch-grand-market":      { name: "The Grand Market",      expected: 5 },
-  "whitemarch-crown-gate":        { name: "The Crown Gate",        expected: 6 },
+  "whitemarch-crown-gate":        { name: "The Crown Gate",        expected: 2 },
   "whitemarch-citadel":           { name: "The Citadel",           expected: 2 },
   "whitemarch-chain-market-steps":{ name: "Chain Market Steps",    expected: 3 },
   "whitemarch-registry-hall":     { name: "Registry Hall",         expected: 2 },
