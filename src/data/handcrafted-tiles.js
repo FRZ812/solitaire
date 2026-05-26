@@ -556,34 +556,41 @@ function applyLinkedDoors(s) {
 }
 
 // ============================================================
-// WALL GENERATOR — fills the Great Wall as a 3-hex-thick band of "wall"
-// terrain around every interior hex. Stage 1: the wall is purely impassable
-// mass; the only crossing is the Crown Gate complex (authored above). Stage
-// 2 will convert the MIDDLE layer of the band to a walkable wall-top with
-// stair entry. The generator runs AFTER the per-tile authoring so it can
-// see what's already placed (interior, gate complex, river, approach) and
-// fill only the gaps that fall within distance 1-3 of any interior hex.
+// WALL GENERATOR — fills the Great Wall as a SINGLE ring of walkable
+// "wall_top" hexes at distance 2 from every interior hex. The previous
+// 3-hex band (inner stone face + walk + outer stone face) collapsed to
+// just the walk: there is no impassable stone mass anymore, only the
+// wall-walk itself. The wall still functions as a wall — every wall_top
+// hex's `doors` list (set below) opens ONLY to adjacent wall_top, to
+// adjacent stairs, and to the Crown Gate's gatehouse middle hexes.
+// Neither the city streets nor procedural exterior hexes appear in that
+// list, so edgeAllowed blocks every edge that would cross the ring in
+// either direction. To climb the wall from the inside you must take one
+// of the six wall-stairs (or cross via the gatehouse roof); to climb it
+// from the outside you must first enter the city through the Crown Gate.
+// The generator runs AFTER the per-tile authoring so it can see what's
+// already placed (interior, gate complex, river, approach, stairs) and
+// fill only the gaps that fall at distance 2 from any interior hex.
 // ============================================================
 {
   // "Interior" for wall-distance purposes = every hex already in HANDCRAFTED
   // that is walkable city ground BEHIND the wall — not water, not the road
   // approach outside the wall, not the Crown Gate complex itself (gate sits
-  // IN the wall band, replacing wall at the gate's x-positions), and not
-  // the wall-stairs (which also sit IN the wall band's inner face), and not
-  // the Underworks (which sits IN the wall band's footprint but is
-  // conceptually below the surface — we don't want it pushing the wall
-  // band outward around itself).
-  // Including any of these in the distance set would push the wall outward
-  // and turn the road's first hexes (or the wall-top adjacent to a stair)
-  // into stone.
+  // ACROSS the wall ring, replacing the wall-walk at the gate's gatehouse
+  // hexes), and not the wall-stairs (which sit just inside the wall-walk
+  // hex they connect to), and not the Underworks (which conceptually sits
+  // below the surface — we don't want it pushing the ring outward around
+  // itself). Including any of these in the distance set would push the
+  // ring outward and turn the road's first hexes (or the wall-top adjacent
+  // to a stair) into more wall-walk.
   const interiorCoords = [];
   for (const key of Object.keys(HANDCRAFTED)) {
     const t = HANDCRAFTED[key];
     if (t.terrain === "water") continue;
     if (t.terrain === "road") continue;                          // Crown Road Approach
-    if (t.poi?.parent === "whitemarch-crown-gate") continue;      // gate is IN the wall
-    if (t.poi?.type === "stair") continue;                        // stairs are IN the wall
-    if (t.poi?.area === "underworks") continue;                   // the Underworks sit IN the wall band
+    if (t.poi?.parent === "whitemarch-crown-gate") continue;      // gate crosses the ring
+    if (t.poi?.type === "stair") continue;                        // stairs sit beside the ring
+    if (t.poi?.area === "underworks") continue;                   // the Underworks sit beside the ring
     const [x, y] = key.split(",").map(Number);
     interiorCoords.push({ x, y });
   }
@@ -597,8 +604,8 @@ function applyLinkedDoors(s) {
     }
     return min;
   };
-  // Walk a bbox wide enough to cover the 3-deep band around any interior
-  // hex. Margin of 4 is safe — distance 3 outward + 1 buffer.
+  // Walk a bbox wide enough to cover the wall-walk ring around any interior
+  // hex. Margin of 3 is safe — distance 2 outward + 1 buffer.
   let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
   for (const c of interiorCoords) {
     if (c.x < xmin) xmin = c.x;
@@ -606,21 +613,18 @@ function applyLinkedDoors(s) {
     if (c.y < ymin) ymin = c.y;
     if (c.y > ymax) ymax = c.y;
   }
-  // Place wall + wall_top hexes:
-  //   distance 1 from interior → inner wall face (impassable)
-  //   distance 2 from interior → wall-top (passable; doors set below)
-  //   distance 3 from interior → outer wall face (impassable)
-  // Beyond distance 3 is procedural country.
-  let wallCount = 0, wallTopCount = 0;
-  for (let x = xmin - 4; x <= xmax + 4; x++) {
-    for (let y = ymin - 4; y <= ymax + 4; y++) {
+  // Place wall_top hexes only:
+  //   distance 2 from interior → wall-walk (passable; doors set below)
+  // Distance 1 (where the inner stone face once sat) and distance 3 (where
+  // the outer stone face once sat) are no longer placed; those positions
+  // fall through to procedural exterior generation in world.js getTile.
+  let wallTopCount = 0;
+  for (let x = xmin - 3; x <= xmax + 3; x++) {
+    for (let y = ymin - 3; y <= ymax + 3; y++) {
       const key = `${x},${y}`;
       if (HANDCRAFTED[key]) continue;        // interior, gate, river, road, stair — already placed
       const d = minDistToInterior(x, y);
-      if (d === 1 || d === 3) {
-        HANDCRAFTED[key] = { terrain: "wall", poi: null, doors: [] };
-        wallCount++;
-      } else if (d === 2) {
+      if (d === 2) {
         HANDCRAFTED[key] = { terrain: "wall_top", poi: null }; // doors set below
         wallTopCount++;
       }
@@ -651,7 +655,7 @@ function applyLinkedDoors(s) {
     HANDCRAFTED[key].doors = doors;
   }
   // Comment retained for any future debugging.
-  // console.log(`[whitemarch] generated ${wallCount} wall faces + ${wallTopCount} wall-walk hexes`);
+  // console.log(`[whitemarch] generated ${wallTopCount} wall-walk hexes`);
 }
 
 for (const s of SEALED_STRUCTURES) {
