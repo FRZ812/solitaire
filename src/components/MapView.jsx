@@ -740,8 +740,6 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
           position: "relative",
           cursor: "grab",
           userSelect: "none",
-          perspective: "2400px",
-          perspectiveOrigin: "center center",
         }}
       >
         <div ref={transformRef} style={{
@@ -749,18 +747,18 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
           top: "50%", left: "50%",
           transformOrigin: "center center",
           willChange: "transform",
-          transformStyle: "preserve-3d",
         }}>
-          {/* Semi-3D isometric tilt — rotated as a child of transformRef so
-              the zoom/pan transform (written imperatively by useZoomPan in
-              screen space) composes cleanly with the tilt. The container
-              supplies the perspective; transformRef preserves 3D so this
-              child's rotateX isn't flattened by the 2D parent. */}
+          {/* Isometric tilt approximated with a 2D scaleY — NOT a CSS 3D
+              rotateX. CSS 3D transforms (rotateX / perspective /
+              preserve-3d) break SVG hit-testing for the polygons
+              inside: clicks fall through to the wrapping transform DIV
+              instead of reaching the hex `<g onClick>` handlers. The
+              2D scaleY foreshortens the map the same way visually
+              (cos(52°) ≈ 0.615), keeps the prism extrusion math
+              working unchanged, and leaves hit-testing intact. */}
           <div style={{
-            transform: "rotateX(52deg)",
+            transform: "scaleY(0.615)",
             transformOrigin: "center center",
-            transformStyle: "preserve-3d",
-            filter: "drop-shadow(0 28px 36px rgba(0,0,0,0.55))",
           }}>
           <svg width={SVG_SIZE} height={SVG_SIZE} style={{ display: "block" }}>
             {/* Render hexes back-to-front (north first, south last) so a
