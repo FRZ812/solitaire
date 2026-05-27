@@ -55,6 +55,41 @@ function hexCornerPoints(cx, cy) {
   return points.join(" ");
 }
 
+// True 3D extrusion — see MapView.jsx hexPrismParts() for the full doc.
+// Emits the four lower-half side-face quad polygons of a hex prism plus
+// the top hex polygon, which after the parent's rotateX(52deg) tilt
+// project as a slanted stone column on screen.
+function hexPrismParts(cx, cy, lift) {
+  const topCorners = [];
+  const gndCorners = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 180) * (60 * i - 30);
+    const dx = HEX_SIZE * Math.cos(angle);
+    const dy = HEX_SIZE * Math.sin(angle);
+    topCorners.push({ x: cx + dx, y: cy - lift + dy });
+    gndCorners.push({ x: cx + dx, y: cy + dy });
+  }
+  const topPoints = topCorners.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  const sides = [];
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 6;
+    const a = topCorners[i], b = topCorners[j];
+    const c = gndCorners[j], d = gndCorners[i];
+    sides.push(
+      `${a.x.toFixed(2)},${a.y.toFixed(2)} ${b.x.toFixed(2)},${b.y.toFixed(2)} ` +
+      `${c.x.toFixed(2)},${c.y.toFixed(2)} ${d.x.toFixed(2)},${d.y.toFixed(2)}`
+    );
+  }
+  return { topPoints, sides };
+}
+
+const SIDE_SHADES = [
+  "rgba(72, 60, 46, 0.95)",
+  "rgba(52, 42, 32, 0.95)",
+  "rgba(36, 28, 22, 0.95)",
+  "rgba(48, 38, 28, 0.95)",
+];
+
 const LS_KEY = "solitaire-mapeditor-draft-v1";
 
 const TERRAIN_OPTIONS = Object.keys(TERRAINS);
@@ -425,7 +460,12 @@ export function MapEditor({ onExit }) {
             filter: "drop-shadow(0 28px 36px rgba(0,0,0,0.55))",
           }}>
             <svg width={SVG_SIZE} height={SVG_SIZE} style={{ display: "block" }}>
-              {renderCoords.map(({ x, y }) => {
+              {/* Render north-first so south-facing hex side faces paint
+                  over anything behind them — matches the in-game MapView. */}
+              {renderCoords
+                .slice()
+                .sort((a, b) => a.y - b.y)
+                .map(({ x, y }) => {
                 const key = `${x},${y}`;
                 const tile = tiles[key];
                 const px = SVG_CENTER + HSPACING * (x + y / 2);
@@ -441,26 +481,28 @@ export function MapEditor({ onExit }) {
                 } else {
                   const T = TERRAINS[tile.terrain];
                   fill = T?.color || "#555";
-                  if (tile.terrain === "wall_top") lift = 20;
-                  else if (tile.terrain === "indoor") lift = 8;
-                  else if (tile.poi?.parent) lift = 6;
+                  if (tile.terrain === "wall_top") lift = 22;
+                  else if (tile.terrain === "indoor") lift = 10;
+                  else if (tile.poi?.parent) lift = 8;
                 }
                 if (isBuilding) stroke = "rgba(231, 161, 110, 0.5)";
                 if (isStreet)   stroke = "rgba(255, 240, 195, 0.5)";
                 if (isMoveSrc) { stroke = "#7fe3b0"; strokeWidth = 3; }
                 if (isSel)     { stroke = "#f5dcb8"; strokeWidth = 3; }
+                const prism = lift > 0 ? hexPrismParts(px, py, lift) : null;
                 return (
                   <g key={key} onClick={() => onHexClick(x, y)} style={{ cursor: "pointer" }}>
-                    {lift > 0 && (
+                    {prism && prism.sides.map((pts, i) => (
                       <polygon
-                        points={hexCornerPoints(px, py + lift)}
-                        fill="rgba(8, 6, 4, 0.7)"
+                        key={i}
+                        points={pts}
+                        fill={SIDE_SHADES[i]}
                         stroke="none"
                         pointerEvents="none"
                       />
-                    )}
+                    ))}
                     <polygon
-                      points={hexCornerPoints(px, py - lift * 0.25)}
+                      points={prism ? prism.topPoints : hexCornerPoints(px, py)}
                       fill={fill}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
@@ -468,7 +510,7 @@ export function MapEditor({ onExit }) {
                     />
                     {tile?.poi?.name && (
                       <text
-                        x={px} y={py + 3 - lift * 0.25}
+                        x={px} y={py + 3 - lift}
                         textAnchor="middle"
                         fontSize="6"
                         fontFamily="'Inter', sans-serif"
