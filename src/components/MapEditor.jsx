@@ -626,18 +626,19 @@ export function MapEditor({ onExit }) {
         style={{
           overflow: "hidden", backgroundColor: PALETTE.bg, touchAction: "none",
           position: "relative", cursor: tool === "select" ? "grab" : "crosshair",
-          userSelect: "none", perspective: "2400px", perspectiveOrigin: "center center",
+          userSelect: "none",
         }}
       >
         <div ref={transformRef} style={{
           position: "absolute", top: "50%", left: "50%",
           transformOrigin: "center center", willChange: "transform",
-          transformStyle: "preserve-3d",
         }}>
+          {/* 2D scaleY isometric tilt — see MapView.jsx for the full
+              note. CSS 3D rotateX breaks SVG hit-testing on the
+              polygons inside; 2D scaleY gives the same foreshortened
+              look without sacrificing click targeting. */}
           <div style={{
-            transform: "rotateX(52deg)", transformOrigin: "center center",
-            transformStyle: "preserve-3d",
-            filter: "drop-shadow(0 28px 36px rgba(0,0,0,0.55))",
+            transform: "scaleY(0.615)", transformOrigin: "center center",
           }}>
             <svg width={SVG_SIZE} height={SVG_SIZE} style={{ display: "block" }}>
               {/* Render north-first so south-facing hex side faces paint
