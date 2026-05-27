@@ -75,6 +75,52 @@ function hexCorner(cx, cy, i) {
   };
 }
 
+// True 3D extrusion in SVG: for a hex elevated by `lift` SVG pixels, we
+// emit the visible side faces of the hexagonal prism as quad polygons
+// connecting the top (lifted) hex corners to the ground hex corners,
+// plus the top hex polygon itself. After the parent SVG's rotateX(52deg)
+// tilt, the south-facing side faces project as slanted vertical walls
+// — actual geometry, not shading. Returns:
+//   { sides: [points...], topPoints: "..." }
+// `sides` is the 4 lower-half side-face polygons (edges 0-1, 1-2, 2-3,
+// 3-4 — those whose two endpoints aren't both on the rear-facing top
+// edge of the hex). The upper-rear 2 faces (4-5, 5-0) are omitted: they'd
+// be hidden behind the top hex anyway, so skipping saves polygons.
+function hexPrismParts(cx, cy, lift) {
+  const topCorners = [];
+  const gndCorners = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 180) * (60 * i - 30);
+    const dx = HEX_SIZE * Math.cos(angle);
+    const dy = HEX_SIZE * Math.sin(angle);
+    topCorners.push({ x: cx + dx, y: cy - lift + dy });
+    gndCorners.push({ x: cx + dx, y: cy + dy });
+  }
+  const topPoints = topCorners.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  const sides = [];
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 6;
+    const a = topCorners[i], b = topCorners[j];
+    const c = gndCorners[j], d = gndCorners[i];
+    sides.push(
+      `${a.x.toFixed(2)},${a.y.toFixed(2)} ${b.x.toFixed(2)},${b.y.toFixed(2)} ` +
+      `${c.x.toFixed(2)},${c.y.toFixed(2)} ${d.x.toFixed(2)},${d.y.toFixed(2)}`
+    );
+  }
+  return { topPoints, sides };
+}
+
+// Side-face shades — small lighting cue so the three visible faces don't
+// all read as the same flat dark band. Indexed by side-face number (0..3,
+// matching the 4 lower edges of the hex returned by hexPrismParts).
+// Edge 0-1 (upper-right) is the most lit; 2-3 (lower-left) the darkest.
+const SIDE_SHADES = [
+  "rgba(72, 60, 46, 0.95)",   // 0-1 right
+  "rgba(52, 42, 32, 0.95)",   // 1-2 lower-right
+  "rgba(36, 28, 22, 0.95)",   // 2-3 lower-left
+  "rgba(48, 38, 28, 0.95)",   // 3-4 left
+];
+
 // ==================== CUSTOM VECTOR LANDMARKS & MAP ART ====================
 const MAP_ASSETS = {
   // bldg (Building, inn, tavern, shop, stable, mill): Cozy hand-timbered cottage
@@ -660,7 +706,12 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
             filter: "drop-shadow(0 28px 36px rgba(0,0,0,0.55))",
           }}>
           <svg width={SVG_SIZE} height={SVG_SIZE} style={{ display: "block" }}>
-            {hexes.map(({ x, y, px, py }) => {
+            {/* Render hexes back-to-front (north first, south last) so a
+                tall hex in the south correctly occludes anything to the
+                north of it after the isometric tilt. The visible side
+                faces of a tall hex extend down toward the camera, so
+                south-most hexes must paint last. */}
+            {hexes.slice().sort((a, b) => a.py - b.py).map(({ x, y, px, py }) => {
               const tile = getTile(state, x, y);
               const seen = isSeen(state, x, y);
               const visited = isVisited(state, x, y);
@@ -708,23 +759,23 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                 opacity = Math.max(opacity, 0.75);
               }
 
-              // Elevation in the isometric tilt — walls + buildings sit
-              // visually higher than ground tiles. We layer a darker
-              // "base" hex offset down by `lift` SVG pixels and draw the
-              // main hex on top; after the rotateX(52deg) tilt at the
-              // container level, the darker base reads as the vertical
-              // face of a stone extrusion (the part of the wall below
-              // the walk, or the lower storey of a building). Ground
-              // tiles (plains, streets, water) skip this. Walls tower
-              // over buildings — three-storey city wall vs one-to-two
-              // storey halls.
+              // Elevation in the isometric tilt — walls and buildings
+              // are real hex prisms: the top hex is drawn `lift` SVG
+              // pixels above its ground position, and four visible side-
+              // face quads connect the top corners back down to the
+              // ground hex corners. After the rotateX(52deg) tilt on
+              // the container the side faces project as slanted vertical
+              // walls, so the result reads as honest 3D geometry rather
+              // than a flat drop shadow. Ground tiles (plains, streets,
+              // water) draw a single hex at their natural position.
+              // Walls tower over buildings.
               const lift = (
-                tile.terrain === "wall_top" ? 20 :
-                tile.terrain === "indoor"   ? 8 :
-                isFootprintMember           ? 6 :
+                tile.terrain === "wall_top" ? 22 :
+                tile.terrain === "indoor"   ? 10 :
+                isFootprintMember           ? 8 :
                 0
               );
-              const baseFill = lift > 0 ? "rgba(8, 6, 4, 0.7)" : null;
+              const prism = lift > 0 ? hexPrismParts(px, py, lift) : null;
 
               return (
                 <g
@@ -738,23 +789,24 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                    }}
                    style={{ cursor: "pointer", opacity }}
                 >
-                  {lift > 0 && (
+                  {prism && prism.sides.map((pts, i) => (
                     <polygon
-                      points={hexCornerPoints(px, py + lift)}
-                      fill={baseFill}
+                      key={i}
+                      points={pts}
+                      fill={SIDE_SHADES[i]}
                       stroke="none"
                       pointerEvents="none"
                     />
-                  )}
+                  ))}
                   <polygon
-                    points={hexCornerPoints(px, py - (lift > 0 ? lift * 0.25 : 0))}
+                    points={prism ? prism.topPoints : hexCornerPoints(px, py)}
                     fill={fill}
                     stroke={stroke}
                     strokeWidth={strokeWidth}
                     strokeLinejoin="round"
                   />
                   {assetKey && MAP_ASSETS[assetKey] && (
-                    <g transform={`translate(${px - 11}, ${py - 11 - (lift > 0 ? lift * 0.25 : 0)})`} pointerEvents="none">
+                    <g transform={`translate(${px - 11}, ${py - 11 - lift})`} pointerEvents="none">
                       {MAP_ASSETS[assetKey](textColor)}
                     </g>
                   )}
