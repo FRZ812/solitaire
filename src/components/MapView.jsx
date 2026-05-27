@@ -892,25 +892,46 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                 pointerEvents="none"
               />
             ))}
-            {path && path.length > 1 && (
-              <polyline
-                points={path.map(p => {
-                  const dq = p.x - cur.x;
-                  const dr = p.y - cur.y;
-                  const ppx = SVG_CENTER + HSPACING * (dq + dr / 2);
-                  const ppy = SVG_CENTER + VSPACING * dr;
-                  return `${ppx.toFixed(2)},${ppy.toFixed(2)}`;
-                }).join(" ")}
-                fill="none"
-                stroke="#d7a76f"
-                strokeWidth={3.5}
-                strokeOpacity={0.95}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                pointerEvents="none"
-                style={{ filter: "drop-shadow(0 0 6px rgba(215, 167, 111, 0.6))" }}
-              />
-            )}
+            {path && path.length > 1 && (() => {
+              // Smooth path overlay: Catmull-Rom-to-cubic-Bezier so the
+              // route reads as a flowing path through the hex centres
+              // rather than a polyline of geometric segments. Endpoints
+              // are virtually extended (p0 = p1, p3 = p_last) so the
+              // first and last segments curve gently into the line.
+              const pts = path.map((p) => {
+                const dq = p.x - cur.x;
+                const dr = p.y - cur.y;
+                return {
+                  x: SVG_CENTER + HSPACING * (dq + dr / 2),
+                  y: SVG_CENTER + VSPACING * dr,
+                };
+              });
+              let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)}`;
+              for (let i = 0; i < pts.length - 1; i++) {
+                const p0 = i > 0 ? pts[i - 1] : pts[0];
+                const p1 = pts[i];
+                const p2 = pts[i + 1];
+                const p3 = i + 2 < pts.length ? pts[i + 2] : pts[pts.length - 1];
+                const c1x = p1.x + (p2.x - p0.x) / 6;
+                const c1y = p1.y + (p2.y - p0.y) / 6;
+                const c2x = p2.x - (p3.x - p1.x) / 6;
+                const c2y = p2.y - (p3.y - p1.y) / 6;
+                d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+              }
+              return (
+                <path
+                  d={d}
+                  fill="none"
+                  stroke="#d7a76f"
+                  strokeWidth={3.5}
+                  strokeOpacity={0.95}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  pointerEvents="none"
+                  style={{ filter: "drop-shadow(0 0 6px rgba(215, 167, 111, 0.6))" }}
+                />
+              );
+            })()}
             {footprintIcons.map((ic) => (
               <g key={ic.key} transform={`translate(${ic.x - 11}, ${ic.y - 11})`} pointerEvents="none">
                 {MAP_ASSETS[ic.iconKey]("#f5dcb8")}
