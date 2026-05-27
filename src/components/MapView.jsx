@@ -414,11 +414,25 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       if (wallSet.has(key)) continue;
       wallSet.add(key);
       const [ca, cb] = EDGE_CORNERS[dir];
-      // Draw the no-entry line at the LOWER side's elevation — so the
-      // line sits flush on whichever hex is shorter (typically the
-      // street at the base of a wall) instead of floating in mid-air
-      // at the taller side's roof.
-      const lift = Math.min(liftForTile(tile), liftForTile(nTile));
+      // Draw the no-entry line at whichever side reads best from the
+      // camera-south isometric tilt:
+      //   - if the TALLER side is NORTH of this edge, the camera looks
+      //     at the taller hex's south face and the line at MIN(lift)
+      //     (the lower hex's surface, usually ground) sits flush at the
+      //     base of the wall, visible in front of it.
+      //   - if the TALLER side is SOUTH of this edge, the taller hex's
+      //     top polygon extends north over the edge in screen space and
+      //     would hide a ground-level line. Use MAX(lift) instead so
+      //     the line sits on the taller's roof at its back edge — the
+      //     side actually visible to the camera.
+      //   - same row (d.y === 0) or equal lifts → use MIN.
+      const liftA = liftForTile(tile);
+      const liftB = liftForTile(nTile);
+      const tallerIsSouth =
+        (liftA > liftB && d.y < 0) || (liftB > liftA && d.y > 0);
+      const lift = tallerIsSouth
+        ? Math.max(liftA, liftB)
+        : Math.min(liftA, liftB);
       const a = hexCorner(h.px, h.py - lift, ca);
       const b = hexCorner(h.px, h.py - lift, cb);
       wallSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
