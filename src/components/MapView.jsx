@@ -395,11 +395,6 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     if (!isSeen(state, h.x, h.y)) continue;
     const tile = getTile(state, h.x, h.y);
     if (!isPassable(tile)) continue;
-    // Skip wall-segment overlays where either side is elevated — the
-    // hex prism itself (the extruded wall/building) already visualises
-    // that the edge can't be crossed. Drawing a brown line on top of
-    // an extruded wall just reads as a stray cut-line on its face.
-    if (liftForTile(tile) > 0) continue;
     for (let dir = 0; dir < HEX_DIRECTIONS.length; dir++) {
       const d = HEX_DIRECTIONS[dir];
       const nx = h.x + d.x;
@@ -407,11 +402,9 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       if (!isSeen(state, nx, ny)) continue;
       const nTile = getTile(state, nx, ny);
       if (!isPassable(nTile)) continue;
-      if (liftForTile(nTile) > 0) continue;
       if (edgeAllowed(tile, h.x, h.y, nTile, nx, ny)) continue;
       // Skip a footprint's outer perimeter — the golden footprint outline
-      // already draws it. Keep dark walls only for interior partitions (both
-      // hexes in a footprint) and plain access walls (neither in one).
+      // (rendered on-select) handles it.
       const aMember = !!tile.poi?.parent && tile.poi?.type !== "hidden";
       const bMember = !!nTile.poi?.parent && nTile.poi?.type !== "hidden";
       if (aMember !== bMember) continue;
@@ -421,8 +414,13 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       if (wallSet.has(key)) continue;
       wallSet.add(key);
       const [ca, cb] = EDGE_CORNERS[dir];
-      const a = hexCorner(h.px, h.py, ca);
-      const b = hexCorner(h.px, h.py, cb);
+      // Draw the no-entry line at the LOWER side's elevation — so the
+      // line sits flush on whichever hex is shorter (typically the
+      // street at the base of a wall) instead of floating in mid-air
+      // at the taller side's roof.
+      const lift = Math.min(liftForTile(tile), liftForTile(nTile));
+      const a = hexCorner(h.px, h.py - lift, ca);
+      const b = hexCorner(h.px, h.py - lift, cb);
       wallSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
     }
   }
