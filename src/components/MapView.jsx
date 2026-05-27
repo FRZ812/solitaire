@@ -76,16 +76,25 @@ function hexCorner(cx, cy, i) {
 }
 
 // True 3D extrusion in SVG: for a hex elevated by `lift` SVG pixels, we
-// emit the visible side faces of the hexagonal prism as quad polygons
-// connecting the top (lifted) hex corners to the ground hex corners,
-// plus the top hex polygon itself. After the parent SVG's rotateX(52deg)
-// tilt, the south-facing side faces project as slanted vertical walls
-// — actual geometry, not shading. Returns:
-//   { sides: [points...], topPoints: "..." }
-// `sides` is the 4 lower-half side-face polygons (edges 0-1, 1-2, 2-3,
-// 3-4 — those whose two endpoints aren't both on the rear-facing top
-// edge of the hex). The upper-rear 2 faces (4-5, 5-0) are omitted: they'd
-// be hidden behind the top hex anyway, so skipping saves polygons.
+// emit the visible non-degenerate side faces of the hexagonal prism as
+// quad polygons connecting the top (lifted) hex corners to the ground
+// hex corners, plus the top hex polygon itself. After the parent SVG's
+// rotateX(52deg) tilt, the south-facing side faces project as slanted
+// vertical walls — actual geometry, not shading.
+//
+// With pointy-top hex orientation, the LEFT and RIGHT vertical edges of
+// the hex (corners 0-1 and 3-4) have the same X for both endpoints, so
+// a quad spanning them collapses to a vertical line on screen (zero
+// width) and reads as a stray "line" on the wall. Skip those. The
+// UPPER-rear edges (4-5, 5-0) are hidden behind the top hex anyway.
+// That leaves the two lower-diagonal side faces (1-2 lower-right and
+// 2-3 lower-left) — the actual visible vertical facets of the wall.
+//
+// Returns:
+//   { topPoints: string, sides: [{ points, shade }] }
+// where each side has its own shade so the two visible facets read as
+// distinct planes under a directional light (lit on the right, dark on
+// the left) rather than a single flat dark band.
 function hexPrismParts(cx, cy, lift) {
   const topCorners = [];
   const gndCorners = [];
@@ -97,29 +106,23 @@ function hexPrismParts(cx, cy, lift) {
     gndCorners.push({ x: cx + dx, y: cy + dy });
   }
   const topPoints = topCorners.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
-  const sides = [];
-  for (let i = 0; i < 4; i++) {
+  const VISIBLE_FACES = [
+    { i: 1, shade: "rgb(78, 62, 44)" }, // 1-2 lower-right, lit
+    { i: 2, shade: "rgb(40, 30, 22)" }, // 2-3 lower-left, dark
+  ];
+  const sides = VISIBLE_FACES.map(({ i, shade }) => {
     const j = (i + 1) % 6;
     const a = topCorners[i], b = topCorners[j];
     const c = gndCorners[j], d = gndCorners[i];
-    sides.push(
-      `${a.x.toFixed(2)},${a.y.toFixed(2)} ${b.x.toFixed(2)},${b.y.toFixed(2)} ` +
-      `${c.x.toFixed(2)},${c.y.toFixed(2)} ${d.x.toFixed(2)},${d.y.toFixed(2)}`
-    );
-  }
+    return {
+      points:
+        `${a.x.toFixed(2)},${a.y.toFixed(2)} ${b.x.toFixed(2)},${b.y.toFixed(2)} ` +
+        `${c.x.toFixed(2)},${c.y.toFixed(2)} ${d.x.toFixed(2)},${d.y.toFixed(2)}`,
+      shade,
+    };
+  });
   return { topPoints, sides };
 }
-
-// Side-face shades — small lighting cue so the three visible faces don't
-// all read as the same flat dark band. Indexed by side-face number (0..3,
-// matching the 4 lower edges of the hex returned by hexPrismParts).
-// Edge 0-1 (upper-right) is the most lit; 2-3 (lower-left) the darkest.
-const SIDE_SHADES = [
-  "rgba(72, 60, 46, 0.95)",   // 0-1 right
-  "rgba(52, 42, 32, 0.95)",   // 1-2 lower-right
-  "rgba(36, 28, 22, 0.95)",   // 2-3 lower-left
-  "rgba(48, 38, 28, 0.95)",   // 3-4 left
-];
 
 // ==================== CUSTOM VECTOR LANDMARKS & MAP ART ====================
 const MAP_ASSETS = {
@@ -730,8 +733,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               else if (tile.terrain === "mountains") fill = "rgba(68, 54, 48, 0.75)";
               else if (tile.terrain === "sand" || tile.terrain === "desert") fill = "rgba(79, 68, 48, 0.6)";
               else if (tile.terrain === "swamp" || tile.terrain === "water") fill = "rgba(22, 42, 54, 0.65)";
-              else if (tile.terrain === "indoor") fill = "rgba(36, 42, 42, 0.85)";
-              if (isFootprintMember) fill = "rgba(74, 60, 43, 0.9)";
+              else if (tile.terrain === "indoor") fill = "rgb(36, 42, 42)";
+              if (isFootprintMember) fill = "rgb(74, 60, 43)";
 
               let textColor = "#f5dcb8";
               let assetKey = null;
@@ -776,6 +779,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                 0
               );
               const prism = lift > 0 ? hexPrismParts(px, py, lift) : null;
+              // Elevated hexes (walls/buildings) always render at full
+              // opacity so the 3D prism reads as a solid stone column.
+              // The fog-of-war dimming on the <g> still applies to flat
+              // ground tiles below.
+              if (prism) opacity = Math.max(opacity, 1);
 
               return (
                 <g
@@ -789,11 +797,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                    }}
                    style={{ cursor: "pointer", opacity }}
                 >
-                  {prism && prism.sides.map((pts, i) => (
+                  {prism && prism.sides.map((side, i) => (
                     <polygon
                       key={i}
-                      points={pts}
-                      fill={SIDE_SHADES[i]}
+                      points={side.points}
+                      fill={side.shade}
                       stroke="none"
                       pointerEvents="none"
                     />

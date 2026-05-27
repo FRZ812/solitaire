@@ -56,9 +56,11 @@ function hexCornerPoints(cx, cy) {
 }
 
 // True 3D extrusion — see MapView.jsx hexPrismParts() for the full doc.
-// Emits the four lower-half side-face quad polygons of a hex prism plus
-// the top hex polygon, which after the parent's rotateX(52deg) tilt
-// project as a slanted stone column on screen.
+// Emits the two visible non-degenerate side-face quads (1-2 lower-right
+// lit and 2-3 lower-left shaded) plus the top hex polygon. The right
+// and left vertical edges of a pointy-top hex collapse to vertical
+// lines in SVG, so we skip them; the upper-rear edges are hidden by
+// the top hex.
 function hexPrismParts(cx, cy, lift) {
   const topCorners = [];
   const gndCorners = [];
@@ -70,25 +72,23 @@ function hexPrismParts(cx, cy, lift) {
     gndCorners.push({ x: cx + dx, y: cy + dy });
   }
   const topPoints = topCorners.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
-  const sides = [];
-  for (let i = 0; i < 4; i++) {
+  const VISIBLE_FACES = [
+    { i: 1, shade: "rgb(78, 62, 44)" }, // 1-2 lower-right, lit
+    { i: 2, shade: "rgb(40, 30, 22)" }, // 2-3 lower-left, dark
+  ];
+  const sides = VISIBLE_FACES.map(({ i, shade }) => {
     const j = (i + 1) % 6;
     const a = topCorners[i], b = topCorners[j];
     const c = gndCorners[j], d = gndCorners[i];
-    sides.push(
-      `${a.x.toFixed(2)},${a.y.toFixed(2)} ${b.x.toFixed(2)},${b.y.toFixed(2)} ` +
-      `${c.x.toFixed(2)},${c.y.toFixed(2)} ${d.x.toFixed(2)},${d.y.toFixed(2)}`
-    );
-  }
+    return {
+      points:
+        `${a.x.toFixed(2)},${a.y.toFixed(2)} ${b.x.toFixed(2)},${b.y.toFixed(2)} ` +
+        `${c.x.toFixed(2)},${c.y.toFixed(2)} ${d.x.toFixed(2)},${d.y.toFixed(2)}`,
+      shade,
+    };
+  });
   return { topPoints, sides };
 }
-
-const SIDE_SHADES = [
-  "rgba(72, 60, 46, 0.95)",
-  "rgba(52, 42, 32, 0.95)",
-  "rgba(36, 28, 22, 0.95)",
-  "rgba(48, 38, 28, 0.95)",
-];
 
 const LS_KEY = "solitaire-mapeditor-draft-v1";
 
@@ -492,11 +492,11 @@ export function MapEditor({ onExit }) {
                 const prism = lift > 0 ? hexPrismParts(px, py, lift) : null;
                 return (
                   <g key={key} onClick={() => onHexClick(x, y)} style={{ cursor: "pointer" }}>
-                    {prism && prism.sides.map((pts, i) => (
+                    {prism && prism.sides.map((side, i) => (
                       <polygon
                         key={i}
-                        points={pts}
-                        fill={SIDE_SHADES[i]}
+                        points={side.points}
+                        fill={side.shade}
                         stroke="none"
                         pointerEvents="none"
                       />
