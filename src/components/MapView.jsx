@@ -450,21 +450,28 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     group.keys.add(`${h.x},${h.y}`);
   }
 
-  // A footprint reads as one building: a golden perimeter outline (broken at the
-  // entry door, where the graph lets you cross into a reachable neighbour) and a
-  // single icon at the centroid. The building name shows only while one of its
-  // hexes is selected; sub-area names live in the detail panel.
+  // A footprint reads as one building via its prism (shared color + no
+  // internal strokes between member hexes). The golden perimeter outline
+  // is now shown ONLY for the currently-selected building — it answers
+  // "where can I enter this place from?" on demand, with a gap at the
+  // door, but stays out of the way for every other building so the map
+  // doesn't read as a cluttered chain of floating gold rings on top of
+  // the extruded structures. The outline traces the ground footprint
+  // (not the roof), so it reads as a building outline on the floor and
+  // doesn't fight the prism geometry above it.
   const selectedKey = selected ? `${selected.x},${selected.y}` : null;
   const footprintSegments = [];
   const footprintLabels = [];
   const footprintIcons = [];
   for (const group of footprintGroups.values()) {
     if (group.tiles.length < 2) continue;
+    const isGroupSelected = !!(selectedKey && group.keys.has(selectedKey));
     let sx = 0;
     let sy = 0;
     for (const h of group.tiles) {
       sx += h.px;
       sy += h.py;
+      if (!isGroupSelected) continue; // only compute outline segments for the selected group
       const tile = getTile(state, h.x, h.y);
       for (let dir = 0; dir < HEX_DIRECTIONS.length; dir++) {
         const d = HEX_DIRECTIONS[dir];
@@ -478,11 +485,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
           if (isPassable(nTile) && edgeAllowed(tile, h.x, h.y, nTile, nx, ny)) continue;
         }
         const [ca, cb] = EDGE_CORNERS[dir];
-        // Lift the golden outline up to the building's roof so it
-        // outlines the extruded top, not the ground footprint.
-        const lift = liftForTile(tile);
-        const a = hexCorner(h.px, h.py - lift, ca);
-        const b = hexCorner(h.px, h.py - lift, cb);
+        const a = hexCorner(h.px, h.py, ca);
+        const b = hexCorner(h.px, h.py, cb);
         footprintSegments.push({
           key: `foot-${group.id}-${h.x},${h.y}-${dir}`,
           x1: a.x, y1: a.y, x2: b.x, y2: b.y,
