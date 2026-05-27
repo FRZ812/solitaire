@@ -88,9 +88,10 @@ export const HANDCRAFTED = {
   // GATE SQUARE — the open paved square just inside the city, where the
   // Crown Gate complex empties into the streets. Was the Crown Road
   // Approach in the old (thin-wall) layout; now the road is much farther
-  // out beyond the wall (see (0,-7) below) and this hex is interior.
+  // out beyond the wall (Crown Road Approach at (0,-6) sits immediately
+  // beyond the Toll Hall) and this hex is interior.
   // ============================================================
-  "0,-3": { terrain: "street", poi: { type: "plaza", name: "Gate Square", access: "public", description: "A broad paved square just inside the Crown Gate's inner ward, where every wagon and pilgrim that clears the gate complex spills out into the city. Touts, porters, and idle Market Watch lean against the wall-stones; the gate's roar — wheels on stone, ox-bellows, the sergeants — beats out of the inner ward at every gate-bell and falls again as the queue moves." } },
+  "0,-3": { terrain: "street", poi: { type: "plaza", name: "Gate Square", access: "public", description: "A broad paved square just inside the Crown Gate, where every wagon and pilgrim that clears the Toll Hall spills out into the city. Touts, porters, and idle Market Watch lean against the wall-stones; the gate's roar — wheels on stone, ox-bellows, the sergeants — beats through the gatehouse at every gate-bell and falls again as the queue moves." } },
 
   // ============================================================
   // NORTH WALL WALK — the inside-the-wall lane, broken at the gate. From
@@ -108,7 +109,7 @@ export const HANDCRAFTED = {
   // path graph uses as a street.
   // ============================================================
   "0,-2": { terrain: "settlement", poi: { type: "hall", name: "Customs Hall", access: "conditional", description: "The city's old toll-hall, kept on after the wall was thickened and the gate moved out into its own complex. Now the cleared paperwork goes here for archiving — sealed receipts, status-stamps, livestock-counts, every entry recorded against the gate's daily roll. Clerks come and go through the small side door; the main counters were boarded over when the new gatehouse opened." } },
-  "0,-1": { terrain: "street", poi: { type: "plaza", name: "Crown Lane", access: "public", description: "The lane south of the gate complex, where porters and runners gather waiting for fares and the day's first newssheets are sold off a barrow. The gate's roar carries down the lane and falls again as the queue moves inside the Inner Ward." } },
+  "0,-1": { terrain: "street", poi: { type: "plaza", name: "Crown Lane", access: "public", description: "The lane south of the gate, where porters and runners gather waiting for fares and the day's first newssheets are sold off a barrow. The gate's roar carries down the lane and falls again as the queue moves through the Toll Hall." } },
 
   // ============================================================
   // CROWN GUARDPOST — gate-guard barracks set into the wall beside Toll
@@ -359,7 +360,7 @@ export const HANDCRAFTED = {
   // themselves are not gated; anyone can climb, and any of the wall-
   // watch above will notice.
   // ============================================================
-  "-1,-5": { terrain: "wall_top", poi: { type: "stair", name: "Crown Stair", access: "restricted", description: "A worked stone stair set into the wall just west of the Crown Gate's inner ward, the climb wide enough for two abreast. Guards take it morning and dusk to relieve the wall-watch; civilians may use it but draw eyes from the gate-towers." } },
+  "-1,-5": { terrain: "wall_top", poi: { type: "stair", name: "Crown Stair", access: "restricted", description: "A worked stone stair set into the wall just west of the Crown Gate, the climb wide enough for two abreast. Guards take it morning and dusk to relieve the wall-watch; civilians may use it but draw eyes from the gate-towers." } },
   "3,-5":  { terrain: "wall_top", poi: { type: "stair", name: "Dragon Stair", access: "restricted", description: "A narrow stone stair built into the wall's inner face beside the Dragon-Watch Tower. The wall-walk above is guard-only by writ; the stair itself is open to anyone bold enough to climb where the harpoon-watchers can see." } },
   "5,0":   { terrain: "wall_top", poi: { type: "stair", name: "Quay Stair", access: "restricted", description: "A stair on the east wall above the foundries, half-stained by forge-smoke. The wall-walk here looks across the Whitewend to the chain-tower and the barge-traffic working downstream." } },
   "-5,0":  { terrain: "wall_top", poi: { type: "stair", name: "West Stair", access: "restricted", description: "A narrow stair set into the west wall above the Halfborn Hostel, used by the wall-watch and by anyone with cause to look out over the country toward the Tannic Wood." } },
@@ -753,10 +754,18 @@ for (const s of SEALED_STRUCTURES) {
 // streets reach via pass (1). So there is no separate street ↔ stair
 // bridge.
 // ============================================================
+// Note: this loop intentionally runs across BOTH authored streets and
+// generated perimeter streets. The gate-side perimeter tiles (0,-4)
+// and (1,-4) are listed in WHITEMARCH_STREETS for the gatehouse `door`
+// validation, which means applyStreetBuildingDoors overwrote their
+// wall-generator-set perimeter doors with an interior-only mesh —
+// dropping their lateral perimeter neighbours (-1,-4) and (2,-4) and
+// breaking the perimeter ring on both sides of the gate. Re-adding
+// perimeter neighbours here patches both authored and generated
+// streets back into a continuous ring.
 for (const key of Object.keys(HANDCRAFTED)) {
   const tile = HANDCRAFTED[key];
   if (tile.terrain !== "street") continue;
-  if (tile.perimeter) continue; // perimeter streets already wired
   if (!Array.isArray(tile.doors)) continue;
   const [x, y] = key.split(",").map(Number);
   const existing = new Set(tile.doors.map((d) => `${d.x},${d.y}`));

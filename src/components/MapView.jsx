@@ -75,6 +75,18 @@ function hexCorner(cx, cy, i) {
   };
 }
 
+// Single source of truth for prism elevation per tile — used by both the
+// hex-render loop and the wall/footprint segment overlays so the
+// no-entry markers and golden building outlines sit on top of the
+// extruded structure rather than at ground level.
+function liftForTile(tile) {
+  if (!tile) return 0;
+  if (tile.terrain === "wall_top") return 22;
+  if (tile.terrain === "indoor") return 10;
+  if (tile.poi?.parent && tile.poi?.type !== "hidden") return 8;
+  return 0;
+}
+
 // True 3D extrusion in SVG: for a hex elevated by `lift` SVG pixels, we
 // emit ONE combined south-facing side-face polygon wrapping from the
 // hex's lower-right edge through its bottom corner to its lower-left
@@ -392,8 +404,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       if (!isPassable(nTile)) continue;
       if (edgeAllowed(tile, h.x, h.y, nTile, nx, ny)) continue;
       // Skip a footprint's outer perimeter — the golden footprint outline
-      // already draws it. Keep dark walls only for interior partitions (both
-      // hexes in a footprint) and plain access walls (neither in one).
+      // (rendered on-select) handles it.
       const aMember = !!tile.poi?.parent && tile.poi?.type !== "hidden";
       const bMember = !!nTile.poi?.parent && nTile.poi?.type !== "hidden";
       if (aMember !== bMember) continue;
@@ -403,8 +414,27 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       if (wallSet.has(key)) continue;
       wallSet.add(key);
       const [ca, cb] = EDGE_CORNERS[dir];
-      const a = hexCorner(h.px, h.py, ca);
-      const b = hexCorner(h.px, h.py, cb);
+      // Draw the no-entry line at whichever side reads best from the
+      // camera-south isometric tilt:
+      //   - if the TALLER side is NORTH of this edge, the camera looks
+      //     at the taller hex's south face and the line at MIN(lift)
+      //     (the lower hex's surface, usually ground) sits flush at the
+      //     base of the wall, visible in front of it.
+      //   - if the TALLER side is SOUTH of this edge, the taller hex's
+      //     top polygon extends north over the edge in screen space and
+      //     would hide a ground-level line. Use MAX(lift) instead so
+      //     the line sits on the taller's roof at its back edge — the
+      //     side actually visible to the camera.
+      //   - same row (d.y === 0) or equal lifts → use MIN.
+      const liftA = liftForTile(tile);
+      const liftB = liftForTile(nTile);
+      const tallerIsSouth =
+        (liftA > liftB && d.y < 0) || (liftB > liftA && d.y > 0);
+      const lift = tallerIsSouth
+        ? Math.max(liftA, liftB)
+        : Math.min(liftA, liftB);
+      const a = hexCorner(h.px, h.py - lift, ca);
+      const b = hexCorner(h.px, h.py - lift, cb);
       wallSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
     }
   }
@@ -432,21 +462,28 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     group.keys.add(`${h.x},${h.y}`);
   }
 
-  // A footprint reads as one building: a golden perimeter outline (broken at the
-  // entry door, where the graph lets you cross into a reachable neighbour) and a
-  // single icon at the centroid. The building name shows only while one of its
-  // hexes is selected; sub-area names live in the detail panel.
+  // A footprint reads as one building via its prism (shared color + no
+  // internal strokes between member hexes). The golden perimeter outline
+  // is now shown ONLY for the currently-selected building — it answers
+  // "where can I enter this place from?" on demand, with a gap at the
+  // door, but stays out of the way for every other building so the map
+  // doesn't read as a cluttered chain of floating gold rings on top of
+  // the extruded structures. The outline traces the ground footprint
+  // (not the roof), so it reads as a building outline on the floor and
+  // doesn't fight the prism geometry above it.
   const selectedKey = selected ? `${selected.x},${selected.y}` : null;
   const footprintSegments = [];
   const footprintLabels = [];
   const footprintIcons = [];
   for (const group of footprintGroups.values()) {
     if (group.tiles.length < 2) continue;
+    const isGroupSelected = !!(selectedKey && group.keys.has(selectedKey));
     let sx = 0;
     let sy = 0;
     for (const h of group.tiles) {
       sx += h.px;
       sy += h.py;
+      if (!isGroupSelected) continue; // only compute outline segments for the selected group
       const tile = getTile(state, h.x, h.y);
       for (let dir = 0; dir < HEX_DIRECTIONS.length; dir++) {
         const d = HEX_DIRECTIONS[dir];
@@ -483,14 +520,15 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         bestNbrs = nbrs; bestDist = dist; anchor = h;
       }
     }
+    const anchorLift = liftForTile(getTile(state, anchor.x, anchor.y));
     if (group.iconKey && MAP_ASSETS[group.iconKey]) {
-      footprintIcons.push({ key: `foot-icon-${group.id}`, x: anchor.px, y: anchor.py, iconKey: group.iconKey });
+      footprintIcons.push({ key: `foot-icon-${group.id}`, x: anchor.px, y: anchor.py - anchorLift, iconKey: group.iconKey });
     }
     if (selectedKey && group.keys.has(selectedKey)) {
       footprintLabels.push({
         key: `foot-label-${group.id}`,
         x: anchor.px,
-        y: anchor.py + 20,
+        y: anchor.py + 20 - anchorLift,
         name: group.name,
       });
     }
@@ -508,7 +546,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       const dr = selected.y - cur.y;
       const px = SVG_CENTER + HSPACING * (dq + dr / 2);
       const py = SVG_CENTER + VSPACING * dr;
-      labels.push({ key: "lbl-selected", x: px, y: py - 22, name: st.poi.name, fill: "#f5dcb8" });
+      const lift = liftForTile(st);
+      labels.push({ key: "lbl-selected", x: px, y: py - 22 - lift, name: st.poi.name, fill: "#f5dcb8" });
     }
   }
 
@@ -767,12 +806,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               // than a flat drop shadow. Ground tiles (plains, streets,
               // water) draw a single hex at their natural position.
               // Walls tower over buildings.
-              const lift = (
-                tile.terrain === "wall_top" ? 22 :
-                tile.terrain === "indoor"   ? 10 :
-                isFootprintMember           ? 8 :
-                0
-              );
+              const lift = liftForTile(tile);
               const prism = lift > 0 ? hexPrismParts(px, py, lift) : null;
               // Elevated hexes (walls/buildings) always render at full
               // opacity so the 3D prism reads as a solid stone column.
