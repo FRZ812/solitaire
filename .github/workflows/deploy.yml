@@ -2,6 +2,10 @@
 # main. One-time setup: in repo Settings → Pages, set Source to "GitHub
 # Actions" (not "Deploy from a branch"). The VITE_SUPABASE_* values come from
 # the committed .env (public by design); no secrets configuration required.
+#
+# `npm run build` is the only build target now — the artifact (singlefile)
+# build path was dropped when the handcrafted map moved to Supabase, so
+# `build:web` no longer exists.
 
 name: Deploy to GitHub Pages
 
@@ -29,7 +33,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run build:web
+      - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
