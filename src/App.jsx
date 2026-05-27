@@ -1378,7 +1378,8 @@ export function Solitaire() {
   async function handleBuyCaptive(c) {
     if (loading || !shopTile) return;
     if (!(await askConfirm({ title: "Buy a bond", body: `Pay ${formatCopper(c.priceCp)} to the auctioneer for ${c.name}'s bond (${c.origin})? Their fate becomes yours — keep them in bonded service, ransom them home, sell them on, or force-release them at the gate.`, confirmLabel: "Pay", danger: true }))) return;
-    const r = buyCaptive(state, c);
+    const tileKey = `${shopTile.x},${shopTile.y}`;
+    const r = buyCaptive(state, c, tileKey);
     if (!r.ok) { setError(r.reason || "You can't pay the auctioneer."); return; }
     const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the block";
     setShopTile(null);
@@ -2075,6 +2076,7 @@ export function Solitaire() {
               state={state}
               building={building}
               board={board}
+              tileKey={key}
               onBuy={handleBuyCaptive}
               onClose={() => setShopTile(null)}
               loading={loading}

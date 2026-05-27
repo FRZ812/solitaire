@@ -39,4 +39,5 @@ export const CAPTIVE_POOL = [
   { key: "lis",    name: "Lis",                 origin: "born in a southern temple-yard, sold to an eastern household at six", taken: "the eastern household failed; her bond was sold to clear the debt and she was barged west by a broker who specialises in trained children", spirit: "hopeful",  skills: "trained from six as a body-attendant in an eastern noble's household — pours wine, lights lamps, dresses hair, runs messages discreetly; reads and writes the trade-tongue, ciphers a household account", priceCp: 240, desc: "Eleven or twelve. Small for her age, dressed in the brown shift of a trained attendant. Stands straight, eyes lowered, hands folded — the posture of a placement waiting for the right buyer.", freedom_response: "trained-attendant; ambition has been a high-house placement since she was six and the player's offer reads as a demotion. Politely asks the player whether they have a chamberlain, an attendant for the table, anyone who keeps trained children. Will refuse the gate the way an applicant refuses an offer beneath their qualifications." },
 ];
 
-export const SLAVE_REFRESH_DAYS = 6;
+export const SLAVE_HIGH_TIER_MIN_CP = 360;
+export const SLAVE_LOW_REFRESH_DAYS = 4;

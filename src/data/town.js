@@ -113,16 +113,18 @@ export const BUILDINGS = {
   },
 
   // Chain Market Steps: Whitemarch's public slave-sale, in the Chain Ward at the
-  // heart of the city — the trade as civic routine, not a rougher town's secret.
-  // The Chain Factor holds people for sale; buying a bond is a coin deal, the rest
-  // is played in the world (free them, press them to service, ransom or resell).
+  // heart of the city — the trade as civic routine. The platform opens at dawn
+  // with the lot-bell and shuts at dusk; high-tier lots rotate daily, lower
+  // lots linger across days (see engine/slaves.js). Buying a bond is a coin
+  // deal; the custody scene (keep / ransom / sell on / force-release) is the
+  // narrator's, governed by THE BLOCK in src/system-prompt.js.
   slavemarket: {
     id: "slavemarket",
     kind: "slavemarket",       // the Chain Factor: a roster of captives whose bonds are for sale
     label: "Chain Market Steps",
     keeper: "the Chain Factor",
     icon: "slavemarket",
-    hours: { open: 8, close: 17 },
+    hours: { open: 7, close: 19 },
     blurb: "Pale stone steps washed between bells so the stains do not show — a raised platform where status-criers call the lots, buyers waiting under awnings, the bonded chained at a viewing-rail, and a Chain Factor with a tally-stick and a flat, appraising eye.",
   },
 

@@ -4,11 +4,23 @@ import { iconButtonStyle, Panel, SectionHeader } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle } from "./tokens.js";
 import { formatCopper, formatCoins } from "../engine/economy.js";
 
-// The Block: the auctioneer's lots. Each captive is a person, not stock — buying
-// their bond pays the auctioneer and makes their fate yours, settled in the world
-// by the narrator (free them, press them to service, ransom, or resell).
-export function SlaveMarketView({ state, building, board, onBuy, onClose, loading }) {
+// The Block: the Chain Factor's lots. The platform shows TWO tiers —
+//   "This morning's lots" = high-tier captives, paraded fresh each day.
+//   "Still on the platform" = low-tier captives, lingering across the
+//   multi-day window until someone takes them or the window rolls.
+// Bought captives are filtered from the visible roster for the rest of their
+// per-tier window so the same face doesn't reappear when the player closes and
+// reopens the menu. Closed-at-night gating is upstream in App.jsx (it refuses
+// to open this view outside the Chain Market Steps' hours).
+export function SlaveMarketView({ state, building, board, tileKey, onBuy, onClose, loading }) {
   const coins = state.character.inventory.coins;
+  const tile = state.world.tiles?.[tileKey];
+  const highBought = (tile?.slavemarket?.high?.bucket === board.highBucket) ? tile.slavemarket.high.bought : {};
+  const lowBought  = (tile?.slavemarket?.low?.bucket  === board.lowBucket)  ? tile.slavemarket.low.bought  : {};
+  const isBought = (c) => (c.tier === "high" ? !!highBought[c.key] : !!lowBought[c.key]);
+
+  const highLots = board.captives.filter((c) => c.tier === "high" && !isBought(c));
+  const lowLots  = board.captives.filter((c) => c.tier === "low"  && !isBought(c));
 
   return (
     <div style={{
@@ -35,7 +47,7 @@ export function SlaveMarketView({ state, building, board, onBuy, onClose, loadin
         </button>
         <div style={{ textAlign: "center", minWidth: 0, padding: "0 6px" }}>
           <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "22px", color: colors.parchmentLight }}>{building.label}</div>
-          <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.78)", marginTop: "3px" }}>The Auctioneer</div>
+          <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.78)", marginTop: "3px" }}>The Chain Factor</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "5px", padding: "6px 10px", borderRadius: radius.pill, border: "1px solid rgba(215, 167, 111, 0.28)", backgroundColor: "rgba(215, 167, 111, 0.08)" }}>
           <Icon name="sparkle" size={11} color={colors.gold} />
@@ -48,16 +60,40 @@ export function SlaveMarketView({ state, building, board, onBuy, onClose, loadin
           <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "14px", color: colors.parchment, lineHeight: 1.4 }}>{building.blurb}</div>
         </Panel>
 
-        {/* The lots — buy a captive's bond; their fate is then yours. */}
-        <SectionHeader>On the block</SectionHeader>
-        {board.captives.map((c) => (
-          <Row key={c.id} title={c.name} meta={`${c.origin} · ${c.spirit}`} desc={c.desc} sub={`Taken: ${c.taken}. ${c.skills}.`}
-            price={`bond ${formatCopper(c.priceCp)}`}
-            action={<ActionButton label="Buy bond" enabled={!loading} onClick={() => onBuy(c)} />} />
-        ))}
-        <div style={{ ...metaStyle, fontSize: "10px", color: colors.parchmentMuted, lineHeight: 1.5, marginTop: "6px", fontStyle: "italic" }}>
-          A bond bought is a fate taken. What you do with it — strike the irons, set them to work, send them home, or sell them on — is yours to decide once they're out of the auctioneer's hands.
-        </div>
+        {highLots.length > 0 && (
+          <>
+            <SectionHeader>This morning's lots</SectionHeader>
+            {highLots.map((c) => (
+              <Row key={c.id} title={c.name} meta={`${c.origin} · ${c.spirit}`} desc={c.desc} sub={`Taken: ${c.taken}. ${c.skills}.`}
+                price={`bond ${formatCopper(c.priceCp)}`}
+                action={<ActionButton label="Buy bond" enabled={!loading} onClick={() => onBuy(c)} />} />
+            ))}
+            <div style={{ ...metaStyle, fontSize: "9px", color: "rgba(237, 228, 208, 0.4)", lineHeight: 1.4, margin: "2px 0 12px", fontStyle: "italic" }}>
+              Prime lots — paraded fresh each morning. Tomorrow's faces will be different.
+            </div>
+          </>
+        )}
+
+        {lowLots.length > 0 && (
+          <>
+            <SectionHeader>Still on the platform</SectionHeader>
+            {lowLots.map((c) => (
+              <Row key={c.id} title={c.name} meta={`${c.origin} · ${c.spirit}`} desc={c.desc} sub={`Taken: ${c.taken}. ${c.skills}.`}
+                price={`bond ${formatCopper(c.priceCp)}`}
+                action={<ActionButton label="Buy bond" enabled={!loading} onClick={() => onBuy(c)} />} />
+            ))}
+            <div style={{ ...metaStyle, fontSize: "9px", color: "rgba(237, 228, 208, 0.4)", lineHeight: 1.4, margin: "2px 0 8px", fontStyle: "italic" }}>
+              Slow movers — kept at the back of the platform across the days until someone takes them or the next coffle clears the rail.
+            </div>
+          </>
+        )}
+
+        {highLots.length === 0 && lowLots.length === 0 && (
+          <div style={{ ...metaStyle, fontSize: "11px", color: colors.parchmentMuted, lineHeight: 1.5, marginTop: "8px", fontStyle: "italic", textAlign: "center" }}>
+            The platform is empty between coffles. Come back in the morning.
+          </div>
+        )}
+
         <div style={{ height: "8px" }} />
       </div>
     </div>
