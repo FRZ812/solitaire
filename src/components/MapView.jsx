@@ -418,21 +418,22 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       // camera-south isometric tilt:
       //   - if the TALLER side is NORTH of this edge, the camera looks
       //     at the taller hex's south face and the line at MIN(lift)
-      //     (the lower hex's surface, usually ground) sits flush at the
-      //     base of the wall, visible in front of it.
-      //   - if the TALLER side is SOUTH of this edge, the taller hex's
-      //     top polygon extends north over the edge in screen space and
-      //     would hide a ground-level line. Use MAX(lift) instead so
-      //     the line sits on the taller's roof at its back edge — the
-      //     side actually visible to the camera.
-      //   - same row (d.y === 0) or equal lifts → use MIN.
+      //     (the lower hex's surface, usually ground) sits flush at
+      //     the base of the wall, visible in front of it.
+      //   - in every other case (taller is south, east, or west — i.e.
+      //     the taller body is camera-near or side-on, and a line at
+      //     the LOWER level reads as a stray border on the shorter
+      //     hex), use MAX(lift) so the line sits on the taller side's
+      //     top/back-roof edge where it reads as the no-entry boundary
+      //     of the taller structure.
+      //   - equal lifts → MIN == MAX, no difference.
       const liftA = liftForTile(tile);
       const liftB = liftForTile(nTile);
-      const tallerIsSouth =
-        (liftA > liftB && d.y < 0) || (liftB > liftA && d.y > 0);
-      const lift = tallerIsSouth
-        ? Math.max(liftA, liftB)
-        : Math.min(liftA, liftB);
+      const tallerIsNorth =
+        (liftA > liftB && d.y > 0) || (liftB > liftA && d.y < 0);
+      const lift = tallerIsNorth
+        ? Math.min(liftA, liftB)
+        : Math.max(liftA, liftB);
       const a = hexCorner(h.px, h.py - lift, ca);
       const b = hexCorner(h.px, h.py - lift, cb);
       wallSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
