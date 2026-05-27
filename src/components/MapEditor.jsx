@@ -186,6 +186,11 @@ function getEdgeState(tiles, ax, ay, bx, by) {
 // doors by listing every adjacent neighbour the engine currently
 // permits — that way "close this one edge" doesn't accidentally close
 // every other adjacent edge by setting doors:[] on a wide-open tile.
+// Procedural neighbours (no entry in `tiles`) are kept in the
+// materialised doors so default-open's permissive semantics survive
+// the materialisation; otherwise toggling one edge on a default-open
+// road tile would silently seal it against every procedural-exterior
+// neighbour.
 function materialiseDoors(tiles, x, y) {
   const t = tiles[`${x},${y}`];
   if (!t || Array.isArray(t.doors)) return t;
@@ -193,17 +198,39 @@ function materialiseDoors(tiles, x, y) {
   for (const d of HEX_DIRS) {
     const nx = x + d.x, ny = y + d.y;
     const nt = tiles[`${nx},${ny}`];
-    if (!nt) continue;
-    // Default-open A is open to B iff B permits A.
+    if (!nt) {
+      // Procedural neighbour — preserve default-open permission.
+      next.doors.push({ x: nx, y: ny });
+      continue;
+    }
     if (tilePermitsEdge(nt, x, y)) next.doors.push({ x: nx, y: ny });
   }
   return next;
+}
+
+// A tile authored with `doors: []` is intentionally sealed (Sewer Mouth,
+// Iron Palace, etc.) — narrator-only entry. Toggling an edge against
+// such a tile would silently unseal it; refuse and surface a hint.
+function isAuthoredSeal(tile) {
+  return tile && Array.isArray(tile.doors) && tile.doors.length === 0;
 }
 
 function toggleEdge(tiles, ax, ay, bx, by) {
   const state = getEdgeState(tiles, ax, ay, bx, by);
   if (state === "missing") return tiles;
   const aKey = `${ax},${ay}`, bKey = `${bx},${by}`;
+  // Protect authored seals — `doors: []` is the narrator-only entry
+  // invariant for Sewer Mouth + the linked Iron Palace.
+  if (isAuthoredSeal(tiles[aKey]) || isAuthoredSeal(tiles[bKey])) {
+    if (typeof window !== "undefined" && window.confirm) {
+      const ok = window.confirm(
+        "One side of this edge is intentionally sealed (doors:[] — narrator-only entry). Unsealing will break the game's gating; continue?"
+      );
+      if (!ok) return tiles;
+    } else {
+      return tiles;
+    }
+  }
   const next = { ...tiles };
   next[aKey] = materialiseDoors(tiles, ax, ay);
   next[bKey] = materialiseDoors(tiles, bx, by);
@@ -235,6 +262,20 @@ function tileToJs(tile) {
   return JSON.stringify(out);
 }
 
+// Generator-owned tiles (perimeter streets + plain wall_top hexes
+// without a stair POI) are produced by the wall generator at module
+// load — if we serialise them into the exported source, pasting back
+// will pre-populate HANDCRAFTED with the generator's previous output
+// and the generator's `if (HANDCRAFTED[key]) continue` will skip
+// regeneration. Subsequent layout changes silently won't take effect.
+// Skip them in the export; the generator regenerates them on reload.
+function isGeneratorOwned(tile) {
+  if (!tile) return false;
+  if (tile.perimeter) return true;
+  if (tile.terrain === "wall_top" && !(tile.poi && tile.poi.type === "stair")) return true;
+  return false;
+}
+
 function exportTilesText(tiles) {
   // Sort keys by (x then y) so the diff stays stable across edits.
   const keys = Object.keys(tiles).sort((a, b) => {
@@ -244,7 +285,15 @@ function exportTilesText(tiles) {
   });
   const lines = ["export const HANDCRAFTED = {"];
   for (const k of keys) {
-    lines.push(`  "${k}": ${tileToJs(tiles[k])},`);
+    const tile = tiles[k];
+    if (isGeneratorOwned(tile)) continue;
+    // Stair-wall_tops are authored, but their `doors` are recomputed
+    // every module load by the wall generator. Strip them so the
+    // export round-trips cleanly back to the authored source shape.
+    const tileForExport = tile.terrain === "wall_top" && Array.isArray(tile.doors)
+      ? { ...tile, doors: undefined }
+      : tile;
+    lines.push(`  "${k}": ${tileToJs(tileForExport)},`);
   }
   lines.push("};");
   return lines.join("\n");
@@ -360,27 +409,76 @@ export function MapEditor({ onExit }) {
         if (tiles[key]) {
           if (!confirm(`(${x},${y}) already has a tile. Overwrite?`)) return;
         }
-        // Move the tile data
+        // Relocate the tile data. The moved tile's `doors` array (and
+        // any other tile's doors/door referring to the source coord)
+        // pointed at the OLD neighbours — we drop the moved tile's
+        // doors entirely so it falls back to default-open at the new
+        // location (subsequent edits via the Edges tool re-author as
+        // needed). We do NOT chase per-tile doors across the rest of
+        // the map; users moving tiles with inbound door references
+        // need to re-edit those references manually.
         const sourceKey = `${moveSource.x},${moveSource.y}`;
-        const moving = tiles[sourceKey];
-        const newTiles = { ...tiles };
-        delete newTiles[sourceKey];
-        newTiles[key] = moving;
-        setTiles(newTiles);
-        // Update streets/buildings membership coords
-        setStreets((s) => s.map((c) => (c.x === moveSource.x && c.y === moveSource.y) ? { x, y } : c));
-        setBuildings((b) => b.map((bd) => {
-          if (bd.x === moveSource.x && bd.y === moveSource.y) return { ...bd, x, y };
-          return bd;
-        }));
+        const src = moveSource;
+        setTiles((t) => {
+          const moving = t[sourceKey];
+          if (!moving) return t;
+          const { doors: _drop, ...rest } = moving;
+          const nextT = { ...t };
+          delete nextT[sourceKey];
+          nextT[key] = rest;
+          return nextT;
+        });
+        // Update streets/buildings membership: replace the source
+        // entry with the new coord; if the destination already had
+        // an entry, drop it so we don't end up with duplicates.
+        setStreets((s) => {
+          let movedOver = false;
+          const out = [];
+          for (const c of s) {
+            if (c.x === src.x && c.y === src.y) {
+              if (movedOver) continue;
+              out.push({ x, y });
+              movedOver = true;
+            } else if (c.x === x && c.y === y) {
+              continue; // destination duplicate dropped
+            } else {
+              out.push(c);
+            }
+          }
+          return out;
+        });
+        setBuildings((b) => {
+          let movedOver = false;
+          const out = [];
+          for (const bd of b) {
+            if (bd.x === src.x && bd.y === src.y) {
+              if (movedOver) continue;
+              out.push({ ...bd, x, y });
+              movedOver = true;
+            } else if (bd.x === x && bd.y === y) {
+              continue; // destination duplicate dropped
+            } else {
+              out.push(bd);
+            }
+          }
+          return out;
+        });
         setMoveSource(null);
         setSelected({ x, y });
       }
       return;
     }
     if (tool === "paint") {
-      const next = { ...tiles, [key]: { ...(tiles[key] || {}), terrain: paintTerrain, poi: tiles[key]?.poi ?? null } };
-      setTiles(next);
+      // Reset `poi` when the painted terrain changes. Keeping a stale
+      // poi (e.g. citadel parent) attached to a different terrain
+      // would leave the footprint group claiming a hex whose terrain
+      // disagrees, which the verifier and renderer would treat as
+      // inconsistent.
+      setTiles((t) => {
+        const cur = t[key];
+        const poiKeep = cur && cur.terrain === paintTerrain ? cur.poi ?? null : null;
+        return { ...t, [key]: { ...(cur || {}), terrain: paintTerrain, poi: poiKeep } };
+      });
       setSelected({ x, y });
       return;
     }
@@ -397,25 +495,30 @@ export function MapEditor({ onExit }) {
     setSelected({ x, y });
   }
 
+  // All state setters use the functional updater form so a quick burst
+  // of edits (typing a description, paint-stamping multiple hexes)
+  // never builds the next state off a stale `tiles` closure.
   function patchSelectedTile(patch) {
     if (!selectedKey) return;
-    const cur = tiles[selectedKey] || {};
-    const next = { ...tiles, [selectedKey]: { ...cur, ...patch } };
-    setTiles(next);
+    setTiles((t) => {
+      const cur = t[selectedKey] || {};
+      return { ...t, [selectedKey]: { ...cur, ...patch } };
+    });
   }
 
   function patchSelectedPoi(patch) {
     if (!selectedKey) return;
-    const cur = tiles[selectedKey] || {};
-    const poi = cur.poi ? { ...cur.poi, ...patch } : { ...patch };
-    // Clean empty strings on type/name/access/description so the export
-    // doesn't carry blank fields.
-    for (const k of ["type", "name", "access", "description", "partName", "part", "parent", "parentName", "area", "areaName"]) {
-      if (poi[k] === "" || poi[k] == null) delete poi[k];
-    }
-    const hasAny = Object.keys(poi).length > 0;
-    const next = { ...tiles, [selectedKey]: { ...cur, poi: hasAny ? poi : null } };
-    setTiles(next);
+    setTiles((t) => {
+      const cur = t[selectedKey] || {};
+      const poi = cur.poi ? { ...cur.poi, ...patch } : { ...patch };
+      // Clean empty strings on type/name/access/description so the export
+      // doesn't carry blank fields.
+      for (const k of ["type", "name", "access", "description", "partName", "part", "parent", "parentName", "area", "areaName"]) {
+        if (poi[k] === "" || poi[k] == null) delete poi[k];
+      }
+      const hasAny = Object.keys(poi).length > 0;
+      return { ...t, [selectedKey]: { ...cur, poi: hasAny ? poi : null } };
+    });
   }
 
   function toggleDoor(nx, ny) {
@@ -427,10 +530,13 @@ export function MapEditor({ onExit }) {
   }
 
   function clearDoorsOverride() {
-    if (!selectedKey || !selectedTile) return;
-    const next = { ...tiles[selectedKey] };
-    delete next.doors;
-    setTiles({ ...tiles, [selectedKey]: next });
+    if (!selectedKey) return;
+    setTiles((t) => {
+      const cur = t[selectedKey];
+      if (!cur) return t;
+      const { doors: _drop, ...rest } = cur;
+      return { ...t, [selectedKey]: rest };
+    });
   }
 
   function toggleStreetMembership() {

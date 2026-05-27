@@ -806,12 +806,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               // than a flat drop shadow. Ground tiles (plains, streets,
               // water) draw a single hex at their natural position.
               // Walls tower over buildings.
-              const lift = (
-                tile.terrain === "wall_top" ? 22 :
-                tile.terrain === "indoor"   ? 10 :
-                isFootprintMember           ? 8 :
-                0
-              );
+              const lift = liftForTile(tile);
               const prism = lift > 0 ? hexPrismParts(px, py, lift) : null;
               // Elevated hexes (walls/buildings) always render at full
               // opacity so the 3D prism reads as a solid stone column.

@@ -160,13 +160,13 @@ for (const c of [...INTERIOR, ...WALL_TOPS]) {
   }
 }
 ok(crossings.length === 1, `exactly one open wall crossing (found ${crossings.length}: ${crossings.join(", ")})`);
-ok(crossings[0] === `${k(OUTER_GATE)} -> ${k(APPROACH)}`, "the open crossing is Outer Ward W -> Crown Road Approach");
+ok(crossings[0] === `${k(OUTER_GATE)} -> ${k(APPROACH)}`, "the open crossing is Toll Hall -> Crown Road Approach");
 
 // 4) You can actually leave the city — and only through the gate.
 console.log("\n4) Leaving the city:");
 const out = findPath(state, GRAIN, { x: 0, y: -9 });
 ok(!!out, "a route from Grain Square out to the open country exists");
-ok(out && out.some((p) => p.x === OUTER_GATE.x && p.y === OUTER_GATE.y), "the route passes through the Outer Ward (the gate)");
+ok(out && out.some((p) => p.x === OUTER_GATE.x && p.y === OUTER_GATE.y), "the route passes through the Toll Hall (the gate)");
 ok(out && out.some((p) => p.x === APPROACH.x && p.y === APPROACH.y), "the route passes through the Crown Road Approach");
 
 // 5) The High Wall: Iron Palace reachable ONLY through the Inner Gate.
