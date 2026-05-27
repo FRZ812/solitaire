@@ -32,7 +32,7 @@ export const COIN_PER_STONE = 500;
 // author their own bodyWeight in data/mounts.js; this covers people.
 export const BODY_WEIGHT_BY_RACE = {
   human: 14, halfling: 8, gnome: 8, goblin: 7, dwarf: 13, elf: 12, "half-elf": 13,
-  orc: 18, "half-orc": 17, drakeborn: 16, demon: 22, ogre: 40, troll: 45, giant: 90,
+  orc: 18, "half-orc": 17, drakeborn: 16, beastfolk: 14, demon: 22, ogre: 40, troll: 45, giant: 90,
 };
 export const DEFAULT_BODY_WEIGHT = 14;
 
