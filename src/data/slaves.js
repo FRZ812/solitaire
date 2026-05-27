@@ -4,16 +4,40 @@
 // runs the trade as a business: it does NOT enslave the central-region natives
 // among whom it sits, but imports flesh from elsewhere — eastern coffles,
 // southern raids, debt-sales out of the western marches, northern hostages
-// whose ransom never came, and the foreign kindreds (orcs, half-orcs, goblins,
-// beast folk, vampires, the demon-blooded) shipped in by bargemaster to
+// whose ransom never came, and the visibly-foreign kindreds (orcs, half-orcs,
+// goblins, beast folk, common-line vampires) shipped in by bargemaster to
 // bargemaster.
+//
+// PUBLIC vs PRIVATE. This pool is the PUBLIC platform only. The truly rare —
+// demon-blooded, drake-blooded, fae-touched, named bloodlines, patrician-line
+// vampires, captives held for a specific patron — are sold privately in the
+// Iron Palace's closed hall and the Patrician Houses' viewing rooms, to nobles
+// and aristocrats by invitation, and NEVER appear here. Do not add such
+// captives to CAPTIVE_POOL; that's a worldbuilding rule, not just a roster gap.
+//
+// PRICING MODEL. priceCp on each entry is the Chain Factor's appraisal of
+// FOUR factors together, not just utility: SKILLS (a healer, a navigator, a
+// literate scribe price up), APPEARANCE (the striking and unblemished stand
+// above the plain, scarred, or marked), RARITY (an eastern steppe-rider, a
+// southern beast-folk, an exotic kindred or origin price up sharply), and
+// AGE/CONDITION (the prime years stand above the aged, failing, or broken).
+// Appearance and rarity weigh AS HEAVILY as skill, often more — a striking
+// captive of an exotic kindred can bond for more than a master cooper. Bargain
+// prices reflect plainness, marks, age, brokenness, or commonness, not just
+// less skill. The narrator follows the same model when improvising captives
+// elsewhere in the world (see the BOND'S PRICE clause in THE BLOCK,
+// src/system-prompt.js).
 //
 // CAPTIVE_POOL — people the auctioneer holds for sale. Each is a real person
 //                with a name, an origin, the wrong turn of fortune that put
 //                them on the block (war, debt, a raid, birth), and a
 //                `freedom_response` cue naming the specific reason they will
 //                refuse the player's offer of freedom (the default is refusal —
-//                see the THE BLOCK passage in src/system-prompt.js). Buying
+//                see the THE BLOCK passage in src/system-prompt.js). The
+//                refusal categories (war-displaced, childhood-bonded, aged/
+//                broken, honour-bound) are a DOCTRINE applied to any captive
+//                in the fiction, not just this roster — `freedom_response`
+//                here is just the doctrine filled in for each name. Buying
 //                their BOND pays the auctioneer and makes their fate yours:
 //                keep them in bonded service, ransom them home (if they have
 //                one a writ can reach), sell them on, or force-release them at
