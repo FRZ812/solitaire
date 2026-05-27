@@ -9,7 +9,7 @@
 // authored under square-grid semantics.
 
 import { TERRAINS } from "../data/terrains.js";
-import { HANDCRAFTED } from "../data/handcrafted-tiles.js";
+import { HANDCRAFTED } from "../data/handcrafted-map.js";
 import { RUMORED } from "../data/rumored.js";
 import { FABLED_BY_COORD } from "../data/fabled.js";
 import { RIVER_BY_COORD } from "../data/rivers.js";
@@ -248,7 +248,10 @@ export function isAdjacent(a, b) {
 }
 
 export function isPassable(tile) {
-  return tile.terrain !== "water" && tile.terrain !== "wall";
+  // Walls are now walkable (mountable fortress wall). Non-mountable
+  // barriers come from existing impassable terrains like water — and the
+  // per-tile doors graph still controls which edges actually open.
+  return tile.terrain !== "water";
 }
 
 // Access control — doors. A tile may declare `doors: [{x,y}, ...]` listing

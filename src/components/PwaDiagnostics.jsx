@@ -29,7 +29,6 @@ export function PwaDiagnostics() {
     return () => { cancelled = true; };
   }, [open]);
 
-  if (typeof __SOLITAIRE_MODE__ !== "undefined" && __SOLITAIRE_MODE__ !== "web") return null;
   if (!open) return null;
 
   return (

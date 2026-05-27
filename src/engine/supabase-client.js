@@ -1,6 +1,7 @@
-// Singleton Supabase client for the web build. Only imported transitively via
-// `$api` and `$campaigns` aliased modules, so the artifact build never pulls
-// in @supabase/supabase-js.
+// Singleton Supabase client. Imported by api / auth / campaigns / map
+// modules. The artifact build that used to swap these out for local-only
+// variants has been retired (the editor and game now talk to Supabase
+// directly).
 import { createClient } from "@supabase/supabase-js";
 
 const url = import.meta.env.VITE_SUPABASE_URL;
