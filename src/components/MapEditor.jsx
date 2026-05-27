@@ -133,6 +133,96 @@ function clearDraft() {
   try { localStorage.removeItem(LS_KEY); } catch (e) {}
 }
 
+// ============================================================
+// EDGE MODEL — the door graph in the engine is per-tile (each tile lists
+// its allowed neighbours), but for authoring and rendering it's much
+// cleaner to think of the edge BETWEEN two adjacent hexes as the unit
+// of state. Closed/open is a property of the shared boundary, not of
+// either tile in isolation. These helpers project the per-tile doors
+// data into an edge-keyed view, and the toggle helper writes the new
+// edge state back into BOTH adjacent tiles' doors arrays atomically.
+//
+// Edge state semantics:
+//   "open"    — both sides' doors arrays include the other, OR neither
+//               side has an explicit doors array (default-open). Edges
+//               between tiles where neither has a doors array are kept
+//               in the "default" bucket below to distinguish.
+//   "closed"  — at least one side blocks the other (the doors array
+//               exists but doesn't include the neighbour).
+//   "default" — neither side has an explicit doors array (wilderness /
+//               unauthored). The toggle materialises both sides' doors
+//               before flipping so the new state is explicit.
+// ============================================================
+function canonicalEdgeKey(ax, ay, bx, by) {
+  if (ax < bx || (ax === bx && ay < by)) return `${ax},${ay}|${bx},${by}`;
+  return `${bx},${by}|${ax},${ay}`;
+}
+
+function tilePermitsEdge(tile, nx, ny) {
+  if (!tile) return true;
+  if (!Array.isArray(tile.doors)) return true;
+  return tile.doors.some((d) => d.x === nx && d.y === ny);
+}
+
+function getEdgeState(tiles, ax, ay, bx, by) {
+  const ta = tiles[`${ax},${ay}`];
+  const tb = tiles[`${bx},${by}`];
+  if (!ta || !tb) return "missing";
+  const aArr = Array.isArray(ta.doors);
+  const bArr = Array.isArray(tb.doors);
+  const aPermits = !aArr || ta.doors.some((d) => d.x === bx && d.y === by);
+  const bPermits = !bArr || tb.doors.some((d) => d.x === ax && d.y === ay);
+  if (!aPermits || !bPermits) return "closed";
+  if (!aArr && !bArr) return "default";
+  return "open";
+}
+
+// Toggle the edge between (ax,ay) and (bx,by) in `tiles` and return a
+// NEW tiles object (immutable update). Modifies both adjacent tiles'
+// doors arrays atomically so the engine's bidirectional edgeAllowed()
+// stays consistent.
+//
+// If either side is "default-open" (no doors array) we materialise its
+// doors by listing every adjacent neighbour the engine currently
+// permits — that way "close this one edge" doesn't accidentally close
+// every other adjacent edge by setting doors:[] on a wide-open tile.
+function materialiseDoors(tiles, x, y) {
+  const t = tiles[`${x},${y}`];
+  if (!t || Array.isArray(t.doors)) return t;
+  const next = { ...t, doors: [] };
+  for (const d of HEX_DIRS) {
+    const nx = x + d.x, ny = y + d.y;
+    const nt = tiles[`${nx},${ny}`];
+    if (!nt) continue;
+    // Default-open A is open to B iff B permits A.
+    if (tilePermitsEdge(nt, x, y)) next.doors.push({ x: nx, y: ny });
+  }
+  return next;
+}
+
+function toggleEdge(tiles, ax, ay, bx, by) {
+  const state = getEdgeState(tiles, ax, ay, bx, by);
+  if (state === "missing") return tiles;
+  const aKey = `${ax},${ay}`, bKey = `${bx},${by}`;
+  const next = { ...tiles };
+  next[aKey] = materialiseDoors(tiles, ax, ay);
+  next[bKey] = materialiseDoors(tiles, bx, by);
+  if (state === "closed") {
+    // → open: ensure both sides include the other
+    if (!next[aKey].doors.some((d) => d.x === bx && d.y === by)) {
+      next[aKey] = { ...next[aKey], doors: [...next[aKey].doors, { x: bx, y: by }] };
+    }
+    if (!next[bKey].doors.some((d) => d.x === ax && d.y === ay)) {
+      next[bKey] = { ...next[bKey], doors: [...next[bKey].doors, { x: ax, y: ay }] };
+    }
+  } else {
+    // → closed: remove from both sides
+    next[aKey] = { ...next[aKey], doors: next[aKey].doors.filter((d) => !(d.x === bx && d.y === by)) };
+    next[bKey] = { ...next[bKey], doors: next[bKey].doors.filter((d) => !(d.x === ax && d.y === ay)) };
+  }
+  return next;
+}
+
 // Pretty-print a tile object as a single line. Order keys deterministically.
 function tileToJs(tile) {
   const out = {};
@@ -212,7 +302,7 @@ export function MapEditor({ onExit }) {
   const [gates, setGates] = useState(initial.gates);
 
   const [selected, setSelected] = useState(null); // {x,y}
-  const [tool, setTool] = useState("select"); // select | move | paint | delete
+  const [tool, setTool] = useState("select"); // select | move | paint | delete | edges
   const [paintTerrain, setPaintTerrain] = useState("settlement");
   const [moveSource, setMoveSource] = useState(null); // {x,y} during move op
   const [showExport, setShowExport] = useState(false);
@@ -329,19 +419,11 @@ export function MapEditor({ onExit }) {
   }
 
   function toggleDoor(nx, ny) {
-    if (!selectedKey || !selectedTile) return;
-    const cur = Array.isArray(selectedTile.doors) ? selectedTile.doors : null;
-    const has = cur && cur.some((d) => d.x === nx && d.y === ny);
-    let nextDoors;
-    if (cur === null) {
-      // default-open → make explicit list of just this neighbour as a starter
-      nextDoors = [{ x: nx, y: ny }];
-    } else if (has) {
-      nextDoors = cur.filter((d) => !(d.x === nx && d.y === ny));
-    } else {
-      nextDoors = [...cur, { x: nx, y: ny }];
-    }
-    patchSelectedTile({ doors: nextDoors });
+    if (!selected) return;
+    // Edge-level toggle: flips the shared boundary between the selected
+    // hex and ({nx, ny}) and writes both sides' doors arrays atomically
+    // so the engine's bidirectional edgeAllowed() stays consistent.
+    setTiles((t) => toggleEdge(t, selected.x, selected.y, nx, ny));
   }
 
   function clearDoorsOverride() {
@@ -417,6 +499,7 @@ export function MapEditor({ onExit }) {
         <ToolBtn label={moveSource ? "Move → click dest" : "Move"} active={tool === "move"} onClick={() => { setTool("move"); }} />
         <ToolBtn label="Paint" active={tool === "paint"} onClick={() => { setTool("paint"); setMoveSource(null); }} />
         <ToolBtn label="Delete" active={tool === "delete"} onClick={() => { setTool("delete"); setMoveSource(null); }} />
+        <ToolBtn label="Edges" active={tool === "edges"} onClick={() => { setTool("edges"); setMoveSource(null); }} />
         {tool === "paint" && (
           <select value={paintTerrain} onChange={(e) => setPaintTerrain(e.target.value)} style={input()}>
             {TERRAIN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -522,6 +605,58 @@ export function MapEditor({ onExit }) {
                   </g>
                 );
               })}
+              {/* Edge widgets — small clickable bars at the midpoint of each
+                  shared hex boundary, colour-coded by state. Rendered when
+                  the Edges tool is active (always), or when any hex is
+                  selected (only the edges around the selected hex). Click
+                  toggles the shared edge state, writing both adjacent
+                  tiles' doors atomically. */}
+              {(tool === "edges" || selected) && (() => {
+                const seen = new Set();
+                const widgets = [];
+                const coords = tool === "edges" ? renderCoords : (selected ? [selected] : []);
+                for (const c of coords) {
+                  for (let d = 0; d < HEX_DIRS.length; d++) {
+                    const dir = HEX_DIRS[d];
+                    const nx = c.x + dir.x, ny = c.y + dir.y;
+                    const key = canonicalEdgeKey(c.x, c.y, nx, ny);
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    const ta = tiles[`${c.x},${c.y}`];
+                    const tb = tiles[`${nx},${ny}`];
+                    if (!ta && !tb) continue;
+                    const state = getEdgeState(tiles, c.x, c.y, nx, ny);
+                    if (state === "missing") continue;
+                    const px = SVG_CENTER + HSPACING * (c.x + c.y / 2);
+                    const py = SVG_CENTER + VSPACING * c.y;
+                    const npx = SVG_CENTER + HSPACING * (nx + ny / 2);
+                    const npy = SVG_CENTER + VSPACING * ny;
+                    // Lift to whichever side is taller so the widget sits
+                    // on top of the extruded structure, not buried in it.
+                    let lift = 0;
+                    if (ta) {
+                      if (ta.terrain === "wall_top") lift = Math.max(lift, 22);
+                      else if (ta.terrain === "indoor") lift = Math.max(lift, 10);
+                      else if (ta.poi?.parent) lift = Math.max(lift, 8);
+                    }
+                    if (tb) {
+                      if (tb.terrain === "wall_top") lift = Math.max(lift, 22);
+                      else if (tb.terrain === "indoor") lift = Math.max(lift, 10);
+                      else if (tb.poi?.parent) lift = Math.max(lift, 8);
+                    }
+                    const mx = (px + npx) / 2;
+                    const my = (py + npy) / 2 - lift;
+                    const color = state === "open" ? "#7fe3b0" : state === "closed" ? "#e58a7a" : "rgba(245,220,184,0.5)";
+                    widgets.push(
+                      <g key={key} onClick={() => setTiles((t) => toggleEdge(t, c.x, c.y, nx, ny))} style={{ cursor: "pointer" }}>
+                        <circle cx={mx} cy={my} r="9" fill="rgba(12,17,17,0.65)" stroke="none" />
+                        <circle cx={mx} cy={my} r="6" fill={color} stroke="#0c1111" strokeWidth="1.5" />
+                      </g>
+                    );
+                  }
+                }
+                return widgets;
+              })()}
             </svg>
           </div>
         </div>
@@ -543,6 +678,7 @@ export function MapEditor({ onExit }) {
             onTilePatch={patchSelectedTile}
             onPoiPatch={patchSelectedPoi}
             onToggleDoor={toggleDoor}
+            onEdgeState={(nx, ny) => getEdgeState(tiles, selected.x, selected.y, nx, ny)}
             onClearDoorsOverride={clearDoorsOverride}
             onToggleStreet={toggleStreetMembership}
             onToggleBuilding={toggleBuildingMembership}
@@ -580,7 +716,7 @@ export function MapEditor({ onExit }) {
 
 function EditPanel({
   tile, x, y, isStreet, isBuilding, buildingEntry,
-  onTilePatch, onPoiPatch, onToggleDoor, onClearDoorsOverride,
+  onTilePatch, onPoiPatch, onToggleDoor, onEdgeState, onClearDoorsOverride,
   onToggleStreet, onToggleBuilding, onSetBuildingDoor,
   tilesAt, isStreetAt,
 }) {
@@ -699,26 +835,35 @@ function EditPanel({
         </Section>
       )}
 
-      {/* Doors */}
+      {/* Edges (shared boundaries) */}
       {tile && (
-        <Section label={`Doors ${Array.isArray(tile.doors) ? `(explicit, ${tile.doors.length})` : "(default open — set by structure)"}`}>
+        <Section label="Edges to neighbours (shared)">
+          <div style={{ fontSize: "10px", color: PALETTE.textDim, marginBottom: "5px", lineHeight: 1.4 }}>
+            Toggling an edge writes BOTH sides' doors lists at once — it's the
+            shared boundary between this hex and its neighbour, not a per-hex
+            flag.
+          </div>
           {adjacents.map((a) => {
             const nk = `${a.x},${a.y}`;
             const nt = tilesAt(a.x, a.y);
-            const has = Array.isArray(tile.doors) && tile.doors.some((d) => d.x === a.x && d.y === a.y);
-            const label = nt ? `(${a.x}, ${a.y}) ${nt.poi?.name || nt.terrain}` : `(${a.x}, ${a.y}) [empty]`;
+            const state = onEdgeState(a.x, a.y);
+            const stateBadge = state === "open" ? "● open" : state === "closed" ? "✕ closed" : state === "missing" ? "—" : "○ default";
+            const stateColor = state === "open" ? PALETTE.ok : state === "closed" ? PALETTE.danger : PALETTE.textDim;
+            const label = nt ? `${stateBadge}  (${a.x}, ${a.y}) ${nt.poi?.name || nt.terrain}` : `${stateBadge}  (${a.x}, ${a.y}) [empty]`;
             return (
-              <Checkbox
+              <label
                 key={nk}
-                label={label}
-                checked={has}
-                onChange={() => onToggleDoor(a.x, a.y)}
-              />
+                style={{ display: "flex", alignItems: "center", gap: "6px", padding: "2px 0", cursor: nt ? "pointer" : "default", fontSize: "12px", color: nt ? PALETTE.text : PALETTE.textDim }}
+                onClick={() => nt && onToggleDoor(a.x, a.y)}
+              >
+                <span style={{ color: stateColor, width: "60px", flexShrink: 0, fontSize: "11px" }}>{stateBadge}</span>
+                <span style={{ flex: 1 }}>{nt ? `(${a.x}, ${a.y}) ${nt.poi?.name || nt.terrain}` : `(${a.x}, ${a.y}) [empty]`}</span>
+              </label>
             );
           })}
           {Array.isArray(tile.doors) && (
             <button onClick={onClearDoorsOverride} style={{ ...btn({ color: PALETTE.danger }), marginTop: "6px" }}>
-              Clear override (revert to default)
+              Clear this hex's doors override (revert to default-open)
             </button>
           )}
         </Section>
