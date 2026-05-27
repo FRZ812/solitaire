@@ -19,7 +19,18 @@ import {
   CAPTIVE_POOL,
   SLAVE_HIGH_TIER_MIN_CP,
   SLAVE_LOW_REFRESH_DAYS,
+  SLAVE_LOW_DAILY_DISCOUNT,
+  SLAVE_LOW_PRICE_FLOOR_PCT,
+  SLAVE_LOW_OFFSCREEN_SALE_RATE,
 } from "../data/slaves.js";
+
+// The Chain Factor's price drop for a low-tier captive that has lingered N days.
+// Floors at SLAVE_LOW_PRICE_FLOOR_PCT of the original — even the auctioneer has
+// a bottom line.
+function decayedPrice(originalCp, daysLingering) {
+  const factor = Math.max(SLAVE_LOW_PRICE_FLOOR_PCT, 1 - daysLingering * SLAVE_LOW_DAILY_DISCOUNT);
+  return Math.max(1, Math.round(originalCp * factor));
+}
 
 // One bucket per day — the high-tier roster rolls every morning.
 export function slaveHighBucket(day) {
@@ -58,7 +69,43 @@ export function generateSlaveMarket(tileKey, day) {
   const highRng = makeRng(`slaves:high:${tileKey}:${highBucket}`);
   const lowRng  = makeRng(`slaves:low:${tileKey}:${lowBucket}`);
   const high = pickN(highPool, HIGH_TIER_COUNT, highRng).map((c) => ({ ...c, tier: "high", id: `captive-high-${highBucket}-${c.key}` }));
-  const low  = pickN(lowPool,  LOW_TIER_COUNT,  lowRng ).map((c) => ({ ...c, tier: "low",  id: `captive-low-${lowBucket}-${c.key}` }));
+
+  const windowStartDay = lowBucket * SLAVE_LOW_REFRESH_DAYS;
+  const daysLingering = Math.max(0, (day || 0) - windowStartDay);
+  const low = pickN(lowPool, LOW_TIER_COUNT, lowRng).map((c) => {
+    const originalCp = c.priceCp;
+    const desirability = Math.min(1.0, originalCp / SLAVE_HIGH_TIER_MIN_CP);
+    // Did another buyer snap them up off-screen on a prior night within this
+    // window? Roll once per night that has passed since arrival, using the
+    // discount visible on that day. The first night-roll uses arrival-day
+    // (zero discount, zero chance) — kept in the loop for symmetry.
+    let soldOffscreen = false;
+    let soldOnDay = null;
+    for (let dayN = 0; dayN < daysLingering; dayN++) {
+      const priceOnDayN = decayedPrice(originalCp, dayN);
+      const discount = 1 - (priceOnDayN / originalCp);
+      if (discount <= 0) continue;
+      const chance = desirability * discount * SLAVE_LOW_OFFSCREEN_SALE_RATE;
+      const offRng = makeRng(`slaves:offscreen:${tileKey}:${lowBucket}:${c.key}:${dayN}`);
+      if (offRng() < chance) {
+        soldOffscreen = true;
+        soldOnDay = windowStartDay + dayN;
+        break;
+      }
+    }
+    const currentCp = decayedPrice(originalCp, daysLingering);
+    return {
+      ...c,
+      tier: "low",
+      id: `captive-low-${lowBucket}-${c.key}`,
+      priceCp: currentCp,
+      originalPriceCp: originalCp,
+      daysLingering,
+      soldOffscreen,
+      soldOnDay,
+    };
+  }).filter((c) => !c.soldOffscreen);
+
   return { highBucket, lowBucket, captives: [...high, ...low] };
 }
 

@@ -41,3 +41,16 @@ export const CAPTIVE_POOL = [
 
 export const SLAVE_HIGH_TIER_MIN_CP = 360;
 export const SLAVE_LOW_REFRESH_DAYS = 4;
+
+// Low-tier captives don't just sit at the same price gathering dust — the Chain
+// Factor knocks the bond by SLAVE_LOW_DAILY_DISCOUNT each day they linger, down
+// to a SLAVE_LOW_PRICE_FLOOR_PCT floor. And other buyers are watching: at each
+// night-close, every still-lingering captive rolls against an off-screen-sale
+// chance = (originalPrice / SLAVE_HIGH_TIER_MIN_CP) * discountFraction *
+// SLAVE_LOW_OFFSCREEN_SALE_RATE — desirability times bargain depth. If the roll
+// hits, someone else takes them off the platform and they vanish from the
+// roster the next morning. The rolls are deterministic per (tile, captive,
+// night) so the same day at the same tile always shows the same remaining set.
+export const SLAVE_LOW_DAILY_DISCOUNT = 0.10;
+export const SLAVE_LOW_PRICE_FLOOR_PCT = 0.50;
+export const SLAVE_LOW_OFFSCREEN_SALE_RATE = 0.5;

@@ -77,13 +77,17 @@ export function SlaveMarketView({ state, building, board, tileKey, onBuy, onClos
         {lowLots.length > 0 && (
           <>
             <SectionHeader>Still on the platform</SectionHeader>
-            {lowLots.map((c) => (
-              <Row key={c.id} title={c.name} meta={`${c.origin} · ${c.spirit}`} desc={c.desc} sub={`Taken: ${c.taken}. ${c.skills}.`}
-                price={`bond ${formatCopper(c.priceCp)}`}
-                action={<ActionButton label="Buy bond" enabled={!loading} onClick={() => onBuy(c)} />} />
-            ))}
+            {lowLots.map((c) => {
+              const decayed = c.daysLingering > 0 && c.priceCp < c.originalPriceCp;
+              return (
+                <Row key={c.id} title={c.name} meta={`${c.origin} · ${c.spirit}`} desc={c.desc} sub={`Taken: ${c.taken}. ${c.skills}.`}
+                  price={`bond ${formatCopper(c.priceCp)}`}
+                  priceSub={decayed ? `was ${formatCopper(c.originalPriceCp)}` : null}
+                  action={<ActionButton label="Buy bond" enabled={!loading} onClick={() => onBuy(c)} />} />
+              );
+            })}
             <div style={{ ...metaStyle, fontSize: "9px", color: "rgba(237, 228, 208, 0.4)", lineHeight: 1.4, margin: "2px 0 8px", fontStyle: "italic" }}>
-              Slow movers — kept at the back of the platform across the days until someone takes them or the next coffle clears the rail.
+              The Chain Factor knocks their bond each day they stay. Once the price is right, someone else takes them off the platform — what you see here is what hasn't moved yet.
             </div>
           </>
         )}
@@ -100,7 +104,7 @@ export function SlaveMarketView({ state, building, board, tileKey, onBuy, onClos
   );
 }
 
-function Row({ title, meta, desc, sub, price, action }) {
+function Row({ title, meta, desc, sub, price, priceSub, action }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: "10px",
@@ -117,9 +121,12 @@ function Row({ title, meta, desc, sub, price, action }) {
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", flexShrink: 0 }}>
         {price && (
-          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-            <Icon name="sparkle" size={10} color={colors.gold} />
-            <span style={{ fontSize: "11px", fontWeight: 800, color: colors.gold, textAlign: "right" }}>{price}</span>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "1px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <Icon name="sparkle" size={10} color={colors.gold} />
+              <span style={{ fontSize: "11px", fontWeight: 800, color: colors.gold, textAlign: "right" }}>{price}</span>
+            </div>
+            {priceSub && <span style={{ fontSize: "9px", color: "rgba(237, 228, 208, 0.45)", textAlign: "right", fontStyle: "italic", textDecoration: "line-through" }}>{priceSub}</span>}
           </div>
         )}
         {action}
