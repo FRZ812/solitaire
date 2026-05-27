@@ -682,7 +682,6 @@ export function MapEditor({ onExit }) {
                         points={prism.sidePoints}
                         fill={SIDE_SHADE}
                         stroke="none"
-                        pointerEvents="none"
                       />
                     )}
                     <polygon
