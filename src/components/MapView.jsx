@@ -76,25 +76,25 @@ function hexCorner(cx, cy, i) {
 }
 
 // True 3D extrusion in SVG: for a hex elevated by `lift` SVG pixels, we
-// emit the visible non-degenerate side faces of the hexagonal prism as
-// quad polygons connecting the top (lifted) hex corners to the ground
-// hex corners, plus the top hex polygon itself. After the parent SVG's
-// rotateX(52deg) tilt, the south-facing side faces project as slanted
-// vertical walls — actual geometry, not shading.
+// emit ONE combined south-facing side-face polygon wrapping from the
+// hex's lower-right edge through its bottom corner to its lower-left
+// edge (corners 1 → 2 → 3 of the top hex, then 3 → 2 → 1 of the ground
+// hex), plus the top hex polygon itself. After the parent SVG's
+// rotateX(52deg) tilt, this single polygon projects as a slanted stone
+// face on screen.
 //
-// With pointy-top hex orientation, the LEFT and RIGHT vertical edges of
-// the hex (corners 0-1 and 3-4) have the same X for both endpoints, so
-// a quad spanning them collapses to a vertical line on screen (zero
-// width) and reads as a stray "line" on the wall. Skip those. The
-// UPPER-rear edges (4-5, 5-0) are hidden behind the top hex anyway.
-// That leaves the two lower-diagonal side faces (1-2 lower-right and
-// 2-3 lower-left) — the actual visible vertical facets of the wall.
+// Why one combined polygon instead of separate "lit right" / "dark
+// left" facets: at this hex orientation the two would meet along the
+// vertical edge at corner 2, and the abrupt lit→dark transition
+// reads as a stray "line" running down the front of the wall. One
+// uniform polygon = no internal seam.
 //
-// Returns:
-//   { topPoints: string, sides: [{ points, shade }] }
-// where each side has its own shade so the two visible facets read as
-// distinct planes under a directional light (lit on the right, dark on
-// the left) rather than a single flat dark band.
+// Why only this one south-wrap face: the left and right vertical
+// edges of a pointy-top hex (corners 0-1 and 3-4) share an X for both
+// endpoints, so quads spanning them collapse to vertical lines on
+// screen (zero width) and read as stray "lines" pasted on the wall.
+// The upper-rear two edges (4-5, 5-0) would be hidden behind the top
+// hex anyway. So the south-wrap is the only useful visible facet.
 function hexPrismParts(cx, cy, lift) {
   const topCorners = [];
   const gndCorners = [];
@@ -106,23 +106,14 @@ function hexPrismParts(cx, cy, lift) {
     gndCorners.push({ x: cx + dx, y: cy + dy });
   }
   const topPoints = topCorners.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
-  const VISIBLE_FACES = [
-    { i: 1, shade: "rgb(78, 62, 44)" }, // 1-2 lower-right, lit
-    { i: 2, shade: "rgb(40, 30, 22)" }, // 2-3 lower-left, dark
-  ];
-  const sides = VISIBLE_FACES.map(({ i, shade }) => {
-    const j = (i + 1) % 6;
-    const a = topCorners[i], b = topCorners[j];
-    const c = gndCorners[j], d = gndCorners[i];
-    return {
-      points:
-        `${a.x.toFixed(2)},${a.y.toFixed(2)} ${b.x.toFixed(2)},${b.y.toFixed(2)} ` +
-        `${c.x.toFixed(2)},${c.y.toFixed(2)} ${d.x.toFixed(2)},${d.y.toFixed(2)}`,
-      shade,
-    };
-  });
-  return { topPoints, sides };
+  // South-wrap side polygon: top[1] → top[2] → top[3] → gnd[3] → gnd[2] → gnd[1]
+  const wrapPoints = [topCorners[1], topCorners[2], topCorners[3], gndCorners[3], gndCorners[2], gndCorners[1]]
+    .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
+    .join(" ");
+  return { topPoints, sidePoints: wrapPoints };
 }
+
+const SIDE_SHADE = "rgb(46, 36, 26)"; // single uniform dark for all prism south-wrap faces
 
 // ==================== CUSTOM VECTOR LANDMARKS & MAP ART ====================
 const MAP_ASSETS = {
@@ -742,7 +733,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               // Footprint members drop their per-hex outline so the group reads
               // as one merged building; the golden perimeter + interior walls
               // carry the edges. The current/selected highlight still applies.
-              let stroke = isFootprintMember ? "transparent" : "rgba(215, 167, 111, 0.08)";
+              // Elevated terrain (wall_top, indoor) also drops its border so
+              // adjacent prisms look like a continuous structure instead of
+              // showing a grid of stroke lines between top hexes.
+              const dropStroke = isFootprintMember || tile.terrain === "wall_top" || tile.terrain === "indoor";
+              let stroke = dropStroke ? "transparent" : "rgba(215, 167, 111, 0.08)";
               let strokeWidth = 1;
 
               if (seen) {
@@ -797,15 +792,14 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                    }}
                    style={{ cursor: "pointer", opacity }}
                 >
-                  {prism && prism.sides.map((side, i) => (
+                  {prism && (
                     <polygon
-                      key={i}
-                      points={side.points}
-                      fill={side.shade}
+                      points={prism.sidePoints}
+                      fill={SIDE_SHADE}
                       stroke="none"
                       pointerEvents="none"
                     />
-                  ))}
+                  )}
                   <polygon
                     points={prism ? prism.topPoints : hexCornerPoints(px, py)}
                     fill={fill}

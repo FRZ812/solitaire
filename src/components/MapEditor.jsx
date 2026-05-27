@@ -56,11 +56,12 @@ function hexCornerPoints(cx, cy) {
 }
 
 // True 3D extrusion — see MapView.jsx hexPrismParts() for the full doc.
-// Emits the two visible non-degenerate side-face quads (1-2 lower-right
-// lit and 2-3 lower-left shaded) plus the top hex polygon. The right
-// and left vertical edges of a pointy-top hex collapse to vertical
-// lines in SVG, so we skip them; the upper-rear edges are hidden by
-// the top hex.
+// Emits ONE south-wrap side polygon (top[1] → top[2] → top[3] →
+// gnd[3] → gnd[2] → gnd[1]) plus the top hex polygon. One combined
+// polygon avoids the lit/dark seam down the front of the wall that
+// two separate facets would produce; the left/right vertical edges
+// of a pointy-top hex are degenerate anyway, and the rear edges are
+// hidden by the top hex.
 function hexPrismParts(cx, cy, lift) {
   const topCorners = [];
   const gndCorners = [];
@@ -72,23 +73,13 @@ function hexPrismParts(cx, cy, lift) {
     gndCorners.push({ x: cx + dx, y: cy + dy });
   }
   const topPoints = topCorners.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
-  const VISIBLE_FACES = [
-    { i: 1, shade: "rgb(78, 62, 44)" }, // 1-2 lower-right, lit
-    { i: 2, shade: "rgb(40, 30, 22)" }, // 2-3 lower-left, dark
-  ];
-  const sides = VISIBLE_FACES.map(({ i, shade }) => {
-    const j = (i + 1) % 6;
-    const a = topCorners[i], b = topCorners[j];
-    const c = gndCorners[j], d = gndCorners[i];
-    return {
-      points:
-        `${a.x.toFixed(2)},${a.y.toFixed(2)} ${b.x.toFixed(2)},${b.y.toFixed(2)} ` +
-        `${c.x.toFixed(2)},${c.y.toFixed(2)} ${d.x.toFixed(2)},${d.y.toFixed(2)}`,
-      shade,
-    };
-  });
-  return { topPoints, sides };
+  const wrapPoints = [topCorners[1], topCorners[2], topCorners[3], gndCorners[3], gndCorners[2], gndCorners[1]]
+    .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
+    .join(" ");
+  return { topPoints, sidePoints: wrapPoints };
 }
+
+const SIDE_SHADE = "rgb(46, 36, 26)";
 
 const LS_KEY = "solitaire-mapeditor-draft-v1";
 
@@ -485,6 +476,11 @@ export function MapEditor({ onExit }) {
                   else if (tile.terrain === "indoor") lift = 10;
                   else if (tile.poi?.parent) lift = 8;
                 }
+                // Elevated hex top loses its default border so adjacent
+                // prisms read as one continuous structure (the wall ring,
+                // a building block). Selection/move/membership markers
+                // still set their bright override below.
+                if (lift > 0) stroke = "transparent";
                 if (isBuilding) stroke = "rgba(231, 161, 110, 0.5)";
                 if (isStreet)   stroke = "rgba(255, 240, 195, 0.5)";
                 if (isMoveSrc) { stroke = "#7fe3b0"; strokeWidth = 3; }
@@ -492,15 +488,14 @@ export function MapEditor({ onExit }) {
                 const prism = lift > 0 ? hexPrismParts(px, py, lift) : null;
                 return (
                   <g key={key} onClick={() => onHexClick(x, y)} style={{ cursor: "pointer" }}>
-                    {prism && prism.sides.map((side, i) => (
+                    {prism && (
                       <polygon
-                        key={i}
-                        points={side.points}
-                        fill={side.shade}
+                        points={prism.sidePoints}
+                        fill={SIDE_SHADE}
                         stroke="none"
                         pointerEvents="none"
                       />
-                    ))}
+                    )}
                     <polygon
                       points={prism ? prism.topPoints : hexCornerPoints(px, py)}
                       fill={fill}
