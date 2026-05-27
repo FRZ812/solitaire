@@ -898,12 +898,22 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               // rather than a polyline of geometric segments. Endpoints
               // are virtually extended (p0 = p1, p3 = p_last) so the
               // first and last segments curve gently into the line.
+              //
+              // Each waypoint also lifts by its tile's prism elevation
+              // (liftForTile), so the path rises onto the wall-walk
+              // when the route passes a stair-wall_top and onto a
+              // building's roof when it enters a footprint member,
+              // rather than locking to the ground centre of every hex.
+              // The Catmull-Rom smoothing turns the lift transitions
+              // into gentle slopes instead of vertical jumps.
               const pts = path.map((p) => {
                 const dq = p.x - cur.x;
                 const dr = p.y - cur.y;
+                const tile = getTile(state, p.x, p.y);
+                const lift = liftForTile(tile);
                 return {
                   x: SVG_CENTER + HSPACING * (dq + dr / 2),
-                  y: SVG_CENTER + VSPACING * dr,
+                  y: SVG_CENTER + VSPACING * dr - lift,
                 };
               });
               let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)}`;
