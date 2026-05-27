@@ -75,6 +75,18 @@ function hexCorner(cx, cy, i) {
   };
 }
 
+// Single source of truth for prism elevation per tile — used by both the
+// hex-render loop and the wall/footprint segment overlays so the
+// no-entry markers and golden building outlines sit on top of the
+// extruded structure rather than at ground level.
+function liftForTile(tile) {
+  if (!tile) return 0;
+  if (tile.terrain === "wall_top") return 22;
+  if (tile.terrain === "indoor") return 10;
+  if (tile.poi?.parent && tile.poi?.type !== "hidden") return 8;
+  return 0;
+}
+
 // True 3D extrusion in SVG: for a hex elevated by `lift` SVG pixels, we
 // emit ONE combined south-facing side-face polygon wrapping from the
 // hex's lower-right edge through its bottom corner to its lower-left
@@ -403,8 +415,12 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       if (wallSet.has(key)) continue;
       wallSet.add(key);
       const [ca, cb] = EDGE_CORNERS[dir];
-      const a = hexCorner(h.px, h.py, ca);
-      const b = hexCorner(h.px, h.py, cb);
+      // Lift the no-entry segment up to whichever side of the edge is
+      // taller, so it sits on top of the extruded wall/building rather
+      // than crossing through it at ground level.
+      const lift = Math.max(liftForTile(tile), liftForTile(nTile));
+      const a = hexCorner(h.px, h.py - lift, ca);
+      const b = hexCorner(h.px, h.py - lift, cb);
       wallSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
     }
   }
@@ -460,8 +476,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
           if (isPassable(nTile) && edgeAllowed(tile, h.x, h.y, nTile, nx, ny)) continue;
         }
         const [ca, cb] = EDGE_CORNERS[dir];
-        const a = hexCorner(h.px, h.py, ca);
-        const b = hexCorner(h.px, h.py, cb);
+        // Lift the golden outline up to the building's roof so it
+        // outlines the extruded top, not the ground footprint.
+        const lift = liftForTile(tile);
+        const a = hexCorner(h.px, h.py - lift, ca);
+        const b = hexCorner(h.px, h.py - lift, cb);
         footprintSegments.push({
           key: `foot-${group.id}-${h.x},${h.y}-${dir}`,
           x1: a.x, y1: a.y, x2: b.x, y2: b.y,
@@ -483,14 +502,15 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         bestNbrs = nbrs; bestDist = dist; anchor = h;
       }
     }
+    const anchorLift = liftForTile(getTile(state, anchor.x, anchor.y));
     if (group.iconKey && MAP_ASSETS[group.iconKey]) {
-      footprintIcons.push({ key: `foot-icon-${group.id}`, x: anchor.px, y: anchor.py, iconKey: group.iconKey });
+      footprintIcons.push({ key: `foot-icon-${group.id}`, x: anchor.px, y: anchor.py - anchorLift, iconKey: group.iconKey });
     }
     if (selectedKey && group.keys.has(selectedKey)) {
       footprintLabels.push({
         key: `foot-label-${group.id}`,
         x: anchor.px,
-        y: anchor.py + 20,
+        y: anchor.py + 20 - anchorLift,
         name: group.name,
       });
     }
@@ -508,7 +528,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       const dr = selected.y - cur.y;
       const px = SVG_CENTER + HSPACING * (dq + dr / 2);
       const py = SVG_CENTER + VSPACING * dr;
-      labels.push({ key: "lbl-selected", x: px, y: py - 22, name: st.poi.name, fill: "#f5dcb8" });
+      const lift = liftForTile(st);
+      labels.push({ key: "lbl-selected", x: px, y: py - 22 - lift, name: st.poi.name, fill: "#f5dcb8" });
     }
   }
 
