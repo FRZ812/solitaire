@@ -395,6 +395,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     if (!isSeen(state, h.x, h.y)) continue;
     const tile = getTile(state, h.x, h.y);
     if (!isPassable(tile)) continue;
+    // Skip wall-segment overlays where either side is elevated — the
+    // hex prism itself (the extruded wall/building) already visualises
+    // that the edge can't be crossed. Drawing a brown line on top of
+    // an extruded wall just reads as a stray cut-line on its face.
+    if (liftForTile(tile) > 0) continue;
     for (let dir = 0; dir < HEX_DIRECTIONS.length; dir++) {
       const d = HEX_DIRECTIONS[dir];
       const nx = h.x + d.x;
@@ -402,6 +407,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       if (!isSeen(state, nx, ny)) continue;
       const nTile = getTile(state, nx, ny);
       if (!isPassable(nTile)) continue;
+      if (liftForTile(nTile) > 0) continue;
       if (edgeAllowed(tile, h.x, h.y, nTile, nx, ny)) continue;
       // Skip a footprint's outer perimeter — the golden footprint outline
       // already draws it. Keep dark walls only for interior partitions (both
@@ -415,12 +421,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       if (wallSet.has(key)) continue;
       wallSet.add(key);
       const [ca, cb] = EDGE_CORNERS[dir];
-      // Lift the no-entry segment up to whichever side of the edge is
-      // taller, so it sits on top of the extruded wall/building rather
-      // than crossing through it at ground level.
-      const lift = Math.max(liftForTile(tile), liftForTile(nTile));
-      const a = hexCorner(h.px, h.py - lift, ca);
-      const b = hexCorner(h.px, h.py - lift, cb);
+      const a = hexCorner(h.px, h.py, ca);
+      const b = hexCorner(h.px, h.py, cb);
       wallSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
     }
   }
