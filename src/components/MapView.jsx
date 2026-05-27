@@ -434,8 +434,31 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       const lift = tallerIsNorth
         ? Math.min(liftA, liftB)
         : Math.max(liftA, liftB);
-      const a = hexCorner(h.px, h.py - lift, ca);
-      const b = hexCorner(h.px, h.py - lift, cb);
+      // Each hex vertex is shared by THREE hexes, not two. The two
+      // ends of this edge are vertices where a 3rd hex (besides
+      // `tile` and `nTile`) meets — at directions (dir+1)%6 and
+      // (dir+5)%6 from h. If that 3rd hex is TALLER than the line's
+      // draw lift, its prism extends over the corner in screen space
+      // and the line would visibly poke out from behind it. Retract
+      // the affected end of the line so it stops short of the
+      // occluding prism instead.
+      const dirCa = (dir + 1) % 6;
+      const dirCb = (dir + 5) % 6;
+      const dCa = HEX_DIRECTIONS[dirCa];
+      const dCb = HEX_DIRECTIONS[dirCb];
+      const caTile = getTile(state, h.x + dCa.x, h.y + dCa.y);
+      const cbTile = getTile(state, h.x + dCb.x, h.y + dCb.y);
+      const caLift = liftForTile(caTile);
+      const cbLift = liftForTile(cbTile);
+      let a = hexCorner(h.px, h.py - lift, ca);
+      let b = hexCorner(h.px, h.py - lift, cb);
+      const RETRACT = 0.4;
+      if (caLift > lift) {
+        a = { x: a.x + (b.x - a.x) * RETRACT, y: a.y + (b.y - a.y) * RETRACT };
+      }
+      if (cbLift > lift) {
+        b = { x: b.x + (a.x - b.x) * RETRACT, y: b.y + (a.y - b.y) * RETRACT };
+      }
       wallSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
     }
   }
@@ -832,7 +855,6 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                       points={prism.sidePoints}
                       fill={SIDE_SHADE}
                       stroke="none"
-                      pointerEvents="none"
                     />
                   )}
                   <polygon
