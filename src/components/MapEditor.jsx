@@ -1,6 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from "react";
-import { HANDCRAFTED } from "../data/handcrafted-tiles.js";
-import { SEALED_STRUCTURES } from "../data/sealed-structures.js";
+import { HANDCRAFTED, SEALED_STRUCTURES, saveMap, hydrateMap, applyMapData } from "../data/handcrafted-map.js";
 import { TERRAINS } from "../data/terrains.js";
 import { useZoomPan } from "./useZoomPan.js";
 
@@ -34,52 +33,31 @@ import { useZoomPan } from "./useZoomPan.js";
 //     streets+buildings list is exposed; the rest stays as authored).
 // ============================================================
 
-const HEX_SIZE = 22;
-const HSPACING = Math.sqrt(3) * HEX_SIZE;
-const VSPACING = 1.5 * HEX_SIZE;
-const SVG_SIZE = 12000;
-const SVG_CENTER = SVG_SIZE / 2;
+// Pull the rendering primitives in from MapView so the editor's hexes are
+// pixel-identical to the in-game map. Anything that draws a tile (shape,
+// color, lift, icon) goes through these — no parallel implementation.
+import { hexLine, hexAStar } from "../data/hex-math.js";
+import {
+  HEX_SIZE,
+  HSPACING,
+  VSPACING,
+  SVG_SIZE,
+  SVG_CENTER,
+  WALL_MATERIALS,
+  hexCornerPoints,
+  hexPrismParts,
+  liftForTile,
+  tileFill,
+  dropStrokeForTile,
+  assetKeyForTile,
+  MAP_ASSETS,
+  SIDE_SHADE,
+} from "./MapView.jsx";
+
 const HEX_DIRS = [
   { x: 1, y: 0 }, { x: 1, y: -1 }, { x: 0, y: -1 },
   { x: -1, y: 0 }, { x: -1, y: 1 }, { x: 0, y: 1 },
 ];
-
-function hexCornerPoints(cx, cy) {
-  const points = [];
-  for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 180) * (60 * i - 30);
-    const x = cx + HEX_SIZE * Math.cos(angle);
-    const y = cy + HEX_SIZE * Math.sin(angle);
-    points.push(`${x.toFixed(2)},${y.toFixed(2)}`);
-  }
-  return points.join(" ");
-}
-
-// True 3D extrusion — see MapView.jsx hexPrismParts() for the full doc.
-// Emits ONE south-wrap side polygon (top[1] → top[2] → top[3] →
-// gnd[3] → gnd[2] → gnd[1]) plus the top hex polygon. One combined
-// polygon avoids the lit/dark seam down the front of the wall that
-// two separate facets would produce; the left/right vertical edges
-// of a pointy-top hex are degenerate anyway, and the rear edges are
-// hidden by the top hex.
-function hexPrismParts(cx, cy, lift) {
-  const topCorners = [];
-  const gndCorners = [];
-  for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 180) * (60 * i - 30);
-    const dx = HEX_SIZE * Math.cos(angle);
-    const dy = HEX_SIZE * Math.sin(angle);
-    topCorners.push({ x: cx + dx, y: cy - lift + dy });
-    gndCorners.push({ x: cx + dx, y: cy + dy });
-  }
-  const topPoints = topCorners.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
-  const wrapPoints = [topCorners[1], topCorners[2], topCorners[3], gndCorners[3], gndCorners[2], gndCorners[1]]
-    .map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`)
-    .join(" ");
-  return { topPoints, sidePoints: wrapPoints };
-}
-
-const SIDE_SHADE = "rgb(46, 36, 26)";
 
 const LS_KEY = "solitaire-mapeditor-draft-v1";
 
@@ -186,20 +164,28 @@ function getEdgeState(tiles, ax, ay, bx, by) {
 // doors by listing every adjacent neighbour the engine currently
 // permits — that way "close this one edge" doesn't accidentally close
 // every other adjacent edge by setting doors:[] on a wide-open tile.
-// Procedural neighbours (no entry in `tiles`) are kept in the
-// materialised doors so default-open's permissive semantics survive
-// the materialisation; otherwise toggling one edge on a default-open
-// road tile would silently seal it against every procedural-exterior
-// neighbour.
+//
+// Procedural-neighbour handling depends on the tile's terrain:
+//   - Walls SEAL against procedural. The authored rule is "a generated
+//     hex never opens a path; handcrafted rulings win." Without this,
+//     toggling one wall edge would materialise the other procedural-
+//     facing edges as open, since the engine treats both default-open
+//     sides as traversable.
+//   - Everything else (roads, streets, wilderness) keeps procedural
+//     neighbours in the doors list so default-open's permissive
+//     semantics survive the materialisation — otherwise toggling one
+//     edge of a road would silently seal it against the procedural
+//     exterior on every other side.
 function materialiseDoors(tiles, x, y) {
   const t = tiles[`${x},${y}`];
   if (!t || Array.isArray(t.doors)) return t;
   const next = { ...t, doors: [] };
+  const sealsProcedural = t.terrain === "wall";
   for (const d of HEX_DIRS) {
     const nx = x + d.x, ny = y + d.y;
     const nt = tiles[`${nx},${ny}`];
     if (!nt) {
-      // Procedural neighbour — preserve default-open permission.
+      if (sealsProcedural) continue;
       next.doors.push({ x: nx, y: ny });
       continue;
     }
@@ -255,7 +241,6 @@ function tileToJs(tile) {
   const out = {};
   if (tile.terrain !== undefined) out.terrain = tile.terrain;
   if (Array.isArray(tile.doors)) out.doors = tile.doors;
-  if (tile.intramural) out.intramural = true;
   if (tile.perimeter) out.perimeter = true;
   if (tile.wallside) out.wallside = true;
   if (tile.poi !== undefined) out.poi = tile.poi;
@@ -272,8 +257,38 @@ function tileToJs(tile) {
 function isGeneratorOwned(tile) {
   if (!tile) return false;
   if (tile.perimeter) return true;
-  if (tile.terrain === "wall_top" && !(tile.poi && tile.poi.type === "stair")) return true;
+  if (tile.terrain === "wall" && !(tile.poi && tile.poi.type === "stair")) return true;
   return false;
+}
+
+// Save EVERYTHING in the editor's tile state — including tiles the wall
+// generator originally placed. Stripping them caused edits on wall_top
+// or perimeter hexes (changing their POI, toggling their edges via the
+// Edges tool, painting over them) to silently get dropped at save time,
+// which the user experienced as "edits don't persist on reload".
+//
+// The wall generator's `if (tiles[key]) continue` makes it idempotent:
+// any tile that already exists in the row gets skipped, so saving the
+// generator's output back is harmless — on reload those tiles stay
+// exactly as they were saved. The trade-off is that if you later move a
+// building, the OLD wall ring is preserved (because Supabase has it) and
+// you'd need to manually clear those stale tiles before the generator
+// would re-fill the new ring. That's a much rarer problem than "my
+// edits vanished".
+export function stripGeneratedTiles(tiles) {
+  // Identity copy — kept as a function so callers stay future-proof if
+  // we add per-tile filtering later (e.g. "only save tiles you've
+  // touched since loading").
+  return { ...tiles };
+}
+
+// The editor used to author a "Great Wall of Whitemarch" streets+buildings
+// structure; that's gone now (the per-tile doors graph is the source of
+// truth, and streets/buildings membership was just a derived projection).
+// We still hand the Citadel + Underworks structures through unchanged —
+// those are link/mesh structures whose semantics don't fit per-tile-doors.
+export function mergeSealedStructures(_streets, _buildings, _gates) {
+  return SEALED_STRUCTURES.filter((s) => !(s.streets || s.buildings));
 }
 
 function exportTilesText(tiles) {
@@ -290,13 +305,66 @@ function exportTilesText(tiles) {
     // Stair-wall_tops are authored, but their `doors` are recomputed
     // every module load by the wall generator. Strip them so the
     // export round-trips cleanly back to the authored source shape.
-    const tileForExport = tile.terrain === "wall_top" && Array.isArray(tile.doors)
+    const tileForExport = tile.terrain === "wall" && Array.isArray(tile.doors)
       ? { ...tile, doors: undefined }
       : tile;
     lines.push(`  "${k}": ${tileToJs(tileForExport)},`);
   }
   lines.push("};");
   return lines.join("\n");
+}
+
+// Mirrors the load-time THROWS in handcrafted-tiles.js' applyStreetBuildingDoors
+// so the editor can warn the user BEFORE they paste a fatal export back.
+// Returns an array of human-readable strings; empty array means clean.
+//
+// Only reports issues that WILL actually throw at load. Specifically does
+// NOT report:
+//   - "orphan" street tiles (terrain:"street" not in WHITEMARCH_STREETS) —
+//     those are the wall generator's perimeter ring + any street the
+//     author deliberately kept out of the sealed structure. The engine
+//     uses per-tile doors directly; the sealed structure is just one
+//     authoring shape on top of that.
+//   - multi-door buildings with no adjacent listed street — the engine
+//     now respects authored tile.doors for multi-door buildings (see
+//     applyStreetBuildingDoors), so "the author decides the exit" rather
+//     than the structure deriving it.
+function validateExport({ tiles, streets, buildings }) {
+  const errors = [];
+  const streetSet = new Set(streets.map((c) => `${c.x},${c.y}`));
+  const buildingSet = new Set(buildings.map((b) => `${b.x},${b.y}`));
+  const hexDist = (ax, ay, bx, by) => {
+    const dq = ax - bx, dr = ay - by;
+    return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+  };
+  // Streets/buildings double-listing — applyStreetBuildingDoors throws on this.
+  for (const k of streetSet) {
+    if (buildingSet.has(k)) errors.push(`(${k}) is listed as both a street and a building`);
+  }
+  // Streets/buildings referencing missing tiles — silent soft-fail at load,
+  // but always an authoring mistake.
+  for (const c of streets) {
+    if (!tiles[`${c.x},${c.y}`]) errors.push(`street (${c.x},${c.y}) — no tile at this coord`);
+  }
+  for (const b of buildings) {
+    if (!tiles[`${b.x},${b.y}`]) errors.push(`building (${b.x},${b.y}) — no tile at this coord`);
+  }
+  // Per-building EXPLICIT door checks — only fires for buildings with
+  // door:{} or doors:[]. Multi-door buildings inherit from tile.doors
+  // (authored via Edges tool) and aren't checked here.
+  for (const b of buildings) {
+    const list = Array.isArray(b.doors) ? b.doors : (b.door ? [b.door] : null);
+    if (!list) continue;
+    for (const door of list) {
+      const dk = `${door.x},${door.y}`;
+      if (hexDist(door.x, door.y, b.x, b.y) !== 1) {
+        errors.push(`building (${b.x},${b.y}) door (${door.x},${door.y}) — NOT ADJACENT (will throw)`);
+      } else if (!streetSet.has(dk) && !buildingSet.has(dk)) {
+        errors.push(`building (${b.x},${b.y}) door (${door.x},${door.y}) — adjacent but not in streets or buildings list (will throw)`);
+      }
+    }
+  }
+  return errors;
 }
 
 function exportStructuresText({ streets, buildings, gates }) {
@@ -343,26 +411,127 @@ const PALETTE = {
   ok: "#7fe3b0",
 };
 
+// Track viewport width so the side panel can collapse to a bottom-sheet
+// on phones. Threshold at 720px — below that we lose ~340px to the side
+// panel, leaving the map area unusable, so we stack instead.
+function useIsMobile(thresholdPx = 720) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth < thresholdPx : false
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setIsMobile(window.innerWidth < thresholdPx);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [thresholdPx]);
+  return isMobile;
+}
+
 export function MapEditor({ onExit }) {
-  const initial = useMemo(() => loadDraft() || cloneInitial(), []);
+  // ALWAYS load from the hydrated HANDCRAFTED (which came from Supabase
+  // at boot). The localStorage draft from previous sessions is
+  // deliberately ignored as the load source — when saves succeed,
+  // Supabase is the truth. Keeping localStorage as the load source
+  // caused: open editor → old draft loads → 800ms autosave uploads
+  // the old draft → Supabase overwritten with stale state → edits
+  // appear to "not persist" because they were never really the
+  // authoritative state to begin with.
+  //
+  // localStorage still gets written on every change as a crash-recovery
+  // cache (see autosave effect below). If a save fails, the draft
+  // survives a refresh; we just don't auto-promote it back into the
+  // editor without the user asking.
+  useEffect(() => { clearDraft(); }, []); // wipe stale draft from old sessions
+  const initial = useMemo(() => cloneInitial(), []);
   const [tiles, setTiles] = useState(initial.tiles);
   const [streets, setStreets] = useState(initial.streets);
   const [buildings, setBuildings] = useState(initial.buildings);
   const [gates, setGates] = useState(initial.gates);
 
+  const isMobile = useIsMobile();
   const [selected, setSelected] = useState(null); // {x,y}
-  const [tool, setTool] = useState("select"); // select | move | paint | delete | edges
+  const [tool, setTool] = useState("select"); // select | move | paint | delete | edges | multi | curtain
   const [paintTerrain, setPaintTerrain] = useState("settlement");
+  // Multi-select state: set of "x,y" keys currently selected. Tap a hex
+  // while the Multi tool is active to add/remove it. The action bar in
+  // the bottom sheet exposes bulk paint + bulk delete.
+  const [multiSel, setMultiSel] = useState(new Set());
+  // Curtain tool state: two-step pick (start → end). Mode toggles
+  // between "direct" (straight hex line, ignores existing tiles) and
+  // "avoid" (A* that routes around any existing handcrafted tile).
+  // Material picks which WALL_MATERIALS color the placed wall hexes get.
+  const [curtainStart, setCurtainStart] = useState(null);
+  const [curtainMode, setCurtainMode] = useState("avoid");
+  const [curtainTerrain, setCurtainTerrain] = useState("wall");
+  const [curtainMaterial, setCurtainMaterial] = useState("stone");
+  // Drag-select state for the Multi tool. A ref (not state) so the
+  // pointerenter handler can read the latest value without restating
+  // every hex's onPointerEnter closure on every render.
+  const draggingMultiRef = useRef(false);
+
+  // Reset per-tool state when the user switches away. Without this, a
+  // multi-selection survives in the background once you leave the Multi
+  // tool — confusing because the blue outlines stay on hexes you can no
+  // longer act on. Same for the curtain's pending start point.
+  useEffect(() => {
+    if (tool !== "multi" && multiSel.size > 0) setMultiSel(new Set());
+    if (tool !== "curtain" && curtainStart) setCurtainStart(null);
+    // Disable map pan in Multi mode so drag-select isn't fighting it.
+    panDisabledRef.current = tool === "multi";
+  }, [tool]);
+
+  // Global pointerup ends the multi-select drag, even if the pointer is
+  // released over an empty area (not a hex). Without this the drag stays
+  // armed forever once started.
+  useEffect(() => {
+    const endDrag = () => { draggingMultiRef.current = false; };
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    return () => {
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+    };
+  }, []);
   const [moveSource, setMoveSource] = useState(null); // {x,y} during move op
   const [showExport, setShowExport] = useState(false);
 
-  // Persist on every change.
+  // Save status: "idle" | "dirty" | "saving" | "saved" | { error }
+  const [saveStatus, setSaveStatus] = useState("idle");
+  const saveTimerRef = useRef(null);
+
+  // Autosave to Supabase, debounced 800ms after the last edit. localStorage
+  // still gets the latest state on every change as a crash-recovery cache
+  // — if the Supabase write fails (offline, RLS, etc.) the draft survives
+  // a refresh and the next mount will try to save again.
   useEffect(() => {
     saveDraft({ tiles, streets, buildings, gates });
+    setSaveStatus("dirty");
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      setSaveStatus("saving");
+      try {
+        // Filter out wall-generator output so we only persist the authored
+        // content; the generator re-runs every load.
+        const authoredTiles = stripGeneratedTiles(tiles);
+        const sealedStructures = mergeSealedStructures(streets, buildings, gates);
+        await saveMap({ tiles: authoredTiles, sealedStructures });
+        clearDraft(); // Supabase has it; no need to keep the localStorage copy
+        setSaveStatus("saved");
+      } catch (err) {
+        console.error("[map editor] save failed:", err);
+        setSaveStatus({ error: err.message || String(err) });
+      }
+    }, 800);
+    return () => clearTimeout(saveTimerRef.current);
   }, [tiles, streets, buildings, gates]);
 
   const containerRef = useRef(null);
-  const { transformRef, lastWasDragRef, mouseHandlers, reset } = useZoomPan(containerRef);
+  // Pan-disable ref. Kept in sync with `tool === "multi"` by the useEffect
+  // below — without this, touching a hex to start a drag-select would
+  // also engage the map's single-finger pan, sliding the camera under
+  // the user's finger and dropping selections everywhere.
+  const panDisabledRef = useRef(false);
+  const { transformRef, lastWasDragRef, mouseHandlers, reset } = useZoomPan(containerRef, { panDisabledRef });
 
   // Compute the bbox of all known content so we render a comfortable
   // window around the city. The editor shows ALL handcrafted hexes
@@ -396,6 +565,57 @@ export function MapEditor({ onExit }) {
   function onHexClick(x, y) {
     if (lastWasDragRef.current) { lastWasDragRef.current = false; return; }
     const key = `${x},${y}`;
+    if (tool === "multi") {
+      // Toggle membership in the multi-select set. Selected hexes get a
+      // bright stroke (see hex render below) and the bottom sheet shows
+      // the bulk-action bar.
+      setMultiSel((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        return next;
+      });
+      return;
+    }
+    if (tool === "curtain") {
+      // Two-step: click start, click end. Computes a hex path from
+      // start to end and stamps `terrain:"wall"` (with current material)
+      // on every coord along the way. "avoid" mode runs A* with
+      // infinite cost on existing tiles, so the path detours around
+      // anything already authored; "direct" draws a straight hex line
+      // and overwrites anything in the way.
+      if (!curtainStart) {
+        setCurtainStart({ x, y });
+        return;
+      }
+      const end = { x, y };
+      let path = null;
+      if (curtainMode === "direct") {
+        path = hexLine(curtainStart, end);
+      } else {
+        const costAt = (p) => {
+          if (p.x === end.x && p.y === end.y) return 1; // end always allowed
+          if (p.x === curtainStart.x && p.y === curtainStart.y) return 1;
+          return tiles[`${p.x},${p.y}`] ? Infinity : 1;
+        };
+        path = hexAStar(curtainStart, end, costAt) || hexLine(curtainStart, end);
+      }
+      const wantsMaterial = curtainTerrain === "wall" && curtainMaterial;
+      setTiles((t) => {
+        const next = { ...t };
+        for (const p of path) {
+          const k = `${p.x},${p.y}`;
+          const existing = next[k] || {};
+          next[k] = {
+            ...existing,
+            terrain: curtainTerrain,
+            ...(wantsMaterial ? { material: curtainMaterial } : {}),
+          };
+        }
+        return next;
+      });
+      setCurtainStart(null);
+      return;
+    }
     if (tool === "move") {
       if (!moveSource) {
         if (!tiles[key]) return; // can only move existing tiles
@@ -450,10 +670,26 @@ export function MapEditor({ onExit }) {
         setBuildings((b) => {
           let movedOver = false;
           const out = [];
+          const hexDist = (ax, ay, bx, by) => {
+            const dq = ax - bx, dr = ay - by;
+            return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+          };
           for (const bd of b) {
             if (bd.x === src.x && bd.y === src.y) {
               if (movedOver) continue;
-              out.push({ ...bd, x, y });
+              // Build the moved entry, but strip any door/doors entries
+              // that are no longer adjacent to the new coord. Without
+              // this, a moved building keeps its old front-door coord
+              // and the next export throws on adjacency validation.
+              const moved = { ...bd, x, y };
+              if (moved.door && hexDist(moved.door.x, moved.door.y, x, y) !== 1) {
+                delete moved.door;
+              }
+              if (Array.isArray(moved.doors)) {
+                moved.doors = moved.doors.filter((dd) => hexDist(dd.x, dd.y, x, y) === 1);
+                if (moved.doors.length === 0) delete moved.doors;
+              }
+              out.push(moved);
               movedOver = true;
             } else if (bd.x === x && bd.y === y) {
               continue; // destination duplicate dropped
@@ -479,6 +715,16 @@ export function MapEditor({ onExit }) {
         const poiKeep = cur && cur.terrain === paintTerrain ? cur.poi ?? null : null;
         return { ...t, [key]: { ...(cur || {}), terrain: paintTerrain, poi: poiKeep } };
       });
+      // Auto-sync sealed-structure membership for unambiguous terrains.
+      // A "street" tile inside the city walls is always a street in the
+      // sealed structure; not auto-adding it produced the orphan-street
+      // bug where a painted street was invisible to building-door
+      // validation. "settlement" and "indoor" stay user-toggled (they
+      // could be either pass-through plazas or destination buildings).
+      if (paintTerrain === "street") {
+        setStreets((s) => (s.some((c) => c.x === x && c.y === y) ? s : [...s, { x, y }]));
+        setBuildings((b) => b.filter((bd) => !(bd.x === x && bd.y === y)));
+      }
       setSelected({ x, y });
       return;
     }
@@ -518,6 +764,60 @@ export function MapEditor({ onExit }) {
       }
       const hasAny = Object.keys(poi).length > 0;
       return { ...t, [selectedKey]: { ...cur, poi: hasAny ? poi : null } };
+    });
+  }
+
+  // Bulk versions for the multi-edit panel. Same shape as the single-tile
+  // patch* helpers but iterate over every key in multiSel. Each field in
+  // the MultiEditPanel writes to all selected hexes live.
+  function bulkPatchTile(patch) {
+    if (multiSel.size === 0) return;
+    setTiles((t) => {
+      const next = { ...t };
+      for (const k of multiSel) {
+        const cur = next[k] || {};
+        next[k] = { ...cur, ...patch };
+      }
+      return next;
+    });
+  }
+  function bulkPatchPoi(patch) {
+    if (multiSel.size === 0) return;
+    setTiles((t) => {
+      const next = { ...t };
+      for (const k of multiSel) {
+        const cur = next[k] || {};
+        const poi = cur.poi ? { ...cur.poi, ...patch } : { ...patch };
+        for (const kk of ["type", "name", "access", "description", "partName", "part", "parent", "parentName", "area", "areaName"]) {
+          if (poi[kk] === "" || poi[kk] == null) delete poi[kk];
+        }
+        const hasAny = Object.keys(poi).length > 0;
+        next[k] = { ...cur, poi: hasAny ? poi : null };
+      }
+      return next;
+    });
+  }
+  function bulkSetParent(parentId, parentName) {
+    if (multiSel.size === 0) return;
+    setTiles((t) => {
+      const next = { ...t };
+      for (const k of multiSel) {
+        const cur = next[k];
+        if (!cur) continue;
+        const poi = { ...(cur.poi || {}) };
+        if (parentId) {
+          poi.parent = parentId;
+          poi.parentName = parentName || parentId;
+        } else {
+          delete poi.parent;
+          delete poi.parentName;
+          delete poi.part;
+          delete poi.partName;
+        }
+        const hasAny = Object.keys(poi).length > 0;
+        next[k] = { ...cur, poi: hasAny ? poi : null };
+      }
+      return next;
     });
   }
 
@@ -572,9 +872,28 @@ export function MapEditor({ onExit }) {
     setBuildings(next);
   }
 
-  function resetToSource() {
-    if (!confirm("Discard all edits and reload from source files?")) return;
+  async function resetToSupabase() {
+    if (!confirm("Discard the current draft and reload the map from Supabase?")) return;
     clearDraft();
+    // Force a re-fetch even though the singleton was already hydrated at
+    // boot — the open game tab may have written newer state.
+    try {
+      // Wipe the in-memory singletons so hydrateMap will re-fetch instead
+      // of returning the cached promise.
+      applyMapData({}, []);
+      // Re-fetch fresh from Supabase.
+      const { supabase } = await import("../engine/supabase-client.js");
+      const { data, error } = await supabase
+        .from("handcrafted_map")
+        .select("tiles, sealed_structures")
+        .eq("id", "whitemarch")
+        .single();
+      if (error) throw error;
+      applyMapData(data.tiles, data.sealed_structures);
+    } catch (err) {
+      alert(`Failed to refetch: ${err.message || err}`);
+      return;
+    }
     const fresh = cloneInitial();
     setTiles(fresh.tiles);
     setStreets(fresh.streets);
@@ -582,41 +901,156 @@ export function MapEditor({ onExit }) {
     setGates(fresh.gates);
     setSelected(null);
     setMoveSource(null);
+    setSaveStatus("saved");
     reset();
   }
 
   const streetSet = useMemo(() => new Set(streets.map((c) => `${c.x},${c.y}`)), [streets]);
+  // Enumerate every poi.parent / parentName combination currently in use.
+  // Powers the right-panel parent picker so the author can group new tiles
+  // under existing footprints (e.g. all water tiles under "whitewend") or
+  // create a new parent on the fly.
+  const parentOptions = useMemo(() => {
+    const m = new Map();
+    for (const t of Object.values(tiles)) {
+      const id = t?.poi?.parent;
+      if (!id) continue;
+      if (!m.has(id)) m.set(id, t.poi.parentName || id);
+    }
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [tiles]);
+
+  function setSelectedParent(parentId, parentName) {
+    if (!selectedKey) return;
+    onPoiPatchHelper(parentId, parentName);
+  }
+  // Wrapper used by the parent picker — clears parent fields when null,
+  // stamps both when set. Kept separate from patchSelectedPoi so we can
+  // explicitly DELETE the parent keys instead of writing empty strings
+  // (the POI cleanup loop in patchSelectedPoi drops empty strings, which
+  // works, but explicit is clearer).
+  function onPoiPatchHelper(parentId, parentName) {
+    setTiles((t) => {
+      const cur = t[selectedKey];
+      if (!cur) return t;
+      const poi = { ...(cur.poi || {}) };
+      if (parentId) {
+        poi.parent = parentId;
+        poi.parentName = parentName || parentId;
+      } else {
+        delete poi.parent;
+        delete poi.parentName;
+        delete poi.part;
+        delete poi.partName;
+      }
+      const hasAny = Object.keys(poi).length > 0;
+      return { ...t, [selectedKey]: { ...cur, poi: hasAny ? poi : null } };
+    });
+  }
   const buildingSet = useMemo(() => new Set(buildings.map((b) => `${b.x},${b.y}`)), [buildings]);
 
   return (
     <div style={{
       position: "fixed", inset: 0, backgroundColor: PALETTE.bg, color: PALETTE.text,
       fontFamily: "'Inter', sans-serif", fontSize: "13px",
-      display: "grid", gridTemplateColumns: "1fr 340px", gridTemplateRows: "44px 1fr",
+      display: "grid",
+      // Desktop: side panel beside the map. Mobile: single column, panel
+      // becomes a fixed-position bottom sheet (see "Right panel" below).
+      gridTemplateColumns: isMobile ? "1fr" : "1fr 340px",
+      gridTemplateRows: isMobile ? "52px 1fr" : "44px 1fr",
     }}>
       {/* Top toolbar */}
       <div style={{
-        gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: "8px", padding: "0 12px",
+        gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: "6px",
+        padding: isMobile ? "0 8px" : "0 12px",
         borderBottom: `1px solid ${PALETTE.border}`, backgroundColor: "#161d1c",
+        overflowX: "auto", overflowY: "hidden", whiteSpace: "nowrap",
+        WebkitOverflowScrolling: "touch",
       }}>
-        <button onClick={onExit} style={btn()}>← Back</button>
-        <strong style={{ marginRight: "12px", color: PALETTE.accent, letterSpacing: "0.06em" }}>MAP EDITOR</strong>
-        <ToolBtn label="Select" active={tool === "select"} onClick={() => { setTool("select"); setMoveSource(null); }} />
-        <ToolBtn label={moveSource ? "Move → click dest" : "Move"} active={tool === "move"} onClick={() => { setTool("move"); }} />
-        <ToolBtn label="Paint" active={tool === "paint"} onClick={() => { setTool("paint"); setMoveSource(null); }} />
-        <ToolBtn label="Delete" active={tool === "delete"} onClick={() => { setTool("delete"); setMoveSource(null); }} />
-        <ToolBtn label="Edges" active={tool === "edges"} onClick={() => { setTool("edges"); setMoveSource(null); }} />
+        <button onClick={onExit} style={btn()}>←</button>
+        {!isMobile && (
+          <strong style={{ marginRight: "12px", color: PALETTE.accent, letterSpacing: "0.06em" }}>MAP EDITOR</strong>
+        )}
+        <ToolBtn label={isMobile ? "Sel" : "Select"} active={tool === "select"} onClick={() => { setTool("select"); setMoveSource(null); }} />
+        <ToolBtn label={moveSource ? (isMobile ? "→Dst" : "Move → click dest") : "Move"} active={tool === "move"} onClick={() => { setTool("move"); }} />
+        <ToolBtn label="Paint" active={tool === "paint"} onClick={() => { setTool("paint"); setMoveSource(null); setCurtainStart(null); }} />
+        <ToolBtn label={isMobile ? "Del" : "Delete"} active={tool === "delete"} onClick={() => { setTool("delete"); setMoveSource(null); setCurtainStart(null); }} />
+        <ToolBtn label="Edges" active={tool === "edges"} onClick={() => { setTool("edges"); setMoveSource(null); setCurtainStart(null); }} />
+        <ToolBtn label={isMobile ? `Multi (${multiSel.size})` : `Multi-select (${multiSel.size})`} active={tool === "multi"} onClick={() => { setTool("multi"); setMoveSource(null); setCurtainStart(null); }} />
+        <ToolBtn label={curtainStart ? (isMobile ? "→End" : "Curtain → click end") : "Curtain"} active={tool === "curtain"} onClick={() => { setTool("curtain"); setMoveSource(null); }} />
         {tool === "paint" && (
-          <select value={paintTerrain} onChange={(e) => setPaintTerrain(e.target.value)} style={input()}>
+          <select value={paintTerrain} onChange={(e) => setPaintTerrain(e.target.value)} style={{ ...input(), width: isMobile ? "110px" : "auto" }}>
             {TERRAIN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
-        <div style={{ flex: 1 }} />
-        <span style={{ color: PALETTE.textDim, fontSize: "11px" }}>
-          {Object.keys(tiles).length} tiles · {streets.length} streets · {buildings.length} buildings
-        </span>
-        <button onClick={resetToSource} style={btn({ color: PALETTE.danger })}>Reset to source</button>
-        <button onClick={() => setShowExport(true)} style={btn({ color: PALETTE.ok })}>Export</button>
+        {tool === "curtain" && (
+          <>
+            <select value={curtainTerrain} onChange={(e) => setCurtainTerrain(e.target.value)} style={{ ...input(), width: isMobile ? "100px" : "auto" }}>
+              {TERRAIN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={curtainMode} onChange={(e) => setCurtainMode(e.target.value)} style={{ ...input(), width: isMobile ? "92px" : "auto" }}>
+              <option value="avoid">avoid existing</option>
+              <option value="direct">direct line</option>
+            </select>
+            {curtainTerrain === "wall" && (
+              <select value={curtainMaterial} onChange={(e) => setCurtainMaterial(e.target.value)} style={{ ...input(), width: isMobile ? "80px" : "auto" }}>
+                {Object.entries(WALL_MATERIALS).map(([key, { label }]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+              </select>
+            )}
+          </>
+        )}
+        {tool === "multi" && multiSel.size > 0 && (
+          <>
+            <button
+              onClick={() => {
+                if (!confirm(`Delete ${multiSel.size} selected hexes?`)) return;
+                setTiles((t) => {
+                  const next = { ...t };
+                  for (const k of multiSel) delete next[k];
+                  return next;
+                });
+                setMultiSel(new Set());
+              }}
+              style={btn({ color: PALETTE.danger })}
+            >Delete sel</button>
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                const terrain = e.target.value;
+                if (!terrain) return;
+                setTiles((t) => {
+                  const next = { ...t };
+                  for (const k of multiSel) {
+                    const existing = next[k] || {};
+                    next[k] = { ...existing, terrain };
+                  }
+                  return next;
+                });
+                e.target.value = "";
+              }}
+              style={{ ...input(), width: isMobile ? "100px" : "auto" }}
+            >
+              <option value="">Paint sel…</option>
+              {TERRAIN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <button onClick={() => setMultiSel(new Set())} style={btn()}>Clear sel</button>
+          </>
+        )}
+        <div style={{ flex: 1, minWidth: "8px" }} />
+        <SaveStatusBadge status={saveStatus} />
+        {!isMobile && (
+          <span style={{ color: PALETTE.textDim, fontSize: "11px" }}>
+            {Object.keys(tiles).length} tiles · {streets.length} streets · {buildings.length} buildings
+          </span>
+        )}
+        <button onClick={resetToSupabase} style={btn({ color: PALETTE.danger })} title="Reset to Supabase">
+          {isMobile ? "↺" : "Reset to Supabase"}
+        </button>
+        <button onClick={() => setShowExport(true)} style={btn()}>
+          {isMobile ? "⤓" : "Export…"}
+        </button>
       </div>
 
       {/* Map area */}
@@ -643,9 +1077,18 @@ export function MapEditor({ onExit }) {
             <svg width={SVG_SIZE} height={SVG_SIZE} style={{ display: "block" }}>
               {/* Render north-first so south-facing hex side faces paint
                   over anything behind them — matches the in-game MapView. */}
+              {/* Per-hex rendering uses MapView's shared primitives —
+                  tileFill, dropStrokeForTile, liftForTile, hexPrismParts,
+                  hexCornerPoints, assetKeyForTile, MAP_ASSETS — so every
+                  hex looks pixel-identical to how it draws in the live
+                  game. Editor-only additions: a bright stroke around the
+                  selected / move-source hex, and a cursor: pointer. No
+                  per-hex text labels (the game uses the MAP_ASSETS icon
+                  glyph; the full POI name shows in the side panel when
+                  selected). */}
               {renderCoords
                 .slice()
-                .sort((a, b) => a.y - b.y)
+                .sort((a, b) => (SVG_CENTER + VSPACING * a.y) - (SVG_CENTER + VSPACING * b.y))
                 .map(({ x, y }) => {
                 const key = `${x},${y}`;
                 const tile = tiles[key];
@@ -653,31 +1096,65 @@ export function MapEditor({ onExit }) {
                 const py = SVG_CENTER + VSPACING * y;
                 const isSel = selected && selected.x === x && selected.y === y;
                 const isMoveSrc = moveSource && moveSource.x === x && moveSource.y === y;
-                const isStreet = streetSet.has(key);
-                const isBuilding = buildingSet.has(key);
-                let fill, stroke = "rgba(215,167,111,0.10)", strokeWidth = 1;
-                let lift = 0;
-                if (!tile) {
-                  fill = "rgba(60, 56, 48, 0.18)"; // empty / procedural
-                } else {
-                  const T = TERRAINS[tile.terrain];
-                  fill = T?.color || "#555";
-                  if (tile.terrain === "wall_top") lift = 22;
-                  else if (tile.terrain === "indoor") lift = 10;
-                  else if (tile.poi?.parent) lift = 8;
-                }
-                // Elevated hex top loses its default border so adjacent
-                // prisms read as one continuous structure (the wall ring,
-                // a building block). Selection/move/membership markers
-                // still set their bright override below.
-                if (lift > 0) stroke = "transparent";
-                if (isBuilding) stroke = "rgba(231, 161, 110, 0.5)";
-                if (isStreet)   stroke = "rgba(255, 240, 195, 0.5)";
-                if (isMoveSrc) { stroke = "#7fe3b0"; strokeWidth = 3; }
-                if (isSel)     { stroke = "#f5dcb8"; strokeWidth = 3; }
+                const isMulti = multiSel.has(key);
+                const isCurtainStart = curtainStart && curtainStart.x === x && curtainStart.y === y;
+                const fill = tileFill(tile);
+                const lift = liftForTile(tile);
                 const prism = lift > 0 ? hexPrismParts(px, py, lift) : null;
+                let stroke = dropStrokeForTile(tile) ? "transparent" : "rgba(215, 167, 111, 0.08)";
+                let strokeWidth = 1;
+                if (isMulti)        { stroke = "#6fb3e0"; strokeWidth = 3; }
+                if (isCurtainStart) { stroke = "#d7a76f"; strokeWidth = 4; }
+                if (isMoveSrc)      { stroke = "#7fe3b0"; strokeWidth = 3; }
+                if (isSel)          { stroke = "#f5dcb8"; strokeWidth = 3; }
+                // Match MapView: tiles inside a building footprint don't
+                // get per-hex icons (the parent's centroid icon represents
+                // the group). Lore-only groupings (river, wall) are
+                // unaffected because we don't classify them as footprint
+                // members in the first place.
+                const isBuildingFootprintMember = !!tile?.poi?.parent && tile?.poi?.type !== "hidden"
+                  && (tile?.terrain === "indoor" || tile?.terrain === "settlement");
+                const assetKey = tile && !isBuildingFootprintMember ? assetKeyForTile(tile) : null;
                 return (
-                  <g key={key} onClick={() => onHexClick(x, y)} style={{ cursor: "pointer" }}>
+                  <g
+                    key={key}
+                    onClick={(e) => {
+                      // Defensive: React's onClick should only fire for
+                      // the primary button, but some platforms / mouse
+                      // drivers leak middle / right clicks through. We
+                      // reserve MMB for pan and want it to never select.
+                      if (e.button !== 0) return;
+                      onHexClick(x, y);
+                    }}
+                    // Drag-select for the Multi tool. Filter on
+                    // e.button === 0 so middle-mouse-button (pan) and
+                    // right-click never add a hex to the selection.
+                    // releasePointerCapture is what lets pointerenter
+                    // fire on neighbouring hexes during a touch drag
+                    // — without it the OS routes every pointer event
+                    // back to the element that received pointerdown.
+                    onPointerDown={tool === "multi" ? (e) => {
+                      if (e.button !== 0) return;
+                      e.stopPropagation(); // don't trigger the container's pan-drag
+                      try { e.target.releasePointerCapture(e.pointerId); } catch {}
+                      draggingMultiRef.current = true;
+                      setMultiSel((prev) => {
+                        const next = new Set(prev);
+                        next.add(key);
+                        return next;
+                      });
+                    } : undefined}
+                    onPointerEnter={tool === "multi" ? () => {
+                      if (!draggingMultiRef.current) return;
+                      setMultiSel((prev) => {
+                        if (prev.has(key)) return prev;
+                        const next = new Set(prev);
+                        next.add(key);
+                        return next;
+                      });
+                    } : undefined}
+                    style={{ cursor: "pointer", touchAction: "none" }}
+                  >
                     {prism && (
                       <polygon
                         points={prism.sidePoints}
@@ -692,21 +1169,10 @@ export function MapEditor({ onExit }) {
                       strokeWidth={strokeWidth}
                       strokeLinejoin="round"
                     />
-                    {tile?.poi?.name && (
-                      <text
-                        x={px} y={py + 3 - lift}
-                        textAnchor="middle"
-                        fontSize="6"
-                        fontFamily="'Inter', sans-serif"
-                        fontWeight="700"
-                        fill="#0c1111"
-                        stroke="#f5dcb8"
-                        strokeWidth="0.4"
-                        paintOrder="stroke"
-                        pointerEvents="none"
-                      >
-                        {tile.poi.name}
-                      </text>
+                    {assetKey && MAP_ASSETS[assetKey] && (
+                      <g transform={`translate(${px - 11}, ${py - 11 - lift})`} pointerEvents="none">
+                        {MAP_ASSETS[assetKey]("#f5dcb8")}
+                      </g>
                     )}
                   </g>
                 );
@@ -741,12 +1207,12 @@ export function MapEditor({ onExit }) {
                     // on top of the extruded structure, not buried in it.
                     let lift = 0;
                     if (ta) {
-                      if (ta.terrain === "wall_top") lift = Math.max(lift, 22);
+                      if (ta.terrain === "wall") lift = Math.max(lift, 22);
                       else if (ta.terrain === "indoor") lift = Math.max(lift, 10);
                       else if (ta.poi?.parent) lift = Math.max(lift, 8);
                     }
                     if (tb) {
-                      if (tb.terrain === "wall_top") lift = Math.max(lift, 22);
+                      if (tb.terrain === "wall") lift = Math.max(lift, 22);
                       else if (tb.terrain === "indoor") lift = Math.max(lift, 10);
                       else if (tb.poi?.parent) lift = Math.max(lift, 8);
                     }
@@ -768,12 +1234,56 @@ export function MapEditor({ onExit }) {
         </div>
       </div>
 
-      {/* Right panel */}
-      <div style={{
+      {/* Right panel (desktop) / Bottom sheet (mobile). On mobile we
+          only render the panel when a tile is selected OR a multi-select
+          is active; tap anywhere to dismiss via the close button at the
+          top of the sheet. */}
+      {(() => {
+        const multiActive = tool === "multi" && multiSel.size > 0;
+        const showPanel = !isMobile || selected || multiActive;
+        if (!showPanel) return null;
+        return (
+      <div style={isMobile ? {
+        // Bottom sheet: fixed at the bottom, ~55vh tall, slides over the map.
+        position: "fixed", left: 0, right: 0, bottom: 0,
+        maxHeight: "55vh", overflowY: "auto",
+        padding: "10px 12px 14px",
+        borderTop: `1px solid ${PALETTE.border}`,
+        backgroundColor: PALETTE.panel,
+        boxShadow: "0 -8px 24px rgba(0,0,0,0.5)",
+        zIndex: 50,
+      } : {
         overflowY: "auto", padding: "12px 14px", borderLeft: `1px solid ${PALETTE.border}`,
         backgroundColor: PALETTE.panel,
       }}>
-        {selected ? (
+        {isMobile && (selected || multiActive) && (
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            marginBottom: "8px", paddingBottom: "6px",
+            borderBottom: `1px solid ${PALETTE.border}`,
+          }}>
+            <span style={{ fontSize: "11px", color: PALETTE.textDim }}>
+              {multiActive ? `Editing ${multiSel.size} hexes` : `Editing (${selected.x}, ${selected.y})`}
+            </span>
+            <button
+              onClick={() => { if (multiActive) setMultiSel(new Set()); else setSelected(null); }}
+              style={{ ...btn(), padding: "4px 12px" }}
+              aria-label="Close panel"
+            >✕</button>
+          </div>
+        )}
+        {multiActive ? (
+          <MultiEditPanel
+            count={multiSel.size}
+            tiles={tiles}
+            keys={multiSel}
+            onTilePatch={bulkPatchTile}
+            onPoiPatch={bulkPatchPoi}
+            onSetParent={bulkSetParent}
+            parentOptions={parentOptions}
+            onClear={() => setMultiSel(new Set())}
+          />
+        ) : selected ? (
           <EditPanel
             tile={selectedTile}
             x={selected.x}
@@ -791,6 +1301,8 @@ export function MapEditor({ onExit }) {
             onSetBuildingDoor={setBuildingDoor}
             tilesAt={(nx, ny) => tiles[`${nx},${ny}`]}
             isStreetAt={(nx, ny) => streetSet.has(`${nx},${ny}`)}
+            parentOptions={parentOptions}
+            onSetParent={setSelectedParent}
           />
         ) : (
           <div style={{ color: PALETTE.textDim, lineHeight: 1.5 }}>
@@ -802,10 +1314,12 @@ export function MapEditor({ onExit }) {
               <li><strong>Paint</strong> — stamp a terrain onto empty hexes (or repaint).</li>
               <li><strong>Delete</strong> — clear a tile (back to procedural).</li>
             </ul>
-            <p>Edits auto-save to localStorage. <strong>Reset to source</strong> reverts. <strong>Export</strong> emits paste-back JS for the source files.</p>
+            <p>Edits auto-save to Supabase (debounced ~800ms). The badge in the top bar shows the current save state. <strong>Reset to Supabase</strong> discards the local draft and refetches the row. <strong>Export…</strong> is a debug-only download of the JS the source files used to hold; pasting it back is no longer the canonical workflow.</p>
           </div>
         )}
       </div>
+        );
+      })()}
 
       {showExport && (
         <ExportDialog
@@ -820,11 +1334,136 @@ export function MapEditor({ onExit }) {
   );
 }
 
+// Bulk-edit panel shown when the Multi tool is active and the selection
+// is non-empty. Mirrors EditPanel's "interchangeable" fields — anything
+// where setting the same value across many tiles makes sense (terrain +
+// wall material, wallside flag, POI type / access, footprint parent).
+// Per-tile fields (name, description, edges, doors) are intentionally
+// absent because they don't bulk-edit meaningfully.
+//
+// Each field write goes through the bulk* helpers in MapEditor, so every
+// selected hex receives the same patch in a single setTiles call → one
+// autosave fires for the whole batch.
+function MultiEditPanel({ count, tiles, keys, onTilePatch, onPoiPatch, onSetParent, parentOptions, onClear }) {
+  // Compute a "shared value or — mixed —" hint for each field, so the
+  // UI shows what the selection currently looks like before the user
+  // changes it.
+  const sample = (getter) => {
+    let first = undefined;
+    let mixed = false;
+    for (const k of keys) {
+      const v = getter(tiles[k]);
+      if (first === undefined) first = v;
+      else if (v !== first) { mixed = true; break; }
+    }
+    return { value: mixed ? "" : (first ?? ""), mixed };
+  };
+  const terrain  = sample((t) => t?.terrain);
+  const material = sample((t) => t?.material);
+  const wallside = sample((t) => !!t?.wallside);
+  const poiType  = sample((t) => t?.poi?.type);
+  const poiAcc   = sample((t) => t?.poi?.access);
+  const parent   = sample((t) => t?.poi?.parent);
+  const showWallMaterial = terrain.value === "wall" && !terrain.mixed;
+  const mixedHint = (s) => s.mixed ? <span style={{ color: PALETTE.accentDim, fontSize: "10px", marginLeft: "6px" }}>— mixed —</span> : null;
+
+  return (
+    <div>
+      <div style={{ marginBottom: "10px" }}>
+        <strong style={{ color: PALETTE.accent, fontSize: "14px" }}>{count} hex{count === 1 ? "" : "es"} selected</strong>
+        <div style={{ color: PALETTE.textDim, fontSize: "11px", marginTop: "2px" }}>
+          Changes here apply to every selected hex. Per-tile fields (name, description, edges) are only editable one tile at a time.
+        </div>
+      </div>
+
+      <Section label="Terrain">
+        <select value={terrain.value} onChange={(e) => onTilePatch({ terrain: e.target.value || undefined })} style={input()}>
+          <option value="">{terrain.mixed ? "(mixed — pick to overwrite)" : "(none — empty)"}</option>
+          {Object.keys(TERRAINS).map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        {showWallMaterial && (
+          <div style={{ marginTop: "6px" }}>
+            <div style={{ fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: PALETTE.accentDim, marginBottom: "4px" }}>
+              Material{mixedHint(material)}
+            </div>
+            <select value={material.value} onChange={(e) => onTilePatch({ material: e.target.value || undefined })} style={input()}>
+              <option value="">(default — slate stone)</option>
+              {Object.entries(WALL_MATERIALS).map(([key, { label }]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </Section>
+
+      <Section label="Flags">
+        <Checkbox
+          label={`hugs the wall${wallside.mixed ? " (mixed)" : ""}`}
+          checked={!wallside.mixed && !!wallside.value}
+          onChange={(v) => onTilePatch({ wallside: v || undefined })}
+        />
+      </Section>
+
+      <Section label="POI">
+        <Field label={<>Type{mixedHint(poiType)}</>}>
+          <input
+            type="text" list="poi-type-suggestions"
+            value={poiType.value}
+            placeholder={poiType.mixed ? "mixed — type to overwrite" : "market, smithy, tower, river, …"}
+            onChange={(e) => onPoiPatch({ type: e.target.value })}
+            style={input()}
+          />
+        </Field>
+        <Field label={<>Access{mixedHint(poiAcc)}</>}>
+          <input
+            type="text" list="poi-access-suggestions"
+            value={poiAcc.value}
+            placeholder={poiAcc.mixed ? "mixed — type to overwrite" : "public, restricted, …"}
+            onChange={(e) => onPoiPatch({ access: e.target.value })}
+            style={input()}
+          />
+        </Field>
+        <Field label={<>Footprint parent{mixedHint(parent)}</>}>
+          <select
+            value={parent.value}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "") { onSetParent(null, null); return; }
+              if (v === "__new__") {
+                const id = (window.prompt("New parent id (slug):", "") || "").trim();
+                if (!id) return;
+                const name = (window.prompt("Display name:", id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())) || "").trim();
+                if (!name) return;
+                onSetParent(id, name);
+                return;
+              }
+              const match = (parentOptions || []).find(([id]) => id === v);
+              onSetParent(v, match ? match[1] : v);
+            }}
+            style={input()}
+          >
+            <option value="">{parent.mixed ? "(mixed — pick to overwrite)" : "(none)"}</option>
+            {(parentOptions || []).map(([id, name]) => (
+              <option key={id} value={id}>{name} ({id})</option>
+            ))}
+            <option value="__new__">+ New parent…</option>
+          </select>
+        </Field>
+      </Section>
+
+      <div style={{ marginTop: "12px", display: "flex", gap: "8px" }}>
+        <button onClick={onClear} style={btn()}>Clear selection</button>
+      </div>
+    </div>
+  );
+}
+
 function EditPanel({
   tile, x, y, isStreet, isBuilding, buildingEntry,
   onTilePatch, onPoiPatch, onToggleDoor, onEdgeState, onClearDoorsOverride,
   onToggleStreet, onToggleBuilding, onSetBuildingDoor,
   tilesAt, isStreetAt,
+  parentOptions, onSetParent,
 }) {
   const poi = tile?.poi || {};
   const adjacents = HEX_DIRS.map((d) => ({ x: x + d.x, y: y + d.y }));
@@ -849,36 +1488,55 @@ function EditPanel({
           <option value="">(none — empty)</option>
           {TERRAIN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
+        {tile?.terrain === "wall" && (
+          <div style={{ marginTop: "6px" }}>
+            <div style={{ fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: PALETTE.accentDim, marginBottom: "4px" }}>
+              Material
+            </div>
+            <select
+              value={tile.material || ""}
+              onChange={(e) => onTilePatch({ material: e.target.value || undefined })}
+              style={input()}
+            >
+              <option value="">(default — slate stone)</option>
+              {Object.entries(WALL_MATERIALS).map(([key, { label }]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </Section>
 
       {/* Flags */}
       {tile && (
         <Section label="Flags">
           <Checkbox
-            label="intramural (legacy)"
-            checked={!!tile.intramural}
-            onChange={(v) => onTilePatch({ intramural: v || undefined })}
-          />
-          <Checkbox
-            label="perimeter (auto-gen perimeter street)"
-            checked={!!tile.perimeter}
-            onChange={(v) => onTilePatch({ perimeter: v || undefined })}
-          />
-          <Checkbox
-            label="wallside (excluded from wall-distance interior)"
+            label="hugs the wall (keeps the wall ring straight around me)"
             checked={!!tile.wallside}
             onChange={(v) => onTilePatch({ wallside: v || undefined })}
           />
+          {tile.perimeter && (
+            <div style={{ fontSize: "11px", color: PALETTE.textDim, marginTop: "4px" }}>
+              <code>perimeter</code> — set by the wall generator; this tile is part of the auto-generated d=1 ring around the city. Read-only.
+            </div>
+          )}
         </Section>
       )}
 
       {/* POI */}
       {tile && (
         <Section label="POI">
-          <Field label="Type">
-            <select value={poi.type || ""} onChange={(e) => onPoiPatch({ type: e.target.value })} style={input()}>
-              {POI_TYPE_OPTIONS.map((t) => <option key={t} value={t}>{t || "(none)"}</option>)}
-            </select>
+          <Field label="Type (drives services + map icon)">
+            <input
+              type="text" list="poi-type-suggestions"
+              value={poi.type || ""}
+              onChange={(e) => onPoiPatch({ type: e.target.value })}
+              placeholder="market, smithy, tower, river, …"
+              style={input()}
+            />
+            <datalist id="poi-type-suggestions">
+              {POI_TYPE_OPTIONS.filter(Boolean).map((t) => <option key={t} value={t} />)}
+            </datalist>
           </Field>
           <Field label="Name">
             <input
@@ -887,10 +1545,17 @@ function EditPanel({
               style={input()}
             />
           </Field>
-          <Field label="Access">
-            <select value={poi.access || ""} onChange={(e) => onPoiPatch({ access: e.target.value })} style={input()}>
-              {POI_ACCESS_OPTIONS.map((a) => <option key={a} value={a}>{a || "(none)"}</option>)}
-            </select>
+          <Field label="Access (narrator hint — not enforced)">
+            <input
+              type="text" list="poi-access-suggestions"
+              value={poi.access || ""}
+              onChange={(e) => onPoiPatch({ access: e.target.value })}
+              placeholder="public, restricted, conditional, hidden, …"
+              style={input()}
+            />
+            <datalist id="poi-access-suggestions">
+              {POI_ACCESS_OPTIONS.filter(Boolean).map((a) => <option key={a} value={a} />)}
+            </datalist>
           </Field>
           <Field label="Description">
             <textarea
@@ -900,46 +1565,50 @@ function EditPanel({
               style={{ ...input(), resize: "vertical", fontFamily: "'Instrument Serif', serif", lineHeight: 1.4 }}
             />
           </Field>
-          <div style={{ fontSize: "11px", color: PALETTE.textDim, marginTop: "4px" }}>
-            Footprint parent: <code>{poi.parent || "(none)"}</code>
+          <Field label="Footprint parent (groups this tile with others)">
+            <select
+              value={poi.parent || ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "") { onSetParent(null, null); return; }
+                if (v === "__new__") {
+                  const id = (window.prompt(
+                    "New parent id (slug — letters/digits/dashes, e.g. iron-way):",
+                    ""
+                  ) || "").trim();
+                  if (!id) return;
+                  const name = (window.prompt(
+                    "Display name for this parent:",
+                    id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+                  ) || "").trim();
+                  if (!name) return;
+                  onSetParent(id, name);
+                  return;
+                }
+                const match = (parentOptions || []).find(([id]) => id === v);
+                onSetParent(v, match ? match[1] : v);
+              }}
+              style={input()}
+            >
+              <option value="">(none — standalone tile)</option>
+              {(parentOptions || []).map(([id, name]) => (
+                <option key={id} value={id}>{name} ({id})</option>
+              ))}
+              <option value="__new__">+ New parent…</option>
+            </select>
             {poi.parent && (
-              <button
-                onClick={() => onPoiPatch({ parent: "", parentName: "", part: "", partName: "" })}
-                style={{ ...btn({ color: PALETTE.danger }), marginLeft: "6px", padding: "2px 6px" }}
-              >Clear</button>
+              <div style={{ fontSize: "11px", color: PALETTE.textDim, marginTop: "4px" }}>
+                Sharing parent <code>{poi.parent}</code> means clicking any tile in this group shows the same lore card.
+              </div>
             )}
-          </div>
+          </Field>
         </Section>
       )}
 
-      {/* Membership in The Great Wall sealed structure */}
-      {tile && (
-        <Section label="Sealed-structure membership">
-          <Checkbox label="Listed as a street" checked={isStreet} onChange={onToggleStreet} />
-          <Checkbox label="Listed as a building" checked={isBuilding} onChange={onToggleBuilding} />
-          {isBuilding && buildingEntry && (
-            <div style={{ marginTop: "6px", padding: "8px", border: `1px solid ${PALETTE.border}`, borderRadius: "4px" }}>
-              <div style={{ fontSize: "11px", color: PALETTE.textDim, marginBottom: "4px" }}>
-                Building door (single street the building opens onto)
-              </div>
-              <select
-                value={buildingEntry.door ? `${buildingEntry.door.x},${buildingEntry.door.y}` : ""}
-                onChange={(e) => {
-                  if (!e.target.value) { onSetBuildingDoor(null); return; }
-                  const [dx, dy] = e.target.value.split(",").map(Number);
-                  onSetBuildingDoor({ x: dx, y: dy });
-                }}
-                style={input()}
-              >
-                <option value="">(multi-door — opens to all adjacent streets)</option>
-                {adjacents.filter((a) => isStreetAt(a.x, a.y)).map((a) => (
-                  <option key={`${a.x},${a.y}`} value={`${a.x},${a.y}`}>({a.x}, {a.y})</option>
-                ))}
-              </select>
-            </div>
-          )}
-        </Section>
-      )}
+      {/* Sealed-structure street/building membership UI used to live here.
+          Dropped — the per-tile doors graph (authored via the Edges section
+          below) is now the source of truth. Use Edges to seal or open the
+          boundaries between this tile and its neighbours. */}
 
       {/* Edges (shared boundaries) */}
       {tile && (
@@ -953,8 +1622,25 @@ function EditPanel({
             const nk = `${a.x},${a.y}`;
             const nt = tilesAt(a.x, a.y);
             const state = onEdgeState(a.x, a.y);
-            const stateBadge = state === "open" ? "● open" : state === "closed" ? "✕ closed" : state === "missing" ? "—" : "○ default";
-            const stateColor = state === "open" ? PALETTE.ok : state === "closed" ? PALETTE.danger : PALETTE.textDim;
+            // Walls auto-seal against procedural neighbours (see
+            // runWallAutoSeal in handcrafted-pipeline.js). Surface that
+            // in the badge so "—" stops looking like permissive
+            // ambiguity on a wall hex — it's a hard seal.
+            const wallToProcedural = state === "missing" && tile.terrain === "wall";
+            const stateBadge = state === "open"
+              ? "● open"
+              : state === "closed"
+                ? "✕ closed"
+                : wallToProcedural
+                  ? "✕ sealed"
+                  : state === "missing"
+                    ? "—"
+                    : "○ default";
+            const stateColor = state === "open"
+              ? PALETTE.ok
+              : (state === "closed" || wallToProcedural)
+                ? PALETTE.danger
+                : PALETTE.textDim;
             const label = nt ? `${stateBadge}  (${a.x}, ${a.y}) ${nt.poi?.name || nt.terrain}` : `${stateBadge}  (${a.x}, ${a.y}) [empty]`;
             return (
               <label
@@ -981,6 +1667,7 @@ function EditPanel({
 function ExportDialog({ tiles, streets, buildings, gates, onClose }) {
   const tilesText = useMemo(() => exportTilesText(tiles), [tiles]);
   const structText = useMemo(() => exportStructuresText({ streets, buildings, gates }), [streets, buildings, gates]);
+  const validation = useMemo(() => validateExport({ tiles, streets, buildings }), [tiles, streets, buildings]);
   const [view, setView] = useState("tiles");
 
   function copyToClipboard(text) {
@@ -1008,14 +1695,30 @@ function ExportDialog({ tiles, streets, buildings, gates, onClose }) {
         display: "flex", flexDirection: "column", padding: "14px",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-          <strong style={{ color: PALETTE.accent, letterSpacing: "0.06em" }}>EXPORT</strong>
-          <ToolBtn label="Tiles (handcrafted-tiles.js)" active={view === "tiles"} onClick={() => setView("tiles")} />
-          <ToolBtn label="Structures (sealed-structures.js)" active={view === "structures"} onClick={() => setView("structures")} />
+          <strong style={{ color: PALETTE.accent, letterSpacing: "0.06em" }}>EXPORT (DEBUG)</strong>
+          <ToolBtn label="Tiles" active={view === "tiles"} onClick={() => setView("tiles")} />
+          <ToolBtn label="Structures" active={view === "structures"} onClick={() => setView("structures")} />
           <div style={{ flex: 1 }} />
           <button onClick={() => copyToClipboard(text)} style={btn()}>Copy to clipboard</button>
           <button onClick={() => downloadAs(filename, text)} style={btn()}>Download .js</button>
           <button onClick={onClose} style={btn({ color: PALETTE.danger })}>Close</button>
         </div>
+        {validation.length > 0 && (
+          <div style={{
+            marginBottom: "10px", padding: "8px 10px", borderRadius: "4px",
+            backgroundColor: "rgba(229, 138, 122, 0.08)",
+            border: `1px solid ${PALETTE.danger}`,
+            color: PALETTE.text, fontSize: "11px", lineHeight: 1.45,
+            maxHeight: "180px", overflow: "auto",
+          }}>
+            <strong style={{ color: PALETTE.danger }}>
+              ⚠ Draft has {validation.length} validation {validation.length === 1 ? "issue" : "issues"} that would throw if loaded by the pipeline:
+            </strong>
+            <ul style={{ margin: "6px 0 0 16px", padding: 0 }}>
+              {validation.map((e, i) => <li key={i} style={{ marginBottom: "2px" }}>{e}</li>)}
+            </ul>
+          </div>
+        )}
         <textarea
           value={text}
           readOnly
@@ -1028,9 +1731,7 @@ function ExportDialog({ tiles, streets, buildings, gates, onClose }) {
           }}
         />
         <p style={{ color: PALETTE.textDim, fontSize: "11px", marginTop: "8px" }}>
-          {view === "tiles"
-            ? "Replace the HANDCRAFTED object literal in src/data/handcrafted-tiles.js with this text. The wall generator, sealed-structures wiring, and the file's comments stay as-is."
-            : "Replace the WHITEMARCH_STREETS and WHITEMARCH_BUILDINGS arrays in src/data/sealed-structures.js with these, and the `gates:` line on \"The Great Wall of Whitemarch\" with the gates snippet."}
+          Debug pane — the canonical save path is now Supabase autosave (see the badge in the top bar). This dump is here for diffing, backups, or pasting into a fresh Supabase project's seed migration.
         </p>
       </div>
     </div>
@@ -1058,6 +1759,21 @@ function input() {
     fontFamily: "'Inter', sans-serif", fontSize: "12px",
   };
 }
+function SaveStatusBadge({ status }) {
+  let label, color;
+  if (status === "idle") return null;
+  if (status === "dirty") { label = "● unsaved"; color = PALETTE.textDim; }
+  else if (status === "saving") { label = "⟳ saving…"; color = PALETTE.accent; }
+  else if (status === "saved") { label = "✓ saved"; color = PALETTE.ok; }
+  else if (status && status.error) { label = `⚠ save failed`; color = PALETTE.danger; }
+  return (
+    <span
+      title={status && status.error ? status.error : ""}
+      style={{ color, fontSize: "11px", marginRight: "8px", minWidth: "76px", textAlign: "right" }}
+    >{label}</span>
+  );
+}
+
 function ToolBtn({ label, active, onClick }) {
   return (
     <button

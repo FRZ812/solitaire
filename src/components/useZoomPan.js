@@ -40,7 +40,13 @@ function buildTransform(panX, panY, zoom) {
   return `translate(-50%, -50%) translate(${panX}px, ${panY}px) scale(${zoom})`;
 }
 
-export function useZoomPan(containerRef) {
+// `options.panDisabledRef` — a React ref (whose .current is a boolean).
+// When true, single-finger / mouse drag-to-pan is suppressed. The MapEditor
+// passes this when its Multi tool is active so the user's drag-select
+// gesture isn't fighting a pan-the-map gesture. Pinch-zoom and wheel-zoom
+// stay active regardless — only the pan branch is gated.
+export function useZoomPan(containerRef, options = {}) {
+  const panDisabledRef = options.panDisabledRef || { current: false };
   // Visible React state, used for UI labels and any external consumer.
   // Updated only on gesture end / reset — NEVER mid-gesture.
   const [zoom, setZoom] = useState(1);
@@ -155,6 +161,10 @@ export function useZoomPan(containerRef) {
 
     const onTouchStart = (e) => {
       if (e.touches.length === 1) {
+        // Skip single-finger pan when the consumer has disabled it
+        // (e.g. MapEditor's Multi tool — drag-select instead). Pinch
+        // (2 fingers) still goes through the else branch below.
+        if (panDisabledRef.current) return;
         const t = e.touches[0];
         dragRef.current = {
           lastX: t.clientX, lastY: t.clientY,
@@ -255,7 +265,22 @@ export function useZoomPan(containerRef) {
   // Mouse drag — React synthetic events are passive and we don't need to
   // preventDefault for these, so plain event handlers are fine.
   function onMouseDown(e) {
-    if (e.button !== 0) return;
+    if (e.button === 1) {
+      // Middle-mouse-button: always pans, regardless of panDisabledRef.
+      // Lets consumers reserve left-button for their own gesture (the
+      // MapEditor's Multi tool uses LMB for drag-select) while leaving
+      // an "always works" pan available on mouse hardware. preventDefault
+      // suppresses the browser's middle-click auto-scroll cursor.
+      e.preventDefault();
+    } else if (e.button === 0) {
+      // Left button: subject to the consumer's pan-disable flag. The
+      // MapEditor's Multi tool flips this on so dragging hexes doesn't
+      // also drag the camera.
+      if (panDisabledRef.current) return;
+    } else {
+      // Ignore right-click (context menu) and other buttons.
+      return;
+    }
     dragRef.current = {
       lastX: e.clientX, lastY: e.clientY,
       startX: e.clientX, startY: e.clientY,

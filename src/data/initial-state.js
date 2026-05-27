@@ -1,4 +1,4 @@
-import { HANDCRAFTED } from "./handcrafted-tiles.js";
+import { HANDCRAFTED } from "./handcrafted-map.js";
 import { RUMORED } from "./rumored.js";
 import { FABLED } from "./fabled.js";
 import { RIVERS } from "./rivers.js";

@@ -5,9 +5,9 @@ import { TERRAINS } from "./data/terrains.js";
 import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 
 import { storeGet, storeDel } from "./engine/storage.js";
-import { callNarrator } from "$api";
-import { onAuthChange, signOut, linkEmail, isSubscribed } from "$auth";
-import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "$campaigns";
+import { callNarrator } from "./engine/api-supabase.js";
+import { onAuthChange, signOut, linkEmail, isSubscribed } from "./engine/auth-supabase.js";
+import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "./engine/campaigns-supabase.js";
 import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt, editBeat, deleteBeat } from "./engine/timeline.js";
@@ -244,13 +244,14 @@ function CenteredLoader() {
 }
 
 export function Solitaire() {
-  // Auth
-  const [user, setUser] = useState(__SOLITAIRE_MODE__ === "web" ? null : { id: "artifact" });
-  const [authChecked, setAuthChecked] = useState(__SOLITAIRE_MODE__ !== "web");
+  // Auth — web-only mode; always start unauthed and wait for the auth
+  // subscription below to deliver the user (or null if signed out).
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
-  // Subscription gate (web only). Artifact mode is always allowed.
-  const [subChecked, setSubChecked] = useState(__SOLITAIRE_MODE__ !== "web");
-  const [subscribed, setSubscribed] = useState(__SOLITAIRE_MODE__ !== "web");
+  // Subscription gate.
+  const [subChecked, setSubChecked] = useState(false);
+  const [subscribed, setSubscribed] = useState(false);
   const [subBusy, setSubBusy] = useState(false);
 
   // Campaigns
@@ -319,9 +320,8 @@ export function Solitaire() {
   const [rewriteText, setRewriteText] = useState("");
   const [editText, setEditText] = useState("");
 
-  // ----- Auth subscription (web mode) -----
+  // ----- Auth subscription -----
   useEffect(() => {
-    if (__SOLITAIRE_MODE__ !== "web") return;
     let mounted = true;
     const unsubscribe = onAuthChange((u) => {
       if (!mounted) return;
@@ -331,9 +331,8 @@ export function Solitaire() {
     return () => { mounted = false; unsubscribe(); };
   }, []);
 
-  // ----- Subscription check when user appears (web mode) -----
+  // ----- Subscription check when user appears -----
   useEffect(() => {
-    if (__SOLITAIRE_MODE__ !== "web") return;
     if (!user) { setSubChecked(false); setSubscribed(false); return; }
     let cancelled = false;
     setSubChecked(false);
@@ -1721,8 +1720,8 @@ export function Solitaire() {
 
   if (!authChecked) return <CenteredLoader />;
   if (!user) return <AuthScreen />;
-  if (__SOLITAIRE_MODE__ === "web" && !subChecked) return <CenteredLoader />;
-  if (__SOLITAIRE_MODE__ === "web" && !subscribed) {
+  if (!subChecked) return <CenteredLoader />;
+  if (!subscribed) {
     return (
       <SubscriptionScreen
         email={user.email}
@@ -1742,7 +1741,7 @@ export function Solitaire() {
           onNew={handleNewCampaign}
           onDelete={handleDeleteCampaign}
           onRename={handleRenameCampaign}
-          onSignOut={__SOLITAIRE_MODE__ === "web" ? handleSignOut : undefined}
+          onSignOut={handleSignOut}
           busy={campaignBusy}
           error={campaignError}
         />
@@ -1983,8 +1982,8 @@ export function Solitaire() {
             onExtinguish: handleExtinguish, onCastBuff: handleCastBuff, onReset: handleResetCampaign,
             onOpenCodex: () => { setDeckOpen(false); setCodexOpen(true); },
             onBackToCampaigns: handleBackToCampaigns,
-            onSignOut: __SOLITAIRE_MODE__ === "web" ? handleSignOut : undefined,
-            onLinkEmail: __SOLITAIRE_MODE__ === "web" ? linkEmail : undefined,
+            onSignOut: handleSignOut,
+            onLinkEmail: linkEmail,
             // Inventory
             onEquip: handleEquip, onUnequip: handleUnequip, onUse: handleUse,
             onLightTorch: handleLightTorch, onLightLantern: handleLightLantern,

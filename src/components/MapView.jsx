@@ -26,22 +26,22 @@ import { poiFootprintName, poiMeta, poiPlaceName, titleFromId } from "../engine/
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
 
 // Pointy-top hex geometry.
-const HEX_SIZE = 22;
+export const HEX_SIZE = 22;
 const HEX_WIDTH = Math.sqrt(3) * HEX_SIZE;      // ≈ 38.1
 const HEX_HEIGHT = 2 * HEX_SIZE;                // 44
-const HSPACING = HEX_WIDTH;
-const VSPACING = 1.5 * HEX_SIZE;
+export const HSPACING = HEX_WIDTH;
+export const VSPACING = 1.5 * HEX_SIZE;
 
 // The SVG canvas needs to fit the player's view hex plus every landmark patch
 // (some of which sit 140 hexes from origin). 12000×12000 leaves headroom for
 // any fabled coord and a generous margin without blowing memory.
-const SVG_SIZE = 12000;
-const SVG_CENTER = SVG_SIZE / 2;
+export const SVG_SIZE = 12000;
+export const SVG_CENTER = SVG_SIZE / 2;
 
 const LANDMARK_REVEAL_RADIUS_RUMORED = 2;
 const LANDMARK_REVEAL_RADIUS_FABLED = 3;
 
-function hexCornerPoints(cx, cy) {
+export function hexCornerPoints(cx, cy) {
   const points = [];
   for (let i = 0; i < 6; i++) {
     const angle = (Math.PI / 180) * (60 * i - 30);
@@ -79,12 +79,75 @@ function hexCorner(cx, cy, i) {
 // hex-render loop and the wall/footprint segment overlays so the
 // no-entry markers and golden building outlines sit on top of the
 // extruded structure rather than at ground level.
-function liftForTile(tile) {
+export function liftForTile(tile) {
   if (!tile) return 0;
-  if (tile.terrain === "wall_top") return 22;
+  if (tile.terrain === "wall") return 22;
   if (tile.terrain === "indoor") return 10;
-  if (tile.poi?.parent && tile.poi?.type !== "hidden") return 8;
+  // Footprint-member lift (8px) is the building-cluster effect — a group
+  // of settlement hexes rises together as one structure. ONLY apply it to
+  // settlement terrain. Without the terrain gate, putting `poi.parent` on
+  // water (the Whitewend) or street tiles makes the river / street rise
+  // above the ground, which the user noticed as the river "becoming a
+  // hilltop" when grouped.
+  if (tile.terrain === "settlement" && tile.poi?.parent && tile.poi?.type !== "hidden") return 8;
   return 0;
+}
+
+// Wall materials → top-face color. Keys are the values you'd set on
+// `tile.material`. A wall with no material falls back to the terrain's
+// default color (slate stone). Add new entries here to give the editor
+// more options in its Material dropdown without further code changes —
+// the editor reads the keys directly off this object.
+export const WALL_MATERIALS = {
+  stone: { color: "rgb(96, 100, 108)", label: "Stone" },
+  wood:  { color: "rgb(140, 100, 60)",  label: "Wood"  },
+  brick: { color: "rgb(124, 70, 56)",   label: "Brick" },
+  iron:  { color: "rgb(68, 70, 78)",    label: "Iron"  },
+  ice:   { color: "rgb(178, 206, 222)", label: "Ice"   },
+};
+
+// Shared color mapping used by both the game's MapView (per-hex fill below)
+// and the MapEditor (so its hexes look identical). Pulled out of the
+// MapView render so the editor doesn't have to duplicate the rule list.
+export function tileFill(tile) {
+  if (!tile) return "rgba(60, 56, 48, 0.18)";
+  const T = TERRAINS[tile.terrain];
+  let fill = T?.color || "#222";
+  if (tile.terrain === "plains") fill = "rgba(42, 64, 52, 0.55)";
+  else if (tile.terrain === "forest") fill = "rgba(24, 46, 32, 0.75)";
+  else if (tile.terrain === "hills") fill = "rgba(58, 64, 46, 0.7)";
+  else if (tile.terrain === "mountains") fill = "rgba(68, 54, 48, 0.75)";
+  else if (tile.terrain === "sand" || tile.terrain === "desert") fill = "rgba(79, 68, 48, 0.6)";
+  else if (tile.terrain === "swamp" || tile.terrain === "water") fill = "rgba(22, 42, 54, 0.65)";
+  else if (tile.terrain === "indoor") fill = "rgb(36, 42, 42)";
+  else if (tile.terrain === "wall") {
+    // Wall material picks the top-face color. Unspecified walls keep the
+    // terrains.js default (slate stone) so existing data renders the same.
+    const m = WALL_MATERIALS[tile.material];
+    if (m) fill = m.color;
+  }
+  // Footprint-member brown override is a BUILDING-cluster effect (group
+  // of indoor/settlement hexes sharing one parent reads as one building).
+  // Walls, water, streets etc. with a parent are grouped purely for lore
+  // — they should keep their natural terrain/material color.
+  const isFootprintMember = !!tile.poi?.parent && tile.poi?.type !== "hidden"
+    && (tile.terrain === "indoor" || tile.terrain === "settlement");
+  if (isFootprintMember) fill = "rgb(74, 60, 43)";
+  return fill;
+}
+
+// Should this tile's outline disappear so adjacent prisms read as one
+// continuous structure? Raised terrain (wall, indoor) always merges
+// with adjacent raised terrain. Settlement tiles merge when they share
+// a footprint parent (the "block of buildings reads as one structure"
+// effect). Walls / water / streets that happen to be grouped under a
+// shared parent for lore still keep their own outline.
+export function dropStrokeForTile(tile) {
+  if (!tile) return false;
+  if (tile.terrain === "wall" || tile.terrain === "indoor") return true;
+  const isBuildingFootprintMember = !!tile.poi?.parent && tile.poi?.type !== "hidden"
+    && tile.terrain === "settlement";
+  return isBuildingFootprintMember;
 }
 
 // True 3D extrusion in SVG: for a hex elevated by `lift` SVG pixels, we
@@ -107,7 +170,7 @@ function liftForTile(tile) {
 // screen (zero width) and read as stray "lines" pasted on the wall.
 // The upper-rear two edges (4-5, 5-0) would be hidden behind the top
 // hex anyway. So the south-wrap is the only useful visible facet.
-function hexPrismParts(cx, cy, lift) {
+export function hexPrismParts(cx, cy, lift) {
   const topCorners = [];
   const gndCorners = [];
   for (let i = 0; i < 6; i++) {
@@ -125,10 +188,10 @@ function hexPrismParts(cx, cy, lift) {
   return { topPoints, sidePoints: wrapPoints };
 }
 
-const SIDE_SHADE = "rgb(46, 36, 26)"; // single uniform dark for all prism south-wrap faces
+export const SIDE_SHADE = "rgb(46, 36, 26)"; // single uniform dark for all prism south-wrap faces
 
 // ==================== CUSTOM VECTOR LANDMARKS & MAP ART ====================
-const MAP_ASSETS = {
+export const MAP_ASSETS = {
   // bldg (Building, inn, tavern, shop, stable, mill): Cozy hand-timbered cottage
   bldg: (color) => (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))" }}>
@@ -251,8 +314,14 @@ const MAP_ASSETS = {
   ),
 };
 
-function assetKeyForTile(tile) {
+export function assetKeyForTile(tile) {
   if (!tile.poi) return null;
+  // Walls never carry a per-hex icon — the stone surface IS the marker.
+  // (Stairs sit on wall terrain too; if a stair-icon is wanted later,
+  // give it its own MAP_ASSET and route here.) Without this, a wall
+  // grouped under a parent for lore was falling through to the "site"
+  // glyph (looks shrine-like) on every hex.
+  if (tile.terrain === "wall") return null;
   const t = tile.poi.type;
   if (t === "hidden") return "unknown";
   if (t === "slavemarket") return "slavemarket";
@@ -487,47 +556,29 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
   }
 
   // A footprint reads as one building via its prism (shared color + no
-  // internal strokes between member hexes). The golden perimeter outline
-  // is now shown ONLY for the currently-selected building — it answers
-  // "where can I enter this place from?" on demand, with a gap at the
-  // door, but stays out of the way for every other building so the map
-  // doesn't read as a cluttered chain of floating gold rings on top of
-  // the extruded structures. The outline traces the ground footprint
-  // (not the roof), so it reads as a building outline on the floor and
-  // doesn't fight the prism geometry above it.
+  // internal strokes between member hexes). The selected footprint is
+  // marked by its centroid icon + label only — the floor-perimeter
+  // outline that used to ring the selected group is gone because it
+  // drew at ground level and bled visibly through any elevated
+  // neighbour (a wall hex adjacent to a Whitewend water hex would show
+  // a gold edge through the wall's side face).
   const selectedKey = selected ? `${selected.x},${selected.y}` : null;
-  const footprintSegments = [];
   const footprintLabels = [];
-  const footprintIcons = [];
+  // Anchor-key → iconKey. The hex render loop reads this map and draws
+  // the group's centroid icon as a CHILD of the anchor hex's <g>, so it
+  // shares the hex's back-to-front z-order. Without this the icon was
+  // rendered as a separate top-layer overlay after the entire hex grid,
+  // so walls south of the anchor (which should be in front of the icon
+  // in the isometric tilt) painted under the icon and the icon bled
+  // through their stone.
+  const anchorIconByKey = new Map();
   for (const group of footprintGroups.values()) {
     if (group.tiles.length < 2) continue;
-    const isGroupSelected = !!(selectedKey && group.keys.has(selectedKey));
     let sx = 0;
     let sy = 0;
     for (const h of group.tiles) {
       sx += h.px;
       sy += h.py;
-      if (!isGroupSelected) continue; // only compute outline segments for the selected group
-      const tile = getTile(state, h.x, h.y);
-      for (let dir = 0; dir < HEX_DIRECTIONS.length; dir++) {
-        const d = HEX_DIRECTIONS[dir];
-        const nx = h.x + d.x;
-        const ny = h.y + d.y;
-        if (group.keys.has(`${nx},${ny}`)) continue;
-        // Leave a gap at the doorway: an external edge the door graph lets you
-        // cross into a reachable neighbour is the way in, not a wall.
-        if (isSeen(state, nx, ny)) {
-          const nTile = getTile(state, nx, ny);
-          if (isPassable(nTile) && edgeAllowed(tile, h.x, h.y, nTile, nx, ny)) continue;
-        }
-        const [ca, cb] = EDGE_CORNERS[dir];
-        const a = hexCorner(h.px, h.py, ca);
-        const b = hexCorner(h.px, h.py, cb);
-        footprintSegments.push({
-          key: `foot-${group.id}-${h.x},${h.y}-${dir}`,
-          x1: a.x, y1: a.y, x2: b.x, y2: b.y,
-        });
-      }
     }
     const cx = sx / group.tiles.length;
     const cy = sy / group.tiles.length;
@@ -546,7 +597,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     }
     const anchorLift = liftForTile(getTile(state, anchor.x, anchor.y));
     if (group.iconKey && MAP_ASSETS[group.iconKey]) {
-      footprintIcons.push({ key: `foot-icon-${group.id}`, x: anchor.px, y: anchor.py - anchorLift, iconKey: group.iconKey });
+      anchorIconByKey.set(`${anchor.x},${anchor.y}`, group.iconKey);
     }
     if (selectedKey && group.keys.has(selectedKey)) {
       footprintLabels.push({
@@ -772,38 +823,31 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               const visited = isVisited(state, x, y);
               const isCurrent = x === cur.x && y === cur.y;
               const isSel = selected && selected.x === x && selected.y === y;
-              const T = TERRAINS[tile.terrain];
-              const isFootprintMember = !!tile.poi?.parent && tile.poi?.type !== "hidden";
-
-              // Color mapping adjustments for premium dark theme:
-              // Make light terrains darker & high contrast
-              let fill = T?.color || "#222";
-              // Tone down high saturation and map to dark fantasy tones
-              if (tile.terrain === "plains") fill = "rgba(42, 64, 52, 0.55)";
-              else if (tile.terrain === "forest") fill = "rgba(24, 46, 32, 0.75)";
-              else if (tile.terrain === "hills") fill = "rgba(58, 64, 46, 0.7)";
-              else if (tile.terrain === "mountains") fill = "rgba(68, 54, 48, 0.75)";
-              else if (tile.terrain === "sand" || tile.terrain === "desert") fill = "rgba(79, 68, 48, 0.6)";
-              else if (tile.terrain === "swamp" || tile.terrain === "water") fill = "rgba(22, 42, 54, 0.65)";
-              else if (tile.terrain === "indoor") fill = "rgb(36, 42, 42)";
-              if (isFootprintMember) fill = "rgb(74, 60, 43)";
+              // Use the SHARED helpers (tileFill, dropStrokeForTile) so
+              // the in-game map and the editor can't drift. The
+              // "building footprint member" notion is also terrain-gated
+              // inside tileFill — water/wall grouped under a lore parent
+              // doesn't get the building-brown treatment anymore.
+              let fill = tileFill(tile);
+              const isBuildingFootprintMember = !!tile.poi?.parent && tile.poi?.type !== "hidden"
+                && (tile.terrain === "indoor" || tile.terrain === "settlement");
 
               let textColor = "#f5dcb8";
               let assetKey = null;
               let opacity;
-              // Footprint members drop their per-hex outline so the group reads
-              // as one merged building; the golden perimeter + interior walls
-              // carry the edges. The current/selected highlight still applies.
-              // Elevated terrain (wall_top, indoor) also drops its border so
-              // adjacent prisms look like a continuous structure instead of
-              // showing a grid of stroke lines between top hexes.
-              const dropStroke = isFootprintMember || tile.terrain === "wall_top" || tile.terrain === "indoor";
+              // Building footprint members + elevated terrain drop their
+              // per-hex outline so adjacent prisms read as one continuous
+              // structure. tileFill keeps non-building groupings (river,
+              // wall ring) outlined normally.
+              const dropStroke = dropStrokeForTile(tile);
               let stroke = dropStroke ? "transparent" : "rgba(215, 167, 111, 0.08)";
               let strokeWidth = 1;
 
               if (seen) {
                 opacity = visited ? 1 : 0.8;
-                assetKey = isFootprintMember ? null : assetKeyForTile(tile);
+                // Suppress per-hex icon for building footprint members —
+                // the centroid icon further down represents the group.
+                assetKey = isBuildingFootprintMember ? null : assetKeyForTile(tile);
               } else {
                 opacity = 0.22;
               }
@@ -867,20 +911,28 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                       {MAP_ASSETS[assetKey](textColor)}
                     </g>
                   )}
+                  {(() => {
+                    // Footprint centroid icon — rendered inline with the
+                    // anchor hex so it shares the same back-to-front sort
+                    // position. Walls / buildings south of the anchor
+                    // render after this <g> and correctly paint over the
+                    // icon; north neighbours are above the icon on screen
+                    // anyway in the isometric tilt and don't overlap it.
+                    const iconKey = anchorIconByKey.get(`${x},${y}`);
+                    if (!iconKey || !MAP_ASSETS[iconKey]) return null;
+                    return (
+                      <g transform={`translate(${px - 11}, ${py - 11 - lift})`} pointerEvents="none">
+                        {MAP_ASSETS[iconKey]("#f5dcb8")}
+                      </g>
+                    );
+                  })()}
                 </g>
               );
             })}
-            {footprintSegments.map((s) => (
-              <line
-                key={s.key}
-                x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
-                stroke="#d7a76f"
-                strokeWidth={3.25}
-                strokeOpacity={0.78}
-                strokeLinecap="round"
-                pointerEvents="none"
-              />
-            ))}
+            {/* Footprint perimeter outline removed — see note where
+                footprintSegments is declared. The selected footprint is
+                marked by its centroid icon + label below; the per-tile
+                stroke on the clicked hex shows which hex is selected. */}
             {wallSegments.map((s, i) => (
               <line
                 key={`wall-${i}`}
@@ -942,11 +994,12 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                 />
               );
             })()}
-            {footprintIcons.map((ic) => (
-              <g key={ic.key} transform={`translate(${ic.x - 11}, ${ic.y - 11})`} pointerEvents="none">
-                {MAP_ASSETS[ic.iconKey]("#f5dcb8")}
-              </g>
-            ))}
+            {/* Footprint centroid icons now render inline with their
+                anchor hex (see anchorIconByKey lookup in the hex pass
+                above) so elevation z-order is honoured. Only the
+                LABEL stays as a top-layer overlay below — text is the
+                one decoration we want guaranteed-on-top regardless of
+                geometry. */}
             {footprintLabels.map((l) => (
               <g key={l.key} pointerEvents="none">
                 <text

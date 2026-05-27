@@ -1,14 +1,12 @@
 {
   "name": "solitaire",
   "version": "0.20.0",
-  "description": "Solo RPG narrative engine — Vite project that builds to a single-file Claude artifact.",
+  "description": "Solo RPG narrative engine — Vite + React, Supabase backend. The handcrafted map and per-user campaign saves live in Postgres; the editor at #/edit writes back to the same row.",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:web": "cross-env SOLITAIRE_MODE=web vite",
     "build": "vite build",
-    "build:web": "cross-env SOLITAIRE_MODE=web vite build",
     "preview": "vite preview",
     "icons": "node scripts/generate-icons.mjs"
   },
@@ -20,8 +18,6 @@
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "@vitejs/plugin-react": "^4.3.1",
-    "cross-env": "^7.0.3",
-    "vite": "^5.4.0",
-    "vite-plugin-singlefile": "^2.0.2"
+    "vite": "^5.4.0"
   }
 }

@@ -10,9 +10,6 @@ import { colors, shadow, glass } from "./tokens.js";
 export function InstallPill() {
   const { canInstall, promptInstall } = useInstallPrompt();
 
-  if (typeof __SOLITAIRE_MODE__ !== "undefined" && __SOLITAIRE_MODE__ !== "web") {
-    return null;
-  }
   if (!canInstall) return null;
 
   return (

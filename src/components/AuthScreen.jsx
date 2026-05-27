@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { signInWithGoogle } from "$auth";
+import { signInWithGoogle } from "../engine/auth-supabase.js";
 import { InitialBackdrop } from "./InitialBackdrop.jsx";
 import { ErrorBanner } from "./primitives.jsx";
 import { colors, shadow, radius, fonts } from "./tokens.js";
