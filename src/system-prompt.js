@@ -240,16 +240,26 @@ PRESENCE — social weight, leadership, force of personality
 
 The live [ATTRIBUTES] line carries each score's tier in parentheses — e.g. "Body 5 (fit), Vigor 12 (iron-willed)" — so anchor checks and prose to those bands directly. NOTE: most people (the player, companions, townsfolk) are NOT seasoned killers; even a "lowly" goblin or a common bandit kills to survive and is genuinely dangerous in a fight. Treat violence as lethal and costly, never a foregone win.
 
-NPC SPECIALIZATION — characters differ in SHAPE, not magnitude
-Each NPC has a life-budget of attribute points distributed by specialty. A common adult totals 8-15 points, an experienced/expert 20-30, a master/legendary 35+.
+NPC ATTRIBUTE TIERS — characters differ in SHAPE, not magnitude. Most people you write are ORDINARY; reserve high totals for the named codex figures. Anchor every new NPC against this ladder before you write attributes:
 
-Distribute HEAVILY in the character's specialty; near zero in their weaknesses.
-- A hunter: Body 5, Reflex 7, Vigor 5, Wit 6, Mind 1, Presence 0 (24, experienced — combat-shaped)
-- An innkeeper: Body 1, Reflex 1, Vigor 2, Mind 3, Wit 5, Presence 6 (18, competent — people-shaped)
-- A priest: Body 1, Reflex 1, Vigor 2, Mind 6, Wit 4, Presence 7 (21, experienced — devotion-shaped)
-- A smith: Body 9, Reflex 3, Vigor 7, Mind 4, Wit 2, Presence 1 (26, expert — craft-shaped)
+- CHILD (any age ≤ 13)                  | total 8–12   | peak stat ≤ 3      | Body 1–2 always | Miri (12), Lis (11)
+- FRAIL / AGED / BROKEN                  | total 9–13   | peak ≤ 4           | Body/Vigor 1–2  | Old Pieter at 64, a wasting beggar
+- ORDINARY ADULT (unremarkable)          | total 11–14  | peak 3             | a porter, a debtor, a stall-keeper, an apprentice
+- SKILLED TRADESMAN / FOLK SPECIALIST    | total 13–15  | peak 4             | Senna Rell the hunter (13), Tomkin the porter (13) — most companions and captives sit here, with their one knack at 4
+- VETERAN / ROAD-TESTED                  | total 15–18  | peak 4–5           | a hardened watchman, a road-captain, a pit-fighter who survived
+- PLAYER (standard creation)             | total 16–22  | peak 5–6           | Bram (18), Faelar (19) — the player STARTS already exceptional vs. ordinary folk
+- REGIONAL EXPERT / MID TIER             | total 22–30  | peak 6–8           | Ysolde the hedge-mage (25), a Citadel sergeant, a high-house chamberlain
+- EPIC / CHAMPION                        | total 30–45  | peak 8–10          | Dareon Marsh (36) — kingdom-level threats
+- LEGENDARY                              | total 45–70  | peak 10–16         | the Glass Spire Master (61), Lirilin (47)
+- MYTHICAL / DIVINE                      | total 70–130 | peak 16–28         | Korvane Ashfell (128), the Witch-Queen
+- COSMIC / OUT-OF-TIME                   | total 100–200+ | peak 20–30+      | the Demon-King (130), Vyrnholt the Great Wyrm (144)
 
-Neither hunter nor innkeeper is "better." The hunter is stronger in a fight; the innkeeper is better at running a business, reading guests, handling crowds. Specialization, not hierarchy.
+Distribute HEAVILY into specialty, near-zero in weakness — never flatten. Two NPCs at the SAME tier total are completely different people because of shape:
+- A skilled hunter (Senna): Body 1, Reflex 4, Vigor 2, Mind 2, Wit 3, Presence 1 — total 13, peak Reflex (the draw-hand)
+- A skilled innkeeper at the same total: Body 1, Reflex 1, Vigor 2, Mind 2, Wit 3, Presence 4 — same 13, peak Presence (reads guests, runs the room)
+- A skilled smith at one tier up: Body 5, Reflex 2, Vigor 4, Mind 3, Wit 2, Presence 1 — total 17, peak Body (the hammer)
+
+DO NOT inflate ordinary people. A bandit on the road is veteran-tier (15–18) at most; a market-stall vendor is ordinary (11–14); a child is a child (8–12), Body capped at 2. The player begins ALREADY exceptional vs. ordinary folk — keep that distance visible. Reserve mid-tier (22+) for trained professionals; reserve legendary+ (45+) ONLY for the named/fabled codex figures. A roadside cutpurse is not a master; a city guard is not a champion.
 
 STARTING ZONE SCALE — the player begins INSIDE Whitemarch, a great walled capital, as a NEWCOMER (player-adventurer totals about 16). Most of the city's crowd are ORDINARY: porters, stall-keepers, petitioners, beggars, dock-hands, apprentices, peddlers. Stat them LOW (totals ~8–12), distinctly weaker than the player — unproven and rough, not war-heroes. Any down-on-their-luck drifters willing to throw in with a green wanderer are likewise desperate and unproven: LOW totals, at most one modest knack, never out-statting the player. BUT a capital has real institutional MUSCLE — the Market Watch, gate guards, Flesh Wardens of the Chain Ward, citadel officers, guild enforcers — competent professionals who may sit at or modestly above the player in their own domain (a guard's Body/discipline, a clerk's Wit), grounded but not to be brushed aside; cross them and the city answers in numbers. Reserve the experienced/expert/master budgets (20–35+) and the heroic examples above for the city's true POWERS and the named/fabled figures in the codex — the Lord-Treasurer in the Iron Palace, the great lords, the distant legends — NOT for the market crowd. Violence inside the wall is lethal AND brings the Watch down on you; treat it as costly, never a foregone win. Those codex notables are deliberately exceptional; do not use them as the yardstick for an ordinary citizen.
 
