@@ -698,6 +698,22 @@ function GlossaryView() {
 
 export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
   const [open, setOpen] = useState(false);
+  // Alt+click the header to reveal hidden audit fields (attractiveness int +
+  // lifespanMultiplier value). These bias the narrator if they leak into prose,
+  // so they're hidden by default and surfaced only on deliberate dev inspect.
+  // Per-entry; persists across sessions in localStorage.codexAudit.
+  const [audit, setAudit] = useState(() => {
+    try { return !!JSON.parse(localStorage.getItem("codexAudit") || "{}")[entry.id]; } catch { return false; }
+  });
+  const toggleAudit = () => setAudit((prev) => {
+    const next = !prev;
+    try {
+      const s = JSON.parse(localStorage.getItem("codexAudit") || "{}");
+      if (next) s[entry.id] = true; else delete s[entry.id];
+      localStorage.setItem("codexAudit", JSON.stringify(s));
+    } catch {}
+    return next;
+  });
   const wornNames = (kind === "characters" && entry.worn?.length)
     ? entry.worn.map(id => (codex.items[id] || itemTemplate(id))?.name || id) : [];
   const knowsList = (kind === "characters" && entry.knows?.length) ? entry.knows : [];
@@ -725,7 +741,11 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
       boxShadow: shadow.cardDeep,
       color: colors.parchment,
     }}>
-      <div onClick={() => setOpen((o) => !o)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+      <div
+        onClick={(e) => { if (e.altKey) { e.preventDefault(); toggleAudit(); } else { setOpen((o) => !o); } }}
+        title={kind === "characters" ? "Alt-click to toggle audit fields" : undefined}
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", cursor: "pointer" }}
+      >
         <div style={{ display: "flex", alignItems: "baseline", gap: "7px", minWidth: 0 }}>
           <span style={{ color: "rgba(215,167,111,0.5)", fontSize: "10px", flexShrink: 0 }}>{open ? "▾" : "▸"}</span>
           <div style={{
@@ -736,6 +756,9 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
           }}>
             {entry.name}
           </div>
+          {audit && (
+            <span style={{ ...accentMeta, fontSize: "8px", color: "rgba(180, 140, 90, 0.7)", letterSpacing: "0.12em", flexShrink: 0 }}>·dev</span>
+          )}
         </div>
         <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
           {onRename && (
@@ -789,13 +812,19 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
         </div>
       )}
 
-      {kind === "characters" && (entry.age != null || entry.gender || entry.attractiveness != null || (entry.agingMode && entry.agingMode !== "mortal")) && (
+      {kind === "characters" && (entry.age != null || entry.gender || (entry.agingMode && entry.agingMode !== "mortal") || audit) && (
         <div style={{ fontSize: "12px", color: "rgba(215, 167, 111, 0.7)", marginBottom: "8px", fontFamily: fonts.serif, fontStyle: "italic" }}>
           {[
             entry.age != null ? entry.age : null,
             entry.gender,
-            attractivenessLabel(entry.attractiveness),
-            agingModeLabel(entry.agingMode, entry),
+            // Attractiveness int + descriptor: hidden by default (would bias narration if surfaced).
+            // Alt+click the entry header to reveal — see toggleAudit above.
+            audit ? attractivenessLabel(entry.attractiveness) : null,
+            // Aging-mode label: terse by default (just the mode name);
+            // the lifespanMultiplier number is dev-only.
+            audit
+              ? agingModeLabel(entry.agingMode, entry)
+              : (entry.agingMode && entry.agingMode !== "mortal" ? entry.agingMode : null),
           ].filter(Boolean).join(" · ")}
         </div>
       )}

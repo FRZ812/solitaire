@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Icon, ItemIcon } from "./Icon.jsx";
 import { iconButtonStyle, actionButtonStyle, insetBoxStyle } from "./primitives.jsx";
@@ -10,6 +10,8 @@ import { tierColor, tierLabel } from "../data/tiers.js";
 import { useEffectChips } from "../data/goods.js";
 import { freshnessLabel, perishDescriptor } from "../engine/spoilage.js";
 import { getAbilityDef } from "../data/abilities.js";
+import { partyMembers } from "../engine/party.js";
+import { loadOf, itemWeight } from "../engine/weight.js";
 import { ATTR_LABELS } from "../config.js";
 
 // Tier-coloured passive (affix) pill. Tap to reveal exactly what it does and by
@@ -59,17 +61,147 @@ function RestButton({ onRest, onClose }) {
   );
 }
 
+// "Give to…" picker: pick a destination character + quantity, then fire onTransfer.
+// Capacity is checked against the destination's remaining room post-transfer.
+function GiveToPicker({ item, id, charId, quantity, state, onTransfer, onClose }) {
+  const [open, setOpen] = useState(false);
+  const [destId, setDestId] = useState(null);
+  const [qty, setQty] = useState(1);
+  const codex = state?.world?.codex;
+  const unitWt = itemWeight(item);
+  const maxQty = Math.max(1, quantity || 1);
+
+  // Eligible destinations: the player and every party member EXCEPT the source.
+  // Defensive: omit members with no inventory (pre-migration save).
+  const destinations = useMemo(() => {
+    if (!codex) return [];
+    const wanderer = codex.characters.wanderer;
+    const list = [];
+    if (wanderer && charId !== "wanderer") {
+      list.push({
+        id: "wanderer",
+        name: "You",
+        char: wanderer,
+        inv: state.character.inventory,
+        cap: state.character.carryCapacityMax ?? 0,
+      });
+    }
+    for (const m of partyMembers(state)) {
+      if (!m || m.id === charId) continue;
+      if (!m.inventory) continue;
+      list.push({
+        id: m.id, name: m.name, char: m,
+        inv: m.inventory,
+        cap: m.carryCapacityMax ?? 0,
+      });
+    }
+    return list;
+  }, [codex, charId, state]);
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={actionButtonStyle({ ghost: true })}>Give to…</button>
+    );
+  }
+
+  if (destinations.length === 0) {
+    return (
+      <div style={{ ...insetBoxStyle, fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)" }}>
+        No one to hand it to.
+      </div>
+    );
+  }
+
+  const confirm = (dId, q) => {
+    onTransfer?.(charId, dId, id, q);
+    onClose();
+  };
+
+  return (
+    <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div style={{ ...metaStyle, fontSize: "8px", color: colors.gold }}>Hand off — {item.name || id}</div>
+      {maxQty > 1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "space-between" }}>
+          <span style={{ fontSize: "11px", color: colors.parchmentMuted }}>Quantity</span>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+            <button onClick={() => setQty((q) => Math.max(1, q - 1))} style={stepperBtn}>−</button>
+            <span style={{ minWidth: "32px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", fontSize: "15px", color: colors.parchmentLight }}>{qty}</span>
+            <button onClick={() => setQty((q) => Math.min(maxQty, q + 1))} style={stepperBtn}>+</button>
+            <button onClick={() => setQty(maxQty)} style={{ ...stepperBtn, fontSize: "9px", padding: "4px 8px" }}>all</button>
+          </div>
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+        {destinations.map((d) => {
+          const dLoad = loadOf(d.char, d.inv, codex.items);
+          const dRem = d.cap - dLoad;
+          const transferWt = unitWt * qty;
+          const fits = transferWt <= dRem;
+          const pctAfter = d.cap ? Math.min(999, Math.round(((dLoad + (fits ? transferWt : 0)) / d.cap) * 100)) : 0;
+          const selected = destId === d.id;
+          return (
+            <button
+              key={d.id}
+              onClick={() => fits && setDestId(d.id)}
+              disabled={!fits}
+              title={fits ? undefined : `${d.name} can't carry that — only ${Math.max(0, Math.round(dRem))} of capacity remains.`}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px",
+                padding: "7px 10px", borderRadius: radius.chip,
+                border: `1px solid ${selected ? colors.gold : "rgba(215,167,111,0.22)"}`,
+                backgroundColor: selected ? "rgba(215,167,111,0.12)" : "rgba(20,29,29,0.5)",
+                color: fits ? colors.parchment : "rgba(237,228,208,0.35)",
+                cursor: fits ? "pointer" : "not-allowed", fontFamily: "inherit", textAlign: "left",
+              }}>
+              <span style={{ fontSize: "12px", fontWeight: 700 }}>{d.name}</span>
+              <span style={{ ...metaStyle, fontSize: "8px", color: fits ? "rgba(215,167,111,0.7)" : "rgba(217,138,106,0.7)" }}>
+                {Math.round(dLoad)} / {d.cap} {fits ? `· ${pctAfter}% after` : "· full"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: "6px" }}>
+        <button onClick={() => setOpen(false)} style={{ ...actionButtonStyle({ ghost: true }), flex: 1 }}>Cancel</button>
+        <button
+          onClick={() => destId && confirm(destId, qty)}
+          disabled={!destId}
+          style={{ ...actionButtonStyle(), flex: 1, opacity: destId ? 1 : 0.4, cursor: destId ? "pointer" : "not-allowed" }}>
+          Give
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const stepperBtn = {
+  width: "24px", height: "24px", borderRadius: radius.chip,
+  border: "1px solid rgba(215,167,111,0.3)", backgroundColor: "rgba(20,29,29,0.6)",
+  color: colors.parchment, fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+  display: "inline-flex", alignItems: "center", justifyContent: "center",
+};
+
 // Item detail modal: stats, requirement, passives, and equip/unequip/use. Shared
 // by the Character sheet and the dedicated Inventory screen.
-export function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip, onUnequip, onUse, onLightTorch, onLightLantern, onRest, onBindRune, onClose }) {
+//
+// `charId` identifies WHICH party member this dialog targets — defaults to the
+// wanderer so legacy callers (the Character sheet) keep working unchanged. The
+// equip/unequip/use callbacks all receive `charId` as their first argument so
+// the engine can route the action to the right inventory.
+export function ItemDetail({ item, id, location, charId = "wanderer", state, quantity, attrs, freshUntil, day, onEquip, onUnequip, onUse, onLightTorch, onLightLantern, onRest, onBindRune, onTransfer, onClose }) {
   if (!item) return null;
   const cs = itemCombatStats(item);
   const req = itemRequirement(item);
   const reqMet = (attrs[req.attr] || 0) >= req.value;
   const equippable = EQUIPPABLE.has(item.kind);
   const worn = location === "worn";
-  const usable = !worn && !!item.use;
-  const bindable = isFusionRune(id);
+  const isPlayerTarget = charId === "wanderer";
+  // Consumable handling for NPCs is out of scope — only the wanderer can `use`.
+  const usable = !worn && !!item.use && isPlayerTarget;
+  const bindable = isFusionRune(id) && isPlayerTarget;
+  // Give-to picker available for any pack item when the engine wires a transfer
+  // handler and we have enough state to render destinations.
+  const giveable = !worn && !!onTransfer && !!state;
   const tcolor = tierColor(item.tier || "common");
   const effectChips = useEffectChips(item);
   const keeps = perishDescriptor(item);
@@ -171,19 +303,19 @@ export function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip
         {usable && (
           <button onClick={() => { onUse(id); onClose(); }} style={actionButtonStyle()}>{item.use.verb || "Use"}</button>
         )}
-        {id === "torch" && (
+        {isPlayerTarget && id === "torch" && (
           <>
             <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", margin: "2px 2px 0", lineHeight: 1.4 }}>Needs a tinderbox to strike the flame. Burns ~1h; sheds a modest pool of light.</div>
             <button onClick={() => { onLightTorch?.(); onClose(); }} style={actionButtonStyle()}>Light a torch</button>
           </>
         )}
-        {id === "lantern" && (
+        {isPlayerTarget && id === "lantern" && (
           <>
             <div style={{ fontSize: "11px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", margin: "2px 2px 0", lineHeight: 1.4 }}>Burns a flask of lamp-oil for ~4h of steady, bright light you can hood at will.</div>
             <button onClick={() => { onLightLantern?.(); onClose(); }} style={actionButtonStyle()}>Light the lantern</button>
           </>
         )}
-        {((item.tool?.uses || []).includes("rest") || (item.tool?.uses || []).includes("camp")) && (
+        {isPlayerTarget && ((item.tool?.uses || []).includes("rest") || (item.tool?.uses || []).includes("camp")) && (
           <RestButton onRest={onRest} onClose={onClose} />
         )}
         {bindable && (
@@ -196,8 +328,14 @@ export function ItemDetail({ item, id, location, attrs, freshUntil, day, onEquip
         )}
         {equippable && (
           worn
-            ? <button onClick={() => { onUnequip(id); onClose(); }} style={actionButtonStyle()}>Unequip</button>
-            : <button onClick={() => { onEquip(id); onClose(); }} style={actionButtonStyle()}>Equip</button>
+            ? <button onClick={() => { onUnequip(charId, id); onClose(); }} style={actionButtonStyle()}>Unequip</button>
+            : <button onClick={() => { onEquip(charId, id); onClose(); }} style={actionButtonStyle()}>Equip</button>
+        )}
+        {giveable && (
+          <GiveToPicker
+            item={item} id={id} charId={charId} quantity={quantity}
+            state={state} onTransfer={onTransfer} onClose={onClose}
+          />
         )}
       </div>
     </div>,

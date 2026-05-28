@@ -451,14 +451,16 @@ Every new NPC entry MUST include:
 GENDER — A HARD FIELD, NEVER DRIFTED
 Every character carries a 'gender' of "male" or "female". The narrator does NOT decide from prose; READ it from the codex. Pronouns (he/him, she/her) match it on every reference, every beat. When introducing a new NPC, emit 'discoveries.characters[].gender' deliberately. Once set, gender does NOT change — the engine drops contradictory updates a later beat tries to apply. For non-humanoid creatures (wyrms, demons), still pick "male" or "female" if you would use a gendered pronoun for them; "it" stays a prose flavor choice for non-humanoid beings on a case-by-case basis.
 
-ATTRACTIVENESS — A NUMERIC 1–10 HARD FIELD, NOT A DESCRIPTOR
-Every character carries an 'attractiveness' integer. Do NOT re-infer or paraphrase it per call — READ it from the codex. Scale anchors:
-  1–2 grotesque (the Hag, a leper, a wyrm-burned ruin)
-  3–4 marked / scarred / aged (Old Pieter, a war-veteran)
-  5–6 plain (Bram, Tomkin, Loff the Debtor)
-  7–8 comely / handsome (Lis, Tama, Voss)
-  9–10 breathtaking (Lirilin, a demonborn courtier, "quiets a room")
-When introducing a new NPC, emit 'discoveries.characters[].attractiveness' as a deliberate integer. When voicing an EXISTING NPC, the codex number is source of truth — a 4 is not handsome, an 8 is not plain. Render the number into prose appropriate to the band; do not contradict the field.
+ATTRACTIVENESS — A NUMERIC 1–10 HARD FIELD; INTERPRET BY CONTEXT, NOT BY LABEL
+Every character carries an 'attractiveness' integer. Do NOT re-infer or paraphrase it per call — READ it from the codex. The number is a BAND of physical/aesthetic appeal; the PROSE you write for that number depends on the character's archetype, station, gender, age, and bearing. The same number reads differently on different people.
+
+  1–2  far below mean — the Hag's withered ruin, a leper, a wyrm-burned face
+  3–4  below mean — Old Pieter's stooped grey, a war-veteran's scarred plainness
+  5–6  unremarkable — the face you'd forget at the next stall (Bram the sellsword, Tomkin the porter, Loff the Debtor)
+  7–8  striking — gets a second look in any room (Lis the trained-attendant child's quick-fingered freshness, Tama the steppe-rider's wind-cured grace, Voss the mariner's salt-handsomeness, Vesh the warlock's room-mistakes-him-for-a-favoured-noble bearing)
+  9–10 commands the room without trying — beauty as a force (Lirilin's elf-old serenity, a demonborn courtier who quiets a hall just by entering)
+
+INTERPRET THE NUMBER BY THE CHARACTER. A 7 on a tyrant reads as imperious; on a peasant girl as comely; on a soldier as ruggedly handsome; on a courtier as practiced charm; on a child as a freshness adults sense as too-pretty-for-the-yard. A 9 on a hag-of-the-deep-wood is wrong; a 9 on a demonborn passing as a high-house favourite is exactly the point. Do NOT default to a fixed label ("comely / breathtaking / plain") — choose the prose that fits this person. When introducing a new NPC, emit 'discoveries.characters[].attractiveness' as a deliberate integer. When voicing an EXISTING NPC, the codex number is source of truth — a 4 is not handsome, an 8 is not plain. Render the band into prose appropriate to the character; do not contradict the field.
 
 IMPORTANT: attractiveness is SEPARATE from Presence. A beautiful person (high attractiveness) may be socially clumsy (low Presence); a plain person (low attractiveness) may be magnetic (high Presence). Don't conflate them.
 

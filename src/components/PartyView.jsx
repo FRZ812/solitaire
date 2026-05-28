@@ -5,6 +5,8 @@ import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { partyMembers, mountMembers, nonMountPartyMembers } from "../engine/party.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { currentRideLoad, effectiveLoad, canMount, rideCapacityOf } from "../engine/riding.js";
+import { loadOf } from "../engine/weight.js";
+import { itemTemplate } from "../data/catalog.js";
 
 // The party roster: every recruited companion AND mount as a full creature —
 // appearance, attributes, gear — with the option to part ways, and (for mounts)
@@ -12,16 +14,72 @@ import { currentRideLoad, effectiveLoad, canMount, rideCapacityOf } from "../eng
 // Party page of the panel deck — companions and mounts as full creatures, with
 // part-ways and (for mounts) weight-bound seat/ride controls. Content only; the
 // deck supplies the sheet chrome, scroll, and dismissal.
-export function PartyView({ state, onDismiss, onMount, onDismount }) {
+//
+// `onOpenInventory(id)` hands control up so the parent (App.jsx) can switch the
+// PanelDeck to Inventory and preselect that party member as the target.
+export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInventory }) {
   const chars = state.world.codex.characters;
   const members = partyMembers(state);
   const mounts = mountMembers(state);
   const people = nonMountPartyMembers(state);
   const wanderer = chars.wanderer;
+  const codexItems = state.world.codex.items;
 
   // Everyone who could be seated on a mount: the player, companions, other mounts.
   const candidates = [wanderer, ...members];
   const nameOf = (id) => chars[id]?.name || (id === "wanderer" ? "You" : id);
+
+  // Pack preview + Open-pack affordance. Folded in here so it reads inline with
+  // the surrounding panel layout — mounts use the same component with a label of
+  // "Open saddlebag" instead of "Open pack".
+  const renderPackPanel = (c, { mount }) => {
+    const wornList = c.worn || [];
+    const carriedList = c.inventory?.carried || [];
+    const cap = c.carryCapacityMax ?? 0;
+    const load = Math.round(loadOf(c, c.inventory, codexItems));
+    const pct = cap ? Math.min(999, Math.round((load / cap) * 100)) : 0;
+    // Preview: first 2–3 visible items (worn first, then pack) by name.
+    const previewItems = [];
+    for (const id of wornList) {
+      const def = codexItems[id] || itemTemplate(id);
+      previewItems.push(def?.name || id.replace(/-/g, " "));
+      if (previewItems.length >= 3) break;
+    }
+    if (previewItems.length < 3) {
+      for (const ci of carriedList) {
+        const def = codexItems[ci.itemId] || itemTemplate(ci.itemId);
+        previewItems.push(def?.name || ci.itemId.replace(/-/g, " "));
+        if (previewItems.length >= 3) break;
+      }
+    }
+    const totalItems = wornList.length + carriedList.length;
+    const tail = totalItems > previewItems.length ? "…" : "";
+    return (
+      <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: "140px", fontSize: "11px", color: "rgba(237,228,208,0.6)", lineHeight: 1.4 }}>
+          {previewItems.length > 0 ? (
+            <>
+              <span style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted }}>{mount ? "Bears " : "Carries "}</span>
+              {previewItems.join(", ")}{tail}
+            </>
+          ) : (
+            <span style={{ fontStyle: "italic", color: "rgba(237,228,208,0.4)" }}>{mount ? "Saddlebag empty." : "Empty-handed."}</span>
+          )}
+        </div>
+        {cap > 0 && (
+          <div style={{ minWidth: "84px" }}>
+            <div style={{ ...metaStyle, fontSize: "8px", color: pct >= 100 ? "#d98a6a" : colors.parchmentMuted, textAlign: "right", marginBottom: "2px" }}>{load} / {cap}</div>
+            <div style={{ height: "5px", borderRadius: "3px", backgroundColor: "rgba(20,29,29,0.7)", overflow: "hidden", border: "1px solid rgba(215,167,111,0.14)" }}>
+              <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", backgroundColor: pct >= 100 ? "#d98a6a" : colors.gold }} />
+            </div>
+          </div>
+        )}
+        {onOpenInventory && (
+          <button onClick={() => onOpenInventory(c.id)} style={openPackBtn}>{mount ? "Open saddlebag" : "Open pack"}</button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div style={{ padding: "2px 16px 8px", color: colors.parchment }}>
@@ -95,6 +153,9 @@ export function PartyView({ state, onDismiss, onMount, onDismount }) {
                   ))}
                 </div>
               )}
+
+              {/* Saddlebag — preview, capacity, Open saddlebag. */}
+              {renderPackPanel(m, { mount: true })}
             </Panel>
           );
         })}
@@ -135,12 +196,8 @@ export function PartyView({ state, onDismiss, onMount, onDismount }) {
               ))}
             </div>
 
-            {(c.worn?.length > 0) && (
-              <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.6)", lineHeight: 1.4 }}>
-                <span style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted }}>Carries </span>
-                {c.worn.map((w) => w.replace(/-/g, " ")).join(", ")}
-              </div>
-            )}
+            {/* Pack — preview, capacity, Open pack. Replaces the old worn comma-list. */}
+            {renderPackPanel(c, { mount: false })}
             {(c.memories?.length > 0) && (
               <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px dashed rgba(215,167,111,0.2)" }}>
                 <div style={{ ...metaStyle, fontSize: "8px", color: colors.gold, marginBottom: "5px" }}>Shared history</div>
@@ -170,4 +227,9 @@ const miniBtn = {
 const seatBtn = {
   padding: "5px 11px", borderRadius: radius.pill, border: "none",
   backgroundColor: colors.gold, color: colors.ink, fontSize: "11px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+};
+const openPackBtn = {
+  padding: "5px 11px", borderRadius: radius.pill,
+  border: `1px solid ${colors.gold}55`, backgroundColor: "rgba(215,167,111,0.10)",
+  color: colors.parchmentLight, fontSize: "11px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
 };

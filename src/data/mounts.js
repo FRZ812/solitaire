@@ -22,7 +22,7 @@
 // (beat.buy_mount); exotic/flying ones are EARNED — tamed, quest-won, or
 // story-gifted — and granted by the narrator via beat.grant_mount (engine/beat.js).
 
-import { resolvePoolForMind } from "../engine/attributes.js";
+import { resolvePoolForMind, carryCapacityFor } from "../engine/attributes.js";
 
 const hoof = (min, max, pen = 0) => ({ min, max, type: "physical", pen, category: "hoof", reach: 1, speed: 0, acc: 0 });
 const fang = (min, max, pen = 1) => ({ min, max, type: "physical", pen, category: "fang", reach: 1, speed: 0, acc: 1 });
@@ -353,6 +353,16 @@ export function mountCodexEntry(tmpl, name) {
     innatePassives: tmpl.innatePassives || [], abilities: [...(tmpl.abilities || [])],
     // Riding linkage (engine/riding.js): what this mount rides, and who rides it.
     ridingOn: null, riders: [],
+    // Saddlebag — same pack/capacity shape as companions, but coins are null (a
+    // mount carries no purse) and there's no `worn` paper-doll; `carried` IS the
+    // saddlebag. Capacity scales from Body/Vigor via the shared carryCapacityFor
+    // helper, so a pack-mule hauls more than a courser. Note this is the mount's
+    // OWN carry-load (its kit and saddlebag stores) — distinct from `rideCapacity`
+    // above, which is the WEIGHT it bears as riders and stacked gear.
+    inventory: { carried: [], coins: null },
+    carryCapacityMax: carryCapacityFor(tmpl),
+    overburdened: false,
+    carryBonus: 0,
     relationship: 0, memories: [],
   };
 }

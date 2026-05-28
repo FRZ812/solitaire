@@ -8,7 +8,7 @@
 // Board-only fields (`role`, `desc`, `terms`, `feeCp`) drive the tavern's
 // "Looking to join" list; the rest is the person.
 
-import { resolvePoolForMind } from "../engine/attributes.js";
+import { resolvePoolForMind, carryCapacityFor } from "../engine/attributes.js";
 import { bodyWeightForRace } from "../engine/weight.js";
 
 export const COMPANIONS = {
@@ -116,6 +116,17 @@ export function companionCodexEntry(tmpl) {
     // linkage (engine/riding.js): what they ride, and who rides them.
     bodyWeight: bodyWeightForRace(tmpl.race),
     ridingOn: null, riders: [],
+    // Per-member pack and coin pouch (data/initial-state.js migrateCodex back-fills
+    // old saves). A companion's `carried` is theirs alone — picked up on the road,
+    // looted, gifted; `worn` (above) is their paper-doll. `carryCapacityMax` is the
+    // hard cap from Body/Vigor (engine/attributes.carryCapacityFor); `carryBonus` is
+    // a transient lift (a spell, a draught) that recomputes through the cap, never
+    // by writing the cap directly. `overburdened` flips when the carried+worn load
+    // exceeds the cap — flagged, not enforced (no items lost).
+    inventory: { carried: [], coins: { copper: 0, silver: 0, gold: 0 } },
+    carryCapacityMax: carryCapacityFor(tmpl),
+    overburdened: false,
+    carryBonus: 0,
     // Bond + shared history — start blank (a new recruit needs introducing);
     // both grow through play and PERSIST in the codex even after parting ways.
     relationship: 0,
