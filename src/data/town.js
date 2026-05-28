@@ -102,8 +102,14 @@ export const BUILDINGS = {
     ],
   },
 
-  prison: {
-    id: "prison",
+  // Renamed from `prison` to `gaol` so the BUILDINGS key matches the
+  // `service: "gaol"` field on the Prison Gate Intake Desk tile at (-3,7).
+  // The engine's [INSPECT RIGHTS] flow (App.jsx, engine/beat.js
+  // purchase_rights) gates on building.kind === "gaol", which this entry
+  // already declared; the orphaned key meant the lookup never hit this
+  // row. SAT-2 validation caught the dangling reference.
+  gaol: {
+    id: "gaol",
     kind: "gaol",              // the warden: a wanted board + cells
     label: "Prison Gate",
     keeper: "the gaoler",
