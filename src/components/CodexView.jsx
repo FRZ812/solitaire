@@ -15,6 +15,13 @@ import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "..
 import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIVES, FUSIONS, RUNES, isFusionRune } from "../data/passives.js";
 import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf, abilityStatLine, abilityReqLine } from "../data/abilities.js";
 import { RACES } from "../data/races.js";
+import { descriptorFor } from "../data/attractiveness.js";
+
+function attractivenessLabel(n) {
+  if (typeof n !== "number") return null;
+  const d = descriptorFor(n);
+  return d ? `${n} / 10 · ${d}` : `${n} / 10`;
+}
 
 // Two kinds of content: "lore" you discover in play, and the full "compendium"
 // catalogs that are always complete. The tabstrip divides them visually.
@@ -765,9 +772,9 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
         </div>
       )}
 
-      {kind === "characters" && (entry.age || entry.attractiveness) && (
+      {kind === "characters" && (entry.age || entry.attractiveness != null) && (
         <div style={{ fontSize: "12px", color: "rgba(215, 167, 111, 0.7)", marginBottom: "8px", fontFamily: fonts.serif, fontStyle: "italic" }}>
-          {[entry.age, entry.attractiveness].filter(Boolean).join(" · ")}
+          {[entry.age, attractivenessLabel(entry.attractiveness)].filter(Boolean).join(" · ")}
         </div>
       )}
 

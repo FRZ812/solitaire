@@ -129,7 +129,7 @@ export function makeInitialState() {
             id: "demon-king", kind: "npc",
             name: "The Demon King", race: "demon", profession: "monarch",
             age: "older than any kingdom",
-            attractiveness: "terrible; the eye refuses to hold him",
+            attractiveness: 3,
             appearance: {
               skin: "not flesh — a banked, shifting heat the colour of cooling iron, darker at the edges",
               hair: "slow black smoke that never quite settles into anything",
@@ -176,7 +176,7 @@ export function makeInitialState() {
             name: "King Asar V of Asalan", race: "human", profession: "monarch",
             origin: "south",
             age: "in his late fifties",
-            attractiveness: "comely in the southern way, royal-handsome",
+            attractiveness: 7,
             appearance: {
               skin: "deep brown, sun-warmed",
               hair: "iron-grey at the temples, otherwise black",
@@ -200,7 +200,7 @@ export function makeInitialState() {
             id: "goblin-king", kind: "npc",
             name: "The Goblin King", race: "goblin", profession: "warlord",
             age: "old, by goblin reckoning — perhaps thirty",
-            attractiveness: "unsettling — too still",
+            attractiveness: 4,
             appearance: {
               skin: "ash-grey, almost lichen-coloured",
               hair: "thin and white, drawn back",
@@ -223,7 +223,7 @@ export function makeInitialState() {
             name: "Lirilin of the Long Note", race: "elf", profession: "speaker",
             origin: "west",
             age: "uncountable; older than the city's outer trees",
-            attractiveness: "the kind of fair that quiets a room",
+            attractiveness: 10,
             appearance: {
               skin: "the colour of unbleached linen",
               hair: "white-silver, plaited to the small of the back",
@@ -246,7 +246,7 @@ export function makeInitialState() {
             name: "The High Master of the Glass Spire", race: "human", profession: "sorcerer",
             origin: "east",
             age: "ancient — perhaps a hundred and forty",
-            attractiveness: "neither one thing nor the other",
+            attractiveness: 5,
             appearance: {
               skin: "ivory-pale, fine-papered with age",
               hair: "white, cut close, sparse at the crown",
@@ -268,7 +268,7 @@ export function makeInitialState() {
             id: "great-wyrm", kind: "npc",
             name: "Vyrnholt, the Great Wyrm", race: "wyrm", profession: null,
             age: "older than every kingdom",
-            attractiveness: "magnificent; terrible",
+            attractiveness: 7,
             appearance: {
               skin: "smoke-black scale, the size of shields",
               hair: "none — long ridge-quills along the spine",
@@ -320,7 +320,7 @@ export function makeInitialState() {
             name: "The Hawthorn Lord", race: "fae", profession: "noble",
             origin: "fae",
             age: "older than the wood",
-            attractiveness: "fair to the point of cold",
+            attractiveness: 8,
             appearance: {
               skin: "the colour of frost on bark",
               hair: "white-gold, long, gathered with hawthorn",
@@ -343,7 +343,7 @@ export function makeInitialState() {
             name: "The Witch-Queen of the Bone Citadel", race: "human", profession: "sorcerer",
             origin: "west",
             age: "uncertain — the Citadel records eight queens, but says nothing of which",
-            attractiveness: "described variably; everyone's account differs",
+            attractiveness: 7,
             appearance: {
               skin: "pale",
               hair: "long, white-blonde, or perhaps grey",
@@ -368,7 +368,7 @@ export function makeInitialState() {
             name: "Baron Halrad of Crowsmoor", race: "human", profession: "noble",
             origin: "central",
             age: "in his early fifties",
-            attractiveness: "plain, weathered, an honest face",
+            attractiveness: 5,
             appearance: {
               skin: "tanned, freckled across the nose",
               hair: "thinning, faded brown",
@@ -391,7 +391,7 @@ export function makeInitialState() {
             name: "Lord-Treasurer Selia of Whitemarch", race: "human", profession: "noble",
             origin: "central",
             age: "in her mid-forties",
-            attractiveness: "striking — sharp-featured",
+            attractiveness: 8,
             appearance: {
               skin: "olive, smooth",
               hair: "black, drawn back tight",
@@ -414,7 +414,7 @@ export function makeInitialState() {
             name: "Brother-Master Anders Yoreld", race: "human", profession: "chapter-master",
             origin: "north",
             age: "in his late sixties",
-            attractiveness: "carved, severe",
+            attractiveness: 5,
             appearance: {
               skin: "alabaster, sun-burnt only at the brow",
               hair: "white, cropped close",
@@ -437,7 +437,7 @@ export function makeInitialState() {
             name: "Hold-Father Druin Ironvein", race: "dwarf", profession: "hold-father",
             origin: "spine-foothills",
             age: "two hundred and thirty",
-            attractiveness: "handsome in the dwarven way",
+            attractiveness: 6,
             appearance: {
               skin: "stone-tan, deeply lined",
               hair: "grey-streaked iron-brown, long, gathered",
@@ -460,7 +460,7 @@ export function makeInitialState() {
             name: "Matriarch Vela of the Halfborn", race: "half-orc", profession: "matriarch",
             origin: "central",
             age: "in her early forties",
-            attractiveness: "powerful, striking",
+            attractiveness: 7,
             appearance: {
               skin: "warm grey-tan",
               hair: "black, shaved at the sides, long and braided down the back",
@@ -483,7 +483,7 @@ export function makeInitialState() {
             name: "Master Aenya of the Heron", race: "human", profession: "sorcerer",
             origin: "central",
             age: "in her late sixties",
-            attractiveness: "plain, with a careful watching face",
+            attractiveness: 5,
             appearance: {
               skin: "lined, pale-tan",
               hair: "grey, gathered loose at the nape",
@@ -506,7 +506,7 @@ export function makeInitialState() {
             name: "The Hag of the Cot", race: "human", profession: "witch",
             origin: "north",
             age: "no one alive remembers her differently",
-            attractiveness: "terrible to those expecting beauty; many bear that mistake",
+            attractiveness: 2,
             appearance: {
               skin: "winter-pale, deeply lined, root-like",
               hair: "white, drawn back tight",
@@ -530,7 +530,7 @@ export function makeInitialState() {
             id: "king-of-three", kind: "npc",
             name: "The King-of-Three", race: "goblin", profession: "warlord",
             age: "old for a goblin — perhaps twenty-five",
-            attractiveness: "unpleasant",
+            attractiveness: 3,
             appearance: {
               skin: "moss-grey, scarred at the cheek",
               hair: "thin, lank, dark",

@@ -74,7 +74,13 @@ export function generateSlaveMarket(tileKey, day) {
   const daysLingering = Math.max(0, (day || 0) - windowStartDay);
   const low = pickN(lowPool, LOW_TIER_COUNT, lowRng).map((c) => {
     const originalCp = c.priceCp;
-    const desirability = Math.min(1.0, originalCp / SLAVE_HIGH_TIER_MIN_CP);
+    // Off-screen demand is pulled by BOTH appearance (the Block's four-factor
+    // appraisal weighs looks AS HEAVILY as skill) and price-as-proxy-for-
+    // desirability. Take the max so a striking low-priced captive still gets
+    // snapped up, not the average — matches the doctrine in src/data/slaves.js.
+    const apprDesir  = c.attractiveness ? (c.attractiveness / 10) : 0.5;
+    const priceDesir = Math.min(1.0, originalCp / SLAVE_HIGH_TIER_MIN_CP);
+    const desirability = Math.max(apprDesir, priceDesir);
     // Did another buyer snap them up off-screen on a prior night within this
     // window? Roll once per night that has passed since arrival, using the
     // discount visible on that day. The first night-roll uses arrival-day

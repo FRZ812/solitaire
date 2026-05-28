@@ -420,14 +420,23 @@ Every new NPC entry MUST include:
 - name, race, profession (if known), description
 - origin: cardinal culture (north/east/south/west/central) for humans, or species region for non-humans
 - age: estimated, narrative ("around 40", "old as stones", "scarcely twenty")
-- attractiveness: first-glance impression ("plain", "weathered handsome", "striking", "ugly in a memorable way", "comely")
+- attractiveness: integer 1–10 (see ATTRACTIVENESS — a numeric hard field below). Do NOT emit a freeform descriptor.
 - appearance: structured object — { skin, hair, eyes, build, facial_hair (or null), marks (or null) }. Populate from the cultural template plus individual variation.
 - base_appearance: narrative summary in 1-2 sentences, weaving the structured fields into evocative prose.
 - attributes: {body, reflex, vigor, mind, wit, presence} — reflect the character's nature
 - worn: [itemIds] — ALL visible gear (weapons, tools, armor, clothing, jewelry)
 - knows: [initial facts] — what they personally know on first encounter
 
-IMPORTANT: attractiveness is SEPARATE from Presence. A beautiful person may be socially clumsy; a plain person may be magnetic. Don't conflate them.
+ATTRACTIVENESS — A NUMERIC 1–10 HARD FIELD, NOT A DESCRIPTOR
+Every character carries an 'attractiveness' integer. Do NOT re-infer or paraphrase it per call — READ it from the codex. Scale anchors:
+  1–2 grotesque (the Hag, a leper, a wyrm-burned ruin)
+  3–4 marked / scarred / aged (Old Pieter, a war-veteran)
+  5–6 plain (Bram, Tomkin, Loff the Debtor)
+  7–8 comely / handsome (Lis, Tama, Voss)
+  9–10 breathtaking (Lirilin, a demonborn courtier, "quiets a room")
+When introducing a new NPC, emit 'discoveries.characters[].attractiveness' as a deliberate integer. When voicing an EXISTING NPC, the codex number is source of truth — a 4 is not handsome, an 8 is not plain. Render the number into prose appropriate to the band; do not contradict the field.
+
+IMPORTANT: attractiveness is SEPARATE from Presence. A beautiful person (high attractiveness) may be socially clumsy (low Presence); a plain person (low attractiveness) may be magnetic (high Presence). Don't conflate them.
 
 WORN ITEMS — ALL visible gear on the person, not just clothing
 "worn" includes EVERYTHING visibly on or held by the character:
@@ -628,7 +637,7 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "start_combat": null OR {"initiator":"player"|"enemy","surprise":<bool>,"lethal":<bool>,"foes":[{"npc_id":"codex-id-or-null","kind":"descriptor","name":"what to call them","tier":"common..divine (optional)","count":<int optional>}],"note":"opening flavor"},
   "location_update": null OR {"status":"normal|tense|hostile|emptied|razed|recovering","depopulated":<bool>,"note":"short lasting change to this place"},
   "discoveries": null OR {
-    "characters": [{"id":"slug","name":"Display","race":"slug-or-null","profession":"slug-or-null","origin":"north|east|south|west|central","age":"around X","attractiveness":"impression","appearance":{"skin":"...","hair":"...","eyes":"...","build":"...","facial_hair":"... or null","marks":"... or null"},"attributes":{"body":2,"reflex":3,"vigor":2,"mind":2,"wit":4,"presence":1},"base_appearance":"narrative summary woven from the structured fields","description":"who they are","worn":["item-id"],"knows":["initial fact"]}],
+    "characters": [{"id":"slug","name":"Display","race":"slug-or-null","profession":"slug-or-null","origin":"north|east|south|west|central","age":"around X","attractiveness":<int 1-10>,"appearance":{"skin":"...","hair":"...","eyes":"...","build":"...","facial_hair":"... or null","marks":"... or null"},"attributes":{"body":2,"reflex":3,"vigor":2,"mind":2,"wit":4,"presence":1},"base_appearance":"narrative summary woven from the structured fields","description":"who they are","worn":["item-id"],"knows":["initial fact"]}],
     "races": [{"id":"slug","name":"Display","appearance":"common traits","description":"short"}],
     "professions": [{"id":"slug","name":"Display","description":"short"}],
     "items": [{"id":"slug","name":"Display","kind":"weapon|armor|clothing|tool|consumable|trinket|valuable|other","appearance":"material/look","description":"short"}],
@@ -650,7 +659,7 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "companion_gear": null OR [{"id":"companion-id","add":["item-id"],"remove":["item-id"]}],
   "relationship_changes": null OR [{"id":"character-id","delta":<small +/- int>}],
   "memory_updates": null OR [{"id":"character-id","adds":["a short shared memory"]}],
-  "character_setup": null OR {"name":"…","race":"kindred id","subrace":"lineage id or null","origin":"…","profession":"…","age":"…","attractiveness":"…","appearance":{"skin":"","hair":"","eyes":"","build":"","facial_hair":"","marks":""},"base_appearance":"…","bond":"a one-line drive","attributes":{"body":<int>,"reflex":<int>,"vigor":<int>,"mind":<int>,"wit":<int>,"presence":<int>},"abilities":null OR ["ability-id" OR {"id":"ability-id","tier":"common..divine"} — martial techniques; a spell id ONLY for a trained caster; tier scales power, default common],"knows":["fact"]},
+  "character_setup": null OR {"name":"…","race":"kindred id","subrace":"lineage id or null","origin":"…","profession":"…","age":"…","attractiveness":<int 1-10>,"appearance":{"skin":"","hair":"","eyes":"","build":"","facial_hair":"","marks":""},"base_appearance":"…","bond":"a one-line drive","attributes":{"body":<int>,"reflex":<int>,"vigor":<int>,"mind":<int>,"wit":<int>,"presence":<int>},"abilities":null OR ["ability-id" OR {"id":"ability-id","tier":"common..divine"} — martial techniques; a spell id ONLY for a trained caster; tier scales power, default common],"knows":["fact"]},
   "player_update": null OR {"name":"…","bond":"…"}
 }
 

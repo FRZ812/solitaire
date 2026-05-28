@@ -8,6 +8,7 @@ import { ALL_ITEMS } from "../data/catalog.js";
 import { equipSlot } from "../engine/combat-stats.js";
 import { TIERS, tier as tierInfo, tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { STANDARD_PROVISIONS } from "../data/templates.js";
+import { descriptorFor } from "../data/attractiveness.js";
 
 const APPEARANCE_OPTS = {
   skin: ["pale", "fair", "tanned", "olive", "brown", "deep brown", "ashen", "grey", "ruddy"],
@@ -75,6 +76,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
   const [subrace, setSubrace] = useState(null);
   const [origin, setOrigin] = useState("north");
   const [appearance, setAppearance] = useState({ skin: "", hair: "", eyes: "", build: "", facial_hair: "", marks: "" });
+  const [attractiveness, setAttractiveness] = useState(5);
   const [baseAppearance, setBaseAppearance] = useState("");
   const [attrs, setAttrs] = useState({ body: 3, reflex: 3, vigor: 3, mind: 3, wit: 3, presence: 3 });
   const [abilities, setAbilities] = useState([]); // [{id, tier}]
@@ -138,7 +140,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
     onBegin({
       name: name.trim(),
       bond: bond.trim() || "A past unspoken — yours to reveal in the telling.",
-      age, attractiveness: undefined,
+      age, attractiveness,
       profession: profession.trim() || "wanderer",
       race, subrace: subrace || null, origin: isHuman ? origin : race,
       attributes: attrs,
@@ -235,6 +237,15 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
                 ))}
               </div>
               <div><label style={fieldLabel}>Distinguishing marks</label><input value={appearance.marks} onChange={(e) => setAppearance((a) => ({ ...a, marks: e.target.value }))} placeholder="scars, tattoos…" style={inputStyle} /></div>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "13px", color: colors.parchment, fontWeight: 600 }}>Attractiveness</div>
+                  <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.55)", marginTop: "1px" }}>1 grotesque · 5 plain · 10 breathtaking</div>
+                </div>
+                <button onClick={() => setAttractiveness((v) => Math.max(1, v - 1))} style={stepBtn}>−</button>
+                <div style={{ width: "70px", textAlign: "center", fontSize: "14px", fontWeight: 800, color: colors.parchmentLight, fontFamily: fonts.serif }}>{attractiveness} <span style={{ fontSize: "10px", fontWeight: 600, color: "rgba(237,228,208,0.6)" }}>{descriptorFor(attractiveness)}</span></div>
+                <button onClick={() => setAttractiveness((v) => Math.min(10, v + 1))} style={stepBtn}>+</button>
+              </div>
               <div><label style={fieldLabel}>In your own words</label><textarea value={baseAppearance} onChange={(e) => setBaseAppearance(e.target.value)} placeholder="A line describing how you look" rows={2} style={{ ...inputStyle, height: "auto", padding: "9px 12px", resize: "vertical" }} /></div>
             </div>
           )}

@@ -579,7 +579,7 @@ export function applyBeat(state, beat, options = {}) {
       origin: cs.origin || w.origin,
       profession: cs.profession || w.profession,
       age: cs.age || w.age,
-      attractiveness: cs.attractiveness || w.attractiveness,
+      attractiveness: cs.attractiveness ?? w.attractiveness,
       appearance: cs.appearance || w.appearance,
       base_appearance: cs.base_appearance || w.base_appearance,
       attributes: character.attributes,
