@@ -44,7 +44,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Bram Coltaine",
       profession: "sellsword",
-      race: "human", subrace: null, origin: "west",
+      race: "human", subrace: null, origin: "west", gender: "male",
       age: "early thirties", attractiveness: 5,
       bond: "Steel for coin — but a contract kept is the one name worth keeping.",
       attributes: { body: 5, reflex: 3, vigor: 5, mind: 1, wit: 2, presence: 2 },
@@ -69,7 +69,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Karzog Brakka",
       profession: "reaver",
-      race: "half-orc", subrace: null, origin: "half-orc",
+      race: "half-orc", subrace: null, origin: "half-orc", gender: "male",
       age: "late twenties", attractiveness: 4,
       bond: "Rage is honest. I hit what needs hitting and keep walking.",
       attributes: { body: 6, reflex: 3, vigor: 5, mind: 1, wit: 2, presence: 1 },
@@ -94,7 +94,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Faelar Sylvareth",
       profession: "ranger",
-      race: "elf", subrace: "wood", origin: "elf",
+      race: "elf", subrace: "wood", origin: "elf", gender: "male",
       age: "ageless, looks thirty", attractiveness: 7,
       bond: "The wild keeps its own; I walk its edges and miss nothing.",
       attributes: { body: 3, reflex: 5, vigor: 3, mind: 2, wit: 4, presence: 2 },
@@ -119,7 +119,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Hokaru Renjiro",
       profession: "assassin",
-      race: "human", subrace: null, origin: "east",
+      race: "human", subrace: null, origin: "east", gender: "male",
       age: "mid twenties", attractiveness: 7,
       bond: "Quick fingers, quicker feet — owe nothing, trust less.",
       attributes: { body: 3, reflex: 6, vigor: 3, mind: 2, wit: 3, presence: 2 },
@@ -144,7 +144,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Amara Zafari",
       profession: "priest",
-      race: "human", subrace: null, origin: "south",
+      race: "human", subrace: null, origin: "south", gender: "female",
       age: "late thirties", attractiveness: 6,
       bond: "A light to carry into dark places, and mercy where I can spare it.",
       attributes: { body: 3, reflex: 2, vigor: 4, mind: 4, wit: 2, presence: 4 },
@@ -171,7 +171,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Ysolde Varen",
       profession: "hedge-mage",
-      race: "human", subrace: null, origin: "central",
+      race: "human", subrace: null, origin: "central", gender: "female",
       age: "late twenties", attractiveness: 6,
       bond: "The Art is a hunger; knowledge is the only true coin.",
       attributes: { body: 2, reflex: 3, vigor: 3, mind: 8, wit: 5, presence: 4 },
@@ -196,7 +196,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Aldric Vane",
       profession: "knight",
-      race: "human", subrace: null, origin: "central",
+      race: "human", subrace: null, origin: "central", gender: "male",
       age: "thirties", attractiveness: 7,
       bond: "The oath outlives the house that swore it.",
       attributes: { body: 6, reflex: 4, vigor: 6, mind: 2, wit: 3, presence: 4 },
@@ -221,7 +221,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Cael Orin",
       profession: "war-priest",
-      race: "human", subrace: null, origin: "south",
+      race: "human", subrace: null, origin: "south", gender: "male",
       age: "forties", attractiveness: 5,
       bond: "Mercy sometimes wears mail — I go where the dying are.",
       attributes: { body: 4, reflex: 3, vigor: 5, mind: 5, wit: 3, presence: 6 },
@@ -246,7 +246,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Iseult Marchetti",
       profession: "duelist",
-      race: "human", subrace: null, origin: "central",
+      race: "human", subrace: null, origin: "central", gender: "female",
       age: "late twenties", attractiveness: 8,
       bond: "Never lost a duel I agreed to — find me one worth the name.",
       attributes: { body: 4, reflex: 7, vigor: 4, mind: 2, wit: 5, presence: 3 },
@@ -271,7 +271,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Maren Holt",
       profession: "warden",
-      race: "human", subrace: null, origin: "central",
+      race: "human", subrace: null, origin: "central", gender: "female",
       age: "thirties", attractiveness: 5,
       bond: "Read the land, answer its troubles — usually with an arrow.",
       attributes: { body: 4, reflex: 6, vigor: 4, mind: 3, wit: 6, presence: 3 },
@@ -298,7 +298,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Dareon Marsh",
       profession: "war-captain",
-      race: "human", subrace: null, origin: "central",
+      race: "human", subrace: null, origin: "central", gender: "male",
       age: "forties", attractiveness: 5,
       bond: "A line breaks where the man holding it does — so I do not.",
       attributes: { body: 8, reflex: 5, vigor: 8, mind: 3, wit: 6, presence: 6 },
@@ -323,7 +323,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Sabira al-Qadir",
       profession: "archmage",
-      race: "human", subrace: null, origin: "east",
+      race: "human", subrace: null, origin: "east", gender: "female",
       age: "late thirties", attractiveness: 7,
       bond: "Power answers to no rank — I level what offends me.",
       attributes: { body: 3, reflex: 5, vigor: 6, mind: 9, wit: 7, presence: 5 },
@@ -348,7 +348,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "The Quiet Coin",
       profession: "assassin",
-      race: "human", subrace: null, origin: "east",
+      race: "human", subrace: null, origin: "east", gender: "male",
       age: "indeterminate", attractiveness: 5,
       bond: "A list in my head, and the patience to reach the end of it.",
       attributes: { body: 5, reflex: 9, vigor: 5, mind: 4, wit: 7, presence: 4 },
@@ -373,7 +373,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Yusra Donmar",
       profession: "paladin",
-      race: "human", subrace: null, origin: "south",
+      race: "human", subrace: null, origin: "south", gender: "female",
       age: "thirties", attractiveness: 8,
       bond: "I am the sword pointed at the dark — and I choose the dark now.",
       attributes: { body: 7, reflex: 4, vigor: 7, mind: 5, wit: 4, presence: 8 },
@@ -400,7 +400,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Halvard Veig",
       profession: "dragon-hunter",
-      race: "human", subrace: null, origin: "north",
+      race: "human", subrace: null, origin: "north", gender: "male",
       age: "fifties", attractiveness: 5,
       bond: "I hunt the things with wings — and I have always walked away.",
       attributes: { body: 9, reflex: 12, vigor: 10, mind: 5, wit: 11, presence: 6 },
@@ -425,7 +425,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Veylan Orre",
       profession: "sorcerer",
-      race: "human", subrace: null, origin: "east",
+      race: "human", subrace: null, origin: "east", gender: "male",
       age: "ancient", attractiveness: 4,
       bond: "I outgrew the Spire that taught me; the world is my study now.",
       attributes: { body: 4, reflex: 6, vigor: 9, mind: 15, wit: 12, presence: 10 },
@@ -450,7 +450,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Grum Skarn",
       profession: "warlord",
-      race: "half-orc", subrace: null, origin: "half-orc",
+      race: "half-orc", subrace: null, origin: "half-orc", gender: "male",
       age: "forties", attractiveness: 3,
       bond: "I broke three war-bands into one — and I have grown bored of tribute.",
       attributes: { body: 14, reflex: 8, vigor: 13, mind: 4, wit: 9, presence: 8 },
@@ -475,7 +475,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Niamh Ailbe",
       profession: "fae-touched",
-      race: "elf", subrace: "high", origin: "elf",
+      race: "elf", subrace: "high", origin: "elf", gender: "female",
       age: "ageless", attractiveness: 9,
       bond: "I came back from the bargain still myself — mostly.",
       attributes: { body: 6, reflex: 13, vigor: 8, mind: 11, wit: 12, presence: 10 },
@@ -502,7 +502,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Inzaghi Vale",
       profession: "archmage",
-      race: "human", subrace: null, origin: "east",
+      race: "human", subrace: null, origin: "east", gender: "male",
       age: "older than he looks", attractiveness: 6,
       bond: "A hand's breadth from ascension — and in no hurry.",
       attributes: { body: 5, reflex: 9, vigor: 14, mind: 20, wit: 16, presence: 14 },
@@ -527,7 +527,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Sigrun Vald",
       profession: "champion",
-      race: "human", subrace: null, origin: "north",
+      race: "human", subrace: null, origin: "north", gender: "female",
       age: "uncertain", attractiveness: 6,
       bond: "The grave keeps refusing me — so I keep walking.",
       attributes: { body: 18, reflex: 12, vigor: 18, mind: 6, wit: 12, presence: 14 },
@@ -552,7 +552,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Vesh Kethran",
       profession: "warlock",
-      race: "demonborn", subrace: null, origin: "demonborn",
+      race: "demonborn", subrace: null, origin: "demonborn", gender: "male",
       age: "forties", attractiveness: 8,
       bond: "I leash the things that made me — and I collect what I am owed.",
       attributes: { body: 8, reflex: 11, vigor: 14, mind: 19, wit: 13, presence: 16 },
@@ -579,7 +579,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Vaelith",
       profession: "dragon-ascendant",
-      race: "drakeborn", subrace: null, origin: "drakeborn",
+      race: "drakeborn", subrace: null, origin: "drakeborn", gender: "female",
       age: "beyond mortal count", attractiveness: 9,
       bond: "Mountains know my name; I walk small for a while, to remember yours.",
       attributes: { body: 26, reflex: 18, vigor: 28, mind: 16, wit: 18, presence: 24 },
@@ -604,7 +604,7 @@ export const CHARACTER_TEMPLATES = [
     setup: {
       name: "Korvane Ashfell",
       profession: "enchanter-tyrant",
-      race: "human", subrace: null, origin: "east",
+      race: "human", subrace: null, origin: "east", gender: "male",
       age: "ageless by art", attractiveness: 7,
       bond: "Armies are heavy; a single word is light. Mine is always obeyed.",
       attributes: { body: 14, reflex: 16, vigor: 22, mind: 28, wit: 22, presence: 26 },

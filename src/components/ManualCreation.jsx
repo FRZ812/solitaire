@@ -77,6 +77,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
   const [origin, setOrigin] = useState("north");
   const [appearance, setAppearance] = useState({ skin: "", hair: "", eyes: "", build: "", facial_hair: "", marks: "" });
   const [attractiveness, setAttractiveness] = useState(5);
+  const [gender, setGender] = useState("male");
   const [baseAppearance, setBaseAppearance] = useState("");
   const [attrs, setAttrs] = useState({ body: 3, reflex: 3, vigor: 3, mind: 3, wit: 3, presence: 3 });
   const [abilities, setAbilities] = useState([]); // [{id, tier}]
@@ -140,7 +141,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
     onBegin({
       name: name.trim(),
       bond: bond.trim() || "A past unspoken — yours to reveal in the telling.",
-      age, attractiveness,
+      age, attractiveness, gender,
       profession: profession.trim() || "wanderer",
       race, subrace: subrace || null, origin: isHuman ? origin : race,
       attributes: attrs,
@@ -187,6 +188,13 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
                   <label style={fieldLabel}>Profession</label>
                   <input list="prof-opts" value={profession} onChange={(e) => setProfession(e.target.value)} placeholder="e.g. sellsword" style={inputStyle} />
                   <datalist id="prof-opts">{PROFESSION_OPTS.map((o) => <option key={o} value={o} />)}</datalist>
+                </div>
+              </div>
+              <div>
+                <label style={fieldLabel}>Gender</label>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button onClick={() => setGender("male")} style={chip(gender === "male")}>Male</button>
+                  <button onClick={() => setGender("female")} style={chip(gender === "female")}>Female</button>
                 </div>
               </div>
             </div>

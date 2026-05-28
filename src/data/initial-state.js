@@ -102,6 +102,7 @@ export function makeInitialState() {
             id: "wanderer", kind: "player",
             name: "Wanderer", race: "human", profession: null,
             origin: null,
+            gender: null,
             age: null,
             attractiveness: null,
             // Unset in limbo — the PLAYER authors their own appearance in the
@@ -127,7 +128,7 @@ export function makeInitialState() {
           // -------- Legendary rulers (fabled, distant) --------
           "demon-king": {
             id: "demon-king", kind: "npc",
-            name: "The Demon King", race: "demon", profession: "monarch",
+            name: "The Demon King", race: "demon", gender: "male", profession: "monarch",
             age: "older than any kingdom",
             attractiveness: 3,
             appearance: {
@@ -173,7 +174,7 @@ export function makeInitialState() {
           },
           "vale-king-asar": {
             id: "vale-king-asar", kind: "npc",
-            name: "King Asar V of Asalan", race: "human", profession: "monarch",
+            name: "King Asar V of Asalan", race: "human", gender: "male", profession: "monarch",
             origin: "south",
             age: "in his late fifties",
             attractiveness: 7,
@@ -198,7 +199,7 @@ export function makeInitialState() {
           },
           "goblin-king": {
             id: "goblin-king", kind: "npc",
-            name: "The Goblin King", race: "goblin", profession: "warlord",
+            name: "The Goblin King", race: "goblin", gender: "male", profession: "warlord",
             age: "old, by goblin reckoning — perhaps thirty",
             attractiveness: 4,
             appearance: {
@@ -220,7 +221,7 @@ export function makeInitialState() {
           },
           "selenyan-speaker": {
             id: "selenyan-speaker", kind: "npc",
-            name: "Lirilin of the Long Note", race: "elf", profession: "speaker",
+            name: "Lirilin of the Long Note", race: "elf", gender: "female", profession: "speaker",
             origin: "west",
             age: "uncountable; older than the city's outer trees",
             attractiveness: 10,
@@ -243,7 +244,7 @@ export function makeInitialState() {
           },
           "glass-spire-master": {
             id: "glass-spire-master", kind: "npc",
-            name: "The High Master of the Glass Spire", race: "human", profession: "sorcerer",
+            name: "The High Master of the Glass Spire", race: "human", gender: "male", profession: "sorcerer",
             origin: "east",
             age: "ancient — perhaps a hundred and forty",
             attractiveness: 5,
@@ -266,7 +267,7 @@ export function makeInitialState() {
           },
           "great-wyrm": {
             id: "great-wyrm", kind: "npc",
-            name: "Vyrnholt, the Great Wyrm", race: "wyrm", profession: null,
+            name: "Vyrnholt, the Great Wyrm", race: "wyrm", gender: "male", profession: null,
             age: "older than every kingdom",
             attractiveness: 7,
             appearance: {
@@ -317,7 +318,7 @@ export function makeInitialState() {
           },
           "hawthorn-lord": {
             id: "hawthorn-lord", kind: "npc",
-            name: "The Hawthorn Lord", race: "fae", profession: "noble",
+            name: "The Hawthorn Lord", race: "fae", gender: "male", profession: "noble",
             origin: "fae",
             age: "older than the wood",
             attractiveness: 8,
@@ -340,7 +341,7 @@ export function makeInitialState() {
           },
           "witch-queen": {
             id: "witch-queen", kind: "npc",
-            name: "The Witch-Queen of the Bone Citadel", race: "human", profession: "sorcerer",
+            name: "The Witch-Queen of the Bone Citadel", race: "human", gender: "female", profession: "sorcerer",
             origin: "west",
             age: "uncertain — the Citadel records eight queens, but says nothing of which",
             attractiveness: 7,
@@ -365,7 +366,7 @@ export function makeInitialState() {
           // -------- Reachable lords & masters (the player may meet these) --------
           "crowsmoor-baron": {
             id: "crowsmoor-baron", kind: "npc",
-            name: "Baron Halrad of Crowsmoor", race: "human", profession: "noble",
+            name: "Baron Halrad of Crowsmoor", race: "human", gender: "male", profession: "noble",
             origin: "central",
             age: "in his early fifties",
             attractiveness: 5,
@@ -388,7 +389,7 @@ export function makeInitialState() {
           },
           "whitemarch-treasurer": {
             id: "whitemarch-treasurer", kind: "npc",
-            name: "Lord-Treasurer Selia of Whitemarch", race: "human", profession: "noble",
+            name: "Lord-Treasurer Selia of Whitemarch", race: "human", gender: "female", profession: "noble",
             origin: "central",
             age: "in her mid-forties",
             attractiveness: 8,
@@ -411,7 +412,7 @@ export function makeInitialState() {
           },
           "cinder-chapter-master": {
             id: "cinder-chapter-master", kind: "npc",
-            name: "Brother-Master Anders Yoreld", race: "human", profession: "chapter-master",
+            name: "Brother-Master Anders Yoreld", race: "human", gender: "male", profession: "chapter-master",
             origin: "north",
             age: "in his late sixties",
             attractiveness: 5,
@@ -434,7 +435,7 @@ export function makeInitialState() {
           },
           "stonebrook-hold-father": {
             id: "stonebrook-hold-father", kind: "npc",
-            name: "Hold-Father Druin Ironvein", race: "dwarf", profession: "hold-father",
+            name: "Hold-Father Druin Ironvein", race: "dwarf", gender: "male", profession: "hold-father",
             origin: "spine-foothills",
             age: "two hundred and thirty",
             attractiveness: 6,
@@ -457,7 +458,7 @@ export function makeInitialState() {
           },
           "halfborn-matriarch": {
             id: "halfborn-matriarch", kind: "npc",
-            name: "Matriarch Vela of the Halfborn", race: "half-orc", profession: "matriarch",
+            name: "Matriarch Vela of the Halfborn", race: "half-orc", gender: "female", profession: "matriarch",
             origin: "central",
             age: "in her early forties",
             attractiveness: 7,
@@ -480,7 +481,7 @@ export function makeInitialState() {
           },
           "heron-master": {
             id: "heron-master", kind: "npc",
-            name: "Master Aenya of the Heron", race: "human", profession: "sorcerer",
+            name: "Master Aenya of the Heron", race: "human", gender: "female", profession: "sorcerer",
             origin: "central",
             age: "in her late sixties",
             attractiveness: 5,
@@ -503,7 +504,7 @@ export function makeInitialState() {
           },
           "the-hag": {
             id: "the-hag", kind: "npc",
-            name: "The Hag of the Cot", race: "human", profession: "witch",
+            name: "The Hag of the Cot", race: "human", gender: "female", profession: "witch",
             origin: "north",
             age: "no one alive remembers her differently",
             attractiveness: 2,
@@ -528,7 +529,7 @@ export function makeInitialState() {
           // -------- Local nemeses (the player will likely meet these soon) --------
           "king-of-three": {
             id: "king-of-three", kind: "npc",
-            name: "The King-of-Three", race: "goblin", profession: "warlord",
+            name: "The King-of-Three", race: "goblin", gender: "male", profession: "warlord",
             age: "old for a goblin — perhaps twenty-five",
             attractiveness: 3,
             appearance: {

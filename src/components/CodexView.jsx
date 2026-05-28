@@ -772,9 +772,9 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
         </div>
       )}
 
-      {kind === "characters" && (entry.age || entry.attractiveness != null) && (
+      {kind === "characters" && (entry.age || entry.gender || entry.attractiveness != null) && (
         <div style={{ fontSize: "12px", color: "rgba(215, 167, 111, 0.7)", marginBottom: "8px", fontFamily: fonts.serif, fontStyle: "italic" }}>
-          {[entry.age, attractivenessLabel(entry.attractiveness)].filter(Boolean).join(" · ")}
+          {[entry.age, entry.gender, attractivenessLabel(entry.attractiveness)].filter(Boolean).join(" · ")}
         </div>
       )}
 

@@ -15,7 +15,7 @@ export const COMPANIONS = {
   bram: {
     id: "bram", key: "bram", role: "sellsword", terms: "a share of the spoils", feeCp: 0,
     desc: "A scarred sellsword nursing a cheap ale, looking for a road worth walking.",
-    name: "Bram Holt", race: "human", profession: "sellsword", origin: "central",
+    name: "Bram Holt", race: "human", gender: "male", profession: "sellsword", origin: "central",
     age: "in his late thirties", attractiveness: 5,
     appearance: { skin: "weathered tan", hair: "black shot with grey, cropped short", eyes: "brown", build: "big, slab-shouldered", facial_hair: "perpetual stubble", marks: "a broken nose and a long scar down the right forearm" },
     base_appearance: "Big and slab-shouldered. Weathered tan, grey-shot black hair cropped short. Broken nose, brown eyes, a long forearm scar.",
@@ -30,7 +30,7 @@ export const COMPANIONS = {
   senna: {
     id: "senna", key: "senna", role: "hunter", terms: "an even split and first pick of pelts", feeCp: 0,
     desc: "A marsh-hunter with a yew bow, bored of shooting eels for a living.",
-    name: "Senna Rell", race: "human", profession: "hunter", origin: "central",
+    name: "Senna Rell", race: "human", gender: "female", profession: "hunter", origin: "central",
     age: "in her late twenties", attractiveness: 6,
     appearance: { skin: "wind-burned", hair: "dark blonde in a tight braid", eyes: "pale grey", build: "lean and wiry", facial_hair: "none", marks: "a bowstring callus and a fish-hook scar at the thumb" },
     base_appearance: "Lean and wiry, wind-burned. Dark-blonde hair in a tight braid, pale grey eyes. A bowstring callus on the draw hand.",
@@ -45,7 +45,7 @@ export const COMPANIONS = {
   tomkin: {
     id: "tomkin", key: "tomkin", role: "porter", terms: "board, a small wage, and no night-watches", feeCp: 0,
     desc: "A stout halfling who'll carry, cook, and complain in equal measure.",
-    name: "Tomkin Burr", race: "halfling", profession: "porter", origin: "central",
+    name: "Tomkin Burr", race: "halfling", gender: "male", profession: "porter", origin: "central",
     age: "in his forties", attractiveness: 5,
     appearance: { skin: "ruddy", hair: "curly chestnut, thinning on top", eyes: "hazel", build: "short and barrel-round", facial_hair: "mutton-chop whiskers", marks: "burn-scars on both forearms from a hundred campfires" },
     base_appearance: "Short and barrel-round, ruddy-faced. Curly chestnut hair thinning on top, mutton-chop whiskers, hazel eyes.",
@@ -60,7 +60,7 @@ export const COMPANIONS = {
   cray: {
     id: "cray", key: "cray", role: "hedge-witch", terms: "a tenth of all coin, and no questions about the cellar-work", feeCp: 30,
     desc: "A hedge-witch with cold hands and a sharp eye, run out of one too many parishes.",
-    name: "Mother Cray", race: "human", profession: "witch", origin: "north",
+    name: "Mother Cray", race: "human", gender: "female", profession: "witch", origin: "north",
     age: "hard to place — somewhere past fifty", attractiveness: 4,
     appearance: { skin: "winter-pale", hair: "iron-grey, pinned back hard", eyes: "pale amber, very steady", build: "thin and upright", facial_hair: "none", marks: "tally-scars along the left forearm and stained fingertips" },
     base_appearance: "Thin and upright, winter-pale. Iron-grey hair pinned back, steady amber eyes, stained fingertips. Tally-scars on the left forearm.",
@@ -75,7 +75,7 @@ export const COMPANIONS = {
   doran: {
     id: "doran", key: "doran", role: "deserter", terms: "a fair split and no banners, ever again", feeCp: 0,
     desc: "A Whitemarch deserter keeping his head down, handy with a spear and quieter about why.",
-    name: "Doran Vell", race: "human", profession: "soldier", origin: "central",
+    name: "Doran Vell", race: "human", gender: "male", profession: "soldier", origin: "central",
     age: "in his early thirties", attractiveness: 6,
     appearance: { skin: "tan, weather-lined young", hair: "brown, regulation-short grown out ragged", eyes: "grey-green", build: "tall and rangy", facial_hair: "a few days' beard", marks: "a faded Whitemarch brand he keeps covered, and a stiff left shoulder" },
     base_appearance: "Tall and rangy, tan and lined before his time. Ragged-grown brown hair, grey-green eyes, a few days' beard. A covered brand on the arm.",
@@ -96,7 +96,7 @@ export const COMPANION_LIST = Object.values(COMPANIONS);
 export function companionCodexEntry(tmpl) {
   return {
     id: tmpl.id, kind: "companion",
-    name: tmpl.name, race: tmpl.race, profession: tmpl.profession, origin: tmpl.origin,
+    name: tmpl.name, race: tmpl.race, gender: tmpl.gender, profession: tmpl.profession, origin: tmpl.origin,
     age: tmpl.age, attractiveness: tmpl.attractiveness,
     appearance: tmpl.appearance, base_appearance: tmpl.base_appearance,
     description: tmpl.description, attributes: tmpl.attributes,

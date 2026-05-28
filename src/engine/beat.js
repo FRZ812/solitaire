@@ -578,6 +578,7 @@ export function applyBeat(state, beat, options = {}) {
       subrace: (kit ? kit.subraceId : (cs.subrace ?? w.subrace ?? null)),
       origin: cs.origin || w.origin,
       profession: cs.profession || w.profession,
+      gender: cs.gender ?? w.gender,
       age: cs.age || w.age,
       attractiveness: cs.attractiveness ?? w.attractiveness,
       appearance: cs.appearance || w.appearance,

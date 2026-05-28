@@ -658,7 +658,7 @@ export function Solitaire() {
       character_setup: {
         name: setup.name, bond: setup.bond, attributes: setup.attributes,
         abilities: setup.abilities || [], race: setup.race, subrace: setup.subrace || null,
-        origin: setup.origin, profession: setup.profession, age: setup.age,
+        origin: setup.origin, profession: setup.profession, gender: setup.gender, age: setup.age,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
         base_appearance: setup.base_appearance, knows: setup.knows || [],
       },
@@ -1389,7 +1389,7 @@ export function Solitaire() {
     const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] At ${place} you have just paid the auctioneer ${formatCopper(c.priceCp)} for the bond of ${c.name} — ${c.origin}, ${c.taken} (${c.desc}). They can ${c.skills}. Their spirit reads as ${c.spirit}. Their freedom_response cue, for if the player offers to free them: ${c.freedom_response}. The coin is already settled — do not re-tally it. Play the moment the auctioneer strikes the irons and hands the writ across: who ${c.name} is in their own voice, how they react to the player given their spirit and history. Follow THE BLOCK in the system prompt for the four paths (keep, ransom, sell on, force-release) and for the refusal-default if the player tests freedom — voice the refusal from the freedom_response cue above, in the captive's own register. Do not narrate them simply walking off into a free life. Don't fabricate combat.`;
+      const msg = `[PLAYER ACTION] At ${place} you have just paid the auctioneer ${formatCopper(c.priceCp)} for the bond of ${c.name} (${c.gender}) — ${c.origin}, ${c.taken} (${c.desc}). They can ${c.skills}. Their spirit reads as ${c.spirit}. Their freedom_response cue, for if the player offers to free them: ${c.freedom_response}. The coin is already settled — do not re-tally it. Play the moment the auctioneer strikes the irons and hands the writ across: who ${c.name} is in their own voice, how they react to the player given their spirit and history (use the gender-matched pronouns). Follow THE BLOCK in the system prompt for the four paths (keep, ransom, sell on, force-release) and for the refusal-default if the player tests freedom — voice the refusal from the freedom_response cue above, in the captive's own register. Do not narrate them simply walking off into a free life. Don't fabricate combat.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
