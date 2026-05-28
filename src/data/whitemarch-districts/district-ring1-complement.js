@@ -81,8 +81,10 @@ export const TILES = {
   // ---------- (-4,3) Apothecary's Window --------------------------------
   // West wards, just east of the Granary Court / Almshouse pair. The
   // city's herb-and-poison trade has to live SOMEWHERE; this is it.
+  // Terrain preserved as "street" — the apothecary works from a shutter-
+  // window onto the lane, not a separate footprint.
   "-4,3": {
-    terrain: "settlement",
+    terrain: "street",
     poi: {
       type: "bldg",
       name: "Apothecary's Window",
@@ -128,7 +130,7 @@ export const TILES = {
   // Market. Tallow, wick, lamp-oil; the first honest light a stranger
   // can buy after the road.
   "1,-3": {
-    terrain: "settlement",
+    terrain: "street",
     poi: {
       type: "bldg",
       name: "Chandler's Stall",
@@ -152,7 +154,7 @@ export const TILES = {
   // come up off the Whitewend boats and never quite reach the Grand
   // Market proper. This is where the quay-catch is sold.
   "2,-1": {
-    terrain: "settlement",
+    terrain: "street",
     poi: {
       type: "bldg",
       name: "Fishmonger's Bench",
@@ -177,7 +179,7 @@ export const TILES = {
   // Court is one block east, and the leatherworker's licence-tag hangs
   // visibly behind the counter.
   "2,3": {
-    terrain: "indoor",
+    terrain: "street",
     poi: {
       type: "bldg",
       name: "Leatherworker's Shop",
@@ -202,7 +204,7 @@ export const TILES = {
   // the small daily stock that the Grand Market does not carry as
   // packaged keep-anywhere goods.
   "3,2": {
-    terrain: "indoor",
+    terrain: "street",
     poi: {
       type: "bldg",
       name: "Dry-Goods Counter",
