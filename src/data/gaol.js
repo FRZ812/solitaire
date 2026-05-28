@@ -22,6 +22,9 @@
 // Rolled deterministically per (tile + refresh window) — see engine/gaol.js.
 // Coin is COPPER. Each entry needs a stable `key`.
 
+import { resolvePoolForMind } from "../engine/attributes.js";
+import { bodyWeightForRace } from "../engine/weight.js";
+
 export const WANTED_POOL = [
   { key: "redhand",   name: "Red-Hand Mott",      gender: "male",   age: 35, agingMode: "mortal", race: "human", profession: "bandit", crime: "highway robbery on the Mire road",        attributes: { body: 4, reflex: 3, vigor: 4, mind: 1, wit: 2, presence: 1 }, appearance: { skin: "weather-burnt tan, freckled at the brow", hair: "red-brown, shoulder-length, unwashed", eyes: "pale blue", build: "heavy through the chest, thick at the wrist", facial_hair: "a short red beard going to grey", marks: "the right hand stained red to the wrist from a fresh kill — the name comes from the habit, not the once" }, base_appearance: "Heavy through the chest. Weather-burnt tan skin freckled at the brow. Unwashed red-brown hair to the shoulder. Pale-blue eyes. A short red beard. The right hand stained red to the wrist — the name comes from the habit, not the once.", worn: ["road-leather-jerkin", "wool-tunic", "patched-trousers", "heavy-boots"], rewardAliveCp: 100, rewardDeadCp: 60,  attractiveness: 4, desc: "Robbed three carters this month. The warden wants him to stand before the baron.", target: { x: -5, y: 0 }, targetName: "the Mire road west" },
   { key: "eel",       name: "The Eel",            gender: "male",   age: 30, agingMode: "mortal", race: "human", profession: "smuggler", crime: "smuggling and a knifing at the ferry",     attributes: { body: 2, reflex: 5, vigor: 3, mind: 2, wit: 3, presence: 1 }, appearance: { skin: "river-pale, sun-spotted at the cheekbone", hair: "black, slicked back, thinning at the crown", eyes: "dark, quick", build: "thin, narrow at the hip, deceptively quick", facial_hair: "clean-shaven, ill-shaved", marks: "a knife-scar from the corner of the mouth to the ear, an inked ferry-mark at the right shoulder" }, base_appearance: "Thin and narrow at the hip. River-pale skin, sun-spotted at the cheek. Slicked-back black hair thinning at the crown. Dark quick eyes. A knife-scar from mouth-corner to ear. A ferry-mark inked at the right shoulder.", worn: ["dark-wool-coat", "river-leather-vest", "patched-trousers", "soft-soled-boots"], rewardAliveCp: 140, rewardDeadCp: 80,  attractiveness: 5, desc: "Slippery as his name. Last seen working the reed-channels east of town.", target: { x: 3, y: 1 }, targetName: "the reed-channels east of town" },
@@ -41,3 +44,47 @@ export const PRISONER_POOL = [
 ];
 
 export const GAOL_REFRESH_DAYS = 5;
+
+// The full codex-character entry for a prisoner whose rights the player has
+// just bought from the warden — sister to bondedCodexEntry and
+// companionCodexEntry. Tagged kind "bonded" (the engine treats the two custody
+// flows uniformly — the prisoner's fate is now the player's, exactly as with a
+// purchased captive). Coded defensively for thin rows: a PRISONER_POOL entry
+// may not yet carry race/profession/appearance/worn/attributes (a sibling
+// agent is enriching those fields); the helper defaults sanely so nothing
+// crashes. The description comes from `desc`; the codex `origin` field carries
+// the prisoner's `crime` (their entry on the rolls — why they were taken).
+export function prisonerCodexEntry(prisoner) {
+  const attrs = prisoner.attributes || { body: 2, reflex: 2, vigor: 2, mind: 2, wit: 2, presence: 2 };
+  const race = prisoner.race || "human";
+  return {
+    id: `bonded-${prisoner.key}`, // overwritten by beat.js with the day-stamped id
+    kind: "bonded",
+    name: prisoner.name,
+    race,
+    subrace: prisoner.subrace || null,
+    gender: prisoner.gender,
+    profession: prisoner.profession || "prisoner",
+    origin: prisoner.origin || prisoner.crime || "",
+    age: prisoner.age,
+    agingMode: prisoner.agingMode || "mortal",
+    lifespanMultiplier: prisoner.lifespanMultiplier ?? 1.0,
+    attractiveness: prisoner.attractiveness ?? 5,
+    appearance: prisoner.appearance || {},
+    base_appearance: prisoner.base_appearance || prisoner.desc || "",
+    description: prisoner.desc || "",
+    attributes: attrs,
+    worn: Array.isArray(prisoner.worn) && prisoner.worn.length ? [...prisoner.worn] : ["rough-tunic"],
+    knows: [],
+    needs: { hunger: 60, thirst: 60, sleep: 60 },
+    resolve: resolvePoolForMind(attrs.mind || 0),
+    resolveMax: resolvePoolForMind(attrs.mind || 0),
+    abilities: Array.isArray(prisoner.abilities) ? [...prisoner.abilities] : [],
+    skills: Array.isArray(prisoner.skills) ? prisoner.skills.map((s) => (typeof s === "string" ? { name: s, rating: 1 } : { ...s })) : [],
+    bodyWeight: bodyWeightForRace(race),
+    ridingOn: null,
+    riders: [],
+    relationship: 0,
+    memories: [],
+  };
+}

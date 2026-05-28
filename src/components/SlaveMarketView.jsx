@@ -12,7 +12,7 @@ import { formatCopper, formatCoins } from "../engine/economy.js";
 // per-tier window so the same face doesn't reappear when the player closes and
 // reopens the menu. Closed-at-night gating is upstream in App.jsx (it refuses
 // to open this view outside the Chain Market Steps' hours).
-export function SlaveMarketView({ state, building, board, tileKey, onBuy, onClose, loading }) {
+export function SlaveMarketView({ state, building, board, tileKey, onInspect, onClose, loading }) {
   const coins = state.character.inventory.coins;
   const tile = state.world.tiles?.[tileKey];
   const highBought = (tile?.slavemarket?.high?.bucket === board.highBucket) ? tile.slavemarket.high.bought : {};
@@ -66,7 +66,7 @@ export function SlaveMarketView({ state, building, board, tileKey, onBuy, onClos
             {highLots.map((c) => (
               <Row key={c.id} title={c.name} meta={`${c.origin} · ${c.spirit}`} desc={c.desc} sub={`Taken: ${c.taken}. ${c.skills}.`}
                 price={`bond ${formatCopper(c.priceCp)}`}
-                action={<ActionButton label="Buy bond" enabled={!loading} onClick={() => onBuy(c)} />} />
+                action={<ActionButton label="Approach" enabled={!loading} onClick={() => onInspect(c)} />} />
             ))}
             <div style={{ ...metaStyle, fontSize: "9px", color: "rgba(237, 228, 208, 0.4)", lineHeight: 1.4, margin: "2px 0 12px", fontStyle: "italic" }}>
               Prime lots — paraded fresh each morning. Tomorrow's faces will be different.
@@ -83,7 +83,7 @@ export function SlaveMarketView({ state, building, board, tileKey, onBuy, onClos
                 <Row key={c.id} title={c.name} meta={`${c.origin} · ${c.spirit}`} desc={c.desc} sub={`Taken: ${c.taken}. ${c.skills}.`}
                   price={`bond ${formatCopper(c.priceCp)}`}
                   priceSub={decayed ? `was ${formatCopper(c.originalPriceCp)}` : null}
-                  action={<ActionButton label="Buy bond" enabled={!loading} onClick={() => onBuy(c)} />} />
+                  action={<ActionButton label="Approach" enabled={!loading} onClick={() => onInspect(c)} />} />
               );
             })}
             <div style={{ ...metaStyle, fontSize: "9px", color: "rgba(237, 228, 208, 0.4)", lineHeight: 1.4, margin: "2px 0 8px", fontStyle: "italic" }}>

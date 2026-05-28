@@ -128,13 +128,12 @@ export function slaveMarketStateFor(tile, highBucket, lowBucket) {
   return { high, low };
 }
 
-// Pay the auctioneer for a captive's bond. Deducts coin AND marks the captive
-// as bought against the current per-tier window — so the same face does not
-// reappear on the platform when the player re-opens the menu before the
-// window rolls. The custody scene is the narrator's.
-export function buyCaptive(state, c, tileKey) {
-  if (!canAfford(state.character.inventory.coins, c.priceCp)) return { state, ok: false, reason: "Not enough coin." };
-  const coins = copperToCoins(coinsToCopper(state.character.inventory.coins) - c.priceCp);
+// Mark a captive as bought on the tile's slavemarket per-tier record. Used
+// both by the legacy buyCaptive path and by the new inspect-haggle-settle
+// flow (the narrator's purchase_captive beat in engine/beat.js, which deducts
+// the agreed coin and adds the bonded codex entry to the party — this helper
+// keeps the captive off the platform when the player reopens the view).
+export function markCaptiveBought(state, c, tileKey) {
   const day = state.time?.day || 0;
   const highBucket = slaveHighBucket(day);
   const lowBucket  = slaveLowBucket(day);
@@ -145,12 +144,22 @@ export function buyCaptive(state, c, tileKey) {
   if (c.tier === "high") market.high.bought[c.key] = true;
   else                    market.low.bought[c.key]  = true;
   tiles[tileKey] = { ...tile, slavemarket: market };
+  return { ...state, world: { ...state.world, tiles } };
+}
+
+// Pay the auctioneer for a captive's bond. Deducts coin AND marks the captive
+// as bought against the current per-tier window — so the same face does not
+// reappear on the platform when the player re-opens the menu before the
+// window rolls. The custody scene is the narrator's.
+export function buyCaptive(state, c, tileKey) {
+  if (!canAfford(state.character.inventory.coins, c.priceCp)) return { state, ok: false, reason: "Not enough coin." };
+  const coins = copperToCoins(coinsToCopper(state.character.inventory.coins) - c.priceCp);
+  const withMark = markCaptiveBought(state, c, tileKey);
   return {
     ok: true,
     state: {
-      ...state,
-      character: { ...state.character, inventory: { ...state.character.inventory, coins } },
-      world: { ...state.world, tiles },
+      ...withMark,
+      character: { ...withMark.character, inventory: { ...withMark.character.inventory, coins } },
     },
   };
 }

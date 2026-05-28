@@ -57,6 +57,9 @@
 // Rolled deterministically per (tile + refresh window) — see engine/slaves.js.
 // Coin is COPPER. Each entry needs a stable `key`.
 
+import { resolvePoolForMind } from "../engine/attributes.js";
+import { bodyWeightForRace } from "../engine/weight.js";
+
 export const CAPTIVE_POOL = [
   { key: "harl",   name: "Harl of the Reeds",   gender: "male",   age: 35, agingMode: "mortal", race: "human", profession: "marsh-spearman", origin: "a marshland villager of the western marches, where the border-wars run hot", taken: "seized in a border raid by a western warlord and traded east, bargemaster to bargemaster, until the bond reached the Block", spirit: "sullen",   skills: "a steady spear-hand who knows the marsh tracks blind", attributes: { body: 3, reflex: 2, vigor: 3, mind: 1, wit: 3, presence: 1 }, appearance: { skin: "weather-darkened, freckled at the brow", hair: "lank brown, water-faded", eyes: "muddy green", build: "big-shouldered, heavy in the arms", facial_hair: "a short unkempt beard", marks: "chain-galls at the wrists, old reed-cuts down the forearms" }, base_appearance: "Big-shouldered and heavy in the arm. Weather-darkened skin, lank brown hair. Muddy-green eyes that stay on the gate. A short unkempt beard. Chain-galls at the wrists, reed-cuts down both forearms.", worn: ["rough-tunic", "coarse-trousers"], priceCp: 280, attractiveness: 5, desc: "Big-shouldered, slow to speak, eyes always on the gate. Watches who buys whom.", freedom_response: "war-displaced; refuses because his village is ash and his people scattered — there is no home for a freed body to return to, and his marsh-skills sell here or nowhere" },
   { key: "neela",  name: "Neela",               gender: "female", age: 25, agingMode: "mortal", race: "human", profession: "herb-healer", origin: "of the Reedfolk of the far southern delta", taken: "given over to a southern broker for her family's bond-debt when the delta fishery failed; the bond traded north until it reached a Whitemarch factor", spirit: "wary",     skills: "trained to herbs and fevers — sets bone, draws venom, eases pain", attributes: { body: 1, reflex: 2, vigor: 2, mind: 4, wit: 3, presence: 1 }, appearance: { skin: "warm copper-brown, smooth", hair: "black, beaded at one temple in delta-fashion", eyes: "dark", build: "small, slight at the wrist", facial_hair: "none", marks: "faint herb-stain at the fingertips, a chain-mark at the throat" }, base_appearance: "Small and slight. Warm copper-brown skin, smooth at the brow. Black hair beaded at one temple. Dark watchful eyes. Herb-stained fingertips. A chain-mark at the throat.", worn: ["rough-tunic", "coarse-trousers"], priceCp: 360, attractiveness: 6, desc: "Keeps her hands folded and her counsel close. The auctioneer prices her high; a healer is worth a war-band.", freedom_response: "bond-debt; refuses because the broker who sold her still holds her sisters' contract — her freedom voids none of theirs, and she will not buy hers at their cost" },
@@ -86,3 +89,46 @@ export const SLAVE_LOW_REFRESH_DAYS = 4;
 export const SLAVE_LOW_DAILY_DISCOUNT = 0.10;
 export const SLAVE_LOW_PRICE_FLOOR_PCT = 0.50;
 export const SLAVE_LOW_OFFSCREEN_SALE_RATE = 0.5;
+
+// The full codex-character entry for a captive bonded into the party at the
+// Block — sister to companionCodexEntry. Tagged kind "bonded" so a later
+// renderer can distinguish them from a freely-recruited companion. Coded
+// defensively: a CAPTIVE_POOL row may not yet carry race/subrace/profession/
+// appearance/worn/attributes (a sibling agent is enriching those fields); the
+// helper defaults sanely so the engine never crashes on a thin row. The
+// description comes from `desc`; the codex `origin` field carries the captive's
+// origin prose verbatim.
+export function bondedCodexEntry(captive) {
+  const attrs = captive.attributes || { body: 3, reflex: 3, vigor: 3, mind: 3, wit: 3, presence: 3 };
+  const race = captive.race || "human";
+  return {
+    id: `bonded-${captive.key}`, // overwritten by beat.js with the day-stamped id
+    kind: "bonded",
+    name: captive.name,
+    race,
+    subrace: captive.subrace || null,
+    gender: captive.gender,
+    profession: captive.profession || "bonded",
+    origin: captive.origin || "",
+    age: captive.age,
+    agingMode: captive.agingMode || "mortal",
+    lifespanMultiplier: captive.lifespanMultiplier ?? 1.0,
+    attractiveness: captive.attractiveness ?? 5,
+    appearance: captive.appearance || {},
+    base_appearance: captive.base_appearance || captive.desc || "",
+    description: captive.desc || "",
+    attributes: attrs,
+    worn: Array.isArray(captive.worn) && captive.worn.length ? [...captive.worn] : ["rough-tunic"],
+    knows: [],
+    needs: { hunger: 60, thirst: 60, sleep: 60 },
+    resolve: resolvePoolForMind(attrs.mind || 0),
+    resolveMax: resolvePoolForMind(attrs.mind || 0),
+    abilities: Array.isArray(captive.abilities) ? [...captive.abilities] : [],
+    skills: Array.isArray(captive.skills) ? captive.skills.map((s) => (typeof s === "string" ? { name: s, rating: 1 } : { ...s })) : [],
+    bodyWeight: bodyWeightForRace(race),
+    ridingOn: null,
+    riders: [],
+    relationship: 0,
+    memories: [],
+  };
+}
