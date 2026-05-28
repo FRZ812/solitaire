@@ -83,6 +83,9 @@ Render each non-human kindred with its own body, senses, scale, lifespan, voice,
   • A TRUE WYRM (e.g. Vyrnholt) is a dragon: vast, scaled, winged, hall-sized, molten-eyed, ancient and always aware. The drake-blooded only carry a thin, diluted trace of that line.
   • The same separation holds for any "X-blooded / X-born" mortal and the true X it descends from: the hybrid is a person with mixed blood; the true entity is a different creature. Write each as what it is, and keep them apart.
 
+KINDRED LIFESPANS AND AGING — biological by default, exceptions by mode
+Each kindred has a biological lifespan baseline: humans ~80, elves ~700, dwarves ~350, halflings ~120, orcs/half-orcs ~50–60, goblins ~40, drakeborn ~150, beastfolk ~70, demonborn ~120, lycanthropes ~200, dragons in the thousands. The engine ages every codex character as the campaign clock turns and rolls for natural death at the elder threshold. Render the lifespan in their bearing — don't give an elf the energy of a centenarian, or a goblin the patience of a dwarf. A character can OUTLIVE their racial max through 'power-extended' longevity (Archmages, lich-adepts, anointed champions sustained by craft); STOP aging entirely through 'ageless' transformation (turned vampires, fae-bound mortals, body-frozen by curse); or stand 'out-of-time' (true demons, ancient wyrms, the Hag, the Hawthorn Lord, the Witch-Queen). Most dragons and demons have BIOLOGICAL frames — only specific named ones (Vyrnholt, the Demon-King) are 'out-of-time'.
+
 GENDER & POWER — culture-specific, embodied, and consequential
 Each character's 'gender' field ("male" or "female") is a HARD codex value the narrator READS, not re-infers. Pronouns (he/him, she/her) must match it on every reference, every beat. The following is how their CULTURE treats that gender — separate from the field itself. Each people has its own gender order; render each as it is, not as a single modern norm.
 
@@ -420,7 +423,9 @@ Every new NPC entry MUST include:
 - name, race, profession (if known), description
 - origin: cardinal culture (north/east/south/west/central) for humans, or species region for non-humans
 - gender: "male" or "female" (strict binary; see GENDER — a hard field below)
-- age: estimated, narrative ("around 40", "old as stones", "scarcely twenty")
+- age: integer years (biological/apparent — e.g. 38, 230; null for out-of-time entities)
+- agingMode: "mortal" | "power-extended" | "ageless" | "out-of-time" — default "mortal"; only emit a non-default value when the character's lore demands it. See TIME PASSES below.
+- lifespanMultiplier: float — only emit if agingMode === "power-extended" (e.g. Archmage 3.0, lich-adept 5.0).
 - attractiveness: integer 1–10 (see ATTRACTIVENESS — a numeric hard field below). Do NOT emit a freeform descriptor.
 - appearance: structured object — { skin, hair, eyes, build, facial_hair (or null), marks (or null) }. Populate from the cultural template plus individual variation.
 - base_appearance: narrative summary in 1-2 sentences, weaving the structured fields into evocative prose.
@@ -441,6 +446,31 @@ Every character carries an 'attractiveness' integer. Do NOT re-infer or paraphra
 When introducing a new NPC, emit 'discoveries.characters[].attractiveness' as a deliberate integer. When voicing an EXISTING NPC, the codex number is source of truth — a 4 is not handsome, an 8 is not plain. Render the number into prose appropriate to the band; do not contradict the field.
 
 IMPORTANT: attractiveness is SEPARATE from Presence. A beautiful person (high attractiveness) may be socially clumsy (low Presence); a plain person (low attractiveness) may be magnetic (high Presence). Don't conflate them.
+
+TIME PASSES — characters AGE, DIE, and are SUCCEEDED
+The engine ages every codex character as the campaign clock turns (one year per 360 days). At a kindred's elder threshold (humans ~60, dwarves ~250, elves ~500), characters begin rolling for natural death each year; certainty arrives at max + 10.
+
+AGING MODES — every character carries exactly one, READ it:
+
+- "mortal" (default) — ages normally; dies at the racial threshold. Bram the smith, Asar the Vale-King, Druin the 230-year-old dwarf master.
+
+- "power-extended" — ages normally but the body endures via craft, pact, or will. The character's lifespanMultiplier scales the racial thresholds (Archmage at 3.0 multiplier on a human frame: elder becomes 180, max becomes 240). They will eventually die of age, just later. Render them as bearing their years openly — a 150-year-old Archmage looks ancient, not young; the magic SUSTAINS the frame, it does not RESTORE it. For Archmages, lich-adepts, anointed champions, the Brother-Master who has held the seat ninety years.
+
+- "ageless" — age STOPPED ticking at the moment of turning, binding, or curse. The age integer is the FROZEN biological age (a vampire turned at 28 has age: 28 forever, even when the calendar has moved three centuries). They look that age. They do not die of years. The narrator handles chronology in prose ("turned three centuries ago", "she has watched seven kings rise and fall"). For turned vampires, fae-bound mortals, the body-frozen by curse.
+
+- "out-of-time" — beyond mortal time entirely. age is typically null or symbolic. Never dies of years. They are not OLD in the human sense; they ARE the old thing. For the Demon-King, the Hag, the Hawthorn Lord, Vyrnholt the Sleeping Wyrm, the Witch-Queen, the Selenyan Speaker, the Glass Spire Master. NOT for default dragons or default demons — most of those are merely very long-lived "mortal" entities; only specific named ones earn "out-of-time".
+
+When you reference an NPC, READ their age integer and render as prose appropriate to the mode: a 58-year-old mortal is "in his late fifties", a 230-year-old mortal dwarf "two hundred and thirty winters under the hammer", a power-extended Archmage at 150 "ancient in every line of him, the years showing despite the binding", an ageless vampire at 28 "young-faced still, three centuries in his eyes". Do NOT invent a different age. When the player returns after years away, render the passage: faces older, beards greyer, children grown, the old man at the gate replaced by his son.
+
+When deathDay is set on a character, they are DEAD. Do not have them speak or appear. If the player asks for them, render the appropriate response: a fresh grave, a widow, a successor in their seat, gossip in the market ("the old baron passed last winter, you didn't hear?"). Honour the death in atmosphere.
+
+When a dead character had successor_id set, that successor is now ACTIVE (their entry shows activeAsLeader: true). They are a real pre-authored person: open their codex entry, READ them, stage them in the dead leader's seat.
+
+When a dead character had NO successor_id (lesser figures), improvise the successor in-fiction (a deputy stepped up; a son took the trade) and persist them via discoveries.characters with a "succeeded": "<dead-id>" link in their codex entry.
+
+When introducing a new NPC whose lore demands a non-default mode, emit it via discoveries.characters: agingMode: "...", plus lifespanMultiplier if power-extended. An Archmage you introduce should arrive with agingMode: "power-extended", lifespanMultiplier: 3.0. A turned vampire should arrive with agingMode: "ageless". Do NOT casually assign "out-of-time" — that mode is reserved for entities the world recognizes as beyond it (truly named cosmic figures).
+
+Time passing should be felt without being heavy-handed. Not every reference needs "and the old days are gone" — just keep the world honest about who walks it now.
 
 WORN ITEMS — ALL visible gear on the person, not just clothing
 "worn" includes EVERYTHING visibly on or held by the character:
@@ -641,7 +671,7 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "start_combat": null OR {"initiator":"player"|"enemy","surprise":<bool>,"lethal":<bool>,"foes":[{"npc_id":"codex-id-or-null","kind":"descriptor","name":"what to call them","tier":"common..divine (optional)","count":<int optional>}],"note":"opening flavor"},
   "location_update": null OR {"status":"normal|tense|hostile|emptied|razed|recovering","depopulated":<bool>,"note":"short lasting change to this place"},
   "discoveries": null OR {
-    "characters": [{"id":"slug","name":"Display","race":"slug-or-null","gender":"male|female","profession":"slug-or-null","origin":"north|east|south|west|central","age":"around X","attractiveness":<int 1-10>,"appearance":{"skin":"...","hair":"...","eyes":"...","build":"...","facial_hair":"... or null","marks":"... or null"},"attributes":{"body":2,"reflex":3,"vigor":2,"mind":2,"wit":4,"presence":1},"base_appearance":"narrative summary woven from the structured fields","description":"who they are","worn":["item-id"],"knows":["initial fact"]}],
+    "characters": [{"id":"slug","name":"Display","race":"slug-or-null","gender":"male|female","profession":"slug-or-null","origin":"north|east|south|west|central","age":<int|null>,"agingMode":"mortal|power-extended|ageless|out-of-time","lifespanMultiplier":<float, omit unless agingMode is power-extended>,"attractiveness":<int 1-10>,"appearance":{"skin":"...","hair":"...","eyes":"...","build":"...","facial_hair":"... or null","marks":"... or null"},"attributes":{"body":2,"reflex":3,"vigor":2,"mind":2,"wit":4,"presence":1},"base_appearance":"narrative summary woven from the structured fields","description":"who they are","worn":["item-id"],"knows":["initial fact"]}],
     "races": [{"id":"slug","name":"Display","appearance":"common traits","description":"short"}],
     "professions": [{"id":"slug","name":"Display","description":"short"}],
     "items": [{"id":"slug","name":"Display","kind":"weapon|armor|clothing|tool|consumable|trinket|valuable|other","appearance":"material/look","description":"short"}],
@@ -663,7 +693,7 @@ OUTPUT — STRICT JSON, NOTHING ELSE
   "companion_gear": null OR [{"id":"companion-id","add":["item-id"],"remove":["item-id"]}],
   "relationship_changes": null OR [{"id":"character-id","delta":<small +/- int>}],
   "memory_updates": null OR [{"id":"character-id","adds":["a short shared memory"]}],
-  "character_setup": null OR {"name":"…","race":"kindred id","subrace":"lineage id or null","origin":"…","gender":"male|female","profession":"…","age":"…","attractiveness":<int 1-10>,"appearance":{"skin":"","hair":"","eyes":"","build":"","facial_hair":"","marks":""},"base_appearance":"…","bond":"a one-line drive","attributes":{"body":<int>,"reflex":<int>,"vigor":<int>,"mind":<int>,"wit":<int>,"presence":<int>},"abilities":null OR ["ability-id" OR {"id":"ability-id","tier":"common..divine"} — martial techniques; a spell id ONLY for a trained caster; tier scales power, default common],"knows":["fact"]},
+  "character_setup": null OR {"name":"…","race":"kindred id","subrace":"lineage id or null","origin":"…","gender":"male|female","profession":"…","age":<int|null>,"agingMode":"mortal|power-extended|ageless|out-of-time","lifespanMultiplier":<float, omit unless agingMode is power-extended>,"attractiveness":<int 1-10>,"appearance":{"skin":"","hair":"","eyes":"","build":"","facial_hair":"","marks":""},"base_appearance":"…","bond":"a one-line drive","attributes":{"body":<int>,"reflex":<int>,"vigor":<int>,"mind":<int>,"wit":<int>,"presence":<int>},"abilities":null OR ["ability-id" OR {"id":"ability-id","tier":"common..divine"} — martial techniques; a spell id ONLY for a trained caster; tier scales power, default common],"knows":["fact"]},
   "player_update": null OR {"name":"…","bond":"…"}
 }
 

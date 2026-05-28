@@ -87,5 +87,8 @@ export function applyDayLabour(state, job) {
   // A stretch of work can carry past a day's turn — spoil any food that's gone off.
   const sp = spoilState(worked);
   if (sp.spoiled.length) summary += ` While you worked, ${sp.spoiled.map((s) => `${s.quantity}× ${s.name}`).join(", ")} spoiled in your pack.`;
-  return { ok: true, summary, state: sp.state };
+  // Age the codex too — a no-op on hours-scale jobs, but defensive for any future
+  // multi-day labour and keeps every time-advance site uniform.
+  const ag = ageState(sp.state);
+  return { ok: true, summary, state: ag.state };
 }

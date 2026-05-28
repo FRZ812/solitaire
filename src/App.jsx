@@ -658,7 +658,8 @@ export function Solitaire() {
       character_setup: {
         name: setup.name, bond: setup.bond, attributes: setup.attributes,
         abilities: setup.abilities || [], race: setup.race, subrace: setup.subrace || null,
-        origin: setup.origin, profession: setup.profession, gender: setup.gender, age: setup.age,
+        origin: setup.origin, profession: setup.profession, gender: setup.gender,
+        age: setup.age, agingMode: setup.agingMode, lifespanMultiplier: setup.lifespanMultiplier,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
         base_appearance: setup.base_appearance, knows: setup.knows || [],
       },

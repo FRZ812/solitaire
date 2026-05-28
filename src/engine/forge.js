@@ -133,5 +133,8 @@ export function applyApprentice(state, step) {
   };
   // Days bound to the forge — perishable food in the pack goes off meanwhile.
   const sp = spoilState(trained);
-  return { ok: true, state: sp.state, spoiled: sp.spoiled };
+  // Long stretches of training can roll years over — age the codex too. Any
+  // characters who died of age during the apprenticeship surface as a notice.
+  const ag = ageState(sp.state);
+  return { ok: true, state: ag.state, spoiled: sp.spoiled, aged: ag.aged, deaths: ag.deaths };
 }

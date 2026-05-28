@@ -20,6 +20,7 @@ export const RACES = {
     id: "human", name: "Human", magic: "learned", social: "normal",
     attributeModifiers: {}, proficiencyGrowthMult: 1.25,
     racialPassives: [], innateAbilities: [],
+    lifespan: { adult: 16, elder: 60, max: 80 },
     traits: ["Versatile and quick — learns every skill markedly faster than any other kindred.", "Ambitious and adaptable; at home anywhere."],
     flaws: ["Short-lived; no inborn power to fall back on."],
   },
@@ -28,6 +29,7 @@ export const RACES = {
     attributeModifiers: { reflex: 1, mind: 1, vigor: -1 },
     racialPassives: [{ id: "tireless", tier: "rare" }],
     innateAbilities: [],
+    lifespan: { adult: 80, elder: 500, max: 700 },
     traits: ["Centuries-long life; uncanny stillness and grace.", "Keen-eyed and quick."],
     flaws: ["Slow to trust; aloof, and slower to heal than the short-lived."],
     subraces: {
@@ -41,6 +43,7 @@ export const RACES = {
     attributeModifiers: { vigor: 2, body: 1, reflex: -1 },
     racialPassives: [{ id: "stoneskin", tier: "rare" }, { id: "stalwart", tier: "rare" }, { id: "enduring", tier: "rare" }],
     innateAbilities: [],
+    lifespan: { adult: 40, elder: 250, max: 350 },
     traits: ["Stone-dense, tireless, long-lived.", "Master smith; resistant to poison and toxin."],
     flaws: ["Ill at ease in open water and high places; no love of the quick or the airy."],
     subraces: {
@@ -53,6 +56,7 @@ export const RACES = {
     attributeModifiers: { reflex: 1, wit: 1, body: -1 }, proficiencyGrowthMult: 1.1,
     racialPassives: [{ id: "fortunate", tier: "rare" }, { id: "evasion", tier: "uncommon" }, { id: "swift", tier: "uncommon" }],
     innateAbilities: [],
+    lifespan: { adult: 20, elder: 90, max: 120 },
     traits: ["Uncannily lucky; braver than their size.", "Quiet-footed and nimble."],
     flaws: ["Small and light — easily overpowered in a straight contest of strength."],
   },
@@ -61,6 +65,7 @@ export const RACES = {
     attributeModifiers: { body: 2, vigor: 1, presence: -1 },
     racialPassives: [{ id: "renewing", tier: "uncommon" }, { id: "stalwart", tier: "rare" }],
     innateAbilities: [{ id: "power-strike", tier: "common" }],
+    lifespan: { adult: 14, elder: 45, max: 60 },
     traits: ["Orcish endurance — shrugs off wounds that would fell a man.", "Relentless under pressure."],
     flaws: ["Scorned by human and orc alike — suspicion, slurs, refused rooms, higher prices."],
   },
@@ -69,6 +74,7 @@ export const RACES = {
     attributeModifiers: { body: 3, vigor: 1, mind: -1, presence: -1 },
     racialPassives: [{ id: "stalwart", tier: "rare" }, { id: "rampage", tier: "epic" }],
     innateAbilities: [{ id: "power-strike", tier: "uncommon" }],
+    lifespan: { adult: 12, elder: 38, max: 50 },
     traits: ["Massive, warlike, raid-hardened."],
     flaws: ["Dreaded across the marches — open hostility, watchmen's eyes, doors barred against you."],
   },
@@ -77,6 +83,7 @@ export const RACES = {
     attributeModifiers: { reflex: 2, wit: 1, body: -2 },
     racialPassives: [{ id: "evasion", tier: "rare" }, { id: "swift", tier: "uncommon" }],
     innateAbilities: [{ id: "venom-strike", tier: "common" }],
+    lifespan: { adult: 10, elder: 28, max: 40 },
     traits: ["Small, quick, over-attentive; warren-cunning and sly."],
     flaws: ["Feared and hated; trusted by no one, and weak in a stand-up fight."],
   },
@@ -85,6 +92,7 @@ export const RACES = {
     attributeModifiers: { body: 1, vigor: 1 },
     racialPassives: [{ id: "stoneskin", tier: "rare" }],
     innateAbilities: [{ id: "dragon-breath", tier: "common" }],
+    lifespan: { adult: 18, elder: 110, max: 150 },
     traits: ["Towering and imposing — a head taller than most humans, heavy in the bone and shoulder.", "A vein of fine scales runs from the nape down the shoulders and collar; otherwise of human face, hand, and eye.", "Carries a thin trace of wyrm-blood — and its breath."],
     flaws: ["Hard to miss in a crowd; takes the front of a room whether they want it or not.", "Uncommon south of the Spine; the scale-line draws careful stares once seen."],
     subraces: {
@@ -98,6 +106,7 @@ export const RACES = {
     attributeModifiers: { reflex: 1, wit: 1 },
     racialPassives: [],
     innateAbilities: [],
+    lifespan: { adult: 14, elder: 50, max: 70 },
     traits: ["Humanoid in body — the ears and tail of their kindred animal are the only outward sign.", "Keen-sensed in the way of their kind; reads a room by scent and sound as much as sight."],
     flaws: ["Marked as non-human at a glance — foreign-coded in human capitals where many of their kindred are bonded."],
     subraces: {
@@ -112,6 +121,7 @@ export const RACES = {
     attributeModifiers: { mind: 1, presence: 1, vigor: 1 },
     racialPassives: [{ id: "stoneskin", tier: "uncommon" }],
     innateAbilities: [{ id: "hellfire-bolt", tier: "common" }, { id: "dread-aura", tier: "common" }],
+    lifespan: { adult: 20, elder: 90, max: 120 },
     traits: ["Skin and frame indistinguishable from a refined high-born — passes anywhere at first glance, often strikingly beautiful in a way that disarms.", "Ram-curl horns at the temples are the only outward sign; many hide them under hair, hood, or a courtier's circlet to move freely.", "Born attuned to magic.", "Natural at allure, sympathy, and the long quiet manipulation — disarming before they are read."],
     flaws: ["Shunned and watched by the devout and the temples once their nature is known — but often trusted further than they should be before that moment comes."],
   },
@@ -120,6 +130,10 @@ export const RACES = {
     attributeModifiers: { body: 3, reflex: 2, presence: 1 },
     racialPassives: [{ id: "vampiric", tier: "rare" }, { id: "renewing", tier: "rare" }, { id: "tireless", tier: "rare" }],
     innateAbilities: [{ id: "blood-siphon", tier: "common" }],
+    // Body-frame baseline (mortal-scaled). Most vampires are turned humans whose
+    // aging is SUSPENDED via per-character `agingMode: "ageless"`, not via race
+    // immunity — a re-mortalized vampire would resume ticking on this frame.
+    lifespan: { adult: 18, elder: 90, max: 110 },
     traits: ["Naturally superhuman — swift, strong, undying.", "Night-sighted; does not age."],
     flaws: ["Burns in sunlight and recoils from holy power.", "Hungers for blood — must feed, or weaken."],
     subraces: {
@@ -132,6 +146,7 @@ export const RACES = {
     attributeModifiers: { body: 2, vigor: 2, reflex: 1, mind: -1 },
     racialPassives: [{ id: "renewing", tier: "rare" }, { id: "tireless", tier: "uncommon" }],
     innateAbilities: [{ id: "rending-claws", tier: "common" }, { id: "beast-shift", tier: "common" }],
+    lifespan: { adult: 16, elder: 140, max: 200 },
     traits: ["Shapeshifter — preternatural strength and swift regeneration.", "Heightened senses; reads scent and sound."],
     flaws: ["Grievously wounded by silver.", "The full moon strains control of the beast."],
   },
@@ -167,3 +182,8 @@ export function resolveRace(raceId, subraceId) {
 
 export function raceKit(raceId) { return RACES[raceId] || null; }
 export function isPlayableRace(raceId) { return !!RACES[raceId]; }
+
+// Biological lifespan baseline for a race. Returns { adult, elder, max } years
+// or null for unknown / lore-only kindreds (fae, demon, wyrm) — those carry
+// per-character `agingMode: "out-of-time"` and never tick.
+export function lifespanFor(raceId) { return RACES[raceId]?.lifespan ?? null; }

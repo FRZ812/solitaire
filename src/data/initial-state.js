@@ -104,6 +104,7 @@ export function makeInitialState() {
             origin: null,
             gender: null,
             age: null,
+            agingMode: null,
             attractiveness: null,
             // Unset in limbo — the PLAYER authors their own appearance in the
             // opening interview; the narrator must NOT decide their looks.
@@ -129,7 +130,7 @@ export function makeInitialState() {
           "demon-king": {
             id: "demon-king", kind: "npc",
             name: "The Demon King", race: "demon", gender: "male", profession: "monarch",
-            age: "older than any kingdom",
+            age: null, agingMode: "out-of-time",
             attractiveness: 3,
             appearance: {
               skin: "not flesh — a banked, shifting heat the colour of cooling iron, darker at the edges",
@@ -176,7 +177,7 @@ export function makeInitialState() {
             id: "vale-king-asar", kind: "npc",
             name: "King Asar V of Asalan", race: "human", gender: "male", profession: "monarch",
             origin: "south",
-            age: "in his late fifties",
+            age: 58, agingMode: "mortal",
             attractiveness: 7,
             appearance: {
               skin: "deep brown, sun-warmed",
@@ -200,7 +201,7 @@ export function makeInitialState() {
           "goblin-king": {
             id: "goblin-king", kind: "npc",
             name: "The Goblin King", race: "goblin", gender: "male", profession: "warlord",
-            age: "old, by goblin reckoning — perhaps thirty",
+            age: 30, agingMode: "mortal",
             attractiveness: 4,
             appearance: {
               skin: "ash-grey, almost lichen-coloured",
@@ -223,7 +224,7 @@ export function makeInitialState() {
             id: "selenyan-speaker", kind: "npc",
             name: "Lirilin of the Long Note", race: "elf", gender: "female", profession: "speaker",
             origin: "west",
-            age: "uncountable; older than the city's outer trees",
+            age: null, agingMode: "out-of-time",
             attractiveness: 10,
             appearance: {
               skin: "the colour of unbleached linen",
@@ -246,7 +247,7 @@ export function makeInitialState() {
             id: "glass-spire-master", kind: "npc",
             name: "The High Master of the Glass Spire", race: "human", gender: "male", profession: "sorcerer",
             origin: "east",
-            age: "ancient — perhaps a hundred and forty",
+            age: null, agingMode: "out-of-time",
             attractiveness: 5,
             appearance: {
               skin: "ivory-pale, fine-papered with age",
@@ -268,7 +269,7 @@ export function makeInitialState() {
           "great-wyrm": {
             id: "great-wyrm", kind: "npc",
             name: "Vyrnholt, the Great Wyrm", race: "wyrm", gender: "male", profession: null,
-            age: "older than every kingdom",
+            age: null, agingMode: "out-of-time",
             attractiveness: 7,
             appearance: {
               skin: "smoke-black scale, the size of shields",
@@ -320,7 +321,7 @@ export function makeInitialState() {
             id: "hawthorn-lord", kind: "npc",
             name: "The Hawthorn Lord", race: "fae", gender: "male", profession: "noble",
             origin: "fae",
-            age: "older than the wood",
+            age: null, agingMode: "out-of-time",
             attractiveness: 8,
             appearance: {
               skin: "the colour of frost on bark",
@@ -343,7 +344,7 @@ export function makeInitialState() {
             id: "witch-queen", kind: "npc",
             name: "The Witch-Queen of the Bone Citadel", race: "human", gender: "female", profession: "sorcerer",
             origin: "west",
-            age: "uncertain — the Citadel records eight queens, but says nothing of which",
+            age: null, agingMode: "out-of-time",
             attractiveness: 7,
             appearance: {
               skin: "pale",
@@ -368,7 +369,7 @@ export function makeInitialState() {
             id: "crowsmoor-baron", kind: "npc",
             name: "Baron Halrad of Crowsmoor", race: "human", gender: "male", profession: "noble",
             origin: "central",
-            age: "in his early fifties",
+            age: 52, agingMode: "mortal",
             attractiveness: 5,
             appearance: {
               skin: "tanned, freckled across the nose",
@@ -391,7 +392,7 @@ export function makeInitialState() {
             id: "whitemarch-treasurer", kind: "npc",
             name: "Lord-Treasurer Selia of Whitemarch", race: "human", gender: "female", profession: "noble",
             origin: "central",
-            age: "in her mid-forties",
+            age: 45, agingMode: "mortal",
             attractiveness: 8,
             appearance: {
               skin: "olive, smooth",
@@ -414,7 +415,7 @@ export function makeInitialState() {
             id: "cinder-chapter-master", kind: "npc",
             name: "Brother-Master Anders Yoreld", race: "human", gender: "male", profession: "chapter-master",
             origin: "north",
-            age: "in his late sixties",
+            age: 67, agingMode: "mortal",
             attractiveness: 5,
             appearance: {
               skin: "alabaster, sun-burnt only at the brow",
@@ -437,7 +438,7 @@ export function makeInitialState() {
             id: "stonebrook-hold-father", kind: "npc",
             name: "Hold-Father Druin Ironvein", race: "dwarf", gender: "male", profession: "hold-father",
             origin: "spine-foothills",
-            age: "two hundred and thirty",
+            age: 230, agingMode: "mortal",
             attractiveness: 6,
             appearance: {
               skin: "stone-tan, deeply lined",
@@ -460,7 +461,7 @@ export function makeInitialState() {
             id: "halfborn-matriarch", kind: "npc",
             name: "Matriarch Vela of the Halfborn", race: "half-orc", gender: "female", profession: "matriarch",
             origin: "central",
-            age: "in her early forties",
+            age: 42, agingMode: "mortal",
             attractiveness: 7,
             appearance: {
               skin: "warm grey-tan",
@@ -483,7 +484,7 @@ export function makeInitialState() {
             id: "heron-master", kind: "npc",
             name: "Master Aenya of the Heron", race: "human", gender: "female", profession: "sorcerer",
             origin: "central",
-            age: "in her late sixties",
+            age: 67, agingMode: "mortal",
             attractiveness: 5,
             appearance: {
               skin: "lined, pale-tan",
@@ -506,7 +507,7 @@ export function makeInitialState() {
             id: "the-hag", kind: "npc",
             name: "The Hag of the Cot", race: "human", gender: "female", profession: "witch",
             origin: "north",
-            age: "no one alive remembers her differently",
+            age: null, agingMode: "out-of-time",
             attractiveness: 2,
             appearance: {
               skin: "winter-pale, deeply lined, root-like",
@@ -530,7 +531,7 @@ export function makeInitialState() {
           "king-of-three": {
             id: "king-of-three", kind: "npc",
             name: "The King-of-Three", race: "goblin", gender: "male", profession: "warlord",
-            age: "old for a goblin — perhaps twenty-five",
+            age: 25, agingMode: "mortal",
             attractiveness: 3,
             appearance: {
               skin: "moss-grey, scarred at the cheek",
