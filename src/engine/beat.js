@@ -68,7 +68,7 @@ export function applyBeat(state, beat, options = {}) {
     });
   }
   if (beat.roll) newBeats.push({ id: `r${Date.now()}`, type: "roll", ...beat.roll });
-  if (beat.narration) newBeats.push({ id: `n${Date.now()}`, type: "narration", content: beat.narration, thinking: beat._thinking || null });
+  if (beat.narration) newBeats.push({ id: `n${Date.now()}`, type: "narration", content: beat.narration, thinking: beat._thinking || null, truncated: beat._truncated || false });
 
   const dialogues = Array.isArray(beat.dialogues)
     ? beat.dialogues
