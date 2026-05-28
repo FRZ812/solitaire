@@ -15,7 +15,7 @@
 // Dead characters are NOT removed from the codex — the player can still ask
 // about them, find the grave, hear it from a survivor. `deathDay` flags them.
 
-import { lifespanFor } from "../data/races.js";
+import { effectiveRaceLifespan } from "../data/races.js";
 import { makeRng } from "./town-gen.js";
 
 export const DAYS_PER_YEAR = 360;
@@ -37,7 +37,7 @@ function mortalityImmune(ch) {
 // { elder, max } scaled, or null if the race has no biological baseline
 // (fae/demon/wyrm — those should ride agingMode: "out-of-time" instead).
 export function effectiveLifespan(ch) {
-  const ls = lifespanFor(ch?.race);
+  const ls = effectiveRaceLifespan(ch?.race, ch?.subrace);
   if (!ls) return null;
   const mult = ch.lifespanMultiplier ?? 1.0;
   return { elder: Math.round(ls.elder * mult), max: Math.round(ls.max * mult) };

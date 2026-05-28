@@ -34,8 +34,8 @@ export const RACES = {
     flaws: ["Slow to trust; aloof, and slower to heal than the short-lived."],
     subraces: {
       high: { name: "High Elf", magic: "innate", startingSpells: ["firebolt"], racialPassives: [{ id: "aegis", tier: "rare" }], traits: ["Born to the Art — magic comes as breath."] },
-      wood: { name: "Wood Elf", racialPassives: [{ id: "evasion", tier: "rare" }, { id: "fleet", tier: "uncommon" }], traits: ["Forest-silent; reads the wild like a page."] },
-      drow: { name: "Drow", darkvision: true, attributeModifiers: { reflex: 1 }, innateAbilities: [{ id: "shadowstep", tier: "common" }], racialPassives: [{ id: "evasion", tier: "rare" }], social: "feared", traits: ["Darkvision — sees in pitch black.", "Deep-folk of a matriarchal court."], flaws: ["Sunlight-sensitive: bright day saps and pains them."] },
+      wood: { name: "Wood Elf", lifespan: { adult: 60, elder: 400, max: 550 }, racialPassives: [{ id: "evasion", tier: "rare" }, { id: "fleet", tier: "uncommon" }], traits: ["Forest-silent; reads the wild like a page."] },
+      drow: { name: "Drow", lifespan: { adult: 70, elder: 450, max: 600 }, darkvision: true, attributeModifiers: { reflex: 1 }, innateAbilities: [{ id: "shadowstep", tier: "common" }], racialPassives: [{ id: "evasion", tier: "rare" }], social: "feared", traits: ["Darkvision — sees in pitch black.", "Deep-folk of a matriarchal court."], flaws: ["Sunlight-sensitive: bright day saps and pains them."] },
     },
   },
   dwarf: {
@@ -48,7 +48,7 @@ export const RACES = {
     flaws: ["Ill at ease in open water and high places; no love of the quick or the airy."],
     subraces: {
       hill: { name: "Hill Dwarf", racialPassives: [{ id: "stalwart", tier: "epic" }], traits: ["Hardier still — a deep well of vitality."] },
-      mountain: { name: "Mountain Dwarf", attributeModifiers: { body: 1 }, racialPassives: [{ id: "bulwark", tier: "rare" }], traits: ["Raised to the hauberk; armour sits light on them."] },
+      mountain: { name: "Mountain Dwarf", lifespan: { adult: 45, elder: 280, max: 400 }, attributeModifiers: { body: 1 }, racialPassives: [{ id: "bulwark", tier: "rare" }], traits: ["Raised to the hauberk; armour sits light on them."] },
     },
   },
   halfling: {
@@ -110,10 +110,10 @@ export const RACES = {
     traits: ["Humanoid in body — the ears and tail of their kindred animal are the only outward sign.", "Keen-sensed in the way of their kind; reads a room by scent and sound as much as sight."],
     flaws: ["Marked as non-human at a glance — foreign-coded in human capitals where many of their kindred are bonded."],
     subraces: {
-      feline: { name: "Feline Line", attributeModifiers: { reflex: 1 }, racialPassives: [{ id: "evasion", tier: "uncommon" }], traits: ["Cat-eared and tailed; silent of step.", "Night-sighted in a measure short of the drow's full darkvision."], flaws: ["Restless under confinement; wears down in cages and cells faster than most."] },
-      lupine: { name: "Lupine Line", attributeModifiers: { vigor: 1 }, racialPassives: [{ id: "enduring", tier: "uncommon" }], traits: ["Wolf-eared and tailed; long-paced; nose-keen.", "Pack-instinct — fights harder beside chosen kin."], flaws: ["Falters alone — needs a band, a chosen kin, or a steady purpose to thrive."] },
-      ursine: { name: "Ursine Line", attributeModifiers: { body: 1, vigor: 1, reflex: -1 }, racialPassives: [{ id: "stalwart", tier: "uncommon" }], traits: ["Bear-eared and tailed; broad-framed; heavy in the shoulder.", "Slow to rile, hard to put down."], flaws: ["Cumbersome; not for ambush, city stealth, or close quarters."] },
-      avian: { name: "Avian Line", attributeModifiers: { wit: 1, body: -1 }, racialPassives: [{ id: "swift", tier: "uncommon" }], traits: ["Hawk- or raven-marked: small feathered crests where ears would sit, a fan-tail of feathers, eyes that catch movement at distance.", "Light-boned; quick of hand; eagle-eyed."], flaws: ["Hollow-framed; takes punishment poorly."] },
+      feline: { name: "Feline Line", lifespan: { adult: 14, elder: 40, max: 55 }, attributeModifiers: { reflex: 1 }, racialPassives: [{ id: "evasion", tier: "uncommon" }], traits: ["Cat-eared and tailed; silent of step.", "Night-sighted in a measure short of the drow's full darkvision."], flaws: ["Restless under confinement; wears down in cages and cells faster than most."] },
+      lupine: { name: "Lupine Line", lifespan: { adult: 14, elder: 50, max: 70 }, attributeModifiers: { vigor: 1 }, racialPassives: [{ id: "enduring", tier: "uncommon" }], traits: ["Wolf-eared and tailed; long-paced; nose-keen.", "Pack-instinct — fights harder beside chosen kin."], flaws: ["Falters alone — needs a band, a chosen kin, or a steady purpose to thrive."] },
+      ursine: { name: "Ursine Line", lifespan: { adult: 16, elder: 70, max: 95 }, attributeModifiers: { body: 1, vigor: 1, reflex: -1 }, racialPassives: [{ id: "stalwart", tier: "uncommon" }], traits: ["Bear-eared and tailed; broad-framed; heavy in the shoulder.", "Slow to rile, hard to put down."], flaws: ["Cumbersome; not for ambush, city stealth, or close quarters."] },
+      avian: { name: "Avian Line", lifespan: { adult: 12, elder: 45, max: 60 }, attributeModifiers: { wit: 1, body: -1 }, racialPassives: [{ id: "swift", tier: "uncommon" }], traits: ["Hawk- or raven-marked: small feathered crests where ears would sit, a fan-tail of feathers, eyes that catch movement at distance.", "Light-boned; quick of hand; eagle-eyed."], flaws: ["Hollow-framed; takes punishment poorly."] },
     },
   },
   demonborn: {
@@ -187,3 +187,19 @@ export function isPlayableRace(raceId) { return !!RACES[raceId]; }
 // or null for unknown / lore-only kindreds (fae, demon, wyrm) — those carry
 // per-character `agingMode: "out-of-time"` and never tick.
 export function lifespanFor(raceId) { return RACES[raceId]?.lifespan ?? null; }
+
+// Subrace-specific lifespan override, if declared. Returns { adult, elder, max }
+// or null when the subrace inherits the race default — beastfolk lineages and
+// elf subraces are where this matters most (feline 55, ursine 95, wood 550).
+export function subraceLifespanFor(raceId, subraceId) {
+  const race = RACES[raceId];
+  if (!race || !subraceId || !race.subraces) return null;
+  return race.subraces[subraceId]?.lifespan ?? null;
+}
+
+// Merged biological lifespan — subrace override first, race default fallback.
+// This is the value the aging engine should consult. Null only when the race
+// itself has no biological baseline (lore-only kindreds).
+export function effectiveRaceLifespan(raceId, subraceId) {
+  return subraceLifespanFor(raceId, subraceId) ?? lifespanFor(raceId);
+}
