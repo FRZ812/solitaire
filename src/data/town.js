@@ -205,6 +205,265 @@ export const BUILDINGS = {
       { id: "raw-meat", chance: 0.5, qty: [1, 3],  priceMult: 1.2 },
     ],
   },
+
+  // ===========================================================================
+  // Whitemarch satellites + Ring-1 complement (Wave 3 S1)
+  //
+  // 18 service entries the four Wave-SAT-1 district modules reference:
+  //   - Ring-1 complement (in-city street stalls): apothecary, chandler,
+  //     fishmonger, general-store, leather-worker.
+  //   - Outer Works (north satellite): courier, oath-priest, wall-sergeant.
+  //   - Caravanserai (west satellite): caravanserai-warden, dock-customs-
+  //     officer, embassy-interpreter, money-changer, farrier.
+  //     (dock-customs-officer and embassy-interpreter are authored once here
+  //     and reused by both the Caravanserai surfaces and the originally-
+  //     planned in-city High Quay / Embassy Lane wirings — same id, same
+  //     entry serves both.)
+  //   - Patrician Estate (south satellite): chapel-priest, house-steward,
+  //     marriage-clerk, noble-gate-guard, patron-salon.
+  //
+  // Alphabetised by key. Trade counters carry `kind:"trader"`, modest
+  // `buys`/`stock`, and trader hours; keeper-only/permit/shrine surfaces
+  // carry their own `kind` ("clerk", "gate", "shrine", "salon", "steward",
+  // "warden") and no stock.
+  // ===========================================================================
+
+  apothecary: {
+    id: "apothecary",
+    kind: "trader",
+    label: "Apothecary's Window",
+    keeper: "the apothecary",
+    icon: "healer",
+    hours: { open: 7, close: 19 },
+    buys: ["supply", "material"],
+    blurb: "A hinged shutter onto the lane — jars of rue, valerian, comfrey, wormwood on a careful shelf; a locked drawer below labelled in no hand at all; a brass scale on a thong at her wrist.",
+    stock: [
+      { id: "willow-bark",   chance: 1.0, qty: [3, 6], priceMult: 1.25 },
+      { id: "healing-salve", chance: 0.9, qty: [1, 3], priceMult: 1.3 },
+      { id: "poultice",      chance: 0.8, qty: [1, 3], priceMult: 1.25 },
+      { id: "fever-tonic",   chance: 0.7, qty: [1, 2], priceMult: 1.3 },
+      { id: "blood-staunch", chance: 0.7, qty: [1, 3], priceMult: 1.3 },
+      { id: "antivenom",     chance: 0.5, qty: [1, 2], priceMult: 1.35 },
+    ],
+  },
+
+  "caravanserai-warden": {
+    id: "caravanserai-warden",
+    kind: "warden",
+    label: "Caravan Master's House",
+    keeper: "the caravan-warden",
+    icon: "bldg",
+    hours: { open: 6, close: 20 },
+    blurb: "A square stone house against the west wall — a map-table, a strongbox under the desk, a back room where caravan-masters take tea while she works through their toll. She does not see drovers, only the masters and the city's customs men.",
+  },
+
+  chandler: {
+    id: "chandler",
+    kind: "trader",
+    label: "Chandler's Stall",
+    keeper: "the chandler",
+    icon: "bldg",
+    hours: { open: 6, close: 19 },
+    buys: ["supply", "material"],
+    blurb: "A timber stall on the customs corridor — dipped tallow tapers on twine, beeswax pillars under a separate awning, coils of cotton wick on pegs, a small lamp burning all day to show the brightness of the oil.",
+    stock: [
+      { id: "torch",     chance: 1.0, qty: [4, 10], priceMult: 1.2 },
+      { id: "lamp-oil",  chance: 1.0, qty: [3, 8],  priceMult: 1.2 },
+      { id: "lantern",   chance: 0.7, qty: [1, 3],  priceMult: 1.25 },
+      { id: "tinderbox", chance: 0.8, qty: [1, 4],  priceMult: 1.2 },
+    ],
+  },
+
+  "chapel-priest": {
+    id: "chapel-priest",
+    kind: "shrine",
+    label: "Private Chapel",
+    keeper: "the chapel priest",
+    icon: "bldg",
+    hours: { open: 6, close: 21 },
+    blurb: "A small barrel-vaulted chapel in the south wing — six wooden pews carved with the Drelan wreath, a pale stone altar, a single rose-window of plain leaded glass. The resident priest hears marriages, baptisms, and the quiet funerals that have no public mourners.",
+  },
+
+  courier: {
+    id: "courier",
+    kind: "clerk",
+    label: "Couriers' Post",
+    keeper: "the dispatcher",
+    icon: "bldg",
+    hours: { open: 5, close: 22 },
+    blurb: "A small slate-roofed room hard against the inner wall — a sorted wall of cubby-holes for sealed dispatches, a bench where road-couriers sleep in their boots between runs. She takes a letter for any waypoint between here and the next bridge fort, for a fee, with a counter-seal, only if the destination is on her route-list.",
+  },
+
+  "dock-customs-officer": {
+    id: "dock-customs-officer",
+    kind: "clerk",
+    label: "Customs Back-Office",
+    keeper: "the customs officer",
+    icon: "bldg",
+    hours: { open: 6, close: 20 },
+    blurb: "A stone-floored office of the city's customs staff — manifests stamped, lead seals crimped onto crates, a brass-bound ledger fattening on every wagon-load. Two officers in city livery sit behind a long counter with a scale, a pot of ink, and the patience of men who know every smuggler's first try.",
+  },
+
+  "embassy-interpreter": {
+    id: "embassy-interpreter",
+    kind: "clerk",
+    label: "Interpreters' Bench",
+    keeper: "the interpreter on duty",
+    icon: "bldg",
+    hours: { open: 7, close: 19 },
+    blurb: "An awning-bench where the interpreters sit and trade work — each with a slate listing the tongues they will swear to: eastern steppe-cant, southern beast-folk pidgin, the three western dialects, a half-dozen merchant creoles. Flat fee, same rates posted on Embassy Lane in the city.",
+  },
+
+  farrier: {
+    id: "farrier",
+    kind: "trader",
+    label: "Smith's Lean-To",
+    keeper: "the farrier",
+    icon: "smithy",
+    hours: { open: 6, close: 19 },
+    buys: ["feed", "tool", "material"],
+    blurb: "A lean-to forge against the west yard-wall, blue with the smoke of burning hoof and loud with the ring of the shoeing-hammer — a wheel-jack and a tongue-and-groove bench, a beast cross-tied with one hind hoof up in his lap. Wagon-repair and shoeing both.",
+    stock: [
+      { id: "iron-ingot",     chance: 0.9, qty: [2, 5], priceMult: 1.3 },
+      { id: "hardwood-haft",  chance: 0.8, qty: [2, 4], priceMult: 1.25 },
+      { id: "whetstone",      chance: 0.7, qty: [1, 3], priceMult: 1.25 },
+      { id: "repair-kit",     chance: 0.6, qty: [1, 2], priceMult: 1.3 },
+      { id: "leather-bracers",chance: 0.4, qty: [1, 1], priceMult: 1.3 },
+    ],
+  },
+
+  fishmonger: {
+    id: "fishmonger",
+    kind: "trader",
+    label: "Fishmonger's Bench",
+    keeper: "the fishmonger",
+    icon: "market",
+    hours: { open: 5, close: 16 },
+    buys: ["food"],
+    blurb: "A long slate bench under a canvas slope, sluiced down with quay-water every bell so the blood does not crust — today's catch laid in fern, river-trout, eel cut in lengths, a half-bushel of small silver fish. A wood-mallet within reach for the eels, a tin cup for change, cats waiting at a polite distance.",
+    stock: [
+      { id: "fresh-meat",   chance: 1.0, qty: [2, 6], priceMult: 1.2 },
+      { id: "soup-bones",   chance: 0.7, qty: [2, 5], priceMult: 1.2 },
+      { id: "smoked-ham",   chance: 0.3, qty: [1, 2], priceMult: 1.3 },
+    ],
+  },
+
+  "general-store": {
+    id: "general-store",
+    kind: "trader",
+    label: "Dry-Goods Counter",
+    keeper: "the dry-goods keeper",
+    icon: "market",
+    hours: { open: 6, close: 20 },
+    buys: ["supply", "food", "tool", "material"],
+    blurb: "A narrow shop wedged into a block-corner — sacks of flour, beans, lentils, salt mouth-open on the floor under chalked prices; the upper shelves with jars of pickle, twine on spools, fire-lighters, soap-bars, paper screws of tea. A brass bell over the door, a slate by the till tracking who is owed credit and who is owing.",
+    stock: [
+      { id: "hardtack",           chance: 1.0, qty: [3, 8], priceMult: 1.2 },
+      { id: "trail-rations",      chance: 0.9, qty: [2, 6], priceMult: 1.25 },
+      { id: "rope-hemp",          chance: 0.9, qty: [2, 5], priceMult: 1.2 },
+      { id: "torch",              chance: 0.9, qty: [3, 8], priceMult: 1.2 },
+      { id: "lamp-oil",           chance: 0.8, qty: [2, 6], priceMult: 1.2 },
+      { id: "tinderbox",          chance: 0.8, qty: [1, 4], priceMult: 1.2 },
+      { id: "waterskin",          chance: 0.8, qty: [2, 5], priceMult: 1.2 },
+      { id: "bedroll",            chance: 0.7, qty: [1, 3], priceMult: 1.2 },
+      { id: "chalk-and-charcoal", chance: 0.6, qty: [1, 4], priceMult: 1.2 },
+      { id: "cook-pot",           chance: 0.4, qty: [1, 2], priceMult: 1.25 },
+    ],
+  },
+
+  "house-steward": {
+    id: "house-steward",
+    kind: "steward",
+    label: "Servants' Lane",
+    keeper: "the house steward",
+    icon: "bldg",
+    hours: { open: 5, close: 23 },
+    blurb: "A flagged service lane along the inside of the west wall, just wide enough for two yoked porters to pass — coal-sacks, ice-baskets, laundry-bundles, quiet errands. The steward sits on a stool at the lane-mouth with a slate, marking who came in and what they carried, and which of them left again.",
+  },
+
+  "leather-worker": {
+    id: "leather-worker",
+    kind: "trader",
+    label: "Leatherworker's Shop",
+    keeper: "the leatherworker",
+    icon: "bldg",
+    hours: { open: 7, close: 19 },
+    buys: ["material", "armor", "clothing"],
+    blurb: "A low-beamed shop smelling of oak-bark tan and neat's-foot oil — belts, satchels, harness-strap, and rolled hide on the front-room wall, an awl-board behind the counter with two dozen tools by their handles. A guild-tag in beaten copper hangs over the till.",
+    stock: [
+      { id: "leather-hide",    chance: 1.0, qty: [2, 5], priceMult: 1.25 },
+      { id: "thick-hide",      chance: 0.5, qty: [1, 2], priceMult: 1.3 },
+      { id: "leather-jerkin",  chance: 0.8, qty: [1, 2], priceMult: 1.25 },
+      { id: "leather-bracers", chance: 0.8, qty: [1, 3], priceMult: 1.25 },
+      { id: "studded-leather", chance: 0.4, qty: [1, 1], priceMult: 1.3 },
+      { id: "traveling-cloak", chance: 0.6, qty: [1, 2], priceMult: 1.25 },
+    ],
+  },
+
+  "marriage-clerk": {
+    id: "marriage-clerk",
+    kind: "clerk",
+    label: "Marriage Hall",
+    keeper: "the marriage clerk",
+    icon: "bldg",
+    hours: { open: 8, close: 17 },
+    blurb: "A square room panelled in lighter wood — a long table down the centre for the two families, a sloped desk by the window for the clerk. A sworn officer of the city's marriage registry, retained on annual stipend; banns, dowry-receipts, marriage articles, the appended pages of an heir's settlement, all sealed in russet wax with the Drelan hound.",
+  },
+
+  "money-changer": {
+    id: "money-changer",
+    kind: "trader",
+    label: "Money-Changer's Counter",
+    keeper: "the money-changer",
+    icon: "bldg",
+    hours: { open: 6, close: 20 },
+    buys: ["material"],
+    blurb: "A narrow shop with a brass-grilled counter — a balance-scale, a touchstone in a felt-lined box, a rack of clipping-shears for testing foreign coin. He sits half a step above the floor and reads each coin by weight and acid before he names a rate.",
+    stock: [
+      { id: "iron-ingot",  chance: 0.5, qty: [1, 3], priceMult: 1.4 },
+      { id: "steel-ingot", chance: 0.3, qty: [1, 2], priceMult: 1.4 },
+    ],
+  },
+
+  "noble-gate-guard": {
+    id: "noble-gate-guard",
+    kind: "gate",
+    label: "Estate Gate",
+    keeper: "the gate clerk",
+    icon: "bldg",
+    hours: { open: 6, close: 22 },
+    blurb: "A double-leaf iron gate hung between two pillars of pale ashlar, the bars wrought into the linked-hounds device of House Drelan. Two house-guards in iron-and-russet livery stand under the arch with halberds at rest; a clerk on a stool keeps a ledger of expected callers, names crossed off in pencil as the carriages roll through.",
+  },
+
+  "oath-priest": {
+    id: "oath-priest",
+    kind: "shrine",
+    label: "Wall-Watch Chapel",
+    keeper: "the oath-priest",
+    icon: "bldg",
+    hours: { open: 5, close: 22 },
+    blurb: "A narrow stone chapel built into the inner skin of the wall — two oath-stones, a saint of soldiers' deaths, a board nailed with the names of the patrols that did not come back. The oath-priest hears watch-oaths at the change of every shift; a private oath from a stranger costs a fee the chapel will not write down.",
+  },
+
+  "patron-salon": {
+    id: "patron-salon",
+    kind: "salon",
+    label: "Patron's Salon",
+    keeper: "the Drelan Patroness",
+    icon: "bldg",
+    hours: { open: 10, close: 18 },
+    blurb: "A long room panelled in dark wood, lit by tall windows over the clipped east lawn — chairs in pairs, never in rows, a silver tea-service on a side-table, a lutenist by the window playing something old enough no one need listen. The Patroness receives in the far chair, a small ledger open on her knee.",
+  },
+
+  "wall-sergeant": {
+    id: "wall-sergeant",
+    kind: "gate",
+    label: "Gate Watchpost",
+    keeper: "the wall sergeant",
+    icon: "bldg",
+    hours: { open: 0, close: 24 },
+    blurb: "A low thick-faced watchpost set into the southern wall of the Outer Works, a single iron-shod gate through it. The sergeant on duty keeps a chalked board of who has passed today and where they were said to be going; a pole-mounted bell hangs for the alarm and a smaller hand-bell for traffic.",
+  },
 };
 
 const DEFAULT_HOURS_BY_KIND = {
