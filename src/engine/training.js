@@ -5,6 +5,7 @@
 
 import { ratingFromXp, proficiencyName } from "../data/proficiencies.js";
 import { advanceTime } from "./time.js";
+import { ageState } from "./aging.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
 
 // XP needed to reach a rating (ratingFromXp = floor(sqrt(xp/6)) → xp = 6·r²).
@@ -35,13 +36,10 @@ export function applyTraining(state, profId, cap) {
   const profs = { ...(state.character.proficiencies || {}) };
   profs[profId] = (profs[profId] || 0) + offer.xpGain;
   const time = advanceTime(state.time, offer.hours * 60);
-  return {
-    ok: true,
-    offer,
-    state: {
-      ...state,
-      time,
-      character: { ...state.character, proficiencies: profs, inventory: { ...state.character.inventory, coins } },
-    },
-  };
+  const ag = ageState({
+    ...state,
+    time,
+    character: { ...state.character, proficiencies: profs, inventory: { ...state.character.inventory, coins } },
+  });
+  return { ok: true, offer, state: ag.state };
 }

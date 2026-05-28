@@ -9,6 +9,7 @@
 import { advanceTime } from "./time.js";
 import { coinsToCopper, copperToCoins, formatCopper } from "./economy.js";
 import { spoilState } from "./spoilage.js";
+import { ageState } from "./aging.js";
 import { makeRng } from "./town-gen.js";
 import { TASK_POOL, JOB_POOL, BOARD_REFRESH_DAYS } from "../data/postings.js";
 import { COMPANION_LIST } from "../data/companions.js";
@@ -87,5 +88,8 @@ export function applyDayLabour(state, job) {
   // A stretch of work can carry past a day's turn — spoil any food that's gone off.
   const sp = spoilState(worked);
   if (sp.spoiled.length) summary += ` While you worked, ${sp.spoiled.map((s) => `${s.quantity}× ${s.name}`).join(", ")} spoiled in your pack.`;
-  return { ok: true, summary, state: sp.state };
+  // Age the codex too — a no-op on hours-scale jobs, but defensive for any future
+  // multi-day labour and keeps every time-advance site uniform.
+  const ag = ageState(sp.state);
+  return { ok: true, summary, state: ag.state };
 }

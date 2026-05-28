@@ -10,3 +10,7 @@ scripts/whitemarch-map.png
 
 # Local Claude Code settings (per-machine permissions allowlist, MCP enables, etc.)
 .claude/settings.local.json
+
+# Claude Code isolated agent worktrees (per-session scratch — agents work in
+# these and the harness reclaims them; never artifacts to commit).
+.claude/worktrees/

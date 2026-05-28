@@ -16,6 +16,7 @@ import { resolveRace } from "../data/races.js";
 import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
 import { tierOrder } from "../data/tiers.js";
 import { spoilCarried } from "./spoilage.js";
+import { ageState } from "./aging.js";
 import { applyAttributeChanges, recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
 import { activeWorldPassives } from "./combat-stats.js";
 import { loadOf } from "./weight.js";
@@ -578,8 +579,11 @@ export function applyBeat(state, beat, options = {}) {
       subrace: (kit ? kit.subraceId : (cs.subrace ?? w.subrace ?? null)),
       origin: cs.origin || w.origin,
       profession: cs.profession || w.profession,
-      age: cs.age || w.age,
-      attractiveness: cs.attractiveness || w.attractiveness,
+      gender: cs.gender ?? w.gender,
+      age: cs.age != null ? cs.age : w.age,
+      agingMode: cs.agingMode ?? w.agingMode ?? "mortal",
+      lifespanMultiplier: cs.lifespanMultiplier ?? w.lifespanMultiplier ?? 1.0,
+      attractiveness: cs.attractiveness ?? w.attractiveness,
       appearance: cs.appearance || w.appearance,
       base_appearance: cs.base_appearance || w.base_appearance,
       attributes: character.attributes,
@@ -614,6 +618,20 @@ export function applyBeat(state, beat, options = {}) {
   if (sp.spoiled.length) {
     character.inventory = { ...character.inventory, carried: sp.carried };
     newBeats.push({ id: `spoil${Date.now()}`, type: "spoilage", lines: sp.spoiled.map((s) => `${s.quantity}× ${s.name}`) });
+  }
+
+  // Codex characters age as the clock turns. ageState mutates only the world's
+  // characters map and activates any pre-authored successors of those who died
+  // this tick — it no-ops when no character crosses a year boundary, so it's
+  // safe to call after every beat. Death beats render only when someone died.
+  const ageSnap = ageState({ ...state, time: newTime, world });
+  if (ageSnap.state.world !== world) world = ageSnap.state.world;
+  if (ageSnap.deaths.length) {
+    const lines = ageSnap.deaths.map((d) => {
+      const name = world.codex.characters[d.id]?.name || d.id;
+      return `${name} dies at ${d.age}.`;
+    });
+    newBeats.push({ id: `age${Date.now()}`, type: "passage", lines });
   }
 
   return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created };

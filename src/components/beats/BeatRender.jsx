@@ -307,6 +307,19 @@ export function BeatRender({ beat, onMenu }) {
         </Panel>
       );
 
+    case "passage":
+      // Natural deaths from age, surfaced by engine/aging.js when codex characters
+      // cross their elder ramp during a time-advance. Plain obituary tone — no
+      // strikethrough; these are not refuse, they are people who have died.
+      return (
+        <Panel tone="pale" compact>
+          <div style={{ ...metaStyle, fontSize: "8px", color: "rgba(150, 140, 110, 0.85)", marginBottom: "4px" }}>Passing</div>
+          <div style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.6)", lineHeight: 1.55, fontFamily: fonts.serif, fontStyle: "italic" }}>
+            {beat.lines.map((l, i) => (<div key={i}>{l}</div>))}
+          </div>
+        </Panel>
+      );
+
     case "need_alert":
       return (
         <div className="fade-in" style={{

@@ -4,6 +4,7 @@
 
 import { applyInventoryChanges } from "./inventory.js";
 import { advanceTime } from "./time.js";
+import { ageState } from "./aging.js";
 import { depleteNeeds, getNeedConditions, mergeConditions } from "./needs.js";
 import { tickConditions, conditionMeta } from "../data/conditions.js";
 import { passiveHealVitality } from "./healing.js";
@@ -132,9 +133,9 @@ export function applyRest(state, hours) {
     ? { ...state.world, codex: { ...state.world.codex, characters: restedChars } }
     : state.world;
 
-  return {
-    ok: true,
-    summary,
-    state: { ...state, time, world, character: { ...ch, needs, vitality, resolve, conditions, light } },
-  };
+  // Age the codex too — keeps every time-advance site uniform. A short rest
+  // won't cross a year boundary, but a long stretch (deep wood / convalescence)
+  // could roll over.
+  const ag = ageState({ ...state, time, world, character: { ...ch, needs, vitality, resolve, conditions, light } });
+  return { ok: true, summary, state: ag.state };
 }

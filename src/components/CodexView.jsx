@@ -15,6 +15,30 @@ import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "..
 import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIVES, FUSIONS, RUNES, isFusionRune } from "../data/passives.js";
 import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf, abilityStatLine, abilityReqLine } from "../data/abilities.js";
 import { RACES } from "../data/races.js";
+import { descriptorFor } from "../data/attractiveness.js";
+
+function attractivenessLabel(n) {
+  if (typeof n !== "number") return null;
+  const d = descriptorFor(n);
+  return d ? `${n} / 10 · ${d}` : `${n} / 10`;
+}
+
+// Aging-mode renderer for the character meta line. Only emits a short tag
+// when the mode is non-default ("mortal" stays implicit). Ageless folk display
+// their frozen biological age; power-extended folk show their multiplier.
+function agingModeLabel(mode, ch) {
+  if (!mode || mode === "mortal") return null;
+  if (mode === "ageless") {
+    const a = ch?.age;
+    return a != null ? `ageless · frozen at ${a}` : "ageless";
+  }
+  if (mode === "power-extended") {
+    const m = ch?.lifespanMultiplier;
+    return m != null ? `power-extended ×${Number(m).toFixed(1)}` : "power-extended";
+  }
+  if (mode === "out-of-time") return "out-of-time";
+  return mode;
+}
 
 // Two kinds of content: "lore" you discover in play, and the full "compendium"
 // catalogs that are always complete. The tabstrip divides them visually.
@@ -765,9 +789,14 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
         </div>
       )}
 
-      {kind === "characters" && (entry.age || entry.attractiveness) && (
+      {kind === "characters" && (entry.age != null || entry.gender || entry.attractiveness != null || (entry.agingMode && entry.agingMode !== "mortal")) && (
         <div style={{ fontSize: "12px", color: "rgba(215, 167, 111, 0.7)", marginBottom: "8px", fontFamily: fonts.serif, fontStyle: "italic" }}>
-          {[entry.age, entry.attractiveness].filter(Boolean).join(" · ")}
+          {[
+            entry.age != null ? entry.age : null,
+            entry.gender,
+            attractivenessLabel(entry.attractiveness),
+            agingModeLabel(entry.agingMode, entry),
+          ].filter(Boolean).join(" · ")}
         </div>
       )}
 

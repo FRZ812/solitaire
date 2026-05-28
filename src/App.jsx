@@ -658,7 +658,8 @@ export function Solitaire() {
       character_setup: {
         name: setup.name, bond: setup.bond, attributes: setup.attributes,
         abilities: setup.abilities || [], race: setup.race, subrace: setup.subrace || null,
-        origin: setup.origin, profession: setup.profession, age: setup.age,
+        origin: setup.origin, profession: setup.profession, gender: setup.gender,
+        age: setup.age, agingMode: setup.agingMode, lifespanMultiplier: setup.lifespanMultiplier,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
         base_appearance: setup.base_appearance, knows: setup.knows || [],
       },
@@ -1356,7 +1357,7 @@ export function Solitaire() {
     const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] At ${place} you have just paid the warden ${formatCopper(p.rightsCp)} for the rights to ${p.name}, held for ${p.crime} (${p.desc}). The coin is already settled — do not re-tally it. Play the moment the warden hands them over: who ${p.name} is, how they react, and leave it open for the player to decide their fate (free them, press them to service, ransom them, or take them elsewhere to sell). Don't fabricate combat.`;
+      const msg = `[PLAYER ACTION] At ${place} you have just paid the warden ${formatCopper(p.rightsCp)} for the rights to ${p.name} (${p.gender}, age ${p.age}), held for ${p.crime} (${p.desc}). The coin is already settled — do not re-tally it. Play the moment the warden hands them over: who ${p.name} is in their own voice (gender-matched pronouns), how they react, and leave it open for the player to decide their fate (free them, press them to service, ransom them, or take them elsewhere to sell). Don't fabricate combat.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
@@ -1370,12 +1371,16 @@ export function Solitaire() {
 
   // ----- Slave market (The Block): buying a captive's bond -----
 
-  // Buying a bond is a coin transaction; the custody scene (free, press to
-  // service, ransom, resell) is narrated. Crowsmoor only — never Mirecross.
+  // Buying a bond is a coin transaction; the custody scene is narrated. The
+  // Block is the public sale-platform of Whitemarch's Chain Ward. See the THE
+  // BLOCK passage in src/system-prompt.js for the four paths (keep / ransom /
+  // sell-on / force-release) and the refusal-default behaviour the narrator
+  // follows. Captive.freedom_response carries the per-captive refusal cue.
   async function handleBuyCaptive(c) {
     if (loading || !shopTile) return;
-    if (!(await askConfirm({ title: "Buy a bond", body: `Pay ${formatCopper(c.priceCp)} to the auctioneer for ${c.name}'s bond (${c.origin})? Their fate becomes yours — to free, to keep, or to sell on.`, confirmLabel: "Pay", danger: true }))) return;
-    const r = buyCaptive(state, c);
+    if (!(await askConfirm({ title: "Buy a bond", body: `Pay ${formatCopper(c.priceCp)} to the auctioneer for ${c.name}'s bond (${c.origin})? Their fate becomes yours — keep them in bonded service, ransom them home, sell them on, or force-release them at the gate.`, confirmLabel: "Pay", danger: true }))) return;
+    const tileKey = `${shopTile.x},${shopTile.y}`;
+    const r = buyCaptive(state, c, tileKey);
     if (!r.ok) { setError(r.reason || "You can't pay the auctioneer."); return; }
     const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the block";
     setShopTile(null);
@@ -1385,7 +1390,7 @@ export function Solitaire() {
     const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] At ${place} you have just paid the auctioneer ${formatCopper(c.priceCp)} for the bond of ${c.name} — ${c.origin}, ${c.taken} (${c.desc}). They can ${c.skills}. Their spirit reads as ${c.spirit}. The coin is already settled — do not re-tally it. Play the moment the auctioneer strikes the irons and hands them over: who ${c.name} is in their own voice, how they react to the player given their spirit, and leave it OPEN for the player to decide their fate — free them outright (they may then walk their own road or, if moved, ask to travel with you), keep them in service, ransom them home, or sell them on. Do not have them simply join as a willing companion unless the player earns it. Don't fabricate combat.`;
+      const msg = `[PLAYER ACTION] At ${place} you have just paid the auctioneer ${formatCopper(c.priceCp)} for the bond of ${c.name} (${c.gender}, age ${c.age}) — ${c.origin}, ${c.taken} (${c.desc}). They can ${c.skills}. Their spirit reads as ${c.spirit}. Their freedom_response cue, for if the player offers to free them: ${c.freedom_response}. The coin is already settled — do not re-tally it. Play the moment the auctioneer strikes the irons and hands the writ across: who ${c.name} is in their own voice, how they react to the player given their spirit and history (use the gender-matched pronouns; render the age in prose appropriate to it — a 12-year-old reads as a child, a 64-year-old as old). Follow THE BLOCK in the system prompt for the four paths (keep, ransom, sell on, force-release) and for the refusal-default if the player tests freedom — voice the refusal from the freedom_response cue above, in the captive's own register. Do not narrate them simply walking off into a free life. Don't fabricate combat.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
@@ -2072,6 +2077,7 @@ export function Solitaire() {
               state={state}
               building={building}
               board={board}
+              tileKey={key}
               onBuy={handleBuyCaptive}
               onClose={() => setShopTile(null)}
               loading={loading}

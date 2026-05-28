@@ -27,6 +27,13 @@ export function mergeDiscoveries(existing, incoming) {
         const { attributes, ...rest } = e;
         incoming = rest;
       }
+      // Gender is a HARD field — once set on a character, the narrator cannot
+      // flip it via a later discoveries update (no mid-conversation pronoun
+      // drift). Drop a contradictory gender field; keep everything else.
+      if (kind === "characters" && prev.gender && incoming.gender && prev.gender !== incoming.gender) {
+        const { gender, ...rest } = incoming;
+        incoming = rest;
+      }
       out[kind][e.id] = { ...prev, ...incoming };
       if (isNew) {
         newlyDiscovered.push({ kind, name: e.name, id: e.id });
