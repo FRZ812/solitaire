@@ -57,7 +57,7 @@
 // Rolled deterministically per (tile + refresh window) — see engine/slaves.js.
 // Coin is COPPER. Each entry needs a stable `key`.
 
-import { resolvePoolForMind } from "../engine/attributes.js";
+import { resolvePoolForMind, carryCapacityFor } from "../engine/attributes.js";
 import { bodyWeightForRace } from "../engine/weight.js";
 
 export const CAPTIVE_POOL = [
@@ -128,6 +128,15 @@ export function bondedCodexEntry(captive) {
     bodyWeight: bodyWeightForRace(race),
     ridingOn: null,
     riders: [],
+    // Per-member pack mirroring companions, BUT coins are null — a bonded captive
+    // is property; their coin pool stays with the player. `carried` is what they
+    // bear on the road (their own kit, plus whatever the player loads onto them);
+    // `worn` (above) is their paper-doll. Capacity, overburden, and the transient
+    // carryBonus follow the same rules as companions.
+    inventory: { carried: [], coins: null },
+    carryCapacityMax: carryCapacityFor({ attributes: attrs }),
+    overburdened: false,
+    carryBonus: 0,
     relationship: 0,
     memories: [],
   };

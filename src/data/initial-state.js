@@ -5,6 +5,7 @@ import { RIVERS } from "./rivers.js";
 import { computeSightFrom, computeSightFromRadius } from "../engine/world.js";
 import { bodyWeightForRace } from "../engine/weight.js";
 import { carryCapacityFor } from "../engine/attributes.js";
+import { itemTemplate } from "./catalog.js";
 import { getBiome, BIOMES } from "./biomes.js";
 
 // The player starts inside Whitemarch, at Grain Square in the heart of the
@@ -884,6 +885,25 @@ export function migrateCodex(state) {
     if (ch.lifespanMultiplier === undefined) ch.lifespanMultiplier = 1.0;
     if (ch.gender === undefined) ch.gender = null;
     if (typeof ch.attractiveness === "string") ch.attractiveness = null;
+  }
+  // Per-party-member inventory back-fill: companions/bonded/mounts gain a personal
+  // `carried` pack (and, for companions, a personal coin pouch — bonded captives
+  // and mounts pool with the player). The wanderer already has the canonical
+  // pack/coins on state, so they're excluded; dormant ex-party-members keep their
+  // existing shape and get back-filled on re-recruit. Also filter phantom `worn`
+  // ids — pre-catalog saves may carry thematic strings that aren't real items,
+  // which would crash a paper-doll renderer.
+  for (const ch of Object.values(ownCodex.characters || {})) {
+    if (!ch || ch.id === "wanderer") continue;
+    const isPartyShape = ch.kind === "companion" || ch.kind === "bonded" || ch.kind === "mount";
+    if (!isPartyShape) continue;
+    if (!ch.inventory) {
+      ch.inventory = { carried: [], coins: ch.kind === "companion" ? { copper: 0, silver: 0, gold: 0 } : null };
+    }
+    if (typeof ch.carryCapacityMax !== "number") ch.carryCapacityMax = carryCapacityFor(ch);
+    if (typeof ch.overburdened !== "boolean") ch.overburdened = false;
+    if (typeof ch.carryBonus !== "number") ch.carryBonus = 0;
+    if (Array.isArray(ch.worn)) ch.worn = ch.worn.filter((id) => !!itemTemplate(id));
   }
   return next;
 }
