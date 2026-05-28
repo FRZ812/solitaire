@@ -20,8 +20,8 @@ import { inTheDark, isNight, isLit, isHidden, isBeacon, sightRadius } from "./en
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { applyFusionToItem, fusionOptionsForRune } from "./engine/fusion.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
-import { generateGaol, acceptBounty, buyPrisonerRights } from "./engine/gaol.js";
-import { generateSlaveMarket, buyCaptive } from "./engine/slaves.js";
+import { generateGaol, acceptBounty } from "./engine/gaol.js";
+import { generateSlaveMarket } from "./engine/slaves.js";
 import { partyStanding, recruitOutlook, isRecruited, partyMembers } from "./engine/party.js";
 import { applyTraining, trainingOffer } from "./engine/training.js";
 import { buildingForTile, isBuildingOpen, buildingHours, TRAIN_CAP } from "./data/town.js";
@@ -1343,21 +1343,22 @@ export function Solitaire() {
     if (!r.ok) return;
     setState({ ...r.state, beats: [...r.state.beats, { id: `bty${Date.now()}`, type: "narration", content: `You take the warden's contract on ${b.name} — wanted for ${b.crime}. Dead or alive.` }] });
   }
-  // Buying rights is a coin transaction; the custody scene is narrated.
-  async function handleBuyRights(p) {
+  // Inspecting a prisoner is the start of a CONVERSATION, not a button-click
+  // purchase. The player approaches the cells with the warden; the scene plays
+  // and the player can haggle the rights-fee or walk away. Only when the
+  // narrator emits purchase_rights:{key,agreedPriceCp} does the engine take
+  // the coin and add them to the party as a bonded codex character (beat.js).
+  async function handleInspectRights(p) {
     if (loading || !shopTile) return;
-    if (!(await askConfirm({ title: "Buy prisoner's rights", body: `Pay ${formatCopper(p.rightsCp)} to the warden for the rights to ${p.name} (held for ${p.crime})? Their fate becomes yours.`, confirmLabel: "Pay" }))) return;
-    const r = buyPrisonerRights(state, p);
-    if (!r.ok) { setError(r.reason || "You can't pay the warden."); return; }
     const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the gaol";
     setShopTile(null);
     setError(null);
     setLoading(true);
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You pay the warden for the rights to ${p.name}.` };
-    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You step up to the warden to look closer at ${p.name}.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] At ${place} you have just paid the warden ${formatCopper(p.rightsCp)} for the rights to ${p.name} (${p.gender}, age ${p.age}), held for ${p.crime} (${p.desc}). The coin is already settled — do not re-tally it. Play the moment the warden hands them over: who ${p.name} is in their own voice (gender-matched pronouns), how they react, and leave it open for the player to decide their fate (free them, press them to service, ransom them, or take them elsewhere to sell). Don't fabricate combat.`;
+      const msg = `[INSPECT RIGHTS] At ${place} the player has walked up to the warden's desk to inspect the rights of ${p.name} (key: ${p.key}; ${p.gender}, age ${p.age}), held for ${p.crime} — ${p.desc}. The warden's asking is ${formatCopper(p.rightsCp)} (this is the OPENING price; the player has paid NOTHING yet). Open the scene: the prisoner stands in the cell or is fetched to the desk, the warden reads the charge, names the fee. Voice the prisoner sparingly during inspection — they don't speak unless addressed. The player chats in their own voice across multiple turns; the warden may lower the fee within reason, hold firm, or refuse the sale (rare). Only when a price is AGREED set purchase_rights:{"key":"${p.key}","agreedPriceCp":<final copper>}; the engine takes the coin, files the bonded codex entry, and adds the prisoner to the party. If the player walks away without a deal, just narrate the close and emit nothing. Don't fabricate combat.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
@@ -1369,28 +1370,27 @@ export function Solitaire() {
     }
   }
 
-  // ----- Slave market (The Block): buying a captive's bond -----
+  // ----- Slave market (The Block): inspecting a captive's bond -----
 
-  // Buying a bond is a coin transaction; the custody scene is narrated. The
-  // Block is the public sale-platform of Whitemarch's Chain Ward. See the THE
+  // Inspecting a captive is the start of a CONVERSATION, not a button-click
+  // purchase. The player moves along the line, the Chain Factor reads the
+  // slate, the captive stands counted on the platform; the player can haggle
+  // the bond-price across multiple turns, or walk away. Only when the narrator
+  // emits purchase_captive:{key,agreedPriceCp} does the engine take the coin
+  // and add them to the party as a bonded codex character (beat.js). See THE
   // BLOCK passage in src/system-prompt.js for the four paths (keep / ransom /
-  // sell-on / force-release) and the refusal-default behaviour the narrator
-  // follows. Captive.freedom_response carries the per-captive refusal cue.
-  async function handleBuyCaptive(c) {
+  // sell-on / force-release) and the refusal-default for any freedom offer.
+  async function handleInspectCaptive(c) {
     if (loading || !shopTile) return;
-    if (!(await askConfirm({ title: "Buy a bond", body: `Pay ${formatCopper(c.priceCp)} to the auctioneer for ${c.name}'s bond (${c.origin})? Their fate becomes yours — keep them in bonded service, ransom them home, sell them on, or force-release them at the gate.`, confirmLabel: "Pay", danger: true }))) return;
-    const tileKey = `${shopTile.x},${shopTile.y}`;
-    const r = buyCaptive(state, c, tileKey);
-    if (!r.ok) { setError(r.reason || "You can't pay the auctioneer."); return; }
     const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the block";
     setShopTile(null);
     setError(null);
     setLoading(true);
-    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You pay the auctioneer for ${c.name}'s bond.` };
-    const stateWithPlayer = { ...r.state, beats: [...r.state.beats, playerBeat] };
+    const playerBeat = { id: `p${Date.now()}`, type: "player", content: `You move along the line to look closer at ${c.name}.` };
+    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] At ${place} you have just paid the auctioneer ${formatCopper(c.priceCp)} for the bond of ${c.name} (${c.gender}, age ${c.age}) — ${c.origin}, ${c.taken} (${c.desc}). They can ${c.skills}. Their spirit reads as ${c.spirit}. Their freedom_response cue, for if the player offers to free them: ${c.freedom_response}. The coin is already settled — do not re-tally it. Play the moment the auctioneer strikes the irons and hands the writ across: who ${c.name} is in their own voice, how they react to the player given their spirit and history (use the gender-matched pronouns; render the age in prose appropriate to it — a 12-year-old reads as a child, a 64-year-old as old). Follow THE BLOCK in the system prompt for the four paths (keep, ransom, sell on, force-release) and for the refusal-default if the player tests freedom — voice the refusal from the freedom_response cue above, in the captive's own register. Do not narrate them simply walking off into a free life. Don't fabricate combat.`;
+      const msg = `[INSPECT CAPTIVE] At ${place} the player has moved along the line to inspect ${c.name} (key: ${c.key}; ${c.gender}, age ${c.age}) — ${c.origin}, ${c.taken} (${c.desc}). They can ${c.skills}. Their spirit reads as ${c.spirit}. Their freedom_response cue, for if the player offers to free them: ${c.freedom_response}. The Chain Factor's asking bond is ${formatCopper(c.priceCp)} — this is the OPENING price; the player has paid NOTHING yet. Open the inspection scene: the captive stands counted on the platform, irons heated at the edge, the Factor reads the slate and frames the four-factor appraisal (skills, appearance, rarity, age/condition). Voice the captive sparingly during inspection — they don't speak unless addressed. The player chats in their own voice across multiple turns; the Factor may lower the bond within reason (his floor is a real one), hold firm, or refuse the sale (rare). The captive's freedom_response/refusal-doctrine stays in force for any actual offer of freedom. Only when a price is AGREED and the Factor strikes the irons set purchase_captive:{"key":"${c.key}","agreedPriceCp":<final copper>}; the engine takes the coin, files the bonded codex entry, and adds the captive to the party — narrate the hand-off (irons struck, writ signed, captive falls in line). If the player walks away without a deal, just narrate the close and emit nothing. Don't fabricate combat.`;
       const beat = await callNarrator(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
@@ -2064,7 +2064,7 @@ export function Solitaire() {
               board={board}
               onAccept={handleAcceptBounty}
               onAbandon={handleAbandonTask}
-              onBuyRights={handleBuyRights}
+              onInspectRights={handleInspectRights}
               onClose={() => setShopTile(null)}
               loading={loading}
             />
@@ -2078,7 +2078,7 @@ export function Solitaire() {
               building={building}
               board={board}
               tileKey={key}
-              onBuy={handleBuyCaptive}
+              onInspect={handleInspectCaptive}
               onClose={() => setShopTile(null)}
               loading={loading}
             />

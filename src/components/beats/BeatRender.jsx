@@ -104,6 +104,18 @@ export function BeatRender({ beat, onMenu }) {
             }}>
               {beat.content}
             </div>
+            {beat.truncated && (
+              <div style={{
+                marginTop: "10px",
+                fontFamily: fonts.serif,
+                fontSize: "11px",
+                fontStyle: "italic",
+                color: "rgba(215, 167, 111, 0.55)",
+                letterSpacing: "0.04em",
+              }}>
+                — the narrator was cut short despite a retry. Long-press to rewrite.
+              </div>
+            )}
           </Panel>
         </Pressable>
       );

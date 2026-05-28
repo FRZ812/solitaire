@@ -23,6 +23,9 @@ import { loadOf } from "./weight.js";
 import { buffCarryBonus, buffRideBonus } from "./buffs.js";
 import { COMPANIONS, companionCodexEntry } from "../data/companions.js";
 import { MOUNTS, mountCodexEntry, generateMountName } from "../data/mounts.js";
+import { CAPTIVE_POOL, SLAVE_HIGH_TIER_MIN_CP, bondedCodexEntry } from "../data/slaves.js";
+import { PRISONER_POOL, prisonerCodexEntry } from "../data/gaol.js";
+import { markCaptiveBought } from "./slaves.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
 import { clampRel, MEMORY_CAP } from "./relationships.js";
 
@@ -68,7 +71,7 @@ export function applyBeat(state, beat, options = {}) {
     });
   }
   if (beat.roll) newBeats.push({ id: `r${Date.now()}`, type: "roll", ...beat.roll });
-  if (beat.narration) newBeats.push({ id: `n${Date.now()}`, type: "narration", content: beat.narration, thinking: beat._thinking || null });
+  if (beat.narration) newBeats.push({ id: `n${Date.now()}`, type: "narration", content: beat.narration, thinking: beat._thinking || null, truncated: beat._truncated || false });
 
   const dialogues = Array.isArray(beat.dialogues)
     ? beat.dialogues
@@ -445,6 +448,81 @@ export function applyBeat(state, beat, options = {}) {
         world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
         party = [...party, tmpl.id];
         newBeats.push({ id: `buy${Date.now()}`, type: "recruit", text: `${entry.name}, ${entry.species}, joins your company.` });
+      }
+    }
+  }
+
+  // A captive's bond bought at the Block, after the inspect-haggle-settle scene
+  // closes ([INSPECT CAPTIVE] doctrine, mirror of [APPROACH RECRUIT]). The
+  // narrator names the agreed copper after haggling with the Chain Factor; the
+  // engine takes the coin, files a bonded codex entry (kind "bonded"), adds
+  // them to the party, and marks them off the platform for the rest of the
+  // window. A purchase against an unknown key (a captive who's rolled off the
+  // platform between inspect and settle) is dropped with a narration line; a
+  // purchase the player can't afford is dropped the same way (a narrator bug).
+  if (beat.purchase_captive?.key) {
+    const captive = CAPTIVE_POOL.find((c) => c.key === beat.purchase_captive.key);
+    if (!captive) {
+      newBeats.push({ id: `pcap${Date.now()}`, type: "narration", content: "The Chain Factor checks his slate, frowns — that captive is no longer on the platform." });
+    } else {
+      const list = captive.priceCp || 0;
+      const agreed = Number.isFinite(beat.purchase_captive.agreedPriceCp) ? beat.purchase_captive.agreedPriceCp : list;
+      // Haggle floor 50% of list (the Block's own SLAVE_LOW_PRICE_FLOOR_PCT),
+      // never above list — the Factor will not be talked above his own
+      // asking, nor more than half below it without abandoning the sale.
+      const price = Math.max(Math.round(list * 0.5), Math.min(agreed, list));
+      if (!canAfford(character.inventory.coins, price)) {
+        newBeats.push({ id: `pcap${Date.now()}`, type: "narration", content: "The coin doesn't add up at the table; the Factor sets the writ aside." });
+      } else {
+        const bondedId = `bonded-${captive.key}-${newTime.day}`;
+        if (!party.includes(bondedId)) {
+          character.inventory = { ...character.inventory, coins: copperToCoins(coinsToCopper(character.inventory.coins) - price) };
+          const entry = { ...bondedCodexEntry(captive), id: bondedId };
+          world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [bondedId]: entry } } };
+          // Also mark the captive off the visible roster on the current tile —
+          // the same face shouldn't reappear when the player reopens the menu
+          // before the per-tier window rolls. Tier is read from priceCp so a
+          // re-purchase by key from the static pool slots into the right tier.
+          const cur = world.currentTile;
+          if (cur) {
+            const tileKey = `${cur.x},${cur.y}`;
+            const tier = (captive.priceCp || 0) >= SLAVE_HIGH_TIER_MIN_CP ? "high" : "low";
+            const stateForMark = { ...state, world, time: newTime, character };
+            const marked = markCaptiveBought(stateForMark, { key: captive.key, tier }, tileKey);
+            world = marked.world;
+          }
+          party = [...party, bondedId];
+          newBeats.push({ id: `pcap${Date.now()}`, type: "recruit", bonded: true, text: `${captive.name} is bonded to you and falls in beside the party.` });
+        }
+      }
+    }
+  }
+
+  // A prisoner's rights bought at the gaol, after the inspect-haggle-settle
+  // scene closes ([INSPECT RIGHTS] doctrine, mirror of [INSPECT CAPTIVE]).
+  // The warden's listed fee is the asking; the player may talk it down. The
+  // engine takes the agreed coin, files a bonded codex entry (kind "bonded"),
+  // and adds them to the party. Unknown keys or unaffordable agreements are
+  // dropped with a narration line.
+  if (beat.purchase_rights?.key) {
+    const prisoner = PRISONER_POOL.find((p) => p.key === beat.purchase_rights.key);
+    if (!prisoner) {
+      newBeats.push({ id: `pris${Date.now()}`, type: "narration", content: "The warden checks his ledger, shakes his head — that one's no longer in the cells." });
+    } else {
+      const list = prisoner.rightsCp || 0;
+      const agreed = Number.isFinite(beat.purchase_rights.agreedPriceCp) ? beat.purchase_rights.agreedPriceCp : list;
+      const price = Math.max(Math.round(list * 0.5), Math.min(agreed, list));
+      if (!canAfford(character.inventory.coins, price)) {
+        newBeats.push({ id: `pris${Date.now()}`, type: "narration", content: "The coin doesn't add up at the warden's desk; the writ stays on the table." });
+      } else {
+        const bondedId = `bonded-${prisoner.key}-${newTime.day}`;
+        if (!party.includes(bondedId)) {
+          character.inventory = { ...character.inventory, coins: copperToCoins(coinsToCopper(character.inventory.coins) - price) };
+          const entry = { ...prisonerCodexEntry(prisoner), id: bondedId };
+          world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [bondedId]: entry } } };
+          party = [...party, bondedId];
+          newBeats.push({ id: `pris${Date.now()}`, type: "recruit", bonded: true, text: `${prisoner.name} is given over to you and falls in beside the party.` });
+        }
       }
     }
   }

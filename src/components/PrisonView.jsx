@@ -6,7 +6,7 @@ import { formatCopper, formatCoins } from "../engine/economy.js";
 
 // The gaol: the warden's wanted board (take bounties, dead or alive — settled in
 // the world by the narrator on delivery) and the cells (buy a prisoner's rights).
-export function PrisonView({ state, building, board, onAccept, onAbandon, onBuyRights, onClose, loading }) {
+export function PrisonView({ state, building, board, onAccept, onAbandon, onInspectRights, onClose, loading }) {
   const coins = state.character.inventory.coins;
   const taken = new Set((state.world.quests || []).map((q) => q.id));
   const activeBounties = (state.world.quests || []).filter((q) => q.status === "active" && q.type === "bounty");
@@ -77,7 +77,7 @@ export function PrisonView({ state, building, board, onAccept, onAbandon, onBuyR
         {board.prisoners.map((p) => (
           <Row key={p.id} title={p.name} meta={p.crime} desc={p.desc}
             reward={`rights ${formatCopper(p.rightsCp)}`}
-            action={<ActionButton label="Buy rights" enabled={!loading} onClick={() => onBuyRights(p)} />} />
+            action={<ActionButton label="Approach" enabled={!loading} onClick={() => onInspectRights(p)} />} />
         ))}
         <div style={{ height: "8px" }} />
       </div>
