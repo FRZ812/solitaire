@@ -14,3 +14,4 @@ scripts/whitemarch-map.png
 # Claude Code isolated agent worktrees (per-session scratch — agents work in
 # these and the harness reclaims them; never artifacts to commit).
 .claude/worktrees/
+.wave4-snapshots/

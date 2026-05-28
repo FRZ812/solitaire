@@ -102,8 +102,13 @@ export const BUILDINGS = {
     ],
   },
 
-  prison: {
-    id: "prison",
+  // The warden's desk at the Prison Gate Intake. The engine's [INSPECT RIGHTS]
+  // flow (App.jsx line ~2058, engine/beat.js purchase_rights) keys off
+  // `kind: "gaol"`; the tile at (-3,7) carries `service: "gaol"`, so this
+  // entry must be keyed `gaol` for buildingForTile() to resolve it. (Wave-3
+  // S1 renamed the legacy BUILDINGS key `prison` → `gaol` to match.)
+  gaol: {
+    id: "gaol",
     kind: "gaol",              // the warden: a wanted board + cells
     label: "Prison Gate",
     keeper: "the gaoler",
@@ -204,6 +209,305 @@ export const BUILDINGS = {
       { id: "fodder",   chance: 1.0, qty: [4, 10], priceMult: 1.15 },
       { id: "raw-meat", chance: 0.5, qty: [1, 3],  priceMult: 1.2 },
     ],
+  },
+
+  // ============================================================
+  // Whitemarch district services (Wave-1 districts, Wave-3 S1).
+  // Each entry is the BUILDINGS-side resolution for a tile that
+  // a district module under src/data/whitemarch-districts/ binds
+  // via poi.service. Keepers are atmospheric, not stat-blocks;
+  // the narrator voices them. Gate-keepers, clerks, and priests
+  // carry no `stock` (no trader counter). Cookshop and pawnbroker
+  // are the only true trade-counters in this batch.
+  // ============================================================
+
+  // Noble Rise — the resident priest of the Vaerwynne family chapel.
+  // Restricted to the household: lay sisters and outside petitioners are
+  // not admitted (the public oath flow lives at the Great Oath Steps).
+  "chapel-priest": {
+    id: "chapel-priest",
+    kind: "shrine",
+    label: "Private Chapel",
+    keeper: "Father Edrec",
+    icon: "temple",
+    hours: { open: 6, close: 20 },
+    blurb: "A rose-window throws coloured light onto six carved pews; the priest waits at the rail in a plain stole, the marriage register open behind him on a sloped desk.",
+  },
+
+  // Low Wards — the cheap day-labourer cookshop. A trader counter: a few
+  // hot staples and cheap drink, nothing more.
+  "cookshop-keeper": {
+    id: "cookshop-keeper",
+    kind: "trader",
+    label: "Cheap Cookshop",
+    keeper: "Old Vesh",
+    icon: "bldg",
+    hours: { open: 5, close: 22 },
+    buys: ["food", "drink"],
+    blurb: "A tin counter, a black-iron range, the smell of fried scraps and onion. Porters eat standing up; the keeper knows every face and almost no one's name.",
+    stock: [
+      { id: "hardtack",     chance: 1.0, qty: [3, 8], priceMult: 1.0 },
+      { id: "soup-bones",   chance: 0.9, qty: [2, 5], priceMult: 1.0 },
+      { id: "sausage-links",chance: 0.7, qty: [1, 4], priceMult: 1.05 },
+      { id: "turnips",      chance: 0.8, qty: [2, 6], priceMult: 1.0 },
+      { id: "ale",          chance: 1.0, qty: [3, 8], priceMult: 1.05 },
+    ],
+  },
+
+  // Court Hill — the petition-side advocate's bench. Civic clerk: a writer
+  // of pleas, depositions, and writs for the court above. No trade.
+  "court-advocate": {
+    id: "court-advocate",
+    kind: "clerk",
+    label: "Advocate Cloister",
+    keeper: "Magister Vael Sorne",
+    icon: "hall",
+    hours: { open: 7, close: 18 },
+    blurb: "Advocates work at slope-desks under tall windows, a wall of bound rolls behind them; petitioners wait on a polished bench with their charges in hand and a copper ready for the writing-fee.",
+  },
+
+  // River Docks — the customs officer at the Quay. A gatekeeper for goods:
+  // checks bonds, stamps writs, decides who walks past the rope.
+  "dock-customs-officer": {
+    id: "dock-customs-officer",
+    kind: "gate",
+    label: "Customs Awning",
+    keeper: "Officer Halt Ranner",
+    icon: "dock",
+    hours: { open: 5, close: 21 },
+    blurb: "A plank counter on two barrels under a chain-weighted awning, two awning-guards leaning on their pikes; entry past the rope is by writ, bond, or the officer's nod, and the nod has been bought before.",
+  },
+
+  // Wall Command — the captain of the Dragon-Watch. Restricted; no trade.
+  // The captain reads the day-book and the northern shutters and answers to
+  // the Wall, not the street.
+  "dragon-watch-captain": {
+    id: "dragon-watch-captain",
+    kind: "gate",
+    label: "Dragon-Watch Tower",
+    keeper: "Captain Yoran Tasque",
+    icon: "tower",
+    hours: { open: 0, close: 24 },
+    blurb: "Harpoon-frames stand at the embrasures; signal-mirrors under wool covers, the day-book on a lectern weighted by a spent quarrel. The captain rises only for those his sergeant has already vouched for.",
+  },
+
+  // Foreign Quarter — the embassy interpreter stalls. A civic clerk service:
+  // sworn translators who witness contracts and read foreign writs for a fee.
+  "embassy-interpreter": {
+    id: "embassy-interpreter",
+    kind: "clerk",
+    label: "Interpreter Stalls",
+    keeper: "Dosha of the Three Tongues",
+    icon: "hall",
+    hours: { open: 6, close: 22 },
+    blurb: "Half a dozen booths under a tile awning, each with its language painted on a wooden shingle. Interpreters work seated, a fee-board chalked above each desk, and witness contracts with a stamp and a quiet word in the right ear.",
+  },
+
+  // Great Stable — the farrier's lane. A craftsman service: shoeing, hoof-
+  // care, light tack repair. No mounted-rack stock; the smith handles iron.
+  "farrier": {
+    id: "farrier",
+    kind: "smith",
+    label: "Farrier Lane",
+    keeper: "Marrick the Farrier",
+    icon: "smithy",
+    hours: { open: 6, close: 19 },
+    buys: ["feed", "tool", "material"],
+    blurb: "A portable forge glows on the cobbles; an apprentice leans his weight on the bellows. A horse stands cross-tied with one hind hoof in the farrier's lap, the air thick with the smell of singed horn.",
+    stock: [
+      { id: "iron-ingot",     chance: 0.9, qty: [1, 3], priceMult: 1.3 },
+      { id: "whetstone",      chance: 0.7, qty: [1, 2], priceMult: 1.25 },
+      { id: "repair-kit",     chance: 0.6, qty: [1, 2], priceMult: 1.25 },
+    ],
+  },
+
+  // Court Hill — the Guild Court's License Counter. Civic clerk: issues and
+  // renews trade-licences, witnesses guild oaths, levies the fees. No trade.
+  "guild-court-clerk": {
+    id: "guild-court-clerk",
+    kind: "clerk",
+    label: "Guild Court License Counter",
+    keeper: "Clerk-Master Beren Hask",
+    icon: "hall",
+    hours: { open: 7, close: 17 },
+    blurb: "A long counter of dark oak, a brass licence-stamp on its chain, ledgers in cradles to either hand. Tradesmen queue with their dues counted out in advance; the clerk reads each oath aloud before he stamps.",
+  },
+
+  // Temple Steps — the lay-sisters of the Hospital Cloister. The cloister is
+  // public alms-funded: a sister at the door takes the bowl, finds a cot, and
+  // dispenses what the dispensary can spare. Tends, splints, fevers.
+  "hospital-sister": {
+    id: "hospital-sister",
+    kind: "healer",
+    label: "Hospital Cloister",
+    keeper: "Sister Avelin",
+    icon: "healer",
+    hours: { open: 5, close: 22 },
+    buys: ["material", "food"],
+    blurb: "Whitewashed walls, rope-strung cots in pairs, a kettle of vinegar-water steaming on a charcoal brazier; lay-sisters in pale grey move between the rows with linen rolls and small wooden cups of bitter tea.",
+    stock: [
+      { id: "healing-salve",   chance: 1.0, qty: [1, 3], priceMult: 1.1 },
+      { id: "blood-staunch",   chance: 1.0, qty: [1, 3], priceMult: 1.1 },
+      { id: "willow-bark",     chance: 1.0, qty: [2, 5], priceMult: 1.1 },
+      { id: "poultice",        chance: 0.8, qty: [1, 3], priceMult: 1.15 },
+      { id: "fever-tonic",     chance: 0.6, qty: [1, 2], priceMult: 1.2 },
+    ],
+  },
+
+  // Foreign Quarter — the Matron's Office at the foreign-hostel. A civic
+  // keeper: assigns beds, collects bond-coin, vouches for guests to the
+  // watch. Conditional: a name must be on the day-book before she opens.
+  "hostel-matron": {
+    id: "hostel-matron",
+    kind: "clerk",
+    label: "Matron's Office",
+    keeper: "Matron Iselle Caro",
+    icon: "hall",
+    hours: { open: 6, close: 22 },
+    blurb: "A panelled office off the hostel court; a day-book open on a slope-desk, a key-board behind, a sealing-iron warm on the brazier. The matron reads each name twice before she signs a bed against it.",
+  },
+
+  // Noble Rise — the marriage clerk's writing-room behind the chapel curtain.
+  // Civic clerk service: banns, contracts, dowry-receipts. House-only.
+  "marriage-clerk": {
+    id: "marriage-clerk",
+    kind: "clerk",
+    label: "Chapel Writing-Room",
+    keeper: "Goodwife Anseth Mar",
+    icon: "hall",
+    hours: { open: 8, close: 16 },
+    blurb: "A side-room behind a heavy curtain, lit by a single lamp at a sloped desk; banns and dowry-receipts in a stack, the small marriage register open under the clerk's careful hand.",
+  },
+
+  // Noble Rise — the Noble Gate watch. A pure gatekeeper: house-liveried
+  // guards inside the arch, a city sergeant outside, a brass-plate book
+  // listing today's expected callers. Refuses unpermitted entry.
+  "noble-gate-guard": {
+    id: "noble-gate-guard",
+    kind: "gate",
+    label: "Noble Gate",
+    keeper: "Sergeant-of-Gate Drael Vorn",
+    icon: "gate",
+    hours: { open: 0, close: 24 },
+    blurb: "Two house-liveried guards inside the arch, a city watch-sergeant outside, a clerk at the lectern striking off names as the carriages roll through. Commoners climbing the steps look through the bars and do not stand near long.",
+  },
+
+  // Temple Steps — the oath-priest at the four altars. Public: takes oaths,
+  // reads contracts, marks the wrist (ash, oil, blood, salt). No trade.
+  "oath-priest": {
+    id: "oath-priest",
+    kind: "shrine",
+    label: "Great Oath Steps",
+    keeper: "Priest of the Mark",
+    icon: "temple",
+    hours: { open: 5, close: 21 },
+    blurb: "Four altars along the back wall — ash, oil, blood, salt — and a priest in a pale robe who touches the chosen mark to the inside of the wrist and reads the contract aloud while a temple scribe writes the witness-line.",
+  },
+
+  // Noble Rise — the Patroness's salon. Conditional: a steward announces
+  // petitioners, the Patroness grants or refuses. Atmosphere-only for now.
+  "patron-salon": {
+    id: "patron-salon",
+    kind: "salon",
+    label: "Patron's Salon",
+    keeper: "the Patroness Lady Maerith Vaerwynne",
+    icon: "hall",
+    hours: { open: 10, close: 18 },
+    blurb: "A long dark-panelled room lit by garden windows; chairs in pairs, a silver tea-service on a side-table, the Patroness in the far chair with a small ledger open on her knee.",
+  },
+
+  // Low Wards — the Pawn Stair. A trade-counter: small valuables in,
+  // copper loans out, tagged pledges on the wall. The watch knows.
+  "pawn-broker": {
+    id: "pawn-broker",
+    kind: "trader",
+    label: "Pawn Stair",
+    keeper: "Goodman Kerrith Tace",
+    icon: "bldg",
+    hours: { open: 7, close: 19 },
+    buys: ["weapon", "armor", "tool", "clothing", "material", "supply"],
+    blurb: "A half-door over a counter, a barred grille, a wall of tagged pledges — a soldier's belt-knife, a wedding hoop, a midwife's lamp. The broker reads loans aloud so the queue can witness them.",
+    stock: [
+      { id: "iron-dagger",     chance: 0.6, qty: [1, 2], priceMult: 0.9 },
+      { id: "leather-jerkin",  chance: 0.4, qty: [1, 1], priceMult: 0.9 },
+      { id: "lantern",         chance: 0.5, qty: [1, 1], priceMult: 0.9 },
+      { id: "traveling-cloak", chance: 0.4, qty: [1, 1], priceMult: 0.9 },
+      { id: "manacles",        chance: 0.3, qty: [1, 1], priceMult: 0.9 },
+      { id: "lockpicks",       chance: 0.3, qty: [1, 1], priceMult: 1.0 },
+    ],
+  },
+
+  // Low Wards — the Back-Court Well elder. Atmosphere-only: presides over
+  // the court's unofficial meeting hall, decides whose bucket goes down next.
+  "pump-elder": {
+    id: "pump-elder",
+    kind: "salon",
+    label: "Back-Court Well",
+    keeper: "Mother Pell",
+    icon: "bldg",
+    hours: { open: 5, close: 21 },
+    blurb: "A round-mouthed stone well with a chipped saint at its lip; the elder sits on the polished bench with the rope across her knees and decides who in the ward is listened to today.",
+  },
+
+  // Grain Ward — the Ration Office. Civic clerk: certificates of need,
+  // hardship-rations against the city's stores. Conditional access.
+  "ration-clerk": {
+    id: "ration-clerk",
+    kind: "clerk",
+    label: "Ration Office",
+    keeper: "Clerk Onna Vesk",
+    icon: "hall",
+    hours: { open: 7, close: 16 },
+    blurb: "A counter of pale plank, a stamp-block, a ledger of names against a city tally; petitioners bring their writ of need and leave with a chit for grain, salt, or oil from the storehouse next door.",
+  },
+
+  // Great Stable — the Remount Pen officer. Restricted: military beasts,
+  // brand-sorted, the officer rejects expensive lies for a living. No trade.
+  "remount-pen-officer": {
+    id: "remount-pen-officer",
+    kind: "gate",
+    label: "Remount Pen",
+    keeper: "Remount-Master Halric Voss",
+    icon: "bldg",
+    hours: { open: 5, close: 20 },
+    blurb: "A square pen of stout oak rails with a locked gate and a city-crest plate above it; the officer sits at a counter under a tile awning with a stack of ledgers and a brass scale for coin and oats both.",
+  },
+
+  // Iron Quarter — the State Foundry foreman at the Work Yard. Restricted
+  // access to the foundry itself; the foreman signs for delivered work from
+  // the public row and occasionally releases surplus arms to vetted buyers.
+  "state-foundry-foreman": {
+    id: "state-foundry-foreman",
+    kind: "gate",
+    label: "Iron Quarter Work Yard",
+    keeper: "Foreman Olras Vekt",
+    icon: "smithy",
+    hours: { open: 6, close: 19 },
+    blurb: "A standing-desk under the foundry chimneys, a tally-board, a wooden box of charcoal chits; the foreman signs for delivered work from the public row and refuses to discuss anything beyond it.",
+  },
+
+  // Temple Steps — the temple scribe-desk in the cloister side-room. Civic
+  // clerk: protection-letters, burial-papers, witness-lines for the oaths.
+  "temple-scribe": {
+    id: "temple-scribe",
+    kind: "clerk",
+    label: "Temple Scribe Desk",
+    keeper: "Brother Calen",
+    icon: "hall",
+    hours: { open: 6, close: 20 },
+    blurb: "A sloped desk in a curtained alcove, a pot of oak-gall ink and a row of cut quills; the scribe writes the witness-line in a heavy book and draws up protection-letters and burial-papers for those too weak to climb to the plaza.",
+  },
+
+  // Foreign Quarter — the Treaty Inn's keeper. The diplomatic inn: longer
+  // hours than a common house, sworn-neutral ground, foreign coin accepted.
+  "treaty-inn-keeper": {
+    id: "treaty-inn-keeper",
+    kind: "tavern",
+    label: "Treaty Inn",
+    keeper: "Goodman Aldric Cael",
+    icon: "bldg",
+    hours: { open: 6, close: 2 },
+    blurb: "A long common room with banners of three crowns hung along the rafters, a board by the door in four languages, and a keeper who sets the right coin against the right ledger without asking which side of which border the trade crossed.",
   },
 };
 
