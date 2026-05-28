@@ -438,7 +438,7 @@ Every new NPC entry MUST include:
 - lifespanMultiplier: float — only emit if agingMode === "power-extended" (e.g. Archmage 3.0, lich-adept 5.0).
 - attractiveness: integer 1–10 (see ATTRACTIVENESS — a numeric hard field below). Do NOT emit a freeform descriptor.
 - appearance: structured object — { skin, hair, eyes, build, facial_hair (or null), marks (or null) }. Populate from the cultural template plus individual variation.
-- base_appearance: narrative summary in 1-2 sentences, weaving the structured fields into evocative prose.
+- base_appearance: narrative summary in 1-2 sentences, weaving the structured fields into evocative prose. BODY ONLY — physical features, build, bearing, marks. Do NOT name worn items, weapons, robes, or carried gear in base_appearance; the worn[] array carries that and the codex composes it separately (see "Total appearance" below).
 - attributes: {body, reflex, vigor, mind, wit, presence} — reflect the character's nature
 - worn: [itemIds] — ALL visible gear (weapons, tools, armor, clothing, jewelry)
 - knows: [initial facts] — what they personally know on first encounter
