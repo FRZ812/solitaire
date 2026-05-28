@@ -224,7 +224,7 @@ export function makeInitialState() {
             id: "selenyan-speaker", kind: "npc",
             name: "Lirilin of the Long Note", race: "elf", gender: "female", profession: "speaker",
             origin: "west",
-            age: null, agingMode: "out-of-time",
+            age: 1800, agingMode: "power-extended", lifespanMultiplier: 5.0,
             attractiveness: 10,
             appearance: {
               skin: "the colour of unbleached linen",
@@ -247,7 +247,7 @@ export function makeInitialState() {
             id: "glass-spire-master", kind: "npc",
             name: "The High Master of the Glass Spire", race: "human", gender: "male", profession: "sorcerer",
             origin: "east",
-            age: null, agingMode: "out-of-time",
+            age: 140, agingMode: "power-extended", lifespanMultiplier: 3.0,
             attractiveness: 5,
             appearance: {
               skin: "ivory-pale, fine-papered with age",
