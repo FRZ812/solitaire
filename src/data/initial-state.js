@@ -663,11 +663,21 @@ export function migrateCodex(state) {
   if (next.world.seen) next.world.seen = revealWhitemarch(next.world.seen);
   // Weight + riding (added with mounts): back-fill the per-character fields so old
   // saves load. carryCapacityMax for the player is (re)derived in App's load path.
+  // Pass A/B/C fields (gender, attractiveness, age, agingMode, lifespanMultiplier):
+  // back-fill defaults so an older save's codex doesn't trip the new engine paths.
+  // Crucially, a saved character whose `age` is still a freeform STRING (pre-Pass C)
+  // would break ageOne's `(cur.age || 0) + 1` arithmetic — coerce to null so the
+  // aging engine treats them as un-aged until the narrator next refers to them.
   for (const ch of Object.values(ownCodex.characters || {})) {
     if (!ch) continue;
     if (typeof ch.bodyWeight !== "number") ch.bodyWeight = bodyWeightForRace(ch.race);
     if (ch.ridingOn === undefined) ch.ridingOn = null;
     if (!Array.isArray(ch.riders)) ch.riders = [];
+    if (typeof ch.age === "string") ch.age = null;
+    if (ch.agingMode === undefined) ch.agingMode = "mortal";
+    if (ch.lifespanMultiplier === undefined) ch.lifespanMultiplier = 1.0;
+    if (ch.gender === undefined) ch.gender = null;
+    if (typeof ch.attractiveness === "string") ch.attractiveness = null;
   }
   return next;
 }

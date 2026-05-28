@@ -9,6 +9,7 @@
 import { advanceTime } from "./time.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
 import { spoilState } from "./spoilage.js";
+import { ageState } from "./aging.js";
 import { itemTemplate } from "../data/catalog.js";
 import { TIERS, tierOrder, tierMult, tierLabel } from "../data/tiers.js";
 

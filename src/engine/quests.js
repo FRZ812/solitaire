@@ -9,6 +9,7 @@
 import { advanceTime } from "./time.js";
 import { coinsToCopper, copperToCoins, formatCopper } from "./economy.js";
 import { spoilState } from "./spoilage.js";
+import { ageState } from "./aging.js";
 import { makeRng } from "./town-gen.js";
 import { TASK_POOL, JOB_POOL, BOARD_REFRESH_DAYS } from "../data/postings.js";
 import { COMPANION_LIST } from "../data/companions.js";
