@@ -197,6 +197,7 @@ export function makeInitialState() {
               "My grandfather signed the trade-peace with Tellmar; I will not be the one to break it.",
             ],
             at: { x: -30, y: 150, day: 0 }, home: { x: -30, y: 150 }, // his seat at Asalan (engine/positions.js)
+            successor_id: "vale-king-asar-vi",
           },
           "goblin-king": {
             id: "goblin-king", kind: "npc",
@@ -387,6 +388,7 @@ export function makeInitialState() {
               "Every gibbet-name posted at the West Gate is mine to put up and take down.",
               "Whitemarch pays the road-toll; I pay them in patrols.",
             ],
+            successor_id: "crowsmoor-baron-heir",
           },
           "whitemarch-treasurer": {
             id: "whitemarch-treasurer", kind: "npc",
@@ -410,6 +412,7 @@ export function makeInitialState() {
               "Every iron-shilling minted here is recorded under one of seven hundred contracts.",
               "The Counting House is the city; the Palace is its conscience.",
             ],
+            successor_id: "whitemarch-treasurer-halen",
           },
           "cinder-chapter-master": {
             id: "cinder-chapter-master", kind: "npc",
@@ -433,6 +436,7 @@ export function makeInitialState() {
               "I have stood close enough to a wyrm to feel its breathing weight the air.",
               "The Hearth has not gone out in eight generations; it will not go out in mine.",
             ],
+            successor_id: "cinder-chapter-master-tovar",
           },
           "stonebrook-hold-father": {
             id: "stonebrook-hold-father", kind: "npc",
@@ -456,6 +460,7 @@ export function makeInitialState() {
               "I have shod the same forge for ninety-one years.",
               "The Council outvotes me half the time. That is the system working.",
             ],
+            successor_id: "stonebrook-hold-father-korro",
           },
           "halfborn-matriarch": {
             id: "halfborn-matriarch", kind: "npc",
@@ -479,6 +484,7 @@ export function makeInitialState() {
               "Every Halfborn here came from a coffle. I remember the coffles.",
               "The Hold is open by day and watched by night. That has not changed in my term and it will not.",
             ],
+            successor_id: "halfborn-matriarch-elect-brann",
           },
           "heron-master": {
             id: "heron-master", kind: "npc",
@@ -502,6 +508,7 @@ export function makeInitialState() {
               "Apprenticeship at this tower is seven years, minimum. Six have left in the first year. One stayed.",
               "I write to the Spire's High Master four times a year. He writes back twice.",
             ],
+            successor_id: "heron-master-apprentice",
           },
           "the-hag": {
             id: "the-hag", kind: "npc",
@@ -549,6 +556,205 @@ export function makeInitialState() {
               "Three bands wanted this hollow. I have it.",
               "If I bring a head to Brokenhold once a year I am left alone.",
             ],
+          },
+
+          // -------- Successors (named heirs to active seats; activeAsLeader flips on predecessor death) --------
+          // Pre-authored 1-deep heirs to the top-tier mortal seats. Each entry is
+          // a real person already living and serving in the parent's shadow —
+          // codex-readable from day one, narrator-stageable on the day the
+          // predecessor's deathDay fires. `activeAsLeader: false` until then;
+          // `successor_id: null` (no second-deep chain — beyond this the narrator
+          // improvises). Coordinates match the predecessor's seat; where the
+          // predecessor lacks `at`/`home`, the successor's coords are derived
+          // from the relevant biome / faction geography.
+
+          "vale-king-asar-vi": {
+            id: "vale-king-asar-vi", kind: "npc",
+            name: "Prince Asar of Asalan", race: "human", gender: "male", profession: "noble",
+            origin: "south",
+            age: 32, agingMode: "mortal",
+            attractiveness: 7,
+            appearance: {
+              skin: "deep brown, less weathered than his father's",
+              hair: "black, oiled, combed back from a high brow",
+              eyes: "dark amber, like his father, but quicker to settle on a thing",
+              build: "tall, upright — the riding-injury skipped a generation",
+              facial_hair: "a close-trimmed beard, edged sharp at the cheek",
+              marks: "no scars; a heavy southern signet on the left forefinger",
+            },
+            base_appearance: "Tall and upright. Deep-brown skin not yet weathered. Black hair combed back. Quick amber eyes. A close-trimmed beard edged sharp. A heavy signet on the left forefinger.",
+            description: "Sixth of his name in waiting — the heir, the eldest son, named to the throne since the cradle. Reads every petition his father has tired of by mid-morning and holds court for them himself in the Lesser Hall, with the Privy Council's younger faction at his shoulder. Trained in administration since fifteen, in southern letters since eight, in the slow patience of his father since never quite enough. Asar V signed a trade-peace with Tellmar and lives by it; Asar VI has already taken three meetings about reopening the question. Sharper than his father in council, hungrier at table, less inclined to leave a slight to settle in the dark.",
+            attributes: { body: 5, reflex: 6, vigor: 6, mind: 10, wit: 12, presence: 11 },
+            worn: ["heir's-circlet", "royal-red-half-robe", "court-sword"],
+            knows: [
+              "I have read every petition my father has put aside. I do not put them aside.",
+              "The Privy Council is older than I am. Half of it will be younger than I am within five years.",
+              "Tellmar's trade-peace is my grandfather's signature, not mine.",
+            ],
+            at: { x: -30, y: 150, day: 0 }, home: { x: -30, y: 150 },
+            activeAsLeader: false, successor_id: null,
+          },
+
+          "halfborn-matriarch-elect-brann": {
+            id: "halfborn-matriarch-elect-brann", kind: "npc",
+            name: "Brann the Iron-Tongue", race: "half-orc", gender: "female", profession: "matriarch",
+            origin: "central",
+            age: 38, agingMode: "mortal",
+            attractiveness: 6,
+            appearance: {
+              skin: "grey-green, paler at the throat where the collar sat",
+              hair: "dark red-brown, shorn close on the right side, long-braided on the left",
+              eyes: "dark amber, level",
+              build: "shorter than Vela, wider at the shoulder; a wrestler's frame",
+              facial_hair: "none",
+              marks: "old chain-mark at the throat — kept visible like Vela's; a notched lower tusk on the left",
+            },
+            base_appearance: "Shorter than Vela, wider at the shoulder. Grey-green skin paler at the throat where the collar sat. Dark red-brown hair shorn close on the right, long-braided on the left. Level amber eyes. The old chain-mark at the throat. A notched lower tusk on the left.",
+            description: "Named, not yet elected. Came out of a Crown coffle at eleven, walked four hundred miles to the Hold at twelve, helped break the third war-band at twenty-six and lost the use of two fingers doing it. Voices the elder women of the Hold in Council and the Iron-Tongue is what they call her there — she will say the harder thing in plain words while the rest of the table is still finding the gentler one. Vela trusts her with the night-watch rota and the slaver-prisoner interviews, which is to say with the parts of the work that have to be done by someone who has been on both sides of the chain. Less forgiving than Vela of the slaver who turns up at the gate with a sack of silver and an apology; she would hang the third one in a week where Vela hanged the seventh in a year.",
+            attributes: { body: 11, reflex: 7, vigor: 11, mind: 8, wit: 9, presence: 10 },
+            worn: ["matriarch-elect's-sash", "iron-braid-ring", "two-handed-maul"],
+            knows: [
+              "I was eleven when they put the collar on. I was twelve when I took it off.",
+              "Vela has hanged seven slavers in a year. I would have hanged the third.",
+              "The Council is older than my coffle-mark. It will not be older than my term.",
+            ],
+            at: { x: 10, y: 4, day: 0 }, home: { x: 10, y: 4 },
+            activeAsLeader: false, successor_id: null,
+          },
+
+          "stonebrook-hold-father-korro": {
+            id: "stonebrook-hold-father-korro", kind: "npc",
+            name: "Korro Stoneholt", race: "dwarf", subrace: "mountain", gender: "male", profession: "hold-father",
+            origin: "spine-foothills",
+            age: 180, agingMode: "mortal",
+            attractiveness: 6,
+            appearance: {
+              skin: "stone-tan, less lined than Druin's, weathered around the eyes",
+              hair: "iron-black going to slate at the temples, cropped at the shoulder",
+              eyes: "slate-grey, slow to blink",
+              build: "thick through the chest, shorter than Druin by a hand",
+              facial_hair: "a forked beard banded with two iron rings — no silver yet",
+              marks: "a long burn-scar down the right forearm from a vat-burst forty years ago",
+            },
+            base_appearance: "Thick through the chest, shorter than Druin by a hand. Stone-tan skin weathered around the eyes. Iron-black hair going to slate. Slow slate-grey eyes. A forked beard banded with two iron rings. A long burn-scar down the right forearm.",
+            description: "Council-Master of Stonebrook these eleven years — Druin's named potential, the man the vote will fall to when the Hold-Father's chair empties. A mountain dwarf from the upper Spine seams, not the river-valley line Druin came up through, and the older Stonebrook councillors have not forgiven him the geography. Reads ledgers Druin signs without looking, and Druin knows it. Where Druin is patient with the Council, Korro is patient with no one — he is the man who will say no when Druin would have said yes, and the Hold knows it, which is part of why they will elect him and part of why some of them will not sleep well the night they do.",
+            attributes: { body: 9, reflex: 5, vigor: 11, mind: 10, wit: 9, presence: 8 },
+            worn: ["council-master's-mantle", "leather-apron", "ledger-and-stylus", "iron-hammer-of-the-seam"],
+            knows: [
+              "I have read every contract Druin has signed for eleven years. He signs them. I read them.",
+              "I came down from the upper seams. The river-valley dwarves remember it every council.",
+              "Druin says yes too often. I will not have that problem.",
+            ],
+            at: { x: 35, y: 20, day: 0 }, home: { x: 35, y: 20 },
+            activeAsLeader: false, successor_id: null,
+          },
+
+          "whitemarch-treasurer-halen": {
+            id: "whitemarch-treasurer-halen", kind: "npc",
+            name: "Halen Vossane", race: "human", gender: "female", profession: "noble",
+            origin: "central",
+            age: 35, agingMode: "mortal",
+            attractiveness: 7,
+            appearance: {
+              skin: "olive, smooth, well-kept",
+              hair: "chestnut-brown, drawn back in a single plait",
+              eyes: "hazel, fast-reading like Selia's",
+              build: "average height, slim, very neat",
+              facial_hair: "none",
+              marks: "ink-stains at both cuffs — Selia keeps hers at the right only",
+            },
+            base_appearance: "Average height and very neat. Olive skin. Chestnut-brown hair in a single plait. Fast-reading hazel eyes. Ink-stains at both cuffs.",
+            description: "One of Selia's three deputies and the one Selia trusts with the southern accounts — Asalan tariffs, the Hollow Coast bond-leases, the long ledger of who in Tellmar owes Whitemarch which favour. Came up through the Counting House from a tally-clerk's stool at sixteen; never held a sword, never crossed a wall. Reads ledgers the way Selia reads them, with the same finger-running attention and the same near-permanent inkstain — though Selia keeps hers at the right cuff and Halen has them at both, which the older clerks have a quiet joke about. Where Selia uses the ledger as conscience, Halen uses it as leverage; she has a sharper sense than her master of which contract leaned on at the right moment will fold a southern house without ever drawing the Watch. The Counting House call her the Quiet Knife behind her back, and she has heard it, and does not mind.",
+            attributes: { body: 3, reflex: 5, vigor: 5, mind: 12, wit: 13, presence: 9 },
+            worn: ["deputy's-tabard", "black-half-robe", "deputy's-sealring", "tally-stylus"],
+            knows: [
+              "I keep the southern accounts. Selia signs them; I read them first.",
+              "A contract leaned on at the right moment folds a house. The Watch never needs to know.",
+              "They call me the Quiet Knife in the Counting House. I have heard it. I do not mind.",
+            ],
+            at: { x: 0, y: 4, day: 0 }, home: { x: 0, y: 4 },
+            activeAsLeader: false, successor_id: null,
+          },
+
+          "cinder-chapter-master-tovar": {
+            id: "cinder-chapter-master-tovar", kind: "npc",
+            name: "Brother-Lieutenant Tovar Eldred", race: "human", gender: "male", profession: "chapter-master",
+            origin: "north",
+            age: 50, agingMode: "mortal",
+            attractiveness: 6,
+            appearance: {
+              skin: "weather-burnt fair, freckled across the bridge of the nose",
+              hair: "sandy-brown going grey at the temples, cut to the collar",
+              eyes: "grey-blue, patient",
+              build: "broad, square, hands roughened from rein and lance",
+              facial_hair: "a short brown beard, neatly clipped",
+              marks: "a wyrm-burn down the back of the right hand, smaller than Anders' face-scar — he has been close to a wyrm once, not four times",
+            },
+            base_appearance: "Broad and square. Weather-burnt fair skin freckled across the nose. Sandy-brown hair going grey at the temples. Patient grey-blue eyes. A short brown beard. A wyrm-burn down the back of the right hand.",
+            description: "Anders Yoreld's named lieutenant these twelve years and the Chapter's drill-master for nine before that. Walked north once in his prime; felt a wyrm's breathing weight the air once, took the burn on the back of the hand for his trouble, and has been content with the once. Where Anders is severe — would have a brother flogged for a slack girth-strap and then ride him to the wyrm-fall the same day — Tovar is patient: he will let the same fault stand twice before he speaks to it, and speaks then in a voice that gives the brother room to mend it without losing face. The senior brothers count this a virtue; the older ones, the ones who walked north with Anders three times, count it the thing that will kill the Chapter when the next wyrm comes south. Both are probably right.",
+            attributes: { body: 8, reflex: 7, vigor: 8, mind: 7, wit: 8, presence: 9 },
+            worn: ["bronze-half-mask", "fire-blackened-cloak", "dragon-lance", "drill-master's-baton"],
+            knows: [
+              "I have stood close enough to a wyrm to feel its breathing weight the air. Once.",
+              "Anders would have flogged the brother for the slack girth-strap. I let it stand.",
+              "The Hearth has not gone out in eight generations. It will not go out in mine either.",
+            ],
+            at: { x: 20, y: -20, day: 0 }, home: { x: 20, y: -20 },
+            activeAsLeader: false, successor_id: null,
+          },
+
+          "crowsmoor-baron-heir": {
+            id: "crowsmoor-baron-heir", kind: "npc",
+            name: "Lady Anwen of Crowsmoor", race: "human", gender: "female", profession: "noble",
+            origin: "central",
+            age: 25, agingMode: "mortal",
+            attractiveness: 7,
+            appearance: {
+              skin: "tanned, freckled like her father across the nose",
+              hair: "dark brown, long, plaited back for riding",
+              eyes: "grey, like Halrad's, and steadier than his",
+              build: "tall, lean, rider's hips",
+              facial_hair: "none",
+              marks: "a thin white scar at the right jaw from a bolt that came too close on the eastern road",
+            },
+            base_appearance: "Tall and lean. Tanned skin freckled across the nose. Dark brown hair plaited back. Steady grey eyes. A thin white scar at the right jaw.",
+            description: "Halrad's elder daughter, raised inside the Wardens' barracks rather than the hall above the Temple — her father wanted her to know the ledgers from the militia end first, and she has. Captain of the East Gate patrol at twenty-two; knows every reeve in the Reach by first name, knows which of them takes a cut off the road-toll and which only takes a cup of ale and a meal. Rides the road herself most weeks; rides it in the saddle, not the carriage. The arrangement with Whitemarch — the toll, the patrols, the iron-wagons through to the Spine — was Halrad's slow work over twenty years; Anwen has already had two meetings with the Counting House about reading the terms again, with the road-tolls being what they are and the Reach being hungrier than it used to be. Honest by inclination, hungry by necessity, and more willing than her father to let the second feed the first.",
+            attributes: { body: 6, reflex: 7, vigor: 6, mind: 7, wit: 8, presence: 8 },
+            worn: ["warden-brown-half-cloak", "iron-pinned-jerkin", "warden-captain's-sword", "rider's-gloves"],
+            knows: [
+              "I have ridden the East Gate patrol three years. I know which reeves take a cup, and which take a cut.",
+              "My father's road-toll arrangement is twenty years old. I have read it twice this season.",
+              "Whitemarch pays in patrols. Patrols cost more than they did when my father drew the contract.",
+            ],
+            at: { x: 30, y: 0, day: 0 }, home: { x: 30, y: 0 },
+            activeAsLeader: false, successor_id: null,
+          },
+
+          "heron-master-apprentice": {
+            id: "heron-master-apprentice", kind: "npc",
+            name: "Naela of the Heron", race: "human", gender: "female", profession: "sorcerer",
+            origin: "central",
+            age: 33, agingMode: "mortal",
+            attractiveness: 6,
+            appearance: {
+              skin: "pale-tan, smooth, indoor-kept",
+              hair: "dark brown, plaited tight to the skull, plait to the small of the back",
+              eyes: "dark grey, slow like her master's",
+              build: "thin, upright, narrow-shouldered",
+              facial_hair: "none",
+              marks: "ink-stains down the side of the right hand from heel to little finger — seven years of copy-work",
+            },
+            base_appearance: "Thin and upright, narrow-shouldered. Pale-tan smooth skin. Dark brown hair plaited tight to the skull, plait to the small of the back. Slow dark-grey eyes. Ink-stains down the side of the right hand.",
+            description: "Seven years with Aenya — the one out of three who stayed. The other two left in the first winter; Naela came back from the first winter with chilblains and a fair copy of the second Heron grammar, and Aenya did not throw her out, which at the Heron Tower is the formal decision. Quiet by training and by inclination. Has bound a witchlight three hundred times now; has bound a binding-sigil twice, both under her master's hand. Will not be Aenya — Aenya took the tower at thirty-six and held it thirty-one years through plain refusal of every applicant who did not deserve it; Naela has already accepted two of three pre-apprentice letters in the past year that Aenya would have set aside without reading, and her master has noticed. Whether that is generosity or the thinness of the line is a question the Heron school will be asking for some time.",
+            attributes: { body: 3, reflex: 5, vigor: 5, mind: 13, wit: 11, presence: 7 },
+            worn: ["heron-grey-half-robe", "ink-and-quill-belt", "apprentice's-bound-grimoire"],
+            knows: [
+              "Six left in the first winter. I came back with chilblains and a fair copy. He did not throw me out.",
+              "I have bound a witchlight three hundred times. A binding-sigil twice, both under my master's hand.",
+              "He sets the letters aside without reading. I have read two and accepted them. He has noticed.",
+            ],
+            at: { x: 40, y: 25, day: 0 }, home: { x: 40, y: 25 },
+            activeAsLeader: false, successor_id: null,
           },
         },
         races: {
