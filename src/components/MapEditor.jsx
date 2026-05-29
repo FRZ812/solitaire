@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from "react";
-import { HANDCRAFTED, SEALED_STRUCTURES, saveMap, hydrateMap, applyMapData } from "../data/handcrafted-map.js";
+import { HANDCRAFTED, SEALED_STRUCTURES, saveMap, hydrateMap, applyMapData, onMapUpdate } from "../data/handcrafted-map.js";
 import { TERRAINS } from "../data/terrains.js";
 import { useZoomPan } from "./useZoomPan.js";
 
@@ -499,11 +499,60 @@ export function MapEditor({ onExit }) {
   const [saveStatus, setSaveStatus] = useState("idle");
   const saveTimerRef = useRef(null);
 
+  // Stale-map lock. Flipped to true when either (a) saveMap throws
+  // STALE_MAP because someone else touched the row since our last load,
+  // or (b) the realtime subscription delivers an external UPDATE while
+  // this editor is open. Once true, every subsequent autosave attempt
+  // is skipped and the banner prompts the user to reload. This stops
+  // the "stale tab autosaves over fresh content" wipe at the source
+  // (see handcrafted-map.js for the optimistic-concurrency check).
+  const [staleMap, setStaleMap] = useState(null); // null | { reason, serverUpdatedAt?, loadedUpdatedAt? }
+
+  // First-mount guard. The autosave useEffect runs once at mount with
+  // the initial state (loaded from HANDCRAFTED) — without this flag
+  // we'd write the just-loaded state back to Supabase immediately,
+  // which (a) is a no-op write on a healthy row but (b) STOMPS a
+  // fresh row whenever the editor's HANDCRAFTED came from a stale
+  // cached bundle. Only schedule autosaves AFTER an actual edit lands.
+  const hasUserEditedRef = useRef(false);
+
+  // Subscribe to external map updates while this editor is open. If
+  // someone else's save lands (another tab, MCP-applied SQL, a
+  // colleague), flip staleMap so the next autosave bails before
+  // overwriting. We register a fresh listener on mount; the singleton
+  // applyMapData mutates HANDCRAFTED in place, but the editor's own
+  // React state copy doesn't auto-update — so even with realtime
+  // working, the editor must refuse to save its now-stale local state.
+  useEffect(() => {
+    const off = onMapUpdate(() => {
+      // If the user has made local edits AND an external update arrived,
+      // we have a real conflict. Lock saves and surface the banner.
+      // (If they haven't edited yet, the realtime push has already
+      // refreshed HANDCRAFTED — but the editor's React state is still
+      // the pre-update copy, so we still refuse saves until reload.)
+      setStaleMap((prev) => prev || {
+        reason: "External update detected — the handcrafted_map row was modified by another writer while this editor was open. Reload to see the latest state.",
+      });
+    });
+    return off;
+  }, []);
+
   // Autosave to Supabase, debounced 800ms after the last edit. localStorage
   // still gets the latest state on every change as a crash-recovery cache
   // — if the Supabase write fails (offline, RLS, etc.) the draft survives
   // a refresh and the next mount will try to save again.
   useEffect(() => {
+    // First-mount no-op: skip the autosave the initial useState seeds.
+    if (!hasUserEditedRef.current) {
+      hasUserEditedRef.current = true;
+      return;
+    }
+    // Hard refusal once stale: don't even draft to localStorage, since
+    // promoting that draft on next mount would just spread the staleness.
+    if (staleMap) {
+      setSaveStatus({ error: "Refusing autosave: map is stale. Reload to continue editing." });
+      return;
+    }
     saveDraft({ tiles, streets, buildings, gates });
     setSaveStatus("dirty");
     clearTimeout(saveTimerRef.current);
@@ -519,11 +568,18 @@ export function MapEditor({ onExit }) {
         setSaveStatus("saved");
       } catch (err) {
         console.error("[map editor] save failed:", err);
+        if (err.code === "STALE_MAP" || err.code === "NO_BASELINE") {
+          setStaleMap({
+            reason: err.message,
+            serverUpdatedAt: err.serverUpdatedAt,
+            loadedUpdatedAt: err.loadedUpdatedAt,
+          });
+        }
         setSaveStatus({ error: err.message || String(err) });
       }
     }, 800);
     return () => clearTimeout(saveTimerRef.current);
-  }, [tiles, streets, buildings, gates]);
+  }, [tiles, streets, buildings, gates, staleMap]);
 
   const containerRef = useRef(null);
   // Pan-disable ref. Kept in sync with `tool === "multi"` by the useEffect
@@ -959,6 +1015,38 @@ export function MapEditor({ onExit }) {
       gridTemplateColumns: isMobile ? "1fr" : "1fr 340px",
       gridTemplateRows: isMobile ? "52px 1fr" : "44px 1fr",
     }}>
+      {/* Stale-map lock banner. High-visibility full-width strip when the
+          row was modified externally (other tab / MCP SQL / stale cache).
+          Renders OVER the toolbar via fixed positioning so the user can't
+          miss it. Saves are blocked while this is up. */}
+      {staleMap && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
+          backgroundColor: "#5a1818", color: "#fff7eb",
+          padding: "10px 16px", boxShadow: "0 2px 8px rgba(0,0,0,0.5)",
+          display: "flex", alignItems: "center", gap: "12px",
+          fontSize: "13px", lineHeight: 1.4,
+        }}>
+          <strong style={{ fontWeight: 700 }}>⚠ Map is stale — autosave disabled.</strong>
+          <span style={{ flex: 1 }}>
+            {staleMap.reason || "The handcrafted_map row was modified by another writer since this editor was loaded. Your local edits are NOT being saved to Supabase. Reload to see the current state, then redo your edits."}
+            {staleMap.serverUpdatedAt && staleMap.loadedUpdatedAt && (
+              <span style={{ display: "block", opacity: 0.7, fontSize: "11px", marginTop: "2px" }}>
+                loaded: {staleMap.loadedUpdatedAt} · server: {staleMap.serverUpdatedAt}
+              </span>
+            )}
+          </span>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              backgroundColor: "#f5dcb8", color: "#0c1111",
+              border: "none", borderRadius: "3px", padding: "6px 14px",
+              cursor: "pointer", fontSize: "12px", fontWeight: 600,
+            }}
+          >Reload</button>
+        </div>
+      )}
+
       {/* Top toolbar */}
       <div style={{
         gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: "6px",
