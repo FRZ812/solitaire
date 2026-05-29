@@ -15,3 +15,9 @@ scripts/whitemarch-map.png
 # these and the harness reclaims them; never artifacts to commit).
 .claude/worktrees/
 .wave4-snapshots/
+
+# Local map snapshots and regenerable map renders (DB backups + SVG/PNG
+# visualizations produced while editing the Whitemarch map). Same class as
+# the ignored render above — local scratch, never repo artifacts.
+.map-backups/
+scripts/whitemarch-backups/
