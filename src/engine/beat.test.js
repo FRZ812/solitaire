@@ -113,4 +113,23 @@ describe("applyBeat — golden snapshots (refactor safety net)", () => {
       recruitBeats: next.beats.filter((b) => b.type === "recruit").map((b) => b.text),
     }).toMatchSnapshot();
   });
+
+  it("golden — character_setup sets identity, attributes, abilities, derived pools", () => {
+    const next = applyBeat(fresh(), {
+      character_setup: {
+        name: "Aldric", bond: "Find the lost heir.", race: "human",
+        attributes: { body: 6, reflex: 5, vigor: 7, mind: 4, wit: 5, presence: 3 },
+        abilities: ["power-strike"],
+      },
+    });
+    const w = next.world.codex.characters.wanderer;
+    expect({
+      created: next.created,
+      name: next.character.name, bond: next.character.bond, race: next.character.race,
+      attributes: next.character.attributes, abilities: next.character.abilities,
+      vitalityMax: next.character.vitalityMax, resolveMax: next.character.resolveMax,
+      carryCapacityMax: next.character.carryCapacityMax,
+      wandererCodex: { name: w.name, race: w.race, attributes: w.attributes },
+    }).toMatchSnapshot();
+  });
 });

@@ -92,6 +92,44 @@ A voice settles around you — everywhere and nowhere at once, patient and very 
 }
 `;
 
+exports[`applyBeat — golden snapshots (refactor safety net) > golden — character_setup sets identity, attributes, abilities, derived pools 1`] = `
+{
+  "abilities": [
+    {
+      "id": "power-strike",
+      "tier": "common",
+    },
+  ],
+  "attributes": {
+    "body": 6,
+    "mind": 4,
+    "presence": 3,
+    "reflex": 5,
+    "vigor": 7,
+    "wit": 5,
+  },
+  "bond": "Find the lost heir.",
+  "carryCapacityMax": 110,
+  "created": true,
+  "name": "Aldric",
+  "race": "human",
+  "resolveMax": 10,
+  "vitalityMax": 86,
+  "wandererCodex": {
+    "attributes": {
+      "body": 6,
+      "mind": 4,
+      "presence": 3,
+      "reflex": 5,
+      "vigor": 7,
+      "wit": 5,
+    },
+    "name": "Aldric",
+    "race": "human",
+  },
+}
+`;
+
 exports[`applyBeat — golden snapshots (refactor safety net) > golden — recruiting a companion files them into the party + codex 1`] = `
 {
   "bram": {
