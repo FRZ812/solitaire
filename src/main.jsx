@@ -4,6 +4,7 @@ import { Solitaire } from "./App.jsx";
 import { InstallPill } from "./components/InstallPill.jsx";
 import { PwaDiagnostics } from "./components/PwaDiagnostics.jsx";
 import { MapEditor } from "./components/MapEditor.jsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { hydrateMap, subscribeToMapUpdates, onMapUpdate } from "./data/handcrafted-map.js";
 
 // Hash routing — `#/edit` swaps the main app for the handcrafted-map editor.
@@ -82,10 +83,10 @@ function Root() {
     );
   }
 
-  if (hash === "#/edit") return <MapEditor onExit={() => { window.location.hash = ""; }} />;
+  if (hash === "#/edit") return <ErrorBoundary label="map editor"><MapEditor onExit={() => { window.location.hash = ""; }} /></ErrorBoundary>;
   return (
     <>
-      <Solitaire />
+      <ErrorBoundary label="game"><Solitaire /></ErrorBoundary>
       {/* Floating PWA install pill — only renders once Chrome fires
           beforeinstallprompt. position: fixed so it floats over whatever
           screen is active. */}
