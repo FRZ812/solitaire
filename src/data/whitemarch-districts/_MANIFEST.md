@@ -8,7 +8,7 @@ Orientation: screen_x = x + y/2 (E = +), screen_y = y (S = +).
 |---|---|---|---|---|
 | `the-whitewend` | 336 | -12..45 | -42..56 | The Whitewend |
 | `_core` | 253 | -30..5 | -6..34 | Whitemarch Core (walls, streets, civic) |
-| `house-drelan-country-estate` | 26 | 11..22 | -1..9 | House Drelan Country Estate |
+| `noble-rise` | 44 | -27..-13 | 13..23 | Noble Rise |
 | `the-caravanserai` | 25 | -36..-25 | -31..-24 | The Caravanserai |
 | `the-outer-works` | 24 | -6..4 | -18..-7 | The Outer Works |
 | `whitemarch-walls` | 21 | -2..5 | -6..7 | Whitemarch Walls |
