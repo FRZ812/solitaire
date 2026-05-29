@@ -1,0 +1,181 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`applyBeat — golden snapshots (refactor safety net) > golden — a rich survival/inventory/attribute/vitals beat 1`] = `
+{
+  "beats": [
+    {
+      "content": "There is no floor, yet you are standing. No sky, yet a pale grey light from nowhere at all. You remember nothing — not your name, not your face, not the road that ended here. This is the threshold: the hush between what was and what will be, where a soul must name itself before the world will take it back.
+
+A voice settles around you — everywhere and nowhere at once, patient and very old.
+
+"Before you step into the Mire and it decides what to make of you, tell me who you are. Begin with your name, and the people and the place you call your own. Take your time — here, there is nothing but the telling."",
+      "type": "narration",
+    },
+    {
+      "content": "14:30",
+      "type": "timestamp",
+    },
+    {
+      "content": "You press on through the pass.",
+      "thinking": null,
+      "truncated": false,
+      "type": "narration",
+    },
+    {
+      "text": "Vigor 2 → 3",
+      "type": "growth",
+    },
+    {
+      "lines": [
+        "+2× Healing Salve",
+        "+3sp",
+      ],
+      "type": "inventory_delta",
+    },
+    {
+      "chips": [
+        {
+          "delta": 11,
+          "stat": "vitality",
+        },
+        {
+          "delta": -2,
+          "stat": "resolve",
+        },
+        {
+          "delta": 10,
+          "stat": "hunger",
+        },
+      ],
+      "type": "vitals_delta",
+    },
+  ],
+  "character": {
+    "attributes": {
+      "body": 2,
+      "mind": 2,
+      "presence": 1,
+      "reflex": 3,
+      "vigor": 3,
+      "wit": 4,
+    },
+    "carried": [
+      {
+        "itemId": "healing-salve",
+        "quantity": 2,
+      },
+    ],
+    "coins": {
+      "copper": 0,
+      "gold": 0,
+      "silver": 3,
+    },
+    "conditions": [],
+    "needs": {
+      "hunger": 68,
+      "sleep": 67.5,
+      "thirst": 72,
+    },
+    "overburdened": false,
+    "resolve": 6,
+    "resolveMax": 8,
+    "vitality": 35,
+    "vitalityMax": 35,
+  },
+  "created": true,
+  "party": [],
+  "time": {
+    "day": 3,
+    "hour": 14,
+    "minute": 30,
+  },
+}
+`;
+
+exports[`applyBeat — golden snapshots (refactor safety net) > golden — character_setup sets identity, attributes, abilities, derived pools 1`] = `
+{
+  "abilities": [
+    {
+      "id": "power-strike",
+      "tier": "common",
+    },
+  ],
+  "attributes": {
+    "body": 6,
+    "mind": 4,
+    "presence": 3,
+    "reflex": 5,
+    "vigor": 7,
+    "wit": 5,
+  },
+  "bond": "Find the lost heir.",
+  "carryCapacityMax": 110,
+  "created": true,
+  "name": "Aldric",
+  "race": "human",
+  "resolveMax": 10,
+  "vitalityMax": 86,
+  "wandererCodex": {
+    "attributes": {
+      "body": 6,
+      "mind": 4,
+      "presence": 3,
+      "reflex": 5,
+      "vigor": 7,
+      "wit": 5,
+    },
+    "name": "Aldric",
+    "race": "human",
+  },
+}
+`;
+
+exports[`applyBeat — golden snapshots (refactor safety net) > golden — location_update stamps the tile and _userMsg/_raw extend apiHistory 1`] = `
+{
+  "apiHistory": [
+    {
+      "content": "I burn the camp.",
+      "role": "user",
+    },
+    {
+      "content": "{"narration":"It burns."}",
+      "role": "assistant",
+    },
+  ],
+  "tileStatus": {
+    "day": 3,
+    "note": "You put the camp to the torch.",
+    "state": "razed",
+  },
+}
+`;
+
+exports[`applyBeat — golden snapshots (refactor safety net) > golden — recruit + relationship/memory updates fold onto the codex character 1`] = `
+{
+  "memories": [
+    "Saved my life at the ford.",
+  ],
+  "party": [
+    "bram",
+  ],
+  "relationship": 5,
+}
+`;
+
+exports[`applyBeat — golden snapshots (refactor safety net) > golden — recruiting a companion files them into the party + codex 1`] = `
+{
+  "bram": {
+    "hasAbilities": true,
+    "hasAttributes": true,
+    "id": "bram",
+    "kind": "companion",
+    "name": "Bram Holt",
+  },
+  "party": [
+    "bram",
+  ],
+  "recruitBeats": [
+    "Bram Holt joins your company.",
+  ],
+}
+`;

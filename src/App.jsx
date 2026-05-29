@@ -47,7 +47,8 @@ import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
-import { initCombat, playerAct, playerTalk, playerDrawWeapon, setTarget, endTurn, playerFlee, playerStandDown, playerCeasefire, playerWithdraw, playerAdvance, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
+import { initCombat, playerAct, playerTalk, playerDrawWeapon, setTarget, endTurn, playerFlee, playerStandDown, playerCeasefire, playerWithdraw, playerAdvance, applyCombatEffect } from "./engine/combat.js";
+import { applyCombatResult, applyLoot } from "./engine/combat-result.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 import { poiPlaceName } from "./engine/location.js";
 
@@ -450,14 +451,22 @@ export function Solitaire() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignsLoaded, user]);
 
-  // ----- Save on state change (when a campaign is active) -----
+  // ----- Save on state change (debounced; when a campaign is active) -----
+  // Autosave used to fire a full Supabase write on EVERY state change — a write
+  // storm where overlapping in-flight PUTs could also land out of order and
+  // clobber newer progress. Debounce to a trailing 800ms so a burst of changes
+  // within one turn collapses to a single write of the latest state. The timer
+  // is cleared on each change (reschedule) and on unmount.
+  const saveTimerRef = useRef(null);
   useEffect(() => {
     if (!hydrated || !currentCampaignId) return;
-    let cancelled = false;
-    saveCampaign(currentCampaignId, state).catch((e) => {
-      if (!cancelled) setCampaignError(`Save failed: ${e.message || e}`);
-    });
-    return () => { cancelled = true; };
+    const id = currentCampaignId;
+    const snapshot = state;
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveCampaign(id, snapshot).catch((e) => setCampaignError(`Save failed: ${e.message || e}`));
+    }, 800);
+    return () => clearTimeout(saveTimerRef.current);
   }, [state, hydrated, currentCampaignId]);
 
   // ----- Scroll the beat log to the latest beat -----
@@ -590,6 +599,11 @@ export function Solitaire() {
     setDeckOpen(false);
     setCurrentCampaignId(null);
     setHydrated(false);
+    // Reset in-memory game state so the next account signed in on this browser
+    // can't inherit the previous user's character/beats/apiHistory (and so the
+    // debounced autosave can't write user-A's state into user-B's campaign).
+    setState(makeInitialState());
+    setCombat(null);
     localStorage.removeItem(LAST_OPENED_KEY);
     try {
       await signOut();

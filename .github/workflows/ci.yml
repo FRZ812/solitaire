@@ -1,0 +1,25 @@
+# Quality gate: build + engine tests on every push and pull request. The deploy
+# workflow (deploy.yml) handles publishing on main; this runs everywhere so PRs
+# are checked before merge. The VITE_SUPABASE_* values the test harness needs are
+# injected by vitest.config.js (dummy values — no network, no secrets required).
+
+name: CI
+
+on:
+  push:
+    branches-ignore: [main] # main is covered by deploy.yml's build job
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # Vitest 4 pulls in Vite 8 (needs Node ^20.19 || >=22.12)
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
