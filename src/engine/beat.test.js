@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { applyBeat } from "./beat.js";
 import { makeInitialState } from "../data/initial-state.js";
 import { ALL_ITEMS } from "../data/catalog.js";
@@ -8,6 +8,15 @@ import { maxVitalityFor } from "./attributes.js";
 // state freezes the clock and the body-ledger).
 const fresh = () => ({ ...makeInitialState(), created: true });
 const totalMinutes = (t) => t.day * 1440 + t.hour * 60 + t.minute;
+
+// Curated views for the golden snapshots — drop volatile ids and the bulky
+// codex so the snapshot is the behaviorally-relevant output only.
+const beatView = (beats) => beats.map(({ id, ...rest }) => rest);
+const charView = (c) => ({
+  vitality: c.vitality, vitalityMax: c.vitalityMax, resolve: c.resolve, resolveMax: c.resolveMax,
+  attributes: c.attributes, needs: c.needs, conditions: c.conditions, overburdened: c.overburdened,
+  coins: c.inventory.coins, carried: c.inventory.carried,
+});
 
 describe("applyBeat — time & feed", () => {
   it("advances the clock by minutes_passed", () => {
@@ -66,5 +75,42 @@ describe("applyBeat — needs depletion", () => {
     const base = fresh();
     const next = applyBeat(base, { minutes_passed: 600 });
     expect(next.character.needs.hunger).toBeLessThan(base.character.needs.hunger);
+  });
+});
+
+// GOLDEN characterization — full curated output of representative beats, captured
+// as inline snapshots. These exist to make the Stage-3 applyBeat decomposition
+// provably behavior-preserving: the snapshots must stay byte-identical across the
+// refactor. Date.now is pinned so any id-bearing field is stable (ids are also
+// stripped by beatView). Beats here avoid Math.random paths (no mount-name gen).
+describe("applyBeat — golden snapshots (refactor safety net)", () => {
+  beforeEach(() => vi.spyOn(Date, "now").mockReturnValue(1_000_000));
+  afterEach(() => vi.restoreAllMocks());
+
+  it("golden — a rich survival/inventory/attribute/vitals beat", () => {
+    const validId = Object.keys(ALL_ITEMS)[0];
+    const next = applyBeat(fresh(), {
+      minutes_passed: 60,
+      narration: "You press on through the pass.",
+      attribute_changes: { vigor: 1 },
+      inventory_changes: { added: [{ itemId: validId, quantity: 2 }], coins: { silver: 3 } },
+      vitality_change: 5,
+      resolve_change: -2,
+      needs_changes: { hunger: 10 },
+    });
+    expect({
+      time: next.time, party: next.party, created: next.created,
+      character: charView(next.character), beats: beatView(next.beats),
+    }).toMatchSnapshot();
+  });
+
+  it("golden — recruiting a companion files them into the party + codex", () => {
+    const next = applyBeat(fresh(), { recruit_companion: { id: "bram" } });
+    const bram = next.world.codex.characters.bram;
+    expect({
+      party: next.party,
+      bram: bram && { id: bram.id, name: bram.name, kind: bram.kind, hasAttributes: !!bram.attributes, hasAbilities: Array.isArray(bram.abilities) },
+      recruitBeats: next.beats.filter((b) => b.type === "recruit").map((b) => b.text),
+    }).toMatchSnapshot();
   });
 });
