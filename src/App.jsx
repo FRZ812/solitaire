@@ -47,7 +47,8 @@ import { getBiome } from "./data/biomes.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
-import { initCombat, playerAct, playerTalk, playerDrawWeapon, setTarget, endTurn, playerFlee, playerStandDown, playerCeasefire, playerWithdraw, playerAdvance, applyCombatResult, applyLoot, applyCombatEffect } from "./engine/combat.js";
+import { initCombat, playerAct, playerTalk, playerDrawWeapon, setTarget, endTurn, playerFlee, playerStandDown, playerCeasefire, playerWithdraw, playerAdvance, applyCombatEffect } from "./engine/combat.js";
+import { applyCombatResult, applyLoot } from "./engine/combat-result.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 import { poiPlaceName } from "./engine/location.js";
 

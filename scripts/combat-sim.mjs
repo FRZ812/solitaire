@@ -6,7 +6,9 @@
 //
 // Pure Node — no React in the import chain.
 
-import { initCombat, playerAct, endTurn, abilityUsable, rollLoot, canStandDown, playerStandDown, applyCombatResult } from "../src/engine/combat.js";
+import { initCombat, playerAct, endTurn, abilityUsable, canStandDown, playerStandDown } from "../src/engine/combat.js";
+import { rollLoot } from "../src/engine/combat-loot.js";
+import { applyCombatResult } from "../src/engine/combat-result.js";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 import { generateEnemy, generateEnemyGroup, allyFromCompanion } from "../src/data/bestiary.js";

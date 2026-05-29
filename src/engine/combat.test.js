@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  initCombat, abilityUsable, rollLoot, playerAct, endTurn,
+  initCombat, abilityUsable, playerAct, endTurn,
   canStandDown, playerStandDown,
 } from "./combat.js";
+import { rollLoot } from "./combat-loot.js";
+import { applyCombatResult, applyLoot } from "./combat-result.js";
 import { generateEnemyGroup } from "../data/bestiary.js";
 import { coinsToCopper } from "./economy.js";
 import { BASIC_ATTACK } from "../data/abilities.js";
@@ -90,19 +92,69 @@ describe("abilityUsable", () => {
   });
 });
 
-describe("rollLoot — coin denomination", () => {
+describe("rollLoot — canonical coin denominations (Stage-1 fix)", () => {
   beforeEach(() => vi.spyOn(Math, "random").mockImplementation(mulberry32(123)));
   afterEach(() => vi.restoreAllMocks());
 
-  it("returns a well-formed loot manifest with a non-negative copper value", () => {
-    const loot = rollLoot([{ kind: "bandits", tier: "common", maxLootTier: "common" }], { maxLootTier: "common", region: 1 });
+  it("rolls coins up into canonical denominations (no silver/copper overflow)", () => {
+    // A beefy haul (8 divine foes → ≥128cp) so the total clears a gold piece.
+    // Pre-fix this was mis-expressed as tens of silver with gold always 0;
+    // copperToCoins now guarantees copper<10 and silver<10.
+    const big = Array.from({ length: 8 }, () => ({ kind: "ogre", tier: "divine", maxLootTier: "divine" }));
+    const loot = rollLoot(big, { maxLootTier: "divine", region: 5 });
     expect(loot).toHaveProperty("items");
-    expect(loot).toHaveProperty("coins");
-    expect(typeof loot.coins.copper).toBe("number");
-    expect(coinsToCopper(loot.coins)).toBeGreaterThanOrEqual(0);
-    // CURRENT behavior (review's coin-normalization finding): loot never rolls
-    // copper up into gold. The Stage-1 combat-loot extraction routes coins
-    // through copperToCoins, after which this expectation becomes canonical.
-    expect(loot.coins.gold).toBe(0);
+    expect(coinsToCopper(loot.coins)).toBeGreaterThan(0);
+    expect(loot.coins.copper).toBeLessThan(10);
+    expect(loot.coins.silver).toBeLessThan(10);
+    expect(loot.coins.gold).toBeGreaterThan(0);
+  });
+});
+
+describe("applyCombatResult / applyLoot (combat → campaign-state fold)", () => {
+  beforeEach(() => vi.spyOn(Math, "random").mockImplementation(mulberry32(99)));
+  afterEach(() => vi.restoreAllMocks());
+
+  const campaignState = () => ({
+    character: {
+      vitality: 50, vitalityMax: 100, resolve: 5, resolveMax: 10,
+      conditions: [], proficiencies: {},
+      inventory: { carried: [], coins: { copper: 5, silver: 0, gold: 0 } },
+    },
+    world: { codex: { characters: { wanderer: {} }, items: {}, skills: {} } },
+    party: [], beats: [], apiHistory: [],
+  });
+
+  function fightToEnd() {
+    let cs = initCombat(player(), CODEX, generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), {});
+    let guard = 0;
+    while (!TERMINAL.has(cs.phase) && guard++ < 300) {
+      if (cs.phase !== "player") { cs = endTurn(cs); continue; }
+      if (canStandDown(cs)) { cs = playerStandDown(cs); break; }
+      const t = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
+      if (t < 0) { cs = endTurn(cs); continue; }
+      cs = playerAct(cs, abilityUsable(cs, "power-strike") ? "power-strike" : BASIC_ATTACK.id, t);
+      if (!TERMINAL.has(cs.phase)) cs = endTurn(cs);
+    }
+    return cs;
+  }
+
+  it("folds combat HP into [0,vitalityMax], appends a recap, and does not mutate input", () => {
+    const cs = fightToEnd();
+    const st = campaignState();
+    const next = applyCombatResult(st, cs, { flavor: "the bandit" });
+    expect(next.character.vitality).toBeGreaterThanOrEqual(0);
+    expect(next.character.vitality).toBeLessThanOrEqual(100);
+    expect(next.apiHistory).toHaveLength(1);
+    expect(next.apiHistory[0].content).toContain("[COMBAT REPORT]");
+    expect(st.apiHistory).toHaveLength(0); // input untouched
+  });
+
+  it("applyLoot adds canonical coin to the purse, conserving total value, and clears pendingLoot", () => {
+    const st = campaignState(); // purse = 5cp
+    const { state: after } = applyLoot(st, { items: [], coins: { gold: 0, silver: 3, copper: 7 }, ability: null });
+    expect(coinsToCopper(after.character.inventory.coins)).toBe(5 + 37); // value conserved
+    expect(after.character.inventory.coins.copper).toBeLessThan(10); // canonical
+    expect(after.character.inventory.coins.silver).toBeLessThan(10);
+    expect(after.pendingLoot).toBe(null);
   });
 });
