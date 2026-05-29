@@ -29,6 +29,15 @@ const MAP_ID = "whitemarch";
 export const HANDCRAFTED = {};
 export const SEALED_STRUCTURES = [];
 
+// Optimistic-concurrency baseline. The handcrafted_map row has an
+// auto-touch trigger on updated_at; we capture the value at hydrate
+// time and gate every save on `WHERE updated_at = loadedUpdatedAt`.
+// If the row was modified by ANY writer since we loaded (another tab,
+// the MCP tool, a colleague), the UPDATE matches 0 rows and saveMap()
+// throws STALE_MAP. This stops the classic "stale tab autosaves over
+// fresh content" wipe that has bitten this row repeatedly.
+let loadedUpdatedAt = null;
+
 let hydratePromise = null;
 
 // Awaitable boot-step. Idempotent: subsequent calls return the same promise.
@@ -39,13 +48,14 @@ export async function hydrateMap() {
   hydratePromise = (async () => {
     const { data, error } = await supabase
       .from("handcrafted_map")
-      .select("tiles, sealed_structures")
+      .select("tiles, sealed_structures, updated_at")
       .eq("id", MAP_ID)
       .single();
     if (error) {
       hydratePromise = null; // let the caller retry on next mount
       throw new Error(`Failed to load handcrafted map: ${error.message}`);
     }
+    loadedUpdatedAt = data.updated_at;
     applyMapData(data.tiles, data.sealed_structures);
   })();
   return hydratePromise;
@@ -67,17 +77,54 @@ export async function saveMap({ tiles, sealedStructures }) {
   // schema (a browser running the pre-rename bundle would otherwise
   // resurrect old terrain names every autosave).
   tiles = migrateTiles(tiles);
+
+  // Optimistic concurrency. If hydrate hasn't completed we have no
+  // baseline; refusing here is safer than blindly overwriting.
+  if (!loadedUpdatedAt) {
+    const err = new Error("Refusing save: map hasn't finished loading (no updated_at baseline). Reload and try again.");
+    err.code = "NO_BASELINE";
+    throw err;
+  }
+
+  // Gate the UPDATE on updated_at = baseline. If the row was touched by
+  // anyone else since we loaded (another tab's autosave, an MCP-applied
+  // SQL UPDATE, a stale cached page in another window), the row's
+  // updated_at no longer matches and the filtered UPDATE matches zero
+  // rows — we report STALE_MAP and let the caller refuse to save.
+  const baseline = loadedUpdatedAt;
   const { data, error } = await supabase
     .from("handcrafted_map")
     .update({ tiles, sealed_structures: sealedStructures })
     .eq("id", MAP_ID)
-    .select("id");
+    .eq("updated_at", baseline)
+    .select("id, updated_at");
   if (error) throw new Error(`Failed to save handcrafted map: ${error.message}`);
   if (!data || data.length === 0) {
+    // 0 rows can mean RLS-rejected OR stale baseline. Distinguish by
+    // re-fetching updated_at; if it has changed since `baseline`, we know
+    // the row was modified externally. Either way the local edit didn't
+    // land — the caller decides what to surface in the UI.
+    const { data: probe } = await supabase
+      .from("handcrafted_map")
+      .select("updated_at")
+      .eq("id", MAP_ID)
+      .single();
+    if (probe && probe.updated_at !== baseline) {
+      const err = new Error(
+        `STALE_MAP: the handcrafted_map row was modified by another writer ` +
+        `(loaded ${baseline}, server now ${probe.updated_at}). Your edits were ` +
+        `NOT saved. Reload to see the current state.`
+      );
+      err.code = "STALE_MAP";
+      err.loadedUpdatedAt = baseline;
+      err.serverUpdatedAt = probe.updated_at;
+      throw err;
+    }
     throw new Error(
       "Save returned 0 rows — likely RLS rejected the update. Confirm you're signed in as the owner of the handcrafted_map row (check owner_id in Supabase against auth.uid())."
     );
   }
+  loadedUpdatedAt = data[0].updated_at;
   applyMapData(tiles, sealedStructures);
 }
 
@@ -149,6 +196,10 @@ export function subscribeToMapUpdates() {
       { event: "UPDATE", schema: "public", table: "handcrafted_map", filter: `id=eq.${MAP_ID}` },
       (payload) => {
         if (!payload?.new) return;
+        // Bump the baseline so our next save isn't immediately STALE_MAP
+        // against a row we just witnessed updating. Without this every
+        // realtime push would lock us out of saving.
+        if (payload.new.updated_at) loadedUpdatedAt = payload.new.updated_at;
         applyMapData(payload.new.tiles, payload.new.sealed_structures);
       }
     )
