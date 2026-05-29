@@ -1,37 +1,18 @@
 import { advanceTime, formatTime } from "./time.js";
-import { getTile, computeSightFrom, computeSightFromRadius } from "./world.js";
-import { sightRadius } from "./light.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
-import { refillVessels } from "./consumables.js";
 import { itemTemplate } from "../data/catalog.js";
 import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
 import { tierOrder } from "../data/tiers.js";
-import { spoilCarried } from "./spoilage.js";
-import { ageState } from "./aging.js";
 import { applyAttributeChanges, recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
 import { loadOf } from "./weight.js";
-import { clampRel, MEMORY_CAP } from "./relationships.js";
 // applyBeat is composed of ordered pipeline steps; the larger cohesive blocks
 // live in sibling modules and just thread the evolving codex / world / party.
 import { applyAcquisitions } from "./beat-acquisitions.js";
 import { applyCreation } from "./beat-creation.js";
 import { applySurvivalTick } from "./beat-tick.js";
-
-// Can a waterskin be refilled at this tile? Settlements have wells; water/marsh
-// tiles and any spring/well/stream/river POI are clean enough; an adjacent
-// open-water tile means a stream is within reach.
-function canRefillWater(stateLike, x, y) {
-  const here = getTile(stateLike, x, y);
-  if (!here) return false;
-  if (here.terrain === "settlement" || here.terrain === "water" || here.terrain === "marsh") return true;
-  const poi = `${here.poi?.name || ""} ${here.poi?.type || ""}`.toLowerCase();
-  if (/well|spring|fountain|stream|brook|river|lake|pool|cistern|oasis|ford|creek/.test(poi)) return true;
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    if (getTile(stateLike, x + dx, y + dy)?.terrain === "water") return true;
-  }
-  return false;
-}
+import { applyWorldMovement, applyWorldTick } from "./beat-world.js";
+import { applyRelationships } from "./beat-relationships.js";
 
 // applyBeat is the heart of the engine. Given the current state and a beat
 // from the narrator, it returns the next state plus the new beat entries to
@@ -201,61 +182,12 @@ export function applyBeat(state, beat, options = {}) {
     codex = tick.codex;
   }
 
-  let world = { ...state.world, codex };
-  if (options.travelToCoords) {
-    const { x, y } = options.travelToCoords;
-    const arrivedTile = getTile(state, x, y);
-    const tiles = { ...world.tiles };
-    let finalTile = { ...arrivedTile };
-    if (beat.tile_discovery && (finalTile.poi?.type === "hidden" || !finalTile.poi)) {
-      finalTile = { ...finalTile, poi: {
-        type: beat.tile_discovery.poi_type || "landmark",
-        name: beat.tile_discovery.name || finalTile.poi?.name || null,
-        description: beat.tile_discovery.description || null,
-      } };
-    }
-    tiles[`${x},${y}`] = finalTile;
-    const r = sightRadius({ world: { ...world, tiles, currentTile: { x, y } }, character, time: newTime });
-    world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFromRadius(x, y, r, world.seen) };
-  }
-
-  // Narrator-driven relocation (no map-travel involved). Used for extreme
-  // entry — wall-scaling, breaching, teleportation, secret-passage — where
-  // the player ends up at a hex they couldn't reach via the door graph.
-  // The narrator outputs tile_move:{x,y} on a successful attempt; the
-  // engine moves the player there and expands sight. The narrator's prose
-  // carries the move context (no travel card synthesized — it would read
-  // strangely with no "from").
-  if (beat.tile_move && !options.travelToCoords) {
-    const { x, y } = beat.tile_move;
-    if (typeof x === "number" && typeof y === "number") {
-      const arrivedTile = getTile(state, x, y);
-      const tiles = { ...world.tiles };
-      tiles[`${x},${y}`] = arrivedTile;
-      const r = sightRadius({ world: { ...world, tiles, currentTile: { x, y } }, character, time: newTime });
-      world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFromRadius(x, y, r, world.seen) };
-    }
-  }
-
-  const newHistory = [...state.apiHistory];
-  if (beat._userMsg) newHistory.push({ role: "user", content: beat._userMsg });
-  if (beat._raw)     newHistory.push({ role: "assistant", content: beat._raw });
-
-  // Lasting consequences the player left on this place (razed, emptied, tense…).
-  // Recorded on the current tile with the game-day so the narrator can pace a
-  // slow, immersive recovery (or keep it dead).
-  if (beat.location_update && world.currentTile) {
-    const k = `${world.currentTile.x},${world.currentTile.y}`;
-    const tiles = { ...world.tiles };
-    const existing = tiles[k] || getTile({ ...state, world }, world.currentTile.x, world.currentTile.y);
-    tiles[k] = { ...existing, status: { ...beat.location_update, day: newTime.day } };
-    world = { ...world, tiles };
-  }
-
-  // At a well, settlement, or clean stream the wanderer tops off any waterskin.
-  if (world.currentTile && canRefillWater({ ...state, world }, world.currentTile.x, world.currentTile.y)) {
-    character.inventory = refillVessels(character.inventory);
-  }
+  // World materialize + map movement (travel arrival, narrator tile_move,
+  // apiHistory growth, location status, waterskin refill) — extracted to
+  // beat-world.js. Threads world (+ newHistory); character.inventory may refill.
+  const _wm = applyWorldMovement({ state, beat, options, codex, character, newTime });
+  let world = _wm.world;
+  const newHistory = _wm.newHistory;
 
   // Party acquisitions (recruit / grant / buy mount, purchase captive / rights,
   // part ways) — coin handling + codex filing extracted to beat-acquisitions.js.
@@ -266,43 +198,9 @@ export function applyBeat(state, beat, options = {}) {
     party = acq.party;
   }
 
-  // Bond shifts and shared memories — kept per-character on the codex and
-  // surfaced back to the narrator so relationships persist and deepen over time.
-  if (Array.isArray(beat.relationship_changes) && beat.relationship_changes.length) {
-    const chars = { ...world.codex.characters };
-    for (const rc of beat.relationship_changes) {
-      const ch = chars[rc?.id];
-      if (!ch) continue;
-      chars[rc.id] = { ...ch, relationship: clampRel((ch.relationship || 0) + (rc.delta || 0)) };
-    }
-    world = { ...world, codex: { ...world.codex, characters: chars } };
-  }
-  if (Array.isArray(beat.memory_updates) && beat.memory_updates.length) {
-    const chars = { ...world.codex.characters };
-    for (const mu of beat.memory_updates) {
-      const ch = chars[mu?.id];
-      if (!ch || !Array.isArray(mu.adds)) continue;
-      const mems = [...(ch.memories || [])];
-      for (const m of mu.adds) if (m && !mems.includes(m)) mems.push(m);
-      chars[mu.id] = { ...ch, memories: mems.slice(-MEMORY_CAP) };
-    }
-    world = { ...world, codex: { ...world.codex, characters: chars } };
-  }
-
-  // Sharing loot with the party: move worn gear onto/off a companion. Pair with
-  // inventory_changes (remove from the player) when handing something over.
-  if (Array.isArray(beat.companion_gear) && beat.companion_gear.length) {
-    const chars = { ...world.codex.characters };
-    for (const g of beat.companion_gear) {
-      const ch = chars[g?.id];
-      if (!ch) continue;
-      let worn = [...(ch.worn || [])];
-      for (const rid of (g.remove || [])) worn = worn.filter((w) => w !== rid);
-      for (const aid of (g.add || [])) if (!worn.includes(aid)) worn.push(aid);
-      chars[g.id] = { ...ch, worn };
-    }
-    world = { ...world, codex: { ...world.codex, characters: chars } };
-  }
+  // Bond / memory / shared-gear updates onto codex characters — extracted to
+  // beat-relationships.js.
+  world = applyRelationships({ beat, world }).world;
 
   // Opening character-creation interview + identity updates (character_setup /
   // player_update) — extracted to beat-creation.js.
@@ -313,27 +211,8 @@ export function applyBeat(state, beat, options = {}) {
     created = cre.created;
   }
 
-  // Food spoils as the clock turns. Any perishable stack past its freshUntil is
-  // tossed, with a quiet log notice so the player isn't surprised by an empty pack.
-  const sp = spoilCarried(character.inventory.carried, newTime.day, codex.items);
-  if (sp.spoiled.length) {
-    character.inventory = { ...character.inventory, carried: sp.carried };
-    newBeats.push({ id: `spoil${Date.now()}`, type: "spoilage", lines: sp.spoiled.map((s) => `${s.quantity}× ${s.name}`) });
-  }
-
-  // Codex characters age as the clock turns. ageState mutates only the world's
-  // characters map and activates any pre-authored successors of those who died
-  // this tick — it no-ops when no character crosses a year boundary, so it's
-  // safe to call after every beat. Death beats render only when someone died.
-  const ageSnap = ageState({ ...state, time: newTime, world });
-  if (ageSnap.state.world !== world) world = ageSnap.state.world;
-  if (ageSnap.deaths.length) {
-    const lines = ageSnap.deaths.map((d) => {
-      const name = world.codex.characters[d.id]?.name || d.id;
-      return `${name} dies at ${d.age}.`;
-    });
-    newBeats.push({ id: `age${Date.now()}`, type: "passage", lines });
-  }
+  // End-of-beat time tick: food spoilage + codex aging — extracted to beat-world.js.
+  world = applyWorldTick({ state, world, codex, character, newTime, newBeats }).world;
 
   return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created };
 }

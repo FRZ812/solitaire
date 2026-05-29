@@ -132,4 +132,31 @@ describe("applyBeat — golden snapshots (refactor safety net)", () => {
       wandererCodex: { name: w.name, race: w.race, attributes: w.attributes },
     }).toMatchSnapshot();
   });
+
+  it("golden — location_update stamps the tile and _userMsg/_raw extend apiHistory", () => {
+    const next = applyBeat(fresh(), {
+      minutes_passed: 30,
+      location_update: { state: "razed", note: "You put the camp to the torch." },
+      _userMsg: "I burn the camp.",
+      _raw: "{\"narration\":\"It burns.\"}",
+    });
+    expect({
+      tileStatus: next.world.tiles["0,0"]?.status,
+      apiHistory: next.apiHistory,
+    }).toMatchSnapshot();
+  });
+
+  it("golden — recruit + relationship/memory updates fold onto the codex character", () => {
+    const next = applyBeat(fresh(), {
+      recruit_companion: { id: "bram" },
+      relationship_changes: [{ id: "bram", delta: 5 }],
+      memory_updates: [{ id: "bram", adds: ["Saved my life at the ford."] }],
+    });
+    const bram = next.world.codex.characters.bram;
+    expect({
+      party: next.party,
+      relationship: bram?.relationship,
+      memories: bram?.memories,
+    }).toMatchSnapshot();
+  });
 });

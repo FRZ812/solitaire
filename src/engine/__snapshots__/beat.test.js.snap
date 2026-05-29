@@ -130,6 +130,38 @@ exports[`applyBeat — golden snapshots (refactor safety net) > golden — chara
 }
 `;
 
+exports[`applyBeat — golden snapshots (refactor safety net) > golden — location_update stamps the tile and _userMsg/_raw extend apiHistory 1`] = `
+{
+  "apiHistory": [
+    {
+      "content": "I burn the camp.",
+      "role": "user",
+    },
+    {
+      "content": "{"narration":"It burns."}",
+      "role": "assistant",
+    },
+  ],
+  "tileStatus": {
+    "day": 3,
+    "note": "You put the camp to the torch.",
+    "state": "razed",
+  },
+}
+`;
+
+exports[`applyBeat — golden snapshots (refactor safety net) > golden — recruit + relationship/memory updates fold onto the codex character 1`] = `
+{
+  "memories": [
+    "Saved my life at the ford.",
+  ],
+  "party": [
+    "bram",
+  ],
+  "relationship": 5,
+}
+`;
+
 exports[`applyBeat — golden snapshots (refactor safety net) > golden — recruiting a companion files them into the party + codex 1`] = `
 {
   "bram": {
