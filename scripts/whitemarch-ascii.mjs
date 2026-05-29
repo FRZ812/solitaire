@@ -88,7 +88,7 @@ async function main() {
   }
   // Mark checkpoint gates (passable tile touching >=2 walls) so they render as '+'.
   const isWall = (x, y) => cells.get(`${x},${y}`)?.terrain === "wall";
-  for (const c of cells.values()) {
+  if (!flag("--no-gates")) for (const c of cells.values()) {
     if (c.terrain === "wall" || c.terrain === "water") continue;
     let w = 0; for (const [dx, dy] of HEX_DIRS) if (isWall(c.x + dx, c.y + dy)) w++;
     if (w >= 2) c.__gate = true;
