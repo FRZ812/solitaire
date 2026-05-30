@@ -13,6 +13,7 @@ Orientation: screen_x = x + y/2 (E = +), screen_y = y (S = +).
 | `the-outer-works` | 24 | -6..4 | -18..-7 | The Outer Works |
 | `whitemarch-walls` | 21 | -2..5 | -6..7 | Whitemarch Walls |
 | `the-grand-market` | 5 | -2..0 | 13..15 | The Grand Market |
+| `the-low-wards` | 5 | -28..-28 | 29..33 | The Low Wards |
 | `chain-market-steps` | 3 | -1..1 | 17..19 | Chain Market Steps |
 | `registry-hall` | 2 | 2..2 | 0..1 | Registry Hall |
 | `guild-court` | 2 | 3..4 | 3..3 | Guild Court |

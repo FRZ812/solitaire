@@ -633,6 +633,29 @@ export const BUILDINGS = {
     hours: { open: 7, close: 16 },
     blurb: "A plain hall near the Noble Gate where House Drelan gives out bread, coin, and cast-off cloth to the deserving poor on the appointed days. A lay-brother of the Oath keeps the alms-roll at a high desk; petitioners queue along the Noble Walk under the eye of the gate-guard, and are seen one at a time.",
   },
+
+  "commons-gate": {
+    id: "commons-gate",
+    kind: "gate",
+    label: "Commons Gate",
+    keeper: "the gate beadle",
+    icon: "bldg",
+    hours: { open: 5, close: 21 },
+    blurb: "A plain stone gate-arch where the Low Wards open onto the Citadel Approach — no portcullis, only a barred night-door and the beadle's lodge. By day the poor spill out to the processional road to beg, hawk, and watch the carriages climb to the Citadel; at the curfew bell the beadle bars the door and the ward is shut in until dawn.",
+  },
+
+  tavern: {
+    id: "tavern",
+    kind: "tavern",
+    label: "The Leaning Tankard",
+    keeper: "the landlord",
+    icon: "bldg",
+    hours: { open: 6, close: 1 },
+    blurb: "A low smoke-blackened tap-room sinking on its north side, the benches worn to a shine and the floor sloping enough to roll a dropped coin to the wall. Thin ale by the jack, a pot of something grey on the fire, a back room let by the hour, and a landlord who hears everything the wards say and sells the better half of it.",
+    blurb_short: "Thin ale, a sloping floor, a landlord who listens.",
+    icon_glyph: "tavern",
+    hms: null,
+  },
 };
 
 const DEFAULT_HOURS_BY_KIND = {
