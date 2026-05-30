@@ -8,12 +8,12 @@ Orientation: screen_x = x + y/2 (E = +), screen_y = y (S = +).
 |---|---|---|---|---|
 | `the-whitewend` | 336 | -12..45 | -42..56 | The Whitewend |
 | `_core` | 253 | -30..5 | -6..34 | Whitemarch Core (walls, streets, civic) |
+| `the-low-wards` | 199 | -28..-2 | 20..33 | The Low Wards |
 | `noble-rise` | 44 | -27..-13 | 13..23 | Noble Rise |
 | `the-caravanserai` | 25 | -36..-25 | -31..-24 | The Caravanserai |
 | `the-outer-works` | 24 | -6..4 | -18..-7 | The Outer Works |
 | `whitemarch-walls` | 21 | -2..5 | -6..7 | Whitemarch Walls |
 | `the-grand-market` | 5 | -2..0 | 13..15 | The Grand Market |
-| `the-low-wards` | 5 | -28..-28 | 29..33 | The Low Wards |
 | `chain-market-steps` | 3 | -1..1 | 17..19 | Chain Market Steps |
 | `registry-hall` | 2 | 2..2 | 0..1 | Registry Hall |
 | `guild-court` | 2 | 3..4 | 3..3 | Guild Court |
