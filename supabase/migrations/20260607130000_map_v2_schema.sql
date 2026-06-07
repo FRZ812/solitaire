@@ -37,6 +37,7 @@ create table if not exists public.map_cell (
   service  text,
   access   text,
   role     text,                                      -- gate|threshold|sanctum|yard… (door-derivation hint)
+  door_controlled boolean not null default false,     -- true = connectivity is door-gated; false = freely-open (no doors emitted)
   prose_id text references public.map_prose(id) on delete set null,
   flags    jsonb not null default '{}',
   primary key (x, y)

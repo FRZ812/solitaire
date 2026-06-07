@@ -6,12 +6,25 @@ map with a normalized, relational model that is legible, deduplicated, drift-pro
 and partially updatable — while keeping the runtime engine unchanged.
 
 **Proof:** `scripts/map-v2-parity.mjs` decompiles the live blob into the v2 layers,
-compiles them back, and asserts equality. Against the current live map it reports
-**0 terrain mismatches and 0 door-graph mismatches** — 921 cells, 20 places, 339
-prose paragraphs extracted out of geometry, and the whole door graph captured in
-**190 gate + 18 cut** edges (vs 174 hand-meshed door lists in v1). The schema lives
-in `supabase/migrations/20260607130000_map_v2_schema.sql` (additive, inert until
-cutover).
+compiles them back, and asserts equality — **0 terrain + 0 door-graph mismatches**:
+921 cells, 20 places, 339 prose paragraphs extracted out of geometry, the whole
+door graph in **190 gate + 18 cut** edges (vs 174 hand-meshed door lists in v1).
+
+**The tables are live and seeded.** The schema
+(`supabase/migrations/20260607130000_map_v2_schema.sql`) is applied to the
+database and populated from the blob (prose/cells/places straight from
+`handcrafted_map` server-side; synthesized place groups + edges from the
+decompiler). `scripts/map-v2-db-parity.mjs` reads the seeded tables back out and
+recompiles them: **0 / 0 against the live blob** — the database content provably
+reproduces the shipping map. All of this is **additive and inert**: the runtime
+still reads `handcrafted_map`; nothing in the game has changed yet.
+
+### Remaining to cut over (next phase)
+1. A Postgres function/trigger to compile the layers → `map_compiled.tiles`.
+2. Point `hydrateMap()` (`src/data/handcrafted-map.js`) at `map_compiled` (one
+   line; revert-safe), keeping `buildHandcrafted` for wall auto-seal.
+3. Move `MapEditor` writes to per-cell / per-place; add owner-scoped write RLS.
+4. Retire (or keep as a generated export) the monolithic blob.
 
 ## 1. Why the current model fights us
 
