@@ -1,9 +1,17 @@
 # World map data model v2 — relational
 
-Status: **proposal** (the chosen direction; not yet built). This document is the
-concrete design for replacing the single-JSONB-blob map with a normalized,
-relational model that is legible, deduplicated, drift-proof, and partially
-updatable — while keeping the runtime engine unchanged.
+Status: **design proven, schema staged** (chosen direction; production cutover
+pending). This document is the concrete design for replacing the single-JSONB-blob
+map with a normalized, relational model that is legible, deduplicated, drift-proof,
+and partially updatable — while keeping the runtime engine unchanged.
+
+**Proof:** `scripts/map-v2-parity.mjs` decompiles the live blob into the v2 layers,
+compiles them back, and asserts equality. Against the current live map it reports
+**0 terrain mismatches and 0 door-graph mismatches** — 921 cells, 20 places, 339
+prose paragraphs extracted out of geometry, and the whole door graph captured in
+**190 gate + 18 cut** edges (vs 174 hand-meshed door lists in v1). The schema lives
+in `supabase/migrations/20260607130000_map_v2_schema.sql` (additive, inert until
+cutover).
 
 ## 1. Why the current model fights us
 
