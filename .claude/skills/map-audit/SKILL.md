@@ -14,9 +14,23 @@ with two JSON columns: `tiles` (`"x,y" → { terrain, poi, doors, … }`) and
 live row has diverged from them, so **always audit the live row, never the
 district files**.
 
-## The tool
+## The tools
 
-`audit-map.mjs` (next to this file) runs every engine invariant against a
+**`render-map.mjs`** — read the map *spatially* instead of as prose. Renders an
+ASCII hex grid (one glyph per terrain), a named-place index, per-structure
+footprint summaries (flags ghosts), and a single labelled footprint. Use this
+FIRST to understand a region; it replaces scrolling hundreds of inlined
+descriptions.
+
+```bash
+node .claude/skills/map-audit/render-map.mjs --live                       # overview ASCII map
+node .claude/skills/map-audit/render-map.mjs --live --crop -12 14 -14 14   # crop to a region
+node .claude/skills/map-audit/render-map.mjs --live --structures           # footprints + entrances (flags ghosts)
+node .claude/skills/map-audit/render-map.mjs --live --places               # named places grouped by footprint
+node .claude/skills/map-audit/render-map.mjs --live --parent <slug>        # one building, each hex labelled
+```
+
+**`audit-map.mjs`** runs every engine invariant against a
 `{ tiles, sealed_structures }` payload, using the repo's own pipeline + terrain
 + biome data so its verdict matches the running game. It exits non-zero if any
 ERROR-severity finding exists.
