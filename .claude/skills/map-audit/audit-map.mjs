@@ -285,6 +285,41 @@ async function main() {
   }
 
   // ===========================================================================
+  // CHECK C6b — interior reachability from the open world.
+  // Independent of sealed_structures: flood from open-country tiles and any
+  // open-country entrance (a tile whose doors include a procedural/void hex),
+  // traversing the symmetric door graph. Any `indoor` tile not reached is an
+  // orphan room or a "sealed box" (e.g. an empty `doors: []`) the player can
+  // never enter — which the NO_DOORS check, by design, does not catch.
+  // ===========================================================================
+  {
+    const OPEN = new Set(["settlement", "street", "road", "plains", "hills", "forest", "marsh", "mountains"]);
+    const edgeOpen = (ax, ay, bx, by) => {
+      const a = effective[key(ax, ay)], b = effective[key(bx, by)];
+      const aOk = !a?.doors || a.doors.some((d) => d.x === bx && d.y === by);
+      const bOk = !b?.doors || b.doors.some((d) => d.x === ax && d.y === ay);
+      return aOk && bOk;
+    };
+    const hasVoidDoor = (t) => Array.isArray(t.doors) && t.doors.some((d) => !effective[key(d.x, d.y)]);
+    const seeds = [];
+    for (const [k, t] of Object.entries(effective)) {
+      if (!t) continue;
+      if ((OPEN.has(t.terrain) && (!Array.isArray(t.doors) || hasVoidDoor(t))) || hasVoidDoor(t)) seeds.push(k);
+    }
+    const seen = new Set(seeds); const stack = [...seeds];
+    while (stack.length) {
+      const { x, y } = parseKey(stack.pop());
+      for (const d of HEX_DIRS) {
+        const nk = key(x + d.x, y + d.y); const nt = effective[nk];
+        if (!nt || seen.has(nk) || nt.terrain === "water") continue;
+        if (edgeOpen(x, y, x + d.x, y + d.y)) { seen.add(nk); stack.push(nk); }
+      }
+    }
+    const unreachable = Object.keys(effective).filter((k) => effective[k]?.terrain === "indoor" && !seen.has(k));
+    if (unreachable.length) add("ERROR", "UNREACHABLE_INTERIOR", `${unreachable.length} indoor tile(s) cannot be reached from the open world by any door path — orphan rooms or sealed "empty doors" boxes the player can never enter.`, unreachable);
+  }
+
+  // ===========================================================================
   // CHECK C7 — POI footprint (parent/part) consistency
   // ===========================================================================
   {
