@@ -225,7 +225,7 @@ export const BUILDINGS = {
   //     and reused by both the Caravanserai surfaces and the originally-
   //     planned in-city High Quay / Embassy Lane wirings — same id, same
   //     entry serves both.)
-  //   - Patrician Estate (south satellite): chapel-priest, house-steward,
+  //   - Noble Rise (west inner ward): chapel-priest, house-steward,
   //     marriage-clerk, noble-gate-guard, patron-salon.
   //
   // Alphabetised by key. Trade counters carry `kind:"trader"`, modest
@@ -434,11 +434,11 @@ export const BUILDINGS = {
   "noble-gate-guard": {
     id: "noble-gate-guard",
     kind: "gate",
-    label: "Estate Gate",
+    label: "Noble Gate",
     keeper: "the gate clerk",
     icon: "bldg",
     hours: { open: 6, close: 22 },
-    blurb: "A double-leaf iron gate hung between two pillars of pale ashlar, the bars wrought into the linked-hounds device of House Drelan. Two house-guards in iron-and-russet livery stand under the arch with halberds at rest; a clerk on a stool keeps a ledger of expected callers, names crossed off in pencil as the carriages roll through.",
+    blurb: "A double-leaf iron gate hung between two pillars of pale ashlar set in the city's inner ring wall, the bars wrought into the linked-hounds device of House Drelan — the only public way into Noble Rise. Two house-guards in iron-and-russet livery stand under the arch with halberds at rest; a clerk on a stool keeps the day's ledger of expected callers, names crossed off in pencil, and sends tradesmen round to the service lane.",
   },
 
   "oath-priest": {
@@ -474,13 +474,13 @@ export const BUILDINGS = {
   // ===========================================================================
   // Whitemarch satellite outer-rings (SAT-5 patch)
   //
-  // 12 service entries the three outer-ring patch modules reference:
+  // 10 service entries the outer-ring patches and Noble Rise reference:
   //   - Outer Works patch (north satellite annulus): cartwright, sutler.
   //   - Caravanserai patch (west satellite annulus): cartwright, cooper,
   //     foreign-trader.
-  //   - Patrician Estate patch (south satellite annulus): carriage-wright,
-  //     dairy-keeper, estate-steward, falconer, kennel-master,
-  //     master-gardener, orangery-keeper, tenant-row.
+  //   - Noble Rise (House Drelan's west inner ward, formerly the south estate):
+  //     almoner, carriage-wright, estate-steward, master-gardener,
+  //     orangery-keeper, tenant-row.
   //
   // `cartwright` is declared by BOTH the Outer Works patch (a road-fort
   // repair-yard for military and Crown Road wagons) and the Caravanserai
@@ -543,22 +543,6 @@ export const BUILDINGS = {
     ],
   },
 
-  "dairy-keeper": {
-    id: "dairy-keeper",
-    kind: "trader",
-    label: "Dairy Court",
-    keeper: "the dairy-keeper",
-    icon: "market",
-    hours: { open: 5, close: 17 },
-    buys: ["food"],
-    blurb: "A flagged court walled on three sides by the estate's working dairy — cold-room sunk half a step below grade, butter-churn worked by the dairyman's daughter through the morning, wheels of soft and hard cheese aging on slatted shelves against the north wall. The kitchen-court takes its butter and cheese here twice a day, signed for in the keeper's book; the surplus rolls to market on the second-day of the week.",
-    stock: [
-      { id: "fresh-meat",  chance: 0.6, qty: [1, 3], priceMult: 1.25 },
-      { id: "smoked-ham",  chance: 0.4, qty: [1, 2], priceMult: 1.3 },
-      { id: "trail-rations", chance: 0.5, qty: [1, 3], priceMult: 1.25 },
-    ],
-  },
-
   "estate-steward": {
     id: "estate-steward",
     kind: "steward",
@@ -566,17 +550,7 @@ export const BUILDINGS = {
     keeper: "the estate steward",
     icon: "bldg",
     hours: { open: 6, close: 20 },
-    blurb: "A two-storey timber lodge west of the avenue, the working office of the estate's full steward — a separate officer from the house-steward who runs the Servants' Lane inside the inner compound. A high desk by the window, a wall of pigeon-holes for rent-rolls and seed-bills, a small fire that burns through the working months. He audits the tenant rents the first week of every quarter, the wood-warden's tally at midsummer and midwinter, and the dairy-court's accounts every market-day.",
-  },
-
-  falconer: {
-    id: "falconer",
-    kind: "keeper",
-    label: "Falconry Mews",
-    keeper: "the falconer",
-    icon: "bldg",
-    hours: { open: 6, close: 19 },
-    blurb: "A long low building of timber on stone footings, the roof oversailed to keep the perches dry. Three gyrs hooded on the wall-perches, a pair of peregrines for the heir's autumn flights, four kitchen sparrow-hawks for the household pigeons, an old red kite kept for sentiment. Leather hoods on pegs, a block of weighing-stones, the smell of feather and well-kept meat. Strangers are not let inside while a bird is on the fist.",
+    blurb: "A two-storey timber lodge west of the avenue, the working office of the estate's full steward — a separate officer from the house-steward who runs the Servants' Lane inside the inner compound. A high desk by the window, a wall of pigeon-holes for rent-rolls and seed-bills, a small fire that burns through the working months. He audits the house rents and the Townhouse Row leases the first week of every quarter, and squares the ward's tradesmen accounts at midsummer and midwinter.",
   },
 
   "foreign-trader": {
@@ -597,16 +571,6 @@ export const BUILDINGS = {
     ],
   },
 
-  "kennel-master": {
-    id: "kennel-master",
-    kind: "keeper",
-    label: "Kennels",
-    keeper: "the kennel-master",
-    icon: "bldg",
-    hours: { open: 6, close: 20 },
-    blurb: "A long timber building east of the avenue, twenty-three couples of the Drelan strain in a double row of slatted stalls along its length — black, tan, and white in the pattern her grandmother bred. A feeding-room at the south end where the meat is cut and the meal mixed; a bench where the kennel-master sleeps in lambing season when the bitches whelp. The dogs bay when a carriage rolls up the avenue, the sound carrying clear over the inner wall.",
-  },
-
   "master-gardener": {
     id: "master-gardener",
     kind: "keeper",
@@ -614,7 +578,7 @@ export const BUILDINGS = {
     keeper: "the master gardener",
     icon: "bldg",
     hours: { open: 5, close: 20 },
-    blurb: "A small stone cottage west of the avenue, set apart from the tenant cottages by a clipped hedge of box. A tiled hearth in the kitchen, a glassed window the tenants do not have, a key-ring at the gardener's belt that opens the orangery, the inner walled gardens' side-gate, the seed-store, and the lock on the orchard's south door. Behind the cottage a low shed of working tools and the rolled canvas covers for the citrus.",
+    blurb: "A small stone cottage west of the avenue, set apart from Townhouse Row by a clipped hedge of box. A tiled hearth in the kitchen, a glassed window the row does not have, a key-ring at the gardener's belt that opens the orangery, the Walled Garden's side-gate, and the seed-store. Behind the cottage a low shed of working tools and the rolled canvas covers for the citrus.",
   },
 
   "orangery-keeper": {
@@ -653,11 +617,44 @@ export const BUILDINGS = {
   "tenant-row": {
     id: "tenant-row",
     kind: "keeper",
-    label: "Tenant Cottages",
-    keeper: "the tenant headman",
+    label: "Townhouse Row",
+    keeper: "the row headman",
     icon: "bldg",
     hours: { open: 5, close: 22 },
-    blurb: "A row of seven low stone cottages along the inside of the west wall, where the estate's working families live: the dairyman and his wife, the head shepherd, the wood-warden, the estate carpenter, the head gardener, and the two families of the gardeners' apprentices. Each cottage with its own small garden of cabbages and onions, a common well at the south end pulling clear cold water from under the grounds. The headman keeps the rota and stands first at the steward's door for the row's disputes.",
+    blurb: "A terrace of tall narrow townhouses on the south side of the Noble Walk, let to the lesser gentry and the households of Drelan retainers — the family physician, the estate's factors, the marriage-clerk, and the senior servants who do not sleep in the Great House. Each with a railed step to the street and a small walled yard behind. The headman keeps the row's rota and stands first at the steward's door for its disputes.",
+  },
+
+  almoner: {
+    id: "almoner",
+    kind: "keeper",
+    label: "Almoner's Hall",
+    keeper: "the almoner",
+    icon: "bldg",
+    hours: { open: 7, close: 16 },
+    blurb: "A plain hall near the Noble Gate where House Drelan gives out bread, coin, and cast-off cloth to the deserving poor on the appointed days. A lay-brother of the Oath keeps the alms-roll at a high desk; petitioners queue along the Noble Walk under the eye of the gate-guard, and are seen one at a time.",
+  },
+
+  "commons-gate": {
+    id: "commons-gate",
+    kind: "gate",
+    label: "Commons Gate",
+    keeper: "the gate beadle",
+    icon: "bldg",
+    hours: { open: 5, close: 21 },
+    blurb: "A plain stone gate-arch where the Low Wards open onto the Citadel Approach — no portcullis, only a barred night-door and the beadle's lodge. By day the poor spill out to the processional road to beg, hawk, and watch the carriages climb to the Citadel; at the curfew bell the beadle bars the door and the ward is shut in until dawn.",
+  },
+
+  tavern: {
+    id: "tavern",
+    kind: "tavern",
+    label: "The Leaning Tankard",
+    keeper: "the landlord",
+    icon: "bldg",
+    hours: { open: 6, close: 1 },
+    blurb: "A low smoke-blackened tap-room sinking on its north side, the benches worn to a shine and the floor sloping enough to roll a dropped coin to the wall. Thin ale by the jack, a pot of something grey on the fire, a back room let by the hour, and a landlord who hears everything the wards say and sells the better half of it.",
+    blurb_short: "Thin ale, a sloping floor, a landlord who listens.",
+    icon_glyph: "tavern",
+    hms: null,
   },
 };
 

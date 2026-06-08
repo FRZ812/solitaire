@@ -62,3 +62,25 @@ S1's town.js BUILDINGS audit.
 - POI types in use: `plaza, hall, market, stair, gate, tower, barracks,
   dock, yard, court, prison, smithy, temple, town, river, sewer,
   slavemarket, hidden, site, bldg, asylum`.
+
+## Regeneration & rendering (round-trip)
+
+The `district-*.js` files in this directory are now **auto-generated** from
+the live `handcrafted_map` row and kept in sync with it (the earlier
+hand-authored modules drifted to ~12% overlap and are kept under
+`_archived-stale-preresync-*/` for lore/history).
+
+- **Resync git from the DB:** `node scripts/whitemarch-export-districts.mjs
+  --from-db --out src/data/whitemarch-districts` (or `--in <snapshot.json>`).
+  It partitions tiles by `poi.parentName` (unparented → `_core`), verifies a
+  byte-exact round-trip, and rewrites every module plus `_MANIFEST.md`.
+- **Visualize:** `node scripts/whitemarch-ascii.mjs --from-db --no-water`
+  renders the map (or `--ward <name>` / `--region x0,x1,y0,y1`) as
+  screen-space ASCII with a N/E compass — the same projection MapView uses.
+- **Push edits back:** edit a module (or the MapEditor) then
+  `node scripts/seed-whitemarch-districts.js --dry` to validate and
+  `--apply` to write. Because the files are a faithful partition,
+  re-applying an unchanged export is a no-op.
+
+`_MANIFEST.md` lists every ward with its tile count and bounding box.
+
