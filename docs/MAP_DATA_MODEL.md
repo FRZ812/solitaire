@@ -20,11 +20,24 @@ reproduces the shipping map. All of this is **additive and inert**: the runtime
 still reads `handcrafted_map`; nothing in the game has changed yet.
 
 ### Remaining to cut over (next phase)
-1. A Postgres function/trigger to compile the layers → `map_compiled.tiles`.
+1. A Postgres function/trigger to compile the layers → `map_compiled.tiles`,
+   with **hierarchy-aware connectivity** (a child place's cells connect to their
+   parent's adjacent cells implicitly) so the open street fabric collapses the
+   ~190 gate edges further.
 2. Point `hydrateMap()` (`src/data/handcrafted-map.js`) at `map_compiled` (one
    line; revert-safe), keeping `buildHandcrafted` for wall auto-seal.
 3. Move `MapEditor` writes to per-cell / per-place; add owner-scoped write RLS.
 4. Retire (or keep as a generated export) the monolithic blob.
+
+### Place hierarchy (seeded)
+Curated in `supabase/seed_map_v2_places.sql`. Every cell belongs to a place under
+a top-level **Whitemarch** (city): the **City Core** district (87 controlled hexes),
+**The Whitewend** (river, 336), **Whitemarch Walls** (22), the **Caravanserai /
+Outer Works / Caravan Yard** compounds (51), **Noble Rise** estate (29), the
+**Grand Market / Chain Market** (8), **Crown / Prison** gates, the **Citadel**, and
+the **Low Wards** buildings (Leaning Tankard, Bonepicker's Chapel, Almshouse
+Overflow). Parity stays 0/0 after the curation (it's metadata + an open-fabric
+home; neither affects the door compile).
 
 ## 1. Why the current model fights us
 
