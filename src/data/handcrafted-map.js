@@ -56,7 +56,22 @@ export async function hydrateMap() {
       throw new Error(`Failed to load handcrafted map: ${error.message}`);
     }
     loadedUpdatedAt = data.updated_at;
-    applyMapData(data.tiles, data.sealed_structures);
+    // Read the compiled tiles produced by the relational v2 model
+    // (map_cell/map_place/map_edge/map_prose → compile_map_v2() → map_compiled).
+    // It is a verified, byte-faithful reproduction of the authored blob (see
+    // scripts/map-v2-compiled-parity.mjs) and is kept current on blob edits by
+    // the trg_sync_map_compiled trigger. Fall back to the authored tiles if the
+    // compiled row is missing — this whole block is revert-safe: delete it and
+    // the loader is back on the blob. sealed_structures + the updated_at
+    // optimistic-concurrency baseline still come from handcrafted_map.
+    let tiles = data.tiles;
+    const { data: compiled } = await supabase
+      .from("map_compiled")
+      .select("tiles")
+      .eq("id", MAP_ID)
+      .maybeSingle();
+    if (compiled?.tiles) tiles = compiled.tiles;
+    applyMapData(tiles, data.sealed_structures);
   })();
   return hydratePromise;
 }

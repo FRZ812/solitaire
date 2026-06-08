@@ -1,43 +1,58 @@
 # World map data model v2 — relational
 
-Status: **design proven, schema staged** (chosen direction; production cutover
-pending). This document is the concrete design for replacing the single-JSONB-blob
-map with a normalized, relational model that is legible, deduplicated, drift-proof,
-and partially updatable — while keeping the runtime engine unchanged.
+Status: **reads cut over to v2** (game boots from the relational model; blob
+retained as the editor's write surface + backup). This document is the design for
+replacing the single-JSONB-blob map with a normalized, relational model that is
+legible, deduplicated, drift-proof, and partially updatable — keeping the runtime
+engine unchanged.
 
 **Proof:** `scripts/map-v2-parity.mjs` decompiles the live blob into the v2 layers,
 compiles them back, and asserts equality — **0 terrain + 0 door-graph mismatches**:
-921 cells, 20 places, 339 prose paragraphs extracted out of geometry, the whole
-door graph in **190 gate + 18 cut** edges (vs 174 hand-meshed door lists in v1).
+921 cells, 21 places, prose extracted out of geometry, the whole door graph in
+**190 gate + 18 cut** edges (vs 174 hand-meshed door lists in v1).
 
-**The tables are live and seeded.** The schema
-(`supabase/migrations/20260607130000_map_v2_schema.sql`) is applied to the
-database and populated from the blob (prose/cells/places straight from
-`handcrafted_map` server-side; synthesized place groups + edges from the
-decompiler). `scripts/map-v2-db-parity.mjs` reads the seeded tables back out and
-recompiles them: **0 / 0 against the live blob** — the database content provably
-reproduces the shipping map. All of this is **additive and inert**: the runtime
-still reads `handcrafted_map`; nothing in the game has changed yet.
+**The tables are live, seeded, and now read by the game.** Schema in
+`supabase/migrations/20260607130000_map_v2_schema.sql` (relational layers) +
+`20260608000000_map_v2_compile.sql` (lossless columns, the `compile_map_v2()` SQL
+compiler, and the blob→`map_compiled` sync trigger); data in
+`supabase/seed_map_v2.sql`. `hydrateMap()` reads `map_compiled` (the compiled
+blob), with a fallback to the authored blob.
 
-### Remaining to cut over (next phase)
-1. A Postgres function/trigger to compile the layers → `map_compiled.tiles`,
-   with **hierarchy-aware connectivity** (a child place's cells connect to their
-   parent's adjacent cells implicitly) so the open street fabric collapses the
-   ~190 gate edges further.
-2. Point `hydrateMap()` (`src/data/handcrafted-map.js`) at `map_compiled` (one
-   line; revert-safe), keeping `buildHandcrafted` for wall auto-seal.
-3. Move `MapEditor` writes to per-cell / per-place; add owner-scoped write RLS.
+**Two parity gates:** `scripts/map-v2-db-parity.mjs` proves the relational
+**door graph + terrain** reproduce the blob (0/0); `scripts/map-v2-compiled-parity.mjs`
+proves the **whole compiled tile payload** reproduces it — 0 payload diffs, 0
+door-*set* diffs, and running the real `buildHandcrafted` pipeline on either
+source yields an identical 921-tile map. (Door element *order* differs on 63
+tiles; it is semantically inert — `world.js hasDoorTo` reads doors as a set.)
+
+> **Losslessness note.** The terrain+door parity that gated the seed did NOT
+> cover the full tile payload. `material` (165), `wallside` (3), `poi.area` (268),
+> `poi.partName` (311) and `poi.parentName` were never captured, and poi presence
+> is three-way (object/explicit-null/absent). `20260608000000` adds first-class
+> columns for all of these (+ `map_place.poi_anchor`) and `seed_map_v2.sql`
+> backfills them from the blob — which is why the compiled parity is now exact.
+
+### Remaining (write-path phase)
+1. Move `MapEditor` writes to per-cell / per-place against the relational tables;
+   add owner-scoped write RLS. Then flip the read source of truth fully onto the
+   relational model.
+2. Switch the sync so `map_compiled` is refreshed by `compile_map_v2()` on
+   relational edits, and retire the blob→`map_compiled` mirror trigger.
+3. Optional: **hierarchy-aware connectivity** (child-place cells connect to their
+   parent's adjacent cells implicitly) to collapse much of the 190 gate edges.
 4. Retire (or keep as a generated export) the monolithic blob.
 
+Until step 1 lands, the blob remains the edit surface: the `trg_sync_map_compiled`
+trigger mirrors any blob edit into `map_compiled` so reads never go stale.
+
 ### Place hierarchy (seeded)
-Curated in `supabase/seed_map_v2_places.sql`. Every cell belongs to a place under
+Curated in `supabase/seed_map_v2.sql`. Every cell belongs to a place under
 a top-level **Whitemarch** (city): the **City Core** district (87 controlled hexes),
 **The Whitewend** (river, 336), **Whitemarch Walls** (22), the **Caravanserai /
 Outer Works / Caravan Yard** compounds (51), **Noble Rise** estate (29), the
 **Grand Market / Chain Market** (8), **Crown / Prison** gates, the **Citadel**, and
 the **Low Wards** buildings (Leaning Tankard, Bonepicker's Chapel, Almshouse
-Overflow). Parity stays 0/0 after the curation (it's metadata + an open-fabric
-home; neither affects the door compile).
+Overflow).
 
 ## 1. Why the current model fights us
 
@@ -157,20 +172,20 @@ Claude artifact" build still works (anon read of `map_compiled`).
 
 ## 6. Migration path (staged, parity-gated, reversible)
 
-1. **Add tables + compiler behind a flag.** No behaviour change; live row stays
-   authoritative.
-2. **Decompile** the current (door-fixed) blob → seed `map_cell` (one row/tile),
-   `map_place` (from `poi.parent` groups + standalone), `map_prose` (extract every
-   `description`), `map_edge` (derive gates/cuts from the door graph). One script.
-3. **Parity test:** compile tables → assert the produced `tiles` equals the
-   blob-derived `HANDCRAFTED` (the `map-audit` auditor + a structural diff prove
-   equivalence). Iterate until identical.
-4. **Cut over** `hydrateMap` to `map_compiled`. Keep the old blob as an export/backup.
-5. **MapEditor** writes per-cell / per-place (partial updates) instead of the whole blob.
-6. **Retire** the monolithic `tiles` blob (or keep it as a generated export only).
+1. ✅ **Add tables + compiler.** No behaviour change; blob stayed authoritative.
+2. ✅ **Decompile** the blob → seed `map_cell` (one row/tile), `map_place` (from
+   `poi.parent` groups + standalone), `map_prose` (every `description`),
+   `map_edge` (gates/cuts from the door graph), + the lossless payload backfill.
+3. ✅ **Parity:** `map-v2-db-parity.mjs` (door graph + terrain) and
+   `map-v2-compiled-parity.mjs` (whole tile payload, incl. the real pipeline) both
+   green against the blob.
+4. ✅ **Cut over** `hydrateMap` to `map_compiled` (revert-safe, blob fallback).
+   Blob kept as the edit surface + backup, mirrored into `map_compiled` by trigger.
+5. ⬜ **MapEditor** writes per-cell / per-place (partial updates) instead of the blob.
+6. ⬜ **Retire** the monolithic `tiles` blob (or keep it as a generated export only).
 
-Each step is independently shippable; cutover is one line and reverts cleanly to
-the blob.
+Each step is independently shippable; the cutover is one block in `hydrateMap` and
+reverts cleanly to the blob.
 
 ## 7. What this buys (problem → fix)
 

@@ -1,17 +1,21 @@
--- Map v2 — curated place layer (the human-authored hierarchy).
+-- Map v2 — data layer: curated place hierarchy + lossless cell backfill.
 --
 -- The mechanical layers (map_prose / map_cell / map_edge) are seeded from the
 -- live handcrafted_map blob: prose + cells + parent-places via server-side
 -- INSERT ... SELECT over jsonb_each(tiles); synthesized place groups + the
 -- gate/cut edges via `node scripts/map-v2-parity.mjs --live --emit seed.json`.
--- door_controlled is set from `(tile ? 'doors')`. End-to-end parity with the
--- blob is asserted by scripts/map-v2-db-parity.mjs (0 terrain + 0 door-graph
--- mismatches).
+-- door_controlled is set from `(tile ? 'doors')`. Door-graph + terrain parity
+-- is asserted by scripts/map-v2-db-parity.mjs; full compiled parity (the whole
+-- tile payload) by scripts/map-v2-compiled-parity.mjs.
 --
--- THIS file is the hand-curated overlay on top of that: a top-level Whitemarch
--- city, meaningful names/kinds for the synthesized groups, and the parent_place
--- hierarchy. It is parity-neutral (names/kinds/hierarchy don't affect the door
--- compile; the orphaned open street fabric is given a home but emits no doors).
+-- THIS file is the hand/blob-derived data overlay on top of that: (A) a curated
+-- top-level Whitemarch city with names/kinds and the parent_place hierarchy,
+-- and (B) the lossless backfill of the tile-payload fields the decompiler did
+-- not capture (material, wallside, poi.area/partName/parentName, poi presence,
+-- and which places are poi anchors). Run after the schema/compile migration
+-- (20260608000000_map_v2_compile.sql); it ends by compiling map_compiled.
+
+-- (A) curated place hierarchy ----------------------------------------------
 
 insert into public.map_place (id,name,kind,sealed,access_default) values
   ('whitemarch','Whitemarch','city',false,'public')
@@ -37,3 +41,25 @@ update public.map_place set kind='building' where id in ('whitemarch-registry-ha
 -- nest every structure under the city, and give the open street fabric a home
 update public.map_place set parent_place='whitemarch' where id <> 'whitemarch';
 update public.map_cell  set place_id='whitemarch'     where place_id is null;
+
+-- (B) lossless tile-payload backfill from the blob --------------------------
+with t as (select tiles from public.handcrafted_map where id='whitemarch'),
+ e as (select split_part(key,',',1)::int x, split_part(key,',',2)::int y, value v
+       from t, jsonb_each((select tiles from t)))
+update public.map_cell c set
+  area        = e.v->'poi'->>'area',
+  part_name   = e.v->'poi'->>'partName',
+  parent_name = e.v->'poi'->>'parentName',
+  material    = e.v->>'material',
+  wallside    = (e.v->>'wallside')::boolean,
+  poi_state   = case jsonb_typeof(e.v->'poi') when 'object' then 'object' when 'null' then 'null' else null end
+from e where c.x = e.x and c.y = e.y;
+
+with t as (select tiles from public.handcrafted_map where id='whitemarch'),
+ parents as (select distinct value->'poi'->>'parent' pid
+             from t, jsonb_each((select tiles from t))
+             where value->'poi'->>'parent' is not null)
+update public.map_place p set poi_anchor = true where p.id in (select pid from parents);
+
+-- compile the relational model into map_compiled (what hydrateMap reads)
+select public.refresh_map_compiled('whitemarch');
