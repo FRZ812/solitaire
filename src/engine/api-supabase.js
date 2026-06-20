@@ -27,10 +27,12 @@ const RETRY_HINT_1 =
 const RETRY_HINT_2 =
   "[RETRY HINT 2: previous attempt still cut short. Paraphrase your intended beat in different words — terse (≤ 150 words narration), avoid graphic embellishment, preserve the core action. Output well-formed JSON within budget.]";
 
-// onProgress (optional): called with { thinking, text } chunks as they
-// stream in from the edge function. `thinking` chunks fire as DeepSeek emits
-// its reasoning trace; `text` chunks fire as the answer JSON streams. Both
-// are partial — concatenate to build the full string. The final narrator
+// onProgress (optional): called with chunks as they stream in from the edge
+// function. `{ thinking }` chunks fire as the model emits its reasoning trace;
+// `{ text }` chunks fire as the answer JSON streams. Both are partial —
+// concatenate to build the full string. A `{ reset: true }` chunk fires at the
+// start of every attempt, so a live-thinking UI can clear the previous take's
+// reasoning before a truncation-retry streams its own. The final narrator
 // beat is returned from this function after the stream completes.
 //
 // Retry policy on truncation: attempt 0 is the original call. If it parses
@@ -115,6 +117,8 @@ function pickBest(results) {
 // (with _truncated flag if salvaged) wrapped as { result }. Throws on
 // !response.ok or missing body — the caller decides whether to retry.
 async function runOneAttempt({ session, state_context, history, userMsgRaw, onProgress, model, reasoning_effort }) {
+  // Mark a fresh attempt so any live-thinking UI clears the prior take.
+  onProgress?.({ reset: true });
   const response = await fetch(FUNCTION_URL, {
     method: "POST",
     headers: {

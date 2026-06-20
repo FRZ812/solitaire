@@ -54,7 +54,7 @@ import { poiPlaceName } from "./engine/location.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
 import { CombatView } from "./components/combat/CombatView.jsx";
-import { VitalsStrip, InputBar, LoadingDots, ErrorBanner } from "./components/primitives.jsx";
+import { VitalsStrip, InputBar, LoadingDots, LiveThinking, ErrorBanner } from "./components/primitives.jsx";
 import { BeatActionSheet } from "./components/BeatActionSheet.jsx";
 import { colors } from "./components/tokens.js";
 import { BeatRender } from "./components/beats/BeatRender.jsx";
@@ -298,6 +298,9 @@ export function Solitaire() {
     return new Promise((resolve) => setNamePrompt({ ...opts, resolve }));
   }
   const [hydrated, setHydrated] = useState(false);
+  // The narrator's reasoning trace as it streams in for the in-flight turn —
+  // shown live under the loading dots, cleared at the start of each turn.
+  const [liveThinking, setLiveThinking] = useState("");
   const logRef = useRef(null);
 
   // Combat: `combat` holds the active turn-state (null = not fighting);
@@ -480,7 +483,7 @@ export function Solitaire() {
     toBottom();
     const r = requestAnimationFrame(toBottom);
     return () => cancelAnimationFrame(r);
-  }, [state.beats.length, loading, hydrated, currentCampaignId]);
+  }, [state.beats.length, loading, liveThinking, hydrated, currentCampaignId]);
 
   // ----- Campaign handlers -----
 
@@ -634,6 +637,20 @@ export function Solitaire() {
     await runNarratorTurn(stateWithPlayer, message);
   }
 
+  // Narrator wrapper used by every turn site. Streams the model's reasoning
+  // into the live-thinking panel the instant it starts, clearing the buffer at
+  // the start of the turn; the edge function emits { reset } per attempt so a
+  // truncation-retry's second take replaces the first. The narration text
+  // (`text` chunks) is JSON, so it isn't shown live — only the thinking is.
+  // Drop-in for callNarrator; returns the same parsed beat promise.
+  function narrate(st, msg) {
+    setLiveThinking("");
+    return callNarrator(st, msg, (c) => {
+      if (c.reset) setLiveThinking("");
+      else if (c.thinking) setLiveThinking((t) => t + c.thinking);
+    });
+  }
+
   // Run a player-message turn against the narrator. On failure (dropped network,
   // backgrounded app…) the message is preserved and stashed for a one-tap Retry —
   // the typed action is never lost.
@@ -641,7 +658,7 @@ export function Solitaire() {
     setError(null);
     setLoading(true);
     try {
-      const beat = await callNarrator(base, message);
+      const beat = await narrate(base, message);
       const next = applyBeat(base, beat);
       setState(recordTurn(base, message, next));
       setRetry(null);
@@ -815,7 +832,7 @@ export function Solitaire() {
   // (which reveals sight by travel.mode), record the turn, offer any fight.
   async function finishTravel(stateWithPlayer, fullMsg, travel) {
     try {
-      const beat = await callNarrator(stateWithPlayer, fullMsg);
+      const beat = await narrate(stateWithPlayer, fullMsg);
       const next = applyTravelArrival(stateWithPlayer, beat, travel);
       setState(recordTurn(stateWithPlayer, fullMsg, next, { travel }));
       if (travel.encounter && travel.encounter.posture === "hostile") setPendingCombat(travel.encounter);
@@ -1064,7 +1081,7 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[TRADE] You have just finished trading with ${building.keeper} at ${place} (${building.label}). ${ledger}. Narrate a SHORT closing exchange (1–3 sentences, you may include a line of the keeper's dialogue) in which ${building.keeper} reacts to THIS specific haul: name an item or two, read what the player seems to be planning or doing from what they took or unloaded, and respond in character — offer fitting help (e.g. a healer asking if you need a hand setting that splint), a knowing remark about the trade (a doctor? an alchemist? or did you rob an apothecary?), gratitude, or wary curiosity. The coin is already settled at the counter, so do NOT tally or change it, and do not invent items beyond those listed.`;
-      const beat = await callNarrator(stateWithPlayer, msg);
+      const beat = await narrate(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
@@ -1155,7 +1172,7 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[APPROACH MOUNT] At ${place} the player looks to buy a ${tmpl.tier} ${tmpl.race} — a ${tmpl.name} (id: ${tmpl.id}): "${tmpl.desc}". The stabler's LISTED price is ${formatCopper(tmpl.priceCp || 0)}. The player has ${coins} on hand. Open the dealing in the stabler's voice per the [APPROACH MOUNT] doctrine — bring the beast out and show it, name the price, and haggle. Do NOT finalize on this beat; close it with buy_mount only when a settlement is reached — coin agreed and affordable, OR a non-coin path the fiction earns (a noble's writ accepted on credit, a ruse, a quiet theft, an in-kind trade); pass {settlement,settlementNote} when it isn't coin. The beast already has a name of the stabler's giving.`;
-      const beat = await callNarrator(stateWithPlayer, msg);
+      const beat = await narrate(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
@@ -1265,7 +1282,7 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[APPROACH RECRUIT] At ${place} the player approaches ${tmpl.name} (id: ${tmpl.id}), a ${tmpl.race} ${tmpl.role} — "${tmpl.desc}" — who is posted as willing to take the road for ${tmpl.terms}. They are ${tmpl.choosiness}-choosiness about who they'll follow. The player's company right now reads as ${standing.descriptor}; its strongest qualities: ${standing.bestLine}. Weighing that, ${tmpl.name}'s likely reception is "${outlook}". This is a FIRST meeting: ${tmpl.name} does NOT know the player's name (a name given earlier to the innkeeper did not reach them) — they address the player by look, bearing, or role until the player offers it, and only learn it if the player actually gives it during this exchange. Open the conversation in ${tmpl.name}'s voice — size up the player and their band, state interest/terms/skepticism. Do NOT have them join yet; the player must talk them round across the exchange. Only set recruit_companion:{"id":"${tmpl.id}"} once they are GENUINELY won over by what the player says and shows — and a scornful, unimpressed prospect (a strong fighter eyeing a lone weakling) may refuse outright. Keep it grounded; let the player's words decide.`;
-      const beat = await callNarrator(stateWithPlayer, msg);
+      const beat = await narrate(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
@@ -1295,7 +1312,7 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[PLAYER ACTION] [PART WAYS] You move to ${isMount ? `set ${name} loose` : `part ways with ${name}`}. Play the scene per the PARTING doctrine — voices in character, the party weighing in${isMount ? " (and likely objecting to abandoning a sound, paid-for beast — sell it instead?)" : ""}. Do NOT remove anyone yet unless it genuinely resolves now; the player may argue. Only set part_ways:{"id":"${id}"} once the parting is truly settled.`;
-      const beat = await callNarrator(stateWithPlayer, msg);
+      const beat = await narrate(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
@@ -1329,7 +1346,7 @@ export function Solitaire() {
     try {
       const near = res.place ? `${Math.round(res.place.dist)} hex(es) from ${res.place.name}` : `open, unmapped country at (${res.pos.x},${res.pos.y})`;
       const msg = `[PLAYER ACTION] [SCRY] You work a scrying to seek ${res.name}. The vision finds them ${res.pos.exact ? "" : "roughly "}at hex (${res.pos.x},${res.pos.y}) — ${near}. Describe what shows in the glass: where ${res.name} is now, what they are about, who is near — true to what's known of them and that place. This is the ONLY way the player learns a character's whereabouts; reveal no more than the scrying shows. Use minutes_passed = 10.`;
-      const beat = await callNarrator(stateWithPlayer, msg);
+      const beat = await narrate(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
     } catch (e) {
@@ -1373,7 +1390,7 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[INSPECT RIGHTS] At ${place} the player has walked up to the warden's desk to inspect the rights of ${p.name} (key: ${p.key}; ${p.gender}, age ${p.age}), held for ${p.crime} — ${p.desc}. The warden's asking is ${formatCopper(p.rightsCp)} (this is the OPENING price; the player has paid NOTHING yet). Open the scene: the prisoner stands in the cell or is fetched to the desk, the warden reads the charge, names the fee. Voice the prisoner sparingly during inspection — they don't speak unless addressed. The player chats in their own voice across multiple turns; the warden may lower the fee within reason, hold firm, or refuse the sale (rare). Only when the settlement is reached — coin agreed, OR a non-coin path the warden accepts in fiction (a noble's writ-of-deposit, a forged release-order, a bribe in kind, a quiet swap) — set purchase_rights:{"key":"${p.key}","agreedPriceCp":<final copper>,"settlement":"coin|writ|ruse|theft|gift|barter","settlementNote":"<one-line act; required for non-coin>"}; the engine takes coin only when settlement is coin, files the bonded codex entry with the settlement recorded, and adds the prisoner to the party. The consequence of a non-coin settlement (the writ called in, the forgery surfacing, a bribed keeper turning) is yours to play in later beats. If the player walks away without a deal, just narrate the close and emit nothing. Don't fabricate combat.`;
-      const beat = await callNarrator(stateWithPlayer, msg);
+      const beat = await narrate(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
@@ -1405,7 +1422,7 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[INSPECT CAPTIVE] At ${place} the player has moved along the line to inspect ${c.name} (key: ${c.key}; ${c.gender}, age ${c.age}) — ${c.origin}, ${c.taken} (${c.desc}). They can ${c.skills}. Their spirit reads as ${c.spirit}. Their freedom_response cue, for if the player offers to free them: ${c.freedom_response}. The Chain Factor's asking bond is ${formatCopper(c.priceCp)} — this is the OPENING price; the player has paid NOTHING yet. Open the inspection scene: the captive stands counted on the platform, irons heated at the edge, the trader reads the slate and frames the four-factor appraisal (skills, appearance, rarity, age/condition). Voice the captive sparingly during inspection — they don't speak unless addressed. The player chats in their own voice across multiple turns; the trader may lower the bond within reason (his floor is a real one), hold firm, or refuse the sale (rare). The captive's freedom_response/refusal-doctrine stays in force for any actual offer of freedom. Only when the settlement is reached — coin agreed and the trader strikes the irons, OR a non-coin settlement the trader accepts (a noble's deposit-writ on credit, a forged seal, a ruse, a captive taken off the platform by force or sleight, an in-kind trade) per THE BLOCK doctrine — set purchase_captive:{"key":"${c.key}","agreedPriceCp":<final copper>,"settlement":"coin|writ|ruse|theft|gift|barter","settlementNote":"<one-line act-description; required for non-coin>"}; the engine takes coin only when settlement is coin, files the bonded codex entry with the settlement recorded, and adds the captive to the party — narrate the hand-off (irons struck, writ signed, captive falls in line, or whatever the act demands). The consequence of a non-coin settlement (the trader calling in the writ, an uncovered ruse souring the trader and Registry, the watch chasing a theft, a debt of service binding the player to a noble's house) is yours to play in later beats. If the player walks away without a deal, just narrate the close and emit nothing. Don't fabricate combat.`;
-      const beat = await callNarrator(stateWithPlayer, msg);
+      const beat = await narrate(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
@@ -1457,7 +1474,7 @@ export function Solitaire() {
     setState(base); // roll the rejected beat (and any later ones) out of the log + memory
     try {
       const directive = `\n\n[REWRITE — author's steer] The player is exercising author's privilege over your PREVIOUS narration of this exact moment and wants it taken in a different direction. Your previous version was:\n"""\n${cp.prevText}\n"""\nWrite a NEW version of this same moment from the same game state, fully honoring the player's steer: "${feedback}". This is how the player nudges the story toward turns it would not take on its own — a trope, a twist, a character's choice. Lean into it as far as the established world, characters, and state plausibly allow, and keep continuity with everything before this moment. Your output REPLACES the previous version; do not mention that it was rewritten.`;
-      const beat = await callNarrator(base, cp.message + directive);
+      const beat = await narrate(base, cp.message + directive);
       // Keep memory clean of the steer scaffolding so later turns don't treat the
       // rejected version as canon.
       beat._userMsg = `${buildStateContext(base)}\n\n${cp.message}`;
@@ -1575,7 +1592,7 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[PLAYER ACTION] You go looking for a fight here — sizing up who might be willing to cross blades.\n\n[SEEK COMBAT] The player is trying to pick a fight at this location. Decide naturally what it holds right now: a willing opponent (set start_combat), no one interested (start_combat null), or consequences for disturbing the peace (guards/patrons step in — start_combat against them). Respect this place's current state; do NOT invent an endless supply of enemies, and if it has already been cleared or emptied there is nothing to fight.`;
-      const beat = await callNarrator(stateWithPlayer, msg);
+      const beat = await narrate(stateWithPlayer, msg);
       const next = applyBeat(stateWithPlayer, beat);
       setState(recordTurn(stateWithPlayer, msg, next));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
@@ -1644,7 +1661,7 @@ export function Solitaire() {
           : "You broke off and fled the fight.";
         msg = `[COMBAT OVER] ${result} At ${place}. Narrate the immediate aftermath STRICTLY from the [COMBAT REPORT] — name the actual foe(s) and their exact fates, the room's reaction, your state — then leave the moment open for the player to react. A foe that yielded is present, beaten, and at your mercy: refer to THEM by name; do NOT introduce or substitute a different character to take the foe's place. Do not restart combat.`;
       }
-      const beat = await callNarrator(next, msg);
+      const beat = await narrate(next, msg);
       const after = applyBeat(next, beat);
       if (epicDeath) {
         const ended = {
@@ -1678,7 +1695,7 @@ export function Solitaire() {
     try {
       const place = currentLocationName(looted);
       const msg = `[LOOTED] You take the time to search the ${manifest.deadCount > 1 ? `${manifest.deadCount} bodies` : "body"} and come away with: ${taken || "little of worth"}. This happens at ${place} and takes several minutes in plain sight. Narrate it, and adjudicate the fallout — rifling a corpse in a public, lawful place draws horror and the watch; in the wilds or a den, no one cares. Apply consequences (location_update, conditions, start_combat with guards, or tile_move) as fits.`;
-      const beat = await callNarrator(looted, msg);
+      const beat = await narrate(looted, msg);
       const after = applyBeat(looted, beat);
       setState(recordTurn(looted, msg, after));
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
@@ -1714,7 +1731,7 @@ export function Solitaire() {
     setError(null);
     try {
       const msg = `[COMBAT ACTION] ${combatContext(combat)}\nThe player's improvised action this turn: "${action}". Adjudicate it from the fiction and return ONLY a combat_effect.`;
-      const beat = await callNarrator(state, msg);
+      const beat = await narrate(state, msg);
       const eff = beat.combat_effect || (beat.narration ? { narration: beat.narration, kind: "miss" } : null);
       let next = eff ? applyCombatEffect(combat, eff) : combat;
       if (!["victory", "defeat", "resolved", "playerFled"].includes(next.phase)) next = endTurn(next);
@@ -1833,7 +1850,7 @@ export function Solitaire() {
         )}
         <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
           {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
-          {loading && <LoadingDots />}
+          {loading && <LiveThinking thinking={liveThinking} />}
           {error && (
             <ErrorBanner>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
