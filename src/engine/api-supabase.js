@@ -11,7 +11,7 @@ import { supabase } from "./supabase-client.js";
 import { buildStateContext } from "./api.js";
 import { extractJSON } from "./json.js";
 import { SYSTEM_PROMPT } from "../system-prompt.js";
-import { getNarratorModel } from "./narrator-models.js";
+import { getNarratorModel, getNarratorEffort } from "./narrator-models.js";
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/narrate`;
 
@@ -47,9 +47,10 @@ const RETRY_HINT_2 =
 export async function callNarrator(state, userMsgRaw, onProgress) {
   const state_context = buildStateContext(state);
   const trimmedHistory = state.apiHistory.slice(-HISTORY_LIMIT);
-  // Which model the edge function should route to — read once so all three
-  // attempts in a turn use the same one even if the player flips it mid-stream.
+  // Which model + thinking effort the edge function should use — read once so
+  // all three attempts in a turn match even if the player flips them mid-stream.
   const model = getNarratorModel();
+  const reasoning_effort = getNarratorEffort();
 
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new Error("not authenticated");
@@ -57,7 +58,7 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
   // Attempt 0: original call. Any thrown error (auth, subscription, server)
   // propagates up — these aren't truncation and aren't worth retrying.
   const attempt0 = await runOneAttempt({
-    session, state_context, history: trimmedHistory, userMsgRaw, onProgress, model,
+    session, state_context, history: trimmedHistory, userMsgRaw, onProgress, model, reasoning_effort,
   });
   if (!attempt0.result._truncated) return attempt0.result;
 
@@ -69,7 +70,7 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
     attempt1 = await runOneAttempt({
       session, state_context, history: trimmedHistory,
       userMsgRaw: `${RETRY_HINT_1}\n${userMsgRaw}`,
-      onProgress, model,
+      onProgress, model, reasoning_effort,
     });
     if (!attempt1.result._truncated) return attempt1.result;
   } catch {
@@ -83,7 +84,7 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
     attempt2 = await runOneAttempt({
       session, state_context, history: trimmedHistory,
       userMsgRaw: `${RETRY_HINT_2}\n${userMsgRaw}`,
-      onProgress, model,
+      onProgress, model, reasoning_effort,
     });
     if (!attempt2.result._truncated) return attempt2.result;
   } catch {
@@ -113,7 +114,7 @@ function pickBest(results) {
 // One round-trip to the narrate edge function. Returns the parsed beat
 // (with _truncated flag if salvaged) wrapped as { result }. Throws on
 // !response.ok or missing body — the caller decides whether to retry.
-async function runOneAttempt({ session, state_context, history, userMsgRaw, onProgress, model }) {
+async function runOneAttempt({ session, state_context, history, userMsgRaw, onProgress, model, reasoning_effort }) {
   const response = await fetch(FUNCTION_URL, {
     method: "POST",
     headers: {
@@ -127,6 +128,7 @@ async function runOneAttempt({ session, state_context, history, userMsgRaw, onPr
       history,
       system_prompt: SYSTEM_PROMPT,
       model,
+      reasoning_effort,
     }),
   });
 

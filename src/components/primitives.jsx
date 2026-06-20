@@ -2,6 +2,11 @@ import React from "react";
 import { Icon } from "./Icon.jsx";
 import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
 import { condName, conditionMeta } from "../data/conditions.js";
+import {
+  NARRATOR_MODELS, NARRATOR_EFFORTS,
+  getNarratorModel, setNarratorModel,
+  getNarratorEffort, setNarratorEffort,
+} from "../engine/narrator-models.js";
 
 // Short "time left" label for a timed condition (e.g. "2.5h", "12m").
 export function fmtRemaining(minutes) {
@@ -406,6 +411,116 @@ export function LiveThinking({ thinking }) {
 
 // ----- Input bar -----
 
+// Small caps section label used inside the narrator popover.
+function PickerLabel({ children }) {
+  return (
+    <div style={{ ...metaStyle, fontSize: "8px", letterSpacing: "0.16em", color: "rgba(215,167,111,0.7)", padding: "6px 9px 5px" }}>
+      {children}
+    </div>
+  );
+}
+
+// The narrator switch that sits to the left of the composer. A compact button
+// showing the active model; tap to open a popover and change the model and (for
+// the DeepSeek thinking models) its reasoning effort on the fly. Self-contained:
+// it reads/writes the persisted choices directly (see engine/narrator-models.js),
+// which callNarrator picks up on the next turn. The popover stays open across
+// selections so both settings can be tweaked at once; an outside tap closes it.
+function NarratorPicker() {
+  const [open, setOpen] = React.useState(false);
+  const [model, setModel] = React.useState(getNarratorModel);
+  const [effort, setEffort] = React.useState(getNarratorEffort);
+  const active = NARRATOR_MODELS.find((m) => m.id === model) || NARRATOR_MODELS[0];
+
+  function chooseModel(id) { setNarratorModel(id); setModel(id); }
+  function chooseEffort(id) { setNarratorEffort(id); setEffort(id); }
+
+  const effortLabel = active.efforts
+    ? ` · ${(NARRATOR_EFFORTS.find((e) => e.id === effort) || {}).label ?? effort}`
+    : "";
+
+  return (
+    <div style={{ position: "relative", flexShrink: 0 }}>
+      {open && (
+        <>
+          {/* Click-away backdrop — closes the popover on any outside tap. */}
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          {/* Popover, anchored above the button (composer sits at screen bottom). */}
+          <div style={{
+            position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 41,
+            minWidth: "212px", padding: "5px",
+            background: "rgba(13, 19, 18, 0.97)",
+            backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+            border: `1px solid rgba(215, 167, 111, 0.22)`,
+            borderRadius: radius.panelCompact, boxShadow: shadow.panel,
+          }}>
+            <PickerLabel>Narrator</PickerLabel>
+            {NARRATOR_MODELS.map((m) => {
+              const on = m.id === model;
+              return (
+                <button key={m.id} onClick={() => chooseModel(m.id)} style={{
+                  width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: "9px",
+                  padding: "9px", borderRadius: radius.chip, fontFamily: "inherit", cursor: "pointer",
+                  border: "none", background: on ? "rgba(215, 167, 111, 0.14)" : "transparent",
+                }}>
+                  <span style={{
+                    width: "7px", height: "7px", borderRadius: radius.pill, flexShrink: 0,
+                    background: on ? colors.gold : "transparent",
+                    border: on ? "none" : `1px solid rgba(215,167,111,0.35)`,
+                  }} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: "13px", fontWeight: on ? 700 : 500, color: colors.parchment }}>{m.label}</span>
+                    {m.note && <span style={{ fontSize: "11px", color: "rgba(237,228,208,0.55)" }}>{m.note}</span>}
+                  </span>
+                </button>
+              );
+            })}
+
+            {/* Thinking effort — only for models that expose it (DeepSeek). */}
+            {active.efforts && (
+              <>
+                <div style={{ height: "1px", margin: "5px 6px", background: "rgba(215,167,111,0.16)" }} />
+                <PickerLabel>Thinking effort</PickerLabel>
+                <div style={{ display: "flex", gap: "6px", padding: "1px 5px 4px" }}>
+                  {active.efforts.map((eid) => {
+                    const on = eid === effort;
+                    const lbl = (NARRATOR_EFFORTS.find((e) => e.id === eid) || {}).label ?? eid;
+                    return (
+                      <button key={eid} onClick={() => chooseEffort(eid)} style={{
+                        flex: 1, padding: "8px", borderRadius: radius.chip, fontFamily: "inherit",
+                        cursor: "pointer", fontSize: "12px", fontWeight: on ? 700 : 600,
+                        border: `1px solid rgba(215,167,111,${on ? 0.5 : 0.2})`,
+                        background: on ? "rgba(215,167,111,0.16)" : "transparent",
+                        color: on ? colors.parchment : "rgba(237,228,208,0.7)",
+                      }}>{lbl}</button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        title={`Narrator: ${active.label}${effortLabel}`}
+        aria-label={`Narrator: ${active.label}${effortLabel}. Tap to change model or thinking effort.`}
+        style={{
+          width: "48px", height: "48px", borderRadius: radius.control,
+          backgroundColor: open ? "rgba(215, 167, 111, 0.16)" : "rgba(10, 15, 15, 0.65)",
+          backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+          border: `1px solid rgba(215, 167, 111, ${open ? 0.5 : 0.22})`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer", flexShrink: 0,
+          boxShadow: "0 10px 24px rgba(0,0,0,0.3)",
+        }}
+      >
+        <Icon name="sparkle" size={18} color={colors.gold} strokeWidth={1.8} />
+      </button>
+    </div>
+  );
+}
+
 export function InputBar({ value, onChange, onSubmit, loading }) {
   const disabled = loading || !value.trim();
   const ref = React.useRef(null);
@@ -423,6 +538,7 @@ export function InputBar({ value, onChange, onSubmit, loading }) {
       background: "linear-gradient(180deg, rgba(11,15,14,0) 0%, rgba(11,15,14,0.62) 20%, rgba(11,15,14,0.92) 100%)",
       display: "flex", alignItems: "flex-end", gap: "9px",
     }}>
+      <NarratorPicker />
       <textarea
         ref={ref}
         rows={1}
