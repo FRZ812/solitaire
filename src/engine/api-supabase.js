@@ -1,6 +1,6 @@
 // Web-mode narrator call. Invokes the `narrate` Supabase Edge Function,
 // which gates on auth + the manual subscription allowlist (server-side),
-// calls Gemini, and re-emits the stream as Anthropic-style SSE
+// calls DeepSeek, and re-emits the stream as Anthropic-style SSE
 // (content_block_delta / text_delta). The client buffers the whole stream
 // then parses JSON; the engine is unchanged.
 //
@@ -11,6 +11,7 @@ import { supabase } from "./supabase-client.js";
 import { buildStateContext } from "./api.js";
 import { extractJSON } from "./json.js";
 import { SYSTEM_PROMPT } from "../system-prompt.js";
+import { getNarratorModel } from "./narrator-models.js";
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/narrate`;
 
@@ -27,8 +28,8 @@ const RETRY_HINT_2 =
   "[RETRY HINT 2: previous attempt still cut short. Paraphrase your intended beat in different words — terse (≤ 150 words narration), avoid graphic embellishment, preserve the core action. Output well-formed JSON within budget.]";
 
 // onProgress (optional): called with { thinking, text } chunks as they
-// stream in from the edge function. `thinking` chunks fire as Gemini emits
-// reasoning summaries; `text` chunks fire as the answer JSON streams. Both
+// stream in from the edge function. `thinking` chunks fire as DeepSeek emits
+// its reasoning trace; `text` chunks fire as the answer JSON streams. Both
 // are partial — concatenate to build the full string. The final narrator
 // beat is returned from this function after the stream completes.
 //
@@ -46,6 +47,9 @@ const RETRY_HINT_2 =
 export async function callNarrator(state, userMsgRaw, onProgress) {
   const state_context = buildStateContext(state);
   const trimmedHistory = state.apiHistory.slice(-HISTORY_LIMIT);
+  // Which model the edge function should route to — read once so all three
+  // attempts in a turn use the same one even if the player flips it mid-stream.
+  const model = getNarratorModel();
 
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new Error("not authenticated");
@@ -53,7 +57,7 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
   // Attempt 0: original call. Any thrown error (auth, subscription, server)
   // propagates up — these aren't truncation and aren't worth retrying.
   const attempt0 = await runOneAttempt({
-    session, state_context, history: trimmedHistory, userMsgRaw, onProgress,
+    session, state_context, history: trimmedHistory, userMsgRaw, onProgress, model,
   });
   if (!attempt0.result._truncated) return attempt0.result;
 
@@ -65,7 +69,7 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
     attempt1 = await runOneAttempt({
       session, state_context, history: trimmedHistory,
       userMsgRaw: `${RETRY_HINT_1}\n${userMsgRaw}`,
-      onProgress,
+      onProgress, model,
     });
     if (!attempt1.result._truncated) return attempt1.result;
   } catch {
@@ -79,7 +83,7 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
     attempt2 = await runOneAttempt({
       session, state_context, history: trimmedHistory,
       userMsgRaw: `${RETRY_HINT_2}\n${userMsgRaw}`,
-      onProgress,
+      onProgress, model,
     });
     if (!attempt2.result._truncated) return attempt2.result;
   } catch {
@@ -109,7 +113,7 @@ function pickBest(results) {
 // One round-trip to the narrate edge function. Returns the parsed beat
 // (with _truncated flag if salvaged) wrapped as { result }. Throws on
 // !response.ok or missing body — the caller decides whether to retry.
-async function runOneAttempt({ session, state_context, history, userMsgRaw, onProgress }) {
+async function runOneAttempt({ session, state_context, history, userMsgRaw, onProgress, model }) {
   const response = await fetch(FUNCTION_URL, {
     method: "POST",
     headers: {
@@ -122,6 +126,7 @@ async function runOneAttempt({ session, state_context, history, userMsgRaw, onPr
       user_msg: userMsgRaw,
       history,
       system_prompt: SYSTEM_PROMPT,
+      model,
     }),
   });
 
@@ -165,9 +170,8 @@ async function accumulateAnthropicSSE(body, onProgress) {
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    // Match both LF and CRLF event delimiters — the edge function should
-    // emit LF, but Gemini upstream sometimes leaks CRLF and we want to
-    // stay tolerant.
+    // Match both LF and CRLF event delimiters — the edge function emits LF,
+    // but upstream providers sometimes leak CRLF and we want to stay tolerant.
     let m;
     while ((m = buffer.match(/\r?\n\r?\n/))) {
       const rawEvent = buffer.slice(0, m.index);
