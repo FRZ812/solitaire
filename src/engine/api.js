@@ -12,6 +12,7 @@ import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
 import { getTile, isSeen, HEX_DIRECTIONS, hexDistance, currentLocationName } from "./world.js";
 import { poiMeta, poiPlaceName } from "./location.js";
+import { standingNodeTile, inPlace, currentExits } from "./place.js";
 import { hostileProfile } from "./encounters.js";
 import { getBiome } from "../data/biomes.js";
 import { buildingForTile, isBuildingOpen, buildingHours } from "../data/town.js";
@@ -178,7 +179,10 @@ export function summarizeRumored() {
 
 export function buildStateContext(state) {
   const { character, time, world } = state;
-  const t = getTile(state, world.currentTile.x, world.currentTile.y);
+  // The standing tile: the synthetic node tile inside a place (scale 2), else the
+  // world hex. Everything below (location naming, POI meta, service) reads from it,
+  // so the narrator is grounded in the city node when inside one.
+  const t = standingNodeTile(state) || getTile(state, world.currentTile.x, world.currentTile.y);
   const biome = getBiome(world.currentTile.x, world.currentTile.y);
   const place = currentLocationName(state) || `${TERRAINS[t.terrain]?.label || "Wilderness"} (${world.currentTile.x},${world.currentTile.y})`;
   const basePlace = poiPlaceName(t.poi) || `${TERRAINS[t.terrain]?.label || "Wilderness"} (${world.currentTile.x},${world.currentTile.y})`;
@@ -191,13 +195,18 @@ export function buildStateContext(state) {
   if (locMeta.access) locBits.push(`Access: ${locMeta.access}`);
   const localLine = locBits.length ? `\n[LOCAL PLACE — ${locBits.join("; ")}]` : "";
   const nearby = [];
-  for (const d of HEX_DIRECTIONS) {
-    const nx = world.currentTile.x + d.x, ny = world.currentTile.y + d.y;
-    if (!isSeen(state, nx, ny)) continue;
-    const nt = getTile(state, nx, ny);
-    const nearbyName = poiPlaceName(nt.poi);
-    if (nearbyName) nearby.push(nearbyName);
-    else if (nt.poi?.type === "hidden") nearby.push(`?(${TERRAINS[nt.terrain]?.label})`);
+  if (inPlace(state)) {
+    // Inside a place, "nearby" is the set of nodes the party can step to from here.
+    for (const ex of currentExits(state)) nearby.push(ex.name);
+  } else {
+    for (const d of HEX_DIRECTIONS) {
+      const nx = world.currentTile.x + d.x, ny = world.currentTile.y + d.y;
+      if (!isSeen(state, nx, ny)) continue;
+      const nt = getTile(state, nx, ny);
+      const nearbyName = poiPlaceName(nt.poi);
+      if (nearbyName) nearby.push(nearbyName);
+      else if (nt.poi?.type === "hidden") nearby.push(`?(${TERRAINS[nt.terrain]?.label})`);
+    }
   }
   const nearbyStr = nearby.length ? `; Nearby: ${nearby.join(", ")}` : "";
   // Lasting state the player's actions left on this spot (razed, emptied, tense…).

@@ -96,6 +96,9 @@ export function makeInitialState() {
     world: {
       tiles: { "0,0": HANDCRAFTED["0,0"] },
       currentTile: { x: 0, y: 0 },
+      // Start inside the node-graph capital (scale 2), at the market heart. The
+      // world hex (0,0) is the city's mouth, so leaving steps back onto the map.
+      place: { id: "whitemarch", node: "grain-square" },
       seen: makeInitialSeen(),
       codex: {
         characters: {

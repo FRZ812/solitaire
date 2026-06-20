@@ -16,6 +16,7 @@ import { RIVER_BY_COORD } from "../data/rivers.js";
 import { getBiome } from "../data/biomes.js";
 import { SIGHT_RADIUS, TRAVEL_BASE_MIN, FLY_MIN_PER_HEX } from "../config.js";
 import { poiPlaceName } from "./location.js";
+import { placeLocationName } from "./place.js";
 
 // Settlements for city/village/fortress; water for lakes and rivers; otherwise
 // keep procedural terrain so a "ruin" can sit on hills, plains, or marsh
@@ -278,8 +279,45 @@ export function edgeAllowed(fromTile, fromX, fromY, toTile, toX, toY) {
 }
 
 export function currentLocationName(state) {
+  // Inside a place (scale 2), the node names the location; otherwise the world hex.
+  const inside = placeLocationName(state);
+  if (inside) return inside;
   const t = getTile(state, state.world.currentTile.x, state.world.currentTile.y);
   return poiPlaceName(t.poi) || TERRAINS[t.terrain]?.label || "Wilderness";
+}
+
+// Go-anywhere world route: a terrain-aware greedy march from `from` toward `to`,
+// one hex at a time. Unlike findPath it does NOT require tiles to have been seen
+// (you can set a course for anywhere) and it routes around impassable water. The
+// caller marches the returned hexes, rolling movement + encounters per step and
+// halting on the first encounter — so this only needs to be a sane heading, not a
+// proven shortest path. A stagnation guard stops it spinning in a concavity.
+export function marchRoute(state, from, to, maxHexes = 400) {
+  const route = [{ x: from.x, y: from.y }];
+  if (from.x === to.x && from.y === to.y) return route;
+  let cur = { x: from.x, y: from.y };
+  let prevKey = null;
+  let bestEver = hexDistance(from, to);
+  let stale = 0;
+  for (let i = 0; i < maxHexes; i++) {
+    let best = null, bestDist = Infinity;
+    for (const d of HEX_DIRECTIONS) {
+      const nx = cur.x + d.x, ny = cur.y + d.y;
+      const key = `${nx},${ny}`;
+      if (key === prevKey) continue;                 // no immediate U-turn
+      if (!isPassable(getTile(state, nx, ny))) continue;
+      const dist = hexDistance({ x: nx, y: ny }, to);
+      if (dist < bestDist) { bestDist = dist; best = { x: nx, y: ny }; }
+    }
+    if (!best) break;                                 // boxed in (water) — stop here
+    prevKey = `${cur.x},${cur.y}`;
+    cur = best;
+    route.push({ x: cur.x, y: cur.y });
+    if (cur.x === to.x && cur.y === to.y) break;      // arrived
+    if (bestDist < bestEver) { bestEver = bestDist; stale = 0; }
+    else if (++stale > 12) break;                     // not getting closer — give up
+  }
+  return route;
 }
 
 // A* over the seen, passable hex graph. Returns an array including both

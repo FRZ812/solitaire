@@ -33,8 +33,9 @@ import { scryResult } from "./engine/positions.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
-  findPath, pathMinutes, isSeen, flightPath, flightMinutes,
+  findPath, pathMinutes, isSeen, flightPath, flightMinutes, marchRoute,
 } from "./engine/world.js";
+import { standingNodeTile, enterPlace, leavePlace, moveToNode, inPlace, placeAtTile, getPlace } from "./engine/place.js";
 import { knownTravelSpells } from "./data/travel-spells.js";
 import { knownBuffSpells } from "./data/buff-spells.js";
 import { buffTravelSpeedMult, hastedGroundMinutes, hastedFlightHexes, hastedFlightMinutes } from "./engine/buffs.js";
@@ -60,6 +61,7 @@ import { colors } from "./components/tokens.js";
 import { BeatRender } from "./components/beats/BeatRender.jsx";
 import { PanelDeck } from "./components/PanelDeck.jsx";
 import { MapView } from "./components/MapView.jsx";
+import { PlaceView } from "./components/PlaceView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
 import { StableView } from "./components/StableView.jsx";
 import { ForgeView } from "./components/ForgeView.jsx";
@@ -82,6 +84,12 @@ import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
+
+// Go-anywhere march: the most hexes a single travel action will cover before the
+// party halts and you tap to continue. Encounters almost always halt the march
+// sooner (one is rolled per hex); this is just a safety bound so a no-encounter
+// leg can't fold a 100-hex crossing into one beat.
+const MARCH_MAX = 48;
 
 // Difficulty profile of the current location (region-gated, not level-scaled).
 function regionHere(state) {
@@ -283,6 +291,31 @@ export function Solitaire() {
   const [codexOpen, setCodexOpen] = useState(false);
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
+  const [placeOpen, setPlaceOpen] = useState(false); // the scale-2 local map (PlaceView) overlay
+
+  // The tile the party is standing on right now. Inside a place (scale 2) it's the
+  // synthetic node tile; on the world map it's the hex under currentTile. Lets the
+  // building/service/biome flows below work identically in a city node or the wild.
+  function standingTile(s = state) {
+    return standingNodeTile(s) || getTile(s, s.world.currentTile.x, s.world.currentTile.y);
+  }
+  // The stock/receipt key for the standing tile — namespaced per place node so a
+  // city node's shop stock is its own, not the world hex's.
+  function standingKey(s = state) {
+    if (s.world.place) return `place:${s.world.place.id}:${s.world.place.node}`;
+    return `${s.world.currentTile.x},${s.world.currentTile.y}`;
+  }
+
+  // ----- Places (scale 2): enter / move within / leave a node-graph place -----
+  function handleEnterPlace(placeId, nodeId = null) {
+    if (!placeId) return;
+    setState((s) => enterPlace(s, placeId, nodeId));
+    setMapOpen(false);
+    setPlaceOpen(true);
+  }
+  function handleMoveNode(nodeId) { setState((s) => moveToNode(s, nodeId)); }
+  function handleLeavePlace() { setState((s) => leavePlace(s)); setPlaceOpen(false); }
+  function handlePlaceService() { openShop(); }
   // Recent purchases at the current shop, for full refunds until you leave the
   // scene: { tileKey, items: { [itemId]: [pricePaid, ...] } }.
   const [receipts, setReceipts] = useState({ tileKey: null, items: {} });
@@ -729,7 +762,9 @@ export function Solitaire() {
   async function handleTravel(dest, providedPath) {
     if (loading) return;
     const cur = state.world.currentTile;
-    const fullPath = providedPath || findPath(state, cur, dest);
+    // Go-anywhere: a terrain-aware march toward the destination — no seen-tile
+    // requirement and no fixed leg cap. The world reveals as the party advances.
+    const fullPath = marchRoute(state, cur, dest, MARCH_MAX);
     if (!fullPath || fullPath.length < 2) return;
     setMapOpen(false);
     setReceipts({ tileKey: null, items: {} }); // leaving the scene ends refunds
@@ -742,10 +777,10 @@ export function Solitaire() {
     const toName = poiPlaceName(destTileFull.poi) || `${TERRAINS[destTileFull.terrain]?.label} (${dest.x},${dest.y})`;
     const destIsHidden = destTileFull.poi?.type === "hidden";
 
-    // A single travel action covers at most MAX_TRAVEL_HEXES toward the
-    // destination; a rolled encounter HALTS the party at its tile. Either way the
-    // party stops short of a far destination — no skipping the world in one tap.
-    let legPath = fullPath.slice(0, Math.min(fullPath.length, MAX_TRAVEL_HEXES + 1));
+    // The party marches hex by hex along the route; an encounter is rolled at every
+    // step and the FIRST one HALTS them at its tile. With no encounter they press on
+    // to the destination (or to the MARCH_MAX safety bound, then you tap to continue).
+    let legPath = fullPath;
     const pathEnc = rollPathEncounter(state, legPath);
     if (pathEnc) legPath = legPath.slice(0, pathEnc.atIndex + 1);
     const legEnd = legPath[legPath.length - 1];
@@ -753,6 +788,8 @@ export function Solitaire() {
     const legTile = getTile(state, legEnd.x, legEnd.y);
     const legName = arrived ? toName : (poiPlaceName(legTile.poi) || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
     const isHidden = arrived && destIsHidden;
+    // Arriving at the mouth of a node-graph place (a city/dungeon) steps you inside.
+    const enterPlaceId = arrived ? placeAtTile(destTileFull, dest.x, dest.y) : null;
 
     const travelWp = activeWorldPassives(state.character, state.world.codex);
     // Slower going in the dark without light, and slower still when worn out.
@@ -823,6 +860,7 @@ export function Solitaire() {
       totalMins: legMins,
       encounter: pathEnc ? pathEnc.encounter : null,
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
+      enterPlaceId,
     };
 
     await finishTravel(stateWithPlayer, fullMsg, travel);
@@ -834,7 +872,11 @@ export function Solitaire() {
     try {
       const beat = await narrate(stateWithPlayer, fullMsg);
       const next = applyTravelArrival(stateWithPlayer, beat, travel);
-      setState(recordTurn(stateWithPlayer, fullMsg, next, { travel }));
+      let landed = recordTurn(stateWithPlayer, fullMsg, next, { travel });
+      // Stepping into a place is a quiet arrival — drop the party at its entry node
+      // and open the local map so the city/dungeon is immediately navigable.
+      if (travel.enterPlaceId) { landed = enterPlace(landed, travel.enterPlaceId); setPlaceOpen(true); }
+      setState(landed);
       if (travel.encounter && travel.encounter.posture === "hostile") setPendingCombat(travel.encounter);
     } catch (e) {
       setError(e.message || String(e));
@@ -1029,10 +1071,11 @@ export function Solitaire() {
   // ----- Town buildings: trader menus (buy / sell / talk) -----
 
   function openShop() {
-    const cur = state.world.currentTile;
-    const b = buildingForTile(getTile(state, cur.x, cur.y));
-    if (b && !isBuildingOpen(b, state.time.hour)) return; // shut for the night
-    const key = `${cur.x},${cur.y}`;
+    const tile = standingTile();
+    const b = buildingForTile(tile);
+    if (!b) return;
+    if (!isBuildingOpen(b, state.time.hour)) return; // shut for the night
+    const key = standingKey();
     setShopView("trade");
     // Fresh refund slate when stepping into a different shop than last time.
     setReceipts((r) => (r.tileKey === key ? r : { tileKey: key, items: {} }));
@@ -1048,9 +1091,9 @@ export function Solitaire() {
     const start = tradeStartRef.current;
     tradeStartRef.current = null;
     const here = shopTile;
+    const tile = standingTile();
     setShopTile(null);
     if (!start || !here || loading) return;
-    const tile = getTile(state, here.x, here.y);
     const building = buildingForTile(tile);
     if (!building) return;
 
@@ -1128,7 +1171,7 @@ export function Solitaire() {
   // Pay an expert to drill a proficiency a rating step (engine/training.js).
   async function handleTrain(profId) {
     if (loading || !shopTile) return;
-    const tile = getTile(state, shopTile.x, shopTile.y);
+    const tile = standingTile();
     const building = buildingForTile(tile);
     const offer = trainingOffer(state, profId, TRAIN_CAP);
     if (offer.capped) { setError("There's nothing more they can teach you."); return; }
@@ -1145,7 +1188,7 @@ export function Solitaire() {
   // restock window. Each purchase is receipted so it can be refunded in full
   // while the player is still at the stall.
   function handleBuy(itemDef, priceCp, bucket) {
-    const key = `${state.world.currentTile.x},${state.world.currentTile.y}`;
+    const key = standingKey();
     const r = buyGood(state, { tileKey: key, bucket, itemDef, priceCp, qty: 1 });
     if (!r.ok) return;
     setState(r.state);
@@ -1162,7 +1205,7 @@ export function Solitaire() {
     if (loading || !shopTile) return;
     const tmpl = mountTemplate(mountId);
     if (!tmpl) return;
-    const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the stable";
+    const place = poiPlaceName(standingTile().poi) || "the stable";
     const coins = formatCopper(coinsToCopper(state.character.inventory.coins));
     setShopTile(null);
     setError(null);
@@ -1271,7 +1314,7 @@ export function Solitaire() {
   // lone, weak wanderer.
   async function handleApproachRecruit(tmpl) {
     if (loading || !shopTile || isRecruited(state, tmpl.id)) return;
-    const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the tavern";
+    const place = poiPlaceName(standingTile().poi) || "the tavern";
     const standing = partyStanding(state);
     const outlook = recruitOutlook(standing, tmpl.choosiness);
     setShopTile(null);
@@ -1381,7 +1424,7 @@ export function Solitaire() {
   // the coin and add them to the party as a bonded codex character (beat.js).
   async function handleInspectRights(p) {
     if (loading || !shopTile) return;
-    const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the gaol";
+    const place = poiPlaceName(standingTile().poi) || "the gaol";
     setShopTile(null);
     setError(null);
     setLoading(true);
@@ -1413,7 +1456,7 @@ export function Solitaire() {
   // sell-on / force-release) and the refusal-default for any freedom offer.
   async function handleInspectCaptive(c) {
     if (loading || !shopTile) return;
-    const place = poiPlaceName(getTile(state, shopTile.x, shopTile.y).poi) || "the block";
+    const place = poiPlaceName(standingTile().poi) || "the block";
     setShopTile(null);
     setError(null);
     setLoading(true);
@@ -1806,8 +1849,14 @@ export function Solitaire() {
 
   // A wired town building (poi.service) at the player's current tile, if any —
   // surfaces an "Enter" affordance to open its menu. Hidden during combat.
-  const buildingHere = combat ? null : buildingForTile(getTile(state, state.world.currentTile.x, state.world.currentTile.y));
+  const buildingHere = combat ? null : buildingForTile(standingTile());
   const buildingOpenNow = buildingHere ? isBuildingOpen(buildingHere, state.time.hour) : false;
+  // A place-mouth under the party on the world map (e.g. the Whitemarch gate hex):
+  // surface an "Enter" affordance so you can step back into the city after leaving.
+  const placeHereId = (!combat && !inPlace(state))
+    ? placeAtTile(getTile(state, state.world.currentTile.x, state.world.currentTile.y), state.world.currentTile.x, state.world.currentTile.y)
+    : null;
+  const placeHere = placeHereId ? getPlace(placeHereId) : null;
 
   // Creation hub: a fresh, untouched limbo shows the templates-vs-limbo chooser.
   // Once the player picks the freeform path (creationEntered) or has already
@@ -1829,7 +1878,7 @@ export function Solitaire() {
           <>
             <CompactHeader
               state={state}
-              onMap={() => setMapOpen(true)}
+              onMap={() => (inPlace(state) ? setPlaceOpen(true) : setMapOpen(true))}
               onOpenDeck={() => { setDeckPage("character"); setDeckOpen(true); }}
             />
             <VitalsStrip character={state.character} />
@@ -1937,6 +1986,27 @@ export function Solitaire() {
               padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
               border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
             }}>Leave</button>
+          </div>
+        )}
+        {state.created !== false && placeHere && !shopTile && (
+          <div className="fade-in" style={{
+            margin: "0 12px 8px", padding: "11px 14px",
+            backgroundColor: "rgba(20,29,29,0.8)", border: `1px solid rgba(215,167,111,0.4)`,
+            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: colors.gold, marginBottom: "2px" }}>
+                {placeHere.kind === "city" ? "City" : "Place"}
+              </div>
+              <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
+                The gates of {placeHere.name} stand open before you.
+              </div>
+            </div>
+            <button onClick={() => handleEnterPlace(placeHereId)} style={{
+              padding: "9px 16px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
+              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+            }}>Enter</button>
           </div>
         )}
         {state.created !== false && buildingHere && !shopTile && (
@@ -2047,14 +2117,24 @@ export function Solitaire() {
           loading={loading}
         />
       )}
+      {placeOpen && inPlace(state) && (
+        <PlaceView
+          state={state}
+          time={state.time}
+          onMove={handleMoveNode}
+          onLeave={handleLeavePlace}
+          onService={handlePlaceService}
+          onClose={() => setPlaceOpen(false)}
+        />
+      )}
       {codexOpen && (
         <CodexView state={state} onClose={() => setCodexOpen(false)} onScry={handleScry} onRenameMount={handleRenameMount} />
       )}
       {shopTile && (() => {
-        const tile = getTile(state, shopTile.x, shopTile.y);
+        const tile = standingTile();
         const building = buildingForTile(tile);
         if (!building) return null;
-        const key = `${shopTile.x},${shopTile.y}`;
+        const key = standingKey();
         if (shopView === "forge" && building.forge) {
           return (
             <ForgeView
