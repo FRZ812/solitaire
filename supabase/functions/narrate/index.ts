@@ -24,14 +24,22 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 type Provider = "gemini" | "deepseek";
 
+type Effort = "high" | "max";
+
 // The model allowlist. Keep in loose sync with src/engine/narrator-models.js;
 // an unknown/missing model from the client falls back to DEFAULT_MODEL.
-const MODELS: Record<string, { provider: Provider; reasoningEffort?: "high" | "max" }> = {
+// `defaultEffort` is the DeepSeek thinking effort used when the client doesn't
+// send a (valid) one; Gemini ignores effort (dynamic thinking budget).
+const MODELS: Record<string, { provider: Provider; defaultEffort?: Effort }> = {
   "gemini-3.1-pro-preview": { provider: "gemini" },
-  "deepseek-v4-pro":        { provider: "deepseek", reasoningEffort: "max" },
-  "deepseek-v4-flash":      { provider: "deepseek", reasoningEffort: "high" },
+  "deepseek-v4-pro":        { provider: "deepseek", defaultEffort: "max" },
+  "deepseek-v4-flash":      { provider: "deepseek", defaultEffort: "high" },
 };
 const DEFAULT_MODEL = "deepseek-v4-pro";
+
+// Thinking-effort allowlist for DeepSeek. An unknown/missing value from the
+// client falls back to the model's defaultEffort.
+const EFFORTS = new Set<Effort>(["high", "max"]);
 
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 const geminiUrl = (model: string) =>
@@ -230,12 +238,17 @@ Deno.serve(async (req: Request) => {
   const model = MODELS[requested] ? requested : DEFAULT_MODEL;
   const cfg = MODELS[model];
 
+  // Honour body.reasoning_effort when it's on the allowlist, else the model's
+  // default. Only consulted for DeepSeek; Gemini ignores it.
+  const reqEffort = body.reasoning_effort as Effort;
+  const effort: Effort = EFFORTS.has(reqEffort) ? reqEffort : (cfg.defaultEffort ?? "high");
+
   const trimmedHistory = history.slice(-HISTORY_LIMIT);
   const userTurn = `${state_context}\n\n${user_msg}`;
 
   const upstreamOrErr = cfg.provider === "gemini"
     ? callGemini(model, system_prompt, trimmedHistory, userTurn)
-    : callDeepSeek(model, cfg.reasoningEffort ?? "high", system_prompt, trimmedHistory, userTurn);
+    : callDeepSeek(model, effort, system_prompt, trimmedHistory, userTurn);
 
   // The call helpers return a Response (not a Promise) only when a key is
   // missing; otherwise they return the fetch Promise.
