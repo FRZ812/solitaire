@@ -11,7 +11,7 @@ import {
   getTile, isSeen, isVisited,
   currentLocationName, hexDistance,
   findPath, pathMinutes, isTeleportAnchor,
-  HEX_DIRECTIONS, edgeAllowed, isPassable,
+  HEX_DIRECTIONS, edgeAllowed, isPassable, marchRoute,
 } from "../engine/world.js";
 import { knownTravelSpells } from "../data/travel-spells.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "../engine/fly.js";
@@ -631,13 +631,23 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
   const selSeen = selected ? isSeen(state, selected.x, selected.y) : false;
   const isSelf = selected && selected.x === cur.x && selected.y === cur.y;
   const curTile = getTile(state, cur.x, cur.y);
-  const path = (selected && selSeen && !isSelf) ? findPath(state, cur, selected) : null;
+  // Route preview. A seen tile uses the A* path; any other passable tile uses the
+  // go-anywhere march — the engine marches hex by hex toward it, rolling an
+  // encounter each step and halting on the first hit — so the Travel button works
+  // for unseen destinations too. The preview shows the first leg's estimate.
+  const seenPath = (selected && selSeen && !isSelf) ? findPath(state, cur, selected) : null;
+  const selPassable = selected ? isPassable(getTile(state, selected.x, selected.y)) : false;
+  const path = (seenPath && seenPath.length > 1)
+    ? seenPath
+    : (selected && !isSelf && selPassable ? marchRoute(state, cur, selected, MAX_TRAVEL_HEXES) : null);
   const canTravel = !!path && path.length > 1 && !loading;
   // A single action covers at most one leg; time/risk shown are for that leg.
   const legPath = path ? path.slice(0, Math.min(path.length, MAX_TRAVEL_HEXES + 1)) : null;
+  const legEnd = legPath ? legPath[legPath.length - 1] : null;
   const totalHexes = path ? path.length - 1 : 0;
   const legHexes = legPath ? legPath.length - 1 : 0;
-  const multiLeg = totalHexes > legHexes;
+  // Multi-leg when the previewed leg stops short of the chosen destination.
+  const multiLeg = legEnd ? (legEnd.x !== selected.x || legEnd.y !== selected.y) : false;
   const totalMins = canTravel ? pathMinutes(state, legPath) : 0;
   const riskPct = canTravel ? pathRiskPercent(state, legPath) : 0;
 
@@ -673,7 +683,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       bottomDetail = `Known by reputation, never visited. ${selRumored.description}`;
     } else if (!selSeen) {
       bottomLabel = `Unknown (${selected.x},${selected.y})`;
-      bottomDetail = "Beyond your sight. Step closer to learn what's there.";
+      bottomDetail = "Beyond your sight — but you can set a course for it. The land reveals as you march, and the wilds decide how far you get.";
     } else {
       const T = TERRAINS[selTile.terrain];
       let name = poiPlaceName(selTile.poi) || T?.label || "Wilderness";
@@ -1310,10 +1320,12 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         >
           {!selected ? "Choose a destination" :
             isSelf ? "You're here" :
-            selRumored && !selSeen ? `Too distant · ${hexDistance(cur, selected)} hexes by rumor` :
-            !selSeen ? "Beyond vision" :
-            !canTravel ? "No passable path" :
-            multiLeg ? `Travel · first ${legHexes} of ${totalHexes} hexes · ~${totalMins} min · risk ${riskPct}%`
+            !canTravel ? (
+              selRumored && !selSeen ? `Too distant · ${hexDistance(cur, selected)} hexes by rumor` :
+              !selSeen ? "No course there" :
+              "No passable path"
+            ) :
+            multiLeg ? `Set course · first ${legHexes}${totalHexes > legHexes ? ` of ${totalHexes}` : ""} hex${legHexes === 1 ? "" : "es"} · ~${totalMins} min · risk ${riskPct}%`
             : `Travel · ${legHexes} hex${legHexes === 1 ? "" : "es"} · ~${totalMins} min · risk ${riskPct}%`}
         </button>
       </div>
