@@ -18,6 +18,7 @@ import { glossaryById, conditionInfo } from "../data/glossary.js";
 import { condName, condNames } from "../data/conditions.js";
 import { lightStatus } from "../engine/light.js";
 import { canHeal } from "../engine/healing.js";
+import { NARRATOR_MODELS, getNarratorModel, setNarratorModel } from "../engine/narrator-models.js";
 
 // Compact label/value cell for the derived combat stats grid. Tappable to explain.
 function CombatStat({ label, value, onClick }) {
@@ -85,6 +86,11 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
   const [arsenalOpen, setArsenalOpen] = useState(false);
   const [openAttr, setOpenAttr] = useState(null); // attribute key whose threshold detail is expanded
   const [info, setInfo] = useState(null); // glossary explanation popover { term, text, extra }
+  const [narratorModel, setNarratorModelState] = useState(getNarratorModel); // active LLM voicing the story
+  function changeNarratorModel(id) {
+    setNarratorModel(id);        // persist (localStorage); callNarrator reads it next turn
+    setNarratorModelState(id);   // reflect in the dropdown
+  }
   const codex = state.world.codex;
   const attrs = effectiveAttributes(state.character);
   const combat = deriveCombatStats(state.character, codex);
@@ -303,6 +309,30 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
         {showGuestNag && <GuestNagSection onLinkEmail={onLinkEmail} />}
 
         <Divider />
+
+        {/* Narrator — which model voices the story. Switchable on the fly; the
+            choice is persisted and sent with the next narrator call. */}
+        <div>
+          <SectionHeader>Narrator</SectionHeader>
+          <select
+            value={narratorModel}
+            onChange={(e) => changeNarratorModel(e.target.value)}
+            className="custom-input"
+            style={{
+              width: "100%", padding: "10px 12px", fontSize: "13px",
+              backgroundColor: "rgba(10, 15, 15, 0.65)", color: colors.parchment,
+              border: `1px solid rgba(215, 167, 111, 0.2)`,
+              borderRadius: radius.chip, fontFamily: "inherit", outline: "none",
+              cursor: "pointer", appearance: "none", WebkitAppearance: "none",
+            }}
+          >
+            {NARRATOR_MODELS.map((m) => (
+              <option key={m.id} value={m.id} style={{ color: colors.paperText }}>
+                {m.label}{m.note ? ` — ${m.note}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* Actions */}
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
