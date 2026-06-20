@@ -1,19 +1,30 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-// Web-mode narrator backend. Streams Gemini's response (thinking + answer
-// parts) and re-emits it as the minimal Anthropic-style SSE the client
-// already parses (data: {"type":"content_block_delta","delta":{"type":"text_delta"|"thinking_delta",...}}),
+// Web-mode narrator backend. Streams DeepSeek's response (reasoning + answer)
+// and re-emits it as the minimal Anthropic-style SSE the client already parses
+// (data: {"type":"content_block_delta","delta":{"type":"text_delta"|"thinking_delta",...}}),
 // so src/engine/api-supabase.js stays provider-agnostic.
 //
-// Event delimiters: handle BOTH LF (\n\n) and CRLF (\r\n\r\n). Gemini emits
-// CRLF; a previous parser only split on \n\n and never drained.
+// DeepSeek's API is OpenAI-compatible: it streams chat.completion.chunk events
+// whose delta carries `content` (the answer) and `reasoning_content` (the
+// thinking trace, when thinking mode is enabled). The stream ends with the
+// literal `data: [DONE]`.
+//
+// Thinking mode: deepseek-v4-pro is the reasoning-heavy model. We enable
+// extended thinking ({"thinking":{"type":"enabled"}}) at max reasoning effort
+// (reasoning_effort:"max"). Thinking mode does NOT support temperature/top_p/
+// presence_penalty/frequency_penalty, so we don't send them.
+//
+// Event delimiters: handle BOTH LF (\n\n) and CRLF (\r\n\r\n) to stay tolerant.
 //
 // Hard-gated: every request must carry a valid Supabase auth JWT AND the
 // caller must have an active row in public.subscriptions (is_subscribed =
 // true). This is the real abuse barrier; the UI gate is cosmetic.
 
-const MODEL = "gemini-3.1-pro-preview";
+const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
+const MODEL = "deepseek-v4-pro";
+const REASONING_EFFORT = "max"; // deepseek-v4-pro thinking effort: "high" | "max"
 const HISTORY_LIMIT = 100;
 const MAX_BODY_BYTES = 8_000_000;
 const MAX_OUTPUT_TOKENS = 65536;
@@ -59,28 +70,29 @@ async function gate(req: Request): Promise<string | Response> {
   return user.id;
 }
 
-function emitFromGeminiPayload(dataPayload: string, controller: TransformStreamDefaultController<string>) {
+function emitFromDeepSeekPayload(dataPayload: string, controller: TransformStreamDefaultController<string>) {
   if (!dataPayload || dataPayload === "[DONE]") return;
   let evt: any;
   try { evt = JSON.parse(dataPayload); } catch { return; }
-  const parts = evt?.candidates?.[0]?.content?.parts ?? [];
-  for (const p of parts) {
-    if (typeof p?.text !== "string" || !p.text.length) continue;
-    if (p.thought === true) {
-      controller.enqueue(
-        `data: ${JSON.stringify({
-          type: "content_block_delta",
-          delta: { type: "thinking_delta", thinking: p.text },
-        })}\n\n`,
-      );
-    } else {
-      controller.enqueue(
-        `data: ${JSON.stringify({
-          type: "content_block_delta",
-          delta: { type: "text_delta", text: p.text },
-        })}\n\n`,
-      );
-    }
+  const delta = evt?.choices?.[0]?.delta;
+  if (!delta) return;
+  // Reasoning trace streams first; emit it as a thinking_delta.
+  if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length) {
+    controller.enqueue(
+      `data: ${JSON.stringify({
+        type: "content_block_delta",
+        delta: { type: "thinking_delta", thinking: delta.reasoning_content },
+      })}\n\n`,
+    );
+  }
+  // Answer text → text_delta.
+  if (typeof delta.content === "string" && delta.content.length) {
+    controller.enqueue(
+      `data: ${JSON.stringify({
+        type: "content_block_delta",
+        delta: { type: "text_delta", text: delta.content },
+      })}\n\n`,
+    );
   }
 }
 
@@ -89,7 +101,7 @@ function emitFromGeminiPayload(dataPayload: string, controller: TransformStreamD
 const EVENT_DELIM = /\r?\n\r?\n/;
 const LINE_DELIM = /\r?\n/;
 
-function geminiToAnthropicSSE(): TransformStream<string, string> {
+function deepseekToAnthropicSSE(): TransformStream<string, string> {
   let buffer = "";
   const drain = (controller: TransformStreamDefaultController<string>) => {
     while (true) {
@@ -102,7 +114,7 @@ function geminiToAnthropicSSE(): TransformStream<string, string> {
         .filter((l) => l.startsWith("data:"))
         .map((l) => l.slice(5).trimStart())
         .join("\n");
-      emitFromGeminiPayload(dataPayload, controller);
+      emitFromDeepSeekPayload(dataPayload, controller);
     }
   };
   return new TransformStream<string, string>({
@@ -118,7 +130,7 @@ function geminiToAnthropicSSE(): TransformStream<string, string> {
         .filter((l) => l.startsWith("data:"))
         .map((l) => l.slice(5).trimStart())
         .join("\n");
-      emitFromGeminiPayload(dataPayload, controller);
+      emitFromDeepSeekPayload(dataPayload, controller);
     },
   });
 }
@@ -130,8 +142,8 @@ Deno.serve(async (req: Request) => {
   const gated = await gate(req);
   if (gated instanceof Response) return gated;
 
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!apiKey) return json({ error: "GEMINI_API_KEY not configured on the edge function" }, 500);
+  const apiKey = Deno.env.get("DEEPSEEK_API_KEY");
+  if (!apiKey) return json({ error: "DEEPSEEK_API_KEY not configured on the edge function" }, 500);
 
   const raw = await req.text();
   if (raw.length > MAX_BODY_BYTES) return json({ error: "body too large" }, 413);
@@ -148,39 +160,39 @@ Deno.serve(async (req: Request) => {
   }
 
   const trimmedHistory = history.slice(-HISTORY_LIMIT);
-  const contents = trimmedHistory.map((m: any) => ({
-    role: m?.role === "assistant" ? "model" : "user",
-    parts: [{ text: typeof m?.content === "string" ? m.content : String(m?.content ?? "") }],
-  }));
-  contents.push({ role: "user", parts: [{ text: `${state_context}\n\n${user_msg}` }] });
+  const messages = [
+    { role: "system", content: system_prompt },
+    ...trimmedHistory.map((m: any) => ({
+      role: m?.role === "assistant" ? "assistant" : "user",
+      content: typeof m?.content === "string" ? m.content : String(m?.content ?? ""),
+    })),
+    { role: "user", content: `${state_context}\n\n${user_msg}` },
+  ];
 
-  const upstream = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse`,
-    {
-      method: "POST",
-      headers: {
-        "x-goog-api-key": apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system_prompt }] },
-        contents,
-        generationConfig: {
-          maxOutputTokens: MAX_OUTPUT_TOKENS,
-          thinkingConfig: { thinkingBudget: -1, includeThoughts: true },
-        },
-      }),
+  const upstream = await fetch(DEEPSEEK_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
     },
-  );
+    body: JSON.stringify({
+      model: MODEL,
+      messages,
+      stream: true,
+      max_tokens: MAX_OUTPUT_TOKENS,
+      thinking: { type: "enabled" },
+      reasoning_effort: REASONING_EFFORT,
+    }),
+  });
 
   if (!upstream.ok || !upstream.body) {
     const errText = await upstream.text().catch(() => "");
-    return json({ error: `gemini ${upstream.status}`, detail: errText.slice(0, 500) }, 502);
+    return json({ error: `deepseek ${upstream.status}`, detail: errText.slice(0, 500) }, 502);
   }
 
   const stream = upstream.body
     .pipeThrough(new TextDecoderStream())
-    .pipeThrough(geminiToAnthropicSSE())
+    .pipeThrough(deepseekToAnthropicSSE())
     .pipeThrough(new TextEncoderStream());
 
   return new Response(stream, {

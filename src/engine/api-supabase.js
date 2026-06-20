@@ -1,6 +1,6 @@
 // Web-mode narrator call. Invokes the `narrate` Supabase Edge Function,
 // which gates on auth + the manual subscription allowlist (server-side),
-// calls Gemini, and re-emits the stream as Anthropic-style SSE
+// calls DeepSeek, and re-emits the stream as Anthropic-style SSE
 // (content_block_delta / text_delta). The client buffers the whole stream
 // then parses JSON; the engine is unchanged.
 //
@@ -27,8 +27,8 @@ const RETRY_HINT_2 =
   "[RETRY HINT 2: previous attempt still cut short. Paraphrase your intended beat in different words — terse (≤ 150 words narration), avoid graphic embellishment, preserve the core action. Output well-formed JSON within budget.]";
 
 // onProgress (optional): called with { thinking, text } chunks as they
-// stream in from the edge function. `thinking` chunks fire as Gemini emits
-// reasoning summaries; `text` chunks fire as the answer JSON streams. Both
+// stream in from the edge function. `thinking` chunks fire as DeepSeek emits
+// its reasoning trace; `text` chunks fire as the answer JSON streams. Both
 // are partial — concatenate to build the full string. The final narrator
 // beat is returned from this function after the stream completes.
 //
@@ -165,9 +165,8 @@ async function accumulateAnthropicSSE(body, onProgress) {
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 
-    // Match both LF and CRLF event delimiters — the edge function should
-    // emit LF, but Gemini upstream sometimes leaks CRLF and we want to
-    // stay tolerant.
+    // Match both LF and CRLF event delimiters — the edge function emits LF,
+    // but upstream providers sometimes leak CRLF and we want to stay tolerant.
     let m;
     while ((m = buffer.match(/\r?\n\r?\n/))) {
       const rawEvent = buffer.slice(0, m.index);
