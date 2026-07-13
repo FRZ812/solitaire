@@ -105,6 +105,21 @@ export function moveToNode(state, nodeId) {
   return { ...state, world: { ...state.world, place: { ...state.world.place, node: nodeId } } };
 }
 
+// Walk a complete previewed route atomically. The city UI can plan several
+// graph edges at once, but the reducer still validates every authored exit so a
+// stale or forged route can never teleport through the place graph.
+export function moveAlongPlaceRoute(state, nodeIds) {
+  if (!Array.isArray(nodeIds) || nodeIds.length === 0) return state;
+  const place = currentPlace(state);
+  let cursor = currentNode(state);
+  if (!place || !cursor) return state;
+  for (const nodeId of nodeIds) {
+    if (!cursor.exits.includes(nodeId) || !place.nodes[nodeId]) return state;
+    cursor = place.nodes[nodeId];
+  }
+  return { ...state, world: { ...state.world, place: { ...state.world.place, node: cursor.id } } };
+}
+
 // Step back out onto the world hex (only legal from a worldExit node).
 export function leavePlace(state) {
   if (!inPlace(state)) return state;
