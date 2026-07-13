@@ -20,8 +20,48 @@
 
 import { supabase } from "../engine/supabase-client.js";
 import { buildHandcrafted } from "./handcrafted-pipeline.js";
+import { DEFAULT_NODES, DEFAULT_ROADS } from "./world-map-default.js";
+import { hexLine } from "./hex-math.js";
 
 const MAP_ID = "whitemarch";
+
+// Compile nodes and roads into hex tiles
+export function compileDefaultWorldMap() {
+  const tiles = {};
+  
+  // 1. Place default nodes
+  for (const n of DEFAULT_NODES) {
+    tiles[`${n.x},${n.y}`] = {
+      terrain: n.terrain || "settlement",
+      poi: {
+        type: n.kind,
+        name: n.name,
+        description: n.description,
+        ...(n.placeId ? { place: n.placeId } : {})
+      }
+    };
+  }
+
+  // 2. Generate roads between nodes using hexLine
+  for (const r of DEFAULT_ROADS) {
+    const fromNode = DEFAULT_NODES.find(n => n.id === r.from);
+    const toNode = DEFAULT_NODES.find(n => n.id === r.to);
+    if (!fromNode || !toNode) continue;
+
+    const path = hexLine(fromNode, toNode);
+    for (const coord of path) {
+      const key = `${coord.x},${coord.y}`;
+      if (!tiles[key]) {
+        tiles[key] = {
+          terrain: r.terrain || "road",
+          poi: null
+        };
+      }
+    }
+  }
+
+  return tiles;
+}
 
 // Mutable singletons. Populated by hydrateMap(). Treated as the same
 // reference for the life of the page; we mutate in place so existing
@@ -46,32 +86,34 @@ let hydratePromise = null;
 export async function hydrateMap() {
   if (hydratePromise) return hydratePromise;
   hydratePromise = (async () => {
-    const { data, error } = await supabase
-      .from("handcrafted_map")
-      .select("tiles, sealed_structures, updated_at")
-      .eq("id", MAP_ID)
-      .single();
-    if (error) {
-      hydratePromise = null; // let the caller retry on next mount
-      throw new Error(`Failed to load handcrafted map: ${error.message}`);
+    try {
+      const { data, error } = await supabase
+        .from("handcrafted_map")
+        .select("tiles, sealed_structures, updated_at")
+        .eq("id", MAP_ID)
+        .single();
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+      
+      loadedUpdatedAt = data.updated_at;
+      let tiles = data.tiles;
+      
+      const { data: compiled } = await supabase
+        .from("map_compiled")
+        .select("tiles")
+        .eq("id", MAP_ID)
+        .maybeSingle();
+      if (compiled?.tiles) tiles = compiled.tiles;
+      
+      applyMapData(tiles, data.sealed_structures || []);
+    } catch (err) {
+      console.warn("Failed to load map from Supabase, falling back to local default world map:", err.message);
+      loadedUpdatedAt = "local-" + Date.now();
+      const defaultTiles = compileDefaultWorldMap();
+      applyMapData(defaultTiles, []);
     }
-    loadedUpdatedAt = data.updated_at;
-    // Read the compiled tiles produced by the relational v2 model
-    // (map_cell/map_place/map_edge/map_prose → compile_map_v2() → map_compiled).
-    // It is a verified, byte-faithful reproduction of the authored blob (see
-    // scripts/map-v2-compiled-parity.mjs) and is kept current on blob edits by
-    // the trg_sync_map_compiled trigger. Fall back to the authored tiles if the
-    // compiled row is missing — this whole block is revert-safe: delete it and
-    // the loader is back on the blob. sealed_structures + the updated_at
-    // optimistic-concurrency baseline still come from handcrafted_map.
-    let tiles = data.tiles;
-    const { data: compiled } = await supabase
-      .from("map_compiled")
-      .select("tiles")
-      .eq("id", MAP_ID)
-      .maybeSingle();
-    if (compiled?.tiles) tiles = compiled.tiles;
-    applyMapData(tiles, data.sealed_structures);
   })();
   return hydratePromise;
 }

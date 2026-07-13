@@ -111,6 +111,19 @@ export const WALL_MATERIALS = {
 // MapView render so the editor doesn't have to duplicate the rule list.
 export function tileFill(tile) {
   if (!tile) return "rgba(60, 56, 48, 0.18)";
+  
+  // If it's a procedural wilderness tile, give it a dark misty overlay.
+  if (tile.procedural) {
+    if (tile.terrain === "forest") return "rgba(18, 30, 22, 0.65)";
+    if (tile.terrain === "hills") return "rgba(32, 34, 28, 0.65)";
+    if (tile.terrain === "mountains") return "rgba(35, 30, 28, 0.65)";
+    if (tile.terrain === "marsh") return "rgba(20, 28, 28, 0.65)";
+    return "rgba(22, 26, 25, 0.65)";
+  }
+
+  if (tile.terrain === "road") return "rgba(215, 167, 111, 0.65)"; // Glowing gold roads!
+  if (tile.terrain === "impassable") return "rgba(12, 17, 16, 0.85)";
+
   const T = TERRAINS[tile.terrain];
   let fill = T?.color || "#222";
   if (tile.terrain === "plains") fill = "rgba(42, 64, 52, 0.55)";
@@ -852,6 +865,10 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               const dropStroke = dropStrokeForTile(tile);
               let stroke = dropStroke ? "transparent" : "rgba(215, 167, 111, 0.08)";
               let strokeWidth = 1;
+              if (tile.terrain === "road") {
+                stroke = "rgba(215, 167, 111, 0.35)";
+                strokeWidth = 1.2;
+              }
 
               if (seen) {
                 opacity = visited ? 1 : 0.8;

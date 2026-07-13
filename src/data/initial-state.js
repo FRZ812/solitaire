@@ -38,6 +38,12 @@ function revealWhitemarch(seen) {
 function makeInitialSeen() {
   let seen = computeSightFrom(0, 0);
   seen = revealWhitemarch(seen);
+  
+  // Reveal the entire handcrafted road/node network so the map routes are visible on start
+  for (const key of Object.keys(HANDCRAFTED)) {
+    seen[key] = true;
+  }
+  
   for (const r of RIVERS) {
     for (const p of r.path) {
       seen = computeSightFromRadius(p.x, p.y, 1, seen);

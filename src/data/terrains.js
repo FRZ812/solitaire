@@ -25,4 +25,5 @@ export const TERRAINS = {
   marsh:      { color: "#6E7B6E", label: "Marsh",      speed: 1.8,  flavor: "wet ground",            dark: true  },
   mountains:  { color: "#4A3A2C", label: "Mountains",  speed: 2.5,  flavor: "stark stone",           dark: true  },
   water:      { color: "#466F86", label: "Water",      speed: 999,  flavor: "deep water",            dark: true  },
+  impassable: { color: "rgba(12, 17, 16, 0.85)", label: "Wilderness", speed: 999, flavor: "choking thicket and trackless waste", dark: true },
 };

@@ -55,6 +55,9 @@ export function buildHandcrafted({ tiles: input, sealedStructures }) {
   // for the full rule; the short version is "a wall with no authored
   // doors sees procedural neighbours as sealed."
   runWallAutoSeal(tiles);
+  
+  // Auto-connect adjacent road, street, and settlement tiles to eliminate manual door authoring overhead.
+  runAutoRoadDoors(tiles);
   return tiles;
 }
 
@@ -407,5 +410,40 @@ function runGatehouseWallTopBridge(tiles, gateKeys) {
       if (nt && nt.terrain === "wall") extra.push({ x: nx, y: ny });
     }
     if (extra.length) tiles[gateKey] = { ...t, doors: [...t.doors, ...extra] };
+  }
+}
+
+// Automatically add doors between adjacent route tiles. A named outdoor POI is
+// also a route endpoint even when its ground is forest/hills/etc.; otherwise a
+// road visibly reaches a ruin but the final edge remains mechanically closed.
+// Indoor/wall nodes stay out of this pass so authored structure access is never
+// opened accidentally.
+function runAutoRoadDoors(tiles) {
+  const ROAD_TERRAINS = new Set(["road", "street", "settlement"]);
+  const OUTDOOR_NODE_TERRAINS = new Set(["plains", "forest", "hills", "marsh", "mountains"]);
+  const isRouteTile = (tile) => !!tile && (
+    ROAD_TERRAINS.has(tile.terrain)
+    || (!!tile.poi?.name && OUTDOOR_NODE_TERRAINS.has(tile.terrain))
+  );
+  for (const key of Object.keys(tiles)) {
+    const tile = tiles[key];
+    if (!isRouteTile(tile)) continue;
+    const [x, y] = key.split(",").map(Number);
+
+    if (!Array.isArray(tile.doors)) {
+      tile.doors = [];
+    }
+
+    for (const d of HEX_DIRS) {
+      const nx = x + d.x, ny = y + d.y;
+      const nk = `${nx},${ny}`;
+      const nt = tiles[nk];
+
+      if (isRouteTile(nt)) {
+        if (!tile.doors.some((dd) => dd.x === nx && dd.y === ny)) {
+          tile.doors.push({ x: nx, y: ny });
+        }
+      }
+    }
   }
 }

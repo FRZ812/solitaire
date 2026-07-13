@@ -961,6 +961,20 @@ export function MapEditor({ onExit }) {
     reset();
   }
 
+  async function resetToDefaultMap() {
+    if (!confirm("Overwrite the current map with the default starting road network? This will discard your draft. (You must save/wait for autosave to write it to Supabase).")) return;
+    clearDraft();
+    const { compileDefaultWorldMap } = await import("../data/handcrafted-map.js");
+    const defaultTiles = compileDefaultWorldMap();
+    setTiles(defaultTiles);
+    setStreets([]);
+    setBuildings([]);
+    setGates([]);
+    setSelected(null);
+    setMoveSource(null);
+    setSaveStatus("edited");
+  }
+
   const streetSet = useMemo(() => new Set(streets.map((c) => `${c.x},${c.y}`)), [streets]);
   // Enumerate every poi.parent / parentName combination currently in use.
   // Powers the right-panel parent picker so the author can group new tiles
@@ -1133,6 +1147,9 @@ export function MapEditor({ onExit }) {
             {Object.keys(tiles).length} tiles · {streets.length} streets · {buildings.length} buildings
           </span>
         )}
+        <button onClick={resetToDefaultMap} style={btn({ color: PALETTE.danger })} title="Reset to Default Map">
+          {isMobile ? "⚙" : "Reset to Default Map"}
+        </button>
         <button onClick={resetToSupabase} style={btn({ color: PALETTE.danger })} title="Reset to Supabase">
           {isMobile ? "↺" : "Reset to Supabase"}
         </button>

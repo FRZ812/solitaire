@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 
-import { STORAGE_KEY, originLabel, SIGHT_RADIUS, MAX_TRAVEL_HEXES, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED } from "./config.js";
+import { STORAGE_KEY, originLabel, SIGHT_RADIUS, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED, WORLD_MARCH_LIMIT } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
 import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 
@@ -33,7 +33,7 @@ import { scryResult } from "./engine/positions.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
-  findPath, pathMinutes, isSeen, flightPath, flightMinutes, marchRoute,
+  pathMinutes, isSeen, flightPath, flightMinutes, findWorldRoute,
 } from "./engine/world.js";
 import { standingNodeTile, enterPlace, leavePlace, moveToNode, inPlace, placeAtTile, getPlace } from "./engine/place.js";
 import { knownTravelSpells } from "./data/travel-spells.js";
@@ -60,7 +60,7 @@ import { BeatActionSheet } from "./components/BeatActionSheet.jsx";
 import { colors } from "./components/tokens.js";
 import { BeatRender } from "./components/beats/BeatRender.jsx";
 import { PanelDeck } from "./components/PanelDeck.jsx";
-import { MapView } from "./components/MapView.jsx";
+import { WorldExploration } from "./components/exploration/WorldExploration.jsx";
 import { PlaceView } from "./components/PlaceView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
 import { StableView } from "./components/StableView.jsx";
@@ -84,12 +84,6 @@ import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
-
-// Go-anywhere march: the most hexes a single travel action will cover before the
-// party halts and you tap to continue. Encounters almost always halt the march
-// sooner (one is rolled per hex); this is just a safety bound so a no-encounter
-// leg can't fold a 100-hex crossing into one beat.
-const MARCH_MAX = 48;
 
 // Difficulty profile of the current location (region-gated, not level-scaled).
 function regionHere(state) {
@@ -762,9 +756,14 @@ export function Solitaire() {
   async function handleTravel(dest, providedPath) {
     if (loading) return;
     const cur = state.world.currentTile;
-    // Go-anywhere: a terrain-aware march toward the destination — no seen-tile
-    // requirement and no fixed leg cap. The world reveals as the party advances.
-    const fullPath = marchRoute(state, cur, dest, MARCH_MAX);
+    // The atlas and the engine share one authored-route plan. Reuse the exact
+    // preview when it still starts here and ends at the chosen destination;
+    // otherwise recompute through the same door-aware graph.
+    const previewIsCurrent = Array.isArray(providedPath) && providedPath.length > 1
+      && providedPath[0]?.x === cur.x && providedPath[0]?.y === cur.y
+      && providedPath[providedPath.length - 1]?.x === dest.x
+      && providedPath[providedPath.length - 1]?.y === dest.y;
+    const fullPath = previewIsCurrent ? providedPath : findWorldRoute(state, cur, dest);
     if (!fullPath || fullPath.length < 2) return;
     setMapOpen(false);
     setReceipts({ tileKey: null, items: {} }); // leaving the scene ends refunds
@@ -780,7 +779,7 @@ export function Solitaire() {
     // The party marches hex by hex along the route; an encounter is rolled at every
     // step and the FIRST one HALTS them at its tile. With no encounter they press on
     // to the destination (or to the MARCH_MAX safety bound, then you tap to continue).
-    let legPath = fullPath;
+    let legPath = fullPath.slice(0, WORLD_MARCH_LIMIT + 1);
     const pathEnc = rollPathEncounter(state, legPath);
     if (pathEnc) legPath = legPath.slice(0, pathEnc.atIndex + 1);
     const legEnd = legPath[legPath.length - 1];
@@ -2107,7 +2106,7 @@ export function Solitaire() {
         />
       )}
       {mapOpen && (
-        <MapView
+        <WorldExploration
           state={state}
           onClose={() => setMapOpen(false)}
           onTravel={handleTravel}

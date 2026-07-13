@@ -166,7 +166,7 @@ function generateTile(x, y) {
   const r2 = tileHash(x + 1031, y - 2017);
   let poi = null;
   if (r2 < (biome.poiChance ?? 0.06)) poi = { type: "hidden", description: null };
-  return { terrain, poi };
+  return { terrain, poi, procedural: true };
 }
 
 export function getTile(state, x, y) {
@@ -249,10 +249,12 @@ export function isAdjacent(a, b) {
 }
 
 export function isPassable(tile) {
-  // Walls are now walkable (mountable fortress wall). Non-mountable
-  // barriers come from existing impassable terrains like water — and the
-  // per-tile doors graph still controls which edges actually open.
-  return tile.terrain !== "water";
+  if (!tile) return false;
+  if (tile.terrain === "water" || tile.terrain === "impassable") return false;
+  // In the new architecture, ground travel is restricted to the designed road/node network (HANDCRAFTED).
+  // Procedural wilderness tiles are impassable by ground, but flight/teleport can bypass them.
+  if (tile.procedural) return false;
+  return true;
 }
 
 // Access control — doors. A tile may declare `doors: [{x,y}, ...]` listing
@@ -378,6 +380,70 @@ export function findPath(state, from, to) {
         const f = tentativeG + hexDistance({ x: nx, y: ny }, to);
         open.set(nKey, { x: nx, y: ny, g: tentativeG, f });
       }
+    }
+  }
+  return null;
+}
+
+// Canonical route planner for the expedition atlas and actual travel. Unlike
+// findPath, it may cross authored route tiles that have not been seen yet, so a
+// player can follow a road into the unknown. Unlike the old greedy marchRoute,
+// it uses the real door graph and can navigate forks, doglegs, and dead ends
+// without walking through a closed boundary.
+//
+// Axial coordinates remain an engine detail. The atlas presents the result as a
+// trail between landmarks, but saves, quests, encounters, and narrator tools all
+// continue to consume the same coordinate path.
+export function findWorldRoute(state, from, to, maxVisited = 12000) {
+  if (from.x === to.x && from.y === to.y) return [{ x: from.x, y: from.y }];
+  const destTile = getTile(state, to.x, to.y);
+  if (!isPassable(destTile)) return null;
+
+  const startKey = `${from.x},${from.y}`;
+  const goalKey = `${to.x},${to.y}`;
+  const open = new Map([[startKey, { x: from.x, y: from.y, g: 0, f: hexDistance(from, to) }]]);
+  const cameFrom = new Map();
+  const gScore = new Map([[startKey, 0]]);
+  let visited = 0;
+
+  while (open.size > 0 && visited++ < maxVisited) {
+    let curKey = null;
+    let curF = Infinity;
+    for (const [key, value] of open) {
+      if (value.f < curF) { curKey = key; curF = value.f; }
+    }
+    const cur = open.get(curKey);
+    if (curKey === goalKey) {
+      const path = [{ x: cur.x, y: cur.y }];
+      let key = curKey;
+      while (cameFrom.has(key)) {
+        const prev = cameFrom.get(key);
+        path.unshift({ x: prev.x, y: prev.y });
+        key = `${prev.x},${prev.y}`;
+      }
+      return path;
+    }
+
+    open.delete(curKey);
+    const curTile = getTile(state, cur.x, cur.y);
+    if (!isPassable(curTile)) continue;
+    for (const d of HEX_DIRECTIONS) {
+      const nx = cur.x + d.x;
+      const ny = cur.y + d.y;
+      const nextTile = getTile(state, nx, ny);
+      if (!isPassable(nextTile)) continue;
+      if (!edgeAllowed(curTile, cur.x, cur.y, nextTile, nx, ny)) continue;
+      const nextKey = `${nx},${ny}`;
+      const tentativeG = cur.g + travelMinutes(curTile, nextTile);
+      if (tentativeG >= (gScore.get(nextKey) ?? Infinity)) continue;
+      cameFrom.set(nextKey, { x: cur.x, y: cur.y });
+      gScore.set(nextKey, tentativeG);
+      open.set(nextKey, {
+        x: nx,
+        y: ny,
+        g: tentativeG,
+        f: tentativeG + hexDistance({ x: nx, y: ny }, to),
+      });
     }
   }
   return null;

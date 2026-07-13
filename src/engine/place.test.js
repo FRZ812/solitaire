@@ -53,9 +53,13 @@ describe("go-anywhere march", () => {
   const blank = { world: { tiles: {}, seen: {} } };
 
   it("reaches an open destination it has never seen", () => {
-    // Far procedural country is all land (water is only rivers/handcrafted), so the
-    // greedy march should walk straight to the goal without needing sight.
-    const route = marchRoute(blank, { x: 200, y: 200 }, { x: 205, y: 200 }, 48);
+    // Populate a path of passable road tiles since procedural wilderness is now impassable by ground.
+    const tiles = {};
+    for (let x = 200; x <= 205; x++) {
+      tiles[`${x},200`] = { terrain: "road" };
+    }
+    const state = { world: { tiles, seen: {} } };
+    const route = marchRoute(state, { x: 200, y: 200 }, { x: 205, y: 200 }, 48);
     const end = route[route.length - 1];
     expect(end).toEqual({ x: 205, y: 200 });
     expect(route.length).toBe(6); // start + 5 steps

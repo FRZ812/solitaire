@@ -12,6 +12,10 @@ export const MAP_VIEW_RADIUS = 30;
 // chosen destination (or until an encounter halts them); farther trips take
 // several legs, so the world can't be skipped in one tap. (engine: handleTravel)
 export const MAX_TRAVEL_HEXES = 6;
+// Expedition-atlas safety bound. The atlas plans the complete authored route,
+// then a single narrated journey covers at most this many steps (or stops at the
+// first encounter). Kept separate from the legacy map's six-cell preview.
+export const WORLD_MARCH_LIMIT = 48;
 // Flight & teleport travel modes (gated behind learned spells; engine/world.js,
 // data/travel-spells.js). Flight covers more ground per leg, ignores terrain, and
 // reveals a wider view; teleports jump straight to a target.
