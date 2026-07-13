@@ -4,16 +4,19 @@ import { headerButtonStyle } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle } from "./tokens.js";
 import { TERRAINS } from "../data/terrains.js";
 import { getTile, currentLocationName } from "../engine/world.js";
+import { standingNodeTile } from "../engine/place.js";
 import { getBiome } from "../data/biomes.js";
+import { sceneBiomeId } from "../data/visual-assets.js";
 import { formatTime, getCalendarDate } from "../engine/time.js";
 
 export function CompactHeader({ state, onMap, onOpenDeck }) {
   const partyCount = (state.party || []).length;
   const cur = state.world.currentTile;
-  const t = getTile(state, cur.x, cur.y);
+  const t = standingNodeTile(state) || getTile(state, cur.x, cur.y);
   const sceneTitle = currentLocationName(state);
   const terrainLabel = TERRAINS[t.terrain]?.label || "Wilderness";
   const biome = getBiome(cur.x, cur.y);
+  const biomeLabel = sceneBiomeId(biome.id, t) === "whitemarch" ? "Whitemarch" : biome.name;
   const time = formatTime(state.time);
   const date = getCalendarDate(state.time);
   // Compact 3-letter month abbreviation for the header chip. The map view
@@ -21,7 +24,7 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
   const monthAbbr = date.monthName.slice(0, 3);
 
   return (
-    <div style={{
+    <header className="compact-header" style={{
       padding: "calc(env(safe-area-inset-top, 0px) + 8px) 12px 6px 12px",
       display: "flex", alignItems: "center", gap: "9px",
       color: colors.parchment,
@@ -66,7 +69,7 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           textShadow: "0 1px 6px rgba(0,0,0,0.8)",
         }}>
-          {terrainLabel} / {biome.name}
+          {terrainLabel} / {biomeLabel}
         </div>
       </div>
 
@@ -87,6 +90,6 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
           )}
         </button>
       </div>
-    </div>
+    </header>
   );
 }

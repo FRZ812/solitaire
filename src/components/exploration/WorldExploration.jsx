@@ -5,6 +5,7 @@ import { useZoomPan } from "../useZoomPan.js";
 import { FLY_MIN_PER_HEX, FLY_TRAVEL_HEXES, WORLD_MARCH_LIMIT } from "../../config.js";
 import { TERRAINS } from "../../data/terrains.js";
 import { getBiome } from "../../data/biomes.js";
+import { biomeVisual, sceneBiomeId } from "../../data/visual-assets.js";
 import { knownTravelSpells } from "../../data/travel-spells.js";
 import {
   currentLocationName,
@@ -32,6 +33,7 @@ import {
 import "./exploration.css";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
+const MAJOR_POI_TYPES = new Set(["city", "town", "village", "fortress", "gate", "palace", "temple", "shrine", "ruin", "landmark"]);
 
 const GLYPHS = {
   city: "♜", village: "⌂", town: "⌂", settlement: "⌂", fortress: "♜",
@@ -68,10 +70,11 @@ function curvePath(points) {
 }
 
 function TerrainGlyph({ cell }) {
+  if (!cell.seen) return null;
   const { x, y } = cell.point;
   const { terrain } = cell.tile;
   const m = cell.mark;
-  const alpha = cell.seen ? 0.55 : 0.16;
+  const alpha = 0.55;
   const transform = `translate(${x + m.offsetX} ${y + m.offsetY}) rotate(${m.rotation}) scale(${m.scale})`;
   if (terrain === "forest") {
     return <g transform={transform} opacity={alpha} className="atlas-terrain-glyph"><path d="M-18 12L-8-8 0 12M-3 13L8-12 19 13M-12 20v-7M9 20v-7" /></g>;
@@ -156,6 +159,16 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
   const teleOption = selected && !isSelf && !loading
     ? teleSpells.find((s) => (isFinite(s.range) ? (selection?.seen && distance <= s.range) : isTeleportAnchor(state, selected.x, selected.y)))
     : null;
+  const coordinateBiome = getBiome(model.origin.x, model.origin.y);
+  const currentBiome = sceneBiomeId(coordinateBiome.id, model.current.tile) === "whitemarch"
+    ? { ...coordinateBiome, id: "whitemarch", name: "Whitemarch" }
+    : coordinateBiome;
+  const currentVisual = biomeVisual(currentBiome.id);
+  const coordinateFocusBiome = getBiome(selection?.x ?? model.origin.x, selection?.y ?? model.origin.y);
+  const focusBiome = sceneBiomeId(coordinateFocusBiome.id, selection?.tile || model.current.tile) === "whitemarch"
+    ? { ...coordinateFocusBiome, id: "whitemarch", name: "Whitemarch" }
+    : coordinateFocusBiome;
+  const focusVisual = biomeVisual(focusBiome.id);
 
   function pick(coord) {
     if (lastWasDragRef.current) { lastWasDragRef.current = false; return; }
@@ -163,12 +176,17 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
   }
 
   return (
-    <div className="exploration-shell atlas-shell">
+    <div className="exploration-shell atlas-shell" style={{
+      "--atlas-accent": currentVisual.accent,
+      "--atlas-primary": currentVisual.primary,
+      "--atlas-secondary": currentVisual.secondary,
+      "--atlas-deep": currentVisual.deep,
+    }}>
       <header className="exploration-header">
         <button onClick={onClose} className="atlas-icon-button" aria-label="Return to story"><Icon name="arrowLeft" size={14} color={colors.parchmentMuted} /></button>
         <div className="exploration-title">
           <span className="atlas-kicker">The wayfarer's atlas</span>
-          <h1>{getBiome(model.origin.x, model.origin.y).name}</h1>
+          <h1>{currentBiome.name}</h1>
           <small>{formatDate(state.time)} · {formatTime(state.time)}</small>
         </div>
         <div className="atlas-header-mark" aria-hidden="true">✦</div>
@@ -179,16 +197,18 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
         <div ref={transformRef} className="atlas-transform">
           <svg width={ATLAS_SIZE} height={ATLAS_SIZE} viewBox={`0 0 ${ATLAS_SIZE} ${ATLAS_SIZE}`} className="atlas-canvas" aria-label="Exploration atlas">
             <defs>
-              <radialGradient id="atlasPaper" cx="50%" cy="48%" r="65%"><stop offset="0" stopColor="#24342e" /><stop offset=".62" stopColor="#14221f" /><stop offset="1" stopColor="#09110f" /></radialGradient>
+              <radialGradient id="atlasPaper" cx="50%" cy="48%" r="65%"><stop offset="0" stopColor={currentVisual.primary} stopOpacity=".48" /><stop offset=".58" stopColor="#14221f" stopOpacity=".9" /><stop offset="1" stopColor={currentVisual.deep} /></radialGradient>
               <filter id="atlasBlur"><feGaussianBlur stdDeviation="24" /></filter>
               <filter id="atlasGlow"><feGaussianBlur stdDeviation="5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
               <pattern id="atlasGrain" width="67" height="67" patternUnits="userSpaceOnUse"><path d="M2 13l1 1m31-8l1-1m21 27l2 1M10 56l2-1m31 4l1 2" stroke="rgba(237,228,208,.09)" strokeWidth=".7" /></pattern>
             </defs>
+            <rect width={ATLAS_SIZE} height={ATLAS_SIZE} fill={currentVisual.deep} />
+            <image href={currentVisual.image} x="0" y="0" width={ATLAS_SIZE} height={ATLAS_SIZE} preserveAspectRatio="xMidYMid slice" opacity=".13" className="atlas-region-wash" />
             <rect width={ATLAS_SIZE} height={ATLAS_SIZE} fill="url(#atlasPaper)" />
             <rect width={ATLAS_SIZE} height={ATLAS_SIZE} fill="url(#atlasGrain)" />
 
             <g filter="url(#atlasBlur)" pointerEvents="none">
-              {model.terrain.map((cell) => <circle key={cell.key} cx={cell.point.x} cy={cell.point.y} r={98 * cell.mark.scale} fill={cell.mark.color} opacity={cell.seen ? .18 : .055} />)}
+              {model.terrain.map((cell) => <circle key={cell.key} cx={cell.point.x} cy={cell.point.y} r={98 * cell.mark.scale} fill={cell.seen ? biomeVisual(sceneBiomeId(getBiome(cell.x, cell.y).id, cell.tile)).primary : "#111a18"} opacity={cell.seen ? .24 : .12} />)}
             </g>
             <g fill="none" stroke="rgba(230,185,140,.34)" strokeWidth="2" pointerEvents="none">
               {model.terrain.map((cell) => <TerrainGlyph key={`glyph-${cell.key}`} cell={cell} />)}
@@ -207,14 +227,20 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
               {model.cells.map((cell) => {
                 const quest = questAt.get(cell.key);
                 const chosen = selected && selected.x === cell.x && selected.y === cell.y;
-                const important = cell.named || quest || cell.key === model.current.key;
+                const stepsAway = hexDistance(model.origin, cell);
+                // Dense authored settlements can contain hundreds of named
+                // stalls and rooms. Keep those discoverable as points, but
+                // reserve always-visible labels for true landmarks in the
+                // nearby map; immediate exits are already named in the sheet.
+                const majorNamed = cell.named && stepsAway > 1 && stepsAway <= 12 && MAJOR_POI_TYPES.has(cell.tile?.poi?.type);
+                const important = majorNamed || quest || cell.key === model.current.key;
                 return (
                   <g key={cell.key} transform={`translate(${cell.point.x} ${cell.point.y})`} role="button" tabIndex="0" aria-label={`${nameForCell(cell, model.origin)} · ${hexDistance(model.origin, cell)} steps`} aria-pressed={chosen} onClick={() => pick(cell)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") pick(cell); }} className={`atlas-waypoint ${important ? "atlas-waypoint--major" : ""} ${chosen ? "is-selected" : ""}`}>
-                    <circle r={important ? 28 : 18} className="atlas-hit" />
+                    <circle r={important ? 32 : 24} className="atlas-hit" />
                     {!important && <circle r={cell.visited ? 3.4 : 2.2} className={cell.seen ? "atlas-trail-dot" : "atlas-trail-dot atlas-trail-dot--unknown"} />}
                     {important && cell.key !== model.current.key && <><circle r="17" className="atlas-landmark-halo" /><circle r="11" className="atlas-landmark-core" /><text y="5" textAnchor="middle" className="atlas-landmark-glyph">{glyphFor(cell.tile)}</text></>}
                     {quest && <><circle r="24" className="atlas-quest-ring" /><text y="-30" textAnchor="middle" className="atlas-quest-star">✦</text></>}
-                    {cell.named && cell.key !== model.current.key && <text y="38" textAnchor="middle" className="atlas-place-label">{poiPlaceName(cell.tile.poi)}</text>}
+                    {majorNamed && cell.key !== model.current.key && <text y="38" textAnchor="middle" className="atlas-place-label">{poiPlaceName(cell.tile.poi)}</text>}
                   </g>
                 );
               })}
@@ -244,10 +270,13 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
         {!selected && model.choices.length > 0 && <div className="atlas-next-steps"><div className="atlas-section-label">Paths from here</div><div className="atlas-choice-row">{model.choices.map((choice) => <button key={choice.key} onClick={() => setSelected({ x: choice.x, y: choice.y })} className="atlas-choice"><span>{directionLabel(model.origin, choice).replace("-", " ")}</span><b>{poiPlaceName(choice.tile.poi) || TERRAINS[choice.tile.terrain]?.label}</b><small>{describeEncounterPotential(choice.tile, choice.x, choice.y) || "open trail"}</small></button>)}</div></div>}
 
         <div className="atlas-destination">
+          <div className="atlas-destination-art" style={{ backgroundImage: `url(${focusVisual.image})`, "--focus-accent": focusVisual.accent }}>
+            <div><span>{focusVisual.symbol}</span><small>{focusBiome.name}</small><b>{focusVisual.mood}</b></div>
+          </div>
           <div className="atlas-destination-heading"><div><span className="atlas-kicker">{selected ? "Chosen destination" : "Present position"}</span><h2>{selectedName}</h2></div>{selected && <button onClick={() => setSelected(null)} className="atlas-clear">Clear</button>}</div>
           <p>{selectedTile?.poi?.description || (selected ? TERRAINS[selectedTile?.terrain]?.flavor : `${currentLocationName(state)}. Choose a waypoint or one of the paths from here.`)}</p>
           <div className="atlas-facts">
-            <span>{getBiome(selection?.x ?? model.origin.x, selection?.y ?? model.origin.y).name}</span>
+            <span>{focusBiome.name}</span>
             {journey && <><span>{journey.legSteps} step{journey.legSteps === 1 ? "" : "s"}</span><span>~{routeMinutes} min</span><span className={risk >= 45 ? "is-danger" : ""}>{risk}% danger</span></>}
           </div>
           {journey && <div className="atlas-terrain-mix">{journey.terrainLabels.map((t) => <span key={t.id} style={{ "--terrain": TERRAIN_INK[t.id] }}>{t.label} ×{t.count}</span>)}</div>}

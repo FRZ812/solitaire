@@ -3,6 +3,7 @@ import { Icon } from "./Icon.jsx";
 import { colors } from "./tokens.js";
 import { currentPlace, currentNode, currentExits, canLeave, nodeTile } from "../engine/place.js";
 import { buildingForTile, isBuildingOpen } from "../data/town.js";
+import { biomeVisual, terrainVisual } from "../data/visual-assets.js";
 import "./exploration/exploration.css";
 
 // Curated positions turn Whitemarch's declarative node graph into a legible
@@ -95,6 +96,8 @@ export function PlaceView({ state, time, onMove, onLeave, onService, onClose }) 
 
   const directIds = new Set(exits.map((e) => e.id));
   const tile = nodeTile(place, node);
+  const placeVisual = biomeVisual(place.biomeId || "far-wild");
+  const nodeVisual = terrainVisual(tile.terrain);
   const building = buildingForTile(tile);
   const open = building ? isBuildingOpen(building, time?.hour ?? 12) : false;
   const edges = [];
@@ -110,7 +113,12 @@ export function PlaceView({ state, time, onMove, onLeave, onService, onClose }) 
   }
 
   return (
-    <div className="exploration-shell place-shell">
+    <div className="exploration-shell place-shell" style={{
+      "--atlas-accent": placeVisual.accent,
+      "--atlas-primary": placeVisual.primary,
+      "--atlas-deep": placeVisual.deep,
+      "--place-node": nodeVisual.tint,
+    }}>
       <header className="exploration-header">
         <button onClick={onClose} className="atlas-icon-button" aria-label="Return to story"><Icon name="arrowLeft" size={14} color={colors.parchmentMuted} /></button>
         <div className="exploration-title"><span className="atlas-kicker">City wayfinder</span><h1>{place.name}</h1><small>{node.district || place.kind} · {displayType(node.type)}</small></div>
@@ -118,6 +126,7 @@ export function PlaceView({ state, time, onMove, onLeave, onService, onClose }) 
       </header>
 
       <main className="place-viewport">
+        <div className="place-scene-wash" style={{ backgroundImage: `url(${placeVisual.image})` }} />
         <svg className="place-map" viewBox="0 0 520 620" role="img" aria-label={`${place.name} exploration map`}>
           <defs>
             <pattern id="placeGrain" width="61" height="61" patternUnits="userSpaceOnUse"><path d="M4 9l1 1m27 12l2-1m20 28l1 1M11 54l2-1" stroke="rgba(237,228,208,.07)" /></pattern>
@@ -146,6 +155,7 @@ export function PlaceView({ state, time, onMove, onLeave, onService, onClose }) 
       </main>
 
       <section className="place-sheet">
+        <div className="place-scene-note"><span>{placeVisual.symbol}</span><div><small>{node.district || place.kind}</small><b>{placeVisual.mood}</b></div></div>
         <div className="place-breadcrumbs">{place.name} › {node.district || "The outskirts"}<span className="place-access">{node.access || "public"}</span></div>
         <h2 className="place-heading">{node.name}</h2>
         <p className="place-description">{node.description}</p>

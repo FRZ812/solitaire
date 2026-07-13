@@ -230,16 +230,16 @@ export function VitalsStrip({ character }) {
   const vitMax = character.vitalityMax || 1;
   const resMax = character.resolveMax || 1;
   return (
-    <div style={{
+    <div className="vitals-strip" style={{
       margin: "0 12px",
       padding: "6px 10px",
       display: "flex", flexDirection: "column", gap: "5px",
-      backgroundColor: "rgba(20, 29, 29, 0.58)",
-      border: `1px solid rgba(215, 167, 111, 0.18)`,
+      backgroundColor: "rgba(8, 13, 12, 0.66)",
+      border: "1px solid color-mix(in srgb, var(--scene-accent, #d7a76f) 30%, transparent)",
       borderRadius: radius.control,
       color: colors.parchment,
       ...glass,
-      boxShadow: `0 10px 28px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.02)`,
+      boxShadow: `0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.025)`,
     }}>
       {/* Five radial meters in a single row — vit / res / hunger / thirst /
           sleep — so the whole HUD is one strip even on a narrow phone.
@@ -367,7 +367,7 @@ export function LoadingDots() {
       {[0, 1, 2].map((i) => (
         <div key={i} style={{
           width: "6px", height: "6px", borderRadius: "50%",
-          backgroundColor: colors.gold,
+          backgroundColor: "var(--scene-highlight, #d7a76f)",
           animation: `pulse 1.4s ease-in-out ${i * 0.2}s infinite`,
         }} />
       ))}
@@ -533,13 +533,14 @@ export function InputBar({ value, onChange, onSubmit, loading }) {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [value]);
   return (
-    <div style={{
+    <div className="story-input" style={{
       padding: "10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px) 12px",
       background: "linear-gradient(180deg, rgba(11,15,14,0) 0%, rgba(11,15,14,0.62) 20%, rgba(11,15,14,0.92) 100%)",
       display: "flex", alignItems: "flex-end", gap: "9px",
     }}>
       <NarratorPicker />
       <textarea
+        className="story-input__field"
         ref={ref}
         rows={1}
         value={value}
@@ -551,23 +552,24 @@ export function InputBar({ value, onChange, onSubmit, loading }) {
           flex: 1, minHeight: "48px", maxHeight: "160px",
           boxSizing: "border-box", resize: "none", overflowY: "auto",
           borderRadius: radius.control,
-          border: `1px solid rgba(215, 167, 111, 0.22)`,
-          backgroundColor: "rgba(10, 15, 15, 0.65)",
+          border: "1px solid color-mix(in srgb, var(--scene-accent, #d7a76f) 34%, transparent)",
+          backgroundColor: "rgba(7, 12, 10, 0.76)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
           padding: "13px 18px", fontSize: "14px", lineHeight: 1.4, color: colors.parchment,
           outline: "none", fontFamily: "inherit",
           transition: "border-color 0.2s, box-shadow 0.2s",
-          boxShadow: `0 10px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.02)`,
+          boxShadow: `0 14px 30px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.025)`,
         }}
       />
       <button
+        className="story-input__send"
         onClick={onSubmit} disabled={disabled}
         style={{
           width: "48px", height: "48px",
           borderRadius: radius.control,
-          backgroundColor: disabled ? "rgba(215, 167, 111, 0.08)" : colors.gold,
-          border: `1px solid rgba(215, 167, 111, 0.28)`,
+          backgroundColor: disabled ? "rgba(215, 167, 111, 0.08)" : "var(--scene-highlight, #d7a76f)",
+          border: "1px solid color-mix(in srgb, var(--scene-highlight, #d7a76f) 42%, transparent)",
           display: "flex", alignItems: "center", justifyContent: "center",
           cursor: disabled ? "not-allowed" : "pointer",
           flexShrink: 0,

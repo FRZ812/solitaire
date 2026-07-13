@@ -45,6 +45,7 @@ import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as 
 import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome } from "./data/biomes.js";
+import { biomeVisual, sceneBiomeId } from "./data/visual-assets.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { generateEnvironment } from "./data/environment.js";
@@ -82,6 +83,7 @@ import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
+import "./components/chat-scene.css";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
 
@@ -1796,6 +1798,9 @@ export function Solitaire() {
 
   // ----- Render flow -----
 
+  const sceneTile = standingNodeTile(state) || getTile(state, state.world.currentTile.x, state.world.currentTile.y);
+  const sceneVisual = biomeVisual(sceneBiomeId(getBiome(state.world.currentTile.x, state.world.currentTile.y).id, sceneTile));
+
   if (!authChecked) return <CenteredLoader />;
   if (!user) return <AuthScreen />;
   if (!subChecked) return <CenteredLoader />;
@@ -1864,15 +1869,18 @@ export function Solitaire() {
   const showCreationHub = inLimbo && !creationEntered && !state.beats.some((b) => b.type === "player");
 
   return (
-    <div style={{
+    <div className="game-shell" style={{
       backgroundColor: colors.ink,
       height: "100dvh", width: "100%", maxWidth: "640px", margin: "0 auto",
       display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
+      "--scene-accent": sceneVisual.primary,
+      "--scene-highlight": sceneVisual.accent,
+      "--scene-deep": sceneVisual.deep,
     }}>
       {/* Limbo (character creation) shows the ethereal between-place backdrop with
           the HUD hidden; the real world shows the scene backdrop + full HUD. */}
       {state.created === false ? <InitialBackdrop /> : <SceneBackdrop state={state} />}
-      <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+      <div className="game-hud-layer">
         {state.created !== false && (
           <>
             <CompactHeader
@@ -1896,7 +1904,7 @@ export function Solitaire() {
             </button>
           </div>
         )}
-        <div ref={logRef} style={{ flex: 1, overflowY: "auto", padding: "14px 18px 10px 18px", WebkitOverflowScrolling: "touch" }}>
+        <div ref={logRef} className="story-log">
           {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
           {loading && <LiveThinking thinking={liveThinking} />}
           {error && (
