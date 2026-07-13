@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from "react";
 import { Icon } from "../Icon.jsx";
-import { colors } from "../tokens.js";
 import { FLY_MIN_PER_HEX, FLY_TRAVEL_HEXES, WORLD_MARCH_LIMIT } from "../../config.js";
 import { TERRAINS } from "../../data/terrains.js";
 import { getBiome } from "../../data/biomes.js";
@@ -18,15 +17,22 @@ import { pathRiskPercent, describeEncounterPotential } from "../../engine/encoun
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "../../engine/fly.js";
 import { playerFlightMount } from "../../engine/riding.js";
 import { formatDate, formatTime } from "../../engine/time.js";
-import { formatCopper } from "../../engine/economy.js";
+import { coinsToCopper, formatCopper } from "../../engine/economy.js";
 import { poiPlaceName } from "../../engine/location.js";
 import {
+  RPG_VIEW_COLS,
+  RPG_VIEW_ROWS,
   TERRAIN_INK,
   buildExplorationModel,
   directionLabel,
   directionShort,
   planAtlasJourney,
 } from "./atlasModel.js";
+import overworldArt from "../../assets/generated/rpg-overworld-v1.webp";
+import playerArt from "../../assets/generated/rpg-player-marker-v1.webp";
+import monsterArt from "../../assets/generated/rpg-monster-v1.webp";
+import weaponArt from "../../assets/generated/rpg-weapon-v1.webp";
+import rewardFrame from "../../assets/generated/rpg-reward-frame-v1.webp";
 import "./exploration.css";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
@@ -50,17 +56,10 @@ function nameForDestination(destination, origin) {
 }
 
 function dangerLabel(risk) {
-  if (risk >= 65) return "Severe";
-  if (risk >= 40) return "Unsettled";
-  if (risk >= 20) return "Watchful";
-  return "Favorable";
-}
-
-function trailPath(scene) {
-  const x = scene.x * 10;
-  const y = scene.y * 6.2;
-  const bend = (x - 500) * 0.18;
-  return `M 500 650 C ${500 - bend} 560, ${x - bend} ${Math.max(y + 86, 390)}, ${x} ${y}`;
+  if (risk >= 65) return "Deadly";
+  if (risk >= 40) return "Dangerous";
+  if (risk >= 20) return "Wary";
+  return "Calm";
 }
 
 function biomeAt(destination) {
@@ -69,19 +68,215 @@ function biomeAt(destination) {
   return id === "whitemarch" ? { ...coordinateBiome, id, name: "Whitemarch" } : coordinateBiome;
 }
 
+function terrainClass(terrain) {
+  return String(terrain || "unknown").replace(/[^a-z0-9-]/gi, "-");
+}
+
+function routePoints(journey, origin) {
+  if (!journey) return "";
+  return journey.legPath.map((point) => {
+    const x = (point.x - origin.x + Math.floor(RPG_VIEW_COLS / 2)) * 100 + 50;
+    const y = (point.y - origin.y + Math.floor(RPG_VIEW_ROWS / 2)) * 100 + 50;
+    return `${x},${y}`;
+  }).join(" ");
+}
+
+function RpgHeader({ state, biome, onClose, onWayfinder }) {
+  const vitality = state.character.vitality ?? 0;
+  const vitalityMax = Math.max(1, state.character.vitalityMax ?? vitality);
+  const resolve = state.character.resolve ?? 0;
+  const resolveMax = Math.max(1, state.character.resolveMax ?? resolve);
+  const vitalityDisplay = Math.ceil(vitality);
+  const vitalityMaxDisplay = Math.ceil(vitalityMax);
+  const resolveDisplay = Math.ceil(resolve);
+  const resolveMaxDisplay = Math.ceil(resolveMax);
+  const coin = coinsToCopper(state.character.inventory?.coins || {});
+  return (
+    <header className="rpg-map-header">
+      <button onClick={onClose} className="rpg-square-button" aria-label="Return to story"><Icon name="arrowLeft" size={17} color="#fff4c7" /></button>
+      <div className="rpg-location-lockup">
+        <span>{biome.name} · overworld</span>
+        <h1>{currentLocationName(state)}</h1>
+        <small>{formatDate(state.time)} · {formatTime(state.time)}</small>
+      </div>
+      <div className="rpg-vitals" aria-label="Party status">
+        <div className="rpg-vital rpg-vital--hp"><span>HP</span><i><b style={{ width: `${Math.min(100, vitality / vitalityMax * 100)}%` }} /></i><strong>{vitalityDisplay}/{vitalityMaxDisplay}</strong></div>
+        <div className="rpg-vital rpg-vital--mp"><span>RP</span><i><b style={{ width: `${Math.min(100, resolve / resolveMax * 100)}%` }} /></i><strong>{resolveDisplay}/{resolveMaxDisplay}</strong></div>
+        <div className="rpg-coin"><span>◆</span>{formatCopper(coin)}</div>
+      </div>
+      <button onClick={onWayfinder} className="rpg-square-button" aria-label="Open world atlas"><Icon name="map" size={17} color="#fff4c7" /></button>
+    </header>
+  );
+}
+
+function RpgDpad({ onStep, onClear }) {
+  return (
+    <div className="rpg-dpad" aria-label="Map cursor controls">
+      <button className="is-up" onClick={() => onStep(0, -1)} aria-label="Move cursor north">▲</button>
+      <button className="is-left" onClick={() => onStep(-1, 0)} aria-label="Move cursor west">◀</button>
+      <button className="is-center" onClick={onClear} aria-label="Center on party">◆</button>
+      <button className="is-right" onClick={() => onStep(1, 0)} aria-label="Move cursor east">▶</button>
+      <button className="is-down" onClick={() => onStep(0, 1)} aria-label="Move cursor south">▼</button>
+    </div>
+  );
+}
+
+function WorldGrid({ model, selection, journey, onPick, onStep, onClear, onJournal, onWayfinder, onSeekCombat, questCount, loading, night }) {
+  const routeKeys = new Set((journey?.legPath || []).map((point) => `${point.x},${point.y}`));
+  return (
+    <main className={`rpg-world-stage ${night ? "is-night" : ""}`} style={{ "--rpg-overworld": `url(${overworldArt})` }}>
+      <div className="rpg-world-art" />
+      <div className="rpg-world-wash" />
+      <div className="rpg-quickbar">
+        <button onClick={onWayfinder}><Icon name="map" size={15} color="#fff4c7" /><span>Atlas</span></button>
+        <button onClick={onJournal}><Icon name="book" size={15} color="#fff4c7" /><span>Quests</span>{questCount > 0 && <b>{questCount}</b>}</button>
+      </div>
+
+      <div className="rpg-map-grid" style={{ "--map-cols": RPG_VIEW_COLS, "--map-rows": RPG_VIEW_ROWS }}>
+        {model.viewport.map((cell) => {
+          const selected = selection?.key === cell.key;
+          const named = cell.seen && cell.tile?.poi?.type !== "hidden" && poiPlaceName(cell.tile?.poi);
+          const visual = terrainVisual(cell.tile?.terrain);
+          return (
+            <button
+              key={cell.key}
+              className={`rpg-map-tile terrain-${terrainClass(cell.tile?.terrain)} ${cell.seen ? "is-seen" : "is-fogged"} ${cell.visited ? "is-visited" : ""} ${cell.passable ? "is-passable" : ""} ${routeKeys.has(cell.key) ? "is-route" : ""} ${selected ? "is-selected" : ""} ${cell.current ? "is-current" : ""}`}
+              style={{ gridColumn: cell.col + 1, gridRow: cell.row + 1, "--terrain-color": visual.tint }}
+              onClick={() => cell.seen && cell.passable && !cell.current && onPick(cell)}
+              disabled={!cell.seen || !cell.passable || cell.current}
+              aria-label={cell.seen ? `${named || TERRAINS[cell.tile?.terrain]?.label || "Unknown terrain"}${cell.current ? ", your location" : ""}` : "Uncharted"}
+            >
+              <span className="rpg-tile-pixels" />
+              {cell.seen && cell.passable && <span className="rpg-step-dot" />}
+              {named && !cell.current && <span className="rpg-poi"><b>{glyphFor(cell.tile)}</b><small>{named}</small></span>}
+              {cell.quest && <span className="rpg-quest-star" title={cell.quest.title}>!</span>}
+              {selected && <span className="rpg-cursor"><i /><i /><i /><i /></span>}
+              {cell.current && (
+                <span className="rpg-player-token">
+                  <span className="rpg-player-shadow" />
+                  <img src={playerArt} alt="" draggable="false" />
+                  <b>YOU</b>
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {journey && <svg className="rpg-route-overlay" viewBox={`0 0 ${RPG_VIEW_COLS * 100} ${RPG_VIEW_ROWS * 100}`} preserveAspectRatio="none" aria-hidden="true"><polyline points={routePoints(journey, model.origin)} className="rpg-route-shadow" /><polyline points={routePoints(journey, model.origin)} className="rpg-route-line" /></svg>}
+
+      {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
+
+      <RpgDpad onStep={onStep} onClear={onClear} />
+      {onSeekCombat && (
+        <button onClick={onSeekCombat} disabled={loading} className="rpg-wild-encounter">
+          <img src={monsterArt} alt="" />
+          <span><small>Wild encounter</small><b>Seek a foe</b></span>
+          <img src={weaponArt} alt="" className="rpg-encounter-weapon" />
+        </button>
+      )}
+    </main>
+  );
+}
+
+function TrailChoices({ model, onPick }) {
+  return (
+    <div className="rpg-trail-choices">
+      {model.choices.slice(0, 5).map((choice) => {
+        const visual = terrainVisual(choice.tile.terrain);
+        return (
+          <button key={choice.key} onClick={() => onPick(choice)} style={{ "--choice-color": visual.tint }}>
+            <span>{glyphFor(choice.tile)}</span>
+            <div><small>{directionShort(choice.direction)} · {choice.steps} {choice.steps === 1 ? "step" : "steps"}</small><b>{nameForDestination(choice, model.origin)}</b><em>{describeEncounterPotential(choice.tile, choice.x, choice.y) || "open trail"}</em></div>
+            <i>›</i>
+          </button>
+        );
+      })}
+      {model.choices.length === 0 && <p className="rpg-empty">No safe road is visible from here.</p>}
+    </div>
+  );
+}
+
+function DestinationPanel({ state, model, selection, selectedName, journey, routeMinutes, risk, focusBiome, focusVisual, onClear, onPick, onTravel, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
+  const distance = selection ? hexDistance(model.origin, selection) : 0;
+  const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
+  const description = selection?.tile?.poi?.description || (selection ? TERRAINS[selection.tile?.terrain]?.flavor : null);
+  const rewardTitle = selection?.quest ? "Quest reward" : selection?.visited ? "Known waypoint" : "Discovery ahead";
+  const rewardValue = selection?.quest ? formatCopper(selection.quest.rewardCp || 0) : selection?.visited ? "Route recorded" : "New atlas entry";
+  return (
+    <section className="rpg-command-panel">
+      <div className="rpg-party-card">
+        <div className="rpg-party-portrait"><img src={playerArt} alt="" /></div>
+        <div><small>Party leader</small><b>{state.character.name || "Wanderer"}</b><span>{state.character.race || "Adventurer"} · ready</span></div>
+        <i>SOLO</i>
+      </div>
+
+      <div className="rpg-command-scroll">
+        {!selection ? (
+          <div className="rpg-route-intro">
+            <span className="rpg-kicker">Choose a destination</span>
+            <h2>The road is yours</h2>
+            <p>Tap any open tile, use the direction pad, or choose a visible trail. Every step advances time and can trigger an encounter.</p>
+            <TrailChoices model={model} onPick={onPick} />
+          </div>
+        ) : (
+          <div className="rpg-destination">
+            <div className="rpg-destination-banner" style={{ backgroundImage: `linear-gradient(180deg, transparent, rgba(5,13,34,.92)), url(${focusVisual.image})`, "--focus-accent": focusVisual.accent }}>
+              <button onClick={onClear} aria-label="Clear destination"><Icon name="x" size={13} color="#fff7d6" /></button>
+              <span>{selection.quest ? "Quest objective" : focusBiome.name}</span>
+              <h2>{selectedName}</h2>
+              <small>{focusVisual.mood}</small>
+            </div>
+
+            {description && <p className="rpg-destination-copy">{description}</p>}
+
+            <div className="rpg-reward-card" style={{ "--reward-art": `url(${rewardFrame})` }}>
+              <div><small>{rewardTitle}</small><b>{rewardValue}</b></div>
+              <span>{selection.quest ? "✦" : selection.visited ? "✓" : "+"}</span>
+            </div>
+
+            {journey ? (
+              <>
+                <div className="rpg-route-stats">
+                  <div><small>Steps</small><b>{journey.legSteps}</b><span>of {journey.totalSteps}</span></div>
+                  <div><small>Time</small><b>{routeMinutes}</b><span>minutes</span></div>
+                  <div className={risk >= 40 ? "is-danger" : ""}><small>Danger</small><b>{risk}%</b><span>{dangerLabel(risk)}</span></div>
+                </div>
+                <div className="rpg-terrain-route">
+                  {journey.terrainLabels.map((terrain) => <span key={terrain.id} style={{ "--segment-color": TERRAIN_INK[terrain.id], "--segment-size": terrain.count }} title={`${terrain.label}: ${terrain.count} steps`}><i /><small>{terrain.label} ×{terrain.count}</small></span>)}
+                </div>
+                {!journey.arrived && <p className="rpg-leg-note">This march reaches {journey.legSteps} of {journey.totalSteps} steps before the party reassesses.</p>}
+              </>
+            ) : <div className="rpg-route-blocked">No ground route reaches this tile from here.</div>}
+          </div>
+        )}
+      </div>
+
+      <div className="rpg-command-actions">
+        {(canFly || teleOption) && <div className="rpg-magic-actions">
+          {canFly && <button onClick={onFly}>Fly · ~{Math.min(distance, FLY_TRAVEL_HEXES) * FLY_MIN_PER_HEX} min{flightMount ? ` · ${flightMount.name}` : ` · ${flyPlan.totalCost} RP`}</button>}
+          {teleOption && <button onClick={() => resolve >= teleOption.resolveCost && onTeleport(teleOption)} disabled={resolve < teleOption.resolveCost}>{teleOption.name} · {teleOption.resolveCost} RP</button>}
+        </div>}
+        <button onClick={onTravel} disabled={!journey || loading} className="rpg-travel-button">
+          <span>{loading ? "…" : "A"}</span>
+          {!selection ? "Choose a destination" : isSelf ? "You are here" : !journey ? "Route unavailable" : journey.arrived ? `Travel to ${selectedName}` : `March toward ${selectedName}`}
+          <small>{journey ? `${risk}% danger` : ""}</small>
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function QuestJournal({ quests, current, onClose, onPick }) {
   return (
-    <div className="trail-overlay" role="dialog" aria-modal="true" aria-label="Quest journal">
-      <div className="trail-overlay-head">
-        <div><span className="atlas-kicker">Pinned objectives</span><h2>Quest journal</h2><p>Choose an objective to set it on your compass.</p></div>
-        <button onClick={onClose} className="atlas-icon-button" aria-label="Close quest journal"><Icon name="x" size={14} color={colors.parchmentMuted} /></button>
-      </div>
-      <div className="trail-ledger-list">
-        {quests.length === 0 ? <p className="atlas-empty">No active trails. Read the boards at taverns and gaols.</p> : quests.map((quest) => (
-          <button key={quest.id} className="trail-ledger-card trail-ledger-card--quest" onClick={() => quest.loc && onPick(quest.loc)} disabled={!quest.loc}>
-            <span className="trail-ledger-glyph">✦</span>
-            <span className="trail-ledger-copy"><b>{quest.title}</b><small>{QUEST_TYPE_LABEL[quest.type] || "Task"} · {quest.giver}{quest.loc ? ` · ${hexDistance(current, quest.loc)} steps` : ""}</small></span>
-            <span className="trail-ledger-reward">{formatCopper(quest.rewardCp || 0)}</span>
+    <div className="rpg-overlay" role="dialog" aria-modal="true" aria-label="Quest journal" style={{ "--reward-art": `url(${rewardFrame})` }}>
+      <div className="rpg-overlay-head"><div><span className="rpg-kicker">Adventure log</span><h2>Quest journal</h2><p>Choose an objective to set it on your compass.</p></div><button onClick={onClose} className="rpg-square-button" aria-label="Close quest journal"><Icon name="x" size={15} color="#fff4c7" /></button></div>
+      <div className="rpg-ledger-grid">
+        {quests.length === 0 ? <p className="rpg-empty">No active quests. Check taverns, gaols, and village boards.</p> : quests.map((quest) => (
+          <button key={quest.id} onClick={() => quest.loc && onPick(quest.loc)} disabled={!quest.loc} className="rpg-quest-card">
+            <span className="rpg-card-rank">{QUEST_TYPE_LABEL[quest.type]?.[0] || "Q"}</span>
+            <div><small>{QUEST_TYPE_LABEL[quest.type] || "Task"} · {quest.giver}</small><b>{quest.title}</b><em>{quest.loc ? `${hexDistance(current, quest.loc)} steps away` : "Location unknown"}</em></div>
+            <strong><span>◆</span>{formatCopper(quest.rewardCp || 0)}</strong>
           </button>
         ))}
       </div>
@@ -90,133 +285,24 @@ function QuestJournal({ quests, current, onClose, onPick }) {
 }
 
 function Wayfinder({ landmarks, origin, onClose, onPick }) {
+  const usefulLandmarks = landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi));
   return (
-    <div className="trail-overlay" role="dialog" aria-modal="true" aria-label="Known destinations">
-      <div className="trail-overlay-head">
-        <div><span className="atlas-kicker">Your remembered world</span><h2>Known horizons</h2><p>Landmarks, sanctuaries, and objectives you can navigate toward.</p></div>
-        <button onClick={onClose} className="atlas-icon-button" aria-label="Close known destinations"><Icon name="x" size={14} color={colors.parchmentMuted} /></button>
-      </div>
-      <div className="trail-ledger-list trail-ledger-list--places">
-        {landmarks.length === 0 ? <p className="atlas-empty">The horizon is still blank. Follow a trail to begin charting it.</p> : landmarks.map((landmark) => {
+    <div className="rpg-overlay" role="dialog" aria-modal="true" aria-label="World atlas" style={{ "--reward-art": `url(${rewardFrame})` }}>
+      <div className="rpg-overlay-head"><div><span className="rpg-kicker">Known world</span><h2>World atlas</h2><p>Landmarks, sanctuaries, and objectives remembered by the party.</p></div><button onClick={onClose} className="rpg-square-button" aria-label="Close world atlas"><Icon name="x" size={15} color="#fff4c7" /></button></div>
+      <div className="rpg-ledger-grid rpg-ledger-grid--places">
+        {usefulLandmarks.length === 0 ? <p className="rpg-empty">The horizon is still blank. Follow a road to begin charting it.</p> : usefulLandmarks.map((landmark) => {
           const biome = biomeAt(landmark);
           const visual = biomeVisual(biome.id);
           return (
-            <button key={landmark.key} className="trail-ledger-card" onClick={() => onPick(landmark)} style={{ "--ledger-image": `url(${visual.image})`, "--ledger-accent": visual.accent }}>
-              <span className="trail-ledger-glyph">{landmark.quest ? "✦" : glyphFor(landmark.tile)}</span>
-              <span className="trail-ledger-copy"><b>{nameForDestination(landmark, origin)}</b><small>{directionLabel(origin, landmark).replace("-", " ")} · {landmark.distance} steps · {biome.name}</small></span>
-              <span className="trail-ledger-tag">{landmark.quest ? "objective" : landmark.anchor ? "anchor" : "known"}</span>
+            <button key={landmark.key} onClick={() => onPick(landmark)} className="rpg-place-card" style={{ "--place-art": `url(${visual.image})`, "--place-accent": visual.accent }}>
+              <span>{landmark.quest ? "✦" : glyphFor(landmark.tile)}</span>
+              <div><small>{landmark.quest ? "Objective" : landmark.anchor ? "Warp anchor" : biome.name}</small><b>{nameForDestination(landmark, origin)}</b><em>{directionLabel(origin, landmark).replace("-", " ")} · {landmark.distance} steps</em></div>
+              <i>›</i>
             </button>
           );
         })}
       </div>
     </div>
-  );
-}
-
-function TrailStage({ model, currentName, currentVisual, selectedKey, onPick, onOpenWayfinder, onOpenJournal, onSeekCombat, questCount, loading, night }) {
-  const choiceKeys = new Set(model.choices.map((choice) => choice.key));
-  const distantSelection = selectedKey && !choiceKeys.has(selectedKey);
-  return (
-    <main className={`trail-stage ${night ? "is-night" : ""}`} style={{ backgroundImage: `url(${currentVisual.image})` }}>
-      <div className="trail-atmosphere" />
-      <div className="trail-top-actions">
-        <button onClick={onOpenWayfinder} className="trail-tool" aria-label="Known horizons"><Icon name="map" size={14} color="#ffe2a7" /><span>Known horizons</span></button>
-        <button onClick={onOpenJournal} className="trail-tool" aria-label="Quests"><Icon name="book" size={14} color="#ffe2a7" /><span>Quests</span>{questCount > 0 && <b>{questCount}</b>}</button>
-        {onSeekCombat && <button onClick={onSeekCombat} disabled={loading} className="trail-tool trail-tool--danger" aria-label="Seek trouble"><Icon name="swords" size={14} color="#ffc1b7" /><span>Seek trouble</span></button>}
-      </div>
-
-      <svg className="trail-route-field" viewBox="0 0 1000 650" preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <filter id="trailGlow"><feGaussianBlur stdDeviation="5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-        </defs>
-        {model.choices.map((choice) => <path key={`shadow-${choice.key}`} d={trailPath(choice.scene)} className="trail-route-shadow" />)}
-        {model.choices.map((choice) => <path key={choice.key} d={trailPath(choice.scene)} className={`trail-route-line ${selectedKey === choice.key ? "is-selected" : ""}`} filter={selectedKey === choice.key ? "url(#trailGlow)" : undefined} />)}
-      </svg>
-
-      <div className="trail-route-markers" aria-label="Paths from here">
-        {model.choices.map((choice) => {
-          const chosen = selectedKey === choice.key;
-          const title = nameForDestination(choice, model.origin);
-          return (
-            <button key={choice.key} onClick={() => onPick(choice)} className={`trail-marker ${chosen ? "is-selected" : ""}`} style={{ "--route-x": choice.scene.x, "--route-y": choice.scene.y }} aria-pressed={chosen} aria-label={`${title}, ${choice.direction}, ${choice.steps} ${choice.steps === 1 ? "step" : "steps"}`}>
-              {choice.quest && <span className="trail-marker-quest">✦</span>}
-              <span className="trail-marker-icon">{glyphFor(choice.tile)}</span>
-              <span className="trail-marker-copy"><b>{title}</b><small>{directionShort(choice.direction)} · {choice.steps} {choice.steps === 1 ? "step" : "steps"}</small></span>
-            </button>
-          );
-        })}
-      </div>
-
-      {distantSelection && <div className="trail-distant-beacon"><span>✦</span><small>Compass set beyond the horizon</small></div>}
-
-      <div className="trail-party">
-        <span className="trail-party-avatar">♟</span>
-        <div><small>You are here</small><b>{currentName}</b></div>
-      </div>
-      {model.choices.length === 0 && <div className="trail-no-path"><b>No visible trail</b><span>Darkness or hard terrain hides every way forward.</span></div>}
-    </main>
-  );
-}
-
-function ExpeditionPanel({ state, model, selection, selectedName, journey, routeMinutes, risk, focusBiome, focusVisual, onClear, onPick, onTravel, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
-  const selected = !!selection;
-  const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
-  const distance = selection ? hexDistance(model.origin, selection) : 0;
-  const description = selection?.tile?.poi?.description
-    || (selection ? TERRAINS[selection.tile?.terrain]?.flavor : `${currentLocationName(state)}. Read the landscape and choose how the expedition continues.`);
-  return (
-    <section className="expedition-panel">
-      <div className="expedition-scroll">
-        {!selected ? (
-          <div className="expedition-intro">
-            <span className="atlas-kicker">The road is the map</span>
-            <h2>Choose what lies ahead</h2>
-            <p>Each signpost follows the visible trail several steps into the country. Push onward, or set your compass to a known horizon.</p>
-            <div className="expedition-choice-list">
-              {model.choices.map((choice) => (
-                <button key={choice.key} onClick={() => onPick(choice)} className="expedition-choice">
-                  <span style={{ "--choice-color": terrainVisual(choice.tile.terrain).tint }}>{glyphFor(choice.tile)}</span>
-                  <div><small>{choice.direction.replace("-", " ")} · {choice.steps} {choice.steps === 1 ? "step" : "steps"}</small><b>{nameForDestination(choice, model.origin)}</b><em>{describeEncounterPotential(choice.tile, choice.x, choice.y) || "open trail"}</em></div>
-                  <i>›</i>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="expedition-destination">
-            <div className="expedition-poster" style={{ backgroundImage: `url(${focusVisual.image})`, "--focus-accent": focusVisual.accent }}>
-              <button onClick={onClear} className="expedition-clear" aria-label="Clear destination"><Icon name="x" size={13} color="#fff1d0" /></button>
-              <div className="expedition-poster-copy"><span>{selection.quest ? "✦" : focusVisual.symbol}</span><small>{selection.quest ? "Quest trail" : focusBiome.name}</small><h2>{selectedName}</h2><p>{focusVisual.mood}</p></div>
-            </div>
-
-            <p className="expedition-description">{description}</p>
-            {journey ? (
-              <>
-                <div className="expedition-stats">
-                  <div><small>Distance</small><b>{journey.legSteps}</b><span>steps</span></div>
-                  <div><small>Travel</small><b>{routeMinutes}</b><span>minutes</span></div>
-                  <div className={risk >= 45 ? "is-danger" : ""}><small>Outlook</small><b>{risk}%</b><span>{dangerLabel(risk)}</span></div>
-                </div>
-                <div className="expedition-route-preview" aria-label="Route terrain">
-                  {journey.terrainLabels.map((terrain) => <span key={terrain.id} style={{ "--segment-color": TERRAIN_INK[terrain.id], "--segment-size": terrain.count }} title={`${terrain.label}: ${terrain.count} steps`}><i /> <small>{terrain.label} ×{terrain.count}</small></span>)}
-                </div>
-                {!journey.arrived && <p className="expedition-leg-note">A single march reaches the first {journey.legSteps} of {journey.totalSteps} steps. You can reassess from there.</p>}
-              </>
-            ) : <div className="expedition-blocked">No safe remembered route reaches this destination yet.</div>}
-          </div>
-        )}
-      </div>
-
-      <div className="expedition-actions">
-        {(canFly || teleOption) && <div className="atlas-magic-row">
-          {canFly && <button onClick={onFly} className="atlas-action atlas-action--fly">Fly · ~{Math.min(distance, FLY_TRAVEL_HEXES) * FLY_MIN_PER_HEX} min{flightMount ? ` · ${flightMount.name}` : ` · ${flyPlan.totalCost} resolve`}</button>}
-          {teleOption && <button onClick={() => resolve >= teleOption.resolveCost && onTeleport(teleOption)} disabled={resolve < teleOption.resolveCost} className="atlas-action atlas-action--teleport">{teleOption.name} · {teleOption.resolveCost} resolve</button>}
-        </div>}
-        <button onClick={onTravel} disabled={!journey || loading} className="atlas-primary-action">
-          {!selected ? "Choose a trail" : isSelf ? "You are here" : !journey ? "Route undiscovered" : journey.arrived ? `Begin expedition · ${risk}% danger` : `March ${journey.legSteps} steps toward ${selectedName}`}
-        </button>
-      </div>
-    </section>
   );
 }
 
@@ -232,6 +318,7 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
     key: `${selected.x},${selected.y}`,
     tile: getTile(state, selected.x, selected.y),
     seen: isSeen(state, selected.x, selected.y),
+    visited: !!state.world.tiles?.[`${selected.x},${selected.y}`],
   } : null;
   const journey = planAtlasJourney(state, selected, WORLD_MARCH_LIMIT);
   const routeMinutes = journey ? pathMinutes(state, journey.legPath) : 0;
@@ -264,62 +351,24 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
     setWayfinderOpen(false);
   }
 
+  function stepCursor(dx, dy) {
+    const base = selected || model.origin;
+    const next = model.viewport.find((cell) => cell.x === base.x + dx && cell.y === base.y + dy);
+    if (next?.seen && next.passable && !next.current) pick(next);
+  }
+
   function handleFlySelection() {
     if (flightMount || flyPlan.casts <= 1) onFly(selected);
     else setFlyPanelDest(selected);
   }
 
   return (
-    <div className="exploration-shell trail-shell" style={{
-      "--atlas-accent": currentVisual.accent,
-      "--atlas-primary": currentVisual.primary,
-      "--atlas-secondary": currentVisual.secondary,
-      "--atlas-deep": currentVisual.deep,
-    }}>
-      <header className="exploration-header trail-header">
-        <button onClick={onClose} className="atlas-icon-button" aria-label="Return to story"><Icon name="arrowLeft" size={15} color={colors.parchmentMuted} /></button>
-        <div className="exploration-title"><span className="atlas-kicker">Expedition · {currentBiome.name}</span><h1>{currentLocationName(state)}</h1><small>{formatDate(state.time)} · {formatTime(state.time)}</small></div>
-        <button onClick={() => setWayfinderOpen(true)} className="atlas-icon-button" aria-label="Open known horizons"><Icon name="map" size={15} color={colors.parchmentMuted} /></button>
-      </header>
-
-      <div className="trail-body">
-        <TrailStage
-          model={model}
-          currentName={currentLocationName(state)}
-          currentVisual={currentVisual}
-          selectedKey={selection?.key}
-          onPick={pick}
-          onOpenWayfinder={() => setWayfinderOpen(true)}
-          onOpenJournal={() => setJournalOpen(true)}
-          onSeekCombat={onSeekCombat}
-          questCount={activeQuests.length}
-          loading={loading}
-          night={hour < 6 || hour >= 20}
-        />
-        <ExpeditionPanel
-          state={state}
-          model={model}
-          selection={selection}
-          selectedName={selectedName}
-          journey={journey}
-          routeMinutes={routeMinutes}
-          risk={risk}
-          focusBiome={focusBiome}
-          focusVisual={focusVisual}
-          onClear={() => setSelected(null)}
-          onPick={pick}
-          onTravel={() => journey && !loading && onTravel(selected, journey.fullPath)}
-          canFly={canFly}
-          teleOption={teleOption}
-          onFly={handleFlySelection}
-          onTeleport={(spell) => onTeleport(selected, spell.id)}
-          flightMount={flightMount}
-          flyPlan={flyPlan}
-          resolve={state.character.resolve ?? 0}
-          loading={loading}
-        />
+    <div className="exploration-shell rpg-exploration-shell" style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
+      <RpgHeader state={state} biome={currentBiome} onClose={onClose} onWayfinder={() => setWayfinderOpen(true)} />
+      <div className="rpg-exploration-body">
+        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onStep={stepCursor} onClear={() => setSelected(null)} onJournal={() => setJournalOpen(true)} onWayfinder={() => setWayfinderOpen(true)} onSeekCombat={onSeekCombat} questCount={activeQuests.length} loading={loading} night={hour < 6 || hour >= 20} />
+        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onPick={pick} onTravel={() => journey && !loading && onTravel(selected, journey.fullPath)} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
       </div>
-
       {journalOpen && <QuestJournal quests={activeQuests} current={model.origin} onClose={() => setJournalOpen(false)} onPick={pick} />}
       {wayfinderOpen && <Wayfinder landmarks={model.landmarks} origin={model.origin} onClose={() => setWayfinderOpen(false)} onPick={pick} />}
       {flyPanelDest && <AtlasFlyPanel plan={flyPlan} destination={selectedName} onCancel={() => setFlyPanelDest(null)} onConfirm={(assign) => { const destination = flyPanelDest; setFlyPanelDest(null); onFly(destination, assign); }} />}
@@ -334,11 +383,11 @@ function AtlasFlyPanel({ plan, destination, onCancel, onConfirm }) {
   return (
     <div className="atlas-modal-backdrop" onClick={onCancel}>
       <div className="atlas-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-label="Assign flight casters">
-        <div className="trail-overlay-head"><div><span className="atlas-kicker">Arcane passage</span><h2>Take wing</h2></div><button onClick={onCancel} className="atlas-icon-button"><Icon name="x" size={13} color="#bfe3f2" /></button></div>
+        <div className="rpg-overlay-head"><div><span className="rpg-kicker">Arcane passage</span><h2>Take wing</h2></div><button onClick={onCancel} className="rpg-square-button"><Icon name="x" size={13} color="#d7f5ff" /></button></div>
         <p>To {destination}. One casting bears one soul; choose who carries each traveller.</p>
         {plan.passengers.map((passenger) => <label key={passenger.id} className="atlas-assign-row"><span>{passenger.name}{passenger.kind === "player" ? " (you)" : ""}</span><select value={assign[passenger.id] ?? ""} onChange={(event) => setAssign({ ...assign, [passenger.id]: event.target.value })}>{plan.casters.map((caster) => <option key={caster.id} value={caster.id}>flown by {caster.name}</option>)}</select></label>)}
         <div className="atlas-caster-costs">{plan.casters.map((caster) => <span key={caster.id}>{caster.name}: {caster.resolve} → {caster.resolve - (costs[caster.id] || 0)}</span>)}</div>
-        <button onClick={() => valid && onConfirm(assign)} disabled={!valid} className="atlas-primary-action atlas-primary-action--sky">{valid ? `Take wing · ${plan.totalCost} resolve` : "Not enough resolve"}</button>
+        <button onClick={() => valid && onConfirm(assign)} disabled={!valid} className="rpg-travel-button rpg-travel-button--sky"><span>A</span>{valid ? `Take wing · ${plan.totalCost} resolve` : "Not enough resolve"}</button>
       </div>
     </div>
   );

@@ -34,6 +34,9 @@ const LANDMARK_TYPES = new Set([
 const COMPASS_ORDER = ["north-west", "north", "north-east", "east", "south-east", "south", "south-west", "west"];
 const TRAIL_REACH = 4;
 
+export const RPG_VIEW_COLS = 11;
+export const RPG_VIEW_ROWS = 9;
+
 export function coordKey(coord) {
   return `${coord.x},${coord.y}`;
 }
@@ -83,6 +86,36 @@ function questAtKey(quests, key) {
   return quests.find((quest) => quest.loc && coordKey(quest.loc) === key) || null;
 }
 
+// The simulation remains an axial hex world, while the exploration screen
+// presents a compact, handheld-RPG camera. Each visible world cell is assigned
+// a stable square in that camera so the player can read terrain, routes, and
+// landmarks at a glance without exposing the underlying map-editor geometry.
+export function buildRpgViewport(state, origin = state.world.currentTile, activeQuests = null) {
+  const quests = activeQuests || (state.world.quests || []).filter((quest) => quest.status === "active");
+  const radiusX = Math.floor(RPG_VIEW_COLS / 2);
+  const radiusY = Math.floor(RPG_VIEW_ROWS / 2);
+  const cells = [];
+  for (let row = 0; row < RPG_VIEW_ROWS; row++) {
+    for (let col = 0; col < RPG_VIEW_COLS; col++) {
+      const x = origin.x + col - radiusX;
+      const y = origin.y + row - radiusY;
+      const key = `${x},${y}`;
+      const tile = getTile(state, x, y);
+      const seen = isSeen(state, x, y);
+      cells.push({
+        key, x, y, col, row, tile,
+        seen,
+        visited: isVisited(state, x, y),
+        passable: isPassable(tile),
+        quest: questAtKey(quests, key),
+        current: x === origin.x && y === origin.y,
+        screen: { x: col * 100 + 50, y: row * 100 + 50 },
+      });
+    }
+  }
+  return cells;
+}
+
 function traceTrail(state, origin, direction, questKeys) {
   const path = [{ ...origin }];
   let cursor = { ...origin };
@@ -109,6 +142,7 @@ export function buildExplorationModel(state) {
   const currentTile = getTile(state, origin.x, origin.y);
   const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
   const questKeys = new Set(activeQuests.filter((quest) => quest.loc).map((quest) => coordKey(quest.loc)));
+  const viewport = buildRpgViewport(state, origin, activeQuests);
 
   const rawChoices = [];
   for (const direction of HEX_DIRECTIONS) {
@@ -135,6 +169,7 @@ export function buildExplorationModel(state) {
   for (const key of Object.keys(state.world.tiles || {})) keys.add(key);
   for (const key of questKeys) keys.add(key);
   for (const choice of choices) keys.add(choice.key);
+  for (const cell of viewport) keys.add(cell.key);
   keys.add(coordKey(origin));
 
   const byKey = new Map();
@@ -177,6 +212,7 @@ export function buildExplorationModel(state) {
     origin,
     current: { key: coordKey(origin), ...origin, tile: currentTile, seen: true, visited: true },
     choices,
+    viewport,
     landmarks: sortedLandmarks,
     byKey,
   };

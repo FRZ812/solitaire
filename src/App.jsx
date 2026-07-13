@@ -35,7 +35,7 @@ import {
   squareToAxial, computeSightFrom, computeSightFromRadius,
   pathMinutes, isSeen, flightPath, flightMinutes, findWorldRoute,
 } from "./engine/world.js";
-import { standingNodeTile, enterPlace, leavePlace, moveToNode, inPlace, placeAtTile, getPlace } from "./engine/place.js";
+import { standingNodeTile, enterPlace, leavePlace, moveToNode, moveAlongPlaceRoute, inPlace, placeAtTile, getPlace } from "./engine/place.js";
 import { knownTravelSpells } from "./data/travel-spells.js";
 import { knownBuffSpells } from "./data/buff-spells.js";
 import { buffTravelSpeedMult, hastedGroundMinutes, hastedFlightHexes, hastedFlightMinutes } from "./engine/buffs.js";
@@ -309,7 +309,11 @@ export function Solitaire() {
     setMapOpen(false);
     setPlaceOpen(true);
   }
-  function handleMoveNode(nodeId) { setState((s) => moveToNode(s, nodeId)); }
+  function handleMoveNode(nodeId, route = null) {
+    setState((s) => Array.isArray(route) && route.length
+      ? moveAlongPlaceRoute(s, route)
+      : moveToNode(s, nodeId));
+  }
   function handleLeavePlace() { setState((s) => leavePlace(s)); setPlaceOpen(false); }
   function handlePlaceService() { openShop(); }
   // Recent purchases at the current shop, for full refunds until you leave the
