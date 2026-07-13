@@ -1870,11 +1870,12 @@ export function Solitaire() {
 
   return (
     <div className="game-shell" style={{
-      backgroundColor: colors.ink,
+      backgroundColor: "var(--scene-deep)",
       height: "100dvh", width: "100%", maxWidth: "640px", margin: "0 auto",
       display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
-      "--scene-accent": sceneVisual.primary,
-      "--scene-highlight": sceneVisual.accent,
+      "--scene-primary": sceneVisual.primary,
+      "--scene-accent": sceneVisual.accent,
+      "--scene-highlight": sceneVisual.secondary,
       "--scene-deep": sceneVisual.deep,
     }}>
       {/* Limbo (character creation) shows the ethereal between-place backdrop with

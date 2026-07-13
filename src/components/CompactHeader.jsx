@@ -33,7 +33,7 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
       <div style={{
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         width: "54px", height: "36px",
-        backgroundColor: "rgba(20, 29, 29, 0.6)",
+        backgroundColor: "rgba(12, 42, 60, 0.6)",
         border: `1px solid rgba(215, 167, 111, 0.28)`,
         borderRadius: radius.panelCompact,
         flexShrink: 0,
@@ -59,7 +59,7 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
           fontFamily: fonts.serif, fontStyle: "italic",
           fontSize: "19px", color: colors.parchment, lineHeight: "1.05",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          textShadow: "0 2px 10px rgba(0,0,0,0.8)",
+          textShadow: "0 2px 10px rgba(4,18,31,0.62)",
         }}>
           {sceneTitle}
         </div>
@@ -67,7 +67,7 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
           ...metaStyle, fontSize: "8px", letterSpacing: "0.14em",
           color: "rgba(237, 228, 208, 0.72)", marginTop: "3px",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          textShadow: "0 1px 6px rgba(0,0,0,0.8)",
+          textShadow: "0 1px 6px rgba(4,18,31,0.62)",
         }}>
           {terrainLabel} / {biomeLabel}
         </div>

@@ -1,53 +1,56 @@
-import sceneWhitemarch from "../assets/generated/scene-whitemarch.webp";
-import sceneMire from "../assets/generated/scene-mire.webp";
-import sceneCrowsmoor from "../assets/generated/scene-crowsmoor.webp";
-import sceneTannicWood from "../assets/generated/scene-tannic-wood.webp";
-import sceneWhitemarchMarch from "../assets/generated/scene-whitemarch-march.webp";
-import sceneSpine from "../assets/generated/scene-spine.webp";
-import sceneBramblewych from "../assets/generated/scene-bramblewych.webp";
-import sceneBonemarsh from "../assets/generated/scene-bonemarsh.webp";
-import sceneSunderedWastes from "../assets/generated/scene-sundered-wastes.webp";
-import sceneHollowCoast from "../assets/generated/scene-hollow-coast.webp";
-import sceneWitchwood from "../assets/generated/scene-witchwood.webp";
-import scenePaleSteppe from "../assets/generated/scene-pale-steppe.webp";
-import sceneFarWild from "../assets/generated/scene-far-wild.webp";
+import sceneWhitemarch from "../assets/generated/scene-whitemarch-v2.webp";
+import sceneMire from "../assets/generated/scene-mire-v2.webp";
+import sceneCrowsmoor from "../assets/generated/scene-crowsmoor-v2.webp";
+import sceneTannicWood from "../assets/generated/scene-tannic-wood-v2.webp";
+import sceneWhitemarchMarch from "../assets/generated/scene-whitemarch-march-v2.webp";
+import sceneSpine from "../assets/generated/scene-spine-v2.webp";
+import sceneDrakeholtPeaks from "../assets/generated/scene-drakeholt-peaks-v2.webp";
+import sceneIronPlateau from "../assets/generated/scene-iron-plateau-v2.webp";
+import sceneTellmarRoad from "../assets/generated/scene-tellmar-road-v2.webp";
+import sceneBramblewych from "../assets/generated/scene-bramblewych-v2.webp";
+import sceneBonemarsh from "../assets/generated/scene-bonemarsh-v2.webp";
+import sceneSunderedWastes from "../assets/generated/scene-sundered-wastes-v2.webp";
+import sceneHollowCoast from "../assets/generated/scene-hollow-coast-v2.webp";
+import sceneWitchwood from "../assets/generated/scene-witchwood-v2.webp";
+import scenePaleSteppe from "../assets/generated/scene-pale-steppe-v2.webp";
+import sceneFarWild from "../assets/generated/scene-far-wild-v2.webp";
 import { TERRAINS } from "./terrains.js";
 
 export const TERRAIN_VISUALS = {
-  indoor: { tint: "#4b382b", ink: "#f0ddbd", glyph: "⌂", motif: "threshold" },
-  settlement: { tint: "#a98b62", ink: "#f5e2c2", glyph: "▦", motif: "roofline" },
-  street: { tint: "#777067", ink: "#f0ddbd", glyph: "═", motif: "cobbles" },
-  wall: { tint: "#625f58", ink: "#f0ddbd", glyph: "▥", motif: "masonry" },
-  road: { tint: "#8c704f", ink: "#f3dfba", glyph: "═", motif: "milestone" },
-  plains: { tint: "#697553", ink: "#e8e6c7", glyph: "〰", motif: "grass" },
-  hills: { tint: "#76654a", ink: "#eee0c3", glyph: "⌒", motif: "contour" },
-  forest: { tint: "#354d3b", ink: "#e4e9ce", glyph: "♣", motif: "bough" },
-  marsh: { tint: "#415c56", ink: "#e0e8d7", glyph: "≋", motif: "reeds" },
-  mountains: { tint: "#4e4944", ink: "#eadfce", glyph: "▲", motif: "crag" },
-  water: { tint: "#365a67", ink: "#dcecf0", glyph: "≈", motif: "current" },
-  impassable: { tint: "#18211e", ink: "#87938a", glyph: "✕", motif: "wild" },
+  indoor: { tint: "#7a5d45", ink: "#fff0d0", glyph: "⌂", motif: "threshold" },
+  settlement: { tint: "#c69a66", ink: "#fff4d6", glyph: "▦", motif: "roofline" },
+  street: { tint: "#8aa2ad", ink: "#f6edda", glyph: "═", motif: "cobbles" },
+  wall: { tint: "#a9a6a0", ink: "#fff0d0", glyph: "▥", motif: "masonry" },
+  road: { tint: "#c49055", ink: "#ffedc4", glyph: "═", motif: "milestone" },
+  plains: { tint: "#86a866", ink: "#f2f3ce", glyph: "〰", motif: "grass" },
+  hills: { tint: "#ad875d", ink: "#f8e7c8", glyph: "⌒", motif: "contour" },
+  forest: { tint: "#3f7e59", ink: "#eaf4d5", glyph: "♣", motif: "bough" },
+  marsh: { tint: "#3d8a82", ink: "#e4f2e5", glyph: "≋", motif: "reeds" },
+  mountains: { tint: "#6c8198", ink: "#f1e8da", glyph: "▲", motif: "crag" },
+  water: { tint: "#347fa4", ink: "#e3f5fa", glyph: "≈", motif: "current" },
+  impassable: { tint: "#33475e", ink: "#a7b7c3", glyph: "✕", motif: "wild" },
 };
 
 // One authored visual plate per named region. Closely related regions share a
 // brushwork family but still carry their own palette, symbol, and field-note
 // language so the UI changes character at the border without changing layout.
 export const BIOME_VISUALS = {
-  whitemarch: { image: sceneWhitemarch, primary: "#8f755d", secondary: "#c7bda8", accent: "#c38a55", deep: "#111312", symbol: "♜", mood: "chalk, iron & smoke", texture: "masonry" },
-  mire: { image: sceneMire, primary: "#526f63", secondary: "#89915f", accent: "#b2a36b", deep: "#101816", symbol: "≋", mood: "peat fog & reedwater", texture: "reeds" },
-  "crowsmoor-reach": { image: sceneCrowsmoor, primary: "#8b7448", secondary: "#70763f", accent: "#d0a461", deep: "#17150f", symbol: "♜", mood: "wagon ruts & watchfires", texture: "fieldstone" },
-  "tannic-wood": { image: sceneTannicWood, primary: "#40563e", secondary: "#826447", accent: "#b79968", deep: "#101611", symbol: "♣", mood: "brown water & alder shade", texture: "canopy" },
-  "whitemarch-march": { image: sceneWhitemarchMarch, primary: "#7d7c70", secondary: "#b8aa83", accent: "#c9a169", deep: "#151613", symbol: "⚒", mood: "chalk wind & milestones", texture: "chalk" },
-  "spine-foothills": { image: sceneSpine, primary: "#6d6659", secondary: "#8d5d3c", accent: "#cf9867", deep: "#141312", symbol: "▲", mood: "high wind & thin paths", texture: "strata" },
-  "bramblewych-reach": { image: sceneBramblewych, primary: "#674950", secondary: "#4f653e", accent: "#c08875", deep: "#171014", symbol: "✢", mood: "thorn bloom & lost hedges", texture: "bramble" },
-  bonemarsh: { image: sceneBonemarsh, primary: "#4d5c58", secondary: "#77735f", accent: "#b6aa8b", deep: "#0e1413", symbol: "☠", mood: "black peat & old bones", texture: "peat" },
-  "sundered-wastes": { image: sceneSunderedWastes, primary: "#725347", secondary: "#867055", accent: "#c18458", deep: "#17110e", symbol: "⚑", mood: "broken stone & cooksmoke", texture: "rubble" },
-  "drakeholt-peaks": { image: sceneSpine, primary: "#5b6062", secondary: "#8a796c", accent: "#c9a58d", deep: "#111416", symbol: "△", mood: "snow-burned cols & wyrm smoke", texture: "ice" },
-  "iron-plateau": { image: sceneWhitemarchMarch, primary: "#6f6c5d", secondary: "#8f7655", accent: "#c9935f", deep: "#141511", symbol: "◇", mood: "dress-stone & mirror light", texture: "ashlar" },
-  "tellmar-road": { image: sceneCrowsmoor, primary: "#806848", secondary: "#66694b", accent: "#cda36b", deep: "#17140f", symbol: "═", mood: "caravan dust & cypress", texture: "road" },
-  "hollow-coast": { image: sceneHollowCoast, primary: "#52676d", secondary: "#85887b", accent: "#aab8b5", deep: "#101618", symbol: "≈", mood: "salt fen & breathless sea", texture: "salt" },
-  "witchwood-deep": { image: sceneWitchwood, primary: "#3e4e40", secondary: "#62564d", accent: "#a98b78", deep: "#0d1410", symbol: "♠", mood: "old bark & hung charms", texture: "oldwood" },
-  "pale-steppe": { image: scenePaleSteppe, primary: "#8d8062", secondary: "#b2a37e", accent: "#d3b77f", deep: "#191711", symbol: "☼", mood: "bone grass & long wind", texture: "grass" },
-  "far-wild": { image: sceneFarWild, primary: "#5e627c", secondary: "#49675e", accent: "#9ea5c9", deep: "#10121a", symbol: "✧", mood: "unmapped stars & nameless stone", texture: "wild" },
+  whitemarch: { image: sceneWhitemarch, primary: "#5b91b6", secondary: "#c9e7ef", accent: "#e8ad54", deep: "#0b2639", symbol: "♜", mood: "sunlit spires & crystal gardens", texture: "masonry" },
+  mire: { image: sceneMire, primary: "#3d8f8a", secondary: "#91c785", accent: "#f0cb74", deep: "#0b3038", symbol: "≋", mood: "lotus water & lantern reeds", texture: "reeds" },
+  "crowsmoor-reach": { image: sceneCrowsmoor, primary: "#7169a5", secondary: "#8fbb6d", accent: "#f3bd64", deep: "#162a45", symbol: "♜", mood: "heather wind & star stones", texture: "fieldstone" },
+  "tannic-wood": { image: sceneTannicWood, primary: "#4d8a60", secondary: "#d59c52", accent: "#f2c56f", deep: "#102f38", symbol: "♣", mood: "amber leaves & tealwater", texture: "canopy" },
+  "whitemarch-march": { image: sceneWhitemarchMarch, primary: "#6f9d77", secondary: "#a9d2de", accent: "#e9b45f", deep: "#143343", symbol: "⚒", mood: "spring roads & ivory horizons", texture: "chalk" },
+  "spine-foothills": { image: sceneSpine, primary: "#6b91bb", secondary: "#a9d8e8", accent: "#f5c779", deep: "#132a43", symbol: "▲", mood: "bright snow & singing falls", texture: "strata" },
+  "bramblewych-reach": { image: sceneBramblewych, primary: "#a65f87", secondary: "#61a06c", accent: "#f1bd72", deep: "#24304a", symbol: "✢", mood: "rose arches & hedge-lights", texture: "bramble" },
+  bonemarsh: { image: sceneBonemarsh, primary: "#6ea1a0", secondary: "#e5c5a1", accent: "#f3c884", deep: "#163548", symbol: "✧", mood: "pearl reeds & ancient stone", texture: "peat" },
+  "sundered-wastes": { image: sceneSunderedWastes, primary: "#c97b5f", secondary: "#d9ac6e", accent: "#62c4c6", deep: "#3d2940", symbol: "⚑", mood: "rose mesas & turquoise springs", texture: "rubble" },
+  "drakeholt-peaks": { image: sceneDrakeholtPeaks, primary: "#789dc1", secondary: "#d5e6ec", accent: "#f0c58b", deep: "#162b47", symbol: "△", mood: "snowlit cols & cloudfire", texture: "ice" },
+  "iron-plateau": { image: sceneIronPlateau, primary: "#789aa0", secondary: "#b7c4a3", accent: "#dfb75e", deep: "#18313e", symbol: "◇", mood: "mirror stone & high meadows", texture: "ashlar" },
+  "tellmar-road": { image: sceneTellmarRoad, primary: "#a88955", secondary: "#7daa76", accent: "#e6b765", deep: "#203342", symbol: "═", mood: "cypress shade & bright caravans", texture: "road" },
+  "hollow-coast": { image: sceneHollowCoast, primary: "#4389aa", secondary: "#8fc7c0", accent: "#f1c56c", deep: "#0d324b", symbol: "≈", mood: "sapphire wind & ivory cliffs", texture: "salt" },
+  "witchwood-deep": { image: sceneWitchwood, primary: "#4b8d72", secondary: "#8a6caf", accent: "#bfe28c", deep: "#172c46", symbol: "♠", mood: "violet boughs & spirit-bloom", texture: "oldwood" },
+  "pale-steppe": { image: scenePaleSteppe, primary: "#b39e61", secondary: "#8fc1ce", accent: "#f0bd65", deep: "#243549", symbol: "☼", mood: "silver grass & ribbon-light", texture: "grass" },
+  "far-wild": { image: sceneFarWild, primary: "#667fc4", secondary: "#54a58b", accent: "#d9b5ff", deep: "#1c294a", symbol: "✧", mood: "crystal meadows & aurora ruins", texture: "wild" },
 };
 
 export function terrainVisual(terrain) {

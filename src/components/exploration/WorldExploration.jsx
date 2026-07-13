@@ -197,18 +197,18 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
         <div ref={transformRef} className="atlas-transform">
           <svg width={ATLAS_SIZE} height={ATLAS_SIZE} viewBox={`0 0 ${ATLAS_SIZE} ${ATLAS_SIZE}`} className="atlas-canvas" aria-label="Exploration atlas">
             <defs>
-              <radialGradient id="atlasPaper" cx="50%" cy="48%" r="65%"><stop offset="0" stopColor={currentVisual.primary} stopOpacity=".48" /><stop offset=".58" stopColor="#14221f" stopOpacity=".9" /><stop offset="1" stopColor={currentVisual.deep} /></radialGradient>
+              <radialGradient id="atlasPaper" cx="50%" cy="48%" r="68%"><stop offset="0" stopColor={currentVisual.primary} stopOpacity=".24" /><stop offset=".58" stopColor="#173c50" stopOpacity=".66" /><stop offset="1" stopColor={currentVisual.deep} stopOpacity=".9" /></radialGradient>
               <filter id="atlasBlur"><feGaussianBlur stdDeviation="24" /></filter>
               <filter id="atlasGlow"><feGaussianBlur stdDeviation="5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
               <pattern id="atlasGrain" width="67" height="67" patternUnits="userSpaceOnUse"><path d="M2 13l1 1m31-8l1-1m21 27l2 1M10 56l2-1m31 4l1 2" stroke="rgba(237,228,208,.09)" strokeWidth=".7" /></pattern>
             </defs>
             <rect width={ATLAS_SIZE} height={ATLAS_SIZE} fill={currentVisual.deep} />
-            <image href={currentVisual.image} x="0" y="0" width={ATLAS_SIZE} height={ATLAS_SIZE} preserveAspectRatio="xMidYMid slice" opacity=".13" className="atlas-region-wash" />
+            <image href={currentVisual.image} x="0" y="0" width={ATLAS_SIZE} height={ATLAS_SIZE} preserveAspectRatio="xMidYMid slice" opacity=".24" className="atlas-region-wash" />
             <rect width={ATLAS_SIZE} height={ATLAS_SIZE} fill="url(#atlasPaper)" />
             <rect width={ATLAS_SIZE} height={ATLAS_SIZE} fill="url(#atlasGrain)" />
 
             <g filter="url(#atlasBlur)" pointerEvents="none">
-              {model.terrain.map((cell) => <circle key={cell.key} cx={cell.point.x} cy={cell.point.y} r={98 * cell.mark.scale} fill={cell.seen ? biomeVisual(sceneBiomeId(getBiome(cell.x, cell.y).id, cell.tile)).primary : "#111a18"} opacity={cell.seen ? .24 : .12} />)}
+              {model.terrain.map((cell) => <circle key={cell.key} cx={cell.point.x} cy={cell.point.y} r={98 * cell.mark.scale} fill={cell.seen ? biomeVisual(sceneBiomeId(getBiome(cell.x, cell.y).id, cell.tile)).primary : "#183247"} opacity={cell.seen ? .24 : .12} />)}
             </g>
             <g fill="none" stroke="rgba(230,185,140,.34)" strokeWidth="2" pointerEvents="none">
               {model.terrain.map((cell) => <TerrainGlyph key={`glyph-${cell.key}`} cell={cell} />)}

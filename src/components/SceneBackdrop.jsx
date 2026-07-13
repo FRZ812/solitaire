@@ -44,6 +44,7 @@ export function SceneBackdrop({ state }) {
       aria-label={`${location}, ${terrainLabel}, ${visualBiomeId === "whitemarch" ? "Whitemarch" : biome.name}`}
       style={{
         "--scene-accent": visual.accent,
+        "--scene-highlight": visual.secondary,
         "--scene-primary": visual.primary,
         "--scene-deep": visual.deep,
         "--terrain-tint": terrainTheme.tint,

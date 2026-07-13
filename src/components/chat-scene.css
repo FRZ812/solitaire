@@ -1,11 +1,11 @@
 .game-shell {
-  --scene-accent: #b78b5d;
-  --scene-highlight: #e6b98c;
-  --scene-deep: #111715;
+  --scene-accent: #e6ad55;
+  --scene-highlight: #bfe7f2;
+  --scene-deep: #102638;
   isolation: isolate;
   background: var(--scene-deep);
-  color: #ede4d0;
-  box-shadow: 0 0 70px rgba(0, 0, 0, .68);
+  color: #f7f1de;
+  box-shadow: 0 0 70px rgba(5, 20, 31, .48);
 }
 
 .scene-backdrop {
@@ -13,7 +13,7 @@
   inset: 0;
   z-index: 0;
   overflow: hidden;
-  background: var(--scene-deep, #101513);
+  background: var(--scene-deep, #102638);
 }
 .scene-backdrop > img {
   width: 100%;
@@ -21,29 +21,29 @@
   display: block;
   object-fit: cover;
   transform: scale(1.015);
-  filter: saturate(.82) contrast(1.04) brightness(.86);
+  filter: saturate(.98) contrast(1.01) brightness(1.03);
   animation: scene-arrive .7s ease-out both;
 }
 .scene-backdrop__terrain, .scene-backdrop__light, .scene-backdrop__grain { position: absolute; inset: 0; pointer-events: none; }
 .scene-backdrop__terrain {
   background:
-    linear-gradient(180deg, transparent 0 40%, color-mix(in srgb, var(--terrain-tint) 18%, transparent) 70%, color-mix(in srgb, var(--scene-deep) 72%, transparent) 100%);
+    linear-gradient(180deg, transparent 0 46%, color-mix(in srgb, var(--terrain-tint) 12%, transparent) 72%, color-mix(in srgb, var(--scene-deep) 50%, transparent) 100%);
   mix-blend-mode: color;
 }
 .scene-backdrop__light {
-  background: linear-gradient(180deg, rgba(7, 10, 9, .05), transparent 25%, rgba(7, 10, 9, .28) 58%, rgba(6, 9, 8, .78) 100%);
+  background: linear-gradient(180deg, rgba(255, 243, 202, .06), transparent 34%, rgba(9, 32, 48, .12) 64%, rgba(7, 24, 38, .62) 100%);
 }
 .scene-backdrop__grain {
-  opacity: .2;
+  opacity: .11;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.36'/%3E%3C/svg%3E");
   mix-blend-mode: soft-light;
 }
-.scene-backdrop--dawn > img { filter: saturate(.82) sepia(.08) contrast(1.02) brightness(.93); }
-.scene-backdrop--dawn .scene-backdrop__light { background: linear-gradient(180deg, rgba(214, 155, 112, .2), transparent 35%, rgba(6, 9, 8, .72) 100%); }
-.scene-backdrop--dusk > img { filter: saturate(.78) sepia(.14) hue-rotate(-8deg) contrast(1.05) brightness(.76); }
-.scene-backdrop--dusk .scene-backdrop__light { background: linear-gradient(180deg, rgba(77, 51, 68, .32), transparent 36%, rgba(7, 8, 9, .8) 100%); }
-.scene-backdrop--night > img { filter: saturate(.5) hue-rotate(14deg) contrast(1.1) brightness(.45); }
-.scene-backdrop--night .scene-backdrop__light { background: radial-gradient(circle at 72% 20%, rgba(112, 137, 165, .14), transparent 32%), linear-gradient(180deg, rgba(5, 9, 15, .32), rgba(3, 7, 10, .88)); }
+.scene-backdrop--dawn > img { filter: saturate(1.02) sepia(.04) contrast(1.01) brightness(1.04); }
+.scene-backdrop--dawn .scene-backdrop__light { background: linear-gradient(180deg, rgba(255, 190, 135, .18), transparent 42%, rgba(10, 30, 46, .58) 100%); }
+.scene-backdrop--dusk > img { filter: saturate(.94) sepia(.06) hue-rotate(-5deg) contrast(1.02) brightness(.9); }
+.scene-backdrop--dusk .scene-backdrop__light { background: linear-gradient(180deg, rgba(113, 76, 137, .2), transparent 42%, rgba(10, 22, 39, .7) 100%); }
+.scene-backdrop--night > img { filter: saturate(.72) hue-rotate(8deg) contrast(1.04) brightness(.64); }
+.scene-backdrop--night .scene-backdrop__light { background: radial-gradient(circle at 72% 20%, rgba(173, 211, 255, .22), transparent 35%), linear-gradient(180deg, rgba(8, 22, 50, .18), rgba(5, 17, 35, .78)); }
 
 @keyframes scene-arrive { from { opacity: .55; transform: scale(1.045); } to { opacity: 1; transform: scale(1.015); } }
 
@@ -64,8 +64,8 @@
   z-index: -1;
   pointer-events: none;
   background:
-    linear-gradient(180deg, rgba(6, 10, 9, .56) 0, rgba(6, 10, 9, .12) 18%, rgba(6, 10, 9, .22) 34%, rgba(7, 11, 10, .74) 68%, rgba(7, 11, 10, .94) 100%),
-    radial-gradient(circle at 50% 16%, color-mix(in srgb, var(--scene-accent) 16%, transparent), transparent 46%);
+    linear-gradient(180deg, rgba(8, 27, 42, .34) 0, rgba(8, 27, 42, .04) 21%, rgba(8, 27, 42, .1) 39%, rgba(7, 24, 38, .55) 72%, rgba(7, 22, 35, .82) 100%),
+    radial-gradient(circle at 50% 14%, color-mix(in srgb, var(--scene-highlight) 15%, transparent), transparent 48%);
 }
 
 .compact-header {
@@ -134,7 +134,7 @@
   display: grid;
   place-items: center;
   color: color-mix(in srgb, var(--scene-highlight) 82%, white 8%);
-  background: rgba(8, 13, 12, .42);
+  background: rgba(10, 35, 51, .46);
   border: 1px solid color-mix(in srgb, var(--scene-accent) 38%, transparent);
   border-radius: 11px;
   cursor: pointer;
@@ -143,23 +143,23 @@
   backdrop-filter: blur(8px);
 }
 .beat-menu svg { fill: currentColor; }
-.beat-menu:hover, .beat-menu:focus-visible { opacity: 1; background: rgba(8, 13, 12, .78); transform: translateY(-1px); outline: none; }
+.beat-menu:hover, .beat-menu:focus-visible { opacity: 1; background: rgba(11, 39, 57, .82); transform: translateY(-1px); outline: none; }
 
 .beat {
   position: relative;
   margin: 0 0 13px;
   border: 1px solid color-mix(in srgb, var(--scene-accent) 35%, transparent);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, .24), inset 0 1px rgba(255, 255, 255, .025);
-  backdrop-filter: blur(17px) saturate(.9);
-  -webkit-backdrop-filter: blur(17px) saturate(.9);
+  box-shadow: 0 14px 34px rgba(4, 18, 30, .24), inset 0 1px rgba(255, 255, 255, .05);
+  backdrop-filter: blur(17px) saturate(1.04);
+  -webkit-backdrop-filter: blur(17px) saturate(1.04);
 }
 
 .beat--narration {
   padding: 17px 48px 18px 18px;
   border-radius: 4px 18px 18px 18px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--scene-accent) 13%, rgba(10, 16, 14, .78)), rgba(10, 15, 14, .66) 64%),
-    rgba(10, 15, 14, .68);
+    linear-gradient(135deg, color-mix(in srgb, var(--scene-primary) 18%, rgba(9, 32, 49, .76)), rgba(8, 28, 44, .62) 64%),
+    rgba(8, 28, 44, .66);
 }
 .beat--narration::before {
   content: "";
@@ -196,7 +196,7 @@
   padding: 12px 42px 13px 15px;
   border-radius: 18px 4px 18px 18px;
   color: #f1e6d0;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--scene-accent) 28%, rgba(20, 28, 26, .84)), rgba(11, 18, 16, .82));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--scene-accent) 25%, rgba(15, 48, 66, .84)), rgba(8, 30, 48, .82));
   font-size: 14px;
   line-height: 1.48;
 }
@@ -209,7 +209,7 @@
   align-items: start;
   padding: 13px 48px 14px 14px;
   border-radius: 18px;
-  background: linear-gradient(135deg, rgba(14, 22, 20, .82), color-mix(in srgb, var(--scene-accent) 12%, rgba(10, 15, 14, .74)));
+  background: linear-gradient(135deg, rgba(10, 36, 54, .8), color-mix(in srgb, var(--scene-primary) 17%, rgba(8, 28, 44, .72)));
 }
 .beat-portrait {
   width: 42px;
@@ -220,7 +220,7 @@
   border-radius: 50% 50% 48% 48%;
   color: var(--scene-highlight);
   background:
-    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--scene-accent) 46%, #262b28), #101613 70%);
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--scene-highlight) 36%, #284b5d), #0c2a3f 72%);
   box-shadow: inset 0 0 14px rgba(0, 0, 0, .56), 0 7px 16px rgba(0, 0, 0, .24);
   font: italic 20px 'Instrument Serif', Georgia, serif;
 }
@@ -275,5 +275,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .scene-backdrop > img { animation: none; }
   .beat-menu { transition: none; }
 }

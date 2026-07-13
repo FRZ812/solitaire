@@ -21,7 +21,7 @@ export const iconButtonStyle = {
   width: "36px", height: "36px",
   borderRadius: radius.pill,
   border: `1px solid rgba(215, 167, 111, 0.28)`,
-  backgroundColor: "rgba(20, 29, 29, 0.52)",
+  backgroundColor: "rgba(12, 42, 60, 0.56)",
   display: "flex", alignItems: "center", justifyContent: "center",
   cursor: "pointer", flexShrink: 0,
   boxShadow: `${shadow.subtle}, inset 0 1px 0 rgba(255,255,255,0.05)`,
@@ -33,7 +33,7 @@ export const headerButtonStyle = {
   width: "44px", height: "44px",
   borderRadius: radius.panelCompact,
   border: `1px solid rgba(215, 167, 111, 0.28)`,
-  backgroundColor: "rgba(20, 29, 29, 0.52)",
+  backgroundColor: "rgba(12, 42, 60, 0.56)",
   display: "flex", alignItems: "center", justifyContent: "center",
   cursor: "pointer", flexShrink: 0,
   backdropFilter: "blur(14px)",
@@ -97,22 +97,22 @@ const panelShell = {
 
 const panelTones = {
   default: {
-    backgroundColor: "rgba(20, 29, 29, 0.65)",
+    backgroundColor: "rgba(10, 38, 56, 0.65)",
     color: colors.parchment,
     border: "1px solid rgba(215, 167, 111, 0.15)",
   },
   warm: {
-    backgroundColor: "rgba(48, 32, 20, 0.6)",
+    backgroundColor: "rgba(71, 51, 38, 0.58)",
     color: colors.parchment,
     border: "1px solid rgba(215, 167, 111, 0.25)",
   },
   pale: {
-    backgroundColor: "rgba(25, 34, 34, 0.72)",
+    backgroundColor: "rgba(21, 48, 64, 0.7)",
     color: colors.parchmentLight,
     border: "1px solid rgba(215, 167, 111, 0.20)",
   },
   dark: {
-    backgroundColor: "rgba(12, 17, 17, 0.78)",
+    backgroundColor: "rgba(8, 29, 46, 0.76)",
     color: colors.parchment,
     border: "1px solid rgba(215, 167, 111, 0.22)",
   },
@@ -234,12 +234,12 @@ export function VitalsStrip({ character }) {
       margin: "0 12px",
       padding: "6px 10px",
       display: "flex", flexDirection: "column", gap: "5px",
-      backgroundColor: "rgba(8, 13, 12, 0.66)",
+      backgroundColor: "rgba(9, 34, 51, 0.66)",
       border: "1px solid color-mix(in srgb, var(--scene-accent, #d7a76f) 30%, transparent)",
       borderRadius: radius.control,
       color: colors.parchment,
       ...glass,
-      boxShadow: `0 14px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.025)`,
+      boxShadow: `0 14px 32px rgba(4,18,31,0.25), inset 0 1px 0 rgba(255,255,255,0.05)`,
     }}>
       {/* Five radial meters in a single row — vit / res / hunger / thirst /
           sleep — so the whole HUD is one strip even on a narrow phone.
@@ -392,14 +392,14 @@ export function LiveThinking({ thinking }) {
           <div style={{
             marginTop: "6px",
             padding: "12px 14px",
-            backgroundColor: "rgba(10, 15, 15, 0.64)",
+            backgroundColor: "rgba(8, 31, 48, 0.66)",
             border: `1px solid rgba(215, 167, 111, 0.14)`,
             borderRadius: radius.panelCompact,
             fontSize: "12px", lineHeight: "1.52",
             color: "rgba(237, 228, 208, 0.85)",
             whiteSpace: "pre-wrap",
             backdropFilter: "blur(10px)",
-            boxShadow: "inset 0 10px 24px rgba(0,0,0,0.3)",
+            boxShadow: "inset 0 10px 24px rgba(4,18,31,0.26)",
           }}>
             {thinking}
           </div>
@@ -535,7 +535,7 @@ export function InputBar({ value, onChange, onSubmit, loading }) {
   return (
     <div className="story-input" style={{
       padding: "10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px) 12px",
-      background: "linear-gradient(180deg, rgba(11,15,14,0) 0%, rgba(11,15,14,0.62) 20%, rgba(11,15,14,0.92) 100%)",
+      background: "linear-gradient(180deg, rgba(7,25,40,0) 0%, rgba(7,25,40,0.48) 20%, rgba(7,25,40,0.84) 100%)",
       display: "flex", alignItems: "flex-end", gap: "9px",
     }}>
       <NarratorPicker />
@@ -553,13 +553,13 @@ export function InputBar({ value, onChange, onSubmit, loading }) {
           boxSizing: "border-box", resize: "none", overflowY: "auto",
           borderRadius: radius.control,
           border: "1px solid color-mix(in srgb, var(--scene-accent, #d7a76f) 34%, transparent)",
-          backgroundColor: "rgba(7, 12, 10, 0.76)",
+          backgroundColor: "rgba(8, 31, 48, 0.74)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
           padding: "13px 18px", fontSize: "14px", lineHeight: 1.4, color: colors.parchment,
           outline: "none", fontFamily: "inherit",
           transition: "border-color 0.2s, box-shadow 0.2s",
-          boxShadow: `0 14px 30px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.025)`,
+          boxShadow: `0 14px 30px rgba(4,18,31,0.28), inset 0 1px 0 rgba(255,255,255,0.05)`,
         }}
       />
       <button

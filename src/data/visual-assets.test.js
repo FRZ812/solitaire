@@ -14,6 +14,10 @@ describe("visual asset registry", () => {
     }
   });
 
+  it("gives every named biome its own regional plate", () => {
+    expect(new Set(Object.values(BIOME_VISUALS).map((visual) => visual.image)).size).toBe(BIOMES.length);
+  });
+
   it("has a terrain treatment for every terrain", () => {
     expect(Object.keys(TERRAIN_VISUALS).sort()).toEqual(Object.keys(TERRAINS).sort());
     for (const terrain of Object.keys(TERRAINS)) {
