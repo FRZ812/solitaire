@@ -1,11 +1,10 @@
-import React, { useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Icon } from "../Icon.jsx";
 import { colors } from "../tokens.js";
-import { useZoomPan } from "../useZoomPan.js";
 import { FLY_MIN_PER_HEX, FLY_TRAVEL_HEXES, WORLD_MARCH_LIMIT } from "../../config.js";
 import { TERRAINS } from "../../data/terrains.js";
 import { getBiome } from "../../data/biomes.js";
-import { biomeVisual, sceneBiomeId } from "../../data/visual-assets.js";
+import { biomeVisual, sceneBiomeId, terrainVisual } from "../../data/visual-assets.js";
 import { knownTravelSpells } from "../../data/travel-spells.js";
 import {
   currentLocationName,
@@ -22,276 +21,308 @@ import { formatDate, formatTime } from "../../engine/time.js";
 import { formatCopper } from "../../engine/economy.js";
 import { poiPlaceName } from "../../engine/location.js";
 import {
-  ATLAS_CENTER,
-  ATLAS_SIZE,
   TERRAIN_INK,
-  atlasPoint,
-  buildAtlasModel,
+  buildExplorationModel,
   directionLabel,
+  directionShort,
   planAtlasJourney,
 } from "./atlasModel.js";
 import "./exploration.css";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
-const MAJOR_POI_TYPES = new Set(["city", "town", "village", "fortress", "gate", "palace", "temple", "shrine", "ruin", "landmark"]);
-
-const GLYPHS = {
+const POI_GLYPHS = {
   city: "♜", village: "⌂", town: "⌂", settlement: "⌂", fortress: "♜",
   ruin: "⌁", temple: "✦", shrine: "✦", landmark: "◆", gate: "◇",
-  camp: "△", river: "≈", lake: "≈", mountains: "▲", hidden: "?",
-  market: "◈", bldg: "⌂", smithy: "⚒", healer: "+",
+  camp: "△", market: "◈", bldg: "⌂", smithy: "⚒", healer: "+",
 };
 
 function glyphFor(tile) {
-  return GLYPHS[tile?.poi?.type] || (tile?.terrain === "settlement" ? "⌂" : "•");
+  return POI_GLYPHS[tile?.poi?.type] || terrainVisual(tile?.terrain).glyph || "•";
 }
 
-function nameForCell(cell, origin) {
-  const named = poiPlaceName(cell.tile?.poi);
+function nameForDestination(destination, origin) {
+  const named = destination?.name || poiPlaceName(destination?.tile?.poi);
   if (named) return named;
-  const terrain = TERRAINS[cell.tile?.terrain]?.label || "Trail";
-  const direction = directionLabel(origin, cell);
-  return `${direction.charAt(0).toUpperCase()}${direction.slice(1)} ${terrain}`;
+  if (destination?.quest) return destination.quest.title;
+  const terrain = TERRAINS[destination?.tile?.terrain]?.label || "Trail";
+  const direction = directionLabel(origin, destination);
+  return `${direction.charAt(0).toUpperCase()}${direction.slice(1).replace("-", " ")} ${terrain}`;
 }
 
-function curvePath(points) {
-  if (!points?.length) return "";
-  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
-  let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1];
-    const b = points[i];
-    const bend = ((i % 2) * 2 - 1) * Math.min(12, Math.hypot(b.x - a.x, b.y - a.y) * 0.08);
-    const mx = (a.x + b.x) / 2 - (b.y - a.y) * bend / 90;
-    const my = (a.y + b.y) / 2 + (b.x - a.x) * bend / 90;
-    d += ` Q ${mx.toFixed(1)} ${my.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
-  }
-  return d;
+function dangerLabel(risk) {
+  if (risk >= 65) return "Severe";
+  if (risk >= 40) return "Unsettled";
+  if (risk >= 20) return "Watchful";
+  return "Favorable";
 }
 
-function TerrainGlyph({ cell }) {
-  if (!cell.seen) return null;
-  const { x, y } = cell.point;
-  const { terrain } = cell.tile;
-  const m = cell.mark;
-  const alpha = 0.55;
-  const transform = `translate(${x + m.offsetX} ${y + m.offsetY}) rotate(${m.rotation}) scale(${m.scale})`;
-  if (terrain === "forest") {
-    return <g transform={transform} opacity={alpha} className="atlas-terrain-glyph"><path d="M-18 12L-8-8 0 12M-3 13L8-12 19 13M-12 20v-7M9 20v-7" /></g>;
-  }
-  if (terrain === "mountains") {
-    return <g transform={transform} opacity={alpha} className="atlas-terrain-glyph"><path d="M-24 17L-8-13 3 7 10-6 25 17M-14-2l6-11 4 9M4 7l6-13 5 9" /></g>;
-  }
-  if (terrain === "hills") {
-    return <g transform={transform} opacity={alpha} className="atlas-terrain-glyph"><path d="M-25 13Q-13-11 0 13Q12-7 26 13M-20 19Q-5 4 8 19" /></g>;
-  }
-  if (terrain === "marsh") {
-    return <g transform={transform} opacity={alpha} className="atlas-terrain-glyph"><path d="M-23 14Q-10 9 3 14T27 14M-12 9V-7M-17-2l5 6 5-7M12 11V-3M7 2l5 5 5-6" /></g>;
-  }
-  if (terrain === "water") {
-    return <g transform={transform} opacity={alpha} className="atlas-terrain-glyph"><path d="M-25 4q8-7 16 0t16 0t16 0M-18 14q7-6 14 0t14 0t14 0" /></g>;
-  }
-  if (terrain === "plains") {
-    return <g transform={transform} opacity={alpha * 0.65} className="atlas-terrain-glyph"><path d="M-15 14V0m0 7l-7-6m7 3 7-7M10 17V5m0 7l-6-5m6 2 6-5" /></g>;
-  }
-  return null;
+function trailPath(scene) {
+  const x = scene.x * 10;
+  const y = scene.y * 6.2;
+  const bend = (x - 500) * 0.18;
+  return `M 500 650 C ${500 - bend} 560, ${x - bend} ${Math.max(y + 86, 390)}, ${x} ${y}`;
 }
 
-function CompassRose() {
-  return (
-    <g transform={`translate(${ATLAS_CENTER - 410} ${ATLAS_CENTER - 390})`} opacity="0.56" pointerEvents="none">
-      <circle r="34" fill="none" stroke="rgba(230,185,140,.45)" strokeWidth="1" />
-      <path d="M0-42L7-7 0 0-7-7ZM0 42L-5 8 0 2 5 8ZM-42 0L-8-5 0 0-8 5ZM42 0L8-5 1 0 8 5Z" fill="rgba(215,167,111,.5)" />
-      <text y="-49" textAnchor="middle" className="atlas-compass-letter">N</text>
-    </g>
-  );
+function biomeAt(destination) {
+  const coordinateBiome = getBiome(destination.x, destination.y);
+  const id = sceneBiomeId(coordinateBiome.id, destination.tile);
+  return id === "whitemarch" ? { ...coordinateBiome, id, name: "Whitemarch" } : coordinateBiome;
 }
 
 function QuestJournal({ quests, current, onClose, onPick }) {
   return (
-    <div className="atlas-popover atlas-journal" role="dialog" aria-label="Quest journal">
-      <div className="atlas-popover-head">
-        <div><span className="atlas-kicker">Field notes</span><h2>Quest journal</h2></div>
-        <button onClick={onClose} className="atlas-icon-button" aria-label="Close quest journal"><Icon name="x" size={13} color={colors.parchmentMuted} /></button>
+    <div className="trail-overlay" role="dialog" aria-modal="true" aria-label="Quest journal">
+      <div className="trail-overlay-head">
+        <div><span className="atlas-kicker">Pinned objectives</span><h2>Quest journal</h2><p>Choose an objective to set it on your compass.</p></div>
+        <button onClick={onClose} className="atlas-icon-button" aria-label="Close quest journal"><Icon name="x" size={14} color={colors.parchmentMuted} /></button>
       </div>
-      {quests.length === 0 ? <p className="atlas-empty">No active trails. Read the boards at taverns and gaols.</p> : quests.map((q) => (
-        <button key={q.id} className="atlas-quest-row" onClick={() => q.loc && onPick(q.loc)} disabled={!q.loc}>
-          <span className="atlas-quest-glyph">✦</span>
-          <span className="atlas-quest-copy"><b>{q.title}</b><small>{QUEST_TYPE_LABEL[q.type] || "Task"} · {q.giver}{q.loc ? ` · ${hexDistance(current, q.loc)} steps` : ""}</small></span>
-          <span className="atlas-quest-reward">{q.type === "bounty" ? formatCopper(q.rewardCp) : formatCopper(q.rewardCp || 0)}</span>
-        </button>
-      ))}
+      <div className="trail-ledger-list">
+        {quests.length === 0 ? <p className="atlas-empty">No active trails. Read the boards at taverns and gaols.</p> : quests.map((quest) => (
+          <button key={quest.id} className="trail-ledger-card trail-ledger-card--quest" onClick={() => quest.loc && onPick(quest.loc)} disabled={!quest.loc}>
+            <span className="trail-ledger-glyph">✦</span>
+            <span className="trail-ledger-copy"><b>{quest.title}</b><small>{QUEST_TYPE_LABEL[quest.type] || "Task"} · {quest.giver}{quest.loc ? ` · ${hexDistance(current, quest.loc)} steps` : ""}</small></span>
+            <span className="trail-ledger-reward">{formatCopper(quest.rewardCp || 0)}</span>
+          </button>
+        ))}
+      </div>
     </div>
+  );
+}
+
+function Wayfinder({ landmarks, origin, onClose, onPick }) {
+  return (
+    <div className="trail-overlay" role="dialog" aria-modal="true" aria-label="Known destinations">
+      <div className="trail-overlay-head">
+        <div><span className="atlas-kicker">Your remembered world</span><h2>Known horizons</h2><p>Landmarks, sanctuaries, and objectives you can navigate toward.</p></div>
+        <button onClick={onClose} className="atlas-icon-button" aria-label="Close known destinations"><Icon name="x" size={14} color={colors.parchmentMuted} /></button>
+      </div>
+      <div className="trail-ledger-list trail-ledger-list--places">
+        {landmarks.length === 0 ? <p className="atlas-empty">The horizon is still blank. Follow a trail to begin charting it.</p> : landmarks.map((landmark) => {
+          const biome = biomeAt(landmark);
+          const visual = biomeVisual(biome.id);
+          return (
+            <button key={landmark.key} className="trail-ledger-card" onClick={() => onPick(landmark)} style={{ "--ledger-image": `url(${visual.image})`, "--ledger-accent": visual.accent }}>
+              <span className="trail-ledger-glyph">{landmark.quest ? "✦" : glyphFor(landmark.tile)}</span>
+              <span className="trail-ledger-copy"><b>{nameForDestination(landmark, origin)}</b><small>{directionLabel(origin, landmark).replace("-", " ")} · {landmark.distance} steps · {biome.name}</small></span>
+              <span className="trail-ledger-tag">{landmark.quest ? "objective" : landmark.anchor ? "anchor" : "known"}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TrailStage({ model, currentName, currentVisual, selectedKey, onPick, onOpenWayfinder, onOpenJournal, onSeekCombat, questCount, loading, night }) {
+  const choiceKeys = new Set(model.choices.map((choice) => choice.key));
+  const distantSelection = selectedKey && !choiceKeys.has(selectedKey);
+  return (
+    <main className={`trail-stage ${night ? "is-night" : ""}`} style={{ backgroundImage: `url(${currentVisual.image})` }}>
+      <div className="trail-atmosphere" />
+      <div className="trail-top-actions">
+        <button onClick={onOpenWayfinder} className="trail-tool" aria-label="Known horizons"><Icon name="map" size={14} color="#ffe2a7" /><span>Known horizons</span></button>
+        <button onClick={onOpenJournal} className="trail-tool" aria-label="Quests"><Icon name="book" size={14} color="#ffe2a7" /><span>Quests</span>{questCount > 0 && <b>{questCount}</b>}</button>
+        {onSeekCombat && <button onClick={onSeekCombat} disabled={loading} className="trail-tool trail-tool--danger" aria-label="Seek trouble"><Icon name="swords" size={14} color="#ffc1b7" /><span>Seek trouble</span></button>}
+      </div>
+
+      <svg className="trail-route-field" viewBox="0 0 1000 650" preserveAspectRatio="none" aria-hidden="true">
+        <defs>
+          <filter id="trailGlow"><feGaussianBlur stdDeviation="5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+        </defs>
+        {model.choices.map((choice) => <path key={`shadow-${choice.key}`} d={trailPath(choice.scene)} className="trail-route-shadow" />)}
+        {model.choices.map((choice) => <path key={choice.key} d={trailPath(choice.scene)} className={`trail-route-line ${selectedKey === choice.key ? "is-selected" : ""}`} filter={selectedKey === choice.key ? "url(#trailGlow)" : undefined} />)}
+      </svg>
+
+      <div className="trail-route-markers" aria-label="Paths from here">
+        {model.choices.map((choice) => {
+          const chosen = selectedKey === choice.key;
+          const title = nameForDestination(choice, model.origin);
+          return (
+            <button key={choice.key} onClick={() => onPick(choice)} className={`trail-marker ${chosen ? "is-selected" : ""}`} style={{ "--route-x": choice.scene.x, "--route-y": choice.scene.y }} aria-pressed={chosen} aria-label={`${title}, ${choice.direction}, ${choice.steps} ${choice.steps === 1 ? "step" : "steps"}`}>
+              {choice.quest && <span className="trail-marker-quest">✦</span>}
+              <span className="trail-marker-icon">{glyphFor(choice.tile)}</span>
+              <span className="trail-marker-copy"><b>{title}</b><small>{directionShort(choice.direction)} · {choice.steps} {choice.steps === 1 ? "step" : "steps"}</small></span>
+            </button>
+          );
+        })}
+      </div>
+
+      {distantSelection && <div className="trail-distant-beacon"><span>✦</span><small>Compass set beyond the horizon</small></div>}
+
+      <div className="trail-party">
+        <span className="trail-party-avatar">♟</span>
+        <div><small>You are here</small><b>{currentName}</b></div>
+      </div>
+      {model.choices.length === 0 && <div className="trail-no-path"><b>No visible trail</b><span>Darkness or hard terrain hides every way forward.</span></div>}
+    </main>
+  );
+}
+
+function ExpeditionPanel({ state, model, selection, selectedName, journey, routeMinutes, risk, focusBiome, focusVisual, onClear, onPick, onTravel, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
+  const selected = !!selection;
+  const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
+  const distance = selection ? hexDistance(model.origin, selection) : 0;
+  const description = selection?.tile?.poi?.description
+    || (selection ? TERRAINS[selection.tile?.terrain]?.flavor : `${currentLocationName(state)}. Read the landscape and choose how the expedition continues.`);
+  return (
+    <section className="expedition-panel">
+      <div className="expedition-scroll">
+        {!selected ? (
+          <div className="expedition-intro">
+            <span className="atlas-kicker">The road is the map</span>
+            <h2>Choose what lies ahead</h2>
+            <p>Each signpost follows the visible trail several steps into the country. Push onward, or set your compass to a known horizon.</p>
+            <div className="expedition-choice-list">
+              {model.choices.map((choice) => (
+                <button key={choice.key} onClick={() => onPick(choice)} className="expedition-choice">
+                  <span style={{ "--choice-color": terrainVisual(choice.tile.terrain).tint }}>{glyphFor(choice.tile)}</span>
+                  <div><small>{choice.direction.replace("-", " ")} · {choice.steps} {choice.steps === 1 ? "step" : "steps"}</small><b>{nameForDestination(choice, model.origin)}</b><em>{describeEncounterPotential(choice.tile, choice.x, choice.y) || "open trail"}</em></div>
+                  <i>›</i>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="expedition-destination">
+            <div className="expedition-poster" style={{ backgroundImage: `url(${focusVisual.image})`, "--focus-accent": focusVisual.accent }}>
+              <button onClick={onClear} className="expedition-clear" aria-label="Clear destination"><Icon name="x" size={13} color="#fff1d0" /></button>
+              <div className="expedition-poster-copy"><span>{selection.quest ? "✦" : focusVisual.symbol}</span><small>{selection.quest ? "Quest trail" : focusBiome.name}</small><h2>{selectedName}</h2><p>{focusVisual.mood}</p></div>
+            </div>
+
+            <p className="expedition-description">{description}</p>
+            {journey ? (
+              <>
+                <div className="expedition-stats">
+                  <div><small>Distance</small><b>{journey.legSteps}</b><span>steps</span></div>
+                  <div><small>Travel</small><b>{routeMinutes}</b><span>minutes</span></div>
+                  <div className={risk >= 45 ? "is-danger" : ""}><small>Outlook</small><b>{risk}%</b><span>{dangerLabel(risk)}</span></div>
+                </div>
+                <div className="expedition-route-preview" aria-label="Route terrain">
+                  {journey.terrainLabels.map((terrain) => <span key={terrain.id} style={{ "--segment-color": TERRAIN_INK[terrain.id], "--segment-size": terrain.count }} title={`${terrain.label}: ${terrain.count} steps`}><i /> <small>{terrain.label} ×{terrain.count}</small></span>)}
+                </div>
+                {!journey.arrived && <p className="expedition-leg-note">A single march reaches the first {journey.legSteps} of {journey.totalSteps} steps. You can reassess from there.</p>}
+              </>
+            ) : <div className="expedition-blocked">No safe remembered route reaches this destination yet.</div>}
+          </div>
+        )}
+      </div>
+
+      <div className="expedition-actions">
+        {(canFly || teleOption) && <div className="atlas-magic-row">
+          {canFly && <button onClick={onFly} className="atlas-action atlas-action--fly">Fly · ~{Math.min(distance, FLY_TRAVEL_HEXES) * FLY_MIN_PER_HEX} min{flightMount ? ` · ${flightMount.name}` : ` · ${flyPlan.totalCost} resolve`}</button>}
+          {teleOption && <button onClick={() => resolve >= teleOption.resolveCost && onTeleport(teleOption)} disabled={resolve < teleOption.resolveCost} className="atlas-action atlas-action--teleport">{teleOption.name} · {teleOption.resolveCost} resolve</button>}
+        </div>}
+        <button onClick={onTravel} disabled={!journey || loading} className="atlas-primary-action">
+          {!selected ? "Choose a trail" : isSelf ? "You are here" : !journey ? "Route undiscovered" : journey.arrived ? `Begin expedition · ${risk}% danger` : `March ${journey.legSteps} steps toward ${selectedName}`}
+        </button>
+      </div>
+    </section>
   );
 }
 
 export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, onSeekCombat, loading }) {
   const [selected, setSelected] = useState(null);
   const [journalOpen, setJournalOpen] = useState(false);
+  const [wayfinderOpen, setWayfinderOpen] = useState(false);
   const [flyPanelDest, setFlyPanelDest] = useState(null);
-  const containerRef = useRef(null);
-  const { zoom, transformRef, reset, lastWasDragRef, mouseHandlers } = useZoomPan(containerRef);
-  const model = buildAtlasModel(state);
-  const activeQuests = (state.world.quests || []).filter((q) => q.status === "active");
-  const questAt = new Map(activeQuests.filter((q) => q.loc).map((q) => [`${q.loc.x},${q.loc.y}`, q]));
+  const model = useMemo(() => buildExplorationModel(state), [state]);
+  const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
   const selection = selected ? model.byKey.get(`${selected.x},${selected.y}`) || {
     ...selected,
     key: `${selected.x},${selected.y}`,
     tile: getTile(state, selected.x, selected.y),
-    point: atlasPoint(selected, model.origin),
     seen: isSeen(state, selected.x, selected.y),
   } : null;
   const journey = planAtlasJourney(state, selected, WORLD_MARCH_LIMIT);
-  const pathPoints = journey?.legPath.map((p) => atlasPoint(p, model.origin)) || [];
   const routeMinutes = journey ? pathMinutes(state, journey.legPath) : 0;
   const risk = journey ? pathRiskPercent(state, journey.legPath) : 0;
-  const selectedTile = selection?.tile;
-  const selectedName = selection ? nameForCell(selection, model.origin) : currentLocationName(state);
+  const selectedName = selection ? nameForDestination(selection, model.origin) : currentLocationName(state);
   const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
 
-  const resolve = state.character.resolve ?? 0;
   const spells = knownTravelSpells(state.character);
-  const teleSpells = spells.filter((s) => s.mode === "teleport");
+  const teleSpells = spells.filter((spell) => spell.mode === "teleport");
   const flyPlan = flyMulticastPlan(state);
   const flightMount = playerFlightMount(state);
   const distance = selected ? hexDistance(model.origin, selected) : 0;
   const canFly = !!selected && !isSelf && !loading && (flyPlan.casters.length > 0 || flightMount);
   const teleOption = selected && !isSelf && !loading
-    ? teleSpells.find((s) => (isFinite(s.range) ? (selection?.seen && distance <= s.range) : isTeleportAnchor(state, selected.x, selected.y)))
+    ? teleSpells.find((spell) => (isFinite(spell.range) ? (selection?.seen && distance <= spell.range) : isTeleportAnchor(state, selected.x, selected.y)))
     : null;
-  const coordinateBiome = getBiome(model.origin.x, model.origin.y);
-  const currentBiome = sceneBiomeId(coordinateBiome.id, model.current.tile) === "whitemarch"
-    ? { ...coordinateBiome, id: "whitemarch", name: "Whitemarch" }
-    : coordinateBiome;
-  const currentVisual = biomeVisual(currentBiome.id);
-  const coordinateFocusBiome = getBiome(selection?.x ?? model.origin.x, selection?.y ?? model.origin.y);
-  const focusBiome = sceneBiomeId(coordinateFocusBiome.id, selection?.tile || model.current.tile) === "whitemarch"
-    ? { ...coordinateFocusBiome, id: "whitemarch", name: "Whitemarch" }
-    : coordinateFocusBiome;
-  const focusVisual = biomeVisual(focusBiome.id);
 
-  function pick(coord) {
-    if (lastWasDragRef.current) { lastWasDragRef.current = false; return; }
-    setSelected({ x: coord.x, y: coord.y });
+  const currentCoordinateBiome = getBiome(model.origin.x, model.origin.y);
+  const currentBiomeId = sceneBiomeId(currentCoordinateBiome.id, model.current.tile);
+  const currentBiome = currentBiomeId === "whitemarch" ? { ...currentCoordinateBiome, id: "whitemarch", name: "Whitemarch" } : currentCoordinateBiome;
+  const currentVisual = biomeVisual(currentBiome.id);
+  const focusDestination = selection || model.current;
+  const focusBiome = biomeAt(focusDestination);
+  const focusVisual = biomeVisual(focusBiome.id);
+  const hour = state.time?.hour ?? 12;
+
+  function pick(destination) {
+    setSelected({ x: destination.x, y: destination.y });
+    setJournalOpen(false);
+    setWayfinderOpen(false);
+  }
+
+  function handleFlySelection() {
+    if (flightMount || flyPlan.casts <= 1) onFly(selected);
+    else setFlyPanelDest(selected);
   }
 
   return (
-    <div className="exploration-shell atlas-shell" style={{
+    <div className="exploration-shell trail-shell" style={{
       "--atlas-accent": currentVisual.accent,
       "--atlas-primary": currentVisual.primary,
       "--atlas-secondary": currentVisual.secondary,
       "--atlas-deep": currentVisual.deep,
     }}>
-      <header className="exploration-header">
-        <button onClick={onClose} className="atlas-icon-button" aria-label="Return to story"><Icon name="arrowLeft" size={14} color={colors.parchmentMuted} /></button>
-        <div className="exploration-title">
-          <span className="atlas-kicker">The wayfarer's atlas</span>
-          <h1>{currentBiome.name}</h1>
-          <small>{formatDate(state.time)} · {formatTime(state.time)}</small>
-        </div>
-        <div className="atlas-header-mark" aria-hidden="true">✦</div>
+      <header className="exploration-header trail-header">
+        <button onClick={onClose} className="atlas-icon-button" aria-label="Return to story"><Icon name="arrowLeft" size={15} color={colors.parchmentMuted} /></button>
+        <div className="exploration-title"><span className="atlas-kicker">Expedition · {currentBiome.name}</span><h1>{currentLocationName(state)}</h1><small>{formatDate(state.time)} · {formatTime(state.time)}</small></div>
+        <button onClick={() => setWayfinderOpen(true)} className="atlas-icon-button" aria-label="Open known horizons"><Icon name="map" size={15} color={colors.parchmentMuted} /></button>
       </header>
 
-      <main ref={containerRef} {...mouseHandlers} className="atlas-viewport">
-        <div className="atlas-vignette" />
-        <div ref={transformRef} className="atlas-transform">
-          <svg width={ATLAS_SIZE} height={ATLAS_SIZE} viewBox={`0 0 ${ATLAS_SIZE} ${ATLAS_SIZE}`} className="atlas-canvas" aria-label="Exploration atlas">
-            <defs>
-              <radialGradient id="atlasPaper" cx="50%" cy="48%" r="68%"><stop offset="0" stopColor={currentVisual.primary} stopOpacity=".24" /><stop offset=".58" stopColor="#173c50" stopOpacity=".66" /><stop offset="1" stopColor={currentVisual.deep} stopOpacity=".9" /></radialGradient>
-              <filter id="atlasBlur"><feGaussianBlur stdDeviation="24" /></filter>
-              <filter id="atlasGlow"><feGaussianBlur stdDeviation="5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-              <pattern id="atlasGrain" width="67" height="67" patternUnits="userSpaceOnUse"><path d="M2 13l1 1m31-8l1-1m21 27l2 1M10 56l2-1m31 4l1 2" stroke="rgba(237,228,208,.09)" strokeWidth=".7" /></pattern>
-            </defs>
-            <rect width={ATLAS_SIZE} height={ATLAS_SIZE} fill={currentVisual.deep} />
-            <image href={currentVisual.image} x="0" y="0" width={ATLAS_SIZE} height={ATLAS_SIZE} preserveAspectRatio="xMidYMid slice" opacity=".24" className="atlas-region-wash" />
-            <rect width={ATLAS_SIZE} height={ATLAS_SIZE} fill="url(#atlasPaper)" />
-            <rect width={ATLAS_SIZE} height={ATLAS_SIZE} fill="url(#atlasGrain)" />
+      <div className="trail-body">
+        <TrailStage
+          model={model}
+          currentName={currentLocationName(state)}
+          currentVisual={currentVisual}
+          selectedKey={selection?.key}
+          onPick={pick}
+          onOpenWayfinder={() => setWayfinderOpen(true)}
+          onOpenJournal={() => setJournalOpen(true)}
+          onSeekCombat={onSeekCombat}
+          questCount={activeQuests.length}
+          loading={loading}
+          night={hour < 6 || hour >= 20}
+        />
+        <ExpeditionPanel
+          state={state}
+          model={model}
+          selection={selection}
+          selectedName={selectedName}
+          journey={journey}
+          routeMinutes={routeMinutes}
+          risk={risk}
+          focusBiome={focusBiome}
+          focusVisual={focusVisual}
+          onClear={() => setSelected(null)}
+          onPick={pick}
+          onTravel={() => journey && !loading && onTravel(selected, journey.fullPath)}
+          canFly={canFly}
+          teleOption={teleOption}
+          onFly={handleFlySelection}
+          onTeleport={(spell) => onTeleport(selected, spell.id)}
+          flightMount={flightMount}
+          flyPlan={flyPlan}
+          resolve={state.character.resolve ?? 0}
+          loading={loading}
+        />
+      </div>
 
-            <g filter="url(#atlasBlur)" pointerEvents="none">
-              {model.terrain.map((cell) => <circle key={cell.key} cx={cell.point.x} cy={cell.point.y} r={98 * cell.mark.scale} fill={cell.seen ? biomeVisual(sceneBiomeId(getBiome(cell.x, cell.y).id, cell.tile)).primary : "#183247"} opacity={cell.seen ? .24 : .12} />)}
-            </g>
-            <g fill="none" stroke="rgba(230,185,140,.34)" strokeWidth="2" pointerEvents="none">
-              {model.terrain.map((cell) => <TerrainGlyph key={`glyph-${cell.key}`} cell={cell} />)}
-            </g>
-
-            <g className="atlas-routes" pointerEvents="none">
-              {model.edges.map((edge) => {
-                const d = curvePath([edge.from.point, edge.to.point]);
-                return <g key={edge.key} opacity={edge.seen ? 1 : .34}><path d={d} className="atlas-route-shadow" /><path d={d} className={edge.visited ? "atlas-route atlas-route--walked" : "atlas-route"} /></g>;
-              })}
-            </g>
-
-            {journey && <g pointerEvents="none" filter="url(#atlasGlow)"><path d={curvePath(pathPoints)} className="atlas-planned-route-back" /><path d={curvePath(pathPoints)} className="atlas-planned-route" /></g>}
-
-            <g className="atlas-waypoints">
-              {model.cells.map((cell) => {
-                const quest = questAt.get(cell.key);
-                const chosen = selected && selected.x === cell.x && selected.y === cell.y;
-                const stepsAway = hexDistance(model.origin, cell);
-                // Dense authored settlements can contain hundreds of named
-                // stalls and rooms. Keep those discoverable as points, but
-                // reserve always-visible labels for true landmarks in the
-                // nearby map; immediate exits are already named in the sheet.
-                const majorNamed = cell.named && stepsAway > 1 && stepsAway <= 12 && MAJOR_POI_TYPES.has(cell.tile?.poi?.type);
-                const important = majorNamed || quest || cell.key === model.current.key;
-                return (
-                  <g key={cell.key} transform={`translate(${cell.point.x} ${cell.point.y})`} role="button" tabIndex="0" aria-label={`${nameForCell(cell, model.origin)} · ${hexDistance(model.origin, cell)} steps`} aria-pressed={chosen} onClick={() => pick(cell)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") pick(cell); }} className={`atlas-waypoint ${important ? "atlas-waypoint--major" : ""} ${chosen ? "is-selected" : ""}`}>
-                    <circle r={important ? 32 : 24} className="atlas-hit" />
-                    {!important && <circle r={cell.visited ? 3.4 : 2.2} className={cell.seen ? "atlas-trail-dot" : "atlas-trail-dot atlas-trail-dot--unknown"} />}
-                    {important && cell.key !== model.current.key && <><circle r="17" className="atlas-landmark-halo" /><circle r="11" className="atlas-landmark-core" /><text y="5" textAnchor="middle" className="atlas-landmark-glyph">{glyphFor(cell.tile)}</text></>}
-                    {quest && <><circle r="24" className="atlas-quest-ring" /><text y="-30" textAnchor="middle" className="atlas-quest-star">✦</text></>}
-                    {majorNamed && cell.key !== model.current.key && <text y="38" textAnchor="middle" className="atlas-place-label">{poiPlaceName(cell.tile.poi)}</text>}
-                  </g>
-                );
-              })}
-            </g>
-
-            <g transform={`translate(${model.current.point.x} ${model.current.point.y})`} pointerEvents="none" filter="url(#atlasGlow)">
-              <circle r="25" className="atlas-party-pulse" />
-              <path d="M0-18L11 9 0 5-11 9Z" className="atlas-party-marker" />
-              <circle cy="2" r="4" fill="#f5dcb8" />
-              <text y="38" textAnchor="middle" className="atlas-you-label">YOU ARE HERE</text>
-            </g>
-            {selection && !isSelf && <g transform={`translate(${selection.point.x} ${selection.point.y})`} pointerEvents="none"><circle r="24" className="atlas-selection-ring" /><path d="M0-31v14M-7-24H7" className="atlas-selection-tick" /></g>}
-            <CompassRose />
-          </svg>
-        </div>
-
-        <div className="atlas-controls">
-          {onSeekCombat && <button onClick={onSeekCombat} disabled={loading} className="atlas-icon-button atlas-icon-button--danger" aria-label="Look for a fight"><Icon name="swords" size={15} color="#efaaa0" /></button>}
-          <button onClick={() => setJournalOpen((v) => !v)} className={`atlas-icon-button ${journalOpen ? "is-active" : ""}`} aria-label="Quest journal"><Icon name="book" size={15} color={colors.parchmentMuted} />{activeQuests.length > 0 && <span className="atlas-count">{activeQuests.length}</span>}</button>
-          <button onClick={reset} className="atlas-icon-button" aria-label="Recenter atlas"><Icon name="crosshair" size={15} color={colors.parchmentMuted} /></button>
-        </div>
-        <div className="atlas-zoom">{Math.round(zoom * 100)}%</div>
-        {journalOpen && <QuestJournal quests={activeQuests} current={model.origin} onClose={() => setJournalOpen(false)} onPick={(coord) => { setSelected(coord); setJournalOpen(false); }} />}
-      </main>
-
-      <section className="atlas-sheet">
-        {!selected && model.choices.length > 0 && <div className="atlas-next-steps"><div className="atlas-section-label">Paths from here</div><div className="atlas-choice-row">{model.choices.map((choice) => <button key={choice.key} onClick={() => setSelected({ x: choice.x, y: choice.y })} className="atlas-choice"><span>{directionLabel(model.origin, choice).replace("-", " ")}</span><b>{poiPlaceName(choice.tile.poi) || TERRAINS[choice.tile.terrain]?.label}</b><small>{describeEncounterPotential(choice.tile, choice.x, choice.y) || "open trail"}</small></button>)}</div></div>}
-
-        <div className="atlas-destination">
-          <div className="atlas-destination-art" style={{ backgroundImage: `url(${focusVisual.image})`, "--focus-accent": focusVisual.accent }}>
-            <div><span>{focusVisual.symbol}</span><small>{focusBiome.name}</small><b>{focusVisual.mood}</b></div>
-          </div>
-          <div className="atlas-destination-heading"><div><span className="atlas-kicker">{selected ? "Chosen destination" : "Present position"}</span><h2>{selectedName}</h2></div>{selected && <button onClick={() => setSelected(null)} className="atlas-clear">Clear</button>}</div>
-          <p>{selectedTile?.poi?.description || (selected ? TERRAINS[selectedTile?.terrain]?.flavor : `${currentLocationName(state)}. Choose a waypoint or one of the paths from here.`)}</p>
-          <div className="atlas-facts">
-            <span>{focusBiome.name}</span>
-            {journey && <><span>{journey.legSteps} step{journey.legSteps === 1 ? "" : "s"}</span><span>~{routeMinutes} min</span><span className={risk >= 45 ? "is-danger" : ""}>{risk}% danger</span></>}
-          </div>
-          {journey && <div className="atlas-terrain-mix">{journey.terrainLabels.map((t) => <span key={t.id} style={{ "--terrain": TERRAIN_INK[t.id] }}>{t.label} ×{t.count}</span>)}</div>}
-        </div>
-
-        {(canFly || teleOption) && <div className="atlas-magic-row">
-          {canFly && <button onClick={() => { if (flightMount || flyPlan.casts <= 1) onFly(selected); else setFlyPanelDest(selected); }} className="atlas-action atlas-action--fly">Fly · ~{Math.min(distance, FLY_TRAVEL_HEXES) * FLY_MIN_PER_HEX} min{flightMount ? ` · ${flightMount.name}` : ` · ${flyPlan.totalCost} resolve`}</button>}
-          {teleOption && <button onClick={() => resolve >= teleOption.resolveCost && onTeleport(selected, teleOption.id)} disabled={resolve < teleOption.resolveCost} className="atlas-action atlas-action--teleport">{teleOption.name} · {teleOption.resolveCost} resolve</button>}
-        </div>}
-        <button onClick={() => journey && !loading && onTravel(selected, journey.fullPath)} disabled={!journey || loading} className="atlas-primary-action">
-          {!selected ? "Choose a trail" : isSelf ? "You are here" : !journey ? "No open route" : journey.arrived ? `Set out · ${journey.legSteps} step${journey.legSteps === 1 ? "" : "s"} · ${risk}% danger` : `Follow the trail · first ${journey.legSteps} of ${journey.totalSteps}`}
-        </button>
-      </section>
-
-      {flyPanelDest && <AtlasFlyPanel plan={flyPlan} destination={selectedName} onCancel={() => setFlyPanelDest(null)} onConfirm={(assign) => { const dest = flyPanelDest; setFlyPanelDest(null); onFly(dest, assign); }} />}
+      {journalOpen && <QuestJournal quests={activeQuests} current={model.origin} onClose={() => setJournalOpen(false)} onPick={pick} />}
+      {wayfinderOpen && <Wayfinder landmarks={model.landmarks} origin={model.origin} onClose={() => setWayfinderOpen(false)} onPick={pick} />}
+      {flyPanelDest && <AtlasFlyPanel plan={flyPlan} destination={selectedName} onCancel={() => setFlyPanelDest(null)} onConfirm={(assign) => { const destination = flyPanelDest; setFlyPanelDest(null); onFly(destination, assign); }} />}
     </div>
   );
 }
@@ -302,11 +333,11 @@ function AtlasFlyPanel({ plan, destination, onCancel, onConfirm }) {
   const valid = assignmentValid(assign, plan.casters, plan.flyCost);
   return (
     <div className="atlas-modal-backdrop" onClick={onCancel}>
-      <div className="atlas-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Assign flight casters">
-        <div className="atlas-popover-head"><div><span className="atlas-kicker">Arcane passage</span><h2>Take wing</h2></div><button onClick={onCancel} className="atlas-icon-button"><Icon name="x" size={13} color="#bfe3f2" /></button></div>
+      <div className="atlas-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-label="Assign flight casters">
+        <div className="trail-overlay-head"><div><span className="atlas-kicker">Arcane passage</span><h2>Take wing</h2></div><button onClick={onCancel} className="atlas-icon-button"><Icon name="x" size={13} color="#bfe3f2" /></button></div>
         <p>To {destination}. One casting bears one soul; choose who carries each traveller.</p>
-        {plan.passengers.map((p) => <label key={p.id} className="atlas-assign-row"><span>{p.name}{p.kind === "player" ? " (you)" : ""}</span><select value={assign[p.id] ?? ""} onChange={(e) => setAssign({ ...assign, [p.id]: e.target.value })}>{plan.casters.map((c) => <option key={c.id} value={c.id}>flown by {c.name}</option>)}</select></label>)}
-        <div className="atlas-caster-costs">{plan.casters.map((c) => <span key={c.id}>{c.name}: {c.resolve} → {c.resolve - (costs[c.id] || 0)}</span>)}</div>
+        {plan.passengers.map((passenger) => <label key={passenger.id} className="atlas-assign-row"><span>{passenger.name}{passenger.kind === "player" ? " (you)" : ""}</span><select value={assign[passenger.id] ?? ""} onChange={(event) => setAssign({ ...assign, [passenger.id]: event.target.value })}>{plan.casters.map((caster) => <option key={caster.id} value={caster.id}>flown by {caster.name}</option>)}</select></label>)}
+        <div className="atlas-caster-costs">{plan.casters.map((caster) => <span key={caster.id}>{caster.name}: {caster.resolve} → {caster.resolve - (costs[caster.id] || 0)}</span>)}</div>
         <button onClick={() => valid && onConfirm(assign)} disabled={!valid} className="atlas-primary-action atlas-primary-action--sky">{valid ? `Take wing · ${plan.totalCost} resolve` : "Not enough resolve"}</button>
       </div>
     </div>
