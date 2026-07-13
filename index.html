@@ -14,14 +14,14 @@
   <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
   <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png">
-  <meta name="theme-color" content="#0b2639">
+  <meta name="theme-color" content="#07101c">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Solitaire">
   <meta name="description" content="A solo RPG narrative engine.">
 
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Pixelify+Sans:wght@400;500;600;700&display=swap">
   <style>
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; overscroll-behavior: contain; }
@@ -32,18 +32,18 @@
         radial-gradient(circle at 12% 78%, rgba(97, 148, 114, .16), transparent 34%),
         radial-gradient(circle at 88% 72%, rgba(207, 153, 81, .14), transparent 32%),
         linear-gradient(160deg, #153b50 0%, #0b2032 48%, #111d3a 100%);
-      font-family: 'DM Sans', system-ui, sans-serif;
-      -webkit-font-smoothing: antialiased;
+      font-family: 'Pixelify Sans', 'Trebuchet MS', sans-serif;
+      -webkit-font-smoothing: none;
       -moz-osx-font-smoothing: grayscale;
       color: #F7F1DE;
     }
     input, button, textarea { font-family: inherit; }
     button { 
       -webkit-tap-highlight-color: transparent; 
-      transition: transform 0.1s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.2s, border-color 0.2s, opacity 0.2s;
+      transition: transform 80ms steps(2, end), background-color 80ms steps(2, end), border-color 80ms steps(2, end), opacity 80ms linear;
     }
     button:active {
-      transform: scale(0.96) !important;
+      transform: translate(2px, 2px) !important;
     }
     @keyframes spin {
       from { transform: rotate(0deg); }

@@ -1,19 +1,19 @@
-import sceneWhitemarch from "../assets/generated/scene-whitemarch-v2.webp";
-import sceneMire from "../assets/generated/scene-mire-v2.webp";
-import sceneCrowsmoor from "../assets/generated/scene-crowsmoor-v2.webp";
-import sceneTannicWood from "../assets/generated/scene-tannic-wood-v2.webp";
-import sceneWhitemarchMarch from "../assets/generated/scene-whitemarch-march-v2.webp";
-import sceneSpine from "../assets/generated/scene-spine-v2.webp";
-import sceneDrakeholtPeaks from "../assets/generated/scene-drakeholt-peaks-v2.webp";
-import sceneIronPlateau from "../assets/generated/scene-iron-plateau-v2.webp";
-import sceneTellmarRoad from "../assets/generated/scene-tellmar-road-v2.webp";
-import sceneBramblewych from "../assets/generated/scene-bramblewych-v2.webp";
-import sceneBonemarsh from "../assets/generated/scene-bonemarsh-v2.webp";
-import sceneSunderedWastes from "../assets/generated/scene-sundered-wastes-v2.webp";
-import sceneHollowCoast from "../assets/generated/scene-hollow-coast-v2.webp";
-import sceneWitchwood from "../assets/generated/scene-witchwood-v2.webp";
-import scenePaleSteppe from "../assets/generated/scene-pale-steppe-v2.webp";
-import sceneFarWild from "../assets/generated/scene-far-wild-v2.webp";
+import sceneWhitemarch from "../assets/generated/scene-whitemarch-pixel.webp";
+import sceneMire from "../assets/generated/scene-mire-pixel.webp";
+import sceneCrowsmoor from "../assets/generated/scene-crowsmoor-pixel.webp";
+import sceneTannicWood from "../assets/generated/scene-tannic-wood-pixel.webp";
+import sceneWhitemarchMarch from "../assets/generated/scene-whitemarch-march-pixel.webp";
+import sceneSpine from "../assets/generated/scene-spine-pixel.webp";
+import sceneDrakeholtPeaks from "../assets/generated/scene-drakeholt-peaks-pixel.webp";
+import sceneIronPlateau from "../assets/generated/scene-iron-plateau-pixel.webp";
+import sceneTellmarRoad from "../assets/generated/scene-tellmar-road-pixel.webp";
+import sceneBramblewych from "../assets/generated/scene-bramblewych-pixel.webp";
+import sceneBonemarsh from "../assets/generated/scene-bonemarsh-pixel.webp";
+import sceneSunderedWastes from "../assets/generated/scene-sundered-wastes-pixel.webp";
+import sceneHollowCoast from "../assets/generated/scene-hollow-coast-pixel.webp";
+import sceneWitchwood from "../assets/generated/scene-witchwood-pixel.webp";
+import scenePaleSteppe from "../assets/generated/scene-pale-steppe-pixel.webp";
+import sceneFarWild from "../assets/generated/scene-far-wild-pixel.webp";
 import { TERRAINS } from "./terrains.js";
 
 export const TERRAIN_VISUALS = {

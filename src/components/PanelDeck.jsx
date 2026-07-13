@@ -69,6 +69,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
 
   return (
     <div
+      className="panel-deck-backdrop"
       onClick={onClose}
       style={{
         position: "absolute", inset: 0, zIndex: 20,
@@ -77,8 +78,8 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
       }}
     >
       <div
+        className="panel-deck slide-up"
         onClick={(e) => e.stopPropagation()}
-        className="slide-up"
         style={{
           width: "100%", maxWidth: "480px", margin: "0 auto",
           height: "92dvh",

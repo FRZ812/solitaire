@@ -21,7 +21,7 @@ export function AuthScreen() {
   }
 
   return (
-    <div className="fade-in" style={{
+    <div className="auth-screen fade-in" style={{
       backgroundColor: colors.ink,
       backgroundImage: "radial-gradient(circle at 50% 30%, #152422 0%, #0a0f0e 80%)",
       minHeight: "100dvh", width: "100%", maxWidth: "480px", margin: "0 auto",
@@ -33,7 +33,7 @@ export function AuthScreen() {
       overflow: "hidden",
     }}>
       <InitialBackdrop />
-      <div style={{
+      <div className="screen-inner-frame" style={{
         position: "absolute",
         inset: "12px",
         border: `1px solid rgba(215, 167, 111, 0.08)`,
@@ -41,7 +41,7 @@ export function AuthScreen() {
         borderRadius: "20px",
       }} />
 
-      <div className="scale-in" style={{
+      <div className="auth-card scale-in" style={{
         backgroundColor: "rgba(20, 29, 29, 0.72)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
@@ -54,14 +54,14 @@ export function AuthScreen() {
       }}>
         {/* Hero */}
         <div style={{ textAlign: "center" }}>
-          <div style={{
+          <div className="title-kicker" style={{
             fontSize: "9px", letterSpacing: "0.26em", textTransform: "uppercase",
             color: colors.gold, marginBottom: "8px", fontWeight: 700,
             textShadow: "0 0 8px rgba(215, 167, 111, 0.25)",
           }}>
             A Solo RPG Narrative Engine
           </div>
-          <h1 style={{
+          <h1 className="game-logo" style={{
             fontFamily: fonts.serif, fontStyle: "italic",
             fontSize: "56px", margin: "0 0 12px",
             letterSpacing: "-0.5px", lineHeight: 1,
@@ -82,6 +82,7 @@ export function AuthScreen() {
         {/* Sign-in */}
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           <button
+            className="auth-primary"
             onClick={handleGoogle}
             disabled={busy}
             style={{

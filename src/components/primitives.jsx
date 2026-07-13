@@ -134,7 +134,7 @@ const panelTones = {
 // the standard game palette plus encounter/discovery accents.
 export function Panel({ children, tone = "default", compact = false, style }) {
   return (
-    <div className="fade-in" style={{
+    <div className={`jrpg-panel jrpg-panel--${tone} fade-in`} style={{
       ...panelShell,
       ...(panelTones[tone] || panelTones.default),
       borderRadius: compact ? radius.panelCompact : radius.panel,
