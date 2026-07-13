@@ -422,7 +422,7 @@ function PickerLabel({ children }) {
 
 // The narrator switch that sits to the left of the composer. A compact button
 // showing the active model; tap to open a popover and change the model and (for
-// the DeepSeek thinking models) its reasoning effort on the fly. Self-contained:
+// reasoning-capable OpenRouter models) its reasoning effort on the fly. Self-contained:
 // it reads/writes the persisted choices directly (see engine/narrator-models.js),
 // which callNarrator picks up on the next turn. The popover stays open across
 // selections so both settings can be tweaked at once; an outside tap closes it.
@@ -476,7 +476,7 @@ function NarratorPicker() {
               );
             })}
 
-            {/* Thinking effort — only for models that expose it (DeepSeek). */}
+            {/* Thinking effort — only for models that expose it. */}
             {active.efforts && (
               <>
                 <div style={{ height: "1px", margin: "5px 6px", background: "rgba(215,167,111,0.16)" }} />

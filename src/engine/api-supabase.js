@@ -1,6 +1,6 @@
 // Web-mode narrator call. Invokes the `narrate` Supabase Edge Function,
 // which gates on auth + the manual subscription allowlist (server-side),
-// calls DeepSeek, and re-emits the stream as Anthropic-style SSE
+// calls OpenRouter, and re-emits the stream as Anthropic-style SSE
 // (content_block_delta / text_delta). The client buffers the whole stream
 // then parses JSON; the engine is unchanged.
 //

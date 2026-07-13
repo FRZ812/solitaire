@@ -1,7 +1,7 @@
 // Narrator model + thinking-effort registry and persisted selection (web
 // build).
 //
-// The `narrate` Supabase edge function can route to multiple providers; this
+// The `narrate` Supabase edge function routes every provider through OpenRouter; this
 // file is the single source of truth for which models/efforts the UI offers
 // and which ones are active. The choices are read by src/engine/api-supabase.js
 // on every narrator call and written by the picker beside the composer
@@ -9,22 +9,23 @@
 // both against its own allowlists and falls back to a default if it doesn't
 // recognise them, so the client and server lists only need to agree loosely.
 
-// Thinking-effort levels the DeepSeek reasoning models accept. (DeepSeek maps
-// low/medium -> high and xhigh -> max; we surface only the two meaningful
-// rungs.) Gemini runs on a dynamic thinking budget and ignores effort, so its
-// model entry below has `efforts: null` and the picker hides the control.
+// Thinking-effort levels exposed for models with a compatible OpenRouter
+// reasoning control. The edge function maps `max` to OpenRouter's `xhigh`.
 export const NARRATOR_EFFORTS = [
   { id: "high", label: "High" },
   { id: "max",  label: "Max" },
 ];
 
 export const NARRATOR_MODELS = [
-  { id: "deepseek-v4-pro",        label: "DeepSeek v4 Pro",   note: "deep reasoning", provider: "deepseek", efforts: ["high", "max"] },
-  { id: "deepseek-v4-flash",      label: "DeepSeek v4 Flash", note: "faster",         provider: "deepseek", efforts: ["high", "max"] },
-  { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro",    note: "Google",         provider: "gemini",   efforts: null },
+  { id: "deepseek/deepseek-v4-pro",        label: "DeepSeek V4 Pro",      note: "deep reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
+  { id: "deepseek/deepseek-v4-flash",      label: "DeepSeek V4 Flash",    note: "fast reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
+  { id: "google/gemini-3.1-pro-preview",   label: "Gemini 3.1 Pro",       note: "Google",          provider: "OpenRouter", efforts: null },
+  { id: "xiaomi/mimo-v2.5",                 label: "MiMo V2.5",           note: "Xiaomi",          provider: "OpenRouter", efforts: null },
+  { id: "z-ai/glm-5.2",                     label: "GLM 5.2",             note: "Z.ai reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
+  { id: "openai/gpt-5.6-luna",              label: "GPT-5.6 Luna",        note: "OpenAI",          provider: "OpenRouter", efforts: null },
 ];
 
-export const DEFAULT_NARRATOR_MODEL = "deepseek-v4-pro";
+export const DEFAULT_NARRATOR_MODEL = "deepseek/deepseek-v4-pro";
 export const DEFAULT_NARRATOR_EFFORT = "max";
 
 const MODEL_KEY  = "solitaire-narrator-model-v1";

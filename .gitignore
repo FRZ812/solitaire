@@ -4,6 +4,7 @@ dist/
 *.log
 .DS_Store
 supabase/.temp/
+supabase/functions/.env
 
 # Regenerable verification render (scripts/render-whitemarch.mjs)
 scripts/whitemarch-map.png
