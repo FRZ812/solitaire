@@ -1,11 +1,6 @@
-# Builds the web bundle and publishes dist/ to GitHub Pages on every push to
-# main. One-time setup: in repo Settings → Pages, set Source to "GitHub
-# Actions" (not "Deploy from a branch"). The VITE_SUPABASE_* values come from
-# the committed .env (public by design); no secrets configuration required.
-#
-# `npm run build` is the only build target now — the artifact (singlefile)
-# build path was dropped when the handcrafted map moved to Supabase, so
-# `build:web` no longer exists.
+# Publishes the clean-room Godot mechanical RPG as the GitHub Pages root.
+# The checked-in pages/ directory is the deterministic Godot Web export; the
+# legacy React bundle is no longer the public site.
 
 name: Deploy to GitHub Pages
 
@@ -28,17 +23,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22 # Vitest 4 pulls in Vite 8 (needs Node ^20.19 || >=22.12)
-          cache: npm
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+      - name: Verify Godot Web artifact
+        shell: bash
+        run: |
+          test -s pages/index.html
+          test -s pages/index.js
+          test -s pages/index.pck
+          test -s pages/index.wasm
+          grep -q 'Solitaire — Whitemarch' pages/index.html
+          grep -q '"executable":"index"' pages/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: pages
 
   deploy:
     needs: build
