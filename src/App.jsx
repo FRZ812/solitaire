@@ -83,6 +83,7 @@ import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
+import { pinStoryToBottom, storyShouldFollow } from "./components/storyScroll.js";
 import "./components/chat-scene.css";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
@@ -335,6 +336,27 @@ export function Solitaire() {
   // shown live under the loading dots, cleared at the start of each turn.
   const [liveThinking, setLiveThinking] = useState("");
   const logRef = useRef(null);
+  const storyFollowRef = useRef(true);
+  const [storyFollowing, setStoryFollowing] = useState(true);
+
+  function setStoryFollow(next) {
+    storyFollowRef.current = next;
+    setStoryFollowing((current) => current === next ? current : next);
+  }
+
+  function handleStoryScroll(event) {
+    setStoryFollow(storyShouldFollow(event.currentTarget));
+  }
+
+  function scrollStoryToLatest() {
+    const element = logRef.current;
+    if (!element) return;
+    setStoryFollow(true);
+    pinStoryToBottom(element);
+    requestAnimationFrame(() => {
+      if (storyFollowRef.current) pinStoryToBottom(logRef.current);
+    });
+  }
 
   // Combat: `combat` holds the active turn-state (null = not fighting);
   // `pendingCombat` is a hostile encounter offering a fight before it starts.
@@ -505,18 +527,29 @@ export function Solitaire() {
     return () => clearTimeout(saveTimerRef.current);
   }, [state, hydrated, currentCampaignId]);
 
-  // ----- Scroll the beat log to the latest beat -----
-  // Loading a campaign renders its whole history at once, so the first scroll
-  // measures a height that late layout (fonts, images, beat art) then grows past
-  // — re-pin on the next frame, and also when a campaign is opened/hydrated.
+  // ----- Follow live output only while the reader is near the bottom -----
+  // A reader who scrolls upward owns the viewport until they return to the
+  // bottom or tap Latest. Streamed thinking can grow many times per second; each
+  // update may re-pin only while that follow lock remains enabled.
   useEffect(() => {
-    const el = logRef.current;
-    if (!el) return;
-    const toBottom = () => { el.scrollTop = el.scrollHeight; };
+    if (!storyFollowRef.current) return;
+    const toBottom = () => {
+      if (storyFollowRef.current) pinStoryToBottom(logRef.current);
+    };
     toBottom();
     const r = requestAnimationFrame(toBottom);
     return () => cancelAnimationFrame(r);
-  }, [state.beats.length, loading, liveThinking, hydrated, currentCampaignId]);
+  }, [state.beats.length, loading, liveThinking]);
+
+  // Campaign hydration is the one intentional reset: a newly opened history
+  // starts at its latest beat even if the previous campaign was scrolled up.
+  useEffect(() => {
+    if (!hydrated || !logRef.current) return;
+    setStoryFollow(true);
+    pinStoryToBottom(logRef.current);
+    const r = requestAnimationFrame(() => pinStoryToBottom(logRef.current));
+    return () => cancelAnimationFrame(r);
+  }, [hydrated, currentCampaignId]);
 
   // ----- Campaign handlers -----
 
@@ -677,6 +710,7 @@ export function Solitaire() {
   // (`text` chunks) is JSON, so it isn't shown live — only the thinking is.
   // Drop-in for callNarrator; returns the same parsed beat promise.
   function narrate(st, msg) {
+    scrollStoryToLatest();
     setLiveThinking("");
     return callNarrator(st, msg, (c) => {
       if (c.reset) setLiveThinking("");
@@ -1909,7 +1943,7 @@ export function Solitaire() {
             </button>
           </div>
         )}
-        <div ref={logRef} className="story-log">
+        <div ref={logRef} className="story-log" onScroll={handleStoryScroll}>
           {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
           {loading && <LiveThinking thinking={liveThinking} />}
           {error && (
@@ -1929,6 +1963,11 @@ export function Solitaire() {
           )}
           {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
         </div>
+        {!storyFollowing && (
+          <button type="button" className="story-jump-latest" onClick={scrollStoryToLatest} aria-label="Jump to latest story output">
+            <span>↓</span> Latest
+          </button>
+        )}
         {state.created !== false && pendingCombat && !combat && (
           <div className="fade-in" style={{
             margin: "0 12px 8px", padding: "11px 14px",
