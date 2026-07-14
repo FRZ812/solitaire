@@ -121,6 +121,29 @@
 .story-log::-webkit-scrollbar { width: 4px; }
 .story-log::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--scene-highlight) 35%, transparent); border-radius: 999px; }
 
+.story-jump-latest {
+  min-height: 32px;
+  margin: 0 auto 6px;
+  padding: 6px 12px 6px 8px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #f8edcf;
+  border: 1px solid color-mix(in srgb, var(--scene-highlight) 48%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--scene-deep) 88%, rgba(12, 36, 52, .92));
+  box-shadow: 0 8px 22px rgba(3, 13, 24, .38), inset 0 1px rgba(255,255,255,.06);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font: 700 10px 'Pixelify Sans', sans-serif;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+.story-jump-latest span { width: 20px; height: 20px; display: grid; place-items: center; color: #17293a; border-radius: 50%; background: var(--scene-highlight); font-size: 13px; }
+.story-jump-latest:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.story-jump-latest:focus-visible { outline: 2px solid var(--scene-highlight); outline-offset: 2px; }
+
 .beat-pressable { position: relative; }
 .beat-pressable + .beat-pressable { margin-top: 2px; }
 
