@@ -78,13 +78,139 @@ export function findPlaceRoute(place, fromId, toId) {
   return null;
 }
 
-function surfaceFor(x, y, node) {
-  if (x === 0 || y === 0 || x === PLACE_MAP_COLS - 1 || y === PLACE_MAP_ROWS - 1) return "wall";
-  if (x <= 1 && y >= 9) return "river";
-  if (node?.terrain === "indoor") return "roof";
-  if (["market", "plaza", "court", "yard", "dock", "settlement"].includes(node?.type)) return "plaza";
-  if (x === 7 || y === 8 || (y >= 10 && x >= 2 && x <= 12)) return "avenue";
-  return "street";
+const GRID_STEPS = [
+  { x: 1, y: 0 },
+  { x: 0, y: 1 },
+  { x: -1, y: 0 },
+  { x: 0, y: -1 },
+];
+
+function gridKey(point) {
+  return `${point.x},${point.y}`;
+}
+
+function edgeKey(fromId, toId) {
+  return [fromId, toId].sort().join("|");
+}
+
+function corridorBetween(from, to, { blocked = new Set(), surfaces = new Map() } = {}) {
+  if (!from || !to) return [];
+  const startKey = gridKey(from);
+  const targetKey = gridKey(to);
+  if (startKey === targetKey) return [{ x: from.x, y: from.y }];
+
+  const heuristic = (point) => (Math.abs(point.x - to.x) + Math.abs(point.y - to.y)) * 0.72;
+  const costs = new Map([[startKey, 0]]);
+  const previous = new Map();
+  const points = new Map([[startKey, { x: from.x, y: from.y }]]);
+  const closed = new Set();
+  const open = [{ x: from.x, y: from.y, key: startKey, cost: 0, score: heuristic(from) }];
+
+  while (open.length) {
+    open.sort((left, right) => left.score - right.score || left.cost - right.cost || left.y - right.y || left.x - right.x);
+    const current = open.shift();
+    if (closed.has(current.key)) continue;
+    if (current.key === targetKey) {
+      const corridor = [];
+      let cursor = targetKey;
+      while (cursor) {
+        corridor.push(points.get(cursor));
+        if (cursor === startKey) break;
+        cursor = previous.get(cursor);
+      }
+      return corridor.reverse();
+    }
+    closed.add(current.key);
+
+    for (const step of GRID_STEPS) {
+      const next = { x: current.x + step.x, y: current.y + step.y };
+      const key = gridKey(next);
+      const isTarget = key === targetKey;
+      const outside = next.x <= 0 || next.y <= 0 || next.x >= PLACE_MAP_COLS - 1 || next.y >= PLACE_MAP_ROWS - 1;
+      const surface = surfaces.get(key);
+      if (!isTarget && (outside || blocked.has(key) || surface === "wall" || surface === "river")) continue;
+
+      const road = surface === "street" || surface === "avenue" || surface === "plaza";
+      const cost = current.cost + (road ? 0.72 : 1);
+      if (cost >= (costs.get(key) ?? Infinity)) continue;
+      costs.set(key, cost);
+      previous.set(key, current.key);
+      points.set(key, next);
+      open.push({ ...next, key, cost, score: cost + heuristic(next) });
+    }
+  }
+  return [];
+}
+
+function nodeSurface(node) {
+  if (!node) return null;
+  if (node.terrain === "wall" || node.type === "wall") return "wall";
+  if (["market", "plaza", "court", "yard", "dock", "settlement", "slavemarket"].includes(node.type)) return "plaza";
+  if (["gate", "stair"].includes(node.type)) return "avenue";
+  return "roof";
+}
+
+// Whitemarch's streets are derived from the same graph that validates walking.
+// This removes the old fourth map representation where a static image and a
+// coordinate heuristic invented roads unrelated to the node exits.
+export function buildPlaceGeometry(place, layout = placeGrid(place)) {
+  const surfaces = new Map();
+  for (let y = 0; y < PLACE_MAP_ROWS; y++) {
+    for (let x = 0; x < PLACE_MAP_COLS; x++) {
+      const boundary = x === 0 || y === 0 || x === PLACE_MAP_COLS - 1 || y === PLACE_MAP_ROWS - 1;
+      surfaces.set(`${x},${y}`, boundary ? "wall" : x <= 1 && y >= 9 ? "river" : "roof");
+    }
+  }
+
+  const nodes = Object.values(place?.nodes || {});
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const blocked = new Set(nodes.map((node) => layout[node.id]).filter(Boolean).map(gridKey));
+  const corridors = new Map();
+  const paintedEdges = new Set();
+  for (const node of nodes) {
+    const from = layout[node.id];
+    if (!from) continue;
+    for (const exitId of node.exits || []) {
+      const to = layout[exitId];
+      if (!to) continue;
+      const keyForEdge = edgeKey(node.id, exitId);
+      if (paintedEdges.has(keyForEdge)) continue;
+      paintedEdges.add(keyForEdge);
+      const exit = nodeById.get(exitId);
+      const avenue = node.district !== exit?.district || [node.type, exit?.type].some((type) => ["gate", "palace", "plaza", "market"].includes(type));
+      const points = corridorBetween(from, to, { blocked, surfaces });
+      corridors.set(keyForEdge, { fromId: node.id, toId: exitId, points });
+      for (const point of points) {
+        if (point.x <= 0 || point.y <= 0 || point.x >= PLACE_MAP_COLS - 1 || point.y >= PLACE_MAP_ROWS - 1) continue;
+        const key = `${point.x},${point.y}`;
+        if (surfaces.get(key) === "river") continue;
+        if (avenue || surfaces.get(key) !== "avenue") surfaces.set(key, avenue ? "avenue" : "street");
+      }
+    }
+  }
+
+  for (const node of nodes) {
+    const point = layout[node.id];
+    if (point) surfaces.set(`${point.x},${point.y}`, nodeSurface(node));
+  }
+  return { surfaces, corridors };
+}
+
+export function buildPlaceSurfaceMap(place, layout = placeGrid(place)) {
+  return buildPlaceGeometry(place, layout).surfaces;
+}
+
+function routeGridCells(route, geometry) {
+  const cells = [];
+  for (let index = 1; index < (route || []).length; index++) {
+    const fromId = route[index - 1];
+    const toId = route[index];
+    const corridor = geometry.corridors.get(edgeKey(fromId, toId));
+    if (!corridor?.points?.length) return [];
+    const segment = corridor.fromId === fromId ? corridor.points : [...corridor.points].reverse();
+    cells.push(...(cells.length ? segment.slice(1) : segment));
+  }
+  return cells;
 }
 
 export function cityDirection(from, to) {
@@ -121,6 +247,8 @@ export function nextPlaceNode(place, layout, fromId, dx, dy) {
 
 export function buildPlaceViewport(place, currentId, selectedId = null) {
   const layout = placeGrid(place);
+  const geometry = buildPlaceGeometry(place, layout);
+  const surfaceMap = geometry.surfaces;
   const currentPosition = layout[currentId] || { x: Math.floor(PLACE_MAP_COLS / 2), y: Math.floor(PLACE_MAP_ROWS / 2) };
   const radiusX = Math.floor(PLACE_VIEW_COLS / 2);
   const radiusY = Math.floor(PLACE_VIEW_ROWS / 2);
@@ -145,7 +273,7 @@ export function buildPlaceViewport(place, currentId, selectedId = null) {
         col,
         row,
         node,
-        surface: surfaceFor(x, y, node),
+        surface: surfaceMap.get(`${x},${y}`) || "roof",
         current: node?.id === currentId,
         selected: node?.id === selectedId,
         backgroundX: `${x / (PLACE_MAP_COLS - 1) * 100}%`,
@@ -156,10 +284,10 @@ export function buildPlaceViewport(place, currentId, selectedId = null) {
 
   const route = selectedId ? findPlaceRoute(place, currentId, selectedId) : null;
   const routeSet = new Set(route || []);
-  const routePoints = (route || []).map((id) => {
-    const point = layout[id];
+  const routeCells = routeGridCells(route, geometry);
+  const routeCellKeys = routeCells.map((point) => `${point.x},${point.y}`);
+  const routePoints = routeCells.map((point) => {
     return {
-      id,
       x: (point.x - startX) * 100 + 50,
       y: (point.y - startY) * 100 + 50,
     };
@@ -177,6 +305,7 @@ export function buildPlaceViewport(place, currentId, selectedId = null) {
     selectedVisible: !selectedId || visibleIds.has(selectedId),
     route,
     routeSet,
+    routeCellKeys,
     routePoints,
     directIds: new Set(place?.nodes?.[currentId]?.exits || []),
     landmarks: Object.values(place?.nodes || {}).sort((a, b) =>
