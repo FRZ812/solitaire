@@ -118,6 +118,30 @@
 .rpg-world-stage.is-night .rpg-world-art { filter: saturate(.72) brightness(.52) hue-rotate(12deg); }
 .rpg-world-stage.is-night .rpg-world-wash { background: radial-gradient(circle at 70% 13%, rgba(161,196,255,.22), transparent 20%), linear-gradient(180deg, rgba(5,15,51,.28), rgba(2,10,32,.7)); }
 
+/* Godot owns the geography, picking, route, player marker, and fog. The React
+   layer above it is intentionally limited to HUD and command controls. */
+.godot-map-frame { position: absolute; z-index: 0; inset: 56px 16px 72px; overflow: hidden; background: radial-gradient(circle at 50% 42%, #183f62, #06152f 76%); }
+.godot-map-frame::after { content: ""; position: absolute; z-index: 3; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 2px rgba(235,194,91,.2), inset 0 0 75px rgba(1,8,24,.34); }
+.godot-map-frame iframe { width: 100%; height: 100%; display: block; border: 0; background: #06152f; opacity: 0; transition: opacity 180ms ease-out; }
+.godot-map-frame.is-ready iframe { opacity: 1; }
+.godot-map-frame iframe:focus-visible { outline: 3px solid #ffe07a; outline-offset: -5px; }
+.godot-map-loading { position: absolute; z-index: 2; inset: 0; display: grid; place-content: center; justify-items: center; gap: 5px; color: #fff0b6; text-align: center; background: radial-gradient(circle at 50% 44%, rgba(32,91,116,.66), rgba(4,15,39,.96) 72%); pointer-events: none; }
+.godot-map-loading span { width: 42px; height: 42px; display: grid; place-items: center; color: #11203d; border: 2px solid #fff0a7; transform: rotate(45deg); background: linear-gradient(145deg, #ffe276, #cb8936); box-shadow: 0 0 28px rgba(255,208,92,.28); animation: godot-map-pulse 1.2s ease-in-out infinite alternate; }
+.godot-map-loading b { margin-top: 10px; font-size: 13px; letter-spacing: .04em; }
+.godot-map-loading small { max-width: 290px; color: rgba(227,239,230,.64); font: 500 11px/1.45 'Alegreya', Georgia, serif; }
+.godot-map-loading.is-error { padding: 16px; pointer-events: auto; }
+.godot-map-loading.is-error span { color: #fff0c7; background: linear-gradient(145deg, #d96862, #793044); }
+.godot-map-loading button { margin-top: 8px; padding: 7px 12px; color: #fff2c6; border: 1px solid #edbd58; border-radius: 3px; background: #12366b; cursor: pointer; }
+.godot-map-loading button:hover { background: #1e4c88; }
+.godot-map-accessibility { position: absolute; z-index: 25; left: -10000px; top: 8px; width: min(310px, calc(100% - 16px)); max-height: calc(100% - 16px); padding: 8px; overflow: auto; display: grid; gap: 5px; color: #fff1bd; border: 2px solid #e5b44d; border-radius: 3px; background: rgba(5,22,56,.98); box-shadow: 4px 5px 0 rgba(2,8,25,.7); }
+.godot-map-accessibility:focus-within { left: 8px; }
+.godot-map-accessibility > span { padding: 2px 3px 5px; color: #85d9d2; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.godot-map-accessibility button { padding: 7px 8px; color: #fff3cc; text-align: left; border: 1px solid rgba(225,181,81,.42); background: #102f65; cursor: pointer; }
+.godot-map-accessibility button:hover,
+.godot-map-accessibility button:focus-visible,
+.godot-map-accessibility button[aria-pressed="true"] { outline: 2px solid #ffe17a; outline-offset: -2px; background: #1d4b87; }
+@keyframes godot-map-pulse { to { transform: rotate(45deg) scale(1.1); filter: brightness(1.15); } }
+
 .rpg-quickbar { position: absolute; z-index: 20; top: 12px; left: 12px; display: flex; gap: 7px; }
 .rpg-quickbar button {
   min-height: 34px;
@@ -228,11 +252,17 @@
 
 .rpg-dpad { position: absolute; z-index: 20; left: 14px; bottom: 11px; width: 92px; height: 60px; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); opacity: .88; }
 .rpg-dpad button { padding: 0; display: grid; place-items: center; color: rgba(255,247,214,.9); border: 1px solid rgba(241,195,85,.52); background: rgba(7,27,68,.88); box-shadow: inset 0 0 0 1px rgba(4,12,33,.8); font-size: 8px; cursor: pointer; }
-.rpg-dpad .is-up { grid-column: 2; grid-row: 1; }
-.rpg-dpad .is-left { grid-column: 1; grid-row: 2; }
+.rpg-dpad .is-nw { grid-column: 1; grid-row: 1; }
+.rpg-dpad .is-ne { grid-column: 3; grid-row: 1; }
+.rpg-dpad .is-west { grid-column: 1; grid-row: 2; }
 .rpg-dpad .is-center { grid-column: 2; grid-row: 2; color: #f4c95f; }
-.rpg-dpad .is-right { grid-column: 3; grid-row: 2; }
-.rpg-dpad .is-down { grid-column: 2; grid-row: 3; }
+.rpg-dpad .is-east { grid-column: 3; grid-row: 2; }
+.rpg-dpad .is-sw { grid-column: 1; grid-row: 3; }
+.rpg-dpad .is-se { grid-column: 3; grid-row: 3; }
+.place-dpad .is-up { grid-column: 2; grid-row: 1; }
+.place-dpad .is-left { grid-column: 1; grid-row: 2; }
+.place-dpad .is-right { grid-column: 3; grid-row: 2; }
+.place-dpad .is-down { grid-column: 2; grid-row: 3; }
 .rpg-dpad button:hover { background: rgba(30,78,139,.95); }
 
 .rpg-wild-encounter { position: absolute; z-index: 20; right: 13px; bottom: 11px; height: 56px; min-width: 186px; padding: 5px 10px 5px 3px; overflow: hidden; display: grid; grid-template-columns: 52px 1fr 30px; align-items: center; gap: 4px; text-align: left; color: #fff5d0; border: 2px solid #efab54; border-radius: 5px; background: linear-gradient(180deg, rgba(111,42,47,.95), rgba(55,18,38,.97)); box-shadow: inset 0 0 0 2px #220d24, 3px 3px 0 rgba(3,10,28,.74); cursor: pointer; }
@@ -475,6 +505,7 @@ button.place-map-tile { appearance: none; font: inherit; cursor: pointer; }
   .rpg-quickbar button span { display: none; }
   .rpg-map-grid,
   .rpg-route-overlay { inset-inline: 4px; width: calc(100% - 8px); }
+  .godot-map-frame { inset-inline: 4px; }
   .rpg-poi > small { display: none; }
   .rpg-poi > b { width: 23px; height: 23px; font-size: 11px; }
   .place-poi-token > small { display: none; }
@@ -496,6 +527,7 @@ button.place-map-tile { appearance: none; font: inherit; cursor: pointer; }
   .rpg-command-panel { max-height: 47dvh; }
   .rpg-map-grid,
   .rpg-route-overlay { inset-block: 43px 58px; height: calc(100% - 101px); }
+  .godot-map-frame { inset-block: 43px 58px; }
   .rpg-command-scroll { padding-top: 9px; }
   .rpg-trail-choices button { min-height: 52px; }
 }

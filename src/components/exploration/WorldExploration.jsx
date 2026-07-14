@@ -20,15 +20,14 @@ import { formatDate, formatTime } from "../../engine/time.js";
 import { coinsToCopper, formatCopper } from "../../engine/economy.js";
 import { poiPlaceName } from "../../engine/location.js";
 import {
-  RPG_VIEW_COLS,
-  RPG_VIEW_ROWS,
   TERRAIN_INK,
   buildExplorationModel,
   directionLabel,
   directionShort,
   planAtlasJourney,
 } from "./atlasModel.js";
-import overworldArt from "../../assets/generated/rpg-overworld-v1.webp";
+import { GodotMapFrame } from "./GodotMapFrame.jsx";
+import { buildWorldGodotScene } from "./godotSceneModel.js";
 import playerArt from "../../assets/generated/rpg-player-marker-v1.webp";
 import monsterArt from "../../assets/generated/rpg-monster-v1.webp";
 import weaponArt from "../../assets/generated/rpg-weapon-v1.webp";
@@ -68,19 +67,6 @@ function biomeAt(destination) {
   return id === "whitemarch" ? { ...coordinateBiome, id, name: "Whitemarch" } : coordinateBiome;
 }
 
-function terrainClass(terrain) {
-  return String(terrain || "unknown").replace(/[^a-z0-9-]/gi, "-");
-}
-
-function routePoints(journey, origin) {
-  if (!journey) return "";
-  return journey.legPath.map((point) => {
-    const x = (point.x - origin.x + Math.floor(RPG_VIEW_COLS / 2)) * 100 + 50;
-    const y = (point.y - origin.y + Math.floor(RPG_VIEW_ROWS / 2)) * 100 + 50;
-    return `${x},${y}`;
-  }).join(" ");
-}
-
 function RpgHeader({ state, biome, onClose, onWayfinder }) {
   const vitality = state.character.vitality ?? 0;
   const vitalityMax = Math.max(1, state.character.vitalityMax ?? vitality);
@@ -112,58 +98,38 @@ function RpgHeader({ state, biome, onClose, onWayfinder }) {
 function RpgDpad({ onStep, onClear }) {
   return (
     <div className="rpg-dpad" aria-label="Map cursor controls">
-      <button className="is-up" onClick={() => onStep(0, -1)} aria-label="Move cursor north">▲</button>
-      <button className="is-left" onClick={() => onStep(-1, 0)} aria-label="Move cursor west">◀</button>
+      <button className="is-nw" onClick={() => onStep(0, -1)} aria-label="Move cursor northwest">↖</button>
+      <button className="is-ne" onClick={() => onStep(1, -1)} aria-label="Move cursor northeast">↗</button>
+      <button className="is-west" onClick={() => onStep(-1, 0)} aria-label="Move cursor west">◀</button>
       <button className="is-center" onClick={onClear} aria-label="Center on party">◆</button>
-      <button className="is-right" onClick={() => onStep(1, 0)} aria-label="Move cursor east">▶</button>
-      <button className="is-down" onClick={() => onStep(0, 1)} aria-label="Move cursor south">▼</button>
+      <button className="is-east" onClick={() => onStep(1, 0)} aria-label="Move cursor east">▶</button>
+      <button className="is-sw" onClick={() => onStep(-1, 1)} aria-label="Move cursor southwest">↙</button>
+      <button className="is-se" onClick={() => onStep(0, 1)} aria-label="Move cursor southeast">↘</button>
     </div>
   );
 }
 
 function WorldGrid({ model, selection, journey, onPick, onStep, onClear, onJournal, onWayfinder, onSeekCombat, questCount, loading, night }) {
-  const routeKeys = new Set((journey?.legPath || []).map((point) => `${point.x},${point.y}`));
+  const godotScene = useMemo(() => buildWorldGodotScene({ model, selection, journey, night }), [model, selection, journey, night]);
+  const accessibleCells = useMemo(() => model.viewport
+    .filter((cell) => cell.seen && cell.passable && !cell.current)
+    .map((cell) => ({
+      key: cell.key,
+      label: `${nameForDestination(cell, model.origin)}, ${directionLabel(model.origin, cell).replace("-", " ")}${cell.quest ? `, quest: ${cell.quest.title}` : ""}`,
+    })), [model]);
+
+  function selectGodotCell(key) {
+    const cell = model.viewport.find((candidate) => candidate.key === key);
+    if (cell?.seen && cell.passable && !cell.current) onPick(cell);
+  }
+
   return (
-    <main className={`rpg-world-stage ${night ? "is-night" : ""}`} style={{ "--rpg-overworld": `url(${overworldArt})` }}>
-      <div className="rpg-world-art" />
-      <div className="rpg-world-wash" />
+    <main className={`rpg-world-stage godot-world-stage ${night ? "is-night" : ""}`}>
+      <GodotMapFrame scene={godotScene} onSelect={selectGodotCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
       <div className="rpg-quickbar">
         <button onClick={onWayfinder}><Icon name="map" size={15} color="#fff4c7" /><span>Atlas</span></button>
         <button onClick={onJournal}><Icon name="book" size={15} color="#fff4c7" /><span>Quests</span>{questCount > 0 && <b>{questCount}</b>}</button>
       </div>
-
-      <div className="rpg-map-grid" style={{ "--map-cols": RPG_VIEW_COLS, "--map-rows": RPG_VIEW_ROWS }}>
-        {model.viewport.map((cell) => {
-          const selected = selection?.key === cell.key;
-          const named = cell.seen && cell.tile?.poi?.type !== "hidden" && poiPlaceName(cell.tile?.poi);
-          const visual = terrainVisual(cell.tile?.terrain);
-          return (
-            <button
-              key={cell.key}
-              className={`rpg-map-tile terrain-${terrainClass(cell.tile?.terrain)} ${cell.seen ? "is-seen" : "is-fogged"} ${cell.visited ? "is-visited" : ""} ${cell.passable ? "is-passable" : ""} ${routeKeys.has(cell.key) ? "is-route" : ""} ${selected ? "is-selected" : ""} ${cell.current ? "is-current" : ""}`}
-              style={{ gridColumn: cell.col + 1, gridRow: cell.row + 1, "--terrain-color": visual.tint }}
-              onClick={() => cell.seen && cell.passable && !cell.current && onPick(cell)}
-              disabled={!cell.seen || !cell.passable || cell.current}
-              aria-label={cell.seen ? `${named || TERRAINS[cell.tile?.terrain]?.label || "Unknown terrain"}${cell.current ? ", your location" : ""}` : "Uncharted"}
-            >
-              <span className="rpg-tile-pixels" />
-              {cell.seen && cell.passable && <span className="rpg-step-dot" />}
-              {named && !cell.current && <span className="rpg-poi"><b>{glyphFor(cell.tile)}</b><small>{named}</small></span>}
-              {cell.quest && <span className="rpg-quest-star" title={cell.quest.title}>!</span>}
-              {selected && <span className="rpg-cursor"><i /><i /><i /><i /></span>}
-              {cell.current && (
-                <span className="rpg-player-token">
-                  <span className="rpg-player-shadow" />
-                  <img src={playerArt} alt="" draggable="false" />
-                  <b>YOU</b>
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {journey && <svg className="rpg-route-overlay" viewBox={`0 0 ${RPG_VIEW_COLS * 100} ${RPG_VIEW_ROWS * 100}`} preserveAspectRatio="none" aria-hidden="true"><polyline points={routePoints(journey, model.origin)} className="rpg-route-shadow" /><polyline points={routePoints(journey, model.origin)} className="rpg-route-line" /></svg>}
 
       {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 

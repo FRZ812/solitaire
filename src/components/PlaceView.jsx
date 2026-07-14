@@ -7,16 +7,13 @@ import { biomeVisual, terrainVisual } from "../data/visual-assets.js";
 import { coinsToCopper, formatCopper } from "../engine/economy.js";
 import { formatDate, formatTime } from "../engine/time.js";
 import {
-  PLACE_MAP_COLS,
-  PLACE_MAP_ROWS,
-  PLACE_VIEW_COLS,
-  PLACE_VIEW_ROWS,
   buildPlaceViewport,
   cityDirection,
   nextPlaceNode,
 } from "./exploration/placeModel.js";
+import { GodotMapFrame } from "./exploration/GodotMapFrame.jsx";
+import { buildCityGodotScene } from "./exploration/godotSceneModel.js";
 import cityArt from "../assets/generated/rpg-whitemarch-v1.webp";
-import playerArt from "../assets/generated/rpg-player-marker-v1.webp";
 import rewardFrame from "../assets/generated/rpg-reward-frame-v1.webp";
 import "./exploration/exploration.css";
 
@@ -84,56 +81,25 @@ function PlaceDpad({ onStep, onCenter }) {
   );
 }
 
-function routePolyline(points) {
-  return points.map((point) => `${point.x},${point.y}`).join(" ");
-}
-
 function CityGrid({ model, current, selected, onPick, onStep, onCenter, onGuide, night }) {
   const selectedDirection = selected && cityDirection(model.currentPosition, model.selectedPosition);
+  const godotScene = useMemo(() => buildCityGodotScene({ model, current, selected, districtColors: DISTRICT_COLORS, night }), [model, current, selected, night]);
+  const accessibleCells = useMemo(() => model.viewport
+    .filter((cell) => cell.node && cell.node.id !== current.id)
+    .map((cell) => ({ key: cell.key, label: `${cell.node.name}, ${cell.node.district}, ${displayType(cell.node.type)}` })), [model, current.id]);
+
+  function selectGodotCell(key) {
+    const node = model.viewport.find((cell) => cell.key === key)?.node;
+    if (node && node.id !== current.id) onPick(node);
+  }
+
   return (
-    <main className={`rpg-world-stage place-world-stage ${night ? "is-night" : ""}`} style={{
-      "--rpg-city-art": `url(${cityArt})`,
-      "--city-map-cols": PLACE_MAP_COLS,
-      "--city-map-rows": PLACE_MAP_ROWS,
-    }}>
-      <div className="place-world-art" />
-      <div className="rpg-world-wash place-world-wash" />
+    <main className={`rpg-world-stage place-world-stage godot-city-stage ${night ? "is-night" : ""}`}>
+      <GodotMapFrame scene={godotScene} onSelect={selectGodotCell} label="Interactive Whitemarch city map" choices={accessibleCells} selectedKey={model.selectedPosition ? `${model.selectedPosition.x},${model.selectedPosition.y}` : ""} />
       <div className="rpg-quickbar place-quickbar">
         <button onClick={onGuide}><Icon name="map" size={15} color="#fff4c7" /><span>Guide</span></button>
         <button onClick={onCenter}><span className="place-center-glyph">◆</span><span>Center</span></button>
       </div>
-
-      <div className="rpg-map-grid place-map-grid" style={{ "--map-cols": PLACE_VIEW_COLS, "--map-rows": PLACE_VIEW_ROWS }}>
-        {model.viewport.map((cell) => {
-          const mapNode = cell.node;
-          const direct = !!mapNode && model.directIds.has(mapNode.id);
-          const onRoute = !!mapNode && model.routeSet.has(mapNode.id);
-          const districtColor = DISTRICT_COLORS[mapNode?.district] || "#f0c45e";
-          const className = `place-map-tile surface-${cell.surface} ${mapNode ? "has-landmark" : ""} ${cell.current ? "is-current" : ""} ${cell.selected ? "is-selected" : ""} ${direct ? "is-direct" : ""} ${onRoute ? "is-route" : ""}`;
-          const style = {
-            gridColumn: cell.col + 1,
-            gridRow: cell.row + 1,
-            "--city-bg-x": cell.backgroundX,
-            "--city-bg-y": cell.backgroundY,
-            "--district-color": districtColor,
-          };
-          const content = (
-            <>
-              <span className="place-tile-shade" />
-              {mapNode && !cell.current && <span className="place-poi-token"><b>{nodeGlyph(mapNode)}</b><small>{mapNode.name}</small>{mapNode.service && <i>+</i>}</span>}
-              {cell.selected && <span className="rpg-cursor"><i /><i /><i /><i /></span>}
-              {cell.current && <span className="rpg-player-token place-player-token"><span className="rpg-player-shadow" /><img src={playerArt} alt="" draggable="false" /><b>YOU</b></span>}
-            </>
-          );
-          return mapNode ? (
-            <button key={cell.key} className={className} style={style} onClick={() => cell.current ? onCenter() : onPick(mapNode)} aria-label={`${mapNode.name}, ${mapNode.district}${direct ? ", adjacent" : ""}`}>{content}</button>
-          ) : (
-            <div key={cell.key} className={className} style={style} aria-hidden="true">{content}</div>
-          );
-        })}
-      </div>
-
-      {model.routePoints.length > 1 && <svg className="rpg-route-overlay place-route-overlay" viewBox={`0 0 ${PLACE_VIEW_COLS * 100} ${PLACE_VIEW_ROWS * 100}`} preserveAspectRatio="none" aria-hidden="true"><polyline points={routePolyline(model.routePoints)} className="rpg-route-shadow" /><polyline points={routePolyline(model.routePoints)} className="rpg-route-line" /></svg>}
       {selected && !model.selectedVisible && <div className="rpg-offscreen-target place-offscreen-target"><span>{nodeGlyph(selected)}</span><b>{selected.name}</b><small>{selectedDirection?.replace("-", " ")}</small></div>}
 
       <PlaceDpad onStep={onStep} onCenter={onCenter} />
