@@ -1,0 +1,61 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/map_surface.gd" id="2_surface"]
+[ext_resource type="Shader" path="res://shaders/fog_of_war.gdshader" id="3_fog"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_fog"]
+shader = ExtResource("3_fog")
+
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="MapSurface" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_default_cursor_shape = 2
+script = ExtResource("2_surface")
+
+[node name="Background" type="ColorRect" parent="MapSurface"]
+z_index = -100
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.018, 0.047, 0.102, 1)
+
+[node name="TerrainLayer" type="Node2D" parent="MapSurface"]
+z_index = -20
+
+[node name="RouteLayer" type="Node2D" parent="MapSurface"]
+z_index = -10
+
+[node name="MarkerLayer" type="Node2D" parent="MapSurface"]
+
+[node name="Fog" type="ColorRect" parent="MapSurface"]
+z_index = 20
+material = SubResource("ShaderMaterial_fog")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 1, 1, 1)
+
+[node name="PlayerLayer" type="Node2D" parent="MapSurface"]
+z_index = 30

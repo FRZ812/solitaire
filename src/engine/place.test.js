@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  getPlace, enterPlace, leavePlace, moveToNode, currentNode, currentExits,
+  getPlace, enterPlace, leavePlace, moveToNode, moveAlongPlaceRoute, currentNode, currentExits,
   inPlace, standingNodeTile, placeAtTile, nodeTile,
 } from "./place.js";
 import { marchRoute } from "./world.js";
@@ -46,6 +46,16 @@ describe("place graph (scale 2)", () => {
     expect(t.poi.service).toBe("market");      // wires data/town.js BUILDINGS.market
     expect(t.poi.parentName).toBe("Whitemarch");
     expect(nodeTile(getPlace("whitemarch"), getPlace("whitemarch").nodes["smith-row"]).poi.service).toBe("blacksmith");
+  });
+
+  it("walks a validated multi-node city route atomically", () => {
+    const base = enterPlace({ world: { currentTile: { x: 0, y: 0 } } }, "whitemarch", "grain-square");
+    const walked = moveAlongPlaceRoute(base, ["grand-concourse", "guild-court", "inner-gate", "muster-court", "iron-palace"]);
+    expect(currentNode(walked).id).toBe("iron-palace");
+
+    const rejected = moveAlongPlaceRoute(base, ["grand-concourse", "iron-palace"]);
+    expect(rejected).toBe(base);
+    expect(currentNode(rejected).id).toBe("grain-square");
   });
 });
 

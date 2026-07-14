@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "mode": "world",
+  "origin": { "x": 0, "y": 0 },
+  "current_key": "0,0",
+  "selected_key": "2,-1",
+  "night": false,
+  "route": ["0,0", "1,0", "2,-1"],
+  "cells": [
+    { "key": "-2,-2", "x": -2, "y": -2, "terrain": "mountains", "seen": false, "visited": false, "interactive": false },
+    { "key": "-1,-2", "x": -1, "y": -2, "terrain": "mountains", "seen": false, "visited": false, "interactive": false },
+    { "key": "0,-2", "x": 0, "y": -2, "terrain": "forest", "seen": true, "visited": false, "interactive": true },
+    { "key": "1,-2", "x": 1, "y": -2, "terrain": "forest", "seen": true, "visited": false, "interactive": true },
+    { "key": "2,-2", "x": 2, "y": -2, "terrain": "impassable", "seen": false, "visited": false, "interactive": false },
+
+    { "key": "-2,-1", "x": -2, "y": -1, "terrain": "hills", "seen": false, "visited": false, "interactive": false },
+    { "key": "-1,-1", "x": -1, "y": -1, "terrain": "forest", "seen": true, "visited": false, "interactive": true },
+    { "key": "0,-1", "x": 0, "y": -1, "terrain": "plains", "seen": true, "visited": true, "interactive": true },
+    { "key": "1,-1", "x": 1, "y": -1, "terrain": "road", "seen": true, "visited": true, "interactive": true },
+    { "key": "2,-1", "x": 2, "y": -1, "terrain": "settlement", "seen": true, "visited": false, "interactive": true, "poi_name": "Whitemarch", "marker_color": "#efbd5c" },
+
+    { "key": "-2,0", "x": -2, "y": 0, "terrain": "water", "seen": false, "visited": false, "interactive": false },
+    { "key": "-1,0", "x": -1, "y": 0, "terrain": "plains", "seen": true, "visited": true, "interactive": true },
+    { "key": "0,0", "x": 0, "y": 0, "terrain": "road", "seen": true, "visited": true, "interactive": false },
+    { "key": "1,0", "x": 1, "y": 0, "terrain": "road", "seen": true, "visited": true, "interactive": true },
+    { "key": "2,0", "x": 2, "y": 0, "terrain": "plains", "seen": true, "visited": false, "interactive": true },
+
+    { "key": "-2,1", "x": -2, "y": 1, "terrain": "water", "seen": false, "visited": false, "interactive": false },
+    { "key": "-1,1", "x": -1, "y": 1, "terrain": "marsh", "seen": true, "visited": false, "interactive": true },
+    { "key": "0,1", "x": 0, "y": 1, "terrain": "plains", "seen": true, "visited": true, "interactive": true },
+    { "key": "1,1", "x": 1, "y": 1, "terrain": "hills", "seen": true, "visited": false, "interactive": true },
+    { "key": "2,1", "x": 2, "y": 1, "terrain": "forest", "seen": false, "visited": false, "interactive": false },
+
+    { "key": "-2,2", "x": -2, "y": 2, "terrain": "impassable", "seen": false, "visited": false, "interactive": false },
+    { "key": "-1,2", "x": -1, "y": 2, "terrain": "marsh", "seen": false, "visited": false, "interactive": false },
+    { "key": "0,2", "x": 0, "y": 2, "terrain": "hills", "seen": true, "visited": false, "interactive": true },
+    { "key": "1,2", "x": 1, "y": 2, "terrain": "forest", "seen": false, "visited": false, "interactive": false },
+    { "key": "2,2", "x": 2, "y": 2, "terrain": "impassable", "seen": false, "visited": false, "interactive": false }
+  ]
+}

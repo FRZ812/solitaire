@@ -8,39 +8,34 @@ import {
   hexDistance,
   isPassable,
   isSeen,
+  isTeleportAnchor,
   isVisited,
 } from "../../engine/world.js";
 
-export const ATLAS_SIZE = 2200;
-export const ATLAS_CENTER = ATLAS_SIZE / 2;
-// Compact cartographic projection: a ten-step road fits in the default mobile
-// viewport, so the player sees meaningful destinations before needing to pan.
-export const ATLAS_STEP_X = 28;
-export const ATLAS_STEP_Y = 25;
-
 export const TERRAIN_INK = {
-  road: "#b98a52",
-  street: "#b98a52",
-  settlement: "#96734f",
-  indoor: "#66513e",
-  wall: "#77756f",
-  plains: "#536a48",
-  hills: "#6a6043",
-  forest: "#29493b",
-  marsh: "#365552",
-  mountains: "#5c514c",
-  water: "#31586b",
-  impassable: "#182321",
+  road: "#d0a765",
+  street: "#c4b69a",
+  settlement: "#d29d65",
+  indoor: "#8c6849",
+  wall: "#96938c",
+  plains: "#83a661",
+  hills: "#af8555",
+  forest: "#3f8059",
+  marsh: "#48a098",
+  mountains: "#8296aa",
+  water: "#4b9bc2",
+  impassable: "#334252",
 };
 
-export function atlasPoint(coord, origin) {
-  const dx = coord.x - origin.x;
-  const dy = coord.y - origin.y;
-  return {
-    x: ATLAS_CENTER + ATLAS_STEP_X * (dx + dy / 2),
-    y: ATLAS_CENTER + ATLAS_STEP_Y * dy,
-  };
-}
+const LANDMARK_TYPES = new Set([
+  "city", "town", "village", "settlement", "fortress", "gate", "palace",
+  "temple", "shrine", "ruin", "landmark", "camp", "market", "smithy", "healer",
+]);
+const COMPASS_ORDER = ["north-west", "north", "north-east", "east", "south-east", "south", "south-west", "west"];
+const TRAIL_REACH = 4;
+
+export const RPG_VIEW_COLS = 11;
+export const RPG_VIEW_ROWS = 9;
 
 export function coordKey(coord) {
   return `${coord.x},${coord.y}`;
@@ -51,37 +46,134 @@ export function parseCoord(key) {
   return { x, y };
 }
 
-function stableNoise(x, y, salt = 0) {
-  let h = Math.imul((x | 0) ^ salt, 0x45d9f3b) ^ Math.imul((y | 0) - salt, 0x27d4eb2d);
-  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+export function directionLabel(from, to) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const angle = Math.atan2(-dy, dx + dy / 2) * 180 / Math.PI;
+  if (angle >= -22.5 && angle < 22.5) return "east";
+  if (angle >= 22.5 && angle < 67.5) return "north-east";
+  if (angle >= 67.5 && angle < 112.5) return "north";
+  if (angle >= 112.5 && angle < 157.5) return "north-west";
+  if (angle >= 157.5 || angle < -157.5) return "west";
+  if (angle >= -157.5 && angle < -112.5) return "south-west";
+  if (angle >= -112.5 && angle < -67.5) return "south";
+  return "south-east";
 }
 
-export function terrainMark(coord, terrain) {
-  const n = stableNoise(coord.x, coord.y, 71);
-  return {
-    rotation: Math.round((n - 0.5) * 32),
-    scale: 0.85 + stableNoise(coord.x, coord.y, 13) * 0.35,
-    offsetX: (stableNoise(coord.x, coord.y, 29) - 0.5) * 22,
-    offsetY: (stableNoise(coord.x, coord.y, 43) - 0.5) * 18,
-    color: TERRAIN_INK[terrain] || "#45534a",
-  };
+export function directionShort(direction) {
+  return direction.split("-").map((word) => word[0]).join("").toUpperCase();
 }
 
-// The atlas is deliberately built from the hydrated authored graph rather than
-// the fallback seed. Supabase maps, old saves, and editor changes therefore all
-// appear without a second source of truth.
-export function buildAtlasModel(state) {
+// Trailheads are staged like choices on the horizon rather than plotted on a
+// coordinate lattice. The shallow arc keeps all six world directions legible
+// on a phone while leaving the central landscape visible.
+export function arrangeTrailheads(choices) {
+  const sorted = [...choices].sort((a, b) => {
+    const ai = COMPASS_ORDER.indexOf(a.direction);
+    const bi = COMPASS_ORDER.indexOf(b.direction);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
+  const count = sorted.length;
+  return sorted.map((choice, index) => {
+    const x = count === 1 ? 50 : 9 + index * (82 / (count - 1));
+    const edge = Math.abs(x - 50) / 41;
+    const y = 27 + edge * 24;
+    return { ...choice, scene: { x, y } };
+  });
+}
+
+function questAtKey(quests, key) {
+  return quests.find((quest) => quest.loc && coordKey(quest.loc) === key) || null;
+}
+
+// The simulation remains an axial hex world, while the exploration screen
+// presents a compact, handheld-RPG camera. Each visible world cell is assigned
+// a stable square in that camera so the player can read terrain, routes, and
+// landmarks at a glance without exposing the underlying map-editor geometry.
+export function buildRpgViewport(state, origin = state.world.currentTile, activeQuests = null) {
+  const quests = activeQuests || (state.world.quests || []).filter((quest) => quest.status === "active");
+  const radiusX = Math.floor(RPG_VIEW_COLS / 2);
+  const radiusY = Math.floor(RPG_VIEW_ROWS / 2);
+  const cells = [];
+  for (let row = 0; row < RPG_VIEW_ROWS; row++) {
+    for (let col = 0; col < RPG_VIEW_COLS; col++) {
+      const x = origin.x + col - radiusX;
+      const y = origin.y + row - radiusY;
+      const key = `${x},${y}`;
+      const tile = getTile(state, x, y);
+      const seen = isSeen(state, x, y);
+      cells.push({
+        key, x, y, col, row, tile,
+        seen,
+        visited: isVisited(state, x, y),
+        passable: isPassable(tile),
+        quest: questAtKey(quests, key),
+        current: x === origin.x && y === origin.y,
+        screen: { x: col * 100 + 50, y: row * 100 + 50 },
+      });
+    }
+  }
+  return cells;
+}
+
+function traceTrail(state, origin, direction, questKeys) {
+  const path = [{ ...origin }];
+  let cursor = { ...origin };
+  let cursorTile = getTile(state, cursor.x, cursor.y);
+  for (let step = 0; step < TRAIL_REACH; step++) {
+    const next = { x: cursor.x + direction.x, y: cursor.y + direction.y };
+    const nextTile = getTile(state, next.x, next.y);
+    if (!isPassable(nextTile) || !isSeen(state, next.x, next.y)) break;
+    if (!edgeAllowed(cursorTile, cursor.x, cursor.y, nextTile, next.x, next.y)) break;
+    path.push(next);
+    cursor = next;
+    cursorTile = nextTile;
+    const key = coordKey(next);
+    if (questKeys.has(key) || (nextTile.poi?.name && nextTile.poi.type !== "hidden")) break;
+  }
+  return path;
+}
+
+// Build a decision model rather than a render model. World coordinates remain
+// the simulation's source of truth, but the player sees trailheads, objectives,
+// and remembered landmarks instead of every cell in the axial grid.
+export function buildExplorationModel(state) {
   const origin = state.world.currentTile;
+  const currentTile = getTile(state, origin.x, origin.y);
+  const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
+  const questKeys = new Set(activeQuests.filter((quest) => quest.loc).map((quest) => coordKey(quest.loc)));
+  const viewport = buildRpgViewport(state, origin, activeQuests);
+
+  const rawChoices = [];
+  for (const direction of HEX_DIRECTIONS) {
+    const path = traceTrail(state, origin, direction, questKeys);
+    if (path.length < 2) continue;
+    const end = path[path.length - 1];
+    const tile = getTile(state, end.x, end.y);
+    const key = coordKey(end);
+    rawChoices.push({
+      key,
+      ...end,
+      tile,
+      path,
+      steps: path.length - 1,
+      direction: directionLabel(origin, end),
+      quest: questAtKey(activeQuests, key),
+      seen: true,
+      visited: isVisited(state, end.x, end.y),
+    });
+  }
+  const choices = arrangeTrailheads(rawChoices);
+
   const keys = new Set(Object.keys(HANDCRAFTED));
   for (const key of Object.keys(state.world.tiles || {})) keys.add(key);
-  for (const quest of state.world.quests || []) {
-    if (quest.status === "active" && quest.loc) keys.add(coordKey(quest.loc));
-  }
+  for (const key of questKeys) keys.add(key);
+  for (const choice of choices) keys.add(choice.key);
+  for (const cell of viewport) keys.add(cell.key);
   keys.add(coordKey(origin));
 
-  const cells = [];
   const byKey = new Map();
+  const landmarks = [];
   for (const key of keys) {
     const coord = parseCoord(key);
     if (!Number.isFinite(coord.x) || !Number.isFinite(coord.y)) continue;
@@ -89,71 +181,41 @@ export function buildAtlasModel(state) {
     if (!isPassable(tile)) continue;
     const seen = isSeen(state, coord.x, coord.y);
     const visited = isVisited(state, coord.x, coord.y);
-    const cell = {
-      key,
-      ...coord,
-      tile,
-      point: atlasPoint(coord, origin),
-      seen,
-      visited,
-      named: !!tile.poi?.name && tile.poi.type !== "hidden" && (seen || visited),
-    };
-    cells.push(cell);
+    const quest = questAtKey(activeQuests, key);
+    const distance = hexDistance(origin, coord);
+    const name = tile.poi?.name;
+    const cell = { key, ...coord, tile, seen, visited, quest, distance };
     byKey.set(key, cell);
-  }
 
-  // A sparse watercolor field gives the roads geographic context without
-  // turning the invisible axial lattice back into visible cells.
-  const terrain = [];
-  const radius = 15;
-  for (let dx = -radius; dx <= radius; dx += 2) {
-    for (let dy = -radius; dy <= radius; dy += 2) {
-      const coord = { x: origin.x + dx, y: origin.y + dy };
-      if (hexDistance(origin, coord) > radius) continue;
-      const tile = getTile(state, coord.x, coord.y);
-      terrain.push({
-        key: `terrain-${coord.x},${coord.y}`,
-        ...coord,
-        tile,
-        point: atlasPoint(coord, origin),
-        seen: isSeen(state, coord.x, coord.y),
-        mark: terrainMark(coord, tile.terrain),
-      });
+    const knownName = name && tile.poi?.type !== "hidden" && (seen || visited || quest);
+    const isLandmark = knownName && (LANDMARK_TYPES.has(tile.poi?.type) || quest);
+    const anchor = (seen || visited) && isTeleportAnchor(state, coord.x, coord.y);
+    if ((isLandmark || quest || anchor) && distance > 0) {
+      landmarks.push({ ...cell, name: name || quest?.title || null, anchor });
     }
   }
 
-  const edges = [];
-  // Only the first half of the direction list is needed; the other half would
-  // draw each trail twice.
-  for (const cell of cells) {
-    for (const d of HEX_DIRECTIONS.slice(0, 3)) {
-      const next = byKey.get(`${cell.x + d.x},${cell.y + d.y}`);
-      if (!next) continue;
-      if (!edgeAllowed(cell.tile, cell.x, cell.y, next.tile, next.x, next.y)) continue;
-      edges.push({
-        key: `${cell.key}|${next.key}`,
-        from: cell,
-        to: next,
-        seen: cell.seen && next.seen,
-        visited: cell.visited && next.visited,
-      });
-    }
+  const choiceByKey = new Map(choices.map((choice) => [choice.key, choice]));
+  for (const choice of choices) byKey.set(choice.key, { ...byKey.get(choice.key), ...choice });
+  const landmarkByKey = new Map();
+  for (const landmark of landmarks) {
+    const existing = landmarkByKey.get(landmark.key);
+    if (!existing || (!existing.quest && landmark.quest)) landmarkByKey.set(landmark.key, landmark);
   }
+  const sortedLandmarks = [...landmarkByKey.values()].sort((a, b) => {
+    if (!!a.quest !== !!b.quest) return a.quest ? -1 : 1;
+    if (!!a.anchor !== !!b.anchor) return a.anchor ? -1 : 1;
+    return a.distance - b.distance || a.name.localeCompare(b.name);
+  }).map((landmark) => ({ ...landmark, direction: directionLabel(origin, landmark), trailhead: choiceByKey.get(landmark.key) || null }));
 
-  const current = byKey.get(coordKey(origin)) || {
-    key: coordKey(origin), ...origin, tile: getTile(state, origin.x, origin.y),
-    point: atlasPoint(origin, origin), seen: true, visited: true,
+  return {
+    origin,
+    current: { key: coordKey(origin), ...origin, tile: currentTile, seen: true, visited: true },
+    choices,
+    viewport,
+    landmarks: sortedLandmarks,
+    byKey,
   };
-
-  const choices = [];
-  for (const d of HEX_DIRECTIONS) {
-    const next = byKey.get(`${origin.x + d.x},${origin.y + d.y}`);
-    if (!next) continue;
-    if (!edgeAllowed(current.tile, origin.x, origin.y, next.tile, next.x, next.y)) continue;
-    choices.push(next);
-  }
-
-  return { origin, cells, byKey, terrain, edges, current, choices };
 }
 
 export function planAtlasJourney(state, destination, maxLeg = 48) {
@@ -183,17 +245,4 @@ export function planAtlasJourney(state, destination, maxLeg = 48) {
       label: TERRAINS[id]?.label || id,
     })),
   };
-}
-
-export function directionLabel(from, to) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const angle = Math.atan2(-dy, dx + dy / 2) * 180 / Math.PI;
-  if (angle >= -22.5 && angle < 22.5) return "east";
-  if (angle >= 22.5 && angle < 67.5) return "north-east";
-  if (angle >= 67.5 && angle < 112.5) return "north";
-  if (angle >= 112.5 || angle < -157.5) return "west";
-  if (angle >= -157.5 && angle < -112.5) return "south-west";
-  if (angle >= -112.5 && angle < -67.5) return "south";
-  return "south-east";
 }
