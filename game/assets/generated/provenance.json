@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-07-14",
+  "project_scope": "clean-room Godot game under game/",
+  "approval": {
+    "approved_ui_family": "ui-*-whitemarch-v1.png",
+    "approved_actor_item_family": "*-oil-anime-v2.png",
+    "superseded_family": "source/*-grounded-v1.png",
+    "superseded_for_ui_use": [
+      "hud-panel-oil-anime-v2",
+      "action-icons-oil-anime-v2"
+    ],
+    "retained_actor_item_assets": [
+      "actors-whitemarch-oil-anime-v2",
+      "items-whitemarch-oil-anime-v2"
+    ],
+    "superseded_assets_must_not_ship": true
+  },
+  "art_direction": {
+    "setting": "Whitemarch and the Whitewend basin",
+    "tone": "light, hopeful high fantasy",
+    "material_reference": "Central and Northwestern Europe, approximately 1400-1475",
+    "rendering": "high-definition oil-brush painterly 2D anime",
+    "grounding_rule": "Characters and objects retain plausible materials, construction, wear, repair, carrying methods, and ordinary use even when a defined fantasy rule applies.",
+    "forbidden_defaults": [
+      "pixel art or low-resolution 8-bit styling",
+      "flat vector or SVG styling",
+      "photorealistic skin or photographic rendering",
+      "glossy 3D-render styling",
+      "generic high-saturation fantasy costume",
+      "arbitrary crystals or ambient magical glow",
+      "generated text, logos, signatures, or watermarks"
+    ]
+  },
+  "generation": {
+    "tool": "image_gen.imagegen",
+    "mode": "built-in generation",
+    "reference_images": "asset-specific; see reference_inputs on generated UI records",
+    "provider_or_model": "managed by the built-in tool; model identifier not exposed",
+    "prompt_record_kind": "canonical production prompt preserving the final accepted intent"
+  },
+  "assets": [
+    {
+      "id": "hud-panel-oil-anime-v2",
+      "status": "superseded_for_ui_use",
+      "superseded_by": "ui-command-surfaces-whitemarch-v1",
+      "tool_output": "exec-58cbc717-9a49-4f97-949d-edc2efa6ff96.png",
+      "source": "res://assets/generated/source/hud-panel-oil-anime-v2.png",
+      "runtime": null,
+      "dimensions": [1254, 1254],
+      "source_pixel_format": "RGB PNG",
+      "runtime_pixel_format": null,
+      "source_sha256": "1b05aee568aa1b19a66a1fce76453f886751fec4631b5bc7143b7144c624c6f7",
+      "runtime_sha256": null,
+      "runtime_note": "Superseded runtime copy removed; provenance source master retained.",
+      "layout": "single square front-facing panel; broad quiet center; preserve at least 18 percent of every edge for nine-slice borders",
+      "prompt": "Create one square high-definition raster UI panel skin for a portrait tactical RPG set in Whitemarch, a hopeful late-medieval high-fantasy river city. Ground the materials in Central and Northwestern Europe circa 1400-1475: a quiet warm vellum field, a black local-stone border picked out with white mortar, a restrained river-blue inner rule, and small muted-brass corner fittings. Render it as hand-painted 2D anime art with visible oil-brush texture, layered color, selective edge detail, and restrained linework. Keep the asset symmetrical and front-facing with a broad empty center and stable corners suitable for nine-slice scaling. No perspective, text, letters, numerals, icons, logos, signatures, watermark, crystals, glow, pixel art, vector finish, photorealism, or 3D-render finish."
+    },
+    {
+      "id": "action-icons-oil-anime-v2",
+      "status": "superseded_for_ui_use",
+      "superseded_by": "ui-action-icons-whitemarch-v1",
+      "tool_output": "exec-bca420a3-5fcb-4c14-849e-ec46deecd266.png",
+      "source": "res://assets/generated/source/action-icons-oil-anime-v2.png",
+      "runtime": null,
+      "dimensions": [1254, 1254],
+      "cell_dimensions": [627, 627],
+      "source_pixel_format": "RGB PNG",
+      "runtime_pixel_format": null,
+      "source_sha256": "4069f508811c6749bd382c05ceb32a4cb6e4b016d7ed2441d2c2575a7ad19cc9",
+      "runtime_sha256": null,
+      "runtime_note": "Superseded runtime copy removed; provenance source master retained.",
+      "layout": {
+        "top_left": "worn leather boot for Move",
+        "top_right": "plain functional arming sword for Attack",
+        "bottom_left": "small painted round shield for Guard",
+        "bottom_right": "wood-and-brass sandglass for End Turn"
+      },
+      "prompt": "Create one square high-definition 2 by 2 atlas of four distinct late-medieval tactical-action icons, each in an equal cell with the same subdued warm field and at least 14 percent clear padding. Top left: a worn practical leather boot for Move. Top right: a plain functional arming sword for Attack. Bottom left: a small painted round shield for Guard. Bottom right: a wood-and-brass sandglass for End Turn. Use credible Central and Northwestern European circa 1400-1475 materials, construction, and wear with no fantasy exaggeration. Render in oil-brush painterly 2D anime style with natural materials, layered painted color, selective dark edge accents, and centered readable silhouettes. No text, letters, numbers, logos, signatures, watermark, magic glow, crystals, pixel art, flat vector styling, photorealism, or 3D-render finish."
+    },
+    {
+      "id": "ui-command-surfaces-whitemarch-v1",
+      "status": "approved_ui",
+      "tool_output": "exec-c17c5af2-03d7-46de-8a45-c651bb9d898d.png",
+      "source": "res://assets/generated/source/ui-command-surfaces-whitemarch-v1.png",
+      "runtime": "res://assets/ui/surfaces/ui-command-surfaces-whitemarch-v1.png",
+      "dimensions": [1254, 1254],
+      "cell_dimensions": [627, 627],
+      "source_pixel_format": "RGB PNG",
+      "runtime_pixel_format": "RGB PNG",
+      "source_bytes": 2341291,
+      "runtime_bytes": 2341291,
+      "source_sha256": "73090c0af720e1aafa4fa354a11c8d63deb3ff8ccf4a7d5a036fc46402b9963d",
+      "runtime_sha256": "73090c0af720e1aafa4fa354a11c8d63deb3ff8ccf4a7d5a036fc46402b9963d",
+      "reference_inputs": [
+        {
+          "image_label": "Image 1",
+          "asset": "docs/rebuild/reference/mobile-combat-ui-generated-v1.png",
+          "role": "style, palette, material, and field-folio UI-language reference; not a source to crop or ship"
+        }
+      ],
+      "layout": {
+        "top_left": "deep slate-blue command dock surface with restrained river-blue ruling and brass fasteners",
+        "top_right": "warm ivory vellum forecast and reading surface with a narrow slate edge",
+        "bottom_left": "quiet limewash action and favorable-state surface with a narrow slate edge",
+        "bottom_right": "deep slate-blue primary commit surface with a restrained muted-brass inner rule"
+      },
+      "slicing_rule": "four equal 627 by 627 quadrants; preserve the quiet center and determine nine-slice margins per runtime control so painted corners never collide",
+      "prompt": "Using Image 1 only as the approved style, palette, material, and field-folio UI-language reference, create one square high-definition 2 by 2 raster atlas of four separate front-facing Whitemarch command surfaces in equal quadrants. Top left: a deep slate-blue command dock surface with restrained river-blue ruling and small muted-brass fasteners. Top right: a warm ivory vellum forecast and reading surface with a narrow slate edge. Bottom left: a quiet pale limewash action and favorable-state surface with a narrow slate edge. Bottom right: a deep slate-blue primary commit surface with a thin restrained muted-brass inner rule. Give every surface broad low-contrast centers suitable for live native text and stable painted corners suitable for nine-slice scaling. Ground all materials in Central and Northwestern Europe circa 1400-1475 while rendering the surfaces in high-definition oil-brush painterly 2D anime style with visible hand-painted texture and cohesive subdued color. Keep each quadrant isolated and symmetrical enough for clean slicing. No baked text, letters, numerals, symbols, crests, icons, data, logos, signatures, watermarks, magical glow, crystals, pixel art, flat vector finish, photorealism, or glossy 3D-render finish."
+    },
+    {
+      "id": "ui-action-icons-whitemarch-v1",
+      "status": "approved_ui",
+      "tool_output": "exec-c515fff0-af4b-4073-893a-b62f23d9c014.png",
+      "source": "res://assets/generated/source/ui-action-icons-whitemarch-v1.png",
+      "runtime": "res://assets/ui/icons/ui-action-icons-whitemarch-v1.png",
+      "dimensions": [1254, 1254],
+      "cell_dimensions": [627, 627],
+      "source_pixel_format": "RGB PNG with a uniform chroma field",
+      "runtime_pixel_format": "RGBA PNG",
+      "source_bytes": 1620166,
+      "runtime_bytes": 925959,
+      "source_sha256": "034600c4788d9048b8d0744edb87da81eb04d6968f2ccd06c3be3494ee9c405e",
+      "runtime_sha256": "8fe293a9c0778f142f2232f278f87861211baef1e5fc510961a9d8318c2030f7",
+      "reference_inputs": [
+        {
+          "image_label": "Image 1",
+          "asset": "docs/rebuild/reference/mobile-combat-ui-generated-v1.png",
+          "role": "style, palette, common lighting, and visual-weight reference; not a source to crop or ship"
+        }
+      ],
+      "runtime_derivation": {
+        "operation": "remove the generated chroma field with feathered edge alpha; preserve painted icon subjects",
+        "sampled_key": "#fb02fa",
+        "fully_transparent_pixels": 1229568,
+        "partially_transparent_pixels": 10532,
+        "total_pixels": 1572516
+      },
+      "layout": {
+        "top_left": "worn leather turnshoe and a short trail of practical step markers for Move",
+        "top_right": "plain functional arming sword for Attack",
+        "bottom_left": "worn river-blue painted shield for Guard",
+        "bottom_right": "wood-and-brass sandglass for Wait or End Turn"
+      },
+      "prompt": "Using Image 1 only as the approved UI brushwork, palette, common lighting, and visual-weight reference, create one square high-definition 2 by 2 tactical-action icon atlas on one perfectly uniform hard chroma-magenta background. Center one distinct readable subject in each equal quadrant with generous clear padding and no baked button tiles. Top left: a worn practical leather turnshoe with a short trail of plain step markers for Move. Top right: a plain functional late-medieval arming sword for Attack. Bottom left: a functional worn river-blue painted shield for Guard. Bottom right: a wood-and-brass sandglass for Wait or End Turn. Base materials, construction, scale, and wear on Central and Northwestern Europe circa 1400-1475. Render all four with consistent three-quarter lighting and visual weight in high-definition oil-brush painterly 2D anime style. No baked panels, text, letters, numbers, logos, signatures, watermarks, magic glow, crystals, oversized fantasy forms, pixel art, flat vector finish, photorealism, or glossy 3D-render finish."
+    },
+    {
+      "id": "ui-combat-portraits-whitemarch-v1",
+      "status": "approved_ui",
+      "tool_output": "exec-60cb8a2f-d1a0-4acc-b728-2d4ce3fd149a.png",
+      "source": "res://assets/generated/source/ui-combat-portraits-whitemarch-v1.png",
+      "runtime": "res://assets/ui/portraits/ui-combat-portraits-whitemarch-v1.png",
+      "dimensions": [1254, 1254],
+      "cell_dimensions": [627, 627],
+      "source_pixel_format": "RGB PNG",
+      "runtime_pixel_format": "RGB PNG",
+      "source_bytes": 2855166,
+      "runtime_bytes": 2855166,
+      "source_sha256": "4902f198e73a14d98c605fc6e929eb21a96b07d836acf3a9970516e6302fcd6d",
+      "runtime_sha256": "4902f198e73a14d98c605fc6e929eb21a96b07d836acf3a9970516e6302fcd6d",
+      "reference_inputs": [
+        {
+          "image_label": "Image 1",
+          "asset": "res://assets/generated/source/actors-whitemarch-oil-anime-v2.png",
+          "role": "identity, clothing, equipment, and quadrant-order reference"
+        },
+        {
+          "image_label": "Image 2",
+          "asset": "docs/rebuild/reference/mobile-combat-ui-generated-v1.png",
+          "role": "UI color, limewash field, and oil-brush treatment reference"
+        }
+      ],
+      "layout": {
+        "top_left": "Erran Holt, company warden in kettle hat, mail, quilted protection, and river-blue civic layer",
+        "top_right": "Maud Reed, Whitewend river scout in an ivory hood and grounded green travel layers",
+        "bottom_left": "road brigand spearman in patched brown working gear and cheap iron protection",
+        "bottom_right": "crossbow skirmisher in worn river-blue civic equipment and kettle hat"
+      },
+      "prompt": "Use Image 1 as the binding identity, clothing, equipment, and 2 by 2 quadrant-order reference, and Image 2 only as the UI color, common limewash field, and oil-brush treatment reference. Create one square high-definition 2 by 2 atlas of four dedicated head-and-shoulder combat portraits in the same actor-sheet order. Top left: Erran Holt, the company warden in a kettle hat, mail, quilted protection, and worn river-blue civic layer. Top right: Maud Reed, the Whitewend river scout in an ivory hood and grounded green travel layers. Bottom left: the road brigand spearman in patched brown working clothing and cheap iron protection. Bottom right: the crossbow skirmisher in worn river-blue civic equipment and kettle hat. Preserve each person's recognizable face, age, expression, clothing colors, and practical equipment cues from Image 1 while placing every portrait against the same quiet neutral limewash field. Use natural adult anime proportions and high-definition oil-brush painterly 2D anime rendering with visible layered brushwork, readable faces, and restrained line accents. Keep the tone alert and human rather than grimdark. Ground garments, fastenings, armor, and wear in Central and Northwestern Europe circa 1400-1475. No chibi anatomy, generic face substitution, modern clothing, magical glow, crystals, text, letters, numbers, logos, signatures, watermarks, pixel art, photorealism, or glossy 3D-render finish."
+    },
+    {
+      "id": "actors-whitemarch-oil-anime-v2",
+      "status": "approved",
+      "tool_output": "exec-9e4d3374-fecf-4bc4-9a91-7fa777b7841a.png",
+      "source": "res://assets/generated/source/actors-whitemarch-oil-anime-v2.png",
+      "runtime": "res://assets/actors/actors-whitemarch-oil-anime-v2.png",
+      "dimensions": [1254, 1254],
+      "cell_dimensions": [627, 627],
+      "source_pixel_format": "RGB PNG with a uniform chroma field",
+      "runtime_pixel_format": "RGBA PNG",
+      "source_sha256": "3714db10f4128ef2949e40266590fdad953829e4524282298b93248c4fe5a902",
+      "runtime_sha256": "400836103ef648de40dee231423164ede179c52c6a7138ce365ca139463e03cf",
+      "runtime_derivation": {
+        "operation": "remove the generated chroma field with feathered edge alpha; preserve painted subjects",
+        "sampled_key": "#f303e8",
+        "fully_transparent_pixels": 1246299,
+        "partially_transparent_pixels": 15543,
+        "total_pixels": 1572516
+      },
+      "layout": {
+        "top_left": "Erran Holt, grounded company warden with kettle hat, mail and quilted protection, ash spear, and practical shield",
+        "top_right": "Maud Reed, Whitewend river scout in hooded linen and wool travel layers with a yew bow",
+        "bottom_left": "road brigand spearman in patched, repaired working gear",
+        "bottom_right": "crossbow skirmisher with credible bow, bolt gear, and worn civic equipment"
+      },
+      "prompt": "Create one square high-definition 2 by 2 character atlas on a single perfectly uniform hard chroma-magenta background, with four separate full-body adult figures centered in equal cells, feet on one shared baseline, generous outer padding, and no baked cast shadows. Top left: Erran Holt, a Whitemarch company warden in a practical kettle hat, quilted protection and mail, carrying an ash spear and useful shield. Top right: Maud Reed, a Whitewend river scout in hooded linen and weathered wool travel layers with a yew self bow and field kit. Bottom left: a road brigand spearman in patched wool over an aging jack, cheap iron protection, mismatched gloves, and visibly repaired equipment. Bottom right: a crossbow skirmisher in worn or defaced civic gear with a plausible Central European crossbow, bolt case, spanning equipment, and side knife. Base every garment, fastening, load, weapon, and repair on Central or Northwestern European material culture circa 1400-1475. Use natural adult anime proportions and readable faces, rendered as oil-brush painterly 2D anime with visible brush texture, layered color, selective edges, and restrained line accents. Keep the tone alert but not grimdark. No chibi anatomy, magic effects, glowing crystals, oversized armor, costume-fantasy leather, clipped subjects, text, logo, signature, watermark, pixel art, photorealism, or glossy 3D-render finish."
+    },
+    {
+      "id": "items-whitemarch-oil-anime-v2",
+      "status": "approved",
+      "tool_output": "exec-3c048b34-0192-46da-af5f-6426d48cce92.png",
+      "source": "res://assets/generated/source/items-whitemarch-oil-anime-v2.png",
+      "runtime": "res://assets/items/items-whitemarch-oil-anime-v2.png",
+      "dimensions": [1254, 1254],
+      "cell_dimensions": [627, 627],
+      "source_pixel_format": "RGB PNG with a uniform chroma field",
+      "runtime_pixel_format": "RGBA PNG",
+      "source_sha256": "df1d9e37906bd097b34bbb7e5784f0ad48c44b5cfb67f2791c92a47e99bee741",
+      "runtime_sha256": "a1503a4a27a0fc57b4130afedacb6160f716d38daa441bd27933d31706ead285",
+      "runtime_derivation": {
+        "operation": "remove the generated chroma field with feathered edge alpha; preserve painted objects",
+        "sampled_key": "#f003e3",
+        "fully_transparent_pixels": 1198831,
+        "partially_transparent_pixels": 17049,
+        "total_pixels": 1572516
+      },
+      "layout": {
+        "top_left": "plain ash-shaft spear with a functional iron head",
+        "top_right": "muted-blue painted shield shown with credible rear straps and construction",
+        "bottom_left": "yew bow field kit with small quiver and bow glove",
+        "bottom_right": "late-medieval crossbow field kit with bolts and spanning equipment"
+      },
+      "prompt": "Create one square high-definition 2 by 2 item atlas on a single perfectly uniform hard chroma-magenta background, with one grounded late-medieval equipment group centered in each equal cell, generous padding, and no cast shadows. Top left: a plain ash-shaft spear with a functional iron head and believable socket. Top right: a muted river-blue painted shield shown so its wood, covering, rim, grip, and rear straps read as usable construction. Bottom left: a yew self-bow field kit with a small quiver and bow glove. Bottom right: a Central European late-medieval crossbow field kit with bolts and credible spanning equipment. Use Central and Northwestern European circa 1400-1475 materials, joinery, dimensions, maintenance wear, and repairs; keep every object carryable and functional. Render as oil-brush painterly 2D anime with visible brush texture, layered natural color, shaped values, selective edges, and restrained line accents. No magic glow, crystals, oversized fantasy shapes, decorative blades, text, letters, numbers, logos, signatures, watermark, pixel art, vector finish, photorealism, or glossy 3D-render finish."
+    }
+  ],
+  "design_references": [
+    {
+      "id": "mobile-combat-ui-generated-v1",
+      "status": "approved_direction_reference_only",
+      "tool_output": "exec-fd0fcbca-44ab-45c6-90dc-28dbfade5409.png",
+      "path": "docs/rebuild/reference/mobile-combat-ui-generated-v1.png",
+      "runtime": "none; do not import, crop, or ship as a game texture",
+      "dimensions": [941, 1672],
+      "pixel_format": "RGB PNG",
+      "bytes": 2405656,
+      "sha256": "c3568f114d51449551638ea116c0f3212814a805387f4fbf83490fc67e1c8f58",
+      "reference_inputs": [],
+      "role": "portrait mobile combat-UI composition, hierarchy, palette, painted-material, and visual-cohesion reference for production assets and implementation",
+      "prompt": "Create one polished 9 by 16 portrait mobile tactical-RPG combat UI design reference for the new Whitemarch game. Show a readable hybrid 2.5D battlefield with painterly 2D adult character figures, a restrained top utility bar, a compact active-actor context and condition area, a forecast or time strip, four large tactical action controls, one unmistakable primary commit control, and one quiet event or chronicle strip. Unify every interface surface as one field-folio material family using deep slate and civic blue, warm ivory vellum, pale limewash, restrained river-blue information accents, and muted brass fastenings. Keep the battlefield visually dominant and every touch target clear at mobile scale. Ground clothing, weapons, props, and construction in Central and Northwestern Europe circa 1400-1475, but keep the setting light, hopeful high fantasy rather than grimdark. Render the complete concept in high-definition oil-brush painterly 2D anime style with visible hand-painted texture, natural materials, restrained linework, and coherent common lighting. Use native-looking blank iconography and data shapes only; no generated words, letters, numbers, logos, signatures, watermarks, pixel art, low-resolution 8-bit styling, SVG or flat-vector finish, photorealism, glossy 3D-render finish, neon sci-fi chrome, arbitrary magical glow, or crystal ornament."
+    }
+  ]
+}
