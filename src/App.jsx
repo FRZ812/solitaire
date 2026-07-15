@@ -56,7 +56,8 @@ import { poiPlaceName } from "./engine/location.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
 import { CombatView } from "./components/combat/CombatView.jsx";
-import { VitalsStrip, InputBar, LoadingDots, LiveThinking, ErrorBanner } from "./components/primitives.jsx";
+import { VitalsStrip, InputBar, LoadingDots, ErrorBanner } from "./components/primitives.jsx";
+import { LiveNarratorStream } from "./components/LiveNarratorStream.jsx";
 import { BeatActionSheet } from "./components/BeatActionSheet.jsx";
 import { colors } from "./components/tokens.js";
 import { BeatRender } from "./components/beats/BeatRender.jsx";
@@ -83,7 +84,8 @@ import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
-import { pinStoryToBottom, storyShouldFollow } from "./components/storyScroll.js";
+import { advanceLiveNarrator, emptyLiveNarrator } from "./engine/live-narrator.js";
+import { pinStoryToBottom, touchRequestsOlder, wheelRequestsOlder } from "./components/storyScroll.js";
 import "./components/chat-scene.css";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
@@ -332,11 +334,12 @@ export function Solitaire() {
     return new Promise((resolve) => setNamePrompt({ ...opts, resolve }));
   }
   const [hydrated, setHydrated] = useState(false);
-  // The narrator's reasoning trace as it streams in for the in-flight turn —
-  // shown live under the loading dots, cleared at the start of each turn.
-  const [liveThinking, setLiveThinking] = useState("");
+  // Transient stream projection. Raw partial JSON never enters saved beats;
+  // only its currently recoverable narration/dialogue and reasoning are shown.
+  const [liveNarrator, setLiveNarrator] = useState(emptyLiveNarrator);
   const logRef = useRef(null);
   const storyFollowRef = useRef(true);
+  const storyTouchYRef = useRef(null);
   const [storyFollowing, setStoryFollowing] = useState(true);
 
   function setStoryFollow(next) {
@@ -344,17 +347,48 @@ export function Solitaire() {
     setStoryFollowing((current) => current === next ? current : next);
   }
 
-  function handleStoryScroll(event) {
-    setStoryFollow(storyShouldFollow(event.currentTarget));
+  function suspendStoryFollow() {
+    if (storyFollowRef.current) setStoryFollow(false);
+  }
+
+  function pinStory(element = logRef.current) {
+    if (!element) return;
+    pinStoryToBottom(element);
+  }
+
+  function handleStoryWheel(event) {
+    if (wheelRequestsOlder(event.deltaY)) suspendStoryFollow();
+  }
+
+  function handleStoryTouchStart(event) {
+    storyTouchYRef.current = event.touches?.[0]?.clientY ?? null;
+  }
+
+  function handleStoryTouchMove(event) {
+    const nextY = event.touches?.[0]?.clientY;
+    const previousY = storyTouchYRef.current;
+    if (touchRequestsOlder(previousY, nextY)) {
+      suspendStoryFollow();
+    }
+    storyTouchYRef.current = Number.isFinite(nextY) ? nextY : previousY;
+  }
+
+  function handleStoryKeyDown(event) {
+    if (["ArrowUp", "PageUp", "Home"].includes(event.key)) suspendStoryFollow();
+  }
+
+  function handleStoryPointerDown(event) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (event.clientX >= bounds.right - 18) suspendStoryFollow();
   }
 
   function scrollStoryToLatest() {
     const element = logRef.current;
     if (!element) return;
     setStoryFollow(true);
-    pinStoryToBottom(element);
+    pinStory(element);
     requestAnimationFrame(() => {
-      if (storyFollowRef.current) pinStoryToBottom(logRef.current);
+      if (storyFollowRef.current) pinStory();
     });
   }
 
@@ -527,26 +561,27 @@ export function Solitaire() {
   }, [state, hydrated, currentCampaignId]);
 
   // ----- Follow live output only while the reader is near the bottom -----
-  // A reader who scrolls upward owns the viewport until they return to the
-  // bottom or tap Latest. Streamed thinking can grow many times per second; each
-  // update may re-pin only while that follow lock remains enabled.
+  // A reader who scrolls upward owns the viewport until they tap Latest.
+  // Reaching the bottom manually does not silently re-enable follow. Streamed
+  // output can grow many times per second; each
+  // visible update may re-pin only while that follow lock remains enabled.
   useEffect(() => {
     if (!storyFollowRef.current) return;
     const toBottom = () => {
-      if (storyFollowRef.current) pinStoryToBottom(logRef.current);
+      if (storyFollowRef.current) pinStory();
     };
     toBottom();
     const r = requestAnimationFrame(toBottom);
     return () => cancelAnimationFrame(r);
-  }, [state.beats.length, loading, liveThinking]);
+  }, [state.beats.length, loading, liveNarrator.thinking, liveNarrator.narration, liveNarrator.dialogues]);
 
   // Campaign hydration is the one intentional reset: a newly opened history
   // starts at its latest beat even if the previous campaign was scrolled up.
   useEffect(() => {
     if (!hydrated || !logRef.current) return;
     setStoryFollow(true);
-    pinStoryToBottom(logRef.current);
-    const r = requestAnimationFrame(() => pinStoryToBottom(logRef.current));
+    pinStory();
+    const r = requestAnimationFrame(() => pinStory());
     return () => cancelAnimationFrame(r);
   }, [hydrated, currentCampaignId]);
 
@@ -702,18 +737,14 @@ export function Solitaire() {
     await runNarratorTurn(stateWithPlayer, message);
   }
 
-  // Narrator wrapper used by every turn site. Streams the model's reasoning
-  // into the live-thinking panel the instant it starts, clearing the buffer at
-  // the start of the turn; the edge function emits { reset } per attempt so a
-  // truncation-retry's second take replaces the first. The narration text
-  // (`text` chunks) is JSON, so it isn't shown live — only the thinking is.
-  // Drop-in for callNarrator; returns the same parsed beat promise.
+  // Narrator wrapper used by every turn site. The edge function emits both
+  // reasoning and answer JSON chunks. advanceLiveNarrator projects only the
+  // recoverable player-facing fields, and { reset } cleanly replaces retries.
   function narrate(st, msg) {
     scrollStoryToLatest();
-    setLiveThinking("");
-    return callNarrator(st, msg, (c) => {
-      if (c.reset) setLiveThinking("");
-      else if (c.thinking) setLiveThinking((t) => t + c.thinking);
+    setLiveNarrator(emptyLiveNarrator());
+    return callNarrator(st, msg, (chunk) => {
+      setLiveNarrator((current) => advanceLiveNarrator(current, chunk));
     });
   }
 
@@ -1888,14 +1919,14 @@ export function Solitaire() {
       {state.created === false ? <InitialBackdrop /> : <SceneBackdrop state={state} />}
       <div className="game-hud-layer">
         {state.created !== false && (
-          <>
+          <div className="story-hud">
             <CompactHeader
               state={state}
               onMap={() => (inPlace(state) ? setPlaceOpen(true) : setMapOpen(true))}
               onOpenDeck={() => { setDeckPage("character"); setDeckOpen(true); }}
             />
             <VitalsStrip character={state.character} />
-          </>
+          </div>
         )}
         {/* In the freeform limbo interview, keep a character-panel button so the
             player can audit the (still-forming) sheet and leave without getting
@@ -1910,31 +1941,43 @@ export function Solitaire() {
             </button>
           </div>
         )}
-        <div ref={logRef} className="story-log" onScroll={handleStoryScroll}>
-          {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
-          {loading && <LiveThinking thinking={liveThinking} />}
-          {error && (
-            <ErrorBanner>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
-                <span style={{ minWidth: 0 }}>{error}</span>
-                {retry && (
-                  <button onClick={handleRetry} disabled={loading} style={{
-                    flexShrink: 0, padding: "6px 14px", borderRadius: 10,
-                    backgroundColor: "rgba(215,167,111,0.18)", color: colors.parchmentLight,
-                    border: "1px solid rgba(215,167,111,0.4)", fontSize: "12px", fontWeight: 800,
-                    cursor: loading ? "default" : "pointer", fontFamily: "inherit", opacity: loading ? 0.5 : 1,
-                  }}>Retry</button>
-                )}
-              </div>
-            </ErrorBanner>
+        <div className="story-log-frame">
+          <div
+            ref={logRef}
+            className="story-log"
+            onWheelCapture={handleStoryWheel}
+            onTouchStart={handleStoryTouchStart}
+            onTouchMove={handleStoryTouchMove}
+            onTouchEnd={() => { storyTouchYRef.current = null; }}
+            onTouchCancel={() => { storyTouchYRef.current = null; }}
+            onKeyDownCapture={handleStoryKeyDown}
+            onPointerDownCapture={handleStoryPointerDown}
+          >
+            {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
+            {loading && <LiveNarratorStream thinking={liveNarrator.thinking} narration={liveNarrator.narration} dialogues={liveNarrator.dialogues} />}
+            {error && (
+              <ErrorBanner>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
+                  <span style={{ minWidth: 0 }}>{error}</span>
+                  {retry && (
+                    <button onClick={handleRetry} disabled={loading} style={{
+                      flexShrink: 0, padding: "6px 14px", borderRadius: 10,
+                      backgroundColor: "rgba(215,167,111,0.18)", color: colors.parchmentLight,
+                      border: "1px solid rgba(215,167,111,0.4)", fontSize: "12px", fontWeight: 800,
+                      cursor: loading ? "default" : "pointer", fontFamily: "inherit", opacity: loading ? 0.5 : 1,
+                    }}>Retry</button>
+                  )}
+                </div>
+              </ErrorBanner>
+            )}
+            {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
+          </div>
+          {!storyFollowing && (
+            <button type="button" className="story-jump-latest" onClick={scrollStoryToLatest} aria-label="Jump to latest story output">
+              <span>↓</span> Latest
+            </button>
           )}
-          {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
         </div>
-        {!storyFollowing && (
-          <button type="button" className="story-jump-latest" onClick={scrollStoryToLatest} aria-label="Jump to latest story output">
-            <span>↓</span> Latest
-          </button>
-        )}
         {state.created !== false && pendingCombat && !combat && (
           <div className="fade-in" style={{
             margin: "0 12px 8px", padding: "11px 14px",

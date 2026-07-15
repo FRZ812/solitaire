@@ -926,8 +926,8 @@ export function CodexView({ state, onClose, onScry, onRenameMount }) {
   }
 
   return (
-    <div style={{ position: "absolute", inset: 0, backgroundColor: "#0b0f0e", zIndex: 30, display: "flex", flexDirection: "column" }}>
-      <div style={{
+    <div className="codex-view fade-in" data-tab={activeTab} style={{ position: "absolute", inset: 0, backgroundColor: "#0b0f0e", zIndex: 30, display: "flex", flexDirection: "column" }}>
+      <div className="codex-view__header" style={{
         padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px 16px",
         display: "flex", justifyContent: "space-between", alignItems: "center",
         borderBottom: `1px solid rgba(215, 167, 111, 0.15)`,
@@ -935,6 +935,7 @@ export function CodexView({ state, onClose, onScry, onRenameMount }) {
       }}>
         <button
           onClick={onClose}
+          aria-label="Close lore codex"
           style={{
             ...iconButtonStyle,
             width: "30px", height: "30px",
@@ -944,11 +945,17 @@ export function CodexView({ state, onClose, onScry, onRenameMount }) {
         >
           <Icon name="arrowLeft" size={13} color={colors.parchmentMuted} strokeWidth={2} />
         </button>
-        <div style={{ fontFamily: fonts.serif, fontSize: "24px", fontStyle: "italic", color: colors.parchmentLight }}>Lore Codex</div>
+        <div className="codex-view__title">
+          <span aria-hidden="true"><Icon name="book" size={21} color={colors.gold} strokeWidth={1.45} /></span>
+          <div>
+            <small>Living archive</small>
+            <strong style={{ fontFamily: fonts.serif, fontSize: "24px", fontStyle: "italic", color: colors.parchmentLight }}>Lore Codex</strong>
+          </div>
+        </div>
         <div style={{ width: "30px" }} />
       </div>
 
-      <div className="tabstrip" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
+      <div className="codex-view__tabs tabstrip" role="tablist" aria-label="Codex sections" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
         {CODEX_TABS.map((tab, i) => {
           const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
@@ -957,7 +964,12 @@ export function CodexView({ state, onClose, onScry, onRenameMount }) {
             <React.Fragment key={tab.key}>
               {divide && <div aria-hidden style={{ alignSelf: "stretch", width: "1px", backgroundColor: "rgba(215, 167, 111, 0.2)", margin: "3px 5px", flexShrink: 0 }} />}
               <button
+                id={`codex-tab-${tab.key}`}
                 onClick={() => setActiveTab(tab.key)}
+                role="tab"
+                aria-selected={active}
+                aria-controls={`codex-panel-${tab.key}`}
+                tabIndex={active ? 0 : -1}
                 style={{
                   padding: "8px 14px",
                   borderRadius: radius.panelCompact,
@@ -978,7 +990,14 @@ export function CodexView({ state, onClose, onScry, onRenameMount }) {
         })}
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px calc(env(safe-area-inset-bottom, 0px) + 24px) 14px", background: "linear-gradient(180deg, #111716 0%, #0b0f0e 100%)" }}>
+      <div className="codex-view__content" style={{ flex: 1, overflowY: "auto", padding: "16px 14px calc(env(safe-area-inset-bottom, 0px) + 24px) 14px", background: "linear-gradient(180deg, #111716 0%, #0b0f0e 100%)" }}>
+        <div
+          key={activeTab}
+          id={`codex-panel-${activeTab}`}
+          className="codex-view__tab-panel"
+          role="tabpanel"
+          aria-labelledby={`codex-tab-${activeTab}`}
+        >
         {activeTab === "items" ? (
           <ItemCatalog codex={codex} />
         ) : activeTab === "abilities" ? (
@@ -1001,6 +1020,7 @@ export function CodexView({ state, onClose, onScry, onRenameMount }) {
               onRename={onRenameMount && activeTab === "characters" && e.kind === "mount" ? () => onRenameMount(e.id) : null} />)}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

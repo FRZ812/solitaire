@@ -35,8 +35,8 @@ function repairTruncatedJSON(body) {
   if (!body || body[0] !== "{") return null;
   let inString = false;
   let escape = false;
-  let braceDepth = 0;
-  let bracketDepth = 0;
+  let truncatedStringIsKey = false;
+  const containers = [];
   for (let i = 0; i < body.length; i++) {
     const c = body[i];
     if (escape) { escape = false; continue; }
@@ -45,20 +45,29 @@ function repairTruncatedJSON(body) {
       else if (c === '"') inString = false;
       continue;
     }
-    if (c === '"') inString = true;
-    else if (c === "{") braceDepth++;
-    else if (c === "}") braceDepth--;
-    else if (c === "[") bracketDepth++;
-    else if (c === "]") bracketDepth--;
+    const top = containers[containers.length - 1];
+    if (c === '"') {
+      inString = true;
+      truncatedStringIsKey = top?.type === "object" && top.expectKey;
+    } else if (c === "{") {
+      containers.push({ type: "object", expectKey: true });
+    } else if (c === "[") {
+      containers.push({ type: "array" });
+    } else if (c === "}" || c === "]") {
+      containers.pop();
+    } else if (c === ":" && top?.type === "object") {
+      top.expectKey = false;
+    } else if (c === "," && top?.type === "object") {
+      top.expectKey = true;
+    }
   }
-  if (braceDepth <= 0 && bracketDepth <= 0 && !inString) return null;
+  if (containers.length === 0 && !inString) return null;
   let repaired = body;
   if (inString) repaired += '"';
   repaired = repaired.replace(/,\s*$/, "");
   // A truncation mid-key (e.g. `"foo` with no colon) leaves a hanging string;
   // append a placeholder value so the brace-close below produces valid JSON.
-  if (/"[A-Za-z_][A-Za-z0-9_]*"\s*$/.test(repaired)) repaired += ":null";
-  while (bracketDepth-- > 0) repaired += "]";
-  while (braceDepth-- > 0) repaired += "}";
+  if (inString && truncatedStringIsKey) repaired += ":null";
+  while (containers.length > 0) repaired += containers.pop().type === "object" ? "}" : "]";
   return repaired;
 }

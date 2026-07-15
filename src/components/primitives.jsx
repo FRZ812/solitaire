@@ -132,9 +132,9 @@ const panelTones = {
 
 // Glass panel used for narration, dialogue, encounters, etc. Tones cover
 // the standard game palette plus encounter/discovery accents.
-export function Panel({ children, tone = "default", compact = false, style }) {
+export function Panel({ children, tone = "default", compact = false, className = "", style }) {
   return (
-    <div className={`game-panel game-panel--${tone} fade-in`} style={{
+    <div className={`game-panel game-panel--${tone} fade-in ${className}`.trim()} style={{
       ...panelShell,
       ...(panelTones[tone] || panelTones.default),
       borderRadius: compact ? radius.panelCompact : radius.panel,
@@ -147,9 +147,9 @@ export function Panel({ children, tone = "default", compact = false, style }) {
 }
 
 // "◆ Label" section header used throughout MenuSheet.
-export function SectionHeader({ children, color = colors.gold }) {
+export function SectionHeader({ children, color = colors.gold, className = "" }) {
   return (
-    <div style={{
+    <div className={`section-header ${className}`.trim()} style={{
       ...metaStyle,
       fontSize: "10px",
       letterSpacing: "0.14em",
@@ -324,7 +324,11 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
     <div
       style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", minWidth: 0 }}
       title={ariaLabel}
+      role="meter"
       aria-label={ariaLabel}
+      aria-valuemin="0"
+      aria-valuemax={m}
+      aria-valuenow={v}
     >
       <div style={{ position: "relative", width: SIZE, height: SIZE }}>
         <svg

@@ -36,7 +36,7 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
   }
 
   return (
-    <div className="fade-in" style={{
+    <div className="campaign-screen fade-in" style={{
       backgroundColor: colors.ink,
       backgroundImage: "radial-gradient(circle at 50% 30%, #152422 0%, #0a0f0e 80%)",
       height: "100dvh", width: "100%", maxWidth: "480px", margin: "0 auto",
@@ -44,7 +44,7 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
       position: "relative",
     }}>
       <InitialBackdrop />
-      <div style={{
+      <div className="screen-inner-frame" style={{
         position: "absolute",
         inset: "12px",
         border: `1px solid rgba(215, 167, 111, 0.06)`,
@@ -53,18 +53,21 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
         zIndex: 0,
       }} />
 
-      <div style={{
+      <div className="campaign-screen__header" style={{
         padding: "calc(env(safe-area-inset-top, 0px) + 20px) 20px 14px 20px",
         display: "flex", alignItems: "center", justifyContent: "space-between",
         borderBottom: `1px solid rgba(215, 167, 111, 0.14)`,
         zIndex: 1,
       }}>
-        <div style={{
-          fontFamily: fonts.serif, fontStyle: "italic",
-          fontSize: "26px", color: colors.parchment,
-          textShadow: "0 2px 10px rgba(0,0,0,0.5)",
-        }}>
-          Solitaire
+        <div>
+          <div className="campaign-screen__kicker">Continue the road</div>
+          <div className="campaign-screen__title" style={{
+            fontFamily: fonts.serif, fontStyle: "italic",
+            fontSize: "26px", color: colors.parchment,
+            textShadow: "0 2px 10px rgba(0,0,0,0.5)",
+          }}>
+            Solitaire
+          </div>
         </div>
         {onSignOut && (
           <button
@@ -86,10 +89,11 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
         )}
       </div>
 
-      <div className="custom-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px", zIndex: 1 }}>
+      <div className="campaign-screen__scroll custom-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px", zIndex: 1 }}>
         {error && <ErrorBanner style={{ margin: "0 0 16px" }}>{error}</ErrorBanner>}
 
         <button
+          className="campaign-new"
           onClick={onNew}
           disabled={busy}
           style={{
@@ -122,7 +126,7 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
         )}
 
         {campaigns.map(c => (
-          <div key={c.id} style={{
+          <div key={c.id} className="campaign-card" style={{
             marginBottom: "12px",
             backgroundColor: "rgba(20, 29, 29, 0.45)",
             border: `1px solid rgba(215, 167, 111, 0.16)`,
@@ -156,6 +160,7 @@ export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, 
               </div>
             ) : (
               <button
+                className="campaign-card__open"
                 onClick={() => onSelect(c.id)}
                 disabled={busy}
                 style={{

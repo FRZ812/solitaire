@@ -86,8 +86,8 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(120% 90% at 50% 0%, rgba(28,36,40,0.98), rgba(8,11,12,0.995))", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div style={{ width: "100%", maxWidth: "640px", margin: "0 auto", padding: "18px 18px 36px" }}>
+    <div className="template-detail" style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(120% 90% at 50% 0%, rgba(28,36,40,0.98), rgba(8,11,12,0.995))", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+      <div className="template-detail__inner" style={{ width: "100%", maxWidth: "640px", margin: "0 auto", padding: "18px 18px 36px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
           <button onClick={onBack} disabled={busy} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "8px 11px", borderRadius: radius.chip, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.3)`, color: "rgba(215,167,111,0.85)", fontSize: "12px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
             <Icon name="arrowLeft" size={13} color="rgba(215,167,111,0.85)" strokeWidth={2} /> Back
@@ -200,13 +200,13 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
   }
 
   return (
-    <div style={{
+    <div className="creation-hub" style={{
       position: "fixed", inset: 0, zIndex: 60, display: "flex", flexDirection: "column",
       background: "radial-gradient(120% 90% at 50% 0%, rgba(28,36,40,0.96), rgba(8,11,12,0.99))",
       overflowY: "auto", WebkitOverflowScrolling: "touch",
     }}>
-      <div style={{ width: "100%", maxWidth: "640px", margin: "0 auto", padding: "20px 18px 40px", flex: 1 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
+      <div className="creation-hub__inner" style={{ width: "100%", maxWidth: "640px", margin: "0 auto", padding: "20px 18px 40px", flex: 1 }}>
+        <div className="creation-hub__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
           <div>
             <div style={{ fontSize: "9px", letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(215,167,111,0.6)", fontWeight: 800 }}>The threshold</div>
             <h1 style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "30px", color: colors.parchmentLight, margin: "2px 0 0" }}>Who will you be?</h1>
@@ -249,7 +249,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                 {list.map((t) => (
-                  <button key={t.id} onClick={() => setSelected(t)} disabled={busy} style={{
+                  <button className="creation-card" key={t.id} onClick={() => setSelected(t)} disabled={busy} style={{
                     display: "flex", alignItems: "center", gap: "11px", padding: "13px 14px", borderRadius: radius.panelCompact, textAlign: "left", width: "100%",
                     backgroundColor: "rgba(20,29,29,0.55)", border: `1px solid ${hue}33`, cursor: busy ? "default" : "pointer", fontFamily: "inherit",
                   }}>
@@ -274,7 +274,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
           );
         })}
 
-        <div style={{ marginTop: "20px", padding: "15px", borderRadius: radius.panelCompact, backgroundColor: "rgba(176,114,230,0.08)", border: `1px solid rgba(176,114,230,0.32)` }}>
+        <div className="creation-custom" style={{ marginTop: "20px", padding: "15px", borderRadius: radius.panelCompact, backgroundColor: "rgba(176,114,230,0.08)", border: `1px solid rgba(176,114,230,0.32)` }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
             <Icon name="sparkle" size={16} color="#c9a6ef" strokeWidth={1.8} />
             <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "18px", color: "#d9c2f2" }}>Create your own</div>
