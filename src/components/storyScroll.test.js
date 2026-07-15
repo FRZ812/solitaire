@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pinStoryToBottom, storyDistanceFromBottom, touchRequestsOlder, wheelRequestsOlder } from "./storyScroll.js";
+import { pinStoryToBottom, storyDistanceFromBottom, storyIsAtBottom, touchRequestsOlder, wheelRequestsOlder } from "./storyScroll.js";
 
 describe("story stream scrolling", () => {
   it("detects wheel and touch gestures toward older output without a dead zone", () => {
@@ -11,6 +11,11 @@ describe("story stream scrolling", () => {
 
   it("handles browser overscroll without reporting a negative distance", () => {
     expect(storyDistanceFromBottom({ scrollHeight: 800, clientHeight: 400, scrollTop: 430 })).toBe(0);
+  });
+
+  it("recognizes the bottom independently of the follow lock", () => {
+    expect(storyIsAtBottom({ scrollHeight: 800, clientHeight: 400, scrollTop: 400 })).toBe(true);
+    expect(storyIsAtBottom({ scrollHeight: 800, clientHeight: 400, scrollTop: 398 })).toBe(false);
   });
 
   it("pins explicitly when the reader asks for the latest output", () => {

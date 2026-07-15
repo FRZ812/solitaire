@@ -118,7 +118,7 @@
   margin: 6px 7px 0;
   padding: calc(env(safe-area-inset-top, 0px) + 8px) 10px 9px;
   isolation: isolate;
-  overflow: hidden;
+  overflow: visible;
   border-radius: 15px;
   background:
     radial-gradient(ellipse at 38% 0, color-mix(in srgb, var(--scene-primary) 20%, transparent), transparent 54%),
@@ -134,9 +134,12 @@
   inset: -2px;
   z-index: 2;
   pointer-events: none;
-  background: url("../assets/generated/ui-hud-frame-v1.webp") center / 100% 100% no-repeat;
-  opacity: .82;
-  filter: saturate(.78) brightness(.92);
+  background-image: url("../assets/generated/ui-hud-frame-v1.webp");
+  background-repeat: no-repeat;
+  background-position: center 50%;
+  background-size: 100% 240%;
+  opacity: .72;
+  filter: saturate(.72) brightness(.88);
 }
 
 .story-hud::after {
@@ -260,22 +263,24 @@
 .vitals-strip__main {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(105px, 1.1fr) minmax(0, 2.25fr);
-  gap: 8px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
 }
 
 .visibility-status {
   min-width: 0;
-  min-height: 45px;
-  padding: 0;
+  min-height: 47px;
+  padding: 0 8px 0 0;
   display: grid;
-  grid-template-columns: 43px minmax(0, 1fr);
-  align-items: center;
-  gap: 6px;
+  grid-template-columns: 1fr;
+  grid-template-rows: 36px auto;
+  place-items: center;
+  gap: 3px;
   color: rgba(244,232,195,.82);
-  text-align: left;
+  text-align: center;
   border: 0;
+  border-right: 1px solid color-mix(in srgb, var(--scene-accent) 18%, transparent);
   background: transparent;
   font-family: inherit;
 }
@@ -283,8 +288,8 @@
 .visibility-status:not(:disabled) { cursor: pointer; }
 .visibility-status__medallion {
   position: relative;
-  width: 43px;
-  height: 43px;
+  width: 38px;
+  height: 38px;
   display: grid;
   place-items: center;
   color: var(--visibility-color, var(--scene-highlight));
@@ -300,21 +305,53 @@
   background: color-mix(in srgb, var(--visibility-color, var(--scene-highlight)) 13%, rgba(4,18,29,.74));
   box-shadow: 0 0 12px color-mix(in srgb, var(--visibility-color, var(--scene-highlight)) 18%, transparent);
 }
-.visibility-status__copy { min-width: 0; display: flex; flex-direction: column; }
-.visibility-status__copy small { color: rgba(191,213,214,.42); font-size: 6px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
-.visibility-status__copy strong { margin-top: 2px; overflow: hidden; color: var(--visibility-color, #fff1c9); font: italic 14px/1 'Instrument Serif', Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
-.visibility-status__copy em { margin-top: 3px; overflow: hidden; color: rgba(208,216,205,.52); font-size: 7px; font-style: normal; font-weight: 700; letter-spacing: .035em; text-overflow: ellipsis; white-space: nowrap; }
+.visibility-status__copy { min-width: 0; width: 100%; grid-column: 1; grid-row: 2; display: flex; flex-direction: column; align-items: center; }
+.visibility-status__copy small,
+.visibility-status__copy em { display: none; }
+.visibility-status__copy strong { overflow: hidden; color: var(--visibility-color, #fff1c9); font-size: 8px; font-weight: 850; letter-spacing: .025em; line-height: 1; text-overflow: ellipsis; text-shadow: 0 1px 4px rgba(0,0,0,.62); white-space: nowrap; }
 .visibility-status--clear { --visibility-color: #d9c180; }
 .visibility-status--revealed { --visibility-color: #efb06b; }
 .visibility-status--revealed .visibility-status__medallion { animation: visibility-revealed 2.2s ease-in-out infinite alternate; }
 .visibility-status--heavy { --visibility-color: #91a9c9; }
 .visibility-status--heavy .visibility-status__medallion { opacity: .84; }
 
-.vitals-strip__meters { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 3px; }
-.radial-meter { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; transition: transform .22s cubic-bezier(.16,1,.3,1); }
-.radial-meter__dial { position: relative; }
-.radial-meter__icon { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
-.radial-meter__value { font-size: 8px; font-weight: 800; letter-spacing: .035em; line-height: 1; white-space: nowrap; }
+.vitals-strip__meters { position: relative; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 3px; }
+.vitals-strip__meters::before {
+  content: "";
+  position: absolute;
+  top: 16px;
+  right: 3px;
+  left: 3px;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--scene-accent) 24%, transparent) 12%, color-mix(in srgb, var(--scene-highlight) 18%, transparent) 50%, color-mix(in srgb, var(--scene-accent) 24%, transparent) 88%, transparent);
+  box-shadow: 0 1px rgba(0,0,0,.22);
+}
+.radial-meter { position: relative; z-index: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; transition: transform .22s cubic-bezier(.16,1,.3,1); }
+.radial-meter__dial {
+  position: relative;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255,255,255,.075), transparent 31%),
+    radial-gradient(circle, rgba(14,45,61,.82), rgba(3,16,28,.92));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--scene-highlight) 12%, transparent),
+    inset 0 -5px 10px rgba(1,9,17,.3),
+    0 4px 8px rgba(1,8,15,.32);
+}
+.radial-meter__dial::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  z-index: 0;
+  pointer-events: none;
+  border: 1px solid color-mix(in srgb, var(--scene-accent) 24%, transparent);
+  border-radius: 50%;
+  box-shadow: inset 0 1px rgba(255,255,255,.04);
+}
+.radial-meter__ring { position: relative; z-index: 1; }
+.radial-meter__icon { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.radial-meter__value { margin-top: 1px; font-size: 8px; font-weight: 850; letter-spacing: .035em; line-height: 1; text-shadow: 0 1px 4px rgba(0,0,0,.62); white-space: nowrap; }
 .radial-meter:hover { transform: translateY(-2px); }
 
 .vitals-strip__conditions { min-width: 0; margin-top: 5px; padding-top: 5px; display: flex; gap: 5px; overflow-x: auto; border-top: 1px solid color-mix(in srgb, var(--scene-accent) 13%, transparent); scrollbar-width: none; }

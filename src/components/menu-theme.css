@@ -413,9 +413,9 @@
   position: relative;
   z-index: 4;
   flex: 1;
-  width: min(100%, 520px);
+  width: min(100%, 540px);
   margin: 0 auto;
-  padding: clamp(34px, 8dvh, 80px) clamp(25px, 6vw, 42px) 24px;
+  padding: clamp(28px, 6dvh, 64px) clamp(29px, 7vw, 52px) 26px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -424,22 +424,43 @@
 }
 
 .title-screen__logo {
-  width: min(112%, 530px);
+  width: min(110%, 510px);
   max-width: none;
-  margin: -8px -6% -5px;
+  margin: -4px -5% 4px;
 }
 
-.title-screen__lede {
-  max-width: 360px;
-  margin: 0;
-  color: rgba(252, 242, 218, 0.86);
-  font: italic clamp(17px, 4.5vw, 20px)/1.4 "Instrument Serif", Georgia, serif;
+.title-screen__statement {
+  width: min(100%, 410px);
+  padding: 15px 20px 16px;
+  border-left: 2px solid rgba(239, 202, 126, 0.78);
+  background: linear-gradient(90deg, rgba(4, 13, 23, 0.58), rgba(4, 13, 23, 0.08));
+  text-align: left;
   text-shadow: 0 3px 16px rgba(2, 7, 14, 0.92);
 }
 
+.title-screen__statement > strong {
+  display: block;
+  color: #fff5d9;
+  font: italic clamp(19px, 4.8vw, 23px)/1.12 "Instrument Serif", Georgia, serif;
+  letter-spacing: 0.01em;
+}
+
+.title-screen__lede {
+  max-width: 370px;
+  margin: 7px 0 0;
+  color: rgba(252, 242, 218, 0.7);
+  font-size: 11px;
+  line-height: 1.52;
+  letter-spacing: 0.015em;
+}
+
+.title-screen__statement + .title-screen__error {
+  margin-top: 16px;
+}
+
 .title-screen__error {
-  width: 100%;
-  margin-top: 18px;
+  width: min(100%, 410px);
+  margin: 0;
   padding: 9px 12px;
   color: #ffd4cb;
   border: 1px solid rgba(240, 126, 110, 0.32);
@@ -450,25 +471,25 @@
 
 .title-start {
   position: relative;
-  width: min(100%, 380px);
-  min-height: 68px;
-  margin-top: clamp(28px, 5dvh, 48px);
-  padding: 9px 14px 9px 11px;
+  width: min(100%, 410px);
+  min-height: 82px;
+  margin-top: clamp(22px, 4dvh, 36px);
+  padding: 13px 17px 13px 13px;
   display: grid;
-  grid-template-columns: 46px 1fr 22px;
+  grid-template-columns: 48px 1fr 24px;
   align-items: center;
-  gap: 11px;
+  gap: 14px;
   overflow: hidden;
   color: #fff6dc;
-  border: 1px solid rgba(249, 220, 157, 0.58);
-  border-radius: 16px;
+  border: 1px solid rgba(249, 220, 157, 0.48);
+  border-radius: 8px;
   background:
-    linear-gradient(110deg, rgba(23, 62, 84, 0.94), rgba(8, 25, 42, 0.96)),
+    linear-gradient(105deg, rgba(16, 49, 69, 0.96), rgba(7, 22, 38, 0.97)),
     rgba(7, 16, 28, 0.92);
   box-shadow:
-    0 18px 42px rgba(2, 7, 14, 0.43),
+    0 18px 42px rgba(2, 7, 14, 0.38),
     inset 0 1px rgba(255, 255, 255, 0.08),
-    inset 0 0 0 4px rgba(255, 255, 255, 0.018);
+    inset 3px 0 rgba(239, 202, 126, 0.82);
   text-align: left;
   cursor: pointer;
   backdrop-filter: blur(14px);
@@ -480,7 +501,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(112deg, transparent 0 55%, rgba(255, 239, 196, 0.075));
+  background: linear-gradient(112deg, transparent 0 55%, rgba(255, 239, 196, 0.06));
 }
 
 .title-start:not(:disabled):hover,
@@ -496,15 +517,15 @@
 .title-start__compass {
   position: relative;
   z-index: 1;
-  width: 46px;
-  height: 46px;
+  width: 48px;
+  height: 48px;
   display: grid;
   place-items: center;
   color: #efca7e;
   border: 1px solid rgba(239, 202, 126, 0.42);
-  border-radius: 50%;
-  background: radial-gradient(circle at 44% 36%, rgba(104, 175, 197, 0.36), rgba(7, 22, 37, 0.78) 68%);
-  box-shadow: 0 0 0 4px rgba(239, 202, 126, 0.055);
+  border-radius: 4px;
+  background: linear-gradient(145deg, rgba(68, 125, 149, 0.25), rgba(5, 17, 30, 0.7));
+  box-shadow: inset 0 0 0 3px rgba(239, 202, 126, 0.04);
 }
 
 .title-start__copy {
@@ -512,20 +533,27 @@
   z-index: 1;
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 3px;
 }
 
 .title-start__copy strong {
-  font: italic 22px/1.05 "Instrument Serif", Georgia, serif;
+  font: italic clamp(20px, 5vw, 23px)/1.04 "Instrument Serif", Georgia, serif;
   letter-spacing: 0.01em;
 }
 
 .title-start__copy small {
-  color: rgba(244, 232, 202, 0.58);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  color: rgba(239, 202, 126, 0.72);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
+}
+
+.title-start__copy > span {
+  color: rgba(244, 232, 202, 0.5);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.025em;
 }
 
 .title-start__arrow {
@@ -535,7 +563,14 @@
   font: 30px/1 "Instrument Serif", Georgia, serif;
 }
 
-.title-screen__details { margin-top: 21px; }
+.title-screen__details {
+  width: min(100%, 390px);
+  margin-top: 18px;
+  padding: 0 8px;
+  justify-content: space-between;
+  gap: 7px;
+  font-size: 7px;
+}
 
 .title-screen__footer {
   position: relative;
@@ -739,38 +774,64 @@
 .campaign-list-heading i { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(239, 202, 126, 0.3), transparent); }
 .campaign-list-heading small { color: rgba(244, 232, 202, 0.32); font-size: 7px; letter-spacing: 0.08em; }
 
-.campaign-list { display: grid; gap: 12px; }
+.campaign-list {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(226, 206, 164, 0.18);
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, rgba(239, 202, 126, 0.035), transparent 22%),
+    rgba(4, 13, 23, 0.82);
+  box-shadow: 0 15px 34px rgba(2, 7, 14, 0.28), inset 0 1px rgba(255, 255, 255, 0.025);
+}
 
 .campaign-list .campaign-card {
   position: relative;
   margin: 0 !important;
   overflow: hidden;
-  border: 1px solid rgba(226, 206, 164, 0.19) !important;
-  border-radius: 15px !important;
-  background:
-    radial-gradient(circle at 90% 0%, rgba(74, 136, 159, 0.11), transparent 34%),
-    linear-gradient(145deg, rgba(8, 22, 36, 0.94), rgba(5, 14, 25, 0.97)) !important;
-  box-shadow: 0 13px 30px rgba(2, 7, 14, 0.3), inset 0 1px rgba(255, 255, 255, 0.035) !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgba(226, 206, 164, 0.1) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
   animation: menu-card-arrive 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.campaign-list .campaign-card::before { display: none; }
+.campaign-list .campaign-card:last-child { border-bottom: 0 !important; }
+
+.campaign-list .campaign-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  display: block;
+  background: #efca7e;
+  opacity: 0;
+  transform: scaleY(0.45);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
 
 .campaign-list .campaign-card:hover,
 .campaign-list .campaign-card:focus-within {
-  transform: translateY(-2px);
-  border-color: rgba(239, 202, 126, 0.4) !important;
-  box-shadow: 0 17px 38px rgba(2, 7, 14, 0.4), inset 0 1px rgba(255, 255, 255, 0.05) !important;
+  transform: none;
+  background: linear-gradient(90deg, rgba(39, 89, 111, 0.2), rgba(7, 21, 35, 0.14)) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025) !important;
 }
+
+.campaign-list .campaign-card:hover::before,
+.campaign-list .campaign-card:focus-within::before { opacity: 1; transform: scaleY(1); }
 
 .campaign-list .campaign-card__open {
   width: 100%;
-  min-height: 100px;
-  padding: 15px 15px 13px;
+  min-height: 91px;
+  padding: 14px 13px 10px 15px;
   display: grid !important;
-  grid-template-columns: 48px 1fr 18px;
+  grid-template-columns: 46px 1fr 32px;
   align-items: center;
-  gap: 13px;
+  gap: 12px;
   color: inherit;
   border: 0;
   background: transparent;
@@ -779,76 +840,108 @@
 }
 
 .campaign-card__index {
-  width: 48px;
-  height: 60px;
-  display: grid;
-  place-items: center;
+  width: 46px;
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
   color: rgba(239, 202, 126, 0.84);
-  border: 1px solid rgba(239, 202, 126, 0.25);
-  border-radius: 25px 25px 7px 7px;
-  background:
-    radial-gradient(circle at 50% 28%, rgba(78, 139, 163, 0.28), transparent 48%),
-    rgba(5, 17, 30, 0.72);
-  box-shadow: inset 0 0 0 3px rgba(239, 202, 126, 0.035);
+  border-right: 1px solid rgba(239, 202, 126, 0.2);
 }
 
-.campaign-card__index > span { font: italic 18px/1 "Instrument Serif", Georgia, serif; }
+.campaign-card__index > small {
+  color: rgba(244, 232, 202, 0.34);
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.campaign-card__index > strong { font: italic 21px/0.9 "Instrument Serif", Georgia, serif; }
 
 .campaign-card__copy { min-width: 0; display: grid; }
 
-.campaign-card__copy > small {
-  margin-bottom: 2px;
-  color: rgba(239, 202, 126, 0.58);
-  font-size: 7.5px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.campaign-card__meta {
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
 }
+
+.campaign-card__meta small {
+  overflow: hidden;
+  color: rgba(239, 202, 126, 0.58);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.campaign-card__meta small:last-child { color: rgba(244, 232, 202, 0.3); }
+.campaign-card__meta i { width: 3px; height: 3px; flex: 0 0 auto; border-radius: 50%; background: rgba(239, 202, 126, 0.42); }
 
 .campaign-card__copy > strong {
   overflow: hidden;
   color: #fff6dd;
-  font: italic clamp(20px, 5vw, 25px)/1.06 "Instrument Serif", Georgia, serif;
+  font: italic clamp(21px, 5.2vw, 25px)/1.05 "Instrument Serif", Georgia, serif;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.campaign-card__copy > span {
-  margin-top: 6px;
-  color: rgba(244, 232, 202, 0.43);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.campaign-card__copy > span:not(.campaign-card__meta) {
+  margin-top: 5px;
+  color: rgba(244, 232, 202, 0.42);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
-.campaign-card__arrow { color: rgba(239, 202, 126, 0.62); font: 28px/1 "Instrument Serif", Georgia, serif; }
+.campaign-card__arrow {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  color: rgba(239, 202, 126, 0.72);
+  border: 1px solid rgba(239, 202, 126, 0.2);
+  border-radius: 50%;
+  font: 23px/1 "Instrument Serif", Georgia, serif;
+}
 
 .campaign-card__actions {
-  min-height: 34px;
-  padding: 8px 14px 10px 77px;
+  min-height: 31px;
+  padding: 0 14px 10px 73px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-top: 1px solid rgba(226, 206, 164, 0.08);
+  border-top: 0;
   color: rgba(244, 232, 202, 0.3);
-  font-size: 8px;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .campaign-card__actions div { display: flex; gap: 12px; }
 
 .campaign-card__actions button {
-  padding: 2px 0;
+  min-height: 24px;
+  padding: 3px 8px;
   color: rgba(239, 202, 126, 0.72);
-  border: 0;
-  background: transparent;
-  font-size: 9px;
+  border: 1px solid rgba(239, 202, 126, 0.12);
+  border-radius: 999px;
+  background: rgba(7, 21, 35, 0.36);
+  font-size: 8px;
   font-weight: 800;
   cursor: pointer;
 }
 
-.campaign-card__actions button.is-danger { color: rgba(244, 135, 123, 0.75); }
+.campaign-card__actions button.is-danger { color: rgba(244, 135, 123, 0.7); border-color: rgba(244, 135, 123, 0.12); }
 .campaign-card__actions button:hover,
 .campaign-card__actions button:focus-visible { color: #fff4d9; outline: none; }
 .campaign-card__actions button.is-danger:hover,
@@ -914,7 +1007,11 @@
   background: #050d17 !important;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
+  scrollbar-width: none;
 }
+
+.creation-hub::-webkit-scrollbar,
+.template-detail::-webkit-scrollbar { display: none; }
 
 .template-detail { z-index: 70; }
 
@@ -1025,7 +1122,7 @@
 
 .creation-roster {
   min-height: 58dvh;
-  padding: 4px clamp(17px, 4vw, 28px) calc(env(safe-area-inset-bottom, 0px) + 38px);
+  padding: 14px clamp(17px, 4vw, 28px) calc(env(safe-area-inset-bottom, 0px) + 38px);
   background:
     radial-gradient(circle at 50% 0%, rgba(67, 122, 145, 0.1), transparent 24%),
     #07101c;
@@ -1033,7 +1130,7 @@
 
 .creation-name-field {
   position: relative;
-  margin: 4px 0 23px;
+  margin: 0 0 23px;
   padding: 14px;
   display: grid;
   grid-template-columns: 37px 1fr;
@@ -1078,55 +1175,137 @@
 .creation-name-field input::placeholder { color: rgba(244, 232, 202, 0.28); }
 
 .creation-section-heading {
-  margin: 0 2px 10px;
+  margin: 0 1px 8px;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.creation-section-heading p { margin: 0 0 2px; color: rgba(239, 202, 126, 0.66); font-size: 7px; font-weight: 800; letter-spacing: 0.17em; text-transform: uppercase; }
-.creation-section-heading h2 { margin: 0; color: #fff5db; font: italic 23px/1 "Instrument Serif", Georgia, serif; }
-.creation-section-heading > span { color: rgba(244, 232, 202, 0.35); font-size: 8px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.creation-section-heading p { margin: 0 0 3px; color: rgba(239, 202, 126, 0.84); font-size: 7.5px; font-weight: 800; letter-spacing: 0.17em; text-transform: uppercase; }
+.creation-section-heading h2 { margin: 0; color: #fff5db; font: italic clamp(25px, 6.8vw, 31px)/1 "Instrument Serif", Georgia, serif; }
+.creation-section-heading > span { max-width: 76px; padding-top: 3px; color: rgba(239, 202, 126, 0.52); font-size: 6.5px; font-weight: 800; letter-spacing: 0.1em; line-height: 1.35; text-align: right; text-transform: uppercase; }
+
+.creation-tier-picker {
+  position: relative;
+  margin: 0 0 18px;
+  padding: 16px 14px 14px;
+  overflow: hidden;
+  border: 1px solid rgba(239, 202, 126, 0.27);
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 10% 0%, color-mix(in srgb, var(--tier-accent) 12%, transparent), transparent 35%),
+    linear-gradient(145deg, rgba(11, 30, 46, 0.94), rgba(4, 13, 23, 0.97));
+  box-shadow: 0 17px 36px rgba(2, 7, 14, 0.34), inset 0 1px rgba(255, 255, 255, 0.045);
+}
+
+.creation-tier-picker::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 14px;
+  left: 14px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--tier-accent), transparent);
+  opacity: 0.7;
+}
+
+.creation-tier-picker__intro {
+  max-width: 430px;
+  margin: 0 1px 13px;
+  color: rgba(244, 232, 202, 0.53);
+  font-size: 9.5px;
+  line-height: 1.45;
+}
 
 .creation-tier-tabs {
-  margin: 0 -1px;
-  padding: 4px;
+  margin: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 2px;
-  overflow: hidden;
-  border: 1px solid rgba(226, 206, 164, 0.13);
-  border-radius: 13px;
-  background: rgba(3, 11, 20, 0.64);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .creation-tier-tabs button {
   position: relative;
   min-width: 0;
-  min-height: 48px;
-  padding: 7px 2px 6px;
+  min-height: 76px;
+  padding: 18px 7px 9px;
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 2px;
-  color: rgba(244, 232, 202, 0.42);
-  border: 0;
+  gap: 3px;
+  overflow: hidden;
+  color: rgba(244, 232, 202, 0.52);
+  border: 1px solid color-mix(in srgb, var(--tab-accent) 19%, rgba(226, 206, 164, 0.12));
   border-radius: 9px;
-  background: transparent;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--tab-accent) 5%, transparent), rgba(2, 9, 17, 0.54));
   cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.creation-tier-tabs button small { color: color-mix(in srgb, var(--tab-accent) 64%, transparent); font-size: 6px; font-weight: 800; letter-spacing: 0.16em; }
-.creation-tier-tabs button span { max-width: 100%; overflow: hidden; font-size: clamp(7px, 2.2vw, 9px); font-weight: 800; letter-spacing: 0.025em; text-overflow: ellipsis; white-space: nowrap; }
+.creation-tier-tabs button small {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  color: color-mix(in srgb, var(--tab-accent) 72%, transparent);
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.creation-tier-tabs button strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: rgba(255, 246, 221, 0.78);
+  font: italic clamp(14px, 3.8vw, 17px)/1 "Instrument Serif", Georgia, serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.creation-tier-tabs button span {
+  max-width: 100%;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--tab-accent) 65%, #d8d0bd);
+  font-size: 6.5px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.creation-tier-tabs button > i {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  color: #07101c;
+  border-radius: 50%;
+  background: var(--tab-accent);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 900;
+  opacity: 0;
+  transform: scale(0.65);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
 
 .creation-tier-tabs button::after {
   content: "";
   position: absolute;
-  right: 20%;
-  bottom: 3px;
-  left: 20%;
-  height: 2px;
+  right: 8px;
+  bottom: 0;
+  left: 8px;
+  height: 3px;
   border-radius: 2px;
   background: var(--tab-accent);
   box-shadow: 0 0 9px color-mix(in srgb, var(--tab-accent) 40%, transparent);
@@ -1136,21 +1315,30 @@
 
 .creation-tier-tabs button.is-active {
   color: #fff6dd;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--tab-accent) 12%, transparent), rgba(19, 49, 68, 0.28));
+  border-color: color-mix(in srgb, var(--tab-accent) 62%, #f4e7c8);
+  background:
+    radial-gradient(circle at 50% 115%, color-mix(in srgb, var(--tab-accent) 24%, transparent), transparent 55%),
+    linear-gradient(180deg, color-mix(in srgb, var(--tab-accent) 18%, rgba(15, 38, 55, 0.8)), rgba(4, 13, 23, 0.82));
+  box-shadow: 0 8px 20px rgba(2, 7, 14, 0.3), inset 0 0 0 1px color-mix(in srgb, var(--tab-accent) 10%, transparent);
+  transform: translateY(-1px);
 }
 
+.creation-tier-tabs button.is-active strong { color: #fff8e6; }
+.creation-tier-tabs button.is-active > i { opacity: 1; transform: scale(1); }
 .creation-tier-tabs button.is-active::after { transform: scaleX(1); }
-.creation-tier-tabs button:focus-visible { outline: 1px solid color-mix(in srgb, var(--tab-accent) 66%, transparent); outline-offset: -3px; }
+.creation-tier-tabs button:focus-visible { outline: 2px solid color-mix(in srgb, var(--tab-accent) 36%, transparent); outline-offset: 2px; }
 
 .creation-tier-summary {
-  margin: 11px 1px 17px;
-  padding: 12px 13px;
+  min-height: 76px;
+  margin: 10px 0 0;
+  padding: 12px 12px;
   display: flex;
   align-items: center;
   gap: 11px;
-  border-left: 2px solid var(--tier-accent);
-  border-radius: 3px 10px 10px 3px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--tier-accent) 9%, transparent), rgba(5, 15, 26, 0.38));
+  border: 1px solid color-mix(in srgb, var(--tier-accent) 25%, rgba(226, 206, 164, 0.1));
+  border-left: 3px solid var(--tier-accent);
+  border-radius: 4px 10px 10px 4px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tier-accent) 12%, transparent), rgba(3, 11, 20, 0.52));
 }
 
 .creation-tier-summary__mark { width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center; color: var(--tier-accent); border: 1px solid color-mix(in srgb, var(--tier-accent) 34%, transparent); border-radius: 50%; }
@@ -1158,6 +1346,25 @@
 .creation-tier-summary small { display: block; color: color-mix(in srgb, var(--tier-accent) 80%, #f5e8c9); font-size: 7px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
 .creation-tier-summary strong { display: inline-block; margin-top: 1px; color: #fff4d7; font: italic 19px/1 "Instrument Serif", Georgia, serif; }
 .creation-tier-summary p { margin: 3px 0 0; color: rgba(244, 232, 202, 0.5); font-size: 9px; line-height: 1.35; }
+
+.creation-tier-summary__roster {
+  min-width: 40px;
+  margin-left: auto;
+  padding-left: 10px;
+  display: grid;
+  justify-items: center;
+  color: color-mix(in srgb, var(--tier-accent) 84%, #fff4d7);
+  border-left: 1px solid color-mix(in srgb, var(--tier-accent) 22%, transparent);
+  font: italic 19px/1 "Instrument Serif", Georgia, serif;
+}
+
+.creation-tier-summary__roster small {
+  margin-top: 4px;
+  color: rgba(244, 232, 202, 0.34);
+  font: 800 5.5px/1.1 system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 
 .creation-grid { display: grid; grid-template-columns: 1fr; gap: 11px; }
 
@@ -1335,7 +1542,7 @@
   .menu-signout--compact,
   .campaign-nav .menu-back { padding: 6px 8px; font-size: 8px; }
   .campaign-library { padding-right: 17px; padding-left: 17px; }
-  .campaign-card__actions { padding-left: 15px; }
+  .campaign-card__actions { justify-content: flex-end; padding-left: 15px; }
   .campaign-card__actions > span { display: none; }
   .creation-roster { padding-right: 15px; padding-left: 15px; }
 }

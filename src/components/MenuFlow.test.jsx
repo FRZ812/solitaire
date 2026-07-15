@@ -15,8 +15,9 @@ describe("front-of-game menu flow", () => {
       />,
     );
 
-    expect(html).toContain("Click to start");
-    expect(html).toContain("Open your campaign library");
+    expect(html).toContain("Your choices become history");
+    expect(html).toContain("Open your campaigns");
+    expect(html).toContain("Campaign ledger");
     expect(html).toContain("wanderer@example.com");
     expect(html).toContain("Sign out");
     expect(html).toContain("logo-solitaire-compass-v1.png");
@@ -40,6 +41,8 @@ describe("front-of-game menu flow", () => {
     expect(html).toContain("Choose your journey");
     expect(html).toContain("Begin a new journey");
     expect(html).toContain("The White Road");
+    expect(html).toContain("Continue from your last passage");
+    expect(html).toContain("Cloud saved");
     expect(html).toContain("Campaign library");
     expect(html).toContain("Sign out");
   });
@@ -50,7 +53,10 @@ describe("front-of-game menu flow", () => {
     );
 
     expect(html.match(/role="tab"/g)).toHaveLength(6);
-    expect(html).toContain("Starting power");
+    expect(html).toContain("Choose your power fantasy");
+    expect(html).toContain("Sets tone &amp; challenge");
+    expect(html).toContain("Standard: Grounded");
+    expect(html.indexOf("Choose your power fantasy")).toBeLessThan(html.indexOf("Name your traveller"));
     expect(html).toContain("Bram Coltaine");
     expect(html).toContain("Faelar Sylvareth");
     expect(html).not.toContain("Ysolde Varen");

@@ -267,7 +267,7 @@ export function VitalsStrip({ state, onExtinguish }) {
           ariaLabel={`Resolve ${character.resolve} of ${resMax}`}
         />
         <RadialMeter
-          iconName="drumstick"
+          iconName="bread"
           value={needs.hunger} max={100}
           label={Math.round(needs.hunger)}
           ariaLabel={`Hunger ${Math.round(needs.hunger)} of 100`}
@@ -312,9 +312,10 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
     pct <= 30 ? "#f5b97a" :
     colors.gold;
 
-  // Geometry: 28×28 box, ring radius 12, stroke 2.5. Circumference = 2πr.
-  const SIZE = 28;
-  const R = 12;
+  // A compact instrument dial with enough interior space for unmistakable
+  // silhouettes (especially hunger's bread loaf) at phone scale.
+  const SIZE = 32;
+  const R = 13;
   const C = 2 * Math.PI * R;
   const dashOffset = C * (1 - pct / 100);
 
@@ -330,15 +331,16 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
     >
       <div className="radial-meter__dial" style={{ width: SIZE, height: SIZE }}>
         <svg
+          className="radial-meter__ring"
           width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}
           style={{ transform: "rotate(-90deg)", display: "block" }}
         >
           {/* faint background ring */}
           <circle cx={SIZE/2} cy={SIZE/2} r={R}
-                  fill="none" stroke="rgba(215, 167, 111, 0.14)" strokeWidth="2.5" />
+                  fill="none" stroke="rgba(215, 167, 111, 0.12)" strokeWidth="2" />
           {/* progress arc */}
           <circle cx={SIZE/2} cy={SIZE/2} r={R}
-                  fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round"
+                  fill="none" stroke={color} strokeWidth="2.35" strokeLinecap="round"
                   strokeDasharray={C} strokeDashoffset={dashOffset}
                   style={{
                     transition: "stroke-dashoffset 0.4s cubic-bezier(0.16,1,0.3,1), stroke 0.2s",
@@ -346,7 +348,7 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
                   }} />
         </svg>
         <div className="radial-meter__icon">
-          <Icon name={iconName} size={11} color={color} fill={iconFill || "none"} strokeWidth={1.8} />
+          <Icon name={iconName} size={13} color={color} fill={iconFill || "none"} strokeWidth={1.75} />
         </div>
       </div>
       <span className="radial-meter__value" style={{ color }}>{label}</span>

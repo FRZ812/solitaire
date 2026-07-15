@@ -27,12 +27,15 @@ export function TitleScreen({ email, onStart, onSignOut, busy = false, error = n
       </header>
 
       <section className="title-screen__hero" aria-labelledby="title-screen-heading">
-        <p className="menu-eyebrow">A living world for one traveller</p>
+        <p className="menu-eyebrow">A persistent solo roleplaying game</p>
         <GameLogo className="title-screen__logo" />
         <h1 id="title-screen-heading" className="sr-only">Solitaire</h1>
-        <p className="title-screen__lede">
-          Walk your own road through a world that listens, changes, and remembers.
-        </p>
+        <div className="title-screen__statement">
+          <strong>Your choices become history.</strong>
+          <p className="title-screen__lede">
+            Places change, people remember, and the rules keep the world honest.
+          </p>
+        </div>
 
         {error && <div className="title-screen__error" role="alert">{error}</div>}
 
@@ -43,19 +46,20 @@ export function TitleScreen({ email, onStart, onSignOut, busy = false, error = n
           disabled={busy}
         >
           <span className="title-start__compass" aria-hidden="true">
-            <Icon name="compass" size={23} strokeWidth={1.6} />
+            <Icon name="book" size={22} strokeWidth={1.45} />
           </span>
           <span className="title-start__copy">
-            <strong>{busy ? "Preparing the road…" : "Click to start"}</strong>
-            <small>{busy ? "Loading your saved journeys" : "Open your campaign library"}</small>
+            <small>Campaign ledger</small>
+            <strong>{busy ? "Preparing your campaigns…" : "Open your campaigns"}</strong>
+            <span>{busy ? "Loading saved journeys" : "Continue a save or begin anew"}</span>
           </span>
           <span className="title-start__arrow" aria-hidden="true">›</span>
         </button>
 
         <div className="title-screen__details" aria-label="Game qualities">
-          <span>Rule-bound</span><i />
-          <span>Persistent</span><i />
-          <span>Yours</span>
+          <span>Rules matter</span><i />
+          <span>World persists</span><i />
+          <span>Choices remain</span>
         </div>
       </section>
 

@@ -3,6 +3,10 @@ export function storyDistanceFromBottom(element) {
   return Math.max(0, element.scrollHeight - element.clientHeight - element.scrollTop);
 }
 
+export function storyIsAtBottom(element, tolerance = 1) {
+  return storyDistanceFromBottom(element) <= tolerance;
+}
+
 export function wheelRequestsOlder(deltaY) {
   return Number.isFinite(deltaY) && deltaY < 0;
 }

@@ -17,12 +17,12 @@ const isHumanRace = (r) => r === "human";
 // Power rungs for the pick-and-play roster. Only one rung is visible at a time
 // so choosing a character feels like browsing a roster, not reading a catalogue.
 const TEMPLATE_TIERS = [
-  { id: "standard", label: "Standard", eyebrow: "The intended beginning", blurb: "An ordinary life. Every mile and hard-won victory matters.", accent: "#d7b477" },
-  { id: "mid", label: "Veteran", eyebrow: "Road-tested", blurb: "Capable from the outset, with room to become exceptional.", accent: "#87b995" },
-  { id: "epic", label: "Champion", eyebrow: "Already formidable", blurb: "A stronger, faster opening with fewer early hardships.", accent: "#b894df" },
-  { id: "legendary", label: "Legend", eyebrow: "Known across the land", blurb: "Begin with the power and reputation others spend lives earning.", accent: "#df9d55" },
-  { id: "mythical", label: "Mythic", eyebrow: "Beyond mortal measure", blurb: "The early world will struggle to contain what you already are.", accent: "#62c3c4" },
-  { id: "divine", label: "Divine", eyebrow: "Pure power fantasy", blurb: "A god walks the road. Choose this for dominion, not survival.", accent: "#efd887" },
+  { id: "standard", label: "Standard", flavor: "Grounded", eyebrow: "The intended beginning", blurb: "An ordinary life. Every mile and hard-won victory matters.", accent: "#d7b477" },
+  { id: "mid", label: "Veteran", flavor: "Seasoned", eyebrow: "Road-tested", blurb: "Capable from the outset, with room to become exceptional.", accent: "#87b995" },
+  { id: "epic", label: "Champion", flavor: "Heroic", eyebrow: "Already formidable", blurb: "A stronger, faster opening with fewer early hardships.", accent: "#b894df" },
+  { id: "legendary", label: "Legend", flavor: "Fabled", eyebrow: "Known across the land", blurb: "Begin with the power and reputation others spend lives earning.", accent: "#df9d55" },
+  { id: "mythical", label: "Mythic", flavor: "Unbound", eyebrow: "Beyond mortal measure", blurb: "The early world will struggle to contain what you already are.", accent: "#62c3c4" },
+  { id: "divine", label: "Divine", flavor: "Godlike", eyebrow: "Pure power fantasy", blurb: "A god walks the road. Choose this for dominion, not survival.", accent: "#efd887" },
 ];
 
 function kindredLabel(setup) {
@@ -229,28 +229,17 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
         </header>
 
         <main className="creation-roster">
-          <section className="creation-name-field">
-            <span className="creation-name-field__sigil" aria-hidden="true"><Icon name="user" size={18} strokeWidth={1.65} /></span>
-            <label htmlFor="creation-name-override">
-              <span>Name your traveller</span>
-              <small>Optional — leave blank to keep each character's name</small>
-            </label>
-            <input
-              id="creation-name-override"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Use the character's own name"
-            />
-          </section>
-
           <section className="creation-tier-picker" aria-labelledby="power-heading">
             <div className="creation-section-heading">
               <div>
-                <p>Starting power</p>
-                <h2 id="power-heading">Choose the kind of tale</h2>
+                <p>Campaign-defining choice</p>
+                <h2 id="power-heading">Choose your power fantasy</h2>
               </div>
-              <span>{activeTemplates.length} lives</span>
+              <span>Sets tone &amp; challenge</span>
             </div>
+            <p className="creation-tier-picker__intro">
+              Starting power changes the danger curve, pace of growth, and how the world reads your arrival.
+            </p>
             <div className="creation-tier-tabs no-scrollbar" role="tablist" aria-label="Starting power">
               {TEMPLATE_TIERS.map((tier, index) => (
                 <button
@@ -264,9 +253,12 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                   style={{ "--tab-accent": tier.accent }}
                   onClick={() => setTierId(tier.id)}
                   disabled={busy}
+                  aria-label={`${tier.label}: ${tier.flavor}`}
                 >
                   <small>{String(index + 1).padStart(2, "0")}</small>
-                  <span>{tier.label}</span>
+                  <strong>{tier.label}</strong>
+                  <span>{tier.flavor}</span>
+                  <i aria-hidden="true">✓</i>
                 </button>
               ))}
             </div>
@@ -274,11 +266,26 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
             <div className="creation-tier-summary">
               <span className="creation-tier-summary__mark" aria-hidden="true"><Icon name={activeTier.id === "standard" ? "compass" : "sparkle"} size={20} strokeWidth={1.65} /></span>
               <div>
-                <small>{activeTier.eyebrow}</small>
+                <small>Selected · {activeTier.eyebrow}</small>
                 <strong>{activeTier.label}</strong>
                 <p>{activeTier.blurb}</p>
               </div>
+              <span className="creation-tier-summary__roster">{activeTemplates.length}<small>travellers</small></span>
             </div>
+          </section>
+
+          <section className="creation-name-field">
+            <span className="creation-name-field__sigil" aria-hidden="true"><Icon name="user" size={18} strokeWidth={1.65} /></span>
+            <label htmlFor="creation-name-override">
+              <span>Name your traveller</span>
+              <small>Optional — leave blank to keep each character's name</small>
+            </label>
+            <input
+              id="creation-name-override"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Use the character's own name"
+            />
           </section>
 
           <section

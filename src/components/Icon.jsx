@@ -29,6 +29,12 @@ const ICONS = {
   // Needs glyphs — small enough to live inside a compact radial meter.
   droplet: <path d="M12 2.5c-3.5 5-5.5 8-5.5 11a5.5 5.5 0 1 0 11 0c0-3-2-6-5.5-11Z" />,
   moon:    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />,
+  bread: (
+    <>
+      <path d="M4 17v-5c0-3.6 3.6-6.5 8-6.5s8 2.9 8 6.5v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+      <path d="m8 9 1.7 2.2" /><path d="m12 7.5 1.4 2.6" /><path d="m16 9 1 2.2" />
+    </>
+  ),
   // Chicken drumstick (Lucide). Reads instantly as "food/hunger".
   drumstick: (
     <>

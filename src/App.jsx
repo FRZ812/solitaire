@@ -85,7 +85,7 @@ import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
 import { advanceLiveNarrator, emptyLiveNarrator } from "./engine/live-narrator.js";
-import { pinStoryToBottom, touchRequestsOlder, wheelRequestsOlder } from "./components/storyScroll.js";
+import { pinStoryToBottom, storyIsAtBottom, touchRequestsOlder, wheelRequestsOlder } from "./components/storyScroll.js";
 import "./components/chat-scene.css";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
@@ -341,6 +341,7 @@ export function Solitaire() {
   const storyFollowRef = useRef(true);
   const storyTouchYRef = useRef(null);
   const [storyFollowing, setStoryFollowing] = useState(true);
+  const [storyAtBottom, setStoryAtBottom] = useState(true);
 
   function setStoryFollow(next) {
     storyFollowRef.current = next;
@@ -354,6 +355,11 @@ export function Solitaire() {
   function pinStory(element = logRef.current) {
     if (!element) return;
     pinStoryToBottom(element);
+    setStoryAtBottom(true);
+  }
+
+  function syncStoryAtBottom(element = logRef.current) {
+    setStoryAtBottom(storyIsAtBottom(element));
   }
 
   function handleStoryWheel(event) {
@@ -380,6 +386,10 @@ export function Solitaire() {
   function handleStoryPointerDown(event) {
     const bounds = event.currentTarget.getBoundingClientRect();
     if (event.clientX >= bounds.right - 18) suspendStoryFollow();
+  }
+
+  function handleStoryScroll(event) {
+    syncStoryAtBottom(event.currentTarget);
   }
 
   function scrollStoryToLatest() {
@@ -560,6 +570,15 @@ export function Solitaire() {
     };
     toBottom();
     const r = requestAnimationFrame(toBottom);
+    return () => cancelAnimationFrame(r);
+  }, [state.beats.length, loading, liveNarrator.thinking, liveNarrator.narration, liveNarrator.dialogues]);
+
+  // The Latest control reflects where the viewport actually is. This is
+  // deliberately separate from the follow lock: reaching the bottom manually
+  // hides the control, but does not re-enable automatic streaming follow.
+  useEffect(() => {
+    syncStoryAtBottom();
+    const r = requestAnimationFrame(() => syncStoryAtBottom());
     return () => cancelAnimationFrame(r);
   }, [state.beats.length, loading, liveNarrator.thinking, liveNarrator.narration, liveNarrator.dialogues]);
 
@@ -1952,6 +1971,7 @@ export function Solitaire() {
             onTouchMove={handleStoryTouchMove}
             onTouchEnd={() => { storyTouchYRef.current = null; }}
             onTouchCancel={() => { storyTouchYRef.current = null; }}
+            onScroll={handleStoryScroll}
             onKeyDownCapture={handleStoryKeyDown}
             onPointerDownCapture={handleStoryPointerDown}
           >
@@ -1974,7 +1994,7 @@ export function Solitaire() {
             )}
             {campaignError && <ErrorBanner>{campaignError}</ErrorBanner>}
           </div>
-          {!storyFollowing && (
+          {!storyFollowing && !storyAtBottom && (
             <button type="button" className="story-jump-latest" onClick={scrollStoryToLatest} aria-label="Jump to latest story output">
               <span>↓</span> Latest
             </button>
