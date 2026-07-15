@@ -4,6 +4,9 @@ import { getBiome } from "../data/biomes.js";
 import { biomeVisual, sceneBiomeId, terrainVisual } from "../data/visual-assets.js";
 import { currentLocationName, getTile } from "../engine/world.js";
 import { currentNode, standingNodeTile } from "../engine/place.js";
+import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
+
+const SCENE_MOTES = [12, 25, 41, 59, 73, 88];
 
 function phaseForHour(hour) {
   if (hour < 5 || hour >= 21) return "night";
@@ -24,6 +27,7 @@ const TERRAIN_POSITION = {
 };
 
 export function SceneBackdrop({ state }) {
+  const backdropRef = useParallaxMotion({ strength: 0.72 });
   const cur = state.world.currentTile;
   const tile = standingNodeTile(state) || getTile(state, cur.x, cur.y);
   const node = currentNode(state);
@@ -38,6 +42,7 @@ export function SceneBackdrop({ state }) {
 
   return (
     <div
+      ref={backdropRef}
       className={`scene-backdrop scene-backdrop--${phase}`}
       data-terrain={terrain}
       data-node={node?.id || undefined}
@@ -50,9 +55,17 @@ export function SceneBackdrop({ state }) {
         "--terrain-tint": terrainTheme.tint,
       }}
     >
-      <img src={visual.image} alt="" draggable="false" style={{ objectPosition: TERRAIN_POSITION[terrain] || "50% 48%" }} />
+      <div className="scene-backdrop__layer scene-backdrop__layer--far" key={`far-${visualBiomeId}-${phase}`}>
+        <img src={visual.image} alt="" draggable="false" style={{ objectPosition: TERRAIN_POSITION[terrain] || "50% 48%" }} />
+      </div>
+      <div className="scene-backdrop__layer scene-backdrop__layer--near" key={`near-${visualBiomeId}-${phase}`}>
+        <img src={visual.image} alt="" draggable="false" style={{ objectPosition: TERRAIN_POSITION[terrain] || "50% 48%" }} />
+      </div>
       <div className="scene-backdrop__terrain" />
       <div className="scene-backdrop__light" />
+      <div className="scene-backdrop__motes">
+        {SCENE_MOTES.map((left, index) => <span key={left} style={{ left: `${left}%`, animationDelay: `${index * 1.4}s` }} />)}
+      </div>
       <div className="scene-backdrop__grain" />
     </div>
   );

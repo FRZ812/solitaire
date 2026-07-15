@@ -52,8 +52,10 @@ export function AuthScreen() {
         display: "flex", flexDirection: "column", gap: "24px",
         zIndex: 1,
       }}>
+        <div className="auth-card__aurora" aria-hidden="true" />
         {/* Hero */}
-        <div style={{ textAlign: "center" }}>
+        <div className="auth-hero" style={{ textAlign: "center" }}>
+          <div className="title-seal" aria-hidden="true"><span>S</span></div>
           <div className="title-kicker" style={{
             fontSize: "9px", letterSpacing: "0.26em", textTransform: "uppercase",
             color: colors.gold, marginBottom: "8px", fontWeight: 700,
@@ -77,6 +79,9 @@ export function AuthScreen() {
           }}>
             A lone traveller, an open road, and a world that answers back — and remembers.
           </p>
+          <div className="auth-hero__facets" aria-label="Game qualities">
+            <span>Rule-bound</span><i /> <span>Persistent</span><i /> <span>Yours</span>
+          </div>
         </div>
 
         {/* Sign-in */}
@@ -111,7 +116,7 @@ export function AuthScreen() {
                 <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
               </svg>
             </div>
-            {busy ? "..." : "Continue with Google"}
+            <span className="auth-primary__label">{busy ? "Opening the road…" : "Continue with Google"}</span>
           </button>
 
           {error && <ErrorBanner style={{ marginTop: "8px" }}>{error}</ErrorBanner>}

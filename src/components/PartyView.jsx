@@ -55,7 +55,7 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInvento
     const totalItems = wornList.length + carriedList.length;
     const tail = totalItems > previewItems.length ? "…" : "";
     return (
-      <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+      <div className="company-pack" style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: "140px", fontSize: "11px", color: "rgba(237,228,208,0.6)", lineHeight: 1.4 }}>
           {previewItems.length > 0 ? (
             <>
@@ -82,8 +82,8 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInvento
   };
 
   return (
-    <div style={{ padding: "2px 16px 8px", color: colors.parchment }}>
-      <div style={{ marginBottom: "12px" }}>
+    <div className="company-view deck-view" style={{ padding: "2px 16px 8px", color: colors.parchment }}>
+      <div className="deck-view__heading" style={{ marginBottom: "12px" }}>
         <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "24px", color: colors.parchmentLight, lineHeight: 1.05 }}>Your Company</div>
         <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.7)", marginTop: "2px" }}>
           {members.length === 0 ? "Travelling alone" : `${people.length} companion${people.length === 1 ? "" : "s"}${mounts.length ? ` · ${mounts.length} mount${mounts.length === 1 ? "" : "s"}` : ""}`}
@@ -104,8 +104,9 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInvento
           const pct = cap ? Math.min(100, Math.round((load / cap) * 100)) : 0;
           const seatable = candidates.filter((c) => c && c.id !== m.id && c.ridingOn !== m.id && canMount(state, c.id, m.id).ok);
           return (
-            <Panel key={m.id} tone="warm" style={{ marginBottom: "12px" }}>
+            <Panel key={m.id} className="company-card company-card--mount" tone="warm" style={{ marginBottom: "12px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                <div className="company-avatar company-avatar--mount" aria-hidden="true">{(m.name || "M").slice(0, 1).toUpperCase()}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.1 }}>{m.name}</div>
                   <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>
@@ -162,8 +163,9 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInvento
 
         {people.length > 0 && <SectionHeader>Companions</SectionHeader>}
         {people.map((c) => (
-          <Panel key={c.id} tone="default" style={{ marginBottom: "12px" }}>
+          <Panel key={c.id} className="company-card company-card--companion" tone="default" style={{ marginBottom: "12px" }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+              <div className="company-avatar" aria-hidden="true">{(c.name || "C").slice(0, 1).toUpperCase()}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.1 }}>{c.name}</div>
                 <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>{c.race} · {c.profession}{c.ridingOn ? ` · riding ${nameOf(c.ridingOn)}` : ""}</div>
@@ -187,7 +189,7 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInvento
             <div style={{ fontSize: "12px", fontStyle: "italic", color: "rgba(237,228,208,0.7)", lineHeight: 1.45, margin: "8px 0" }}>{c.base_appearance}</div>
             <div style={{ fontSize: "12px", color: colors.parchment, lineHeight: 1.45, marginBottom: "10px" }}>{c.description}</div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "4px", marginBottom: "8px" }}>
+            <div className="company-attributes" style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "4px", marginBottom: "8px" }}>
               {ATTR_KEYS.map((k) => (
                 <div key={k} style={{ textAlign: "center", padding: "5px 2px", borderRadius: radius.chip, backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.14)" }}>
                   <div style={{ ...metaStyle, fontSize: "7px", color: colors.gold }}>{ATTR_LABELS[k].slice(0, 3)}</div>

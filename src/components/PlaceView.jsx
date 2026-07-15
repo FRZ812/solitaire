@@ -9,7 +9,6 @@ import { formatDate, formatTime } from "../engine/time.js";
 import {
   buildPlaceViewport,
   cityDirection,
-  nextPlaceNode,
 } from "./exploration/placeModel.js";
 import { MapCanvas } from "./exploration/MapCanvas.jsx";
 import { buildCityMapScene } from "./exploration/mapSceneModel.js";
@@ -59,8 +58,8 @@ function PlaceHeader({ state, place, node, onClose, onGuide }) {
         <small>{formatDate(state.time)} · {formatTime(state.time)} · {node.district}</small>
       </div>
       <div className="rpg-vitals" aria-label="Party status">
-        <div className="rpg-vital rpg-vital--hp"><span>HP</span><i><b style={{ width: `${Math.min(100, vitality / vitalityMax * 100)}%` }} /></i><strong>{Math.ceil(vitality)}/{Math.ceil(vitalityMax)}</strong></div>
-        <div className="rpg-vital rpg-vital--mp"><span>RP</span><i><b style={{ width: `${Math.min(100, resolve / resolveMax * 100)}%` }} /></i><strong>{Math.ceil(resolve)}/{Math.ceil(resolveMax)}</strong></div>
+        <div className="rpg-vital rpg-vital--hp" role="meter" aria-label="Health" aria-valuemin="0" aria-valuemax={Math.ceil(vitalityMax)} aria-valuenow={Math.ceil(vitality)}><span>HP</span><i aria-hidden="true"><b style={{ width: `${Math.min(100, vitality / vitalityMax * 100)}%` }} /></i><strong>{Math.ceil(vitality)}/{Math.ceil(vitalityMax)}</strong></div>
+        <div className="rpg-vital rpg-vital--mp" role="meter" aria-label="Resolve" aria-valuemin="0" aria-valuemax={Math.ceil(resolveMax)} aria-valuenow={Math.ceil(resolve)}><span>RP</span><i aria-hidden="true"><b style={{ width: `${Math.min(100, resolve / resolveMax * 100)}%` }} /></i><strong>{Math.ceil(resolve)}/{Math.ceil(resolveMax)}</strong></div>
         <div className="rpg-coin"><span>◆</span>{formatCopper(coin)}</div>
       </div>
       <button onClick={onGuide} className="rpg-square-button" aria-label="Open city guide"><Icon name="map" size={17} color="#fff4c7" /></button>
@@ -68,19 +67,7 @@ function PlaceHeader({ state, place, node, onClose, onGuide }) {
   );
 }
 
-function PlaceDpad({ onStep, onCenter }) {
-  return (
-    <div className="rpg-dpad place-dpad" aria-label="City cursor controls">
-      <button className="is-up" onClick={() => onStep(0, -1)} aria-label="Select landmark north">▲</button>
-      <button className="is-left" onClick={() => onStep(-1, 0)} aria-label="Select landmark west">◀</button>
-      <button className="is-center" onClick={onCenter} aria-label="Center on party">◆</button>
-      <button className="is-right" onClick={() => onStep(1, 0)} aria-label="Select landmark east">▶</button>
-      <button className="is-down" onClick={() => onStep(0, 1)} aria-label="Select landmark south">▼</button>
-    </div>
-  );
-}
-
-function CityGrid({ model, current, selected, onPick, onStep, onCenter, onGuide, night }) {
+function CityGrid({ model, current, selected, onPick, onCenter, onGuide, night }) {
   const selectedDirection = selected && cityDirection(model.currentPosition, model.selectedPosition);
   const mapScene = useMemo(() => buildCityMapScene({ model, current, selected, districtColors: DISTRICT_COLORS, night }), [model, current, selected, night]);
   const accessibleCells = useMemo(() => model.viewport
@@ -96,30 +83,17 @@ function CityGrid({ model, current, selected, onPick, onStep, onCenter, onGuide,
     <main className={`rpg-world-stage place-world-stage canvas-city-stage ${night ? "is-night" : ""}`}>
       <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive Whitemarch city map" choices={accessibleCells} selectedKey={model.selectedPosition ? `${model.selectedPosition.x},${model.selectedPosition.y}` : ""} />
       <div className="rpg-quickbar place-quickbar">
-        <button onClick={onGuide}><Icon name="map" size={15} color="#fff4c7" /><span>Guide</span></button>
-        <button onClick={onCenter}><span className="place-center-glyph">◆</span><span>Center</span></button>
+        <button onClick={onGuide} aria-label="Open city guide"><Icon name="map" size={15} color="#fff4c7" /><span>Guide</span></button>
+        <button onClick={onCenter} aria-label="Center map on current location"><span className="place-center-glyph" aria-hidden="true">◆</span><span>Center</span></button>
       </div>
       {selected && !model.selectedVisible && <div className="rpg-offscreen-target place-offscreen-target"><span>{nodeGlyph(selected)}</span><b>{selected.name}</b><small>{selectedDirection?.replace("-", " ")}</small></div>}
 
-      <PlaceDpad onStep={onStep} onCenter={onCenter} />
       <div className="place-ward-chip"><span style={{ background: DISTRICT_COLORS[current.district] }} />{current.district}</div>
     </main>
   );
 }
 
-function NearbyChoices({ place, current, onPick }) {
-  return (
-    <div className="rpg-trail-choices place-nearby-choices">
-      {(current.exits || []).map((id) => {
-        const exit = place.nodes[id];
-        if (!exit) return null;
-        return <button key={id} onClick={() => onPick(exit)} style={{ "--choice-color": DISTRICT_COLORS[exit.district] || "#f0c45e" }}><span>{nodeGlyph(exit)}</span><div><small>Nearby · {displayType(exit.type)}</small><b>{exit.name}</b><em>{exit.district}</em></div><i>›</i></button>;
-      })}
-    </div>
-  );
-}
-
-function LocationPanel({ state, place, current, selected, model, time, onPick, onCenter, onWalk, onLeave, onService, onGuide }) {
+function LocationPanel({ state, place, current, selected, model, time, onCenter, onWalk, onLeave, onService, onGuide }) {
   const focus = selected || current;
   const focusTile = nodeTile(place, focus);
   const building = buildingForTile(focusTile);
@@ -140,7 +114,7 @@ function LocationPanel({ state, place, current, selected, model, time, onPick, o
       </div>
 
       <div className="rpg-command-scroll">
-        <div className="rpg-destination place-destination">
+        <div className="rpg-destination place-destination" aria-live="polite">
           <div className="rpg-destination-banner place-destination-banner" style={{ backgroundImage: `linear-gradient(180deg, transparent, rgba(5,13,34,.94)), url(${cityArt})`, "--focus-accent": focusVisual.accent }}>
             {!isCurrent && <button onClick={onCenter} aria-label="Clear city destination"><Icon name="x" size={13} color="#fff7d6" /></button>}
             <span>{isCurrent ? "You are here" : `Route · ${cityDirection(model.currentPosition, model.selectedPosition).replace("-", " ")}`}</span>
@@ -167,19 +141,18 @@ function LocationPanel({ state, place, current, selected, model, time, onPick, o
               </div>
             </>
           ) : !isCurrent ? <div className="rpg-route-blocked">No walkable city route reaches this landmark.</div> : (
-            <>
-              <div className="atlas-section-label">Ways from here</div>
-              <NearbyChoices place={place} current={current} onPick={onPick} />
-            </>
+            <div className="rpg-map-tap-hint rpg-map-tap-hint--city" aria-label="Tap a landmark on the map to preview a street route">
+              <span>1</span><b>Tap a landmark</b><i>→</i><span>2</span><b>Confirm the walk</b>
+            </div>
           )}
         </div>
       </div>
 
       <div className="rpg-command-actions place-command-actions">
-        {isCurrent && building && <button onClick={() => open && onService?.(current, building)} disabled={!open} className="place-enter-button"><span>{open ? "A" : "×"}</span>{open ? `Enter ${building.label}` : `${building.label} opens at ${building.hours?.open}:00`}</button>}
+        {isCurrent && building && <button onClick={() => open && onService?.(current, building)} disabled={!open} className="place-enter-button"><span aria-hidden="true">{open ? "↗" : "×"}</span>{open ? `Enter ${building.label}` : `${building.label} opens at ${building.hours?.open}:00`}</button>}
         {isCurrent && canLeave(state) && <button onClick={onLeave} className="place-leave-button">Beyond the Crown Gate · leave {place.name}</button>}
-        {!isCurrent && <button onClick={onWalk} disabled={!route || route.length < 2} className="rpg-travel-button"><span>A</span>{route ? `Walk to ${focus.name}` : "Route unavailable"}<small>{route ? `${route.length - 1} stops` : ""}</small></button>}
-        {isCurrent && !building && !canLeave(state) && <button onClick={onGuide} className="rpg-travel-button place-guide-button"><span>Y</span>Choose from the city guide<small>{Object.keys(place.nodes).length} landmarks</small></button>}
+        {!isCurrent && <button onClick={onWalk} disabled={!route || route.length < 2} className="rpg-travel-button"><span aria-hidden="true">✓</span>{route ? `Walk to ${focus.name}` : "Route unavailable"}<small>{route ? `${route.length - 1} stops` : ""}</small></button>}
+        {isCurrent && !building && !canLeave(state) && <button onClick={onGuide} className="rpg-travel-button place-guide-button"><span aria-hidden="true">◇</span>Choose from the city guide<small>{Object.keys(place.nodes).length} landmarks</small></button>}
       </div>
     </section>
   );
@@ -219,12 +192,6 @@ export function PlaceView({ state, time, onMove, onLeave, onService, onClose }) 
     setGuideOpen(false);
   }
 
-  function stepCursor(dx, dy) {
-    const baseId = selected?.id || current.id;
-    const next = nextPlaceNode(place, model.layout, baseId, dx, dy);
-    if (next) pick(next);
-  }
-
   function walkRoute() {
     if (!selected || !model.route || model.route.length < 2) return;
     onMove?.(selected.id, model.route.slice(1));
@@ -235,8 +202,8 @@ export function PlaceView({ state, time, onMove, onLeave, onService, onClose }) 
     <div className="exploration-shell rpg-exploration-shell place-shell" style={{ "--rpg-accent": placeVisual.accent, "--rpg-primary": placeVisual.primary, "--rpg-deep": placeVisual.deep }}>
       <PlaceHeader state={state} place={place} node={current} onClose={onClose} onGuide={() => setGuideOpen(true)} />
       <div className="rpg-exploration-body place-exploration-body">
-        <CityGrid model={model} current={current} selected={selected} onPick={pick} onStep={stepCursor} onCenter={() => setSelectedId(null)} onGuide={() => setGuideOpen(true)} night={hour < 6 || hour >= 20} />
-        <LocationPanel state={state} place={place} current={current} selected={selected} model={model} time={time} onPick={pick} onCenter={() => setSelectedId(null)} onWalk={walkRoute} onLeave={onLeave} onService={onService} onGuide={() => setGuideOpen(true)} />
+        <CityGrid model={model} current={current} selected={selected} onPick={pick} onCenter={() => setSelectedId(null)} onGuide={() => setGuideOpen(true)} night={hour < 6 || hour >= 20} />
+        <LocationPanel state={state} place={place} current={current} selected={selected} model={model} time={time} onCenter={() => setSelectedId(null)} onWalk={walkRoute} onLeave={onLeave} onService={onService} onGuide={() => setGuideOpen(true)} />
       </div>
       {guideOpen && <CityGuide place={place} current={current} landmarks={model.landmarks} onClose={() => setGuideOpen(false)} onPick={pick} />}
     </div>

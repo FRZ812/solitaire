@@ -87,15 +87,18 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
   const coins = target.inv?.coins;
 
   return (
-    <div style={{ padding: "2px 16px 8px", display: "flex", flexDirection: "column", gap: "14px", color: colors.parchment }}>
-      <div>
-        <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "24px", color: colors.parchmentLight, lineHeight: 1.05 }}>Inventory</div>
-        <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.7)", marginTop: "2px" }}>Gear · pack · wealth</div>
+    <div className="inventory-view deck-view" style={{ padding: "2px 16px 8px", display: "flex", flexDirection: "column", gap: "14px", color: colors.parchment }}>
+      <div className="inventory-hero">
+        <div className="inventory-hero__icon" aria-hidden="true"><Icon name="bag" size={24} strokeWidth={1.45} /></div>
+        <div>
+          <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "24px", color: colors.parchmentLight, lineHeight: 1.05 }}>Inventory</div>
+          <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.7)", marginTop: "2px" }}>Gear · pack · wealth</div>
+        </div>
       </div>
 
       {/* Member-switch pills — only when the party has anyone in it. */}
       {showPills && (
-        <div style={{ display: "flex", gap: "6px", overflowX: "auto", margin: "-2px -4px 0", padding: "0 4px 4px" }} className="no-scrollbar">
+        <div style={{ display: "flex", gap: "6px", overflowX: "auto", margin: "-2px -4px 0", padding: "0 4px 4px" }} className="inventory-targets no-scrollbar">
           {[codex.characters.wanderer, ...members].filter(Boolean).map((ch) => {
             const isSelf = ch.id === "wanderer";
             const pInv = isSelf ? state.character.inventory : ch.inventory;
@@ -126,7 +129,7 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
       )}
 
       {/* Carry-weight gauge — Body raises the cap. */}
-      <div>
+      <div className="inventory-weight">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "4px" }}>
           <span style={{ ...metaStyle, fontSize: "9px", color: over ? "#d98a6a" : "rgba(237,228,208,0.72)" }}>{over ? "Overburdened — slowed" : "Carry weight"}</span>
           <span style={{ fontSize: "11px", fontWeight: 800, color: over ? "#d98a6a" : colors.parchment }}>{load} / {cap}</span>
@@ -146,13 +149,13 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
           <div style={{ ...insetBoxStyle, padding: "10px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", maxWidth: "264px", margin: "0 auto" }}>
               {DOLL.map((entry, i) => {
-                if (!entry) return <div key={`sp${i}`} />;
+                if (!entry) return <div key={`sp${i}`} aria-hidden="true" />;
                 const [slotId, idxStr] = entry.split(":");
                 const index = idxStr ? Number(idxStr) : 0;
                 const id = occupantOf(slotId, index);
                 const def = id ? defOf(id) : null;
                 return (
-                  <DollCell key={entry} label={slotLabel(slotId)} id={id} def={def}
+                  <DollCell key={entry} index={i} label={slotLabel(slotId)} id={id} def={def}
                     onTap={id ? () => setDetail({ id, location: "worn" }) : undefined} />
                 );
               })}
@@ -189,7 +192,7 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
       {/* Pack — a tappable list (icon · name · weight · qty). */}
       <div>
         <SectionHeader>{isMount ? "Saddlebag" : "Pack"} {carried.length > 0 ? `· ${carried.length}` : ""}</SectionHeader>
-        <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "2px" }}>
+        <div className="inventory-pack" style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "2px" }}>
           {!target.inv ? (
             <span style={{ fontSize: "12px", color: "rgba(237,228,208,0.4)", fontStyle: "italic" }}>Nothing to carry.</span>
           ) : carried.length === 0
@@ -200,7 +203,7 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
                 const fc = fresh && fresh.tone !== "ok" ? (fresh.tone === "bad" ? "#fca5a5" : "#e6a878") : null;
                 const wt = itemWeight(def) * c.quantity;
                 return (
-                  <button key={c.itemId} onClick={() => setDetail({ id: c.itemId, location: "carried" })} style={rowStyle}>
+                  <button className="inventory-row" key={c.itemId} onClick={() => setDetail({ id: c.itemId, location: "carried" })} style={rowStyle}>
                     <span style={{ display: "flex", alignItems: "center", minWidth: 0, gap: "7px", flex: 1 }}>
                       <ItemIcon item={def} itemId={c.itemId} size={16} />
                       <span style={{ color: tierColor(def?.tier || "common"), overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{def?.name || c.itemId}</span>
@@ -248,23 +251,24 @@ const rowStyle = {
 
 // One paper-doll cell: the equipped item's glyph (tap for detail) or a faint slot
 // label when the slot is empty.
-function DollCell({ label, id, def, onTap }) {
+function DollCell({ index, label, id, def, onTap }) {
   const occupied = !!id;
-  const tcolor = occupied ? tierColor(def?.tier || "common") : "rgba(215,167,111,0.14)";
+  const tcolor = occupied ? tierColor(def?.tier || "common") : "rgba(215,167,111,0.24)";
   return (
-    <button onClick={onTap} disabled={!occupied} style={{
+    <button className={`inventory-slot${occupied ? " is-occupied" : ""}`} onClick={onTap} disabled={!occupied} style={{
+      "--slot-index": index,
       aspectRatio: "1", borderRadius: radius.chip, fontFamily: "inherit", padding: "4px", minWidth: 0,
       border: `1px solid ${tcolor}`,
-      backgroundColor: occupied ? "rgba(20,29,29,0.65)" : "rgba(20,29,29,0.3)",
+      backgroundColor: occupied ? "rgba(20,29,29,0.65)" : "rgba(16,43,67,0.24)",
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "3px",
       cursor: occupied ? "pointer" : "default",
     }}>
       {occupied
         ? <ItemIcon item={def} itemId={id} size={20} />
-        : <Icon name="x" size={9} color="rgba(215,167,111,0.18)" strokeWidth={2} />}
+        : <Icon name="x" size={9} color="rgba(215,167,111,0.3)" strokeWidth={2} />}
       <span style={{
         ...metaStyle, fontSize: "7px", letterSpacing: "0.08em",
-        color: occupied ? tcolor : "rgba(215,167,111,0.4)",
+        color: occupied ? tcolor : "rgba(215,167,111,0.56)",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%",
       }}>{occupied ? (def?.name || id) : label}</span>
     </button>

@@ -13,7 +13,7 @@ import {
   isTeleportAnchor,
   pathMinutes,
 } from "../../engine/world.js";
-import { pathRiskPercent, describeEncounterPotential } from "../../engine/encounters.js";
+import { pathRiskPercent } from "../../engine/encounters.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "../../engine/fly.js";
 import { playerFlightMount } from "../../engine/riding.js";
 import { formatDate, formatTime } from "../../engine/time.js";
@@ -23,13 +23,12 @@ import {
   TERRAIN_INK,
   buildExplorationModel,
   directionLabel,
-  directionShort,
   planAtlasJourney,
 } from "./atlasModel.js";
 import { MapCanvas } from "./MapCanvas.jsx";
 import { buildWorldMapScene } from "./mapSceneModel.js";
 import partyArt from "../../assets/generated/scene-tellmar-road-v2.webp";
-import encounterArt from "../../assets/generated/scene-tannic-wood-v2.webp";
+import seekEncounterIcon from "../../assets/generated/ui-seek-encounter.png";
 import rewardArt from "../../assets/generated/scene-whitemarch-march-v2.webp";
 import "./exploration.css";
 
@@ -85,8 +84,8 @@ function RpgHeader({ state, biome, onClose, onWayfinder }) {
         <small>{formatDate(state.time)} · {formatTime(state.time)}</small>
       </div>
       <div className="rpg-vitals" aria-label="Party status">
-        <div className="rpg-vital rpg-vital--hp"><span>HP</span><i><b style={{ width: `${Math.min(100, vitality / vitalityMax * 100)}%` }} /></i><strong>{vitalityDisplay}/{vitalityMaxDisplay}</strong></div>
-        <div className="rpg-vital rpg-vital--mp"><span>RP</span><i><b style={{ width: `${Math.min(100, resolve / resolveMax * 100)}%` }} /></i><strong>{resolveDisplay}/{resolveMaxDisplay}</strong></div>
+        <div className="rpg-vital rpg-vital--hp" role="meter" aria-label="Health" aria-valuemin="0" aria-valuemax={vitalityMaxDisplay} aria-valuenow={vitalityDisplay}><span>HP</span><i aria-hidden="true"><b style={{ width: `${Math.min(100, vitality / vitalityMax * 100)}%` }} /></i><strong>{vitalityDisplay}/{vitalityMaxDisplay}</strong></div>
+        <div className="rpg-vital rpg-vital--mp" role="meter" aria-label="Resolve" aria-valuemin="0" aria-valuemax={resolveMaxDisplay} aria-valuenow={resolveDisplay}><span>RP</span><i aria-hidden="true"><b style={{ width: `${Math.min(100, resolve / resolveMax * 100)}%` }} /></i><strong>{resolveDisplay}/{resolveMaxDisplay}</strong></div>
         <div className="rpg-coin"><span>◆</span>{formatCopper(coin)}</div>
       </div>
       <button onClick={onWayfinder} className="rpg-square-button" aria-label="Open world atlas"><Icon name="map" size={17} color="#fff4c7" /></button>
@@ -94,21 +93,7 @@ function RpgHeader({ state, biome, onClose, onWayfinder }) {
   );
 }
 
-function RpgDpad({ onStep, onClear }) {
-  return (
-    <div className="rpg-dpad" aria-label="Map cursor controls">
-      <button className="is-nw" onClick={() => onStep(0, -1)} aria-label="Move cursor northwest">↖</button>
-      <button className="is-ne" onClick={() => onStep(1, -1)} aria-label="Move cursor northeast">↗</button>
-      <button className="is-west" onClick={() => onStep(-1, 0)} aria-label="Move cursor west">◀</button>
-      <button className="is-center" onClick={onClear} aria-label="Center on party">◆</button>
-      <button className="is-east" onClick={() => onStep(1, 0)} aria-label="Move cursor east">▶</button>
-      <button className="is-sw" onClick={() => onStep(-1, 1)} aria-label="Move cursor southwest">↙</button>
-      <button className="is-se" onClick={() => onStep(0, 1)} aria-label="Move cursor southeast">↘</button>
-    </div>
-  );
-}
-
-function WorldGrid({ model, selection, journey, onPick, onStep, onClear, onJournal, onWayfinder, onSeekCombat, questCount, loading, night }) {
+function WorldGrid({ model, selection, journey, onPick, onJournal, onWayfinder, onSeekCombat, questCount, loading, night }) {
   const mapScene = useMemo(() => buildWorldMapScene({ model, selection, journey, night }), [model, selection, journey, night]);
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.seen && cell.passable && !cell.current)
@@ -126,49 +111,36 @@ function WorldGrid({ model, selection, journey, onPick, onStep, onClear, onJourn
     <main className={`rpg-world-stage canvas-world-stage ${night ? "is-night" : ""}`}>
       <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
       <div className="rpg-quickbar">
-        <button onClick={onWayfinder}><Icon name="map" size={15} color="#fff4c7" /><span>Atlas</span></button>
-        <button onClick={onJournal}><Icon name="book" size={15} color="#fff4c7" /><span>Quests</span>{questCount > 0 && <b>{questCount}</b>}</button>
+        <button onClick={onWayfinder} aria-label="Open world atlas"><Icon name="map" size={15} color="#fff4c7" /><span>Atlas</span></button>
+        <button onClick={onJournal} aria-label={questCount > 0 ? `Open quest journal, ${questCount} active ${questCount === 1 ? "quest" : "quests"}` : "Open quest journal"}><Icon name="book" size={15} color="#fff4c7" /><span>Quests</span>{questCount > 0 && <b aria-hidden="true">{questCount}</b>}</button>
       </div>
 
       {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 
-      <RpgDpad onStep={onStep} onClear={onClear} />
       {onSeekCombat && (
-        <button onClick={onSeekCombat} disabled={loading} className="rpg-wild-encounter">
-          <img src={encounterArt} alt="" />
-          <span><small>Wild encounter</small><b>Seek a foe</b></span>
+        <button
+          onClick={onSeekCombat}
+          disabled={loading}
+          className="rpg-wild-encounter"
+          aria-label="Seek a hostile encounter"
+          title="Seek a hostile encounter"
+        >
+          <img src={seekEncounterIcon} alt="" />
+          <span><small>Wild encounter</small><b>Seek a fight</b></span>
         </button>
       )}
     </main>
   );
 }
 
-function TrailChoices({ model, onPick }) {
-  return (
-    <div className="rpg-trail-choices">
-      {model.choices.slice(0, 5).map((choice) => {
-        const visual = terrainVisual(choice.tile.terrain);
-        return (
-          <button key={choice.key} onClick={() => onPick(choice)} style={{ "--choice-color": visual.tint }}>
-            <span>{glyphFor(choice.tile)}</span>
-            <div><small>{directionShort(choice.direction)} · {choice.steps} {choice.steps === 1 ? "step" : "steps"}</small><b>{nameForDestination(choice, model.origin)}</b><em>{describeEncounterPotential(choice.tile, choice.x, choice.y) || "open trail"}</em></div>
-            <i>›</i>
-          </button>
-        );
-      })}
-      {model.choices.length === 0 && <p className="rpg-empty">No safe road is visible from here.</p>}
-    </div>
-  );
-}
-
-function DestinationPanel({ state, model, selection, selectedName, journey, routeMinutes, risk, focusBiome, focusVisual, onClear, onPick, onTravel, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
+function DestinationPanel({ state, model, selection, selectedName, journey, routeMinutes, risk, focusBiome, focusVisual, onClear, onTravel, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
   const distance = selection ? hexDistance(model.origin, selection) : 0;
   const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
   const description = selection?.tile?.poi?.description || (selection ? TERRAINS[selection.tile?.terrain]?.flavor : null);
   const rewardTitle = selection?.quest ? "Quest reward" : selection?.visited ? "Known waypoint" : "Discovery ahead";
   const rewardValue = selection?.quest ? formatCopper(selection.quest.rewardCp || 0) : selection?.visited ? "Route recorded" : "New atlas entry";
   return (
-    <section className="rpg-command-panel">
+    <section className={`rpg-command-panel ${selection ? "has-selection" : "is-awaiting-destination"}`}>
       <div className="rpg-party-card">
         <div className="rpg-party-portrait"><img src={partyArt} alt="" /></div>
         <div><small>Party leader</small><b>{state.character.name || "Wanderer"}</b><span>{state.character.race || "Adventurer"} · ready</span></div>
@@ -178,13 +150,15 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
       <div className="rpg-command-scroll">
         {!selection ? (
           <div className="rpg-route-intro">
-            <span className="rpg-kicker">Choose a destination</span>
-            <h2>The road is yours</h2>
-            <p>Tap any open tile, use the direction pad, or choose a visible trail. Every step advances time and can trigger an encounter.</p>
-            <TrailChoices model={model} onPick={onPick} />
+            <span className="rpg-kicker">Plan a journey</span>
+            <h2>Choose on the map</h2>
+            <p>Tap any revealed, walkable tile to preview its route, travel time, and danger before committing.</p>
+            <div className="rpg-map-tap-hint" aria-label="Travel in two steps: tap a tile, then confirm travel">
+              <span>1</span><b>Tap a tile</b><i>→</i><span>2</span><b>Confirm travel</b>
+            </div>
           </div>
         ) : (
-          <div className="rpg-destination">
+          <div className="rpg-destination" aria-live="polite">
             <div className="rpg-destination-banner" style={{ backgroundImage: `linear-gradient(180deg, transparent, rgba(5,13,34,.92)), url(${focusVisual.image})`, "--focus-accent": focusVisual.accent }}>
               <button onClick={onClear} aria-label="Clear destination"><Icon name="x" size={13} color="#fff7d6" /></button>
               <span>{selection.quest ? "Quest objective" : focusBiome.name}</span>
@@ -216,17 +190,17 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
         )}
       </div>
 
-      <div className="rpg-command-actions">
+      {selection && <div className="rpg-command-actions">
         {(canFly || teleOption) && <div className="rpg-magic-actions">
           {canFly && <button onClick={onFly}>Fly · ~{Math.min(distance, FLY_TRAVEL_HEXES) * FLY_MIN_PER_HEX} min{flightMount ? ` · ${flightMount.name}` : ` · ${flyPlan.totalCost} RP`}</button>}
           {teleOption && <button onClick={() => resolve >= teleOption.resolveCost && onTeleport(teleOption)} disabled={resolve < teleOption.resolveCost}>{teleOption.name} · {teleOption.resolveCost} RP</button>}
         </div>}
         <button onClick={onTravel} disabled={!journey || loading} className="rpg-travel-button">
-          <span>{loading ? "…" : "A"}</span>
+          <span aria-hidden="true">{loading ? "…" : "✓"}</span>
           {!selection ? "Choose a destination" : isSelf ? "You are here" : !journey ? "Route unavailable" : journey.arrived ? `Travel to ${selectedName}` : `March toward ${selectedName}`}
           <small>{journey ? `${risk}% danger` : ""}</small>
         </button>
-      </div>
+      </div>}
     </section>
   );
 }
@@ -315,12 +289,6 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
     setWayfinderOpen(false);
   }
 
-  function stepCursor(dx, dy) {
-    const base = selected || model.origin;
-    const next = model.viewport.find((cell) => cell.x === base.x + dx && cell.y === base.y + dy);
-    if (next?.seen && next.passable && !next.current) pick(next);
-  }
-
   function handleFlySelection() {
     if (flightMount || flyPlan.casts <= 1) onFly(selected);
     else setFlyPanelDest(selected);
@@ -330,8 +298,8 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
     <div className="exploration-shell rpg-exploration-shell" style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
       <RpgHeader state={state} biome={currentBiome} onClose={onClose} onWayfinder={() => setWayfinderOpen(true)} />
       <div className="rpg-exploration-body">
-        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onStep={stepCursor} onClear={() => setSelected(null)} onJournal={() => setJournalOpen(true)} onWayfinder={() => setWayfinderOpen(true)} onSeekCombat={onSeekCombat} questCount={activeQuests.length} loading={loading} night={hour < 6 || hour >= 20} />
-        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onPick={pick} onTravel={() => journey && !loading && onTravel(selected, journey.fullPath)} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
+        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onJournal={() => setJournalOpen(true)} onWayfinder={() => setWayfinderOpen(true)} onSeekCombat={onSeekCombat} questCount={activeQuests.length} loading={loading} night={hour < 6 || hour >= 20} />
+        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={() => journey && !loading && onTravel(selected, journey.fullPath)} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
       </div>
       {journalOpen && <QuestJournal quests={activeQuests} current={model.origin} onClose={() => setJournalOpen(false)} onPick={pick} />}
       {wayfinderOpen && <Wayfinder landmarks={model.landmarks} origin={model.origin} onClose={() => setWayfinderOpen(false)} onPick={pick} />}
@@ -351,7 +319,7 @@ function AtlasFlyPanel({ plan, destination, onCancel, onConfirm }) {
         <p>To {destination}. One casting bears one soul; choose who carries each traveller.</p>
         {plan.passengers.map((passenger) => <label key={passenger.id} className="atlas-assign-row"><span>{passenger.name}{passenger.kind === "player" ? " (you)" : ""}</span><select value={assign[passenger.id] ?? ""} onChange={(event) => setAssign({ ...assign, [passenger.id]: event.target.value })}>{plan.casters.map((caster) => <option key={caster.id} value={caster.id}>flown by {caster.name}</option>)}</select></label>)}
         <div className="atlas-caster-costs">{plan.casters.map((caster) => <span key={caster.id}>{caster.name}: {caster.resolve} → {caster.resolve - (costs[caster.id] || 0)}</span>)}</div>
-        <button onClick={() => valid && onConfirm(assign)} disabled={!valid} className="rpg-travel-button rpg-travel-button--sky"><span>A</span>{valid ? `Take wing · ${plan.totalCost} resolve` : "Not enough resolve"}</button>
+        <button onClick={() => valid && onConfirm(assign)} disabled={!valid} className="rpg-travel-button rpg-travel-button--sky"><span aria-hidden="true">↑</span>{valid ? `Take wing · ${plan.totalCost} resolve` : "Not enough resolve"}</button>
       </div>
     </div>
   );
