@@ -13,7 +13,6 @@ import { AttributeDetail } from "./AttributeDetail.jsx";
 import rosterArtwork from "../assets/generated/character-roster-threshold-v1.webp";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { resolveCharacterPortrait } from "./character-portrait-assets.js";
-import { professionRecord } from "../data/professions.js";
 
 const isHumanRace = (r) => r === "human";
 
@@ -335,7 +334,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search name, profession, kindred…"
+                placeholder="Search name, class, subclass, kindred…"
               />
             </label>
             <div className="creation-role-filters no-scrollbar" role="toolbar" aria-label="Filter by combat role">
@@ -386,7 +385,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 <span className="creation-card__body">
                   <span className="creation-card__topline">
                     <small>{tmpl.role}</small>
-                    <em>{professionRecord(tmpl.setup.profession)?.name || tmpl.label}</em>
+                    <em aria-label={`Subclass: ${tmpl.label}`}><span>Subclass</span><b>{tmpl.label}</b></em>
                   </span>
                   <strong>{finalNameFor(tmpl)}</strong>
                   <span className="creation-card__meta">{metaLine(tmpl.setup)}</span>
