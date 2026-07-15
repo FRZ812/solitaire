@@ -11,11 +11,14 @@ import { CHARACTER_TEMPLATES, STANDARD_PROVISIONS } from "../data/templates.js";
 import { InfoModal } from "./InfoTip.jsx";
 import { AttributeDetail } from "./AttributeDetail.jsx";
 import rosterArtwork from "../assets/generated/character-roster-threshold-v1.webp";
+import { ProfessionIcon } from "./ProfessionIcon.jsx";
+import { resolveCharacterPortrait } from "./character-portrait-assets.js";
+import { professionRecord } from "../data/professions.js";
 
 const isHumanRace = (r) => r === "human";
 
-// Power rungs for the pick-and-play roster. Only one rung is visible at a time
-// so choosing a character feels like browsing a roster, not reading a catalogue.
+// Power rungs for the pick-and-play roster. The full authored company is the
+// default view; these become quick filters for players who want a power band.
 const TEMPLATE_TIERS = [
   { id: "standard", label: "Standard", flavor: "Grounded", eyebrow: "The intended beginning", blurb: "An ordinary life. Every mile and hard-won victory matters.", accent: "#d7b477" },
   { id: "mid", label: "Veteran", flavor: "Seasoned", eyebrow: "Road-tested", blurb: "Capable from the outset, with room to become exceptional.", accent: "#87b995" },
@@ -24,6 +27,13 @@ const TEMPLATE_TIERS = [
   { id: "mythical", label: "Mythic", flavor: "Unbound", eyebrow: "Beyond mortal measure", blurb: "The early world will struggle to contain what you already are.", accent: "#62c3c4" },
   { id: "divine", label: "Divine", flavor: "Godlike", eyebrow: "Pure power fantasy", blurb: "A god walks the road. Choose this for dominion, not survival.", accent: "#efd887" },
 ];
+
+const ALL_TIER = {
+  id: "all", label: "All", flavor: `${CHARACTER_TEMPLATES.length} lives`, eyebrow: "Every authored road",
+  blurb: "Browse the complete company, then narrow by power, role, or name.", accent: "#efca7e",
+};
+const ROSTER_TIERS = [ALL_TIER, ...TEMPLATE_TIERS];
+const ROLE_FILTERS = ["all", ...new Set(CHARACTER_TEMPLATES.map((template) => template.role))];
 
 function kindredLabel(setup) {
   const r = RACES[setup.race];
@@ -91,7 +101,7 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
     <div className="template-detail" style={{ "--tier-accent": tierMeta.accent }}>
       <div className="template-detail__inner">
         <header className="template-detail__hero">
-          <img src={rosterArtwork} alt="" draggable="false" />
+          <img src={resolveCharacterPortrait(tmpl, rosterArtwork)} alt="" draggable="false" decoding="async" />
           <div className="template-detail__hero-wash" aria-hidden="true" />
           <div className="template-detail__toolbar">
             <button className="creation-back" type="button" onClick={onBack} disabled={busy}>
@@ -100,7 +110,9 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
             <span className="template-detail__role">{tmpl.role}</span>
           </div>
           <div className="template-detail__identity">
-            <span className="template-detail__sigil" aria-hidden="true"><Icon name={tmpl.icon} size={24} strokeWidth={1.75} /></span>
+            <span className="template-detail__sigil" aria-hidden="true">
+              <ProfessionIcon templateId={tmpl.id} profession={s.profession} size="large" decorative />
+            </span>
             <p>{tierMeta.label} · {tmpl.label}</p>
             <h1>{finalName}</h1>
             <div>{metaLine(s)}</div>
@@ -110,6 +122,14 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
 
         <div className="template-detail__body">
           <p className="template-detail__story">{tmpl.story || s.story}</p>
+
+          <Section title="A person, not a preset">
+            <div className="template-character-hooks">
+              <CharacterHook label="Voice" value={tmpl.voice} />
+              <CharacterHook label="Unfinished business" value={tmpl.complication} />
+              <CharacterHook label="Telltale habit" value={tmpl.signature} />
+            </div>
+          </Section>
 
           <Section title="Appearance">
             <div style={{ fontSize: "12.5px", color: "rgba(237,228,208,0.85)", lineHeight: 1.5, marginBottom: apprChips.length ? "7px" : 0 }}>{s.base_appearance}</div>
@@ -185,24 +205,56 @@ const Section = ({ title, hint, children }) => (
   </div>
 );
 
+const CharacterHook = ({ label, value }) => value ? (
+  <div className="template-character-hook">
+    <small>{label}</small>
+    <p>{value}</p>
+  </div>
+) : null;
+
 // The first thing a fresh soul sees in limbo: choose a ready-made life (tap a
 // card to meet them in full, then begin) or step into the freeform interview to
 // author your own. "Leave" returns to the campaigns list so you're never stuck.
 export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState(null); // template being previewed
-  const [tierId, setTierId] = useState("standard");
+  const [tierId, setTierId] = useState("all");
+  const [role, setRole] = useState("all");
+  const [search, setSearch] = useState("");
 
   const finalNameFor = (tmpl) => name.trim() || tmpl.setup.name;
-  const activeTier = TEMPLATE_TIERS.find((tier) => tier.id === tierId) || TEMPLATE_TIERS[0];
-  const activeTemplates = CHARACTER_TEMPLATES.filter((tmpl) => (tmpl.tier || "standard") === activeTier.id);
+  const activeTier = ROSTER_TIERS.find((tier) => tier.id === tierId) || ALL_TIER;
+  const normalizedSearch = search.trim().toLowerCase();
+  const activeTemplates = CHARACTER_TEMPLATES.filter((tmpl) => {
+    if (activeTier.id !== "all" && (tmpl.tier || "standard") !== activeTier.id) return false;
+    if (role !== "all" && tmpl.role !== role) return false;
+    if (!normalizedSearch) return true;
+    return [tmpl.label, tmpl.role, tmpl.concept, tmpl.story, tmpl.setup.name, tmpl.setup.profession, tmpl.setup.race]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+  });
   const begin = (tmpl) => {
     if (busy) return;
     const have = new Set((tmpl.setup.items || []).map((i) => i.itemId));
     const provisions = STANDARD_PROVISIONS.filter((p) => !have.has(p.itemId)).map((p) => ({ itemId: p.itemId, quantity: p.quantity, worn: false }));
     // Pass the backstory so the narrator can ground the opening scene (now a live
     // narrator call that arrives the character inside Whitemarch, like the custom path).
-    onPickTemplate({ ...tmpl.setup, name: finalNameFor(tmpl), backstory: tmpl.story, items: [...(tmpl.setup.items || []), ...provisions] });
+    const profile = { voice: tmpl.voice, complication: tmpl.complication, signature: tmpl.signature };
+    const backstory = [
+      tmpl.story,
+      tmpl.voice && `Voice: ${tmpl.voice}`,
+      tmpl.complication && `Unfinished business: ${tmpl.complication}`,
+      tmpl.signature && `Telltale habit: ${tmpl.signature}`,
+    ].filter(Boolean).join(" ");
+    onPickTemplate({
+      ...tmpl.setup,
+      name: finalNameFor(tmpl),
+      templateId: tmpl.id,
+      portraitKey: tmpl.portraitKey,
+      profile,
+      backstory,
+      items: [...(tmpl.setup.items || []), ...provisions],
+    });
   };
 
   if (selected) {
@@ -213,7 +265,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
     <div className="creation-hub" style={{ "--tier-accent": activeTier.accent }}>
       <div className="creation-hub__inner">
         <header className="creation-roster-hero">
-          <img className="creation-roster-hero__art" src={rosterArtwork} alt="" draggable="false" />
+          <img className="creation-roster-hero__art" src={rosterArtwork} alt="" draggable="false" decoding="async" />
           <div className="creation-roster-hero__wash" aria-hidden="true" />
           <div className="creation-roster-hero__toolbar">
             <button className="creation-back" type="button" onClick={onQuit} disabled={busy}>
@@ -241,7 +293,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
               Starting power changes the danger curve, pace of growth, and how the world reads your arrival.
             </p>
             <div className="creation-tier-tabs no-scrollbar" role="tablist" aria-label="Starting power">
-              {TEMPLATE_TIERS.map((tier, index) => (
+              {ROSTER_TIERS.map((tier, index) => (
                 <button
                   type="button"
                   key={tier.id}
@@ -255,7 +307,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                   disabled={busy}
                   aria-label={`${tier.label}: ${tier.flavor}`}
                 >
-                  <small>{String(index + 1).padStart(2, "0")}</small>
+                  <small>{tier.id === "all" ? "∞" : String(index).padStart(2, "0")}</small>
                   <strong>{tier.label}</strong>
                   <span>{tier.flavor}</span>
                   <i aria-hidden="true">✓</i>
@@ -264,13 +316,38 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
             </div>
 
             <div className="creation-tier-summary">
-              <span className="creation-tier-summary__mark" aria-hidden="true"><Icon name={activeTier.id === "standard" ? "compass" : "sparkle"} size={20} strokeWidth={1.65} /></span>
+              <span className="creation-tier-summary__mark" aria-hidden="true"><Icon name={activeTier.id === "standard" || activeTier.id === "all" ? "compass" : "sparkle"} size={20} strokeWidth={1.65} /></span>
               <div>
                 <small>Selected · {activeTier.eyebrow}</small>
                 <strong>{activeTier.label}</strong>
                 <p>{activeTier.blurb}</p>
               </div>
-              <span className="creation-tier-summary__roster">{activeTemplates.length}<small>travellers</small></span>
+              <span className="creation-tier-summary__roster">{activeTemplates.length}<small>{activeTemplates.length === 1 ? "traveller" : "travellers"}</small></span>
+            </div>
+          </section>
+
+          <section className="creation-roster-tools" aria-label="Filter character roster">
+            <label htmlFor="creation-roster-search">
+              <Icon name="target" size={17} />
+              <span className="sr-only">Search characters</span>
+              <input
+                id="creation-roster-search"
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search name, profession, kindred…"
+              />
+            </label>
+            <div className="creation-role-filters no-scrollbar" role="toolbar" aria-label="Filter by combat role">
+              {ROLE_FILTERS.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={role === value ? "is-active" : ""}
+                  aria-pressed={role === value}
+                  onClick={() => setRole(value)}
+                >{value === "all" ? "All roles" : value}</button>
+              ))}
             </div>
           </section>
 
@@ -302,11 +379,14 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 onClick={() => setSelected(tmpl)}
                 disabled={busy}
               >
-                <span className="creation-card__sigil" aria-hidden="true"><Icon name={tmpl.icon} size={22} strokeWidth={1.7} /></span>
+                <span className="creation-card__portrait" aria-hidden="true">
+                  <img src={resolveCharacterPortrait(tmpl, rosterArtwork)} alt="" draggable="false" loading="lazy" decoding="async" />
+                  <ProfessionIcon templateId={tmpl.id} profession={tmpl.setup.profession} size="small" decorative />
+                </span>
                 <span className="creation-card__body">
                   <span className="creation-card__topline">
                     <small>{tmpl.role}</small>
-                    <em>{tmpl.label}</em>
+                    <em>{professionRecord(tmpl.setup.profession)?.name || tmpl.label}</em>
                   </span>
                   <strong>{finalNameFor(tmpl)}</strong>
                   <span className="creation-card__meta">{metaLine(tmpl.setup)}</span>
@@ -318,6 +398,13 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 <span className="creation-card__meet" aria-hidden="true">Meet them <b>›</b></span>
               </button>
             ))}
+            {activeTemplates.length === 0 && (
+              <div className="creation-roster-empty" role="status">
+                <Icon name="character" size={28} />
+                <strong>No traveller answers that description.</strong>
+                <button type="button" onClick={() => { setSearch(""); setRole("all"); setTierId("all"); }}>Clear filters</button>
+              </div>
+            )}
           </section>
 
           <section className="creation-custom">

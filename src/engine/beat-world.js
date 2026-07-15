@@ -4,7 +4,7 @@
 // apiHistory growth, location status, waterskin refill); applyWorldTick runs the
 // end-of-beat time tick (food spoilage + codex aging). No import back into
 // beat.js, so no cycle.
-import { getTile, computeSightFromRadius } from "./world.js";
+import { getTile, computeSightFromRadius, persistedTileDelta } from "./world.js";
 import { sightRadius } from "./light.js";
 import { refillVessels } from "./consumables.js";
 import { spoilCarried } from "./spoilage.js";
@@ -35,13 +35,15 @@ export function applyWorldMovement({ state, beat, options, codex, character, new
     const tiles = { ...world.tiles };
     let finalTile = { ...arrivedTile };
     if (beat.tile_discovery && (finalTile.poi?.type === "hidden" || !finalTile.poi)) {
+      const generated = finalTile.poi?.generated;
       finalTile = { ...finalTile, poi: {
-        type: beat.tile_discovery.poi_type || "landmark",
-        name: beat.tile_discovery.name || finalTile.poi?.name || null,
-        description: beat.tile_discovery.description || null,
+        type: generated?.poiType || beat.tile_discovery.poi_type || "landmark",
+        name: generated?.name || beat.tile_discovery.name || finalTile.poi?.name || null,
+        description: generated?.description || beat.tile_discovery.description || null,
+        ...(generated?.id ? { siteId: generated.id, generated: true } : {}),
       } };
     }
-    tiles[`${x},${y}`] = finalTile;
+    tiles[`${x},${y}`] = persistedTileDelta(finalTile);
     const r = sightRadius({ world: { ...world, tiles, currentTile: { x, y } }, character, time: newTime });
     world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFromRadius(x, y, r, world.seen) };
   }
@@ -58,7 +60,7 @@ export function applyWorldMovement({ state, beat, options, codex, character, new
     if (typeof x === "number" && typeof y === "number") {
       const arrivedTile = getTile(state, x, y);
       const tiles = { ...world.tiles };
-      tiles[`${x},${y}`] = arrivedTile;
+      tiles[`${x},${y}`] = persistedTileDelta(arrivedTile);
       const r = sightRadius({ world: { ...world, tiles, currentTile: { x, y } }, character, time: newTime });
       world = { ...world, tiles, currentTile: { x, y }, seen: computeSightFromRadius(x, y, r, world.seen) };
     }
@@ -74,8 +76,8 @@ export function applyWorldMovement({ state, beat, options, codex, character, new
   if (beat.location_update && world.currentTile) {
     const k = `${world.currentTile.x},${world.currentTile.y}`;
     const tiles = { ...world.tiles };
-    const existing = tiles[k] || getTile({ ...state, world }, world.currentTile.x, world.currentTile.y);
-    tiles[k] = { ...existing, status: { ...beat.location_update, day: newTime.day } };
+    const existing = getTile({ ...state, world }, world.currentTile.x, world.currentTile.y);
+    tiles[k] = persistedTileDelta(existing, { status: { ...beat.location_update, day: newTime.day } });
     world = { ...world, tiles };
   }
 

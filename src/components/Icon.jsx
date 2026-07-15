@@ -1,5 +1,9 @@
 import React from "react";
 import { colors } from "./tokens.js";
+import { GAME_ICON_ASSETS } from "./game-icon-assets.js";
+import { ItemIcon as AtlasItemIcon } from "./ItemIcon.jsx";
+
+export { AtlasItemIcon as ItemIcon };
 
 const ICONS = {
   menu: <><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></>,
@@ -52,10 +56,26 @@ const ICONS = {
   ),
 };
 
-export function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.5, fill = "none" }) {
+export function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.5, fill = "none", className = "", style }) {
+  const gameAsset = GAME_ICON_ASSETS[name];
+  if (gameAsset) {
+    return (
+      <img
+        src={gameAsset}
+        alt=""
+        aria-hidden="true"
+        draggable="false"
+        className={`game-icon${className ? ` ${className}` : ""}`}
+        data-game-icon={name}
+        width={size}
+        height={size}
+        style={{ width: size, height: size, objectFit: "contain", flex: "0 0 auto", verticalAlign: "middle", ...style }}
+      />
+    );
+  }
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
-      fill={fill} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      fill={fill} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
       {ICONS[name]}
     </svg>
   );
@@ -65,7 +85,7 @@ export function Icon({ name, size = 16, color = "currentColor", strokeWidth = 1.
 // item's KIND (weapon/armor/shield/clothing/trinket/remedy/food/drink/tool/
 // material), refined by NAME keywords (a dagger vs an axe, a helm vs boots, a
 // torch vs a spyglass). Falls back to a pouch for anything uncategorised.
-export function ItemIcon({ item, itemId, size = 14, style = {} }) {
+function LegacyItemIcon({ item, itemId, size = 14, style = {} }) {
   const id = itemId || item?.id || "";
   const name = (item?.name || id).toLowerCase();
   const kind = item?.kind || "";

@@ -176,6 +176,7 @@ function combatantFromAttributes(spec, codex, { tierId = "common" } = {}) {
   const dFlat = sm.damageFlat || 0, dMult = 1 + (sm.damageMult || 0);
   const fam = weaponFamilyBase(weaponType);
   const weapon = {
+    name: weaponItem?.name || titleCase(weaponType || "unarmed"),
     min: Math.max(1, Math.round((base.min * govF + dFlat) * dMult)),
     max: Math.max(1, Math.round((base.max * govF + dFlat) * dMult)),
     type: base.type || "physical", pen: (base.pen || 0) + Math.floor(body / 4) + (sm.penetration || 0), category: weaponType,
@@ -231,7 +232,19 @@ function combatantFromAttributes(spec, codex, { tierId = "common" } = {}) {
     procs: tr.procs || [], shield: 0, magicShield: 0, invuln: 0,
     weapon, abilities, maxLootTier: spec.maxLootTier || tierId, statuses: [], cooldowns: {},
     // The actual gear this combatant wears — a slain person drops their kit (rollLoot).
-    gear: worn.map((it) => ({ id: it.id, tier: it.tier || tierId })),
+    gear: worn.map((it) => {
+      const stats = itemCombatStats(it);
+      return {
+        id: it.id,
+        name: it.name || titleCase(it.id || "equipment"),
+        kind: it.kind || it.slot || "equipment",
+        slot: it.slot || null,
+        tier: it.tier || tierId,
+        armor: stats.armor || 0,
+        ward: stats.ward || 0,
+        dodge: stats.dodge || 0,
+      };
+    }),
   };
 }
 

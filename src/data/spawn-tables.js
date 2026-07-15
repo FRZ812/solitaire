@@ -6,6 +6,15 @@
 // terrain bases; the engine sums the weights. So a forest tile in the Witchwood
 // Deep can roll a wolf/bandit/goblin/orc/treekin-watcher etc., weighted.
 export const SPAWN_TABLES = {
+  street: {
+    chance: 0.03,
+    entries: [
+      { kind: "city-pedestrians", weight: 24, posture: "friendly", desc: "townsfolk making room for one another in the busy lane" },
+      { kind: "handcart-traffic", weight: 18, posture: "neutral", desc: "a handcart crew calling for space through the crossing" },
+      { kind: "watch-patrol", weight: 10, posture: "neutral", desc: "a watch patrol moving at an unhurried, observant pace" },
+      { kind: "street-thief", weight: 4, posture: "hostile", desc: "a street thief testing the crowd for an unwatched purse" },
+    ],
+  },
   marsh: {
     chance: 0.05,
     entries: [

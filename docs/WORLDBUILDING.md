@@ -5,7 +5,9 @@ Status: **canonical setting and content direction**
 This document governs tone, cultures, characters, objects, and magic. The
 [product vision](product/vision.md) governs the overall experience, the
 [deck-combat design](design/combat-deck.md) governs combat, and the
-[world/place model](MAP_REBUILD_V3.md) governs spatial data.
+[unified world-map model](MAP_REBUILD_V3.md) governs spatial data. The
+[Avarra generation contract](CONTINENT_GENERATION.md) governs continental scale,
+deterministic generation, and generated content boundaries.
 
 ## Tone
 
@@ -38,6 +40,10 @@ change over time.
 Fantasy peoples are not moral monocultures. Biology may affect physical needs or
 senses when a rule defines it; culture, profession, allegiance, and experience
 shape behavior.
+
+Avarra's named cultural regions and its ecologies are separate layers. A climate
+or biome does not imply one culture, faction, or moral character; one cultural
+region may contain several ecologies, and an ecology may cross political borders.
 
 ## Characters
 
@@ -90,22 +96,38 @@ trade-off.
 
 ## Starting region: Whitemarch Basin
 
-Whitemarch is the first dense region, a fortified river-and-road capital serving
-farms, market towns, workshops, shrines, ferry communities, and frontier paths.
-Its identity comes from pale stone, whitewashed timber, ironwork, wool, river
-trade, public gardens, craft guilds, seasonal fairs, and old protective wards.
+Whitemarch Basin is the first dense production region. Its fortified
+river-and-road capital, Whitemarch, serves farms, market towns, workshops,
+shrines, ferry communities, and frontier paths. Its identity comes from pale
+stone, whitewashed timber, ironwork, wool, river trade, public gardens, craft
+guilds, seasonal fairs, and old protective wards.
 
 The city is useful rather than benevolent: tolls, guild access, water rights,
 and competing charters create friction. Its conflicts should offer negotiation,
 investigation, service, competition, and reform as often as violence.
 
-Whitemarch is not the entire world. Complete its communities, professions,
-factions, encounter ecology, and regional arc before defining distant continents
-in production detail.
+Whitemarch itself is a dense radius-twelve authored capital on the same map as
+the continent. Grain Square anchors twelve distinct districts: the Grand
+Market, Temple Steps, Low Wards, Chain Ward, Guild Court, River Docks, Crown
+Gate Ward, Iron Quarter, Noble Rise, Citadel Ward, Caravan Ward, and Outer
+Works. Six defended gates continue onto the Crown, Alder, Sheep, Hedge, Salt,
+and Smoke roads. The Whitewend bends through the eastern wards, passes beneath
+three bridge alignments, and joins the generated river at both edges of the
+authored city. These are traversable geography and civic boundaries, not a
+separate place graph.
+
+Whitemarch is not the entire world. The surrounding continent of Avarra exists
+as finite, lower-density macro geography with named cultural regions, ecologies,
+waterways, routes, landmarks, and sites placed from reviewed archetypes. That
+breadth does not make every region production-complete: complete Whitemarch
+Basin's communities, professions, factions, encounter ecology, and regional arc
+before promoting another region to the same density.
 
 ## Content authority
 
 - Version-controlled content definitions establish canonical ids and rules.
+- Deterministic generation may arrange approved geography and instantiate
+  reviewed site archetypes with stable ids; it may not invent unreviewed canon.
 - Mechanical state and events establish what happened in a campaign.
 - Authored lore establishes public facts and beliefs.
 - Characters know only facts available through observation, testimony, memory,
@@ -119,8 +141,10 @@ Before content lands, verify:
 
 - the tone supports adventurous high fantasy rather than grimdark shorthand;
 - historical sources and transformations are recorded;
+- cultural regions and ecologies are related without being conflated;
 - clothing, objects, architecture, and travel fit region and season;
 - magical content declares costs, limits, tells, and counterplay;
+- generated sites use reviewed archetypes and stable canonical ids;
 - the content uses existing mechanical ids or adds reviewed definitions;
 - player-facing consequences are legible before commitment;
 - generated raster assets follow the painterly high-definition art direction.

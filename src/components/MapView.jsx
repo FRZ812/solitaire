@@ -681,7 +681,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       if (selTile.poi?.description) bottomDetail = selTile.poi.description;
       else if (selTile.poi?.type === "hidden") bottomDetail = "Something here, not yet known.";
       else bottomDetail = T?.flavor || "";
-      biomeLabel = getBiome(selected.x, selected.y).name;
+      biomeLabel = getBiome(selected.x, selected.y, state.world.seed).name;
       encounterHint = describeEncounterPotential(selTile, selected.x, selected.y);
       // If the tile is seen and passable but the door graph forbids any
       // approach, surface that. The player can still attempt entry via
@@ -692,7 +692,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       }
     }
   } else {
-    biomeLabel = getBiome(cur.x, cur.y).name;
+    biomeLabel = getBiome(cur.x, cur.y, state.world.seed).name;
     encounterHint = describeEncounterPotential(curTile, cur.x, cur.y);
     const meta = poiMeta(curTile, currentLocationName(state));
     areaLabel = meta.area;
@@ -739,7 +739,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
             cursor: "pointer"
           }}
         >
-          <Icon name="arrowLeft" size={13} color="#e6b98c" strokeWidth={2} />
+          <Icon name="back" size={18} />
         </button>
         <div style={{
           display: "flex", flexDirection: "column", alignItems: "center",
@@ -1025,7 +1025,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
             backdropFilter: "blur(8px)", boxShadow: "0 4px 14px rgba(0,0,0,0.45)",
           }}
         >
-          <Icon name="map" size={15} color="#e6b98c" strokeWidth={2} />
+          <Icon name="map" size={20} />
           <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", color: "#e6b98c" }}>{legendOpen ? "Hide" : "Legend"}</span>
         </button>
         {/* Floating overlay anchored to the map area — never reflows the map. */}
@@ -1042,7 +1042,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
             <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "19px", color: "#f5dcb8" }}>Quest Journal</div>
-            <button onClick={() => setJournalOpen(false)} style={{ ...iconButtonStyle, width: "26px", height: "26px" }}><Icon name="x" size={12} color="#e6b98c" strokeWidth={2} /></button>
+            <button onClick={() => setJournalOpen(false)} style={{ ...iconButtonStyle, width: "26px", height: "26px" }}><Icon name="close" size={16} /></button>
           </div>
           {activeQuests.length === 0 ? (
             <div style={{ fontSize: "12px", fontStyle: "italic", color: "rgba(237,228,208,0.5)", padding: "8px 0" }}>No quests taken. Read the boards at the tavern and the gaol.</div>
@@ -1088,7 +1088,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               opacity: loading ? 0.5 : 1, backdropFilter: "blur(8px)",
             }}
           >
-            <Icon name="swords" size={15} color="#fca5a5" strokeWidth={2} />
+            <Icon name="combat" size={20} />
           </button>
         )}
         <button
@@ -1102,7 +1102,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
             justifyContent: "center", cursor: "pointer", backdropFilter: "blur(8px)",
           }}
         >
-          <Icon name="book" size={15} color="#e6b98c" strokeWidth={2} />
+          <Icon name="journal" size={20} />
           {activeQuests.length > 0 && (
             <span style={{ position: "absolute", top: "-4px", right: "-4px", minWidth: "15px", height: "15px", padding: "0 3px", borderRadius: "999px", backgroundColor: "#d7a76f", color: "#111716", fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{activeQuests.length}</span>
           )}
@@ -1118,7 +1118,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
             justifyContent: "center", cursor: "pointer", backdropFilter: "blur(8px)",
           }}
         >
-          <Icon name="crosshair" size={14} color="#e6b98c" strokeWidth={2} />
+          <Icon name="target" size={19} />
         </button>
       </div>
 

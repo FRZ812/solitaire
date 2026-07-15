@@ -1,0 +1,30 @@
+.profession-icon {
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 48px;
+  aspect-ratio: 1;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(235, 202, 132, .52);
+  border-radius: 50%;
+  background: #06101a;
+  box-shadow: 0 0 0 2px rgba(4, 10, 16, .74), 0 5px 14px rgba(2, 7, 14, .42);
+  isolation: isolate;
+}
+
+.profession-icon > span {
+  position: absolute;
+  inset: -3%;
+  background-image: var(--profession-atlas);
+  background-position: var(--profession-position);
+  background-repeat: no-repeat;
+  background-size: 500% 500%;
+  filter: saturate(.92) contrast(1.04);
+}
+
+.profession-icon--tiny { width: 28px; }
+.profession-icon--small { width: 36px; }
+.profession-icon--medium { width: 48px; }
+.profession-icon--large { width: 64px; }
+.profession-icon--hero { width: 76px; }

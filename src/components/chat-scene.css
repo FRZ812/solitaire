@@ -138,8 +138,8 @@
   background-repeat: no-repeat;
   background-position: center 50%;
   background-size: 100% 240%;
-  opacity: .72;
-  filter: saturate(.72) brightness(.88);
+  opacity: .5;
+  filter: saturate(.66) brightness(.82);
 }
 
 .story-hud::after {
@@ -263,18 +263,18 @@
 .vitals-strip__main {
   min-width: 0;
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 50px minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
 }
 
 .visibility-status {
   min-width: 0;
-  min-height: 47px;
+  min-height: 50px;
   padding: 0 8px 0 0;
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-rows: 36px auto;
+  grid-template-rows: 39px auto;
   place-items: center;
   gap: 3px;
   color: rgba(244,232,195,.82);
@@ -288,22 +288,21 @@
 .visibility-status:not(:disabled) { cursor: pointer; }
 .visibility-status__medallion {
   position: relative;
-  width: 38px;
-  height: 38px;
+  width: 42px;
+  height: 39px;
   display: grid;
   place-items: center;
   color: var(--visibility-color, var(--scene-highlight));
-  background: url("../assets/generated/ui-visibility-medallion-v1.webp") center / contain no-repeat;
-  filter: drop-shadow(0 4px 7px rgba(1,8,15,.44));
+  filter: drop-shadow(0 3px 5px rgba(1,8,15,.48));
 }
 .visibility-status__medallion::after {
   content: "";
   position: absolute;
-  inset: 9px;
+  inset: 8px 6px;
   z-index: -1;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--visibility-color, var(--scene-highlight)) 13%, rgba(4,18,29,.74));
-  box-shadow: 0 0 12px color-mix(in srgb, var(--visibility-color, var(--scene-highlight)) 18%, transparent);
+  background: color-mix(in srgb, var(--visibility-color, var(--scene-highlight)) 9%, rgba(4,18,29,.54));
+  box-shadow: 0 0 10px color-mix(in srgb, var(--visibility-color, var(--scene-highlight)) 12%, transparent);
 }
 .visibility-status__copy { min-width: 0; width: 100%; grid-column: 1; grid-row: 2; display: flex; flex-direction: column; align-items: center; }
 .visibility-status__copy small,
@@ -312,6 +311,7 @@
 .visibility-status--clear { --visibility-color: #d9c180; }
 .visibility-status--revealed { --visibility-color: #efb06b; }
 .visibility-status--revealed .visibility-status__medallion { animation: visibility-revealed 2.2s ease-in-out infinite alternate; }
+.visibility-status--partial { --visibility-color: #b8c5b7; }
 .visibility-status--heavy { --visibility-color: #91a9c9; }
 .visibility-status--heavy .visibility-status__medallion { opacity: .84; }
 
@@ -319,7 +319,7 @@
 .vitals-strip__meters::before {
   content: "";
   position: absolute;
-  top: 16px;
+  top: 18px;
   right: 3px;
   left: 3px;
   height: 1px;
@@ -362,12 +362,10 @@
   .story-hud { margin-inline: 4px; padding-inline: 8px; }
   .compact-header { grid-template-columns: 43px minmax(0, 1fr) auto; gap: 7px; }
   .compact-header__action { width: 35px; height: 35px; }
-  .vitals-strip__main { grid-template-columns: 108px minmax(0, 1fr); gap: 5px; }
-  .visibility-status { grid-template-columns: 39px minmax(0, 1fr); gap: 4px; }
-  .visibility-status__medallion { width: 39px; height: 39px; }
-  .visibility-status__copy small { display: none; }
-  .visibility-status__copy strong { font-size: 12.5px; }
-  .visibility-status__copy em { font-size: 6.5px; }
+  .vitals-strip__main { grid-template-columns: 46px minmax(0, 1fr); gap: 6px; }
+  .visibility-status { min-height: 50px; padding-right: 6px; grid-template-columns: 1fr; grid-template-rows: 39px auto; gap: 2px; }
+  .visibility-status__medallion { width: 40px; height: 39px; }
+  .visibility-status__copy strong { font-size: 7.5px; }
 }
 
 .story-input {

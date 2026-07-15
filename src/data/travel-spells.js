@@ -10,6 +10,7 @@
 // across the casters who know Fly.)
 
 import { DIMENSION_DOOR_RANGE } from "../config.js";
+import { tierOrder } from "./tiers.js";
 
 export const TRAVEL_SPELLS = {
   fly: {
@@ -38,17 +39,25 @@ export const TRAVEL_SPELL_IDS = Object.keys(TRAVEL_SPELLS);
 export function isTravelSpell(id) { return !!TRAVEL_SPELLS[id]; }
 export function travelSpellById(id) { return TRAVEL_SPELLS[id] || null; }
 
-const learnedIds = (character) => {
+const learnedTiers = (character) => {
   const learned = Array.isArray(character?.abilities) ? character.abilities : [];
-  return new Set(learned.map((a) => (typeof a === "string" ? a : a?.id)).filter(Boolean));
+  return new Map(learned.map((entry) => {
+    const normalized = typeof entry === "string" ? { id: entry, tier: "common" } : entry;
+    return [normalized?.id, normalized?.tier || "common"];
+  }).filter(([id]) => id));
 };
 
 // The travel spells a CHARACTER knows — read from their per-character abilities.
 export function knownTravelSpells(character) {
-  const ids = learnedIds(character);
-  return TRAVEL_SPELL_IDS.filter((id) => ids.has(id)).map((id) => TRAVEL_SPELLS[id]);
+  const learned = learnedTiers(character);
+  return TRAVEL_SPELL_IDS.filter((id) => learned.has(id)).map((id) => {
+    const spell = TRAVEL_SPELLS[id];
+    const learnedTier = learned.get(id) || "common";
+    const resolvedTier = spell.minTier && tierOrder(learnedTier) < tierOrder(spell.minTier) ? spell.minTier : learnedTier;
+    return { ...spell, tier: resolvedTier };
+  });
 }
 
 export function knowsTravelSpell(character, id) {
-  return !!TRAVEL_SPELLS[id] && learnedIds(character).has(id);
+  return !!TRAVEL_SPELLS[id] && learnedTiers(character).has(id);
 }

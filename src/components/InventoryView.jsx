@@ -89,7 +89,7 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
   return (
     <div className="inventory-view deck-view" style={{ padding: "2px 16px 8px", display: "flex", flexDirection: "column", gap: "14px", color: colors.parchment }}>
       <div className="inventory-hero">
-        <div className="inventory-hero__icon" aria-hidden="true"><Icon name="bag" size={24} strokeWidth={1.45} /></div>
+        <div className="inventory-hero__icon" aria-hidden="true"><Icon name="inventory" size={28} /></div>
         <div>
           <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "24px", color: colors.parchmentLight, lineHeight: 1.05 }}>Inventory</div>
           <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.7)", marginTop: "2px" }}>Gear · pack · wealth</div>
@@ -155,7 +155,7 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
                 const id = occupantOf(slotId, index);
                 const def = id ? defOf(id) : null;
                 return (
-                  <DollCell key={entry} index={i} label={slotLabel(slotId)} id={id} def={def}
+                  <DollCell key={entry} index={i} slotId={slotId} label={slotLabel(slotId)} id={id} def={def}
                     onTap={id ? () => setDetail({ id, location: "worn" }) : undefined} />
                 );
               })}
@@ -251,7 +251,19 @@ const rowStyle = {
 
 // One paper-doll cell: the equipped item's glyph (tap for detail) or a faint slot
 // label when the slot is empty.
-function DollCell({ index, label, id, def, onTap }) {
+function emptySlotDefinition(slotId) {
+  if (slotId === "mainhand") return { kind: "weapon", name: "Sword" };
+  if (slotId === "offhand") return { kind: "shield", name: "Shield" };
+  if (slotId === "body") return { kind: "armor", name: "Light armour" };
+  if (slotId === "neck" || slotId === "ring") return { kind: "trinket", slot: slotId, name: "Trinket" };
+  return { kind: "clothing", slot: slotId, name: labelForEmptySlot(slotId) };
+}
+
+function labelForEmptySlot(slotId) {
+  return SLOTS.find((slot) => slot.id === slotId)?.label || slotId;
+}
+
+function DollCell({ index, slotId, label, id, def, onTap }) {
   const occupied = !!id;
   const tcolor = occupied ? tierColor(def?.tier || "common") : "rgba(215,167,111,0.24)";
   return (
@@ -265,7 +277,7 @@ function DollCell({ index, label, id, def, onTap }) {
     }}>
       {occupied
         ? <ItemIcon item={def} itemId={id} size={20} />
-        : <Icon name="x" size={9} color="rgba(215,167,111,0.3)" strokeWidth={2} />}
+        : <ItemIcon item={emptySlotDefinition(slotId)} size={20} className="is-empty" style={{ opacity: 0.24, filter: "grayscale(.45)" }} />}
       <span style={{
         ...metaStyle, fontSize: "7px", letterSpacing: "0.08em",
         color: occupied ? tcolor : "rgba(215,167,111,0.56)",

@@ -295,4 +295,62 @@ describe("deck combat", () => {
     expect(after.log.some((entry) => /uncanny speed|extra action/i.test(entry.text))).toBe(false);
     assertCardConservation(after);
   });
+
+  it("uses Guard as temporary Block that absorbs the enemy phase and clears next round", () => {
+    const basicFoe = enemy();
+    basicFoe.abilities = [];
+    basicFoe.weapon.min = 12;
+    basicFoe.weapon.max = 12;
+    const initial = initCombat(character(), CODEX, [basicFoe], { seed: 404 });
+    const { cs, uid } = forceIntoHand(initial, "defend");
+    const healthBefore = cs.player.health;
+
+    const guarded = playCard(cs, uid);
+    expect(guarded.player.block).toBe(7);
+    expect(guarded.deck.discard).toContain(uid);
+    guarded.player.shield = 5;
+
+    const nextRound = endPlayerTurn(guarded);
+    expect(nextRound.player.health).toBe(healthBefore);
+    expect(nextRound.player.block).toBe(0);
+    expect(nextRound.player.shield).toBe(2);
+    expect(nextRound.log.some((entry) => /7 Block \+ 3 shield absorb/i.test(entry.text))).toBe(true);
+    assertCardConservation(nextRound);
+  });
+
+  it("resolves a legacy below-floor spell at the same tier shown on its card", () => {
+    const legacy = character();
+    legacy.abilities.push({ id: "fireball", tier: "common" });
+    const initial = initCombat(legacy, CODEX, [enemy()], { seed: 406 });
+    const { cs, uid } = forceIntoHand(initial, "fireball");
+    const card = cs.deck.cards[uid];
+    const healthBefore = cs.enemies[0].health;
+
+    expect(cs.player.abilities.find((ability) => ability.id === "fireball").tier).toBe("rare");
+    expect(card.tier).toBe("rare");
+    expect(card.statLine).toContain("dmg 7–13 magical");
+
+    const after = playCard(cs, uid, cs.enemies[0].uid);
+    expect(healthBefore - after.enemies[0].health).toBeGreaterThanOrEqual(7);
+  });
+
+  it("resolves card draw before discard so the played card cannot redraw itself", () => {
+    const focused = character();
+    focused.abilities.push({ id: "battle-focus", tier: "common" });
+    const initial = initCombat(focused, CODEX, [enemy()], { seed: 405 });
+    const { cs, uid } = forceIntoHand(initial, "battle-focus");
+    const otherCards = Object.keys(cs.deck.cards).filter((id) => id !== uid);
+    cs.deck.hand = [uid];
+    cs.deck.draw = [];
+    cs.deck.discard = [...otherCards];
+    cs.deck.exhaust = [];
+
+    const after = playCard(cs, uid);
+    expect(after.deck.cards[uid].draw).toBe(2);
+    expect(after.deck.hand).toHaveLength(2);
+    expect(after.deck.hand).not.toContain(uid);
+    expect(after.deck.discard).toContain(uid);
+    expect(after.log.at(-1).text).toMatch(/Battle Focus → discard · draw 2/);
+    assertCardConservation(after);
+  });
 });

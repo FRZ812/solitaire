@@ -13,10 +13,10 @@ import { HANDCRAFTED } from "../data/handcrafted-map.js";
 import { RUMORED } from "../data/rumored.js";
 import { FABLED_BY_COORD } from "../data/fabled.js";
 import { RIVER_BY_COORD } from "../data/rivers.js";
-import { getBiome } from "../data/biomes.js";
+import { DEFAULT_WORLD_SEED } from "../data/continent.js";
 import { SIGHT_RADIUS, TRAVEL_BASE_MIN, FLY_MIN_PER_HEX } from "../config.js";
-import { poiPlaceName } from "./location.js";
-import { placeLocationName } from "./place.js";
+import { poiFootprintName, poiPartName, poiPlaceName } from "./location.js";
+import { CONTINENT_ROUTE_CELLS, generateWorldTile } from "./world-generation.js";
 
 // Settlements for city/village/fortress; water for lakes and rivers; otherwise
 // keep procedural terrain so a "ruin" can sit on hills, plains, or marsh
@@ -28,10 +28,12 @@ function terrainForLandmarkKind(kind) {
   return null;
 }
 
-function tileFromLandmark(landmark, fallbackTerrain) {
+function tileFromLandmark(landmark, generated) {
   return {
-    terrain: terrainForLandmarkKind(landmark.kind) || fallbackTerrain,
-    poi: { type: landmark.kind, name: landmark.name, description: landmark.description },
+    ...generated,
+    authoredFeatureId: landmark.id,
+    terrain: terrainForLandmarkKind(landmark.kind) || generated.terrain,
+    poi: { type: landmark.kind, name: landmark.name, description: landmark.description, landmarkId: landmark.id },
   };
 }
 
@@ -45,6 +47,57 @@ export const HEX_DIRECTIONS = [
   { x: -1, y:  1 },
   { x:  0, y:  1 },
 ];
+
+// Long journeys search a sparse, reviewed expedition corridor first: the
+// continental roads plus the authored Whitemarch graph that joins their mouths.
+// Local and off-road destinations still use the full generated hex field.
+const EXPEDITION_ROUTE_KEYS = new Set(
+  CONTINENT_ROUTE_CELLS.map(({ x, y }) => `${x},${y}`),
+);
+let cachedHandcraftedCount = -1;
+let cachedExpeditionBase = EXPEDITION_ROUTE_KEYS;
+
+function addCorridorRadius(keys, x, y, radius) {
+  for (let dq = -radius; dq <= radius; dq++) {
+    const drLow = Math.max(-radius, -dq - radius);
+    const drHigh = Math.min(radius, -dq + radius);
+    for (let dr = drLow; dr <= drHigh; dr++) {
+      keys.add(`${x + dq},${y + dr}`);
+    }
+  }
+}
+
+function expeditionBaseKeys() {
+  // HANDCRAFTED is hydrated in place before the app mounts, after this module is
+  // evaluated. Rebuild lazily when that mutable registry changes.
+  const handcraftedKeys = Object.keys(HANDCRAFTED);
+  if (handcraftedKeys.length === cachedHandcraftedCount) return cachedExpeditionBase;
+  const keys = new Set(EXPEDITION_ROUTE_KEYS);
+  for (const key of handcraftedKeys) {
+    const [x, y] = key.split(",").map(Number);
+    addCorridorRadius(keys, x, y, 4);
+  }
+  cachedHandcraftedCount = handcraftedKeys.length;
+  cachedExpeditionBase = keys;
+  return keys;
+}
+
+function connectCoordinateToCorridor(keys, coordinate) {
+  let nearest = Infinity;
+  for (const road of CONTINENT_ROUTE_CELLS) {
+    nearest = Math.min(nearest, hexDistance(coordinate, road));
+  }
+  // A bounded apron lets a party standing near a road reach it through actual
+  // generated terrain. Deep off-road starts fall back to the open-world search.
+  if (nearest <= 48) addCorridorRadius(keys, coordinate.x, coordinate.y, nearest + 2);
+}
+
+function expeditionCorridorKeys(from, to) {
+  const keys = new Set(expeditionBaseKeys());
+  connectCoordinateToCorridor(keys, from);
+  connectCoordinateToCorridor(keys, to);
+  return keys;
+}
 
 export function hexNeighbors(x, y) {
   return HEX_DIRECTIONS.map(d => ({ x: x + d.x, y: y + d.y }));
@@ -66,107 +119,40 @@ export function squareToAxial(x, y) {
   return { x: q, y: r };
 }
 
-// Stable per-tile hash for deterministic procedural generation.
-function tileHash(x, y) {
-  let h = ((x | 0) * 73856093) ^ ((y | 0) * 19349663) ^ 0x1f1f1f1f;
-  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
-  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
-  h = (h ^ (h >>> 16)) >>> 0;
-  return h / 4294967296;
+function generateTile(state, x, y) {
+  return generateWorldTile({ x, y, seed: state?.world?.seed || DEFAULT_WORLD_SEED });
 }
 
-// Value noise with smooth bilinear interpolation between integer corners.
-// Each `seed` offsets the hash so different noise channels (elevation vs
-// moisture) don't correlate. Returns 0..1.
-function valueNoise(x, y, seed) {
-  const x0 = Math.floor(x);
-  const y0 = Math.floor(y);
-  const fx = x - x0;
-  const fy = y - y0;
-  const sx = fx * fx * (3 - 2 * fx);
-  const sy = fy * fy * (3 - 2 * fy);
-  const sX = seed * 73856;
-  const sY = seed * 19349;
-  const a = tileHash(x0 + sX,     y0 + sY);
-  const b = tileHash(x0 + 1 + sX, y0 + sY);
-  const c = tileHash(x0 + sX,     y0 + 1 + sY);
-  const d = tileHash(x0 + 1 + sX, y0 + 1 + sY);
-  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
-}
-
-// 3-octave fractional Brownian motion — sum of progressively finer noise.
-// Produces blobby fields with both large and small features.
-function fbm(x, y, seed) {
-  let total = 0, amp = 1, freq = 1, max = 0;
-  for (let i = 0; i < 3; i++) {
-    total += valueNoise(x * freq, y * freq, seed + i) * amp;
-    max += amp;
-    amp *= 0.5;
-    freq *= 2;
+// Campaigns persist only discoveries and dynamic consequences for generated
+// tiles. Old saves may still contain a full procedural snapshot; rebase those
+// fields onto the current generator so explored and unexplored ground cannot
+// develop a version seam.
+function mergeProceduralDelta(generated, visited) {
+  if (!visited) return generated;
+  const dynamic = {};
+  for (const field of ["status", "shop", "aerialSighting", "cache"]) {
+    if (visited[field] !== undefined) dynamic[field] = visited[field];
   }
-  return total / max;
+  const discoveredPoi = !generated.authoredFeatureId && visited.poi && visited.poi.type !== "hidden" ? visited.poi : null;
+  return {
+    ...generated,
+    ...dynamic,
+    ...(discoveredPoi ? { poi: discoveredPoi } : {}),
+    visited: true,
+  };
 }
 
-// Pick a terrain from two noise channels (elevation and moisture) using
-// biome-specific thresholds. Water is no longer procedural — rivers and
-// lakes are explicit (data/rivers.js and the handcrafted lake POIs).
-function selectTerrainFromNoise(biome, elev, moist) {
-  // Far Wild defaults
-  let marshMaxElev   = 0.32;
-  let marshMinMoist  = 0.55;
-  let mountainsMin   = 0.78;
-  let hillsMin       = 0.58;
-  let forestMinMoist = 0.55;
-
-  switch (biome.id) {
-    case "mire":
-      marshMaxElev = 0.55;  marshMinMoist = 0.30;
-      hillsMin     = 0.78;  mountainsMin  = 0.99;
-      forestMinMoist = 0.55;
-      break;
-    case "tannic-wood":
-      forestMinMoist = 0.28;
-      hillsMin = 0.68; mountainsMin = 0.90;
-      marshMinMoist = 0.65;
-      break;
-    case "crowsmoor-reach":
-      marshMinMoist = 0.78; forestMinMoist = 0.70;
-      hillsMin = 0.66; mountainsMin = 0.92;
-      break;
-    case "whitemarch-march":
-      marshMinMoist = 0.82; forestMinMoist = 0.62;
-      hillsMin = 0.50; mountainsMin = 0.84;
-      break;
-    case "spine-foothills":
-      marshMinMoist = 0.92; forestMinMoist = 0.55;
-      hillsMin = 0.32; mountainsMin = 0.66;
-      break;
-    case "bramblewych-reach":
-      marshMaxElev = 0.40; marshMinMoist = 0.55;
-      forestMinMoist = 0.38;
-      hillsMin = 0.66; mountainsMin = 0.94;
-      break;
-    // far-wild keeps defaults
+// Compact persistence representation for a lazily generated tile. It records
+// that the party visited plus discoveries/consequences, never the regenerated
+// climate/terrain payload itself. Authored tiles remain complete objects.
+export function persistedTileDelta(tile, overrides = {}) {
+  if (!tile?.procedural) return { ...tile, ...overrides };
+  const delta = { proceduralDelta: true, visited: true };
+  if (!tile.authoredFeatureId && tile.poi && tile.poi.type !== "hidden") delta.poi = tile.poi;
+  for (const field of ["status", "shop", "aerialSighting", "cache"]) {
+    if (tile[field] !== undefined) delta[field] = tile[field];
   }
-
-  if (elev > mountainsMin) return "mountains";
-  if (elev > hillsMin)     return "hills";
-  if (elev < marshMaxElev && moist > marshMinMoist) return "marsh";
-  if (moist > forestMinMoist) return "forest";
-  return "plains";
-}
-
-function generateTile(x, y) {
-  const biome = getBiome(x, y);
-  // Two slightly different scales so elevation and moisture don't form the
-  // same blobs — terrain feels less repetitive at zoom-out.
-  const elev  = fbm(x * 0.08, y * 0.08, 0);
-  const moist = fbm(x * 0.11, y * 0.11, 47);
-  const terrain = selectTerrainFromNoise(biome, elev, moist);
-  const r2 = tileHash(x + 1031, y - 2017);
-  let poi = null;
-  if (r2 < (biome.poiChance ?? 0.06)) poi = { type: "hidden", description: null };
-  return { terrain, poi, procedural: true };
+  return { ...delta, ...overrides };
 }
 
 export function getTile(state, x, y) {
@@ -186,12 +172,15 @@ export function getTile(state, x, y) {
     }
     return HANDCRAFTED[key];
   }
-  if (visited) return visited;
+  const generated = generateTile(state, x, y);
+  let canonical = generated;
   // Rivers are continuous water-terrain features. Always water; POI carries
   // the river's name/description so tapping a river tile names it.
   const river = RIVER_BY_COORD[key];
   if (river) {
-    return {
+    canonical = {
+      ...generated,
+      authoredFeatureId: river.id || key,
       terrain: "water",
       poi: { type: "river", name: river.name, description: river.description },
     };
@@ -201,15 +190,19 @@ export function getTile(state, x, y) {
   // generation produced so a barrow stays on its actual ground.
   const rumored = RUMORED[key];
   if (rumored) {
-    const procedural = generateTile(x, y);
-    return tileFromLandmark(rumored, procedural.terrain);
+    canonical = tileFromLandmark(rumored, generated);
   }
   const fabled = FABLED_BY_COORD[key];
   if (fabled) {
-    const procedural = generateTile(x, y);
-    return tileFromLandmark(fabled, procedural.terrain);
+    canonical = tileFromLandmark(fabled, generated);
   }
-  return generateTile(x, y);
+  if (visited) {
+    if (visited.procedural || visited.proceduralDelta || !visited.terrain) {
+      return mergeProceduralDelta(canonical, visited);
+    }
+    return visited;
+  }
+  return canonical;
 }
 
 export function isSeen(state, x, y)   { return state.world.seen[`${x},${y}`] === true; }
@@ -251,9 +244,6 @@ export function isAdjacent(a, b) {
 export function isPassable(tile) {
   if (!tile) return false;
   if (tile.terrain === "water" || tile.terrain === "impassable") return false;
-  // In the new architecture, ground travel is restricted to the designed road/node network (HANDCRAFTED).
-  // Procedural wilderness tiles are impassable by ground, but flight/teleport can bypass them.
-  if (tile.procedural) return false;
   return true;
 }
 
@@ -277,15 +267,50 @@ export function hasDoorTo(tile, toX, toY) {
 }
 
 export function edgeAllowed(fromTile, fromX, fromY, toTile, toX, toY) {
+  // Authored macro-road stubs from the legacy compiler may carry materialized
+  // doors only to other authored cells. Let a road/settlement mouth join the
+  // generated continental route that actually continues it; walls and every
+  // other explicit boundary retain strict reciprocal door checks.
+  const routeMouthTerrain = (tile) => ["road", "street", "settlement"].includes(tile?.terrain);
+  const routeId = (tile) => typeof tile?.route === "string" ? tile.route : tile?.route?.id;
+  const joinsDeclaredMouth = (mouth, mouthX, mouthY, world, worldX, worldY) => {
+    const seam = mouth?.routeMouth || mouth?.atlasRouteMouth;
+    return !!seam
+      && world?.procedural === true
+      && routeMouthTerrain(mouth)
+      && hasDoorTo(mouth, worldX, worldY)
+      && seam.routeId === routeId(mouth)
+      && seam.routeId === routeId(world);
+  };
+
+  // A city/continent seam is exceptional only on its explicitly-authored
+  // outside edge and only when both sides name the same macro route.
+  if ((fromTile?.routeMouth || fromTile?.atlasRouteMouth) && toTile?.procedural) {
+    return joinsDeclaredMouth(fromTile, fromX, fromY, toTile, toX, toY);
+  }
+  if ((toTile?.routeMouth || toTile?.atlasRouteMouth) && fromTile?.procedural) {
+    return joinsDeclaredMouth(toTile, toX, toY, fromTile, fromX, fromY);
+  }
   return hasDoorTo(fromTile, toX, toY) && hasDoorTo(toTile, fromX, fromY);
 }
 
 export function currentLocationName(state) {
-  // Inside a place (scale 2), the node names the location; otherwise the world hex.
-  const inside = placeLocationName(state);
-  if (inside) return inside;
   const t = getTile(state, state.world.currentTile.x, state.world.currentTile.y);
-  return poiPlaceName(t.poi) || TERRAINS[t.terrain]?.label || "Wilderness";
+  const localName = poiPlaceName(t.poi);
+  if (t.cityId === "whitemarch") {
+    const district = t.districtName || t.poi?.districtName || null;
+    const footprint = poiFootprintName(t.poi);
+    const normalize = (value) => String(value || "").toLowerCase().replace(/^the\s+/, "").trim();
+    const detail = district && footprint && normalize(district) === normalize(footprint)
+      ? (poiPartName(t.poi) || t.poi?.name || localName)
+      : localName;
+    const names = ["Whitemarch", district, detail].filter(Boolean);
+    const unique = names.filter((name, index) => (
+      names.findIndex((candidate) => candidate.toLowerCase() === name.toLowerCase()) === index
+    ));
+    return unique.join(" — ");
+  }
+  return localName || TERRAINS[t.terrain]?.label || "Wilderness";
 }
 
 // Go-anywhere world route: a terrain-aware greedy march from `from` toward `to`,
@@ -394,59 +419,129 @@ export function findPath(state, from, to) {
 // Axial coordinates remain an engine detail. The atlas presents the result as a
 // trail between landmarks, but saves, quests, encounters, and narrator tools all
 // continue to consume the same coordinate path.
-export function findWorldRoute(state, from, to, maxVisited = 12000) {
-  if (from.x === to.x && from.y === to.y) return [{ x: from.x, y: from.y }];
-  const destTile = getTile(state, to.x, to.y);
-  if (!isPassable(destTile)) return null;
+class RouteMinHeap {
+  constructor() { this.items = []; }
+  get size() { return this.items.length; }
+  push(value) {
+    const items = this.items;
+    items.push(value);
+    let index = items.length - 1;
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (items[parent].f <= value.f) break;
+      items[index] = items[parent];
+      index = parent;
+    }
+    items[index] = value;
+  }
+  pop() {
+    const items = this.items;
+    if (!items.length) return null;
+    const root = items[0];
+    const tail = items.pop();
+    if (items.length) {
+      let index = 0;
+      while (true) {
+        const left = index * 2 + 1;
+        if (left >= items.length) break;
+        const right = left + 1;
+        const child = right < items.length && items[right].f < items[left].f ? right : left;
+        if (items[child].f >= tail.f) break;
+        items[index] = items[child];
+        index = child;
+      }
+      items[index] = tail;
+    }
+    return root;
+  }
+}
 
+function reconstructWorldRoute(cameFrom, current) {
+  const path = [{ x: current.x, y: current.y }];
+  let key = current.key;
+  while (cameFrom.has(key)) {
+    const previous = cameFrom.get(key);
+    path.unshift({ x: previous.x, y: previous.y });
+    key = `${previous.x},${previous.y}`;
+  }
+  return path;
+}
+
+function searchWorldRoute({ from, to, maxVisited, tileAt, allowedKeys = null, heuristicWeight = 2.25 }) {
   const startKey = `${from.x},${from.y}`;
   const goalKey = `${to.x},${to.y}`;
-  const open = new Map([[startKey, { x: from.x, y: from.y, g: 0, f: hexDistance(from, to) }]]);
+  const minimumStep = Math.max(1, Math.round(TRAVEL_BASE_MIN * 0.4));
+  const heuristic = (coord) => hexDistance(coord, to) * minimumStep;
+  const open = new RouteMinHeap();
+  open.push({ key: startKey, x: from.x, y: from.y, g: 0, f: heuristic(from) * heuristicWeight });
   const cameFrom = new Map();
   const gScore = new Map([[startKey, 0]]);
   let visited = 0;
 
-  while (open.size > 0 && visited++ < maxVisited) {
-    let curKey = null;
-    let curF = Infinity;
-    for (const [key, value] of open) {
-      if (value.f < curF) { curKey = key; curF = value.f; }
-    }
-    const cur = open.get(curKey);
-    if (curKey === goalKey) {
-      const path = [{ x: cur.x, y: cur.y }];
-      let key = curKey;
-      while (cameFrom.has(key)) {
-        const prev = cameFrom.get(key);
-        path.unshift({ x: prev.x, y: prev.y });
-        key = `${prev.x},${prev.y}`;
-      }
-      return path;
-    }
+  while (open.size > 0 && visited < maxVisited) {
+    const cur = open.pop();
+    const curKey = cur.key;
+    if (cur.g !== gScore.get(curKey)) continue; // stale heap entry
+    visited++;
+    if (curKey === goalKey) return reconstructWorldRoute(cameFrom, cur);
 
-    open.delete(curKey);
-    const curTile = getTile(state, cur.x, cur.y);
+    const curTile = tileAt(cur.x, cur.y);
     if (!isPassable(curTile)) continue;
     for (const d of HEX_DIRECTIONS) {
       const nx = cur.x + d.x;
       const ny = cur.y + d.y;
-      const nextTile = getTile(state, nx, ny);
+      const nextKey = `${nx},${ny}`;
+      if (allowedKeys && !allowedKeys.has(nextKey)) continue;
+      const nextTile = tileAt(nx, ny);
       if (!isPassable(nextTile)) continue;
       if (!edgeAllowed(curTile, cur.x, cur.y, nextTile, nx, ny)) continue;
-      const nextKey = `${nx},${ny}`;
       const tentativeG = cur.g + travelMinutes(curTile, nextTile);
       if (tentativeG >= (gScore.get(nextKey) ?? Infinity)) continue;
       cameFrom.set(nextKey, { x: cur.x, y: cur.y });
       gScore.set(nextKey, tentativeG);
-      open.set(nextKey, {
+      open.push({
+        key: nextKey,
         x: nx,
         y: ny,
         g: tentativeG,
-        f: tentativeG + hexDistance({ x: nx, y: ny }, to),
+        f: tentativeG + heuristic({ x: nx, y: ny }) * heuristicWeight,
       });
     }
   }
   return null;
+}
+
+export function findWorldRoute(state, from, to, maxVisited = 12000) {
+  if (from.x === to.x && from.y === to.y) return [{ x: from.x, y: from.y }];
+  const tileCache = new Map();
+  const tileAt = (x, y) => {
+    const key = `${x},${y}`;
+    if (!tileCache.has(key)) tileCache.set(key, getTile(state, x, y));
+    return tileCache.get(key);
+  };
+  const destTile = tileAt(to.x, to.y);
+  if (!isPassable(destTile)) return null;
+
+  const startKey = `${from.x},${from.y}`;
+  const goalKey = `${to.x},${to.y}`;
+  const continentScale = hexDistance(from, to) > 48;
+  const corridorKeys = continentScale ? expeditionCorridorKeys(from, to) : null;
+  if (corridorKeys?.has(startKey) && corridorKeys.has(goalKey)) {
+    const corridorRoute = searchWorldRoute({
+      from,
+      to,
+      maxVisited: Math.max(maxVisited, corridorKeys.size),
+      tileAt,
+      allowedKeys: corridorKeys,
+      heuristicWeight: 1.35,
+    });
+    if (corridorRoute) return corridorRoute;
+  }
+
+  // This planner sets a practical expedition course rather than proving a
+  // mathematically shortest path. The weighted heuristic keeps open-country
+  // searches narrow; real terrain cost still favors roads and avoids water.
+  return searchWorldRoute({ from, to, maxVisited, tileAt });
 }
 
 // Sum of per-step travelMinutes for the path (entering each subsequent tile).
@@ -491,7 +586,7 @@ export function flightMinutes(path) {
 }
 
 // Places a Gate/Dimension Door may target: everywhere the player has VISITED,
-// plus RUMORED named landmarks they know of (gating there lands them blind),
+// plus passable RUMORED named landmarks they know of (gating there lands them blind),
 // plus any active quest marker. Returns [{ x, y, name, type }].
 export function validTeleportAnchors(state) {
   const out = [];
@@ -504,7 +599,7 @@ export function validTeleportAnchors(state) {
   }
   for (const key of Object.keys(RUMORED)) {
     const [x, y] = key.split(",").map(Number);
-    add(x, y, RUMORED[key].name, "rumored");
+    if (isPassable(getTile(state, x, y))) add(x, y, RUMORED[key].name, "rumored");
   }
   for (const q of (state.world.quests || [])) {
     if (q.status === "active" && q.loc) add(q.loc.x, q.loc.y, q.locName || q.title, "quest");
@@ -514,6 +609,6 @@ export function validTeleportAnchors(state) {
 
 export function isTeleportAnchor(state, x, y) {
   if (isVisited(state, x, y)) return true;
-  if (RUMORED[`${x},${y}`]) return true;
+  if (RUMORED[`${x},${y}`] && isPassable(getTile(state, x, y))) return true;
   return (state.world.quests || []).some((q) => q.status === "active" && q.loc && q.loc.x === x && q.loc.y === y);
 }

@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Icon, ItemIcon } from "./Icon.jsx";
+import { AbilityIcon } from "./AbilityIcon.jsx";
+import { AtlasIcon } from "./AtlasIcon.jsx";
 import { iconButtonStyle, conditionPalette, fmtRemaining } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
@@ -7,15 +9,20 @@ import { GLOSSARY, GLOSSARY_CATEGORIES } from "../data/glossary.js";
 import { CONDITIONS } from "../data/conditions.js";
 import { hasCombatEffect } from "../engine/condition-combat.js";
 import { relationshipTier } from "../engine/relationships.js";
-import { itemTemplate } from "../data/catalog.js";
+import { ALL_ITEMS, itemTemplate } from "../data/catalog.js";
 import { canScry } from "../engine/positions.js";
-import { EQUIPMENT, MATERIALS } from "../data/equipment.js";
 import { tier as tierInfo, tierLabel, tierOrder, tierColor } from "../data/tiers.js";
 import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
 import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIVES, FUSIONS, RUNES, isFusionRune } from "../data/passives.js";
-import { getAbilityDef, ABILITY_CATALOG, abilityCategoryOf, abilityStatLine, abilityReqLine } from "../data/abilities.js";
+import { getAbilityDef, ABILITY_CATALOG, abilityStatLine, abilityReqLine } from "../data/abilities.js";
+import { MAGIC_SCHOOLS, abilityTaxonomy } from "../data/ability-taxonomy.js";
 import { RACES } from "../data/races.js";
 import { descriptorFor } from "../data/attractiveness.js";
+import { resolveCharacterPortrait } from "./character-portrait-assets.js";
+import { ProfessionIcon } from "./ProfessionIcon.jsx";
+import codexCategoryAtlas from "../assets/generated/icon-atlases/codex-categories-atlas-v1.png";
+import { CODEX_PORTRAIT_IDS, resolveCodexPortrait } from "./codex-portrait-assets.js";
+import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 
 function attractivenessLabel(n) {
   if (typeof n !== "number") return null;
@@ -43,15 +50,17 @@ function agingModeLabel(mode, ch) {
 // Two kinds of content: "lore" you discover in play, and the full "compendium"
 // catalogs that are always complete. The tabstrip divides them visually.
 const CODEX_TABS = [
-  { key: "characters",  label: "Characters",  group: "lore",       icon: "users" },
-  { key: "races",       label: "Races",       group: "lore",       icon: "globe" },
-  { key: "professions", label: "Professions", group: "lore",       icon: "swords" },
-  { key: "items",       label: "Items",       group: "compendium", icon: "bag" },
-  { key: "abilities",   label: "Abilities",   group: "compendium", icon: "sparkle" },
-  { key: "passives",    label: "Passives",    group: "compendium", icon: "shield" },
-  { key: "conditions",  label: "Conditions",  group: "reference",  icon: "heart" },
-  { key: "glossary",    label: "Glossary",    group: "reference",  icon: "book" },
+  { key: "characters",  label: "Characters",  group: "lore",       column: 0, row: 0 },
+  { key: "races",       label: "Races",       group: "lore",       column: 1, row: 0 },
+  { key: "professions", label: "Professions", group: "lore",       column: 2, row: 0 },
+  { key: "items",       label: "Items",       group: "compendium", column: 0, row: 1 },
+  { key: "abilities",   label: "Abilities",   group: "compendium", column: 1, row: 1 },
+  { key: "passives",    label: "Passives",    group: "compendium", column: 2, row: 1 },
+  { key: "conditions",  label: "Conditions",  group: "reference",  column: 0, row: 2 },
+  { key: "glossary",    label: "Glossary",    group: "reference",  column: 1, row: 2 },
 ];
+
+const IMPORTANT_CHARACTER_IDS = new Set(CODEX_PORTRAIT_IDS);
 
 // Reusable styles inside this view.
 const subtleMeta = {
@@ -92,30 +101,85 @@ function characterKindLabel(entry) {
   return "Known character";
 }
 
-function CharacterPortrait({ entry }) {
+function CharacterPortrait({ entry, portraitOverride }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const portrait = !imageFailed && typeof entry.portrait === "string" && entry.portrait.trim() ? entry.portrait : null;
+  useEffect(() => setImageFailed(false), [portraitOverride]);
+  const portrait = !imageFailed ? resolveCharacterPortrait(entry, null, portraitOverride) : null;
+  const atlasPortrait = !portrait ? resolveCodexPortrait(entry) : null;
   return (
     <div
-      className={`codex-entry__portrait${portrait ? " has-image" : " is-placeholder"}`}
+      className={`codex-entry__portrait${portrait ? " has-image" : atlasPortrait ? " has-atlas" : " is-placeholder"}`}
       data-portrait-slot={entry.id}
+      data-portrait-atlas={atlasPortrait?.atlasId}
       style={{ "--portrait-hue": portraitHue(entry.id) }}
-      role={portrait ? undefined : "img"}
-      aria-label={portrait ? undefined : `${entry.name} portrait placeholder`}
+      role={!portrait && !atlasPortrait ? "img" : undefined}
+      aria-label={!portrait && !atlasPortrait ? `${entry.name} portrait placeholder` : undefined}
     >
       {portrait
-        ? <img src={portrait} alt={`${entry.name} portrait`} draggable="false" onError={() => setImageFailed(true)} />
-        : <><Icon name={entry.kind === "mount" ? "compass" : "user"} size={25} strokeWidth={1.25} /><strong>{portraitInitials(entry.name)}</strong></>}
+        ? <img src={portrait} alt={`${entry.name} portrait`} draggable="false" loading="lazy" decoding="async" onError={() => setImageFailed(true)} />
+        : atlasPortrait
+          ? <AtlasIcon src={atlasPortrait.atlas} columns={atlasPortrait.grid.columns} rows={atlasPortrait.grid.rows} column={atlasPortrait.cell.column} row={atlasPortrait.cell.row} size="100%" shape="portrait" label={`${entry.name} portrait`} iconKey={`codex-portrait:${entry.id}`} className="codex-entry__portrait-sprite" />
+          : <><Icon name={entry.kind === "mount" ? "compass" : "user"} size={25} strokeWidth={1.25} /><strong>{portraitInitials(entry.name)}</strong></>}
       <span aria-hidden="true" />
     </div>
   );
 }
 
+function CharacterPortraitEditor({ entry, portraitOverride, onPortraitChange }) {
+  const inputRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function choosePortrait(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !onPortraitChange) return;
+    setError("");
+    setBusy(true);
+    try {
+      const prepared = await normalizePortraitFile(file);
+      await onPortraitChange(entry.id, prepared);
+    } catch (reason) {
+      setError(reason?.message || "That portrait could not be saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPortrait() {
+    if (!onPortraitChange) return;
+    setError("");
+    setBusy(true);
+    try {
+      await onPortraitChange(entry.id, null);
+    } catch (reason) {
+      setError(reason?.message || "That portrait could not be reset.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!onPortraitChange) return null;
+  return (
+    <div className="codex-entry__portrait-editor">
+      <div>
+        <small>Save portrait</small>
+        <span>Replace this image everywhere in this campaign.</span>
+      </div>
+      <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}>
+        {busy ? "Preparing…" : portraitOverride ? "Change portrait" : "Upload portrait"}
+      </button>
+      {portraitOverride && <button type="button" className="is-reset" onClick={resetPortrait} disabled={busy}>Use original</button>}
+      <input ref={inputRef} type="file" accept={PORTRAIT_ACCEPT} onChange={choosePortrait} tabIndex={-1} aria-hidden="true" />
+      {error && <span role="alert">{error}</span>}
+    </div>
+  );
+}
+
 // ===========================================================================
-// ITEM CATALOG — the full gear table (EQUIPMENT + MATERIALS), grouped by content
-// type (weapon family, light/heavy armour, shields, clothing, trinkets, runes,
-// materials) and, within each, by TIER. Lets you review every added item in one
-// place, whether or not it's been discovered in play.
+// ITEM CATALOG — the full canonical catalog, grouped by content type and, within
+// each group, by tier. Equipment, provisions, field tools, and materials all use
+// the same normalized atlas identities as the inventory and combat UI.
 // ===========================================================================
 
 const TYPE_FILTERS = [
@@ -125,6 +189,8 @@ const TYPE_FILTERS = [
   { key: "shield", label: "Shields" },
   { key: "clothing", label: "Clothing" },
   { key: "trinket", label: "Trinkets" },
+  { key: "consumable", label: "Provisions" },
+  { key: "tool", label: "Tools" },
   { key: "rune", label: "Runes" },
   { key: "material", label: "Materials" },
 ];
@@ -138,10 +204,10 @@ const WEAPON_FAMILY_LABEL = {
 const sortByTier = (items) =>
   items.slice().sort((a, b) => (tierOrder(a.tier || "common") - tierOrder(b.tier || "common")) || a.name.localeCompare(b.name));
 
-const CATALOG_ITEM_COUNT = Object.keys({ ...EQUIPMENT, ...MATERIALS }).length;
+const CATALOG_ITEM_COUNT = Object.keys(ALL_ITEMS).length;
 
 function buildCatalogSections() {
-  const all = Object.values({ ...EQUIPMENT, ...MATERIALS });
+  const all = Object.values(ALL_ITEMS);
   const sections = [];
   for (const fam of WEAPON_FAMILY_ORDER) {
     const items = all.filter((it) => it.kind === "weapon" && weaponCategory(it) === fam);
@@ -159,6 +225,12 @@ function buildCatalogSections() {
   if (runes.length) sections.push({ group: "rune", key: "rune", label: "Runes · Fusion", items: sortByTier(runes) });
   const mats = all.filter((it) => it.kind === "material" && !isFusionRune(it.id));
   if (mats.length) sections.push({ group: "material", key: "material", label: "Materials", items: sortByTier(mats) });
+  for (const [kind, label] of [["remedy", "Remedies"], ["food", "Food"], ["drink", "Drink"], ["feed", "Mount feed"]]) {
+    const items = all.filter((it) => it.kind === kind);
+    if (items.length) sections.push({ group: "consumable", key: `consumable-${kind}`, label: `Provisions · ${label}`, items: sortByTier(items) });
+  }
+  const tools = all.filter((it) => it.kind === "tool");
+  if (tools.length) sections.push({ group: "tool", key: "tool", label: "Tools & field kit", items: sortByTier(tools) });
   return sections;
 }
 
@@ -302,7 +374,7 @@ function CatalogRow({ item, seen }) {
   const req = reqLine(item);
   const passives = item.passives || [];
   return (
-    <div onClick={() => setOpen((o) => !o)} style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid ${t.color}33`, display: "flex", flexDirection: "column", gap: "3px", cursor: "pointer" }}>
+    <button type="button" className="codex-catalog-row" aria-expanded={open} onClick={() => setOpen((o) => !o)} style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid ${t.color}33`, display: "flex", flexDirection: "column", gap: "3px", cursor: "pointer" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "space-between" }}>
         <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color: t.color }}>
           <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span><ItemIcon item={item} size={13} />{item.name}
@@ -321,7 +393,7 @@ function CatalogRow({ item, seen }) {
       )}
       {open && item.appearance && <div style={{ fontSize: "10px", fontStyle: "italic", color: "rgba(237,228,208,0.6)", lineHeight: 1.4, marginTop: "2px" }}>{item.appearance}</div>}
       {open && item.description && <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.85)", lineHeight: 1.45 }}>{item.description}</div>}
-    </div>
+    </button>
   );
 }
 
@@ -354,12 +426,12 @@ const plurCat = (n) => (n === 1 ? "category" : "categories");
 
 function FilterChips({ filters, value, onChange }) {
   return filters.map((f) => (
-    <button key={f.key} onClick={() => onChange(f.key)} style={chipBtn(f.key === value)}>{f.label}</button>
+    <button type="button" key={f.key} aria-pressed={f.key === value} onClick={() => onChange(f.key)} style={chipBtn(f.key === value)}>{f.label}</button>
   ));
 }
 function ToggleChip({ active, label, title, onClick }) {
   return (
-    <button onClick={onClick} title={title} style={{ ...chipBtn(active), marginLeft: "auto", color: active ? colors.gold : "rgba(215,167,111,0.5)" }}>
+    <button type="button" aria-pressed={active} onClick={onClick} title={title} style={{ ...chipBtn(active), marginLeft: "auto", color: active ? colors.gold : "rgba(215,167,111,0.5)" }}>
       {active ? "● " : "○ "}{label}
     </button>
   );
@@ -457,10 +529,12 @@ function ItemCatalog({ codex }) {
 // which they know. Mirrors the item catalog (collapsible, Known toggle, click).
 // ===========================================================================
 
-const ABILITY_CATEGORIES = [
-  { key: "martial", label: "Martial Techniques", color: "#e9d8b8" },
-  { key: "spell", label: "Spells (Magic)", color: "#c4a6f0" },
-  { key: "racial", label: "Racial & Innate", color: "#86d27a" },
+const ABILITY_FILTERS = [
+  { key: "martial", label: "Martial", color: "#e9d8b8" },
+  { key: "magic", label: "Magic", color: "#c4a6f0" },
+  { key: "survival", label: "Survival", color: "#86c997" },
+  { key: "social", label: "Social", color: "#e0ba7b" },
+  { key: "innate", label: "Innate", color: "#86d27a" },
 ];
 
 function AbilityRow({ def, known, tier, owned }) {
@@ -468,12 +542,17 @@ function AbilityRow({ def, known, tier, owned }) {
   const color = tierInfo(tier || "common").color; // name reads as its tier (school is the section)
   const stat = abilityStatLine(def, tier);
   const req = abilityReqLine(def);
+  const taxonomy = abilityTaxonomy(def, tier);
   return (
-    <div onClick={() => setOpen((o) => !o)} style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.16)`, display: "flex", flexDirection: "column", gap: "3px", cursor: "pointer" }}>
+    <button type="button" className="codex-catalog-row" aria-expanded={open} onClick={() => setOpen((o) => !o)} style={{ padding: "8px 10px", borderRadius: radius.panelCompact, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.16)`, display: "flex", flexDirection: "column", gap: "3px", cursor: "pointer" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-        <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color }}>
-          <span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span>{def.name}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+          <AbilityIcon ability={def} tierId={tier} size="small" />
+          <span style={{ display: "grid", minWidth: 0, fontFamily: fonts.serif, fontStyle: "italic", fontSize: "13px", color }}>
+            <span><span style={{ color: "rgba(215,167,111,0.45)", marginRight: "5px", fontSize: "9px", fontStyle: "normal" }}>{open ? "▾" : "▸"}</span>{def.name}</span>
+            <small style={{ color: "rgba(215,167,111,0.55)", fontFamily: "inherit", fontSize: "7px", fontStyle: "normal", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase" }}>{taxonomy.label}</small>
+          </span>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
           <TierChip tierId={tier} min={!owned && !!def.minTier} />
           {known && <span title="Known" style={{ width: "6px", height: "6px", borderRadius: "50%", backgroundColor: colors.gold, flexShrink: 0 }} />}
@@ -482,7 +561,7 @@ function AbilityRow({ def, known, tier, owned }) {
       {stat && <div style={{ fontSize: "9px", color: "rgba(237,228,208,0.6)", letterSpacing: "0.03em" }}>{stat}</div>}
       {req && <div style={{ fontSize: "9px", color: "rgba(127,199,224,0.8)", letterSpacing: "0.03em" }}>{req}</div>}
       {open && def.desc && <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.85)", lineHeight: 1.45 }}>{def.desc}</div>}
-    </div>
+    </button>
   );
 }
 
@@ -509,14 +588,28 @@ function AbilityCatalog({ codex, character }) {
     return m;
   }, [character, codex.skills]);
   const dispTier = (d) => ownedTier[d.id] || d.minTier || d.tier || "common";
-  const sections = useMemo(() => ABILITY_CATEGORIES.map((c) => ({
-    ...c, items: ABILITY_CATALOG.filter((d) => abilityCategoryOf(d) === c.key),
-  })).filter((s) => s.items.length), []);
+  const sections = useMemo(() => [
+    ...ABILITY_FILTERS.filter((c) => c.key !== "magic").map((c) => ({
+      ...c,
+      category: c.key,
+      items: ABILITY_CATALOG.filter((d) => abilityTaxonomy(d).categoryId === c.key),
+    })),
+    ...Object.values(MAGIC_SCHOOLS).map((school) => ({
+      key: `magic-${school.id}`,
+      category: "magic",
+      label: `${school.label} magic`,
+      color: "#c4a6f0",
+      items: ABILITY_CATALOG.filter((d) => {
+        const taxonomy = abilityTaxonomy(d);
+        return taxonomy.categoryId === "magic" && taxonomy.magicSchoolId === school.id;
+      }),
+    })),
+  ].filter((s) => s.items.length), []);
   const visible = sections
-    .filter((s) => cat === "all" || s.key === cat)
+    .filter((s) => cat === "all" || s.category === cat)
     .map((s) => ({ ...s, items: knownOnly ? s.items.filter((d) => known.has(d.id)) : s.items }))
     .filter((s) => s.items.length);
-  const FILTERS = [{ key: "all", label: "All" }, ...ABILITY_CATEGORIES.map((c) => ({ key: c.key, label: c.label.split(" ")[0] }))];
+  const FILTERS = [{ key: "all", label: "All" }, ...ABILITY_FILTERS.map((c) => ({ key: c.key, label: c.label }))];
 
   return (
     <CatalogShell
@@ -732,7 +825,7 @@ function GlossaryView() {
   );
 }
 
-export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
+export function CodexEntry({ entry, kind, codex, onScry, onRename, portraitOverride, onPortraitChange }) {
   const [open, setOpen] = useState(false);
   // Alt+click the header to reveal hidden audit fields (attractiveness int +
   // lifespanMultiplier value). These bias the narrator if they leak into prose,
@@ -781,14 +874,19 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
   return (
     <article className={`codex-entry${isCharacter ? " codex-entry--character" : " codex-entry--record"}${open ? " is-open" : ""}`}>
       <div className="codex-entry__header">
-        {isCharacter && <CharacterPortrait entry={entry} />}
+        {isCharacter && (
+          <button type="button" className="codex-entry__portrait-button" onClick={onToggle} aria-label={`${open ? "Collapse" : "Open"} ${entry.name} dossier`} aria-expanded={open}>
+            <CharacterPortrait entry={entry} portraitOverride={portraitOverride} />
+          </button>
+        )}
         <button
           type="button"
-          className="codex-entry__summary"
+          className={`codex-entry__summary${kind === "professions" ? " is-profession" : ""}`}
           onClick={onToggle}
           title={isCharacter ? "Alt-click to toggle audit fields" : undefined}
           aria-expanded={open}
         >
+          {kind === "professions" && <ProfessionIcon profession={entry.id} size="small" decorative />}
           <span className="codex-entry__eyebrow">{isCharacter ? (metaLine || characterKindLabel(entry)) : recordLabel}</span>
           <span className="codex-entry__name-row">
             <strong>{entry.name}</strong>
@@ -814,11 +912,19 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
           {onScry && (
             <button type="button" className="is-scry" onClick={onScry}>Scry</button>
           )}
-          <span className="codex-entry__chevron" aria-hidden="true">{open ? "−" : "+"}</span>
+          <button type="button" className="codex-entry__chevron" onClick={onToggle} aria-label={`${open ? "Collapse" : "Expand"} ${entry.name}`} aria-expanded={open}>{open ? "−" : "+"}</button>
         </div>
       </div>
 
       {open && (<div className="codex-entry__details">
+
+      {isCharacter && (
+        <CharacterPortraitEditor
+          entry={entry}
+          portraitOverride={portraitOverride}
+          onPortraitChange={onPortraitChange}
+        />
+      )}
 
       {kind === "characters" && (entry.race || entry.profession || entry.origin) && (
         <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginTop: "6px", marginBottom: "6px" }}>
@@ -932,16 +1038,50 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
   );
 }
 
-export function CodexView({ state, onClose, onScry, onRenameMount, embedded = false }) {
+export function CodexView({ state, onClose, onScry, onRenameMount, onPortraitChange, embedded = false }) {
   const codex = state.world.codex;
   const scryable = onScry && canScry(state);
   const partyIds = new Set(state.party || []);
   const [activeTab, setActiveTab] = useState("characters");
+  const [characterQuery, setCharacterQuery] = useState("");
+  const [characterScope, setCharacterScope] = useState("all");
   let entries = Object.values(codex[activeTab] || {});
-  // Characters: always pin the player (self) to the very top.
   if (activeTab === "characters") {
-    entries = [...entries].sort((a, b) => (a.kind === "player" ? -1 : 0) - (b.kind === "player" ? -1 : 0));
+    const query = characterQuery.trim().toLowerCase();
+    const rank = (entry) => {
+      if (entry.kind === "player") return 0;
+      if (partyIds.has(entry.id)) return 1;
+      if (IMPORTANT_CHARACTER_IDS.has(entry.id)) return 2;
+      if (entry.kind === "mount") return 3;
+      return 4;
+    };
+    entries = [...entries]
+      .filter((entry) => {
+        if (characterScope === "company" && entry.kind !== "player" && !partyIds.has(entry.id)) return false;
+        if (characterScope === "notable" && !IMPORTANT_CHARACTER_IDS.has(entry.id)) return false;
+        if (characterScope === "mounts" && entry.kind !== "mount") return false;
+        if (!query) return true;
+        return [entry.name, entry.race, entry.profession, entry.origin, entry.description, entry.base_appearance]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+      })
+      .sort((a, b) => rank(a) - rank(b) || String(a.name || a.id).localeCompare(String(b.name || b.id)));
   }
+
+  const handleTabKeyDown = (event, tabIndex) => {
+    const last = CODEX_TABS.length - 1;
+    let next = null;
+    if (event.key === "ArrowRight") next = tabIndex === last ? 0 : tabIndex + 1;
+    if (event.key === "ArrowLeft") next = tabIndex === 0 ? last : tabIndex - 1;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = last;
+    if (next == null) return;
+    event.preventDefault();
+    setActiveTab(CODEX_TABS[next].key);
+    requestAnimationFrame(() => document.getElementById(`codex-tab-${CODEX_TABS[next].key}`)?.focus());
+  };
 
   return (
     <div className={`codex-view${embedded ? " codex-view--embedded deck-view" : " fade-in"}`} data-tab={activeTab} style={{ position: embedded ? "relative" : "absolute", inset: embedded ? "auto" : 0, backgroundColor: "#0b0f0e", zIndex: embedded ? 1 : 30, display: "flex", flexDirection: "column" }}>
@@ -962,10 +1102,10 @@ export function CodexView({ state, onClose, onScry, onRenameMount, embedded = fa
               border: `1px solid rgba(215, 167, 111, 0.2)`,
             }}
           >
-            <Icon name="arrowLeft" size={13} color={colors.parchmentMuted} strokeWidth={2} />
+            <Icon name="back" size={17} />
           </button>
           <div className="codex-view__title">
-            <span aria-hidden="true"><Icon name="book" size={21} color={colors.gold} strokeWidth={1.45} /></span>
+            <span aria-hidden="true"><Icon name="codex" size={25} /></span>
             <div>
               <small>Living archive</small>
               <strong style={{ fontFamily: fonts.serif, fontSize: "24px", fontStyle: "italic", color: colors.parchmentLight }}>Lore Codex</strong>
@@ -977,7 +1117,7 @@ export function CodexView({ state, onClose, onScry, onRenameMount, embedded = fa
 
       {embedded && (
         <div className="codex-panel__intro">
-          <span className="codex-panel__intro-icon" aria-hidden="true"><Icon name="book" size={21} color={colors.gold} strokeWidth={1.4} /></span>
+          <span className="codex-panel__intro-icon" aria-hidden="true"><Icon name="codex" size={25} /></span>
           <div className="codex-panel__intro-copy">
             <small>Living archive</small>
             <h3>Lore Codex</h3>
@@ -991,7 +1131,7 @@ export function CodexView({ state, onClose, onScry, onRenameMount, embedded = fa
       )}
 
       <div className="codex-view__tabs" role="tablist" aria-label="Codex sections">
-        {CODEX_TABS.map((tab) => {
+        {CODEX_TABS.map((tab, tabIndex) => {
           const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
           return (
@@ -1001,18 +1141,45 @@ export function CodexView({ state, onClose, onScry, onRenameMount, embedded = fa
               className={active ? "is-active" : ""}
               data-group={tab.group}
               onClick={() => setActiveTab(tab.key)}
+              onKeyDown={(event) => handleTabKeyDown(event, tabIndex)}
               role="tab"
               aria-selected={active}
               aria-controls={`codex-panel-${tab.key}`}
               tabIndex={active ? 0 : -1}
             >
-              <Icon name={tab.icon} size={15} strokeWidth={1.5} />
+              <AtlasIcon src={codexCategoryAtlas} columns={3} rows={3} column={tab.column} row={tab.row} size={21} decorative iconKey={`codex:${tab.key}`} shape="round" className="codex-tab-icon" />
               <span>{tab.label}</span>
               {count > 0 && <strong>{count}</strong>}
             </button>
           );
         })}
       </div>
+
+      {activeTab === "characters" && (
+        <div className="codex-character-tools">
+          <label className="codex-character-search">
+            <AtlasIcon src={codexCategoryAtlas} columns={3} rows={3} column={2} row={2} size={18} decorative shape="round" />
+            <input
+              type="search"
+              value={characterQuery}
+              onChange={(event) => setCharacterQuery(event.target.value)}
+              placeholder="Search names, origins, or lore"
+              aria-label="Search Codex characters"
+            />
+            <span aria-live="polite">{entries.length}</span>
+          </label>
+          <div className="codex-character-scopes" role="group" aria-label="Character filters">
+            {[
+              ["all", "All"],
+              ["company", "Company"],
+              ["notable", "Notable"],
+              ["mounts", "Mounts"],
+            ].map(([key, label]) => (
+              <button type="button" key={key} aria-pressed={characterScope === key} onClick={() => setCharacterScope(key)}>{label}</button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="codex-view__content" style={{ flex: 1, overflowY: embedded ? "visible" : "auto" }}>
         <div
@@ -1034,12 +1201,14 @@ export function CodexView({ state, onClose, onScry, onRenameMount, embedded = fa
           <GlossaryView />
         ) : entries.length === 0 ? (
           <div style={{ marginTop: "80px", textAlign: "center", fontFamily: fonts.serif, fontStyle: "italic", color: "rgba(215, 167, 111, 0.45)", fontSize: "16px", lineHeight: "1.6", padding: "0 24px" }}>
-            Nothing recorded here yet.<br />
-            <span style={{ fontSize: "13px", color: "rgba(215, 167, 111, 0.3)" }}>Discover lore by wandering the realm.</span>
+            {activeTab === "characters" && (characterQuery || characterScope !== "all") ? "No characters match this view." : "Nothing recorded here yet."}<br />
+            <span style={{ fontSize: "13px", color: "rgba(215, 167, 111, 0.3)" }}>{activeTab === "characters" && (characterQuery || characterScope !== "all") ? "Clear the search or choose another group." : "Discover lore by wandering the realm."}</span>
           </div>
         ) : (
           <div className={`codex-entry-list fade-in${activeTab === "characters" ? " is-characters" : ""}`}>
             {entries.map((e) => <CodexEntry key={e.id} entry={e} kind={activeTab} codex={codex}
+              portraitOverride={state.portraitOverrides?.[e.id]}
+              onPortraitChange={activeTab === "characters" ? onPortraitChange : null}
               onScry={scryable && activeTab === "characters" && e.kind !== "player" && !partyIds.has(e.id) ? () => onScry(e.id) : null}
               onRename={onRenameMount && activeTab === "characters" && e.kind === "mount" ? () => onRenameMount(e.id) : null} />)}
           </div>

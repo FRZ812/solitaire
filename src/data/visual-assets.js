@@ -65,10 +65,10 @@ export function biomeVisual(biomeId) {
 
 const WHITEMARCH_PLACE_PATTERN = /(whitemarch|grand market|chain market|crown gate|citadel|low wards|outer works|caravanserai|noble rise|whitewend|guild court|prison gate|registry hall)/i;
 
-// Older campaigns can still stand on the retired tile-by-tile Whitemarch map,
-// whose outer wards extend beyond the capital's compact biome bounds. Let the
-// authored place metadata win so those saves retain the capital's identity.
+// Dense authored city tiles keep their visual identity even where a district
+// overlaps the surrounding generated region's influence field.
 export function sceneBiomeId(defaultBiomeId, tile) {
+  if (tile?.cityId === "whitemarch") return "whitemarch";
   const poi = tile?.poi || {};
   const placeContext = [tile?.place, poi.parent, poi.parentName, poi.area, poi.areaName, poi.district, poi.districtName, poi.name]
     .filter(Boolean)

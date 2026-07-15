@@ -78,6 +78,29 @@ describe("applyBeat — needs depletion", () => {
   });
 });
 
+describe("applyBeat — authored character presentation", () => {
+  it("persists profession, portrait key, and character hooks in both player records", () => {
+    const profile = {
+      voice: "Quiet and exact.",
+      complication: "An oath is coming due.",
+      signature: "Counts every doorway.",
+    };
+    const next = applyBeat(fresh(), {
+      character_setup: {
+        name: "Bram", race: "human", profession: "sellsword",
+        templateId: "sellsword", portraitKey: "template:sellsword", profile,
+      },
+    });
+    const wanderer = next.world.codex.characters.wanderer;
+    expect(next.character).toMatchObject({
+      profession: "sellsword", templateId: "sellsword", portraitKey: "template:sellsword", profile,
+    });
+    expect(wanderer).toMatchObject({
+      profession: "sellsword", templateId: "sellsword", portraitKey: "template:sellsword", profile,
+    });
+  });
+});
+
 // GOLDEN characterization — full curated output of representative beats, captured
 // as inline snapshots. These exist to make the Stage-3 applyBeat decomposition
 // provably behavior-preserving: the snapshots must stay byte-identical across the
@@ -134,14 +157,16 @@ describe("applyBeat — golden snapshots (refactor safety net)", () => {
   });
 
   it("golden — location_update stamps the tile and _userMsg/_raw extend apiHistory", () => {
-    const next = applyBeat(fresh(), {
+    const base = fresh();
+    const tileKey = `${base.world.currentTile.x},${base.world.currentTile.y}`;
+    const next = applyBeat(base, {
       minutes_passed: 30,
       location_update: { state: "razed", note: "You put the camp to the torch." },
       _userMsg: "I burn the camp.",
       _raw: "{\"narration\":\"It burns.\"}",
     });
     expect({
-      tileStatus: next.world.tiles["0,0"]?.status,
+      tileStatus: next.world.tiles[tileKey]?.status,
       apiHistory: next.apiHistory,
     }).toMatchSnapshot();
   });

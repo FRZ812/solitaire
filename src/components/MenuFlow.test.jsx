@@ -47,19 +47,26 @@ describe("front-of-game menu flow", () => {
     expect(html).toContain("Sign out");
   });
 
-  it("shows one focused character power tier instead of every preset at once", () => {
+  it("renders the complete portrait-led roster with power, role, and search controls", () => {
     const html = renderToStaticMarkup(
       <CreationHub onPickTemplate={() => {}} onCustom={() => {}} onQuit={() => {}} busy={false} />,
     );
 
-    expect(html.match(/role="tab"/g)).toHaveLength(6);
+    expect(html.match(/role="tab"/g)).toHaveLength(7);
+    expect(html.match(/class="creation-card"/g)).toHaveLength(23);
     expect(html).toContain("Choose your power fantasy");
     expect(html).toContain("Sets tone &amp; challenge");
+    expect(html).toContain("All: 23 lives");
     expect(html).toContain("Standard: Grounded");
     expect(html.indexOf("Choose your power fantasy")).toBeLessThan(html.indexOf("Name your traveller"));
     expect(html).toContain("Bram Coltaine");
     expect(html).toContain("Faelar Sylvareth");
-    expect(html).not.toContain("Ysolde Varen");
+    expect(html).toContain("Ysolde Varen");
+    expect(html).toContain("Korvane Ashfell");
+    expect(html).toContain("Search name, profession, kindred…");
+    expect(html).toContain("All roles");
+    expect(html).toContain("data-atlas-cell=\"sellsword\"");
+    expect(html).toContain("sellsword-anime-v2.webp");
     expect(html).toContain("Create a custom traveller");
     expect(html).toContain("character-roster-threshold-v1.webp");
   });

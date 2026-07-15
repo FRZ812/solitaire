@@ -1,5 +1,6 @@
 import { SPAWN_TABLES, AERIAL_SPAWNS } from "../data/spawn-tables.js";
-import { getBiome } from "../data/biomes.js";
+import { getBiome, getBiomeById } from "../data/biomes.js";
+import { ECOLOGIES } from "../data/continent.js";
 import { regionDifficulty } from "../data/regions.js";
 import { getTile } from "./world.js";
 import { TERRAINS } from "../data/terrains.js";
@@ -14,8 +15,10 @@ export const NIGHT_ENCOUNTER_MULT = 1.4;
 function effectiveTable(tile, x, y) {
   const base = SPAWN_TABLES[tile.terrain];
   if (!base) return null;
-  const biome = getBiome(x, y);
-  const extras = biome.extraSpawns?.[tile.terrain] || [];
+  const biome = getBiomeById(tile.regionId) || getBiome(x, y);
+  const regional = biome.extraSpawns?.[tile.terrain] || [];
+  const ecological = ECOLOGIES[tile.ecology]?.encounters || [];
+  const extras = [...regional, ...ecological];
   if (extras.length === 0) return base;
   return {
     chance: base.chance,
@@ -91,7 +94,7 @@ export function rollAerialEncounter(state, path) {
   if (!path || path.length < 2) return null;
   for (let i = 1; i < path.length; i++) {
     const p = path[i];
-    const level = regionDifficulty(p.x, p.y).level || 0;
+    const level = regionDifficulty(p.x, p.y, state.world.seed).level || 0;
     if (level < AERIAL_MIN_LEVEL) continue;
     const chance = (level - (AERIAL_MIN_LEVEL - 1)) * AERIAL_CHANCE_PER_LEVEL;
     if (Math.random() < chance) return { encounter: pickAerial(), atTile: p, atIndex: i };

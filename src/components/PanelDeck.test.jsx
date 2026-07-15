@@ -39,9 +39,51 @@ describe("PanelDeck", () => {
     expect(codexHtml).toContain("People, lore, and hard-won knowledge gathered on the road.");
     expect(codexHtml).toContain("codex-entry__portrait");
     expect(codexHtml).toContain("portrait placeholder");
+    expect(codexHtml).toContain('data-portrait-atlas="important"');
+    expect(codexHtml).toContain('data-icon-key="codex:characters"');
+    expect(codexHtml).toContain('aria-label="Search Codex characters"');
     expect(characterHtml).not.toContain("Open Codex");
     expect(characterHtml).toContain("character-status-overview");
     expect(characterHtml).toContain("Ready for the road");
+    expect(characterHtml).toContain("Upload portrait");
+    expect(characterHtml).toContain("image/png,image/jpeg,image/webp");
+  });
+
+  it("resolves authored and uploaded player portraits with reset controls", () => {
+    const authored = makeInitialState();
+    authored.character.templateId = "ranger";
+    authored.character.portraitKey = "template:ranger";
+    authored.character.profession = "ranger";
+    Object.assign(authored.world.codex.characters.wanderer, {
+      templateId: "ranger",
+      portraitKey: "template:ranger",
+      profession: "ranger",
+    });
+    const authoredHtml = renderToStaticMarkup(
+      <PanelDeck state={authored} user={null} initialPage="character" onClose={() => {}} handlers={{ onPortraitChange: () => {} }} />,
+    );
+    expect(authoredHtml).toContain("ranger-anime-v2.webp");
+    expect(authoredHtml).toContain("Upload portrait");
+    expect(authoredHtml).toContain("data-atlas-cell=\"ranger\"");
+
+    const custom = structuredClone(authored);
+    custom.portraitOverrides.wanderer = "data:image/webp;base64,AAAA";
+    const customHtml = renderToStaticMarkup(
+      <PanelDeck state={custom} user={null} initialPage="character" onClose={() => {}} handlers={{ onPortraitChange: () => {} }} />,
+    );
+    expect(customHtml).toContain("data:image/webp;base64,AAAA");
+    expect(customHtml).toContain("Change portrait");
+    expect(customHtml).toContain("Use original");
+  });
+
+  it("resolves a persistent NPC portrait override throughout the Codex", () => {
+    const state = makeInitialState();
+    state.portraitOverrides["demon-king"] = "data:image/webp;base64,TkPC";
+    const html = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="codex" onClose={() => {}} handlers={{ onPortraitChange: () => {} }} />,
+    );
+    expect(html).toContain("data:image/webp;base64,TkPC");
+    expect(html).toContain("The Demon King portrait");
   });
 
   it("snaps short pulls back and dismisses long or deliberate flicks", () => {

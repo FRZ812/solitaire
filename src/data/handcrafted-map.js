@@ -22,22 +22,33 @@ import { supabase } from "../engine/supabase-client.js";
 import { buildHandcrafted } from "./handcrafted-pipeline.js";
 import { DEFAULT_NODES, DEFAULT_ROADS } from "./world-map-default.js";
 import { hexLine } from "./hex-math.js";
+import {
+  WHITEMARCH_MAP_VERSION,
+  compileWhitemarchCapital,
+} from "./whitemarch-capital.js";
 
 const MAP_ID = "whitemarch";
 
 // Compile nodes and roads into hex tiles
 export function compileDefaultWorldMap() {
-  const tiles = {};
+  const capital = compileWhitemarchCapital();
+  const tiles = { ...(capital.tiles || {}) };
   
   // 1. Place default nodes
   for (const n of DEFAULT_NODES) {
-    tiles[`${n.x},${n.y}`] = {
+    const key = `${n.x},${n.y}`;
+    // The bundled local-scale capital is authoritative. Atlas anchors may
+    // label empty regional cells, but never replace a city street or POI.
+    if (tiles[key]) continue;
+    tiles[key] = {
       terrain: n.terrain || "settlement",
+      authoredFeatureId: n.id,
+      ...(n.atlasLandmark ? { atlasLandmark: true } : {}),
       poi: {
         type: n.kind,
         name: n.name,
         description: n.description,
-        ...(n.placeId ? { place: n.placeId } : {})
+        landmarkId: n.id,
       }
     };
   }
@@ -54,13 +65,23 @@ export function compileDefaultWorldMap() {
       if (!tiles[key]) {
         tiles[key] = {
           terrain: r.terrain || "road",
-          poi: null
+          route: r.id || `${r.from}-${r.to}`,
+          poi: null,
         };
       }
     }
   }
 
   return tiles;
+}
+
+function compileBundledMap() {
+  const capital = compileWhitemarchCapital();
+  return {
+    mapVersion: WHITEMARCH_MAP_VERSION,
+    tiles: compileDefaultWorldMap(),
+    sealedStructures: capital.sealedStructures || [],
+  };
 }
 
 // Mutable singletons. Populated by hydrateMap(). Treated as the same
@@ -80,6 +101,58 @@ let loadedUpdatedAt = null;
 
 let hydratePromise = null;
 
+const MAP_METADATA_KIND = "unified-map-metadata";
+
+function metadataStructure(mapVersion = WHITEMARCH_MAP_VERSION) {
+  return { kind: MAP_METADATA_KIND, mapVersion };
+}
+
+function payloadMapVersion(tiles, sealedStructures, explicitVersion = null) {
+  const structureVersion = Array.isArray(sealedStructures)
+    ? sealedStructures.find((entry) => entry?.kind === MAP_METADATA_KIND)?.mapVersion
+    : null;
+  const coordinatePayload = tiles?.tiles && typeof tiles.tiles === "object" ? tiles.tiles : tiles;
+  return Number(
+    explicitVersion
+    ?? tiles?.mapVersion
+    ?? tiles?.__mapVersion
+    ?? tiles?.meta?.mapVersion
+    ?? tiles?.__meta?.mapVersion
+    ?? coordinatePayload?.["0,0"]?.mapVersion
+    ?? structureVersion,
+  );
+}
+
+function coordinateTiles(payload) {
+  const candidate = payload?.tiles && typeof payload.tiles === "object"
+    ? payload.tiles
+    : payload;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return {};
+  return Object.fromEntries(Object.entries(candidate).filter(([key]) => /^-?\d+,-?\d+$/.test(key)));
+}
+
+function contentStructures(sealedStructures) {
+  return Array.isArray(sealedStructures)
+    ? sealedStructures.filter((entry) => entry?.kind !== MAP_METADATA_KIND)
+    : [];
+}
+
+function mergeStructures(base, overlay) {
+  const merged = new Map();
+  for (const structure of [...base, ...overlay]) {
+    const key = structure?.id || structure?.name || JSON.stringify(structure);
+    merged.set(key, structure);
+  }
+  return [...merged.values()];
+}
+
+// Public for focused load-safety tests. A remote payload must opt into the
+// unified schema; an unversioned blob is the disconnected legacy city and is
+// intentionally ignored.
+export function isUnifiedMapPayload(tiles, sealedStructures = [], explicitVersion = null) {
+  return payloadMapVersion(tiles, sealedStructures, explicitVersion) === WHITEMARCH_MAP_VERSION;
+}
+
 // Awaitable boot-step. Idempotent: subsequent calls return the same promise.
 // Throws if Supabase is unreachable or the row is missing — main.jsx
 // surfaces that to the user as a load failure rather than a blank game.
@@ -89,7 +162,7 @@ export async function hydrateMap() {
     try {
       const { data, error } = await supabase
         .from("handcrafted_map")
-        .select("tiles, sealed_structures, updated_at")
+        .select("*")
         .eq("id", MAP_ID)
         .single();
       
@@ -99,20 +172,30 @@ export async function hydrateMap() {
       
       loadedUpdatedAt = data.updated_at;
       let tiles = data.tiles;
+      let explicitVersion = data.map_version ?? data.mapVersion ?? null;
       
       const { data: compiled } = await supabase
         .from("map_compiled")
-        .select("tiles")
+        .select("*")
         .eq("id", MAP_ID)
         .maybeSingle();
-      if (compiled?.tiles) tiles = compiled.tiles;
+      if (compiled?.tiles) {
+        const compiledVersion = compiled.map_version ?? compiled.mapVersion ?? null;
+        // A relationally-compiled blob must advertise the unified schema on
+        // its own. Never let metadata from the base row bless a stale legacy
+        // compiled payload by association.
+        if (isUnifiedMapPayload(compiled.tiles, [], compiledVersion)) {
+          tiles = compiled.tiles;
+          explicitVersion = compiledVersion;
+        }
+      }
       
-      applyMapData(tiles, data.sealed_structures || []);
+      applyMapData(tiles, data.sealed_structures || [], { explicitVersion });
     } catch (err) {
       console.warn("Failed to load map from Supabase, falling back to local default world map:", err.message);
       loadedUpdatedAt = "local-" + Date.now();
-      const defaultTiles = compileDefaultWorldMap();
-      applyMapData(defaultTiles, []);
+      const bundled = compileBundledMap();
+      applyMapData(bundled, bundled.sealedStructures, { trusted: true });
     }
   })();
   return hydratePromise;
@@ -134,6 +217,10 @@ export async function saveMap({ tiles, sealedStructures }) {
   // schema (a browser running the pre-rename bundle would otherwise
   // resurrect old terrain names every autosave).
   tiles = migrateTiles(tiles);
+  const persistedStructures = [
+    metadataStructure(),
+    ...contentStructures(sealedStructures),
+  ];
 
   // Optimistic concurrency. If hydrate hasn't completed we have no
   // baseline; refusing here is safer than blindly overwriting.
@@ -151,7 +238,7 @@ export async function saveMap({ tiles, sealedStructures }) {
   const baseline = loadedUpdatedAt;
   const { data, error } = await supabase
     .from("handcrafted_map")
-    .update({ tiles, sealed_structures: sealedStructures })
+    .update({ tiles, sealed_structures: persistedStructures })
     .eq("id", MAP_ID)
     .eq("updated_at", baseline)
     .select("id, updated_at");
@@ -182,7 +269,7 @@ export async function saveMap({ tiles, sealedStructures }) {
     );
   }
   loadedUpdatedAt = data[0].updated_at;
-  applyMapData(tiles, sealedStructures);
+  applyMapData(tiles, sealedStructures, { trusted: true });
 }
 
 // Backwards-compat tile migrations. Runs on every load + save so the
@@ -208,9 +295,19 @@ function migrateTiles(tiles) {
 // after fetch, after save, and after realtime UPDATE events. Also
 // exported for the MapEditor so it can preview pipeline output before
 // saving.
-export function applyMapData(tiles, sealedStructures) {
-  tiles = migrateTiles(tiles);
-  const built = buildHandcrafted({ tiles, sealedStructures });
+export function applyMapData(tiles, sealedStructures = [], options = {}) {
+  const bundled = compileBundledMap();
+  const trusted = options.trusted === true;
+  const accepted = trusted || isUnifiedMapPayload(tiles, sealedStructures, options.explicitVersion);
+  const remoteTiles = accepted ? migrateTiles(coordinateTiles(tiles)) : {};
+  const remoteStructures = accepted ? contentStructures(sealedStructures) : [];
+
+  // The checked-in capital is the durable base. Versioned remote data may add
+  // regional content or intentionally override matching unified-map cells;
+  // the obsolete unversioned 921-tile city contributes nothing.
+  const mergedTiles = { ...bundled.tiles, ...remoteTiles };
+  const mergedStructures = mergeStructures(bundled.sealedStructures, remoteStructures);
+  const built = buildHandcrafted({ tiles: mergedTiles, sealedStructures: mergedStructures });
   // Drop every key in HANDCRAFTED that's no longer in the build, then
   // copy the new values in. Same reference, fresh contents — consumers
   // that already grabbed Object.keys(HANDCRAFTED) on this tab won't see
@@ -218,7 +315,7 @@ export function applyMapData(tiles, sealedStructures) {
   for (const k of Object.keys(HANDCRAFTED)) delete HANDCRAFTED[k];
   for (const [k, v] of Object.entries(built)) HANDCRAFTED[k] = v;
   SEALED_STRUCTURES.length = 0;
-  for (const s of sealedStructures) SEALED_STRUCTURES.push(s);
+  for (const s of mergedStructures) SEALED_STRUCTURES.push(s);
   // Notify subscribers (the game's <MapView> re-render hook, mostly) so
   // they can refresh when realtime pushes new map data.
   for (const cb of mapUpdateListeners) {
@@ -257,9 +354,18 @@ export function subscribeToMapUpdates() {
         // against a row we just witnessed updating. Without this every
         // realtime push would lock us out of saving.
         if (payload.new.updated_at) loadedUpdatedAt = payload.new.updated_at;
-        applyMapData(payload.new.tiles, payload.new.sealed_structures);
+        applyMapData(payload.new.tiles, payload.new.sealed_structures, {
+          explicitVersion: payload.new.map_version ?? payload.new.mapVersion ?? null,
+        });
       }
     )
     .subscribe();
   return () => { supabase.removeChannel(channel); };
 }
+
+// Populate synchronously as well as during boot. Engine-only tests, SSR, and
+// offline tools all import the same Grain Square capital before hydrateMap can
+// contact the backend; they must never see an empty registry and silently fall
+// through to a generated regional road at the origin.
+const INITIAL_BUNDLED_MAP = compileBundledMap();
+applyMapData(INITIAL_BUNDLED_MAP, INITIAL_BUNDLED_MAP.sealedStructures, { trusted: true });

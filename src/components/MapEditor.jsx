@@ -934,18 +934,16 @@ export function MapEditor({ onExit }) {
     // Force a re-fetch even though the singleton was already hydrated at
     // boot — the open game tab may have written newer state.
     try {
-      // Wipe the in-memory singletons so hydrateMap will re-fetch instead
-      // of returning the cached promise.
-      applyMapData({}, []);
-      // Re-fetch fresh from Supabase.
+      // Re-fetch directly: hydrateMap is intentionally memoized for normal app
+      // boot, while this editor action is an explicit refresh.
       const { supabase } = await import("../engine/supabase-client.js");
       const { data, error } = await supabase
         .from("handcrafted_map")
-        .select("tiles, sealed_structures")
+        .select("*")
         .eq("id", "whitemarch")
         .single();
       if (error) throw error;
-      applyMapData(data.tiles, data.sealed_structures);
+      applyMapData(data.tiles, data.sealed_structures, { explicitVersion: data.map_version });
     } catch (err) {
       alert(`Failed to refetch: ${err.message || err}`);
       return;

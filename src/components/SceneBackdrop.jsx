@@ -3,7 +3,6 @@ import { TERRAINS } from "../data/terrains.js";
 import { getBiome } from "../data/biomes.js";
 import { biomeVisual, sceneBiomeId, terrainVisual } from "../data/visual-assets.js";
 import { currentLocationName, getTile } from "../engine/world.js";
-import { currentNode, standingNodeTile } from "../engine/place.js";
 import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
 
 const SCENE_MOTES = [12, 25, 41, 59, 73, 88];
@@ -29,10 +28,9 @@ const TERRAIN_POSITION = {
 export function SceneBackdrop({ state }) {
   const backdropRef = useParallaxMotion({ strength: 0.72 });
   const cur = state.world.currentTile;
-  const tile = standingNodeTile(state) || getTile(state, cur.x, cur.y);
-  const node = currentNode(state);
+  const tile = getTile(state, cur.x, cur.y);
   const terrain = tile?.terrain || "plains";
-  const biome = getBiome(cur.x, cur.y);
+  const biome = getBiome(cur.x, cur.y, state.world.seed);
   const visualBiomeId = sceneBiomeId(biome.id, tile);
   const visual = biomeVisual(visualBiomeId);
   const terrainTheme = terrainVisual(terrain);
@@ -45,7 +43,6 @@ export function SceneBackdrop({ state }) {
       ref={backdropRef}
       className={`scene-backdrop scene-backdrop--${phase}`}
       data-terrain={terrain}
-      data-node={node?.id || undefined}
       aria-label={`${location}, ${terrainLabel}, ${visualBiomeId === "whitemarch" ? "Whitemarch" : biome.name}`}
       style={{
         "--scene-accent": visual.accent,

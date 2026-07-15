@@ -3,7 +3,6 @@ import { Icon } from "./Icon.jsx";
 import { colors } from "./tokens.js";
 import { TERRAINS } from "../data/terrains.js";
 import { getTile, currentLocationName } from "../engine/world.js";
-import { standingNodeTile } from "../engine/place.js";
 import { getBiome } from "../data/biomes.js";
 import { sceneBiomeId } from "../data/visual-assets.js";
 import { formatTime, getCalendarDate } from "../engine/time.js";
@@ -11,10 +10,10 @@ import { formatTime, getCalendarDate } from "../engine/time.js";
 export function CompactHeader({ state, onMap, onOpenDeck }) {
   const partyCount = (state.party || []).length;
   const cur = state.world.currentTile;
-  const t = standingNodeTile(state) || getTile(state, cur.x, cur.y);
+  const t = getTile(state, cur.x, cur.y);
   const sceneTitle = currentLocationName(state);
   const terrainLabel = TERRAINS[t.terrain]?.label || "Wilderness";
-  const biome = getBiome(cur.x, cur.y);
+  const biome = getBiome(cur.x, cur.y, state.world.seed);
   const biomeLabel = sceneBiomeId(biome.id, t) === "whitemarch" ? "Whitemarch" : biome.name;
   const time = formatTime(state.time);
   const date = getCalendarDate(state.time);
@@ -37,9 +36,9 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
       </div>
 
       <nav className="compact-header__actions" aria-label="World and dossier">
-        <button className="compact-header__action" onClick={onMap} aria-label="Map"><Icon name="map" size={17} color={colors.gold} strokeWidth={1.7} /></button>
+        <button className="compact-header__action" onClick={onMap} aria-label="World atlas"><Icon name="atlas" size={22} /></button>
         <button className="compact-header__action" onClick={onOpenDeck} aria-label="Character, company, abilities, inventory, and codex">
-          <Icon name="user" size={16} color={colors.gold} strokeWidth={1.8} />
+          <Icon name="character" size={21} />
           {partyCount > 0 && (
             <span className="compact-header__party-count">{partyCount}</span>
           )}

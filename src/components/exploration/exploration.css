@@ -279,6 +279,11 @@
 .place-offscreen-target b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .place-ward-chip { position: absolute; z-index: 20; right: 13px; bottom: 12px; max-width: 230px; padding: 6px 9px; overflow: hidden; display: flex; align-items: center; gap: 7px; color: #fff0bd; border: 2px solid rgba(238,190,78,.58); background: rgba(6,25,61,.9); box-shadow: inset 0 0 0 1px #061333, 2px 2px 0 rgba(2,8,25,.72); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .place-ward-chip span { width: 10px; height: 10px; border: 1px solid #fff0ac; box-shadow: 0 0 7px currentColor; }
+.rpg-city-district-chip { position: absolute; z-index: 24; right: 13px; bottom: 12px; max-width: 250px; padding: 7px 10px; display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; column-gap: 7px; color: #fff2c4; border: 1px solid rgba(231,185,94,.48); border-radius: 8px; background: rgba(7,20,31,.9); box-shadow: 0 8px 24px rgba(2,7,13,.36), inset 0 1px rgba(255,255,255,.05); backdrop-filter: blur(7px); pointer-events: none; }
+.rpg-city-district-chip > span { grid-row: 1 / span 2; color: #e7b95e; font-size: 12px; text-shadow: 0 0 10px rgba(231,185,94,.42); }
+.rpg-city-district-chip small { overflow: hidden; color: rgba(191,213,214,.58); font-size: 6px; font-weight: 800; letter-spacing: .16em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.rpg-city-district-chip b { overflow: hidden; color: #fff8e5; font: italic 500 13px/1.1 "Instrument Serif", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
+.is-capital-map .canvas-world-stage::after { content: ""; position: absolute; z-index: 2; inset: 0; background: linear-gradient(135deg, rgba(231,185,94,.045), transparent 34%, rgba(142,200,199,.035)); pointer-events: none; }
 
 .place-district-seal { color: #162238; background: linear-gradient(145deg, color-mix(in srgb, var(--district-color) 75%, #fff1a4), color-mix(in srgb, var(--district-color) 80%, #754321)); font: 700 24px Georgia, serif; }
 .place-destination-banner { background-position: center 42%; }
@@ -351,6 +356,7 @@
   .place-poi-token > b { width: 24px; height: 24px; font-size: 11px; }
   .place-poi-token > i { top: -6px; right: -8px; }
   .place-ward-chip { max-width: 174px; padding-inline: 7px; }
+  .rpg-city-district-chip { right: 8px; bottom: 8px; max-width: 178px; padding: 6px 8px; }
   .place-itinerary > span { min-width: 53px; max-width: 65px; }
   .rpg-wild-encounter { min-width: 56px; width: 56px; min-height: 56px; grid-template-columns: 1fr; padding: 4px; border-radius: 16px; }
   .rpg-wild-encounter > img:first-child { width: 46px; height: 46px; justify-self: center; }
@@ -820,6 +826,207 @@
 .rpg-folio-overview small { color: rgba(191,213,214,.48); font-size: 6.5px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
 .rpg-folio-overview b { margin-top: 2px; overflow: hidden; color: #fff8e5; font: italic 500 20px/1 "Instrument Serif", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
 
+/* Finite, seed-backed continental survey -------------------------------- */
+.rpg-folio-page--atlas { gap: 10px; }
+.rpg-folio-page--atlas .rpg-folio-grid,
+.rpg-folio-page--atlas .rpg-folio-empty { flex: 1 1 auto; }
+
+.continent-atlas {
+  min-width: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+  color: rgba(244,232,195,.82);
+  border: 1px solid rgba(191,213,214,.15);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(13,35,48,.94), rgba(5,14,24,.96));
+  box-shadow: 0 10px 28px rgba(2,6,13,.22), inset 0 1px rgba(255,255,255,.035);
+}
+.continent-atlas__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.continent-atlas__header {
+  min-height: 48px;
+  padding: 7px 11px 8px;
+  display: grid;
+  grid-template-columns: auto minmax(120px,1fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+  border-bottom: 1px solid rgba(191,213,214,.1);
+  background: linear-gradient(90deg, rgba(231,185,94,.055), transparent 42%, rgba(47,100,115,.07));
+}
+.continent-atlas__identity { min-width: 148px; }
+.continent-atlas__identity small {
+  display: block;
+  color: rgba(231,185,94,.66);
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.continent-atlas__identity h3 {
+  margin: 2px 0 0;
+  color: #fff8e5;
+  font: italic 500 24px/.9 "Instrument Serif", Georgia, serif;
+  letter-spacing: -.02em;
+}
+.continent-atlas__header > p {
+  max-width: 590px;
+  margin: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  color: rgba(191,213,214,.54);
+  font: italic 10.5px/1.25 "Instrument Serif", Georgia, serif;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.continent-atlas__scale { display: flex; align-items: center; gap: 7px; color: rgba(191,213,214,.55); font-size: 7px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.continent-atlas__scale i { position: relative; width: 36px; height: 5px; display: block; border-right: 1px solid #e7b95e; border-bottom: 1px solid #e7b95e; border-left: 1px solid #e7b95e; }
+.continent-atlas__scale i::after { content: ""; position: absolute; bottom: -1px; left: 50%; height: 3px; border-left: 1px solid #e7b95e; }
+
+.continent-atlas__map {
+  position: relative;
+  height: clamp(150px, 24dvh, 210px);
+  overflow: hidden;
+  isolation: isolate;
+  background: #092738;
+}
+.continent-atlas__map::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+  opacity: .18;
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 19px, rgba(202,224,217,.12) 20px),
+    repeating-linear-gradient(90deg, transparent 0 39px, rgba(202,224,217,.1) 40px);
+  mix-blend-mode: soft-light;
+}
+.continent-atlas__map::after {
+  content: "";
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 36px rgba(2,7,13,.72), inset 0 0 2px rgba(244,232,195,.22);
+}
+.continent-atlas__map > svg { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; }
+.continent-atlas__cell { stroke: none; fill: #0a293a; }
+.continent-atlas__cell.is-sea { fill: #0b2c40; }
+.continent-atlas__cell.is-land { fill: #697952; }
+.continent-atlas__cell.is-plains { fill: #74825a; }
+.continent-atlas__cell.is-forest { fill: #315746; }
+.continent-atlas__cell.is-hills { fill: #79694d; }
+.continent-atlas__cell.is-mountains { fill: #85867b; }
+.continent-atlas__cell.is-marsh { fill: #496d65; }
+.continent-atlas__cell.is-road { fill: #9b865b; }
+.continent-atlas__cell.is-water { fill: #276276; }
+.continent-atlas__cell.is-settlement { fill: #ae925e; }
+.continent-atlas__cell.is-coast { fill: #768477; }
+.continent-atlas__cell.is-low { opacity: .86; }
+.continent-atlas__cell.is-high { opacity: .96; }
+
+.continent-atlas__region-layer,
+.continent-atlas__landmark-layer { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
+.continent-atlas__landmark-layer { z-index: 5; }
+.continent-atlas__region-label {
+  position: absolute;
+  max-width: 90px;
+  color: rgba(255,248,229,.54);
+  font: 700 6.5px/1.1 Georgia, serif;
+  letter-spacing: .08em;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(2,7,13,.98), 0 0 6px rgba(2,7,13,.72);
+  text-transform: uppercase;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
+.continent-atlas__region-label.is-frontier { color: rgba(231,185,94,.42); font-size: 5.5px; letter-spacing: .16em; }
+
+.continent-atlas__marker {
+  position: absolute;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  color: #fff1b9;
+  border: 1px solid rgba(255,238,181,.78);
+  border-radius: 50%;
+  background: rgba(42,34,25,.88);
+  box-shadow: 0 2px 7px rgba(2,7,13,.72), 0 0 0 2px rgba(231,185,94,.09);
+  transform: translate(calc(-50% + var(--marker-x, 0px)), calc(-50% + var(--marker-y, 0px)));
+  cursor: pointer;
+  transition: border-color .18s ease, box-shadow .18s ease, scale .18s ease;
+}
+.continent-atlas__marker.is-legend { color: #e3d5ff; border-color: rgba(206,183,246,.86); background: rgba(47,35,67,.9); box-shadow: 0 2px 7px rgba(2,7,13,.72), 0 0 0 2px rgba(190,152,235,.1); }
+.continent-atlas__marker > span { font: normal 10px/1 Georgia, serif; }
+.continent-atlas__marker > b {
+  position: absolute;
+  z-index: 12;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  max-width: 150px;
+  padding: 5px 7px;
+  pointer-events: none;
+  opacity: 0;
+  color: #fff8e5;
+  border: 1px solid rgba(231,185,94,.34);
+  border-radius: 6px;
+  background: rgba(3,10,18,.96);
+  box-shadow: 0 6px 16px rgba(2,6,13,.46);
+  font: 700 8px/1.15 system-ui, sans-serif;
+  letter-spacing: .02em;
+  text-overflow: ellipsis;
+  transform: translate(-50%, 3px);
+  transition: opacity .16s ease, transform .16s ease;
+  white-space: nowrap;
+}
+.continent-atlas__marker:hover,
+.continent-atlas__marker:focus-visible { z-index: 10; border-color: #fff3c6; box-shadow: 0 3px 9px rgba(2,7,13,.8), 0 0 0 3px rgba(231,185,94,.2); scale: 1.08; }
+.continent-atlas__marker:focus-visible { outline: 2px solid #fff3c6; outline-offset: 2px; }
+.continent-atlas__marker:hover > b,
+.continent-atlas__marker:focus-visible > b { opacity: 1; transform: translate(-50%, 0); }
+
+.continent-atlas__position {
+  position: absolute;
+  z-index: 7;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+}
+.continent-atlas__position i { position: relative; width: 8px; height: 8px; display: block; border: 2px solid #fff8e5; border-radius: 50%; background: #d15c48; box-shadow: 0 0 0 2px rgba(5,15,25,.7), 0 0 10px rgba(209,92,72,.72); }
+.continent-atlas__position i::after { content: ""; position: absolute; inset: -7px; border: 1px solid rgba(255,248,229,.68); border-radius: 50%; animation: continent-position-pulse 2.1s ease-out infinite; }
+.continent-atlas__position span { position: absolute; top: 10px; padding: 2px 4px; color: #fff8e5; border-radius: 3px; background: rgba(3,10,18,.78); font-size: 5.5px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; text-shadow: 0 1px 2px #02070d; }
+
+.continent-atlas__legend {
+  min-height: 28px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 11px;
+  border-top: 1px solid rgba(191,213,214,.08);
+}
+.continent-atlas__legend > span { display: inline-flex; align-items: center; gap: 4px; color: rgba(191,213,214,.55); font-size: 6px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.continent-atlas__legend > span > i { width: 8px; height: 8px; display: block; border: 1px solid rgba(244,232,195,.2); border-radius: 2px; background: #74825a; }
+.continent-atlas__legend > span > i.is-forest { background: #315746; }
+.continent-atlas__legend > span > i.is-marsh { background: #496d65; }
+.continent-atlas__legend > span > i.is-mountains { background: #85867b; }
+.continent-atlas__legend > span > i.is-landmark { border-radius: 50%; background: #e7b95e; }
+.continent-atlas__legend > small { margin-left: auto; color: rgba(191,213,214,.37); font: italic 9px/1.2 "Instrument Serif", Georgia, serif; }
+
 .rpg-folio-grid { min-height: 0; padding: 2px 2px 8px; overflow-y: auto; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); align-content: start; gap: 10px; scrollbar-width: thin; scrollbar-color: rgba(231,185,94,.28) transparent; }
 .rpg-folio-card {
   position: relative;
@@ -873,13 +1080,15 @@
 .rpg-folio-quest__reward b { margin-top: 4px; color: rgba(231,185,94,.9); font-size: 10px; white-space: nowrap; }
 
 .rpg-folio-empty { min-height: 220px; margin: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; color: rgba(142,200,199,.58); text-align: center; }
-.rpg-folio-empty > svg { margin-bottom: 10px; }
+.rpg-folio-empty > svg,
+.rpg-folio-empty > .game-icon { margin-bottom: 10px; }
 .rpg-folio-empty h3 { margin: 0; color: #fff8e5; font: italic 500 25px/1 "Instrument Serif", Georgia, serif; }
 .rpg-folio-empty p { max-width: 340px; margin: 8px 0 0; color: rgba(191,213,214,.58); font: italic 13px/1.4 "Instrument Serif", Georgia, serif; }
 
 @keyframes folio-backdrop-enter { from { opacity: 0; } }
 @keyframes folio-enter { from { opacity: 0; transform: translateY(18px) scale(.985); } }
 @keyframes folio-page-enter { from { opacity: 0; transform: translateY(6px); } }
+@keyframes continent-position-pulse { from { opacity: .85; transform: scale(.55); } to { opacity: 0; transform: scale(1.5); } }
 
 @media (max-width: 819px) {
   .rpg-exploration-shell:not(.place-shell) > .rpg-map-header {
@@ -924,8 +1133,13 @@
   .rpg-folio-hero { min-height: 220px; flex-basis: 220px; }
   .rpg-folio-identity { bottom: 84px; }
   .rpg-folio-page { padding: 13px 14px 16px; gap: 11px; }
+  .rpg-folio-page--atlas { gap: 8px; }
   .rpg-folio-grid { grid-template-columns: 1fr; }
   .rpg-folio-card { min-height: 104px; }
+  .continent-atlas__map { height: clamp(150px, 25dvh, 185px); }
+  .continent-atlas__region-label { font-size: 5.5px; }
+  .continent-atlas__region-label.is-frontier { font-size: 5px; }
+  .continent-atlas__legend > small { flex-basis: 100%; margin-left: 0; }
 }
 
 @media (max-width: 520px) {
@@ -952,6 +1166,15 @@
   .rpg-folio-overview > div > span { width: 28px; height: 28px; }
   .rpg-folio-overview small { font-size: 5.5px; letter-spacing: .1em; }
   .rpg-folio-overview b { font-size: 16px; }
+  .continent-atlas__header { grid-template-columns: minmax(0,1fr) auto; gap: 5px 8px; padding-inline: 9px; }
+  .continent-atlas__identity { min-width: 0; }
+  .continent-atlas__identity h3 { font-size: 21px; }
+  .continent-atlas__header > p { grid-column: 1 / -1; -webkit-line-clamp: 1; font-size: 9.5px; }
+  .continent-atlas__scale i { width: 26px; }
+  .continent-atlas__map { height: 150px; }
+  .continent-atlas__marker { width: 18px; height: 18px; }
+  .continent-atlas__legend { gap: 4px 8px; padding-inline: 8px; }
+  .continent-atlas__legend > small { display: none; }
   .rpg-folio-place { grid-template-columns: 76px minmax(0,1fr) 14px; }
   .rpg-folio-place__art { width: 76px; height: 82px; }
   .rpg-folio-card__copy > strong { font-size: 18px; }
@@ -977,4 +1200,6 @@
   .rpg-folio,
   .rpg-folio-body { animation: none; }
   .rpg-folio-card { transition: none; }
+  .continent-atlas__marker { transition: none; }
+  .continent-atlas__position i::after { animation: none; }
 }

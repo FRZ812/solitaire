@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Icon } from "../Icon.jsx";
 import { FLY_MIN_PER_HEX, FLY_TRAVEL_HEXES, WORLD_MARCH_LIMIT } from "../../config.js";
 import { TERRAINS } from "../../data/terrains.js";
-import { getBiome } from "../../data/biomes.js";
+import { getBiome, getBiomeById } from "../../data/biomes.js";
 import { biomeVisual, sceneBiomeId, terrainVisual } from "../../data/visual-assets.js";
 import { knownTravelSpells } from "../../data/travel-spells.js";
 import {
@@ -26,6 +26,7 @@ import {
   planAtlasJourney,
 } from "./atlasModel.js";
 import { MapCanvas } from "./MapCanvas.jsx";
+import { ContinentAtlas } from "./ContinentAtlas.jsx";
 import { buildWorldMapScene } from "./mapSceneModel.js";
 import partyArt from "../../assets/generated/scene-tellmar-road-v2.webp";
 import seekEncounterIcon from "../../assets/generated/ui-seek-encounter.png";
@@ -44,6 +45,19 @@ function glyphFor(tile) {
   return POI_GLYPHS[tile?.poi?.type] || terrainVisual(tile?.terrain).glyph || "•";
 }
 
+function cityDistrict(tile) {
+  return tile?.districtName
+    || tile?.district
+    || tile?.poi?.districtName
+    || tile?.poi?.parentName
+    || null;
+}
+
+function capitalName(tile) {
+  if (!tile?.cityId) return null;
+  return tile.cityName || (tile.cityId === "whitemarch" ? "Whitemarch" : tile.cityId);
+}
+
 function nameForDestination(destination, origin) {
   const named = destination?.name || poiPlaceName(destination?.tile?.poi);
   if (named) return named;
@@ -60,13 +74,13 @@ function dangerLabel(risk) {
   return "Calm";
 }
 
-function biomeAt(destination) {
-  const coordinateBiome = getBiome(destination.x, destination.y);
+function biomeAt(destination, seed) {
+  const coordinateBiome = getBiomeById(destination.tile?.regionId) || getBiome(destination.x, destination.y, seed);
   const id = sceneBiomeId(coordinateBiome.id, destination.tile);
   return id === "whitemarch" ? { ...coordinateBiome, id, name: "Whitemarch" } : coordinateBiome;
 }
 
-function RpgHeader({ state, biome, onClose, onWayfinder }) {
+function RpgHeader({ state, biome, tile, onClose, onWayfinder }) {
   const vitality = state.character.vitality ?? 0;
   const vitalityMax = Math.max(1, state.character.vitalityMax ?? vitality);
   const resolve = state.character.resolve ?? 0;
@@ -76,25 +90,27 @@ function RpgHeader({ state, biome, onClose, onWayfinder }) {
   const resolveDisplay = Math.ceil(resolve);
   const resolveMaxDisplay = Math.ceil(resolveMax);
   const coin = coinsToCopper(state.character.inventory?.coins || {});
+  const city = capitalName(tile);
+  const district = cityDistrict(tile);
   return (
     <header className="rpg-map-header">
-      <button onClick={onClose} className="rpg-square-button" aria-label="Return to story"><Icon name="arrowLeft" size={17} color="#fff4c7" /></button>
+      <button onClick={onClose} className="rpg-square-button" aria-label="Return to story"><Icon name="back" size={21} /></button>
       <div className="rpg-location-lockup">
-        <span>{biome.name} · overworld</span>
+        <span>{city ? `${city} · unified city map` : `${biome.name} · overworld`}</span>
         <h1>{currentLocationName(state)}</h1>
-        <small>{formatDate(state.time)} · {formatTime(state.time)}</small>
+        <small>{formatDate(state.time)} · {formatTime(state.time)}{district ? ` · ${district}` : ""}</small>
       </div>
       <div className="rpg-vitals" aria-label="Party status">
         <div className="rpg-vital rpg-vital--hp" role="meter" aria-label="Health" aria-valuemin="0" aria-valuemax={vitalityMaxDisplay} aria-valuenow={vitalityDisplay}><span>HP</span><i aria-hidden="true"><b style={{ width: `${Math.min(100, vitality / vitalityMax * 100)}%` }} /></i><strong>{vitalityDisplay}/{vitalityMaxDisplay}</strong></div>
         <div className="rpg-vital rpg-vital--mp" role="meter" aria-label="Resolve" aria-valuemin="0" aria-valuemax={resolveMaxDisplay} aria-valuenow={resolveDisplay}><span>RP</span><i aria-hidden="true"><b style={{ width: `${Math.min(100, resolve / resolveMax * 100)}%` }} /></i><strong>{resolveDisplay}/{resolveMaxDisplay}</strong></div>
         <div className="rpg-coin"><span>◆</span>{formatCopper(coin)}</div>
       </div>
-      <button onClick={onWayfinder} className="rpg-square-button" aria-label="Open world atlas"><Icon name="map" size={17} color="#fff4c7" /></button>
+      <button onClick={onWayfinder} className="rpg-square-button" aria-label="Open world atlas"><Icon name="atlas" size={22} /></button>
     </header>
   );
 }
 
-function WorldGrid({ model, selection, journey, onPick, onJournal, onWayfinder, onSeekCombat, questCount, loading, night }) {
+function WorldGrid({ model, selection, journey, onPick, onJournal, onWayfinder, onSeekCombat, questCount, loading, night, city, district }) {
   const mapScene = useMemo(() => buildWorldMapScene({ model, selection, journey, night }), [model, selection, journey, night]);
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.seen && cell.passable && !cell.current)
@@ -109,15 +125,15 @@ function WorldGrid({ model, selection, journey, onPick, onJournal, onWayfinder, 
   }
 
   return (
-    <main className={`rpg-world-stage canvas-world-stage ${night ? "is-night" : ""}`}>
+    <main className={`rpg-world-stage canvas-world-stage ${city ? "is-capital" : ""} ${night ? "is-night" : ""}`}>
       <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
       <div className="rpg-quickbar" aria-label="Exploration tools">
         <button onClick={onWayfinder} aria-label="Open world atlas">
-          <Icon name="map" size={17} />
+          <Icon name="atlas" size={22} />
           <span><small>Known world</small><strong>Atlas</strong></span>
         </button>
         <button onClick={onJournal} aria-label={questCount > 0 ? `Open quest journal, ${questCount} active ${questCount === 1 ? "quest" : "quests"}` : "Open quest journal"}>
-          <Icon name="book" size={17} />
+          <Icon name="journal" size={22} />
           <span><small>Adventure log</small><strong>Journal</strong></span>
           {questCount > 0 && <b className="rpg-tool-count" aria-hidden="true">{questCount}</b>}
         </button>
@@ -125,16 +141,18 @@ function WorldGrid({ model, selection, journey, onPick, onJournal, onWayfinder, 
 
       {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 
+      {city && district && <div className="rpg-city-district-chip"><span aria-hidden="true">◆</span><small>{city}</small><b>{district}</b></div>}
+
       {onSeekCombat && (
         <button
           onClick={onSeekCombat}
           disabled={loading}
           className="rpg-wild-encounter"
-          aria-label="Seek a hostile encounter"
-          title="Seek a hostile encounter"
+          aria-label={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
+          title={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
         >
           <img src={seekEncounterIcon} alt="" />
-          <span><small>Wild encounter</small><b>Seek a fight</b></span>
+          <span><small>{city ? "Street encounter" : "Wild encounter"}</small><b>{city ? "Seek trouble" : "Seek a fight"}</b></span>
         </button>
       )}
     </main>
@@ -147,6 +165,8 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
   const description = selection?.tile?.poi?.description || (selection ? TERRAINS[selection.tile?.terrain]?.flavor : null);
   const rewardTitle = selection?.quest ? "Quest reward" : selection?.visited ? "Known waypoint" : "Discovery ahead";
   const rewardValue = selection?.quest ? formatCopper(selection.quest.rewardCp || 0) : selection?.visited ? "Route recorded" : "New atlas entry";
+  const focusDistrict = cityDistrict(selection?.tile);
+  const urbanRoute = !!selection?.tile?.cityId && selection.tile.cityId === model.current.tile?.cityId;
   return (
     <section className={`rpg-command-panel ${selection ? "has-selection" : "is-awaiting-destination"}`}>
       <div className="rpg-party-card">
@@ -169,7 +189,7 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
           <div className="rpg-destination" aria-live="polite">
             <div className="rpg-destination-banner" style={{ backgroundImage: `linear-gradient(180deg, transparent, rgba(5,13,34,.92)), url(${focusVisual.image})`, "--focus-accent": focusVisual.accent }}>
               <button onClick={onClear} aria-label="Clear destination"><Icon name="x" size={13} color="#fff7d6" /></button>
-              <span>{selection.quest ? "Quest objective" : focusBiome.name}</span>
+              <span>{selection.quest ? "Quest objective" : focusDistrict || focusBiome.name}</span>
               <h2>{selectedName}</h2>
               <small>{focusVisual.mood}</small>
             </div>
@@ -184,7 +204,7 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
             {journey ? (
               <>
                 <div className="rpg-route-stats">
-                  <div><small>Steps</small><b>{journey.legSteps}</b><span>of {journey.totalSteps}</span></div>
+                  <div><small>{urbanRoute ? "Blocks" : "Steps"}</small><b>{journey.legSteps}</b><span>of {journey.totalSteps}</span></div>
                   <div><small>Time</small><b>{routeMinutes}</b><span>minutes</span></div>
                   <div className={risk >= 40 ? "is-danger" : ""}><small>Danger</small><b>{risk}%</b><span>{dangerLabel(risk)}</span></div>
                 </div>
@@ -232,12 +252,12 @@ function QuestJournalPage({ quests, current, onPick }) {
   return (
     <div className="rpg-folio-page rpg-folio-page--quests">
       <FolioOverview items={[
-        { label: "Active", value: quests.length, icon: "book" },
+        { label: "Active", value: quests.length, icon: "journal" },
         { label: "Charted", value: `${located}/${quests.length || 0}`, icon: "compass" },
         { label: "Rewards", value: formatCopper(rewards), icon: "sparkle" },
       ]} />
       {quests.length === 0 ? (
-        <div className="rpg-folio-empty"><Icon name="book" size={26} /><h3>No open entries</h3><p>Check taverns, gaols, and village boards for work worth recording.</p></div>
+        <div className="rpg-folio-empty"><Icon name="journal" size={30} /><h3>No open entries</h3><p>Check taverns, gaols, and village boards for work worth recording.</p></div>
       ) : (
         <div className="rpg-folio-grid rpg-folio-grid--quests">
           {quests.map((quest) => {
@@ -262,23 +282,24 @@ function QuestJournalPage({ quests, current, onPick }) {
   );
 }
 
-function WorldAtlasPage({ landmarks, origin, onPick }) {
+function WorldAtlasPage({ state, landmarks, origin, onPick }) {
   const usefulLandmarks = landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi));
   const anchors = usefulLandmarks.filter((landmark) => landmark.anchor).length;
   const objectives = usefulLandmarks.filter((landmark) => landmark.quest).length;
   return (
     <div className="rpg-folio-page rpg-folio-page--atlas">
+      <ContinentAtlas state={state} origin={origin} onPick={onPick} />
       <FolioOverview items={[
-        { label: "Known places", value: usefulLandmarks.length, icon: "map" },
+        { label: "Known places", value: usefulLandmarks.length, icon: "atlas" },
         { label: "Warp anchors", value: anchors, icon: "sparkle" },
         { label: "Objectives", value: objectives, icon: "compass" },
       ]} />
       {usefulLandmarks.length === 0 ? (
-        <div className="rpg-folio-empty"><Icon name="map" size={26} /><h3>An unmarked horizon</h3><p>Follow a road or climb to high ground to begin charting the world.</p></div>
+        <div className="rpg-folio-empty"><Icon name="atlas" size={30} /><h3>An unmarked horizon</h3><p>Follow a road or climb to high ground to begin charting the world.</p></div>
       ) : (
         <div className="rpg-folio-grid rpg-folio-grid--places">
           {usefulLandmarks.map((landmark) => {
-            const biome = biomeAt(landmark);
+            const biome = biomeAt(landmark, state.world.seed);
             const visual = biomeVisual(biome.id);
             const kind = landmark.quest ? "Objective" : landmark.anchor ? "Warp anchor" : biome.name;
             return (
@@ -300,10 +321,10 @@ function WorldAtlasPage({ landmarks, origin, onPick }) {
   );
 }
 
-function AdventureFolio({ page, quests, landmarks, origin, onPage, onClose, onPick }) {
+function AdventureFolio({ state, page, quests, landmarks, origin, onPage, onClose, onPick }) {
   const tabs = [
-    { id: "atlas", label: "World atlas", icon: "map", count: landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi)).length },
-    { id: "quests", label: "Quest journal", icon: "book", count: quests.length },
+    { id: "atlas", label: "World atlas", icon: "atlas", count: landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi)).length },
+    { id: "quests", label: "Quest journal", icon: "journal", count: quests.length },
   ];
   const title = page === "quests" ? "Quest Journal" : "World Atlas";
   const description = page === "quests"
@@ -313,7 +334,7 @@ function AdventureFolio({ page, quests, landmarks, origin, onPage, onClose, onPi
     <div className="rpg-folio-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="rpg-folio" role="dialog" aria-modal="true" aria-labelledby="rpg-folio-title" style={{ "--folio-art": `url(${atlasSpreadArt})` }}>
         <header className="rpg-folio-hero">
-          <button onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label={`Close ${title.toLowerCase()}`}><Icon name="x" size={16} /></button>
+          <button onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label={`Close ${title.toLowerCase()}`}><Icon name="close" size={20} /></button>
           <div className="rpg-folio-identity">
             <small>Wayfinder's folio</small>
             <h2 id="rpg-folio-title">{title}</h2>
@@ -332,7 +353,7 @@ function AdventureFolio({ page, quests, landmarks, origin, onPage, onClose, onPi
         <div key={page} id={`rpg-folio-panel-${page}`} className="rpg-folio-body" role="tabpanel" aria-labelledby={`rpg-folio-tab-${page}`}>
           {page === "quests"
             ? <QuestJournalPage quests={quests} current={origin} onPick={onPick} />
-            : <WorldAtlasPage landmarks={landmarks} origin={origin} onPick={onPick} />}
+            : <WorldAtlasPage state={state} landmarks={landmarks} origin={origin} onPick={onPick} />}
         </div>
       </section>
     </div>
@@ -352,7 +373,10 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
     seen: isSeen(state, selected.x, selected.y),
     visited: !!state.world.tiles?.[`${selected.x},${selected.y}`],
   } : null;
-  const journey = planAtlasJourney(state, selected, WORLD_MARCH_LIMIT);
+  const journey = useMemo(
+    () => planAtlasJourney(state, selected, WORLD_MARCH_LIMIT),
+    [state, selected],
+  );
   const routeMinutes = journey ? pathMinutes(state, journey.legPath) : 0;
   const risk = journey ? pathRiskPercent(state, journey.legPath) : 0;
   const selectedName = selection ? nameForDestination(selection, model.origin) : currentLocationName(state);
@@ -368,12 +392,14 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
     ? teleSpells.find((spell) => (isFinite(spell.range) ? (selection?.seen && distance <= spell.range) : isTeleportAnchor(state, selected.x, selected.y)))
     : null;
 
-  const currentCoordinateBiome = getBiome(model.origin.x, model.origin.y);
+  const currentCoordinateBiome = getBiomeById(model.current.tile?.regionId) || getBiome(model.origin.x, model.origin.y, state.world.seed);
   const currentBiomeId = sceneBiomeId(currentCoordinateBiome.id, model.current.tile);
   const currentBiome = currentBiomeId === "whitemarch" ? { ...currentCoordinateBiome, id: "whitemarch", name: "Whitemarch" } : currentCoordinateBiome;
   const currentVisual = biomeVisual(currentBiome.id);
+  const currentCity = capitalName(model.current.tile);
+  const currentDistrict = cityDistrict(model.current.tile);
   const focusDestination = selection || model.current;
-  const focusBiome = biomeAt(focusDestination);
+  const focusBiome = biomeAt(focusDestination, state.world.seed);
   const focusVisual = biomeVisual(focusBiome.id);
   const hour = state.time?.hour ?? 12;
 
@@ -399,13 +425,13 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
   }
 
   return (
-    <div className="exploration-shell rpg-exploration-shell" style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
-      <RpgHeader state={state} biome={currentBiome} onClose={onClose} onWayfinder={() => setFolioPage("atlas")} />
+    <div className={`exploration-shell rpg-exploration-shell ${currentCity ? "is-capital-map" : ""}`} style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
+      <RpgHeader state={state} biome={currentBiome} tile={model.current.tile} onClose={onClose} onWayfinder={() => setFolioPage("atlas")} />
       <div className="rpg-exploration-body">
-        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onJournal={() => setFolioPage("quests")} onWayfinder={() => setFolioPage("atlas")} onSeekCombat={onSeekCombat} questCount={activeQuests.length} loading={loading} night={hour < 6 || hour >= 20} />
+        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onJournal={() => setFolioPage("quests")} onWayfinder={() => setFolioPage("atlas")} onSeekCombat={onSeekCombat} questCount={activeQuests.length} loading={loading} night={hour < 6 || hour >= 20} city={currentCity} district={currentDistrict} />
         <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={() => journey && !loading && onTravel(selected, journey.fullPath)} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
       </div>
-      {folioPage && <AdventureFolio page={folioPage} quests={activeQuests} landmarks={model.landmarks} origin={model.origin} onPage={setFolioPage} onClose={() => setFolioPage(null)} onPick={pick} />}
+      {folioPage && <AdventureFolio state={state} page={folioPage} quests={activeQuests} landmarks={model.landmarks} origin={model.origin} onPage={setFolioPage} onClose={() => setFolioPage(null)} onPick={pick} />}
       {flyPanelDest && <AtlasFlyPanel plan={flyPlan} destination={selectedName} onCancel={() => setFlyPanelDest(null)} onConfirm={(assign) => { const destination = flyPanelDest; setFlyPanelDest(null); onFly(destination, assign); }} />}
     </div>
   );

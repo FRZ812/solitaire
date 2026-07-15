@@ -1,7 +1,7 @@
-// Hard-boundary biomes in axial coordinate space. Each region is a rectangular
-// box in (x, y); regions are mutually exclusive and bounded so the catch-all
-// "Far Wild" picks up anything outside them. `match` is auto-derived from
-// `bounds`; the WorldMapView uses `bounds` directly to draw region polygons.
+// Named cultural regions and their encounter identities. Avarra's live region
+// assignment is an irregular deterministic influence field owned by
+// engine/world-generation.js. Legacy `bounds`/`match` values remain as content
+// hints and for Whitemarch's initial reveal only.
 //
 // `faction` is the id of the political/cultural group associated with this
 // biome (see data/factions.js). Used for world-view coloring and narrator
@@ -17,7 +17,11 @@
 //   Far east arcs:    x > 60     (Iron Plateau, Tellmar Road)
 //   Far south arcs:   y > 40     (Hollow Coast)
 //   Far west arcs:    x < -30    (Witchwood Deep, Pale Steppe)
-// Anywhere outside every rect falls through to The Far Wild.
+// Those rectangles no longer resolve live geography; the finite generator's
+// warped influence field assigns Far Wild only inside Avarra's outer frontiers.
+
+import { regionIdAt } from "../engine/world-generation.js";
+import { WHITEMARCH_CAPITAL } from "./whitemarch-capital.js";
 
 function rect({ xmin, xmax, ymin, ymax }) {
   return {
@@ -38,10 +42,18 @@ export const BIOMES = [
     name: "Whitemarch",
     faction: "whitemarch-iron",
     description: "The walled capital where the iron-shilling is minted — black-and-white gate-towers over a Great Wall that rings wards of market, dock, chain, court, and citadel, with the Whitewend running brown beneath the quays. Inside the wall the country gives way wholly to stone, smoke, and crowd.",
-    ...rect({ xmin: -8, xmax: 9, ymin: -10, ymax: 10 }),
+    ...rect(WHITEMARCH_CAPITAL.bounds),
     terrainWeights: { settlement: 0.34, street: 0.24, wall: 0.18, road: 0.10, plains: 0.08, water: 0.06 },
     poiChance: 0.02,
     extraSpawns: {
+      street: [
+        { kind: "market-watch-patrol", weight: 12, posture: "neutral", desc: "a Market Watch patrol threading between handcarts and rain-dark awnings" },
+        { kind: "city-porters", weight: 12, posture: "friendly", desc: "a file of city porters shouldering corded bales toward the counting yards" },
+        { kind: "district-messengers", weight: 9, posture: "friendly", desc: "district messengers in iron-grey tabs calling warnings at every crossing" },
+        { kind: "street-vendors", weight: 9, posture: "friendly", desc: "street vendors working from trays of hot pies, lamp-wicks, and cheap ribbons" },
+        { kind: "ward-inspectors", weight: 6, posture: "neutral", desc: "two ward inspectors checking chalk marks, shutters, and posted licences" },
+        { kind: "alley-cutpurses", weight: 4, posture: "hostile", desc: "a cutpurse pair shadowing the crowd from the mouth of a service lane" },
+      ],
       settlement: [
         { kind: "market-watch",  weight: 12, posture: "neutral",  desc: "a pair of Market Watch in iron-grey, eyes moving over the crowd" },
         { kind: "porter",        weight: 12, posture: "friendly", desc: "a sweating porter bent under a corded load, calling for room" },
@@ -368,11 +380,8 @@ export const BIOMES = [
   },
 ];
 
-export function getBiome(x, y) {
-  for (const b of BIOMES) {
-    if (b.match(x, y)) return b;
-  }
-  return BIOMES[BIOMES.length - 1];
+export function getBiome(x, y, seed) {
+  return getBiomeById(regionIdAt(x, y, seed)) || BIOMES[BIOMES.length - 1];
 }
 
 export function getBiomeById(id) {
