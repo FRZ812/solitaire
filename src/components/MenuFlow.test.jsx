@@ -63,9 +63,13 @@ describe("front-of-game menu flow", () => {
     expect(html).toContain("Faelar Sylvareth");
     expect(html).toContain("Ysolde Varen");
     expect(html).toContain("Korvane Ashfell");
-    expect(html).toContain("Search name, profession, kindred…");
+    expect(html).toContain("Search name, class, subclass, kindred…");
     expect(html).toContain("All roles");
     expect(html).toContain("data-atlas-cell=\"sellsword\"");
+    expect(html).toContain("data-atlas-cell=\"cutthroat\"");
+    expect(html).toContain("data-atlas-cell=\"shadowblade\"");
+    expect(html).toContain("aria-label=\"Subclass: Cutthroat\"");
+    expect(html).toContain("aria-label=\"Subclass: Shadowblade\"");
     expect(html).toContain("sellsword-anime-v2.webp");
     expect(html).toContain("Create a custom traveller");
     expect(html).toContain("character-roster-threshold-v1.webp");

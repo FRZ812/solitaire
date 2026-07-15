@@ -13,6 +13,7 @@ describe("VitalsStrip", () => {
     expect(html).toContain("Clear sightlines");
     expect(html).toContain("visibility-status--clear");
     expect(html).toContain("visibilityOpen");
+    expect(html).toContain('data-game-icon="hunger"');
     expect(html).not.toContain("hud-light");
   });
 

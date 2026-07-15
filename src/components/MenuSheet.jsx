@@ -206,7 +206,7 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
           <SectionHeader>Needs</SectionHeader>
           <div className="status-meter-grid status-meter-grid--needs">
             <button className="status-meter-button" aria-label={`Learn about Hunger — ${Math.round(needs.hunger)} of 100`} onClick={() => showInfo("hunger")}>
-              <NeedBar label="Hunger" icon="drumstick" tone="hunger" value={needs.hunger} detail={meterDetail("hunger", needs.hunger)} />
+              <NeedBar label="Hunger" icon="hunger" tone="hunger" value={needs.hunger} detail={meterDetail("hunger", needs.hunger)} />
             </button>
             <button className="status-meter-button" aria-label={`Learn about Thirst — ${Math.round(needs.thirst)} of 100`} onClick={() => showInfo("thirst")}>
               <NeedBar label="Thirst" icon="droplet" tone="thirst" value={needs.thirst} detail={meterDetail("thirst", needs.thirst)} />

@@ -1222,7 +1222,7 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 7px;
   overflow: visible;
   border: 0;
@@ -1234,7 +1234,7 @@
   position: relative;
   min-width: 0;
   min-height: 76px;
-  padding: 18px 7px 9px;
+  padding: 18px 4px 9px;
   display: grid;
   align-content: center;
   justify-items: center;
@@ -1247,7 +1247,14 @@
     linear-gradient(180deg, color-mix(in srgb, var(--tab-accent) 5%, transparent), rgba(2, 9, 17, 0.54));
   cursor: pointer;
   transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  grid-column: span 2;
 }
+
+/* Seven choices settle into a centred 4 + 3 formation instead of leaving an
+ * orphaned final tier on its own row. */
+.creation-tier-tabs button:nth-child(5) { grid-column: 2 / span 2; }
+.creation-tier-tabs button:nth-child(6) { grid-column: 4 / span 2; }
+.creation-tier-tabs button:nth-child(7) { grid-column: 6 / span 2; }
 
 .creation-tier-tabs button small {
   position: absolute;
@@ -1263,7 +1270,7 @@
   max-width: 100%;
   overflow: hidden;
   color: rgba(255, 246, 221, 0.78);
-  font: italic clamp(14px, 3.8vw, 17px)/1 "Instrument Serif", Georgia, serif;
+  font: italic clamp(13px, 3.5vw, 17px)/1 "Instrument Serif", Georgia, serif;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1464,12 +1471,14 @@
   box-shadow: inset 0 0 0 2px rgba(4, 11, 18, 0.5);
 }
 .creation-card__portrait > img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; border-radius: inherit; filter: saturate(.88) contrast(1.01); }
-.creation-card__portrait .profession-icon { position: absolute; right: -8px; bottom: -8px; border-color: var(--tier-accent); }
+.creation-card__portrait .profession-icon { position: absolute; right: 0; bottom: 0; border-color: var(--tier-accent); transform: translate(50%, 50%); }
 
 .creation-card__body { min-width: 0; display: flex; flex-direction: column; }
 .creation-card__topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .creation-card__topline small { color: var(--tier-accent); font-size: 7px; font-weight: 800; letter-spacing: 0.13em; text-transform: uppercase; }
-.creation-card__topline em { overflow: hidden; color: rgba(244, 232, 202, 0.36); font-size: 8px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.creation-card__topline em { min-width: 0; margin-left: auto; display: flex; align-items: center; justify-content: flex-end; gap: 4px; overflow: hidden; color: rgba(244, 232, 202, 0.36); font-size: 8px; font-style: normal; white-space: nowrap; }
+.creation-card__topline em > span { flex: 0 0 auto; color: rgba(239, 202, 126, 0.4); font-size: 5.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+.creation-card__topline em > b { min-width: 0; overflow: hidden; color: rgba(244, 232, 202, 0.48); font: inherit; text-overflow: ellipsis; }
 .creation-card__body > strong { margin-top: 3px; overflow: hidden; color: #fff6dd; font: italic 23px/1.02 "Instrument Serif", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
 .creation-card__meta { margin-top: 4px; overflow: hidden; color: rgba(239, 202, 126, 0.58); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .creation-card__concept { margin-top: 8px; display: -webkit-box; overflow: hidden; color: rgba(244, 232, 202, 0.57); font-size: 10px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -1622,6 +1631,15 @@
   .campaign-card__actions { justify-content: flex-end; padding-left: 15px; }
   .campaign-card__actions > span { display: none; }
   .creation-roster { padding-right: 15px; padding-left: 15px; }
+}
+
+@media (max-width: 350px) {
+  .creation-tier-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .creation-tier-tabs button,
+  .creation-tier-tabs button:nth-child(5),
+  .creation-tier-tabs button:nth-child(6),
+  .creation-tier-tabs button:nth-child(7) { grid-column: auto; }
+  .creation-tier-tabs button:first-child { grid-column: 1 / -1; }
 }
 
 @media (max-height: 720px) {
