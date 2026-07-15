@@ -1,7 +1,8 @@
 # Builds the web bundle and publishes dist/ to GitHub Pages on every push to
 # main. One-time setup: in repo Settings → Pages, set Source to "GitHub
 # Actions" (not "Deploy from a branch"). The VITE_SUPABASE_* values come from
-# the committed .env (public by design); no secrets configuration required.
+# GitHub Actions repository variables (or secrets as a fallback); they are
+# public browser identifiers, while private provider credentials stay server-side.
 #
 # `npm run build` is the only build target now — the artifact (singlefile)
 # build path was dropped when the handcrafted map moved to Supabase, so
@@ -26,6 +27,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,6 +38,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Check Supabase browser configuration
+        run: |
+          test -n "$VITE_SUPABASE_URL" || { echo "Missing VITE_SUPABASE_URL repository variable/secret"; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "Missing VITE_SUPABASE_ANON_KEY repository variable/secret"; exit 1; }
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
