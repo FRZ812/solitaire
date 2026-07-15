@@ -74,7 +74,6 @@ import { PrisonView } from "./components/PrisonView.jsx";
 import { SlaveMarketView } from "./components/SlaveMarketView.jsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { NamePrompt } from "./components/NamePrompt.jsx";
-import { CodexView } from "./components/CodexView.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
 import { CampaignsList } from "./components/CampaignsList.jsx";
@@ -278,7 +277,7 @@ export function Solitaire() {
   // A failed player-message send, kept so it can be retried (e.g. the app was
   // backgrounded mid-request and the connection dropped). { base, message }.
   const [retry, setRetry] = useState(null);
-  const [deckOpen, setDeckOpen] = useState(false);     // the Company/Character/Inventory deck
+  const [deckOpen, setDeckOpen] = useState(false);     // unified dossier deck
   const [deckPage, setDeckPage] = useState("character"); // which page it opens to
   // Character creation UI: the hub (templates vs limbo) shows first on a fresh
   // campaign; `creationEntered` flips once the player chooses the freeform limbo
@@ -287,7 +286,6 @@ export function Solitaire() {
   const [manualCreation, setManualCreation] = useState(false);
   const [fusionRune, setFusionRune] = useState(null); // forge-rune id being bound in the fusion ritual
   const [mapOpen, setMapOpen] = useState(false);
-  const [codexOpen, setCodexOpen] = useState(false);
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
   const [placeOpen, setPlaceOpen] = useState(false); // the scale-2 local map (PlaceView) overlay
@@ -1442,7 +1440,7 @@ export function Solitaire() {
   async function handleScry(id) {
     if (loading) return;
     const res = scryResult(state, id);
-    setCodexOpen(false);
+    setDeckOpen(false);
     setError(null);
     const who = state.world.codex.characters?.[id]?.name || "them";
     if (!res) {
@@ -1641,7 +1639,7 @@ export function Solitaire() {
   function startCombat(enemies, context, extraOpts = {}, st = state) {
     if (!enemies || enemies.length === 0) return;
     combatCtxRef.current = context || { flavor: enemies[0].name };
-    setDeckOpen(false); setMapOpen(false); setCodexOpen(false); setShopTile(null);
+    setDeckOpen(false); setMapOpen(false); setShopTile(null);
     setPendingCombat(null);
     closeBeatMenu();
     const region = regionHere(st);
@@ -1925,7 +1923,7 @@ export function Solitaire() {
               onMap={() => (inPlace(state) ? setPlaceOpen(true) : setMapOpen(true))}
               onOpenDeck={() => { setDeckPage("character"); setDeckOpen(true); }}
             />
-            <VitalsStrip character={state.character} />
+            <VitalsStrip state={state} onExtinguish={handleExtinguish} />
           </div>
         )}
         {/* In the freeform limbo interview, keep a character-panel button so the
@@ -2146,11 +2144,11 @@ export function Solitaire() {
             // Party
             onDismiss: handleDismiss, onMount: handleMount, onDismount: handleDismountRider,
             // Character
-            onExtinguish: handleExtinguish, onCastBuff: handleCastBuff, onReset: handleResetCampaign,
-            onOpenCodex: () => { setDeckOpen(false); setCodexOpen(true); },
+            onCastBuff: handleCastBuff, onReset: handleResetCampaign,
             onBackToCampaigns: handleBackToCampaigns,
             onSignOut: handleSignOut,
             onLinkEmail: linkEmail,
+            onScry: handleScry, onRenameMount: handleRenameMount,
             // Inventory
             onEquip: handleEquip, onUnequip: handleUnequip, onUse: handleUse,
             onLightTorch: handleLightTorch, onLightLantern: handleLightLantern,
@@ -2187,9 +2185,6 @@ export function Solitaire() {
           onService={handlePlaceService}
           onClose={() => setPlaceOpen(false)}
         />
-      )}
-      {codexOpen && (
-        <CodexView state={state} onClose={() => setCodexOpen(false)} onScry={handleScry} onRenameMount={handleRenameMount} />
       )}
       {shopTile && (() => {
         const tile = standingTile();

@@ -1,19 +1,62 @@
 import React, { useState } from "react";
 import { Icon } from "./Icon.jsx";
 import {
-  ConditionPill, NeedBar, StatBar, AttrBlock,
+  ConditionPill, NeedBar, StatBar,
   SectionHeader, ErrorBanner, actionButtonStyle, insetBoxStyle,
 } from "./primitives.jsx";
 import { colors, alert, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats } from "../engine/combat-stats.js";
 import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
+import { attrDescriptor } from "../data/attribute-tiers.js";
 import { AttributeDetail } from "./AttributeDetail.jsx";
 import { InfoModal } from "./InfoTip.jsx";
 import { glossaryById, conditionInfo } from "../data/glossary.js";
 import { condName } from "../data/conditions.js";
-import { lightStatus } from "../engine/light.js";
 import { canHeal } from "../engine/healing.js";
+
+const ATTRIBUTE_VISUALS = {
+  body: { icon: "swords", hint: "Force" },
+  reflex: { icon: "arrowUp", hint: "Tempo" },
+  vigor: { icon: "shield", hint: "Endure" },
+  mind: { icon: "book", hint: "Arcana" },
+  wit: { icon: "compass", hint: "Instinct" },
+  presence: { icon: "sparkle", hint: "Will" },
+};
+
+function attributeProgress(score) {
+  const thresholds = [5, 10, 15, 20, 25, 30];
+  const next = thresholds.find((threshold) => score < threshold);
+  if (!next) return { pct: 100, note: "Mastered" };
+  const previous = thresholds.filter((threshold) => threshold <= score).at(-1) || 0;
+  const pct = ((score - previous) / (next - previous)) * 100;
+  return { pct: Math.max(3, Math.min(100, pct)), note: `${next - score} to ${next}` };
+}
+
+function AttributeCard({ attrKey, score, active, onClick }) {
+  const visual = ATTRIBUTE_VISUALS[attrKey];
+  const progress = attributeProgress(score);
+  return (
+    <button
+      type="button"
+      className={`attribute-card${active ? " is-active" : ""}`}
+      onClick={onClick}
+      aria-expanded={active}
+      aria-controls={`attribute-detail-${attrKey}`}
+    >
+      <span className="attribute-card__sigil" aria-hidden="true">
+        <Icon name={visual.icon} size={17} strokeWidth={1.55} />
+      </span>
+      <span className="attribute-card__copy">
+        <span className="attribute-card__label">{ATTR_LABELS[attrKey]}</span>
+        <span className="attribute-card__rank">{attrDescriptor(attrKey, score)}</span>
+      </span>
+      <strong className="attribute-card__score">{score}</strong>
+      <span className="attribute-card__track" aria-hidden="true"><i style={{ width: `${progress.pct}%` }} /></span>
+      <span className="attribute-card__footer"><span>{visual.hint}</span><span>{progress.note}</span></span>
+    </button>
+  );
+}
 
 // Compact label/value cell for the derived combat stats grid. Tappable to explain.
 function CombatStat({ label, value, onClick }) {
@@ -66,7 +109,7 @@ function Divider() {
 // attributes, proficiencies, combat, and campaign actions. Content only;
 // the deck supplies the sheet chrome, scroll, and dismissal. (Wealth + gear now
 // live on the Inventory page.)
-export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onExtinguish }) {
+export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, onLinkEmail }) {
   const [showAllProficiencies, setShowAllProficiencies] = useState(false);
   const [openAttr, setOpenAttr] = useState(null); // attribute key whose threshold detail is expanded
   const [info, setInfo] = useState(null); // glossary explanation popover { term, text, extra }
@@ -74,7 +117,7 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
   const attrs = effectiveAttributes(state.character);
   const combat = deriveCombatStats(state.character, codex);
   // Tap-to-explain: open a glossary entry, appending a LIVE line for the
-  // concepts whose state actually varies (resolve regen, healing, light).
+  // concepts whose state actually varies (resolve regen and healing).
   const liveStyle = { fontSize: "12px", color: colors.parchmentMuted, background: "rgba(215,167,111,0.08)", border: "1px solid rgba(215,167,111,0.2)", borderRadius: radius.chip, padding: "6px 9px" };
   function showInfo(id) {
     const g = glossaryById(id);
@@ -87,8 +130,6 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
       extra = <div style={liveStyle}>Right now: <b>{cur}/{max}</b>{rr > 0 ? ` — and ${rr} back each turn from your traits` : " — restored by rest or a drink"}.</div>;
     } else if (id === "vitality") {
       extra = <div style={liveStyle}>{canHeal(state.character.conditions) ? "Right now: healing normally." : "Right now: NOT healing — a wound or need is blocking it."}</div>;
-    } else if (id === "light") {
-      extra = <div style={liveStyle}>Right now: <b>{lightStatus(state).text}</b>.</div>;
     }
     setInfo({ term: g.term, text: g.text, extra });
   }
@@ -114,7 +155,7 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
           </div>
         </div>
 
-        {/* Vitals — Vitality + Resolve (+ light), grouped with the needs below. Tap to learn. */}
+        {/* Vitals — light now lives in the always-visible HUD. */}
         <div>
           <SectionHeader>Vitals</SectionHeader>
           <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
@@ -125,23 +166,6 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
               <StatBar label="Resolve" value={state.character.resolve} max={state.character.resolveMax}
                        gradient="linear-gradient(90deg, #6d4a8a 0%, #a06fc4 100%)" />
             </button>
-            <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
-              <button onClick={() => showInfo("light")} style={{
-                ...bareBtn,
-                flex: 1, minWidth: 0,
-                display: "flex", justifyContent: "space-between", alignItems: "baseline",
-              }}>
-                <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.14em", color: "rgba(237, 228, 208, 0.72)" }}>Light</span>
-                <span style={{ fontSize: "11px", color: colors.parchment, fontWeight: 700 }}>{lightStatus(state).text}</span>
-              </button>
-              {lightStatus(state).lit && (
-                <button onClick={() => onExtinguish?.()} style={{
-                  flexShrink: 0, padding: "4px 10px", borderRadius: radius.pill, fontFamily: "inherit",
-                  background: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.3)`,
-                  color: "rgba(215,167,111,0.85)", fontSize: "11px", fontWeight: 700, cursor: "pointer",
-                }}>Extinguish</button>
-              )}
-            </div>
           </div>
         </div>
 
@@ -159,8 +183,16 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
             Tap one to see its always-on bonuses + the threshold-unlock ladder. */}
         <div>
           <SectionHeader>Attributes</SectionHeader>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
-            {ATTR_KEYS.map(k => <AttrBlock key={k} label={ATTR_LABELS[k]} score={attrs[k]} active={openAttr === k} onClick={() => setOpenAttr((p) => (p === k ? null : k))} />)}
+          <div className="attribute-grid">
+            {ATTR_KEYS.map((key) => (
+              <AttributeCard
+                key={key}
+                attrKey={key}
+                score={attrs[key]}
+                active={openAttr === key}
+                onClick={() => setOpenAttr((current) => (current === key ? null : key))}
+              />
+            ))}
           </div>
           {openAttr && <AttributeDetail attrKey={openAttr} value={attrs[openAttr] ?? 0} />}
         </div>
@@ -220,10 +252,6 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
 
         {/* Actions */}
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <button className="menu-action menu-action--codex" onClick={onOpenCodex} style={actionButtonStyle()}>
-            <Icon name="book" size={14} strokeWidth={1.5} />
-            Open Codex
-          </button>
           {onBackToCampaigns && (
             <button className="menu-action" onClick={onBackToCampaigns} style={actionButtonStyle()}>
               <Icon name="arrowLeft" size={14} strokeWidth={1.5} />

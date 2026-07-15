@@ -58,9 +58,8 @@ export function SceneBackdrop({ state }) {
       <div className="scene-backdrop__layer scene-backdrop__layer--far" key={`far-${visualBiomeId}-${phase}`}>
         <img src={visual.image} alt="" draggable="false" style={{ objectPosition: TERRAIN_POSITION[terrain] || "50% 48%" }} />
       </div>
-      <div className="scene-backdrop__layer scene-backdrop__layer--near" key={`near-${visualBiomeId}-${phase}`}>
-        <img src={visual.image} alt="" draggable="false" style={{ objectPosition: TERRAIN_POSITION[terrain] || "50% 48%" }} />
-      </div>
+      {/* Keep the scene plate singular. Reusing it as a shifted foreground creates
+          visible doubled architecture as the gyro layers separate. */}
       <div className="scene-backdrop__terrain" />
       <div className="scene-backdrop__light" />
       <div className="scene-backdrop__motes">

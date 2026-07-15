@@ -5,7 +5,7 @@ import { makeInitialState } from "../data/initial-state.js";
 import { PanelDeck, shouldDismissPanel } from "./PanelDeck.jsx";
 
 describe("PanelDeck", () => {
-  it("renders abilities as a peer deck page with handle-only sheet chrome", () => {
+  it("renders abilities and Codex as peer deck pages with handle-only sheet chrome", () => {
     const html = renderToStaticMarkup(
       <PanelDeck
         state={makeInitialState()}
@@ -18,9 +18,24 @@ describe("PanelDeck", () => {
 
     expect(html).toContain("Abilities &amp; Spells");
     expect(html).toContain("Drag down or tap to close menu");
-    expect(html.match(/role="tab"/g)).toHaveLength(4);
+    expect(html.match(/role="tab"/g)).toHaveLength(5);
+    expect(html).toContain("Codex");
     expect(html).not.toContain("Wanderer dossier");
     expect(html).not.toContain("Close character menu");
+  });
+
+  it("renders the living Codex inside the dossier instead of as a character action", () => {
+    const state = makeInitialState();
+    const codexHtml = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="codex" onClose={() => {}} handlers={{}} />,
+    );
+    const characterHtml = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="character" onClose={() => {}} handlers={{}} />,
+    );
+
+    expect(codexHtml).toContain("Lore Codex");
+    expect(codexHtml).toContain("People, places, relics, and rules gathered on the road.");
+    expect(characterHtml).not.toContain("Open Codex");
   });
 
   it("snaps short pulls back and dismisses long or deliberate flicks", () => {

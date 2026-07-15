@@ -914,7 +914,7 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
   );
 }
 
-export function CodexView({ state, onClose, onScry, onRenameMount }) {
+export function CodexView({ state, onClose, onScry, onRenameMount, embedded = false }) {
   const codex = state.world.codex;
   const scryable = onScry && canScry(state);
   const partyIds = new Set(state.party || []);
@@ -926,34 +926,47 @@ export function CodexView({ state, onClose, onScry, onRenameMount }) {
   }
 
   return (
-    <div className="codex-view fade-in" data-tab={activeTab} style={{ position: "absolute", inset: 0, backgroundColor: "#0b0f0e", zIndex: 30, display: "flex", flexDirection: "column" }}>
-      <div className="codex-view__header" style={{
-        padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px 16px",
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        borderBottom: `1px solid rgba(215, 167, 111, 0.15)`,
-        backgroundColor: "rgba(20, 29, 29, 0.95)",
-      }}>
-        <button
-          onClick={onClose}
-          aria-label="Close lore codex"
-          style={{
-            ...iconButtonStyle,
-            width: "30px", height: "30px",
-            backgroundColor: "rgba(215, 167, 111, 0.08)",
-            border: `1px solid rgba(215, 167, 111, 0.2)`,
-          }}
-        >
-          <Icon name="arrowLeft" size={13} color={colors.parchmentMuted} strokeWidth={2} />
-        </button>
-        <div className="codex-view__title">
-          <span aria-hidden="true"><Icon name="book" size={21} color={colors.gold} strokeWidth={1.45} /></span>
+    <div className={`codex-view${embedded ? " codex-view--embedded deck-view" : " fade-in"}`} data-tab={activeTab} style={{ position: embedded ? "relative" : "absolute", inset: embedded ? "auto" : 0, backgroundColor: "#0b0f0e", zIndex: embedded ? 1 : 30, display: "flex", flexDirection: "column" }}>
+      {!embedded && (
+        <div className="codex-view__header" style={{
+          padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px 16px",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          borderBottom: `1px solid rgba(215, 167, 111, 0.15)`,
+          backgroundColor: "rgba(20, 29, 29, 0.95)",
+        }}>
+          <button
+            onClick={onClose}
+            aria-label="Close lore codex"
+            style={{
+              ...iconButtonStyle,
+              width: "30px", height: "30px",
+              backgroundColor: "rgba(215, 167, 111, 0.08)",
+              border: `1px solid rgba(215, 167, 111, 0.2)`,
+            }}
+          >
+            <Icon name="arrowLeft" size={13} color={colors.parchmentMuted} strokeWidth={2} />
+          </button>
+          <div className="codex-view__title">
+            <span aria-hidden="true"><Icon name="book" size={21} color={colors.gold} strokeWidth={1.45} /></span>
+            <div>
+              <small>Living archive</small>
+              <strong style={{ fontFamily: fonts.serif, fontSize: "24px", fontStyle: "italic", color: colors.parchmentLight }}>Lore Codex</strong>
+            </div>
+          </div>
+          <div style={{ width: "30px" }} />
+        </div>
+      )}
+
+      {embedded && (
+        <div className="codex-panel__intro">
+          <span aria-hidden="true"><Icon name="book" size={22} color={colors.gold} strokeWidth={1.4} /></span>
           <div>
             <small>Living archive</small>
-            <strong style={{ fontFamily: fonts.serif, fontSize: "24px", fontStyle: "italic", color: colors.parchmentLight }}>Lore Codex</strong>
+            <h3>Lore Codex</h3>
+            <p>People, places, relics, and rules gathered on the road.</p>
           </div>
         </div>
-        <div style={{ width: "30px" }} />
-      </div>
+      )}
 
       <div className="codex-view__tabs tabstrip" role="tablist" aria-label="Codex sections" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
         {CODEX_TABS.map((tab, i) => {
@@ -990,7 +1003,7 @@ export function CodexView({ state, onClose, onScry, onRenameMount }) {
         })}
       </div>
 
-      <div className="codex-view__content" style={{ flex: 1, overflowY: "auto", padding: "16px 14px calc(env(safe-area-inset-bottom, 0px) + 24px) 14px", background: "linear-gradient(180deg, #111716 0%, #0b0f0e 100%)" }}>
+      <div className="codex-view__content" style={{ flex: 1, overflowY: embedded ? "visible" : "auto", padding: "16px 14px calc(env(safe-area-inset-bottom, 0px) + 24px) 14px", background: "linear-gradient(180deg, #111716 0%, #0b0f0e 100%)" }}>
         <div
           key={activeTab}
           id={`codex-panel-${activeTab}`}
