@@ -10,18 +10,19 @@ import { tierColor, tierLabel } from "../data/tiers.js";
 import { CHARACTER_TEMPLATES, STANDARD_PROVISIONS } from "../data/templates.js";
 import { InfoModal } from "./InfoTip.jsx";
 import { AttributeDetail } from "./AttributeDetail.jsx";
+import rosterArtwork from "../assets/generated/character-roster-threshold-v1.webp";
 
 const isHumanRace = (r) => r === "human";
 
-// Power rungs for the pick-and-play roster: [tier, heading, blurb, accent hue].
-// Standard is the intended start; everything above begins you already powerful.
+// Power rungs for the pick-and-play roster. Only one rung is visible at a time
+// so choosing a character feels like browsing a roster, not reading a catalogue.
 const TEMPLATE_TIERS = [
-  ["standard",  "Standard",  "an ordinary life — the Mire bites",          "#c9a26a"],
-  ["mid",       "Veteran",   "road-tested and capable",                    "#7fb88a"],
-  ["epic",      "Champion",  "a serious power — a softer, faster game",    "#b072e6"],
-  ["legendary", "Legend",    "renowned across the land",                   "#e0913f"],
-  ["mythical",  "Mythic",    "near-divine — the early world cannot hold you", "#54c7c7"],
-  ["divine",    "Divine",    "a god walks the world — pure power fantasy",  "#f2d27a"],
+  { id: "standard", label: "Standard", eyebrow: "The intended beginning", blurb: "An ordinary life. Every mile and hard-won victory matters.", accent: "#d7b477" },
+  { id: "mid", label: "Veteran", eyebrow: "Road-tested", blurb: "Capable from the outset, with room to become exceptional.", accent: "#87b995" },
+  { id: "epic", label: "Champion", eyebrow: "Already formidable", blurb: "A stronger, faster opening with fewer early hardships.", accent: "#b894df" },
+  { id: "legendary", label: "Legend", eyebrow: "Known across the land", blurb: "Begin with the power and reputation others spend lives earning.", accent: "#df9d55" },
+  { id: "mythical", label: "Mythic", eyebrow: "Beyond mortal measure", blurb: "The early world will struggle to contain what you already are.", accent: "#62c3c4" },
+  { id: "divine", label: "Divine", eyebrow: "Pure power fantasy", blurb: "A god walks the road. Choose this for dominion, not survival.", accent: "#efd887" },
 ];
 
 function kindredLabel(setup) {
@@ -44,6 +45,7 @@ const metaHead = { fontSize: "9px", letterSpacing: "0.14em", textTransform: "upp
 // (look, story, stats, kit) before committing to begin as them.
 function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
   const s = tmpl.setup;
+  const tierMeta = TEMPLATE_TIERS.find((tier) => tier.id === (tmpl.tier || "standard")) || TEMPLATE_TIERS[0];
   const [info, setInfo] = useState(null);   // tapped ability/gear explanation
   const [openAttr, setOpenAttr] = useState(null); // tapped attribute → threshold detail
   const appr = s.appearance || {};
@@ -86,85 +88,90 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
   };
 
   return (
-    <div className="template-detail" style={{ position: "fixed", inset: 0, zIndex: 70, background: "radial-gradient(120% 90% at 50% 0%, rgba(28,36,40,0.98), rgba(8,11,12,0.995))", overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div className="template-detail__inner" style={{ width: "100%", maxWidth: "640px", margin: "0 auto", padding: "18px 18px 36px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-          <button onClick={onBack} disabled={busy} style={{ display: "flex", alignItems: "center", gap: "4px", padding: "8px 11px", borderRadius: radius.chip, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.3)`, color: "rgba(215,167,111,0.85)", fontSize: "12px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-            <Icon name="arrowLeft" size={13} color="rgba(215,167,111,0.85)" strokeWidth={2} /> Back
-          </button>
-          <div style={{ flex: 1 }} />
-          <span style={{ ...tagPill, color: colors.ink, backgroundColor: colors.gold, fontSize: "10px", padding: "4px 10px" }}>{tmpl.role}</span>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "3px" }}>
-          <Icon name={tmpl.icon} size={22} color={colors.gold} strokeWidth={1.8} />
-          <h1 style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "28px", color: colors.parchmentLight, margin: 0 }}>{finalName}</h1>
-        </div>
-        <div style={{ fontSize: "12px", color: "rgba(215,167,111,0.85)", marginBottom: "12px" }}>{metaLine(s)} · {tmpl.label} · {tmpl.concept}</div>
-
-        <div style={{ fontSize: "13px", color: "rgba(237,228,208,0.82)", lineHeight: 1.55, fontStyle: "italic", marginBottom: "16px" }}>{s.story}</div>
-
-        <Section title="Appearance">
-          <div style={{ fontSize: "12.5px", color: "rgba(237,228,208,0.85)", lineHeight: 1.5, marginBottom: apprChips.length ? "7px" : 0 }}>{s.base_appearance}</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-            {apprChips.map((c, i) => <span key={i} style={{ ...tagPill, color: "rgba(237,228,208,0.85)", backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.2)`, textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>{c}</span>)}
+    <div className="template-detail" style={{ "--tier-accent": tierMeta.accent }}>
+      <div className="template-detail__inner">
+        <header className="template-detail__hero">
+          <img src={rosterArtwork} alt="" draggable="false" />
+          <div className="template-detail__hero-wash" aria-hidden="true" />
+          <div className="template-detail__toolbar">
+            <button className="creation-back" type="button" onClick={onBack} disabled={busy}>
+              <Icon name="arrowLeft" size={14} strokeWidth={2} /> Back to roster
+            </button>
+            <span className="template-detail__role">{tmpl.role}</span>
           </div>
-        </Section>
-
-        <Section title="Drive">
-          <div style={{ fontSize: "13px", color: colors.parchmentLight, fontFamily: fonts.serif, fontStyle: "italic", lineHeight: 1.4 }}>“{s.bond}”</div>
-        </Section>
-
-        <Section title="Attributes" hint="tap for what each grants">
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
-            {ATTR_KEYS.map((k) => {
-              const hot = tmpl.highlights.includes(ATTR_LABELS[k]);
-              const active = openAttr === k;
-              return (
-                <button key={k} onClick={() => setOpenAttr((p) => (p === k ? null : k))} style={{ padding: "7px 8px", borderRadius: radius.chip, textAlign: "center", cursor: "pointer", fontFamily: "inherit", backgroundColor: active ? "rgba(215,167,111,0.2)" : hot ? "rgba(215,167,111,0.14)" : "rgba(20,29,29,0.5)", border: `1px solid ${active || hot ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.16)"}` }}>
-                  <div style={{ fontSize: "8px", letterSpacing: "0.1em", textTransform: "uppercase", color: colors.gold, fontWeight: 800 }}>{ATTR_LABELS[k]}</div>
-                  <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "20px", color: colors.parchment, lineHeight: 1.1 }}>{s.attributes[k]}</div>
-                </button>
-              );
-            })}
+          <div className="template-detail__identity">
+            <span className="template-detail__sigil" aria-hidden="true"><Icon name={tmpl.icon} size={24} strokeWidth={1.75} /></span>
+            <p>{tierMeta.label} · {tmpl.label}</p>
+            <h1>{finalName}</h1>
+            <div>{metaLine(s)}</div>
+            <span>{tmpl.concept}</span>
           </div>
-          {openAttr && <AttributeDetail attrKey={openAttr} value={s.attributes[openAttr] ?? 0} />}
-        </Section>
+        </header>
 
-        <Section title="Abilities" hint="tap for what they do">
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-            {(s.abilities || []).map((a) => {
-              const def = getAbilityDef(a.id);
-              return (
-                <button key={a.id} onClick={() => abilityInfo(a)} style={{ ...tagPill, cursor: "pointer", fontFamily: "inherit", textTransform: "none", letterSpacing: 0, color: colors.parchmentLight, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.22)` }}>
-                  {def?.name || a.id} <span style={{ color: tierColor(a.tier), fontWeight: 800 }}>{tierLabel(a.tier)}</span>
-                </button>
-              );
-            })}
-          </div>
-        </Section>
+        <div className="template-detail__body">
+          <p className="template-detail__story">{tmpl.story || s.story}</p>
 
-        <Section title="Gear" hint="tap an item">
-          {[["Worn", wornItems], ["Packed", packedItems]].map(([label, list]) => list.length > 0 && (
-            <div key={label} style={{ marginBottom: "6px" }}>
-              <div style={{ fontSize: "10px", color: "rgba(215,167,111,0.6)", marginBottom: "4px" }}>{label}</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-                {list.map((it) => (
-                  <button key={it.itemId} onClick={() => itemInfo(it)} style={{ ...tagPill, cursor: "pointer", fontFamily: "inherit", textTransform: "none", letterSpacing: 0, color: "rgba(237,228,208,0.85)", backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.2)`, fontWeight: 600 }}>
-                    {it.quantity > 1 ? `${it.quantity}× ` : ""}{it.def?.name || it.itemId}
-                  </button>
-                ))}
-              </div>
+          <Section title="Appearance">
+            <div style={{ fontSize: "12.5px", color: "rgba(237,228,208,0.85)", lineHeight: 1.5, marginBottom: apprChips.length ? "7px" : 0 }}>{s.base_appearance}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+              {apprChips.map((c, i) => <span key={i} style={{ ...tagPill, color: "rgba(237,228,208,0.85)", backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.2)`, textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>{c}</span>)}
             </div>
-          ))}
-          <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.5)", marginTop: "4px" }}>+ standard provisions{coinStr ? ` · ${coinStr}` : ""}</div>
-        </Section>
+          </Section>
 
-        <button onClick={() => !busy && onConfirm()} disabled={busy} style={{
-          width: "100%", marginTop: "18px", padding: "13px", borderRadius: radius.control, border: "none",
-          backgroundColor: colors.gold, color: colors.ink, fontSize: "14px", fontWeight: 800,
-          cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1,
-        }}>{busy ? "Drawing them into the world…" : `Begin as ${finalName}`}</button>
+          <Section title="Drive">
+            <div style={{ fontSize: "13px", color: colors.parchmentLight, fontFamily: fonts.serif, fontStyle: "italic", lineHeight: 1.4 }}>“{s.bond}”</div>
+          </Section>
+
+          <Section title="Attributes" hint="tap for what each grants">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
+              {ATTR_KEYS.map((k) => {
+                const hot = tmpl.highlights.includes(ATTR_LABELS[k]);
+                const active = openAttr === k;
+                return (
+                  <button key={k} onClick={() => setOpenAttr((p) => (p === k ? null : k))} style={{ padding: "7px 8px", borderRadius: radius.chip, textAlign: "center", cursor: "pointer", fontFamily: "inherit", backgroundColor: active ? "rgba(215,167,111,0.2)" : hot ? "rgba(215,167,111,0.14)" : "rgba(20,29,29,0.5)", border: `1px solid ${active || hot ? "rgba(215,167,111,0.45)" : "rgba(215,167,111,0.16)"}` }}>
+                    <div style={{ fontSize: "8px", letterSpacing: "0.1em", textTransform: "uppercase", color: colors.gold, fontWeight: 800 }}>{ATTR_LABELS[k]}</div>
+                    <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "20px", color: colors.parchment, lineHeight: 1.1 }}>{s.attributes[k]}</div>
+                  </button>
+                );
+              })}
+            </div>
+            {openAttr && <AttributeDetail attrKey={openAttr} value={s.attributes[openAttr] ?? 0} />}
+          </Section>
+
+          <Section title="Abilities" hint="tap for what they do">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {(s.abilities || []).map((a) => {
+                const def = getAbilityDef(a.id);
+                return (
+                  <button key={a.id} onClick={() => abilityInfo(a)} style={{ ...tagPill, cursor: "pointer", fontFamily: "inherit", textTransform: "none", letterSpacing: 0, color: colors.parchmentLight, backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.22)` }}>
+                    {def?.name || a.id} <span style={{ color: tierColor(a.tier), fontWeight: 800 }}>{tierLabel(a.tier)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+
+          <Section title="Gear" hint="tap an item">
+            {[["Worn", wornItems], ["Packed", packedItems]].map(([label, list]) => list.length > 0 && (
+              <div key={label} style={{ marginBottom: "6px" }}>
+                <div style={{ fontSize: "10px", color: "rgba(215,167,111,0.6)", marginBottom: "4px" }}>{label}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                  {list.map((it) => (
+                    <button key={it.itemId} onClick={() => itemInfo(it)} style={{ ...tagPill, cursor: "pointer", fontFamily: "inherit", textTransform: "none", letterSpacing: 0, color: "rgba(237,228,208,0.85)", backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.2)`, fontWeight: 600 }}>
+                      {it.quantity > 1 ? `${it.quantity}× ` : ""}{it.def?.name || it.itemId}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.5)", marginTop: "4px" }}>+ standard provisions{coinStr ? ` · ${coinStr}` : ""}</div>
+          </Section>
+
+          <button className="template-detail__begin" onClick={() => !busy && onConfirm()} disabled={busy}>
+            <Icon name="compass" size={18} strokeWidth={1.7} />
+            {busy ? "Drawing them into the world…" : `Begin as ${finalName}`}
+          </button>
+        </div>
       </div>
       {info && <InfoModal info={info} onClose={() => setInfo(null)} />}
     </div>
@@ -184,8 +191,11 @@ const Section = ({ title, hint, children }) => (
 export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState(null); // template being previewed
+  const [tierId, setTierId] = useState("standard");
 
   const finalNameFor = (tmpl) => name.trim() || tmpl.setup.name;
+  const activeTier = TEMPLATE_TIERS.find((tier) => tier.id === tierId) || TEMPLATE_TIERS[0];
+  const activeTemplates = CHARACTER_TEMPLATES.filter((tmpl) => (tmpl.tier || "standard") === activeTier.id);
   const begin = (tmpl) => {
     if (busy) return;
     const have = new Set((tmpl.setup.items || []).map((i) => i.itemId));
@@ -200,94 +210,121 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
   }
 
   return (
-    <div className="creation-hub" style={{
-      position: "fixed", inset: 0, zIndex: 60, display: "flex", flexDirection: "column",
-      background: "radial-gradient(120% 90% at 50% 0%, rgba(28,36,40,0.96), rgba(8,11,12,0.99))",
-      overflowY: "auto", WebkitOverflowScrolling: "touch",
-    }}>
-      <div className="creation-hub__inner" style={{ width: "100%", maxWidth: "640px", margin: "0 auto", padding: "20px 18px 40px", flex: 1 }}>
-        <div className="creation-hub__header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
-          <div>
-            <div style={{ fontSize: "9px", letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(215,167,111,0.6)", fontWeight: 800 }}>The threshold</div>
-            <h1 style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "30px", color: colors.parchmentLight, margin: "2px 0 0" }}>Who will you be?</h1>
+    <div className="creation-hub" style={{ "--tier-accent": activeTier.accent }}>
+      <div className="creation-hub__inner">
+        <header className="creation-roster-hero">
+          <img className="creation-roster-hero__art" src={rosterArtwork} alt="" draggable="false" />
+          <div className="creation-roster-hero__wash" aria-hidden="true" />
+          <div className="creation-roster-hero__toolbar">
+            <button className="creation-back" type="button" onClick={onQuit} disabled={busy}>
+              <Icon name="arrowLeft" size={14} strokeWidth={2} /> Campaigns
+            </button>
+            <span>The threshold</span>
           </div>
-          <button onClick={onQuit} disabled={busy} style={{
-            display: "flex", alignItems: "center", gap: "5px", padding: "8px 12px", borderRadius: radius.chip,
-            backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.3)`, color: "rgba(215,167,111,0.85)",
-            fontSize: "12px", fontWeight: 700, cursor: busy ? "default" : "pointer", fontFamily: "inherit", flexShrink: 0,
-          }}>
-            <Icon name="arrowLeft" size={13} color="rgba(215,167,111,0.85)" strokeWidth={2} /> Leave
-          </button>
-        </div>
-        <p style={{ fontSize: "13px", color: "rgba(237,228,208,0.7)", lineHeight: 1.5, margin: "8px 0 18px" }}>
-          Tap a ready-made life to meet them in full, then begin — or step into the limbo to shape your own from nothing.
-        </p>
+          <div className="creation-roster-hero__copy">
+            <p>Choose a life</p>
+            <h1>Who will walk the road?</h1>
+            <span>Meet a ready-made traveller, or shape your own from nothing.</span>
+          </div>
+        </header>
 
-        <div style={{ marginBottom: "18px" }}>
-          <label style={{ fontSize: "9px", letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(215,167,111,0.6)", fontWeight: 800 }}>Name <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "rgba(215,167,111,0.4)" }}>· optional override</span></label>
-          <input
-            value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="Leave blank to keep the template's name"
-            style={{
-              width: "100%", marginTop: "5px", height: "42px", borderRadius: radius.control,
-              border: `1px solid rgba(215,167,111,0.3)`, backgroundColor: "rgba(10,15,15,0.6)",
-              padding: "0 14px", fontSize: "14px", color: colors.parchment, outline: "none", fontFamily: "inherit", boxSizing: "border-box",
-            }}
-          />
-        </div>
+        <main className="creation-roster">
+          <section className="creation-name-field">
+            <span className="creation-name-field__sigil" aria-hidden="true"><Icon name="user" size={18} strokeWidth={1.65} /></span>
+            <label htmlFor="creation-name-override">
+              <span>Name your traveller</span>
+              <small>Optional — leave blank to keep each character's name</small>
+            </label>
+            <input
+              id="creation-name-override"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Use the character's own name"
+            />
+          </section>
 
-        <div style={{ fontSize: "9px", letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(215,167,111,0.6)", fontWeight: 800, marginBottom: "4px" }}>Ready-made lives <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "rgba(215,167,111,0.45)" }}>· a party needs one of each</span></div>
-        <div style={{ fontSize: "10.5px", color: "rgba(215,167,111,0.55)", fontStyle: "italic", lineHeight: 1.4, marginBottom: "12px" }}>Standard is the intended start. Everything above it begins you already powerful — a different, easier experience by choice.</div>
-        {TEMPLATE_TIERS.map(([tier, label, blurb, hue]) => {
-          const list = CHARACTER_TEMPLATES.filter((t) => (t.tier || "standard") === tier);
-          if (!list.length) return null;
-          return (
-            <div key={tier} style={{ marginBottom: "16px" }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "9px", paddingBottom: "5px", borderBottom: `1px solid ${hue}33` }}>
-                <span style={{ fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase", color: hue, fontWeight: 800 }}>{label}</span>
-                <span style={{ fontSize: "10px", color: "rgba(215,167,111,0.5)", fontStyle: "italic" }}>{blurb}</span>
+          <section className="creation-tier-picker" aria-labelledby="power-heading">
+            <div className="creation-section-heading">
+              <div>
+                <p>Starting power</p>
+                <h2 id="power-heading">Choose the kind of tale</h2>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {list.map((t) => (
-                  <button className="creation-card" key={t.id} onClick={() => setSelected(t)} disabled={busy} style={{
-                    display: "flex", alignItems: "center", gap: "11px", padding: "13px 14px", borderRadius: radius.panelCompact, textAlign: "left", width: "100%",
-                    backgroundColor: "rgba(20,29,29,0.55)", border: `1px solid ${hue}33`, cursor: busy ? "default" : "pointer", fontFamily: "inherit",
-                  }}>
-                    <div style={{ width: "36px", height: "36px", borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: `${hue}1f`, border: `1px solid ${hue}4d` }}>
-                      <Icon name={t.icon} size={18} color={hue} strokeWidth={1.8} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: "7px", flexWrap: "wrap" }}>
-                        <span style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.15 }}>{finalNameFor(t)}</span>
-                        <span style={{ ...tagPill, color: colors.ink, backgroundColor: colors.gold }}>{t.role}</span>
-                      </div>
-                      <div style={{ fontSize: "10.5px", color: "rgba(215,167,111,0.7)", marginTop: "2px" }}>{metaLine(t.setup)}</div>
-                      <div style={{ display: "flex", gap: "4px", marginTop: "6px", flexWrap: "wrap" }}>
-                        {t.highlights.map((h) => <span key={h} style={tagPill}>{h}</span>)}
-                      </div>
-                    </div>
-                    <span style={{ flexShrink: 0, fontSize: "20px", color: "rgba(215,167,111,0.55)", lineHeight: 1 }}>›</span>
-                  </button>
-                ))}
+              <span>{activeTemplates.length} lives</span>
+            </div>
+            <div className="creation-tier-tabs no-scrollbar" role="tablist" aria-label="Starting power">
+              {TEMPLATE_TIERS.map((tier, index) => (
+                <button
+                  type="button"
+                  key={tier.id}
+                  id={`creation-tier-${tier.id}`}
+                  role="tab"
+                  aria-selected={tier.id === activeTier.id}
+                  aria-controls="creation-roster-panel"
+                  className={tier.id === activeTier.id ? "is-active" : ""}
+                  style={{ "--tab-accent": tier.accent }}
+                  onClick={() => setTierId(tier.id)}
+                  disabled={busy}
+                >
+                  <small>{String(index + 1).padStart(2, "0")}</small>
+                  <span>{tier.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="creation-tier-summary">
+              <span className="creation-tier-summary__mark" aria-hidden="true"><Icon name={activeTier.id === "standard" ? "compass" : "sparkle"} size={20} strokeWidth={1.65} /></span>
+              <div>
+                <small>{activeTier.eyebrow}</small>
+                <strong>{activeTier.label}</strong>
+                <p>{activeTier.blurb}</p>
               </div>
             </div>
-          );
-        })}
+          </section>
 
-        <div className="creation-custom" style={{ marginTop: "20px", padding: "15px", borderRadius: radius.panelCompact, backgroundColor: "rgba(176,114,230,0.08)", border: `1px solid rgba(176,114,230,0.32)` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
-            <Icon name="sparkle" size={16} color="#c9a6ef" strokeWidth={1.8} />
-            <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "18px", color: "#d9c2f2" }}>Create your own</div>
-          </div>
-          <div style={{ fontSize: "12px", color: "rgba(237,228,208,0.72)", lineHeight: 1.5, marginBottom: "11px" }}>
-            Step into the limbo and shape every detail in conversation — or type the expert token there to open the full manual builder.
-          </div>
-          <button onClick={() => !busy && onCustom()} disabled={busy} style={{
-            width: "100%", padding: "11px", borderRadius: radius.panelCompact,
-            backgroundColor: "rgba(176,114,230,0.16)", color: "#d9c2f2", border: `1px solid rgba(176,114,230,0.45)`,
-            fontSize: "13px", fontWeight: 800, cursor: busy ? "default" : "pointer", fontFamily: "inherit", opacity: busy ? 0.5 : 1,
-          }}>Enter the limbo</button>
-        </div>
+          <section
+            id="creation-roster-panel"
+            className="creation-grid"
+            role="tabpanel"
+            aria-labelledby={`creation-tier-${activeTier.id}`}
+          >
+            {activeTemplates.map((tmpl) => (
+              <button
+                type="button"
+                className="creation-card"
+                key={tmpl.id}
+                onClick={() => setSelected(tmpl)}
+                disabled={busy}
+              >
+                <span className="creation-card__sigil" aria-hidden="true"><Icon name={tmpl.icon} size={22} strokeWidth={1.7} /></span>
+                <span className="creation-card__body">
+                  <span className="creation-card__topline">
+                    <small>{tmpl.role}</small>
+                    <em>{tmpl.label}</em>
+                  </span>
+                  <strong>{finalNameFor(tmpl)}</strong>
+                  <span className="creation-card__meta">{metaLine(tmpl.setup)}</span>
+                  <span className="creation-card__concept">{tmpl.concept}</span>
+                  <span className="creation-card__highlights">
+                    {tmpl.highlights.map((highlight) => <i key={highlight}>{highlight}</i>)}
+                  </span>
+                </span>
+                <span className="creation-card__meet" aria-hidden="true">Meet them <b>›</b></span>
+              </button>
+            ))}
+          </section>
+
+          <section className="creation-custom">
+            <span className="creation-custom__sigil" aria-hidden="true"><Icon name="sparkle" size={22} strokeWidth={1.7} /></span>
+            <div>
+              <p>Write your own beginning</p>
+              <h2>Create a custom traveller</h2>
+              <span>Step into the limbo and shape identity, history, and purpose through conversation.</span>
+            </div>
+            <button type="button" onClick={() => !busy && onCustom()} disabled={busy}>
+              Enter the limbo <span aria-hidden="true">›</span>
+            </button>
+          </section>
+        </main>
       </div>
     </div>
   );
