@@ -74,12 +74,17 @@ function Root() {
 
   if (!mapReady) {
     return (
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        minHeight: "100vh", color: "#f5dcb8",
-        backgroundColor: "#0c1111", fontFamily: "'Inter', sans-serif",
-      }}>
-        Loading map…
+      <div className="map-loader" role="status" aria-live="polite" aria-label="Loading world map">
+        <div className="map-loader__glow" aria-hidden="true" />
+        <div className="map-loader__mark" aria-hidden="true">
+          <span />
+          <i />
+        </div>
+        <div className="map-loader__copy">
+          <strong>Charting the realm</strong>
+          <span>Preparing roads and landmarks</span>
+        </div>
+        <div className="map-loader__track" aria-hidden="true"><span /></div>
       </div>
     );
   }

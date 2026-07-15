@@ -19,7 +19,7 @@ function writeParallaxVars(node, x, y, strength) {
   const layers = {
     far: { x: x * -4 * strength, y: y * -3 * strength },
     mid: { x: x * -9 * strength, y: y * -6 * strength },
-    near: { x: x * -17 * strength, y: y * -11 * strength },
+    near: { x: x * -13 * strength, y: y * -8.5 * strength },
   };
 
   for (const [name, offset] of Object.entries(layers)) {

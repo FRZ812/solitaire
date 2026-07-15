@@ -7,15 +7,11 @@ import {
 import { colors, alert, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats } from "../engine/combat-stats.js";
-import { getAbilityDef } from "../data/abilities.js";
-import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
-import { knownBuffSpells } from "../data/buff-spells.js";
-import { ArsenalView } from "./ArsenalView.jsx";
 import { AttributeDetail } from "./AttributeDetail.jsx";
 import { InfoModal } from "./InfoTip.jsx";
 import { glossaryById, conditionInfo } from "../data/glossary.js";
-import { condName, condNames } from "../data/conditions.js";
+import { condName } from "../data/conditions.js";
 import { lightStatus } from "../engine/light.js";
 import { canHeal } from "../engine/healing.js";
 
@@ -49,17 +45,6 @@ function ViewAll({ label, onClick }) {
   );
 }
 
-// Tier-coloured ability pill.
-function AbilityChip({ name, tier }) {
-  const c = tierColor(tier);
-  return (
-    <span title={tierLabel(tier)} style={{
-      fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: radius.pill,
-      color: c, border: `1px solid ${c}`, backgroundColor: `${c}18`,
-    }}>{name}</span>
-  );
-}
-
 // Transparent button wrappers so existing display components become tappable.
 const bareBtn = { background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" };
 const barBtn = { ...bareBtn, width: "100%", textAlign: "left", display: "block" };
@@ -78,11 +63,11 @@ function Divider() {
 }
 
 // Character page of the panel deck — identity, conditions, vitals, needs,
-// attributes, proficiencies, combat, boons, and campaign actions. Content only;
+// attributes, proficiencies, combat, and campaign actions. Content only;
 // the deck supplies the sheet chrome, scroll, and dismissal. (Wealth + gear now
 // live on the Inventory page.)
-export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onExtinguish, onCastBuff }) {
-  const [arsenalOpen, setArsenalOpen] = useState(false);
+export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns, onSignOut, onLinkEmail, onExtinguish }) {
+  const [showAllProficiencies, setShowAllProficiencies] = useState(false);
   const [openAttr, setOpenAttr] = useState(null); // attribute key whose threshold detail is expanded
   const [info, setInfo] = useState(null); // glossary explanation popover { term, text, extra }
   const codex = state.world.codex;
@@ -107,18 +92,10 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
     }
     setInfo({ term: g.term, text: g.text, extra });
   }
-  const learnedAbilities = state.character.abilities || [];
   const trainedProfs = PROFICIENCIES
     .map((p) => ({ name: p.name, rating: ratingFromXp(state.character.proficiencies?.[p.id] || 0), xp: state.character.proficiencies?.[p.id] || 0 }))
     .filter((p) => p.xp > 0)
     .sort((a, b) => b.rating - a.rating || b.xp - a.xp);
-
-  // Abilities, highest tier first — the panel shows a short preview; the full
-  // sorted list lives in the Arsenal panel.
-  const sortedAbilities = [
-    { id: "basic-attack", tier: "common" }, { id: "defend", tier: "common" }, { id: "talk", tier: "common" },
-    ...learnedAbilities.map((a) => (typeof a === "string" ? { id: a, tier: "common" } : a)),
-  ].filter((a) => { const d = getAbilityDef(a.id); return d && !d.noncombat; }).sort((x, y) => tierOrder(y.tier || "common") - tierOrder(x.tier || "common"));
   const PREVIEW = 4;
 
   const showGuestNag = user?.is_anonymous && onLinkEmail;
@@ -197,7 +174,7 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
               : (
                 <>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                    {trainedProfs.slice(0, PREVIEW).map((p) => (
+                    {(showAllProficiencies ? trainedProfs : trainedProfs.slice(0, PREVIEW)).map((p) => (
                       <span key={p.name} style={{
                         fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: radius.pill,
                         color: colors.parchment, border: `1px solid rgba(215, 167, 111, 0.28)`,
@@ -207,7 +184,12 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
                       </span>
                     ))}
                   </div>
-                  {trainedProfs.length > PREVIEW && <ViewAll label={`All ${trainedProfs.length} proficiencies`} onClick={() => setArsenalOpen(true)} />}
+                  {trainedProfs.length > PREVIEW && (
+                    <ViewAll
+                      label={showAllProficiencies ? "Show fewer proficiencies" : `All ${trainedProfs.length} proficiencies`}
+                      onClick={() => setShowAllProficiencies((value) => !value)}
+                    />
+                  )}
                 </>
               )}
           </div>
@@ -224,55 +206,13 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
             <CombatStat label="Pen" value={combat.weapon.pen} onClick={() => showInfo("penetration")} />
             <CombatStat label="Damage" value={`${combat.weapon.min}–${combat.weapon.max}`} onClick={() => showInfo("damage")} />
           </div>
-          <div style={insetBoxStyle}>
-            <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: "rgba(215, 167, 111, 0.7)", marginBottom: "7px" }}>
-              Abilities · {combat.weapon.name}
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {sortedAbilities.slice(0, PREVIEW).map((a, i) => {
-                const def = getAbilityDef(a.id);
-                if (!def) return null;
-                return <AbilityChip key={i} name={def.name} tier={a.tier || "common"} />;
-              })}
-            </div>
-            {sortedAbilities.length > PREVIEW && <ViewAll label={`All ${sortedAbilities.length} abilities`} onClick={() => setArsenalOpen(true)} />}
+          <div style={{ ...insetBoxStyle, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+            <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: "rgba(215, 167, 111, 0.7)" }}>Readied weapon</span>
+            <span style={{ fontFamily: fonts.serif, fontStyle: "italic", color: colors.parchmentLight }}>{combat.weapon.name}</span>
           </div>
         </div>
 
         <Divider />
-
-        {/* Boons — castable self-buffs (Haste, Bear's Strength). Spend resolve to
-            lay a timed boon that speeds travel / lifts carrying limits. */}
-        {(() => {
-          const boons = knownBuffSpells(state.character);
-          if (!boons.length) return null;
-          const active = new Set(condNames(state.character.conditions));
-          return (
-            <div>
-              <SectionHeader>Boons</SectionHeader>
-              <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "8px" }}>
-                {boons.map((sp) => {
-                  const on = active.has(sp.applies.condition);
-                  const afford = (state.character.resolve ?? 0) >= sp.resolveCost;
-                  return (
-                    <div key={sp.id} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "15px", color: colors.parchmentLight }}>{sp.name}{on && <span style={{ ...metaStyle, fontSize: "8px", color: "#a7f3d0", marginLeft: "6px" }}>active</span>}</div>
-                        <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.6)", lineHeight: 1.35 }}>{sp.description}</div>
-                      </div>
-                      <button onClick={() => (afford ? onCastBuff?.(sp.id) : null)} disabled={!afford} style={{
-                        flexShrink: 0, padding: "7px 14px", borderRadius: radius.pill, border: "none",
-                        backgroundColor: afford ? colors.gold : "rgba(215,167,111,0.1)",
-                        color: afford ? colors.ink : "rgba(215,167,111,0.4)",
-                        fontSize: "12px", fontWeight: 800, cursor: afford ? "pointer" : "not-allowed", fontFamily: "inherit",
-                      }}>{on ? "Renew" : "Cast"} · {sp.resolveCost}</button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
 
         {showGuestNag && <GuestNagSection onLinkEmail={onLinkEmail} />}
 
@@ -302,7 +242,6 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
         </div>
 
       {info && <InfoModal info={info} onClose={() => setInfo(null)} />}
-      {arsenalOpen && <ArsenalView character={state.character} onClose={() => setArsenalOpen(false)} />}
     </div>
   );
 }
