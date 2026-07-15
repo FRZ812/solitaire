@@ -1777,13 +1777,13 @@
 .codex-view__tabs [role="tab"] {
   position: relative;
   min-width: 0;
-  min-height: 68px;
-  padding: 7px 5px 6px;
+  min-height: 96px;
+  padding: 7px 4px 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 1px;
   color: rgba(191, 213, 214, 0.58);
   border: 1px solid rgba(191, 213, 214, 0.1);
   border-radius: 9px;
@@ -1796,16 +1796,13 @@
 .codex-view__tabs [role="tab"] svg,
 .codex-view__tabs [role="tab"] .game-icon { flex: 0 0 auto; color: rgba(231, 185, 94, 0.58); }
 .codex-tab-icon-slot {
-  width: 38px;
-  height: 38px;
+  width: min(74px, 100%);
+  aspect-ratio: 1;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
   margin-inline: auto;
   overflow: hidden;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(14, 39, 55, .7), rgba(3, 11, 20, .9));
-  box-shadow: inset 0 0 0 1px rgba(231, 185, 94, .12), 0 4px 9px rgba(2, 7, 14, .28);
 }
 .codex-view__tabs [role="tab"] > .codex-tab-label {
   width: 100%;
@@ -1827,11 +1824,13 @@
 }
 
 .codex-tab-icon {
-  width: 34px !important;
-  height: 34px !important;
-  filter: saturate(.78) brightness(.86);
+  width: 100% !important;
+  height: 100% !important;
+  filter: saturate(.86) brightness(.94);
   transition: filter .2s ease, transform .2s ease;
 }
+
+.codex-tab-icon .atlas-icon__sprite { transform: scale(1.12); }
 
 .codex-view__tabs [role="tab"][data-group="lore"] { box-shadow: inset 0 2px rgba(105, 185, 208, .18); }
 .codex-view__tabs [role="tab"][data-group="compendium"] { box-shadow: inset 0 2px rgba(231, 185, 94, .18); }
@@ -1853,7 +1852,7 @@
 }
 .codex-view__tabs [role="tab"][aria-selected="true"] svg { color: var(--game-gold); }
 .codex-view__tabs [role="tab"][aria-selected="true"] .game-icon { filter: brightness(1.12) saturate(1.04) drop-shadow(0 2px 4px rgba(0,0,0,.38)); }
-.codex-view__tabs [role="tab"][aria-selected="true"] .codex-tab-icon { filter: saturate(1.03) brightness(1.12) drop-shadow(0 2px 5px rgba(0, 0, 0, .42)); transform: scale(1.06); }
+.codex-view__tabs [role="tab"][aria-selected="true"] .codex-tab-icon { filter: saturate(1.03) brightness(1.12) drop-shadow(0 2px 5px rgba(0, 0, 0, .42)); transform: scale(1.03); }
 .codex-view__tabs [role="tab"][aria-selected="true"] > strong { color: rgba(244, 232, 195, 0.72); }
 
 .codex-character-tools {
