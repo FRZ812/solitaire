@@ -4,8 +4,10 @@ import {
   TALK,
   abilityReqLine,
   abilityStatLine,
+  clampAbilityTier,
   getAbilityDef,
 } from "./abilities.js";
+import { abilityTaxonomy } from "./ability-taxonomy.js";
 
 const CORE_ABILITY_IDS = new Set([BASIC_ATTACK.id, DEFEND.id, TALK.id]);
 
@@ -21,6 +23,17 @@ const CORE_OVERRIDES = {
     art: "guard",
   },
 };
+
+// Card-only tempo rules live beside the deck adapter, not inside the reusable
+// ability resolver. They let a learned technique keep its world/combat meaning
+// while gaining the draw/retain vocabulary expected from a real deck battler.
+const CARD_BEHAVIOR = Object.freeze({
+  "battle-focus": { draw: 2 },
+  shadowstep: { draw: 1, retain: true },
+  wraithstep: { draw: 1, retain: true },
+  haste: { draw: 2, exhaust: true },
+  dispel: { draw: 1 },
+});
 
 function cardType(def) {
   if (def?.dmg || def?.damageType === "weapon") return "attack";
@@ -42,7 +55,11 @@ export function cardDefinition(abilityId, tier = "common") {
   const def = getAbilityDef(abilityId);
   if (!def || def.noncombat) return null;
   const override = CORE_OVERRIDES[abilityId] || {};
+  const behavior = { ...(def.card || {}), ...(CARD_BEHAVIOR[abilityId] || {}) };
+  const resolvedTier = clampAbilityTier(abilityId, tier);
+  const taxonomy = abilityTaxonomy(def, resolvedTier);
   const exhaust = abilityId !== BASIC_ATTACK.id && abilityId !== DEFEND.id && (
+    behavior.exhaust === true ||
     def.card?.exhaust === true ||
     (def.cooldown || 0) >= 4 ||
     ["invuln", "unstoppable", "dominated", "charmed"].includes(def.effect?.type)
@@ -52,17 +69,25 @@ export function cardDefinition(abilityId, tier = "common") {
     abilityId,
     name: override.name || def.name,
     description: def.desc || "",
-    statLine: liveCardStatLine(def, tier),
+    statLine: liveCardStatLine(def, resolvedTier),
     requirementLine: abilityReqLine(def),
     type: override.type || cardType(def),
-    art: override.art || (def.damageType || def.dmg ? "weapon" : "guard"),
+    art: override.art || taxonomy.iconKey,
+    category: taxonomy.categoryId,
+    categoryLabel: taxonomy.category.label,
+    magicSchool: taxonomy.magicSchoolId,
+    magicSchoolLabel: taxonomy.magicSchool?.label || null,
+    iconKey: taxonomy.iconKey,
+    tradition: def.school || null,
     target: def.target || "enemy",
     energyCost: Math.max(0, Math.min(3, def.actionCost || 1)),
     resolveCost: Math.max(0, def.resolveCost || 0),
     exhaust,
-    retain: !!def.card?.retain,
-    ethereal: !!def.card?.ethereal,
-    tier,
+    retain: !!behavior.retain,
+    ethereal: !!behavior.ethereal,
+    draw: Math.max(0, behavior.draw || 0),
+    block: def.effect?.type === "block" ? Math.max(0, def.effect.value || 0) : 0,
+    tier: resolvedTier,
   };
 }
 

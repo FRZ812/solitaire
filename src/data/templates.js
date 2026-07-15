@@ -1,8 +1,7 @@
-// Pick-and-play character templates for the creation hub. Each is a complete,
-// ready-to-run build — a clear party ROLE, a distinct stat spread, starting
-// abilities (ids + tiers honoured against their floors by the engine), gear
-// (worn vs packed), a short backstory, and a bespoke OPENING the engine seeds
-// VERBATIM (no narrator call) so every start reads clean and identical.
+// Pick-and-play characters for the creation hub. Each is a complete ready-to-run
+// build with a distinct voice, unresolved complication, visual signature, role,
+// stat spread, starting abilities, and canonical gear. Arrival narration is
+// generated from these authored hooks so the people remain specific in play.
 //
 // Templates are arranged on a POWER LADDER via `tier`:
 //   standard  — the intended start; an ordinary life the Mire can bite.
@@ -29,18 +28,134 @@ export const STANDARD_PROVISIONS = [
 const worn = (itemId, quantity = 1) => ({ itemId, quantity, worn: true });
 const packed = (itemId, quantity = 1) => ({ itemId, quantity, worn: false });
 
-export const CHARACTER_TEMPLATES = [
+const CHARACTER_HOOKS = Object.freeze({
+  sellsword: {
+    voice: "Clipped frontier plain-speech, dryly funny when the danger is worst; never promises what he cannot deliver.",
+    complication: "One of the three lords whose banner he survived has offered enough coin to make him betray the only contract he still respects.",
+    signature: "Counts exits, chairs, and armed hands before he ever sits down.",
+  },
+  reaver: {
+    voice: "Blunt, literal, and unexpectedly observant; contemptuous of euphemism and fond of very bad deadpan jokes.",
+    complication: "Every easy act of violence proves his childhood tormentors right, and he is terrified rage may be the only self they left him.",
+    signature: "Carves tiny patient animals from scrap wood with the edge of his axe.",
+  },
+  ranger: {
+    voice: "Sparse and sensory; speaks in distances, weather, spoor, and the exact sound a lie makes in the throat.",
+    complication: "The trail from his burned village points toward another wood-elf, and he has not decided whether truth matters more than kin.",
+    signature: "Keeps a pouch of fire-blackened seeds and plants one wherever he sleeps safely.",
+  },
+  cutthroat: {
+    voice: "Impeccably courteous understatement, even with a blade drawn; anger makes him quieter rather than louder.",
+    complication: "The blood-debt he works to repay was inherited through an innocent younger sister who still believes him dead.",
+    signature: "Folds every written order into a tiny paper moth before burning it.",
+  },
+  devout: {
+    voice: "Warm, direct, and unembarrassed by tenderness; asks the question everyone else avoids.",
+    complication: "Her order named mercy heresy after she saved an enemy child, but the child now leads people the order means to destroy.",
+    signature: "Notices shaking hands, fevered eyes, and empty bowls before weapons or rank.",
+  },
+  "hedge-mage": {
+    voice: "Quick, precise, and delighted by hard questions; explanations accelerate until somebody makes her breathe.",
+    complication: "The folio she stole is not the forbidden book but its index, and one entry is written in her own future hand.",
+    signature: "Ink blooms warm on her fingers whenever a nearby spell has been deliberately misnamed.",
+  },
+  "knight-errant": {
+    voice: "Formal without condescension, with the careful courtesy of someone rebuilding a ruined code one choice at a time.",
+    complication: "His house fell because he obeyed a lawful order he knew was wicked; the last survivor remembers exactly what he did.",
+    signature: "Mends the colourless place on his surcoat after every fight, though he refuses to restore the old device.",
+  },
+  "war-priest": {
+    voice: "A field chaplain's steady cadence, equal parts scripture, gallows humour, and practical instructions for staying alive.",
+    complication: "He remembers every last rite he gave but has begun forgetting the living faces of the people who survived beside him.",
+    signature: "Hums a different marching hymn for each regiment whose dead he buried.",
+  },
+  duelist: {
+    voice: "Bright, theatrical, and cutting; treats conversation as fencing and hates an opponent who will not riposte.",
+    complication: "Her most famous victory was secretly fixed by the patron she despises, and the defeated duelist has returned for the honest match.",
+    signature: "Measures unfamiliar rooms in silent heel-to-toe steps before accepting a drink.",
+  },
+  "beast-warden": {
+    voice: "Practical marcher speech, patient with animals and children, impatient with any adult pretending not to understand.",
+    complication: "Her mother vanished following a set of tracks that appear again wherever the Mire's beasts flee without reason.",
+    signature: "Carries one clean feather from every creature she could have killed and chose not to.",
+  },
+  "war-captain": {
+    voice: "Low, economical command that makes panic feel briefly foolish; praise is rare, exact, and remembered for years.",
+    complication: "The celebrated breach was held by spending a reserve company he knew would die, and their unsigned final orders remain in his coat.",
+    signature: "Rebuilds battlefields with cups, crumbs, and cutlery whenever he has to think.",
+  },
+  "battle-archmage": {
+    voice: "Imperious, witty, and impatient with hierarchy; becomes scrupulously gentle around anyone burned by magic.",
+    complication: "A city quarter still bears the glass left by the spell that won her rank, and the survivors have learned she is in Whitemarch.",
+    signature: "A faint tri-coloured static crawls over metal near her whenever she is restraining her temper.",
+  },
+  shadowblade: {
+    voice: "Mirrors the rhythm and vocabulary of whoever is speaking, leaving almost no voice that can be called his own.",
+    complication: "The final name on his private list is the forgotten birth-name he surrendered when the Quiet Coin was made.",
+    signature: "Turns a black coin across his knuckles without producing the smallest sound.",
+  },
+  "champion-paladin": {
+    voice: "Calm, luminous certainty without sermonising; when she doubts, each sentence becomes more exact.",
+    complication: "Her order keeps pointing her at darkness because it fears what she might choose to illuminate on her own.",
+    signature: "Cleans her sword before prayer, insisting remorse should never be used to hide poor maintenance.",
+  },
+  "dragon-hunter": {
+    voice: "Laconic northern speech with the patience of a man accustomed to waiting three days for one shot.",
+    complication: "He once spared a wounded hatchling; the Burning Order calls it treason, and the grown wyrm has begun leaving him gifts.",
+    signature: "Tests every change of wind with two scarred fingers and names what is burning beyond the horizon.",
+  },
+  "high-sorcerer": {
+    voice: "Exacting teacher's diction, austere but never vague; corrects himself aloud when pride outruns evidence.",
+    complication: "His finest student died attempting the proof he dismissed as timid, and her unfinished theorem is beginning to answer back.",
+    signature: "Rain beads an inch above his shoulders before he notices and permits it to fall.",
+  },
+  warlord: {
+    voice: "Booming, shrewd, and delighted by courage in anyone; laughs first at insults good enough to deserve it.",
+    complication: "Peace has made his horde prosperous and him irrelevant, and part of him wants a war his own people no longer need.",
+    signature: "Drinks from the dented cup of the first chief who surrendered and remembers that rival more fondly than his flatterers.",
+  },
+  "fae-touched": {
+    voice: "Musical double meanings that become brutally plain whenever a bargain is actually at stake.",
+    complication: "She escaped with her name intact by paying with her sister's memory of her, and the price is beginning to spread.",
+    signature: "Leaves one frost-pale footprint in every room, no matter the season or floor.",
+  },
+  "archmage-ascendant": {
+    voice: "Soft, curious, and almost offensively patient; asks ordinary people questions no master ever thought worth asking.",
+    complication: "Ascension will preserve his mind but erase every mortal attachment that taught him why power should be restrained.",
+    signature: "Loose pages and candle flames incline toward him as if waiting for permission.",
+  },
+  "undying-champion": {
+    voice: "Sardonic northern warmth, impatient with prophecy and reverent only toward ordinary stubbornness.",
+    complication: "Each return from death costs one beloved memory, and she can no longer recall the face for whom she first took up the sword.",
+    signature: "Numbers new scars aloud, then leaves a deliberate gap for the wound that killed her.",
+  },
+  "demon-warlock": {
+    voice: "Velvet courtly ease with contracts hidden inside compliments; sincerity arrives rough and almost unused.",
+    complication: "The leash on his infernal makers must be renewed with a true name each year, and he has run out of enemies he can justify paying.",
+    signature: "Keeps one glove fastened over the binding-sigil even when heat smokes through the leather.",
+  },
+  "dragon-ascendant": {
+    voice: "Slow, ancient-feeling precision broken by flashes of fierce mortal curiosity.",
+    complication: "The awakened wyrm-self grows stronger each time she uses its power, and she fears one day Vaelith will be the smaller creature inside it.",
+    signature: "Listens to heartbeats before faces and unconsciously matches her breathing to the quietest one.",
+  },
+  "enchanter-tyrant": {
+    voice: "Warm, reasonable, and devastatingly attentive; never raises his voice because rooms volunteer to quiet.",
+    complication: "No affection offered to him can be proved genuine, and he no longer knows which of his own desires began as enchantments reflected back.",
+    signature: "People near him repeat the final word of his sentences before noticing they have done it.",
+  },
+});
+
+const CHARACTER_TEMPLATE_DEFINITIONS = [
   // ============================ STANDARD ============================
   {
     id: "sellsword",
     label: "Sellsword",
     role: "Tank",
-    icon: "shield",
     tier: "standard",
     concept: "Sword, shield, and the sense to hold a line.",
     story: "Bram has sold his blade under three frontier feud-lords and buried friends beneath all three banners. He fights from the front and takes his pay up front. He's looking for a last contract worth more than coin.",
     highlights: ["Vigor", "Body"],
-    opening: "Rain hammers the shingles of the Drowned Rat, and Bram Coltaine ducks under the lintel with water sheeting off a much-mended cloak. He's known a hundred taverns like it — low beams, sour ale, eyes that price a stranger's boots before his face. He drops a worn coin on the boards, takes the mug the keep slides over, and sets his back to the wall where he can see the door. Somewhere out in this drowned little country there's work for a steady blade; he's only got to find who's hiring.",
     setup: {
       name: "Bram Coltaine",
       profession: "sellsword",
@@ -60,12 +175,10 @@ export const CHARACTER_TEMPLATES = [
     id: "reaver",
     label: "Reaver",
     role: "Bruiser",
-    icon: "swords",
     tier: "standard",
     concept: "A heavy axe, a temper, and very little patience.",
     story: "Raised among humans who never let him forget what he was, Karzog answered their fear with the fury they expected — then walked out and never looked back. He is hunting a purpose big enough to swing an axe at.",
     highlights: ["Body", "Vigor"],
-    opening: "The door of the Drowned Rat bangs off the wall and a half-orc the size of a door fills the frame, rain steaming off ash-green skin. Conversation stutters; a card game forgets itself. Karzog Brakka has seen the look a thousand times and pays it the same contempt as always — he shoulders to the bar, thumps down a coin, and drinks the offered ale in one long pull. Let them stare. He came north chasing work, or trouble, or whatever passes for either in a town built on a swamp.",
     setup: {
       name: "Karzog Brakka",
       profession: "reaver",
@@ -85,12 +198,10 @@ export const CHARACTER_TEMPLATES = [
     id: "ranger",
     label: "Ranger",
     role: "Ranged DPS",
-    icon: "woodenBird",
     tier: "standard",
     concept: "A bow, a quiet step, and a hunter's patience.",
     story: "Faelar has walked the green marches alone since the village that raised him burned. He speaks little and misses nothing, and follows rumours of the ones who lit that fire — eastward, always eastward.",
     highlights: ["Reflex", "Wit"],
-    opening: "Faelar Sylvareth comes into the Drowned Rat the way he comes into any clearing — quietly, eyes mapping the exits before the warmth even registers. Marsh-water beads on oiled leathers; the longbow stays strung across his back. He takes a corner table, orders nothing he won't finish, and listens. The Mire is a poor country for an elf alone, but poor countries keep poor secrets badly, and he is following a trail of them east.",
     setup: {
       name: "Faelar Sylvareth",
       profession: "ranger",
@@ -110,12 +221,10 @@ export const CHARACTER_TEMPLATES = [
     id: "cutthroat",
     label: "Cutthroat",
     role: "Assassin",
-    icon: "moon",
     tier: "standard",
     concept: "Fast blades and a knife from the dark.",
     story: "Renjiro learned the trade in the silk-and-shadow courts of the eastern empires. He owes a debt to a house that does not forgive, and the only coin that pays it is the kind of work no one admits to hiring.",
     highlights: ["Reflex", "Body"],
-    opening: "Nobody quite sees Hokaru Renjiro come in; he's simply at the end of the bar, hood beaded with rain, when the keep turns around. The Drowned Rat is exactly his kind of room — too loud to overhear, too dim to read a face, too poor to ask questions. He nurses a cup he won't drink and watches the door in the warped mirror behind the bottles. The debt that drove him this far west does not sleep, so neither, much, does he.",
     setup: {
       name: "Hokaru Renjiro",
       profession: "assassin",
@@ -135,12 +244,10 @@ export const CHARACTER_TEMPLATES = [
     id: "devout",
     label: "Devout",
     role: "Healer",
-    icon: "sun",
     tier: "standard",
     concept: "Mace and faith — mends the party, smites the unholy.",
     story: "Amara left her order over a mercy they called heresy, and now carries her faith on the road instead of behind an altar. She is certain her god still listens — most days.",
     highlights: ["Presence", "Mind"],
-    opening: "Amara Zafari shakes the rain from a bright head-wrap and the Drowned Rat's noise softens a half-step around her, the way a frightened room quiets when someone steady walks in. She buys a bowl of whatever's in the pot, says a word over it that no one asks her to explain, and eats among strangers as if she's known them years. The order is behind her now, the road ahead of her, and a mace at her hip for the things that prey on the helpless. Her god, she trusts, will sort out the rest.",
     setup: {
       name: "Amara Zafari",
       profession: "priest",
@@ -162,12 +269,10 @@ export const CHARACTER_TEMPLATES = [
     id: "hedge-mage",
     label: "Hedge-Mage",
     role: "Mage",
-    icon: "flame",
     tier: "mid",
     concept: "Self-taught fire and ward — fragile, but deadly.",
     story: "Turned away from the Glass Spire for asking the wrong questions, Ysolde taught herself the Art from stolen folios and singed fingers. Somewhere out there is the book that got her expelled — and she means to read it.",
     highlights: ["Mind", "Wit"],
-    opening: "Ysolde Varen takes the driest corner of the Drowned Rat and sets a travel-warped folio on the table before she's even shed her cloak, reading by the guttering tallow as if the rain and the drinkers are someone else's problem. Ink stains her fingers; a faint warmth clings to her where it shouldn't, the residue of an Art no one taught her. She came to the Mire on a rumour — a name in a ledger, a book that should not exist this far from the Spire. The ale she ignores; the next clue, she will not.",
     setup: {
       name: "Ysolde Varen",
       profession: "hedge-mage",
@@ -187,12 +292,10 @@ export const CHARACTER_TEMPLATES = [
     id: "knight-errant",
     label: "Knight-Errant",
     role: "Tank",
-    icon: "shield",
     tier: "mid",
     concept: "Oath, lance, and a wall of a shield.",
     story: "Sir Aldric kept his vows after the house that swore him fell, and rides now under no banner but the one in his head. He looks for wrongs the size of his sword.",
     highlights: ["Body", "Presence"],
-    opening: "Mail rings softly as Sir Aldric Vane stoops through the Drowned Rat's low door, rain silvering a surcoat washed of its colours. He is too clean and too courteous for the room, and knows it, and bows to the keep anyway as though she were a chatelaine. A coin, a dry seat, and an old habit of facing the door: a knight without a house is still a knight. There are wrongs in a place like this, he's certain — and a sword looking for the right one.",
     setup: {
       name: "Aldric Vane",
       profession: "knight",
@@ -212,12 +315,10 @@ export const CHARACTER_TEMPLATES = [
     id: "war-priest",
     label: "War-Priest",
     role: "Healer",
-    icon: "sun",
     tier: "mid",
     concept: "Hymn and hammer — heals hard, hits harder.",
     story: "Brother Cael took his faith to the front instead of the cloister, and learned that mercy sometimes wears mail. He goes where the dying are.",
     highlights: ["Presence", "Mind"],
-    opening: "Brother Cael comes into the Drowned Rat singing under his breath — a marching-hymn worn down to a habit — and the warmth seems to follow him to the bar. He blesses the ale before he drinks it and means it. Broad across the shoulders for a priest, a war-mace knocking at his hip, he has buried enough soldiers to stop flinching and not enough to stop caring. Where the road is hard and the dying are many, that is where his god has always sent him.",
     setup: {
       name: "Cael Orin",
       profession: "war-priest",
@@ -237,12 +338,10 @@ export const CHARACTER_TEMPLATES = [
     id: "duelist",
     label: "Duelist",
     role: "Assassin",
-    icon: "swords",
     tier: "mid",
     concept: "Footwork, feint, and a single perfect thrust.",
     story: "Iseult fenced her way out of debtors' courts and into infamy, and has never lost a duel she agreed to. She is looking for one worth the name.",
     highlights: ["Reflex", "Wit"],
-    opening: "Iseult Marchetti props a slim blade against the table at the Drowned Rat and orders the best the house has, which is not much, with the air of someone doing the room a favour. Quick eyes, quicker hands, a smile filed to an edge — she reads the drinkers like a hand of cards and finds them wanting. The frontier is short on worthy opponents, but long on fools who'll wager they're the exception. She rather hopes one tries.",
     setup: {
       name: "Iseult Marchetti",
       profession: "duelist",
@@ -262,12 +361,10 @@ export const CHARACTER_TEMPLATES = [
     id: "beast-warden",
     label: "Beast-Warden",
     role: "Ranged DPS",
-    icon: "woodenBird",
     tier: "mid",
     concept: "A bow, a keen eye, and the wild at her back.",
     story: "Maren keeps the old marches the way her mother taught her — by reading the land and answering its troubles with an arrow. The Mire's troubles are getting loud.",
     highlights: ["Wit", "Reflex"],
-    opening: "Maren Holt sets her bow within reach and her back to the wall, and the Drowned Rat's keep marks her at once for what she is — marsh-born, hill-raised, the kind that knows which way the water runs. Mud to the knee, a hawk's patience behind quiet eyes, she's tracked something wrong out of the fens and into men's country. She trades a brace of marsh-fowl for a bed and a meal and listens to the talk. The Mire's troubles, lately, have teeth.",
     setup: {
       name: "Maren Holt",
       profession: "warden",
@@ -289,12 +386,10 @@ export const CHARACTER_TEMPLATES = [
     id: "war-captain",
     label: "War-Captain",
     role: "Tank",
-    icon: "shield",
     tier: "epic",
     concept: "A storied commander who turns a rout into a stand.",
     story: "Captain Dareon held the breach at Whitemarch when the line broke around him, and the survivors still drink to his name. He has outlived three wars and the causes of all three.",
     highlights: ["Body", "Vigor"],
-    opening: "When Captain Dareon ducks into the Drowned Rat the drinkers don't price his boots — they straighten, an old reflex they couldn't name. Dragonscale clinks under a rain-dark cloak; a blade with a hundred winters on it rides his hip. He's a long way down from the breach at Whitemarch, slumming through a swamp town on some private reckoning, and the room can feel it, the way you feel a storm two valleys off. He buys a round for the house and lets them wonder why.",
     setup: {
       name: "Dareon Marsh",
       profession: "war-captain",
@@ -314,12 +409,10 @@ export const CHARACTER_TEMPLATES = [
     id: "battle-archmage",
     label: "Battle-Archmage",
     role: "Mage",
-    icon: "flame",
     tier: "epic",
     concept: "Fire, frost, and lightning at a war's scale.",
     story: "Sabira walked out of the eastern academies with more power than rank and a temper for using it. She levels what offends her and apologises to no one.",
     highlights: ["Mind", "Wit"],
-    opening: "The candles of the Drowned Rat lean toward Sabira al-Qadir as she enters, then steady, as if thinking better of it. Storm-coloured silks, a black rod at her belt, the unbothered poise of someone who has never lost an argument she cared about — she is plainly too grand for the place and plainly does not care. She came east on a rumour of something old buried under the Mire's mud, and a backwater tavern is merely where the road put her tonight. She orders wine the house does not have, and accepts ale with magnificent disdain.",
     setup: {
       name: "Sabira al-Qadir",
       profession: "archmage",
@@ -339,12 +432,10 @@ export const CHARACTER_TEMPLATES = [
     id: "shadowblade",
     label: "Shadowblade",
     role: "Assassin",
-    icon: "moon",
     tier: "epic",
     concept: "A killer whose name is a rumour in three courts.",
     story: "They call him the Quiet Coin in the eastern courts, and pay a fortune to never meet him. He has retired from no one's service and answers only to a list he keeps in his head.",
     highlights: ["Reflex", "Wit"],
-    opening: "No one notices the man in the corner of the Drowned Rat until the lamp gutters and he is, somehow, a table closer. The drinkers' eyes slide off him like rain off oiled leather; a blackened fang of a dagger rests under one hand, idle. They call him the Quiet Coin in courts a thousand miles from this swamp, and not one of those courts knows he is here, which is the way he likes every place to be. A name on his list has run to ground in the Mire. He has all night.",
     setup: {
       name: "The Quiet Coin",
       profession: "assassin",
@@ -364,12 +455,10 @@ export const CHARACTER_TEMPLATES = [
     id: "champion-paladin",
     label: "Champion",
     role: "Healer",
-    icon: "sun",
     tier: "epic",
     concept: "A holy champion — radiant heals, righteous ruin.",
     story: "Dame Yusra is the sword her order points at the dark, and she has never come back from where they pointed her empty-handed. Lately she chooses her own dark to face.",
     highlights: ["Presence", "Body"],
-    opening: "A clean gold light comes into the Drowned Rat with Dame Yusra, the kind a smoky room doesn't know what to do with. Sun-dark and tall in dragonscale, a flanged mace at her hip threaded with pale fire, she carries the quiet of someone who has stared down worse than a tavern full of strangers. Her order would call this errand a waste of their champion; she calls it a calling. She lays a healer's hands on the keep's cough before she even asks for ale.",
     setup: {
       name: "Yusra Donmar",
       profession: "paladin",
@@ -391,12 +480,10 @@ export const CHARACTER_TEMPLATES = [
     id: "dragon-hunter",
     label: "Dragon-Hunter",
     role: "Ranged DPS",
-    icon: "woodenBird",
     tier: "legendary",
     concept: "The archer who has put arrows in things with wings.",
     story: "Halvard of the Burning Order has stood close enough to a wyrm to feel its breath and walked away with the bow still in his hands. Few living can say it; fewer twice.",
     highlights: ["Reflex", "Wit"],
-    opening: "The Drowned Rat goes quiet in a different register when Halvard comes in — not the wariness of a strange blade, but the hush of a story walking through the door. Scale-scarred, grey at the temple, a black war-bow taller than the keep slung across his back, he is the kind of man the songs are nearly accurate about. He has hunted things with wings from the Spine to the Drakeholt, and a wingbeat heard over the Mire two nights past has brought him to this miserable, dripping town. He wants the corner table, and a map.",
     setup: {
       name: "Halvard Veig",
       profession: "dragon-hunter",
@@ -416,12 +503,10 @@ export const CHARACTER_TEMPLATES = [
     id: "high-sorcerer",
     label: "High Sorcerer",
     role: "Mage",
-    icon: "flame",
     tier: "legendary",
     concept: "Calls down meteors; unmakes what offends.",
     story: "Master Veylan trained a generation of the Glass Spire's best and outgrew the Spire itself. The continent's mages speak his name carefully.",
     highlights: ["Mind", "Wit"],
-    opening: "The rain stops touching the air a hand's breadth around Master Veylan as he steps into the Drowned Rat, and the drinkers feel the wrongness before they understand it. White-robed, white-bearded, a scepter of bone and turning light in one hand, he is a power that trained the people who train powers — and he is, inexplicably, here. He came following a flaw in the world, a thin place under the Mire where something leaks. He asks the keep for the quietest room. The keep, wisely, gives it.",
     setup: {
       name: "Veylan Orre",
       profession: "sorcerer",
@@ -441,12 +526,10 @@ export const CHARACTER_TEMPLATES = [
     id: "warlord",
     label: "Warlord",
     role: "Bruiser",
-    icon: "swords",
     tier: "legendary",
     concept: "A horde at his back and an axe that takes banners.",
     story: "Grum Skarn broke three war-bands to his will and made them one, and the marches still pay him not to come. He has grown bored of being paid.",
     highlights: ["Body", "Vigor"],
-    opening: "The Drowned Rat's door doesn't bang for Grum Skarn — it groans, and the floorboards take notice. A half-orc warlord with a notched greataxe and a hundred winters of killing in his shoulders, he fills the room the way weather fills a valley. The marches pay him tribute to stay away; he has left his horde camped beyond the fens and walked into the Mire alone, on a whim, to see what a man finds when no one is paying him to leave. The keep pours, and does not spill.",
     setup: {
       name: "Grum Skarn",
       profession: "warlord",
@@ -466,12 +549,10 @@ export const CHARACTER_TEMPLATES = [
     id: "fae-touched",
     label: "Fae-Touched",
     role: "Skirmisher",
-    icon: "sparkle",
     tier: "legendary",
     concept: "Glaive, glamour, and a wind no one can pin.",
     story: "Niamh came back from the Fae bargain still mostly herself, which is rarer than surviving it. She moves through a fight like weather and leaves it wondering what happened.",
     highlights: ["Reflex", "Mind"],
-    opening: "Something comes into the Drowned Rat with Niamh Ailbe that the lamplight likes too much — a glaive of living silver-wood, frost that never melts at its edge, a smile a half-beat ahead of the room. She bargained with the Fae and came back wearing most of herself, which the drinkers sense without knowing why their skin prickles. The Mire's marshes are thin places, doors half-open; she has felt one yawn somewhere near, and followed the draught of it here. She takes wine she won't quite drink and watches the dark beyond the windows.",
     setup: {
       name: "Niamh Ailbe",
       profession: "fae-touched",
@@ -493,12 +574,10 @@ export const CHARACTER_TEMPLATES = [
     id: "archmage-ascendant",
     label: "Archmage Ascendant",
     role: "Mage",
-    icon: "flame",
     tier: "mythical",
     concept: "One stride from godhood; reality bends to be polite.",
     story: " Inzaghi has read books that no longer exist and survived the reading. He is a hand's breadth from ascension, and slowing down to look at the Mire is, for him, an act of restraint.",
     highlights: ["Mind", "Wit"],
-    opening: "Reality is faintly, apologetically wrong around the figure that enters the Drowned Rat — the rain falls a touch too slow near him, the lamp-flames lean and hold. Inzaghi Vale carries a humming staff of fused crystal and a calm that should not fit inside a person. He is perhaps the strongest living mage who is still, technically, a person, and he has come to this dripping nowhere because a thread of something he has been chasing for forty years runs under it. The drinkers go very quiet. He smiles, kindly, and lets them.",
     setup: {
       name: "Inzaghi Vale",
       profession: "archmage",
@@ -518,12 +597,10 @@ export const CHARACTER_TEMPLATES = [
     id: "undying-champion",
     label: "Undying Champion",
     role: "Bruiser",
-    icon: "swords",
     tier: "mythical",
     concept: "The hero the grave keeps refusing to keep.",
     story: "Sigrun Vald has died, by reliable count, four times, and got up four times with the sword still in her hand. The chroniclers have stopped writing endings for her.",
     highlights: ["Vigor", "Body"],
-    opening: "The Drowned Rat's fire dips when Sigrun Vald comes in out of the rain, as if the room recognises something the drinkers can only shiver at. Grey-scarred, granite-calm, a great pale blade scored with the marks of fights that should have killed her on her back — she has died, the songs insist, four times, and the songs for once undercount. She came to the Mire chasing the only thing that still interests the deathless: a rumour of something that might finally end her. She orders the strongest the house has and is, mildly, disappointed.",
     setup: {
       name: "Sigrun Vald",
       profession: "champion",
@@ -543,12 +620,10 @@ export const CHARACTER_TEMPLATES = [
     id: "demon-warlock",
     label: "Demon-Warlock",
     role: "Warlock",
-    icon: "moon",
     tier: "mythical",
     concept: "Binds wills and hells alike; pays the price gladly.",
     story: "Born of the Demon-King's tainted line, Vesh learned to bind the very things that made him and bend them to a leash. He keeps a grimoire warm to the touch and a long list of debts owed to him.",
     highlights: ["Mind", "Presence"],
-    opening: "The warmth in the Drowned Rat changes when Vesh Kethran enters — too warm, like standing near a banked forge, and the demon-blooded warlock does nothing to hide the slow heat coming off his skin. Horns ride low at his temples; a grimoire bound in something that was never an animal hangs at his hip, faintly breathing. He carries the Demon-King's tainted blood and has spent a lifetime learning to leash the things that share it. A name in the Mire owes him a soul. He has come, unhurried, to collect.",
     setup: {
       name: "Vesh Kethran",
       profession: "warlock",
@@ -570,12 +645,10 @@ export const CHARACTER_TEMPLATES = [
     id: "dragon-ascendant",
     label: "Dragon-Ascendant",
     role: "Demigod",
-    icon: "swords",
     tier: "divine",
     concept: "Dragon-blood woken to godhood; a walking apocalypse.",
     story: "The Vyrgun line runs thin in most who claim it; in Vaelith it ran true, and woke. Mountains have names for her now. She walks among mortals because, for a little while, it amuses her to.",
     highlights: ["Vigor", "Presence"],
-    opening: "The Drowned Rat's door does not so much open as concede. What comes in from the rain is shaped like a tall woman in a blade grown from a single ridge of dragon-scale, but the room's animal part knows better and goes silent to the roots. Vaelith of the woken blood has had mountains learn her name; the drinkers learn, in an instant, the specific smallness of being prey. She has come down among mortals on a whim shaped like curiosity, and a swamp tavern is as good a place as any to remember what they are like. She asks for ale. Someone, hands shaking, pours.",
     setup: {
       name: "Vaelith",
       profession: "dragon-ascendant",
@@ -595,12 +668,10 @@ export const CHARACTER_TEMPLATES = [
     id: "enchanter-tyrant",
     label: "Enchanter-Tyrant",
     role: "God-Tyrant",
-    icon: "moon",
     tier: "divine",
     concept: "A will that other wills simply obey; god-tier dominion.",
     story: "Korvane learned that armies are heavy and a single word is light, and built an empire of borrowed loyalty on that arithmetic. Kings have ruled at his whisper and never known whose thought they were thinking.",
     highlights: ["Mind", "Presence"],
-    opening: "It is hard, afterward, for the drinkers of the Drowned Rat to say exactly when they decided they liked the man who came in from the rain — only that they did, all at once, and warmly. Korvane Ashfell wears black gold and carries a scepter topped with a cold, unblinking eye of light, and the room arranges itself around him like iron filings before he has said a word. He has unseated kings with a sentence and worn empires like coats. Something in the Mire has refused him, which is novel enough to be worth the trip. He smiles, and the room smiles back, and means it, and that is the horror of him.",
     setup: {
       name: "Korvane Ashfell",
       profession: "enchanter-tyrant",
@@ -617,3 +688,9 @@ export const CHARACTER_TEMPLATES = [
     },
   },
 ];
+
+export const CHARACTER_TEMPLATES = Object.freeze(CHARACTER_TEMPLATE_DEFINITIONS.map((template) => ({
+  ...template,
+  portraitKey: `template:${template.id}`,
+  ...(CHARACTER_HOOKS[template.id] || {}),
+})));

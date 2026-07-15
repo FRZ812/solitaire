@@ -25,7 +25,8 @@ describe("visual asset registry", () => {
     }
   });
 
-  it("keeps legacy capital districts visually in Whitemarch", () => {
+  it("keeps unified capital tiles visually in Whitemarch", () => {
+    expect(sceneBiomeId("bramblewych-reach", { cityId: "whitemarch" })).toBe("whitemarch");
     expect(sceneBiomeId("bramblewych-reach", { poi: { areaName: "The Grand Market" } })).toBe("whitemarch");
     expect(sceneBiomeId("mire", { poi: { name: "An unnamed peat pool" } })).toBe("mire");
   });

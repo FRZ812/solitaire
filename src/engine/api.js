@@ -12,9 +12,9 @@ import { RUMORED } from "../data/rumored.js";
 import { summarizeFabled } from "../data/fabled.js";
 import { getTile, isSeen, HEX_DIRECTIONS, hexDistance, currentLocationName } from "./world.js";
 import { poiMeta, poiPlaceName } from "./location.js";
-import { standingNodeTile, inPlace, currentExits } from "./place.js";
 import { hostileProfile } from "./encounters.js";
 import { getBiome } from "../data/biomes.js";
+import { ecologyDefinition } from "../data/continent.js";
 import { buildingForTile, isBuildingOpen, buildingHours } from "../data/town.js";
 import { formatTime, formatDate } from "./time.js";
 import { relationshipTier } from "./relationships.js";
@@ -179,11 +179,9 @@ export function summarizeRumored() {
 
 export function buildStateContext(state) {
   const { character, time, world } = state;
-  // The standing tile: the synthetic node tile inside a place (scale 2), else the
-  // world hex. Everything below (location naming, POI meta, service) reads from it,
-  // so the narrator is grounded in the city node when inside one.
-  const t = standingNodeTile(state) || getTile(state, world.currentTile.x, world.currentTile.y);
-  const biome = getBiome(world.currentTile.x, world.currentTile.y);
+  const t = getTile(state, world.currentTile.x, world.currentTile.y);
+  const biome = getBiome(world.currentTile.x, world.currentTile.y, world.seed);
+  const ecology = t.ecology ? ecologyDefinition(t.ecology) : null;
   const place = currentLocationName(state) || `${TERRAINS[t.terrain]?.label || "Wilderness"} (${world.currentTile.x},${world.currentTile.y})`;
   const basePlace = poiPlaceName(t.poi) || `${TERRAINS[t.terrain]?.label || "Wilderness"} (${world.currentTile.x},${world.currentTile.y})`;
   const locMeta = poiMeta(t, basePlace);
@@ -195,18 +193,13 @@ export function buildStateContext(state) {
   if (locMeta.access) locBits.push(`Access: ${locMeta.access}`);
   const localLine = locBits.length ? `\n[LOCAL PLACE — ${locBits.join("; ")}]` : "";
   const nearby = [];
-  if (inPlace(state)) {
-    // Inside a place, "nearby" is the set of nodes the party can step to from here.
-    for (const ex of currentExits(state)) nearby.push(ex.name);
-  } else {
-    for (const d of HEX_DIRECTIONS) {
-      const nx = world.currentTile.x + d.x, ny = world.currentTile.y + d.y;
-      if (!isSeen(state, nx, ny)) continue;
-      const nt = getTile(state, nx, ny);
-      const nearbyName = poiPlaceName(nt.poi);
-      if (nearbyName) nearby.push(nearbyName);
-      else if (nt.poi?.type === "hidden") nearby.push(`?(${TERRAINS[nt.terrain]?.label})`);
-    }
+  for (const d of HEX_DIRECTIONS) {
+    const nx = world.currentTile.x + d.x, ny = world.currentTile.y + d.y;
+    if (!isSeen(state, nx, ny)) continue;
+    const nt = getTile(state, nx, ny);
+    const nearbyName = poiPlaceName(nt.poi);
+    if (nearbyName) nearby.push(nearbyName);
+    else if (nt.poi?.type === "hidden") nearby.push(`?(${TERRAINS[nt.terrain]?.label})`);
   }
   const nearbyStr = nearby.length ? `; Nearby: ${nearby.join(", ")}` : "";
   // Lasting state the player's actions left on this spot (razed, emptied, tense…).
@@ -264,6 +257,10 @@ export function buildStateContext(state) {
   const you = world.codex.characters.wanderer || {};
   const youDesc = [originLabel(you.origin), you.race, you.profession].filter(Boolean).join(" ");
   const playerLine = `[PLAYER — You are ${character.name}${youDesc ? `, a ${youDesc}` : ""}. Keep this identity consistent (do not drift the player's race or origin). Your NAME is PRIVATE: another character knows it ONLY if you have told THEM in the fiction (or it has plausibly reached them — a poster, a mutual friend, your own renown). A stranger, someone freshly met, or a companion you have only just recruited does NOT know your name until you give it — they address you by look, bearing, or role ("the swordsman", "stranger", "you with the bow") until then. The name you gave one person (the innkeeper) did not travel to anyone else on its own.]`;
+  const authoredProfile = you.profile || character.profile;
+  const playerProfileLine = authoredProfile
+    ? `\n[AUTHORED CHARACTER — Voice: ${authoredProfile.voice || "as established"} Complication: ${authoredProfile.complication || "none authored"} Telltale habit: ${authoredProfile.signature || "none authored"} Keep these specific hooks alive without forcing all three into every scene.]`
+    : "";
   const conditionsLine = (character.conditions || []).map((c) => {
     const name = condName(c);
     const meta = conditionMeta(name);
@@ -272,9 +269,12 @@ export function buildStateContext(state) {
       ? `, ~${Math.max(1, Math.round(c.remaining / 60 * 10) / 10)}h left` : "";
     return `${name}${tag}${rem}`;
   }).join(", ") || "none";
-  return `${playerLine}
+  const generatedAreaLine = t.area?.name && ecology
+    ? `\n[AREA — ${t.area.name}; ${ecology.name}: ${ecology.description} Resources and materials: ${(t.resources || ecology.resources || []).join(", ") || "locally scarce"}.]`
+    : "";
+  return `${playerLine}${playerProfileLine}
 [STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${conditionsLine}; Light: ${lightStatus(state).text}; Bond: ${character.bond}${nearbyStr}]${localLine}${locLine}${flyLine}${svcLine}${questLine}${partyLine}${buildSurroundings(state, t)}
-[BIOME — ${biome.name}: ${biome.description}]
+[REGION — ${biome.name}: ${biome.description}]${generatedAreaLine}
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]
 [GRANTABLE ABILITIES — the COMPLETE set you may grant by id (a creation kit, a teacher's lesson, a technique learned in play). Use these ids EXACTLY; grant NOTHING outside this list, and never invent an ability. Innate racial powers are NOT here — the engine grants those from the chosen race. Each may be granted at a TIER from common→divine: the tier scales its power exactly like gear, so match it to the source — a hedge-teacher or short drill gives common/uncommon; a true master or guild gives rare/epic; only a fabled mentor, a legendary relic, or a god's boon confers legendary+; divine is godhood, almost never given. An id shown as "name (≥tier)" has a FLOOR — never grant or teach it below that tier (the engine clamps it up if you try). Set the tier on the grant (see ABILITIES & SPELLS). ${summarizeGrantableAbilities()}]

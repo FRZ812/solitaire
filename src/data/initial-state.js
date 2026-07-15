@@ -1,15 +1,83 @@
 import { HANDCRAFTED } from "./handcrafted-map.js";
-import { RUMORED } from "./rumored.js";
-import { FABLED } from "./fabled.js";
-import { RIVERS } from "./rivers.js";
-import { computeSightFrom, computeSightFromRadius } from "../engine/world.js";
+import { computeSightFrom } from "../engine/world.js";
 import { bodyWeightForRace } from "../engine/weight.js";
 import { carryCapacityFor } from "../engine/attributes.js";
 import { itemTemplate } from "./catalog.js";
 import { getBiome, BIOMES } from "./biomes.js";
+import { CONTINENT, DEFAULT_WORLD_SEED, WORLD_GENERATOR_VERSION } from "./continent.js";
+import { PROFESSIONS } from "./professions.js";
+import { migratePortraitOverrides } from "../engine/portrait-overrides.js";
 
-// The player starts inside Whitemarch, at Grain Square in the heart of the
-// Grand Market (0,0). Whitemarch is their home city — they grew up here,
+// The unified capital is authored directly in continent coordinates, with
+// Grain Square deliberately fixed at the atlas origin.
+const GRAIN_SQUARE_FALLBACK = { x: 0, y: 0 };
+
+function comparablePlaceName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/^the\s+/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+// Resolve a retired place-graph node onto its authored world-map POI. Exact
+// part ids win, then visible names and service ids provide compatibility for
+// older node names. The unified world map is hydrated before Solitaire mounts.
+function worldPoiCoordinate({ part, service, name, district } = {}) {
+  const wantedName = comparablePlaceName(name);
+  const wantedDistrict = comparablePlaceName(district);
+  let best = null;
+  let bestScore = 0;
+
+  for (const [key, tile] of Object.entries(HANDCRAFTED)) {
+    const poi = tile?.poi;
+    if (!poi) continue;
+    if (tile.cityId && tile.cityId !== "whitemarch") continue;
+    let score = 0;
+    if (part && poi.part === part) score += 100;
+    if (wantedName && comparablePlaceName(poi.partName) === wantedName) score += 70;
+    if (wantedName && comparablePlaceName(poi.name) === wantedName) score += 60;
+    if (service && poi.service === service) score += 50;
+    const localArea = comparablePlaceName(
+      tile.districtName || poi.districtName || poi.parentName || poi.areaName || poi.district,
+    );
+    if (wantedDistrict && localArea === wantedDistrict) score += 10;
+    if (score <= bestScore) continue;
+    const [x, y] = key.split(",").map(Number);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    best = { x, y };
+    bestScore = score;
+  }
+
+  return bestScore >= 50 ? best : null;
+}
+
+function grainSquareCoordinate() {
+  return worldPoiCoordinate({ part: "grain-square", service: "market", name: "Grain Square", district: "The Grand Market" })
+    || GRAIN_SQUARE_FALLBACK;
+}
+
+function legacyPlaceCoordinate(legacyPlace) {
+  // Every node id shipped by the retired Whitemarch graph is now the `part`
+  // id of its replacement POI. Resolve it against the real map directly so
+  // save compatibility does not require bundling a second navigation graph.
+  return worldPoiCoordinate({ part: legacyPlace?.node }) || grainSquareCoordinate();
+}
+
+function migrateLegacyWorldLocation(world) {
+  if (!world?.place) return world;
+  const destination = legacyPlaceCoordinate(world.place);
+  const destinationKey = `${destination.x},${destination.y}`;
+  const migrated = { ...world, currentTile: destination };
+  delete migrated.place;
+  if (migrated.tiles && HANDCRAFTED[destinationKey]) {
+    migrated.tiles = { ...migrated.tiles, [destinationKey]: HANDCRAFTED[destinationKey] };
+  }
+  return migrated;
+}
+
+// The player starts at the actual Grain Square POI on the unified world map.
+// Whitemarch is their home city — they grew up here,
 // every lane is known, every wall-tower is named — so the WHOLE biome rect
 // is revealed on start (and re-revealed on load via the migrator below).
 // That covers the interior, the 3-hex Great Wall band (so the wall is
@@ -35,31 +103,15 @@ function revealWhitemarch(seen) {
   }
   return seen;
 }
-function makeInitialSeen() {
-  let seen = computeSightFrom(0, 0);
+function makeInitialSeen(start) {
+  let seen = computeSightFrom(start.x, start.y);
   seen = revealWhitemarch(seen);
-  
-  // Reveal the entire handcrafted road/node network so the map routes are visible on start
-  for (const key of Object.keys(HANDCRAFTED)) {
-    seen[key] = true;
-  }
-  
-  for (const r of RIVERS) {
-    for (const p of r.path) {
-      seen = computeSightFromRadius(p.x, p.y, 1, seen);
-    }
-  }
-  for (const key of Object.keys(RUMORED)) {
-    const [x, y] = key.split(",").map(Number);
-    seen = computeSightFromRadius(x, y, 2, seen);
-  }
-  for (const f of Object.values(FABLED)) {
-    seen = computeSightFromRadius(f.coord.x, f.coord.y, 3, seen);
-  }
   return seen;
 }
 
 export function makeInitialState() {
+  const start = { ...CONTINENT.start.coord };
+  const startKey = `${start.x},${start.y}`;
   return {
     character: {
       name: "Wanderer",
@@ -100,12 +152,12 @@ export function makeInitialState() {
     },
     time: { day: 3, hour: 13, minute: 30 },
     world: {
-      tiles: { "0,0": HANDCRAFTED["0,0"] },
-      currentTile: { x: 0, y: 0 },
-      // Start inside the node-graph capital (scale 2), at the market heart. The
-      // world hex (0,0) is the city's mouth, so leaving steps back onto the map.
-      place: { id: "whitemarch", node: "grain-square" },
-      seen: makeInitialSeen(),
+      continentId: CONTINENT.id,
+      seed: DEFAULT_WORLD_SEED,
+      generatorVersion: WORLD_GENERATOR_VERSION,
+      tiles: HANDCRAFTED[startKey] ? { [startKey]: HANDCRAFTED[startKey] } : {},
+      currentTile: start,
+      seen: makeInitialSeen(start),
       codex: {
         characters: {
           "wanderer": {
@@ -784,20 +836,7 @@ export function makeInitialState() {
           "vampire":   { id: "vampire",   name: "Vampire",      appearance: "A living corpse of terrible grace — pale, cold, fanged, ageless. The eyes catch light like an animal's; the smile holds too many teeth.", description: "The undying — mortals remade by a blood-curse into something superhuman and damned. Swift, strong, and tireless, they pay for it in sunlight, holy ground, and an endless hunger. Feared and hunted where they are known; most pass unseen among the living." },
           "lycanthrope": { id: "lycanthrope", name: "Lycanthrope", appearance: "A person who is not only a person — too still, too quick, with a wrongness in the teeth and a glint in the eye. Under the moon, something larger wears the skin.", description: "Shape-cursed folk who carry the beast within — preternaturally strong, fast-healing, keen of sense. Silver wounds them as nothing else does, and the full moon strains their hold on the beast. Shunned and feared where the curse is known." },
         },
-        professions: {
-          "innkeeper":      { id: "innkeeper",      name: "Innkeeper",      description: "Keeper of an inn or tavern.", common: true },
-          "farmer":         { id: "farmer",         name: "Farmer",         description: "Tiller of land, raiser of stock.", common: true },
-          "peddler":        { id: "peddler",        name: "Peddler",        description: "A traveling trader of small goods.", common: true },
-          "monarch":        { id: "monarch",        name: "Monarch",        description: "Crowned ruler of a kingdom or comparable polity." },
-          "noble":          { id: "noble",          name: "Noble",          description: "Holder of a title — baron, lord, lord-treasurer, count." },
-          "warlord":        { id: "warlord",        name: "Warlord",        description: "Leader of a war-band or sworn warriors by force of arms." },
-          "sorcerer":       { id: "sorcerer",       name: "Sorcerer",       description: "Practitioner of binding magic — taught, oathed, or self-discovered." },
-          "witch":          { id: "witch",          name: "Witch",          description: "A hedge-magic practitioner working outside the Spire schools — older, less institutional." },
-          "speaker":        { id: "speaker",        name: "Speaker",        description: "Selenyan or Greenshaw civic leader; heard, not commanded." },
-          "chapter-master": { id: "chapter-master", name: "Chapter-Master", description: "Senior officer of a chapter-house of a militant order." },
-          "hold-father":    { id: "hold-father",    name: "Hold-Father",    description: "Elected leader of a dwarven hold for a term of years." },
-          "matriarch":      { id: "matriarch",      name: "Matriarch",      description: "Elected female leader; used in matriarchies like the Halfborn Hold." },
-        },
+        professions: { ...PROFESSIONS },
         items: {
           "wool-cloak":    { id: "wool-cloak",    name: "Wool Cloak",   appearance: "Heavy charcoal-grey wool, dark across the shoulders from the rain. Frayed hem.", description: "A traveler's cloak.", kind: "clothing" },
           "linen-tunic":   { id: "linen-tunic",   name: "Linen Tunic",  appearance: "Undyed linen, the colour of old milk. Mended at one elbow.", description: "A plain undershirt.", kind: "clothing" },
@@ -835,10 +874,11 @@ export function makeInitialState() {
       },
     },
     party: [], // recruited companion ids (full people in world.codex.characters)
+    portraitOverrides: {},
     created: false, // false until the opening character-creation interview finishes
     beats: [{
       id: "b0", type: "narration",
-      content: "There is no floor, yet you are standing. No sky, yet a pale grey light from nowhere at all. You remember nothing — not your name, not your face, not the road that ended here. This is the threshold: the hush between what was and what will be, where a soul must name itself before the world will take it back.\n\nA voice settles around you — everywhere and nowhere at once, patient and very old.\n\n\"Before you step into the Mire and it decides what to make of you, tell me who you are. Begin with your name, and the people and the place you call your own. Take your time — here, there is nothing but the telling.\"",
+      content: "There is no floor, yet you are standing. No sky, yet a pale grey light from nowhere at all. You remember nothing — not your name, not your face, not the road that ended here. This is the threshold: the hush between what was and what will be, where a soul must name itself before the world will take it back.\n\nA voice settles around you — everywhere and nowhere at once, patient and very old.\n\n\"Before you step into Avarra and it decides what to make of you, tell me who you are. Begin with your name, and the people and the place you call your own. Take your time — here, there is nothing but the telling.\"",
     }],
     apiHistory: [],
   };
@@ -850,9 +890,23 @@ export function makeInitialState() {
 // own discoveries are preserved (we only add what's missing). Mutates +
 // returns a new state object; safe to call repeatedly.
 export function migrateCodex(state) {
-  if (!state?.world?.codex) return state;
-  const fresh = makeInitialState();
+  if (!state?.world) return state;
   const next = JSON.parse(JSON.stringify(state));
+  migratePortraitOverrides(next);
+  next.world = migrateLegacyWorldLocation(next.world);
+  if (Array.isArray(next.turns)) {
+    next.turns = next.turns.map((turn) => turn?.world?.place
+      ? { ...turn, world: migrateLegacyWorldLocation(turn.world) }
+      : turn);
+  }
+  if (!next.world.continentId) next.world.continentId = CONTINENT.id;
+  if (!next.world.seed) next.world.seed = DEFAULT_WORLD_SEED;
+  if (!next.world.generatorVersion) next.world.generatorVersion = WORLD_GENERATOR_VERSION;
+  // Location migration is independent of Codex hydration. Very old or
+  // deliberately minimal saves may have no Codex, but must still leave the
+  // retired place graph and rejoin the one world map.
+  if (!next.world.codex) return next;
+  const fresh = makeInitialState();
   const ownCodex = next.world.codex;
   for (const sub of ["characters", "races", "professions", "items", "spells", "skills"]) {
     const freshSub = fresh.world.codex[sub] || {};
@@ -894,6 +948,20 @@ export function migrateCodex(state) {
     if (ch.lifespanMultiplier === undefined) ch.lifespanMultiplier = 1.0;
     if (ch.gender === undefined) ch.gender = null;
     if (typeof ch.attractiveness === "string") ch.attractiveness = null;
+  }
+  // Creation records historically held the full identity only on the Codex
+  // wanderer while the dossier read from state.character. Pull those fields
+  // forward once so older campaigns gain the same profession and portrait
+  // resolution as newly-created characters.
+  const wanderer = ownCodex.characters?.wanderer;
+  if (next.character && wanderer) {
+    for (const key of [
+      "profession", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
+      "attractiveness", "appearance", "base_appearance", "templateId", "portraitKey",
+      "profile",
+    ]) {
+      if (next.character[key] == null && wanderer[key] != null) next.character[key] = wanderer[key];
+    }
   }
   // Per-party-member inventory back-fill: companions/bonded/mounts gain a personal
   // `carried` pack (and, for companions, a personal coin pouch — bonded captives

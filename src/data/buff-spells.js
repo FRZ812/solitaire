@@ -11,6 +11,8 @@
 // mount-stamina drain (both are time-based) — so going faster can only cost LESS
 // upkeep over a journey, never more (engine/buffs.js, scripts/mount-weight-sim).
 
+import { tierOrder } from "./tiers.js";
+
 export const BUFF_SPELLS = {
   haste: {
     id: "haste", name: "Haste", school: "arcane", icon: "sparkle", noncombat: true, kind: "buff",
@@ -34,13 +36,21 @@ export const BUFF_SPELL_IDS = Object.keys(BUFF_SPELLS);
 export function isBuffSpell(id) { return !!BUFF_SPELLS[id]; }
 export function buffSpellById(id) { return BUFF_SPELLS[id] || null; }
 
-const learnedIds = (character) => {
+const learnedTiers = (character) => {
   const learned = Array.isArray(character?.abilities) ? character.abilities : [];
-  return new Set(learned.map((a) => (typeof a === "string" ? a : a?.id)).filter(Boolean));
+  return new Map(learned.map((entry) => {
+    const normalized = typeof entry === "string" ? { id: entry, tier: "common" } : entry;
+    return [normalized?.id, normalized?.tier || "common"];
+  }).filter(([id]) => id));
 };
 
 // The boon spells a CHARACTER knows — read from their per-character abilities.
 export function knownBuffSpells(character) {
-  const ids = learnedIds(character);
-  return BUFF_SPELL_IDS.filter((id) => ids.has(id)).map((id) => BUFF_SPELLS[id]);
+  const learned = learnedTiers(character);
+  return BUFF_SPELL_IDS.filter((id) => learned.has(id)).map((id) => {
+    const spell = BUFF_SPELLS[id];
+    const learnedTier = learned.get(id) || "common";
+    const resolvedTier = spell.minTier && tierOrder(learnedTier) < tierOrder(spell.minTier) ? spell.minTier : learnedTier;
+    return { ...spell, tier: resolvedTier };
+  });
 }

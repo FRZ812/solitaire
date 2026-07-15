@@ -49,9 +49,8 @@ export function buildHandcrafted({ tiles: input, sealedStructures }) {
   // runStreetPerimeterBridge depended on perimeter:true tiles existing —
   // with the generator off, it has nothing to do. Disabled to match.
   // runStreetPerimeterBridge(tiles);
-  runGatehouseWallTopBridge(tiles, ["0,-5", "1,-5"]);
   // Auto-seal must run LAST so it can reciprocate gates and any other
-  // bridge-set doors that already point at a wall hex. See the function
+  // authored doors that already point at a wall hex. See the function
   // for the full rule; the short version is "a wall with no authored
   // doors sees procedural neighbours as sealed."
   runWallAutoSeal(tiles);
@@ -393,26 +392,6 @@ function runStreetPerimeterBridge(tiles) {
   }
 }
 
-// Open the gatehouse hexes to adjacent wall_top tiles so the wall-walk
-// crosses the gatehouse roof instead of dead-ending at it.
-function runGatehouseWallTopBridge(tiles, gateKeys) {
-  for (const gateKey of gateKeys) {
-    const t = tiles[gateKey];
-    if (!t || !Array.isArray(t.doors)) continue;
-    const [x, y] = gateKey.split(",").map(Number);
-    const existing = new Set(t.doors.map((d) => `${d.x},${d.y}`));
-    const extra = [];
-    for (const d of HEX_DIRS) {
-      const nx = x + d.x, ny = y + d.y;
-      const nk = `${nx},${ny}`;
-      if (existing.has(nk)) continue;
-      const nt = tiles[nk];
-      if (nt && nt.terrain === "wall") extra.push({ x: nx, y: ny });
-    }
-    if (extra.length) tiles[gateKey] = { ...t, doors: [...t.doors, ...extra] };
-  }
-}
-
 // Automatically add doors between adjacent route tiles. A named outdoor POI is
 // also a route endpoint even when its ground is forest/hills/etc.; otherwise a
 // road visibly reaches a ruin but the final edge remains mechanically closed.
@@ -429,6 +408,11 @@ function runAutoRoadDoors(tiles) {
     const tile = tiles[key];
     if (!isRouteTile(tile)) continue;
     const [x, y] = key.split(",").map(Number);
+
+    // Unified-map cells carry a complete reviewed edge graph. Re-running the
+    // legacy convenience mesher would turn one-door shops and civic interiors
+    // back into six-way pavement shortcuts.
+    if (Array.isArray(tile.doors) && Number(tile.mapVersion) >= 2) continue;
 
     if (!Array.isArray(tile.doors)) {
       tile.doors = [];

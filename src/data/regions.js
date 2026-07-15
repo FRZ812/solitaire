@@ -35,8 +35,8 @@ export const BIOME_DIFFICULTY = {
 
 // Difficulty profile at a coordinate: the band object plus the biome name, used
 // to set enemy/loot tier ceilings and the rollTier luck for that area.
-export function regionDifficulty(x, y) {
-  const biome = getBiome(x, y);
+export function regionDifficulty(x, y, seed) {
+  const biome = getBiome(x, y, seed);
   const level = BIOME_DIFFICULTY[biome.id] ?? 2;
   return { ...difficultyBand(level), biomeId: biome.id, biomeName: biome.name };
 }

@@ -244,7 +244,7 @@ export function VitalsStrip({ state, onExtinguish }) {
           aria-label={`${visibility.label}. ${visibility.detail}${visibility.canExtinguish ? ". Tap to extinguish." : ""}`}
         >
           <span className="visibility-status__medallion" aria-hidden="true">
-            <Icon name={visibility.icon} size={21} strokeWidth={1.9} />
+            <Icon name={visibility.icon} size={31} />
           </span>
           <span className="visibility-status__copy">
             <small>Obscurity</small>
@@ -314,8 +314,8 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
 
   // A compact instrument dial with enough interior space for unmistakable
   // silhouettes (especially hunger's bread loaf) at phone scale.
-  const SIZE = 32;
-  const R = 13;
+  const SIZE = 36;
+  const R = 15;
   const C = 2 * Math.PI * R;
   const dashOffset = C * (1 - pct / 100);
 
@@ -348,7 +348,7 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
                   }} />
         </svg>
         <div className="radial-meter__icon">
-          <Icon name={iconName} size={13} color={color} fill={iconFill || "none"} strokeWidth={1.75} />
+          <Icon name={iconName} size={21} color={color} fill={iconFill || "none"} strokeWidth={1.75} />
         </div>
       </div>
       <span className="radial-meter__value" style={{ color }}>{label}</span>

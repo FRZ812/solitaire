@@ -35,8 +35,8 @@ export const DEFEND = {
   target: "self", damageType: null, scaling: "none", scaleAttr: "vigor",
   weaponReq: null, statReq: null, dmg: null, pen: 0, critBonus: 0,
   resolveCost: 0, cooldown: 1,
-  effect: { type: "guard", value: 4, duration: 1, target: "self" },
-  desc: "Plant and guard — raises armour until your next turn.",
+  effect: { type: "block", value: 7, duration: 1, target: "self" },
+  desc: "Plant your feet and gain 7 Block until your next turn.",
 };
 
 // Social action with several intents (resolved by the engine, not as damage):
@@ -223,7 +223,11 @@ const UNIQUE_BY_ID = Object.fromEntries(UNIQUE_ABILITIES.map((a) => [a.id, a]));
 // Travel spells (fly / dimension-door / gate) are real, grantable abilities so the
 // normal grant/known/tier-clamp paths work — but they're flagged `noncombat`, so
 // every combat + ability-list consumer filters them out (they drive map travel only).
-const ALL_BY_ID = { ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, ...TRAVEL_SPELLS, ...BUFF_SPELLS, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
+// Utility registries are spread first so a combat definition can deliberately
+// share an id and remain the canonical combat resolver. `haste` is both a road
+// boon and a combat spell; the old order let the noncombat boon shadow the card
+// definition and silently removed Haste from every deck.
+const ALL_BY_ID = { ...TRAVEL_SPELLS, ...BUFF_SPELLS, ...LIBRARY_BY_ID, ...UNIQUE_BY_ID, [BASIC_ATTACK.id]: BASIC_ATTACK, [DEFEND.id]: DEFEND, [TALK.id]: TALK };
 
 export function getAbilityDef(id) { return ALL_BY_ID[id] || null; }
 

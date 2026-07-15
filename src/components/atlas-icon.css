@@ -1,0 +1,38 @@
+.atlas-icon {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: var(--atlas-size, 32px);
+  aspect-ratio: 1;
+  overflow: hidden;
+  box-sizing: border-box;
+  vertical-align: middle;
+  background-color: transparent;
+  contain: paint;
+}
+
+.atlas-icon__sprite {
+  position: absolute;
+  inset: 0;
+  background-image: var(--atlas-image);
+  background-position: var(--atlas-column-position, 0%) var(--atlas-row-position, 0%);
+  background-repeat: no-repeat;
+  background-size: var(--atlas-background-width, 100%) var(--atlas-background-height, 100%);
+}
+
+.atlas-icon--square { border-radius: 0; }
+.atlas-icon--round { border-radius: 50%; }
+
+/* The generated portrait cells are square, while the Codex viewport is 3:4.
+   Widening the inner square sprite to the viewport height preserves the source
+   proportions and lets the outer slot crop only the side edges. */
+.atlas-icon--portrait {
+  aspect-ratio: 3 / 4;
+  border-radius: 0;
+}
+
+.atlas-icon--portrait .atlas-icon__sprite {
+  inset: 0 auto 0 50%;
+  width: 133.3334%;
+  transform: translateX(-50%);
+}

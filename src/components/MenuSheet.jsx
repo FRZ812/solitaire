@@ -16,12 +16,12 @@ import { condName } from "../data/conditions.js";
 import { canHeal } from "../engine/healing.js";
 
 const ATTRIBUTE_VISUALS = {
-  body: { icon: "swords", hint: "Force" },
-  reflex: { icon: "arrowUp", hint: "Tempo" },
-  vigor: { icon: "shield", hint: "Endure" },
-  mind: { icon: "book", hint: "Arcana" },
+  body: { icon: "combat", hint: "Force" },
+  reflex: { icon: "progress", hint: "Tempo" },
+  vigor: { icon: "condition", hint: "Endure" },
+  mind: { icon: "codex", hint: "Arcana" },
   wit: { icon: "compass", hint: "Instinct" },
-  presence: { icon: "sparkle", hint: "Will" },
+  presence: { icon: "abilities", hint: "Will" },
 };
 
 function attributeProgress(score) {

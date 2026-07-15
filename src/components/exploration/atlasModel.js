@@ -1,5 +1,8 @@
 import { HANDCRAFTED } from "../../data/handcrafted-map.js";
+import { RUMORED } from "../../data/rumored.js";
+import { FABLED_BY_COORD } from "../../data/fabled.js";
 import { TERRAINS } from "../../data/terrains.js";
+import { WHITEMARCH_CAPITAL, WHITEMARCH_LANDMARKS } from "../../data/whitemarch-capital.js";
 import {
   HEX_DIRECTIONS,
   edgeAllowed,
@@ -29,10 +32,16 @@ export const TERRAIN_INK = {
 
 const LANDMARK_TYPES = new Set([
   "city", "town", "village", "settlement", "fortress", "gate", "palace",
-  "temple", "shrine", "ruin", "landmark", "camp", "market", "smithy", "healer",
+  "temple", "shrine", "tower", "lake", "ruin", "landmark", "camp", "market", "smithy", "healer",
 ]);
 const COMPASS_ORDER = ["north-west", "north", "north-east", "east", "south-east", "south", "south-west", "west"];
 const TRAIL_REACH = 4;
+const WHITEMARCH_CITY_ID = WHITEMARCH_CAPITAL.cityId || WHITEMARCH_CAPITAL.id;
+const WHITEMARCH_ATLAS_LANDMARK = WHITEMARCH_LANDMARKS.find((landmark) => (
+  landmark?.atlasLandmark
+  || (landmark?.coord?.x === WHITEMARCH_CAPITAL.start.x
+    && landmark?.coord?.y === WHITEMARCH_CAPITAL.start.y)
+)) || {};
 
 export const RPG_VIEW_COLS = 11;
 export const RPG_VIEW_ROWS = 9;
@@ -166,6 +175,8 @@ export function buildExplorationModel(state) {
   const choices = arrangeTrailheads(rawChoices);
 
   const keys = new Set(Object.keys(HANDCRAFTED));
+  for (const key of Object.keys(RUMORED)) keys.add(key);
+  for (const key of Object.keys(FABLED_BY_COORD)) keys.add(key);
   for (const key of Object.keys(state.world.tiles || {})) keys.add(key);
   for (const key of questKeys) keys.add(key);
   for (const choice of choices) keys.add(choice.key);
@@ -178,21 +189,52 @@ export function buildExplorationModel(state) {
     const coord = parseCoord(key);
     if (!Number.isFinite(coord.x) || !Number.isFinite(coord.y)) continue;
     const tile = getTile(state, coord.x, coord.y);
-    if (!isPassable(tile)) continue;
+    const knownBy = RUMORED[key] ? "reputation" : (FABLED_BY_COORD[key] ? "legend" : null);
+    // A named lake or other impassable feature still belongs in the atlas even
+    // though ground travel correctly stops at its shore.
+    if (!isPassable(tile) && !knownBy) continue;
     const seen = isSeen(state, coord.x, coord.y);
     const visited = isVisited(state, coord.x, coord.y);
     const quest = questAtKey(activeQuests, key);
     const distance = hexDistance(origin, coord);
     const name = tile.poi?.name;
-    const cell = { key, ...coord, tile, seen, visited, quest, distance };
+    const cell = { key, ...coord, tile, seen, visited, quest, distance, knownBy };
     byKey.set(key, cell);
 
-    const knownName = name && tile.poi?.type !== "hidden" && (seen || visited || quest);
+    const knownName = name && tile.poi?.type !== "hidden" && (seen || visited || quest || knownBy);
     const isLandmark = knownName && (LANDMARK_TYPES.has(tile.poi?.type) || quest);
     const anchor = (seen || visited) && isTeleportAnchor(state, coord.x, coord.y);
+    // City POIs stay fully visible in the nearby RPG viewport, but the atlas
+    // index represents the entire capital with a single landmark instead of
+    // listing every market stall, gatehouse, chapel, and workshop.
+    if (tile.cityId === WHITEMARCH_CITY_ID) continue;
     if ((isLandmark || quest || anchor) && distance > 0) {
       landmarks.push({ ...cell, name: name || quest?.title || null, anchor });
     }
+  }
+
+  const capitalCoord = WHITEMARCH_ATLAS_LANDMARK.coord || WHITEMARCH_CAPITAL.center || WHITEMARCH_CAPITAL.start;
+  const capitalKey = coordKey(capitalCoord);
+  const capitalTile = getTile(state, capitalCoord.x, capitalCoord.y);
+  const capitalSeen = isSeen(state, capitalCoord.x, capitalCoord.y);
+  const capitalVisited = isVisited(state, capitalCoord.x, capitalCoord.y);
+  if (capitalSeen || capitalVisited || capitalTile.cityId === WHITEMARCH_CITY_ID) {
+    const capitalDistance = hexDistance(origin, capitalCoord);
+    const capitalLandmark = {
+      key: capitalKey,
+      ...capitalCoord,
+      tile: capitalTile,
+      name: WHITEMARCH_CAPITAL.name,
+      seen: capitalSeen,
+      visited: capitalVisited,
+      quest: questAtKey(activeQuests, capitalKey),
+      distance: capitalDistance,
+      knownBy: null,
+      anchor: (capitalSeen || capitalVisited) && isTeleportAnchor(state, capitalCoord.x, capitalCoord.y),
+      capital: true,
+    };
+    landmarks.push(capitalLandmark);
+    byKey.set(capitalKey, { ...byKey.get(capitalKey), ...capitalLandmark });
   }
 
   const choiceByKey = new Map(choices.map((choice) => [choice.key, choice]));

@@ -108,17 +108,26 @@ export function visibilityStatus(state) {
       obscurity: "revealed",
       label: "Revealed",
       detail: `${sourceName} · ${minutes}m`,
-      icon: "eye",
+      icon: "visibilityOpen",
       canExtinguish: true,
     };
   }
 
   if (isHidden(state)) {
+    if (!inTheDark(state)) {
+      return {
+        obscurity: "partial",
+        label: "Obscured",
+        detail: "Darkvision · unseen",
+        icon: "visibilityHalf",
+        canExtinguish: false,
+      };
+    }
     return {
       obscurity: "heavy",
-      label: "Obscured",
-      detail: inTheDark(state) ? "Hidden · sight impaired" : "Hidden · darkvision",
-      icon: "eyeOff",
+      label: "Hidden",
+      detail: "Sight impaired",
+      icon: "visibilityClosed",
       canExtinguish: false,
     };
   }
@@ -127,7 +136,7 @@ export function visibilityStatus(state) {
     obscurity: "clear",
     label: "Visible",
     detail: minutes > 0 ? `${sourceName} · ${minutes}m` : "Clear sightlines",
-    icon: "eye",
+    icon: "visibilityOpen",
     canExtinguish: minutes > 0,
   };
 }

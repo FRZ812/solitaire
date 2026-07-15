@@ -8,6 +8,10 @@ import { ArsenalView } from "./ArsenalView.jsx";
 import { CodexView } from "./CodexView.jsx";
 import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
 import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.webp";
+import { resolveCharacterPortrait } from "./character-portrait-assets.js";
+import { ProfessionIcon } from "./ProfessionIcon.jsx";
+import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
+import { PLAYER_PORTRAIT_ID, portraitOverrideFor } from "../engine/portrait-overrides.js";
 
 // The unified character deck: Company · Character · Abilities · Inventory ·
 // Codex as five pages of one
@@ -16,7 +20,7 @@ import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.w
 // gesture never steals an ordinary scroll inside a page.
 const PAGES = ["party", "character", "abilities", "inventory", "codex"];
 const LABELS = { party: "Company", character: "Character", abilities: "Abilities", inventory: "Inventory", codex: "Codex" };
-const PAGE_ICONS = { party: "users", character: "user", abilities: "sparkle", inventory: "bag", codex: "book" };
+const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", codex: "codex" };
 
 export function shouldDismissPanel(pulled, velocity) {
   return pulled > 88 || (pulled > 18 && velocity > 0.55);
@@ -187,7 +191,12 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
           ref={scroll}
           className="panel-deck__scroll no-scrollbar"
         >
-          <DossierHero state={state} page={page} onSelectPage={selectPage} />
+          <DossierHero
+            state={state}
+            page={page}
+            onSelectPage={selectPage}
+            onPortraitChange={handlers?.onPortraitChange}
+          />
           <div
             key={activePage}
             id={`deck-page-${activePage}`}
@@ -225,6 +234,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 state={state}
                 onScry={handlers.onScry}
                 onRenameMount={handlers.onRenameMount}
+                onPortraitChange={handlers.onPortraitChange}
               />
             )}
           </div>
@@ -240,20 +250,93 @@ function labelize(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function DossierHero({ state, page, onSelectPage }) {
+function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
   const motionRef = useParallaxMotion({ strength: 1.1 });
+  const fileInput = useRef(null);
+  const [portraitBusy, setPortraitBusy] = useState(false);
+  const [portraitError, setPortraitError] = useState("");
   const character = state.character;
-  const identity = [labelize(character.race), labelize(character.profession)].filter(Boolean).join(" · ") || "Wanderer";
+  const wanderer = state.world?.codex?.characters?.wanderer || {};
+  const identityRecord = { ...character, ...wanderer };
+  const identity = [labelize(identityRecord.race), labelize(identityRecord.profession)].filter(Boolean).join(" · ") || "Wanderer";
+  const portraitOverride = portraitOverrideFor(state, PLAYER_PORTRAIT_ID);
+  const portrait = resolveCharacterPortrait(identityRecord, dossierPortrait, portraitOverride);
+  const customPortrait = !!portraitOverride;
+
+  async function onChoosePortrait(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !onPortraitChange) return;
+    setPortraitError("");
+    setPortraitBusy(true);
+    try {
+      const prepared = await normalizePortraitFile(file);
+      await onPortraitChange(PLAYER_PORTRAIT_ID, prepared);
+    } catch (error) {
+      setPortraitError(error?.message || "That portrait could not be prepared.");
+    } finally {
+      setPortraitBusy(false);
+    }
+  }
+
+  async function resetPortrait() {
+    if (!onPortraitChange) return;
+    setPortraitError("");
+    setPortraitBusy(true);
+    try {
+      await onPortraitChange(PLAYER_PORTRAIT_ID, null);
+    } catch (error) {
+      setPortraitError(error?.message || "That portrait could not be reset.");
+    } finally {
+      setPortraitBusy(false);
+    }
+  }
+
+  function onTabKeyDown(event, index) {
+    const last = PAGES.length - 1;
+    let next = null;
+    if (event.key === "ArrowRight") next = index === last ? 0 : index + 1;
+    if (event.key === "ArrowLeft") next = index === 0 ? last : index - 1;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = last;
+    if (next == null) return;
+    event.preventDefault();
+    onSelectPage(next);
+    requestAnimationFrame(() => document.getElementById(`deck-tab-${PAGES[next]}`)?.focus());
+  }
 
   return (
     <section ref={motionRef} className="dossier-hero">
-      <img className="dossier-hero__art" src={dossierPortrait} alt="" draggable="false" />
+      <img className="dossier-hero__art" src={portrait} alt="" draggable="false" decoding="async" />
       <div className="dossier-hero__wash" aria-hidden="true" />
+      <div className="dossier-hero__portrait-tools">
+        <ProfessionIcon templateId={identityRecord.templateId} profession={identityRecord.profession} size="small" decorative />
+        <button
+          type="button"
+          onClick={() => fileInput.current?.click()}
+          disabled={portraitBusy || !onPortraitChange}
+          aria-label="Upload a new character portrait"
+        >{portraitBusy ? "Preparing…" : customPortrait ? "Change portrait" : "Upload portrait"}</button>
+        {customPortrait && (
+          <button type="button" className="is-reset" onClick={resetPortrait} disabled={portraitBusy}>
+            Use original
+          </button>
+        )}
+        <input
+          ref={fileInput}
+          type="file"
+          accept={PORTRAIT_ACCEPT}
+          onChange={onChoosePortrait}
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+        {portraitError && <span role="alert">{portraitError}</span>}
+      </div>
       <div className="dossier-hero__identity">
         <small>Player character</small>
-        <h2>{character.name}</h2>
+        <h2>{identityRecord.name || character.name}</h2>
         <div>{identity}</div>
-        {character.bond && <p>{character.bond}</p>}
+        {(identityRecord.bond || character.bond) && <p>{identityRecord.bond || character.bond}</p>}
       </div>
       <div className="dossier-hero__tabs" role="tablist" aria-label="Dossier sections">
         {PAGES.map((key, index) => (
@@ -263,12 +346,13 @@ function DossierHero({ state, page, onSelectPage }) {
             type="button"
             className={index === page ? "is-active" : ""}
             onClick={() => onSelectPage(index)}
+            onKeyDown={(event) => onTabKeyDown(event, index)}
             role="tab"
             aria-selected={index === page}
             aria-controls={`deck-page-${key}`}
             tabIndex={index === page ? 0 : -1}
           >
-            <Icon name={PAGE_ICONS[key]} size={15} strokeWidth={1.55} />
+            <Icon name={PAGE_ICONS[key]} size={18} />
             <span>{LABELS[key]}</span>
           </button>
         ))}

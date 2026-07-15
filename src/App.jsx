@@ -11,6 +11,7 @@ import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampai
 import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt, editBeat, deleteBeat } from "./engine/timeline.js";
+import { withPortraitOverride } from "./engine/portrait-overrides.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./engine/attributes.js";
 import { equipItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
@@ -33,9 +34,8 @@ import { scryResult } from "./engine/positions.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
-  pathMinutes, isSeen, flightPath, flightMinutes, findWorldRoute,
+  pathMinutes, isSeen, flightPath, flightMinutes, findWorldRoute, persistedTileDelta,
 } from "./engine/world.js";
-import { standingNodeTile, enterPlace, leavePlace, moveToNode, moveAlongPlaceRoute, inPlace, placeAtTile, getPlace } from "./engine/place.js";
 import { knownTravelSpells } from "./data/travel-spells.js";
 import { knownBuffSpells } from "./data/buff-spells.js";
 import { buffTravelSpeedMult, hastedGroundMinutes, hastedFlightHexes, hastedFlightMinutes } from "./engine/buffs.js";
@@ -44,7 +44,8 @@ import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.
 import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, isOverloaded } from "./engine/riding.js";
 import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
-import { getBiome } from "./data/biomes.js";
+import { getBiome, getBiomeById } from "./data/biomes.js";
+import { ECOLOGIES } from "./data/continent.js";
 import { biomeVisual, sceneBiomeId } from "./data/visual-assets.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
@@ -63,7 +64,6 @@ import { colors } from "./components/tokens.js";
 import { BeatRender } from "./components/beats/BeatRender.jsx";
 import { PanelDeck } from "./components/PanelDeck.jsx";
 import { WorldExploration } from "./components/exploration/WorldExploration.jsx";
-import { PlaceView } from "./components/PlaceView.jsx";
 import { TraderView } from "./components/TraderView.jsx";
 import { StableView } from "./components/StableView.jsx";
 import { ForgeView } from "./components/ForgeView.jsx";
@@ -93,7 +93,7 @@ const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
 // Difficulty profile of the current location (region-gated, not level-scaled).
 function regionHere(state) {
   const cur = state.world.currentTile;
-  return regionDifficulty(cur.x, cur.y);
+  return regionDifficulty(cur.x, cur.y, state.world.seed);
 }
 // Unique ids the character already holds, so the same named drop can't repeat.
 function ownedUniqueIds(state) {
@@ -109,8 +109,10 @@ function hostileEntriesHere(state) {
   const tile = getTile(state, cur.x, cur.y);
   const base = SPAWN_TABLES[tile.terrain];
   if (!base) return [];
-  const extras = getBiome(cur.x, cur.y).extraSpawns?.[tile.terrain] || [];
-  return [...base.entries, ...extras].filter((e) => e.posture === "hostile");
+  const region = getBiomeById(tile.regionId) || getBiome(cur.x, cur.y, state.world.seed);
+  const regional = region.extraSpawns?.[tile.terrain] || [];
+  const ecological = ECOLOGIES[tile.ecology]?.encounters || [];
+  return [...base.entries, ...regional, ...ecological].filter((e) => e.posture === "hostile");
 }
 function pickHostileKind(state) {
   const hostile = hostileEntriesHere(state);
@@ -168,7 +170,7 @@ function applyTravelArrival(base, beat, travel) {
     for (let i = 1; i < path.length; i++) {
       const p = path[i];
       const k = `${p.x},${p.y}`;
-      if (!newTiles[k]) newTiles[k] = getTile(base, p.x, p.y);
+      if (!newTiles[k]) newTiles[k] = persistedTileDelta(getTile(base, p.x, p.y));
       newSeen = computeSightFromRadius(p.x, p.y, r, newSeen);
     }
     next = { ...next, world: { ...next.world, tiles: newTiles, seen: newSeen } };
@@ -273,6 +275,8 @@ export function Solitaire() {
 
   // Game
   const [state, setState] = useState(makeInitialState());
+  const liveStateRef = useRef(state);
+  liveStateRef.current = state;
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -290,35 +294,15 @@ export function Solitaire() {
   const [mapOpen, setMapOpen] = useState(false);
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
-  const [placeOpen, setPlaceOpen] = useState(false); // the scale-2 local map (PlaceView) overlay
 
-  // The tile the party is standing on right now. Inside a place (scale 2) it's the
-  // synthetic node tile; on the world map it's the hex under currentTile. Lets the
-  // building/service/biome flows below work identically in a city node or the wild.
+  // Travel and interaction share the same world-map tile. A POI's service opens a
+  // dedicated panel; movement always happens through WorldExploration.
   function standingTile(s = state) {
-    return standingNodeTile(s) || getTile(s, s.world.currentTile.x, s.world.currentTile.y);
+    return getTile(s, s.world.currentTile.x, s.world.currentTile.y);
   }
-  // The stock/receipt key for the standing tile — namespaced per place node so a
-  // city node's shop stock is its own, not the world hex's.
   function standingKey(s = state) {
-    if (s.world.place) return `place:${s.world.place.id}:${s.world.place.node}`;
     return `${s.world.currentTile.x},${s.world.currentTile.y}`;
   }
-
-  // ----- Places (scale 2): enter / move within / leave a node-graph place -----
-  function handleEnterPlace(placeId, nodeId = null) {
-    if (!placeId) return;
-    setState((s) => enterPlace(s, placeId, nodeId));
-    setMapOpen(false);
-    setPlaceOpen(true);
-  }
-  function handleMoveNode(nodeId, route = null) {
-    setState((s) => Array.isArray(route) && route.length
-      ? moveAlongPlaceRoute(s, route)
-      : moveToNode(s, nodeId));
-  }
-  function handleLeavePlace() { setState((s) => leavePlace(s)); setPlaceOpen(false); }
-  function handlePlaceService() { openShop(); }
   // Recent purchases at the current shop, for full refunds until you leave the
   // scene: { tileKey, items: { [itemId]: [pricePaid, ...] } }.
   const [receipts, setReceipts] = useState({ tileKey: null, items: {} });
@@ -558,6 +542,12 @@ export function Solitaire() {
     return () => clearTimeout(saveTimerRef.current);
   }, [state, hydrated, currentCampaignId]);
 
+  async function flushActiveCampaign(snapshot = liveStateRef.current) {
+    if (!hydrated || !currentCampaignId) return;
+    clearTimeout(saveTimerRef.current);
+    await saveCampaign(currentCampaignId, snapshot);
+  }
+
   // ----- Follow live output only while the reader is near the bottom -----
   // A reader who scrolls upward owns the viewport until they tap Latest.
   // Reaching the bottom manually does not silently re-enable follow. Streamed
@@ -696,7 +686,12 @@ export function Solitaire() {
     }
   }
 
-  function handleBackToCampaigns() {
+  async function handleBackToCampaigns() {
+    try {
+      await flushActiveCampaign();
+    } catch (e) {
+      setCampaignError(`Save failed: ${e.message || e}`);
+    }
     setDeckOpen(false);
     setCurrentCampaignId(null);
     setHydrated(false);
@@ -706,6 +701,11 @@ export function Solitaire() {
   }
 
   async function handleSignOut() {
+    try {
+      await flushActiveCampaign();
+    } catch (e) {
+      setCampaignError(`Save failed: ${e.message || e}`);
+    }
     setDeckOpen(false);
     setMenuEntered(false);
     setCurrentCampaignId(null);
@@ -765,7 +765,14 @@ export function Solitaire() {
     try {
       const beat = await narrate(base, message);
       const next = applyBeat(base, beat);
-      setState(recordTurn(base, message, next));
+      const recorded = recordTurn(base, message, next);
+      setState((current) => {
+        // Portraits are save-level presentation, not fiction state. Preserve
+        // uploads made while this narrator request was in flight.
+        const merged = { ...recorded, portraitOverrides: current.portraitOverrides || {} };
+        liveStateRef.current = merged;
+        return merged;
+      });
       setRetry(null);
       // An explicit strike in the fiction hands off to the turn-based engine.
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
@@ -798,6 +805,9 @@ export function Solitaire() {
         age: setup.age, agingMode: setup.agingMode, lifespanMultiplier: setup.lifespanMultiplier,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
         base_appearance: setup.base_appearance, knows: setup.knows || [],
+        templateId: setup.templateId || null,
+        portraitKey: setup.portraitKey || null,
+        profile: setup.profile || null,
       },
       inventory_changes: Object.keys(inv).length ? inv : undefined,
       discoveries: wornIds.length ? { characters: [{ id: "wanderer", worn: wornIds }] } : undefined,
@@ -865,9 +875,6 @@ export function Solitaire() {
     const legTile = getTile(state, legEnd.x, legEnd.y);
     const legName = arrived ? toName : (poiPlaceName(legTile.poi) || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
     const isHidden = arrived && destIsHidden;
-    // Arriving at the mouth of a node-graph place (a city/dungeon) steps you inside.
-    const enterPlaceId = arrived ? placeAtTile(destTileFull, dest.x, dest.y) : null;
-
     const travelWp = activeWorldPassives(state.character, state.world.codex);
     // Slower going in the dark without light, and slower still when worn out.
     const darkTravel = isNight(state.time) && !isLit(state) && !state.character?.darkvision;
@@ -909,8 +916,11 @@ export function Solitaire() {
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
 
+    const generatedSite = destTileFull.poi?.generated;
     const destDescription = isHidden
-      ? "HIDDEN — generate a random event appropriate to the terrain. Set tile_discovery."
+      ? generatedSite
+        ? `HIDDEN AUTHORED SITE — reveal the deterministic site ${JSON.stringify(generatedSite.name)} (${generatedSite.poiType}): ${generatedSite.description} Set tile_discovery EXACTLY to ${JSON.stringify({ name: generatedSite.name, poi_type: generatedSite.poiType, description: generatedSite.description })}; phrase the discovery, but do not rename or replace its canonical identity.`
+        : "HIDDEN — reveal an event appropriate to the approved terrain content and set tile_discovery."
       : destTileFull.poi ? `known ${destTileFull.poi.type} (${poiPlaceName(destTileFull.poi) || destTileFull.poi.name})` : "open wilderness";
 
     let travelMsg;
@@ -937,7 +947,6 @@ export function Solitaire() {
       totalMins: legMins,
       encounter: pathEnc ? pathEnc.encounter : null,
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
-      enterPlaceId,
     };
 
     await finishTravel(stateWithPlayer, fullMsg, travel);
@@ -949,10 +958,7 @@ export function Solitaire() {
     try {
       const beat = await narrate(stateWithPlayer, fullMsg);
       const next = applyTravelArrival(stateWithPlayer, beat, travel);
-      let landed = recordTurn(stateWithPlayer, fullMsg, next, { travel });
-      // Stepping into a place is a quiet arrival — drop the party at its entry node
-      // and open the local map so the city/dungeon is immediately navigable.
-      if (travel.enterPlaceId) { landed = enterPlace(landed, travel.enterPlaceId); setPlaceOpen(true); }
+      const landed = recordTurn(stateWithPlayer, fullMsg, next, { travel });
       setState(landed);
       if (travel.encounter && travel.encounter.posture === "hostile") setPendingCombat(travel.encounter);
     } catch (e) {
@@ -1044,8 +1050,9 @@ export function Solitaire() {
       }
     }
 
-    // Overflown settlements remember the party on the wing for a few days (api.js
-    // surfaces it as [SEEN FLYING]). Store the FULL tile so getTile keeps its terrain.
+    // Overflown settlements remember the party on the wing for a few days. A
+    // generated settlement stores only the dynamic sighting delta; its terrain
+    // and climate remain lazy generator output.
     const day = state.time?.day ?? 0;
     const baseTiles = state.world.tiles || {};
     let updatedTiles = baseTiles, tilesTouched = false;
@@ -1055,7 +1062,7 @@ export function Solitaire() {
       if (t.terrain !== "settlement") continue;
       const key = `${p.x},${p.y}`;
       if (!tilesTouched) { updatedTiles = { ...baseTiles }; tilesTouched = true; }
-      updatedTiles[key] = { ...(updatedTiles[key] || t), aerialSighting: { day } };
+      updatedTiles[key] = persistedTileDelta(t, { aerialSighting: { day } });
       const overflownName = poiPlaceName(t.poi);
       if (overflownName && !overflownTowns.includes(overflownName)) overflownTowns.push(overflownName);
     }
@@ -1315,6 +1322,20 @@ export function Solitaire() {
       if (!c) return cur;
       return { ...cur, world: { ...cur.world, codex: { ...cur.world.codex, characters: { ...cur.world.codex.characters, [id]: { ...c, name: chosen } } } } };
     });
+  }
+
+  async function handlePortraitChange(characterId, portrait) {
+    const next = withPortraitOverride(liveStateRef.current, characterId, portrait);
+    liveStateRef.current = next;
+    setState(next);
+    try {
+      // Portrait changes are deliberate save-level edits. Flush immediately so
+      // upload-then-exit cannot lose them to the ordinary autosave debounce.
+      await flushActiveCampaign(next);
+    } catch (e) {
+      setCampaignError(`Portrait save failed: ${e.message || e}`);
+      throw e;
+    }
   }
   // Sell one unit. A refund consumes a receipt (full price paid); a plain sale
   // uses the used-goods price the trader view computed.
@@ -1842,8 +1863,8 @@ export function Solitaire() {
 
   // ----- Render flow -----
 
-  const sceneTile = standingNodeTile(state) || getTile(state, state.world.currentTile.x, state.world.currentTile.y);
-  const sceneVisual = biomeVisual(sceneBiomeId(getBiome(state.world.currentTile.x, state.world.currentTile.y).id, sceneTile));
+  const sceneTile = getTile(state, state.world.currentTile.x, state.world.currentTile.y);
+  const sceneVisual = biomeVisual(sceneBiomeId((getBiomeById(sceneTile.regionId) || getBiome(state.world.currentTile.x, state.world.currentTile.y, state.world.seed)).id, sceneTile));
 
   if (!authChecked) return <CenteredLoader />;
   if (!user) return <AuthScreen />;
@@ -1912,13 +1933,6 @@ export function Solitaire() {
   // surfaces an "Enter" affordance to open its menu. Hidden during combat.
   const buildingHere = combat ? null : buildingForTile(standingTile());
   const buildingOpenNow = buildingHere ? isBuildingOpen(buildingHere, state.time.hour) : false;
-  // A place-mouth under the party on the world map (e.g. the Whitemarch gate hex):
-  // surface an "Enter" affordance so you can step back into the city after leaving.
-  const placeHereId = (!combat && !inPlace(state))
-    ? placeAtTile(getTile(state, state.world.currentTile.x, state.world.currentTile.y), state.world.currentTile.x, state.world.currentTile.y)
-    : null;
-  const placeHere = placeHereId ? getPlace(placeHereId) : null;
-
   // Creation hub: a fresh, untouched limbo shows the templates-vs-limbo chooser.
   // Once the player picks the freeform path (creationEntered) or has already
   // spoken a line, the normal limbo interview takes over.
@@ -1928,7 +1942,7 @@ export function Solitaire() {
   return (
     <div className="game-shell" style={{
       backgroundColor: "var(--scene-deep)",
-      height: "100dvh", width: "100%", maxWidth: "640px", margin: "0 auto",
+      height: "100dvh", width: "100%", maxWidth: combat ? "1440px" : "640px", margin: "0 auto",
       display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
       "--scene-primary": sceneVisual.primary,
       "--scene-accent": sceneVisual.accent,
@@ -1943,7 +1957,7 @@ export function Solitaire() {
           <div className="story-hud">
             <CompactHeader
               state={state}
-              onMap={() => (inPlace(state) ? setPlaceOpen(true) : setMapOpen(true))}
+              onMap={() => setMapOpen(true)}
               onOpenDeck={() => { setDeckPage("character"); setDeckOpen(true); }}
             />
             <VitalsStrip state={state} onExtinguish={handleExtinguish} />
@@ -1958,7 +1972,7 @@ export function Solitaire() {
               width: "38px", height: "38px", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center",
               backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.35)`, cursor: "pointer",
             }}>
-              <Icon name="user" size={16} color={colors.gold} strokeWidth={1.8} />
+              <Icon name="character" size={21} />
             </button>
           </div>
         )}
@@ -2071,27 +2085,6 @@ export function Solitaire() {
             }}>Leave</button>
           </div>
         )}
-        {state.created !== false && placeHere && !shopTile && (
-          <div className="fade-in" style={{
-            margin: "0 12px 8px", padding: "11px 14px",
-            backgroundColor: "rgba(20,29,29,0.8)", border: `1px solid rgba(215,167,111,0.4)`,
-            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
-            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
-          }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: colors.gold, marginBottom: "2px" }}>
-                {placeHere.kind === "city" ? "City" : "Place"}
-              </div>
-              <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
-                The gates of {placeHere.name} stand open before you.
-              </div>
-            </div>
-            <button onClick={() => handleEnterPlace(placeHereId)} style={{
-              padding: "9px 16px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
-              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
-            }}>Enter</button>
-          </div>
-        )}
         {state.created !== false && buildingHere && !shopTile && (
           <div className="fade-in" style={{
             margin: "0 12px 8px", padding: "11px 14px",
@@ -2173,6 +2166,7 @@ export function Solitaire() {
             onSignOut: handleSignOut,
             onLinkEmail: linkEmail,
             onScry: handleScry, onRenameMount: handleRenameMount,
+            onPortraitChange: handlePortraitChange,
             // Inventory
             onEquip: handleEquip, onUnequip: handleUnequip, onUse: handleUse,
             onLightTorch: handleLightTorch, onLightLantern: handleLightLantern,
@@ -2198,16 +2192,6 @@ export function Solitaire() {
           onTeleport={handleTeleport}
           onSeekCombat={handleSeekCombat}
           loading={loading}
-        />
-      )}
-      {placeOpen && inPlace(state) && (
-        <PlaceView
-          state={state}
-          time={state.time}
-          onMove={handleMoveNode}
-          onLeave={handleLeavePlace}
-          onService={handlePlaceService}
-          onClose={() => setPlaceOpen(false)}
         />
       )}
       {shopTile && (() => {
@@ -2279,7 +2263,7 @@ export function Solitaire() {
           const stock = rollShopStock(building, key, state.time.day);
           // Mounts are gated by REGION (the stable's biome), with a per-tile
           // override; the signature is always in, the rest seed-roll per window.
-          const biome = getBiome(shopTile.x, shopTile.y);
+          const biome = getBiome(shopTile.x, shopTile.y, state.world.seed);
           const stockEntry = tile.poi?.mounts || stableStockFor(biome.id);
           const mounts = rollStableMounts(stockEntry, key, state.time.day);
           return (

@@ -1,0 +1,78 @@
+.ability-icon {
+  --ability-tier: #b8b0a0;
+  --ability-mark-size: 22px;
+  --ability-rank-size: 8px;
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 48px;
+  aspect-ratio: 1;
+  place-items: center;
+  overflow: hidden;
+  color: #f5ead7;
+  background: radial-gradient(circle, rgba(31, 45, 45, .94), rgba(7, 13, 16, .98));
+  border: 2px solid color-mix(in srgb, var(--ability-tier) 82%, #2a1f17);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 2px rgba(9, 13, 14, .78),
+    0 0 14px color-mix(in srgb, var(--ability-tier) 20%, transparent),
+    inset 0 0 10px rgba(255, 255, 255, .08);
+  isolation: isolate;
+}
+
+.ability-icon--small { width: 34px; --ability-mark-size: 16px; --ability-rank-size: 6px; }
+.ability-icon--medium { width: 48px; --ability-mark-size: 22px; --ability-rank-size: 7px; }
+.ability-icon--large { width: 72px; --ability-mark-size: 32px; --ability-rank-size: 9px; }
+.ability-icon--hero { width: 82px; max-width: 82px; --ability-mark-size: 34px; --ability-rank-size: 9px; }
+
+.ability-icon__school {
+  position: absolute;
+  inset: -4%;
+  z-index: -1;
+  background-image: var(--ability-school-atlas);
+  background-position: var(--ability-school-position);
+  background-size: 300% 300%;
+  filter: saturate(.92) contrast(1.04);
+}
+
+.ability-icon__category {
+  position: absolute;
+  inset: -4%;
+  z-index: -1;
+  background-image: var(--ability-category-atlas);
+  background-position: var(--ability-category-position);
+  background-size: 300% 300%;
+  filter: saturate(.9) contrast(1.04);
+}
+
+.ability-icon__tier {
+  position: absolute;
+  right: 7%;
+  bottom: 4%;
+  min-width: 31%;
+  padding: 1px 3px;
+  color: #101719;
+  font-family: Georgia, serif;
+  font-size: var(--ability-rank-size);
+  font-weight: 900;
+  line-height: 1.1;
+  text-align: center;
+  background: var(--ability-tier);
+  border: 1px solid rgba(255, 246, 224, .72);
+  border-radius: 999px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .72);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ability-icon { transition: none; }
+}
+
+/* Existing arsenal slots keep their layout dimensions while the raster school
+   medallion replaces the old inline SVG glyph. */
+.arsenal-card__icon .ability-icon { width: 29px; }
+.spell-card__sigil .ability-icon { width: 32px; }
+.combat-card__art .ability-icon--hero {
+  width: auto;
+  max-width: none;
+  height: calc(100% - 10px);
+}

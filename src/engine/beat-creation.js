@@ -19,6 +19,16 @@ export function applyCreation({ beat, character, world, created }) {
     const cs = beat.character_setup;
     if (cs.name) character.name = cs.name;
     if (cs.bond) character.bond = cs.bond;
+    // Keep the compact player state and the full Codex identity aligned. Older
+    // creation code only updated the Codex, which left the dossier profession
+    // blank and made presentation metadata impossible to persist reliably.
+    for (const key of [
+      "profession", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
+      "attractiveness", "appearance", "base_appearance", "templateId", "portraitKey",
+      "profile",
+    ]) {
+      if (cs[key] != null) character[key] = cs[key];
+    }
     if (cs.attributes) {
       const a = {};
       for (const k of ["body", "reflex", "vigor", "mind", "wit", "presence"]) a[k] = clampAttr(cs.attributes[k] ?? character.attributes[k]);
@@ -84,6 +94,9 @@ export function applyCreation({ beat, character, world, created }) {
       attractiveness: cs.attractiveness ?? w.attractiveness,
       appearance: cs.appearance || w.appearance,
       base_appearance: cs.base_appearance || w.base_appearance,
+      ...((cs.templateId != null || w.templateId != null) ? { templateId: cs.templateId ?? w.templateId } : {}),
+      ...((cs.portraitKey != null || w.portraitKey != null) ? { portraitKey: cs.portraitKey ?? w.portraitKey } : {}),
+      ...((cs.profile != null || w.profile != null) ? { profile: cs.profile ?? w.profile } : {}),
       attributes: character.attributes,
       // Dedup: a long (manual) creation may have already filed a self-fact via
       // knowledge_updates before the final sheet repeats it — don't list it twice.

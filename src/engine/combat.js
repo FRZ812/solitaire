@@ -15,7 +15,7 @@
 // allies, being stun-locked or out-classed — they may waver, plead, demand a
 // fair fight, flee, or yield. The player can also Demand Surrender (parley).
 
-import { getAbilityDef, attrFactor, abilityScaling, abilityRequiredStat, abilityCategoryOf, BASIC_ATTACK, DEFEND, TALK } from "../data/abilities.js";
+import { getAbilityDef, attrFactor, abilityScaling, abilityRequiredStat, abilityCategoryOf, clampAbilityTier, BASIC_ATTACK, DEFEND, TALK } from "../data/abilities.js";
 import { tierMult, tier as tierInfo } from "../data/tiers.js";
 import { DEMEANOR_CONFIG, flavorLine } from "../data/combat-flavor.js";
 import { weaponMasteryId, XP } from "../data/proficiencies.js";
@@ -363,7 +363,9 @@ export function initCombat(character, codex, enemies, opts = {}) {
     { id: DEFEND.id, tier: "common" },
     { id: TALK.id, tier: "common" },
     ...learned.map((e) => (typeof e === "string" ? { id: e, tier: "common" } : { id: e.id, tier: e.tier || "common" })),
-  ].filter((a) => { const d = getAbilityDef(a.id); return d && !d.noncombat; }); // travel spells never fight
+  ]
+    .map((ability) => ({ ...ability, tier: clampAbilityTier(ability.id, ability.tier) }))
+    .filter((a) => { const d = getAbilityDef(a.id); return d && !d.noncombat; }); // travel spells never fight
 
   // +life affixes (cs.maxHealth above character.vitalityMax) are granted filled,
   // so a wounded player still benefits from extra health gear at full value.
@@ -390,7 +392,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     cooldownReduction: cs.cooldownReduction || 0,
     controlDuration: cs.controlDuration || 0, ccDurationReduction: cs.ccDurationReduction || 0,
     spellSurge: !!cs.spellSurge, abilityCrit: !!cs.abilityCrit,
-    shield: 0, magicShield: 0, invuln: 0,
+    block: 0, shield: 0, magicShield: 0, invuln: 0,
     prof: cs.prof || {},
     attrs: cs.attrs || { ...character.attributes },
     abilities, cooldowns: {}, statuses: [], side: "player",
@@ -402,7 +404,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     ...clone(a), uid: `a${i}`, side: "player", statuses: a.statuses || [], cooldowns: a.cooldowns || {},
     actionsPerTurn: a.actionsPerTurn || 1, actionsLeft: a.actionsPerTurn || 1,
     speed: a.speed ?? 4, swiftChance: a.swiftChance || 0, reloadLeft: 0,
-    procs: a.procs || a.triggers?.procs || [], shield: 0, magicShield: 0, invuln: 0,
+    procs: a.procs || a.triggers?.procs || [], block: 0, shield: 0, magicShield: 0, invuln: 0,
   }));
 
   // A rider fights with their mount's bulk and speed under them — a charge bonus
@@ -437,7 +439,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     // minigame. Weapon/range identity remains in card requirements and damage.
     e.distance = 0;
     e.procs = e.procs || e.triggers?.procs || [];
-    e.shield = e.shield || 0; e.magicShield = e.magicShield || 0; e.invuln = e.invuln || 0;
+    e.block = e.block || 0; e.shield = e.shield || 0; e.magicShield = e.magicShield || 0; e.invuln = e.invuln || 0;
   });
   // How outmatched are they? Lower the nerve of foes who can see they're outclassed.
   const pThreat = playerThreat(player) + allies.reduce((s, a) => s + enemyThreat(a), 0);
@@ -566,6 +568,10 @@ function decrementCooldowns(actor) {
 }
 
 function beginTurnFor(cs, actor, { deckMode = false } = {}) {
+  // Block is tactical protection for one round: it covers the opposing phase,
+  // then falls away when this combatant begins acting again. Persistent item
+  // shields remain separate pools and are not cleared here.
+  actor.block = 0;
   // Observe turn-cancelling statuses before the normal start-of-turn expiry.
   // This makes duration:1 mean "skip the next turn" while leaving every other
   // status on the existing tick cadence.
@@ -856,15 +862,20 @@ function resolveHit(attacker, defender, profile) {
   // the identical line.
   if (defender.damageCap && defender.maxHealth) dmg = Math.min(dmg, Math.max(1, Math.round(defender.maxHealth * defender.damageCap)));
 
-  // Invulnerability turns the blow aside entirely; otherwise a shield pool soaks
-  // it before health (physical → shield, magical → magicShield).
-  let blocked = false, absorbed = 0;
-  if ((defender.invuln || 0) > 0) { blocked = true; dmg = 0; }
+  // Invulnerability turns the blow aside entirely. Tactical Block absorbs any
+  // direct hit next, then persistent typed shields catch what remains.
+  let invulnerable = false, blockAbsorbed = 0, shieldAbsorbed = 0;
+  if ((defender.invuln || 0) > 0) { invulnerable = true; dmg = 0; }
   else if (dmg > 0) {
+    if ((defender.block || 0) > 0) {
+      blockAbsorbed = Math.min(defender.block, dmg);
+      defender.block -= blockAbsorbed;
+      dmg -= blockAbsorbed;
+    }
     if (profile.type === "magical" && (defender.magicShield || 0) > 0) {
-      absorbed = Math.min(defender.magicShield, dmg); defender.magicShield -= absorbed; dmg -= absorbed;
+      shieldAbsorbed = Math.min(defender.magicShield, dmg); defender.magicShield -= shieldAbsorbed; dmg -= shieldAbsorbed;
     } else if (profile.type !== "magical" && (defender.shield || 0) > 0) {
-      absorbed = Math.min(defender.shield, dmg); defender.shield -= absorbed; dmg -= absorbed;
+      shieldAbsorbed = Math.min(defender.shield, dmg); defender.shield -= shieldAbsorbed; dmg -= shieldAbsorbed;
     }
   }
   // Damage deferral (dmgDefer): a share of the blow that WOULD land is held back
@@ -883,7 +894,17 @@ function resolveHit(attacker, defender, profile) {
 
   const typeTag = profile.type === "true" ? " true" : profile.type === "magical" ? " magical" : "";
   const critTag = crit ? " CRIT" : "";
-  const tail = blocked ? " — turned aside (invulnerable)." : (absorbed > 0 && dmg === 0) ? " — shielded." : dmg === 0 ? " — absorbed." : ".";
+  const absorption = [
+    blockAbsorbed > 0 ? `${blockAbsorbed} Block` : "",
+    shieldAbsorbed > 0 ? `${shieldAbsorbed} ${profile.type === "magical" ? "magic shield" : "shield"}` : "",
+  ].filter(Boolean).join(" + ");
+  const tail = invulnerable
+    ? " — turned aside (invulnerable)."
+    : absorption && dmg === 0
+      ? ` — ${absorption} absorb it.`
+      : absorption
+        ? ` — ${absorption} absorbed.`
+        : dmg === 0 ? " — absorbed." : ".";
   return { log: logEntry(`${attacker.name} hits ${defender.name} for ${dmg}${typeTag}${critTag}${tail}`, crit ? "crit" : "hit"), dmg, crit, dodged: false };
 }
 
@@ -1132,6 +1153,7 @@ function applySelfEffect(actor, effect) {
   // stays meaningful at every scale (a flat +16 is noise next to a raid's HP).
   const val = effect.pctMax ? Math.max(1, Math.round((actor.maxHealth || 0) * (effect.value || 0))) : (effect.value || 0);
   switch (effect.type) {
+    case "block":       actor.block = (actor.block || 0) + val; break;
     case "shield":      actor.shield = (actor.shield || 0) + val; break;
     case "magicShield": actor.magicShield = (actor.magicShield || 0) + val; break;
     case "invuln":      actor.invuln = Math.max(actor.invuln || 0, effect.duration || 1); break;
@@ -1240,6 +1262,7 @@ function intentForChoice(actor, choice, seq) {
   const profile = attackProfile(actor, def, tier, false);
   const hits = (def.hits || 1) + (choice.ability?.id === BASIC_ATTACK.id && actor.weapon?.paired ? 1 : 0);
   const estimated = choice.target && profile ? Math.max(0, Math.round(estimateHit(actor, def, tier, choice.target))) : 0;
+  const defensive = ["block", "shield", "magicShield", "invuln", "unstoppable"].includes(def.effect?.type);
   return {
     id: `${actor.uid}-r${seq}`,
     abilityId: choice.ability.id,
@@ -1247,9 +1270,10 @@ function intentForChoice(actor, choice, seq) {
     mode: choice.mode,
     targetUid: choice.target?.uid || null,
     name: def.name,
-    kind: profile ? "attack" : def.effect?.target === "enemy" ? "debuff" : "skill",
+    kind: profile ? "attack" : def.effect?.target === "enemy" ? "debuff" : defensive ? "defend" : "skill",
     damage: profile ? { min: profile.min, max: profile.max, type: profile.type, hits, estimated } : null,
     status: def.effect?.type || null,
+    effect: def.effect ? { ...def.effect } : null,
   };
 }
 
@@ -1471,9 +1495,11 @@ function tickStatuses(c) {
     logs.push(logEntry(`${c.name} suffers ${dot} from bleed/poison/burn.`, "status"));
   }
   const healAmt = sumStatus(c, "regen");
-  if (healAmt > 0 && c.health > 0) {
+  if (healAmt > 0 && c.health > 0 && !hasStatus(c, "poison")) {
     const got = gainHealth(c, healAmt);
     if (got > 0) logs.push(logEntry(`${c.name} recovers ${got}.`, "status"));
+  } else if (healAmt > 0 && c.health > 0 && hasStatus(c, "poison")) {
+    logs.push(logEntry(`${c.name}'s regeneration is suppressed by poison.`, "status"));
   }
   // Shield/ward-shield regenerate from affixes, capped at three turns' worth so a
   // pool can't accumulate without bound. Invulnerability counts down each turn.
@@ -1589,9 +1615,12 @@ export function playCard(cs0, cardUid, targetUid = null) {
   cs.targetUid = cs.enemies[cs.target]?.uid || cs.targetUid;
 
   cs.deck.hand = cs.deck.hand.filter((uid) => uid !== cardUid);
+  // Resolve draw before placing this card in its destination, so an empty draw
+  // pile cannot immediately reshuffle and redraw the card that created the draw.
+  if ((card.draw || 0) > 0) drawCardsInto(cs, card.draw);
   if (card.exhaust) cs.deck.exhaust.push(cardUid);
   else cs.deck.discard.push(cardUid);
-  cs.log.push(logEntry(`${card.name} → ${card.exhaust ? "exhaust" : "discard"}.`, "system"));
+  cs.log.push(logEntry(`${card.name} → ${card.exhaust ? "exhaust" : "discard"}${card.draw ? ` · draw ${card.draw}` : ""}.`, "system"));
   return cs;
 }
 
