@@ -43,14 +43,14 @@ function agingModeLabel(mode, ch) {
 // Two kinds of content: "lore" you discover in play, and the full "compendium"
 // catalogs that are always complete. The tabstrip divides them visually.
 const CODEX_TABS = [
-  { key: "characters",  label: "Characters",  group: "lore" },
-  { key: "races",       label: "Races",       group: "lore" },
-  { key: "professions", label: "Professions", group: "lore" },
-  { key: "items",       label: "Items",       group: "compendium" },
-  { key: "abilities",   label: "Abilities",   group: "compendium" },
-  { key: "passives",    label: "Passives",    group: "compendium" },
-  { key: "conditions",  label: "Conditions",  group: "reference" },
-  { key: "glossary",    label: "Glossary",    group: "reference" },
+  { key: "characters",  label: "Characters",  group: "lore",       icon: "users" },
+  { key: "races",       label: "Races",       group: "lore",       icon: "globe" },
+  { key: "professions", label: "Professions", group: "lore",       icon: "swords" },
+  { key: "items",       label: "Items",       group: "compendium", icon: "bag" },
+  { key: "abilities",   label: "Abilities",   group: "compendium", icon: "sparkle" },
+  { key: "passives",    label: "Passives",    group: "compendium", icon: "shield" },
+  { key: "conditions",  label: "Conditions",  group: "reference",  icon: "heart" },
+  { key: "glossary",    label: "Glossary",    group: "reference",  icon: "book" },
 ];
 
 // Reusable styles inside this view.
@@ -74,6 +74,42 @@ const serifInlineValue = {
   fontSize: "14px",
   color: colors.parchmentLight,
 };
+
+function portraitInitials(name) {
+  const words = String(name || "Unknown").replace(/^the\s+/i, "").trim().split(/\s+/);
+  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+}
+
+function portraitHue(id) {
+  const hash = [...String(id || "unknown")].reduce((total, char) => ((total * 31) + char.charCodeAt(0)) >>> 0, 0);
+  return 184 + (hash % 72);
+}
+
+function characterKindLabel(entry) {
+  if (entry.kind === "player") return "Player character";
+  if (entry.kind === "companion") return "Companion";
+  if (entry.kind === "mount") return "Mount";
+  return "Known character";
+}
+
+function CharacterPortrait({ entry }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const portrait = !imageFailed && typeof entry.portrait === "string" && entry.portrait.trim() ? entry.portrait : null;
+  return (
+    <div
+      className={`codex-entry__portrait${portrait ? " has-image" : " is-placeholder"}`}
+      data-portrait-slot={entry.id}
+      style={{ "--portrait-hue": portraitHue(entry.id) }}
+      role={portrait ? undefined : "img"}
+      aria-label={portrait ? undefined : `${entry.name} portrait placeholder`}
+    >
+      {portrait
+        ? <img src={portrait} alt={`${entry.name} portrait`} draggable="false" onError={() => setImageFailed(true)} />
+        : <><Icon name={entry.kind === "mount" ? "compass" : "user"} size={25} strokeWidth={1.25} /><strong>{portraitInitials(entry.name)}</strong></>}
+      <span aria-hidden="true" />
+    </div>
+  );
+}
 
 // ===========================================================================
 // ITEM CATALOG — the full gear table (EQUIPMENT + MATERIALS), grouped by content
@@ -729,78 +765,60 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
     ? [codex.races?.[entry.race]?.name || entry.race, entry.kind === "mount" ? entry.species : (codex.professions?.[entry.profession]?.name || entry.profession), originLabel(entry.origin)].filter(Boolean).join(" · ")
     : "";
   const trunc = (s, n = 100) => { const t = (s || "").trim(); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
-  const preview = metaLine || trunc(entry.description || narrativeAppearance || "");
+  const isCharacter = kind === "characters";
+  const summaryText = trunc(entry.description || narrativeAppearance || "", isCharacter ? 138 : 100);
+  const preview = isCharacter ? summaryText : (metaLine || summaryText);
+  const recordLabel = CODEX_TABS.find((tab) => tab.key === kind)?.label || kind;
+  const onToggle = (event) => {
+    if (event.altKey && isCharacter) {
+      event.preventDefault();
+      toggleAudit();
+      return;
+    }
+    setOpen((current) => !current);
+  };
 
   return (
-    <div style={{
-      padding: "14px 16px",
-      backgroundColor: "rgba(20, 29, 29, 0.75)",
-      backdropFilter: "blur(12px)",
-      border: `1px solid rgba(215, 167, 111, 0.18)`,
-      borderRadius: radius.control,
-      boxShadow: shadow.cardDeep,
-      color: colors.parchment,
-    }}>
-      <div
-        onClick={(e) => { if (e.altKey) { e.preventDefault(); toggleAudit(); } else { setOpen((o) => !o); } }}
-        title={kind === "characters" ? "Alt-click to toggle audit fields" : undefined}
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", cursor: "pointer" }}
-      >
-        <div style={{ display: "flex", alignItems: "baseline", gap: "7px", minWidth: 0 }}>
-          <span style={{ color: "rgba(215,167,111,0.5)", fontSize: "10px", flexShrink: 0 }}>{open ? "▾" : "▸"}</span>
-          <div style={{
-            fontFamily: fonts.serif, fontStyle: "italic",
-            fontSize: "17px", color: colors.parchmentLight,
-            textShadow: "0 1px 4px rgba(0,0,0,0.25)",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          }}>
-            {entry.name}
-          </div>
-          {audit && (
-            <span style={{ ...accentMeta, fontSize: "8px", color: "rgba(180, 140, 90, 0.7)", letterSpacing: "0.12em", flexShrink: 0 }}>·dev</span>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+    <article className={`codex-entry${isCharacter ? " codex-entry--character" : " codex-entry--record"}${open ? " is-open" : ""}`}>
+      <div className="codex-entry__header">
+        {isCharacter && <CharacterPortrait entry={entry} />}
+        <button
+          type="button"
+          className="codex-entry__summary"
+          onClick={onToggle}
+          title={isCharacter ? "Alt-click to toggle audit fields" : undefined}
+          aria-expanded={open}
+        >
+          <span className="codex-entry__eyebrow">{isCharacter ? (metaLine || characterKindLabel(entry)) : recordLabel}</span>
+          <span className="codex-entry__name-row">
+            <strong>{entry.name}</strong>
+            {audit && <span>Dev audit</span>}
+          </span>
+          <span className="codex-entry__badges">
+            {bondTier && (
+              <span style={{ "--badge-color": bondTier.color }}>
+                {bondTier.label} {(entry.relationship || 0) > 0 ? "+" : ""}{entry.relationship || 0}
+              </span>
+            )}
+            {entry.common && <span>Baseline</span>}
+            {entry.kind === "player" && <span>You</span>}
+            {kind === "skills" && typeof entry.rating === "number" && <span>Rating {entry.rating}</span>}
+          </span>
+          {!open && preview && <span className="codex-entry__preview">{preview}</span>}
+        </button>
+
+        <div className="codex-entry__actions">
           {onRename && (
-            <button onClick={(ev) => { ev.stopPropagation(); onRename(); }} style={{
-              fontSize: "9px", fontWeight: 800, letterSpacing: "0.06em", padding: "3px 9px", borderRadius: "8px",
-              color: "rgba(215,167,111,0.9)", border: "1px solid rgba(215,167,111,0.45)", backgroundColor: "rgba(215,167,111,0.1)",
-              cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
-            }}>Rename</button>
+            <button type="button" onClick={onRename}>Rename</button>
           )}
           {onScry && (
-            <button onClick={(ev) => { ev.stopPropagation(); onScry(); }} style={{
-              fontSize: "9px", fontWeight: 800, letterSpacing: "0.06em", padding: "3px 9px", borderRadius: "8px",
-              color: "#bfe3f2", border: "1px solid rgba(127,199,224,0.5)", backgroundColor: "rgba(127,199,224,0.12)",
-              cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
-            }}>Scry</button>
+            <button type="button" className="is-scry" onClick={onScry}>Scry</button>
           )}
-          {bondTier && (
-            <span style={{ fontSize: "9px", fontWeight: 800, padding: "2px 8px", borderRadius: "8px", color: bondTier.color, border: `1px solid ${bondTier.color}55`, backgroundColor: `${bondTier.color}14` }}>
-              {bondTier.label} {(entry.relationship || 0) > 0 ? "+" : ""}{entry.relationship || 0}
-            </span>
-          )}
-          {entry.common && <span style={{ ...subtleMeta, fontSize: "8px", letterSpacing: "0.12em" }}>Baseline</span>}
-          {entry.kind === "player" && <span style={{ ...accentMeta, fontSize: "8px" }}>You</span>}
-          {kind === "skills" && typeof entry.rating === "number" && (
-            <span style={{
-              fontSize: "10px", padding: "2px 8px",
-              backgroundColor: "rgba(215, 167, 111, 0.15)",
-              color: colors.parchmentLight,
-              border: `1px solid rgba(215, 167, 111, 0.3)`,
-              borderRadius: "8px",
-              fontFamily: fonts.serif, fontStyle: "italic",
-            }}>
-              Rating {entry.rating}
-            </span>
-          )}
+          <span className="codex-entry__chevron" aria-hidden="true">{open ? "−" : "+"}</span>
         </div>
       </div>
 
-      {!open && preview && (
-        <div onClick={() => setOpen(true)} style={{ fontSize: "10px", color: "rgba(237,228,208,0.5)", lineHeight: 1.4, marginTop: "4px", marginLeft: "17px", cursor: "pointer" }}>{preview}</div>
-      )}
-      {open && (<>
+      {open && (<div className="codex-entry__details">
 
       {kind === "characters" && (entry.race || entry.profession || entry.origin) && (
         <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginTop: "6px", marginBottom: "6px" }}>
@@ -909,8 +927,8 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename }) {
           </ul>
         </div>
       )}
-      </>)}
-    </div>
+      </div>)}
+    </article>
   );
 }
 
@@ -959,51 +977,44 @@ export function CodexView({ state, onClose, onScry, onRenameMount, embedded = fa
 
       {embedded && (
         <div className="codex-panel__intro">
-          <span aria-hidden="true"><Icon name="book" size={22} color={colors.gold} strokeWidth={1.4} /></span>
-          <div>
+          <span className="codex-panel__intro-icon" aria-hidden="true"><Icon name="book" size={21} color={colors.gold} strokeWidth={1.4} /></span>
+          <div className="codex-panel__intro-copy">
             <small>Living archive</small>
             <h3>Lore Codex</h3>
-            <p>People, places, relics, and rules gathered on the road.</p>
+            <p>People, lore, and hard-won knowledge gathered on the road.</p>
+          </div>
+          <div className="codex-panel__intro-count" aria-label={`${Object.keys(codex.characters || {}).length} known characters`}>
+            <strong>{Object.keys(codex.characters || {}).length}</strong>
+            <span>Known</span>
           </div>
         </div>
       )}
 
-      <div className="codex-view__tabs tabstrip" role="tablist" aria-label="Codex sections" style={{ display: "flex", overflowX: "auto", borderBottom: `1px solid rgba(215, 167, 111, 0.12)`, backgroundColor: "rgba(20, 29, 29, 0.95)", padding: "8px 12px", gap: "6px" }}>
-        {CODEX_TABS.map((tab, i) => {
+      <div className="codex-view__tabs" role="tablist" aria-label="Codex sections">
+        {CODEX_TABS.map((tab) => {
           const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
-          const divide = i > 0 && CODEX_TABS[i - 1].group !== tab.group; // lore | compendium
           return (
-            <React.Fragment key={tab.key}>
-              {divide && <div aria-hidden style={{ alignSelf: "stretch", width: "1px", backgroundColor: "rgba(215, 167, 111, 0.2)", margin: "3px 5px", flexShrink: 0 }} />}
-              <button
-                id={`codex-tab-${tab.key}`}
-                onClick={() => setActiveTab(tab.key)}
-                role="tab"
-                aria-selected={active}
-                aria-controls={`codex-panel-${tab.key}`}
-                tabIndex={active ? 0 : -1}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: radius.panelCompact,
-                  border: "1px solid",
-                  borderColor: active ? `rgba(215, 167, 111, 0.45)` : `rgba(215, 167, 111, 0.08)`,
-                  backgroundColor: active ? "rgba(215, 167, 111, 0.12)" : "rgba(10, 15, 15, 0.4)",
-                  color: active ? colors.parchmentLight : "rgba(215, 167, 111, 0.55)",
-                  textShadow: active ? "0 0 8px rgba(215, 167, 111, 0.4)" : "none",
-                  fontSize: "12px", fontWeight: 700,
-                  whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0,
-                  transition: "all 0.2s",
-                }}
-              >
-                {tab.label}{count > 0 ? ` · ${count}` : ""}
-              </button>
-            </React.Fragment>
+            <button
+              key={tab.key}
+              id={`codex-tab-${tab.key}`}
+              className={active ? "is-active" : ""}
+              data-group={tab.group}
+              onClick={() => setActiveTab(tab.key)}
+              role="tab"
+              aria-selected={active}
+              aria-controls={`codex-panel-${tab.key}`}
+              tabIndex={active ? 0 : -1}
+            >
+              <Icon name={tab.icon} size={15} strokeWidth={1.5} />
+              <span>{tab.label}</span>
+              {count > 0 && <strong>{count}</strong>}
+            </button>
           );
         })}
       </div>
 
-      <div className="codex-view__content" style={{ flex: 1, overflowY: embedded ? "visible" : "auto", padding: "16px 14px calc(env(safe-area-inset-bottom, 0px) + 24px) 14px", background: "linear-gradient(180deg, #111716 0%, #0b0f0e 100%)" }}>
+      <div className="codex-view__content" style={{ flex: 1, overflowY: embedded ? "visible" : "auto" }}>
         <div
           key={activeTab}
           id={`codex-panel-${activeTab}`}
@@ -1027,7 +1038,7 @@ export function CodexView({ state, onClose, onScry, onRenameMount, embedded = fa
             <span style={{ fontSize: "13px", color: "rgba(215, 167, 111, 0.3)" }}>Discover lore by wandering the realm.</span>
           </div>
         ) : (
-          <div className="fade-in" style={{ display: "flex", flexDirection: "column", gap: "7px" }}>
+          <div className={`codex-entry-list fade-in${activeTab === "characters" ? " is-characters" : ""}`}>
             {entries.map((e) => <CodexEntry key={e.id} entry={e} kind={activeTab} codex={codex}
               onScry={scryable && activeTab === "characters" && e.kind !== "player" && !partyIds.has(e.id) ? () => onScry(e.id) : null}
               onRename={onRenameMount && activeTab === "characters" && e.kind === "mount" ? () => onRenameMount(e.id) : null} />)}

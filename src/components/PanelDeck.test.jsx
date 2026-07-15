@@ -22,6 +22,8 @@ describe("PanelDeck", () => {
     expect(html).toContain("Codex");
     expect(html).not.toContain("Wanderer dossier");
     expect(html).not.toContain("Close character menu");
+    expect(html).toContain("choose a section · drag handle to close");
+    expect(html).not.toContain("swipe sections");
   });
 
   it("renders the living Codex inside the dossier instead of as a character action", () => {
@@ -34,8 +36,12 @@ describe("PanelDeck", () => {
     );
 
     expect(codexHtml).toContain("Lore Codex");
-    expect(codexHtml).toContain("People, places, relics, and rules gathered on the road.");
+    expect(codexHtml).toContain("People, lore, and hard-won knowledge gathered on the road.");
+    expect(codexHtml).toContain("codex-entry__portrait");
+    expect(codexHtml).toContain("portrait placeholder");
     expect(characterHtml).not.toContain("Open Codex");
+    expect(characterHtml).toContain("character-status-overview");
+    expect(characterHtml).toContain("Ready for the road");
   });
 
   it("snaps short pulls back and dismisses long or deliberate flicks", () => {

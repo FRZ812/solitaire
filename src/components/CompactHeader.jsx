@@ -1,7 +1,6 @@
 import React from "react";
 import { Icon } from "./Icon.jsx";
-import { headerButtonStyle } from "./primitives.jsx";
-import { colors, radius, fonts, metaStyle } from "./tokens.js";
+import { colors } from "./tokens.js";
 import { TERRAINS } from "../data/terrains.js";
 import { getTile, currentLocationName } from "../engine/world.js";
 import { standingNodeTile } from "../engine/place.js";
@@ -24,72 +23,28 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
   const monthAbbr = date.monthName.slice(0, 3);
 
   return (
-    <header className="compact-header" style={{
-      padding: "calc(env(safe-area-inset-top, 0px) + 8px) 12px 6px 12px",
-      display: "flex", alignItems: "center", gap: "9px",
-      color: colors.parchment,
-    }}>
-      {/* Date / time block — kept compact (full date is on the map). */}
-      <div className="compact-header__date" style={{
-        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-        width: "54px", height: "36px",
-        backgroundColor: "rgba(12, 42, 60, 0.6)",
-        border: `1px solid rgba(215, 167, 111, 0.28)`,
-        borderRadius: radius.panelCompact,
-        flexShrink: 0,
-        backdropFilter: "blur(14px)",
-        WebkitBackdropFilter: "blur(14px)",
-        boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.02)",
-        lineHeight: 1,
-      }} title={`${date.dayOfMonth} ${date.monthName}, ${date.year}`}>
-        <span style={{
-          ...metaStyle, fontSize: "8px", letterSpacing: "0.1em",
-          color: colors.gold, textShadow: "0 0 4px rgba(215, 167, 111, 0.2)",
-          whiteSpace: "nowrap",
-        }}>{date.dayOfMonth} {monthAbbr}</span>
-        <span style={{
-          fontFamily: fonts.serif, fontStyle: "italic",
-          fontSize: "14px", color: colors.parchment, marginTop: "2px",
-        }}>{time}</span>
+    <header className="compact-header">
+      <div className="compact-header__date" title={`${date.dayOfMonth} ${date.monthName}, ${date.year}`}>
+        <span><b>{date.dayOfMonth}</b> {monthAbbr}</span>
+        <time>{time}</time>
       </div>
 
-      {/* Scene title */}
-      <div className="compact-header__scene" style={{ flex: 1, minWidth: 0 }}>
-        <div className="compact-header__title" style={{
-          fontFamily: fonts.serif, fontStyle: "italic",
-          fontSize: "19px", color: colors.parchment, lineHeight: "1.05",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          textShadow: "0 2px 10px rgba(4,18,31,0.62)",
-        }}>
-          {sceneTitle}
-        </div>
-        <div className="compact-header__place" style={{
-          ...metaStyle, fontSize: "8px", letterSpacing: "0.14em",
-          color: "rgba(237, 228, 208, 0.72)", marginTop: "3px",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          textShadow: "0 1px 6px rgba(4,18,31,0.62)",
-        }}>
-          {terrainLabel} / {biomeLabel}
+      <div className="compact-header__scene">
+        <div className="compact-header__title">{sceneTitle}</div>
+        <div className="compact-header__place">
+          <span>{terrainLabel}</span><i aria-hidden="true" /><span>{biomeLabel}</span>
         </div>
       </div>
 
-      {/* Two buttons only: the Map, and the unified dossier deck (Company · Character ·
-          Abilities · Inventory · Codex). A party-count badge
-          rides the deck button so the company stays glanceable. */}
-      <div className="compact-header__actions" style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-        <button className="compact-header__action" onClick={onMap} style={headerButtonStyle} aria-label="Map"><Icon name="map" size={16} color={colors.gold} strokeWidth={1.8} /></button>
-        <button className="compact-header__action" onClick={onOpenDeck} style={{ ...headerButtonStyle, position: "relative" }} aria-label="Character, company, abilities, inventory, and codex">
+      <nav className="compact-header__actions" aria-label="World and dossier">
+        <button className="compact-header__action" onClick={onMap} aria-label="Map"><Icon name="map" size={17} color={colors.gold} strokeWidth={1.7} /></button>
+        <button className="compact-header__action" onClick={onOpenDeck} aria-label="Character, company, abilities, inventory, and codex">
           <Icon name="user" size={16} color={colors.gold} strokeWidth={1.8} />
           {partyCount > 0 && (
-            <span style={{
-              position: "absolute", top: "-4px", right: "-4px", minWidth: "16px", height: "16px",
-              padding: "0 4px", borderRadius: "999px", backgroundColor: colors.gold, color: colors.ink,
-              fontSize: "9px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
-            }}>{partyCount}</span>
+            <span className="compact-header__party-count">{partyCount}</span>
           )}
         </button>
-      </div>
+      </nav>
     </header>
   );
 }

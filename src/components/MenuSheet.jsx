@@ -33,6 +33,15 @@ function attributeProgress(score) {
   return { pct: Math.max(3, Math.min(100, pct)), note: `${next - score} to ${next}` };
 }
 
+function meterDetail(kind, value, max = 100) {
+  const pct = Math.max(0, Math.min(100, ((value || 0) / Math.max(1, max)) * 100));
+  if (pct <= 10) return "Critical";
+  if (pct <= 30) return "Low";
+  if (pct <= 60) return "Waning";
+  if (pct <= 85) return "Steady";
+  return ({ vitality: "Healthy", resolve: "Focused", hunger: "Fed", thirst: "Hydrated", sleep: "Rested" })[kind] || "Full";
+}
+
 function AttributeCard({ attrKey, score, active, onClick }) {
   const visual = ATTRIBUTE_VISUALS[attrKey];
   const progress = attributeProgress(score);
@@ -90,7 +99,6 @@ function ViewAll({ label, onClick }) {
 
 // Transparent button wrappers so existing display components become tappable.
 const bareBtn = { background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" };
-const barBtn = { ...bareBtn, width: "100%", textAlign: "left", display: "block" };
 
 // Hairline rule used to separate the sheet's major groups (identity /
 // stats / possessions / actions) so the section headers don't all read as
@@ -116,6 +124,8 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
   const codex = state.world.codex;
   const attrs = effectiveAttributes(state.character);
   const combat = deriveCombatStats(state.character, codex);
+  const conditions = state.character.conditions || [];
+  const needs = state.character.needs || { hunger: 100, thirst: 100, sleep: 100 };
   // Tap-to-explain: open a glossary entry, appending a LIVE line for the
   // concepts whose state actually varies (resolve regen and healing).
   const liveStyle = { fontSize: "12px", color: colors.parchmentMuted, background: "rgba(215,167,111,0.08)", border: "1px solid rgba(215,167,111,0.2)", borderRadius: radius.chip, padding: "6px 9px" };
@@ -143,39 +153,67 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
   return (
     <div className="menu-sheet deck-view" style={{ padding: "18px 16px 8px", display: "flex", flexDirection: "column", gap: "17px", color: colors.parchment }}>
 
-        {/* Conditions — surfaced first. Tap any to learn what it does. */}
-        <div>
-          <SectionHeader>Conditions</SectionHeader>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {state.character.conditions.length === 0
-              ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.5)", fontStyle: "italic" }}>None</span>
-              : state.character.conditions.map((c) => (
-                  <button key={condName(c)} onClick={() => setInfo(conditionInfo(condName(c)))} style={bareBtn}><ConditionPill cond={c} /></button>
-                ))}
+        {/* A single at-a-glance state card keeps conditions visually connected
+            to the pools they affect without flattening everything into bars. */}
+        <section className={`character-status-overview${conditions.length ? " has-conditions" : " is-clear"}`}>
+          <div className="character-status-overview__heading">
+            <div>
+              <small>Current state</small>
+              <h3>{conditions.length ? `${conditions.length} active ${conditions.length === 1 ? "condition" : "conditions"}` : "Ready for the road"}</h3>
+            </div>
+            <span>{conditions.length ? "Affected" : "Clear"}</span>
           </div>
-        </div>
+          <div className="character-condition-shelf">
+            <span className="character-condition-shelf__sigil" aria-hidden="true"><Icon name="shield" size={18} strokeWidth={1.55} /></span>
+            <div className="character-condition-shelf__copy">
+              <strong>Conditions</strong>
+              {conditions.length === 0
+                ? <p>No wounds, afflictions, or active boons.</p>
+                : (
+                  <div className="character-condition-shelf__pills">
+                    {conditions.map((c) => (
+                      <button key={condName(c)} onClick={() => setInfo(conditionInfo(condName(c)))} style={bareBtn}><ConditionPill cond={c} /></button>
+                    ))}
+                  </div>
+                )}
+            </div>
+          </div>
+        </section>
 
         {/* Vitals — light now lives in the always-visible HUD. */}
-        <div>
+        <div className="character-status-group">
           <SectionHeader>Vitals</SectionHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
-            <button onClick={() => showInfo("vitality")} style={barBtn}>
-              <StatBar label="Vitality" value={state.character.vitality} max={state.character.vitalityMax} />
+          <div className="status-meter-grid status-meter-grid--vitals">
+            <button className="status-meter-button" aria-label={`Learn about Vitality — ${Math.round(state.character.vitality)} of ${state.character.vitalityMax}`} onClick={() => showInfo("vitality")}>
+              <StatBar
+                label="Vitality" icon="heart" tone="vitality"
+                value={state.character.vitality} max={state.character.vitalityMax}
+                detail={meterDetail("vitality", state.character.vitality, state.character.vitalityMax)}
+              />
             </button>
-            <button onClick={() => showInfo("resolve")} style={barBtn}>
-              <StatBar label="Resolve" value={state.character.resolve} max={state.character.resolveMax}
-                       gradient="linear-gradient(90deg, #6d4a8a 0%, #a06fc4 100%)" />
+            <button className="status-meter-button" aria-label={`Learn about Resolve — ${Math.round(state.character.resolve)} of ${state.character.resolveMax}`} onClick={() => showInfo("resolve")}>
+              <StatBar
+                label="Resolve" icon="flame" tone="resolve"
+                value={state.character.resolve} max={state.character.resolveMax}
+                detail={meterDetail("resolve", state.character.resolve, state.character.resolveMax)}
+              />
             </button>
           </div>
         </div>
 
         {/* Needs — tap to learn */}
-        <div>
+        <div className="character-status-group">
           <SectionHeader>Needs</SectionHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: "9px" }}>
-            <button onClick={() => showInfo("hunger")} style={barBtn}><NeedBar label="Hunger" value={state.character.needs.hunger} /></button>
-            <button onClick={() => showInfo("thirst")} style={barBtn}><NeedBar label="Thirst" value={state.character.needs.thirst} /></button>
-            <button onClick={() => showInfo("sleep")} style={barBtn}><NeedBar label="Sleep" value={state.character.needs.sleep} /></button>
+          <div className="status-meter-grid status-meter-grid--needs">
+            <button className="status-meter-button" aria-label={`Learn about Hunger — ${Math.round(needs.hunger)} of 100`} onClick={() => showInfo("hunger")}>
+              <NeedBar label="Hunger" icon="drumstick" tone="hunger" value={needs.hunger} detail={meterDetail("hunger", needs.hunger)} />
+            </button>
+            <button className="status-meter-button" aria-label={`Learn about Thirst — ${Math.round(needs.thirst)} of 100`} onClick={() => showInfo("thirst")}>
+              <NeedBar label="Thirst" icon="droplet" tone="thirst" value={needs.thirst} detail={meterDetail("thirst", needs.thirst)} />
+            </button>
+            <button className="status-meter-button" aria-label={`Learn about Sleep — ${Math.round(needs.sleep)} of 100`} onClick={() => showInfo("sleep")}>
+              <NeedBar label="Sleep" icon="moon" tone="sleep" value={needs.sleep} detail={meterDetail("sleep", needs.sleep)} />
+            </button>
           </div>
         </div>
 

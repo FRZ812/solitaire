@@ -12,7 +12,8 @@ import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.w
 // The unified character deck: Company · Character · Abilities · Inventory ·
 // Codex as five pages of one
 // portrait-led bottom sheet, opened from a single header button (defaults to
-// Character). Swipe LEFT/RIGHT to move between sections, or use the tabs.
+// Character). Sections change only through the visible tabs so a horizontal
+// gesture never steals an ordinary scroll inside a page.
 const PAGES = ["party", "character", "abilities", "inventory", "codex"];
 const LABELS = { party: "Company", character: "Character", abilities: "Abilities", inventory: "Inventory", codex: "Codex" };
 const PAGE_ICONS = { party: "users", character: "user", abilities: "sparkle", inventory: "bag", codex: "book" };
@@ -27,8 +28,6 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
   const [inventoryTarget, setInventoryTarget] = useState("wanderer");
   const [dragging, setDragging] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [direction, setDirection] = useState(1);
-  const swipe = useRef(null);
   const grab = useRef(null);
   const scroll = useRef(null);
   const sheet = useRef(null);
@@ -37,14 +36,8 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
   const suppressHandleClick = useRef(false);
   const grabListeners = useRef(null);
 
-  const go = useCallback((dir) => {
-    setDirection(dir);
-    setPage((p) => (p + dir + PAGES.length) % PAGES.length);
-  }, []); // wraps around
-
   const selectPage = (next) => {
     if (next === page) return;
-    setDirection(next > page ? 1 : -1);
     setPage(next);
   };
 
@@ -78,12 +71,10 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
   useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === "Escape") requestClose();
-      if (event.key === "ArrowLeft" && event.altKey) go(-1);
-      if (event.key === "ArrowRight" && event.altKey) go(1);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [go, requestClose]);
+  }, [requestClose]);
 
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = 0;
@@ -91,32 +82,8 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
 
   const openInventory = (characterId) => {
     setInventoryTarget(characterId || "wanderer");
-    setDirection(1);
     setPage(PAGES.indexOf("inventory"));
   };
-
-  // The content area only owns horizontal page swipes. Vertical gestures remain
-  // native scrolling; dismissal is deliberately reserved for the top handle.
-  function onTouchStart(e) {
-    const t = e.touches[0];
-    swipe.current = { x: t.clientX, y: t.clientY, mode: null };
-  }
-  function onTouchMove(e) {
-    const s = swipe.current; if (!s) return;
-    const t = e.touches[0];
-    const dx = t.clientX - s.x, dy = t.clientY - s.y;
-    if (!s.mode) {
-      if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) s.mode = "swipe";
-      else if (Math.abs(dy) > 8) s.mode = "scroll";
-    }
-  }
-  function onTouchEnd(e) {
-    const s = swipe.current; swipe.current = null;
-    if (!s) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - s.x, dy = t.clientY - s.y;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) go(dx > 0 ? -1 : 1);
-  }
 
   // Pointer capture keeps the sheet attached to the finger even when it leaves
   // the narrow handle. Distance plus release velocity decide close vs snap-back.
@@ -219,9 +186,6 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
         <div
           ref={scroll}
           className="panel-deck__scroll no-scrollbar"
-          onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEnd}
         >
           <DossierHero state={state} page={page} onSelectPage={selectPage} />
           <div
@@ -230,7 +194,6 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
             className="panel-deck__active-page"
             role="tabpanel"
             aria-labelledby={`deck-tab-${activePage}`}
-            style={{ "--page-enter": `${direction * 18}px` }}
           >
             {activePage === "party" && (
               <PartyView state={state} onDismiss={handlers.onDismiss} onMount={handlers.onMount} onDismount={handlers.onDismount} onOpenInventory={openInventory} />
@@ -310,7 +273,7 @@ function DossierHero({ state, page, onSelectPage }) {
           </button>
         ))}
       </div>
-      <div className="dossier-hero__gesture">swipe sections · drag handle to close</div>
+      <div className="dossier-hero__gesture">choose a section · drag handle to close</div>
     </section>
   );
 }

@@ -11,16 +11,8 @@ function Thinking({ text }) {
   );
 }
 
-function Dots() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" />
-    </svg>
-  );
-}
-
-// Narration history is editable. Keep the unobtrusive menu affordance and the
-// long-press gesture even while the visual treatment changes.
+// Narration history remains editable through hold/right-click. The visible
+// ellipsis duplicated that gesture and crowded every bubble.
 function Pressable({ onMenu, children }) {
   const timer = React.useRef(null);
   const start = () => { timer.current = setTimeout(() => { timer.current = null; onMenu?.(); }, 480); };
@@ -29,7 +21,6 @@ function Pressable({ onMenu, children }) {
   return (
     <div className="beat-pressable" onTouchStart={start} onTouchEnd={cancel} onTouchMove={cancel} onContextMenu={(event) => { event.preventDefault(); onMenu(); }}>
       {children}
-      <button className="beat-menu" onClick={(event) => { event.stopPropagation(); onMenu(); }} aria-label="Edit, rewrite, or rewind this moment"><Dots /></button>
     </div>
   );
 }
