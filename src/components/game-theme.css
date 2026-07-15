@@ -1777,13 +1777,13 @@
 .codex-view__tabs [role="tab"] {
   position: relative;
   min-width: 0;
-  min-height: 52px;
-  padding: 6px 4px;
+  min-height: 68px;
+  padding: 7px 5px 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   color: rgba(191, 213, 214, 0.58);
   border: 1px solid rgba(191, 213, 214, 0.1);
   border-radius: 9px;
@@ -1795,7 +1795,19 @@
 
 .codex-view__tabs [role="tab"] svg,
 .codex-view__tabs [role="tab"] .game-icon { flex: 0 0 auto; color: rgba(231, 185, 94, 0.58); }
-.codex-view__tabs [role="tab"] > span {
+.codex-tab-icon-slot {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  margin-inline: auto;
+  overflow: hidden;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(14, 39, 55, .7), rgba(3, 11, 20, .9));
+  box-shadow: inset 0 0 0 1px rgba(231, 185, 94, .12), 0 4px 9px rgba(2, 7, 14, .28);
+}
+.codex-view__tabs [role="tab"] > .codex-tab-label {
   width: 100%;
   overflow: hidden;
   font-size: 8px;
@@ -1815,6 +1827,8 @@
 }
 
 .codex-tab-icon {
+  width: 34px !important;
+  height: 34px !important;
   filter: saturate(.78) brightness(.86);
   transition: filter .2s ease, transform .2s ease;
 }
@@ -1933,7 +1947,8 @@
   box-shadow: 0 8px 22px rgba(3, 7, 15, 0.2), inset 0 1px rgba(255, 255, 255, 0.035);
   box-sizing: border-box;
 }
-.codex-panel__intro-icon { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; color: var(--game-gold); border: 1px solid rgba(231, 185, 94, 0.3); border-radius: 10px; background: rgba(4, 9, 19, 0.38); }
+.codex-panel__intro-icon { width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center; align-self: center; color: var(--game-gold); border: 1px solid rgba(231, 185, 94, 0.3); border-radius: 10px; background: rgba(4, 9, 19, 0.38); }
+.codex-panel__intro-icon .game-icon { width: 28px !important; height: 28px !important; object-position: center; }
 .codex-panel__intro-copy { min-width: 0; flex: 1; }
 .codex-panel__intro small { color: rgba(231, 185, 94, 0.62); font-size: 7px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; }
 .codex-panel__intro h3 { margin: 2px 0 0; color: #fff8e5; font: italic 500 23px/1 "Instrument Serif", Georgia, serif; }

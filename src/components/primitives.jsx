@@ -267,7 +267,7 @@ export function VitalsStrip({ state, onExtinguish }) {
           ariaLabel={`Resolve ${character.resolve} of ${resMax}`}
         />
         <RadialMeter
-          iconName="bread"
+          iconName="hunger"
           value={needs.hunger} max={100}
           label={Math.round(needs.hunger)}
           ariaLabel={`Hunger ${Math.round(needs.hunger)} of 100`}

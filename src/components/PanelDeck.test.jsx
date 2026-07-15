@@ -41,10 +41,13 @@ describe("PanelDeck", () => {
     expect(codexHtml).toContain("portrait placeholder");
     expect(codexHtml).toContain('data-portrait-atlas="important"');
     expect(codexHtml).toContain('data-icon-key="codex:characters"');
+    expect(codexHtml).toContain("codex-tab-icon-slot");
     expect(codexHtml).toContain('aria-label="Search Codex characters"');
     expect(characterHtml).not.toContain("Open Codex");
     expect(characterHtml).toContain("character-status-overview");
     expect(characterHtml).toContain("Ready for the road");
+    expect(characterHtml).toContain('data-game-icon="hunger"');
+    expect(characterHtml).not.toContain("drumstick");
     expect(characterHtml).toContain("Upload portrait");
     expect(characterHtml).toContain("image/png,image/jpeg,image/webp");
   });
