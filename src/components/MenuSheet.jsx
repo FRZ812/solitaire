@@ -122,37 +122,8 @@ export function MenuSheet({ state, user, onReset, onOpenCodex, onBackToCampaigns
   const PREVIEW = 4;
 
   const showGuestNag = user?.is_anonymous && onLinkEmail;
-  const identityLine = [state.character.race, state.character.profession].filter(Boolean).join(" · ") || "Wanderer";
-
   return (
-    <div className="menu-sheet deck-view" style={{ padding: "2px 16px 8px", display: "flex", flexDirection: "column", gap: "15px", color: colors.parchment }}>
-        {/* Illustrated identity lockup. */}
-        <div className="character-hero">
-          <div className="character-hero__portrait" aria-hidden="true">
-            <span>{(state.character.name || "?").slice(0, 1).toUpperCase()}</span>
-            <i />
-          </div>
-          <div className="character-hero__copy">
-            <div className="character-hero__name" style={{
-              fontFamily: fonts.serif, fontStyle: "italic",
-              fontSize: "26px", color: colors.parchmentLight, lineHeight: 1.05,
-              textShadow: "0 2px 10px rgba(0,0,0,0.3)",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>
-              {state.character.name}
-            </div>
-            <div className="character-hero__meta">{identityLine}</div>
-            <div className="character-hero__bond" style={{
-              fontFamily: fonts.serif, fontStyle: "italic",
-              fontSize: "14px", lineHeight: "1.42",
-              color: colors.parchmentMuted,
-            }}>
-              {state.character.bond}
-            </div>
-          </div>
-        </div>
-
-        <Divider />
+    <div className="menu-sheet deck-view" style={{ padding: "18px 16px 8px", display: "flex", flexDirection: "column", gap: "17px", color: colors.parchment }}>
 
         {/* Conditions — surfaced first. Tap any to learn what it does. */}
         <div>

@@ -1,6 +1,6 @@
 import React from "react";
-import titleBackdrop from "../assets/generated/title-solitaire-twilight-v1.webp";
-import titleForeground from "../assets/generated/title-solitaire-foreground-v1.png";
+import titleBackdrop from "../assets/generated/title-solitaire-daylight-v2.webp";
+import titleForeground from "../assets/generated/title-solitaire-daylight-foreground-v2.png";
 import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
 
 const MOTES = [
@@ -13,7 +13,7 @@ const MOTES = [
  * high-definition oil-brush direction as the in-world region scenes.
  */
 export function InitialBackdrop() {
-  const backdropRef = useParallaxMotion({ strength: 1 });
+  const backdropRef = useParallaxMotion({ strength: 1.15 });
 
   return (
     <div ref={backdropRef} className="initial-backdrop" aria-hidden="true">
@@ -21,7 +21,7 @@ export function InitialBackdrop() {
         <img className="initial-backdrop__art" src={titleBackdrop} alt="" draggable="false" />
       </div>
       <div className="initial-backdrop__layer initial-backdrop__layer--mid">
-        <img className="initial-backdrop__art" src={titleBackdrop} alt="" draggable="false" />
+        <div className="initial-backdrop__atmosphere" />
       </div>
       <div className="initial-backdrop__sky" />
       <div className="initial-backdrop__shade" />
