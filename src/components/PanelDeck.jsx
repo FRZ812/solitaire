@@ -4,28 +4,37 @@ import { glass, shadow } from "./tokens.js";
 import { PartyView } from "./PartyView.jsx";
 import { MenuSheet } from "./MenuSheet.jsx";
 import { InventoryView } from "./InventoryView.jsx";
-import { MotionPermissionButton } from "./MotionPermissionButton.jsx";
+import { ArsenalView } from "./ArsenalView.jsx";
 import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
 import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.webp";
 
-// The unified character deck: Company · Character · Inventory as three pages of one
+// The unified character deck: Company · Character · Abilities · Inventory as
+// four pages of one
 // portrait-led bottom sheet, opened from a single header button (defaults to
 // Character). Swipe LEFT/RIGHT to move between sections, or use the tabs.
-//
-// Order matters: Company sits LEFT of Character, Inventory RIGHT (per the brief).
-const PAGES = ["party", "character", "inventory"];
-const LABELS = { party: "Company", character: "Character", inventory: "Inventory" };
-const PAGE_ICONS = { party: "users", character: "user", inventory: "bag" };
+const PAGES = ["party", "character", "abilities", "inventory"];
+const LABELS = { party: "Company", character: "Character", abilities: "Abilities", inventory: "Inventory" };
+const PAGE_ICONS = { party: "users", character: "user", abilities: "sparkle", inventory: "bag" };
+
+export function shouldDismissPanel(pulled, velocity) {
+  return pulled > 88 || (pulled > 18 && velocity > 0.55);
+}
 
 export function PanelDeck({ state, user, initialPage = "character", onClose, handlers }) {
   const requestedPage = PAGES.indexOf(initialPage);
-  const [page, setPage] = useState(requestedPage === -1 ? 1 : requestedPage);
+  const [page, setPage] = useState(requestedPage === -1 ? PAGES.indexOf("character") : requestedPage);
   const [inventoryTarget, setInventoryTarget] = useState("wanderer");
-  const [dragY, setDragY] = useState(0); // live downward pull on the grab handle
+  const [dragging, setDragging] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [direction, setDirection] = useState(1);
   const swipe = useRef(null);
   const grab = useRef(null);
   const scroll = useRef(null);
+  const sheet = useRef(null);
+  const dragY = useRef(0);
+  const closeTimer = useRef(null);
+  const suppressHandleClick = useRef(false);
+  const grabListeners = useRef(null);
 
   const go = useCallback((dir) => {
     setDirection(dir);
@@ -38,15 +47,42 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
     setPage(next);
   };
 
+  const requestClose = useCallback(() => {
+    if (closing) return;
+    setDragging(false);
+    setClosing(true);
+    window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(onClose, 420);
+  }, [closing, onClose]);
+
+  const writeDragY = useCallback((value) => {
+    dragY.current = value;
+    sheet.current?.style.setProperty("--panel-drag-y", `${value}px`);
+  }, []);
+
+  const detachGrabListeners = useCallback(() => {
+    const listeners = grabListeners.current;
+    if (!listeners) return;
+    window.removeEventListener("pointermove", listeners.move);
+    window.removeEventListener("pointerup", listeners.end);
+    window.removeEventListener("pointercancel", listeners.cancel);
+    grabListeners.current = null;
+  }, []);
+
+  useEffect(() => () => {
+    window.clearTimeout(closeTimer.current);
+    detachGrabListeners();
+  }, [detachGrabListeners]);
+
   useEffect(() => {
     const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") requestClose();
       if (event.key === "ArrowLeft" && event.altKey) go(-1);
       if (event.key === "ArrowRight" && event.altKey) go(1);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [go, onClose]);
+  }, [go, requestClose]);
 
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = 0;
@@ -58,13 +94,11 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
     setPage(PAGES.indexOf("inventory"));
   };
 
-  // One gesture handler for the whole content area. A mostly-horizontal swipe
-  // changes page (snap, loops). A downward pull that STARTS at the top of a page
-  // dismisses the sheet (so you can fling it away from anywhere, not just the
-  // grab handle); otherwise the touch falls through to normal content scroll.
+  // The content area only owns horizontal page swipes. Vertical gestures remain
+  // native scrolling; dismissal is deliberately reserved for the top handle.
   function onTouchStart(e) {
     const t = e.touches[0];
-    swipe.current = { x: t.clientX, y: t.clientY, atTop: !scroll.current || scroll.current.scrollTop <= 0, mode: null };
+    swipe.current = { x: t.clientX, y: t.clientY, mode: null };
   }
   function onTouchMove(e) {
     const s = swipe.current; if (!s) return;
@@ -72,84 +106,113 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
     const dx = t.clientX - s.x, dy = t.clientY - s.y;
     if (!s.mode) {
       if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) s.mode = "swipe";
-      else if (dy > 8 && s.atTop) s.mode = "pull";
       else if (Math.abs(dy) > 8) s.mode = "scroll";
     }
-    if (s.mode === "pull") setDragY(Math.max(0, dy));
   }
   function onTouchEnd(e) {
     const s = swipe.current; swipe.current = null;
     if (!s) return;
-    if (s.mode === "pull") { const pulled = dragY; setDragY(0); if (pulled > 64) onClose(); return; }
     const t = e.changedTouches[0];
     const dx = t.clientX - s.x, dy = t.clientY - s.y;
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) go(dx > 0 ? -1 : 1);
   }
 
-  // Pull DOWN on the grab handle to dismiss — the sheet follows the finger and
-  // closes if pulled far enough, else snaps back (the "pull away" the brief asks for).
-  function onGrabStart(e) { const t = e.touches[0]; grab.current = { x: t.clientX, y: t.clientY }; }
-  function onGrabMove(e) {
-    const s = grab.current; if (!s) return;
-    const dy = e.touches[0].clientY - s.y;
-    if (dy > 0) setDragY(dy);
+  // Pointer capture keeps the sheet attached to the finger even when it leaves
+  // the narrow handle. Distance plus release velocity decide close vs snap-back.
+  function onGrabStart(event) {
+    if (!event.isPrimary) return;
+    detachGrabListeners();
+    try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* window listeners remain the fallback */ }
+    grab.current = {
+      pointerId: event.pointerId,
+      target: event.currentTarget,
+      startY: event.clientY,
+      lastY: event.clientY,
+      lastAt: event.timeStamp,
+      velocity: 0,
+      moved: false,
+    };
+    suppressHandleClick.current = false;
+    setDragging(true);
+    writeDragY(0);
+
+    const listeners = {
+      move: (nativeEvent) => onGrabMove(nativeEvent),
+      end: (nativeEvent) => onGrabEnd(nativeEvent),
+      cancel: (nativeEvent) => onGrabCancel(nativeEvent),
+    };
+    grabListeners.current = listeners;
+    window.addEventListener("pointermove", listeners.move, { passive: false });
+    window.addEventListener("pointerup", listeners.end);
+    window.addEventListener("pointercancel", listeners.cancel);
   }
-  function onGrabEnd() {
-    const pulled = dragY;
+  function onGrabMove(event) {
+    const gesture = grab.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (event.cancelable) event.preventDefault();
+    const nextY = Math.max(0, event.clientY - gesture.startY);
+    const elapsed = Math.max(1, event.timeStamp - gesture.lastAt);
+    gesture.velocity = (event.clientY - gesture.lastY) / elapsed;
+    gesture.lastY = event.clientY;
+    gesture.lastAt = event.timeStamp;
+    gesture.moved ||= nextY > 6;
+    suppressHandleClick.current ||= gesture.moved;
+    writeDragY(nextY);
+  }
+  function onGrabEnd(event) {
+    const gesture = grab.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const pulled = Math.max(0, gesture.lastY - gesture.startY);
+    const shouldClose = shouldDismissPanel(pulled, gesture.velocity);
+    detachGrabListeners();
+    try { gesture.target?.releasePointerCapture?.(event.pointerId); } catch { /* pointer may already be released */ }
     grab.current = null;
-    setDragY(0);
-    if (pulled > 64) onClose();
+    setDragging(false);
+    if (shouldClose) requestClose();
+    else writeDragY(0);
+    window.setTimeout(() => { suppressHandleClick.current = false; }, 0);
   }
+  function onGrabCancel(event) {
+    if (event && grab.current && grab.current.pointerId !== event.pointerId) return;
+    detachGrabListeners();
+    grab.current = null;
+    setDragging(false);
+    writeDragY(0);
+  }
+
+  const activePage = PAGES[page];
 
   return (
     <div
-      className="panel-deck-backdrop"
-      onClick={onClose}
+      className={`panel-deck-backdrop${closing ? " is-closing" : ""}`}
+      onClick={requestClose}
       role="presentation"
-      style={{
-        position: "absolute", inset: 0, zIndex: 20,
-        backgroundColor: "rgba(11, 15, 14, 0.65)", backdropFilter: "blur(6px)",
-        display: "flex", flexDirection: "column", justifyContent: "flex-end",
-      }}
     >
       <div
-        className="panel-deck slide-up"
+        ref={sheet}
+        className={`panel-deck${dragging ? " is-dragging" : ""}${closing ? " is-closing" : ""}`}
         onClick={(e) => e.stopPropagation()}
-        data-page={PAGES[page]}
+        onTransitionEnd={(event) => {
+          if (closing && event.target === event.currentTarget && event.propertyName === "transform") onClose();
+        }}
+        data-page={activePage}
         role="dialog"
         aria-modal="true"
-        aria-label={`${LABELS[PAGES[page]]} menu`}
+        aria-label={`${LABELS[activePage]} menu`}
         style={{
-          width: "100%", maxWidth: "480px", margin: "0 auto",
-          height: "96dvh",
-          backgroundColor: "rgba(20, 29, 29, 0.94)",
-          border: "1px solid rgba(215, 167, 111, 0.22)", borderBottom: "none",
-          borderTopLeftRadius: "24px", borderTopRightRadius: "24px",
-          display: "flex", flexDirection: "column",
-          transform: dragY ? `translateY(${dragY}px)` : undefined,
-          transition: dragY ? "none" : "transform 0.25s cubic-bezier(0.16,1,0.3,1)",
+          "--panel-drag-y": "0px",
           ...glass, boxShadow: shadow.sheet,
         }}
       >
-        {/* Minimal sheet chrome: the illustrated dossier owns the hierarchy. */}
-        <div className="panel-deck__chrome"
-          onTouchStart={onGrabStart}
-          onTouchMove={onGrabMove}
-          onTouchEnd={onGrabEnd}
-          style={{ flexShrink: 0, cursor: "grab", touchAction: "none" }}
-        >
-          <div className="panel-deck__grab" aria-hidden="true">
-            <span />
-          </div>
-          <div className="panel-deck__chrome-row">
-            <span>Wanderer dossier</span>
-            <div>
-              <MotionPermissionButton compact />
-              <button type="button" className="panel-deck__close" onClick={onClose} aria-label="Close character menu">
-                <Icon name="x" size={16} strokeWidth={1.7} />
-              </button>
-            </div>
-          </div>
+        {/* The handle is the only sheet chrome and the only dismiss control. */}
+        <div className="panel-deck__chrome">
+          <button
+            type="button"
+            className="panel-deck__grab"
+            aria-label="Drag down or tap to close menu"
+            onClick={() => { if (!suppressHandleClick.current) requestClose(); }}
+            onPointerDown={onGrabStart}
+          ><span /></button>
         </div>
 
         <div
@@ -161,26 +224,28 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
         >
           <DossierHero state={state} page={page} onSelectPage={selectPage} />
           <div
-            key={PAGES[page]}
-            id={`deck-page-${PAGES[page]}`}
+            key={activePage}
+            id={`deck-page-${activePage}`}
             className="panel-deck__active-page"
             role="tabpanel"
-            aria-labelledby={`deck-tab-${PAGES[page]}`}
+            aria-labelledby={`deck-tab-${activePage}`}
             style={{ "--page-enter": `${direction * 18}px` }}
           >
-            {page === 0 && (
+            {activePage === "party" && (
               <PartyView state={state} onDismiss={handlers.onDismiss} onMount={handlers.onMount} onDismount={handlers.onDismount} onOpenInventory={openInventory} />
             )}
-            {page === 1 && (
+            {activePage === "character" && (
               <MenuSheet
                 state={state} user={user}
                 onReset={handlers.onReset} onOpenCodex={handlers.onOpenCodex}
                 onBackToCampaigns={handlers.onBackToCampaigns} onSignOut={handlers.onSignOut}
                 onLinkEmail={handlers.onLinkEmail} onExtinguish={handlers.onExtinguish}
-                onCastBuff={handlers.onCastBuff}
               />
             )}
-            {page === 2 && (
+            {activePage === "abilities" && (
+              <ArsenalView state={state} onCastBuff={handlers.onCastBuff} />
+            )}
+            {activePage === "inventory" && (
               <InventoryView
                 state={state}
                 onEquip={handlers.onEquip} onUnequip={handlers.onUnequip} onUse={handlers.onUse}
@@ -236,7 +301,7 @@ function DossierHero({ state, page, onSelectPage }) {
           </button>
         ))}
       </div>
-      <div className="dossier-hero__gesture">swipe sections · pull down to close</div>
+      <div className="dossier-hero__gesture">swipe sections · drag handle to close</div>
     </section>
   );
 }

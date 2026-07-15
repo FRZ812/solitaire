@@ -1,123 +1,169 @@
 import React, { useState } from "react";
-import { createPortal } from "react-dom";
 import { Icon } from "./Icon.jsx";
-import { iconButtonStyle, SectionHeader } from "./primitives.jsx";
-import { colors, radius, fonts, metaStyle, glass, shadow } from "./tokens.js";
+import { SectionHeader } from "./primitives.jsx";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { getAbilityDef, abilityStatLine, abilityReqLine } from "../data/abilities.js";
 import { PROFICIENCIES, ratingFromXp, proficiencyDef } from "../data/proficiencies.js";
+import { knownBuffSpells } from "../data/buff-spells.js";
+import { knownTravelSpells } from "../data/travel-spells.js";
+import { condNames } from "../data/conditions.js";
 import { ATTR_LABELS } from "../config.js";
 
 const CORE = new Set(["basic-attack", "defend", "talk"]);
 
-// One ability — collapsed shows its real combat stat line (damage at this grade,
-// pen, status rider, target, cost); tap to reveal the requirement and full prose.
-function AbilityCard({ a, def }) {
+function AbilityCard({ ability, definition }) {
   const [open, setOpen] = useState(false);
-  const c = tierColor(a.tier);
-  const stat = abilityStatLine(def, a.tier);
-  const req = abilityReqLine(def);
+  const tone = tierColor(ability.tier);
+  const stat = abilityStatLine(definition, ability.tier);
+  const requirement = abilityReqLine(definition);
+
   return (
-    <div onClick={() => setOpen((o) => !o)} style={{
-      display: "flex", alignItems: "flex-start", gap: "10px",
-      padding: "9px 11px", borderRadius: radius.chip, cursor: "pointer",
-      backgroundColor: "rgba(20,29,29,0.5)", border: `1px solid ${a.tier === "common" ? "rgba(215,167,111,0.14)" : c}`,
-    }}>
-      <Icon name={def.icon || "swords"} size={14} color={c} strokeWidth={1.8} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: "7px", flexWrap: "wrap" }}>
-          <span style={{ fontSize: "13px", fontWeight: 700, color: colors.parchment }}>{def.name}</span>
-          {a.tier !== "common" && <span style={{ fontSize: "8px", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: c }}>{tierLabel(a.tier)}</span>}
-          <span style={{ fontSize: "8px", color: "rgba(237,228,208,0.4)", textTransform: "uppercase", letterSpacing: "0.1em" }}>{def.school}</span>
-        </div>
-        {stat && <div style={{ fontSize: "9.5px", color: "rgba(237,228,208,0.62)", letterSpacing: "0.02em", marginTop: "3px" }}>{stat}</div>}
-        {req && <div style={{ fontSize: "9px", color: "rgba(127,199,224,0.8)", letterSpacing: "0.02em", marginTop: "2px" }}>{req}</div>}
-        {open && def.desc && <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.85)", lineHeight: 1.4, marginTop: "5px" }}>{def.desc}</div>}
-      </div>
-      <span style={{ fontSize: "10px", color: "rgba(215,167,111,0.45)", flexShrink: 0, marginTop: "1px" }}>{open ? "▾" : "▸"}</span>
-    </div>
+    <button
+      type="button"
+      className={`arsenal-card${open ? " is-open" : ""}`}
+      onClick={() => setOpen((value) => !value)}
+      aria-expanded={open}
+      style={{ "--arsenal-tone": tone }}
+    >
+      <span className="arsenal-card__icon" aria-hidden="true">
+        <Icon name={definition.icon || "swords"} size={16} color={tone} strokeWidth={1.8} />
+      </span>
+      <span className="arsenal-card__body">
+        <span className="arsenal-card__title">
+          <strong>{definition.name}</strong>
+          {ability.tier !== "common" && <em style={{ color: tone }}>{tierLabel(ability.tier)}</em>}
+          <small>{definition.school}</small>
+        </span>
+        {stat && <span className="arsenal-card__stat">{stat}</span>}
+        {requirement && <span className="arsenal-card__requirement">{requirement}</span>}
+        {open && definition.desc && <span className="arsenal-card__description">{definition.desc}</span>}
+      </span>
+      <span className="arsenal-card__chevron" aria-hidden="true">{open ? "−" : "+"}</span>
+    </button>
   );
 }
 
-// Full list of the character's abilities + proficiencies, sorted by tier /
-// rating (highest first). Opened from the character panel so the panel itself
-// stays a tidy preview.
-export function ArsenalView({ character, onClose }) {
-  const learned = (character.abilities || []).map((a) => (typeof a === "string" ? { id: a, tier: "common" } : { id: a.id, tier: a.tier || "common" }));
-  const abilities = [...learned, ...[...CORE].map((id) => ({ id, tier: "common" }))]
-    .filter((a) => { const d = getAbilityDef(a.id); return d && !d.noncombat; }) // travel spells aren't combat arsenal
-    .sort((a, b) => tierOrder(b.tier) - tierOrder(a.tier));
-
-  const profs = PROFICIENCIES
-    .map((p) => ({ ...p, xp: character.proficiencies?.[p.id] || 0, rating: ratingFromXp(character.proficiencies?.[p.id] || 0) }))
-    .filter((p) => p.xp > 0)
-    .sort((a, b) => b.rating - a.rating || b.xp - a.xp);
-
-  // Rendered through a portal to document.body so it overlays the whole viewport.
-  // (Inside the panel deck it would otherwise be sized against the transformed,
-  // 300%-wide page track — same bug ItemDetail fixed — making the sheet stretch
-  // beyond the visible area and clipping the abilities list. See PanelDeck.jsx.)
-  return createPortal(
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, zIndex: 50,
-      backgroundColor: "rgba(8, 12, 12, 0.86)", backdropFilter: "blur(8px)",
-      display: "flex", flexDirection: "column", justifyContent: "flex-end",
-    }}>
-      <div onClick={(e) => e.stopPropagation()} className="slide-up custom-scroll" style={{
-        width: "100%", maxWidth: "480px", margin: "0 auto",
-        backgroundColor: "rgba(20, 29, 29, 0.96)",
-        border: `1px solid rgba(215, 167, 111, 0.22)`, borderBottom: "none",
-        borderTopLeftRadius: "24px", borderTopRightRadius: "24px",
-        padding: "18px 20px calc(env(safe-area-inset-bottom, 0px) + 22px) 20px",
-        maxHeight: "88dvh", overflowY: "auto", ...glass, boxShadow: shadow.sheet, color: colors.parchment,
-        display: "flex", flexDirection: "column", gap: "14px",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "22px", color: colors.parchmentLight }}>Arsenal</div>
-          <button onClick={onClose} aria-label="Close" style={{ ...iconButtonStyle, width: "30px", height: "30px", backgroundColor: "rgba(215,167,111,0.08)", border: `1px solid rgba(215,167,111,0.2)` }}>
-            <Icon name="x" size={13} color={colors.parchmentMuted} strokeWidth={2} />
-          </button>
+function SpellCard({ spell, kind, active, affordable, onCast }) {
+  const canCastHere = kind === "boon" && onCast;
+  return (
+    <article className={`spell-card spell-card--${kind}${active ? " is-active" : ""}`}>
+      <div className="spell-card__sigil" aria-hidden="true">
+        <Icon name={spell.icon || "sparkle"} size={18} strokeWidth={1.45} />
+      </div>
+      <div className="spell-card__copy">
+        <div className="spell-card__title">
+          <strong>{spell.name}</strong>
+          <span>{kind === "travel" ? "Travel" : active ? "Active boon" : "Boon"}</span>
         </div>
-
-        <div>
-          <SectionHeader>Abilities</SectionHeader>
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            {abilities.map((a, i) => {
-              const def = getAbilityDef(a.id);
-              return <AbilityCard key={`${a.id}-${i}`} a={a} def={def} />;
-            })}
-          </div>
-        </div>
-
-        <div>
-          <SectionHeader>Proficiencies</SectionHeader>
-          {profs.length === 0
-            ? <div style={{ fontSize: "12px", color: "rgba(237,228,208,0.45)", fontStyle: "italic" }}>None yet — fight, cast, and survive to improve.</div>
-            : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
-                {profs.map((p) => (
-                  <div key={p.id} style={{
-                    display: "flex", alignItems: "center", gap: "8px",
-                    padding: "8px 10px", borderRadius: radius.chip,
-                    backgroundColor: "rgba(20,29,29,0.5)", border: `1px solid rgba(215,167,111,0.16)`,
-                  }}>
-                    <div style={{
-                      width: "26px", height: "26px", borderRadius: "8px", flexShrink: 0,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      backgroundColor: "rgba(215,167,111,0.1)", border: `1px solid rgba(215,167,111,0.28)`,
-                      fontFamily: fonts.serif, fontStyle: "italic", fontSize: "15px", color: colors.gold,
-                    }}>{p.rating}</div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "12px", fontWeight: 700, color: colors.parchment, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                      <div style={{ fontSize: "8px", color: "rgba(237,228,208,0.45)", textTransform: "uppercase", letterSpacing: "0.08em" }}>feeds {ATTR_LABELS[proficiencyDef(p.id)?.attr] || ""}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+        <p>{spell.description || spell.desc}</p>
+        <div className="spell-card__meta">
+          <span>{spell.school}</span>
+          <span>{spell.resolveCost} resolve</span>
+          {kind === "travel" && <span>Cast from map</span>}
         </div>
       </div>
-    </div>,
-    document.body,
+      {canCastHere && (
+        <button
+          type="button"
+          className="spell-card__cast"
+          disabled={!affordable}
+          onClick={() => onCast(spell.id)}
+        >
+          {active ? "Renew" : "Cast"}
+        </button>
+      )}
+    </article>
+  );
+}
+
+// Dedicated deck page for combat techniques, learned magic, and mastery.
+// Casting travel spells stays on the map because each one needs a destination.
+export function ArsenalView({ state, onCastBuff }) {
+  const character = state.character;
+  const learned = (character.abilities || []).map((ability) => (
+    typeof ability === "string"
+      ? { id: ability, tier: "common" }
+      : { id: ability.id, tier: ability.tier || "common" }
+  ));
+  const abilities = [...new Map(
+    [...[...CORE].map((id) => ({ id, tier: "common" })), ...learned]
+      .map((ability) => [ability.id, ability]),
+  ).values()]
+    .filter((ability) => {
+      const definition = getAbilityDef(ability.id);
+      return definition && !definition.noncombat;
+    })
+    .sort((a, b) => tierOrder(b.tier) - tierOrder(a.tier));
+
+  const boons = knownBuffSpells(character);
+  const travelSpells = knownTravelSpells(character);
+  const activeConditions = new Set(condNames(character.conditions || []));
+  const proficiencies = PROFICIENCIES
+    .map((proficiency) => ({
+      ...proficiency,
+      xp: character.proficiencies?.[proficiency.id] || 0,
+      rating: ratingFromXp(character.proficiencies?.[proficiency.id] || 0),
+    }))
+    .filter((proficiency) => proficiency.xp > 0)
+    .sort((a, b) => b.rating - a.rating || b.xp - a.xp);
+
+  return (
+    <div className="arsenal-view deck-view">
+      <div className="arsenal-hero">
+        <div className="arsenal-hero__icon" aria-hidden="true"><Icon name="sparkle" size={24} strokeWidth={1.4} /></div>
+        <div>
+          <h3>Abilities &amp; Spells</h3>
+          <p>Techniques · magic · mastery</p>
+        </div>
+      </div>
+
+      <section>
+        <SectionHeader>Combat abilities · {abilities.length}</SectionHeader>
+        <div className="arsenal-list">
+          {abilities.map((ability, index) => {
+            const definition = getAbilityDef(ability.id);
+            return <AbilityCard key={`${ability.id}-${index}`} ability={ability} definition={definition} />;
+          })}
+        </div>
+      </section>
+
+      <section>
+        <SectionHeader>Spells · {boons.length + travelSpells.length}</SectionHeader>
+        {boons.length + travelSpells.length === 0 ? (
+          <div className="arsenal-empty">No spells learned yet. Grimoires and teachers can awaken new magic.</div>
+        ) : (
+          <div className="spell-list">
+            {boons.map((spell) => (
+              <SpellCard
+                key={spell.id}
+                spell={spell}
+                kind="boon"
+                active={activeConditions.has(spell.applies.condition)}
+                affordable={(character.resolve ?? 0) >= spell.resolveCost}
+                onCast={onCastBuff}
+              />
+            ))}
+            {travelSpells.map((spell) => <SpellCard key={spell.id} spell={spell} kind="travel" />)}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <SectionHeader>Mastery</SectionHeader>
+        {proficiencies.length === 0 ? (
+          <div className="arsenal-empty">Practice in the field to establish your first mastery.</div>
+        ) : (
+          <div className="mastery-grid">
+            {proficiencies.map((proficiency) => (
+              <div key={proficiency.id} className="mastery-card">
+                <span>{proficiency.name}</span>
+                <strong>{proficiency.rating}</strong>
+                <small>feeds {ATTR_LABELS[proficiencyDef(proficiency.id)?.attr] || "growth"}</small>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
