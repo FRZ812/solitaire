@@ -94,3 +94,40 @@ export function lightStatus(state) {
   if (ambientDark(state)) return { lit: false, dark: true, text: "in darkness" };
   return { lit: false, dark: false, text: "daylight" };
 }
+
+// Stealth-facing interpretation of the same light rules. This is intentionally
+// distinct from lightStatus: the HUD should answer "can they see me?", while
+// the inventory/menu still needs to answer "what is lighting this place?".
+export function visibilityStatus(state) {
+  const source = lightSource(state);
+  const minutes = lightMinutes(state);
+  const sourceName = source ? `${source.charAt(0).toUpperCase()}${source.slice(1)}` : "Flame";
+
+  if (isBeacon(state)) {
+    return {
+      obscurity: "revealed",
+      label: "Revealed",
+      detail: `${sourceName} · ${minutes}m`,
+      icon: "eye",
+      canExtinguish: true,
+    };
+  }
+
+  if (isHidden(state)) {
+    return {
+      obscurity: "heavy",
+      label: "Obscured",
+      detail: inTheDark(state) ? "Hidden · sight impaired" : "Hidden · darkvision",
+      icon: "eyeOff",
+      canExtinguish: false,
+    };
+  }
+
+  return {
+    obscurity: "clear",
+    label: "Visible",
+    detail: minutes > 0 ? `${sourceName} · ${minutes}m` : "Clear sightlines",
+    icon: "eye",
+    canExtinguish: minutes > 0,
+  };
+}

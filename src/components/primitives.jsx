@@ -2,7 +2,7 @@ import React from "react";
 import { Icon } from "./Icon.jsx";
 import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
 import { condName, conditionMeta } from "../data/conditions.js";
-import { lightStatus } from "../engine/light.js";
+import { visibilityStatus } from "../engine/light.js";
 import {
   NARRATOR_MODELS, NARRATOR_EFFORTS,
   getNarratorModel, setNarratorModel,
@@ -231,29 +231,29 @@ export function VitalsStrip({ state, onExtinguish }) {
   const needs = character.needs || { hunger: 100, thirst: 100, sleep: 100 };
   const vitMax = character.vitalityMax || 1;
   const resMax = character.resolveMax || 1;
-  const light = lightStatus(state);
-  const lightIcon = light.lit ? "flame" : light.dark ? "moon" : "sun";
+  const visibility = visibilityStatus(state);
   return (
-    <div className="vitals-strip" style={{
-      margin: "0 12px",
-      padding: "6px 10px",
-      display: "flex", flexDirection: "column", gap: "5px",
-      backgroundColor: "rgba(9, 34, 51, 0.66)",
-      border: "1px solid color-mix(in srgb, var(--scene-accent, #d7a76f) 30%, transparent)",
-      borderRadius: radius.control,
-      color: colors.parchment,
-      ...glass,
-      boxShadow: `0 14px 32px rgba(4,18,31,0.25), inset 0 1px 0 rgba(255,255,255,0.05)`,
-    }}>
-      {/* Five radial meters in a single row — vit / res / hunger / thirst /
-          sleep — so the whole HUD is one strip even on a narrow phone.
-          Engine thresholds (engine/needs.js): ≤30% amber, ≤10% red. The
-          same threshold applies to vit/res so a near-dead player gets the
-          warning before the condition pill fires. */}
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        gap: "4px",
-      }}>
+    <section className="vitals-strip" aria-label="Travel status">
+      <div className="vitals-strip__main">
+        <button
+          type="button"
+          className={`visibility-status visibility-status--${visibility.obscurity}`}
+          onClick={visibility.canExtinguish ? onExtinguish : undefined}
+          disabled={!visibility.canExtinguish}
+          title={visibility.canExtinguish ? `${visibility.detail}. Tap to extinguish.` : visibility.detail}
+          aria-label={`${visibility.label}. ${visibility.detail}${visibility.canExtinguish ? ". Tap to extinguish." : ""}`}
+        >
+          <span className="visibility-status__medallion" aria-hidden="true">
+            <Icon name={visibility.icon} size={21} strokeWidth={1.9} />
+          </span>
+          <span className="visibility-status__copy">
+            <small>Obscurity</small>
+            <strong>{visibility.label}</strong>
+            <em>{visibility.detail}</em>
+          </span>
+        </button>
+
+        <div className="vitals-strip__meters">
         <RadialMeter
           iconName="heart" iconFill={colors.gold}
           value={character.vitality} max={vitMax}
@@ -284,28 +284,15 @@ export function VitalsStrip({ state, onExtinguish }) {
           label={Math.round(needs.sleep)}
           ariaLabel={`Sleep ${Math.round(needs.sleep)} of 100`}
         />
+        </div>
       </div>
 
-      <div className="vitals-strip__context">
-        <button
-          type="button"
-          className={`hud-light${light.lit ? " is-lit" : ""}${light.dark ? " is-dark" : ""}`}
-          onClick={light.lit ? onExtinguish : undefined}
-          disabled={!light.lit}
-          aria-label={light.lit ? `${light.text}. Tap to extinguish.` : `Light: ${light.text}`}
-        >
-          <Icon name={lightIcon} size={12} strokeWidth={1.7} />
-          <span>Light</span>
-          <strong>{light.text}</strong>
-          {light.lit && <em>Snuff</em>}
-        </button>
-        {character.conditions.length > 0 && (
-          <div className="vitals-strip__conditions">
-            {character.conditions.map((c) => <ConditionPill key={condName(c)} cond={c} />)}
-          </div>
-        )}
-      </div>
-    </div>
+      {character.conditions.length > 0 && (
+        <div className="vitals-strip__conditions">
+          {character.conditions.map((c) => <ConditionPill key={condName(c)} cond={c} />)}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -334,7 +321,6 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
   return (
     <div
       className="radial-meter"
-      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", minWidth: 0 }}
       title={ariaLabel}
       role="meter"
       aria-label={ariaLabel}
@@ -342,7 +328,7 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
       aria-valuemax={m}
       aria-valuenow={v}
     >
-      <div style={{ position: "relative", width: SIZE, height: SIZE }}>
+      <div className="radial-meter__dial" style={{ width: SIZE, height: SIZE }}>
         <svg
           width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}
           style={{ transform: "rotate(-90deg)", display: "block" }}
@@ -359,18 +345,11 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
                     filter: `drop-shadow(0 0 3px ${color}66)`,
                   }} />
         </svg>
-        <div style={{
-          position: "absolute", inset: 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          pointerEvents: "none",
-        }}>
+        <div className="radial-meter__icon">
           <Icon name={iconName} size={11} color={color} fill={iconFill || "none"} strokeWidth={1.8} />
         </div>
       </div>
-      <span style={{
-        fontSize: "8px", letterSpacing: "0.04em", color,
-        fontWeight: 700, lineHeight: 1, whiteSpace: "nowrap",
-      }}>{label}</span>
+      <span className="radial-meter__value" style={{ color }}>{label}</span>
     </div>
   );
 }
@@ -640,43 +619,49 @@ export function AttrBlock({ label, score, active, onClick }) {
   );
 }
 
-export function NeedBar({ label, value }) {
-  return <StatBar label={label} value={value} max={100} />;
+export function NeedBar({ label, value, ...props }) {
+  return <StatBar label={label} value={value} max={100} {...props} />;
 }
 
-// Labelled progress bar showing value / max. Default colouring follows the
-// need-threshold convention (green > 50% > amber > 25% > red); pass `gradient`
-// to override (e.g. Resolve's violet).
-export function StatBar({ label, value, max = 100, gradient }) {
-  const v = Math.round(value);
+const STAT_TONES = {
+  vitality: "#d88a78",
+  resolve: "#b48bd3",
+  hunger: "#d8ad61",
+  thirst: "#68b9d1",
+  sleep: "#8f9fd2",
+};
+
+// A compact status card used by the character dossier. The number, state,
+// icon, and track all share one colour language; warning thresholds override
+// the decorative tone so an urgent need can never look healthy.
+export function StatBar({ label, value, max = 100, gradient, icon, detail, tone, className = "" }) {
+  const v = Math.round(Number.isFinite(value) ? value : 0);
   const m = Math.max(1, max);
   const pct = Math.max(0, Math.min(100, (v / m) * 100));
-  const barColor = gradient || (pct > 50
-    ? "linear-gradient(90deg, #606d43 0%, #7B8460 100%)"
-    : pct > 25
-      ? "linear-gradient(90deg, #b09156 0%, #C0A46C 100%)"
-      : "linear-gradient(90deg, #7c3b2d 0%, #8F4C3C 100%)");
+  const toneColor = STAT_TONES[tone] || colors.gold;
+  const meterColor = pct <= 10 ? "#f38b80" : pct <= 30 ? "#e1a35f" : toneColor;
+  const barColor = gradient || `linear-gradient(90deg, color-mix(in srgb, ${meterColor} 68%, #18303b), ${meterColor})`;
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px", alignItems: "baseline" }}>
-        <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.14em", color: "rgba(237, 228, 208, 0.72)" }}>{label}</span>
-        <span style={{ fontSize: "11px", color: colors.parchment, fontWeight: 700 }}>{v}/{m}</span>
+    <div
+      className={`stat-meter${tone ? ` stat-meter--${tone}` : ""}${className ? ` ${className}` : ""}`}
+      style={{ "--meter-color": meterColor, "--meter-fill": barColor }}
+      role="meter"
+      aria-label={`${label} ${v} of ${m}`}
+      aria-valuemin="0"
+      aria-valuemax={m}
+      aria-valuenow={v}
+    >
+      <div className="stat-meter__head">
+        {icon && <span className="stat-meter__icon" aria-hidden="true"><Icon name={icon} size={16} strokeWidth={1.65} /></span>}
+        <span className="stat-meter__copy">
+          <span className="stat-meter__label">{label}</span>
+          {detail && <span className="stat-meter__detail">{detail}</span>}
+        </span>
+        <strong className="stat-meter__value">{v}<span>/{m}</span></strong>
       </div>
-      <div style={{
-        width: "100%", height: "7px",
-        backgroundColor: "rgba(0, 0, 0, 0.38)",
-        border: `1px solid rgba(215, 167, 111, 0.12)`,
-        borderRadius: "4px", overflow: "hidden",
-        boxShadow: "inset 0 1px 3px rgba(0,0,0,0.4)",
-      }}>
-        <div style={{
-          width: `${pct}%`, height: "100%",
-          background: barColor,
-          borderRadius: "3px",
-          transition: "width 0.4s cubic-bezier(0.16, 1, 0.3, 1), background 0.4s",
-          boxShadow: pct > 25 ? "0 0 6px rgba(215,167,111,0.2)" : "0 0 6px rgba(143,76,60,0.4)",
-        }} />
+      <div className="stat-meter__track" aria-hidden="true">
+        <i style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Icon } from "../Icon.jsx";
 import { FLY_MIN_PER_HEX, FLY_TRAVEL_HEXES, WORLD_MARCH_LIMIT } from "../../config.js";
 import { TERRAINS } from "../../data/terrains.js";
@@ -30,6 +30,7 @@ import { buildWorldMapScene } from "./mapSceneModel.js";
 import partyArt from "../../assets/generated/scene-tellmar-road-v2.webp";
 import seekEncounterIcon from "../../assets/generated/ui-seek-encounter.png";
 import rewardArt from "../../assets/generated/scene-whitemarch-march-v2.webp";
+import atlasSpreadArt from "../../assets/generated/world-atlas-spread-v1.jpg";
 import "./exploration.css";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
@@ -110,9 +111,16 @@ function WorldGrid({ model, selection, journey, onPick, onJournal, onWayfinder, 
   return (
     <main className={`rpg-world-stage canvas-world-stage ${night ? "is-night" : ""}`}>
       <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
-      <div className="rpg-quickbar">
-        <button onClick={onWayfinder} aria-label="Open world atlas"><Icon name="map" size={15} color="#fff4c7" /><span>Atlas</span></button>
-        <button onClick={onJournal} aria-label={questCount > 0 ? `Open quest journal, ${questCount} active ${questCount === 1 ? "quest" : "quests"}` : "Open quest journal"}><Icon name="book" size={15} color="#fff4c7" /><span>Quests</span>{questCount > 0 && <b aria-hidden="true">{questCount}</b>}</button>
+      <div className="rpg-quickbar" aria-label="Exploration tools">
+        <button onClick={onWayfinder} aria-label="Open world atlas">
+          <Icon name="map" size={17} />
+          <span><small>Known world</small><strong>Atlas</strong></span>
+        </button>
+        <button onClick={onJournal} aria-label={questCount > 0 ? `Open quest journal, ${questCount} active ${questCount === 1 ? "quest" : "quests"}` : "Open quest journal"}>
+          <Icon name="book" size={17} />
+          <span><small>Adventure log</small><strong>Journal</strong></span>
+          {questCount > 0 && <b className="rpg-tool-count" aria-hidden="true">{questCount}</b>}
+        </button>
       </div>
 
       {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
@@ -205,49 +213,135 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
   );
 }
 
-function QuestJournal({ quests, current, onClose, onPick }) {
+function FolioOverview({ items }) {
   return (
-    <div className="rpg-overlay" role="dialog" aria-modal="true" aria-label="Quest journal" style={{ "--reward-art": `url(${rewardArt})` }}>
-      <div className="rpg-overlay-head"><div><span className="rpg-kicker">Adventure log</span><h2>Quest journal</h2><p>Choose an objective to set it on your compass.</p></div><button onClick={onClose} className="rpg-square-button" aria-label="Close quest journal"><Icon name="x" size={15} color="#fff4c7" /></button></div>
-      <div className="rpg-ledger-grid">
-        {quests.length === 0 ? <p className="rpg-empty">No active quests. Check taverns, gaols, and village boards.</p> : quests.map((quest) => (
-          <button key={quest.id} onClick={() => quest.loc && onPick(quest.loc)} disabled={!quest.loc} className="rpg-quest-card">
-            <span className="rpg-card-rank">{QUEST_TYPE_LABEL[quest.type]?.[0] || "Q"}</span>
-            <div><small>{QUEST_TYPE_LABEL[quest.type] || "Task"} · {quest.giver}</small><b>{quest.title}</b><em>{quest.loc ? `${hexDistance(current, quest.loc)} steps away` : "Location unknown"}</em></div>
-            <strong><span>◆</span>{formatCopper(quest.rewardCp || 0)}</strong>
-          </button>
-        ))}
-      </div>
+    <div className="rpg-folio-overview" aria-label="Page summary">
+      {items.map((item) => (
+        <div key={item.label}>
+          <span aria-hidden="true"><Icon name={item.icon} size={16} strokeWidth={1.5} /></span>
+          <p><small>{item.label}</small><b>{item.value}</b></p>
+        </div>
+      ))}
     </div>
   );
 }
 
-function Wayfinder({ landmarks, origin, onClose, onPick }) {
-  const usefulLandmarks = landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi));
+function QuestJournalPage({ quests, current, onPick }) {
+  const located = quests.filter((quest) => quest.loc).length;
+  const rewards = quests.reduce((sum, quest) => sum + (quest.rewardCp || 0), 0);
   return (
-    <div className="rpg-overlay" role="dialog" aria-modal="true" aria-label="World atlas" style={{ "--reward-art": `url(${rewardArt})` }}>
-      <div className="rpg-overlay-head"><div><span className="rpg-kicker">Known world</span><h2>World atlas</h2><p>Landmarks, sanctuaries, and objectives remembered by the party.</p></div><button onClick={onClose} className="rpg-square-button" aria-label="Close world atlas"><Icon name="x" size={15} color="#fff4c7" /></button></div>
-      <div className="rpg-ledger-grid rpg-ledger-grid--places">
-        {usefulLandmarks.length === 0 ? <p className="rpg-empty">The horizon is still blank. Follow a road to begin charting it.</p> : usefulLandmarks.map((landmark) => {
-          const biome = biomeAt(landmark);
-          const visual = biomeVisual(biome.id);
-          return (
-            <button key={landmark.key} onClick={() => onPick(landmark)} className="rpg-place-card" style={{ "--place-art": `url(${visual.image})`, "--place-accent": visual.accent }}>
-              <span>{landmark.quest ? "✦" : glyphFor(landmark.tile)}</span>
-              <div><small>{landmark.quest ? "Objective" : landmark.anchor ? "Warp anchor" : biome.name}</small><b>{nameForDestination(landmark, origin)}</b><em>{directionLabel(origin, landmark).replace("-", " ")} · {landmark.distance} steps</em></div>
-              <i>›</i>
-            </button>
-          );
-        })}
-      </div>
+    <div className="rpg-folio-page rpg-folio-page--quests">
+      <FolioOverview items={[
+        { label: "Active", value: quests.length, icon: "book" },
+        { label: "Charted", value: `${located}/${quests.length || 0}`, icon: "compass" },
+        { label: "Rewards", value: formatCopper(rewards), icon: "sparkle" },
+      ]} />
+      {quests.length === 0 ? (
+        <div className="rpg-folio-empty"><Icon name="book" size={26} /><h3>No open entries</h3><p>Check taverns, gaols, and village boards for work worth recording.</p></div>
+      ) : (
+        <div className="rpg-folio-grid rpg-folio-grid--quests">
+          {quests.map((quest) => {
+            const type = QUEST_TYPE_LABEL[quest.type] || "Task";
+            const distance = quest.loc ? hexDistance(current, quest.loc) : null;
+            return (
+              <button key={quest.id} onClick={() => quest.loc && onPick(quest.loc)} disabled={!quest.loc} className="rpg-folio-card rpg-folio-quest">
+                <span className="rpg-folio-quest__sigil" aria-hidden="true">{type[0]}</span>
+                <span className="rpg-folio-card__copy">
+                  <small>{type} · {quest.giver || "Unknown patron"}</small>
+                  <strong>{quest.title}</strong>
+                  <em>{distance === null ? "Location not yet charted" : `${distance} ${distance === 1 ? "step" : "steps"} from your camp`}</em>
+                  <span className="rpg-folio-card__action"><Icon name="compass" size={13} />{quest.loc ? "Set on compass" : "Awaiting a lead"}</span>
+                </span>
+                <span className="rpg-folio-quest__reward"><small>Reward</small><b>◆ {formatCopper(quest.rewardCp || 0)}</b></span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WorldAtlasPage({ landmarks, origin, onPick }) {
+  const usefulLandmarks = landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi));
+  const anchors = usefulLandmarks.filter((landmark) => landmark.anchor).length;
+  const objectives = usefulLandmarks.filter((landmark) => landmark.quest).length;
+  return (
+    <div className="rpg-folio-page rpg-folio-page--atlas">
+      <FolioOverview items={[
+        { label: "Known places", value: usefulLandmarks.length, icon: "map" },
+        { label: "Warp anchors", value: anchors, icon: "sparkle" },
+        { label: "Objectives", value: objectives, icon: "compass" },
+      ]} />
+      {usefulLandmarks.length === 0 ? (
+        <div className="rpg-folio-empty"><Icon name="map" size={26} /><h3>An unmarked horizon</h3><p>Follow a road or climb to high ground to begin charting the world.</p></div>
+      ) : (
+        <div className="rpg-folio-grid rpg-folio-grid--places">
+          {usefulLandmarks.map((landmark) => {
+            const biome = biomeAt(landmark);
+            const visual = biomeVisual(biome.id);
+            const kind = landmark.quest ? "Objective" : landmark.anchor ? "Warp anchor" : biome.name;
+            return (
+              <button key={landmark.key} onClick={() => onPick(landmark)} className="rpg-folio-card rpg-folio-place" style={{ "--place-art": `url(${visual.image})`, "--place-accent": visual.accent }}>
+                <span className="rpg-folio-place__art" aria-hidden="true"><i>{landmark.quest ? "✦" : glyphFor(landmark.tile)}</i></span>
+                <span className="rpg-folio-card__copy">
+                  <small>{kind}</small>
+                  <strong>{nameForDestination(landmark, origin)}</strong>
+                  <em>{directionLabel(origin, landmark).replace("-", " ")} · {landmark.distance} {landmark.distance === 1 ? "step" : "steps"}</em>
+                  <span className="rpg-folio-card__action"><Icon name="compass" size={13} />Chart a route</span>
+                </span>
+                <span className="rpg-folio-card__arrow" aria-hidden="true">›</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdventureFolio({ page, quests, landmarks, origin, onPage, onClose, onPick }) {
+  const tabs = [
+    { id: "atlas", label: "World atlas", icon: "map", count: landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi)).length },
+    { id: "quests", label: "Quest journal", icon: "book", count: quests.length },
+  ];
+  const title = page === "quests" ? "Quest Journal" : "World Atlas";
+  const description = page === "quests"
+    ? "Open obligations, promised rewards, and the next trail to follow."
+    : "Landmarks, sanctuaries, and roads remembered by the party.";
+  return (
+    <div className="rpg-folio-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="rpg-folio" role="dialog" aria-modal="true" aria-labelledby="rpg-folio-title" style={{ "--folio-art": `url(${atlasSpreadArt})` }}>
+        <header className="rpg-folio-hero">
+          <button onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label={`Close ${title.toLowerCase()}`}><Icon name="x" size={16} /></button>
+          <div className="rpg-folio-identity">
+            <small>Wayfinder's folio</small>
+            <h2 id="rpg-folio-title">{title}</h2>
+            <p>{description}</p>
+          </div>
+          <div className="rpg-folio-tabs" role="tablist" aria-label="Folio sections">
+            {tabs.map((tab) => (
+              <button key={tab.id} id={`rpg-folio-tab-${tab.id}`} type="button" className={page === tab.id ? "is-active" : ""} onClick={() => onPage(tab.id)} role="tab" aria-selected={page === tab.id} aria-controls={`rpg-folio-panel-${tab.id}`}>
+                <Icon name={tab.icon} size={16} strokeWidth={1.5} />
+                <span>{tab.label}</span>
+                <b>{tab.count}</b>
+              </button>
+            ))}
+          </div>
+        </header>
+        <div key={page} id={`rpg-folio-panel-${page}`} className="rpg-folio-body" role="tabpanel" aria-labelledby={`rpg-folio-tab-${page}`}>
+          {page === "quests"
+            ? <QuestJournalPage quests={quests} current={origin} onPick={onPick} />
+            : <WorldAtlasPage landmarks={landmarks} origin={origin} onPick={onPick} />}
+        </div>
+      </section>
     </div>
   );
 }
 
 export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, onSeekCombat, loading }) {
   const [selected, setSelected] = useState(null);
-  const [journalOpen, setJournalOpen] = useState(false);
-  const [wayfinderOpen, setWayfinderOpen] = useState(false);
+  const [folioPage, setFolioPage] = useState(null);
   const [flyPanelDest, setFlyPanelDest] = useState(null);
   const model = useMemo(() => buildExplorationModel(state), [state]);
   const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
@@ -283,10 +377,20 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
   const focusVisual = biomeVisual(focusBiome.id);
   const hour = state.time?.hour ?? 12;
 
+  useEffect(() => {
+    if (!folioPage && !flyPanelDest) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      if (flyPanelDest) setFlyPanelDest(null);
+      else setFolioPage(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [flyPanelDest, folioPage]);
+
   function pick(destination) {
     setSelected({ x: destination.x, y: destination.y });
-    setJournalOpen(false);
-    setWayfinderOpen(false);
+    setFolioPage(null);
   }
 
   function handleFlySelection() {
@@ -296,13 +400,12 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
 
   return (
     <div className="exploration-shell rpg-exploration-shell" style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
-      <RpgHeader state={state} biome={currentBiome} onClose={onClose} onWayfinder={() => setWayfinderOpen(true)} />
+      <RpgHeader state={state} biome={currentBiome} onClose={onClose} onWayfinder={() => setFolioPage("atlas")} />
       <div className="rpg-exploration-body">
-        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onJournal={() => setJournalOpen(true)} onWayfinder={() => setWayfinderOpen(true)} onSeekCombat={onSeekCombat} questCount={activeQuests.length} loading={loading} night={hour < 6 || hour >= 20} />
+        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onJournal={() => setFolioPage("quests")} onWayfinder={() => setFolioPage("atlas")} onSeekCombat={onSeekCombat} questCount={activeQuests.length} loading={loading} night={hour < 6 || hour >= 20} />
         <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={() => journey && !loading && onTravel(selected, journey.fullPath)} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
       </div>
-      {journalOpen && <QuestJournal quests={activeQuests} current={model.origin} onClose={() => setJournalOpen(false)} onPick={pick} />}
-      {wayfinderOpen && <Wayfinder landmarks={model.landmarks} origin={model.origin} onClose={() => setWayfinderOpen(false)} onPick={pick} />}
+      {folioPage && <AdventureFolio page={folioPage} quests={activeQuests} landmarks={model.landmarks} origin={model.origin} onPage={setFolioPage} onClose={() => setFolioPage(null)} onPick={pick} />}
       {flyPanelDest && <AtlasFlyPanel plan={flyPlan} destination={selectedName} onCancel={() => setFlyPanelDest(null)} onConfirm={(assign) => { const destination = flyPanelDest; setFlyPanelDest(null); onFly(destination, assign); }} />}
     </div>
   );
