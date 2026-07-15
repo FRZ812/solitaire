@@ -1148,7 +1148,7 @@ export function CodexView({ state, onClose, onScry, onRenameMount, onPortraitCha
               tabIndex={active ? 0 : -1}
             >
               <span className="codex-tab-icon-slot" aria-hidden="true">
-                <AtlasIcon src={codexCategoryAtlas} columns={3} rows={3} column={tab.column} row={tab.row} size="100%" decorative iconKey={`codex:${tab.key}`} shape="round" className="codex-tab-icon" />
+                <AtlasIcon src={codexCategoryAtlas} columns={3} rows={3} column={tab.column} row={tab.row} size="100%" decorative iconKey={`codex:${tab.key}`} className="codex-tab-icon" />
               </span>
               <span className="codex-tab-label">{tab.label}</span>
               {count > 0 && <strong>{count}</strong>}

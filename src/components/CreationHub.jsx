@@ -380,7 +380,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
               >
                 <span className="creation-card__portrait" aria-hidden="true">
                   <img src={resolveCharacterPortrait(tmpl, rosterArtwork)} alt="" draggable="false" loading="lazy" decoding="async" />
-                  <ProfessionIcon templateId={tmpl.id} profession={tmpl.setup.profession} size="small" decorative />
+                  <ProfessionIcon className="creation-card__class-badge" templateId={tmpl.id} profession={tmpl.setup.profession} size="small" decorative />
                 </span>
                 <span className="creation-card__body">
                   <span className="creation-card__topline">
