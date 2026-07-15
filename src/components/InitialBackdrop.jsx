@@ -1,10 +1,9 @@
 import React from "react";
-import titleBackdrop from "../assets/generated/jrpg-title-backdrop.png";
+import titleBackdrop from "../assets/generated/scene-tellmar-road-v2.webp";
 
 /**
- * Shared title/creation backdrop. The artwork is generated locally by
- * scripts/generate-jrpg-ui-assets.py on a 240px pixel canvas, then enlarged
- * with nearest-neighbour sampling to keep every pixel crisp.
+ * Shared title/creation backdrop. The production plate follows the same
+ * high-definition oil-brush direction as the in-world region scenes.
  */
 export function InitialBackdrop() {
   return (

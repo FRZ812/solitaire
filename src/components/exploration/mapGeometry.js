@@ -1,0 +1,174 @@
+export const SQRT_3 = Math.sqrt(3);
+
+export const ATLAS_CELLS = Object.freeze({
+  plains: [0, 0], forest: [1, 0], hills: [2, 0], mountains: [3, 0],
+  road: [0, 1], water: [1, 1], marsh: [2, 1], impassable: [3, 1],
+  settlement: [0, 2], street: [1, 2], wall: [2, 2], indoor: [3, 2],
+  plaza: [0, 3], avenue: [1, 3], river: [2, 3], roof: [3, 3],
+});
+
+const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+
+function polygonBounds(polygon) {
+  const xs = polygon.map((point) => point.x);
+  const ys = polygon.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+}
+
+export function hexPolygon(center, radius) {
+  return [
+    { x: center.x, y: center.y - radius },
+    { x: center.x + SQRT_3 * 0.5 * radius, y: center.y - 0.5 * radius },
+    { x: center.x + SQRT_3 * 0.5 * radius, y: center.y + 0.5 * radius },
+    { x: center.x, y: center.y + radius },
+    { x: center.x - SQRT_3 * 0.5 * radius, y: center.y + 0.5 * radius },
+    { x: center.x - SQRT_3 * 0.5 * radius, y: center.y - 0.5 * radius },
+  ];
+}
+
+function entryFor(cell, center, polygon, size) {
+  return {
+    cell,
+    key: String(cell.key || ""),
+    center,
+    polygon,
+    bounds: polygonBounds(polygon),
+    size,
+  };
+}
+
+function buildWorldLayout(scene, width, height) {
+  const cells = Array.isArray(scene?.cells) ? scene.cells : [];
+  if (cells.length === 0) return { entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 };
+
+  const origin = scene.origin || { x: 0, y: 0 };
+  const rawCenters = cells.map((cell) => {
+    const q = Number(cell.x || 0) - Number(origin.x || 0);
+    const r = Number(cell.y || 0) - Number(origin.y || 0);
+    return { x: SQRT_3 * (q + r * 0.5), y: 1.5 * r };
+  });
+  const xs = rawCenters.map((point) => point.x);
+  const ys = rawCenters.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const padding = clamp(Math.min(width, height) * 0.025, 8, 20);
+  const availableWidth = Math.max(1, width - padding * 2);
+  const availableHeight = Math.max(1, height - padding * 2);
+  const worldRadius = Math.max(1, Math.min(
+    availableWidth / Math.max(1, maxX - minX + SQRT_3),
+    availableHeight / Math.max(1, maxY - minY + 2),
+  ));
+  const contentWidth = (maxX - minX + SQRT_3) * worldRadius;
+  const contentHeight = (maxY - minY + 2) * worldRadius;
+  const offset = {
+    x: (width - contentWidth) * 0.5 + (-minX + SQRT_3 * 0.5) * worldRadius,
+    y: (height - contentHeight) * 0.5 + (-minY + 1) * worldRadius,
+  };
+  const centerByKey = new Map();
+  const entries = cells.map((cell, index) => {
+    const center = {
+      x: offset.x + rawCenters[index].x * worldRadius,
+      y: offset.y + rawCenters[index].y * worldRadius,
+    };
+    const entry = entryFor(cell, center, hexPolygon(center, worldRadius * 1.015), worldRadius);
+    centerByKey.set(entry.key, center);
+    return entry;
+  });
+  return { entries, centerByKey, worldRadius, cityCellSize: 0 };
+}
+
+function buildCityLayout(scene, width, height) {
+  const cells = Array.isArray(scene?.cells) ? scene.cells : [];
+  if (cells.length === 0) return { entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 };
+
+  const columns = Math.max(1, Number(scene.columns || 11));
+  const rows = Math.max(1, Number(scene.rows || 9));
+  const padding = clamp(Math.min(width, height) * 0.025, 8, 20);
+  const cityCellSize = Math.max(1, Math.min(
+    (width - padding * 2) / columns,
+    (height - padding * 2) / rows,
+  ));
+  const offset = {
+    x: (width - columns * cityCellSize) * 0.5,
+    y: (height - rows * cityCellSize) * 0.5,
+  };
+  const centerByKey = new Map();
+  const entries = cells.map((cell) => {
+    const center = {
+      x: offset.x + (Number(cell.col || 0) + 0.5) * cityCellSize,
+      y: offset.y + (Number(cell.row || 0) + 0.5) * cityCellSize,
+    };
+    const half = cityCellSize * 0.505;
+    const polygon = [
+      { x: center.x - half, y: center.y - half },
+      { x: center.x + half, y: center.y - half },
+      { x: center.x + half, y: center.y + half },
+      { x: center.x - half, y: center.y + half },
+    ];
+    const entry = entryFor(cell, center, polygon, cityCellSize * 0.5);
+    centerByKey.set(entry.key, center);
+    return entry;
+  });
+  return { entries, centerByKey, worldRadius: 0, cityCellSize };
+}
+
+export function buildMapLayout(scene, width, height) {
+  const safeWidth = Math.max(1, Number(width) || 1);
+  const safeHeight = Math.max(1, Number(height) || 1);
+  return scene?.mode === "city"
+    ? buildCityLayout(scene, safeWidth, safeHeight)
+    : buildWorldLayout(scene, safeWidth, safeHeight);
+}
+
+function pointOnSegment(point, start, end) {
+  const cross = (point.y - start.y) * (end.x - start.x) - (point.x - start.x) * (end.y - start.y);
+  if (Math.abs(cross) > 0.001) return false;
+  const dot = (point.x - start.x) * (end.x - start.x) + (point.y - start.y) * (end.y - start.y);
+  if (dot < 0) return false;
+  const lengthSquared = (end.x - start.x) ** 2 + (end.y - start.y) ** 2;
+  return dot <= lengthSquared;
+}
+
+export function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+    const currentPoint = polygon[index];
+    const previousPoint = polygon[previous];
+    if (pointOnSegment(point, previousPoint, currentPoint)) return true;
+    const crosses = (currentPoint.y > point.y) !== (previousPoint.y > point.y)
+      && point.x < ((previousPoint.x - currentPoint.x) * (point.y - currentPoint.y))
+        / (previousPoint.y - currentPoint.y) + currentPoint.x;
+    if (crosses) inside = !inside;
+  }
+  return inside;
+}
+
+export function findInteractiveEntry(entries, point) {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry.cell.interactive && pointInPolygon(point, entry.polygon)) return entry;
+  }
+  return null;
+}
+
+export function buildRouteSegments(route, centerByKey) {
+  const segments = [];
+  let active = [];
+  for (const routeKey of route || []) {
+    const center = centerByKey.get(String(routeKey));
+    if (center) {
+      active.push(center);
+    } else {
+      if (active.length > 1) segments.push(active);
+      active = [];
+    }
+  }
+  if (active.length > 1) segments.push(active);
+  return segments;
+}

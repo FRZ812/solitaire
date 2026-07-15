@@ -21,8 +21,10 @@ import { DEMEANOR_CONFIG, flavorLine } from "../data/combat-flavor.js";
 import { weaponMasteryId, XP } from "../data/proficiencies.js";
 import { deriveCombatStats, reqEffectiveness } from "./combat-stats.js";
 import { seedConditionStatuses } from "./condition-combat.js";
-import { chooseAction } from "./combat-ai.js";
+import { chooseAction, estimateHit } from "./combat-ai.js";
 import { DARK_ACC_PENALTY, DARK_FLEE_BONUS } from "./light.js";
+import { cardDefinition, defaultCombatDeck } from "../data/combat-cards.js";
+import { normalizeSeed, shuffleSeeded } from "./combat-rng.js";
 // Loot generation + combat→state folding live in sibling leaf modules (Stage 1
 // extraction). The turn loop's finish* helpers call rollLoot/lootCtx; App.jsx
 // imports applyCombatResult/applyLoot directly from ./combat-result.js.
@@ -50,7 +52,22 @@ const ALLY_LOSS = { cowardly: 22, wary: 14, fierce: 8, brutish: 10, honorable: 1
 function sumStatus(c, type) {
   return (c.statuses || []).filter((s) => s.type === type).reduce((s, x) => s + (x.value || 0), 0);
 }
-function hasStatus(c, type) { return (c.statuses || []).some((s) => s.type === type); }
+function hasStatus(c, type) { return (c?.statuses || []).some((s) => s.type === type); }
+export function isPlayerControlled(cs) {
+  const player = cs?.player;
+  return !!player && ["charmed", "enthralled", "dominated"].some((type) => hasStatus(player, type));
+}
+export function isPlayerTurnLocked(cs) {
+  return isPlayerControlled(cs) || hasStatus(cs?.player, "stun");
+}
+function isPlayerPermanentlyControlled(cs) {
+  const player = cs?.player;
+  if (!player) return false;
+  if (player.enthralledBy) return true;
+  return (player.statuses || []).some((status) =>
+    ["enthralled", "dominated"].includes(status.type) &&
+    (status.duration == null || !Number.isFinite(status.duration) || status.duration >= 10000));
+}
 
 // Curse is distinct from vulnerable: as well as amplifying damage taken, a cursed
 // creature's wounds barely knit — ALL healing it receives is halved. Every heal
@@ -59,6 +76,7 @@ function hasStatus(c, type) { return (c.statuses || []).some((s) => s.type === t
 const CURSE_HEAL_MULT = 0.5;
 const DEFER_TURNS = 3; // turns a deferred (dmgDefer) wound bleeds out over
 const CEASEFIRE_TURN = 50; // a grindingly long fight: a thinking foe offers a truce
+const TERMINAL_PHASES = new Set(["victory", "defeat", "resolved", "playerFled"]);
 function gainHealth(c, amt) {
   if (!c || amt <= 0 || c.health <= 0) return 0;
   let h = amt;
@@ -234,6 +252,92 @@ function enemyThreat(e) {
   return e.maxHealth * 0.25 + e.weapon.max + tierInfo(e.tier).order * 2;
 }
 
+// ----- browser-native deck state -----
+
+function makeDeck(character, seed) {
+  const specs = defaultCombatDeck(character);
+  const cards = {};
+  const ids = specs.map((spec, index) => {
+    const uid = `c${String(index + 1).padStart(3, "0")}`;
+    const definition = cardDefinition(spec.abilityId, spec.tier);
+    cards[uid] = { uid, ...definition };
+    return uid;
+  });
+  const shuffled = shuffleSeeded(ids, normalizeSeed(seed));
+  return {
+    cards,
+    draw: shuffled.items,
+    hand: [],
+    discard: [],
+    exhaust: [],
+    shuffleState: shuffled.state,
+  };
+}
+
+function reshuffleDiscard(cs) {
+  if (cs.deck.draw.length || !cs.deck.discard.length) return;
+  const shuffled = shuffleSeeded(cs.deck.discard, cs.deck.shuffleState);
+  cs.deck.draw = shuffled.items;
+  cs.deck.discard = [];
+  cs.deck.shuffleState = shuffled.state;
+  cs.log.push(logEntry("The discard is gathered and shuffled.", "system"));
+}
+
+function drawCardsInto(cs, count) {
+  for (let i = 0; i < count; i += 1) {
+    reshuffleDiscard(cs);
+    if (!cs.deck.draw.length) break;
+    const uid = cs.deck.draw.shift();
+    if (cs.deck.hand.length >= 10) {
+      cs.deck.discard.push(uid);
+      cs.log.push(logEntry(`${cs.deck.cards[uid]?.name || "A card"} is discarded — your hand is full.`, "system"));
+    } else {
+      cs.deck.hand.push(uid);
+    }
+  }
+}
+
+export function drawCards(cs0, count = 1) {
+  if (!cs0?.deck || count <= 0) return cs0;
+  const cs = clone(cs0);
+  drawCardsInto(cs, count);
+  return cs;
+}
+
+function discardHand(cs) {
+  const retained = [];
+  for (const uid of cs.deck.hand) {
+    const card = cs.deck.cards[uid];
+    if (card?.retain) retained.push(uid);
+    else if (card?.ethereal) cs.deck.exhaust.push(uid);
+    else cs.deck.discard.push(uid);
+  }
+  cs.deck.hand = retained;
+}
+
+function startPlayerDeckRound(cs, { initial = false } = {}) {
+  if (!initial) {
+    cs.round = (cs.round || cs.turn || 1) + 1;
+    cs.turn = cs.round; // legacy morale/result code reads turn
+    cs.log.push(logEntry(`— Round ${cs.round} —`, "system"));
+  }
+  const begun = beginTurnFor(cs, cs.player, { deckMode: true });
+  if (begun === "dead" || playerDown(cs)) return finishDefeat(cs);
+  cs.player.maxEnergy = 3;
+  cs.player.energy = begun === "stun" || begun === "controlled" ? 0 : 3;
+  cs.player.actionsLeft = cs.player.energy; // compatibility for legacy helpers
+  planEnemyIntents(cs);
+  if (begun === "controlled" || begun === "stun") {
+    // A stunned or controlled player never receives an actionable hand. The
+    // deck driver sees this internal enemy phase and resolves it immediately.
+    cs.phase = "enemy";
+    return checkCombatEnd(cs);
+  }
+  cs.phase = "player";
+  drawCardsInto(cs, Math.max(0, 5 - cs.deck.hand.length));
+  return checkCombatEnd(cs);
+}
+
 // Lend a rider their mount's charge: better aim and reach, a heavier blow, more
 // speed. The mount itself fights separately; this is purely the rider's lift.
 function applyMountedBonus(c, b) {
@@ -329,7 +433,9 @@ export function initCombat(character, codex, enemies, opts = {}) {
     e.speed = e.speed ?? 4; e.swiftChance = e.swiftChance || 0; e.reloadLeft = 0;
     // Engagement distance from the player. Most foes open a step out (melee must
     // close; ranged & reach weapons can already strike). An ambush starts closer.
-    e.distance = e.distance ?? (opts.startDistance ?? (opts.ambush === "player" ? 1 : 2));
+    // Card combat presents one readable field rather than a hidden scalar range
+    // minigame. Weapon/range identity remains in card requirements and damage.
+    e.distance = 0;
     e.procs = e.procs || e.triggers?.procs || [];
     e.shield = e.shield || 0; e.magicShield = e.magicShield || 0; e.invuln = e.invuln || 0;
   });
@@ -371,7 +477,9 @@ export function initCombat(character, codex, enemies, opts = {}) {
     allies,
     enemies: foes,
     target: 0,
+    targetUid: foes[0]?.uid || null,
     turn: 1,
+    round: 1,
     phase: "player",
     order: [],
     orderIdx: 0,
@@ -382,20 +490,18 @@ export function initCombat(character, codex, enemies, opts = {}) {
     region: opts.region || 1,
     ownedUniques: opts.ownedUniques || [],
     coinBonus: opts.coinBonus || 0,
-    environment: opts.environment || [],
     dark: !!opts.dark, // fighting blind: accuracy penalty (set on player) + easier flight
     revivedUsed: false,
     profGains: {},
     log: [logEntry(lethal ? `Combat begins — ${flavor}.` : `A brawl breaks out — ${flavor}. Bare hands, for now.`, "system")],
     loot: null,
+    seed: normalizeSeed(opts.seed ?? `${character.name || "wanderer"}|${foes.map((e) => e.name).join("|")}`),
   };
+  combatState.deck = makeDeck(character, combatState.seed);
   if (opts.ambush) applyAmbush(combatState, opts.ambush);
-  // Roll initiative and let any faster foes open before the player's first turn.
-  if (combatState.phase === "player") {
-    rollInitiative(combatState);
-    return advanceQueue(combatState);
-  }
-  return combatState;
+  if (TERMINAL_PHASES.has(combatState.phase)) return combatState;
+  const started = startPlayerDeckRound(combatState, { initial: true });
+  return started.phase === "enemy" ? advanceDeckUntilPlayer(started) : started;
 }
 
 // ----- initiative -----
@@ -452,14 +558,27 @@ function downActor(cs, actor) {
 // Begin one combatant's turn: tick statuses/cooldowns/reload, trait resolve regen
 // and turn-heal, fire start-of-turn procs, resolve stun, and set action points
 // (base + swift "act-again" rolls). Returns "dead" | "stun" | "ok".
-function beginTurnFor(cs, actor) {
+function decrementCooldowns(actor) {
+  const cdr = 1 + (actor.cooldownReduction || 0);
+  for (const id of Object.keys(actor.cooldowns || {})) {
+    actor.cooldowns[id] = Math.max(0, actor.cooldowns[id] - cdr);
+  }
+}
+
+function beginTurnFor(cs, actor, { deckMode = false } = {}) {
+  // Observe turn-cancelling statuses before the normal start-of-turn expiry.
+  // This makes duration:1 mean "skip the next turn" while leaving every other
+  // status on the existing tick cadence.
+  const stunnedAtTurnStart = hasStatus(actor, "stun");
+  const charmedAtTurnStart = hasStatus(actor, "charmed");
+  const controlledAtTurnStart = actor === cs.player && isPlayerControlled(cs);
+  const controlKindAtTurnStart = hasStatus(actor, "enthralled") || hasStatus(actor, "dominated") ? "enthralled" : "charmed";
   tickStatuses(actor).forEach((l) => cs.log.push(l));
   if (actor.health <= 0) {
     if (actor === cs.player) { if (playerDown(cs)) return "dead"; }
     else { downActor(cs, actor); return "dead"; }
   }
-  const cdr = 1 + (actor.cooldownReduction || 0);
-  for (const id of Object.keys(actor.cooldowns || {})) actor.cooldowns[id] = Math.max(0, actor.cooldowns[id] - cdr);
+  decrementCooldowns(actor);
   if (actor.reloadLeft > 0) actor.reloadLeft = Math.max(0, actor.reloadLeft - 1);
   startOfTurn(cs, actor);
   // Resolve is a rest/consumable-gated pool (engine/attributes.js) — no base regen.
@@ -473,14 +592,26 @@ function beginTurnFor(cs, actor) {
     const mended = gainHealth(actor, Math.max(1, Math.round(actor.maxHealth * tr.turnRegen)));
     if (mended > 0) cs.log.push(logEntry(`${actor.name} mends ${mended}.`, "status"));
   }
-  if (hasStatus(actor, "stun")) {
+  if (stunnedAtTurnStart) {
     cs.log.push(logEntry(`${actor.name} is stunned and cannot act.`, "status"));
-    actor.statuses = actor.statuses.filter((s) => s.type !== "stun");
     return "stun";
+  }
+  if (controlledAtTurnStart) {
+    cs.log.push(logEntry(
+      controlKindAtTurnStart === "enthralled"
+        ? "Your body is not your own — you stand frozen, enthralled."
+        : "A strange calm stays your hand — you cannot raise a weapon.",
+      "status",
+    ));
+    return "controlled";
+  }
+  if (actor !== cs.player && charmedAtTurnStart) {
+    cs.log.push(logEntry(`${actor.name} stands down, held by the charm.`, "status"));
+    return "charmed";
   }
   // Action points: base + swift "act-again" rolls (each less likely, capped).
   // Slow denies the act-again rolls entirely (and docks initiative, above).
-  let extra = 0, chance = hasStatus(actor, "slow") ? 0 : (actor.swiftChance || 0);
+  let extra = 0, chance = deckMode || hasStatus(actor, "slow") ? 0 : (actor.swiftChance || 0);
   while (chance > 0 && extra < 3 && Math.random() < chance) { extra += 1; chance *= 0.5; }
   if (extra > 0 && actor === cs.player) cs.log.push(logEntry(`You move with uncanny speed — an extra action.`, "status"));
   actor.actionsLeft = (actor.actionsPerTurn || 1) + extra;
@@ -519,10 +650,7 @@ function advanceQueue(cs) {
       const r = beginTurnFor(cs, actor);
       if (r === "dead") return finishDefeat(cs);
       if (r === "stun") { cs.orderIdx += 1; continue; }
-      // An enthralled/charmed player loses the turn — the will isn't theirs to command
-      // (freed when the dominator dies or an ally's Dispel wins the contest).
-      if (hasStatus(actor, "enthralled")) { cs.log.push(logEntry("Your body is not your own — you stand frozen, enthralled.", "status")); cs.orderIdx += 1; continue; }
-      if (hasStatus(actor, "charmed")) { cs.log.push(logEntry("A strange calm stays your hand — you cannot raise a weapon.", "status")); cs.orderIdx += 1; continue; }
+      if (r === "controlled") { cs.orderIdx += 1; continue; }
       cs.phase = "player";
       return cs; // hand control to the UI
     }
@@ -531,15 +659,13 @@ function advanceQueue(cs) {
     const r = beginTurnFor(cs, actor);
     cs.orderIdx += 1;
     if (r === "dead") { if (playerDown(cs)) return finishDefeat(cs); continue; }
-    if (r === "stun") continue;
+    if (r === "stun" || r === "charmed") continue;
     // A fleeing foe spends its turn putting ground between it and the field; once
     // it's far enough it's gone. It doesn't fight — the player must run it down.
     if (actor.side === "enemy" && actor.fleeing) { fleeStep(cs, actor); continue; }
     if (actor.side === "enemy" && !moraleCheck(cs, actor)) continue;
-    // Mind-control: a CHARMED foe stands down (it won't act against the side that
-    // swayed it). An enthralled (dominated) creature has already switched sides, so it
-    // simply fights for its new side below — no special retarget needed.
-    if (hasStatus(actor, "charmed")) { cs.log.push(logEntry(`${actor.name} stands down, held by the charm.`, "status")); continue; }
+    // An enthralled creature has already switched sides, so it fights for its
+    // new side below. Brief charm was consumed by beginTurnFor above.
     while ((actor.actionsLeft || 0) > 0) {
       // Companions hit only foes still fighting — never a fleeing or yielded foe
       // (running one down or finishing a captive is the player's call alone).
@@ -585,7 +711,7 @@ function escalateToLethal(cs, reason) {
 // Draw steel mid-brawl — escalates to a lethal fight (you and any armed foes
 // switch to real weapons; the aftermath gets far worse).
 export function playerDrawWeapon(cs0) {
-  if (cs0.phase !== "player" || cs0.lethal) return cs0;
+  if (cs0.phase !== "player" || cs0.lethal || isPlayerTurnLocked(cs0)) return cs0;
   if (!cs0.player.stowedWeapon || cs0.player.stowedWeapon.category === "unarmed") return cs0;
   const cs = clone(cs0);
   escalateToLethal(cs, "weapon");
@@ -1046,7 +1172,7 @@ function npcCandidates(actor) {
 function npcPerform(cs, actor, opponents, opts = {}) {
   if ((actor.actionsLeft || 0) <= 0) return false;
   // A dominated actor gets allies:[] so it won't "support" the side it's now fighting.
-  const choice = chooseAction(actor, opponents, npcCandidates(actor), { allies: opts.allies ?? sideAllies(cs, actor) });
+  const choice = opts.choice || chooseAction(actor, opponents, npcCandidates(actor), { allies: opts.allies ?? sideAllies(cs, actor) });
   if (!choice) return false;
   const { def, ability, mode } = choice;
   const tId = ability.tier || actor.tier || "common";
@@ -1104,6 +1230,81 @@ function npcPerform(cs, actor, opponents, opts = {}) {
     if (t.side === "enemy") downEnemy(cs, t); else downAlly(cs, t);
   }
   return true;
+}
+
+function intentForChoice(actor, choice, seq) {
+  if (!choice) return null;
+  const tier = choice.ability?.tier || actor.tier || "common";
+  const def = choice.def || getAbilityDef(choice.ability?.id);
+  if (!def) return null;
+  const profile = attackProfile(actor, def, tier, false);
+  const hits = (def.hits || 1) + (choice.ability?.id === BASIC_ATTACK.id && actor.weapon?.paired ? 1 : 0);
+  const estimated = choice.target && profile ? Math.max(0, Math.round(estimateHit(actor, def, tier, choice.target))) : 0;
+  return {
+    id: `${actor.uid}-r${seq}`,
+    abilityId: choice.ability.id,
+    tier,
+    mode: choice.mode,
+    targetUid: choice.target?.uid || null,
+    name: def.name,
+    kind: profile ? "attack" : def.effect?.target === "enemy" ? "debuff" : "skill",
+    damage: profile ? { min: profile.min, max: profile.max, type: profile.type, hits, estimated } : null,
+    status: def.effect?.type || null,
+  };
+}
+
+// Intents are planned and stored before the player sees their hand. Execution
+// reconstructs this exact choice; the AI is never asked to choose again mid-turn.
+function planEnemyIntents(cs) {
+  for (const enemy of cs.enemies) {
+    enemy.intent = null;
+    enemy.intents = [];
+    if (!canAct(enemy) || enemy.fleeing || hasStatus(enemy, "charmed")) continue;
+    if (hasStatus(enemy, "stun")) {
+      const pass = {
+        id: `${enemy.uid}-r${cs.round || cs.turn}-stunned`,
+        abilityId: null,
+        tier: enemy.tier || "common",
+        mode: "pass",
+        targetUid: null,
+        name: "Stunned",
+        kind: "pass",
+        damage: null,
+        status: null,
+      };
+      enemy.intent = pass;
+      enemy.intents = [pass];
+      continue;
+    }
+    const sim = clone(enemy);
+    // Intents describe the state the enemy will actually have when its turn
+    // begins. Simulate that one upcoming cooldown tick without mutating the
+    // live actor; beginTurnFor performs the single real decrement at execution.
+    decrementCooldowns(sim);
+    const actionCount = Math.max(1, sim.actionsPerTurn || 1);
+    const opponents = playerSide(cs);
+    for (let index = 0; index < actionCount; index += 1) {
+      const choice = chooseAction(sim, opponents, npcCandidates(sim), { allies: sideAllies(cs, enemy) });
+      const intent = intentForChoice(enemy, choice, `${cs.round || cs.turn}-${index}`);
+      if (!choice || !intent) break;
+      enemy.intents.push(intent);
+      const def = choice.def;
+      if (def.cooldown) sim.cooldowns[choice.ability.id] = def.cooldown;
+      if (sim.resolve != null) sim.resolve = Math.max(0, sim.resolve - (def.resolveCost || 0));
+    }
+    enemy.intent = enemy.intents[0] || null;
+  }
+}
+
+function choiceFromIntent(cs, actor, intent) {
+  const def = getAbilityDef(intent?.abilityId);
+  if (!def) return null;
+  return {
+    ability: { id: intent.abilityId, tier: intent.tier || actor.tier || "common", def },
+    def,
+    mode: intent.mode,
+    target: intent.targetUid ? byUid(cs, intent.targetUid) : null,
+  };
 }
 
 function resolveYield(cs, e) {
@@ -1337,7 +1538,7 @@ export function playerResolveCost(cs, def) {
 }
 
 export function abilityUsable(cs, abilityId) {
-  if (cs.phase !== "player") return false;
+  if (cs.phase !== "player" || isPlayerTurnLocked(cs)) return false;
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   if (!entry) return false;
   const def = getAbilityDef(abilityId);
@@ -1348,6 +1549,50 @@ export function abilityUsable(cs, abilityId) {
   if ((cs.player.resolve ?? 0) < playerResolveCost(cs, def)) return false;
   if (!weaponReqMet(def, cs.player.weapon)) return false;
   return true;
+}
+
+function cardTargetIndex(cs, card, targetUid) {
+  if (["self", "all-enemies", "all-allies"].includes(card.target)) return null;
+  const uid = targetUid || cs.targetUid || cs.enemies[cs.target]?.uid;
+  return cs.enemies.findIndex((enemy) => enemy.uid === uid && playerTargetable(enemy));
+}
+
+export function cardUsable(cs, cardUid, targetUid = null) {
+  if (!cs?.deck || cs.phase !== "player" || isPlayerTurnLocked(cs) || !cs.deck.hand.includes(cardUid)) return false;
+  const card = cs.deck.cards[cardUid];
+  const def = card && getAbilityDef(card.abilityId);
+  if (!card || !def) return false;
+  if ((cs.player.energy || 0) < card.energyCost) return false;
+  if ((cs.player.resolve ?? 0) < playerResolveCost(cs, def)) return false;
+  if (!weaponReqMet(def, cs.player.weapon)) return false;
+  if (hasStatus(cs.player, "silence") && card.abilityId !== BASIC_ATTACK.id && card.abilityId !== DEFEND.id) return false;
+  if (!["self", "all-enemies", "all-allies"].includes(card.target) && cardTargetIndex(cs, card, targetUid) < 0) return false;
+  return true;
+}
+
+export function playCard(cs0, cardUid, targetUid = null) {
+  if (!cardUsable(cs0, cardUid, targetUid)) return cs0;
+  const card = cs0.deck.cards[cardUid];
+  const def = getAbilityDef(card.abilityId);
+  const targetIndex = cardTargetIndex(cs0, card, targetUid);
+  const prepared = clone(cs0);
+  const energyBefore = prepared.player.energy || 0;
+  const actionCost = def.actionCost || 1;
+  prepared.player.actionsLeft = Math.max(1, actionCost);
+  prepared.player.cooldowns[card.abilityId] = 0; // the pile cycle replaces cooldowns
+  const baselineAfter = prepared.player.actionsLeft - actionCost;
+  let cs = playerAct(prepared, card.abilityId, targetIndex < 0 ? null : targetIndex);
+  const actionBonus = Math.max(0, (cs.player.actionsLeft || 0) - baselineAfter);
+  cs.player.energy = Math.max(0, energyBefore - card.energyCost + actionBonus);
+  cs.player.actionsLeft = cs.player.energy;
+  delete cs.player.cooldowns[card.abilityId];
+  cs.targetUid = cs.enemies[cs.target]?.uid || cs.targetUid;
+
+  cs.deck.hand = cs.deck.hand.filter((uid) => uid !== cardUid);
+  if (card.exhaust) cs.deck.exhaust.push(cardUid);
+  else cs.deck.discard.push(cardUid);
+  cs.log.push(logEntry(`${card.name} → ${card.exhaust ? "exhaust" : "discard"}.`, "system"));
+  return cs;
 }
 
 export function playerAct(cs0, abilityId, targetIndex) {
@@ -1518,56 +1763,10 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
   return checkCombatEnd(cs);
 }
 
-// Use a battlefield feature (flip a table, hurl a stool, topple a log…).
-export function playerUseEnvironment(cs0, featureId, targetIndex = null) {
-  if (cs0.phase !== "player") return cs0;
-  const f0 = cs0.environment.find((f) => f.id === featureId);
-  if (!f0 || f0.uses <= 0) return cs0;
-  if ((cs0.player.actionsLeft || 0) < 1) return cs0; // costs an action point
-  const cs = clone(cs0);
-  const feat = cs.environment.find((f) => f.id === featureId);
-  cs.player.actionsLeft = (cs.player.actionsLeft || 1) - 1;
-  feat.uses -= 1;
-  const act = feat.action;
-  cs.log.push(logEntry(`${cs.player.name}: ${feat.name}.`, "player"));
-
-  const hurt = (e, range, type = "physical") => {
-    const armor = type === "physical" ? (e.armor || 0) : 0;
-    const dmg = Math.max(0, randInt(range[0], range[1]) + Math.floor((cs.player.attrs?.body || 0) / 3) - armor);
-    e.health = Math.max(0, e.health - dmg);
-    cs.log.push(logEntry(`${e.name} takes ${dmg} from ${feat.name.toLowerCase()}.`, "hit"));
-    if (dmg > 0) onEnemyDamaged(e, dmg);
-  };
-  const pickTarget = () => {
-    let idx = targetIndex;
-    if (idx == null || !cs.enemies[idx] || cs.enemies[idx].health <= 0 || cs.enemies[idx].resolved) idx = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
-    return cs.enemies[idx];
-  };
-
-  if (act.type === "cover") {
-    addStatus(cs.player, { type: "guard", value: act.armor || 5, duration: act.dur || 2 });
-    cs.log.push(logEntry(`You take cover — armour raised.`, "status"));
-  } else if (act.type === "throw" || act.type === "shove" || act.type === "topple") {
-    const e = pickTarget();
-    if (e) {
-      hurt(e, act.dmg);
-      const stun = act.stun || (act.stunChance && Math.random() < act.stunChance ? 1 : 0);
-      if (e.health > 0 && stun) { addStatus(e, { type: "stun", value: 1, duration: 1 }); onEnemyControlled(e); cs.log.push(logEntry(`${e.name} is knocked off balance.`, "status")); }
-      if (e.health <= 0) downEnemy(cs, e);
-    }
-  } else if (act.type === "hazard") {
-    for (const e of livingEnemies(cs)) {
-      hurt(e, act.dmg, "true");
-      if (e.health > 0 && act.dot) addStatus(e, { ...act.dot, target: "enemy" });
-      if (e.health <= 0) downEnemy(cs, e);
-    }
-  }
-  return checkCombatEnd(cs);
-}
-
 export function setTarget(cs0, idx) {
-  if (!playerTargetable(cs0.enemies[idx])) return cs0; // alive foes, plus a yielded one to execute
-  return { ...cs0, target: idx };
+  const targetIndex = typeof idx === "string" ? cs0.enemies.findIndex((e) => e.uid === idx) : idx;
+  if (!playerTargetable(cs0.enemies[targetIndex])) return cs0; // alive foes, plus a yielded one to execute
+  return { ...cs0, target: targetIndex, targetUid: cs0.enemies[targetIndex].uid };
 }
 
 // Apply a narrator-adjudicated improvised action ([COMBAT ACTION]) to the
@@ -1576,7 +1775,7 @@ export function setTarget(cs0, idx) {
 // strength so a freeform line can't hand out arbitrary damage. Counts as the
 // player's action; the caller advances the turn afterward.
 export function applyCombatEffect(cs0, effect) {
-  if (cs0.phase !== "player" || !effect) return cs0;
+  if (cs0.phase !== "player" || !effect || isPlayerTurnLocked(cs0)) return cs0;
   const cs = clone(cs0);
   const p = cs.player;
   if (effect.narration) cs.log.push(logEntry(effect.narration, "player"));
@@ -1651,19 +1850,101 @@ export function applyCombatEffect(cs0, effect) {
 
 // ----- enemy phase + turn advance -----
 
-// The player has finished their turn (spent their actions or chose to end it).
-// Step past the player's slot and resolve the rest of the initiative order —
-// allies and foes acting in speed order, round after round — until it's the
-// player's turn again or the fight ends.
+function resolveDeckEnemyPhase(cs) {
+  // Companions remain autonomous and resolve before the visible enemy plans.
+  for (const ally of [...(cs.allies || [])]) {
+    if (!canAct(ally)) continue;
+    const begun = beginTurnFor(cs, ally, { deckMode: true });
+    if (begun !== "ok") continue;
+    while ((ally.actionsLeft || 0) > 0) {
+      const opponents = liveAttackers(cs);
+      if (!opponents.length || !npcPerform(cs, ally, opponents)) break;
+    }
+    const afterAlly = checkCombatEnd(cs);
+    if (TERMINAL_PHASES.has(afterAlly.phase)) return afterAlly;
+  }
+
+  // Each enemy executes the exact ability/mode stored before the player acted.
+  for (const enemy of [...cs.enemies]) {
+    if (!canAct(enemy)) continue;
+    routCheck(cs);
+    if (!canAct(enemy)) continue;
+    const begun = beginTurnFor(cs, enemy, { deckMode: true });
+    if (begun === "dead") continue;
+    if (begun === "stun" || begun === "charmed") { enemy.intent = null; enemy.intents = []; continue; }
+    if (enemy.fleeing) { fleeStep(cs, enemy); continue; }
+    if (!moraleCheck(cs, enemy)) continue;
+
+    const intents = enemy.intents?.length ? [...enemy.intents] : (enemy.intent ? [enemy.intent] : []);
+    enemy.actionsLeft = intents.length;
+    for (const intent of intents) {
+      if (!canAct(enemy) || cs.player.health <= 0) break;
+      if (hasStatus(enemy, "silence") && intent.abilityId !== BASIC_ATTACK.id) {
+        cs.log.push(logEntry(`${enemy.name}'s ${intent.name} is smothered by silence.`, "status"));
+        enemy.actionsLeft = Math.max(0, enemy.actionsLeft - 1);
+        continue;
+      }
+      const choice = choiceFromIntent(cs, enemy, intent);
+      const opponents = playerSide(cs);
+      if (!choice || !opponents.length) break;
+      npcPerform(cs, enemy, opponents, { choice, allies: sideAllies(cs, enemy) });
+      if (playerDown(cs)) return finishDefeat(cs);
+    }
+    enemy.intent = null;
+    enemy.intents = [];
+    const afterEnemy = checkCombatEnd(cs);
+    if (TERMINAL_PHASES.has(afterEnemy.phase)) return afterEnemy;
+  }
+
+  if (playerDown(cs)) return finishDefeat(cs);
+  return checkCombatEnd(cs);
+}
+
+// Run one or more enemy phases until the player genuinely has agency again.
+// Brief charm skips exactly its remaining turns; a permanent binding cannot
+// strand React on an inert `phase: enemy` state.
+function advanceDeckUntilPlayer(cs) {
+  if (isPlayerPermanentlyControlled(cs)) {
+    cs.log.push(logEntry("Your will is bound beyond recall; the battle is lost.", "status"));
+    return finishDefeat(cs);
+  }
+  for (let guard = 0; guard < 2000; guard += 1) {
+    const afterEnemy = resolveDeckEnemyPhase(cs);
+    if (TERMINAL_PHASES.has(afterEnemy.phase)) return afterEnemy;
+    const nextRound = startPlayerDeckRound(cs);
+    if (TERMINAL_PHASES.has(nextRound.phase) || nextRound.phase === "player") return nextRound;
+    if (isPlayerPermanentlyControlled(nextRound)) {
+      nextRound.log.push(logEntry("Your will is bound beyond recall; the battle is lost.", "status"));
+      return finishDefeat(nextRound);
+    }
+    // `phase: enemy` here is the internal controlled-turn sentinel. Its intents
+    // were planned by startPlayerDeckRound, so resolve them immediately.
+  }
+  cs.log.push(logEntry("Your will never returns to the field.", "status"));
+  return finishDefeat(cs);
+}
+
+// The player has finished their turn (spent their cards or chosen to end it).
+// Resolve allies and stored enemy intents, including any player rounds that a
+// charm or enthrallment automatically skips.
+export function endPlayerTurn(cs0) {
+  if (cs0.phase !== "player" || !cs0.deck) return cs0;
+  const cs = clone(cs0);
+  cs.phase = "enemy";
+  discardHand(cs);
+  return advanceDeckUntilPlayer(cs);
+}
+
 export function endTurn(cs0) {
   if (cs0.phase !== "player") return cs0;
+  if (cs0.deck) return endPlayerTurn(cs0);
   const cs = clone(cs0);
   cs.orderIdx = (cs.orderIdx || 0) + 1; // move past the player's slot
   return advanceQueue(cs);
 }
 
 export function playerFlee(cs0) {
-  if (cs0.phase !== "player") return cs0;
+  if (cs0.phase !== "player" || isPlayerTurnLocked(cs0)) return cs0;
   const cs = clone(cs0);
   const speeds = livingEnemies(cs).map((e) => e.speed || 4);
   const enemySpeed = speeds.length ? Math.max(...speeds) : 1;
@@ -1681,7 +1962,7 @@ export function playerFlee(cs0) {
 // Reposition: give ground (open the distance from every foe — the ranged kiting
 // lever) or close in. Both cost an action point.
 export function playerWithdraw(cs0) {
-  if (cs0.phase !== "player" || (cs0.player.actionsLeft || 0) < 1) return cs0;
+  if (cs0.phase !== "player" || isPlayerTurnLocked(cs0) || (cs0.player.actionsLeft || 0) < 1) return cs0;
   const cs = clone(cs0);
   cs.player.actionsLeft -= 1;
   for (const e of cs.enemies) if (e.health > 0 && !e.resolved) e.distance = Math.min(MAX_DISTANCE, (e.distance || 0) + 1);
@@ -1689,7 +1970,7 @@ export function playerWithdraw(cs0) {
   return cs;
 }
 export function playerAdvance(cs0) {
-  if (cs0.phase !== "player" || (cs0.player.actionsLeft || 0) < 1) return cs0;
+  if (cs0.phase !== "player" || isPlayerTurnLocked(cs0) || (cs0.player.actionsLeft || 0) < 1) return cs0;
   const cs = clone(cs0);
   cs.player.actionsLeft -= 1;
   for (const e of cs.enemies) if (e.health > 0 && !e.resolved) e.distance = Math.max(0, (e.distance || 0) - 1);
@@ -1701,7 +1982,7 @@ export function playerAdvance(cs0) {
 // some foe yielded or is fleeing (so there's a verdict to give — spare them, or
 // let the runners go). Used to gate the Stand Down button.
 export function canStandDown(cs) {
-  if (!cs || cs.phase !== "player") return false;
+  if (!cs || cs.phase !== "player" || isPlayerTurnLocked(cs)) return false;
   if (liveAttackers(cs).length > 0) return false;
   return pendingCaptives(cs).length > 0 || livingEnemies(cs).some((e) => e.fleeing);
 }
@@ -1709,7 +1990,7 @@ export function canStandDown(cs) {
 // Once a fight has dragged into a stalemate (CEASEFIRE_TURN), a thinking foe's
 // truce offer stays on the table — the player can break off to a wary DRAW.
 export function canCeasefire(cs) {
-  return !!(cs && cs.phase === "player" && cs.ceasefire);
+  return !!(cs && cs.phase === "player" && !isPlayerTurnLocked(cs) && cs.ceasefire);
 }
 // Take the truce: both sides disengage. Foes still standing give ground (no kill,
 // no spoils); a foe that had yielded stays a captive. Ends as a standoff.

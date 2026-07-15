@@ -12,7 +12,7 @@ export const colors = {
   inkDeep: "#040913",         // overlays / vignette anchor
   parchment: "#F4E8C3",       // primary text on dark
   parchmentLight: "#FFF4D0",  // title and dialogue highlight
-  parchmentMuted: "#C9A96A",  // warm pixel-gold metadata
+  parchmentMuted: "#C9A96A",  // warm gold metadata
   gold: "#E7B95E",            // primary accent
   goldSoft: "#D3A650",        // secondary accent
 
@@ -71,7 +71,9 @@ export const glass = {
 
 export const fonts = {
   serif: "'Alegreya', Georgia, serif",
-  pixel: "'Pixelify Sans', 'Trebuchet MS', sans-serif",
+  // Kept as an API-compatible key while older components migrate. It now
+  // resolves to the production book face rather than a retro pixel font.
+  pixel: "'Alegreya', Georgia, serif",
 };
 
 // The 9px uppercase letterspaced label style used in beat metadata,

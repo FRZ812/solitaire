@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Map v2 (relational model) — decompile / compile / parity proof.
 //
-// Proves the normalized model (docs/MAP_DATA_MODEL.md) can losslessly represent
-// the current single-blob map: it DECOMPILES the live `tiles` blob into the v2
+// Legacy migration check for the normalized model retained in the Supabase
+// migrations. It proves that model can losslessly represent the current
+// single-blob map: it DECOMPILES the live `tiles` blob into the v2
 // layers (places, cells, prose, edges), COMPILES them back to a `tiles` dict,
 // and asserts the door graph + terrain are identical. Run before seeding the
 // real tables, and in CI during the migration, so a model/loader change can't

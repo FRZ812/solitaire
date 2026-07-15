@@ -22,3 +22,11 @@ scripts/whitemarch-map.png
 # the ignored render above — local scratch, never repo artifacts.
 .map-backups/
 scripts/whitemarch-backups/
+
+# Local agent attachments and planning scratch.
+.codex-remote-attachments/
+.hermes/plans/
+.preview-root/
+
+# Godot editor/import caches left by retired engine spikes.
+**/.godot/

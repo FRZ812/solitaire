@@ -1,6 +1,6 @@
 // River Docks — the eastern river-face of Whitemarch, looking out on the
-// Whitewend. The bible (docs/region-planning/WHITEMARCH_CITY.md L279-320)
-// frames this ward as "almost a second city: lower, wetter, louder, less
+// Whitewend. The archived ward brief frames it as "almost a second city:
+// lower, wetter, louder, less
 // patient with law unless law has a badge and backup." Tar, rope, mud, fish
 // scales, river fog, customs awnings, dock gangs hauling sacks in rhythm,
 // smugglers using legitimate noise as cover.

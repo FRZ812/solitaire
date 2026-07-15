@@ -48,8 +48,8 @@ import { getBiome } from "./data/biomes.js";
 import { biomeVisual, sceneBiomeId } from "./data/visual-assets.js";
 import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
-import { generateEnvironment } from "./data/environment.js";
-import { initCombat, playerAct, playerTalk, playerDrawWeapon, setTarget, endTurn, playerFlee, playerStandDown, playerCeasefire, playerWithdraw, playerAdvance, applyCombatEffect } from "./engine/combat.js";
+import { initCombat, playCard, setTarget, endPlayerTurn, playerFlee, playerStandDown, playerCeasefire } from "./engine/combat.js";
+import { hashSeed } from "./engine/combat-rng.js";
 import { applyCombatResult, applyLoot } from "./engine/combat-result.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 import { poiPlaceName } from "./engine/location.js";
@@ -361,7 +361,6 @@ export function Solitaire() {
   // Combat: `combat` holds the active turn-state (null = not fighting);
   // `pendingCombat` is a hostile encounter offering a fight before it starts.
   const [combat, setCombat] = useState(null);
-  const [combatBusy, setCombatBusy] = useState(false); // awaiting the narrator for an improvised combat action
   const [pendingCombat, setPendingCombat] = useState(null);
   const [pendingLoot, setPendingLoot] = useState(null); // spoils to deliberately Search
   const [pendingEngage, setPendingEngage] = useState(null); // narrator start_combat awaiting the player's go-ahead
@@ -1616,8 +1615,6 @@ export function Solitaire() {
     closeBeatMenu();
     const region = regionHere(st);
     const wp = activeWorldPassives(st.character, st.world.codex);
-    const cur = st.world.currentTile;
-    const terrain = getTile(st, cur.x, cur.y).terrain;
     // Recruited companions fight at your side, scaled to the region's enemy tier.
     const allies = (st.party || [])
       .map((id) => st.world.codex.characters?.[id])
@@ -1630,12 +1627,21 @@ export function Solitaire() {
     for (const a of allies) if (a.companionId) a._mountedBonus = carrierBonus(chars[a.companionId]);
     const playerMountedBonus = carrierBonus(chars.wanderer);
     setCombat(initCombat(st.character, st.world.codex, enemies, {
+      seed: hashSeed([
+        currentCampaignId || "local",
+        st.time?.day || 0,
+        st.time?.hour || 0,
+        st.time?.minute || 0,
+        st.world.currentTile?.x || 0,
+        st.world.currentTile?.y || 0,
+        st.turns?.length || st.beats?.length || 0,
+        context?.flavor || enemies.map((enemy) => enemy.name).join("/"),
+      ]),
       playerMountedBonus,
       maxLootTier: region.lootTier,
       region: region.level,
       ownedUniques: ownedUniqueIds(st),
       coinBonus: wp.coinBonus || 0,
-      environment: generateEnvironment(terrain),
       dark: inTheDark(st),
       weary: hasCondition(st.character.conditions, "Exhausted"),
       allies,
@@ -1788,51 +1794,12 @@ export function Solitaire() {
     }
   }
 
-  const onCombatAct = (abilityId) => setCombat((c) => (c ? playerAct(c, abilityId, c.target) : c));
-  // Structured Talk intents (Demand Surrender / Demoralize / Provoke) — instant,
-  // engine-resolved. Free-spoken Talk goes through handleCombatAction (narrator).
-  const onCombatTalk = (intent) => setCombat((c) => (c ? playerTalk(c, intent, c.target) : c));
-
-  // A snapshot of the fight for the narrator to adjudicate an improvised action.
-  function combatContext(c) {
-    const p = c.player;
-    const en = c.enemies.filter((e) => e.health > 0 && !e.resolved)
-      .map((e) => `${e.name} [${e.tier}, ${e.demeanor}] ${Math.ceil(e.health)}/${e.maxHealth}hp${(e.statuses || []).length ? ` (${e.statuses.map((s) => s.type).join(",")})` : ""}`).join("; ");
-    const allies = (c.allies || []).filter((a) => a.health > 0 && !a._dead && !a.resolved).map((a) => `${a.name} ${Math.ceil(a.health)}/${a.maxHealth}`).join("; ");
-    const env = (c.environment || []).filter((f) => f.uses > 0).map((f) => f.name).join(", ");
-    return `[FIGHT STATE] You: ${Math.ceil(p.health)}/${p.maxHealth}hp, ${c.lethal ? `wielding ${p.weapon?.name || "fists"}` : "in a bare-handed brawl"}. Foes: ${en || "none left"}.${allies ? ` Allies: ${allies}.` : ""}${env ? ` Around you: ${env}.` : ""}`;
-  }
-
-  // The player types a freeform combat move (improvise with the surroundings,
-  // demand surrender, taunt, terrify…). The narrator adjudicates it into a
-  // bounded combat_effect; the engine applies it as the player's turn.
-  async function handleCombatAction(text) {
-    const action = (text || "").trim();
-    if (!action || combatBusy || !combat || combat.phase !== "player") return;
-    setCombatBusy(true);
-    setError(null);
-    try {
-      const msg = `[COMBAT ACTION] ${combatContext(combat)}\nThe player's improvised action this turn: "${action}". Adjudicate it from the fiction and return ONLY a combat_effect.`;
-      const beat = await narrate(state, msg);
-      const eff = beat.combat_effect || (beat.narration ? { narration: beat.narration, kind: "miss" } : null);
-      let next = eff ? applyCombatEffect(combat, eff) : combat;
-      if (!["victory", "defeat", "resolved", "playerFled"].includes(next.phase)) next = endTurn(next);
-      setCombat(next);
-    } catch (e) {
-      setError(e.message || String(e));
-    } finally {
-      setCombatBusy(false);
-    }
-  }
-
-  const onCombatDraw = () => setCombat((c) => (c ? playerDrawWeapon(c) : c));
-  const onCombatTarget = (idx) => setCombat((c) => (c ? setTarget(c, idx) : c));
-  const onCombatEndTurn = () => setCombat((c) => (c ? endTurn(c) : c));
+  const onCombatPlayCard = (cardUid, targetUid) => setCombat((c) => (c ? playCard(c, cardUid, targetUid) : c));
+  const onCombatTarget = (uid) => setCombat((c) => (c ? setTarget(c, uid) : c));
+  const onCombatEndTurn = () => setCombat((c) => (c ? endPlayerTurn(c) : c));
   const onCombatFlee = () => setCombat((c) => (c ? playerFlee(c) : c));
   const onCombatStandDown = () => setCombat((c) => (c ? playerStandDown(c) : c));
   const onCombatCeasefire = () => setCombat((c) => (c ? playerCeasefire(c) : c));
-  const onCombatWithdraw = () => setCombat((c) => (c ? playerWithdraw(c) : c));
-  const onCombatAdvance = () => setCombat((c) => (c ? playerAdvance(c) : c));
 
   // ----- Render flow -----
 
@@ -2290,18 +2257,12 @@ export function Solitaire() {
       {combat && (
         <CombatView
           combat={combat}
-          onAct={onCombatAct}
-          onAction={handleCombatAction}
-          onTalk={onCombatTalk}
-          busy={combatBusy}
-          onDraw={onCombatDraw}
+          onPlayCard={onCombatPlayCard}
           onSetTarget={onCombatTarget}
           onEndTurn={onCombatEndTurn}
           onFlee={onCombatFlee}
           onStandDown={onCombatStandDown}
           onCeasefire={onCombatCeasefire}
-          onWithdraw={onCombatWithdraw}
-          onAdvance={onCombatAdvance}
           onResolve={handleResolveCombat}
         />
       )}
