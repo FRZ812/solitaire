@@ -1842,10 +1842,10 @@
  * balanced beside the already-symmetrical Abilities compass. */
 .codex-tab-icon[data-icon-key="codex:characters"] { --codex-art-x: -13%; --codex-art-y: -11%; }
 .codex-tab-icon[data-icon-key="codex:races"] { --codex-art-x: -1%; --codex-art-y: -8%; }
-.codex-tab-icon[data-icon-key="codex:professions"] { --codex-art-x: 9%; --codex-art-y: -7%; }
+.codex-tab-icon[data-icon-key="codex:professions"] { --codex-art-x: 0%; --codex-art-y: 3%; }
 .codex-tab-icon[data-icon-key="codex:items"] { --codex-art-x: -9%; --codex-art-y: -4%; }
-.codex-tab-icon[data-icon-key="codex:passives"] { --codex-art-x: 14%; --codex-art-y: 3%; }
-.codex-tab-icon[data-icon-key="codex:conditions"] { --codex-art-x: -7%; --codex-art-y: 16%; }
+.codex-tab-icon[data-icon-key="codex:passives"] { --codex-art-x: 22%; --codex-art-y: 7%; }
+.codex-tab-icon[data-icon-key="codex:conditions"] { --codex-art-x: -16%; --codex-art-y: 20%; --codex-art-scale: 1; }
 .codex-tab-icon[data-icon-key="codex:glossary"] { --codex-art-x: -1%; --codex-art-y: 15%; }
 
 .codex-view__tabs [role="tab"][data-group="lore"] { box-shadow: inset 0 2px rgba(105, 185, 208, .18); }
