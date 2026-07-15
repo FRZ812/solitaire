@@ -21,7 +21,7 @@ import { formatTime, formatDate } from "../engine/time.js";
 import { formatCopper } from "../engine/economy.js";
 import { compassDir } from "../engine/api.js";
 import { useZoomPan } from "./useZoomPan.js";
-import { poiFootprintName, poiMeta, poiPlaceName, titleFromId } from "../engine/location.js";
+import { poiMeta, poiPlaceName } from "../engine/location.js";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
 
@@ -556,8 +556,6 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     if (!parent || tile.poi?.type === "hidden") continue;
     if (!footprintGroups.has(parent)) {
       footprintGroups.set(parent, {
-        id: parent,
-        name: poiFootprintName(tile.poi) || titleFromId(parent) || parent,
         iconKey: assetKeyForTile(tile),
         tiles: [],
         keys: new Set(),
@@ -570,13 +568,11 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
 
   // A footprint reads as one building via its prism (shared color + no
   // internal strokes between member hexes). The selected footprint is
-  // marked by its centroid icon + label only — the floor-perimeter
+  // marked by its centroid icon only — the floor-perimeter
   // outline that used to ring the selected group is gone because it
   // drew at ground level and bled visibly through any elevated
   // neighbour (a wall hex adjacent to a Whitewend water hex would show
   // a gold edge through the wall's side face).
-  const selectedKey = selected ? `${selected.x},${selected.y}` : null;
-  const footprintLabels = [];
   // Anchor-key → iconKey. The hex render loop reads this map and draws
   // the group's centroid icon as a CHILD of the anchor hex's <g>, so it
   // shares the hex's back-to-front z-order. Without this the icon was
@@ -608,34 +604,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         bestNbrs = nbrs; bestDist = dist; anchor = h;
       }
     }
-    const anchorLift = liftForTile(getTile(state, anchor.x, anchor.y));
     if (group.iconKey && MAP_ASSETS[group.iconKey]) {
       anchorIconByKey.set(`${anchor.x},${anchor.y}`, group.iconKey);
-    }
-    if (selectedKey && group.keys.has(selectedKey)) {
-      footprintLabels.push({
-        key: `foot-label-${group.id}`,
-        x: anchor.px,
-        y: anchor.py + 20 - anchorLift,
-        name: group.name,
-      });
-    }
-  }
-
-  // Place names are otherwise hidden — show one label only for the selected hex
-  // (a non-footprint named POI: landmark, river, signpost, etc.). Footprint
-  // buildings get their name via footprintLabels above; sub-area and terrain
-  // detail live in the panel. This keeps the map text-free until you tap.
-  const labels = [];
-  if (selected && isSeen(state, selected.x, selected.y)) {
-    const st = getTile(state, selected.x, selected.y);
-    if (!st.poi?.parent && st.poi?.type !== "hidden" && st.poi?.name) {
-      const dq = selected.x - cur.x;
-      const dr = selected.y - cur.y;
-      const px = SVG_CENTER + HSPACING * (dq + dr / 2);
-      const py = SVG_CENTER + VSPACING * dr;
-      const lift = liftForTile(st);
-      labels.push({ key: "lbl-selected", x: px, y: py - 22 - lift, name: st.poi.name, fill: "#f5dcb8" });
     }
   }
 
@@ -1021,74 +991,6 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                 />
               );
             })()}
-            {/* Footprint centroid icons now render inline with their
-                anchor hex (see anchorIconByKey lookup in the hex pass
-                above) so elevation z-order is honoured. Only the
-                LABEL stays as a top-layer overlay below — text is the
-                one decoration we want guaranteed-on-top regardless of
-                geometry. */}
-            {footprintLabels.map((l) => (
-              <g key={l.key} pointerEvents="none">
-                <text
-                  x={l.x} y={l.y}
-                  textAnchor="middle"
-                  fontFamily="'Inter', sans-serif"
-                  fontSize="9"
-                  fontWeight="900"
-                  letterSpacing="1.2"
-                  fill="none"
-                  stroke="#111716"
-                  strokeWidth="4"
-                  strokeOpacity={0.9}
-                  paintOrder="stroke"
-                >
-                  {l.name.toUpperCase()}
-                </text>
-                <text
-                  x={l.x} y={l.y}
-                  textAnchor="middle"
-                  fontFamily="'Inter', sans-serif"
-                  fontSize="9"
-                  fontWeight="900"
-                  letterSpacing="1.2"
-                  fill="#d7a76f"
-                  fillOpacity="0.78"
-                >
-                  {l.name.toUpperCase()}
-                </text>
-              </g>
-            ))}
-            {labels.map((l) => (
-              <g key={l.key} pointerEvents="none">
-                <text
-                  x={l.x} y={l.y}
-                  textAnchor="middle"
-                  fontFamily="'Instrument Serif', serif"
-                  fontStyle="italic"
-                  fontSize="16"
-                  fontWeight="700"
-                  fill="none"
-                  stroke="#111716"
-                  strokeWidth="5"
-                  strokeOpacity={0.92}
-                  strokeLinejoin="round"
-                  paintOrder="stroke"
-                >
-                  {l.name}
-                </text>
-                <text
-                  x={l.x} y={l.y}
-                  textAnchor="middle"
-                  fontFamily="'Instrument Serif', serif"
-                  fontStyle="italic"
-                  fontSize="16"
-                  fontWeight="700"
-                  fill="#f5dcb8"
-                >
-                  {l.name}
-                </text>
-              </g>
-            ))}
             {/* Quest markers — an objective ring + label at each accepted quest's place */}
             {questMarks.map((q) => {
               const qx = SVG_CENTER + HSPACING * ((q.loc.x - cur.x) + (q.loc.y - cur.y) / 2);

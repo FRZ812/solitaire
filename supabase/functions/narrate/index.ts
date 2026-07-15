@@ -10,7 +10,6 @@ const ALLOWED_MODELS = new Set([
   "deepseek/deepseek-v4-pro",
   "deepseek/deepseek-v4-flash",
   "google/gemini-3.1-pro-preview",
-  "xiaomi/mimo-v2.5",
   "z-ai/glm-5.2",
   "openai/gpt-5.6-luna",
 ]);

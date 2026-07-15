@@ -16,9 +16,8 @@ function formatRelativeTime(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
-function RomanIndex({ index }) {
-  const numerals = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
-  return <span>{numerals[index] || String(index + 1).padStart(2, "0")}</span>;
+function CampaignIndex({ index }) {
+  return <strong>{String(index + 1).padStart(2, "0")}</strong>;
 }
 
 export function CampaignsList({
@@ -142,16 +141,23 @@ export function CampaignsList({
                       onClick={() => onSelect(campaign.id)}
                       disabled={busy}
                     >
-                      <span className="campaign-card__index" aria-hidden="true"><RomanIndex index={index} /></span>
+                      <span className="campaign-card__index" aria-hidden="true">
+                        <small>Journey</small>
+                        <CampaignIndex index={index} />
+                      </span>
                       <span className="campaign-card__copy">
-                        <small>Last played {formatRelativeTime(campaign.last_played_at)}</small>
+                        <span className="campaign-card__meta">
+                          <small>Last played {formatRelativeTime(campaign.last_played_at)}</small>
+                          <i aria-hidden="true" />
+                          <small>Cloud saved</small>
+                        </span>
                         <strong>{campaign.name || "Untitled journey"}</strong>
-                        <span>Continue campaign</span>
+                        <span>Continue from your last passage</span>
                       </span>
                       <span className="campaign-card__arrow" aria-hidden="true">›</span>
                     </button>
                     <footer className="campaign-card__actions">
-                      <span>Saved to your account</span>
+                      <span>Save options</span>
                       <div>
                         <button type="button" onClick={() => startRename(campaign)} disabled={busy}>Rename</button>
                         <button type="button" className="is-danger" onClick={() => onDelete(campaign.id)} disabled={busy}>Delete</button>
