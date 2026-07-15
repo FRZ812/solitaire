@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { signInWithGoogle } from "../engine/auth-supabase.js";
 import { InitialBackdrop } from "./InitialBackdrop.jsx";
+import { MotionPermissionButton } from "./MotionPermissionButton.jsx";
 import { ErrorBanner } from "./primitives.jsx";
 import { colors, shadow, radius, fonts } from "./tokens.js";
 
@@ -82,6 +83,7 @@ export function AuthScreen() {
           <div className="auth-hero__facets" aria-label="Game qualities">
             <span>Rule-bound</span><i /> <span>Persistent</span><i /> <span>Yours</span>
           </div>
+          <MotionPermissionButton className="motion-permission--auth" />
         </div>
 
         {/* Sign-in */}

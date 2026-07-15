@@ -1,14 +1,16 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { Icon } from "./Icon.jsx";
-import { radius, glass, shadow, metaStyle } from "./tokens.js";
+import { glass, shadow } from "./tokens.js";
 import { PartyView } from "./PartyView.jsx";
 import { MenuSheet } from "./MenuSheet.jsx";
 import { InventoryView } from "./InventoryView.jsx";
+import { MotionPermissionButton } from "./MotionPermissionButton.jsx";
+import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
+import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.webp";
 
 // The unified character deck: Company · Character · Inventory as three pages of one
-// bottom-sheet, opened from a single header button (defaults to Character). Swipe
-// LEFT/RIGHT to move between them — it LOOPS — or tap a page dot. Pull DOWN on the
-// grab handle (or tap the dimmed backdrop) to dismiss; there is no close button.
+// portrait-led bottom sheet, opened from a single header button (defaults to
+// Character). Swipe LEFT/RIGHT to move between sections, or use the tabs.
 //
 // Order matters: Company sits LEFT of Character, Inventory RIGHT (per the brief).
 const PAGES = ["party", "character", "inventory"];
@@ -16,14 +18,25 @@ const LABELS = { party: "Company", character: "Character", inventory: "Inventory
 const PAGE_ICONS = { party: "users", character: "user", inventory: "bag" };
 
 export function PanelDeck({ state, user, initialPage = "character", onClose, handlers }) {
-  const start = Math.max(0, PAGES.indexOf(initialPage));
-  const [page, setPage] = useState(start === -1 ? 1 : start);
+  const requestedPage = PAGES.indexOf(initialPage);
+  const [page, setPage] = useState(requestedPage === -1 ? 1 : requestedPage);
   const [inventoryTarget, setInventoryTarget] = useState("wanderer");
   const [dragY, setDragY] = useState(0); // live downward pull on the grab handle
+  const [direction, setDirection] = useState(1);
   const swipe = useRef(null);
   const grab = useRef(null);
+  const scroll = useRef(null);
 
-  const go = (dir) => setPage((p) => (p + dir + PAGES.length) % PAGES.length); // wraps around
+  const go = useCallback((dir) => {
+    setDirection(dir);
+    setPage((p) => (p + dir + PAGES.length) % PAGES.length);
+  }, []); // wraps around
+
+  const selectPage = (next) => {
+    if (next === page) return;
+    setDirection(next > page ? 1 : -1);
+    setPage(next);
+  };
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -33,10 +46,15 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [go, onClose]);
+
+  useEffect(() => {
+    if (scroll.current) scroll.current.scrollTop = 0;
+  }, [page]);
 
   const openInventory = (characterId) => {
     setInventoryTarget(characterId || "wanderer");
+    setDirection(1);
     setPage(PAGES.indexOf("inventory"));
   };
 
@@ -46,8 +64,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
   // grab handle); otherwise the touch falls through to normal content scroll.
   function onTouchStart(e) {
     const t = e.touches[0];
-    const sc = e.target.closest?.(".no-scrollbar");
-    swipe.current = { x: t.clientX, y: t.clientY, atTop: !sc || sc.scrollTop <= 0, mode: null };
+    swipe.current = { x: t.clientX, y: t.clientY, atTop: !scroll.current || scroll.current.scrollTop <= 0, mode: null };
   }
   function onTouchMove(e) {
     const s = swipe.current; if (!s) return;
@@ -104,7 +121,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
         aria-label={`${LABELS[PAGES[page]]} menu`}
         style={{
           width: "100%", maxWidth: "480px", margin: "0 auto",
-          height: "92dvh",
+          height: "96dvh",
           backgroundColor: "rgba(20, 29, 29, 0.94)",
           border: "1px solid rgba(215, 167, 111, 0.22)", borderBottom: "none",
           borderTopLeftRadius: "24px", borderTopRightRadius: "24px",
@@ -114,59 +131,47 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
           ...glass, boxShadow: shadow.sheet,
         }}
       >
-        {/* Grab handle + page indicator — drag this down to dismiss. */}
-        <div
+        {/* Minimal sheet chrome: the illustrated dossier owns the hierarchy. */}
+        <div className="panel-deck__chrome"
           onTouchStart={onGrabStart}
           onTouchMove={onGrabMove}
           onTouchEnd={onGrabEnd}
-          style={{ flexShrink: 0, padding: "10px 12px 8px", cursor: "grab", touchAction: "none" }}
+          style={{ flexShrink: 0, cursor: "grab", touchAction: "none" }}
         >
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: "9px" }}>
-            <div style={{ width: "40px", height: "4px", borderRadius: radius.pill, backgroundColor: "rgba(215, 167, 111, 0.35)" }} />
+          <div className="panel-deck__grab" aria-hidden="true">
+            <span />
           </div>
-          {/* Named page rail keeps all three destinations visible and tappable. */}
-          <div className="panel-deck__nav" role="tablist" aria-label="Character pages">
-            <button onClick={() => go(-1)} aria-label="Previous" style={chevBtn}>
-              <Icon name="arrowLeft" size={13} color="rgba(215,167,111,0.5)" strokeWidth={2} />
-            </button>
-            <div className="panel-deck__tabs">
-              {PAGES.map((key, i) => (
-                <button
-                  key={key}
-                  className={`panel-deck__tab${i === page ? " is-active" : ""}`}
-                  onClick={() => setPage(i)}
-                  role="tab"
-                  aria-selected={i === page}
-                  aria-controls={`deck-page-${key}`}
-                  tabIndex={i === page ? 0 : -1}
-                >
-                  <span><Icon name={PAGE_ICONS[key]} size={14} strokeWidth={1.7} /></span>
-                  <small>{LABELS[key]}</small>
-                </button>
-              ))}
+          <div className="panel-deck__chrome-row">
+            <span>Wanderer dossier</span>
+            <div>
+              <MotionPermissionButton compact />
+              <button type="button" className="panel-deck__close" onClick={onClose} aria-label="Close character menu">
+                <Icon name="x" size={16} strokeWidth={1.7} />
+              </button>
             </div>
-            <button onClick={() => go(1)} aria-label="Next" style={chevBtn}>
-              <span style={{ display: "flex", transform: "rotate(180deg)" }}>
-                <Icon name="arrowLeft" size={13} color="rgba(215,167,111,0.5)" strokeWidth={2} />
-              </span>
-            </button>
-          </div>
-          <div className="panel-deck__hint" style={{ ...metaStyle }}>
-            swipe pages · pull down to close
           </div>
         </div>
 
-        {/* Pages — a horizontal track; only the active page is in view. */}
-        <div style={{ flex: 1, overflow: "hidden" }} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-          <div style={{
-            display: "flex", width: "300%", height: "100%",
-            transform: `translateX(-${page * (100 / PAGES.length)}%)`,
-            transition: "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
-          }}>
-            <Page pageKey="party" active={page === 0}>
+        <div
+          ref={scroll}
+          className="panel-deck__scroll no-scrollbar"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          <DossierHero state={state} page={page} onSelectPage={selectPage} />
+          <div
+            key={PAGES[page]}
+            id={`deck-page-${PAGES[page]}`}
+            className="panel-deck__active-page"
+            role="tabpanel"
+            aria-labelledby={`deck-tab-${PAGES[page]}`}
+            style={{ "--page-enter": `${direction * 18}px` }}
+          >
+            {page === 0 && (
               <PartyView state={state} onDismiss={handlers.onDismiss} onMount={handlers.onMount} onDismount={handlers.onDismount} onOpenInventory={openInventory} />
-            </Page>
-            <Page pageKey="character" active={page === 1}>
+            )}
+            {page === 1 && (
               <MenuSheet
                 state={state} user={user}
                 onReset={handlers.onReset} onOpenCodex={handlers.onOpenCodex}
@@ -174,8 +179,8 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 onLinkEmail={handlers.onLinkEmail} onExtinguish={handlers.onExtinguish}
                 onCastBuff={handlers.onCastBuff}
               />
-            </Page>
-            <Page pageKey="inventory" active={page === 2}>
+            )}
+            {page === 2 && (
               <InventoryView
                 state={state}
                 onEquip={handlers.onEquip} onUnequip={handlers.onUnequip} onUse={handlers.onUse}
@@ -184,7 +189,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 onTransfer={handlers.onTransfer}
                 initialSelectedId={inventoryTarget}
               />
-            </Page>
+            )}
           </div>
         </div>
       </div>
@@ -192,27 +197,46 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
   );
 }
 
-function Page({ pageKey, active, children }) {
-  return (
-    <div
-      id={`deck-page-${pageKey}`}
-      className={`panel-deck__page panel-deck__page--${pageKey} no-scrollbar${active ? " is-active" : ""}`}
-      role="tabpanel"
-      aria-hidden={!active}
-      inert={active ? undefined : ""}
-      style={{
-        width: `${100 / PAGES.length}%`, height: "100%", overflowY: "auto",
-        WebkitOverflowScrolling: "touch", overscrollBehaviorY: "contain",
-        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
-      }}
-    >
-      {children}
-    </div>
-  );
+function labelize(value) {
+  return String(value || "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-const chevBtn = {
-  width: "28px", height: "28px", borderRadius: radius.pill, border: "none",
-  background: "transparent", display: "flex", alignItems: "center", justifyContent: "center",
-  cursor: "pointer", flexShrink: 0,
-};
+function DossierHero({ state, page, onSelectPage }) {
+  const motionRef = useParallaxMotion({ strength: 1.1 });
+  const character = state.character;
+  const identity = [labelize(character.race), labelize(character.profession)].filter(Boolean).join(" · ") || "Wanderer";
+
+  return (
+    <section ref={motionRef} className="dossier-hero">
+      <img className="dossier-hero__art" src={dossierPortrait} alt="" draggable="false" />
+      <div className="dossier-hero__wash" aria-hidden="true" />
+      <div className="dossier-hero__identity">
+        <small>Player character</small>
+        <h2>{character.name}</h2>
+        <div>{identity}</div>
+        {character.bond && <p>{character.bond}</p>}
+      </div>
+      <div className="dossier-hero__tabs" role="tablist" aria-label="Dossier sections">
+        {PAGES.map((key, index) => (
+          <button
+            key={key}
+            id={`deck-tab-${key}`}
+            type="button"
+            className={index === page ? "is-active" : ""}
+            onClick={() => onSelectPage(index)}
+            role="tab"
+            aria-selected={index === page}
+            aria-controls={`deck-page-${key}`}
+            tabIndex={index === page ? 0 : -1}
+          >
+            <Icon name={PAGE_ICONS[key]} size={15} strokeWidth={1.55} />
+            <span>{LABELS[key]}</span>
+          </button>
+        ))}
+      </div>
+      <div className="dossier-hero__gesture">swipe sections · pull down to close</div>
+    </section>
+  );
+}
