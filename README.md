@@ -62,7 +62,12 @@ VITE_SUPABASE_ANON_KEY
 ```
 
 These are public client identifiers. Private provider credentials remain in
-server-side environment configuration and must never be committed.
+server-side environment configuration and must never be committed. For local
+development, copy `.env.example` to `.env` and fill in the values. For the
+GitHub Pages deployment, add `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` as repository Actions variables (or secrets); the
+deployment workflow injects them at build time and stops with a clear error if
+either is missing.
 
 ## Repository layout
 
