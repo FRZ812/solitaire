@@ -3,7 +3,7 @@
 // The Foreign Quarter is the city's regulated touch-point with the outside
 // world: envoys, merchants, translators, hostage delegations, foreign temples,
 // guarded compounds, treaty inns, and the spies everyone politely pretends
-// are clerks (per docs/region-planning/WHITEMARCH_CITY.md lines 493-533).
+// are clerks. This archived module preserves that original ward brief.
 //
 // Two named footprints live in this module:
 //

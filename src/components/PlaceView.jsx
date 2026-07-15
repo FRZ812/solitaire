@@ -11,10 +11,9 @@ import {
   cityDirection,
   nextPlaceNode,
 } from "./exploration/placeModel.js";
-import { GodotMapFrame } from "./exploration/GodotMapFrame.jsx";
-import { buildCityGodotScene } from "./exploration/godotSceneModel.js";
-import cityArt from "../assets/generated/rpg-whitemarch-v1.webp";
-import rewardFrame from "../assets/generated/rpg-reward-frame-v1.webp";
+import { MapCanvas } from "./exploration/MapCanvas.jsx";
+import { buildCityMapScene } from "./exploration/mapSceneModel.js";
+import cityArt from "../assets/generated/scene-whitemarch-v2.webp";
 import "./exploration/exploration.css";
 
 const NODE_GLYPHS = {
@@ -83,19 +82,19 @@ function PlaceDpad({ onStep, onCenter }) {
 
 function CityGrid({ model, current, selected, onPick, onStep, onCenter, onGuide, night }) {
   const selectedDirection = selected && cityDirection(model.currentPosition, model.selectedPosition);
-  const godotScene = useMemo(() => buildCityGodotScene({ model, current, selected, districtColors: DISTRICT_COLORS, night }), [model, current, selected, night]);
+  const mapScene = useMemo(() => buildCityMapScene({ model, current, selected, districtColors: DISTRICT_COLORS, night }), [model, current, selected, night]);
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.node && cell.node.id !== current.id)
     .map((cell) => ({ key: cell.key, label: `${cell.node.name}, ${cell.node.district}, ${displayType(cell.node.type)}` })), [model, current.id]);
 
-  function selectGodotCell(key) {
+  function selectMapCell(key) {
     const node = model.viewport.find((cell) => cell.key === key)?.node;
     if (node && node.id !== current.id) onPick(node);
   }
 
   return (
-    <main className={`rpg-world-stage place-world-stage godot-city-stage ${night ? "is-night" : ""}`}>
-      <GodotMapFrame scene={godotScene} onSelect={selectGodotCell} label="Interactive Whitemarch city map" choices={accessibleCells} selectedKey={model.selectedPosition ? `${model.selectedPosition.x},${model.selectedPosition.y}` : ""} />
+    <main className={`rpg-world-stage place-world-stage canvas-city-stage ${night ? "is-night" : ""}`}>
+      <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive Whitemarch city map" choices={accessibleCells} selectedKey={model.selectedPosition ? `${model.selectedPosition.x},${model.selectedPosition.y}` : ""} />
       <div className="rpg-quickbar place-quickbar">
         <button onClick={onGuide}><Icon name="map" size={15} color="#fff4c7" /><span>Guide</span></button>
         <button onClick={onCenter}><span className="place-center-glyph">◆</span><span>Center</span></button>
@@ -151,7 +150,7 @@ function LocationPanel({ state, place, current, selected, model, time, onPick, o
 
           <p className="rpg-destination-copy place-destination-copy">{focus.description}</p>
 
-          <div className="rpg-reward-card place-service-card" style={{ "--reward-art": `url(${rewardFrame})` }}>
+          <div className="rpg-reward-card place-service-card" style={{ "--reward-art": `url(${cityArt})` }}>
             <div><small>{rewardTitle}</small><b>{rewardValue}</b></div>
             <span>{building ? (open ? "+" : "×") : isCurrent ? "◆" : "›"}</span>
           </div>
@@ -188,7 +187,7 @@ function LocationPanel({ state, place, current, selected, model, time, onPick, o
 
 function CityGuide({ place, current, landmarks, onClose, onPick }) {
   return (
-    <div className="rpg-overlay place-guide" role="dialog" aria-modal="true" aria-label="Whitemarch city guide" style={{ "--reward-art": `url(${rewardFrame})` }}>
+    <div className="rpg-overlay place-guide" role="dialog" aria-modal="true" aria-label="Whitemarch city guide" style={{ "--reward-art": `url(${cityArt})` }}>
       <div className="rpg-overlay-head"><div><span className="rpg-kicker">Wards and landmarks</span><h2>{place.name} city guide</h2><p>Choose any landmark to chart a street route from {current.name}.</p></div><button onClick={onClose} className="rpg-square-button" aria-label="Close city guide"><Icon name="x" size={15} color="#fff4c7" /></button></div>
       <div className="rpg-ledger-grid rpg-ledger-grid--places place-guide-grid">
         {landmarks.map((landmark) => (

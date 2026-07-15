@@ -1,7 +1,7 @@
 {
   "name": "Solitaire",
   "short_name": "Solitaire",
-  "description": "A solo RPG narrative engine. The world is waiting.",
+  "description": "A browser-native mechanical high-fantasy RPG.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

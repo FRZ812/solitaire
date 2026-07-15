@@ -4,6 +4,7 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "deepseek/deepseek-v4-pro";
 const MAX_OUTPUT_TOKENS = 4000;
 const MAX_FIELD_LENGTH = 120_000;
+const MAX_SYSTEM_PROMPT_LENGTH = 200_000;
 
 const ALLOWED_MODELS = new Set([
   "deepseek/deepseek-v4-pro",
@@ -34,9 +35,9 @@ function json(body: unknown, status = 200) {
   });
 }
 
-function stringField(value: unknown, name: string) {
+function stringField(value: unknown, name: string, maxLength = MAX_FIELD_LENGTH) {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required`);
-  if (value.length > MAX_FIELD_LENGTH) throw new Error(`${name} is too large`);
+  if (value.length > maxLength) throw new Error(`${name} is too large`);
   return value;
 }
 
@@ -159,7 +160,7 @@ Deno.serve(async (request) => {
   try {
     stateContext = stringField(payload.state_context, "state_context");
     userMessage = stringField(payload.user_msg, "user_msg");
-    systemPrompt = stringField(payload.system_prompt, "system_prompt");
+    systemPrompt = stringField(payload.system_prompt, "system_prompt", MAX_SYSTEM_PROMPT_LENGTH);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "invalid request" }, 400);
   }

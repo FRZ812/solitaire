@@ -1,7 +1,7 @@
 {
   "name": "solitaire",
   "version": "0.20.0",
-  "description": "Solo RPG narrative engine — Vite + React, Supabase backend. The handcrafted map and per-user campaign saves live in Postgres; the editor at #/edit writes back to the same row.",
+  "description": "Browser-native mechanics-first high-fantasy RPG built with React, Vite, seeded deck combat, and Supabase services.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,8 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "icons": "node scripts/generate-icons.mjs"
+    "test:watch": "vitest"
   },
   "engines": {
     "node": ">=20.19"
@@ -21,7 +20,6 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@resvg/resvg-js": "^2.6.2",
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^5.4.0",
     "vitest": "^4.1.7"

@@ -136,7 +136,7 @@
   box-shadow: 0 8px 22px rgba(3, 13, 24, .38), inset 0 1px rgba(255,255,255,.06);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  font: 700 10px 'Pixelify Sans', sans-serif;
+  font: 700 10px 'Alegreya', Georgia, serif;
   letter-spacing: .06em;
   cursor: pointer;
 }

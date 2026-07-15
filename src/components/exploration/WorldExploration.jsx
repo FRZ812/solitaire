@@ -26,12 +26,11 @@ import {
   directionShort,
   planAtlasJourney,
 } from "./atlasModel.js";
-import { GodotMapFrame } from "./GodotMapFrame.jsx";
-import { buildWorldGodotScene } from "./godotSceneModel.js";
-import playerArt from "../../assets/generated/rpg-player-marker-v1.webp";
-import monsterArt from "../../assets/generated/rpg-monster-v1.webp";
-import weaponArt from "../../assets/generated/rpg-weapon-v1.webp";
-import rewardFrame from "../../assets/generated/rpg-reward-frame-v1.webp";
+import { MapCanvas } from "./MapCanvas.jsx";
+import { buildWorldMapScene } from "./mapSceneModel.js";
+import partyArt from "../../assets/generated/scene-tellmar-road-v2.webp";
+import encounterArt from "../../assets/generated/scene-tannic-wood-v2.webp";
+import rewardArt from "../../assets/generated/scene-whitemarch-march-v2.webp";
 import "./exploration.css";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
@@ -110,7 +109,7 @@ function RpgDpad({ onStep, onClear }) {
 }
 
 function WorldGrid({ model, selection, journey, onPick, onStep, onClear, onJournal, onWayfinder, onSeekCombat, questCount, loading, night }) {
-  const godotScene = useMemo(() => buildWorldGodotScene({ model, selection, journey, night }), [model, selection, journey, night]);
+  const mapScene = useMemo(() => buildWorldMapScene({ model, selection, journey, night }), [model, selection, journey, night]);
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.seen && cell.passable && !cell.current)
     .map((cell) => ({
@@ -118,14 +117,14 @@ function WorldGrid({ model, selection, journey, onPick, onStep, onClear, onJourn
       label: `${nameForDestination(cell, model.origin)}, ${directionLabel(model.origin, cell).replace("-", " ")}${cell.quest ? `, quest: ${cell.quest.title}` : ""}`,
     })), [model]);
 
-  function selectGodotCell(key) {
+  function selectMapCell(key) {
     const cell = model.viewport.find((candidate) => candidate.key === key);
     if (cell?.seen && cell.passable && !cell.current) onPick(cell);
   }
 
   return (
-    <main className={`rpg-world-stage godot-world-stage ${night ? "is-night" : ""}`}>
-      <GodotMapFrame scene={godotScene} onSelect={selectGodotCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
+    <main className={`rpg-world-stage canvas-world-stage ${night ? "is-night" : ""}`}>
+      <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
       <div className="rpg-quickbar">
         <button onClick={onWayfinder}><Icon name="map" size={15} color="#fff4c7" /><span>Atlas</span></button>
         <button onClick={onJournal}><Icon name="book" size={15} color="#fff4c7" /><span>Quests</span>{questCount > 0 && <b>{questCount}</b>}</button>
@@ -136,9 +135,8 @@ function WorldGrid({ model, selection, journey, onPick, onStep, onClear, onJourn
       <RpgDpad onStep={onStep} onClear={onClear} />
       {onSeekCombat && (
         <button onClick={onSeekCombat} disabled={loading} className="rpg-wild-encounter">
-          <img src={monsterArt} alt="" />
+          <img src={encounterArt} alt="" />
           <span><small>Wild encounter</small><b>Seek a foe</b></span>
-          <img src={weaponArt} alt="" className="rpg-encounter-weapon" />
         </button>
       )}
     </main>
@@ -172,7 +170,7 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
   return (
     <section className="rpg-command-panel">
       <div className="rpg-party-card">
-        <div className="rpg-party-portrait"><img src={playerArt} alt="" /></div>
+        <div className="rpg-party-portrait"><img src={partyArt} alt="" /></div>
         <div><small>Party leader</small><b>{state.character.name || "Wanderer"}</b><span>{state.character.race || "Adventurer"} · ready</span></div>
         <i>SOLO</i>
       </div>
@@ -196,7 +194,7 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
 
             {description && <p className="rpg-destination-copy">{description}</p>}
 
-            <div className="rpg-reward-card" style={{ "--reward-art": `url(${rewardFrame})` }}>
+            <div className="rpg-reward-card" style={{ "--reward-art": `url(${rewardArt})` }}>
               <div><small>{rewardTitle}</small><b>{rewardValue}</b></div>
               <span>{selection.quest ? "✦" : selection.visited ? "✓" : "+"}</span>
             </div>
@@ -235,7 +233,7 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
 
 function QuestJournal({ quests, current, onClose, onPick }) {
   return (
-    <div className="rpg-overlay" role="dialog" aria-modal="true" aria-label="Quest journal" style={{ "--reward-art": `url(${rewardFrame})` }}>
+    <div className="rpg-overlay" role="dialog" aria-modal="true" aria-label="Quest journal" style={{ "--reward-art": `url(${rewardArt})` }}>
       <div className="rpg-overlay-head"><div><span className="rpg-kicker">Adventure log</span><h2>Quest journal</h2><p>Choose an objective to set it on your compass.</p></div><button onClick={onClose} className="rpg-square-button" aria-label="Close quest journal"><Icon name="x" size={15} color="#fff4c7" /></button></div>
       <div className="rpg-ledger-grid">
         {quests.length === 0 ? <p className="rpg-empty">No active quests. Check taverns, gaols, and village boards.</p> : quests.map((quest) => (
@@ -253,7 +251,7 @@ function QuestJournal({ quests, current, onClose, onPick }) {
 function Wayfinder({ landmarks, origin, onClose, onPick }) {
   const usefulLandmarks = landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi));
   return (
-    <div className="rpg-overlay" role="dialog" aria-modal="true" aria-label="World atlas" style={{ "--reward-art": `url(${rewardFrame})` }}>
+    <div className="rpg-overlay" role="dialog" aria-modal="true" aria-label="World atlas" style={{ "--reward-art": `url(${rewardArt})` }}>
       <div className="rpg-overlay-head"><div><span className="rpg-kicker">Known world</span><h2>World atlas</h2><p>Landmarks, sanctuaries, and objectives remembered by the party.</p></div><button onClick={onClose} className="rpg-square-button" aria-label="Close world atlas"><Icon name="x" size={15} color="#fff4c7" /></button></div>
       <div className="rpg-ledger-grid rpg-ledger-grid--places">
         {usefulLandmarks.length === 0 ? <p className="rpg-empty">The horizon is still blank. Follow a road to begin charting it.</p> : usefulLandmarks.map((landmark) => {

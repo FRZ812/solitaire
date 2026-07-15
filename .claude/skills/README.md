@@ -1,40 +1,22 @@
-# Solitaire skills
+# Repository skills
 
-Project-committed Claude Code skills for building and maintaining the game world.
-Each lives in its own directory with a `SKILL.md` (the entry point) and
-`reference/` files loaded on demand.
+These skills must follow the current design authorities, in order:
 
-| Skill | Use it when you're… | Key tool |
-|---|---|---|
-| **`worldbuilding`** | designing lore — regions/biomes, factions, races, difficulty bands, encounter flavor, named landmarks, keeping the grimdark tone | `data/*.js` schemas in `reference/` |
-| **`map-creation`** | authoring the physical hex map — towns, dungeons, fortresses, districts, the doors graph, sealed structures | tile/door/structure references |
-| **`map-audit`** | studying, validating, or **cleaning up** the live Supabase map | `map-audit/audit-map.mjs` |
+1. `docs/product/vision.md`
+2. `docs/WORLDBUILDING.md`
+3. `docs/MAP_REBUILD_V3.md`
+4. `docs/design/combat-deck.md`
+5. `docs/architecture/runtime.md`
 
-## How they fit together
+| Skill | Use it for |
+|---|---|
+| `worldbuilding` | Regions, cultures, factions, characters, material culture, magic, and lore consistency |
+| `map-creation` | Region-atlas locations and node-graph places in the canonical two-scale model |
 
-The world has two layers that must agree:
+Retired guidance must not be restored from old files or Git history. In
+particular, do not default to grimdark tone, dense city hexes, sealed-structure
+door compilation, a Supabase map blob as content authority, or a Godot renderer.
 
-1. **Lore / systemic geography** — which region a coordinate belongs to, who
-   rules it, how dangerous it is, what wanders there (the **worldbuilding**
-   skill, editing `src/data/biomes.js`, `factions.js`, `regions.js`, …).
-2. **The physical map** — the actual walkable hexes, POIs, and access graph
-   stored in Supabase (`public.handcrafted_map`, id=`whitemarch`) (the
-   **map-creation** skill).
-
-Anything you author with either skill should be **verified with `map-audit`**
-before it lands. The auditor runs the engine's own pipeline (`buildHandcrafted`)
-so its verdict matches the running game, and exits non-zero on any
-gameplay-breaking error.
-
-## Canonical rulings
-
-These skills summarize `docs/WORLDBUILDING.md` (repo root) — read it for the
-authoritative ruling set. Design vision lives in `docs/world-expansion-plan.md`
-and `docs/region-planning/*`.
-
-## Quick start: audit the live map
-
-```bash
-node .claude/skills/map-audit/audit-map.mjs --live --biomes
-```
-(or feed a `{tiles, sealed_structures}` JSON dump pulled via the Supabase MCP).
+When implementation still contains a legacy path, treat it as a migration
+constraint. New content should use stable ids and serializable definitions that
+can move into the canonical browser runtime without reinterpretation.

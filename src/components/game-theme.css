@@ -1,0 +1,280 @@
+/*
+ * Shared painterly high-fantasy surface treatment.
+ *
+ * The component layer still owns layout through inline styles. This file adds
+ * the generated raster artwork, restrained ornamental borders, and interaction
+ * states that need pseudo-elements/media queries and therefore cannot live in
+ * React style objects. The old pixel-art treatment has been retired.
+ */
+
+:root {
+  color-scheme: dark;
+  --game-ink: #07101c;
+  --game-ink-deep: #040913;
+  --game-blue: #102b43;
+  --game-blue-light: #1d4661;
+  --game-gold: #e7b95e;
+  --game-gold-deep: #8d6530;
+  --game-parchment: #f4e8c3;
+  --game-shadow: #03070f;
+  --game-panel-texture:
+    radial-gradient(circle at 20% 14%, rgba(239, 206, 137, 0.08), transparent 30%),
+    linear-gradient(145deg, rgba(29, 70, 97, 0.2), rgba(4, 9, 19, 0.08));
+}
+
+::selection {
+  color: var(--game-ink-deep);
+  background: var(--game-gold);
+}
+
+/* Generated title artwork ------------------------------------------------- */
+
+.initial-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--game-ink-deep);
+  isolation: isolate;
+}
+
+.initial-backdrop__art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 50%;
+  image-rendering: auto;
+  opacity: 0.82;
+  filter: saturate(1.04) contrast(1.04);
+  user-select: none;
+}
+
+.initial-backdrop__sky,
+.initial-backdrop__shade,
+.initial-backdrop__scanlines {
+  position: absolute;
+  inset: 0;
+}
+
+.initial-backdrop__sky {
+  z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(4, 9, 19, 0.12) 0%, rgba(4, 9, 19, 0) 38%, rgba(4, 9, 19, 0.5) 100%),
+    radial-gradient(circle at 50% 24%, rgba(111, 173, 204, 0.14), transparent 38%);
+}
+
+.initial-backdrop__shade {
+  z-index: 2;
+  background:
+    linear-gradient(180deg, rgba(4, 9, 19, 0.08), rgba(4, 9, 19, 0.24) 55%, rgba(4, 9, 19, 0.74)),
+    radial-gradient(ellipse at center, transparent 32%, rgba(2, 6, 14, 0.56) 100%);
+}
+
+.initial-backdrop__scanlines {
+  z-index: 3;
+  opacity: 0.24;
+  background:
+    radial-gradient(circle at 72% 18%, rgba(255, 235, 177, 0.14), transparent 30%),
+    linear-gradient(125deg, rgba(255, 255, 255, 0.04), transparent 32% 72%, rgba(81, 142, 174, 0.08));
+  mix-blend-mode: screen;
+}
+
+/* Authentication / title screen ----------------------------------------- */
+
+.auth-screen {
+  isolation: isolate;
+  background: var(--game-ink-deep) !important;
+}
+
+.screen-inner-frame {
+  inset: 8px !important;
+  z-index: 2;
+  border: 2px solid rgba(231, 185, 94, 0.54) !important;
+  border-radius: 2px !important;
+  box-shadow:
+    inset 0 0 0 3px rgba(4, 9, 19, 0.88),
+    inset 0 0 0 4px rgba(91, 126, 148, 0.42);
+}
+
+.auth-card {
+  position: relative;
+  z-index: 4 !important;
+  border: 2px solid var(--game-gold-deep) !important;
+  border-radius: 4px !important;
+  background-color: rgba(7, 16, 28, 0.9) !important;
+  background-image:
+    linear-gradient(rgba(16, 43, 67, 0.2), rgba(4, 9, 19, 0.2)),
+    var(--game-panel-texture);
+  background-repeat: no-repeat;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow:
+    6px 7px 0 rgba(3, 7, 15, 0.82),
+    inset 0 0 0 2px rgba(4, 9, 19, 0.94),
+    inset 0 0 0 3px rgba(231, 185, 94, 0.18) !important;
+}
+
+.auth-card::before,
+.auth-card::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+  border-color: var(--game-gold);
+  opacity: 0.8;
+}
+
+.auth-card::before {
+  top: 5px;
+  left: 5px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+}
+
+.auth-card::after {
+  right: 5px;
+  bottom: 5px;
+  border-right: 2px solid;
+  border-bottom: 2px solid;
+}
+
+.title-kicker {
+  font-family: "Alegreya", Georgia, serif;
+  color: var(--game-gold) !important;
+  text-shadow: 2px 2px 0 rgba(3, 7, 15, 0.9) !important;
+}
+
+.game-logo {
+  color: var(--game-parchment) !important;
+  text-shadow:
+    3px 3px 0 var(--game-shadow),
+    0 0 18px rgba(231, 185, 94, 0.18) !important;
+}
+
+.auth-primary {
+  position: relative;
+  min-height: 48px;
+  border: 2px solid var(--game-gold-deep) !important;
+  border-radius: 3px !important;
+  color: var(--game-parchment) !important;
+  background: #102b43 !important;
+  box-shadow:
+    3px 4px 0 var(--game-shadow),
+    inset 0 0 0 1px rgba(231, 185, 94, 0.14) !important;
+}
+
+.auth-primary:not(:disabled):hover,
+.auth-primary:not(:disabled):focus-visible {
+  border-color: var(--game-gold) !important;
+  background: #173b55 !important;
+  outline: 2px solid rgba(231, 185, 94, 0.26);
+  outline-offset: 2px;
+}
+
+.auth-primary:disabled {
+  filter: saturate(0.55);
+}
+
+/* Reusable panels --------------------------------------------------------- */
+
+.game-panel {
+  position: relative;
+  background-image: var(--game-panel-texture);
+  background-repeat: no-repeat;
+  box-shadow:
+    4px 5px 0 rgba(3, 7, 15, 0.7),
+    inset 0 0 0 1px rgba(244, 232, 195, 0.035);
+}
+
+.game-panel::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgba(231, 185, 94, 0.08);
+  pointer-events: none;
+}
+
+.game-panel--encounter::before {
+  border-color: rgba(248, 113, 113, 0.16);
+}
+
+.game-panel--discovery::before {
+  border-color: rgba(110, 231, 183, 0.16);
+}
+
+/* Character / inventory deck -------------------------------------------- */
+
+.panel-deck-backdrop {
+  background-color: rgba(3, 7, 15, 0.78) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.panel-deck {
+  position: relative;
+  border: 2px solid var(--game-gold-deep) !important;
+  border-bottom: 0 !important;
+  border-radius: 4px 4px 0 0 !important;
+  background-color: rgba(7, 16, 28, 0.98) !important;
+  background-image:
+    linear-gradient(180deg, rgba(29, 70, 97, 0.18), transparent 26%),
+    var(--game-panel-texture);
+  background-repeat: no-repeat;
+  box-shadow:
+    0 -6px 0 rgba(3, 7, 15, 0.82),
+    inset 0 0 0 2px rgba(4, 9, 19, 0.86),
+    inset 0 0 0 3px rgba(231, 185, 94, 0.1) !important;
+}
+
+/* Composer controls receive the same hard-edged material language. */
+.story-input__field,
+.story-input__send {
+  border-width: 2px !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.story-input__field:focus {
+  border-color: var(--scene-highlight, var(--game-gold)) !important;
+  box-shadow:
+    3px 4px 0 rgba(3, 7, 15, 0.7),
+    inset 0 0 0 1px rgba(244, 232, 195, 0.05) !important;
+}
+
+.story-input__send:not(:disabled):hover,
+.story-input__send:not(:disabled):focus-visible {
+  filter: brightness(1.12);
+  outline: 2px solid color-mix(in srgb, var(--scene-highlight, var(--game-gold)) 40%, transparent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 380px) {
+  .auth-screen {
+    padding-left: 17px !important;
+    padding-right: 17px !important;
+  }
+
+  .auth-card {
+    padding: 30px 19px 24px !important;
+  }
+
+  .game-logo {
+    font-size: 48px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-in,
+  .scale-in,
+  .slide-up {
+    animation-duration: 1ms !important;
+  }
+
+  button {
+    transition: none !important;
+  }
+}

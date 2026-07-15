@@ -1,59 +1,87 @@
 # Solitaire
 
-A solo RPG narrative engine. AI narrator powers an open-ended fantasy game; the engine handles time, needs, healing, encounters, the codex, and inventory.
+Solitaire is a browser-native, mechanics-first role-playing game under active
+rebuild. It combines a persistent high-fantasy campaign with mechanical
+deck combat, regional exploration, survival pressures, equipment, companions,
+and bounded AI narration.
 
-## Build target
+This is a new game. The older narrative prototype and earlier engine spikes are
+design research, not a code or product baseline.
 
-The build produces a single self-contained `dist/index.html`. Paste its contents into a Claude artifact to run with subscription auth (the artifact pane has special access to `api.anthropic.com`). Outside the artifact pane the same code will need an API key.
+## Direction
 
-## Workflow
+- Light, adventurous high fantasy rather than grimdark.
+- Characters, clothing, weapons, tools, and settlements grounded in historical
+  regions and believable material culture.
+- Rule-bound magic with visible costs, limits, and counterplay.
+- Slay-the-Spire-like deck vocabulary for combat: draw, hand, energy, discard,
+  exhaust, statuses, and visible enemy intents.
+- High-definition 2.5D scenes with oil-brush painterly 2D anime art.
+- Generated raster UI art instead of an SVG- or pixel-art-led interface.
+- A tailored React/Vite runtime; no Godot dependency or embedded game engine.
+
+The product, combat, and runtime authorities are:
+
+- [Product vision](docs/product/vision.md)
+- [Deck-combat design](docs/design/combat-deck.md)
+- [Browser runtime](docs/architecture/runtime.md)
+- [Worldbuilding rules](docs/WORLDBUILDING.md)
+- [World and place model](docs/MAP_REBUILD_V3.md)
+
+## Stack
+
+- React 18 for application and interface composition.
+- Vite for development and production builds.
+- Plain JavaScript mechanics under `src/engine/`.
+- Version-controlled content under `src/data/`.
+- Supabase for authentication, campaign persistence, and server-side narration.
+- Vitest for rules, contracts, and regression tests.
+
+## Local workflow
+
+Node.js 20.19 or newer is required.
 
 ```bash
-npm install      # one-time
-npm run dev      # local dev with HMR
-npm run build    # produces dist/index.html (single file, paste-ready)
+npm ci
+npm run dev
+npm test
+npm run build
+npm run preview
 ```
 
-After `npm run build`, copy the contents of `dist/index.html` into a Claude artifact and you are off.
+`npm run build` writes the production site to `dist/`. GitHub Actions runs the
+test and build gates, then deploys `dist/` from `main` to GitHub Pages.
 
-## Project layout
+## Configuration
 
+The browser client expects:
+
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
 ```
+
+These are public client identifiers. Private provider credentials remain in
+server-side environment configuration and must never be committed.
+
+## Repository layout
+
+```text
 src/
-├── main.jsx               # React entry
-├── App.jsx                # main Solitaire component, state hooks, handlers
-├── config.js              # constants (storage key, attribute keys, etc.)
-├── system-prompt.js       # the narrator's instructions
-├── data/
-│   ├── terrains.js        # terrain table
-│   ├── handcrafted-tiles.js   # the starting region
-│   ├── rumored.js         # distant pre-known landmarks
-│   ├── spawn-tables.js    # random encounter tables per terrain
-│   └── initial-state.js   # fresh game state
-├── engine/
-│   ├── world.js           # tiles, sight, movement
-│   ├── time.js            # clock
-│   ├── needs.js           # hunger/thirst/sleep + alerts
-│   ├── healing.js         # passive vitality regen + blocking conditions
-│   ├── encounters.js      # rollEncounter + risk hint
-│   ├── storage.js         # window.storage + localStorage fallback
-│   ├── discoveries.js     # codex merge logic
-│   ├── inventory.js       # inventory deltas
-│   ├── attributes.js      # attribute changes
-│   ├── json.js            # robust JSON extraction
-│   ├── api.js             # callNarrator + state context
-│   └── beat.js            # applyBeat orchestrator
-└── components/
-    ├── Icon.jsx
-    ├── primitives.jsx     # Vital, ConditionPill, NeedBar, AttrBlock, ...
-    ├── CompactHeader.jsx
-    ├── MenuSheet.jsx
-    ├── MapView.jsx
-    ├── CodexView.jsx      # includes CodexEntry
-    └── beats/
-        └── BeatRender.jsx
+  components/       React screens and presentation
+  data/             authored and generated game content
+  engine/           mechanical rules and state transitions
+  assets/           raster art used by the browser runtime
+supabase/functions/ server-side narration and authenticated integrations
+docs/               current design and architecture authorities
+public/             static web assets
+scripts/            build and content tooling
 ```
 
-## Storage
+## Mechanical authority
 
-`STORAGE_KEY = "solitaire-state-v10"` (bumped any time the state shape changes; old saves wipe).
+Consequential outcomes follow `command -> rules -> events -> state`. Rendering,
+narration, and generated content may explain or propose actions, but they do not
+directly mutate canonical campaign state. New mechanics require explicit rule
+tests; random systems migrate to serializable seeded streams before replay is
+advertised as a supported feature.
