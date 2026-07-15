@@ -5,16 +5,17 @@ import { PartyView } from "./PartyView.jsx";
 import { MenuSheet } from "./MenuSheet.jsx";
 import { InventoryView } from "./InventoryView.jsx";
 import { ArsenalView } from "./ArsenalView.jsx";
+import { CodexView } from "./CodexView.jsx";
 import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
 import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.webp";
 
-// The unified character deck: Company · Character · Abilities · Inventory as
-// four pages of one
+// The unified character deck: Company · Character · Abilities · Inventory ·
+// Codex as five pages of one
 // portrait-led bottom sheet, opened from a single header button (defaults to
 // Character). Swipe LEFT/RIGHT to move between sections, or use the tabs.
-const PAGES = ["party", "character", "abilities", "inventory"];
-const LABELS = { party: "Company", character: "Character", abilities: "Abilities", inventory: "Inventory" };
-const PAGE_ICONS = { party: "users", character: "user", abilities: "sparkle", inventory: "bag" };
+const PAGES = ["party", "character", "abilities", "inventory", "codex"];
+const LABELS = { party: "Company", character: "Character", abilities: "Abilities", inventory: "Inventory", codex: "Codex" };
+const PAGE_ICONS = { party: "users", character: "user", abilities: "sparkle", inventory: "bag", codex: "book" };
 
 export function shouldDismissPanel(pulled, velocity) {
   return pulled > 88 || (pulled > 18 && velocity > 0.55);
@@ -237,9 +238,9 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
             {activePage === "character" && (
               <MenuSheet
                 state={state} user={user}
-                onReset={handlers.onReset} onOpenCodex={handlers.onOpenCodex}
+                onReset={handlers.onReset}
                 onBackToCampaigns={handlers.onBackToCampaigns} onSignOut={handlers.onSignOut}
-                onLinkEmail={handlers.onLinkEmail} onExtinguish={handlers.onExtinguish}
+                onLinkEmail={handlers.onLinkEmail}
               />
             )}
             {activePage === "abilities" && (
@@ -253,6 +254,14 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 onRest={handlers.onRest} onBindRune={handlers.onBindRune}
                 onTransfer={handlers.onTransfer}
                 initialSelectedId={inventoryTarget}
+              />
+            )}
+            {activePage === "codex" && (
+              <CodexView
+                embedded
+                state={state}
+                onScry={handlers.onScry}
+                onRenameMount={handlers.onRenameMount}
               />
             )}
           </div>

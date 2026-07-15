@@ -1,5 +1,5 @@
 import React from "react";
-import { colors, radius } from "./tokens.js";
+import { radius } from "./tokens.js";
 import { ATTR_LABELS } from "../config.js";
 import { tier as tierInfo } from "../data/tiers.js";
 import { attrDescriptor, smoothStatSummary, attributeLadder, attrPurpose } from "../data/attribute-tiers.js";
@@ -15,25 +15,27 @@ export function AttributeDetail({ attrKey, value }) {
   if (attrKey === "vigor" && vigorHealthBonus(value) > 0) smooth.unshift(`+${vigorHealthBonus(value)} max HP`);
   const ladder = attributeLadder(attrKey, value);
   return (
-    <div style={{ marginTop: "8px", padding: "9px 11px", borderRadius: radius.panelCompact, backgroundColor: "rgba(10,15,15,0.45)", border: `1px solid rgba(215,167,111,0.2)` }}>
-      <div style={{ fontSize: "12px", color: colors.parchmentLight, fontWeight: 700, marginBottom: "5px" }}>
-        {ATTR_LABELS[attrKey]} {value} <span style={{ color: "rgba(215,167,111,0.7)", fontWeight: 400 }}>· {attrDescriptor(attrKey, value)}</span>
+    <div id={`attribute-detail-${attrKey}`} className="attribute-detail" style={{ borderRadius: radius.panelCompact }}>
+      <div className="attribute-detail__heading">
+        <div>
+          <small>Capability profile</small>
+          <strong>{ATTR_LABELS[attrKey]} <span>{attrDescriptor(attrKey, value)}</span></strong>
+        </div>
+        <em>{value}</em>
       </div>
-      <div style={{ fontSize: "11.5px", color: "rgba(237,228,208,0.85)", lineHeight: 1.5, marginBottom: "8px" }}>{attrPurpose(attrKey)}</div>
-      <div style={{ fontSize: "9px", color: "rgba(215,167,111,0.6)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "3px" }}>Always on now</div>
-      <div style={{ fontSize: "11px", color: "rgba(237,228,208,0.85)", lineHeight: 1.45, marginBottom: "8px" }}>
+      <p className="attribute-detail__purpose">{attrPurpose(attrKey)}</p>
+      <div className="attribute-detail__eyebrow">Always active</div>
+      <div className="attribute-detail__bonuses">
         {smooth.length ? smooth.join(" · ") : "Nothing yet — this score is too low to bend the fight."}
       </div>
-      <div style={{ fontSize: "9px", color: "rgba(215,167,111,0.6)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>Threshold unlocks</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+      <div className="attribute-detail__eyebrow">Threshold path</div>
+      <div className="attribute-detail__ladder">
         {ladder.map((step) => {
           const c = tierInfo(step.tier).color;
           return (
-            <div key={step.at} style={{ display: "flex", gap: "8px", alignItems: "baseline", opacity: step.reached ? 1 : 0.45 }}>
-              <span style={{ flexShrink: 0, fontSize: "10px", fontWeight: 800, color: step.reached ? c : "rgba(237,228,208,0.5)", width: "34px" }}>
-                {step.reached ? "✓ " : ""}{step.at}+
-              </span>
-              <span style={{ fontSize: "11px", color: step.reached ? "rgba(237,228,208,0.9)" : "rgba(237,228,208,0.6)", lineHeight: 1.4 }}>{step.text}</span>
+            <div key={step.at} className={`attribute-detail__step${step.reached ? " is-reached" : ""}`}>
+              <span className="attribute-detail__node" style={{ "--attribute-tier": c }}>{step.reached ? "✓" : step.at}</span>
+              <span><b>{step.at}+</b>{step.text}</span>
             </div>
           );
         })}

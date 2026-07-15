@@ -30,7 +30,7 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
       color: colors.parchment,
     }}>
       {/* Date / time block — kept compact (full date is on the map). */}
-      <div style={{
+      <div className="compact-header__date" style={{
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         width: "54px", height: "36px",
         backgroundColor: "rgba(12, 42, 60, 0.6)",
@@ -54,8 +54,8 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
       </div>
 
       {/* Scene title */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
+      <div className="compact-header__scene" style={{ flex: 1, minWidth: 0 }}>
+        <div className="compact-header__title" style={{
           fontFamily: fonts.serif, fontStyle: "italic",
           fontSize: "19px", color: colors.parchment, lineHeight: "1.05",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
@@ -63,7 +63,7 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
         }}>
           {sceneTitle}
         </div>
-        <div style={{
+        <div className="compact-header__place" style={{
           ...metaStyle, fontSize: "8px", letterSpacing: "0.14em",
           color: "rgba(237, 228, 208, 0.72)", marginTop: "3px",
           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
@@ -73,12 +73,12 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
         </div>
       </div>
 
-      {/* Two buttons only: the Map, and the unified deck (Company · Character ·
-          Inventory — swipe between them; opens at Character). A party-count badge
+      {/* Two buttons only: the Map, and the unified dossier deck (Company · Character ·
+          Abilities · Inventory · Codex). A party-count badge
           rides the deck button so the company stays glanceable. */}
-      <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-        <button onClick={onMap} style={headerButtonStyle} aria-label="Map"><Icon name="map" size={16} color={colors.gold} strokeWidth={1.8} /></button>
-        <button onClick={onOpenDeck} style={{ ...headerButtonStyle, position: "relative" }} aria-label="Character, company & inventory">
+      <div className="compact-header__actions" style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+        <button className="compact-header__action" onClick={onMap} style={headerButtonStyle} aria-label="Map"><Icon name="map" size={16} color={colors.gold} strokeWidth={1.8} /></button>
+        <button className="compact-header__action" onClick={onOpenDeck} style={{ ...headerButtonStyle, position: "relative" }} aria-label="Character, company, abilities, inventory, and codex">
           <Icon name="user" size={16} color={colors.gold} strokeWidth={1.8} />
           {partyCount > 0 && (
             <span style={{

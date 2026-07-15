@@ -688,6 +688,7 @@
 
 .panel-deck {
   position: relative;
+  box-sizing: border-box;
   width: 100%;
   max-width: 480px;
   height: min(97dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 6px));
@@ -876,7 +877,7 @@
   left: 12px;
   height: 52px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   border-bottom: 1px solid rgba(244, 232, 195, 0.14);
 }
 
@@ -892,7 +893,7 @@
   border: 0;
   background: transparent;
   font-family: "Alegreya", Georgia, serif;
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
 }
 
@@ -1156,28 +1157,143 @@
 .mastery-card strong { color: var(--game-gold); font: italic 500 17px/1 "Instrument Serif", Georgia, serif; }
 .mastery-card small { grid-column: 1 / -1; color: rgba(191, 213, 214, 0.4); font-size: 7px; letter-spacing: 0.08em; text-transform: uppercase; }
 
+/* Character attributes -------------------------------------------------- */
+
+.attribute-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.attribute-card {
+  position: relative;
+  min-width: 0;
+  min-height: 92px;
+  padding: 11px 10px 9px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-rows: auto 3px auto;
+  gap: 7px 8px;
+  overflow: hidden;
+  color: var(--game-parchment);
+  text-align: left;
+  font-family: inherit;
+  border: 1px solid rgba(191, 213, 214, 0.16);
+  border-radius: 3px;
+  background:
+    radial-gradient(circle at 8% 0, rgba(111, 173, 204, 0.12), transparent 38%),
+    linear-gradient(135deg, rgba(16, 43, 67, 0.48), rgba(4, 9, 19, 0.5));
+  box-shadow: 2px 3px 0 rgba(3, 7, 15, 0.34), inset 0 1px rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.attribute-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% -48% 35%;
+  height: 70px;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(231, 185, 94, 0.11), transparent 68%);
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.attribute-card:hover,
+.attribute-card:focus-visible,
+.attribute-card.is-active {
+  z-index: 1;
+  border-color: rgba(231, 185, 94, 0.48);
+  background-color: rgba(29, 70, 97, 0.28);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.attribute-card.is-active::after { opacity: 1; }
+
+.attribute-card__sigil {
+  grid-row: 1;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--game-gold);
+  border: 1px solid rgba(231, 185, 94, 0.28);
+  border-radius: 50%;
+  background: rgba(4, 9, 19, 0.4);
+  box-shadow: inset 0 0 12px rgba(3, 7, 15, 0.44);
+}
+
+.attribute-card__copy { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.attribute-card__label { color: rgba(244, 232, 195, 0.94); font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+.attribute-card__rank { margin-top: 2px; overflow: hidden; color: rgba(191, 213, 214, 0.55); font: italic 11px/1 "Instrument Serif", Georgia, serif; text-overflow: ellipsis; text-transform: capitalize; white-space: nowrap; }
+.attribute-card__score { align-self: center; color: #fff8e5; font: italic 500 27px/1 "Instrument Serif", Georgia, serif; text-shadow: 0 2px 12px rgba(3, 7, 15, 0.7); }
+
+.attribute-card__track {
+  grid-column: 1 / -1;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(191, 213, 214, 0.09);
+}
+.attribute-card__track i {
+  height: 100%;
+  display: block;
+  background: linear-gradient(90deg, #4f839f, var(--game-gold));
+  box-shadow: 0 0 8px rgba(231, 185, 94, 0.36);
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.attribute-card__footer {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(191, 213, 214, 0.38);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.attribute-card__footer span:last-child { color: rgba(231, 185, 94, 0.56); }
+
+.attribute-detail {
+  position: relative;
+  margin-top: 9px;
+  padding: 13px;
+  overflow: hidden;
+  color: rgba(244, 232, 195, 0.85);
+  border: 1px solid rgba(231, 185, 94, 0.28);
+  background:
+    linear-gradient(90deg, rgba(29, 70, 97, 0.24), transparent 36%),
+    rgba(4, 9, 19, 0.58);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+  animation: attribute-detail-open 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.attribute-detail__heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding-bottom: 9px; border-bottom: 1px solid rgba(231, 185, 94, 0.14); }
+.attribute-detail__heading div { min-width: 0; display: flex; flex-direction: column; }
+.attribute-detail__heading small,
+.attribute-detail__eyebrow { color: rgba(231, 185, 94, 0.58); font-size: 7px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
+.attribute-detail__heading strong { margin-top: 3px; color: #fff8e5; font: italic 500 20px/1 "Instrument Serif", Georgia, serif; }
+.attribute-detail__heading strong span { margin-left: 4px; color: rgba(191, 213, 214, 0.62); font-size: 13px; font-weight: 400; text-transform: capitalize; }
+.attribute-detail__heading em { color: var(--game-gold); font: italic 500 34px/0.8 "Instrument Serif", Georgia, serif; }
+.attribute-detail__purpose { margin: 10px 0 12px; color: rgba(244, 232, 195, 0.72); font: italic 13px/1.45 "Instrument Serif", Georgia, serif; }
+.attribute-detail__eyebrow { margin: 10px 0 5px; }
+.attribute-detail__bonuses { padding: 8px 10px; color: rgba(244, 232, 195, 0.84); border-left: 2px solid rgba(231, 185, 94, 0.42); background: rgba(29, 70, 97, 0.18); font-size: 10px; line-height: 1.45; }
+.attribute-detail__ladder { position: relative; display: flex; flex-direction: column; gap: 7px; }
+.attribute-detail__step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: center; opacity: 0.42; }
+.attribute-detail__step.is-reached { opacity: 1; }
+.attribute-detail__node { width: 20px; height: 20px; display: grid; place-items: center; color: rgba(244, 232, 195, 0.48); border: 1px solid rgba(191, 213, 214, 0.2); border-radius: 50%; background: rgba(4, 9, 19, 0.52); font-size: 7px; font-weight: 800; }
+.attribute-detail__step.is-reached .attribute-detail__node { color: #07101c; border-color: var(--attribute-tier); background: var(--attribute-tier); box-shadow: 0 0 10px color-mix(in srgb, var(--attribute-tier) 42%, transparent); }
+.attribute-detail__step > span:last-child { color: rgba(244, 232, 195, 0.66); font-size: 10px; line-height: 1.38; }
+.attribute-detail__step > span:last-child b { margin-right: 6px; color: rgba(231, 185, 94, 0.6); font-size: 8px; }
+.attribute-detail__step.is-reached > span:last-child { color: rgba(244, 232, 195, 0.9); }
+
 .menu-action {
   position: relative;
   overflow: hidden;
   min-height: 44px;
   border-radius: 3px !important;
-}
-
-.menu-action--codex {
-  justify-content: flex-start !important;
-  background:
-    linear-gradient(105deg, rgba(29, 70, 97, 0.82), rgba(16, 43, 67, 0.52)) !important;
-  box-shadow: 3px 4px 0 rgba(3, 7, 15, 0.48);
-}
-
-.menu-action--codex::after {
-  content: "Open the living archive";
-  margin-left: auto;
-  color: rgba(244, 232, 195, 0.42);
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 /* Company page */
@@ -1416,6 +1532,34 @@
   animation: codex-page-arrive 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.codex-view--embedded {
+  min-height: 42dvh;
+  overflow: visible;
+  background: transparent !important;
+}
+
+.codex-view--embedded::before {
+  height: 188px;
+  opacity: 0.24;
+  mask-image: linear-gradient(black, transparent);
+}
+
+.codex-panel__intro {
+  min-height: 88px;
+  padding: 17px 16px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid rgba(231, 185, 94, 0.13);
+  background: linear-gradient(110deg, rgba(29, 70, 97, 0.34), rgba(4, 9, 19, 0.34));
+}
+.codex-panel__intro > span { width: 44px; height: 44px; flex: 0 0 auto; display: grid; place-items: center; color: var(--game-gold); border: 1px solid rgba(231, 185, 94, 0.32); border-radius: 50%; background: rgba(4, 9, 19, 0.44); }
+.codex-panel__intro small { color: rgba(231, 185, 94, 0.62); font-size: 7px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; }
+.codex-panel__intro h3 { margin: 2px 0 0; color: #fff8e5; font: italic 500 25px/1 "Instrument Serif", Georgia, serif; }
+.codex-panel__intro p { margin: 4px 0 0; color: rgba(191, 213, 214, 0.56); font-size: 9px; }
+.codex-view--embedded .codex-view__tabs { position: sticky; top: 0; z-index: 5; padding-inline: 10px !important; }
+.codex-view--embedded .codex-view__content { overflow: visible !important; padding-inline: 12px !important; background: linear-gradient(180deg, rgba(16, 43, 67, 0.16), transparent 240px) !important; }
+
 @keyframes map-mark-turn { to { transform: rotate(360deg); } }
 @keyframes map-track-cross { from { transform: translateX(-110%); } to { transform: translateX(340%); } }
 @keyframes panel-backdrop-enter { from { opacity: 0; } to { opacity: 1; } }
@@ -1427,21 +1571,11 @@
 @keyframes inventory-slot-arrive { from { opacity: 0; transform: translateY(7px) scale(0.96); } to { opacity: 1; transform: none; } }
 @keyframes codex-vista-breathe { from { transform: scale(1.04) translateY(-3px); } to { transform: scale(1.08) translateY(4px); } }
 @keyframes codex-page-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes attribute-detail-open { from { opacity: 0; transform: translateY(-6px) scaleY(0.96); transform-origin: top; } to { opacity: 1; transform: none; } }
 
-/* Composer controls receive the same hard-edged material language. */
-.story-input__field,
-.story-input__send {
-  border-width: 2px !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-.story-input__field:focus {
-  border-color: var(--scene-highlight, var(--game-gold)) !important;
-  box-shadow:
-    3px 4px 0 rgba(3, 7, 15, 0.7),
-    inset 0 0 0 1px rgba(244, 232, 195, 0.05) !important;
-}
+/* The composer keeps the theme's crisp gold edge while remaining one fluid bubble. */
+.story-input__field { border: 0 !important; box-shadow: none !important; }
+.story-input__send { border-width: 1px !important; }
 
 .story-input__send:not(:disabled):hover,
 .story-input__send:not(:disabled):focus-visible {
@@ -1469,13 +1603,12 @@
   .dossier-hero__identity h2 { font-size: 33px; }
   .dossier-hero__identity p { font-size: 13px; }
   .dossier-hero__tabs { right: 8px; left: 8px; }
-  .dossier-hero__tabs button { gap: 3px; font-size: 9.5px; }
+  .dossier-hero__tabs button { gap: 2px; font-size: 8.5px; }
   .dossier-hero__tabs button svg { width: 13px; height: 13px; }
   .spell-card { grid-template-columns: 30px minmax(0, 1fr); }
   .spell-card__sigil { width: 30px; height: 30px; }
   .spell-card__cast { grid-column: 2; justify-self: start; }
 
-  .menu-action--codex::after { display: none; }
   .company-attributes { grid-template-columns: repeat(3, 1fr) !important; }
   .codex-view__title > span { display: none; }
 }

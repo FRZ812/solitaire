@@ -2,6 +2,7 @@ import React from "react";
 import { Icon } from "./Icon.jsx";
 import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
 import { condName, conditionMeta } from "../data/conditions.js";
+import { lightStatus } from "../engine/light.js";
 import {
   NARRATOR_MODELS, NARRATOR_EFFORTS,
   getNarratorModel, setNarratorModel,
@@ -225,10 +226,13 @@ export function ConditionPill({ cond }) {
   );
 }
 
-export function VitalsStrip({ character }) {
+export function VitalsStrip({ state, onExtinguish }) {
+  const character = state.character;
   const needs = character.needs || { hunger: 100, thirst: 100, sleep: 100 };
   const vitMax = character.vitalityMax || 1;
   const resMax = character.resolveMax || 1;
+  const light = lightStatus(state);
+  const lightIcon = light.lit ? "flame" : light.dark ? "moon" : "sun";
   return (
     <div className="vitals-strip" style={{
       margin: "0 12px",
@@ -282,18 +286,25 @@ export function VitalsStrip({ character }) {
         />
       </div>
 
-      {/* Condition pills — only when there's something active. Hidden when
-          clear so the strip stays one row in the common case. */}
-      {character.conditions.length > 0 && (
-        <div style={{
-          display: "flex", gap: "5px", flexWrap: "wrap",
-          justifyContent: "center",
-          paddingTop: "4px",
-          borderTop: `1px solid rgba(215, 167, 111, 0.10)`,
-        }}>
-          {character.conditions.map((c) => <ConditionPill key={condName(c)} cond={c} />)}
-        </div>
-      )}
+      <div className="vitals-strip__context">
+        <button
+          type="button"
+          className={`hud-light${light.lit ? " is-lit" : ""}${light.dark ? " is-dark" : ""}`}
+          onClick={light.lit ? onExtinguish : undefined}
+          disabled={!light.lit}
+          aria-label={light.lit ? `${light.text}. Tap to extinguish.` : `Light: ${light.text}`}
+        >
+          <Icon name={lightIcon} size={12} strokeWidth={1.7} />
+          <span>Light</span>
+          <strong>{light.text}</strong>
+          {light.lit && <em>Snuff</em>}
+        </button>
+        {character.conditions.length > 0 && (
+          <div className="vitals-strip__conditions">
+            {character.conditions.map((c) => <ConditionPill key={condName(c)} cond={c} />)}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -322,6 +333,7 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
 
   return (
     <div
+      className="radial-meter"
       style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", minWidth: 0 }}
       title={ariaLabel}
       role="meter"
@@ -442,15 +454,22 @@ function NarratorPicker() {
   const effortLabel = active.efforts
     ? ` · ${(NARRATOR_EFFORTS.find((e) => e.id === effort) || {}).label ?? effort}`
     : "";
+  const compactLabel = active.label
+    .replace("DeepSeek", "DS")
+    .replace("Gemini", "Gem")
+    .replace("GPT-", "GPT ")
+    .split(" ")
+    .slice(0, 2)
+    .join(" ");
 
   return (
-    <div style={{ position: "relative", flexShrink: 0 }}>
+    <div className={`narrator-picker${open ? " is-open" : ""}`} style={{ position: "relative", flexShrink: 0 }}>
       {open && (
         <>
           {/* Click-away backdrop — closes the popover on any outside tap. */}
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
           {/* Popover, anchored above the button (composer sits at screen bottom). */}
-          <div style={{
+          <div className="narrator-picker__popover" style={{
             position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 41,
             minWidth: "212px", padding: "5px",
             background: "rgba(13, 19, 18, 0.97)",
@@ -462,7 +481,7 @@ function NarratorPicker() {
             {NARRATOR_MODELS.map((m) => {
               const on = m.id === model;
               return (
-                <button key={m.id} onClick={() => chooseModel(m.id)} style={{
+                <button className={`narrator-picker__option${on ? " is-active" : ""}`} key={m.id} onClick={() => chooseModel(m.id)} aria-pressed={on} style={{
                   width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: "9px",
                   padding: "9px", borderRadius: radius.chip, fontFamily: "inherit", cursor: "pointer",
                   border: "none", background: on ? "rgba(215, 167, 111, 0.14)" : "transparent",
@@ -506,11 +525,13 @@ function NarratorPicker() {
         </>
       )}
       <button
+        type="button"
+        className="narrator-picker__trigger"
         onClick={() => setOpen((o) => !o)}
         title={`Narrator: ${active.label}${effortLabel}`}
         aria-label={`Narrator: ${active.label}${effortLabel}. Tap to change model or thinking effort.`}
         style={{
-          width: "48px", height: "48px", borderRadius: radius.control,
+          height: "48px", borderRadius: radius.control,
           backgroundColor: open ? "rgba(215, 167, 111, 0.16)" : "rgba(10, 15, 15, 0.65)",
           backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
           border: `1px solid rgba(215, 167, 111, ${open ? 0.5 : 0.22})`,
@@ -519,7 +540,8 @@ function NarratorPicker() {
           boxShadow: "0 10px 24px rgba(0,0,0,0.3)",
         }}
       >
-        <Icon name="sparkle" size={18} color={colors.gold} strokeWidth={1.8} />
+        <Icon name="sparkle" size={16} color={colors.gold} strokeWidth={1.8} />
+        <span><small>Narrator</small><strong>{compactLabel}</strong></span>
       </button>
     </div>
   );
@@ -528,6 +550,7 @@ function NarratorPicker() {
 export function InputBar({ value, onChange, onSubmit, loading }) {
   const disabled = loading || !value.trim();
   const ref = React.useRef(null);
+  const [focused, setFocused] = React.useState(false);
   // Grow the field with its content (up to a cap, then it scrolls), so a longer
   // action is easy to write and read back before sending.
   React.useEffect(() => {
@@ -537,51 +560,49 @@ export function InputBar({ value, onChange, onSubmit, loading }) {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [value]);
   return (
-    <div className="story-input" style={{
+    <div className={`story-input${focused ? " is-focused" : ""}${value.trim() ? " has-value" : ""}${loading ? " is-sending" : ""}`} style={{
       padding: "10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px) 12px",
       background: "linear-gradient(180deg, rgba(7,25,40,0) 0%, rgba(7,25,40,0.48) 20%, rgba(7,25,40,0.84) 100%)",
-      display: "flex", alignItems: "flex-end", gap: "9px",
+      display: "block",
     }}>
-      <NarratorPicker />
-      <textarea
-        className="story-input__field"
-        ref={ref}
-        rows={1}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        // Enter adds a new line (there's a Send button); ⌘/Ctrl+Enter sends.
-        onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!disabled) onSubmit(); } }}
-        placeholder="What do you do?" disabled={loading}
-        style={{
-          flex: 1, minHeight: "48px", maxHeight: "160px",
-          boxSizing: "border-box", resize: "none", overflowY: "auto",
-          borderRadius: radius.control,
-          border: "1px solid color-mix(in srgb, var(--scene-accent, #d7a76f) 34%, transparent)",
-          backgroundColor: "rgba(8, 31, 48, 0.74)",
-          backdropFilter: "blur(12px)",
-          WebkitBackdropFilter: "blur(12px)",
-          padding: "13px 18px", fontSize: "14px", lineHeight: 1.4, color: colors.parchment,
-          outline: "none", fontFamily: "inherit",
-          transition: "border-color 0.2s, box-shadow 0.2s",
-          boxShadow: `0 14px 30px rgba(4,18,31,0.28), inset 0 1px 0 rgba(255,255,255,0.05)`,
-        }}
-      />
-      <button
-        className="story-input__send"
-        onClick={onSubmit} disabled={disabled}
-        style={{
-          width: "48px", height: "48px",
-          borderRadius: radius.control,
-          backgroundColor: disabled ? "rgba(215, 167, 111, 0.08)" : "var(--scene-highlight, #d7a76f)",
-          border: "1px solid color-mix(in srgb, var(--scene-highlight, #d7a76f) 42%, transparent)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          cursor: disabled ? "not-allowed" : "pointer",
-          flexShrink: 0,
-          boxShadow: "0 10px 24px rgba(0,0,0,0.3)",
-        }}
-      >
-        <Icon name="send" size={17} color={disabled ? "rgba(215, 167, 111, 0.3)" : colors.ink} strokeWidth={2.2} />
-      </button>
+      <div className="story-input__composer">
+        <NarratorPicker />
+        <div className="story-input__bubble">
+          <textarea
+            className="story-input__field"
+            ref={ref}
+            rows={1}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            // Enter adds a new line (there's a Send button); ⌘/Ctrl+Enter sends.
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!disabled) onSubmit(); } }}
+            placeholder={loading ? "The narrator is answering…" : "What do you do?"}
+            disabled={loading}
+            style={{
+              flex: 1, minHeight: "46px", maxHeight: "160px",
+              boxSizing: "border-box", resize: "none", overflowY: "auto",
+              padding: "12px 10px 11px", fontSize: "15px", lineHeight: 1.4, color: colors.parchment,
+              outline: "none", fontFamily: "inherit",
+            }}
+          />
+          <span className="story-input__hint">Ctrl ↵ to send</span>
+        </div>
+        <button
+          type="button"
+          className="story-input__send"
+          onClick={onSubmit}
+          disabled={disabled}
+          aria-label={loading ? "Narrator is responding" : "Send action"}
+        >
+          {loading ? (
+            <span className="story-input__sending" aria-hidden="true"><i /><i /><i /></span>
+          ) : (
+            <Icon name="send" size={18} color={disabled ? "rgba(215, 167, 111, 0.3)" : colors.ink} strokeWidth={2.2} />
+          )}
+        </button>
+      </div>
     </div>
   );
 }
