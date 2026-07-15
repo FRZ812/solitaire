@@ -76,6 +76,7 @@ import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { NamePrompt } from "./components/NamePrompt.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { SubscriptionScreen } from "./components/SubscriptionScreen.jsx";
+import { TitleScreen } from "./components/TitleScreen.jsx";
 import { CampaignsList } from "./components/CampaignsList.jsx";
 import { GameOverScreen } from "./components/GameOverScreen.jsx";
 import { InitialBackdrop } from "./components/InitialBackdrop.jsx";
@@ -267,7 +268,8 @@ export function Solitaire() {
   const [currentCampaignId, setCurrentCampaignId] = useState(null);
   const [campaignBusy, setCampaignBusy] = useState(false);
   const [campaignError, setCampaignError] = useState(null);
-  const autoResumedRef = useRef(false);
+  const [menuEntered, setMenuEntered] = useState(false);
+  const campaignsPreparedRef = useRef(false);
 
   // Game
   const [state, setState] = useState(makeInitialState());
@@ -416,6 +418,7 @@ export function Solitaire() {
     const unsubscribe = onAuthChange((u) => {
       if (!mounted) return;
       setUser(u);
+      if (!u) setMenuEntered(false);
       setAuthChecked(true);
     });
     return () => { mounted = false; unsubscribe(); };
@@ -452,7 +455,7 @@ export function Solitaire() {
     if (!user) {
       setCampaigns([]);
       setCampaignsLoaded(false);
-      autoResumedRef.current = false;
+      campaignsPreparedRef.current = false;
       return;
     }
     // Don't touch campaigns until the subscription gate has passed — a
@@ -476,10 +479,13 @@ export function Solitaire() {
     return () => { cancelled = true; };
   }, [user, subscribed]);
 
-  // ----- Auto-resume / legacy-import on first load -----
+  // ----- One-time legacy import on first load -----
+  // The title screen now deliberately opens into the campaign library instead
+  // of auto-resuming or silently creating a save. Players always choose the road
+  // they are about to enter.
   useEffect(() => {
-    if (autoResumedRef.current || !campaignsLoaded || !user) return;
-    autoResumedRef.current = true;
+    if (campaignsPreparedRef.current || !campaignsLoaded || !user) return;
+    campaignsPreparedRef.current = true;
     const snapshotCampaigns = campaigns;
     let cancelled = false;
 
@@ -514,22 +520,6 @@ export function Solitaire() {
           }
         }
 
-        const isCancelled = () => cancelled;
-
-        // 2. Standard auto-resume: open the last-opened campaign if it still exists.
-        const lastOpened = localStorage.getItem(LAST_OPENED_KEY);
-        if (lastOpened && snapshotCampaigns.some((c) => c.id === lastOpened)) {
-          await openCampaign(lastOpened, isCancelled);
-          return;
-        }
-
-        // 3. First-launch auto-create: no campaigns at all → make one and dive in.
-        if (snapshotCampaigns.length === 0) {
-          await createCampaign(isCancelled);
-          return;
-        }
-
-        // 4. Otherwise: campaigns exist but no lastOpened → stay on list.
       } catch (e) {
         if (!cancelled) setCampaignError(e.message || String(e));
       }
@@ -698,6 +688,7 @@ export function Solitaire() {
 
   async function handleSignOut() {
     setDeckOpen(false);
+    setMenuEntered(false);
     setCurrentCampaignId(null);
     setHydrated(false);
     // Reset in-memory game state so the next account signed in on this browser
@@ -1848,16 +1839,29 @@ export function Solitaire() {
       />
     );
   }
+  if (!menuEntered) {
+    return (
+      <TitleScreen
+        email={user.email}
+        onStart={() => setMenuEntered(true)}
+        onSignOut={handleSignOut}
+        busy={!campaignsLoaded || campaignBusy}
+        error={campaignError}
+      />
+    );
+  }
   if (!campaignsLoaded || campaignBusy) return <CenteredLoader />;
   if (!currentCampaignId) {
     return (
       <>
         <CampaignsList
           campaigns={campaigns}
+          email={user.email}
           onSelect={handleSelectCampaign}
           onNew={handleNewCampaign}
           onDelete={handleDeleteCampaign}
           onRename={handleRenameCampaign}
+          onBack={() => setMenuEntered(false)}
           onSignOut={handleSignOut}
           busy={campaignBusy}
           error={campaignError}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { Solitaire } from "./App.jsx";
 import "./components/game-theme.css";
+import "./components/menu-theme.css";
 import { InstallPill } from "./components/InstallPill.jsx";
 import { PwaDiagnostics } from "./components/PwaDiagnostics.jsx";
 import { MapEditor } from "./components/MapEditor.jsx";

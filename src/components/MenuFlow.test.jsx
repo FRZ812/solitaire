@@ -1,0 +1,60 @@
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import { CampaignsList } from "./CampaignsList.jsx";
+import { CreationHub } from "./CreationHub.jsx";
+import { TitleScreen } from "./TitleScreen.jsx";
+
+describe("front-of-game menu flow", () => {
+  it("renders a deliberate authenticated title gate with account controls", () => {
+    const html = renderToStaticMarkup(
+      <TitleScreen
+        email="wanderer@example.com"
+        onStart={() => {}}
+        onSignOut={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Click to start");
+    expect(html).toContain("Open your campaign library");
+    expect(html).toContain("wanderer@example.com");
+    expect(html).toContain("Sign out");
+    expect(html).toContain("logo-solitaire-compass-v1.png");
+  });
+
+  it("renders campaigns as a library with title and sign-out navigation", () => {
+    const html = renderToStaticMarkup(
+      <CampaignsList
+        campaigns={[{ id: "road-1", name: "The White Road", last_played_at: new Date().toISOString() }]}
+        email="wanderer@example.com"
+        onSelect={() => {}}
+        onNew={() => {}}
+        onDelete={() => {}}
+        onRename={() => {}}
+        onBack={() => {}}
+        onSignOut={() => {}}
+        busy={false}
+      />,
+    );
+
+    expect(html).toContain("Choose your journey");
+    expect(html).toContain("Begin a new journey");
+    expect(html).toContain("The White Road");
+    expect(html).toContain("Campaign library");
+    expect(html).toContain("Sign out");
+  });
+
+  it("shows one focused character power tier instead of every preset at once", () => {
+    const html = renderToStaticMarkup(
+      <CreationHub onPickTemplate={() => {}} onCustom={() => {}} onQuit={() => {}} busy={false} />,
+    );
+
+    expect(html.match(/role="tab"/g)).toHaveLength(6);
+    expect(html).toContain("Starting power");
+    expect(html).toContain("Bram Coltaine");
+    expect(html).toContain("Faelar Sylvareth");
+    expect(html).not.toContain("Ysolde Varen");
+    expect(html).toContain("Create a custom traveller");
+    expect(html).toContain("character-roster-threshold-v1.webp");
+  });
+});

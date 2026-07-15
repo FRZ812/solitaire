@@ -1,13 +1,14 @@
 import React, { useState } from "react";
+import { GameLogo } from "./GameLogo.jsx";
 import { InitialBackdrop } from "./InitialBackdrop.jsx";
+import { Icon } from "./Icon.jsx";
 import { ErrorBanner } from "./primitives.jsx";
-import { colors, shadow, radius, fonts } from "./tokens.js";
 
 function formatRelativeTime(iso) {
   if (!iso) return "moments ago";
   const then = new Date(iso).getTime();
   const now = Date.now();
-  const diffSec = Math.floor((now - then) / 1000);
+  const diffSec = Math.max(0, Math.floor((now - then) / 1000));
   if (diffSec < 60) return "moments ago";
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
@@ -15,210 +16,154 @@ function formatRelativeTime(iso) {
   return new Date(iso).toLocaleDateString();
 }
 
-export function CampaignsList({ campaigns, onSelect, onNew, onDelete, onRename, onSignOut, busy, error }) {
+function RomanIndex({ index }) {
+  const numerals = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+  return <span>{numerals[index] || String(index + 1).padStart(2, "0")}</span>;
+}
+
+export function CampaignsList({
+  campaigns,
+  email,
+  onSelect,
+  onNew,
+  onDelete,
+  onRename,
+  onBack,
+  onSignOut,
+  busy,
+  error,
+}) {
   const [renamingId, setRenamingId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
 
   function startRename(c) {
     setRenamingId(c.id);
-    setRenameValue(c.name);
+    setRenameValue(c.name || "");
   }
-  function commitRename() {
+
+  function commitRename(event) {
+    event?.preventDefault();
     if (!renamingId) return;
-    const v = renameValue.trim();
-    if (v && v !== campaigns.find(c => c.id === renamingId)?.name) {
-      onRename(renamingId, v);
-    }
+    const value = renameValue.trim();
+    const current = campaigns.find((campaign) => campaign.id === renamingId)?.name;
+    if (value && value !== current) onRename(renamingId, value);
     setRenamingId(null);
   }
+
   function cancelRename() {
     setRenamingId(null);
+    setRenameValue("");
   }
 
   return (
-    <div className="campaign-screen fade-in" style={{
-      backgroundColor: colors.ink,
-      backgroundImage: "radial-gradient(circle at 50% 30%, #152422 0%, #0a0f0e 80%)",
-      height: "100dvh", width: "100%", maxWidth: "480px", margin: "0 auto",
-      display: "flex", flexDirection: "column", overflow: "hidden",
-      position: "relative",
-    }}>
+    <main className="menu-screen campaign-screen fade-in">
       <InitialBackdrop />
-      <div className="screen-inner-frame" style={{
-        position: "absolute",
-        inset: "12px",
-        border: `1px solid rgba(215, 167, 111, 0.06)`,
-        pointerEvents: "none",
-        borderRadius: "20px",
-        zIndex: 0,
-      }} />
+      <div className="campaign-screen__veil" aria-hidden="true" />
+      <div className="menu-screen__frame" aria-hidden="true" />
 
-      <div className="campaign-screen__header" style={{
-        padding: "calc(env(safe-area-inset-top, 0px) + 20px) 20px 14px 20px",
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        borderBottom: `1px solid rgba(215, 167, 111, 0.14)`,
-        zIndex: 1,
-      }}>
-        <div>
-          <div className="campaign-screen__kicker">Continue the road</div>
-          <div className="campaign-screen__title" style={{
-            fontFamily: fonts.serif, fontStyle: "italic",
-            fontSize: "26px", color: colors.parchment,
-            textShadow: "0 2px 10px rgba(0,0,0,0.5)",
-          }}>
-            Solitaire
+      <header className="campaign-nav">
+        <button type="button" className="menu-back" onClick={onBack} disabled={busy}>
+          <Icon name="arrowLeft" size={15} strokeWidth={1.8} />
+          Title
+        </button>
+        <GameLogo compact className="campaign-nav__logo" />
+        <button type="button" className="menu-signout menu-signout--compact" onClick={onSignOut} disabled={busy}>
+          <span className="menu-signout__glyph" aria-hidden="true"><i /></span>
+          Sign out
+        </button>
+      </header>
+
+      <div className="campaign-library custom-scroll">
+        <section className="campaign-library__intro" aria-labelledby="campaign-heading">
+          <p className="menu-eyebrow">Campaign library</p>
+          <div className="campaign-library__title-row">
+            <div>
+              <h1 id="campaign-heading">Choose your journey</h1>
+              <p>Return to a road in progress, or begin somewhere new.</p>
+            </div>
+            <span className="campaign-count" aria-label={`${campaigns.length} saved campaigns`}>
+              <strong>{campaigns.length}</strong>
+              <small>{campaigns.length === 1 ? "save" : "saves"}</small>
+            </span>
           </div>
-        </div>
-        {onSignOut && (
-          <button
-            onClick={onSignOut}
-            disabled={busy}
-            style={{
-              padding: "7px 12px", fontSize: "11px", fontWeight: 700,
-              border: `1px solid rgba(215, 167, 111, 0.28)`,
-              borderRadius: radius.chip,
-              backgroundColor: "rgba(255, 255, 255, 0.05)",
-              color: colors.gold,
-              cursor: busy ? "default" : "pointer",
-              opacity: busy ? 0.5 : 1,
-              fontFamily: "inherit",
-            }}
-          >
-            Sign out
-          </button>
-        )}
-      </div>
+          {email && <div className="campaign-library__account">Cloud library for <strong>{email}</strong></div>}
+        </section>
 
-      <div className="campaign-screen__scroll custom-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px", zIndex: 1 }}>
-        {error && <ErrorBanner style={{ margin: "0 0 16px" }}>{error}</ErrorBanner>}
+        {error && <ErrorBanner style={{ margin: "0 0 14px" }}>{error}</ErrorBanner>}
 
-        <button
-          className="campaign-new"
-          onClick={onNew}
-          disabled={busy}
-          style={{
-            width: "100%", padding: "14px 18px", marginBottom: "20px",
-            fontSize: "14px", fontWeight: 700,
-            backgroundColor: "rgba(215, 167, 111, 0.12)",
-            color: colors.gold,
-            border: `1px solid rgba(215, 167, 111, 0.4)`,
-            borderRadius: radius.control,
-            cursor: busy ? "default" : "pointer",
-            opacity: busy ? 0.5 : 1,
-            fontFamily: "inherit",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-            boxShadow: shadow.subtle,
-          }}
-        >
-          <span style={{ fontSize: "18px", fontWeight: 400, lineHeight: 1 }}>+</span>
-          New campaign
+        <button type="button" className="campaign-new" onClick={onNew} disabled={busy}>
+          <span className="campaign-new__mark" aria-hidden="true"><i /><i /></span>
+          <span>
+            <strong>Begin a new journey</strong>
+            <small>Create a fresh campaign and choose your traveller</small>
+          </span>
+          <span className="campaign-new__arrow" aria-hidden="true">›</span>
         </button>
 
-        {campaigns.length === 0 && !busy && (
-          <div style={{
-            textAlign: "center", padding: "48px 16px",
-            color: "rgba(237, 228, 208, 0.58)", lineHeight: "1.6",
-            fontFamily: fonts.serif, fontStyle: "italic", fontSize: "16px",
-          }}>
-            No campaigns yet.<br />
-            Tap "New campaign" to begin.
+        <div className="campaign-list-heading">
+          <span>Your campaigns</span>
+          <i />
+          <small>Most recent first</small>
+        </div>
+
+        {campaigns.length === 0 && !busy ? (
+          <section className="campaign-empty">
+            <span className="campaign-empty__sigil" aria-hidden="true"><Icon name="compass" size={25} strokeWidth={1.45} /></span>
+            <h2>No roads charted yet</h2>
+            <p>Your first campaign will appear here, ready to continue from any device.</p>
+          </section>
+        ) : (
+          <div className="campaign-list">
+            {campaigns.map((campaign, index) => (
+              <article className="campaign-card" key={campaign.id}>
+                {renamingId === campaign.id ? (
+                  <form className="campaign-rename" onSubmit={commitRename}>
+                    <label htmlFor={`campaign-name-${campaign.id}`}>Rename campaign</label>
+                    <input
+                      id={`campaign-name-${campaign.id}`}
+                      autoFocus
+                      type="text"
+                      value={renameValue}
+                      onChange={(event) => setRenameValue(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") cancelRename();
+                      }}
+                    />
+                    <div>
+                      <button type="button" onClick={cancelRename}>Cancel</button>
+                      <button type="submit" disabled={!renameValue.trim()}>Save name</button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="campaign-card__open"
+                      onClick={() => onSelect(campaign.id)}
+                      disabled={busy}
+                    >
+                      <span className="campaign-card__index" aria-hidden="true"><RomanIndex index={index} /></span>
+                      <span className="campaign-card__copy">
+                        <small>Last played {formatRelativeTime(campaign.last_played_at)}</small>
+                        <strong>{campaign.name || "Untitled journey"}</strong>
+                        <span>Continue campaign</span>
+                      </span>
+                      <span className="campaign-card__arrow" aria-hidden="true">›</span>
+                    </button>
+                    <footer className="campaign-card__actions">
+                      <span>Saved to your account</span>
+                      <div>
+                        <button type="button" onClick={() => startRename(campaign)} disabled={busy}>Rename</button>
+                        <button type="button" className="is-danger" onClick={() => onDelete(campaign.id)} disabled={busy}>Delete</button>
+                      </div>
+                    </footer>
+                  </>
+                )}
+              </article>
+            ))}
           </div>
         )}
-
-        {campaigns.map(c => (
-          <div key={c.id} className="campaign-card" style={{
-            marginBottom: "12px",
-            backgroundColor: "rgba(20, 29, 29, 0.45)",
-            border: `1px solid rgba(215, 167, 111, 0.16)`,
-            borderRadius: radius.control,
-            overflow: "hidden",
-            boxShadow: shadow.subtle,
-            transition: "border-color 0.2s, box-shadow 0.2s",
-          }}>
-            {renamingId === c.id ? (
-              <div style={{ padding: "14px 16px 6px 16px" }}>
-                <input
-                  autoFocus
-                  type="text"
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); commitRename(); }
-                    if (e.key === "Escape") cancelRename();
-                  }}
-                  style={{
-                    width: "100%", padding: "8px 12px", fontSize: "18px",
-                    fontFamily: fonts.serif, fontStyle: "italic",
-                    border: `1px solid rgba(215, 167, 111, 0.4)`,
-                    borderRadius: radius.chip,
-                    backgroundColor: "rgba(0, 0, 0, 0.38)",
-                    color: colors.parchment, outline: "none",
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-            ) : (
-              <button
-                className="campaign-card__open"
-                onClick={() => onSelect(c.id)}
-                disabled={busy}
-                style={{
-                  display: "block", width: "100%", textAlign: "left",
-                  padding: "14px 16px 4px 16px",
-                  backgroundColor: "transparent", border: "none",
-                  cursor: busy ? "default" : "pointer",
-                  opacity: busy ? 0.5 : 1,
-                  fontFamily: "inherit",
-                }}
-              >
-                <div style={{
-                  fontFamily: fonts.serif, fontStyle: "italic",
-                  fontSize: "20px", color: colors.parchment,
-                  textShadow: "0 1px 4px rgba(0,0,0,0.2)",
-                }}>
-                  {c.name || "Untitled"}
-                </div>
-              </button>
-            )}
-            <div style={{
-              padding: "0 16px 12px 16px",
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              fontSize: "11px", color: "rgba(237, 228, 208, 0.54)",
-            }}>
-              <span style={{ fontSize: "10px" }}>Last played {formatRelativeTime(c.last_played_at)}</span>
-              {renamingId !== c.id && (
-                <div style={{ display: "flex", gap: "12px" }}>
-                  <button
-                    onClick={() => startRename(c)}
-                    disabled={busy}
-                    style={{
-                      background: "transparent", border: "none", padding: 0,
-                      fontSize: "11px", color: colors.gold, fontWeight: 700,
-                      cursor: busy ? "default" : "pointer",
-                      fontFamily: "inherit", opacity: busy ? 0.5 : 1,
-                    }}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    onClick={() => onDelete(c.id)}
-                    disabled={busy}
-                    style={{
-                      background: "transparent", border: "none", padding: 0,
-                      fontSize: "11px", color: "#f87171", fontWeight: 700,
-                      cursor: busy ? "default" : "pointer",
-                      fontFamily: "inherit", opacity: busy ? 0.5 : 1,
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
       </div>
-    </div>
+    </main>
   );
 }
