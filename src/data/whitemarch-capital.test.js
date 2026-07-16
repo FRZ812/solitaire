@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUILDINGS } from "./town.js";
+import { BUILDINGS, MARKET_PRICE_TIERS, buildingForTile } from "./town.js";
 import {
   HANDCRAFTED,
   SEALED_STRUCTURES,
@@ -26,9 +26,9 @@ const SUPPORTED_SERVICE_KINDS = new Set([
 
 const EXPECTED_CAPITAL_COUNTS = Object.freeze({
   tiles: 469,
-  namedPois: 60,
+  namedPois: 94,
   districts: 12,
-  serviceTiles: 22,
+  serviceTiles: 48,
   gates: 6,
   routeMouths: 6,
 });
@@ -114,7 +114,7 @@ describe("Whitemarch unified-capital compiler", () => {
     const first = compileWhitemarchCapital();
     const second = compileWhitemarchCapital();
 
-    expect(WHITEMARCH_MAP_VERSION).toBe(2);
+    expect(WHITEMARCH_MAP_VERSION).toBe(3);
     expect(first).toEqual(second);
     expect(first).not.toBe(second);
     expect(first.tiles).not.toBe(second.tiles);
@@ -138,6 +138,7 @@ describe("Whitemarch unified-capital compiler", () => {
     expect(districts.size).toBe(EXPECTED_CAPITAL_COUNTS.districts);
     expect(serviceTiles).toHaveLength(EXPECTED_CAPITAL_COUNTS.serviceTiles);
     expect(uniqueServices.size).toBeGreaterThanOrEqual(6);
+    expect([...uniqueServices]).toEqual(expect.arrayContaining(["stable", "blacksmith", "apothecary", "herbalist", "magic-shop", "royal-arcana", "inn"]));
     expect(WHITEMARCH_LANDMARKS).toHaveLength(EXPECTED_CAPITAL_COUNTS.namedPois);
 
     for (const [key, tile] of entries) {
@@ -189,6 +190,49 @@ describe("Whitemarch unified-capital compiler", () => {
       expect(building, `${key}: missing BUILDINGS.${service}`).toBeTruthy();
       expect(SUPPORTED_SERVICE_KINDS.has(building.kind), `${key}: unsupported ${service}/${building.kind}`).toBe(true);
     }
+  });
+
+  it("gives every retail house an explicit six-tier market position without concentrating endgame stock in the starting city", () => {
+    const { tiles } = compileWhitemarchCapital();
+    const entries = Object.entries(tiles);
+    const namedByDistrict = new Map();
+    const servicesByDistrict = new Map();
+    const serviceTiles = entries.filter(([, tile]) => tile.poi?.service);
+    const retailTiles = serviceTiles.filter(([, tile]) => BUILDINGS[tile.poi.service]?.stock?.length);
+
+    expect(Object.keys(MARKET_PRICE_TIERS)).toEqual([
+      "budget", "standard", "premium", "noble", "royal", "mastercraft",
+    ]);
+    expect(MARKET_PRICE_TIERS.bargain).toBeUndefined();
+    expect(MARKET_PRICE_TIERS["high-noble"]).toBeUndefined();
+
+    for (const [, tile] of entries.filter(([, entry]) => entry.poi?.name)) {
+      namedByDistrict.set(tile.districtId, (namedByDistrict.get(tile.districtId) || 0) + 1);
+    }
+    for (const [, tile] of serviceTiles) {
+      servicesByDistrict.set(tile.districtId, (servicesByDistrict.get(tile.districtId) || 0) + 1);
+    }
+    for (const district of WHITEMARCH_CAPITAL.districts) {
+      expect(namedByDistrict.get(districtId(district)), districtName(district)).toBeGreaterThanOrEqual(6);
+      expect(servicesByDistrict.get(districtId(district)), districtName(district)).toBeGreaterThanOrEqual(1);
+    }
+
+    for (const [key, tile] of retailTiles) {
+      const tier = MARKET_PRICE_TIERS[tile.poi.marketTier];
+      const building = buildingForTile(tile);
+      expect(tier, `${key}: missing market tier`).toBeTruthy();
+      expect(building.marketTier, key).toBe(tier.id);
+      expect(building.priceScale, key).toBe(tier.priceScale);
+      expect(building.label, key).toBe(tile.poi.name);
+    }
+
+    const tierTiles = (tier) => serviceTiles.filter(([, tile]) => tile.poi.marketTier === tier);
+    expect(tierTiles("budget").length).toBeGreaterThan(tierTiles("noble").length);
+    expect(tierTiles("noble")).toHaveLength(4);
+    expect(tierTiles("noble").every(([, tile]) => tile.districtId === "noble-rise")).toBe(true);
+    expect(tierTiles("royal")).toHaveLength(1);
+    expect(tierTiles("royal")[0][1].poi.name).toBe("Starfall Arcana");
+    expect(tierTiles("mastercraft")).toHaveLength(0);
   });
 
   it("authors the Whitewend as recognizable water with a named crossing", () => {

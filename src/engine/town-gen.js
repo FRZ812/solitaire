@@ -45,6 +45,9 @@ export function makeRng(seedStr) {
 export function rollShopStock(building, tileKey, day) {
   const bucket = bucketForDay(day);
   const items = [];
+  const locationPriceScale = Number.isFinite(building?.priceScale) && building.priceScale > 0
+    ? building.priceScale
+    : 1;
   if (building?.stock?.length) {
     const rng = mulberry32(hashStr(`${tileKey}:${building.id}:${bucket}`));
     for (const entry of building.stock) {
@@ -56,7 +59,7 @@ export function rollShopStock(building, tileKey, day) {
       const qty = qmin + Math.floor(rng() * (qmax - qmin + 1));
       if (qty <= 0) continue;
       const variance = 0.9 + rng() * 0.3; // 0.9..1.2 — keeps prices from being uniform
-      const price = Math.max(1, Math.round(def.value * (entry.priceMult ?? 1) * variance));
+      const price = Math.max(1, Math.round(def.value * (entry.priceMult ?? 1) * locationPriceScale * variance));
       items.push({ itemId: def.id, def, qty, price });
     }
   }

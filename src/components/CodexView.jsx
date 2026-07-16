@@ -10,7 +10,7 @@ import { CONDITIONS } from "../data/conditions.js";
 import { hasCombatEffect } from "../engine/condition-combat.js";
 import { relationshipTier } from "../engine/relationships.js";
 import { ALL_ITEMS, itemTemplate } from "../data/catalog.js";
-import { canScry } from "../engine/positions.js";
+import { canScry, canTrackCharacter } from "../engine/positions.js";
 import { tier as tierInfo, tierLabel, tierOrder, tierColor } from "../data/tiers.js";
 import { weaponCategory, armorClass, itemCombatStats, itemRequirement } from "../engine/combat-stats.js";
 import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIVES, FUSIONS, RUNES, isFusionRune } from "../data/passives.js";
@@ -826,7 +826,7 @@ function GlossaryView() {
   );
 }
 
-export function CodexEntry({ entry, kind, codex, onScry, onRename, portraitOverride, onPortraitChange }) {
+export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = false, onRename, portraitOverride, onPortraitChange }) {
   const [open, setOpen] = useState(false);
   // Alt+click the header to reveal hidden audit fields (attractiveness int +
   // lifespanMultiplier value). These bias the narrator if they leak into prose,
@@ -911,6 +911,8 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename, portraitOverr
             )}
             {entry.common && <span>Baseline</span>}
             {entry.kind === "player" && <span>You</span>}
+            {entry.playable && <span>Playable</span>}
+            {isTracked && <span>Tracked</span>}
             {subclass && <span>Subclass · {subclass.label}</span>}
             {kind === "skills" && typeof entry.rating === "number" && <span>Rating {entry.rating}</span>}
           </span>
@@ -918,6 +920,9 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename, portraitOverr
         </button>
 
         <div className="codex-entry__actions">
+          {onTrack && (
+            <button type="button" className={`is-track${isTracked ? " is-active" : ""}`} aria-pressed={isTracked} onClick={onTrack}>{isTracked ? "Tracking" : "Track"}</button>
+          )}
           {onRename && (
             <button type="button" onClick={onRename}>Rename</button>
           )}
@@ -1053,7 +1058,7 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename, portraitOverr
   );
 }
 
-export function CodexView({ state, onClose, onScry, onRenameMount, onPortraitChange, embedded = false }) {
+export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMount, onPortraitChange, embedded = false }) {
   const codex = state.world.codex;
   const scryable = onScry && canScry(state);
   const partyIds = new Set(state.party || []);
@@ -1066,13 +1071,15 @@ export function CodexView({ state, onClose, onScry, onRenameMount, onPortraitCha
     const rank = (entry) => {
       if (entry.kind === "player") return 0;
       if (partyIds.has(entry.id)) return 1;
-      if (IMPORTANT_CHARACTER_IDS.has(entry.id)) return 2;
-      if (entry.kind === "mount") return 3;
-      return 4;
+      if (entry.playable) return 2;
+      if (IMPORTANT_CHARACTER_IDS.has(entry.id)) return 3;
+      if (entry.kind === "mount") return 4;
+      return 5;
     };
     entries = [...entries]
       .filter((entry) => {
         if (characterScope === "company" && entry.kind !== "player" && !partyIds.has(entry.id)) return false;
+        if (characterScope === "playable" && !entry.playable) return false;
         if (characterScope === "notable" && !IMPORTANT_CHARACTER_IDS.has(entry.id)) return false;
         if (characterScope === "mounts" && entry.kind !== "mount") return false;
         if (!query) return true;
@@ -1190,6 +1197,7 @@ export function CodexView({ state, onClose, onScry, onRenameMount, onPortraitCha
             {[
               ["all", "All"],
               ["company", "Company"],
+              ["playable", "Playable"],
               ["notable", "Notable"],
               ["mounts", "Mounts"],
             ].map(([key, label]) => (
@@ -1227,6 +1235,8 @@ export function CodexView({ state, onClose, onScry, onRenameMount, onPortraitCha
             {entries.map((e) => <CodexEntry key={e.id} entry={e} kind={activeTab} codex={codex}
               portraitOverride={state.portraitOverrides?.[e.id]}
               onPortraitChange={activeTab === "characters" ? onPortraitChange : null}
+              isTracked={activeTab === "characters" && state.world.trackedCharacterId === e.id}
+              onTrack={onTrackCharacter && activeTab === "characters" && (state.world.trackedCharacterId === e.id || canTrackCharacter(state, e.id)) ? () => onTrackCharacter(e.id) : null}
               onScry={scryable && activeTab === "characters" && e.kind !== "player" && !partyIds.has(e.id) ? () => onScry(e.id) : null}
               onRename={onRenameMount && activeTab === "characters" && e.kind === "mount" ? () => onRenameMount(e.id) : null} />)}
           </div>

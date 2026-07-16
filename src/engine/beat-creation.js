@@ -6,6 +6,7 @@
 import { resolveRace } from "../data/races.js";
 import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
 import { proficiencyDef } from "../data/proficiencies.js";
+import { withoutSelectedPlayableCharacter } from "../data/playable-roster.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
 
 // Creation attributes are set directly from the interview, scaled to the
@@ -112,7 +113,15 @@ export function applyCreation({ beat, character, world, created }) {
       // knowledge_updates before the final sheet repeats it — don't list it twice.
       knows: [...new Set([...(w.knows || []), ...(cs.knows || [])].filter((f) => typeof f === "string" && f.trim()))],
     };
-    world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, wanderer: merged } } };
+    const characters = withoutSelectedPlayableCharacter(
+      { ...world.codex.characters, wanderer: merged },
+      merged.templateId,
+    );
+    world = {
+      ...world,
+      ...(world.trackedCharacterId && !characters[world.trackedCharacterId] ? { trackedCharacterId: null } : {}),
+      codex: { ...world.codex, characters },
+    };
     // Creation set attributes + racial vigor/mind — derive starting HP and resolve.
     recomputeVitalityMax(character);
     recomputeResolveMax(character);

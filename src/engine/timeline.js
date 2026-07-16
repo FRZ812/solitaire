@@ -48,6 +48,7 @@ export function recordTurn(base, message, next, extra = {}) {
     message,
     prevText,
     char: base.character,
+    party: base.party,
     time: base.time,
     world: { codexIdx: c.idx, seenIdx: s.idx, tilesIdx: t.idx, ...restWorld },
   };
@@ -137,6 +138,7 @@ export function stateBeforeTurn(state, k) {
   return {
     ...state,
     character: cp.char,
+    party: cp.party ?? state.party,
     time: cp.time,
     world,
     beats: state.beats.slice(0, cp.beatsLen),
@@ -166,6 +168,7 @@ export function stateAfterTurn(state, k) {
   return {
     ...state,
     character: nextCp.char,
+    party: nextCp.party ?? state.party,
     time: nextCp.time,
     world,
     beats: state.beats.slice(0, cur.endLen),       // keep through turn k's last beat

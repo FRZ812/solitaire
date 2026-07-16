@@ -19,6 +19,9 @@ import { playerFlightMount } from "../../engine/riding.js";
 import { formatDate, formatTime } from "../../engine/time.js";
 import { coinsToCopper, formatCopper } from "../../engine/economy.js";
 import { poiPartName, poiPlaceName } from "../../engine/location.js";
+import { buildingForService, MARKET_PRICE_TIERS } from "../../data/town.js";
+import { poiIconKeyForTile } from "../../data/poi-icons.js";
+import { PoiIcon, PoiTierMarker } from "../PoiIcon.jsx";
 import {
   TERRAIN_INK,
   buildExplorationModel,
@@ -45,6 +48,10 @@ const POI_GLYPHS = {
 
 function glyphFor(tile) {
   return POI_GLYPHS[tile?.poi?.type] || terrainVisual(tile?.terrain).glyph || "•";
+}
+
+function iconKeyFor(tile) {
+  return poiIconKeyForTile(tile, buildingForService(tile?.poi?.service)?.icon || null);
 }
 
 function cityDistrict(tile) {
@@ -140,6 +147,12 @@ function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, n
       {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 
       {city && district && <div className="rpg-city-district-chip"><span aria-hidden="true">◆</span><small>{city}</small><b>{district}</b></div>}
+      {city && (
+        <div className="rpg-poi-tier-legend" aria-label="Shop tier marker legend">
+          <small>Shop tier</small>
+          {Object.values(MARKET_PRICE_TIERS).map((tier) => <PoiTierMarker key={tier.id} marketTier={tier.id} size={16} />)}
+        </div>
+      )}
 
       {onSeekCombat && (
         <div className="rpg-map-corner-controls">
@@ -169,6 +182,7 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
   const rewardTitle = selection?.quest ? "Quest reward" : selection?.visited ? "Known waypoint" : "Discovery ahead";
   const rewardValue = selection?.quest ? formatCopper(selection.quest.rewardCp || 0) : selection?.visited ? "Route recorded" : "New atlas entry";
   const focusDistrict = cityDistrict(selection?.tile);
+  const focusMarketTier = selection?.tile?.poi?.marketTier || null;
   const urbanRoute = !!selection?.tile?.cityId && selection.tile.cityId === model.current.tile?.cityId;
   return (
     <section className={`rpg-command-panel ${selection ? "has-selection" : "is-awaiting-destination"}`}>
@@ -196,6 +210,13 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
               <h2>{selectedName}</h2>
               <small>{focusVisual.mood}</small>
             </div>
+
+            {focusMarketTier && (
+              <div className="rpg-destination-poi-tier">
+                <small>Shop tier</small>
+                <PoiTierMarker marketTier={focusMarketTier} size={18} showLabel />
+              </div>
+            )}
 
             {description && <p className="rpg-destination-copy">{description}</p>}
 
@@ -313,9 +334,10 @@ function WorldAtlasPage({ state, landmarks, origin, onPick }) {
             const biome = biomeAt(landmark, state.world.seed);
             const visual = biomeVisual(biome.id);
             const kind = landmark.quest ? "Objective" : landmark.anchor ? "Warp anchor" : biome.name;
+            const poiIconKey = iconKeyFor(landmark.tile);
             return (
               <button key={landmark.key} onClick={() => onPick(landmark)} className="rpg-folio-card rpg-folio-place" style={{ "--place-art": `url(${visual.image})`, "--place-accent": visual.accent }}>
-                <span className="rpg-folio-place__art" aria-hidden="true"><i>{landmark.quest ? "✦" : glyphFor(landmark.tile)}</i></span>
+                <span className="rpg-folio-place__art" aria-hidden="true"><i>{landmark.quest ? "✦" : poiIconKey ? <PoiIcon iconKey={poiIconKey} size={32} marketTier={landmark.tile?.poi?.marketTier} /> : glyphFor(landmark.tile)}</i></span>
                 <span className="rpg-folio-card__copy">
                   <small>{kind}</small>
                   <strong>{nameForDestination(landmark, origin)}</strong>
@@ -427,7 +449,7 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
   }, [flyPanelDest, folioPage]);
 
   function pick(destination) {
-    setSelected({ x: destination.x, y: destination.y });
+    setSelected({ x: destination.x, y: destination.y, ...(destination.name ? { name: destination.name } : {}) });
     setFolioPage(null);
   }
 

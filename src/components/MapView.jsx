@@ -22,6 +22,15 @@ import { formatCopper } from "../engine/economy.js";
 import { compassDir } from "../engine/api.js";
 import { useZoomPan } from "./useZoomPan.js";
 import { poiMeta, poiPlaceName } from "../engine/location.js";
+import { buildingForService, MARKET_PRICE_TIERS } from "../data/town.js";
+import {
+  isPoiIcon,
+  PoiIcon,
+  PoiTierMarker,
+  POI_LEGEND_GROUPS,
+  poiIconKeyForTile,
+  poiIconMeta,
+} from "./PoiIcon.jsx";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
 
@@ -327,6 +336,38 @@ export const MAP_ASSETS = {
   ),
 };
 
+export function hasMapAsset(assetKey) {
+  return !!MAP_ASSETS[assetKey] || isPoiIcon(assetKey);
+}
+
+function MapAssetIcon({ assetKey, color = "#f5dcb8", size = 22, title = null, marketTier = null }) {
+  if (isPoiIcon(assetKey)) {
+    return <PoiIcon iconKey={assetKey} size={size} title={title} marketTier={marketTier} />;
+  }
+  const factory = MAP_ASSETS[assetKey];
+  if (!factory) return null;
+  return React.cloneElement(factory(color), { width: size, height: size });
+}
+
+// The map plane is foreshortened with scaleY(.615). Rich service markers need
+// to remain upright and square to stay readable at mobile-map scale, while the
+// older line-art terrain glyphs retain the established painted-on-map look.
+function MapAssetAt({ assetKey, color = "#f5dcb8", cx, cy, lift = 0, marketTier = null }) {
+  if (!hasMapAsset(assetKey)) return null;
+  const poiMarker = isPoiIcon(assetKey);
+  const size = poiMarker ? 30 : 22;
+  const uprightY = poiMarker ? 1 / 0.615 : 1;
+  return (
+    <g
+      transform={`translate(${cx} ${cy - lift}) scale(1 ${uprightY}) translate(${-size / 2} ${-size / 2})`}
+      pointerEvents="none"
+      data-map-marker={assetKey}
+    >
+      <MapAssetIcon assetKey={assetKey} color={color} size={size} marketTier={marketTier} />
+    </g>
+  );
+}
+
 export function assetKeyForTile(tile) {
   if (!tile.poi) return null;
   // Walls never carry a per-hex icon — the stone surface IS the marker.
@@ -337,20 +378,21 @@ export function assetKeyForTile(tile) {
   if (tile.terrain === "wall") return null;
   const t = tile.poi.type;
   if (t === "hidden") return "unknown";
-  if (t === "slavemarket") return "slavemarket";
+  // A service id is more specific than the physical POI shape. A stable may
+  // be authored as a market pen, an indoor building, or part of a compound;
+  // all of those should still show the same horse marker.
+  const serviceIcon = buildingForService(tile.poi.service)?.icon || null;
+  const poiIcon = poiIconKeyForTile(tile, serviceIcon);
+  if (poiIcon) return poiIcon;
   if (tile.terrain === "indoor") {
-    if (t === "gaol" || t === "prison") return "gaol";
-    if (t === "healer" || t === "apothecary") return "healer";
-    if (t === "inn" || t === "tavern" || t === "stable" || t === "mill" || t === "shop") return "bldg";
-    if (t === "smithy") return "smithy";
-    if (t === "temple" || t === "shrine" || t === "cathedral") return "temple";
+    if (t === "mill" || t === "shop") return "bldg";
     return "bldg";
   }
   if (t === "market") return "market";
   if (t === "town" || t === "hall" || t === "square" || t === "garden" || t === "yard") return "town";
   if (t === "gate") return "gate";
   if (t === "landmark" || t === "camp") return "site";
-  if (t === "shrine" || t === "cathedral" || t === "fortress") return "temple";
+  if (t === "fortress") return "temple";
   if (t === "palace" || t === "mint" || t === "city") return "city";
   if (t === "village") return "town";
   if (t === "lake") return "lake";
@@ -361,11 +403,8 @@ export function assetKeyForTile(tile) {
 }
 
 function MapLegend() {
-  const items = [
-    { key: "bldg", label: "bldg" }, { key: "smithy", label: "smithy" },
-    { key: "healer", label: "healer" }, { key: "market", label: "market" },
-    { key: "gaol", label: "gaol" }, { key: "slavemarket", label: "auction" },
-    { key: "temple", label: "temple" }, { key: "town", label: "town" },
+  const genericItems = [
+    { key: "bldg", label: "building" }, { key: "market", label: "market / plaza" },
     { key: "gate", label: "gate" }, { key: "site", label: "site" },
     { key: "unknown", label: "unknown" }, { key: "city", label: "city" },
     { key: "river", label: "river" }, { key: "mtns", label: "mtns" },
@@ -381,9 +420,8 @@ function MapLegend() {
       onTouchStart={(e) => e.stopPropagation()}
       style={{
         position: "absolute", left: "12px", right: "12px", bottom: "52px", zIndex: 6,
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "8px 12px",
+        display: "grid",
+        gap: "12px",
         padding: "10px 12px",
         maxHeight: "45%", overflowY: "auto",
         borderRadius: "14px",
@@ -393,20 +431,30 @@ function MapLegend() {
         boxShadow: "0 12px 32px rgba(0,0,0,0.55)",
         fontSize: "11px",
         color: "rgba(237, 228, 208, 0.72)",
-        justifyContent: "center",
       }}>
-      {items.map((it) => (
-        <span key={it.key + it.label} style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-          <span style={{ display: "inline-flex", width: "16px", height: "16px", alignItems: "center", justifyContent: "center" }}>
-            {MAP_ASSETS[it.key] && (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d7a76f" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                {MAP_ASSETS[it.key]("#d7a76f").props.children}
-              </svg>
-            )}
-          </span>
-          <span style={{ letterSpacing: "0.06em" }}>{it.label}</span>
-        </span>
+      {[...POI_LEGEND_GROUPS, { id: "map", label: "Map features", items: genericItems }].map((group) => (
+        <section key={group.id}>
+          <div style={{ marginBottom: "6px", color: "#d7a76f", fontSize: "9px", fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase" }}>{group.label}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 12px", justifyContent: "center" }}>
+            {group.items.map((it) => (
+              <span key={it.key} data-map-legend-item={it.key} style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ display: "inline-flex", width: "22px", height: "22px", alignItems: "center", justifyContent: "center" }}>
+                  {hasMapAsset(it.key) && <MapAssetIcon assetKey={it.key} color="#d7a76f" size={isPoiIcon(it.key) ? 22 : 16} />}
+                </span>
+                <span style={{ letterSpacing: "0.06em" }}>{it.label}</span>
+              </span>
+            ))}
+          </div>
+        </section>
       ))}
+      <section>
+        <div style={{ marginBottom: "6px", color: "#d7a76f", fontSize: "9px", fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase" }}>Shop tiers</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 12px", justifyContent: "center", fontSize: "10px", fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          {Object.values(MARKET_PRICE_TIERS).map((tier) => (
+            <PoiTierMarker key={tier.id} marketTier={tier.id} size={18} showLabel />
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -556,12 +604,17 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     if (!parent || tile.poi?.type === "hidden") continue;
     if (!footprintGroups.has(parent)) {
       footprintGroups.set(parent, {
-        iconKey: assetKeyForTile(tile),
+        iconKey: null,
         tiles: [],
         keys: new Set(),
       });
     }
     const group = footprintGroups.get(parent);
+    // Trade/service POIs inside a compound keep their own per-hex markers.
+    // The compound centroid is reserved for a non-service identity marker, so
+    // a caravanserai cannot collapse its stable, farrier, and traders into one
+    // arbitrary icon chosen from the first member tile.
+    if (!tile.poi?.service && !group.iconKey) group.iconKey = assetKeyForTile(tile);
     group.tiles.push(h);
     group.keys.add(`${h.x},${h.y}`);
   }
@@ -604,7 +657,7 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         bestNbrs = nbrs; bestDist = dist; anchor = h;
       }
     }
-    if (group.iconKey && MAP_ASSETS[group.iconKey]) {
+    if (group.iconKey && hasMapAsset(group.iconKey)) {
       anchorIconByKey.set(`${anchor.x},${anchor.y}`, group.iconKey);
     }
   }
@@ -660,6 +713,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
   let accessLabel = null;
   let footprintLabel = null;
   let partLabel = null;
+  let serviceMarker = null;
+  let poiMarketTier = null;
   if (selected) {
     if (selRumored && !selSeen) {
       bottomLabel = `${selRumored.name} · ${selRumored.kind}`;
@@ -678,6 +733,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
       accessLabel = meta.access;
       footprintLabel = meta.footprint;
       partLabel = meta.part;
+      serviceMarker = poiIconMeta(assetKeyForTile(selTile));
+      poiMarketTier = selTile.poi?.marketTier || null;
       if (selTile.poi?.description) bottomDetail = selTile.poi.description;
       else if (selTile.poi?.type === "hidden") bottomDetail = "Something here, not yet known.";
       else bottomDetail = T?.flavor || "";
@@ -700,6 +757,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
     accessLabel = meta.access;
     footprintLabel = meta.footprint;
     partLabel = meta.part;
+    serviceMarker = poiIconMeta(assetKeyForTile(curTile));
+    poiMarketTier = curTile.poi?.marketTier || null;
   }
 
   return (
@@ -843,8 +902,12 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
               if (seen) {
                 opacity = visited ? 1 : 0.8;
                 // Suppress per-hex icon for building footprint members —
-                // the centroid icon further down represents the group.
-                assetKey = isBuildingFootprintMember ? null : assetKeyForTile(tile);
+                // the centroid icon further down represents the group. Explicit
+                // Explicit POI markers are the exception: each service or
+                // venue must remain visible inside a multi-POI compound.
+                const tileAssetKey = assetKeyForTile(tile);
+                const explicitPoiMarker = isPoiIcon(tileAssetKey);
+                assetKey = (isBuildingFootprintMember && !explicitPoiMarker) ? null : tileAssetKey;
               } else {
                 opacity = 0.22;
               }
@@ -903,10 +966,8 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                     strokeWidth={strokeWidth}
                     strokeLinejoin="round"
                   />
-                  {assetKey && MAP_ASSETS[assetKey] && (
-                    <g transform={`translate(${px - 11}, ${py - 11 - lift})`} pointerEvents="none">
-                      {MAP_ASSETS[assetKey](textColor)}
-                    </g>
+                  {assetKey && hasMapAsset(assetKey) && (
+                    <MapAssetAt assetKey={assetKey} color={textColor} cx={px} cy={py} lift={lift} marketTier={tile.poi?.marketTier} />
                   )}
                   {(() => {
                     // Footprint centroid icon — rendered inline with the
@@ -916,11 +977,9 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
                     // icon; north neighbours are above the icon on screen
                     // anyway in the isometric tilt and don't overlap it.
                     const iconKey = anchorIconByKey.get(`${x},${y}`);
-                    if (!iconKey || !MAP_ASSETS[iconKey]) return null;
+                    if (!iconKey || !hasMapAsset(iconKey)) return null;
                     return (
-                      <g transform={`translate(${px - 11}, ${py - 11 - lift})`} pointerEvents="none">
-                        {MAP_ASSETS[iconKey]("#f5dcb8")}
-                      </g>
+                      <MapAssetAt assetKey={iconKey} color="#f5dcb8" cx={px} cy={py} lift={lift} />
                     );
                   })()}
                 </g>
@@ -1144,6 +1203,13 @@ export function MapView({ state, onClose, onTravel, onFly, onTeleport, onSeekCom
         }}>
           {bottomLabel}
         </div>
+        {serviceMarker && (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "7px", alignSelf: "flex-start", marginTop: "7px", padding: "3px 9px 3px 4px", borderRadius: "999px", border: "1px solid rgba(215,167,111,0.22)", background: "rgba(215,167,111,0.08)", color: "#e6b98c", fontSize: "10px", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            <PoiIcon iconKey={serviceMarker.key} size={22} marketTier={poiMarketTier} />
+            <span>{serviceMarker.label}</span>
+            {poiMarketTier && <PoiTierMarker marketTier={poiMarketTier} size={17} showLabel />}
+          </div>
+        )}
         <div style={{ fontSize: "13px", color: "rgba(237, 228, 208, 0.85)", lineHeight: "1.45", marginTop: "4px" }}>{bottomDetail}</div>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "6px" }}>
           {areaLabel && (
