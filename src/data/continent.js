@@ -7,7 +7,7 @@
 
 import { WHITEMARCH_CAPITAL } from "./whitemarch-capital.js";
 
-export const WORLD_GENERATOR_VERSION = 1;
+export const WORLD_GENERATOR_VERSION = 2;
 export const DEFAULT_WORLD_SEED = "avarra-first-light";
 
 export const CONTINENT = {
@@ -15,7 +15,7 @@ export const CONTINENT = {
   name: "Avarra",
   seed: DEFAULT_WORLD_SEED,
   generatorVersion: WORLD_GENERATOR_VERSION,
-  contentVersion: 1,
+  contentVersion: 3,
   hexKilometers: 6,
   chunkSize: 24,
   // These are sampling/editor bounds, not a rectangular wall. The actual shore
@@ -27,10 +27,189 @@ export const CONTINENT = {
     coord: { x: WHITEMARCH_CAPITAL.start.x, y: WHITEMARCH_CAPITAL.start.y },
   },
   description:
-    "A long east-west continent of drowned southern shelves, western grass seas, " +
-    "a cold northern crown, and river basins gathered around the Whitewend. " +
-    "Whitemarch stands near its inhabited middle, small against the whole.",
+    "An immense, road-bound continent: Whitemarch stands in the temperate heartlands, " +
+    "with the frozen crown far north, the Sunscar desert far south, the Sea of Reeds " +
+    "far east, and the Elderwood far west. Irregular coasts open to three great seas.",
+  // The atlas and generator share this authored, non-radial outline. Low-frequency
+  // seed noise roughens the edges, while named coves below cut into it. Coordinates
+  // stay in the same axial world space as Whitemarch and every travel tile.
+  coastline: [
+    // The frozen crown continues beyond the northern chart edge; this is a
+    // mainland survey, not a radius-clipped oval island.
+    { x: -205, y: -430 }, { x: -80, y: -455 }, { x: 35, y: -445 },
+    { x: 155, y: -430 }, { x: 225, y: -382 }, { x: 275, y: -315 },
+    { x: 365, y: -305 }, { x: 430, y: -252 }, { x: 462, y: -266 },
+    { x: 445, y: -205 }, { x: 505, y: -155 }, { x: 492, y: -86 },
+    { x: 526, y: -28 }, { x: 493, y: 35 }, { x: 528, y: 102 },
+    { x: 475, y: 154 }, { x: 456, y: 215 }, { x: 405, y: 278 },
+    { x: 324, y: 304 }, { x: 286, y: 347 }, { x: 205, y: 370 },
+    { x: 65, y: 395 }, { x: -80, y: 380 }, { x: -190, y: 335 },
+    { x: -270, y: 350 }, { x: -330, y: 300 }, { x: -382, y: 264 },
+    { x: -456, y: 278 }, { x: -438, y: 222 }, { x: -507, y: 192 },
+    { x: -485, y: 139 }, { x: -532, y: 92 }, { x: -500, y: 28 },
+    { x: -535, y: -20 }, { x: -474, y: -82 }, { x: -497, y: -145 },
+    { x: -421, y: -174 }, { x: -434, y: -238 }, { x: -350, y: -252 },
+    { x: -300, y: -330 }, { x: -230, y: -352 },
+  ],
 };
+
+// Five atlas-scale realms are the primary geography players should read from a
+// continental view. Smaller REGION_DEFINITIONS below remain cultural subregions
+// for encounter/save compatibility; every generated tile also carries one of
+// these five stable realm ids and its dominant biome identity.
+export const REALMS = Object.freeze([
+  Object.freeze({
+    id: "central", direction: "central", name: "Whitemarch Heartlands",
+    shortName: "Heartlands", biomeId: "temperate", biomeName: "Temperate Heartland",
+    center: Object.freeze({ x: 0, y: 0 }), influence: Object.freeze({ scaleX: 145, scaleY: 135 }),
+    capital: Object.freeze({ id: "whitemarch", name: "Whitemarch", coord: Object.freeze({ x: 0, y: 0 }) }),
+    faction: Object.freeze({ id: "whitemarch-iron", name: "The Iron Concord" }),
+    ruler: Object.freeze({ name: "Queen Aveline IV", title: "Crowned Warden of Whitemarch" }),
+    climate: Object.freeze({ temperature: 0.02, moisture: 0.02, elevation: -0.04 }),
+    terrain: Object.freeze({ forest: 0.02, marsh: 0.01, hills: -0.05 }),
+    description: "River-fed fields, low wooded ridges, market roads, and the walled capital at Avarra's inland crossroads.",
+  }),
+  Object.freeze({
+    id: "north", direction: "north", name: "The Frostcrown",
+    shortName: "Frostcrown", biomeId: "snow", biomeName: "Snowbound Wastes",
+    center: Object.freeze({ x: 8, y: -332 }), influence: Object.freeze({ scaleX: 240, scaleY: 175 }),
+    capital: Object.freeze({ id: "northstar-castle", name: "Northstar", coord: Object.freeze({ x: 8, y: -332 }) }),
+    faction: Object.freeze({ id: "vyrgun-drakekin", name: "The Vyrgun Crown" }),
+    ruler: Object.freeze({ name: "High Queen Ysra Vyrgun", title: "Keeper of the Winter Crown" }),
+    climate: Object.freeze({ temperature: -0.38, moisture: 0.08, elevation: 0.16 }),
+    terrain: Object.freeze({ forest: -0.14, marsh: -0.12, hills: 0.20 }),
+    description: "A remote crown of snowfields, black fir, glacier valleys, smoking peaks, and fortified winter roads.",
+  }),
+  Object.freeze({
+    id: "east", direction: "east", name: "The Sea of Reeds",
+    shortName: "Sea of Reeds", biomeId: "reed-sea", biomeName: "Reed Sea and River Provinces",
+    center: Object.freeze({ x: 418, y: 72 }), influence: Object.freeze({ scaleX: 250, scaleY: 210 }),
+    capital: Object.freeze({ id: "tellmar", name: "Tellmar", coord: Object.freeze({ x: 418, y: 72 }) }),
+    faction: Object.freeze({ id: "tellmar-banners", name: "The Hundred Banners" }),
+    ruler: Object.freeze({ name: "Empress Shuyei Ren", title: "Mistress of Reeds and Tides" }),
+    climate: Object.freeze({ temperature: 0.10, moisture: 0.30, elevation: -0.12 }),
+    terrain: Object.freeze({ forest: 0.12, marsh: 0.30, hills: -0.16 }),
+    description: "Vast reed wetlands, terraced river valleys, tiled cities, shrine roads, banner clans, and bright eastern harbors.",
+  }),
+  Object.freeze({
+    id: "south", direction: "south", name: "The Sunscar Expanse",
+    shortName: "Sunscar", biomeId: "desert", biomeName: "Sunscar Desert",
+    center: Object.freeze({ x: 104, y: 294 }), influence: Object.freeze({ scaleX: 250, scaleY: 190 }),
+    capital: Object.freeze({ id: "asalan", name: "Asalan", coord: Object.freeze({ x: 104, y: 294 }) }),
+    faction: Object.freeze({ id: "asalan-sun-court", name: "The Sun Court of Asalan" }),
+    ruler: Object.freeze({ name: "Sultana Maraset al-Azur", title: "Keeper of the Nine Wells" }),
+    climate: Object.freeze({ temperature: 0.28, moisture: -0.42, elevation: 0.04 }),
+    terrain: Object.freeze({ forest: -0.36, marsh: -0.32, hills: 0.08 }),
+    description: "Gold and red dunes, salt pans, caravan wells, sandstone escarpments, and a southern sea reached through warm ports.",
+  }),
+  Object.freeze({
+    id: "west", direction: "west", name: "The Elderwood",
+    shortName: "Elderwood", biomeId: "woodland", biomeName: "Great Western Woodland",
+    center: Object.freeze({ x: -420, y: 150 }), influence: Object.freeze({ scaleX: 250, scaleY: 210 }),
+    capital: Object.freeze({ id: "caer-selenya", name: "Caer Selenya", coord: Object.freeze({ x: -420, y: 150 }) }),
+    faction: Object.freeze({ id: "selenyan-covenant", name: "The Selenyan Covenant" }),
+    ruler: Object.freeze({ name: "Queen Maerwynn Thorne", title: "Voice Beneath the Boughs" }),
+    climate: Object.freeze({ temperature: -0.01, moisture: 0.30, elevation: 0.01 }),
+    terrain: Object.freeze({ forest: 0.46, marsh: 0.04, hills: 0.02 }),
+    description: "A continent-deep woodland of rain-dark canopy, living bridges, hidden courts, forest roads, and western ports.",
+  }),
+]);
+
+export const REALM_DEFINITIONS = Object.freeze(Object.fromEntries(REALMS.map((realm) => [realm.id, realm])));
+// Alias retained for atlas consumers that describe these as macro regions.
+export const MACRO_REGIONS = REALMS;
+
+export const COASTAL_FEATURES = Object.freeze([
+  Object.freeze({ id: "rimeward-sea", name: "Rimeward Sea", kind: "sea", edge: "north", realmId: "north", coord: Object.freeze({ x: 30, y: -405 }), description: "Pack ice and blue-black winter water beyond the northern crown." }),
+  Object.freeze({ id: "greenwater", name: "The Greenwater", kind: "sea", edge: "west", realmId: "west", coord: Object.freeze({ x: -535, y: 125 }), description: "A rain-fed western sea broken by forested headlands." }),
+  Object.freeze({ id: "saffron-sea", name: "The Saffron Sea", kind: "sea", edge: "south", realmId: "south", coord: Object.freeze({ x: 80, y: 405 }), description: "Warm southern water carrying spice sails and desert dust." }),
+  Object.freeze({ id: "lantern-sea", name: "The Lantern Sea", kind: "sea", edge: "east", realmId: "east", coord: Object.freeze({ x: 535, y: 95 }), description: "The bright eastern sea beyond the reed deltas." }),
+  Object.freeze({ id: "heron-inlet", name: "Heron Inlet", kind: "inlet", edge: "east", realmId: "east", coord: Object.freeze({ x: 484, y: 132 }), carve: Object.freeze({ radiusX: 94, radiusY: 72, strength: 0.65 }), description: "A many-fingered tidal inlet among the outer reeds." }),
+  Object.freeze({ id: "nine-wells-bay", name: "Nine Wells Bay", kind: "bay", edge: "south", realmId: "south", coord: Object.freeze({ x: 10, y: 374 }), carve: Object.freeze({ radiusX: 105, radiusY: 65, strength: 0.38 }), description: "A broad warm bay sheltering the desert coast's oldest roadstead." }),
+  Object.freeze({ id: "selenyan-cove", name: "Selenyan Cove", kind: "cove", edge: "west", realmId: "west", coord: Object.freeze({ x: -486, y: 150 }), carve: Object.freeze({ radiusX: 82, radiusY: 78, strength: 0.15 }), description: "A steep green cove hidden between rainwood cliffs." }),
+]);
+
+// A broken mountain backbone echoes the continental relief visible on the
+// parchment chart. It bends from the frozen north through the inland east of
+// Whitemarch, then turns south-west. Named road passes deliberately interrupt
+// the ridge so the five realms remain connected by believable ground routes.
+export const MOUNTAIN_SPINE = Object.freeze({
+  id: "avarran-spine",
+  name: "The Avarran Spine",
+  width: 48,
+  elevationBoost: 0.36,
+  waypoints: Object.freeze([
+    Object.freeze({ x: 72, y: -330 }), Object.freeze({ x: 48, y: -245 }),
+    Object.freeze({ x: 82, y: -170 }), Object.freeze({ x: 62, y: -92 }),
+    Object.freeze({ x: 112, y: -22 }), Object.freeze({ x: 135, y: 40 }),
+    Object.freeze({ x: 94, y: 100 }), Object.freeze({ x: -15, y: 170 }),
+    Object.freeze({ x: -82, y: 226 }), Object.freeze({ x: -190, y: 286 }),
+  ]),
+  passes: Object.freeze([
+    Object.freeze({ id: "drakespire-pass", name: "Drakespire Pass", coord: Object.freeze({ x: 48, y: -245 }), radius: 8, routeIds: Object.freeze(["north-road"]) }),
+    Object.freeze({ id: "heron-pass", name: "Heron Pass", coord: Object.freeze({ x: 135, y: 40 }), radius: 9, routeIds: Object.freeze(["star-road"]) }),
+    Object.freeze({ id: "sunward-pass", name: "Sunward Pass", coord: Object.freeze({ x: -15, y: 170 }), radius: 10, routeIds: Object.freeze(["south-road"]) }),
+  ]),
+});
+
+export const REALM_CULTURES = Object.freeze([
+  { id: "heartland-culture", realmId: "central", demonym: "Heartlander", languages: ["March Speech", "High Avarran"], values: ["public duty", "fair measure", "guest-right"], architecture: ["black-and-white masonry", "river brick", "slate market halls"], customs: ["weighing-day fairs", "iron oath coins", "lantern processions"], faiths: ["the Pale God", "river saints", "household ancestors"], settlementTypes: ["walled-city", "market-town", "river-village", "roadside-hospice"], encounterThemes: ["watch patrols", "merchant trains", "pilgrims", "tenant assemblies"], description: "A literate road culture shaped by Whitemarch law, river commerce, guild charters, and stubborn village custom." },
+  { id: "frostcrown-culture", realmId: "north", demonym: "Frostborn", languages: ["Vyrgun", "Rime Cant", "March Speech"], values: ["winter hospitality", "lineage memory", "kept tribute"], architecture: ["black-fir halls", "basalt keeps", "snow-roofed bathhouses"], customs: ["aurora vigils", "first-thaw treaties", "shared hearth salt"], faiths: ["the Winter Crown", "wyrm ancestors", "ember saints"], settlementTypes: ["winter-hold", "hot-spring-town", "tribute-fort", "hunter-cloister"], encounterThemes: ["sledge caravans", "frost patrols", "wyrm hunters", "hearth envoys"], description: "Northern life is organized around defended hearths, stored heat, oath kinship, and the disciplined movement of food through snow." },
+  { id: "reed-sea-culture", realmId: "east", demonym: "Reedlander", languages: ["Tellmari Court Speech", "River Cant", "Banner Sign"], values: ["harmonious duty", "scholarship", "ancestral reputation"], architecture: ["tiled river cities", "raised timber causeways", "courtyard academies"], customs: ["moon-viewing boats", "ancestor tablets", "banner poetry contests"], faiths: ["river dragons", "the Lantern Court", "local shrine spirits"], settlementTypes: ["canal-city", "stilt-town", "terrace-village", "shrine-island"], encounterThemes: ["river patrols", "scholar pilgrims", "rice barges", "banner retainers"], description: "A many-province river civilization joined by waterways, examination halls, ancestor rites, and the negotiated authority of the Hundred Banners." },
+  { id: "sunscar-culture", realmId: "south", demonym: "Sunscarred", languages: ["Asalani", "Caravan Cant", "Old Well Script"], values: ["water hospitality", "kept contracts", "poetic renown"], architecture: ["sandstone courts", "wind towers", "blue-tiled cisterns"], customs: ["well-sharing law", "night markets", "dawn recitations"], faiths: ["the Unsetting Sun", "well guardians", "saints of the open road"], settlementTypes: ["oasis-city", "caravan-town", "well-fort", "cliff-sanctuary"], encounterThemes: ["caravan leagues", "well guards", "desert scholars", "dune outriders"], description: "Southern society measures wealth in water, shade, trustworthy roads, and the stories carried between widely separated wells." },
+  { id: "elderwood-culture", realmId: "west", demonym: "Woodlander", languages: ["Selenyan", "Green Cant", "March Speech"], values: ["stewardship", "consensus", "remembered obligation"], architecture: ["living timber halls", "root bridges", "rain-slate ports"], customs: ["grove councils", "name-grafting", "rainwake feasts"], faiths: ["the Root Choir", "green ancestors", "cove saints"], settlementTypes: ["tree-city", "coppice-town", "grove-sanctuary", "rain-port"], encounterThemes: ["oak-spear wardens", "forester guilds", "herb caravans", "covenant envoys"], description: "Western communities treat forest, road, and ancestry as one living inheritance governed through layered covenants." },
+]);
+
+export const REALM_ECONOMIES = Object.freeze([
+  { id: "heartland-economy", realmId: "central", currency: "iron shilling", resources: ["grain", "iron", "wool", "river clay", "apples"], exports: ["tools", "flour", "finished cloth", "chartered services"], imports: ["spices", "hardwood", "salt", "furs"], tradeGoods: ["iron tools", "barley", "wool bolts", "ledger paper"], routeIds: ["crown-road-east", "tannic-road", "spine-road", "bramble-road", "south-road", "north-road"], tradeNotes: ["Whitemarch certifies weights used across the continent", "river tolls fund road patrols"] },
+  { id: "frostcrown-economy", realmId: "north", currency: "rime mark", resources: ["furs", "cold iron", "amber", "ice crystal", "pine resin"], exports: ["furs", "tempered steel", "amber", "medicinal moss"], imports: ["grain", "wine", "salt", "lamp oil"], tradeGoods: ["fur mantles", "rime steel", "amber beads", "smoked char"], routeIds: ["north-road", "tannic-road", "aurora-way"], tradeNotes: ["winter convoys travel under military seal", "hot-spring towns store emergency grain"] },
+  { id: "reed-sea-economy", realmId: "east", currency: "square-holed banner cash", resources: ["rice", "tea", "silk", "reeds", "river fish", "lacquer"], exports: ["silk", "tea", "paper", "porcelain", "lacquerware"], imports: ["iron", "horses", "amber", "desert glass"], tradeGoods: ["tea bricks", "silk bolts", "rice paper", "lacquer boxes"], routeIds: ["crown-road-east", "spine-road", "star-road", "jade-causeway", "lotus-circuit"], tradeNotes: ["canal tolls are paid by cargo depth", "banner houses maintain competing courier posts"] },
+  { id: "sunscar-economy", realmId: "south", currency: "sun dinar", resources: ["salt", "dates", "copper", "glass sand", "incense"], exports: ["salt", "glass", "incense", "dates", "astronomical instruments"], imports: ["timber", "grain", "cold iron", "silk"], tradeGoods: ["blue glass", "salt cakes", "date wine", "brass astrolabes"], routeIds: ["south-road", "low-tide-way", "nine-wells-road", "dune-circuit"], tradeNotes: ["water rights travel with stamped caravan tablets", "Qamarat prices are set after the dawn wind reading"] },
+  { id: "elderwood-economy", realmId: "west", currency: "leaf crown", resources: ["hardwood", "herbs", "honey", "resin", "mushrooms", "dyes"], exports: ["hardwood", "medicines", "green dyes", "honey", "ship timber"], imports: ["iron", "salt", "ceramics", "desert glass"], tradeGoods: ["healing tinctures", "wax tablets", "dyewood", "rain-cured timber"], routeIds: ["bramble-road", "greenway", "root-road"], tradeNotes: ["living trees may only be felled under covenant mark", "Greenharbor auctions storm-fallen timber first"] },
+]);
+
+export const REALM_FACTIONS = Object.freeze([
+  { id: "whitemarch-iron", realmId: "central", name: "The Iron Concord", type: "crown-and-charter realm", leader: { name: "Queen Aveline IV", title: "Crowned Warden" }, seatLandmarkId: "whitemarch", provinceIds: ["crown-basin"], agenda: "Keep the six continental roads open under common weights and law.", allies: ["crowsmoor-wardens"], rivals: ["sundered-crown"], forces: ["Market Watch", "Iron Lancers", "road engineers"], description: "The crown, city wards, and chartered guilds governing Whitemarch and its basin." },
+  { id: "crowsmoor-wardens", realmId: "central", name: "Crowsmoor Wardens", type: "freehold council", leader: { name: "Reeve Mara Crow", title: "First Warden" }, seatLandmarkId: "crowsmoor", provinceIds: ["crowsmoor-reach"], agenda: "Protect grain roads and freehold courts from noble enclosure.", allies: ["whitemarch-iron"], rivals: ["iron-plateau-marches"], forces: ["mounted reeves", "militia bows"], description: "A federation of grain freeholds whose elected wardens police the eastern heartland." },
+  { id: "high-sheepway-guild", realmId: "central", name: "High Sheepway Guild", type: "road and mining league", leader: { name: "Dorrin Stonebrook", title: "Roadmaster" }, seatLandmarkId: "stonebrook", provinceIds: ["stonebrook-uplands"], agenda: "Hold the mountain passes and enforce safe caravan contracts.", allies: ["whitemarch-iron"], rivals: ["road-cutthroat-companies"], forces: ["guild outriders", "bridge crews"], description: "Dwarven holds, herders, and caravan houses bound to the High Sheepway." },
+  { id: "vyrgun-drakekin", realmId: "north", name: "The Vyrgun Crown", type: "winter monarchy", leader: { name: "High Queen Ysra Vyrgun", title: "Keeper of the Winter Crown" }, seatLandmarkId: "northstar-castle", provinceIds: ["rime-crown", "drake-marches"], agenda: "Unify the northern holds before the glaciers advance again.", allies: ["wintermere-hearths"], rivals: ["sundered-crown"], forces: ["White Pike Legion", "drake riders", "snow engineers"], description: "The royal hearth network owing tribute, troops, and winter stores to Northstar." },
+  { id: "sundered-crown", realmId: "north", name: "The Sundered Crown", type: "warlord confederacy", leader: { name: "King Vrask Nine-Walls", title: "Crown-Taker" }, seatLandmarkId: "brokenhold", provinceIds: ["sundered-snow"], agenda: "Control the north-west road and bargain recognition through strength.", allies: [], rivals: ["vyrgun-drakekin", "whitemarch-iron"], forces: ["Red Tusk Cohort", "wolf sledges", "fortress levies"], description: "A harsh league of captured keeps and mobile war camps around Brokenhold." },
+  { id: "wintermere-hearths", realmId: "north", name: "Wintermere Free Hearths", type: "town league", leader: { name: "Sava Emberhand", title: "Speaker of Hearths" }, seatLandmarkId: "wintermere", provinceIds: ["ember-lakes"], agenda: "Keep hot springs, refuges, and food stores independent but open.", allies: ["vyrgun-drakekin"], rivals: ["sundered-crown"], forces: ["hearth wardens", "lake scouts"], description: "Hot-spring towns whose shared granaries make northern travel possible." },
+  { id: "tellmar-banners", realmId: "east", name: "The Hundred Banners", type: "imperial banner court", leader: { name: "Empress Shuyei Ren", title: "Mistress of Reeds and Tides" }, seatLandmarkId: "tellmar", provinceIds: ["tellmar-delta", "lotus-marches"], agenda: "Balance the banner houses while restoring the old floodworks.", allies: ["lotus-prefecture"], rivals: ["iron-plateau-marches"], forces: ["Azure Heron Banner", "river marines", "court inspectors"], description: "Tellmar's imperial court and the banner houses sworn to maintain canals and armies." },
+  { id: "iron-plateau-marches", realmId: "east", name: "Iron Plateau Marches", type: "border baronies", leader: { name: "Lady Sen Varro", title: "March-Marshal" }, seatLandmarkId: "jade-lock", provinceIds: ["starfall-uplands"], agenda: "Monopolize horse and meteor-iron traffic through Reedwatch.", allies: [], rivals: ["tellmar-banners", "crowsmoor-wardens"], forces: ["mirror cavalry", "signal towers"], description: "Horse barons and fortress houses holding the dry approaches above the reed sea." },
+  { id: "lotus-prefecture", realmId: "east", name: "Lotus Prefecture", type: "scholar bureaucracy", leader: { name: "Prefect Lin Aro", title: "Keeper of Floodgates" }, seatLandmarkId: "hanori", provinceIds: ["lotus-marches", "heron-inlet"], agenda: "Rebuild floodgates and curb private banner tolls.", allies: ["tellmar-banners"], rivals: ["lantern-guilds"], forces: ["canal magistrates", "reed boat patrols"], description: "Engineers, magistrates, and academy clans administering the lower waterways." },
+  { id: "asalan-sun-court", realmId: "south", name: "The Sun Court of Asalan", type: "oasis monarchy", leader: { name: "Sultana Maraset al-Azur", title: "Keeper of the Nine Wells" }, seatLandmarkId: "asalan", provinceIds: ["nine-wells", "glass-desert"], agenda: "Secure every public well and reopen the southern observatory road.", allies: ["nine-wells-league"], rivals: ["dune-raider-clans"], forces: ["Brass Shield Regiment", "well engineers", "sun lancers"], description: "The royal court whose authority rests on water law, caravan safety, and the Nine Wells." },
+  { id: "nine-wells-league", realmId: "south", name: "Nine Wells Caravan League", type: "merchant league", leader: { name: "Tamar ibn Kes", title: "First Ledger" }, seatLandmarkId: "sirocco-wells", provinceIds: ["caravan-belt"], agenda: "Standardize water tablets and protect night markets.", allies: ["asalan-sun-court"], rivals: ["dune-raider-clans"], forces: ["contract guards", "camel scouts"], description: "Caravan masters and well towns coordinating freight across the open desert." },
+  { id: "qamarat-tideguild", realmId: "south", name: "Qamarat Tideguild", type: "port oligarchy", leader: { name: "Nahla Blue-Sail", title: "Harbor Speaker" }, seatLandmarkId: "qamarat", provinceIds: ["saffron-coast"], agenda: "Keep the Saffron Sea lanes free of royal monopolies.", allies: ["nine-wells-league"], rivals: ["lantern-guilds"], forces: ["blue-sail marines", "harbor chains"], description: "Shipowners, pilots, and warehouse families governing the southern port." },
+  { id: "selenyan-covenant", realmId: "west", name: "The Selenyan Covenant", type: "forest crown and grove council", leader: { name: "Queen Maerwynn Thorne", title: "Voice Beneath the Boughs" }, seatLandmarkId: "caer-selenya", provinceIds: ["selenyan-heart", "pale-boughs"], agenda: "Keep the old-growth roads living and foreign armies outside them.", allies: ["oak-spear-wardens"], rivals: ["sundered-crown"], forces: ["covenant archers", "path singers", "living bridge crews"], description: "The queen, grove councils, and hereditary path keepers of the Elderwood." },
+  { id: "oak-spear-wardens", realmId: "west", name: "Oak-Spear Wardens", type: "border military order", leader: { name: "Ardan Mosscloak", title: "Green Marshal" }, seatLandmarkId: "greenward-gate", provinceIds: ["eastern-coppices"], agenda: "Contain blight and regulate every armed crossing into the wood.", allies: ["selenyan-covenant"], rivals: ["pale-hand"], forces: ["oak-spear companies", "forester scouts"], description: "A disciplined woodland border order maintaining Greenward and the eastern coppices." },
+  { id: "greenharbor-guilds", realmId: "west", name: "Greenharbor Tide Guilds", type: "port guild compact", leader: { name: "Ilyen Rainwake", title: "Cove Provost" }, seatLandmarkId: "greenharbor", provinceIds: ["greenwater-coast"], agenda: "Expand sea trade without surrendering covenant forestry law.", allies: ["selenyan-covenant"], rivals: ["qamarat-tideguild"], forces: ["cove marines", "storm pilots"], description: "Shipwrights, resin merchants, pilots, and rain-port families." },
+]);
+
+export const PROVINCES = Object.freeze([
+  { id: "crown-basin", realmId: "central", name: "Crown Basin", seatLandmarkId: "whitemarch", authorityFactionId: "whitemarch-iron", governor: { name: "Lady Merrow Vale", title: "Basin Chancellor" }, anchor: { x: 0, y: 0 }, influence: { scaleX: 90, scaleY: 75 }, regionIds: ["whitemarch", "mire"], terrainTags: ["river", "farmland", "urban"], resources: ["grain", "iron", "river clay"], settlementTypes: ["walled-city", "river-village"], hazards: ["spring flood", "crowded toll roads"], encounterTags: ["watch patrols", "market caravans"], cultureNotes: ["Crown law is posted at every bridge"], description: "The Whitewend basin, Whitemarch's walls, quays, gardens, and closest farming villages." },
+  { id: "crowsmoor-reach", realmId: "central", name: "Crowsmoor Reach", seatLandmarkId: "crowsmoor", authorityFactionId: "crowsmoor-wardens", governor: { name: "Mara Crow", title: "First Warden" }, anchor: { x: 82, y: -8 }, influence: { scaleX: 85, scaleY: 65 }, regionIds: ["crowsmoor-reach", "whitemarch-march"], terrainTags: ["downs", "grain country", "open road"], resources: ["barley", "horses", "wool"], settlementTypes: ["freehold-town", "road-village"], hazards: ["flash grass fires", "toll disputes"], encounterTags: ["reeve patrols", "grain wagons"], cultureNotes: ["Freeholders elect road wardens each thaw"], description: "Open eastern grain country whose freeholds feed the capital and resent distant barons." },
+  { id: "stonebrook-uplands", realmId: "central", name: "Stonebrook Uplands", seatLandmarkId: "stonebrook", authorityFactionId: "high-sheepway-guild", governor: { name: "Dorrin Stonebrook", title: "Roadmaster" }, anchor: { x: 95, y: 78 }, influence: { scaleX: 85, scaleY: 75 }, regionIds: ["spine-foothills"], terrainTags: ["foothills", "quarries", "high road"], resources: ["iron ore", "slate", "goat wool"], settlementTypes: ["mining-hold", "pass-town"], hazards: ["rockfall", "winter fog"], encounterTags: ["prospectors", "guild outriders"], cultureNotes: ["Contracts are witnessed with a struck stone"], description: "Mined ridges and sheep valleys clustered around the continent's safest eastern passes." },
+  { id: "bramble-downs", realmId: "central", name: "Bramble Downs", seatLandmarkId: "bramblewych", authorityFactionId: "whitemarch-iron", governor: { name: "Ysabet Green", title: "Hedge Reeve" }, anchor: { x: -90, y: 70 }, influence: { scaleX: 85, scaleY: 72 }, regionIds: ["bramblewych-reach", "tannic-wood"], terrainTags: ["hedgerow", "orchard", "coppice"], resources: ["honey", "apples", "tannin"], settlementTypes: ["hedge-town", "orchard-village"], hazards: ["lost hedge paths", "river mist"], encounterTags: ["bee keepers", "woodward patrols"], cultureNotes: ["Boundary hedges are treated as public archives"], description: "A half-wild belt of orchards, working woods, and old boundary magic west of Whitemarch." },
+  { id: "rime-crown", realmId: "north", name: "Rime Crown", seatLandmarkId: "northstar-castle", authorityFactionId: "vyrgun-drakekin", governor: { name: "Jarl Edda Northlight", title: "Crown Castellan" }, anchor: { x: 10, y: -330 }, influence: { scaleX: 105, scaleY: 82 }, regionIds: ["drakeholt-peaks"], terrainTags: ["glacier", "snowfield", "black peak"], resources: ["cold iron", "ice crystal", "furs"], settlementTypes: ["winter-hold", "glacier-fort"], hazards: ["whiteout", "ice quake"], encounterTags: ["frost patrols", "wyrm hunters"], cultureNotes: ["Every hall keeps a stranger's hearth bench"], description: "The high frozen basin around Northstar, cut by glaciers and watched by black volcanic peaks." },
+  { id: "drake-marches", realmId: "north", name: "Drake Marches", seatLandmarkId: "drakespire", authorityFactionId: "vyrgun-drakekin", governor: { name: "Vara Smoke-Braid", title: "March Jarl" }, anchor: { x: 48, y: -240 }, influence: { scaleX: 105, scaleY: 82 }, regionIds: ["drakeholt-peaks"], terrainTags: ["volcanic ridge", "pine line", "tribute road"], resources: ["sulfur", "iron", "pine resin"], settlementTypes: ["tribute-fort", "ash-village"], hazards: ["wyrm flight", "ash storm"], encounterTags: ["drake riders", "tribute caravans"], cultureNotes: ["Smoke direction determines the market week"], description: "A militarized volcanic frontier controlling the passes below Drakespire." },
+  { id: "sundered-snow", realmId: "north", name: "Sundered Snow", seatLandmarkId: "brokenhold", authorityFactionId: "sundered-crown", governor: { name: "Vrask Nine-Walls", title: "Crown-Taker" }, anchor: { x: -205, y: -255 }, influence: { scaleX: 120, scaleY: 90 }, regionIds: ["sundered-wastes"], terrainTags: ["wind waste", "ruined forts", "red snow"], resources: ["salvaged iron", "amber", "wolf hides"], settlementTypes: ["fort-town", "war-camp"], hazards: ["raider levy", "ground blizzard"], encounterTags: ["wolf sledges", "fortress levies"], cultureNotes: ["Captured gates are rebuilt into Brokenhold"], description: "A broad north-western waste where conquered fortresses form an unstable kingdom." },
+  { id: "ember-lakes", realmId: "north", name: "Ember Lakes", seatLandmarkId: "wintermere", authorityFactionId: "wintermere-hearths", governor: { name: "Sava Emberhand", title: "Hearth Speaker" }, anchor: { x: -52, y: -295 }, influence: { scaleX: 110, scaleY: 78 }, regionIds: ["bonemarsh", "drakeholt-peaks"], terrainTags: ["hot spring", "frozen lake", "black fir"], resources: ["smoked fish", "medicinal moss", "amber"], settlementTypes: ["hot-spring-town", "lake-hold"], hazards: ["thin ice", "steam fog"], encounterTags: ["lake scouts", "hearth envoys"], cultureNotes: ["Public baths double as council chambers"], description: "Geothermal lakes and refuge towns holding the northern food reserves." },
+  { id: "tellmar-delta", realmId: "east", name: "Tellmar Delta", seatLandmarkId: "tellmar", authorityFactionId: "tellmar-banners", governor: { name: "Ren Jiao", title: "Capital Intendant" }, anchor: { x: 418, y: 82 }, influence: { scaleX: 105, scaleY: 90 }, regionIds: ["tellmar-road"], terrainTags: ["canal", "lotus marsh", "urban delta"], resources: ["rice", "paper", "river fish"], settlementTypes: ["canal-city", "stilt-town"], hazards: ["monsoon flood", "canal fire"], encounterTags: ["river marines", "rice barges"], cultureNotes: ["Neighborhoods sponsor their own flood dragons"], description: "The dense lower delta of canals, academies, workshops, and banner compounds surrounding Tellmar." },
+  { id: "lotus-marches", realmId: "east", name: "Lotus Marches", seatLandmarkId: "hanori", authorityFactionId: "lotus-prefecture", governor: { name: "Lin Aro", title: "Floodgate Prefect" }, anchor: { x: 270, y: 65 }, influence: { scaleX: 120, scaleY: 100 }, regionIds: ["tellmar-road", "iron-plateau"], terrainTags: ["reed sea", "terrace island", "causeway"], resources: ["rice", "tea", "reeds"], settlementTypes: ["terrace-town", "shrine-island"], hazards: ["reed fire", "floodgate failure"], encounterTags: ["canal magistrates", "scholar pilgrims"], cultureNotes: ["Floodgate duty rotates between villages"], description: "Endless productive wetlands threaded by raised roads and administered from Hanori." },
+  { id: "starfall-uplands", realmId: "east", name: "Starfall Uplands", seatLandmarkId: "star-forge", authorityFactionId: "iron-plateau-marches", governor: { name: "Sen Varro", title: "March-Marshal" }, anchor: { x: 300, y: -95 }, influence: { scaleX: 125, scaleY: 95 }, regionIds: ["iron-plateau", "far-wild"], terrainTags: ["high grass", "meteor craters", "horse country"], resources: ["meteor iron", "horses", "copper"], settlementTypes: ["baronial-fort", "horse-town"], hazards: ["dry lightning", "border feud"], encounterTags: ["mirror cavalry", "forge pilgrims"], cultureNotes: ["Fallen stars belong first to the nearest village"], description: "Dry high country above the reed sea, famous for horses, signal towers, and star iron." },
+  { id: "heron-inlet", realmId: "east", name: "Heron Inlet", seatLandmarkId: "lotusmouth", authorityFactionId: "lotus-prefecture", governor: { name: "Tao Min", title: "Inlet Admiral" }, anchor: { x: 470, y: 120 }, influence: { scaleX: 82, scaleY: 72 }, regionIds: ["tellmar-road"], terrainTags: ["tidal reeds", "harbor", "barrier island"], resources: ["salt fish", "pearls", "ship reeds"], settlementTypes: ["tide-port", "fishing-stilt-town"], hazards: ["typhoon", "shoal shift"], encounterTags: ["harbor pilots", "customs boats"], cultureNotes: ["Pilots memorize channels as sung genealogies"], description: "The tidal eastern margin where the reed rivers meet the Lantern Sea." },
+  { id: "nine-wells", realmId: "south", name: "The Nine Wells", seatLandmarkId: "asalan", authorityFactionId: "asalan-sun-court", governor: { name: "Rasim al-Azur", title: "Warden of Wells" }, anchor: { x: 100, y: 295 }, influence: { scaleX: 105, scaleY: 85 }, regionIds: ["hollow-coast"], terrainTags: ["oasis", "red dune", "royal garden"], resources: ["dates", "copper", "spring water"], settlementTypes: ["oasis-city", "garden-town"], hazards: ["sand fever", "well intrigue"], encounterTags: ["sun lancers", "water judges"], cultureNotes: ["The ninth cup at any meal is reserved for a traveller"], description: "Asalan's royal oasis belt and the irrigated gardens fed by its nine ancient wells." },
+  { id: "caravan-belt", realmId: "south", name: "Caravan Belt", seatLandmarkId: "sirocco-wells", authorityFactionId: "nine-wells-league", governor: { name: "Tamar ibn Kes", title: "First Ledger" }, anchor: { x: -15, y: 225 }, influence: { scaleX: 120, scaleY: 92 }, regionIds: ["hollow-coast", "far-wild"], terrainTags: ["gravel desert", "well road", "salt pan"], resources: ["salt", "camel wool", "incense"], settlementTypes: ["caravan-town", "well-fort"], hazards: ["dry well", "dune raiders"], encounterTags: ["contract guards", "night caravans"], cultureNotes: ["Water tablets are honored before coin"], description: "The chain of defended wells and night markets between Sunward and Asalan." },
+  { id: "glass-desert", realmId: "south", name: "Glass Desert", seatLandmarkId: "glass-dune-observatory", authorityFactionId: "asalan-sun-court", governor: { name: "Samira Qel", title: "Royal Astronomer" }, anchor: { x: -55, y: 290 }, influence: { scaleX: 115, scaleY: 85 }, regionIds: ["hollow-coast", "far-wild"], terrainTags: ["glass dune", "rock desert", "observatory road"], resources: ["glass sand", "copper", "star charts"], settlementTypes: ["cliff-sanctuary", "scholar-camp"], hazards: ["glass storm", "mirage"], encounterTags: ["desert scholars", "relic diggers"], cultureNotes: ["Travel begins only after the dawn shadow is measured"], description: "Lightning-fused dunes and observatory outposts on the south-western heights." },
+  { id: "saffron-coast", realmId: "south", name: "Saffron Coast", seatLandmarkId: "qamarat", authorityFactionId: "qamarat-tideguild", governor: { name: "Nahla Blue-Sail", title: "Harbor Speaker" }, anchor: { x: 105, y: 360 }, influence: { scaleX: 110, scaleY: 70 }, regionIds: ["hollow-coast"], terrainTags: ["warm coast", "salt cliff", "port"], resources: ["salt", "shell dye", "incense"], settlementTypes: ["sandstone-port", "cliff-village"], hazards: ["hot squall", "shoal wreck"], encounterTags: ["blue-sail marines", "spice factors"], cultureNotes: ["Harbor prices are proclaimed after the dawn wind"], description: "A warm southern littoral of cliff villages, spice warehouses, and blue-sailed ports." },
+  { id: "selenyan-heart", realmId: "west", name: "Selenyan Heart", seatLandmarkId: "caer-selenya", authorityFactionId: "selenyan-covenant", governor: { name: "Oryn Silverleaf", title: "First Grove Speaker" }, anchor: { x: -410, y: 155 }, influence: { scaleX: 100, scaleY: 86 }, regionIds: ["witchwood-deep", "far-wild"], terrainTags: ["old growth", "living road", "tree city"], resources: ["rare herbs", "hardwood", "green dye"], settlementTypes: ["tree-city", "grove-sanctuary"], hazards: ["memory fog", "root heave"], encounterTags: ["path singers", "covenant archers"], cultureNotes: ["Public decisions are grafted into witness trees"], description: "The oldest inhabited forest around Caer Selenya and the covenant groves." },
+  { id: "greenwater-coast", realmId: "west", name: "Greenwater Coast", seatLandmarkId: "greenharbor", authorityFactionId: "greenharbor-guilds", governor: { name: "Ilyen Rainwake", title: "Cove Provost" }, anchor: { x: -455, y: 125 }, influence: { scaleX: 82, scaleY: 76 }, regionIds: ["witchwood-deep"], terrainTags: ["rain coast", "cove", "ship forest"], resources: ["ship timber", "resin", "honey"], settlementTypes: ["rain-port", "cliff hamlet"], hazards: ["storm surge", "cliff fall"], encounterTags: ["storm pilots", "timber factors"], cultureNotes: ["Storm-fallen trees are auctioned before cut timber"], description: "Rain-beaten coves where forest roads descend to the Greenwater." },
+  { id: "pale-boughs", realmId: "west", name: "Pale Boughs", seatLandmarkId: "mossmere", authorityFactionId: "selenyan-covenant", governor: { name: "Maela Hart", title: "Bough Warden" }, anchor: { x: -300, y: 80 }, influence: { scaleX: 120, scaleY: 95 }, regionIds: ["pale-steppe", "witchwood-deep"], terrainTags: ["birch forest", "open glade", "buried ruin"], resources: ["birch bark", "medicinal moss", "game"], settlementTypes: ["coppice-town", "glade-village"], hazards: ["walking paths", "pale blight"], encounterTags: ["forester guilds", "ruin seekers"], cultureNotes: ["Open glades are kept as neutral meeting ground"], description: "A lighter western forest grown across old grasslands and half-buried fortresses." },
+  { id: "eastern-coppices", realmId: "west", name: "Eastern Coppices", seatLandmarkId: "greenward-gate", authorityFactionId: "oak-spear-wardens", governor: { name: "Ardan Mosscloak", title: "Green Marshal" }, anchor: { x: -190, y: 35 }, influence: { scaleX: 100, scaleY: 85 }, regionIds: ["witchwood-deep", "bramblewych-reach"], terrainTags: ["working woodland", "border keep", "coppice road"], resources: ["charcoal", "oak", "mushrooms"], settlementTypes: ["warden-fort", "coppice-village"], hazards: ["border skirmish", "forest fire"], encounterTags: ["oak-spear patrols", "charcoal burners"], cultureNotes: ["All armed visitors bind peace-cord at Greenward"], description: "The managed eastern forest and military approaches behind Greenward Gate." },
+]);
+
+export const PROVINCE_BY_ID = Object.freeze(Object.fromEntries(PROVINCES.map((province) => [province.id, province])));
 
 // Region sites are low-detail cultural/ecological authorities. Their warped
 // influence fields form irregular borders; they are not hard rectangles. The
@@ -255,6 +434,27 @@ export const ECOLOGIES = {
     features: ["hunter-lodge", "cairn-field", "hot-spring", "waystone"],
     encounters: [{ kind: "winter-trappers", weight: 6, posture: "friendly", desc: "winter trappers hauling a low sledge over the heath" }],
   },
+  snowfield: {
+    id: "snowfield", name: "Snowfield", terrain: "plains",
+    description: "Wind-carved snow, frozen heath, black fir islands, and old ice roads beneath the Frostcrown.",
+    tags: ["snow", "frozen", "winter"], resources: ["fur", "ice", "cold-iron"],
+    features: ["winter-watch", "ice-cave", "hunter-lodge", "snowbound-shrine"],
+    encounters: [{ kind: "frostcrown-patrol", weight: 7, posture: "neutral", desc: "fur-mantled Frostcrown riders checking the winter road" }],
+  },
+  desert: {
+    id: "desert", name: "Sunscar Desert", terrain: "plains",
+    description: "Dune seas, gravel plains, salt pans, and caravan tracks joining defended wells beneath a white sun.",
+    tags: ["desert", "arid", "hot"], resources: ["salt", "dates", "glass-sand"],
+    features: ["caravanserai", "guarded-well", "dune-shrine", "buried-ruin"],
+    encounters: [{ kind: "sunscar-caravan", weight: 8, posture: "friendly", desc: "a bright-awning caravan moving between guarded wells" }],
+  },
+  "reed-sea": {
+    id: "reed-sea", name: "Sea of Reeds", terrain: "marsh",
+    description: "Reed oceans, lotus channels, raised causeways, terraced islands, and slow rivers leading to the Lantern Sea.",
+    tags: ["reeds", "river", "monsoon"], resources: ["rice", "reeds", "freshwater-fish"],
+    features: ["stilt-village", "moon-bridge", "river-shrine", "watch-pagoda"],
+    encounters: [{ kind: "banner-river-patrol", weight: 8, posture: "neutral", desc: "a lacquered patrol boat gliding beside the raised road" }],
+  },
   badlands: {
     id: "badlands", name: "Stony Badlands", terrain: "hills",
     description: "Dry gullies, mesas, rubble fans, and sparse thorn around unreliable wells.",
@@ -320,45 +520,169 @@ export const SITE_ARCHETYPES = {
   },
 };
 
-export const LANDMARKS = [
-  // Starting basin and reachable regional anchors: known by ordinary reputation.
-  { id: "mirecross", name: "Mirecross", knowledge: "rumor", kind: "village", coord: { x: 28, y: 6 }, regionId: "mire", direction: "east", description: "A peat-and-reed village on piles above the black water, where the Crown Road changes from stone to logs." },
-  { id: "tannic-ford", name: "Tannic Ford", knowledge: "rumor", kind: "village", coord: { x: -27, y: -34 }, regionId: "tannic-wood", direction: "north-west", description: "A woodward and ferry community where brown water slides under alder roots." },
-  { id: "crowsmoor", name: "Crowsmoor", knowledge: "rumor", kind: "town", coord: { x: 72, y: -3 }, regionId: "crowsmoor-reach", direction: "east", description: "A freehold town of slate roofs, sheep courts, and a council hall built over the old road." },
-  { id: "halfborn-hold", name: "The Halfborn Hold", knowledge: "rumor", kind: "fortress", coord: { x: 49, y: 20 }, regionId: "spine-foothills", direction: "south-east", description: "A compact free town on the Crowsmoor-Spine border whose open gate and strict sanctuary law are famous along the caravan roads." },
-  { id: "pale-shrine", name: "Shrine of the Pale God", knowledge: "rumor", kind: "shrine", coord: { x: 33, y: 12 }, regionId: "mire", direction: "east", description: "A quiet arch and hospice on Crowsmoor's wet western edge, where seven-day servants keep watch beside a cold spring." },
-  { id: "greenshaw", name: "Greenshaw", knowledge: "rumor", kind: "village", coord: { x: -43, y: 66 }, regionId: "bramblewych-reach", direction: "south-west", description: "Garden plots, bee-skeps, and low turf-roofed homes hidden inside a patient hedge maze." },
-  { id: "stonebrook", name: "Stonebrook Hold", knowledge: "rumor", kind: "town", coord: { x: 70, y: 64 }, regionId: "spine-foothills", direction: "south-east", description: "A practical dwarven mining hold around a fast stream, known for fair weights and excellent steel." },
-  { id: "heron-tower", name: "The Heron Tower", knowledge: "rumor", kind: "tower", coord: { x: 96, y: 43 }, regionId: "spine-foothills", direction: "east", description: "A solitary sorcerer's tower whose white herald birds can be seen circling from two valleys away." },
-  { id: "black-tarn", name: "Black Tarn", knowledge: "rumor", kind: "lake", coord: { x: -96, y: -96 }, regionId: "bonemarsh", direction: "north-west", description: "A cold inland tarn whose wind smells of peat cellars and rain." },
-  { id: "bramblewych", name: "Bramblewych", knowledge: "rumor", kind: "town", coord: { x: -72, y: 48 }, regionId: "bramblewych-reach", direction: "south-west", description: "A market settlement gathered around an old hedge-court and a bridge that refuses straight lines." },
+export const BORDER_CHECKPOINTS = Object.freeze([
+  Object.freeze({
+    id: "frostgate", name: "Frostgate Redoubt", coord: Object.freeze({ x: 5, y: -165 }),
+    realmIds: Object.freeze(["central", "north"]), routeIds: Object.freeze(["north-road"]),
+    controllingFactionId: "vyrgun-drakekin", garrison: "The White Pike Legion",
+    description: "A double-walled military customs fort where winter troops inspect every traveller bound for the Frostcrown.",
+  }),
+  Object.freeze({
+    id: "wolfsnow-redoubt", name: "Wolfsnow Redoubt", coord: Object.freeze({ x: -132, y: -154 }),
+    realmIds: Object.freeze(["central", "north"]), routeIds: Object.freeze(["tannic-road"]),
+    controllingFactionId: "sundered-crown", garrison: "The Red Tusk Cohort",
+    description: "A hard northern checkpoint controlling the Alder Road's dangerous north-western crossing.",
+  }),
+  Object.freeze({
+    id: "reedwatch", name: "Reedwatch Bastion", coord: Object.freeze({ x: 175, y: -5 }),
+    realmIds: Object.freeze(["central", "east"]), routeIds: Object.freeze(["crown-road-east", "spine-road", "star-road"]),
+    controllingFactionId: "tellmar-banners", garrison: "The Azure Heron Banner",
+    description: "A tiled border fortress whose raised gates command the first causeways into the Sea of Reeds.",
+  }),
+  Object.freeze({
+    id: "sunward-bastion", name: "Sunward Bastion", coord: Object.freeze({ x: -15, y: 170 }),
+    realmIds: Object.freeze(["central", "south"]), routeIds: Object.freeze(["south-road"]),
+    controllingFactionId: "asalan-sun-court", garrison: "The Brass Shield Regiment",
+    description: "A sandstone checkpoint guarding the first permanent wells and recording every caravan entering the Sunscar.",
+  }),
+  Object.freeze({
+    id: "greenward-gate", name: "Greenward Gate", coord: Object.freeze({ x: -170, y: 30 }),
+    realmIds: Object.freeze(["central", "west"]), routeIds: Object.freeze(["bramble-road"]),
+    controllingFactionId: "selenyan-covenant", garrison: "The Oak-Spear Wardens",
+    description: "A timber-and-stone border keep where covenant wardens prevent armies and blight from entering the Elderwood.",
+  }),
+]);
 
-  // Continental goals. They are stable facts and reachable in principle, but
-  // hundreds of travel cells and their danger bands make them campaign arcs.
-  { id: "brokenhold", name: "Brokenhold", knowledge: "legend", kind: "fortress", coord: { x: -245, y: -166 }, regionId: "sundered-wastes", direction: "far north-west", description: "The many-walled seat of the Sundered Crown, rebuilt from a dozen conquered fortresses." },
-  { id: "northstar-castle", name: "Northstar Castle", knowledge: "legend", kind: "fortress", coord: { x: 8, y: -332 }, regionId: "drakeholt-peaks", direction: "far north", description: "A black polestar fortress above the last ordinary snow, said to house the Demon King's court." },
-  { id: "drakespire", name: "Drakespire", knowledge: "legend", kind: "fortress", coord: { x: 48, y: -245 }, regionId: "drakeholt-peaks", direction: "north", description: "The greatest Vyrgun tribute-seat, built into a smoking mountain shoulder." },
-  { id: "bone-citadel", name: "The Bone Citadel", knowledge: "legend", kind: "ruin", coord: { x: -332, y: 42 }, regionId: "pale-steppe", direction: "far west", description: "A pale fortress on the steppe horizon, empty according to every sensible map." },
-  { id: "caer-selenya", name: "Caer Selenya", knowledge: "legend", kind: "city", coord: { x: -420, y: 150 }, regionId: "far-wild", direction: "far west", description: "A tree-built city on the western rain coast, reached by paths that are never found the same way twice." },
-  { id: "tellmar", name: "Tellmar", knowledge: "legend", kind: "city", coord: { x: 418, y: 72 }, regionId: "tellmar-road", direction: "far east", description: "The Iron City and its Hundred Banners, where the long road finally meets a bright eastern sea." },
-  { id: "star-forge", name: "The Star-Forge", knowledge: "legend", kind: "temple", coord: { x: 342, y: -88 }, regionId: "far-wild", direction: "far north-east", description: "A pilgrim forge raised around the first iron to fall burning from the sky." },
-  { id: "mole-halls", name: "The Mole-Halls", knowledge: "legend", kind: "ruin", coord: { x: 130, y: 90 }, regionId: "spine-foothills", direction: "south-east", description: "Vast abandoned delvings below the Spine, with doors tall enough for forgotten kings." },
-  { id: "asalan", name: "Asalan", knowledge: "legend", kind: "city", coord: { x: 104, y: 294 }, regionId: "hollow-coast", direction: "far south", description: "A warm southern crown-city beyond the salt fens, its red roofs gathered around royal gardens." },
-  { id: "sunken-crown", name: "The Sunken Crown", knowledge: "legend", kind: "ruin", coord: { x: 24, y: 338 }, regionId: "hollow-coast", direction: "far south", description: "Drowned towers visible beneath clear water at the lowest turning of the year." },
+const CHECKPOINT_LANDMARKS = BORDER_CHECKPOINTS.map((checkpoint) => ({
+  ...checkpoint,
+  knowledge: "rumor",
+  kind: "fortress",
+  role: "border-checkpoint",
+  regionId: checkpoint.id === "frostgate" ? "drakeholt-peaks"
+    : checkpoint.id === "wolfsnow-redoubt" ? "sundered-wastes"
+      : checkpoint.id === "reedwatch" ? "iron-plateau"
+        : checkpoint.id === "sunward-bastion" ? "hollow-coast"
+          : "witchwood-deep",
+  realmId: checkpoint.realmIds[1],
+  direction: checkpoint.realmIds[1] === "north" ? "far north"
+    : checkpoint.realmIds[1] === "east" ? "far east"
+      : checkpoint.realmIds[1] === "south" ? "far south" : "far west",
+}));
+
+export const LANDMARKS = [
+  // Heartland anchors remain useful early destinations without pretending the
+  // cardinal realms are nearby. Every passable place below lies on a named road.
+  { id: "mirecross", name: "Mirecross", knowledge: "rumor", kind: "village", coord: { x: 55, y: 10 }, regionId: "mire", realmId: "central", direction: "east", description: "A peat-and-reed village where the Crown Road climbs onto its first long causeway." },
+  { id: "tannic-ford", name: "Tannic Ford", knowledge: "rumor", kind: "village", coord: { x: -55, y: -55 }, regionId: "tannic-wood", realmId: "central", direction: "north-west", description: "A woodward and ferry community where brown water slides under alder roots." },
+  { id: "crowsmoor", name: "Crowsmoor", knowledge: "rumor", kind: "town", coord: { x: 90, y: -5 }, regionId: "crowsmoor-reach", realmId: "central", direction: "east", description: "A slate-roofed freehold town and the last great grain market before Reedwatch." },
+  { id: "halfborn-hold", name: "The Halfborn Hold", knowledge: "rumor", kind: "fortress", coord: { x: 80, y: 60 }, regionId: "spine-foothills", realmId: "central", direction: "south-east", description: "A sanctuary-fort whose open gate protects caravans on the High Sheepway." },
+  { id: "pale-shrine", name: "Shrine of the Pale God", knowledge: "rumor", kind: "shrine", coord: { x: 42, y: 22 }, regionId: "mire", realmId: "central", direction: "east", description: "A quiet hospice beside a cold spring where seven-day servants keep watch." },
+  { id: "greenshaw", name: "Greenshaw", knowledge: "rumor", kind: "village", coord: { x: -70, y: 75 }, regionId: "bramblewych-reach", realmId: "central", direction: "south-west", description: "Garden plots, bee-skeps, and turf-roofed homes hidden inside a patient hedge maze." },
+  { id: "stonebrook", name: "Stonebrook Hold", knowledge: "rumor", kind: "town", coord: { x: 105, y: 75 }, regionId: "spine-foothills", realmId: "central", direction: "south-east", description: "A dwarven mining hold around a fast stream, known for fair weights and excellent steel." },
+  { id: "heron-tower", name: "The Heron Tower", knowledge: "rumor", kind: "tower", coord: { x: 135, y: 40 }, regionId: "spine-foothills", realmId: "central", direction: "east", description: "A white-heralded sorcerer's tower watching the roads that converge on Reedwatch." },
+  { id: "black-tarn", name: "Black Tarn", knowledge: "rumor", kind: "lake", coord: { x: -115, y: -105 }, regionId: "bonemarsh", realmId: "central", direction: "north-west", description: "A cold inland tarn whose wind smells of peat cellars and rain." },
+  { id: "bramblewych", name: "Bramblewych", knowledge: "rumor", kind: "town", coord: { x: -105, y: 75 }, regionId: "bramblewych-reach", realmId: "central", direction: "south-west", description: "A hedge-court market town on the long road to the western forest." },
+  ...CHECKPOINT_LANDMARKS,
+
+  // Realm capitals, ports, and campaign-scale landmarks are separated from
+  // Whitemarch by hundreds of six-kilometre hexes.
+  { id: "brokenhold", name: "Brokenhold", knowledge: "legend", kind: "fortress", coord: { x: -205, y: -260 }, regionId: "sundered-wastes", realmId: "north", provinceId: "sundered-snow", factionId: "sundered-crown", routeIds: ["tannic-road", "sundered-march"], direction: "far north-west", description: "The many-walled seat of the Sundered Crown, rebuilt from conquered fortresses in the snow." },
+  { id: "northstar-castle", name: "Northstar", knowledge: "legend", kind: "city", coord: { x: 8, y: -332 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "rime-crown", factionId: "vyrgun-drakekin", routeIds: ["north-road", "aurora-way", "ember-road"], direction: "far north", capitalOfRealmId: "north", description: "The black-walled capital of the Frostcrown beneath aurora-lit peaks, ruled by High Queen Ysra Vyrgun." },
+  { id: "drakespire", name: "Drakespire", knowledge: "legend", kind: "fortress", coord: { x: 48, y: -245 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "drake-marches", factionId: "vyrgun-drakekin", routeIds: ["north-road", "aurora-way"], direction: "far north", description: "A volcanic tribute-seat and winter-road fortress built into a smoking mountain shoulder." },
+  { id: "wintermere", name: "Wintermere", knowledge: "legend", kind: "town", coord: { x: -55, y: -300 }, regionId: "bonemarsh", realmId: "north", provinceId: "ember-lakes", factionId: "wintermere-hearths", routeIds: ["north-road", "ember-road", "sundered-march"], direction: "far north", description: "A black-fir town built around hot springs that keep its harbor-sized lake from freezing." },
+  { id: "bone-citadel", name: "The Bone Citadel", knowledge: "legend", kind: "ruin", coord: { x: -325, y: 55 }, regionId: "pale-steppe", realmId: "west", provinceId: "pale-boughs", factionId: "selenyan-covenant", routeIds: ["bramble-road"], direction: "far west", description: "A pale fortress-ruin swallowed one courtyard at a time by the Elderwood." },
+  { id: "everpine-court", name: "The Everpine Court", knowledge: "legend", kind: "shrine", coord: { x: -350, y: 175 }, regionId: "witchwood-deep", realmId: "west", provinceId: "selenyan-heart", factionId: "selenyan-covenant", routeIds: ["bramble-road"], direction: "far west", description: "A living council grove where the Selenyan Covenant renews its oaths beneath an unfallen pine." },
+  { id: "caer-selenya", name: "Caer Selenya", knowledge: "legend", kind: "city", coord: { x: -420, y: 150 }, regionId: "witchwood-deep", realmId: "west", provinceId: "selenyan-heart", factionId: "selenyan-covenant", routeIds: ["bramble-road", "greenway", "root-road", "coppice-road"], direction: "far west", capitalOfRealmId: "west", description: "The tree-built capital of the Elderwood, ruled by Queen Maerwynn Thorne through the Selenyan Covenant." },
+  { id: "greenharbor", name: "Greenharbor", knowledge: "legend", kind: "port", coord: { x: -474, y: 124 }, regionId: "witchwood-deep", realmId: "west", provinceId: "greenwater-coast", factionId: "greenharbor-guilds", routeIds: ["bramble-road"], direction: "far west", coastalFeatureId: "selenyan-cove", description: "A rain-dark timber port hidden inside Selenyan Cove, where forest roads meet the Greenwater." },
+  { id: "tellmar", name: "Tellmar", knowledge: "legend", kind: "city", coord: { x: 418, y: 72 }, regionId: "tellmar-road", realmId: "east", provinceId: "tellmar-delta", factionId: "tellmar-banners", routeIds: ["crown-road-east", "jade-causeway", "lotus-circuit"], direction: "far east", capitalOfRealmId: "east", description: "The tiled capital of the Hundred Banners, raised above lotus canals and ruled by Empress Shuyei Ren." },
+  { id: "lotusmouth", name: "Lotusmouth", knowledge: "legend", kind: "port", coord: { x: 486, y: 94 }, regionId: "tellmar-road", realmId: "east", provinceId: "heron-inlet", factionId: "lotus-prefecture", routeIds: ["crown-road-east", "lotus-circuit"], direction: "far east", coastalFeatureId: "heron-inlet", description: "A bright harbor of stilt quays and red beacon towers where the Sea of Reeds opens into the Lantern Sea." },
+  { id: "moon-reed-monastery", name: "Moon-Reed Monastery", knowledge: "legend", kind: "temple", coord: { x: 330, y: 145 }, regionId: "tellmar-road", realmId: "east", provinceId: "lotus-marches", factionId: "lotus-prefecture", routeIds: ["crown-road-east", "star-road", "jade-causeway"], direction: "far east", description: "A terraced river monastery whose bell towers rise above a horizon of reeds." },
+  { id: "star-forge", name: "The Star-Forge", knowledge: "legend", kind: "temple", coord: { x: 325, y: -110 }, regionId: "iron-plateau", realmId: "east", provinceId: "starfall-uplands", factionId: "iron-plateau-marches", routeIds: ["spine-road", "star-road", "starfall-road"], direction: "far north-east", description: "A pilgrim forge raised around the first iron said to have fallen burning from the sky." },
+  { id: "mole-halls", name: "The Mole-Halls", knowledge: "legend", kind: "ruin", coord: { x: 150, y: 115 }, regionId: "spine-foothills", realmId: "central", direction: "south-east", description: "Vast abandoned delvings beneath the continental road, with doors tall enough for forgotten kings." },
+  { id: "asalan", name: "Asalan", knowledge: "legend", kind: "city", coord: { x: 104, y: 294 }, regionId: "hollow-coast", realmId: "south", provinceId: "nine-wells", factionId: "asalan-sun-court", routeIds: ["south-road", "low-tide-way", "nine-wells-road", "saffron-coast-road"], direction: "far south", capitalOfRealmId: "south", description: "The red-walled desert capital around the Nine Wells, ruled by Sultana Maraset al-Azur." },
+  { id: "glass-dune-observatory", name: "Glass Dune Observatory", knowledge: "legend", kind: "tower", coord: { x: -30, y: 280 }, regionId: "hollow-coast", realmId: "south", provinceId: "glass-desert", factionId: "asalan-sun-court", routeIds: ["south-road", "dune-circuit"], direction: "far south", description: "A brass-domed observatory standing where lightning fused a dune into dark glass." },
+  { id: "qamarat", name: "Qamarat", knowledge: "legend", kind: "port", coord: { x: 134, y: 387 }, regionId: "hollow-coast", realmId: "south", provinceId: "saffron-coast", factionId: "qamarat-tideguild", routeIds: ["south-road", "low-tide-way", "nine-wells-road", "saffron-coast-road"], direction: "far south", coastalFeatureId: "nine-wells-bay", description: "A sandstone port of spice warehouses and blue sails on the Saffron Sea." },
+  { id: "sunken-crown", name: "The Sunken Crown", knowledge: "legend", kind: "ruin", coord: { x: 24, y: 338 }, regionId: "hollow-coast", realmId: "south", provinceId: "saffron-coast", factionId: "qamarat-tideguild", routeIds: ["low-tide-way"], direction: "far south", description: "Drowned towers visible beneath Nine Wells Bay at the lowest turning of the year." },
+
+  // Frostcrown provinces: defended hearths, tribute roads, sacred ice, and
+  // ruins large enough to make the northern realm feel inhabited rather than
+  // like one distant capital marker.
+  { id: "icebridge", name: "Icebridge", knowledge: "legend", kind: "town", role: "trade-town", coord: { x: -100, y: -280 }, regionId: "bonemarsh", realmId: "north", provinceId: "ember-lakes", factionId: "wintermere-hearths", routeIds: ["ember-road"], direction: "far north-west", description: "A many-arched basalt market built where warm springs keep the winter road and its fish channel open." },
+  { id: "aurora-vault", name: "The Aurora Vault", knowledge: "legend", kind: "wonder", role: "ancient-wonder", coord: { x: 70, y: -365 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "rime-crown", factionId: "vyrgun-drakekin", routeIds: ["aurora-way"], direction: "far north", description: "A glacier cavern whose translucent roof traps ribbons of aurora in blue ice and wakes old voices during midwinter." },
+  { id: "skeldhaven", name: "Skeldhaven", knowledge: "legend", kind: "town", role: "winter-hold", coord: { x: 120, y: -315 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "rime-crown", factionId: "vyrgun-drakekin", routeIds: ["aurora-way"], direction: "far north-east", description: "A black-fir hold of granaries, sledge yards, and aurora observatories serving Northstar's eastern glacier valleys." },
+  { id: "ashfang-monastery", name: "Ashfang Monastery", knowledge: "legend", kind: "monastery", role: "wyrm-sanctuary", coord: { x: 100, y: -250 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "drake-marches", factionId: "vyrgun-drakekin", routeIds: ["aurora-way"], direction: "far north-east", description: "Smoke-robed keepers tend a volcanic shrine, record every drake flight, and shelter travelers caught above the pine line." },
+  { id: "red-snow-cairns", name: "The Red-Snow Cairns", knowledge: "legend", kind: "ruin", role: "battlefield", coord: { x: -260, y: -220 }, regionId: "sundered-wastes", realmId: "north", provinceId: "sundered-snow", factionId: "sundered-crown", routeIds: ["sundered-march"], direction: "far north-west", description: "Thousands of spear stones mark a battlefield where iron-rich snowmelt stains the drifts red each thaw." },
+  { id: "wolfglass", name: "Wolfglass", knowledge: "legend", kind: "fortress", role: "march-fort", coord: { x: -150, y: -285 }, regionId: "sundered-wastes", realmId: "north", provinceId: "sundered-snow", factionId: "sundered-crown", routeIds: ["sundered-march"], direction: "far north-west", description: "A captured cliff keep faced with smoky ice, controlling the safest sledge road between Brokenhold and Wintermere." },
+  { id: "hearthwatch", name: "Hearthwatch", knowledge: "legend", kind: "village", role: "refuge-hold", coord: { x: -20, y: -275 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "ember-lakes", factionId: "wintermere-hearths", routeIds: ["ember-road"], direction: "far north", description: "A ring of communal halls around a signal brazier, stocked to receive whole villages when blizzards close the lakes." },
+  { id: "rimeward-abbey", name: "Rimeward Abbey", knowledge: "legend", kind: "shrine", role: "pilgrim-hospice", coord: { x: -30, y: -355 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "rime-crown", factionId: "vyrgun-drakekin", routeIds: ["ember-road"], direction: "far north", description: "An ice-walled hospice where ember saints bless northbound tribute trains and bury the nameless beneath singing bells." },
+
+  // Sea of Reeds provinces: causeway towns, flood-control citadels, scholar
+  // sanctuaries, and star-iron marches arranged around a working river realm.
+  { id: "hanori", name: "Hanori", knowledge: "legend", kind: "city", role: "provincial-seat", coord: { x: 270, y: 65 }, regionId: "tellmar-road", realmId: "east", provinceId: "lotus-marches", factionId: "lotus-prefecture", routeIds: ["jade-causeway"], direction: "far east", description: "A raised canal city of floodgate towers, civil academies, tea courts, and the prefecture archives of the Lotus Marches." },
+  { id: "jade-lock", name: "The Jade Lock", knowledge: "legend", kind: "fortress", role: "faction-seat", coord: { x: 260, y: -70 }, regionId: "iron-plateau", realmId: "east", provinceId: "starfall-uplands", factionId: "iron-plateau-marches", routeIds: ["starfall-road"], direction: "far north-east", description: "A green-tiled fortress guarding the stair road from the reed basin to the horse country and its meteor-iron forges." },
+  { id: "willowcourt", name: "Willowcourt", knowledge: "legend", kind: "town", role: "canal-market", coord: { x: 350, y: 115 }, regionId: "tellmar-road", realmId: "east", provinceId: "tellmar-delta", factionId: "tellmar-banners", routeIds: ["jade-causeway"], direction: "far east", description: "A willow-shaded judicial town where banner houses settle canal disputes before their barges enter Tellmar." },
+  { id: "crane-fort", name: "Crane Fort", knowledge: "legend", kind: "fortress", role: "causeway-garrison", coord: { x: 220, y: 20 }, regionId: "iron-plateau", realmId: "east", provinceId: "lotus-marches", factionId: "lotus-prefecture", routeIds: ["jade-causeway", "starfall-road"], direction: "far east", description: "A narrow redoubt on stone piles whose signal cranes can raise or sever the western causeway during invasion." },
+  { id: "jade-terraces", name: "The Jade Terraces", knowledge: "legend", kind: "wonder", role: "living-landmark", coord: { x: 390, y: 150 }, regionId: "tellmar-road", realmId: "east", provinceId: "tellmar-delta", factionId: "tellmar-banners", routeIds: ["lotus-circuit"], direction: "far east", description: "Miles of mirror-bright rice terraces stepping down toward the delta, irrigated by channels older than the empire." },
+  { id: "bellwater", name: "Bellwater", knowledge: "legend", kind: "town", role: "river-port", coord: { x: 450, y: 30 }, regionId: "tellmar-road", realmId: "east", provinceId: "tellmar-delta", factionId: "tellmar-banners", routeIds: ["lotus-circuit"], direction: "far east", description: "A crowded inland harbor where bronze tide bells regulate locks, ferries, and the arrival of sea-going reed junks." },
+  { id: "copperstep", name: "Copperstep", knowledge: "legend", kind: "town", role: "march-town", coord: { x: 250, y: -130 }, regionId: "iron-plateau", realmId: "east", provinceId: "starfall-uplands", factionId: "iron-plateau-marches", routeIds: ["starfall-road"], direction: "far north-east", description: "A wind-scoured cavalry town built across seven red escarpments, trading horses, copper, and fallen-star claims." },
+  { id: "white-heron-sanctuary", name: "White Heron Sanctuary", knowledge: "legend", kind: "sanctuary", role: "tide-shrine", coord: { x: 440, y: 125 }, regionId: "tellmar-road", realmId: "east", provinceId: "heron-inlet", factionId: "lotus-prefecture", routeIds: ["lotus-circuit"], direction: "far east", description: "A tide shrine on a wooded hummock where pilots leave painted feathers before crossing the shifting inlet channels." },
+
+  // Sunscar provinces: a chain of wells, caravan markets, fortresses, and
+  // astronomical relics linking the inland capital to a broad southern coast.
+  { id: "sirocco-wells", name: "Sirocco Wells", knowledge: "legend", kind: "town", role: "provincial-seat", coord: { x: -15, y: 225 }, regionId: "hollow-coast", realmId: "south", provinceId: "caravan-belt", factionId: "nine-wells-league", routeIds: ["nine-wells-road", "dune-circuit"], direction: "far south", description: "A walled caravan town around three wind-cooled cisterns and the ledger hall that guarantees water tablets." },
+  { id: "brasshaven", name: "Brasshaven", knowledge: "legend", kind: "town", role: "caravan-market", coord: { x: 55, y: 250 }, regionId: "hollow-coast", realmId: "south", provinceId: "caravan-belt", factionId: "nine-wells-league", routeIds: ["nine-wells-road"], direction: "far south", description: "A night-market town of brass awnings, camel courts, repair yards, and licensed guides for the Nine Wells road." },
+  { id: "duneveil", name: "Duneveil", knowledge: "legend", kind: "village", role: "well-village", coord: { x: -80, y: 240 }, regionId: "hollow-coast", realmId: "south", provinceId: "caravan-belt", factionId: "nine-wells-league", routeIds: ["dune-circuit"], direction: "far south-west", description: "A half-buried well village whose reed screens harvest dawn fog and whose homes migrate as the dune face advances." },
+  { id: "mirage-step", name: "Mirage Step", knowledge: "legend", kind: "ruin", role: "lost-road", coord: { x: -100, y: 310 }, regionId: "far-wild", realmId: "south", provinceId: "glass-desert", factionId: "asalan-sun-court", routeIds: ["dune-circuit"], direction: "far south-west", description: "A monumental stair climbing into empty air, visible at noon from distances that no traveler can agree upon." },
+  { id: "sunspire", name: "Sunspire", knowledge: "legend", kind: "fortress", role: "royal-garrison", coord: { x: 160, y: 270 }, regionId: "hollow-coast", realmId: "south", provinceId: "nine-wells", factionId: "asalan-sun-court", routeIds: ["nine-wells-road"], direction: "far south-east", description: "A high sandstone signal fort whose mirrored crown relays warnings between Asalan, the coast, and the eastern dunes." },
+  { id: "saltmother-shrine", name: "Shrine of the Saltmother", knowledge: "legend", kind: "shrine", role: "coastal-sanctuary", coord: { x: 180, y: 340 }, regionId: "hollow-coast", realmId: "south", provinceId: "saffron-coast", factionId: "qamarat-tideguild", routeIds: ["nine-wells-road"], direction: "far south-east", description: "A white cliff sanctuary where sailors, well keepers, and salt cutters pour the first cup back into the earth." },
+  { id: "blueglass", name: "Blueglass", knowledge: "legend", kind: "town", role: "glass-town", coord: { x: 70, y: 340 }, regionId: "hollow-coast", realmId: "south", provinceId: "saffron-coast", factionId: "qamarat-tideguild", routeIds: ["saffron-coast-road"], direction: "far south", description: "A furnace town producing blue window glass and mirrored navigation tiles from the coast's pure sand." },
+  { id: "saffron-gate", name: "Saffron Gate", knowledge: "legend", kind: "fortress", role: "coastal-checkpoint", coord: { x: 120, y: 330 }, regionId: "hollow-coast", realmId: "south", provinceId: "nine-wells", factionId: "asalan-sun-court", routeIds: ["saffron-coast-road"], direction: "far south", description: "A customs fort astride the last pass to Qamarat, guarded jointly by royal lancers and blue-sail marines." },
+
+  // Elderwood provinces: port guilds, wardens, living sanctuaries, market
+  // clearings, and remnants of the civilizations the forest absorbed.
+  { id: "mossmere", name: "Mossmere", knowledge: "legend", kind: "town", role: "provincial-seat", coord: { x: -300, y: 80 }, regionId: "pale-steppe", realmId: "west", provinceId: "pale-boughs", factionId: "selenyan-covenant", routeIds: ["greenway"], direction: "far west", description: "A pale-birch market around a green lake, serving as the open council seat for the northern bough communities." },
+  { id: "rainward", name: "Rainward", knowledge: "legend", kind: "town", role: "forester-town", coord: { x: -390, y: 80 }, regionId: "witchwood-deep", realmId: "west", provinceId: "pale-boughs", factionId: "selenyan-covenant", routeIds: ["greenway"], direction: "far west", description: "A slate-roofed timber town where every roof gutter feeds public cisterns and every logging mark faces covenant review." },
+  { id: "thornwatch", name: "Thornwatch", knowledge: "legend", kind: "fortress", role: "warden-fort", coord: { x: -250, y: 30 }, regionId: "pale-steppe", realmId: "west", provinceId: "pale-boughs", factionId: "oak-spear-wardens", routeIds: ["greenway"], direction: "far west", description: "A hedge-grown border fortress watching the pale clearings for blight, raiders, and armies leaving Greenward." },
+  { id: "deepbough", name: "Deepbough", knowledge: "legend", kind: "sanctuary", role: "root-choir-grove", coord: { x: -360, y: 220 }, regionId: "witchwood-deep", realmId: "west", provinceId: "selenyan-heart", factionId: "selenyan-covenant", routeIds: ["root-road"], direction: "far west", description: "A cathedral grove whose joined roots resonate like low voices when the covenant gathers to decide a question of war." },
+  { id: "greenwater-abbey", name: "Greenwater Abbey", knowledge: "legend", kind: "monastery", role: "storm-hospice", coord: { x: -450, y: 200 }, regionId: "witchwood-deep", realmId: "west", provinceId: "selenyan-heart", factionId: "greenharbor-guilds", routeIds: ["root-road"], direction: "far west", description: "A cliffside rain hospice whose lantern gallery guides damaged ships toward Selenyan Cove." },
+  { id: "antlerhold", name: "Antlerhold", knowledge: "legend", kind: "town", role: "covenant-moot", coord: { x: -300, y: 180 }, regionId: "witchwood-deep", realmId: "west", provinceId: "selenyan-heart", factionId: "selenyan-covenant", routeIds: ["root-road", "coppice-road"], direction: "far west", description: "A ring-built hunting town and seasonal moot where trail guilds exchange maps carved on shed antler." },
+  { id: "willowglass", name: "Willowglass", knowledge: "legend", kind: "village", role: "craft-village", coord: { x: -220, y: 120 }, regionId: "witchwood-deep", realmId: "west", provinceId: "pale-boughs", factionId: "selenyan-covenant", routeIds: ["coppice-road"], direction: "far west", description: "A willow village known for green-dyed windows, medicine gardens, and guides who can read the forest after rain." },
+  { id: "old-root-ruins", name: "The Old Root Ruins", knowledge: "legend", kind: "ruin", role: "buried-city", coord: { x: -400, y: 260 }, regionId: "far-wild", realmId: "west", provinceId: "selenyan-heart", factionId: "selenyan-covenant", routeIds: ["root-road"], direction: "far south-west", description: "Cyclopean streets lifted apart by ancient roots, with rain-filled chambers descending beneath the western cliffs." },
 ];
 
 // Major roads are authored macro intent, then rasterized to axial cells by the
 // generator. Wilderness between them remains generated and walkable; a road is
 // an advantage and a story corridor, not the only legal ground.
 export const CONTINENT_ROUTES = [
-  { id: "crown-road-east", name: "The Crown Road", waypoints: [{ x: 0, y: 0 }, { x: 28, y: 6 }, { x: 49, y: 20 }, { x: 72, y: -3 }, { x: 178, y: -28 }, { x: 315, y: 62 }, { x: 418, y: 72 }] },
-  { id: "tannic-road", name: "The Alder Road", waypoints: [{ x: 0, y: 0 }, { x: -27, y: -34 }, { x: -96, y: -92 }, { x: -168, y: -128 }, { x: -245, y: -166 }] },
-  { id: "spine-road", name: "The High Sheepway", waypoints: [{ x: 0, y: 0 }, { x: 33, y: 12 }, { x: 49, y: 20 }, { x: 70, y: 64 }, { x: 96, y: 43 }, { x: 130, y: 90 }] },
-  { id: "bramble-road", name: "The Hedge Road", waypoints: [{ x: 0, y: 0 }, { x: -43, y: 66 }, { x: -72, y: 48 }, { x: -170, y: 66 }, { x: -332, y: 42 }, { x: -420, y: 150 }] },
-  { id: "south-road", name: "The Salt Road", waypoints: [{ x: 0, y: 0 }, { x: -18, y: 88 }, { x: 22, y: 176 }, { x: 58, y: 238 }, { x: 104, y: 294 }] },
-  { id: "low-tide-way", name: "The Low-Tide Way", waypoints: [{ x: 104, y: 294 }, { x: 66, y: 315 }, { x: 24, y: 338 }] },
-  { id: "north-road", name: "The Smoke Road", waypoints: [{ x: 0, y: 0 }, { x: 22, y: -72 }, { x: 38, y: -152 }, { x: 48, y: -245 }, { x: 8, y: -332 }] },
-  { id: "star-road", name: "The Pilgrim's Iron Road", waypoints: [{ x: 178, y: -28 }, { x: 248, y: -68 }, { x: 342, y: -88 }] },
+  { id: "crown-road-east", name: "The Crown Road", realmIds: ["central", "east"], checkpointIds: ["reedwatch"], waypoints: [{ x: 0, y: 0 }, { x: 11, y: 2 }, { x: 55, y: 10 }, { x: 90, y: -5 }, { x: 175, y: -5 }, { x: 330, y: 145 }, { x: 418, y: 72 }, { x: 486, y: 94 }] },
+  { id: "tannic-road", name: "The Alder Road", realmIds: ["central", "north"], checkpointIds: ["wolfsnow-redoubt"], waypoints: [{ x: 0, y: 0 }, { x: -6, y: -7 }, { x: -55, y: -55 }, { x: -115, y: -96 }, { x: -132, y: -154 }, { x: -205, y: -260 }] },
+  { id: "spine-road", name: "The High Sheepway", realmIds: ["central", "east"], checkpointIds: ["reedwatch"], waypoints: [{ x: 0, y: 0 }, { x: 10, y: 3 }, { x: 42, y: 22 }, { x: 80, y: 60 }, { x: 105, y: 75 }, { x: 150, y: 115 }, { x: 175, y: -5 }, { x: 325, y: -110 }] },
+  { id: "bramble-road", name: "The Hedge Road", realmIds: ["central", "west"], checkpointIds: ["greenward-gate"], waypoints: [{ x: 0, y: 0 }, { x: -8, y: 13 }, { x: -70, y: 75 }, { x: -105, y: 75 }, { x: -170, y: 30 }, { x: -325, y: 55 }, { x: -350, y: 175 }, { x: -420, y: 150 }, { x: -474, y: 124 }] },
+  { id: "south-road", name: "The Salt Road", realmIds: ["central", "south"], checkpointIds: ["sunward-bastion"], waypoints: [{ x: 0, y: 0 }, { x: -3, y: 13 }, { x: -15, y: 170 }, { x: -30, y: 280 }, { x: 104, y: 294 }, { x: 134, y: 387 }] },
+  { id: "low-tide-way", name: "The Low-Tide Way", realmIds: ["south"], checkpointIds: [], waypoints: [{ x: 104, y: 294 }, { x: 24, y: 338 }, { x: 134, y: 387 }] },
+  { id: "north-road", name: "The Smoke Road", realmIds: ["central", "north"], checkpointIds: ["frostgate"], waypoints: [{ x: 0, y: 0 }, { x: 4, y: -13 }, { x: 5, y: -165 }, { x: 48, y: -245 }, { x: -55, y: -300 }, { x: 8, y: -332 }] },
+  { id: "star-road", name: "The Pilgrim's Iron Road", realmIds: ["central", "east"], checkpointIds: ["reedwatch"], waypoints: [{ x: 80, y: 60 }, { x: 135, y: 40 }, { x: 175, y: -5 }, { x: 325, y: -110 }, { x: 330, y: 145 }] },
+  { id: "aurora-way", name: "The Aurora Way", kind: "regional-road", realmIds: ["north"], checkpointIds: [], waypoints: [{ x: 8, y: -332 }, { x: 70, y: -365 }, { x: 120, y: -315 }, { x: 100, y: -250 }, { x: 48, y: -245 }], description: "A crown-maintained winter circuit linking Northstar's glacier holds to Drakespire." },
+  { id: "ember-road", name: "The Ember Road", kind: "regional-road", realmIds: ["north"], checkpointIds: [], waypoints: [{ x: -55, y: -300 }, { x: -100, y: -280 }, { x: -20, y: -275 }, { x: -30, y: -355 }, { x: 8, y: -332 }], description: "A hot-spring road marked by public braziers and emergency refuge halls." },
+  { id: "sundered-march", name: "The Sundered March", kind: "regional-road", realmIds: ["north"], checkpointIds: [], waypoints: [{ x: -205, y: -260 }, { x: -260, y: -220 }, { x: -150, y: -285 }, { x: -55, y: -300 }], description: "A hard military road binding captured north-western forts to the free hearths." },
+  { id: "jade-causeway", name: "The Jade Causeway", kind: "regional-road", realmIds: ["east"], checkpointIds: [], waypoints: [{ x: 175, y: -5 }, { x: 220, y: 20 }, { x: 270, y: 65 }, { x: 350, y: 115 }, { x: 330, y: 145 }, { x: 418, y: 72 }], description: "A raised flood road of stone locks, courier towers, and academy hostels." },
+  { id: "starfall-road", name: "The Starfall Road", kind: "regional-road", realmIds: ["east"], checkpointIds: [], waypoints: [{ x: 325, y: -110 }, { x: 250, y: -130 }, { x: 260, y: -70 }, { x: 220, y: 20 }], description: "The fortified upland road used by cavalry studs and meteor-iron caravans." },
+  { id: "lotus-circuit", name: "The Lotus Circuit", kind: "regional-road", realmIds: ["east"], checkpointIds: [], waypoints: [{ x: 418, y: 72 }, { x: 450, y: 30 }, { x: 390, y: 150 }, { x: 440, y: 125 }, { x: 486, y: 94 }], description: "A chain of levees, ferries, and tide roads around Tellmar's inhabited delta." },
+  { id: "nine-wells-road", name: "The Nine Wells Road", kind: "regional-road", realmIds: ["south"], checkpointIds: [], waypoints: [{ x: -15, y: 225 }, { x: 55, y: 250 }, { x: 104, y: 294 }, { x: 160, y: 270 }, { x: 180, y: 340 }, { x: 134, y: 387 }], description: "A royal caravan road supplied by nine protected wells and mirrored signal towers." },
+  { id: "dune-circuit", name: "The Dune Circuit", kind: "regional-road", realmIds: ["south"], checkpointIds: [], waypoints: [{ x: -15, y: 170 }, { x: -15, y: 225 }, { x: -80, y: 240 }, { x: -30, y: 280 }, { x: -100, y: 310 }], description: "A surveyed desert loop whose cairns are reset after every season of moving dunes." },
+  { id: "saffron-coast-road", name: "The Saffron Coast Road", kind: "regional-road", realmIds: ["south"], checkpointIds: [], waypoints: [{ x: 104, y: 294 }, { x: 70, y: 340 }, { x: 120, y: 330 }, { x: 134, y: 387 }], description: "A customs road connecting Asalan's gardens to the glass towns and southern harbor." },
+  { id: "greenway", name: "The Greenway", kind: "regional-road", realmIds: ["west"], checkpointIds: [], waypoints: [{ x: -170, y: 30 }, { x: -250, y: 30 }, { x: -300, y: 80 }, { x: -390, y: 80 }, { x: -420, y: 150 }], description: "A living road trained through the pale boughs from Greenward to the covenant capital." },
+  { id: "root-road", name: "The Root Road", kind: "regional-road", realmIds: ["west"], checkpointIds: [], waypoints: [{ x: -420, y: 150 }, { x: -300, y: 180 }, { x: -360, y: 220 }, { x: -400, y: 260 }, { x: -450, y: 200 }], description: "A deep-forest pilgrimage road linking covenant groves, buried ruins, and the western storm hospice." },
+  { id: "coppice-road", name: "The Coppice Road", kind: "regional-road", realmIds: ["west"], checkpointIds: [], waypoints: [{ x: -170, y: 30 }, { x: -220, y: 120 }, { x: -300, y: 180 }, { x: -420, y: 150 }], description: "A guild road through managed woodland, craft villages, and seasonal hunting moots." },
+];
+
+// Coastal travel joins the three navigable faces of Avarra without turning the
+// atlas into a round island. These are deliberately offshore trade corridors;
+// their endpoints are real ports while intermediate waypoints remain at sea.
+export const CONTINENT_SEA_LANES = [
+  { id: "greenwater-saffron-run", name: "The Greenwater-Saffron Run", kind: "sea-lane", realmIds: ["west", "south"], portIds: ["greenharbor", "qamarat"], waypoints: [{ x: -474, y: 124 }, { x: -474, y: 125 }, { x: -550, y: 200 }, { x: -550, y: 430 }, { x: 134, y: 420 }, { x: 134, y: 388 }, { x: 134, y: 387 }], hazards: ["green squalls", "fog banks", "nine-wells shoals"], tradeGoods: ["ship timber", "resin", "salt", "blue glass"], description: "A long south-western circuit carrying Elderwood timber to Qamarat and returning with salt and glass." },
+  { id: "saffron-lantern-run", name: "The Saffron-Lantern Run", kind: "sea-lane", realmIds: ["south", "east"], portIds: ["qamarat", "lotusmouth"], waypoints: [{ x: 134, y: 387 }, { x: 134, y: 388 }, { x: 134, y: 420 }, { x: 560, y: 430 }, { x: 560, y: 94 }, { x: 487, y: 94 }, { x: 486, y: 94 }], hazards: ["hot squalls", "pirate lanterns", "shifting reed shoals"], tradeGoods: ["incense", "desert glass", "tea", "silk"], description: "The warm eastern passage joining Qamarat's spice quays to the stilt harbors of the Sea of Reeds." },
+  { id: "three-harbors-circuit", name: "The Three Harbors Circuit", kind: "sea-lane", realmIds: ["west", "south", "east"], portIds: ["greenharbor", "qamarat", "lotusmouth"], waypoints: [{ x: -474, y: 124 }, { x: -474, y: 125 }, { x: -560, y: 220 }, { x: -600, y: 470 }, { x: 134, y: 470 }, { x: 134, y: 388 }, { x: 134, y: 387 }, { x: 134, y: 388 }, { x: 134, y: 470 }, { x: 600, y: 470 }, { x: 600, y: 94 }, { x: 487, y: 94 }, { x: 486, y: 94 }], hazards: ["open-water storms", "corsair fleets", "seasonal monsoons"], tradeGoods: ["hardwood", "spices", "porcelain", "iron tools"], description: "A prestigious seasonal circuit sailed by the largest merchant fleets between all three continental ports." },
 ];
 
 // Named continental water is macro-authored so rivers remain continuous and
@@ -366,11 +690,12 @@ export const CONTINENT_ROUTES = [
 export const CONTINENT_WATERWAYS = [
   { id: "whitewend", name: "The Whitewend", description: "The brown working river of the central basins.", waypoints: [{ x: 46, y: -218 }, { x: 31, y: -150 }, { x: 18, y: -82 }, { x: 12, y: -24 }, { x: 13, y: 34 }, { x: 28, y: 102 }, { x: 36, y: 184 }, { x: 42, y: 272 }] },
   { id: "tannic", name: "The Tannic", description: "A dark alder-fed tributary carrying leaf stain out of the western woods.", waypoints: [{ x: -116, y: -132 }, { x: -82, y: -88 }, { x: -27, y: -34 }, { x: 12, y: -24 }] },
-  { id: "bannerflow", name: "The Bannerflow", description: "A broad eastern river lined by ferries, cypress, and market towns.", waypoints: [{ x: 238, y: -128 }, { x: 254, y: -54 }, { x: 286, y: 24 }, { x: 344, y: 74 }, { x: 412, y: 102 }] },
+  { id: "bannerflow", name: "The Bannerflow", description: "A broad eastern river dividing into lotus channels through the Sea of Reeds.", waypoints: [{ x: 238, y: -128 }, { x: 254, y: -54 }, { x: 286, y: 24 }, { x: 344, y: 74 }, { x: 412, y: 102 }, { x: 486, y: 94 }] },
+  { id: "saffron-wadi", name: "The Saffron Wadi", description: "A seasonal southern river linking the Nine Wells to the warm sea.", waypoints: [{ x: 22, y: 176 }, { x: 38, y: 225 }, { x: 72, y: 272 }, { x: 104, y: 294 }, { x: 134, y: 387 }] },
 ];
 
 export const CONTINENT_LAKES = [
-  { id: "black-tarn", name: "Black Tarn", description: "Cold, peat-dark water under a low western sky.", center: { x: -96, y: -96 }, radius: 5 },
+  { id: "black-tarn", name: "Black Tarn", description: "Cold, peat-dark water under a low western sky.", center: { x: -115, y: -105 }, radius: 5 },
   { id: "mirror-lake", name: "Mirror Lake", description: "A high clear lake reflecting the Iron Plateau's fast weather.", center: { x: 190, y: -42 }, radius: 4 },
 ];
 
@@ -384,4 +709,8 @@ export function ecologyDefinition(id) {
 
 export function landmarksByKnowledge(knowledge) {
   return LANDMARKS.filter((landmark) => landmark.knowledge === knowledge);
+}
+
+export function realmDefinition(id) {
+  return REALM_DEFINITIONS[id] || REALM_DEFINITIONS.central;
 }

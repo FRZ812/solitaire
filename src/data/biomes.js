@@ -217,6 +217,14 @@ export const BIOMES = [
       plains: [
         { kind: "carrion-corvid", weight: 12, posture: "neutral",  desc: "a coven of black-feathered birds large as dogs, working at something" },
       ],
+      forest: [
+        { kind: "black-fir-charcoalers", weight: 10, posture: "friendly", desc: "charcoalers tending low turf-covered clamps beneath the black fir" },
+        { kind: "pale-hand-foragers", weight: 5, posture: "neutral", desc: "hooded Pale Hand gatherers cutting corpse-lilies beside a marked path" },
+      ],
+      water: [
+        { kind: "tarn-ferrymen", weight: 10, posture: "friendly", desc: "silent ferrymen poling a hide-covered boat between peat islands" },
+        { kind: "bog-lanterns", weight: 5, posture: "hostile", desc: "cold lantern lights moving against the wind across the black water" },
+      ],
     },
   },
   {
@@ -239,6 +247,10 @@ export const BIOMES = [
       plains: [
         { kind: "slave-coffle",    weight: 8,  posture: "hostile",  desc: "a chain of captives driven east — three goblins to twelve people" },
       ],
+      road: [
+        { kind: "sundered-toll-band", weight: 12, posture: "hostile", desc: "a self-appointed toll band blocking the old fortress road with chained wagons" },
+        { kind: "brokenhold-envoys", weight: 5, posture: "neutral", desc: "armoured envoys of Brokenhold carrying a split-iron safe-conduct" },
+      ],
     },
   },
   {
@@ -258,6 +270,14 @@ export const BIOMES = [
       ],
       hills: [
         { kind: "tribute-caravan", weight: 8, posture: "neutral", desc: "a tribute-caravan winding up to the Vyrgun: salt, copper, and yearling girls" },
+      ],
+      plains: [
+        { kind: "wintermere-drovers", weight: 9, posture: "friendly", desc: "Wintermere drovers urging shaggy oxen between snow poles" },
+        { kind: "white-pike-muster", weight: 6, posture: "neutral", desc: "a White Pike levy drilling beside a wind-scoured winter camp" },
+      ],
+      road: [
+        { kind: "smoke-road-sledge", weight: 12, posture: "friendly", desc: "a mail sledge racing north behind six iron-shod elk" },
+        { kind: "vyrgun-customs-riders", weight: 8, posture: "neutral", desc: "Vyrgun customs riders checking tribute seals on the Smoke Road" },
       ],
     },
   },
@@ -281,15 +301,23 @@ export const BIOMES = [
       hills: [
         { kind: "watchtower-blink", weight: 6,  posture: "neutral",  desc: "a flash of mirror-light from a tower miles off — someone is being signalled about" },
       ],
+      road: [
+        { kind: "plateau-remount-train", weight: 12, posture: "friendly", desc: "a remount train of lean steppe horses bound for the eastern marches" },
+        { kind: "baronial-road-court", weight: 6, posture: "neutral", desc: "a marcher baron holding a roadside court beneath a striped awning" },
+      ],
+      settlement: [
+        { kind: "horse-fair", weight: 12, posture: "friendly", desc: "a temporary horse fair of rope pens, smiths, cooks, and loud bargaining" },
+        { kind: "banner-recruiters", weight: 5, posture: "neutral", desc: "eastern banner recruiters measuring riders and inspecting their tack" },
+      ],
     },
   },
   {
     id: "tellmar-road",
-    name: "The Tellmar Road",
+    name: "The Sea of Reeds",
     faction: "tellmar-banners",
-    description: "The long trade-march east — caravan-ground, cypress windbreaks, and milestones counting toward Tellmar that nobody has ever finished counting. Bandits work the verges; banners work the inns.",
+    description: "The immense eastern reed sea — lotus channels, rice terraces, shrine islands, tiled river towns, and raised roads leading to Tellmar and the Lantern Sea.",
     ...rect({ xmin: 61, xmax: 145, ymin: 8, ymax: 60 }),
-    terrainWeights: { plains: 0.38, hills: 0.20, forest: 0.18, road: 0.10, marsh: 0.04, mountains: 0.05, water: 0.05 },
+    terrainWeights: { marsh: 0.36, forest: 0.18, plains: 0.14, water: 0.12, road: 0.10, hills: 0.07, mountains: 0.03 },
     poiChance: 0.05,
     extraSpawns: {
       road: [
@@ -299,6 +327,22 @@ export const BIOMES = [
       forest: [
         { kind: "road-cutthroats",  weight: 10, posture: "hostile",  desc: "a half-dozen cutthroats watching the road from the trees" },
       ],
+      marsh: [
+        { kind: "banner-river-patrol", weight: 12, posture: "neutral", desc: "a lacquered patrol boat pacing the raised causeway" },
+        { kind: "reed-farmers", weight: 10, posture: "friendly", desc: "reed farmers poling baskets of rice seedlings toward a terraced island" },
+      ],
+      water: [
+        { kind: "lotus-ferry", weight: 12, posture: "friendly", desc: "a broad lotus ferry carrying pilgrims, ducks, and market baskets between shrine islands" },
+        { kind: "river-pirates", weight: 5, posture: "hostile", desc: "reed-masked river pirates drifting close under bundled green sail" },
+      ],
+      plains: [
+        { kind: "rice-terrace-workers", weight: 12, posture: "friendly", desc: "a terrace crew repairing water gates beneath embroidered field banners" },
+        { kind: "wandering-opera", weight: 5, posture: "friendly", desc: "a travelling opera troupe hauling painted screens toward the next river town" },
+      ],
+      settlement: [
+        { kind: "banner-magistrates", weight: 8, posture: "neutral", desc: "banner magistrates hearing petitions beneath a tiled public pavilion" },
+        { kind: "canal-market", weight: 12, posture: "friendly", desc: "boat vendors crowding a canal market with tea, fish, paper charms, and bronze tools" },
+      ],
     },
   },
 
@@ -307,22 +351,31 @@ export const BIOMES = [
   // ===================================================================
   {
     id: "hollow-coast",
-    name: "The Hollow Coast",
-    faction: "tideless",
-    description: "Salt fens and grey beaches south of the Bramblewych. The Tideless walk the shore at low water with their dead. The sea here breathes more than it crashes.",
+    name: "The Sunscar Expanse",
+    faction: "asalan-sun-court",
+    description: "A far southern desert of red dunes, salt pans, defended caravan wells, sandstone escarpments, and warm ports on the Saffron Sea.",
     ...rect({ xmin: -60, xmax: 60, ymin: 41, ymax: 110 }),
-    terrainWeights: { marsh: 0.30, plains: 0.22, forest: 0.15, hills: 0.10, water: 0.18, mountains: 0.03, road: 0.02 },
+    terrainWeights: { plains: 0.46, hills: 0.20, road: 0.10, mountains: 0.08, forest: 0.06, settlement: 0.05, water: 0.03, marsh: 0.02 },
     poiChance: 0.05,
     extraSpawns: {
-      marsh: [
-        { kind: "tideless-acolyte", weight: 8,  posture: "neutral",  desc: "a salt-wet acolyte of the Tideless, walking a corpse out toward the surf" },
-        { kind: "salt-fisher",      weight: 12, posture: "friendly", desc: "a fisher dragging a flat-boat through the shallow grass" },
-      ],
       plains: [
-        { kind: "wrecker-band",     weight: 8,  posture: "hostile",  desc: "wreckers scrubbing the sand for what last night's tide gave up" },
+        { kind: "sunscar-caravan", weight: 14, posture: "friendly", desc: "a bright-awning caravan travelling between guarded wells" },
+        { kind: "brass-shield-patrol", weight: 10, posture: "neutral", desc: "Sun Court riders checking seals and water allotments" },
+      ],
+      hills: [
+        { kind: "dune-raiders", weight: 8, posture: "hostile", desc: "veiled riders watching the caravan road from a red escarpment" },
+      ],
+      road: [
+        { kind: "nine-wells-caravan", weight: 14, posture: "friendly", desc: "a Nine Wells caravan moving under blue awnings with an armed water-master" },
+        { kind: "sun-court-couriers", weight: 7, posture: "neutral", desc: "Sun Court couriers changing lathered horses at a brass mile post" },
+      ],
+      settlement: [
+        { kind: "oasis-night-market", weight: 12, posture: "friendly", desc: "an oasis night market opening beneath lamps and woven shade cloth" },
+        { kind: "well-court", weight: 7, posture: "neutral", desc: "a well judge settling water shares before a ring of caravan elders" },
       ],
       water: [
-        { kind: "drowned-bell",     weight: 6,  posture: "neutral",  desc: "a bell, far out, ringing under no hand" },
+        { kind: "saffron-coasters", weight: 12, posture: "friendly", desc: "lateen-rigged coasters unloading dates, copper, and glazed jars on a tidal quay" },
+        { kind: "drowned-choir-echo", weight: 4, posture: "neutral", desc: "a many-voiced song carrying inland from water empty of any visible sail" },
       ],
     },
   },
@@ -332,9 +385,9 @@ export const BIOMES = [
   // ===================================================================
   {
     id: "witchwood-deep",
-    name: "The Witchwood Deep",
-    faction: "bramble-witches",
-    description: "Old wood west of the Bramblewych Reach — denser, hungrier, less farmed. The witches respect it more than they tend it. Some of the trees here remember being people.",
+    name: "The Elderwood",
+    faction: "selenyan-covenant",
+    description: "The immense western woodland — rain-dark canopy, living bridges, hidden courts, old-growth roads, and green ports under the Selenyan Covenant.",
     ...rect({ xmin: -80, xmax: -31, ymin: 0, ymax: 40 }),
     terrainWeights: { forest: 0.55, hills: 0.15, marsh: 0.12, plains: 0.08, mountains: 0.05, water: 0.05 },
     poiChance: 0.04,
@@ -344,6 +397,18 @@ export const BIOMES = [
         { kind: "deep-witch",       weight: 5,  posture: "neutral",  desc: "a tall woman walking barefoot, ankles bound in iron rings" },
         { kind: "old-bear",         weight: 6,  posture: "hostile",  desc: "a bear too large for its tracks, half-grey, scarred across the snout" },
         { kind: "treekin-watcher",  weight: 4,  posture: "neutral",  desc: "a knot of bark and limb that turns out to have a face when you look back" },
+      ],
+      hills: [
+        { kind: "covenant-rangers", weight: 10, posture: "neutral", desc: "Covenant rangers watching the canopy road from a rain-black ridge" },
+        { kind: "living-bridge-keepers", weight: 7, posture: "friendly", desc: "bridge-keepers pruning a vast living span where it crosses a ravine" },
+      ],
+      marsh: [
+        { kind: "moss-gatherers", weight: 10, posture: "friendly", desc: "moss gatherers carrying wicker frames of medicine and luminous fungus" },
+        { kind: "root-wights", weight: 5, posture: "hostile", desc: "root-bound dead rising where an old war road sinks beneath the bog" },
+      ],
+      road: [
+        { kind: "greenharbor-carriers", weight: 12, posture: "friendly", desc: "forest carriers hauling salt and lamp oil inland from Greenharbor" },
+        { kind: "oak-spear-patrol", weight: 8, posture: "neutral", desc: "Oak-Spear wardens checking axes, blight signs, and road leave-tokens" },
       ],
     },
   },
@@ -360,6 +425,14 @@ export const BIOMES = [
         { kind: "steppe-rider",    weight: 14, posture: "neutral",  desc: "a steppe-rider on a long pony, bow across her saddlebow" },
         { kind: "windless-stone",  weight: 4,  posture: "neutral",  desc: "a single standing stone with no wind around it for a hundred paces" },
         { kind: "lone-walker",     weight: 8,  posture: "neutral",  desc: "a thin figure walking toward you out of nowhere, slow and not stopping" },
+      ],
+      hills: [
+        { kind: "bone-citadel-delvers", weight: 8, posture: "neutral", desc: "ruin-delvers returning from the Bone Citadel with wrapped ivory fragments" },
+        { kind: "grass-sea-hunters", weight: 10, posture: "friendly", desc: "mounted hunters driving long-horned antelope toward a hidden camp" },
+      ],
+      road: [
+        { kind: "covenant-truce-caravan", weight: 9, posture: "friendly", desc: "a mixed steppe-and-Elderwood caravan travelling under a woven truce branch" },
+        { kind: "nomad-toll-circle", weight: 6, posture: "neutral", desc: "clan riders forming a courteous but unmistakable toll circle around the trail" },
       ],
     },
   },

@@ -1,3 +1,5 @@
+import { REALM_FACTIONS } from "./continent.js";
+
 // Factions of the central regions — political/cultural groupings tied to
 // biomes (via biome.faction). Used by WorldMapView to color regions and label
 // who holds what. The narrator can also reference factions through the state
@@ -10,7 +12,7 @@
 //     fear, and politics.
 //   • Legendary powers — only spoken of in hearth-stories, tied to fabled
 //     landmarks; surfaced through [GEOGRAPHY KNOWN BY LEGEND].
-export const FACTIONS = [
+const LEGACY_FACTIONS = [
   // ---------- Vale powers ----------
   {
     id: "crowsmoor-wardens",
@@ -200,6 +202,41 @@ export const FACTIONS = [
     color: "#C8B6A0",
     description: "A devotional order with a single small shrine on the edge of Crowsmoor Reach. The Pale God is silent, listens long, and answers — sometimes — those who fast, bleed, and wait. The order keeps the shrine in shifts of seven days; nobody serves longer than seven years.",
   },
+];
+
+const REALM_FACTION_COLORS = {
+  central: "#5A5550",
+  north: "#4B2A4E",
+  east: "#3A4F7A",
+  south: "#A53E3E",
+  west: "#5A7C7A",
+};
+
+const LEGACY_FACTION_IDS = new Set(LEGACY_FACTIONS.map((faction) => faction.id));
+const REALM_FACTION_BY_ID = new Map(REALM_FACTIONS.map((faction) => [faction.id, faction]));
+
+// The continental atlas owns the detailed provincial powers introduced by the
+// large-world generator. Merge them into the shared faction registry so
+// encounters, narration, and future diplomacy resolve the same ids shown on
+// the map instead of treating distant governments as anonymous labels.
+export const FACTIONS = [
+  ...LEGACY_FACTIONS.map((legacyFaction) => {
+    const authoredFaction = REALM_FACTION_BY_ID.get(legacyFaction.id);
+    if (!authoredFaction) return legacyFaction;
+    return {
+      ...legacyFaction,
+      ...authoredFaction,
+      short: authoredFaction.short || legacyFaction.short,
+      color: authoredFaction.color || legacyFaction.color,
+    };
+  }),
+  ...REALM_FACTIONS
+    .filter((faction) => !LEGACY_FACTION_IDS.has(faction.id))
+    .map((faction) => ({
+      ...faction,
+      short: faction.short || faction.name,
+      color: faction.color || REALM_FACTION_COLORS[faction.realmId] || "#8B857A",
+    })),
 ];
 
 export function getFaction(id) {
