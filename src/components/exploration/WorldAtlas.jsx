@@ -16,8 +16,11 @@ import {
 } from "../../data/continent.js";
 import { surveyAtlas } from "../../engine/world-generation.js";
 import { getTile } from "../../engine/world.js";
+import { trackedCharacterResult } from "../../engine/positions.js";
 import { TERRAINS } from "../../data/terrains.js";
 import { TERRAIN_INK } from "./atlasModel.js";
+import { poiIconKeyForLandmark } from "../../data/poi-icons.js";
+import { PoiIcon, PoiTierMarker } from "../PoiIcon.jsx";
 import {
   ATLAS_KNOWLEDGE_LABELS,
   ATLAS_LANDMARK_GLYPHS,
@@ -217,6 +220,7 @@ export function WorldAtlas({ state, origin, onPick }) {
   const zoomRatio = camera.zoom / fit;
   const landmarks = useMemo(() => buildAtlasLandmarks(state, partyCoord), [state, partyCoord]);
   const questMarkers = useMemo(() => atlasQuestMarkers(state), [state]);
+  const trackedCharacter = useMemo(() => trackedCharacterResult(state), [state]);
 
   const selectedLandmark = selection.kind === "landmark"
     ? landmarks.find((landmark) => landmark.id === selection.id) || null
@@ -380,6 +384,13 @@ export function WorldAtlas({ state, origin, onPick }) {
     setCamera((current) => centerAtlasCamera(current, viewport, partyCoord, Math.max(current.zoom, fit * 3)));
   }
 
+  function centerOnTrackedCharacter() {
+    if (!trackedCharacter) return;
+    const { x, y } = trackedCharacter.pos;
+    setSelection({ kind: "point", x, y });
+    setCamera((current) => centerAtlasCamera(current, viewport, { x, y }, Math.max(current.zoom, fit * 3)));
+  }
+
   function chartSelection() {
     if (!selectedCoord) return;
     const tile = getTile(state, selectedCoord.x, selectedCoord.y);
@@ -388,7 +399,7 @@ export function WorldAtlas({ state, origin, onPick }) {
       y: selectedCoord.y,
       key: `${selectedCoord.x},${selectedCoord.y}`,
       tile,
-      name: selectedLandmark?.name || null,
+      name: selectedLandmark?.name || (trackedAtSelection ? trackedCharacter.name : null),
       knownBy: selectedLandmark ? landmarkKnowledge(state, selectedLandmark) : null,
     });
   }
@@ -400,6 +411,12 @@ export function WorldAtlas({ state, origin, onPick }) {
   const coastPoints = useMemo(() => svgPoints(camera, viewport, CONTINENT.coastline), [camera, viewport]);
   const showRegionLabels = zoomRatio >= 1.7;
   const showRealmLabels = zoomRatio < 1.7;
+  const trackedAtSelection = !!(
+    trackedCharacter
+    && selectedCoord
+    && trackedCharacter.pos.x === selectedCoord.x
+    && trackedCharacter.pos.y === selectedCoord.y
+  );
 
   const detailRealm = REALM_BY_ID[selectedLandmark?.realmId || selectedSurvey?.realmId] || null;
   const detailRegion = REGION_DEFINITIONS[selectedLandmark?.regionId || selectedSurvey?.regionId] || null;
@@ -418,10 +435,13 @@ export function WorldAtlas({ state, origin, onPick }) {
   const detailSeaLanes = selectedLandmark?.kind === "port"
     ? CONTINENT_SEA_LANES.filter((lane) => lane.portIds?.includes(selectedLandmark.id))
     : [];
-  const detailTypeLabel = selectedLandmark
+  const detailTypeLabel = trackedAtSelection
+    ? "Tracked playable character"
+    : selectedLandmark
     ? atlasLandmarkTypeLabel(selectedLandmark)
     : (selectedSurvey ? (TERRAINS[selectedSurvey.terrain]?.label || "Open country") : "Unknown ground");
-  const detailTitle = selectedLandmark?.name
+  const detailTitle = (trackedAtSelection ? trackedCharacter.name : null)
+    || selectedLandmark?.name
     || (selectedSurvey ? `${TERRAINS[selectedSurvey.terrain]?.label || "Open country"} (${selectedCoord.x}, ${selectedCoord.y})` : "Uncharted");
   const detailKnowledge = selectedLandmark ? landmarkKnowledge(state, selectedLandmark) : null;
   const detailAreaName = detailProvince?.name || detailRegion?.label || detailRealm?.shortName || "Uncharted lands";
@@ -578,19 +598,24 @@ export function WorldAtlas({ state, origin, onPick }) {
               const screen = atlasWorldToScreen(camera, viewport, landmark.coord);
               const offstage = screen.x < -40 || screen.y < -40 || screen.x > viewport.width + 40 || screen.y > viewport.height + 40;
               const selected = selection.kind === "landmark" && selection.id === landmark.id;
+              const poiIconKey = poiIconKeyForLandmark(landmark);
               return (
                 <button
                   key={landmark.id}
                   type="button"
                   hidden={!visible || offstage}
-                  className={`world-atlas__marker is-${landmark.knowledgeTier} is-category-${atlasLandmarkLayer(landmark)} ${selected ? "is-selected" : ""} ${landmark.capitalOfRealmId ? "is-capital" : ""} ${landmark.quest ? "has-quest" : ""}`}
+                  className={`world-atlas__marker is-${landmark.knowledgeTier} is-category-${atlasLandmarkLayer(landmark)} ${poiIconKey ? "has-poi-icon" : ""} ${selected ? "is-selected" : ""} ${landmark.capitalOfRealmId ? "is-capital" : ""} ${landmark.quest ? "has-quest" : ""}`}
                   style={{ left: `${screen.x}px`, top: `${screen.y}px` }}
                   onClick={() => inspectLandmark(landmark)}
                   aria-label={`Inspect ${landmark.name}, ${atlasLandmarkTypeLabel(landmark)}, ${REGION_DEFINITIONS[landmark.regionId]?.label || REALM_BY_ID[landmark.realmId]?.shortName || "uncharted lands"}, ${ATLAS_KNOWLEDGE_LABELS[landmark.knowledgeTier]}`}
                   aria-pressed={selected}
                   aria-controls="world-atlas-detail"
                 >
-                  <span aria-hidden="true">{ATLAS_LANDMARK_GLYPHS[landmark.kind] || "◆"}</span>
+                  <span aria-hidden="true">
+                    {poiIconKey
+                      ? <PoiIcon iconKey={poiIconKey} size={landmark.capitalOfRealmId ? 31 : 25} marketTier={landmark.marketTier} />
+                      : (ATLAS_LANDMARK_GLYPHS[landmark.kind] || "◆")}
+                  </span>
                   {landmark.quest && <i className="world-atlas__quest-pip" aria-hidden="true">!</i>}
                   {(zoomRatio >= 1.5 || landmark.capitalOfRealmId || selected) && (
                     <b aria-hidden="true">{landmark.name}</b>
@@ -616,6 +641,25 @@ export function WorldAtlas({ state, origin, onPick }) {
                 </button>
               );
             })}
+            {trackedCharacter && (() => {
+              const screen = atlasWorldToScreen(camera, viewport, trackedCharacter.pos);
+              const offstage = screen.x < -40 || screen.y < -40 || screen.x > viewport.width + 40 || screen.y > viewport.height + 40;
+              return (
+                <button
+                  type="button"
+                  hidden={offstage}
+                  className={`world-atlas__marker is-tracked-character${trackedAtSelection ? " is-selected" : ""}`}
+                  style={{ left: `${screen.x}px`, top: `${screen.y}px` }}
+                  onClick={centerOnTrackedCharacter}
+                  aria-label={`Tracked lead for ${trackedCharacter.name}`}
+                  aria-pressed={trackedAtSelection}
+                  aria-controls="world-atlas-detail"
+                >
+                  <span aria-hidden="true">⌖</span>
+                  <b aria-hidden="true">{trackedCharacter.name}</b>
+                </button>
+              );
+            })()}
           </div>
 
           {selection.kind === "point" && (() => {
@@ -637,6 +681,7 @@ export function WorldAtlas({ state, origin, onPick }) {
 
           <div className="world-atlas__map-controls">
             <button type="button" onClick={centerOnParty} aria-label="Center map on the party">◎ Party</button>
+            {trackedCharacter && <button type="button" onClick={centerOnTrackedCharacter} aria-label={`Center map on tracked character ${trackedCharacter.name}`} title={trackedCharacter.name}>⌖ Track</button>}
             <div role="group" aria-label="Map zoom controls">
               <button type="button" onClick={() => setCamera((current) => zoomAtlasCamera(current, viewport, 1 / 1.4))} disabled={camera.zoom <= fit * 1.01} aria-label="Zoom map out">−</button>
               <button type="button" onClick={() => setCamera((current) => clampAtlasCamera({ ...current, zoom: fit }, viewport))} aria-label="Fit the whole continent">{Math.round(zoomRatio * 100)}%</button>
@@ -655,7 +700,9 @@ export function WorldAtlas({ state, origin, onPick }) {
               {detailAreaName ? ` · ${detailAreaName}` : ""}
             </small>
             <h4>{detailTitle}</h4>
-            <p>{selectedLandmark?.description || detailRealm?.description || "Unsurveyed ground."}</p>
+            <p>{trackedAtSelection
+              ? `The Codex trail currently points toward ${trackedCharacter.name} here. It is a moving lead, not a guarantee; scrying can provide a clearer live reading.`
+              : selectedLandmark?.description || detailRealm?.description || "Unsurveyed ground."}</p>
           </div>
           <dl>
             <div><dt>Site type</dt><dd>{detailTypeLabel}</dd></div>
@@ -665,6 +712,7 @@ export function WorldAtlas({ state, origin, onPick }) {
             <div><dt>Leader</dt><dd>{detailLeader ? `${detailLeader.name}${detailLeader.title ? ` · ${detailLeader.title}` : ""}` : "No single ruler"}</dd></div>
             <div><dt>Culture</dt><dd title={detailCulture?.description}>{cultureSummary || "Mixed frontier traditions"}</dd></div>
             <div><dt>Trade</dt><dd title={detailEconomy?.tradeNotes}>{tradeSummary || "Local exchange"}</dd></div>
+            {selectedLandmark?.marketTier && <div><dt>Trade house</dt><dd><PoiTierMarker marketTier={selectedLandmark.marketTier} size={15} showLabel /></dd></div>}
             {selectedLandmark?.garrison && <div><dt>Garrison</dt><dd>{selectedLandmark.garrison}</dd></div>}
             <div className="is-wide"><dt>Connected routes</dt><dd title={detailRoutes.map((route) => route.name).join(", ")}>{routeSummary}</dd></div>
             {seaLaneSummary && <div className="is-wide"><dt>Sea passages</dt><dd>{seaLaneSummary}</dd></div>}
@@ -700,6 +748,9 @@ export function WorldAtlas({ state, origin, onPick }) {
         <span><i className="is-sea-lane" />Sea passage</span>
         <span><i className="is-trail" />Party trail</span>
         <span><i className="is-journey" />Planned route</span>
+        <span><i className="is-character" />Tracked character</span>
+        <span><PoiTierMarker marketTier="royal" size={12} />Royal shop</span>
+        <span><PoiTierMarker marketTier="mastercraft" size={12} />Mastercraft</span>
         <small>{REALMS.length} realms · {Object.keys(REGION_DEFINITIONS).length} named regions · {CONTINENT_ROUTES.length} charted roads · {CONTINENT_SEA_LANES.length} sea lanes · one coast-to-coast world map</small>
       </footer>
     </section>

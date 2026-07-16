@@ -1,4 +1,6 @@
 import { poiPlaceName } from "../../engine/location.js";
+import { buildingForService } from "../../data/town.js";
+import { poiIconKeyForTile } from "../../data/poi-icons.js";
 
 function coordinateKey(point) {
   return `${point.x},${point.y}`;
@@ -6,6 +8,12 @@ function coordinateKey(point) {
 function worldPoiName(cell) {
   if (!cell.seen || cell.tile?.poi?.type === "hidden") return "";
   return poiPlaceName(cell.tile?.poi) || "";
+}
+
+function worldPoiIcon(cell) {
+  if (!worldPoiName(cell)) return "";
+  const serviceIcon = buildingForService(cell.tile?.poi?.service)?.icon || null;
+  return poiIconKeyForTile(cell.tile, serviceIcon) || "";
 }
 
 export function buildWorldMapScene({ model, selection, journey, night = false }) {
@@ -30,6 +38,8 @@ export function buildWorldMapScene({ model, selection, journey, night = false })
       visited: !!cell.visited,
       interactive: !!cell.seen && !!cell.passable && !cell.current,
       poi_name: worldPoiName(cell),
+      poi_icon: worldPoiIcon(cell),
+      poi_market_tier: worldPoiName(cell) ? (cell.tile?.poi?.marketTier || "") : "",
       quest: !!cell.quest,
       marker_color: cell.quest ? "#f8d56a" : "#e9ae55",
     })),

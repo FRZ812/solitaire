@@ -15,7 +15,7 @@ export const CONTINENT = {
   name: "Avarra",
   seed: DEFAULT_WORLD_SEED,
   generatorVersion: WORLD_GENERATOR_VERSION,
-  contentVersion: 3,
+  contentVersion: 4,
   hexKilometers: 6,
   chunkSize: 24,
   // These are sampling/editor bounds, not a rectangular wall. The actual shore
@@ -649,6 +649,61 @@ export const LANDMARKS = [
   { id: "willowglass", name: "Willowglass", knowledge: "legend", kind: "village", role: "craft-village", coord: { x: -220, y: 120 }, regionId: "witchwood-deep", realmId: "west", provinceId: "pale-boughs", factionId: "selenyan-covenant", routeIds: ["coppice-road"], direction: "far west", description: "A willow village known for green-dyed windows, medicine gardens, and guides who can read the forest after rain." },
   { id: "old-root-ruins", name: "The Old Root Ruins", knowledge: "legend", kind: "ruin", role: "buried-city", coord: { x: -400, y: 260 }, regionId: "far-wild", realmId: "west", provinceId: "selenyan-heart", factionId: "selenyan-covenant", routeIds: ["root-road"], direction: "far south-west", description: "Cyclopean streets lifted apart by ancient roots, with rain-filled chambers descending beneath the western cliffs." },
 ];
+
+// The upper two market tiers are authored, never ambient procedural shops.
+// Royal houses sit in four distant realm capitals; the two Mastercraft houses
+// are isolated specialist destinations on opposite sides of the continent.
+// Their service registries carry epic and legendary commercial stock only.
+export const RARE_TRADE_HOUSES = Object.freeze({
+  "northstar-castle": Object.freeze({
+    id: "aurora-armoury",
+    name: "The Aurora Armoury",
+    type: "smithy",
+    service: "royal-armourer",
+    marketTier: "royal",
+    description: "A royal winter armoury of rime steel, silvered edges, fur-lined harness, and warrant-stamped war gear beneath Northstar's black walls.",
+  }),
+  tellmar: Object.freeze({
+    id: "hundred-seals",
+    name: "The Hall of One Hundred Seals",
+    type: "market",
+    service: "royal-arcana",
+    marketTier: "royal",
+    description: "Tellmar's imperial arcane exchange, where epic foci and wards pass beneath court seals before reaching a buyer.",
+  }),
+  asalan: Object.freeze({
+    id: "ninth-well-astrolabe",
+    name: "The Ninth-Well Astrolabe",
+    type: "market",
+    service: "royal-arcana",
+    marketTier: "royal",
+    description: "A royal Asalani house of star instruments, sun wards, and epic desert workings sold under the Sultana's water seal.",
+  }),
+  "caer-selenya": Object.freeze({
+    id: "silverleaf-bowyers",
+    name: "The Silverleaf Bowyers",
+    type: "smithy",
+    service: "royal-armourer",
+    marketTier: "royal",
+    description: "A covenant-appointed royal workshop offering epic living-wood bows, warded mail, and arms made under the oldest trees.",
+  }),
+  "star-forge": Object.freeze({
+    id: "falling-star-forge",
+    name: "The Falling-Star Forge",
+    type: "smithy",
+    service: "mastercraft-forge",
+    marketTier: "mastercraft",
+    description: "One of Avarra's two known Mastercraft houses, producing legendary arms and armour beside the crater of the first fallen iron.",
+  }),
+  "glass-dune-observatory": Object.freeze({
+    id: "glass-dune-artificer",
+    name: "The Glass Dune Artificer",
+    type: "market",
+    service: "mastercraft-arcana",
+    marketTier: "mastercraft",
+    description: "One of Avarra's two known Mastercraft houses, where an artificer offers a handful of legendary wards and foci beneath the observatory dome.",
+  }),
+});
 
 // Major roads are authored macro intent, then rasterized to axial cells by the
 // generator. Wilderness between them remains generated and walkable; a road is

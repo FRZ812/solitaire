@@ -121,6 +121,34 @@ describe("applyBeat — authored character presentation", () => {
   });
 });
 
+describe("applyBeat — narrator party removal", () => {
+  it("marks a narratively killed companion dead and removes them from the party", () => {
+    const recruited = applyBeat(fresh(), { recruit_companion: { id: "bram" } });
+    const next = applyBeat(recruited, {
+      story: [{ type: "beat", text: "The falling gate takes Bram beneath it." }],
+      party_removals: [{ id: "bram", reason: "dead" }],
+    });
+
+    expect(next.party).not.toContain("bram");
+    expect(next.world.codex.characters.bram.combatState).toMatchObject({
+      health: 0,
+      status: "dead",
+    });
+    expect(recruited.party).toContain("bram");
+    expect(recruited.world.codex.characters.bram.combatState).toBeUndefined();
+  });
+
+  it("ignores narrator removals for characters outside the current party", () => {
+    const base = fresh();
+    const next = applyBeat(base, {
+      party_removals: [{ id: "demon-king", reason: "dead" }],
+    });
+
+    expect(next.party).toEqual(base.party);
+    expect(next.world.codex.characters["demon-king"].combatState).toBeUndefined();
+  });
+});
+
 // GOLDEN characterization — full curated output of representative beats, captured
 // as inline snapshots. These exist to make the Stage-3 applyBeat decomposition
 // provably behavior-preserving: the snapshots must stay byte-identical across the

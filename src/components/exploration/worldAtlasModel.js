@@ -9,6 +9,7 @@ import {
   CONTINENT,
   CONTINENT_ROUTES,
   LANDMARKS,
+  RARE_TRADE_HOUSES,
   REALMS,
 } from "../../data/continent.js";
 import { WHITEMARCH_CAPITAL } from "../../data/whitemarch-capital.js";
@@ -36,7 +37,12 @@ export const ATLAS_LANDMARKS = Object.freeze([
     routeIds: ["crown-road-east", "tannic-road", "spine-road", "bramble-road", "south-road", "north-road"],
     description: CENTRAL_REALM?.description || "The walled capital at Avarra's inland crossroads.",
   }),
-  ...LANDMARKS,
+  ...LANDMARKS.map((landmark) => {
+    const tradeHouse = RARE_TRADE_HOUSES[landmark.id];
+    return tradeHouse
+      ? Object.freeze({ ...landmark, marketTier: tradeHouse.marketTier, tradeHouseId: tradeHouse.id })
+      : landmark;
+  }),
 ]);
 
 export const ATLAS_LAYERS = Object.freeze([

@@ -21,15 +21,19 @@ import { relationshipTier } from "./relationships.js";
 import { lightStatus } from "./light.js";
 import { conditionMeta, condName } from "../data/conditions.js";
 import { characterSubclass } from "../data/character-subclasses.js";
+import { playableCharactersNear } from "./positions.js";
 
 export function summarizeCodex(codex) {
   const lines = [];
   const chars = Object.values(codex.characters).filter(c => c.kind !== "player");
-  if (chars.length) lines.push(`Met: ${chars.map((c) => {
+  const roster = chars.filter((c) => c.playable);
+  const encountered = chars.filter((c) => !c.playable);
+  if (encountered.length) lines.push(`Met: ${encountered.map((c) => {
     const subclass = characterSubclass(c);
     return `${c.name}(${c.race || "?"}, ${c.profession || "?"}${subclass ? `/${subclass.label}` : ""})`;
   }).join("; ")}`);
   else lines.push(`Met: only you`);
+  if (roster.length) lines.push(`World roster (known dossiers, not automatically met): ${roster.map((c) => c.name).join(", ")}`);
   const races = Object.values(codex.races).map(r => r.common ? `${r.name}*` : r.name);
   lines.push(`Races: ${races.join(", ") || "none"}`);
   const profs = Object.values(codex.professions).map(p => p.common ? `${p.name}*` : p.name);
@@ -182,7 +186,7 @@ export function summarizeRumored() {
 }
 
 export function buildStateContext(state) {
-  const { character, time, world } = state;
+  const { character, time, world, party = [] } = state;
   const t = getTile(state, world.currentTile.x, world.currentTile.y);
   const biome = getBiome(world.currentTile.x, world.currentTile.y, world.seed);
   const ecology = t.ecology ? ecologyDefinition(t.ecology) : null;
@@ -244,7 +248,7 @@ export function buildStateContext(state) {
         : `"${q.title}" (from ${q.giver}; reward ${q.rewardCp}cp)`).join("; ")}]`
     : "";
   // Companions recruited into the party — real people travelling with the player.
-  const companions = (world.party || []).map((id) => world.codex.characters[id]).filter(Boolean);
+  const companions = party.map((id) => world.codex.characters[id]).filter(Boolean);
   const companionDetail = (c) => {
     const abil = (c.abilities || []).map((id) => getAbilityDef(id)?.name || id);
     const sk = (c.skills || []).map((s) => `${s.name}${s.rating ? ` ${s.rating}` : ""}`);
@@ -254,10 +258,14 @@ export function buildStateContext(state) {
     if (sk.length) bits.push(`skilled in ${sk.join(", ")}`);
     if (gear.length) bits.push(`carries ${gear.join(", ")}`);
     const subclass = characterSubclass(c);
-    return `${c.name} (${c.race} ${c.profession}${subclass ? `, ${subclass.label} subclass` : ""}${bits.length ? `; ${bits.join("; ")}` : ""})`;
+    return `${c.name} (id: ${c.id}; ${c.race} ${c.profession}${subclass ? `, ${subclass.label} subclass` : ""}${bits.length ? `; ${bits.join("; ")}` : ""})`;
   };
   const partyLine = companions.length
-    ? `\n[COMPANIONS — travelling with you: ${companions.map(companionDetail).join(" · ")}. They are present in scenes, act and speak on their own, fight at your side, and share your fortunes (they can be wounded, killed, or leave). When the player asks a companion what they can do, ANSWER CONCRETELY from this kit — their real abilities, skills, and gear — never vague hand-waving. You may move gear between the player and a companion when they share loot (use companion_gear). Don't drop or forget them.]`
+    ? `\n[COMPANIONS — travelling with you: ${companions.map(companionDetail).join(" · ")}. They are present in scenes, act and speak on their own, fight at your side, and share your fortunes (they can be wounded, killed, or leave). When the player asks a companion what they can do, ANSWER CONCRETELY from this kit — their real abilities, skills, and gear — never vague hand-waving. You may move gear between the player and a companion when they share loot (use companion_gear). If narration itself permanently kills or removes one, use their listed id in party_removals in that same response. Don't drop or forget them silently.]`
+    : "";
+  const localRoster = playableCharactersNear(state);
+  const localRosterLine = localRoster.length
+    ? `\n[OTHER ROSTER CHARACTERS HERE — ${localRoster.map(({ character: c }) => `${c.name} (id: ${c.id}; ${c.race} ${c.profession}${c.role ? `; ${c.role}` : ""})`).join(" · ")}. These authored people are physically present at this hex. Surface them naturally in the scene as independent NPCs, true to their dossier and voice. They are not companions unless the fiction changes that, and none is a second copy of the player.]`
     : "";
   const you = world.codex.characters.wanderer || {};
   const playerSubclass = characterSubclass(you);
@@ -279,7 +287,7 @@ export function buildStateContext(state) {
     ? `\n[AREA — ${t.area.name}; ${ecology.name}: ${ecology.description} Resources and materials: ${(t.resources || ecology.resources || []).join(", ") || "locally scarce"}.]`
     : "";
   return `${playerLine}${playerProfileLine}
-[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${conditionsLine}; Light: ${lightStatus(state).text}; Bond: ${character.bond}${nearbyStr}]${localLine}${locLine}${flyLine}${svcLine}${questLine}${partyLine}${buildSurroundings(state, t)}
+[STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${conditionsLine}; Light: ${lightStatus(state).text}; Bond: ${character.bond}${nearbyStr}]${localLine}${locLine}${flyLine}${svcLine}${questLine}${partyLine}${localRosterLine}${buildSurroundings(state, t)}
 [REGION — ${biome.name}: ${biome.description}]${generatedAreaLine}
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]

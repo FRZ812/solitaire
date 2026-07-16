@@ -12,6 +12,7 @@ import {
   MOUNTAIN_SPINE,
   PROVINCES,
   PROVINCE_BY_ID,
+  RARE_TRADE_HOUSES,
   REALM_CULTURES,
   REALM_DEFINITIONS,
   REALM_ECONOMIES,
@@ -20,7 +21,9 @@ import {
   REGION_DEFINITIONS,
   SITE_ARCHETYPES,
 } from "../data/continent.js";
+import { itemTemplate } from "../data/catalog.js";
 import { hexDist, hexLine } from "../data/hex-math.js";
+import { BUILDINGS } from "../data/town.js";
 import {
   checkpointAt,
   continentValueAt,
@@ -508,6 +511,55 @@ describe("continental world generation", () => {
       expect(sample.land, landmark.id).toBe(true);
       expect(sample.regionId, landmark.id).toBe(landmark.regionId);
     }
+  });
+
+  it("places the rare Royal and Mastercraft trade houses across the wider world as visitable endgame POIs", () => {
+    const houses = Object.entries(RARE_TRADE_HOUSES);
+    const royal = houses.filter(([, house]) => house.marketTier === "royal");
+    const mastercraft = houses.filter(([, house]) => house.marketTier === "mastercraft");
+    const royalRealms = new Set();
+
+    expect(CONTINENT.contentVersion).toBe(4);
+    expect(houses).toHaveLength(6);
+    expect(royal).toHaveLength(4);
+    expect(mastercraft).toHaveLength(2);
+    expect(mastercraft.map(([landmarkId]) => landmarkId).sort())
+      .toEqual(["glass-dune-observatory", "star-forge"]);
+
+    for (const [landmarkId, house] of houses) {
+      const landmark = LANDMARKS.find((entry) => entry.id === landmarkId);
+      expect(landmark, landmarkId).toBeTruthy();
+      expect(landmark.realmId, landmarkId).not.toBe("central");
+      if (house.marketTier === "royal") royalRealms.add(landmark.realmId);
+
+      const tile = generateWorldTile({ ...landmark.coord, seed: DEFAULT_WORLD_SEED });
+      expect(tile.terrain, landmarkId).toBe("settlement");
+      expect(tile.poi, landmarkId).toMatchObject({
+        type: house.type,
+        name: house.name,
+        description: house.description,
+        access: "public",
+        parent: landmark.id,
+        parentName: landmark.name,
+        part: house.id,
+        partName: house.name,
+        service: house.service,
+        marketTier: house.marketTier,
+        landmarkId,
+      });
+
+      const building = BUILDINGS[house.service];
+      const expectedItemTier = house.marketTier === "royal" ? "epic" : "legendary";
+      expect(building, house.service).toBeTruthy();
+      expect(building.stock.length, house.service).toBeGreaterThan(0);
+      for (const stock of building.stock) {
+        const item = itemTemplate(stock.id);
+        expect(item?.tier, `${house.service}:${stock.id}`).toBe(expectedItemTier);
+        expect(item?.unique, `${house.service}:${stock.id}`).not.toBe(true);
+      }
+    }
+
+    expect([...royalRealms].sort()).toEqual(["east", "north", "south", "west"]);
   });
 
   it("rasterizes named routes into adjacent, land-based roads and river bridges", () => {

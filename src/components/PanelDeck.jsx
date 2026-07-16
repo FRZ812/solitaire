@@ -234,6 +234,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 embedded
                 state={state}
                 onScry={handlers.onScry}
+                onTrackCharacter={handlers.onTrackCharacter}
                 onRenameMount={handlers.onRenameMount}
                 onPortraitChange={handlers.onPortraitChange}
               />
