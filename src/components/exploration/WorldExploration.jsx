@@ -31,7 +31,6 @@ import { buildWorldMapScene } from "./mapSceneModel.js";
 import partyArt from "../../assets/generated/scene-tellmar-road-v2.webp";
 import seekEncounterIcon from "../../assets/generated/ui-seek-encounter.png";
 import rewardArt from "../../assets/generated/scene-whitemarch-march-v2.webp";
-import atlasSpreadArt from "../../assets/generated/world-atlas-spread-v1.jpg";
 import "./exploration.css";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
@@ -324,7 +323,7 @@ function WorldAtlasPage({ state, landmarks, origin, onPick }) {
   );
 }
 
-function AdventureFolio({ state, page, quests, landmarks, origin, onPage, onClose, onPick }) {
+export function AdventureFolio({ state, page, quests, landmarks, origin, onPage, onClose, onPick }) {
   const tabs = [
     { id: "atlas", label: "World atlas", icon: "atlas", count: landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi)).length },
     { id: "quests", label: "Quest journal", icon: "journal", count: quests.length },
@@ -335,7 +334,7 @@ function AdventureFolio({ state, page, quests, landmarks, origin, onPage, onClos
     : "Landmarks, sanctuaries, and roads remembered by the party.";
   return (
     <div className="rpg-folio-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="rpg-folio" role="dialog" aria-modal="true" aria-labelledby="rpg-folio-title" style={{ "--folio-art": `url(${atlasSpreadArt})` }}>
+      <section className="rpg-folio" role="dialog" aria-modal="true" aria-labelledby="rpg-folio-title">
         <header className="rpg-folio-hero">
           <button onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label={`Close ${title.toLowerCase()}`}><Icon name="close" size={20} /></button>
           <div className="rpg-folio-identity">
@@ -353,7 +352,7 @@ function AdventureFolio({ state, page, quests, landmarks, origin, onPage, onClos
             ))}
           </div>
         </header>
-        <div key={page} id={`rpg-folio-panel-${page}`} className="rpg-folio-body" role="tabpanel" aria-labelledby={`rpg-folio-tab-${page}`}>
+        <div key={page} id={`rpg-folio-panel-${page}`} className={`rpg-folio-body rpg-folio-body--${page}`} role="tabpanel" aria-labelledby={`rpg-folio-tab-${page}`}>
           {page === "quests"
             ? <QuestJournalPage quests={quests} current={origin} onPick={onPick} />
             : <WorldAtlasPage state={state} landmarks={landmarks} origin={origin} onPick={onPick} />}
