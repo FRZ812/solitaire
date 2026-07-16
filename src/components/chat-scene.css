@@ -528,7 +528,7 @@
   line-height: 1;
 }
 .story-input__sending { display: flex; align-items: center; gap: 2px; }
-.story-input__sending i { width: 3px; height: 3px; border-radius: 50%; background: var(--scene-highlight); animation: sending-dot .9s ease-in-out infinite alternate; }
+.story-input__sending i { width: 3px; height: 3px; border-radius: 50%; background: var(--scene-deep, #071928); animation: sending-dot .9s ease-in-out infinite alternate; }
 .story-input__sending i:nth-child(2) { animation-delay: .16s; }
 .story-input__sending i:nth-child(3) { animation-delay: .32s; }
 

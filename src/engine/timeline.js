@@ -65,10 +65,9 @@ export function turnForBeatIndex(state, beatIndex) {
   return -1;
 }
 
-// The checkpoint a PLAYER message kicked off: its narrator beats begin right
-// after the player bubble, so the turn's beatsLen === playerBeatIndex + 1. -1 if
-// none (e.g. a message whose turn produced no rewritable text). Used to rewind
-// from a player bubble — keeping the message, dropping its response and after.
+// The checkpoint a PLAYER message contributed to. A manual run may consume one
+// bubble or a consecutive queue; return the shared turn for any of them. -1 means
+// the message is still pending (or produced no rewritable text).
 export function turnStartedAt(state, beatIndex) {
   if (state.beats?.[beatIndex]?.type !== "player") return -1;
   const turns = state.turns || [];
