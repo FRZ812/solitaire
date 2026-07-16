@@ -96,7 +96,7 @@ describe("applyBeat — needs depletion", () => {
 });
 
 describe("applyBeat — authored character presentation", () => {
-  it("persists class, subclass, portrait key, and character hooks in both player records", () => {
+  it("persists class, subclass, portrait key, character hooks, and authored mastery", () => {
     const profile = {
       voice: "Quiet and exact.",
       complication: "An oath is coming due.",
@@ -106,12 +106,15 @@ describe("applyBeat — authored character presentation", () => {
       character_setup: {
         name: "Bram", race: "human", profession: "assassin", subclass: "shadowblade",
         templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
+        proficiencies: { spellcasting: 1350, invented: 99 },
       },
     });
     const wanderer = next.world.codex.characters.wanderer;
     expect(next.character).toMatchObject({
       profession: "assassin", subclass: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
+      proficiencies: { spellcasting: 1350 },
     });
+    expect(next.character.proficiencies).not.toHaveProperty("invented");
     expect(wanderer).toMatchObject({
       profession: "assassin", subclass: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
     });

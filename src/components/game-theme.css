@@ -1343,6 +1343,15 @@
   background: linear-gradient(110deg, rgba(29, 70, 97, 0.5), rgba(4, 9, 19, 0.62));
 }
 
+.arsenal-card--spell {
+  border-color: color-mix(in srgb, var(--arsenal-tone) 54%, rgba(151, 112, 196, .34));
+  background: linear-gradient(112deg, rgba(70, 48, 102, .34), rgba(4, 9, 19, .58));
+}
+
+.arsenal-card--spell.is-open {
+  background: linear-gradient(112deg, rgba(83, 55, 119, .44), rgba(4, 9, 19, .64));
+}
+
 .arsenal-card__icon {
   width: 31px;
   height: 31px;
@@ -1351,6 +1360,39 @@
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--arsenal-tone) 44%, transparent);
   background: color-mix(in srgb, var(--arsenal-tone) 10%, transparent);
+}
+
+.arsenal-card__icon[data-tier="mythical"] {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--arsenal-tone) 42%, transparent);
+}
+
+.arsenal-card__icon[data-tier="divine"] {
+  border-color: rgba(255, 244, 191, .84);
+  background: radial-gradient(circle, rgba(255, 248, 213, .18), rgba(231, 185, 94, .04) 64%, transparent 72%);
+  box-shadow:
+    0 0 0 1px rgba(255, 250, 226, .26),
+    0 0 15px 3px rgba(255, 242, 184, .56),
+    0 0 28px rgba(176, 214, 255, .22);
+  animation: arsenal-divine-frame 2.8s ease-in-out infinite;
+}
+
+@keyframes arsenal-divine-frame {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 250, 226, .24),
+      0 0 13px 2px rgba(255, 242, 184, .48),
+      0 0 24px rgba(176, 214, 255, .16);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(255, 250, 226, .5),
+      0 0 20px 5px rgba(255, 242, 184, .72),
+      0 0 36px rgba(176, 214, 255, .3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arsenal-card__icon { animation: none; }
 }
 
 .arsenal-card__body {

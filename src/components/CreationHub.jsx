@@ -16,6 +16,15 @@ import { resolveCharacterPortrait } from "./character-portrait-assets.js";
 
 const isHumanRace = (r) => r === "human";
 
+const PORTRAIT_FOCUS = Object.freeze({
+  "dragon-ascendant": { card: "16%", detail: "10%" },
+  "enchanter-tyrant": { card: "14%", detail: "8%" },
+});
+
+function portraitFocus(templateId, surface) {
+  return PORTRAIT_FOCUS[templateId]?.[surface];
+}
+
 // Power rungs for the pick-and-play roster. The full authored company is the
 // default view; these become quick filters for players who want a power band.
 const TEMPLATE_TIERS = [
@@ -100,7 +109,13 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
     <div className="template-detail" style={{ "--tier-accent": tierMeta.accent }}>
       <div className="template-detail__inner">
         <header className="template-detail__hero">
-          <img src={resolveCharacterPortrait(tmpl, rosterArtwork)} alt="" draggable="false" decoding="async" />
+          <img
+            src={resolveCharacterPortrait(tmpl, rosterArtwork)}
+            alt=""
+            draggable="false"
+            decoding="async"
+            style={{ "--portrait-detail-focus-y": portraitFocus(tmpl.id, "detail") }}
+          />
           <div className="template-detail__hero-wash" aria-hidden="true" />
           <div className="template-detail__toolbar">
             <button className="creation-back" type="button" onClick={onBack} disabled={busy}>
@@ -156,6 +171,22 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
             </div>
             {openAttr && <AttributeDetail attrKey={openAttr} value={s.attributes[openAttr] ?? 0} />}
           </Section>
+
+          {(s.skills || []).length > 0 && (
+            <Section title="Social skills" hint="used in narrative checks">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {s.skills.map((skill) => (
+                  <span
+                    key={skill.id}
+                    title={skill.desc || undefined}
+                    style={{ ...tagPill, color: colors.parchmentLight, backgroundColor: "rgba(126,84,151,0.17)", border: "1px solid rgba(191,139,223,0.32)", textTransform: "none", letterSpacing: 0 }}
+                  >
+                    {skill.name || skill.id} <strong style={{ color: "#d9a9f3" }}>{skill.rating}</strong>
+                  </span>
+                ))}
+              </div>
+            </Section>
+          )}
 
           <Section title="Abilities" hint="tap for what they do">
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
@@ -228,7 +259,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
     if (activeTier.id !== "all" && (tmpl.tier || "standard") !== activeTier.id) return false;
     if (role !== "all" && tmpl.role !== role) return false;
     if (!normalizedSearch) return true;
-    return [tmpl.label, tmpl.role, tmpl.concept, tmpl.story, tmpl.setup.name, tmpl.setup.profession, tmpl.setup.race]
+    return [tmpl.label, tmpl.role, tmpl.concept, tmpl.story, tmpl.setup.name, tmpl.setup.profession, tmpl.setup.race, ...(tmpl.setup.skills || []).map((skill) => skill.name || skill.id)]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(normalizedSearch));
   });
@@ -337,7 +368,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 placeholder="Search name, class, subclass, kindred…"
               />
             </label>
-            <div className="creation-role-filters no-scrollbar" role="toolbar" aria-label="Filter by combat role">
+            <div className="creation-role-filters no-scrollbar" role="toolbar" aria-label="Filter by playstyle">
               {ROLE_FILTERS.map((value) => (
                 <button
                   key={value}
@@ -379,7 +410,14 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 disabled={busy}
               >
                 <span className="creation-card__portrait" aria-hidden="true">
-                  <img src={resolveCharacterPortrait(tmpl, rosterArtwork)} alt="" draggable="false" loading="lazy" decoding="async" />
+                  <img
+                    src={resolveCharacterPortrait(tmpl, rosterArtwork)}
+                    alt=""
+                    draggable="false"
+                    loading="lazy"
+                    decoding="async"
+                    style={{ "--portrait-card-focus-y": portraitFocus(tmpl.id, "card") }}
+                  />
                   <ProfessionIcon className="creation-card__class-badge" templateId={tmpl.id} profession={tmpl.setup.profession} size="small" decorative />
                 </span>
                 <span className="creation-card__body">

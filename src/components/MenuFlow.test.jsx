@@ -53,10 +53,10 @@ describe("front-of-game menu flow", () => {
     );
 
     expect(html.match(/role="tab"/g)).toHaveLength(7);
-    expect(html.match(/class="creation-card"/g)).toHaveLength(23);
+    expect(html.match(/class="creation-card"/g)).toHaveLength(27);
     expect(html).toContain("Choose your power fantasy");
     expect(html).toContain("Sets tone &amp; challenge");
-    expect(html).toContain("All: 23 lives");
+    expect(html).toContain("All: 27 lives");
     expect(html).toContain("Standard: Grounded");
     expect(html.indexOf("Choose your power fantasy")).toBeLessThan(html.indexOf("Name your traveller"));
     expect(html).toContain("Bram Coltaine");

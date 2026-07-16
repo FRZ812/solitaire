@@ -6,13 +6,14 @@ import { itemTemplate } from "./catalog.js";
 import { getAbilityDef } from "./abilities.js";
 import { CHARACTER_PORTRAITS } from "../components/character-portrait-assets.js";
 import { characterSubclass } from "./character-subclasses.js";
+import { ratingFromXp } from "./proficiencies.js";
 
 describe("authored character templates", () => {
   it("keeps every ready-made character unique and fully authored", () => {
-    expect(CHARACTER_TEMPLATES).toHaveLength(23);
-    expect(new Set(CHARACTER_TEMPLATES.map((template) => template.id)).size).toBe(23);
-    expect(new Set(CHARACTER_TEMPLATES.map((template) => template.setup.name)).size).toBe(23);
-    expect(new Set(CHARACTER_TEMPLATES.map((template) => template.portraitKey)).size).toBe(23);
+    expect(CHARACTER_TEMPLATES).toHaveLength(27);
+    expect(new Set(CHARACTER_TEMPLATES.map((template) => template.id)).size).toBe(27);
+    expect(new Set(CHARACTER_TEMPLATES.map((template) => template.setup.name)).size).toBe(27);
+    expect(new Set(CHARACTER_TEMPLATES.map((template) => template.portraitKey)).size).toBe(27);
     for (const template of CHARACTER_TEMPLATES) {
       expect(template.voice, `${template.id} voice`).toBeTruthy();
       expect(template.complication, `${template.id} complication`).toBeTruthy();
@@ -44,6 +45,18 @@ describe("authored character templates", () => {
     for (const template of CHARACTER_TEMPLATES) {
       if (template.setup.subclass) expect(template.setup.subclass).not.toBe(template.setup.profession);
     }
+  });
+
+  it("gives trained caster templates power-appropriate spellcasting mastery", () => {
+    const devout = CHARACTER_TEMPLATES.find((template) => template.id === "devout");
+    const hedgeMage = CHARACTER_TEMPLATES.find((template) => template.id === "hedge-mage");
+    const korvane = CHARACTER_TEMPLATES.find((template) => template.id === "enchanter-tyrant");
+    const sellsword = CHARACTER_TEMPLATES.find((template) => template.id === "sellsword");
+
+    expect(ratingFromXp(devout.setup.proficiencies.spellcasting)).toBe(1);
+    expect(ratingFromXp(hedgeMage.setup.proficiencies.spellcasting)).toBe(3);
+    expect(ratingFromXp(korvane.setup.proficiencies.spellcasting)).toBe(15);
+    expect(sellsword.setup.proficiencies?.spellcasting).toBeUndefined();
   });
 
   it("never aliases one generated portrait to a different authored character", () => {

@@ -372,8 +372,9 @@ export function ContinentAtlas({ state, origin, onPick }) {
   }
 
   function inspectLandmark(landmark) {
+    // Marker inspection is deliberately selection-only. Realm focus owns map
+    // filtering and recentering, so coupling it to a POI tap makes the map jump.
     setSelectedLandmarkId(landmark.id);
-    setFocusedRealmId(landmark.realmId || landmark.capitalOfRealmId || null);
   }
 
   function inspectRealm(realm) {
@@ -634,6 +635,7 @@ export function ContinentAtlas({ state, origin, onPick }) {
                 style={{ ...mapPercent(landmark.coord), "--marker-x": `${nudge[0]}px`, "--marker-y": `${nudge[1]}px` }}
                 onClick={() => inspectLandmark(landmark)}
                 aria-label={`Inspect ${landmark.name}, ${atlasLandmarkTypeLabel(landmark)}, ${REGION_DEFINITIONS[landmark.regionId]?.label || REALM_BY_ID[landmark.realmId]?.shortName || "uncharted lands"}, known by ${knownBy}`}
+                aria-controls="continent-atlas-place-detail"
                 aria-pressed={selected}
               >
                 <span aria-hidden="true">{LANDMARK_GLYPHS[landmark.kind] || "◆"}</span>
@@ -652,7 +654,7 @@ export function ContinentAtlas({ state, origin, onPick }) {
       </div>
 
       {selectedLandmark && (
-        <aside className="continent-atlas__detail" aria-live="polite" aria-label={`Atlas entry for ${selectedLandmark.name}`}>
+        <aside id="continent-atlas-place-detail" className="continent-atlas__detail" aria-live="polite" aria-label={`Atlas entry for ${selectedLandmark.name}`}>
           <div className="continent-atlas__detail-copy">
             <small>
               {selectedLandmarkType}

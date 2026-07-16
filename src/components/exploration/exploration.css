@@ -1196,8 +1196,9 @@
   background: rgba(42,34,25,.88);
   box-shadow: 0 2px 7px rgba(2,7,13,.72), 0 0 0 2px rgba(231,185,94,.09);
   transform: translate(calc(-50% + var(--marker-x, 0px)), calc(-50% + var(--marker-y, 0px)));
+  touch-action: manipulation;
   cursor: pointer;
-  transition: border-color .18s ease, box-shadow .18s ease, scale .18s ease;
+  transition: border-color .18s ease, box-shadow .18s ease;
 }
 .continent-atlas__marker[hidden] { display: none; }
 .continent-atlas__marker.is-legend { color: #e3d5ff; border-color: rgba(206,183,246,.86); background: rgba(47,35,67,.9); box-shadow: 0 2px 7px rgba(2,7,13,.72), 0 0 0 2px rgba(190,152,235,.1); }
@@ -1209,7 +1210,7 @@
 .continent-atlas__marker.is-category-lore { width: 17px; height: 17px; color: #cbd8b0; border-style: dashed; border-color: rgba(194,215,158,.7); background: rgba(35,54,38,.9); }
 .continent-atlas__marker.is-checkpoint { box-shadow: 0 2px 7px rgba(2,7,13,.76), 0 0 0 3px rgba(123,190,194,.15); }
 .continent-atlas__marker.is-realm-muted { opacity: .27; filter: saturate(.35); }
-.continent-atlas__marker.is-selected { z-index: 11; border-color: #fff8e5; box-shadow: 0 3px 10px rgba(2,7,13,.84), 0 0 0 4px rgba(231,185,94,.28); scale: 1.12; }
+.continent-atlas__marker.is-selected { z-index: 11; border-color: #fff8e5; box-shadow: 0 3px 10px rgba(2,7,13,.84), 0 0 0 4px rgba(231,185,94,.28); }
 .continent-atlas__marker > span { font: normal 10px/1 Georgia, serif; }
 .continent-atlas__marker > b {
   position: absolute;
@@ -1232,13 +1233,20 @@
 }
 .continent-atlas__marker > b > span { overflow: hidden; display: block; font: 700 8px/1.15 system-ui, sans-serif; letter-spacing: .02em; text-overflow: ellipsis; white-space: nowrap; }
 .continent-atlas__marker > b > small { margin-top: 3px; overflow: hidden; display: block; color: rgba(191,213,214,.68); font: 700 6.5px/1.15 system-ui, sans-serif; letter-spacing: .04em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
-.continent-atlas__marker:hover,
-.continent-atlas__marker:focus-visible { z-index: 10; border-color: #fff3c6; box-shadow: 0 3px 9px rgba(2,7,13,.8), 0 0 0 3px rgba(231,185,94,.2); scale: 1.08; }
+.continent-atlas__marker:focus-visible { z-index: 10; border-color: #fff3c6; box-shadow: 0 3px 9px rgba(2,7,13,.8), 0 0 0 3px rgba(231,185,94,.2); }
 .continent-atlas__marker:focus-visible { outline: 2px solid #fff3c6; outline-offset: 2px; }
-.continent-atlas__marker:hover > b,
 .continent-atlas__marker:focus-visible > b { opacity: 1; transform: translate(-50%, 0); }
 .continent-atlas__marker.is-selected > b { opacity: 1; transform: translate(-50%, 0); }
-.continent-atlas.is-expanded .continent-atlas__marker.is-major:not(.is-realm-muted) > b { opacity: .82; transform: translate(-50%, 0); }
+
+@media (hover: hover) and (pointer: fine) {
+  .continent-atlas__marker:hover { z-index: 10; border-color: #fff3c6; box-shadow: 0 3px 9px rgba(2,7,13,.8), 0 0 0 3px rgba(231,185,94,.2); }
+  .continent-atlas__marker:hover > b { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .continent-atlas__marker > b,
+  .continent-atlas__marker.is-selected > b { display: none; }
+}
 
 .continent-atlas__position {
   position: absolute;

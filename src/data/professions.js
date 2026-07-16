@@ -34,6 +34,8 @@ export const PROFESSIONS = Object.freeze({
   warlock: { id: "warlock", name: "Demon-Warlock", role: "Warlock", iconKey: "demon-warlock", description: "A binder who chains infernal power and accepts every debt that power demands." },
   "dragon-ascendant": { id: "dragon-ascendant", name: "Dragon-Ascendant", role: "Demigod", iconKey: "dragon-ascendant", description: "A drake-blooded mortal whose buried wyrm-line has awakened into near-divine dominion." },
   "enchanter-tyrant": { id: "enchanter-tyrant", name: "Enchanter-Tyrant", role: "God-Tyrant", iconKey: "enchanter-tyrant", description: "A sovereign will that conquers by making obedience feel like one's own idea." },
+  envoy: { id: "envoy", name: "Envoy", role: "Face", iconKey: "envoy", description: "A practiced negotiator who wins passage, terms, and loyalty through protocol, empathy, leverage, and a well-timed truth." },
+  courtier: { id: "courtier", name: "Courtier", role: "Face", iconKey: "courtier", description: "A social operator who trades in attention, introductions, flirtation, status, and secrets instead of force." },
 });
 
 export function professionRecord(id) {
