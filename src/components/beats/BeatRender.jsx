@@ -1,11 +1,14 @@
 import React from "react";
 import { Icon } from "../Icon.jsx";
+import { narratorModelLabel } from "../../engine/narrator-models.js";
 
-function Thinking({ text }) {
+function Thinking({ text, model }) {
   if (!text) return null;
+  const modelLabel = narratorModelLabel(model);
   return (
     <details className="beat-thinking fade-in">
       <summary>Behind the veil</summary>
+      {modelLabel && <div className="beat-thinking__model">{modelLabel}</div>}
       <div>{text}</div>
     </details>
   );
@@ -45,7 +48,7 @@ export function BeatRender({ beat, onMenu }) {
       return (
         <Pressable onMenu={onMenu}>
           <article className="beat beat--narration fade-in">
-            <Thinking text={beat.thinking} />
+            <Thinking text={beat.thinking} model={beat.model} />
             {beat.timeStamp && <div className="beat__time">{beat.timeStamp}</div>}
             <div className="beat__prose">{beat.content}</div>
             {beat.truncated && <div className="beat__aside">— the narrator was cut short despite a retry. Long-press to rewrite.</div>}
@@ -77,7 +80,7 @@ export function BeatRender({ beat, onMenu }) {
       return (
         <Pressable onMenu={onMenu}>
           <>
-            <Thinking text={beat.thinking} />
+            <Thinking text={beat.thinking} model={beat.model} />
             <article className="beat beat--dialogue fade-in">
               <div className="beat-portrait" aria-hidden="true"><span>{(beat.name || "?").trim().charAt(0).toUpperCase()}</span></div>
               <div className="beat-dialogue__copy">

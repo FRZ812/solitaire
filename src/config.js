@@ -1,6 +1,11 @@
 // Top-level configuration constants.
 export const MODEL = "claude-opus-4-7";
 export const HISTORY_LIMIT = 100;
+// Durable facts recorded via the narrator's `remember` tool (see
+// summarizeMemoryBank in engine/api.js). Oldest facts drop off once the bank
+// is this full — the narrator is instructed to only record what's worth this
+// permanence, so this is a generous ceiling, not an expected steady state.
+export const MEMORY_BANK_LIMIT = 80;
 export const STORAGE_KEY = "solitaire-state-v14";
 
 // v12 scale: hexes are ~250m so each tile is a single concrete vantage rather

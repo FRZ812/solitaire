@@ -911,7 +911,6 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
             )}
             {entry.common && <span>Baseline</span>}
             {entry.kind === "player" && <span>You</span>}
-            {entry.playable && <span>Playable</span>}
             {isTracked && <span>Tracked</span>}
             {subclass && <span>Subclass · {subclass.label}</span>}
             {kind === "skills" && typeof entry.rating === "number" && <span>Rating {entry.rating}</span>}

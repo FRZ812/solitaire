@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 
 import { STORAGE_KEY, originLabel, SIGHT_RADIUS, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED, WORLD_MARCH_LIMIT } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
@@ -16,6 +16,7 @@ import {
   turnForBeatIndex, turnStartedAt,
 } from "./engine/timeline.js";
 import { withPortraitOverride } from "./engine/portrait-overrides.js";
+import { applyStoryFontScale } from "./engine/preferences.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./engine/attributes.js";
 import { equipItem, transferItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
@@ -89,7 +90,7 @@ import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
 import { advanceLiveNarrator, emptyLiveNarrator } from "./engine/live-narrator.js";
-import { pinStoryToBottom, storyIsAtBottom, touchRequestsOlder, wheelRequestsOlder } from "./components/storyScroll.js";
+import { pinStoryToBottom, storyDistanceFromBottom, touchRequestsOlder, wheelRequestsOlder } from "./components/storyScroll.js";
 import "./components/chat-scene.css";
 
 const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
@@ -346,8 +347,13 @@ export function Solitaire() {
     setStoryAtBottom(true);
   }
 
+  // A generous tolerance here — this drives the Latest button, which should
+  // only appear once the reader has drifted meaningfully from the bottom, not
+  // the instant a pixel of scroll happens.
+  const STORY_LATEST_THRESHOLD = 96;
+
   function syncStoryAtBottom(element = logRef.current) {
-    setStoryAtBottom(storyIsAtBottom(element));
+    setStoryAtBottom(storyDistanceFromBottom(element) <= STORY_LATEST_THRESHOLD);
   }
 
   function handleStoryWheel(event) {
@@ -409,6 +415,9 @@ export function Solitaire() {
   const [beatMode, setBeatMode] = useState("menu"); // "menu" | "rewrite" | "edit"
   const [rewriteText, setRewriteText] = useState("");
   const [editText, setEditText] = useState("");
+
+  // ----- QoL preferences (story text size etc.) applied as CSS vars on mount -----
+  useEffect(() => { applyStoryFontScale(); }, []);
 
   // ----- Auth subscription -----
   useEffect(() => {
@@ -578,7 +587,9 @@ export function Solitaire() {
 
   // Campaign hydration is the one intentional reset: a newly opened history
   // starts at its latest beat even if the previous campaign was scrolled up.
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so this runs before the browser paints —
+  // otherwise the reader sees a flash of the log at the top before it jumps.
+  useLayoutEffect(() => {
     if (!hydrated || !logRef.current) return;
     setStoryFollow(true);
     pinStory();

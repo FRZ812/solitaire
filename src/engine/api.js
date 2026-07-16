@@ -185,6 +185,14 @@ export function summarizeRumored() {
   return Object.values(grouped).map(r => `${r.name} (${r.kind}, ${r.direction})`).join("; ");
 }
 
+// Facts the narrator chose to persist via the `remember` tool (independent of
+// the per-character BONDS & MEMORIES above, and of the rolling apiHistory
+// window — this is what lets it recall something from turn 3 at turn 300).
+export function summarizeMemoryBank(memories) {
+  if (!memories?.length) return "(nothing recorded yet)";
+  return memories.map((m) => `- ${m}`).join("\n");
+}
+
 export function buildStateContext(state) {
   const { character, time, world, party = [] } = state;
   const t = getTile(state, world.currentTile.x, world.currentTile.y);
@@ -302,6 +310,8 @@ ${summarizeGrantableItems()}]
 [KNOWLEDGE BY CHARACTER]
 ${summarizeKnowledge(world.codex)}
 [BONDS & MEMORIES — the player's standing with people met, and what each remembers of their shared history. Honour these on every re-encounter: a person who knows the player does NOT need re-introducing, and treats them per their bond. Deepen or sour them with relationship_changes; record significant shared moments with memory_updates.]
-${summarizeBonds(world.codex)}`;
+${summarizeBonds(world.codex)}
+[MEMORY BANK — durable facts you have chosen to remember with the \`remember\` tool: promises, secrets, unresolved threads, plot-relevant details that must survive long after this turn scrolls out of the conversation window. This list is authoritative and permanent — treat it as ground truth. Call \`remember\` again whenever something worth this durability happens; don't re-record what's already listed.]
+${summarizeMemoryBank(state.memories)}`;
 }
 

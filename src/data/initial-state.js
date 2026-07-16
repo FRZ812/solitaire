@@ -888,6 +888,11 @@ export function makeInitialState() {
       content: "There is no floor, yet you are standing. No sky, yet a pale grey light from nowhere at all. You remember nothing — not your name, not your face, not the road that ended here. This is the threshold: the hush between what was and what will be, where a soul must name itself before the world will take it back.\n\nA voice settles around you — everywhere and nowhere at once, patient and very old.\n\n\"Before you step into Avarra and it decides what to make of you, tell me who you are. Begin with your name, and the people and the place you call your own. Take your time — here, there is nothing but the telling.\"",
     }],
     apiHistory: [],
+    // Durable facts the narrator explicitly chose to remember via the `remember`
+    // tool (supabase/functions/narrate/index.ts) — survives independently of the
+    // rolling apiHistory window, injected into every state_context (see
+    // buildStateContext in engine/api.js). Newest last; capped in beat.js.
+    memories: [],
   };
 }
 
@@ -906,6 +911,7 @@ export function migrateCodex(state) {
       ? { ...turn, world: migrateLegacyWorldLocation(turn.world) }
       : turn);
   }
+  if (!Array.isArray(next.memories)) next.memories = [];
   if (!next.world.continentId) next.world.continentId = CONTINENT.id;
   if (!next.world.seed) next.world.seed = DEFAULT_WORLD_SEED;
   if (!next.world.generatorVersion) next.world.generatorVersion = WORLD_GENERATOR_VERSION;

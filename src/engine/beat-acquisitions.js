@@ -62,22 +62,33 @@ function removePartyMember(world, party, id, newTime, { dead = false, setHome = 
 // mutated in place (same objects the caller holds).
 export function applyAcquisitions({ state, beat, world, party, character, newTime, newBeats }) {
   // A companion the narrator just won over joins the party (the player talked
-  // them into it — see [APPROACH RECRUIT] doctrine).
+  // them into it — see [APPROACH RECRUIT] doctrine). Two shapes:
+  //  - a fixed-roster id (COMPANIONS, the tavern-board prospects): the engine
+  //    FORCES the authored template's stats/kit onto the codex entry — the
+  //    narrator may have flavored or even restatted them earlier, but the
+  //    template is authoritative, so the Company view matches the board.
+  //  - any OTHER id already on file in world.codex.characters (an improvised
+  //    NPC the narrator introduced via discoveries.characters — a freed
+  //    captive, a won-over ally, a dominated thrall): no authored template
+  //    exists to force, so they join exactly as already filed in the codex.
+  //    An id matching neither is dropped — the narrator invented it on the
+  //    spot with no prior discoveries.characters entry to back it.
   if (beat.recruit_companion?.id) {
-    const tmpl = COMPANIONS[beat.recruit_companion.id];
+    const id = beat.recruit_companion.id;
+    const tmpl = COMPANIONS[id];
     if (tmpl && !party.includes(tmpl.id)) {
       party = [...party, tmpl.id];
       // File a fresh entry for a new recruit; a returning companion keeps their
-      // accumulated memories + bond. Either way the engine FORCES the authored
-      // template's stats/kit (attributes, abilities, skills) onto the codex entry
-      // — the narrator may have flavored or even restatted them earlier, but the
-      // template is authoritative, so the Company view matches the tavern board.
+      // accumulated memories + bond.
       const existing = world.codex.characters[tmpl.id];
       const entry = existing
         ? { ...existing, attributes: tmpl.attributes, abilities: [...(tmpl.abilities || [])], skills: (tmpl.skills || []).map((s) => ({ ...s })) }
         : companionCodexEntry(tmpl);
       world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
       newBeats.push({ id: `join${Date.now()}`, type: "recruit", text: `${tmpl.name} joins your company.` });
+    } else if (!tmpl && !party.includes(id) && world.codex.characters[id]) {
+      party = [...party, id];
+      newBeats.push({ id: `join${Date.now()}`, type: "recruit", text: `${world.codex.characters[id].name || id} joins your company.` });
     }
   }
 

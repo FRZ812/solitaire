@@ -17,6 +17,7 @@ A voice settles around you — everywhere and nowhere at once, patient and very 
     },
     {
       "content": "You press on through the pass.",
+      "model": null,
       "thinking": null,
       "truncated": false,
       "type": "narration",
