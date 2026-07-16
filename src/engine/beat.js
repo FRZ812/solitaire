@@ -13,6 +13,7 @@ import { applyCreation } from "./beat-creation.js";
 import { applySurvivalTick } from "./beat-tick.js";
 import { applyWorldMovement, applyWorldTick } from "./beat-world.js";
 import { applyRelationships } from "./beat-relationships.js";
+import { storyFromResponse } from "./narrative-sequence.js";
 
 // applyBeat is the heart of the engine. Given the current state and a beat
 // from the narrator, it returns the next state plus the new beat entries to
@@ -41,15 +42,21 @@ export function applyBeat(state, beat, options = {}) {
     });
   }
   if (beat.roll) newBeats.push({ id: `r${Date.now()}`, type: "roll", ...beat.roll });
-  if (beat.narration) newBeats.push({ id: `n${Date.now()}`, type: "narration", content: beat.narration, thinking: beat._thinking || null, truncated: beat._truncated || false });
-
-  const dialogues = Array.isArray(beat.dialogues)
-    ? beat.dialogues
-    : (beat.dialogue ? [beat.dialogue] : []);
-  let dlgCounter = 0;
-  for (const d of dialogues) {
-    if (!d || !d.name || !d.line) continue;
-    newBeats.push({ id: `d${Date.now()}-${dlgCounter++}`, type: "dialogue", name: d.name, line: d.line });
+  const story = storyFromResponse(beat).filter((item) => (
+    item.type === "beat" ? !!item.text : !!item.name && !!item.line
+  ));
+  const storyStamp = Date.now();
+  for (let index = 0; index < story.length; index++) {
+    const item = story[index];
+    const shared = {
+      thinking: index === 0 ? (beat._thinking || null) : null,
+      truncated: index === story.length - 1 && !!beat._truncated,
+    };
+    if (item.type === "beat") {
+      newBeats.push({ id: `n${storyStamp}-${index}`, type: "narration", content: item.text, ...shared });
+    } else {
+      newBeats.push({ id: `d${storyStamp}-${index}`, type: "dialogue", name: item.name, line: item.line, ...shared });
+    }
   }
 
   let codex = state.world.codex;

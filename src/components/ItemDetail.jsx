@@ -116,6 +116,11 @@ function GiveToPicker({ item, id, charId, quantity, state, onTransfer, onClose }
     onTransfer?.(charId, dId, id, q);
     onClose();
   };
+  const selectedDestination = destinations.find((entry) => entry.id === destId);
+  const selectedRemaining = selectedDestination
+    ? selectedDestination.cap - loadOf(selectedDestination.char, selectedDestination.inv, codex.items)
+    : 0;
+  const canConfirm = !!selectedDestination && unitWt * qty <= selectedRemaining;
 
   return (
     <div style={{ ...insetBoxStyle, display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -164,9 +169,13 @@ function GiveToPicker({ item, id, charId, quantity, state, onTransfer, onClose }
       <div style={{ display: "flex", gap: "6px" }}>
         <button onClick={() => setOpen(false)} style={{ ...actionButtonStyle({ ghost: true }), flex: 1 }}>Cancel</button>
         <button
-          onClick={() => destId && confirm(destId, qty)}
-          disabled={!destId}
-          style={{ ...actionButtonStyle(), flex: 1, opacity: destId ? 1 : 0.4, cursor: destId ? "pointer" : "not-allowed" }}>
+          onClick={() => canConfirm && confirm(destId, qty)}
+          disabled={!canConfirm}
+          style={{
+            ...actionButtonStyle(), flex: 1,
+            opacity: canConfirm ? 1 : 0.4,
+            cursor: canConfirm ? "pointer" : "not-allowed",
+          }}>
           Give
         </button>
       </div>

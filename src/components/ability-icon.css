@@ -1,7 +1,10 @@
 .ability-icon {
   --ability-tier: #b8b0a0;
   --ability-mark-size: 22px;
-  --ability-rank-size: 8px;
+  --ability-glow-size: 14px;
+  --ability-glow-strength: 20%;
+  --ability-pulse-size: 16px;
+  --ability-pulse-strength: 28%;
   position: relative;
   display: inline-grid;
   flex: 0 0 auto;
@@ -15,15 +18,15 @@
   border-radius: 50%;
   box-shadow:
     0 0 0 2px rgba(9, 13, 14, .78),
-    0 0 14px color-mix(in srgb, var(--ability-tier) 20%, transparent),
+    0 0 var(--ability-glow-size) color-mix(in srgb, var(--ability-tier) var(--ability-glow-strength), transparent),
     inset 0 0 10px rgba(255, 255, 255, .08);
   isolation: isolate;
 }
 
-.ability-icon--small { width: 34px; --ability-mark-size: 16px; --ability-rank-size: 6px; }
-.ability-icon--medium { width: 48px; --ability-mark-size: 22px; --ability-rank-size: 7px; }
-.ability-icon--large { width: 72px; --ability-mark-size: 32px; --ability-rank-size: 9px; }
-.ability-icon--hero { width: 82px; max-width: 82px; --ability-mark-size: 34px; --ability-rank-size: 9px; }
+.ability-icon--small { width: 34px; --ability-mark-size: 16px; }
+.ability-icon--medium { width: 48px; --ability-mark-size: 22px; }
+.ability-icon--large { width: 72px; --ability-mark-size: 32px; }
+.ability-icon--hero { width: 82px; max-width: 82px; --ability-mark-size: 34px; }
 
 .ability-icon__school {
   position: absolute;
@@ -45,26 +48,64 @@
   filter: saturate(.9) contrast(1.04);
 }
 
-.ability-icon__tier {
-  position: absolute;
-  right: 7%;
-  bottom: 4%;
-  min-width: 31%;
-  padding: 1px 3px;
-  color: #101719;
-  font-family: Georgia, serif;
-  font-size: var(--ability-rank-size);
-  font-weight: 900;
-  line-height: 1.1;
-  text-align: center;
-  background: var(--ability-tier);
-  border: 1px solid rgba(255, 246, 224, .72);
-  border-radius: 999px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .72);
+.ability-icon[data-tier="rare"] {
+  --ability-glow-strength: 24%;
+}
+
+.ability-icon[data-tier="very-rare"] {
+  --ability-glow-size: 15px;
+  --ability-glow-strength: 28%;
+}
+
+.ability-icon[data-tier="epic"] {
+  --ability-glow-size: 16px;
+  --ability-glow-strength: 32%;
+  --ability-pulse-size: 18px;
+  --ability-pulse-strength: 40%;
+  animation: ability-icon-tier-pulse 5.6s ease-in-out infinite;
+}
+
+.ability-icon[data-tier="legendary"] {
+  --ability-glow-size: 17px;
+  --ability-glow-strength: 38%;
+  --ability-pulse-size: 20px;
+  --ability-pulse-strength: 47%;
+  animation: ability-icon-tier-pulse 5s ease-in-out infinite;
+}
+
+.ability-icon[data-tier="mythical"] {
+  --ability-glow-size: 18px;
+  --ability-glow-strength: 44%;
+  --ability-pulse-size: 22px;
+  --ability-pulse-strength: 54%;
+  animation: ability-icon-tier-pulse 4.5s ease-in-out infinite;
+}
+
+.ability-icon[data-tier="divine"] {
+  --ability-glow-size: 20px;
+  --ability-glow-strength: 50%;
+  --ability-pulse-size: 25px;
+  --ability-pulse-strength: 62%;
+  animation: ability-icon-tier-pulse 4s ease-in-out infinite;
+}
+
+@keyframes ability-icon-tier-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 2px rgba(9, 13, 14, .78),
+      0 0 var(--ability-glow-size) color-mix(in srgb, var(--ability-tier) var(--ability-glow-strength), transparent),
+      inset 0 0 10px rgba(255, 255, 255, .08);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(9, 13, 14, .72),
+      0 0 var(--ability-pulse-size) color-mix(in srgb, var(--ability-tier) var(--ability-pulse-strength), transparent),
+      inset 0 0 12px color-mix(in srgb, var(--ability-tier) 13%, rgba(255, 255, 255, .08));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ability-icon { transition: none; }
+  .ability-icon { animation: none; transition: none; }
 }
 
 /* Existing arsenal slots keep their layout dimensions while the raster school

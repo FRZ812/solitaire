@@ -23,8 +23,6 @@ const CATEGORY_POSITIONS = Object.freeze({
   magic: "50% 50%",
 });
 
-const TIER_SIGILS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
-
 export function AbilityIcon({
   ability,
   tierId = "common",
@@ -62,7 +60,6 @@ export function AbilityIcon({
       ) : (
         <span className="ability-icon__category" aria-hidden="true" />
       )}
-      <span className="ability-icon__tier" aria-hidden="true">{TIER_SIGILS[taxonomy.tier.order] || "I"}</span>
     </span>
   );
 }

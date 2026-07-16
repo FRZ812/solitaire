@@ -79,6 +79,35 @@ describe("PanelDeck", () => {
     expect(customHtml).toContain("Use original");
   });
 
+  it("surfaces a character's parent class and specific subclass in the dossier and Codex", () => {
+    const state = makeInitialState();
+    Object.assign(state.character, {
+      templateId: "shadowblade",
+      portraitKey: "template:shadowblade",
+      profession: "assassin",
+      subclass: "shadowblade",
+    });
+    Object.assign(state.world.codex.characters.wanderer, {
+      templateId: "shadowblade",
+      portraitKey: "template:shadowblade",
+      profession: "assassin",
+      subclass: "shadowblade",
+    });
+
+    const characterHtml = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="character" onClose={() => {}} handlers={{}} />,
+    );
+    const codexHtml = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="codex" onClose={() => {}} handlers={{}} />,
+    );
+
+    expect(characterHtml).toContain("Assassin");
+    expect(characterHtml).toContain("Class</em>Assassin");
+    expect(characterHtml).toContain("Subclass</em>Shadowblade");
+    expect(codexHtml).toContain("Assassin class · Shadowblade subclass");
+    expect(codexHtml).toContain("Subclass · Shadowblade");
+  });
+
   it("resolves a persistent NPC portrait override throughout the Codex", () => {
     const state = makeInitialState();
     state.portraitOverrides["demon-king"] = "data:image/webp;base64,TkPC";

@@ -99,11 +99,9 @@ export const MAGIC_SCHOOL_BY_ABILITY_ID = Object.freeze({
   dragonbreath: "evocation",
 
   // Illusion
-  shadowstep: "illusion",
   terrify: "illusion",
   "mass-terror": "illusion",
   "dread-aura": "illusion",
-  wraithstep: "illusion",
 
   // Necromancy
   curse: "necromancy",
@@ -115,6 +113,7 @@ export const MAGIC_SCHOOL_BY_ABILITY_ID = Object.freeze({
   "life-drain": "necromancy",
   "soul-rend": "necromancy",
   "blood-siphon": "necromancy",
+  wraithstep: "necromancy",
 
   // Transmutation
   haste: "transmutation",

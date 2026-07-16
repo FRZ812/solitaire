@@ -679,7 +679,7 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
       age: 200, agingMode: "power-extended", lifespanMultiplier: 4.0, attractiveness: 7,
       bond: "Armies are heavy; a single word is light. Mine is always obeyed.",
       attributes: { body: 14, reflex: 16, vigor: 22, mind: 28, wit: 22, presence: 26 },
-      appearance: { skin: "pale", hair: "black, silver at the temple", eyes: "cold and bright", build: "elegant", facial_hair: "trimmed" },
+      appearance: { skin: "pale and ageless", hair: "white, worn long and partly tied back", eyes: "cold blue-grey and bright", build: "elegant", facial_hair: "none" },
       base_appearance: "Tall and elegant. Pale skin, black hair silvered at the temples, cold bright eyes, a trimmed beard. Carries the bearing of a man around whom a room rearranges itself unbidden.",
       abilities: [{ id: "dominate", tier: "divine" }, { id: "charm", tier: "divine" }, { id: "meteor", tier: "divine" }, { id: "time-stop", tier: "divine" }, { id: "dispel", tier: "divine" }],
       items: [worn("tyrants-scepter"), worn("unseen-veil-armor"), worn("crown-dominion-helm"), worn("ascension-band-ring"), worn("heart-world-amulet")],
@@ -689,8 +689,16 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
   },
 ];
 
-export const CHARACTER_TEMPLATES = Object.freeze(CHARACTER_TEMPLATE_DEFINITIONS.map((template) => ({
-  ...template,
-  portraitKey: `template:${template.id}`,
-  ...(CHARACTER_HOOKS[template.id] || {}),
-})));
+export const CHARACTER_TEMPLATES = Object.freeze(CHARACTER_TEMPLATE_DEFINITIONS.map((template) => {
+  const subclass = template.setup.subclass
+    ?? (template.id !== template.setup.profession ? template.id : null);
+  return {
+    ...template,
+    portraitKey: `template:${template.id}`,
+    setup: {
+      ...template.setup,
+      ...(subclass ? { subclass } : {}),
+    },
+    ...(CHARACTER_HOOKS[template.id] || {}),
+  };
+}));

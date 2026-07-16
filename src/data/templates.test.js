@@ -5,6 +5,7 @@ import { RACES } from "./races.js";
 import { itemTemplate } from "./catalog.js";
 import { getAbilityDef } from "./abilities.js";
 import { CHARACTER_PORTRAITS } from "../components/character-portrait-assets.js";
+import { characterSubclass } from "./character-subclasses.js";
 
 describe("authored character templates", () => {
   it("keeps every ready-made character unique and fully authored", () => {
@@ -32,6 +33,16 @@ describe("authored character templates", () => {
       for (const item of template.setup.items || []) {
         expect(itemTemplate(item.itemId), `${template.id} item ${item.itemId}`).toBeTruthy();
       }
+    }
+  });
+
+  it("persists specific subclasses without repeating the parent profession", () => {
+    const shadowblade = CHARACTER_TEMPLATES.find((template) => template.id === "shadowblade");
+    expect(shadowblade.setup).toMatchObject({ profession: "assassin", subclass: "shadowblade" });
+    expect(characterSubclass({ templateId: "shadowblade", profession: "assassin" }))
+      .toEqual({ id: "shadowblade", label: "Shadowblade" });
+    for (const template of CHARACTER_TEMPLATES) {
+      if (template.setup.subclass) expect(template.setup.subclass).not.toBe(template.setup.profession);
     }
   });
 

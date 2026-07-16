@@ -79,7 +79,7 @@ describe("applyBeat — needs depletion", () => {
 });
 
 describe("applyBeat — authored character presentation", () => {
-  it("persists profession, portrait key, and character hooks in both player records", () => {
+  it("persists class, subclass, portrait key, and character hooks in both player records", () => {
     const profile = {
       voice: "Quiet and exact.",
       complication: "An oath is coming due.",
@@ -87,16 +87,16 @@ describe("applyBeat — authored character presentation", () => {
     };
     const next = applyBeat(fresh(), {
       character_setup: {
-        name: "Bram", race: "human", profession: "sellsword",
-        templateId: "sellsword", portraitKey: "template:sellsword", profile,
+        name: "Bram", race: "human", profession: "assassin", subclass: "shadowblade",
+        templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
       },
     });
     const wanderer = next.world.codex.characters.wanderer;
     expect(next.character).toMatchObject({
-      profession: "sellsword", templateId: "sellsword", portraitKey: "template:sellsword", profile,
+      profession: "assassin", subclass: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
     });
     expect(wanderer).toMatchObject({
-      profession: "sellsword", templateId: "sellsword", portraitKey: "template:sellsword", profile,
+      profession: "assassin", subclass: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
     });
   });
 });

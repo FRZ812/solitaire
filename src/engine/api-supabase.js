@@ -12,20 +12,21 @@ import { buildStateContext } from "./api.js";
 import { extractJSON } from "./json.js";
 import { SYSTEM_PROMPT } from "../system-prompt.js";
 import { getNarratorModel, getNarratorEffort } from "./narrator-models.js";
+import { storyTextLength } from "./narrative-sequence.js";
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/narrate`;
 
-// Retry hint prepended to userMsgRaw on attempt 1 when attempt 0's narration
+// Retry hint prepended to userMsgRaw on attempt 1 when attempt 0's story
 // arrived truncated (mid-stream cut by the model's safety filter, not the
 // token budget — server-side limit is 64k). Nudges the model to be terser.
 const RETRY_HINT_1 =
-  "[RETRY HINT: your previous response was cut short mid-stream; deliver this beat more concisely (target ≤ 300 words narration), same intent.]";
+  "[RETRY HINT: your previous response was cut short mid-stream; deliver this story sequence more concisely (target ≤ 300 player-facing words), same intent.]";
 
 // Stronger nudge on attempt 2: ask for a paraphrase in different words at an
 // even tighter budget. The [PLAYER ACTION] input is procedurally generated
 // and unlikely to be the trigger, so both retries act on the output side.
 const RETRY_HINT_2 =
-  "[RETRY HINT 2: previous attempt still cut short. Paraphrase your intended beat in different words — terse (≤ 150 words narration), avoid graphic embellishment, preserve the core action. Output well-formed JSON within budget.]";
+  "[RETRY HINT 2: previous attempt still cut short. Paraphrase your intended story sequence in different words — terse (≤ 150 player-facing words), avoid graphic embellishment, preserve the core action. Output well-formed JSON within budget.]";
 
 // onProgress (optional): called with chunks as they stream in from the edge
 // function. `{ thinking }` chunks fire as the model emits its reasoning trace;
@@ -39,7 +40,7 @@ const RETRY_HINT_2 =
 // cleanly, return immediately. If it arrives truncated (extractJSON salvage
 // path or unparseable text), silently re-call with RETRY_HINT_1 prepended.
 // If that retry also truncates, call once more with RETRY_HINT_2. After at
-// most three calls per turn, return the best-of-three by narration text
+// most three calls per turn, return the best-of-three by player-facing story
 // length (tie-breaks favor the later attempt, since it was asked for the
 // tersest output). onProgress fires through ALL attempts — the user may
 // see a "second take" replace the first if they're watching the stream.
@@ -94,20 +95,20 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
     return pickBest([attempt0.result, attempt1.result]);
   }
 
-  // All three truncated — return the best (longest narration). On a tie,
+  // All three truncated — return the best (longest story). On a tie,
   // pickBest returns the LATER attempt (terser hint was honored).
   return pickBest([attempt0.result, attempt1.result, attempt2.result]);
 }
 
-// Picks the attempt with the longest narration string. Ties go to the later
+// Picks the attempt with the longest player-facing story. Ties go to the later
 // attempt in the array (later = stronger retry hint, so likelier to be the
 // version the model meant to land on).
 function pickBest(results) {
   let best = results[0];
-  let bestLen = (best?.narration || "").length;
+  let bestLen = storyTextLength(best);
   for (let i = 1; i < results.length; i++) {
     const r = results[i];
-    const len = (r?.narration || "").length;
+    const len = storyTextLength(r);
     if (len >= bestLen) { best = r; bestLen = len; }
   }
   return best;
@@ -154,7 +155,7 @@ async function runOneAttempt({ session, state_context, history, userMsgRaw, onPr
     // again; if all attempts fail this way we surface the raw text.
     return {
       result: {
-        narration: text || "(The narrator stumbles.)",
+        story: [{ type: "beat", text: text || "(The narrator stumbles.)" }],
         minutes_passed: 1,
         _truncated: true,
         _raw: text, _thinking: thinking, _userMsg: userMsg,

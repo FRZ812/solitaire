@@ -45,8 +45,21 @@ describe("ability taxonomy", () => {
 
   it("keeps nonmagical abilities in their authored broad categories", () => {
     expect(abilityTaxonomy(getAbilityDef("basic-attack")).category).toBe(ABILITY_CATEGORIES.martial);
+    expect(abilityTaxonomy(getAbilityDef("shadowstep"))).toMatchObject({
+      category: ABILITY_CATEGORIES.martial,
+      magicSchool: null,
+      iconKey: "category:martial",
+    });
     expect(abilityTaxonomy(getAbilityDef("battle-focus")).category).toBe(ABILITY_CATEGORIES.survival);
     expect(abilityTaxonomy(getAbilityDef("talk")).category).toBe(ABILITY_CATEGORIES.social);
+  });
+
+  it("assigns supernatural grave techniques to necromancy rather than illusion", () => {
+    expect(abilityTaxonomy(getAbilityDef("wraithstep"))).toMatchObject({
+      categoryId: "magic",
+      magicSchool: MAGIC_SCHOOLS.necromancy,
+      iconKey: "magic:necromancy:common",
+    });
   });
 
   it("uses one stable icon identity per school and tier", () => {
@@ -68,6 +81,7 @@ describe("ability taxonomy", () => {
     expect(html).toContain('data-school="evocation"');
     expect(html).toContain('data-tier="rare"');
     expect(html).toContain('aria-label="Evocation magic · Rare"');
+    expect(html).not.toContain("ability-icon__tier");
   });
 
   it("keeps combat Haste canonical while applying its card tempo rules", () => {

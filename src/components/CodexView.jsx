@@ -20,6 +20,7 @@ import { RACES } from "../data/races.js";
 import { descriptorFor } from "../data/attractiveness.js";
 import { resolveCharacterPortrait } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
+import { characterSubclass } from "../data/character-subclasses.js";
 import codexCategoryAtlas from "../assets/generated/icon-atlases/codex-categories-atlas-v1.png";
 import { CODEX_PORTRAIT_IDS, resolveCodexPortrait } from "./codex-portrait-assets.js";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
@@ -852,13 +853,23 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename, portraitOverr
   const hasAttrs = kind === "characters" && entry.attributes;
   const narrativeAppearance = entry.base_appearance || (typeof entry.appearance === "string" ? entry.appearance : null);
   const structuredAppearance = kind === "characters" && entry.appearance && typeof entry.appearance === "object" ? entry.appearance : null;
+  const isCharacter = kind === "characters";
+  const subclass = isCharacter ? characterSubclass(entry) : null;
 
   // Brief one-line preview shown while collapsed (keeps the list scannable).
   const metaLine = kind === "characters"
-    ? [codex.races?.[entry.race]?.name || entry.race, entry.kind === "mount" ? entry.species : (codex.professions?.[entry.profession]?.name || entry.profession), originLabel(entry.origin)].filter(Boolean).join(" · ")
+    ? [
+        codex.races?.[entry.race]?.name || entry.race,
+        entry.kind === "mount"
+          ? entry.species
+          : ((codex.professions?.[entry.profession]?.name || entry.profession)
+              ? `${codex.professions?.[entry.profession]?.name || entry.profession} class`
+              : null),
+        subclass ? `${subclass.label} subclass` : null,
+        originLabel(entry.origin),
+      ].filter(Boolean).join(" · ")
     : "";
   const trunc = (s, n = 100) => { const t = (s || "").trim(); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
-  const isCharacter = kind === "characters";
   const summaryText = trunc(entry.description || narrativeAppearance || "", isCharacter ? 138 : 100);
   const preview = isCharacter ? summaryText : (metaLine || summaryText);
   const recordLabel = CODEX_TABS.find((tab) => tab.key === kind)?.label || kind;
@@ -900,6 +911,7 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename, portraitOverr
             )}
             {entry.common && <span>Baseline</span>}
             {entry.kind === "player" && <span>You</span>}
+            {subclass && <span>Subclass · {subclass.label}</span>}
             {kind === "skills" && typeof entry.rating === "number" && <span>Rating {entry.rating}</span>}
           </span>
           {!open && preview && <span className="codex-entry__preview">{preview}</span>}
@@ -926,11 +938,14 @@ export function CodexEntry({ entry, kind, codex, onScry, onRename, portraitOverr
         />
       )}
 
-      {kind === "characters" && (entry.race || entry.profession || entry.origin) && (
+      {kind === "characters" && (entry.race || entry.profession || subclass || entry.origin) && (
         <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginTop: "6px", marginBottom: "6px" }}>
           {[
             codex.races[entry.race]?.name || entry.race,
-            codex.professions[entry.profession]?.name || entry.profession,
+            (codex.professions[entry.profession]?.name || entry.profession)
+              ? `${codex.professions[entry.profession]?.name || entry.profession} class`
+              : null,
+            subclass ? `${subclass.label} subclass` : null,
             originLabel(entry.origin),
           ].filter(Boolean).join(" · ")}
         </div>
@@ -1061,7 +1076,8 @@ export function CodexView({ state, onClose, onScry, onRenameMount, onPortraitCha
         if (characterScope === "notable" && !IMPORTANT_CHARACTER_IDS.has(entry.id)) return false;
         if (characterScope === "mounts" && entry.kind !== "mount") return false;
         if (!query) return true;
-        return [entry.name, entry.race, entry.profession, entry.origin, entry.description, entry.base_appearance]
+        const subclass = characterSubclass(entry);
+        return [entry.name, entry.race, entry.profession, entry.subclass, subclass?.label, entry.origin, entry.description, entry.base_appearance]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()

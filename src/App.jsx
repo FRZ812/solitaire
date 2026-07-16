@@ -13,7 +13,7 @@ import { buildStateContext } from "./engine/api.js";
 import { recordTurn, stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt, editBeat, deleteBeat } from "./engine/timeline.js";
 import { withPortraitOverride } from "./engine/portrait-overrides.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./engine/attributes.js";
-import { equipItem, unequipItem } from "./engine/inventory.js";
+import { equipItem, transferItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
 import { lightTorch, lightLantern, extinguish, applyRest } from "./engine/tools.js";
@@ -801,7 +801,7 @@ export function Solitaire() {
       character_setup: {
         name: setup.name, bond: setup.bond, attributes: setup.attributes,
         abilities: setup.abilities || [], race: setup.race, subrace: setup.subrace || null,
-        origin: setup.origin, profession: setup.profession, gender: setup.gender,
+        origin: setup.origin, profession: setup.profession, subclass: setup.subclass || null, gender: setup.gender,
         age: setup.age, agingMode: setup.agingMode, lifespanMultiplier: setup.lifespanMultiplier,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
         base_appearance: setup.base_appearance, knows: setup.knows || [],
@@ -832,7 +832,8 @@ export function Solitaire() {
     ].filter(Boolean).join(", ");
     const originStr = originLabel(setup.origin);
     const backstory = [setup.backstory, ...(Array.isArray(setup.knows) ? setup.knows : [])].filter(Boolean).join(" ");
-    const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving INSIDE the walled capital of Whitemarch, in the press and clamour of the Grand Market's Grain Square (the city's heart, behind the Great Wall), grounding the scene in who they are, their origin, and what (from the backstory) has brought them to the city, then proceed as a normal first beat.`;
+    const calling = setup.subclass ? `${setup.subclass} ${setup.profession || "wanderer"}` : (setup.profession || "wanderer");
+    const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${calling}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving INSIDE the walled capital of Whitemarch, in the press and clamour of the Grand Market's Grain Square (the city's heart, behind the Great Wall), grounding the scene in who they are, their origin, and what (from the backstory) has brought them to the city, then proceed as a normal first beat.`;
     await runNarratorTurn(built, opener);
   }
 
@@ -1149,8 +1150,21 @@ export function Solitaire() {
     setDeckOpen(false);
   }
 
-  function handleEquip(itemId) { setState((s) => equipItem(s, itemId)); }
-  function handleUnequip(itemId) { setState((s) => unequipItem(s, itemId)); }
+  function handleEquip(charId, itemId) {
+    // Keep the one-argument form available for any legacy caller while the
+    // inventory menu supplies an explicit owner id.
+    const ownerId = itemId == null ? "wanderer" : charId;
+    const targetItemId = itemId == null ? charId : itemId;
+    setState((s) => equipItem(s, targetItemId, ownerId));
+  }
+  function handleUnequip(charId, itemId) {
+    const ownerId = itemId == null ? "wanderer" : charId;
+    const targetItemId = itemId == null ? charId : itemId;
+    setState((s) => unequipItem(s, targetItemId, ownerId));
+  }
+  function handleTransfer(fromCharId, toCharId, itemId, quantity) {
+    setState((s) => transferItem(s, fromCharId, toCharId, itemId, quantity).state);
+  }
 
   // ----- Town buildings: trader menus (buy / sell / talk) -----
 
@@ -2169,6 +2183,7 @@ export function Solitaire() {
             onPortraitChange: handlePortraitChange,
             // Inventory
             onEquip: handleEquip, onUnequip: handleUnequip, onUse: handleUse,
+            onTransfer: handleTransfer,
             onLightTorch: handleLightTorch, onLightLantern: handleLightLantern,
             onRest: (h) => { setDeckOpen(false); handleRest(h); },
             onBindRune: (id) => { setDeckOpen(false); setFusionRune(id); },
