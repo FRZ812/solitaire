@@ -7,10 +7,12 @@ describe("extractJSON truncated stream repair", () => {
   });
 
   it("closes nested containers in their actual reverse order", () => {
-    const parsed = extractJSON('{"narration":"Done","dialogues":[{"name":"Mira","line":"Do not turn');
+    const parsed = extractJSON('{"story":[{"type":"beat","text":"Done"},{"type":"dialogue","name":"Mira","line":"Do not turn');
     expect(parsed).toMatchObject({
-      narration: "Done",
-      dialogues: [{ name: "Mira", line: "Do not turn" }],
+      story: [
+        { type: "beat", text: "Done" },
+        { type: "dialogue", name: "Mira", line: "Do not turn" },
+      ],
       _truncated: true,
     });
   });

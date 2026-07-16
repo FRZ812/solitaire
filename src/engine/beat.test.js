@@ -30,6 +30,23 @@ describe("applyBeat — time & feed", () => {
     expect(next.beats.some((b) => b.type === "narration" && b.content === "The wind howls down the pass.")).toBe(true);
   });
 
+  it("appends story beats and dialogue in their authored chronological order", () => {
+    const base = fresh();
+    const next = applyBeat(base, { story: [
+      { type: "beat", text: "The keeper reaches beneath the counter." },
+      { type: "dialogue", name: "Keeper", line: "Two bedrolls." },
+      { type: "beat", text: "He binds the bundle with a square knot." },
+    ] });
+    const visible = next.beats.slice(base.beats.length).filter((b) => b.type === "narration" || b.type === "dialogue");
+
+    expect(visible.map((b) => b.type)).toEqual(["narration", "dialogue", "narration"]);
+    expect(visible.map((b) => b.content || b.line)).toEqual([
+      "The keeper reaches beneath the counter.",
+      "Two bedrolls.",
+      "He binds the bundle with a square knot.",
+    ]);
+  });
+
   it("treats the input state as immutable", () => {
     const base = fresh();
     const beatsLen = base.beats.length;
