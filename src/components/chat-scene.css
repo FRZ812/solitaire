@@ -405,6 +405,7 @@
 }
 .radial-meter__ring { position: relative; z-index: 1; }
 .radial-meter__icon { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.radial-meter--vitality .radial-meter__icon { transform: translateY(1px); }
 .radial-meter__value { margin-top: 1px; font-size: 8px; font-weight: 850; letter-spacing: .035em; line-height: 1; text-shadow: 0 1px 4px rgba(0,0,0,.62); white-space: nowrap; }
 .radial-meter:hover { transform: translateY(-2px); }
 
