@@ -1018,6 +1018,48 @@ function sampleContent(area, ecology, context, land, seed, x, y) {
   };
 }
 
+// Lightweight physical survey used by the interactive world atlas raster. It
+// resolves the same landform, hydrology, ecology, realm, and route layers as
+// sampleContinent while skipping province, content, and generated-site
+// sampling, so painting thousands of cells stays responsive. Terrain, land,
+// coast, and realm results must remain identical to sampleContinent — the
+// atlas is a projection of the world, never a second authority. Hidden
+// generated sites are deliberately absent from this sample.
+export function surveyAtlas(x, y, seed = DEFAULT_WORLD_SEED) {
+  const rawLandValue = continentValueAt(x, y, seed);
+  const { xmin, xmax, ymin, ymax } = CONTINENT.bounds;
+  const withinEnvelope = x >= xmin && x <= xmax && y >= ymin && y <= ymax;
+  const landValue = withinEnvelope && rawLandValue > 0
+    ? rawLandValue
+    : Math.min(rawLandValue, -0.0001);
+  const land = landValue > 0;
+  const realmId = realmIdAt(x, y, seed);
+  const realm = realmDefinition(realmId);
+  const regionId = regionIdAt(x, y, seed);
+  const region = regionDefinition(regionId);
+  const climate = climateAt(x, y, regionId, realmId, seed);
+  const ecologyId = ecologyIdFor({ landValue, ...climate }, region, realm);
+  let terrain = terrainForEcology(ecologyId, climate, region, realm, seed, x, y);
+  const route = routeAt(x, y);
+  const waterway = waterwayAt(x, y);
+  if (waterway) terrain = "water";
+  if (route && land) terrain = "road";
+  const authoredLandmark = landmarkAt(x, y);
+  const coast = land && (landValue < 0.065 || !!(authoredLandmark?.coastalFeatureId
+    && COASTAL_FEATURE_BY_ID.get(authoredLandmark.coastalFeatureId)));
+  return {
+    land,
+    coast,
+    terrain,
+    elevation: roundMetric(climate.elevation),
+    realmId,
+    regionId,
+    ecologyId,
+    routeId: route?.id || null,
+    waterwayId: waterway?.id || null,
+  };
+}
+
 // Full physical/cultural sample used by the tile generator and continent atlas.
 export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
   const rawLandValue = continentValueAt(x, y, seed);
