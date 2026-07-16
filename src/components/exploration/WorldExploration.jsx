@@ -141,19 +141,22 @@ function WorldGrid({ model, selection, journey, onPick, onJournal, onWayfinder, 
 
       {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 
-      {city && district && <div className="rpg-city-district-chip"><span aria-hidden="true">◆</span><small>{city}</small><b>{district}</b></div>}
-
-      {onSeekCombat && (
-        <button
-          onClick={onSeekCombat}
-          disabled={loading}
-          className="rpg-wild-encounter"
-          aria-label={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
-          title={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
-        >
-          <img src={seekEncounterIcon} alt="" />
-          <span><small>{city ? "Street encounter" : "Wild encounter"}</small><b>{city ? "Seek trouble" : "Seek a fight"}</b></span>
-        </button>
+      {(city && district || onSeekCombat) && (
+        <div className="rpg-map-corner-controls">
+          {city && district && <div className="rpg-city-district-chip"><span aria-hidden="true">◆</span><small>{city}</small><b>{district}</b></div>}
+          {onSeekCombat && (
+            <button
+              onClick={onSeekCombat}
+              disabled={loading}
+              className="rpg-wild-encounter"
+              aria-label={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
+              title={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
+            >
+              <img src={seekEncounterIcon} alt="" />
+              <span><small>{city ? "Street encounter" : "Wild encounter"}</small><b>{city ? "Seek trouble" : "Seek a fight"}</b></span>
+            </button>
+          )}
+        </div>
       )}
     </main>
   );

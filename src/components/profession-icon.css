@@ -1,9 +1,6 @@
 .profession-icon {
-  /* The authored panels sit slightly down/right inside their nominal 5×5
-   * atlas cells. Keep every crest centred on the badge frame, independent of
-   * its cell position. */
-  --profession-art-x: -4%;
-  --profession-art-y: -4%;
+  --profession-art-x: 0%;
+  --profession-art-y: 0%;
   position: relative;
   display: inline-grid;
   flex: 0 0 auto;
@@ -28,6 +25,33 @@
   transform: translate(var(--profession-art-x), var(--profession-art-y));
   filter: saturate(.92) contrast(1.04);
 }
+
+/* Each authored medallion has a slightly different centre inside its atlas
+ * cell. These offsets align the circular crest frame, not the irregular
+ * weapon or character silhouette inside it. */
+.profession-icon[data-atlas-cell="sellsword"] { --profession-art-x: -3.2%; --profession-art-y: -2.8%; }
+.profession-icon[data-atlas-cell="reaver"] { --profession-art-x: -3.6%; --profession-art-y: -3.2%; }
+.profession-icon[data-atlas-cell="ranger"] { --profession-art-x: -.8%; --profession-art-y: -4.8%; }
+.profession-icon[data-atlas-cell="cutthroat"] { --profession-art-x: 1.6%; --profession-art-y: -4.4%; }
+.profession-icon[data-atlas-cell="devout"] { --profession-art-x: 6%; --profession-art-y: -6.4%; }
+.profession-icon[data-atlas-cell="hedge-mage"] { --profession-art-x: -4.4%; --profession-art-y: -4.8%; }
+.profession-icon[data-atlas-cell="knight-errant"] { --profession-art-x: -2.8%; --profession-art-y: -5.6%; }
+.profession-icon[data-atlas-cell="war-priest"] { --profession-art-x: 0%; --profession-art-y: -3.6%; }
+.profession-icon[data-atlas-cell="duelist"] { --profession-art-x: 2%; --profession-art-y: -5.6%; }
+.profession-icon[data-atlas-cell="beast-warden"] { --profession-art-x: 3.6%; --profession-art-y: -6.8%; }
+.profession-icon[data-atlas-cell="war-captain"] { --profession-art-x: -4.4%; --profession-art-y: -5.2%; }
+.profession-icon[data-atlas-cell="battle-archmage"] { --profession-art-x: -3.2%; --profession-art-y: -6%; }
+.profession-icon[data-atlas-cell="shadowblade"] { --profession-art-x: -.4%; --profession-art-y: -5.6%; }
+.profession-icon[data-atlas-cell="champion-paladin"] { --profession-art-x: 1.6%; --profession-art-y: -4.8%; }
+.profession-icon[data-atlas-cell="dragon-hunter"] { --profession-art-x: 2.4%; --profession-art-y: -5.2%; }
+.profession-icon[data-atlas-cell="high-sorcerer"] { --profession-art-x: -4.8%; --profession-art-y: -5.6%; }
+.profession-icon[data-atlas-cell="warlord"] { --profession-art-x: -.8%; --profession-art-y: -5.6%; }
+.profession-icon[data-atlas-cell="fae-touched"] { --profession-art-x: 1.6%; --profession-art-y: -6.4%; }
+.profession-icon[data-atlas-cell="archmage-ascendant"] { --profession-art-x: 2%; --profession-art-y: -5.6%; }
+.profession-icon[data-atlas-cell="undying-champion"] { --profession-art-x: 6%; --profession-art-y: -4.4%; }
+.profession-icon[data-atlas-cell="demon-warlock"] { --profession-art-x: -3.2%; --profession-art-y: -1.2%; }
+.profession-icon[data-atlas-cell="dragon-ascendant"] { --profession-art-x: -2.4%; --profession-art-y: 0%; }
+.profession-icon[data-atlas-cell="enchanter-tyrant"] { --profession-art-x: -.4%; --profession-art-y: 1.2%; }
 
 .profession-icon--tiny { width: 28px; }
 .profession-icon--small { width: 36px; }

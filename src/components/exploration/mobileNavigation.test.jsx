@@ -24,6 +24,8 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain('aria-label="Open world atlas"');
     expect(html).toContain('aria-label="Open quest journal"');
     expect(html).toContain("Whitemarch · unified city map");
+    expect(html).toContain('class="rpg-map-corner-controls"');
+    expect(html).toContain('class="rpg-city-district-chip"');
     expect(html).not.toContain("Map cursor controls");
     expect(html).not.toContain("Choose a destination");
     expect(html).not.toContain("rpg-trail-choices");
