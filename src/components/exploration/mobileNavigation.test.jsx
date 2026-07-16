@@ -36,7 +36,7 @@ describe("mobile map navigation markup", () => {
     expect(html).not.toContain("rpg-trail-choices");
   });
 
-  it("gives the atlas a dedicated scrolling panel and only one parchment map background", () => {
+  it("renders the interactive atlas in its dedicated folio panel", () => {
     const state = makeInitialState();
     const model = buildExplorationModel(state);
     const html = renderToStaticMarkup(
@@ -53,7 +53,8 @@ describe("mobile map navigation markup", () => {
     );
 
     expect(html).toContain('class="rpg-folio-body rpg-folio-body--atlas"');
-    expect(html.match(/world-atlas-spread-v1\.jpg/g)).toHaveLength(1);
+    expect(html).toContain('class="world-atlas"');
+    expect(html).toContain('class="rpg-folio-hero rpg-folio-hero--atlas"');
     expect(html).toContain("atlas-folio-hero-v1.png");
     expect(html).not.toContain("quest-journal-folio-hero-v1.png");
     expect(html).not.toContain("--folio-art");
@@ -78,7 +79,6 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain('class="rpg-folio-hero rpg-folio-hero--quests"');
     expect(html).toContain("quest-journal-folio-hero-v1.png");
     expect(html).not.toContain("atlas-folio-hero-v1.png");
-    expect(html).not.toContain("world-atlas-spread-v1.jpg");
   });
 
 });

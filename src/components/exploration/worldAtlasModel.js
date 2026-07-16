@@ -13,7 +13,7 @@ import {
 } from "../../data/continent.js";
 import { WHITEMARCH_CAPITAL } from "../../data/whitemarch-capital.js";
 import { checkpointAt, landmarkAt } from "../../engine/world-generation.js";
-import { getTile, hexDistance, isSeen, isVisited, pathMinutes } from "../../engine/world.js";
+import { hexDistance, isSeen, isVisited, pathMinutes } from "../../engine/world.js";
 import { pathRiskPercent } from "../../engine/encounters.js";
 import { planAtlasJourney } from "./atlasModel.js";
 
@@ -355,21 +355,4 @@ export function summarizeAtlasJourney(state, destination, maxLeg = 48) {
     waypoints: journeyWaypoints(journey.fullPath),
     checkpoints: journeyCheckpoints(journey.fullPath),
   };
-}
-
-// Detail for an arbitrary charted point (tap on open terrain). The atlas may
-// name the realm, region, and physical ground; identity beyond that belongs to
-// travel and discovery.
-export function describeAtlasPoint(survey, tileName = null) {
-  if (!survey) return null;
-  if (!survey.land) return { title: tileName || "Open sea", subtitle: "Uncharted water", passable: false };
-  return {
-    title: tileName || "Open country",
-    subtitle: null,
-    passable: survey.terrain !== "water" && survey.terrain !== "impassable",
-  };
-}
-
-export function atlasTileFor(state, coord) {
-  return getTile(state, coord.x, coord.y);
 }
