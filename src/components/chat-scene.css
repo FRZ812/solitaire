@@ -120,36 +120,16 @@
   isolation: isolate;
   overflow: visible;
   border-radius: 15px;
-  background:
-    radial-gradient(ellipse at 38% 0, color-mix(in srgb, var(--scene-primary) 20%, transparent), transparent 54%),
-    linear-gradient(180deg, rgba(7, 25, 39, .88), rgba(7, 25, 39, .7));
+  background: #101d29 url("../assets/generated/ui-hud-panel-v2.webp") center / 100% 100% no-repeat;
   box-shadow: 0 12px 30px rgba(3, 15, 25, .28), inset 0 1px rgba(255,255,255,.035);
-  backdrop-filter: blur(8px) saturate(.96);
-  -webkit-backdrop-filter: blur(8px) saturate(.96);
 }
 
 .story-hud::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  background-image: url("../assets/generated/ui-hud-frame-v1.webp");
-  background-repeat: no-repeat;
-  background-position: center 49%;
-  background-size: calc(100% - 2px) 238%;
-  opacity: .5;
-  filter: saturate(.66) brightness(.82);
+  content: none;
 }
 
 .story-hud::after {
-  content: "";
-  position: absolute;
-  inset: 5px 7px 6px;
-  z-index: 1;
-  pointer-events: none;
-  border-radius: 11px;
-  background: linear-gradient(180deg, rgba(14, 46, 65, .18), rgba(3, 13, 23, .1));
+  content: none;
 }
 
 .story-hud > * { position: relative; z-index: 3; }
