@@ -2,7 +2,8 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
-import { WorldExploration } from "./WorldExploration.jsx";
+import { AdventureFolio, WorldExploration } from "./WorldExploration.jsx";
+import { buildExplorationModel } from "./atlasModel.js";
 
 describe("mobile map navigation markup", () => {
   it("uses direct map selection and a dedicated encounter action on the world map", () => {
@@ -29,6 +30,27 @@ describe("mobile map navigation markup", () => {
     expect(html).not.toContain("Map cursor controls");
     expect(html).not.toContain("Choose a destination");
     expect(html).not.toContain("rpg-trail-choices");
+  });
+
+  it("gives the atlas a dedicated scrolling panel and only one parchment map background", () => {
+    const state = makeInitialState();
+    const model = buildExplorationModel(state);
+    const html = renderToStaticMarkup(
+      <AdventureFolio
+        state={state}
+        page="atlas"
+        quests={[]}
+        landmarks={model.landmarks}
+        origin={state.world.currentTile}
+        onPage={vi.fn()}
+        onClose={vi.fn()}
+        onPick={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('class="rpg-folio-body rpg-folio-body--atlas"');
+    expect(html.match(/world-atlas-spread-v1\.jpg/g)).toHaveLength(1);
+    expect(html).not.toContain("--folio-art");
   });
 
 });
