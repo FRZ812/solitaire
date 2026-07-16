@@ -1,27 +1,30 @@
 import { extractJSON } from "./json.js";
+import { storyFromResponse } from "./narrative-sequence.js";
 
 export function emptyLiveNarrator() {
-  return { raw: "", thinking: "", narration: "", dialogues: [] };
+  return { raw: "", thinking: "", story: [] };
 }
 
-function dialogueLength(dialogues) {
-  return dialogues.reduce((total, dialogue) => total + dialogue.name.length + dialogue.line.length, 0);
+function storyLength(story) {
+  return story.reduce((total, item) => (
+    total + (item.type === "dialogue"
+      ? item.name.length + item.line.length
+      : item.text.length)
+  ), 0);
 }
 
-function visibleDialogues(parsed, previous) {
-  if (!Array.isArray(parsed?.dialogues)) return previous;
-  const next = parsed.dialogues
-    .filter((dialogue) => dialogue && (typeof dialogue.name === "string" || typeof dialogue.line === "string"))
-    .map((dialogue) => ({
-      name: typeof dialogue.name === "string" ? dialogue.name : "",
-      line: typeof dialogue.line === "string" ? dialogue.line : "",
-    }))
-    .filter((dialogue) => dialogue.name || dialogue.line);
+function visibleStory(parsed, previous) {
+  const hasPlayerFacingField = Array.isArray(parsed?.story)
+    || typeof parsed?.narration === "string"
+    || Array.isArray(parsed?.dialogues)
+    || !!parsed?.dialogue;
+  if (!hasPlayerFacingField) return previous;
+  const next = storyFromResponse(parsed);
 
   // A chunk can end halfway through an escape or key. extractJSON deliberately
   // returns null in those instants; never let a temporary repair gap make text
   // already visible to the player jump backwards.
-  return dialogueLength(next) > dialogueLength(previous) ? next : previous;
+  return storyLength(next) > storyLength(previous) ? next : previous;
 }
 
 export function advanceLiveNarrator(current, chunk) {
@@ -38,9 +41,6 @@ export function advanceLiveNarrator(current, chunk) {
   const parsed = extractJSON(next.raw);
   if (!parsed) return next;
 
-  if (typeof parsed.narration === "string" && parsed.narration.length >= current.narration.length) {
-    next.narration = parsed.narration;
-  }
-  next.dialogues = visibleDialogues(parsed, current.dialogues);
+  next.story = visibleStory(parsed, current.story);
   return next;
 }

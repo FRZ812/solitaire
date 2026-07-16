@@ -23,7 +23,7 @@ export function applyCreation({ beat, character, world, created }) {
     // creation code only updated the Codex, which left the dossier profession
     // blank and made presentation metadata impossible to persist reliably.
     for (const key of [
-      "profession", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
+      "profession", "subclass", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
       "attractiveness", "appearance", "base_appearance", "templateId", "portraitKey",
       "profile",
     ]) {
@@ -87,6 +87,7 @@ export function applyCreation({ beat, character, world, created }) {
       subrace: (kit ? kit.subraceId : (cs.subrace ?? w.subrace ?? null)),
       origin: cs.origin || w.origin,
       profession: cs.profession || w.profession,
+      subclass: cs.subclass ?? w.subclass,
       gender: cs.gender ?? w.gender,
       age: cs.age != null ? cs.age : w.age,
       agingMode: cs.agingMode ?? w.agingMode ?? "mortal",

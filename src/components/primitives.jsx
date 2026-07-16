@@ -529,8 +529,8 @@ function NarratorPicker() {
   );
 }
 
-export function InputBar({ value, onChange, onSubmit, loading }) {
-  const disabled = loading || !value.trim();
+export function InputBar({ value, onChange, onSubmit, onRun, queuedCount = 0, loading }) {
+  const queueDisabled = loading || !value.trim();
   const ref = React.useRef(null);
   const [focused, setFocused] = React.useState(false);
   // Grow the field with its content (up to a cap, then it scrolls), so a longer
@@ -542,7 +542,7 @@ export function InputBar({ value, onChange, onSubmit, loading }) {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [value]);
   return (
-    <div className={`story-input${focused ? " is-focused" : ""}${value.trim() ? " has-value" : ""}${loading ? " is-sending" : ""}`} style={{
+    <div className={`story-input${focused ? " is-focused" : ""}${value.trim() ? " has-value" : ""}${queuedCount ? " has-queued" : ""}${loading ? " is-sending" : ""}`} style={{
       padding: "10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px) 12px",
       background: "linear-gradient(180deg, rgba(7,25,40,0) 0%, rgba(7,25,40,0.48) 20%, rgba(7,25,40,0.84) 100%)",
       display: "block",
@@ -558,9 +558,10 @@ export function InputBar({ value, onChange, onSubmit, loading }) {
             onChange={(e) => onChange(e.target.value)}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            // Enter adds a new line (there's a Send button); ⌘/Ctrl+Enter sends.
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!disabled) onSubmit(); } }}
-            placeholder={loading ? "The narrator is answering…" : "What do you do?"}
+            // Enter adds a new line; ⌘/Ctrl+Enter queues this message without
+            // starting the narrator. The adjacent play control starts the turn.
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!queueDisabled) onSubmit(); } }}
+            placeholder={loading ? "The narrator is answering…" : "Queue what you do…"}
             disabled={loading}
             style={{
               flex: 1, minHeight: "46px", maxHeight: "160px",
@@ -569,19 +570,33 @@ export function InputBar({ value, onChange, onSubmit, loading }) {
               outline: "none", fontFamily: "inherit",
             }}
           />
-          <span className="story-input__hint">Ctrl ↵ to send</span>
+          <span className="story-input__hint">Ctrl ↵ to queue</span>
         </div>
         <button
           type="button"
           className="story-input__send"
           onClick={onSubmit}
-          disabled={disabled}
-          aria-label={loading ? "Narrator is responding" : "Send action"}
+          disabled={queueDisabled}
+          aria-label="Queue message"
+          title="Queue message"
+        >
+          <Icon name="send" size={17} color={queueDisabled ? "rgba(215, 167, 111, 0.3)" : colors.gold} strokeWidth={2.2} />
+        </button>
+        <button
+          type="button"
+          className="story-input__run"
+          onClick={onRun}
+          disabled={loading}
+          aria-label={queuedCount ? `Run narrator with ${queuedCount} queued message${queuedCount === 1 ? "" : "s"}` : "Continue story without a new action"}
+          title={queuedCount ? `Play ${queuedCount} queued message${queuedCount === 1 ? "" : "s"}` : "Continue story"}
         >
           {loading ? (
             <span className="story-input__sending" aria-hidden="true"><i /><i /><i /></span>
           ) : (
-            <Icon name="send" size={18} color={disabled ? "rgba(215, 167, 111, 0.3)" : colors.ink} strokeWidth={2.2} />
+            <>
+              <Icon name="play" size={18} color={colors.ink} strokeWidth={2.2} />
+              {queuedCount > 0 && <span className="story-input__queued-count" aria-hidden="true">{queuedCount}</span>}
+            </>
           )}
         </button>
       </div>

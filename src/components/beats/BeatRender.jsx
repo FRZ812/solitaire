@@ -76,10 +76,17 @@ export function BeatRender({ beat, onMenu }) {
     case "dialogue":
       return (
         <Pressable onMenu={onMenu}>
-          <article className="beat beat--dialogue fade-in">
-            <div className="beat-portrait" aria-hidden="true"><span>{(beat.name || "?").trim().charAt(0).toUpperCase()}</span></div>
-            <div className="beat-dialogue__copy"><div className="beat__speaker">{beat.name}</div><div className="beat-dialogue__line">“{beat.line}”</div></div>
-          </article>
+          <>
+            <Thinking text={beat.thinking} />
+            <article className="beat beat--dialogue fade-in">
+              <div className="beat-portrait" aria-hidden="true"><span>{(beat.name || "?").trim().charAt(0).toUpperCase()}</span></div>
+              <div className="beat-dialogue__copy">
+                <div className="beat__speaker">{beat.name}</div>
+                <div className="beat-dialogue__line">“{beat.line}”</div>
+                {beat.truncated && <div className="beat__aside">— the narrator was cut short despite a retry. Long-press to rewrite.</div>}
+              </div>
+            </article>
+          </>
         </Pressable>
       );
 

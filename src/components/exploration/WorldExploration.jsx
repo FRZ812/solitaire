@@ -18,7 +18,7 @@ import { flyMulticastPlan, assignmentCost, assignmentValid } from "../../engine/
 import { playerFlightMount } from "../../engine/riding.js";
 import { formatDate, formatTime } from "../../engine/time.js";
 import { coinsToCopper, formatCopper } from "../../engine/economy.js";
-import { poiPlaceName } from "../../engine/location.js";
+import { poiPartName, poiPlaceName } from "../../engine/location.js";
 import {
   TERRAIN_INK,
   buildExplorationModel,
@@ -57,6 +57,14 @@ function cityDistrict(tile) {
 function capitalName(tile) {
   if (!tile?.cityId) return null;
   return tile.cityName || (tile.cityId === "whitemarch" ? "Whitemarch" : tile.cityId);
+}
+
+function headerLocationName(tile) {
+  return poiPartName(tile?.poi)
+    || tile?.poi?.name
+    || poiPlaceName(tile?.poi)
+    || TERRAINS[tile?.terrain]?.label
+    || "Wilderness";
 }
 
 function nameForDestination(destination, origin) {
@@ -98,7 +106,7 @@ function RpgHeader({ state, biome, tile, onClose, onWayfinder }) {
       <button onClick={onClose} className="rpg-square-button" aria-label="Return to story"><Icon name="back" size={21} /></button>
       <div className="rpg-location-lockup">
         <span>{city ? `${city} · unified city map` : `${biome.name} · overworld`}</span>
-        <h1>{currentLocationName(state)}</h1>
+        <h1>{headerLocationName(tile)}</h1>
         <small>{formatDate(state.time)} · {formatTime(state.time)}{district ? ` · ${district}` : ""}</small>
       </div>
       <div className="rpg-vitals" aria-label="Party status">
@@ -111,7 +119,7 @@ function RpgHeader({ state, biome, tile, onClose, onWayfinder }) {
   );
 }
 
-function WorldGrid({ model, selection, journey, onPick, onJournal, onWayfinder, onSeekCombat, questCount, loading, night, city, district }) {
+function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, night, city, district }) {
   const mapScene = useMemo(() => buildWorldMapScene({ model, selection, journey, night }), [model, selection, journey, night]);
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.seen && cell.passable && !cell.current)
@@ -128,35 +136,22 @@ function WorldGrid({ model, selection, journey, onPick, onJournal, onWayfinder, 
   return (
     <main className={`rpg-world-stage canvas-world-stage ${city ? "is-capital" : ""} ${night ? "is-night" : ""}`}>
       <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
-      <div className="rpg-quickbar" aria-label="Exploration tools">
-        <button onClick={onWayfinder} aria-label="Open world atlas">
-          <Icon name="atlas" size={22} />
-          <span><small>Known world</small><strong>Atlas</strong></span>
-        </button>
-        <button onClick={onJournal} aria-label={questCount > 0 ? `Open quest journal, ${questCount} active ${questCount === 1 ? "quest" : "quests"}` : "Open quest journal"}>
-          <Icon name="journal" size={22} />
-          <span><small>Adventure log</small><strong>Journal</strong></span>
-          {questCount > 0 && <b className="rpg-tool-count" aria-hidden="true">{questCount}</b>}
-        </button>
-      </div>
-
       {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 
-      {(city && district || onSeekCombat) && (
+      {city && district && <div className="rpg-city-district-chip"><span aria-hidden="true">◆</span><small>{city}</small><b>{district}</b></div>}
+
+      {onSeekCombat && (
         <div className="rpg-map-corner-controls">
-          {city && district && <div className="rpg-city-district-chip"><span aria-hidden="true">◆</span><small>{city}</small><b>{district}</b></div>}
-          {onSeekCombat && (
-            <button
-              onClick={onSeekCombat}
-              disabled={loading}
-              className="rpg-wild-encounter"
-              aria-label={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
-              title={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
-            >
-              <img src={seekEncounterIcon} alt="" />
-              <span><small>{city ? "Street encounter" : "Wild encounter"}</small><b>{city ? "Seek trouble" : "Seek a fight"}</b></span>
-            </button>
-          )}
+          <button
+            onClick={onSeekCombat}
+            disabled={loading}
+            className="rpg-wild-encounter"
+            aria-label={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
+            title={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
+          >
+            <img src={seekEncounterIcon} alt="" />
+            <span><small>{city ? "Street encounter" : "Wild encounter"}</small><b>{city ? "Seek trouble" : "Seek a fight"}</b></span>
+          </button>
         </div>
       )}
     </main>
@@ -433,7 +428,7 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
     <div className={`exploration-shell rpg-exploration-shell ${currentCity ? "is-capital-map" : ""}`} style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
       <RpgHeader state={state} biome={currentBiome} tile={model.current.tile} onClose={onClose} onWayfinder={() => setFolioPage("atlas")} />
       <div className="rpg-exploration-body">
-        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onJournal={() => setFolioPage("quests")} onWayfinder={() => setFolioPage("atlas")} onSeekCombat={onSeekCombat} questCount={activeQuests.length} loading={loading} night={hour < 6 || hour >= 20} city={currentCity} district={currentDistrict} />
+        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onSeekCombat={onSeekCombat} loading={loading} night={hour < 6 || hour >= 20} city={currentCity} district={currentDistrict} />
         <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={() => journey && !loading && onTravel(selected, journey.fullPath)} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
       </div>
       {folioPage && <AdventureFolio state={state} page={folioPage} quests={activeQuests} landmarks={model.landmarks} origin={model.origin} onPage={setFolioPage} onClose={() => setFolioPage(null)} onPick={pick} />}

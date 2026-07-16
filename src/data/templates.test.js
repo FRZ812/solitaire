@@ -5,6 +5,7 @@ import { RACES } from "./races.js";
 import { itemTemplate } from "./catalog.js";
 import { getAbilityDef } from "./abilities.js";
 import { CHARACTER_PORTRAITS } from "../components/character-portrait-assets.js";
+import { characterSubclass } from "./character-subclasses.js";
 
 describe("authored character templates", () => {
   it("keeps every ready-made character unique and fully authored", () => {
@@ -35,11 +36,21 @@ describe("authored character templates", () => {
     }
   });
 
+  it("persists specific subclasses without repeating the parent profession", () => {
+    const shadowblade = CHARACTER_TEMPLATES.find((template) => template.id === "shadowblade");
+    expect(shadowblade.setup).toMatchObject({ profession: "assassin", subclass: "shadowblade" });
+    expect(characterSubclass({ templateId: "shadowblade", profession: "assassin" }))
+      .toEqual({ id: "shadowblade", label: "Shadowblade" });
+    for (const template of CHARACTER_TEMPLATES) {
+      if (template.setup.subclass) expect(template.setup.subclass).not.toBe(template.setup.profession);
+    }
+  });
+
   it("never aliases one generated portrait to a different authored character", () => {
     const generated = Object.values(CHARACTER_PORTRAITS);
-    expect(generated).toHaveLength(21);
+    expect(generated).toHaveLength(23);
     expect(new Set(generated).size).toBe(generated.length);
-    expect(CHARACTER_PORTRAITS["dragon-hunter"]).toBeUndefined();
-    expect(CHARACTER_PORTRAITS["high-sorcerer"]).toBeUndefined();
+    expect(CHARACTER_PORTRAITS["dragon-hunter"]).toContain("dragon-hunter-grounded-v3.webp");
+    expect(CHARACTER_PORTRAITS["high-sorcerer"]).toContain("high-sorcerer-grounded-v3.webp");
   });
 });

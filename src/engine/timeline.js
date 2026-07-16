@@ -65,16 +65,58 @@ export function turnForBeatIndex(state, beatIndex) {
   return -1;
 }
 
-// The checkpoint a PLAYER message kicked off: its narrator beats begin right
-// after the player bubble, so the turn's beatsLen === playerBeatIndex + 1. -1 if
-// none (e.g. a message whose turn produced no rewritable text). Used to rewind
-// from a player bubble — keeping the message, dropping its response and after.
+// The checkpoint a PLAYER message contributed to. A manual run may consume one
+// bubble or a consecutive queue; return the shared turn for any of them. -1 means
+// the message is still pending (or produced no rewritable text).
 export function turnStartedAt(state, beatIndex) {
+  if (state.beats?.[beatIndex]?.type !== "player") return -1;
   const turns = state.turns || [];
   for (let k = 0; k < turns.length; k++) {
-    if (turns[k].beatsLen === beatIndex + 1) return k;
+    const previousEnd = k > 0 ? turns[k - 1].endLen : 0;
+    // A manual narrator run may consume several consecutive queued player
+    // bubbles. Every one of those messages belongs to the turn, not only the
+    // final bubble immediately before beatsLen.
+    if (beatIndex >= previousEnd && beatIndex < turns[k].beatsLen) return k;
   }
   return -1;
+}
+
+// Player messages are pending when they form the uninterrupted tail of the feed.
+// This survives autosave/reload and also describes the state produced by rewinding
+// a player bubble: its old response is gone, while the player's words remain ready.
+export function pendingPlayerBeats(state) {
+  const beats = state.beats || [];
+  let start = beats.length;
+  while (start > 0 && beats[start - 1]?.type === "player") start--;
+  return beats.slice(start);
+}
+
+export function narratorMessageForPendingPlayers(state) {
+  const pending = pendingPlayerBeats(state);
+  if (pending.length === 1) {
+    const tag = state.created === false ? "[CHARACTER CREATION]" : "[PLAYER ACTION]";
+    return `${tag} ${pending[0].content}`;
+  }
+  if (pending.length > 1) {
+    const tag = state.created === false ? "[CHARACTER CREATION]" : "[PLAYER ACTION]";
+    const messages = pending.map((beat, index) => `${index + 1}. ${beat.content}`).join("\n");
+    return `${tag} The player queued these messages in chronological order. Treat them as one continuous contribution:\n${messages}`;
+  }
+  if (state.created === false) {
+    return "[CHARACTER CREATION] The player remains silent. Continue the interview naturally without inventing any of their answers.";
+  }
+  return "[CONTINUE STORY] The player takes no new action and says nothing. Continue the current moment through the world, NPCs, and consequences already in motion without choosing or speaking for the player.";
+}
+
+// Rewind from one of the player's bubbles, keeping that bubble as queued input.
+// If it already produced a response, restore the pre-response checkpoint first;
+// if it is still pending, this simply drops any later queued bubbles.
+export function rewindToPlayerBeat(state, beatIndex) {
+  if (state.beats?.[beatIndex]?.type !== "player") return state;
+  const turnK = turnStartedAt(state, beatIndex);
+  const base = turnK >= 0 ? stateBeforeTurn(state, turnK) : state;
+  if (beatIndex + 1 >= base.beats.length) return base;
+  return { ...base, beats: base.beats.slice(0, beatIndex + 1) };
 }
 
 // Reconstruct the state as it was right before turn k — dropping turn k and every
@@ -146,6 +188,7 @@ export function editBeat(state, beatId, newText) {
   beats[idx] = { ...beat, [field]: newText };
 
   const role = beat.type === "player" ? "user" : "assistant";
+  const storyPosition = narrativePositionInTurn(state, idx);
   let apiHistory = state.apiHistory;
   for (let i = state.apiHistory.length - 1; i >= 0; i--) {
     const entry = state.apiHistory[i];
@@ -153,7 +196,7 @@ export function editBeat(state, beatId, newText) {
     if (!entry.content.includes(oldText)) continue;
     const patched = role === "user"
       ? entry.content.replace(oldText, newText) // player's words appear verbatim
-      : patchRaw(entry.content, beat, oldText, newText);
+      : patchRaw(entry.content, beat, oldText, newText, storyPosition);
     if (patched !== entry.content) {
       apiHistory = [...state.apiHistory];
       apiHistory[i] = { ...entry, content: patched };
@@ -171,6 +214,7 @@ export function deleteBeat(state, beatId) {
   const idx = state.beats.findIndex((b) => b.id === beatId);
   if (idx < 0) return state;
   const beat = state.beats[idx];
+  const storyPosition = narrativePositionInTurn(state, idx);
   const beats = state.beats.filter((b) => b.id !== beatId);
 
   let apiHistory = state.apiHistory;
@@ -180,7 +224,7 @@ export function deleteBeat(state, beatId) {
       const entry = state.apiHistory[i];
       if (entry.role !== "assistant" || typeof entry.content !== "string") continue;
       if (text && !entry.content.includes(text)) continue;
-      const patched = removeFromRaw(entry.content, beat, text);
+      const patched = removeFromRaw(entry.content, beat, text, storyPosition);
       if (patched !== entry.content) {
         apiHistory = [...state.apiHistory];
         apiHistory[i] = { ...entry, content: patched };
@@ -200,9 +244,16 @@ export function deleteBeat(state, beatId) {
   return { ...state, beats, apiHistory, turns };
 }
 
-function removeFromRaw(raw, beat, text) {
+function removeFromRaw(raw, beat, text, storyPosition) {
   try {
     const obj = JSON.parse(raw);
+    if (Array.isArray(obj.story)) {
+      const index = matchingStoryIndex(obj.story, beat, text, storyPosition);
+      if (index >= 0) {
+        obj.story.splice(index, 1);
+        return JSON.stringify(obj);
+      }
+    }
     if (beat.type === "narration" && typeof obj.narration === "string") {
       obj.narration = "";
       return JSON.stringify(obj);
@@ -223,9 +274,19 @@ function removeFromRaw(raw, beat, text) {
   return raw;
 }
 
-function patchRaw(raw, beat, oldText, newText) {
+function patchRaw(raw, beat, oldText, newText, storyPosition) {
   try {
     const obj = JSON.parse(raw);
+    if (Array.isArray(obj.story)) {
+      const index = matchingStoryIndex(obj.story, beat, oldText, storyPosition);
+      if (index >= 0) {
+        const item = obj.story[index];
+        if (beat.type === "dialogue") item.line = newText;
+        else if (typeof item.text === "string") item.text = newText;
+        else item.content = newText;
+        return JSON.stringify(obj);
+      }
+    }
     if (beat.type === "narration" && typeof obj.narration === "string") {
       obj.narration = newText;
       return JSON.stringify(obj);
@@ -246,4 +307,28 @@ function patchRaw(raw, beat, oldText, newText) {
     // fall through to a blunt replace
   }
   return raw.includes(oldText) ? raw.replace(oldText, newText) : raw;
+}
+
+function narrativePositionInTurn(state, beatIndex) {
+  const turnK = turnForBeatIndex(state, beatIndex);
+  if (turnK < 0) return -1;
+  let position = -1;
+  for (let i = state.turns[turnK].beatsLen; i <= beatIndex; i++) {
+    if (state.beats[i]?.type === "narration" || state.beats[i]?.type === "dialogue") position++;
+  }
+  return position;
+}
+
+function matchingStoryIndex(story, beat, text, preferred) {
+  const matches = (item) => {
+    if (!item || typeof item !== "object") return false;
+    if (beat.type === "dialogue") {
+      return (item.type === "dialogue" || item.type === "dialog")
+        && item.name === beat.name && item.line === text;
+    }
+    return (item.type === "beat" || item.type === "narration")
+      && (item.text === text || item.content === text);
+  };
+  if (preferred >= 0 && preferred < story.length && matches(story[preferred])) return preferred;
+  return story.findIndex(matches);
 }

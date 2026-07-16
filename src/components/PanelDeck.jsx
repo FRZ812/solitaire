@@ -12,6 +12,7 @@ import { resolveCharacterPortrait } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 import { PLAYER_PORTRAIT_ID, portraitOverrideFor } from "../engine/portrait-overrides.js";
+import { characterSubclass } from "../data/character-subclasses.js";
 
 // The unified character deck: Company · Character · Abilities · Inventory ·
 // Codex as five pages of one
@@ -258,7 +259,9 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
   const character = state.character;
   const wanderer = state.world?.codex?.characters?.wanderer || {};
   const identityRecord = { ...character, ...wanderer };
-  const identity = [labelize(identityRecord.race), labelize(identityRecord.profession)].filter(Boolean).join(" · ") || "Wanderer";
+  const raceLabel = labelize(identityRecord.race);
+  const professionLabel = labelize(identityRecord.profession);
+  const subclass = characterSubclass(identityRecord);
   const portraitOverride = portraitOverrideFor(state, PLAYER_PORTRAIT_ID);
   const portrait = resolveCharacterPortrait(identityRecord, dossierPortrait, portraitOverride);
   const customPortrait = !!portraitOverride;
@@ -335,7 +338,15 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
       <div className="dossier-hero__identity">
         <small>Player character</small>
         <h2>{identityRecord.name || character.name}</h2>
-        <div>{identity}</div>
+        <div className="dossier-hero__classline">
+          {(raceLabel || professionLabel) ? (
+            <>
+              {raceLabel && <span>{raceLabel}</span>}
+              {professionLabel && <strong className="is-class"><em>Class</em>{professionLabel}</strong>}
+            </>
+          ) : <span>Wanderer</span>}
+          {subclass && <strong className="is-subclass"><em>Subclass</em>{subclass.label}</strong>}
+        </div>
         {(identityRecord.bond || character.bond) && <p>{identityRecord.bond || character.bond}</p>}
       </div>
       <div className="dossier-hero__tabs" role="tablist" aria-label="Dossier sections">

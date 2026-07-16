@@ -55,8 +55,10 @@ divine, and shadow remain separate data and do not determine the icon.
 
 Spell icon identity is deliberately shared at `magic:<school>:<tier>`. Every
 spell in the same school and tier uses the same generated school medallion,
-tier-colored frame, and Roman rank; changing either school or tier changes the
-displayed identity. Non-magical abilities share their category mark.
+tier-colored frame; changing either school or tier changes the displayed
+identity. Rare grades gain a progressively stronger halo, while epic and higher
+grades add a slow, reduced-motion-safe pulse. Non-magical abilities share their
+category mark.
 
 ## Card families
 

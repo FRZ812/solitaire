@@ -74,6 +74,30 @@ const LANDMARK_GLYPHS = {
   road: "◇",
 };
 
+const LANDMARK_KIND_LABELS = Object.freeze({
+  city: "City",
+  fortress: "Fortress",
+  fort: "Fort",
+  castle: "Castle",
+  checkpoint: "Military checkpoint",
+  town: "Town",
+  village: "Village",
+  settlement: "Settlement",
+  temple: "Temple",
+  shrine: "Shrine",
+  sanctuary: "Sanctuary",
+  monastery: "Monastery",
+  ruin: "Ruin",
+  landmark: "Landmark",
+  tower: "Tower",
+  bridge: "Bridge",
+  lake: "Lake",
+  river: "River crossing",
+  mountain: "Mountain",
+  port: "Port",
+  road: "Road waypoint",
+});
+
 export const CONTINENT_ATLAS_LAYERS = Object.freeze([
   Object.freeze({ id: "capitals", label: "Capitals", glyph: "♜" }),
   Object.freeze({ id: "settlements", label: "Towns", glyph: "⌂" }),
@@ -90,6 +114,13 @@ export function atlasLandmarkLayer(landmark) {
   if (["city", "town", "village", "settlement"].includes(landmark.kind)) return "settlements";
   if (["temple", "shrine", "sanctuary", "monastery"].includes(landmark.kind)) return "sanctuaries";
   return "lore";
+}
+
+export function atlasLandmarkTypeLabel(landmark) {
+  if (!landmark) return "Unknown place";
+  if (landmark.role === "border-checkpoint") return "Guarded border checkpoint";
+  if (landmark.capitalOfRealmId) return "Realm capital";
+  return LANDMARK_KIND_LABELS[landmark.kind] || "Point of interest";
 }
 
 function isMajorLandmark(landmark) {
@@ -307,6 +338,8 @@ export function ContinentAtlas({ state, origin, onPick }) {
     ? CONTINENT_SEA_LANES.filter((lane) => lane.portIds?.includes(selectedLandmark.id))
     : [];
   const selectedLeader = selectedFaction?.leader || selectedProvince?.governor || selectedRealm?.ruler;
+  const selectedLandmarkType = atlasLandmarkTypeLabel(selectedLandmark);
+  const selectedAreaName = selectedProvince?.name || selectedRegion?.label || selectedRealm?.shortName || "Uncharted lands";
   const cultureSummary = selectedCulture
     ? [selectedCulture.demonym, compactList(selectedCulture.languages, 2)].filter(Boolean).join(" · ")
     : selectedRealm?.biomeName;
@@ -456,6 +489,10 @@ export function ContinentAtlas({ state, origin, onPick }) {
       </p>
 
       <div className="continent-atlas__map-shell">
+        <div className="continent-atlas__selection-status" role="status" aria-live="polite" aria-label={`Selected ${selectedLandmark.name}, ${selectedLandmarkType}, ${selectedAreaName}`}>
+          <i aria-hidden="true">{LANDMARK_GLYPHS[selectedLandmark.kind] || "◆"}</i>
+          <span><small>Selected · {selectedLandmarkType} · {selectedAreaName}</small><strong>{selectedLandmark.name}</strong></span>
+        </div>
         <div className="continent-atlas__map-controls">
           <button
             type="button"
@@ -596,11 +633,11 @@ export function ContinentAtlas({ state, origin, onPick }) {
                 className={`continent-atlas__marker is-${knownBy} is-category-${layer} ${selected ? "is-selected" : ""} ${major ? "is-major" : ""} ${outsideRealmFocus ? "is-realm-muted" : ""} ${landmark.capitalOfRealmId ? "is-capital" : ""} ${landmark.kind === "port" ? "is-port" : ""} ${landmark.role === "border-checkpoint" ? "is-checkpoint" : ""}`}
                 style={{ ...mapPercent(landmark.coord), "--marker-x": `${nudge[0]}px`, "--marker-y": `${nudge[1]}px` }}
                 onClick={() => inspectLandmark(landmark)}
-                aria-label={`Inspect ${landmark.name}, ${CONTINENT_ATLAS_LAYERS.find((entry) => entry.id === layer)?.label.toLowerCase()}, known by ${knownBy}`}
+                aria-label={`Inspect ${landmark.name}, ${atlasLandmarkTypeLabel(landmark)}, ${REGION_DEFINITIONS[landmark.regionId]?.label || REALM_BY_ID[landmark.realmId]?.shortName || "uncharted lands"}, known by ${knownBy}`}
                 aria-pressed={selected}
               >
                 <span aria-hidden="true">{LANDMARK_GLYPHS[landmark.kind] || "◆"}</span>
-                <b aria-hidden="true">{landmark.name}</b>
+                <b aria-hidden="true"><span>{landmark.name}</span><small>{atlasLandmarkTypeLabel(landmark)} · {REGION_DEFINITIONS[landmark.regionId]?.label || REALM_BY_ID[landmark.realmId]?.shortName}</small></b>
               </button>
             );
           })}
@@ -618,13 +655,14 @@ export function ContinentAtlas({ state, origin, onPick }) {
         <aside className="continent-atlas__detail" aria-live="polite" aria-label={`Atlas entry for ${selectedLandmark.name}`}>
           <div className="continent-atlas__detail-copy">
             <small>
-              {selectedLandmark.role === "border-checkpoint" ? "Guarded border checkpoint" : selectedLandmark.kind}
+              {selectedLandmarkType}
               {selectedProvince ? ` · ${selectedProvince.name}` : selectedRegion ? ` · ${selectedRegion.label}` : ""}
             </small>
             <h4>{selectedLandmark.name}</h4>
             <p>{selectedLandmark.description || selectedRealm?.description}</p>
           </div>
           <dl>
+            <div><dt>Site type</dt><dd>{selectedLandmarkType}</dd></div>
             <div><dt>Province</dt><dd title={selectedProvince?.description}>{selectedProvince?.name || selectedRegion?.label || "Uncharted province"}</dd></div>
             <div><dt>Realm</dt><dd>{selectedRealm?.name || "Unclaimed frontier"}</dd></div>
             <div><dt>Authority</dt><dd title={selectedFaction?.description}>{selectedFaction?.name || selectedRealm?.faction?.name || selectedLandmark.controllingFactionId || "Independent"}</dd></div>

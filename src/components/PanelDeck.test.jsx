@@ -65,7 +65,7 @@ describe("PanelDeck", () => {
     const authoredHtml = renderToStaticMarkup(
       <PanelDeck state={authored} user={null} initialPage="character" onClose={() => {}} handlers={{ onPortraitChange: () => {} }} />,
     );
-    expect(authoredHtml).toContain("ranger-anime-v2.webp");
+    expect(authoredHtml).toContain("ranger-grounded-v3.webp");
     expect(authoredHtml).toContain("Upload portrait");
     expect(authoredHtml).toContain("data-atlas-cell=\"ranger\"");
 
@@ -77,6 +77,35 @@ describe("PanelDeck", () => {
     expect(customHtml).toContain("data:image/webp;base64,AAAA");
     expect(customHtml).toContain("Change portrait");
     expect(customHtml).toContain("Use original");
+  });
+
+  it("surfaces a character's parent class and specific subclass in the dossier and Codex", () => {
+    const state = makeInitialState();
+    Object.assign(state.character, {
+      templateId: "shadowblade",
+      portraitKey: "template:shadowblade",
+      profession: "assassin",
+      subclass: "shadowblade",
+    });
+    Object.assign(state.world.codex.characters.wanderer, {
+      templateId: "shadowblade",
+      portraitKey: "template:shadowblade",
+      profession: "assassin",
+      subclass: "shadowblade",
+    });
+
+    const characterHtml = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="character" onClose={() => {}} handlers={{}} />,
+    );
+    const codexHtml = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="codex" onClose={() => {}} handlers={{}} />,
+    );
+
+    expect(characterHtml).toContain("Assassin");
+    expect(characterHtml).toContain("Class</em>Assassin");
+    expect(characterHtml).toContain("Subclass</em>Shadowblade");
+    expect(codexHtml).toContain("Assassin class · Shadowblade subclass");
+    expect(codexHtml).toContain("Subclass · Shadowblade");
   });
 
   it("resolves a persistent NPC portrait override throughout the Codex", () => {

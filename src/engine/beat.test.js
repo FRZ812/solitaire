@@ -30,6 +30,23 @@ describe("applyBeat — time & feed", () => {
     expect(next.beats.some((b) => b.type === "narration" && b.content === "The wind howls down the pass.")).toBe(true);
   });
 
+  it("appends story beats and dialogue in their authored chronological order", () => {
+    const base = fresh();
+    const next = applyBeat(base, { story: [
+      { type: "beat", text: "The keeper reaches beneath the counter." },
+      { type: "dialogue", name: "Keeper", line: "Two bedrolls." },
+      { type: "beat", text: "He binds the bundle with a square knot." },
+    ] });
+    const visible = next.beats.slice(base.beats.length).filter((b) => b.type === "narration" || b.type === "dialogue");
+
+    expect(visible.map((b) => b.type)).toEqual(["narration", "dialogue", "narration"]);
+    expect(visible.map((b) => b.content || b.line)).toEqual([
+      "The keeper reaches beneath the counter.",
+      "Two bedrolls.",
+      "He binds the bundle with a square knot.",
+    ]);
+  });
+
   it("treats the input state as immutable", () => {
     const base = fresh();
     const beatsLen = base.beats.length;
@@ -79,7 +96,7 @@ describe("applyBeat — needs depletion", () => {
 });
 
 describe("applyBeat — authored character presentation", () => {
-  it("persists profession, portrait key, and character hooks in both player records", () => {
+  it("persists class, subclass, portrait key, and character hooks in both player records", () => {
     const profile = {
       voice: "Quiet and exact.",
       complication: "An oath is coming due.",
@@ -87,16 +104,16 @@ describe("applyBeat — authored character presentation", () => {
     };
     const next = applyBeat(fresh(), {
       character_setup: {
-        name: "Bram", race: "human", profession: "sellsword",
-        templateId: "sellsword", portraitKey: "template:sellsword", profile,
+        name: "Bram", race: "human", profession: "assassin", subclass: "shadowblade",
+        templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
       },
     });
     const wanderer = next.world.codex.characters.wanderer;
     expect(next.character).toMatchObject({
-      profession: "sellsword", templateId: "sellsword", portraitKey: "template:sellsword", profile,
+      profession: "assassin", subclass: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
     });
     expect(wanderer).toMatchObject({
-      profession: "sellsword", templateId: "sellsword", portraitKey: "template:sellsword", profile,
+      profession: "assassin", subclass: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
     });
   });
 });

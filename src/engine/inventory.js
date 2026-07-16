@@ -4,8 +4,10 @@
 // granted food (foraging, gifts, loot) spoils like bought food.
 
 import { goodDef } from "../data/goods.js";
+import { itemTemplate } from "../data/catalog.js";
 import { stampFreshUntil } from "./spoilage.js";
 import { equipSlot, slotCapacity, weaponHands } from "./combat-stats.js";
+import { itemWeight, loadOf } from "./weight.js";
 
 export function applyInventoryChanges(inv, changes, day = 0) {
   if (!changes) return inv;
@@ -37,13 +39,208 @@ export function applyInventoryChanges(inv, changes, day = 0) {
 
 export const EQUIPPABLE = new Set(["weapon", "armor", "clothing", "trinket", "shield"]);
 
+// Resolve the two inventory shapes used by the save model. The wanderer's pack
+// lives on state.character; companions and mounts keep theirs on their codex
+// entry. Only current party members are valid hand-off targets.
+function inventoryOwner(state, charId) {
+  const codex = state.world?.codex;
+  const character = codex?.characters?.[charId];
+  if (!character) return null;
+  if (charId === "wanderer") {
+    if (!state.character?.inventory) return null;
+    return {
+      id: charId,
+      character,
+      inventory: state.character.inventory,
+      capacity: state.character.carryCapacityMax ?? Infinity,
+      isPlayer: true,
+    };
+  }
+  if (!(state.party || []).includes(charId) || !character.inventory) return null;
+  return {
+    id: charId,
+    character,
+    inventory: character.inventory,
+    capacity: character.carryCapacityMax ?? Infinity,
+    isPlayer: false,
+  };
+}
+
+function replaceOwnerInventory(state, owner, inventory, overburdened) {
+  if (owner.isPlayer) {
+    return {
+      ...state,
+      character: { ...state.character, inventory, overburdened },
+    };
+  }
+  const codex = state.world.codex;
+  const current = codex.characters[owner.id];
+  return {
+    ...state,
+    world: {
+      ...state.world,
+      codex: {
+        ...codex,
+        characters: {
+          ...codex.characters,
+          [owner.id]: { ...current, inventory, overburdened },
+        },
+      },
+    },
+  };
+}
+
+function earliestFreshUntil(a, b) {
+  if (a == null) return b;
+  if (b == null) return a;
+  return Math.min(a, b);
+}
+
+// Move a stack (or part of one) between the wanderer and any current party
+// member. The engine repeats the UI's carry-capacity check so stale dialogs or
+// direct callers cannot overfill a destination. Stack metadata such as
+// freshUntil travels with the item; when two perishable stacks merge, the
+// earliest expiry wins so a hand-off can never make food fresher.
+export function transferItem(state, fromCharId, toCharId, itemId, quantity = 1) {
+  if (!itemId || fromCharId === toCharId) return { ok: false, state, reason: "Choose another character." };
+  const qty = Number(quantity);
+  if (!Number.isInteger(qty) || qty <= 0) return { ok: false, state, reason: "Choose a valid quantity." };
+
+  const source = inventoryOwner(state, fromCharId);
+  const destination = inventoryOwner(state, toCharId);
+  if (!source || !destination) return { ok: false, state, reason: "That character cannot receive items." };
+
+  const sourceStack = (source.inventory.carried || []).find((entry) => entry.itemId === itemId);
+  if (!sourceStack || (sourceStack.quantity || 0) < qty) {
+    return { ok: false, state, reason: "There are not enough items in that pack." };
+  }
+
+  const codexItems = state.world.codex.items;
+  const item = codexItems?.[itemId] || itemTemplate(itemId);
+  const transferWeight = itemWeight(item) * qty;
+  const destinationLoad = loadOf(destination.character, destination.inventory, codexItems);
+  if (destinationLoad + transferWeight > destination.capacity) {
+    return { ok: false, state, reason: "That character cannot carry the transfer." };
+  }
+
+  const sourceCarried = (source.inventory.carried || []).map((entry) => ({ ...entry }));
+  const sourceIndex = sourceCarried.findIndex((entry) => entry.itemId === itemId);
+  sourceCarried[sourceIndex].quantity -= qty;
+  if (sourceCarried[sourceIndex].quantity <= 0) sourceCarried.splice(sourceIndex, 1);
+
+  const destinationCarried = (destination.inventory.carried || []).map((entry) => ({ ...entry }));
+  const destinationIndex = destinationCarried.findIndex((entry) => entry.itemId === itemId);
+  if (destinationIndex >= 0) {
+    const targetStack = destinationCarried[destinationIndex];
+    targetStack.quantity += qty;
+    const freshUntil = earliestFreshUntil(targetStack.freshUntil, sourceStack.freshUntil);
+    if (freshUntil != null) targetStack.freshUntil = freshUntil;
+  } else {
+    destinationCarried.push({ ...sourceStack, quantity: qty });
+  }
+
+  const sourceInventory = { ...source.inventory, carried: sourceCarried };
+  const destinationInventory = { ...destination.inventory, carried: destinationCarried };
+  const sourceOverburdened = loadOf(source.character, sourceInventory, codexItems) > source.capacity;
+  const destinationOverburdened = loadOf(destination.character, destinationInventory, codexItems) > destination.capacity;
+
+  let next = replaceOwnerInventory(state, source, sourceInventory, sourceOverburdened);
+  next = replaceOwnerInventory(next, destination, destinationInventory, destinationOverburdened);
+  return { ok: true, state: next };
+}
+
+function equipPartyItem(state, charId, itemId) {
+  const owner = inventoryOwner(state, charId);
+  if (!owner || owner.isPlayer || owner.character.kind === "mount") return state;
+  const codex = state.world.codex;
+  const item = codex.items?.[itemId] || itemTemplate(itemId);
+  if (!item || !EQUIPPABLE.has(item.kind)) return state;
+  const worn = [...(owner.character.worn || [])];
+  if (worn.includes(itemId)) return state;
+  const carried = (owner.inventory.carried || []).map((entry) => ({ ...entry }));
+  const carriedIndex = carried.findIndex((entry) => entry.itemId === itemId);
+  if (carriedIndex < 0) return state;
+  carried[carriedIndex].quantity -= 1;
+
+  const defOf = (id) => codex.items?.[id] || itemTemplate(id);
+  const toPack = (id) => {
+    const index = carried.findIndex((entry) => entry.itemId === id);
+    if (index >= 0) carried[index].quantity += 1;
+    else carried.push({ itemId: id, quantity: 1 });
+  };
+  const slot = equipSlot(item);
+  const displaced = new Set();
+  if (slot) {
+    const inSlot = worn.filter((id) => equipSlot(defOf(id)) === slot);
+    const capacity = slotCapacity(slot);
+    for (let i = 0; inSlot.length - displaced.size >= capacity && i < inSlot.length; i++) displaced.add(inSlot[i]);
+  }
+  if (item.kind === "weapon" && weaponHands(item) === 2) {
+    for (const id of worn) if (equipSlot(defOf(id)) === "offhand") displaced.add(id);
+  } else if (item.kind === "shield") {
+    for (const id of worn) {
+      const definition = defOf(id);
+      if (definition?.kind === "weapon" && weaponHands(definition) === 2) displaced.add(id);
+    }
+  }
+  for (const id of displaced) toPack(id);
+  const nextWorn = [...worn.filter((id) => !displaced.has(id)), itemId];
+  const inventory = { ...owner.inventory, carried: carried.filter((entry) => entry.quantity > 0) };
+  const character = { ...owner.character, worn: nextWorn };
+  const overburdened = loadOf(character, inventory, codex.items) > owner.capacity;
+  const withInventory = replaceOwnerInventory(state, owner, inventory, overburdened);
+  return {
+    ...withInventory,
+    world: {
+      ...withInventory.world,
+      codex: {
+        ...withInventory.world.codex,
+        characters: {
+          ...withInventory.world.codex.characters,
+          [charId]: { ...withInventory.world.codex.characters[charId], worn: nextWorn },
+        },
+      },
+    },
+  };
+}
+
+function unequipPartyItem(state, charId, itemId) {
+  const owner = inventoryOwner(state, charId);
+  if (!owner || owner.isPlayer || owner.character.kind === "mount") return state;
+  const worn = owner.character.worn || [];
+  if (!worn.includes(itemId)) return state;
+  const carried = (owner.inventory.carried || []).map((entry) => ({ ...entry }));
+  const carriedIndex = carried.findIndex((entry) => entry.itemId === itemId);
+  if (carriedIndex >= 0) carried[carriedIndex].quantity += 1;
+  else carried.push({ itemId, quantity: 1 });
+  const nextWorn = worn.filter((id) => id !== itemId);
+  const inventory = { ...owner.inventory, carried };
+  const character = { ...owner.character, worn: nextWorn };
+  const overburdened = loadOf(character, inventory, state.world.codex.items) > owner.capacity;
+  const withInventory = replaceOwnerInventory(state, owner, inventory, overburdened);
+  return {
+    ...withInventory,
+    world: {
+      ...withInventory.world,
+      codex: {
+        ...withInventory.world.codex,
+        characters: {
+          ...withInventory.world.codex.characters,
+          [charId]: { ...withInventory.world.codex.characters[charId], worn: nextWorn },
+        },
+      },
+    },
+  };
+}
+
 // Move a carried item onto the wanderer's worn list (codex), enforcing equipment
 // SLOTS so combat effects can't be stacked: one item per slot (two rings), a
 // two-handed weapon and a shield are mutually exclusive (a 2H weapon needs both
 // hands). Equipping into a full slot displaces the current occupant to the pack.
-export function equipItem(state, itemId) {
+export function equipItem(state, itemId, charId = "wanderer") {
+  if (charId !== "wanderer") return equipPartyItem(state, charId, itemId);
   const codex = state.world.codex;
-  const item = codex.items?.[itemId];
+  const item = codex.items?.[itemId] || itemTemplate(itemId);
   const wanderer = codex.characters?.wanderer;
   if (!item || !wanderer) return state;
   const worn = [...(wanderer.worn || [])];
@@ -113,7 +310,8 @@ export function equipItem(state, itemId) {
 // Move a worn item back into the pack. Returns a new state. Revokes anything the
 // item granted on equip (its `_granted` record) — so taking off a grimoire
 // disables the magic it gave, while spells learned by other means persist.
-export function unequipItem(state, itemId) {
+export function unequipItem(state, itemId, charId = "wanderer") {
+  if (charId !== "wanderer") return unequipPartyItem(state, charId, itemId);
   const codex = state.world.codex;
   const wanderer = codex.characters?.wanderer;
   if (!wanderer || !(wanderer.worn || []).includes(itemId)) return state;

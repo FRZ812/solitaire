@@ -22,6 +22,7 @@ import {
   ContinentAtlas,
   atlasLandmarkIsVisible,
   atlasLandmarkLayer,
+  atlasLandmarkTypeLabel,
   atlasRouteEmphasis,
   atlasRoutesForLandmark,
   clampAtlasZoom,
@@ -38,7 +39,9 @@ describe("continent atlas", () => {
     expect(html).toContain(`${CONTINENT.hexKilometers} km / hex`);
     expect(html.match(/class="continent-atlas__cell /g)).toHaveLength(48 * 26);
     expect(html.match(/class="continent-atlas__marker /g)).toHaveLength(CONTINENT_ATLAS_LANDMARKS.length);
-    expect(html).toContain("Inspect Whitemarch, capitals, known by reputation");
+    expect(html).toContain("Inspect Whitemarch, Realm capital, Whitemarch Basin, known by reputation");
+    expect(html).toContain('class="continent-atlas__selection-status"');
+    expect(html).toContain("Selected · Realm capital · Crown Basin");
     expect(html).toContain(`${Object.keys(REGION_DEFINITIONS).length} named regions`);
     for (const landmark of LANDMARKS) expect(html).toContain(landmark.name);
 
@@ -125,6 +128,8 @@ describe("continent atlas", () => {
     expect(html).toContain("Set compass");
     expect(html).toContain("0 travel hexes");
     expect(html).toContain("Connected routes");
+    expect(html).toContain("Site type");
+    expect(html).toContain("Realm capital");
     expect(html).toContain("The Crown Road");
   });
 
@@ -137,6 +142,9 @@ describe("continent atlas", () => {
     expect(atlasLandmarkLayer(byId["frostgate"])).toBe("strongholds");
     expect(atlasLandmarkLayer(byId["pale-shrine"])).toBe("sanctuaries");
     expect(atlasLandmarkLayer(byId["sunken-crown"])).toBe("lore");
+    expect(atlasLandmarkTypeLabel(byId["whitemarch"])).toBe("Realm capital");
+    expect(atlasLandmarkTypeLabel(byId["greenharbor"])).toBe("Port");
+    expect(atlasLandmarkTypeLabel(byId["frostgate"])).toBe("Guarded border checkpoint");
 
     const whitemarchRoutes = atlasRoutesForLandmark(byId["whitemarch"]).map((route) => route.name);
     expect(whitemarchRoutes).toContain("The Crown Road");

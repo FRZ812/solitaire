@@ -20,11 +20,15 @@ import { formatTime, formatDate } from "./time.js";
 import { relationshipTier } from "./relationships.js";
 import { lightStatus } from "./light.js";
 import { conditionMeta, condName } from "../data/conditions.js";
+import { characterSubclass } from "../data/character-subclasses.js";
 
 export function summarizeCodex(codex) {
   const lines = [];
   const chars = Object.values(codex.characters).filter(c => c.kind !== "player");
-  if (chars.length) lines.push(`Met: ${chars.map(c => `${c.name}(${c.race || "?"}, ${c.profession || "?"})`).join("; ")}`);
+  if (chars.length) lines.push(`Met: ${chars.map((c) => {
+    const subclass = characterSubclass(c);
+    return `${c.name}(${c.race || "?"}, ${c.profession || "?"}${subclass ? `/${subclass.label}` : ""})`;
+  }).join("; ")}`);
   else lines.push(`Met: only you`);
   const races = Object.values(codex.races).map(r => r.common ? `${r.name}*` : r.name);
   lines.push(`Races: ${races.join(", ") || "none"}`);
@@ -249,13 +253,15 @@ export function buildStateContext(state) {
     if (abil.length) bits.push(`fights with ${abil.join(", ")}`);
     if (sk.length) bits.push(`skilled in ${sk.join(", ")}`);
     if (gear.length) bits.push(`carries ${gear.join(", ")}`);
-    return `${c.name} (${c.race} ${c.profession}${bits.length ? `; ${bits.join("; ")}` : ""})`;
+    const subclass = characterSubclass(c);
+    return `${c.name} (${c.race} ${c.profession}${subclass ? `, ${subclass.label} subclass` : ""}${bits.length ? `; ${bits.join("; ")}` : ""})`;
   };
   const partyLine = companions.length
     ? `\n[COMPANIONS — travelling with you: ${companions.map(companionDetail).join(" · ")}. They are present in scenes, act and speak on their own, fight at your side, and share your fortunes (they can be wounded, killed, or leave). When the player asks a companion what they can do, ANSWER CONCRETELY from this kit — their real abilities, skills, and gear — never vague hand-waving. You may move gear between the player and a companion when they share loot (use companion_gear). Don't drop or forget them.]`
     : "";
   const you = world.codex.characters.wanderer || {};
-  const youDesc = [originLabel(you.origin), you.race, you.profession].filter(Boolean).join(" ");
+  const playerSubclass = characterSubclass(you);
+  const youDesc = [originLabel(you.origin), you.race, you.profession, playerSubclass ? `(${playerSubclass.label} subclass)` : null].filter(Boolean).join(" ");
   const playerLine = `[PLAYER — You are ${character.name}${youDesc ? `, a ${youDesc}` : ""}. Keep this identity consistent (do not drift the player's race or origin). Your NAME is PRIVATE: another character knows it ONLY if you have told THEM in the fiction (or it has plausibly reached them — a poster, a mutual friend, your own renown). A stranger, someone freshly met, or a companion you have only just recruited does NOT know your name until you give it — they address you by look, bearing, or role ("the swordsman", "stranger", "you with the bow") until then. The name you gave one person (the innkeeper) did not travel to anyone else on its own.]`;
   const authoredProfile = you.profile || character.profile;
   const playerProfileLine = authoredProfile

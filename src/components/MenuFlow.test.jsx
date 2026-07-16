@@ -71,7 +71,7 @@ describe("front-of-game menu flow", () => {
     expect(html).toContain("creation-card__class-badge");
     expect(html).toContain("aria-label=\"Subclass: Cutthroat\"");
     expect(html).toContain("aria-label=\"Subclass: Shadowblade\"");
-    expect(html).toContain("sellsword-anime-v2.webp");
+    expect(html).toContain("sellsword-grounded-v3.webp");
     expect(html).toContain("Create a custom traveller");
     expect(html).toContain("character-roster-threshold-v1.webp");
   });

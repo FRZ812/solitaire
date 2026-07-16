@@ -10,10 +10,14 @@ import { onAuthChange, signOut, linkEmail, isSubscribed } from "./engine/auth-su
 import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "./engine/campaigns-supabase.js";
 import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
-import { recordTurn, stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt, editBeat, deleteBeat } from "./engine/timeline.js";
+import {
+  deleteBeat, editBeat, narratorMessageForPendingPlayers, pendingPlayerBeats,
+  recordTurn, rewindToPlayerBeat, stateBeforeTurn, stateAfterTurn,
+  turnForBeatIndex, turnStartedAt,
+} from "./engine/timeline.js";
 import { withPortraitOverride } from "./engine/portrait-overrides.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./engine/attributes.js";
-import { equipItem, unequipItem } from "./engine/inventory.js";
+import { equipItem, transferItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
 import { lightTorch, lightLantern, extinguish, applyRest } from "./engine/tools.js";
@@ -319,7 +323,7 @@ export function Solitaire() {
   }
   const [hydrated, setHydrated] = useState(false);
   // Transient stream projection. Raw partial JSON never enters saved beats;
-  // only its currently recoverable narration/dialogue and reasoning are shown.
+  // only its currently recoverable ordered story entries and reasoning are shown.
   const [liveNarrator, setLiveNarrator] = useState(emptyLiveNarrator);
   const logRef = useRef(null);
   const storyFollowRef = useRef(true);
@@ -561,7 +565,7 @@ export function Solitaire() {
     toBottom();
     const r = requestAnimationFrame(toBottom);
     return () => cancelAnimationFrame(r);
-  }, [state.beats.length, loading, liveNarrator.thinking, liveNarrator.narration, liveNarrator.dialogues]);
+  }, [state.beats.length, loading, liveNarrator.thinking, liveNarrator.story]);
 
   // The Latest control reflects where the viewport actually is. This is
   // deliberately separate from the follow lock: reaching the bottom manually
@@ -570,7 +574,7 @@ export function Solitaire() {
     syncStoryAtBottom();
     const r = requestAnimationFrame(() => syncStoryAtBottom());
     return () => cancelAnimationFrame(r);
-  }, [state.beats.length, loading, liveNarrator.thinking, liveNarrator.narration, liveNarrator.dialogues]);
+  }, [state.beats.length, loading, liveNarrator.thinking, liveNarrator.story]);
 
   // Campaign hydration is the one intentional reset: a newly opened history
   // starts at its latest beat even if the previous campaign was scrolled up.
@@ -725,7 +729,7 @@ export function Solitaire() {
 
   // ----- Game handlers (unchanged behavior, kept inline) -----
 
-  async function handleSubmit() {
+  function handleSubmit() {
     const action = input.trim();
     if (!action || loading) return;
     // The expert token opens the full-manual builder instead of chatting it out.
@@ -737,12 +741,18 @@ export function Solitaire() {
     setInput("");
     setRetry(null);
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: action };
-    const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
-    setState(stateWithPlayer);
-    // Until the opening interview finishes, every answer feeds character creation;
-    // the narrator asks a few questions then finalizes the build.
-    const message = state.created === false ? `[CHARACTER CREATION] ${action}` : `[PLAYER ACTION] ${action}`;
-    await runNarratorTurn(stateWithPlayer, message);
+    setState((current) => ({ ...current, beats: [...current.beats, playerBeat] }));
+    scrollStoryToLatest();
+  }
+
+  // Sending only queues the player's words. This explicit play step consumes every
+  // trailing player bubble in order; with no queued text it lets the living scene
+  // advance without assigning a choice or line of dialogue to the player.
+  async function handleRunNarrator() {
+    if (loading) return;
+    setRetry(null);
+    const message = narratorMessageForPendingPlayers(state);
+    await runNarratorTurn(state, message);
   }
 
   // Narrator wrapper used by every turn site. The edge function emits both
@@ -801,7 +811,7 @@ export function Solitaire() {
       character_setup: {
         name: setup.name, bond: setup.bond, attributes: setup.attributes,
         abilities: setup.abilities || [], race: setup.race, subrace: setup.subrace || null,
-        origin: setup.origin, profession: setup.profession, gender: setup.gender,
+        origin: setup.origin, profession: setup.profession, subclass: setup.subclass || null, gender: setup.gender,
         age: setup.age, agingMode: setup.agingMode, lifespanMultiplier: setup.lifespanMultiplier,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
         base_appearance: setup.base_appearance, knows: setup.knows || [],
@@ -832,7 +842,8 @@ export function Solitaire() {
     ].filter(Boolean).join(", ");
     const originStr = originLabel(setup.origin);
     const backstory = [setup.backstory, ...(Array.isArray(setup.knows) ? setup.knows : [])].filter(Boolean).join(" ");
-    const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${setup.profession || "wanderer"}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving INSIDE the walled capital of Whitemarch, in the press and clamour of the Grand Market's Grain Square (the city's heart, behind the Great Wall), grounding the scene in who they are, their origin, and what (from the backstory) has brought them to the city, then proceed as a normal first beat.`;
+    const calling = setup.subclass ? `${setup.subclass} ${setup.profession || "wanderer"}` : (setup.profession || "wanderer");
+    const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${calling}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving INSIDE the walled capital of Whitemarch, in the press and clamour of the Grand Market's Grain Square (the city's heart, behind the Great Wall), grounding the scene in who they are, their origin, and what (from the backstory) has brought them to the city, then proceed as a normal first beat.`;
     await runNarratorTurn(built, opener);
   }
 
@@ -1149,8 +1160,21 @@ export function Solitaire() {
     setDeckOpen(false);
   }
 
-  function handleEquip(itemId) { setState((s) => equipItem(s, itemId)); }
-  function handleUnequip(itemId) { setState((s) => unequipItem(s, itemId)); }
+  function handleEquip(charId, itemId) {
+    // Keep the one-argument form available for any legacy caller while the
+    // inventory menu supplies an explicit owner id.
+    const ownerId = itemId == null ? "wanderer" : charId;
+    const targetItemId = itemId == null ? charId : itemId;
+    setState((s) => equipItem(s, targetItemId, ownerId));
+  }
+  function handleUnequip(charId, itemId) {
+    const ownerId = itemId == null ? "wanderer" : charId;
+    const targetItemId = itemId == null ? charId : itemId;
+    setState((s) => unequipItem(s, targetItemId, ownerId));
+  }
+  function handleTransfer(fromCharId, toCharId, itemId, quantity) {
+    setState((s) => transferItem(s, fromCharId, toCharId, itemId, quantity).state);
+  }
 
   // ----- Town buildings: trader menus (buy / sell / talk) -----
 
@@ -1583,7 +1607,9 @@ export function Solitaire() {
     // player bubble's turn is the one it kicked off; a narration/dialogue's is the
     // turn it belongs to. Rewind is possible only if a later turn exists to drop.
     const turnK = beat.type === "player" ? turnStartedAt(state, index) : turnForBeatIndex(state, index);
-    const canRewind = turnK >= 0 && turnK + 1 < turns.length;
+    const canRewind = beat.type === "player"
+      ? turnK >= 0 || index + 1 < state.beats.length
+      : turnK >= 0 && turnK + 1 < turns.length;
     const kind = beat.type === "player" ? "player" : "narrative";
     setBeatMenu({ beatId: beat.id, index, kind, turnK, canRewind });
     setBeatMode("menu");
@@ -1634,9 +1660,9 @@ export function Solitaire() {
     }
   }
 
-  // Rewind: keep the selected bubble and drop everything AFTER it. A player
-  // message keeps itself and loses its response + later turns; a narration/
-  // dialogue keeps its whole turn and loses only later turns.
+  // Rewind: a player message becomes queued input again (including when it is the
+  // latest completed turn); narration/dialogue keeps its whole turn and drops only
+  // later turns.
   function handleRewindBeat() {
     const menu = beatMenu;
     if (!menu || !menu.canRewind || loading) return;
@@ -1644,7 +1670,9 @@ export function Solitaire() {
     setPendingEngage(null);
     setPendingCombat(null);
     setPendingLoot(null);
-    setState(stateAfterTurn(state, menu.turnK));
+    setState(menu.kind === "player"
+      ? rewindToPlayerBeat(state, menu.index)
+      : stateAfterTurn(state, menu.turnK));
   }
 
   // Manually edit the bubble's text in place (synced into the model's memory).
@@ -1938,6 +1966,7 @@ export function Solitaire() {
   // spoken a line, the normal limbo interview takes over.
   const inLimbo = state.created === false;
   const showCreationHub = inLimbo && !creationEntered && !state.beats.some((b) => b.type === "player");
+  const queuedPlayerCount = pendingPlayerBeats(state).length;
 
   return (
     <div className="game-shell" style={{
@@ -1990,7 +2019,7 @@ export function Solitaire() {
             onPointerDownCapture={handleStoryPointerDown}
           >
             {state.beats.map((b, i) => <BeatRender key={b.id} beat={b} onMenu={() => openBeatMenu(b, i)} />)}
-            {loading && <LiveNarratorStream thinking={liveNarrator.thinking} narration={liveNarrator.narration} dialogues={liveNarrator.dialogues} />}
+            {loading && <LiveNarratorStream thinking={liveNarrator.thinking} story={liveNarrator.story} />}
             {error && (
               <ErrorBanner>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
@@ -2111,7 +2140,14 @@ export function Solitaire() {
             }}>{buildingOpenNow ? "Enter" : "Closed"}</button>
           </div>
         )}
-        <InputBar value={input} onChange={setInput} onSubmit={handleSubmit} loading={loading} />
+        <InputBar
+          value={input}
+          onChange={setInput}
+          onSubmit={handleSubmit}
+          onRun={handleRunNarrator}
+          queuedCount={queuedPlayerCount}
+          loading={loading}
+        />
       </div>
 
       {beatMenu && (
@@ -2169,6 +2205,7 @@ export function Solitaire() {
             onPortraitChange: handlePortraitChange,
             // Inventory
             onEquip: handleEquip, onUnequip: handleUnequip, onUse: handleUse,
+            onTransfer: handleTransfer,
             onLightTorch: handleLightTorch, onLightLantern: handleLightLantern,
             onRest: (h) => { setDeckOpen(false); handleRest(h); },
             onBindRune: (id) => { setDeckOpen(false); setFusionRune(id); },

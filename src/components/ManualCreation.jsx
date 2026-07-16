@@ -7,7 +7,7 @@ import { ABILITY_CATALOG, abilityCategoryOf, getAbilityDef } from "../data/abili
 import { ALL_ITEMS } from "../data/catalog.js";
 import { equipSlot } from "../engine/combat-stats.js";
 import { TIERS, tier as tierInfo, tierColor, tierLabel, tierOrder } from "../data/tiers.js";
-import { STANDARD_PROVISIONS } from "../data/templates.js";
+import { CHARACTER_TEMPLATES, STANDARD_PROVISIONS } from "../data/templates.js";
 import { descriptorFor } from "../data/attractiveness.js";
 
 const APPEARANCE_OPTS = {
@@ -23,6 +23,7 @@ const AGING_MODES = [
   { id: "out-of-time", label: "Out-of-Time" },
 ];
 const PROFESSION_OPTS = ["sellsword", "knight", "ranger", "hunter", "thief", "assassin", "hedge-mage", "sorcerer", "scholar", "priest", "healer", "bard", "merchant", "outlaw", "noble", "barbarian", "monk"];
+const SUBCLASS_OPTS = [...new Set(CHARACTER_TEMPLATES.map((template) => template.setup.subclass).filter(Boolean))];
 const ITEM_KINDS = [
   { id: "weapon", label: "Weapons", kinds: ["weapon"] },
   { id: "armor", label: "Armour", kinds: ["armor"] },
@@ -79,6 +80,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
   const [agingMode, setAgingMode] = useState("mortal");
   const [lifespanMultiplier, setLifespanMultiplier] = useState(2.0);
   const [profession, setProfession] = useState("");
+  const [subclass, setSubclass] = useState("");
   const [race, setRace] = useState("human");
   const [subrace, setSubrace] = useState(null);
   const [origin, setOrigin] = useState("north");
@@ -153,6 +155,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
       lifespanMultiplier: agingMode === "power-extended" ? lifespanMultiplier : undefined,
       attractiveness, gender,
       profession: profession.trim() || "wanderer",
+      subclass: subclass.trim() || null,
       race, subrace: subrace || null, origin: isHuman ? origin : race,
       attributes: attrs,
       appearance: Object.keys(appr).length ? appr : undefined,
@@ -184,7 +187,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
         {/* scroll body */}
         <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: "8px" }}>
           {/* IDENTITY */}
-          <SectionHeader icon="user" title="Identity" sub={name.trim() ? `${name}${profession ? ` · ${profession}` : ""}` : "name, drive, age, calling"} open={open === "identity"} onToggle={() => toggle("identity")} />
+          <SectionHeader icon="user" title="Identity" sub={name.trim() ? `${name}${profession ? ` · ${profession}` : ""}${subclass ? ` · ${subclass}` : ""}` : "name, drive, age, class, subclass"} open={open === "identity"} onToggle={() => toggle("identity")} />
           {open === "identity" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "11px", padding: "4px 2px 8px" }}>
               <div><label style={fieldLabel}>Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" style={inputStyle} /></div>
@@ -213,6 +216,11 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
                   <input list="prof-opts" value={profession} onChange={(e) => setProfession(e.target.value)} placeholder="e.g. sellsword" style={inputStyle} />
                   <datalist id="prof-opts">{PROFESSION_OPTS.map((o) => <option key={o} value={o} />)}</datalist>
                 </div>
+              </div>
+              <div>
+                <label style={fieldLabel}>Subclass / specialization</label>
+                <input list="subclass-opts" value={subclass} onChange={(e) => setSubclass(e.target.value)} placeholder="e.g. shadowblade" style={inputStyle} />
+                <datalist id="subclass-opts">{SUBCLASS_OPTS.map((o) => <option key={o} value={o} />)}</datalist>
               </div>
               <div>
                 <label style={fieldLabel}>Gender</label>
