@@ -26,7 +26,8 @@ import {
   planAtlasJourney,
 } from "./atlasModel.js";
 import { MapCanvas } from "./MapCanvas.jsx";
-import { ContinentAtlas } from "./ContinentAtlas.jsx";
+import { WorldAtlas } from "./WorldAtlas.jsx";
+import { formatTravelDuration, journeyWaypoints } from "./worldAtlasModel.js";
 import { buildWorldMapScene } from "./mapSceneModel.js";
 import partyArt from "../../assets/generated/scene-tellmar-road-v2.webp";
 import seekEncounterIcon from "../../assets/generated/ui-seek-encounter.png";
@@ -160,6 +161,9 @@ function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, n
 
 function DestinationPanel({ state, model, selection, selectedName, journey, routeMinutes, risk, focusBiome, focusVisual, onClear, onTravel, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
   const distance = selection ? hexDistance(model.origin, selection) : 0;
+  // Named waypoints come from authored landmark data only — cheap lookups, no
+  // tile generation — so long continental previews stay responsive.
+  const journeyVia = useMemo(() => (journey ? journeyWaypoints(journey.fullPath, { cap: 4 }) : []), [journey]);
   const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
   const description = selection?.tile?.poi?.description || (selection ? TERRAINS[selection.tile?.terrain]?.flavor : null);
   const rewardTitle = selection?.quest ? "Quest reward" : selection?.visited ? "Known waypoint" : "Discovery ahead";
@@ -204,13 +208,21 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
               <>
                 <div className="rpg-route-stats">
                   <div><small>{urbanRoute ? "Blocks" : "Steps"}</small><b>{journey.legSteps}</b><span>of {journey.totalSteps}</span></div>
-                  <div><small>Time</small><b>{routeMinutes}</b><span>minutes</span></div>
+                  <div><small>Time</small><b>{formatTravelDuration(routeMinutes)}</b><span>this march</span></div>
                   <div className={risk >= 40 ? "is-danger" : ""}><small>Danger</small><b>{risk}%</b><span>{dangerLabel(risk)}</span></div>
                 </div>
                 <div className="rpg-terrain-route">
                   {journey.terrainLabels.map((terrain) => <span key={terrain.id} style={{ "--segment-color": TERRAIN_INK[terrain.id], "--segment-size": terrain.count }} title={`${terrain.label}: ${terrain.count} steps`}><i /><small>{terrain.label} ×{terrain.count}</small></span>)}
                 </div>
-                {!journey.arrived && <p className="rpg-leg-note">This march reaches {journey.legSteps} of {journey.totalSteps} steps before the party reassesses.</p>}
+                {journeyVia.length > 0 && (
+                  <p className="rpg-route-via">Via {journeyVia.map((waypoint) => waypoint.name).join(" · ")}</p>
+                )}
+                {!journey.arrived && (
+                  <p className="rpg-leg-note">
+                    This march reaches {journey.legSteps} of {journey.totalSteps} steps before the party reassesses.
+                    Full journey ≈ {formatTravelDuration(journey.legSteps > 0 ? Math.round(routeMinutes / journey.legSteps * journey.totalSteps) : routeMinutes)}.
+                  </p>
+                )}
               </>
             ) : <div className="rpg-route-blocked">No ground route reaches this tile from here.</div>}
           </div>
@@ -287,7 +299,7 @@ function WorldAtlasPage({ state, landmarks, origin, onPick }) {
   const objectives = usefulLandmarks.filter((landmark) => landmark.quest).length;
   return (
     <div className="rpg-folio-page rpg-folio-page--atlas">
-      <ContinentAtlas state={state} origin={origin} onPick={onPick} />
+      <WorldAtlas state={state} origin={origin} onPick={onPick} />
       <FolioOverview items={[
         { label: "Known places", value: usefulLandmarks.length, icon: "atlas" },
         { label: "Warp anchors", value: anchors, icon: "sparkle" },
