@@ -31,6 +31,8 @@ import { buildWorldMapScene } from "./mapSceneModel.js";
 import partyArt from "../../assets/generated/scene-tellmar-road-v2.webp";
 import seekEncounterIcon from "../../assets/generated/ui-seek-encounter.png";
 import rewardArt from "../../assets/generated/scene-whitemarch-march-v2.webp";
+import atlasFolioHero from "../../assets/generated/atlas-folio-hero-v1.png";
+import questJournalFolioHero from "../../assets/generated/quest-journal-folio-hero-v1.png";
 import "./exploration.css";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
@@ -332,10 +334,11 @@ export function AdventureFolio({ state, page, quests, landmarks, origin, onPage,
   const description = page === "quests"
     ? "Open obligations, promised rewards, and the next trail to follow."
     : "Landmarks, sanctuaries, and roads remembered by the party.";
+  const heroArt = page === "quests" ? questJournalFolioHero : atlasFolioHero;
   return (
     <div className="rpg-folio-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="rpg-folio" role="dialog" aria-modal="true" aria-labelledby="rpg-folio-title">
-        <header className="rpg-folio-hero">
+        <header className={`rpg-folio-hero rpg-folio-hero--${page}`} style={{ "--folio-hero-art": `url(${heroArt})` }}>
           <button onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label={`Close ${title.toLowerCase()}`}><Icon name="close" size={20} /></button>
           <div className="rpg-folio-identity">
             <small>Wayfinder's folio</small>

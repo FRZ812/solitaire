@@ -50,7 +50,31 @@ describe("mobile map navigation markup", () => {
 
     expect(html).toContain('class="rpg-folio-body rpg-folio-body--atlas"');
     expect(html.match(/world-atlas-spread-v1\.jpg/g)).toHaveLength(1);
+    expect(html).toContain("atlas-folio-hero-v1.png");
+    expect(html).not.toContain("quest-journal-folio-hero-v1.png");
     expect(html).not.toContain("--folio-art");
+  });
+
+  it("uses separate generated art for the quest journal folio", () => {
+    const state = makeInitialState();
+    const model = buildExplorationModel(state);
+    const html = renderToStaticMarkup(
+      <AdventureFolio
+        state={state}
+        page="quests"
+        quests={[]}
+        landmarks={model.landmarks}
+        origin={state.world.currentTile}
+        onPage={vi.fn()}
+        onClose={vi.fn()}
+        onPick={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('class="rpg-folio-hero rpg-folio-hero--quests"');
+    expect(html).toContain("quest-journal-folio-hero-v1.png");
+    expect(html).not.toContain("atlas-folio-hero-v1.png");
+    expect(html).not.toContain("world-atlas-spread-v1.jpg");
   });
 
 });

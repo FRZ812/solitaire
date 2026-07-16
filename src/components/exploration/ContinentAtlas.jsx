@@ -23,6 +23,9 @@ const {
 const MAP_WIDTH = 1200;
 const MAP_HEIGHT = 520;
 const MAP_PADDING = 22;
+const MAP_ZOOM_MIN = 1;
+const MAP_ZOOM_MAX = 2.5;
+const MAP_ZOOM_STEP = 0.25;
 const SAMPLE_COLUMNS = 48;
 const SAMPLE_ROWS = 26;
 const SQRT_THREE_OVER_TWO = Math.sqrt(3) / 2;
@@ -112,6 +115,10 @@ export function atlasLandmarkIsVisible(landmark, {
 export function atlasRouteEmphasis(route, focusedRealmId) {
   if (!focusedRealmId) return "";
   return route.realmIds?.includes(focusedRealmId) ? "is-focused" : "is-muted";
+}
+
+export function clampAtlasZoom(value) {
+  return Math.max(MAP_ZOOM_MIN, Math.min(MAP_ZOOM_MAX, value));
 }
 
 function compactList(value, limit = 3) {
@@ -271,6 +278,7 @@ export function ContinentAtlas({ state, origin, onPick }) {
   const terrain = useMemo(() => buildTerrainCells(seed), [seed]);
   const regions = Object.values(REGION_DEFINITIONS);
   const [expanded, setExpanded] = useState(false);
+  const [mapZoom, setMapZoom] = useState(MAP_ZOOM_MIN);
   const [focusedRealmId, setFocusedRealmId] = useState(null);
   const [visibleLayers, setVisibleLayers] = useState(() => new Set(CONTINENT_ATLAS_LAYERS.map((layer) => layer.id)));
   const [selectedLandmarkId, setSelectedLandmarkId] = useState(WHITEMARCH_CAPITAL.id);
@@ -333,7 +341,6 @@ export function ContinentAtlas({ state, origin, onPick }) {
   function inspectLandmark(landmark) {
     setSelectedLandmarkId(landmark.id);
     setFocusedRealmId(landmark.realmId || landmark.capitalOfRealmId || null);
-    setExpanded(true);
   }
 
   function inspectRealm(realm) {
@@ -342,7 +349,56 @@ export function ContinentAtlas({ state, origin, onPick }) {
     ));
     if (capital) setSelectedLandmarkId(capital.id);
     setFocusedRealmId(realm.id);
-    setExpanded(true);
+  }
+
+  function changeMapZoom(nextValue) {
+    const nextZoom = clampAtlasZoom(nextValue);
+    if (nextZoom === mapZoom) return;
+    const viewport = mapViewportRef.current;
+    const horizontalRatio = viewport?.scrollWidth
+      ? (viewport.scrollLeft + viewport.clientWidth / 2) / viewport.scrollWidth
+      : 0.5;
+    const verticalRatio = viewport?.scrollHeight
+      ? (viewport.scrollTop + viewport.clientHeight / 2) / viewport.scrollHeight
+      : 0.5;
+    setMapZoom(nextZoom);
+    if (!viewport || typeof window === "undefined") return;
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      viewport.scrollLeft = horizontalRatio * viewport.scrollWidth - viewport.clientWidth / 2;
+      viewport.scrollTop = verticalRatio * viewport.scrollHeight - viewport.clientHeight / 2;
+    }));
+  }
+
+  function toggleExpanded() {
+    const nextExpanded = !expanded;
+    setExpanded(nextExpanded);
+    if (!nextExpanded) {
+      setMapZoom(MAP_ZOOM_MIN);
+      if (mapViewportRef.current) {
+        mapViewportRef.current.scrollLeft = 0;
+        mapViewportRef.current.scrollTop = 0;
+      }
+    }
+  }
+
+  function handleMapWheel(event) {
+    if (!expanded || event.deltaY === 0) return;
+    event.preventDefault();
+    changeMapZoom(mapZoom + (event.deltaY < 0 ? MAP_ZOOM_STEP : -MAP_ZOOM_STEP));
+  }
+
+  function handleMapKeyDown(event) {
+    if (!expanded) return;
+    if (["+", "="].includes(event.key)) {
+      event.preventDefault();
+      changeMapZoom(mapZoom + MAP_ZOOM_STEP);
+    } else if (event.key === "-") {
+      event.preventDefault();
+      changeMapZoom(mapZoom - MAP_ZOOM_STEP);
+    } else if (event.key === "0") {
+      event.preventDefault();
+      changeMapZoom(MAP_ZOOM_MIN);
+    }
   }
 
   function toggleLayer(layerId) {
@@ -399,14 +455,43 @@ export function ContinentAtlas({ state, origin, onPick }) {
         Charted waters: {COASTAL_FEATURES.map((feature) => feature.name).join(", ")}.
       </p>
 
-      <div
-        ref={mapViewportRef}
-        className="continent-atlas__map-viewport"
-        role="region"
-        aria-label={expanded ? "Expanded world map; swipe or use arrow and Tab keys to explore the wide chart" : "Compact world map"}
-        tabIndex={expanded ? 0 : undefined}
-      >
-      <div id="continent-atlas-world-map" className="continent-atlas__map" style={{ "--atlas-spread": `url(${atlasSpreadArt})` }}>
+      <div className="continent-atlas__map-shell">
+        <div className="continent-atlas__map-controls">
+          <button
+            type="button"
+            className="continent-atlas__canvas-toggle"
+            aria-controls="continent-atlas-world-map"
+            aria-expanded={expanded}
+            onClick={toggleExpanded}
+          >
+            <span>{expanded ? "Collapse world view" : "Expand world view"}</span>
+          </button>
+          {expanded && (
+            <div className="continent-atlas__zoom-controls" role="group" aria-label="Map zoom controls">
+              <button type="button" onClick={() => changeMapZoom(mapZoom - MAP_ZOOM_STEP)} disabled={mapZoom <= MAP_ZOOM_MIN} aria-label="Zoom map out">−</button>
+              <button type="button" onClick={() => changeMapZoom(MAP_ZOOM_MIN)} disabled={mapZoom === MAP_ZOOM_MIN} aria-label="Reset map zoom">{Math.round(mapZoom * 100)}%</button>
+              <button type="button" onClick={() => changeMapZoom(mapZoom + MAP_ZOOM_STEP)} disabled={mapZoom >= MAP_ZOOM_MAX} aria-label="Zoom map in">+</button>
+            </div>
+          )}
+        </div>
+        <div
+          ref={mapViewportRef}
+          className="continent-atlas__map-viewport"
+          role="region"
+          aria-label={expanded ? `Expanded world map at ${Math.round(mapZoom * 100)} percent; scroll or drag to pan` : "Compact world map"}
+          tabIndex={expanded ? 0 : undefined}
+          onWheel={handleMapWheel}
+          onKeyDown={handleMapKeyDown}
+        >
+          <div
+            id="continent-atlas-world-map"
+            className="continent-atlas__map"
+            style={{
+              "--atlas-spread": `url(${atlasSpreadArt})`,
+              "--atlas-zoom-width": `${mapZoom * 100}%`,
+              "--atlas-mobile-zoom-width": `${720 * mapZoom}px`,
+            }}
+          >
         <svg viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} preserveAspectRatio="none" shapeRendering="geometricPrecision" aria-hidden="true">
           <defs>
             <clipPath id="continent-atlas-land-clip">
@@ -477,16 +562,6 @@ export function ContinentAtlas({ state, origin, onPick }) {
           ))}
         </div>
 
-        <button
-          type="button"
-          className="continent-atlas__canvas-toggle"
-          aria-controls="continent-atlas-world-map"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          <span>{expanded ? "Collapse world view" : "Expand world view"}</span>
-        </button>
-
         <div className="continent-atlas__region-layer" aria-hidden="true">
           {regions.flatMap((region) => region.sites.map((site, siteIndex) => (
             <span
@@ -535,7 +610,8 @@ export function ContinentAtlas({ state, origin, onPick }) {
           <i aria-hidden="true" />
           <span aria-hidden="true">You</span>
         </div>
-      </div>
+          </div>
+        </div>
       </div>
 
       {selectedLandmark && (
