@@ -14,7 +14,7 @@ import guildAdvocate from "../assets/generated/character-portraits/guild-advocat
 import velvetCourtier from "../assets/generated/character-portraits/velvet-courtier-grounded-v3.webp";
 import warCaptain from "../assets/generated/character-portraits/war-captain-grounded-v3.webp";
 import battleArchmage from "../assets/generated/character-portraits/battle-archmage-grounded-v3.webp";
-import shadowblade from "../assets/generated/character-portraits/shadowblade-grounded-v3.webp";
+import shadowblade from "../assets/generated/character-portraits/shadowblade-anime-v2.webp";
 import championPaladin from "../assets/generated/character-portraits/champion-paladin-grounded-v3.webp";
 import dragonHunter from "../assets/generated/character-portraits/dragon-hunter-grounded-v3.webp";
 import highSorcerer from "../assets/generated/character-portraits/high-sorcerer-grounded-v3.webp";
