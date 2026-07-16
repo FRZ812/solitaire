@@ -3,15 +3,15 @@ import professionAtlas from "../assets/generated/professions/profession-atlas-an
 import { professionRecord } from "../data/professions.js";
 import "./profession-icon.css";
 
-// ImageGen-authored 5x5 atlas. The first 23 cells are occupied in template
-// order; the last two are deliberately blank. Keeping the index semantic here
+// ImageGen-authored 5x5 atlas. The first 23 cells are character-specific and
+// the final two are shared by the envoy and courtier social professions. Keeping the index semantic here
 // makes the visual source replaceable without scattering pixel coordinates.
 export const PROFESSION_ATLAS_CELLS = Object.freeze([
   "sellsword", "reaver", "ranger", "cutthroat", "devout",
   "hedge-mage", "knight-errant", "war-priest", "duelist", "beast-warden",
   "war-captain", "battle-archmage", "shadowblade", "champion-paladin", "dragon-hunter",
   "high-sorcerer", "warlord", "fae-touched", "archmage-ascendant", "undying-champion",
-  "demon-warlock", "dragon-ascendant", "enchanter-tyrant",
+  "demon-warlock", "dragon-ascendant", "enchanter-tyrant", "envoy", "courtier",
 ]);
 
 const CELL_INDEX = Object.freeze(Object.fromEntries(PROFESSION_ATLAS_CELLS.map((key, index) => [key, index])));
@@ -21,6 +21,7 @@ const PROFESSION_FALLBACKS = Object.freeze({
   "war-captain": "war-captain", archmage: "battle-archmage", paladin: "champion-paladin", "dragon-hunter": "dragon-hunter",
   sorcerer: "high-sorcerer", warlord: "warlord", "fae-touched": "fae-touched", champion: "undying-champion",
   warlock: "demon-warlock", "dragon-ascendant": "dragon-ascendant", "enchanter-tyrant": "enchanter-tyrant",
+  envoy: "envoy", courtier: "courtier",
 });
 
 export function professionIconKey({ templateId, profession } = {}) {

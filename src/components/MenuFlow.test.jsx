@@ -62,6 +62,10 @@ describe("front-of-game menu flow", () => {
     expect(html).toContain("Bram Coltaine");
     expect(html).toContain("Faelar Sylvareth");
     expect(html).toContain("Ysolde Varen");
+    expect(html).toContain("Nadira Sahir");
+    expect(html).toContain("Lethira Vael");
+    expect(html).toContain("Tomas Vell");
+    expect(html).toContain("Amahara Sayo");
     expect(html).toContain("Korvane Ashfell");
     expect(html).toContain("Search name, class, subclass, kindred…");
     expect(html).toContain("All roles");
