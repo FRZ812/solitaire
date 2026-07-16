@@ -592,7 +592,12 @@ function beginTurnFor(cs, actor, { deckMode = false } = {}) {
   // high Presence (triggers.resolveRegen); plus EARNED refund procs in fireProc.
   const tr = actor.triggers || {};
   const rr = tr.resolveRegen || 0;
-  if (rr && actor.resolveMax != null) actor.resolve = Math.min(actor.resolveMax, (actor.resolve || 0) + rr);
+  if (rr && actor.resolveMax != null) {
+    const prevResolve = actor.resolve || 0;
+    actor.resolve = Math.min(actor.resolveMax, prevResolve + rr);
+    const gained = actor.resolve - prevResolve;
+    if (gained > 0) cs.log.push(logEntry(`${actor.name} recovers ${gained} resolve.`, "status"));
+  }
   if (tr.turnRegen && actor.health > 0) {
     // turnRegen is a FRACTION of max health (scales with the wearer at every tier).
     const mended = gainHealth(actor, Math.max(1, Math.round(actor.maxHealth * tr.turnRegen)));

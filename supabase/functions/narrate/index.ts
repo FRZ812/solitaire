@@ -57,7 +57,7 @@ function selectedModel(value: unknown) {
 function selectedReasoning(model: string, effort: unknown) {
   if (!REASONING_MODELS.has(model)) return undefined;
   if (effort !== "high" && effort !== "max") return undefined;
-  return { effort: effort === "max" ? "xhigh" : "high", exclude: true };
+  return { effort: effort === "max" ? "xhigh" : "high" };
 }
 
 function toText(value: unknown): string {
