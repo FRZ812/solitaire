@@ -48,9 +48,9 @@ describe("authored character templates", () => {
 
   it("never aliases one generated portrait to a different authored character", () => {
     const generated = Object.values(CHARACTER_PORTRAITS);
-    expect(generated).toHaveLength(21);
+    expect(generated).toHaveLength(23);
     expect(new Set(generated).size).toBe(generated.length);
-    expect(CHARACTER_PORTRAITS["dragon-hunter"]).toBeUndefined();
-    expect(CHARACTER_PORTRAITS["high-sorcerer"]).toBeUndefined();
+    expect(CHARACTER_PORTRAITS["dragon-hunter"]).toContain("dragon-hunter-grounded-v3.webp");
+    expect(CHARACTER_PORTRAITS["high-sorcerer"]).toContain("high-sorcerer-grounded-v3.webp");
   });
 });

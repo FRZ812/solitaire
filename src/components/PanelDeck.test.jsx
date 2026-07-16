@@ -65,7 +65,7 @@ describe("PanelDeck", () => {
     const authoredHtml = renderToStaticMarkup(
       <PanelDeck state={authored} user={null} initialPage="character" onClose={() => {}} handlers={{ onPortraitChange: () => {} }} />,
     );
-    expect(authoredHtml).toContain("ranger-anime-v2.webp");
+    expect(authoredHtml).toContain("ranger-grounded-v3.webp");
     expect(authoredHtml).toContain("Upload portrait");
     expect(authoredHtml).toContain("data-atlas-cell=\"ranger\"");
 
