@@ -262,7 +262,7 @@
 .rpg-city-district-chip > span { grid-row: 1 / span 2; color: #e7b95e; font-size: 12px; text-shadow: 0 0 10px rgba(231,185,94,.42); }
 .rpg-city-district-chip small { overflow: hidden; color: rgba(191,213,214,.58); font-size: 6px; font-weight: 800; letter-spacing: .16em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .rpg-city-district-chip b { overflow: hidden; color: #fff8e5; font: italic 500 13px/1.1 "Instrument Serif", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
-.rpg-poi-tier-legend { position: absolute; z-index: 20; left: 13px; bottom: 72px; display: flex; align-items: center; gap: 5px; padding: 5px 7px; color: #fff2c4; border: 1px solid rgba(231,185,94,.36); border-radius: 999px; background: rgba(7,20,31,.9); box-shadow: 0 8px 24px rgba(2,7,13,.36); backdrop-filter: blur(7px); pointer-events: none; }
+.rpg-poi-tier-legend { position: absolute; z-index: 20; top: 14px; right: 13px; display: flex; align-items: center; gap: 5px; padding: 5px 7px; color: #fff2c4; border: 1px solid rgba(231,185,94,.36); border-radius: 999px; background: rgba(7,20,31,.9); box-shadow: 0 8px 24px rgba(2,7,13,.36); backdrop-filter: blur(7px); pointer-events: none; }
 .rpg-poi-tier-legend > small { margin-right: 2px; color: rgba(191,213,214,.62); font-size: 6px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
 .rpg-destination-poi-tier { margin: 10px 14px 0; padding: 7px 9px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(231,185,94,.25); border-radius: 8px; background: rgba(7,20,31,.46); }
 .rpg-destination-poi-tier > small { color: rgba(191,213,214,.62); font-size: 7px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
