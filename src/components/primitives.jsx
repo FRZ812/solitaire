@@ -255,6 +255,7 @@ export function VitalsStrip({ state, onExtinguish }) {
 
         <div className="vitals-strip__meters">
         <RadialMeter
+          className="radial-meter--vitality"
           iconName="heart" iconFill={colors.gold}
           value={character.vitality} max={vitMax}
           label={`${Math.round(character.vitality)}/${vitMax}`}
@@ -303,7 +304,7 @@ export function VitalsStrip({ state, onExtinguish }) {
 //   ≤10% → red    (Starving / Parched / Exhausted / near-death vitality)
 //   ≤30% → amber  (Hungry / Thirsty / Tired / wounded vitality)
 //   else → gold
-function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
+function RadialMeter({ className = "", iconName, iconFill, value, max, label, ariaLabel }) {
   const v = Number.isFinite(value) ? value : 0;
   const m = Math.max(1, max);
   const pct = Math.max(0, Math.min(100, (v / m) * 100));
@@ -321,7 +322,7 @@ function RadialMeter({ iconName, iconFill, value, max, label, ariaLabel }) {
 
   return (
     <div
-      className="radial-meter"
+      className={`radial-meter ${className}`}
       title={ariaLabel}
       role="meter"
       aria-label={ariaLabel}
