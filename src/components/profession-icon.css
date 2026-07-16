@@ -1,4 +1,9 @@
 .profession-icon {
+  /* The authored panels sit slightly down/right inside their nominal 5×5
+   * atlas cells. Keep every crest centred on the badge frame, independent of
+   * its cell position. */
+  --profession-art-x: -4%;
+  --profession-art-y: -4%;
   position: relative;
   display: inline-grid;
   flex: 0 0 auto;
@@ -20,6 +25,7 @@
   background-position: var(--profession-position);
   background-repeat: no-repeat;
   background-size: 500% 500%;
+  transform: translate(var(--profession-art-x), var(--profession-art-y));
   filter: saturate(.92) contrast(1.04);
 }
 
