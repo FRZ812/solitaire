@@ -61,9 +61,13 @@ describe("authored character templates", () => {
 
   it("never aliases one generated portrait to a different authored character", () => {
     const generated = Object.values(CHARACTER_PORTRAITS);
-    expect(generated).toHaveLength(23);
+    expect(generated).toHaveLength(27);
     expect(new Set(generated).size).toBe(generated.length);
     expect(CHARACTER_PORTRAITS["dragon-hunter"]).toContain("dragon-hunter-grounded-v3.webp");
     expect(CHARACTER_PORTRAITS["high-sorcerer"]).toContain("high-sorcerer-grounded-v3.webp");
+    expect(CHARACTER_PORTRAITS["court-envoy"]).toContain("court-envoy-grounded-v3.webp");
+    expect(CHARACTER_PORTRAITS["confidence-artist"]).toContain("confidence-artist-grounded-v3.webp");
+    expect(CHARACTER_PORTRAITS["guild-advocate"]).toContain("guild-advocate-grounded-v3.webp");
+    expect(CHARACTER_PORTRAITS["velvet-courtier"]).toContain("velvet-courtier-grounded-v3.webp");
   });
 });
