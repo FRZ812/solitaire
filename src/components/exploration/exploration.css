@@ -732,9 +732,14 @@
   isolation: isolate;
   background-image:
     radial-gradient(ellipse at 50% -20%, rgba(77,132,148,.34), transparent 58%),
-    linear-gradient(180deg, rgba(14,40,55,.76), rgba(7,16,28,.94) 72%, #07101c 100%),
+    linear-gradient(180deg, rgba(3,10,18,.24), rgba(7,16,28,.62) 54%, #07101c 100%),
+    var(--folio-hero-art),
     repeating-linear-gradient(90deg, transparent 0 74px, rgba(191,213,214,.025) 75px);
+  background-position: center, center, center 23%, center;
+  background-size: auto, auto, cover, auto;
+  background-repeat: no-repeat;
 }
+.rpg-folio-hero--quests { background-position: center, center, center 18%, center; }
 .rpg-folio-hero::after {
   content: "";
   position: absolute;
@@ -942,8 +947,8 @@
 .continent-atlas__realm-tabs span { min-width: 0; display: flex; flex-direction: column; }
 .continent-atlas__realm-tabs small,
 .continent-atlas__realm-tabs b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.continent-atlas__realm-tabs small { color: rgba(191,213,214,.42); font-size: 5.5px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
-.continent-atlas__realm-tabs b { margin-top: 2px; font: 700 8px/1.05 Georgia, serif; letter-spacing: .02em; }
+.continent-atlas__realm-tabs small { color: rgba(191,213,214,.5); font-size: 7px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.continent-atlas__realm-tabs b { margin-top: 2px; font: 700 10px/1.08 Georgia, serif; letter-spacing: .02em; }
 
 .continent-atlas__layer-controls {
   padding: 4px 6px;
@@ -974,15 +979,37 @@
 .continent-atlas__layer-controls button[aria-pressed="false"] { opacity: .55; }
 .continent-atlas__layer-controls button:focus-visible { outline: 2px solid #fff3c6; outline-offset: 1px; }
 .continent-atlas__layer-controls i { flex: 0 0 auto; color: rgba(231,185,94,.78); font: normal 8px/1 Georgia, serif; }
-.continent-atlas__layer-controls span { overflow: hidden; font-size: 5.5px; font-weight: 900; letter-spacing: .07em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.continent-atlas__layer-controls span { overflow: hidden; font-size: 8.5px; font-weight: 900; letter-spacing: .05em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .continent-atlas__layer-controls .is-all-realms i { color: rgba(128,213,213,.78); }
 
+.continent-atlas__map-shell {
+  position: relative;
+  min-width: 0;
+  background: radial-gradient(ellipse at center, rgba(25,60,69,.72), #081b24 72%);
+}
+.continent-atlas__map-controls {
+  position: absolute;
+  z-index: 20;
+  top: 9px;
+  right: 9px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  pointer-events: none;
+}
+.continent-atlas__map-controls button { pointer-events: auto; }
 .continent-atlas__map-viewport {
   min-width: 0;
   overflow: hidden;
-  background: radial-gradient(ellipse at center, rgba(25,60,69,.72), #081b24 72%);
+  overscroll-behavior: contain;
+  background: transparent;
   scrollbar-width: thin;
   scrollbar-color: rgba(231,185,94,.44) rgba(3,10,18,.7);
+}
+.continent-atlas.is-expanded .continent-atlas__map-viewport {
+  max-height: min(58dvh, 520px);
+  overflow: auto;
+  touch-action: pan-x pan-y;
 }
 .continent-atlas__map-viewport:focus-visible { outline: 2px solid #fff3c6; outline-offset: -2px; }
 
@@ -1004,7 +1031,7 @@
   background-blend-mode: multiply, normal;
   transition: width .28s ease, max-width .28s ease;
 }
-.continent-atlas.is-expanded .continent-atlas__map { width: 100%; max-width: none; }
+.continent-atlas.is-expanded .continent-atlas__map { width: var(--atlas-zoom-width, 100%); max-width: none; }
 .continent-atlas__map::before {
   content: "";
   position: absolute;
@@ -1123,33 +1150,51 @@
 .continent-atlas__water-label.is-muted { opacity: .16; }
 
 .continent-atlas__canvas-toggle {
-  position: absolute;
-  z-index: 3;
-  inset: 0;
-  width: 100%;
-  padding: 0;
+  min-height: 32px;
+  padding: 7px 9px;
   color: rgba(255,248,229,.8);
-  border: 0;
-  background: transparent;
-  cursor: zoom-in;
+  border: 1px solid rgba(231,185,94,.38);
+  border-radius: 7px;
+  background: rgba(3,10,18,.88);
+  box-shadow: 0 4px 12px rgba(2,6,13,.38);
+  cursor: pointer;
 }
-.continent-atlas__canvas-toggle[aria-expanded="true"] { cursor: zoom-out; }
 .continent-atlas__canvas-toggle > span {
-  position: absolute;
-  top: 7px;
-  right: 8px;
-  padding: 5px 7px;
-  border: 1px solid rgba(231,185,94,.3);
-  border-radius: 6px;
-  background: rgba(3,10,18,.76);
-  box-shadow: 0 3px 10px rgba(2,6,13,.28);
-  font-size: 6px;
+  font-size: 8px;
   font-weight: 900;
-  letter-spacing: .11em;
+  letter-spacing: .09em;
   text-transform: uppercase;
 }
-.continent-atlas__canvas-toggle:hover > span { border-color: rgba(231,185,94,.64); background: rgba(18,28,32,.9); }
-.continent-atlas__canvas-toggle:focus-visible { outline: 2px solid #fff3c6; outline-offset: -4px; }
+.continent-atlas__canvas-toggle:hover { border-color: rgba(231,185,94,.7); background: rgba(18,28,32,.94); }
+.continent-atlas__canvas-toggle:focus-visible { outline: 2px solid #fff3c6; outline-offset: 2px; }
+.continent-atlas__zoom-controls {
+  min-height: 32px;
+  padding: 3px;
+  display: grid;
+  grid-template-columns: 30px 48px 30px;
+  gap: 2px;
+  pointer-events: auto;
+  border: 1px solid rgba(191,213,214,.2);
+  border-radius: 8px;
+  background: rgba(3,10,18,.9);
+  box-shadow: 0 4px 12px rgba(2,6,13,.38);
+}
+.continent-atlas__zoom-controls button {
+  min-width: 0;
+  min-height: 26px;
+  padding: 2px 5px;
+  color: rgba(255,248,229,.88);
+  border: 0;
+  border-radius: 5px;
+  background: rgba(30,62,70,.58);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.continent-atlas__zoom-controls button:nth-child(2) { font-size: 9px; }
+.continent-atlas__zoom-controls button:hover:not(:disabled) { color: #fff8e5; background: rgba(231,185,94,.16); }
+.continent-atlas__zoom-controls button:disabled { opacity: .38; cursor: default; }
+.continent-atlas__zoom-controls button:focus-visible { outline: 2px solid #fff3c6; outline-offset: 1px; }
 
 .continent-atlas__region-layer,
 .continent-atlas__landmark-layer { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
@@ -1242,36 +1287,36 @@
 .continent-atlas__position span { position: absolute; top: 10px; padding: 2px 4px; color: #fff8e5; border-radius: 3px; background: rgba(3,10,18,.78); font-size: 5.5px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; text-shadow: 0 1px 2px #02070d; }
 
 .continent-atlas__detail {
-  min-height: 84px;
-  padding: 9px 10px;
+  min-height: 132px;
+  padding: 14px 16px;
   display: grid;
-  grid-template-columns: minmax(180px,1.35fr) minmax(220px,1fr) auto;
+  grid-template-columns: minmax(240px,.9fr) minmax(0,1.5fr) auto;
   align-items: center;
-  gap: 10px 15px;
+  gap: 14px 20px;
   border-top: 1px solid rgba(231,185,94,.15);
   background: linear-gradient(90deg, rgba(231,185,94,.055), rgba(7,21,31,.7) 42%, rgba(47,100,115,.07));
 }
 .continent-atlas__detail-copy { min-width: 0; }
-.continent-atlas__detail-copy > small { color: rgba(231,185,94,.64); font-size: 6px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
-.continent-atlas__detail-copy h4 { margin: 3px 0; color: #fff8e5; font: italic 500 20px/1 "Instrument Serif", Georgia, serif; }
+.continent-atlas__detail-copy > small { color: rgba(231,185,94,.72); font-size: 9px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+.continent-atlas__detail-copy h4 { margin: 5px 0; color: #fff8e5; font: italic 500 27px/1 "Instrument Serif", Georgia, serif; }
 .continent-atlas__detail-copy p {
   margin: 0;
   overflow: hidden;
   display: -webkit-box;
   color: rgba(191,213,214,.57);
-  font: italic 9.5px/1.25 "Instrument Serif", Georgia, serif;
+  font: italic 13px/1.4 "Instrument Serif", Georgia, serif;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
-.continent-atlas__detail dl { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 5px 10px; }
+.continent-atlas__detail dl { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px 16px; }
 .continent-atlas__detail dl > div { min-width: 0; }
 .continent-atlas__detail dl > .is-wide { grid-column: 1 / -1; }
-.continent-atlas__detail dt { color: rgba(191,213,214,.38); font-size: 5.5px; font-weight: 900; letter-spacing: .11em; text-transform: uppercase; }
-.continent-atlas__detail dd { margin: 2px 0 0; overflow: hidden; color: rgba(244,232,195,.76); font-size: 7px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.continent-atlas__detail dt { color: rgba(191,213,214,.52); font-size: 9px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.continent-atlas__detail dd { margin: 3px 0 0; color: rgba(244,232,195,.82); font-size: 12.5px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
 .continent-atlas__chart {
-  min-width: 104px;
-  min-height: 44px;
-  padding: 7px 9px;
+  min-width: 136px;
+  min-height: 58px;
+  padding: 9px 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1285,8 +1330,8 @@
 }
 .continent-atlas__chart:hover { filter: brightness(1.08); }
 .continent-atlas__chart:focus-visible { outline: 2px solid #fff3c6; outline-offset: 2px; }
-.continent-atlas__chart > span { font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
-.continent-atlas__chart > small { margin-top: 3px; font-size: 5.5px; font-weight: 800; opacity: .68; }
+.continent-atlas__chart > span { font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.continent-atlas__chart > small { margin-top: 4px; font-size: 8.5px; font-weight: 800; opacity: .72; }
 
 .continent-atlas__legend {
   min-height: 28px;
@@ -1417,12 +1462,14 @@
   .rpg-folio-grid { grid-template-columns: 1fr; }
   .rpg-folio-card { min-height: 104px; }
   .continent-atlas__map { width: min(100%, 720px); height: auto; aspect-ratio: 30 / 13; }
-  .continent-atlas.is-expanded .continent-atlas__map { width: 100%; }
+  .continent-atlas.is-expanded .continent-atlas__map { width: var(--atlas-zoom-width, 100%); }
   .continent-atlas__region-label { font-size: 5.5px; }
   .continent-atlas__region-label.is-frontier { font-size: 5px; }
-  .continent-atlas__detail { grid-template-columns: minmax(0,1.25fr) minmax(190px,1fr); }
+  .continent-atlas__detail { grid-template-columns: minmax(0,1fr) auto; align-items: start; }
+  .continent-atlas__detail-copy { grid-column: 1; grid-row: 1; }
   .continent-atlas__detail dl { grid-template-columns: repeat(2, minmax(0,1fr)); }
-  .continent-atlas__chart { grid-column: 1 / -1; min-height: 40px; }
+  .continent-atlas__detail dl { grid-column: 1 / -1; }
+  .continent-atlas__chart { grid-column: 2; grid-row: 1; min-height: 58px; }
   .continent-atlas__legend > small { flex-basis: 100%; margin-left: 0; }
 }
 
@@ -1460,24 +1507,30 @@
   .continent-atlas__realm-tabs button { min-height: 32px; padding: 4px; grid-template-columns: 5px minmax(0,1fr); gap: 3px; }
   .continent-atlas__realm-tabs i { width: 4px; height: 18px; }
   .continent-atlas__realm-tabs small { display: none; }
-  .continent-atlas__realm-tabs b { margin: 0; font-size: 7px; }
+  .continent-atlas__realm-tabs b { margin: 0; font-size: 9px; }
   .continent-atlas__layer-controls { padding: 3px; gap: 2px; }
   .continent-atlas__layer-controls button { min-height: 26px; padding-inline: 2px; gap: 2px; }
-  .continent-atlas__layer-controls span { font-size: 5px; letter-spacing: .03em; }
+  .continent-atlas__layer-controls span { font-size: 7.5px; letter-spacing: .02em; }
   .continent-atlas__map { width: 100%; height: auto; aspect-ratio: 30 / 13; }
-  .continent-atlas.is-expanded .continent-atlas__map-viewport { overflow-x: auto; overscroll-behavior-inline: contain; }
-  .continent-atlas.is-expanded .continent-atlas__map { width: 720px; height: auto; max-width: none; aspect-ratio: 30 / 13; }
+  .continent-atlas.is-expanded .continent-atlas__map-viewport { overflow: auto; overscroll-behavior: contain; }
+  .continent-atlas.is-expanded .continent-atlas__map { width: var(--atlas-mobile-zoom-width, 720px); height: auto; max-width: none; aspect-ratio: 30 / 13; }
   .continent-atlas__realm b { font-size: 7px; }
   .continent-atlas__realm small { display: none; }
-  .continent-atlas__canvas-toggle > span { top: 5px; right: 5px; padding: 4px 5px; font-size: 5.5px; }
+  .continent-atlas__map-controls { top: 6px; right: 6px; gap: 5px; }
+  .continent-atlas__canvas-toggle { min-height: 30px; padding: 6px 7px; }
+  .continent-atlas__canvas-toggle > span { font-size: 7px; }
+  .continent-atlas__zoom-controls { min-height: 30px; grid-template-columns: 28px 43px 28px; }
   .continent-atlas__marker { width: 18px; height: 18px; }
   .continent-atlas__water-label:not(.is-sea) { display: none; }
-  .continent-atlas__detail { padding: 8px; grid-template-columns: minmax(0,1fr) 96px; align-items: start; gap: 7px 8px; }
-  .continent-atlas__detail-copy p { -webkit-line-clamp: 2; }
-  .continent-atlas__detail dl { grid-column: 1 / -1; display: flex; gap: 7px; overflow-x: auto; padding: 1px 0 3px; scrollbar-width: thin; }
-  .continent-atlas__detail dl > div { flex: 0 0 106px; padding-right: 6px; border-right: 1px solid rgba(191,213,214,.08); }
-  .continent-atlas__detail dl > .is-wide { flex-basis: 180px; }
-  .continent-atlas__chart { grid-column: 2; grid-row: 1; width: 96px; min-width: 0; min-height: 52px; }
+  .continent-atlas__detail { min-height: 0; padding: 13px 11px; grid-template-columns: minmax(0,1fr) 112px; align-items: start; gap: 12px 10px; }
+  .continent-atlas__detail-copy h4 { font-size: 24px; }
+  .continent-atlas__detail-copy p { font-size: 12px; -webkit-line-clamp: 3; }
+  .continent-atlas__detail dl { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 11px 13px; overflow: visible; padding: 3px 0 0; }
+  .continent-atlas__detail dl > div { min-width: 0; padding: 0; border: 0; }
+  .continent-atlas__detail dl > .is-wide { grid-column: 1 / -1; }
+  .continent-atlas__detail dt { font-size: 9px; }
+  .continent-atlas__detail dd { font-size: 12px; }
+  .continent-atlas__chart { grid-column: 2; grid-row: 1; width: 112px; min-width: 0; min-height: 58px; }
   .continent-atlas__legend { gap: 4px 8px; padding-inline: 8px; }
   .continent-atlas__legend > small { display: none; }
   .rpg-folio-place { grid-template-columns: 76px minmax(0,1fr) 14px; }

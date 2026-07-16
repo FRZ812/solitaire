@@ -24,6 +24,7 @@ import {
   atlasLandmarkLayer,
   atlasRouteEmphasis,
   atlasRoutesForLandmark,
+  clampAtlasZoom,
 } from "./ContinentAtlas.jsx";
 
 describe("continent atlas", () => {
@@ -83,6 +84,9 @@ describe("continent atlas", () => {
     ));
     expect(html.match(/hidden="" class="continent-atlas__marker/g)).toHaveLength(minorLandmarks.length);
     expect(html).toContain('aria-label="Compact world map"');
+    expect(html).toContain('class="continent-atlas__map-shell"');
+    expect(html).toContain('class="continent-atlas__map-controls"');
+    expect(html).not.toContain('aria-label="Map zoom controls"');
     for (const feature of COASTAL_FEATURES) expect(html).toContain(feature.name);
     for (const realm of REALMS) {
       expect(html).toContain(realm.shortName);
@@ -90,6 +94,12 @@ describe("continent atlas", () => {
     }
     expect(html).toContain(`${PROVINCES.length} provinces`);
     expect(html).toContain(`${CONTINENT_SEA_LANES.length} sea lanes`);
+  });
+
+  it("keeps map zoom within its local readable range", () => {
+    expect(clampAtlasZoom(0)).toBe(1);
+    expect(clampAtlasZoom(1.75)).toBe(1.75);
+    expect(clampAtlasZoom(4)).toBe(2.5);
   });
 
   it("opens on a useful capital entry with realm, faction, ruler, and route details", () => {
