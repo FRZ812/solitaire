@@ -2260,10 +2260,13 @@
 
 /* The composer keeps the theme's crisp gold edge while remaining one fluid bubble. */
 .story-input__field { border: 0 !important; box-shadow: none !important; }
-.story-input__send { border-width: 1px !important; }
+.story-input__send,
+.story-input__run { border-width: 1px !important; }
 
 .story-input__send:not(:disabled):hover,
-.story-input__send:not(:disabled):focus-visible {
+.story-input__send:not(:disabled):focus-visible,
+.story-input__run:not(:disabled):hover,
+.story-input__run:not(:disabled):focus-visible {
   filter: brightness(1.12);
   outline: 2px solid color-mix(in srgb, var(--scene-highlight, var(--game-gold)) 40%, transparent);
   outline-offset: 2px;
