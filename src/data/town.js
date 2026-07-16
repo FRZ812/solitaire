@@ -11,8 +11,32 @@
 // fee + time (engine/training.js), so the player can fast-track a grindy skill.
 // Only experts (healer, smith) carry it — the wet-market sellers do not.
 
+import { tierColor } from "./tiers.js";
+
 export const RESTOCK_DAYS = 4; // a trader's stock refreshes every 4 game-days
 export const TRAIN_CAP = 5;    // how far an expert can take a proficiency
+
+// Location-level pricing. A service definition describes what a trader sells;
+// the tile's `poi.marketTier` describes the market it is sold in. This lets two
+// general stores share a stock ruleset while a Low Wards counter stays cheap
+// and a Noble Rise house charges for polish, discretion, and address.
+export const MARKET_PRICE_TIERS = Object.freeze({
+  budget: Object.freeze({ id: "budget", label: "Budget house", summary: "26% below standard", priceScale: 0.74, qualityTier: "common", marker: "B" }),
+  standard: Object.freeze({ id: "standard", label: "Standard house", summary: "standard prices", priceScale: 1, qualityTier: "uncommon", marker: "S" }),
+  premium: Object.freeze({ id: "premium", label: "Premium house", summary: "45% above standard", priceScale: 1.45, qualityTier: "rare", marker: "P" }),
+  noble: Object.freeze({ id: "noble", label: "Noble house", summary: "125% above standard", priceScale: 2.25, qualityTier: "very-rare", marker: "N" }),
+  royal: Object.freeze({ id: "royal", label: "Royal house", summary: "250% above standard", priceScale: 3.5, qualityTier: "epic", marker: "R" }),
+  mastercraft: Object.freeze({ id: "mastercraft", label: "Mastercraft house", summary: "400% above standard", priceScale: 5, qualityTier: "legendary", marker: "M" }),
+});
+
+export function marketPriceTierVisual(marketTier) {
+  const definition = typeof marketTier === "string" ? MARKET_PRICE_TIERS[marketTier] : marketTier;
+  if (!definition) return null;
+  return {
+    ...definition,
+    color: tierColor(definition.qualityTier),
+  };
+}
 
 export const BUILDINGS = {
   tavern: {
@@ -20,9 +44,19 @@ export const BUILDINGS = {
     kind: "tavern",            // a quest board: tasks, folk for hire, day-labour
     label: "The Iron Tankard",
     keeper: "the innkeeper",
-    icon: "bldg",
+    icon: "trade-tavern",
     hours: { open: 6, close: 1 }, // wraps past midnight — last call at 1am
     blurb: "The common room hums — low talk, a peat fire, and a board by the door thick with curling notices held on by knives and nails.",
+  },
+
+  inn: {
+    id: "inn",
+    kind: "tavern",
+    label: "The Six Roads Inn",
+    keeper: "the innkeeper",
+    icon: "poi-inn",
+    hours: { open: 6, close: 1 },
+    blurb: "A broad travellers' inn gathered around a guarded wagon yard — warm beds upstairs, common tables below, and road notices in half a dozen tongues beside the hearth.",
   },
 
   healer: {
@@ -30,7 +64,7 @@ export const BUILDINGS = {
     kind: "trader",            // a standard buy/sell trader menu
     label: "The Hospital Cloister",
     keeper: "the healer",      // used to flavor the "speak with…" narrator hook
-    icon: "healer",            // MapView MAP_ASSETS key
+    icon: "trade-healer",      // MapView generated trade/service atlas key
     hours: { open: 7, close: 20 },
     trains: ["endurance"],     // an expert: drills resilience / field-hardiness
     blurb: "Bundles of drying herbs hang from the rafters; the air is thick with comfrey, tallow, and woodsmoke.",
@@ -52,7 +86,7 @@ export const BUILDINGS = {
     forge: true,
     label: "Public Smith Row",
     keeper: "the smith",
-    icon: "smithy",
+    icon: "trade-smith",
     hours: { open: 7, close: 19 },
     trains: ["mastery-mace"],  // an expert: drills you on the arms they make
     buys: ["weapon", "armor", "shield", "clothing", "material", "tool"],
@@ -113,7 +147,7 @@ export const BUILDINGS = {
     kind: "gaol",              // the warden: a wanted board + cells
     label: "Prison Gate",
     keeper: "the gaoler",
-    icon: "gaol",
+    icon: "poi-prison",
     hours: { open: 6, close: 22 },
     blurb: "A threshold of old stone scarred by nails — an intake desk under a lantern that burns all day, a wanted-board by the door, the smell of straw and iron, and a work-gang's side-arch barred until dawn.",
   },
@@ -129,7 +163,7 @@ export const BUILDINGS = {
     kind: "slavemarket",       // the Chain Factor: a roster of captives whose bonds are for sale
     label: "Chain Market Steps",
     keeper: "the Chain Factor",
-    icon: "slavemarket",
+    icon: "poi-slave-market",
     hours: { open: 7, close: 19 },
     blurb: "Pale stone steps washed between bells so the stains do not show — a raised platform where status-criers call the lots, buyers waiting under awnings, the bonded chained at a viewing-rail, and a Chain Factor with a tally-stick and a flat, appraising eye.",
   },
@@ -142,7 +176,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "The Grand Market",
     keeper: "the market-sellers",
-    icon: "market",
+    icon: "trade-provisions",
     hours: { open: 6, close: 18 },
     buys: ["food", "drink", "tool", "supply", "material"],
     blurb: "Plank stalls under oiled canvas — a butcher's block, baskets of fruit, crates of root-vegetables, a pedlar's bench of rope and tin, sellers crying over one another.",
@@ -202,7 +236,7 @@ export const BUILDINGS = {
     kind: "stable",
     label: "Caravan Yard & Stable",
     keeper: "the stabler",
-    icon: "bldg",
+    icon: "trade-stable",
     hours: { open: 6, close: 20 },
     buys: ["feed", "tool"],
     blurb: "Stalls of warm straw and the steady sound of feeding; tack on pegs, a stabler with hay in his sleeves, and the smell of horse and leather.",
@@ -239,7 +273,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Apothecary's Window",
     keeper: "the apothecary",
-    icon: "healer",
+    icon: "trade-alchemist",
     hours: { open: 7, close: 19 },
     buys: ["supply", "material"],
     blurb: "A hinged shutter onto the lane — jars of rue, valerian, comfrey, wormwood on a careful shelf; a locked drawer below labelled in no hand at all; a brass scale on a thong at her wrist.",
@@ -268,7 +302,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Chandler's Stall",
     keeper: "the chandler",
-    icon: "bldg",
+    icon: "trade-chandler",
     hours: { open: 6, close: 19 },
     buys: ["supply", "material"],
     blurb: "A timber stall on the customs corridor — dipped tallow tapers on twine, beeswax pillars under a separate awning, coils of cotton wick on pegs, a small lamp burning all day to show the brightness of the oil.",
@@ -285,7 +319,7 @@ export const BUILDINGS = {
     kind: "shrine",
     label: "Private Chapel",
     keeper: "the chapel priest",
-    icon: "bldg",
+    icon: "trade-priest",
     hours: { open: 6, close: 21 },
     blurb: "A small barrel-vaulted chapel in the south wing — six wooden pews carved with the Drelan wreath, a pale stone altar, a single rose-window of plain leaded glass. The resident priest hears marriages, baptisms, and the quiet funerals that have no public mourners.",
   },
@@ -325,7 +359,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Smith's Lean-To",
     keeper: "the farrier",
-    icon: "smithy",
+    icon: "trade-stable",
     hours: { open: 6, close: 19 },
     buys: ["feed", "tool", "material"],
     blurb: "A lean-to forge against the west yard-wall, blue with the smoke of burning hoof and loud with the ring of the shoeing-hammer — a wheel-jack and a tongue-and-groove bench, a beast cross-tied with one hind hoof up in his lap. Wagon-repair and shoeing both.",
@@ -343,7 +377,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Fishmonger's Bench",
     keeper: "the fishmonger",
-    icon: "market",
+    icon: "trade-fish",
     hours: { open: 5, close: 16 },
     buys: ["food"],
     blurb: "A long slate bench under a canvas slope, sluiced down with quay-water every bell so the blood does not crust — today's catch laid in fern, river-trout, eel cut in lengths, a half-bushel of small silver fish. A wood-mallet within reach for the eels, a tin cup for change, cats waiting at a polite distance.",
@@ -359,7 +393,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Dry-Goods Counter",
     keeper: "the dry-goods keeper",
-    icon: "market",
+    icon: "trade-general",
     hours: { open: 6, close: 20 },
     buys: ["supply", "food", "tool", "material"],
     blurb: "A narrow shop wedged into a block-corner — sacks of flour, beans, lentils, salt mouth-open on the floor under chalked prices; the upper shelves with jars of pickle, twine on spools, fire-lighters, soap-bars, paper screws of tea. A brass bell over the door, a slate by the till tracking who is owed credit and who is owing.",
@@ -374,6 +408,24 @@ export const BUILDINGS = {
       { id: "bedroll",            chance: 0.7, qty: [1, 3], priceMult: 1.2 },
       { id: "chalk-and-charcoal", chance: 0.6, qty: [1, 4], priceMult: 1.2 },
       { id: "cook-pot",           chance: 0.4, qty: [1, 2], priceMult: 1.25 },
+    ],
+  },
+
+  herbalist: {
+    id: "herbalist",
+    kind: "trader",
+    label: "Greenward Herbarium",
+    keeper: "the herbalist",
+    icon: "trade-herbalist",
+    hours: { open: 6, close: 18 },
+    buys: ["remedy", "food", "material"],
+    blurb: "A green-awning stall fragrant with bruised mint and bitter roots — drying racks overhead, labelled seed drawers below, and a stone mortar polished pale by years of field remedies.",
+    stock: [
+      { id: "willow-bark",   chance: 1.0, qty: [4, 8], priceMult: 1.15 },
+      { id: "healing-salve", chance: 0.9, qty: [2, 4], priceMult: 1.2 },
+      { id: "poultice",      chance: 0.9, qty: [2, 5], priceMult: 1.15 },
+      { id: "blood-staunch", chance: 0.8, qty: [2, 4], priceMult: 1.2 },
+      { id: "fever-tonic",   chance: 0.45, qty: [1, 2], priceMult: 1.25 },
     ],
   },
 
@@ -392,7 +444,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Leatherworker's Shop",
     keeper: "the leatherworker",
-    icon: "bldg",
+    icon: "trade-equipment",
     hours: { open: 7, close: 19 },
     buys: ["material", "armor", "clothing"],
     blurb: "A low-beamed shop smelling of oak-bark tan and neat's-foot oil — belts, satchels, harness-strap, and rolled hide on the front-room wall, an awl-board behind the counter with two dozen tools by their handles. A guild-tag in beaten copper hangs over the till.",
@@ -403,6 +455,106 @@ export const BUILDINGS = {
       { id: "leather-bracers", chance: 0.8, qty: [1, 3], priceMult: 1.25 },
       { id: "studded-leather", chance: 0.4, qty: [1, 1], priceMult: 1.3 },
       { id: "traveling-cloak", chance: 0.6, qty: [1, 2], priceMult: 1.25 },
+    ],
+  },
+
+  "magic-shop": {
+    id: "magic-shop",
+    kind: "trader",
+    label: "The Gilded Astrolabe",
+    keeper: "the arcane factor",
+    icon: "trade-magic",
+    hours: { open: 10, close: 18 },
+    buys: ["weapon", "trinket", "material"],
+    blurb: "Blue witchlight turns slowly inside a cage of brass rings above the counter. Spellstaves stand in felt-lined racks, grimoires are chained by their spines, and every focus bears an assay tag from Guild Court.",
+    stock: [
+      { id: "bone-wand",         chance: 0.85, qty: [1, 2], priceMult: 1.35 },
+      { id: "hedge-grimoire",    chance: 0.75, qty: [1, 2], priceMult: 1.35 },
+      { id: "oak-staff",         chance: 0.7,  qty: [1, 2], priceMult: 1.35 },
+      { id: "rune-staff",        chance: 0.35, qty: [1, 1], priceMult: 1.45 },
+      { id: "warding-gauntlets", chance: 0.2,  qty: [1, 1], priceMult: 1.5 },
+      { id: "adept-band",        chance: 0.15, qty: [1, 1], priceMult: 1.55 },
+    ],
+  },
+
+  // Rare late-world trade houses. Royal counters carry epic work;
+  // Mastercraft counters carry legendary commercial equipment. Explicitly
+  // unique relics and character or boss signature arms remain earned rewards.
+  "royal-armourer": {
+    id: "royal-armourer",
+    kind: "smith",
+    forge: true,
+    label: "Royal Armourer",
+    keeper: "the royal armourer",
+    icon: "trade-smith",
+    hours: { open: 9, close: 17 },
+    buys: ["weapon", "armor", "shield", "clothing", "material"],
+    blurb: "A warrant-only armoury where court inspectors assay every epic edge, plate, bow-stave, and fastening before it reaches a velvet-lined rack.",
+    stock: [
+      { id: "blacksteel-greatsword", chance: 1.0, qty: [1, 1], priceMult: 1 },
+      { id: "rune-etched-maul",      chance: 0.55, qty: [1, 1], priceMult: 1 },
+      { id: "dragonfang-spear",      chance: 0.55, qty: [1, 1], priceMult: 1 },
+      { id: "deathsong-bow",         chance: 0.5, qty: [1, 1], priceMult: 1 },
+      { id: "siege-crossbow",        chance: 0.5, qty: [1, 1], priceMult: 1 },
+      { id: "full-plate",            chance: 0.5, qty: [1, 1], priceMult: 1 },
+      { id: "dragonscale-mail",      chance: 0.4, qty: [1, 1], priceMult: 1 },
+      { id: "dragonbone-bulwark",    chance: 0.45, qty: [1, 1], priceMult: 1 },
+    ],
+  },
+
+  "royal-arcana": {
+    id: "royal-arcana",
+    kind: "trader",
+    label: "Royal Arcane House",
+    keeper: "the royal arcane factor",
+    icon: "trade-magic",
+    hours: { open: 10, close: 17 },
+    buys: ["weapon", "trinket", "clothing", "material"],
+    blurb: "A crown-sealed salon where epic foci and wards are handled under glass, entered by serial number, and shown only after the buyer is vouched for.",
+    stock: [
+      { id: "staff-of-embers",     chance: 1.0, qty: [1, 1], priceMult: 1 },
+      { id: "ivory-wand",          chance: 0.65, qty: [1, 1], priceMult: 1 },
+      { id: "codex-of-cinders",    chance: 0.6, qty: [1, 1], priceMult: 1 },
+      { id: "heartstone-amulet",   chance: 0.55, qty: [1, 1], priceMult: 1 },
+      { id: "sevenleague-boots",   chance: 0.45, qty: [1, 1], priceMult: 1 },
+      { id: "shadowsilk-vest",     chance: 0.45, qty: [1, 1], priceMult: 1 },
+    ],
+  },
+
+  "mastercraft-forge": {
+    id: "mastercraft-forge",
+    kind: "smith",
+    forge: true,
+    label: "Mastercraft Forge",
+    keeper: "the master forgemaster",
+    icon: "trade-smith",
+    hours: { open: 10, close: 16 },
+    buys: ["weapon", "armor", "shield", "material"],
+    blurb: "A fabled working forge whose available pieces are legendary commissions, forfeited deposits, or the rare completed work a master has consented to sell.",
+    stock: [
+      { id: "kingsguard-blade",       chance: 1.0, qty: [1, 1], priceMult: 1 },
+      { id: "heartseeker-dagger",     chance: 0.6, qty: [1, 1], priceMult: 1 },
+      { id: "warlords-greatsword",    chance: 0.5, qty: [1, 1], priceMult: 1 },
+      { id: "skullsplitter-greataxe", chance: 0.5, qty: [1, 1], priceMult: 1 },
+      { id: "dragonbolt-arbalest",    chance: 0.5, qty: [1, 1], priceMult: 1 },
+      { id: "phantom-leathers",       chance: 0.4, qty: [1, 1], priceMult: 1 },
+      { id: "vanguard-aegis",         chance: 0.45, qty: [1, 1], priceMult: 1 },
+    ],
+  },
+
+  "mastercraft-arcana": {
+    id: "mastercraft-arcana",
+    kind: "trader",
+    label: "Mastercraft Arcana",
+    keeper: "the master artificer",
+    icon: "trade-magic",
+    hours: { open: 11, close: 16 },
+    buys: ["weapon", "trinket", "clothing", "armor", "material"],
+    blurb: "A distant artificer's house where every offered focus, ward, and wonder is legendary work; most visitors see the locked cases and leave empty-handed.",
+    stock: [
+      { id: "tome-of-tides",       chance: 1.0, qty: [1, 1], priceMult: 1 },
+      { id: "magus-circlet",       chance: 0.55, qty: [1, 1], priceMult: 1 },
+      { id: "seal-of-kings-ring",  chance: 0.5, qty: [1, 1], priceMult: 1 },
     ],
   },
 
@@ -421,7 +573,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Money-Changer's Counter",
     keeper: "the money-changer",
-    icon: "bldg",
+    icon: "trade-money",
     hours: { open: 6, close: 20 },
     buys: ["material"],
     blurb: "A narrow shop with a brass-grilled counter — a balance-scale, a touchstone in a felt-lined box, a rack of clipping-shears for testing foreign coin. He sits half a step above the floor and reads each coin by weight and acid before he names a rate.",
@@ -446,7 +598,7 @@ export const BUILDINGS = {
     kind: "shrine",
     label: "Wall-Watch Chapel",
     keeper: "the oath-priest",
-    icon: "bldg",
+    icon: "trade-priest",
     hours: { open: 5, close: 22 },
     blurb: "A narrow stone chapel built into the inner skin of the wall — two oath-stones, a saint of soldiers' deaths, a board nailed with the names of the patrols that did not come back. The oath-priest hears watch-oaths at the change of every shift; a private oath from a stranger costs a fee the chapel will not write down.",
   },
@@ -497,7 +649,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Carriage House",
     keeper: "the carriage-wright",
-    icon: "bldg",
+    icon: "trade-transport",
     hours: { open: 7, close: 19 },
     buys: ["material", "tool"],
     blurb: "A broad timber shop at the back of the estate's carriage-house, the painted boxes of the family kept on flagged stone in front. Spare wheels stacked by gauge, a long bench of draw-knives and gouges, a tin of axle-grease on every shelf. Minor repairs and re-axle work for travellers who reach the outer gate, if the steward signs the chit.",
@@ -514,7 +666,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Cartwright Yard",
     keeper: "the cartwright",
-    icon: "bldg",
+    icon: "trade-transport",
     hours: { open: 6, close: 19 },
     buys: ["material", "tool"],
     blurb: "An open-fronted timber shed with two pits sunk into the floor for working under wagons — road-wagons up from the Crown Road one day, caravan-wagons in off the long west road the next. Spare wheels sorted by gauge against the back wall, coopered iron tyres on pegs above, a bench buried under chisels and draw-knives, a long ash-pole for prying axles straight. Sound wheels walked out within the day; broken ones within the week.",
@@ -532,7 +684,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Coopers' Row",
     keeper: "the cooper",
-    icon: "bldg",
+    icon: "trade-general",
     hours: { open: 6, close: 19 },
     buys: ["material"],
     blurb: "A long shed of stave-wood with three benches working in line, a stack of seasoned oak running the length of the back wall. New casks for caravans setting out, repairs for casks coming in, char-fired barrels for wine and oil, hooped tubs for grain and salt-pork. The yard smells of green oak and old wine-lees; the coopers themselves thick-armed, taciturn, and paid by the barrel.",
@@ -558,7 +710,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Foreign Merchants' Row",
     keeper: "the foreign traders",
-    icon: "market",
+    icon: "trade-foreign",
     hours: { open: 7, close: 19 },
     buys: ["supply", "material", "food"],
     blurb: "A double row of awning-stalls along the south annulus, each one rented by a drover who has unhitched his wagon for a few days and is selling what he hauled. Spice in twists of waxed paper, southern cloth, eastern brass-work, dried fruit by the string, knives in three patterns no smith in the city would forge. Six languages between them; prices change every hour, in any of three currencies.",
@@ -596,7 +748,7 @@ export const BUILDINGS = {
     kind: "trader",
     label: "Sutlers' Row",
     keeper: "the sutlers",
-    icon: "market",
+    icon: "trade-provisions",
     hours: { open: 5, close: 21 },
     buys: ["supply", "food", "material"],
     blurb: "A line of canvas-roofed stalls leaning against the inside of the outer wall, selling everything a marching man might buy without thinking: dried meat, salt, hard cheese, lamp-oil, candles by the dozen, thread, sewing-needles, copper buckles, sharpening-stones, and the kind of cheap brandy that travels well. Licensed by the wall-sergeant; prices fixed by a chalked board no one is allowed to wipe but the duty officer.",
@@ -649,7 +801,7 @@ export const BUILDINGS = {
     kind: "tavern",
     label: "The Leaning Tankard",
     keeper: "the landlord",
-    icon: "bldg",
+    icon: "trade-tavern",
     hours: { open: 6, close: 1 },
     blurb: "A low smoke-blackened tap-room sinking on its north side, the benches worn to a shine and the floor sloping enough to roll a dropped coin to the wall. Thin ale by the jack, a pot of something grey on the fire, a back room let by the hour, and a landlord who hears everything the wards say and sells the better half of it.",
     blurb_short: "Thin ale, a sloping floor, a landlord who listens.",
@@ -679,6 +831,28 @@ export function buildingForService(service) {
   return service ? BUILDINGS[service] || null : null;
 }
 
+export function marketPriceTierForTile(tile) {
+  return MARKET_PRICE_TIERS[tile?.poi?.marketTier] || null;
+}
+
 export function buildingForTile(tile) {
-  return buildingForService(tile?.poi?.service);
+  const building = buildingForService(tile?.poi?.service);
+  if (!building) return null;
+  const poi = tile?.poi || {};
+  const tier = marketPriceTierForTile(tile);
+  return {
+    ...building,
+    // Reused service rules should not make every counter present itself under
+    // the registry's generic name. The authored POI remains the actual place.
+    label: poi.name || building.label,
+    blurb: poi.description || building.blurb,
+    locationId: poi.part || null,
+    districtName: poi.districtName || null,
+    ...(tier ? {
+      marketTier: tier.id,
+      marketTierLabel: tier.label,
+      marketTierSummary: tier.summary,
+      priceScale: tier.priceScale,
+    } : {}),
+  };
 }

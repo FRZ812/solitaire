@@ -262,6 +262,10 @@
 .rpg-city-district-chip > span { grid-row: 1 / span 2; color: #e7b95e; font-size: 12px; text-shadow: 0 0 10px rgba(231,185,94,.42); }
 .rpg-city-district-chip small { overflow: hidden; color: rgba(191,213,214,.58); font-size: 6px; font-weight: 800; letter-spacing: .16em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .rpg-city-district-chip b { overflow: hidden; color: #fff8e5; font: italic 500 13px/1.1 "Instrument Serif", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
+.rpg-poi-tier-legend { position: absolute; z-index: 20; left: 13px; bottom: 72px; display: flex; align-items: center; gap: 5px; padding: 5px 7px; color: #fff2c4; border: 1px solid rgba(231,185,94,.36); border-radius: 999px; background: rgba(7,20,31,.9); box-shadow: 0 8px 24px rgba(2,7,13,.36); backdrop-filter: blur(7px); pointer-events: none; }
+.rpg-poi-tier-legend > small { margin-right: 2px; color: rgba(191,213,214,.62); font-size: 6px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+.rpg-destination-poi-tier { margin: 10px 14px 0; padding: 7px 9px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(231,185,94,.25); border-radius: 8px; background: rgba(7,20,31,.46); }
+.rpg-destination-poi-tier > small { color: rgba(191,213,214,.62); font-size: 7px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
 .is-capital-map .canvas-world-stage::after { content: ""; position: absolute; z-index: 2; inset: 0; background: linear-gradient(135deg, rgba(231,185,94,.045), transparent 34%, rgba(142,200,199,.035)); pointer-events: none; }
 
 .place-district-seal { color: #162238; background: linear-gradient(145deg, color-mix(in srgb, var(--district-color) 75%, #fff1a4), color-mix(in srgb, var(--district-color) 80%, #754321)); font: 700 24px Georgia, serif; }
@@ -1002,6 +1006,11 @@
 .world-atlas__marker.is-category-sanctuaries { width: 19px; height: 19px; color: #eadfff; border-color: rgba(206,183,246,.84); background: rgba(54,39,75,.92); }
 .world-atlas__marker.is-category-lore { width: 17px; height: 17px; color: #cbd8b0; border-style: dashed; border-color: rgba(194,215,158,.7); background: rgba(35,54,38,.9); }
 .world-atlas__marker.is-quest { color: #fff28a; border-color: rgba(255,242,138,.9); background: rgba(84,66,15,.94); }
+.world-atlas__marker.is-tracked-character { z-index: 9; width: 26px; height: 26px; color: #bff4ef; border-width: 2px; border-color: rgba(155,235,225,.94); background: rgba(20,69,78,.96); box-shadow: 0 3px 10px rgba(2,7,13,.82), 0 0 0 4px rgba(105,205,196,.2); }
+.world-atlas__marker.is-tracked-character > span { font-size: 15px; }
+.world-atlas__marker.has-poi-icon { width: 29px; height: 29px; border-color: rgba(255,225,143,.58); background: rgba(7,18,24,.78); }
+.world-atlas__marker.has-poi-icon.is-category-capitals { width: 35px; height: 35px; }
+.world-atlas__marker.has-poi-icon > span { display: grid; place-items: center; }
 .world-atlas__marker.is-selected { z-index: 11; border-color: #fff8e5; box-shadow: 0 3px 10px rgba(2,7,13,.84), 0 0 0 4px rgba(231,185,94,.28); }
 .world-atlas__marker:focus-visible { z-index: 10; outline: 2px solid #fff3c6; outline-offset: 2px; }
 .world-atlas__marker > span { font: normal 10px/1 Georgia, serif; }
@@ -1199,6 +1208,7 @@
 .world-atlas__legend > span > i.is-sea-lane { border-style: dashed; background: #497d86; }
 .world-atlas__legend > span > i.is-trail { border-radius: 50%; background: rgba(255,224,138,.75); }
 .world-atlas__legend > span > i.is-journey { border-style: dashed; background: #ffe47c; }
+.world-atlas__legend > span > i.is-character { border-radius: 50%; border-color: rgba(155,235,225,.8); background: #3e9c96; }
 .world-atlas__legend > small { margin-left: auto; color: rgba(191,213,214,.37); font: italic 9px/1.2 "Instrument Serif", Georgia, serif; }
 
 @keyframes world-atlas-journey-flow { to { stroke-dashoffset: -22; } }
@@ -1360,6 +1370,7 @@
   .world-atlas__marker { width: 18px; height: 18px; }
   .world-atlas__marker > b { display: none; }
   .world-atlas__marker.is-selected > b,
+  .world-atlas__marker.is-tracked-character > b,
   .world-atlas__marker.is-category-capitals > b { display: block; }
   .world-atlas__water-labels span:not(.is-sea) { display: none; }
   .world-atlas__detail { min-height: 0; padding: 13px 11px; grid-template-columns: minmax(0,1fr) 112px; align-items: start; gap: 12px 10px; }

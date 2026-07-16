@@ -34,7 +34,7 @@ import { schematicsForBuilding } from "./data/schematics.js";
 import { tierLabel, tierOrder } from "./data/tiers.js";
 import { rollShopStock, rollStableMounts } from "./engine/town-gen.js";
 import { stableStockFor, mountTemplate } from "./data/mounts.js";
-import { scryResult } from "./engine/positions.js";
+import { scryResult, toggleTrackedCharacter } from "./engine/positions.js";
 import {
   getTile, currentLocationName,
   squareToAxial, computeSightFrom, computeSightFromRadius,
@@ -1495,10 +1495,10 @@ export function Solitaire() {
     }
   }
 
-  // Scry for a character — the ONE way to surface a hidden tracked position
-  // (engine/positions.js). Reveals their last-known/drifted hex on the map and has
-  // the narrator describe the vision. Whereabouts that were never recorded read as
-  // an unsettled, clouded vision.
+  // Scry for a character — the narrated live reading of a hidden position
+  // (engine/positions.js). Ready-made roster characters also support an approximate
+  // atlas track; scrying adds the in-fiction vision. Whereabouts that were never
+  // recorded read as an unsettled, clouded vision.
   async function handleScry(id) {
     if (loading) return;
     const res = scryResult(state, id);
@@ -1526,6 +1526,10 @@ export function Solitaire() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleTrackCharacter(id) {
+    setState((current) => toggleTrackedCharacter(current, id));
   }
 
   // Seat a rider (the player "wanderer", a companion, or a smaller mount) onto a
@@ -2130,7 +2134,8 @@ export function Solitaire() {
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: buildingOpenNow ? colors.gold : "rgba(215,167,111,0.55)", marginBottom: "2px" }}>
-                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : buildingHere.kind === "tavern" ? "Tavern" : buildingHere.kind === "gaol" ? "Gaol" : buildingHere.kind === "slavemarket" ? "Auction" : "Building"}
+                {buildingHere.marketTierLabel ? `${buildingHere.marketTierLabel} · ` : ""}
+                {buildingHere.kind === "trader" ? "Trader" : buildingHere.kind === "smith" ? "Smith" : buildingHere.kind === "tavern" ? "Tavern" : buildingHere.kind === "gaol" ? "Gaol" : buildingHere.kind === "slavemarket" ? "Auction" : buildingHere.kind === "stable" ? "Stable" : "Building"}
               </div>
               <div style={{ fontFamily: "'Instrument Serif', serif", fontStyle: "italic", fontSize: "14px", color: colors.parchmentLight, lineHeight: 1.3 }}>
                 {buildingOpenNow
@@ -2208,7 +2213,7 @@ export function Solitaire() {
             onBackToCampaigns: handleBackToCampaigns,
             onSignOut: handleSignOut,
             onLinkEmail: linkEmail,
-            onScry: handleScry, onRenameMount: handleRenameMount,
+            onScry: handleScry, onTrackCharacter: handleTrackCharacter, onRenameMount: handleRenameMount,
             onPortraitChange: handlePortraitChange,
             // Inventory
             onEquip: handleEquip, onUnequip: handleUnequip, onUse: handleUse,

@@ -47,6 +47,29 @@ describe("queued player messages and rewind", () => {
     expect(rewound.turns).toEqual([]);
   });
 
+  it("restores a companion removed and marked dead by the narrator", () => {
+    const initial = { ...makeInitialState(), created: true };
+    const recruited = applyBeat(initial, { recruit_companion: { id: "bram" } });
+    const playerBeat = { id: "p-death", type: "player", content: "I pull Bram clear." };
+    const base = { ...recruited, beats: [...recruited.beats, playerBeat] };
+    const response = {
+      story: [{ type: "beat", text: "The stones fall before you can reach him." }],
+      party_removals: [{ id: "bram", reason: "dead" }],
+      _raw: "{}",
+      _userMsg: "queued prompt",
+    };
+    const recorded = recordTurn(base, "queued prompt", applyBeat(base, response));
+    const playerIndex = recorded.beats.findIndex((beat) => beat.id === playerBeat.id);
+
+    expect(recorded.party).not.toContain("bram");
+    expect(recorded.world.codex.characters.bram.combatState?.status).toBe("dead");
+
+    const rewound = rewindToPlayerBeat(recorded, playerIndex);
+    expect(rewound.party).toContain("bram");
+    expect(rewound.world.codex.characters.bram.combatState).toBeUndefined();
+    expect(pendingPlayerBeats(rewound).map((beat) => beat.content)).toEqual(["I pull Bram clear."]);
+  });
+
   it("builds one chronological narrator prompt from multiple queued bubbles", () => {
     const initial = { ...makeInitialState(), created: true };
     const queued = {

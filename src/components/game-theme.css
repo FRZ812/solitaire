@@ -2198,7 +2198,7 @@
 }
 
 .codex-entry__actions {
-  width: 52px;
+  width: 62px;
   padding: 9px 8px 9px 0;
   display: flex;
   flex-direction: column;
@@ -2222,6 +2222,8 @@
   text-transform: uppercase;
 }
 .codex-entry__actions > button.is-scry { color: #a9d7e5; border-color: rgba(105, 185, 208, 0.3); background: rgba(105, 185, 208, 0.08); }
+.codex-entry__actions > button.is-track { color: #e9d18c; border-color: rgba(231, 185, 94, 0.34); background: rgba(231, 185, 94, 0.09); }
+.codex-entry__actions > button.is-track.is-active { color: #fff8d5; border-color: rgba(255, 225, 135, 0.62); background: rgba(119, 83, 28, 0.36); box-shadow: 0 0 0 2px rgba(231, 185, 94, 0.08); }
 .codex-entry__chevron {
   width: 26px;
   height: 26px;

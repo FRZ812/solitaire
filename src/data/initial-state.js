@@ -7,6 +7,7 @@ import { getBiome, BIOMES } from "./biomes.js";
 import { CONTINENT, DEFAULT_WORLD_SEED, WORLD_GENERATOR_VERSION } from "./continent.js";
 import { PROFESSIONS } from "./professions.js";
 import { migratePortraitOverrides } from "../engine/portrait-overrides.js";
+import { playableRosterCharacters, withoutSelectedPlayableCharacter } from "./playable-roster.js";
 
 // The unified capital is authored directly in continent coordinates, with
 // Grain Square deliberately fixed at the atlas origin.
@@ -158,6 +159,7 @@ export function makeInitialState() {
       tiles: HANDCRAFTED[startKey] ? { [startKey]: HANDCRAFTED[startKey] } : {},
       currentTile: start,
       seen: makeInitialSeen(start),
+      trackedCharacterId: null,
       codex: {
         characters: {
           "wanderer": {
@@ -178,6 +180,11 @@ export function makeInitialState() {
             knows: [],
             bodyWeight: 14, ridingOn: null, riders: [],
           },
+
+          // Every ready-made creation character also lives somewhere in Avarra.
+          // Character creation removes the selected template's roster copy so
+          // the protagonist never persists as their own duplicate NPC.
+          ...playableRosterCharacters({ day: 3 }),
 
           // ---------------------------------------------------------------
           // IMPORTANT NAMED FIGURES — by reputation, not by encounter
@@ -962,6 +969,14 @@ export function migrateCodex(state) {
     ]) {
       if (next.character[key] == null && wanderer[key] != null) next.character[key] = wanderer[key];
     }
+  }
+  // Saves created before the world-roster feature gain the authored cast above,
+  // but a template-selected protagonist must remain the sole instance of that
+  // person. Clear a stale tracking target at the same time.
+  const selectedTemplateId = next.character?.templateId ?? wanderer?.templateId ?? null;
+  ownCodex.characters = withoutSelectedPlayableCharacter(ownCodex.characters, selectedTemplateId);
+  if (next.world.trackedCharacterId && !ownCodex.characters[next.world.trackedCharacterId]) {
+    next.world.trackedCharacterId = null;
   }
   // Per-party-member inventory back-fill: companions/bonded/mounts gain a personal
   // `carried` pack (and, for companions, a personal coin pouch — bonded captives

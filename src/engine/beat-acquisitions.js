@@ -11,6 +11,52 @@ import { PRISONER_POOL, prisonerCodexEntry } from "../data/gaol.js";
 import { markCaptiveBought } from "./slaves.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
 
+// Remove one travelling member without deleting their codex entry. Both a
+// settled parting and a narrator-resolved death need the same riding cleanup;
+// death additionally persists the member's fate so they cannot keep acting from
+// the codex after leaving the active roster.
+function removePartyMember(world, party, id, newTime, { dead = false, setHome = false } = {}) {
+  const chars = { ...world.codex.characters };
+  const member = chars[id];
+  const cur = world.currentTile || { x: 0, y: 0 };
+  if (member) {
+    if (member.ridingOn && chars[member.ridingOn]) {
+      chars[member.ridingOn] = {
+        ...chars[member.ridingOn],
+        riders: (chars[member.ridingOn].riders || []).filter((x) => x !== id),
+      };
+    }
+    for (const riderId of (member.riders || [])) {
+      if (chars[riderId]) chars[riderId] = { ...chars[riderId], ridingOn: null };
+    }
+
+    const position = { x: cur.x, y: cur.y, day: newTime.day };
+    const fate = dead
+      ? {
+          combatState: {
+            ...(member.combatState || {}),
+            health: 0,
+            maxHealth: member.combatState?.maxHealth ?? member.health ?? 0,
+            status: "dead",
+          },
+        }
+      : {};
+    chars[id] = {
+      ...member,
+      ...fate,
+      ridingOn: null,
+      riders: [],
+      at: position,
+      ...(setHome ? { home: member.home || { x: cur.x, y: cur.y } } : {}),
+    };
+  }
+  if (chars.wanderer?.ridingOn === id) chars.wanderer = { ...chars.wanderer, ridingOn: null };
+  return {
+    world: { ...world, codex: { ...world.codex, characters: chars } },
+    party: party.filter((x) => x !== id),
+  };
+}
+
 // ctx in: { state, beat, world, party, character, newTime, newBeats }.
 // Returns the updated { world, party }; character.inventory and newBeats are
 // mutated in place (same objects the caller holds).
@@ -208,26 +254,35 @@ export function applyAcquisitions({ state, beat, world, party, character, newTim
     }
   }
 
+  // A death or permanent departure that happens directly in narration must also
+  // change the mechanical roster. Combat deaths are handled by combat-result.js;
+  // this is the equivalent bridge for story-only events. Unknown reasons and ids
+  // outside the current party are ignored so the narrator cannot rewrite the
+  // wider codex through this action.
+  const narratedRemovals = Array.isArray(beat.party_removals)
+    ? beat.party_removals
+    : (beat.party_removals ? [beat.party_removals] : []);
+  for (const removal of narratedRemovals) {
+    const id = removal?.id;
+    const reason = removal?.reason;
+    if (!id || !party.includes(id) || (reason !== "dead" && reason !== "left")) continue;
+    ({ world, party } = removePartyMember(world, party, id, newTime, {
+      dead: reason === "dead",
+      setHome: reason === "left",
+    }));
+  }
+
   // A companion parts ways, or a mount is set loose — the narrator sets this only
   // once the scene resolves (see PARTING doctrine; the player can argue it out).
   // The leaver drops from the party but stays known in the codex (re-findable). Any
   // saddle links are cleared so no dangling rider/carrier reference remains.
   if (beat.part_ways?.id && party.includes(beat.part_ways.id)) {
     const id = beat.part_ways.id;
-    const chars = { ...world.codex.characters };
-    const leaver = chars[id];
-    const cur = world.currentTile || { x: 0, y: 0 };
-    if (leaver) {
-      if (leaver.ridingOn && chars[leaver.ridingOn]) chars[leaver.ridingOn] = { ...chars[leaver.ridingOn], riders: (chars[leaver.ridingOn].riders || []).filter((x) => x !== id) };
-      for (const rid of (leaver.riders || [])) if (chars[rid]) chars[rid] = { ...chars[rid], ridingOn: null };
-      // They leave the party but remain IN THE WORLD: stamp where you left them as
-      // their last-known position + home, so they linger/drift near here and can be
-      // scryed or found again (engine/positions.js). Whereabouts hidden from the UI.
-      chars[id] = { ...leaver, ridingOn: null, riders: [], at: { x: cur.x, y: cur.y, day: newTime.day }, home: leaver.home || { x: cur.x, y: cur.y } };
-    }
-    if (chars.wanderer?.ridingOn === id) chars.wanderer = { ...chars.wanderer, ridingOn: null };
-    world = { ...world, codex: { ...world.codex, characters: chars } };
-    party = party.filter((x) => x !== id);
+    const leaver = world.codex.characters[id];
+    // They leave the party but remain IN THE WORLD: stamp where you left them as
+    // their last-known position + home, so they linger/drift near here and can be
+    // scryed or found again (engine/positions.js). Whereabouts hidden from the UI.
+    ({ world, party } = removePartyMember(world, party, id, newTime, { setHome: true }));
     newBeats.push({ id: `leave${Date.now()}`, type: "recruit", text: leaver?.kind === "mount" ? `${leaver?.name || id} is set loose.` : `${leaver?.name || id} parts ways.` });
   }
 

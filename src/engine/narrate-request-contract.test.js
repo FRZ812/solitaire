@@ -28,3 +28,11 @@ describe("narrator request size contract", () => {
     );
   });
 });
+
+describe("narrator party-removal contract", () => {
+  it("exposes a structured removal action for story-only companion deaths", () => {
+    expect(SYSTEM_PROMPT).toContain('party_removals:[{"id":"<their listed id>","reason":"dead"}]');
+    expect(SYSTEM_PROMPT).toContain('"party_removals": null OR [{"id":"current-party-member-id","reason":"dead|left"}]');
+    expect(SYSTEM_PROMPT).toContain("repair that stale roster with the same removal");
+  });
+});

@@ -29,7 +29,7 @@ describe("PanelDeck", () => {
   it("renders the living Codex inside the dossier instead of as a character action", () => {
     const state = makeInitialState();
     const codexHtml = renderToStaticMarkup(
-      <PanelDeck state={state} user={null} initialPage="codex" onClose={() => {}} handlers={{}} />,
+      <PanelDeck state={state} user={null} initialPage="codex" onClose={() => {}} handlers={{ onTrackCharacter: () => {} }} />,
     );
     const characterHtml = renderToStaticMarkup(
       <PanelDeck state={state} user={null} initialPage="character" onClose={() => {}} handlers={{}} />,
@@ -43,6 +43,8 @@ describe("PanelDeck", () => {
     expect(codexHtml).toContain('data-icon-key="codex:characters"');
     expect(codexHtml).toContain("codex-tab-icon-slot");
     expect(codexHtml).toContain('aria-label="Search Codex characters"');
+    expect(codexHtml).toContain(">Playable<");
+    expect(codexHtml).toContain(">Track<");
     expect(characterHtml).not.toContain("Open Codex");
     expect(characterHtml).toContain("character-status-overview");
     expect(characterHtml).toContain("Ready for the road");

@@ -7,6 +7,7 @@ import { trainingOffer } from "../engine/training.js";
 import { TRAIN_CAP } from "../data/town.js";
 import { useEffectChips } from "../data/goods.js";
 import { perishDescriptor } from "../engine/spoilage.js";
+import { PoiTierMarker } from "./PoiIcon.jsx";
 
 // A standard trader menu: a Buy ledger rolled from the shop's stock and a Sell
 // ledger of the player's saleable goods. Reused by every trader building
@@ -78,8 +79,11 @@ export function TraderView({ state, building, tileKey, stock, receipts = {}, onC
           <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "22px", color: colors.parchmentLight, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {building.label}
           </div>
-          <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.78)", marginTop: "3px" }}>
-            Trader
+          <div style={{ ...metaStyle, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.78)", marginTop: "3px" }}>
+            {building.marketTier && <PoiTierMarker marketTier={building.marketTier} size={16} />}
+            <span>{building.marketTierLabel
+              ? `${building.marketTierLabel} · ${building.marketTierSummary}`
+              : building.kind === "smith" ? "Smith & trader" : "Trader"}</span>
           </div>
         </div>
         <div style={{

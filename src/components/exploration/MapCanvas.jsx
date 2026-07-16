@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import mapAtlasUrl from "../../assets/generated/map-material-atlas.png";
+import tradePoiAtlasUrl from "../../assets/generated/icon-atlases/trade-poi-atlas-v1.png";
+import cityPoiAtlasUrl from "../../assets/generated/icon-atlases/city-poi-atlas-v1.png";
+import wildernessPoiAtlasUrl from "../../assets/generated/icon-atlases/wilderness-poi-atlas-v1.png";
+import { POI_ATLAS_CELL, poiIconMeta } from "../../data/poi-icons.js";
+import { marketPriceTierVisual } from "../../data/town.js";
 import {
   ATLAS_CELLS,
   SQRT_3,
@@ -15,6 +20,11 @@ const MATERIAL_FALLBACKS = {
   plaza: "#b8aa91", avenue: "#c5b89d", river: "#296c8c", roof: "#526d8d",
 };
 const RELIEF_MATERIALS = new Set(["mountains", "wall", "settlement", "roof", "indoor"]);
+const POI_ATLAS_URLS = Object.freeze({
+  trade: tradePoiAtlasUrl,
+  city: cityPoiAtlasUrl,
+  wilderness: wildernessPoiAtlasUrl,
+});
 
 function tracePolygon(context, polygon) {
   if (!polygon.length) return;
@@ -146,7 +156,42 @@ function drawLabel(context, text, x, y, scaleHint) {
   context.shadowBlur = 0;
 }
 
-function drawPoi(context, entry, selected) {
+function drawPoiTierMarker(context, x, y, markerRadius, marketTier) {
+  const tier = marketPriceTierVisual(marketTier);
+  if (!tier) return;
+  const ringRadius = Math.max(5, markerRadius * 0.88);
+  const badgeRadius = Math.max(4.5, markerRadius * 0.31);
+  const badgeX = x + markerRadius * 0.68;
+  const badgeY = y + markerRadius * 0.68;
+
+  context.save();
+  context.strokeStyle = tier.color;
+  context.lineWidth = Math.max(1.5, markerRadius * 0.12);
+  context.shadowColor = tier.color;
+  context.shadowBlur = Math.max(4, markerRadius * 0.4);
+  context.beginPath();
+  context.arc(x, y, ringRadius, 0, Math.PI * 2);
+  context.stroke();
+
+  context.shadowBlur = 2;
+  context.fillStyle = "rgba(7, 13, 16, .96)";
+  context.beginPath();
+  context.arc(badgeX, badgeY, badgeRadius, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  context.shadowBlur = 0;
+  context.fillStyle = tier.color;
+  context.strokeStyle = "rgba(7, 13, 16, .96)";
+  context.lineWidth = 2;
+  context.font = `900 ${Math.max(7, badgeRadius * 1.28)}px sans-serif`;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.strokeText(tier.marker, badgeX, badgeY + 0.4);
+  context.fillText(tier.marker, badgeX, badgeY + 0.4);
+  context.restore();
+}
+
+function drawPoi(context, entry, selected, poiAtlases) {
   const size = Math.max(8, Math.min(19, entry.size * 0.33));
   const { x, y } = entry.center;
   const diamond = (offsetX, offsetY, radius, color) => {
@@ -159,9 +204,34 @@ function drawPoi(context, entry, selected) {
     context.fillStyle = color;
     context.fill();
   };
-  diamond(2, 4, size, "rgba(1, 6, 16, .78)");
-  diamond(0, 0, size, entry.cell.marker_color || "#efb957");
-  diamond(0, 0, size * 0.42, "#fff0b0");
+  const icon = poiIconMeta(entry.cell.poi_icon);
+  const poiAtlas = icon ? poiAtlases?.[icon.atlas] : null;
+  let markerRadius = size;
+  if (icon && poiAtlas?.naturalWidth) {
+    const iconSize = Math.max(27, Math.min(48, entry.size * 0.82));
+    markerRadius = iconSize * 0.5;
+    context.save();
+    context.shadowColor = "rgba(1, 6, 16, .9)";
+    context.shadowBlur = Math.max(4, iconSize * 0.16);
+    context.shadowOffsetY = Math.max(2, iconSize * 0.08);
+    context.drawImage(
+      poiAtlas,
+      icon.col * POI_ATLAS_CELL,
+      icon.row * POI_ATLAS_CELL,
+      POI_ATLAS_CELL,
+      POI_ATLAS_CELL,
+      x - iconSize * 0.5,
+      y - iconSize * 0.5,
+      iconSize,
+      iconSize,
+    );
+    context.restore();
+  } else {
+    diamond(2, 4, size, "rgba(1, 6, 16, .78)");
+    diamond(0, 0, size, entry.cell.marker_color || "#efb957");
+    diamond(0, 0, size * 0.42, "#fff0b0");
+  }
+  drawPoiTierMarker(context, x, y, markerRadius, entry.cell.poi_market_tier);
   if (entry.cell.quest) {
     context.font = `800 ${Math.max(11, Math.min(16, entry.size * 0.28))}px sans-serif`;
     context.textAlign = "center";
@@ -169,18 +239,18 @@ function drawPoi(context, entry, selected) {
     context.fillStyle = "#fff28a";
     context.strokeStyle = "rgba(5, 12, 26, .95)";
     context.lineWidth = 3;
-    context.strokeText("!", x + size * 0.72, y - size * 1.05);
-    context.fillText("!", x + size * 0.72, y - size * 1.05);
+    context.strokeText("!", x + markerRadius * 0.72, y - markerRadius * 1.05);
+    context.fillText("!", x + markerRadius * 0.72, y - markerRadius * 1.05);
   }
-  if (selected) drawLabel(context, entry.cell.poi_name, x, y + size * 1.2, entry.size);
+  if (selected) drawLabel(context, entry.cell.poi_name, x, y + markerRadius * 1.2, entry.size);
 }
 
-function drawMarkers(context, scene, entries) {
+function drawMarkers(context, scene, entries, poiAtlases) {
   for (const entry of entries) {
     if (entry.cell.seen === false) continue;
     if (entry.key === String(scene.selected_key || "")) drawSelection(context, entry);
     if (entry.cell.poi_name && entry.key !== String(scene.current_key || "")) {
-      drawPoi(context, entry, entry.key === String(scene.selected_key || ""));
+      drawPoi(context, entry, entry.key === String(scene.selected_key || ""), poiAtlases);
     }
   }
 }
@@ -262,7 +332,7 @@ function drawHover(context, entry) {
   context.stroke();
 }
 
-export function renderMap(context, scene, layout, atlas, hoverKey, width, height) {
+export function renderMap(context, scene, layout, atlas, poiAtlases, hoverKey, width, height) {
   context.clearRect(0, 0, width, height);
   const background = context.createRadialGradient(width * 0.5, height * 0.42, 0, width * 0.5, height * 0.5, Math.max(width, height) * 0.72);
   background.addColorStop(0, scene.night ? "#142d52" : "#255875");
@@ -275,7 +345,7 @@ export function renderMap(context, scene, layout, atlas, hoverKey, width, height
     ? Math.max(4, layout.worldRadius * 0.13)
     : Math.max(4, layout.cityCellSize * 0.1);
   strokeRoute(context, buildRouteSegments(scene.route, layout.centerByKey), routeWidth);
-  drawMarkers(context, scene, layout.entries);
+  drawMarkers(context, scene, layout.entries, poiAtlases);
   drawFog(context, scene, layout.entries, width, height);
   drawPlayer(context, layout.entries.find((entry) => entry.key === String(scene.current_key || "")));
   drawHover(context, layout.entries.find((entry) => entry.key === hoverKey));
@@ -300,9 +370,11 @@ export function MapCanvas({ scene, onSelect, label, choices = [], selectedKey = 
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
   const atlasRef = useRef(null);
+  const poiAtlasesRef = useRef({});
   const layoutRef = useRef({ entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 });
   const [viewport, setViewport] = useState({ width: 1, height: 1 });
   const [atlasReady, setAtlasReady] = useState(false);
+  const [poiAtlasesReady, setPoiAtlasesReady] = useState(0);
   const [hoverKey, setHoverKey] = useState("");
 
   useEffect(() => {
@@ -320,6 +392,33 @@ export function MapCanvas({ scene, onSelect, label, choices = [], selectedKey = 
     return () => {
       image.onload = null;
       image.onerror = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const images = [];
+    for (const [atlasId, url] of Object.entries(POI_ATLAS_URLS)) {
+      const image = new Image();
+      images.push(image);
+      image.decoding = "async";
+      image.onload = () => {
+        if (!active) return;
+        poiAtlasesRef.current = { ...poiAtlasesRef.current, [atlasId]: image };
+        setPoiAtlasesReady((count) => count + 1);
+      };
+      image.onerror = () => {
+        if (!active) return;
+        setPoiAtlasesReady((count) => count + 1);
+      };
+      image.src = url;
+    }
+    return () => {
+      active = false;
+      for (const image of images) {
+        image.onload = null;
+        image.onerror = null;
+      }
     };
   }, []);
 
@@ -356,8 +455,8 @@ export function MapCanvas({ scene, onSelect, label, choices = [], selectedKey = 
     context.imageSmoothingQuality = "high";
     const layout = buildMapLayout(scene, viewport.width, viewport.height);
     layoutRef.current = layout;
-    renderMap(context, scene, layout, atlasRef.current, hoverKey, viewport.width, viewport.height);
-  }, [scene, viewport, atlasReady, hoverKey]);
+    renderMap(context, scene, layout, atlasRef.current, poiAtlasesRef.current, hoverKey, viewport.width, viewport.height);
+  }, [scene, viewport, atlasReady, poiAtlasesReady, hoverKey]);
 
   function entryAt(event) {
     const canvas = canvasRef.current;

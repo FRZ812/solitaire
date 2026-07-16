@@ -18,6 +18,7 @@ import {
   ECOLOGIES,
   LANDMARKS,
   MOUNTAIN_SPINE,
+  RARE_TRADE_HOUSES,
   REALMS,
   REGION_DEFINITIONS,
   SITE_ARCHETYPES,
@@ -1187,7 +1188,23 @@ export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
 
 export function generateWorldTile({ x, y, seed = DEFAULT_WORLD_SEED } = {}) {
   const sample = sampleContinent(x, y, seed);
-  const poi = sample.site ? {
+  const landmark = landmarkAt(x, y);
+  const rareTradeHouse = landmark ? RARE_TRADE_HOUSES[landmark.id] : null;
+  const poi = rareTradeHouse ? {
+    type: rareTradeHouse.type,
+    name: rareTradeHouse.name,
+    description: rareTradeHouse.description,
+    access: "public",
+    area: landmark.realmId,
+    areaName: sample.realm.name,
+    parent: landmark.id,
+    parentName: landmark.name,
+    part: rareTradeHouse.id,
+    partName: rareTradeHouse.name,
+    service: rareTradeHouse.service,
+    marketTier: rareTradeHouse.marketTier,
+    landmarkId: landmark.id,
+  } : sample.site ? {
     type: "hidden",
     name: null,
     description: null,
@@ -1216,7 +1233,7 @@ export function generateWorldTile({ x, y, seed = DEFAULT_WORLD_SEED } = {}) {
     },
   } : null;
   return {
-    terrain: sample.terrain,
+    terrain: rareTradeHouse ? "settlement" : sample.terrain,
     poi,
     procedural: true,
     realmId: sample.realmId,
