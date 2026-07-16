@@ -19,6 +19,10 @@ const isHumanRace = (r) => r === "human";
 const PORTRAIT_FOCUS = Object.freeze({
   "dragon-ascendant": { card: "16%", detail: "10%" },
   "enchanter-tyrant": { card: "14%", detail: "8%" },
+  "court-envoy": { card: "18%", detail: "10%" },
+  "confidence-artist": { card: "18%", detail: "10%" },
+  "guild-advocate": { card: "18%", detail: "10%" },
+  "velvet-courtier": { card: "18%", detail: "10%" },
 });
 
 function portraitFocus(templateId, surface) {
