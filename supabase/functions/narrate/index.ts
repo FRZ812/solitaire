@@ -20,6 +20,35 @@ const REASONING_MODELS = new Set([
   "z-ai/glm-5.2",
 ]);
 
+// A real function-call tool (not a JSON response field) — this is the
+// narrator's dedicated long-term memory, distinct from the rolling
+// apiHistory window (which drops old turns) and from the per-character
+// BONDS & MEMORIES already threaded through state_context (those are
+// relationship-scoped; this is world/plot-scoped). Facts recorded here are
+// echoed back to the client as a memory_delta event, persisted client-side
+// in state.memories, and re-injected into every future state_context
+// (see summarizeMemoryBank in src/engine/api.js) — so it survives long
+// after the turn it was recorded in has scrolled out of history.
+const MEMORY_TOOL = {
+  type: "function",
+  function: {
+    name: "remember",
+    description: "Permanently record a durable fact worth recalling long after this turn scrolls out of the conversation window — a promise made, a secret learned, an unresolved thread, a plot-critical detail. Call this whenever something happens that the story will need much later. Keep the fact short, self-contained, and in third person. Don't call it for anything trivial, already recorded, or already tracked elsewhere (inventory, quests, relationships).",
+    parameters: {
+      type: "object",
+      properties: {
+        fact: { type: "string", description: "A concise, self-contained statement of the fact to remember (one or two sentences)." },
+      },
+      required: ["fact"],
+    },
+  },
+};
+
+// Guards against a pathological loop where every round calls remember and
+// never produces narrative text — after this many rounds we stop asking and
+// let whatever streamed so far stand.
+const MAX_TOOL_ROUNDS = 3;
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
@@ -74,45 +103,149 @@ function toAnthropicEvent(type: "text_delta" | "thinking_delta", value: string) 
   return `data: ${JSON.stringify({ type: "content_block_delta", delta })}\n\n`;
 }
 
-function openRouterToNarratorStream(body: ReadableStream<Uint8Array>) {
+function toMemoryEvent(fact: string) {
+  return `data: ${JSON.stringify({ type: "memory_delta", fact })}\n\n`;
+}
+
+type ToolCallAcc = { id: string; name: string; arguments: string };
+
+// Reads one OpenRouter SSE response to completion, forwarding text/thinking
+// deltas live onto `controller`, and accumulating any streamed tool_calls
+// (which arrive as fragments keyed by index — id/name on the first fragment,
+// arguments trickling in across subsequent ones). Returns what the round
+// produced so the caller can decide whether to loop for another round.
+async function pumpOpenRouterRound(
+  body: ReadableStream<Uint8Array>,
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+): Promise<{ text: string; toolCalls: ToolCallAcc[]; finishReason: string | null }> {
   const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
+  const reader = body.getReader();
   let buffer = "";
+  let text = "";
+  let finishReason: string | null = null;
+  const toolCallsByIndex = new Map<number, ToolCallAcc>();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const chunk = JSON.parse(payload);
+          const choice = chunk?.choices?.[0] || {};
+          const delta = choice.delta || {};
+          if (choice.finish_reason) finishReason = choice.finish_reason;
+
+          const reasoning = toText(delta.reasoning ?? delta.reasoning_content);
+          const content = toText(delta.content);
+          text += content;
+          const thinkingEvent = toAnthropicEvent("thinking_delta", reasoning);
+          const textEvent = toAnthropicEvent("text_delta", content);
+          if (thinkingEvent) controller.enqueue(encoder.encode(thinkingEvent));
+          if (textEvent) controller.enqueue(encoder.encode(textEvent));
+
+          if (Array.isArray(delta.tool_calls)) {
+            for (const tc of delta.tool_calls) {
+              const index = typeof tc.index === "number" ? tc.index : 0;
+              const existing = toolCallsByIndex.get(index) || { id: "", name: "", arguments: "" };
+              if (tc.id) existing.id = tc.id;
+              if (tc.function?.name) existing.name = tc.function.name;
+              if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+              toolCallsByIndex.set(index, existing);
+            }
+          }
+        } catch {
+          // Ignore malformed provider chunks; a later valid delta may still complete the beat.
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+
+  return { text, toolCalls: [...toolCallsByIndex.values()], finishReason };
+}
+
+// Drives the full narrator turn: calls OpenRouter, and whenever the model
+// calls `remember`, emits a memory_delta event for the client, appends the
+// tool call + a synthetic tool result onto the message list, and loops for
+// another round so the model can continue narrating. Bounded by
+// MAX_TOOL_ROUNDS so a pathological remember-only loop can't hang the request.
+function streamNarratorTurn(opts: {
+  apiKey: string;
+  model: string;
+  reasoning?: { effort: string };
+  messages: Array<Record<string, unknown>>;
+}) {
+  const encoder = new TextEncoder();
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      const reader = body.getReader();
+      const messages = [...opts.messages];
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split(/\r?\n/);
-          buffer = lines.pop() || "";
+        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          const upstream = await fetch(OPENROUTER_URL, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${opts.apiKey}`,
+              "Content-Type": "application/json",
+              "X-Title": "Solitaire",
+            },
+            body: JSON.stringify({
+              model: opts.model,
+              stream: true,
+              max_tokens: MAX_OUTPUT_TOKENS,
+              messages,
+              tools: [MEMORY_TOOL],
+              ...(opts.reasoning ? { reasoning: opts.reasoning } : {}),
+            }),
+          });
 
-          for (const line of lines) {
-            if (!line.startsWith("data:")) continue;
-            const payload = line.slice(5).trim();
-            if (!payload || payload === "[DONE]") continue;
-            try {
-              const chunk = JSON.parse(payload);
-              const delta = chunk?.choices?.[0]?.delta || {};
-              const reasoning = toText(delta.reasoning ?? delta.reasoning_content);
-              const content = toText(delta.content);
-              const thinkingEvent = toAnthropicEvent("thinking_delta", reasoning);
-              const textEvent = toAnthropicEvent("text_delta", content);
-              if (thinkingEvent) controller.enqueue(encoder.encode(thinkingEvent));
-              if (textEvent) controller.enqueue(encoder.encode(textEvent));
-            } catch {
-              // Ignore malformed provider chunks; a later valid delta may still complete the beat.
-            }
+          if (!upstream.ok || !upstream.body) {
+            const detail = (await upstream.text()).slice(0, 500);
+            console.error("OpenRouter narrator request failed", upstream.status, detail);
+            throw new Error("narrator provider request failed");
+          }
+
+          const { text, toolCalls, finishReason } = await pumpOpenRouterRound(upstream.body, controller, encoder);
+          const rememberCalls = toolCalls.filter((tc) => tc.name === "remember");
+
+          // No tool call this round (or none we recognize) — the model gave
+          // its final narrative answer, nothing more to loop for.
+          if (!rememberCalls.length || finishReason !== "tool_calls") break;
+          // Last round budget — stop asking and let the streamed text stand
+          // rather than opening a round we won't follow through on.
+          if (round === MAX_TOOL_ROUNDS - 1) break;
+
+          messages.push({
+            role: "assistant",
+            content: text || null,
+            tool_calls: rememberCalls.map((tc) => ({
+              id: tc.id,
+              type: "function",
+              function: { name: tc.name, arguments: tc.arguments },
+            })),
+          });
+          for (const tc of rememberCalls) {
+            let fact = "";
+            try { fact = String(JSON.parse(tc.arguments || "{}").fact || "").trim(); } catch { /* malformed args — skip */ }
+            if (fact) controller.enqueue(encoder.encode(toMemoryEvent(fact)));
+            messages.push({ role: "tool", tool_call_id: tc.id, content: fact ? "recorded" : "ignored: no fact given" });
           }
         }
       } catch (error) {
         controller.error(error);
-      } finally {
-        controller.close();
+        return;
       }
+      controller.close();
     },
   });
 }
@@ -166,33 +299,13 @@ Deno.serve(async (request) => {
 
   const model = selectedModel(payload.model);
   const reasoning = selectedReasoning(model, payload.reasoning_effort);
-  const upstream = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "X-Title": "Solitaire",
-    },
-    body: JSON.stringify({
-      model,
-      stream: true,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...asHistory(payload.history),
-        { role: "user", content: `${stateContext}\n\n${userMessage}` },
-      ],
-      ...(reasoning ? { reasoning } : {}),
-    }),
-  });
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...asHistory(payload.history),
+    { role: "user", content: `${stateContext}\n\n${userMessage}` },
+  ];
 
-  if (!upstream.ok || !upstream.body) {
-    const detail = (await upstream.text()).slice(0, 500);
-    console.error("OpenRouter narrator request failed", upstream.status, detail);
-    return json({ error: "narrator provider request failed" }, 502);
-  }
-
-  return new Response(openRouterToNarratorStream(upstream.body), {
+  return new Response(streamNarratorTurn({ apiKey, model, reasoning, messages }), {
     headers: {
       ...CORS_HEADERS,
       "Content-Type": "text/event-stream; charset=utf-8",

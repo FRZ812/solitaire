@@ -147,7 +147,7 @@ async function runOneAttempt({ session, state_context, history, userMsgRaw, onPr
     throw new Error(`narrate ${response.status}: ${detail}`);
   }
 
-  const { text, thinking } = await accumulateAnthropicSSE(response.body, onProgress);
+  const { text, thinking, memories } = await accumulateAnthropicSSE(response.body, onProgress);
   const userMsg = `${state_context}\n\n${userMsgRaw}`;
   const parsed = extractJSON(text);
   if (!parsed) {
@@ -158,11 +158,11 @@ async function runOneAttempt({ session, state_context, history, userMsgRaw, onPr
         story: [{ type: "beat", text: text || "(The narrator stumbles.)" }],
         minutes_passed: 1,
         _truncated: true,
-        _raw: text, _thinking: thinking, _userMsg: userMsg,
+        _raw: text, _thinking: thinking, _userMsg: userMsg, _model: model, _memories: memories,
       },
     };
   }
-  return { result: { ...parsed, _raw: text, _thinking: thinking, _userMsg: userMsg } };
+  return { result: { ...parsed, _raw: text, _thinking: thinking, _userMsg: userMsg, _model: model, _memories: memories } };
 }
 
 async function accumulateAnthropicSSE(body, onProgress) {
@@ -171,6 +171,7 @@ async function accumulateAnthropicSSE(body, onProgress) {
   let buffer = "";
   let text = "";
   let thinking = "";
+  const memories = [];
 
   while (true) {
     const { done, value } = await reader.read();
@@ -199,11 +200,13 @@ async function accumulateAnthropicSSE(body, onProgress) {
             thinking += evt.delta.thinking;
             onProgress?.({ thinking: evt.delta.thinking });
           }
+        } else if (evt.type === "memory_delta" && evt.fact) {
+          memories.push(evt.fact);
         }
       } catch {
         // skip malformed events
       }
     }
   }
-  return { text, thinking };
+  return { text, thinking, memories };
 }

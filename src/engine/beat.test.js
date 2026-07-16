@@ -149,6 +149,27 @@ describe("applyBeat — narrator party removal", () => {
   });
 });
 
+describe("applyBeat — recruit_companion for improvised (non-roster) NPCs", () => {
+  it("joins a previously-discovered NPC as-is, with no authored template to force", () => {
+    const discovered = applyBeat(fresh(), {
+      discoveries: { characters: [{ id: "nyxara", name: "Nyxara", kind: "npc" }] },
+    });
+    const next = applyBeat(discovered, { recruit_companion: { id: "nyxara" } });
+
+    expect(next.party).toContain("nyxara");
+    expect(next.world.codex.characters.nyxara).toMatchObject({ name: "Nyxara" });
+    expect(next.beats.some((b) => b.type === "recruit" && b.text.includes("Nyxara"))).toBe(true);
+  });
+
+  it("drops a recruit_companion id that was never discovered and isn't on the roster", () => {
+    const base = fresh();
+    const next = applyBeat(base, { recruit_companion: { id: "invented-on-the-spot" } });
+
+    expect(next.party).toEqual(base.party);
+    expect(next.world.codex.characters["invented-on-the-spot"]).toBeUndefined();
+  });
+});
+
 // GOLDEN characterization — full curated output of representative beats, captured
 // as inline snapshots. These exist to make the Stage-3 applyBeat decomposition
 // provably behavior-preserving: the snapshots must stay byte-identical across the

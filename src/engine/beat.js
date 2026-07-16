@@ -1,3 +1,4 @@
+import { MEMORY_BANK_LIMIT } from "../config.js";
 import { advanceTime, formatTime } from "./time.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
@@ -50,6 +51,7 @@ export function applyBeat(state, beat, options = {}) {
     const item = story[index];
     const shared = {
       thinking: index === 0 ? (beat._thinking || null) : null,
+      model: index === 0 ? (beat._model || null) : null,
       truncated: index === story.length - 1 && !!beat._truncated,
     };
     if (item.type === "beat") {
@@ -221,5 +223,13 @@ export function applyBeat(state, beat, options = {}) {
   // End-of-beat time tick: food spoilage + codex aging — extracted to beat-world.js.
   world = applyWorldTick({ state, world, codex, character, newTime, newBeats }).world;
 
-  return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created };
+  // Durable facts the narrator chose to remember this turn (the `remember`
+  // tool, supabase/functions/narrate/index.ts) — appended oldest-first,
+  // trimmed to MEMORY_BANK_LIMIT so the bank can't grow without bound.
+  let memories = state.memories || [];
+  if (beat._memories?.length) {
+    memories = [...memories, ...beat._memories].slice(-MEMORY_BANK_LIMIT);
+  }
+
+  return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created, memories };
 }

@@ -14,6 +14,7 @@ import { InfoModal } from "./InfoTip.jsx";
 import { glossaryById, conditionInfo } from "../data/glossary.js";
 import { condName } from "../data/conditions.js";
 import { canHeal } from "../engine/healing.js";
+import { STORY_FONT_SCALES, getStoryFontScale, setStoryFontScale } from "../engine/preferences.js";
 
 const ATTRIBUTE_VISUALS = {
   body: { icon: "combat", hint: "Force" },
@@ -284,6 +285,10 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
 
         <Divider />
 
+        <SettingsSection />
+
+        <Divider />
+
         {showGuestNag && <GuestNagSection onLinkEmail={onLinkEmail} />}
 
         <Divider />
@@ -308,6 +313,40 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
         </div>
 
       {info && <InfoModal info={info} onClose={() => setInfo(null)} />}
+    </div>
+  );
+}
+
+// Story text size — persisted via preferences.js, applied live as a CSS var
+// so every open bubble resizes immediately without a reload.
+function SettingsSection() {
+  const [fontScale, setFontScale] = useState(getStoryFontScale());
+  function chooseFontScale(id) {
+    setStoryFontScale(id);
+    setFontScale(id);
+  }
+  return (
+    <div>
+      <SectionHeader>Settings</SectionHeader>
+      <div style={insetBoxStyle}>
+        <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: "rgba(215, 167, 111, 0.7)", marginBottom: "8px" }}>
+          Story text size
+        </div>
+        <div style={{ display: "flex", gap: "6px" }}>
+          {STORY_FONT_SCALES.map((s) => {
+            const on = s.id === fontScale;
+            return (
+              <button key={s.id} onClick={() => chooseFontScale(s.id)} aria-pressed={on} style={{
+                flex: 1, padding: "8px 4px", borderRadius: radius.chip, fontFamily: "inherit",
+                cursor: "pointer", fontSize: "12px", fontWeight: on ? 700 : 600,
+                border: `1px solid rgba(215,167,111,${on ? 0.5 : 0.2})`,
+                background: on ? "rgba(215,167,111,0.16)" : "transparent",
+                color: on ? colors.parchment : "rgba(237,228,208,0.7)",
+              }}>{s.label}</button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

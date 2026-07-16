@@ -7,6 +7,7 @@ import {
   NARRATOR_MODELS, NARRATOR_EFFORTS,
   getNarratorModel, setNarratorModel,
   getNarratorEffort, setNarratorEffort,
+  narratorModelLabel,
 } from "../engine/narrator-models.js";
 
 // Short "time left" label for a timed condition (e.g. "2.5h", "12m").
@@ -388,6 +389,13 @@ export function LiveThinking({ thinking }) {
             Thinking
           </summary>
           <div style={{
+            marginTop: "4px",
+            fontSize: "9px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
+            color: "rgba(215, 167, 111, 0.58)",
+          }}>
+            {narratorModelLabel(getNarratorModel())}
+          </div>
+          <div style={{
             marginTop: "6px",
             padding: "12px 14px",
             backgroundColor: "rgba(8, 31, 48, 0.66)",
@@ -445,37 +453,22 @@ function NarratorPicker() {
     .join(" ");
 
   return (
-    <div className={`narrator-picker${open ? " is-open" : ""}`} style={{ position: "relative", flexShrink: 0 }}>
+    <div className={`narrator-picker${open ? " is-open" : ""}`}>
       {open && (
         <>
           {/* Click-away backdrop — closes the popover on any outside tap. */}
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <div className="narrator-picker__backdrop" onClick={() => setOpen(false)} />
           {/* Popover, anchored above the button (composer sits at screen bottom). */}
-          <div className="narrator-picker__popover" style={{
-            position: "absolute", bottom: "calc(100% + 8px)", left: 0, zIndex: 41,
-            minWidth: "212px", padding: "5px",
-            background: "rgba(13, 19, 18, 0.97)",
-            backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-            border: `1px solid rgba(215, 167, 111, 0.22)`,
-            borderRadius: radius.panelCompact, boxShadow: shadow.panel,
-          }}>
+          <div className="narrator-picker__popover">
             <PickerLabel>Narrator</PickerLabel>
             {NARRATOR_MODELS.map((m) => {
               const on = m.id === model;
               return (
-                <button className={`narrator-picker__option${on ? " is-active" : ""}`} key={m.id} onClick={() => chooseModel(m.id)} aria-pressed={on} style={{
-                  width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: "9px",
-                  padding: "9px", borderRadius: radius.chip, fontFamily: "inherit", cursor: "pointer",
-                  border: "none", background: on ? "rgba(215, 167, 111, 0.14)" : "transparent",
-                }}>
-                  <span style={{
-                    width: "7px", height: "7px", borderRadius: radius.pill, flexShrink: 0,
-                    background: on ? colors.gold : "transparent",
-                    border: on ? "none" : `1px solid rgba(215,167,111,0.35)`,
-                  }} />
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: "block", fontSize: "13px", fontWeight: on ? 700 : 500, color: colors.parchment }}>{m.label}</span>
-                    {m.note && <span style={{ fontSize: "11px", color: "rgba(237,228,208,0.55)" }}>{m.note}</span>}
+                <button className={`narrator-picker__option${on ? " is-active" : ""}`} key={m.id} onClick={() => chooseModel(m.id)} aria-pressed={on}>
+                  <span className="narrator-picker__dot" />
+                  <span className="narrator-picker__option-copy">
+                    <span className="narrator-picker__option-label">{m.label}</span>
+                    {m.note && <span className="narrator-picker__option-note">{m.note}</span>}
                   </span>
                 </button>
               );
@@ -484,20 +477,14 @@ function NarratorPicker() {
             {/* Thinking effort — only for models that expose it. */}
             {active.efforts && (
               <>
-                <div style={{ height: "1px", margin: "5px 6px", background: "rgba(215,167,111,0.16)" }} />
+                <div className="narrator-picker__divider" />
                 <PickerLabel>Thinking effort</PickerLabel>
-                <div style={{ display: "flex", gap: "6px", padding: "1px 5px 4px" }}>
+                <div className="narrator-picker__efforts">
                   {active.efforts.map((eid) => {
                     const on = eid === effort;
                     const lbl = (NARRATOR_EFFORTS.find((e) => e.id === eid) || {}).label ?? eid;
                     return (
-                      <button key={eid} onClick={() => chooseEffort(eid)} style={{
-                        flex: 1, padding: "8px", borderRadius: radius.chip, fontFamily: "inherit",
-                        cursor: "pointer", fontSize: "12px", fontWeight: on ? 700 : 600,
-                        border: `1px solid rgba(215,167,111,${on ? 0.5 : 0.2})`,
-                        background: on ? "rgba(215,167,111,0.16)" : "transparent",
-                        color: on ? colors.parchment : "rgba(237,228,208,0.7)",
-                      }}>{lbl}</button>
+                      <button key={eid} className={`narrator-picker__effort${on ? " is-active" : ""}`} onClick={() => chooseEffort(eid)}>{lbl}</button>
                     );
                   })}
                 </div>
@@ -512,15 +499,6 @@ function NarratorPicker() {
         onClick={() => setOpen((o) => !o)}
         title={`Narrator: ${active.label}${effortLabel}`}
         aria-label={`Narrator: ${active.label}${effortLabel}. Tap to change model or thinking effort.`}
-        style={{
-          height: "48px", borderRadius: radius.control,
-          backgroundColor: open ? "rgba(215, 167, 111, 0.16)" : "rgba(10, 15, 15, 0.65)",
-          backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
-          border: `1px solid rgba(215, 167, 111, ${open ? 0.5 : 0.22})`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          cursor: "pointer", flexShrink: 0,
-          boxShadow: "0 10px 24px rgba(0,0,0,0.3)",
-        }}
       >
         <Icon name="sparkle" size={16} color={colors.gold} strokeWidth={1.8} />
         <span><small>Narrator</small><strong>{compactLabel}</strong></span>

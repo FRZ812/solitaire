@@ -24,6 +24,13 @@ export const NARRATOR_MODELS = [
   { id: "google/gemini-3.1-pro-preview",   label: "Gemini 3.1 Pro",       note: "Google",          provider: "OpenRouter", efforts: null },
 ];
 
+// Label for a model id, for display in the "Behind the veil" thinking drawer
+// on committed beats — falls back to the raw id for models dropped from the
+// picker after a beat was written with them.
+export function narratorModelLabel(id) {
+  return NARRATOR_MODELS.find((m) => m.id === id)?.label || id || null;
+}
+
 export const DEFAULT_NARRATOR_MODEL = "deepseek/deepseek-v4-pro";
 export const DEFAULT_NARRATOR_EFFORT = "max";
 
