@@ -2,7 +2,8 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../data/initial-state.js";
-import { ArsenalView } from "./ArsenalView.jsx";
+import { CHARACTER_TEMPLATES } from "../data/templates.js";
+import { ArsenalView, arsenalAbilityGroups } from "./ArsenalView.jsx";
 import { InventoryView } from "./InventoryView.jsx";
 
 describe("inventory and arsenal atlas integration", () => {
@@ -16,10 +17,32 @@ describe("inventory and arsenal atlas integration", () => {
 
   it("exposes category filters and generated nonmagic ability art", () => {
     const html = renderToStaticMarkup(<ArsenalView state={makeInitialState()} />);
-    expect(html).toContain('aria-label="Ability categories"');
+    expect(html).toContain('aria-label="Technique categories"');
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('data-icon-key="category:martial"');
     expect(html).toContain('data-icon-key="category:social"');
     expect(html).not.toContain("ability-icon__category\">M");
+  });
+
+  it("surfaces a mage template's combat magic as spells with established mastery", () => {
+    const korvane = CHARACTER_TEMPLATES.find((template) => template.id === "enchanter-tyrant");
+    const state = makeInitialState();
+    state.character = {
+      ...state.character,
+      abilities: korvane.setup.abilities,
+      proficiencies: korvane.setup.proficiencies,
+      proficiencyGrowthMult: 1.25,
+    };
+
+    const groups = arsenalAbilityGroups(state.character);
+    expect(groups.techniques.map((ability) => ability.id)).toEqual(["basic-attack", "defend", "talk"]);
+    expect(groups.spells.map((ability) => ability.id)).toEqual(["dominate", "charm", "meteor", "time-stop", "dispel"]);
+    expect(korvane.setup.proficiencies.spellcasting).toBe(1350);
+
+    const html = renderToStaticMarkup(<ArsenalView state={state} />);
+    expect(html).toContain("Techniques &amp; core actions · 3");
+    expect(html).toContain("Spells · 5");
+    expect(html).toContain('data-tier="divine"');
+    expect(html).toContain("<span>Spellcasting</span><strong>16</strong>");
   });
 });

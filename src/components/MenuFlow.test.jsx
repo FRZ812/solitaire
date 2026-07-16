@@ -53,15 +53,19 @@ describe("front-of-game menu flow", () => {
     );
 
     expect(html.match(/role="tab"/g)).toHaveLength(7);
-    expect(html.match(/class="creation-card"/g)).toHaveLength(23);
+    expect(html.match(/class="creation-card"/g)).toHaveLength(27);
     expect(html).toContain("Choose your power fantasy");
     expect(html).toContain("Sets tone &amp; challenge");
-    expect(html).toContain("All: 23 lives");
+    expect(html).toContain("All: 27 lives");
     expect(html).toContain("Standard: Grounded");
     expect(html.indexOf("Choose your power fantasy")).toBeLessThan(html.indexOf("Name your traveller"));
     expect(html).toContain("Bram Coltaine");
     expect(html).toContain("Faelar Sylvareth");
     expect(html).toContain("Ysolde Varen");
+    expect(html).toContain("Nadira Sahir");
+    expect(html).toContain("Lethira Vael");
+    expect(html).toContain("Tomas Vell");
+    expect(html).toContain("Amahara Sayo");
     expect(html).toContain("Korvane Ashfell");
     expect(html).toContain("Search name, class, subclass, kindred…");
     expect(html).toContain("All roles");

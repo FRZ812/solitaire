@@ -44,6 +44,10 @@ for (const k of ATTR_KEYS) PROFS_BY_ATTR[k] = PROFICIENCIES.filter((p) => p.attr
 // Attribute growth from the SUM of its proficiencies' XP, much slower:
 //   +1 at 40 total, +2 at 160, +3 at 360, +4 at 640 …
 export function ratingFromXp(xp) { return Math.floor(Math.sqrt(Math.max(0, xp || 0) / 6)); }
+export function xpForRating(rating) {
+  const wholeRating = Math.max(0, Math.floor(Number(rating) || 0));
+  return wholeRating * wholeRating * 6;
+}
 export function attributeGrowth(sumXp) { return Math.floor(Math.sqrt(Math.max(0, sumXp || 0) / 40)); }
 
 export function proficiencyRating(character, id) {

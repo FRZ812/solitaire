@@ -5,6 +5,7 @@
 // into beat.js, so no cycle.
 import { resolveRace } from "../data/races.js";
 import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
+import { proficiencyDef } from "../data/proficiencies.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
 
 // Creation attributes are set directly from the interview, scaled to the
@@ -33,6 +34,14 @@ export function applyCreation({ beat, character, world, created }) {
       const a = {};
       for (const k of ["body", "reflex", "vigor", "mind", "wit", "presence"]) a[k] = clampAttr(cs.attributes[k] ?? character.attributes[k]);
       character.attributes = a;
+    }
+    if (cs.proficiencies && typeof cs.proficiencies === "object") {
+      const proficiencies = { ...(character.proficiencies || {}) };
+      for (const [id, rawXp] of Object.entries(cs.proficiencies)) {
+        const xp = Math.max(0, Math.round(Number(rawXp) || 0));
+        if (proficiencyDef(id) && xp > 0) proficiencies[id] = xp;
+      }
+      character.proficiencies = proficiencies;
     }
     // Grant any starting abilities the concept calls for — martial techniques, or
     // spells if the player explicitly built a magical character. Accepts an

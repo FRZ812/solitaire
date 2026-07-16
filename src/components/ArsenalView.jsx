@@ -4,7 +4,7 @@ import { AbilityIcon } from "./AbilityIcon.jsx";
 import { SectionHeader } from "./primitives.jsx";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { getAbilityDef, abilityStatLine, abilityReqLine } from "../data/abilities.js";
-import { PROFICIENCIES, ratingFromXp, proficiencyDef } from "../data/proficiencies.js";
+import { PROFICIENCIES, proficiencyRating, proficiencyDef } from "../data/proficiencies.js";
 import { knownBuffSpells } from "../data/buff-spells.js";
 import { knownTravelSpells } from "../data/travel-spells.js";
 import { condNames } from "../data/conditions.js";
@@ -13,7 +13,33 @@ import { abilityTaxonomy } from "../data/ability-taxonomy.js";
 
 const CORE = new Set(["basic-attack", "defend", "talk"]);
 
-function AbilityCard({ ability, definition }) {
+export function arsenalAbilityGroups(character) {
+  const learned = (character?.abilities || []).map((ability) => (
+    typeof ability === "string"
+      ? { id: ability, tier: "common" }
+      : { id: ability.id, tier: ability.tier || "common" }
+  ));
+  const abilities = [...new Map(
+    [...[...CORE].map((id) => ({ id, tier: "common" })), ...learned]
+      .map((ability) => [ability.id, ability]),
+  ).values()]
+    .filter((ability) => {
+      const definition = getAbilityDef(ability.id);
+      return definition && !definition.noncombat;
+    })
+    .sort((a, b) => tierOrder(b.tier) - tierOrder(a.tier));
+
+  return {
+    spells: abilities.filter((ability) => (
+      abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === "magic"
+    )),
+    techniques: abilities.filter((ability) => (
+      abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId !== "magic"
+    )),
+  };
+}
+
+function AbilityCard({ ability, definition, variant = "technique" }) {
   const [open, setOpen] = useState(false);
   const tone = tierColor(ability.tier);
   const stat = abilityStatLine(definition, ability.tier);
@@ -23,12 +49,12 @@ function AbilityCard({ ability, definition }) {
   return (
     <button
       type="button"
-      className={`arsenal-card${open ? " is-open" : ""}`}
+      className={`arsenal-card arsenal-card--${variant}${open ? " is-open" : ""}`}
       onClick={() => setOpen((value) => !value)}
       aria-expanded={open}
       style={{ "--arsenal-tone": tone }}
     >
-      <span className="arsenal-card__icon" aria-hidden="true">
+      <span className="arsenal-card__icon" data-tier={ability.tier} aria-hidden="true">
         <AbilityIcon ability={definition} tierId={ability.tier} size="small" decorative />
       </span>
       <span className="arsenal-card__body">
@@ -86,20 +112,7 @@ function SpellCard({ spell, kind, active, affordable, onCast }) {
 export function ArsenalView({ state, onCastBuff }) {
   const character = state.character;
   const [abilityFilter, setAbilityFilter] = useState("all");
-  const learned = (character.abilities || []).map((ability) => (
-    typeof ability === "string"
-      ? { id: ability, tier: "common" }
-      : { id: ability.id, tier: ability.tier || "common" }
-  ));
-  const abilities = [...new Map(
-    [...[...CORE].map((id) => ({ id, tier: "common" })), ...learned]
-      .map((ability) => [ability.id, ability]),
-  ).values()]
-    .filter((ability) => {
-      const definition = getAbilityDef(ability.id);
-      return definition && !definition.noncombat;
-    })
-    .sort((a, b) => tierOrder(b.tier) - tierOrder(a.tier));
+  const { techniques, spells: combatSpells } = arsenalAbilityGroups(character);
 
   const boons = knownBuffSpells(character);
   const travelSpells = knownTravelSpells(character);
@@ -108,25 +121,24 @@ export function ArsenalView({ state, onCastBuff }) {
     .map((proficiency) => ({
       ...proficiency,
       xp: character.proficiencies?.[proficiency.id] || 0,
-      rating: ratingFromXp(character.proficiencies?.[proficiency.id] || 0),
+      rating: proficiencyRating(character, proficiency.id),
     }))
     .filter((proficiency) => proficiency.xp > 0)
     .sort((a, b) => b.rating - a.rating || b.xp - a.xp);
   const abilityCategories = [
     ["all", "All"],
     ["martial", "Martial"],
-    ["magic", "Magic"],
     ["survival", "Survival"],
     ["social", "Social"],
     ["innate", "Innate"],
   ].map(([key, label]) => ({
     key,
     label,
-    count: key === "all" ? abilities.length : abilities.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === key).length,
+    count: key === "all" ? techniques.length : techniques.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === key).length,
   })).filter((category) => category.key === "all" || category.count > 0);
   const visibleAbilities = abilityFilter === "all"
-    ? abilities
-    : abilities.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === abilityFilter);
+    ? techniques
+    : techniques.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === abilityFilter);
 
   return (
     <div className="arsenal-view deck-view">
@@ -139,8 +151,8 @@ export function ArsenalView({ state, onCastBuff }) {
       </div>
 
       <section>
-        <SectionHeader>Combat abilities · {visibleAbilities.length}</SectionHeader>
-        <div className="arsenal-filters" role="group" aria-label="Ability categories">
+        <SectionHeader>Techniques &amp; core actions · {visibleAbilities.length}</SectionHeader>
+        <div className="arsenal-filters" role="group" aria-label="Technique categories">
           {abilityCategories.map((category) => (
             <button type="button" key={category.key} aria-pressed={abilityFilter === category.key} onClick={() => setAbilityFilter(category.key)}>
               <span>{category.label}</span><strong>{category.count}</strong>
@@ -156,11 +168,15 @@ export function ArsenalView({ state, onCastBuff }) {
       </section>
 
       <section>
-        <SectionHeader>Spells · {boons.length + travelSpells.length}</SectionHeader>
-        {boons.length + travelSpells.length === 0 ? (
+        <SectionHeader>Spells · {combatSpells.length + boons.length + travelSpells.length}</SectionHeader>
+        {combatSpells.length + boons.length + travelSpells.length === 0 ? (
           <div className="arsenal-empty">No spells learned yet. Grimoires and teachers can awaken new magic.</div>
         ) : (
           <div className="spell-list">
+            {combatSpells.map((ability, index) => {
+              const definition = getAbilityDef(ability.id);
+              return <AbilityCard key={`${ability.id}-${index}`} ability={ability} definition={definition} variant="spell" />;
+            })}
             {boons.map((spell) => (
               <SpellCard
                 key={spell.id}

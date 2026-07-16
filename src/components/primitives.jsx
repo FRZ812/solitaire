@@ -530,7 +530,17 @@ function NarratorPicker() {
 }
 
 export function InputBar({ value, onChange, onSubmit, onRun, queuedCount = 0, loading }) {
-  const queueDisabled = loading || !value.trim();
+  const hasDraft = Boolean(value.trim());
+  const actionLabel = hasDraft
+    ? "Queue message"
+    : queuedCount
+      ? `Run narrator with ${queuedCount} queued message${queuedCount === 1 ? "" : "s"}`
+      : "Continue story without a new action";
+  const actionTitle = hasDraft
+    ? "Queue message"
+    : queuedCount
+      ? `Play ${queuedCount} queued message${queuedCount === 1 ? "" : "s"}`
+      : "Continue story";
   const ref = React.useRef(null);
   const [focused, setFocused] = React.useState(false);
   // Grow the field with its content (up to a cap, then it scrolls), so a longer
@@ -559,8 +569,8 @@ export function InputBar({ value, onChange, onSubmit, onRun, queuedCount = 0, lo
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             // Enter adds a new line; ⌘/Ctrl+Enter queues this message without
-            // starting the narrator. The adjacent play control starts the turn.
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!queueDisabled) onSubmit(); } }}
+            // starting the narrator. With an empty draft, the same control plays.
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!loading && hasDraft) onSubmit(); } }}
             placeholder={loading ? "The narrator is answering…" : "Queue what you do…"}
             disabled={loading}
             style={{
@@ -574,28 +584,18 @@ export function InputBar({ value, onChange, onSubmit, onRun, queuedCount = 0, lo
         </div>
         <button
           type="button"
-          className="story-input__send"
-          onClick={onSubmit}
-          disabled={queueDisabled}
-          aria-label="Queue message"
-          title="Queue message"
-        >
-          <Icon name="send" size={17} color={queueDisabled ? "rgba(215, 167, 111, 0.3)" : colors.gold} strokeWidth={2.2} />
-        </button>
-        <button
-          type="button"
-          className="story-input__run"
-          onClick={onRun}
+          className={`story-input__action${hasDraft ? " is-send" : " is-play"}`}
+          onClick={hasDraft ? onSubmit : onRun}
           disabled={loading}
-          aria-label={queuedCount ? `Run narrator with ${queuedCount} queued message${queuedCount === 1 ? "" : "s"}` : "Continue story without a new action"}
-          title={queuedCount ? `Play ${queuedCount} queued message${queuedCount === 1 ? "" : "s"}` : "Continue story"}
+          aria-label={actionLabel}
+          title={actionTitle}
         >
           {loading ? (
             <span className="story-input__sending" aria-hidden="true"><i /><i /><i /></span>
           ) : (
             <>
-              <Icon name="play" size={18} color={colors.ink} strokeWidth={2.2} />
-              {queuedCount > 0 && <span className="story-input__queued-count" aria-hidden="true">{queuedCount}</span>}
+              <Icon name={hasDraft ? "send" : "play"} size={21} />
+              {!hasDraft && queuedCount > 0 && <span className="story-input__queued-count" aria-hidden="true">{queuedCount}</span>}
             </>
           )}
         </button>

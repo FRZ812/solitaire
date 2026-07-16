@@ -82,11 +82,24 @@
 }
 
 .ability-icon[data-tier="divine"] {
-  --ability-glow-size: 20px;
-  --ability-glow-strength: 50%;
-  --ability-pulse-size: 25px;
-  --ability-pulse-strength: 62%;
-  animation: ability-icon-tier-pulse 4s ease-in-out infinite;
+  --ability-glow-size: 28px;
+  --ability-glow-strength: 72%;
+  --ability-pulse-size: 38px;
+  --ability-pulse-strength: 92%;
+  border-color: color-mix(in srgb, var(--ability-tier) 88%, #f3cf76);
+  animation: ability-icon-divine-pulse 2.8s ease-in-out infinite;
+}
+
+.ability-icon[data-tier="divine"]::after {
+  content: "";
+  position: absolute;
+  inset: -45%;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 34%, rgba(255, 247, 205, .62) 48%, rgba(190, 229, 255, .34) 54%, transparent 68%);
+  mix-blend-mode: screen;
+  transform: translateX(-54%) rotate(8deg);
+  animation: ability-icon-divine-sheen 4.2s ease-in-out infinite;
 }
 
 @keyframes ability-icon-tier-pulse {
@@ -104,8 +117,34 @@
   }
 }
 
+@keyframes ability-icon-divine-pulse {
+  0%, 100% {
+    filter: saturate(1.08) brightness(1.04);
+    box-shadow:
+      0 0 0 2px rgba(9, 13, 14, .72),
+      0 0 8px rgba(255, 248, 217, .72),
+      0 0 var(--ability-glow-size) color-mix(in srgb, var(--ability-tier) var(--ability-glow-strength), #d9aa4a 10%),
+      inset 0 0 11px rgba(255, 248, 217, .18);
+  }
+  50% {
+    filter: saturate(1.22) brightness(1.16);
+    box-shadow:
+      0 0 0 2px rgba(32, 26, 14, .62),
+      0 0 12px rgba(255, 252, 230, .96),
+      0 0 var(--ability-pulse-size) color-mix(in srgb, var(--ability-tier) var(--ability-pulse-strength), #e7b74f 14%),
+      inset 0 0 16px rgba(255, 244, 192, .34);
+  }
+}
+
+@keyframes ability-icon-divine-sheen {
+  0%, 18%, 100% { transform: translateX(-58%) rotate(8deg); opacity: 0; }
+  36% { opacity: .9; }
+  58% { transform: translateX(58%) rotate(8deg); opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ability-icon { animation: none; transition: none; }
+  .ability-icon::after { animation: none; opacity: .18; transform: none; }
 }
 
 /* Existing arsenal slots keep their layout dimensions while the raster school

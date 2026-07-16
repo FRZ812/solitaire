@@ -804,13 +804,20 @@ export function Solitaire() {
       .filter((i) => i?.itemId)
       .map((i) => ({ itemId: i.itemId, quantity: Math.max(1, i.quantity || 1) }));
     const wornIds = items.filter((i) => i?.worn && i.itemId).map((i) => i.itemId);
+    const skills = Array.isArray(setup.skills)
+      ? setup.skills.filter((skill) => skill?.id).map((skill) => ({ ...skill }))
+      : [];
     const inv = {};
     if (added.length) inv.added = added;
     if (setup.coins && (setup.coins.copper || setup.coins.silver || setup.coins.gold)) inv.coins = setup.coins;
+    const discoveries = {};
+    if (wornIds.length) discoveries.characters = [{ id: "wanderer", worn: wornIds }];
+    if (skills.length) discoveries.skills = skills;
     const beat = {
       character_setup: {
         name: setup.name, bond: setup.bond, attributes: setup.attributes,
         abilities: setup.abilities || [], race: setup.race, subrace: setup.subrace || null,
+        proficiencies: setup.proficiencies || {},
         origin: setup.origin, profession: setup.profession, subclass: setup.subclass || null, gender: setup.gender,
         age: setup.age, agingMode: setup.agingMode, lifespanMultiplier: setup.lifespanMultiplier,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
@@ -820,7 +827,7 @@ export function Solitaire() {
         profile: setup.profile || null,
       },
       inventory_changes: Object.keys(inv).length ? inv : undefined,
-      discoveries: wornIds.length ? { characters: [{ id: "wanderer", worn: wornIds }] } : undefined,
+      discoveries: Object.keys(discoveries).length ? discoveries : undefined,
     };
     // Both template and custom builds open the same way: a single narrator call
     // that arrives the character INSIDE Whitemarch (the global start), weaving in

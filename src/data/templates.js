@@ -17,6 +17,9 @@
 // here is a real catalog/ability id; the engine drops unknown items and clamps
 // abilities below their tier floor.
 
+import { abilityCategoryOf, getAbilityDef } from "./abilities.js";
+import { xpForRating } from "./proficiencies.js";
+
 export const STANDARD_PROVISIONS = [
   { itemId: "trail-rations", quantity: 3 },
   { itemId: "waterskin", quantity: 1 },
@@ -54,6 +57,16 @@ const CHARACTER_HOOKS = Object.freeze({
     complication: "Her order named mercy heresy after she saved an enemy child, but the child now leads people the order means to destroy.",
     signature: "Notices shaking hands, fevered eyes, and empty bowls before weapons or rank.",
   },
+  "court-envoy": {
+    voice: "Measured southern warmth; names the other person's strongest concern before offering her own terms, then lets silence do the final work.",
+    complication: "The accord that made her famous was secured with relief silver she did not know had been stolen; the clerk who proved it wants her reputation in exchange for silence.",
+    signature: "Before difficult talk, moves cups and chairs until no one sits at the head of the table.",
+  },
+  "confidence-artist": {
+    voice: "Breezy, confessional, and quick to laugh at herself; volunteers one harmless flaw so the larger lie feels safe.",
+    complication: "The fictional aunt whose seal she forged has died and named 'Lethira Vael' in a real will, drawing heirs and investigators to Whitemarch.",
+    signature: "Miscounts the first handful of coin in the other person's favour and watches what they do with the advantage.",
+  },
   "hedge-mage": {
     voice: "Quick, precise, and delighted by hard questions; explanations accelerate until somebody makes her breathe.",
     complication: "The folio she stole is not the forbidden book but its index, and one entry is written in her own future hand.",
@@ -78,6 +91,16 @@ const CHARACTER_HOOKS = Object.freeze({
     voice: "Practical marcher speech, patient with animals and children, impatient with any adult pretending not to understand.",
     complication: "Her mother vanished following a set of tracks that appear again wherever the Mire's beasts flee without reason.",
     signature: "Carries one clean feather from every creature she could have killed and chose not to.",
+  },
+  "guild-advocate": {
+    voice: "Precise, patient, and deceptively mild; turns assertions into questions and gives people room to contradict themselves.",
+    complication: "A widow has found evidence that his celebrated defence rested on a coached witness; exposing it will clear her family and end his career.",
+    signature: "Turns his signet inward before asking a question whose answer he already knows.",
+  },
+  "velvet-courtier": {
+    voice: "Low, intimate, and lightly amused; offers one precise, sincere compliment and leaves silences that other people rush to fill.",
+    complication: "The magistrate she betrayed is alive in Whitemarch with the only copy of the ledger, asking after her without saying whether it is for vengeance or reunion.",
+    signature: "Remembers exactly what someone drank, what they refused, and which compliment made them look away.",
   },
   "war-captain": {
     voice: "Low, economical command that makes panic feel briefly foolish; praise is rare, exact, and remembered for years.",
@@ -263,6 +286,62 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
       knows: ["Left an order over a disagreement she will not discuss."],
     },
   },
+  {
+    id: "court-envoy",
+    label: "Court Envoy",
+    role: "Face",
+    tier: "standard",
+    concept: "Persuasion, protocol, and the patience to make enemies share a table.",
+    story: "Nadira has ended feuds, opened grain roads, and once kept a border fort from starving by seating two men who had sworn never to share a roof. She left her delegation after learning the peace she brokered was being used to hide a famine levy; the sealed ledgers are in Whitemarch, and so is the official who can bury them.",
+    highlights: ["Presence", "Wit"],
+    setup: {
+      name: "Nadira Sahir",
+      profession: "envoy",
+      race: "human", subrace: null, origin: "south", gender: "female",
+      age: 37, agingMode: "mortal", attractiveness: 7,
+      bond: "A bargain that leaves one side voiceless is only a slower kind of violence.",
+      attributes: { body: 2, reflex: 3, vigor: 2, mind: 3, wit: 4, presence: 5 },
+      appearance: { skin: "deep umber", hair: "black, gathered in a smooth low twist", eyes: "warm dark brown", build: "slim and straight-backed", facial_hair: null, marks: "a fine scar through the left eyebrow" },
+      base_appearance: "A slim, straight-backed southern woman with deep umber skin, warm dark eyes, and black hair gathered low. A fine scar crosses her left eyebrow; her composure reads as attention rather than distance.",
+      skills: [
+        { id: "diplomacy", name: "Diplomacy", rating: 3, desc: "protocol, mediation, and face-saving terms" },
+        { id: "persuasion", name: "Persuasion", rating: 3, desc: "finding the shared interest inside a dispute" },
+        { id: "insight", name: "Insight", rating: 2, desc: "reading what a person cannot afford to say" },
+      ],
+      abilities: [{ id: "rallying-shout", tier: "uncommon" }, { id: "feint", tier: "uncommon" }, { id: "second-wind", tier: "uncommon" }],
+      items: [worn("rapier"), worn("iron-ring"), packed("traveling-cloak"), packed("spyglass"), packed("chalk-and-charcoal")],
+      coins: { gold: 2, silver: 4 },
+      knows: ["Knows the grain-road treaties, embassy protocols, and which Whitemarch clerks can make a sealed letter disappear."],
+    },
+  },
+  {
+    id: "confidence-artist",
+    label: "Confidence Artist",
+    role: "Face",
+    tier: "standard",
+    concept: "A harmless smile, a useful lie, and three exits already chosen.",
+    story: "Lethira sells confidence before she sells anything else. In eighty years on the road she has been a vintner's niece, customs widow, minor heiress, and once a remarkably convincing embassy clerk; every role ended cleanly until a family she invented turned out to exist.",
+    highlights: ["Wit", "Presence"],
+    setup: {
+      name: "Lethira Vael",
+      profession: "courtier",
+      race: "elf", subrace: "high", origin: "elf", gender: "female",
+      age: 112, agingMode: "mortal", attractiveness: 8,
+      bond: "Trust is a bridge; I decide who pays the toll only after we are across.",
+      attributes: { body: 2, reflex: 4, vigor: 2, mind: 2, wit: 5, presence: 4 },
+      appearance: { skin: "pale gold with light freckling", hair: "ash-blonde, cropped at the jaw", eyes: "leaf green", build: "slender and quick", facial_hair: null, marks: "a deep dimple in the right cheek; long ears tapered to fine points" },
+      base_appearance: "A slender adult elf with pale-gold freckled skin, jaw-cropped ash-blonde hair, leaf-green eyes, and long ears tapered to fine points. A deep right-cheek dimple makes calculation look like mischief rather than innocence.",
+      skills: [
+        { id: "deception", name: "Deception", rating: 4, desc: "false identities, safe lies, and controlled tells" },
+        { id: "persuasion", name: "Persuasion", rating: 3, desc: "making the mark feel clever for agreeing" },
+        { id: "performance", name: "Performance", rating: 3, desc: "inhabiting a role under scrutiny" },
+      ],
+      abilities: [{ id: "feint", tier: "uncommon" }, { id: "disarming-strike", tier: "uncommon" }, { id: "second-wind", tier: "uncommon" }],
+      items: [worn("steel-dagger"), worn("iron-ring"), packed("traveling-cloak"), packed("lockpicks"), packed("chalk-and-charcoal")],
+      coins: { gold: 1, silver: 16 },
+      knows: ["Recognises forged seals, loaded dice, false pedigrees, and a mark pretending not to be interested."],
+    },
+  },
 
   // ============================== MID ==============================
   {
@@ -378,6 +457,62 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
       items: [worn("hunting-bow"), worn("rangers-leathers"), worn("traveling-cloak"), worn("marching-boots"), packed("iron-dagger")],
       coins: { gold: 2, silver: 6 },
       knows: ["Can name every bird and beast of the marsh by its call."],
+    },
+  },
+  {
+    id: "guild-advocate",
+    label: "Guild Advocate",
+    role: "Face",
+    tier: "mid",
+    concept: "Reads motive, precedent, and the weakness inside a confident lie.",
+    story: "Tomas spent twenty years arguing petitioners through Whitemarch's licensed benches, where a correctly placed question can outdraw a sword. He resigned after his best victory freed a guild factor whose next act ruined six families, and now works cases no patron wants tied to their name.",
+    highlights: ["Wit", "Presence"],
+    setup: {
+      name: "Tomas Vell",
+      profession: "envoy",
+      race: "human", subrace: null, origin: "central", gender: "male",
+      age: 46, agingMode: "mortal", attractiveness: 6,
+      bond: "Every rule has an author; find the fear they wrote around and the door appears.",
+      attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 6, presence: 6 },
+      appearance: { skin: "olive", hair: "chestnut, greying cleanly at the temples", eyes: "grey-green", build: "lean and long-fingered", facial_hair: "clean-shaven", marks: "a shallow crease beside the mouth from an old cut" },
+      base_appearance: "A lean central man with olive skin, long careful hands, chestnut hair greying at the temples, and watchful grey-green eyes. Clean-shaven, with a shallow old cut beside the mouth that makes his resting expression look faintly skeptical.",
+      skills: [
+        { id: "persuasion", name: "Persuasion", rating: 3, desc: "patient questions and tightly framed choices" },
+        { id: "diplomacy", name: "Diplomacy", rating: 3, desc: "procedure, precedent, and negotiated remedy" },
+        { id: "insight", name: "Insight", rating: 4, desc: "finding the fear underneath a confident claim" },
+      ],
+      abilities: [{ id: "rallying-shout", tier: "rare" }, { id: "disarming-strike", tier: "uncommon" }, { id: "battle-focus", tier: "uncommon" }, { id: "second-wind", tier: "uncommon" }],
+      items: [worn("steel-dagger"), worn("iron-ring"), packed("traveling-cloak"), packed("lantern"), packed("chalk-and-charcoal")],
+      coins: { gold: 4, silver: 6 },
+      knows: ["Can read Guild Court procedure, debt instruments, and contract traps at a glance."],
+    },
+  },
+  {
+    id: "velvet-courtier",
+    label: "Velvet Courtier",
+    role: "Face",
+    tier: "mid",
+    concept: "Attention, flirtation, and secrets offered at exactly the right distance.",
+    story: "Sayo made a career in eastern salons where attention is currency: introductions, discreet companionship, flirtation, and the secrets people volunteer when they feel singular. A patron paid her to compromise a magistrate; she fell for the woman instead, ruined her anyway, and followed the leaked account-book west.",
+    highlights: ["Presence", "Wit"],
+    setup: {
+      name: "Amahara Sayo",
+      profession: "courtier",
+      race: "human", subrace: null, origin: "east", gender: "female",
+      age: 31, agingMode: "mortal", attractiveness: 9,
+      bond: "Desire is honest when it is given room to speak; I trade in the moment it does.",
+      attributes: { body: 2, reflex: 4, vigor: 3, mind: 3, wit: 5, presence: 8 },
+      appearance: { skin: "warm golden tan", hair: "black, chin-length and swept behind the ears", eyes: "amber-brown", build: "lithe and graceful", facial_hair: "none", marks: "a small beauty mark below the left eye" },
+      base_appearance: "A lithe eastern woman with warm golden-tan skin, chin-length black hair, and amber-brown eyes that hold attention without staring. A small beauty mark rests beneath the left eye; her ease of movement has been polished into instinct.",
+      skills: [
+        { id: "seduction", name: "Seduction", rating: 4, desc: "flirtation, attraction, and attentive restraint" },
+        { id: "persuasion", name: "Persuasion", rating: 3, desc: "making another person feel singular and heard" },
+        { id: "deception", name: "Deception", rating: 3, desc: "concealing purpose without flattening sincerity" },
+      ],
+      abilities: [{ id: "rallying-shout", tier: "rare" }, { id: "feint", tier: "uncommon" }, { id: "battle-focus", tier: "uncommon" }, { id: "second-wind", tier: "uncommon" }],
+      items: [worn("stiletto"), worn("silver-amulet"), worn("iron-ring"), packed("traveling-cloak"), packed("wine")],
+      coins: { gold: 5, silver: 10 },
+      knows: ["Reads salon rank, household desire, and service-door gossip as fluently as a written invitation."],
     },
   },
 
@@ -692,12 +827,27 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
 export const CHARACTER_TEMPLATES = Object.freeze(CHARACTER_TEMPLATE_DEFINITIONS.map((template) => {
   const subclass = template.setup.subclass
     ?? (template.id !== template.setup.profession ? template.id : null);
+  const casterRating = {
+    standard: 1,
+    mid: 3,
+    epic: 6,
+    legendary: 9,
+    mythical: 12,
+    divine: 15,
+  }[template.tier] || 1;
+  const isTrainedCaster = (template.setup.abilities || []).some((ability) => (
+    abilityCategoryOf(getAbilityDef(typeof ability === "string" ? ability : ability.id)) === "spell"
+  ));
+  const proficiencies = isTrainedCaster
+    ? { spellcasting: xpForRating(casterRating), ...(template.setup.proficiencies || {}) }
+    : template.setup.proficiencies;
   return {
     ...template,
     portraitKey: `template:${template.id}`,
     setup: {
       ...template.setup,
       ...(subclass ? { subclass } : {}),
+      ...(proficiencies ? { proficiencies } : {}),
     },
     ...(CHARACTER_HOOKS[template.id] || {}),
   };

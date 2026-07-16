@@ -22,7 +22,7 @@ const AGING_MODES = [
   { id: "ageless", label: "Ageless" },
   { id: "out-of-time", label: "Out-of-Time" },
 ];
-const PROFESSION_OPTS = ["sellsword", "knight", "ranger", "hunter", "thief", "assassin", "hedge-mage", "sorcerer", "scholar", "priest", "healer", "bard", "merchant", "outlaw", "noble", "barbarian", "monk"];
+const PROFESSION_OPTS = ["sellsword", "knight", "ranger", "hunter", "thief", "assassin", "hedge-mage", "sorcerer", "scholar", "priest", "healer", "envoy", "courtier", "bard", "merchant", "outlaw", "noble", "barbarian", "monk"];
 const SUBCLASS_OPTS = [...new Set(CHARACTER_TEMPLATES.map((template) => template.setup.subclass).filter(Boolean))];
 const ITEM_KINDS = [
   { id: "weapon", label: "Weapons", kinds: ["weapon"] },

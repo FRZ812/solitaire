@@ -40,6 +40,8 @@ describe("continent atlas", () => {
     expect(html.match(/class="continent-atlas__cell /g)).toHaveLength(48 * 26);
     expect(html.match(/class="continent-atlas__marker /g)).toHaveLength(CONTINENT_ATLAS_LANDMARKS.length);
     expect(html).toContain("Inspect Whitemarch, Realm capital, Whitemarch Basin, known by reputation");
+    expect(html).toContain('aria-controls="continent-atlas-place-detail"');
+    expect(html).toContain('id="continent-atlas-place-detail"');
     expect(html).toContain('class="continent-atlas__selection-status"');
     expect(html).toContain("Selected · Realm capital · Crown Basin");
     expect(html).toContain(`${Object.keys(REGION_DEFINITIONS).length} named regions`);

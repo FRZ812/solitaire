@@ -1470,7 +1470,7 @@
   background: #101923;
   box-shadow: inset 0 0 0 2px rgba(4, 11, 18, 0.5);
 }
-.creation-card__portrait > img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; border-radius: inherit; filter: saturate(.88) contrast(1.01); }
+.creation-card__portrait > img { width: 100%; height: 100%; object-fit: cover; object-position: 50% var(--portrait-card-focus-y, 30%); border-radius: inherit; filter: saturate(.88) contrast(1.01); }
 .creation-card__portrait .creation-card__class-badge { position: absolute; right: auto; bottom: 0; left: 50%; z-index: 2; border-color: var(--tier-accent); transform: translate(-50%, 50%); }
 
 .creation-card__body { min-width: 0; display: flex; flex-direction: column; }
@@ -1530,7 +1530,7 @@
 
 /* Character detail borrows the image-led dossier grammar. */
 .template-detail__hero { height: clamp(310px, 47dvh, 410px); }
-.template-detail__hero > img { object-position: 50% 28%; }
+.template-detail__hero > img { object-position: 50% var(--portrait-detail-focus-y, 28%); }
 .template-detail__hero-wash { background: linear-gradient(180deg, rgba(3, 9, 17, 0.26), transparent 25%, rgba(3, 9, 17, 0.32) 54%, rgba(5, 13, 23, 0.98) 93%, #07101c 100%); }
 
 .template-detail__role {

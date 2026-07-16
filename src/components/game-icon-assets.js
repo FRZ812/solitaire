@@ -15,6 +15,7 @@ import inventory from "../assets/generated/ui-icons/ui-icon-inventory-v1.png";
 import journal from "../assets/generated/ui-icons/ui-icon-journal-v1.png";
 import map from "../assets/generated/ui-icons/ui-icon-map-v1.png";
 import progress from "../assets/generated/ui-icons/ui-icon-progress-v1.png";
+import play from "../assets/generated/ui-icons/ui-icon-play-v1.png";
 import reset from "../assets/generated/ui-icons/ui-icon-reset-v1.png";
 import resolve from "../assets/generated/ui-icons/ui-icon-resolve-v1.png";
 import rest from "../assets/generated/ui-icons/ui-icon-rest-v1.png";
@@ -46,6 +47,7 @@ export const GAME_ICON_ASSETS = {
   inventory,
   journal,
   map,
+  play,
   progress,
   reset,
   resolve,
