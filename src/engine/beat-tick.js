@@ -5,7 +5,7 @@
 // These steps share temps (wp/decayMult/drained/prevNeedConds) and compare the
 // evolving character against the OLD `state.character` snapshot, so they stay one
 // cohesive step. Threads `codex` (returned); `character` is mutated in place.
-import { activeWorldPassives } from "./combat-stats.js";
+import { activeWorldPassives, deriveCombatStats } from "./combat-stats.js";
 import { depleteNeeds, applyNeedsChanges, getNeedConditions, mergeConditions, getNeedAlertText } from "./needs.js";
 import { tickConditions, condNames, conditionMeta, polarityOf } from "../data/conditions.js";
 import { passiveHealVitality } from "./healing.js";
@@ -72,6 +72,14 @@ export function applySurvivalTick({ state, beat, character, codex, newBeats }) {
     character.vitality, character.vitalityMax,
     character.conditions, beat.minutes_passed || 0, wp.healPerHour || 0
   );
+
+  // Passive resolve recovery from Presence thresholds and item triggers (e.g. Clear Mind,
+  // Archmage). Same resolveRegen rate as in combat — one tick per beat.
+  const cs = deriveCombatStats(character, codex);
+  const rrOoc = cs.triggers?.resolveRegen || 0;
+  if (rrOoc && (character.resolveMax ?? 0) > 0) {
+    character.resolve = Math.min(character.resolveMax, (character.resolve || 0) + rrOoc);
+  }
 
   // Wounds bite as the clock turns — Bleeding/Poisoned cost vitality until treated.
   if (minutes > 0) {
