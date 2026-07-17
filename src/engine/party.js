@@ -7,6 +7,9 @@ import { companionCodexEntry } from "../data/companions.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
+import { mechanicalAttributeValue } from "../data/attribute-tiers.js";
+import { carryCapacityFor, recomputeResolveMax } from "./attributes.js";
+import { normalizeCharacterProgression } from "./progression.js";
 
 const WEAPON_RE = /sword|blade|bow|crossbow|spear|axe|mace|maul|hammer|knife|dagger|staff|wand|grimoire|lance|halberd|cleaver/i;
 
@@ -17,7 +20,7 @@ const WEAPON_RE = /sword|blade|bow|crossbow|spear|axe|mace|maul|hammer|knife|dag
 export function partyStanding(state) {
   const codex = state.world.codex;
   const members = [{ attrs: effectiveAttributes(state.character), worn: codex.characters.wanderer?.worn || [] }];
-  for (const c of partyMembers(state)) members.push({ attrs: c.attributes || {}, worn: c.worn || [], natural: !!c.naturalWeapon });
+  for (const c of partyMembers(state)) members.push({ attrs: effectiveAttributes(c), worn: c.worn || [], natural: !!c.naturalWeapon });
   const size = members.length;
   const bestAttrs = {};
   for (const k of ATTR_KEYS) bestAttrs[k] = Math.max(0, ...members.map((m) => m.attrs[k] || 0));
@@ -25,8 +28,10 @@ export function partyStanding(state) {
   // dragon is plainly a threat without a sword in hand).
   const armed = members.filter((m) => m.natural || (m.worn || []).some((id) => WEAPON_RE.test(id))).length;
   const topAttr = Math.max(0, ...Object.values(bestAttrs));
-  const attrSum = Object.values(bestAttrs).reduce((a, b) => a + b, 0);
-  const score = size * 2 + topAttr + attrSum / 4 + armed * 1.5;
+  const mechanicalBest = Object.values(bestAttrs).map(mechanicalAttributeValue);
+  const mechanicalTop = Math.max(0, ...mechanicalBest);
+  const attrSum = mechanicalBest.reduce((a, b) => a + b, 0);
+  const score = size * 2 + mechanicalTop + attrSum / 4 + armed * 1.5;
   const bestLine = ATTR_KEYS.filter((k) => bestAttrs[k] >= Math.max(4, topAttr - 1))
     .map((k) => `${ATTR_LABELS[k]} ${bestAttrs[k]}`).join(", ") || "nothing to boast of";
   const descriptor = size === 1
@@ -36,6 +41,18 @@ export function partyStanding(state) {
 }
 
 const CHOOSINESS_NEED = { low: 6, mid: 12, high: 18 };
+
+function progressedCompanion(entry, { legacyAttributes = false } = {}) {
+  const next = { ...entry };
+  normalizeCharacterProgression(next, {
+    convertLegacyAttributes: legacyAttributes,
+    enforceLevelAttributeScale: true,
+    alignAttributesToProgression: legacyAttributes,
+  });
+  recomputeResolveMax(next);
+  next.carryCapacityMax = carryCapacityFor(next);
+  return next;
+}
 
 // Given the party's standing and how choosy a recruit is, how warmly are they
 // likely to take to being asked? (A hint for the UI + the narrator — the
@@ -55,8 +72,15 @@ export function recruitOutlook(standing, choosiness = "mid") {
 export function addCompanionToParty(state, tmpl) {
   if (!tmpl || isRecruited(state, tmpl.id)) return state;
   const existing = state.world.codex.characters?.[tmpl.id];
-  if (existing) return { ...state, party: [...(state.party || []), tmpl.id] };
-  const entry = companionCodexEntry(tmpl);
+  if (existing) {
+    const entry = progressedCompanion(existing, { legacyAttributes: !existing.progression });
+    return {
+      ...state,
+      party: [...(state.party || []), tmpl.id],
+      world: { ...state.world, codex: { ...state.world.codex, characters: { ...state.world.codex.characters, [tmpl.id]: entry } } },
+    };
+  }
+  const entry = progressedCompanion(companionCodexEntry(tmpl), { legacyAttributes: true });
   return {
     ...state,
     party: [...(state.party || []), tmpl.id],
@@ -95,7 +119,10 @@ export function recruitCompanion(state, tmpl) {
   const coins = tmpl.feeCp
     ? copperToCoins(coinsToCopper(state.character.inventory.coins) - tmpl.feeCp)
     : state.character.inventory.coins;
-  const entry = companionCodexEntry(tmpl);
+  const existing = state.world.codex.characters?.[tmpl.id];
+  const entry = existing
+    ? progressedCompanion(existing, { legacyAttributes: !existing.progression })
+    : progressedCompanion(companionCodexEntry(tmpl), { legacyAttributes: true });
   return {
     ok: true,
     state: {

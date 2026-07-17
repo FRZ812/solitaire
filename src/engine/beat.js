@@ -1,4 +1,3 @@
-import { MEMORY_BANK_LIMIT } from "../config.js";
 import { advanceTime, formatTime } from "./time.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
@@ -15,6 +14,8 @@ import { applySurvivalTick } from "./beat-tick.js";
 import { applyWorldMovement, applyWorldTick } from "./beat-world.js";
 import { applyRelationships } from "./beat-relationships.js";
 import { storyFromResponse } from "./narrative-sequence.js";
+import { advanceProgression, progressionLevel } from "./progression.js";
+import { mergeMemoryBank } from "./memory.js";
 
 // applyBeat is the heart of the engine. Given the current state and a beat
 // from the narrator, it returns the next state plus the new beat entries to
@@ -62,6 +63,7 @@ export function applyBeat(state, beat, options = {}) {
   }
 
   let codex = state.world.codex;
+  let progressionXpGain = 0;
   if (beat.discoveries) {
     const merged = mergeDiscoveries(codex, beat.discoveries);
     codex = merged.codex;
@@ -76,6 +78,10 @@ export function applyBeat(state, beat, options = {}) {
     }
     for (const g of growthItems) {
       newBeats.push({ id: `grow${Date.now()}-${g.id}`, type: "growth", text: `${g.name} ${g.from} → ${g.to}` });
+      // Narrative professions need a route through the same level system as
+      // combat practice. Rating growth is converted deterministically and
+      // capped per skill/beat so a narrator cannot mint an apex character.
+      progressionXpGain += Math.min(3, Math.max(0, g.to - g.from)) * 160;
     }
   }
   if (beat.knowledge_updates) codex = applyKnowledgeUpdates(codex, beat.knowledge_updates);
@@ -220,16 +226,44 @@ export function applyBeat(state, beat, options = {}) {
     created = cre.created;
   }
 
+  if (progressionXpGain > 0 && created !== false) {
+    const before = progressionLevel(character);
+    const progress = advanceProgression(character, progressionXpGain);
+    if (progress.gained.length) {
+      const latest = progress.gained.at(-1);
+      newBeats.push({
+        id: `lvl${Date.now()}`,
+        type: "growth",
+        text: `Level ${before} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+      });
+    }
+    const priorWanderer = world.codex?.characters?.wanderer || {};
+    const projectedWanderer = {
+      ...priorWanderer,
+      profession: character.profession,
+      archetype: character.archetype,
+      attributes: { ...(character.attributes || {}) },
+      progression: character.progression ? {
+        ...character.progression,
+        paths: { ...character.progression.paths },
+      } : null,
+    };
+    codex = {
+      ...world.codex,
+      characters: { ...world.codex?.characters, wanderer: projectedWanderer },
+    };
+    world = { ...world, codex };
+  }
+
   // End-of-beat time tick: food spoilage + codex aging — extracted to beat-world.js.
   world = applyWorldTick({ state, world, codex, character, newTime, newBeats }).world;
 
   // Durable facts the narrator chose to remember this turn (the `remember`
   // tool, supabase/functions/narrate/index.ts) — appended oldest-first,
-  // trimmed to MEMORY_BANK_LIMIT so the bank can't grow without bound.
-  let memories = state.memories || [];
-  if (beat._memories?.length) {
-    memories = [...memories, ...beat._memories].slice(-MEMORY_BANK_LIMIT);
-  }
+  // Normalize, de-duplicate, and bound tool-produced memories before they enter
+  // campaign state. Provider retries and parallel tool calls can otherwise add
+  // the same fact more than once.
+  const memories = mergeMemoryBank(state.memories, beat._memories);
 
   return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created, memories };
 }

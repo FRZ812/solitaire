@@ -22,6 +22,14 @@ describe("vigor → vitality formula", () => {
     expect(maxVitalityFor({ attributes: ATTRS({ vigor: 2 }) })).toBe(BASE_VITALITY + vigorHealthBonus(2));
     expect(maxVitalityFor({ attributes: ATTRS({ vigor: 30 }) })).toBe(1010);
   });
+
+  it("keeps the expanded apex finite and below three old-cap vitality pools", () => {
+    const oldCap = maxVitalityFor({ attributes: ATTRS({ vigor: 30 }) });
+    const apex = maxVitalityFor({ attributes: ATTRS({ vigor: 90 }) });
+    expect(apex).toBe(2810);
+    expect(apex).toBeGreaterThan(oldCap);
+    expect(apex).toBeLessThanOrEqual(oldCap * 3);
+  });
 });
 
 describe("recomputeVitalityMax (heal-by-delta, clamp)", () => {
@@ -61,6 +69,20 @@ describe("mind → resolve & body → carry formulas", () => {
     expect(buffed - base).toBe(50);
   });
 
+  it("diminishes resolve and carrying growth above 30 without flattening it", () => {
+    const resolve30 = resolvePoolForMind(30);
+    const resolve90 = resolvePoolForMind(90);
+    expect(resolve90).toBe(212);
+    expect(resolve90).toBeGreaterThan(resolve30);
+    expect(resolve90).toBeLessThanOrEqual(resolve30 * 3);
+
+    const carry30 = carryCapacityFor({ attributes: ATTRS({ body: 30, vigor: 30 }) });
+    const carry90 = carryCapacityFor({ attributes: ATTRS({ body: 90, vigor: 90 }) });
+    expect(carry90).toBe(1624);
+    expect(carry90).toBeGreaterThan(carry30);
+    expect(carry90).toBeLessThanOrEqual(carry30 * 3);
+  });
+
   it("recomputeResolveMax / recomputeCarryCapacity store derived maxes", () => {
     const c = { attributes: ATTRS({ mind: 10, body: 10 }) };
     recomputeResolveMax(c);
@@ -83,12 +105,8 @@ describe("applyAttributeChanges", () => {
     expect(applyAttributeChanges(ATTRS({ body: 5 }), { body: 0 }).growthLines).toEqual([]);
   });
 
-  // KNOWN BUG (review finding, slated for the refactor's attribute-cap fix):
-  // the in-play clamp is min(25,…) while creation allows up to 30, so a POSITIVE
-  // grant to a stat already above 25 silently LOWERS it. Characterized here so
-  // the fix (25 → 30) is a deliberate, visible change to this expectation.
-  it("CURRENTLY caps in-play growth at 25, lowering an above-25 stat on a positive grant", () => {
-    const { next } = applyAttributeChanges(ATTRS({ body: 28 }), { body: 1 });
-    expect(next.body).toBe(25);
+  it("grows past the old cap and clamps cleanly at the expanded cap", () => {
+    expect(applyAttributeChanges(ATTRS({ body: 28 }), { body: 1 }).next.body).toBe(29);
+    expect(applyAttributeChanges(ATTRS({ body: 90 }), { body: 1 }).next.body).toBe(90);
   });
 });

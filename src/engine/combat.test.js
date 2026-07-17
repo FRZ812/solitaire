@@ -8,7 +8,8 @@ import { applyCombatResult, applyLoot } from "./combat-result.js";
 import { generateEnemyGroup } from "../data/bestiary.js";
 import { coinsToCopper } from "./economy.js";
 import { BASIC_ATTACK } from "../data/abilities.js";
-import { recomputeVitalityMax, recomputeResolveMax } from "./attributes.js";
+import { maxResolveFor, maxVitalityFor, recomputeVitalityMax, recomputeResolveMax } from "./attributes.js";
+import { progressionLevel } from "./progression.js";
 
 // Deterministic RNG so combat (initiative, hit/crit, loot rolls) is reproducible.
 function mulberry32(seed) {
@@ -156,5 +157,32 @@ describe("applyCombatResult / applyLoot (combat → campaign-state fold)", () =>
     expect(after.character.inventory.coins.copper).toBeLessThan(10); // canonical
     expect(after.character.inventory.coins.silver).toBeLessThan(10);
     expect(after.pendingLoot).toBe(null);
+  });
+
+  it("files a newly dominated combatant with profession, archetype, and progression", () => {
+    const st = campaignState();
+    const next = applyCombatResult(st, {
+      phase: "victory",
+      player: { health: 50, maxHealth: 100, resolve: 5, statuses: [] },
+      enemies: [],
+      allies: [{
+        id: "thrall-test", name: "Fen Knife", kind: "marsh-raider", race: "human",
+        enthralledBy: "p", health: 20, maxHealth: 20, attrs: { body: 4, reflex: 3, vigor: 3, mind: 1, wit: 2, presence: 1 },
+        gear: [{ id: "w" }], abilities: [], statuses: [],
+      }],
+      profGains: {}, loot: null, log: [], executedCount: 0,
+    });
+    const thrall = next.world.codex.characters["thrall-test"];
+
+    expect(next.party).toContain("thrall-test");
+    expect(thrall).toMatchObject({ profession: "soldier", archetype: "marsh-raider" });
+    expect(progressionLevel(thrall)).toBeGreaterThan(0);
+    expect(thrall).not.toHaveProperty("health");
+    expect(thrall.combatState).toMatchObject({
+      health: maxVitalityFor(thrall),
+      maxHealth: maxVitalityFor(thrall),
+      status: "ok",
+    });
+    expect(thrall.resolveMax).toBe(maxResolveFor(thrall));
   });
 });

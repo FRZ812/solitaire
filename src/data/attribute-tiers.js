@@ -8,14 +8,42 @@
 // scaling in combat-stats.js / bestiary.js. They also apply to NPCs, so a foe
 // with high attributes (a boss) is dangerous by its very nature.
 
-// [minValue, label] bands per attribute (labels from the system-prompt table).
+import { ATTRIBUTE_CAP } from "../config.js";
+
+// The authored attribute scale now reaches 90, but feeding a raw apex score into
+// every old linear/quadratic combat formula would turn 3x numeric headroom into
+// 9x-or-worse combat output. Scores through the former cap retain their exact
+// mechanical value. Above 30, this bounded rational curve keeps every added
+// point meaningful while approaching (but never reaching) an effective 50.
+//
+//  30 -> 30, 45 -> 38.57, 60 -> 42, 75 -> 43.85, 90 -> 45
+//
+// Requirements and unlocks still read the RAW score; this helper is only for
+// formulas that turn an attribute into damage, accuracy, defence, percentages,
+// initiative, and similar combat quantities.
+export const COMMON_ATTRIBUTE_MECHANICAL_CAP = 30;
+const APEX_MECHANICAL_HEADROOM = 20;
+
+export function mechanicalAttributeValue(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  const raw = Math.min(ATTRIBUTE_CAP, parsed);
+  if (raw <= COMMON_ATTRIBUTE_MECHANICAL_CAP) return raw;
+  const excess = raw - COMMON_ATTRIBUTE_MECHANICAL_CAP;
+  return COMMON_ATTRIBUTE_MECHANICAL_CAP
+    + (APEX_MECHANICAL_HEADROOM * excess) / (excess + APEX_MECHANICAL_HEADROOM);
+}
+
+// [minValue, label] bands per attribute. The 45/60/75/90 bands deliberately
+// leave a wide gulf between ordinary people and epic, legendary, mythical, and
+// divine beings rather than calling a score near the old cap world-shaping.
 const BANDS = {
-  body:     [[2, "common"], [5, "fit"], [10, "strong"], [15, "powerful"], [20, "legendary"]],
-  reflex:   [[2, "average"], [5, "quick"], [10, "sharp"], [15, "inhuman"], [20, "legendary"]],
-  vigor:    [[2, "hardy"], [5, "tough"], [10, "iron-willed"], [15, "stalwart"], [20, "indomitable"]],
-  mind:     [[2, "common"], [5, "educated"], [10, "learned"], [15, "brilliant"], [20, "genius"]],
-  wit:      [[2, "watchful"], [5, "keen"], [10, "sharp"], [15, "uncanny"], [20, "foresighted"]],
-  presence: [[2, "polite"], [5, "commanding"], [10, "magnetic"], [15, "compelling"], [20, "world-shaping"]],
+  body:     [[2, "common"], [5, "fit"], [10, "trained"], [15, "strong"], [20, "mighty"], [30, "heroic"], [45, "epic"], [60, "titan-blooded"], [75, "mythical"], [90, "divine"]],
+  reflex:   [[2, "average"], [5, "quick"], [10, "sharp"], [15, "masterful"], [20, "uncanny"], [30, "heroic"], [45, "epic"], [60, "time-bending"], [75, "mythical"], [90, "divine"]],
+  vigor:    [[2, "hardy"], [5, "tough"], [10, "iron-willed"], [15, "stalwart"], [20, "indomitable"], [30, "heroic"], [45, "epic"], [60, "death-defying"], [75, "mythical"], [90, "divine"]],
+  mind:     [[2, "common"], [5, "educated"], [10, "learned"], [15, "brilliant"], [20, "genius"], [30, "polymathic"], [45, "epic"], [60, "transcendent"], [75, "mythical"], [90, "divine"]],
+  wit:      [[2, "watchful"], [5, "keen"], [10, "sharp"], [15, "uncanny"], [20, "foresighted"], [30, "oracular"], [45, "epic"], [60, "fate-reading"], [75, "mythical"], [90, "divine"]],
+  presence: [[2, "polite"], [5, "commanding"], [10, "magnetic"], [15, "compelling"], [20, "sovereign"], [30, "heroic"], [45, "epic"], [60, "legend-commanding"], [75, "mythical"], [90, "divine"]],
 };
 
 // The named band an attribute value sits in (for narrator state context + UI).
@@ -27,12 +55,12 @@ export function attrDescriptor(key, value) {
 
 // Attributes pay off two ways:
 //
-// 1) SMOOTH stat scaling — a back-loaded (quadratic-ish) curve so low/mid stats
-//    stay modest (the punishing mob balance holds) while a maxed stat is huge:
-//    vigor 30 → +840 HP. No 5x gating; it just inflates with the attribute.
+// 1) SMOOTH stat scaling — the old quadratic-ish curve is unchanged through 30,
+//    then consumes the diminishing mechanical value above so a raw 90 is
+//    exceptional without creating ninefold quadratic output.
 //
 // 2) UNIQUE-EFFECT unlocks at the grind thresholds — a distinct mechanic at each
-//    of 5/10/15/20/25/30 (rare/very-rare/epic/legendary/mythic/divine), CUMULATIVE
+//    of 5/10/15/20/25/30/45/60/75/90, CUMULATIVE
 //    (you keep every one you've passed). These are qualitative powers (cheat death,
 //    shrug off control, cap big hits, cleave armour, regen, extra actions,
 //    ward-shields…), not just numbers. Applied to NPCs too, so a high-attribute
@@ -42,10 +70,12 @@ const addInto = (dst, src) => { for (const k in src) dst[k] = (dst[k] || 0) + sr
 
 // Smooth, always-on stat scaling per attribute — back-loaded with an OFFSET so the
 // first few points add nothing (an attribute of ≤4 contributes 0, keeping the
-// punishing low/mid baseline exactly as tuned) and it ramps hard toward a maxed 30.
+// punishing low/mid baseline exactly as tuned); above 30 the bounded mechanical
+// value continues the curve without treating the former mortal cap as divine.
 // q = max(0, v²-16); coefficient = target / (30²-16) = target / 884.
 function smoothStats(key, v) {
-  const q = Math.max(0, v * v - 16), s = {};
+  const mechanical = mechanicalAttributeValue(v);
+  const q = Math.max(0, mechanical * mechanical - 16), s = {};
   switch (key) {
     case "vigor":    break;                                              // HP lives in vitalityMax (attributes.js) — shown in the panel, no combat statMod here
     case "body":     s.damageMult = +(q * 0.00041).toFixed(4); break;     // 30 → +36% damage (armour & penetration dropped)
@@ -57,7 +87,7 @@ function smoothStats(key, v) {
   return s;
 }
 
-// Unique-effect unlocks at [5,10,15,20,25,30], cumulative. `s` → statMods,
+// Unique-effect unlocks at [5,10,15,20,25,30,45,60,75,90], cumulative. `s` → statMods,
 // `t` → triggers (same keys the gear-affix engine already honors).
 const UNIQUE = {
   vigor: [ // TOUGHNESS — deep HP (always-on) + shrugging off control, capped by Stonewall
@@ -66,7 +96,11 @@ const UNIQUE = {
     null,                             // 15
     { s: { controlResist: 0.35 } },   // 20 — near control-immune
     null,                             // 25
-    { s: { damageCap: 0.25 } },       // 30 — Stonewall: no single hit exceeds 25% max HP
+    { s: { fortify: 0.05 } },         // 30 — mortal pinnacle: harder to finish while wounded
+    { s: { controlResist: 0.10 } },   // 45 — epic composure under control
+    { s: { damageCap: 0.25 } },       // 60 — Stonewall: no single hit exceeds 25% max HP
+    { t: { turnRegen: 0.01 } },       // 75 — wounds begin closing during battle
+    { t: { reviveOnce: 0.20 } },      // 90 — once per fight, return from death
   ],
   body: [ // RAW MIGHT — devastating force: brutal crit damage + crushing blows
     { s: { critMult: 0.20 } },        // 5  rare      — heavy blows land like a falling hammer
@@ -74,15 +108,23 @@ const UNIQUE = {
     { s: { critMult: 0.30 } },        // 15 epic      — bone-shattering critical force
     { s: { damageMult: 0.10 } },      // 20 legendary — colossal might
     { s: { critMult: 0.40 } },        // 25 mythic    — catastrophic, devastating crits
-    { s: { execute: 0.20 } },         // 30 divine    — Execute: damaging a foe below 20% HP instantly kills it
+    { s: { penetration: 1 } },        // 30 — mortal pinnacle force begins to breach protection
+    { s: { damageMult: 0.05 } },      // 45 — epic force behind every blow
+    { s: { critMult: 0.15 } },        // 60 — legendary critical force
+    { s: { penetration: 3 } },        // 75 — mythical blows split protection
+    { s: { execute: 0.20, damageMult: 0.10 } }, // 90 — divine Execute and raw might
   ],
   reflex: [
     { s: { swiftChance: 0.10 } },     // 5  — flurry: chance to act again
     { s: { swiftChance: 0.10 } },     // 10
-    { s: { extraActions: 1 } },       // 15 — move between heartbeats: an extra action
+    { s: { accuracy: 2 } },           // 15 — practiced precision
     { s: { swiftChance: 0.15 } },     // 20 — act-again totals 35%
-    { s: { extraActions: 1 } },       // 25 — another extra action
-    { s: { phaseChance: 0.25 } },     // 30 — Phantom: a quarter of attacks pass straight through you
+    { s: { dodge: 5 } },              // 25 — evasive footwork
+    { s: { accuracy: 3 } },           // 30 — mortal pinnacle precision
+    { s: { extraActions: 1 } },       // 45 — epic speed finds an extra action
+    { s: { swiftChance: 0.10 } },     // 60 — legendary openings to act again
+    { s: { extraActions: 1 } },       // 75 — mythical motion between heartbeats
+    { s: { phaseChance: 0.25, dodgeIgnore: 0.20 } }, // 90 — divine Phantom motion
   ],
   mind: [ // CONTROL & CASTING — your control magic lingers; your spells can surge
     { s: { controlDuration: 0.15 } }, // 5  — control you inflict lasts longer
@@ -90,7 +132,11 @@ const UNIQUE = {
     { s: { cooldownReduction: 1 } },  // 15 — quick study: tricks recover faster
     { s: { controlDuration: 0.20 } }, // 20
     { s: { cooldownReduction: 1 } },  // 25
-    { s: { spellSurge: 1 } },         // 30 — ALL abilities cost double Resolve but deal half again as much
+    { s: { saveDC: 1 } },             // 30 — mortal pinnacle command of spell structure
+    { s: { saveDC: 2 } },             // 45 — epic command of hostile magic
+    { t: { magicShieldGen: 0.02 } },   // 60 — thought instinctively renews a ward
+    { s: { cooldownReduction: 1, controlDuration: 0.15 } }, // 75 — mythical recall and control
+    { s: { spellSurge: 1 } },          // 90 — divine spell surge
   ],
   wit: [ // INSIGHT — clever mending, quick thinking, and precision crits
     { s: { healPower: 0.10 } },       // 5  rare      — tend wounds cannily: healing hits harder
@@ -98,7 +144,11 @@ const UNIQUE = {
     { s: { healPower: 0.15 } },       // 15 epic      — a healer's eye
     { s: { cooldownReduction: 1 } },  // 20 legendary — tricks recover faster still
     { s: { healPower: 0.20 } },       // 25 mythic    — perfect insight into mending
-    { s: { abilityCrit: 1 } },        // 30 divine    — your abilities can crit, even healing spells
+    { s: { critChance: 3 } },         // 30 — mortal pinnacle awareness
+    { s: { critChance: 5 } },         // 45 — epic awareness of openings
+    { s: { dodgeIgnore: 0.10 } },      // 60 — reads a foe's escape before it begins
+    { s: { abilityCrit: 1, healPower: 0.10 } }, // 75 — mythical abilities can crit
+    { s: { cooldownReduction: 1 } },   // 90 — divine intuition wastes no motion
   ],
   presence: [ // WILLPOWER — sustain your Resolve, endure, and refuse to break
     { t: { resolveRegen: 1 } },          // 5  rare      — force of will fuels you
@@ -106,10 +156,14 @@ const UNIQUE = {
     { t: { resolveRegen: 1 } },          // 15 epic      — your will keeps fueling you (+1 more/turn)
     { s: { ccDurationReduction: 0.25 } },// 20 legendary — control & debuffs on you wear off faster
     { s: { dmgDefer: 0.15 } },           // 25 mythic    — defer ever more of the brunt
-    { t: { lastStand: 1 } },             // 30 divine    — once per fight, a lethal blow can't drop you below 1 HP for 3 turns
+    { s: { maxResolve: 3 } },             // 30 — mortal pinnacle reserves of conviction
+    { s: { maxResolve: 5 } },             // 45 — epic reserves of conviction
+    { s: { ccDurationReduction: 0.10 } }, // 60 — legendary self-command
+    { t: { shieldGen: 0.02 } },           // 75 — presence manifests as a renewing aegis
+    { t: { lastStand: 1 } },               // 90 — divine will refuses a lethal blow
   ],
 };
-const THRESHOLDS = [5, 10, 15, 20, 25, 30];
+const THRESHOLDS = [5, 10, 15, 20, 25, 30, 45, 60, 75, 90];
 
 // Smooth stats + every unique unlock the attributes have passed → { statMods,
 // triggers } folded into the combat pipeline.
@@ -130,7 +184,10 @@ export function attributeThresholdMods(attrs = {}) {
 
 // ---- Display helpers (character panel: tap an attribute to see its payoff) ----
 
-const THRESHOLD_TIER = { 5: "rare", 10: "very-rare", 15: "epic", 20: "legendary", 25: "mythical", 30: "divine" };
+const THRESHOLD_TIER = {
+  5: "common", 10: "common", 15: "uncommon", 20: "uncommon", 25: "rare",
+  30: "very-rare", 45: "epic", 60: "legendary", 75: "mythical", 90: "divine",
+};
 
 // One readable phrase per stat/trigger key, used for both the smooth bonuses and
 // the unique unlocks so the panel reads in plain language.

@@ -5,8 +5,10 @@ import { RACES } from "./races.js";
 import { itemTemplate } from "./catalog.js";
 import { getAbilityDef } from "./abilities.js";
 import { CHARACTER_PORTRAITS } from "../components/character-portrait-assets.js";
-import { characterSubclass } from "./character-subclasses.js";
+import { characterArchetype } from "./character-archetypes.js";
 import { ratingFromXp } from "./proficiencies.js";
+import { STARTING_LEVEL_BY_POWER_TIER, progressionAtLevel } from "./progression-paths.js";
+import { progressionLevel } from "../engine/progression.js";
 
 describe("authored character templates", () => {
   it("keeps every ready-made character unique and fully authored", () => {
@@ -37,13 +39,40 @@ describe("authored character templates", () => {
     }
   });
 
-  it("persists specific subclasses without repeating the parent profession", () => {
+  it("persists a specialized archetype separately from the broad profession", () => {
     const shadowblade = CHARACTER_TEMPLATES.find((template) => template.id === "shadowblade");
-    expect(shadowblade.setup).toMatchObject({ profession: "assassin", subclass: "shadowblade" });
-    expect(characterSubclass({ templateId: "shadowblade", profession: "assassin" }))
-      .toEqual({ id: "shadowblade", label: "Shadowblade" });
+    expect(shadowblade.setup).toMatchObject({ profession: "assassin", archetype: "shadowblade" });
+    expect(characterArchetype({ templateId: "shadowblade", profession: "assassin" }))
+      .toMatchObject({ id: "shadowblade", label: "Shadowblade" });
     for (const template of CHARACTER_TEMPLATES) {
-      if (template.setup.subclass) expect(template.setup.subclass).not.toBe(template.setup.profession);
+      expect(template.setup).not.toHaveProperty("subclass");
+      expect(template.setup.archetype, `${template.id} archetype`).toBeTruthy();
+    }
+  });
+
+  it("anchors every campaign power tier to the new 100-level scale", () => {
+    expect(STARTING_LEVEL_BY_POWER_TIER).toEqual({
+      standard: 10,
+      mid: 25,
+      epic: 45,
+      legendary: 65,
+      mythical: 85,
+      divine: 100,
+    });
+    for (const template of CHARACTER_TEMPLATES) {
+      expect(progressionLevel(template.setup), `${template.id} starting level`)
+        .toBe(STARTING_LEVEL_BY_POWER_TIER[template.tier]);
+    }
+  });
+
+  it("starts every ready-made sheet at its route's exact cumulative attributes", () => {
+    for (const template of CHARACTER_TEMPLATES) {
+      const level = STARTING_LEVEL_BY_POWER_TIER[template.tier];
+      const route = progressionAtLevel(template.setup.profession, level, {
+        sidePath: template.setup.progression.sidePath,
+        archetypeId: template.setup.progression.archetypeId,
+      });
+      expect(template.setup.attributes, `${template.id} route attributes`).toEqual(route.attributes);
     }
   });
 

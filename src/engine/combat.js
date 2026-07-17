@@ -29,6 +29,7 @@ import { normalizeSeed, shuffleSeeded } from "./combat-rng.js";
 // extraction). The turn loop's finish* helpers call rollLoot/lootCtx; App.jsx
 // imports applyCombatResult/applyLoot directly from ./combat-result.js.
 import { rollLoot, lootCtx } from "./combat-loot.js";
+import { mechanicalAttributeValue } from "../data/attribute-tiers.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -740,9 +741,11 @@ const alertness = (d) => ({ feral: 4, honorable: 3, wary: 3, fierce: 2, fanatic:
 // blow. Either way you train the relevant proficiency.
 function applyAmbush(cs, side) {
   const a = cs.player.attrs || {};
+  const reflex = mechanicalAttributeValue(a.reflex);
+  const wit = mechanicalAttributeValue(a.wit);
   const living = livingEnemies(cs);
   if (side === "player") {
-    const stealth = (a.reflex || 0) + Math.floor((a.wit || 0) / 2) + (cs.player.prof?.ambush || 0);
+    const stealth = reflex + Math.floor(wit / 2) + (cs.player.prof?.ambush || 0);
     const awareness = Math.max(...living.map((e) => (e.accuracy || 0) + alertness(e.demeanor)), 0);
     const chance = clamp(40 + (stealth - awareness) * 6 - (living.length - 1) * 12, 5, 95);
     addProf(cs, "ambush", XP.AMBUSH_TRY);
@@ -755,7 +758,7 @@ function applyAmbush(cs, side) {
     }
   } else if (side === "enemy") {
     const enemyStealth = Math.max(...living.map((e) => (e.speed || 4) + tierInfo(e.tier).order), 0);
-    const perception = (a.wit || 0) + Math.floor((a.reflex || 0) / 2) + (cs.player.prof?.awareness || 0);
+    const perception = wit + Math.floor(reflex / 2) + (cs.player.prof?.awareness || 0);
     addProf(cs, "awareness", XP.AWARENESS);
     const chance = clamp(50 + (enemyStealth - perception) * 6, 5, 95);
     if (rand100() > chance) {
@@ -787,8 +790,8 @@ function attackProfile(attacker, def, tierId, isPlayer) {
   if (scaling === "weapon" || def.damageType === "weapon") {
     const w = attacker.weapon || { min: 1, max: 2, type: "physical", pen: 0 };
     const techMult = 1 + order * 0.15;
-    const govAttr = isPlayer ? (attacker.attrs?.[def.scaleAttr] ?? attacker.attrs?.body ?? 0) : 0;
-    const statMod = isPlayer ? Math.round(govAttr * (0.5 + order * 0.25)) : Math.round(order * 1.5);
+    const govAttr = mechanicalAttributeValue(attacker.attrs?.[def.scaleAttr] ?? attacker.attrs?.body ?? 0);
+    const statMod = Math.round(govAttr * (0.5 + order * 0.25));
     const type = def.damageType && def.damageType !== "weapon" ? def.damageType : w.type;
     return {
       min: Math.max(1, Math.round((w.min * techMult + statMod) * surge)),
@@ -800,10 +803,10 @@ function attackProfile(attacker, def, tierId, isPlayer) {
   if (scaling === "stat") {
     if (!def.dmg) return null;
     const m = tierMult(tierId);
-    const f = isPlayer && def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
+    const f = def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
     const castBonus = isPlayer ? 1 + (attacker.prof?.spellcasting || 0) * 0.05 : 1; // Spellcasting proficiency
     let focus = 0;
-    if (isPlayer && attacker.weapon?.category === "arcane") {
+    if (attacker.weapon?.category === "arcane") {
       focus = Math.round((attacker.weapon.max || 0) * 0.3);
     }
     return {
@@ -1729,6 +1732,8 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
   cs.player.cooldowns[TALK.id] = TALK.cooldown;
   addProf(cs, "command", XP.COMMAND);
   const a = cs.player.attrs || {};
+  const presence = mechanicalAttributeValue(a.presence);
+  const wit = mechanicalAttributeValue(a.wit);
 
   if (intent === "demoralize") {
     cs.log.push(logEntry(`${cs.player.name} hurls threats and grim promises.`, "player"));
@@ -1736,7 +1741,7 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
     if (hit.length === 0) cs.log.push(logEntry(`No one here can be cowed.`, "system"));
     const playerHp = cs.player.health / cs.player.maxHealth;
     for (const e of hit) {
-      let dmg = 8 + (a.presence || 0) * 3 + (a.wit || 0) * 1.5;
+      let dmg = 8 + presence * 3 + wit * 1.5;
       if (cs.powerRatio > 1.4) dmg += 10;
       if (e.demeanor === "cowardly") dmg += 8;
       if (DEMEANOR_CONFIG[e.demeanor]?.proud) dmg *= 0.5;
@@ -1772,7 +1777,7 @@ export function playerTalk(cs0, intent = "surrender", targetIndex = null) {
     const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
     if (!canCommunicate(e)) { cs.log.push(logEntry(`${e.name} cannot be reasoned with.`, "system")); continue; }
     const hp = e.health / e.maxHealth;
-    let chance = 6 + (a.presence || 0) * 4 + (a.wit || 0) * 1.5;
+    let chance = 6 + presence * 4 + wit * 1.5;
     chance += (e.moraleMax - e.morale) * 0.5;
     if (hp < 0.3) chance += 28; else if (hp < 0.5) chance += 14;
     chance += fallen * 10;
@@ -1826,7 +1831,7 @@ export function applyCombatEffect(cs0, effect) {
 
   const magDmg = (mag) => {
     const w = p.weapon || { min: 2, max: 4 };
-    const body = p.attrs?.body || 0;
+    const body = mechanicalAttributeValue(p.attrs?.body);
     const avg = (w.min + w.max) / 2;
     const base = mag === "major" ? avg * 1.6 + body : mag === "moderate" ? avg + body * 0.5 : avg * 0.5;
     return Math.max(1, Math.round(base * (0.85 + Math.random() * 0.3)));

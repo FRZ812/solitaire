@@ -78,7 +78,11 @@ export function playableCharacterCodexEntry(template, day = 0) {
     race: setup.race,
     subrace: setup.subrace ?? null,
     profession: setup.profession,
-    subclass: setup.subclass ?? null,
+    archetype: setup.archetype ?? null,
+    progression: setup.progression ? {
+      ...setup.progression,
+      paths: { ...(setup.progression.paths || {}) },
+    } : null,
     origin: setup.origin ?? null,
     gender: setup.gender ?? null,
     age: setup.age ?? null,

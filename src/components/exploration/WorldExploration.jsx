@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon.jsx";
 import { FLY_MIN_PER_HEX, FLY_TRAVEL_HEXES, WORLD_MARCH_LIMIT } from "../../config.js";
 import { TERRAINS } from "../../data/terrains.js";
@@ -46,60 +46,122 @@ const POI_GLYPHS = {
   camp: "△", market: "◈", bldg: "⌂", smithy: "⚒", healer: "+",
 };
 const POI_LEGEND_HELP = Object.freeze({
-  trade: "Shops and specialists. Travel to one to trade, rest, recover, arrange transport, or use its named service when available.",
-  city: "Civic, social, and landmark venues. Travel to one for related services, access, or story interactions.",
-  wilderness: "Sites beyond the streets. They mark settlements, shelter, crossings, exploration targets, and possible danger.",
+  trade: "Places that sell goods or provide a practical service. Their icon tells you the specialty; a lettered ring shows the market tier and expected stock quality.",
+  city: "Civic, social, and landmark venues. These are usually places for access, information, work, recovery, or story interactions rather than ordinary shopping.",
+  wilderness: "Sites beyond the streets. Some offer shelter, trade, or a safer route; places labeled Danger in this guide are especially likely to involve a hostile encounter.",
 });
 const POI_LEGEND_ACTIONS = Object.freeze({
-  "trade-general": "Buy and sell everyday goods",
-  "trade-provisions": "Buy food and travel supplies",
-  "trade-equipment": "Buy adventuring equipment",
-  "trade-stable": "Buy mounts and stable animals",
-  "trade-magic": "Buy enchanted and arcane goods",
-  "trade-herbalist": "Buy herbs and natural remedies",
-  "trade-alchemist": "Buy potions and reagents",
-  "trade-priest": "Worship, healing, and rites",
-  "trade-healer": "Restore health and treat wounds",
-  "trade-smith": "Buy, repair, or forge equipment",
-  "trade-transport": "Hire carts and arrange transport",
-  "trade-money": "Exchange or store currency",
-  "trade-tavern": "Rest, drink, hear rumors and jobs",
-  "trade-fish": "Buy fish and preserved catch",
-  "trade-chandler": "Buy rope, lamps, wax, and ship goods",
-  "trade-foreign": "Buy imported and rare goods",
-  "poi-palace": "Government, court, and royal business",
-  "poi-prison": "Prisoners, wardens, and legal custody",
-  "poi-slave-market": "Bond sales and captive trade",
-  "poi-inn": "Beds, meals, and traveler services",
-  "poi-restaurant": "Meals and local dining",
-  "poi-park": "Public garden and quiet meeting place",
-  "poi-brothel": "Paid company and social encounters",
-  "poi-bathhouse": "Bathing, recovery, and socializing",
-  "poi-courthouse": "Hearings, records, and civil law",
-  "poi-guildhall": "Guild business, charters, and work",
-  "poi-library": "Research, records, and learned help",
-  "poi-barracks": "Guards, military access, and security",
-  "poi-docks": "Ships, ferries, cargo, and passage",
-  "poi-warehouse": "Stored cargo and trade goods",
-  "poi-theatre": "Performances, games, and crowds",
-  "poi-cemetery": "Burials, memorials, and grave sites",
-  "wild-shrine": "Rites, offerings, and sanctuary",
-  "wild-monster-den": "Dangerous creature lair",
-  "wild-bandit-camp": "Hostile outlaw encampment",
-  "wild-merchant": "Trade with a roaming seller",
-  "wild-caravan": "Travelers, trade, and road news",
-  "wild-cave": "Underground site to explore",
-  "wild-dungeon": "Dangerous delve and possible treasure",
-  "wild-checkpoint": "Controlled passage and inspections",
-  "wild-ruin": "Explore remains and hidden history",
-  "wild-fortress": "Fortified stronghold and defenders",
-  "wild-manor": "Estate, household, and local authority",
-  "wild-watchtower": "Lookout, signals, and surveillance",
-  "wild-village": "Homes, services, and local people",
-  "wild-mine": "Minerals, labor, and underground works",
-  "wild-campsite": "A known place to shelter or rest",
-  "wild-bridge": "Safe route across water or terrain",
+  "trade-general": "Everyday tools, household wares, and basic supplies.",
+  "trade-provisions": "Rations, drink, camping gear, and journey supplies.",
+  "trade-equipment": "Weapons, armor, clothing, and adventuring kit.",
+  "trade-stable": "Mounts, stable animals, tack, feed, and care.",
+  "trade-magic": "Enchanted equipment, magical foci, and arcane goods.",
+  "trade-herbalist": "Herbs, field remedies, and natural ingredients.",
+  "trade-alchemist": "Prepared potions, reagents, and specialist mixtures.",
+  "trade-priest": "Worship, healing, offerings, and religious rites.",
+  "trade-healer": "Restore health and receive treatment for wounds.",
+  "trade-smith": "Buy, repair, commission, or forge equipment.",
+  "trade-transport": "Hire carts, arrange passage, and discuss routes.",
+  "trade-money": "Exchange coin or use secure currency services.",
+  "trade-tavern": "Rest, eat, drink, hear rumors, and find work.",
+  "trade-fish": "Fresh or preserved catch and local provisions.",
+  "trade-chandler": "Rope, lamps, wax, oil, and practical ship goods.",
+  "trade-foreign": "Imported wares, unusual materials, and rare goods.",
+  "poi-palace": "Court, government offices, petitions, and royal business.",
+  "poi-prison": "Wardens, prisoners, legal custody, and official access.",
+  "poi-slave-market": "Bond sales, captive trade, and its interested parties.",
+  "poi-inn": "Beds, meals, stabling, and services for travelers.",
+  "poi-restaurant": "Prepared meals, local dining, and conversation.",
+  "poi-park": "A public garden for respite, meetings, and gatherings.",
+  "poi-brothel": "Paid company, entertainment, and social encounters.",
+  "poi-bathhouse": "Bathing, recovery, gossip, and socializing.",
+  "poi-courthouse": "Hearings, public records, petitions, and civil law.",
+  "poi-guildhall": "Guild business, contracts, training, and work.",
+  "poi-library": "Research, archives, records, and learned assistance.",
+  "poi-barracks": "Guards, military authority, security, and restricted access.",
+  "poi-docks": "Ships, ferries, cargo, crews, and onward passage.",
+  "poi-warehouse": "Stored cargo, merchants, labor, and trade goods.",
+  "poi-theatre": "Performances, contests, games, and public crowds.",
+  "poi-cemetery": "Burials, memorials, mourners, and grave sites.",
+  "wild-shrine": "Offerings, rites, local faith, and possible sanctuary.",
+  "wild-monster-den": "A creature lair; expect a dangerous encounter nearby.",
+  "wild-bandit-camp": "A hostile outlaw camp; approach prepared for combat.",
+  "wild-merchant": "A roaming seller with limited, changing goods.",
+  "wild-caravan": "Travelers offering trade, passage, and fresh road news.",
+  "wild-cave": "An underground site that may hide hazards or discoveries.",
+  "wild-dungeon": "A dangerous delve promising opposition and possible treasure.",
+  "wild-checkpoint": "Controlled passage, inspections, tolls, or questioning.",
+  "wild-ruin": "Old remains that may conceal history, hazards, or salvage.",
+  "wild-fortress": "A defended stronghold with authority and armed occupants.",
+  "wild-manor": "An estate, household, and seat of local authority.",
+  "wild-watchtower": "A lookout for patrols, warnings, signals, and surveillance.",
+  "wild-village": "Homes, local people, modest goods, and basic services.",
+  "wild-mine": "Mineral workings, labor, trade, and underground access.",
+  "wild-campsite": "A known place to pause, shelter, or make camp.",
+  "wild-bridge": "A recognized crossing and safer route through terrain.",
 });
+
+const POI_LEGEND_TAGS = Object.freeze({
+  "trade-general": ["Goods", "goods"],
+  "trade-provisions": ["Supplies", "goods"],
+  "trade-equipment": ["Equipment", "goods"],
+  "trade-stable": ["Mounts", "travel"],
+  "trade-magic": ["Arcane goods", "goods"],
+  "trade-herbalist": ["Remedies", "service"],
+  "trade-alchemist": ["Remedies", "service"],
+  "trade-priest": ["Rites", "service"],
+  "trade-healer": ["Healing", "service"],
+  "trade-smith": ["Craft", "service"],
+  "trade-transport": ["Travel", "travel"],
+  "trade-money": ["Finance", "service"],
+  "trade-tavern": ["Rest & rumors", "social"],
+  "trade-fish": ["Food", "goods"],
+  "trade-chandler": ["Ship goods", "goods"],
+  "trade-foreign": ["Rare goods", "goods"],
+  "poi-palace": ["Authority", "authority"],
+  "poi-prison": ["Custody", "authority"],
+  "poi-slave-market": ["Trade", "goods"],
+  "poi-inn": ["Lodging", "service"],
+  "poi-restaurant": ["Food", "goods"],
+  "poi-park": ["Social", "social"],
+  "poi-brothel": ["Social", "social"],
+  "poi-bathhouse": ["Recovery", "service"],
+  "poi-courthouse": ["Law", "authority"],
+  "poi-guildhall": ["Work", "social"],
+  "poi-library": ["Knowledge", "service"],
+  "poi-barracks": ["Authority", "authority"],
+  "poi-docks": ["Travel", "travel"],
+  "poi-warehouse": ["Goods", "goods"],
+  "poi-theatre": ["Entertainment", "social"],
+  "poi-cemetery": ["Memorial", "social"],
+  "wild-shrine": ["Sanctuary", "service"],
+  "wild-monster-den": ["Danger", "danger"],
+  "wild-bandit-camp": ["Danger", "danger"],
+  "wild-merchant": ["Goods", "goods"],
+  "wild-caravan": ["Trade & news", "goods"],
+  "wild-cave": ["Explore", "explore"],
+  "wild-dungeon": ["Danger", "danger"],
+  "wild-checkpoint": ["Access", "authority"],
+  "wild-ruin": ["Explore", "explore"],
+  "wild-fortress": ["Defended", "danger"],
+  "wild-manor": ["Authority", "authority"],
+  "wild-watchtower": ["Warning", "authority"],
+  "wild-village": ["Services", "service"],
+  "wild-mine": ["Resources", "goods"],
+  "wild-campsite": ["Shelter", "service"],
+  "wild-bridge": ["Route", "travel"],
+});
+
+const MAP_GUIDE_ITEMS = Object.freeze([
+  Object.freeze({ icon: "map", label: "Choose a destination", tag: "Map", tone: "travel", description: "Tap a revealed, walkable tile to select it. The bright outline is your destination; the gold line is the route you will take." }),
+  Object.freeze({ icon: "compass", label: "Route preview", tag: "Journey", tone: "travel", description: "Steps and time describe the next march. A long journey pauses at the march limit so the party can reassess before continuing." }),
+  Object.freeze({ icon: "alert", label: "Danger", tag: "Route risk", tone: "danger", description: "The percentage is the cumulative chance of at least one encounter along the shown ground route. Darkness can make the actual journey more dangerous." }),
+  Object.freeze({ icon: "swords", label: "Encounters", tag: "Combat", tone: "danger", description: "Travel may trigger an encounter on its own. The encounter button deliberately looks for a fight at your current location." }),
+  Object.freeze({ icon: "bag", label: "Goods", tag: "Trade", tone: "goods", description: "Goods markers indicate wares to buy or sell. Selection and quality depend on the specialty and the marker's lettered market tier." }),
+  Object.freeze({ icon: "sparkle", label: "Services", tag: "Assistance", tone: "service", description: "Services provide help such as healing, lodging, repairs, transport, rites, research, or access; they may not carry a normal shop inventory." }),
+  Object.freeze({ icon: "eye", label: "Visibility", tag: "Exploration", tone: "explore", description: "Clear tiles are currently visible, dim tiles are remembered, and black tiles remain unknown. Visiting and scouting keep geography on your map." }),
+  Object.freeze({ icon: "alert", label: "Quest marks", tag: "Objective", tone: "social", description: "A gold exclamation mark on a destination means a known quest objective is tied to that place." }),
+]);
 
 function glyphFor(tile) {
   return POI_GLYPHS[tile?.poi?.type] || terrainVisual(tile?.terrain).glyph || "•";
@@ -182,38 +244,70 @@ function RpgHeader({ state, biome, tile, onClose, onWayfinder }) {
   );
 }
 
-export function MapLegend({ onClose, initialSection = "tiers" }) {
+export function MapLegend({ onClose, initialSection = "guide" }) {
   const [sectionId, setSectionId] = useState(initialSection);
+  const contentRef = useRef(null);
   const poiGroup = POI_LEGEND_GROUPS.find((group) => group.id === sectionId) || null;
   const sections = [
-    { id: "tiers", label: "Shop tiers" },
-    ...POI_LEGEND_GROUPS.map((group) => ({ id: group.id, label: group.label })),
+    { id: "guide", label: "Map signs" },
+    { id: "tiers", label: "Shop grades" },
+    ...POI_LEGEND_GROUPS.map((group) => ({
+      id: group.id,
+      label: group.id === "city" ? "City" : group.id === "wilderness" ? "Wilds" : group.label,
+    })),
   ];
+
+  useEffect(() => {
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+  }, [sectionId]);
 
   return (
     <section id="rpg-map-legend-dialog" className="rpg-map-legend-panel" role="dialog" aria-modal="true" aria-labelledby="rpg-map-legend-title" onMouseDown={(event) => event.stopPropagation()}>
       <header className="rpg-map-legend-head">
-        <div><small>Map guide</small><h2 id="rpg-map-legend-title">Legend</h2></div>
+        <div><small>Traveler's field guide</small><h2 id="rpg-map-legend-title">Map legend</h2><p>Read the signs before you march.</p></div>
         <button type="button" onClick={onClose} aria-label="Close map legend"><Icon name="x" size={17} /></button>
       </header>
       <div className="rpg-map-legend-tabs" role="tablist" aria-label="Legend sections">
         {sections.map((section) => (
           <button
             key={section.id}
+            id={`rpg-map-legend-tab-${section.id}`}
             type="button"
             className={sectionId === section.id ? "is-active" : ""}
             onClick={() => setSectionId(section.id)}
             role="tab"
             aria-selected={sectionId === section.id}
+            aria-controls="rpg-map-legend-content"
           >
             {section.label}
           </button>
         ))}
       </div>
-      <div className="rpg-map-legend-content" role="tabpanel">
-        {sectionId === "tiers" ? (
+      <div ref={contentRef} id="rpg-map-legend-content" className="rpg-map-legend-content" role="tabpanel" aria-labelledby={`rpg-map-legend-tab-${sectionId}`}>
+        {sectionId === "guide" ? (
           <>
-            <p>Lettered rings on shop and service icons show their price level and the best stock they normally carry.</p>
+            <p>The local map combines travel planning, destination types, and encounter risk. These are the signals used across both city streets and the wilderness.</p>
+            <div className="rpg-map-guide-grid">
+              {MAP_GUIDE_ITEMS.map((item) => (
+                <div key={item.label} className={`rpg-map-guide-item is-${item.tone}`}>
+                  <span className="rpg-map-guide-icon"><Icon name={item.icon} size={19} /></span>
+                  <span><em>{item.tag}</em><b>{item.label}</b><small>{item.description}</small></span>
+                </div>
+              ))}
+            </div>
+            <div className="rpg-map-risk-guide" aria-label="Danger levels">
+              <strong>Danger levels</strong>
+              <div>
+                <span className="is-calm"><b>0–19%</b><small>Calm</small></span>
+                <span className="is-wary"><b>20–39%</b><small>Wary</small></span>
+                <span className="is-dangerous"><b>40–64%</b><small>Dangerous</small></span>
+                <span className="is-deadly"><b>65%+</b><small>Deadly</small></span>
+              </div>
+            </div>
+          </>
+        ) : sectionId === "tiers" ? (
+          <>
+            <p>Lettered rings on shop and service icons compare local prices and the best quality of stock the establishment normally carries—not the danger of the area.</p>
             <div className="rpg-map-tier-grid">
               {Object.values(MARKET_PRICE_TIERS).map((tier) => (
                 <div key={tier.id} className="rpg-map-tier-item">
@@ -227,12 +321,15 @@ export function MapLegend({ onClose, initialSection = "tiers" }) {
           <>
             <p>{POI_LEGEND_HELP[poiGroup.id]}</p>
             <div className="rpg-map-poi-grid">
-              {poiGroup.items.map((item) => (
-                <div key={item.key} className="rpg-map-poi-item">
-                  <PoiIcon iconKey={item.key} size={38} title={item.label} />
-                  <span><b>{item.label}</b><small>{POI_LEGEND_ACTIONS[item.key]}</small></span>
-                </div>
-              ))}
+              {poiGroup.items.map((item) => {
+                const [tag, tone] = POI_LEGEND_TAGS[item.key] || ["Place", "social"];
+                return (
+                  <div key={item.key} className={`rpg-map-poi-item is-${tone}`}>
+                    <PoiIcon iconKey={item.key} size={42} title={item.label} />
+                    <span><em>{tag}</em><b>{item.label}</b><small>{POI_LEGEND_ACTIONS[item.key]}</small></span>
+                  </div>
+                );
+              })}
             </div>
           </>
         ) : null}
@@ -264,42 +361,44 @@ function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, n
   }, [legendOpen]);
 
   return (
-    <main className={`rpg-world-stage canvas-world-stage ${city ? "is-capital" : ""} ${night ? "is-night" : ""}`}>
-      <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
-      {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
+    <>
+      <main className={`rpg-world-stage canvas-world-stage ${city ? "is-capital" : ""} ${night ? "is-night" : ""}`}>
+        <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
+        {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 
-      <button
-        type="button"
-        className="rpg-map-legend-toggle"
-        onClick={() => setLegendOpen(true)}
-        aria-label="Open map legend"
-        aria-expanded={legendOpen}
-        aria-controls="rpg-map-legend-dialog"
-      >
-        <Icon name="book" size={16} /><span>Legend</span>
-      </button>
+        <button
+          type="button"
+          className="rpg-map-legend-toggle"
+          onClick={() => setLegendOpen(true)}
+          aria-label="Open map legend"
+          aria-expanded={legendOpen}
+          aria-controls="rpg-map-legend-dialog"
+        >
+          <Icon name="book" size={16} /><span>Legend</span>
+        </button>
+
+        {onSeekCombat && (
+          <div className="rpg-map-corner-controls">
+            <button
+              onClick={onSeekCombat}
+              disabled={loading}
+              className="rpg-wild-encounter"
+              aria-label={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
+              title={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
+            >
+              <img src={seekEncounterIcon} alt="" />
+              <span><small>{city ? "Street encounter" : "Wild encounter"}</small><b>{city ? "Seek trouble" : "Seek a fight"}</b></span>
+            </button>
+          </div>
+        )}
+      </main>
 
       {legendOpen && (
         <div className="rpg-map-legend-backdrop" onMouseDown={() => setLegendOpen(false)}>
           <MapLegend onClose={() => setLegendOpen(false)} />
         </div>
       )}
-
-      {onSeekCombat && (
-        <div className="rpg-map-corner-controls">
-          <button
-            onClick={onSeekCombat}
-            disabled={loading}
-            className="rpg-wild-encounter"
-            aria-label={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
-            title={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
-          >
-            <img src={seekEncounterIcon} alt="" />
-            <span><small>{city ? "Street encounter" : "Wild encounter"}</small><b>{city ? "Seek trouble" : "Seek a fight"}</b></span>
-          </button>
-        </div>
-      )}
-    </main>
+    </>
   );
 }
 

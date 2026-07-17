@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { Icon } from "./Icon.jsx";
 import { colors, radius, fonts } from "./tokens.js";
-import { ATTR_KEYS, ATTR_LABELS, ORIGIN_LABEL } from "../config.js";
+import { ATTR_KEYS, ATTR_LABELS, CHARACTER_LEVEL_CAP, ORIGIN_LABEL } from "../config.js";
 import { RACES } from "../data/races.js";
 import { ABILITY_CATALOG, abilityCategoryOf, getAbilityDef } from "../data/abilities.js";
 import { ALL_ITEMS } from "../data/catalog.js";
@@ -9,6 +9,15 @@ import { equipSlot } from "../engine/combat-stats.js";
 import { TIERS, tier as tierInfo, tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { CHARACTER_TEMPLATES, STANDARD_PROVISIONS } from "../data/templates.js";
 import { descriptorFor } from "../data/attractiveness.js";
+import { PROFESSIONS } from "../data/professions.js";
+import {
+  attributeCeilingForLevel,
+  canonicalProfessionId,
+  levelTier,
+  professionBuild,
+  progressionAtLevel,
+} from "../data/progression-paths.js";
+import { attributesForProgression } from "../engine/progression.js";
 
 const APPEARANCE_OPTS = {
   skin: ["pale", "fair", "tanned", "olive", "brown", "deep brown", "ashen", "grey", "ruddy"],
@@ -22,8 +31,11 @@ const AGING_MODES = [
   { id: "ageless", label: "Ageless" },
   { id: "out-of-time", label: "Out-of-Time" },
 ];
-const PROFESSION_OPTS = ["sellsword", "knight", "ranger", "hunter", "thief", "assassin", "hedge-mage", "sorcerer", "scholar", "priest", "healer", "envoy", "courtier", "bard", "merchant", "outlaw", "noble", "barbarian", "monk"];
-const SUBCLASS_OPTS = [...new Set(CHARACTER_TEMPLATES.map((template) => template.setup.subclass).filter(Boolean))];
+const PROFESSION_OPTS = Object.keys(PROFESSIONS);
+const ARCHETYPE_OPTS = [...new Set([
+  ...CHARACTER_TEMPLATES.map((template) => template.setup.archetype),
+  ...PROFESSION_OPTS.map((id) => professionBuild(id)?.archetypePathId),
+].filter(Boolean))];
 const ITEM_KINDS = [
   { id: "weapon", label: "Weapons", kinds: ["weapon"] },
   { id: "armor", label: "Armour", kinds: ["armor"] },
@@ -34,6 +46,14 @@ const ITEM_KINDS = [
   { id: "tool", label: "Tools", kinds: ["tool"] },
   { id: "material", label: "Materials", kinds: ["material"] },
 ];
+
+const slug = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const sidePathForRace = (race) => (race === "human" ? "utility" : "racial");
+const sameAttributes = (left, right) => ATTR_KEYS.every((key) => Number(left?.[key]) === Number(right?.[key]));
+const archetypeFor = (professionValue, archetypeValue, professionId) => archetypeValue.trim()
+  || (slug(professionValue) && slug(professionValue) !== professionId ? professionValue.trim() : null)
+  || professionBuild(professionId)?.archetypePathId
+  || null;
 
 // Tiers a granted ability may take: from its floor up to divine.
 function tiersAtOrAbove(floorId) {
@@ -80,7 +100,8 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
   const [agingMode, setAgingMode] = useState("mortal");
   const [lifespanMultiplier, setLifespanMultiplier] = useState(2.0);
   const [profession, setProfession] = useState("");
-  const [subclass, setSubclass] = useState("");
+  const [archetype, setArchetype] = useState("");
+  const [level, setLevel] = useState(10);
   const [race, setRace] = useState("human");
   const [subrace, setSubrace] = useState(null);
   const [origin, setOrigin] = useState("north");
@@ -88,7 +109,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
   const [attractiveness, setAttractiveness] = useState(5);
   const [gender, setGender] = useState("male");
   const [baseAppearance, setBaseAppearance] = useState("");
-  const [attrs, setAttrs] = useState({ body: 3, reflex: 3, vigor: 3, mind: 3, wit: 3, presence: 3 });
+  const [attrs, setAttrs] = useState(() => ({ ...progressionAtLevel("wanderer", 10, { sidePath: "utility" }).attributes }));
   const [abilities, setAbilities] = useState([]); // [{id, tier}]
   const [items, setItems] = useState([]); // [{itemId, quantity, worn}]
   const [itemSearch, setItemSearch] = useState("");
@@ -97,14 +118,67 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
   const raceDef = RACES[race] || {};
   const subraceMap = raceDef.subraces || null;
   const isHuman = race === "human";
+  const professionId = canonicalProfessionId(profession) || "wanderer";
+  const archetypeId = archetypeFor(profession, archetype, professionId);
+  const sidePath = sidePathForRace(race);
+  const routeBaseline = progressionAtLevel(professionId, level, { sidePath, archetypeId }).attributes;
+  const routeTotal = ATTR_KEYS.reduce((sum, key) => sum + (routeBaseline[key] || 0), 0);
+  const routeBudgetMin = Math.round(routeTotal * 0.85);
+  const routeBudgetMax = Math.round(routeTotal * 1.15);
 
-  const setAttr = (k, d) => setAttrs((a) => ({ ...a, [k]: Math.max(1, Math.min(30, (a[k] || 0) + d)) }));
+  const fitAttributes = (candidate, overrides = {}) => attributesForProgression({
+    attributes: candidate,
+    professionId: overrides.professionId ?? professionId,
+    archetypeId: overrides.archetypeId ?? archetypeId,
+    level: overrides.level ?? level,
+    sidePath: overrides.sidePath ?? sidePath,
+    preserveValidShape: true,
+  });
+
+  const attributeCeiling = attributeCeilingForLevel(level);
+  const setAttr = (k, d) => setAttrs((current) => fitAttributes({
+    ...current,
+    [k]: Math.max(0, Math.min(attributeCeiling, (current[k] || 0) + d)),
+  }));
   const attrTotal = ATTR_KEYS.reduce((s, k) => s + (attrs[k] || 0), 0);
 
+  const pickLevel = (raw) => {
+    const nextLevel = Math.max(1, Math.min(CHARACTER_LEVEL_CAP, Math.round(Number(raw) || 1)));
+    const nextBaseline = progressionAtLevel(professionId, nextLevel, { sidePath, archetypeId }).attributes;
+    setLevel(nextLevel);
+    setAttrs((current) => sameAttributes(current, routeBaseline)
+      ? { ...nextBaseline }
+      : fitAttributes(current, { level: nextLevel }));
+  };
+
   const pickRace = (id) => {
+    const nextSidePath = sidePathForRace(id);
+    const nextBaseline = progressionAtLevel(professionId, level, { sidePath: nextSidePath, archetypeId }).attributes;
     setRace(id);
     setSubrace(null);
     setOrigin(id === "human" ? "north" : id);
+    setAttrs((current) => sameAttributes(current, routeBaseline)
+      ? { ...nextBaseline }
+      : fitAttributes(current, { sidePath: nextSidePath }));
+  };
+
+  const pickProfession = (value) => {
+    const nextProfessionId = canonicalProfessionId(value) || "wanderer";
+    const nextArchetypeId = archetypeFor(value, archetype, nextProfessionId);
+    const nextBaseline = progressionAtLevel(nextProfessionId, level, { sidePath, archetypeId: nextArchetypeId }).attributes;
+    setProfession(value);
+    setAttrs((current) => sameAttributes(current, routeBaseline)
+      ? { ...nextBaseline }
+      : fitAttributes(current, { professionId: nextProfessionId, archetypeId: nextArchetypeId }));
+  };
+
+  const pickArchetype = (value) => {
+    const nextArchetypeId = archetypeFor(profession, value, professionId);
+    const nextBaseline = progressionAtLevel(professionId, level, { sidePath, archetypeId: nextArchetypeId }).attributes;
+    setArchetype(value);
+    setAttrs((current) => sameAttributes(current, routeBaseline)
+      ? { ...nextBaseline }
+      : fitAttributes(current, { archetypeId: nextArchetypeId }));
   };
 
   // ---- abilities ----
@@ -155,9 +229,10 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
       lifespanMultiplier: agingMode === "power-extended" ? lifespanMultiplier : undefined,
       attractiveness, gender,
       profession: profession.trim() || "wanderer",
-      subclass: subclass.trim() || null,
+      archetype: archetype.trim() || professionBuild(profession.trim() || "wanderer")?.archetypePathId || null,
+      level,
       race, subrace: subrace || null, origin: isHuman ? origin : race,
-      attributes: attrs,
+      attributes: fitAttributes(attrs),
       appearance: Object.keys(appr).length ? appr : undefined,
       base_appearance: baseAppearance.trim() || undefined,
       abilities,
@@ -187,7 +262,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
         {/* scroll body */}
         <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: "8px" }}>
           {/* IDENTITY */}
-          <SectionHeader icon="user" title="Identity" sub={name.trim() ? `${name}${profession ? ` · ${profession}` : ""}${subclass ? ` · ${subclass}` : ""}` : "name, drive, age, class, subclass"} open={open === "identity"} onToggle={() => toggle("identity")} />
+          <SectionHeader icon="user" title="Identity" sub={name.trim() ? `${name}${profession ? ` · ${profession}` : ""}${archetype ? ` · ${archetype}` : ""}` : "name, drive, age, profession, archetype"} open={open === "identity"} onToggle={() => toggle("identity")} />
           {open === "identity" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "11px", padding: "4px 2px 8px" }}>
               <div><label style={fieldLabel}>Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" style={inputStyle} /></div>
@@ -213,14 +288,32 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={fieldLabel}>Profession</label>
-                  <input list="prof-opts" value={profession} onChange={(e) => setProfession(e.target.value)} placeholder="e.g. sellsword" style={inputStyle} />
+                  <input list="prof-opts" value={profession} onChange={(e) => pickProfession(e.target.value)} placeholder="e.g. sellsword" style={inputStyle} />
                   <datalist id="prof-opts">{PROFESSION_OPTS.map((o) => <option key={o} value={o} />)}</datalist>
                 </div>
               </div>
               <div>
-                <label style={fieldLabel}>Subclass / specialization</label>
-                <input list="subclass-opts" value={subclass} onChange={(e) => setSubclass(e.target.value)} placeholder="e.g. shadowblade" style={inputStyle} />
-                <datalist id="subclass-opts">{SUBCLASS_OPTS.map((o) => <option key={o} value={o} />)}</datalist>
+                <label style={fieldLabel}>Archetype / specialized focus</label>
+                <input list="archetype-opts" value={archetype} onChange={(e) => pickArchetype(e.target.value)} placeholder="e.g. shadowblade" style={inputStyle} />
+                <datalist id="archetype-opts">{ARCHETYPE_OPTS.map((o) => <option key={o} value={o} />)}</datalist>
+              </div>
+              <div>
+                <label style={fieldLabel}>Progression level · {levelTier(level).label}</label>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <button onClick={() => pickLevel(level - 1)} style={stepBtn}>−</button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={CHARACTER_LEVEL_CAP}
+                    value={level}
+                    onChange={(e) => pickLevel(e.target.value)}
+                    style={{ ...inputStyle, textAlign: "center", padding: "0 6px" }}
+                  />
+                  <button onClick={() => pickLevel(level + 1)} style={stepBtn}>+</button>
+                </div>
+                <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.55)", marginTop: "4px" }}>
+                  {levelTier(level).min}–{levelTier(level).max} {levelTier(level).label} · attribute ceiling {attributeCeiling}
+                </div>
               </div>
               <div>
                 <label style={fieldLabel}>Gender</label>
@@ -311,9 +404,15 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
           )}
 
           {/* ATTRIBUTES */}
-          <SectionHeader icon="heart" title="Attributes" sub={`total ${attrTotal} · no cap`} open={open === "attributes"} onToggle={() => toggle("attributes")} />
+          <SectionHeader icon="heart" title="Attributes" sub={`total ${attrTotal} · route budget ${routeBudgetMin}–${routeBudgetMax} · score ceiling ${attributeCeiling}`} open={open === "attributes"} onToggle={() => toggle("attributes")} />
           {open === "attributes" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "7px", padding: "4px 2px 8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "2px" }}>
+                <span style={{ flex: 1, fontSize: "10px", color: "rgba(237,228,208,0.55)", lineHeight: 1.4 }}>
+                  This is the saved sheet. Valid custom shapes remain exact; out-of-band changes are reconciled immediately with the selected route.
+                </span>
+                <button onClick={() => setAttrs({ ...routeBaseline })} style={{ ...chip(false), fontSize: "10px", padding: "5px 8px" }}>Route baseline</button>
+              </div>
               {ATTR_KEYS.map((k) => (
                 <div key={k} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   <div style={{ flex: 1, fontSize: "13px", color: colors.parchment, fontWeight: 600 }}>{ATTR_LABELS[k]}</div>

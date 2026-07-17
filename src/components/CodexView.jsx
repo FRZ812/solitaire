@@ -5,7 +5,7 @@ import { AtlasIcon } from "./AtlasIcon.jsx";
 import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import { iconButtonStyle, conditionPalette, fmtRemaining } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
-import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
+import { ATTR_KEYS, ATTR_LABELS, CHARACTER_LEVEL_CAP, originLabel } from "../config.js";
 import { GLOSSARY, GLOSSARY_CATEGORIES } from "../data/glossary.js";
 import { CONDITIONS } from "../data/conditions.js";
 import { hasCombatEffect } from "../engine/condition-combat.js";
@@ -18,10 +18,14 @@ import { passiveLabel, passiveDef, passiveEffectText, passiveEffectRange, PASSIV
 import { getAbilityDef, ABILITY_CATALOG, abilityStatLine, abilityReqLine } from "../data/abilities.js";
 import { MAGIC_SCHOOLS, abilityTaxonomy } from "../data/ability-taxonomy.js";
 import { RACES } from "../data/races.js";
+import { PROFESSIONS } from "../data/professions.js";
 import { descriptorFor } from "../data/attractiveness.js";
 import { resolveCharacterPortrait } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
-import { characterSubclass } from "../data/character-subclasses.js";
+import { ProfessionCatalog } from "./ProfessionProgression.jsx";
+import { characterArchetype } from "../data/character-archetypes.js";
+import { progressionLevel } from "../engine/progression.js";
+import { levelTier } from "../data/progression-paths.js";
 import codexCategoryAtlas from "../assets/generated/icon-atlases/codex-categories-atlas-v1.png";
 import { CODEX_PORTRAIT_IDS, resolveCodexPortrait } from "./codex-portrait-assets.js";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
@@ -855,7 +859,9 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
   const narrativeAppearance = entry.base_appearance || (typeof entry.appearance === "string" ? entry.appearance : null);
   const structuredAppearance = kind === "characters" && entry.appearance && typeof entry.appearance === "object" ? entry.appearance : null;
   const isCharacter = kind === "characters";
-  const subclass = isCharacter ? characterSubclass(entry) : null;
+  const archetype = isCharacter ? characterArchetype(entry) : null;
+  const totalProgressionLevel = isCharacter ? progressionLevel(entry) : 0;
+  const progressionTier = totalProgressionLevel > 0 ? levelTier(totalProgressionLevel) : null;
 
   // Brief one-line preview shown while collapsed (keeps the list scannable).
   const metaLine = kind === "characters"
@@ -864,9 +870,11 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
         entry.kind === "mount"
           ? entry.species
           : ((codex.professions?.[entry.profession]?.name || entry.profession)
-              ? `${codex.professions?.[entry.profession]?.name || entry.profession} class`
+              ? `${codex.professions?.[entry.profession]?.name || entry.profession} profession`
               : null),
-        subclass ? `${subclass.label} subclass` : null,
+        archetype ? `${archetype.label} archetype` : null,
+        totalProgressionLevel > 0 ? `Level ${totalProgressionLevel}` : null,
+        progressionTier ? `${progressionTier.label} tier` : null,
         originLabel(entry.origin),
       ].filter(Boolean).join(" · ")
     : "";
@@ -913,7 +921,9 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
             {entry.common && <span>Baseline</span>}
             {entry.kind === "player" && <span>You</span>}
             {isTracked && <span>Tracked</span>}
-            {subclass && <span>Subclass · {subclass.label}</span>}
+            {archetype && <span>Archetype · {archetype.label}</span>}
+            {totalProgressionLevel > 0 && <span>Level {totalProgressionLevel} / {CHARACTER_LEVEL_CAP}</span>}
+            {progressionTier && <span>{progressionTier.label} tier</span>}
             {kind === "skills" && typeof entry.rating === "number" && <span>Rating {entry.rating}</span>}
           </span>
           {!open && preview && <span className="codex-entry__preview">{preview}</span>}
@@ -943,14 +953,16 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
         />
       )}
 
-      {kind === "characters" && (entry.race || entry.profession || subclass || entry.origin) && (
+      {kind === "characters" && (entry.race || entry.profession || archetype || entry.origin) && (
         <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginTop: "6px", marginBottom: "6px" }}>
           {[
             codex.races[entry.race]?.name || entry.race,
             (codex.professions[entry.profession]?.name || entry.profession)
-              ? `${codex.professions[entry.profession]?.name || entry.profession} class`
+              ? `${codex.professions[entry.profession]?.name || entry.profession} profession`
               : null,
-            subclass ? `${subclass.label} subclass` : null,
+            archetype ? `${archetype.label} archetype` : null,
+            totalProgressionLevel > 0 ? `Level ${totalProgressionLevel}` : null,
+            progressionTier ? `${progressionTier.label} tier` : null,
             originLabel(entry.origin),
           ].filter(Boolean).join(" · ")}
         </div>
@@ -1083,8 +1095,9 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
         if (characterScope === "notable" && !IMPORTANT_CHARACTER_IDS.has(entry.id)) return false;
         if (characterScope === "mounts" && entry.kind !== "mount") return false;
         if (!query) return true;
-        const subclass = characterSubclass(entry);
-        return [entry.name, entry.race, entry.profession, entry.subclass, subclass?.label, entry.origin, entry.description, entry.base_appearance]
+        const archetype = characterArchetype(entry);
+        const level = progressionLevel(entry);
+        return [entry.name, entry.race, entry.profession, entry.archetype, archetype?.label, level > 0 ? levelTier(level).label : null, entry.origin, entry.description, entry.base_appearance]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
@@ -1148,7 +1161,7 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
 
       <div className="codex-view__tabs" role="tablist" aria-label="Codex sections">
         {CODEX_TABS.map((tab, tabIndex) => {
-          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : Object.keys(codex[tab.key] || {}).length;
+          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : tab.key === "professions" ? Object.keys(PROFESSIONS).length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
           return (
             <button
@@ -1208,7 +1221,9 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
           role="tabpanel"
           aria-labelledby={`codex-tab-${activeTab}`}
         >
-        {activeTab === "items" ? (
+        {activeTab === "professions" ? (
+          <ProfessionCatalog character={state.character} />
+        ) : activeTab === "items" ? (
           <ItemCatalog codex={codex} />
         ) : activeTab === "abilities" ? (
           <AbilityCatalog codex={codex} character={state.character} />

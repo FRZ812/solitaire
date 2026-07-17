@@ -73,6 +73,10 @@ describe("unified capital migration", () => {
 
   it("retires world.place even when a minimal legacy save has no Codex", () => {
     const legacy = {
+      character: {
+        profession: "farmer",
+        attributes: { body: 5, reflex: 3, vigor: 6, mind: 3, wit: 4, presence: 2 },
+      },
       world: {
         currentTile: { x: 0, y: 0 },
         place: { id: "whitemarch", node: "smith-row" },
@@ -84,5 +88,7 @@ describe("unified capital migration", () => {
     expect(migrated.world.currentTile).toEqual({ x: 2, y: 11 });
     expect(migrated.world).not.toHaveProperty("place");
     expect(migrated.world.codex).toBeUndefined();
+    expect(migrated.character).toMatchObject({ id: "wanderer", kind: "player", profession: "farmer" });
+    expect(migrated.character.progression).toMatchObject({ version: 1, professionId: "farmer" });
   });
 });

@@ -1,10 +1,24 @@
 // Canonical profession records shared by character creation and the living
 // Codex. Ready-made characters use a focused adventuring subset, while common
 // occupations remain here so old saves keep their existing lore entries.
-export const PROFESSIONS = Object.freeze({
+import { professionProfile } from "./progression-paths.js";
+
+const PROFESSION_RECORDS = {
+  wanderer: { id: "wanderer", name: "Wanderer", role: "Generalist", iconKey: "ranger", description: "A road-shaped calling built from experience, adaptation, and no single institution." },
   innkeeper: { id: "innkeeper", name: "Innkeeper", description: "Keeper of an inn or tavern.", common: true },
   farmer: { id: "farmer", name: "Farmer", description: "Tiller of land, raiser of stock.", common: true },
   peddler: { id: "peddler", name: "Peddler", description: "A travelling trader of small goods.", common: true },
+  artisan: { id: "artisan", name: "Artisan", description: "A maker whose practiced craft can encompass smithing, joinery, masonry, baking, tailoring, and other material trades.", common: true },
+  labourer: { id: "labourer", name: "Labourer", description: "A working professional skilled in hauling, building, digging, lifting, and coordinated physical trades.", common: true },
+  scholar: { id: "scholar", name: "Scholar", description: "A researcher, teacher, archivist, or scribe devoted to disciplined knowledge.", common: true },
+  healer: { id: "healer", name: "Healer", description: "A practitioner of medicine, surgery, remedies, and long-term care.", common: true },
+  performer: { id: "performer", name: "Performer", description: "A musician, actor, dancer, storyteller, or other professional keeper of living art.", common: true },
+  merchant: { id: "merchant", name: "Merchant", description: "A trader who manages goods, credit, risk, and relationships across markets.", common: true },
+  mariner: { id: "mariner", name: "Mariner", description: "A sailor, navigator, shipmaster, or other professional of river and sea.", common: true },
+  outlaw: { id: "outlaw", name: "Outlaw", description: "A fugitive or underworld professional living beyond ordinary law and patronage.", common: true },
+  soldier: { id: "soldier", name: "Soldier", description: "A trained member of an organized fighting force, defined by drill and formation rather than adventuring fame.", common: true },
+  hunter: { id: "hunter", name: "Hunter", description: "A tracker and provider who reads terrain, weather, and quarry for a living.", common: true },
+  attendant: { id: "attendant", name: "Attendant", description: "A discreet household professional trained in care, service, messages, accounts, and routine.", common: true },
   monarch: { id: "monarch", name: "Monarch", description: "Crowned ruler of a kingdom or comparable polity." },
   noble: { id: "noble", name: "Noble", description: "Holder of a title — baron, lord, count, or comparable rank." },
   witch: { id: "witch", name: "Witch", description: "A hedge-magic practitioner working outside the Spire schools." },
@@ -36,7 +50,22 @@ export const PROFESSIONS = Object.freeze({
   "enchanter-tyrant": { id: "enchanter-tyrant", name: "Enchanter-Tyrant", role: "God-Tyrant", iconKey: "enchanter-tyrant", description: "A sovereign will that conquers by making obedience feel like one's own idea." },
   envoy: { id: "envoy", name: "Envoy", role: "Face", iconKey: "envoy", description: "A practiced negotiator who wins passage, terms, and loyalty through protocol, empathy, leverage, and a well-timed truth." },
   courtier: { id: "courtier", name: "Courtier", role: "Face", iconKey: "courtier", description: "A social operator who trades in attention, introductions, flirtation, status, and secrets instead of force." },
-});
+};
+
+// Progression stays in the static catalog rather than being copied as 100 rows
+// into every save. The thin fields here let identity surfaces describe every
+// calling—including civic, service, and trade work—with the same vocabulary.
+export const PROFESSIONS = Object.freeze(Object.fromEntries(
+  Object.entries(PROFESSION_RECORDS).map(([id, record]) => {
+    const progression = professionProfile(id);
+    return [id, Object.freeze({
+      ...record,
+      domain: progression?.domain || "general",
+      archetype: progression?.archetype || "Generalist",
+      archetypeDescription: progression?.archetypeDescription || record.description,
+    })];
+  }),
+));
 
 export function professionRecord(id) {
   return PROFESSIONS[id] || null;

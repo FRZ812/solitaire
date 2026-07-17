@@ -38,6 +38,8 @@ import {
   buildAtlasLandmarks,
   centerAtlasCamera,
   clampAtlasCamera,
+  initialAtlasSelection,
+  journeyLegBreaks,
   landmarkKnowledge,
   panAtlasCamera,
   summarizeAtlasJourney,
@@ -56,13 +58,29 @@ const CULTURE_BY_REALM_ID = Object.fromEntries(REALM_CULTURES.map((culture) => [
 const ECONOMY_BY_REALM_ID = Object.fromEntries(REALM_ECONOMIES.map((economy) => [economy.realmId, economy]));
 const FACTION_BY_ID = Object.fromEntries(REALM_FACTIONS.map((faction) => [faction.id, faction]));
 
-// Raster palette: land terrain from the shared ink map, plus sea/coast tones.
-const SEA_INK = "#173d56";
-const SEA_DEEP_INK = "#10293f";
-const COAST_INK = "#3f7d86";
+// Muted inks keep the generated geography legible while making the canvas
+// read like a hand-painted relief board rather than a technical heat map.
+const ATLAS_TERRAIN_INK = Object.freeze({
+  indoor: "#776653",
+  settlement: "#8d7758",
+  street: "#9b8968",
+  road: "#b08a52",
+  wall: "#766d61",
+  plains: "#78815a",
+  hills: "#856b4b",
+  forest: "#46634a",
+  marsh: "#4f6b63",
+  mountains: "#625a53",
+  impassable: "#394840",
+});
+const SEA_INK = "#244b5a";
+const SEA_DEEP_INK = "#173442";
+const COAST_INK = "#52766f";
 
 const SAMPLE_CACHE = new Map();
 const SAMPLE_CACHE_LIMIT = 300000;
+const INITIAL_ATLAS_VIEWPORT = Object.freeze({ width: 960, height: 540 });
+const ATLAS_OPEN_ZOOM_RATIO = 1.16;
 
 function cachedSurvey(x, y, seed) {
   const key = `${seed}|${x},${y}`;
@@ -90,20 +108,156 @@ function shade(hex, amount) {
   return `rgb(${channel(16)}, ${channel(8)}, ${channel(0)})`;
 }
 
-function cellColor(sample) {
+function cellColor(sample, hillshade = 0) {
   if (!sample.land) return sample.elevation > 0.55 ? SEA_INK : SEA_DEEP_INK;
-  const base = TERRAIN_INK[sample.terrain] || TERRAIN_INK.plains;
-  const relief = (sample.elevation - 0.45) * 0.5;
-  if (sample.coast && sample.terrain !== "road") return shade(COAST_INK, relief * 0.4);
+  const base = ATLAS_TERRAIN_INK[sample.terrain] || TERRAIN_INK[sample.terrain] || ATLAS_TERRAIN_INK.plains;
+  const relief = (sample.elevation - 0.45) * 0.24 + hillshade;
+  if (sample.coast && sample.terrain !== "road") return shade(COAST_INK, relief * 0.45);
   return shade(base, relief);
 }
 
-// Sample step in whole hexes, chosen so painted cells stay chunky enough to
-// keep a full repaint around ~15k survey samples.
+// Sample step in whole hexes. World-anchoring the lattice stops the terrain
+// from crawling under the routes while panning and keeps a repaint compact.
 function rasterStep(zoom) {
   let step = 1;
-  while (step < 16 && step * zoom < 6) step *= 2;
+  while (step < 32 && step * zoom < 8) step *= 2;
   return step;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function coordinateNoise(x, y) {
+  let value = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);
+  value = Math.imul(value ^ (value >>> 13), 1274126177);
+  return ((value ^ (value >>> 16)) >>> 0) / 4294967295;
+}
+
+function traceCell(context, corners, dx = 0, dy = 0) {
+  context.beginPath();
+  context.moveTo(corners[0].x + dx, corners[0].y + dy);
+  for (let index = 1; index < corners.length; index += 1) {
+    context.lineTo(corners[index].x + dx, corners[index].y + dy);
+  }
+  context.closePath();
+}
+
+function cellCorners(center, xBasis, yBasis) {
+  const raw = [
+    { x: center.x - xBasis.x / 2 - yBasis.x / 2, y: center.y - xBasis.y / 2 - yBasis.y / 2 },
+    { x: center.x + xBasis.x / 2 - yBasis.x / 2, y: center.y + xBasis.y / 2 - yBasis.y / 2 },
+    { x: center.x + xBasis.x / 2 + yBasis.x / 2, y: center.y + xBasis.y / 2 + yBasis.y / 2 },
+    { x: center.x - xBasis.x / 2 + yBasis.x / 2, y: center.y - xBasis.y / 2 + yBasis.y / 2 },
+  ];
+  // A fractional overlap prevents hairline seams between adjacent samples.
+  return raw.map((point) => ({
+    x: center.x + (point.x - center.x) * 1.025,
+    y: center.y + (point.y - center.y) * 1.025,
+  }));
+}
+
+function reliefStrength(sample) {
+  if (!sample?.land) return 0;
+  if (sample.terrain === "mountains") return 1;
+  if (sample.terrain === "hills") return 0.68;
+  if (sample.terrain === "forest") return 0.48;
+  if (["wall", "settlement", "indoor"].includes(sample.terrain)) return 0.56;
+  return clamp((sample.elevation - 0.35) * 0.45, 0, 0.24);
+}
+
+function drawMountain(context, x, y, size, sample, noise) {
+  const width = size * (0.56 + noise * 0.18);
+  const height = size * (0.48 + clamp(sample.elevation, 0, 1) * 0.35);
+  const baseY = y + size * 0.24;
+  context.beginPath();
+  context.moveTo(x - width / 2, baseY);
+  context.lineTo(x + width * 0.04, baseY - height);
+  context.lineTo(x + width / 2, baseY);
+  context.closePath();
+  context.fillStyle = "rgba(44, 41, 39, .82)";
+  context.fill();
+  context.beginPath();
+  context.moveTo(x - width / 2, baseY);
+  context.lineTo(x + width * 0.04, baseY - height);
+  context.lineTo(x - width * 0.03, baseY - height * 0.35);
+  context.lineTo(x + width * 0.12, baseY - height * 0.2);
+  context.closePath();
+  context.fillStyle = "rgba(205, 196, 174, .68)";
+  context.fill();
+  context.strokeStyle = "rgba(35, 31, 30, .5)";
+  context.lineWidth = Math.max(0.55, size * 0.045);
+  context.stroke();
+}
+
+function drawForest(context, x, y, size, noise) {
+  const count = size > 13 ? 3 : 2;
+  for (let index = 0; index < count; index += 1) {
+    const offset = (index - (count - 1) / 2) * size * 0.22;
+    const treeHeight = size * (0.34 + ((noise + index * 0.23) % 1) * 0.12);
+    context.beginPath();
+    context.moveTo(x + offset, y - treeHeight * 0.62);
+    context.lineTo(x + offset - treeHeight * 0.32, y + treeHeight * 0.3);
+    context.lineTo(x + offset + treeHeight * 0.32, y + treeHeight * 0.3);
+    context.closePath();
+    context.fillStyle = index % 2 ? "rgba(35, 73, 51, .72)" : "rgba(49, 86, 56, .82)";
+    context.fill();
+    context.strokeStyle = "rgba(23, 46, 34, .55)";
+    context.lineWidth = 0.55;
+    context.stroke();
+  }
+}
+
+function drawTerrainRelief(context, center, size, sample, noise) {
+  if (size < 7.5) return;
+  const density = sample.terrain === "mountains" ? 0.9
+    : sample.terrain === "forest" ? 0.68
+    : sample.terrain === "hills" ? 0.54
+    : sample.terrain === "marsh" ? 0.4
+    : !sample.land ? 0.32
+    : 0;
+  if (noise > density) return;
+
+  if (sample.terrain === "mountains") {
+    drawMountain(context, center.x, center.y, size, sample, noise);
+    return;
+  }
+  if (sample.terrain === "forest") {
+    drawForest(context, center.x, center.y, size, noise);
+    return;
+  }
+  if (sample.terrain === "hills") {
+    context.beginPath();
+    context.ellipse(center.x, center.y + size * 0.14, size * 0.34, size * 0.16, -0.16, Math.PI, Math.PI * 2);
+    context.strokeStyle = "rgba(62, 47, 34, .48)";
+    context.lineWidth = Math.max(0.6, size * 0.055);
+    context.stroke();
+    context.beginPath();
+    context.ellipse(center.x - size * 0.12, center.y + size * 0.1, size * 0.22, size * 0.1, -0.16, Math.PI, Math.PI * 2);
+    context.strokeStyle = "rgba(216, 192, 142, .32)";
+    context.stroke();
+    return;
+  }
+  if (sample.terrain === "marsh") {
+    context.strokeStyle = "rgba(184, 173, 111, .48)";
+    context.lineWidth = 0.7;
+    for (let index = -1; index <= 1; index += 1) {
+      context.beginPath();
+      context.moveTo(center.x + index * size * 0.18, center.y + size * 0.22);
+      context.lineTo(center.x + index * size * 0.15, center.y - size * 0.14);
+      context.stroke();
+    }
+    return;
+  }
+  if (!sample.land) {
+    context.beginPath();
+    context.moveTo(center.x - size * 0.28, center.y);
+    context.quadraticCurveTo(center.x - size * 0.08, center.y - size * 0.12, center.x + size * 0.08, center.y);
+    context.quadraticCurveTo(center.x + size * 0.22, center.y + size * 0.1, center.x + size * 0.32, center.y);
+    context.strokeStyle = "rgba(153, 203, 207, .28)";
+    context.lineWidth = 0.65;
+    context.stroke();
+  }
 }
 
 function thinPath(path, maxPoints = 240) {
@@ -149,8 +303,23 @@ function paintAtlas({ canvas, camera, viewport, seed, seenKeys, token }) {
 
   const step = rasterStep(camera.zoom);
   const cellPx = step * camera.zoom;
-  const columns = Math.ceil(viewport.width / cellPx) + 1;
-  const rows = Math.ceil(viewport.height / cellPx) + 1;
+  const screenCorners = [
+    atlasScreenToWorld(camera, viewport, { x: -cellPx, y: -cellPx }),
+    atlasScreenToWorld(camera, viewport, { x: viewport.width + cellPx, y: -cellPx }),
+    atlasScreenToWorld(camera, viewport, { x: viewport.width + cellPx, y: viewport.height + cellPx }),
+    atlasScreenToWorld(camera, viewport, { x: -cellPx, y: viewport.height + cellPx }),
+  ];
+  const xmin = Math.floor(Math.min(...screenCorners.map((corner) => corner.x)) / step) * step - step;
+  const xmax = Math.ceil(Math.max(...screenCorners.map((corner) => corner.x)) / step) * step + step;
+  const ymin = Math.floor(Math.min(...screenCorners.map((corner) => corner.y)) / step) * step - step;
+  const ymax = Math.ceil(Math.max(...screenCorners.map((corner) => corner.y)) / step) * step + step;
+  const columns = Math.ceil((xmax - xmin) / step) + 1;
+  const rows = Math.ceil((ymax - ymin) / step) + 1;
+  const basisOrigin = atlasWorldToScreen(camera, viewport, { x: 0, y: 0 });
+  const basisXPoint = atlasWorldToScreen(camera, viewport, { x: step, y: 0 });
+  const basisYPoint = atlasWorldToScreen(camera, viewport, { x: 0, y: step });
+  const xBasis = { x: basisXPoint.x - basisOrigin.x, y: basisXPoint.y - basisOrigin.y };
+  const yBasis = { x: basisYPoint.x - basisOrigin.x, y: basisYPoint.y - basisOrigin.y };
 
   context.fillStyle = SEA_DEEP_INK;
   context.fillRect(0, 0, viewport.width, viewport.height);
@@ -160,14 +329,41 @@ function paintAtlas({ canvas, camera, viewport, seed, seenKeys, token }) {
     if (token.cancelled) return;
     const start = typeof performance !== "undefined" ? performance.now() : Date.now();
     while (row < rows) {
+      const y = ymin + row * step;
       for (let column = 0; column < columns; column++) {
-        const px = column * cellPx + cellPx / 2;
-        const py = row * cellPx + cellPx / 2;
-        const fractional = atlasScreenToWorld(camera, viewport, { x: px, y: py });
-        const coord = axialRound(fractional.x, fractional.y);
-        const sample = cachedSurvey(coord.x, coord.y, seed);
-        context.fillStyle = cellColor(sample);
-        context.fillRect(column * cellPx, row * cellPx, cellPx + 0.5, cellPx + 0.5);
+        const x = xmin + column * step;
+        const coord = { x, y };
+        const sample = cachedSurvey(x, y, seed);
+        const northWest = cachedSurvey(x - step, y - step, seed);
+        const west = cachedSurvey(x - step, y, seed);
+        const hillshade = clamp(
+          ((sample.elevation - northWest.elevation) * 0.78 + (sample.elevation - west.elevation) * 0.46) * 0.75,
+          -0.18,
+          0.18,
+        );
+        const center = atlasWorldToScreen(camera, viewport, coord);
+        const corners = cellCorners(center, xBasis, yBasis);
+        traceCell(context, corners);
+        context.fillStyle = cellColor(sample, hillshade);
+        context.fill();
+
+        const strength = reliefStrength(sample);
+        if (cellPx >= 7 && strength > 0.12) {
+          context.beginPath();
+          context.moveTo(corners[0].x, corners[0].y);
+          context.lineTo(corners[1].x, corners[1].y);
+          context.strokeStyle = `rgba(244, 222, 169, ${0.08 + strength * 0.18})`;
+          context.lineWidth = Math.max(0.45, cellPx * 0.035);
+          context.stroke();
+          context.beginPath();
+          context.moveTo(corners[2].x, corners[2].y);
+          context.lineTo(corners[3].x, corners[3].y);
+          context.strokeStyle = `rgba(28, 24, 24, ${0.1 + strength * 0.24})`;
+          context.lineWidth = Math.max(0.55, cellPx * 0.05);
+          context.stroke();
+        }
+
+        drawTerrainRelief(context, center, cellPx, sample, coordinateNoise(x, y));
       }
       row += 1;
       const now = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -188,13 +384,20 @@ function paintAtlas({ canvas, camera, viewport, seed, seenKeys, token }) {
       if (screen.x < -4 || screen.y < -4 || screen.x > viewport.width + 4 || screen.y > viewport.height + 4) continue;
       context.fillRect(screen.x - dot / 2, screen.y - dot / 2, dot, dot);
     }
+    // A warm glaze ties the procedural colors and raised marks together like
+    // pigment on an aged campaign board.
+    context.save();
+    context.globalCompositeOperation = "soft-light";
+    context.fillStyle = "rgba(225, 189, 118, .12)";
+    context.fillRect(0, 0, viewport.width, viewport.height);
+    context.restore();
     // Soft vignette keeps the chart readable against the folio.
     const vignette = context.createRadialGradient(
       viewport.width / 2, viewport.height / 2, Math.min(viewport.width, viewport.height) * 0.42,
       viewport.width / 2, viewport.height / 2, Math.max(viewport.width, viewport.height) * 0.78,
     );
     vignette.addColorStop(0, "rgba(2, 10, 22, 0)");
-    vignette.addColorStop(1, "rgba(2, 10, 22, .5)");
+    vignette.addColorStop(1, "rgba(2, 10, 22, .56)");
     context.fillStyle = vignette;
     context.fillRect(0, 0, viewport.width, viewport.height);
   };
@@ -206,15 +409,22 @@ export function WorldAtlas({ state, origin, onPick }) {
   const partyCoord = origin || state?.world?.currentTile || CONTINENT.start.coord;
   const stageRef = useRef(null);
   const canvasRef = useRef(null);
-  const gestureRef = useRef({ pointers: new Map(), moved: false, pinchDistance: 0 });
-  const [viewport, setViewport] = useState({ width: 960, height: 540 });
+  const gestureRef = useRef({ pointers: new Map(), moved: false, dragDistance: 0, pinchDistance: 0 });
+  const didInitialFitRef = useRef(false);
+  const [viewport, setViewport] = useState(INITIAL_ATLAS_VIEWPORT);
+  const [stageMeasured, setStageMeasured] = useState(false);
   const [camera, setCamera] = useState(() => clampAtlasCamera(
-    centerAtlasCamera({ x: 0, y: 0, zoom: 2.4 }, { width: 960, height: 540 }, partyCoord, 2.4),
-    { width: 960, height: 540 },
+    centerAtlasCamera(
+      { x: 0, y: 0, zoom: atlasFitZoom(INITIAL_ATLAS_VIEWPORT) * ATLAS_OPEN_ZOOM_RATIO },
+      INITIAL_ATLAS_VIEWPORT,
+      partyCoord,
+      atlasFitZoom(INITIAL_ATLAS_VIEWPORT) * ATLAS_OPEN_ZOOM_RATIO,
+    ),
+    INITIAL_ATLAS_VIEWPORT,
   ));
   const [visibleLayers, setVisibleLayers] = useState(() => new Set(ATLAS_LAYERS.map((layer) => layer.id)));
   const [focusedRealmId, setFocusedRealmId] = useState(null);
-  const [selection, setSelection] = useState({ kind: "landmark", id: "whitemarch" });
+  const [selection, setSelection] = useState(() => initialAtlasSelection(partyCoord));
 
   const fit = atlasFitZoom(viewport);
   const zoomRatio = camera.zoom / fit;
@@ -246,6 +456,7 @@ export function WorldAtlas({ state, origin, onPick }) {
       const width = Math.max(1, Math.round(bounds.width));
       const height = Math.max(1, Math.round(bounds.height));
       setViewport((current) => (current.width === width && current.height === height ? current : { width, height }));
+      setStageMeasured(true);
     };
     measure();
     if (typeof ResizeObserver !== "undefined") {
@@ -257,10 +468,19 @@ export function WorldAtlas({ state, origin, onPick }) {
     return () => window.removeEventListener("resize", measure);
   }, []);
 
-  // Keep the camera legal when the stage resizes.
+  // Fit once after the real stage measurement, then preserve the user's view
+  // while merely keeping it legal on later resizes.
   useEffect(() => {
-    setCamera((current) => clampAtlasCamera(current, viewport));
-  }, [viewport.width, viewport.height]);
+    if (!stageMeasured) return;
+    setCamera((current) => {
+      if (!didInitialFitRef.current) {
+        didInitialFitRef.current = true;
+        const openingZoom = atlasFitZoom(viewport) * ATLAS_OPEN_ZOOM_RATIO;
+        return centerAtlasCamera(current, viewport, partyCoord, openingZoom);
+      }
+      return clampAtlasCamera(current, viewport);
+    });
+  }, [stageMeasured, viewport.width, viewport.height, partyCoord.x, partyCoord.y]);
 
   // Paint the raster whenever the camera, seed, or discoveries change.
   const seenKeys = useMemo(() => Object.keys(state?.world?.seen || {}), [state?.world?.seen]);
@@ -297,7 +517,10 @@ export function WorldAtlas({ state, origin, onPick }) {
   function handlePointerDown(event) {
     const gesture = gestureRef.current;
     gesture.pointers.set(event.pointerId, stagePoint(event));
-    if (gesture.pointers.size === 1) gesture.moved = false;
+    if (gesture.pointers.size === 1) {
+      gesture.moved = false;
+      gesture.dragDistance = 0;
+    }
     if (gesture.pointers.size === 2) {
       const [a, b] = [...gesture.pointers.values()];
       gesture.pinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
@@ -327,7 +550,8 @@ export function WorldAtlas({ state, origin, onPick }) {
 
     const dx = point.x - previous.x;
     const dy = point.y - previous.y;
-    if (!gesture.moved && Math.hypot(dx, dy) < 4) return;
+    gesture.dragDistance += Math.hypot(dx, dy);
+    if (!gesture.moved && gesture.dragDistance < 4) return;
     gesture.moved = true;
     setCamera((current) => panAtlasCamera(current, viewport, dx, dy));
   }
@@ -407,7 +631,14 @@ export function WorldAtlas({ state, origin, onPick }) {
   // ---- Derived presentation ----
   const partyScreen = atlasWorldToScreen(camera, viewport, partyCoord);
   const kmAcross = Math.round((viewport.width / camera.zoom) * (CONTINENT.hexKilometers || 6));
-  const journeyPoints = journey ? svgPoints(camera, viewport, thinPath(journey.fullPath)) : "";
+  const currentLegPoints = journey ? svgPoints(camera, viewport, thinPath(journey.legPath)) : "";
+  const continuationPath = journey
+    ? journey.fullPath.slice(Math.max(0, (journey.legPath?.length || 1) - 1))
+    : [];
+  const continuationPoints = continuationPath.length > 1
+    ? svgPoints(camera, viewport, thinPath(continuationPath))
+    : "";
+  const journeyBreaks = journey ? journeyLegBreaks(journey.fullPath, journey.legSteps) : [];
   const coastPoints = useMemo(() => svgPoints(camera, viewport, CONTINENT.coastline), [camera, viewport]);
   const showRegionLabels = zoomRatio >= 1.7;
   const showRealmLabels = zoomRatio < 1.7;
@@ -513,6 +744,11 @@ export function WorldAtlas({ state, origin, onPick }) {
           <canvas ref={canvasRef} className="world-atlas__canvas" aria-hidden="true" />
 
           <svg className="world-atlas__vector" viewBox={`0 0 ${viewport.width} ${viewport.height}`} aria-hidden="true">
+            <defs>
+              <marker id="world-atlas-route-arrow" viewBox="0 0 8 8" refX="6.2" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M 0 0 L 8 4 L 0 8 z" />
+              </marker>
+            </defs>
             <polygon className="world-atlas__coastline" points={coastPoints} />
             {CONTINENT_WATERWAYS.map((river) => (
               <polyline key={river.id} className="world-atlas__river" points={svgPoints(camera, viewport, river.waypoints)}>
@@ -541,12 +777,28 @@ export function WorldAtlas({ state, origin, onPick }) {
                 <title>{route.name}</title>
               </polyline>
             ))}
-            {journeyPoints && (
+            {continuationPoints && (
               <>
-                <polyline className="world-atlas__journey-halo" points={journeyPoints} />
-                <polyline className="world-atlas__journey" points={journeyPoints} />
+                <polyline className="world-atlas__journey-continuation-halo" points={continuationPoints} />
+                <polyline className="world-atlas__journey-continuation" points={continuationPoints} />
               </>
             )}
+            {currentLegPoints && (
+              <>
+                <polyline className="world-atlas__journey-halo" points={currentLegPoints} />
+                <polyline className="world-atlas__journey" points={currentLegPoints} markerEnd="url(#world-atlas-route-arrow)" />
+              </>
+            )}
+            {journeyBreaks.map((stop, index) => {
+              const screen = atlasWorldToScreen(camera, viewport, stop);
+              return (
+                <g key={`${stop.x},${stop.y}`} className="world-atlas__leg-stop" transform={`translate(${screen.x} ${screen.y})`}>
+                  <ellipse cx="2" cy="3" rx="7" ry="3" />
+                  <circle r="5.5" />
+                  <text y=".5">{index + 1}</text>
+                </g>
+              );
+            })}
           </svg>
 
           {showRealmLabels && (
@@ -613,7 +865,7 @@ export function WorldAtlas({ state, origin, onPick }) {
                 >
                   <span aria-hidden="true">
                     {poiIconKey
-                      ? <PoiIcon iconKey={poiIconKey} size={landmark.capitalOfRealmId ? 31 : 25} marketTier={landmark.marketTier} />
+                      ? <PoiIcon iconKey={poiIconKey} size={landmark.capitalOfRealmId ? 43 : 35} marketTier={landmark.marketTier} />
                       : (ATLAS_LANDMARK_GLYPHS[landmark.kind] || "◆")}
                   </span>
                   {landmark.quest && <i className="world-atlas__quest-pip" aria-hidden="true">!</i>}
@@ -665,7 +917,9 @@ export function WorldAtlas({ state, origin, onPick }) {
           {selection.kind === "point" && (() => {
             const screen = atlasWorldToScreen(camera, viewport, selectedCoord);
             return (
-              <span className="world-atlas__point-pin" style={{ left: `${screen.x}px`, top: `${screen.y}px` }} aria-hidden="true">◈</span>
+              <span className="world-atlas__point-pin" style={{ left: `${screen.x}px`, top: `${screen.y}px` }} aria-hidden="true">
+                <i /><b />
+              </span>
             );
           })()}
 
@@ -688,6 +942,22 @@ export function WorldAtlas({ state, origin, onPick }) {
               <button type="button" onClick={() => setCamera((current) => zoomAtlasCamera(current, viewport, 1.4))} disabled={camera.zoom >= ATLAS_MAX_ZOOM * 0.99} aria-label="Zoom map in">+</button>
             </div>
           </div>
+
+          <div className="world-atlas__compass-rose" aria-hidden="true">
+            <span>N</span><i />
+          </div>
+
+          {journey && (
+            <div className={`world-atlas__travel-docket${journey.risk >= 40 ? " is-danger" : ""}`} aria-label={`Planned march to ${detailTitle}`}>
+              <div>
+                <small>Journey laid out</small>
+                <strong>{detailTitle}</strong>
+                <span>{journey.kilometers.toLocaleString()} km · ≈{journey.duration}</span>
+              </div>
+              <em><b>{journey.risk}%</b> first-leg danger</em>
+              <button type="button" onClick={chartSelection}>Set route</button>
+            </div>
+          )}
         </div>
       </div>
 

@@ -7,7 +7,7 @@
 //
 // Stored on the character as { proficiencies: { [id]: xp } }.
 
-import { ATTR_KEYS } from "../config.js";
+import { ATTRIBUTE_CAP, ATTR_KEYS } from "../config.js";
 
 export const PROFICIENCIES = [
   // Weapon masteries (one per category) — feed Reflex (finesse) or Body (force).
@@ -56,9 +56,10 @@ export function proficiencyRating(character, id) {
   return ratingFromXp((character?.proficiencies?.[id] || 0) * mult);
 }
 
-// Effective attribute = base (creation) + RACIAL modifier + growth earned by
-// grinding its profs. Racial attribute leanings (vampire +Body, etc.) are flat;
-// a racial learning multiplier speeds the use-based growth on top.
+// Effective attribute = base (creation + profession-path gains) + RACIAL
+// modifier + a bounded mastery bonus earned through use. Path ranks now own the
+// long 1→100 growth curve; proficiency remains meaningful without becoming a
+// second unlimited attribute ladder layered on top.
 export function effectiveAttributes(character) {
   const base = character?.attributes || {};
   const prof = character?.proficiencies || {};
@@ -68,7 +69,8 @@ export function effectiveAttributes(character) {
   for (const k of ATTR_KEYS) {
     let sum = 0;
     for (const id of (PROFS_BY_ATTR[k] || [])) sum += prof[id] || 0;
-    out[k] = Math.min(30, (base[k] || 0) + (racial[k] || 0) + attributeGrowth(sum * mult));
+    const masteryGrowth = Math.min(15, attributeGrowth(sum * mult));
+    out[k] = Math.min(ATTRIBUTE_CAP, (base[k] || 0) + (racial[k] || 0) + masteryGrowth);
   }
   return out;
 }

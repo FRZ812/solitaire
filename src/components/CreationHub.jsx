@@ -13,6 +13,7 @@ import { AttributeDetail } from "./AttributeDetail.jsx";
 import rosterArtwork from "../assets/generated/character-roster-threshold-v1.webp";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { resolveCharacterPortrait } from "./character-portrait-assets.js";
+import { PROFESSIONS } from "../data/professions.js";
 
 const isHumanRace = (r) => r === "human";
 
@@ -32,12 +33,12 @@ function portraitFocus(templateId, surface) {
 // Power rungs for the pick-and-play roster. The full authored company is the
 // default view; these become quick filters for players who want a power band.
 const TEMPLATE_TIERS = [
-  { id: "standard", label: "Standard", flavor: "Grounded", eyebrow: "The intended beginning", blurb: "An ordinary life. Every mile and hard-won victory matters.", accent: "#d7b477" },
-  { id: "mid", label: "Veteran", flavor: "Seasoned", eyebrow: "Road-tested", blurb: "Capable from the outset, with room to become exceptional.", accent: "#87b995" },
-  { id: "epic", label: "Champion", flavor: "Heroic", eyebrow: "Already formidable", blurb: "A stronger, faster opening with fewer early hardships.", accent: "#b894df" },
-  { id: "legendary", label: "Legend", flavor: "Fabled", eyebrow: "Known across the land", blurb: "Begin with the power and reputation others spend lives earning.", accent: "#df9d55" },
-  { id: "mythical", label: "Mythic", flavor: "Unbound", eyebrow: "Beyond mortal measure", blurb: "The early world will struggle to contain what you already are.", accent: "#62c3c4" },
-  { id: "divine", label: "Divine", flavor: "Godlike", eyebrow: "Pure power fantasy", blurb: "A god walks the road. Choose this for dominion, not survival.", accent: "#efd887" },
+  { id: "standard", label: "Standard", flavor: "Grounded", range: "1–20", eyebrow: "The intended beginning", blurb: "Level 1–20. An ordinary life; every mile and hard-won victory matters.", accent: "#d7b477" },
+  { id: "mid", label: "Veteran", flavor: "Seasoned", range: "21–40", eyebrow: "Road-tested", blurb: "Level 21–40. Capable and uncommon, while still belonging to the ordinary world.", accent: "#87b995" },
+  { id: "epic", label: "Epic", flavor: "Heroic", range: "41–60", eyebrow: "Already formidable", blurb: "Level 41–60. Truly strong figures gather near 50; living legends end here.", accent: "#b894df" },
+  { id: "legendary", label: "Legendary", flavor: "Fabled", range: "61–70", eyebrow: "Known across the land", blurb: "Level 61–70. An exceptional playable life beyond the normal world's ceiling.", accent: "#df9d55" },
+  { id: "mythical", label: "Mythical", flavor: "Unbound", range: "71–85", eyebrow: "Beyond mortal measure", blurb: "Level 71–85. The early world will struggle to contain what you already are.", accent: "#62c3c4" },
+  { id: "divine", label: "Divine", flavor: "Godlike", range: "86–100", eyebrow: "Pure power fantasy", blurb: "Level 86–100. A god walks the road; choose this for dominion, not survival.", accent: "#efd887" },
 ];
 
 const ALL_TIER = {
@@ -54,6 +55,14 @@ function kindredLabel(setup) {
 }
 function metaLine(setup) {
   return [kindredLabel(setup), isHumanRace(setup.race) ? originLabel(setup.origin) : null, setup.age].filter(Boolean).join(" · ");
+}
+function templateArchetypeLabel(template) {
+  return template.id !== template.setup.profession
+    ? template.label
+    : (PROFESSIONS[template.setup.profession]?.archetype || template.label);
+}
+function templateLevel(template) {
+  return Object.values(template.setup.progression?.paths || {}).reduce((total, rank) => total + (Number(rank) || 0), 0) || 1;
 }
 
 const tagPill = {
@@ -131,10 +140,10 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
             <span className="template-detail__sigil" aria-hidden="true">
               <ProfessionIcon templateId={tmpl.id} profession={s.profession} size="large" decorative />
             </span>
-            <p>{tierMeta.label} · {tmpl.label}</p>
+            <p>{tierMeta.label} · Level {templateLevel(tmpl)} · {PROFESSIONS[s.profession]?.name || s.profession}</p>
             <h1>{finalName}</h1>
             <div>{metaLine(s)}</div>
-            <span>{tmpl.concept}</span>
+            <span>Archetype · {templateArchetypeLabel(tmpl)} — {tmpl.concept}</span>
           </div>
         </header>
 
@@ -263,7 +272,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
     if (activeTier.id !== "all" && (tmpl.tier || "standard") !== activeTier.id) return false;
     if (role !== "all" && tmpl.role !== role) return false;
     if (!normalizedSearch) return true;
-    return [tmpl.label, tmpl.role, tmpl.concept, tmpl.story, tmpl.setup.name, tmpl.setup.profession, tmpl.setup.race, ...(tmpl.setup.skills || []).map((skill) => skill.name || skill.id)]
+    return [tmpl.label, templateArchetypeLabel(tmpl), tmpl.role, tmpl.concept, tmpl.story, tmpl.setup.name, tmpl.setup.profession, tmpl.setup.race, ...(tmpl.setup.skills || []).map((skill) => skill.name || skill.id)]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(normalizedSearch));
   });
@@ -343,7 +352,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 >
                   <small>{tier.id === "all" ? "∞" : String(index).padStart(2, "0")}</small>
                   <strong>{tier.label}</strong>
-                  <span>{tier.flavor}</span>
+                  <span>{tier.range ? `${tier.flavor} · Lv ${tier.range}` : tier.flavor}</span>
                   <i aria-hidden="true">✓</i>
                 </button>
               ))}
@@ -369,7 +378,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search name, class, subclass, kindred…"
+                placeholder="Search name, profession, archetype, kindred…"
               />
             </label>
             <div className="creation-role-filters no-scrollbar" role="toolbar" aria-label="Filter by playstyle">
@@ -422,12 +431,12 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                     decoding="async"
                     style={{ "--portrait-card-focus-y": portraitFocus(tmpl.id, "card") }}
                   />
-                  <ProfessionIcon className="creation-card__class-badge" templateId={tmpl.id} profession={tmpl.setup.profession} size="small" decorative />
+                  <ProfessionIcon className="creation-card__profession-badge" templateId={tmpl.id} profession={tmpl.setup.profession} size="small" decorative />
                 </span>
                 <span className="creation-card__body">
                   <span className="creation-card__topline">
-                    <small>{tmpl.role}</small>
-                    <em aria-label={`Subclass: ${tmpl.label}`}><span>Subclass</span><b>{tmpl.label}</b></em>
+                    <small>{TEMPLATE_TIERS.find((tier) => tier.id === tmpl.tier)?.label || "Standard"} · Level {templateLevel(tmpl)} · {tmpl.role}</small>
+                    <em aria-label={`Archetype: ${templateArchetypeLabel(tmpl)}`}><span>Archetype</span><b>{templateArchetypeLabel(tmpl)}</b></em>
                   </span>
                   <strong>{finalNameFor(tmpl)}</strong>
                   <span className="creation-card__meta">{metaLine(tmpl.setup)}</span>

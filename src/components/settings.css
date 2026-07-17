@@ -1,0 +1,201 @@
+.settings-view { gap: 14px; }
+
+.settings-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid rgba(191, 213, 214, .16);
+  border-radius: 12px;
+  background: rgba(4, 11, 20, .58);
+}
+
+.settings-nav button {
+  min-width: 0;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: rgba(244, 232, 195, .58);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: 800 10px/1 "Alegreya", Georgia, serif;
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+
+.settings-nav button.is-active {
+  color: #fff4d0;
+  background: linear-gradient(180deg, rgba(231, 185, 94, .15), rgba(29, 70, 97, .22));
+  box-shadow: inset 0 0 0 1px rgba(231, 185, 94, .18);
+}
+
+.settings-stack { display: grid; gap: 12px; }
+
+.settings-card {
+  padding: 14px;
+  border: 1px solid rgba(191, 213, 214, .16);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 8% 0, rgba(103, 160, 174, .09), transparent 40%),
+    linear-gradient(145deg, rgba(17, 43, 61, .62), rgba(7, 16, 28, .78));
+  box-shadow: 0 10px 26px rgba(3, 7, 15, .2), inset 0 1px rgba(255, 255, 255, .03);
+}
+
+.settings-card__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.settings-card__heading small,
+.settings-field > span {
+  display: block;
+  color: rgba(231, 185, 94, .68);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.settings-card__heading h4 {
+  margin: 3px 0 0;
+  color: #fff8e5;
+  font: italic 500 21px/1.05 "Instrument Serif", Georgia, serif;
+}
+
+.settings-card__heading > span {
+  padding: 4px 7px;
+  color: rgba(244, 232, 195, .62);
+  border: 1px solid rgba(191, 213, 214, .16);
+  border-radius: 999px;
+  background: rgba(4, 11, 20, .42);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.settings-help {
+  margin: 0 0 12px;
+  color: rgba(244, 232, 195, .62);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.settings-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.settings-presets button,
+.settings-editor-footer button,
+.memory-row button {
+  padding: 6px 9px;
+  color: rgba(244, 232, 195, .72);
+  border: 1px solid rgba(231, 185, 94, .2);
+  border-radius: 999px;
+  background: rgba(231, 185, 94, .07);
+  font: 800 9px/1 "Alegreya", Georgia, serif;
+  cursor: pointer;
+}
+
+.settings-field { display: grid; gap: 7px; }
+.settings-field textarea,
+.memory-row textarea,
+.memory-composer textarea,
+.relationship-memory-add select,
+.guest-link-form input {
+  box-sizing: border-box;
+  width: 100%;
+  color: #f4e8c3;
+  border: 1px solid rgba(191, 213, 214, .2);
+  border-radius: 9px;
+  outline: none;
+  background: rgba(3, 9, 17, .7);
+  font: 12px/1.45 "Alegreya", Georgia, serif;
+}
+.settings-field textarea { min-height: 150px; padding: 11px; resize: vertical; }
+.settings-field textarea:focus,
+.memory-row textarea:focus,
+.memory-composer textarea:focus,
+.guest-link-form input:focus { border-color: rgba(231, 185, 94, .52); box-shadow: 0 0 0 2px rgba(231, 185, 94, .08); }
+
+.settings-editor-footer { display: flex; align-items: center; gap: 7px; margin-top: 9px; }
+.settings-editor-footer small { margin-right: auto; color: rgba(244, 232, 195, .42); font-size: 9px; }
+.settings-primary {
+  min-height: 34px;
+  padding: 8px 12px !important;
+  color: #07101c !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: #e7b95e !important;
+  font-weight: 900 !important;
+  cursor: pointer;
+}
+.settings-primary:disabled { opacity: .38; cursor: default; }
+
+.memory-mode-grid { display: grid; gap: 7px; }
+.memory-mode-grid > button {
+  padding: 10px 11px;
+  display: grid;
+  gap: 3px;
+  color: rgba(244, 232, 195, .66);
+  text-align: left;
+  border: 1px solid rgba(191, 213, 214, .14);
+  border-radius: 9px;
+  background: rgba(4, 11, 20, .42);
+  cursor: pointer;
+}
+.memory-mode-grid > button strong { color: #f4e8c3; font: 800 12px/1.1 "Alegreya", Georgia, serif; }
+.memory-mode-grid > button span { font: 10px/1.35 "Alegreya", Georgia, serif; }
+.memory-mode-grid > button.is-active { border-color: rgba(231, 185, 94, .48); background: rgba(231, 185, 94, .1); }
+
+.memory-list { display: grid; gap: 7px; }
+.memory-row {
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(191, 213, 214, .12);
+  border-radius: 9px;
+  background: rgba(3, 9, 17, .48);
+}
+.memory-row p { margin: 0; color: rgba(244, 232, 195, .8); font-size: 11px; line-height: 1.45; }
+.memory-row textarea { min-height: 72px; padding: 8px; resize: vertical; }
+.memory-row > div { display: flex; justify-content: flex-end; gap: 6px; }
+.memory-row button.is-save { color: #c9f3c2; border-color: rgba(137, 211, 133, .24); }
+.memory-row button.is-delete { color: #f6b1a5; border-color: rgba(246, 133, 115, .2); }
+
+.memory-composer { display: grid; grid-template-columns: 1fr auto; gap: 7px; margin-top: 9px; }
+.memory-composer textarea { min-height: 62px; padding: 9px; resize: vertical; }
+.memory-composer .settings-primary { align-self: stretch; }
+.memory-empty { padding: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; color: rgba(244, 232, 195, .42); border: 1px dashed rgba(191, 213, 214, .16); border-radius: 9px; font-size: 10px; }
+
+.relationship-memory-list { display: grid; gap: 7px; }
+.relationship-memory-list details { border: 1px solid rgba(191, 213, 214, .13); border-radius: 9px; background: rgba(3, 9, 17, .4); }
+.relationship-memory-list summary { padding: 10px; display: flex; justify-content: space-between; color: #f4e8c3; cursor: pointer; }
+.relationship-memory-list summary span { color: rgba(231, 185, 94, .68); font-size: 9px; }
+.relationship-memory-list details > .memory-list { padding: 0 8px 8px; }
+.relationship-memory-add { margin-top: 9px; padding-top: 9px; border-top: 1px solid rgba(191, 213, 214, .1); }
+.relationship-memory-add select { padding: 8px; }
+
+.font-scale-control { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; gap: 10px; }
+.font-scale-control > button { width: 40px; height: 40px; display: grid; place-items: center; color: #f4e8c3; border: 1px solid rgba(231, 185, 94, .24); border-radius: 50%; background: rgba(231, 185, 94, .07); cursor: pointer; }
+.font-scale-control > button:disabled { opacity: .3; cursor: default; }
+.font-scale-control > div { display: grid; text-align: center; }
+.font-scale-control strong { color: #fff8e5; font: italic 500 18px/1.1 "Instrument Serif", Georgia, serif; }
+.font-scale-control span { color: rgba(244, 232, 195, .44); font-size: 9px; }
+
+.guest-link-form { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
+.guest-link-form input { min-height: 36px; padding: 8px 10px; }
+.settings-status { margin: 8px 0 0; color: rgba(244, 232, 195, .68); font-size: 10px; }
+.settings-campaign-actions { display: grid; gap: 7px; }
+.settings-campaign-actions .settings-card__heading { margin-bottom: 3px; }
+.settings-campaign-actions > button { min-height: 38px; padding: 9px 11px; display: flex; align-items: center; gap: 8px; color: rgba(244, 232, 195, .74); border: 1px solid rgba(191, 213, 214, .15); border-radius: 9px; background: rgba(4, 11, 20, .44); font: 800 10px/1 "Alegreya", Georgia, serif; cursor: pointer; }
+.settings-campaign-actions > button.is-danger { color: #f6b1a5; border-color: rgba(246, 133, 115, .2); }
+
+@media (max-width: 390px) {
+  .settings-nav button { gap: 3px; font-size: 8.5px; }
+  .memory-composer,
+  .guest-link-form { grid-template-columns: 1fr; }
+}

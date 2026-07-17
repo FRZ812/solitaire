@@ -8,6 +8,9 @@ import { CONTINENT, DEFAULT_WORLD_SEED, WORLD_GENERATOR_VERSION } from "./contin
 import { PROFESSIONS } from "./professions.js";
 import { migratePortraitOverrides } from "../engine/portrait-overrides.js";
 import { playableRosterCharacters, withoutSelectedPlayableCharacter } from "./playable-roster.js";
+import { migrateProgressionState } from "../engine/progression.js";
+import { normalizeMemoryBank } from "../engine/memory.js";
+import { DEFAULT_NARRATOR_SETTINGS, normalizeNarratorSettings } from "../engine/narrator-settings.js";
 
 // The unified capital is authored directly in continent coordinates, with
 // Grain Square deliberately fixed at the atlas origin.
@@ -113,8 +116,9 @@ function makeInitialSeen(start) {
 export function makeInitialState() {
   const start = { ...CONTINENT.start.coord };
   const startKey = `${start.x},${start.y}`;
-  return {
+  const state = {
     character: {
+      id: "wanderer", kind: "player",
       name: "Wanderer",
       vitality: 24, vitalityMax: 30,
       resolve: 8, resolveMax: 8, // Mind-2 pool (engine/attributes.js); recomputed on creation/load
@@ -141,8 +145,8 @@ export function makeInitialState() {
       // always available and not listed here. The opening limbo interview grants
       // any starting abilities; more come from victories and teachers.
       abilities: [],
-      // Use-based proficiencies { id: xp }. Grow through combat; their XP is what
-      // raises the governing attributes (attributes don't grow any other way).
+      // Use-based proficiencies { id: xp }. They grant bounded mastery growth;
+      // the larger attribute curve comes from stacked progression paths.
       proficiencies: {},
       inventory: {
         // Empty in limbo — the opening interview grants the starting kit, drawn
@@ -893,7 +897,12 @@ export function makeInitialState() {
     // rolling apiHistory window, injected into every state_context (see
     // buildStateContext in engine/api.js). Newest last; capped in beat.js.
     memories: [],
+    // Campaign-scoped creative direction and automatic memory policy. These
+    // belong to the save rather than localStorage so every device tells the
+    // same story when the campaign is resumed.
+    narratorSettings: { ...DEFAULT_NARRATOR_SETTINGS },
   };
+  return migrateProgressionState(state, { alignAuthoredAttributes: true });
 }
 
 // Merge any codex entries that exist in the fresh initial state but are
@@ -911,14 +920,15 @@ export function migrateCodex(state) {
       ? { ...turn, world: migrateLegacyWorldLocation(turn.world) }
       : turn);
   }
-  if (!Array.isArray(next.memories)) next.memories = [];
+  next.memories = normalizeMemoryBank(next.memories);
+  next.narratorSettings = normalizeNarratorSettings(next.narratorSettings);
   if (!next.world.continentId) next.world.continentId = CONTINENT.id;
   if (!next.world.seed) next.world.seed = DEFAULT_WORLD_SEED;
   if (!next.world.generatorVersion) next.world.generatorVersion = WORLD_GENERATOR_VERSION;
   // Location migration is independent of Codex hydration. Very old or
   // deliberately minimal saves may have no Codex, but must still leave the
   // retired place graph and rejoin the one world map.
-  if (!next.world.codex) return next;
+  if (!next.world.codex) return migrateProgressionState(next);
   const fresh = makeInitialState();
   const ownCodex = next.world.codex;
   for (const sub of ["characters", "races", "professions", "items", "spells", "skills"]) {
@@ -981,8 +991,10 @@ export function migrateCodex(state) {
   // resolution as newly-created characters.
   const wanderer = ownCodex.characters?.wanderer;
   if (next.character && wanderer) {
+    const legacyArchetype = wanderer["sub" + "class"];
+    if (next.character.archetype == null && legacyArchetype != null) next.character.archetype = legacyArchetype;
     for (const key of [
-      "profession", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
+      "profession", "archetype", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
       "attractiveness", "appearance", "base_appearance", "templateId", "portraitKey",
       "profile",
     ]) {
@@ -1016,5 +1028,5 @@ export function migrateCodex(state) {
     if (typeof ch.carryBonus !== "number") ch.carryBonus = 0;
     if (Array.isArray(ch.worn)) ch.worn = ch.worn.filter((id) => !!itemTemplate(id));
   }
-  return next;
+  return migrateProgressionState(next);
 }

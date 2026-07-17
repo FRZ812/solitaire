@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   weaponCategory, armorClass, itemCombatStats, weaponHands,
-  equipSlot, slotCapacity, SLOTS,
+  equipSlot, slotCapacity, SLOTS, deriveCombatStats,
 } from "./combat-stats.js";
+import { enemyFromNPC } from "../data/bestiary.js";
+import { attributeThresholdMods } from "../data/attribute-tiers.js";
+import { resolvePoolForMind } from "./attributes.js";
 
 describe("weaponCategory", () => {
   it("classifies by explicit type, then name keywords", () => {
@@ -74,5 +77,42 @@ describe("equipSlot / slotCapacity", () => {
     expect(slotCapacity("mainhand")).toBe(1);
     expect(slotCapacity("nonexistent")).toBe(1);
     expect(SLOTS.find((s) => s.id === "ring").cap).toBe(2);
+  });
+});
+
+describe("expanded attribute combat bounds", () => {
+  const codex = { characters: { wanderer: { worn: [] } }, items: {} };
+  const fighter = (score) => ({
+    attributes: { body: score, reflex: score, vigor: score, mind: score, wit: score, presence: score },
+    proficiencies: {}, vitalityMax: 1000,
+  });
+
+  it("keeps raw apex scores for thresholds while bounding direct combat formulas", () => {
+    const oldCap = deriveCombatStats(fighter(30), codex);
+    const apex = deriveCombatStats(fighter(90), codex);
+
+    expect(apex.attrs.body).toBe(90);
+    expect(apex.weapon.max).toBeGreaterThan(oldCap.weapon.max);
+    expect(apex.weapon.max).toBeLessThanOrEqual(oldCap.weapon.max * 2);
+    expect(apex.accuracy).toBeGreaterThan(oldCap.accuracy);
+    expect(apex.accuracy).toBeLessThanOrEqual(oldCap.accuracy * 2);
+    expect(apex.speed).toBeLessThanOrEqual(oldCap.speed * 2);
+    expect(apex.armor).toBeLessThanOrEqual(oldCap.armor * 2);
+
+    expect(apex.critChance).toBeLessThanOrEqual(100);
+    expect(apex.dodge).toBeLessThanOrEqual(70);
+    expect(apex.swiftChance).toBeLessThanOrEqual(0.5);
+    expect(apex.phaseChance).toBeLessThanOrEqual(0.4);
+    expect([apex.weapon.min, apex.weapon.max, apex.accuracy, apex.speed, apex.armor, apex.ward]
+      .every(Number.isFinite)).toBe(true);
+  });
+
+  it("uses raw Mind exactly once for NPC Resolve, matching the player pool curve", () => {
+    const attributes = { body: 1, reflex: 1, vigor: 1, mind: 90, wit: 1, presence: 1 };
+    const enemy = enemyFromNPC({ id: "apex-mind", name: "Apex Mind", attributes, worn: [] }, { items: {} });
+    const thresholdBonus = attributeThresholdMods(attributes).statMods.resolveMax || 0;
+
+    expect(enemy.resolveMax).toBe(resolvePoolForMind(90) + thresholdBonus);
+    expect(enemy.resolveMax).toBe(enemy.resolve);
   });
 });

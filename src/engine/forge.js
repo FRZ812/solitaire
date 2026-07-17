@@ -1,7 +1,8 @@
 // Smithing: apprenticeship, material checks, the forge minigame's quality→tier
 // mapping, and applying a forge / an apprenticeship to game state.
 //
-// Crafting progress lives on character.crafting.blacksmith.rank (0 = untrained).
+// Recipe access lives on character.crafting.blacksmith.rank (0 = untrained),
+// while time at the anvil also advances the character's shared progression.
 // Forged gear's POWER comes from its output TIER (combat-stats infers stats from
 // name + tier), so the minigame just decides how many tiers above the recipe's
 // base the piece lands — capped by the smith's rank.
@@ -12,6 +13,7 @@ import { spoilState } from "./spoilage.js";
 import { ageState } from "./aging.js";
 import { itemTemplate } from "../data/catalog.js";
 import { TIERS, tierOrder, tierMult, tierLabel } from "../data/tiers.js";
+import { advanceProgression, projectCharacterProgression } from "./progression.js";
 
 export function blacksmithRank(state) {
   return state.character?.crafting?.blacksmith?.rank || 0;
@@ -100,16 +102,25 @@ export function applyForge(state, schematic, tier) {
 
   const time = advanceTime(state.time, schematic.minutes || 60);
 
-  return {
-    ok: true,
-    item: itemDef,
-    state: {
-      ...state,
-      time,
-      character: { ...state.character, inventory: { ...state.character.inventory, coins, carried } },
-      world: { ...state.world, codex: { ...state.world.codex, items } },
-    },
+  let next = {
+    ...state,
+    time,
+    character: { ...state.character, inventory: { ...state.character.inventory, coins, carried } },
+    world: { ...state.world, codex: { ...state.world.codex, items } },
   };
+  const progress = advanceProgression(next.character, Math.max(60, schematic.minutes || 60) * 2 + tierOrder(tier) * 50);
+  if (progress.gained.length) {
+    const latest = progress.gained.at(-1);
+    next = {
+      ...next,
+      beats: [...(next.beats || []), {
+        id: `forge-level-${Date.now()}`,
+        type: "growth",
+        text: `Level ${progress.beforeLevel} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+      }],
+    };
+  }
+  return { ok: true, item: itemDef, state: projectCharacterProgression(next) };
 }
 
 // Take the next apprenticeship step: pay the fee, live and labour at the forge
@@ -137,5 +148,18 @@ export function applyApprentice(state, step) {
   // Long stretches of training can roll years over — age the codex too. Any
   // characters who died of age during the apprenticeship surface as a notice.
   const ag = ageState(sp.state);
-  return { ok: true, state: ag.state, spoiled: sp.spoiled, aged: ag.aged, deaths: ag.deaths };
+  let next = ag.state;
+  const progress = advanceProgression(next.character, Math.max(1, step.days || 1) * 60);
+  if (progress.gained.length) {
+    const latest = progress.gained.at(-1);
+    next = {
+      ...next,
+      beats: [...(next.beats || []), {
+        id: `apprentice-level-${Date.now()}`,
+        type: "growth",
+        text: `Level ${progress.beforeLevel} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+      }],
+    };
+  }
+  return { ok: true, state: projectCharacterProgression(next), spoiled: sp.spoiled, aged: ag.aged, deaths: ag.deaths };
 }

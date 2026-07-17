@@ -10,8 +10,20 @@ import { CAPTIVE_POOL, SLAVE_HIGH_TIER_MIN_CP, bondedCodexEntry } from "../data/
 import { PRISONER_POOL, prisonerCodexEntry } from "../data/gaol.js";
 import { markCaptiveBought } from "./slaves.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
-import { resolvePoolForMind, estimateAttributesFor } from "./attributes.js";
+import { carryCapacityFor, estimateAttributesFor, recomputeResolveMax, resolvePoolForMind } from "./attributes.js";
 import { bodyWeightForRace } from "./weight.js";
+import { normalizeCharacterProgression } from "./progression.js";
+
+function normalizeAcquiredCharacter(entry, { legacyAttributes = false } = {}) {
+  normalizeCharacterProgression(entry, {
+    convertLegacyAttributes: legacyAttributes,
+    enforceLevelAttributeScale: true,
+    alignAttributesToProgression: legacyAttributes,
+  });
+  recomputeResolveMax(entry);
+  entry.carryCapacityMax = carryCapacityFor(entry);
+  return entry;
+}
 
 // Remove one travelling member without deleting their codex entry. Both a
 // settled parting and a narrator-resolved death need the same riding cleanup;
@@ -83,9 +95,14 @@ export function applyAcquisitions({ state, beat, world, party, character, newTim
       // File a fresh entry for a new recruit; a returning companion keeps their
       // accumulated memories + bond.
       const existing = world.codex.characters[tmpl.id];
-      const entry = existing
-        ? { ...existing, attributes: tmpl.attributes, abilities: [...(tmpl.abilities || [])], skills: (tmpl.skills || []).map((s) => ({ ...s })) }
+      const rawEntry = existing
+        ? {
+            ...existing,
+            abilities: existing.abilities?.length ? [...existing.abilities] : [...(tmpl.abilities || [])],
+            skills: existing.skills?.length ? existing.skills.map((skill) => ({ ...skill })) : (tmpl.skills || []).map((skill) => ({ ...skill })),
+          }
         : companionCodexEntry(tmpl);
+      const entry = normalizeAcquiredCharacter(rawEntry, { legacyAttributes: !existing?.progression });
       world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
       newBeats.push({ id: `join${Date.now()}`, type: "recruit", text: `${tmpl.name} joins your company.` });
     } else if (!tmpl && !party.includes(id) && world.codex.characters[id]) {
@@ -118,6 +135,8 @@ export function applyAcquisitions({ state, beat, world, party, character, newTim
           },
         };
       }
+      const joined = normalizeAcquiredCharacter({ ...world.codex.characters[id] });
+      world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [id]: joined } } };
       newBeats.push({ id: `join${Date.now()}`, type: "recruit", text: `${world.codex.characters[id].name || id} joins your company.` });
     }
   }
@@ -136,9 +155,16 @@ export function applyAcquisitions({ state, beat, world, party, character, newTim
     // narrator passes grant_mount.name), else a fitting fallback. A returning mount
     // keeps the name it had. The player can rename it anytime.
     const granted = (beat.grant_mount.name || "").trim();
-    const entry = existing
-      ? { ...existing, ...mountCodexEntry(tmpl, existing.name), relationship: existing.relationship || 0, memories: existing.memories || [] }
-      : mountCodexEntry(tmpl, granted || generateMountName(tmpl.race));
+    const authored = mountCodexEntry(tmpl, existing?.name || granted || generateMountName(tmpl.race));
+    const rawEntry = existing
+      ? { ...authored, ...existing, relationship: existing.relationship || 0, memories: existing.memories || [] }
+      : authored;
+    if (!existing?.progression) {
+      rawEntry.profession = authored.profession;
+      rawEntry.archetype = authored.archetype;
+      rawEntry.level = authored.level;
+    }
+    const entry = normalizeAcquiredCharacter(rawEntry, { legacyAttributes: !existing?.progression });
     world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
     newBeats.push({ id: `mount${Date.now()}`, type: "recruit", text: `${entry.name}, ${entry.species || tmpl.name}, now bears you.` });
   }
@@ -175,7 +201,16 @@ export function applyAcquisitions({ state, beat, world, party, character, newTim
           character.inventory = { ...character.inventory, coins: copperToCoins(coinsToCopper(character.inventory.coins) - coinToTake) };
         }
         const named = (beat.buy_mount.name || "").trim(); // the stabler's name for it, if given
-        const entry = { ...mountCodexEntry(tmpl, named || generateMountName(tmpl.race)), acquired: { type: settlement, agreedCp: nominalCp, note, day: newTime.day } };
+        const existing = world.codex.characters[tmpl.id];
+        const authored = mountCodexEntry(tmpl, existing?.name || named || generateMountName(tmpl.race));
+        const rawEntry = existing ? { ...authored, ...existing } : authored;
+        if (!existing?.progression) {
+          rawEntry.profession = authored.profession;
+          rawEntry.archetype = authored.archetype;
+          rawEntry.level = authored.level;
+        }
+        rawEntry.acquired = { type: settlement, agreedCp: nominalCp, note, day: newTime.day };
+        const entry = normalizeAcquiredCharacter(rawEntry, { legacyAttributes: !existing?.progression });
         world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [tmpl.id]: entry } } };
         party = [...party, tmpl.id];
         newBeats.push({ id: `buy${Date.now()}`, type: "recruit", text: `${entry.name}, ${entry.species}, joins your company.` });
@@ -228,7 +263,11 @@ export function applyAcquisitions({ state, beat, world, party, character, newTim
           if (coinToTake > 0) {
             character.inventory = { ...character.inventory, coins: copperToCoins(coinsToCopper(character.inventory.coins) - coinToTake) };
           }
-          const entry = { ...bondedCodexEntry(captive), id: bondedId, acquired: { type: settlement, agreedCp: nominalCp, note, day: newTime.day } };
+          const entry = normalizeAcquiredCharacter({
+            ...bondedCodexEntry(captive),
+            id: bondedId,
+            acquired: { type: settlement, agreedCp: nominalCp, note, day: newTime.day },
+          }, { legacyAttributes: true });
           world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [bondedId]: entry } } };
           // Also mark the captive off the visible roster on the current tile —
           // the same face shouldn't reappear when the player reopens the menu
@@ -286,7 +325,11 @@ export function applyAcquisitions({ state, beat, world, party, character, newTim
           if (coinToTake > 0) {
             character.inventory = { ...character.inventory, coins: copperToCoins(coinsToCopper(character.inventory.coins) - coinToTake) };
           }
-          const entry = { ...prisonerCodexEntry(prisoner), id: bondedId, acquired: { type: settlement, agreedCp: nominalCp, note, day: newTime.day } };
+          const entry = normalizeAcquiredCharacter({
+            ...prisonerCodexEntry(prisoner),
+            id: bondedId,
+            acquired: { type: settlement, agreedCp: nominalCp, note, day: newTime.day },
+          }, { legacyAttributes: true });
           world = { ...world, codex: { ...world.codex, characters: { ...world.codex.characters, [bondedId]: entry } } };
           party = [...party, bondedId];
           newBeats.push({ id: `pris${Date.now()}`, type: "recruit", bonded: true, text: `${prisoner.name} is given over to you and falls in beside the party.` });

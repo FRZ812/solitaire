@@ -12,6 +12,7 @@ import {
   RARE_TRADE_HOUSES,
   REALMS,
 } from "../../data/continent.js";
+import { WORLD_MARCH_LIMIT } from "../../config.js";
 import { WHITEMARCH_CAPITAL } from "../../data/whitemarch-capital.js";
 import { checkpointAt, landmarkAt } from "../../engine/world-generation.js";
 import { hexDistance, isSeen, isVisited, pathMinutes } from "../../engine/world.js";
@@ -19,6 +20,10 @@ import { pathRiskPercent } from "../../engine/encounters.js";
 import { planAtlasJourney } from "./atlasModel.js";
 
 export const SQRT_THREE_OVER_TWO = Math.sqrt(3) / 2;
+// Compress the axial plane vertically into a continental oblique view. Keeping
+// this in the projection itself means camera math and pointer picking share the
+// exact same pitch.
+export const ATLAS_OBLIQUE_PITCH = 0.76;
 
 const CENTRAL_REALM = REALMS.find((realm) => realm.id === "central") || REALMS[0];
 
@@ -104,11 +109,11 @@ export function atlasRoutesForLandmark(landmark) {
 // are exactly one unit apart, so camera zoom reads as "pixels per travel hex".
 
 export function projectAxial(x, y) {
-  return { x: x + y * 0.5, y: y * SQRT_THREE_OVER_TWO };
+  return { x: x + y * 0.5, y: y * SQRT_THREE_OVER_TWO * ATLAS_OBLIQUE_PITCH };
 }
 
 export function unprojectAxial(px, py) {
-  const y = py / SQRT_THREE_OVER_TWO;
+  const y = py / (SQRT_THREE_OVER_TWO * ATLAS_OBLIQUE_PITCH);
   return { x: px - y * 0.5, y };
 }
 
@@ -292,6 +297,14 @@ export function atlasQuestMarkers(state) {
     .map((quest) => ({ id: quest.id, title: quest.title, coord: { x: quest.loc.x, y: quest.loc.y } }));
 }
 
+export function initialAtlasSelection(coord, landmarks = ATLAS_LANDMARKS) {
+  const landmark = landmarks.find((entry) => (
+    entry.coord.x === coord.x && entry.coord.y === coord.y
+  ));
+  if (landmark) return { kind: "landmark", id: landmark.id };
+  return { kind: "point", x: coord.x, y: coord.y };
+}
+
 // ---- Journey summaries ----
 
 export function formatTravelDuration(minutes) {
@@ -337,18 +350,33 @@ export function journeyCheckpoints(path) {
   return out;
 }
 
+// Interior endpoints where the party pauses and reassesses a long route.
+// Excluding the final destination keeps single-leg routes marker-free and
+// avoids stacking a break marker under the destination pin.
+export function journeyLegBreaks(path, legSteps, cap = 8) {
+  if (!path || path.length < 2 || !Number.isFinite(legSteps) || legSteps <= 0) return [];
+  const step = Math.floor(legSteps);
+  if (step < 1) return [];
+  const limit = Math.max(0, Math.floor(cap));
+  const breaks = [];
+  for (let index = step; index < path.length - 1 && breaks.length < limit; index += step) {
+    const coord = path[index];
+    breaks.push({ x: coord.x, y: coord.y, index });
+  }
+  return breaks;
+}
+
 // One summary object for the atlas detail panel. Uses the same route planner
 // as actual travel, so the preview and the march never disagree. The march
 // itself still resolves in legs with per-step encounter rolls.
-export function summarizeAtlasJourney(state, destination, maxLeg = 48) {
+export function summarizeAtlasJourney(state, destination, maxLeg = WORLD_MARCH_LIMIT) {
   if (!state || !destination) return null;
   const origin = state.world.currentTile;
   if (origin.x === destination.x && origin.y === destination.y) return null;
   const journey = planAtlasJourney(state, destination, maxLeg);
   if (!journey) return null;
   const legMinutes = pathMinutes(state, journey.legPath);
-  const perStep = journey.legSteps > 0 ? legMinutes / journey.legSteps : 0;
-  const estimatedMinutes = Math.round(perStep * journey.totalSteps);
+  const estimatedMinutes = pathMinutes(state, journey.fullPath);
   return {
     ...journey,
     origin,

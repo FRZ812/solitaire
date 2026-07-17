@@ -2,15 +2,17 @@
 // and rating increases so the renderer can show "Recorded" / "Growth" beats.
 
 import { COMPANIONS } from "../data/companions.js";
+import { normalizeCharacterProgression } from "./progression.js";
 
 export function mergeDiscoveries(existing, incoming) {
   const out = { ...existing };
   const newlyDiscovered = [];
   if (!incoming) return { codex: out, newlyDiscovered };
-  // Accept old field names as aliases in case the AI slips.
-  if (incoming.classes && !incoming.professions) incoming.professions = incoming.classes;
+  // The broad profession catalog is engine-owned: exact vocations discovered
+  // in play belong on a character as their archetype, never as an uncompiled
+  // profession entry with no 100-level route.
   if (incoming.abilities && !incoming.skills)    incoming.skills      = incoming.abilities;
-  for (const kind of ["characters", "races", "professions", "items", "spells", "skills"]) {
+  for (const kind of ["characters", "races", "items", "spells", "skills"]) {
     const entries = incoming[kind];
     if (!entries || !Array.isArray(entries)) continue;
     out[kind] = { ...out[kind] };
@@ -19,12 +21,19 @@ export function mergeDiscoveries(existing, incoming) {
       const isNew = !out[kind][e.id];
       const prev = out[kind][e.id] || {};
       let incoming = e;
-      // The engine owns companions' attributes — the narrator may flavor their
-      // description / knowledge but must not RESTAT an authored companion (their
-      // stats come from data/companions.js, applied on recruit). Drop any
-      // attributes the narrator tries to set on a companion id.
-      if (kind === "characters" && e.attributes && (COMPANIONS[e.id] || prev.kind === "companion")) {
-        const { attributes, ...rest } = e;
+      // Rank allocation and playable-template identity are engine-owned. The
+      // narrator may propose only a loose starting level; never trust supplied
+      // paths or a template id that would bypass the living-world ceiling.
+      const hasOwn = (key) => Object.prototype.hasOwnProperty.call(incoming, key);
+      if (kind === "characters" && (hasOwn("progression") || hasOwn("templateId"))) {
+        const { progression, templateId, ...rest } = incoming;
+        incoming = rest;
+      }
+      // The engine owns attributes after a person enters the Codex. The narrator
+      // may seed a brand-new sheet, but later discoveries cannot restat it around
+      // earned path ranks. Authored companions are protected even before recruit.
+      if (kind === "characters" && Object.prototype.hasOwnProperty.call(incoming, "attributes") && (COMPANIONS[e.id] || prev.kind === "companion" || !isNew)) {
+        const { attributes, ...rest } = incoming;
         incoming = rest;
       }
       // Gender is a HARD field — once set on a character, the narrator cannot
@@ -35,6 +44,13 @@ export function mergeDiscoveries(existing, incoming) {
         incoming = rest;
       }
       out[kind][e.id] = { ...prev, ...incoming };
+      // Every person in the Codex uses the same stacked-rank model. A newly
+      // narrated `level` seeds that stack, but ordinary world generation is
+      // capped at 60 by the progression engine and the loose number is then
+      // discarded so it can never disagree with allocated ranks.
+      if (kind === "characters" && e.id !== "wanderer") {
+        normalizeCharacterProgression(out[kind][e.id], { enforceLevelAttributeScale: isNew });
+      }
       if (isNew) {
         newlyDiscovered.push({ kind, name: e.name, id: e.id });
       } else if (kind === "skills" && typeof e.rating === "number" && typeof prev.rating === "number" && e.rating > prev.rating) {

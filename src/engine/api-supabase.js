@@ -6,13 +6,15 @@
 //
 // The system prompt is bundled in the web client (src/system-prompt.js) —
 // single source of truth, no mirror file on the function side.
-import { HISTORY_LIMIT } from "../config.js";
 import { supabase } from "./supabase-client.js";
 import { buildStateContext } from "./api.js";
 import { extractJSON } from "./json.js";
 import { SYSTEM_PROMPT } from "../system-prompt.js";
 import { getNarratorModel, getNarratorEffort } from "./narrator-models.js";
 import { storyTextLength } from "./narrative-sequence.js";
+import { prepareNarratorHistory } from "./narrator-history.js";
+import { normalizeNarratorSettings } from "./narrator-settings.js";
+import { mergeMemoryBank } from "./memory.js";
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/narrate`;
 
@@ -49,7 +51,9 @@ const RETRY_HINT_2 =
 // partial result.
 export async function callNarrator(state, userMsgRaw, onProgress) {
   const state_context = buildStateContext(state);
-  const trimmedHistory = state.apiHistory.slice(-HISTORY_LIMIT);
+  const trimmedHistory = prepareNarratorHistory(state.apiHistory);
+  const narratorSettings = normalizeNarratorSettings(state.narratorSettings);
+  const existing_memories = mergeMemoryBank([], state.memories);
   // Which model + thinking effort the edge function should use — read once so
   // all three attempts in a turn match even if the player flips them mid-stream.
   const model = getNarratorModel();
@@ -62,6 +66,7 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
   // propagates up — these aren't truncation and aren't worth retrying.
   const attempt0 = await runOneAttempt({
     session, state_context, history: trimmedHistory, userMsgRaw, onProgress, model, reasoning_effort,
+    memory_mode: narratorSettings.memoryMode, existing_memories,
   });
   if (!attempt0.result._truncated) return attempt0.result;
 
@@ -73,7 +78,8 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
     attempt1 = await runOneAttempt({
       session, state_context, history: trimmedHistory,
       userMsgRaw: `${RETRY_HINT_1}\n${userMsgRaw}`,
-      onProgress, model, reasoning_effort,
+      canonicalUserMsg: userMsgRaw,
+      onProgress, model, reasoning_effort, memory_mode: narratorSettings.memoryMode, existing_memories,
     });
     if (!attempt1.result._truncated) return attempt1.result;
   } catch {
@@ -87,7 +93,8 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
     attempt2 = await runOneAttempt({
       session, state_context, history: trimmedHistory,
       userMsgRaw: `${RETRY_HINT_2}\n${userMsgRaw}`,
-      onProgress, model, reasoning_effort,
+      canonicalUserMsg: userMsgRaw,
+      onProgress, model, reasoning_effort, memory_mode: narratorSettings.memoryMode, existing_memories,
     });
     if (!attempt2.result._truncated) return attempt2.result;
   } catch {
@@ -117,7 +124,7 @@ function pickBest(results) {
 // One round-trip to the narrate edge function. Returns the parsed beat
 // (with _truncated flag if salvaged) wrapped as { result }. Throws on
 // !response.ok or missing body — the caller decides whether to retry.
-async function runOneAttempt({ session, state_context, history, userMsgRaw, onProgress, model, reasoning_effort }) {
+async function runOneAttempt({ session, state_context, history, userMsgRaw, canonicalUserMsg = userMsgRaw, onProgress, model, reasoning_effort, memory_mode, existing_memories }) {
   // Mark a fresh attempt so any live-thinking UI clears the prior take.
   onProgress?.({ reset: true });
   const response = await fetch(FUNCTION_URL, {
@@ -134,6 +141,8 @@ async function runOneAttempt({ session, state_context, history, userMsgRaw, onPr
       system_prompt: SYSTEM_PROMPT,
       model,
       reasoning_effort,
+      memory_mode,
+      existing_memories,
     }),
   });
 
@@ -148,7 +157,9 @@ async function runOneAttempt({ session, state_context, history, userMsgRaw, onPr
   }
 
   const { text, thinking, memories } = await accumulateAnthropicSSE(response.body, onProgress);
-  const userMsg = `${state_context}\n\n${userMsgRaw}`;
+  // Store only the action. The next request already carries a fresh state_context;
+  // persisting it inside every history item multiplied payload and save size.
+  const userMsg = canonicalUserMsg;
   const parsed = extractJSON(text);
   if (!parsed) {
     // Total parse failure — treat as a truncation so the retry loop can try
@@ -208,5 +219,5 @@ async function accumulateAnthropicSSE(body, onProgress) {
       }
     }
   }
-  return { text, thinking, memories };
+  return { text, thinking, memories: mergeMemoryBank([], memories) };
 }
