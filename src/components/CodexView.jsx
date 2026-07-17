@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import { Icon, ItemIcon } from "./Icon.jsx";
 import { AbilityIcon } from "./AbilityIcon.jsx";
 import { AtlasIcon } from "./AtlasIcon.jsx";
+import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import { iconButtonStyle, conditionPalette, fmtRemaining } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
@@ -1106,7 +1107,7 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
   };
 
   return (
-    <div className={`codex-view${embedded ? " codex-view--embedded deck-view" : " fade-in"}`} data-tab={activeTab} style={{ position: embedded ? "relative" : "absolute", inset: embedded ? "auto" : 0, backgroundColor: "#0b0f0e", zIndex: embedded ? 1 : 30, display: "flex", flexDirection: "column" }}>
+    <DeckPage enabled={embedded} className={`codex-view${embedded ? " codex-view--embedded" : " fade-in"}`} data-tab={activeTab} style={{ position: embedded ? "relative" : "absolute", inset: embedded ? "auto" : 0, backgroundColor: "#0b0f0e", zIndex: embedded ? 1 : 30, display: "flex", flexDirection: "column" }}>
       {!embedded && (
         <div className="codex-view__header" style={{
           padding: "calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px 16px",
@@ -1138,18 +1139,11 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
       )}
 
       {embedded && (
-        <div className="codex-panel__intro">
-          <span className="codex-panel__intro-icon" aria-hidden="true"><Icon name="codex" size={25} /></span>
-          <div className="codex-panel__intro-copy">
-            <small>Living archive</small>
-            <h3>Lore Codex</h3>
-            <p>People, lore, and hard-won knowledge gathered on the road.</p>
-          </div>
-          <div className="codex-panel__intro-count" aria-label={`${Object.keys(codex.characters || {}).length} known characters`}>
-            <strong>{Object.keys(codex.characters || {}).length}</strong>
-            <span>Known</span>
-          </div>
-        </div>
+        <DeckPageHeader
+          icon="codex"
+          title="Codex"
+          subtitle={`${Object.keys(codex.characters || {}).length} known characters · people · places · lore`}
+        />
       )}
 
       <div className="codex-view__tabs" role="tablist" aria-label="Codex sections">
@@ -1242,6 +1236,6 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
         )}
         </div>
       </div>
-    </div>
+    </DeckPage>
   );
 }

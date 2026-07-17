@@ -55,7 +55,9 @@ export function applySurvivalTick({ state, beat, character, codex, newBeats }) {
   {
     const cur = character.light || {};
     const prev = (cur.minutes ?? cur.torchMinutes) || 0; // back-compat with old {torchMinutes}
-    if (prev > 0) {
+    if (cur.hooded && cur.source === "lantern" && prev > 0) {
+      character.light = { source: "lantern", minutes: prev, hooded: true };
+    } else if (prev > 0) {
       const left = Math.max(0, prev - (beat.minutes_passed || 0));
       character.light = left > 0 ? { source: cur.source || "torch", minutes: left } : { source: null, minutes: 0 };
       if (left === 0) {

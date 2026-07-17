@@ -14,13 +14,13 @@ import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 import { PLAYER_PORTRAIT_ID, portraitOverrideFor } from "../engine/portrait-overrides.js";
 import { characterSubclass } from "../data/character-subclasses.js";
 
-// The unified character deck: Company · Character · Abilities · Inventory ·
+// The unified character deck: Company · Character · Skills · Inventory ·
 // Codex as five pages of one
 // portrait-led bottom sheet, opened from a single header button (defaults to
 // Character). Sections change only through the visible tabs so a horizontal
 // gesture never steals an ordinary scroll inside a page.
 const PAGES = ["party", "character", "abilities", "inventory", "codex"];
-const LABELS = { party: "Company", character: "Character", abilities: "Abilities", inventory: "Inventory", codex: "Codex" };
+const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", codex: "Codex" };
 const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", codex: "codex" };
 
 export function shouldDismissPanel(pulled, velocity) {

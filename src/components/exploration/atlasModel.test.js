@@ -11,7 +11,7 @@ import {
   compileWhitemarchCapital,
 } from "../../data/whitemarch-capital.js";
 import { getTile } from "../../engine/world.js";
-import { buildExplorationModel } from "./atlasModel.js";
+import { buildExplorationModel, buildRpgViewport } from "./atlasModel.js";
 
 function keyOf(coord) {
   return `${coord.x},${coord.y}`;
@@ -30,6 +30,16 @@ function withCompiledCapital(run) {
 }
 
 describe("unified capital in the exploration atlas", () => {
+  it("distinguishes current sight from remembered exploration", () => {
+    const state = makeInitialState();
+    state.world.seen = { "0,0": true, "2,0": true, "4,0": true };
+
+    const byKey = new Map(buildRpgViewport(state).map((cell) => [cell.key, cell]));
+
+    expect(byKey.get("2,0")).toMatchObject({ seen: true, visible: true, explored: true });
+    expect(byKey.get("4,0")).toMatchObject({ seen: true, visible: false, explored: true });
+  });
+
   it("collapses every internal Whitemarch POI into one capital landmark", () => {
     withCompiledCapital(() => {
       const state = makeInitialState();

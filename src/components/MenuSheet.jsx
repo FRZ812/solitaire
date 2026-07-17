@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Icon } from "./Icon.jsx";
+import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import {
   ConditionPill, NeedBar, StatBar,
   SectionHeader, ErrorBanner, actionButtonStyle, insetBoxStyle,
@@ -7,10 +8,10 @@ import {
 import { colors, alert, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { deriveCombatStats } from "../engine/combat-stats.js";
-import { effectiveAttributes, PROFICIENCIES, ratingFromXp } from "../data/proficiencies.js";
+import { effectiveAttributes } from "../data/proficiencies.js";
 import { attrDescriptor } from "../data/attribute-tiers.js";
 import { AttributeDetail } from "./AttributeDetail.jsx";
-import { InfoModal } from "./InfoTip.jsx";
+import { InfoModal, ViewportModal } from "./InfoTip.jsx";
 import { glossaryById, conditionInfo } from "../data/glossary.js";
 import { condName } from "../data/conditions.js";
 import { canHeal } from "../engine/healing.js";
@@ -84,20 +85,6 @@ function CombatStat({ label, value, onClick }) {
   );
 }
 
-// "View all N →" link to open the Arsenal panel.
-function ViewAll({ label, onClick }) {
-  return (
-    <button onClick={onClick} style={{
-      marginTop: "8px", display: "flex", alignItems: "center", gap: "5px",
-      background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit",
-      color: "rgba(215, 167, 111, 0.85)", fontSize: "11px", fontWeight: 700,
-      letterSpacing: "0.04em", padding: 0,
-    }}>
-      {label} <span style={{ fontSize: "13px" }}>→</span>
-    </button>
-  );
-}
-
 // Transparent button wrappers so existing display components become tappable.
 const bareBtn = { background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" };
 
@@ -115,11 +102,10 @@ function Divider() {
 }
 
 // Character page of the panel deck — identity, conditions, vitals, needs,
-// attributes, proficiencies, combat, and campaign actions. Content only;
+// attributes, combat, and campaign actions. Content only;
 // the deck supplies the sheet chrome, scroll, and dismissal. (Wealth + gear now
 // live on the Inventory page.)
 export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, onLinkEmail }) {
-  const [showAllProficiencies, setShowAllProficiencies] = useState(false);
   const [openAttr, setOpenAttr] = useState(null); // attribute key whose threshold detail is expanded
   const [info, setInfo] = useState(null); // glossary explanation popover { term, text, extra }
   const codex = state.world.codex;
@@ -144,15 +130,10 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
     }
     setInfo({ term: g.term, text: g.text, extra });
   }
-  const trainedProfs = PROFICIENCIES
-    .map((p) => ({ name: p.name, rating: ratingFromXp(state.character.proficiencies?.[p.id] || 0), xp: state.character.proficiencies?.[p.id] || 0 }))
-    .filter((p) => p.xp > 0)
-    .sort((a, b) => b.rating - a.rating || b.xp - a.xp);
-  const PREVIEW = 4;
-
   const showGuestNag = user?.is_anonymous && onLinkEmail;
   return (
-    <div className="menu-sheet deck-view" style={{ padding: "18px 16px 8px", display: "flex", flexDirection: "column", gap: "17px", color: colors.parchment }}>
+    <DeckPage className="menu-sheet">
+        <DeckPageHeader icon="character" title="Character" subtitle="Vitals · needs · attributes" />
 
         {/* A single at-a-glance state card keeps conditions visually connected
             to the pools they affect without flattening everything into bars. */}
@@ -233,53 +214,31 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
               />
             ))}
           </div>
-          {openAttr && <AttributeDetail attrKey={openAttr} value={attrs[openAttr] ?? 0} />}
-        </div>
-
-        {/* Proficiencies — what you've trained by doing. Raise these to grow attributes. */}
-        <div>
-          <SectionHeader>Proficiencies</SectionHeader>
-          <div style={insetBoxStyle}>
-            {trainedProfs.length === 0
-              ? <span style={{ fontSize: "12px", color: "rgba(237, 228, 208, 0.45)", fontStyle: "italic" }}>None yet — fight, cast, and survive to improve.</span>
-              : (
-                <>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                    {(showAllProficiencies ? trainedProfs : trainedProfs.slice(0, PREVIEW)).map((p) => (
-                      <span key={p.name} style={{
-                        fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: radius.pill,
-                        color: colors.parchment, border: `1px solid rgba(215, 167, 111, 0.28)`,
-                        backgroundColor: "rgba(215, 167, 111, 0.08)",
-                      }}>
-                        {p.name} <span style={{ color: colors.gold }}>{p.rating}</span>
-                      </span>
-                    ))}
-                  </div>
-                  {trainedProfs.length > PREVIEW && (
-                    <ViewAll
-                      label={showAllProficiencies ? "Show fewer proficiencies" : `All ${trainedProfs.length} proficiencies`}
-                      onClick={() => setShowAllProficiencies((value) => !value)}
-                    />
-                  )}
-                </>
-              )}
-          </div>
+          {openAttr && (
+            <ViewportModal
+              onClose={() => setOpenAttr(null)}
+              ariaLabel={`${ATTR_LABELS[openAttr]} attribute explanation`}
+            >
+              <AttributeDetail attrKey={openAttr} value={attrs[openAttr] ?? 0} />
+              <button onClick={() => setOpenAttr(null)} style={{
+                marginTop: "4px", alignSelf: "flex-end", padding: "6px 14px", borderRadius: radius.pill,
+                background: "rgba(215,167,111,0.14)", color: colors.parchmentLight,
+                border: "1px solid rgba(215,167,111,0.35)", fontSize: "12px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+              }}>Got it</button>
+            </ViewportModal>
+          )}
         </div>
 
         {/* Combat — stats derived from attributes + equipped gear. */}
         <div>
           <SectionHeader>Combat</SectionHeader>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginBottom: "8px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
             <CombatStat label="Armor" value={combat.armor} onClick={() => showInfo("armor")} />
             <CombatStat label="Ward" value={combat.ward} onClick={() => showInfo("ward")} />
             <CombatStat label="Dodge" value={`${combat.dodge}%`} onClick={() => showInfo("dodge")} />
             <CombatStat label="Crit" value={`${combat.critChance}%`} onClick={() => showInfo("crit")} />
             <CombatStat label="Pen" value={combat.weapon.pen} onClick={() => showInfo("penetration")} />
             <CombatStat label="Damage" value={`${combat.weapon.min}–${combat.weapon.max}`} onClick={() => showInfo("damage")} />
-          </div>
-          <div style={{ ...insetBoxStyle, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-            <span style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: "rgba(215, 167, 111, 0.7)" }}>Readied weapon</span>
-            <span style={{ fontFamily: fonts.serif, fontStyle: "italic", color: colors.parchmentLight }}>{combat.weapon.name}</span>
           </div>
         </div>
 
@@ -313,7 +272,7 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
         </div>
 
       {info && <InfoModal info={info} onClose={() => setInfo(null)} />}
-    </div>
+    </DeckPage>
   );
 }
 

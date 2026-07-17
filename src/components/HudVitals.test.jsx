@@ -10,7 +10,7 @@ describe("VitalsStrip", () => {
 
     expect(html).toContain("Obscurity");
     expect(html).toContain("Visible");
-    expect(html).toContain("Clear sightlines");
+    expect(html).toMatch(/Daylight|Hearth &amp; lamps/);
     expect(html).toContain("visibility-status--clear");
     expect(html).toContain("visibilityOpen");
     expect(html).toContain('data-game-icon="hunger"');
@@ -27,7 +27,7 @@ describe("VitalsStrip", () => {
 
     const hiddenHtml = renderToStaticMarkup(<VitalsStrip state={state} onExtinguish={() => {}} />);
     expect(hiddenHtml).toContain("Hidden");
-    expect(hiddenHtml).toContain("Sight impaired");
+    expect(hiddenHtml).toContain("Darkness · sight impaired");
     expect(hiddenHtml).toContain("visibility-status--heavy");
     expect(hiddenHtml).toContain("visibilityClosed");
 

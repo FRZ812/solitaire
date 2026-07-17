@@ -48,7 +48,7 @@ export const GLOSSARY = [
 
   // ---- Light ----
   { id: "light", term: "Light & darkness", category: "Light",
-    text: "Daylight lights the open world; after dark, only a flame does (towns keep some ambient glow, the wilds do not). Caves, dungeons, and interiors are dark at any hour. In the dark with NO light you go blind: your aim suffers in a fight and your sight shrinks to a single hex — you can barely map your way and can't travel far. A torch (≈1h, modest pool) or a lantern (≈4h on a flask of oil, steady and bright) pushes it back. Strike either with a tinderbox." },
+    text: "Daylight lights the open world; after dark, towns and inhabited interiors keep their own lamps, hearths, or fires, while the wilds do not. Caves, dungeons, and explicitly lightless interiors are dark at any hour. In the dark with NO light you go blind: your aim suffers in a fight and your sight shrinks to a single hex — you can barely map your way and can't travel far. A torch (≈1h, modest pool) or a lantern (≈4h on a flask of oil, steady and bright) pushes it back. Strike either with a tinderbox." },
   { id: "night", term: "Night & ambush", category: "Light",
     text: "More things prowl after dark — encounters are likelier at night and in gloomy country. A burning light lets you see and fight, but it's a BEACON: foes are likelier to ambush you and you can't slip past them. Go unlit and you're blind, but HIDDEN — you can slip away from trouble and break from a fight far more easily. A risk you weigh each night." },
   { id: "travel-magic", term: "Flight & teleport", category: "Light",

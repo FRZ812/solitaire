@@ -130,7 +130,7 @@ function RpgHeader({ state, biome, tile, onClose, onWayfinder }) {
 function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, night, city, district }) {
   const mapScene = useMemo(() => buildWorldMapScene({ model, selection, journey, night }), [model, selection, journey, night]);
   const accessibleCells = useMemo(() => model.viewport
-    .filter((cell) => cell.seen && cell.passable && !cell.current)
+    .filter((cell) => cell.explored && cell.passable && !cell.current)
     .map((cell) => ({
       key: cell.key,
       label: `${nameForDestination(cell, model.origin)}, ${directionLabel(model.origin, cell).replace("-", " ")}${cell.quest ? `, quest: ${cell.quest.title}` : ""}`,
@@ -138,7 +138,7 @@ function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, n
 
   function selectMapCell(key) {
     const cell = model.viewport.find((candidate) => candidate.key === key);
-    if (cell?.seen && cell.passable && !cell.current) onPick(cell);
+    if (cell?.explored && cell.passable && !cell.current) onPick(cell);
   }
 
   return (

@@ -5,7 +5,7 @@ import { makeInitialState } from "../data/initial-state.js";
 import { PanelDeck, shouldDismissPanel } from "./PanelDeck.jsx";
 
 describe("PanelDeck", () => {
-  it("renders abilities and Codex as peer deck pages with handle-only sheet chrome", () => {
+  it("renders Skills and Codex as peer deck pages with handle-only sheet chrome", () => {
     const html = renderToStaticMarkup(
       <PanelDeck
         state={makeInitialState()}
@@ -16,7 +16,7 @@ describe("PanelDeck", () => {
       />,
     );
 
-    expect(html).toContain("Abilities &amp; Spells");
+    expect(html).toContain("<h3>Skills</h3>");
     expect(html).toContain("Drag down or tap to close menu");
     expect(html.match(/role="tab"/g)).toHaveLength(5);
     expect(html).toContain("Codex");
@@ -24,6 +24,40 @@ describe("PanelDeck", () => {
     expect(html).not.toContain("Close character menu");
     expect(html).toContain("choose a section · drag handle to close");
     expect(html).not.toContain("swipe sections");
+  });
+
+  it("uses the same page shell and heading contract for every dossier section", () => {
+    const headings = {
+      party: "Company",
+      character: "Character",
+      abilities: "Skills",
+      inventory: "Inventory",
+      codex: "Codex",
+    };
+
+    for (const [initialPage, heading] of Object.entries(headings)) {
+      const html = renderToStaticMarkup(
+        <PanelDeck state={makeInitialState()} user={null} initialPage={initialPage} onClose={() => {}} handlers={{}} />,
+      );
+      expect(html.match(/class="deck-page__header"/g)).toHaveLength(1);
+      expect(html).toContain(`<h3>${heading}</h3>`);
+      expect(html).toContain("deck-page deck-view");
+    }
+  });
+
+  it("keeps proficiencies in Skills and redundant weapon detail out of Character", () => {
+    const state = makeInitialState();
+    state.character.proficiencies = { "mastery-sword": 40 };
+    const characterHtml = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="character" onClose={() => {}} handlers={{}} />,
+    );
+    const skillsHtml = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="abilities" onClose={() => {}} handlers={{}} />,
+    );
+
+    expect(characterHtml).not.toContain("Proficiencies");
+    expect(characterHtml).not.toContain("Readied weapon");
+    expect(skillsHtml).toContain("Proficiencies");
   });
 
   it("renders the living Codex inside the dossier instead of as a character action", () => {
@@ -35,8 +69,8 @@ describe("PanelDeck", () => {
       <PanelDeck state={state} user={null} initialPage="character" onClose={() => {}} handlers={{}} />,
     );
 
-    expect(codexHtml).toContain("Lore Codex");
-    expect(codexHtml).toContain("People, lore, and hard-won knowledge gathered on the road.");
+    expect(codexHtml).toContain("<h3>Codex</h3>");
+    expect(codexHtml).toContain("known characters · people · places · lore");
     expect(codexHtml).toContain("codex-entry__portrait");
     expect(codexHtml).toContain("portrait placeholder");
     expect(codexHtml).toContain('data-portrait-atlas="important"');

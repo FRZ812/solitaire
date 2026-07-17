@@ -1,7 +1,8 @@
 // Light & darkness — a load-bearing survival system.
 //
-// A PLACE is ambiently dark when it's an interior/underground, or it's night
-// out in the open (towns keep ambient light; gloomy terrain darkens earlier).
+// A PLACE is ambiently dark when it's a lightless interior/underground, or it's
+// night out in the open (towns and tended interiors keep ambient light; gloomy
+// terrain darkens earlier).
 // A carried LIGHT (torch or lantern) holds the dark back until it burns down.
 // DARKVISION races see in it regardless.
 //
@@ -27,8 +28,13 @@ export const DARK_FLEE_BONUS = 20;     // easier to vanish into the black
 const NIGHT_START = 20, NIGHT_END = 6; // open ground: night is 20:00–05:59
 const GLOOM_START = 18, GLOOM_END = 7; // under canopy / in the crags it comes earlier
 
-// Adventure interiors that are dark at any hour.
-export const INTERIOR_POIS = new Set(["cellar", "dungeon", "hall", "throne_room", "vault", "warren", "den"]);
+// Adventure interiors that are dark at any hour. Generic halls and throne
+// rooms are deliberately absent: inhabited interiors are lit unless their
+// authored type says they are genuinely lightless.
+export const INTERIOR_POIS = new Set([
+  "cellar", "dungeon", "vault", "warren", "den",
+  "cave", "cavern", "crypt", "tomb", "catacomb", "sewer", "mine", "burrow", "pit",
+]);
 // Built places that keep some ambient light through the night.
 export const SETTLEMENT_POIS = new Set(["city", "town", "village", "fortress", "camp", "inn", "market", "square"]);
 
@@ -39,35 +45,72 @@ export function isNight(time, gloomy = false) {
 
 export function isSettlement(tile) {
   if (!tile) return false;
-  return tile.terrain === "settlement" || (tile.poi?.type && SETTLEMENT_POIS.has(tile.poi.type));
+  return !!tile.cityId
+    || tile.terrain === "settlement"
+    || !!(tile.poi?.type && SETTLEMENT_POIS.has(tile.poi.type));
 }
 
 export function hasDarkvision(character) { return !!character?.darkvision; }
 
-// Ambient darkness of the player's tile, ignoring any carried light or darkvision.
-function ambientDark(state) {
+const DAYLIGHT = { dark: false, source: "daylight", label: "Daylight", text: "daylight" };
+const DARKNESS = { dark: true, source: null, label: "Darkness", text: "in darkness" };
+
+// The location's own illumination, ignoring carried light and darkvision.
+// Keeping this structured prevents a lit settlement or tended interior from
+// being flattened into the misleading narrator/UI label "daylight" at night.
+export function locationLightStatus(state) {
   const cur = state?.world?.currentTile;
-  if (!cur) return false;
+  if (!cur) return DAYLIGHT;
   const tile = getTile(state, cur.x, cur.y);
-  if (!tile) return false;
+  if (!tile) return DAYLIGHT;
   const poiType = tile.poi?.type;
-  if (poiType && INTERIOR_POIS.has(poiType)) return true; // dungeons, cellars, dens: lightless
-  if (isSettlement(tile)) return false;                   // towns + civilized interiors (inn, shop, market): kept lit
-  if (tile.terrain === "indoor") return false;            // a tended building — hearth, lamps, occupants
-  return isNight(state.time, !!TERRAINS[tile.terrain]?.dark); // open wilds: dark at night (sooner if gloomy)
+  if (poiType && INTERIOR_POIS.has(poiType)) return DARKNESS;
+
+  // A tended building has its own light source regardless of the hour.
+  if (tile.terrain === "indoor") {
+    return { dark: false, source: "interior-lamps", label: "Hearth & lamps", text: "hearth and lamp light" };
+  }
+
+  // Outdoor built places keep visible ambient light through the night, but it
+  // comes from the location rather than from the sun.
+  if (isSettlement(tile)) {
+    if (!isNight(state.time)) return DAYLIGHT;
+    if (poiType === "camp") {
+      return { dark: false, source: "campfires", label: "Campfires", text: "campfire light" };
+    }
+    if (poiType === "fortress") {
+      return { dark: false, source: "watch-fires", label: "Watch fires", text: "watch-fire light" };
+    }
+    if (tile.cityId) {
+      return { dark: false, source: "city-lamps", label: "City lamps", text: "city lamp light" };
+    }
+    return { dark: false, source: "street-lamps", label: "Street lamps", text: "street-lamp light" };
+  }
+
+  return isNight(state.time, !!TERRAINS[tile.terrain]?.dark) ? DARKNESS : DAYLIGHT;
+}
+
+// Ambient darkness of the player's tile, ignoring carried light or darkvision.
+function ambientDark(state) {
+  return locationLightStatus(state).dark;
 }
 
 // ---- carried light ----
-export function lightSource(state) { return state?.character?.light?.source || null; }
 // Minutes of light left (back-compat with the old {torchMinutes} shape).
 export function lightMinutes(state) {
   const l = state?.character?.light;
-  return (l?.minutes ?? l?.torchMinutes) || 0;
+  if (l?.hooded) return 0;
+  return Math.max(0, Number(l?.minutes ?? l?.torchMinutes) || 0);
+}
+export function lightSource(state) {
+  if (lightMinutes(state) <= 0) return null;
+  return state?.character?.light?.source || "torch";
 }
 export function isLit(state) { return lightMinutes(state) > 0; }
 
-// Is it dark for THIS character right now (ambient dark, darkvision sees through)?
-export function isDarkHere(state) { return ambientDark(state) && !hasDarkvision(state.character); }
+// Is it dark for THIS character right now? Carried light and darkvision both
+// count, matching the combat/navigation interpretation below.
+export function isDarkHere(state) { return ambientDark(state) && !isLit(state) && !hasDarkvision(state.character); }
 
 // ---- the three meaningful states ----
 // Blind: can't see to fight or navigate.
@@ -88,17 +131,31 @@ export function sightRadius(state) {
 
 // Short status for the menu HUD, glossary, and narrator context line.
 export function lightStatus(state) {
+  const ambient = locationLightStatus(state);
   const m = lightMinutes(state);
-  if (m > 0) return { lit: true, dark: false, source: lightSource(state), minutes: m, text: `lit by ${lightSource(state) || "a flame"} (~${m}m left)` };
-  if (ambientDark(state) && hasDarkvision(state.character)) return { lit: false, dark: false, darkvision: true, text: "dark, but you see in it" };
-  if (ambientDark(state)) return { lit: false, dark: true, text: "in darkness" };
-  return { lit: false, dark: false, text: "daylight" };
+  const source = lightSource(state);
+  if (m > 0) {
+    const carried = `lit ${source || "flame"} (~${m}m left)`;
+    return {
+      lit: true,
+      dark: false,
+      source,
+      minutes: m,
+      locationSource: ambient.source,
+      text: ambient.dark ? `lit by ${source || "a flame"} (~${m}m left)` : `${ambient.text}; carrying a ${carried}`,
+    };
+  }
+  if (ambient.dark && hasDarkvision(state.character)) {
+    return { lit: false, dark: false, darkvision: true, locationSource: null, text: "in darkness, but you see by darkvision" };
+  }
+  return { lit: false, dark: ambient.dark, locationSource: ambient.source, text: ambient.text };
 }
 
 // Stealth-facing interpretation of the same light rules. This is intentionally
 // distinct from lightStatus: the HUD should answer "can they see me?", while
 // the inventory/menu still needs to answer "what is lighting this place?".
 export function visibilityStatus(state) {
+  const ambient = locationLightStatus(state);
   const source = lightSource(state);
   const minutes = lightMinutes(state);
   const sourceName = source ? `${source.charAt(0).toUpperCase()}${source.slice(1)}` : "Flame";
@@ -126,7 +183,7 @@ export function visibilityStatus(state) {
     return {
       obscurity: "heavy",
       label: "Hidden",
-      detail: "Sight impaired",
+      detail: "Darkness · sight impaired",
       icon: "visibilityClosed",
       canExtinguish: false,
     };
@@ -135,7 +192,7 @@ export function visibilityStatus(state) {
   return {
     obscurity: "clear",
     label: "Visible",
-    detail: minutes > 0 ? `${sourceName} · ${minutes}m` : "Clear sightlines",
+    detail: minutes > 0 ? `${ambient.label} · ${sourceName} ${minutes}m` : ambient.label,
     icon: "visibilityOpen",
     canExtinguish: minutes > 0,
   };
