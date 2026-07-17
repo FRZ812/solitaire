@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Icon } from "./Icon.jsx";
 import { AbilityIcon } from "./AbilityIcon.jsx";
+import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import { SectionHeader } from "./primitives.jsx";
 import { tierColor, tierLabel, tierOrder } from "../data/tiers.js";
 import { getAbilityDef, abilityStatLine, abilityReqLine } from "../data/abilities.js";
@@ -107,7 +107,7 @@ function SpellCard({ spell, kind, active, affordable, onCast }) {
   );
 }
 
-// Dedicated deck page for combat techniques, learned magic, and mastery.
+// Dedicated deck page for combat techniques, learned magic, and proficiencies.
 // Casting travel spells stays on the map because each one needs a destination.
 export function ArsenalView({ state, onCastBuff }) {
   const character = state.character;
@@ -141,14 +141,8 @@ export function ArsenalView({ state, onCastBuff }) {
     : techniques.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === abilityFilter);
 
   return (
-    <div className="arsenal-view deck-view">
-      <div className="arsenal-hero">
-        <div className="arsenal-hero__icon" aria-hidden="true"><Icon name="abilities" size={28} /></div>
-        <div>
-          <h3>Abilities &amp; Spells</h3>
-          <p>Techniques · magic · mastery</p>
-        </div>
-      </div>
+    <DeckPage className="arsenal-view">
+      <DeckPageHeader icon="abilities" title="Skills" subtitle="Techniques · spells · proficiencies" />
 
       <section>
         <SectionHeader>Techniques &amp; core actions · {visibleAbilities.length}</SectionHeader>
@@ -193,9 +187,9 @@ export function ArsenalView({ state, onCastBuff }) {
       </section>
 
       <section>
-        <SectionHeader>Mastery</SectionHeader>
+        <SectionHeader>Proficiencies · {proficiencies.length}</SectionHeader>
         {proficiencies.length === 0 ? (
-          <div className="arsenal-empty">Practice in the field to establish your first mastery.</div>
+          <div className="arsenal-empty">Practice in the field to establish your first proficiency.</div>
         ) : (
           <div className="mastery-grid">
             {proficiencies.map((proficiency) => (
@@ -208,6 +202,6 @@ export function ArsenalView({ state, onCastBuff }) {
           </div>
         )}
       </section>
-    </div>
+    </DeckPage>
   );
 }

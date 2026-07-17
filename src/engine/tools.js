@@ -38,32 +38,45 @@ export function lightTorch(state) {
   };
 }
 
-// Light the hooded lantern. Needs the lantern, a flask of lamp-oil (consumed),
-// and a fire source. A lantern is a steady, bright, long light (≈4h) — full
-// sight — and can be hooded (extinguished) at will to go dark for stealth.
+// Light the hooded lantern. A fresh fill needs a flask of lamp-oil (consumed);
+// relighting a hooded reservoir reuses its remaining oil. Both need a fire
+// source. A lantern is a steady, bright, long light (≈4h) — full sight — and
+// can be hooded (extinguished) at will to go dark for stealth.
 export function lightLantern(state) {
   const ch = state.character;
+  const savedMinutes = Math.max(0, Number(ch.light?.minutes) || 0);
+  const relightingHoodedLantern = ch.light?.source === "lantern" && ch.light?.hooded && savedMinutes > 0;
   if (lightMinutes(state) > 5) return { state, ok: false, reason: "You already carry a burning light." };
   if (carriedQty(state, "lantern") < 1) return { state, ok: false, reason: "You have no lantern." };
-  if (carriedQty(state, "lamp-oil") < 1) return { state, ok: false, reason: "The lantern is dry — you need a flask of lamp-oil." };
   if (!FIRE_SOURCES.some((id) => carriedQty(state, id) > 0)) {
     return { state, ok: false, reason: "You need a tinderbox to strike the lantern alight." };
   }
+  if (relightingHoodedLantern) {
+    return {
+      ok: true,
+      summary: "You relight the lantern and draw back its hood; the steady glow returns.",
+      state: { ...state, character: { ...ch, light: { source: "lantern", minutes: savedMinutes } } },
+    };
+  }
+  if (carriedQty(state, "lamp-oil") < 1) return { state, ok: false, reason: "The lantern is dry — you need a flask of lamp-oil." };
   const inventory = applyInventoryChanges(ch.inventory, { removed: [{ itemId: "lamp-oil", quantity: 1 }] }, state.time.day);
   const light = { source: "lantern", minutes: LANTERN_MINUTES };
   return {
     ok: true,
-    summary: "You feed the lantern a flask of oil and strike it alight — a steady, hooded glow you can carry or shutter at will.",
+    summary: "You feed the lantern a flask of oil and strike it alight — a steady glow you can carry or shutter at will.",
     state: { ...state, character: { ...ch, inventory, light } },
   };
 }
 
-// Snuff or hood your light to go dark on purpose (to hide, or to save a torch).
+// Snuff a torch or douse and hood a lantern to go dark on purpose. A lantern
+// keeps the unburned oil in its reservoir so it can be relit later.
 export function extinguish(state) {
   const ch = state.character;
   if (lightMinutes(state) <= 0) return { state, ok: false, reason: "You carry no burning light." };
   const wasLantern = ch.light?.source === "lantern";
-  const light = { source: null, minutes: 0 };
+  const light = wasLantern
+    ? { source: "lantern", minutes: lightMinutes(state), hooded: true }
+    : { source: null, minutes: 0 };
   return {
     ok: true,
     summary: wasLantern ? "You slide the lantern's hood shut and the dark rushes back in." : "You snuff the torch — the dark rushes back in.",
@@ -121,7 +134,11 @@ export function applyRest(state, hours) {
     conditions = [...conditions, { name: "Rested", remaining: conditionMeta("Rested").duration }];
   }
   const burned = Math.max(0, lightMinutes(state) - minutes);
-  const light = burned > 0 ? { source: ch.light?.source || "torch", minutes: burned } : { source: null, minutes: 0 };
+  const light = ch.light?.hooded && ch.light?.source === "lantern"
+    ? { source: "lantern", minutes: Math.max(0, Number(ch.light.minutes) || 0), hooded: true }
+    : burned > 0
+      ? { source: ch.light?.source || "torch", minutes: burned }
+      : { source: null, minutes: 0 };
 
   const gains = [];
   if (sleepGain > 0) gains.push(`+${sleepGain} sleep`);

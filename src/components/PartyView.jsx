@@ -1,5 +1,6 @@
 import React from "react";
 import { Panel, SectionHeader } from "./primitives.jsx";
+import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import { colors, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { partyMembers, mountMembers, nonMountPartyMembers } from "../engine/party.js";
@@ -82,13 +83,12 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInvento
   };
 
   return (
-    <div className="company-view deck-view" style={{ padding: "2px 16px 8px", color: colors.parchment }}>
-      <div className="deck-view__heading" style={{ marginBottom: "12px" }}>
-        <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "24px", color: colors.parchmentLight, lineHeight: 1.05 }}>Your Company</div>
-        <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.7)", marginTop: "2px" }}>
-          {members.length === 0 ? "Travelling alone" : `${people.length} companion${people.length === 1 ? "" : "s"}${mounts.length ? ` · ${mounts.length} mount${mounts.length === 1 ? "" : "s"}` : ""}`}
-        </div>
-      </div>
+    <DeckPage className="company-view">
+      <DeckPageHeader
+        icon="company"
+        title="Company"
+        subtitle={members.length === 0 ? "Travelling alone" : `${people.length} companion${people.length === 1 ? "" : "s"}${mounts.length ? ` · ${mounts.length} mount${mounts.length === 1 ? "" : "s"}` : ""}`}
+      />
 
       <div>
         {members.length === 0 && (
@@ -213,7 +213,7 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInvento
           </Panel>
         ))}
       </div>
-    </div>
+    </DeckPage>
   );
 }
 

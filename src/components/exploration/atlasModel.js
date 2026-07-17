@@ -14,6 +14,7 @@ import {
   isTeleportAnchor,
   isVisited,
 } from "../../engine/world.js";
+import { sightRadius } from "../../engine/light.js";
 
 export const TERRAIN_INK = {
   road: "#d0a765",
@@ -103,6 +104,7 @@ export function buildRpgViewport(state, origin = state.world.currentTile, active
   const quests = activeQuests || (state.world.quests || []).filter((quest) => quest.status === "active");
   const radiusX = Math.floor(RPG_VIEW_COLS / 2);
   const radiusY = Math.floor(RPG_VIEW_ROWS / 2);
+  const visibleRadius = sightRadius(state);
   const cells = [];
   for (let row = 0; row < RPG_VIEW_ROWS; row++) {
     for (let col = 0; col < RPG_VIEW_COLS; col++) {
@@ -110,11 +112,15 @@ export function buildRpgViewport(state, origin = state.world.currentTile, active
       const y = origin.y + row - radiusY;
       const key = `${x},${y}`;
       const tile = getTile(state, x, y);
-      const seen = isSeen(state, x, y);
+      const visible = hexDistance(origin, { x, y }) <= visibleRadius;
+      const seen = visible || isSeen(state, x, y);
+      const visited = isVisited(state, x, y);
       cells.push({
         key, x, y, col, row, tile,
         seen,
-        visited: isVisited(state, x, y),
+        visible,
+        visited,
+        explored: seen || visited,
         passable: isPassable(tile),
         quest: questAtKey(quests, key),
         current: x === origin.x && y === origin.y,

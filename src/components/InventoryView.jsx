@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Icon, ItemIcon } from "./Icon.jsx";
+import { ItemIcon } from "./Icon.jsx";
+import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import { SectionHeader, insetBoxStyle } from "./primitives.jsx";
 import { colors, radius, fonts, metaStyle } from "./tokens.js";
 import { SLOTS, equipSlot, slotCapacity } from "../engine/combat-stats.js";
@@ -87,14 +88,8 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
   const coins = target.inv?.coins;
 
   return (
-    <div className="inventory-view deck-view" style={{ padding: "2px 16px 8px", display: "flex", flexDirection: "column", gap: "14px", color: colors.parchment }}>
-      <div className="inventory-hero">
-        <div className="inventory-hero__icon" aria-hidden="true"><Icon name="inventory" size={28} /></div>
-        <div>
-          <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "24px", color: colors.parchmentLight, lineHeight: 1.05 }}>Inventory</div>
-          <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.16em", color: "rgba(215, 167, 111, 0.7)", marginTop: "2px" }}>Gear · pack · wealth</div>
-        </div>
-      </div>
+    <DeckPage className="inventory-view">
+      <DeckPageHeader icon="inventory" title="Inventory" subtitle="Gear · pack · wealth" />
 
       {/* Member-switch pills — only when the party has anyone in it. */}
       {showPills && (
@@ -239,7 +234,7 @@ export function InventoryView({ state, onEquip, onUnequip, onUse, onLightTorch, 
           onClose={() => setDetail(null)}
         />
       )}
-    </div>
+    </DeckPage>
   );
 }
 

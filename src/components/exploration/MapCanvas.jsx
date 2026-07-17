@@ -7,7 +7,6 @@ import { POI_ATLAS_CELL, poiIconMeta } from "../../data/poi-icons.js";
 import { marketPriceTierVisual } from "../../data/town.js";
 import {
   ATLAS_CELLS,
-  SQRT_3,
   buildMapLayout,
   buildRouteSegments,
   findInteractiveEntry,
@@ -93,7 +92,7 @@ function drawTerrain(context, scene, entries, atlas) {
       context.fillStyle = "rgba(12, 27, 66, .42)";
       context.fillRect(entry.bounds.minX, entry.bounds.minY, entry.bounds.width, entry.bounds.height);
     }
-    if (entry.cell.seen !== false) {
+    if (entry.cell.explored !== false) {
       context.fillStyle = entry.cell.visited ? "rgba(255, 230, 146, .035)" : "rgba(28, 112, 122, .075)";
       context.fillRect(entry.bounds.minX, entry.bounds.minY, entry.bounds.width, entry.bounds.height);
     }
@@ -125,6 +124,7 @@ function strokeRoute(context, segments, width) {
 }
 
 function drawSelection(context, entry) {
+  if (!entry) return;
   tracePolygon(context, entry.polygon);
   context.strokeStyle = "rgba(255, 199, 64, .22)";
   context.lineWidth = Math.max(9, entry.size * 0.22);
@@ -191,7 +191,7 @@ function drawPoiTierMarker(context, x, y, markerRadius, marketTier) {
   context.restore();
 }
 
-function drawPoi(context, entry, selected, poiAtlases) {
+function drawPoi(context, entry, poiAtlases) {
   const size = Math.max(8, Math.min(19, entry.size * 0.33));
   const { x, y } = entry.center;
   const diamond = (offsetX, offsetY, radius, color) => {
@@ -242,46 +242,33 @@ function drawPoi(context, entry, selected, poiAtlases) {
     context.strokeText("!", x + markerRadius * 0.72, y - markerRadius * 1.05);
     context.fillText("!", x + markerRadius * 0.72, y - markerRadius * 1.05);
   }
-  if (selected) drawLabel(context, entry.cell.poi_name, x, y + markerRadius * 1.2, entry.size);
 }
 
 function drawMarkers(context, scene, entries, poiAtlases) {
   for (const entry of entries) {
-    if (entry.cell.seen === false) continue;
-    if (entry.key === String(scene.selected_key || "")) drawSelection(context, entry);
+    if (entry.cell.explored === false) continue;
     if (entry.cell.poi_name && entry.key !== String(scene.current_key || "")) {
-      drawPoi(context, entry, entry.key === String(scene.selected_key || ""), poiAtlases);
+      drawPoi(context, entry, poiAtlases);
     }
   }
 }
 
-function drawFog(context, scene, entries, width, height) {
+function drawFog(context, scene, entries) {
   if (scene.mode !== "world") return;
-  const fogCanvas = context.canvas.ownerDocument?.createElement("canvas");
-  if (!fogCanvas) return;
-  fogCanvas.width = Math.max(1, Math.ceil(width));
-  fogCanvas.height = Math.max(1, Math.ceil(height));
-  const fog = fogCanvas.getContext("2d");
-  fog.fillStyle = scene.night ? "rgba(2, 7, 28, .97)" : "rgba(3, 13, 25, .93)";
-  fog.fillRect(0, 0, width, height);
-  fog.globalCompositeOperation = "destination-out";
+  // Three explicit states: visible terrain is clear, remembered terrain keeps
+  // its map detail beneath a dark fog layer, and unknown geography stays black.
+  // Per-cell fog keeps accumulated exploration authoritative as the camera
+  // moves instead of re-covering remembered edge cells with a full-screen mask.
   for (const entry of entries) {
-    if (!entry.cell.seen) continue;
-    const radiusScale = entry.cell.visited ? 1.34 : 1.16;
-    const radiusX = Math.max(1, SQRT_3 * entry.size * 0.62 * radiusScale);
-    const radiusY = Math.max(1, entry.size * 0.92 * radiusScale);
-    fog.save();
-    fog.translate(entry.center.x, entry.center.y);
-    fog.scale(radiusX, radiusY);
-    const reveal = fog.createRadialGradient(0, 0, 0.18, 0, 0, 1);
-    reveal.addColorStop(0, "rgba(0, 0, 0, 1)");
-    reveal.addColorStop(0.68, "rgba(0, 0, 0, .98)");
-    reveal.addColorStop(1, "rgba(0, 0, 0, 0)");
-    fog.fillStyle = reveal;
-    fog.fillRect(-1, -1, 2, 2);
-    fog.restore();
+    if (entry.cell.visible) continue;
+    tracePolygon(context, entry.polygon);
+    if (entry.cell.explored) {
+      context.fillStyle = scene.night ? "rgba(2, 7, 28, .68)" : "rgba(3, 13, 25, .54)";
+    } else {
+      context.fillStyle = scene.night ? "rgba(2, 7, 28, .98)" : "rgba(3, 13, 25, .94)";
+    }
+    context.fill();
   }
-  context.drawImage(fogCanvas, 0, 0, width, height);
 }
 
 function drawPlayer(context, entry) {
@@ -346,7 +333,8 @@ export function renderMap(context, scene, layout, atlas, poiAtlases, hoverKey, w
     : Math.max(4, layout.cityCellSize * 0.1);
   strokeRoute(context, buildRouteSegments(scene.route, layout.centerByKey), routeWidth);
   drawMarkers(context, scene, layout.entries, poiAtlases);
-  drawFog(context, scene, layout.entries, width, height);
+  drawFog(context, scene, layout.entries);
+  drawSelection(context, layout.entries.find((entry) => entry.key === String(scene.selected_key || "")));
   drawPlayer(context, layout.entries.find((entry) => entry.key === String(scene.current_key || "")));
   drawHover(context, layout.entries.find((entry) => entry.key === hoverKey));
 

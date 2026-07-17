@@ -102,7 +102,7 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
 
       <nav className="compact-header__actions" aria-label="World and dossier">
         <button className="compact-header__action" onClick={onMap} aria-label="World atlas"><Icon name="atlas" size={22} /></button>
-        <button className="compact-header__action" onClick={onOpenDeck} aria-label="Character, company, abilities, inventory, and codex">
+        <button className="compact-header__action" onClick={onOpenDeck} aria-label="Character, company, skills, inventory, and codex">
           <Icon name="character" size={21} />
           {partyCount > 0 && (
             <span className="compact-header__party-count">{partyCount}</span>
