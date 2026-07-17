@@ -21,11 +21,11 @@ export const TASK_POOL = [
 ];
 
 export const JOB_POOL = [
-  { key: "ferry-haul",  title: "Haul cargo at the ferry", hours: 5, payCp: 6,  needs: { hunger: -12, thirst: -14, sleep: -6 },  desc: "Load and unload the ferry-barges till your back aches." },
-  { key: "taproom",     title: "Work the taproom",        hours: 6, payCp: 8,  needs: { hunger: -8,  thirst: -6,  sleep: -10 }, desc: "Pull ale and clear tables through a long, loud evening." },
-  { key: "muck-stable", title: "Muck out the stable",     hours: 3, payCp: 4,  needs: { hunger: -6,  thirst: -8,  sleep: -2 },  desc: "Filthy, quick work for quick coin." },
-  { key: "dig-drains",  title: "Dig drains in the market", hours: 8, payCp: 10, needs: { hunger: -16, thirst: -18, sleep: -8 }, desc: "A full day in the wet and the cold. Pays a labourer's wage." },
-  { key: "night-watch", title: "Stand the night-watch",   hours: 8, payCp: 12, needs: { hunger: -6,  thirst: -6,  sleep: -28 }, desc: "A night on the wall, watching the dark and fighting sleep." },
+  { key: "ferry-haul",  professionId: "labourer", title: "Haul cargo at the ferry", hours: 5, payCp: 6,  needs: { hunger: -12, thirst: -14, sleep: -6 },  desc: "Load and unload the ferry-barges till your back aches." },
+  { key: "taproom",     professionId: "innkeeper", title: "Work the taproom",        hours: 6, payCp: 8,  needs: { hunger: -8,  thirst: -6,  sleep: -10 }, desc: "Pull ale and clear tables through a long, loud evening." },
+  { key: "muck-stable", professionId: "farmer",    title: "Muck out the stable",     hours: 3, payCp: 4,  needs: { hunger: -6,  thirst: -8,  sleep: -2 },  desc: "Filthy, quick work for quick coin." },
+  { key: "dig-drains",  professionId: "labourer", title: "Dig drains in the market", hours: 8, payCp: 10, needs: { hunger: -16, thirst: -18, sleep: -8 }, desc: "A full day in the wet and the cold. Pays a labourer's wage." },
+  { key: "night-watch", professionId: "fighter",   title: "Stand the night-watch",   hours: 8, payCp: 12, needs: { hunger: -6,  thirst: -6,  sleep: -28 }, desc: "A night on the wall, watching the dark and fighting sleep." },
 ];
 
 export const BOARD_REFRESH_DAYS = 3;

@@ -16,7 +16,9 @@ import {
   ATLAS_LANDMARKS,
   ATLAS_LAYERS,
   ATLAS_MAX_ZOOM,
+  ATLAS_TILT,
   atlasFitZoom,
+  atlasPlaneViewport,
   atlasLandmarkLayer,
   atlasLandmarkTypeLabel,
   atlasMarkerVisible,
@@ -30,6 +32,8 @@ import {
   landmarkKnowledge,
   markerZoomTier,
   summarizeAtlasJourney,
+  tiltPlaneToScreen,
+  tiltScreenToPlane,
   zoomAtlasCamera,
 } from "./worldAtlasModel.js";
 
@@ -87,6 +91,49 @@ describe("atlas camera", () => {
     const camera = clampAtlasCamera({ x: 99999, y: -99999, zoom: 6 }, VIEWPORT);
     expect(camera.x).toBeLessThanOrEqual(1200);
     expect(camera.y).toBeGreaterThanOrEqual(-800);
+  });
+});
+
+describe("tabletop tilt projection", () => {
+  const plane = atlasPlaneViewport(VIEWPORT, ATLAS_TILT);
+
+  it("oversizes the plane so the leaned table still covers every stage corner", () => {
+    expect(plane.width).toBeGreaterThan(VIEWPORT.width);
+    expect(plane.height).toBeGreaterThan(VIEWPORT.height);
+    for (const corner of [
+      { x: 0, y: 0 },
+      { x: VIEWPORT.width, y: 0 },
+      { x: 0, y: VIEWPORT.height },
+      { x: VIEWPORT.width, y: VIEWPORT.height },
+    ]) {
+      const onPlane = tiltScreenToPlane(corner, VIEWPORT, plane, ATLAS_TILT);
+      expect(onPlane.x).toBeGreaterThanOrEqual(-1);
+      expect(onPlane.x).toBeLessThanOrEqual(plane.width + 1);
+      expect(onPlane.y).toBeGreaterThanOrEqual(-1);
+      expect(onPlane.y).toBeLessThanOrEqual(plane.height + 1);
+    }
+  });
+
+  it("round-trips stage and plane points exactly, so picking matches the pixels", () => {
+    for (const point of [{ x: 240, y: 130 }, { x: 12, y: 8 }, { x: 900, y: 520 }]) {
+      const onPlane = tiltScreenToPlane(point, VIEWPORT, plane, ATLAS_TILT);
+      const back = tiltPlaneToScreen(onPlane, VIEWPORT, plane, ATLAS_TILT);
+      expect(back.x).toBeCloseTo(point.x, 6);
+      expect(back.y).toBeCloseTo(point.y, 6);
+    }
+  });
+
+  it("magnifies the near edge and recedes the far edge like a leaned table", () => {
+    const run = (planeY) => tiltPlaneToScreen({ x: plane.width / 2 + 50, y: planeY }, VIEWPORT, plane, ATLAS_TILT).x
+      - tiltPlaneToScreen({ x: plane.width / 2, y: planeY }, VIEWPORT, plane, ATLAS_TILT).x;
+    expect(run(plane.height * 0.9)).toBeGreaterThan(50);
+    expect(run(plane.height * 0.1)).toBeLessThan(50);
+  });
+
+  it("is the identity when the tilt is disabled", () => {
+    expect(atlasPlaneViewport(VIEWPORT, null)).toEqual({ width: VIEWPORT.width, height: VIEWPORT.height });
+    expect(tiltScreenToPlane({ x: 31, y: 57 }, VIEWPORT, VIEWPORT, null)).toEqual({ x: 31, y: 57 });
+    expect(tiltPlaneToScreen({ x: 31, y: 57 }, VIEWPORT, VIEWPORT, null)).toEqual({ x: 31, y: 57 });
   });
 });
 
@@ -181,6 +228,11 @@ describe("world atlas component", () => {
     expect(html).toContain(`>${CONTINENT.name}</h3>`);
     expect(html).toContain('role="application"');
     expect(html).toContain("Arrow keys pan");
+    // The tabletop 3D view is the default, with an accessible 2D switch.
+    expect(html).toContain('class="world-atlas is-tilted"');
+    expect(html).toContain('class="world-atlas__plane"');
+    expect(html).toContain('aria-label="Switch to the flat chart view"');
+    expect(html).toContain("charted places");
     expect(html.match(/class="world-atlas__marker /g)).toHaveLength(ATLAS_LANDMARKS.length);
     expect(html).toContain('aria-label="Five biome realms"');
     expect(html).toContain('aria-label="Atlas marker layers"');
@@ -222,6 +274,6 @@ describe("world atlas component", () => {
     expect(html).toContain('class="world-atlas__journey"');
     expect(html).toContain('class="world-atlas__leg-stop"');
     expect(html).toContain("Journey laid out");
-    expect(html).toContain("Set route");
+    expect(html).toContain("Set compass");
   });
 });

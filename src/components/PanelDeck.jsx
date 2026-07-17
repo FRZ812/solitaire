@@ -14,8 +14,9 @@ import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 import { PLAYER_PORTRAIT_ID, portraitOverrideFor } from "../engine/portrait-overrides.js";
 import { characterArchetype } from "../data/character-archetypes.js";
-import { progressionLevel } from "../engine/progression.js";
-import { levelTier } from "../data/progression-paths.js";
+import * as progressionEngine from "../engine/progression.js";
+import { canonicalProfessionId } from "../data/progression-paths.js";
+import { PROFESSIONS } from "../data/professions.js";
 
 // The unified character deck: Company · Character · Skills · Inventory ·
 // Codex · Settings as six pages of one
@@ -23,6 +24,9 @@ import { levelTier } from "../data/progression-paths.js";
 // Character). Sections change only through the visible tabs so a horizontal
 // gesture never steals an ordinary scroll inside a page.
 const PAGES = ["party", "character", "abilities", "inventory", "codex", "settings"];
+const progressionLevel = progressionEngine.progressionLevel;
+const professionProgressionLevel = progressionEngine.professionProgressionLevel || progressionLevel;
+const racialProgressionLevel = progressionEngine.racialProgressionLevel || ((character) => Object.values(character?.progression?.racial?.paths || {}).reduce((sum, rank) => sum + (Number(rank) || 0), 0));
 const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", codex: "Codex", settings: "Settings" };
 const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", codex: "codex", settings: "settings" };
 
@@ -240,6 +244,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 onTrackCharacter={handlers.onTrackCharacter}
                 onRenameMount={handlers.onRenameMount}
                 onPortraitChange={handlers.onPortraitChange}
+                onChooseProgression={handlers.onChooseProgression}
               />
             )}
             {activePage === "settings" && (
@@ -277,10 +282,12 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
   const wanderer = state.world?.codex?.characters?.wanderer || {};
   const identityRecord = { ...character, ...wanderer };
   const raceLabel = labelize(identityRecord.race);
-  const professionLabel = labelize(identityRecord.profession);
+  const professionId = canonicalProfessionId(identityRecord.profession) || identityRecord.profession;
+  const professionLabel = PROFESSIONS[professionId]?.name || labelize(professionId);
   const archetype = characterArchetype(identityRecord);
   const level = Math.max(1, progressionLevel(identityRecord));
-  const powerTier = levelTier(level);
+  const racialLevel = racialProgressionLevel(identityRecord);
+  const professionLevel = professionProgressionLevel(identityRecord);
   const portraitOverride = portraitOverrideFor(state, PLAYER_PORTRAIT_ID);
   const portrait = resolveCharacterPortrait(identityRecord, dossierPortrait, portraitOverride);
   const customPortrait = !!portraitOverride;
@@ -364,8 +371,10 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
               {professionLabel && <strong className="is-profession"><em>Profession</em>{professionLabel}</strong>}
             </>
           ) : <span>Wanderer</span>}
-          {archetype && <strong className="is-archetype"><em>Archetype</em>{archetype.label}</strong>}
-          <strong className="is-level"><em>Level</em>{level} · {powerTier.label}</strong>
+          {archetype && <strong className="is-archetype"><em>Specialization</em>{archetype.label}</strong>}
+          <strong className="is-level"><em>Level</em>{level}</strong>
+          <strong className="is-level"><em>Race</em>{racialLevel} / 30</strong>
+          <strong className="is-level"><em>Professions</em>{professionLevel} / 70</strong>
         </div>
         {(identityRecord.bond || character.bond) && <p>{identityRecord.bond || character.bond}</p>}
       </div>

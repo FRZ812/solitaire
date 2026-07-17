@@ -25,7 +25,7 @@ describe("generated Codex character progression", () => {
 
     const warden = codex.characters["old-bridge-warden"];
     expect(progressionLevel(warden)).toBe(60);
-    expect(warden.progression).toMatchObject({ version: 1, professionId: "warden", archetypeId: "river-sentinel" });
+    expect(warden.progression).toMatchObject({ version: 2, professionId: "ranger", archetypeId: "river-sentinel" });
     expect(Math.max(...Object.values(warden.attributes))).toBeLessThanOrEqual(attributeCeilingForLevel(60));
     expect(warden).not.toHaveProperty("level");
   });

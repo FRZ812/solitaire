@@ -59,6 +59,8 @@ export const PASSIVE_CAPS = {
   turnRegen: 0.12, shieldGen: 0.12, magicShieldGen: 0.12, invulnCharges: 3,
   controlResist: 0.6, healPower: 1.0, dmgDefer: 0.6,
   phaseChance: 0.4, dodgeIgnore: 1, // Phantom's uncounterable evade; Deadeye's no-dodge strikes
+  // Racial progression passives are unique entitlements, not stackable affixes.
+  adaptable: 0.5, dragonHeart: 0.1, racialRegeneration: 0.05,
 };
 
 // Each passive: scope, type, key (what it modifies), minTier (lowest grade it can
@@ -86,6 +88,14 @@ export const PASSIVES = [
   { id: "vampiric",   name: "Vampiric",     cat: "sustain", scope: "combat", type: "trigger", key: "lifesteal", minTier: "rare",     amount: (n) => 3 + n,                desc: "Heals for a small share of damage dealt." },
   { id: "renewing",   name: "Renewing",     cat: "sustain", scope: "combat", type: "trigger", key: "turnRegen", minTier: "epic",     amount: (n) => 0.04 + n * 0.008, desc: "Knits a share of your wounds each turn — scales with your vitality." },
   { id: "benediction",name: "Benediction",  cat: "sustain", scope: "combat", type: "stat",    key: "healPower", minTier: "rare",     amount: (n) => 0.10 + n * 0.04,      desc: "Amplifies ALL healing you receive — regen, lifesteal, and mended wounds all hit harder." },
+
+  // ---------- RACIAL PROGRESSION (earned, never rolled or free-authored) ----------
+  // These ids are deliberately progressionExclusive. A save only receives their
+  // mechanics when the allocated racial ladder actually grants them; putting the
+  // same id in racialPassives or on an item cannot bypass the level threshold.
+  { id: "adaptable",   name: "Adaptable",   cat: "racial", scope: "combat", type: "trigger", key: "adaptable",          noRoll: true, progressionExclusive: true, minTier: "common", amount: () => 0.5,  desc: "Learns combat proficiencies 50% faster and reduces the penalty for unfamiliar abilities." },
+  { id: "dragon-heart",name: "Dragon Heart",cat: "racial", scope: "combat", type: "trigger", key: "dragonHeart",        noRoll: true, progressionExclusive: true, minTier: "common", amount: () => 0.1,  desc: "Increases maximum vitality by 10% and blunts fear magic." },
+  { id: "regeneration",name: "Regeneration",cat: "racial", scope: "combat", type: "trigger", key: "racialRegeneration", noRoll: true, progressionExclusive: true, minTier: "common", amount: () => 0.05, desc: "Restores 5% of maximum health each turn unless the lineage's weakness suppresses it." },
 
   // ---------- RESOURCE / TEMPO (resolve, initiative, action economy) ----------
   { id: "tireless",   name: "Fleet-Footed", cat: "tempo", scope: "combat", type: "stat", key: "speed",       minTier: "uncommon",  amount: (n) => 1 + Math.floor(n / 2), desc: "Acts sooner — raises initiative." },
@@ -184,6 +194,16 @@ export const PASSIVES = [
 const BY_ID = Object.fromEntries(PASSIVES.map((p) => [p.id, p]));
 export function passiveDef(id) { return BY_ID[id] || null; }
 
+// Progression grants are usually ungraded. Clamp them to the passive's normal
+// floor so an authored Stoneskin/Undying milestone cannot accidentally become a
+// common-grade affix merely because its racial row omitted an item-style tier.
+export function clampPassiveTier(id, tierId = "common") {
+  const def = passiveDef(id);
+  const requested = tierInfo(tierId || "common");
+  const floor = tierInfo(def?.minTier || "common");
+  return requested.order < floor.order ? floor.id : requested.id;
+}
+
 // Magnitude of a passive instance at a given tier.
 export function passiveMagnitude(id, tierId) {
   const def = BY_ID[id];
@@ -198,7 +218,7 @@ export function passiveLabel(id, tierId) {
   const v = def.amount(o(tierId));
   if (def.type === "proc") return def.name; // proc magnitude is contextual — name carries it
   if (def.key === "reviveOnce" || def.key === "dodgeIgnore") return def.name;
-  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance", "coinBonus", "reviveOnce", "turnRegen", "shieldGen", "magicShieldGen", "healPower", "dmgDefer", "phaseChance"]; // stored 0..1
+  const fracKeys = ["damageMult", "drPct", "travelMult", "needDecayMult", "critMult", "fortify", "swiftChance", "coinBonus", "reviveOnce", "turnRegen", "shieldGen", "magicShieldGen", "healPower", "dmgDefer", "phaseChance", "adaptable", "dragonHeart", "racialRegeneration"]; // stored 0..1
   const wholePctKeys = ["lifesteal", "thorns"];        // stored as whole %, render with a % suffix
   const pctSuffixKeys = ["critChance", "dodge"];       // whole numbers that ARE percentages
   if (fracKeys.includes(def.key)) return `${def.name} ${Math.round(v * 100)}%`;
@@ -258,6 +278,9 @@ const KEY_EFFECT = {
   magicShieldGen: { s: "pct", p: (n) => `gain a magic ward worth ${n}% of max health each turn` },
   invulnCharges:{ s: "flat", p: (n) => `near death, turn briefly invulnerable (${n} charge${plur(n)} per fight)` },
   reviveOnce:  { s: "pct",  p: (n) => `once per fight, cheat death and revive at ${n}% health` },
+  adaptable:   { s: "pct",  p: (n) => `earn ${n}% more combat-proficiency XP and reduce unfamiliar-ability penalties` },
+  dragonHeart: { s: "pct",  p: (n) => `+${n}% maximum health and halve the force of fear effects` },
+  racialRegeneration: { s: "pct", p: (n) => `restore ${n}% of max health each turn unless a racial weakness suppresses it` },
   // world / exploration
   travelMult:   { s: "pct", p: (n) => `travel takes ${n}% less time` },
   coinBonus:    { s: "pct", p: (n) => `+${n}% coin looted from the fallen` },
@@ -431,6 +454,9 @@ export function aggregateCombatPassives(list, attrs = null) {
   if (triggers.shieldGen != null) triggers.shieldGen = Math.min(triggers.shieldGen, PASSIVE_CAPS.shieldGen);
   if (triggers.magicShieldGen != null) triggers.magicShieldGen = Math.min(triggers.magicShieldGen, PASSIVE_CAPS.magicShieldGen);
   if (triggers.invulnCharges != null) triggers.invulnCharges = Math.min(triggers.invulnCharges, PASSIVE_CAPS.invulnCharges);
+  if (triggers.adaptable != null) triggers.adaptable = Math.min(triggers.adaptable, PASSIVE_CAPS.adaptable);
+  if (triggers.dragonHeart != null) triggers.dragonHeart = Math.min(triggers.dragonHeart, PASSIVE_CAPS.dragonHeart);
+  if (triggers.racialRegeneration != null) triggers.racialRegeneration = Math.min(triggers.racialRegeneration, PASSIVE_CAPS.racialRegeneration);
   if (procs.length) triggers.procs = procs;
   return { statMods, triggers };
 }

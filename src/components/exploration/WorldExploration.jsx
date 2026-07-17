@@ -3,7 +3,7 @@ import { Icon } from "../Icon.jsx";
 import { FLY_MIN_PER_HEX, FLY_TRAVEL_HEXES, WORLD_MARCH_LIMIT } from "../../config.js";
 import { TERRAINS } from "../../data/terrains.js";
 import { getBiome, getBiomeById } from "../../data/biomes.js";
-import { biomeVisual, sceneBiomeId, terrainVisual } from "../../data/visual-assets.js";
+import { biomeVisual, sceneBiomeId } from "../../data/visual-assets.js";
 import { knownTravelSpells } from "../../data/travel-spells.js";
 import {
   currentLocationName,
@@ -19,8 +19,8 @@ import { playerFlightMount } from "../../engine/riding.js";
 import { formatDate, formatTime } from "../../engine/time.js";
 import { coinsToCopper, formatCopper } from "../../engine/economy.js";
 import { poiPartName, poiPlaceName } from "../../engine/location.js";
-import { buildingForService, MARKET_PRICE_TIERS } from "../../data/town.js";
-import { POI_LEGEND_GROUPS, poiIconKeyForTile } from "../../data/poi-icons.js";
+import { MARKET_PRICE_TIERS } from "../../data/town.js";
+import { POI_LEGEND_GROUPS } from "../../data/poi-icons.js";
 import { PoiIcon, PoiTierMarker } from "../PoiIcon.jsx";
 import {
   TERRAIN_INK,
@@ -35,16 +35,10 @@ import { buildWorldMapScene } from "./mapSceneModel.js";
 import partyArt from "../../assets/generated/scene-tellmar-road-v2.webp";
 import seekEncounterIcon from "../../assets/generated/ui-seek-encounter.png";
 import rewardArt from "../../assets/generated/scene-whitemarch-march-v2.webp";
-import atlasFolioHero from "../../assets/generated/atlas-folio-hero-v1.png";
 import questJournalFolioHero from "../../assets/generated/quest-journal-folio-hero-v1.png";
 import "./exploration.css";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
-const POI_GLYPHS = {
-  city: "♜", village: "⌂", town: "⌂", settlement: "⌂", fortress: "♜",
-  ruin: "⌁", temple: "✦", shrine: "✦", landmark: "◆", gate: "◇",
-  camp: "△", market: "◈", bldg: "⌂", smithy: "⚒", healer: "+",
-};
 const POI_LEGEND_HELP = Object.freeze({
   trade: "Places that sell goods or provide a practical service. Their icon tells you the specialty; a lettered ring shows the market tier and expected stock quality.",
   city: "Civic, social, and landmark venues. These are usually places for access, information, work, recovery, or story interactions rather than ordinary shopping.",
@@ -162,14 +156,6 @@ const MAP_GUIDE_ITEMS = Object.freeze([
   Object.freeze({ icon: "eye", label: "Visibility", tag: "Exploration", tone: "explore", description: "Clear tiles are currently visible, dim tiles are remembered, and black tiles remain unknown. Visiting and scouting keep geography on your map." }),
   Object.freeze({ icon: "alert", label: "Quest marks", tag: "Objective", tone: "social", description: "A gold exclamation mark on a destination means a known quest objective is tied to that place." }),
 ]);
-
-function glyphFor(tile) {
-  return POI_GLYPHS[tile?.poi?.type] || terrainVisual(tile?.terrain).glyph || "•";
-}
-
-function iconKeyFor(tile) {
-  return poiIconKeyForTile(tile, buildingForService(tile?.poi?.service)?.icon || null);
-}
 
 function cityDistrict(tile) {
   return tile?.districtName
@@ -544,42 +530,10 @@ function QuestJournalPage({ quests, current, onPick }) {
   );
 }
 
-function WorldAtlasPage({ state, landmarks, origin, onPick }) {
-  const usefulLandmarks = landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi));
-  const anchors = usefulLandmarks.filter((landmark) => landmark.anchor).length;
-  const objectives = usefulLandmarks.filter((landmark) => landmark.quest).length;
+function WorldAtlasPage({ state, origin, onPick }) {
   return (
     <div className="rpg-folio-page rpg-folio-page--atlas">
       <WorldAtlas state={state} origin={origin} onPick={onPick} />
-      <FolioOverview items={[
-        { label: "Known places", value: usefulLandmarks.length, icon: "atlas" },
-        { label: "Warp anchors", value: anchors, icon: "sparkle" },
-        { label: "Objectives", value: objectives, icon: "compass" },
-      ]} />
-      {usefulLandmarks.length === 0 ? (
-        <div className="rpg-folio-empty"><Icon name="atlas" size={30} /><h3>An unmarked horizon</h3><p>Follow a road or climb to high ground to begin charting the world.</p></div>
-      ) : (
-        <div className="rpg-folio-grid rpg-folio-grid--places">
-          {usefulLandmarks.map((landmark) => {
-            const biome = biomeAt(landmark, state.world.seed);
-            const visual = biomeVisual(biome.id);
-            const kind = landmark.quest ? "Objective" : landmark.anchor ? "Warp anchor" : biome.name;
-            const poiIconKey = iconKeyFor(landmark.tile);
-            return (
-              <button key={landmark.key} onClick={() => onPick(landmark)} className="rpg-folio-card rpg-folio-place" style={{ "--place-art": `url(${visual.image})`, "--place-accent": visual.accent }}>
-                <span className="rpg-folio-place__art" aria-hidden="true"><i>{landmark.quest ? "✦" : poiIconKey ? <PoiIcon iconKey={poiIconKey} size={32} marketTier={landmark.tile?.poi?.marketTier} /> : glyphFor(landmark.tile)}</i></span>
-                <span className="rpg-folio-card__copy">
-                  <small>{kind}</small>
-                  <strong>{nameForDestination(landmark, origin)}</strong>
-                  <em>{directionLabel(origin, landmark).replace("-", " ")} · {landmark.distance} {landmark.distance === 1 ? "step" : "steps"}</em>
-                  <span className="rpg-folio-card__action"><Icon name="compass" size={13} />Chart a route</span>
-                </span>
-                <span className="rpg-folio-card__arrow" aria-hidden="true">›</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -589,35 +543,54 @@ export function AdventureFolio({ state, page, quests, landmarks, origin, onPage,
     { id: "atlas", label: "World atlas", icon: "atlas", count: landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi)).length },
     { id: "quests", label: "Quest journal", icon: "journal", count: quests.length },
   ];
-  const title = page === "quests" ? "Quest Journal" : "World Atlas";
-  const description = page === "quests"
-    ? "Open obligations, promised rewards, and the next trail to follow."
-    : "Landmarks, sanctuaries, and roads remembered by the party.";
-  const heroArt = page === "quests" ? questJournalFolioHero : atlasFolioHero;
+  const isAtlas = page !== "quests";
   return (
     <div className="rpg-folio-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="rpg-folio" role="dialog" aria-modal="true" aria-labelledby="rpg-folio-title">
-        <header className={`rpg-folio-hero rpg-folio-hero--${page}`} style={{ "--folio-hero-art": `url(${heroArt})` }}>
-          <button onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label={`Close ${title.toLowerCase()}`}><Icon name="close" size={20} /></button>
-          <div className="rpg-folio-identity">
-            <small>Wayfinder's folio</small>
-            <h2 id="rpg-folio-title">{title}</h2>
-            <p>{description}</p>
+      <section
+        className={`rpg-folio${isAtlas ? " rpg-folio--map" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        {...(isAtlas ? { "aria-label": "World Atlas" } : { "aria-labelledby": "rpg-folio-title" })}
+      >
+        {isAtlas ? (
+          // The atlas reads like a maps app: the map owns the whole folio and
+          // the journal switch and close control float over it.
+          <div className="rpg-folio-map-chrome">
+            <button type="button" className="rpg-folio-map-journal" onClick={() => onPage("quests")}>
+              <Icon name="journal" size={15} strokeWidth={1.5} />
+              <span>Quest journal</span>
+              <b>{quests.length}</b>
+            </button>
+            <button onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label="Close world atlas"><Icon name="close" size={20} /></button>
           </div>
-          <div className="rpg-folio-tabs" role="tablist" aria-label="Folio sections">
-            {tabs.map((tab) => (
-              <button key={tab.id} id={`rpg-folio-tab-${tab.id}`} type="button" className={page === tab.id ? "is-active" : ""} onClick={() => onPage(tab.id)} role="tab" aria-selected={page === tab.id} aria-controls={`rpg-folio-panel-${tab.id}`}>
-                <Icon name={tab.icon} size={16} strokeWidth={1.5} />
-                <span>{tab.label}</span>
-                <b>{tab.count}</b>
-              </button>
-            ))}
-          </div>
-        </header>
-        <div key={page} id={`rpg-folio-panel-${page}`} className={`rpg-folio-body rpg-folio-body--${page}`} role="tabpanel" aria-labelledby={`rpg-folio-tab-${page}`}>
+        ) : (
+          <header className="rpg-folio-hero rpg-folio-hero--quests" style={{ "--folio-hero-art": `url(${questJournalFolioHero})` }}>
+            <button onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label="Close quest journal"><Icon name="close" size={20} /></button>
+            <div className="rpg-folio-identity">
+              <small>Wayfinder's folio</small>
+              <h2 id="rpg-folio-title">Quest Journal</h2>
+              <p>Open obligations, promised rewards, and the next trail to follow.</p>
+            </div>
+            <div className="rpg-folio-tabs" role="tablist" aria-label="Folio sections">
+              {tabs.map((tab) => (
+                <button key={tab.id} id={`rpg-folio-tab-${tab.id}`} type="button" className={page === tab.id ? "is-active" : ""} onClick={() => onPage(tab.id)} role="tab" aria-selected={page === tab.id} aria-controls={`rpg-folio-panel-${tab.id}`}>
+                  <Icon name={tab.icon} size={16} strokeWidth={1.5} />
+                  <span>{tab.label}</span>
+                  <b>{tab.count}</b>
+                </button>
+              ))}
+            </div>
+          </header>
+        )}
+        <div
+          key={page}
+          id={`rpg-folio-panel-${page}`}
+          className={`rpg-folio-body rpg-folio-body--${page}`}
+          {...(isAtlas ? { "aria-label": "World Atlas" } : { role: "tabpanel", "aria-labelledby": `rpg-folio-tab-${page}` })}
+        >
           {page === "quests"
             ? <QuestJournalPage quests={quests} current={origin} onPick={onPick} />
-            : <WorldAtlasPage state={state} landmarks={landmarks} origin={origin} onPick={onPick} />}
+            : <WorldAtlasPage state={state} origin={origin} onPick={onPick} />}
         </div>
       </section>
     </div>

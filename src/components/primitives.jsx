@@ -362,7 +362,7 @@ function RadialMeter({ className = "", iconName, iconFill, value, max, label, ar
 
 export function LoadingDots() {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "10px 2px", opacity: 0.78 }}>
+    <div className="loading-dots" style={{ display: "flex", alignItems: "center", gap: "6px", padding: "10px 2px", opacity: 0.78 }}>
       {[0, 1, 2].map((i) => (
         <div key={i} style={{
           width: "6px", height: "6px", borderRadius: "50%",

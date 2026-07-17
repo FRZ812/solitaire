@@ -83,6 +83,7 @@ describe("Codex portrait assets", () => {
     expect(Object.isFrozen(CODEX_PORTRAIT_MANIFEST)).toBe(true);
     for (const id of CODEX_PORTRAIT_IDS) {
       expect(CODEX_PORTRAIT_MANIFEST[id].label).toBe(canonicalCharacters[id].name);
+      expect(CODEX_PORTRAIT_MANIFEST[id].detailSrc).toContain(`codex-individual/${id}.webp`);
     }
 
     expect(resolveCodexPortrait("demon-king")).toBe(CODEX_PORTRAIT_MANIFEST["demon-king"]);

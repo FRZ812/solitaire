@@ -1,8 +1,57 @@
 import importantAtlas from "../assets/generated/character-portraits/codex-important-atlas-v1.png";
 import successorAtlas from "../assets/generated/character-portraits/codex-successors-atlas-v1.png";
+import demonKingPortrait from "../assets/generated/character-portraits/codex-individual/demon-king.webp";
+import valeKingAsarPortrait from "../assets/generated/character-portraits/codex-individual/vale-king-asar.webp";
+import goblinKingPortrait from "../assets/generated/character-portraits/codex-individual/goblin-king.webp";
+import selenyanSpeakerPortrait from "../assets/generated/character-portraits/codex-individual/selenyan-speaker.webp";
+import glassSpireMasterPortrait from "../assets/generated/character-portraits/codex-individual/glass-spire-master.webp";
+import greatWyrmPortrait from "../assets/generated/character-portraits/codex-individual/great-wyrm.webp";
+import hawthornLordPortrait from "../assets/generated/character-portraits/codex-individual/hawthorn-lord.webp";
+import witchQueenPortrait from "../assets/generated/character-portraits/codex-individual/witch-queen.webp";
+import crowsmoorBaronPortrait from "../assets/generated/character-portraits/codex-individual/crowsmoor-baron.webp";
+import whitemarchTreasurerPortrait from "../assets/generated/character-portraits/codex-individual/whitemarch-treasurer.webp";
+import cinderChapterMasterPortrait from "../assets/generated/character-portraits/codex-individual/cinder-chapter-master.webp";
+import stonebrookHoldFatherPortrait from "../assets/generated/character-portraits/codex-individual/stonebrook-hold-father.webp";
+import halfbornMatriarchPortrait from "../assets/generated/character-portraits/codex-individual/halfborn-matriarch.webp";
+import heronMasterPortrait from "../assets/generated/character-portraits/codex-individual/heron-master.webp";
+import hagPortrait from "../assets/generated/character-portraits/codex-individual/the-hag.webp";
+import kingOfThreePortrait from "../assets/generated/character-portraits/codex-individual/king-of-three.webp";
+import valeKingAsarViPortrait from "../assets/generated/character-portraits/codex-individual/vale-king-asar-vi.webp";
+import halfbornMatriarchElectPortrait from "../assets/generated/character-portraits/codex-individual/halfborn-matriarch-elect-brann.webp";
+import stonebrookHoldFatherKorroPortrait from "../assets/generated/character-portraits/codex-individual/stonebrook-hold-father-korro.webp";
+import whitemarchTreasurerHalenPortrait from "../assets/generated/character-portraits/codex-individual/whitemarch-treasurer-halen.webp";
+import cinderChapterMasterTovarPortrait from "../assets/generated/character-portraits/codex-individual/cinder-chapter-master-tovar.webp";
+import crowsmoorBaronHeirPortrait from "../assets/generated/character-portraits/codex-individual/crowsmoor-baron-heir.webp";
+import heronMasterApprenticePortrait from "../assets/generated/character-portraits/codex-individual/heron-master-apprentice.webp";
 
 const dimensions = (width, height) => Object.freeze({ width, height });
 const grid = (columns, rows) => Object.freeze({ columns, rows });
+
+const DETAIL_PORTRAITS = Object.freeze({
+  "demon-king": demonKingPortrait,
+  "vale-king-asar": valeKingAsarPortrait,
+  "goblin-king": goblinKingPortrait,
+  "selenyan-speaker": selenyanSpeakerPortrait,
+  "glass-spire-master": glassSpireMasterPortrait,
+  "great-wyrm": greatWyrmPortrait,
+  "hawthorn-lord": hawthornLordPortrait,
+  "witch-queen": witchQueenPortrait,
+  "crowsmoor-baron": crowsmoorBaronPortrait,
+  "whitemarch-treasurer": whitemarchTreasurerPortrait,
+  "cinder-chapter-master": cinderChapterMasterPortrait,
+  "stonebrook-hold-father": stonebrookHoldFatherPortrait,
+  "halfborn-matriarch": halfbornMatriarchPortrait,
+  "heron-master": heronMasterPortrait,
+  "the-hag": hagPortrait,
+  "king-of-three": kingOfThreePortrait,
+  "vale-king-asar-vi": valeKingAsarViPortrait,
+  "halfborn-matriarch-elect-brann": halfbornMatriarchElectPortrait,
+  "stonebrook-hold-father-korro": stonebrookHoldFatherKorroPortrait,
+  "whitemarch-treasurer-halen": whitemarchTreasurerHalenPortrait,
+  "cinder-chapter-master-tovar": cinderChapterMasterTovarPortrait,
+  "crowsmoor-baron-heir": crowsmoorBaronHeirPortrait,
+  "heron-master-apprentice": heronMasterApprenticePortrait,
+});
 
 // ImageGen-authored portrait atlases. Pixel and grid dimensions live beside the
 // imports so consumers can render either CSS sprites or exact SVG view boxes
@@ -71,6 +120,7 @@ function portraitRecord(id, label, atlasId, column, row) {
     label,
     atlasId,
     atlas: atlas.src,
+    detailSrc: DETAIL_PORTRAITS[id],
     atlasLabel: atlas.label,
     dimensions: atlas.dimensions,
     grid: atlas.grid,

@@ -12,7 +12,8 @@ describe("journey loading states", () => {
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain("Opening your journey");
     expect(html).toContain("Restoring your latest save");
-    expect(html).toContain("journey-loader__track");
+    expect(html).toContain("loading-dots");
+    expect(html).not.toContain("journey-loader__track");
   });
 
   it("blocks a warm game snapshot while its server version is checked", () => {
@@ -20,5 +21,7 @@ describe("journey loading states", () => {
     expect(html).toContain("Restoring your journey");
     expect(html).toContain("Checking for newer progress");
     expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("loading-dots");
+    expect(html).not.toContain("journey-loader__track");
   });
 });

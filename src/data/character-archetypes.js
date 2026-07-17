@@ -17,12 +17,25 @@ export function characterArchetype(entry) {
   if (!entry) return null;
   const template = TEMPLATE_BY_ID.get(entry.templateId);
   const legacy = entry["sub" + "class"];
-  const id = entry.archetype || legacy || template?.setup?.archetype
-    || professionBuild(entry.profession)?.archetypePathId;
+  const allocations = Array.isArray(entry.progression?.professions) ? entry.progression.professions : [];
+  const activeProfessionId = entry.progression?.activeProfessionId
+    || entry.progression?.professionId
+    || entry.profession;
+  const activeAllocation = allocations.find((allocation) => allocation?.professionId === activeProfessionId)
+    || allocations[0]
+    || null;
+  const professionId = activeAllocation?.professionId || activeProfessionId;
+  const isLayeredProgression = Number(entry.progression?.version) >= 2;
+  const id = entry.archetype
+    || activeAllocation?.specializationId
+    || entry.progression?.archetypeId
+    || legacy
+    || template?.setup?.archetype
+    || (!isLayeredProgression ? professionBuild(professionId)?.archetypePathId : null);
   if (!id) return null;
   const authoredTemplate = TEMPLATE_BY_ID.get(id) || (template?.setup?.archetype === id ? template : null);
-  const profession = PROFESSIONS[entry.profession];
-  const build = professionBuild(entry.profession);
+  const profession = PROFESSIONS[professionId];
+  const build = professionBuild(professionId);
   const isProfessionArchetype = id === build?.archetypePathId;
   return {
     id,

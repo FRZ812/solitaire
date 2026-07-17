@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../data/initial-state.js";
 import { PanelDeck, shouldDismissPanel } from "./PanelDeck.jsx";
+import { CodexEntry } from "./CodexView.jsx";
 import { createProgression } from "../engine/progression.js";
 
 describe("PanelDeck", () => {
@@ -106,6 +107,30 @@ describe("PanelDeck", () => {
     expect(characterHtml).toContain("image/png,image/jpeg,image/webp");
   });
 
+  it("opens a Codex character as a full portrait dossier with polished detail sections", () => {
+    const state = makeInitialState();
+    const entry = state.world.codex.characters["demon-king"];
+    const html = renderToStaticMarkup(
+      <CodexEntry
+        entry={entry}
+        kind="characters"
+        codex={state.world.codex}
+        detailMode
+        onBack={() => {}}
+        onPortraitChange={() => {}}
+      />,
+    );
+
+    expect(html).toContain("codex-entry--dossier is-open");
+    expect(html).toContain("Back to roster");
+    expect(html).toContain('data-portrait-source="detail"');
+    expect(html).toContain("codex-individual/demon-king.webp");
+    expect(html).toContain("Identity and progression");
+    expect(html).toContain("Visible details");
+    expect(html).toContain("Known story");
+    expect(html).toContain("Upload portrait");
+  });
+
   it("resolves authored and uploaded player portraits with reset controls", () => {
     const authored = makeInitialState();
     authored.character.templateId = "ranger";
@@ -138,14 +163,14 @@ describe("PanelDeck", () => {
     Object.assign(state.character, {
       templateId: "shadowblade",
       portraitKey: "template:shadowblade",
-      profession: "assassin",
+      profession: "rogue",
       archetype: "shadowblade",
-      progression: createProgression({ professionId: "assassin", archetypeId: "shadowblade", level: 45, sidePath: "utility" }),
+      progression: createProgression({ professionId: "rogue", archetypeId: "shadowblade", level: 45, sidePath: "utility" }),
     });
     Object.assign(state.world.codex.characters.wanderer, {
       templateId: "shadowblade",
       portraitKey: "template:shadowblade",
-      profession: "assassin",
+      profession: "rogue",
       archetype: "shadowblade",
       progression: createProgression({ professionId: "assassin", archetypeId: "shadowblade", level: 45, sidePath: "utility" }),
     });
@@ -157,12 +182,14 @@ describe("PanelDeck", () => {
       <PanelDeck state={state} user={null} initialPage="codex" onClose={() => {}} handlers={{}} />,
     );
 
-    expect(characterHtml).toContain("Assassin");
-    expect(characterHtml).toContain("Profession</em>Assassin");
-    expect(characterHtml).toContain("Archetype</em>Shadowblade");
+    expect(characterHtml).toContain("Rogue");
+    expect(characterHtml).toContain("Profession</em>Rogue");
+    expect(characterHtml).toContain("Specialization</em>Shadowblade");
     expect(characterHtml).toContain("Level</em>45");
-    expect(codexHtml).toContain("Assassin profession · Shadowblade archetype · Level 45");
-    expect(codexHtml).toContain("Archetype · Shadowblade");
+    expect(characterHtml).toContain("Race</em>");
+    expect(characterHtml).toContain("Professions</em>");
+    expect(codexHtml).toContain("Shadowblade specialization · Level 45");
+    expect(codexHtml).toContain("Specialization · Shadowblade");
     expect(codexHtml).toContain("Level 45 / 100");
   });
 

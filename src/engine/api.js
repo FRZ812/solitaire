@@ -21,10 +21,53 @@ import { relationshipTier } from "./relationships.js";
 import { lightStatus } from "./light.js";
 import { conditionMeta, condName } from "../data/conditions.js";
 import { characterArchetype } from "../data/character-archetypes.js";
+import { professionProfile } from "../data/progression-paths.js";
 import { playableCharactersNear } from "./positions.js";
-import { progressionLevel, progressionSummary } from "./progression.js";
+import { progressionLevel } from "./progression.js";
+import { progressionNarrativeProjection } from "./progression-abilities.js";
 import { summarizeMemoryBank } from "./memory.js";
 import { buildNarratorSteering } from "./narrator-settings.js";
+
+const rankTotal = (paths) => Object.values(paths || {})
+  .reduce((total, rank) => total + Math.max(0, Math.floor(Number(rank) || 0)), 0);
+const progressionLabel = (value) => String(value || "")
+  .replace(/[-_]+/g, " ")
+  .replace(/\b\w/g, (letter) => letter.toUpperCase());
+const progressionProfessionName = (value) => professionProfile(value)?.name || progressionLabel(value);
+
+// Character power labels are intentionally absent. The narrator receives the
+// exact numeric allocation so it can honor multiclass and metamorphosis fiction
+// without turning internal population thresholds into public titles.
+export function summarizeProgressionAllocation(character) {
+  const progression = character?.progression || {};
+  const racialLevel = rankTotal(progression.racial?.paths);
+  const professions = Array.isArray(progression.professions)
+    ? progression.professions.map((entry) => ({
+        professionId: entry.professionId,
+        specializationId: entry.specializationId || entry.archetypeId || null,
+        levels: rankTotal(entry.paths),
+        specializationPath: entry.specializationPath || entry.specializationPathId
+          || entry.choices?.specializationPath || null,
+        branchChoices: entry.branchChoices && typeof entry.branchChoices === "object"
+          ? Object.entries(entry.branchChoices).map(([choiceId, optionId]) => `${choiceId}=${optionId}`)
+          : [],
+      })).filter((entry) => entry.professionId && entry.levels > 0)
+    : [];
+  const professionLevel = professions.reduce((sum, entry) => sum + entry.levels, 0);
+  const totalLevel = Math.max(1, progressionLevel(character));
+  const professionText = professions.length
+    ? professions.map((entry) => {
+        const branches = [entry.specializationPath, ...entry.branchChoices].filter(Boolean);
+        return `${progressionProfessionName(entry.professionId)}${entry.specializationId ? ` (${progressionLabel(entry.specializationId)})` : ""} ${entry.levels}${branches.length ? `; layered branches ${branches.join(" > ")}` : "; general profession progression"}`;
+      }).join(" + ")
+    : `${progressionProfessionName(progression.professionId || character?.profession || "wanderer")} ${Math.max(0, totalLevel - racialLevel)}`;
+  return {
+    totalLevel,
+    racialLevel,
+    professionLevel: professions.length ? professionLevel : Math.max(0, totalLevel - racialLevel),
+    professionText,
+  };
+}
 
 export function summarizeCodex(codex) {
   const lines = [];
@@ -33,7 +76,8 @@ export function summarizeCodex(codex) {
   const encountered = chars.filter((c) => !c.playable);
   if (encountered.length) lines.push(`Met: ${encountered.map((c) => {
     const archetype = characterArchetype(c);
-    return `${c.name}(${c.race || "?"}, ${c.profession || "?"}${archetype ? `/${archetype.label}` : ""}, L${Math.max(1, progressionLevel(c))})`;
+    const allocation = summarizeProgressionAllocation(c);
+    return `${c.name}(${c.race || "?"}, ${c.profession ? progressionProfessionName(c.profession) : "?"}${archetype ? `/${archetype.label}` : ""}, level ${allocation.totalLevel} = racial ${allocation.racialLevel} + professions ${allocation.professionLevel})`;
   }).join("; ")}`);
   else lines.push(`Met: only you`);
   if (roster.length) lines.push(`World roster (known dossiers, not automatically met): ${roster.map((c) => c.name).join(", ")}`);
@@ -73,9 +117,9 @@ export function summarizeAttributes(attrs) {
 // What the player can DO in a fight: combat spells (magic — schools arcane/divine,
 // dreaded if cast in public) vs martial techniques. Granted abilities (e.g. from an
 // equipped grimoire) live here too, so the narrator knows the player can cast them.
-export function summarizeAbilities(character) {
+export function summarizeAbilities(character, progressionProjection = progressionNarrativeProjection(character)) {
   const spells = [], techniques = [];
-  for (const entry of (character.abilities || [])) {
+  for (const entry of progressionProjection.abilities) {
     const def = getAbilityDef(typeof entry === "string" ? entry : entry?.id);
     if (!def) continue;
     (def.school === "arcane" || def.school === "divine" ? spells : techniques).push(def.name);
@@ -86,6 +130,28 @@ export function summarizeAbilities(character) {
   return parts.join("; ") || "none learned";
 }
 
+export function summarizeProgressionCapabilities(character, progressionProjection = progressionNarrativeProjection(character)) {
+  const profiles = progressionProjection.metamagicProfiles || [];
+  const progressionCapabilities = progressionProjection.progressionCapabilities
+    || progressionProjection.branchCapabilities || [];
+  const parts = [];
+  if (profiles.length) {
+    const assignments = profiles.map((profile) => (
+      `${profile.abilityName}${profile.primarySignature ? " [primary signature]" : ""} = ${profile.features.map((feature) => feature.name).join(", ")}`
+    ));
+    const definitions = new Map();
+    for (const profile of profiles) {
+      for (const feature of profile.features) definitions.set(feature.id, feature);
+    }
+    parts.push(`Metamagic profiles: ${assignments.join("; ")}`);
+    parts.push(`Authored metamagic effects: ${[...definitions.values()].map((feature) => `${feature.name} — ${feature.description}`).join("; ")}`);
+  }
+  if (progressionCapabilities.length) {
+    parts.push(`Earned progression capabilities: ${progressionCapabilities.map((feature) => `${feature.name} — ${feature.description}`).join("; ")}`);
+  }
+  return parts.join(" | ") || "none beyond the listed abilities";
+}
+
 // The COMPLETE pool of abilities the narrator may teach/grant by id — the engine's
 // defined library, minus innate racial powers (engine grants those by race) and
 // unique drop-only abilities. Surfaced so a starting kit or learned-in-play
@@ -93,7 +159,7 @@ export function summarizeAbilities(character) {
 export function summarizeGrantableAbilities() {
   const techniques = [], spells = [], cataclysmic = [];
   for (const a of ABILITY_CATALOG) {
-    if (a.innate || a.unique) continue; // race-granted / drop-only — not narrator-grantable
+    if (a.innate || a.unique || a.branchExclusive || a.progressionExclusive) continue; // race/drop/progression-owned — not narrator-grantable
     const label = a.minTier ? `${a.id} (≥${a.minTier})` : a.id; // floored apex powers
     (abilityCategoryOf(a) === "spell" ? spells : techniques).push(label);
     if (a.cataclysm) cataclysmic.push(a.id);
@@ -263,19 +329,26 @@ export function buildStateContext(state) {
     if (sk.length) bits.push(`skilled in ${sk.join(", ")}`);
     if (gear.length) bits.push(`carries ${gear.join(", ")}`);
     const archetype = characterArchetype(c);
-    return `${c.name} (id: ${c.id}; level ${Math.max(1, progressionLevel(c))}; ${c.race} ${c.profession}${archetype ? `, ${archetype.label} archetype` : ""}${bits.length ? `; ${bits.join("; ")}` : ""})`;
+    const allocation = summarizeProgressionAllocation(c);
+    return `${c.name} (id: ${c.id}; level ${allocation.totalLevel} = racial ${allocation.racialLevel} + professions ${allocation.professionLevel}; ${c.race} ${progressionProfessionName(c.profession)}${archetype ? `, ${archetype.label} specialization` : ""}${bits.length ? `; ${bits.join("; ")}` : ""})`;
   };
   const partyLine = companions.length
     ? `\n[COMPANIONS — travelling with you: ${companions.map(companionDetail).join(" · ")}. They are present in scenes, act and speak on their own, fight at your side, and share your fortunes (they can be wounded, killed, or leave). When the player asks a companion what they can do, ANSWER CONCRETELY from this kit — their real abilities, skills, and gear — never vague hand-waving. You may move gear between the player and a companion when they share loot (use companion_gear). If narration itself permanently kills or removes one, use their listed id in party_removals in that same response. Don't drop or forget them silently.]`
     : "";
   const localRoster = playableCharactersNear(state);
   const localRosterLine = localRoster.length
-    ? `\n[OTHER ROSTER CHARACTERS HERE — ${localRoster.map(({ character: c }) => `${c.name} (id: ${c.id}; ${c.race} ${c.profession}${c.role ? `; ${c.role}` : ""})`).join(" · ")}. These authored people are physically present at this hex. Surface them naturally in the scene as independent NPCs, true to their dossier and voice. They are not companions unless the fiction changes that, and none is a second copy of the player.]`
+    ? `\n[OTHER ROSTER CHARACTERS HERE — ${localRoster.map(({ character: c }) => `${c.name} (id: ${c.id}; ${c.race} ${progressionProfessionName(c.profession)}${c.role ? `; ${c.role}` : ""})`).join(" · ")}. These authored people are physically present at this hex. Surface them naturally in the scene as independent NPCs, true to their dossier and voice. They are not companions unless the fiction changes that, and none is a second copy of the player.]`
     : "";
   const you = world.codex.characters.wanderer || {};
   const playerArchetype = characterArchetype(you);
-  const youDesc = [originLabel(you.origin), you.race, you.profession, playerArchetype ? `(${playerArchetype.label} archetype)` : null].filter(Boolean).join(" ");
-  const playerProgression = progressionSummary(character);
+  const youDesc = [
+    originLabel(you.origin),
+    you.race,
+    you.profession ? progressionProfessionName(you.profession) : null,
+    playerArchetype ? `(${playerArchetype.label} specialization)` : null,
+  ].filter(Boolean).join(" ");
+  const playerAllocation = summarizeProgressionAllocation(character);
+  const progressionProjection = progressionNarrativeProjection(character);
   const playerLine = `[PLAYER — You are ${character.name}${youDesc ? `, a ${youDesc}` : ""}. Keep this identity consistent (do not drift the player's race or origin). Your NAME is PRIVATE: another character knows it ONLY if you have told THEM in the fiction (or it has plausibly reached them — a poster, a mutual friend, your own renown). A stranger, someone freshly met, or a companion you have only just recruited does NOT know your name until you give it — they address you by look, bearing, or role ("the swordsman", "stranger", "you with the bow") until then. The name you gave one person (the innkeeper) did not travel to anyone else on its own.]`;
   const narratorSteering = buildNarratorSteering(state.narratorSettings);
   const narratorSteeringLine = narratorSteering ? `\n${narratorSteering}` : "";
@@ -298,8 +371,9 @@ export function buildStateContext(state) {
 [STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${conditionsLine}; Light: ${lightStatus(state).text}; Bond: ${character.bond}${nearbyStr}]${localLine}${locLine}${flyLine}${svcLine}${questLine}${partyLine}${localRosterLine}${buildSurroundings(state, t)}
 [REGION — ${biome.name}: ${biome.description}]${generatedAreaLine}
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
-[PROGRESSION — level ${playerProgression?.level || 1}/100 (${playerProgression?.tier?.label || "Standard"}); profession ${playerProgression?.professionId || you.profession || "wanderer"}; archetype ${playerArchetype?.label || "Adaptive Seeker"}; stacked path ranks ${Object.entries(playerProgression?.paths || {}).map(([id, rank]) => `${id} ${rank}`).join(", ") || "none"}. Profession, racial, and utility ranks all consume this same 100-level budget; no single path reaches level 100.]
-[ABILITIES KNOWN — ${summarizeAbilities(character)}]
+[PROGRESSION — level ${playerAllocation.totalLevel}/100 = racial ${playerAllocation.racialLevel}/30 + professions ${playerAllocation.professionLevel}/70; profession allocation ${playerAllocation.professionText}. Specialization ${playerArchetype?.label || "Adaptive Seeker"}. Broad-profession growth continues alongside any listed layered specialization branches. The engine owns durable ranks and every player branch choice; narrate an unlocked choice but never choose it.]
+[ABILITIES KNOWN — ${summarizeAbilities(character, progressionProjection)}]
+[PROGRESSION CAPABILITIES — ${summarizeProgressionCapabilities(character, progressionProjection)}]
 [GRANTABLE ABILITIES — the COMPLETE set you may grant by id (a creation kit, a teacher's lesson, a technique learned in play). Use these ids EXACTLY; grant NOTHING outside this list, and never invent an ability. Innate racial powers are NOT here — the engine grants those from the chosen race. Each may be granted at a TIER from common→divine: the tier scales its power exactly like gear, so match it to the source — a hedge-teacher or short drill gives common/uncommon; a true master or guild gives rare/epic; only a fabled mentor, a legendary relic, or a god's boon confers legendary+; divine is godhood, almost never given. An id shown as "name (≥tier)" has a FLOOR — never grant or teach it below that tier (the engine clamps it up if you try). Set the tier on the grant (see ABILITIES & SPELLS). ${summarizeGrantableAbilities()}]
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]
 [CODEX — ${summarizeCodex(world.codex)}]

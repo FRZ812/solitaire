@@ -13,7 +13,7 @@ import { spoilState } from "./spoilage.js";
 import { ageState } from "./aging.js";
 import { itemTemplate } from "../data/catalog.js";
 import { TIERS, tierOrder, tierMult, tierLabel } from "../data/tiers.js";
-import { advanceProgression, projectCharacterProgression } from "./progression.js";
+import { advanceProgression, earnedLevelGrowthText, projectCharacterProgression } from "./progression.js";
 
 export function blacksmithRank(state) {
   return state.character?.crafting?.blacksmith?.rank || 0;
@@ -109,14 +109,13 @@ export function applyForge(state, schematic, tier) {
     world: { ...state.world, codex: { ...state.world.codex, items } },
   };
   const progress = advanceProgression(next.character, Math.max(60, schematic.minutes || 60) * 2 + tierOrder(tier) * 50);
-  if (progress.gained.length) {
-    const latest = progress.gained.at(-1);
+  if (progress.earnedLevels > 0) {
     next = {
       ...next,
       beats: [...(next.beats || []), {
         id: `forge-level-${Date.now()}`,
         type: "growth",
-        text: `Level ${progress.beforeLevel} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+        text: earnedLevelGrowthText(progress),
       }],
     };
   }
@@ -150,14 +149,13 @@ export function applyApprentice(state, step) {
   const ag = ageState(sp.state);
   let next = ag.state;
   const progress = advanceProgression(next.character, Math.max(1, step.days || 1) * 60);
-  if (progress.gained.length) {
-    const latest = progress.gained.at(-1);
+  if (progress.earnedLevels > 0) {
     next = {
       ...next,
       beats: [...(next.beats || []), {
         id: `apprentice-level-${Date.now()}`,
         type: "growth",
-        text: `Level ${progress.beforeLevel} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+        text: earnedLevelGrowthText(progress),
       }],
     };
   }

@@ -16,7 +16,12 @@ export const PROFESSION_ATLAS_CELLS = Object.freeze([
 
 const CELL_INDEX = Object.freeze(Object.fromEntries(PROFESSION_ATLAS_CELLS.map((key, index) => [key, index])));
 const PROFESSION_FALLBACKS = Object.freeze({
-  wanderer: "ranger", innkeeper: "envoy", farmer: "beast-warden", peddler: "envoy",
+  wanderer: "ranger", fighter: "sellsword", barbarian: "reaver", ranger: "ranger",
+  rogue: "cutthroat", cleric: "devout", paladin: "champion-paladin", wizard: "battle-archmage",
+  sorcerer: "high-sorcerer", warlock: "demon-warlock", druid: "beast-warden", monk: "duelist",
+  bard: "courtier", artificer: "hedge-mage", diplomat: "envoy", steward: "envoy",
+  ruler: "enchanter-tyrant", commander: "war-captain",
+  innkeeper: "envoy", farmer: "beast-warden", peddler: "envoy",
   artisan: "sellsword", labourer: "sellsword", scholar: "high-sorcerer", healer: "devout",
   performer: "courtier", merchant: "envoy", mariner: "ranger", outlaw: "cutthroat",
   soldier: "war-captain", hunter: "ranger", attendant: "courtier",

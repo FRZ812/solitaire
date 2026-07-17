@@ -2,15 +2,109 @@
 // and rating increases so the renderer can show "Recorded" / "Growth" beats.
 
 import { COMPANIONS } from "../data/companions.js";
+import { canonicalProfessionId, isBroadProfessionName } from "../data/progression-paths.js";
 import { normalizeCharacterProgression } from "./progression.js";
+
+const clampInt = (value, min, max) => Math.max(min, Math.min(max, Math.floor(Number(value) || 0)));
+
+export function sanitizeProfessionPlan(entry, { allowBranches = false } = {}) {
+  const rawPlan = Array.isArray(entry?.profession_plan)
+    ? entry.profession_plan
+    : Array.isArray(entry?.professionPlan) ? entry.professionPlan : [];
+  const plan = [];
+  let remaining = 70;
+  for (const raw of rawPlan) {
+    if (!raw || remaining <= 0) break;
+    const requested = String(raw.profession || raw.professionId || "").trim();
+    const profession = canonicalProfessionId(requested);
+    if (!profession) continue;
+    const levels = Math.min(remaining, clampInt(raw.levels, 0, 70));
+    if (levels <= 0) continue;
+    const requestedKey = requested.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const specialization = String(
+      raw.specialization || raw.specializationId || raw.archetype || raw.archetypeId
+      || (!isBroadProfessionName(requestedKey, profession) ? requested : ""),
+    ).trim();
+    const specializationPath = String(raw.specializationPath || raw.specialization_path || "").trim();
+    const rawBranchChoices = raw.branchChoices && typeof raw.branchChoices === "object" && !Array.isArray(raw.branchChoices)
+      ? raw.branchChoices
+      : raw.branch_choices && typeof raw.branch_choices === "object" && !Array.isArray(raw.branch_choices)
+        ? raw.branch_choices
+        : {};
+    const branchChoices = Object.fromEntries(Object.entries(rawBranchChoices)
+      .filter(([choiceId, optionId]) => choiceId.trim() && typeof optionId === "string" && optionId.trim())
+      .map(([choiceId, optionId]) => [choiceId.trim(), optionId.trim()]));
+    plan.push({
+      profession,
+      ...(specialization ? { specialization } : {}),
+      levels,
+      ...(allowBranches && specializationPath ? { specializationPath } : {}),
+      ...(allowBranches && Object.keys(branchChoices).length ? { branchChoices } : {}),
+    });
+    remaining -= levels;
+  }
+  return plan;
+}
+
+// Narrator input may describe a bounded allocation, but never durable path ids.
+// Normalize aliases and caps here; progression.js remains the authority that
+// compiles these hints into the versioned ledger.
+export function sanitizeNarratorProgressionHints(entry, { existing = false } = {}) {
+  if (!entry || typeof entry !== "object") return entry;
+  const out = { ...entry };
+  delete out.progression;
+  delete out.templateId;
+  if (existing) {
+    for (const key of [
+      "level", "racial_levels", "racialLevels", "profession_plan", "professionPlan",
+      "signature_spell", "signatureSpell", "metamagic", "metamagic_ids",
+    ]) delete out[key];
+    return out;
+  }
+
+  const plan = sanitizeProfessionPlan(out, { allowBranches: true });
+  if (plan.length) {
+    out.profession_plan = plan;
+    delete out.professionPlan;
+    // Compatibility identity is a projection of the primary generalized
+    // profession; an exact old-style title is retained only as specialization.
+    out.profession = plan[0].profession;
+    if (plan[0].specialization) out.archetype = plan[0].specialization;
+  } else {
+    const requested = String(out.profession || "").trim();
+    const profession = canonicalProfessionId(requested);
+    if (profession) {
+      const requestedKey = requested.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      out.profession = profession;
+      if (!out.archetype && !isBroadProfessionName(requestedKey, profession)) out.archetype = requested;
+    }
+  }
+
+  const hasDeclaredRacialLevels = out.racial_levels != null || out.racialLevels != null;
+  if (hasDeclaredRacialLevels) out.racial_levels = clampInt(out.racial_levels ?? out.racialLevels, 0, 30);
+  else delete out.racial_levels;
+  delete out.racialLevels;
+  const professionLevels = plan.reduce((sum, part) => sum + part.levels, 0);
+  const plannedTotal = (out.racial_levels || 0) + professionLevels;
+  const declared = clampInt(out.level || plannedTotal || 1, 1, 100);
+  out.level = plan.length ? Math.max(1, Math.min(100, plannedTotal)) : declared;
+
+  const hasSorcerer = plan.some((part) => part.profession === "sorcerer") || out.profession === "sorcerer";
+  if (!hasSorcerer) {
+    delete out.signature_spell;
+    delete out.signatureSpell;
+    delete out.metamagic;
+    delete out.metamagic_ids;
+  }
+  return out;
+}
 
 export function mergeDiscoveries(existing, incoming) {
   const out = { ...existing };
   const newlyDiscovered = [];
   if (!incoming) return { codex: out, newlyDiscovered };
-  // The broad profession catalog is engine-owned: exact vocations discovered
-  // in play belong on a character as their archetype, never as an uncompiled
-  // profession entry with no 100-level route.
+  // The generalized profession catalog is engine-owned: exact vocations
+  // discovered in play belong on a character as their specialization.
   if (incoming.abilities && !incoming.skills)    incoming.skills      = incoming.abilities;
   for (const kind of ["characters", "races", "items", "spells", "skills"]) {
     const entries = incoming[kind];
@@ -22,13 +116,8 @@ export function mergeDiscoveries(existing, incoming) {
       const prev = out[kind][e.id] || {};
       let incoming = e;
       // Rank allocation and playable-template identity are engine-owned. The
-      // narrator may propose only a loose starting level; never trust supplied
-      // paths or a template id that would bypass the living-world ceiling.
-      const hasOwn = (key) => Object.prototype.hasOwnProperty.call(incoming, key);
-      if (kind === "characters" && (hasOwn("progression") || hasOwn("templateId"))) {
-        const { progression, templateId, ...rest } = incoming;
-        incoming = rest;
-      }
+      // narrator may propose only bounded allocation hints, never durable paths.
+      if (kind === "characters") incoming = sanitizeNarratorProgressionHints(incoming, { existing: !isNew });
       // The engine owns attributes after a person enters the Codex. The narrator
       // may seed a brand-new sheet, but later discoveries cannot restat it around
       // earned path ranks. Authored companions are protected even before recruit.
@@ -50,6 +139,12 @@ export function mergeDiscoveries(existing, incoming) {
       // discarded so it can never disagree with allocated ranks.
       if (kind === "characters" && e.id !== "wanderer") {
         normalizeCharacterProgression(out[kind][e.id], { enforceLevelAttributeScale: isNew });
+        // Generation fields are one-shot hints. The compact, validated v2
+        // progression ledger is the only durable source after normalization.
+        for (const key of [
+          "profession_plan", "professionPlan", "racial_levels", "racialLevels",
+          "signature_spell", "signatureSpell", "metamagic", "metamagic_ids",
+        ]) delete out[kind][e.id][key];
       }
       if (isNew) {
         newlyDiscovered.push({ kind, name: e.name, id: e.id });

@@ -47,18 +47,17 @@ describe("front-of-game menu flow", () => {
     expect(html).toContain("Sign out");
   });
 
-  it("renders the complete portrait-led roster with power, role, and search controls", () => {
+  it("renders one level-ordered portrait roster with role and search controls", () => {
     const html = renderToStaticMarkup(
       <CreationHub onPickTemplate={() => {}} onCustom={() => {}} onQuit={() => {}} busy={false} />,
     );
 
-    expect(html.match(/role="tab"/g)).toHaveLength(7);
+    expect(html).not.toContain('role="tab"');
     expect(html.match(/class="creation-card"/g)).toHaveLength(27);
-    expect(html).toContain("Choose your power fantasy");
-    expect(html).toContain("Sets tone &amp; challenge");
-    expect(html).toContain("All: 27 lives");
-    expect(html).toContain("Standard: Grounded");
-    expect(html.indexOf("Choose your power fantasy")).toBeLessThan(html.indexOf("Name your traveller"));
+    expect(html).not.toContain("Choose your power fantasy");
+    expect(html).not.toContain("Standard: Grounded");
+    expect(html).not.toContain("Divine · Level");
+    expect(html).toContain('aria-label="Ready-made characters ordered by level"');
     expect(html).toContain("Bram Coltaine");
     expect(html).toContain("Faelar Sylvareth");
     expect(html).toContain("Ysolde Varen");
@@ -67,16 +66,15 @@ describe("front-of-game menu flow", () => {
     expect(html).toContain("Tomas Vell");
     expect(html).toContain("Amahara Sayo");
     expect(html).toContain("Korvane Ashfell");
-    expect(html).toContain("Search name, profession, archetype, kindred…");
+    expect(html).toContain("Search name, profession, specialization, kindred…");
     expect(html).toContain("All roles");
     expect(html).toContain("data-atlas-cell=\"sellsword\"");
     expect(html).toContain("data-atlas-cell=\"cutthroat\"");
     expect(html).toContain("data-atlas-cell=\"shadowblade\"");
     expect(html).toContain("creation-card__profession-badge");
-    expect(html).toContain("aria-label=\"Archetype: Cutthroat\"");
-    expect(html).toContain("aria-label=\"Archetype: Shadowblade\"");
-    expect(html).toContain("Standard · Level 10");
-    expect(html).toContain("Divine · Level 100");
+    expect(html).toContain("aria-label=\"Specialization: Cutthroat\"");
+    expect(html).toContain("aria-label=\"Specialization: Shadowblade\"");
+    expect(html).toMatch(/Level \d+ ·/);
     expect(html).toContain("sellsword-grounded-v3.webp");
     expect(html).toContain("Create a custom traveller");
     expect(html).toContain("character-roster-threshold-v1.webp");

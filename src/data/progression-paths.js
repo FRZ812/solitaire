@@ -1,29 +1,51 @@
 import { ATTRIBUTE_CAP, ATTR_KEYS, CHARACTER_LEVEL_CAP } from "../config.js";
+import { getAbilityDef } from "./abilities.js";
+import {
+  PROFESSION_ALIASES,
+  PROFESSION_PROFILES,
+} from "./profession-progressions.js";
+import {
+  RACIAL_PROFILES,
+  racialProfileFor,
+  racialProgressionAtLevel,
+} from "./racial-progressions.js";
+import {
+  PROFESSION_BRANCHES,
+  branchGrantsAtLevel,
+  normalizeBranchChoices,
+  pendingBranchChoices,
+  professionBranchChoices,
+} from "./profession-branches.js";
+import {
+  METAMAGIC_FEATURES,
+  PROGRESSION_FEATURES,
+  progressionGrant,
+  validateProgressionGrant,
+} from "./progression-features.js";
+import {
+  PROFESSION_CONTENT_STATUS,
+  PROFESSION_LEVEL_TABLES,
+  professionContentStatus,
+  professionLevelTable,
+} from "./profession-level-tables.js";
+import {
+  RACIAL_BRANCHES,
+  normalizeRacialBranchChoices,
+  pendingRacialBranchChoices,
+  racialBranchChoices,
+  racialBranchGrantsAtLevel,
+  resolveRacialBranchChoice,
+} from "./racial-branches.js";
 
-// The progression vocabulary deliberately avoids combat-only class language.
-// A Profession is a broad calling, an Archetype is its specialized identity,
-// and a Path is one small stackable unit of growth. Grades own the hard rank
-// caps: no path can ever span the full character range by itself.
-export const PATH_GRADE_CAPS = Object.freeze({
-  standard: 15,
-  advanced: 10,
-  specialized: 5,
-});
+export const PROFESSION_LEVEL_CAP = 70;
+export const RACIAL_LEVEL_CAP = 30;
 
+export const PATH_GRADE_CAPS = Object.freeze({ standard: 15, advanced: 10, specialized: 5 });
 export const PATH_KINDS = Object.freeze(["profession", "racial", "utility"]);
 
-export const STARTING_LEVEL_BY_POWER_TIER = Object.freeze({
-  standard: 10,
-  mid: 25,
-  epic: 45,
-  legendary: 65,
-  mythical: 85,
-  divine: 100,
-});
-
-// These bands are shared by character creation, Codex dossiers, generated
-// inhabitants, and narrator context. The deliberately narrow high tiers leave
-// a visible gulf above the level-60 ceiling of a living world legend.
+// Deprecated compatibility anchors. Character templates now own exact levels;
+// these numeric bands remain useful for world-generation calibration only.
+export const STARTING_LEVEL_BY_POWER_TIER = Object.freeze({ standard: 10, mid: 25, epic: 45, legendary: 65, mythical: 85, divine: 100 });
 export const LEVEL_TIER_BANDS = Object.freeze([
   Object.freeze({ id: "standard", label: "Standard", min: 1, max: 20 }),
   Object.freeze({ id: "mid", label: "Veteran", min: 21, max: 40 }),
@@ -39,27 +61,17 @@ export function levelTier(level) {
 }
 
 export function progressionXpForLevel(level) {
-  const bounded = Math.max(1, Math.min(CHARACTER_LEVEL_CAP, Math.floor(Number(level) || 1)));
-  const completed = bounded - 1;
-  return completed * completed * 20;
+  const bounded = Math.max(0, Math.min(CHARACTER_LEVEL_CAP, Math.floor(Number(level) || 0)));
+  return bounded * bounded * 20;
 }
 
-// Authored and generated sheets gain room for larger scores as their shared
-// stack grows. A level-100 character may reach the 90 apex; a newcomer cannot
-// simply declare an apex sheet without also carrying the progression for it.
 export function attributeCeilingForLevel(level) {
   const bounded = Math.max(1, Math.min(CHARACTER_LEVEL_CAP, Math.floor(Number(level) || 1)));
   const mortalCurve = 10 + Math.floor(bounded * 0.8);
-  // The final specialized stacks deliberately accelerate inside the Divine
-  // band. This envelope covers every legal route projection (some reach 90 at
-  // level 94) while retaining the slower curve through level 84.
   const divineCurve = bounded >= 85 ? 79 + Math.ceil(((bounded - 85) * 11) / 9) : 0;
   return Math.min(ATTRIBUTE_CAP, Math.max(mortalCurve, divineCurve));
 }
 
-// One-time migration from the retired 0–30 scale. The curve barely moves
-// ordinary scores but opens sharply at the legendary end: 5→6, 10→14,
-// 20→42, 30→90. Never apply this to an already-versioned character.
 export function expandLegacyAttribute(value) {
   const old = Math.max(0, Math.min(30, Number(value) || 0));
   if (old === 0) return 0;
@@ -70,81 +82,15 @@ export function expandLegacyAttributes(attributes = {}) {
   return Object.fromEntries(ATTR_KEYS.map((key) => [key, expandLegacyAttribute(attributes[key])]));
 }
 
-const profile = (name, domain, archetype, archetypeDescription, attributes, utility, signature) => ({
-  name, domain, archetype, archetypeDescription, attributes, utility, signature,
-});
+export { METAMAGIC_FEATURES, PROFESSION_ALIASES, PROFESSION_BRANCHES, PROFESSION_CONTENT_STATUS, PROFESSION_LEVEL_TABLES, PROFESSION_PROFILES, PROGRESSION_FEATURES, RACIAL_BRANCHES, RACIAL_PROFILES, normalizeRacialBranchChoices, pendingRacialBranchChoices, professionBranchChoices, professionContentStatus, professionLevelTable, racialBranchChoices, racialProgressionAtLevel, resolveRacialBranchChoice };
 
-// Every canonical profession has an authored non-combat-inclusive domain and a
-// specialized archetype. These records also drive its projected stat shape;
-// weights are intentionally uneven so a level-100 build has real weaknesses.
-export const PROFESSION_PROFILES = Object.freeze({
-  wanderer: profile("Wanderer", "generalist", "Adaptive Seeker", "Builds an identity from roads taken, disciplines borrowed, and choices made in motion.", ["wit", "vigor", "reflex", "presence"], "Wayfaring", "A Path Without End"),
-  innkeeper: profile("Innkeeper", "service", "House Steward", "Builds a public room into sanctuary, network, and livelihood.", ["presence", "wit", "mind", "vigor"], "Hospitality", "Open Door"),
-  farmer: profile("Farmer", "husbandry", "Land Steward", "Reads soil, season, stock, and the human labor binding them together.", ["vigor", "body", "wit", "mind"], "Husbandry", "Living Harvest"),
-  peddler: profile("Peddler", "trade", "Road Broker", "Turns roads, rumors, and modest wares into a resilient moving enterprise.", ["wit", "presence", "reflex", "vigor"], "Logistics", "Market Without Walls"),
-  artisan: profile("Artisan", "craft", "Master Maker", "Turns material knowledge, practiced hands, and patient design into works that outlive their maker.", ["wit", "mind", "body", "vigor"], "Craftsmanship", "Masterwork Without Peer"),
-  labourer: profile("Labourer", "labor", "Guild Hand", "Makes endurance, leverage, teamwork, and practical judgment into a dependable living craft.", ["vigor", "body", "wit", "presence"], "Endurance", "The Work of Many Hands"),
-  scholar: profile("Scholar", "scholarship", "Polymath", "Builds deep learning into discovery, teaching, archival memory, and solutions no one else can see.", ["mind", "wit", "presence", "reflex"], "Research", "Living Archive"),
-  healer: profile("Healer", "medicine", "Master Chirurgeon", "Joins diagnosis, surgery, remedies, and bedside judgment into the power to preserve life.", ["mind", "wit", "presence", "vigor"], "Medicine", "Death Denied"),
-  performer: profile("Performer", "arts", "Virtuoso", "Shapes voice, movement, story, and audience into an art able to carry memory across generations.", ["presence", "wit", "reflex", "mind"], "Performance", "Song the World Remembers"),
-  merchant: profile("Merchant", "trade", "Guild Factor", "Builds supply, credit, trust, and risk into an enterprise spanning roads and nations.", ["wit", "presence", "mind", "vigor"], "Commerce", "Market of Nations"),
-  mariner: profile("Mariner", "seafaring", "Tide Navigator", "Reads wind, water, hull, crew, and stars as one moving system.", ["wit", "reflex", "vigor", "mind"], "Navigation", "Master of Every Tide"),
-  outlaw: profile("Outlaw", "underworld", "Free-Road Captain", "Survives outside law through stealth, nerve, contacts, mobility, and chosen loyalties.", ["reflex", "wit", "presence", "body"], "Underworld", "No Chain Holds"),
-  soldier: profile("Soldier", "martial", "Line Veteran", "Turns drill, formation, fieldcraft, and mutual trust into survival under organized violence.", ["vigor", "body", "reflex", "wit"], "Drill", "The Last Line"),
-  hunter: profile("Hunter", "wilderness", "Master Tracker", "Reads quarry, terrain, weather, patience, and the ethics of taking life from the wild.", ["wit", "reflex", "vigor", "body"], "Tracking", "No Quarry Escapes"),
-  attendant: profile("Attendant", "service", "Household Steward", "Makes discretion, anticipation, care, and exact routine into the invisible structure of a household.", ["presence", "wit", "reflex", "mind"], "Stewardship", "The Perfect Household"),
-  monarch: profile("Monarch", "governance", "Sovereign", "Makes institutions, loyalties, and consequence answer a single crown.", ["presence", "mind", "wit", "vigor"], "Statecraft", "Living Realm"),
-  noble: profile("Noble", "governance", "Estate Architect", "Shapes land, patronage, obligation, and reputation into lasting power.", ["presence", "wit", "mind", "vigor"], "Stewardship", "House Eternal"),
-  witch: profile("Witch", "occult", "Coven Keeper", "Braids practical craft, old bargains, and dangerous local knowledge.", ["mind", "wit", "presence", "vigor"], "Herblore", "Name Beneath Names"),
-  speaker: profile("Speaker", "civic", "Consensus Voice", "Leads through trust, memory, and the difficult craft of being heard.", ["presence", "wit", "mind", "vigor"], "Mediation", "Many Voices, One Word"),
-  "chapter-master": profile("Chapter-Master", "command", "Order Marshal", "Holds doctrine, discipline, and a militant institution in one hand.", ["presence", "body", "mind", "vigor"], "Logistics", "The Chapter Endures"),
-  "hold-father": profile("Hold-Father", "civic", "Hold Steward", "Guards a people's stores, disputes, memory, and stone-bound future.", ["vigor", "presence", "mind", "body"], "Stewardship", "Heart of the Hold"),
-  matriarch: profile("Matriarch", "civic", "Kinship Anchor", "Turns kinship, care, memory, and hard authority into communal survival.", ["presence", "wit", "vigor", "mind"], "Mediation", "The Line Unbroken"),
+export function slug(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
 
-  sellsword: profile("Sellsword", "martial", "Contract Vanguard", "Holds the paid line through discipline, shield-work, and terms kept.", ["vigor", "body", "reflex", "wit"], "Fieldcraft", "Unbroken Contract"),
-  reaver: profile("Reaver", "martial", "Momentum Breaker", "Turns impact, pain, and relentless motion into battlefield dominance.", ["body", "vigor", "reflex", "presence"], "Intimidation", "Avalanche Incarnate"),
-  ranger: profile("Ranger", "wilderness", "Far-Walker", "Masters distance, spoor, weather, and the patient geometry of the hunt.", ["reflex", "wit", "vigor", "body"], "Survival", "Horizon Hunter"),
-  assassin: profile("Assassin", "covert", "Quiet Blade", "Controls notice, approach, and the decisive instant before resistance begins.", ["reflex", "wit", "body", "mind"], "Infiltration", "Death Between Heartbeats"),
-  priest: profile("Priest", "devotional", "Mercy Keeper", "Channels belief into restoration, protection, and moral authority.", ["presence", "mind", "vigor", "wit"], "Medicine", "Sanctuary Made Flesh"),
-  "hedge-mage": profile("Hedge-Mage", "arcane", "Improvised Thaumaturge", "Makes personal, practical magic from scraps no academy would trust.", ["mind", "wit", "presence", "reflex"], "Ritualcraft", "Impossible Working"),
-  knight: profile("Knight-Errant", "martial", "Oath Vanguard", "Joins armor, horsemanship, duty, and independent judgment.", ["vigor", "body", "presence", "reflex"], "Riding", "Oath Beyond Banners"),
-  "war-priest": profile("War-Priest", "devotional", "Battle Chaplain", "Carries restoration and judgment through the center of a battle.", ["presence", "vigor", "mind", "body"], "Medicine", "Last Rite, First Stand"),
-  duelist: profile("Duelist", "martial", "Perfect Measure", "Wins through distance, nerve, technical precision, and one exact opening.", ["reflex", "wit", "body", "presence"], "Etiquette", "The Final Measure"),
-  warden: profile("Beast-Warden", "wilderness", "Wild Bondkeeper", "Reads beasts and broken country as partners rather than obstacles.", ["wit", "reflex", "vigor", "presence"], "Beastcraft", "Voice of the Wild"),
-  "war-captain": profile("War-Captain", "command", "Line Commander", "Turns terrain, frightened people, and limited time into victory.", ["presence", "wit", "vigor", "body"], "Logistics", "Army of One Will"),
-  archmage: profile("Archmage", "arcane", "Grand Theurgist", "Unifies many schools into magic at the scale of armies and realms.", ["mind", "wit", "presence", "vigor"], "Ritualcraft", "Lawgiver to Reality"),
-  paladin: profile("Paladin", "devotional", "Consecrated Champion", "Makes conviction a shelter to allies and a weapon against corruption.", ["presence", "vigor", "body", "mind"], "Leadership", "Dawn That Walks"),
-  "dragon-hunter": profile("Dragon-Hunter", "wilderness", "Wyrm Stalker", "Studies colossal prey until scale, wing, and breath reveal one fatal instant.", ["reflex", "wit", "body", "vigor"], "Monster Lore", "Sky-Piercing Shot"),
-  sorcerer: profile("High Sorcerer", "arcane", "Binding Savant", "Builds overwhelming magic from exact theory, will, and disciplined reserves.", ["mind", "wit", "presence", "vigor"], "Scholarship", "Master Equation"),
-  warlord: profile("Warlord", "command", "Conquest Marshal", "Leads by proven force, strategic appetite, and the loyalty of victory.", ["body", "presence", "vigor", "wit"], "Logistics", "Banner of Dominion"),
-  "fae-touched": profile("Fae-Touched", "occult", "Glamour Walker", "Balances steel, weather, beauty, and the exact language of bargains.", ["reflex", "mind", "presence", "wit"], "Pactcraft", "Name Unbound"),
-  champion: profile("Undying Champion", "martial", "Deathless Hero", "Turns accumulated wounds, memory, and refusal into mythic endurance.", ["vigor", "body", "presence", "reflex"], "Leadership", "The Grave Refuses"),
-  warlock: profile("Demon-Warlock", "occult", "Infernal Binder", "Commands borrowed horror by mastering every clause of its price.", ["mind", "presence", "wit", "vigor"], "Pactcraft", "Hell in Chains"),
-  "dragon-ascendant": profile("Dragon-Ascendant", "racial", "Wyrm Sovereign", "Develops awakened dragon lineage into embodied elemental dominion.", ["vigor", "presence", "body", "mind"], "Lineage", "True Dragon Dominion"),
-  "enchanter-tyrant": profile("Enchanter-Tyrant", "arcane", "Sovereign Will", "Makes command, desire, and magical compulsion indistinguishable.", ["presence", "mind", "wit", "vigor"], "Statecraft", "One Will, All Worlds"),
-  envoy: profile("Envoy", "social", "Accord Weaver", "Builds passage, terms, and durable trust out of opposed interests.", ["presence", "wit", "mind", "reflex"], "Diplomacy", "Peace Between Empires"),
-  courtier: profile("Courtier", "social", "Velvet Operator", "Trades in attention, access, desire, status, and secrets with surgical grace.", ["presence", "wit", "reflex", "mind"], "Intrigue", "Court Without Walls"),
-});
-
-// Older content and narrator-authored exact vocations are folded into broad
-// professions while preserving the original vocation as the character's
-// archetype. This is the compatibility bridge that makes "cooper", "porter",
-// or "marsh-spearman" specialized focuses rather than stray class systems.
-export const PROFESSION_ALIASES = Object.freeze({
-  blacksmith: "artisan", cooper: "artisan", baker: "artisan", forger: "artisan", shipwright: "artisan",
-  porter: "labourer", laborer: "labourer", bonded: "labourer", prisoner: "labourer",
-  scribe: "scholar", "house-scribe": "scholar",
-  "herb-healer": "healer", poisoner: "healer",
-  bard: "performer",
-  trader: "merchant",
-  sailor: "mariner",
-  bandit: "outlaw", smuggler: "outlaw", "grave-robber": "outlaw", cutpurse: "outlaw", highwayman: "outlaw", thief: "outlaw",
-  "marsh-spearman": "soldier", "pit-fighter": "soldier", "horse-archer": "soldier", "axe-man": "soldier",
-  "knife-fighter": "soldier", "deserter-spearman": "soldier", barbarian: "soldier",
-  tracker: "hunter", poacher: "hunter",
-  "body-attendant": "attendant", "indentured-housemaid": "attendant", housemaid: "attendant",
-  monk: "priest",
-});
+function labelize(value) {
+  return String(value || "").replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
 
 export function canonicalProfessionId(value) {
   const id = slug(value);
@@ -153,8 +99,26 @@ export function canonicalProfessionId(value) {
   return PROFESSION_ALIASES[id] || null;
 }
 
-function slug(value) {
-  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+// Broad public names are allowed to differ from their durable save ids. This
+// matters for renamed professions such as Warrior, whose persisted id remains
+// `fighter`: entering the public name must not accidentally create a
+// specialization called "warrior". Exact vocation aliases such as Sellsword
+// still become specializations through canonicalProfessionIdentity below.
+export function isBroadProfessionName(value, professionId = null) {
+  const requestedId = slug(value);
+  const canonicalId = canonicalProfessionId(professionId || requestedId);
+  if (!requestedId || !canonicalId) return false;
+  return requestedId === canonicalId || requestedId === slug(PROFESSION_PROFILES[canonicalId]?.name);
+}
+
+export function canonicalProfessionIdentity(value, specializationId = null) {
+  const requestedId = slug(value);
+  const professionId = canonicalProfessionId(requestedId);
+  if (!professionId) return null;
+  return Object.freeze({
+    professionId,
+    specializationId: slug(specializationId) || (isBroadProfessionName(requestedId, professionId) ? null : requestedId),
+  });
 }
 
 function weightsFor(attributes, offset = 0) {
@@ -162,154 +126,136 @@ function weightsFor(attributes, offset = 0) {
   [7, 5, 3, 2].forEach((weight, index) => {
     if (attributes[index]) weights[attributes[index]] = weight;
   });
-  // Supporting paths change the emphasis without erasing the calling's core
-  // shape; a mage's ritual utility still develops Mind, and a farmer's animal
-  // craft still develops Vigor. This is what lets apex specialists approach 90
-  // while keeping deliberate weaknesses low.
   const emphasis = attributes[offset % Math.max(1, attributes.length)];
-  if (emphasis) weights[emphasis] += offset ? 3 : 0;
+  if (emphasis && offset) weights[emphasis] += 3;
   return weights;
 }
 
-const gradeCap = (grade) => PATH_GRADE_CAPS[grade];
-
-function pathRecord({ id, name, kind = "profession", grade, description, weights, prerequisites = [], milestones = {} }) {
+function pathRecord({ id, name, kind, grade, description, weights, prerequisites = {}, role }) {
   return Object.freeze({
-    id, name, kind, grade, maxRank: gradeCap(grade), description,
+    id,
+    name,
+    kind,
+    grade,
+    role,
+    maxRank: PATH_GRADE_CAPS[grade],
+    description,
     weights: Object.freeze({ ...weights }),
-    prerequisites: Object.freeze(prerequisites.map((entry) => Object.freeze({ ...entry }))),
-    milestones: Object.freeze({ ...milestones }),
+    prerequisites: Object.freeze({ ...prerequisites }),
   });
 }
 
-const SHARED_PATHS = {
-  "awakened-lineage": pathRecord({
-    id: "awakened-lineage", name: "Awakened Lineage", kind: "racial", grade: "advanced",
-    description: "Invested racial development: inherited senses, form, resilience, and supernatural nature. These ranks share the same 100-level budget as every profession rank.",
-    weights: { body: 4, reflex: 3, vigor: 6, mind: 2, wit: 2, presence: 4 },
-    prerequisites: [{ totalLevel: 30 }],
-    milestones: { 1: "Lineage Stirring", 5: "Ancestral Expression", 10: "Lineage Ascendant" },
-  }),
-  "worldly-versatility": pathRecord({
-    id: "worldly-versatility", name: "Worldly Versatility", kind: "utility", grade: "advanced",
-    description: "A utility alternative for characters who do not cultivate racial development: languages, adaptation, contacts, tools, and practiced breadth.",
-    weights: { body: 2, reflex: 3, vigor: 3, mind: 4, wit: 5, presence: 4 },
-    prerequisites: [{ totalLevel: 30 }],
-    milestones: { 1: "Second Discipline", 5: "Adaptable Practice", 10: "Master Generalist" },
-  }),
-};
+const PROFESSION_SEGMENTS = Object.freeze([
+  Object.freeze({ role: "foundation", grade: "standard", ranks: 15 }),
+  Object.freeze({ role: "practice", grade: "standard", ranks: 15 }),
+  Object.freeze({ role: "specialization", grade: "advanced", ranks: 10 }),
+  Object.freeze({ role: "mastery", grade: "advanced", ranks: 10 }),
+  Object.freeze({ role: "synthesis", grade: "advanced", ranks: 10 }),
+  Object.freeze({ role: "exemplar", grade: "specialized", ranks: 5 }),
+  Object.freeze({ role: "apogee", grade: "specialized", ranks: 5 }),
+]);
 
-function generatedPaths(professionId, p) {
-  const root = slug(professionId);
-  const coreKind = p.domain === "racial" ? "racial" : "profession";
-  const foundation = `${root}-foundation`;
-  const practice = `${root}-${slug(p.domain)}-practice`;
-  const utility = `${root}-${slug(p.utility)}`;
-  const archetype = `${root}-${slug(p.archetype)}`;
-  const mastery = `${root}-mastery`;
-  const synthesis = `${root}-synthesis`;
-  const exemplar = `${root}-exemplar`;
-  const specialist = `${root}-${slug(p.utility)}-specialist`;
-  const paragon = `${root}-paragon`;
-  const transcendent = `${root}-transcendent`;
-  return {
-    [foundation]: pathRecord({
-      id: foundation, name: `${p.name} Foundation`, kind: coreKind, grade: "standard",
-      description: `The durable fundamentals of the ${p.name} profession.`, weights: weightsFor(p.attributes),
-      milestones: { 1: "Calling Chosen", 5: "Practiced Hand", 10: "Established Professional", 15: "Foundation Complete" },
-    }),
-    [practice]: pathRecord({
-      id: practice, name: `${p.domain[0].toUpperCase()}${p.domain.slice(1)} Practice`, kind: coreKind, grade: "standard",
-      description: `A second foundation in ${p.domain}, broadening the calling beyond a single trick.`, weights: weightsFor(p.attributes, 1),
-      prerequisites: [{ pathId: foundation, rank: 5 }],
-      milestones: { 1: "Cross-Training", 5: "Reliable Practice", 10: "Domain Veteran", 15: "Domain Complete" },
-    }),
-    [utility]: pathRecord({
-      id: utility, name: `${p.utility} Discipline`, kind: "utility", grade: "advanced",
-      description: `A side path in ${p.utility.toLowerCase()} that remains useful away from direct confrontation.`, weights: weightsFor(p.attributes, 2),
-      prerequisites: [{ pathId: foundation, rank: 10 }, { totalLevel: 25 }],
-      milestones: { 1: `${p.utility} Initiate`, 5: `${p.utility} Expert`, 10: `${p.utility} Master` },
-    }),
-    [archetype]: pathRecord({
-      id: archetype, name: p.archetype, kind: coreKind, grade: "advanced", description: p.archetypeDescription,
-      weights: weightsFor(p.attributes), prerequisites: [{ pathId: foundation, rank: 15 }, { pathId: practice, rank: 10 }, { totalLevel: 45 }],
-      milestones: { 1: "Archetype Awakened", 5: "Archetype Signature", 10: "Archetype Mastered" },
-    }),
-    [mastery]: pathRecord({
-      id: mastery, name: `${p.name} Mastery`, kind: coreKind, grade: "advanced",
-      description: `Integrates the profession's foundations into confident, high-order practice.`, weights: weightsFor(p.attributes, 1),
-      prerequisites: [{ pathId: archetype, rank: 5 }, { totalLevel: 55 }],
-      milestones: { 1: "Master's Method", 5: "Effortless Practice", 10: "Complete Mastery" },
-    }),
-    [synthesis]: pathRecord({
-      id: synthesis, name: `${p.archetype} Synthesis`, kind: coreKind, grade: "advanced",
-      description: `Fuses profession, archetype, lineage, and utility experience into one coherent discipline.`, weights: weightsFor(p.attributes, 3),
-      prerequisites: [{ pathId: archetype, rank: 10 }, { pathId: mastery, rank: 5 }, { totalLevel: 65 }],
-      milestones: { 1: "Disciplines Joined", 5: "Seamless Synthesis", 10: "Perfect Integration" },
-    }),
-    [exemplar]: pathRecord({
-      id: exemplar, name: `${p.name} Exemplar`, kind: coreKind, grade: "specialized",
-      description: `Rare ranks that turn mastery into an example others build traditions around.`, weights: weightsFor(p.attributes),
-      prerequisites: [{ pathId: mastery, rank: 10 }, { totalLevel: 75 }],
-      milestones: { 1: "Exemplar", 3: "Living Standard", 5: "Tradition Founder" },
-    }),
-    [specialist]: pathRecord({
-      id: specialist, name: `${p.utility} Savant`, kind: "utility", grade: "specialized",
-      description: `A rare utility culmination proving that non-combat practice can stand beside legendary battle arts.`, weights: weightsFor(p.attributes, 2),
-      prerequisites: [{ pathId: utility, rank: 10 }, { totalLevel: 80 }],
-      milestones: { 1: "Savant's Insight", 3: "Impossible Technique", 5: "World-Renowned Savant" },
-    }),
-    [paragon]: pathRecord({
-      id: paragon, name: `${p.archetype} Paragon`, kind: coreKind, grade: "specialized",
-      description: `A near-mythical expression of the profession's specialized archetype.`, weights: weightsFor(p.attributes, 1),
-      prerequisites: [{ pathId: synthesis, rank: 10 }, { pathId: exemplar, rank: 5 }, { totalLevel: 85 }],
-      milestones: { 1: "Paragon Threshold", 3: "Mythic Expression", 5: "Archetype Paragon" },
-    }),
-    [transcendent]: pathRecord({
-      id: transcendent, name: p.signature, kind: coreKind, grade: "specialized",
-      description: `The final five ranks of this exemplar route: ${p.signature}.`, weights: weightsFor(p.attributes),
-      prerequisites: [{ pathId: paragon, rank: 5 }, { pathId: specialist, rank: 5 }, { totalLevel: 95 }],
-      milestones: { 1: "Apex Threshold", 3: "World-Class Presence", 5: p.signature },
-    }),
-  };
+const RACIAL_SEGMENTS = Object.freeze([
+  Object.freeze({ role: "lineage", grade: "standard", ranks: 15 }),
+  Object.freeze({ role: "evolution", grade: "advanced", ranks: 10 }),
+  Object.freeze({ role: "apotheosis", grade: "specialized", ranks: 5 }),
+]);
+
+function professionPathName(profile, role) {
+  if (role === "foundation") return `${profile.name} Foundation`;
+  if (role === "practice") return `${labelize(profile.domain)} Practice`;
+  if (role === "specialization") return `${profile.name} Specialization`;
+  if (role === "mastery") return `${profile.name} Mastery`;
+  if (role === "synthesis") return `${profile.name} Synthesis`;
+  if (role === "exemplar") return `${profile.name} Exemplar`;
+  return `${profile.name} Apogee`;
 }
 
-const generatedCatalog = {};
-for (const [professionId, p] of Object.entries(PROFESSION_PROFILES)) {
-  Object.assign(generatedCatalog, generatedPaths(professionId, p));
+function buildProfessionCatalog() {
+  const paths = {};
+  const builds = {};
+  for (const [professionId, profile] of Object.entries(PROFESSION_PROFILES)) {
+    const allocations = [];
+    let previousPathId = null;
+    let total = 0;
+    for (const [index, segment] of PROFESSION_SEGMENTS.entries()) {
+      const pathId = `${professionId}-${segment.role}`;
+      const name = professionPathName(profile, segment.role);
+      paths[pathId] = pathRecord({
+        id: pathId,
+        name,
+        kind: "profession",
+        grade: segment.grade,
+        role: segment.role,
+        description: `${name} continues the general ${profile.name} progression${segment.role === "specialization" ? " while a chosen branch overlays it" : ""}.`,
+        weights: weightsFor(profile.attributes, index),
+        prerequisites: previousPathId ? { pathId: previousPathId, rank: PROFESSION_SEGMENTS[index - 1].ranks, trackLevel: total } : {},
+      });
+      allocations.push(Object.freeze({ role: segment.role, pathId, ranks: segment.ranks }));
+      previousPathId = pathId;
+      total += segment.ranks;
+    }
+    builds[professionId] = Object.freeze({
+      id: professionId,
+      professionId,
+      archetype: profile.specialization,
+      archetypePathId: `${professionId}-${slug(profile.specialization)}`,
+      description: profile.description,
+      allocations: Object.freeze(allocations),
+      totalLevels: PROFESSION_LEVEL_CAP,
+      contentStatus: professionContentStatus(professionId),
+      branches: professionBranchChoices(professionId),
+    });
+  }
+  return { paths: Object.freeze(paths), builds: Object.freeze(builds) };
 }
 
-export const PROGRESSION_PATHS = Object.freeze({ ...SHARED_PATHS, ...generatedCatalog });
-
-function buildFor(professionId, p) {
-  const root = slug(professionId);
-  return Object.freeze({
-    id: professionId,
-    professionId,
-    archetype: p.archetype,
-    archetypePathId: `${root}-${slug(p.archetype)}`,
-    description: p.archetypeDescription,
-    allocations: Object.freeze([
-      { role: "foundation", pathId: `${root}-foundation`, ranks: 15 },
-      { role: "practice", pathId: `${root}-${slug(p.domain)}-practice`, ranks: 15 },
-      { role: "utility", pathId: `${root}-${slug(p.utility)}`, ranks: 10 },
-      // The same ten-rank slot can cultivate supernatural lineage or broader
-      // utility. Either choice consumes the shared level budget.
-      { role: "side", pathId: "awakened-lineage", alternatePathId: "worldly-versatility", ranks: 10, choice: "racial-or-utility" },
-      { role: "archetype", pathId: `${root}-${slug(p.archetype)}`, ranks: 10 },
-      { role: "mastery", pathId: `${root}-mastery`, ranks: 10 },
-      { role: "synthesis", pathId: `${root}-synthesis`, ranks: 10 },
-      { role: "exemplar", pathId: `${root}-exemplar`, ranks: 5 },
-      { role: "utility-specialist", pathId: `${root}-${slug(p.utility)}-specialist`, ranks: 5 },
-      { role: "paragon", pathId: `${root}-paragon`, ranks: 5 },
-      { role: "transcendent", pathId: `${root}-transcendent`, ranks: 5 },
-    ].map((entry) => Object.freeze(entry))),
-  });
+function buildRacialCatalog() {
+  const paths = {};
+  const builds = {};
+  for (const [raceId, profile] of Object.entries(RACIAL_PROFILES)) {
+    const allocations = [];
+    let previousPathId = null;
+    let total = 0;
+    for (const [index, segment] of RACIAL_SEGMENTS.entries()) {
+      const pathId = `${raceId}-racial-${segment.role}`;
+      const stageName = profile.stages[index];
+      paths[pathId] = pathRecord({
+        id: pathId,
+        name: stageName,
+        kind: "racial",
+        grade: segment.grade,
+        role: segment.role,
+        description: `${profile.name} racial ${segment.role}: ${stageName}.`,
+        weights: weightsFor(profile.attributes, index),
+        prerequisites: previousPathId ? { pathId: previousPathId, rank: RACIAL_SEGMENTS[index - 1].ranks, trackLevel: total } : {},
+      });
+      allocations.push(Object.freeze({ role: segment.role, pathId, ranks: segment.ranks, stageName }));
+      previousPathId = pathId;
+      total += segment.ranks;
+    }
+    builds[raceId] = Object.freeze({ id: raceId, raceId, evolutionId: slug(profile.evolution), allocations: Object.freeze(allocations), totalLevels: RACIAL_LEVEL_CAP });
+  }
+  return { paths: Object.freeze(paths), builds: Object.freeze(builds) };
 }
 
-export const PROFESSION_BUILDS = Object.freeze(Object.fromEntries(
-  Object.entries(PROFESSION_PROFILES).map(([id, p]) => [id, buildFor(id, p)]),
-));
+const professionCatalog = buildProfessionCatalog();
+const racialCatalog = buildRacialCatalog();
+export const PROFESSION_BUILDS = professionCatalog.builds;
+export const RACIAL_BUILDS = racialCatalog.builds;
+export const PROGRESSION_PATHS = Object.freeze({ ...professionCatalog.paths, ...racialCatalog.paths });
+
+export function professionProfile(professionId) {
+  return PROFESSION_PROFILES[canonicalProfessionId(professionId)] || null;
+}
+
+export function professionBuild(professionId) {
+  return PROFESSION_BUILDS[canonicalProfessionId(professionId)] || null;
+}
+
+export function progressionPath(pathId) {
+  return PROGRESSION_PATHS[pathId] || null;
+}
 
 function hash(value) {
   let result = 2166136261;
@@ -318,203 +264,352 @@ function hash(value) {
 }
 
 function attributeGains(path, rank) {
-  const points = path.grade === "standard" ? 2 : path.grade === "advanced" ? 3 : 4;
+  const points = path.grade === "standard" ? 3 : path.grade === "advanced" ? 4 : 5;
   const tickets = [];
-  for (const key of ATTR_KEYS) {
-    for (let i = 0; i < Math.max(1, path.weights[key] || 1); i++) tickets.push(key);
-  }
+  for (const key of ATTR_KEYS) for (let index = 0; index < Math.max(1, path.weights[key] || 1); index++) tickets.push(key);
   const gains = Object.fromEntries(ATTR_KEYS.map((key) => [key, 0]));
   const start = (hash(path.id) + rank * 7) % tickets.length;
-  for (let point = 0; point < points; point++) {
-    gains[tickets[(start + point * 5) % tickets.length]] += 1;
-  }
+  for (let point = 0; point < points; point++) gains[tickets[(start + point * 5) % tickets.length]] += 1;
   return Object.fromEntries(Object.entries(gains).filter(([, value]) => value > 0));
 }
 
-function prerequisiteMet(requirement, ranks, totalLevel) {
-  if (requirement.totalLevel != null && totalLevel < requirement.totalLevel) return false;
-  if (requirement.pathId && (ranks[requirement.pathId] || 0) < (requirement.rank || 1)) return false;
-  return true;
-}
-
-function archetypeVariant(build, value) {
-  const requested = slug(value);
-  const canonicalId = build.archetypePathId;
-  const canonicalName = slug(build.archetype);
-  if (!requested || requested === slug(canonicalId) || requested === canonicalName) {
-    return { id: canonicalId, label: build.archetype, custom: false };
+function scheduledIndex(level, count, maxLevel) {
+  if (count === 0) return -1;
+  if (count <= 1) return level === 1 ? 0 : -1;
+  for (let index = 0; index < count; index++) {
+    if (Math.round(1 + index * ((maxLevel - 1) / (count - 1))) === level) return index;
   }
-  return {
-    id: requested,
-    label: requested.replace(/(^|[-_])([a-z])/g, (_, separator, letter) => `${separator ? " " : ""}${letter.toUpperCase()}`),
-    custom: true,
-  };
+  return -1;
 }
 
-function variantPathMap(build, variant) {
-  if (!variant.custom) return {};
-  return Object.fromEntries(build.allocations
-    .filter((allocation) => ["archetype", "synthesis", "paragon", "transcendent"].includes(allocation.role))
-    .map((allocation) => [allocation.pathId, `${allocation.pathId}--${variant.id}`]));
+function generalProfessionGrants(profile, professionId, level, choices = {}) {
+  const grants = [];
+  if (level === 1) grants.push(progressionGrant("proficiency", profile.domain));
+  if (professionId === "sorcerer") {
+    const signature = choices.signatureSpellId || choices.signature_spell || null;
+    if (level === 1) {
+      grants.push(signature && profile.abilities.includes(signature)
+        ? progressionGrant("ability", signature, { source: "signature-spell", signature: true })
+        : progressionGrant("ability-choice", "sorcerer-signature-spell", { options: profile.abilities, count: 1, selectionKey: "signatureSpellId", signature: true }));
+    }
+    const metamagicIds = Object.keys(METAMAGIC_FEATURES);
+    const metaIndex = [10, 20, 30, 40, 50, 60].indexOf(level);
+    if (metaIndex >= 0) {
+      const selected = Array.isArray(choices.metamagicIds) ? choices.metamagicIds[metaIndex] : null;
+      grants.push(selected && METAMAGIC_FEATURES[selected]
+        ? progressionGrant("metamagic", selected, { appliesTo: "signature-spell", slot: metaIndex })
+        : progressionGrant("metamagic-choice", `sorcerer-metamagic-${metaIndex + 1}`, {
+          options: metamagicIds, count: 1, selectionKey: "metamagicIds", slot: metaIndex, appliesTo: "signature-spell",
+        }));
+    }
+    if ([25, 45, 65].includes(level)) grants.push(progressionGrant("ability-choice", `sorcerer-signature-exchange-${level}`, {
+      options: profile.abilities, count: 1, selectionKey: "signatureSpellId", replace: true, signature: true,
+    }));
+  } else {
+    const abilityIndex = scheduledIndex(level, profile.abilities.length, PROFESSION_LEVEL_CAP);
+    if (abilityIndex >= 0) grants.push(progressionGrant("ability", profile.abilities[abilityIndex]));
+  }
+  const actionIndex = scheduledIndex(level, profile.actions.length, 55);
+  if (actionIndex >= 0) grants.push(progressionGrant("action", profile.actions[actionIndex]));
+  return grants;
 }
 
-function materializePath(basePath, allocation, variant, pathMap) {
-  const variantId = pathMap[basePath.id];
-  const role = allocation.role;
-  const shouldReshape = !!variantId;
+function resolveAuthoredGrant(grant, choices = {}, level) {
+  if (grant.type === "metamagic-choice") {
+    const selected = Array.isArray(choices.metamagicIds) ? choices.metamagicIds[grant.slot] : null;
+    return selected && grant.options.includes(selected)
+      ? progressionGrant("metamagic", selected, { appliesTo: grant.appliesTo, slot: grant.slot })
+      : grant;
+  }
+  if (grant.type !== "ability-choice" || !grant.selectionKey) return grant;
+  const selected = grant.replace
+    ? choices.signatureExchanges?.[String(level)]
+    : choices[grant.selectionKey];
+  if (grant.replace && selected && selected !== choices.signatureSpellId) return progressionGrant("proficiency", `sorcerer:signature-focus-history-${level}`, {
+    name: `Former Signature Focus: ${labelize(selected)}`,
+    description: "Records a replaced primary focus; the former spell is not retained unless it was independently chosen for the personal repertoire.",
+    formerSignatureSpellId: selected,
+  });
+  return selected && grant.options.includes(selected)
+    ? progressionGrant("ability", selected, {
+      source: grant.replace ? "signature-exchange" : "signature-spell",
+      signature: Boolean(grant.signature),
+      ...(grant.replace ? { replacesSignatureAt: level } : {}),
+    })
+    : grant;
+}
+
+function pathVariant(path, specializationId, professionId) {
+  const defaultId = slug(PROFESSION_PROFILES[professionId].specialization);
+  if (!specializationId || specializationId === defaultId || !["specialization", "synthesis", "exemplar", "apogee"].includes(path.role)) return path;
+  const label = labelize(specializationId);
   const names = {
-    archetype: variant.label,
-    synthesis: `${variant.label} Synthesis`,
-    paragon: `${variant.label} Paragon`,
-    transcendent: `${variant.label} Apex`,
+    specialization: label,
+    synthesis: `${label} Synthesis`,
+    exemplar: `${label} Exemplar`,
+    apogee: `${label} Apogee`,
   };
-  const weights = { ...basePath.weights };
-  if (shouldReshape) {
-    const seed = hash(`${variant.id}:${role}`);
-    weights[ATTR_KEYS[seed % ATTR_KEYS.length]] = (weights[ATTR_KEYS[seed % ATTR_KEYS.length]] || 1) + 5;
-    weights[ATTR_KEYS[(seed + 2) % ATTR_KEYS.length]] = (weights[ATTR_KEYS[(seed + 2) % ATTR_KEYS.length]] || 1) + 2;
-  }
-  return {
-    ...basePath,
-    id: variantId || basePath.id,
-    name: names[role] || basePath.name,
-    description: shouldReshape
-      ? `${variant.label} redirects this stage of ${basePath.description.charAt(0).toLowerCase()}${basePath.description.slice(1)}`
-      : basePath.description,
-    weights,
-    prerequisites: basePath.prerequisites.map((requirement) => ({
-      ...requirement,
-      ...(requirement.pathId && pathMap[requirement.pathId] ? { pathId: pathMap[requirement.pathId] } : {}),
-    })),
-  };
+  const weights = { ...path.weights };
+  const seed = hash(`${professionId}:${specializationId}:${path.role}`);
+  weights[ATTR_KEYS[seed % ATTR_KEYS.length]] += 4;
+  return { ...path, id: `${path.id}--${specializationId}`, name: names[path.role], weights };
 }
 
-export function professionProfile(professionId) {
-  return PROFESSION_PROFILES[professionId] || null;
-}
-
-export function professionBuild(professionId) {
-  return PROFESSION_BUILDS[professionId] || null;
-}
-
-export function progressionPath(pathId) {
-  return PROGRESSION_PATHS[pathId] || null;
-}
-
-// Expand the compact stack into the exact 100-row ledger used by both the
-// engine and Codex. The sidePath choice swaps only the explicit racial/utility
-// branch; everything else remains identical and validated.
-export function compileProfessionBuild(professionId, { sidePath = "racial", archetypeId = null } = {}) {
-  const build = professionBuild(professionId);
-  if (!build) return null;
-  const variant = archetypeVariant(build, archetypeId);
-  const pathMap = variantPathMap(build, variant);
-  const ranks = {};
+export function compileProfessionTrack(professionValue, {
+  specializationId = null,
+  archetypeId = null,
+  choices = {},
+  branchChoices = {},
+  specializationPath = [],
+} = {}) {
+  const identity = canonicalProfessionIdentity(professionValue, specializationId || archetypeId);
+  if (!identity) return null;
+  const { professionId } = identity;
+  const resolvedSpecialization = identity.specializationId;
+  const profile = PROFESSION_PROFILES[professionId];
+  const build = PROFESSION_BUILDS[professionId];
+  const selections = normalizeBranchChoices(professionId, branchChoices, specializationPath);
   const attributes = Object.fromEntries(ATTR_KEYS.map((key) => [key, 1]));
+  const ranks = {};
   const levels = [];
   const segments = [];
   for (const allocation of build.allocations) {
-    const chosenId = allocation.choice === "racial-or-utility" && sidePath === "utility"
-      ? allocation.alternatePathId
-      : allocation.pathId;
-    const basePath = progressionPath(chosenId);
-    if (!basePath) throw new Error(`Unknown progression path ${chosenId} in ${professionId}`);
-    const path = materializePath(basePath, allocation, variant, pathMap);
-    if (allocation.ranks > path.maxRank) throw new Error(`${chosenId} exceeds its ${path.grade} cap`);
-    const unmet = path.prerequisites.filter((requirement) => !prerequisiteMet(requirement, ranks, levels.length));
-    if (unmet.length) throw new Error(`${chosenId} prerequisites are not met in ${professionId}`);
+    const basePath = PROGRESSION_PATHS[allocation.pathId];
+    const path = pathVariant(basePath, resolvedSpecialization, professionId);
     const start = levels.length + 1;
     for (let rank = 1; rank <= allocation.ranks; rank++) {
-      if (levels.length >= CHARACTER_LEVEL_CAP) throw new Error(`${professionId} exceeds level ${CHARACTER_LEVEL_CAP}`);
-      const nextLevel = levels.length + 1;
+      const trackLevel = levels.length + 1;
       const proposedGains = attributeGains(path, rank);
       const gains = {};
       for (const [key, amount] of Object.entries(proposedGains)) {
         const before = attributes[key];
-        attributes[key] = Math.min(ATTRIBUTE_CAP, attributeCeilingForLevel(nextLevel), before + amount);
-        const applied = attributes[key] - before;
-        if (applied > 0) gains[key] = applied;
+        attributes[key] = Math.min(ATTRIBUTE_CAP, attributeCeilingForLevel(trackLevel), before + amount);
+        if (attributes[key] > before) gains[key] = attributes[key] - before;
       }
-      const feature = path.milestones[rank] || `Deepens ${path.name}`;
+      const authoredLevel = professionLevelTable(professionId)?.[trackLevel - 1] || null;
+      const generalGrants = authoredLevel
+        ? authoredLevel.grants.map((grant) => resolveAuthoredGrant(grant, choices, trackLevel))
+        : generalProfessionGrants(profile, professionId, trackLevel, choices);
+      const branchGrants = branchGrantsAtLevel(professionId, trackLevel, selections);
       ranks[path.id] = rank;
       levels.push(Object.freeze({
-        level: nextLevel,
+        level: trackLevel,
+        trackLevel,
         professionId,
+        specializationId: resolvedSpecialization,
+        archetypeId: resolvedSpecialization,
         pathId: path.id,
         pathName: path.name,
-        kind: path.kind,
+        kind: "profession",
         grade: path.grade,
         rank,
         maxRank: path.maxRank,
-        archetypeId: variant.id,
-        attributeGains: Object.freeze({ ...gains }),
+        attributeGains: Object.freeze({ ...proposedGains }),
         cumulativeAttributes: Object.freeze({ ...attributes }),
-        feature,
+        feature: authoredLevel?.name || generalGrants[0]?.id || `Deepens ${path.name}`,
+        featureDescription: authoredLevel?.description || null,
+        authoredContent: !!authoredLevel,
+        generalGrants: Object.freeze(generalGrants),
+        branchGrants: Object.freeze(branchGrants),
+        grants: Object.freeze([...generalGrants, ...branchGrants]),
       }));
     }
     segments.push(Object.freeze({
-      pathId: path.id,
-      alternatePathId: allocation.alternatePathId || null,
-      pathName: path.name,
-      kind: path.kind,
-      grade: path.grade,
-      maxRank: path.maxRank,
-      description: path.description,
-      prerequisites: Object.freeze(path.prerequisites.map((requirement) => Object.freeze({ ...requirement }))),
-      ranks: allocation.ranks,
-      start,
-      end: levels.length,
+      pathId: path.id, pathName: path.name, kind: "profession", grade: path.grade, role: allocation.role,
+      maxRank: path.maxRank, description: path.description, prerequisites: path.prerequisites,
+      ranks: allocation.ranks, start, end: levels.length,
     }));
   }
-  if (levels.length !== CHARACTER_LEVEL_CAP) throw new Error(`${professionId} expands to ${levels.length}, not ${CHARACTER_LEVEL_CAP}`);
   return Object.freeze({
     ...build,
-    archetypeId: variant.id,
-    archetype: variant.label,
-    sidePath,
+    professionId,
+    specializationId: resolvedSpecialization,
+    archetypeId: resolvedSpecialization,
+    archetype: resolvedSpecialization ? labelize(resolvedSpecialization) : null,
+    branchChoices: Object.freeze({ ...selections }),
+    pendingChoices: Object.freeze(pendingBranchChoices(professionId, PROFESSION_LEVEL_CAP, selections)),
     totalLevels: levels.length,
     levels: Object.freeze(levels),
     segments: Object.freeze(segments),
-    ranks: Object.freeze({ ...ranks }),
+    ranks: Object.freeze(ranks),
     finalAttributes: Object.freeze({ ...attributes }),
   });
 }
 
-export function progressionAtLevel(professionId, level, options) {
-  const compiled = compileProfessionBuild(professionId, options);
-  if (!compiled) return null;
-  const target = Math.max(0, Math.min(CHARACTER_LEVEL_CAP, Math.floor(Number(level) || 0)));
-  const rows = compiled.levels.slice(0, target);
-  const ranks = {};
-  for (const row of rows) ranks[row.pathId] = row.rank;
-  return Object.freeze({
-    professionId,
-    level: target,
-    ranks: Object.freeze(ranks),
-    latest: rows.at(-1) || null,
-    attributes: rows.at(-1)?.cumulativeAttributes || Object.freeze(Object.fromEntries(ATTR_KEYS.map((key) => [key, 1]))),
+// Compatibility name: a profession build is now a 70-rank profession track,
+// never a complete 100-level character route.
+export function compileProfessionBuild(professionId, options = {}) {
+  return compileProfessionTrack(professionId, options);
+}
+
+export function compileRacialTrack(raceId = "human", { evolutionId = null, branchChoices = {}, evolutionPath = [] } = {}) {
+  const id = slug(raceId) || "human";
+  // Narrated creatures can carry an uncatalogued race id. Keep those saves
+  // loadable with a deliberately generic ladder; every catalogued playable
+  // race uses its fully authored thirty-row progression below.
+  const profile = racialProfileFor(id) || Object.freeze({
+    name: labelize(id),
+    stages: Object.freeze([labelize(id), `Greater ${labelize(id)}`, `${labelize(id)} Exemplar`]),
+    evolution: `${labelize(id)} Exemplar`,
+    attributes: Object.freeze(["vigor", "body", "wit", "presence"]),
   });
+  const build = RACIAL_BUILDS[id] || (() => {
+    const allocations = RACIAL_SEGMENTS.map((segment, index) => ({ role: segment.role, pathId: `${id}-racial-${segment.role}`, ranks: segment.ranks, stageName: profile.stages[index] }));
+    return { id, raceId: id, evolutionId: slug(profile.evolution), allocations, totalLevels: RACIAL_LEVEL_CAP };
+  })();
+  const attributes = Object.fromEntries(ATTR_KEYS.map((key) => [key, 1]));
+  const selections = normalizeRacialBranchChoices(id, branchChoices, evolutionPath);
+  const ranks = {};
+  const levels = [];
+  const segments = [];
+  for (const [index, allocation] of build.allocations.entries()) {
+    const basePath = PROGRESSION_PATHS[allocation.pathId] || pathRecord({
+      id: allocation.pathId, name: allocation.stageName, kind: "racial", grade: RACIAL_SEGMENTS[index].grade,
+      role: allocation.role, description: `${profile.name} racial ${allocation.role}.`, weights: weightsFor(profile.attributes, index),
+    });
+    const start = levels.length + 1;
+    for (let rank = 1; rank <= allocation.ranks; rank++) {
+      const trackLevel = levels.length + 1;
+      const gains = attributeGains(basePath, rank);
+      for (const [key, amount] of Object.entries(gains)) attributes[key] = Math.min(ATTRIBUTE_CAP, attributeCeilingForLevel(trackLevel), attributes[key] + amount);
+      const authored = racialProgressionAtLevel(id, trackLevel);
+      const generalGrants = authored
+        ? [...authored.grants]
+        : [progressionGrant("proficiency", `${id}:racial-level-${trackLevel}`, {
+          name: `${profile.name} ${trackLevel}`,
+          description: `Deepens the uncatalogued ${profile.name} racial progression.`,
+          source: "racial-progression-fallback",
+        })];
+      if (!authored && [1, 16, 26].includes(trackLevel)) {
+        const stage = [1, 16, 26].indexOf(trackLevel);
+        generalGrants.push(progressionGrant("evolution", slug(profile.stages[stage]), { name: profile.stages[stage], stage: stage + 1 }));
+      }
+      const branchGrants = racialBranchGrantsAtLevel(id, trackLevel, selections);
+      const grants = [...generalGrants, ...branchGrants];
+      ranks[basePath.id] = rank;
+      levels.push(Object.freeze({
+        level: trackLevel, trackLevel, raceId: id, evolutionId: evolutionId || build.evolutionId,
+        pathId: basePath.id, pathName: basePath.name, kind: "racial", grade: basePath.grade,
+        rank, maxRank: basePath.maxRank, attributeGains: Object.freeze(gains), cumulativeAttributes: Object.freeze({ ...attributes }),
+        feature: authored?.name || grants[0]?.id || `Deepens ${basePath.name}`,
+        featureDescription: authored?.description || `Deepens the ${basePath.name} racial progression.`,
+        authoredContent: Boolean(authored),
+        generalGrants: Object.freeze(generalGrants), branchGrants: Object.freeze(branchGrants), grants: Object.freeze(grants),
+      }));
+    }
+    segments.push(Object.freeze({ pathId: basePath.id, pathName: basePath.name, kind: "racial", grade: basePath.grade, role: allocation.role, maxRank: basePath.maxRank, description: basePath.description, prerequisites: basePath.prerequisites, ranks: allocation.ranks, start, end: levels.length }));
+  }
+  return Object.freeze({
+    ...build, raceId: id, evolutionId: evolutionId || build.evolutionId, stages: profile.stages,
+    branches: racialBranchChoices(id), branchChoices: selections,
+    pendingChoices: pendingRacialBranchChoices(id, RACIAL_LEVEL_CAP, selections),
+    totalLevels: levels.length, levels: Object.freeze(levels), segments: Object.freeze(segments),
+    ranks: Object.freeze(ranks), finalAttributes: Object.freeze({ ...attributes }),
+  });
+}
+
+export function compileCharacterProgression({ professions = [], racial = null } = {}) {
+  const professionTotal = professions.reduce((sum, track) => sum + Math.max(0, Math.floor(Number(track.levels) || 0)), 0);
+  const racialLevels = Math.max(0, Math.floor(Number(racial?.levels) || 0));
+  if (professionTotal > PROFESSION_LEVEL_CAP) throw new Error(`Profession levels ${professionTotal} exceed ${PROFESSION_LEVEL_CAP}`);
+  if (racialLevels > RACIAL_LEVEL_CAP) throw new Error(`Racial levels ${racialLevels} exceed ${RACIAL_LEVEL_CAP}`);
+  if (professionTotal + racialLevels > CHARACTER_LEVEL_CAP) throw new Error(`Character levels exceed ${CHARACTER_LEVEL_CAP}`);
+  const trackResults = professions.map((track) => ({
+    requested: track,
+    compiled: compileProfessionTrack(track.professionId || track.profession, {
+      specializationId: track.specializationId || track.specialization || track.archetypeId,
+      choices: track.choices,
+      branchChoices: track.branchChoices,
+      specializationPath: track.specializationPath,
+    }),
+  }));
+  if (trackResults.some(({ compiled }) => !compiled)) throw new Error("Unknown profession allocation");
+  const racialCompiled = racialLevels > 0 ? compileRacialTrack(racial?.raceId || "human", { evolutionId: racial?.evolutionId, branchChoices: racial?.branchChoices, evolutionPath: racial?.evolutionPath }) : null;
+  const sourceRows = [
+    ...(racialCompiled ? racialCompiled.levels.slice(0, racialLevels) : []),
+    ...trackResults.flatMap(({ requested, compiled }) => compiled.levels.slice(0, requested.levels)),
+  ];
+  const attributes = Object.fromEntries(ATTR_KEYS.map((key) => [key, 1]));
+  const levels = sourceRows.map((row, index) => {
+    const level = index + 1;
+    const gains = {};
+    for (const [key, amount] of Object.entries(row.attributeGains || {})) {
+      const before = attributes[key];
+      attributes[key] = Math.min(ATTRIBUTE_CAP, attributeCeilingForLevel(level), before + amount);
+      if (attributes[key] > before) gains[key] = attributes[key] - before;
+    }
+    return Object.freeze({ ...row, level, attributeGains: Object.freeze(gains), cumulativeAttributes: Object.freeze({ ...attributes }) });
+  });
+  const ranks = {};
+  for (const row of levels) ranks[row.pathId] = row.rank;
+  return Object.freeze({
+    totalLevels: levels.length,
+    professionLevels: professionTotal,
+    racialLevels,
+    professions: Object.freeze(trackResults.map(({ requested, compiled }) => Object.freeze({ ...compiled, investedLevels: requested.levels }))),
+    racial: racialCompiled ? Object.freeze({ ...racialCompiled, investedLevels: racialLevels }) : null,
+    levels: Object.freeze(levels), ranks: Object.freeze(ranks), finalAttributes: Object.freeze({ ...attributes }),
+  });
+}
+
+export function progressionAtLevel(professionId, level, options = {}) {
+  const target = Math.max(0, Math.min(CHARACTER_LEVEL_CAP, Math.floor(Number(level) || 0)));
+  const racialLevels = Math.max(0, Math.min(RACIAL_LEVEL_CAP, options.racialLevels ?? Math.max(0, target - PROFESSION_LEVEL_CAP)));
+  const professionLevels = Math.min(PROFESSION_LEVEL_CAP, target - racialLevels);
+  const compiled = compileCharacterProgression({
+    professions: [{
+      professionId,
+      specializationId: options.specializationId || options.archetypeId,
+      levels: professionLevels,
+      choices: options.choices,
+      branchChoices: options.branchChoices,
+      specializationPath: options.specializationPath,
+    }],
+    racial: racialLevels > 0 ? { raceId: options.raceId || "human", evolutionId: options.evolutionId, levels: racialLevels, branchChoices: options.racialBranchChoices, evolutionPath: options.evolutionPath } : null,
+  });
+  return Object.freeze({
+    professionId: canonicalProfessionId(professionId), level: target,
+    professionLevel: professionLevels, racialLevel: racialLevels, ranks: compiled.ranks,
+    latest: compiled.levels.at(-1) || null, attributes: compiled.finalAttributes, levels: compiled.levels,
+  });
+}
+
+export function pendingProfessionChoices(track) {
+  const professionId = canonicalProfessionId(track?.professionId || track?.profession);
+  if (!professionId) return [];
+  const levels = track?.levels ?? Object.values(track?.paths || {}).reduce((sum, rank) => sum + Math.max(0, Number(rank) || 0), 0);
+  return pendingBranchChoices(professionId, levels, normalizeBranchChoices(professionId, track?.branchChoices, track?.specializationPath));
 }
 
 export function validateProgressionCatalog() {
   const errors = [];
   for (const [id, path] of Object.entries(PROGRESSION_PATHS)) {
     if (!PATH_KINDS.includes(path.kind)) errors.push(`${id}: invalid kind ${path.kind}`);
-    if (path.maxRank !== PATH_GRADE_CAPS[path.grade]) errors.push(`${id}: cap does not match ${path.grade}`);
-    for (const key of Object.keys(path.weights || {})) if (!ATTR_KEYS.includes(key)) errors.push(`${id}: invalid attribute ${key}`);
-    for (const requirement of path.prerequisites) {
-      if (requirement.pathId && !PROGRESSION_PATHS[requirement.pathId]) errors.push(`${id}: missing prerequisite ${requirement.pathId}`);
-    }
+    if (path.maxRank !== PATH_GRADE_CAPS[path.grade]) errors.push(`${id}: invalid ${path.grade} cap`);
   }
-  for (const id of Object.keys(PROFESSION_BUILDS)) {
-    for (const sidePath of ["racial", "utility"]) {
-      try {
-        const compiled = compileProfessionBuild(id, { sidePath });
-        if (compiled.levels.some((row, index) => row.level !== index + 1)) errors.push(`${id}: non-contiguous levels`);
-      } catch (error) {
-        errors.push(`${id}: ${error.message}`);
+  const validateGrant = (grant, owner) => {
+    const error = validateProgressionGrant(grant, { abilityExists: (id) => !!getAbilityDef(id) });
+    if (error) errors.push(`${owner}: ${error}`);
+  };
+  for (const professionId of Object.keys(PROFESSION_PROFILES)) {
+    try {
+      const compiled = compileProfessionTrack(professionId);
+      if (compiled.totalLevels !== PROFESSION_LEVEL_CAP) errors.push(`${professionId}: not ${PROFESSION_LEVEL_CAP} levels`);
+      for (const row of compiled.levels) for (const grant of row.grants) validateGrant(grant, `${professionId}/L${row.level}`);
+      for (const branchChoice of professionBranchChoices(professionId)) {
+        for (const branchOption of branchChoice.options) for (const grant of branchOption.grants) validateGrant(grant, `${professionId}/${branchOption.id}`);
       }
-    }
+    } catch (error) { errors.push(`${professionId}: ${error.message}`); }
+  }
+  for (const raceId of Object.keys(RACIAL_PROFILES)) {
+    try {
+      const compiled = compileRacialTrack(raceId);
+      if (compiled.totalLevels !== RACIAL_LEVEL_CAP) errors.push(`${raceId}: not ${RACIAL_LEVEL_CAP} racial levels`);
+      for (const row of compiled.levels) for (const grant of row.grants) validateGrant(grant, `${raceId}/L${row.level}`);
+      for (const branchChoice of racialBranchChoices(raceId)) {
+        for (const branchOption of branchChoice.options) for (const grant of branchOption.grants) validateGrant(grant, `${raceId}/${branchOption.id}`);
+      }
+    } catch (error) { errors.push(`${raceId}: ${error.message}`); }
   }
   return errors;
 }

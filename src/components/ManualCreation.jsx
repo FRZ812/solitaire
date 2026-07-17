@@ -3,21 +3,23 @@ import { Icon } from "./Icon.jsx";
 import { colors, radius, fonts } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS, CHARACTER_LEVEL_CAP, ORIGIN_LABEL } from "../config.js";
 import { RACES } from "../data/races.js";
-import { ABILITY_CATALOG, abilityCategoryOf, getAbilityDef } from "../data/abilities.js";
+import { getAbilityDef } from "../data/abilities.js";
 import { ALL_ITEMS } from "../data/catalog.js";
 import { equipSlot } from "../engine/combat-stats.js";
-import { TIERS, tier as tierInfo, tierColor, tierLabel, tierOrder } from "../data/tiers.js";
+import { tierColor, tierLabel } from "../data/tiers.js";
 import { CHARACTER_TEMPLATES, STANDARD_PROVISIONS } from "../data/templates.js";
 import { descriptorFor } from "../data/attractiveness.js";
 import { PROFESSIONS } from "../data/professions.js";
 import {
   attributeCeilingForLevel,
   canonicalProfessionId,
-  levelTier,
+  compileCharacterProgression,
+  isBroadProfessionName,
   professionBuild,
-  progressionAtLevel,
+  professionProfile,
 } from "../data/progression-paths.js";
-import { attributesForProgression } from "../engine/progression.js";
+import { METAMAGIC_FEATURES, PROGRESSION_FEATURES } from "../data/progression-features.js";
+import { createProgression } from "../engine/progression.js";
 
 const APPEARANCE_OPTS = {
   skin: ["pale", "fair", "tanned", "olive", "brown", "deep brown", "ashen", "grey", "ruddy"],
@@ -32,8 +34,13 @@ const AGING_MODES = [
   { id: "out-of-time", label: "Out-of-Time" },
 ];
 const PROFESSION_OPTS = Object.keys(PROFESSIONS);
+const PROFESSION_DATALIST = Object.values(PROFESSIONS).map((profession) => ({
+  id: profession.id,
+  name: profession.name,
+}));
 const ARCHETYPE_OPTS = [...new Set([
   ...CHARACTER_TEMPLATES.map((template) => template.setup.archetype),
+  ...Object.values(PROFESSIONS).flatMap((profession) => (profession.specializations || []).map((entry) => entry.id)),
   ...PROFESSION_OPTS.map((id) => professionBuild(id)?.archetypePathId),
 ].filter(Boolean))];
 const ITEM_KINDS = [
@@ -48,17 +55,84 @@ const ITEM_KINDS = [
 ];
 
 const slug = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-const sidePathForRace = (race) => (race === "human" ? "utility" : "racial");
 const sameAttributes = (left, right) => ATTR_KEYS.every((key) => Number(left?.[key]) === Number(right?.[key]));
 const archetypeFor = (professionValue, archetypeValue, professionId) => archetypeValue.trim()
-  || (slug(professionValue) && slug(professionValue) !== professionId ? professionValue.trim() : null)
-  || professionBuild(professionId)?.archetypePathId
+  || (slug(professionValue) && !isBroadProfessionName(professionValue, professionId) ? professionValue.trim() : null)
   || null;
 
-// Tiers a granted ability may take: from its floor up to divine.
-function tiersAtOrAbove(floorId) {
-  const f = tierOrder(floorId || "common");
-  return TIERS.filter((t) => t.order >= f);
+function fitAttributesToRoute(attributes, projected, level, { preserveValidShape = true } = {}) {
+  const ceiling = attributeCeilingForLevel(level);
+  const projectedValues = ATTR_KEYS.map((key) => Math.max(0, Math.min(ceiling, Number(projected?.[key]) || 0)));
+  const projectedTotal = projectedValues.reduce((sum, value) => sum + value, 0);
+  const suppliedValues = ATTR_KEYS.map((key, index) => {
+    const value = Number(attributes?.[key]);
+    return Math.max(0, Math.min(ceiling, Number.isFinite(value) ? value : projectedValues[index]));
+  });
+  const suppliedTotal = suppliedValues.reduce((sum, value) => sum + value, 0);
+  if (projectedTotal <= 0) return Object.fromEntries(ATTR_KEYS.map((key) => [key, 0]));
+
+  const lowerBudget = Math.round(projectedTotal * 0.85);
+  const upperBudget = Math.round(projectedTotal * 1.15);
+  const hasCompleteSheet = ATTR_KEYS.every((key) => Number.isFinite(Number(attributes?.[key])));
+  if (preserveValidShape && hasCompleteSheet && suppliedTotal >= lowerBudget && suppliedTotal <= upperBudget) {
+    return Object.fromEntries(ATTR_KEYS.map((key, index) => [key, Math.round(suppliedValues[index])]));
+  }
+
+  const targetBudget = Math.min(ceiling * ATTR_KEYS.length, Math.max(
+    lowerBudget,
+    Math.min(upperBudget, suppliedTotal || projectedTotal),
+  ));
+  const weighted = ATTR_KEYS.map((_, index) => {
+    const routeShare = projectedValues[index] / projectedTotal;
+    const suppliedShare = suppliedTotal > 0 ? suppliedValues[index] / suppliedTotal : routeShare;
+    return targetBudget * ((routeShare * 0.7) + (suppliedShare * 0.3));
+  });
+  const allocated = weighted.map((value) => Math.min(ceiling, Math.floor(value)));
+  let remaining = targetBudget - allocated.reduce((sum, value) => sum + value, 0);
+  const order = weighted
+    .map((value, index) => ({ index, remainder: value - Math.floor(value) }))
+    .sort((left, right) => right.remainder - left.remainder || left.index - right.index);
+  while (remaining > 0) {
+    let changed = false;
+    for (const { index } of order) {
+      if (remaining <= 0) break;
+      if (allocated[index] >= ceiling) continue;
+      allocated[index] += 1;
+      remaining -= 1;
+      changed = true;
+    }
+    if (!changed) break;
+  }
+  return Object.fromEntries(ATTR_KEYS.map((key, index) => [key, allocated[index]]));
+}
+
+const INITIAL_ATTRIBUTES = compileCharacterProgression({
+  professions: [{ professionId: "wanderer", levels: 10 }],
+}).finalAttributes;
+
+function titleCase(value) {
+  return String(value || "").replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function routeGrantDetails(grant) {
+  if (grant.type === "ability") {
+    const ability = getAbilityDef(grant.id);
+    return { name: ability?.name || titleCase(grant.id), description: grant.description || ability?.desc || "" };
+  }
+  if (grant.type === "ability-choice") {
+    const options = (grant.options || []).map((id) => getAbilityDef(id)?.name || titleCase(id));
+    return { name: grant.replace ? "Signature spell exchange" : "Ability choice pending", description: options.join(" · ") };
+  }
+  if (grant.type === "metamagic" || grant.type === "metamagic-choice") {
+    const feature = METAMAGIC_FEATURES[grant.id];
+    const options = (grant.options || []).map((id) => METAMAGIC_FEATURES[id]?.name || titleCase(id));
+    return {
+      name: feature?.name || (grant.type === "metamagic-choice" ? "Metamagic choice pending" : titleCase(grant.id)),
+      description: grant.description || feature?.description || options.join(" · "),
+    };
+  }
+  const feature = PROGRESSION_FEATURES[grant.id];
+  return { name: feature?.name || titleCase(grant.id || grant.type), description: grant.description || feature?.description || "" };
 }
 
 const SectionHeader = ({ icon, title, sub, open, onToggle }) => (
@@ -101,7 +175,10 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
   const [lifespanMultiplier, setLifespanMultiplier] = useState(2.0);
   const [profession, setProfession] = useState("");
   const [archetype, setArchetype] = useState("");
-  const [level, setLevel] = useState(10);
+  const [signatureSpellId, setSignatureSpellId] = useState("");
+  const [racialLevels, setRacialLevels] = useState(0);
+  const [primaryProfessionLevels, setPrimaryProfessionLevels] = useState(10);
+  const [multiclassAllocations, setMulticlassAllocations] = useState([]);
   const [race, setRace] = useState("human");
   const [subrace, setSubrace] = useState(null);
   const [origin, setOrigin] = useState("north");
@@ -109,8 +186,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
   const [attractiveness, setAttractiveness] = useState(5);
   const [gender, setGender] = useState("male");
   const [baseAppearance, setBaseAppearance] = useState("");
-  const [attrs, setAttrs] = useState(() => ({ ...progressionAtLevel("wanderer", 10, { sidePath: "utility" }).attributes }));
-  const [abilities, setAbilities] = useState([]); // [{id, tier}]
+  const [attrs, setAttrs] = useState(() => ({ ...INITIAL_ATTRIBUTES }));
   const [items, setItems] = useState([]); // [{itemId, quantity, worn}]
   const [itemSearch, setItemSearch] = useState("");
   const [itemKind, setItemKind] = useState("weapon");
@@ -120,20 +196,51 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
   const isHuman = race === "human";
   const professionId = canonicalProfessionId(profession) || "wanderer";
   const archetypeId = archetypeFor(profession, archetype, professionId);
-  const sidePath = sidePathForRace(race);
-  const routeBaseline = progressionAtLevel(professionId, level, { sidePath, archetypeId }).attributes;
+  const multiclassLevels = multiclassAllocations.reduce((sum, allocation) => sum + (Number(allocation.levels) || 0), 0);
+  const professionLevels = primaryProfessionLevels + multiclassLevels;
+  const level = Math.max(1, racialLevels + professionLevels);
+
+  const compileCreationRoute = (overrides = {}) => {
+    const nextProfessionId = overrides.professionId ?? professionId;
+    const nextArchetypeId = overrides.archetypeId ?? archetypeId;
+    const nextPrimaryLevels = overrides.primaryProfessionLevels ?? primaryProfessionLevels;
+    const nextMulticlass = overrides.multiclassAllocations ?? multiclassAllocations;
+    const nextRacialLevels = overrides.racialLevels ?? racialLevels;
+    const nextRace = overrides.raceId ?? race;
+    const nextEvolution = Object.prototype.hasOwnProperty.call(overrides, "evolutionId") ? overrides.evolutionId : subrace;
+    const professions = [
+      {
+        professionId: nextProfessionId,
+        specializationId: nextArchetypeId,
+        levels: nextPrimaryLevels,
+        choices: nextProfessionId === "sorcerer" && signatureSpellId ? { signatureSpellId } : {},
+      },
+      ...nextMulticlass.map((allocation) => ({
+        professionId: canonicalProfessionId(allocation.profession) || "wanderer",
+        specializationId: allocation.archetype || null,
+        levels: Number(allocation.levels) || 0,
+      })),
+    ].filter((allocation) => allocation.levels > 0);
+    return compileCharacterProgression({
+      professions,
+      racial: nextRacialLevels > 0 ? {
+        raceId: nextRace,
+        evolutionId: nextEvolution || null,
+        levels: nextRacialLevels,
+      } : null,
+    });
+  };
+
+  const routeProjection = compileCreationRoute();
+  const routeBaseline = routeProjection.finalAttributes;
   const routeTotal = ATTR_KEYS.reduce((sum, key) => sum + (routeBaseline[key] || 0), 0);
   const routeBudgetMin = Math.round(routeTotal * 0.85);
   const routeBudgetMax = Math.round(routeTotal * 1.15);
 
-  const fitAttributes = (candidate, overrides = {}) => attributesForProgression({
-    attributes: candidate,
-    professionId: overrides.professionId ?? professionId,
-    archetypeId: overrides.archetypeId ?? archetypeId,
-    level: overrides.level ?? level,
-    sidePath: overrides.sidePath ?? sidePath,
-    preserveValidShape: true,
-  });
+  const fitAttributes = (candidate, overrides = {}) => {
+    const route = compileCreationRoute(overrides);
+    return fitAttributesToRoute(candidate, route.finalAttributes, Math.max(1, route.totalLevels));
+  };
 
   const attributeCeiling = attributeCeilingForLevel(level);
   const setAttr = (k, d) => setAttrs((current) => fitAttributes({
@@ -141,57 +248,98 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
     [k]: Math.max(0, Math.min(attributeCeiling, (current[k] || 0) + d)),
   }));
   const attrTotal = ATTR_KEYS.reduce((s, k) => s + (attrs[k] || 0), 0);
+  const isPrimarySorcerer = professionId === "sorcerer" && primaryProfessionLevels > 0;
+  const signatureSpellOptions = professionProfile("sorcerer")?.abilities || [];
+  const earnedRouteGrants = [];
+  const seenRouteGrants = new Set();
+  for (const row of routeProjection.levels) {
+    for (const grant of row.grants || []) {
+      const key = `${grant.type}:${grant.id || (grant.options || []).join("|")}:${grant.slot ?? ""}:${grant.replace ? "replace" : ""}`;
+      if (seenRouteGrants.has(key)) continue;
+      seenRouteGrants.add(key);
+      earnedRouteGrants.push({ grant, level: row.level, source: row.pathName });
+    }
+  }
 
-  const pickLevel = (raw) => {
-    const nextLevel = Math.max(1, Math.min(CHARACTER_LEVEL_CAP, Math.round(Number(raw) || 1)));
-    const nextBaseline = progressionAtLevel(professionId, nextLevel, { sidePath, archetypeId }).attributes;
-    setLevel(nextLevel);
+  const refitForRoute = (overrides) => {
+    const nextBaseline = compileCreationRoute(overrides).finalAttributes;
     setAttrs((current) => sameAttributes(current, routeBaseline)
       ? { ...nextBaseline }
-      : fitAttributes(current, { level: nextLevel }));
+      : fitAttributes(current, overrides));
+  };
+
+  const pickRacialLevels = (raw) => {
+    const next = Math.max(0, Math.min(30, Math.round(Number(raw) || 0)));
+    setRacialLevels(next);
+    refitForRoute({ racialLevels: next });
+  };
+
+  const pickPrimaryProfessionLevels = (raw) => {
+    const next = Math.max(0, Math.min(70 - multiclassLevels, Math.round(Number(raw) || 0)));
+    setPrimaryProfessionLevels(next);
+    refitForRoute({ primaryProfessionLevels: next });
+  };
+
+  const addMulticlass = () => {
+    const fallbackId = PROFESSION_OPTS.find((id) => id !== professionId) || "wanderer";
+    const fallback = PROFESSIONS[fallbackId]?.name || fallbackId;
+    setMulticlassAllocations((current) => [...current, {
+      key: `${Date.now()}-${current.length}`,
+      profession: fallback,
+      archetype: "",
+      levels: 0,
+    }]);
+  };
+
+  const updateMulticlass = (key, patch) => {
+    const nextAllocations = multiclassAllocations.map((allocation) => {
+      if (allocation.key !== key) return allocation;
+      const next = { ...allocation, ...patch };
+      if (patch.profession != null) {
+        next.archetype = "";
+      }
+      if (patch.levels != null) {
+        const otherLevels = multiclassAllocations.reduce((sum, entry) => sum + (entry.key === key ? 0 : Number(entry.levels) || 0), 0);
+        next.levels = Math.max(0, Math.min(70 - primaryProfessionLevels - otherLevels, Math.round(Number(patch.levels) || 0)));
+      }
+      return next;
+    });
+    setMulticlassAllocations(nextAllocations);
+    refitForRoute({ multiclassAllocations: nextAllocations });
+  };
+
+  const removeMulticlass = (key) => {
+    const nextAllocations = multiclassAllocations.filter((allocation) => allocation.key !== key);
+    setMulticlassAllocations(nextAllocations);
+    refitForRoute({ multiclassAllocations: nextAllocations });
   };
 
   const pickRace = (id) => {
-    const nextSidePath = sidePathForRace(id);
-    const nextBaseline = progressionAtLevel(professionId, level, { sidePath: nextSidePath, archetypeId }).attributes;
     setRace(id);
     setSubrace(null);
     setOrigin(id === "human" ? "north" : id);
-    setAttrs((current) => sameAttributes(current, routeBaseline)
-      ? { ...nextBaseline }
-      : fitAttributes(current, { sidePath: nextSidePath }));
+    refitForRoute({ raceId: id, evolutionId: null });
   };
 
   const pickProfession = (value) => {
     const nextProfessionId = canonicalProfessionId(value) || "wanderer";
     const nextArchetypeId = archetypeFor(value, archetype, nextProfessionId);
-    const nextBaseline = progressionAtLevel(nextProfessionId, level, { sidePath, archetypeId: nextArchetypeId }).attributes;
+    if (nextProfessionId !== "sorcerer") setSignatureSpellId("");
     setProfession(value);
-    setAttrs((current) => sameAttributes(current, routeBaseline)
-      ? { ...nextBaseline }
-      : fitAttributes(current, { professionId: nextProfessionId, archetypeId: nextArchetypeId }));
+    refitForRoute({ professionId: nextProfessionId, archetypeId: nextArchetypeId });
   };
 
   const pickArchetype = (value) => {
     const nextArchetypeId = archetypeFor(profession, value, professionId);
-    const nextBaseline = progressionAtLevel(professionId, level, { sidePath, archetypeId: nextArchetypeId }).attributes;
     setArchetype(value);
-    setAttrs((current) => sameAttributes(current, routeBaseline)
-      ? { ...nextBaseline }
-      : fitAttributes(current, { archetypeId: nextArchetypeId }));
+    refitForRoute({ archetypeId: nextArchetypeId });
   };
 
-  // ---- abilities ----
-  const grantable = useMemo(() => {
-    const g = ABILITY_CATALOG.filter((a) => !a.innate && !a.unique);
-    const groups = { martial: [], spell: [] };
-    for (const a of g) (groups[abilityCategoryOf(a)] || groups.martial).push(a);
-    return groups;
-  }, []);
-  const hasAbility = (id) => abilities.some((a) => a.id === id);
-  const addAbility = (def) => { if (!hasAbility(def.id)) setAbilities((l) => [...l, { id: def.id, tier: def.minTier || "common" }]); };
-  const setAbilityTier = (id, t) => setAbilities((l) => l.map((a) => (a.id === id ? { ...a, tier: t } : a)));
-  const removeAbility = (id) => setAbilities((l) => l.filter((a) => a.id !== id));
+  const pickSubrace = (value) => {
+    const next = subrace === value ? null : value;
+    setSubrace(next);
+    refitForRoute({ evolutionId: next });
+  };
 
   // ---- items ----
   const itemList = useMemo(() => {
@@ -215,12 +363,37 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
     return [...l, ...STANDARD_PROVISIONS.filter((p) => !have.has(p.itemId)).map((p) => ({ itemId: p.itemId, quantity: p.quantity, worn: false }))];
   });
 
-  const canBegin = name.trim().length > 0 && !!race && !busy;
+  const canBegin = name.trim().length > 0 && !!race && (!isPrimarySorcerer || !!signatureSpellId) && !busy;
 
   const begin = () => {
     if (!canBegin) return;
     const appr = {};
     for (const k of ["skin", "hair", "eyes", "build", "facial_hair", "marks"]) if (appearance[k]?.trim()) appr[k] = appearance[k].trim();
+    const professionAllocations = [
+      {
+        professionId,
+        specializationId: archetypeId,
+        levels: primaryProfessionLevels,
+        choices: isPrimarySorcerer && signatureSpellId ? { signatureSpellId } : {},
+      },
+      ...multiclassAllocations
+        .filter((allocation) => Number(allocation.levels) > 0)
+        .map((allocation) => ({
+          professionId: canonicalProfessionId(allocation.profession) || "wanderer",
+          specializationId: allocation.archetype || null,
+          levels: Number(allocation.levels) || 0,
+        })),
+    ].filter((allocation) => allocation.levels > 0);
+    const progression = createProgression({
+      professionId,
+      archetypeId,
+      raceId: race,
+      evolutionId: subrace || null,
+      level,
+      racialLevels,
+      professions: professionAllocations,
+      signatureSpellId: isPrimarySorcerer ? signatureSpellId : null,
+    });
     onBegin({
       name: name.trim(),
       bond: bond.trim() || "A past unspoken — yours to reveal in the telling.",
@@ -228,14 +401,16 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
       agingMode,
       lifespanMultiplier: agingMode === "power-extended" ? lifespanMultiplier : undefined,
       attractiveness, gender,
-      profession: profession.trim() || "wanderer",
-      archetype: archetype.trim() || professionBuild(profession.trim() || "wanderer")?.archetypePathId || null,
+      profession: professionId,
+      archetype: archetypeId,
       level,
+      progression,
+      signatureSpell: isPrimarySorcerer ? signatureSpellId : null,
       race, subrace: subrace || null, origin: isHuman ? origin : race,
       attributes: fitAttributes(attrs),
       appearance: Object.keys(appr).length ? appr : undefined,
       base_appearance: baseAppearance.trim() || undefined,
-      abilities,
+      abilities: [],
       items,
       knows: [],
     });
@@ -262,7 +437,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
         {/* scroll body */}
         <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: "8px" }}>
           {/* IDENTITY */}
-          <SectionHeader icon="user" title="Identity" sub={name.trim() ? `${name}${profession ? ` · ${profession}` : ""}${archetype ? ` · ${archetype}` : ""}` : "name, drive, age, profession, archetype"} open={open === "identity"} onToggle={() => toggle("identity")} />
+          <SectionHeader icon="user" title="Identity" sub={name.trim() ? `${name}${profession ? ` · ${profession}` : ""}${archetype ? ` · ${archetype}` : ""}` : "name, drive, age, profession, specialization"} open={open === "identity"} onToggle={() => toggle("identity")} />
           {open === "identity" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "11px", padding: "4px 2px 8px" }}>
               <div><label style={fieldLabel}>Name</label><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" style={inputStyle} /></div>
@@ -288,32 +463,79 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={fieldLabel}>Profession</label>
-                  <input list="prof-opts" value={profession} onChange={(e) => pickProfession(e.target.value)} placeholder="e.g. sellsword" style={inputStyle} />
-                  <datalist id="prof-opts">{PROFESSION_OPTS.map((o) => <option key={o} value={o} />)}</datalist>
+                  <input list="prof-opts" value={profession} onChange={(e) => pickProfession(e.target.value)} placeholder="e.g. Warrior" style={inputStyle} />
+                  <datalist id="prof-opts">{PROFESSION_DATALIST.map((option) => <option key={option.id} value={option.name} />)}</datalist>
                 </div>
               </div>
               <div>
-                <label style={fieldLabel}>Archetype / specialized focus</label>
+                <label style={fieldLabel}>Specialization</label>
                 <input list="archetype-opts" value={archetype} onChange={(e) => pickArchetype(e.target.value)} placeholder="e.g. shadowblade" style={inputStyle} />
                 <datalist id="archetype-opts">{ARCHETYPE_OPTS.map((o) => <option key={o} value={o} />)}</datalist>
               </div>
               <div>
-                <label style={fieldLabel}>Progression level · {levelTier(level).label}</label>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <button onClick={() => pickLevel(level - 1)} style={stepBtn}>−</button>
-                  <input
-                    type="number"
-                    min={1}
-                    max={CHARACTER_LEVEL_CAP}
-                    value={level}
-                    onChange={(e) => pickLevel(e.target.value)}
-                    style={{ ...inputStyle, textAlign: "center", padding: "0 6px" }}
-                  />
-                  <button onClick={() => pickLevel(level + 1)} style={stepBtn}>+</button>
+                <label style={fieldLabel}>Level investment</label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <label style={{ ...fieldLabel, margin: 0 }}>
+                    <span>Racial evolution · {racialLevels} / 30</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={racialLevels}
+                      onChange={(event) => pickRacialLevels(event.target.value)}
+                      style={{ ...inputStyle, marginTop: "4px", textAlign: "center", padding: "0 6px" }}
+                    />
+                  </label>
+                  <label style={{ ...fieldLabel, margin: 0 }}>
+                    <span>Professions · {professionLevels} / 70</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={70 - multiclassLevels}
+                      value={primaryProfessionLevels}
+                      onChange={(event) => pickPrimaryProfessionLevels(event.target.value)}
+                      style={{ ...inputStyle, marginTop: "4px", textAlign: "center", padding: "0 6px" }}
+                    />
+                  </label>
                 </div>
-                <div style={{ fontSize: "10px", color: "rgba(237,228,208,0.55)", marginTop: "4px" }}>
-                  {levelTier(level).min}–{levelTier(level).max} {levelTier(level).label} · attribute ceiling {attributeCeiling}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", fontSize: "10px", color: "rgba(237,228,208,0.55)", marginTop: "6px" }}>
+                  <span>Total level {level} / {CHARACTER_LEVEL_CAP}</span>
+                  <span>Attribute ceiling {attributeCeiling}</span>
                 </div>
+              </div>
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                  <label style={{ ...fieldLabel, margin: 0 }}>Multiclass professions</label>
+                  <button type="button" onClick={addMulticlass} disabled={professionLevels >= 70} style={chip(false)}>Add profession</button>
+                </div>
+                {multiclassAllocations.map((allocation) => (
+                  <div key={allocation.key} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 72px 30px", gap: "6px", alignItems: "center", marginTop: "7px" }}>
+                    <input
+                      list="prof-opts"
+                      value={allocation.profession}
+                      onChange={(event) => updateMulticlass(allocation.key, { profession: event.target.value })}
+                      aria-label="Multiclass profession"
+                      style={{ ...inputStyle, minWidth: 0 }}
+                    />
+                    <input
+                      list="archetype-opts"
+                      value={allocation.archetype}
+                      onChange={(event) => updateMulticlass(allocation.key, { archetype: event.target.value })}
+                      aria-label="Multiclass specialization"
+                      style={{ ...inputStyle, minWidth: 0 }}
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      max={70 - primaryProfessionLevels}
+                      value={allocation.levels}
+                      onChange={(event) => updateMulticlass(allocation.key, { levels: event.target.value })}
+                      aria-label="Multiclass levels"
+                      style={{ ...inputStyle, textAlign: "center", padding: "0 5px" }}
+                    />
+                    <button type="button" onClick={() => removeMulticlass(allocation.key)} aria-label="Remove multiclass profession" style={removeBtn}>×</button>
+                  </div>
+                ))}
               </div>
               <div>
                 <label style={fieldLabel}>Gender</label>
@@ -359,7 +581,7 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
                 <div>
                   <label style={fieldLabel}>Lineage</label>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                    {Object.entries(subraceMap).map(([id, s]) => <button key={id} onClick={() => setSubrace(subrace === id ? null : id)} style={chip(subrace === id)}>{s.name}</button>)}
+                    {Object.entries(subraceMap).map(([id, s]) => <button key={id} onClick={() => pickSubrace(id)} style={chip(subrace === id)}>{s.name}</button>)}
                   </div>
                 </div>
               )}
@@ -425,39 +647,52 @@ export function ManualCreation({ onBegin, onCancel, onQuit, busy }) {
           )}
 
           {/* ABILITIES */}
-          <SectionHeader icon="swords" title="Abilities" sub={abilities.length ? `${abilities.length} chosen` : "techniques & spells"} open={open === "abilities"} onToggle={() => toggle("abilities")} />
+          <SectionHeader icon="swords" title="Progression grants" sub={`${earnedRouteGrants.length} earned abilities & features`} open={open === "abilities"} onToggle={() => toggle("abilities")} />
           {open === "abilities" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", padding: "4px 2px 8px" }}>
-              {abilities.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                  {abilities.map((a) => {
-                    const def = getAbilityDef(a.id);
-                    return (
-                      <div key={a.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 9px", borderRadius: radius.chip, backgroundColor: "rgba(215,167,111,0.08)", border: `1px solid rgba(215,167,111,0.25)` }}>
-                        <div style={{ flex: 1, fontSize: "12px", color: colors.parchmentLight, fontWeight: 600 }}>{def?.name || a.id}</div>
-                        <select value={a.tier} onChange={(e) => setAbilityTier(a.id, e.target.value)} style={{ ...inputStyle, width: "auto", height: "30px", padding: "0 8px", fontSize: "11px", color: tierColor(a.tier) }}>
-                          {tiersAtOrAbove(def?.minTier).map((t) => <option key={t.id} value={t.id} style={{ color: colors.ink }}>{t.label}</option>)}
-                        </select>
-                        <button onClick={() => removeAbility(a.id)} style={removeBtn}><Icon name="x" size={12} color="#fca5a5" strokeWidth={2.5} /></button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {["martial", "spell"].map((cat) => (
-                <div key={cat}>
-                  <div style={fieldLabel}>{cat === "martial" ? "Martial techniques" : "Spells"}</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                    {grantable[cat].map((def) => (
-                      <button key={def.id} onClick={() => addAbility(def)} disabled={hasAbility(def.id)} title={def.desc} style={{
-                        ...chip(false), opacity: hasAbility(def.id) ? 0.35 : 1, fontSize: "11px", padding: "5px 9px",
-                      }}>
-                        {def.name}{def.minTier ? <span style={{ color: tierColor(def.minTier), marginLeft: 4 }}>≥{tierInfo(def.minTier).label}</span> : null}
-                      </button>
-                    ))}
+              <div style={{ fontSize: "11px", lineHeight: 1.5, color: "rgba(237,228,208,0.6)" }}>
+                Your invested professions and racial evolution grant these automatically. Specialization and metamagic decisions unlock at their thresholds and cannot be bypassed here.
+              </div>
+              {isPrimarySorcerer && (
+                <div style={{ padding: "9px", borderRadius: radius.chip, backgroundColor: "rgba(215,167,111,0.08)", border: "1px solid rgba(215,167,111,0.25)" }}>
+                  <label style={fieldLabel}>Signature spell · required</label>
+                  <select
+                    value={signatureSpellId}
+                    onChange={(event) => setSignatureSpellId(event.target.value)}
+                    aria-label="Sorcerer signature spell"
+                    style={inputStyle}
+                  >
+                    <option value="">Choose a favourite spell</option>
+                    {signatureSpellOptions.map((id) => {
+                      const ability = getAbilityDef(id);
+                      return <option key={id} value={id}>{ability?.name || titleCase(id)}</option>;
+                    })}
+                  </select>
+                  <div style={{ marginTop: "6px", fontSize: "10px", lineHeight: 1.4, color: "rgba(237,228,208,0.55)" }}>
+                    Sorcerers build a small repertoire, while this primary signature anchors early metamagic and later exchange choices.
                   </div>
                 </div>
-              ))}
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {earnedRouteGrants.map(({ grant, level: grantLevel, source }, index) => {
+                  const details = routeGrantDetails(grant);
+                  return (
+                    <div key={`${grant.type}-${grant.id || index}-${grantLevel}`} style={{ padding: "8px 9px", borderRadius: radius.chip, backgroundColor: "rgba(20,29,29,0.5)", border: "1px solid rgba(215,167,111,0.18)" }}>
+                      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "8px" }}>
+                        <strong style={{ fontSize: "12px", color: colors.parchmentLight }}>{details.name}</strong>
+                        <span style={{ flexShrink: 0, fontSize: "9px", fontWeight: 800, color: "rgba(215,167,111,0.62)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Level {grantLevel} · {titleCase(grant.type)}</span>
+                      </div>
+                      {details.description && <div style={{ marginTop: "3px", fontSize: "10px", lineHeight: 1.4, color: "rgba(237,228,208,0.55)" }}>{details.description}</div>}
+                      {source && <div style={{ marginTop: "3px", fontSize: "9px", color: "rgba(215,167,111,0.48)" }}>{source}</div>}
+                    </div>
+                  );
+                })}
+                {earnedRouteGrants.length === 0 && (
+                  <div style={{ padding: "10px", fontSize: "11px", color: "rgba(237,228,208,0.5)", border: "1px dashed rgba(215,167,111,0.2)", borderRadius: radius.chip }}>
+                    Invest a level in a profession or racial evolution to earn its first grant.
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

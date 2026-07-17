@@ -3,7 +3,7 @@ import { makeInitialState } from "../data/initial-state.js";
 import { applyAcquisitions } from "./beat-acquisitions.js";
 import { AUTHORED_MOUNT_LEVELS, progressionLevel } from "./progression.js";
 import { maxResolveFor } from "./attributes.js";
-import { MOUNTS, MOUNT_PROGRESSION_LEVEL_BY_TIER } from "../data/mounts.js";
+import { MOUNTS } from "../data/mounts.js";
 
 function acquire(beat) {
   const state = makeInitialState();
@@ -21,17 +21,24 @@ function acquire(beat) {
 }
 
 function expectProgression(entry) {
-  expect(entry.progression).toMatchObject({ version: 1 });
+  expect(entry.progression).toMatchObject({ version: 2 });
+  expect(entry.progression.professions.length).toBeGreaterThan(0);
+  expect(entry.progression.racial).toBeTruthy();
   expect(progressionLevel(entry)).toBeGreaterThan(0);
   expect(entry.progression.professionId).toBe(entry.profession);
   expect(entry.resolveMax).toBe(maxResolveFor(entry));
 }
 
 describe("party acquisition progression", () => {
-  it("keeps every authored mount id aligned with its tier's progression level", () => {
+  it("gives every mount an individual authored level instead of a tier anchor", () => {
+    const levels = [];
     for (const mount of Object.values(MOUNTS)) {
-      expect(AUTHORED_MOUNT_LEVELS[mount.id], mount.id).toBe(MOUNT_PROGRESSION_LEVEL_BY_TIER[mount.tier]);
+      const level = AUTHORED_MOUNT_LEVELS[mount.id];
+      expect(level, mount.id).toBeGreaterThan(0);
+      expect(level, mount.id).toBeLessThanOrEqual(100);
+      levels.push(level);
     }
+    expect(new Set(levels).size).toBe(levels.length);
   });
 
   it("normalizes an authored companion into the shared stack", () => {
@@ -40,7 +47,7 @@ describe("party acquisition progression", () => {
 
     expect(party).toContain("senna");
     expectProgression(senna);
-    expect(senna).toMatchObject({ profession: "hunter" });
+    expect(senna).toMatchObject({ profession: "ranger" });
     expect(progressionLevel(senna)).toBe(22);
   });
 
@@ -50,8 +57,8 @@ describe("party acquisition progression", () => {
     const harl = world.codex.characters[id];
 
     expectProgression(harl);
-    expect(harl).toMatchObject({ profession: "soldier", archetype: "marsh-spearman" });
-    expect(progressionLevel(harl)).toBe(15);
+    expect(harl).toMatchObject({ profession: "fighter", archetype: "marsh-spearman" });
+    expect(progressionLevel(harl)).toBe(12);
   });
 
   it("folds a prisoner's exact vocation into profession and archetype", () => {
@@ -61,7 +68,7 @@ describe("party acquisition progression", () => {
 
     expectProgression(loff);
     expect(loff).toMatchObject({ profession: "artisan", archetype: "baker" });
-    expect(progressionLevel(loff)).toBe(15);
+    expect(progressionLevel(loff)).toBe(8);
   });
 
   it("files an earned divine mount as a racial level-100 Codex character", () => {
@@ -72,7 +79,7 @@ describe("party acquisition progression", () => {
     expectProgression(dragon);
     expect(dragon).toMatchObject({
       kind: "mount",
-      profession: "dragon-ascendant",
+      profession: "sorcerer",
       archetype: "dragon-mount",
     });
     expect(progressionLevel(dragon)).toBe(100);
@@ -86,6 +93,6 @@ describe("party acquisition progression", () => {
     expect(party).toContain("horse");
     expectProgression(horse);
     expect(horse).toMatchObject({ kind: "mount", profession: "wanderer", archetype: "horse-mount" });
-    expect(progressionLevel(horse)).toBe(10);
+    expect(progressionLevel(horse)).toBe(9);
   });
 });

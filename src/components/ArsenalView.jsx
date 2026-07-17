@@ -10,11 +10,12 @@ import { knownTravelSpells } from "../data/travel-spells.js";
 import { condNames } from "../data/conditions.js";
 import { ATTR_LABELS } from "../config.js";
 import { abilityTaxonomy } from "../data/ability-taxonomy.js";
+import { progressionNarrativeProjection } from "../engine/progression-abilities.js";
 
 const CORE = new Set(["basic-attack", "defend", "talk"]);
 
-export function arsenalAbilityGroups(character) {
-  const learned = (character?.abilities || []).map((ability) => (
+export function arsenalAbilityGroups(character, progressionProjection = progressionNarrativeProjection(character)) {
+  const learned = progressionProjection.abilities.map((ability) => (
     typeof ability === "string"
       ? { id: ability, tier: "common" }
       : { id: ability.id, tier: ability.tier || "common" }
@@ -112,10 +113,15 @@ function SpellCard({ spell, kind, active, affordable, onCast }) {
 export function ArsenalView({ state, onCastBuff }) {
   const character = state.character;
   const [abilityFilter, setAbilityFilter] = useState("all");
-  const { techniques, spells: combatSpells } = arsenalAbilityGroups(character);
+  const progressionProjection = progressionNarrativeProjection(character);
+  const projectedCharacter = { ...character, abilities: progressionProjection.abilities };
+  const { techniques, spells: combatSpells } = arsenalAbilityGroups(character, progressionProjection);
 
-  const boons = knownBuffSpells(character);
-  const travelSpells = knownTravelSpells(character);
+  const boons = knownBuffSpells(projectedCharacter);
+  const travelSpells = knownTravelSpells(projectedCharacter);
+  const metamagicProfiles = progressionProjection.metamagicProfiles;
+  const progressionCapabilities = progressionProjection.progressionCapabilities
+    || progressionProjection.branchCapabilities;
   const activeConditions = new Set(condNames(character.conditions || []));
   const proficiencies = PROFICIENCIES
     .map((proficiency) => ({
@@ -160,6 +166,39 @@ export function ArsenalView({ state, onCastBuff }) {
           })}
         </div>
       </section>
+
+      {(metamagicProfiles.length > 0 || progressionCapabilities.length > 0) && (
+        <section aria-label="Earned progression capabilities">
+          <SectionHeader>Progression capabilities · {metamagicProfiles.length + progressionCapabilities.length}</SectionHeader>
+          <div className="progression-capability-list">
+            {metamagicProfiles.map((profile) => (
+              <article className="progression-capability-card" key={`metamagic-${profile.abilityId}`}>
+                <header>
+                  <strong>{profile.abilityName}</strong>
+                  <span>{profile.primarySignature ? "Primary signature" : "Spell profile"}</span>
+                </header>
+                <ul>
+                  {profile.features.map((feature) => (
+                    <li key={feature.id}>
+                      <strong>{feature.name}</strong>
+                      <p>{feature.description}</p>
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+            {progressionCapabilities.map((feature) => (
+              <article className="progression-capability-card" key={`${feature.type}-${feature.id}`}>
+                <header>
+                  <strong>{feature.name}</strong>
+                  <span>{feature.scope === "general" ? `General ${feature.type}` : feature.type === "passive" ? "Branch passive" : "Branch capability"}</span>
+                </header>
+                {feature.description && <p>{feature.description}</p>}
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <SectionHeader>Spells · {combatSpells.length + boons.length + travelSpells.length}</SectionHeader>

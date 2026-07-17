@@ -9,7 +9,7 @@ import { condNames, normalizeConditions } from "../data/conditions.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierLabel, tier as tierInfo } from "../data/tiers.js";
 import { coinsToCopper, copperToCoins } from "./economy.js";
-import { advanceProgression, normalizeCharacterProgression } from "./progression.js";
+import { advanceProgression, earnedLevelGrowthText, normalizeCharacterProgression } from "./progression.js";
 import { carryCapacityFor, maxVitalityFor, recomputeResolveMax } from "./attributes.js";
 
 // Tiny local copies of combat.js's shared helpers — kept local so this module
@@ -31,8 +31,8 @@ export function applyCombatResult(state, cs, context = {}) {
   if (cs.phase === "defeat") next.character.vitality = Math.max(1, next.character.vitality);
 
   // Proficiency XP earned this fight raises use-based mastery and feeds the
-  // shared profession/racial/utility level track. Paths, not proficiencies,
-  // remain the primary source of long-term attribute growth.
+  // global character-level reserve. The player decides later whether each
+  // earned level advances racial evolution or a profession.
   if (cs.profGains && Object.keys(cs.profGains).length) {
     const beforeProf = { ...(next.character.proficiencies || {}) };
     const beforeEff = effectiveAttributes(next.character);
@@ -54,12 +54,11 @@ export function applyCombatResult(state, cs, context = {}) {
     const progressionXp = Object.values(cs.profGains)
       .reduce((sum, xp) => sum + Math.max(0, Number(xp) || 0), 0) * 10;
     const progress = advanceProgression(next.character, progressionXp);
-    if (progress.gained.length) {
-      const latest = progress.gained.at(-1);
+    if (progress.earnedLevels > 0) {
       beats.push({
         id: `cl${now}`,
         type: "growth",
-        text: `Level ${progress.beforeLevel} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+        text: earnedLevelGrowthText(progress),
       });
     }
     const wanderer = next.world.codex.characters?.wanderer;
