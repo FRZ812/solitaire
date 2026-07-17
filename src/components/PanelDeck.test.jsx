@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../data/initial-state.js";
 import { PanelDeck, shouldDismissPanel } from "./PanelDeck.jsx";
+import { createProgression } from "../engine/progression.js";
 
 describe("PanelDeck", () => {
   it("renders Skills and Codex as peer deck pages with handle-only sheet chrome", () => {
@@ -18,8 +19,9 @@ describe("PanelDeck", () => {
 
     expect(html).toContain("<h3>Skills</h3>");
     expect(html).toContain("Drag down or tap to close menu");
-    expect(html.match(/role="tab"/g)).toHaveLength(5);
+    expect(html.match(/role="tab"/g)).toHaveLength(6);
     expect(html).toContain("Codex");
+    expect(html).toContain("Settings");
     expect(html).not.toContain("Wanderer dossier");
     expect(html).not.toContain("Close character menu");
     expect(html).toContain("choose a section · drag handle to close");
@@ -33,6 +35,7 @@ describe("PanelDeck", () => {
       abilities: "Skills",
       inventory: "Inventory",
       codex: "Codex",
+      settings: "Settings",
     };
 
     for (const [initialPage, heading] of Object.entries(headings)) {
@@ -43,6 +46,21 @@ describe("PanelDeck", () => {
       expect(html).toContain(`<h3>${heading}</h3>`);
       expect(html).toContain("deck-page deck-view");
     }
+  });
+
+  it("provides a dedicated campaign settings page for narration and memory management", () => {
+    const state = makeInitialState();
+    state.memories = ["The north gate captain expects the wanderer before dawn."];
+    state.narratorSettings = { memoryMode: "essential", instructions: "Let companions disagree openly." };
+    const html = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="settings" onClose={() => {}} handlers={{}} />,
+    );
+
+    expect(html).toContain("Narrator · memory · campaign");
+    expect(html).toContain("Direct the storyteller");
+    expect(html).toContain("Let companions disagree openly.");
+    expect(html).toContain("Memory");
+    expect(html).toContain("General");
   });
 
   it("keeps proficiencies in Skills and redundant weapon detail out of Character", () => {
@@ -115,19 +133,21 @@ describe("PanelDeck", () => {
     expect(customHtml).toContain("Use original");
   });
 
-  it("surfaces a character's parent class and specific subclass in the dossier and Codex", () => {
+  it("surfaces a character's broad profession, specialized archetype, and total level in the dossier and Codex", () => {
     const state = makeInitialState();
     Object.assign(state.character, {
       templateId: "shadowblade",
       portraitKey: "template:shadowblade",
       profession: "assassin",
-      subclass: "shadowblade",
+      archetype: "shadowblade",
+      progression: createProgression({ professionId: "assassin", archetypeId: "shadowblade", level: 45, sidePath: "utility" }),
     });
     Object.assign(state.world.codex.characters.wanderer, {
       templateId: "shadowblade",
       portraitKey: "template:shadowblade",
       profession: "assassin",
-      subclass: "shadowblade",
+      archetype: "shadowblade",
+      progression: createProgression({ professionId: "assassin", archetypeId: "shadowblade", level: 45, sidePath: "utility" }),
     });
 
     const characterHtml = renderToStaticMarkup(
@@ -138,10 +158,12 @@ describe("PanelDeck", () => {
     );
 
     expect(characterHtml).toContain("Assassin");
-    expect(characterHtml).toContain("Class</em>Assassin");
-    expect(characterHtml).toContain("Subclass</em>Shadowblade");
-    expect(codexHtml).toContain("Assassin class · Shadowblade subclass");
-    expect(codexHtml).toContain("Subclass · Shadowblade");
+    expect(characterHtml).toContain("Profession</em>Assassin");
+    expect(characterHtml).toContain("Archetype</em>Shadowblade");
+    expect(characterHtml).toContain("Level</em>45");
+    expect(codexHtml).toContain("Assassin profession · Shadowblade archetype · Level 45");
+    expect(codexHtml).toContain("Archetype · Shadowblade");
+    expect(codexHtml).toContain("Level 45 / 100");
   });
 
   it("resolves a persistent NPC portrait override throughout the Codex", () => {

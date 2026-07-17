@@ -38,9 +38,16 @@ describe("mobile map navigation markup", () => {
   });
 
   it("puts shop-tier and POI explanations in the browsable map legend", () => {
-    const tiers = renderToStaticMarkup(<MapLegend onClose={vi.fn()} />);
+    const guide = renderToStaticMarkup(<MapLegend onClose={vi.fn()} />);
+    const tiers = renderToStaticMarkup(<MapLegend onClose={vi.fn()} initialSection="tiers" />);
     const cityPois = renderToStaticMarkup(<MapLegend onClose={vi.fn()} initialSection="city" />);
 
+    expect(guide).toContain("Choose a destination");
+    expect(guide).toContain("cumulative chance of at least one encounter");
+    expect(guide).toContain("The encounter button deliberately looks for a fight");
+    expect(guide).toContain("Goods markers indicate wares");
+    expect(guide).toContain("Services provide help");
+    expect(guide).toContain("65%+");
     expect(tiers).toContain("Lettered rings on shop and service icons");
     expect(tiers).toContain("Budget house");
     expect(tiers).toContain("26% below standard");
@@ -48,7 +55,8 @@ describe("mobile map navigation markup", () => {
     expect(cityPois).toContain("Civic, social, and landmark venues");
     expect(cityPois).toContain('data-poi-icon="poi-palace"');
     expect(cityPois).toContain("Palace");
-    expect(cityPois).toContain("Government, court, and royal business");
+    expect(cityPois).toContain("Court, government offices, petitions, and royal business");
+    expect(cityPois).toContain("Authority");
   });
 
   it("renders the interactive atlas in its dedicated folio panel", () => {

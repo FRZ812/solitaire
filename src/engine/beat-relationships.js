@@ -3,6 +3,7 @@
 // fold onto codex characters. Threads the evolving `world` (returned). No import
 // back into beat.js, so no cycle.
 import { clampRel, MEMORY_CAP } from "./relationships.js";
+import { mergeMemoryBank } from "./memory.js";
 
 // ctx in: { beat, world }. Returns the updated { world }.
 export function applyRelationships({ beat, world }) {
@@ -22,9 +23,8 @@ export function applyRelationships({ beat, world }) {
     for (const mu of beat.memory_updates) {
       const ch = chars[mu?.id];
       if (!ch || !Array.isArray(mu.adds)) continue;
-      const mems = [...(ch.memories || [])];
-      for (const m of mu.adds) if (m && !mems.includes(m)) mems.push(m);
-      chars[mu.id] = { ...ch, memories: mems.slice(-MEMORY_CAP) };
+      const mems = mergeMemoryBank(ch.memories, mu.adds, MEMORY_CAP);
+      chars[mu.id] = { ...ch, memories: mems };
     }
     world = { ...world, codex: { ...world.codex, characters: chars } };
   }

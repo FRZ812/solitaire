@@ -19,6 +19,10 @@
 
 import { abilityCategoryOf, getAbilityDef } from "./abilities.js";
 import { xpForRating } from "./proficiencies.js";
+import {
+  professionBuild, progressionAtLevel, progressionXpForLevel,
+  STARTING_LEVEL_BY_POWER_TIER,
+} from "./progression-paths.js";
 
 export const STANDARD_PROVISIONS = [
   { itemId: "trail-rations", quantity: 3 },
@@ -825,8 +829,12 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
 ];
 
 export const CHARACTER_TEMPLATES = Object.freeze(CHARACTER_TEMPLATE_DEFINITIONS.map((template) => {
-  const subclass = template.setup.subclass
-    ?? (template.id !== template.setup.profession ? template.id : null);
+  const professionPath = professionBuild(template.setup.profession);
+  const archetype = template.setup.archetype
+    ?? (template.id !== template.setup.profession ? template.id : professionPath?.archetypePathId);
+  const startingLevel = STARTING_LEVEL_BY_POWER_TIER[template.tier] || 1;
+  const sidePath = template.setup.race === "human" ? "utility" : "racial";
+  const startingProgression = progressionAtLevel(template.setup.profession, startingLevel, { sidePath, archetypeId: archetype });
   const casterRating = {
     standard: 1,
     mid: 3,
@@ -846,7 +854,22 @@ export const CHARACTER_TEMPLATES = Object.freeze(CHARACTER_TEMPLATE_DEFINITIONS.
     portraitKey: `template:${template.id}`,
     setup: {
       ...template.setup,
-      ...(subclass ? { subclass } : {}),
+      // Ready-made sheets begin at the exact cumulative projection of their
+      // allocated route. Future ranks therefore arrive at the same level-100
+      // attributes shown in the Profession Codex instead of starting from a
+      // disconnected legacy spread and permanently undershooting it.
+      attributes: { ...(startingProgression?.attributes || template.setup.attributes) },
+      ...(archetype ? { archetype } : {}),
+      ...(startingProgression ? {
+        progression: {
+          version: 1,
+          professionId: template.setup.profession,
+          archetypeId: archetype,
+          sidePath,
+          xp: progressionXpForLevel(startingLevel),
+          paths: { ...startingProgression.ranks },
+        },
+      } : {}),
       ...(proficiencies ? { proficiencies } : {}),
     },
     ...(CHARACTER_HOOKS[template.id] || {}),

@@ -8,8 +8,10 @@ import { DEMEANOR_CONFIG, defaultDemeanor } from "./combat-flavor.js";
 import { itemCombatStats, weaponFamilyBase, mergeThresholdMods } from "../engine/combat-stats.js";
 import { itemTemplate } from "./catalog.js";
 import { aggregateCombatPassives } from "./passives.js";
-import { attributeThresholdMods } from "./attribute-tiers.js";
+import { attributeThresholdMods, mechanicalAttributeValue } from "./attribute-tiers.js";
+import { attrFactor } from "./abilities.js";
 import { resolvePoolForMind, maxVitalityFor } from "../engine/attributes.js";
+import { effectiveAttributes } from "./proficiencies.js";
 
 // A natural weapon (fang/claw/horn/…) or an armed humanoid's weapon category.
 const nw = (min, max, category = "natural", pen = 0, type = "physical") => ({ min, max, type, pen, category });
@@ -134,7 +136,15 @@ function npcDemeanor(npc) {
 // shortcut: a bandit and the Demon-King run through the same math.
 function combatantFromAttributes(spec, codex, { tierId = "common" } = {}) {
   const a = spec.attributes || {};
-  const body = a.body || 0, reflex = a.reflex || 0, vigor = a.vigor || 0, mind = a.mind || 0, wit = a.wit || 0, presence = a.presence || 0;
+  // Keep the raw 0–90 values for threshold unlocks and persistence, but route
+  // direct combat arithmetic through the same diminishing values as players.
+  // This preserves full player/NPC parity at the expanded attribute ceiling.
+  const body = mechanicalAttributeValue(a.body);
+  const reflex = mechanicalAttributeValue(a.reflex);
+  const vigor = mechanicalAttributeValue(a.vigor);
+  const mind = mechanicalAttributeValue(a.mind);
+  const wit = mechanicalAttributeValue(a.wit);
+  const presence = mechanicalAttributeValue(a.presence);
   const wornRaw = (spec.worn || []).map((id) => codex?.items?.[id] || itemTemplate(id)).filter(Boolean);
   // Mob templates carry COMMON-grade gear ids; scale them to the foe's tier so a
   // rare bandit's blade hits (and drops) at rare. Named NPCs keep their real gear.
@@ -172,7 +182,7 @@ function combatantFromAttributes(spec, codex, { tierId = "common" } = {}) {
   } else {
     base = { min: 2, max: 4, type: "physical", pen: 0 };
   }
-  const govF = 1 + (base.type === "magical" ? mind : body) * 0.08;
+  const govF = attrFactor(base.type === "magical" ? a.mind : a.body);
   const dFlat = sm.damageFlat || 0, dMult = 1 + (sm.damageMult || 0);
   const fam = weaponFamilyBase(weaponType);
   const weapon = {
@@ -225,7 +235,7 @@ function combatantFromAttributes(spec, codex, { tierId = "common" } = {}) {
     attrs: a, // source attributes — lets a Dominated foe be filed as a lasting thrall
     naturalWeaponSpec: spec.naturalWeapon || null, // kept so a thrall beast re-derives its bite
     triggers: tr,
-    resolve: resolvePoolForMind(mind) + (sm.resolveMax || 0), resolveMax: resolvePoolForMind(mind) + (sm.resolveMax || 0),
+    resolve: resolvePoolForMind(a.mind) + (sm.resolveMax || 0), resolveMax: resolvePoolForMind(a.mind) + (sm.resolveMax || 0),
     swiftChance: Math.min(0.5, sm.swiftChance || 0),
     actionsPerTurn: spec.actionsPerTurn != null ? spec.actionsPerTurn : (1 + Math.min(3, Math.max(0, sm.extraActions || 0))), actionsLeft: 1,
     cooldownReduction: Math.min(3, sm.cooldownReduction || 0),
@@ -252,7 +262,7 @@ function combatantFromAttributes(spec, codex, { tierId = "common" } = {}) {
 // + worn gear, so a fight against "the hooded figure" reflects who they are.
 export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
   const e = combatantFromAttributes({
-    attributes: npc.attributes, worn: npc.worn,
+    attributes: effectiveAttributes(npc), worn: npc.worn,
     naturalWeapon: npc.naturalWeapon, naturalArmor: npc.naturalArmor, naturalWard: npc.naturalWard,
     innatePassives: npc.innatePassives, abilities: npc.abilities, health: npc.health,
     actionsPerTurn: npc.actionsPerTurn, combatState: npc.combatState,
@@ -272,14 +282,16 @@ export function allyFromCompanion(npc, codex, { tierId = "common" } = {}) {
   // Companions' worn gear is descriptive (not codex items), so no weapon
   // resolves — give a competent weapon scaled to their martial attribute.
   if (!base.weapon || base.weapon.category === "unarmed") {
-    const a = npc.attributes || {};
-    const force = Math.max(a.body || 0, a.reflex || 0);
+    const a = effectiveAttributes(npc);
+    const body = mechanicalAttributeValue(a.body);
+    const reflex = mechanicalAttributeValue(a.reflex);
+    const force = Math.max(body, reflex);
     const m = tierMult(tierId);
     base.weapon = {
       min: Math.max(2, Math.round((2 + force * 0.4) * m)),
       max: Math.max(4, Math.round((5 + force * 0.7) * m)),
-      type: "physical", pen: Math.floor((a.body || 0) / 4),
-      category: (a.reflex || 0) > (a.body || 0) ? "dagger" : "sword",
+      type: "physical", pen: Math.floor(body / 4),
+      category: reflex > body ? "dagger" : "sword",
     };
   }
   // Use the companion's OWN defined kit of abilities (not attribute-inferred),

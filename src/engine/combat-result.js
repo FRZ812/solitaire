@@ -9,6 +9,8 @@ import { condNames, normalizeConditions } from "../data/conditions.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { tierLabel, tier as tierInfo } from "../data/tiers.js";
 import { coinsToCopper, copperToCoins } from "./economy.js";
+import { advanceProgression, normalizeCharacterProgression } from "./progression.js";
+import { carryCapacityFor, maxVitalityFor, recomputeResolveMax } from "./attributes.js";
 
 // Tiny local copies of combat.js's shared helpers — kept local so this module
 // has no import back into combat.js (which would cycle). Stage 2 consolidates
@@ -28,8 +30,9 @@ export function applyCombatResult(state, cs, context = {}) {
   next.character.vitality = clamp(Math.round(cs.player.health), 0, next.character.vitalityMax);
   if (cs.phase === "defeat") next.character.vitality = Math.max(1, next.character.vitality);
 
-  // Proficiency XP earned this fight → ratings up → attribute growth (the only
-  // way attributes rise). Surface what improved as growth beats.
+  // Proficiency XP earned this fight raises use-based mastery and feeds the
+  // shared profession/racial/utility level track. Paths, not proficiencies,
+  // remain the primary source of long-term attribute growth.
   if (cs.profGains && Object.keys(cs.profGains).length) {
     const beforeProf = { ...(next.character.proficiencies || {}) };
     const beforeEff = effectiveAttributes(next.character);
@@ -47,6 +50,31 @@ export function applyCombatResult(state, cs, context = {}) {
     for (const k of ATTR_KEYS) if (afterEff[k] > beforeEff[k]) attrLines.push(`${ATTR_LABELS[k]} ${beforeEff[k]} → ${afterEff[k]}`);
     if (profLines.length) beats.push({ id: `pg${now}`, type: "growth", text: profLines.join(" · ") });
     if (attrLines.length) beats.push({ id: `ag${now}`, type: "growth", text: `Attributes — ${attrLines.join(" · ")}` });
+
+    const progressionXp = Object.values(cs.profGains)
+      .reduce((sum, xp) => sum + Math.max(0, Number(xp) || 0), 0) * 10;
+    const progress = advanceProgression(next.character, progressionXp);
+    if (progress.gained.length) {
+      const latest = progress.gained.at(-1);
+      beats.push({
+        id: `cl${now}`,
+        type: "growth",
+        text: `Level ${progress.beforeLevel} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+      });
+    }
+    const wanderer = next.world.codex.characters?.wanderer;
+    if (wanderer && next.character.progression) {
+      next.world.codex.characters.wanderer = {
+        ...wanderer,
+        profession: next.character.profession,
+        archetype: next.character.archetype,
+        attributes: { ...(next.character.attributes || {}) },
+        progression: {
+          ...next.character.progression,
+          paths: { ...next.character.progression.paths },
+        },
+      };
+    }
   }
   // Spent Resolve (spellcasting drain) persists out of the fight.
   if (typeof cs.player.resolve === "number") {
@@ -121,10 +149,13 @@ export function applyCombatResult(state, cs, context = {}) {
       if (chars[tid]) { if (!(next.party || []).includes(tid)) next.party = [...(next.party || []), tid]; continue; }
       const hadGear = (a.gear || []).length > 0;
       const charmed = a.bindKind === "charm"; // divine Charm — devoted, not leashed
-      chars[tid] = {
+      const exactFocus = a.archetype || a.profession || a.kind || String(a.name || "bound-combatant").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      const entry = {
         id: tid, kind: "thrall", name: a.name, race: a.race || null,
+        profession: a.profession || (hadGear ? "soldier" : "hunter"),
+        archetype: exactFocus,
+        ...(Number.isFinite(Number(a.level)) ? { level: Number(a.level) } : {}),
         attributes: { ...(a.attrs || {}) },
-        health: a.maxHealth, // explicit so HP is preserved on refight
         worn: hadGear ? a.gear.map((g) => g.id) : [],
         naturalWeapon: hadGear ? null : (a.naturalWeaponSpec || null),
         abilities: (a.abilities || []).map((x) => x.id),
@@ -134,6 +165,22 @@ export function applyCombatResult(state, cs, context = {}) {
         relationship: charmed ? 80 : 0,
         enthralledBy: "wanderer",
       };
+      const rawPeak = Math.max(0, ...Object.values(entry.attributes).map((value) => Number(value) || 0));
+      normalizeCharacterProgression(entry, {
+        convertLegacyAttributes: rawPeak <= 30,
+        enforceLevelAttributeScale: true,
+        alignAttributesToProgression: rawPeak <= 30,
+      });
+      const progressedMaxHealth = maxVitalityFor(entry);
+      const remainingRatio = a.maxHealth > 0 ? Math.max(0, Math.min(1, a.health / a.maxHealth)) : 1;
+      entry.combatState = {
+        health: Math.max(1, Math.round(progressedMaxHealth * remainingRatio)),
+        maxHealth: progressedMaxHealth,
+        status: remainingRatio < 1 ? "wounded" : "ok",
+      };
+      recomputeResolveMax(entry);
+      entry.carryCapacityMax = carryCapacityFor(entry);
+      chars[tid] = entry;
       if (!(next.party || []).includes(tid)) next.party = [...(next.party || []), tid];
     }
   }

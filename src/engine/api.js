@@ -20,8 +20,11 @@ import { formatTime, formatDate } from "./time.js";
 import { relationshipTier } from "./relationships.js";
 import { lightStatus } from "./light.js";
 import { conditionMeta, condName } from "../data/conditions.js";
-import { characterSubclass } from "../data/character-subclasses.js";
+import { characterArchetype } from "../data/character-archetypes.js";
 import { playableCharactersNear } from "./positions.js";
+import { progressionLevel, progressionSummary } from "./progression.js";
+import { summarizeMemoryBank } from "./memory.js";
+import { buildNarratorSteering } from "./narrator-settings.js";
 
 export function summarizeCodex(codex) {
   const lines = [];
@@ -29,14 +32,14 @@ export function summarizeCodex(codex) {
   const roster = chars.filter((c) => c.playable);
   const encountered = chars.filter((c) => !c.playable);
   if (encountered.length) lines.push(`Met: ${encountered.map((c) => {
-    const subclass = characterSubclass(c);
-    return `${c.name}(${c.race || "?"}, ${c.profession || "?"}${subclass ? `/${subclass.label}` : ""})`;
+    const archetype = characterArchetype(c);
+    return `${c.name}(${c.race || "?"}, ${c.profession || "?"}${archetype ? `/${archetype.label}` : ""}, L${Math.max(1, progressionLevel(c))})`;
   }).join("; ")}`);
   else lines.push(`Met: only you`);
   if (roster.length) lines.push(`World roster (known dossiers, not automatically met): ${roster.map((c) => c.name).join(", ")}`);
   const races = Object.values(codex.races).map(r => r.common ? `${r.name}*` : r.name);
   lines.push(`Races: ${races.join(", ") || "none"}`);
-  const profs = Object.values(codex.professions).map(p => p.common ? `${p.name}*` : p.name);
+  const profs = Object.values(codex.professions).map(p => `${p.id}:${p.name}${p.common ? "*" : ""}`);
   lines.push(`Professions: ${profs.join(", ") || "none"}`);
   const spells = Object.values(codex.spells).map(s => s.name);
   if (spells.length) lines.push(`Spells: ${spells.join(", ")}`);
@@ -185,13 +188,7 @@ export function summarizeRumored() {
   return Object.values(grouped).map(r => `${r.name} (${r.kind}, ${r.direction})`).join("; ");
 }
 
-// Facts the narrator chose to persist via the `remember` tool (independent of
-// the per-character BONDS & MEMORIES above, and of the rolling apiHistory
-// window — this is what lets it recall something from turn 3 at turn 300).
-export function summarizeMemoryBank(memories) {
-  if (!memories?.length) return "(nothing recorded yet)";
-  return memories.map((m) => `- ${m}`).join("\n");
-}
+export { summarizeMemoryBank };
 
 export function buildStateContext(state) {
   const { character, time, world, party = [] } = state;
@@ -265,8 +262,8 @@ export function buildStateContext(state) {
     if (abil.length) bits.push(`fights with ${abil.join(", ")}`);
     if (sk.length) bits.push(`skilled in ${sk.join(", ")}`);
     if (gear.length) bits.push(`carries ${gear.join(", ")}`);
-    const subclass = characterSubclass(c);
-    return `${c.name} (id: ${c.id}; ${c.race} ${c.profession}${subclass ? `, ${subclass.label} subclass` : ""}${bits.length ? `; ${bits.join("; ")}` : ""})`;
+    const archetype = characterArchetype(c);
+    return `${c.name} (id: ${c.id}; level ${Math.max(1, progressionLevel(c))}; ${c.race} ${c.profession}${archetype ? `, ${archetype.label} archetype` : ""}${bits.length ? `; ${bits.join("; ")}` : ""})`;
   };
   const partyLine = companions.length
     ? `\n[COMPANIONS — travelling with you: ${companions.map(companionDetail).join(" · ")}. They are present in scenes, act and speak on their own, fight at your side, and share your fortunes (they can be wounded, killed, or leave). When the player asks a companion what they can do, ANSWER CONCRETELY from this kit — their real abilities, skills, and gear — never vague hand-waving. You may move gear between the player and a companion when they share loot (use companion_gear). If narration itself permanently kills or removes one, use their listed id in party_removals in that same response. Don't drop or forget them silently.]`
@@ -276,9 +273,12 @@ export function buildStateContext(state) {
     ? `\n[OTHER ROSTER CHARACTERS HERE — ${localRoster.map(({ character: c }) => `${c.name} (id: ${c.id}; ${c.race} ${c.profession}${c.role ? `; ${c.role}` : ""})`).join(" · ")}. These authored people are physically present at this hex. Surface them naturally in the scene as independent NPCs, true to their dossier and voice. They are not companions unless the fiction changes that, and none is a second copy of the player.]`
     : "";
   const you = world.codex.characters.wanderer || {};
-  const playerSubclass = characterSubclass(you);
-  const youDesc = [originLabel(you.origin), you.race, you.profession, playerSubclass ? `(${playerSubclass.label} subclass)` : null].filter(Boolean).join(" ");
+  const playerArchetype = characterArchetype(you);
+  const youDesc = [originLabel(you.origin), you.race, you.profession, playerArchetype ? `(${playerArchetype.label} archetype)` : null].filter(Boolean).join(" ");
+  const playerProgression = progressionSummary(character);
   const playerLine = `[PLAYER — You are ${character.name}${youDesc ? `, a ${youDesc}` : ""}. Keep this identity consistent (do not drift the player's race or origin). Your NAME is PRIVATE: another character knows it ONLY if you have told THEM in the fiction (or it has plausibly reached them — a poster, a mutual friend, your own renown). A stranger, someone freshly met, or a companion you have only just recruited does NOT know your name until you give it — they address you by look, bearing, or role ("the swordsman", "stranger", "you with the bow") until then. The name you gave one person (the innkeeper) did not travel to anyone else on its own.]`;
+  const narratorSteering = buildNarratorSteering(state.narratorSettings);
+  const narratorSteeringLine = narratorSteering ? `\n${narratorSteering}` : "";
   const authoredProfile = you.profile || character.profile;
   const playerProfileLine = authoredProfile
     ? `\n[AUTHORED CHARACTER — Voice: ${authoredProfile.voice || "as established"} Complication: ${authoredProfile.complication || "none authored"} Telltale habit: ${authoredProfile.signature || "none authored"} Keep these specific hooks alive without forcing all three into every scene.]`
@@ -294,10 +294,11 @@ export function buildStateContext(state) {
   const generatedAreaLine = t.area?.name && ecology
     ? `\n[AREA — ${t.area.name}; ${ecology.name}: ${ecology.description} Resources and materials: ${(t.resources || ecology.resources || []).join(", ") || "locally scarce"}.]`
     : "";
-  return `${playerLine}${playerProfileLine}
+  return `${playerLine}${playerProfileLine}${narratorSteeringLine}
 [STATE — ${formatDate(time)}, ${formatTime(time)}; at ${place} (${TERRAINS[t.terrain]?.label}); Vitality ${Math.round(character.vitality)}/${character.vitalityMax}; Resolve ${character.resolve}/${character.resolveMax}; Conditions: ${conditionsLine}; Light: ${lightStatus(state).text}; Bond: ${character.bond}${nearbyStr}]${localLine}${locLine}${flyLine}${svcLine}${questLine}${partyLine}${localRosterLine}${buildSurroundings(state, t)}
 [REGION — ${biome.name}: ${biome.description}]${generatedAreaLine}
 [ATTRIBUTES — ${summarizeAttributes(effectiveAttributes(character))}]
+[PROGRESSION — level ${playerProgression?.level || 1}/100 (${playerProgression?.tier?.label || "Standard"}); profession ${playerProgression?.professionId || you.profession || "wanderer"}; archetype ${playerArchetype?.label || "Adaptive Seeker"}; stacked path ranks ${Object.entries(playerProgression?.paths || {}).map(([id, rank]) => `${id} ${rank}`).join(", ") || "none"}. Profession, racial, and utility ranks all consume this same 100-level budget; no single path reaches level 100.]
 [ABILITIES KNOWN — ${summarizeAbilities(character)}]
 [GRANTABLE ABILITIES — the COMPLETE set you may grant by id (a creation kit, a teacher's lesson, a technique learned in play). Use these ids EXACTLY; grant NOTHING outside this list, and never invent an ability. Innate racial powers are NOT here — the engine grants those from the chosen race. Each may be granted at a TIER from common→divine: the tier scales its power exactly like gear, so match it to the source — a hedge-teacher or short drill gives common/uncommon; a true master or guild gives rare/epic; only a fabled mentor, a legendary relic, or a god's boon confers legendary+; divine is godhood, almost never given. An id shown as "name (≥tier)" has a FLOOR — never grant or teach it below that tier (the engine clamps it up if you try). Set the tier on the grant (see ABILITIES & SPELLS). ${summarizeGrantableAbilities()}]
 [NEEDS — Hunger ${Math.round(character.needs.hunger)}/100, Thirst ${Math.round(character.needs.thirst)}/100, Sleep ${Math.round(character.needs.sleep)}/100]

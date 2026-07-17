@@ -70,6 +70,23 @@ describe("queued player messages and rewind", () => {
     expect(pendingPlayerBeats(rewound).map((beat) => beat.content)).toEqual(["I pull Bram clear."]);
   });
 
+  it("rewinds durable memories recorded by the rejected turn", () => {
+    const initial = { ...makeInitialState(), created: true, memories: ["An older fact."] };
+    const playerBeat = { id: "p-memory", type: "player", content: "I make the bargain." };
+    const base = { ...initial, beats: [...initial.beats, playerBeat] };
+    const response = {
+      story: [{ type: "beat", text: "The bargain is struck." }],
+      _memories: ["The player owes the ferryman a favor."],
+      _raw: "{}",
+      _userMsg: "queued prompt",
+    };
+    const recorded = recordTurn(base, "queued prompt", applyBeat(base, response));
+    const playerIndex = recorded.beats.findIndex((beat) => beat.id === playerBeat.id);
+
+    expect(recorded.memories).toContain("The player owes the ferryman a favor.");
+    expect(rewindToPlayerBeat(recorded, playerIndex).memories).toEqual(["An older fact."]);
+  });
+
   it("builds one chronological narrator prompt from multiple queued bubbles", () => {
     const initial = { ...makeInitialState(), created: true };
     const queued = {

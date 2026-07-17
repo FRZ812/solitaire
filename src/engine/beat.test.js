@@ -3,6 +3,8 @@ import { applyBeat } from "./beat.js";
 import { makeInitialState } from "../data/initial-state.js";
 import { ALL_ITEMS } from "../data/catalog.js";
 import { maxVitalityFor } from "./attributes.js";
+import { attributeCeilingForLevel, progressionLevel } from "./progression.js";
+import { progressionAtLevel } from "../data/progression-paths.js";
 
 // A fresh, post-creation state so the full applyBeat pipeline runs (the limbo
 // state freezes the clock and the body-ledger).
@@ -96,27 +98,27 @@ describe("applyBeat — needs depletion", () => {
 });
 
 describe("applyBeat — authored character presentation", () => {
-  it("persists class, subclass, portrait key, character hooks, and authored mastery", () => {
+  it("persists profession, archetype, portrait key, character hooks, and authored mastery", () => {
     const profile = {
       voice: "Quiet and exact.",
       complication: "An oath is coming due.",
       signature: "Counts every doorway.",
     };
-    const next = applyBeat(fresh(), {
+    const next = applyBeat(makeInitialState(), {
       character_setup: {
-        name: "Bram", race: "human", profession: "assassin", subclass: "shadowblade",
+        name: "Bram", race: "human", profession: "assassin", archetype: "shadowblade",
         templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
         proficiencies: { spellcasting: 1350, invented: 99 },
       },
     });
     const wanderer = next.world.codex.characters.wanderer;
     expect(next.character).toMatchObject({
-      profession: "assassin", subclass: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
+      profession: "assassin", archetype: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
       proficiencies: { spellcasting: 1350 },
     });
     expect(next.character.proficiencies).not.toHaveProperty("invented");
     expect(wanderer).toMatchObject({
-      profession: "assassin", subclass: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
+      profession: "assassin", archetype: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
     });
   });
 });
@@ -207,7 +209,7 @@ describe("applyBeat — golden snapshots (refactor safety net)", () => {
   });
 
   it("golden — character_setup sets identity, attributes, abilities, derived pools", () => {
-    const next = applyBeat(fresh(), {
+    const next = applyBeat(makeInitialState(), {
       character_setup: {
         name: "Aldric", bond: "Find the lost heir.", race: "human",
         attributes: { body: 6, reflex: 5, vigor: 7, mind: 4, wit: 5, presence: 3 },
@@ -223,6 +225,58 @@ describe("applyBeat — golden snapshots (refactor safety net)", () => {
       carryCapacityMax: next.character.carryCapacityMax,
       wandererCodex: { name: w.name, race: w.race, attributes: w.attributes },
     }).toMatchSnapshot();
+  });
+
+  it("binds manual or narrator-authored attributes and vocation aliases to the declared progression", () => {
+    const next = applyBeat(makeInitialState(), {
+      character_setup: {
+        name: "Mara", race: "human", profession: "blacksmith", level: 1,
+        attributes: { body: 90, reflex: 90, vigor: 90, mind: 90, wit: 90, presence: 90 },
+      },
+    });
+
+    expect(progressionLevel(next.character)).toBe(1);
+    expect(next.character.profession).toBe("artisan");
+    expect(next.character.archetype).toBe("blacksmith");
+    expect(Math.max(...Object.values(next.character.attributes))).toBeLessThanOrEqual(attributeCeilingForLevel(1));
+    expect(next.world.codex.characters.wanderer.progression.professionId).toBe("artisan");
+  });
+
+  it("preserves a valid authored sheet and treats display-case profession names as canonical", () => {
+    const attributes = progressionAtLevel("soldier", 10, { sidePath: "utility" }).attributes;
+    const next = applyBeat(makeInitialState(), {
+      character_setup: {
+        name: "Alda",
+        race: "human",
+        profession: "Soldier",
+        level: 10,
+        attributes,
+      },
+    });
+
+    expect(next.character).toMatchObject({
+      profession: "soldier",
+      archetype: "soldier-line-veteran",
+      attributes,
+    });
+  });
+
+  it("ignores character_setup after creation so narration cannot replace earned ranks", () => {
+    const base = fresh();
+    const before = structuredClone(base.character);
+    const next = applyBeat(base, {
+      character_setup: {
+        name: "The Replacement",
+        profession: "soldier",
+        archetype: "impossible-reset",
+        level: 100,
+        attributes: { body: 90, reflex: 90, vigor: 90, mind: 90, wit: 90, presence: 90 },
+      },
+    });
+
+    expect(next.character.name).toBe(before.name);
+    expect(next.character.progression).toEqual(before.progression);
+    expect(next.character.attributes).toEqual(before.attributes);
   });
 
   it("golden — location_update stamps the tile and _userMsg/_raw extend apiHistory", () => {

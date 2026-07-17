@@ -6,22 +6,25 @@ import { MenuSheet } from "./MenuSheet.jsx";
 import { InventoryView } from "./InventoryView.jsx";
 import { ArsenalView } from "./ArsenalView.jsx";
 import { CodexView } from "./CodexView.jsx";
+import { SettingsView } from "./SettingsView.jsx";
 import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
 import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.webp";
 import { resolveCharacterPortrait } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 import { PLAYER_PORTRAIT_ID, portraitOverrideFor } from "../engine/portrait-overrides.js";
-import { characterSubclass } from "../data/character-subclasses.js";
+import { characterArchetype } from "../data/character-archetypes.js";
+import { progressionLevel } from "../engine/progression.js";
+import { levelTier } from "../data/progression-paths.js";
 
 // The unified character deck: Company · Character · Skills · Inventory ·
-// Codex as five pages of one
+// Codex · Settings as six pages of one
 // portrait-led bottom sheet, opened from a single header button (defaults to
 // Character). Sections change only through the visible tabs so a horizontal
 // gesture never steals an ordinary scroll inside a page.
-const PAGES = ["party", "character", "abilities", "inventory", "codex"];
-const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", codex: "Codex" };
-const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", codex: "codex" };
+const PAGES = ["party", "character", "abilities", "inventory", "codex", "settings"];
+const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", codex: "Codex", settings: "Settings" };
+const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", codex: "codex", settings: "settings" };
 
 export function shouldDismissPanel(pulled, velocity) {
   return pulled > 88 || (pulled > 18 && velocity > 0.55);
@@ -239,6 +242,19 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 onPortraitChange={handlers.onPortraitChange}
               />
             )}
+            {activePage === "settings" && (
+              <SettingsView
+                state={state}
+                user={user}
+                onUpdateNarratorSettings={handlers.onUpdateNarratorSettings}
+                onUpdateMemories={handlers.onUpdateMemories}
+                onUpdateCharacterMemories={handlers.onUpdateCharacterMemories}
+                onReset={handlers.onReset}
+                onBackToCampaigns={handlers.onBackToCampaigns}
+                onSignOut={handlers.onSignOut}
+                onLinkEmail={handlers.onLinkEmail}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -262,7 +278,9 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
   const identityRecord = { ...character, ...wanderer };
   const raceLabel = labelize(identityRecord.race);
   const professionLabel = labelize(identityRecord.profession);
-  const subclass = characterSubclass(identityRecord);
+  const archetype = characterArchetype(identityRecord);
+  const level = Math.max(1, progressionLevel(identityRecord));
+  const powerTier = levelTier(level);
   const portraitOverride = portraitOverrideFor(state, PLAYER_PORTRAIT_ID);
   const portrait = resolveCharacterPortrait(identityRecord, dossierPortrait, portraitOverride);
   const customPortrait = !!portraitOverride;
@@ -339,14 +357,15 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
       <div className="dossier-hero__identity">
         <small>Player character</small>
         <h2>{identityRecord.name || character.name}</h2>
-        <div className="dossier-hero__classline">
+        <div className="dossier-hero__identityline">
           {(raceLabel || professionLabel) ? (
             <>
               {raceLabel && <span>{raceLabel}</span>}
-              {professionLabel && <strong className="is-class"><em>Class</em>{professionLabel}</strong>}
+              {professionLabel && <strong className="is-profession"><em>Profession</em>{professionLabel}</strong>}
             </>
           ) : <span>Wanderer</span>}
-          {subclass && <strong className="is-subclass"><em>Subclass</em>{subclass.label}</strong>}
+          {archetype && <strong className="is-archetype"><em>Archetype</em>{archetype.label}</strong>}
+          <strong className="is-level"><em>Level</em>{level} · {powerTier.label}</strong>
         </div>
         {(identityRecord.bond || character.bond) && <p>{identityRecord.bond || character.bond}</p>}
       </div>

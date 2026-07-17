@@ -16,6 +16,7 @@
 //             the weapon's own type), or null.
 
 import { tierMult, tier as tierInfo } from "./tiers.js";
+import { mechanicalAttributeValue } from "./attribute-tiers.js";
 import { UNIQUE_ABILITIES } from "./uniques.js";
 import { TRAVEL_SPELLS } from "./travel-spells.js";
 import { BUFF_SPELLS } from "./buff-spells.js";
@@ -287,8 +288,10 @@ for (const a of ABILITY_LIBRARY) {
 // each carries its own damage, effects, costs, and requirements.
 export const ABILITY_CATALOG = [...ABILITY_LIBRARY, ...UNIQUE_ABILITIES];
 
-// How much an attribute score amplifies an ability: each point adds 8%.
-export function attrFactor(score) { return 1 + Math.max(0, score || 0) * 0.08; }
+// How much an attribute score amplifies an ability. Scores through 30 keep the
+// original +8% per point exactly; apex scores use the shared diminishing combat
+// value so the expanded 0–90 scale cannot triple every damage multiplier.
+export function attrFactor(score) { return 1 + mechanicalAttributeValue(score) * 0.08; }
 
 export function scaleByTier(base, tierId) { return Math.round(base * tierMult(tierId)); }
 

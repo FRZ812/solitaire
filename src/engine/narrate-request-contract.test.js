@@ -29,6 +29,15 @@ describe("narrator request size contract", () => {
   });
 });
 
+describe("narrator memory tool contract", () => {
+  it("supports manual opt-out, parallel calls, and server-side duplicate suppression", () => {
+    expect(edgeSource).toContain('const toolsEnabled = opts.memoryMode !== "manual"');
+    expect(edgeSource).toContain('parallel_tool_calls: true');
+    expect(edgeSource).toContain('"ignored: already recorded"');
+    expect(edgeSource).toContain("existing_memories");
+  });
+});
+
 describe("narrator party-removal contract", () => {
   it("exposes a structured removal action for story-only companion deaths", () => {
     expect(SYSTEM_PROMPT).toContain('party_removals:[{"id":"<their listed id>","reason":"dead"}]');

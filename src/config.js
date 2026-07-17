@@ -1,6 +1,8 @@
 // Top-level configuration constants.
 export const MODEL = "claude-opus-4-7";
-export const HISTORY_LIMIT = 100;
+// The Edge function consumes at most 24 recent messages. Match that window on
+// the client so repeated state context and old JSON never cross the network.
+export const HISTORY_LIMIT = 24;
 // Durable facts recorded via the narrator's `remember` tool (see
 // summarizeMemoryBank in engine/api.js). Oldest facts drop off once the bank
 // is this full — the narrator is instructed to only record what's worth this

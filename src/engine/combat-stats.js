@@ -18,7 +18,7 @@
 import { attrFactor } from "../data/abilities.js";
 import { tierMult, tier as tierInfo } from "../data/tiers.js";
 import { aggregateCombatPassives, aggregateWorldPassives, PASSIVE_CAPS } from "../data/passives.js";
-import { attributeThresholdMods } from "../data/attribute-tiers.js";
+import { attributeThresholdMods, mechanicalAttributeValue } from "../data/attribute-tiers.js";
 
 // Fold attribute-threshold mods into a passive statMods/triggers bundle: most
 // stats sum, damageCap is lowest-wins, and the snowball trigger caps are re-applied
@@ -317,7 +317,7 @@ function weaponProfile(character, codex, eff) {
     min: Math.max(1, Math.round(base.min * f * reqEff) + Math.floor(mastery / 2)),
     max: Math.max(1, Math.round(base.max * f * reqEff) + mastery),
     type: base.type || "physical",
-    pen: (base.pen || 0) + Math.floor((attrs.body || 0) / 4),
+    pen: (base.pen || 0) + Math.floor(mechanicalAttributeValue(attrs.body) / 4),
     category,
     mastery,
     reach: base.reach ?? fam.reach ?? 1,
@@ -355,8 +355,16 @@ function armorBandMods(cls) {
 
 export function deriveCombatStats(character, codex) {
   const a = effectiveAttributes(character);
-  const body = a.body || 0, reflex = a.reflex || 0, vigor = a.vigor || 0;
-  const mind = a.mind || 0, wit = a.wit || 0, presence = a.presence || 0;
+  // Keep raw attributes on the fighter for progression, threshold checks, and
+  // display, but route every direct combat formula through the shared bounded
+  // value. This leaves <=30 balance untouched and prevents a raw 90 from being
+  // interpreted as three old-cap characters stacked together.
+  const body = mechanicalAttributeValue(a.body);
+  const reflex = mechanicalAttributeValue(a.reflex);
+  const vigor = mechanicalAttributeValue(a.vigor);
+  const mind = mechanicalAttributeValue(a.mind);
+  const wit = mechanicalAttributeValue(a.wit);
+  const presence = mechanicalAttributeValue(a.presence);
   const gear = equippedItems(character, codex);
 
   // Proficiency domain bonuses (the gradual, do-it-get-better effects).

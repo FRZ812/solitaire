@@ -324,6 +324,21 @@ const MOUNT_NAME_POOLS = {
 };
 const GENERIC_MOUNT_NAMES = ["Roan", "Shadow", "Lucky", "Storm", "Steadfast", "Pal", "Scout"];
 
+export const MOUNT_PROGRESSION_LEVEL_BY_TIER = Object.freeze({
+  common: 10,
+  uncommon: 15,
+  rare: 25,
+  "very-rare": 35,
+  epic: 45,
+  legendary: 65,
+  mythical: 85,
+  divine: 100,
+});
+
+function mountProfession(tmpl) {
+  return /(?:dragon|drake|wyvern)/.test(`${tmpl.id} ${tmpl.race}`) ? "dragon-ascendant" : "wanderer";
+}
+
 export function generateMountName(race) {
   const pool = MOUNT_NAME_POOLS[race] || GENERIC_MOUNT_NAMES;
   return pool[Math.floor(Math.random() * pool.length)];
@@ -334,7 +349,10 @@ export function generateMountName(race) {
 export function mountCodexEntry(tmpl, name) {
   return {
     id: tmpl.id, kind: "mount",
-    name: name || tmpl.name, species: tmpl.name, race: tmpl.race, profession: "mount", origin: null,
+    name: name || tmpl.name, species: tmpl.name, race: tmpl.race,
+    profession: mountProfession(tmpl), archetype: `${tmpl.id}-mount`,
+    level: MOUNT_PROGRESSION_LEVEL_BY_TIER[tmpl.tier] || 10,
+    origin: null,
     description: tmpl.desc, attributes: tmpl.attributes,
     worn: [], knows: [],
     // Mounts hunger, thirst, and tire like companions — drained on the road and

@@ -5,6 +5,8 @@ const DEFAULT_MODEL = "deepseek/deepseek-v4-pro";
 const MAX_OUTPUT_TOKENS = 4000;
 const MAX_FIELD_LENGTH = 120_000;
 const MAX_SYSTEM_PROMPT_LENGTH = 200_000;
+const MAX_MEMORY_FACT_LENGTH = 600;
+const MAX_EXISTING_MEMORIES = 80;
 
 const ALLOWED_MODELS = new Set([
   "deepseek/deepseek-v4-pro",
@@ -49,6 +51,8 @@ const MEMORY_TOOL = {
 // let whatever streamed so far stand.
 const MAX_TOOL_ROUNDS = 3;
 
+type MemoryMode = "balanced" | "essential" | "manual";
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
@@ -77,6 +81,45 @@ function asHistory(value: unknown) {
     if ((role !== "user" && role !== "assistant") || typeof content !== "string" || !content.trim()) return [];
     return [{ role, content: content.slice(0, MAX_FIELD_LENGTH) }];
   });
+}
+
+function normalizeMemoryFact(value: unknown) {
+  return typeof value === "string"
+    ? value.replace(/\s+/g, " ").trim().slice(0, MAX_MEMORY_FACT_LENGTH)
+    : "";
+}
+
+function memoryFingerprint(value: unknown) {
+  return normalizeMemoryFact(value).normalize("NFKC").toLocaleLowerCase().replace(/[.!?]+$/g, "");
+}
+
+function asExistingMemories(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  const facts: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of value.slice(-MAX_EXISTING_MEMORIES)) {
+    const fact = normalizeMemoryFact(candidate);
+    const key = memoryFingerprint(fact);
+    if (!fact || !key || seen.has(key)) continue;
+    seen.add(key);
+    facts.push(fact);
+  }
+  return facts;
+}
+
+function selectedMemoryMode(value: unknown): MemoryMode {
+  return value === "essential" || value === "manual" ? value : "balanced";
+}
+
+function memoryToolFor(mode: MemoryMode) {
+  if (mode !== "essential") return MEMORY_TOOL;
+  return {
+    ...MEMORY_TOOL,
+    function: {
+      ...MEMORY_TOOL.function,
+      description: `${MEMORY_TOOL.function.description} ESSENTIAL-ONLY mode is active: use this only for a fact likely to matter many turns from now, and batch independent facts in parallel.`,
+    },
+  };
 }
 
 function selectedModel(value: unknown) {
@@ -184,12 +227,16 @@ function streamNarratorTurn(opts: {
   model: string;
   reasoning?: { effort: string };
   messages: Array<Record<string, unknown>>;
+  memoryMode: MemoryMode;
+  existingMemories: string[];
 }) {
   const encoder = new TextEncoder();
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       const messages = [...opts.messages];
+      const knownMemoryKeys = new Set(opts.existingMemories.map(memoryFingerprint).filter(Boolean));
+      const toolsEnabled = opts.memoryMode !== "manual";
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
           const upstream = await fetch(OPENROUTER_URL, {
@@ -204,7 +251,11 @@ function streamNarratorTurn(opts: {
               stream: true,
               max_tokens: MAX_OUTPUT_TOKENS,
               messages,
-              tools: [MEMORY_TOOL],
+              ...(toolsEnabled ? {
+                tools: [memoryToolFor(opts.memoryMode)],
+                tool_choice: "auto",
+                parallel_tool_calls: true,
+              } : {}),
               ...(opts.reasoning ? { reasoning: opts.reasoning } : {}),
             }),
           });
@@ -221,10 +272,6 @@ function streamNarratorTurn(opts: {
           // No tool call this round (or none we recognize) — the model gave
           // its final narrative answer, nothing more to loop for.
           if (!rememberCalls.length || finishReason !== "tool_calls") break;
-          // Last round budget — stop asking and let the streamed text stand
-          // rather than opening a round we won't follow through on.
-          if (round === MAX_TOOL_ROUNDS - 1) break;
-
           messages.push({
             role: "assistant",
             content: text || null,
@@ -236,10 +283,19 @@ function streamNarratorTurn(opts: {
           });
           for (const tc of rememberCalls) {
             let fact = "";
-            try { fact = String(JSON.parse(tc.arguments || "{}").fact || "").trim(); } catch { /* malformed args — skip */ }
-            if (fact) controller.enqueue(encoder.encode(toMemoryEvent(fact)));
-            messages.push({ role: "tool", tool_call_id: tc.id, content: fact ? "recorded" : "ignored: no fact given" });
+            try { fact = normalizeMemoryFact(JSON.parse(tc.arguments || "{}").fact); } catch { /* malformed args — skip */ }
+            const key = memoryFingerprint(fact);
+            const isDuplicate = !!key && knownMemoryKeys.has(key);
+            if (fact && key && !isDuplicate) {
+              knownMemoryKeys.add(key);
+              controller.enqueue(encoder.encode(toMemoryEvent(fact)));
+            }
+            const result = !fact ? "ignored: no fact given" : isDuplicate ? "ignored: already recorded" : "recorded";
+            messages.push({ role: "tool", tool_call_id: tc.id, content: result });
           }
+          // Record calls made in the final budgeted round, then stop without
+          // opening a provider request that cannot be followed through.
+          if (round === MAX_TOOL_ROUNDS - 1) break;
         }
       } catch (error) {
         controller.error(error);
@@ -299,13 +355,15 @@ Deno.serve(async (request) => {
 
   const model = selectedModel(payload.model);
   const reasoning = selectedReasoning(model, payload.reasoning_effort);
+  const memoryMode = selectedMemoryMode(payload.memory_mode);
+  const existingMemories = asExistingMemories(payload.existing_memories);
   const messages = [
     { role: "system", content: systemPrompt },
     ...asHistory(payload.history),
     { role: "user", content: `${stateContext}\n\n${userMessage}` },
   ];
 
-  return new Response(streamNarratorTurn({ apiKey, model, reasoning, messages }), {
+  return new Response(streamNarratorTurn({ apiKey, model, reasoning, messages, memoryMode, existingMemories }), {
     headers: {
       ...CORS_HEADERS,
       "Content-Type": "text/event-stream; charset=utf-8",

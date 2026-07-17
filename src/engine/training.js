@@ -1,12 +1,13 @@
 // Expert training: pay an expert trader a fee + time to fast-track a grindy
 // proficiency by one rating step (proficiencies normally only grow through use).
-// Proficiency XP also feeds its governing attribute, so paid training nudges
-// attributes too — the trade-off is steep, rating-scaled coin and hours.
+// The session also feeds the shared stacked-path level track; its trade-off is
+// steep, rating-scaled coin and hours.
 
 import { ratingFromXp, proficiencyName } from "../data/proficiencies.js";
 import { advanceTime } from "./time.js";
 import { ageState } from "./aging.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
+import { advanceProgression } from "./progression.js";
 
 // XP needed to reach a rating (ratingFromXp = floor(sqrt(xp/6)) → xp = 6·r²).
 const xpForRating = (r) => 6 * r * r;
@@ -41,5 +42,40 @@ export function applyTraining(state, profId, cap) {
     time,
     character: { ...state.character, proficiencies: profs, inventory: { ...state.character.inventory, coins } },
   });
-  return { ok: true, offer, state: ag.state };
+  const next = ag.state;
+  const progress = advanceProgression(next.character, offer.xpGain * 10);
+  if (progress.gained.length) {
+    const latest = progress.gained.at(-1);
+    next.beats = [
+      ...(next.beats || []),
+      {
+        id: `training-level-${Date.now()}`,
+        type: "growth",
+        text: `Level ${progress.beforeLevel} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+      },
+    ];
+  }
+  const wanderer = next.world?.codex?.characters?.wanderer;
+  if (wanderer && next.character.progression) {
+    next.world = {
+      ...next.world,
+      codex: {
+        ...next.world.codex,
+        characters: {
+          ...next.world.codex.characters,
+          wanderer: {
+            ...wanderer,
+            profession: next.character.profession,
+            archetype: next.character.archetype,
+            attributes: { ...(next.character.attributes || {}) },
+            progression: {
+              ...next.character.progression,
+              paths: { ...next.character.progression.paths },
+            },
+          },
+        },
+      },
+    };
+  }
+  return { ok: true, offer, state: next };
 }

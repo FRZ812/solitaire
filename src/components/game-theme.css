@@ -1072,15 +1072,15 @@
   text-transform: uppercase;
 }
 
-.dossier-hero__classline {
+.dossier-hero__identityline {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 5px 8px;
 }
-.dossier-hero__classline > span + span::before { margin-right: 8px; color: rgba(231, 185, 94, .54); content: "·"; }
-.dossier-hero__classline > strong {
+.dossier-hero__identityline > span + span::before { margin-right: 8px; color: rgba(231, 185, 94, .54); content: "·"; }
+.dossier-hero__identityline > strong {
   padding: 3px 8px;
   color: #fff1c6;
   border: 1px solid rgba(231, 185, 94, .34);
@@ -1090,8 +1090,10 @@
   font-size: 8px;
   letter-spacing: .09em;
 }
-.dossier-hero__classline > strong.is-class { color: rgba(244, 232, 195, .86); border-color: rgba(191, 213, 214, .24); }
-.dossier-hero__classline > strong > em { margin-right: 5px; color: rgba(231, 185, 94, .64); font-size: 6px; font-style: normal; letter-spacing: .13em; }
+.dossier-hero__identityline > strong.is-profession { color: rgba(244, 232, 195, .86); border-color: rgba(191, 213, 214, .24); }
+.dossier-hero__identityline > strong.is-archetype { color: rgba(214, 191, 244, .9); border-color: rgba(174, 139, 211, .28); }
+.dossier-hero__identityline > strong.is-level { color: rgba(239, 216, 135, .92); border-color: rgba(239, 216, 135, .3); }
+.dossier-hero__identityline > strong > em { margin-right: 5px; color: rgba(231, 185, 94, .64); font-size: 6px; font-style: normal; letter-spacing: .13em; }
 
 .dossier-hero__identity p {
   display: -webkit-box;
@@ -1113,7 +1115,7 @@
   height: 58px;
   padding: 4px;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   border: 1px solid rgba(244, 232, 195, 0.16);
   border-radius: 12px;
   background: rgba(5, 13, 23, 0.58);
@@ -2409,6 +2411,508 @@
   border-top: 1px solid rgba(191, 213, 214, 0.11);
   background: linear-gradient(180deg, rgba(29, 70, 97, 0.11), rgba(4, 9, 19, 0.14));
   animation: codex-detail-open 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Profession progression -------------------------------------------------- */
+
+.profession-catalog,
+.profession-progress {
+  display: grid;
+  gap: 12px;
+  color: var(--game-parchment);
+}
+
+.profession-catalog__intro {
+  padding: 2px 2px 5px;
+}
+
+.profession-catalog__intro > small,
+.profession-progress__section-heading small,
+.profession-progress__focus small {
+  color: rgba(231, 185, 94, .68);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.profession-catalog__intro h2 {
+  margin: 4px 0 5px;
+  color: #fff8e5;
+  font: italic 500 25px/1 "Instrument Serif", Georgia, serif;
+}
+
+.profession-catalog__intro p {
+  margin: 0;
+  color: rgba(191, 213, 214, .65);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.profession-catalog__tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(118px, .42fr);
+  gap: 8px;
+}
+
+.profession-catalog__search,
+.profession-catalog__filter {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.profession-catalog__search > span,
+.profession-catalog__filter > span {
+  padding-left: 2px;
+  color: rgba(231, 185, 94, .58);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.profession-catalog__search input,
+.profession-catalog__filter select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 39px;
+  padding: 8px 10px;
+  color: #fff8e5;
+  border: 1px solid rgba(231, 185, 94, .2);
+  border-radius: 9px;
+  outline: 0;
+  background: rgba(4, 9, 19, .5);
+  font: inherit;
+  font-size: 10px;
+}
+
+.profession-catalog__filter select {
+  cursor: pointer;
+  color-scheme: dark;
+}
+
+.profession-catalog__search input:focus,
+.profession-catalog__filter select:focus {
+  border-color: rgba(231, 185, 94, .52);
+  box-shadow: 0 0 0 2px rgba(231, 185, 94, .09);
+}
+
+.profession-catalog__search input::placeholder { color: rgba(191, 213, 214, .38); }
+
+.profession-catalog__result-count {
+  color: rgba(191, 213, 214, .5);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.profession-catalog__list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.profession-card {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  color: inherit;
+  border: 1px solid rgba(191, 213, 214, .14);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(13, 34, 49, .88), rgba(7, 17, 28, .94));
+  box-shadow: 0 8px 22px rgba(3, 7, 15, .2), inset 0 1px rgba(255, 255, 255, .025);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .2s ease, background-color .2s ease, transform .2s ease;
+}
+
+.profession-card:hover {
+  border-color: rgba(231, 185, 94, .34);
+  background: linear-gradient(145deg, rgba(23, 54, 70, .9), rgba(7, 17, 28, .96));
+  transform: translateY(-1px);
+}
+
+.profession-card:focus-visible,
+.profession-progress button:focus-visible {
+  outline: 2px solid rgba(231, 185, 94, .58);
+  outline-offset: 2px;
+}
+
+.profession-card__body {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.profession-card__eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(105, 185, 208, .72);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.profession-card__eyebrow > span:last-child { color: rgba(231, 185, 94, .6); text-align: right; }
+
+.profession-card__name {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff8e5;
+  font: italic 500 19px/1.05 "Instrument Serif", Georgia, serif;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profession-card__description {
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgba(191, 213, 214, .62);
+  font-size: 10px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.profession-card__archetype {
+  margin-top: 3px;
+  padding: 6px 8px;
+  display: grid;
+  gap: 2px;
+  border-left: 2px solid rgba(163, 139, 201, .56);
+  background: rgba(86, 67, 122, .12);
+}
+
+.profession-card__archetype small {
+  color: rgba(163, 139, 201, .78);
+  font-size: 6px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.profession-card__archetype strong { color: rgba(244, 232, 195, .9); font-size: 11px; }
+
+.profession-card__open {
+  margin-top: 2px;
+  color: rgba(231, 185, 94, .7);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.profession-catalog__empty,
+.profession-progress--error {
+  min-height: 140px;
+  padding: 24px;
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  color: rgba(191, 213, 214, .58);
+  border: 1px dashed rgba(231, 185, 94, .2);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.profession-catalog__empty strong,
+.profession-progress--error h2 { color: #fff8e5; font-family: "Instrument Serif", Georgia, serif; font-style: italic; }
+.profession-catalog__empty span,
+.profession-progress--error p { font-size: 10px; }
+
+.profession-progress__back {
+  width: fit-content;
+  min-height: 32px;
+  padding: 6px 9px;
+  color: rgba(231, 185, 94, .82);
+  border: 1px solid rgba(231, 185, 94, .24);
+  border-radius: 8px;
+  background: rgba(231, 185, 94, .07);
+  font: inherit;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.profession-progress__hero {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(231, 185, 94, .24);
+  border-radius: 13px;
+  background:
+    radial-gradient(circle at 8% 0, rgba(105, 185, 208, .16), transparent 38%),
+    linear-gradient(145deg, rgba(19, 45, 61, .94), rgba(7, 17, 28, .97));
+  box-shadow: 0 12px 30px rgba(3, 7, 15, .3), inset 0 1px rgba(255, 255, 255, .035);
+}
+
+.profession-progress__identity { min-width: 0; }
+.profession-progress__identity > small { color: rgba(105, 185, 208, .78); font-size: 7px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.profession-progress__identity h2 { margin: 4px 0; color: #fff8e5; outline: none; font: italic 500 27px/1 "Instrument Serif", Georgia, serif; }
+.profession-progress__identity p { margin: 0; color: rgba(191, 213, 214, .66); font-size: 10px; line-height: 1.4; }
+
+.profession-progress__total {
+  min-width: 62px;
+  padding: 8px 6px;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  border: 1px solid rgba(231, 185, 94, .28);
+  border-radius: 10px;
+  background: rgba(4, 9, 19, .38);
+}
+
+.profession-progress__total strong { color: #fff1b4; font: italic 500 28px/1 "Instrument Serif", Georgia, serif; }
+.profession-progress__total span,
+.profession-progress__total small { color: rgba(231, 185, 94, .62); font-size: 6px; font-weight: 900; letter-spacing: .1em; text-align: center; text-transform: uppercase; }
+.profession-progress__total small { margin-top: 3px; color: rgba(105, 185, 208, .82); }
+
+.profession-progress__focus {
+  padding: 12px 13px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(163, 139, 201, .22);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(72, 51, 101, .2), rgba(7, 17, 28, .6));
+}
+
+.profession-progress__focus > div { display: grid; gap: 2px; }
+.profession-progress__focus strong { color: #f0e2ff; font: italic 500 20px/1.05 "Instrument Serif", Georgia, serif; }
+.profession-progress__focus p { margin: 0; color: rgba(215, 205, 229, .68); font-size: 10px; line-height: 1.42; }
+
+.profession-progress__grade-section,
+.profession-progress__segments,
+.profession-progress__attributes,
+.profession-progress__timeline {
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(191, 213, 214, .12);
+  border-radius: 12px;
+  background: rgba(7, 17, 28, .64);
+}
+
+.profession-progress__section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.profession-progress__section-heading > div { display: grid; gap: 2px; }
+.profession-progress__section-heading h3 { margin: 0; color: #fff8e5; font: italic 500 19px/1 "Instrument Serif", Georgia, serif; }
+.profession-progress__section-heading > span { color: rgba(191, 213, 214, .52); font-size: 7px; font-weight: 800; letter-spacing: .07em; text-align: right; text-transform: uppercase; }
+
+.profession-progress__grades {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.profession-progress__grades > div {
+  padding: 9px 6px;
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  border: 1px solid color-mix(in srgb, var(--grade-color) 28%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--grade-color) 7%, transparent);
+}
+
+.profession-progress__grades [data-grade="standard"] { --grade-color: #69b9d0; }
+.profession-progress__grades [data-grade="advanced"] { --grade-color: #d9b86f; }
+.profession-progress__grades [data-grade="specialized"] { --grade-color: #a38bc9; }
+.profession-progress__grades strong { color: var(--grade-color); font: italic 500 24px/1 "Instrument Serif", Georgia, serif; }
+.profession-progress__grades span { color: rgba(244, 232, 195, .82); font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.profession-progress__grades small { color: rgba(191, 213, 214, .46); font-size: 6px; letter-spacing: .08em; text-transform: uppercase; }
+
+.profession-progress__branch {
+  min-width: 0;
+  margin: 0;
+  padding: 11px 12px 12px;
+  border: 1px solid rgba(105, 185, 208, .22);
+  border-radius: 12px;
+  background: rgba(13, 34, 49, .58);
+}
+
+.profession-progress__branch legend {
+  padding: 0 5px;
+  color: rgba(105, 185, 208, .82);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.profession-progress__branch > p { margin: 0 0 9px; color: rgba(191, 213, 214, .62); font-size: 9px; line-height: 1.4; }
+.profession-progress__branch > div { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.profession-progress__branch button {
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px;
+  display: grid;
+  gap: 3px;
+  color: rgba(191, 213, 214, .64);
+  border: 1px solid rgba(191, 213, 214, .14);
+  border-radius: 9px;
+  background: rgba(4, 9, 19, .38);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profession-progress__branch button[aria-pressed="true"] { color: #fff8e5; border-color: rgba(231, 185, 94, .48); background: rgba(48, 91, 113, .46); box-shadow: inset 0 0 0 1px rgba(231, 185, 94, .08); }
+.profession-progress__branch button strong { font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
+.profession-progress__branch button span { overflow: hidden; color: rgba(231, 185, 94, .68); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+
+.profession-progress__segments > ol,
+.profession-progress__attributes > ul {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  list-style: none;
+}
+
+.profession-progress__segments > ol > li {
+  --path-color: #69b9d0;
+  padding: 9px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--path-color) 18%, transparent);
+  border-left-width: 2px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--path-color) 5%, rgba(4, 9, 19, .44));
+}
+
+.profession-progress__segments > ol > li[data-kind="racial"] { --path-color: #77c7a0; }
+.profession-progress__segments > ol > li[data-kind="utility"] { --path-color: #d9b86f; }
+.profession-progress__segments > ol > li[data-grade="specialized"] { --path-color: #a38bc9; }
+.profession-progress__range { padding-top: 2px; color: var(--path-color); font: italic 500 16px/1 "Instrument Serif", Georgia, serif; text-align: center; }
+.profession-progress__segments li > div { min-width: 0; display: grid; gap: 4px; }
+.profession-progress__segment-title { min-width: 0; display: grid; gap: 2px; }
+.profession-progress__segment-title strong { color: rgba(244, 232, 195, .92); font-size: 10px; }
+.profession-progress__segment-title span { color: var(--path-color); font-size: 6px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.profession-progress__segments li p { margin: 0; color: rgba(191, 213, 214, .56); font-size: 8px; line-height: 1.36; }
+.profession-progress__prerequisites,
+.profession-progress__alternative { color: rgba(231, 185, 94, .64); font-size: 7px; line-height: 1.35; }
+.profession-progress__prerequisites small { margin-right: 4px; color: rgba(191, 213, 214, .46); font-size: 6px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.profession-progress__alternative { color: rgba(105, 185, 208, .72); font-style: italic; }
+
+.profession-progress__attributes > ul {
+  grid-template-columns: 1fr 1fr;
+}
+
+.profession-progress__attributes li {
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(191, 213, 214, .1);
+  border-radius: 8px;
+  background: rgba(4, 9, 19, .32);
+}
+
+.profession-progress__attributes li > span { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.profession-progress__attributes li small { color: rgba(191, 213, 214, .62); font-size: 7px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.profession-progress__attributes li strong { color: #fff1b4; font: italic 500 18px/1 "Instrument Serif", Georgia, serif; }
+.profession-progress__attributes meter { width: 100%; height: 5px; border: 0; border-radius: 999px; background: rgba(191, 213, 214, .1); }
+.profession-progress__attributes meter::-webkit-meter-bar { border: 0; border-radius: 999px; background: rgba(191, 213, 214, .1); }
+.profession-progress__attributes meter::-webkit-meter-optimum-value { border-radius: 999px; background: linear-gradient(90deg, #69b9d0, #d9b86f); }
+.profession-progress__attributes meter::-moz-meter-bar { border-radius: 999px; background: linear-gradient(90deg, #69b9d0, #d9b86f); }
+
+.profession-progress__timeline-heading { align-items: center; }
+.profession-progress__timeline-heading > button {
+  min-height: 29px;
+  padding: 5px 8px;
+  color: rgba(231, 185, 94, .76);
+  border: 1px solid rgba(231, 185, 94, .22);
+  border-radius: 7px;
+  background: rgba(231, 185, 94, .06);
+  font: inherit;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.profession-progress__bands { display: grid; gap: 6px; }
+.profession-progress__band { overflow: hidden; border: 1px solid rgba(191, 213, 214, .11); border-radius: 9px; background: rgba(4, 9, 19, .3); }
+.profession-progress__band.is-open { border-color: rgba(231, 185, 94, .22); }
+.profession-progress__band-toggle {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 46px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: inherit;
+  border: 0;
+  background: rgba(13, 34, 49, .48);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profession-progress__band-toggle > span { min-width: 0; display: grid; gap: 2px; }
+.profession-progress__band-toggle strong { color: rgba(244, 232, 195, .9); font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
+.profession-progress__band-toggle small { overflow: hidden; color: rgba(105, 185, 208, .65); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.profession-progress__band-toggle b { width: 22px; height: 22px; display: grid; place-items: center; flex: 0 0 auto; color: rgba(231, 185, 94, .76); border: 1px solid rgba(231, 185, 94, .18); border-radius: 50%; font: 15px/1 Arial, sans-serif; }
+
+.profession-progress__level-list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  list-style: none;
+  border-top: 1px solid rgba(191, 213, 214, .09);
+}
+
+.profession-progress__level-list > li {
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 9px;
+  border-bottom: 1px solid rgba(191, 213, 214, .07);
+}
+
+.profession-progress__level-list > li:last-child { border-bottom: 0; }
+.profession-progress__level-list > li.is-attained { background: linear-gradient(90deg, rgba(105, 185, 208, .12), transparent); }
+.profession-progress__level-number { width: 30px; height: 30px; display: grid; place-items: center; color: rgba(231, 185, 94, .82); border: 1px solid rgba(231, 185, 94, .2); border-radius: 50%; background: rgba(4, 9, 19, .38); font: italic 500 14px/1 "Instrument Serif", Georgia, serif; }
+.profession-progress__level-list li > div { min-width: 0; display: grid; gap: 2px; }
+.profession-progress__level-meta { overflow: hidden; color: rgba(105, 185, 208, .62); font-size: 6px; font-weight: 900; letter-spacing: .06em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.profession-progress__level-list li > div > strong { color: rgba(244, 232, 195, .9); font-size: 9px; }
+.profession-progress__level-gains { color: rgba(231, 185, 94, .66); font-size: 7px; line-height: 1.3; }
+
+@media (max-width: 380px) {
+  .profession-catalog__tools { grid-template-columns: 1fr; }
+  .profession-progress__hero { grid-template-columns: auto minmax(0, 1fr); }
+  .profession-progress__hero .profession-icon { width: 62px; }
+  .profession-progress__total { grid-column: 1 / -1; grid-template-columns: auto auto; align-items: baseline; justify-content: center; gap: 6px; }
+  .profession-progress__total small { grid-column: 1 / -1; margin-top: 0; }
+  .profession-progress__branch > div { grid-template-columns: 1fr; }
+  .profession-progress__attributes > ul { grid-template-columns: 1fr; }
+  .profession-progress__section-heading { align-items: start; }
 }
 
 @keyframes map-mark-turn { to { transform: rotate(360deg); } }

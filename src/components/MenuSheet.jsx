@@ -3,7 +3,7 @@ import { Icon } from "./Icon.jsx";
 import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import {
   ConditionPill, NeedBar, StatBar,
-  SectionHeader, ErrorBanner, actionButtonStyle, insetBoxStyle,
+  SectionHeader, ErrorBanner, actionButtonStyle,
 } from "./primitives.jsx";
 import { colors, alert, radius, fonts, metaStyle } from "./tokens.js";
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
@@ -15,7 +15,6 @@ import { InfoModal, ViewportModal } from "./InfoTip.jsx";
 import { glossaryById, conditionInfo } from "../data/glossary.js";
 import { condName } from "../data/conditions.js";
 import { canHeal } from "../engine/healing.js";
-import { STORY_FONT_SCALES, getStoryFontScale, setStoryFontScale } from "../engine/preferences.js";
 
 const ATTRIBUTE_VISUALS = {
   body: { icon: "combat", hint: "Force" },
@@ -27,7 +26,7 @@ const ATTRIBUTE_VISUALS = {
 };
 
 function attributeProgress(score) {
-  const thresholds = [5, 10, 15, 20, 25, 30];
+  const thresholds = [5, 10, 15, 20, 25, 30, 45, 60, 75, 90];
   const next = thresholds.find((threshold) => score < threshold);
   if (!next) return { pct: 100, note: "Mastered" };
   const previous = thresholds.filter((threshold) => threshold <= score).at(-1) || 0;
@@ -244,10 +243,6 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
 
         <Divider />
 
-        <SettingsSection />
-
-        <Divider />
-
         {showGuestNag && <GuestNagSection onLinkEmail={onLinkEmail} />}
 
         <Divider />
@@ -273,70 +268,6 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
 
       {info && <InfoModal info={info} onClose={() => setInfo(null)} />}
     </DeckPage>
-  );
-}
-
-// Story text size — persisted via preferences.js, applied live as a CSS var
-// so every open bubble resizes immediately without a reload.
-function SettingsSection() {
-  const [fontScale, setFontScale] = useState(getStoryFontScale());
-  const currentIndex = STORY_FONT_SCALES.findIndex((s) => s.id === fontScale);
-  const currentScale = currentIndex >= 0 ? STORY_FONT_SCALES[currentIndex] : STORY_FONT_SCALES[0];
-
-  function chooseFontScale(id) {
-    setStoryFontScale(id);
-    setFontScale(id);
-  }
-
-  function shiftFontScale(direction) {
-    const nextIndex = Math.max(0, Math.min(STORY_FONT_SCALES.length - 1, currentIndex + direction));
-    chooseFontScale(STORY_FONT_SCALES[nextIndex].id);
-  }
-
-  return (
-    <div>
-      <SectionHeader>Settings</SectionHeader>
-      <div style={insetBoxStyle}>
-        <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: "rgba(215, 167, 111, 0.7)", marginBottom: "8px" }}>
-          Story text size
-        </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-          <button
-            type="button"
-            onClick={() => shiftFontScale(-1)}
-            disabled={currentIndex <= 0}
-            aria-label="Decrease story text size"
-            title="Decrease story text size"
-            style={{
-              width: "34px", height: "34px", padding: 0, display: "grid", placeItems: "center",
-              borderRadius: "50%", border: "1px solid rgba(215,167,111,0.3)",
-              background: "rgba(215,167,111,0.08)", color: colors.parchment,
-              cursor: currentIndex <= 0 ? "not-allowed" : "pointer", opacity: currentIndex <= 0 ? 0.35 : 1,
-            }}
-          >
-            <Icon name="zoomOut" size={17} strokeWidth={1.65} />
-          </button>
-          <span aria-live="polite" style={{ minWidth: 0, flex: 1, color: colors.parchment, fontSize: "12px", fontWeight: 700, textAlign: "center" }}>
-            {currentScale.label}
-          </span>
-          <button
-            type="button"
-            onClick={() => shiftFontScale(1)}
-            disabled={currentIndex >= STORY_FONT_SCALES.length - 1}
-            aria-label="Increase story text size"
-            title="Increase story text size"
-            style={{
-              width: "34px", height: "34px", padding: 0, display: "grid", placeItems: "center",
-              borderRadius: "50%", border: "1px solid rgba(215,167,111,0.3)",
-              background: "rgba(215,167,111,0.08)", color: colors.parchment,
-              cursor: currentIndex >= STORY_FONT_SCALES.length - 1 ? "not-allowed" : "pointer", opacity: currentIndex >= STORY_FONT_SCALES.length - 1 ? 0.35 : 1,
-            }}
-          >
-            <Icon name="zoomIn" size={17} strokeWidth={1.65} />
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 

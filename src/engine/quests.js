@@ -13,6 +13,7 @@ import { ageState } from "./aging.js";
 import { makeRng } from "./town-gen.js";
 import { TASK_POOL, JOB_POOL, BOARD_REFRESH_DAYS } from "../data/postings.js";
 import { COMPANION_LIST } from "../data/companions.js";
+import { advanceProgression, projectCharacterProgression } from "./progression.js";
 
 const clamp100 = (v) => Math.max(0, Math.min(100, v));
 
@@ -91,5 +92,18 @@ export function applyDayLabour(state, job) {
   // Age the codex too — a no-op on hours-scale jobs, but defensive for any future
   // multi-day labour and keeps every time-advance site uniform.
   const ag = ageState(sp.state);
-  return { ok: true, summary, state: ag.state };
+  let next = ag.state;
+  const progress = advanceProgression(next.character, Math.max(1, job.hours || 4) * 30);
+  if (progress.gained.length) {
+    const latest = progress.gained.at(-1);
+    next = {
+      ...next,
+      beats: [...(next.beats || []), {
+        id: `labour-level-${Date.now()}`,
+        type: "growth",
+        text: `Level ${progress.beforeLevel} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+      }],
+    };
+  }
+  return { ok: true, summary, state: projectCharacterProgression(next) };
 }

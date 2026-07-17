@@ -10,6 +10,7 @@ import {
 } from "../../data/continent.js";
 import { makeInitialState } from "../../data/initial-state.js";
 import { sampleContinent, surveyAtlas } from "../../engine/world-generation.js";
+import { pathMinutes } from "../../engine/world.js";
 import { WorldAtlas } from "./WorldAtlas.jsx";
 import {
   ATLAS_LANDMARKS,
@@ -158,6 +159,7 @@ describe("journey summaries", () => {
     expect(journey.totalSteps).toBeGreaterThan(0);
     expect(journey.kilometers).toBe(journey.totalSteps * CONTINENT.hexKilometers);
     expect(journey.estimatedMinutes).toBeGreaterThan(0);
+    expect(journey.estimatedMinutes).toBe(pathMinutes(state, journey.fullPath));
     expect(typeof journey.duration).toBe("string");
     expect(journey.risk).toBeGreaterThanOrEqual(0);
     expect(journey.fullPath[0]).toEqual(state.world.currentTile);
@@ -183,6 +185,7 @@ describe("world atlas component", () => {
     expect(html).toContain('aria-label="Five biome realms"');
     expect(html).toContain('aria-label="Atlas marker layers"');
     expect(html).toContain("Center map on the party");
+    expect(html).toContain('aria-label="Fit the whole continent">116%</button>');
     expect(html).toContain(`${CONTINENT_SEA_LANES.length} sea lanes`);
     for (const realm of REALMS) expect(html).toContain(realm.shortName);
     for (const layer of ATLAS_LAYERS) expect(html).toContain(`>${layer.label}</span>`);
@@ -206,5 +209,19 @@ describe("world atlas component", () => {
     // The party starts in Whitemarch, so no journey is offered to it.
     expect(html).toContain("The party is already here.");
     expect(html).toContain("The Crown Road");
+  });
+
+  it("lays a long journey out as a current march plus a muted continuation", () => {
+    const state = makeInitialState();
+    const tellmar = ATLAS_LANDMARKS.find((landmark) => landmark.id === "tellmar");
+    const html = renderToStaticMarkup(
+      <WorldAtlas state={state} origin={tellmar.coord} onPick={vi.fn()} />,
+    );
+
+    expect(html).toContain('class="world-atlas__journey-continuation"');
+    expect(html).toContain('class="world-atlas__journey"');
+    expect(html).toContain('class="world-atlas__leg-stop"');
+    expect(html).toContain("Journey laid out");
+    expect(html).toContain("Set route");
   });
 });

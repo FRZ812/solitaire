@@ -17,7 +17,6 @@ import {
   writeResumeSnapshot,
 } from "./engine/campaign-resume.js";
 import { applyBeat } from "./engine/beat.js";
-import { buildStateContext } from "./engine/api.js";
 import {
   deleteBeat, editBeat, narratorMessageForPendingPlayers, pendingPlayerBeats,
   recordTurn, rewindToPlayerBeat, stateBeforeTurn, stateAfterTurn,
@@ -25,6 +24,9 @@ import {
 } from "./engine/timeline.js";
 import { withPortraitOverride } from "./engine/portrait-overrides.js";
 import { applyStoryFontScale } from "./engine/preferences.js";
+import { normalizeMemoryBank } from "./engine/memory.js";
+import { normalizeNarratorSettings } from "./engine/narrator-settings.js";
+import { MEMORY_CAP } from "./engine/relationships.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./engine/attributes.js";
 import { equipItem, transferItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
@@ -1013,7 +1015,8 @@ export function Solitaire() {
         name: setup.name, bond: setup.bond, attributes: setup.attributes,
         abilities: setup.abilities || [], race: setup.race, subrace: setup.subrace || null,
         proficiencies: setup.proficiencies || {},
-        origin: setup.origin, profession: setup.profession, subclass: setup.subclass || null, gender: setup.gender,
+        progression: setup.progression || null,
+        origin: setup.origin, profession: setup.profession, archetype: setup.archetype || null, gender: setup.gender,
         age: setup.age, agingMode: setup.agingMode, lifespanMultiplier: setup.lifespanMultiplier,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
         base_appearance: setup.base_appearance, knows: setup.knows || [],
@@ -1044,7 +1047,7 @@ export function Solitaire() {
     ].filter(Boolean).join(", ");
     const originStr = originLabel(setup.origin);
     const backstory = [setup.backstory, ...(Array.isArray(setup.knows) ? setup.knows : [])].filter(Boolean).join(" ");
-    const calling = setup.subclass ? `${setup.subclass} ${setup.profession || "wanderer"}` : (setup.profession || "wanderer");
+    const calling = setup.archetype ? `${setup.archetype} ${setup.profession || "wanderer"}` : (setup.profession || "wanderer");
     const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${calling}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving INSIDE the walled capital of Whitemarch, in the press and clamour of the Grand Market's Grain Square (the city's heart, behind the Great Wall), grounding the scene in who they are, their origin, and what (from the backstory) has brought them to the city, then proceed as a normal first beat.`;
     await runNarratorTurn(built, opener);
   }
@@ -1850,7 +1853,7 @@ export function Solitaire() {
       const beat = await narrate(base, cp.message + directive);
       // Keep memory clean of the steer scaffolding so later turns don't treat the
       // rejected version as canon.
-      beat._userMsg = `${buildStateContext(base)}\n\n${cp.message}`;
+      beat._userMsg = cp.message;
       // A travel turn re-lands the player at the destination (and re-reveals the
       // route); any other turn just re-applies its beat.
       const next = cp.travel
@@ -1909,11 +1912,12 @@ export function Solitaire() {
     closeBeatMenu();
     const region = regionHere(st);
     const wp = activeWorldPassives(st.character, st.world.codex);
-    // Recruited companions fight at your side, scaled to the region's enemy tier.
+    // Recruited companions keep their own level, attributes, and kit wherever
+    // they travel; moving into a harsher region must not silently restat them.
     const allies = (st.party || [])
       .map((id) => st.world.codex.characters?.[id])
       .filter((c) => c && c.combatState?.status !== "dead")
-      .map((c) => allyFromCompanion(c, st.world.codex, { tierId: region.enemyTier || "common" }));
+      .map((c) => allyFromCompanion(c, st.world.codex));
     // Mounted-rider bonuses: a rider fights with their mount's charge under them.
     // The mount is also an ally here; this is the lift its rider gets (engine/combat).
     const chars = st.world.codex.characters || {};
@@ -2102,6 +2106,43 @@ export function Solitaire() {
 
   if (!authChecked) {
     return <CenteredLoader title="Waking the realm" detail="Restoring your session" />;
+  }
+
+  function handleUpdateNarratorSettings(nextSettings) {
+    setState((current) => ({
+      ...current,
+      narratorSettings: normalizeNarratorSettings(nextSettings),
+    }));
+  }
+
+  function handleUpdateMemories(nextMemories) {
+    setState((current) => ({
+      ...current,
+      memories: normalizeMemoryBank(nextMemories),
+    }));
+  }
+
+  function handleUpdateCharacterMemories(characterId, nextMemories) {
+    setState((current) => {
+      const character = current.world?.codex?.characters?.[characterId];
+      if (!character) return current;
+      return {
+        ...current,
+        world: {
+          ...current.world,
+          codex: {
+            ...current.world.codex,
+            characters: {
+              ...current.world.codex.characters,
+              [characterId]: {
+                ...character,
+                memories: normalizeMemoryBank(nextMemories, MEMORY_CAP),
+              },
+            },
+          },
+        },
+      };
+    });
   }
   if (!user) return <AuthScreen />;
   if (!subChecked) {
@@ -2425,6 +2466,10 @@ export function Solitaire() {
             onLinkEmail: linkEmail,
             onScry: handleScry, onTrackCharacter: handleTrackCharacter, onRenameMount: handleRenameMount,
             onPortraitChange: handlePortraitChange,
+            // Settings
+            onUpdateNarratorSettings: handleUpdateNarratorSettings,
+            onUpdateMemories: handleUpdateMemories,
+            onUpdateCharacterMemories: handleUpdateCharacterMemories,
             // Inventory
             onEquip: handleEquip, onUnequip: handleUnequip, onUse: handleUse,
             onTransfer: handleTransfer,

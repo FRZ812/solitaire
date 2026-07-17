@@ -8,34 +8,46 @@ import { getAbilityDef, clampAbilityTier } from "../data/abilities.js";
 import { proficiencyDef } from "../data/proficiencies.js";
 import { withoutSelectedPlayableCharacter } from "../data/playable-roster.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
+import { ATTRIBUTE_CAP } from "../config.js";
+import { createProgression, inferProgressionLevel, normalizeCharacterProgression, progressionLevel } from "./progression.js";
+import { canonicalProfessionId } from "../data/progression-paths.js";
 
-// Creation attributes are set directly from the interview, scaled to the
-// described concept — NOT hard-capped to a small budget (clamped only to the
-// engine's effective ceiling of 30 for roleplay freedom).
-const clampAttr = (v) => Math.max(1, Math.min(30, Math.round(v || 0)));
+// Creation attributes are set from the interview and then checked against the
+// declared route's level envelope. Valid authored shapes remain exact; sheets
+// outside that envelope are brought back to earned progression scale.
+const clampAttr = (v) => Math.max(0, Math.min(ATTRIBUTE_CAP, Math.round(v || 0)));
 
 // ctx in: { beat, character, world, created }. Returns { world, created };
 // character is mutated in place (same object the caller holds).
 export function applyCreation({ beat, character, world, created }) {
-  if (beat.character_setup) {
+  if (beat.character_setup && created === false) {
     const cs = beat.character_setup;
+    const legacyKey = "sub" + "class";
+    const requestedProfession = cs.profession || character.profession || "wanderer";
+    const professionId = canonicalProfessionId(requestedProfession) || "wanderer";
+    const requestedProfessionKey = String(requestedProfession).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const archetype = cs.archetype
+      || cs[legacyKey]
+      || (requestedProfessionKey !== professionId ? requestedProfession : null);
     if (cs.name) character.name = cs.name;
     if (cs.bond) character.bond = cs.bond;
     // Keep the compact player state and the full Codex identity aligned. Older
     // creation code only updated the Codex, which left the dossier profession
     // blank and made presentation metadata impossible to persist reliably.
     for (const key of [
-      "profession", "subclass", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
+      "archetype", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
       "attractiveness", "appearance", "base_appearance", "templateId", "portraitKey",
       "profile",
     ]) {
       if (cs[key] != null) character[key] = cs[key];
     }
+    character.profession = professionId;
     if (cs.attributes) {
       const a = {};
       for (const k of ["body", "reflex", "vigor", "mind", "wit", "presence"]) a[k] = clampAttr(cs.attributes[k] ?? character.attributes[k]);
       character.attributes = a;
     }
+    if (archetype) character.archetype = archetype;
     if (cs.proficiencies && typeof cs.proficiencies === "object") {
       const proficiencies = { ...(character.proficiencies || {}) };
       for (const [id, rawXp] of Object.entries(cs.proficiencies)) {
@@ -44,6 +56,23 @@ export function applyCreation({ beat, character, world, created }) {
       }
       character.proficiencies = proficiencies;
     }
+    // Ready-made builds bring an authored stack; freeform creation receives a
+    // deterministic level appropriate to the described attribute magnitude.
+    const suppliedLevel = cs.progression ? progressionLevel(cs.progression) : 0;
+    const declaredLevel = Number.isFinite(Number(cs.level)) ? Number(cs.level) : 0;
+    const startingLevel = suppliedLevel || declaredLevel || inferProgressionLevel({ ...character, profession: professionId });
+    character.progression = createProgression({
+      professionId,
+      archetypeId: archetype || cs.progression?.archetypeId,
+      level: startingLevel,
+      sidePath: cs.progression?.sidePath || (cs.race === "human" ? "utility" : "racial"),
+      xp: cs.progression?.xp,
+    });
+    character.archetype = archetype || character.progression.archetypeId;
+    normalizeCharacterProgression(character, {
+      enforceLevelAttributeScale: true,
+      preserveValidAttributeShape: true,
+    });
     // Grant any starting abilities the concept calls for — martial techniques, or
     // spells if the player explicitly built a magical character. Accepts an
     // `abilities` array (ids or {id,tier}) and/or a legacy single `ability`.
@@ -89,15 +118,17 @@ export function applyCreation({ beat, character, world, created }) {
         world = { ...world, codex: { ...world.codex, spells } };
       }
     }
-    const w = world.codex.characters.wanderer || {};
+    const w = { ...(world.codex.characters.wanderer || {}) };
+    delete w[legacyKey];
     const merged = {
       ...w,
       name: cs.name || w.name,
       race: cs.race || w.race,
       subrace: (kit ? kit.subraceId : (cs.subrace ?? w.subrace ?? null)),
       origin: cs.origin || w.origin,
-      profession: cs.profession || w.profession,
-      subclass: cs.subclass ?? w.subclass,
+      profession: professionId,
+      archetype: character.archetype || w.archetype,
+      progression: { ...character.progression, paths: { ...character.progression.paths } },
       gender: cs.gender ?? w.gender,
       age: cs.age != null ? cs.age : w.age,
       agingMode: cs.agingMode ?? w.agingMode ?? "mortal",
