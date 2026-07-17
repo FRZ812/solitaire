@@ -25,8 +25,6 @@ import { PROFESSIONS } from "../data/professions.js";
 // gesture never steals an ordinary scroll inside a page.
 const PAGES = ["party", "character", "abilities", "inventory", "codex", "settings"];
 const progressionLevel = progressionEngine.progressionLevel;
-const professionProgressionLevel = progressionEngine.professionProgressionLevel || progressionLevel;
-const racialProgressionLevel = progressionEngine.racialProgressionLevel || ((character) => Object.values(character?.progression?.racial?.paths || {}).reduce((sum, rank) => sum + (Number(rank) || 0), 0));
 const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", codex: "Codex", settings: "Settings" };
 const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", codex: "codex", settings: "settings" };
 
@@ -286,8 +284,7 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
   const professionLabel = PROFESSIONS[professionId]?.name || labelize(professionId);
   const archetype = characterArchetype(identityRecord);
   const level = Math.max(1, progressionLevel(identityRecord));
-  const racialLevel = racialProgressionLevel(identityRecord);
-  const professionLevel = professionProgressionLevel(identityRecord);
+  const callingLabel = archetype?.label || professionLabel;
   const portraitOverride = portraitOverrideFor(state, PLAYER_PORTRAIT_ID);
   const portrait = resolveCharacterPortrait(identityRecord, dossierPortrait, portraitOverride);
   const customPortrait = !!portraitOverride;
@@ -362,19 +359,15 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
         {portraitError && <span role="alert">{portraitError}</span>}
       </div>
       <div className="dossier-hero__identity">
-        <small>Player character</small>
         <h2>{identityRecord.name || character.name}</h2>
         <div className="dossier-hero__identityline">
-          {(raceLabel || professionLabel) ? (
+          {(raceLabel || callingLabel) ? (
             <>
               {raceLabel && <span>{raceLabel}</span>}
-              {professionLabel && <strong className="is-profession"><em>Profession</em>{professionLabel}</strong>}
+              {callingLabel && <strong className={archetype ? "is-archetype" : "is-profession"}>{callingLabel}</strong>}
             </>
           ) : <span>Wanderer</span>}
-          {archetype && <strong className="is-archetype"><em>Specialization</em>{archetype.label}</strong>}
           <strong className="is-level"><em>Level</em>{level}</strong>
-          <strong className="is-level"><em>Race</em>{racialLevel} / 30</strong>
-          <strong className="is-level"><em>Professions</em>{professionLevel} / 70</strong>
         </div>
         {(identityRecord.bond || character.bond) && <p>{identityRecord.bond || character.bond}</p>}
       </div>

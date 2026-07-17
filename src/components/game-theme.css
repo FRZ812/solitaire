@@ -1032,17 +1032,9 @@
   text-shadow: 0 2px 14px rgba(3, 7, 15, 0.82);
 }
 
-.dossier-hero__identity small {
-  color: rgba(231, 185, 94, 0.78);
-  font-size: 7px;
-  font-weight: 800;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-}
-
 .dossier-hero__identity h2 {
   max-width: 100%;
-  margin: 5px 0 3px;
+  margin: 0 0 3px;
   overflow: hidden;
   color: #fff8e5;
   font: italic 500 clamp(34px, 9vw, 46px)/0.98 "Instrument Serif", Georgia, serif;
@@ -2299,13 +2291,6 @@
   cursor: default;
 }
 
-.codex-entry--dossier .codex-entry__eyebrow {
-  color: rgba(231, 185, 94, .82);
-  font-size: 7px;
-  letter-spacing: .2em;
-  white-space: normal;
-}
-
 .codex-entry--dossier .codex-entry__name-row {
   margin-top: 6px;
   justify-content: center;
@@ -2448,18 +2433,6 @@
 .codex-entry__summary.is-profession { position: relative; min-height: 76px; padding-left: 62px; justify-content: center; }
 .codex-entry__summary.is-profession .profession-icon { position: absolute; top: 50%; left: 14px; transform: translateY(-50%); }
 .codex-entry__summary:focus-visible { outline: 1px solid rgba(231, 185, 94, 0.5); outline-offset: -3px; }
-
-.codex-entry__eyebrow {
-  width: 100%;
-  overflow: hidden;
-  color: rgba(231, 185, 94, 0.62);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
 
 .codex-entry__name-row { width: 100%; margin-top: 3px; display: flex; align-items: baseline; gap: 6px; }
 .codex-entry__name-row > strong {
@@ -2638,6 +2611,22 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
+}
+
+.codex-entry__identity-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 9px;
+  color: rgba(244, 232, 195, .92);
+  font: 600 16px/1.1 "Instrument Serif", Georgia, serif;
+}
+
+.codex-entry__identity-values strong + strong::before {
+  margin-right: 12px;
+  color: rgba(231, 185, 94, .54);
+  content: "·";
 }
 
 .codex-entry__fact {

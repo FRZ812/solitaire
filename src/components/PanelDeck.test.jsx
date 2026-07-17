@@ -158,7 +158,7 @@ describe("PanelDeck", () => {
     expect(customHtml).toContain("Use original");
   });
 
-  it("surfaces a character's broad profession, specialized archetype, and total level in the dossier and Codex", () => {
+  it("surfaces race, highest specialization, and total level without redundant dossier labels", () => {
     const state = makeInitialState();
     Object.assign(state.character, {
       templateId: "shadowblade",
@@ -182,15 +182,21 @@ describe("PanelDeck", () => {
       <PanelDeck state={state} user={null} initialPage="codex" onClose={() => {}} handlers={{}} />,
     );
 
-    expect(characterHtml).toContain("Rogue");
-    expect(characterHtml).toContain("Profession</em>Rogue");
-    expect(characterHtml).toContain("Specialization</em>Shadowblade");
+    expect(characterHtml).toContain('>Human</span><strong class="is-archetype">Shadowblade</strong>');
+    expect(characterHtml).not.toContain("Profession</em>");
+    expect(characterHtml).not.toContain("Specialization</em>");
+    expect(characterHtml).not.toContain(">Player character</small>");
     expect(characterHtml).toContain("Level</em>45");
-    expect(characterHtml).toContain("Race</em>");
-    expect(characterHtml).toContain("Professions</em>");
-    expect(codexHtml).toContain("Shadowblade specialization · Level 45");
-    expect(codexHtml).toContain("Specialization · Shadowblade");
-    expect(codexHtml).toContain("Level 45 / 100");
+    expect(characterHtml).not.toContain("Professions</em>");
+    expect(characterHtml).not.toContain(" / 30");
+    expect(characterHtml).not.toContain(" / 70");
+    expect(codexHtml).toContain("Level 45");
+    expect(codexHtml).toContain(">Human</span>");
+    expect(codexHtml).toContain(">Shadowblade</span>");
+    expect(codexHtml).not.toContain("Specialization · Shadowblade");
+    expect(codexHtml).not.toContain("Level 45 / 100");
+    expect(codexHtml).not.toContain(">You</span>");
+    expect(codexHtml).not.toContain("codex-entry__eyebrow");
   });
 
   it("resolves a persistent NPC portrait override throughout the Codex", () => {

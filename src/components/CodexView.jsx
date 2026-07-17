@@ -5,7 +5,7 @@ import { AtlasIcon } from "./AtlasIcon.jsx";
 import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import { iconButtonStyle, conditionPalette, fmtRemaining } from "./primitives.jsx";
 import { colors, shadow, radius, fonts, metaStyle } from "./tokens.js";
-import { ATTR_KEYS, ATTR_LABELS, CHARACTER_LEVEL_CAP, originLabel } from "../config.js";
+import { ATTR_KEYS, ATTR_LABELS, originLabel } from "../config.js";
 import { GLOSSARY, GLOSSARY_CATEGORIES } from "../data/glossary.js";
 import { CONDITIONS } from "../data/conditions.js";
 import { hasCombatEffect } from "../engine/condition-combat.js";
@@ -31,8 +31,6 @@ import { CODEX_PORTRAIT_IDS, resolveCodexPortrait } from "./codex-portrait-asset
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
 
 const progressionLevel = progressionEngine.progressionLevel;
-const professionProgressionLevel = progressionEngine.professionProgressionLevel || progressionLevel;
-const racialProgressionLevel = progressionEngine.racialProgressionLevel || ((character) => Object.values(character?.progression?.racial?.paths || {}).reduce((sum, rank) => sum + (Number(rank) || 0), 0));
 
 function attractivenessLabel(n) {
   if (typeof n !== "number") return null;
@@ -102,13 +100,6 @@ function portraitInitials(name) {
 function portraitHue(id) {
   const hash = [...String(id || "unknown")].reduce((total, char) => ((total * 31) + char.charCodeAt(0)) >>> 0, 0);
   return 184 + (hash % 72);
-}
-
-function characterKindLabel(entry) {
-  if (entry.kind === "player") return "Player character";
-  if (entry.kind === "companion") return "Companion";
-  if (entry.kind === "mount") return "Mount";
-  return "Known character";
 }
 
 function CharacterPortrait({ entry, portraitOverride, detail = false }) {
@@ -892,28 +883,14 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
   const archetype = isCharacter ? characterArchetype(entry) : null;
   const broadProfessionId = isCharacter ? (canonicalProfessionId(entry.profession) || entry.profession) : null;
   const broadProfessionName = isCharacter ? (codex.professions?.[broadProfessionId]?.name || PROFESSIONS[broadProfessionId]?.name || broadProfessionId) : null;
+  const raceLabel = isCharacter ? (codex.races?.[entry.race]?.name || entry.race) : null;
+  const callingLabel = archetype?.label || broadProfessionName;
+  const identityCallingLabel = entry.kind === "mount" ? entry.species : callingLabel;
   const totalProgressionLevel = isCharacter ? progressionLevel(entry) : 0;
-  const racialLevel = isCharacter ? racialProgressionLevel(entry) : 0;
-  const professionLevel = isCharacter ? professionProgressionLevel(entry) : 0;
 
-  // Brief one-line preview shown while collapsed (keeps the list scannable).
-  const metaLine = kind === "characters"
-    ? [
-        codex.races?.[entry.race]?.name || entry.race,
-        entry.kind === "mount"
-          ? entry.species
-          : (broadProfessionName
-              ? `${broadProfessionName} profession`
-              : null),
-        archetype ? `${archetype.label} specialization` : null,
-        totalProgressionLevel > 0 ? `Level ${totalProgressionLevel}` : null,
-        originLabel(entry.origin),
-      ].filter(Boolean).join(" · ")
-    : "";
   const trunc = (s, n = 100) => { const t = (s || "").trim(); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
   const summaryText = trunc(entry.description || narrativeAppearance || "", isCharacter ? 138 : 100);
-  const preview = isCharacter ? summaryText : (metaLine || summaryText);
-  const recordLabel = CODEX_TABS.find((tab) => tab.key === kind)?.label || kind;
+  const preview = summaryText;
   const onToggle = (event) => {
     if (event.altKey && isCharacter) {
       event.preventDefault();
@@ -957,7 +934,6 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
           } : {})}
         >
           {kind === "professions" && <ProfessionIcon profession={entry.id} size="small" decorative />}
-          <span className="codex-entry__eyebrow">{isCharacter ? (metaLine || characterKindLabel(entry)) : recordLabel}</span>
           <span className="codex-entry__name-row">
             <strong>{entry.name}</strong>
             {audit && <span>Dev audit</span>}
@@ -969,10 +945,10 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
               </span>
             )}
             {entry.common && <span>Baseline</span>}
-            {entry.kind === "player" && <span>You</span>}
+            {raceLabel && <span>{raceLabel}</span>}
+            {identityCallingLabel && <span>{identityCallingLabel}</span>}
             {isTracked && <span>Tracked</span>}
-            {archetype && <span>Specialization · {archetype.label}</span>}
-            {totalProgressionLevel > 0 && <span>Level {totalProgressionLevel} / {CHARACTER_LEVEL_CAP}</span>}
+            {totalProgressionLevel > 0 && <span>Level {totalProgressionLevel}</span>}
             {kind === "skills" && typeof entry.rating === "number" && <span>Rating {entry.rating}</span>}
           </span>
           {!open && preview && <span className="codex-entry__preview">{preview}</span>}
@@ -1004,16 +980,15 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
 
             <div className="codex-entry__detail-grid">
               <CharacterDetailSection label="Profile" title="Identity and progression" className="is-wide">
+                <div className="codex-entry__identity-values">
+                  <strong>{raceLabel}</strong>
+                  {identityCallingLabel && <strong>{identityCallingLabel}</strong>}
+                </div>
                 <div className="codex-entry__fact-grid">
-                  <CharacterFact label="Race" value={codex.races?.[entry.race]?.name || entry.race} />
-                  <CharacterFact label="Profession" value={broadProfessionName} />
-                  <CharacterFact label="Specialization" value={archetype?.label} />
                   <CharacterFact label="Origin" value={originLabel(entry.origin)} />
                   <CharacterFact label="Age" value={entry.age} />
                   <CharacterFact label="Gender" value={entry.gender} />
-                  <CharacterFact label="Level" value={totalProgressionLevel > 0 ? `${totalProgressionLevel} / ${CHARACTER_LEVEL_CAP}` : null} />
-                  <CharacterFact label="Racial evolution" value={`${racialLevel} / 30`} />
-                  <CharacterFact label="Professions" value={`${professionLevel} / 70`} />
+                  <CharacterFact label="Level" value={totalProgressionLevel > 0 ? `${totalProgressionLevel}` : null} />
                   <CharacterFact label="Bond" value={bondTier ? `${bondTier.label} ${(entry.relationship || 0) > 0 ? "+" : ""}${entry.relationship || 0}` : null} />
                   <CharacterFact
                     label="Aging"
