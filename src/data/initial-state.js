@@ -1,7 +1,7 @@
 import { HANDCRAFTED } from "./handcrafted-map.js";
 import { computeSightFrom } from "../engine/world.js";
 import { bodyWeightForRace } from "../engine/weight.js";
-import { carryCapacityFor, resolvePoolForMind } from "../engine/attributes.js";
+import { carryCapacityFor, resolvePoolForMind, estimateAttributesFor } from "../engine/attributes.js";
 import { itemTemplate } from "./catalog.js";
 import { getBiome, BIOMES } from "./biomes.js";
 import { CONTINENT, DEFAULT_WORLD_SEED, WORLD_GENERATOR_VERSION } from "./continent.js";
@@ -970,7 +970,7 @@ export function migrateCodex(state) {
   for (const id of (next.party || [])) {
     const ch = ownCodex.characters?.[id];
     if (!ch || (ch.attributes && Object.keys(ch.attributes).length > 0)) continue;
-    ch.attributes = { body: 2, reflex: 2, vigor: 2, mind: 2, wit: 2, presence: 2 };
+    ch.attributes = estimateAttributesFor(ch);
     if (ch.resolve === undefined) ch.resolve = resolvePoolForMind(ch.attributes.mind);
     if (ch.resolveMax === undefined) ch.resolveMax = resolvePoolForMind(ch.attributes.mind);
     if (!ch.needs) ch.needs = { hunger: 70, thirst: 75, sleep: 70 };

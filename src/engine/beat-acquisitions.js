@@ -10,7 +10,7 @@ import { CAPTIVE_POOL, SLAVE_HIGH_TIER_MIN_CP, bondedCodexEntry } from "../data/
 import { PRISONER_POOL, prisonerCodexEntry } from "../data/gaol.js";
 import { markCaptiveBought } from "./slaves.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
-import { resolvePoolForMind } from "./attributes.js";
+import { resolvePoolForMind, estimateAttributesFor } from "./attributes.js";
 import { bodyWeightForRace } from "./weight.js";
 
 // Remove one travelling member without deleting their codex entry. Both a
@@ -92,11 +92,11 @@ export function applyAcquisitions({ state, beat, world, party, character, newTim
       party = [...party, id];
       const existing = world.codex.characters[id];
       // An improvised NPC filed via discoveries.characters can be thin — the
-      // narrator declares name/description but no stat block. Default sanely
-      // (mirrors bondedCodexEntry/prisonerCodexEntry's thin-row fallback) so
-      // they don't join the party with all-zero attributes.
+      // narrator declares name/description but no stat block. Estimate a
+      // plausible one from what we do know (race, age, profession) rather
+      // than joining with all-zero attributes.
       if (!existing.attributes || Object.keys(existing.attributes).length === 0) {
-        const attrs = { body: 2, reflex: 2, vigor: 2, mind: 2, wit: 2, presence: 2 };
+        const attrs = estimateAttributesFor(existing);
         const race = existing.race || "human";
         world = {
           ...world,
