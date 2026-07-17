@@ -30,6 +30,7 @@ import { normalizeSeed, shuffleSeeded } from "./combat-rng.js";
 // imports applyCombatResult/applyLoot directly from ./combat-result.js.
 import { rollLoot, lootCtx } from "./combat-loot.js";
 import { mechanicalAttributeValue } from "../data/attribute-tiers.js";
+import { progressionCombatEntitlements } from "./progression-abilities.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -38,16 +39,23 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 let LOG_SEQ = 0;
 const logEntry = (text, kind = "system") => ({ id: `l${Date.now()}-${LOG_SEQ++}`, text, kind });
 
-const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence", "charmed", "dominated"]);
+const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence", "charmed", "dominated", "geas", "polymorph", "levelDrain", "misdirected"]);
 const RESISTABLE_CONTROL = new Set(["stun", "slow"]); // hard controls Unbowed (controlResist) can shrug off
-const MIND_CONTROL = new Set(["charmed", "dominated"]); // Charm/Dominate — gated by a WILL save (applyEnemyEffect)
+const MIND_CONTROL = new Set(["charmed", "dominated", "geas"]); // enchantments gated by a WILL save (applyEnemyEffect)
+const FEAR_ABILITY_IDS = new Set(["terrify", "mass-terror", "dread-aura", "phantasmal-killer"]);
 // Debuffs an "unstoppable" combatant (BKB) is flat-out immune to — disables and the
 // anti-heal curse, NOT damage-over-time (a wound still bleeds; you just can't be
 // disabled or cursed). Damage immunity (incl. true) is invuln's job, separately.
-const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence"]); // NOT mind-control: no flat immunity wards a mind, only the will gap
+const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence", "polymorph", "levelDrain", "misdirected", "warriorWeaponBound", "warriorAdvanceChecked", "monkActionInterrupted", "monkBalanceChecked", "barbarianActionStaggered", "barbarianGuardDisrupted"]); // NOT mind-control: no flat immunity wards a mind, only the will gap
 // Control + debuff statuses whose duration scales with the caster's controlDuration
 // (Mind) and the target's ccDurationReduction (Presence). DOTs are excluded.
-const CONTROL_DEBUFF = new Set(["stun", "slow", "weaken", "vulnerable", "chill", "curse", "silence", "charmed", "dominated"]);
+const CONTROL_DEBUFF = new Set(["stun", "slow", "weaken", "vulnerable", "chill", "curse", "silence", "charmed", "dominated", "geas", "polymorph", "levelDrain", "misdirected", "warriorWeaponBound", "warriorAdvanceChecked", "monkActionInterrupted", "monkBalanceChecked", "barbarianActionStaggered", "barbarianGuardDisrupted"]);
+const PURIFIABLE_STATUS = new Set(["bleed", "poison", "burn", "chill", "curse", "vulnerable", "weaken", "silence", "slow"]);
+const WARRIOR_SHAKE_OFF_STATUS = new Set(["bleed", "weaken", "vulnerable", "slow", "warriorWeaponBound", "warriorAdvanceChecked"]);
+const MONK_POSTURE_IMMUNE_ANATOMY = new Set(["amorphous", "incorporeal", "mist", "ooze", "slime", "swarm"]);
+const MONK_LARGE_SIZES = new Set(["large", "huge", "gargantuan", "colossal"]);
+const MONK_IMMOVABLE_SIZES = new Set(["huge", "gargantuan", "colossal"]);
+const PROFANE_RACES = new Set(["undead", "demon", "fiend", "spirit"]);
 const ALLY_LOSS = { cowardly: 22, wary: 14, fierce: 8, brutish: 10, honorable: 10, feral: 8, fanatic: 0, mindless: 0 };
 
 function sumStatus(c, type) {
@@ -102,17 +110,17 @@ function lastStandHolds(c) {
 }
 
 function addStatus(c, effect) {
-  if (!effect) return;
+  if (!effect) return false;
   // Debuff immunity (Unstoppable / BKB): control, silence, and curse are rejected
   // outright while it's up.
-  if (c && BKB_BLOCKS.has(effect.type) && hasStatus(c, "unstoppable")) return;
+  if (c && BKB_BLOCKS.has(effect.type) && hasStatus(c, "unstoppable")) return false;
   // Hard control (stun/slow) has DIMINISHING RETURNS: Unbowed (controlResist) plus
   // a stacking resist from how often this foe has already been controlled this
   // fight (+20% per prior control, capped). So you can chain a couple of locks to
   // set up a kill, but you can't perma-stun a boss out of the fight.
   if (c && RESISTABLE_CONTROL.has(effect.type)) {
     const resist = Math.min(0.8, (c.controlResist || 0) + (c.controlPressure || 0) * 0.2);
-    if (resist > 0 && Math.random() < resist) return;
+    if (resist > 0 && Math.random() < resist) return false;
   }
   c.statuses = c.statuses || [];
   // Presence: control & debuffs applied to a bearer with ccDurationReduction wear
@@ -121,7 +129,14 @@ function addStatus(c, effect) {
   if (CONTROL_DEBUFF.has(effect.type) && (c.ccDurationReduction || 0) > 0) {
     dur = Math.max(1, Math.round(dur * (1 - Math.min(0.9, c.ccDurationReduction))));
   }
-  c.statuses.push({ type: effect.type, value: effect.value || 0, duration: dur, pctMax: !!effect.pctMax });
+  c.statuses.push({
+    type: effect.type,
+    value: effect.value || 0,
+    duration: dur,
+    pctMax: !!effect.pctMax,
+    ...(effect.sourceUid ? { sourceUid: effect.sourceUid } : {}),
+  });
+  return true;
 }
 
 // The will-save chance the SUBJECT resists a mind-control attempt. PURE POWER GAP —
@@ -136,12 +151,272 @@ function willSaveChance(caster, target, type, tier) {
   const base = type === "dominated" ? 0.05 : 0.10;
   return Math.min(0.95, base + Math.max(0, (target.will || 0) - potency) * 0.05 + (target.controlResist || 0) + (target.controlPressure || 0) * 0.15);
 }
+
+function isProfaneEntity(target) {
+  const race = String(target?.race || "").toLowerCase();
+  if (PROFANE_RACES.has(race)) return true;
+  const identity = `${target?.kind || ""} ${target?.name || ""}`.toLowerCase();
+  return /\b(undead|skeleton|wight|wraith|ghost|spirit|fiend|demon|possessor|carrion[- ]thrall)\b/.test(identity);
+}
+
+function isBossScale(caster, target) {
+  return !!(target?.boss || target?.isBoss || target?.apex
+    || tierInfo(target?.tier || "common").order >= tierInfo("legendary").order
+    || (caster?.maxHealth > 0 && target?.maxHealth >= caster.maxHealth * 3));
+}
+
+function sacredResistanceChance(caster, target, tier, bossBonus = 0) {
+  const sacredForce = (caster?.attrs?.presence || 0) + (caster?.saveDC || 0) + tierInfo(tier || "common").order * 2;
+  const profaneWill = (target?.will || 0) + (target?.controlResist || 0) * 10;
+  return clamp(0.15 + Math.max(0, profaneWill - sacredForce) * 0.04 + bossBonus, 0.1, 0.9);
+}
+
+function isNativeWarriorTechnique(def) {
+  return !!def && def.professionId === "fighter" && def.school === "martial" && !def.innate;
+}
+
+function isNativeMonkTechnique(def) {
+  return !!def && def.professionId === "monk" && def.school === "martial" && !def.innate;
+}
+
+function isNativeBarbarianTechnique(def) {
+  return !!def && def.professionId === "barbarian" && def.school === "martial" && !def.innate;
+}
+
+function isBarbarianCombatant(actor) {
+  if (!actor) return false;
+  if (actor.professionId === "barbarian" || actor.professionIds?.includes?.("barbarian")) return true;
+  // The player always carries the entitlement-filtered progression list. Do
+  // not fall back to a forged freeform abilities list when that authority is
+  // present; authored NPCs/allies without a ledger may identify through their
+  // native Barbarian kit instead.
+  if (actor.uid === "p" && Array.isArray(actor.progressionAbilityIds)) {
+    return actor.progressionAbilityIds.some((id) => isNativeBarbarianTechnique(getAbilityDef(id)));
+  }
+  const ids = [
+    ...(actor.progressionAbilityIds || []),
+    ...(actor.abilities || []).map((entry) => typeof entry === "string" ? entry : entry?.id).filter(Boolean),
+  ];
+  return ids.some((id) => isNativeBarbarianTechnique(getAbilityDef(id)));
+}
+
+function beginBarbarianAction(actor) {
+  if (!actor) return;
+  actor._barbarianFuryGrantedTargets = [];
+  delete actor._barbarianFurySpent;
+}
+
+function endBarbarianAction(actor) {
+  if (!actor) return;
+  delete actor._barbarianFuryGrantedTargets;
+  delete actor._barbarianFurySpent;
+}
+
+function gainBarbarianFuryFromDamage(cs, attacker, target, dealt) {
+  if (!attacker || !target || dealt <= 0 || target.health <= 0 || attacker.side === target.side || !isBarbarianCombatant(target)) return false;
+  const key = combatantActionKey(target);
+  attacker._barbarianFuryGrantedTargets = attacker._barbarianFuryGrantedTargets || [];
+  if (attacker._barbarianFuryGrantedTargets.includes(key)) return false;
+  attacker._barbarianFuryGrantedTargets.push(key);
+  const before = clamp(Math.floor(target.barbarianFury || 0), 0, 5);
+  target.barbarianFury = Math.min(5, before + 1);
+  if (target.barbarianFury <= before) return false;
+  target.statuses = (target.statuses || []).filter((status) => status.type !== "barbarianRecentDamage");
+  addStatus(target, {
+    type: "barbarianRecentDamage",
+    value: clamp(Math.round(dealt), 1, Math.max(1, Math.round((target.maxHealth || dealt) * 0.2))),
+    duration: 2,
+  });
+  cs?.log?.push(logEntry(`${target.name} gains Fury from the damaging hostile action (${target.barbarianFury}/5).`, "status"));
+  return true;
+}
+
+function gainProvokedBarbarianFury(cs, actor) {
+  if (!isBarbarianCombatant(actor)) return false;
+  const before = clamp(Math.floor(actor.barbarianFury || 0), 0, 5);
+  actor.barbarianFury = Math.min(5, before + 1);
+  if (actor.barbarianFury <= before) return false;
+  cs?.log?.push(logEntry(`${actor.name} provokes one Fury (${actor.barbarianFury}/5) while exposing the guard.`, "status"));
+  return true;
+}
+
+function spendBarbarianFury(cs, actor, def) {
+  if (!isNativeBarbarianTechnique(def)) return 0;
+  const cost = clamp(Math.floor(def?.barbarianFuryCost || 0), 0, 5);
+  if (!cost) { delete actor._barbarianFurySpent; return 0; }
+  const available = clamp(Math.floor(actor.barbarianFury || 0), 0, 5);
+  if (available < cost) { actor._barbarianFurySpent = 0; return 0; }
+  actor.barbarianFury = available - cost;
+  actor._barbarianFurySpent = cost;
+  cs?.log?.push(logEntry(`${actor.name} spends ${cost} Fury (${actor.barbarianFury}/5 remains).`, "status"));
+  return cost;
+}
+
+function monkPostureImmune(target) {
+  const anatomy = String(target?.anatomy || target?.form || "").toLowerCase();
+  return !!(target?.postureImmune || target?.incorporeal || MONK_POSTURE_IMMUNE_ANATOMY.has(anatomy));
+}
+
+// How much target-side Posture Strain a body can hold. This deliberately reads
+// only explicit combat facts: anatomy/form flags, size, weight, and the armour
+// band carried into combat. Boss identity does not make posture impossible; it
+// changes what spending posture can accomplish (see applyMonkControl).
+export function monkPostureCapacity(caster, target) {
+  if (!target || monkPostureImmune(target)) return 0;
+  let cap = 3;
+  const size = String(target.size || "").toLowerCase();
+  if (MONK_IMMOVABLE_SIZES.has(size)) cap = 1;
+  else if (MONK_LARGE_SIZES.has(size)) cap = Math.min(cap, 2);
+  if (target.armorClass === "heavy") cap = Math.min(cap, 2);
+  const casterWeight = Number(caster?.weight);
+  const targetWeight = Number(target.weight);
+  if (Number.isFinite(casterWeight) && casterWeight > 0 && Number.isFinite(targetWeight) && targetWeight > 0) {
+    const ratio = targetWeight / casterWeight;
+    if (ratio >= 3) cap = Math.min(cap, 1);
+    else if (ratio >= 1.75) cap = Math.min(cap, 2);
+  }
+  return clamp(cap, 0, 3);
+}
+
+function combatantActionKey(target) {
+  return target?.uid || target?.id || target?.name || "target";
+}
+
+function beginMonkAction(actor) {
+  if (!actor) return;
+  actor._monkPostureBuiltTargets = [];
+  actor._monkPostureSpentByTarget = {};
+}
+
+function endMonkAction(actor) {
+  if (!actor) return;
+  delete actor._monkPostureBuiltTargets;
+  delete actor._monkPostureSpentByTarget;
+}
+
+function gainMonkPosture(cs, attacker, target, amount = 1) {
+  if (!attacker || !target || amount <= 0) return false;
+  const key = combatantActionKey(target);
+  attacker._monkPostureBuiltTargets = attacker._monkPostureBuiltTargets || [];
+  if (attacker._monkPostureBuiltTargets.includes(key)) return false;
+  attacker._monkPostureBuiltTargets.push(key);
+  const capacity = monkPostureCapacity(attacker, target);
+  const before = clamp(Math.floor(target.postureStrain || 0), 0, capacity);
+  target.postureStrain = Math.min(capacity, before + clamp(Math.floor(amount), 1, 1));
+  if (target.postureStrain <= before) {
+    if (capacity === 0) cs?.log?.push(logEntry(`${target.name}'s anatomy offers no stable posture to strain.`, "status"));
+    return false;
+  }
+  // One target turn of grace prevents an immediate start-of-turn decay from
+  // erasing the contact. Without renewed contact, later turns shed strain.
+  target.postureDecayTurns = 1;
+  cs?.log?.push(logEntry(`${target.name} gains Posture Strain (${target.postureStrain}/${capacity}).`, "status"));
+  return true;
+}
+
+function monkPostureReady(target, def, attacker = null) {
+  const cost = Math.max(0, Math.floor(def?.monkPostureCost || 0));
+  const capacity = monkPostureCapacity(attacker, target);
+  return !cost || clamp(Math.floor(target?.postureStrain || 0), 0, capacity) >= cost;
+}
+
+function spendMonkPosture(cs, attacker, target, def) {
+  if (!isNativeMonkTechnique(def)) return 0;
+  const cost = Math.max(0, Math.floor(def?.monkPostureCost || 0));
+  if (!cost || !target) return 0;
+  attacker._monkPostureSpentByTarget = attacker._monkPostureSpentByTarget || {};
+  const key = combatantActionKey(target);
+  if (Object.prototype.hasOwnProperty.call(attacker._monkPostureSpentByTarget, key)) {
+    return attacker._monkPostureSpentByTarget[key];
+  }
+  const available = clamp(Math.floor(target.postureStrain || 0), 0, monkPostureCapacity(attacker, target));
+  const spent = available >= cost ? cost : 0;
+  if (spent) {
+    target.postureStrain = available - spent;
+    if (target.postureStrain <= 0) target.postureDecayTurns = 0;
+    cs?.log?.push(logEntry(`${attacker.name} spends ${spent} of ${target.name}'s Posture Strain (${target.postureStrain}/3 remains).`, "status"));
+  }
+  attacker._monkPostureSpentByTarget[key] = spent;
+  return spent;
+}
+
+function gainWarriorTempo(cs, actor, { sequenceTag = null, defensive = false } = {}) {
+  if (!actor || (!defensive && !sequenceTag)) return false;
+  if (!defensive && actor.lastWarriorSequenceTag === sequenceTag) return false;
+  if (!defensive) actor.lastWarriorSequenceTag = sequenceTag;
+  const before = clamp(Math.floor(actor.martialTempo || 0), 0, 3);
+  actor.martialTempo = Math.min(3, before + 1);
+  if (actor.martialTempo <= before) return false;
+  cs?.log?.push(logEntry(`${actor.name} builds Martial Tempo (${actor.martialTempo}/3).`, "status"));
+  return true;
+}
+
+function spendWarriorTempo(cs, actor, def) {
+  const minimum = Math.max(0, Math.floor(def?.warriorTempoCost || 0));
+  if (!minimum) { delete actor._warriorTempoSpent; return 0; }
+  const available = clamp(Math.floor(actor.martialTempo || 0), 0, 3);
+  const spent = def.warriorConsumeAllTempo ? available : minimum;
+  actor.martialTempo = Math.max(0, available - spent);
+  actor._warriorTempoSpent = spent;
+  cs?.log?.push(logEntry(`${actor.name} spends ${spent} Martial Tempo (${actor.martialTempo}/3 remains).`, "status"));
+  return spent;
+}
+
+// Instant-death magic is an earned finisher, not an unconditional boss delete.
+// It only functions under a strict health threshold; legendary/boss-scale foes
+// use a much smaller threshold and retain a large irreducible resistance.
+function applyInstantDeath(cs, caster, target, effect, tier) {
+  const bossLike = !!(target.boss || target.isBoss || target.apex
+    || tierInfo(target.tier || "common").order >= tierInfo("legendary").order
+    || (caster?.maxHealth > 0 && target.maxHealth >= caster.maxHealth * 3));
+  const threshold = bossLike ? (effect.bossThreshold ?? 0.08) : (effect.threshold ?? 0.25);
+  const healthFraction = target.health / Math.max(1, target.maxHealth || target.health);
+  if (healthFraction > threshold) {
+    cs.log.push(logEntry(`${target.name}'s life is too strong for the death-working to close around it.`, "status"));
+    return false;
+  }
+  const casterWill = (caster?.will || 0) + (caster?.saveDC || 0) + tierInfo(tier || "common").order;
+  const targetWill = (target.will || 0) + (target.controlResist || 0) * 10;
+  const contested = clamp(0.2 + (targetWill - casterWill) * 0.04, 0.1, 0.85);
+  const resistChance = bossLike ? Math.max(0.7, contested) : contested;
+  if (Math.random() < resistChance) {
+    cs.log.push(logEntry(`${target.name} resists the hand closing around their heart.`, "status"));
+    return false;
+  }
+  if (lastStandHolds(target)) {
+    target.health = 1;
+    cs.log.push(logEntry(`${target.name} refuses the final command and clings to one last breath.`, "status"));
+    return false;
+  }
+  target.health = 0;
+  cs.log.push(logEntry(`${caster?.name || "The caster"} stills ${target.name}'s heart.`, caster?.side === "player" ? "crit" : "enemy"));
+  return true;
+}
 // Apply an enemy-targeted ability effect. MIND CONTROL gets ONE will-save. Below divine:
 // Charm is a brief stand-down, Dominate (if it lands) is a PERMANENT enthrall. At DIVINE
 // both bind FOREVER — Dominate leashes the body (attitude kept), Charm rewrites the heart
 // (artificial devotion). Everything else applies straight (addStatus owns stun/slow resist).
-function applyEnemyEffect(cs, caster, target, effect, tier) {
+function applyEnemyEffect(cs, caster, target, effect, tier, sourceDef = null) {
   if (!effect || !target || target.health <= 0) return;
+  // Antimagic suppresses spell riders as well as most direct magical damage.
+  // Physical techniques and innate racial powers still work inside the field.
+  if (sourceDef && hasStatus(target, "antimagicField")
+      && abilityCategoryOf(sourceDef) === "spell" && !sourceDef.innate) {
+    cs.log.push(logEntry(`${target.name}'s antimagic field unravels ${sourceDef.name}.`, "status"));
+    return;
+  }
+  // Dragon Heart does not make its bearer emotionless; it lets a sovereign
+  // draconic will keep acting through supernatural dread. Fear riders land at
+  // half force and lose a turn of duration (direct fear damage is reduced in
+  // dealHit below).
+  if (target.triggers?.dragonHeart && sourceDef && FEAR_ABILITY_IDS.has(sourceDef.id)) {
+    effect = {
+      ...effect,
+      value: Math.max(0, Math.round((effect.value || 0) * 0.5)),
+      duration: Math.max(1, (effect.duration || 1) - 1),
+    };
+    cs.log.push(logEntry(`${target.name}'s dragon heart steadies them against ${sourceDef.name}.`, "status"));
+  }
   // Mind: control & debuffs the caster inflicts last longer (controlDuration).
   if (effect && CONTROL_DEBUFF.has(effect.type) && (caster?.controlDuration || 0) > 0) {
     effect = { ...effect, duration: Math.max(1, Math.round((effect.duration || 1) * (1 + caster.controlDuration))) };
@@ -149,7 +424,7 @@ function applyEnemyEffect(cs, caster, target, effect, tier) {
   // DISPEL — strips brief control, and BREAKS a binding via a CONTEST of wills between
   // the dispeller and the ORIGINAL binder (stored at cast) — NOT a save by the thrall.
   if (effect.type === "dispel") {
-    const STRIP = new Set(["charmed", "dominated", "stun", "slow", "weaken", "vulnerable", "chill", "curse", "silence"]);
+    const STRIP = new Set(["charmed", "dominated", "geas", "polymorph", "stun", "slow", "weaken", "vulnerable", "chill", "curse", "silence"]);
     if (Array.isArray(target.statuses)) target.statuses = target.statuses.filter((s) => !STRIP.has(s.type));
     if (target.enthralledBy) {
       const freeChance = Math.min(0.95, Math.max(0.05, 0.5 + (((caster?.will || 0) + (caster?.saveDC || 0)) - (target.dominationWill || 0)) * 0.05));
@@ -157,6 +432,157 @@ function applyEnemyEffect(cs, caster, target, effect, tier) {
       else cs.log.push(logEntry(`The binding on ${target.name} holds — the binder's will is the stronger.`, "status"));
     } else {
       cs.log.push(logEntry(`${target.name} is cleansed of lingering magics.`, "status"));
+    }
+    return;
+  }
+  if (effect.type === "turnProfane") {
+    if (!isProfaneEntity(target)) {
+      cs.log.push(logEntry(`${sourceDef?.name || "The turning prayer"} finds no profane hold in ${target.name}.`, "status"));
+      return;
+    }
+    const bossLike = isBossScale(caster, target);
+    if (Math.random() < sacredResistanceChance(caster, target, tier, bossLike ? 0.5 : 0)) {
+      cs.log.push(logEntry(`${target.name} holds against the turning prayer.`, "status"));
+      return;
+    }
+    if (bossLike) {
+      if (addStatus(target, { type: "weaken", value: Math.min(20, effect.value || 20), duration: 1 })) {
+        cs.log.push(logEntry(`${target.name} recoils from the sacred authority but cannot be driven away.`, "status"));
+      }
+    } else {
+      const turned = addStatus(target, { type: "stun", value: 1, duration: 1 });
+      addStatus(target, { type: "weaken", value: clamp(effect.value || 30, 10, 40), duration: clamp(effect.duration || 2, 1, 3) });
+      if (turned) cs.log.push(logEntry(`${target.name} recoils helplessly from the sacred authority.`, "status"));
+    }
+    if (target.side === "enemy") onEnemyControlled(target);
+    return;
+  }
+  if (effect.type === "exorcise") {
+    const possessionTypes = new Set(["possessed", "possession", "spiritPossession"]);
+    const beforeStatuses = target.statuses?.length || 0;
+    target.statuses = (target.statuses || []).filter((status) => !possessionTypes.has(status.type));
+    const freedHost = target.statuses.length < beforeStatuses;
+    if (freedHost) cs.log.push(logEntry(`${target.name} is separated from the possessing influence.`, "status"));
+    if (!isProfaneEntity(target)) {
+      if (!freedHost) cs.log.push(logEntry(`${sourceDef?.name || "The exorcism"} finds no possessing or profane entity in ${target.name}.`, "status"));
+      return;
+    }
+    const bossLike = isBossScale(caster, target);
+    if (Math.random() < sacredResistanceChance(caster, target, tier, bossLike ? 0.45 : 0.05)) {
+      cs.log.push(logEntry(`${target.name} resists expulsion and clings to the world.`, "status"));
+      return;
+    }
+    const healthFraction = target.health / Math.max(1, target.maxHealth || target.health);
+    if (target._summoned || (!bossLike && healthFraction <= clamp(effect.threshold || 0.3, 0.15, 0.4))) {
+      target.health = 0;
+      target._banished = true;
+      cs.log.push(logEntry(`${target.name} is banished beyond the violated boundary.`, caster?.side === "player" ? "crit" : "enemy"));
+      return;
+    }
+    const duration = bossLike ? 1 : clamp(effect.duration || 3, 1, 4);
+    const silenced = addStatus(target, { type: "silence", duration });
+    addStatus(target, { type: "weaken", value: bossLike ? 20 : 40, duration });
+    if (target.resolve != null) target.resolve = Math.max(0, target.resolve - (bossLike ? 2 : 5));
+    if (silenced) cs.log.push(logEntry(`${target.name}'s profane nature is suppressed, not merely wounded.`, "status"));
+    if (target.side === "enemy") onEnemyControlled(target);
+    return;
+  }
+  if (effect.type === "misdirected") {
+    const bossLike = isBossScale(caster, target);
+    const casterPresence = caster?.attrs?.presence || caster?.will || 0;
+    const targetWill = (target.will || 0) + (target.controlResist || 0) * 10;
+    const resistChance = clamp(0.2 + Math.max(0, targetWill - casterPresence) * 0.04 + (bossLike ? 0.35 : 0), 0.1, 0.85);
+    if (Math.random() < resistChance) {
+      cs.log.push(logEntry(`${target.name} sees through the sacred misdirection.`, "status"));
+      return;
+    }
+    if (addStatus(target, { ...effect, value: 1, duration: clamp(effect.duration || 2, 1, 2) })) {
+      cs.log.push(logEntry(`${target.name}'s next hostile intent is led toward a harmless false opening.`, "status"));
+      if (target.side === "enemy") onEnemyControlled(target);
+    }
+    return;
+  }
+  if (effect.type === "warriorWeaponBind") {
+    if (addStatus(target, { type: "warriorWeaponBound", value: 1, duration: clamp(effect.duration || 2, 1, 2) })) {
+      cs.log.push(logEntry(`${target.name}'s weapon line is caught under physical leverage.`, "status"));
+    }
+    return;
+  }
+  if (effect.type === "warriorDriveBack") {
+    if (target.side === "enemy") target.distance = Math.min(MAX_DISTANCE, (target.distance || 0) + clamp(effect.value || 1, 1, 2));
+    cs.log.push(logEntry(`${target.name} is forced back by controlled weapon pressure.`, "status"));
+    return;
+  }
+  if (effect.type === "warriorReadOpponent") {
+    target.statuses = (target.statuses || []).filter((status) => !(status.type === "warriorReadOpponent" && status.sourceUid === caster.uid));
+    target.statuses.push({
+      type: "warriorReadOpponent",
+      value: clamp(effect.value || 30, 10, 40),
+      pen: clamp(effect.pen || 5, 1, 8),
+      crit: clamp(effect.crit || 15, 5, 20),
+      duration: clamp(effect.duration || 3, 1, 4),
+      sourceUid: caster.uid,
+    });
+    cs.log.push(logEntry(`${caster.name} reads ${target.name}'s balance and repeated habits.`, "status"));
+    return;
+  }
+  if (effect.type === "warriorStopThrust") {
+    if (target.side === "enemy") target.distance = Math.min(MAX_DISTANCE, (target.distance || 0) + clamp(effect.value || 1, 1, 2));
+    addStatus(target, { type: "warriorAdvanceChecked", value: 1, duration: clamp(effect.duration || 2, 1, 2) });
+    cs.log.push(logEntry(`${target.name}'s next approach is checked by the waiting point.`, "status"));
+    return;
+  }
+  if (effect.type === "barbarianChallenge" || effect.type === "barbarianFoeCaller") {
+    const aware = target.health > 0 && !target.unconscious && target.canHear !== false && !target.deaf
+      && target.aware !== false && target.demeanor !== "mindless" && !target.alienMorale && !target.moraleImmune;
+    if (!aware) {
+      cs.log.push(logEntry(`${target.name} cannot meaningfully receive the physical challenge.`, "status"));
+      return;
+    }
+    const bossLike = isBossScale(caster, target);
+    const statusType = effect.type === "barbarianChallenge" ? "barbarianChallenged" : "barbarianFoeCalled";
+    target.statuses = (target.statuses || []).filter((status) => !(status.type === statusType && status.sourceUid === caster.uid));
+    addStatus(target, {
+      type: statusType,
+      value: bossLike ? clamp(Math.round((effect.value || 15) * 0.4), 3, 8) : clamp(effect.value || 15, 8, 22),
+      duration: bossLike ? 1 : clamp(effect.duration || 2, 1, 2),
+      sourceUid: caster.uid,
+    });
+    cs.log.push(logEntry(`${target.name} answers the visible, audible pressure without losing will or allegiance.`, "status"));
+    return;
+  }
+  if (effect.type === "instantKill") {
+    applyInstantDeath(cs, caster, target, effect, tier);
+    return;
+  }
+  if (effect.type === "levelDrain") {
+    const applied = addStatus(target, {
+      ...effect,
+      value: clamp(effect.value || 20, 5, 40),
+      duration: clamp(effect.duration || 3, 1, 6),
+    });
+    if (applied) {
+      if (target.resolve != null) target.resolve = Math.max(0, target.resolve - Math.max(1, Math.ceil((effect.value || 20) / 10)));
+      cs.log.push(logEntry(`${target.name} is enervated — skill, aim, and force ebb away.`, "status"));
+      if (target.side === "enemy") onEnemyControlled(target);
+    }
+    return;
+  }
+  if (effect.type === "polymorph") {
+    const bossLike = !!(target.boss || target.isBoss || target.apex
+      || tierInfo(target.tier || "common").order >= tierInfo("legendary").order
+      || (caster?.maxHealth > 0 && target.maxHealth >= caster.maxHealth * 3));
+    const casterWill = (caster?.will || 0) + (caster?.saveDC || 0) + tierInfo(tier || "common").order;
+    const targetWill = (target.will || 0) + (target.controlResist || 0) * 10;
+    const resistChance = clamp(0.1 + Math.max(0, targetWill - casterWill) * 0.04 + (bossLike ? 0.5 : 0), 0.1, 0.9);
+    if (hasStatus(target, "unstoppable") || Math.random() < resistChance) {
+      cs.log.push(logEntry(`${target.name} resists the attempted transformation.`, "status"));
+      return;
+    }
+    const duration = clamp(effect.duration || 3, 1, bossLike ? 2 : 4);
+    if (addStatus(target, { ...effect, duration, sourceUid: caster?.uid })) {
+      cs.log.push(logEntry(`${target.name} is transformed into a harmless lesser shape.`, "status"));
+      if (target.side === "enemy") onEnemyControlled(target);
     }
     return;
   }
@@ -168,6 +594,12 @@ function applyEnemyEffect(cs, caster, target, effect, tier) {
     }
     if (effect.type === "dominated") { bindToCaster(cs, caster, target, "dominate"); return; } // permanent thrall
     if (effect.type === "charmed" && tier === "divine") { bindToCaster(cs, caster, target, "charm"); return; } // permanent, artificial love
+    if (effect.type === "geas") {
+      addStatus(target, { ...effect, value: clamp(effect.value || 6, 2, 10), sourceUid: caster?.uid });
+      cs.log.push(logEntry(`${target.name} is bound by a geas and will suffer for each disobedient attack.`, "status"));
+      if (target.side === "enemy") onEnemyControlled(target);
+      return;
+    }
     // a sub-divine charm is a brief stand-down — falls through to addStatus
   }
   addStatus(target, effect);
@@ -253,15 +685,57 @@ function enemyThreat(e) {
   return e.maxHealth * 0.25 + e.weapon.max + tierInfo(e.tier).order * 2;
 }
 
+function hasAbilityMetamagic(actor, def, metamagicId) {
+  if (!actor || !def) return false;
+  const perAbility = actor.metamagicByAbilityId?.[def.id];
+  if (Array.isArray(perAbility)) return perAbility.includes(metamagicId);
+  // Backward-compatible combat snapshots predate per-spell profiles.
+  return !!(actor.signatureSpellIds?.includes(def.id) && actor.metamagicIds?.includes(metamagicId));
+}
+
+function effectiveAbilityTarget(actor, def) {
+  if (def?.target === "enemy" && hasAbilityMetamagic(actor, def, "shaped-signature")) return "all-enemies";
+  return def?.target || "enemy";
+}
+
+function isTwinnedSignature(actor, def) {
+  return def?.target === "enemy"
+    && !hasAbilityMetamagic(actor, def, "shaped-signature")
+    && hasAbilityMetamagic(actor, def, "twinned-signature");
+}
+
+function effectiveActionCost(actor, def) {
+  if (hasAbilityMetamagic(actor, def, "quickened-signature")) return 0;
+  return def?.actionCost || 1;
+}
+
+function effectiveCooldown(actor, def) {
+  const convergence = hasStatus(actor, "arcaneConvergence") ? 1 : 0;
+  return Math.max(0, (def?.cooldown || 0) - convergence);
+}
+
 // ----- browser-native deck state -----
 
-function makeDeck(character, seed) {
-  const specs = defaultCombatDeck(character);
+function makeDeck(character, seed, entitlements = progressionCombatEntitlements(character)) {
+  const combatCharacter = { ...character, abilities: entitlements.abilities };
+  const specs = defaultCombatDeck(combatCharacter);
   const cards = {};
   const ids = specs.map((spec, index) => {
     const uid = `c${String(index + 1).padStart(3, "0")}`;
     const definition = cardDefinition(spec.abilityId, spec.tier);
-    cards[uid] = { uid, ...definition };
+    const signature = entitlements.signatureSpellIds.includes(spec.abilityId);
+    const metamagic = entitlements.metamagicByAbilityId?.[spec.abilityId]
+      || (signature ? entitlements.metamagicIds : []);
+    const quickened = metamagic.includes("quickened-signature");
+    const shaped = metamagic.includes("shaped-signature") && definition?.target === "enemy";
+    cards[uid] = {
+      uid,
+      ...definition,
+      ...(quickened ? { energyCost: 0 } : {}),
+      ...(shaped ? { target: "all-enemies" } : {}),
+      ...(signature ? { signature: true } : {}),
+      ...(metamagic.length ? { metamagic: [...metamagic] } : {}),
+    };
     return uid;
   });
   const shuffled = shuffleSeeded(ids, normalizeSeed(seed));
@@ -358,7 +832,8 @@ function applyMountedBonus(c, b) {
 export function initCombat(character, codex, enemies, opts = {}) {
   LOG_SEQ = 0;
   const cs = deriveCombatStats(character, codex);
-  const learned = Array.isArray(character.abilities) ? character.abilities : [];
+  const entitlements = progressionCombatEntitlements(character);
+  const learned = entitlements.abilities;
   const abilities = [
     { id: BASIC_ATTACK.id, tier: "common" },
     { id: DEFEND.id, tier: "common" },
@@ -374,6 +849,12 @@ export function initCombat(character, codex, enemies, opts = {}) {
   const player = {
     uid: "p",
     name: character.name || "You",
+    race: String(character.race || character.progression?.racial?.raceId || "").toLowerCase(),
+    anatomy: character.anatomy || character.form || null,
+    size: character.size || null,
+    weight: Number.isFinite(Number(character.weight)) ? Number(character.weight) : null,
+    needs: clone(character.needs || {}),
+    sunlightExposure: !!opts.sunlight,
     health: Math.min(cs.maxHealth, Math.round(character.vitality) + healthBonus),
     maxHealth: cs.maxHealth,
     resolve: Math.round(character.resolve ?? 0),
@@ -383,7 +864,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     damageCap: cs.damageCap || 0, execute: cs.execute || 0, controlResist: cs.controlResist || 0,
     will: cs.will || 0, // willpower — Charm/Dominate save (mind+presence)
     healPower: cs.healPower || 0, dmgDefer: cs.dmgDefer || 0,
-    armor: cs.armor, ward: cs.ward, dodge: cs.dodge,
+    armor: cs.armor, armorClass: cs.armorClass || null, ward: cs.ward, dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed, swiftChance: cs.swiftChance || 0, reloadLeft: 0,
     triggers: cs.triggers || {},
@@ -396,6 +877,18 @@ export function initCombat(character, codex, enemies, opts = {}) {
     block: 0, shield: 0, magicShield: 0, invuln: 0,
     prof: cs.prof || {},
     attrs: cs.attrs || { ...character.attributes },
+    signatureSpellIds: [...entitlements.signatureSpellIds],
+    metamagicIds: [...entitlements.metamagicIds],
+    metamagicByAbilityId: Object.fromEntries(
+      Object.entries(entitlements.metamagicByAbilityId || {}).map(([abilityId, ids]) => [abilityId, [...ids]]),
+    ),
+    progressionAbilityIds: [...(entitlements.progressionAbilityIds || [])],
+    progressionBranchAbilityIds: [...entitlements.selectedBranchAbilityIds],
+    martialTempo: 0,
+    lastWarriorSequenceTag: null,
+    postureStrain: 0,
+    postureDecayTurns: 0,
+    barbarianFury: 0,
     abilities, cooldowns: {}, statuses: [], side: "player",
   };
 
@@ -404,6 +897,11 @@ export function initCombat(character, codex, enemies, opts = {}) {
   const allies = (opts.allies || []).map((a, i) => ({
     ...clone(a), uid: `a${i}`, side: "player", statuses: a.statuses || [], cooldowns: a.cooldowns || {},
     actionsPerTurn: a.actionsPerTurn || 1, actionsLeft: a.actionsPerTurn || 1,
+    martialTempo: clamp(Math.floor(a.martialTempo || 0), 0, 3),
+    lastWarriorSequenceTag: a.lastWarriorSequenceTag || null,
+    postureStrain: clamp(Math.floor(a.postureStrain || 0), 0, 3),
+    postureDecayTurns: clamp(Math.floor(a.postureDecayTurns || 0), 0, 1),
+    barbarianFury: 0,
     speed: a.speed ?? 4, swiftChance: a.swiftChance || 0, reloadLeft: 0,
     procs: a.procs || a.triggers?.procs || [], block: 0, shield: 0, magicShield: 0, invuln: 0,
   }));
@@ -433,6 +931,11 @@ export function initCombat(character, codex, enemies, opts = {}) {
     e.side = "enemy";
     e.actionsPerTurn = e.actionsPerTurn || 1;
     e.actionsLeft = e.actionsPerTurn;
+    e.martialTempo = clamp(Math.floor(e.martialTempo || 0), 0, 3);
+    e.lastWarriorSequenceTag = e.lastWarriorSequenceTag || null;
+    e.postureStrain = clamp(Math.floor(e.postureStrain || 0), 0, 3);
+    e.postureDecayTurns = clamp(Math.floor(e.postureDecayTurns || 0), 0, 1);
+    e.barbarianFury = 0;
     e.speed = e.speed ?? 4; e.swiftChance = e.swiftChance || 0; e.reloadLeft = 0;
     // Engagement distance from the player. Most foes open a step out (melee must
     // close; ranged & reach weapons can already strike). An ambush starts closer.
@@ -500,7 +1003,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     loot: null,
     seed: normalizeSeed(opts.seed ?? `${character.name || "wanderer"}|${foes.map((e) => e.name).join("|")}`),
   };
-  combatState.deck = makeDeck(character, combatState.seed);
+  combatState.deck = makeDeck(character, combatState.seed, entitlements);
   if (opts.ambush) applyAmbush(combatState, opts.ambush);
   if (TERMINAL_PHASES.has(combatState.phase)) return combatState;
   const started = startPlayerDeckRound(combatState, { initial: true });
@@ -538,6 +1041,149 @@ function gap(actor, target) {
 function closeStep(cs, actor, target) {
   if (actor.side === "enemy") { actor.distance = Math.max(0, (actor.distance || 0) - 1); return; }
   if (target) target.distance = Math.max(0, (target.distance || 0) - 1);
+}
+
+function moveCombatantsApart(actor, target, steps) {
+  const distance = clamp(Math.floor(steps || 0), 0, 2);
+  if (!distance) return;
+  const enemy = actor?.side === "enemy" ? actor : target?.side === "enemy" ? target : null;
+  if (enemy) enemy.distance = Math.min(MAX_DISTANCE, (enemy.distance || 0) + distance);
+}
+
+// Convert spent Posture Strain into explicitly physical consequences. Hard
+// interruption/prone effects require an ordinary, fully leverageable body.
+// Bosses and resistant bodies keep taking the physical hit but receive only a
+// short balance/force penalty and tightly bounded displacement.
+function applyMonkControl(cs, attacker, target, def, spent) {
+  if (!def?.monkControl || spent <= 0 || !target || target.health <= 0) return;
+  const capacity = monkPostureCapacity(attacker, target);
+  if (capacity <= 0) {
+    cs.log.push(logEntry(`${def.name} finds no usable balance structure in ${target.name}.`, "status"));
+    return;
+  }
+  const bossLike = isBossScale(attacker, target);
+  const hardControl = capacity >= 3 && !bossLike && !hasStatus(target, "unstoppable");
+  const softValue = capacity >= 3 ? 20 : capacity === 2 ? 14 : 8;
+  const balanceCheck = (value = softValue) => addStatus(target, {
+    type: "monkBalanceChecked",
+    value: clamp(value, 5, 25),
+    duration: 1,
+  });
+  let description = "checks balance";
+  switch (def.monkControl) {
+    case "joint-check":
+      addStatus(target, { type: "weaken", value: clamp(softValue + 5, 10, 30), duration: 2 });
+      description = "loads a joint and weakens the answering blows";
+      break;
+    case "trip": {
+      const stopped = hardControl && addStatus(target, { type: "stun", value: 1, duration: 1 });
+      if (!stopped) balanceCheck();
+      moveCombatantsApart(attacker, target, hardControl ? 1 : 0);
+      description = stopped ? "reaps the target off its feet" : "checks a base too solid to reap";
+      break;
+    }
+    case "interrupt": {
+      const stopped = hardControl && addStatus(target, { type: "monkActionInterrupted", value: 1, duration: 2 });
+      if (!stopped) balanceCheck(softValue + 3);
+      if (stopped && target.side === "enemy") onEnemyControlled(target);
+      description = stopped ? "physically interrupts the next committed action" : "forces a brief balance correction";
+      break;
+    }
+    case "impact":
+      addStatus(target, { type: "shatter", value: clamp(3 + spent, 3, 6), duration: 2 });
+      balanceCheck(softValue);
+      description = "transfers force through the opened structure";
+      break;
+    case "throw":
+    case "wheel-throw": {
+      const wider = def.monkControl === "wheel-throw";
+      const steps = hardControl ? (wider ? 2 : 1) : capacity >= 2 ? 1 : 0;
+      moveCombatantsApart(attacker, target, steps);
+      const stopped = hardControl && addStatus(target, { type: "stun", value: 1, duration: 1 });
+      if (!stopped) balanceCheck();
+      description = stopped ? `throws the target ${steps} step${steps === 1 ? "" : "s"}` : "turns the target only as far as its mass allows";
+      break;
+    }
+    case "lift": {
+      const stopped = hardControl && addStatus(target, { type: "monkActionInterrupted", value: 1, duration: 2 });
+      if (!stopped) balanceCheck(softValue + 2);
+      if (stopped && target.side === "enemy") onEnemyControlled(target);
+      description = stopped ? "lifts the target out of its next action" : "checks the target without launching it";
+      break;
+    }
+    case "shatter":
+      addStatus(target, { type: "shatter", value: clamp(5 + spent * 2, 5, 10), duration: 3 });
+      description = "compromises a physical guard seam";
+      break;
+    case "perfect-impact":
+      balanceCheck(softValue);
+      description = "lands a fully aligned but bounded physical finish";
+      break;
+  }
+  cs.log.push(logEntry(`${attacker.name}'s ${def.name} ${description}.`, "status"));
+}
+
+function barbarianControlGrade(attacker, target) {
+  if (!target || target.anchored || target.immovable || target.incorporeal) return 0;
+  let grade = 2;
+  const size = String(target.size || "").toLowerCase();
+  if (["huge", "gargantuan", "colossal"].includes(size)) grade = 0;
+  else if (size === "large") grade = 1;
+  const attackerWeight = Number(attacker?.weight);
+  const targetWeight = Number(target.weight);
+  if (Number.isFinite(attackerWeight) && attackerWeight > 0 && Number.isFinite(targetWeight) && targetWeight > 0) {
+    const ratio = targetWeight / attackerWeight;
+    if (ratio >= 3) grade = 0;
+    else if (ratio >= 1.75) grade = Math.min(grade, 1);
+  }
+  if (isBossScale(attacker, target)) grade = Math.min(grade, 1);
+  const brace = sumStatus(target, "barbarianGritThrough") + sumStatus(target, "barbarianMountainFrame");
+  if (brace >= 3) grade = Math.max(0, grade - 2);
+  else if (brace > 0) grade = Math.max(0, grade - 1);
+  return clamp(grade, 0, 2);
+}
+
+function applyBarbarianControl(cs, attacker, target, def) {
+  if (!def?.barbarianControl || !target || target.health <= 0) return;
+  const grade = barbarianControlGrade(attacker, target);
+  const disrupt = (value) => addStatus(target, {
+    type: "barbarianGuardDisrupted",
+    value: clamp(value, 3, 10),
+    duration: 2,
+  });
+  let description = "meets an immovable body";
+  switch (def.barbarianControl) {
+    case "crumple": {
+      const value = grade >= 2 ? 9 : grade === 1 ? 5 : 3;
+      addStatus(target, { type: "shatter", value, duration: grade >= 2 ? 3 : 2 });
+      description = `crumples physical protection by ${value} for a bounded time`;
+      break;
+    }
+    case "push": {
+      if (grade >= 2) {
+        moveCombatantsApart(attacker, target, 1);
+        description = "drives the manageable target back one step";
+      } else {
+        disrupt(grade === 1 ? 6 : 3);
+        description = grade === 1 ? "shakes a great target's guard without moving it" : "breaks against anchoring without displacement";
+      }
+      break;
+    }
+    case "collision":
+    case "stagger": {
+      if (grade >= 2) {
+        if (def.barbarianControl === "collision") moveCombatantsApart(attacker, target, 1);
+        addStatus(target, { type: "barbarianActionStaggered", value: 1, duration: 2 });
+        if (target.side === "enemy") onEnemyControlled(target);
+        description = def.barbarianControl === "collision" ? "drives and staggers the manageable body" : "staggers the target's next committed action";
+      } else {
+        disrupt(grade === 1 ? 7 : 3);
+        description = grade === 1 ? "disrupts a great target's guard without launching or stunning it" : "cannot move the anchored mass";
+      }
+      break;
+    }
+  }
+  cs.log.push(logEntry(`${attacker.name}'s ${def.name} ${description}.`, "status"));
 }
 
 // Order every living combatant for the round by speed (initiative), highest
@@ -730,7 +1376,10 @@ export function playerDrawWeapon(cs0) {
   return cs;
 }
 
-function addProf(cs, id, xp) { cs.profGains[id] = (cs.profGains[id] || 0) + xp; }
+function addProf(cs, id, xp) {
+  const adaptable = Math.max(0, cs.player?.triggers?.adaptable || 0);
+  cs.profGains[id] = (cs.profGains[id] || 0) + xp * (1 + adaptable);
+}
 const alertness = (d) => ({ feral: 4, honorable: 3, wary: 3, fierce: 2, fanatic: 2, brutish: 1, cowardly: 0, mindless: 0 }[d] ?? 1);
 
 // A surprise strike is CONTESTED, not free — so you can't just ambush everyone.
@@ -783,9 +1432,16 @@ function applyAmbush(cs, side) {
 // stat-scaling spells are built from the attribute × tier, with a staff/wand
 // adding only a small bonus.
 function attackProfile(attacker, def, tierId, isPlayer) {
+  // Polymorph seals equipment, techniques, and spellcasting behind a harmless
+  // lesser form. The creature can still nip or kick, but rank and gear cannot
+  // turn that fallback into a disguised full-strength attack.
+  if (hasStatus(attacker, "polymorph")) {
+    return { min: 1, max: 2, type: "physical", pen: 0, critBonus: 0 };
+  }
   const scaling = abilityScaling(def);
   const order = tierInfo(tierId).order;
   const surge = attacker.spellSurge ? 1.5 : 1; // Mind 30: ALL abilities hit half again as hard
+  const unseen = hasStatus(attacker, "greaterInvisibility") ? 1.25 : 1;
 
   if (scaling === "weapon" || def.damageType === "weapon") {
     const w = attacker.weapon || { min: 1, max: 2, type: "physical", pen: 0 };
@@ -793,10 +1449,17 @@ function attackProfile(attacker, def, tierId, isPlayer) {
     const govAttr = mechanicalAttributeValue(attacker.attrs?.[def.scaleAttr] ?? attacker.attrs?.body ?? 0);
     const statMod = Math.round(govAttr * (0.5 + order * 0.25));
     const type = def.damageType && def.damageType !== "weapon" ? def.damageType : w.type;
+    const authoredMult = Math.max(0.25, Math.min(2, def.damageMult || 1));
+    const tempoMult = def.warriorFinisher
+      ? 1 + clamp(attacker._warriorTempoSpent || 0, 0, 3) * 0.2
+      : 1;
     return {
-      min: Math.max(1, Math.round((w.min * techMult + statMod) * surge)),
-      max: Math.max(1, Math.round((w.max * techMult + statMod) * surge)),
-      type, pen: (w.pen || 0) + (def.pen || 0), critBonus: def.critBonus || 0,
+      min: Math.max(1, Math.round((w.min * techMult + statMod) * surge * unseen * authoredMult * tempoMult)),
+      max: Math.max(1, Math.round((w.max * techMult + statMod) * surge * unseen * authoredMult * tempoMult)),
+      type,
+      pen: (w.pen || 0) + (def.pen || 0),
+      critBonus: def.critBonus || 0,
+      accuracyBonus: def.accuracyBonus || 0,
     };
   }
 
@@ -805,14 +1468,24 @@ function attackProfile(attacker, def, tierId, isPlayer) {
     const m = tierMult(tierId);
     const f = def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
     const castBonus = isPlayer ? 1 + (attacker.prof?.spellcasting || 0) * 0.05 : 1; // Spellcasting proficiency
+    let signatureMult = 1;
+    if (hasAbilityMetamagic(attacker, def, "empowered-signature")) signatureMult *= 1.35;
+    if (hasAbilityMetamagic(attacker, def, "perfected-signature")) signatureMult *= 1.15;
+    // Shaped and twinned castings exchange per-target force for reach. They are
+    // still a net gain when they connect with multiple targets.
+    if (hasAbilityMetamagic(attacker, def, "shaped-signature")) signatureMult *= 0.75;
+    if (isTwinnedSignature(attacker, def)) signatureMult *= 0.75;
     let focus = 0;
     if (attacker.weapon?.category === "arcane") {
       focus = Math.round((attacker.weapon.max || 0) * 0.3);
     }
+    const transmuted = hasAbilityMetamagic(attacker, def, "transmuted-signature") && def.damageType === "magical";
     return {
-      min: Math.max(1, Math.round(def.dmg[0] * m * f * castBonus * surge) + focus),
-      max: Math.max(1, Math.round(def.dmg[1] * m * f * castBonus * surge) + focus),
-      type: def.damageType, pen: def.pen || 0, critBonus: def.critBonus || 0,
+      min: Math.max(1, Math.round(def.dmg[0] * m * f * castBonus * surge * signatureMult * unseen) + focus),
+      max: Math.max(1, Math.round(def.dmg[1] * m * f * castBonus * surge * signatureMult * unseen) + focus),
+      type: transmuted ? "physical" : def.damageType,
+      pen: (def.pen || 0) + (hasAbilityMetamagic(attacker, def, "piercing-signature") ? 8 : 0),
+      critBonus: def.critBonus || 0,
     };
   }
   return null; // no direct damage
@@ -822,12 +1495,24 @@ function attackProfile(attacker, def, tierId, isPlayer) {
 // Weapon-type mismatch is no longer a penalty — it hard-blocks use (see
 // weaponReqMet/abilityUsable), so anything that reaches here has its weapon.
 function abilityEffectiveness(player, def, tierId) {
-  return reqEffectiveness(player.attrs || {}, abilityRequiredStat(def, tierId));
+  const base = reqEffectiveness(player.attrs || {}, abilityRequiredStat(def, tierId));
+  // Adaptable turns partial familiarity into usable practice: it erases half of
+  // its magnitude from the remaining shortfall (0.5 trait => 25% less penalty),
+  // while never replacing the attributes needed for full mastery.
+  const recovery = Math.min(0.5, Math.max(0, player.triggers?.adaptable || 0) * 0.5);
+  return Math.min(1, base + (1 - base) * recovery);
 }
 
 // Resolve a single hit. Returns { log, dmg, crit, dodged } so callers can fire
 // procs (on-crit / on-hit / on-dodge / on-kill) off the outcome.
 function resolveHit(attacker, defender, profile) {
+  // Greater Invisibility is not ordinary dodge: accuracy cannot fully solve a
+  // target the attacker cannot locate. It therefore rolls before accuracy, like
+  // Phantom, while remaining bounded below certainty.
+  const invisibilityChance = clamp(sumStatus(defender, "greaterInvisibility"), 0, 90) / 100;
+  if (invisibilityChance > 0 && Math.random() <= invisibilityChance) {
+    return { log: logEntry(`${attacker.name} attacks ${defender.name} — the greater veil leaves nothing to strike.`, "miss"), dmg: 0, crit: false, dodged: true };
+  }
   // Phantom: a flat, UNCOUNTERABLE chance the blow passes through the half-real
   // defender — rolled independently of accuracy, so no foe accuracy can negate it.
   if ((defender.phaseChance || 0) > 0 && rand100() <= defender.phaseChance * 100) {
@@ -835,15 +1520,30 @@ function resolveHit(attacker, defender, profile) {
   }
   // Chill saps the attacker's accuracy; dodge-stacks add to the defender's dodge.
   // Deadeye (dodgeIgnore) erases the defender's dodge so the strike can't be evaded.
-  const acc = (attacker.accuracy || 0) - sumStatus(attacker, "chill") - (attacker.darkPenalty || 0);
-  const dodge = ((defender.dodge || 0) + sumStatus(defender, "dodgeStack")) * (1 - (attacker.dodgeIgnore || 0));
+  const acc = (attacker.accuracy || 0) + (profile.accuracyBonus || 0)
+    + (hasStatus(attacker, "greaterInvisibility") ? 25 : 0) + sumStatus(attacker, "barbarianWarCry")
+    - sumStatus(attacker, "chill") - sumStatus(attacker, "barbarianGuardDisrupted")
+    - sumStatus(attacker, "levelDrain") - sumStatus(attacker, "monkBalanceChecked") - (attacker.darkPenalty || 0);
+  const warriorFootwork = sumStatus(defender, "warriorPassingStep") + sumStatus(defender, "warriorTurningParry");
+  const monkFootwork = sumStatus(defender, "monkYieldingGuard") + sumStatus(defender, "monkCrossingStep")
+    + sumStatus(defender, "monkBurstStep") + sumStatus(defender, "monkReboundStep");
+  const dodge = ((defender.dodge || 0) + sumStatus(defender, "dodgeStack") + warriorFootwork + monkFootwork) * (1 - (attacker.dodgeIgnore || 0));
   const hitChance = 100 - clamp(dodge - acc, 0, 90);
   if (rand100() > hitChance) {
     return { log: logEntry(`${attacker.name} attacks ${defender.name} — dodged.`, "miss"), dmg: 0, crit: false, dodged: true };
   }
   let raw = randInt(profile.min, profile.max);
   if (profile.eff != null) raw *= profile.eff;
-  raw *= 1 + sumStatus(attacker, "rally") / 100 - sumStatus(attacker, "weaken") / 100;
+  raw *= 1 + sumStatus(attacker, "rally") / 100
+    + sumStatus(attacker, "barbarianAbandon") / 100
+    - (sumStatus(attacker, "weaken") + sumStatus(attacker, "levelDrain")) / 100;
+
+  const challenge = (attacker.statuses || []).find((status) =>
+    ["barbarianChallenged", "barbarianFoeCalled"].includes(status.type));
+  if (challenge && defender.uid !== challenge.sourceUid) {
+    raw *= 1 - clamp(challenge.value || 0, 0, 25) / 100;
+  }
+  if (profile.type === "physical") raw *= 1 + clamp(sumStatus(defender, "barbarianExposedGuard"), 0, 30) / 100;
 
   const critChance = (attacker.critChance || 0) + (profile.critBonus || 0) + sumStatus(attacker, "focus");
   const crit = rand100() <= critChance;
@@ -856,7 +1556,7 @@ function resolveHit(attacker, defender, profile) {
 
   let mitig = 0;
   // Shatter (sundered armour) eats into physical mitigation while it lasts.
-  if (profile.type === "physical") mitig = Math.max(0, (defender.armor || 0) + sumStatus(defender, "guard") - sumStatus(defender, "shatter") - (profile.pen || 0));
+  if (profile.type === "physical") mitig = Math.max(0, (defender.armor || 0) + sumStatus(defender, "guard") - sumStatus(defender, "shatter") - sumStatus(defender, "barbarianGuardDisrupted") - (profile.pen || 0));
   else if (profile.type === "magical") mitig = Math.max(0, (defender.ward || 0) - (profile.pen || 0));
   // Flat % damage-reduction (Stoneskin / Godward), plus Bastion fortify while
   // badly wounded. Capped so it can never fully negate a blow.
@@ -864,6 +1564,13 @@ function resolveHit(attacker, defender, profile) {
   let dr = defender.dr || 0;
   if (defender.fortify && defender.maxHealth && defender.health / defender.maxHealth < 0.35) dr += defender.fortify;
   if (dr) dmg = Math.max(0, Math.round(dmg * (1 - Math.min(0.85, dr))));
+  let antimagicAbsorbed = 0;
+  if (profile.type === "magical" && hasStatus(defender, "antimagicField") && dmg > 0) {
+    const beforeAntimagic = dmg;
+    const reduction = clamp(sumStatus(defender, "antimagicField"), 0, 90) / 100;
+    dmg = Math.max(0, Math.round(dmg * (1 - reduction)));
+    antimagicAbsorbed = beforeAntimagic - dmg;
+  }
   // Per-hit cap (damageCap): no single blow may exceed a share of max health.
   // Same rule for every creature — the cap is earned, from a Stonewall affix or a
   // high-vigor threshold. Nothing is boss-specific; Senna and a great-wyrm obey
@@ -905,6 +1612,7 @@ function resolveHit(attacker, defender, profile) {
   const absorption = [
     blockAbsorbed > 0 ? `${blockAbsorbed} Block` : "",
     shieldAbsorbed > 0 ? `${shieldAbsorbed} ${profile.type === "magical" ? "magic shield" : "shield"}` : "",
+    antimagicAbsorbed > 0 ? `${antimagicAbsorbed} antimagic` : "",
   ].filter(Boolean).join(" + ");
   const tail = invulnerable
     ? " — turned aside (invulnerable)."
@@ -916,22 +1624,205 @@ function resolveHit(attacker, defender, profile) {
   return { log: logEntry(`${attacker.name} hits ${defender.name} for ${dmg}${typeTag}${critTag}${tail}`, crit ? "crit" : "hit"), dmg, crit, dodged: false };
 }
 
+function removeStatusType(actor, type) {
+  let removed = false;
+  actor.statuses = (actor.statuses || []).filter((status) => {
+    if (!removed && status.type === type) { removed = true; return false; }
+    return true;
+  });
+  return removed;
+}
+
+function warriorCounterHit(cs, defender, attacker, multiplier, label) {
+  if (!defender?.weapon || !attacker || attacker.health <= 0) return 0;
+  const profile = attackProfile(defender, BASIC_ATTACK, defender.tier || "common", defender.side === "player");
+  if (!profile) return 0;
+  const bounded = clamp(multiplier || 0.5, 0.25, 0.75);
+  const counterProfile = {
+    ...profile,
+    type: "physical",
+    min: Math.max(1, Math.round(profile.min * bounded)),
+    max: Math.max(1, Math.round(profile.max * bounded)),
+    critBonus: 0,
+  };
+  cs.log.push(logEntry(`${defender.name} answers with ${label}.`, defender.side === "player" ? "player" : "enemy"));
+  const before = attacker.health;
+  const result = resolveHit(defender, attacker, counterProfile);
+  cs.log.push(result.log);
+  if (attacker.health <= 0 && attacker !== cs.player) {
+    if (attacker.side === "enemy") downEnemy(cs, attacker);
+    else downAlly(cs, attacker);
+  }
+  return Math.max(0, before - attacker.health);
+}
+
 // The shared per-hit resolution used by BOTH the player and NPCs (the unified
 // combat path). Pushes the hit log, applies lifesteal/thorns, fires the
 // attacker's on-hit/on-crit/on-kill procs and the defender's on-dodge procs, and
 // applies any ability-borne status. Returns { dealt, crit }.
 function dealHit(cs, attacker, target, profile, def, tier) {
   const before = target.health;
-  const res = resolveHit(attacker, target, profile);
+  const nativeWarrior = isNativeWarriorTechnique(def);
+  const nativeMonk = isNativeMonkTechnique(def);
+  const nativeBarbarian = isNativeBarbarianTechnique(def);
+  const recentDamage = nativeBarbarian
+    ? (attacker.statuses || []).find((status) => status.type === "barbarianRecentDamage")
+    : null;
+  let barbarianProfile = profile;
+  if (nativeBarbarian && recentDamage && def.barbarianRecentFuryBonus) {
+    const mult = 1 + clamp(def.barbarianRecentFuryBonus, 0.1, 0.35);
+    barbarianProfile = {
+      ...barbarianProfile,
+      min: Math.max(1, Math.round(barbarianProfile.min * mult)),
+      max: Math.max(1, Math.round(barbarianProfile.max * mult)),
+    };
+  }
+  if (nativeBarbarian && recentDamage && def.barbarianPainConversion) {
+    const converted = Math.min(
+      Math.max(1, Math.round((recentDamage.value || 0) * clamp(def.barbarianPainConversion, 0.25, 0.6))),
+      Math.max(1, Math.round(barbarianProfile.max * 0.5)),
+    );
+    barbarianProfile = {
+      ...barbarianProfile,
+      min: barbarianProfile.min + converted,
+      max: barbarianProfile.max + converted,
+    };
+  }
+  if (nativeBarbarian && def.barbarianWoundedBonus && target.health / Math.max(1, target.maxHealth || 1) <= 0.5) {
+    const mult = 1 + clamp(def.barbarianWoundedBonus, 0.1, 0.3);
+    barbarianProfile = {
+      ...barbarianProfile,
+      min: Math.max(1, Math.round(barbarianProfile.min * mult)),
+      max: Math.max(1, Math.round(barbarianProfile.max * mult)),
+    };
+  }
+  if (recentDamage && (def.barbarianRecentFuryBonus || def.barbarianPainConversion)) {
+    attacker.statuses = (attacker.statuses || []).filter((status) => status !== recentDamage);
+  }
+  const postureSpent = nativeMonk ? spendMonkPosture(cs, attacker, target, def) : 0;
+  const postureDamageMult = postureSpent > 0 && def.monkPostureDamagePerPoint
+    ? 1 + postureSpent * clamp(def.monkPostureDamagePerPoint, 0.05, 0.2)
+    : 1;
+  const monkProfile = postureDamageMult > 1
+    ? {
+        ...barbarianProfile,
+        min: Math.max(1, Math.round(barbarianProfile.min * postureDamageMult)),
+        max: Math.max(1, Math.round(barbarianProfile.max * postureDamageMult)),
+      }
+    : barbarianProfile;
+  const read = nativeWarrior
+    ? (target.statuses || []).find((status) => status.type === "warriorReadOpponent" && status.sourceUid === attacker.uid)
+    : null;
+  const weaponChange = nativeWarrior
+    ? (attacker.statuses || []).find((status) => status.type === "warriorWeaponChange")
+    : null;
+  let warriorProfile = monkProfile;
+  if (read) {
+    warriorProfile = {
+      ...warriorProfile,
+      accuracyBonus: (warriorProfile.accuracyBonus || 0) + clamp(read.value || 0, 0, 40),
+      pen: (warriorProfile.pen || 0) + clamp(read.pen || 0, 0, 8),
+      critBonus: (warriorProfile.critBonus || 0) + clamp(read.crit || 0, 0, 20),
+    };
+    target.statuses = (target.statuses || []).filter((status) => status !== read);
+    cs.log.push(logEntry(`${attacker.name}'s reading of ${target.name} sharpens the committed technique.`, "status"));
+  }
+  if (weaponChange) {
+    warriorProfile = { ...warriorProfile, accuracyBonus: (warriorProfile.accuracyBonus || 0) + clamp(weaponChange.value || 0, 0, 30) };
+    attacker.statuses = (attacker.statuses || []).filter((status) => status !== weaponChange);
+  }
+  const physicalWeaponAttack = warriorProfile.type === "physical" && abilityScaling(def) === "weapon";
+  const rangedWeapon = !!(attacker.weapon?.range || ["bow", "crossbow"].includes(attacker.weapon?.category));
+  const physicalMeleeAttack = physicalWeaponAttack && !rangedWeapon;
+  const monkParry = physicalMeleeAttack
+    ? (target.statuses || []).find((status) => status.type === "monkOpenHandParry")
+    : null;
+  const monkAbsorb = physicalWeaponAttack
+    ? (target.statuses || []).find((status) => status.type === "monkAbsorbingFrame")
+    : null;
+  const veteranReversal = physicalWeaponAttack && hasStatus(target, "warriorVeteranReversal");
+  const resolvedWarriorProfile = veteranReversal
+    ? {
+        ...warriorProfile,
+        min: Math.max(1, Math.round(warriorProfile.min * 0.6)),
+        max: Math.max(1, Math.round(warriorProfile.max * 0.6)),
+      }
+    : warriorProfile;
+  const monkReactionReduction = Math.max(
+    clamp((monkParry?.value || 0) / 100, 0, 0.4),
+    clamp((monkAbsorb?.value || 0) / 100, 0, 0.5),
+  );
+  const resolvedMonkProfile = monkReactionReduction > 0
+    ? {
+        ...resolvedWarriorProfile,
+        min: Math.max(1, Math.round(resolvedWarriorProfile.min * (1 - monkReactionReduction))),
+        max: Math.max(1, Math.round(resolvedWarriorProfile.max * (1 - monkReactionReduction))),
+      }
+    : resolvedWarriorProfile;
+  const fearReduced = target.triggers?.dragonHeart && def && FEAR_ABILITY_IDS.has(def.id);
+  const resolvedProfile = fearReduced
+    ? { ...resolvedMonkProfile, min: Math.max(1, Math.round(resolvedMonkProfile.min * 0.75)), max: Math.max(1, Math.round(resolvedMonkProfile.max * 0.75)) }
+    : resolvedMonkProfile;
+  const blockBefore = target.block || 0;
+  const res = resolveHit(attacker, target, resolvedProfile);
   cs.log.push(res.log);
   const dealt = before - target.health;
   const targetIsPlayer = target === cs.player;
   if (targetIsPlayer) addProf(cs, "evasion", XP.EVASION); // exercising evasion (even on a dodge)
+  gainBarbarianFuryFromDamage(cs, attacker, target, dealt);
+
+  const resolveMonkReaction = ({ contact = true } = {}) => {
+    if (!monkParry && !(contact && monkAbsorb)) return;
+    if (monkParry) removeStatusType(target, "monkOpenHandParry");
+    if (contact && monkAbsorb) removeStatusType(target, "monkAbsorbingFrame");
+    gainMonkPosture(cs, target, attacker, 1);
+    cs.log.push(logEntry(`${target.name} receives the physical line through trained ${monkParry ? "open-hand redirection" : "body structure"}.`, "status"));
+  };
 
   if (res.dodged) {
+    // A parry can turn an otherwise-missed line into deliberate contact.
+    // Absorbing Frame, by contrast, must actually receive a landed blow.
+    resolveMonkReaction({ contact: false });
+    if (physicalWeaponAttack && removeStatusType(target, "warriorTurningParry")) {
+      gainWarriorTempo(cs, target, { defensive: true });
+      if (attacker.side === "enemy") attacker.distance = Math.min(MAX_DISTANCE, (attacker.distance || 0) + 1);
+      addStatus(target, { type: "focus", value: 20, duration: 1 });
+      cs.log.push(logEntry(`${target.name} turns the weapon line aside and takes the safer angle.`, "status"));
+    }
     fireProcs(cs, target, "onDodge", {});
     return { dealt: 0, crit: false };
   }
+
+  if (physicalWeaponAttack && blockBefore > (target.block || 0) && removeStatusType(target, "warriorGuard")) {
+    gainWarriorTempo(cs, target, { defensive: true });
+    cs.log.push(logEntry(`${target.name}'s guarded recovery catches part of the answering weapon line.`, "status"));
+  }
+  if (physicalWeaponAttack && blockBefore > (target.block || 0) && removeStatusType(target, "warriorRiposteGuard")) {
+    gainWarriorTempo(cs, target, { defensive: true });
+    warriorCounterHit(cs, target, attacker, 0.5, "a bounded riposte");
+  }
+  if (veteranReversal && removeStatusType(target, "warriorVeteranReversal")) {
+    gainWarriorTempo(cs, target, { defensive: true });
+    warriorCounterHit(cs, target, attacker, 0.65, "a veteran reversal");
+  }
+
+  resolveMonkReaction();
+
+  if (dealt > 0 && nativeWarrior && def.warriorSequenceTag && !def.warriorFinisher) {
+    gainWarriorTempo(cs, attacker, { sequenceTag: def.warriorSequenceTag });
+  }
+  if (dealt > 0 && nativeWarrior && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs);
+  if (!res.dodged && target.health > 0 && nativeMonk && def.monkPostureBuild) {
+    gainMonkPosture(cs, attacker, target, def.monkPostureBuild);
+  }
+  if (!res.dodged && target.health > 0 && nativeMonk && postureSpent >= (def.monkPostureCost || 0)) {
+    applyMonkControl(cs, attacker, target, def, postureSpent);
+  }
+  if (dealt > 0 && nativeMonk && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs);
+  if (dealt > 0 && target.health > 0 && nativeBarbarian && def.barbarianControl) {
+    applyBarbarianControl(cs, attacker, target, def);
+  }
+  if (dealt > 0 && nativeBarbarian && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs);
 
   // Execute (Body 30): any landed hit on a foe already below the threshold
   // (pre-damage HP) is an instant kill. The threshold is checked against
@@ -944,6 +1835,18 @@ function dealHit(cs, attacker, target, profile, def, tier) {
   }
 
   if (dealt > 0) {
+    // Silver prevents lycanthropic flesh from sealing. Refresh one bounded wound
+    // marker rather than stacking copies; regeneration resumes after three turns
+    // without another silvered strike.
+    const silveredStrike = target.race === "lycanthrope"
+      && target.triggers?.racialRegeneration
+      && (attacker.weapon?.silvered || /\bsilver(?:ed)?\b/i.test(attacker.weapon?.name || ""))
+      && (abilityScaling(def) === "weapon" || def?.damageType === "weapon");
+    if (silveredStrike) {
+      target.statuses = (target.statuses || []).filter((status) => status.type !== "silverWound");
+      addStatus(target, { type: "silverWound", duration: 3 });
+      cs.log.push(logEntry(`${target.name}'s wound refuses to close around the silver.`, "status"));
+    }
     const ls = attacker.triggers?.lifesteal || 0;
     if (ls > 0 && attacker.health > 0) {
       const heal = gainHealth(attacker, Math.max(1, Math.round(dealt * ls / 100)));
@@ -969,14 +1872,98 @@ function dealHit(cs, attacker, target, profile, def, tier) {
     }
     fireProcs(cs, attacker, "onHit", { target, dealt, crit: res.crit });
     if (res.crit) fireProcs(cs, attacker, "onCrit", { target, dealt, crit: true });
+
+    // Abjuration's reflection can return only a bounded share of magical damage
+    // that actually landed. It never reflects true/physical damage and cannot
+    // recursively trigger another reflection.
+    if (resolvedProfile.type === "magical" && hasStatus(target, "spellReflection") && attacker.health > 0) {
+      const reflectedPct = clamp(sumStatus(target, "spellReflection"), 0, 60);
+      const reflected = Math.min(attacker.health, Math.max(1, Math.round(dealt * reflectedPct / 100)));
+      attacker.health = Math.max(0, attacker.health - reflected);
+      cs.log.push(logEntry(`${target.name}'s ward reflects ${reflected} magical damage into ${attacker.name}.`, "status"));
+    }
   }
 
   if (target.health > 0 && def && def.effect && def.effect.target === "enemy") {
-    applyEnemyEffect(cs, attacker, target, def.effect, tier);
+    applyEnemyEffect(cs, attacker, target, def.effect, tier, def);
   }
 
   if (target.health <= 0 && !targetIsPlayer) fireProcs(cs, attacker, "onKill", { target });
   return { dealt, crit: res.crit };
+}
+
+function offensiveAbility(def) {
+  return !!def && (def.target === "enemy" || def.target === "all-enemies" || !!def.dmg || def.damageType === "weapon");
+}
+
+function consumeSacredMisdirection(cs, actor, def) {
+  if (!hasStatus(actor, "misdirected") || !offensiveAbility(def)) return false;
+  actor.statuses = (actor.statuses || []).filter((status) => status.type !== "misdirected");
+  actor.actionsLeft = Math.max(0, (actor.actionsLeft || 1) - (def?.actionCost || 1));
+  cs.log.push(logEntry(`${actor.name}'s hostile action follows the false opening and finds nothing.`, "status"));
+  return true;
+}
+
+function consumeWarriorWeaponBind(cs, actor, def) {
+  if (!hasStatus(actor, "warriorWeaponBound") || abilityScaling(def) !== "weapon" || !offensiveAbility(def)) return false;
+  removeStatusType(actor, "warriorWeaponBound");
+  actor.actionsLeft = Math.max(0, (actor.actionsLeft || 1) - (def?.actionCost || 1));
+  cs.log.push(logEntry(`${actor.name}'s weapon action is lost in the existing bind.`, "status"));
+  return true;
+}
+
+function consumeMonkActionInterruption(cs, actor, def) {
+  if (!hasStatus(actor, "monkActionInterrupted") || !offensiveAbility(def)) return false;
+  removeStatusType(actor, "monkActionInterrupted");
+  actor.actionsLeft = Math.max(0, (actor.actionsLeft || 1) - effectiveActionCost(actor, def));
+  cs.log.push(logEntry(`${actor.name}'s committed action collapses under the earlier physical posture break.`, "status"));
+  return true;
+}
+
+function consumeBarbarianActionStagger(cs, actor, def) {
+  if (!hasStatus(actor, "barbarianActionStaggered") || !offensiveAbility(def)) return false;
+  removeStatusType(actor, "barbarianActionStaggered");
+  actor.actionsLeft = Math.max(0, (actor.actionsLeft || 1) - effectiveActionCost(actor, def));
+  cs.log.push(logEntry(`${actor.name}'s committed action is lost while recovering from the physical collision.`, "status"));
+  return true;
+}
+
+function warriorDenyApproach(cs, attacker, defender, def) {
+  if (!defender || !hasStatus(defender, "warriorDenyApproach") || abilityScaling(def) !== "weapon") return false;
+  const weapon = attacker.weapon || {};
+  if (weapon.range || ["bow", "crossbow"].includes(weapon.category)) return false;
+  if (gap(attacker, defender) <= abilityReach(attacker, def)) return false;
+  const status = (defender.statuses || []).find((entry) => entry.type === "warriorDenyApproach");
+  removeStatusType(defender, "warriorDenyApproach");
+  attacker.actionsLeft = Math.max(0, (attacker.actionsLeft || 1) - (def?.actionCost || 1));
+  if (attacker.side === "enemy") attacker.distance = Math.min(MAX_DISTANCE, (attacker.distance || 0) + 1);
+  gainWarriorTempo(cs, defender, { defensive: true });
+  warriorCounterHit(cs, defender, attacker, clamp((status?.value || 40) / 100, 0.25, 0.6), "a reach-keeping stop");
+  cs.log.push(logEntry(`${defender.name} denies the melee approach before the attack can develop.`, "status"));
+  return true;
+}
+
+function warriorAdvanceIsChecked(cs, actor, def, distanceGap, reach) {
+  if (distanceGap <= reach || !hasStatus(actor, "warriorAdvanceChecked") || abilityScaling(def) !== "weapon") return false;
+  removeStatusType(actor, "warriorAdvanceChecked");
+  actor.actionsLeft = Math.max(0, (actor.actionsLeft || 1) - (def?.actionCost || 1));
+  cs.log.push(logEntry(`${actor.name}'s attempted approach stops at the waiting point.`, "status"));
+  return true;
+}
+
+// A geas does not puppet its subject. It leaves the choice to disobey intact,
+// then exacts a bounded price each time the subject takes hostile action. The
+// backlash cannot deal the final point of health, so it remains coercion rather
+// than a passive execution effect.
+function applyGeasBacklash(cs, actor, def) {
+  if (!hasStatus(actor, "geas") || !offensiveAbility(def) || actor.health <= 0) return 0;
+  const pct = clamp(sumStatus(actor, "geas"), 2, 10) / 100;
+  const before = actor.health;
+  actor.health = Math.max(1, actor.health - Math.max(1, Math.round((actor.maxHealth || actor.health) * pct)));
+  const suffered = before - actor.health;
+  if (actor.resolve != null) actor.resolve = Math.max(0, actor.resolve - 2);
+  cs.log.push(logEntry(`${actor.name}'s geas punishes the disobedient attack for ${suffered} vitality and 2 Resolve.`, "status"));
+  return suffered;
 }
 
 // Proc firing condition (beyond hook + chance). targetLow: only badly-wounded
@@ -1094,7 +2081,7 @@ function onEnemyControlled(e) {
 }
 // Undying scrubs lingering harm on revive so the cheated-death moment isn't wasted
 // re-dying to leftover damage-over-time.
-const HARMFUL_STATUS = new Set(["bleed", "poison", "burn", "chill", "curse", "vulnerable", "weaken", "stun", "silence", "slow", "shatter"]);
+const HARMFUL_STATUS = new Set(["bleed", "poison", "burn", "chill", "curse", "vulnerable", "weaken", "stun", "silence", "slow", "shatter", "geas", "polymorph", "levelDrain"]);
 function cleanseHarm(c) {
   if (Array.isArray(c.statuses)) c.statuses = c.statuses.filter((s) => !HARMFUL_STATUS.has(s.type));
 }
@@ -1155,7 +2142,64 @@ function sideAllies(cs, actor) {
   return list.filter((c) => c && c.health > 0 && !c.resolved && !c._dead);
 }
 
-function applySelfEffect(actor, effect) {
+function summonUndead(cs, actor) {
+  if (!cs || !actor) return false;
+  const side = actor.side === "enemy" ? "enemy" : "player";
+  const destination = side === "enemy" ? cs.enemies : cs.allies;
+  const maintained = destination.filter((entry) => entry._summonerUid === actor.uid && entry.health > 0 && !entry._dead);
+  if (maintained.length >= 2) {
+    cs.log.push(logEntry(`${actor.name} already maintains the maximum of two undead retainers.`, "status"));
+    return false;
+  }
+  cs.summonSeq = (cs.summonSeq || 0) + 1;
+  const maxHealth = clamp(Math.round((actor.maxHealth || 40) * 0.28), 12, 120);
+  const body = Math.max(2, Math.floor((actor.attrs?.mind || actor.attrs?.body || 4) * 0.4));
+  const minDamage = clamp(Math.round((actor.weapon?.min || 4) * 0.45), 2, 18);
+  const maxDamage = Math.max(minDamage + 1, clamp(Math.round((actor.weapon?.max || 7) * 0.45), 3, 24));
+  const summon = {
+    uid: `summon-${actor.uid || "caster"}-${cs.summonSeq}`,
+    id: `summoned-undead-${cs.summonSeq}`,
+    name: "Bound Skeleton",
+    kind: "summoned-undead",
+    race: "undead",
+    tier: "common",
+    side,
+    health: maxHealth,
+    maxHealth,
+    resolve: 0,
+    resolveMax: 0,
+    armor: Math.max(0, Math.round((actor.armor || 0) * 0.25)),
+    ward: 0,
+    dodge: Math.max(0, Math.round((actor.dodge || 0) * 0.25)),
+    accuracy: Math.max(5, Math.round((actor.accuracy || 20) * 0.7)),
+    critChance: 0,
+    critMult: 1.5,
+    speed: 2,
+    will: 0,
+    attrs: { body, reflex: 2, vigor: body, mind: 0, wit: 1, presence: 0 },
+    weapon: { name: "Bone Claws", min: minDamage, max: maxDamage, type: "physical", pen: 0, category: "natural", reach: 1 },
+    abilities: [],
+    actionsPerTurn: 1,
+    actionsLeft: 1,
+    cooldowns: {},
+    statuses: [],
+    demeanor: "mindless",
+    morale: 100,
+    moraleMax: 100,
+    canTalk: false,
+    block: 0,
+    shield: 0,
+    magicShield: 0,
+    invuln: 0,
+    _summoned: true,
+    _summonerUid: actor.uid,
+  };
+  destination.push(summon);
+  cs.log.push(logEntry(`${actor.name} calls a bound skeleton into the battle.`, side === "player" ? "player" : "enemy"));
+  return true;
+}
+
+function applySelfEffect(actor, effect, cs = null) {
   if (!effect) return;
   // `pctMax` heals/shields are a FRACTION of the target's max health, so support
   // stays meaningful at every scale (a flat +16 is noise next to a raid's HP).
@@ -1169,6 +2213,241 @@ function applySelfEffect(actor, effect) {
     // aside ALL damage, true included) for the duration — the answer to an alpha.
     case "unstoppable": { const d = effect.duration || 2; actor.invuln = Math.max(actor.invuln || 0, d); addStatus(actor, { type: "unstoppable", duration: d }); break; }
     case "bonusAction": actor.actionsLeft = (actor.actionsLeft || 0) + (effect.value || 1); break;
+    case "purify": {
+      const before = actor.statuses?.length || 0;
+      actor.statuses = (actor.statuses || []).filter((status) => !PURIFIABLE_STATUS.has(status.type));
+      const removed = before - actor.statuses.length;
+      const restored = gainHealth(actor, Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.value || 0.08, 0.03, 0.15))));
+      if (cs && (removed > 0 || restored > 0)) {
+        cs.log.push(logEntry(`${actor.name} is purified${removed ? ` of ${removed} affliction${removed === 1 ? "" : "s"}` : ""}${restored ? ` and immediately recovers ${restored}` : ""}.`, "status"));
+      }
+      break;
+    }
+    case "intercession": {
+      const maxHealth = Math.max(1, actor.maxHealth || actor.health || 1);
+      const inMortalDanger = actor.health / maxHealth <= clamp(effect.threshold || 0.35, 0.2, 0.5);
+      const share = inMortalDanger
+        ? clamp(effect.criticalValue || 0.25, 0.15, 0.35)
+        : clamp(effect.value || 0.08, 0.04, 0.12);
+      const restored = gainHealth(actor, Math.max(1, Math.round(maxHealth * share)));
+      const ward = inMortalDanger ? Math.max(1, Math.round(maxHealth * clamp(effect.shield || 0.1, 0.05, 0.15))) : 0;
+      if (ward) actor.shield = (actor.shield || 0) + ward;
+      if (cs && (restored > 0 || ward > 0)) {
+        cs.log.push(logEntry(`${actor.name} receives ${inMortalDanger ? "crisis intercession" : "measured intercession"}: ${restored} health${ward ? ` and ${ward} shield` : ""}.`, "status"));
+      }
+      break;
+    }
+    case "verdantAegis": {
+      const maxHealth = Math.max(1, actor.maxHealth || actor.health || 1);
+      const restored = gainHealth(actor, Math.max(1, Math.round(maxHealth * clamp(effect.heal || 0.07, 0.03, 0.12))));
+      const ward = Math.max(1, Math.round(maxHealth * clamp(effect.shield || 0.12, 0.05, 0.18)));
+      actor.shield = (actor.shield || 0) + ward;
+      if (cs) cs.log.push(logEntry(`${actor.name} is sheltered by patient living roots: ${restored} health and ${ward} shield.`, "status"));
+      break;
+    }
+    case "barbarianBaitBlow": {
+      gainProvokedBarbarianFury(cs, actor);
+      addStatus(actor, {
+        type: "barbarianExposedGuard",
+        value: clamp(effect.exposure || 8, 5, 15),
+        duration: clamp(effect.duration || 2, 1, 2),
+      });
+      if (cs) cs.log.push(logEntry(`${actor.name} baits the next blow with a deliberately exposed physical guard.`, "status"));
+      break;
+    }
+    case "barbarianExposeGuard":
+      addStatus(actor, { type: "barbarianExposedGuard", value: clamp(effect.value || 8, 5, 15), duration: clamp(effect.duration || 2, 1, 3) });
+      break;
+    case "barbarianAbandon": {
+      const missing = 1 - actor.health / Math.max(1, actor.maxHealth || 1);
+      const offence = clamp(Math.round(missing * (effect.maxOffence || 35)), 0, 35);
+      if (offence > 0) addStatus(actor, { type: "barbarianAbandon", value: offence, duration: clamp(effect.duration || 3, 1, 3) });
+      addStatus(actor, { type: "barbarianExposedGuard", value: clamp(effect.exposure || 10, 5, 15), duration: clamp(effect.duration || 3, 1, 3) });
+      if (cs) cs.log.push(logEntry(`${actor.name} turns existing wounds into ${offence}% bounded offence without healing them.`, "status"));
+      break;
+    }
+    case "barbarianGritThrough": {
+      const block = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.block || 0.08, 0.04, 0.12)));
+      actor.block = (actor.block || 0) + block;
+      addStatus(actor, { type: "barbarianGritThrough", value: clamp(effect.forcedMoveResist || 2, 1, 3), duration: clamp(effect.duration || 2, 1, 2) });
+      if (cs) cs.log.push(logEntry(`${actor.name} grits through for ${block} physical Block and a braced stance, without healing.`, "status"));
+      break;
+    }
+    case "barbarianMountainFrame": {
+      const block = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.block || 0.12, 0.06, 0.16)));
+      actor.block = (actor.block || 0) + block;
+      addStatus(actor, { type: "barbarianMountainFrame", value: clamp(effect.forcedMoveResist || 3, 2, 3), duration: clamp(effect.duration || 3, 1, 3) });
+      if (cs) cs.log.push(logEntry(`${actor.name} plants a mountain frame for ${block} physical Block.`, "status"));
+      break;
+    }
+    case "barbarianWarCry": {
+      const eligible = actor.health > 0 && actor.canHear !== false && !actor.deaf && !actor.unconscious && actor.demeanor !== "mindless";
+      if (!eligible) {
+        if (cs) cs.log.push(logEntry(`${actor.name} cannot receive the audible War Cry.`, "status"));
+        break;
+      }
+      let restored = 0;
+      if (Number.isFinite(Number(actor.morale)) && Number.isFinite(Number(actor.moraleMax))) {
+        const before = actor.morale;
+        actor.morale = Math.min(actor.moraleMax, actor.morale + clamp(effect.value || 20, 5, 25));
+        restored = actor.morale - before;
+      }
+      addStatus(actor, { type: "barbarianWarCry", value: clamp(Math.round((effect.value || 20) / 2), 5, 12), duration: clamp(effect.duration || 2, 1, 2) });
+      if (cs) cs.log.push(logEntry(`${actor.name} is steadied by the physical War Cry${restored ? ` (+${restored} morale)` : ""}.`, "status"));
+      break;
+    }
+    case "monkYieldingGuard": {
+      const block = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.block || 0.08, 0.04, 0.12)));
+      actor.block = (actor.block || 0) + block;
+      addStatus(actor, { type: "monkYieldingGuard", value: clamp(effect.dodge || 22, 10, 30), duration: clamp(effect.duration || 2, 1, 2) });
+      if (cs) cs.log.push(logEntry(`${actor.name} keeps an empty-hand yielding guard (${block} Block).`, "status"));
+      break;
+    }
+    case "monkCrossingStep":
+      addStatus(actor, { type: "monkCrossingStep", value: clamp(effect.dodge || 20, 10, 30), duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    case "monkOpenHandParry":
+      addStatus(actor, { type: "monkOpenHandParry", value: clamp(Math.round((effect.reduction || 0.35) * 100), 20, 40), duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    case "monkIronBodyBrace": {
+      const block = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.block || 0.14, 0.08, 0.18)));
+      actor.block = (actor.block || 0) + block;
+      addStatus(actor, { type: "monkIronBodyBrace", value: block, duration: clamp(effect.duration || 2, 1, 2) });
+      if (cs) cs.log.push(logEntry(`${actor.name} braces conditioned tissue and frame for ${block} physical Block.`, "status"));
+      break;
+    }
+    case "monkBurstStep": {
+      const steps = clamp(effect.steps || 2, 1, 2);
+      if (cs) {
+        if (actor.side === "enemy") actor.distance = Math.max(0, (actor.distance || 0) - steps);
+        else for (const target of cs.enemies || []) target.distance = Math.max(0, (target.distance || 0) - steps);
+      }
+      addStatus(actor, { type: "monkBurstStep", value: clamp(effect.dodge || 18, 10, 25), duration: clamp(effect.duration || 2, 1, 2) });
+      if (cs) cs.log.push(logEntry(`${actor.name} covers ${steps} step${steps === 1 ? "" : "s"} in a trained sprint.`, "status"));
+      break;
+    }
+    case "monkAbsorbingFrame":
+      addStatus(actor, { type: "monkAbsorbingFrame", value: clamp(Math.round((effect.reduction || 0.45) * 100), 25, 50), duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    case "monkReboundStep": {
+      const steps = clamp(effect.steps || 1, 1, 1);
+      if (cs) {
+        if (actor.side === "enemy") actor.distance = Math.min(MAX_DISTANCE, (actor.distance || 0) + steps);
+        else for (const target of cs.enemies || []) target.distance = Math.min(MAX_DISTANCE, (target.distance || 0) + steps);
+      }
+      addStatus(actor, { type: "monkReboundStep", value: clamp(effect.dodge || 24, 12, 32), duration: clamp(effect.duration || 2, 1, 2) });
+      if (cs) cs.log.push(logEntry(`${actor.name} rebounds one physical step out of the answering line.`, "status"));
+      break;
+    }
+    case "warriorGuard": {
+      const block = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.block || 0.1, 0.05, 0.15)));
+      actor.block = (actor.block || 0) + block;
+      addStatus(actor, { type: "warriorGuard", value: block, duration: clamp(effect.duration || 2, 1, 2) });
+      if (cs) cs.log.push(logEntry(`${actor.name} recovers behind a guarded weapon line (${block} Block).`, "status"));
+      break;
+    }
+    case "warriorPassingStep":
+      addStatus(actor, { type: "warriorPassingStep", value: clamp(effect.value || 25, 10, 35), duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    case "warriorTurningParry":
+      addStatus(actor, { type: "warriorTurningParry", value: clamp(effect.value || 55, 30, 65), duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    case "warriorAdaptiveForm": {
+      actor.lastWarriorSequenceTag = null;
+      const shift = clamp(effect.cooldownShift || 1, 1, 2);
+      for (const id of Object.keys(actor.cooldowns || {})) {
+        if (isNativeWarriorTechnique(getAbilityDef(id))) actor.cooldowns[id] = Math.max(0, actor.cooldowns[id] - shift);
+      }
+      const block = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.block || 0.05, 0.03, 0.08)));
+      actor.block = (actor.block || 0) + block;
+      if (cs) cs.log.push(logEntry(`${actor.name} re-centers an adaptive martial form without creating Tempo.`, "status"));
+      break;
+    }
+    case "warriorVeteranReversal":
+      addStatus(actor, { type: "warriorVeteranReversal", value: clamp(Math.round((effect.reduction || 0.4) * 100), 25, 50), duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    case "warriorWeaponChange": {
+      if (actor.alternateWeapon) {
+        const previous = actor.weapon;
+        actor.weapon = actor.alternateWeapon;
+        actor.alternateWeapon = previous;
+        if (cs) cs.log.push(logEntry(`${actor.name} changes to ${actor.weapon?.name || "a prepared weapon"}.`, "status"));
+      } else if (cs) {
+        cs.log.push(logEntry(`${actor.name} has no alternate weapon prepared, but restores a usable guard.`, "status"));
+      }
+      actor.actionsLeft = (actor.actionsLeft || 0) + 1;
+      addStatus(actor, { type: "warriorWeaponChange", value: clamp(effect.value || 20, 10, 30), duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    }
+    case "warriorRiposteGuard": {
+      const block = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.block || 0.15, 0.08, 0.18)));
+      actor.block = (actor.block || 0) + block;
+      addStatus(actor, { type: "warriorRiposteGuard", value: block, duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    }
+    case "warriorBracedAdvance": {
+      const steps = clamp(effect.steps || 2, 1, 2);
+      if (cs) {
+        if (actor.side === "player") for (const target of cs.enemies) target.distance = Math.max(0, (target.distance || 0) - steps);
+        else actor.distance = Math.max(0, (actor.distance || 0) - steps);
+      }
+      const block = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.block || 0.12, 0.06, 0.16)));
+      actor.block = (actor.block || 0) + block;
+      if (cs) cs.log.push(logEntry(`${actor.name} advances ${steps} step${steps === 1 ? "" : "s"} behind a physical brace.`, "status"));
+      break;
+    }
+    case "warriorSecondBreath": {
+      if (actor._warriorSecondBreathUsed) {
+        if (cs) cs.log.push(logEntry(`${actor.name} has already spent that reserve of conditioning.`, "status"));
+        break;
+      }
+      actor._warriorSecondBreathUsed = true;
+      const recoveryCap = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.value || 0.15, 0.1, 0.2)));
+      const before = actor.health;
+      gainHealth(actor, recoveryCap);
+      actor.health = Math.min(actor.health, before + recoveryCap, actor.maxHealth);
+      const restored = actor.health - before;
+      if (cs) cs.log.push(logEntry(`${actor.name} takes a second breath and immediately recovers ${restored} health.`, "status"));
+      break;
+    }
+    case "warriorSeizeTempo": {
+      actor.actionsLeft = (actor.actionsLeft || 0) + clamp(effect.value || 1, 1, 1);
+      const shift = clamp(effect.cooldownShift || 1, 1, 1);
+      for (const id of Object.keys(actor.cooldowns || {})) {
+        if (isNativeWarriorTechnique(getAbilityDef(id))) actor.cooldowns[id] = Math.max(0, actor.cooldowns[id] - shift);
+      }
+      if (cs) cs.log.push(logEntry(`${actor.name} converts earned Tempo into immediate martial initiative.`, "status"));
+      break;
+    }
+    case "warriorDenyApproach":
+      addStatus(actor, { type: "warriorDenyApproach", value: clamp(Math.round((effect.counter || 0.4) * 100), 25, 60), duration: clamp(effect.duration || 3, 1, 3) });
+      break;
+    case "warriorShakeOff": {
+      const before = actor.statuses?.length || 0;
+      actor.statuses = (actor.statuses || []).filter((status) => !WARRIOR_SHAKE_OFF_STATUS.has(status.type));
+      const removed = before - actor.statuses.length;
+      const block = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.block || 0.06, 0.03, 0.08)));
+      actor.block = (actor.block || 0) + block;
+      if (cs) cs.log.push(logEntry(`${actor.name} shakes off ${removed} physical hindrance${removed === 1 ? "" : "s"} and braces for ${block}.`, "status"));
+      break;
+    }
+    case "warriorLastStand": {
+      if (actor._warriorLastStandUsed || actor.health / Math.max(1, actor.maxHealth || 1) > 0.35) {
+        if (cs) cs.log.push(logEntry(`${actor.name} cannot commit another last stand.`, "status"));
+        break;
+      }
+      actor._warriorLastStandUsed = true;
+      actor.deathlessTurns = Math.max(actor.deathlessTurns || 0, clamp(effect.duration || 2, 1, 2));
+      const block = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.block || 0.08, 0.04, 0.1)));
+      actor.block = (actor.block || 0) + block;
+      if (cs) cs.log.push(logEntry(`${actor.name} makes a last stand: wounds remain, but the final point will hold briefly.`, "status"));
+      break;
+    }
+    case "summonUndead": summonUndead(cs, actor); break;
+    case "spellReflection": addStatus(actor, { ...effect, value: clamp(effect.value || 40, 1, 60) }); break;
+    case "arcaneConvergence": addStatus(actor, { ...effect, value: 1 }); break;
+    case "antimagicField": addStatus(actor, { ...effect, value: clamp(effect.value || 70, 25, 85), duration: clamp(effect.duration || 2, 1, 3) }); break;
+    case "greaterInvisibility": addStatus(actor, { ...effect, value: clamp(effect.value || 60, 25, 80), duration: clamp(effect.duration || 2, 1, 4) }); break;
     case "regen": {     // bank the %-of-max as flat/turn — Wit's abilityCrit lets a heal crit
       let hv = val;
       if (actor.abilityCrit && rand100() <= (actor.critChance || 0)) hv = Math.round(hv * (actor.critMult || 1.5));
@@ -1182,14 +2461,24 @@ function applySelfEffect(actor, effect) {
 // Usable abilities for an NPC (ally or enemy): off cooldown AND affordable on the
 // actor's resolve (spells drain resolve; martial techniques are gated by action
 // points + cooldown only — the same economy the player uses).
-function npcCandidates(actor) {
-  if (hasStatus(actor, "silence")) return []; // silenced foes fall back to basic attacks
+function npcCandidates(actor, opponents = []) {
+  if (hasStatus(actor, "silence") || hasStatus(actor, "polymorph")) return []; // blocked foes fall back to basic attacks
   const out = [];
   for (const a of (actor.abilities || [])) {
     if ((actor.cooldowns?.[a.id] || 0) > 0) continue;
     const def = getAbilityDef(a.id);
     if (!def) continue;
+    if (hasStatus(actor, "antimagicField") && abilityCategoryOf(def) === "spell" && !def.innate) continue;
     if (actor.resolve != null && (def.resolveCost || 0) > actor.resolve) continue;
+    if (!weaponReqMet(def, actor.weapon)) continue;
+    if (!monkMobilityReqMet(actor, def)) continue;
+    if (!barbarianEquipmentReqMet(actor, def)) continue;
+    if ((def.warriorTempoCost || 0) > (actor.martialTempo || 0)) continue;
+    if ((def.barbarianFuryCost || 0) > (actor.barbarianFury || 0)) continue;
+    if (def.monkPostureCost && !opponents.some((target) => canAct(target) && monkPostureReady(target, def, actor))) continue;
+    if (def.healthThreshold != null && actor.health / Math.max(1, actor.maxHealth || 1) > def.healthThreshold) continue;
+    if (def.effect?.type === "warriorSecondBreath" && actor._warriorSecondBreathUsed) continue;
+    if (def.effect?.type === "warriorLastStand" && actor._warriorLastStandUsed) continue;
     out.push({ id: a.id, tier: a.tier || actor.tier || "common", def });
   }
   return out;
@@ -1202,10 +2491,57 @@ function npcCandidates(actor) {
 function npcPerform(cs, actor, opponents, opts = {}) {
   if ((actor.actionsLeft || 0) <= 0) return false;
   // A dominated actor gets allies:[] so it won't "support" the side it's now fighting.
-  const choice = opts.choice || chooseAction(actor, opponents, npcCandidates(actor), { allies: opts.allies ?? sideAllies(cs, actor) });
+  let choice = opts.choice || chooseAction(actor, opponents, npcCandidates(actor, opponents), { allies: opts.allies ?? sideAllies(cs, actor) });
+  // A stored deck intent may have been planned before Polymorph landed. Replace
+  // that stale spell/technique with the transformed creature's feeble fallback.
+  if (hasStatus(actor, "polymorph")) {
+    choice = {
+      ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+      def: BASIC_ATTACK,
+      mode: "single",
+      target: opponents.find((entry) => entry.health > 0 && !entry.resolved && !entry._dead) || null,
+    };
+  }
   if (!choice) return false;
+  if ((choice.def?.barbarianFuryCost || 0) > (actor.barbarianFury || 0)) {
+    const target = opponents.find((entry) => canAct(entry)) || null;
+    choice = {
+      ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+      def: BASIC_ATTACK,
+      mode: "single",
+      target,
+    };
+  }
+  if (!weaponReqMet(choice.def, actor.weapon) || !monkMobilityReqMet(actor, choice.def) || !barbarianEquipmentReqMet(actor, choice.def)) {
+    const target = opponents.find((entry) => canAct(entry)) || null;
+    choice = {
+      ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+      def: BASIC_ATTACK,
+      mode: "single",
+      target,
+    };
+  }
+  if (choice.def?.monkPostureCost) {
+    const postureTarget = monkPostureReady(choice.target, choice.def, actor)
+      ? choice.target
+      : opponents.find((target) => canAct(target) && monkPostureReady(target, choice.def, actor));
+    if (postureTarget) choice = { ...choice, target: postureTarget, mode: "single" };
+    else {
+      const target = opponents.find((entry) => canAct(entry)) || null;
+      choice = {
+        ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+        def: BASIC_ATTACK,
+        mode: "single",
+        target,
+      };
+    }
+  }
   const { def, ability, mode } = choice;
   const tId = ability.tier || actor.tier || "common";
+  if (consumeSacredMisdirection(cs, actor, def)) return true;
+  if (consumeWarriorWeaponBind(cs, actor, def)) return true;
+  if (consumeMonkActionInterruption(cs, actor, def)) return true;
+  if (consumeBarbarianActionStagger(cs, actor, def)) return true;
   // Distance gate: charge the last step (close + strike) when one step out, else
   // spend the action just closing in.
   if (mode === "single") {
@@ -1213,41 +2549,49 @@ function npcPerform(cs, actor, opponents, opts = {}) {
     if (!mt || mt.health <= 0 || mt.resolved || mt._dead) mt = opponents.find((o) => o.health > 0 && !o.resolved && !o._dead);
     if (mt) {
       const reach = abilityReach(actor, def);
-      if (gap(actor, mt) > reach + 1) {
+      const distanceGap = gap(actor, mt);
+      if (warriorDenyApproach(cs, actor, mt, def)) return true;
+      if (warriorAdvanceIsChecked(cs, actor, def, distanceGap, reach)) return true;
+      if (distanceGap > reach + 1) {
         actor.actionsLeft = (actor.actionsLeft || 1) - 1;
         closeStep(cs, actor, mt);
         cs.log.push(logEntry(`${actor.name} ${actor.side === "enemy" ? "advances" : "closes in"}.`, actor.side === "player" ? "player" : "enemy"));
         return true;
       }
-      if (gap(actor, mt) > reach) closeStep(cs, actor, mt); // charge the final step, then strike below
+      if (distanceGap > reach) closeStep(cs, actor, mt); // charge the final step, then strike below
     }
   }
+  beginMonkAction(actor);
+  beginBarbarianAction(actor);
+  spendWarriorTempo(cs, actor, def);
+  spendBarbarianFury(cs, actor, def);
   if (def.cooldown) actor.cooldowns[ability.id] = def.cooldown;
   if (actor.resolve != null) actor.resolve = Math.max(0, actor.resolve - (def.resolveCost || 0));
   actor.actionsLeft = (actor.actionsLeft || 1) - (def.actionCost || 1);
+  applyGeasBacklash(cs, actor, def);
   const sideKind = actor.side === "player" ? "player" : "enemy";
 
   const hitOne = (target) => {
     const profile = attackProfile(actor, def, tId, false);
     if (profile) dealHit(cs, actor, target, profile, def, tId);
     else if (def.effect && def.effect.target === "enemy" && target.health > 0) {
-      applyEnemyEffect(cs, actor, target, def.effect, tId);
+      applyEnemyEffect(cs, actor, target, def.effect, tId, def);
     }
   };
 
   if (mode === "self") {
-    applySelfEffect(actor, def.effect);
+    applySelfEffect(actor, def.effect, cs);
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
   } else if (mode === "all-allies") {
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
-    for (const al of sideAllies(cs, actor)) applySelfEffect(al, def.effect);
+    for (const al of sideAllies(cs, actor)) applySelfEffect(al, def.effect, cs);
   } else if (mode === "aoe") {
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
     for (const t of opponents) if (t.health > 0 && !t.resolved && !t._dead) hitOne(t);
   } else {
     let target = choice.target;
     if (!target || target.health <= 0 || target.resolved || target._dead) target = opponents.find((o) => o.health > 0 && !o.resolved && !o._dead);
-    if (!target) { actor.actionsLeft = 0; return false; }
+    if (!target) { actor.actionsLeft = 0; endMonkAction(actor); endBarbarianAction(actor); return false; }
     if (ability.id !== BASIC_ATTACK.id) cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
     // Paired weapons add an extra light strike to the BASIC attack (twin blades).
     const hits = (def.hits || 1) + (ability.id === BASIC_ATTACK.id && actor.weapon?.paired ? 1 : 0);
@@ -1259,6 +2603,9 @@ function npcPerform(cs, actor, opponents, opts = {}) {
     if (t.health > 0 || t === cs.player) continue;
     if (t.side === "enemy") downEnemy(cs, t); else downAlly(cs, t);
   }
+  delete actor._warriorTempoSpent;
+  endMonkAction(actor);
+  endBarbarianAction(actor);
   return true;
 }
 
@@ -1270,7 +2617,7 @@ function intentForChoice(actor, choice, seq) {
   const profile = attackProfile(actor, def, tier, false);
   const hits = (def.hits || 1) + (choice.ability?.id === BASIC_ATTACK.id && actor.weapon?.paired ? 1 : 0);
   const estimated = choice.target && profile ? Math.max(0, Math.round(estimateHit(actor, def, tier, choice.target))) : 0;
-  const defensive = ["block", "shield", "magicShield", "invuln", "unstoppable"].includes(def.effect?.type);
+  const defensive = ["block", "shield", "magicShield", "invuln", "unstoppable", "antimagicField", "greaterInvisibility"].includes(def.effect?.type);
   return {
     id: `${actor.uid}-r${seq}`,
     abilityId: choice.ability.id,
@@ -1316,7 +2663,7 @@ function planEnemyIntents(cs) {
     const actionCount = Math.max(1, sim.actionsPerTurn || 1);
     const opponents = playerSide(cs);
     for (let index = 0; index < actionCount; index += 1) {
-      const choice = chooseAction(sim, opponents, npcCandidates(sim), { allies: sideAllies(cs, enemy) });
+      const choice = chooseAction(sim, opponents, npcCandidates(sim, opponents), { allies: sideAllies(cs, enemy) });
       const intent = intentForChoice(enemy, choice, `${cs.round || cs.turn}-${index}`);
       if (!choice || !intent) break;
       enemy.intents.push(intent);
@@ -1490,6 +2837,18 @@ function moraleCheck(cs, e) {
 
 function tickStatuses(c) {
   const logs = [];
+  const postureCapacity = monkPostureCapacity(c, c);
+  c.postureStrain = clamp(Math.floor(c.postureStrain || 0), 0, postureCapacity);
+  if (c.postureStrain > 0) {
+    if ((c.postureDecayTurns || 0) > 0) c.postureDecayTurns = Math.max(0, c.postureDecayTurns - 1);
+    else {
+      c.postureStrain = Math.max(0, c.postureStrain - 1);
+      if (c.postureStrain > 0) c.postureDecayTurns = 0;
+      logs.push(logEntry(`${c.name} recovers balance (${c.postureStrain}/${postureCapacity} Posture Strain).`, "status"));
+    }
+  } else {
+    c.postureDecayTurns = 0;
+  }
   // Damage-over-time: bleed/poison/burn (+ lingering deferred wounds). A status can
   // be FLAT (value) or pctMax (a share of the victim's MAX health each turn) — the
   // latter is how a build chips down a huge-pool monster (Vyrnholt) it can't burst.
@@ -1508,6 +2867,20 @@ function tickStatuses(c) {
     if (got > 0) logs.push(logEntry(`${c.name} recovers ${got}.`, "status"));
   } else if (healAmt > 0 && c.health > 0 && hasStatus(c, "poison")) {
     logs.push(logEntry(`${c.name}'s regeneration is suppressed by poison.`, "status"));
+  }
+  const racialRegen = c.triggers?.racialRegeneration || 0;
+  if (racialRegen > 0 && c.health > 0 && c.health < c.maxHealth) {
+    let blockedBy = null;
+    if (hasStatus(c, "curse")) blockedBy = "a severe curse";
+    else if (c.race === "vampire" && c.sunlightExposure) blockedBy = "sunlight";
+    else if (c.race === "vampire" && Number.isFinite(Number(c.needs?.hunger)) && Number(c.needs.hunger) <= 30) blockedBy = "blood hunger";
+    else if (c.race === "lycanthrope" && hasStatus(c, "silverWound")) blockedBy = "silver";
+    if (blockedBy) {
+      logs.push(logEntry(`${c.name}'s racial regeneration is suppressed by ${blockedBy}.`, "status"));
+    } else {
+      const restored = gainHealth(c, Math.max(1, Math.round(c.maxHealth * racialRegen)));
+      if (restored > 0) logs.push(logEntry(`${c.name}'s flesh regenerates ${restored}.`, "status"));
+    }
   }
   // Shield/ward-shield regenerate from affixes, capped at three turns' worth so a
   // pool can't accumulate without bound. Invulnerability counts down each turn.
@@ -1554,9 +2927,26 @@ function checkCombatEnd(cs) {
 // A weapon technique HARD-requires a compatible weapon in hand — you can't
 // Power Strike with a grimoire or bare fists. (Stat shortfalls stay soft.)
 export function weaponReqMet(def, weapon) {
+  // Monk discipline owns an explicit empty-hand/Temple-Arms contract even for
+  // defensive cards whose scaling is `none`. Generic utility cards normally
+  // ignore weaponReq, but that shortcut must not let a sword-wielding Monk use
+  // Yielding Guard or another empty-hand form.
+  if (["monk", "barbarian"].includes(def?.professionId) && def.weaponReq?.length) return def.weaponReq.includes(weapon?.category);
   if (abilityScaling(def) !== "weapon") return true;       // spells/utility need no weapon
   if (!def.weaponReq || def.weaponReq.length === 0) return true; // basic attack — any weapon/fists
   return def.weaponReq.includes(weapon?.category);
+}
+
+function monkMobilityReqMet(actor, def) {
+  return !(def?.monkFreedomRequired && actor?.armorClass === "heavy");
+}
+
+function barbarianEquipmentReqMet(actor, def) {
+  if (def?.professionId !== "barbarian") return true;
+  const armorClass = actor?.armorClass || "none";
+  if (def.armorReq?.length && !def.armorReq.includes(armorClass)) return false;
+  if (def.barbarianMovementRequired && (actor?.movementLocked || actor?.immobilized || hasStatus(actor, "stun"))) return false;
+  return true;
 }
 
 // The Resolve an ability actually costs the player. SPELLS get the spellcasting-
@@ -1567,8 +2957,20 @@ export function playerResolveCost(cs, def) {
   if (base <= 0) return 0;
   const isSpell = abilityCategoryOf(def) === "spell";
   if (cs.player?.spellSurge) base *= 2; // Mind 30: ALL abilities cost double Resolve
+  if (hasAbilityMetamagic(cs.player, def, "quickened-signature")) base *= 1.25;
+  if (hasAbilityMetamagic(cs.player, def, "perfected-signature")) base *= 0.8;
+  if (isSpell && hasStatus(cs.player, "arcaneConvergence")) base *= 0.7;
   const discount = isSpell ? Math.min(0.4, (cs.player.prof?.spellcasting || 0) * 0.02) : 0;
   return Math.max(1, Math.ceil(base * (1 - discount)));
+}
+
+function progressionUseAllowed(player, def, abilityId) {
+  if (!def) return false;
+  if (def.branchExclusive && !(player?.progressionBranchAbilityIds || []).includes(abilityId)) return false;
+  if (def.progressionExclusive && !(player?.progressionAbilityIds || []).includes(abilityId)) return false;
+  if (hasStatus(player, "polymorph") && abilityId !== BASIC_ATTACK.id && abilityId !== DEFEND.id) return false;
+  if (hasStatus(player, "antimagicField") && abilityCategoryOf(def) === "spell" && !def.innate) return false;
+  return true;
 }
 
 export function abilityUsable(cs, abilityId) {
@@ -1576,12 +2978,25 @@ export function abilityUsable(cs, abilityId) {
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   if (!entry) return false;
   const def = getAbilityDef(abilityId);
-  if ((cs.player.actionsLeft || 0) < (def.actionCost || 1)) return false; // action points gate everything now
+  if (!progressionUseAllowed(cs.player, def, abilityId)) return false;
+  if ((cs.player.actionsLeft || 0) < effectiveActionCost(cs.player, def)) return false; // action points gate everything now
   // Silenced: only the basic strike and brace remain — no learned abilities.
   if (hasStatus(cs.player, "silence") && abilityId !== BASIC_ATTACK.id && abilityId !== "defend") return false;
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
   if ((cs.player.resolve ?? 0) < playerResolveCost(cs, def)) return false;
   if (!weaponReqMet(def, cs.player.weapon)) return false;
+  if (!monkMobilityReqMet(cs.player, def)) return false;
+  if (!barbarianEquipmentReqMet(cs.player, def)) return false;
+  if ((def.warriorTempoCost || 0) > (cs.player.martialTempo || 0)) return false;
+  if ((def.barbarianFuryCost || 0) > (cs.player.barbarianFury || 0)) return false;
+  if (def.monkPostureCost) {
+    const selected = cs.enemies?.[cs.target];
+    const target = playerTargetable(selected) ? selected : cs.enemies?.find((entry) => playerTargetable(entry));
+    if (!monkPostureReady(target, def, cs.player)) return false;
+  }
+  if (def.healthThreshold != null && cs.player.health / Math.max(1, cs.player.maxHealth || 1) > def.healthThreshold) return false;
+  if (def.effect?.type === "warriorSecondBreath" && cs.player._warriorSecondBreathUsed) return false;
+  if (def.effect?.type === "warriorLastStand" && cs.player._warriorLastStandUsed) return false;
   return true;
 }
 
@@ -1596,9 +3011,21 @@ export function cardUsable(cs, cardUid, targetUid = null) {
   const card = cs.deck.cards[cardUid];
   const def = card && getAbilityDef(card.abilityId);
   if (!card || !def) return false;
+  if (!progressionUseAllowed(cs.player, def, card.abilityId)) return false;
   if ((cs.player.energy || 0) < card.energyCost) return false;
   if ((cs.player.resolve ?? 0) < playerResolveCost(cs, def)) return false;
   if (!weaponReqMet(def, cs.player.weapon)) return false;
+  if (!monkMobilityReqMet(cs.player, def)) return false;
+  if (!barbarianEquipmentReqMet(cs.player, def)) return false;
+  if ((def.warriorTempoCost || 0) > (cs.player.martialTempo || 0)) return false;
+  if ((def.barbarianFuryCost || 0) > (cs.player.barbarianFury || 0)) return false;
+  if (def.monkPostureCost) {
+    const index = cardTargetIndex(cs, card, targetUid);
+    if (index < 0 || !monkPostureReady(cs.enemies[index], def, cs.player)) return false;
+  }
+  if (def.healthThreshold != null && cs.player.health / Math.max(1, cs.player.maxHealth || 1) > def.healthThreshold) return false;
+  if (def.effect?.type === "warriorSecondBreath" && cs.player._warriorSecondBreathUsed) return false;
+  if (def.effect?.type === "warriorLastStand" && cs.player._warriorLastStandUsed) return false;
   if (hasStatus(cs.player, "silence") && card.abilityId !== BASIC_ATTACK.id && card.abilityId !== DEFEND.id) return false;
   if (!["self", "all-enemies", "all-allies"].includes(card.target) && cardTargetIndex(cs, card, targetUid) < 0) return false;
   return true;
@@ -1611,7 +3038,7 @@ export function playCard(cs0, cardUid, targetUid = null) {
   const targetIndex = cardTargetIndex(cs0, card, targetUid);
   const prepared = clone(cs0);
   const energyBefore = prepared.player.energy || 0;
-  const actionCost = def.actionCost || 1;
+  const actionCost = effectiveActionCost(prepared.player, def);
   prepared.player.actionsLeft = Math.max(1, actionCost);
   prepared.player.cooldowns[card.abilityId] = 0; // the pile cycle replaces cooldowns
   const baselineAfter = prepared.player.actionsLeft - actionCost;
@@ -1640,38 +3067,63 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   const tierId = entry.tier || "common";
   const scaling = abilityScaling(def);
+  const targetMode = effectiveAbilityTarget(cs.player, def);
+  if (def.monkPostureCost && targetMode === "enemy") {
+    let postureIndex = targetIndex;
+    if (postureIndex == null || !playerTargetable(cs.enemies[postureIndex])) {
+      postureIndex = cs.target;
+    }
+    const selected = cs.enemies[postureIndex];
+    const postureTarget = playerTargetable(selected) ? selected : cs.enemies.find((entry) => playerTargetable(entry));
+    if (!monkPostureReady(postureTarget, def, cs.player)) return cs0;
+  }
+  if (consumeSacredMisdirection(cs, cs.player, def)) return cs;
+  if (consumeWarriorWeaponBind(cs, cs.player, def)) return cs;
+  if (consumeMonkActionInterruption(cs, cs.player, def)) return cs;
+  if (consumeBarbarianActionStagger(cs, cs.player, def)) return cs;
   // Distance gate: a single-target action only lands within the ability's
   // reach/range. One step out → CHARGE (close the last step and strike in the
   // same action). Farther → spend the action just closing in (no cost).
-  if (def.target !== "self" && def.target !== "all-enemies" && def.target !== "all-allies") {
+  if (targetMode !== "self" && targetMode !== "all-enemies" && targetMode !== "all-allies") {
     let gi = targetIndex;
     if (gi == null || !playerTargetable(cs.enemies[gi])) gi = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
     const gt = gi >= 0 ? cs.enemies[gi] : null;
     if (gt) {
       const reach = abilityReach(cs.player, def);
-      if ((gt.distance || 0) > reach + 1) {
+      const distanceGap = gt.distance || 0;
+      if (warriorDenyApproach(cs, cs.player, gt, def)) return cs;
+      if (warriorAdvanceIsChecked(cs, cs.player, def, distanceGap, reach)) return cs;
+      if (distanceGap > reach + 1) {
         cs.player.actionsLeft = (cs.player.actionsLeft || 1) - (def.actionCost || 1);
         closeStep(cs, cs.player, gt);
         cs.log.push(logEntry(`${cs.player.name} closes the distance.`, "player"));
         return cs;
       }
-      if ((gt.distance || 0) > reach) closeStep(cs, cs.player, gt); // charge the final step, then strike
+      if (distanceGap > reach) closeStep(cs, cs.player, gt); // charge the final step, then strike
     }
   }
+  beginMonkAction(cs.player);
+  beginBarbarianAction(cs.player);
   // A spell or a real weapon technique is inherently a killing act — using one
   // in a brawl escalates it to lethal on its own (no separate Draw needed).
   const isSpell = scaling === "stat";
-  const isWeaponTech = scaling === "weapon" && def.weaponReq && def.weaponReq.length > 0;
+  const isWeaponTech = scaling === "weapon"
+    && cs.player.weapon?.category !== "unarmed"
+    && def.weaponReq?.some((category) => category !== "unarmed");
   // Innate racial powers (dragon breath, hellfire, etc.) aren't "witchcraft" — they
   // don't trigger the dread-of-magic reaction, though they still escalate a brawl.
   if (isSpell && !def.innate) cs.magicCast = true;
   if (!cs.lethal && (isSpell || isWeaponTech)) escalateToLethal(cs, isSpell ? "magic" : "weapon");
-  cs.player.actionsLeft = (cs.player.actionsLeft || 1) - (def.actionCost || 1); // action points gate actions
+  spendWarriorTempo(cs, cs.player, def);
+  spendBarbarianFury(cs, cs.player, def);
+  cs.player.actionsLeft = (cs.player.actionsLeft || 0) - effectiveActionCost(cs.player, def); // action points gate actions
   // Spellcasting proficiency makes casting cheaper on Resolve — a capped %
   // discount that stretches the pool but never makes a spell free (see helper).
   const resoCost = playerResolveCost(cs, def);
   cs.player.resolve = Math.max(0, (cs.player.resolve ?? 0) - resoCost);
-  if (def.cooldown) cs.player.cooldowns[abilityId] = def.cooldown;
+  const cooldown = effectiveCooldown(cs.player, def);
+  if (cooldown) cs.player.cooldowns[abilityId] = cooldown;
+  applyGeasBacklash(cs, cs.player, def);
 
   // Train the proficiency this action exercises (do-it-get-better).
   if (def.dmg || def.damageType === "weapon") {
@@ -1688,17 +3140,17 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const hitEnemy = (target) => {
     if (profile) dealHit(cs, cs.player, target, profile, def, tierId);
     else if (def.effect && def.effect.target === "enemy" && target.health > 0) {
-      applyEnemyEffect(cs, cs.player, target, def.effect, tierId);
+      applyEnemyEffect(cs, cs.player, target, def.effect, tierId, def);
     }
   };
 
-  if (def.target === "self") {
-    applySelfEffect(cs.player, def.effect);
+  if (targetMode === "self") {
+    applySelfEffect(cs.player, def.effect, cs);
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
-  } else if (def.target === "all-allies") {
+  } else if (targetMode === "all-allies") {
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
-    for (const al of sideAllies(cs, cs.player)) applySelfEffect(al, def.effect);
-  } else if (def.target === "all-enemies") {
+    for (const al of sideAllies(cs, cs.player)) applySelfEffect(al, def.effect, cs);
+  } else if (targetMode === "all-enemies") {
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
     for (const e of cs.enemies) { if (e.health > 0 && !e.resolved) hitEnemy(e); }
   } else {
@@ -1706,17 +3158,21 @@ export function playerAct(cs0, abilityId, targetIndex) {
     if (idx == null || !playerTargetable(cs.enemies[idx])) {
       idx = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
     }
-    if (idx < 0) return cs0;
+    if (idx < 0) { endMonkAction(cs.player); endBarbarianAction(cs.player); return cs0; }
     const target = cs.enemies[idx];
     if (abilityId !== BASIC_ATTACK.id) cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
     // Paired weapons add an extra light strike to the BASIC attack (twin blades).
-    const hits = (def.hits || 1) + (abilityId === BASIC_ATTACK.id && cs.player.weapon?.paired ? 1 : 0);
+    const twinHits = isTwinnedSignature(cs.player, def) ? 1 : 0;
+    const hits = (def.hits || 1) + twinHits + (abilityId === BASIC_ATTACK.id && cs.player.weapon?.paired ? 1 : 0);
     for (let h = 0; h < hits; h++) { if (target.health <= 0) break; hitEnemy(target); }
   }
 
   for (const e of cs.enemies) if (e.health <= 0) downEnemy(cs, e);
   const firstAlive = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
   if (firstAlive >= 0 && (cs.enemies[cs.target]?.health <= 0 || cs.enemies[cs.target]?.resolved)) cs.target = firstAlive;
+  delete cs.player._warriorTempoSpent;
+  endMonkAction(cs.player);
+  endBarbarianAction(cs.player);
   return checkCombatEnd(cs);
 }
 

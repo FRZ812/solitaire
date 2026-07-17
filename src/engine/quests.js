@@ -13,7 +13,7 @@ import { ageState } from "./aging.js";
 import { makeRng } from "./town-gen.js";
 import { TASK_POOL, JOB_POOL, BOARD_REFRESH_DAYS } from "../data/postings.js";
 import { COMPANION_LIST } from "../data/companions.js";
-import { advanceProgression, projectCharacterProgression } from "./progression.js";
+import { advanceProgression, earnedLevelGrowthText, projectCharacterProgression } from "./progression.js";
 
 const clamp100 = (v) => Math.max(0, Math.min(100, v));
 
@@ -94,14 +94,13 @@ export function applyDayLabour(state, job) {
   const ag = ageState(sp.state);
   let next = ag.state;
   const progress = advanceProgression(next.character, Math.max(1, job.hours || 4) * 30);
-  if (progress.gained.length) {
-    const latest = progress.gained.at(-1);
+  if (progress.earnedLevels > 0) {
     next = {
       ...next,
       beats: [...(next.beats || []), {
         id: `labour-level-${Date.now()}`,
         type: "growth",
-        text: `Level ${progress.beforeLevel} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+        text: earnedLevelGrowthText(progress),
       }],
     };
   }

@@ -45,3 +45,34 @@ describe("narrator party-removal contract", () => {
     expect(SYSTEM_PROMPT).toContain("repair that stale roster with the same removal");
   });
 });
+
+describe("narrator progression contract", () => {
+  it("uses numeric racial and profession allocation without character-tier labels", () => {
+    expect(SYSTEM_PROMPT).toContain("racial_levels");
+    expect(SYSTEM_PROMPT).toContain("profession_plan");
+    expect(SYSTEM_PROMPT).toContain('"progression_focus": null OR "racial"');
+    expect(SYSTEM_PROMPT).toContain("up to 30 RACIAL EVOLUTION levels plus up to 70 combined PROFESSION levels");
+    expect(SYSTEM_PROMPT).toContain("Never invent or emit durable path ids/ranks");
+    expect(SYSTEM_PROMPT).not.toContain("WORLD POWER BANDS");
+    expect(SYSTEM_PROMPT).not.toContain("STANDARD: levels 1–20");
+  });
+
+  it("keeps rarity tiers for items and abilities distinct from character level", () => {
+    expect(SYSTEM_PROMPT).toContain("Item and ability rarity tiers remain separate");
+    expect(SYSTEM_PROMPT).toContain("TIER SCALES AN ABILITY");
+    expect(SYSTEM_PROMPT).toContain('("tier":"common".."divine")');
+  });
+
+  it("defines distinct caster and non-combat profession identities", () => {
+    expect(SYSTEM_PROMPT).toContain("Wizard progression favors the widest arcane spellbook");
+    expect(SYSTEM_PROMPT).toContain("Sorcerer progression favors a small number of signature spells enhanced by metamagic");
+    expect(SYSTEM_PROMPT).toContain("Social, service, scholarship, and craft professions gain abilities useful in their own work");
+  });
+
+  it("leaves player specialization branches to the engine while allowing validated NPC hints", () => {
+    expect(SYSTEM_PROMPT).toContain("A player's branch is an engine-owned choice");
+    expect(SYSTEM_PROMPT).toContain("NEVER choose, infer, or silently change specializationPath or branchChoices for the player");
+    expect(SYSTEM_PROMPT).toContain("Generated NPCs may include engine-validated specializationPath and branchChoices");
+    expect(SYSTEM_PROMPT).toContain("Necromancy may later layer into Undead Lord, or into Death Magic");
+  });
+});

@@ -8,6 +8,31 @@ import { relationshipTier } from "../engine/relationships.js";
 import { currentRideLoad, effectiveLoad, canMount, rideCapacityOf } from "../engine/riding.js";
 import { loadOf } from "../engine/weight.js";
 import { itemTemplate } from "../data/catalog.js";
+import { characterArchetype } from "../data/character-archetypes.js";
+import { PROFESSIONS } from "../data/professions.js";
+import { canonicalProfessionId, isBroadProfessionName } from "../data/progression-paths.js";
+
+const labelize = (value) => String(value || "")
+  .replace(/[-_]+/g, " ")
+  .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+function publicProfessionLabel(character) {
+  const professionId = canonicalProfessionId(character?.profession) || character?.profession;
+  const broadName = PROFESSIONS[professionId]?.name || labelize(professionId);
+  const allocation = (character?.progression?.professions || []).find((entry) => entry.professionId === professionId);
+  const legacySpecialization = character?.["sub" + "class"];
+  const hasSpecialization = !!(
+    character?.archetype
+    || legacySpecialization
+    || character?.templateId
+    || allocation?.specializationId
+    || (character?.profession && !isBroadProfessionName(character.profession, professionId))
+  );
+  const specialization = hasSpecialization ? characterArchetype(character)?.label : null;
+  return specialization && specialization.toLowerCase() !== broadName.toLowerCase()
+    ? `${broadName} · ${specialization}`
+    : broadName;
+}
 
 // The party roster: every recruited companion AND mount as a full creature —
 // appearance, attributes, gear — with the option to part ways, and (for mounts)
@@ -168,7 +193,7 @@ export function PartyView({ state, onDismiss, onMount, onDismount, onOpenInvento
               <div className="company-avatar" aria-hidden="true">{(c.name || "C").slice(0, 1).toUpperCase()}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: fonts.serif, fontStyle: "italic", fontSize: "19px", color: colors.parchmentLight, lineHeight: 1.1 }}>{c.name}</div>
-                <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>{c.race} · {c.profession}{c.ridingOn ? ` · riding ${nameOf(c.ridingOn)}` : ""}</div>
+                <div style={{ ...metaStyle, fontSize: "8px", color: colors.parchmentMuted, marginTop: "3px" }}>{c.race} · {publicProfessionLabel(c)}{c.ridingOn ? ` · riding ${nameOf(c.ridingOn)}` : ""}</div>
                 {(() => { const t = relationshipTier(c.relationship || 0); return (
                   <span style={{ display: "inline-block", marginTop: "5px", fontSize: "9px", fontWeight: 800, letterSpacing: "0.04em", padding: "2px 8px", borderRadius: radius.pill, color: t.color, border: `1px solid ${t.color}55`, backgroundColor: `${t.color}14` }}>
                     {t.label} · {(c.relationship || 0) > 0 ? "+" : ""}{c.relationship || 0}

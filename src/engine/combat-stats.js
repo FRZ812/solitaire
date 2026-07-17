@@ -17,8 +17,9 @@
 
 import { attrFactor } from "../data/abilities.js";
 import { tierMult, tier as tierInfo } from "../data/tiers.js";
-import { aggregateCombatPassives, aggregateWorldPassives, PASSIVE_CAPS } from "../data/passives.js";
+import { aggregateCombatPassives, aggregateWorldPassives, passiveDef, PASSIVE_CAPS } from "../data/passives.js";
 import { attributeThresholdMods, mechanicalAttributeValue } from "../data/attribute-tiers.js";
+import { progressionPassiveEntries } from "./progression-abilities.js";
 
 // Fold attribute-threshold mods into a passive statMods/triggers bundle: most
 // stats sum, damageCap is lowest-wins, and the snowball trigger caps are re-applied
@@ -289,11 +290,17 @@ export function collectEquippedPassives(character, codex) {
   const gear = equippedItems(character, codex);
   const enabled = [];
   const disabled = [];
-  // Racial passives are innate and ALWAYS on — no item, no requirement check. They
-  // flow through the same aggregation as gear affixes (combat + world passives).
-  if (Array.isArray(character?.racialPassives) && character.racialPassives.length) enabled.push(...character.racialPassives);
+  // Allocated racial progression is authoritative for earned progression-only
+  // traits. Legacy freeform racialPassives (or a forged item) cannot smuggle an
+  // Adaptable/Dragon Heart/Regeneration id around its level threshold.
+  enabled.push(...progressionPassiveEntries(character));
+  const nonProgressionExclusive = (entry) => !passiveDef(entry?.id)?.progressionExclusive;
+  // Baseline racial passives remain innate and always on — no item requirement.
+  if (Array.isArray(character?.racialPassives) && character.racialPassives.length) {
+    enabled.push(...character.racialPassives.filter(nonProgressionExclusive));
+  }
   for (const it of gear) {
-    const list = it.passives || [];
+    const list = (it.passives || []).filter(nonProgressionExclusive);
     if (list.length === 0) continue;
     const met = reqEffectiveness(attrs, itemRequirement(it)) >= 1;
     (met ? enabled : disabled).push(...list);
@@ -330,6 +337,7 @@ function weaponProfile(character, codex, eff) {
     // lands an EXTRA light strike (engine/combat.js). Each blade is lighter, so the
     // base damage stays low; the win is two crit-hungry hits, not one heavy one.
     paired: !!(weapon && (weapon.paired || weapon.combat?.paired || /\b(twin|paired|matched|dual)\b|pair of/i.test(weapon.name || ""))),
+    silvered: !!(weapon && (weapon.silvered || /^silvered-/i.test(weapon.id || "") || /\bsilvered\b/i.test(weapon.name || ""))),
     name: weapon ? (weapon.name || weapon.id) : "Unarmed",
   };
 }
@@ -380,6 +388,7 @@ export function deriveCombatStats(character, codex) {
   let armor = Math.floor(body / 3);
   let ward = Math.floor(mind / 3);
   let dodgeGear = 0;
+  let equippedArmorClass = null;
   let band = armorBandMods(null);
   for (const it of gear) {
     const stats = itemCombatStats(it);
@@ -387,7 +396,10 @@ export function deriveCombatStats(character, codex) {
     armor += Math.round(stats.armor * eff);
     ward += Math.round(stats.ward * eff);
     dodgeGear += Math.round(stats.dodge * eff);
-    if (it.kind === "armor" && stats.armorClass) band = armorBandMods(stats.armorClass);
+    if (it.kind === "armor" && stats.armorClass) {
+      equippedArmorClass = stats.armorClass;
+      band = armorBandMods(stats.armorClass);
+    }
   }
 
   // Req-met passives modify stats and add triggers (attrs gate threshold passives).
@@ -417,12 +429,16 @@ export function deriveCombatStats(character, codex) {
   let dodge = reflex * 2 + dodgeGear + prof.evasion + (statMods.dodge || 0) + (band.dodge || 0);
   dodge = clamp(Math.round(dodge * (band.dodgeMult ?? 1)), 0, 70);
 
+  const baseMaxHealth = character.vitalityMax + (statMods.maxHealth || 0) + (band.maxHealth || 0);
+  const maxHealth = Math.max(1, Math.round(baseMaxHealth * (1 + (triggers.dragonHeart || 0))));
+
   return {
-    maxHealth: character.vitalityMax + (statMods.maxHealth || 0) + (band.maxHealth || 0),
+    maxHealth,
     dr: clamp(statMods.drPct || 0, 0, 0.85), // flat % damage reduction, capped (deep DR stacking pays off)
     phaseChance: clamp(statMods.phaseChance || 0, 0, 0.4), // uncounterable evade (Phantom)
     dodgeIgnore: clamp(statMods.dodgeIgnore || 0, 0, 1),   // attacks ignore the foe's dodge (Deadeye)
     armor: armor + (statMods.armor || 0),
+    armorClass: equippedArmorClass,
     ward: ward + (statMods.ward || 0) + (band.ward || 0),
     dodge,
     accuracy: reflex + wit + prof.awareness + weapon.mastery + (weapon.acc || 0) + (statMods.accuracy || 0) + (band.accuracy || 0),

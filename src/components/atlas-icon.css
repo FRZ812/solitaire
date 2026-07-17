@@ -23,9 +23,9 @@
 .atlas-icon--square { border-radius: 0; }
 .atlas-icon--round { border-radius: 50%; }
 
-/* The generated portrait cells are square, while the Codex viewport is 3:4.
-   Widening the inner square sprite to the viewport height preserves the source
-   proportions and lets the outer slot crop only the side edges. */
+/* Portrait atlas cells are square. Keep the inner sprite square even when a
+   responsive card makes the outer viewport a little taller than 3:4; the
+   viewport may crop the sides, but it must never stretch the character. */
 .atlas-icon--portrait {
   aspect-ratio: 3 / 4;
   border-radius: 0;
@@ -33,6 +33,8 @@
 
 .atlas-icon--portrait .atlas-icon__sprite {
   inset: 0 auto 0 50%;
-  width: 133.3334%;
+  width: auto;
+  height: 100%;
+  aspect-ratio: 1;
   transform: translateX(-50%);
 }

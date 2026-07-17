@@ -181,7 +181,6 @@
   border: 1px solid rgba(231, 185, 94, 0.4);
   border-radius: 50%;
   box-shadow: inset 0 0 0 5px rgba(16, 43, 67, 0.34), 0 0 26px rgba(231, 185, 94, 0.08);
-  animation: map-mark-turn 8s linear infinite;
 }
 
 .journey-loader__mark::before,
@@ -232,20 +231,8 @@
   letter-spacing: 0.08em;
 }
 
-.journey-loader__track {
-  width: min(174px, 58vw);
-  height: 2px;
-  margin-top: 20px;
-  overflow: hidden;
-  background: rgba(191, 213, 214, 0.14);
-}
-
-.journey-loader__track i {
-  display: block;
-  width: 42%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, var(--game-gold), transparent);
-  animation: map-track-cross 1.5s ease-in-out infinite;
+.journey-loader__activity {
+  margin-top: 9px;
 }
 
 .journey-resume {
@@ -300,7 +287,7 @@
   text-transform: uppercase;
 }
 
-.journey-resume__card .journey-loader__track { margin-top: 16px; }
+.journey-resume__card .journey-loader__activity { margin-top: 5px; }
 
 /* Generated title artwork ------------------------------------------------- */
 
@@ -1599,6 +1586,33 @@
   font: italic 13px/1.4 "Instrument Serif", Georgia, serif;
 }
 
+.progression-capability-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.progression-capability-card {
+  padding: 10px 11px;
+  border: 1px solid rgba(176, 114, 230, 0.3);
+  background: linear-gradient(112deg, rgba(70, 48, 102, 0.28), rgba(4, 9, 19, 0.5));
+}
+
+.progression-capability-card > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.progression-capability-card > header strong { color: #fff8e5; font-size: 12px; }
+.progression-capability-card > header span { color: rgba(201, 179, 232, 0.68); font-size: 7px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+.progression-capability-card > p,
+.progression-capability-card li p { margin: 4px 0 0; color: rgba(244, 232, 195, 0.68); font-size: 10px; line-height: 1.4; }
+.progression-capability-card ul { margin: 8px 0 0; padding: 0; list-style: none; }
+.progression-capability-card li + li { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(201, 179, 232, 0.12); }
+.progression-capability-card li strong { color: rgba(242, 212, 143, 0.88); font-size: 10px; }
+
 .spell-card {
   padding: 11px;
   display: grid;
@@ -2186,6 +2200,171 @@
 .codex-entry.is-open { border-color: rgba(231, 185, 94, 0.3); }
 .codex-entry.is-open { box-shadow: 0 12px 28px rgba(3, 7, 15, 0.3), inset 0 1px rgba(255, 255, 255, 0.03); }
 
+.codex-character-dossier {
+  margin: -12px -12px 0;
+  scroll-margin-top: 8px;
+}
+
+.codex-entry--dossier {
+  border-width: 0 0 1px;
+  border-radius: 0;
+  background: #07101c;
+  box-shadow: none;
+}
+
+.codex-entry--dossier .codex-entry__header {
+  position: relative;
+  height: clamp(372px, 105vw, 520px);
+  min-height: 372px;
+  display: block;
+  overflow: hidden;
+  background: #101e29;
+  isolation: isolate;
+}
+
+.codex-entry--dossier .codex-entry__header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(180deg, rgba(7, 16, 28, .02) 22%, rgba(7, 16, 28, .18) 48%, rgba(7, 16, 28, .92) 86%, #07101c 100%),
+    linear-gradient(90deg, rgba(7, 16, 28, .16), transparent 42%, rgba(7, 16, 28, .08));
+  pointer-events: none;
+}
+
+.codex-entry--dossier .codex-entry__portrait-button {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+}
+
+.codex-entry--dossier .codex-entry__portrait {
+  min-height: 100%;
+  border-right: 0;
+}
+
+.codex-entry--dossier .codex-entry__portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 18%;
+  filter: saturate(.9) contrast(.97) brightness(.92);
+}
+
+.codex-entry--dossier .codex-entry__portrait > span:last-child { display: none; }
+
+.codex-entry__dossier-back {
+  position: absolute;
+  z-index: 5;
+  top: 15px;
+  left: 14px;
+  min-height: 32px;
+  padding: 6px 11px 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff1cf;
+  border: 1px solid rgba(239, 202, 126, .38);
+  border-radius: 999px;
+  background: rgba(4, 13, 23, .7);
+  box-shadow: 0 5px 16px rgba(2, 7, 14, .35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-family: inherit;
+  font-size: 7px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.codex-entry__dossier-back:focus-visible { outline: 2px solid rgba(239, 202, 126, .62); outline-offset: 2px; }
+
+.codex-entry--dossier .codex-entry__summary {
+  position: absolute;
+  z-index: 3;
+  right: 20px;
+  bottom: 25px;
+  left: 20px;
+  width: auto;
+  padding: 0;
+  align-items: center;
+  color: inherit;
+  text-align: center;
+  text-shadow: 0 2px 14px rgba(3, 7, 15, .84);
+  cursor: default;
+}
+
+.codex-entry--dossier .codex-entry__eyebrow {
+  color: rgba(231, 185, 94, .82);
+  font-size: 7px;
+  letter-spacing: .2em;
+  white-space: normal;
+}
+
+.codex-entry--dossier .codex-entry__name-row {
+  margin-top: 6px;
+  justify-content: center;
+}
+
+.codex-entry--dossier .codex-entry__name-row > strong {
+  overflow: visible;
+  font-size: clamp(31px, 8.8vw, 44px);
+  line-height: .98;
+  text-align: center;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.codex-entry--dossier .codex-entry__badges {
+  margin-top: 9px;
+  justify-content: center;
+}
+
+.codex-entry--dossier .codex-entry__badges > span {
+  padding: 3px 8px;
+  background: rgba(7, 16, 28, .5);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .04);
+  font-size: 7px;
+}
+
+.codex-entry__hero-summary {
+  display: -webkit-box;
+  max-width: 390px;
+  margin: 9px auto 0;
+  overflow: hidden;
+  color: rgba(244, 232, 195, .76);
+  font: italic 13px/1.35 "Instrument Serif", Georgia, serif;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.codex-entry--dossier .codex-entry__actions {
+  position: absolute;
+  z-index: 5;
+  top: 15px;
+  right: 14px;
+  width: auto;
+  padding: 0;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.codex-entry--dossier .codex-entry__actions > button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(4, 13, 23, .7);
+  box-shadow: 0 5px 16px rgba(2, 7, 14, .35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
 .codex-entry__header {
   min-width: 0;
   display: grid;
@@ -2322,6 +2501,17 @@
   -webkit-line-clamp: 2;
 }
 
+/* Keep the mobile roster compact enough that its portrait slot remains close
+   to the authored 3:4 crop. The complete metadata lives in the dossier. */
+.codex-entry--character:not(.is-open) .codex-entry__badges {
+  max-height: 18px;
+  overflow: hidden;
+}
+
+.codex-entry--character:not(.is-open) .codex-entry__preview {
+  -webkit-line-clamp: 1;
+}
+
 .codex-entry__actions {
   width: 62px;
   padding: 9px 8px 9px 0;
@@ -2397,6 +2587,152 @@
 .codex-entry__portrait-editor input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); opacity: 0; pointer-events: none; }
 .codex-entry__portrait-editor > span[role="alert"] { width: 100%; color: #ffd1c6; font-size: 9px; }
 
+.codex-entry--dossier .codex-entry__portrait-editor {
+  margin: 0 0 13px;
+  padding: 11px 12px;
+  border-color: rgba(231, 185, 94, .2);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(17, 42, 58, .66), rgba(5, 14, 24, .78));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.codex-entry__detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.codex-entry__detail-card {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid rgba(191, 213, 214, .13);
+  border-radius: 11px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(105, 185, 208, .07), transparent 40%),
+    linear-gradient(145deg, rgba(15, 37, 52, .68), rgba(5, 14, 24, .72));
+  box-shadow: 0 8px 20px rgba(2, 7, 14, .14), inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.codex-entry__detail-heading {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(231, 185, 94, .12);
+}
+
+.codex-entry__detail-heading small {
+  display: block;
+  color: rgba(231, 185, 94, .68);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.codex-entry__detail-heading h3 {
+  margin: 3px 0 0;
+  color: #fff8e5;
+  font: italic 500 20px/1.05 "Instrument Serif", Georgia, serif;
+}
+
+.codex-entry__fact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.codex-entry__fact {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid rgba(191, 213, 214, .1);
+  border-radius: 8px;
+  background: rgba(4, 11, 20, .34);
+}
+
+.codex-entry__fact small,
+.codex-entry__attribute-grid small {
+  display: block;
+  color: rgba(231, 185, 94, .58);
+  font-size: 6.5px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.codex-entry__fact strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: rgba(244, 232, 195, .88);
+  font: 600 11px/1.25 "Alegreya", Georgia, serif;
+  text-overflow: ellipsis;
+}
+
+.codex-entry__attribute-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.codex-entry__attribute-grid > div {
+  padding: 9px 8px;
+  text-align: center;
+  border: 1px solid rgba(231, 185, 94, .13);
+  border-radius: 8px;
+  background: rgba(7, 16, 28, .48);
+}
+
+.codex-entry__attribute-grid strong {
+  display: block;
+  margin-top: 3px;
+  color: #fff1c6;
+  font: 500 21px/1 "Instrument Serif", Georgia, serif;
+}
+
+.codex-entry__detail-prose {
+  margin: 0;
+  color: rgba(237, 228, 208, .82);
+  font-size: 12px;
+  line-height: 1.58;
+}
+
+.codex-entry__detail-prose.is-appearance {
+  margin-bottom: 10px;
+  color: rgba(244, 232, 195, .82);
+  font: italic 14px/1.5 "Instrument Serif", Georgia, serif;
+}
+
+.codex-entry__detail-prose.is-list {
+  color: rgba(244, 232, 195, .78);
+  font-family: "Instrument Serif", Georgia, serif;
+  font-style: italic;
+}
+
+.codex-entry__detail-list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  list-style: none;
+}
+
+.codex-entry__detail-list li {
+  position: relative;
+  padding-left: 13px;
+  color: rgba(244, 232, 195, .78);
+  font: italic 13px/1.45 "Instrument Serif", Georgia, serif;
+}
+
+.codex-entry__detail-list li::before {
+  content: "";
+  position: absolute;
+  top: .62em;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  border: 1px solid rgba(231, 185, 94, .5);
+  transform: rotate(45deg);
+}
+
 .codex-catalog-row {
   width: 100%;
   color: inherit;
@@ -2413,7 +2749,128 @@
   animation: codex-detail-open 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.codex-entry--dossier .codex-entry__details {
+  padding: 15px 14px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  border-top: 0;
+  background:
+    radial-gradient(circle at 50% 0, rgba(66, 111, 132, .1), transparent 24%),
+    #07101c;
+}
+
+@media (min-width: 640px) {
+  .codex-entry__detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .codex-entry__detail-card.is-wide { grid-column: 1 / -1; }
+}
+
 /* Profession progression -------------------------------------------------- */
+
+.progression-choice-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: end center;
+  padding: 18px 12px max(18px, env(safe-area-inset-bottom, 0px));
+  background: rgba(2, 7, 14, .78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.progression-choice-modal {
+  width: min(620px, 100%);
+  max-height: min(820px, calc(100dvh - 32px));
+  overflow-y: auto;
+  padding: 20px;
+  color: rgba(244, 232, 195, .9);
+  border: 1px solid rgba(231, 185, 94, .34);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 50% 0, rgba(105, 185, 208, .12), transparent 32%),
+    linear-gradient(160deg, #102434, #07101c 58%);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .58), inset 0 1px rgba(255, 255, 255, .04);
+}
+
+.progression-choice-modal > header { text-align: center; }
+.progression-choice-modal > header small,
+.progression-choice-modal__option-copy small {
+  color: rgba(231, 185, 94, .7);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.progression-choice-modal > header h2 {
+  margin: 6px 0 7px;
+  color: #fff8e5;
+  font: italic 500 clamp(29px, 8vw, 42px)/1 "Instrument Serif", Georgia, serif;
+}
+.progression-choice-modal > header p {
+  max-width: 480px;
+  margin: 0 auto;
+  color: rgba(237, 228, 208, .7);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.progression-choice-modal__breadcrumbs {
+  margin: 15px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  list-style: none;
+}
+.progression-choice-modal__breadcrumbs li {
+  padding: 4px 8px;
+  border: 1px solid rgba(191, 213, 214, .15);
+  border-radius: 999px;
+  color: rgba(191, 213, 214, .76);
+  background: rgba(4, 11, 20, .36);
+  font-size: 8px;
+}
+.progression-choice-modal__breadcrumbs li + li::before { content: "›"; margin-right: 8px; color: rgba(231, 185, 94, .5); }
+
+.progression-choice-modal__options {
+  margin-top: 16px;
+  display: grid;
+  gap: 9px;
+}
+.progression-choice-modal__options > button {
+  width: 100%;
+  padding: 14px;
+  color: inherit;
+  text-align: left;
+  border: 1px solid rgba(191, 213, 214, .15);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(17, 42, 58, .72), rgba(5, 14, 24, .82));
+  cursor: pointer;
+  font-family: inherit;
+}
+.progression-choice-modal__options > button:hover,
+.progression-choice-modal__options > button:focus-visible { border-color: rgba(231, 185, 94, .58); background-color: rgba(231, 185, 94, .07); }
+.progression-choice-modal__options > button:focus-visible { outline: 2px solid rgba(231, 185, 94, .42); outline-offset: 2px; }
+.progression-choice-modal__options > button:disabled { opacity: .55; cursor: wait; }
+.progression-choice-modal__options > button.is-selected:disabled { border-color: rgba(105, 185, 208, .45); opacity: .8; cursor: default; }
+.progression-choice-modal__option-copy { display: grid; gap: 4px; }
+.progression-choice-modal__option-copy strong { color: #fff1c6; font: 500 21px/1.1 "Instrument Serif", Georgia, serif; }
+.progression-choice-modal__option-copy > span { color: rgba(237, 228, 208, .72); font-size: 11px; line-height: 1.45; }
+.progression-choice-modal__options > button > em { display: block; margin-top: 9px; color: rgba(105, 185, 208, .82); font-size: 9px; font-style: normal; }
+
+.progression-choice-modal__grants {
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  list-style: none;
+}
+.progression-choice-modal__grants li { padding: 5px 7px; border-radius: 7px; background: rgba(4, 11, 20, .44); }
+.progression-choice-modal__grants small { display: block; color: rgba(231, 185, 94, .55); font-size: 6px; letter-spacing: .1em; text-transform: uppercase; }
+.progression-choice-modal__grants strong { display: block; color: rgba(244, 232, 195, .84); font-size: 9px; }
+.progression-choice-modal__grants span { display: block; margin-top: 2px; color: rgba(191, 213, 214, .68); font-size: 8px; }
+.progression-choice-modal__empty { margin: 16px 0 0; color: #ffd1c6; text-align: center; }
+.progression-choice-modal > footer { margin-top: 15px; color: rgba(237, 228, 208, .55); font-size: 9px; text-align: center; }
 
 .profession-catalog,
 .profession-progress {
@@ -2421,6 +2878,131 @@
   gap: 12px;
   color: var(--game-parchment);
 }
+
+.profession-catalog__racial-card {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 13px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: inherit;
+  text-align: left;
+  border: 1px solid rgba(105, 185, 208, .25);
+  border-radius: 11px;
+  background: linear-gradient(135deg, rgba(24, 61, 76, .58), rgba(7, 16, 28, .72));
+  cursor: pointer;
+  font-family: inherit;
+}
+.profession-catalog__racial-card > span { display: grid; gap: 3px; }
+.profession-catalog__racial-card small { color: rgba(105, 185, 208, .8); font-size: 7px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+.profession-catalog__racial-card strong { color: #fff1c6; font: 500 18px/1.1 "Instrument Serif", Georgia, serif; }
+.profession-catalog__racial-card em { color: rgba(237, 228, 208, .62); font-size: 9px; font-style: normal; }
+.profession-catalog__racial-card > b { flex: 0 0 auto; color: rgba(231, 185, 94, .78); font-size: 9px; }
+
+.profession-catalog__racial-directory {
+  padding: 13px;
+  border: 1px solid rgba(105, 185, 208, .17);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(13, 35, 49, .5), rgba(4, 11, 20, .5));
+}
+.profession-catalog__racial-directory > p { margin: 4px 0 11px; color: rgba(237, 228, 208, .62); font-size: 10px; line-height: 1.45; }
+.profession-catalog__racial-directory > ul {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 5px;
+  list-style: none;
+}
+.profession-catalog__racial-directory li > button {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: inherit;
+  text-align: left;
+  border: 1px solid rgba(191, 213, 214, .1);
+  border-radius: 8px;
+  background: rgba(4, 11, 20, .36);
+  cursor: pointer;
+  font-family: inherit;
+}
+.profession-catalog__racial-directory li > button:hover,
+.profession-catalog__racial-directory li > button:focus-visible { border-color: rgba(105, 185, 208, .42); background: rgba(105, 185, 208, .07); }
+.profession-catalog__racial-directory li span { min-width: 0; display: grid; gap: 3px; }
+.profession-catalog__racial-directory li strong { color: #fff1c6; font-size: 10px; }
+.profession-catalog__racial-directory li small { color: rgba(191, 213, 214, .58); font-size: 7px; }
+.profession-catalog__racial-directory li b { color: rgba(105, 185, 208, .72); font-size: 10px; }
+
+.profession-progress__specialization-options {
+  width: 100%;
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+}
+.profession-progress__specialization-options button {
+  min-width: 0;
+  padding: 9px;
+  display: grid;
+  gap: 3px;
+  color: rgba(237, 228, 208, .72);
+  text-align: left;
+  border: 1px solid rgba(191, 213, 214, .12);
+  border-radius: 8px;
+  background: rgba(4, 11, 20, .34);
+  cursor: pointer;
+  font-family: inherit;
+}
+.profession-progress__specialization-options button[aria-pressed="true"] { color: #fff1c6; border-color: rgba(231, 185, 94, .48); background: rgba(231, 185, 94, .09); }
+.profession-progress__specialization-options strong { font-size: 11px; }
+.profession-progress__specialization-options span { font-size: 9px; line-height: 1.35; }
+
+.profession-progress__branch-intro { margin: 0 0 10px; color: rgba(237, 228, 208, .62); font-size: 10px; line-height: 1.5; }
+.profession-progress__branch-tree { margin: 0; padding: 0; display: grid; gap: 8px; list-style: none; }
+.profession-progress__branch-tree > li {
+  margin-left: calc(var(--branch-depth, 0) * 18px);
+  padding: 11px;
+  border: 1px solid rgba(191, 213, 214, .13);
+  border-radius: 10px;
+  background: rgba(5, 14, 24, .55);
+}
+.profession-progress__branch-tree > li.is-pending { border-color: rgba(231, 185, 94, .55); box-shadow: inset 0 0 0 1px rgba(231, 185, 94, .08); }
+.profession-progress__branch-tree > li.is-locked { opacity: .55; }
+.profession-progress__branch-tree > li > header { position: relative; display: grid; gap: 3px; }
+.profession-progress__branch-tree > li > header > span { color: rgba(105, 185, 208, .74); font-size: 7px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.profession-progress__branch-tree > li > header > strong { color: #fff1c6; font: 500 17px/1.1 "Instrument Serif", Georgia, serif; }
+.profession-progress__branch-tree > li > header > p { margin: 0; color: rgba(237, 228, 208, .65); font-size: 9px; line-height: 1.4; }
+.profession-progress__branch-tree > li > header > em { color: rgba(231, 185, 94, .82); font-size: 8px; font-style: normal; }
+.profession-progress__branch-tree > li > div { margin-top: 8px; display: grid; gap: 5px; }
+.profession-progress__branch-tree > li > div > button {
+  padding: 9px;
+  display: grid;
+  gap: 3px;
+  color: rgba(237, 228, 208, .75);
+  text-align: left;
+  border: 1px solid rgba(191, 213, 214, .1);
+  border-radius: 8px;
+  background: rgba(12, 32, 45, .5);
+  cursor: pointer;
+  font-family: inherit;
+}
+.profession-progress__branch-tree > li > div > button[aria-pressed="true"] { border-color: rgba(231, 185, 94, .5); background: rgba(231, 185, 94, .08); }
+.profession-progress__branch-tree > li > div > button:disabled { cursor: default; }
+.profession-progress__branch-tree > li > div > button > strong { font-size: 11px; }
+.profession-progress__branch-tree > li > div > button > span { font-size: 9px; line-height: 1.35; }
+
+.profession-progress__grant-list { margin: 7px 0 0; padding: 0; display: grid; gap: 5px; list-style: none; }
+.profession-progress__grant-list.is-compact { display: flex; flex-wrap: wrap; }
+.profession-progress__grant-list li { padding: 6px 7px; border: 1px solid rgba(105, 185, 208, .13); border-radius: 7px; background: rgba(4, 11, 20, .38); }
+.profession-progress__grant-list small { display: block; color: rgba(105, 185, 208, .7); font-size: 6px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.profession-progress__grant-list strong { display: block; color: rgba(244, 232, 195, .85); font-size: 9px; }
+.profession-progress__grant-list span { display: block; margin-top: 2px; color: rgba(237, 228, 208, .58); font-size: 8px; line-height: 1.3; }
 
 .profession-catalog__intro {
   padding: 2px 2px 5px;
@@ -3015,8 +3597,7 @@
 
   .map-loader__mark,
   .map-loader__track span,
-  .journey-loader__mark,
-  .journey-loader__track i,
+  .loading-dots > div,
   .panel-deck-backdrop,
   .panel-deck {
     animation: none !important;

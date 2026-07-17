@@ -175,7 +175,7 @@ describe("applyCombatResult / applyLoot (combat → campaign-state fold)", () =>
     const thrall = next.world.codex.characters["thrall-test"];
 
     expect(next.party).toContain("thrall-test");
-    expect(thrall).toMatchObject({ profession: "soldier", archetype: "marsh-raider" });
+    expect(thrall).toMatchObject({ profession: "fighter", archetype: "marsh-raider" });
     expect(progressionLevel(thrall)).toBeGreaterThan(0);
     expect(thrall).not.toHaveProperty("health");
     expect(thrall.combatState).toMatchObject({

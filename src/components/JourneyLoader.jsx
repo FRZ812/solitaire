@@ -1,5 +1,6 @@
 import React from "react";
 import { InitialBackdrop } from "./InitialBackdrop.jsx";
+import { LoadingDots } from "./primitives.jsx";
 
 function LoaderMark() {
   return (
@@ -23,7 +24,7 @@ export function JourneyLoader({
         <p>Solitaire</p>
         <h1>{title}</h1>
         <span>{detail}</span>
-        <div className="journey-loader__track" aria-hidden="true"><i /></div>
+        <div className="journey-loader__activity" aria-hidden="true"><LoadingDots /></div>
       </section>
     </main>
   );
@@ -38,7 +39,7 @@ export function JourneyResumeOverlay() {
           <strong>Restoring your journey</strong>
           <span>Checking for newer progress</span>
         </div>
-        <div className="journey-loader__track" aria-hidden="true"><i /></div>
+        <div className="journey-loader__activity" aria-hidden="true"><LoadingDots /></div>
       </div>
     </div>
   );

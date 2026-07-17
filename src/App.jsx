@@ -32,7 +32,7 @@ import { equipItem, transferItem, unequipItem } from "./engine/inventory.js";
 import { buyGood, sellGood, formatCopper, coinsToCopper } from "./engine/economy.js";
 import { useConsumable } from "./engine/consumables.js";
 import { lightTorch, lightLantern, extinguish, applyRest } from "./engine/tools.js";
-import { inTheDark, isNight, isLit, isHidden, isBeacon, sightRadius } from "./engine/light.js";
+import { inTheDark, isNight, isLit, isHidden, isBeacon, locationLightStatus, sightRadius } from "./engine/light.js";
 import { applyForge, applyApprentice, blacksmithRank } from "./engine/forge.js";
 import { applyFusionToItem, fusionOptionsForRune } from "./engine/fusion.js";
 import { generateBoard, acceptTask, abandonTask, applyDayLabour } from "./engine/quests.js";
@@ -67,6 +67,14 @@ import { regionDifficulty } from "./data/regions.js";
 import { initCombat, playCard, setTarget, endPlayerTurn, playerFlee, playerStandDown, playerCeasefire } from "./engine/combat.js";
 import { hashSeed } from "./engine/combat-rng.js";
 import { applyCombatResult, applyLoot } from "./engine/combat-result.js";
+import {
+  pendingProgressionChoices,
+  projectCharacterProgression,
+  resolveLevelAllocationChoice,
+  resolveProfessionChoice,
+  resolveProgressionGrantChoice,
+  resolveRacialProgressionChoice,
+} from "./engine/progression.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 import { poiPlaceName } from "./engine/location.js";
 
@@ -98,6 +106,7 @@ import { InitialBackdrop } from "./components/InitialBackdrop.jsx";
 import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
+import { ProgressionChoiceModal } from "./components/ProgressionChoiceModal.jsx";
 import { Icon } from "./components/Icon.jsx";
 import { JourneyLoader, JourneyResumeOverlay } from "./components/JourneyLoader.jsx";
 import { advanceLiveNarrator, emptyLiveNarrator } from "./engine/live-narrator.js";
@@ -1016,6 +1025,11 @@ export function Solitaire() {
         abilities: setup.abilities || [], race: setup.race, subrace: setup.subrace || null,
         proficiencies: setup.proficiencies || {},
         progression: setup.progression || null,
+        level: setup.level ?? null,
+        racial_levels: setup.racial_levels ?? setup.racialLevels ?? null,
+        profession_plan: setup.profession_plan ?? setup.professionPlan ?? null,
+        signature_spell: setup.signature_spell ?? setup.signatureSpell ?? null,
+        metamagic: setup.metamagic ?? setup.progressionChoices?.metamagic ?? null,
         origin: setup.origin, profession: setup.profession, archetype: setup.archetype || null, gender: setup.gender,
         age: setup.age, agingMode: setup.agingMode, lifespanMultiplier: setup.lifespanMultiplier,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
@@ -1050,6 +1064,61 @@ export function Solitaire() {
     const calling = setup.archetype ? `${setup.archetype} ${setup.profession || "wanderer"}` : (setup.profession || "wanderer");
     const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${calling}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving INSIDE the walled capital of Whitemarch, in the press and clamour of the Grand Market's Grain Square (the city's heart, behind the Great Wall), grounding the scene in who they are, their origin, and what (from the backstory) has brought them to the city, then proceed as a normal first beat.`;
     await runNarratorTurn(built, opener);
+  }
+
+  // Threshold decisions are resolved locally against the versioned ledger.
+  // The narrator can describe the consequence later, but it can never choose a
+  // school, specialization, signature spell, or metamagic for the player.
+  function handleProgressionChoice(professionId, choiceId, optionId) {
+    setState((current) => {
+      const pending = pendingProgressionChoices(current.character).find((entry) => (
+        entry.id === choiceId && (!professionId || entry.professionId === professionId)
+      ));
+      if (!pending) return current;
+      // Multi-pick grants remain pending between selections. A fast double
+      // activation can therefore enqueue the same option twice before React
+      // paints its disabled state; treat that second activation as a no-op.
+      if ((pending.selectedOptions || []).includes(optionId)) return current;
+      const character = {
+        ...current.character,
+        attributes: { ...(current.character.attributes || {}) },
+        progression: current.character.progression,
+      };
+      let progression;
+      if (pending.kind === "level-allocation") {
+        progression = resolveLevelAllocationChoice(character, { choiceId, optionId });
+      } else if (pending.kind === "branch") {
+        progression = resolveProfessionChoice(character.progression, { professionId, choiceId, optionId });
+      } else if (pending.kind === "racial-branch") {
+        progression = resolveRacialProgressionChoice(character.progression, { choiceId, optionId });
+      } else {
+        progression = resolveProgressionGrantChoice(character.progression, { professionId, grantId: choiceId, optionId });
+      }
+      const option = (pending.options || []).find((entry) => (
+        (typeof entry === "string" ? entry : (entry.id || entry.optionId)) === optionId
+      ));
+      const optionLabel = typeof option === "string"
+        ? option.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+        : option?.name || option?.label || optionId;
+      const professionLabel = String(professionId || pending.raceId || "character")
+        .replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+      const choiceLabel = pending.kind === "level-allocation"
+        ? `Level ${pending.level} allocated`
+        : pending.kind === "racial-branch"
+          ? "racial specialization"
+          : pending.kind === "branch" ? "specialization" : "progression";
+      const next = projectCharacterProgression({
+        ...current,
+        character: { ...character, progression },
+        beats: [...(current.beats || []), {
+          id: `progression-choice-${Date.now()}`,
+          type: "growth",
+          text: `${professionLabel} ${choiceLabel} — ${optionLabel}`,
+        }],
+      });
+      liveStateRef.current = next;
+      return next;
+    });
   }
 
   function handleRetry() {
@@ -1941,6 +2010,7 @@ export function Solitaire() {
       ownedUniques: ownedUniqueIds(st),
       coinBonus: wp.coinBonus || 0,
       dark: inTheDark(st),
+      sunlight: locationLightStatus(st).source === "daylight",
       weary: hasCondition(st.character.conditions, "Exhausted"),
       allies,
       ...extraOpts,
@@ -2228,6 +2298,9 @@ export function Solitaire() {
   const inLimbo = state.created === false;
   const showCreationHub = inLimbo && !creationEntered && !state.beats.some((b) => b.type === "player");
   const queuedPlayerCount = pendingPlayerBeats(state).length;
+  const pendingProgressionChoice = state.created !== false
+    ? (pendingProgressionChoices(state.character)[0] || null)
+    : null;
 
   return (
     <div className="game-shell" style={{
@@ -2466,6 +2539,7 @@ export function Solitaire() {
             onLinkEmail: linkEmail,
             onScry: handleScry, onTrackCharacter: handleTrackCharacter, onRenameMount: handleRenameMount,
             onPortraitChange: handlePortraitChange,
+            onChooseProgression: handleProgressionChoice,
             // Settings
             onUpdateNarratorSettings: handleUpdateNarratorSettings,
             onUpdateMemories: handleUpdateMemories,
@@ -2477,6 +2551,13 @@ export function Solitaire() {
             onRest: (h) => { setDeckOpen(false); handleRest(h); },
             onBindRune: (id) => { setDeckOpen(false); setFusionRune(id); },
           }}
+        />
+      )}
+      {pendingProgressionChoice && (
+        <ProgressionChoiceModal
+          choice={pendingProgressionChoice}
+          busy={loading}
+          onChoose={(choiceId, optionId) => handleProgressionChoice(pendingProgressionChoice.professionId, choiceId, optionId)}
         />
       )}
       {fusionRune && (

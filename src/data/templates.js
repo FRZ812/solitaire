@@ -3,15 +3,9 @@
 // stat spread, starting abilities, and canonical gear. Arrival narration is
 // generated from these authored hooks so the people remain specific in play.
 //
-// Templates are arranged on a POWER LADDER via `tier`:
-//   standard  — the intended start; an ordinary life the Mire can bite.
-//   mid       — road-tested (Ysolde the hedge-mage anchors this rung).
-//   epic      — a champion; a softer, faster game.
-//   legendary — renowned across the land.
-//   mythical  — near-divine; the early world cannot hold you.
-//   divine    — a god walks; pure power fantasy.
-// Standard is balanced for the opening region; everything above begins you
-// already powerful, on purpose. The CreationHub groups the list by tier.
+// Every ready-made character owns an authored starting level. Internal power
+// bands may still help encounter balance, but they never determine the level or
+// appear as a character-facing label in the campaign roster.
 //
 // Names/appearance/origin follow the world's CULTURES (system-prompt). Every id
 // here is a real catalog/ability id; the engine drops unknown items and clamps
@@ -19,9 +13,9 @@
 
 import { abilityCategoryOf, getAbilityDef } from "./abilities.js";
 import { xpForRating } from "./proficiencies.js";
+import { TEMPLATE_RACIAL_BRANCH_CHOICES } from "./template-racial-branches.js";
 import {
-  professionBuild, progressionAtLevel, progressionXpForLevel,
-  STARTING_LEVEL_BY_POWER_TIER,
+  compileCharacterProgression, progressionXpForLevel,
 } from "./progression-paths.js";
 
 export const STANDARD_PROVISIONS = [
@@ -31,6 +25,204 @@ export const STANDARD_PROVISIONS = [
   { itemId: "tinderbox", quantity: 1 },
   { itemId: "bedroll", quantity: 1 },
 ];
+
+// Deliberately uneven individual levels. No campaign character is snapped to a
+// shared tier anchor; the number follows their own history and demonstrated
+// mastery. These totals are later divided between a 0–30 racial ledger and a
+// shared 0–70 profession ledger by the progression compiler.
+export const AUTHORED_TEMPLATE_LEVELS = Object.freeze({
+  sellsword: 8,
+  devout: 11,
+  reaver: 13,
+  ranger: 15,
+  "court-envoy": 17,
+  cutthroat: 19,
+  "confidence-artist": 20,
+  "hedge-mage": 23,
+  "knight-errant": 26,
+  "war-priest": 29,
+  duelist: 32,
+  "beast-warden": 35,
+  "guild-advocate": 38,
+  "velvet-courtier": 40,
+  "war-captain": 43,
+  "battle-archmage": 49,
+  shadowblade: 54,
+  "champion-paladin": 59,
+  "dragon-hunter": 62,
+  "high-sorcerer": 65,
+  warlord: 68,
+  "fae-touched": 70,
+  "archmage-ascendant": 75,
+  "undying-champion": 81,
+  "demon-warlock": 85,
+  "dragon-ascendant": 92,
+  "enchanter-tyrant": 99,
+});
+
+// The portrait/template id remains the exact specialization; the outward
+// profession is a broad calling shared by many specializations.
+export const TEMPLATE_PROFESSION_IDS = Object.freeze({
+  sellsword: "fighter",
+  reaver: "barbarian",
+  ranger: "ranger",
+  cutthroat: "rogue",
+  devout: "cleric",
+  "court-envoy": "diplomat",
+  "confidence-artist": "courtier",
+  "hedge-mage": "wizard",
+  "knight-errant": "paladin",
+  "war-priest": "cleric",
+  duelist: "fighter",
+  "beast-warden": "ranger",
+  "guild-advocate": "diplomat",
+  "velvet-courtier": "courtier",
+  "war-captain": "commander",
+  "battle-archmage": "wizard",
+  shadowblade: "rogue",
+  "champion-paladin": "paladin",
+  "dragon-hunter": "ranger",
+  "high-sorcerer": "sorcerer",
+  warlord: "commander",
+  "fae-touched": "warlock",
+  "archmage-ascendant": "wizard",
+  "undying-champion": "fighter",
+  "demon-warlock": "warlock",
+  "dragon-ascendant": "sorcerer",
+  "enchanter-tyrant": "wizard",
+});
+
+// The two ledgers are authored independently as well. Kindred whose identity is
+// strongly supernatural invest more heavily in metamorphosis, while most human
+// lives remain profession-led. The remainder of each character's exact total is
+// distributed across the profession plan below; no hidden tier preset is used.
+export const TEMPLATE_RACIAL_LEVELS = Object.freeze({
+  sellsword: 1,
+  devout: 2,
+  reaver: 5,
+  ranger: 5,
+  "court-envoy": 2,
+  cutthroat: 2,
+  "confidence-artist": 6,
+  "hedge-mage": 3,
+  "knight-errant": 4,
+  "war-priest": 4,
+  duelist: 5,
+  "beast-warden": 5,
+  "guild-advocate": 6,
+  "velvet-courtier": 6,
+  "war-captain": 7,
+  "battle-archmage": 8,
+  shadowblade: 9,
+  "champion-paladin": 10,
+  "dragon-hunter": 11,
+  "high-sorcerer": 12,
+  warlord: 18,
+  "fae-touched": 21,
+  "archmage-ascendant": 14,
+  "undying-champion": 18,
+  "demon-warlock": 26,
+  "dragon-ascendant": 30,
+  "enchanter-tyrant": 29,
+});
+
+const multiclassPlan = (primaryId, primaryLevels, secondaryId, secondaryLevels, secondarySpecialization) => Object.freeze([
+  Object.freeze({ professionId: primaryId, levels: primaryLevels }),
+  Object.freeze({ professionId: secondaryId, specializationId: secondarySpecialization, levels: secondaryLevels }),
+]);
+
+// Only identities whose fiction genuinely spans two disciplines multiclass.
+// Everyone else may still invest all earned profession ranks into one calling.
+export const TEMPLATE_MULTICLASS_PLANS = Object.freeze({
+  "war-priest": multiclassPlan("cleric", 17, "fighter", 8, "iron-vanguard"),
+  "guild-advocate": multiclassPlan("diplomat", 23, "scholar", 9, "jurist"),
+  "war-captain": multiclassPlan("commander", 24, "fighter", 12, "iron-vanguard"),
+  "battle-archmage": multiclassPlan("wizard", 29, "fighter", 12, "sellsword"),
+  shadowblade: multiclassPlan("rogue", 30, "wizard", 15, "shadow-mage"),
+  "champion-paladin": multiclassPlan("paladin", 35, "fighter", 14, "iron-vanguard"),
+  "dragon-hunter": multiclassPlan("ranger", 37, "fighter", 14, "iron-vanguard"),
+  warlord: multiclassPlan("commander", 36, "fighter", 14, "iron-vanguard"),
+  "dragon-ascendant": multiclassPlan("sorcerer", 48, "fighter", 14, "iron-vanguard"),
+  "enchanter-tyrant": multiclassPlan("wizard", 52, "ruler", 18, "sovereign-will"),
+});
+
+export const TEMPLATE_SORCERER_CHOICES = Object.freeze({
+  "high-sorcerer": Object.freeze({
+    signatureSpellId: "tempest",
+    signatureExchanges: Object.freeze({ 25: "meteor", 45: "tempest" }),
+    metamagicIds: Object.freeze(["empowered-signature", "shaped-signature", "quickened-signature", "piercing-signature", "perfected-signature"]),
+    grantSelections: Object.freeze({
+      "sorcerer-secondary-spell": Object.freeze(["fireball"]),
+      "sorcerer-tertiary-spell": Object.freeze(["chain-lightning"]),
+      "sorcerer-final-repertoire-spell": Object.freeze(["lightning-bolt"]),
+      "sorcerer:weave-spell-i": Object.freeze(["frost-lance"]),
+      "sorcerer:weave-spell-ii": Object.freeze(["combust"]),
+      "sorcerer:weave-spell-iii": Object.freeze(["firebolt"]),
+    }),
+    metamagicProfiles: Object.freeze({
+      "woven-spell-i": Object.freeze(["quickened-signature"]),
+      "woven-spell-ii": Object.freeze(["shaped-signature"]),
+      "woven-spell-iii": Object.freeze(["transmuted-signature"]),
+    }),
+  }),
+  "dragon-ascendant": Object.freeze({
+    signatureSpellId: "fireball",
+    signatureExchanges: Object.freeze({ 25: "fireball", 45: "fireball" }),
+    metamagicIds: Object.freeze(["empowered-signature", "shaped-signature", "quickened-signature", "transmuted-signature", null, null, "subtle-signature", "triggered-signature"]),
+    grantSelections: Object.freeze({
+      "sorcerer-secondary-spell": Object.freeze(["combust"]),
+      "sorcerer-tertiary-spell": Object.freeze(["lightning-bolt"]),
+      "sorcerer-final-repertoire-spell": Object.freeze(["chain-lightning"]),
+    }),
+  }),
+});
+
+// Ready-made identities that have already crossed a branch threshold retain
+// the choices implied by their authored title. Characters created manually
+// leave these empty and receive the threshold prompt in play.
+export const TEMPLATE_BRANCH_CHOICES = Object.freeze({
+  "war-priest": Object.freeze({ "sacred-domain": "war" }),
+  duelist: Object.freeze({ "warrior-specialization": "duelist" }),
+  "war-captain": Object.freeze({ "warrior-specialization": "iron-vanguard" }),
+  "hedge-mage": Object.freeze({ "wizard-school": "universalist" }),
+  "battle-archmage": Object.freeze({ "wizard-school": "evocation", "warrior-specialization": "sellsword" }),
+  shadowblade: Object.freeze({ "wizard-school": "illusion" }),
+  "champion-paladin": Object.freeze({ "warrior-specialization": "iron-vanguard" }),
+  "dragon-hunter": Object.freeze({ "warrior-specialization": "iron-vanguard" }),
+  warlord: Object.freeze({ "warrior-specialization": "iron-vanguard" }),
+  "archmage-ascendant": Object.freeze({
+    "wizard-school": "universalist",
+    "universalist-discipline": "polymath",
+    "polymath-mastery": "living-spellbook",
+  }),
+  "enchanter-tyrant": Object.freeze({
+    "wizard-school": "enchantment",
+    "enchantment-discipline": "dominator",
+    "dominator-mastery": "puppet-master",
+  }),
+  "high-sorcerer": Object.freeze({
+    "sorcerous-focus": "specialized-spellweaver",
+    "spellweaver-discipline": "constellation-weaver",
+    "constellation-weaver-apotheosis": "grand-constellation",
+  }),
+  "dragon-ascendant": Object.freeze({
+    "sorcerous-focus": "singular-savant",
+    "singular-savant-discipline": "overwhelming-signature",
+    "warrior-specialization": "iron-vanguard",
+  }),
+  "undying-champion": Object.freeze({
+    "warrior-specialization": "undying-champion",
+    "undying-champion-method": "last-stand-exemplar",
+    "last-stand-apotheosis": "deathless-victor",
+  }),
+});
+
+export const TEMPLATE_WIZARD_GRANT_SELECTIONS = Object.freeze({
+  "archmage-ascendant": Object.freeze({
+    "wizard:polymath-spell": "blizzard",
+    "wizard:living-spellbook-formulae": Object.freeze(["chain-lightning", "tempest"]),
+  }),
+});
 
 const worn = (itemId, quantity = 1) => ({ itemId, quantity, worn: true });
 const packed = (itemId, quantity = 1) => ({ itemId, quantity, worn: false });
@@ -153,8 +345,8 @@ const CHARACTER_HOOKS = Object.freeze({
   },
   "undying-champion": {
     voice: "Sardonic northern warmth, impatient with prophecy and reverent only toward ordinary stubbornness.",
-    complication: "Each return from death costs one beloved memory, and she can no longer recall the face for whom she first took up the sword.",
-    signature: "Numbers new scars aloud, then leaves a deliberate gap for the wound that killed her.",
+    complication: "Repeated trauma and brutal recoveries have begun erasing beloved memories, and she can no longer recall the face for whom she first took up the sword.",
+    signature: "Numbers new scars aloud, then leaves a deliberate gap for the wound no physician expected her to survive.",
   },
   "demon-warlock": {
     voice: "Immaculate young-court courtesy with a prince's effortless entitlement; sincerity appears only when the polish briefly cracks.",
@@ -192,7 +384,7 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
       attributes: { body: 5, reflex: 3, vigor: 5, mind: 1, wit: 2, presence: 2 },
       appearance: { skin: "weathered tan", hair: "dark brown", eyes: "brown", build: "broad and scarred", facial_hair: "short unkempt beard" },
       base_appearance: "A broad-shouldered frontier veteran, olive-tanned and wind-cured, with a soldier's economy of movement and a nose set crooked from an old break.",
-      abilities: [{ id: "power-strike", tier: "common" }, { id: "bulwark-stance", tier: "uncommon" }, { id: "second-wind", tier: "uncommon" }],
+      abilities: [{ id: "warrior-measured-strike", tier: "common" }, { id: "warrior-guarded-cut", tier: "uncommon" }],
       items: [worn("arming-sword"), worn("chain-shirt"), worn("iron-helm"), worn("round-shield"), worn("traveling-cloak"), worn("marching-boots"), packed("whetstone")],
       coins: { gold: 1, silver: 8 },
       knows: ["Has soldiered in three border wars and survived all three."],
@@ -215,7 +407,7 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
       attributes: { body: 6, reflex: 3, vigor: 5, mind: 1, wit: 2, presence: 1 },
       appearance: { skin: "ashen green", hair: "black topknot", eyes: "yellow", build: "huge and corded" },
       base_appearance: "A mountain of a half-orc. Ashen-green skin, black topknot, yellow eyes. Tusks chipped, knuckles scarred, hands that look like they could weigh nothing.",
-      abilities: [{ id: "power-strike", tier: "common" }, { id: "rend", tier: "uncommon" }, { id: "second-wind", tier: "uncommon" }],
+      abilities: [{ id: "barbarian-brutal-swing", tier: "common" }, { id: "barbarian-bait-the-blow", tier: "uncommon" }],
       items: [worn("battle-axe"), worn("leather-jerkin"), worn("fur-cloak"), worn("marching-boots")],
       coins: { gold: 1, silver: 2 },
       knows: ["Was raised among humans who never let him forget what he was."],
@@ -434,7 +626,7 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
       attributes: { body: 4, reflex: 7, vigor: 4, mind: 2, wit: 5, presence: 3 },
       appearance: { skin: "olive", hair: "black, pinned up", eyes: "dark", build: "lithe" },
       base_appearance: "A lithe, sharp-eyed duelist. Olive skin, black hair pinned up, dark eyes. A fencer's poise; a smile filed to an edge.",
-      abilities: [{ id: "rapid-jabs", tier: "uncommon" }, { id: "feint", tier: "uncommon" }, { id: "lunge", tier: "uncommon" }, { id: "shadowstep", tier: "rare" }],
+      abilities: [{ id: "warrior-measured-strike", tier: "uncommon" }, { id: "warrior-weapon-bind", tier: "uncommon" }, { id: "warrior-turning-parry", tier: "uncommon" }, { id: "warrior-riposte-guard", tier: "rare" }],
       items: [worn("sabre-estoc"), worn("leather-jerkin"), worn("traveling-cloak"), worn("marching-boots")],
       coins: { gold: 2, silver: 10 },
       knows: ["Has never lost a formal duel — and never let anyone forget it."],
@@ -655,7 +847,9 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
       attributes: { body: 4, reflex: 6, vigor: 9, mind: 15, wit: 12, presence: 10 },
       appearance: { skin: "pale", hair: "white", eyes: "colourless", build: "thin and straight", facial_hair: "long white beard" },
       base_appearance: "An austere, white-bearded sorcerer. Pale, thin and straight; white hair, colourless eyes, a long white beard. Carries himself as one the rain itself declines to touch.",
-      abilities: [{ id: "meteor", tier: "legendary" }, { id: "disintegrate", tier: "legendary" }, { id: "chain-lightning", tier: "legendary" }, { id: "time-stop", tier: "legendary" }, { id: "mana-shield", tier: "legendary" }],
+      // Meteor is Veylan's signature rather than one entry in a wizard-sized
+      // spellbook; his depth comes from metamagic applied to this working.
+      abilities: [{ id: "meteor", tier: "legendary" }],
       items: [worn("archon-scepter"), worn("elven-mail"), worn("scholars-circlet"), worn("traveling-cloak"), worn("marching-boots")],
       coins: { gold: 50, silver: 0 },
       knows: ["Trained a generation of the Glass Spire's finest, then surpassed them all."],
@@ -737,22 +931,22 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
     label: "Undying Champion",
     role: "Bruiser",
     tier: "mythical",
-    concept: "The hero the grave keeps refusing to keep.",
-    story: "Sigrun Vald has died, by reliable count, four times, and got up four times with the sword still in her hand. The chroniclers have stopped writing endings for her.",
+    concept: "The veteran every battlefield has failed to finish.",
+    story: "Sigrun Vald has been left for dead on four battlefields and dragged herself back from each through months of surgery, conditioning, and merciless retraining. The chroniclers have stopped writing endings for her.",
     highlights: ["Vigor", "Body"],
     setup: {
       name: "Sigrun Vald",
       profession: "champion",
       race: "human", subrace: null, origin: "north", gender: "female",
       age: 50, agingMode: "power-extended", lifespanMultiplier: 3.0, attractiveness: 6,
-      bond: "The grave keeps refusing me — so I keep walking.",
+      bond: "Death has missed me four times — I do not intend to help it aim.",
       attributes: { body: 18, reflex: 12, vigor: 18, mind: 6, wit: 12, presence: 14 },
       appearance: { skin: "scarred pale", hair: "ash-blonde, shorn", eyes: "winter-grey", build: "powerful and marked" },
       base_appearance: "A grey-scarred northern champion the firelight shrinks from. Powerful and marked, scarred-pale skin, ash-blonde hair shorn, winter-grey eyes.",
-      abilities: [{ id: "power-strike", tier: "mythical" }, { id: "whirlwind", tier: "mythical" }, { id: "execute", tier: "mythical" }, { id: "unbreakable-will", tier: "mythical" }, { id: "second-wind", tier: "mythical" }],
+      abilities: [{ id: "warrior-masterstroke", tier: "mythical" }, { id: "warrior-iron-sequence", tier: "mythical" }, { id: "warrior-veteran-reversal", tier: "mythical" }, { id: "warrior-second-breath", tier: "mythical" }, { id: "warrior-last-stand", tier: "mythical" }],
       items: [worn("deathless-greatsword"), worn("starsteel-mail"), worn("fur-cloak"), worn("marching-boots")],
       coins: { gold: 70, silver: 0 },
-      knows: ["Has died four times by reliable count, and risen four times."],
+      knows: ["Has been left for dead four times by reliable count, and survived every recovery."],
     },
   },
   {
@@ -797,7 +991,7 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
       attributes: { body: 26, reflex: 18, vigor: 28, mind: 16, wit: 18, presence: 24 },
       appearance: { skin: "scaled bronze", hair: "molten gold", eyes: "slit, furnace-bright", build: "tall and terrible", marks: "ridged scale along jaw and forearms" },
       base_appearance: "A tall, bronze-scaled dragon-blood. Molten-gold hair, slit furnace-bright eyes, ridged scale along jaw and forearms. A stillness the room's every instinct reads as predator.",
-      abilities: [{ id: "dragon-breath", tier: "divine" }, { id: "power-strike", tier: "divine" }, { id: "whirlwind", tier: "divine" }, { id: "beast-shift", tier: "divine" }, { id: "unbreakable-will", tier: "divine" }],
+      abilities: [{ id: "fireball", tier: "divine" }, { id: "dragon-breath", tier: "divine" }, { id: "warrior-guarded-cut", tier: "divine" }, { id: "warrior-braced-advance", tier: "divine" }, { id: "beast-shift", tier: "divine" }, { id: "warrior-passing-step", tier: "divine" }],
       items: [worn("wyrmscale-greatblade"), worn("aegis-plate"), worn("crown-dominion-helm"), worn("vigil-mantle-cloak"), worn("heart-world-amulet")],
       coins: { gold: 200, silver: 0 },
       knows: ["Carries the true, woken blood of the Vyrgun dragon-line."],
@@ -828,21 +1022,98 @@ const CHARACTER_TEMPLATE_DEFINITIONS = [
   },
 ];
 
+function allocatedRanks(rows, levels) {
+  const ranks = {};
+  for (const row of rows.slice(0, levels)) ranks[row.pathId] = row.rank;
+  return ranks;
+}
+
+function cloneTrackChoices(choices = {}) {
+  return {
+    ...choices,
+    ...(Array.isArray(choices.metamagicIds) ? { metamagicIds: [...choices.metamagicIds] } : {}),
+    ...(choices.grantSelections ? {
+      grantSelections: Object.fromEntries(Object.entries(choices.grantSelections).map(([id, value]) => [id, Array.isArray(value) ? [...value] : value])),
+    } : {}),
+    ...(choices.signatureExchanges ? { signatureExchanges: { ...choices.signatureExchanges } } : {}),
+    ...(choices.metamagicProfiles ? {
+      metamagicProfiles: Object.fromEntries(Object.entries(choices.metamagicProfiles).map(([id, value]) => [id, Array.isArray(value) ? [...value] : value])),
+    } : {}),
+  };
+}
+
+function templateProfessionPlan(template, professionLevels, primaryProfessionId, specializationId) {
+  const authored = TEMPLATE_MULTICLASS_PLANS[template.id];
+  const plan = (authored || [{ professionId: primaryProfessionId, levels: professionLevels }]).map((entry, index) => {
+    const professionId = entry.professionId;
+    const sorcererChoices = professionId === "sorcerer" ? TEMPLATE_SORCERER_CHOICES[template.id] : null;
+    const wizardSelections = professionId === "wizard" ? TEMPLATE_WIZARD_GRANT_SELECTIONS[template.id] : null;
+    return {
+      professionId,
+      specializationId: entry.specializationId || (index === 0 ? specializationId : null),
+      levels: entry.levels,
+      choices: {
+        ...(sorcererChoices || {}),
+        ...(wizardSelections ? { grantSelections: wizardSelections } : {}),
+      },
+      branchChoices: { ...(TEMPLATE_BRANCH_CHOICES[template.id] || {}) },
+    };
+  });
+  const planned = plan.reduce((sum, entry) => sum + entry.levels, 0);
+  if (planned !== professionLevels) throw new Error(`${template.id} profession plan allocates ${planned}, expected ${professionLevels}`);
+  return plan;
+}
+
 export const CHARACTER_TEMPLATES = Object.freeze(CHARACTER_TEMPLATE_DEFINITIONS.map((template) => {
-  const professionPath = professionBuild(template.setup.profession);
-  const archetype = template.setup.archetype
-    ?? (template.id !== template.setup.profession ? template.id : professionPath?.archetypePathId);
-  const startingLevel = STARTING_LEVEL_BY_POWER_TIER[template.tier] || 1;
-  const sidePath = template.setup.race === "human" ? "utility" : "racial";
-  const startingProgression = progressionAtLevel(template.setup.profession, startingLevel, { sidePath, archetypeId: archetype });
-  const casterRating = {
-    standard: 1,
-    mid: 3,
-    epic: 6,
-    legendary: 9,
-    mythical: 12,
-    divine: 15,
-  }[template.tier] || 1;
+  const startingLevel = AUTHORED_TEMPLATE_LEVELS[template.id];
+  if (!startingLevel) throw new Error(`Missing authored level for ${template.id}`);
+  const primaryProfessionId = TEMPLATE_PROFESSION_IDS[template.id];
+  if (!primaryProfessionId) throw new Error(`Missing generalized profession for ${template.id}`);
+  const specializationId = template.setup.archetype
+    ?? (template.id !== primaryProfessionId ? template.id : null);
+  const racialLevels = Math.min(startingLevel, TEMPLATE_RACIAL_LEVELS[template.id] ?? 0);
+  const professionLevels = startingLevel - racialLevels;
+  const professionPlan = templateProfessionPlan(template, professionLevels, primaryProfessionId, specializationId);
+  const projection = compileCharacterProgression({
+    professions: professionPlan,
+    racial: {
+      raceId: template.setup.race,
+      evolutionId: template.setup.subrace || null,
+      levels: racialLevels,
+      branchChoices: TEMPLATE_RACIAL_BRANCH_CHOICES[template.id] || {},
+    },
+  });
+  const professionTracks = projection.professions.map((compiled, index) => {
+    const allocation = professionPlan[index];
+    return {
+      professionId: allocation.professionId,
+      specializationId: allocation.specializationId,
+      paths: allocatedRanks(compiled.levels, allocation.levels),
+      choices: cloneTrackChoices(allocation.choices),
+      branchChoices: { ...compiled.branchChoices },
+    };
+  });
+  const racialTrack = {
+    raceId: template.setup.race,
+    evolutionId: template.setup.subrace || projection.racial?.evolutionId || null,
+    paths: allocatedRanks(projection.racial?.levels || [], racialLevels),
+    choices: {},
+    branchChoices: { ...(TEMPLATE_RACIAL_BRANCH_CHOICES[template.id] || projection.racial?.branchChoices || {}) },
+  };
+  const compatibilityPaths = Object.assign({}, racialTrack.paths, ...professionTracks.map((track) => track.paths));
+  const progression = {
+    version: 2,
+    activeProfessionId: primaryProfessionId,
+    professionId: primaryProfessionId,
+    archetypeId: specializationId,
+    xp: progressionXpForLevel(startingLevel),
+    unspentLevels: 0,
+    professions: professionTracks,
+    racial: racialTrack,
+    paths: compatibilityPaths,
+  };
+  const sorcererChoices = TEMPLATE_SORCERER_CHOICES[template.id];
+  const casterRating = Math.max(1, Math.min(15, Math.ceil(startingLevel / 7)));
   const isTrainedCaster = (template.setup.abilities || []).some((ability) => (
     abilityCategoryOf(getAbilityDef(typeof ability === "string" ? ability : ability.id)) === "spell"
   ));
@@ -858,18 +1129,22 @@ export const CHARACTER_TEMPLATES = Object.freeze(CHARACTER_TEMPLATE_DEFINITIONS.
       // allocated route. Future ranks therefore arrive at the same level-100
       // attributes shown in the Profession Codex instead of starting from a
       // disconnected legacy spread and permanently undershooting it.
-      attributes: { ...(startingProgression?.attributes || template.setup.attributes) },
-      ...(archetype ? { archetype } : {}),
-      ...(startingProgression ? {
-        progression: {
-          version: 1,
-          professionId: template.setup.profession,
-          archetypeId: archetype,
-          sidePath,
-          xp: progressionXpForLevel(startingLevel),
-          paths: { ...startingProgression.ranks },
-        },
+      profession: primaryProfessionId,
+      archetype: specializationId,
+      level: startingLevel,
+      racial_levels: racialLevels,
+      profession_plan: professionPlan.map((entry) => ({
+        profession: entry.professionId,
+        specialization: entry.specializationId,
+        levels: entry.levels,
+        branchChoices: { ...entry.branchChoices },
+      })),
+      ...(sorcererChoices ? {
+        signature_spell: sorcererChoices.signatureSpellId,
+        metamagic: [...sorcererChoices.metamagicIds],
       } : {}),
+      attributes: { ...projection.finalAttributes },
+      progression,
       ...(proficiencies ? { proficiencies } : {}),
     },
     ...(CHARACTER_HOOKS[template.id] || {}),

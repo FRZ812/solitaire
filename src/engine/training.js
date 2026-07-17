@@ -1,13 +1,13 @@
 // Expert training: pay an expert trader a fee + time to fast-track a grindy
 // proficiency by one rating step (proficiencies normally only grow through use).
-// The session also feeds the shared stacked-path level track; its trade-off is
-// steep, rating-scaled coin and hours.
+// The session also earns global character XP; the player allocates any earned
+// level afterward. Its trade-off is steep, rating-scaled coin and hours.
 
 import { ratingFromXp, proficiencyName } from "../data/proficiencies.js";
 import { advanceTime } from "./time.js";
 import { ageState } from "./aging.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
-import { advanceProgression } from "./progression.js";
+import { advanceProgression, earnedLevelGrowthText } from "./progression.js";
 
 // XP needed to reach a rating (ratingFromXp = floor(sqrt(xp/6)) → xp = 6·r²).
 const xpForRating = (r) => 6 * r * r;
@@ -44,14 +44,13 @@ export function applyTraining(state, profId, cap) {
   });
   const next = ag.state;
   const progress = advanceProgression(next.character, offer.xpGain * 10);
-  if (progress.gained.length) {
-    const latest = progress.gained.at(-1);
+  if (progress.earnedLevels > 0) {
     next.beats = [
       ...(next.beats || []),
       {
         id: `training-level-${Date.now()}`,
         type: "growth",
-        text: `Level ${progress.beforeLevel} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+        text: earnedLevelGrowthText(progress),
       },
     ];
   }

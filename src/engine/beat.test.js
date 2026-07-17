@@ -113,12 +113,12 @@ describe("applyBeat — authored character presentation", () => {
     });
     const wanderer = next.world.codex.characters.wanderer;
     expect(next.character).toMatchObject({
-      profession: "assassin", archetype: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
+      profession: "rogue", archetype: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
       proficiencies: { spellcasting: 1350 },
     });
     expect(next.character.proficiencies).not.toHaveProperty("invented");
     expect(wanderer).toMatchObject({
-      profession: "assassin", archetype: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
+      profession: "rogue", archetype: "shadowblade", templateId: "shadowblade", portraitKey: "template:shadowblade", profile,
     });
   });
 });
@@ -255,8 +255,8 @@ describe("applyBeat — golden snapshots (refactor safety net)", () => {
     });
 
     expect(next.character).toMatchObject({
-      profession: "soldier",
-      archetype: "soldier-line-veteran",
+      profession: "fighter",
+      archetype: "soldier",
       attributes,
     });
   });

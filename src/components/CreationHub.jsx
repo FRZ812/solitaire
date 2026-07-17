@@ -14,6 +14,7 @@ import rosterArtwork from "../assets/generated/character-roster-threshold-v1.web
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { resolveCharacterPortrait } from "./character-portrait-assets.js";
 import { PROFESSIONS } from "../data/professions.js";
+import { canonicalProfessionId } from "../data/progression-paths.js";
 
 const isHumanRace = (r) => r === "human";
 
@@ -30,22 +31,6 @@ function portraitFocus(templateId, surface) {
   return PORTRAIT_FOCUS[templateId]?.[surface];
 }
 
-// Power rungs for the pick-and-play roster. The full authored company is the
-// default view; these become quick filters for players who want a power band.
-const TEMPLATE_TIERS = [
-  { id: "standard", label: "Standard", flavor: "Grounded", range: "1–20", eyebrow: "The intended beginning", blurb: "Level 1–20. An ordinary life; every mile and hard-won victory matters.", accent: "#d7b477" },
-  { id: "mid", label: "Veteran", flavor: "Seasoned", range: "21–40", eyebrow: "Road-tested", blurb: "Level 21–40. Capable and uncommon, while still belonging to the ordinary world.", accent: "#87b995" },
-  { id: "epic", label: "Epic", flavor: "Heroic", range: "41–60", eyebrow: "Already formidable", blurb: "Level 41–60. Truly strong figures gather near 50; living legends end here.", accent: "#b894df" },
-  { id: "legendary", label: "Legendary", flavor: "Fabled", range: "61–70", eyebrow: "Known across the land", blurb: "Level 61–70. An exceptional playable life beyond the normal world's ceiling.", accent: "#df9d55" },
-  { id: "mythical", label: "Mythical", flavor: "Unbound", range: "71–85", eyebrow: "Beyond mortal measure", blurb: "Level 71–85. The early world will struggle to contain what you already are.", accent: "#62c3c4" },
-  { id: "divine", label: "Divine", flavor: "Godlike", range: "86–100", eyebrow: "Pure power fantasy", blurb: "Level 86–100. A god walks the road; choose this for dominion, not survival.", accent: "#efd887" },
-];
-
-const ALL_TIER = {
-  id: "all", label: "All", flavor: `${CHARACTER_TEMPLATES.length} lives`, eyebrow: "Every authored road",
-  blurb: "Browse the complete company, then narrow by power, role, or name.", accent: "#efca7e",
-};
-const ROSTER_TIERS = [ALL_TIER, ...TEMPLATE_TIERS];
 const ROLE_FILTERS = ["all", ...new Set(CHARACTER_TEMPLATES.map((template) => template.role))];
 
 function kindredLabel(setup) {
@@ -57,9 +42,17 @@ function metaLine(setup) {
   return [kindredLabel(setup), isHumanRace(setup.race) ? originLabel(setup.origin) : null, setup.age].filter(Boolean).join(" · ");
 }
 function templateArchetypeLabel(template) {
-  return template.id !== template.setup.profession
-    ? template.label
-    : (PROFESSIONS[template.setup.profession]?.archetype || template.label);
+  const profession = PROFESSIONS[canonicalProfessionId(template.setup.profession) || template.setup.profession];
+  const specializationId = template.setup.archetype || template.id;
+  return profession?.specializations?.find((entry) => entry.id === specializationId)?.name
+    || template.label;
+}
+function templateProfessionLabel(template) {
+  const id = canonicalProfessionId(template.setup.profession) || template.setup.profession;
+  return PROFESSIONS[id]?.name || titleCaseProfession(id);
+}
+function titleCaseProfession(value) {
+  return String(value || "").replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 function templateLevel(template) {
   return Object.values(template.setup.progression?.paths || {}).reduce((total, rank) => total + (Number(rank) || 0), 0) || 1;
@@ -76,7 +69,6 @@ const metaHead = { fontSize: "9px", letterSpacing: "0.14em", textTransform: "upp
 // (look, story, stats, kit) before committing to begin as them.
 function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
   const s = tmpl.setup;
-  const tierMeta = TEMPLATE_TIERS.find((tier) => tier.id === (tmpl.tier || "standard")) || TEMPLATE_TIERS[0];
   const [info, setInfo] = useState(null);   // tapped ability/gear explanation
   const [openAttr, setOpenAttr] = useState(null); // tapped attribute → threshold detail
   const appr = s.appearance || {};
@@ -119,7 +111,7 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
   };
 
   return (
-    <div className="template-detail" style={{ "--tier-accent": tierMeta.accent }}>
+    <div className="template-detail" style={{ "--tier-accent": "#efca7e" }}>
       <div className="template-detail__inner">
         <header className="template-detail__hero">
           <img
@@ -140,10 +132,10 @@ function TemplateDetail({ tmpl, finalName, onConfirm, onBack, busy }) {
             <span className="template-detail__sigil" aria-hidden="true">
               <ProfessionIcon templateId={tmpl.id} profession={s.profession} size="large" decorative />
             </span>
-            <p>{tierMeta.label} · Level {templateLevel(tmpl)} · {PROFESSIONS[s.profession]?.name || s.profession}</p>
+            <p>Level {templateLevel(tmpl)} · {templateProfessionLabel(tmpl)}</p>
             <h1>{finalName}</h1>
             <div>{metaLine(s)}</div>
-            <span>Archetype · {templateArchetypeLabel(tmpl)} — {tmpl.concept}</span>
+            <span>Specialization · {templateArchetypeLabel(tmpl)} — {tmpl.concept}</span>
           </div>
         </header>
 
@@ -261,21 +253,18 @@ const CharacterHook = ({ label, value }) => value ? (
 export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState(null); // template being previewed
-  const [tierId, setTierId] = useState("all");
   const [role, setRole] = useState("all");
   const [search, setSearch] = useState("");
 
   const finalNameFor = (tmpl) => name.trim() || tmpl.setup.name;
-  const activeTier = ROSTER_TIERS.find((tier) => tier.id === tierId) || ALL_TIER;
   const normalizedSearch = search.trim().toLowerCase();
   const activeTemplates = CHARACTER_TEMPLATES.filter((tmpl) => {
-    if (activeTier.id !== "all" && (tmpl.tier || "standard") !== activeTier.id) return false;
     if (role !== "all" && tmpl.role !== role) return false;
     if (!normalizedSearch) return true;
     return [tmpl.label, templateArchetypeLabel(tmpl), tmpl.role, tmpl.concept, tmpl.story, tmpl.setup.name, tmpl.setup.profession, tmpl.setup.race, ...(tmpl.setup.skills || []).map((skill) => skill.name || skill.id)]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(normalizedSearch));
-  });
+  }).sort((a, b) => templateLevel(a) - templateLevel(b) || a.setup.name.localeCompare(b.setup.name));
   const begin = (tmpl) => {
     if (busy) return;
     const have = new Set((tmpl.setup.items || []).map((i) => i.itemId));
@@ -305,7 +294,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
   }
 
   return (
-    <div className="creation-hub" style={{ "--tier-accent": activeTier.accent }}>
+    <div className="creation-hub" style={{ "--tier-accent": "#efca7e" }}>
       <div className="creation-hub__inner">
         <header className="creation-roster-hero">
           <img className="creation-roster-hero__art" src={rosterArtwork} alt="" draggable="false" decoding="async" />
@@ -324,51 +313,6 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
         </header>
 
         <main className="creation-roster">
-          <section className="creation-tier-picker" aria-labelledby="power-heading">
-            <div className="creation-section-heading">
-              <div>
-                <p>Campaign-defining choice</p>
-                <h2 id="power-heading">Choose your power fantasy</h2>
-              </div>
-              <span>Sets tone &amp; challenge</span>
-            </div>
-            <p className="creation-tier-picker__intro">
-              Starting power changes the danger curve, pace of growth, and how the world reads your arrival.
-            </p>
-            <div className="creation-tier-tabs no-scrollbar" role="tablist" aria-label="Starting power">
-              {ROSTER_TIERS.map((tier, index) => (
-                <button
-                  type="button"
-                  key={tier.id}
-                  id={`creation-tier-${tier.id}`}
-                  role="tab"
-                  aria-selected={tier.id === activeTier.id}
-                  aria-controls="creation-roster-panel"
-                  className={tier.id === activeTier.id ? "is-active" : ""}
-                  style={{ "--tab-accent": tier.accent }}
-                  onClick={() => setTierId(tier.id)}
-                  disabled={busy}
-                  aria-label={`${tier.label}: ${tier.flavor}`}
-                >
-                  <small>{tier.id === "all" ? "∞" : String(index).padStart(2, "0")}</small>
-                  <strong>{tier.label}</strong>
-                  <span>{tier.range ? `${tier.flavor} · Lv ${tier.range}` : tier.flavor}</span>
-                  <i aria-hidden="true">✓</i>
-                </button>
-              ))}
-            </div>
-
-            <div className="creation-tier-summary">
-              <span className="creation-tier-summary__mark" aria-hidden="true"><Icon name={activeTier.id === "standard" || activeTier.id === "all" ? "compass" : "sparkle"} size={20} strokeWidth={1.65} /></span>
-              <div>
-                <small>Selected · {activeTier.eyebrow}</small>
-                <strong>{activeTier.label}</strong>
-                <p>{activeTier.blurb}</p>
-              </div>
-              <span className="creation-tier-summary__roster">{activeTemplates.length}<small>{activeTemplates.length === 1 ? "traveller" : "travellers"}</small></span>
-            </div>
-          </section>
-
           <section className="creation-roster-tools" aria-label="Filter character roster">
             <label htmlFor="creation-roster-search">
               <Icon name="target" size={17} />
@@ -378,7 +322,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search name, profession, archetype, kindred…"
+                placeholder="Search name, profession, specialization, kindred…"
               />
             </label>
             <div className="creation-role-filters no-scrollbar" role="toolbar" aria-label="Filter by playstyle">
@@ -411,8 +355,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
           <section
             id="creation-roster-panel"
             className="creation-grid"
-            role="tabpanel"
-            aria-labelledby={`creation-tier-${activeTier.id}`}
+            aria-label="Ready-made characters ordered by level"
           >
             {activeTemplates.map((tmpl) => (
               <button
@@ -435,8 +378,8 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
                 </span>
                 <span className="creation-card__body">
                   <span className="creation-card__topline">
-                    <small>{TEMPLATE_TIERS.find((tier) => tier.id === tmpl.tier)?.label || "Standard"} · Level {templateLevel(tmpl)} · {tmpl.role}</small>
-                    <em aria-label={`Archetype: ${templateArchetypeLabel(tmpl)}`}><span>Archetype</span><b>{templateArchetypeLabel(tmpl)}</b></em>
+                    <small>Level {templateLevel(tmpl)} · {templateProfessionLabel(tmpl)} · {tmpl.role}</small>
+                    <em aria-label={`Specialization: ${templateArchetypeLabel(tmpl)}`}><span>Specialization</span><b>{templateArchetypeLabel(tmpl)}</b></em>
                   </span>
                   <strong>{finalNameFor(tmpl)}</strong>
                   <span className="creation-card__meta">{metaLine(tmpl.setup)}</span>
@@ -452,7 +395,7 @@ export function CreationHub({ onPickTemplate, onCustom, onQuit, busy }) {
               <div className="creation-roster-empty" role="status">
                 <Icon name="character" size={28} />
                 <strong>No traveller answers that description.</strong>
-                <button type="button" onClick={() => { setSearch(""); setRole("all"); setTierId("all"); }}>Clear filters</button>
+                <button type="button" onClick={() => { setSearch(""); setRole("all"); }}>Clear filters</button>
               </div>
             )}
           </section>

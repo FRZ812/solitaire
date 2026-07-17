@@ -10,7 +10,8 @@ import { withoutSelectedPlayableCharacter } from "../data/playable-roster.js";
 import { recomputeVitalityMax, recomputeResolveMax, recomputeCarryCapacity } from "./attributes.js";
 import { ATTRIBUTE_CAP } from "../config.js";
 import { createProgression, inferProgressionLevel, normalizeCharacterProgression, progressionLevel } from "./progression.js";
-import { canonicalProfessionId } from "../data/progression-paths.js";
+import { canonicalProfessionId, isBroadProfessionName } from "../data/progression-paths.js";
+import { sanitizeProfessionPlan } from "./discoveries.js";
 
 // Creation attributes are set from the interview and then checked against the
 // declared route's level envelope. Valid authored shapes remain exact; sheets
@@ -23,12 +24,16 @@ export function applyCreation({ beat, character, world, created }) {
   if (beat.character_setup && created === false) {
     const cs = beat.character_setup;
     const legacyKey = "sub" + "class";
-    const requestedProfession = cs.profession || character.profession || "wanderer";
+    const professionPlan = sanitizeProfessionPlan(cs);
+    const primaryPlan = professionPlan[0] || null;
+    const requestedProfession = primaryPlan?.profession || cs.profession || character.profession || "wanderer";
     const professionId = canonicalProfessionId(requestedProfession) || "wanderer";
     const requestedProfessionKey = String(requestedProfession).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const archetype = cs.archetype
+    const archetype = primaryPlan?.specialization
+      || cs.specialization
+      || cs.archetype
       || cs[legacyKey]
-      || (requestedProfessionKey !== professionId ? requestedProfession : null);
+      || (!isBroadProfessionName(requestedProfessionKey, professionId) ? requestedProfession : null);
     if (cs.name) character.name = cs.name;
     if (cs.bond) character.bond = cs.bond;
     // Keep the compact player state and the full Codex identity aligned. Older
@@ -60,12 +65,28 @@ export function applyCreation({ beat, character, world, created }) {
     // deterministic level appropriate to the described attribute magnitude.
     const suppliedLevel = cs.progression ? progressionLevel(cs.progression) : 0;
     const declaredLevel = Number.isFinite(Number(cs.level)) ? Number(cs.level) : 0;
-    const startingLevel = suppliedLevel || declaredLevel || inferProgressionLevel({ ...character, profession: professionId });
+    const racialLevels = Math.max(0, Math.min(30, Math.floor(Number(cs.racial_levels ?? cs.racialLevels) || 0)));
+    const plannedProfessionLevels = professionPlan.reduce((sum, entry) => sum + entry.levels, 0);
+    const plannedLevel = racialLevels + plannedProfessionLevels;
+    const startingLevel = suppliedLevel || (professionPlan.length ? plannedLevel : declaredLevel)
+      || inferProgressionLevel({ ...character, profession: professionId });
     character.progression = createProgression({
       professionId,
       archetypeId: archetype || cs.progression?.archetypeId,
+      raceId: cs.race || character.race || "human",
       level: startingLevel,
-      sidePath: cs.progression?.sidePath || (cs.race === "human" ? "utility" : "racial"),
+      ...(professionPlan.length ? {
+        professions: professionPlan.map((entry) => ({
+          professionId: entry.profession,
+          specializationId: entry.specialization || null,
+          levels: entry.levels,
+        })),
+        racialLevels,
+      } : {}),
+      signatureSpellId: cs.signature_spell || cs.signatureSpell || null,
+      metamagicIds: Array.isArray(cs.metamagic)
+        ? cs.metamagic
+        : Array.isArray(cs.metamagic_ids) ? cs.metamagic_ids : [],
       xp: cs.progression?.xp,
     });
     character.archetype = archetype || character.progression.archetypeId;

@@ -24,11 +24,15 @@ import { resolveCharacterPortrait } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { ProfessionCatalog } from "./ProfessionProgression.jsx";
 import { characterArchetype } from "../data/character-archetypes.js";
-import { progressionLevel } from "../engine/progression.js";
-import { levelTier } from "../data/progression-paths.js";
+import * as progressionEngine from "../engine/progression.js";
+import { canonicalProfessionId } from "../data/progression-paths.js";
 import codexCategoryAtlas from "../assets/generated/icon-atlases/codex-categories-atlas-v1.png";
 import { CODEX_PORTRAIT_IDS, resolveCodexPortrait } from "./codex-portrait-assets.js";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
+
+const progressionLevel = progressionEngine.progressionLevel;
+const professionProgressionLevel = progressionEngine.professionProgressionLevel || progressionLevel;
+const racialProgressionLevel = progressionEngine.racialProgressionLevel || ((character) => Object.values(character?.progression?.racial?.paths || {}).reduce((sum, rank) => sum + (Number(rank) || 0), 0));
 
 function attractivenessLabel(n) {
   if (typeof n !== "number") return null;
@@ -107,22 +111,25 @@ function characterKindLabel(entry) {
   return "Known character";
 }
 
-function CharacterPortrait({ entry, portraitOverride }) {
+function CharacterPortrait({ entry, portraitOverride, detail = false }) {
   const [imageFailed, setImageFailed] = useState(false);
-  useEffect(() => setImageFailed(false), [portraitOverride]);
+  useEffect(() => setImageFailed(false), [portraitOverride, detail]);
   const portrait = !imageFailed ? resolveCharacterPortrait(entry, null, portraitOverride) : null;
   const atlasPortrait = !portrait ? resolveCodexPortrait(entry) : null;
+  const detailPortrait = detail && !imageFailed ? atlasPortrait?.detailSrc : null;
+  const resolvedImage = portrait || detailPortrait;
   return (
     <div
-      className={`codex-entry__portrait${portrait ? " has-image" : atlasPortrait ? " has-atlas" : " is-placeholder"}`}
+      className={`codex-entry__portrait${resolvedImage ? " has-image" : atlasPortrait ? " has-atlas" : " is-placeholder"}`}
       data-portrait-slot={entry.id}
       data-portrait-atlas={atlasPortrait?.atlasId}
+      data-portrait-source={detailPortrait ? "detail" : portrait ? "character" : atlasPortrait ? "atlas" : "placeholder"}
       style={{ "--portrait-hue": portraitHue(entry.id) }}
-      role={!portrait && !atlasPortrait ? "img" : undefined}
-      aria-label={!portrait && !atlasPortrait ? `${entry.name} portrait placeholder` : undefined}
+      role={!resolvedImage && !atlasPortrait ? "img" : undefined}
+      aria-label={!resolvedImage && !atlasPortrait ? `${entry.name} portrait placeholder` : undefined}
     >
-      {portrait
-        ? <img src={portrait} alt={`${entry.name} portrait`} draggable="false" loading="lazy" decoding="async" onError={() => setImageFailed(true)} />
+      {resolvedImage
+        ? <img src={resolvedImage} alt={`${entry.name} portrait`} draggable="false" loading={detail ? "eager" : "lazy"} decoding="async" onError={() => setImageFailed(true)} />
         : atlasPortrait
           ? <AtlasIcon src={atlasPortrait.atlas} columns={atlasPortrait.grid.columns} rows={atlasPortrait.grid.rows} column={atlasPortrait.cell.column} row={atlasPortrait.cell.row} size="100%" shape="portrait" label={`${entry.name} portrait`} iconKey={`codex-portrait:${entry.id}`} className="codex-entry__portrait-sprite" />
           : <><Icon name={entry.kind === "mount" ? "compass" : "user"} size={25} strokeWidth={1.25} /><strong>{portraitInitials(entry.name)}</strong></>}
@@ -178,6 +185,28 @@ function CharacterPortraitEditor({ entry, portraitOverride, onPortraitChange }) 
       {portraitOverride && <button type="button" className="is-reset" onClick={resetPortrait} disabled={busy}>Use original</button>}
       <input ref={inputRef} type="file" accept={PORTRAIT_ACCEPT} onChange={choosePortrait} tabIndex={-1} aria-hidden="true" />
       {error && <span role="alert">{error}</span>}
+    </div>
+  );
+}
+
+function CharacterDetailSection({ label, title, className = "", children }) {
+  return (
+    <section className={`codex-entry__detail-card${className ? ` ${className}` : ""}`}>
+      <header className="codex-entry__detail-heading">
+        <small>{label}</small>
+        {title && <h3>{title}</h3>}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function CharacterFact({ label, value }) {
+  if (value == null || value === "") return null;
+  return (
+    <div className="codex-entry__fact">
+      <small>{label}</small>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -831,8 +860,9 @@ function GlossaryView() {
   );
 }
 
-export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = false, onRename, portraitOverride, onPortraitChange }) {
-  const [open, setOpen] = useState(false);
+export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = false, onRename, portraitOverride, onPortraitChange, detailMode = false, onOpen, onBack }) {
+  const [expanded, setExpanded] = useState(false);
+  const open = detailMode || expanded;
   // Alt+click the header to reveal hidden audit fields (attractiveness int +
   // lifespanMultiplier value). These bias the narrator if they leak into prose,
   // so they're hidden by default and surfaced only on deliberate dev inspect.
@@ -860,8 +890,11 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
   const structuredAppearance = kind === "characters" && entry.appearance && typeof entry.appearance === "object" ? entry.appearance : null;
   const isCharacter = kind === "characters";
   const archetype = isCharacter ? characterArchetype(entry) : null;
+  const broadProfessionId = isCharacter ? (canonicalProfessionId(entry.profession) || entry.profession) : null;
+  const broadProfessionName = isCharacter ? (codex.professions?.[broadProfessionId]?.name || PROFESSIONS[broadProfessionId]?.name || broadProfessionId) : null;
   const totalProgressionLevel = isCharacter ? progressionLevel(entry) : 0;
-  const progressionTier = totalProgressionLevel > 0 ? levelTier(totalProgressionLevel) : null;
+  const racialLevel = isCharacter ? racialProgressionLevel(entry) : 0;
+  const professionLevel = isCharacter ? professionProgressionLevel(entry) : 0;
 
   // Brief one-line preview shown while collapsed (keeps the list scannable).
   const metaLine = kind === "characters"
@@ -869,12 +902,11 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
         codex.races?.[entry.race]?.name || entry.race,
         entry.kind === "mount"
           ? entry.species
-          : ((codex.professions?.[entry.profession]?.name || entry.profession)
-              ? `${codex.professions?.[entry.profession]?.name || entry.profession} profession`
+          : (broadProfessionName
+              ? `${broadProfessionName} profession`
               : null),
-        archetype ? `${archetype.label} archetype` : null,
+        archetype ? `${archetype.label} specialization` : null,
         totalProgressionLevel > 0 ? `Level ${totalProgressionLevel}` : null,
-        progressionTier ? `${progressionTier.label} tier` : null,
         originLabel(entry.origin),
       ].filter(Boolean).join(" · ")
     : "";
@@ -888,23 +920,41 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
       toggleAudit();
       return;
     }
-    setOpen((current) => !current);
+    if (detailMode) return;
+    if (isCharacter && onOpen) {
+      onOpen(entry.id);
+      return;
+    }
+    setExpanded((current) => !current);
   };
+  const SummaryElement = detailMode ? "div" : "button";
 
   return (
-    <article className={`codex-entry${isCharacter ? " codex-entry--character" : " codex-entry--record"}${open ? " is-open" : ""}`}>
+    <article className={`codex-entry${isCharacter ? " codex-entry--character" : " codex-entry--record"}${detailMode ? " codex-entry--dossier" : ""}${open ? " is-open" : ""}`}>
       <div className="codex-entry__header">
-        {isCharacter && (
+        {detailMode && onBack && (
+          <button type="button" className="codex-entry__dossier-back" onClick={onBack}>
+            <Icon name="back" size={15} />
+            <span>Back to roster</span>
+          </button>
+        )}
+        {isCharacter && (detailMode ? (
+          <div className="codex-entry__portrait-button is-static" aria-hidden="true">
+            <CharacterPortrait entry={entry} portraitOverride={portraitOverride} detail />
+          </div>
+        ) : (
           <button type="button" className="codex-entry__portrait-button" onClick={onToggle} aria-label={`${open ? "Collapse" : "Open"} ${entry.name} dossier`} aria-expanded={open}>
             <CharacterPortrait entry={entry} portraitOverride={portraitOverride} />
           </button>
-        )}
-        <button
-          type="button"
+        ))}
+        <SummaryElement
           className={`codex-entry__summary${kind === "professions" ? " is-profession" : ""}`}
-          onClick={onToggle}
-          title={isCharacter ? "Alt-click to toggle audit fields" : undefined}
-          aria-expanded={open}
+          {...(!detailMode ? {
+            type: "button",
+            onClick: onToggle,
+            title: isCharacter ? "Alt-click to toggle audit fields" : undefined,
+            "aria-expanded": open,
+          } : {})}
         >
           {kind === "professions" && <ProfessionIcon profession={entry.id} size="small" decorative />}
           <span className="codex-entry__eyebrow">{isCharacter ? (metaLine || characterKindLabel(entry)) : recordLabel}</span>
@@ -921,13 +971,13 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
             {entry.common && <span>Baseline</span>}
             {entry.kind === "player" && <span>You</span>}
             {isTracked && <span>Tracked</span>}
-            {archetype && <span>Archetype · {archetype.label}</span>}
+            {archetype && <span>Specialization · {archetype.label}</span>}
             {totalProgressionLevel > 0 && <span>Level {totalProgressionLevel} / {CHARACTER_LEVEL_CAP}</span>}
-            {progressionTier && <span>{progressionTier.label} tier</span>}
             {kind === "skills" && typeof entry.rating === "number" && <span>Rating {entry.rating}</span>}
           </span>
           {!open && preview && <span className="codex-entry__preview">{preview}</span>}
-        </button>
+          {detailMode && summaryText && <span className="codex-entry__hero-summary">{summaryText}</span>}
+        </SummaryElement>
 
         <div className="codex-entry__actions">
           {onTrack && (
@@ -939,144 +989,150 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
           {onScry && (
             <button type="button" className="is-scry" onClick={onScry}>Scry</button>
           )}
-          <button type="button" className="codex-entry__chevron" onClick={onToggle} aria-label={`${open ? "Collapse" : "Expand"} ${entry.name}`} aria-expanded={open}>{open ? "−" : "+"}</button>
+          {!detailMode && <button type="button" className="codex-entry__chevron" onClick={onToggle} aria-label={`${open ? "Collapse" : "Expand"} ${entry.name}`} aria-expanded={open}>{open ? "−" : "+"}</button>}
         </div>
       </div>
 
       {open && (<div className="codex-entry__details">
+        {isCharacter ? (
+          <>
+            <CharacterPortraitEditor
+              entry={entry}
+              portraitOverride={portraitOverride}
+              onPortraitChange={onPortraitChange}
+            />
 
-      {isCharacter && (
-        <CharacterPortraitEditor
-          entry={entry}
-          portraitOverride={portraitOverride}
-          onPortraitChange={onPortraitChange}
-        />
-      )}
+            <div className="codex-entry__detail-grid">
+              <CharacterDetailSection label="Profile" title="Identity and progression" className="is-wide">
+                <div className="codex-entry__fact-grid">
+                  <CharacterFact label="Race" value={codex.races?.[entry.race]?.name || entry.race} />
+                  <CharacterFact label="Profession" value={broadProfessionName} />
+                  <CharacterFact label="Specialization" value={archetype?.label} />
+                  <CharacterFact label="Origin" value={originLabel(entry.origin)} />
+                  <CharacterFact label="Age" value={entry.age} />
+                  <CharacterFact label="Gender" value={entry.gender} />
+                  <CharacterFact label="Level" value={totalProgressionLevel > 0 ? `${totalProgressionLevel} / ${CHARACTER_LEVEL_CAP}` : null} />
+                  <CharacterFact label="Racial evolution" value={`${racialLevel} / 30`} />
+                  <CharacterFact label="Professions" value={`${professionLevel} / 70`} />
+                  <CharacterFact label="Bond" value={bondTier ? `${bondTier.label} ${(entry.relationship || 0) > 0 ? "+" : ""}${entry.relationship || 0}` : null} />
+                  <CharacterFact
+                    label="Aging"
+                    value={audit
+                      ? agingModeLabel(entry.agingMode, entry)
+                      : (entry.agingMode && entry.agingMode !== "mortal" ? entry.agingMode : null)}
+                  />
+                  {audit && <CharacterFact label="Attractiveness" value={attractivenessLabel(entry.attractiveness)} />}
+                </div>
+              </CharacterDetailSection>
 
-      {kind === "characters" && (entry.race || entry.profession || archetype || entry.origin) && (
-        <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginTop: "6px", marginBottom: "6px" }}>
-          {[
-            codex.races[entry.race]?.name || entry.race,
-            (codex.professions[entry.profession]?.name || entry.profession)
-              ? `${codex.professions[entry.profession]?.name || entry.profession} profession`
-              : null,
-            archetype ? `${archetype.label} archetype` : null,
-            totalProgressionLevel > 0 ? `Level ${totalProgressionLevel}` : null,
-            progressionTier ? `${progressionTier.label} tier` : null,
-            originLabel(entry.origin),
-          ].filter(Boolean).join(" · ")}
-        </div>
-      )}
+              {(narrativeAppearance || structuredAppearance) && (
+                <CharacterDetailSection label="Appearance" title="Visible details" className="is-wide">
+                  {narrativeAppearance && <p className="codex-entry__detail-prose is-appearance">{narrativeAppearance}</p>}
+                  {structuredAppearance && (
+                    <div className="codex-entry__fact-grid is-compact">
+                      <CharacterFact label="Skin" value={structuredAppearance.skin} />
+                      <CharacterFact label="Hair" value={structuredAppearance.hair} />
+                      <CharacterFact label="Eyes" value={structuredAppearance.eyes} />
+                      <CharacterFact label="Build" value={structuredAppearance.build} />
+                      <CharacterFact label="Facial hair" value={structuredAppearance.facial_hair} />
+                      <CharacterFact label="Marks" value={structuredAppearance.marks} />
+                    </div>
+                  )}
+                </CharacterDetailSection>
+              )}
 
-      {kind === "characters" && (entry.age != null || entry.gender || (entry.agingMode && entry.agingMode !== "mortal") || audit) && (
-        <div style={{ fontSize: "12px", color: "rgba(215, 167, 111, 0.7)", marginBottom: "8px", fontFamily: fonts.serif, fontStyle: "italic" }}>
-          {[
-            entry.age != null ? entry.age : null,
-            entry.gender,
-            // Attractiveness int + descriptor: hidden by default (would bias narration if surfaced).
-            // Alt+click the entry header to reveal — see toggleAudit above.
-            audit ? attractivenessLabel(entry.attractiveness) : null,
-            // Aging-mode label: terse by default (just the mode name);
-            // the lifespanMultiplier number is dev-only.
-            audit
-              ? agingModeLabel(entry.agingMode, entry)
-              : (entry.agingMode && entry.agingMode !== "mortal" ? entry.agingMode : null),
-          ].filter(Boolean).join(" · ")}
-        </div>
-      )}
+              {hasAttrs && (
+                <CharacterDetailSection label="Capabilities" title="Attributes" className="is-wide">
+                  <div className="codex-entry__attribute-grid">
+                    {ATTR_KEYS.map((key) => (
+                      <div key={key}>
+                        <small>{ATTR_LABELS[key]}</small>
+                        <strong>{entry.attributes[key] ?? 0}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </CharacterDetailSection>
+              )}
 
-      {kind === "items" && entry.kind && (
-        <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginBottom: "6px" }}>{entry.kind}</div>
-      )}
+              {entry.description && (
+                <CharacterDetailSection label="Dossier" title="Known story" className="is-wide">
+                  <p className="codex-entry__detail-prose">{entry.description}</p>
+                </CharacterDetailSection>
+              )}
 
-      {narrativeAppearance && (
-        <div style={{ fontSize: "12px", color: colors.parchment, lineHeight: "1.5", marginBottom: "8px" }}>
-          <span style={{ ...subtleMeta, marginRight: "6px" }}>Appearance</span>
-          <span style={serifInlineValue}>{narrativeAppearance}</span>
-        </div>
-      )}
+              {wornNames.length > 0 && (
+                <CharacterDetailSection label="Equipment" title="Wearing">
+                  <p className="codex-entry__detail-prose is-list">{wornNames.join(", ")}</p>
+                </CharacterDetailSection>
+              )}
 
-      {structuredAppearance && (
-        <div style={{
-          fontSize: "11px", color: "rgba(237, 228, 208, 0.75)",
-          lineHeight: "1.55", marginBottom: "8px",
-          paddingLeft: "10px", borderLeft: `1px solid rgba(215, 167, 111, 0.25)`,
-        }}>
-          {[
-            structuredAppearance.skin && `Skin: ${structuredAppearance.skin}`,
-            structuredAppearance.hair && `Hair: ${structuredAppearance.hair}`,
-            structuredAppearance.eyes && `Eyes: ${structuredAppearance.eyes}`,
-            structuredAppearance.build && `Build: ${structuredAppearance.build}`,
-            structuredAppearance.facial_hair && `Beard: ${structuredAppearance.facial_hair}`,
-            structuredAppearance.marks && `Marks: ${structuredAppearance.marks}`,
-          ].filter(Boolean).join(" · ")}
-        </div>
-      )}
+              {knowsList.length > 0 && (
+                <CharacterDetailSection label="Knowledge" title="What they know">
+                  <ul className="codex-entry__detail-list">
+                    {knowsList.map((fact, index) => <li key={index}>{fact}</li>)}
+                  </ul>
+                </CharacterDetailSection>
+              )}
 
-      {kind === "characters" && wornNames.length > 0 && (
-        <div style={{ fontSize: "12px", color: colors.parchment, lineHeight: "1.5", marginBottom: "8px" }}>
-          <span style={{ ...subtleMeta, marginRight: "6px" }}>Wearing</span>
-          <span style={serifInlineValue}>{wornNames.join(", ")}</span>
-        </div>
-      )}
-
-      {hasAttrs && (
-        <div style={{ marginBottom: "8px", paddingTop: "8px", borderTop: `1px dashed rgba(215, 167, 111, 0.2)` }}>
-          <div style={{ ...accentMeta, marginBottom: "6px", fontWeight: 600 }}>Attributes</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", fontSize: "12px", color: colors.parchment }}>
-            {ATTR_KEYS.map(k => (
-              <div key={k}>
-                <span style={{ color: "rgba(215, 167, 111, 0.6)" }}>{ATTR_LABELS[k]}</span>{" "}
-                <span style={{ fontWeight: 600, color: colors.parchmentLight }}>{entry.attributes[k] ?? 0}</span>
+              {memoriesList.length > 0 && (
+                <CharacterDetailSection label="Relationship" title="Shared history" className="is-wide">
+                  <ul className="codex-entry__detail-list">
+                    {memoriesList.map((memory, index) => <li key={index}>{memory}</li>)}
+                  </ul>
+                </CharacterDetailSection>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            {kind === "items" && entry.kind && (
+              <div style={{ ...accentMeta, fontSize: "9px", letterSpacing: "0.10em", marginBottom: "6px" }}>{entry.kind}</div>
+            )}
+            {narrativeAppearance && (
+              <div style={{ fontSize: "12px", color: colors.parchment, lineHeight: "1.5", marginBottom: "8px" }}>
+                <span style={{ ...subtleMeta, marginRight: "6px" }}>Appearance</span>
+                <span style={serifInlineValue}>{narrativeAppearance}</span>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {entry.description && (
-        <div style={{ fontSize: "13px", color: "rgba(237, 228, 208, 0.88)", lineHeight: "1.5", marginBottom: knowsList.length ? "10px" : 0 }}>{entry.description}</div>
-      )}
-
-      {kind === "races" && RACES[entry.id] && <RaceKit raceId={entry.id} />}
-
-      {kind === "spells" && entry.acquisition && (
-        <div style={{ fontSize: "11px", color: "rgba(215, 167, 111, 0.6)", marginTop: "4px", fontStyle: "italic" }}>Acquired: {entry.acquisition}</div>
-      )}
-
-      {knowsList.length > 0 && (
-        <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: `1px dashed rgba(215, 167, 111, 0.2)` }}>
-          <div style={{ ...accentMeta, marginBottom: "6px", fontWeight: 600 }}>Knows</div>
-          <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "13px", color: colors.parchment, lineHeight: "1.5" }}>
-            {knowsList.map((f, i) => (
-              <li key={i} style={{ fontFamily: fonts.serif, fontStyle: "italic", marginBottom: "2px", color: colors.parchmentLight }}>{f}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {memoriesList.length > 0 && (
-        <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: `1px dashed rgba(215, 167, 111, 0.2)` }}>
-          <div style={{ ...accentMeta, marginBottom: "6px", fontWeight: 600 }}>Shared history</div>
-          <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "13px", color: colors.parchment, lineHeight: "1.5" }}>
-            {memoriesList.map((m, i) => (
-              <li key={i} style={{ fontFamily: fonts.serif, fontStyle: "italic", marginBottom: "2px", color: colors.parchmentLight }}>{m}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+            )}
+            {entry.description && (
+              <div style={{ fontSize: "13px", color: "rgba(237, 228, 208, 0.88)", lineHeight: "1.5" }}>{entry.description}</div>
+            )}
+            {kind === "races" && RACES[entry.id] && <RaceKit raceId={entry.id} />}
+            {kind === "spells" && entry.acquisition && (
+              <div style={{ fontSize: "11px", color: "rgba(215, 167, 111, 0.6)", marginTop: "4px", fontStyle: "italic" }}>Acquired: {entry.acquisition}</div>
+            )}
+          </>
+        )}
       </div>)}
     </article>
   );
 }
 
-export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMount, onPortraitChange, embedded = false }) {
+export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMount, onPortraitChange, onChooseProgression, embedded = false }) {
   const codex = state.world.codex;
   const scryable = onScry && canScry(state);
   const partyIds = new Set(state.party || []);
   const [activeTab, setActiveTab] = useState("characters");
   const [characterQuery, setCharacterQuery] = useState("");
   const [characterScope, setCharacterScope] = useState("all");
+  const [selectedCharacterId, setSelectedCharacterId] = useState(null);
+  const selectedDossierRef = useRef(null);
+  const selectedCharacter = activeTab === "characters" && selectedCharacterId
+    ? codex.characters?.[selectedCharacterId]
+    : null;
+
+  useEffect(() => {
+    if (activeTab !== "characters") setSelectedCharacterId(null);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!selectedCharacter) return;
+    const frame = window.requestAnimationFrame(() => {
+      selectedDossierRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedCharacter]);
+
   let entries = Object.values(codex[activeTab] || {});
   if (activeTab === "characters") {
     const query = characterQuery.trim().toLowerCase();
@@ -1097,7 +1153,7 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
         if (!query) return true;
         const archetype = characterArchetype(entry);
         const level = progressionLevel(entry);
-        return [entry.name, entry.race, entry.profession, entry.archetype, archetype?.label, level > 0 ? levelTier(level).label : null, entry.origin, entry.description, entry.base_appearance]
+        return [entry.name, entry.race, entry.profession, entry.archetype, archetype?.label, level > 0 ? `level ${level}` : null, entry.origin, entry.description, entry.base_appearance]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
@@ -1186,7 +1242,7 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
         })}
       </div>
 
-      {activeTab === "characters" && (
+      {activeTab === "characters" && !selectedCharacter && (
         <div className="codex-character-tools">
           <label className="codex-character-search">
             <AtlasIcon src={codexCategoryAtlas} columns={3} rows={3} column={2} row={2} size={18} decorative shape="round" />
@@ -1221,8 +1277,24 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
           role="tabpanel"
           aria-labelledby={`codex-tab-${activeTab}`}
         >
-        {activeTab === "professions" ? (
-          <ProfessionCatalog character={state.character} />
+        {activeTab === "characters" && selectedCharacter ? (
+          <div ref={selectedDossierRef} className="codex-character-dossier fade-in">
+            <CodexEntry
+              entry={selectedCharacter}
+              kind="characters"
+              codex={codex}
+              detailMode
+              onBack={() => setSelectedCharacterId(null)}
+              portraitOverride={state.portraitOverrides?.[selectedCharacter.id]}
+              onPortraitChange={onPortraitChange}
+              isTracked={state.world.trackedCharacterId === selectedCharacter.id}
+              onTrack={onTrackCharacter && (state.world.trackedCharacterId === selectedCharacter.id || canTrackCharacter(state, selectedCharacter.id)) ? () => onTrackCharacter(selectedCharacter.id) : null}
+              onScry={scryable && selectedCharacter.kind !== "player" && !partyIds.has(selectedCharacter.id) ? () => onScry(selectedCharacter.id) : null}
+              onRename={onRenameMount && selectedCharacter.kind === "mount" ? () => onRenameMount(selectedCharacter.id) : null}
+            />
+          </div>
+        ) : activeTab === "professions" ? (
+          <ProfessionCatalog character={state.character} onChooseProgression={onChooseProgression} />
         ) : activeTab === "items" ? (
           <ItemCatalog codex={codex} />
         ) : activeTab === "abilities" ? (
@@ -1243,6 +1315,7 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
             {entries.map((e) => <CodexEntry key={e.id} entry={e} kind={activeTab} codex={codex}
               portraitOverride={state.portraitOverrides?.[e.id]}
               onPortraitChange={activeTab === "characters" ? onPortraitChange : null}
+              onOpen={activeTab === "characters" ? setSelectedCharacterId : null}
               isTracked={activeTab === "characters" && state.world.trackedCharacterId === e.id}
               onTrack={onTrackCharacter && activeTab === "characters" && (state.world.trackedCharacterId === e.id || canTrackCharacter(state, e.id)) ? () => onTrackCharacter(e.id) : null}
               onScry={scryable && activeTab === "characters" && e.kind !== "player" && !partyIds.has(e.id) ? () => onScry(e.id) : null}

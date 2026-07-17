@@ -76,9 +76,14 @@ describe("mobile map navigation markup", () => {
     );
 
     expect(html).toContain('class="rpg-folio-body rpg-folio-body--atlas"');
-    expect(html).toContain('class="world-atlas"');
-    expect(html).toContain('class="rpg-folio-hero rpg-folio-hero--atlas"');
-    expect(html).toContain("atlas-folio-hero-v1.png");
+    expect(html).toContain('class="world-atlas is-tilted"');
+    // The atlas is a full-bleed maps-app page: no hero banner, just floating
+    // chrome with the journal switch and the close control.
+    expect(html).toContain('class="rpg-folio-map-chrome"');
+    expect(html).toContain("Quest journal");
+    expect(html).toContain('aria-label="Close world atlas"');
+    expect(html).not.toContain("rpg-folio-hero");
+    expect(html).not.toContain("atlas-folio-hero-v1.png");
     expect(html).not.toContain("quest-journal-folio-hero-v1.png");
     expect(html).not.toContain("--folio-art");
   });

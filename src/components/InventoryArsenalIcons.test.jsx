@@ -6,6 +6,35 @@ import { CHARACTER_TEMPLATES } from "../data/templates.js";
 import { ArsenalView, arsenalAbilityGroups } from "./ArsenalView.jsx";
 import { InventoryView } from "./InventoryView.jsx";
 
+function singularSavantState() {
+  const state = makeInitialState();
+  const metamagicIds = ["empowered-signature", "quickened-signature", "piercing-signature"];
+  metamagicIds[6] = "subtle-signature";
+  metamagicIds[7] = "triggered-signature";
+  state.character.abilities = [];
+  state.character.progression = {
+    version: 2,
+    professions: [{
+      professionId: "sorcerer",
+      levels: 30,
+      branchChoices: {
+        "sorcerous-focus": "singular-savant",
+        "singular-savant-discipline": "mutable-signature",
+      },
+      choices: {
+        signatureSpellId: "firebolt",
+        metamagicIds,
+        grantSelections: {
+          "sorcerer-secondary-spell": ["combust"],
+          "sorcerer-tertiary-spell": ["lightning-bolt"],
+        },
+      },
+    }],
+    racial: null,
+  };
+  return state;
+}
+
 describe("inventory and arsenal atlas integration", () => {
   it("uses normalized equipment silhouettes for empty paper-doll slots", () => {
     const html = renderToStaticMarkup(<InventoryView state={makeInitialState()} />);
@@ -44,5 +73,25 @@ describe("inventory and arsenal atlas integration", () => {
     expect(html).toContain("Spells · 5");
     expect(html).toContain('data-tier="divine"');
     expect(html).toContain("<span>Spellcasting</span><strong>16</strong>");
+  });
+
+  it("surfaces selected Sorcerer repertoire and authored utility modes", () => {
+    const state = singularSavantState();
+    const groups = arsenalAbilityGroups(state.character);
+
+    expect(groups.spells.map((ability) => ability.id)).toEqual(expect.arrayContaining([
+      "firebolt", "combust", "lightning-bolt",
+    ]));
+
+    const html = renderToStaticMarkup(<ArsenalView state={state} />);
+    expect(html).toContain("Spells · 3");
+    expect(html).toContain('aria-label="Earned progression capabilities"');
+    expect(html).toContain("Primary signature");
+    expect(html).toContain("Subtle Signature");
+    expect(html).toContain("ordinary voice, gesture, and harmless sensory display");
+    expect(html).toContain("Triggered Signature");
+    expect(html).toContain("only one triggered signature may be held at once");
+    expect(html).toContain("Signature Utility Mode");
+    expect(html).toContain("Reframe Signature");
   });
 });

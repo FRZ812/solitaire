@@ -60,6 +60,12 @@ export const MAGIC_SCHOOL_BY_ABILITY_ID = Object.freeze({
   "guardian-aegis": "abjuration",
   "last-sanctuary": "abjuration",
   "unbreakable-will": "abjuration",
+  "arcane-aegis": "abjuration",
+  "spell-reflection": "abjuration",
+  "antimagic-field": "abjuration",
+  "turn-profane": "abjuration",
+  exorcise: "abjuration",
+  "verdant-aegis": "abjuration",
 
   // Conjuration
   "dimension-door": "conjuration",
@@ -71,6 +77,8 @@ export const MAGIC_SCHOOL_BY_ABILITY_ID = Object.freeze({
   charm: "enchantment",
   dominate: "enchantment",
   "battle-hymn": "enchantment",
+  "beguiling-command": "enchantment",
+  geas: "enchantment",
 
   // Evocation
   combust: "evocation",
@@ -94,14 +102,23 @@ export const MAGIC_SCHOOL_BY_ABILITY_ID = Object.freeze({
   dawnburst: "evocation",
   renewal: "evocation",
   sanctify: "evocation",
+  "purifying-light": "evocation",
+  "divine-intercession": "evocation",
+  "consecrated-strike": "evocation",
+  "storm-rebuke": "evocation",
   "dragon-breath": "evocation",
   "hellfire-bolt": "evocation",
   dragonbreath: "evocation",
+  "elemental-surge": "evocation",
 
   // Illusion
   terrify: "illusion",
   "mass-terror": "illusion",
   "dread-aura": "illusion",
+  "mirror-image": "illusion",
+  "phantasmal-killer": "illusion",
+  "greater-invisibility": "illusion",
+  "sacred-misdirection": "illusion",
 
   // Necromancy
   curse: "necromancy",
@@ -114,6 +131,11 @@ export const MAGIC_SCHOOL_BY_ABILITY_ID = Object.freeze({
   "soul-rend": "necromancy",
   "blood-siphon": "necromancy",
   wraithstep: "necromancy",
+  "summon-undead": "necromancy",
+  enervation: "necromancy",
+  "death-clutch": "necromancy",
+  "soul-siphon": "necromancy",
+  "grasp-heart": "necromancy",
 
   // Transmutation
   haste: "transmutation",
@@ -122,6 +144,12 @@ export const MAGIC_SCHOOL_BY_ABILITY_ID = Object.freeze({
   fly: "transmutation",
   "bear-strength": "transmutation",
   "beast-shift": "transmutation",
+  "flesh-to-stone": "transmutation",
+  polymorph: "transmutation",
+
+  // Universalist theory is represented by its closest icon-school: divination
+  // studies how disparate workings fit together without making a ninth school.
+  "arcane-convergence": "divination",
 });
 
 export function magicSchoolIdOf(defOrId) {

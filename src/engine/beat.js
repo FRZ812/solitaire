@@ -14,7 +14,7 @@ import { applySurvivalTick } from "./beat-tick.js";
 import { applyWorldMovement, applyWorldTick } from "./beat-world.js";
 import { applyRelationships } from "./beat-relationships.js";
 import { storyFromResponse } from "./narrative-sequence.js";
-import { advanceProgression, progressionLevel } from "./progression.js";
+import { advanceProgression, earnedLevelGrowthText } from "./progression.js";
 import { mergeMemoryBank } from "./memory.js";
 
 // applyBeat is the heart of the engine. Given the current state and a beat
@@ -78,9 +78,8 @@ export function applyBeat(state, beat, options = {}) {
     }
     for (const g of growthItems) {
       newBeats.push({ id: `grow${Date.now()}-${g.id}`, type: "growth", text: `${g.name} ${g.from} → ${g.to}` });
-      // Narrative professions need a route through the same level system as
-      // combat practice. Rating growth is converted deterministically and
-      // capped per skill/beat so a narrator cannot mint an apex character.
+      // Narrative practice earns the same global XP as other activity. Rating
+      // growth is capped per beat so a narrator cannot mint an apex character.
       progressionXpGain += Math.min(3, Math.max(0, g.to - g.from)) * 160;
     }
   }
@@ -227,14 +226,12 @@ export function applyBeat(state, beat, options = {}) {
   }
 
   if (progressionXpGain > 0 && created !== false) {
-    const before = progressionLevel(character);
     const progress = advanceProgression(character, progressionXpGain);
-    if (progress.gained.length) {
-      const latest = progress.gained.at(-1);
+    if (progress.earnedLevels > 0) {
       newBeats.push({
         id: `lvl${Date.now()}`,
         type: "growth",
-        text: `Level ${before} → ${progress.afterLevel} · ${latest.pathName} ${latest.rank}/${latest.maxRank}`,
+        text: earnedLevelGrowthText(progress),
       });
     }
     const priorWanderer = world.codex?.characters?.wanderer || {};

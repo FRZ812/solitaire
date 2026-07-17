@@ -26,7 +26,9 @@ import {
   ATLAS_LANDMARK_GLYPHS,
   ATLAS_LAYERS,
   ATLAS_MAX_ZOOM,
+  ATLAS_TILT,
   atlasFitZoom,
+  atlasPlaneViewport,
   atlasLandmarkLayer,
   atlasLandmarkTypeLabel,
   atlasMarkerVisible,
@@ -43,6 +45,7 @@ import {
   landmarkKnowledge,
   panAtlasCamera,
   summarizeAtlasJourney,
+  tiltScreenToPlane,
   zoomAtlasCamera,
 } from "./worldAtlasModel.js";
 
@@ -289,87 +292,134 @@ function svgPoints(camera, viewport, waypoints) {
 
 // ---- Raster painter ----
 //
-// Paints the physical survey into an offscreen canvas in time-budgeted chunks,
-// compositing after each chunk so panning never blocks the main thread. The
-// party's remembered trail (seen tiles) is drawn over the finished raster.
+// Paints a coarse physical survey immediately, then refines it on an offscreen
+// canvas in time-budgeted chunks. The visible canvas keeps the last usable map
+// until the next preview is ready, so cancelled camera passes never strand the
+// player on the deep-sea clear. The party's remembered trail (seen tiles) is
+// drawn over the finished raster.
 function paintAtlas({ canvas, camera, viewport, seed, seenKeys, token }) {
   const ratio = typeof window !== "undefined"
     ? Math.max(1, Math.min(2, window.devicePixelRatio || 1))
     : 1;
-  canvas.width = Math.max(1, Math.round(viewport.width * ratio));
-  canvas.height = Math.max(1, Math.round(viewport.height * ratio));
-  const context = canvas.getContext("2d", { alpha: false });
+  const pixelWidth = Math.max(1, Math.round(viewport.width * ratio));
+  const pixelHeight = Math.max(1, Math.round(viewport.height * ratio));
+  if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+  if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+  const displayContext = canvas.getContext("2d", { alpha: false });
+
+  // Camera changes paint away from the DOM canvas. Until the preview is
+  // presented, the old camera image remains visible instead of flashing sea.
+  const buffer = canvas.ownerDocument?.createElement?.("canvas") || canvas;
+  buffer.width = pixelWidth;
+  buffer.height = pixelHeight;
+  const context = buffer.getContext("2d", { alpha: false });
+  if (!displayContext || !context) return;
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
 
   const step = rasterStep(camera.zoom);
-  const cellPx = step * camera.zoom;
-  const screenCorners = [
-    atlasScreenToWorld(camera, viewport, { x: -cellPx, y: -cellPx }),
-    atlasScreenToWorld(camera, viewport, { x: viewport.width + cellPx, y: -cellPx }),
-    atlasScreenToWorld(camera, viewport, { x: viewport.width + cellPx, y: viewport.height + cellPx }),
-    atlasScreenToWorld(camera, viewport, { x: -cellPx, y: viewport.height + cellPx }),
-  ];
-  const xmin = Math.floor(Math.min(...screenCorners.map((corner) => corner.x)) / step) * step - step;
-  const xmax = Math.ceil(Math.max(...screenCorners.map((corner) => corner.x)) / step) * step + step;
-  const ymin = Math.floor(Math.min(...screenCorners.map((corner) => corner.y)) / step) * step - step;
-  const ymax = Math.ceil(Math.max(...screenCorners.map((corner) => corner.y)) / step) * step + step;
-  const columns = Math.ceil((xmax - xmin) / step) + 1;
-  const rows = Math.ceil((ymax - ymin) / step) + 1;
-  const basisOrigin = atlasWorldToScreen(camera, viewport, { x: 0, y: 0 });
-  const basisXPoint = atlasWorldToScreen(camera, viewport, { x: step, y: 0 });
-  const basisYPoint = atlasWorldToScreen(camera, viewport, { x: 0, y: step });
-  const xBasis = { x: basisXPoint.x - basisOrigin.x, y: basisXPoint.y - basisOrigin.y };
-  const yBasis = { x: basisYPoint.x - basisOrigin.x, y: basisYPoint.y - basisOrigin.y };
+  const gridFor = (sampleStep) => {
+    const cellPx = sampleStep * camera.zoom;
+    const screenCorners = [
+      atlasScreenToWorld(camera, viewport, { x: -cellPx, y: -cellPx }),
+      atlasScreenToWorld(camera, viewport, { x: viewport.width + cellPx, y: -cellPx }),
+      atlasScreenToWorld(camera, viewport, { x: viewport.width + cellPx, y: viewport.height + cellPx }),
+      atlasScreenToWorld(camera, viewport, { x: -cellPx, y: viewport.height + cellPx }),
+    ];
+    const xmin = Math.floor(Math.min(...screenCorners.map((corner) => corner.x)) / sampleStep) * sampleStep - sampleStep;
+    const xmax = Math.ceil(Math.max(...screenCorners.map((corner) => corner.x)) / sampleStep) * sampleStep + sampleStep;
+    const ymin = Math.floor(Math.min(...screenCorners.map((corner) => corner.y)) / sampleStep) * sampleStep - sampleStep;
+    const ymax = Math.ceil(Math.max(...screenCorners.map((corner) => corner.y)) / sampleStep) * sampleStep + sampleStep;
+    const basisOrigin = atlasWorldToScreen(camera, viewport, { x: 0, y: 0 });
+    const basisXPoint = atlasWorldToScreen(camera, viewport, { x: sampleStep, y: 0 });
+    const basisYPoint = atlasWorldToScreen(camera, viewport, { x: 0, y: sampleStep });
+    return {
+      step: sampleStep,
+      cellPx,
+      xmin,
+      ymin,
+      columns: Math.ceil((xmax - xmin) / sampleStep) + 1,
+      rows: Math.ceil((ymax - ymin) / sampleStep) + 1,
+      xBasis: { x: basisXPoint.x - basisOrigin.x, y: basisXPoint.y - basisOrigin.y },
+      yBasis: { x: basisYPoint.x - basisOrigin.x, y: basisYPoint.y - basisOrigin.y },
+    };
+  };
+
+  const paintCell = (grid, x, y, detailed) => {
+    const sample = cachedSurvey(x, y, seed);
+    const hillshade = detailed ? clamp(
+      ((sample.elevation - cachedSurvey(x - grid.step, y - grid.step, seed).elevation) * 0.78
+        + (sample.elevation - cachedSurvey(x - grid.step, y, seed).elevation) * 0.46) * 0.75,
+      -0.18,
+      0.18,
+    ) : 0;
+    const center = atlasWorldToScreen(camera, viewport, { x, y });
+    const corners = cellCorners(center, grid.xBasis, grid.yBasis);
+    traceCell(context, corners);
+    context.fillStyle = cellColor(sample, hillshade);
+    context.fill();
+
+    if (!detailed) return;
+    const strength = reliefStrength(sample);
+    if (grid.cellPx >= 7 && strength > 0.12) {
+      context.beginPath();
+      context.moveTo(corners[0].x, corners[0].y);
+      context.lineTo(corners[1].x, corners[1].y);
+      context.strokeStyle = `rgba(244, 222, 169, ${0.08 + strength * 0.18})`;
+      context.lineWidth = Math.max(0.45, grid.cellPx * 0.035);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(corners[2].x, corners[2].y);
+      context.lineTo(corners[3].x, corners[3].y);
+      context.strokeStyle = `rgba(28, 24, 24, ${0.1 + strength * 0.24})`;
+      context.lineWidth = Math.max(0.55, grid.cellPx * 0.05);
+      context.stroke();
+    }
+    drawTerrainRelief(context, center, grid.cellPx, sample, coordinateNoise(x, y));
+  };
+
+  const present = () => {
+    if (buffer === canvas) return;
+    displayContext.setTransform(1, 0, 0, 1, 0, 0);
+    displayContext.globalCompositeOperation = "source-over";
+    displayContext.imageSmoothingEnabled = false;
+    displayContext.drawImage(buffer, 0, 0);
+  };
 
   context.fillStyle = SEA_DEEP_INK;
   context.fillRect(0, 0, viewport.width, viewport.height);
 
+  // A 4x coarser world-anchored grid is cheap enough to show in the same task
+  // and gives the refinement pass a terrain-colored image to work over.
+  const previewGrid = gridFor(step * 4);
+  for (let previewRow = 0; previewRow < previewGrid.rows; previewRow += 1) {
+    const y = previewGrid.ymin + previewRow * previewGrid.step;
+    for (let column = 0; column < previewGrid.columns; column += 1) {
+      paintCell(previewGrid, previewGrid.xmin + column * previewGrid.step, y, false);
+    }
+  }
+  present();
+
+  const grid = gridFor(step);
   let row = 0;
+  let lastPresent = typeof performance !== "undefined" ? performance.now() : Date.now();
   const paintChunk = () => {
     if (token.cancelled) return;
     const start = typeof performance !== "undefined" ? performance.now() : Date.now();
-    while (row < rows) {
-      const y = ymin + row * step;
-      for (let column = 0; column < columns; column++) {
-        const x = xmin + column * step;
-        const coord = { x, y };
-        const sample = cachedSurvey(x, y, seed);
-        const northWest = cachedSurvey(x - step, y - step, seed);
-        const west = cachedSurvey(x - step, y, seed);
-        const hillshade = clamp(
-          ((sample.elevation - northWest.elevation) * 0.78 + (sample.elevation - west.elevation) * 0.46) * 0.75,
-          -0.18,
-          0.18,
-        );
-        const center = atlasWorldToScreen(camera, viewport, coord);
-        const corners = cellCorners(center, xBasis, yBasis);
-        traceCell(context, corners);
-        context.fillStyle = cellColor(sample, hillshade);
-        context.fill();
-
-        const strength = reliefStrength(sample);
-        if (cellPx >= 7 && strength > 0.12) {
-          context.beginPath();
-          context.moveTo(corners[0].x, corners[0].y);
-          context.lineTo(corners[1].x, corners[1].y);
-          context.strokeStyle = `rgba(244, 222, 169, ${0.08 + strength * 0.18})`;
-          context.lineWidth = Math.max(0.45, cellPx * 0.035);
-          context.stroke();
-          context.beginPath();
-          context.moveTo(corners[2].x, corners[2].y);
-          context.lineTo(corners[3].x, corners[3].y);
-          context.strokeStyle = `rgba(28, 24, 24, ${0.1 + strength * 0.24})`;
-          context.lineWidth = Math.max(0.55, cellPx * 0.05);
-          context.stroke();
-        }
-
-        drawTerrainRelief(context, center, cellPx, sample, coordinateNoise(x, y));
+    while (row < grid.rows) {
+      const y = grid.ymin + row * grid.step;
+      for (let column = 0; column < grid.columns; column += 1) {
+        paintCell(grid, grid.xmin + column * grid.step, y, true);
       }
       row += 1;
       const now = typeof performance !== "undefined" ? performance.now() : Date.now();
       if (now - start > 9) break;
     }
-    if (row < rows) {
+    if (row < grid.rows) {
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      if (now - lastPresent > 120) {
+        present();
+        lastPresent = now;
+      }
       token.frame = requestAnimationFrame(paintChunk);
       return;
     }
@@ -400,8 +450,24 @@ function paintAtlas({ canvas, camera, viewport, seed, seenKeys, token }) {
     vignette.addColorStop(1, "rgba(2, 10, 22, .56)");
     context.fillStyle = vignette;
     context.fillRect(0, 0, viewport.width, viewport.height);
+    present();
   };
-  paintChunk();
+  token.frame = requestAnimationFrame(paintChunk);
+}
+
+const TILT_STORAGE_KEY = "solitaire-atlas-view";
+const KNOWLEDGE_SHORT_LABELS = Object.freeze({
+  charted: "Charted",
+  sighted: "Sighted",
+  reputation: "Reputation",
+  legend: "Legend",
+});
+
+function stopStagePointer(event) {
+  // Chrome overlays (search, chips, rail, place card) sit on the map stage;
+  // swallowing pointerdown keeps taps and scrolls inside them from panning
+  // the table or charting the ground underneath.
+  event.stopPropagation();
 }
 
 export function WorldAtlas({ state, origin, onPick }) {
@@ -409,25 +475,43 @@ export function WorldAtlas({ state, origin, onPick }) {
   const partyCoord = origin || state?.world?.currentTile || CONTINENT.start.coord;
   const stageRef = useRef(null);
   const canvasRef = useRef(null);
+  const searchInputRef = useRef(null);
   const gestureRef = useRef({ pointers: new Map(), moved: false, dragDistance: 0, pinchDistance: 0 });
   const didInitialFitRef = useRef(false);
   const [viewport, setViewport] = useState(INITIAL_ATLAS_VIEWPORT);
   const [stageMeasured, setStageMeasured] = useState(false);
-  const [camera, setCamera] = useState(() => clampAtlasCamera(
-    centerAtlasCamera(
-      { x: 0, y: 0, zoom: atlasFitZoom(INITIAL_ATLAS_VIEWPORT) * ATLAS_OPEN_ZOOM_RATIO },
-      INITIAL_ATLAS_VIEWPORT,
-      partyCoord,
-      atlasFitZoom(INITIAL_ATLAS_VIEWPORT) * ATLAS_OPEN_ZOOM_RATIO,
-    ),
-    INITIAL_ATLAS_VIEWPORT,
-  ));
+  // The tabletop tilt is the default camera; the choice persists like a maps
+  // app remembering 2D/3D mode.
+  const [tilted, setTilted] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.localStorage.getItem(TILT_STORAGE_KEY) !== "2d";
+    } catch {
+      return true;
+    }
+  });
+  const tilt = tilted ? ATLAS_TILT : null;
+  // Everything on the table — raster, routes, labels, markers — lives on an
+  // oversized plane so the rotated top edge still reaches the stage corners.
+  const planeViewport = useMemo(() => atlasPlaneViewport(viewport, tilt), [viewport, tilted]);
+  const [camera, setCamera] = useState(() => {
+    const plane = atlasPlaneViewport(INITIAL_ATLAS_VIEWPORT, tilted ? ATLAS_TILT : null);
+    const openingZoom = atlasFitZoom(plane) * ATLAS_OPEN_ZOOM_RATIO;
+    return clampAtlasCamera(
+      centerAtlasCamera({ x: 0, y: 0, zoom: openingZoom }, plane, partyCoord, openingZoom),
+      plane,
+    );
+  });
   const [visibleLayers, setVisibleLayers] = useState(() => new Set(ATLAS_LAYERS.map((layer) => layer.id)));
   const [focusedRealmId, setFocusedRealmId] = useState(null);
   const [selection, setSelection] = useState(() => initialAtlasSelection(partyCoord));
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [detailExpanded, setDetailExpanded] = useState(false);
 
-  const fit = atlasFitZoom(viewport);
+  const fit = atlasFitZoom(planeViewport);
   const zoomRatio = camera.zoom / fit;
+  const hexKilometers = CONTINENT.hexKilometers || 6;
   const landmarks = useMemo(() => buildAtlasLandmarks(state, partyCoord), [state, partyCoord]);
   const questMarkers = useMemo(() => atlasQuestMarkers(state), [state]);
   const trackedCharacter = useMemo(() => trackedCharacterResult(state), [state]);
@@ -446,6 +530,7 @@ export function WorldAtlas({ state, origin, onPick }) {
     () => (selectedCoord && state ? summarizeAtlasJourney(state, selectedCoord) : null),
     [state, selectedCoord?.x, selectedCoord?.y],
   );
+  const selectionKey = selection.kind === "landmark" ? selection.id : `${selection.x},${selection.y}`;
 
   // Measure the stage.
   useEffect(() => {
@@ -469,54 +554,86 @@ export function WorldAtlas({ state, origin, onPick }) {
   }, []);
 
   // Fit once after the real stage measurement, then preserve the user's view
-  // while merely keeping it legal on later resizes.
+  // while merely keeping it legal on later resizes and 2D/3D switches.
   useEffect(() => {
     if (!stageMeasured) return;
     setCamera((current) => {
       if (!didInitialFitRef.current) {
         didInitialFitRef.current = true;
-        const openingZoom = atlasFitZoom(viewport) * ATLAS_OPEN_ZOOM_RATIO;
-        return centerAtlasCamera(current, viewport, partyCoord, openingZoom);
+        const openingZoom = atlasFitZoom(planeViewport) * ATLAS_OPEN_ZOOM_RATIO;
+        return centerAtlasCamera(current, planeViewport, partyCoord, openingZoom);
       }
-      return clampAtlasCamera(current, viewport);
+      return clampAtlasCamera(current, planeViewport);
     });
-  }, [stageMeasured, viewport.width, viewport.height, partyCoord.x, partyCoord.y]);
+  }, [stageMeasured, planeViewport.width, planeViewport.height, partyCoord.x, partyCoord.y]);
 
-  // Paint the raster whenever the camera, seed, or discoveries change.
-  const seenKeys = useMemo(() => Object.keys(state?.world?.seen || {}), [state?.world?.seen]);
+  // A fresh selection opens as the compact place card.
+  useEffect(() => {
+    setDetailExpanded(false);
+  }, [selectionKey]);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  // Paint the raster whenever the camera, plane, seed, or discoveries change.
+  const seenSignature = Object.keys(state?.world?.seen || {}).join("|");
+  const seenKeys = useMemo(
+    () => (seenSignature ? seenSignature.split("|") : []),
+    [seenSignature],
+  );
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || typeof requestAnimationFrame === "undefined") return undefined;
+    if (!stageMeasured || !canvas || typeof requestAnimationFrame === "undefined") return undefined;
     const token = { cancelled: false, frame: 0 };
-    paintAtlas({ canvas, camera, viewport, seed, seenKeys, token });
+    // Defer the start one frame so measurement and initial-fit renders can
+    // coalesce without clearing or beginning a painter that will be cancelled.
+    token.frame = requestAnimationFrame(() => {
+      token.frame = 0;
+      if (!token.cancelled) paintAtlas({ canvas, camera, viewport: planeViewport, seed, seenKeys, token });
+    });
     return () => {
       token.cancelled = true;
       if (token.frame) cancelAnimationFrame(token.frame);
     };
-  }, [camera, viewport, seed, seenKeys]);
+  }, [camera, planeViewport, seed, seenKeys, stageMeasured]);
 
-  // Wheel zoom needs a non-passive listener.
+  // Wheel zoom needs a non-passive listener. The anchor converts through the
+  // tilt so the ground under the cursor stays put on the leaned table too.
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return undefined;
     const onWheel = (event) => {
       event.preventDefault();
       const bounds = stage.getBoundingClientRect();
-      const anchor = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
-      setCamera((current) => zoomAtlasCamera(current, viewport, event.deltaY < 0 ? 1.22 : 1 / 1.22, anchor));
+      const anchor = tiltScreenToPlane(
+        { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+        viewport,
+        planeViewport,
+        tilt,
+      );
+      setCamera((current) => zoomAtlasCamera(current, planeViewport, event.deltaY < 0 ? 1.22 : 1 / 1.22, anchor));
     };
     stage.addEventListener("wheel", onWheel, { passive: false });
     return () => stage.removeEventListener("wheel", onWheel);
-  }, [viewport]);
+  }, [viewport, planeViewport, tilted]);
 
-  function stagePoint(event) {
+  // Pointer math runs in plane coordinates: a stage touch is projected through
+  // the tilt first, so drags keep the ground glued to the finger and pinches
+  // zoom about the true midpoint between the touch points.
+  function planePoint(event) {
     const bounds = stageRef.current.getBoundingClientRect();
-    return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+    return tiltScreenToPlane(
+      { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      viewport,
+      planeViewport,
+      tilt,
+    );
   }
 
   function handlePointerDown(event) {
     const gesture = gestureRef.current;
-    gesture.pointers.set(event.pointerId, stagePoint(event));
+    gesture.pointers.set(event.pointerId, planePoint(event));
     if (gesture.pointers.size === 1) {
       gesture.moved = false;
       gesture.dragDistance = 0;
@@ -531,7 +648,7 @@ export function WorldAtlas({ state, origin, onPick }) {
   function handlePointerMove(event) {
     const gesture = gestureRef.current;
     if (!gesture.pointers.has(event.pointerId)) return;
-    const point = stagePoint(event);
+    const point = planePoint(event);
     const previous = gesture.pointers.get(event.pointerId);
     gesture.pointers.set(event.pointerId, point);
 
@@ -543,7 +660,7 @@ export function WorldAtlas({ state, origin, onPick }) {
         const factor = distance / gesture.pinchDistance;
         gesture.pinchDistance = distance;
         gesture.moved = true;
-        setCamera((current) => zoomAtlasCamera(current, viewport, factor, midpoint));
+        setCamera((current) => zoomAtlasCamera(current, planeViewport, factor, midpoint));
       }
       return;
     }
@@ -553,7 +670,7 @@ export function WorldAtlas({ state, origin, onPick }) {
     gesture.dragDistance += Math.hypot(dx, dy);
     if (!gesture.moved && gesture.dragDistance < 4) return;
     gesture.moved = true;
-    setCamera((current) => panAtlasCamera(current, viewport, dx, dy));
+    setCamera((current) => panAtlasCamera(current, planeViewport, dx, dy));
   }
 
   function handlePointerUp(event) {
@@ -563,7 +680,7 @@ export function WorldAtlas({ state, origin, onPick }) {
     if (!hadPointer || gesture.moved || gesture.pointers.size > 0) return;
     if (event.target.closest?.("button")) return; // marker buttons select themselves
     // A clean tap on open ground charts that coordinate.
-    const fractional = atlasScreenToWorld(camera, viewport, stagePoint(event));
+    const fractional = atlasScreenToWorld(camera, planeViewport, planePoint(event));
     const coord = axialRound(fractional.x, fractional.y);
     const sample = cachedSurvey(coord.x, coord.y, seed);
     if (!sample.land) return;
@@ -571,15 +688,16 @@ export function WorldAtlas({ state, origin, onPick }) {
   }
 
   function handleKeyDown(event) {
+    if (event.target.closest?.("input")) return; // typing in search
     const pan = 72;
-    if (event.key === "ArrowLeft") setCamera((current) => panAtlasCamera(current, viewport, pan, 0));
-    else if (event.key === "ArrowRight") setCamera((current) => panAtlasCamera(current, viewport, -pan, 0));
-    else if (event.key === "ArrowUp") setCamera((current) => panAtlasCamera(current, viewport, 0, pan));
-    else if (event.key === "ArrowDown") setCamera((current) => panAtlasCamera(current, viewport, 0, -pan));
-    else if (event.key === "+" || event.key === "=") setCamera((current) => zoomAtlasCamera(current, viewport, 1.25));
-    else if (event.key === "-") setCamera((current) => zoomAtlasCamera(current, viewport, 1 / 1.25));
-    else if (event.key === "0") setCamera((current) => clampAtlasCamera({ ...current, zoom: fit }, viewport));
-    else if (event.key === "Home") setCamera((current) => centerAtlasCamera(current, viewport, partyCoord, Math.max(current.zoom, fit * 3)));
+    if (event.key === "ArrowLeft") setCamera((current) => panAtlasCamera(current, planeViewport, pan, 0));
+    else if (event.key === "ArrowRight") setCamera((current) => panAtlasCamera(current, planeViewport, -pan, 0));
+    else if (event.key === "ArrowUp") setCamera((current) => panAtlasCamera(current, planeViewport, 0, pan));
+    else if (event.key === "ArrowDown") setCamera((current) => panAtlasCamera(current, planeViewport, 0, -pan));
+    else if (event.key === "+" || event.key === "=") setCamera((current) => zoomAtlasCamera(current, planeViewport, 1.25));
+    else if (event.key === "-") setCamera((current) => zoomAtlasCamera(current, planeViewport, 1 / 1.25));
+    else if (event.key === "0") setCamera((current) => clampAtlasCamera({ ...current, zoom: fit }, planeViewport));
+    else if (event.key === "Home") setCamera((current) => centerAtlasCamera(current, planeViewport, partyCoord, Math.max(current.zoom, fit * 3)));
     else return;
     event.preventDefault();
   }
@@ -592,7 +710,7 @@ export function WorldAtlas({ state, origin, onPick }) {
     setFocusedRealmId((current) => (current === realm.id ? null : realm.id));
     const capital = landmarks.find((landmark) => landmark.capitalOfRealmId === realm.id || landmark.id === realm.capital.id);
     if (capital) setSelection({ kind: "landmark", id: capital.id });
-    setCamera((current) => centerAtlasCamera(current, viewport, realm.center, Math.max(fit * 2.1, current.zoom)));
+    setCamera((current) => centerAtlasCamera(current, planeViewport, realm.center, Math.max(fit * 2.1, current.zoom)));
   }
 
   function toggleLayer(layerId) {
@@ -604,15 +722,34 @@ export function WorldAtlas({ state, origin, onPick }) {
     });
   }
 
+  function toggleTilt() {
+    setTilted((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(TILT_STORAGE_KEY, next ? "3d" : "2d");
+      } catch {
+        // Private browsing: the mode simply won't persist.
+      }
+      return next;
+    });
+  }
+
   function centerOnParty() {
-    setCamera((current) => centerAtlasCamera(current, viewport, partyCoord, Math.max(current.zoom, fit * 3)));
+    setCamera((current) => centerAtlasCamera(current, planeViewport, partyCoord, Math.max(current.zoom, fit * 3)));
   }
 
   function centerOnTrackedCharacter() {
     if (!trackedCharacter) return;
     const { x, y } = trackedCharacter.pos;
     setSelection({ kind: "point", x, y });
-    setCamera((current) => centerAtlasCamera(current, viewport, { x, y }, Math.max(current.zoom, fit * 3)));
+    setCamera((current) => centerAtlasCamera(current, planeViewport, { x, y }, Math.max(current.zoom, fit * 3)));
+  }
+
+  function pickSearchResult(landmark) {
+    setSelection({ kind: "landmark", id: landmark.id });
+    setCamera((current) => centerAtlasCamera(current, planeViewport, landmark.coord, Math.max(current.zoom, fit * 3)));
+    setSearchOpen(false);
+    setQuery("");
   }
 
   function chartSelection() {
@@ -628,18 +765,34 @@ export function WorldAtlas({ state, origin, onPick }) {
     });
   }
 
+  const searchResults = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const matches = landmarks.filter((landmark) => !needle
+      || landmark.name.toLowerCase().includes(needle)
+      || atlasLandmarkTypeLabel(landmark).toLowerCase().includes(needle)
+      || (REGION_DEFINITIONS[landmark.regionId]?.label || "").toLowerCase().includes(needle)
+      || (REALM_BY_ID[landmark.realmId]?.shortName || "").toLowerCase().includes(needle));
+    return matches
+      .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
+      .slice(0, 40);
+  }, [landmarks, query]);
+
   // ---- Derived presentation ----
-  const partyScreen = atlasWorldToScreen(camera, viewport, partyCoord);
-  const kmAcross = Math.round((viewport.width / camera.zoom) * (CONTINENT.hexKilometers || 6));
-  const currentLegPoints = journey ? svgPoints(camera, viewport, thinPath(journey.legPath)) : "";
+  const planeOffset = {
+    left: (viewport.width - planeViewport.width) / 2,
+    top: (viewport.height - planeViewport.height) / 2,
+  };
+  const partyScreen = atlasWorldToScreen(camera, planeViewport, partyCoord);
+  const kmAcross = Math.round((viewport.width / camera.zoom) * hexKilometers);
+  const currentLegPoints = journey ? svgPoints(camera, planeViewport, thinPath(journey.legPath)) : "";
   const continuationPath = journey
     ? journey.fullPath.slice(Math.max(0, (journey.legPath?.length || 1) - 1))
     : [];
   const continuationPoints = continuationPath.length > 1
-    ? svgPoints(camera, viewport, thinPath(continuationPath))
+    ? svgPoints(camera, planeViewport, thinPath(continuationPath))
     : "";
   const journeyBreaks = journey ? journeyLegBreaks(journey.fullPath, journey.legSteps) : [];
-  const coastPoints = useMemo(() => svgPoints(camera, viewport, CONTINENT.coastline), [camera, viewport]);
+  const coastPoints = useMemo(() => svgPoints(camera, planeViewport, CONTINENT.coastline), [camera, planeViewport]);
   const showRegionLabels = zoomRatio >= 1.7;
   const showRealmLabels = zoomRatio < 1.7;
   const trackedAtSelection = !!(
@@ -687,342 +840,447 @@ export function WorldAtlas({ state, origin, onPick }) {
   const selectionIsParty = selectedCoord && selectedCoord.x === partyCoord.x && selectedCoord.y === partyCoord.y;
 
   return (
-    <section className="world-atlas" aria-labelledby="world-atlas-title" aria-describedby="world-atlas-guide">
-      <header className="world-atlas__header">
-        <div className="world-atlas__identity">
-          <small>Continental survey · five realms</small>
-          <h3 id="world-atlas-title">{CONTINENT.name}</h3>
-        </div>
-        <p id="world-atlas-guide">
-          Drag to pan, pinch or scroll to zoom, and tap any marker or open ground to survey it before setting the compass.
-        </p>
-        <div className="world-atlas__scale" role="img" aria-label={`View spans about ${kmAcross} kilometers; ${CONTINENT.hexKilometers} kilometers per travel hex`}>
-          <i aria-hidden="true" />
-          <span>≈ {kmAcross.toLocaleString()} km across</span>
-        </div>
-      </header>
-
-      <nav className="world-atlas__realm-tabs" aria-label="Five biome realms">
-        {REALMS.map((realm) => (
-          <button
-            key={realm.id}
-            type="button"
-            className={`is-${realm.id}`}
-            aria-pressed={focusedRealmId === realm.id}
-            onClick={() => inspectRealm(realm)}
+    <section
+      className={`world-atlas${tilted ? " is-tilted" : ""}`}
+      style={{ "--atlas-tilt": `${ATLAS_TILT.angleDeg}deg`, "--atlas-perspective": `${ATLAS_TILT.perspective}px` }}
+      aria-labelledby="world-atlas-title"
+    >
+      <div
+        ref={stageRef}
+        className="world-atlas__stage"
+        role="application"
+        aria-label={`Interactive map of ${CONTINENT.name}. Arrow keys pan, plus and minus zoom, zero fits the continent, Home returns to the party.`}
+        tabIndex={0}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onKeyDown={handleKeyDown}
+      >
+        <div className="world-atlas__scene">
+          <div
+            className="world-atlas__plane"
+            style={{
+              width: `${planeViewport.width}px`,
+              height: `${planeViewport.height}px`,
+              left: `${planeOffset.left}px`,
+              top: `${planeOffset.top}px`,
+            }}
           >
-            <i aria-hidden="true" />
-            <span><small>{realm.direction}</small><b>{realm.shortName}</b></span>
-          </button>
-        ))}
-      </nav>
+            <canvas ref={canvasRef} className="world-atlas__canvas" aria-hidden="true" />
 
-      <div className="world-atlas__layer-controls" role="group" aria-label="Atlas marker layers">
-        <button type="button" className="is-all-realms" aria-pressed={!focusedRealmId} onClick={() => setFocusedRealmId(null)}>
-          <i aria-hidden="true">◎</i><span>All lands</span>
-        </button>
-        {ATLAS_LAYERS.map((layer) => (
-          <button key={layer.id} type="button" aria-pressed={visibleLayers.has(layer.id)} onClick={() => toggleLayer(layer.id)}>
-            <i aria-hidden="true">{layer.glyph}</i><span>{layer.label}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="world-atlas__map-shell">
-        <div
-          ref={stageRef}
-          className="world-atlas__stage"
-          role="application"
-          aria-label={`Interactive map of ${CONTINENT.name}. Arrow keys pan, plus and minus zoom, zero fits the continent, Home returns to the party.`}
-          tabIndex={0}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          onKeyDown={handleKeyDown}
-        >
-          <canvas ref={canvasRef} className="world-atlas__canvas" aria-hidden="true" />
-
-          <svg className="world-atlas__vector" viewBox={`0 0 ${viewport.width} ${viewport.height}`} aria-hidden="true">
-            <defs>
-              <marker id="world-atlas-route-arrow" viewBox="0 0 8 8" refX="6.2" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                <path d="M 0 0 L 8 4 L 0 8 z" />
-              </marker>
-            </defs>
-            <polygon className="world-atlas__coastline" points={coastPoints} />
-            {CONTINENT_WATERWAYS.map((river) => (
-              <polyline key={river.id} className="world-atlas__river" points={svgPoints(camera, viewport, river.waypoints)}>
-                <title>{river.name}</title>
-              </polyline>
-            ))}
-            {CONTINENT_LAKES.map((lake) => {
-              const center = atlasWorldToScreen(camera, viewport, lake.center);
-              return <circle key={lake.id} className="world-atlas__lake" cx={center.x} cy={center.y} r={Math.max(3, lake.radius * camera.zoom * 0.85)} />;
-            })}
-            {CONTINENT_SEA_LANES.map((lane) => (
-              <polyline
-                key={lane.id}
-                className={`world-atlas__sea-lane ${focusedRealmId && !lane.realmIds?.includes(focusedRealmId) ? "is-muted" : ""}`}
-                points={svgPoints(camera, viewport, lane.waypoints)}
-              >
-                <title>{lane.name}</title>
-              </polyline>
-            ))}
-            {CONTINENT_ROUTES.map((route) => (
-              <polyline
-                key={route.id}
-                className={`world-atlas__route ${route.kind === "regional-road" ? "is-regional" : "is-great"} ${focusedRealmId && !route.realmIds?.includes(focusedRealmId) ? "is-muted" : ""}`}
-                points={svgPoints(camera, viewport, route.waypoints)}
-              >
-                <title>{route.name}</title>
-              </polyline>
-            ))}
-            {continuationPoints && (
-              <>
-                <polyline className="world-atlas__journey-continuation-halo" points={continuationPoints} />
-                <polyline className="world-atlas__journey-continuation" points={continuationPoints} />
-              </>
-            )}
-            {currentLegPoints && (
-              <>
-                <polyline className="world-atlas__journey-halo" points={currentLegPoints} />
-                <polyline className="world-atlas__journey" points={currentLegPoints} markerEnd="url(#world-atlas-route-arrow)" />
-              </>
-            )}
-            {journeyBreaks.map((stop, index) => {
-              const screen = atlasWorldToScreen(camera, viewport, stop);
-              return (
-                <g key={`${stop.x},${stop.y}`} className="world-atlas__leg-stop" transform={`translate(${screen.x} ${screen.y})`}>
-                  <ellipse cx="2" cy="3" rx="7" ry="3" />
-                  <circle r="5.5" />
-                  <text y=".5">{index + 1}</text>
-                </g>
-              );
-            })}
-          </svg>
-
-          {showRealmLabels && (
-            <div className="world-atlas__realm-labels" aria-hidden="true">
-              {REALMS.map((realm) => {
-                const screen = atlasWorldToScreen(camera, viewport, realm.center);
+            <svg className="world-atlas__vector" viewBox={`0 0 ${planeViewport.width} ${planeViewport.height}`} aria-hidden="true">
+              <defs>
+                <marker id="world-atlas-route-arrow" viewBox="0 0 8 8" refX="6.2" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                  <path d="M 0 0 L 8 4 L 0 8 z" />
+                </marker>
+              </defs>
+              <polygon className="world-atlas__coastline" points={coastPoints} />
+              {CONTINENT_WATERWAYS.map((river) => (
+                <polyline key={river.id} className="world-atlas__river" points={svgPoints(camera, planeViewport, river.waypoints)}>
+                  <title>{river.name}</title>
+                </polyline>
+              ))}
+              {CONTINENT_LAKES.map((lake) => {
+                const center = atlasWorldToScreen(camera, planeViewport, lake.center);
+                return <circle key={lake.id} className="world-atlas__lake" cx={center.x} cy={center.y} r={Math.max(3, lake.radius * camera.zoom * 0.85)} />;
+              })}
+              {CONTINENT_SEA_LANES.map((lane) => (
+                <polyline
+                  key={lane.id}
+                  className={`world-atlas__sea-lane ${focusedRealmId && !lane.realmIds?.includes(focusedRealmId) ? "is-muted" : ""}`}
+                  points={svgPoints(camera, planeViewport, lane.waypoints)}
+                >
+                  <title>{lane.name}</title>
+                </polyline>
+              ))}
+              {CONTINENT_ROUTES.map((route) => (
+                <polyline
+                  key={route.id}
+                  className={`world-atlas__route ${route.kind === "regional-road" ? "is-regional" : "is-great"} ${focusedRealmId && !route.realmIds?.includes(focusedRealmId) ? "is-muted" : ""}`}
+                  points={svgPoints(camera, planeViewport, route.waypoints)}
+                >
+                  <title>{route.name}</title>
+                </polyline>
+              ))}
+              {continuationPoints && (
+                <>
+                  <polyline className="world-atlas__journey-continuation-halo" points={continuationPoints} />
+                  <polyline className="world-atlas__journey-continuation" points={continuationPoints} />
+                </>
+              )}
+              {currentLegPoints && (
+                <>
+                  <polyline className="world-atlas__journey-halo" points={currentLegPoints} />
+                  <polyline className="world-atlas__journey" points={currentLegPoints} markerEnd="url(#world-atlas-route-arrow)" />
+                </>
+              )}
+              {journeyBreaks.map((stop, index) => {
+                const screen = atlasWorldToScreen(camera, planeViewport, stop);
                 return (
-                  <span key={realm.id} className={`is-${realm.id}`} style={{ left: `${screen.x}px`, top: `${screen.y}px` }}>
-                    <b>{realm.shortName}</b>
-                    <small>{realm.biomeName}</small>
+                  <g key={`${stop.x},${stop.y}`} className="world-atlas__leg-stop" transform={`translate(${screen.x} ${screen.y})`}>
+                    <ellipse cx="2" cy="3" rx="7" ry="3" />
+                    <circle r="5.5" />
+                    <text y=".5">{index + 1}</text>
+                  </g>
+                );
+              })}
+            </svg>
+
+            {showRealmLabels && (
+              <div className="world-atlas__realm-labels" aria-hidden="true">
+                {REALMS.map((realm) => {
+                  const screen = atlasWorldToScreen(camera, planeViewport, realm.center);
+                  return (
+                    <span key={realm.id} className={`is-${realm.id}`} style={{ left: `${screen.x}px`, top: `${screen.y}px` }}>
+                      <b>{realm.shortName}</b>
+                      <small>{realm.biomeName}</small>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="world-atlas__water-labels" aria-hidden="true">
+              {COASTAL_FEATURES.map((feature) => {
+                const screen = atlasWorldToScreen(camera, planeViewport, feature.coord);
+                return (
+                  <span key={feature.id} className={`is-${feature.kind}`} style={{ left: `${screen.x}px`, top: `${screen.y}px` }}>
+                    {feature.name}
                   </span>
                 );
               })}
             </div>
-          )}
 
-          <div className="world-atlas__water-labels" aria-hidden="true">
-            {COASTAL_FEATURES.map((feature) => {
-              const screen = atlasWorldToScreen(camera, viewport, feature.coord);
+            {showRegionLabels && (
+              <div className="world-atlas__region-labels" aria-hidden="true">
+                {Object.values(REGION_DEFINITIONS).flatMap((region) => region.sites.map((site, index) => {
+                  const screen = atlasWorldToScreen(camera, planeViewport, site);
+                  return (
+                    <span key={`${region.id}:${index}`} style={{ left: `${screen.x}px`, top: `${screen.y}px` }}>
+                      {region.label}
+                    </span>
+                  );
+                }))}
+              </div>
+            )}
+
+            <div className="world-atlas__marker-layer" role="group" aria-label={`${landmarks.length} known landmarks`}>
+              {landmarks.map((landmark) => {
+                const visible = atlasMarkerVisible(landmark, {
+                  zoomRatio,
+                  visibleLayers,
+                  focusedRealmId,
+                  selectedLandmarkId: selection.kind === "landmark" ? selection.id : null,
+                }) || !!landmark.quest;
+                const screen = atlasWorldToScreen(camera, planeViewport, landmark.coord);
+                const offstage = screen.x < -40 || screen.y < -40 || screen.x > planeViewport.width + 40 || screen.y > planeViewport.height + 40;
+                const selected = selection.kind === "landmark" && selection.id === landmark.id;
+                const poiIconKey = poiIconKeyForLandmark(landmark);
+                return (
+                  <button
+                    key={landmark.id}
+                    type="button"
+                    hidden={!visible || offstage}
+                    className={`world-atlas__marker is-${landmark.knowledgeTier} is-category-${atlasLandmarkLayer(landmark)} ${poiIconKey ? "has-poi-icon" : ""} ${selected ? "is-selected" : ""} ${landmark.capitalOfRealmId ? "is-capital" : ""} ${landmark.quest ? "has-quest" : ""}`}
+                    style={{ left: `${screen.x}px`, top: `${screen.y}px` }}
+                    onClick={() => inspectLandmark(landmark)}
+                    aria-label={`Inspect ${landmark.name}, ${atlasLandmarkTypeLabel(landmark)}, ${REGION_DEFINITIONS[landmark.regionId]?.label || REALM_BY_ID[landmark.realmId]?.shortName || "uncharted lands"}, ${ATLAS_KNOWLEDGE_LABELS[landmark.knowledgeTier]}`}
+                    aria-pressed={selected}
+                    aria-controls="world-atlas-detail"
+                  >
+                    <span aria-hidden="true">
+                      {poiIconKey
+                        ? <PoiIcon iconKey={poiIconKey} size={landmark.capitalOfRealmId ? 43 : 35} marketTier={landmark.marketTier} />
+                        : (ATLAS_LANDMARK_GLYPHS[landmark.kind] || "◆")}
+                    </span>
+                    {landmark.quest && <i className="world-atlas__quest-pip" aria-hidden="true">!</i>}
+                    {(zoomRatio >= 1.5 || landmark.capitalOfRealmId || selected) && (
+                      <b aria-hidden="true">{landmark.name}</b>
+                    )}
+                  </button>
+                );
+              })}
+              {questMarkers.map((quest) => {
+                const screen = atlasWorldToScreen(camera, planeViewport, quest.coord);
+                const offstage = screen.x < -40 || screen.y < -40 || screen.x > planeViewport.width + 40 || screen.y > planeViewport.height + 40;
+                return (
+                  <button
+                    key={quest.id}
+                    type="button"
+                    hidden={offstage}
+                    className="world-atlas__marker is-quest"
+                    style={{ left: `${screen.x}px`, top: `${screen.y}px` }}
+                    onClick={() => setSelection({ kind: "point", x: quest.coord.x, y: quest.coord.y })}
+                    aria-label={`Quest objective: ${quest.title}`}
+                  >
+                    <span aria-hidden="true">✦</span>
+                    <b aria-hidden="true">{quest.title}</b>
+                  </button>
+                );
+              })}
+              {trackedCharacter && (() => {
+                const screen = atlasWorldToScreen(camera, planeViewport, trackedCharacter.pos);
+                const offstage = screen.x < -40 || screen.y < -40 || screen.x > planeViewport.width + 40 || screen.y > planeViewport.height + 40;
+                return (
+                  <button
+                    type="button"
+                    hidden={offstage}
+                    className={`world-atlas__marker is-tracked-character${trackedAtSelection ? " is-selected" : ""}`}
+                    style={{ left: `${screen.x}px`, top: `${screen.y}px` }}
+                    onClick={centerOnTrackedCharacter}
+                    aria-label={`Tracked lead for ${trackedCharacter.name}`}
+                    aria-pressed={trackedAtSelection}
+                    aria-controls="world-atlas-detail"
+                  >
+                    <span aria-hidden="true">⌖</span>
+                    <b aria-hidden="true">{trackedCharacter.name}</b>
+                  </button>
+                );
+              })()}
+            </div>
+
+            {selection.kind === "point" && (() => {
+              const screen = atlasWorldToScreen(camera, planeViewport, selectedCoord);
               return (
-                <span key={feature.id} className={`is-${feature.kind}`} style={{ left: `${screen.x}px`, top: `${screen.y}px` }}>
-                  {feature.name}
+                <span className="world-atlas__point-pin" style={{ left: `${screen.x}px`, top: `${screen.y}px` }} aria-hidden="true">
+                  <i /><b />
                 </span>
               );
-            })}
-          </div>
-
-          {showRegionLabels && (
-            <div className="world-atlas__region-labels" aria-hidden="true">
-              {Object.values(REGION_DEFINITIONS).flatMap((region) => region.sites.map((site, index) => {
-                const screen = atlasWorldToScreen(camera, viewport, site);
-                return (
-                  <span key={`${region.id}:${index}`} style={{ left: `${screen.x}px`, top: `${screen.y}px` }}>
-                    {region.label}
-                  </span>
-                );
-              }))}
-            </div>
-          )}
-
-          <div className="world-atlas__marker-layer" role="group" aria-label={`${landmarks.length} known landmarks`}>
-            {landmarks.map((landmark) => {
-              const visible = atlasMarkerVisible(landmark, {
-                zoomRatio,
-                visibleLayers,
-                focusedRealmId,
-                selectedLandmarkId: selection.kind === "landmark" ? selection.id : null,
-              }) || !!landmark.quest;
-              const screen = atlasWorldToScreen(camera, viewport, landmark.coord);
-              const offstage = screen.x < -40 || screen.y < -40 || screen.x > viewport.width + 40 || screen.y > viewport.height + 40;
-              const selected = selection.kind === "landmark" && selection.id === landmark.id;
-              const poiIconKey = poiIconKeyForLandmark(landmark);
-              return (
-                <button
-                  key={landmark.id}
-                  type="button"
-                  hidden={!visible || offstage}
-                  className={`world-atlas__marker is-${landmark.knowledgeTier} is-category-${atlasLandmarkLayer(landmark)} ${poiIconKey ? "has-poi-icon" : ""} ${selected ? "is-selected" : ""} ${landmark.capitalOfRealmId ? "is-capital" : ""} ${landmark.quest ? "has-quest" : ""}`}
-                  style={{ left: `${screen.x}px`, top: `${screen.y}px` }}
-                  onClick={() => inspectLandmark(landmark)}
-                  aria-label={`Inspect ${landmark.name}, ${atlasLandmarkTypeLabel(landmark)}, ${REGION_DEFINITIONS[landmark.regionId]?.label || REALM_BY_ID[landmark.realmId]?.shortName || "uncharted lands"}, ${ATLAS_KNOWLEDGE_LABELS[landmark.knowledgeTier]}`}
-                  aria-pressed={selected}
-                  aria-controls="world-atlas-detail"
-                >
-                  <span aria-hidden="true">
-                    {poiIconKey
-                      ? <PoiIcon iconKey={poiIconKey} size={landmark.capitalOfRealmId ? 43 : 35} marketTier={landmark.marketTier} />
-                      : (ATLAS_LANDMARK_GLYPHS[landmark.kind] || "◆")}
-                  </span>
-                  {landmark.quest && <i className="world-atlas__quest-pip" aria-hidden="true">!</i>}
-                  {(zoomRatio >= 1.5 || landmark.capitalOfRealmId || selected) && (
-                    <b aria-hidden="true">{landmark.name}</b>
-                  )}
-                </button>
-              );
-            })}
-            {questMarkers.map((quest) => {
-              const screen = atlasWorldToScreen(camera, viewport, quest.coord);
-              const offstage = screen.x < -40 || screen.y < -40 || screen.x > viewport.width + 40 || screen.y > viewport.height + 40;
-              return (
-                <button
-                  key={quest.id}
-                  type="button"
-                  hidden={offstage}
-                  className="world-atlas__marker is-quest"
-                  style={{ left: `${screen.x}px`, top: `${screen.y}px` }}
-                  onClick={() => setSelection({ kind: "point", x: quest.coord.x, y: quest.coord.y })}
-                  aria-label={`Quest objective: ${quest.title}`}
-                >
-                  <span aria-hidden="true">✦</span>
-                  <b aria-hidden="true">{quest.title}</b>
-                </button>
-              );
-            })}
-            {trackedCharacter && (() => {
-              const screen = atlasWorldToScreen(camera, viewport, trackedCharacter.pos);
-              const offstage = screen.x < -40 || screen.y < -40 || screen.x > viewport.width + 40 || screen.y > viewport.height + 40;
-              return (
-                <button
-                  type="button"
-                  hidden={offstage}
-                  className={`world-atlas__marker is-tracked-character${trackedAtSelection ? " is-selected" : ""}`}
-                  style={{ left: `${screen.x}px`, top: `${screen.y}px` }}
-                  onClick={centerOnTrackedCharacter}
-                  aria-label={`Tracked lead for ${trackedCharacter.name}`}
-                  aria-pressed={trackedAtSelection}
-                  aria-controls="world-atlas-detail"
-                >
-                  <span aria-hidden="true">⌖</span>
-                  <b aria-hidden="true">{trackedCharacter.name}</b>
-                </button>
-              );
             })()}
-          </div>
 
-          {selection.kind === "point" && (() => {
-            const screen = atlasWorldToScreen(camera, viewport, selectedCoord);
-            return (
-              <span className="world-atlas__point-pin" style={{ left: `${screen.x}px`, top: `${screen.y}px` }} aria-hidden="true">
-                <i /><b />
-              </span>
-            );
-          })()}
-
-          <div
-            className="world-atlas__party"
-            style={{ left: `${partyScreen.x}px`, top: `${partyScreen.y}px` }}
-            role="img"
-            aria-label={`Your current position on ${CONTINENT.name}`}
-          >
-            <i aria-hidden="true" />
-            <span aria-hidden="true">You</span>
-          </div>
-
-          <div className="world-atlas__map-controls">
-            <button type="button" onClick={centerOnParty} aria-label="Center map on the party">◎ Party</button>
-            {trackedCharacter && <button type="button" onClick={centerOnTrackedCharacter} aria-label={`Center map on tracked character ${trackedCharacter.name}`} title={trackedCharacter.name}>⌖ Track</button>}
-            <div role="group" aria-label="Map zoom controls">
-              <button type="button" onClick={() => setCamera((current) => zoomAtlasCamera(current, viewport, 1 / 1.4))} disabled={camera.zoom <= fit * 1.01} aria-label="Zoom map out">−</button>
-              <button type="button" onClick={() => setCamera((current) => clampAtlasCamera({ ...current, zoom: fit }, viewport))} aria-label="Fit the whole continent">{Math.round(zoomRatio * 100)}%</button>
-              <button type="button" onClick={() => setCamera((current) => zoomAtlasCamera(current, viewport, 1.4))} disabled={camera.zoom >= ATLAS_MAX_ZOOM * 0.99} aria-label="Zoom map in">+</button>
+            <div
+              className="world-atlas__party"
+              style={{ left: `${partyScreen.x}px`, top: `${partyScreen.y}px` }}
+              role="img"
+              aria-label={`Your current position on ${CONTINENT.name}`}
+            >
+              <i aria-hidden="true" />
+              <span aria-hidden="true">You</span>
             </div>
           </div>
+        </div>
 
-          <div className="world-atlas__compass-rose" aria-hidden="true">
-            <span>N</span><i />
+        {tilted && <div className="world-atlas__horizon" aria-hidden="true" />}
+
+        <div className="world-atlas__chrome-top" onPointerDown={stopStagePointer}>
+          <div className="world-atlas__topline">
+            <div className="world-atlas__title-chip">
+              <small>Wayfinder's survey</small>
+              <h3 id="world-atlas-title">{CONTINENT.name}</h3>
+            </div>
+            <button
+              type="button"
+              className="world-atlas__search-pill"
+              onClick={() => setSearchOpen((open) => !open)}
+              aria-expanded={searchOpen}
+              aria-controls="world-atlas-search"
+            >
+              <i aria-hidden="true">⌕</i>
+              <span>Search {landmarks.length} charted places</span>
+            </button>
           </div>
 
-          {journey && (
-            <div className={`world-atlas__travel-docket${journey.risk >= 40 ? " is-danger" : ""}`} aria-label={`Planned march to ${detailTitle}`}>
-              <div>
-                <small>Journey laid out</small>
-                <strong>{detailTitle}</strong>
-                <span>{journey.kilometers.toLocaleString()} km · ≈{journey.duration}</span>
-              </div>
-              <em><b>{journey.risk}%</b> first-leg danger</em>
-              <button type="button" onClick={chartSelection}>Set route</button>
+          <nav className="world-atlas__chips world-atlas__chips--realms" aria-label="Five biome realms">
+            <button type="button" className="is-all-realms" aria-pressed={!focusedRealmId} onClick={() => setFocusedRealmId(null)}>
+              <i aria-hidden="true">◎</i><span>All lands</span>
+            </button>
+            {REALMS.map((realm) => (
+              <button
+                key={realm.id}
+                type="button"
+                className={`is-${realm.id}`}
+                aria-pressed={focusedRealmId === realm.id}
+                onClick={() => inspectRealm(realm)}
+              >
+                <i aria-hidden="true" /><span>{realm.shortName}</span>
+              </button>
+            ))}
+          </nav>
+
+          <div className="world-atlas__chips world-atlas__chips--layers" role="group" aria-label="Atlas marker layers">
+            {ATLAS_LAYERS.map((layer) => (
+              <button key={layer.id} type="button" aria-pressed={visibleLayers.has(layer.id)} onClick={() => toggleLayer(layer.id)}>
+                <i aria-hidden="true">{layer.glyph}</i><span>{layer.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {searchOpen && (
+            <div id="world-atlas-search" className="world-atlas__search" role="search">
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => event.key === "Escape" && setSearchOpen(false)}
+                placeholder="Find a city, port, fort, or shrine…"
+                aria-label={`Search ${CONTINENT.name} landmarks`}
+              />
+              <ul className="world-atlas__search-results">
+                {searchResults.map((landmark) => {
+                  const poiIconKey = poiIconKeyForLandmark(landmark);
+                  return (
+                    <li key={landmark.id}>
+                      <button type="button" onClick={() => pickSearchResult(landmark)}>
+                        <i aria-hidden="true">
+                          {poiIconKey
+                            ? <PoiIcon iconKey={poiIconKey} size={26} marketTier={landmark.marketTier} />
+                            : (ATLAS_LANDMARK_GLYPHS[landmark.kind] || "◆")}
+                        </i>
+                        <span>
+                          <b>{landmark.name}</b>
+                          <small>
+                            {atlasLandmarkTypeLabel(landmark)}
+                            {" · "}
+                            {REGION_DEFINITIONS[landmark.regionId]?.label || REALM_BY_ID[landmark.realmId]?.shortName || "Uncharted lands"}
+                            {Number.isFinite(landmark.distance) ? ` · ${(landmark.distance * hexKilometers).toLocaleString()} km` : ""}
+                          </small>
+                        </span>
+                        <em className={`is-${landmark.knowledgeTier}`}>{KNOWLEDGE_SHORT_LABELS[landmark.knowledgeTier]}</em>
+                      </button>
+                    </li>
+                  );
+                })}
+                {searchResults.length === 0 && <li className="is-empty">No charted place matches that name.</li>}
+              </ul>
             </div>
           )}
         </div>
-      </div>
 
-      {selectedCoord && (
-        <aside id="world-atlas-detail" className="world-atlas__detail" aria-live="polite" aria-label={`Atlas entry for ${detailTitle}`}>
-          <div className="world-atlas__detail-copy">
-            <small>
-              {detailTypeLabel}
-              {detailKnowledge ? ` · ${ATLAS_KNOWLEDGE_LABELS[detailKnowledge]}` : ""}
-              {detailAreaName ? ` · ${detailAreaName}` : ""}
-            </small>
-            <h4>{detailTitle}</h4>
-            <p>{trackedAtSelection
-              ? `The Codex trail currently points toward ${trackedCharacter.name} here. It is a moving lead, not a guarantee; scrying can provide a clearer live reading.`
-              : selectedLandmark?.description || detailRealm?.description || "Unsurveyed ground."}</p>
+        <div className="world-atlas__map-controls" onPointerDown={stopStagePointer}>
+          <div role="group" aria-label="Map zoom controls">
+            <button type="button" onClick={() => setCamera((current) => zoomAtlasCamera(current, planeViewport, 1.4))} disabled={camera.zoom >= ATLAS_MAX_ZOOM * 0.99} aria-label="Zoom map in">+</button>
+            <button type="button" onClick={() => setCamera((current) => clampAtlasCamera({ ...current, zoom: fit }, planeViewport))} aria-label="Fit the whole continent">{Math.round(zoomRatio * 100)}%</button>
+            <button type="button" onClick={() => setCamera((current) => zoomAtlasCamera(current, planeViewport, 1 / 1.4))} disabled={camera.zoom <= fit * 1.01} aria-label="Zoom map out">−</button>
           </div>
-          <dl>
-            <div><dt>Site type</dt><dd>{detailTypeLabel}</dd></div>
-            <div><dt>Province</dt><dd title={detailProvince?.description}>{detailProvince?.name || detailRegion?.label || "Uncharted province"}</dd></div>
-            <div><dt>Realm</dt><dd>{detailRealm?.name || "Unclaimed frontier"}</dd></div>
-            <div><dt>Authority</dt><dd title={detailFaction?.description}>{detailFaction?.name || detailRealm?.faction?.name || "Independent"}</dd></div>
-            <div><dt>Leader</dt><dd>{detailLeader ? `${detailLeader.name}${detailLeader.title ? ` · ${detailLeader.title}` : ""}` : "No single ruler"}</dd></div>
-            <div><dt>Culture</dt><dd title={detailCulture?.description}>{cultureSummary || "Mixed frontier traditions"}</dd></div>
-            <div><dt>Trade</dt><dd title={detailEconomy?.tradeNotes}>{tradeSummary || "Local exchange"}</dd></div>
-            {selectedLandmark?.marketTier && <div><dt>Trade house</dt><dd><PoiTierMarker marketTier={selectedLandmark.marketTier} size={15} showLabel /></dd></div>}
-            {selectedLandmark?.garrison && <div><dt>Garrison</dt><dd>{selectedLandmark.garrison}</dd></div>}
-            <div className="is-wide"><dt>Connected routes</dt><dd title={detailRoutes.map((route) => route.name).join(", ")}>{routeSummary}</dd></div>
-            {seaLaneSummary && <div className="is-wide"><dt>Sea passages</dt><dd>{seaLaneSummary}</dd></div>}
-          </dl>
+          <button
+            type="button"
+            className="world-atlas__dimension"
+            onClick={toggleTilt}
+            aria-pressed={tilted}
+            aria-label={tilted ? "Switch to the flat chart view" : "Switch to the tabletop 3D view"}
+          >
+            {tilted ? "3D" : "2D"}
+          </button>
+          <button type="button" className="world-atlas__locate" onClick={centerOnParty} aria-label="Center map on the party">
+            <i aria-hidden="true">◎</i><span>Party</span>
+          </button>
+          {trackedCharacter && (
+            <button type="button" className="world-atlas__locate" onClick={centerOnTrackedCharacter} aria-label={`Center map on tracked character ${trackedCharacter.name}`} title={trackedCharacter.name}>
+              <i aria-hidden="true">⌖</i><span>Track</span>
+            </button>
+          )}
+        </div>
 
-          {journey && (
-            <div className="world-atlas__journey-plan" aria-label={`Journey plan to ${detailTitle}`}>
-              <div className="world-atlas__journey-stats">
-                <span><small>Distance</small><b>{journey.totalSteps}</b><em>hexes · ≈{journey.kilometers.toLocaleString()} km</em></span>
-                <span><small>March time</small><b>≈{journey.duration}</b><em>first leg {journey.legDuration}</em></span>
-                <span className={journey.risk >= 40 ? "is-danger" : ""}><small>Leg danger</small><b>{journey.risk}%</b><em>{journey.arrived ? "single march" : `${Math.ceil(journey.totalSteps / Math.max(1, journey.legSteps))} legs`}</em></span>
+        <div className="world-atlas__compass-rose" aria-hidden="true">
+          <span>N</span><i />
+        </div>
+
+        <div className="world-atlas__chrome-bottom">
+        <div className="world-atlas__foot" onPointerDown={stopStagePointer}>
+          <div className="world-atlas__scale" role="img" aria-label={`View spans about ${kmAcross} kilometers; ${hexKilometers} kilometers per travel hex`}>
+            <i aria-hidden="true" />
+            <span>≈ {kmAcross.toLocaleString()} km across</span>
+          </div>
+          <details className="world-atlas__legend">
+            <summary>Legend</summary>
+            <div>
+              <span><i className="is-road" />Great road</span>
+              <span><i className="is-sea-lane" />Sea passage</span>
+              <span><i className="is-trail" />Party trail</span>
+              <span><i className="is-journey" />Planned route</span>
+              <span><i className="is-character" />Tracked character</span>
+              <span><PoiTierMarker marketTier="royal" size={12} />Royal shop</span>
+              <span><PoiTierMarker marketTier="mastercraft" size={12} />Mastercraft</span>
+              <small>{REALMS.length} realms · {Object.keys(REGION_DEFINITIONS).length} named regions · {CONTINENT_ROUTES.length} charted roads · {CONTINENT_SEA_LANES.length} sea lanes · one coast-to-coast world map</small>
+            </div>
+          </details>
+        </div>
+
+        {selectedCoord && (
+          <aside
+            id="world-atlas-detail"
+            className={`world-atlas__placecard${detailExpanded ? " is-expanded" : ""}${journey && journey.risk >= 40 ? " is-danger" : ""}`}
+            aria-live="polite"
+            aria-label={`Atlas entry for ${detailTitle}`}
+            onPointerDown={stopStagePointer}
+          >
+            <header className="world-atlas__placecard-head">
+              <div className="world-atlas__placecard-copy">
+                <small>
+                  {detailTypeLabel}
+                  {detailKnowledge ? ` · ${ATLAS_KNOWLEDGE_LABELS[detailKnowledge]}` : ""}
+                  {detailAreaName ? ` · ${detailAreaName}` : ""}
+                </small>
+                <h4>{detailTitle}</h4>
+                {journey ? (
+                  <span className="world-atlas__placecard-journey">
+                    <small>Journey laid out</small>
+                    <b>{journey.kilometers.toLocaleString()} km · ≈{journey.duration}</b>
+                    <em className={journey.risk >= 40 ? "is-danger" : ""}>{journey.risk}% first-leg danger</em>
+                  </span>
+                ) : (
+                  <span className="world-atlas__placecard-journey is-blocked">
+                    {selectionIsParty ? "The party is already here." : "No ground route reaches this point from the party's position."}
+                  </span>
+                )}
               </div>
-              {journey.waypoints.length > 0 && (
-                <p className="world-atlas__journey-via">Via {journey.waypoints.map((waypoint) => waypoint.name).join(" · ")}</p>
-              )}
-              {journey.checkpoints.length > 0 && (
-                <p className="world-atlas__journey-gates">Border checkpoints: {journey.checkpoints.map((checkpoint) => checkpoint.name).join(" · ")}</p>
+              <div className="world-atlas__placecard-actions">
+                <button
+                  type="button"
+                  className="world-atlas__more"
+                  onClick={() => setDetailExpanded((expanded) => !expanded)}
+                  aria-expanded={detailExpanded}
+                  aria-controls="world-atlas-detail-body"
+                >
+                  {detailExpanded ? "Close dossier" : "Dossier"}
+                </button>
+                <button type="button" className="world-atlas__chart" onClick={chartSelection} disabled={selectionIsParty}>
+                  <span>Set compass</span>
+                  <small>{journey ? `${journey.totalSteps} travel hex${journey.totalSteps === 1 ? "" : "es"} · ≈${journey.duration}` : "Known destination"}</small>
+                </button>
+              </div>
+            </header>
+
+            <div id="world-atlas-detail-body" className="world-atlas__placecard-body" hidden={!detailExpanded}>
+              <p>{trackedAtSelection
+                ? `The Codex trail currently points toward ${trackedCharacter.name} here. It is a moving lead, not a guarantee; scrying can provide a clearer live reading.`
+                : selectedLandmark?.description || detailRealm?.description || "Unsurveyed ground."}</p>
+              <dl>
+                <div><dt>Site type</dt><dd>{detailTypeLabel}</dd></div>
+                <div><dt>Province</dt><dd title={detailProvince?.description}>{detailProvince?.name || detailRegion?.label || "Uncharted province"}</dd></div>
+                <div><dt>Realm</dt><dd>{detailRealm?.name || "Unclaimed frontier"}</dd></div>
+                <div><dt>Authority</dt><dd title={detailFaction?.description}>{detailFaction?.name || detailRealm?.faction?.name || "Independent"}</dd></div>
+                <div><dt>Leader</dt><dd>{detailLeader ? `${detailLeader.name}${detailLeader.title ? ` · ${detailLeader.title}` : ""}` : "No single ruler"}</dd></div>
+                <div><dt>Culture</dt><dd title={detailCulture?.description}>{cultureSummary || "Mixed frontier traditions"}</dd></div>
+                <div><dt>Trade</dt><dd title={detailEconomy?.tradeNotes}>{tradeSummary || "Local exchange"}</dd></div>
+                {selectedLandmark?.marketTier && <div><dt>Trade house</dt><dd><PoiTierMarker marketTier={selectedLandmark.marketTier} size={15} showLabel /></dd></div>}
+                {selectedLandmark?.garrison && <div><dt>Garrison</dt><dd>{selectedLandmark.garrison}</dd></div>}
+                <div className="is-wide"><dt>Connected routes</dt><dd title={detailRoutes.map((route) => route.name).join(", ")}>{routeSummary}</dd></div>
+                {seaLaneSummary && <div className="is-wide"><dt>Sea passages</dt><dd>{seaLaneSummary}</dd></div>}
+              </dl>
+
+              {journey && (
+                <div className="world-atlas__journey-plan" aria-label={`Journey plan to ${detailTitle}`}>
+                  <div className="world-atlas__journey-stats">
+                    <span><small>Distance</small><b>{journey.totalSteps}</b><em>hexes · ≈{journey.kilometers.toLocaleString()} km</em></span>
+                    <span><small>March time</small><b>≈{journey.duration}</b><em>first leg {journey.legDuration}</em></span>
+                    <span className={journey.risk >= 40 ? "is-danger" : ""}><small>Leg danger</small><b>{journey.risk}%</b><em>{journey.arrived ? "single march" : `${Math.ceil(journey.totalSteps / Math.max(1, journey.legSteps))} legs`}</em></span>
+                  </div>
+                  {journey.waypoints.length > 0 && (
+                    <p className="world-atlas__journey-via">Via {journey.waypoints.map((waypoint) => waypoint.name).join(" · ")}</p>
+                  )}
+                  {journey.checkpoints.length > 0 && (
+                    <p className="world-atlas__journey-gates">Border checkpoints: {journey.checkpoints.map((checkpoint) => checkpoint.name).join(" · ")}</p>
+                  )}
+                </div>
               )}
             </div>
-          )}
-          {!journey && !selectionIsParty && <p className="world-atlas__journey-blocked">No ground route reaches this point from the party's position.</p>}
-          {selectionIsParty && <p className="world-atlas__journey-blocked">The party is already here.</p>}
-
-          <button type="button" className="world-atlas__chart" onClick={chartSelection} disabled={selectionIsParty}>
-            <span>Set compass</span>
-            <small>{journey ? `${journey.totalSteps} travel hex${journey.totalSteps === 1 ? "" : "es"}` : "Known destination"}</small>
-          </button>
-        </aside>
-      )}
-
-      <footer className="world-atlas__legend" aria-label="Map legend">
-        <span><i className="is-road" />Great road</span>
-        <span><i className="is-sea-lane" />Sea passage</span>
-        <span><i className="is-trail" />Party trail</span>
-        <span><i className="is-journey" />Planned route</span>
-        <span><i className="is-character" />Tracked character</span>
-        <span><PoiTierMarker marketTier="royal" size={12} />Royal shop</span>
-        <span><PoiTierMarker marketTier="mastercraft" size={12} />Mastercraft</span>
-        <small>{REALMS.length} realms · {Object.keys(REGION_DEFINITIONS).length} named regions · {CONTINENT_ROUTES.length} charted roads · {CONTINENT_SEA_LANES.length} sea lanes · one coast-to-coast world map</small>
-      </footer>
+          </aside>
+        )}
+        </div>
+      </div>
     </section>
   );
 }

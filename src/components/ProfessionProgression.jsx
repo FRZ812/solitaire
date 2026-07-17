@@ -1,21 +1,30 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ATTRIBUTE_CAP, ATTR_KEYS, ATTR_LABELS, CHARACTER_LEVEL_CAP } from "../config.js";
+import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { PROFESSIONS } from "../data/professions.js";
-import {
-  PROFESSION_BUILDS,
-  PROFESSION_PROFILES,
-  PROGRESSION_PATHS,
-  PATH_GRADE_CAPS,
-  compileProfessionBuild,
-  levelTier,
-} from "../data/progression-paths.js";
+import { RACES } from "../data/races.js";
+import * as progressionPaths from "../data/progression-paths.js";
+import { getAbilityDef } from "../data/abilities.js";
+import { METAMAGIC_FEATURES, PROGRESSION_FEATURES } from "../data/progression-features.js";
+import * as progressionEngine from "../engine/progression.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 
-const GRADE_CAPS = Object.freeze([
-  { grade: "standard", cap: PATH_GRADE_CAPS.standard, label: "Standard" },
-  { grade: "advanced", cap: PATH_GRADE_CAPS.advanced, label: "Advanced" },
-  { grade: "specialized", cap: PATH_GRADE_CAPS.specialized, label: "Specialized" },
-]);
+const PROFESSION_CAP = 70;
+const RACIAL_CAP = 30;
+const compileProfessionTrack = progressionPaths.compileProfessionTrack || ((professionId, options) => {
+  const legacy = progressionPaths.compileProfessionBuild?.(professionId, {
+    archetypeId: options?.specializationId,
+    sidePath: "utility",
+  });
+  return legacy ? { ...legacy, totalLevels: PROFESSION_CAP, levels: legacy.levels.slice(0, PROFESSION_CAP), pendingChoices: [] } : null;
+});
+const compileRacialTrack = progressionPaths.compileRacialTrack || (() => ({ totalLevels: RACIAL_CAP, levels: [] }));
+const professionBranchChoices = progressionPaths.professionBranchChoices || (() => []);
+const professionProgressionLevel = progressionEngine.professionProgressionLevel || ((character) => {
+  const tracks = character?.progression?.professions;
+  if (Array.isArray(tracks)) return tracks.reduce((sum, track) => sum + Object.values(track.paths || {}).reduce((n, rank) => n + (Number(rank) || 0), 0), 0);
+  return progressionEngine.progressionLevel(character);
+});
+const racialProgressionLevel = progressionEngine.racialProgressionLevel || ((character) => Object.values(character?.progression?.racial?.paths || {}).reduce((sum, rank) => sum + (Number(rank) || 0), 0));
 
 function titleCase(value) {
   return String(value || "")
@@ -23,425 +32,363 @@ function titleCase(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function formatPrerequisite(requirement, segments = []) {
-  if (requirement.pathId) {
-    const path = PROGRESSION_PATHS[requirement.pathId];
-    const segment = segments.find((entry) => entry.pathId === requirement.pathId);
-    return `${path?.name || segment?.pathName || titleCase(requirement.pathId)} rank ${requirement.rank || 1}`;
+function grantDetails(grant) {
+  if (!grant) return { name: "Unknown feature", description: "" };
+  if (grant.type === "ability-choice") {
+    const names = (grant.options || []).map((id) => getAbilityDef(id)?.name || titleCase(id));
+    return {
+      name: grant.name || `Choose ${grant.count || 1} ${grant.count === 1 ? "ability" : "abilities"}`,
+      description: [grant.description, names.length ? `Options: ${names.join(" · ")}` : null].filter(Boolean).join(" "),
+    };
   }
-  if (requirement.totalLevel != null) return `Total level ${requirement.totalLevel}`;
-  return "Authored prerequisite";
-}
-
-function formatAttributeGains(gains) {
-  return Object.entries(gains || {})
-    .map(([key, value]) => `+${value} ${ATTR_LABELS[key] || titleCase(key)}`)
-    .join(" · ");
-}
-
-function compileSafely(professionId, sidePath, archetypeId) {
-  try {
-    return { compiled: compileProfessionBuild(professionId, { sidePath, archetypeId }), error: null };
-  } catch (error) {
-    return { compiled: null, error };
+  if (grant.type === "metamagic-choice") {
+    const names = (grant.options || []).map((id) => METAMAGIC_FEATURES[id]?.name || titleCase(id));
+    return {
+      name: grant.name || `Choose ${grant.count || 1} metamagic`,
+      description: [grant.description, names.length ? `Options: ${names.join(" · ")}` : null].filter(Boolean).join(" "),
+    };
   }
+  if (grant.name || grant.label) return { name: grant.name || grant.label, description: grant.description || "" };
+  if (grant.type === "ability") {
+    const ability = getAbilityDef(grant.id);
+    return { name: ability?.name || titleCase(grant.id), description: grant.description || ability?.desc || "" };
+  }
+  if (grant.type === "metamagic") {
+    const feature = METAMAGIC_FEATURES[grant.id];
+    return { name: feature?.name || titleCase(grant.id), description: grant.description || feature?.description || "" };
+  }
+  const feature = PROGRESSION_FEATURES[grant.id];
+  return { name: feature?.name || titleCase(grant.id || grant.type), description: grant.description || feature?.description || "" };
 }
 
-function bandSummary(rows) {
-  const paths = [...new Set(rows.map((row) => row.pathName))];
-  return paths.join(" · ");
+function GrantList({ grants, empty = null, compact = false }) {
+  if (!grants?.length) return empty;
+  return (
+    <ul className={`profession-progress__grant-list${compact ? " is-compact" : ""}`}>
+      {grants.map((grant, index) => {
+        const details = grantDetails(grant);
+        return (
+          <li key={`${grant.type || "feature"}-${grant.id || index}`} data-grant-type={grant.type || "feature"}>
+            <small>{titleCase(grant.type || "feature")}</small>
+            <strong>{details.name}</strong>
+            {details.description && <span>{details.description}</span>}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
-function ProfessionCard({ profession, profile, current = false, currentLevel = 0, currentArchetype = null, onOpen }) {
-  const currentArchetypeLabel = currentArchetype === PROFESSION_BUILDS[profession.id]?.archetypePathId
-    ? profile.archetype
-    : titleCase(currentArchetype);
+function LevelTimeline({ rows, cap, ownedLevel = 0, kind }) {
+  const [openBands, setOpenBands] = useState(() => new Set([0]));
+  const bands = Array.from({ length: Math.ceil(cap / 10) }, (_, index) => rows.slice(index * 10, index * 10 + 10));
+  const allOpen = bands.every((_, index) => openBands.has(index));
+  const toggle = (index) => setOpenBands((current) => {
+    const next = new Set(current);
+    if (next.has(index)) next.delete(index); else next.add(index);
+    return next;
+  });
+  return (
+    <section className="profession-progress__timeline" aria-label={`${kind} level progression`}>
+      <div className="profession-progress__section-heading profession-progress__timeline-heading">
+        <div><small>Every level</small><h3>Levels 1–{cap}</h3></div>
+        <button type="button" onClick={() => setOpenBands(allOpen ? new Set() : new Set(bands.map((_, index) => index)))}>
+          {allOpen ? "Collapse all" : "Expand all"}
+        </button>
+      </div>
+      <div className="profession-progress__bands">
+        {bands.map((band, index) => {
+          const start = index * 10 + 1;
+          const end = Math.min(cap, start + 9);
+          const open = openBands.has(index);
+          const grantCount = band.reduce((sum, row) => sum + (row?.generalGrants || row?.grants || []).length, 0);
+          return (
+            <section key={start} className={`profession-progress__band${open ? " is-open" : ""}`}>
+              <button type="button" className="profession-progress__band-toggle" onClick={() => toggle(index)} aria-expanded={open}>
+                <span><strong>Levels {start}–{end}</strong><small>{grantCount} typed rewards</small></span><b aria-hidden="true">{open ? "−" : "+"}</b>
+              </button>
+              {open && (
+                <ol start={start} className="profession-progress__level-list">
+                  {band.map((row, offset) => {
+                    const level = row?.trackLevel || row?.level || start + offset;
+                    const general = row?.generalGrants || row?.grants || [];
+                    return (
+                      <li key={level} value={level} className={level <= ownedLevel ? "is-attained" : ""}>
+                        <span className="profession-progress__level-number">{level}</span>
+                        <div>
+                          <span className="profession-progress__level-meta">{row?.pathName || `${titleCase(kind)} training`} · rank {row?.rank || level}</span>
+                          <strong>{row?.feature || `${titleCase(kind)} level ${level}`}</strong>
+                          <GrantList grants={general} compact />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function BranchTree({ profession, definitions, choices, pendingIds, onSelect, trackKind = "Profession" }) {
+  if (!definitions.length) return null;
+  const depths = new Map();
+  const depthOf = (definition) => {
+    if (!definition?.parentChoiceId) return 0;
+    if (depths.has(definition.id)) return depths.get(definition.id);
+    const depth = 1 + depthOf(definitions.find((entry) => entry.id === definition.parentChoiceId));
+    depths.set(definition.id, depth);
+    return depth;
+  };
+  return (
+    <section className="profession-progress__branches" aria-labelledby={`profession-branches-${profession.id}`}>
+      <div className="profession-progress__section-heading">
+        <div><small>{trackKind === "Racial" ? "Evolution overlays" : "Specialization overlays"}</small><h3 id={`profession-branches-${profession.id}`}>Branch thresholds</h3></div>
+        <span>Never chosen automatically</span>
+      </div>
+      <p className="profession-progress__branch-intro">General {trackKind.toLowerCase()} rewards always remain visible. Branch rewards layer onto that shared track only after an explicit choice.</p>
+      <ol className="profession-progress__branch-tree">
+        {definitions.map((choice) => {
+          const selected = choices[choice.id] || null;
+          const pending = pendingIds.has(choice.id);
+          const parentSatisfied = !choice.parentChoiceId || choices[choice.parentChoiceId] === choice.parentOptionId;
+          return (
+            <li
+              key={choice.id}
+              data-choice-id={choice.id}
+              data-parent-choice={choice.parentChoiceId || undefined}
+              className={`${pending ? "is-pending" : ""}${!parentSatisfied ? " is-locked" : ""}`}
+              style={{ "--branch-depth": depthOf(choice) }}
+            >
+              <header>
+                <span>{trackKind} level {choice.threshold}</span>
+                <strong>{choice.name}</strong>
+                {choice.description && <p>{choice.description}</p>}
+                {pending && <em>Choice required</em>}
+                {!parentSatisfied && <em>Requires {titleCase(choice.parentOptionId)}</em>}
+              </header>
+              <div>
+                {(choice.options || []).map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={selected === option.id}
+                    disabled={!parentSatisfied || (!!selected && !pending)}
+                    onClick={() => onSelect(choice, option)}
+                  >
+                    <strong>{option.name || titleCase(option.id)}</strong>
+                    {option.description && <span>{option.description}</span>}
+                    <GrantList grants={option.grants || []} compact />
+                  </button>
+                ))}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+function ProfessionCard({ profession, currentLevel = 0, currentSpecializations = [], onOpen }) {
+  const names = (profession.specializations || []).map((entry) => entry.name);
   return (
     <li className="profession-catalog__item">
-      <button
-        id={`profession-card-${profession.id}`}
-        type="button"
-        className="profession-card"
-        onClick={onOpen}
-        aria-label={`Open ${profession.name}, ${profile.archetype} archetype, 100-level progression`}
-      >
+      <button id={`profession-card-${profession.id}`} type="button" className="profession-card" onClick={onOpen}>
         <ProfessionIcon profession={profession.id} size="medium" decorative />
         <span className="profession-card__body">
-          <span className="profession-card__eyebrow">
-            <span>{titleCase(profile.domain)}</span>
-            <span>{current ? `Your path · level ${currentLevel} · ${levelTier(currentLevel).label}` : "100 levels"}</span>
-          </span>
+          <span className="profession-card__eyebrow"><span>{profession.role || profession.domain || "Profession"}</span><span>{currentLevel > 0 ? `Your investment · ${currentLevel} / ${PROFESSION_CAP}` : `0–${PROFESSION_CAP} levels`}</span></span>
           <strong className="profession-card__name">{profession.name}</strong>
           <span className="profession-card__description">{profession.description}</span>
-          <span className="profession-card__archetype">
-            <small>Specialized archetype</small>
-            <strong>{current && currentArchetype ? currentArchetypeLabel : profile.archetype}</strong>
-          </span>
-          <span className="profession-card__open">View stacked progression <span aria-hidden="true">→</span></span>
+          <span className="profession-card__archetype"><small>Specialization branches</small><strong>{currentSpecializations.length ? currentSpecializations.join(" · ") : names.slice(0, 3).join(" · ") || "Authored focus paths"}</strong></span>
+          <span className="profession-card__open">View profession and branches <span aria-hidden="true">→</span></span>
         </span>
       </button>
     </li>
   );
 }
 
-export function ProfessionProgression({
-  profession,
-  defaultSidePath = "racial",
-  currentProfessionId = null,
-  currentLevel = 0,
-  currentArchetypeId = null,
-  currentPaths = {},
-  onBack,
-}) {
-  const profile = PROFESSION_PROFILES[profession.id];
-  const build = PROFESSION_BUILDS[profession.id];
-  const [sidePath, setSidePath] = useState(defaultSidePath === "utility" ? "utility" : "racial");
-  const [openBands, setOpenBands] = useState(() => new Set([0]));
+export function ProfessionProgression({ profession, currentTrack = null, currentLevel = 0, onBack, onChooseProgression }) {
+  const [previewSpecialization, setPreviewSpecialization] = useState(currentTrack?.specializationId || null);
+  const [previewChoices, setPreviewChoices] = useState(() => ({ ...(currentTrack?.branchChoices || currentTrack?.choices || {}) }));
   const headingRef = useRef(null);
-  const { compiled, error } = useMemo(
-    () => compileSafely(
-      profession.id,
-      sidePath,
-      currentProfessionId === profession.id ? currentArchetypeId : null,
-    ),
-    [currentArchetypeId, currentProfessionId, profession.id, sidePath],
-  );
-
+  useEffect(() => headingRef.current?.focus(), [profession.id]);
   useEffect(() => {
-    headingRef.current?.focus();
-  }, [profession.id]);
+    setPreviewSpecialization(currentTrack?.specializationId || null);
+    setPreviewChoices({ ...(currentTrack?.branchChoices || currentTrack?.choices || {}) });
+  }, [currentTrack, profession.id]);
 
-  useEffect(() => {
-    setOpenBands(new Set([0]));
-  }, [profession.id, sidePath]);
+  const compiled = useMemo(() => compileProfessionTrack(profession.id, {
+    specializationId: previewSpecialization,
+    choices: previewChoices,
+    branchChoices: previewChoices,
+  }), [previewChoices, previewSpecialization, profession.id]);
+  const definitions = professionBranchChoices(profession.id) || [];
+  const pendingChoices = currentTrack && progressionPaths.pendingProfessionChoices
+    ? progressionPaths.pendingProfessionChoices(currentTrack)
+    : [];
+  const pendingIds = new Set(pendingChoices.map((choice) => choice.id || choice.choiceId));
+  const finalAttributes = compiled?.finalAttributes || {};
 
-  if (!profile || !build || !compiled) {
-    return (
-      <section className="profession-progress profession-progress--error" aria-live="polite">
-        <button type="button" className="profession-progress__back" onClick={onBack}>← All professions</button>
-        <h2 tabIndex={-1} ref={headingRef}>Progression unavailable</h2>
-        <p>{error?.message || `${profession.name} does not yet have a canonical progression build.`}</p>
-      </section>
-    );
-  }
-
-  const bands = Array.from({ length: 10 }, (_, index) => compiled.levels.slice(index * 10, index * 10 + 10));
-  const allBandsOpen = bands.every((_, index) => openBands.has(index));
-  const isCurrentPath = currentProfessionId === profession.id;
-  const branchIndex = build.allocations.findIndex((allocation) => allocation.choice === "racial-or-utility");
-  const branchSegment = compiled.segments[branchIndex];
-  const archetypeIndex = build.allocations.findIndex((allocation) => allocation.role === "archetype");
-  const archetypeSegment = compiled.segments[archetypeIndex];
-  const ownedSidePath = defaultSidePath === "utility" ? "utility" : "racial";
-  const viewingOwnedBranch = isCurrentPath && sidePath === ownedSidePath;
-
-  const toggleBand = (index) => {
-    setOpenBands((current) => {
-      const next = new Set(current);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
+  const chooseBranch = (choice, option) => {
+    if (!pendingIds.has(choice.id) || !currentTrack) {
+      setPreviewChoices((current) => ({ ...current, [choice.id]: option.id }));
+      return;
+    }
+    onChooseProgression?.(profession.id, choice.id, option.id);
   };
 
   return (
     <section className="profession-progress" aria-labelledby={`profession-progress-title-${profession.id}`}>
-      <button type="button" className="profession-progress__back" onClick={onBack}>← All professions</button>
-
+      <button type="button" className="profession-progress__back" onClick={onBack}>← Progression catalog</button>
       <header className="profession-progress__hero">
         <ProfessionIcon profession={profession.id} size="hero" decorative />
         <div className="profession-progress__identity">
-          <small>{titleCase(profile.domain)} profession</small>
+          <small>Broad profession · 0–{PROFESSION_CAP}</small>
           <h2 id={`profession-progress-title-${profession.id}`} ref={headingRef} tabIndex={-1}>{profession.name}</h2>
           <p>{profession.description}</p>
         </div>
-        <div className="profession-progress__total" aria-label={`${compiled.totalLevels} total levels`}>
-          <strong>{compiled.totalLevels}</strong>
-          <span>Total levels</span>
-          {isCurrentPath && <small>Your level {currentLevel}</small>}
-        </div>
+        <div className="profession-progress__total"><strong>{currentLevel}</strong><span>Invested / {PROFESSION_CAP}</span></div>
       </header>
 
-      <div className="profession-progress__focus">
-        <div>
-          <small>Specialized archetype</small>
-          <strong>{compiled.archetype}</strong>
-        </div>
-        <p>{archetypeSegment?.description || profile.archetypeDescription}</p>
-      </div>
-
-      <section className="profession-progress__grade-section" aria-labelledby={`profession-grade-title-${profession.id}`}>
-        <div className="profession-progress__section-heading">
-          <div>
-            <small>Path law</small>
-            <h3 id={`profession-grade-title-${profession.id}`}>Grade rank caps</h3>
-          </div>
-          <span>No path reaches 100 alone</span>
-        </div>
-        <div className="profession-progress__grades">
-          {GRADE_CAPS.map(({ grade, cap, label }) => (
-            <div key={grade} data-grade={grade}>
-              <strong>{cap}</strong>
-              <span>{label}</span>
-              <small>rank cap</small>
-            </div>
+      <section className="profession-progress__focus" aria-label="Specialization preview">
+        <div><small>Specialization overlay</small><strong>{previewSpecialization ? (profession.specializations || []).find((entry) => entry.id === previewSpecialization)?.name || titleCase(previewSpecialization) : "General profession"}</strong></div>
+        <p>Specializations add rewards at authored thresholds; they do not replace the shared profession track.</p>
+        <div className="profession-progress__specialization-options">
+          <button type="button" aria-pressed={!previewSpecialization} onClick={() => setPreviewSpecialization(null)}>General rewards</button>
+          {(profession.specializations || []).map((specialization) => (
+            <button key={specialization.id} type="button" aria-pressed={previewSpecialization === specialization.id} onClick={() => setPreviewSpecialization(specialization.id)}>
+              <strong>{specialization.name}</strong><span>{specialization.description}</span>
+            </button>
           ))}
         </div>
       </section>
 
-      <fieldset className="profession-progress__branch">
-        <legend>Racial or utility branch</legend>
-        <p>
-          Levels {branchSegment?.start || 41}–{branchSegment?.end || 50} share one ten-rank budget.
-          Choose lineage growth or worldly breadth; both still count toward level 100.
-        </p>
-        <div>
-          <button type="button" aria-pressed={sidePath === "racial"} onClick={() => setSidePath("racial")}>
-            <strong>Racial levels</strong>
-            <span>{PROGRESSION_PATHS[build.allocations[branchIndex]?.pathId]?.name || "Awakened Lineage"}</span>
-          </button>
-          <button type="button" aria-pressed={sidePath === "utility"} onClick={() => setSidePath("utility")}>
-            <strong>Utility levels</strong>
-            <span>{PROGRESSION_PATHS[build.allocations[branchIndex]?.alternatePathId]?.name || "Worldly Versatility"}</span>
-          </button>
-        </div>
-      </fieldset>
-
-      <section className="profession-progress__segments" aria-labelledby={`profession-stack-title-${profession.id}`}>
-        <div className="profession-progress__section-heading">
-          <div>
-            <small>Exact allocation</small>
-            <h3 id={`profession-stack-title-${profession.id}`}>Stacked paths</h3>
-          </div>
-          <span>{compiled.segments.length} paths · {compiled.totalLevels} ranks</span>
-        </div>
-        <ol>
-          {compiled.segments.map((segment, index) => {
-            const path = PROGRESSION_PATHS[segment.pathId] || segment;
-            const allocation = build.allocations[index];
-            const alternativeId = allocation?.choice === "racial-or-utility"
-              ? (sidePath === "racial" ? allocation.alternatePathId : allocation.pathId)
-              : null;
-            const alternative = alternativeId ? PROGRESSION_PATHS[alternativeId] : null;
-            return (
-              <li key={`${segment.pathId}-${index}`} data-kind={segment.kind} data-grade={segment.grade}>
-                <span className="profession-progress__range">{segment.start}–{segment.end}</span>
-                <div>
-                  <div className="profession-progress__segment-title">
-                    <strong>{segment.pathName}</strong>
-                    <span>{titleCase(segment.kind)} · {titleCase(segment.grade)} · {segment.ranks}/{path?.maxRank || segment.ranks}</span>
-                  </div>
-                  {path?.description && <p>{path.description}</p>}
-                  {path?.prerequisites?.length > 0 && (
-                    <span className="profession-progress__prerequisites">
-                      <small>Requires</small> {path.prerequisites.map((requirement) => formatPrerequisite(requirement, compiled.segments)).join(" · ")}
-                    </span>
-                  )}
-                  {alternative && (
-                    <span className="profession-progress__alternative">
-                      {isCurrentPath
-                        ? viewingOwnedBranch
-                          ? `Your chosen ${sidePath} branch · alternative: ${alternative.name}`
-                          : `Alternative ${sidePath} branch preview · your path uses ${ownedSidePath}`
-                        : `Viewing ${sidePath} branch · alternative: ${alternative.name}`}
-                    </span>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+      <section className="profession-progress__attributes" aria-label="Profession level 70 attributes">
+        <div className="profession-progress__section-heading"><div><small>General track projection</small><h3>Level 70 attributes</h3></div><span>Before racial evolution</span></div>
+        <ul>{ATTR_KEYS.map((key) => <li key={key}><span><small>{ATTR_LABELS[key]}</small><strong>{finalAttributes[key] || 0}</strong></span></li>)}</ul>
       </section>
 
-      <section className="profession-progress__attributes" aria-labelledby={`profession-attributes-title-${profession.id}`}>
-        <div className="profession-progress__section-heading">
-          <div>
-            <small>Level 100 projection</small>
-            <h3 id={`profession-attributes-title-${profession.id}`}>Final attributes</h3>
-          </div>
-          <span>Cap {ATTRIBUTE_CAP}</span>
-        </div>
-        <ul>
-          {ATTR_KEYS.map((key) => {
-            const value = compiled.finalAttributes[key] || 0;
-            return (
-              <li key={key}>
-                <span><small>{ATTR_LABELS[key]}</small><strong>{value}</strong></span>
-                <meter min="0" max={ATTRIBUTE_CAP} value={value} aria-label={`${ATTR_LABELS[key]} ${value} of ${ATTRIBUTE_CAP}`}>{value}</meter>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
-      <section className="profession-progress__timeline" aria-labelledby={`profession-timeline-title-${profession.id}`}>
-        <div className="profession-progress__section-heading profession-progress__timeline-heading">
-          <div>
-            <small>Every rank</small>
-            <h3 id={`profession-timeline-title-${profession.id}`}>Levels 1–100</h3>
-          </div>
-          <button
-            type="button"
-            onClick={() => setOpenBands(allBandsOpen ? new Set() : new Set(bands.map((_, index) => index)))}
-          >
-            {allBandsOpen ? "Collapse all" : "Expand all"}
-          </button>
-        </div>
-        <div className="profession-progress__bands">
-          {bands.map((rows, index) => {
-            const open = openBands.has(index);
-            const start = rows[0]?.level || index * 10 + 1;
-            const end = rows.at(-1)?.level || start + 9;
-            const panelId = `profession-level-band-${profession.id}-${sidePath}-${index}`;
-            return (
-              <section key={start} className={`profession-progress__band${open ? " is-open" : ""}`}>
-                <button
-                  type="button"
-                  className="profession-progress__band-toggle"
-                  onClick={() => toggleBand(index)}
-                  aria-expanded={open}
-                  aria-controls={panelId}
-                >
-                  <span><strong>Levels {start}–{end}</strong><small>{bandSummary(rows)}</small></span>
-                  <b aria-hidden="true">{open ? "−" : "+"}</b>
-                </button>
-                {open && (
-                  <ol id={panelId} start={start} className="profession-progress__level-list">
-                    {rows.map((row) => {
-                      const attained = isCurrentPath && (currentPaths[row.pathId] || 0) >= row.rank;
-                      return (
-                        <li key={row.level} value={row.level} className={attained ? "is-attained" : ""}>
-                          <span className="profession-progress__level-number">{row.level}</span>
-                          <div>
-                            <span className="profession-progress__level-meta">
-                              {row.pathName} · {titleCase(row.kind)} {titleCase(row.grade)} · rank {row.rank}/{row.maxRank}
-                            </span>
-                            <strong>{row.feature}</strong>
-                            <span className="profession-progress__level-gains">{formatAttributeGains(row.attributeGains)}</span>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ol>
-                )}
-              </section>
-            );
-          })}
-        </div>
-      </section>
+      <BranchTree profession={profession} definitions={definitions} choices={previewChoices} pendingIds={pendingIds} onSelect={chooseBranch} />
+      <LevelTimeline rows={compiled?.levels || []} cap={PROFESSION_CAP} ownedLevel={currentLevel} kind="profession" />
     </section>
   );
 }
 
-export function ProfessionCatalog({ character }) {
+export function RacialProgression({ character, raceId: raceIdOverride = null, onBack, onChooseProgression }) {
+  const ownedRaceId = character?.progression?.racial?.raceId || character?.race;
+  const raceId = raceIdOverride || ownedRaceId;
+  const ownsRace = !!raceId && raceId === ownedRaceId;
+  const racial = ownsRace ? character?.progression?.racial || null : null;
+  const level = ownsRace ? racialProgressionLevel(character) : 0;
+  const [previewChoices, setPreviewChoices] = useState(() => ({ ...(racial?.branchChoices || racial?.choices || {}) }));
+  useEffect(() => setPreviewChoices({ ...(racial?.branchChoices || racial?.choices || {}) }), [raceId, racial?.branchChoices, racial?.choices]);
+  const compiled = useMemo(() => compileRacialTrack(raceId, {
+    evolutionId: racial?.evolutionId || character?.subrace || null,
+    choices: previewChoices,
+    branchChoices: previewChoices,
+  }), [character?.subrace, previewChoices, raceId, racial?.evolutionId]);
+  const definitions = progressionPaths.racialBranchChoices?.(raceId) || [];
+  const pendingChoices = progressionPaths.pendingRacialBranchChoices?.(raceId, level, racial?.branchChoices || {}) || [];
+  const pendingIds = new Set(pendingChoices.map((choice) => choice.id || choice.choiceId));
+  const finalAttributes = compiled?.finalAttributes || {};
+  const chooseBranch = (choice, option) => {
+    if (!pendingIds.has(choice.id)) {
+      setPreviewChoices((current) => ({ ...current, [choice.id]: option.id }));
+      return;
+    }
+    if (ownsRace) onChooseProgression?.(null, choice.id, option.id);
+    else setPreviewChoices((current) => ({ ...current, [choice.id]: option.id }));
+  };
+  const race = RACES[raceId];
+  return (
+    <section className="profession-progress profession-progress--racial">
+      <button type="button" className="profession-progress__back" onClick={onBack}>← Progression catalog</button>
+      <header className="profession-progress__hero">
+        <div className="profession-progress__identity"><small>Racial evolution · 0–{RACIAL_CAP}</small><h2>{race?.name || titleCase(raceId)}</h2><p>Metamorphosis, lineage awakening, and racial powers advance separately from the combined profession budget.</p></div>
+        <div className="profession-progress__total"><strong>{level}</strong><span>Invested / {RACIAL_CAP}</span></div>
+      </header>
+      <section className="profession-progress__attributes" aria-label="Racial level 30 attributes">
+        <div className="profession-progress__section-heading"><div><small>Racial track projection</small><h3>Level 30 attributes</h3></div><span>Before profession levels</span></div>
+        <ul>{ATTR_KEYS.map((key) => <li key={key}><span><small>{ATTR_LABELS[key]}</small><strong>{finalAttributes[key] || 0}</strong></span></li>)}</ul>
+      </section>
+      <BranchTree profession={{ id: raceId }} definitions={definitions} choices={previewChoices} pendingIds={pendingIds} onSelect={chooseBranch} trackKind="Racial" />
+      <LevelTimeline rows={compiled?.levels || []} cap={RACIAL_CAP} ownedLevel={level} kind="racial evolution" />
+    </section>
+  );
+}
+
+export function ProfessionCatalog({ character, onChooseProgression }) {
   const [query, setQuery] = useState("");
   const [domain, setDomain] = useState("all");
   const [selectedId, setSelectedId] = useState(null);
-  const returnFocusId = useRef(null);
-  const currentProfessionId = character?.progression?.professionId || character?.profession || null;
-  const currentArchetypeId = character?.progression?.archetypeId || character?.archetype || null;
-  const currentLevel = Math.min(CHARACTER_LEVEL_CAP, Math.max(0, Object.values(character?.progression?.paths || {})
-    .reduce((total, rank) => total + Math.max(0, Math.floor(Number(rank) || 0)), 0)));
-  const defaultSidePath = character?.progression?.sidePath || (character?.race === "human" ? "utility" : "racial");
-
-  const professions = useMemo(() => Object.values(PROFESSIONS)
-    .filter((profession) => PROFESSION_PROFILES[profession.id] && PROFESSION_BUILDS[profession.id])
-    .sort((a, b) => a.name.localeCompare(b.name)), []);
-  const domains = useMemo(() => [...new Set(professions.map((profession) => PROFESSION_PROFILES[profession.id].domain))]
-    .sort((a, b) => a.localeCompare(b)), [professions]);
-  const visible = useMemo(() => {
+  const tracks = Array.isArray(character?.progression?.professions) ? character.progression.professions : [];
+  const professionLevel = professionProgressionLevel(character);
+  const racialLevel = racialProgressionLevel(character);
+  const professions = useMemo(() => Object.values(PROFESSIONS).sort((a, b) => a.name.localeCompare(b.name)), []);
+  const domains = useMemo(() => [...new Set(professions.map((entry) => entry.role || entry.domain || "general"))].sort(), [professions]);
+  const visible = professions.filter((profession) => {
+    const group = profession.role || profession.domain || "general";
+    if (domain !== "all" && group !== domain) return false;
     const needle = query.trim().toLowerCase();
-    return professions.filter((profession) => {
-      const profile = PROFESSION_PROFILES[profession.id];
-      if (domain !== "all" && profile.domain !== domain) return false;
-      if (!needle) return true;
-      return [
-        profession.name,
-        profession.description,
-        profile.domain,
-        profile.archetype,
-        profile.archetypeDescription,
-        profile.utility,
-        profile.signature,
-      ].filter(Boolean).join(" ").toLowerCase().includes(needle);
-    });
-  }, [domain, professions, query]);
+    if (!needle) return true;
+    return [profession.name, profession.description, group, ...(profession.specializations || []).flatMap((entry) => [entry.name, entry.description])]
+      .filter(Boolean).join(" ").toLowerCase().includes(needle);
+  });
 
-  const openProfession = (professionId) => {
-    returnFocusId.current = professionId;
-    setSelectedId(professionId);
-  };
-  const closeProfession = () => {
-    const focusId = returnFocusId.current;
-    setSelectedId(null);
-    requestAnimationFrame(() => document.getElementById(`profession-card-${focusId}`)?.focus());
-  };
-
+  if (selectedId?.startsWith("__racial__:")) {
+    return <RacialProgression character={character} raceId={selectedId.slice("__racial__:".length)} onBack={() => setSelectedId(null)} onChooseProgression={onChooseProgression} />;
+  }
   if (selectedId && PROFESSIONS[selectedId]) {
-    return (
-      <ProfessionProgression
-        profession={PROFESSIONS[selectedId]}
-        defaultSidePath={defaultSidePath}
-        currentProfessionId={currentProfessionId}
-        currentLevel={currentLevel}
-        currentArchetypeId={currentArchetypeId}
-        currentPaths={character?.progression?.paths || {}}
-        onBack={closeProfession}
-      />
-    );
+    const track = tracks.find((entry) => entry.professionId === selectedId) || null;
+    const currentLevel = track ? Object.values(track.paths || {}).reduce((sum, rank) => sum + (Number(rank) || 0), 0) : 0;
+    return <ProfessionProgression profession={PROFESSIONS[selectedId]} currentTrack={track} currentLevel={currentLevel} onBack={() => setSelectedId(null)} onChooseProgression={onChooseProgression} />;
   }
 
   return (
     <section className="profession-catalog fade-in" aria-labelledby="profession-catalog-title">
-      <header className="profession-catalog__intro">
-        <small>Stacked callings</small>
-        <h2 id="profession-catalog-title">Professions & archetypes</h2>
-        <p>Every profession reaches level 100 by combining capped standard, advanced, and specialized paths with racial or utility levels.</p>
-      </header>
-
-      <div className="profession-catalog__tools">
-        <label className="profession-catalog__search">
-          <span>Search professions</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Name, domain, archetype, or focus"
-          />
-        </label>
-        <label className="profession-catalog__filter">
-          <span>Domain</span>
-          <select value={domain} onChange={(event) => setDomain(event.target.value)}>
-            <option value="all">All domains</option>
-            {domains.map((entry) => <option key={entry} value={entry}>{titleCase(entry)}</option>)}
-          </select>
-        </label>
-      </div>
-
-      <div className="profession-catalog__result-count" aria-live="polite">
-        {visible.length} of {professions.length} canonical professions
-      </div>
-
-      {visible.length > 0 ? (
-        <ul className="profession-catalog__list">
-          {visible.map((profession) => (
-            <ProfessionCard
-              key={profession.id}
-              profession={profession}
-              profile={PROFESSION_PROFILES[profession.id]}
-              current={currentProfessionId === profession.id}
-              currentLevel={currentLevel}
-              currentArchetype={currentArchetypeId}
-              onOpen={() => openProfession(profession.id)}
-            />
-          ))}
-        </ul>
-      ) : (
-        <div className="profession-catalog__empty">
-          <strong>No professions match this view.</strong>
-          <span>Try another domain or a broader search.</span>
-        </div>
+      <header className="profession-catalog__intro"><small>Layered progression</small><h2 id="profession-catalog-title">Professions &amp; specializations</h2><p>Up to 70 combined profession levels sit beside a separate 30-level racial evolution track. Multiclass freely; every specialization is an authored branch, never a silent default.</p></header>
+      {character?.race && (
+        <button type="button" className="profession-catalog__racial-card" onClick={() => setSelectedId(`__racial__:${character.progression?.racial?.raceId || character.race}`)}>
+          <span><small>Separate racial track</small><strong>{RACES[character.race]?.name || titleCase(character.race)} evolution</strong><em>{racialLevel} / {RACIAL_CAP} levels</em></span><b>View evolution →</b>
+        </button>
       )}
+      <section className="profession-catalog__racial-directory" aria-labelledby="racial-evolution-directory-title">
+        <div className="profession-progress__section-heading">
+          <div><small>Separate 30-level tracks</small><h3 id="racial-evolution-directory-title">Racial evolutions</h3></div>
+          <span>{Object.keys(progressionPaths.RACIAL_PROFILES || RACES).length} ancestries</span>
+        </div>
+        <p>Browse every ancestry's racial abilities, metamorphosis milestones, and nested evolution branches independently of profession levels.</p>
+        <ul>
+          {Object.entries(progressionPaths.RACIAL_PROFILES || RACES).sort(([, a], [, b]) => a.name.localeCompare(b.name)).map(([raceId, race]) => {
+            const current = raceId === (character?.progression?.racial?.raceId || character?.race);
+            return (
+              <li key={raceId}>
+                <button type="button" onClick={() => setSelectedId(`__racial__:${raceId}`)}>
+                  <span><strong>{race.name}</strong><small>{current ? `${racialLevel} / ${RACIAL_CAP} invested` : `${RACIAL_CAP} authored levels`}</small></span>
+                  <b aria-hidden="true">→</b>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      <div className="profession-catalog__tools">
+        <label className="profession-catalog__search"><span>Search professions</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Profession, specialization, branch, or focus" /></label>
+        <label className="profession-catalog__filter"><span>Discipline</span><select value={domain} onChange={(event) => setDomain(event.target.value)}><option value="all">All disciplines</option>{domains.map((entry) => <option key={entry} value={entry}>{titleCase(entry)}</option>)}</select></label>
+      </div>
+      <div className="profession-catalog__result-count" aria-live="polite">{visible.length} of {professions.length} broad professions · {professionLevel} / {PROFESSION_CAP} levels invested</div>
+      <ul className="profession-catalog__list">
+        {visible.map((profession) => {
+          const owned = tracks.filter((entry) => entry.professionId === profession.id);
+          const ownedLevel = owned.reduce((sum, track) => sum + Object.values(track.paths || {}).reduce((trackSum, rank) => trackSum + (Number(rank) || 0), 0), 0);
+          const specializations = owned.map((track) => (profession.specializations || []).find((entry) => entry.id === track.specializationId)?.name || titleCase(track.specializationId)).filter(Boolean);
+          return <ProfessionCard key={profession.id} profession={profession} currentLevel={ownedLevel} currentSpecializations={specializations} onOpen={() => setSelectedId(profession.id)} />;
+        })}
+      </ul>
     </section>
   );
 }

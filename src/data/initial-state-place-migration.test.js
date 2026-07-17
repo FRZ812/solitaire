@@ -89,6 +89,6 @@ describe("unified capital migration", () => {
     expect(migrated.world).not.toHaveProperty("place");
     expect(migrated.world.codex).toBeUndefined();
     expect(migrated.character).toMatchObject({ id: "wanderer", kind: "player", profession: "farmer" });
-    expect(migrated.character.progression).toMatchObject({ version: 1, professionId: "farmer" });
+    expect(migrated.character.progression).toMatchObject({ version: 2, professionId: "farmer" });
   });
 });
