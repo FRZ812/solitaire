@@ -20,7 +20,7 @@ import { formatDate, formatTime } from "../../engine/time.js";
 import { coinsToCopper, formatCopper } from "../../engine/economy.js";
 import { poiPartName, poiPlaceName } from "../../engine/location.js";
 import { buildingForService, MARKET_PRICE_TIERS } from "../../data/town.js";
-import { poiIconKeyForTile } from "../../data/poi-icons.js";
+import { POI_LEGEND_GROUPS, poiIconKeyForTile } from "../../data/poi-icons.js";
 import { PoiIcon, PoiTierMarker } from "../PoiIcon.jsx";
 import {
   TERRAIN_INK,
@@ -45,6 +45,61 @@ const POI_GLYPHS = {
   ruin: "⌁", temple: "✦", shrine: "✦", landmark: "◆", gate: "◇",
   camp: "△", market: "◈", bldg: "⌂", smithy: "⚒", healer: "+",
 };
+const POI_LEGEND_HELP = Object.freeze({
+  trade: "Shops and specialists. Travel to one to trade, rest, recover, arrange transport, or use its named service when available.",
+  city: "Civic, social, and landmark venues. Travel to one for related services, access, or story interactions.",
+  wilderness: "Sites beyond the streets. They mark settlements, shelter, crossings, exploration targets, and possible danger.",
+});
+const POI_LEGEND_ACTIONS = Object.freeze({
+  "trade-general": "Buy and sell everyday goods",
+  "trade-provisions": "Buy food and travel supplies",
+  "trade-equipment": "Buy adventuring equipment",
+  "trade-stable": "Buy mounts and stable animals",
+  "trade-magic": "Buy enchanted and arcane goods",
+  "trade-herbalist": "Buy herbs and natural remedies",
+  "trade-alchemist": "Buy potions and reagents",
+  "trade-priest": "Worship, healing, and rites",
+  "trade-healer": "Restore health and treat wounds",
+  "trade-smith": "Buy, repair, or forge equipment",
+  "trade-transport": "Hire carts and arrange transport",
+  "trade-money": "Exchange or store currency",
+  "trade-tavern": "Rest, drink, hear rumors and jobs",
+  "trade-fish": "Buy fish and preserved catch",
+  "trade-chandler": "Buy rope, lamps, wax, and ship goods",
+  "trade-foreign": "Buy imported and rare goods",
+  "poi-palace": "Government, court, and royal business",
+  "poi-prison": "Prisoners, wardens, and legal custody",
+  "poi-slave-market": "Bond sales and captive trade",
+  "poi-inn": "Beds, meals, and traveler services",
+  "poi-restaurant": "Meals and local dining",
+  "poi-park": "Public garden and quiet meeting place",
+  "poi-brothel": "Paid company and social encounters",
+  "poi-bathhouse": "Bathing, recovery, and socializing",
+  "poi-courthouse": "Hearings, records, and civil law",
+  "poi-guildhall": "Guild business, charters, and work",
+  "poi-library": "Research, records, and learned help",
+  "poi-barracks": "Guards, military access, and security",
+  "poi-docks": "Ships, ferries, cargo, and passage",
+  "poi-warehouse": "Stored cargo and trade goods",
+  "poi-theatre": "Performances, games, and crowds",
+  "poi-cemetery": "Burials, memorials, and grave sites",
+  "wild-shrine": "Rites, offerings, and sanctuary",
+  "wild-monster-den": "Dangerous creature lair",
+  "wild-bandit-camp": "Hostile outlaw encampment",
+  "wild-merchant": "Trade with a roaming seller",
+  "wild-caravan": "Travelers, trade, and road news",
+  "wild-cave": "Underground site to explore",
+  "wild-dungeon": "Dangerous delve and possible treasure",
+  "wild-checkpoint": "Controlled passage and inspections",
+  "wild-ruin": "Explore remains and hidden history",
+  "wild-fortress": "Fortified stronghold and defenders",
+  "wild-manor": "Estate, household, and local authority",
+  "wild-watchtower": "Lookout, signals, and surveillance",
+  "wild-village": "Homes, services, and local people",
+  "wild-mine": "Minerals, labor, and underground works",
+  "wild-campsite": "A known place to shelter or rest",
+  "wild-bridge": "Safe route across water or terrain",
+});
 
 function glyphFor(tile) {
   return POI_GLYPHS[tile?.poi?.type] || terrainVisual(tile?.terrain).glyph || "•";
@@ -127,7 +182,67 @@ function RpgHeader({ state, biome, tile, onClose, onWayfinder }) {
   );
 }
 
-function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, night, city, district }) {
+export function MapLegend({ onClose, initialSection = "tiers" }) {
+  const [sectionId, setSectionId] = useState(initialSection);
+  const poiGroup = POI_LEGEND_GROUPS.find((group) => group.id === sectionId) || null;
+  const sections = [
+    { id: "tiers", label: "Shop tiers" },
+    ...POI_LEGEND_GROUPS.map((group) => ({ id: group.id, label: group.label })),
+  ];
+
+  return (
+    <section id="rpg-map-legend-dialog" className="rpg-map-legend-panel" role="dialog" aria-modal="true" aria-labelledby="rpg-map-legend-title" onMouseDown={(event) => event.stopPropagation()}>
+      <header className="rpg-map-legend-head">
+        <div><small>Map guide</small><h2 id="rpg-map-legend-title">Legend</h2></div>
+        <button type="button" onClick={onClose} aria-label="Close map legend"><Icon name="x" size={17} /></button>
+      </header>
+      <div className="rpg-map-legend-tabs" role="tablist" aria-label="Legend sections">
+        {sections.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            className={sectionId === section.id ? "is-active" : ""}
+            onClick={() => setSectionId(section.id)}
+            role="tab"
+            aria-selected={sectionId === section.id}
+          >
+            {section.label}
+          </button>
+        ))}
+      </div>
+      <div className="rpg-map-legend-content" role="tabpanel">
+        {sectionId === "tiers" ? (
+          <>
+            <p>Lettered rings on shop and service icons show their price level and the best stock they normally carry.</p>
+            <div className="rpg-map-tier-grid">
+              {Object.values(MARKET_PRICE_TIERS).map((tier) => (
+                <div key={tier.id} className="rpg-map-tier-item">
+                  <PoiTierMarker marketTier={tier.id} size={24} />
+                  <span><b>{tier.label}</b><small>{tier.summary} · {tier.qualityTier.replace("-", " ")} stock</small></span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : poiGroup ? (
+          <>
+            <p>{POI_LEGEND_HELP[poiGroup.id]}</p>
+            <div className="rpg-map-poi-grid">
+              {poiGroup.items.map((item) => (
+                <div key={item.key} className="rpg-map-poi-item">
+                  <PoiIcon iconKey={item.key} size={38} title={item.label} />
+                  <span><b>{item.label}</b><small>{POI_LEGEND_ACTIONS[item.key]}</small></span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, night, city }) {
+  const [legendOpen, setLegendOpen] = useState(false);
   const mapScene = useMemo(() => buildWorldMapScene({ model, selection, journey, night }), [model, selection, journey, night]);
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.explored && cell.passable && !cell.current)
@@ -141,16 +256,32 @@ function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, n
     if (cell?.explored && cell.passable && !cell.current) onPick(cell);
   }
 
+  useEffect(() => {
+    if (!legendOpen) return undefined;
+    const onKeyDown = (event) => event.key === "Escape" && setLegendOpen(false);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [legendOpen]);
+
   return (
     <main className={`rpg-world-stage canvas-world-stage ${city ? "is-capital" : ""} ${night ? "is-night" : ""}`}>
       <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
       {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 
-      {city && district && <div className="rpg-city-district-chip"><span aria-hidden="true">◆</span><small>{city}</small><b>{district}</b></div>}
-      {city && (
-        <div className="rpg-poi-tier-legend" aria-label="Shop tier marker legend">
-          <small>Shop tier</small>
-          {Object.values(MARKET_PRICE_TIERS).map((tier) => <PoiTierMarker key={tier.id} marketTier={tier.id} size={16} />)}
+      <button
+        type="button"
+        className="rpg-map-legend-toggle"
+        onClick={() => setLegendOpen(true)}
+        aria-label="Open map legend"
+        aria-expanded={legendOpen}
+        aria-controls="rpg-map-legend-dialog"
+      >
+        <Icon name="book" size={16} /><span>Legend</span>
+      </button>
+
+      {legendOpen && (
+        <div className="rpg-map-legend-backdrop" onMouseDown={() => setLegendOpen(false)}>
+          <MapLegend onClose={() => setLegendOpen(false)} />
         </div>
       )}
 
@@ -431,7 +562,6 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
   const currentBiome = currentBiomeId === "whitemarch" ? { ...currentCoordinateBiome, id: "whitemarch", name: "Whitemarch" } : currentCoordinateBiome;
   const currentVisual = biomeVisual(currentBiome.id);
   const currentCity = capitalName(model.current.tile);
-  const currentDistrict = cityDistrict(model.current.tile);
   const focusDestination = selection || model.current;
   const focusBiome = biomeAt(focusDestination, state.world.seed);
   const focusVisual = biomeVisual(focusBiome.id);
@@ -462,7 +592,7 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
     <div className={`exploration-shell rpg-exploration-shell ${currentCity ? "is-capital-map" : ""}`} style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
       <RpgHeader state={state} biome={currentBiome} tile={model.current.tile} onClose={onClose} onWayfinder={() => setFolioPage("atlas")} />
       <div className="rpg-exploration-body">
-        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onSeekCombat={onSeekCombat} loading={loading} night={hour < 6 || hour >= 20} city={currentCity} district={currentDistrict} />
+        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onSeekCombat={onSeekCombat} loading={loading} night={hour < 6 || hour >= 20} city={currentCity} />
         <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={() => journey && !loading && onTravel(selected, journey.fullPath)} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
       </div>
       {folioPage && <AdventureFolio state={state} page={folioPage} quests={activeQuests} landmarks={model.landmarks} origin={model.origin} onPage={setFolioPage} onClose={() => setFolioPage(null)} onPick={pick} />}

@@ -280,10 +280,19 @@ export function MenuSheet({ state, user, onReset, onBackToCampaigns, onSignOut, 
 // so every open bubble resizes immediately without a reload.
 function SettingsSection() {
   const [fontScale, setFontScale] = useState(getStoryFontScale());
+  const currentIndex = STORY_FONT_SCALES.findIndex((s) => s.id === fontScale);
+  const currentScale = currentIndex >= 0 ? STORY_FONT_SCALES[currentIndex] : STORY_FONT_SCALES[0];
+
   function chooseFontScale(id) {
     setStoryFontScale(id);
     setFontScale(id);
   }
+
+  function shiftFontScale(direction) {
+    const nextIndex = Math.max(0, Math.min(STORY_FONT_SCALES.length - 1, currentIndex + direction));
+    chooseFontScale(STORY_FONT_SCALES[nextIndex].id);
+  }
+
   return (
     <div>
       <SectionHeader>Settings</SectionHeader>
@@ -291,19 +300,40 @@ function SettingsSection() {
         <div style={{ ...metaStyle, fontSize: "9px", letterSpacing: "0.12em", color: "rgba(215, 167, 111, 0.7)", marginBottom: "8px" }}>
           Story text size
         </div>
-        <div style={{ display: "flex", gap: "6px" }}>
-          {STORY_FONT_SCALES.map((s) => {
-            const on = s.id === fontScale;
-            return (
-              <button key={s.id} onClick={() => chooseFontScale(s.id)} aria-pressed={on} style={{
-                flex: 1, padding: "8px 4px", borderRadius: radius.chip, fontFamily: "inherit",
-                cursor: "pointer", fontSize: "12px", fontWeight: on ? 700 : 600,
-                border: `1px solid rgba(215,167,111,${on ? 0.5 : 0.2})`,
-                background: on ? "rgba(215,167,111,0.16)" : "transparent",
-                color: on ? colors.parchment : "rgba(237,228,208,0.7)",
-              }}>{s.label}</button>
-            );
-          })}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+          <button
+            type="button"
+            onClick={() => shiftFontScale(-1)}
+            disabled={currentIndex <= 0}
+            aria-label="Decrease story text size"
+            title="Decrease story text size"
+            style={{
+              width: "34px", height: "34px", padding: 0, display: "grid", placeItems: "center",
+              borderRadius: "50%", border: "1px solid rgba(215,167,111,0.3)",
+              background: "rgba(215,167,111,0.08)", color: colors.parchment,
+              cursor: currentIndex <= 0 ? "not-allowed" : "pointer", opacity: currentIndex <= 0 ? 0.35 : 1,
+            }}
+          >
+            <Icon name="zoomOut" size={17} strokeWidth={1.65} />
+          </button>
+          <span aria-live="polite" style={{ minWidth: 0, flex: 1, color: colors.parchment, fontSize: "12px", fontWeight: 700, textAlign: "center" }}>
+            {currentScale.label}
+          </span>
+          <button
+            type="button"
+            onClick={() => shiftFontScale(1)}
+            disabled={currentIndex >= STORY_FONT_SCALES.length - 1}
+            aria-label="Increase story text size"
+            title="Increase story text size"
+            style={{
+              width: "34px", height: "34px", padding: 0, display: "grid", placeItems: "center",
+              borderRadius: "50%", border: "1px solid rgba(215,167,111,0.3)",
+              background: "rgba(215,167,111,0.08)", color: colors.parchment,
+              cursor: currentIndex >= STORY_FONT_SCALES.length - 1 ? "not-allowed" : "pointer", opacity: currentIndex >= STORY_FONT_SCALES.length - 1 ? 0.35 : 1,
+            }}
+          >
+            <Icon name="zoomIn" size={17} strokeWidth={1.65} />
+          </button>
         </div>
       </div>
     </div>

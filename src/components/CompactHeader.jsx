@@ -1,10 +1,26 @@
 import React from "react";
 import { Icon } from "./Icon.jsx";
 import { TERRAINS } from "../data/terrains.js";
-import { getTile, currentLocationName } from "../engine/world.js";
+import { getTile } from "../engine/world.js";
+import { poiFootprintName, poiPartName, poiPlaceName } from "../engine/location.js";
 import { getBiome } from "../data/biomes.js";
 import { sceneBiomeId } from "../data/visual-assets.js";
 import { formatTime, getCalendarDate } from "../engine/time.js";
+
+function comparablePlaceName(value) {
+  return String(value || "").toLowerCase().replace(/^the\s+/, "").trim();
+}
+
+function compactLocation(tile) {
+  const poi = tile?.poi;
+  const district = tile?.districtName || tile?.district || poi?.districtName || poi?.district || null;
+  const footprint = poiFootprintName(poi);
+  const localName = poiPlaceName(poi);
+  const title = district && footprint && comparablePlaceName(district) === comparablePlaceName(footprint)
+    ? (poiPartName(poi) || poi?.name || localName)
+    : localName;
+  return { district, title: title || TERRAINS[tile?.terrain]?.label || "Wilderness" };
+}
 
 function AnalogClock({ time }) {
   const hour = Number(time?.hour) || 0;
@@ -77,10 +93,13 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
   const partyCount = (state.party || []).length;
   const cur = state.world.currentTile;
   const t = getTile(state, cur.x, cur.y);
-  const sceneTitle = currentLocationName(state);
+  const { district, title: sceneTitle } = compactLocation(t);
   const terrainLabel = TERRAINS[t.terrain]?.label || "Wilderness";
   const biome = getBiome(cur.x, cur.y, state.world.seed);
   const biomeLabel = sceneBiomeId(biome.id, t) === "whitemarch" ? "Whitemarch" : biome.name;
+  const placeLevels = [terrainLabel, district, biomeLabel].filter((label, index, labels) => (
+    label && labels.findIndex((candidate) => comparablePlaceName(candidate) === comparablePlaceName(label)) === index
+  ));
   const date = getCalendarDate(state.time);
   // Compact 3-letter month abbreviation for the header chip. The map view
   // shows the full date + year — this stays tight so the scene title has room.
@@ -96,7 +115,12 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
       <div className="compact-header__scene">
         <OverflowMarquee>{sceneTitle}</OverflowMarquee>
         <div className="compact-header__place">
-          <span>{terrainLabel}</span><i aria-hidden="true" /><span>{biomeLabel}</span>
+          {placeLevels.map((label, index) => (
+            <React.Fragment key={label}>
+              {index > 0 && <i aria-hidden="true" />}
+              <span>{label}</span>
+            </React.Fragment>
+          ))}
         </div>
       </div>
 

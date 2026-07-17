@@ -2,7 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
-import { AdventureFolio, WorldExploration } from "./WorldExploration.jsx";
+import { AdventureFolio, MapLegend, WorldExploration } from "./WorldExploration.jsx";
 import { buildExplorationModel } from "./atlasModel.js";
 
 describe("mobile map navigation markup", () => {
@@ -29,11 +29,26 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain(">Grain Square</h1>");
     expect(html).not.toContain("Whitemarch —");
     expect(html).toContain('class="rpg-map-corner-controls"');
-    expect(html).toContain('class="rpg-city-district-chip"');
-    expect(html.indexOf('class="rpg-city-district-chip"')).toBeLessThan(html.indexOf('class="rpg-map-corner-controls"'));
+    expect(html).toContain('aria-label="Open map legend"');
+    expect(html).not.toContain('class="rpg-city-district-chip"');
+    expect(html).not.toContain('class="rpg-poi-tier-legend"');
     expect(html).not.toContain("Map cursor controls");
     expect(html).not.toContain("Choose a destination");
     expect(html).not.toContain("rpg-trail-choices");
+  });
+
+  it("puts shop-tier and POI explanations in the browsable map legend", () => {
+    const tiers = renderToStaticMarkup(<MapLegend onClose={vi.fn()} />);
+    const cityPois = renderToStaticMarkup(<MapLegend onClose={vi.fn()} initialSection="city" />);
+
+    expect(tiers).toContain("Lettered rings on shop and service icons");
+    expect(tiers).toContain("Budget house");
+    expect(tiers).toContain("26% below standard");
+    expect(tiers).toContain("Mastercraft house");
+    expect(cityPois).toContain("Civic, social, and landmark venues");
+    expect(cityPois).toContain('data-poi-icon="poi-palace"');
+    expect(cityPois).toContain("Palace");
+    expect(cityPois).toContain("Government, court, and royal business");
   });
 
   it("renders the interactive atlas in its dedicated folio panel", () => {
