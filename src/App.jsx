@@ -7,7 +7,15 @@ import { makeInitialState, migrateCodex } from "./data/initial-state.js";
 import { storeGet, storeDel } from "./engine/storage.js";
 import { callNarrator } from "./engine/api-supabase.js";
 import { onAuthChange, signOut, linkEmail, isSubscribed } from "./engine/auth-supabase.js";
-import { listCampaigns, loadCampaign, saveCampaign, deleteCampaign, renameCampaign } from "./engine/campaigns-supabase.js";
+import { listCampaigns, loadCampaignRecord, saveCampaign, deleteCampaign, renameCampaign } from "./engine/campaigns-supabase.js";
+import {
+  clearCampaignResume,
+  readLastCampaignId,
+  readResumeSnapshot,
+  rememberLastCampaignId,
+  shouldRecoverResumeSnapshot,
+  writeResumeSnapshot,
+} from "./engine/campaign-resume.js";
 import { applyBeat } from "./engine/beat.js";
 import { buildStateContext } from "./engine/api.js";
 import {
@@ -62,7 +70,7 @@ import { poiPlaceName } from "./engine/location.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
 import { CombatView } from "./components/combat/CombatView.jsx";
-import { VitalsStrip, InputBar, LoadingDots, ErrorBanner } from "./components/primitives.jsx";
+import { VitalsStrip, InputBar, ErrorBanner } from "./components/primitives.jsx";
 import { LiveNarratorStream } from "./components/LiveNarratorStream.jsx";
 import { BeatActionSheet } from "./components/BeatActionSheet.jsx";
 import { colors } from "./components/tokens.js";
@@ -89,11 +97,10 @@ import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
+import { JourneyLoader, JourneyResumeOverlay } from "./components/JourneyLoader.jsx";
 import { advanceLiveNarrator, emptyLiveNarrator } from "./engine/live-narrator.js";
 import { pinStoryToBottom, storyDistanceFromBottom, touchRequestsOlder, wheelRequestsOlder } from "./components/storyScroll.js";
 import "./components/chat-scene.css";
-
-const LAST_OPENED_KEY = "solitaire-last-campaign-v12";
 
 // Difficulty profile of the current location (region-gated, not level-scaled).
 function regionHere(state) {
@@ -240,22 +247,24 @@ function convertLegacyV10ToHex(legacy) {
   return out;
 }
 
-function CenteredLoader() {
-  return (
-    <div style={{
-      backgroundColor: colors.inkDeep,
-      height: "100dvh", width: "100%",
-      maxWidth: "480px", margin: "0 auto",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      position: "relative",
-      overflow: "hidden",
-    }}>
-      <InitialBackdrop />
-      <div style={{ position: "relative", zIndex: 1 }}>
-        <LoadingDots />
-      </div>
-    </div>
-  );
+function prepareCampaignState(loaded) {
+  // Pull forward any codex entries (races, professions, named NPCs) added to
+  // initial-state.js since the snapshot was written.
+  const migrated = migrateCodex(loaded);
+  if (migrated?.character) {
+    recomputeVitalityMax(migrated.character);
+    recomputeResolveMax(migrated.character);
+    recomputeCarryCapacity(migrated.character);
+  }
+  for (const id of (migrated?.party || [])) {
+    const companion = migrated.world?.codex?.characters?.[id];
+    if (companion && companion.resolveMax == null) recomputeResolveMax(companion);
+  }
+  return migrated;
+}
+
+function CenteredLoader({ title, detail }) {
+  return <JourneyLoader title={title} detail={detail} />;
 }
 
 export function Solitaire() {
@@ -263,6 +272,7 @@ export function Solitaire() {
   // subscription below to deliver the user (or null if signed out).
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const authUserIdRef = useRef(null);
 
   // Subscription gate.
   const [subChecked, setSubChecked] = useState(false);
@@ -273,15 +283,21 @@ export function Solitaire() {
   const [campaigns, setCampaigns] = useState([]);
   const [campaignsLoaded, setCampaignsLoaded] = useState(false);
   const [currentCampaignId, setCurrentCampaignId] = useState(null);
+  const currentCampaignIdRef = useRef(currentCampaignId);
+  currentCampaignIdRef.current = currentCampaignId;
   const [campaignBusy, setCampaignBusy] = useState(false);
   const [campaignError, setCampaignError] = useState(null);
   const [menuEntered, setMenuEntered] = useState(false);
+  const [resumeChecked, setResumeChecked] = useState(false);
   const campaignsPreparedRef = useRef(false);
+  const resumeAttemptedForRef = useRef(null);
 
   // Game
   const [state, setState] = useState(makeInitialState());
   const liveStateRef = useRef(state);
   liveStateRef.current = state;
+  const lastSyncedStateRef = useRef(null);
+  const lastServerUpdatedAtRef = useRef(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -323,6 +339,7 @@ export function Solitaire() {
     return new Promise((resolve) => setNamePrompt({ ...opts, resolve }));
   }
   const [hydrated, setHydrated] = useState(false);
+  const resumeCacheTimerRef = useRef(null);
   // Transient stream projection. Raw partial JSON never enters saved beats;
   // only its currently recoverable ordered story entries and reasoning are shown.
   const [liveNarrator, setLiveNarrator] = useState(emptyLiveNarrator);
@@ -424,8 +441,18 @@ export function Solitaire() {
     let mounted = true;
     const unsubscribe = onAuthChange((u) => {
       if (!mounted) return;
+      const nextUserId = u?.id ?? null;
+      if (authUserIdRef.current !== nextUserId) {
+        authUserIdRef.current = nextUserId;
+        resumeAttemptedForRef.current = null;
+        setResumeChecked(false);
+      }
       setUser(u);
-      if (!u) setMenuEntered(false);
+      if (!u) {
+        setMenuEntered(false);
+        setCurrentCampaignId(null);
+        setHydrated(false);
+      }
       setAuthChecked(true);
     });
     return () => { mounted = false; unsubscribe(); };
@@ -440,7 +467,7 @@ export function Solitaire() {
       .then((ok) => { if (!cancelled) { setSubscribed(!!ok); setSubChecked(true); } })
       .catch(() => { if (!cancelled) { setSubscribed(false); setSubChecked(true); } });
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user?.id]);
 
   async function handleRecheckSubscription() {
     if (subBusy) return;
@@ -456,6 +483,35 @@ export function Solitaire() {
       setSubBusy(false);
     }
   }
+
+  // A cold PWA resume used to forget that a campaign was open even though its
+  // id was written to localStorage. Restore that pointer once auth/access are
+  // known. A user-scoped snapshot can paint the real last scene immediately;
+  // openCampaign still checks Supabase before the game becomes interactive.
+  useEffect(() => {
+    if (!user || !subChecked || !subscribed) return;
+    if (resumeAttemptedForRef.current === user.id) {
+      setResumeChecked(true);
+      return;
+    }
+    resumeAttemptedForRef.current = user.id;
+
+    const cached = readResumeSnapshot(user.id);
+    const campaignId = cached?.campaignId || readLastCampaignId();
+    if (!campaignId) {
+      setResumeChecked(true);
+      return;
+    }
+
+    let cancelled = false;
+    setMenuEntered(true);
+    openCampaign(campaignId, () => cancelled, cached)
+      .finally(() => { if (!cancelled) setResumeChecked(true); });
+    setResumeChecked(true);
+    return () => { cancelled = true; };
+    // openCampaign is a stable function declaration over this render's user.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, subChecked, subscribed]);
 
   // ----- Fetch campaigns list when user appears -----
   useEffect(() => {
@@ -484,7 +540,7 @@ export function Solitaire() {
       }
     })();
     return () => { cancelled = true; };
-  }, [user, subscribed]);
+  }, [user?.id, subscribed]);
 
   // ----- One-time legacy import on first load -----
   // The title screen now deliberately opens into the campaign library instead
@@ -535,31 +591,118 @@ export function Solitaire() {
     // We intentionally depend only on campaignsLoaded + user; the campaigns
     // snapshot is captured at the moment campaignsLoaded becomes true.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignsLoaded, user]);
+  }, [campaignsLoaded, user?.id]);
 
   // ----- Save on state change (debounced; when a campaign is active) -----
+  // Keep a warm, user-scoped browser snapshot so an Android/PWA cold resume can
+  // paint the actual last scene while Supabase is checked. Writes are trailing
+  // and best-effort; the server remains authoritative unless the cache is both
+  // explicitly dirty and newer than the server row.
+  useEffect(() => {
+    if (!hydrated || !currentCampaignId || !user?.id) return;
+    const snapshot = state;
+    const dirty = snapshot !== lastSyncedStateRef.current;
+    clearTimeout(resumeCacheTimerRef.current);
+    resumeCacheTimerRef.current = setTimeout(() => {
+      writeResumeSnapshot({
+        userId: user.id,
+        campaignId: currentCampaignId,
+        state: snapshot,
+        dirty,
+        serverUpdatedAt: lastServerUpdatedAtRef.current,
+      });
+    }, 250);
+    return () => clearTimeout(resumeCacheTimerRef.current);
+  }, [state, hydrated, currentCampaignId, user?.id]);
+
   // Autosave used to fire a full Supabase write on EVERY state change — a write
   // storm where overlapping in-flight PUTs could also land out of order and
-  // clobber newer progress. Debounce to a trailing 800ms so a burst of changes
-  // within one turn collapses to a single write of the latest state. The timer
-  // is cleared on each change (reschedule) and on unmount.
+  // clobber newer progress. Debounce to a trailing 800ms and skip the initial
+  // hydration state because it is already identical to the server baseline.
   const saveTimerRef = useRef(null);
   useEffect(() => {
-    if (!hydrated || !currentCampaignId) return;
+    if (!hydrated || !currentCampaignId || !user?.id) return;
     const id = currentCampaignId;
     const snapshot = state;
+    if (snapshot === lastSyncedStateRef.current) return;
     clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      saveCampaign(id, snapshot).catch((e) => setCampaignError(`Save failed: ${e.message || e}`));
+      saveCampaign(id, snapshot)
+        .then((result) => {
+          if (currentCampaignIdRef.current !== id || liveStateRef.current !== snapshot) return;
+          lastSyncedStateRef.current = snapshot;
+          lastServerUpdatedAtRef.current = result?.updatedAt ?? lastServerUpdatedAtRef.current;
+          writeResumeSnapshot({
+            userId: user.id,
+            campaignId: id,
+            state: snapshot,
+            dirty: false,
+            serverUpdatedAt: lastServerUpdatedAtRef.current,
+          });
+        })
+        .catch((e) => setCampaignError(`Save failed: ${e.message || e}`));
     }, 800);
     return () => clearTimeout(saveTimerRef.current);
-  }, [state, hydrated, currentCampaignId]);
+  }, [state, hydrated, currentCampaignId, user?.id]);
 
   async function flushActiveCampaign(snapshot = liveStateRef.current) {
-    if (!hydrated || !currentCampaignId) return;
+    if (!hydrated || !currentCampaignId || !user?.id) return;
+    const id = currentCampaignId;
     clearTimeout(saveTimerRef.current);
-    await saveCampaign(currentCampaignId, snapshot);
+    const result = await saveCampaign(id, snapshot);
+    if (currentCampaignIdRef.current === id && liveStateRef.current === snapshot) {
+      lastSyncedStateRef.current = snapshot;
+      lastServerUpdatedAtRef.current = result?.updatedAt ?? lastServerUpdatedAtRef.current;
+      writeResumeSnapshot({
+        userId: user.id,
+        campaignId: id,
+        state: snapshot,
+        dirty: false,
+        serverUpdatedAt: lastServerUpdatedAtRef.current,
+      });
+    }
   }
+
+  // A mobile OS can freeze or discard the web process without waiting for the
+  // 800ms autosave. Capture synchronously as the page hides, then make a
+  // best-effort serialized server flush. On a later cold start the dirty cache
+  // is recoverable if that network write never landed.
+  useEffect(() => {
+    if (!hydrated || !currentCampaignId || !user?.id) return;
+    let lastFlushAt = 0;
+    const persistBeforeSuspend = () => {
+      const now = Date.now();
+      if (now - lastFlushAt < 250) return;
+      lastFlushAt = now;
+      const snapshot = liveStateRef.current;
+      const dirty = snapshot !== lastSyncedStateRef.current;
+      clearTimeout(resumeCacheTimerRef.current);
+      writeResumeSnapshot({
+        userId: user.id,
+        campaignId: currentCampaignId,
+        state: snapshot,
+        dirty,
+        capturedAt: now,
+        serverUpdatedAt: lastServerUpdatedAtRef.current,
+      });
+      if (dirty) {
+        flushActiveCampaign(snapshot)
+          .catch((e) => setCampaignError(`Save failed: ${e.message || e}`));
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") persistBeforeSuspend();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", persistBeforeSuspend);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", persistBeforeSuspend);
+    };
+    // flushActiveCampaign intentionally reads the same active campaign/user
+    // represented by these dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, currentCampaignId, user?.id]);
 
   // ----- Follow live output only while the reader is near the bottom -----
   // A reader who scrolls upward owns the viewport until they tap Latest.
@@ -602,41 +745,63 @@ export function Solitaire() {
   // Internal helpers shared by handlers + auto-resume. isCancelled is a getter
   // (not a snapshot) so callers from useEffect can flip cancellation atomically
   // when their cleanup fires.
-  async function openCampaign(id, isCancelled = () => false) {
+  async function openCampaign(id, isCancelled = () => false, cachedSnapshot = null) {
     setCampaignBusy(true);
     setHydrated(false);
     setCampaignError(null);
+    const warmSnapshot = cachedSnapshot?.campaignId === id
+      && cachedSnapshot?.userId === user?.id
+      ? cachedSnapshot
+      : null;
+    let warmState = null;
+    if (warmSnapshot) {
+      // Paint the real last scene during the network check, but leave hydrated
+      // false so controls/autosave remain gated behind the resume overlay.
+      warmState = prepareCampaignState(warmSnapshot.state);
+      setState(warmState);
+      closeBeatMenu();
+      setCurrentCampaignId(id);
+      rememberLastCampaignId(id);
+    }
     try {
-      const loaded = await loadCampaign(id);
+      const loaded = await loadCampaignRecord(id);
       if (isCancelled()) return;
       if (!loaded) {
         // Stale id; drop the lastOpened pointer and let the list show.
-        localStorage.removeItem(LAST_OPENED_KEY);
+        clearCampaignResume();
+        setCurrentCampaignId(null);
         const refreshed = await listCampaigns();
-        if (!isCancelled()) setCampaigns(refreshed);
+        if (!isCancelled()) {
+          setCampaigns(refreshed);
+          setCampaignsLoaded(true);
+        }
         return;
       }
-      // Pull forward any codex entries (races, professions, named NPCs)
-      // added to initial-state.js since this campaign was last opened.
-      // Doesn't touch the player's own discoveries.
-      const migrated = migrateCodex(loaded);
-      // Bring older saves' max HP onto the vigor-derived formula so the vitals
-      // strip is correct the moment the campaign opens (heals by any gain).
-      // Likewise re-derive the Mind-scaled resolve pool (older saves had flat 6).
-      if (migrated?.character) { recomputeVitalityMax(migrated.character); recomputeResolveMax(migrated.character); recomputeCarryCapacity(migrated.character); }
-      // Companions carry their own Mind-scaled resolve pool too (they can fly the
-      // party) — derive it for any party member saved before pools existed.
-      for (const id of (migrated?.party || [])) {
-        const c = migrated.world?.codex?.characters?.[id];
-        if (c && c.resolveMax == null) recomputeResolveMax(c);
-      }
-      setState(migrated);
+      const serverState = prepareCampaignState(loaded.state);
+      const recoverWarmState = warmState
+        && shouldRecoverResumeSnapshot(warmSnapshot, loaded.updatedAt);
+      const resumedState = recoverWarmState ? warmState : serverState;
+      lastSyncedStateRef.current = recoverWarmState ? serverState : resumedState;
+      lastServerUpdatedAtRef.current = loaded.updatedAt;
+      setState(resumedState);
       closeBeatMenu();
       setCurrentCampaignId(id);
-      localStorage.setItem(LAST_OPENED_KEY, id);
+      rememberLastCampaignId(id);
+      if (user?.id) {
+        writeResumeSnapshot({
+          userId: user.id,
+          campaignId: id,
+          state: resumedState,
+          dirty: !!recoverWarmState,
+          serverUpdatedAt: loaded.updatedAt,
+        });
+      }
       setHydrated(true);
     } catch (e) {
-      if (!isCancelled()) setCampaignError(e.message || String(e));
+      if (!isCancelled()) {
+        setCurrentCampaignId(null);
+        setCampaignError(e.message || String(e));
+      }
     } finally {
       if (!isCancelled()) setCampaignBusy(false);
     }
@@ -649,12 +814,23 @@ export function Solitaire() {
     try {
       const fresh = makeInitialState();
       const name = fresh.character?.name || "Untitled";
-      const { id } = await saveCampaign(null, fresh, { name });
+      const { id, updatedAt } = await saveCampaign(null, fresh, { name });
       if (isCancelled()) return;
+      lastSyncedStateRef.current = fresh;
+      lastServerUpdatedAtRef.current = updatedAt;
       setState(fresh);
       closeBeatMenu();
       setCurrentCampaignId(id);
-      localStorage.setItem(LAST_OPENED_KEY, id);
+      rememberLastCampaignId(id);
+      if (user?.id) {
+        writeResumeSnapshot({
+          userId: user.id,
+          campaignId: id,
+          state: fresh,
+          dirty: false,
+          serverUpdatedAt: updatedAt,
+        });
+      }
       setHydrated(true);
       // Refresh the list in the background so the new entry shows when user navigates back.
       listCampaigns().then((list) => {
@@ -684,7 +860,11 @@ export function Solitaire() {
       if (currentCampaignId === id) {
         setCurrentCampaignId(null);
         setHydrated(false);
-        localStorage.removeItem(LAST_OPENED_KEY);
+        lastSyncedStateRef.current = null;
+        lastServerUpdatedAtRef.current = null;
+        clearCampaignResume();
+      } else if (readLastCampaignId() === id) {
+        clearCampaignResume();
       }
     } catch (e) {
       setCampaignError(`Delete failed: ${e.message || e}`);
@@ -710,7 +890,9 @@ export function Solitaire() {
     setDeckOpen(false);
     setCurrentCampaignId(null);
     setHydrated(false);
-    localStorage.removeItem(LAST_OPENED_KEY);
+    lastSyncedStateRef.current = null;
+    lastServerUpdatedAtRef.current = null;
+    clearCampaignResume();
     // Refresh list to pick up the latest last_played_at from this session.
     listCampaigns().then(setCampaigns).catch(() => {});
   }
@@ -730,7 +912,9 @@ export function Solitaire() {
     // debounced autosave can't write user-A's state into user-B's campaign).
     setState(makeInitialState());
     setCombat(null);
-    localStorage.removeItem(LAST_OPENED_KEY);
+    lastSyncedStateRef.current = null;
+    lastServerUpdatedAtRef.current = null;
+    clearCampaignResume();
     try {
       await signOut();
     } catch (e) {
@@ -1916,9 +2100,13 @@ export function Solitaire() {
   const sceneTile = getTile(state, state.world.currentTile.x, state.world.currentTile.y);
   const sceneVisual = biomeVisual(sceneBiomeId((getBiomeById(sceneTile.regionId) || getBiome(state.world.currentTile.x, state.world.currentTile.y, state.world.seed)).id, sceneTile));
 
-  if (!authChecked) return <CenteredLoader />;
+  if (!authChecked) {
+    return <CenteredLoader title="Waking the realm" detail="Restoring your session" />;
+  }
   if (!user) return <AuthScreen />;
-  if (!subChecked) return <CenteredLoader />;
+  if (!subChecked) {
+    return <CenteredLoader title="Checking your passage" detail="Confirming access to the realm" />;
+  }
   if (!subscribed) {
     return (
       <SubscriptionScreen
@@ -1928,6 +2116,9 @@ export function Solitaire() {
         busy={subBusy}
       />
     );
+  }
+  if (!resumeChecked) {
+    return <CenteredLoader title="Finding your journey" detail="Looking for your last open campaign" />;
   }
   if (!menuEntered) {
     return (
@@ -1940,7 +2131,14 @@ export function Solitaire() {
       />
     );
   }
-  if (!campaignsLoaded || campaignBusy) return <CenteredLoader />;
+  if ((!campaignsLoaded || campaignBusy) && !currentCampaignId) {
+    return (
+      <CenteredLoader
+        title={campaignBusy ? "Opening your journey" : "Gathering your journeys"}
+        detail={campaignBusy ? "Restoring your latest save" : "Loading saved campaigns"}
+      />
+    );
+  }
   if (!currentCampaignId) {
     return (
       <>
@@ -2003,6 +2201,7 @@ export function Solitaire() {
       {/* Limbo (character creation) shows the ethereal between-place backdrop with
           the HUD hidden; the real world shows the scene backdrop + full HUD. */}
       {state.created === false ? <InitialBackdrop /> : <SceneBackdrop state={state} />}
+      {campaignBusy && <JourneyResumeOverlay />}
       <div className="game-hud-layer">
         {state.created !== false && (
           <div className="story-hud">

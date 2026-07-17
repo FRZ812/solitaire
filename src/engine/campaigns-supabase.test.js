@@ -31,7 +31,7 @@ vi.mock("./supabase-client.js", () => ({
   },
 }));
 
-const { loadCampaign, saveCampaign } = await import("./campaigns-supabase.js");
+const { loadCampaign, loadCampaignRecord, saveCampaign } = await import("./campaigns-supabase.js");
 
 const gatesFrom = (recorded) =>
   recorded.filter(([m, c]) => m === "eq" && c === "updated_at");
@@ -40,6 +40,16 @@ describe("campaigns optimistic-concurrency guard", () => {
   beforeEach(() => {
     h.state.queue = [];
     h.state.recorded = [];
+  });
+
+  it("exposes the server timestamp for safe local-resume reconciliation", async () => {
+    h.state.queue = [
+      { data: { state: { n: 4 }, updated_at: "t4" }, error: null },
+    ];
+    await expect(loadCampaignRecord("resume-record")).resolves.toEqual({
+      state: { n: 4 },
+      updatedAt: "t4",
+    });
   });
 
   it("captures the load baseline and gates each save on the latest updated_at", async () => {

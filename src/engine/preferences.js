@@ -8,10 +8,9 @@ export const STORY_FONT_SCALES = [
   { id: "sm", label: "Small",  value: 0.86 },
   { id: "md", label: "Normal", value: 1 },
   { id: "lg", label: "Large",  value: 1.18 },
-  { id: "xl", label: "Extra large", value: 1.34 },
 ];
 
-export const DEFAULT_STORY_FONT_SCALE = "md";
+export const DEFAULT_STORY_FONT_SCALE = "sm";
 
 const FONT_SCALE_KEY = "solitaire-story-font-scale-v1";
 const FONT_SCALE_CSS_VAR = "--story-font-scale";

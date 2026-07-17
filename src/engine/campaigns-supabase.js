@@ -33,6 +33,13 @@ export async function listCampaigns() {
 }
 
 export async function loadCampaign(id) {
+  return (await loadCampaignRecord(id))?.state ?? null;
+}
+
+// Startup restoration also needs the row timestamp so a locally cached state
+// can be used only when it contains progress newer than the last server write.
+// Keep loadCampaign's state-only contract for existing callers.
+export async function loadCampaignRecord(id) {
   const { data, error } = await supabase
     .from("campaigns")
     .select("state, updated_at")
@@ -42,7 +49,7 @@ export async function loadCampaign(id) {
   // Capture the concurrency baseline at load time so the first autosave can
   // detect a row that was changed elsewhere between opening and saving.
   if (data) baselines.set(id, data.updated_at ?? null);
-  return data?.state ?? null;
+  return data ? { state: data.state, updatedAt: data.updated_at ?? null } : null;
 }
 
 export async function saveCampaign(id, state, { name } = {}) {
@@ -100,7 +107,7 @@ async function updateCampaign(id, state, { name }) {
 
   // Advance the baseline to this write's updated_at so the next save chains off it.
   if (data && data.length > 0) baselines.set(id, data[0].updated_at);
-  return { id };
+  return { id, updatedAt: data?.[0]?.updated_at ?? now };
 }
 
 async function insertCampaign(state, { name }) {
@@ -115,7 +122,7 @@ async function insertCampaign(state, { name }) {
     .single();
   if (error) throw error;
   baselines.set(data.id, data.updated_at ?? null);
-  return { id: data.id };
+  return { id: data.id, updatedAt: data.updated_at ?? null };
 }
 
 export async function deleteCampaign(id) {

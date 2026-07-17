@@ -8,6 +8,15 @@ export const HISTORY_LIMIT = 100;
 export const MEMORY_BANK_LIMIT = 80;
 export const STORAGE_KEY = "solitaire-state-v14";
 
+// Character growth is a stack of small profession, racial, and utility paths.
+// Nothing owns all 100 ranks by itself: standard paths cap at 15, advanced at
+// 10, and specialized at 5 (see data/progression-paths.js).
+export const CHARACTER_LEVEL_CAP = 100;
+// The previous attribute ceiling was 30. The stacked level model deliberately
+// opens roughly three times that headroom so apex beings and ordinary people no
+// longer occupy nearly the same numeric world.
+export const ATTRIBUTE_CAP = 90;
+
 // v12 scale: hexes are ~250m so each tile is a single concrete vantage rather
 // than a region. Travel base drops accordingly, sight is normally short, and
 // the new vista mechanic (see world.js) does the long-range reveal work.

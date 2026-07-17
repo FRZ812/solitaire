@@ -742,7 +742,6 @@
   border-radius: 18px;
   background: linear-gradient(135deg, rgba(10, 36, 54, .48), color-mix(in srgb, var(--scene-primary) 12%, rgba(8, 28, 44, .36)));
 }
-.beat--dialogue::after { content: ""; position: absolute; left: 18px; bottom: -5px; width: 12px; height: 12px; background: rgba(9,32,49,.56); clip-path: polygon(0 0, 100% 0, 0 100%); }
 .beat-portrait {
   width: 42px;
   height: 42px;
