@@ -10,6 +10,8 @@ import { CAPTIVE_POOL, SLAVE_HIGH_TIER_MIN_CP, bondedCodexEntry } from "../data/
 import { PRISONER_POOL, prisonerCodexEntry } from "../data/gaol.js";
 import { markCaptiveBought } from "./slaves.js";
 import { coinsToCopper, copperToCoins, canAfford } from "./economy.js";
+import { resolvePoolForMind, estimateAttributesFor } from "./attributes.js";
+import { bodyWeightForRace } from "./weight.js";
 
 // Remove one travelling member without deleting their codex entry. Both a
 // settled parting and a narrator-resolved death need the same riding cleanup;
@@ -88,6 +90,34 @@ export function applyAcquisitions({ state, beat, world, party, character, newTim
       newBeats.push({ id: `join${Date.now()}`, type: "recruit", text: `${tmpl.name} joins your company.` });
     } else if (!tmpl && !party.includes(id) && world.codex.characters[id]) {
       party = [...party, id];
+      const existing = world.codex.characters[id];
+      // An improvised NPC filed via discoveries.characters can be thin — the
+      // narrator declares name/description but no stat block. Estimate a
+      // plausible one from what we do know (race, age, profession) rather
+      // than joining with all-zero attributes.
+      if (!existing.attributes || Object.keys(existing.attributes).length === 0) {
+        const attrs = estimateAttributesFor(existing);
+        const race = existing.race || "human";
+        world = {
+          ...world,
+          codex: {
+            ...world.codex,
+            characters: {
+              ...world.codex.characters,
+              [id]: {
+                ...existing,
+                attributes: attrs,
+                needs: existing.needs || { hunger: 70, thirst: 75, sleep: 70 },
+                resolve: existing.resolve ?? resolvePoolForMind(attrs.mind),
+                resolveMax: existing.resolveMax ?? resolvePoolForMind(attrs.mind),
+                bodyWeight: existing.bodyWeight ?? bodyWeightForRace(race),
+                ridingOn: existing.ridingOn ?? null,
+                riders: existing.riders || [],
+              },
+            },
+          },
+        };
+      }
       newBeats.push({ id: `join${Date.now()}`, type: "recruit", text: `${world.codex.characters[id].name || id} joins your company.` });
     }
   }

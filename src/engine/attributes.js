@@ -1,6 +1,8 @@
 import { ATTR_KEYS, ATTR_LABELS } from "../config.js";
 import { effectiveAttributes } from "../data/proficiencies.js";
 import { attributeThresholdMods } from "../data/attribute-tiers.js";
+import { resolveRace, effectiveRaceLifespan } from "../data/races.js";
+import { professionRecord } from "../data/professions.js";
 
 // The player's max HP is derived from VIGOR (so toughness is a real, investable
 // stat — mirroring how NPCs get HP from vigor). A linear floor keeps early builds
@@ -99,6 +101,73 @@ export function recomputeCarryCapacity(character) {
   if (!character) return character;
   character.carryCapacityMax = carryCapacityFor(character);
   return character;
+}
+
+// A role-tagged profession skews toward the stats that role leans on in combat.
+const ROLE_ATTR_SKEW = {
+  Tank: { body: 1, vigor: 1 },
+  Bruiser: { body: 1, vigor: 1 },
+  "Ranged DPS": { reflex: 1, wit: 1 },
+  Assassin: { reflex: 1, wit: 1 },
+  Skirmisher: { reflex: 1 },
+  Healer: { mind: 1, presence: 1 },
+  Mage: { mind: 1 },
+  Warlock: { mind: 1, presence: 1 },
+  Face: { presence: 1 },
+  Demigod: { body: 1, vigor: 1, presence: 1 },
+  "God-Tyrant": { presence: 2, mind: 1 },
+};
+
+// Common (non-adventuring) occupations have no combat "role" tag but still
+// imply a leaning — a farmer is built for labour, a courtier for presence.
+const COMMON_PROFESSION_SKEW = {
+  farmer: { body: 1, vigor: 1 },
+  innkeeper: { presence: 1 },
+  peddler: { wit: 1 },
+  monarch: { presence: 1 },
+  noble: { presence: 1 },
+  witch: { mind: 1 },
+  speaker: { presence: 1 },
+  "chapter-master": { body: 1, presence: 1 },
+  "hold-father": { vigor: 1, presence: 1 },
+  matriarch: { presence: 1, wit: 1 },
+};
+
+// A rough life-stage bucket from the race's biological lifespan curve — used
+// only to nudge an estimate, not to model aging precisely.
+function ageStage(race, subrace, age) {
+  if (age == null) return "adult";
+  const span = effectiveRaceLifespan(race, subrace) || { adult: 16, elder: 60, max: 80 };
+  if (age < span.adult) return "young";
+  if (age >= span.elder) return "elder";
+  return "adult";
+}
+
+// Estimate a plausible 6-stat block for an NPC the narrator introduced without
+// ever rolling one (an improvised companion joining via discoveries.characters
+// with no authored template to force stats). Not a substitute for authored
+// design — just a sanity default shaped by what we do know about them (race,
+// age, profession) instead of a flat, characterless baseline.
+export function estimateAttributesFor({ race, subrace, age, agingMode, profession } = {}) {
+  const attrs = { body: 2, reflex: 2, vigor: 2, mind: 2, wit: 2, presence: 2 };
+  const kit = race ? resolveRace(race, subrace) : null;
+  if (kit) {
+    for (const [k, v] of Object.entries(kit.attributeModifiers || {})) {
+      attrs[k] = (attrs[k] ?? 2) + v;
+    }
+  }
+  if (agingMode !== "ageless" && agingMode !== "out-of-time") {
+    const stage = ageStage(race, subrace, age);
+    if (stage === "young") { attrs.body -= 1; attrs.vigor -= 1; attrs.wit += 1; }
+    else if (stage === "elder") { attrs.body -= 1; attrs.reflex -= 1; attrs.mind += 1; attrs.wit += 1; }
+  }
+  const rec = profession ? professionRecord(profession) : null;
+  const skew = (rec?.role && ROLE_ATTR_SKEW[rec.role]) || COMMON_PROFESSION_SKEW[profession];
+  if (skew) {
+    for (const [k, v] of Object.entries(skew)) attrs[k] = (attrs[k] ?? 2) + v;
+  }
+  for (const k of ATTR_KEYS) attrs[k] = Math.max(1, Math.min(6, attrs[k] ?? 2));
+  return attrs;
 }
 
 export function applyAttributeChanges(attrs, changes) {

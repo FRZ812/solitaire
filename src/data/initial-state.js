@@ -1,7 +1,7 @@
 import { HANDCRAFTED } from "./handcrafted-map.js";
 import { computeSightFrom } from "../engine/world.js";
 import { bodyWeightForRace } from "../engine/weight.js";
-import { carryCapacityFor } from "../engine/attributes.js";
+import { carryCapacityFor, resolvePoolForMind, estimateAttributesFor } from "../engine/attributes.js";
 import { itemTemplate } from "./catalog.js";
 import { getBiome, BIOMES } from "./biomes.js";
 import { CONTINENT, DEFAULT_WORLD_SEED, WORLD_GENERATOR_VERSION } from "./continent.js";
@@ -961,6 +961,19 @@ export function migrateCodex(state) {
     if (ch.lifespanMultiplier === undefined) ch.lifespanMultiplier = 1.0;
     if (ch.gender === undefined) ch.gender = null;
     if (typeof ch.attractiveness === "string") ch.attractiveness = null;
+  }
+  // Old bug back-fill: an improvised companion recruited purely via narration
+  // (discoveries.characters, no fixed-roster template) could join the party
+  // before the engine forced a stat default on a thin entry — leaving them
+  // with no `attributes` and an all-zero Company sheet. Repair any such
+  // party member found in an existing save.
+  for (const id of (next.party || [])) {
+    const ch = ownCodex.characters?.[id];
+    if (!ch || (ch.attributes && Object.keys(ch.attributes).length > 0)) continue;
+    ch.attributes = estimateAttributesFor(ch);
+    if (ch.resolve === undefined) ch.resolve = resolvePoolForMind(ch.attributes.mind);
+    if (ch.resolveMax === undefined) ch.resolveMax = resolvePoolForMind(ch.attributes.mind);
+    if (!ch.needs) ch.needs = { hunger: 70, thirst: 75, sleep: 70 };
   }
   // Creation records historically held the full identity only on the Codex
   // wanderer while the dossier read from state.character. Pull those fields
