@@ -21,6 +21,14 @@ import { TERRAINS } from "../../data/terrains.js";
 import { TERRAIN_INK } from "./atlasModel.js";
 import { poiIconKeyForLandmark } from "../../data/poi-icons.js";
 import { PoiIcon, PoiTierMarker } from "../PoiIcon.jsx";
+import { WorldAtlas3DScene } from "./WorldAtlas3DScene.jsx";
+import {
+  atlas3dProject,
+  atlas3dScreenToGround,
+  atlas3dTerrainHeightAt,
+  panAtlas3dCamera,
+  zoomAtlas3dCamera,
+} from "./worldAtlas3dModel.js";
 import {
   ATLAS_KNOWLEDGE_LABELS,
   ATLAS_LANDMARK_GLYPHS,
@@ -672,6 +680,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   const partyCoord = origin || state?.world?.currentTile || CONTINENT.start.coord;
   const stageRef = useRef(null);
   const canvasRef = useRef(null);
+  const scene3dRef = useRef(null);
   const searchInputRef = useRef(null);
   const gestureRef = useRef({
     pointers: new Map(),
@@ -697,9 +706,8 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   const didInitialFitRef = useRef(false);
   const [viewport, setViewport] = useState(INITIAL_ATLAS_VIEWPORT);
   const [stageMeasured, setStageMeasured] = useState(false);
-  // The atlas is a focused 2D chart. A single plane keeps the terrain, routes,
-  // labels, pointer math, and accessibility controls in the same coordinate
-  // system instead of offering a decorative perspective mode.
+  // WebGL owns the permanent terrain geometry. The flat chart below is an
+  // automatic compatibility fallback, not a player-facing display mode.
   const planeViewport = viewport;
   const rasterOverscan = Math.max(
     ATLAS_RASTER_MIN_OVERSCAN,
@@ -726,6 +734,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [rasterFrame, setRasterFrame] = useState(null);
+  const [sceneState, setSceneState] = useState("loading");
 
   const fit = atlasFitZoom(planeViewport);
   const zoomRatio = camera.zoom / fit;
@@ -953,6 +962,10 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
 
   useAtlasLayoutEffect(() => {
     const canvas = canvasRef.current;
+    if (sceneState === "webgl") {
+      stopRasterScheduler();
+      return undefined;
+    }
     if (!stageMeasured || !canvas || typeof requestAnimationFrame === "undefined") return undefined;
     const scheduler = rasterSchedulerRef.current;
     scheduler.disposed = false;
@@ -1019,7 +1032,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     // reaches an edge, and synchronously promote a coarse emergency fallback
     // only if a single large input delta already uncovered the stage.
     return undefined;
-  }, [camera, planeViewport, rasterGeneration, rasterOverscan, rasterViewport, seed, seenKeys, stageMeasured]);
+  }, [camera, planeViewport, rasterGeneration, rasterOverscan, rasterViewport, seed, seenKeys, stageMeasured, sceneState]);
 
   useAtlasLayoutEffect(() => {
     const scheduler = rasterSchedulerRef.current;
@@ -1053,7 +1066,8 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
         wheel.anchor = null;
         if (deltaY === 0) return;
         setCamera((current) => {
-          const next = zoomAtlasCamera(current, planeViewport, atlasWheelZoomFactor(deltaY), nextAnchor);
+          const zoomCamera = sceneState === "webgl" ? zoomAtlas3dCamera : zoomAtlasCamera;
+          const next = zoomCamera(current, planeViewport, atlasWheelZoomFactor(deltaY), nextAnchor);
           return sameCamera(current, next) ? current : next;
         });
       });
@@ -1067,7 +1081,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       wheel.deltaY = 0;
       wheel.anchor = null;
     };
-  }, [viewport, planeViewport]);
+  }, [viewport, planeViewport, sceneState]);
 
   // Coalesce pointer camera updates to one React render per animation frame.
   // Raw mobile pointermove streams can be much faster than the display.
@@ -1082,9 +1096,13 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
         let next = current;
         for (const operation of queued) {
           if (operation.type === "zoom") {
-            next = zoomAtlasCamera(next, planeViewport, operation.factor, operation.anchor);
+            next = sceneState === "webgl"
+              ? zoomAtlas3dCamera(next, planeViewport, operation.factor, operation.anchor)
+              : zoomAtlasCamera(next, planeViewport, operation.factor, operation.anchor);
           } else if (operation.dx || operation.dy) {
-            next = panAtlasCamera(next, planeViewport, operation.dx, operation.dy);
+            next = sceneState === "webgl"
+              ? panAtlas3dCamera(next, planeViewport, operation.dx, operation.dy)
+              : panAtlasCamera(next, planeViewport, operation.dx, operation.dy);
           }
         }
         return sameCamera(current, next) ? current : next;
@@ -1177,7 +1195,10 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     if (gesture.pointers.size > 0) return;
     if (gesture.startedOnInteractive || event.target.closest?.("button, a, input, select, textarea")) return;
     // A clean tap on open ground charts that coordinate.
-    const fractional = atlasScreenToWorld(camera, planeViewport, planePoint(event));
+    const point = planePoint(event);
+    const fractional = sceneState === "webgl"
+      ? (scene3dRef.current?.pick(point) || atlas3dScreenToGround(camera, planeViewport, point))
+      : atlasScreenToWorld(camera, planeViewport, point);
     const coord = axialRound(fractional.x, fractional.y);
     const sample = cachedSurvey(coord.x, coord.y, seed);
     if (!sample.land) return;
@@ -1204,12 +1225,14 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       return;
     }
     const pan = 72;
-    if (event.key === "ArrowLeft") setCamera((current) => panAtlasCamera(current, planeViewport, pan, 0));
-    else if (event.key === "ArrowRight") setCamera((current) => panAtlasCamera(current, planeViewport, -pan, 0));
-    else if (event.key === "ArrowUp") setCamera((current) => panAtlasCamera(current, planeViewport, 0, pan));
-    else if (event.key === "ArrowDown") setCamera((current) => panAtlasCamera(current, planeViewport, 0, -pan));
-    else if (event.key === "+" || event.key === "=") setCamera((current) => zoomAtlasCamera(current, planeViewport, 1.25));
-    else if (event.key === "-") setCamera((current) => zoomAtlasCamera(current, planeViewport, 1 / 1.25));
+    const panCamera = sceneState === "webgl" ? panAtlas3dCamera : panAtlasCamera;
+    const zoomCamera = sceneState === "webgl" ? zoomAtlas3dCamera : zoomAtlasCamera;
+    if (event.key === "ArrowLeft") setCamera((current) => panCamera(current, planeViewport, pan, 0));
+    else if (event.key === "ArrowRight") setCamera((current) => panCamera(current, planeViewport, -pan, 0));
+    else if (event.key === "ArrowUp") setCamera((current) => panCamera(current, planeViewport, 0, pan));
+    else if (event.key === "ArrowDown") setCamera((current) => panCamera(current, planeViewport, 0, -pan));
+    else if (event.key === "+" || event.key === "=") setCamera((current) => zoomCamera(current, planeViewport, 1.25));
+    else if (event.key === "-") setCamera((current) => zoomCamera(current, planeViewport, 1 / 1.25));
     else if (event.key === "0") setCamera((current) => clampAtlasCamera({ ...current, zoom: fit }, planeViewport));
     else if (event.key === "Home") setCamera((current) => centerAtlasCamera(current, planeViewport, partyCoord, Math.max(current.zoom, fit * 3)));
     else if (event.key === "Escape" && (searchOpen || filtersOpen)) {
@@ -1276,7 +1299,12 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     left: (viewport.width - planeViewport.width) / 2,
     top: (viewport.height - planeViewport.height) / 2,
   };
-  const partyScreen = atlasWorldToScreen(camera, planeViewport, partyCoord);
+  const projectMapCoord = (coord, lift = 0) => (
+    sceneState === "webgl"
+      ? atlas3dProject(camera, planeViewport, coord, atlas3dTerrainHeightAt(coord, seed) + lift)
+      : atlasWorldToScreen(camera, planeViewport, coord)
+  );
+  const partyScreen = projectMapCoord(partyCoord, 1.4);
   const kmAcross = Math.round((viewport.width / camera.zoom) * hexKilometers);
   const currentLegPoints = journey ? svgPoints(camera, planeViewport, thinPath(journey.legPath)) : "";
   const continuationPath = journey
@@ -1287,8 +1315,8 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     : "";
   const journeyBreaks = journey ? journeyLegBreaks(journey.fullPath, journey.legSteps) : [];
   const coastPoints = useMemo(() => svgPoints(camera, planeViewport, CONTINENT.coastline), [camera, planeViewport]);
-  const showRegionLabels = zoomRatio >= 1.7;
-  const showRealmLabels = zoomRatio < 1.7;
+  const showRegionLabels = zoomRatio >= 2.25;
+  const showRealmLabels = zoomRatio < 1.45;
   const trackedAtSelection = !!(
     trackedCharacter
     && selectedCoord
@@ -1387,6 +1415,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   }, [detailEntry, onPick, state, trackedAtSelection, trackedCharacter]);
 
   const activeFilterCount = (focusedRealmId ? 1 : 0) + (ATLAS_LAYERS.length - visibleLayers.size);
+  const zoomControlCamera = sceneState === "webgl" ? zoomAtlas3dCamera : zoomAtlasCamera;
 
   return (
     <section
@@ -1407,7 +1436,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       >
         <div className="world-atlas__scene">
           <div
-            className="world-atlas__plane"
+            className={`world-atlas__plane${sceneState === "webgl" ? " is-3d" : ""}`}
             style={{
               width: `${planeViewport.width}px`,
               height: `${planeViewport.height}px`,
@@ -1415,6 +1444,17 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
               top: `${planeOffset.top}px`,
             }}
           >
+            <WorldAtlas3DScene
+              ref={scene3dRef}
+              camera={camera}
+              viewport={planeViewport}
+              seed={seed}
+              focusedRealmId={focusedRealmId}
+              journey={journey}
+              journeyBreaks={journeyBreaks}
+              onReady={() => setSceneState("webgl")}
+              onFallback={() => setSceneState("fallback")}
+            />
             <canvas
               ref={canvasRef}
               className="world-atlas__canvas"
@@ -1496,7 +1536,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
             {showRealmLabels && (
               <div className="world-atlas__realm-labels" aria-hidden="true">
                 {REALMS.map((realm) => {
-                  const screen = atlasWorldToScreen(camera, planeViewport, realm.center);
+                  const screen = projectMapCoord(realm.center, 1.1);
                   return (
                     <span key={realm.id} className={`is-${realm.id}`} style={{ left: `${screen.x}px`, top: `${screen.y}px` }}>
                       <b>{realm.shortName}</b>
@@ -1509,7 +1549,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
 
             <div className="world-atlas__water-labels" aria-hidden="true">
               {COASTAL_FEATURES.map((feature) => {
-                const screen = atlasWorldToScreen(camera, planeViewport, feature.coord);
+                const screen = projectMapCoord(feature.coord, feature.kind === "sea" ? -0.8 : 0.7);
                 return (
                   <span key={feature.id} className={`is-${feature.kind}`} style={{ left: `${screen.x}px`, top: `${screen.y}px` }}>
                     {feature.name}
@@ -1521,7 +1561,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
             {showRegionLabels && (
               <div className="world-atlas__region-labels" aria-hidden="true">
                 {Object.values(REGION_DEFINITIONS).flatMap((region) => region.sites.map((site, index) => {
-                  const screen = atlasWorldToScreen(camera, planeViewport, site);
+                  const screen = projectMapCoord(site, 0.8);
                   return (
                     <span key={`${region.id}:${index}`} style={{ left: `${screen.x}px`, top: `${screen.y}px` }}>
                       {region.label}
@@ -1539,7 +1579,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
                   focusedRealmId,
                   selectedLandmarkId: selection?.kind === "landmark" ? selection.id : null,
                 }) || !!landmark.quest;
-                const screen = atlasWorldToScreen(camera, planeViewport, landmark.coord);
+                const screen = projectMapCoord(landmark.coord, 1.6);
                 const offstage = screen.x < -40 || screen.y < -40 || screen.x > planeViewport.width + 40 || screen.y > planeViewport.height + 40;
                 const selected = selection?.kind === "landmark" && selection.id === landmark.id;
                 const poiIconKey = poiIconKeyForLandmark(landmark);
@@ -1570,7 +1610,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
                 );
               })}
               {questMarkers.map((quest) => {
-                const screen = atlasWorldToScreen(camera, planeViewport, quest.coord);
+                const screen = projectMapCoord(quest.coord, 1.8);
                 const offstage = screen.x < -40 || screen.y < -40 || screen.x > planeViewport.width + 40 || screen.y > planeViewport.height + 40;
                 return (
                   <button
@@ -1592,7 +1632,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
                 );
               })}
               {trackedCharacter && (() => {
-                const screen = atlasWorldToScreen(camera, planeViewport, trackedCharacter.pos);
+                const screen = projectMapCoord(trackedCharacter.pos, 1.8);
                 const offstage = screen.x < -40 || screen.y < -40 || screen.x > planeViewport.width + 40 || screen.y > planeViewport.height + 40;
                 return (
                   <button
@@ -1615,7 +1655,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
             </div>
 
             {selection?.kind === "point" && (() => {
-              const screen = atlasWorldToScreen(camera, planeViewport, selectedCoord);
+              const screen = projectMapCoord(selectedCoord, 1.3);
               return (
                 <span className="world-atlas__point-pin" style={{ left: `${screen.x}px`, top: `${screen.y}px` }} aria-hidden="true">
                   <i /><b />
@@ -1778,9 +1818,9 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
 
         <div className="world-atlas__map-controls" data-atlas-wheel-ignore="true" onPointerDown={stopStagePointer}>
           <div role="group" aria-label="Map zoom controls">
-            <button type="button" onClick={() => setCamera((current) => zoomAtlasCamera(current, planeViewport, 1.4))} disabled={camera.zoom >= ATLAS_MAX_ZOOM * 0.99} aria-label="Zoom map in">+</button>
+            <button type="button" onClick={() => setCamera((current) => zoomControlCamera(current, planeViewport, 1.4))} disabled={camera.zoom >= ATLAS_MAX_ZOOM * 0.99} aria-label="Zoom map in">+</button>
             <button type="button" onClick={() => setCamera((current) => clampAtlasCamera({ ...current, zoom: fit }, planeViewport))} aria-label="Fit the whole continent">{Math.round(zoomRatio * 100)}%</button>
-            <button type="button" onClick={() => setCamera((current) => zoomAtlasCamera(current, planeViewport, 1 / 1.4))} disabled={camera.zoom <= fit * 1.01} aria-label="Zoom map out">−</button>
+            <button type="button" onClick={() => setCamera((current) => zoomControlCamera(current, planeViewport, 1 / 1.4))} disabled={camera.zoom <= fit * 1.01} aria-label="Zoom map out">−</button>
           </div>
           <button type="button" className="world-atlas__locate" onClick={centerOnParty} aria-label="Center map on the party">
             <i aria-hidden="true">◎</i><span>Party</span>

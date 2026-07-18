@@ -2862,35 +2862,58 @@ export function professionBranchChoices(professionId) {
 
 export function normalizeBranchChoices(professionId, branchChoices = {}, specializationPath = []) {
   const definitions = professionBranchChoices(professionId);
-  const normalized = {};
+  const candidates = {};
   const entries = Array.isArray(branchChoices)
     ? branchChoices.map((entry) => [entry.choiceId || entry.id, entry.optionId || entry.option])
     : Object.entries(branchChoices || {});
   for (const [choiceId, optionId] of entries) {
     const definition = definitions.find((entry) => entry.id === choiceId);
-    if (definition?.options.some((entry) => entry.id === optionId)) normalized[choiceId] = optionId;
+    if (definition?.options.some((entry) => entry.id === optionId)) candidates[choiceId] = optionId;
   }
   for (const optionId of (Array.isArray(specializationPath) ? specializationPath : [specializationPath]).filter(Boolean)) {
     const definition = definitions.find((entry) => entry.options.some((candidate) => candidate.id === optionId));
-    if (definition && !normalized[definition.id]) normalized[definition.id] = optionId;
+    if (definition && !candidates[definition.id]) candidates[definition.id] = optionId;
+  }
+
+  // A specialization is one rooted, exclusive path. Imported saves and legacy
+  // specializationPath arrays may contain individually valid choices whose
+  // ancestors no longer match; those stale descendants must never grant their
+  // rewards or make a later mastery appear available.
+  const definitionsById = new Map(definitions.map((definition) => [definition.id, definition]));
+  const reachesRoot = (definition, seen = new Set()) => {
+    if (!definition || seen.has(definition.id)) return false;
+    const optionId = candidates[definition.id];
+    if (!definition.options.some((entry) => entry.id === optionId)) return false;
+    if (!definition.parentChoiceId) return true;
+    const parent = definitionsById.get(definition.parentChoiceId);
+    if (!parent || candidates[parent.id] !== definition.parentOptionId) return false;
+    const nextSeen = new Set(seen);
+    nextSeen.add(definition.id);
+    return reachesRoot(parent, nextSeen);
+  };
+  const normalized = {};
+  for (const definition of definitions) {
+    if (reachesRoot(definition)) normalized[definition.id] = candidates[definition.id];
   }
   return normalized;
 }
 
 export function pendingBranchChoices(professionId, level, selections = {}) {
+  const normalized = normalizeBranchChoices(professionId, selections);
   return professionBranchChoices(professionId).filter((definition) => {
-    if (level < definition.threshold || selections[definition.id]) return false;
+    if (level < definition.threshold || normalized[definition.id]) return false;
     if (!definition.parentChoiceId) return true;
-    return selections[definition.parentChoiceId] === definition.parentOptionId;
+    return normalized[definition.parentChoiceId] === definition.parentOptionId;
   });
 }
 
-export function branchGrantsAtLevel(professionId, level, selections = {}) {
+export function branchGrantsAtLevel(professionId, level, selections = {}, { normalized = false } = {}) {
+  const activeSelections = normalized ? selections : normalizeBranchChoices(professionId, selections);
   const grants = [];
   for (const definition of professionBranchChoices(professionId)) {
     if (definition.threshold !== level) continue;
-    if (definition.parentChoiceId && selections[definition.parentChoiceId] !== definition.parentOptionId) continue;
-    const optionId = selections[definition.id];
+    if (definition.parentChoiceId && activeSelections[definition.parentChoiceId] !== definition.parentOptionId) continue;
+    const optionId = activeSelections[definition.id];
     if (!optionId) continue;
     const selected = definition.options.find((entry) => entry.id === optionId);
     if (selected) grants.push(...selected.grants);

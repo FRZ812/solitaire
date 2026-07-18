@@ -912,11 +912,94 @@ function ProfessionStage({ segment, levels, initiallyOpen = false }) {
   );
 }
 
-function ProfessionPathChoices({ professionId, initiallyOpen = false }) {
+function ProfessionBranchOptionDetail({ option }) {
+  const grants = [...new Set((option.grants || []).map(professionGrantLabel).filter(Boolean))];
+  return (
+    <div className="profession-glossary__branch-detail">
+      <p>{option.description}</p>
+      {grants.length > 0 && <div aria-label={`${option.name} rewards`}>
+        {grants.map((grant) => <span key={grant}>{grant}</span>)}
+      </div>}
+    </div>
+  );
+}
+
+function ProfessionBranchChoice({ choice, choices, prerequisite, inspection, onInspect, depth = 1 }) {
+  return (
+    <section
+      className="profession-glossary__branch-choice"
+      data-branch-choice-id={choice.id}
+      data-parent-choice={choice.parentChoiceId || undefined}
+      data-parent-option={choice.parentOptionId || undefined}
+      data-branch-depth={depth}
+    >
+      <header>
+        <span>
+          <small>Level {choice.threshold}</small>
+          <strong>{choice.name}</strong>
+        </span>
+        <b>Choose 1</b>
+      </header>
+      <p className="profession-glossary__branch-requires">Requires {prerequisite}</p>
+      <ol className="profession-glossary__branch-options">
+        {choice.options.map((option) => {
+          const optionKey = `${choice.id}:${option.id}`;
+          const inspected = inspection === optionKey;
+          const childChoices = choices.filter((candidate) => (
+            candidate.parentChoiceId === choice.id && candidate.parentOptionId === option.id
+          ));
+          return (
+            <li key={option.id} data-branch-option-id={option.id}>
+              <button
+                type="button"
+                className={inspected ? "is-inspected" : undefined}
+                aria-expanded={inspected}
+                onClick={() => onInspect(inspected ? null : optionKey)}
+              >
+                <span>
+                  <strong>{option.name}</strong>
+                  <small>{childChoices.length > 0
+                    ? `Unlocks level ${Math.min(...childChoices.map((entry) => entry.threshold))}`
+                    : "Final path"}</small>
+                </span>
+                <b aria-hidden="true">{inspected ? "−" : "+"}</b>
+              </button>
+              {inspected && <ProfessionBranchOptionDetail option={option} />}
+              {childChoices.length > 0 && <div className="profession-glossary__branch-descendants">
+                {childChoices.map((childChoice) => (
+                  <ProfessionBranchChoice
+                    key={childChoice.id}
+                    choice={childChoice}
+                    choices={choices}
+                    prerequisite={option.name}
+                    inspection={inspection}
+                    onInspect={onInspect}
+                    depth={depth + 1}
+                  />
+                ))}
+              </div>}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
+function ProfessionPathChoices({ professionId, initiallyOpen = false, initialRootOptionId = null }) {
   const [open, setOpen] = useState(initiallyOpen);
+  const [activeRootOptionId, setActiveRootOptionId] = useState(initialRootOptionId);
+  const [inspection, setInspection] = useState(null);
   const choices = professionBranchChoices(professionId);
   if (choices.length === 0) return null;
-  const thresholds = [...new Set(choices.map((choice) => choice.threshold))].sort((a, b) => a - b);
+  const root = choices.find((choice) => !choice.parentChoiceId);
+  if (!root) return null;
+  const activeRootOption = root.options.find((option) => option.id === activeRootOptionId)
+    || root.options.find((option) => option.id === initialRootOptionId)
+    || root.options[0];
+  const nextChoices = choices.filter((choice) => (
+    choice.parentChoiceId === root.id && choice.parentOptionId === activeRootOption?.id
+  ));
   return (
     <details
       className="profession-glossary__disclosure profession-glossary__choice-book"
@@ -925,34 +1008,66 @@ function ProfessionPathChoices({ professionId, initiallyOpen = false }) {
     >
       <summary>
         <span>
-          <small>Player decisions</small>
-          <strong>Path choices</strong>
+          <small>Exclusive advancement</small>
+          <strong>Specialization tree</strong>
         </span>
-        <b>{choices.length}</b>
+        <b>{root.options.length}</b>
       </summary>
-      {open && <div className="profession-glossary__choice-groups">
-        {thresholds.map((threshold) => (
-          <section key={threshold}>
-            <h5>Level {threshold}</h5>
-            {choices.filter((choice) => choice.threshold === threshold).map((choice) => (
-              <details key={choice.id} className="profession-glossary__choice">
-                <summary>
-                  <span>{choice.name}</span>
-                  <b>{choice.options.length}</b>
-                </summary>
-                <p>{choice.description}</p>
-                <div>
-                  {choice.options.map((option) => (
-                    <article key={option.id}>
-                      <strong>{option.name}</strong>
-                      <span>{option.description}</span>
-                    </article>
-                  ))}
-                </div>
-              </details>
-            ))}
-          </section>
-        ))}
+      {open && <div className="profession-glossary__branch-map">
+        <div className="profession-glossary__branch-note">
+          <span>Preview only</span>
+          <p>Choose one option at each split. Every later node requires the path directly above it.</p>
+        </div>
+        <section className="profession-glossary__branch-root" data-branch-choice-id={root.id}>
+          <header>
+            <span>
+              <small>Level {root.threshold}</small>
+              <strong>{root.name}</strong>
+            </span>
+            <b>Choose 1</b>
+          </header>
+          <div className="profession-glossary__branch-root-options" aria-label={`${root.name} path preview`}>
+            {root.options.map((option) => {
+              const active = option.id === activeRootOption?.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={active ? "is-active" : undefined}
+                  aria-pressed={active}
+                  data-branch-option-id={option.id}
+                  onClick={() => {
+                    setActiveRootOptionId(option.id);
+                    setInspection(null);
+                  }}
+                >
+                  <strong>{option.name}</strong>
+                  <small>{active ? "Viewing path" : "View path"}</small>
+                </button>
+              );
+            })}
+          </div>
+          {activeRootOption && <div className="profession-glossary__branch-root-summary">
+            <strong>{activeRootOption.name}</strong>
+            <p>{activeRootOption.description}</p>
+            {(activeRootOption.grants || []).length > 0 && <span>
+              {[...new Set(activeRootOption.grants.map(professionGrantLabel).filter(Boolean))].join(" · ")}
+            </span>}
+          </div>}
+        </section>
+        {nextChoices.length > 0 && <div className="profession-glossary__branch-trunk" aria-hidden="true" />}
+        <div className="profession-glossary__branch-subtree">
+          {nextChoices.map((choice) => (
+            <ProfessionBranchChoice
+              key={choice.id}
+              choice={choice}
+              choices={choices}
+              prerequisite={activeRootOption.name}
+              inspection={inspection}
+              onInspect={setInspection}
+            />
+          ))}
+        </div>
       </div>}
     </details>
   );
@@ -969,8 +1084,8 @@ function ProfessionSpecializations({ specializations }) {
     >
       <summary>
         <span>
-          <small>Recognized identities</small>
-          <strong>Specializations</strong>
+          <small>Character identities · not branch choices</small>
+          <strong>Known archetypes</strong>
         </span>
         <b>{specializations.length}</b>
       </summary>
@@ -986,7 +1101,12 @@ function ProfessionSpecializations({ specializations }) {
   );
 }
 
-export function ProfessionGlossary({ initialProfessionId = null, initialOpenStageId = null, initialOpenChoices = false }) {
+export function ProfessionGlossary({
+  initialProfessionId = null,
+  initialOpenStageId = null,
+  initialOpenChoices = false,
+  initialBranchOptionId = null,
+}) {
   const [query, setQuery] = useState("");
   const [selectedProfessionId, setSelectedProfessionId] = useState(() => (
     initialProfessionId && PROFESSIONS[initialProfessionId] ? initialProfessionId : null
@@ -1077,7 +1197,11 @@ export function ProfessionGlossary({ initialProfessionId = null, initialOpenStag
           </div>
         </section>
 
-        <ProfessionPathChoices professionId={selectedProfession.id} initiallyOpen={initialOpenChoices} />
+        <ProfessionPathChoices
+          professionId={selectedProfession.id}
+          initiallyOpen={initialOpenChoices}
+          initialRootOptionId={initialBranchOptionId}
+        />
 
         <ProfessionSpecializations specializations={specializations} />
       </div>

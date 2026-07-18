@@ -107,8 +107,25 @@ describe("progression v2 catalogs", () => {
     for (const professionId of Object.keys(PROFESSION_BUILDS)) {
       const branches = professionBranchChoices(professionId);
       expect(branches.length, professionId).toBeGreaterThanOrEqual(3);
-      const root = branches.find((entry) => !entry.parentChoiceId);
+      const roots = branches.filter((entry) => !entry.parentChoiceId);
+      expect(roots, `${professionId} roots`).toHaveLength(1);
+      const root = roots[0];
       expect(root, professionId).toBeTruthy();
+      const byId = new Map(branches.map((entry) => [entry.id, entry]));
+      for (const definition of branches) {
+        if (!definition.parentChoiceId) continue;
+        const parent = byId.get(definition.parentChoiceId);
+        expect(parent, `${professionId}/${definition.id} parent`).toBeTruthy();
+        expect(parent.options.some((option) => option.id === definition.parentOptionId), `${professionId}/${definition.id} parent option`).toBe(true);
+        expect(parent.threshold, `${professionId}/${definition.id} threshold`).toBeLessThan(definition.threshold);
+        const seen = new Set([definition.id]);
+        let ancestor = parent;
+        while (ancestor) {
+          expect(seen.has(ancestor.id), `${professionId}/${definition.id} cycle`).toBe(false);
+          seen.add(ancestor.id);
+          ancestor = ancestor.parentChoiceId ? byId.get(ancestor.parentChoiceId) : null;
+        }
+      }
       for (const option of root.options) {
         const child = branches.find((entry) => entry.parentChoiceId === root.id && entry.parentOptionId === option.id);
         expect(child, `${professionId}/${option.id}`).toBeTruthy();
@@ -128,6 +145,20 @@ describe("progression v2 catalogs", () => {
       "wizard-school": "necromancy", "necromancy-discipline": "death-magic", "death-magic-mastery": "instant-death",
     } });
     expect(deathMage.levels[49].branchGrants).toEqual(expect.arrayContaining([expect.objectContaining({ type: "ability", id: "grasp-heart" })]));
+  });
+
+  it("prunes mastery selections whose full Wizard ancestry is incompatible", () => {
+    const corruptedNecromancer = compileProfessionTrack("wizard", { branchChoices: {
+      "wizard-school": "necromancy",
+      "abjuration-discipline": "warder",
+      "warder-mastery": "mirror-warden",
+    } });
+
+    expect(corruptedNecromancer.branchChoices).toEqual({ "wizard-school": "necromancy" });
+    expect(corruptedNecromancer.pendingChoices.map((entry) => entry.id)).toEqual(["necromancy-discipline"]);
+    const grantIds = corruptedNecromancer.levels.flatMap((row) => row.branchGrants).map((grant) => grant.id);
+    expect(grantIds).not.toContain("spell-reflection");
+    expect(grantIds).not.toContain("wizard:mirror-warden");
   });
 
   it("keeps racial branches separate from the uninterrupted 30-level ancestry ladder", () => {

@@ -208,6 +208,8 @@ export function ProgressionChoiceModal({ choice, onChoose, busy = false }) {
             ? `${remainingCount} ${remainingCount === 1 ? "selection" : "selections"} remaining. Each selected option becomes part of this progression.`
             : allocation
               ? "Invest this earned level in one racial or profession track to continue."
+              : choice.exclusive
+                ? "Choose one exclusive path. Every later specialization must follow it."
               : "Choose one path to continue. This decision is not made automatically."}</footer>
       </section>
     </div>
