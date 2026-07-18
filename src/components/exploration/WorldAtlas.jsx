@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   COASTAL_FEATURES,
   CONTINENT,
@@ -45,6 +45,8 @@ import {
   zoomAtlasCamera,
 } from "./worldAtlasModel.js";
 
+const useAtlasLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 export {
   atlasLandmarkLayer,
   atlasLandmarkTypeLabel,
@@ -88,6 +90,7 @@ const ATLAS_ACTIVE_RASTER_REFRESH = 180;
 const ATLAS_WHEEL_IGNORE_SELECTOR = "[data-atlas-wheel-ignore]";
 const ATLAS_RASTER_MIN_OVERSCAN = 128;
 const ATLAS_RASTER_MAX_OVERSCAN = 180;
+const ATLAS_RASTER_COVERAGE_RESERVE = 48;
 
 function cachedSurvey(x, y, seed) {
   const key = `${seed}|${x},${y}`;
@@ -175,6 +178,30 @@ export function atlasRasterTransform(camera, renderedCamera, viewport) {
   const x = viewport.width / 2 * (1 - scale) + (renderedCamera.x - camera.x) * camera.zoom;
   const y = viewport.height / 2 * (1 - scale) + (renderedCamera.y - camera.y) * camera.zoom;
   return `matrix(${scale}, 0, 0, ${scale}, ${x}, ${y})`;
+}
+
+export function atlasRasterCoversViewport(
+  camera,
+  renderedCamera,
+  rasterViewport,
+  planeViewport,
+  overscan,
+  reserve = 0,
+) {
+  if (!camera || !renderedCamera || !rasterViewport || !planeViewport) return false;
+  const scale = camera.zoom / renderedCamera.zoom;
+  const x = rasterViewport.width / 2 * (1 - scale) + (renderedCamera.x - camera.x) * camera.zoom;
+  const y = rasterViewport.height / 2 * (1 - scale) + (renderedCamera.y - camera.y) * camera.zoom;
+  // CSS left/top place the canvas outside its transform, so that layout
+  // offset stays fixed while only the canvas box itself scales.
+  const left = -overscan + x;
+  const top = -overscan + y;
+  const right = left + rasterViewport.width * scale;
+  const bottom = top + rasterViewport.height * scale;
+  return left <= -reserve
+    && top <= -reserve
+    && right >= planeViewport.width + reserve
+    && bottom >= planeViewport.height + reserve;
 }
 
 function sameCamera(a, b) {
@@ -828,7 +855,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     // The first or resized frame paints immediately. During continuous input,
     // refresh the overscanned raster at a bounded cadence; otherwise wait for
     // the short idle window so pointer traffic cannot restart terrain work.
-    if (!frameMatches || idleDelay === 0 || refreshDelay === 0) {
+    if (!frameMatches || latest.urgent || idleDelay === 0 || refreshDelay === 0) {
       startRasterPaint();
       return;
     }
@@ -850,8 +877,13 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       && existingFrame.height === job.viewport.height
     );
     const token = { cancelled: false, frame: 0 };
-    scheduler.active = { token, generation: job.generation };
-    token.frame = requestAnimationFrame(() => {
+    scheduler.active = {
+      token,
+      generation: job.generation,
+      camera: job.camera,
+      viewport: job.viewport,
+    };
+    const beginPaint = () => {
       token.frame = 0;
       if (token.cancelled || scheduler.disposed || scheduler.active?.token !== token) return;
       if (!rasterBufferRef.current) {
@@ -874,6 +906,21 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
         // those pixels to the newest camera before React's next paint.
         job.canvas.style.transform = atlasRasterTransform(latest.camera, job.camera, job.viewport);
         rasterFrameRef.current = frame;
+        latest.urgent = !atlasRasterCoversViewport(
+          latest.camera,
+          job.camera,
+          job.viewport,
+          latest.planeViewport,
+          latest.overscan,
+          ATLAS_RASTER_COVERAGE_RESERVE,
+        );
+        latest.forcePreview = !atlasRasterCoversViewport(
+          latest.camera,
+          job.camera,
+          job.viewport,
+          latest.planeViewport,
+          latest.overscan,
+        );
         setRasterFrame(frame);
       };
 
@@ -885,7 +932,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
         seenKeys: job.seenKeys,
         token,
         buffer: rasterBufferRef.current,
-        presentPreview: !hasUsableFrame,
+        presentPreview: !hasUsableFrame || job.forcePreview,
         presentPartials: !hasUsableFrame,
         onPreview: () => publishFrame(false),
         onDetailed: () => {
@@ -899,10 +946,12 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       if (!started && scheduler.active?.token === token) {
         scheduler.active = null;
       }
-    });
+    };
+    if (job.forcePreview) beginPaint();
+    else token.frame = requestAnimationFrame(beginPaint);
   }
 
-  useEffect(() => {
+  useAtlasLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!stageMeasured || !canvas || typeof requestAnimationFrame === "undefined") return undefined;
     const scheduler = rasterSchedulerRef.current;
@@ -915,22 +964,64 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       scheduler.generation = rasterGeneration;
       scheduler.lastCompletedAt = 0;
     }
+    const frame = rasterFrameRef.current;
+    const frameMatches = !!(
+      frame
+      && frame.generation === rasterGeneration
+      && frame.width === rasterViewport.width
+      && frame.height === rasterViewport.height
+    );
+    const needsCoverageRefresh = frameMatches && !atlasRasterCoversViewport(
+      camera,
+      frame.camera,
+      rasterViewport,
+      planeViewport,
+      rasterOverscan,
+      ATLAS_RASTER_COVERAGE_RESERVE,
+    );
+    const frameIsUncovered = frameMatches && !atlasRasterCoversViewport(
+      camera,
+      frame.camera,
+      rasterViewport,
+      planeViewport,
+      rasterOverscan,
+    );
     scheduler.latest = {
       canvas,
       camera,
       viewport: rasterViewport,
+      planeViewport,
+      overscan: rasterOverscan,
       seed,
       seenKeys,
       generation: rasterGeneration,
+      urgent: needsCoverageRefresh,
+      forcePreview: frameIsUncovered,
     };
+    if (needsCoverageRefresh && scheduler.active) {
+      const active = scheduler.active;
+      const activeWillCover = active.generation === rasterGeneration && atlasRasterCoversViewport(
+        camera,
+        active.camera,
+        active.viewport,
+        planeViewport,
+        rasterOverscan,
+        ATLAS_RASTER_COVERAGE_RESERVE,
+      );
+      if (frameIsUncovered || !activeWillCover) {
+        cancelRasterToken(active.token);
+        scheduler.active = null;
+      }
+    }
     scheduleRasterPaint();
-    // Camera-only renders intentionally do not cancel the active painter. The
-    // retained frame tracks the gesture by transform, while one queued job
-    // finishes and then refreshes toward the latest camera.
+    // Camera-only renders normally leave the active painter alone. Coverage
+    // pressure is the exception: preempt a stale job before its retained frame
+    // reaches an edge, and synchronously promote a coarse emergency fallback
+    // only if a single large input delta already uncovered the stage.
     return undefined;
-  }, [camera, rasterGeneration, rasterViewport, seed, seenKeys, stageMeasured]);
+  }, [camera, planeViewport, rasterGeneration, rasterOverscan, rasterViewport, seed, seenKeys, stageMeasured]);
 
-  useEffect(() => {
+  useAtlasLayoutEffect(() => {
     const scheduler = rasterSchedulerRef.current;
     scheduler.disposed = false;
     return () => {

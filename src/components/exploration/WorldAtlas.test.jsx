@@ -12,6 +12,7 @@ import { pathMinutes } from "../../engine/world.js";
 import {
   WorldAtlas,
   atlasKeyboardShortcutAllowed,
+  atlasRasterCoversViewport,
   atlasRasterTransform,
   atlasSelectionClickAllowed,
   atlasWheelZoomAllowed,
@@ -117,6 +118,17 @@ describe("atlas camera", () => {
       .toBe("matrix(1, 0, 0, 1, 40, -20)");
     expect(atlasRasterTransform({ x: 0, y: 0, zoom: 8 }, rendered, VIEWPORT))
       .toBe("matrix(2, 0, 0, 2, -480, -270)");
+  });
+
+  it("refreshes before an overscanned terrain frame can expose a blank edge", () => {
+    const plane = { width: 960, height: 540 };
+    const overscan = 128;
+    const raster = { width: plane.width + overscan * 2, height: plane.height + overscan * 2 };
+    const rendered = { x: 0, y: 0, zoom: 4 };
+    expect(atlasRasterCoversViewport(rendered, rendered, raster, plane, overscan, 48)).toBe(true);
+    expect(atlasRasterCoversViewport({ x: 25, y: 0, zoom: 4 }, rendered, raster, plane, overscan, 48)).toBe(false);
+    expect(atlasRasterCoversViewport({ x: 0, y: 0, zoom: 2 }, rendered, raster, plane, overscan)).toBe(false);
+    expect(atlasRasterCoversViewport({ x: 8, y: 0, zoom: 3.2 }, rendered, raster, plane, overscan)).toBe(false);
   });
 
   it("blocks a marker's pointer click after map movement without blocking keyboard activation", () => {
