@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CONTINENT } from "../../data/continent.js";
 import {
+  ATLAS_3D_CAMERA_COAST_INSET,
   ATLAS_3D_RENDER_VERSION,
   atlas3dAxialToScene,
   atlas3dCameraFrame,
@@ -14,9 +15,9 @@ import {
   clampAtlas3dCamera,
   fitAtlas3dCamera,
   panAtlas3dCamera,
+  registerAtlas3dTerrainData,
   zoomAtlas3dCamera,
 } from "./worldAtlas3dModel.js";
-import { clampAtlasCamera } from "./worldAtlasModel.js";
 
 const VIEWPORT = { width: 960, height: 540 };
 
@@ -34,8 +35,56 @@ describe("true 3D atlas spatial model", () => {
     }
   });
 
+  it("keeps the camera target in authoritative axial coordinates", () => {
+    const coord = { x: 131, y: -96 };
+    const camera = centerAtlas3dCamera(
+      fitAtlas3dCamera({ x: 0, y: 0, zoom: 1 }, VIEWPORT),
+      VIEWPORT,
+      coord,
+      4,
+    );
+    const frame = atlas3dCameraFrame(camera, VIEWPORT);
+    const target = atlas3dSceneToAxial({ x: frame.target.x, z: frame.target.z });
+
+    expect(camera.x).toBeCloseTo(coord.x, 8);
+    expect(camera.y).toBeCloseTo(coord.y, 8);
+    expect(target.x).toBeCloseTo(camera.x, 8);
+    expect(target.y).toBeCloseTo(camera.y, 8);
+  });
+
+  it("clamps extreme axial centers by the zoom footprint plus a coastal inset", () => {
+    const zoom = 26;
+    const fit = atlas3dFitZoom(VIEWPORT, CONTINENT.seed);
+    const visibleFraction = fit / zoom;
+    const halfFootprint = {
+      x: ((CONTINENT.bounds.xmax - CONTINENT.bounds.xmin) * visibleFraction
+        + ATLAS_3D_CAMERA_COAST_INSET * 2) / 2,
+      y: ((CONTINENT.bounds.ymax - CONTINENT.bounds.ymin) * visibleFraction
+        + ATLAS_3D_CAMERA_COAST_INSET * 2) / 2,
+    };
+    const northEast = clampAtlas3dCamera({
+      x: Number.POSITIVE_INFINITY,
+      y: Number.NEGATIVE_INFINITY,
+      zoom,
+      targetHeight: 0.4,
+    }, VIEWPORT);
+    const southWest = clampAtlas3dCamera({
+      x: Number.NEGATIVE_INFINITY,
+      y: Number.POSITIVE_INFINITY,
+      zoom,
+      targetHeight: 0.4,
+    }, VIEWPORT);
+
+    expect(northEast.x).toBeCloseTo(CONTINENT.bounds.xmax - halfFootprint.x, 8);
+    expect(northEast.y).toBeCloseTo(CONTINENT.bounds.ymin + halfFootprint.y, 8);
+    expect(southWest.x).toBeCloseTo(CONTINENT.bounds.xmin + halfFootprint.x, 8);
+    expect(southWest.y).toBeCloseTo(CONTINENT.bounds.ymax - halfFootprint.y, 8);
+    expect(northEast.x).toBeLessThan(CONTINENT.bounds.xmax - ATLAS_3D_CAMERA_COAST_INSET);
+    expect(northEast.y).toBeGreaterThan(CONTINENT.bounds.ymin + ATLAS_3D_CAMERA_COAST_INSET);
+  });
+
   it("projects and picks the camera target through a real perspective frame", () => {
-    const camera = clampAtlasCamera({ x: 0, y: 0, zoom: 3 }, VIEWPORT);
+    const camera = clampAtlas3dCamera({ x: 0, y: 0, zoom: 3 }, VIEWPORT);
     const target = atlas3dScreenToGround(camera, VIEWPORT, { x: VIEWPORT.width / 2, y: VIEWPORT.height / 2 });
     const screen = atlas3dProject(camera, VIEWPORT, target, target.height);
     expect(screen.x).toBeCloseTo(VIEWPORT.width / 2, 3);
@@ -44,7 +93,7 @@ describe("true 3D atlas spatial model", () => {
   });
 
   it("keeps the ground below an off-center cursor fixed while dollying", () => {
-    const camera = clampAtlasCamera({ x: 20, y: -35, zoom: 2.8 }, VIEWPORT);
+    const camera = clampAtlas3dCamera({ x: 20, y: -35, zoom: 2.8 }, VIEWPORT);
     const anchor = { x: 280, y: 190 };
     const before = atlas3dScreenToGround(camera, VIEWPORT, anchor);
     const zoomed = zoomAtlas3dCamera(camera, VIEWPORT, 1.7, anchor);
@@ -61,9 +110,9 @@ describe("true 3D atlas spatial model", () => {
   it("keeps the camera above raised terrain at maximum zoom", () => {
     const viewport = { width: 560, height: 300 };
     const focus = { x: 342, y: -316 };
-    const camera = clampAtlasCamera({
-      x: focus.x + focus.y * 0.5,
-      y: focus.y * Math.sqrt(3) / 2 * 0.76,
+    const camera = clampAtlas3dCamera({
+      x: focus.x,
+      y: focus.y,
       zoom: 26,
     }, viewport);
     const frame = atlas3dCameraFrame(camera, viewport, CONTINENT.seed);
@@ -73,7 +122,7 @@ describe("true 3D atlas spatial model", () => {
   });
 
   it("keeps a real terrain point beneath the zoom anchor", () => {
-    const camera = clampAtlasCamera({ x: 0, y: 0, zoom: 2.8 }, VIEWPORT);
+    const camera = clampAtlas3dCamera({ x: 0, y: 0, zoom: 2.8 }, VIEWPORT);
     const coord = { x: 156, y: -134 };
     const terrainHeight = atlas3dTerrainHeightAt(coord, CONTINENT.seed);
     const ground = { ...coord, scene: atlas3dAxialToScene(coord), height: terrainHeight };
@@ -84,7 +133,7 @@ describe("true 3D atlas spatial model", () => {
   });
 
   it("damps zoom correction across steep target-height changes", () => {
-    const camera = { x: -160, y: -120, zoom: 12 };
+    const camera = { x: -68.8394311805854, y: -182.3211376388292, zoom: 12 };
     const scene = { x: -134.67, z: -166.85 };
     const coord = atlas3dSceneToAxial(scene);
     const terrainHeight = atlas3dTerrainHeightAt(coord, CONTINENT.seed);
@@ -96,7 +145,7 @@ describe("true 3D atlas spatial model", () => {
   });
 
   it("keeps a distant coastal water anchor stable through a large zoom", () => {
-    const camera = { x: 322.8252451401204, y: -146.91075002774596, zoom: 13.78598650433123 };
+    const camera = { x: 434.42914129192167, y: -223.20779230360253, zoom: 13.78598650433123 };
     const anchor = { x: 886.9094589725137, y: 56.50194658432156 };
     const ground = {
       x: 490.76733212614454,
@@ -117,7 +166,7 @@ describe("true 3D atlas spatial model", () => {
   });
 
   it("keeps a high ridge fixed through a small zoom-out", () => {
-    const camera = { x: 182.69049272639677, y: -216.51922262272785, zoom: 5.775092225277389 };
+    const camera = { x: 347.1739551816079, y: -328.9669249104222, zoom: 5.775092225277389 };
     const anchor = { x: 285.02564303576946, y: 300.99339455366135 };
     const scene = { x: 155.88798613763035, z: -262.13104625359045 };
     const ground = {
@@ -139,7 +188,7 @@ describe("true 3D atlas spatial model", () => {
   });
 
   it("keeps a near-horizon water point fixed through a zoom-in", () => {
-    const camera = { x: 66.8259469838813, y: -234.0718390752227, zoom: 9.246612178420586 };
+    const camera = { x: 244.64363027307945, y: -355.6353665783963, zoom: 9.246612178420586 };
     const anchor = { x: 652.7866018563509, y: 2.8576104808598757 };
     const scene = { x: 91.90460577283721, z: -358.65768135500707 };
     const ground = { ...atlas3dSceneToAxial(scene), scene, height: -1.55 };
@@ -177,7 +226,7 @@ describe("true 3D atlas spatial model", () => {
   });
 
   it("keeps a grabbed water point stable across a steep camera-height boundary", () => {
-    const camera = { x: 76.3401, y: -86.3236, zoom: 1.78894 };
+    const camera = { x: 141.91767065449682, y: -131.15514130899365, zoom: 1.78894 };
     const anchor = { x: 845.1937, y: 114.0546 };
     const delta = { x: 3.2819162296981, y: -29.09613510089964 };
     const ground = {
@@ -200,7 +249,7 @@ describe("true 3D atlas spatial model", () => {
   });
 
   it("keeps an off-center coastal water point fixed through a downward drag", () => {
-    const camera = { x: 265.6154970393982, y: -186.39357984733772, zoom: 3.5120515377199832 };
+    const camera = { x: 407.2133700658172, y: -283.195746052838, zoom: 3.5120515377199832 };
     const anchor = { x: 702.8368930425495, y: 169.00848167017102 };
     const delta = { x: -4.101750068366528, y: 35.15628867549822 };
     const scene = { x: 335.6379863306885, z: -286.30047665070515 };
@@ -295,6 +344,22 @@ describe("true 3D atlas spatial model", () => {
     expect(first.trees.length).toBeGreaterThan(0);
     expect(Math.max(...first.positions.filter((_, index) => index % 3 === 1))).toBeGreaterThan(8);
     expect(Math.min(...first.positions.filter((_, index) => index % 3 === 1))).toBeLessThan(0);
+  });
+
+  it("reuses the worker terrain grid for overlay heights on the UI thread", () => {
+    const seed = 987654321;
+    const stride = 96;
+    const terrain = buildAtlas3dTerrainData(seed, stride);
+    const row = 2;
+    const column = 3;
+    const vertex = row * terrain.columns + column;
+    const scene = {
+      x: terrain.positions[vertex * 3],
+      z: terrain.positions[vertex * 3 + 2],
+    };
+    terrain.positions[vertex * 3 + 1] = 17.25;
+    expect(registerAtlas3dTerrainData(terrain)).toBe(true);
+    expect(atlas3dTerrainHeightAt(atlas3dSceneToAxial(scene), seed, stride)).toBeCloseTo(17.25, 5);
   });
 
   it("places overlays on the same piecewise-linear surface as the terrain mesh", () => {

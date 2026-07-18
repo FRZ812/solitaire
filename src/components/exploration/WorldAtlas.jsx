@@ -2,10 +2,7 @@ import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, 
 import {
   COASTAL_FEATURES,
   CONTINENT,
-  CONTINENT_LAKES,
-  CONTINENT_ROUTES,
   CONTINENT_SEA_LANES,
-  CONTINENT_WATERWAYS,
   PROVINCES,
   PROVINCE_BY_ID,
   REALM_CULTURES,
@@ -18,11 +15,12 @@ import { surveyAtlas } from "../../engine/world-generation.js";
 import { getTile } from "../../engine/world.js";
 import { trackedCharacterResult } from "../../engine/positions.js";
 import { TERRAINS } from "../../data/terrains.js";
-import { TERRAIN_INK } from "./atlasModel.js";
 import { poiIconKeyForLandmark } from "../../data/poi-icons.js";
 import { PoiIcon, PoiTierMarker } from "../PoiIcon.jsx";
+import { LoadingDots } from "../primitives.jsx";
 import { WorldAtlas3DScene } from "./WorldAtlas3DScene.jsx";
 import {
+  ATLAS_3D_MAX_ZOOM,
   atlas3dFitZoom,
   atlas3dProject,
   atlas3dScreenToGround,
@@ -37,24 +35,16 @@ import {
   ATLAS_KNOWLEDGE_LABELS,
   ATLAS_LANDMARK_GLYPHS,
   ATLAS_LAYERS,
-  ATLAS_MAX_ZOOM,
-  atlasFitZoom,
   atlasLandmarkLayer,
   atlasLandmarkTypeLabel,
   atlasMarkerVisible,
   atlasQuestMarkers,
   atlasRoutesForLandmark,
-  atlasScreenToWorld,
-  atlasWorldToScreen,
   axialRound,
   buildAtlasLandmarks,
-  centerAtlasCamera,
-  clampAtlasCamera,
   journeyLegBreaks,
   landmarkKnowledge,
-  panAtlasCamera,
   summarizeAtlasJourney,
-  zoomAtlasCamera,
 } from "./worldAtlasModel.js";
 
 const useAtlasLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -71,84 +61,16 @@ const CULTURE_BY_REALM_ID = Object.fromEntries(REALM_CULTURES.map((culture) => [
 const ECONOMY_BY_REALM_ID = Object.fromEntries(REALM_ECONOMIES.map((economy) => [economy.realmId, economy]));
 const FACTION_BY_ID = Object.fromEntries(REALM_FACTIONS.map((faction) => [faction.id, faction]));
 
-// Muted inks keep the generated geography legible while making the canvas
-// read like a hand-painted relief board rather than a technical heat map.
-const ATLAS_TERRAIN_INK = Object.freeze({
-  indoor: "#776653",
-  settlement: "#8d7758",
-  street: "#9b8968",
-  road: "#b08a52",
-  wall: "#766d61",
-  plains: "#78815a",
-  hills: "#856b4b",
-  forest: "#46634a",
-  marsh: "#4f6b63",
-  mountains: "#625a53",
-  impassable: "#394840",
-});
-const SEA_INK = "#244b5a";
-const SEA_DEEP_INK = "#173442";
-const COAST_INK = "#52766f";
-
-const SAMPLE_CACHE = new Map();
-const SAMPLE_CACHE_LIMIT = 300000;
 const INITIAL_ATLAS_VIEWPORT = Object.freeze({ width: 960, height: 540 });
 const ATLAS_OPEN_ZOOM_RATIO = 1.16;
 const ATLAS_WHEEL_ZOOM_STEP = 1.22;
 const ATLAS_WHEEL_STEP_PIXELS = 100;
 const ATLAS_WHEEL_MAX_FRAME_DELTA = 240;
-const ATLAS_WHEEL_REFINE_DELAY = 110;
-const ATLAS_ACTIVE_RASTER_REFRESH = 180;
 const ATLAS_WHEEL_IGNORE_SELECTOR = "[data-atlas-wheel-ignore]";
-const ATLAS_RASTER_MIN_OVERSCAN = 128;
-const ATLAS_RASTER_MAX_OVERSCAN = 180;
-const ATLAS_RASTER_COVERAGE_RESERVE = 48;
 
-function atlasOpeningZoom(viewport) {
+function atlasOpeningZoom(viewport, seed = CONTINENT.seed) {
   const portrait = viewport.height > viewport.width * 1.3;
-  return atlasFitZoom(viewport) * (portrait ? 2.35 : ATLAS_OPEN_ZOOM_RATIO);
-}
-
-function cachedSurvey(x, y, seed) {
-  const key = `${seed}|${x},${y}`;
-  let sample = SAMPLE_CACHE.get(key);
-  if (!sample) {
-    const survey = surveyAtlas(x, y, seed);
-    sample = {
-      land: survey.land,
-      coast: survey.coast,
-      terrain: survey.terrain,
-      elevation: survey.elevation,
-    };
-    if (SAMPLE_CACHE.size >= SAMPLE_CACHE_LIMIT) SAMPLE_CACHE.clear();
-    SAMPLE_CACHE.set(key, sample);
-  }
-  return sample;
-}
-
-function shade(hex, amount) {
-  const value = parseInt(hex.slice(1), 16);
-  const channel = (offset) => {
-    const base = (value >> offset) & 255;
-    return Math.max(0, Math.min(255, Math.round(base * (1 + amount))));
-  };
-  return `rgb(${channel(16)}, ${channel(8)}, ${channel(0)})`;
-}
-
-function cellColor(sample, hillshade = 0) {
-  if (!sample.land) return sample.elevation > 0.55 ? SEA_INK : SEA_DEEP_INK;
-  const base = ATLAS_TERRAIN_INK[sample.terrain] || TERRAIN_INK[sample.terrain] || ATLAS_TERRAIN_INK.plains;
-  const relief = (sample.elevation - 0.45) * 0.24 + hillshade;
-  if (sample.coast && sample.terrain !== "road") return shade(COAST_INK, relief * 0.45);
-  return shade(base, relief);
-}
-
-// Sample step in whole hexes. World-anchoring the lattice stops the terrain
-// from crawling under the routes while panning and keeps a repaint compact.
-function rasterStep(zoom) {
-  let step = 1;
-  while (step < 32 && step * zoom < 8) step *= 2;
-  return step;
+  return atlas3dFitZoom(viewport, seed) * (portrait ? 2.35 : ATLAS_OPEN_ZOOM_RATIO);
 }
 
 function clamp(value, min, max) {
@@ -185,188 +107,11 @@ export function atlasKeyboardShortcutAllowed(target) {
   return !element?.closest?.("button, a, input, select, textarea, [contenteditable='true']");
 }
 
-// While a new detailed raster is painted offscreen, keep the last completed
-// terrain frame aligned with the live vector layer. This is the same visual
-// continuity users expect from a maps app: movement transforms existing map
-// detail instead of replacing it with a coarse placeholder on every frame.
-export function atlasRasterTransform(camera, renderedCamera, viewport) {
-  if (!camera || !renderedCamera || !viewport) return "none";
-  const scale = camera.zoom / renderedCamera.zoom;
-  const x = viewport.width / 2 * (1 - scale) + (renderedCamera.x - camera.x) * camera.zoom;
-  const y = viewport.height / 2 * (1 - scale) + (renderedCamera.y - camera.y) * camera.zoom;
-  return `matrix(${scale}, 0, 0, ${scale}, ${x}, ${y})`;
-}
-
-export function atlasRasterCoversViewport(
-  camera,
-  renderedCamera,
-  rasterViewport,
-  planeViewport,
-  overscan,
-  reserve = 0,
-) {
-  if (!camera || !renderedCamera || !rasterViewport || !planeViewport) return false;
-  const scale = camera.zoom / renderedCamera.zoom;
-  const x = rasterViewport.width / 2 * (1 - scale) + (renderedCamera.x - camera.x) * camera.zoom;
-  const y = rasterViewport.height / 2 * (1 - scale) + (renderedCamera.y - camera.y) * camera.zoom;
-  // CSS left/top place the canvas outside its transform, so that layout
-  // offset stays fixed while only the canvas box itself scales.
-  const left = -overscan + x;
-  const top = -overscan + y;
-  const right = left + rasterViewport.width * scale;
-  const bottom = top + rasterViewport.height * scale;
-  return left <= -reserve
-    && top <= -reserve
-    && right >= planeViewport.width + reserve
-    && bottom >= planeViewport.height + reserve;
-}
-
 function sameCamera(a, b) {
   return a.x === b.x
     && a.y === b.y
     && a.zoom === b.zoom
     && (a.targetHeight ?? null) === (b.targetHeight ?? null);
-}
-
-function coordinateNoise(x, y) {
-  let value = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263);
-  value = Math.imul(value ^ (value >>> 13), 1274126177);
-  return ((value ^ (value >>> 16)) >>> 0) / 4294967295;
-}
-
-function traceCell(context, corners, dx = 0, dy = 0) {
-  context.beginPath();
-  context.moveTo(corners[0].x + dx, corners[0].y + dy);
-  for (let index = 1; index < corners.length; index += 1) {
-    context.lineTo(corners[index].x + dx, corners[index].y + dy);
-  }
-  context.closePath();
-}
-
-function cellCorners(center, xBasis, yBasis) {
-  const raw = [
-    { x: center.x - xBasis.x / 2 - yBasis.x / 2, y: center.y - xBasis.y / 2 - yBasis.y / 2 },
-    { x: center.x + xBasis.x / 2 - yBasis.x / 2, y: center.y + xBasis.y / 2 - yBasis.y / 2 },
-    { x: center.x + xBasis.x / 2 + yBasis.x / 2, y: center.y + xBasis.y / 2 + yBasis.y / 2 },
-    { x: center.x - xBasis.x / 2 + yBasis.x / 2, y: center.y - xBasis.y / 2 + yBasis.y / 2 },
-  ];
-  // A fractional overlap prevents hairline seams between adjacent samples.
-  return raw.map((point) => ({
-    x: center.x + (point.x - center.x) * 1.025,
-    y: center.y + (point.y - center.y) * 1.025,
-  }));
-}
-
-function reliefStrength(sample) {
-  if (!sample?.land) return 0;
-  if (sample.terrain === "mountains") return 1;
-  if (sample.terrain === "hills") return 0.68;
-  if (sample.terrain === "forest") return 0.48;
-  if (["wall", "settlement", "indoor"].includes(sample.terrain)) return 0.56;
-  return clamp((sample.elevation - 0.35) * 0.45, 0, 0.24);
-}
-
-function drawMountain(context, x, y, size, sample, noise) {
-  const width = size * (0.56 + noise * 0.18);
-  const height = size * (0.48 + clamp(sample.elevation, 0, 1) * 0.35);
-  const baseY = y + size * 0.24;
-  context.beginPath();
-  context.moveTo(x - width / 2, baseY);
-  context.lineTo(x + width * 0.04, baseY - height);
-  context.lineTo(x + width / 2, baseY);
-  context.closePath();
-  context.fillStyle = "rgba(44, 41, 39, .82)";
-  context.fill();
-  context.beginPath();
-  context.moveTo(x - width / 2, baseY);
-  context.lineTo(x + width * 0.04, baseY - height);
-  context.lineTo(x - width * 0.03, baseY - height * 0.35);
-  context.lineTo(x + width * 0.12, baseY - height * 0.2);
-  context.closePath();
-  context.fillStyle = "rgba(205, 196, 174, .68)";
-  context.fill();
-  context.strokeStyle = "rgba(35, 31, 30, .5)";
-  context.lineWidth = Math.max(0.55, size * 0.045);
-  context.stroke();
-}
-
-function drawForest(context, x, y, size, noise) {
-  const count = size > 13 ? 3 : 2;
-  for (let index = 0; index < count; index += 1) {
-    const offset = (index - (count - 1) / 2) * size * 0.22;
-    const treeHeight = size * (0.34 + ((noise + index * 0.23) % 1) * 0.12);
-    context.beginPath();
-    context.moveTo(x + offset, y - treeHeight * 0.62);
-    context.lineTo(x + offset - treeHeight * 0.32, y + treeHeight * 0.3);
-    context.lineTo(x + offset + treeHeight * 0.32, y + treeHeight * 0.3);
-    context.closePath();
-    context.fillStyle = index % 2 ? "rgba(35, 73, 51, .72)" : "rgba(49, 86, 56, .82)";
-    context.fill();
-    context.strokeStyle = "rgba(23, 46, 34, .55)";
-    context.lineWidth = 0.55;
-    context.stroke();
-  }
-}
-
-function drawTerrainRelief(context, center, size, sample, noise) {
-  if (size < 7.5) return;
-  const density = sample.terrain === "mountains" ? 0.9
-    : sample.terrain === "forest" ? 0.68
-    : sample.terrain === "hills" ? 0.54
-    : sample.terrain === "marsh" ? 0.4
-    : !sample.land ? 0.32
-    : 0;
-  if (noise > density) return;
-
-  if (sample.terrain === "mountains") {
-    drawMountain(context, center.x, center.y, size, sample, noise);
-    return;
-  }
-  if (sample.terrain === "forest") {
-    drawForest(context, center.x, center.y, size, noise);
-    return;
-  }
-  if (sample.terrain === "hills") {
-    context.beginPath();
-    context.ellipse(center.x, center.y + size * 0.14, size * 0.34, size * 0.16, -0.16, Math.PI, Math.PI * 2);
-    context.strokeStyle = "rgba(62, 47, 34, .48)";
-    context.lineWidth = Math.max(0.6, size * 0.055);
-    context.stroke();
-    context.beginPath();
-    context.ellipse(center.x - size * 0.12, center.y + size * 0.1, size * 0.22, size * 0.1, -0.16, Math.PI, Math.PI * 2);
-    context.strokeStyle = "rgba(216, 192, 142, .32)";
-    context.stroke();
-    return;
-  }
-  if (sample.terrain === "marsh") {
-    context.strokeStyle = "rgba(184, 173, 111, .48)";
-    context.lineWidth = 0.7;
-    for (let index = -1; index <= 1; index += 1) {
-      context.beginPath();
-      context.moveTo(center.x + index * size * 0.18, center.y + size * 0.22);
-      context.lineTo(center.x + index * size * 0.15, center.y - size * 0.14);
-      context.stroke();
-    }
-    return;
-  }
-  if (!sample.land) {
-    context.beginPath();
-    context.moveTo(center.x - size * 0.28, center.y);
-    context.quadraticCurveTo(center.x - size * 0.08, center.y - size * 0.12, center.x + size * 0.08, center.y);
-    context.quadraticCurveTo(center.x + size * 0.22, center.y + size * 0.1, center.x + size * 0.32, center.y);
-    context.strokeStyle = "rgba(153, 203, 207, .28)";
-    context.lineWidth = 0.65;
-    context.stroke();
-  }
-}
-
-function thinPath(path, maxPoints = 240) {
-  if (!path || path.length <= maxPoints) return path || [];
-  const stride = Math.ceil(path.length / maxPoints);
-  const out = [];
-  for (let index = 0; index < path.length; index += stride) out.push(path[index]);
-  if (out[out.length - 1] !== path[path.length - 1]) out.push(path[path.length - 1]);
-  return out;
 }
 
 function compactList(value, limit = 3) {
@@ -376,198 +121,6 @@ function compactList(value, limit = 3) {
     typeof item === "string" ? item : item?.name || item?.label || String(item)
   ));
   return `${shown.join(", ")}${items.length > limit ? ` +${items.length - limit}` : ""}`;
-}
-
-function svgPoints(camera, viewport, waypoints) {
-  return waypoints
-    .map((point) => {
-      const screen = atlasWorldToScreen(camera, viewport, point);
-      return `${screen.x.toFixed(1)},${screen.y.toFixed(1)}`;
-    })
-    .join(" ");
-}
-
-// ---- Raster painter ----
-//
-// Paints a coarse physical survey immediately, then refines it on an offscreen
-// canvas in time-budgeted chunks. The visible canvas keeps the last usable map
-// until the next preview is ready, so cancelled camera passes never strand the
-// player on the deep-sea clear. The party's remembered trail (seen tiles) is
-// drawn over the finished raster.
-function paintAtlas({
-  canvas,
-  camera,
-  viewport,
-  seed,
-  seenKeys,
-  token,
-  buffer: suppliedBuffer,
-  presentPreview = true,
-  presentPartials = true,
-  onPreview,
-  onDetailed,
-}) {
-  const ratio = typeof window !== "undefined"
-    ? Math.max(1, Math.min(2, window.devicePixelRatio || 1))
-    : 1;
-  const pixelWidth = Math.max(1, Math.round(viewport.width * ratio));
-  const pixelHeight = Math.max(1, Math.round(viewport.height * ratio));
-  if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
-  if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
-  const displayContext = canvas.getContext("2d", { alpha: false });
-
-  // Camera changes paint away from the DOM canvas. Until the preview is
-  // presented, the old camera image remains visible instead of flashing sea.
-  const buffer = suppliedBuffer || canvas.ownerDocument?.createElement?.("canvas") || canvas;
-  if (buffer.width !== pixelWidth) buffer.width = pixelWidth;
-  if (buffer.height !== pixelHeight) buffer.height = pixelHeight;
-  const context = buffer.getContext("2d", { alpha: false });
-  if (!displayContext || !context) return false;
-  context.setTransform(ratio, 0, 0, ratio, 0, 0);
-
-  const step = rasterStep(camera.zoom);
-  const gridFor = (sampleStep) => {
-    const cellPx = sampleStep * camera.zoom;
-    const screenCorners = [
-      atlasScreenToWorld(camera, viewport, { x: -cellPx, y: -cellPx }),
-      atlasScreenToWorld(camera, viewport, { x: viewport.width + cellPx, y: -cellPx }),
-      atlasScreenToWorld(camera, viewport, { x: viewport.width + cellPx, y: viewport.height + cellPx }),
-      atlasScreenToWorld(camera, viewport, { x: -cellPx, y: viewport.height + cellPx }),
-    ];
-    const xmin = Math.floor(Math.min(...screenCorners.map((corner) => corner.x)) / sampleStep) * sampleStep - sampleStep;
-    const xmax = Math.ceil(Math.max(...screenCorners.map((corner) => corner.x)) / sampleStep) * sampleStep + sampleStep;
-    const ymin = Math.floor(Math.min(...screenCorners.map((corner) => corner.y)) / sampleStep) * sampleStep - sampleStep;
-    const ymax = Math.ceil(Math.max(...screenCorners.map((corner) => corner.y)) / sampleStep) * sampleStep + sampleStep;
-    const basisOrigin = atlasWorldToScreen(camera, viewport, { x: 0, y: 0 });
-    const basisXPoint = atlasWorldToScreen(camera, viewport, { x: sampleStep, y: 0 });
-    const basisYPoint = atlasWorldToScreen(camera, viewport, { x: 0, y: sampleStep });
-    return {
-      step: sampleStep,
-      cellPx,
-      xmin,
-      ymin,
-      columns: Math.ceil((xmax - xmin) / sampleStep) + 1,
-      rows: Math.ceil((ymax - ymin) / sampleStep) + 1,
-      xBasis: { x: basisXPoint.x - basisOrigin.x, y: basisXPoint.y - basisOrigin.y },
-      yBasis: { x: basisYPoint.x - basisOrigin.x, y: basisYPoint.y - basisOrigin.y },
-    };
-  };
-
-  const paintCell = (grid, x, y, detailed) => {
-    const sample = cachedSurvey(x, y, seed);
-    const hillshade = detailed ? clamp(
-      ((sample.elevation - cachedSurvey(x - grid.step, y - grid.step, seed).elevation) * 0.78
-        + (sample.elevation - cachedSurvey(x - grid.step, y, seed).elevation) * 0.46) * 0.75,
-      -0.18,
-      0.18,
-    ) : 0;
-    const center = atlasWorldToScreen(camera, viewport, { x, y });
-    const corners = cellCorners(center, grid.xBasis, grid.yBasis);
-    traceCell(context, corners);
-    context.fillStyle = cellColor(sample, hillshade);
-    context.fill();
-
-    if (!detailed) return;
-    const strength = reliefStrength(sample);
-    if (grid.cellPx >= 7 && strength > 0.12) {
-      context.beginPath();
-      context.moveTo(corners[0].x, corners[0].y);
-      context.lineTo(corners[1].x, corners[1].y);
-      context.strokeStyle = `rgba(244, 222, 169, ${0.08 + strength * 0.18})`;
-      context.lineWidth = Math.max(0.45, grid.cellPx * 0.035);
-      context.stroke();
-      context.beginPath();
-      context.moveTo(corners[2].x, corners[2].y);
-      context.lineTo(corners[3].x, corners[3].y);
-      context.strokeStyle = `rgba(28, 24, 24, ${0.1 + strength * 0.24})`;
-      context.lineWidth = Math.max(0.55, grid.cellPx * 0.05);
-      context.stroke();
-    }
-    drawTerrainRelief(context, center, grid.cellPx, sample, coordinateNoise(x, y));
-  };
-
-  const present = () => {
-    if (buffer === canvas) return;
-    displayContext.setTransform(1, 0, 0, 1, 0, 0);
-    displayContext.globalCompositeOperation = "source-over";
-    displayContext.imageSmoothingEnabled = false;
-    displayContext.drawImage(buffer, 0, 0);
-  };
-
-  context.fillStyle = SEA_DEEP_INK;
-  context.fillRect(0, 0, viewport.width, viewport.height);
-
-  // Only the first frame (or a resized canvas) needs a coarse fallback. Once a
-  // detailed raster exists, camera gestures skip this work entirely and keep
-  // transforming the completed frame until the new detailed buffer is ready.
-  if (presentPreview) {
-    const previewGrid = gridFor(step * 4);
-    for (let previewRow = 0; previewRow < previewGrid.rows; previewRow += 1) {
-      const y = previewGrid.ymin + previewRow * previewGrid.step;
-      for (let column = 0; column < previewGrid.columns; column += 1) {
-        paintCell(previewGrid, previewGrid.xmin + column * previewGrid.step, y, false);
-      }
-    }
-    present();
-    if (!token.cancelled) onPreview?.();
-  }
-
-  const grid = gridFor(step);
-  let row = 0;
-  let lastPresent = typeof performance !== "undefined" ? performance.now() : Date.now();
-  const paintChunk = () => {
-    if (token.cancelled) return;
-    const start = typeof performance !== "undefined" ? performance.now() : Date.now();
-    while (row < grid.rows) {
-      const y = grid.ymin + row * grid.step;
-      for (let column = 0; column < grid.columns; column += 1) {
-        paintCell(grid, grid.xmin + column * grid.step, y, true);
-      }
-      row += 1;
-      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-      if (now - start > 9) break;
-    }
-    if (row < grid.rows) {
-      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
-      if (presentPartials && now - lastPresent > 120) {
-        present();
-        lastPresent = now;
-      }
-      token.frame = requestAnimationFrame(paintChunk);
-      return;
-    }
-    // Remembered trail: a faint amber dust over every hex the party has seen.
-    context.fillStyle = "rgba(255, 224, 138, .30)";
-    const dot = Math.max(1.2, camera.zoom * 0.24);
-    for (const key of seenKeys) {
-      const comma = key.indexOf(",");
-      const x = Number(key.slice(0, comma));
-      const y = Number(key.slice(comma + 1));
-      const screen = atlasWorldToScreen(camera, viewport, { x, y });
-      if (screen.x < -4 || screen.y < -4 || screen.x > viewport.width + 4 || screen.y > viewport.height + 4) continue;
-      context.fillRect(screen.x - dot / 2, screen.y - dot / 2, dot, dot);
-    }
-    // A warm glaze ties the procedural colors and raised marks together like
-    // pigment on an aged campaign board.
-    context.save();
-    context.globalCompositeOperation = "soft-light";
-    context.fillStyle = "rgba(225, 189, 118, .12)";
-    context.fillRect(0, 0, viewport.width, viewport.height);
-    context.restore();
-    // Soft vignette keeps the chart readable against the folio.
-    const vignette = context.createRadialGradient(
-      viewport.width / 2, viewport.height / 2, Math.min(viewport.width, viewport.height) * 0.42,
-      viewport.width / 2, viewport.height / 2, Math.max(viewport.width, viewport.height) * 0.78,
-    );
-    vignette.addColorStop(0, "rgba(2, 10, 22, 0)");
-    vignette.addColorStop(1, "rgba(2, 10, 22, .56)");
-    context.fillStyle = vignette;
-    context.fillRect(0, 0, viewport.width, viewport.height);
-    present();
-    if (!token.cancelled) onDetailed?.();
-  };
-  token.frame = requestAnimationFrame(paintChunk);
-  return true;
 }
 
 const KNOWLEDGE_SHORT_LABELS = Object.freeze({
@@ -691,7 +244,6 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   const seed = state?.world?.seed || CONTINENT.seed;
   const partyCoord = origin || state?.world?.currentTile || CONTINENT.start.coord;
   const stageRef = useRef(null);
-  const canvasRef = useRef(null);
   const scene3dRef = useRef(null);
   const searchInputRef = useRef(null);
   const gestureRef = useRef({
@@ -701,42 +253,24 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     suppressClick: false,
     startedOnInteractive: false,
     hadMultiplePointers: false,
-    lastAt: null,
   });
   const cameraFrameRef = useRef({ frame: 0, operations: [] });
-  const rasterBufferRef = useRef(null);
-  const rasterFrameRef = useRef(null);
-  const rasterSchedulerRef = useRef({
-    timer: 0,
-    active: null,
-    latest: null,
-    generation: "",
-    lastCompletedAt: 0,
-    disposed: false,
-    canvas: null,
-  });
-  const wheelRef = useRef({ frame: 0, deltaY: 0, anchor: null, lastAt: null });
+  const wheelRef = useRef({ frame: 0, deltaY: 0, anchor: null });
   const didInitialFitRef = useRef(false);
-  const previousSceneStateRef = useRef("loading");
   const [viewport, setViewport] = useState(INITIAL_ATLAS_VIEWPORT);
   const [stageMeasured, setStageMeasured] = useState(false);
-  // WebGL owns the permanent terrain geometry. The flat chart below is an
-  // automatic compatibility fallback, not a player-facing display mode.
+  // WebGL owns the permanent terrain geometry. Loading and error states keep
+  // the same 3D stage mounted behind their status UI.
   const planeViewport = viewport;
-  const rasterOverscan = Math.max(
-    ATLAS_RASTER_MIN_OVERSCAN,
-    Math.min(ATLAS_RASTER_MAX_OVERSCAN, Math.round(Math.min(planeViewport.width, planeViewport.height) * 0.22)),
-  );
-  const rasterViewport = useMemo(() => ({
-    width: planeViewport.width + rasterOverscan * 2,
-    height: planeViewport.height + rasterOverscan * 2,
-  }), [planeViewport.width, planeViewport.height, rasterOverscan]);
   const [camera, setCamera] = useState(() => {
     const plane = INITIAL_ATLAS_VIEWPORT;
-    const openingZoom = atlasOpeningZoom(plane);
-    return clampAtlasCamera(
-      centerAtlasCamera({ x: 0, y: 0, zoom: openingZoom }, plane, partyCoord, openingZoom),
+    const openingZoom = atlasOpeningZoom(plane, seed);
+    return centerAtlas3dCamera(
+      { x: partyCoord.x, y: partyCoord.y, zoom: openingZoom },
       plane,
+      partyCoord,
+      openingZoom,
+      seed,
     );
   });
   const [visibleLayers, setVisibleLayers] = useState(() => new Set(ATLAS_LAYERS.map((layer) => layer.id)));
@@ -747,12 +281,10 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   const [searchOpen, setSearchOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [rasterFrame, setRasterFrame] = useState(null);
   const [sceneState, setSceneState] = useState("loading");
+  const [sceneError, setSceneError] = useState("");
 
-  const flatFit = atlasFitZoom(planeViewport);
-  const threeDimensionalFit = atlas3dFitZoom(planeViewport, seed);
-  const fit = sceneState === "webgl" ? threeDimensionalFit : flatFit;
+  const fit = atlas3dFitZoom(planeViewport, seed);
   const zoomRatio = camera.zoom / fit;
   const hexKilometers = CONTINENT.hexKilometers || 6;
   const landmarks = useMemo(() => buildAtlasLandmarks(state, partyCoord), [state, partyCoord]);
@@ -764,21 +296,15 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   const trackedCharacter = useMemo(() => trackedCharacterResult(state), [state]);
 
   function clampActiveCamera(current) {
-    return sceneState === "webgl"
-      ? clampAtlas3dCamera(current, planeViewport, seed)
-      : clampAtlasCamera(current, planeViewport);
+    return clampAtlas3dCamera(current, planeViewport, seed);
   }
 
   function centerActiveCamera(current, coord, zoom = current.zoom) {
-    return sceneState === "webgl"
-      ? centerAtlas3dCamera(current, planeViewport, coord, zoom, seed)
-      : centerAtlasCamera(current, planeViewport, coord, zoom);
+    return centerAtlas3dCamera(current, planeViewport, coord, zoom, seed);
   }
 
   function fitActiveCamera(current) {
-    return sceneState === "webgl"
-      ? fitAtlas3dCamera(current, planeViewport, seed)
-      : clampAtlasCamera({ ...current, zoom: flatFit }, planeViewport);
+    return fitAtlas3dCamera(current, planeViewport, seed);
   }
 
   const selectedLandmark = selection?.kind === "landmark"
@@ -824,26 +350,6 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     return () => window.removeEventListener("resize", measure);
   }, []);
 
-  // The fallback chart and perspective scene share a center representation but
-  // have different true fit scales. Preserve the player's relative zoom when
-  // WebGL becomes ready, falls back, or restores after context loss.
-  useAtlasLayoutEffect(() => {
-    const previous = previousSceneStateRef.current;
-    if (previous === sceneState) return;
-    previousSceneStateRef.current = sceneState;
-    if (sceneState === "webgl") {
-      setCamera((current) => clampAtlas3dCamera({
-        ...current,
-        zoom: threeDimensionalFit * (current.zoom / flatFit),
-      }, planeViewport, seed));
-    } else if (previous === "webgl") {
-      setCamera((current) => clampAtlasCamera({
-        ...current,
-        zoom: flatFit * (current.zoom / threeDimensionalFit),
-      }, planeViewport));
-    }
-  }, [flatFit, planeViewport, sceneState, seed, threeDimensionalFit]);
-
   // Fit once after the real stage measurement, then preserve the user's view
   // while merely keeping it legal on later resizes.
   useEffect(() => {
@@ -851,275 +357,23 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     setCamera((current) => {
       if (!didInitialFitRef.current) {
         didInitialFitRef.current = true;
-        const openingRatio = atlasOpeningZoom(planeViewport) / flatFit;
+        const openingRatio = atlasOpeningZoom(planeViewport, seed) / fit;
         return centerActiveCamera(current, partyCoord, fit * openingRatio);
       }
       return clampActiveCamera(current);
     });
-  }, [fit, flatFit, sceneState, seed, stageMeasured, planeViewport.width, planeViewport.height, partyCoord.x, partyCoord.y]);
+  }, [fit, seed, stageMeasured, planeViewport.width, planeViewport.height, partyCoord.x, partyCoord.y]);
 
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus();
   }, [searchOpen]);
 
-  // Paint the raster whenever the camera, plane, seed, or discoveries change.
   const seenMap = state?.world?.seen;
   const seenKeys = useMemo(() => Object.keys(seenMap || {}), [seenMap]);
-  const seenSignature = useMemo(() => seenKeys.join("|"), [seenKeys]);
-  const rasterPixelRatio = typeof window !== "undefined"
-    ? Math.max(1, Math.min(2, window.devicePixelRatio || 1))
-    : 1;
-  const rasterGeneration = `${rasterViewport.width}x${rasterViewport.height}@${rasterPixelRatio}|${seed}|${seenSignature}`;
-  const rasterFrameMatchesViewport = !!(
-    rasterFrame
-    && rasterFrame.generation === rasterGeneration
-    && rasterFrame.width === rasterViewport.width
-    && rasterFrame.height === rasterViewport.height
-  );
-
-  function cancelRasterToken(token) {
-    if (!token) return;
-    token.cancelled = true;
-    if (token.frame && typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(token.frame);
-    token.frame = 0;
-  }
 
   function pickAtlas3dGround(modelCamera, point) {
     return scene3dRef.current?.pickGround(point, modelCamera) || null;
   }
-
-  function stopRasterScheduler() {
-    const scheduler = rasterSchedulerRef.current;
-    if (scheduler.timer) clearTimeout(scheduler.timer);
-    scheduler.timer = 0;
-    cancelRasterToken(scheduler.active?.token);
-    scheduler.active = null;
-    scheduler.latest = null;
-  }
-
-  function scheduleRasterPaint() {
-    const scheduler = rasterSchedulerRef.current;
-    const latest = scheduler.latest;
-    if (scheduler.disposed || scheduler.active || !latest) return;
-    if (scheduler.timer) clearTimeout(scheduler.timer);
-    scheduler.timer = 0;
-
-    const frame = rasterFrameRef.current;
-    const frameMatches = !!(
-      frame
-      && frame.generation === latest.generation
-      && frame.width === latest.viewport.width
-      && frame.height === latest.viewport.height
-    );
-    const needsPaint = !frameMatches || !frame.detailed || !sameCamera(frame.camera, latest.camera);
-    if (!needsPaint) return;
-
-    const now = Date.now();
-    const wheelIdleFor = wheelRef.current.lastAt == null ? Infinity : now - wheelRef.current.lastAt;
-    const pointerIdleFor = gestureRef.current.lastAt == null ? Infinity : now - gestureRef.current.lastAt;
-    const interactionIdleFor = Math.min(wheelIdleFor, pointerIdleFor);
-    const idleDelay = Math.max(0, ATLAS_WHEEL_REFINE_DELAY - interactionIdleFor);
-    const refreshDelay = Math.max(0, ATLAS_ACTIVE_RASTER_REFRESH - (now - scheduler.lastCompletedAt));
-
-    // The first or resized frame paints immediately. During continuous input,
-    // refresh the overscanned raster at a bounded cadence; otherwise wait for
-    // the short idle window so pointer traffic cannot restart terrain work.
-    if (!frameMatches || latest.urgent || idleDelay === 0 || refreshDelay === 0) {
-      startRasterPaint();
-      return;
-    }
-    scheduler.timer = setTimeout(startRasterPaint, Math.min(idleDelay, refreshDelay));
-  }
-
-  function startRasterPaint() {
-    const scheduler = rasterSchedulerRef.current;
-    if (scheduler.disposed || scheduler.active || !scheduler.latest) return;
-    if (scheduler.timer) clearTimeout(scheduler.timer);
-    scheduler.timer = 0;
-
-    const job = scheduler.latest;
-    const existingFrame = rasterFrameRef.current;
-    const hasUsableFrame = !!(
-      existingFrame
-      && existingFrame.generation === job.generation
-      && existingFrame.width === job.viewport.width
-      && existingFrame.height === job.viewport.height
-    );
-    const token = { cancelled: false, frame: 0 };
-    scheduler.active = {
-      token,
-      generation: job.generation,
-      camera: job.camera,
-      viewport: job.viewport,
-    };
-    const beginPaint = () => {
-      token.frame = 0;
-      if (token.cancelled || scheduler.disposed || scheduler.active?.token !== token) return;
-      if (!rasterBufferRef.current) {
-        rasterBufferRef.current = job.canvas.ownerDocument?.createElement?.("canvas") || null;
-      }
-
-      const publishFrame = (detailed) => {
-        if (token.cancelled || scheduler.disposed || scheduler.active?.token !== token) return;
-        const latest = scheduler.latest;
-        if (!latest || latest.generation !== job.generation) return;
-        const frame = {
-          camera: job.camera,
-          width: job.viewport.width,
-          height: job.viewport.height,
-          generation: job.generation,
-          detailed,
-        };
-        // Pair the newly presented pixels with their render camera in the same
-        // browser task. If input advanced while painting, immediately align
-        // those pixels to the newest camera before React's next paint.
-        job.canvas.style.transform = atlasRasterTransform(latest.camera, job.camera, job.viewport);
-        rasterFrameRef.current = frame;
-        latest.urgent = !atlasRasterCoversViewport(
-          latest.camera,
-          job.camera,
-          job.viewport,
-          latest.planeViewport,
-          latest.overscan,
-          ATLAS_RASTER_COVERAGE_RESERVE,
-        );
-        latest.forcePreview = !atlasRasterCoversViewport(
-          latest.camera,
-          job.camera,
-          job.viewport,
-          latest.planeViewport,
-          latest.overscan,
-        );
-        setRasterFrame(frame);
-      };
-
-      const started = paintAtlas({
-        canvas: job.canvas,
-        camera: job.camera,
-        viewport: job.viewport,
-        seed: job.seed,
-        seenKeys: job.seenKeys,
-        token,
-        buffer: rasterBufferRef.current,
-        presentPreview: !hasUsableFrame || job.forcePreview,
-        presentPartials: !hasUsableFrame,
-        onPreview: () => publishFrame(false),
-        onDetailed: () => {
-          publishFrame(true);
-          if (scheduler.active?.token !== token) return;
-          scheduler.active = null;
-          scheduler.lastCompletedAt = Date.now();
-          scheduleRasterPaint();
-        },
-      });
-      if (!started && scheduler.active?.token === token) {
-        scheduler.active = null;
-      }
-    };
-    if (job.forcePreview) beginPaint();
-    else token.frame = requestAnimationFrame(beginPaint);
-  }
-
-  useAtlasLayoutEffect(() => {
-    const canvas = canvasRef.current;
-    if (sceneState === "webgl") {
-      stopRasterScheduler();
-      const scheduler = rasterSchedulerRef.current;
-      if (scheduler.canvas) {
-        scheduler.canvas.width = 1;
-        scheduler.canvas.height = 1;
-      }
-      if (rasterBufferRef.current) {
-        rasterBufferRef.current.width = 1;
-        rasterBufferRef.current.height = 1;
-      }
-      scheduler.canvas = null;
-      rasterBufferRef.current = null;
-      rasterFrameRef.current = null;
-      if (rasterFrame) setRasterFrame(null);
-      return undefined;
-    }
-    if (!stageMeasured || !canvas || typeof requestAnimationFrame === "undefined") return undefined;
-    const scheduler = rasterSchedulerRef.current;
-    scheduler.disposed = false;
-    if (scheduler.canvas !== canvas) {
-      scheduler.canvas = canvas;
-      rasterFrameRef.current = null;
-      setRasterFrame(null);
-    }
-    if (scheduler.generation !== rasterGeneration) {
-      if (scheduler.timer) clearTimeout(scheduler.timer);
-      scheduler.timer = 0;
-      cancelRasterToken(scheduler.active?.token);
-      scheduler.active = null;
-      scheduler.generation = rasterGeneration;
-      scheduler.lastCompletedAt = 0;
-    }
-    const frame = rasterFrameRef.current;
-    const frameMatches = !!(
-      frame
-      && frame.generation === rasterGeneration
-      && frame.width === rasterViewport.width
-      && frame.height === rasterViewport.height
-    );
-    const needsCoverageRefresh = frameMatches && !atlasRasterCoversViewport(
-      camera,
-      frame.camera,
-      rasterViewport,
-      planeViewport,
-      rasterOverscan,
-      ATLAS_RASTER_COVERAGE_RESERVE,
-    );
-    const frameIsUncovered = frameMatches && !atlasRasterCoversViewport(
-      camera,
-      frame.camera,
-      rasterViewport,
-      planeViewport,
-      rasterOverscan,
-    );
-    scheduler.latest = {
-      canvas,
-      camera,
-      viewport: rasterViewport,
-      planeViewport,
-      overscan: rasterOverscan,
-      seed,
-      seenKeys,
-      generation: rasterGeneration,
-      urgent: needsCoverageRefresh,
-      forcePreview: frameIsUncovered,
-    };
-    if (needsCoverageRefresh && scheduler.active) {
-      const active = scheduler.active;
-      const activeWillCover = active.generation === rasterGeneration && atlasRasterCoversViewport(
-        camera,
-        active.camera,
-        active.viewport,
-        planeViewport,
-        rasterOverscan,
-        ATLAS_RASTER_COVERAGE_RESERVE,
-      );
-      if (frameIsUncovered || !activeWillCover) {
-        cancelRasterToken(active.token);
-        scheduler.active = null;
-      }
-    }
-    scheduleRasterPaint();
-    // Camera-only renders normally leave the active painter alone. Coverage
-    // pressure is the exception: preempt a stale job before its retained frame
-    // reaches an edge, and synchronously promote a coarse emergency fallback
-    // only if a single large input delta already uncovered the stage.
-    return undefined;
-  }, [camera, planeViewport, rasterFrame, rasterGeneration, rasterOverscan, rasterViewport, seed, seenKeys, stageMeasured, sceneState]);
-
-  useAtlasLayoutEffect(() => {
-    const scheduler = rasterSchedulerRef.current;
-    scheduler.disposed = false;
-    return () => {
-      scheduler.disposed = true;
-      stopRasterScheduler();
-    };
-  }, []);
 
   // Wheel zoom needs a non-passive listener so the chart, rather than the page,
   // owns a wheel gesture made over open map terrain.
@@ -1127,6 +381,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     const stage = stageRef.current;
     if (!stage) return undefined;
     const onWheel = (event) => {
+      if (sceneState !== "ready") return;
       if (!atlasWheelZoomAllowed(event.target) || event.deltaY === 0) return;
       event.preventDefault();
       const bounds = stage.getBoundingClientRect();
@@ -1134,7 +389,6 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       const wheel = wheelRef.current;
       wheel.deltaY += event.deltaY * (event.deltaMode === 1 ? 32 : event.deltaMode === 2 ? viewport.height : 1);
       wheel.anchor = anchor;
-      wheel.lastAt = Date.now();
       if (wheel.frame) return;
       wheel.frame = requestAnimationFrame(() => {
         wheel.frame = 0;
@@ -1144,9 +398,14 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
         wheel.anchor = null;
         if (deltaY === 0) return;
         setCamera((current) => {
-          const next = sceneState === "webgl"
-            ? zoomAtlas3dCamera(current, planeViewport, atlasWheelZoomFactor(deltaY), nextAnchor, seed, pickAtlas3dGround)
-            : zoomAtlasCamera(current, planeViewport, atlasWheelZoomFactor(deltaY), nextAnchor);
+          const next = zoomAtlas3dCamera(
+            current,
+            planeViewport,
+            atlasWheelZoomFactor(deltaY),
+            nextAnchor,
+            seed,
+            pickAtlas3dGround,
+          );
           return sameCamera(current, next) ? current : next;
         });
       });
@@ -1186,13 +445,9 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
         let next = current;
         for (const operation of queued) {
           if (operation.type === "zoom") {
-            next = sceneState === "webgl"
-              ? zoomAtlas3dCamera(next, planeViewport, operation.factor, operation.anchor, seed, pickAtlas3dGround)
-              : zoomAtlasCamera(next, planeViewport, operation.factor, operation.anchor);
+            next = zoomAtlas3dCamera(next, planeViewport, operation.factor, operation.anchor, seed, pickAtlas3dGround);
           } else if (operation.dx || operation.dy) {
-            next = sceneState === "webgl"
-              ? panAtlas3dCamera(next, planeViewport, operation.dx, operation.dy, seed, pickAtlas3dGround, operation.anchor)
-              : panAtlasCamera(next, planeViewport, operation.dx, operation.dy);
+            next = panAtlas3dCamera(next, planeViewport, operation.dx, operation.dy, seed, pickAtlas3dGround, operation.anchor);
           }
         }
         return sameCamera(current, next) ? current : next;
@@ -1210,7 +465,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   useAtlasLayoutEffect(() => {
     cancelQueuedCameraOperations();
     return () => cancelQueuedCameraOperations();
-  }, [planeViewport.height, planeViewport.width, sceneState, seed]);
+  }, [planeViewport.height, planeViewport.width, seed]);
 
   function planePoint(event) {
     const bounds = stageRef.current.getBoundingClientRect();
@@ -1218,6 +473,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   }
 
   function handlePointerDown(event) {
+    if (sceneState !== "ready") return;
     const gesture = gestureRef.current;
     gesture.pointers.set(event.pointerId, planePoint(event));
     if (gesture.pointers.size === 1) {
@@ -1255,7 +511,6 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       if (Math.hypot(dx, dy) > 0.25 || Math.abs(distance - beforeDistance) > 0.5) {
         gesture.moved = true;
         gesture.suppressClick = true;
-        gesture.lastAt = Date.now();
         const operations = [];
         if (dx || dy) operations.push({ type: "pan", dx, dy, anchor: beforeMidpoint });
         if (factor !== 1) operations.push({ type: "zoom", factor, anchor: midpoint });
@@ -1272,7 +527,6 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     if (!gesture.moved && gesture.dragDistance < 4) return;
     gesture.moved = true;
     gesture.suppressClick = true;
-    gesture.lastAt = Date.now();
     queueCameraOperations([{ type: "pan", dx, dy, anchor: previous }]);
   }
 
@@ -1289,11 +543,10 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     if (gesture.startedOnInteractive || event.target.closest?.("button, a, input, select, textarea")) return;
     // A clean tap on open ground charts that coordinate.
     const point = planePoint(event);
-    const fractional = sceneState === "webgl"
-      ? (scene3dRef.current?.pick(point) || atlas3dScreenToGround(camera, planeViewport, point, seed))
-      : atlasScreenToWorld(camera, planeViewport, point);
+    const fractional = scene3dRef.current?.pick(point)
+      || atlas3dScreenToGround(camera, planeViewport, point, seed);
     const coord = axialRound(fractional.x, fractional.y);
-    const sample = cachedSurvey(coord.x, coord.y, seed);
+    const sample = surveyAtlas(coord.x, coord.y, seed);
     if (!sample.land) return;
     setSelection({ kind: "point", x: coord.x, y: coord.y });
   }
@@ -1318,12 +571,12 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       return;
     }
     const pan = 72;
-    const panCamera = (current, dx, dy) => (sceneState === "webgl"
-      ? panAtlas3dCamera(current, planeViewport, dx, dy, seed, pickAtlas3dGround)
-      : panAtlasCamera(current, planeViewport, dx, dy));
-    const zoomCamera = (current, factor) => (sceneState === "webgl"
-      ? zoomAtlas3dCamera(current, planeViewport, factor, null, seed, pickAtlas3dGround)
-      : zoomAtlasCamera(current, planeViewport, factor));
+    const panCamera = (current, dx, dy) => (
+      panAtlas3dCamera(current, planeViewport, dx, dy, seed, pickAtlas3dGround)
+    );
+    const zoomCamera = (current, factor) => (
+      zoomAtlas3dCamera(current, planeViewport, factor, null, seed, pickAtlas3dGround)
+    );
     if (event.key === "ArrowLeft") setCamera((current) => panCamera(current, pan, 0));
     else if (event.key === "ArrowRight") setCamera((current) => panCamera(current, -pan, 0));
     else if (event.key === "ArrowUp") setCamera((current) => panCamera(current, 0, pan));
@@ -1397,9 +650,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     top: (viewport.height - planeViewport.height) / 2,
   };
   const projectMapCoord = (coord, lift = 0) => (
-    sceneState === "webgl"
-      ? atlas3dProject(camera, planeViewport, coord, atlas3dTerrainHeightAt(coord, seed) + lift, seed)
-      : atlasWorldToScreen(camera, planeViewport, coord)
+    atlas3dProject(camera, planeViewport, coord, atlas3dTerrainHeightAt(coord, seed) + lift, seed)
   );
   const partyScreen = projectMapCoord(partyCoord, 1.4);
   const partyOffstage = partyScreen.x < -32
@@ -1407,23 +658,9 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     || partyScreen.x > planeViewport.width + 32
     || partyScreen.y > planeViewport.height + 32;
   const kmAcross = Math.round((viewport.width / camera.zoom) * hexKilometers);
-  const useFallbackChart = sceneState !== "webgl";
-  const currentLegPoints = useFallbackChart && journey
-    ? svgPoints(camera, planeViewport, thinPath(journey.legPath))
-    : "";
-  const continuationPath = journey
-    ? journey.fullPath.slice(Math.max(0, (journey.legPath?.length || 1) - 1))
-    : [];
-  const continuationPoints = useFallbackChart && continuationPath.length > 1
-    ? svgPoints(camera, planeViewport, thinPath(continuationPath))
-    : "";
   const journeyBreaks = useMemo(
     () => (journey ? journeyLegBreaks(journey.fullPath, journey.legSteps) : []),
     [journey],
-  );
-  const coastPoints = useMemo(
-    () => (useFallbackChart ? svgPoints(camera, planeViewport, CONTINENT.coastline) : ""),
-    [camera, planeViewport, useFallbackChart],
   );
   const showRegionLabels = zoomRatio >= 3;
   const showRealmLabels = zoomRatio < 1.45;
@@ -1525,9 +762,9 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   }, [detailEntry, onPick, state, trackedAtSelection, trackedCharacter]);
 
   const activeFilterCount = (focusedRealmId ? 1 : 0) + (ATLAS_LAYERS.length - visibleLayers.size);
-  const zoomControlCamera = (current, factor) => (sceneState === "webgl"
-    ? zoomAtlas3dCamera(current, planeViewport, factor, null, seed, pickAtlas3dGround)
-    : zoomAtlasCamera(current, planeViewport, factor));
+  const zoomControlCamera = (current, factor) => (
+    zoomAtlas3dCamera(current, planeViewport, factor, null, seed, pickAtlas3dGround)
+  );
 
   return (
     <section
@@ -1537,9 +774,10 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       <div
         ref={stageRef}
         className="world-atlas__stage"
-        role="application"
-        aria-label={`Interactive map of ${CONTINENT.name}. Arrow keys pan, plus and minus zoom, zero fits the continent, Home returns to the party.`}
-        tabIndex={0}
+      role="application"
+      aria-label={`Interactive map of ${CONTINENT.name}. Arrow keys pan, plus and minus zoom, zero fits the continent, Home returns to the party.`}
+      aria-busy={sceneState === "loading"}
+      tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -1548,7 +786,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       >
         <div className="world-atlas__scene">
           <div
-            className={`world-atlas__plane${sceneState === "webgl" ? " is-3d" : ""}`}
+            className={`world-atlas__plane is-3d${sceneState === "ready" ? " is-ready" : ""}${sceneState === "error" ? " has-error" : ""}`}
             style={{
               width: `${planeViewport.width}px`,
               height: `${planeViewport.height}px`,
@@ -1565,89 +803,30 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
               journey={journey}
               journeyBreaks={journeyBreaks}
               seenKeys={seenKeys}
-              onReady={() => setSceneState("webgl")}
-              onFallback={() => setSceneState("fallback")}
+              onReady={() => {
+                setSceneError("");
+                setSceneState("ready");
+              }}
+              onError={(message) => {
+                setSceneError(message || "The 3D atlas could not start.");
+                setSceneState("error");
+              }}
             />
-            {useFallbackChart && (
-              <>
-                <canvas
-                  ref={canvasRef}
-                  className="world-atlas__canvas"
-                  style={{
-                    width: `${rasterViewport.width}px`,
-                    height: `${rasterViewport.height}px`,
-                    left: `${-rasterOverscan}px`,
-                    top: `${-rasterOverscan}px`,
-                    right: "auto",
-                    bottom: "auto",
-                    transform: atlasRasterTransform(
-                      camera,
-                      rasterFrameMatchesViewport ? rasterFrame.camera : null,
-                      rasterViewport,
-                    ),
-                    transformOrigin: "0 0",
-                  }}
-                  aria-hidden="true"
-                />
-
-                <svg className="world-atlas__vector" viewBox={`0 0 ${planeViewport.width} ${planeViewport.height}`} aria-hidden="true">
-              <defs>
-                <marker id="world-atlas-route-arrow" viewBox="0 0 8 8" refX="6.2" refY="4" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                  <path d="M 0 0 L 8 4 L 0 8 z" />
-                </marker>
-              </defs>
-              <polygon className="world-atlas__coastline" points={coastPoints} />
-              {CONTINENT_WATERWAYS.map((river) => (
-                <polyline key={river.id} className="world-atlas__river" points={svgPoints(camera, planeViewport, river.waypoints)}>
-                  <title>{river.name}</title>
-                </polyline>
-              ))}
-              {CONTINENT_LAKES.map((lake) => {
-                const center = atlasWorldToScreen(camera, planeViewport, lake.center);
-                return <circle key={lake.id} className="world-atlas__lake" cx={center.x} cy={center.y} r={Math.max(3, lake.radius * camera.zoom * 0.85)} />;
-              })}
-              {CONTINENT_SEA_LANES.map((lane) => (
-                <polyline
-                  key={lane.id}
-                  className={`world-atlas__sea-lane ${focusedRealmId && !lane.realmIds?.includes(focusedRealmId) ? "is-muted" : ""}`}
-                  points={svgPoints(camera, planeViewport, lane.waypoints)}
-                >
-                  <title>{lane.name}</title>
-                </polyline>
-              ))}
-              {CONTINENT_ROUTES.map((route) => (
-                <polyline
-                  key={route.id}
-                  className={`world-atlas__route ${route.kind === "regional-road" ? "is-regional" : "is-great"} ${focusedRealmId && !route.realmIds?.includes(focusedRealmId) ? "is-muted" : ""}`}
-                  points={svgPoints(camera, planeViewport, route.waypoints)}
-                >
-                  <title>{route.name}</title>
-                </polyline>
-              ))}
-              {continuationPoints && (
-                <>
-                  <polyline className="world-atlas__journey-continuation-halo" points={continuationPoints} />
-                  <polyline className="world-atlas__journey-continuation" points={continuationPoints} />
-                </>
-              )}
-              {currentLegPoints && (
-                <>
-                  <polyline className="world-atlas__journey-halo" points={currentLegPoints} />
-                  <polyline className="world-atlas__journey" points={currentLegPoints} markerEnd="url(#world-atlas-route-arrow)" />
-                </>
-              )}
-              {journeyBreaks.map((stop, index) => {
-                const screen = atlasWorldToScreen(camera, planeViewport, stop);
-                return (
-                  <g key={`${stop.x},${stop.y}`} className="world-atlas__leg-stop" transform={`translate(${screen.x} ${screen.y})`}>
-                    <ellipse cx="2" cy="3" rx="7" ry="3" />
-                    <circle r="5.5" />
-                    <text y=".5">{index + 1}</text>
-                  </g>
-                );
-              })}
-                </svg>
-              </>
+            {sceneState !== "ready" && (
+              <div className={`world-atlas__scene-status${sceneState === "error" ? " is-error" : ""}`} role="status" aria-live="polite">
+                {sceneState === "error" ? (
+                  <>
+                    <strong>3D atlas unavailable</strong>
+                    <span>{sceneError}</span>
+                  </>
+                ) : (
+                  <>
+                    <LoadingDots />
+                    <strong>Raising the realm</strong>
+                    <span>Preparing persistent terrain</span>
+                  </>
+                )}
+              </div>
             )}
 
             {showRealmLabels && (
@@ -1690,7 +869,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
               </div>
             )}
 
-            {sceneState === "webgl" && journeyBreaks.map((stop, index) => {
+            {sceneState === "ready" && journeyBreaks.map((stop, index) => {
               const screen = projectMapCoord(stop, 2.2);
               const offstage = screen.x < -20 || screen.y < -20 || screen.x > planeViewport.width + 20 || screen.y > planeViewport.height + 20;
               return (
@@ -1975,7 +1154,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
 
         <div className="world-atlas__map-controls" data-atlas-wheel-ignore="true" onPointerDown={stopStagePointer}>
           <div role="group" aria-label="Map zoom controls">
-            <button type="button" onClick={() => setCamera((current) => zoomControlCamera(current, 1.4))} disabled={camera.zoom >= ATLAS_MAX_ZOOM * 0.99} aria-label="Zoom map in">+</button>
+            <button type="button" onClick={() => setCamera((current) => zoomControlCamera(current, 1.4))} disabled={camera.zoom >= ATLAS_3D_MAX_ZOOM * 0.99} aria-label="Zoom map in">+</button>
             <button type="button" onClick={() => setCamera((current) => fitActiveCamera(current))} aria-label="Fit the whole continent">{Math.round(zoomRatio * 100)}%</button>
             <button type="button" onClick={() => setCamera((current) => zoomControlCamera(current, 1 / 1.4))} disabled={camera.zoom <= fit * 1.01} aria-label="Zoom map out">−</button>
           </div>
