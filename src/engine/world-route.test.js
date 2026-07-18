@@ -20,6 +20,7 @@ import {
   HEX_DIRECTIONS,
   isPassable,
   isTeleportAnchor,
+  travelMinutes,
   persistedTileDelta,
 } from "./world.js";
 import { sampleContinent } from "./world-generation.js";
@@ -83,6 +84,16 @@ function generatedLandPair() {
 }
 
 describe("expedition route planning", () => {
+  it("prices generated continental ground at expedition scale without slowing local cells", () => {
+    const localRoad = { terrain: "road" };
+    const continentalRoad = { terrain: "road", procedural: true };
+
+    expect(travelMinutes(localRoad, localRoad)).toBe(8);
+    expect(travelMinutes(continentalRoad, continentalRoad)).toBe(101);
+    expect(travelMinutes(localRoad, continentalRoad)).toBe(101);
+    expect(CONTINENT.footMinutesPerHex).toBeGreaterThanOrEqual(120);
+  });
+
   it("reaches every named node in the default atlas, including outdoor endpoints", () => {
     const tiles = buildHandcrafted({ tiles: compileDefaultWorldMap(), sealedStructures: [] });
     const state = stateWithTiles(tiles);

@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { CONTINENT, LANDMARKS } from "../../data/continent.js";
+import { makeInitialState } from "../../data/initial-state.js";
 import {
   ATLAS_LANDMARKS,
   ATLAS_OBLIQUE_PITCH,
   initialAtlasSelection,
   journeyLegBreaks,
   projectAxial,
+  summarizeAtlasJourney,
   unprojectAxial,
 } from "./worldAtlasModel.js";
+
+const PRE_EXPANSION_NORTHSTAR_MINUTES = 3364;
 
 describe("world atlas oblique projection", () => {
   it("uses the continental pitch while preserving pointer round trips", () => {
@@ -61,6 +66,21 @@ describe("world atlas journey leg breaks", () => {
     expect(journeyLegBreaks(exactLegPath, 8)).toEqual([]);
     expect(journeyLegBreaks(path, 0)).toEqual([]);
     expect(journeyLegBreaks(path, 0.5)).toEqual([]);
+  });
+});
+
+describe("world atlas expedition scale", () => {
+  it("keeps the canonical Northstar boss route at least ten times the former journey", () => {
+    const state = makeInitialState();
+    const origin = { ...state.world.currentTile };
+    const northstar = LANDMARKS.find((landmark) => landmark.id === "northstar-castle");
+    const journey = summarizeAtlasJourney(state, northstar.coord);
+
+    expect(state.world.currentTile).toEqual(origin);
+    expect(journey.fullPath[0]).toEqual(origin);
+    expect(journey.fullPath.at(-1)).toEqual(northstar.coord);
+    expect(journey.estimatedMinutes).toBeGreaterThanOrEqual(PRE_EXPANSION_NORTHSTAR_MINUTES * 10);
+    expect(journey.kilometers).toBe(journey.totalSteps * CONTINENT.hexKilometers);
   });
 });
 

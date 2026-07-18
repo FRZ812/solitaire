@@ -13,7 +13,7 @@ import { HANDCRAFTED } from "../data/handcrafted-map.js";
 import { RUMORED } from "../data/rumored.js";
 import { FABLED_BY_COORD } from "../data/fabled.js";
 import { RIVER_BY_COORD } from "../data/rivers.js";
-import { DEFAULT_WORLD_SEED } from "../data/continent.js";
+import { CONTINENT, DEFAULT_WORLD_SEED } from "../data/continent.js";
 import { SIGHT_RADIUS, TRAVEL_BASE_MIN, FLY_MIN_PER_HEX } from "../config.js";
 import { poiFootprintName, poiPartName, poiPlaceName } from "./location.js";
 import { CONTINENT_ROUTE_CELLS, generateWorldTile } from "./world-generation.js";
@@ -233,7 +233,16 @@ export function computeSightFromRadius(cx, cy, radius, existing = {}) {
 export function travelMinutes(fromT, toT) {
   const s1 = TERRAINS[fromT.terrain]?.speed ?? 1.0;
   const s2 = TERRAINS[toT.terrain]?.speed ?? 1.0;
-  return Math.max(1, Math.round(TRAVEL_BASE_MIN * (s1 + s2) / 2));
+  // Whitemarch's handcrafted cells are close-scale streets, rooms, and yards;
+  // lazy generated cells are the six-kilometre continental hexes declared in
+  // data/continent.js. An edge touching generated ground therefore uses the
+  // expedition clock. This preserves one axial graph and one party coordinate
+  // while preventing a continent-spanning road from inheriting city timings.
+  const crossesContinentalGround = !!(fromT?.procedural || toT?.procedural);
+  const baseMinutes = crossesContinentalGround
+    ? (CONTINENT.footMinutesPerHex || TRAVEL_BASE_MIN)
+    : TRAVEL_BASE_MIN;
+  return Math.max(1, Math.round(baseMinutes * (s1 + s2) / 2));
 }
 
 // Hex 6-neighbor adjacency.
@@ -470,7 +479,14 @@ function reconstructWorldRoute(cameFrom, current) {
 function searchWorldRoute({ from, to, maxVisited, tileAt, allowedKeys = null, heuristicWeight = 2.25 }) {
   const startKey = `${from.x},${from.y}`;
   const goalKey = `${to.x},${to.y}`;
-  const minimumStep = Math.max(1, Math.round(TRAVEL_BASE_MIN * 0.4));
+  const endpointIsContinental = !!(
+    tileAt(from.x, from.y)?.procedural
+    || tileAt(to.x, to.y)?.procedural
+  );
+  const heuristicBaseMinutes = endpointIsContinental
+    ? (CONTINENT.footMinutesPerHex || TRAVEL_BASE_MIN)
+    : TRAVEL_BASE_MIN;
+  const minimumStep = Math.max(1, Math.round(heuristicBaseMinutes * 0.4));
   const heuristic = (coord) => hexDistance(coord, to) * minimumStep;
   const open = new RouteMinHeap();
   open.push({ key: startKey, x: from.x, y: from.y, g: 0, f: heuristic(from) * heuristicWeight });

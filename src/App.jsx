@@ -68,6 +68,7 @@ import { initCombat, playCard, setTarget, endPlayerTurn, playerFlee, playerStand
 import { hashSeed } from "./engine/combat-rng.js";
 import { applyCombatResult, applyLoot } from "./engine/combat-result.js";
 import {
+  pendingLevelAllocations,
   pendingProgressionChoices,
   projectCharacterProgression,
   resolveLevelAllocationChoice,
@@ -1068,7 +1069,7 @@ export function Solitaire() {
   // Threshold decisions are resolved locally against the versioned ledger.
   // The narrator can describe the consequence later, but it can never choose a
   // school, specialization, signature spell, or metamagic for the player.
-  function handleProgressionChoice(professionId, choiceId, optionId, nodeId = null) {
+  function handleProgressionChoice(professionId, choiceId, optionId) {
     setState((current) => {
       const pending = pendingProgressionChoices(current.character).find((entry) => (
         entry.id === choiceId && (!professionId || entry.professionId === professionId)
@@ -1085,7 +1086,7 @@ export function Solitaire() {
       };
       let progression;
       if (pending.kind === "level-allocation") {
-        progression = resolveLevelAllocationChoice(character, { choiceId, optionId, nodeId });
+        progression = resolveLevelAllocationChoice(character, { choiceId, optionId });
       } else if (pending.kind === "branch") {
         progression = resolveProfessionChoice(character.progression, { professionId, choiceId, optionId });
       } else if (pending.kind === "racial-branch") {
@@ -2297,6 +2298,9 @@ export function Solitaire() {
   const inLimbo = state.created === false;
   const showCreationHub = inLimbo && !creationEntered && !state.beats.some((b) => b.type === "player");
   const queuedPlayerCount = pendingPlayerBeats(state).length;
+  const readyAdvancements = state.created === false ? 0 : (pendingLevelAllocations(state.character)?.unspentLevels || 0);
+  const advancementNeedsChoice = state.created !== false && pendingProgressionChoices(state.character)
+    .some((choice) => choice.kind !== "level-allocation");
   return (
     <div className="game-shell" style={{
       backgroundColor: "var(--scene-deep)",
@@ -2478,6 +2482,9 @@ export function Solitaire() {
           onRun={handleRunNarrator}
           queuedCount={queuedPlayerCount}
           loading={loading}
+          advancementCount={readyAdvancements}
+          advancementNeedsChoice={advancementNeedsChoice}
+          onOpenProgression={() => { setDeckPage("progression"); setDeckOpen(true); }}
         />
       </div>
 

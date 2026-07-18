@@ -17,6 +17,13 @@ export const CONTINENT = {
   generatorVersion: WORLD_GENERATOR_VERSION,
   contentVersion: 4,
   hexKilometers: 6,
+  // Generated continental cells cover expedition-scale ground, unlike the
+  // compact handcrafted cells inside Whitemarch. At 144 minutes per open
+  // country hex the party sustains roughly 2.5 km/h across a full walking day;
+  // authored roads remain faster through their terrain multiplier. Keeping the
+  // scale here beside hexKilometers gives route previews and actual travel one
+  // authoritative physical contract without splitting the axial graph.
+  footMinutesPerHex: 144,
   chunkSize: 24,
   // These are sampling/editor bounds, not a rectangular wall. The actual shore
   // is an irregular finite mask inside them.
