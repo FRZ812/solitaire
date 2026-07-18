@@ -390,7 +390,7 @@ export function compileProfessionTrack(professionValue, {
       const generalGrants = authoredLevel
         ? authoredLevel.grants.map((grant) => resolveAuthoredGrant(grant, choices, trackLevel))
         : generalProfessionGrants(profile, professionId, trackLevel, choices);
-      const branchGrants = branchGrantsAtLevel(professionId, trackLevel, selections);
+      const branchGrants = branchGrantsAtLevel(professionId, trackLevel, selections, { normalized: true });
       ranks[path.id] = rank;
       levels.push(Object.freeze({
         level: trackLevel,

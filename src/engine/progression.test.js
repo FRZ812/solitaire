@@ -118,11 +118,44 @@ describe("choices and entitlements", () => {
     const progression = createProgression({ professionId: "wizard", level: 50 });
     expect(pendingProgressionChoices(progression).map((choice) => choice.id)).toContain("wizard-school");
     const necromancer = resolveProfessionChoice(progression, { professionId: "wizard", choiceId: "wizard-school", optionId: "necromancy" });
-    expect(pendingProgressionChoices(necromancer).map((choice) => choice.id)).toContain("necromancy-discipline");
+    const necromancyChoice = pendingProgressionChoices(necromancer).find((choice) => choice.id === "necromancy-discipline");
+    expect(necromancyChoice).toMatchObject({ exclusive: true, breadcrumbs: [{ id: "necromancy", name: "Necromancy" }] });
+    expect(necromancyChoice.options).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "death-magic", nextChoices: [expect.objectContaining({ id: "death-magic-mastery", threshold: 50 })] }),
+    ]));
     const deathMage = resolveProfessionChoice(necromancer, { professionId: "wizard", choiceId: "necromancy-discipline", optionId: "death-magic" });
-    expect(pendingProgressionChoices(deathMage).map((choice) => choice.id)).toContain("death-magic-mastery");
+    expect(pendingProgressionChoices(deathMage).find((choice) => choice.id === "death-magic-mastery"))
+      .toMatchObject({ breadcrumbs: [{ id: "necromancy", name: "Necromancy" }, { id: "death-magic", name: "Death Magic" }] });
     const final = resolveProfessionChoice(deathMage, { professionId: "wizard", choiceId: "death-magic-mastery", optionId: "instant-death" });
     expect(progressionEntitlements(final).abilities).toContain("grasp-heart");
+  });
+
+  it("locks resolved specialization gates instead of permitting a sibling respec", () => {
+    const progression = createProgression({ professionId: "wizard", level: 50 });
+    const necromancer = resolveProfessionChoice(progression, {
+      professionId: "wizard", choiceId: "wizard-school", optionId: "necromancy",
+    });
+
+    expect(() => resolveProfessionChoice(necromancer, {
+      professionId: "wizard", choiceId: "wizard-school", optionId: "abjuration",
+    })).toThrow(/already locked/);
+    expect(necromancer.professions[0].branchChoices).toEqual({ "wizard-school": "necromancy" });
+  });
+
+  it("rejects and removes Warder mastery descendants from a Necromancy path", () => {
+    const progression = createProgression({ professionId: "wizard", level: 50 });
+    progression.professions[0].branchChoices = {
+      "wizard-school": "necromancy",
+      "abjuration-discipline": "warder",
+      "warder-mastery": "mirror-warden",
+    };
+
+    expect(() => resolveProfessionChoice(progression, {
+      professionId: "wizard", choiceId: "warder-mastery", optionId: "mirror-warden",
+    })).toThrow(/prerequisite/);
+    expect(progressionEntitlements(progression).abilities).not.toContain("spell-reflection");
+    expect(pendingProgressionChoices(progression).map((choice) => choice.id)).toContain("necromancy-discipline");
+    expect(pendingProgressionChoices(progression).map((choice) => choice.id)).not.toContain("warder-mastery");
   });
 
   it("resolves branch-granted bounded spell choices under grant-specific keys", () => {

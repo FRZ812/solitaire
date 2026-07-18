@@ -35,9 +35,34 @@ describe("ProfessionGlossary", () => {
     expect(html).toContain("Learn the distance at which the held weapon can strike cleanly");
     expect(html).toContain("Warrior Specialization");
     expect(html).toContain("Iron Vanguard");
-    expect(html).toContain("Path choices");
-    expect(html).toContain("Specializations");
+    expect(html).toContain("Specialization tree");
+    expect(html).toContain("Sellsword Method");
+    expect(html).toContain("Requires Sellsword");
+    expect(html).toContain("Known archetypes");
     expect(html).not.toContain(">Fighter</h4>");
+  });
+
+  it("shows one exclusive Wizard school subtree with its prerequisite flow", () => {
+    const html = renderToStaticMarkup(
+      <ProfessionGlossary
+        initialProfessionId="wizard"
+        initialOpenChoices
+        initialBranchOptionId="necromancy"
+      />,
+    );
+
+    expect(html).toContain('data-branch-choice-id="wizard-school"');
+    expect(html).toContain('data-branch-option-id="necromancy"');
+    expect(html).toContain("Necromantic Discipline");
+    expect(html).toContain("Requires Necromancy");
+    expect(html).toContain("Undead Lord Mastery");
+    expect(html).toContain("Requires Undead Lord");
+    expect(html).toContain("Death Magic Mastery");
+    expect(html).toContain("Requires Death Magic");
+    expect(html).toContain("Choose 1");
+    expect(html).not.toContain("Warder Mastery");
+    expect(html).not.toContain("Nullifier Mastery");
+    expect(html).not.toContain("Elementalist Mastery");
   });
 
   it("defers level and branch rows until their disclosures are opened", () => {
@@ -45,7 +70,7 @@ describe("ProfessionGlossary", () => {
 
     expect(html.match(/profession-glossary__disclosure profession-glossary__stage/g)).toHaveLength(7);
     expect(html).not.toContain("profession-glossary__level");
-    expect(html).not.toContain("profession-glossary__choice-groups");
+    expect(html).not.toContain("profession-glossary__branch-map");
     expect(html).not.toContain("profession-glossary__specializations\"><div>");
   });
 
@@ -55,6 +80,7 @@ describe("ProfessionGlossary", () => {
         initialProfessionId="artisan"
         initialOpenStageId="artisan-foundation"
         initialOpenChoices
+        initialBranchOptionId="smith"
       />,
     );
 
@@ -63,6 +89,8 @@ describe("ProfessionGlossary", () => {
     expect(html).toContain(">Craft</strong>");
     expect(html).toContain("Craft Discipline");
     expect(html).toContain("Fine Crafter");
+    expect(html).toContain("Requires Smith");
+    expect(html).toContain("Masterwork Tradition");
     expect(html).not.toContain("content-incomplete");
   });
 });

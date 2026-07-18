@@ -667,14 +667,44 @@ function applyRowAttributes(character, row, totalLevel) {
   }
 }
 
+function professionBranchChoiceContext(professionId, choice, selections) {
+  const definitions = professionBranchChoices(professionId);
+  const byId = new Map(definitions.map((definition) => [definition.id, definition]));
+  const breadcrumbs = [];
+  let current = choice;
+  const seen = new Set();
+  while (current?.parentChoiceId && !seen.has(current.id)) {
+    seen.add(current.id);
+    const parent = byId.get(current.parentChoiceId);
+    if (!parent) break;
+    const optionId = selections[parent.id] || current.parentOptionId;
+    const option = parent.options.find((entry) => entry.id === optionId);
+    if (!option) break;
+    breadcrumbs.unshift(Object.freeze({ id: option.id, name: option.name }));
+    current = parent;
+  }
+  const options = choice.options.map((option) => Object.freeze({
+    ...option,
+    nextChoices: Object.freeze(definitions
+      .filter((definition) => definition.parentChoiceId === choice.id && definition.parentOptionId === option.id)
+      .map((definition) => Object.freeze({ id: definition.id, name: definition.name, threshold: definition.threshold }))),
+  }));
+  return { ...choice, breadcrumbs: Object.freeze(breadcrumbs), options: Object.freeze(options), exclusive: true };
+}
+
 function pendingBranchesForProgression(progression) {
-  const professionChoices = progression.professions.flatMap((track) => (
-    pendingTrackChoices({
+  const professionChoices = progression.professions.flatMap((track) => {
+    const branchChoices = normalizeBranchChoices(track.professionId, track.branchChoices);
+    return pendingTrackChoices({
       professionId: track.professionId,
       levels: persistedProfessionTrackLevel(progression, track),
-      branchChoices: track.branchChoices,
-    }).map((choice) => ({ ...choice, kind: "branch", professionId: track.professionId }))
-  ));
+      branchChoices,
+    }).map((choice) => ({
+      ...professionBranchChoiceContext(track.professionId, choice, branchChoices),
+      kind: "branch",
+      professionId: track.professionId,
+    }));
+  });
   const racialChoices = pendingRacialBranchChoices(
     progression.racial.raceId,
     racialProgressionLevel(progression),
@@ -777,11 +807,14 @@ export function resolveProfessionChoice(value, { professionId, choiceId, optionI
   const canonical = canonicalProfessionId(professionId || progression.activeProfessionId);
   const track = progression.professions.find((entry) => entry.professionId === canonical);
   if (!track) throw new Error(`Character has no ${canonical} profession track`);
+  track.branchChoices = { ...normalizeBranchChoices(canonical, track.branchChoices) };
   const definition = professionBranchChoices(canonical).find((entry) => entry.id === choiceId);
   const branchReached = definition && persistedProfessionTrackLevel(progression, track) >= definition.threshold;
   if (!branchReached) throw new Error(`Branch choice ${choiceId} is not available`);
   if (definition.parentChoiceId && track.branchChoices[definition.parentChoiceId] !== definition.parentOptionId) throw new Error(`Branch choice ${choiceId} prerequisite is not met`);
   if (!definition.options.some((entry) => entry.id === optionId)) throw new Error(`Invalid option ${optionId} for ${choiceId}`);
+  const lockedOptionId = track.branchChoices[choiceId];
+  if (lockedOptionId && lockedOptionId !== optionId) throw new Error(`Branch choice ${choiceId} is already locked to ${lockedOptionId}`);
   track.branchChoices[choiceId] = optionId;
   syncCompatibility(progression);
   if (character) character.progression = progression;

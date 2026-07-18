@@ -48,6 +48,27 @@ describe("ProgressionChoiceModal", () => {
     expect(renderToStaticMarkup(<ProgressionChoiceModal choice={null} onChoose={() => {}} />)).toBe("");
   });
 
+  it("states that authored profession branches are exclusive", () => {
+    const html = renderToStaticMarkup(
+      <ProgressionChoiceModal
+        choice={{
+          id: "death-magic-mastery",
+          kind: "branch",
+          exclusive: true,
+          professionId: "wizard",
+          threshold: 50,
+          name: "Death Magic Mastery",
+          breadcrumbs: [{ id: "necromancy", name: "Necromancy" }, { id: "death-magic", name: "Death Magic" }],
+          options: [{ id: "ruin", name: "Ruin" }, { id: "drain", name: "Drain" }],
+        }}
+        onChoose={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Necromancy</li><li>Death Magic");
+    expect(html).toContain("Choose one exclusive path. Every later specialization must follow it.");
+  });
+
   it("renders an earned character level as a race-or-profession allocation", () => {
     const html = renderToStaticMarkup(
       <ProgressionChoiceModal

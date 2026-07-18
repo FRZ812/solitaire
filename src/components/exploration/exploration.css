@@ -877,8 +877,8 @@
 }
 .world-atlas__stage:focus-visible { outline: 2px solid #fff3c6; outline-offset: -2px; }
 
-/* One flat scene keeps the procedural terrain and its interactive overlays in
-   exact visual alignment across mouse, touch, and keyboard camera movement. */
+/* A persistent WebGL scene owns terrain depth and world-space routes. The old
+   chart stays underneath only as an automatic compatibility fallback. */
 .world-atlas__scene {
   position: absolute;
   inset: 0;
@@ -889,8 +889,12 @@
 }
 .world-atlas__scene:active { cursor: grabbing; }
 .world-atlas__plane { position: absolute; }
-.world-atlas__canvas { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; }
-.world-atlas__vector { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.world-atlas__canvas { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; transition: opacity 180ms ease-out; }
+.world-atlas__webgl { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; pointer-events: none; transition: opacity 220ms ease-out; }
+.world-atlas__vector { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; pointer-events: none; transition: opacity 180ms ease-out; }
+.world-atlas__plane.is-3d .world-atlas__webgl { opacity: 1; }
+.world-atlas__plane.is-3d .world-atlas__canvas,
+.world-atlas__plane.is-3d .world-atlas__vector { visibility: hidden; opacity: 0; }
 
 .world-atlas__coastline { fill: none; stroke: rgba(226,217,187,.42); stroke-width: 1.1; stroke-linejoin: round; filter: drop-shadow(0 1px rgba(18,31,35,.7)); }
 .world-atlas__river { fill: none; stroke: rgba(98,177,194,.72); stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px rgba(12,34,43,.75)); }
@@ -910,6 +914,22 @@
 .world-atlas__leg-stop ellipse { fill: rgba(8,12,15,.55); }
 .world-atlas__leg-stop circle { fill: #b98c49; stroke: #ffe7a0; stroke-width: 1.1; filter: drop-shadow(0 2px 1px rgba(5,7,8,.7)); }
 .world-atlas__leg-stop text { fill: #241a11; font: 900 6px/1 system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; }
+.world-atlas__leg-stop-label {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border: 1px solid #ffe7a0;
+  border-radius: 50%;
+  color: #241a11;
+  background: #c99a50;
+  box-shadow: 0 2px 3px rgba(5,7,8,.68);
+  font: 900 8px/1 system-ui, sans-serif;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
 
 /* Names stay painted flat on the parchment while markers stand up. */
 .world-atlas__realm-labels,
@@ -927,6 +947,8 @@
 }
 .world-atlas__realm-labels b { font: 700 12px/1 Georgia, serif; letter-spacing: .12em; text-transform: uppercase; }
 .world-atlas__realm-labels small { margin-top: 3px; color: rgba(244,232,195,.5); font-size: 7px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.world-atlas__plane.is-3d .world-atlas__realm-labels small { display: none; }
+.world-atlas__plane.is-3d .world-atlas__realm-labels b { color: rgba(255,248,229,.68); font-size: 10px; }
 .world-atlas__water-labels span {
   position: absolute;
   color: rgba(191,224,228,.6);
@@ -1060,17 +1082,26 @@
 .world-atlas__party {
   position: absolute;
   z-index: 7;
-  pointer-events: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
   display: grid;
   place-items: center;
-  transform: translate(-50%, -9px) translateY(-100%);
+  transform: translate(-50%, -9px) translateY(-50%);
   transform-origin: 50% 100%;
 }
-.world-atlas__party::before { content: ""; position: absolute; top: 21px; width: 23px; height: 7px; border-radius: 50%; background: rgba(4,7,8,.7); filter: blur(1.2px); transform: skewX(-20deg); }
-.world-atlas__party i { position: relative; z-index: 1; width: 13px; height: 13px; display: block; border: 1.5px solid #fff0c2; border-radius: 50%; background: radial-gradient(circle at 34% 28%, #f6bb83, #b74e3d 58%, #63291f); box-shadow: 0 2px 0 #4e211a, inset 0 1px rgba(255,255,255,.4), 0 0 10px rgba(209,92,72,.62); }
+.world-atlas__party:focus-visible { outline: 2px solid #f2cb77; outline-offset: 2px; border-radius: 50%; }
+.world-atlas__party::before { content: ""; position: absolute; top: 30px; width: 23px; height: 7px; border-radius: 50%; background: rgba(4,7,8,.7); filter: blur(1.2px); transform: skewX(-20deg); }
+.world-atlas__party i { position: absolute; top: 9px; z-index: 1; width: 13px; height: 13px; display: block; border: 1.5px solid #fff0c2; border-radius: 50%; background: radial-gradient(circle at 34% 28%, #f6bb83, #b74e3d 58%, #63291f); box-shadow: 0 2px 0 #4e211a, inset 0 1px rgba(255,255,255,.4), 0 0 10px rgba(209,92,72,.62); }
 .world-atlas__party i::before { content: ""; position: absolute; z-index: -1; top: 8px; left: -4px; width: 18px; height: 15px; clip-path: polygon(35% 0, 65% 0, 83% 63%, 100% 82%, 90% 100%, 10% 100%, 0 82%, 17% 63%); border-radius: 2px; background: linear-gradient(90deg, #6b2b23, #c65f48 46%, #7c3026); box-shadow: inset 0 -3px rgba(55,20,16,.28); }
 .world-atlas__party i::after { content: ""; position: absolute; z-index: -2; top: 16px; left: -9px; width: 28px; height: 12px; border: 1px solid rgba(255,239,181,.65); border-radius: 50%; animation: world-atlas-position-pulse 2.1s ease-out infinite; }
-.world-atlas__party span { position: absolute; top: 28px; padding: 2px 5px; color: #fff8e5; border: 1px solid rgba(255,233,158,.28); border-radius: 4px; background: rgba(3,10,18,.84); font-size: 5.5px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; text-shadow: 0 1px 2px #02070d; }
+.world-atlas__party span { position: absolute; top: 35px; padding: 2px 5px; color: #fff8e5; border: 1px solid rgba(255,233,158,.28); border-radius: 4px; background: rgba(3,10,18,.84); font-size: 5.5px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; text-shadow: 0 1px 2px #02070d; }
 
 /* ---- Floating chrome: search, chips, rail, foot, place card ---- */
 
