@@ -376,7 +376,7 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
         </div>
         {(identityRecord.bond || character.bond) && <p>{identityRecord.bond || character.bond}</p>}
       </div>
-      <div className="dossier-hero__tabs" role="tablist" aria-label="Dossier sections">
+      <div className="dossier-hero__tabs" data-tab-count={PAGES.length} role="tablist" aria-label="Dossier sections">
         {PAGES.map((key, index) => (
           <button
             key={key}

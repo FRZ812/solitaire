@@ -24,7 +24,12 @@ import { resolveCharacterPortrait } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
 import { characterArchetype } from "../data/character-archetypes.js";
 import * as progressionEngine from "../engine/progression.js";
-import { canonicalProfessionId } from "../data/progression-paths.js";
+import {
+  PROFESSION_LEVEL_CAP,
+  canonicalProfessionId,
+  compileProfessionTrack,
+  professionBranchChoices,
+} from "../data/progression-paths.js";
 import codexCategoryAtlas from "../assets/generated/icon-atlases/codex-categories-atlas-v1.png";
 import { CODEX_PORTRAIT_IDS, resolveCodexPortrait } from "./codex-portrait-assets.js";
 import { normalizePortraitFile, PORTRAIT_ACCEPT } from "../engine/portrait.js";
@@ -59,6 +64,7 @@ function agingModeLabel(mode, ch) {
 const CODEX_TABS = [
   { key: "characters",  label: "Characters",  group: "lore",       column: 0, row: 0 },
   { key: "races",       label: "Races",       group: "lore",       column: 1, row: 0 },
+  { key: "professions", label: "Professions", group: "compendium", column: 2, row: 0 },
   { key: "items",       label: "Items",       group: "compendium", column: 0, row: 1 },
   { key: "abilities",   label: "Abilities",   group: "compendium", column: 1, row: 1 },
   { key: "passives",    label: "Passives",    group: "compendium", column: 2, row: 1 },
@@ -849,6 +855,283 @@ function GlossaryView() {
   );
 }
 
+const PROFESSION_GLOSSARY_ENTRIES = Object.freeze(
+  Object.values(PROFESSIONS).sort((a, b) => a.name.localeCompare(b.name)),
+);
+
+function progressionLabel(value) {
+  const raw = String(value || "");
+  if (/\s/.test(raw)) return raw.charAt(0).toUpperCase() + raw.slice(1);
+  return raw
+    .replace(/^[^:]+:/, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function professionGrantLabel(grant) {
+  if (!grant) return null;
+  if (grant.name || grant.label) return grant.name || grant.label;
+  if (grant.type === "ability") return getAbilityDef(grant.id)?.name || progressionLabel(grant.id);
+  return progressionLabel(grant.id || grant.type);
+}
+
+function ProfessionStage({ segment, levels, initiallyOpen = false }) {
+  const [open, setOpen] = useState(initiallyOpen);
+  const stageLevels = levels.slice(segment.start - 1, segment.end);
+  return (
+    <details
+      className="profession-glossary__disclosure profession-glossary__stage"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <span>
+          <small>Levels {segment.start}–{segment.end}</small>
+          <strong>{segment.pathName}</strong>
+        </span>
+        <b>{stageLevels.length}</b>
+      </summary>
+      {open && <div className="profession-glossary__levels">
+        {stageLevels.map((row) => {
+          const grants = [...new Set((row.grants || []).map(professionGrantLabel).filter(Boolean))].slice(0, 4);
+          return (
+            <article key={row.trackLevel} className="profession-glossary__level">
+              <em>{row.trackLevel}</em>
+              <div>
+                <strong>{progressionLabel(row.feature) || segment.pathName}</strong>
+                {row.featureDescription && <p>{row.featureDescription}</p>}
+                {grants.length > 0 && (
+                  <span>{grants.join(" · ")}</span>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>}
+    </details>
+  );
+}
+
+function ProfessionPathChoices({ professionId, initiallyOpen = false }) {
+  const [open, setOpen] = useState(initiallyOpen);
+  const choices = professionBranchChoices(professionId);
+  if (choices.length === 0) return null;
+  const thresholds = [...new Set(choices.map((choice) => choice.threshold))].sort((a, b) => a - b);
+  return (
+    <details
+      className="profession-glossary__disclosure profession-glossary__choice-book"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <span>
+          <small>Player decisions</small>
+          <strong>Path choices</strong>
+        </span>
+        <b>{choices.length}</b>
+      </summary>
+      {open && <div className="profession-glossary__choice-groups">
+        {thresholds.map((threshold) => (
+          <section key={threshold}>
+            <h5>Level {threshold}</h5>
+            {choices.filter((choice) => choice.threshold === threshold).map((choice) => (
+              <details key={choice.id} className="profession-glossary__choice">
+                <summary>
+                  <span>{choice.name}</span>
+                  <b>{choice.options.length}</b>
+                </summary>
+                <p>{choice.description}</p>
+                <div>
+                  {choice.options.map((option) => (
+                    <article key={option.id}>
+                      <strong>{option.name}</strong>
+                      <span>{option.description}</span>
+                    </article>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </section>
+        ))}
+      </div>}
+    </details>
+  );
+}
+
+function ProfessionSpecializations({ specializations }) {
+  const [open, setOpen] = useState(false);
+  if (specializations.length === 0) return null;
+  return (
+    <details
+      className="profession-glossary__disclosure profession-glossary__specializations"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        <span>
+          <small>Recognized identities</small>
+          <strong>Specializations</strong>
+        </span>
+        <b>{specializations.length}</b>
+      </summary>
+      {open && <div>
+        {specializations.map((specialization) => (
+          <article key={specialization.id}>
+            <strong>{specialization.name}</strong>
+            <span>{specialization.description}</span>
+          </article>
+        ))}
+      </div>}
+    </details>
+  );
+}
+
+export function ProfessionGlossary({ initialProfessionId = null, initialOpenStageId = null, initialOpenChoices = false }) {
+  const [query, setQuery] = useState("");
+  const [selectedProfessionId, setSelectedProfessionId] = useState(() => (
+    initialProfessionId && PROFESSIONS[initialProfessionId] ? initialProfessionId : null
+  ));
+  const detailRef = useRef(null);
+  const detailTitleRef = useRef(null);
+  const returnFocusIdRef = useRef(null);
+  const selectedProfession = selectedProfessionId ? PROFESSIONS[selectedProfessionId] : null;
+  const track = useMemo(
+    () => (selectedProfession ? compileProfessionTrack(selectedProfession.id) : null),
+    [selectedProfession],
+  );
+  const visibleProfessions = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return PROFESSION_GLOSSARY_ENTRIES;
+    return PROFESSION_GLOSSARY_ENTRIES.filter((profession) => [
+      profession.name,
+      profession.role,
+      profession.domain,
+      profession.description,
+      ...(profession.specializations || []).flatMap((entry) => [entry.name, entry.description]),
+    ].filter(Boolean).join(" ").toLowerCase().includes(needle));
+  }, [query]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.requestAnimationFrame) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      if (selectedProfession) {
+        detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        detailTitleRef.current?.focus({ preventScroll: true });
+        return;
+      }
+      const returnId = returnFocusIdRef.current;
+      if (!returnId) return;
+      const card = document.getElementById(`profession-card-${returnId}`);
+      card?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      card?.focus({ preventScroll: true });
+      returnFocusIdRef.current = null;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedProfession]);
+
+  if (selectedProfession && track) {
+    const specializations = selectedProfession.specializations || [];
+    return (
+      <div ref={detailRef} className="profession-glossary profession-glossary--detail fade-in">
+        <button
+          type="button"
+          className="profession-glossary__back"
+          onClick={() => {
+            returnFocusIdRef.current = selectedProfession.id;
+            setSelectedProfessionId(null);
+          }}
+        >
+          <Icon name="arrowLeft" size={14} />
+          All professions
+        </button>
+
+        <header className="profession-glossary__hero">
+          <ProfessionIcon profession={selectedProfession.id} size="hero" decorative />
+          <div>
+            <small>{selectedProfession.role}</small>
+            <h4 ref={detailTitleRef} tabIndex={-1}>{selectedProfession.name}</h4>
+            <p>{selectedProfession.description}</p>
+          </div>
+        </header>
+
+        <div className="profession-glossary__stats" aria-label={`${selectedProfession.name} progression summary`}>
+          <span><strong>{PROFESSION_LEVEL_CAP}</strong> levels</span>
+          <span><strong>{track.segments.length}</strong> stages</span>
+          <span><strong>{professionBranchChoices(selectedProfession.id).length}</strong> choices</span>
+        </div>
+
+        <section className="profession-glossary__section" aria-labelledby={`profession-${selectedProfession.id}-progression`}>
+          <div className="profession-glossary__section-title">
+            <small>Progression at a glance</small>
+            <h4 id={`profession-${selectedProfession.id}-progression`}>Open a stage to inspect its levels</h4>
+          </div>
+          <div className="profession-glossary__stages">
+            {track.segments.map((segment) => (
+              <ProfessionStage
+                key={segment.pathId}
+                segment={segment}
+                levels={track.levels}
+                initiallyOpen={segment.pathId === initialOpenStageId}
+              />
+            ))}
+          </div>
+        </section>
+
+        <ProfessionPathChoices professionId={selectedProfession.id} initiallyOpen={initialOpenChoices} />
+
+        <ProfessionSpecializations specializations={specializations} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="profession-glossary fade-in">
+      <header className="profession-glossary__intro">
+        <div>
+          <small>Profession glossary</small>
+          <h4>Every calling, one compact index</h4>
+        </div>
+        <p>Choose a profession to see its stages, level rewards, and branching decisions.</p>
+      </header>
+      <label className="profession-glossary__search">
+        <span>Find</span>
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search profession or role"
+          aria-label="Search professions"
+        />
+        <b aria-live="polite">{visibleProfessions.length}</b>
+      </label>
+      {visibleProfessions.length > 0 ? (
+        <div className="profession-glossary__grid">
+          {visibleProfessions.map((profession) => (
+            <button
+              key={profession.id}
+              id={`profession-card-${profession.id}`}
+              type="button"
+              className="profession-glossary__card"
+              onClick={() => setSelectedProfessionId(profession.id)}
+              aria-label={`View ${profession.name} progression`}
+            >
+              <ProfessionIcon profession={profession.id} size="small" decorative />
+              <span>
+                <strong>{profession.name}</strong>
+                <small>{profession.role}</small>
+                <em>{profession.description}</em>
+              </span>
+              <b aria-hidden="true">›</b>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="profession-glossary__empty">No professions match that search.</div>
+      )}
+    </div>
+  );
+}
+
 export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = false, onRename, portraitOverride, onPortraitChange, detailMode = false, onOpen, onBack }) {
   const [expanded, setExpanded] = useState(false);
   const open = detailMode || expanded;
@@ -1190,7 +1473,7 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
 
       <div className="codex-view__tabs" role="tablist" aria-label="Codex sections">
         {CODEX_TABS.map((tab, tabIndex) => {
-          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : Object.keys(codex[tab.key] || {}).length;
+          const count = tab.key === "professions" ? PROFESSION_GLOSSARY_ENTRIES.length : tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
           return (
             <button
@@ -1268,6 +1551,8 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
           </div>
         ) : activeTab === "items" ? (
           <ItemCatalog codex={codex} />
+        ) : activeTab === "professions" ? (
+          <ProfessionGlossary />
         ) : activeTab === "abilities" ? (
           <AbilityCatalog codex={codex} character={state.character} />
         ) : activeTab === "passives" ? (

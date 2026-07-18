@@ -6,9 +6,10 @@ import { PanelDeck, shouldDismissPanel } from "./PanelDeck.jsx";
 import { CodexEntry } from "./CodexView.jsx";
 import { createProgression } from "../engine/progression.js";
 import { progressionXpForLevel } from "../data/progression-paths.js";
+import { PROFESSIONS } from "../data/professions.js";
 
 describe("PanelDeck", () => {
-  it("renders Progression, Skills, and Codex as peer deck pages with handle-only sheet chrome", () => {
+  it("renders peer deck pages in a balanced seven-tab layout with handle-only sheet chrome", () => {
     const html = renderToStaticMarkup(
       <PanelDeck
         state={makeInitialState()}
@@ -22,6 +23,7 @@ describe("PanelDeck", () => {
     expect(html).toContain("<h3>Skills</h3>");
     expect(html).toContain("Drag down or tap to close menu");
     expect(html.match(/role="tab"/g)).toHaveLength(7);
+    expect(html).toContain('data-tab-count="7"');
     expect(html).toContain("Progression");
     expect(html).toContain("Codex");
     expect(html).toContain("Settings");
@@ -101,6 +103,10 @@ describe("PanelDeck", () => {
     expect(codexHtml).toContain("portrait placeholder");
     expect(codexHtml).toContain('data-portrait-atlas="important"');
     expect(codexHtml).toContain('data-icon-key="codex:characters"');
+    expect(codexHtml).toContain('data-icon-key="codex:professions"');
+    expect(codexHtml.match(/id="codex-tab-/g)).toHaveLength(8);
+    expect(codexHtml).toContain(">Professions</span>");
+    expect(codexHtml).toContain(`<strong>${Object.keys(PROFESSIONS).length}</strong>`);
     expect(codexHtml).toContain("codex-tab-icon-slot");
     expect(codexHtml).toContain('aria-label="Search Codex characters"');
     expect(codexHtml).toContain(">Playable<");
