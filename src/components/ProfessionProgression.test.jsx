@@ -9,9 +9,9 @@ import {
   RACIAL_PROFILES,
   racialBranchChoices,
 } from "../data/progression-paths.js";
-import { ProfessionCatalog, ProfessionProgression, RacialProgression } from "./ProfessionProgression.jsx";
+import { ProfessionCatalog, ProfessionProgression, RacialProgression, RaceTreePage } from "./ProfessionProgression.jsx";
 
-describe("layered Profession Codex", () => {
+describe("profession and race node trees", () => {
   it("lists broad combat and noncombat professions against the shared 70-level budget", () => {
     const html = renderToStaticMarkup(<ProfessionCatalog character={null} />);
 
@@ -23,7 +23,8 @@ describe("layered Profession Codex", () => {
     expect(html).toContain("Artisan");
     expect(html).toContain("Healer");
     expect(html).toContain("Scholar");
-    expect(html).toContain("Professions &amp; specializations");
+    expect(html).toContain("Choose a profession tree");
+    expect(html).toContain("Profession constellation");
     expect(html).not.toContain("100 levels");
     expect(html).not.toContain("Racial or utility branch");
   });
@@ -33,11 +34,12 @@ describe("layered Profession Codex", () => {
       <ProfessionProgression profession={PROFESSIONS.wizard} currentLevel={0} onBack={() => {}} />,
     );
 
-    expect(html).toContain("Broad profession · 0–70");
-    expect(html).toContain("General rewards");
-    expect(html).toContain("Specialization overlays");
-    expect(html).toContain("Branch thresholds");
-    expect(html).toContain("Never chosen automatically");
+    expect(html).toContain("Profession tree · 0–70");
+    expect(html).toContain("General core");
+    expect(html).toContain("Specialization branches");
+    expect(html).toContain("Specialized paths");
+    expect(html).toContain("Explicit node choices");
+    expect(html).toContain("Center-out node tree");
     expect(html).toContain("Abjuration");
     expect(html).toContain("Necromancy");
     expect(html).toContain("Undead Lord");
@@ -66,14 +68,7 @@ describe("layered Profession Codex", () => {
     expect(html).toContain("War-Priest");
     expect(PROFESSIONS.cleric.specializations.map((entry) => entry.name)).toEqual(["Devout", "War-Priest"]);
     expect(html).toContain("Levels 1–70");
-    expect(html).toContain("Levels 1–10");
-    expect(html).toContain("Levels 11–20");
-    expect(html).toContain("Levels 21–30");
-    expect(html).toContain("Levels 31–40");
-    expect(html).toContain("Levels 41–50");
-    expect(html).toContain("Levels 51–60");
-    expect(html).toContain("Levels 61–70");
-    expect(html.match(/<section class="profession-progress__band/g)).toHaveLength(7);
+    expect(html.match(/class="progression-tree__node/g)).toHaveLength(70);
 
     const root = definitions.find((definition) => !definition.parentChoiceId);
     expect(root).toMatchObject({ id: "sacred-domain", threshold: 10 });
@@ -118,7 +113,7 @@ describe("layered Profession Codex", () => {
     expect(html).toContain("Sellsword Method");
     expect(html).toContain("Counterfencer");
     expect(html).toContain("Deathless Victor");
-    expect(html.match(/<section class="profession-progress__band/g)).toHaveLength(7);
+    expect(html.match(/class="progression-tree__node/g)).toHaveLength(70);
 
     const root = definitions.find((definition) => !definition.parentChoiceId);
     expect(root).toMatchObject({ id: "warrior-specialization", threshold: 10 });
@@ -203,7 +198,284 @@ describe("layered Profession Codex", () => {
     expect(html).not.toMatch(/Arcane School|Sacred Domain|Pact Source|Primal Circle|Warrior Tempo|Posture Strain/);
   });
 
-  it("surfaces a character's racial evolution as a separate 30-level track", () => {
+  it("renders Bard as a complete non-spell Cadence profession with four native performance paths", () => {
+    const compiled = compileProfessionTrack("bard");
+    const definitions = professionBranchChoices("bard");
+    const html = renderToStaticMarkup(
+      <ProfessionProgression profession={PROFESSIONS.bard} currentLevel={0} onBack={() => {}} />,
+    );
+
+    expect(compiled.levels).toHaveLength(70);
+    expect(new Set(compiled.levels.map((row) => row.feature)).size).toBe(70);
+    expect(compiled.levels[0].feature).toBe("Clarion Note");
+    expect(compiled.levels[69].feature).toBe("Grand Finale");
+    expect(PROFESSIONS.bard.specializations.map((entry) => entry.name)).toEqual([
+      "War Singer", "Satirist", "Resonant Virtuoso", "Lorekeeper",
+    ]);
+    expect(html).toContain(">Bard</h2>");
+    expect(html).toContain("Cadence");
+    expect(html).toContain("Clarion Note");
+    expect(html).toContain("War Singer Method");
+    expect(html).toContain("Drumline");
+    expect(html).toContain("Chorus of Scorn");
+    expect(html).toContain("Harmonic Weaver");
+    expect(html).toContain("Battle Chronicler");
+    expect(html).not.toContain("Bardic College");
+    expect(html).not.toContain("College of Lore");
+    expect(html).not.toContain("College of Valour");
+    expect(html).not.toContain("Spell Virtuoso");
+    expect(html).not.toContain("Battle Hymn");
+    expect(html).not.toContain("Charm");
+
+    const root = definitions.find((definition) => !definition.parentChoiceId);
+    expect(root).toMatchObject({ id: "bard-performance-path", threshold: 10 });
+    expect(root.options.map((option) => option.id)).toEqual([
+      "war-singer", "satirist", "resonant-virtuoso", "lorekeeper",
+    ]);
+    expect(definitions.filter((definition) => definition.threshold === 30)).toHaveLength(4);
+    expect(definitions.filter((definition) => definition.threshold === 50)).toHaveLength(8);
+    expect(html).not.toMatch(/Arcane School|Sacred Domain|Pact Source|Primal Circle|magical damage|true damage/);
+  });
+
+  it("renders Ranger as a complete non-spell Quarry profession with fieldcraft utility on all 70 levels", () => {
+    const compiled = compileProfessionTrack("ranger");
+    const definitions = professionBranchChoices("ranger");
+    const html = renderToStaticMarkup(
+      <ProfessionProgression profession={PROFESSIONS.ranger} currentLevel={0} onBack={() => {}} />,
+    );
+
+    expect(compiled.levels).toHaveLength(70);
+    expect(new Set(compiled.levels.map((row) => row.feature)).size).toBe(70);
+    expect(compiled.levels.every((row) => row.generalGrants.some((grant) => grant.noncombatBenefit === true))).toBe(true);
+    expect(compiled.levels[0].feature).toBe("Quarry Sign");
+    expect(compiled.levels[69].feature).toBe("Perfect Hunt");
+    expect(PROFESSIONS.ranger.specializations.map((entry) => entry.name)).toEqual([
+      "Hunter", "Trailblazer", "Beast Warden", "Trapper",
+    ]);
+    expect(html).toContain(">Ranger</h2>");
+    expect(html).toContain("Quarry Insight");
+    expect(html).toContain("Quarry Sign");
+    expect(html).toContain("Ranger Field Practice");
+    expect(html).toContain("Monster Stalker");
+    expect(html).toContain("Deadeye");
+    expect(html).toContain("Pathfinder");
+    expect(html).toContain("Skirmisher");
+    expect(html).toContain("Packmaster");
+    expect(html).toContain("Falconer");
+    expect(html).toContain("Snarewright");
+    expect(html).toContain("Ambusher");
+    expect(html).toContain("High-Circle Spotter");
+    expect(html).toContain("Humane Captor");
+    expect(html).toContain("already-present trained mundane animal");
+    expect(html).toContain("never summons");
+    expect(html).not.toContain("Ranger Conclave");
+    expect(html).not.toContain("Horizon Walker");
+    expect(html).not.toContain("Gloom Stalker");
+    expect(html).not.toContain("Primal Companion");
+
+    const root = definitions.find((definition) => !definition.parentChoiceId);
+    expect(root).toMatchObject({ id: "ranger-field-practice", threshold: 10 });
+    expect(root.options.map((option) => option.id)).toEqual([
+      "hunter", "trailblazer", "beast-warden", "trapper",
+    ]);
+    expect(definitions.filter((definition) => definition.threshold === 30)).toHaveLength(4);
+    expect(definitions.filter((definition) => definition.threshold === 50)).toHaveLength(8);
+    expect(html.match(/class="progression-tree__node/g)).toHaveLength(70);
+    expect(html).not.toMatch(/Arcane School|Sacred Domain|Pact Source|Primal Circle|Warrior Tempo|Posture Strain|Barbarian Fury/);
+  });
+
+  it("renders Rogue as a complete mundane Opportunity Window profession with noncombat utility on all 70 levels", () => {
+    const compiled = compileProfessionTrack("rogue");
+    const definitions = professionBranchChoices("rogue");
+    const html = renderToStaticMarkup(
+      <ProfessionProgression profession={PROFESSIONS.rogue} currentLevel={0} onBack={() => {}} />,
+    );
+
+    expect(compiled.levels).toHaveLength(70);
+    expect(new Set(compiled.levels.map((row) => row.feature)).size).toBe(70);
+    expect(compiled.levels.every((row) => row.generalGrants.some((grant) => grant.noncombatBenefit === true))).toBe(true);
+    expect(compiled.levels[0].feature).toBe("Assess Mark");
+    expect(compiled.levels[69].feature).toBe("Perfect Opportunity");
+    expect(PROFESSIONS.rogue.specializations.map((entry) => entry.name)).toEqual([
+      "Infiltrator", "Scoundrel", "Assassin", "Saboteur",
+    ]);
+    expect(html).toContain(">Rogue</h2>");
+    expect(html).toContain("Opportunity Window");
+    expect(html).toContain("Assess Mark");
+    expect(html).toContain("Rogue Practice");
+    expect(html).toContain("Cat Burglar");
+    expect(html).toContain("Crowd Ghost");
+    expect(html).toContain("Confidence Artist");
+    expect(html).toContain("Dirty Fighter");
+    expect(html).toContain("Ambusher");
+    expect(html).toContain("Poisoner");
+    expect(html).toContain("Locksmith");
+    expect(html).toContain("Wrecker");
+    expect(html).toContain("Roofline Surveyor");
+    expect(html).toContain("Antidote Keeper");
+    expect(html).toContain("Selective Collapse");
+    expect(html).not.toContain("Roguish Practice");
+    expect(html).not.toContain("Underworld Mastery");
+    expect(html).not.toMatch(/Shadowblade|Arcane Trickster|Soulknife|Phantom/);
+
+    const root = definitions.find((definition) => !definition.parentChoiceId);
+    expect(root).toMatchObject({ id: "rogue-practice", threshold: 10 });
+    expect(root.options.map((option) => option.id)).toEqual([
+      "infiltrator", "scoundrel", "assassin", "saboteur",
+    ]);
+    expect(definitions.filter((definition) => definition.threshold === 30)).toHaveLength(4);
+    expect(definitions.filter((definition) => definition.threshold === 50)).toHaveLength(8);
+    expect(html.match(/class="progression-tree__node/g)).toHaveLength(70);
+    expect(html).not.toMatch(/Arcane School|Sacred Domain|Pact Source|Primal Circle|Warrior Tempo|Posture Strain|Barbarian Fury|Quarry Insight/);
+  });
+
+  it("renders Paladin as a complete non-spell Conviction protector with oathbound utility on all 70 levels", () => {
+    const compiled = compileProfessionTrack("paladin");
+    const definitions = professionBranchChoices("paladin");
+    const html = renderToStaticMarkup(
+      <ProfessionProgression profession={PROFESSIONS.paladin} currentLevel={0} onBack={() => {}} />,
+    );
+
+    expect(compiled.levels).toHaveLength(70);
+    expect(new Set(compiled.levels.map((row) => row.feature)).size).toBe(70);
+    expect(compiled.levels.every((row) => row.generalGrants.some((grant) => grant.noncombatBenefit === true))).toBe(true);
+    expect(compiled.levels[0].feature).toBe("Oathguard");
+    expect(compiled.levels[69].feature).toBe("Oath Incarnate");
+    expect(PROFESSIONS.paladin.specializations.map((entry) => entry.name)).toEqual([
+      "Shield Oath", "Truth Oath", "Mercy Oath", "Beacon Oath",
+    ]);
+    expect(html).toContain(">Paladin</h2>");
+    expect(html).toContain("Conviction");
+    expect(html).toContain("Oathguard");
+    expect(html).toContain("Paladin Oath");
+    expect(html).toContain("Shieldbearer");
+    expect(html).toContain("Gatekeeper");
+    expect(html).toContain("Inquisitor");
+    expect(html).toContain("Magistrate");
+    expect(html).toContain("Redeemer");
+    expect(html).toContain("Martyr");
+    expect(html).toContain("Dawnblade");
+    expect(html).toContain("Roadwarden");
+    expect(html).toContain("Living Rampart");
+    expect(html).toContain("Falsehood Scourge");
+    expect(html).toContain("Chainbreaker");
+    expect(html).toContain("Horizon Guardian");
+    expect(html).not.toMatch(/Sacred Oath|Devotion|Vengeance|Consecrated Office|Holy Shield|Divine Avenger/);
+
+    const root = definitions.find((definition) => !definition.parentChoiceId);
+    expect(root).toMatchObject({ id: "paladin-oath", threshold: 10 });
+    expect(root.options.map((option) => option.id)).toEqual([
+      "shield-oath", "truth-oath", "mercy-oath", "beacon-oath",
+    ]);
+    expect(definitions.filter((definition) => definition.threshold === 30)).toHaveLength(4);
+    expect(definitions.filter((definition) => definition.threshold === 50)).toHaveLength(8);
+    expect(html.match(/class="progression-tree__node/g)).toHaveLength(70);
+    expect(html).not.toMatch(/Arcane School|Sacred Domain|Pact Source|Primal Circle|Warrior Tempo|Posture Strain|Barbarian Fury|Cadence|Quarry Insight|Opportunity Window/);
+  });
+
+  it("renders Innkeeper as a complete non-combat hospitality profession with layered house callings", () => {
+    const compiled = compileProfessionTrack("innkeeper");
+    const definitions = professionBranchChoices("innkeeper");
+    const html = renderToStaticMarkup(
+      <ProfessionProgression profession={PROFESSIONS.innkeeper} currentLevel={0} onBack={() => {}} />,
+    );
+
+    expect(compiled.levels).toHaveLength(70);
+    expect(new Set(compiled.levels.map((row) => row.feature)).size).toBe(70);
+    expect(compiled.levels.every((row) => row.generalGrants.some((grant) => grant.noncombatBenefit === true))).toBe(true);
+    expect(compiled.levels.flatMap((row) => row.grants).some((grant) => grant.type === "ability")).toBe(false);
+    expect(PROFESSIONS.innkeeper.specializations.map((entry) => entry.name)).toEqual([
+      "Hearthkeeper", "Publican", "Provisioner", "Wayhouse Broker",
+    ]);
+    expect(html).toContain(">Innkeeper</h2>");
+    expect(html).toContain("Open the House");
+    expect(html).toContain("House Calling");
+    expect(html).toContain("Sanctuary Warden");
+    expect(html).toContain("Taproom Host");
+    expect(html).toContain("Cellar Master");
+    expect(html).toContain("Rumour Broker");
+    expect(html).toContain("Refuge Network Steward");
+    expect(html).toContain("Crowd Steward");
+    expect(html).toContain("Community Kitchen Keeper");
+    expect(html).toContain("Network Innkeeper");
+    expect(html.match(/class="progression-tree__node/g)).toHaveLength(70);
+
+    const root = definitions.find((definition) => !definition.parentChoiceId);
+    expect(root).toMatchObject({ id: "innkeeper-calling", threshold: 10 });
+    expect(definitions.filter((definition) => definition.threshold === 30)).toHaveLength(4);
+    expect(definitions.filter((definition) => definition.threshold === 50)).toHaveLength(8);
+    expect(html).not.toMatch(/Spell|Cadence|Quarry Insight|Opportunity Window|Device Charges|Pact Favor|Conviction/);
+  });
+
+  it("renders Farmer as a complete non-combat husbandry profession with four material practices", () => {
+    const compiled = compileProfessionTrack("farmer");
+    const definitions = professionBranchChoices("farmer");
+    const html = renderToStaticMarkup(
+      <ProfessionProgression profession={PROFESSIONS.farmer} currentLevel={0} onBack={() => {}} />,
+    );
+
+    expect(compiled.levels).toHaveLength(70);
+    expect(new Set(compiled.levels.map((row) => row.feature)).size).toBe(70);
+    expect(compiled.levels.every((row) => row.generalGrants.some((grant) => grant.noncombatBenefit === true))).toBe(true);
+    expect(compiled.levels.flatMap((row) => row.grants).some((grant) => grant.type === "ability")).toBe(false);
+    expect(PROFESSIONS.farmer.specializations.map((entry) => entry.name)).toEqual([
+      "Field Cultivator", "Herd Keeper", "Orchard Keeper", "Land Reclaimer",
+    ]);
+    expect(html).toContain(">Farmer</h2>");
+    expect(html).toContain("Farm Year");
+    expect(html).toContain("Agricultural Practice");
+    expect(html).toContain("Seed Steward");
+    expect(html).toContain("Pasture Warden");
+    expect(html).toContain("Graftmaster");
+    expect(html).toContain("Reclamation Farmer");
+    expect(html).toContain("Landrace Keeper");
+    expect(html).toContain("Welfare Breeder");
+    expect(html).toContain("Orchard Ecologist");
+    expect(html).toContain("Post-Disaster Cultivator");
+    expect(html.match(/class="progression-tree__node/g)).toHaveLength(70);
+
+    const root = definitions.find((definition) => !definition.parentChoiceId);
+    expect(root).toMatchObject({ id: "farmer-practice", threshold: 10 });
+    expect(definitions.filter((definition) => definition.threshold === 30)).toHaveLength(4);
+    expect(definitions.filter((definition) => definition.threshold === 50)).toHaveLength(8);
+    expect(html).not.toMatch(/Arcane School|Cadence|Quarry Insight|Opportunity Window|Device Charges|Pact Favor|Conviction/);
+  });
+
+  it("renders Merchant as a complete non-combat trade profession with four accountable practices", () => {
+    const compiled = compileProfessionTrack("merchant");
+    const definitions = professionBranchChoices("merchant");
+    const html = renderToStaticMarkup(
+      <ProfessionProgression profession={PROFESSIONS.merchant} currentLevel={0} onBack={() => {}} />,
+    );
+
+    expect(compiled.levels).toHaveLength(70);
+    expect(new Set(compiled.levels.map((row) => row.feature)).size).toBe(70);
+    expect(compiled.levels.every((row) => row.generalGrants.some((grant) => grant.noncombatBenefit === true))).toBe(true);
+    expect(compiled.levels.flatMap((row) => row.grants).some((grant) => grant.type === "ability")).toBe(false);
+    expect(PROFESSIONS.merchant.specializations.map((entry) => entry.name)).toEqual([
+      "Peddler", "Caravan Factor", "Guild Broker", "Credit Steward",
+    ]);
+    expect(html).toContain(">Merchant</h2>");
+    expect(html).toContain("Honest Trade");
+    expect(html).toContain("Commercial Practice");
+    expect(html).toContain("Stallholder");
+    expect(html).toContain("Cargo Steward");
+    expect(html).toContain("Contract Broker");
+    expect(html).toContain("Risk Underwriter");
+    expect(html).toContain("Market Hall Steward");
+    expect(html).toContain("Provenance Factor");
+    expect(html).toContain("Public Procurement Steward");
+    expect(html).toContain("Catastrophe Underwriter");
+    expect(html.match(/class="progression-tree__node/g)).toHaveLength(70);
+
+    const root = definitions.find((definition) => !definition.parentChoiceId);
+    expect(root).toMatchObject({ id: "merchant-practice", threshold: 10 });
+    expect(definitions.filter((definition) => definition.threshold === 30)).toHaveLength(4);
+    expect(definitions.filter((definition) => definition.threshold === 50)).toHaveLength(8);
+    expect(html).not.toMatch(/Arcane School|Cadence|Quarry Insight|Opportunity Window|Device Charges|Pact Favor|Conviction/);
+  });
+
+  it("surfaces the character's lineage as a dedicated 30-node Race panel", () => {
     const character = {
       race: "vampire",
       progression: {
@@ -212,21 +484,15 @@ describe("layered Profession Codex", () => {
         racial: { raceId: "vampire", evolutionId: "lesser-vampire", paths: { "vampire-awakening": 8 } },
       },
     };
-    const html = renderToStaticMarkup(<ProfessionCatalog character={character} />);
+    const html = renderToStaticMarkup(<RaceTreePage state={{ character }} />);
 
-    expect(html).toContain("Separate racial track");
-    expect(html).toContain("Vampire evolution");
-    expect(html).toContain("8 / 30 levels");
-    expect(html).toContain("Racial evolutions");
-    expect(html).toContain("15 ancestries");
-    expect(html).toContain("Human");
-    expect(html).toContain("Drake-Blooded");
-    expect(html).toContain("30 authored levels");
-
-    for (const profile of Object.values(RACIAL_PROFILES)) {
-      expect(html, `${profile.name} is missing from the racial directory`).toContain(`<strong>${profile.name}</strong>`);
-    }
-    expect(html.match(/<b aria-hidden="true">→<\/b>/g)).toHaveLength(Object.keys(RACIAL_PROFILES).length);
+    expect(html).toContain("<h3>Race</h3>");
+    expect(html).toContain("Race tree · 0–30");
+    expect(html).toContain("<h2>Vampire</h2>");
+    expect(html).toContain("8 allocated · 0 available");
+    expect(html.match(/class="progression-tree__node/g)).toHaveLength(30);
+    expect(html).toContain("Scrollable Vampire lineage tree");
+    expect(html).not.toContain("Choose a profession tree");
   });
 
   it("makes every catalogued ancestry browseable with its complete authored track and nested branches", () => {
@@ -242,10 +508,9 @@ describe("layered Profession Codex", () => {
         Array.from({ length: 30 }, (_, index) => index + 1),
       );
       expect(html, raceId).toContain(`<h2>${profile.name}</h2>`);
-      expect(html, raceId).toContain("Levels 1–10");
-      expect(html, raceId).toContain("Levels 11–20");
-      expect(html, raceId).toContain("Levels 21–30");
-      expect(html.match(/<section class="profession-progress__band/g), raceId).toHaveLength(3);
+      expect(html, raceId).toContain("Levels 1–30");
+      expect(html.match(/class="progression-tree__node/g), raceId).toHaveLength(30);
+      expect(html, raceId).toContain("Center-out node tree");
       expect(html, raceId).toContain("Racial level 10");
       expect(html, raceId).toContain("Racial level 20");
 
@@ -264,14 +529,14 @@ describe("layered Profession Codex", () => {
       expect(html, raceId).toContain("Racial track projection");
       expect(html, raceId).toContain("Level 30 attributes");
       expect(html, raceId).toContain("Before profession levels");
-      expect(html, raceId).toContain("← Progression catalog");
+      expect(html, raceId).toContain("← Race tree");
       expect(html, raceId).not.toContain("← All professions");
       expect(html, raceId).not.toContain("Power tier");
       expect(html, raceId).not.toMatch(/>(?:Epic|Legendary|Mythical|Divine)</);
     }
   });
 
-  it("shows every authored racial level, metamorphosis, and nested racial branch in the Codex detail", () => {
+  it("shows every authored racial level, metamorphosis, and nested branch in the dedicated tree", () => {
     const compiled = compileRacialTrack("vampire");
     const paths = {};
     for (const row of compiled.levels.slice(0, 20)) paths[row.pathId] = row.rank;
@@ -285,11 +550,11 @@ describe("layered Profession Codex", () => {
     };
     const html = renderToStaticMarkup(<RacialProgression character={character} onBack={() => {}} />);
 
-    expect(html).toContain("Racial evolution · 0–30");
+    expect(html).toContain("Race tree · 0–30");
     expect(html).toContain("Levels 1–30");
     expect(html).toContain("Lesser Vampire");
     expect(html).toContain("True Vampire");
-    expect(html).toContain("Evolution overlays");
+    expect(html).toContain("Evolution branches");
     expect(html).toContain("Racial level 10");
     expect(html).toContain("Blood Sovereign");
     expect(html).toContain("Night Stalker");
@@ -298,7 +563,7 @@ describe("layered Profession Codex", () => {
     expect(html).toContain("Choice required");
     expect(html).toContain('aria-label="Racial level 30 attributes"');
     expect(html).toContain("Before profession levels");
-    expect(html).toContain("← Progression catalog");
+    expect(html).toContain("← Race tree");
     expect(html).not.toContain("← All professions");
   });
 });

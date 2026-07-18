@@ -5,9 +5,10 @@ import { makeInitialState } from "../data/initial-state.js";
 import { PanelDeck, shouldDismissPanel } from "./PanelDeck.jsx";
 import { CodexEntry } from "./CodexView.jsx";
 import { createProgression } from "../engine/progression.js";
+import { progressionXpForLevel } from "../data/progression-paths.js";
 
 describe("PanelDeck", () => {
-  it("renders Skills and Codex as peer deck pages with handle-only sheet chrome", () => {
+  it("renders Profession, Race, Skills, and Codex as peer deck pages with handle-only sheet chrome", () => {
     const html = renderToStaticMarkup(
       <PanelDeck
         state={makeInitialState()}
@@ -20,7 +21,9 @@ describe("PanelDeck", () => {
 
     expect(html).toContain("<h3>Skills</h3>");
     expect(html).toContain("Drag down or tap to close menu");
-    expect(html.match(/role="tab"/g)).toHaveLength(6);
+    expect(html.match(/role="tab"/g)).toHaveLength(8);
+    expect(html).toContain("Profession");
+    expect(html).toContain("Race");
     expect(html).toContain("Codex");
     expect(html).toContain("Settings");
     expect(html).not.toContain("Wanderer dossier");
@@ -35,6 +38,8 @@ describe("PanelDeck", () => {
       character: "Character",
       abilities: "Skills",
       inventory: "Inventory",
+      profession: "Profession",
+      race: "Race",
       codex: "Codex",
       settings: "Settings",
     };
@@ -197,6 +202,29 @@ describe("PanelDeck", () => {
     expect(codexHtml).not.toContain("Level 45 / 100");
     expect(codexHtml).not.toContain(">You</span>");
     expect(codexHtml).not.toContain("codex-entry__eyebrow");
+  });
+
+  it("surfaces earned points on both dedicated trees and makes the next connected node spendable", () => {
+    const state = makeInitialState();
+    state.character.profession = "fighter";
+    state.character.progression = createProgression({ professionId: "fighter", raceId: "human", level: 9 });
+    state.character.progression.xp = progressionXpForLevel(10);
+
+    const professionHtml = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="profession" onClose={() => {}} handlers={{ onChooseProgression: () => {} }} />,
+    );
+    const raceHtml = renderToStaticMarkup(
+      <PanelDeck state={state} user={null} initialPage="race" onClose={() => {}} handlers={{ onChooseProgression: () => {} }} />,
+    );
+
+    expect(professionHtml).toContain("1 unspent point · core skills · specializations");
+    expect(professionHtml).toContain('aria-label="Level 10 — Martial Identity — available"');
+    expect(professionHtml).toContain("Invest 1 point in Warrior");
+    expect(professionHtml.match(/class="progression-tree__node/g)).toHaveLength(70);
+    expect(raceHtml).toContain("1 unspent point · lineage · evolution");
+    expect(raceHtml).toContain('aria-label="Level 1 — Mortal Beginning — available"');
+    expect(raceHtml).toContain("Invest 1 point in Human lineage");
+    expect(raceHtml.match(/class="progression-tree__node/g)).toHaveLength(30);
   });
 
   it("resolves a persistent NPC portrait override throughout the Codex", () => {

@@ -24,6 +24,7 @@
 
 import { resolvePoolForMind } from "../engine/attributes.js";
 import { bodyWeightForRace } from "../engine/weight.js";
+import { normalizeCharacterProgression } from "../engine/progression.js";
 
 export const WANTED_POOL = [
   { key: "redhand",   name: "Red-Hand Mott",      gender: "male",   age: 35, agingMode: "mortal", race: "human", profession: "bandit", crime: "highway robbery on the Mire road",        attributes: { body: 4, reflex: 3, vigor: 4, mind: 1, wit: 2, presence: 1 }, appearance: { skin: "weather-burnt tan, freckled at the brow", hair: "red-brown, shoulder-length, unwashed", eyes: "pale blue", build: "heavy through the chest, thick at the wrist", facial_hair: "a short red beard going to grey", marks: "the right hand stained red to the wrist from a fresh kill — the name comes from the habit, not the once" }, base_appearance: "Heavy through the chest. Weather-burnt tan skin freckled at the brow. Unwashed red-brown hair to the shoulder. Pale-blue eyes. A short red beard. The right hand stained red to the wrist — the name comes from the habit, not the once.", worn: ["road-leather-jerkin", "wool-tunic", "patched-trousers", "heavy-boots"], rewardAliveCp: 100, rewardDeadCp: 60,  attractiveness: 4, desc: "Robbed three carters this month. The warden wants him to stand before the baron.", target: { x: -5, y: 0 }, targetName: "the Mire road west" },
@@ -57,7 +58,7 @@ export const GAOL_REFRESH_DAYS = 5;
 export function prisonerCodexEntry(prisoner) {
   const attrs = prisoner.attributes || { body: 2, reflex: 2, vigor: 2, mind: 2, wit: 2, presence: 2 };
   const race = prisoner.race || "human";
-  return {
+  const entry = {
     id: `bonded-${prisoner.key}`, // overwritten by beat.js with the day-stamped id
     kind: "bonded",
     name: prisoner.name,
@@ -87,4 +88,9 @@ export function prisonerCodexEntry(prisoner) {
     relationship: 0,
     memories: [],
   };
+  return normalizeCharacterProgression(entry, {
+    convertLegacyAttributes: true,
+    enforceLevelAttributeScale: true,
+    alignAttributesToProgression: true,
+  });
 }

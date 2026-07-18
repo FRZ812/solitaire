@@ -7,6 +7,7 @@ import { getAbilityDef } from "../data/abilities.js";
 import { METAMAGIC_FEATURES, PROGRESSION_FEATURES } from "../data/progression-features.js";
 import * as progressionEngine from "../engine/progression.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
+import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 
 const PROFESSION_CAP = 70;
 const RACIAL_CAP = 30;
@@ -25,6 +26,8 @@ const professionProgressionLevel = progressionEngine.professionProgressionLevel 
   return progressionEngine.progressionLevel(character);
 });
 const racialProgressionLevel = progressionEngine.racialProgressionLevel || ((character) => Object.values(character?.progression?.racial?.paths || {}).reduce((sum, rank) => sum + (Number(rank) || 0), 0));
+const pendingLevelAllocations = progressionEngine.pendingLevelAllocations || (() => null);
+const pendingProgressionChoices = progressionEngine.pendingProgressionChoices || (() => []);
 
 function titleCase(value) {
   return String(value || "")
@@ -79,56 +82,165 @@ function GrantList({ grants, empty = null, compact = false }) {
   );
 }
 
-function LevelTimeline({ rows, cap, ownedLevel = 0, kind }) {
-  const [openBands, setOpenBands] = useState(() => new Set([0]));
-  const bands = Array.from({ length: Math.ceil(cap / 10) }, (_, index) => rows.slice(index * 10, index * 10 + 10));
-  const allOpen = bands.every((_, index) => openBands.has(index));
-  const toggle = (index) => setOpenBands((current) => {
-    const next = new Set(current);
-    if (next.has(index)) next.delete(index); else next.add(index);
-    return next;
+function treeLayout(rows) {
+  const perRing = 10;
+  const rings = Math.max(1, Math.ceil(rows.length / perRing));
+  const size = rows.length > 30 ? 900 : 540;
+  const center = size / 2;
+  const ringGap = rows.length > 30 ? 53 : 58;
+  const firstRadius = rows.length > 30 ? 68 : 72;
+  const nodes = rows.map((row, index) => {
+    const ring = Math.floor(index / perRing);
+    const ringStart = ring * perRing;
+    const count = Math.min(perRing, rows.length - ringStart);
+    const slot = index - ringStart;
+    const radius = firstRadius + ring * ringGap;
+    const angle = (-Math.PI / 2) + ((slot / count) * Math.PI * 2) + ring * 0.16;
+    return { row, x: center + Math.cos(angle) * radius, y: center + Math.sin(angle) * radius };
   });
+  return { size, center, nodes };
+}
+
+function NodeSkillTree({
+  rows, cap, ownedLevel = 0, kind, trackName, allocationChoice,
+  allocationOptionId, unresolvedChoices = [], onSpendPoint,
+}) {
+  const viewportRef = useRef(null);
+  const [selectedLevel, setSelectedLevel] = useState(() => Math.min(cap, Math.max(1, ownedLevel + 1)));
+  const layout = useMemo(() => treeLayout(rows), [rows]);
+  const selected = rows[Math.max(0, selectedLevel - 1)] || rows[0] || null;
+  const option = allocationChoice?.options?.find((entry) => entry.optionId === allocationOptionId) || null;
+  const blockingChoice = unresolvedChoices.find((choice) => choice.kind !== "level-allocation") || null;
+  const points = allocationChoice?.unspentLevels || 0;
+  const nextLevel = ownedLevel + 1;
+  const canSpend = !!option && points > 0 && !blockingChoice && nextLevel <= cap;
+
+  useEffect(() => {
+    setSelectedLevel(Math.min(cap, Math.max(1, ownedLevel + 1)));
+  }, [cap, ownedLevel, trackName]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    viewport.scrollLeft = Math.max(0, (viewport.scrollWidth - viewport.clientWidth) / 2);
+    viewport.scrollTop = Math.max(0, (viewport.scrollHeight - viewport.clientHeight) / 2);
+  }, [layout.size, trackName]);
+
   return (
-    <section className="profession-progress__timeline" aria-label={`${kind} level progression`}>
-      <div className="profession-progress__section-heading profession-progress__timeline-heading">
-        <div><small>Every level</small><h3>Levels 1–{cap}</h3></div>
-        <button type="button" onClick={() => setOpenBands(allOpen ? new Set() : new Set(bands.map((_, index) => index)))}>
-          {allOpen ? "Collapse all" : "Expand all"}
-        </button>
+    <section className="progression-tree" aria-label={`${kind} node skill tree`}>
+      <div className="profession-progress__section-heading progression-tree__heading">
+        <div><small>Center-out node tree</small><h3>Levels 1–{cap}</h3></div>
+        <span>{ownedLevel} allocated · {points} available</span>
       </div>
-      <div className="profession-progress__bands">
-        {bands.map((band, index) => {
-          const start = index * 10 + 1;
-          const end = Math.min(cap, start + 9);
-          const open = openBands.has(index);
-          const grantCount = band.reduce((sum, row) => sum + (row?.generalGrants || row?.grants || []).length, 0);
-          return (
-            <section key={start} className={`profession-progress__band${open ? " is-open" : ""}`}>
-              <button type="button" className="profession-progress__band-toggle" onClick={() => toggle(index)} aria-expanded={open}>
-                <span><strong>Levels {start}–{end}</strong><small>{grantCount} typed rewards</small></span><b aria-hidden="true">{open ? "−" : "+"}</b>
+      <p className="progression-tree__guide">Begin at the core and move outward. Select any node to inspect it; only the next connected node can consume a point.</p>
+      <div className="progression-tree__viewport" ref={viewportRef} tabIndex={0} aria-label={`Scrollable ${trackName} tree`}>
+        <div className="progression-tree__canvas" style={{ width: layout.size, height: layout.size }}>
+          <svg className="progression-tree__connections" viewBox={`0 0 ${layout.size} ${layout.size}`} aria-hidden="true">
+            {layout.nodes.length > 0 && (
+              <line
+                x1={layout.center} y1={layout.center}
+                x2={layout.nodes[0].x} y2={layout.nodes[0].y}
+                className={ownedLevel >= 1 ? "is-owned" : canSpend ? "is-available" : ""}
+              />
+            )}
+            {layout.nodes.slice(1).map((node, index) => {
+              const previous = layout.nodes[index];
+              const targetLevel = index + 2;
+              return (
+                <line
+                  key={`edge-${targetLevel}`}
+                  x1={previous.x} y1={previous.y} x2={node.x} y2={node.y}
+                  className={targetLevel <= ownedLevel ? "is-owned" : targetLevel === nextLevel && canSpend ? "is-available" : ""}
+                />
+              );
+            })}
+          </svg>
+          <button type="button" className="progression-tree__core" onClick={() => setSelectedLevel(Math.max(1, Math.min(cap, ownedLevel || 1)))}>
+            <strong>CORE</strong><span>{trackName}</span>
+          </button>
+          {layout.nodes.map(({ row, x, y }, index) => {
+            const level = row?.trackLevel || row?.level || index + 1;
+            const owned = level <= ownedLevel;
+            const available = level === nextLevel && canSpend;
+            const milestone = level % 5 === 0 || (row?.grants || row?.generalGrants || []).length > 1;
+            return (
+              <button
+                key={`${row?.pathId || kind}-${level}`}
+                type="button"
+                className={`progression-tree__node${owned ? " is-owned" : available ? " is-available" : " is-locked"}${milestone ? " is-milestone" : ""}${selectedLevel === level ? " is-selected" : ""}`}
+                style={{ left: x, top: y }}
+                aria-label={`Level ${level} — ${row?.feature || `${titleCase(kind)} level ${level}`} — ${owned ? "allocated" : available ? "available" : "locked"}`}
+                aria-pressed={selectedLevel === level}
+                onClick={() => setSelectedLevel(level)}
+              >
+                <span>{level}</span>
+                <i className="sr-only">{row?.feature || `${titleCase(kind)} level ${level}`}</i>
               </button>
-              {open && (
-                <ol start={start} className="profession-progress__level-list">
-                  {band.map((row, offset) => {
-                    const level = row?.trackLevel || row?.level || start + offset;
-                    const general = row?.generalGrants || row?.grants || [];
-                    return (
-                      <li key={level} value={level} className={level <= ownedLevel ? "is-attained" : ""}>
-                        <span className="profession-progress__level-number">{level}</span>
-                        <div>
-                          <span className="profession-progress__level-meta">{row?.pathName || `${titleCase(kind)} training`} · rank {row?.rank || level}</span>
-                          <strong>{row?.feature || `${titleCase(kind)} level ${level}`}</strong>
-                          <GrantList grants={general} compact />
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
-            </section>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
+      {selected && (
+        <article className="progression-tree__inspector" aria-live="polite">
+          <header>
+            <span>Level {selected.trackLevel || selected.level} · {selected.pathName || titleCase(selected.pathId || kind)}</span>
+            <strong>{selected.feature || `${titleCase(kind)} level ${selected.trackLevel || selected.level}`}</strong>
+            {selected.featureDescription && <p>{selected.featureDescription}</p>}
+          </header>
+          <GrantList grants={selected.generalGrants || selected.grants || []} empty={<p className="progression-tree__empty">This node advances the path without a separate grant.</p>} />
+          {(selected.trackLevel || selected.level) === nextLevel && (
+            <div className="progression-tree__investment">
+              {blockingChoice ? (
+                <span>Resolve <strong>{blockingChoice.name || titleCase(blockingChoice.id)}</strong> before moving farther.</span>
+              ) : canSpend ? (
+                <button type="button" onClick={() => onSpendPoint?.(allocationChoice.choiceId, allocationOptionId)}>
+                  Invest 1 point in {trackName}
+                </button>
+              ) : (
+                <span>Earn another character level to unlock this connected node.</span>
+              )}
+            </div>
+          )}
+        </article>
+      )}
+    </section>
+  );
+}
+
+function choiceOptionDetails(choice, option) {
+  const id = typeof option === "string" ? option : (option.id || option.optionId);
+  if (typeof option !== "string") return { id, name: option.name || option.label || titleCase(id), description: option.description || "", grants: option.grants || option.rewards || [] };
+  if (choice.type === "metamagic-choice") {
+    const feature = METAMAGIC_FEATURES[id];
+    return { id, name: feature?.name || titleCase(id), description: feature?.description || "", grants: [] };
+  }
+  const ability = getAbilityDef(id);
+  return { id, name: ability?.name || PROGRESSION_FEATURES[id]?.name || titleCase(id), description: ability?.desc || PROGRESSION_FEATURES[id]?.description || "", grants: [] };
+}
+
+function PendingGrantChoices({ choices, onSelect }) {
+  if (!choices.length) return null;
+  return (
+    <section className="progression-tree__pending" aria-label="Required node choices">
+      <div className="profession-progress__section-heading"><div><small>Node decisions</small><h3>Choose before advancing</h3></div><span>{choices.length} pending</span></div>
+      {choices.map((choice) => {
+        const selected = new Set(choice.selectedOptions || []);
+        return (
+          <article key={choice.id} data-choice-id={choice.id}>
+            <header><small>Level {choice.level}</small><strong>{choice.name || titleCase(choice.id)}</strong>{choice.description && <p>{choice.description}</p>}</header>
+            <div>
+              {(choice.options || []).map((option) => {
+                const details = choiceOptionDetails(choice, option);
+                return (
+                  <button key={details.id} type="button" disabled={selected.has(details.id)} aria-pressed={selected.has(details.id)} onClick={() => onSelect(choice, details.id)}>
+                    <strong>{details.name}</strong>{details.description && <span>{details.description}</span>}<GrantList grants={details.grants} compact />
+                  </button>
+                );
+              })}
+            </div>
+          </article>
+        );
+      })}
     </section>
   );
 }
@@ -146,10 +258,10 @@ function BranchTree({ profession, definitions, choices, pendingIds, onSelect, tr
   return (
     <section className="profession-progress__branches" aria-labelledby={`profession-branches-${profession.id}`}>
       <div className="profession-progress__section-heading">
-        <div><small>{trackKind === "Racial" ? "Evolution overlays" : "Specialization overlays"}</small><h3 id={`profession-branches-${profession.id}`}>Branch thresholds</h3></div>
-        <span>Never chosen automatically</span>
+        <div><small>{trackKind === "Racial" ? "Evolution branches" : "Specialization branches"}</small><h3 id={`profession-branches-${profession.id}`}>Specialized paths</h3></div>
+        <span>Explicit node choices</span>
       </div>
-      <p className="profession-progress__branch-intro">General {trackKind.toLowerCase()} rewards always remain visible. Branch rewards layer onto that shared track only after an explicit choice.</p>
+      <p className="profession-progress__branch-intro">The shared core remains intact while these threshold nodes branch into increasingly specialized paths.</p>
       <ol className="profession-progress__branch-tree">
         {definitions.map((choice) => {
           const selected = choices[choice.id] || null;
@@ -211,7 +323,7 @@ function ProfessionCard({ profession, currentLevel = 0, currentSpecializations =
   );
 }
 
-export function ProfessionProgression({ profession, currentTrack = null, currentLevel = 0, onBack, onChooseProgression }) {
+export function ProfessionProgression({ profession, character = null, currentTrack = null, currentLevel = 0, onBack, onChooseProgression }) {
   const [previewSpecialization, setPreviewSpecialization] = useState(currentTrack?.specializationId || null);
   const [previewChoices, setPreviewChoices] = useState(() => ({ ...(currentTrack?.branchChoices || currentTrack?.choices || {}) }));
   const headingRef = useRef(null);
@@ -232,6 +344,10 @@ export function ProfessionProgression({ profession, currentTrack = null, current
     : [];
   const pendingIds = new Set(pendingChoices.map((choice) => choice.id || choice.choiceId));
   const finalAttributes = compiled?.finalAttributes || {};
+  const allocationChoice = character ? pendingLevelAllocations(character) : null;
+  const unresolvedChoices = character ? pendingProgressionChoices(character).filter((choice) => choice.kind !== "level-allocation") : [];
+  const trackChoices = unresolvedChoices.filter((choice) => choice.professionId === profession.id);
+  const grantChoices = trackChoices.filter((choice) => choice.kind === "grant");
 
   const chooseBranch = (choice, option) => {
     if (!pendingIds.has(choice.id) || !currentTrack) {
@@ -243,11 +359,11 @@ export function ProfessionProgression({ profession, currentTrack = null, current
 
   return (
     <section className="profession-progress" aria-labelledby={`profession-progress-title-${profession.id}`}>
-      <button type="button" className="profession-progress__back" onClick={onBack}>← Progression catalog</button>
+      {onBack && <button type="button" className="profession-progress__back" onClick={onBack}>← All professions</button>}
       <header className="profession-progress__hero">
         <ProfessionIcon profession={profession.id} size="hero" decorative />
         <div className="profession-progress__identity">
-          <small>Broad profession · 0–{PROFESSION_CAP}</small>
+          <small>Profession tree · 0–{PROFESSION_CAP}</small>
           <h2 id={`profession-progress-title-${profession.id}`} ref={headingRef} tabIndex={-1}>{profession.name}</h2>
           <p>{profession.description}</p>
         </div>
@@ -255,10 +371,10 @@ export function ProfessionProgression({ profession, currentTrack = null, current
       </header>
 
       <section className="profession-progress__focus" aria-label="Specialization preview">
-        <div><small>Specialization overlay</small><strong>{previewSpecialization ? (profession.specializations || []).find((entry) => entry.id === previewSpecialization)?.name || titleCase(previewSpecialization) : "General profession"}</strong></div>
-        <p>Specializations add rewards at authored thresholds; they do not replace the shared profession track.</p>
+        <div><small>Branch preview</small><strong>{previewSpecialization ? (profession.specializations || []).find((entry) => entry.id === previewSpecialization)?.name || titleCase(previewSpecialization) : "General core"}</strong></div>
+        <p>Preview a path, then commit to its authored specialization node when its threshold is reached.</p>
         <div className="profession-progress__specialization-options">
-          <button type="button" aria-pressed={!previewSpecialization} onClick={() => setPreviewSpecialization(null)}>General rewards</button>
+          <button type="button" aria-pressed={!previewSpecialization} onClick={() => setPreviewSpecialization(null)}>General core</button>
           {(profession.specializations || []).map((specialization) => (
             <button key={specialization.id} type="button" aria-pressed={previewSpecialization === specialization.id} onClick={() => setPreviewSpecialization(specialization.id)}>
               <strong>{specialization.name}</strong><span>{specialization.description}</span>
@@ -272,8 +388,19 @@ export function ProfessionProgression({ profession, currentTrack = null, current
         <ul>{ATTR_KEYS.map((key) => <li key={key}><span><small>{ATTR_LABELS[key]}</small><strong>{finalAttributes[key] || 0}</strong></span></li>)}</ul>
       </section>
 
+      <NodeSkillTree
+        rows={compiled?.levels || []}
+        cap={PROFESSION_CAP}
+        ownedLevel={currentLevel}
+        kind="profession"
+        trackName={profession.name}
+        allocationChoice={allocationChoice}
+        allocationOptionId={`profession:${profession.id}`}
+        unresolvedChoices={unresolvedChoices}
+        onSpendPoint={(choiceId, optionId) => onChooseProgression?.(profession.id, choiceId, optionId)}
+      />
       <BranchTree profession={profession} definitions={definitions} choices={previewChoices} pendingIds={pendingIds} onSelect={chooseBranch} />
-      <LevelTimeline rows={compiled?.levels || []} cap={PROFESSION_CAP} ownedLevel={currentLevel} kind="profession" />
+      <PendingGrantChoices choices={grantChoices} onSelect={(choice, optionId) => onChooseProgression?.(profession.id, choice.id, optionId)} />
     </section>
   );
 }
@@ -295,6 +422,8 @@ export function RacialProgression({ character, raceId: raceIdOverride = null, on
   const pendingChoices = progressionPaths.pendingRacialBranchChoices?.(raceId, level, racial?.branchChoices || {}) || [];
   const pendingIds = new Set(pendingChoices.map((choice) => choice.id || choice.choiceId));
   const finalAttributes = compiled?.finalAttributes || {};
+  const allocationChoice = character ? pendingLevelAllocations(character) : null;
+  const unresolvedChoices = character ? pendingProgressionChoices(character).filter((choice) => choice.kind !== "level-allocation") : [];
   const chooseBranch = (choice, option) => {
     if (!pendingIds.has(choice.id)) {
       setPreviewChoices((current) => ({ ...current, [choice.id]: option.id }));
@@ -306,28 +435,37 @@ export function RacialProgression({ character, raceId: raceIdOverride = null, on
   const race = RACES[raceId];
   return (
     <section className="profession-progress profession-progress--racial">
-      <button type="button" className="profession-progress__back" onClick={onBack}>← Progression catalog</button>
+      {onBack && <button type="button" className="profession-progress__back" onClick={onBack}>← Race tree</button>}
       <header className="profession-progress__hero">
-        <div className="profession-progress__identity"><small>Racial evolution · 0–{RACIAL_CAP}</small><h2>{race?.name || titleCase(raceId)}</h2><p>Metamorphosis, lineage awakening, and racial powers advance separately from the combined profession budget.</p></div>
+        <div className="profession-progress__identity"><small>Race tree · 0–{RACIAL_CAP}</small><h2>{race?.name || titleCase(raceId)}</h2><p>Lineage awakening and racial powers share the character point bank while advancing on their own dedicated tree.</p></div>
         <div className="profession-progress__total"><strong>{level}</strong><span>Invested / {RACIAL_CAP}</span></div>
       </header>
       <section className="profession-progress__attributes" aria-label="Racial level 30 attributes">
         <div className="profession-progress__section-heading"><div><small>Racial track projection</small><h3>Level 30 attributes</h3></div><span>Before profession levels</span></div>
         <ul>{ATTR_KEYS.map((key) => <li key={key}><span><small>{ATTR_LABELS[key]}</small><strong>{finalAttributes[key] || 0}</strong></span></li>)}</ul>
       </section>
+      <NodeSkillTree
+        rows={compiled?.levels || []}
+        cap={RACIAL_CAP}
+        ownedLevel={level}
+        kind="racial evolution"
+        trackName={`${race?.name || titleCase(raceId)} lineage`}
+        allocationChoice={allocationChoice}
+        allocationOptionId="racial:evolution"
+        unresolvedChoices={unresolvedChoices}
+        onSpendPoint={(choiceId, optionId) => onChooseProgression?.(null, choiceId, optionId)}
+      />
       <BranchTree profession={{ id: raceId }} definitions={definitions} choices={previewChoices} pendingIds={pendingIds} onSelect={chooseBranch} trackKind="Racial" />
-      <LevelTimeline rows={compiled?.levels || []} cap={RACIAL_CAP} ownedLevel={level} kind="racial evolution" />
     </section>
   );
 }
 
-export function ProfessionCatalog({ character, onChooseProgression }) {
+export function ProfessionCatalog({ character, onChooseProgression, initialProfessionId = null }) {
   const [query, setQuery] = useState("");
   const [domain, setDomain] = useState("all");
-  const [selectedId, setSelectedId] = useState(null);
+  const [selectedId, setSelectedId] = useState(initialProfessionId);
   const tracks = Array.isArray(character?.progression?.professions) ? character.progression.professions : [];
   const professionLevel = professionProgressionLevel(character);
-  const racialLevel = racialProgressionLevel(character);
   const professions = useMemo(() => Object.values(PROFESSIONS).sort((a, b) => a.name.localeCompare(b.name)), []);
   const domains = useMemo(() => [...new Set(professions.map((entry) => entry.role || entry.domain || "general"))].sort(), [professions]);
   const visible = professions.filter((profession) => {
@@ -339,43 +477,15 @@ export function ProfessionCatalog({ character, onChooseProgression }) {
       .filter(Boolean).join(" ").toLowerCase().includes(needle);
   });
 
-  if (selectedId?.startsWith("__racial__:")) {
-    return <RacialProgression character={character} raceId={selectedId.slice("__racial__:".length)} onBack={() => setSelectedId(null)} onChooseProgression={onChooseProgression} />;
-  }
   if (selectedId && PROFESSIONS[selectedId]) {
     const track = tracks.find((entry) => entry.professionId === selectedId) || null;
     const currentLevel = track ? Object.values(track.paths || {}).reduce((sum, rank) => sum + (Number(rank) || 0), 0) : 0;
-    return <ProfessionProgression profession={PROFESSIONS[selectedId]} currentTrack={track} currentLevel={currentLevel} onBack={() => setSelectedId(null)} onChooseProgression={onChooseProgression} />;
+    return <ProfessionProgression profession={PROFESSIONS[selectedId]} character={character} currentTrack={track} currentLevel={currentLevel} onBack={() => setSelectedId(null)} onChooseProgression={onChooseProgression} />;
   }
 
   return (
     <section className="profession-catalog fade-in" aria-labelledby="profession-catalog-title">
-      <header className="profession-catalog__intro"><small>Layered progression</small><h2 id="profession-catalog-title">Professions &amp; specializations</h2><p>Up to 70 combined profession levels sit beside a separate 30-level racial evolution track. Multiclass freely; every specialization is an authored branch, never a silent default.</p></header>
-      {character?.race && (
-        <button type="button" className="profession-catalog__racial-card" onClick={() => setSelectedId(`__racial__:${character.progression?.racial?.raceId || character.race}`)}>
-          <span><small>Separate racial track</small><strong>{RACES[character.race]?.name || titleCase(character.race)} evolution</strong><em>{racialLevel} / {RACIAL_CAP} levels</em></span><b>View evolution →</b>
-        </button>
-      )}
-      <section className="profession-catalog__racial-directory" aria-labelledby="racial-evolution-directory-title">
-        <div className="profession-progress__section-heading">
-          <div><small>Separate 30-level tracks</small><h3 id="racial-evolution-directory-title">Racial evolutions</h3></div>
-          <span>{Object.keys(progressionPaths.RACIAL_PROFILES || RACES).length} ancestries</span>
-        </div>
-        <p>Browse every ancestry's racial abilities, metamorphosis milestones, and nested evolution branches independently of profession levels.</p>
-        <ul>
-          {Object.entries(progressionPaths.RACIAL_PROFILES || RACES).sort(([, a], [, b]) => a.name.localeCompare(b.name)).map(([raceId, race]) => {
-            const current = raceId === (character?.progression?.racial?.raceId || character?.race);
-            return (
-              <li key={raceId}>
-                <button type="button" onClick={() => setSelectedId(`__racial__:${raceId}`)}>
-                  <span><strong>{race.name}</strong><small>{current ? `${racialLevel} / ${RACIAL_CAP} invested` : `${RACIAL_CAP} authored levels`}</small></span>
-                  <b aria-hidden="true">→</b>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+      <header className="profession-catalog__intro"><small>Profession constellation</small><h2 id="profession-catalog-title">Choose a profession tree</h2><p>Spend up to 70 profession points across broad callings. Every calling begins at its own core and branches into authored specializations at levels 10, 30, and 50.</p></header>
       <div className="profession-catalog__tools">
         <label className="profession-catalog__search"><span>Search professions</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Profession, specialization, branch, or focus" /></label>
         <label className="profession-catalog__filter"><span>Discipline</span><select value={domain} onChange={(event) => setDomain(event.target.value)}><option value="all">All disciplines</option>{domains.map((entry) => <option key={entry} value={entry}>{titleCase(entry)}</option>)}</select></label>
@@ -390,5 +500,31 @@ export function ProfessionCatalog({ character, onChooseProgression }) {
         })}
       </ul>
     </section>
+  );
+}
+
+export function ProfessionTreePage({ state, onChooseProgression }) {
+  const character = state?.character;
+  const activeProfessionId = progressionPaths.canonicalProfessionId?.(character?.progression?.activeProfessionId || character?.profession)
+    || character?.progression?.activeProfessionId
+    || character?.profession
+    || null;
+  const points = pendingLevelAllocations(character)?.unspentLevels || 0;
+  return (
+    <DeckPage className="progression-tree-page progression-tree-page--profession">
+      <DeckPageHeader icon="progress" title="Profession" subtitle={`${points} unspent ${points === 1 ? "point" : "points"} · core skills · specializations`} />
+      <ProfessionCatalog character={character} onChooseProgression={onChooseProgression} initialProfessionId={activeProfessionId} />
+    </DeckPage>
+  );
+}
+
+export function RaceTreePage({ state, onChooseProgression }) {
+  const character = state?.character;
+  const points = pendingLevelAllocations(character)?.unspentLevels || 0;
+  return (
+    <DeckPage className="progression-tree-page progression-tree-page--race">
+      <DeckPageHeader icon="world" title="Race" subtitle={`${points} unspent ${points === 1 ? "point" : "points"} · lineage · evolution`} />
+      <RacialProgression character={character} onChooseProgression={onChooseProgression} />
+    </DeckPage>
   );
 }

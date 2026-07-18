@@ -23,6 +23,7 @@
 // story-gifted — and granted by the narrator via beat.grant_mount (engine/beat.js).
 
 import { resolvePoolForMind, carryCapacityFor } from "../engine/attributes.js";
+import { normalizeCharacterProgression } from "../engine/progression.js";
 
 const hoof = (min, max, pen = 0) => ({ min, max, type: "physical", pen, category: "hoof", reach: 1, speed: 0, acc: 0 });
 const fang = (min, max, pen = 1) => ({ min, max, type: "physical", pen, category: "fang", reach: 1, speed: 0, acc: 1 });
@@ -347,7 +348,7 @@ export function generateMountName(race) {
 // The full codex-character entry for a mount — same scaffolding as a recruited
 // companion (companionCodexEntry), plus the mount block and riding linkage.
 export function mountCodexEntry(tmpl, name) {
-  return {
+  const entry = {
     id: tmpl.id, kind: "mount",
     name: name || tmpl.name, species: tmpl.name, race: tmpl.race,
     profession: mountProfession(tmpl), archetype: `${tmpl.id}-mount`,
@@ -383,4 +384,9 @@ export function mountCodexEntry(tmpl, name) {
     carryBonus: 0,
     relationship: 0, memories: [],
   };
+  return normalizeCharacterProgression(entry, {
+    convertLegacyAttributes: true,
+    enforceLevelAttributeScale: true,
+    alignAttributesToProgression: true,
+  });
 }

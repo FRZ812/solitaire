@@ -34,8 +34,29 @@ export function arsenalAbilityGroups(character, progressionProjection = progress
     spells: abilities.filter((ability) => (
       abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === "magic"
     )),
+    performances: abilities.filter((ability) => (
+      abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === "performance"
+    )),
+    fieldcraft: abilities.filter((ability) => (
+      abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === "fieldcraft"
+    )),
+    subterfuge: abilities.filter((ability) => (
+      abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === "subterfuge"
+    )),
+    oathcraft: abilities.filter((ability) => (
+      abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === "oathcraft"
+    )),
+    primalcraft: abilities.filter((ability) => (
+      abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === "primalcraft"
+    )),
+    pactcraft: abilities.filter((ability) => (
+      abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === "pactcraft"
+    )),
+    devicecraft: abilities.filter((ability) => (
+      abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === "devicecraft"
+    )),
     techniques: abilities.filter((ability) => (
-      abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId !== "magic"
+      !["magic", "performance", "fieldcraft", "subterfuge", "oathcraft", "primalcraft", "pactcraft", "devicecraft"].includes(abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId)
     )),
   };
 }
@@ -115,7 +136,9 @@ export function ArsenalView({ state, onCastBuff }) {
   const [abilityFilter, setAbilityFilter] = useState("all");
   const progressionProjection = progressionNarrativeProjection(character);
   const projectedCharacter = { ...character, abilities: progressionProjection.abilities };
-  const { techniques, spells: combatSpells } = arsenalAbilityGroups(character, progressionProjection);
+  const { techniques, performances, fieldcraft, subterfuge, oathcraft, primalcraft, pactcraft, devicecraft, spells: combatSpells } = arsenalAbilityGroups(character, progressionProjection);
+  const trainedAbilities = [...techniques, ...performances, ...fieldcraft, ...subterfuge, ...oathcraft, ...primalcraft, ...pactcraft, ...devicecraft]
+    .sort((a, b) => tierOrder(b.tier) - tierOrder(a.tier));
 
   const boons = knownBuffSpells(projectedCharacter);
   const travelSpells = knownTravelSpells(projectedCharacter);
@@ -136,23 +159,30 @@ export function ArsenalView({ state, onCastBuff }) {
     ["martial", "Martial"],
     ["survival", "Survival"],
     ["social", "Social"],
+    ["performance", "Performance"],
+    ["fieldcraft", "Fieldcraft"],
+    ["subterfuge", "Subterfuge"],
+    ["oathcraft", "Oathcraft"],
+    ["primalcraft", "Primal Arts"],
+    ["pactcraft", "Pact Arts"],
+    ["devicecraft", "Devices"],
     ["innate", "Innate"],
   ].map(([key, label]) => ({
     key,
     label,
-    count: key === "all" ? techniques.length : techniques.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === key).length,
+    count: key === "all" ? trainedAbilities.length : trainedAbilities.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === key).length,
   })).filter((category) => category.key === "all" || category.count > 0);
   const visibleAbilities = abilityFilter === "all"
-    ? techniques
-    : techniques.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === abilityFilter);
+    ? trainedAbilities
+    : trainedAbilities.filter((ability) => abilityTaxonomy(getAbilityDef(ability.id), ability.tier).categoryId === abilityFilter);
 
   return (
     <DeckPage className="arsenal-view">
-      <DeckPageHeader icon="abilities" title="Skills" subtitle="Techniques · spells · proficiencies" />
+      <DeckPageHeader icon="abilities" title="Skills" subtitle="Techniques · performances · fieldcraft · subterfuge · oathcraft · primal arts · pact arts · devices · spells · proficiencies" />
 
       <section>
-        <SectionHeader>Techniques &amp; core actions · {visibleAbilities.length}</SectionHeader>
-        <div className="arsenal-filters" role="group" aria-label="Technique categories">
+        <SectionHeader>Techniques, performances, fieldcraft, subterfuge, oathcraft, primal arts, pact arts, devices &amp; core actions · {visibleAbilities.length}</SectionHeader>
+        <div className="arsenal-filters" role="group" aria-label="Skill categories">
           {abilityCategories.map((category) => (
             <button type="button" key={category.key} aria-pressed={abilityFilter === category.key} onClick={() => setAbilityFilter(category.key)}>
               <span>{category.label}</span><strong>{category.count}</strong>

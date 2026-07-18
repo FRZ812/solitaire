@@ -114,18 +114,34 @@ export function summarizeAttributes(attrs) {
   return ATTR_KEYS.map(k => `${ATTR_LABELS[k]} ${attrs[k] ?? 0} (${attrDescriptor(k, attrs[k] ?? 0)})`).join(", ");
 }
 
-// What the player can DO in a fight: combat spells (magic — schools arcane/divine,
-// dreaded if cast in public) vs martial techniques. Granted abilities (e.g. from an
-// equipped grimoire) live here too, so the narrator knows the player can cast them.
+// What the player can DO in a fight: combat spells, non-spell Bard performances,
+// Ranger fieldcraft, and other techniques. Distinct groups keep the narrator
+// from quietly recasting trained professions as generic magic or martial cards.
 export function summarizeAbilities(character, progressionProjection = progressionNarrativeProjection(character)) {
-  const spells = [], techniques = [];
+  const spells = [], performances = [], fieldcraft = [], subterfuge = [], oathcraft = [], primalcraft = [], pactcraft = [], devicecraft = [], techniques = [];
   for (const entry of progressionProjection.abilities) {
     const def = getAbilityDef(typeof entry === "string" ? entry : entry?.id);
     if (!def) continue;
-    (def.school === "arcane" || def.school === "divine" ? spells : techniques).push(def.name);
+    const category = abilityCategoryOf(def);
+    (category === "spell" ? spells
+      : category === "performance" ? performances
+        : category === "fieldcraft" ? fieldcraft
+          : category === "subterfuge" ? subterfuge
+            : category === "oathcraft" ? oathcraft
+              : category === "primalcraft" ? primalcraft
+                : category === "pactcraft" ? pactcraft
+                  : category === "devicecraft" ? devicecraft
+                  : techniques).push(def.name);
   }
   const parts = [];
   if (spells.length) parts.push(`Spells (magic): ${spells.join(", ")}`);
+  if (performances.length) parts.push(`Performances (non-spell): ${performances.join(", ")}`);
+  if (fieldcraft.length) parts.push(`Fieldcraft (non-spell): ${fieldcraft.join(", ")}`);
+  if (subterfuge.length) parts.push(`Subterfuge (non-spell): ${subterfuge.join(", ")}`);
+  if (oathcraft.length) parts.push(`Oathcraft (non-spell): ${oathcraft.join(", ")}`);
+  if (primalcraft.length) parts.push(`Primal Arts (primal spellwork): ${primalcraft.join(", ")}`);
+  if (pactcraft.length) parts.push(`Pact Arts (pact spellwork): ${pactcraft.join(", ")}`);
+  if (devicecraft.length) parts.push(`Devices (prepared devicecraft): ${devicecraft.join(", ")}`);
   if (techniques.length) parts.push(`Techniques: ${techniques.join(", ")}`);
   return parts.join("; ") || "none learned";
 }
@@ -157,15 +173,31 @@ export function summarizeProgressionCapabilities(character, progressionProjectio
 // unique drop-only abilities. Surfaced so a starting kit or learned-in-play
 // technique is drawn from real ids, never invented. Built live from the catalog.
 export function summarizeGrantableAbilities() {
-  const techniques = [], spells = [], cataclysmic = [];
+  const techniques = [], performances = [], fieldcraft = [], subterfuge = [], oathcraft = [], primalcraft = [], pactcraft = [], devicecraft = [], spells = [], cataclysmic = [];
   for (const a of ABILITY_CATALOG) {
     if (a.innate || a.unique || a.branchExclusive || a.progressionExclusive) continue; // race/drop/progression-owned — not narrator-grantable
     const label = a.minTier ? `${a.id} (≥${a.minTier})` : a.id; // floored apex powers
-    (abilityCategoryOf(a) === "spell" ? spells : techniques).push(label);
+    const category = abilityCategoryOf(a);
+    (category === "spell" ? spells
+      : category === "performance" ? performances
+        : category === "fieldcraft" ? fieldcraft
+          : category === "subterfuge" ? subterfuge
+            : category === "oathcraft" ? oathcraft
+              : category === "primalcraft" ? primalcraft
+                : category === "pactcraft" ? pactcraft
+                  : category === "devicecraft" ? devicecraft
+                  : techniques).push(label);
     if (a.cataclysm) cataclysmic.push(a.id);
   }
   const parts = [];
   if (techniques.length) parts.push(`Techniques: ${techniques.sort().join(", ")}`);
+  if (performances.length) parts.push(`Performances (non-spell): ${performances.sort().join(", ")}`);
+  if (fieldcraft.length) parts.push(`Fieldcraft (non-spell): ${fieldcraft.sort().join(", ")}`);
+  if (subterfuge.length) parts.push(`Subterfuge (non-spell): ${subterfuge.sort().join(", ")}`);
+  if (oathcraft.length) parts.push(`Oathcraft (non-spell): ${oathcraft.sort().join(", ")}`);
+  if (primalcraft.length) parts.push(`Primal Arts (primal spellwork): ${primalcraft.sort().join(", ")}`);
+  if (pactcraft.length) parts.push(`Pact Arts (pact spellwork): ${pactcraft.sort().join(", ")}`);
+  if (devicecraft.length) parts.push(`Devices (prepared devicecraft): ${devicecraft.sort().join(", ")}`);
   if (spells.length) parts.push(`Spells (magic): ${spells.sort().join(", ")}`);
   if (cataclysmic.length) parts.push(`Cataclysmic (terrain-scale — adjudicate per CATACLYSMIC MAGIC; feasible only with room/sky, hits everyone present, can fail or backfire): ${cataclysmic.sort().join(", ")}`);
   return parts.join(" | ");

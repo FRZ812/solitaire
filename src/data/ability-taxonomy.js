@@ -1,11 +1,22 @@
 import { tier } from "./tiers.js";
 
 // Ability identity has two levels. The broad category answers "what kind of
-// training is this?"; magical abilities then share one of the eight classical
-// schools. The historical `def.school` field (arcane/divine/shadow/etc.) stays
-// intact as a casting tradition so old campaigns and loot filters keep working.
+// training is this?"; performance, fieldcraft, subterfuge, oathcraft, and
+// primalcraft, pactcraft, and devicecraft are
+// deliberately parallel to martial and magic so profession-native practice can
+// never be inferred to be spells or generic martial techniques. Magical abilities then
+// share one of the eight classical schools. The historical
+// `def.school` field (arcane/divine/shadow/etc.) stays intact as a casting
+// tradition so old campaigns and loot filters keep working.
 export const ABILITY_CATEGORIES = Object.freeze({
   martial: { id: "martial", label: "Martial", shortLabel: "Martial", mark: "M" },
+  performance: { id: "performance", label: "Performance", shortLabel: "Performance", mark: "B" },
+  fieldcraft: { id: "fieldcraft", label: "Fieldcraft", shortLabel: "Fieldcraft", mark: "R" },
+  subterfuge: { id: "subterfuge", label: "Subterfuge", shortLabel: "Subterfuge", mark: "G" },
+  oathcraft: { id: "oathcraft", label: "Oathcraft", shortLabel: "Oathcraft", mark: "O" },
+  primalcraft: { id: "primalcraft", label: "Primalcraft", shortLabel: "Primal", mark: "D" },
+  pactcraft: { id: "pactcraft", label: "Pactcraft", shortLabel: "Pact", mark: "W" },
+  devicecraft: { id: "devicecraft", label: "Devicecraft", shortLabel: "Device", mark: "T" },
   survival: { id: "survival", label: "Survival", shortLabel: "Survival", mark: "S" },
   social: { id: "social", label: "Social", shortLabel: "Social", mark: "P" },
   magic: { id: "magic", label: "Magic", shortLabel: "Magic", mark: "A" },
@@ -163,6 +174,13 @@ export function abilityCategoryIdOf(def) {
   if (!def) return "martial";
   if (def.innate) return "innate";
   if (magicSchoolIdOf(def)) return "magic";
+  if (def.school === "performance") return "performance";
+  if (def.school === "fieldcraft") return "fieldcraft";
+  if (def.school === "subterfuge") return "subterfuge";
+  if (def.school === "oathcraft") return "oathcraft";
+  if (def.school === "primalcraft") return "primalcraft";
+  if (def.school === "pactcraft") return "pactcraft";
+  if (def.school === "devicecraft") return "devicecraft";
   if (def.school === "social") return "social";
   if (def.school === "survival") return "survival";
   return "martial";

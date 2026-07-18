@@ -3,6 +3,7 @@ import {
   DEFEND,
   TALK,
   abilityReqLine,
+  abilityScaling,
   abilityStatLine,
   clampAbilityTier,
   getAbilityDef,
@@ -36,7 +37,8 @@ const CARD_BEHAVIOR = Object.freeze({
 });
 
 function cardType(def) {
-  if (def?.dmg || def?.damageType === "weapon") return "attack";
+  if (def?.dmg || def?.damageType === "weapon"
+      || (abilityScaling(def) === "weapon" && ["enemy", "all-enemies"].includes(def?.target))) return "attack";
   if (def?.target === "self" && ["rally", "focus", "unstoppable"].includes(def.effect?.type)) return "power";
   return "skill";
 }

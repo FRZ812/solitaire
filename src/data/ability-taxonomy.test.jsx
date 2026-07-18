@@ -52,6 +52,72 @@ describe("ability taxonomy", () => {
     });
     expect(abilityTaxonomy(getAbilityDef("battle-focus")).category).toBe(ABILITY_CATEGORIES.survival);
     expect(abilityTaxonomy(getAbilityDef("talk")).category).toBe(ABILITY_CATEGORIES.social);
+    expect(abilityTaxonomy(getAbilityDef("bard-clarion-note"))).toMatchObject({
+      category: ABILITY_CATEGORIES.performance,
+      magicSchool: null,
+      iconKey: "category:performance",
+    });
+    expect(abilityTaxonomy(getAbilityDef("ranger-quarry-sign"))).toMatchObject({
+      category: ABILITY_CATEGORIES.fieldcraft,
+      magicSchool: null,
+      iconKey: "category:fieldcraft",
+    });
+    expect(abilityTaxonomy(getAbilityDef("rogue-assess-mark"))).toMatchObject({
+      category: ABILITY_CATEGORIES.subterfuge,
+      magicSchool: null,
+      iconKey: "category:subterfuge",
+    });
+    expect(abilityTaxonomy(getAbilityDef("paladin-oathguard"))).toMatchObject({
+      category: ABILITY_CATEGORIES.oathcraft,
+      magicSchool: null,
+      iconKey: "category:oathcraft",
+    });
+    expect(abilityTaxonomy(getAbilityDef("druid-verdant-spark"))).toMatchObject({
+      category: ABILITY_CATEGORIES.primalcraft,
+      magicSchool: null,
+      iconKey: "category:primalcraft",
+    });
+    expect(abilityCategoryOf(getAbilityDef("druid-verdant-spark"))).toBe("primalcraft");
+    expect(abilityTaxonomy(getAbilityDef("warlock-tithe-bolt"))).toMatchObject({
+      category: ABILITY_CATEGORIES.pactcraft,
+      magicSchool: null,
+      iconKey: "category:pactcraft",
+    });
+    expect(abilityCategoryOf(getAbilityDef("warlock-tithe-bolt"))).toBe("pactcraft");
+    expect(abilityTaxonomy(getAbilityDef("artificer-snapfire-capsule"))).toMatchObject({
+      category: ABILITY_CATEGORIES.devicecraft,
+      magicSchool: null,
+      iconKey: "category:devicecraft",
+    });
+    expect(abilityCategoryOf(getAbilityDef("artificer-snapfire-capsule"))).toBe("devicecraft");
+  });
+
+  it("keeps pact spells first-class in combat cards while preserving Resolve costs", () => {
+    const card = cardDefinition("warlock-tithe-bolt", "common");
+    expect(card).toMatchObject({
+      abilityId: "warlock-tithe-bolt",
+      category: "pactcraft",
+      categoryLabel: "Pactcraft",
+      magicSchool: null,
+      tradition: "pactcraft",
+      resolveCost: 3,
+      type: "attack",
+      iconKey: "category:pactcraft",
+    });
+  });
+
+  it("keeps prepared devices first-class in combat cards without spell costs", () => {
+    const card = cardDefinition("artificer-snapfire-capsule", "common");
+    expect(card).toMatchObject({
+      abilityId: "artificer-snapfire-capsule",
+      category: "devicecraft",
+      categoryLabel: "Devicecraft",
+      magicSchool: null,
+      tradition: "devicecraft",
+      resolveCost: 0,
+      type: "attack",
+      iconKey: "category:devicecraft",
+    });
   });
 
   it("assigns supernatural grave techniques to necromancy rather than illusion", () => {

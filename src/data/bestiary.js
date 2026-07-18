@@ -12,6 +12,7 @@ import { attributeThresholdMods, mechanicalAttributeValue } from "./attribute-ti
 import { attrFactor } from "./abilities.js";
 import { resolvePoolForMind, maxVitalityFor } from "../engine/attributes.js";
 import { effectiveAttributes } from "./proficiencies.js";
+import { normalizeCharacterProgression } from "../engine/progression.js";
 
 // A natural weapon (fang/claw/horn/…) or an armed humanoid's weapon category.
 const nw = (min, max, category = "natural", pen = 0, type = "physical") => ({ min, max, type, pen, category });
@@ -99,18 +100,71 @@ function titleCase(s) { return s.replace(/-/g, " ").replace(/\b\w/g, (c) => c.to
 function randInt(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
 const scale = (v, m) => Math.round((v || 0) * m);
 
+const GENERATED_LEVEL_BANDS = Object.freeze({
+  common: Object.freeze([2, 10]),
+  uncommon: Object.freeze([11, 19]),
+  rare: Object.freeze([20, 29]),
+  "very-rare": Object.freeze([30, 40]),
+  epic: Object.freeze([41, 50]),
+  legendary: Object.freeze([51, 60]),
+  mythical: Object.freeze([56, 60]),
+  divine: Object.freeze([60, 60]),
+});
+
+function identityHash(value) {
+  let result = 2166136261;
+  for (const character of String(value || "")) result = Math.imul(result ^ character.charCodeAt(0), 16777619);
+  return result >>> 0;
+}
+
+function generatedEnemyProfession(kind, template) {
+  const identity = `${kind} ${template?.name || ""} ${template?.race || ""}`.toLowerCase();
+  if (/(drakeling|sorcer|mage|warlock|witch)/.test(identity)) return "sorcerer";
+  if (/(bandit|brigand|cutthroat|highway|pickpocket|thief|smuggler)/.test(identity)) return "rogue";
+  if (/(orc|ogre|troll|warg)/.test(identity)) return "barbarian";
+  if (template?.worn?.length) return "fighter";
+  return "wanderer";
+}
+
+function generatedEnemyRacialLevels(level, race, professionId) {
+  const natural = professionId === "wanderer";
+  const nonhuman = race && race !== "human";
+  const share = natural ? 0.6 : nonhuman ? 0.3 : 0.12;
+  return Math.min(30, level, Math.max(level >= 8 ? 1 : 0, Math.floor(level * share)));
+}
+
+function generatedEnemyIdentity(kind, template, { tierId, index, total }) {
+  const [minimum, maximum] = GENERATED_LEVEL_BANDS[tierId] || GENERATED_LEVEL_BANDS.common;
+  const level = minimum + (identityHash(`${kind}:${index}:${total}`) % (maximum - minimum + 1));
+  const profession = generatedEnemyProfession(kind, template);
+  const racialLevels = generatedEnemyRacialLevels(level, template?.race, profession);
+  return normalizeCharacterProgression({
+    id: `generated-${kind}-${index}`,
+    kind: "npc",
+    name: template?.name || titleCase(kind),
+    race: template?.race || "human",
+    profession,
+    archetype: kind,
+    level,
+    racialLevels,
+    attributes: { ...(template?.attributes || {}) },
+  });
+}
+
 // Build one enemy combatant instance of `kind` at the given tier — a bestiary mob
 // now derives from its attribute stack through the SAME path as a named NPC.
 export function generateEnemy(kind, { tierId = "common", index = 0, total = 1 } = {}) {
   const tmpl = BESTIARY[kind] || inferTemplate(kind);
   const name = total > 1 ? `${tmpl.name} ${index + 1}` : tmpl.name;
   const demeanor = tmpl.demeanor || defaultDemeanor(kind, tmpl.race);
+  const identity = generatedEnemyIdentity(kind, tmpl, { tierId, index, total });
   const e = combatantFromAttributes({
     attributes: tmpl.attributes, worn: tmpl.worn, tierGear: true,
     naturalWeapon: tmpl.naturalWeapon,
     naturalArmor: tmpl.naturalArmor, naturalWard: tmpl.naturalWard,
     innatePassives: tmpl.innatePassives, abilities: tmpl.abilities, health: tmpl.health,
     demeanor, kind, name, race: tmpl.race || null,
+    profession: identity.profession, archetype: identity.archetype, progression: identity.progression,
   }, null, { tierId });
   e.id = `enemy-${kind}-${index}-${Math.random().toString(36).slice(2, 7)}`;
   e.maxLootTier = tmpl.maxLootTier || "uncommon";
@@ -217,6 +271,11 @@ function combatantFromAttributes(spec, codex, { tierId = "common" } = {}) {
   return {
     id: `enemy-${Math.random().toString(36).slice(2, 7)}`,
     kind: spec.kind || "foe", name: spec.name || "Foe", race: spec.race || null, tier: tierId,
+    profession: spec.profession || null,
+    archetype: spec.archetype || null,
+    progression: spec.progression || null,
+    professionId: spec.progression?.professionId || null,
+    professionIds: (spec.progression?.professions || []).map((track) => track.professionId),
     demeanor, morale, moraleMax: dcfg.morale,
     canTalk: !(demeanor === "mindless" || demeanor === "feral"),
     controlPressure: 0, provoked: false, resolved: null, lastFlavorTurn: 0, noFleeUntil: 0,
@@ -261,13 +320,20 @@ function combatantFromAttributes(spec, codex, { tierId = "common" } = {}) {
 // Turn a known/named codex NPC into a combat enemy using their real attributes
 // + worn gear, so a fight against "the hooded figure" reflects who they are.
 export function enemyFromNPC(npc, codex, { tierId = "common" } = {}) {
+  const identity = npc.progression
+    ? npc
+    : normalizeCharacterProgression({
+        ...npc,
+        attributes: { ...(npc.attributes || {}) },
+      });
   const e = combatantFromAttributes({
-    attributes: effectiveAttributes(npc), worn: npc.worn,
-    naturalWeapon: npc.naturalWeapon, naturalArmor: npc.naturalArmor, naturalWard: npc.naturalWard,
-    innatePassives: npc.innatePassives, abilities: npc.abilities, health: npc.health,
-    actionsPerTurn: npc.actionsPerTurn, combatState: npc.combatState,
-    demeanor: npcDemeanor(npc),
-    kind: npc.profession || npc.race || "foe", name: npc.name || "Foe", race: npc.race || null,
+    attributes: effectiveAttributes(identity), worn: identity.worn,
+    naturalWeapon: identity.naturalWeapon, naturalArmor: identity.naturalArmor, naturalWard: identity.naturalWard,
+    innatePassives: identity.innatePassives, abilities: identity.abilities, health: identity.health,
+    actionsPerTurn: identity.actionsPerTurn, combatState: identity.combatState,
+    demeanor: npcDemeanor(identity),
+    kind: identity.profession || identity.race || "foe", name: identity.name || "Foe", race: identity.race || null,
+    profession: identity.profession, archetype: identity.archetype, progression: identity.progression,
   }, codex, { tierId });
   e.id = `enemy-npc-${npc.id}-${Math.random().toString(36).slice(2, 6)}`;
   e.npcId = npc.id;

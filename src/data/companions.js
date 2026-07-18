@@ -10,6 +10,7 @@
 
 import { resolvePoolForMind, carryCapacityFor } from "../engine/attributes.js";
 import { bodyWeightForRace } from "../engine/weight.js";
+import { normalizeCharacterProgression } from "../engine/progression.js";
 
 export const COMPANIONS = {
   bram: {
@@ -94,7 +95,7 @@ export const COMPANION_LIST = Object.values(COMPANIONS);
 // The full codex-character entry for a recruited companion (drops board-only
 // fields; tags them kind "companion").
 export function companionCodexEntry(tmpl) {
-  return {
+  const entry = {
     id: tmpl.id, kind: "companion",
     name: tmpl.name, race: tmpl.race, gender: tmpl.gender, profession: tmpl.profession, origin: tmpl.origin,
     age: tmpl.age, agingMode: tmpl.agingMode || "mortal", lifespanMultiplier: tmpl.lifespanMultiplier ?? 1.0, attractiveness: tmpl.attractiveness,
@@ -132,4 +133,9 @@ export function companionCodexEntry(tmpl) {
     relationship: 0,
     memories: [],
   };
+  return normalizeCharacterProgression(entry, {
+    convertLegacyAttributes: true,
+    enforceLevelAttributeScale: true,
+    alignAttributesToProgression: true,
+  });
 }

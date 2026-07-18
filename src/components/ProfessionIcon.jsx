@@ -27,11 +27,11 @@ const PROFESSION_FALLBACKS = Object.freeze({
   soldier: "war-captain", hunter: "ranger", attendant: "courtier",
   monarch: "enchanter-tyrant", noble: "courtier", witch: "hedge-mage", speaker: "envoy",
   "chapter-master": "war-captain", "hold-father": "sellsword", matriarch: "courtier",
-  sellsword: "sellsword", reaver: "reaver", ranger: "ranger", assassin: "cutthroat", priest: "devout",
+  sellsword: "sellsword", reaver: "reaver", assassin: "cutthroat", priest: "devout",
   "hedge-mage": "hedge-mage", knight: "knight-errant", "war-priest": "war-priest", duelist: "duelist", warden: "beast-warden",
-  "war-captain": "war-captain", archmage: "battle-archmage", paladin: "champion-paladin", "dragon-hunter": "dragon-hunter",
-  sorcerer: "high-sorcerer", warlord: "warlord", "fae-touched": "fae-touched", champion: "undying-champion",
-  warlock: "demon-warlock", "dragon-ascendant": "dragon-ascendant", "enchanter-tyrant": "enchanter-tyrant",
+  "war-captain": "war-captain", archmage: "battle-archmage", "dragon-hunter": "dragon-hunter",
+  warlord: "warlord", "fae-touched": "fae-touched", champion: "undying-champion",
+  "dragon-ascendant": "dragon-ascendant", "enchanter-tyrant": "enchanter-tyrant",
   envoy: "envoy", courtier: "courtier",
 });
 

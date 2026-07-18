@@ -5,7 +5,7 @@
 //
 // Damage pipeline for one hit:
 //   dodge check → roll base damage → rally/weaken → crit → vulnerable
-//   → mitigate (physical:armor, magical:ward, true:none, minus penetration)
+//   → mitigate (physical:armor, magical:ward, sonic:acoustic guard, true:none)
 // Status effects: bleed/poison (true damage-over-time), stun (skip a turn),
 // weaken (−outgoing), vulnerable (+incoming), guard (+armour), rally
 // (+outgoing), regen (heal-over-time), focus (+crit, consumed on next hit).
@@ -43,23 +43,89 @@ const CONTROL_TYPES = new Set(["stun", "weaken", "vulnerable", "chill", "curse",
 const RESISTABLE_CONTROL = new Set(["stun", "slow"]); // hard controls Unbowed (controlResist) can shrug off
 const MIND_CONTROL = new Set(["charmed", "dominated", "geas"]); // enchantments gated by a WILL save (applyEnemyEffect)
 const FEAR_ABILITY_IDS = new Set(["terrify", "mass-terror", "dread-aura", "phantasmal-killer"]);
+const BARD_PRESSURE_STATUS = new Set([
+  "bardCuttingVerse", "bardDissonance", "bardStingingRefrain", "bardSyncopation",
+  "bardCounterMelody", "bardGrandFinale", "bardPointedSatire", "bardHecklersHook",
+  "bardChorusScorn", "bardSonicFracture", "bardHarmonicWeave",
+]);
+const RANGER_PRESSURE_STATUS = new Set([
+  "rangerTrailCut", "rangerCripplingShot", "rangerPursuitLine", "rangerCoveringShot",
+  "rangerPatientAim", "rangerPathfinderStep", "rangerCompanionSignal", "rangerSetSnare",
+  "rangerReadMonster", "rangerPackCommand", "rangerFalconStoop",
+  "rangerLayeredSnare", "rangerKillZone",
+]);
+const ROGUE_PRESSURE_STATUS = new Set([
+  "rogueAssessMark", "rogueFalseOpening", "rogueExploitGuard", "rogueSapBlow",
+  "rogueConcealedShift", "rogueHamstring", "rogueSwitchbackFeint", "rogueKidneyShot",
+  "rogueFinishingAngle", "rogueSilentEntry", "rogueBrazenFeint", "rogueKillingMeasure",
+  "rogueFaultFinder", "rogueHighWindow", "rogueConfidencePlay", "rogueDirtyTrick",
+  "rogueFirstStrike", "rogueVenomWork", "rogueMasterKey", "roguePlannedCollapse",
+]);
+const PALADIN_PRESSURE_STATUS = new Set([
+  "paladinWitnessChallenge", "paladinJudgmentStroke", "paladinMercifulArrest",
+  "paladinCallToAccount", "paladinOfferQuarter", "paladinThresholdBlow",
+  "paladinVerdictEdge", "paladinPeaceCommand", "paladinSunwardCut",
+]);
+const DRUID_ENEMY_STATUS = new Set([
+  "druidVerdantSpark", "druidLeafrot", "druidSirocco", "druidHarvestTide",
+  "druidFrostroot", "druidHighSummer", "druidReturnToSoil", "druidGreatYear",
+  "druidGroveAwakening", "druidGaleShear", "druidDecayMark", "druidEntanglingThicket",
+  "druidStormbolt", "druidSunwheel", "druidMolderingWave",
+]);
+const DRUID_PRESSURE_STATUS = new Set([
+  "druidVerdantSpark", "druidSirocco", "druidHarvestTide", "druidFrostroot",
+  "druidReturnToSoil", "druidGreatYear", "druidGroveAwakening", "druidGaleShear",
+  "druidDecayMark", "druidEntanglingThicket", "druidStormbolt", "druidSunwheel",
+]);
+const WARLOCK_ENEMY_STATUS = new Set([
+  "warlockDebtMark", "warlockFavorsRebuke", "warlockCovenantLash", "warlockCreditorsGaze",
+  "warlockClaimDue", "warlockRuinousTerms", "warlockPactApotheosis", "warlockHellfireCovenant",
+  "warlockWitchMark", "warlockPactChain", "warlockWhisperedTerms", "warlockInfernalVolley",
+  "warlockDevilsDue", "warlockLayeredHex", "warlockSympatheticToken", "warlockBindingLinks",
+  "warlockSecretLeverage", "warlockOpenBargain",
+]);
+const WARLOCK_PRESSURE_STATUS = new Set([
+  "warlockDebtMark", "warlockFavorsRebuke", "warlockCovenantLash", "warlockCreditorsGaze",
+  "warlockClaimDue", "warlockRuinousTerms", "warlockPactApotheosis", "warlockWitchMark",
+  "warlockPactChain", "warlockWhisperedTerms", "warlockDevilsDue", "warlockLayeredHex",
+  "warlockSympatheticToken", "warlockBindingLinks", "warlockSecretLeverage", "warlockOpenBargain",
+]);
+const WARLOCK_SCORCH_STATUS = new Set(["warlockHellfireCovenant", "warlockInfernalVolley"]);
+const ARTIFICER_ENEMY_STATUS = new Set([
+  "artificerSnapfire", "artificerTangleLine", "artificerArcNode", "artificerCollapseCharge",
+  "artificerGrandInvention", "artificerFlashPhial", "artificerFractureCompound", "artificerShapedDemolition",
+]);
+const ARTIFICER_PRESSURE_STATUS = new Set([
+  "artificerTangleLine", "artificerArcNode", "artificerCollapseCharge", "artificerGrandInvention",
+  "artificerFlashPhial", "artificerFractureCompound", "artificerShapedDemolition",
+]);
 // Debuffs an "unstoppable" combatant (BKB) is flat-out immune to — disables and the
 // anti-heal curse, NOT damage-over-time (a wound still bleeds; you just can't be
 // disabled or cursed). Damage immunity (incl. true) is invuln's job, separately.
-const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence", "polymorph", "levelDrain", "misdirected", "warriorWeaponBound", "warriorAdvanceChecked", "monkActionInterrupted", "monkBalanceChecked", "barbarianActionStaggered", "barbarianGuardDisrupted"]); // NOT mind-control: no flat immunity wards a mind, only the will gap
+const BKB_BLOCKS = new Set(["stun", "weaken", "vulnerable", "chill", "curse", "slow", "silence", "polymorph", "levelDrain", "misdirected", "warriorWeaponBound", "warriorAdvanceChecked", "monkActionInterrupted", "monkBalanceChecked", "barbarianActionStaggered", "barbarianGuardDisrupted", ...BARD_PRESSURE_STATUS, ...RANGER_PRESSURE_STATUS, ...ROGUE_PRESSURE_STATUS, ...PALADIN_PRESSURE_STATUS, ...DRUID_PRESSURE_STATUS, ...WARLOCK_PRESSURE_STATUS, ...ARTIFICER_PRESSURE_STATUS]); // NOT mind-control: no flat immunity wards a mind, only the will gap
 // Control + debuff statuses whose duration scales with the caster's controlDuration
 // (Mind) and the target's ccDurationReduction (Presence). DOTs are excluded.
-const CONTROL_DEBUFF = new Set(["stun", "slow", "weaken", "vulnerable", "chill", "curse", "silence", "charmed", "dominated", "geas", "polymorph", "levelDrain", "misdirected", "warriorWeaponBound", "warriorAdvanceChecked", "monkActionInterrupted", "monkBalanceChecked", "barbarianActionStaggered", "barbarianGuardDisrupted"]);
-const PURIFIABLE_STATUS = new Set(["bleed", "poison", "burn", "chill", "curse", "vulnerable", "weaken", "silence", "slow"]);
+const CONTROL_DEBUFF = new Set(["stun", "slow", "weaken", "vulnerable", "chill", "curse", "silence", "charmed", "dominated", "geas", "polymorph", "levelDrain", "misdirected", "warriorWeaponBound", "warriorAdvanceChecked", "monkActionInterrupted", "monkBalanceChecked", "barbarianActionStaggered", "barbarianGuardDisrupted", ...BARD_PRESSURE_STATUS, ...RANGER_PRESSURE_STATUS, ...ROGUE_PRESSURE_STATUS, ...PALADIN_PRESSURE_STATUS]);
+const PURIFIABLE_STATUS = new Set(["bleed", "poison", "burn", "chill", "curse", "vulnerable", "weaken", "silence", "slow", "rogueVenomWork", "druidLeafrot", "druidHighSummer", "druidMolderingWave", ...WARLOCK_ENEMY_STATUS, ...ARTIFICER_ENEMY_STATUS]);
 const WARRIOR_SHAKE_OFF_STATUS = new Set(["bleed", "weaken", "vulnerable", "slow", "warriorWeaponBound", "warriorAdvanceChecked"]);
 const MONK_POSTURE_IMMUNE_ANATOMY = new Set(["amorphous", "incorporeal", "mist", "ooze", "slime", "swarm"]);
 const MONK_LARGE_SIZES = new Set(["large", "huge", "gargantuan", "colossal"]);
 const MONK_IMMOVABLE_SIZES = new Set(["huge", "gargantuan", "colossal"]);
 const PROFANE_RACES = new Set(["undead", "demon", "fiend", "spirit"]);
+const MUNDANE_TRAINED_BEAST_RACES = new Set([
+  "animal", "beast", "wolf", "warg", "hound", "dog", "horse", "pony", "mule", "camel",
+  "stag", "deer", "ram", "goat", "boar", "cat", "lynx", "rat", "hawk", "falcon", "eagle", "owl",
+]);
+const FLYING_TRAINED_BEAST_RACES = new Set(["hawk", "falcon", "eagle", "owl"]);
 const ALLY_LOSS = { cowardly: 22, wary: 14, fierce: 8, brutish: 10, honorable: 10, feral: 8, fanatic: 0, mindless: 0 };
 
 function sumStatus(c, type) {
   return (c.statuses || []).filter((s) => s.type === type).reduce((s, x) => s + (x.value || 0), 0);
+}
+function sumStatusField(c, types, field) {
+  const wanted = new Set(Array.isArray(types) ? types : [types]);
+  return (c?.statuses || []).filter((status) => wanted.has(status.type))
+    .reduce((total, status) => total + (Number(status[field]) || 0), 0);
 }
 function hasStatus(c, type) { return (c?.statuses || []).some((s) => s.type === type); }
 export function isPlayerControlled(cs) {
@@ -130,11 +196,13 @@ function addStatus(c, effect) {
     dur = Math.max(1, Math.round(dur * (1 - Math.min(0.9, c.ccDurationReduction))));
   }
   c.statuses.push({
+    ...effect,
     type: effect.type,
     value: effect.value || 0,
     duration: dur,
     pctMax: !!effect.pctMax,
     ...(effect.sourceUid ? { sourceUid: effect.sourceUid } : {}),
+    ...(effect.cap != null ? { cap: effect.cap } : {}),
   });
   return true;
 }
@@ -250,6 +318,791 @@ function spendBarbarianFury(cs, actor, def) {
   actor._barbarianFurySpent = cost;
   cs?.log?.push(logEntry(`${actor.name} spends ${cost} Fury (${actor.barbarianFury}/5 remains).`, "status"));
   return cost;
+}
+
+function isNativeBardPerformance(def) {
+  return !!def && def.professionId === "bard" && def.school === "performance" && !def.innate;
+}
+
+function canPerceiveBardPerformance(target, { willing = false } = {}) {
+  if (!target || target.health <= 0 || target._dead || target.resolved) return false;
+  if (target.conscious === false || target.unconscious || hasStatus(target, "unconscious")) return false;
+  if (target.canHear === false || target.hearing === false || target.deaf || hasStatus(target, "deaf")) return false;
+  if (target.demeanor === "mindless") return false;
+  if (willing && target.willing === false) return false;
+  return true;
+}
+
+function canUnderstandBardPerformance(target) {
+  return canPerceiveBardPerformance(target)
+    && target.canUnderstand !== false
+    && target.understandsSpeech !== false
+    && target.languageUnderstanding !== false
+    && target.canTalk !== false;
+}
+
+function spendBardCadence(cs, actor, def) {
+  if (!isNativeBardPerformance(def)) return 0;
+  const cost = clamp(Math.floor(def?.bardCadenceCost || 0), 0, 4);
+  if (!cost) return 0;
+  const available = clamp(Math.floor(actor.bardCadence || 0), 0, 4);
+  if (available < cost) return 0;
+  actor.bardCadence = available - cost;
+  cs?.log?.push(logEntry(`${actor.name} spends ${cost} Cadence (${actor.bardCadence}/4 remains).`, "status"));
+  return cost;
+}
+
+function completeBardPerformance(cs, actor, def) {
+  if (!isNativeBardPerformance(def) || !def.bardMotif) return;
+  const previous = actor.bardLastMotif || null;
+  const motif = String(def.bardMotif);
+  actor.bardLastMotif = motif;
+  if (!def.bardCadenceBuild || (def.bardCadenceCost || 0) > 0 || previous === motif) return;
+  const before = clamp(Math.floor(actor.bardCadence || 0), 0, 4);
+  actor.bardCadence = Math.min(4, before + clamp(Math.floor(def.bardCadenceBuild || 1), 1, 1));
+  if (actor.bardCadence > before) {
+    cs?.log?.push(logEntry(`${actor.name} changes to a ${motif} motif and builds Cadence (${actor.bardCadence}/4).`, "status"));
+  }
+}
+
+function isNativeRangerFieldcraft(def) {
+  return !!def && def.professionId === "ranger" && def.school === "fieldcraft" && !def.innate;
+}
+
+function rangerBeastRace(beast) {
+  return String(beast?.race || beast?.species || beast?.kind || "").trim().toLowerCase();
+}
+
+function isEligibleTrainedBeast(beast, { flying = false } = {}) {
+  if (!beast || beast.health <= 0 || beast._dead || beast.resolved) return false;
+  if (beast.conscious === false || beast.unconscious || hasStatus(beast, "unconscious")) return false;
+  if (beast._summoned || beast.summoned === true || beast.magical === true || beast.magicalConstruct
+      || beast.mundane === false || beast.kind === "summon") return false;
+  const race = rangerBeastRace(beast);
+  const trained = beast.trainedBeast === true || beast.animalCompanion === true
+    || beast.trained === true || beast.kind === "mount";
+  const mundane = beast.mundaneAnimal === true || MUNDANE_TRAINED_BEAST_RACES.has(race);
+  if (!trained || !mundane) return false;
+  if (!flying) return true;
+  return beast.canFly === true || beast.flight === true || FLYING_TRAINED_BEAST_RACES.has(race);
+}
+
+function rangerBeastAlly(cs, actor, def) {
+  if (!def?.requiresTrainedBeastAlly && !def?.requiresFlyingBeastAlly) return null;
+  const flying = !!def.requiresFlyingBeastAlly;
+  return sideAllies(cs, actor).find((ally) => {
+    if (ally === actor || !isEligibleTrainedBeast(ally, { flying })) return false;
+    if (def.requiresBeastPerception && (ally.canHear === false || ally.hearing === false || ally.deaf
+        || hasStatus(ally, "deaf"))) return false;
+    return true;
+  }) || null;
+}
+
+function rangerBeastRequirementMet(cs, actor, def) {
+  return (!def?.requiresTrainedBeastAlly && !def?.requiresFlyingBeastAlly)
+    || !!rangerBeastAlly(cs, actor, def);
+}
+
+function rangerQuarryTarget(cs, actor) {
+  const uid = actor?.rangerQuarryUid;
+  if (!uid) return null;
+  const target = byUid(cs, uid);
+  return target && target.side !== actor.side && canAct(target) ? target : null;
+}
+
+function rangerQuarryReady(cs, actor, target, def) {
+  const cost = clamp(Math.floor(def?.rangerQuarryInsightCost || 0), 0, 5);
+  if (!cost && !def?.rangerRequiresCurrentQuarry) return true;
+  const quarry = rangerQuarryTarget(cs, actor);
+  if (!quarry || clamp(Math.floor(actor?.rangerQuarryInsight || 0), 0, 5) < cost) return false;
+  const enemyTargeted = def?.target === "enemy";
+  return !enemyTargeted || !target || combatantActionKey(target) === combatantActionKey(quarry);
+}
+
+function beginRangerAction(actor) {
+  if (!actor) return;
+  actor._rangerQuarryBuiltTargets = [];
+  delete actor._rangerQuarrySpent;
+}
+
+function endRangerAction(actor) {
+  if (!actor) return;
+  delete actor._rangerQuarryBuiltTargets;
+  delete actor._rangerQuarrySpent;
+}
+
+function gainRangerQuarryInsight(cs, actor, target, def) {
+  if (!isNativeRangerFieldcraft(def) || !actor || !target || !canAct(target)) return false;
+  const build = clamp(Math.floor(def.rangerQuarryInsightBuild || 0), 0, 5);
+  if (!build) return false;
+  const key = combatantActionKey(target);
+  actor._rangerQuarryBuiltTargets = actor._rangerQuarryBuiltTargets || [];
+  if (actor._rangerQuarryBuiltTargets.includes(key)) return false;
+  actor._rangerQuarryBuiltTargets.push(key);
+  if (actor.rangerQuarryUid !== key) {
+    actor.rangerQuarryUid = key;
+    actor.rangerQuarryInsight = 0;
+  }
+  const before = clamp(Math.floor(actor.rangerQuarryInsight || 0), 0, 5);
+  actor.rangerQuarryInsight = Math.min(5, before + build);
+  if (actor.rangerQuarryInsight <= before) return false;
+  cs?.log?.push(logEntry(`${actor.name} reads ${target.name} as the current quarry (${actor.rangerQuarryInsight}/5 Insight).`, "status"));
+  return true;
+}
+
+function spendRangerQuarryInsight(cs, actor, target, def) {
+  if (!isNativeRangerFieldcraft(def)) return 0;
+  const cost = clamp(Math.floor(def?.rangerQuarryInsightCost || 0), 0, 5);
+  if (!cost) return 0;
+  if (actor._rangerQuarrySpent != null) return actor._rangerQuarrySpent;
+  if (!rangerQuarryReady(cs, actor, target, def)) {
+    actor._rangerQuarrySpent = 0;
+    return 0;
+  }
+  actor.rangerQuarryInsight = clamp(Math.floor(actor.rangerQuarryInsight || 0), 0, 5) - cost;
+  actor._rangerQuarrySpent = cost;
+  cs?.log?.push(logEntry(`${actor.name} spends ${cost} Quarry Insight (${actor.rangerQuarryInsight}/5 remains).`, "status"));
+  return cost;
+}
+
+function isNativeRogueSubterfuge(def) {
+  return !!def && def.professionId === "rogue" && def.school === "subterfuge" && !def.innate;
+}
+
+function rogueOpeningFor(actor, target) {
+  if (!actor || !target) return null;
+  const sourceUid = combatantActionKey(actor);
+  return (target.statuses || []).find((status) => status.type === "rogueOpening" && status.sourceUid === sourceUid) || null;
+}
+
+function rogueOpeningReady(actor, target, def) {
+  return !def?.rogueRequiresOpening || !!rogueOpeningFor(actor, target);
+}
+
+function rogueHasCover(cs, actor) {
+  return !!(actor?.inCover || actor?.behindCover || actor?.coverAvailable
+    || hasStatus(actor, "cover") || cs?.coverAvailable);
+}
+
+function rogueHasCrowd(cs, actor) {
+  if (actor?.inCrowd || cs?.crowded || cs?.battle?.crowded) return true;
+  const active = allCombatants(cs || {}).filter((combatant) => combatant?.health > 0 && !combatant._dead && !combatant.resolved);
+  return active.length >= 4;
+}
+
+function roguePhysicalRequirementMet(cs, actor, target, def) {
+  if (!isNativeRogueSubterfuge(def)) return true;
+  if (def.requiresLineOfSight && (target?.lineOfSightBlocked || cs?.lineOfSightBlocked)) return false;
+  if (def.requiresAwareness && (!target || target.aware === false || target.conscious === false
+      || target.unconscious || hasStatus(target, "unconscious"))) return false;
+  if (def.requiresCover && !rogueHasCover(cs, actor)) return false;
+  if (def.requiresCrowdOrCover && !rogueHasCover(cs, actor) && !rogueHasCrowd(cs, actor)) return false;
+  if (def.requiresLivingAnatomy) {
+    const race = String(target?.race || target?.kind || "").toLowerCase();
+    const anatomy = String(target?.anatomy || target?.form || "").toLowerCase();
+    if (!target || target.incorporeal || ["construct", "undead"].includes(race)
+        || ["amorphous", "incorporeal", "mist", "ooze", "slime", "swarm"].includes(anatomy)) return false;
+  }
+  if (def.requiresUnactedTarget && target?._actedThisRound === true) return false;
+  if (def.requiresCarriedPhysicalToxin && actor?.carriedPhysicalToxin === false) return false;
+  if (def.requiresAccessibleFault) {
+    const fault = target?.physicalFaultExposed || target?.accessiblePhysicalFault
+      || target?.structureAssessed || target?.footingAssessed
+      || cs?.structureAssessed || cs?.footingAssessed;
+    if (!fault) return false;
+  }
+  if (def.requiresAccessibleEquipment) {
+    const equipment = target?.equipmentAccessible === true
+      || (target?.equipmentAccessible !== false && !!(target?.weapon || target?.armor || target?.armorClass));
+    if (!equipment) return false;
+  }
+  if (def.requiresAssessedTerrain || def.requiresAssessedStructure || def.effect?.type === "roguePlannedCollapse") {
+    const assessed = target?.structureAssessed || target?.footingAssessed
+      || cs?.terrainAssessed || cs?.structureAssessed || cs?.footingAssessed;
+    if (!assessed) return false;
+  }
+  return true;
+}
+
+function canReceiveRogueSpeech(target) {
+  return !!target && target.health > 0 && !target._dead && !target.resolved
+    && target.conscious !== false && !target.unconscious && !hasStatus(target, "unconscious")
+    && target.aware !== false && target.canHear !== false && target.hearing !== false
+    && !target.deaf && !hasStatus(target, "deaf") && target.demeanor !== "mindless"
+    && target.canUnderstand !== false && target.understandsSpeech !== false
+    && target.languageUnderstanding !== false;
+}
+
+function rogueTargetEligible(cs, actor, target, def) {
+  if (!isNativeRogueSubterfuge(def) || def.target !== "enemy") return true;
+  if (!canAct(target) || !roguePhysicalRequirementMet(cs, actor, target, def)) return false;
+  if ((def.rogueRequiresUnderstanding || def.audible) && !canReceiveRogueSpeech(target)) return false;
+  return rogueOpeningReady(actor, target, def);
+}
+
+function beginRogueAction(actor) {
+  if (!actor) return;
+  actor._rogueOpeningBuiltTargets = [];
+  delete actor._rogueOpeningSpent;
+}
+
+function endRogueAction(actor) {
+  if (!actor) return;
+  delete actor._rogueOpeningBuiltTargets;
+  delete actor._rogueOpeningSpent;
+}
+
+function gainRogueOpening(cs, actor, target, def) {
+  if (!isNativeRogueSubterfuge(def) || !def.rogueOpeningBuild || !actor || !target || !canAct(target)) return false;
+  const targetUid = combatantActionKey(target);
+  actor._rogueOpeningBuiltTargets = actor._rogueOpeningBuiltTargets || [];
+  if (actor._rogueOpeningBuiltTargets.includes(targetUid)) return false;
+  actor._rogueOpeningBuiltTargets.push(targetUid);
+  const sourceUid = combatantActionKey(actor);
+  target.statuses = (target.statuses || []).filter((status) => !(
+    status.type === "rogueOpening" && status.sourceUid === sourceUid
+  ));
+  addStatus(target, {
+    type: "rogueOpening",
+    value: 1,
+    duration: clamp(def.rogueOpeningDuration || 2, 1, 2),
+    sourceUid,
+  });
+  cs?.log?.push(logEntry(`${actor.name} creates a brief Opportunity Window against ${target.name}.`, "status"));
+  return true;
+}
+
+function consumeRogueOpening(cs, actor, target, def) {
+  if (!isNativeRogueSubterfuge(def) || !def.rogueOpeningExploit) return true;
+  if (actor._rogueOpeningSpent) {
+    return actor._rogueOpeningSpent.targetUid === combatantActionKey(target);
+  }
+  const opening = rogueOpeningFor(actor, target);
+  if (!opening) return false;
+  target.statuses = (target.statuses || []).filter((status) => status !== opening);
+  actor._rogueOpeningSpent = { targetUid: combatantActionKey(target), opening };
+  cs?.log?.push(logEntry(`${actor.name} commits ${def.name} through the Opportunity Window on ${target.name}.`, "status"));
+  return true;
+}
+
+function rogueExploitCommitted(actor, target, def) {
+  return !!(isNativeRogueSubterfuge(def) && def.rogueOpeningExploit
+    && actor?._rogueOpeningSpent?.targetUid === combatantActionKey(target));
+}
+
+function isNativePaladinOathcraft(def) {
+  return !!def && def.professionId === "paladin" && def.school === "oathcraft" && !def.innate;
+}
+
+function isPaladinCombatant(actor) {
+  if (!actor) return false;
+  if (actor.professionId === "paladin" || actor.professionIds?.includes?.("paladin")) return true;
+  if (actor.uid === "p" && Array.isArray(actor.progressionAbilityIds)) {
+    return actor.progressionAbilityIds.some((id) => isNativePaladinOathcraft(getAbilityDef(id)));
+  }
+  const ids = [
+    ...(actor.progressionAbilityIds || []),
+    ...(actor.abilities || []).map((entry) => typeof entry === "string" ? entry : entry?.id).filter(Boolean),
+  ];
+  return ids.some((id) => isNativePaladinOathcraft(getAbilityDef(id)));
+}
+
+function beginPaladinAction(actor) {
+  if (!actor) return;
+  actor._paladinConvictionBuiltSources = [];
+  delete actor._paladinConvictionSpent;
+}
+
+function endPaladinAction(actor) {
+  if (!actor) return;
+  delete actor._paladinConvictionBuiltSources;
+  delete actor._paladinConvictionSpent;
+}
+
+const DRUID_SEASONS = Object.freeze(["spring", "summer", "autumn", "winter"]);
+const DRUID_SURGE_EFFECT_EXCLUSIONS = Object.freeze(new Set([
+  "duration", "cap", "healthCap", "resolveCap", "bossScale", "threshold", "target",
+]));
+
+function isNativeDruidPrimalcraft(def) {
+  return !!def && def.professionId === "druid" && def.school === "primalcraft" && !def.innate;
+}
+
+function isDruidCombatant(actor) {
+  if (!actor) return false;
+  if (actor.professionId === "druid" || actor.professionIds?.includes?.("druid")) return true;
+  return [...(actor.progressionAbilityIds || []), ...(actor.abilities || []).map((entry) =>
+    typeof entry === "string" ? entry : entry?.id).filter(Boolean)]
+    .some((id) => isNativeDruidPrimalcraft(getAbilityDef(id)));
+}
+
+function normalizedDruidSeason(actor) {
+  const season = String(actor?.druidSeason || "spring").toLowerCase();
+  return DRUID_SEASONS.includes(season) ? season : "spring";
+}
+
+function beginDruidAction(actor) {
+  if (actor) delete actor._druidSeasonAction;
+}
+
+function commitDruidAction(cs, actor, def) {
+  if (!actor || !isNativeDruidPrimalcraft(def)) return false;
+  const currentSeason = normalizedDruidSeason(actor);
+  const authoredSeason = String(def.druidSeason || "").toLowerCase();
+  const authoredSurge = def.druidSeasonSurge || {};
+  const bonus = clamp(Number(authoredSurge.bonus || 0), 0, 0.25);
+  const cap = clamp(Number(authoredSurge.cap ?? 0.25), 0, 0.25);
+  const multiplier = 1 + Math.min(bonus, cap);
+  const surged = DRUID_SEASONS.includes(authoredSeason) && authoredSeason === currentSeason && multiplier > 1;
+  actor._druidSeasonAction = {
+    defId: def.id,
+    startSeason: currentSeason,
+    authoredSeason,
+    surged,
+    multiplier,
+    appliesTo: authoredSurge.appliesTo || "",
+    effectRefs: [def.effect, def.selfEffect].filter(Boolean),
+  };
+  if (surged) {
+    cs?.log?.push(logEntry(`${actor.name}'s ${def.name} answers the ${currentSeason} season with a bounded ${Math.round((multiplier - 1) * 100)}% surge.`, "status"));
+  }
+  return true;
+}
+
+function finishDruidAction(cs, actor, committed = true) {
+  const action = actor?._druidSeasonAction;
+  if (!actor || !action) return;
+  if (committed) {
+    const index = DRUID_SEASONS.indexOf(action.startSeason);
+    actor.druidSeason = DRUID_SEASONS[(index + 1) % DRUID_SEASONS.length];
+    cs?.log?.push(logEntry(`${actor.name}'s primal cycle turns from ${action.startSeason} to ${actor.druidSeason}.`, "status"));
+  }
+  delete actor._druidSeasonAction;
+}
+
+function druidSeasonDamageMultiplier(actor, def) {
+  const action = actor?._druidSeasonAction;
+  if (!action?.surged || action.defId !== def?.id) return 1;
+  return ["damage", "damage-and-effect"].includes(action.appliesTo) ? action.multiplier : 1;
+}
+
+function druidSurgedEffect(sourceActor, effect, sourceDef = null) {
+  const action = sourceActor?._druidSeasonAction;
+  if (!effect || !action?.surged || !["effect", "damage-and-effect"].includes(action.appliesTo)) return effect;
+  if (sourceDef && action.defId !== sourceDef.id) return effect;
+  if (!sourceDef && !action.effectRefs.includes(effect)) return effect;
+  const surged = { ...effect };
+  for (const [field, authored] of Object.entries(surged)) {
+    if (DRUID_SURGE_EFFECT_EXCLUSIONS.has(field)) continue;
+    if (typeof authored !== "number") continue;
+    const value = Number(authored);
+    if (!Number.isFinite(value) || value === 0) continue;
+    const next = value * action.multiplier;
+    surged[field] = Number.isInteger(value) ? Math.round(next) : next;
+  }
+  return surged;
+}
+
+function isMagicalCastingDiscipline(def) {
+  return ["spell", "primalcraft", "pactcraft"].includes(abilityCategoryOf(def));
+}
+
+function druidEnvironmentRequirementMet(cs, actor, def) {
+  if (!isNativeDruidPrimalcraft(def)) return true;
+  if (def.terrainReq) {
+    const unavailable = cs?.livingGrowthAvailable === false || cs?.seedBearingGround === false
+      || cs?.terrain?.livingGrowth === false || cs?.terrain?.seedBearingGround === false;
+    if (unavailable) return false;
+  }
+  if (def.requiresOpenSkyOrStorm) {
+    const storm = cs?.stormActive === true || cs?.weather?.storm === true || actor?.stormActive === true;
+    const openSky = cs?.openSky !== false && cs?.indoors !== true && actor?.openSky !== false;
+    if (!storm && !openSky) return false;
+  }
+  if (def.requiresSunlight) {
+    const sunlight = actor?.sunlightExposure === true || cs?.sunlight === true
+      || cs?.weather?.sunlight === true || cs?.openSkyDaylight === true;
+    if (!sunlight) return false;
+  }
+  if (def.requiresReclaimableDecay) {
+    const decayTypes = new Set(["druidLeafrot", "druidDecayMark", "druidMolderingWave", "druidReturnToSoil"]);
+    const actors = [cs?.player, ...(cs?.allies || []), ...(cs?.enemies || [])].filter(Boolean);
+    const reclaimable = cs?.reclaimableDecay === true || actors.some((entry) =>
+      (entry.statuses || []).some((status) => decayTypes.has(status.type)));
+    if (!reclaimable) return false;
+  }
+  return true;
+}
+
+function isNativeWarlockPactcraft(def) {
+  return !!def && def.professionId === "warlock" && def.school === "pactcraft" && !def.innate;
+}
+
+function isWarlockCombatant(actor) {
+  if (!actor) return false;
+  if (actor.professionId === "warlock" || actor.professionIds?.includes?.("warlock")) return true;
+  return [...(actor.progressionAbilityIds || []), ...(actor.abilities || []).map((entry) =>
+    typeof entry === "string" ? entry : entry?.id).filter(Boolean)]
+    .some((id) => isNativeWarlockPactcraft(getAbilityDef(id)));
+}
+
+function beginWarlockAction(actor) {
+  if (!actor) return;
+  delete actor._warlockPactPricePaid;
+  delete actor._warlockFavorSpent;
+  delete actor._warlockFavorBuilt;
+}
+
+function endWarlockAction(actor) {
+  if (!actor) return;
+  delete actor._warlockPactPricePaid;
+  delete actor._warlockFavorSpent;
+  delete actor._warlockFavorBuilt;
+}
+
+function warlockHealthPriceAmount(actor, price) {
+  if (!actor || price?.type !== "health") return 0;
+  const maxHealth = Math.max(1, actor.maxHealth || actor.health || 1);
+  const ratio = clamp(Number(price.maxHealth || 0), 0.01, 0.2);
+  const cap = clamp(Number(price.cap ?? ratio), 0.01, 0.2);
+  return Math.max(1, Math.min(Math.round(maxHealth * ratio), Math.round(maxHealth * cap)));
+}
+
+function warlockPactPricePayable(actor, def) {
+  if (!isNativeWarlockPactcraft(def) || !def.warlockPactPrice) return true;
+  const price = def.warlockPactPrice;
+  if (price.type === "health") {
+    const amount = warlockHealthPriceAmount(actor, price);
+    return amount > 0 && (price.nonlethal ? actor.health > amount : actor.health >= amount);
+  }
+  if (price.type === "exposure") return Number(price.incomingDamage || 0) > 0;
+  return false;
+}
+
+function gainWarlockFavor(cs, actor, amount = 1) {
+  if (!isWarlockCombatant(actor) || amount <= 0 || actor._warlockFavorBuilt) return false;
+  const before = clamp(Math.floor(actor.warlockFavor || 0), 0, 5);
+  actor.warlockFavor = Math.min(5, before + Math.min(1, Math.floor(amount)));
+  actor._warlockFavorBuilt = true;
+  if (actor.warlockFavor <= before) return false;
+  cs?.log?.push(logEntry(`${actor.name} earns Pact Favor only after paying the authored price (${actor.warlockFavor}/5).`, "status"));
+  return true;
+}
+
+function payWarlockPactPrice(cs, actor, def) {
+  if (!isNativeWarlockPactcraft(def) || !def.warlockPactPrice || actor._warlockPactPricePaid) return false;
+  if (!warlockPactPricePayable(actor, def)) return false;
+  const price = def.warlockPactPrice;
+  if (price.type === "health") {
+    const amount = warlockHealthPriceAmount(actor, price);
+    actor.health = Math.max(price.nonlethal ? 1 : 0, actor.health - amount);
+    actor._warlockPactPricePaid = { type: "health", amount };
+    cs?.log?.push(logEntry(`${actor.name} pays ${amount} actual health into ${def.name}; the price cannot be refunded by the cast.`, "status"));
+  } else if (price.type === "exposure") {
+    const incoming = clamp(Number(price.incomingDamage || 0), 0.05, Number(price.cap || 0.25));
+    const value = clamp(Math.round(incoming * 100), 5, 25);
+    addStatus(actor, {
+      type: "warlockPactExposure",
+      value,
+      cap: clamp(Number(price.cap || 0.25), 0.05, 0.25),
+      duration: clamp(price.duration || 2, 1, 3),
+      sourceUid: combatantActionKey(actor),
+    });
+    actor._warlockPactPricePaid = { type: "exposure", value };
+    cs?.log?.push(logEntry(`${actor.name} accepts ${value}% bounded incoming-harm exposure as the price of ${def.name}.`, "status"));
+  }
+  if (!actor._warlockPactPricePaid) return false;
+  if (def.warlockFavorBuildOnPaidPrice && (def.warlockFavorBuild || 0) > 0) {
+    gainWarlockFavor(cs, actor, def.warlockFavorBuild);
+  }
+  return true;
+}
+
+function warlockFavorReady(actor, def) {
+  const cost = clamp(Math.floor(def?.warlockFavorCost || 0), 0, 5);
+  return !cost || clamp(Math.floor(actor?.warlockFavor || 0), 0, 5) >= cost;
+}
+
+function spendWarlockFavor(cs, actor, def) {
+  if (!isNativeWarlockPactcraft(def)) return 0;
+  const cost = clamp(Math.floor(def?.warlockFavorCost || 0), 0, 5);
+  if (!cost) return 0;
+  if (actor._warlockFavorSpent != null) return actor._warlockFavorSpent;
+  if (!warlockFavorReady(actor, def)) {
+    actor._warlockFavorSpent = 0;
+    return 0;
+  }
+  actor.warlockFavor = clamp(Math.floor(actor.warlockFavor || 0), 0, 5) - cost;
+  actor._warlockFavorSpent = cost;
+  cs?.log?.push(logEntry(`${actor.name} commits ${cost} Pact Favor to ${def.name} (${actor.warlockFavor}/5 remains).`, "status"));
+  return cost;
+}
+
+function isNativeArtificerDevicecraft(def) {
+  return !!def && def.professionId === "artificer" && def.school === "devicecraft" && !def.innate;
+}
+
+function beginArtificerAction(actor) {
+  if (!actor) return;
+  delete actor._artificerChargeSpent;
+  delete actor._artificerRefitApplied;
+}
+
+function endArtificerAction(actor) {
+  if (!actor) return;
+  delete actor._artificerChargeSpent;
+  delete actor._artificerRefitApplied;
+}
+
+function artificerChargesReady(actor, def) {
+  const cost = clamp(Math.floor(def?.artificerChargeCost || 0), 0, 5);
+  return !cost || clamp(Math.floor(actor?.artificerDeviceCharges || 0), 0, 5) >= cost;
+}
+
+function spendArtificerCharges(cs, actor, def) {
+  if (!isNativeArtificerDevicecraft(def)) return 0;
+  const cost = clamp(Math.floor(def?.artificerChargeCost || 0), 0, 5);
+  if (!cost) return 0;
+  if (actor._artificerChargeSpent != null) return actor._artificerChargeSpent;
+  if (!artificerChargesReady(actor, def)) {
+    actor._artificerChargeSpent = 0;
+    return 0;
+  }
+  actor.artificerDeviceCharges = clamp(Math.floor(actor.artificerDeviceCharges || 0), 0, 5) - cost;
+  actor._artificerChargeSpent = cost;
+  cs?.log?.push(logEntry(`${actor.name} commits ${cost} prepared Device Charge${cost === 1 ? "" : "s"} to ${def.name} (${actor.artificerDeviceCharges}/5 remain).`, "status"));
+  return cost;
+}
+
+function applyArtificerRefit(cs, actor, effect) {
+  if (!actor || actor._artificerRefitApplied) return 0;
+  const before = clamp(Math.floor(actor.artificerDeviceCharges || 0), 0, 5);
+  const cap = clamp(Math.floor(effect?.chargeCap || 5), 1, 5);
+  const restored = clamp(Math.floor(effect?.restoreCharges || 0), 0, 2);
+  actor.artificerDeviceCharges = Math.min(cap, before + restored);
+  actor._artificerRefitApplied = true;
+  const gained = actor.artificerDeviceCharges - before;
+  cs?.log?.push(logEntry(`${actor.name} refits carried devices and restores ${gained} Charge${gained === 1 ? "" : "s"} (${actor.artificerDeviceCharges}/5 prepared).`, "status"));
+  return gained;
+}
+
+function warlockOwnStatus(actor, target, type) {
+  const sourceUid = combatantActionKey(actor);
+  return (target?.statuses || []).some((status) => status.type === type && status.sourceUid === sourceUid);
+}
+
+function warlockCarriesSympatheticToken(actor, target) {
+  if (!actor) return false;
+  if (actor.carriedSympatheticToken === true || actor.hasSympatheticToken === true) return true;
+  const targetUid = combatantActionKey(target);
+  const linkedTargets = [
+    ...(actor.sympatheticTokenTargetUids || []),
+    ...(actor.sympatheticLinks || []),
+  ].map((entry) => typeof entry === "string" ? entry : combatantActionKey(entry));
+  if (linkedTargets.includes(targetUid)) return true;
+  const carried = [
+    ...(actor.sympatheticTokens || []),
+    ...(actor.carried || []),
+    ...(actor.items || []),
+    ...(actor.inventory?.items || []),
+  ];
+  return carried.some((item) => {
+    if (typeof item === "string") return /sympathetic|poppet|true-name-token|linked-token/i.test(item);
+    if (!item) return false;
+    const identity = `${item.id || ""} ${item.name || ""} ${(item.tags || []).join?.(" ") || ""}`;
+    const linkedUid = item.targetUid || item.linkedTargetUid || item.ownerUid;
+    return /sympathetic|poppet|true-name-token|linked-token/i.test(identity)
+      && (!linkedUid || linkedUid === targetUid);
+  });
+}
+
+function warlockKnowsTargetSecret(actor, target) {
+  if (!actor || !target) return false;
+  if (actor.knowsTargetSecret === true || actor.hasKnownSecret === true || actor.knownSecret === true) return true;
+  const actorUid = combatantActionKey(actor);
+  const targetUid = combatantActionKey(target);
+  const targetAcknowledges = [target.secretKnownBy, target.knownSecretBy, target.secretWitnesses]
+    .filter(Array.isArray)
+    .some((entries) => entries.includes(actorUid));
+  if (targetAcknowledges) return true;
+  const directTargets = [
+    ...(actor.knownSecretTargetUids || []),
+    ...(actor.secretTargetUids || []),
+  ];
+  if (directTargets.includes(targetUid)) return true;
+  const known = actor.knownSecrets || actor.secretsKnown || [];
+  if (!Array.isArray(known) && known && typeof known === "object") {
+    return !!(known[targetUid] || known[target?.uid] || known[target?.id] || known[target?.name]);
+  }
+  return known.some((entry) => {
+    if (typeof entry === "string") return entry === targetUid || entry === target?.uid || entry === target?.id || entry === target?.name;
+    const linkedUid = entry?.targetUid || entry?.subjectUid || entry?.ownerUid || entry?.targetId;
+    return !!entry && (linkedUid === targetUid || linkedUid === target?.uid || linkedUid === target?.id);
+  });
+}
+
+function warlockTargetEligible(cs, actor, target, def) {
+  if (!isNativeWarlockPactcraft(def) || def.target !== "enemy") return true;
+  if (!canAct(target)) return false;
+  if ((def.audible || def.requiresAwareness || def.requiresUnderstanding)
+      && !canReceiveRogueSpeech(target)) return false;
+  if (def.warlockRequiresOwnDebtMark && !warlockOwnStatus(actor, target, "warlockDebtMark")) return false;
+  if (def.warlockRequiresOwnHellfireCovenant
+      && !warlockOwnStatus(actor, target, "warlockHellfireCovenant")) return false;
+  if (def.requiresCarriedSympatheticToken && !warlockCarriesSympatheticToken(actor, target)) return false;
+  if (def.requiresKnownSecret && !warlockKnowsTargetSecret(actor, target)) return false;
+  return true;
+}
+
+function gainPaladinConviction(cs, paladin, hostileActor, amount = 1) {
+  if (!isPaladinCombatant(paladin) || !hostileActor || hostileActor.side === paladin.side || amount <= 0) return false;
+  const sourceUid = combatantActionKey(paladin);
+  hostileActor._paladinConvictionBuiltSources = hostileActor._paladinConvictionBuiltSources || [];
+  if (hostileActor._paladinConvictionBuiltSources.includes(sourceUid)) return false;
+  hostileActor._paladinConvictionBuiltSources.push(sourceUid);
+  const before = clamp(Math.floor(paladin.paladinConviction || 0), 0, 5);
+  paladin.paladinConviction = Math.min(5, before + clamp(Math.floor(amount), 1, 1));
+  if (paladin.paladinConviction <= before) return false;
+  cs?.log?.push(logEntry(`${paladin.name} earns Conviction by bearing real hostile force (${paladin.paladinConviction}/5).`, "status"));
+  return true;
+}
+
+function paladinConvictionReady(actor, def) {
+  const cost = clamp(Math.floor(def?.paladinConvictionCost || 0), 0, 5);
+  return !cost || clamp(Math.floor(actor?.paladinConviction || 0), 0, 5) >= cost;
+}
+
+function paladinTargetEligible(actor, target, def) {
+  if (!isNativePaladinOathcraft(def) || def.target !== "enemy") return true;
+  if (!canAct(target)) return false;
+  if ((def.audible || def.requiresUnderstanding || def.requiresAwareness)
+      && !canReceiveRogueSpeech(target)) return false;
+  if (def.paladinRequiresOwnCallToAccount && !(target.statuses || []).some((status) =>
+    status.type === "paladinCallToAccount" && status.sourceUid === combatantActionKey(actor))) return false;
+  if (def.effect?.type === "paladinThresholdBlow") {
+    const anatomy = String(target.anatomy || target.form || "").toLowerCase();
+    if (target.incorporeal || ["incorporeal", "mist", "swarm"].includes(anatomy)) return false;
+  }
+  return true;
+}
+
+function paladinPhysicalRequirementMet(cs, actor, def) {
+  if (!isNativePaladinOathcraft(def)) return true;
+  if (def.requiresDefensiblePosition && (actor?.defensiblePosition === false || cs?.defensiblePosition === false)) return false;
+  if (def.requiresInterceptionLine && (actor?.interceptionLineAvailable === false || cs?.interceptionLineAvailable === false)) return false;
+  if (def.requiresShieldOrGuardingWeapon) {
+    const guardingWeapon = ["sword", "axe", "mace", "spear"].includes(actor?.weapon?.category);
+    const shield = actor?.shieldEquipped || actor?.offhand?.category === "shield" || actor?.weapon?.category === "shield";
+    if (!guardingWeapon && !shield) return false;
+  }
+  return true;
+}
+
+function spendPaladinConviction(cs, actor, def) {
+  if (!isNativePaladinOathcraft(def)) return 0;
+  const cost = clamp(Math.floor(def?.paladinConvictionCost || 0), 0, 5);
+  if (!cost) return 0;
+  if (actor._paladinConvictionSpent != null) return actor._paladinConvictionSpent;
+  if (!paladinConvictionReady(actor, def)) {
+    actor._paladinConvictionSpent = 0;
+    return 0;
+  }
+  actor.paladinConviction = clamp(Math.floor(actor.paladinConviction || 0), 0, 5) - cost;
+  actor._paladinConvictionSpent = cost;
+  cs?.log?.push(logEntry(`${actor.name} commits ${cost} Conviction to ${def.name} (${actor.paladinConviction}/5 remains).`, "status"));
+  return cost;
+}
+
+function paladinOathguardLink(cs, target) {
+  const candidates = (target?.statuses || [])
+    .filter((status) => status.type === "paladinOathguard" && status.sourceUid)
+    .map((status) => ({ status, source: byUid(cs, status.sourceUid) }))
+    .filter(({ source }) => source && source !== target && canAct(source)
+      && source.side === target.side && isPaladinCombatant(source));
+  candidates.sort((a, b) => (b.status.value || 0) - (a.status.value || 0)
+    || (b.source.health || 0) - (a.source.health || 0));
+  return candidates[0] || null;
+}
+
+function redirectThroughPaladinOathguard(cs, attacker, target, dealt) {
+  if (!cs || !attacker || !target || dealt <= 0 || attacker.side === target.side) return 0;
+  const link = paladinOathguardLink(cs, target);
+  if (!link) return 0;
+  const share = clamp((link.status.value || 0) / 100, 0.1, 0.65);
+  const perHitCap = Math.max(1, Math.round((link.source.maxHealth || link.source.health || 1)
+    * clamp(Number(link.status.cap ?? 0.15), 0.08, 0.25)));
+  const redirected = Math.min(dealt, perHitCap, Math.max(1, Math.round(dealt * share)));
+  if (redirected <= 0) return 0;
+
+  // This is damage reassignment, not healing: return the intercepted portion to
+  // the original target directly, then place the already-mitigated force on the
+  // sworn protector without recursively invoking another guard link.
+  target.health = Math.min(target.maxHealth || target.health + redirected, target.health + redirected);
+  const burden = (link.source.statuses || []).find((status) => status.type === "paladinBurdenTaken");
+  const burdenReduction = clamp(burden?.value || 0, 0, 35) / 100;
+  const burdenCap = burden
+    ? Math.max(1, Math.round((link.source.maxHealth || 1) * clamp(burden.cap || 0.12, 0.08, 0.2)))
+    : 0;
+  const reduced = burden ? Math.min(burdenCap, Math.max(0, Math.round(redirected * burdenReduction))) : 0;
+  const borne = Math.max(1, redirected - reduced);
+  const nextHealth = link.source.health - borne;
+  link.source.health = nextHealth <= 0 && lastStandHolds(link.source) ? 1 : Math.max(0, nextHealth);
+  gainPaladinConviction(cs, link.source, attacker, 1);
+  cs.log.push(logEntry(`${link.source.name} redirects ${redirected} damage from ${target.name} through a witnessed Oathguard and bears ${borne}.`, "status"));
+  if (link.source.health <= 0 && link.source !== cs.player) {
+    if (link.source.side === "enemy") downEnemy(cs, link.source);
+    else downAlly(cs, link.source);
+  }
+  return redirected;
+}
+
+function warlockSharedBurdenLink(cs, target) {
+  if (!cs || !target) return null;
+  const links = (target.statuses || []).filter((status) =>
+    status.type === "warlockSharedBurden" && status.sourceUid);
+  for (const status of links) {
+    const source = byUid(cs, status.sourceUid);
+    if (!source || source.side !== target.side || !isWarlockCombatant(source)) continue;
+    const linked = sideAllies(cs, target)
+      .filter((candidate) => candidate !== target && candidate.willing !== false
+        && (candidate.statuses || []).some((entry) => entry.type === "warlockSharedBurden"
+          && entry.sourceUid === status.sourceUid));
+    if (!linked.length) continue;
+    linked.sort((a, b) => (a === source ? -1 : b === source ? 1 : 0)
+      || (b.health / Math.max(1, b.maxHealth || 1)) - (a.health / Math.max(1, a.maxHealth || 1)));
+    return { status, source, recipient: linked[0] };
+  }
+  return null;
+}
+
+function redistributeWarlockSharedBurden(cs, attacker, target, dealt) {
+  if (!cs || !attacker || !target || dealt <= 0 || attacker.side === target.side) return 0;
+  const link = warlockSharedBurdenLink(cs, target);
+  if (!link) return 0;
+  const share = clamp((link.status.value || 0) / 100, 0.05, 0.20);
+  const recipientCap = Math.max(1, Math.round((link.recipient.maxHealth || link.recipient.health || 1)
+    * clamp(Number(link.status.cap ?? 0.08), 0.03, 0.08)));
+  const redistributed = Math.min(dealt, recipientCap, Math.max(1, Math.round(dealt * share)));
+  if (redistributed <= 0) return 0;
+
+  // Reassignment is deliberately nonrecursive. Return the already-mitigated
+  // share to the struck ally, then place that exact harm directly on one other
+  // willing linked ally. No health is created and no second link can catch it.
+  target.health = Math.min(target.maxHealth || target.health + redistributed, target.health + redistributed);
+  const nextHealth = link.recipient.health - redistributed;
+  link.recipient.health = nextHealth <= 0 && lastStandHolds(link.recipient) ? 1 : Math.max(0, nextHealth);
+  cs.log.push(logEntry(`${link.recipient.name} accepts ${redistributed} already-mitigated harm from ${target.name} through Shared Burden.`, "status"));
+  if (link.recipient.health <= 0 && link.recipient !== cs.player) {
+    if (link.recipient.side === "enemy") downEnemy(cs, link.recipient);
+    else downAlly(cs, link.recipient);
+  }
+  return redistributed;
+}
+
+function silenceBlocksAbility(def) {
+  if (!def) return true;
+  return abilityCategoryOf(def) === "spell" || def.school === "performance" || def.audible === true
+    || def.requiresSpeech === true || def.requiresVoice === true;
 }
 
 function monkPostureImmune(target) {
@@ -398,10 +1251,11 @@ function applyInstantDeath(cs, caster, target, effect, tier) {
 // (artificial devotion). Everything else applies straight (addStatus owns stun/slow resist).
 function applyEnemyEffect(cs, caster, target, effect, tier, sourceDef = null) {
   if (!effect || !target || target.health <= 0) return;
+  effect = druidSurgedEffect(caster, effect, sourceDef);
   // Antimagic suppresses spell riders as well as most direct magical damage.
   // Physical techniques and innate racial powers still work inside the field.
   if (sourceDef && hasStatus(target, "antimagicField")
-      && abilityCategoryOf(sourceDef) === "spell" && !sourceDef.innate) {
+      && isMagicalCastingDiscipline(sourceDef) && !sourceDef.innate) {
     cs.log.push(logEntry(`${target.name}'s antimagic field unravels ${sourceDef.name}.`, "status"));
     return;
   }
@@ -416,6 +1270,33 @@ function applyEnemyEffect(cs, caster, target, effect, tier, sourceDef = null) {
       duration: Math.max(1, (effect.duration || 1) - 1),
     };
     cs.log.push(logEntry(`${target.name}'s dragon heart steadies them against ${sourceDef.name}.`, "status"));
+  }
+  const performedCourage = clamp(
+    sumStatus(target, "bardHearteningChorus") + sumStatus(target, "bardDefiantAnthem") + sumStatus(target, "bardOldBallad"),
+    0,
+    50,
+  );
+  if (performedCourage > 0 && sourceDef && FEAR_ABILITY_IDS.has(sourceDef.id)) {
+    effect = {
+      ...effect,
+      value: Math.max(0, Math.round((effect.value || 0) * (1 - performedCourage / 100))),
+      duration: Math.max(1, (effect.duration || 1) - (performedCourage >= 30 ? 1 : 0)),
+    };
+    cs.log.push(logEntry(`${target.name} keeps time with a remembered chorus against ${sourceDef.name}.`, "status"));
+  }
+  const oathCourage = clamp(
+    sumStatus(target, "paladinSteadfastWord") + sumStatus(target, "paladinBeaconStance")
+      + sumStatus(target, "paladinPilgrimAegis"),
+    0,
+    55,
+  );
+  if (oathCourage > 0 && sourceDef && FEAR_ABILITY_IDS.has(sourceDef.id)) {
+    effect = {
+      ...effect,
+      value: Math.max(0, Math.round((effect.value || 0) * (1 - oathCourage / 100))),
+      duration: Math.max(1, (effect.duration || 1) - (oathCourage >= 25 ? 1 : 0)),
+    };
+    cs.log.push(logEntry(`${target.name} stands inside a witnessed oath against ${sourceDef.name}.`, "status"));
   }
   // Mind: control & debuffs the caster inflicts last longer (controlDuration).
   if (effect && CONTROL_DEBUFF.has(effect.type) && (caster?.controlDuration || 0) > 0) {
@@ -549,6 +1430,288 @@ function applyEnemyEffect(cs, caster, target, effect, tier, sourceDef = null) {
       sourceUid: caster.uid,
     });
     cs.log.push(logEntry(`${target.name} answers the visible, audible pressure without losing will or allegiance.`, "status"));
+    return;
+  }
+  if (effect.type === "rangerQuarrySign" || RANGER_PRESSURE_STATUS.has(effect.type)) {
+    if (!isNativeRangerFieldcraft(sourceDef)) return;
+    const trainedBeast = (sourceDef.requiresTrainedBeastAlly || sourceDef.requiresFlyingBeastAlly)
+      ? rangerBeastAlly(cs, caster, sourceDef)
+      : null;
+    if ((sourceDef.requiresTrainedBeastAlly || sourceDef.requiresFlyingBeastAlly)
+        && !trainedBeast) {
+      cs.log.push(logEntry(`${caster.name} has no conscious trained ${sourceDef.requiresFlyingBeastAlly ? "flying " : ""}animal ally to coordinate.`, "status"));
+      return;
+    }
+    if (effect.type === "rangerCompanionSignal") {
+      const beastProfile = attackProfile(trainedBeast, BASIC_ATTACK, tier || trainedBeast.tier || "common", false);
+      const contact = beastProfile ? dealHit(cs, trainedBeast, target, beastProfile, BASIC_ATTACK, tier || "common") : null;
+      if (!contact || contact.dealt <= 0 || target.health <= 0) {
+        cs.log.push(logEntry(`${trainedBeast.name}'s trained response fails to establish contact; no Quarry Insight is gained.`, "status"));
+        return;
+      }
+    }
+    const trapLike = ["rangerSetSnare", "rangerLayeredSnare", "rangerKillZone"].includes(effect.type);
+    const anatomy = String(target.anatomy || target.form || "").toLowerCase();
+    if (trapLike && (target.incorporeal || ["incorporeal", "mist", "swarm"].includes(anatomy))) {
+      cs.log.push(logEntry(`${target.name} offers no stable body or footing for ${sourceDef.name}.`, "status"));
+      return;
+    }
+    const bossLike = isBossScale(caster, target);
+    const baseValue = clamp(effect.value || (effect.type === "rangerQuarrySign" ? 6 : 12), 1, 30);
+    const value = bossLike ? clamp(Math.round(baseValue * 0.45), 2, 10) : baseValue;
+    const duration = effect.type === "rangerQuarrySign"
+      ? clamp(effect.duration || 4, 1, 6)
+      : bossLike ? 1 : clamp(effect.duration || 2, 1, 3);
+    target.statuses = (target.statuses || []).filter((status) => !(
+      status.type === effect.type && status.sourceUid === caster.uid
+    ));
+    const applied = addStatus(target, { type: effect.type, value, duration, sourceUid: caster.uid });
+    if (!applied) {
+      cs.log.push(logEntry(`${target.name} keeps enough freedom to defeat the fieldcraft pressure.`, "status"));
+      return;
+    }
+    if (["rangerSetSnare", "rangerLayeredSnare"].includes(effect.type) && target.side === "enemy") {
+      target.distance = Math.min(MAX_DISTANCE, (target.distance || 0) + (bossLike ? 0 : 1));
+    }
+    gainRangerQuarryInsight(cs, caster, target, sourceDef);
+    cs.log.push(logEntry(`${caster.name}'s ${sourceDef.name} establishes a physical fieldcraft advantage against ${target.name}${bossLike ? " at reduced effect" : ""}.`, "status"));
+    return;
+  }
+  if (ROGUE_PRESSURE_STATUS.has(effect.type)) {
+    if (!isNativeRogueSubterfuge(sourceDef)) return;
+    if (!roguePhysicalRequirementMet(cs, caster, target, sourceDef)) {
+      cs.log.push(logEntry(`${caster.name} cannot establish the physical circumstances required for ${sourceDef.name}.`, "status"));
+      return;
+    }
+    if ((sourceDef.rogueRequiresUnderstanding || sourceDef.audible)
+        && !canReceiveRogueSpeech(target)) {
+      cs.log.push(logEntry(`${target.name} cannot hear and understand the mundane verbal play behind ${sourceDef.name}.`, "status"));
+      return;
+    }
+    const anatomy = String(target.anatomy || target.form || "").toLowerCase();
+    const incorporeal = target.incorporeal || ["incorporeal", "mist", "swarm"].includes(anatomy);
+    if (incorporeal && ["rogueFaultFinder", "rogueMasterKey", "roguePlannedCollapse"].includes(effect.type)) {
+      cs.log.push(logEntry(`${target.name} offers no accessible physical fault for ${sourceDef.name}.`, "status"));
+      return;
+    }
+    if (effect.type === "rogueVenomWork") {
+      const race = String(target.race || target.kind || "").toLowerCase();
+      const toxinImmune = target.toxinImmune || target.poisonImmune || target.immuneToPoison
+        || target.triggers?.poisonImmune || ["construct", "undead"].includes(race);
+      if (toxinImmune) {
+        cs.log.push(logEntry(`${target.name}'s body cannot be impaired by the prepared physical toxin.`, "status"));
+        return;
+      }
+    }
+    const bossLike = isBossScale(caster, target);
+    const baseValue = clamp(effect.value || 10, 1, 30);
+    const value = bossLike ? clamp(Math.round(baseValue * 0.45), 2, 10) : baseValue;
+    const duration = bossLike ? 1 : clamp(effect.duration || 2, 1, 3);
+    const sourceUid = combatantActionKey(caster);
+    target.statuses = (target.statuses || []).filter((status) => !(
+      status.type === effect.type && status.sourceUid === sourceUid
+    ));
+    const applied = addStatus(target, { type: effect.type, value, duration, sourceUid });
+    if (!applied) {
+      cs.log.push(logEntry(`${target.name} keeps enough physical freedom to defeat the subterfuge pressure.`, "status"));
+      return;
+    }
+    gainRogueOpening(cs, caster, target, sourceDef);
+    cs.log.push(logEntry(`${caster.name}'s ${sourceDef.name} creates a bounded physical advantage against ${target.name}${bossLike ? " at reduced effect" : ""}.`, "status"));
+    return;
+  }
+  if (WARLOCK_ENEMY_STATUS.has(effect.type)) {
+    if (!isNativeWarlockPactcraft(sourceDef)) return;
+    if (!warlockTargetEligible(cs, caster, target, sourceDef)) {
+      cs.log.push(logEntry(`${target.name} does not satisfy the explicit pact conditions for ${sourceDef.name}.`, "status"));
+      return;
+    }
+    if (WARLOCK_PRESSURE_STATUS.has(effect.type) && hasStatus(target, "unstoppable")) {
+      cs.log.push(logEntry(`${target.name}'s unstoppable state rejects the bounded pact pressure of ${sourceDef.name}.`, "status"));
+      return;
+    }
+    const bossLike = isBossScale(caster, target);
+    const sourceUid = combatantActionKey(caster);
+    const scorch = WARLOCK_SCORCH_STATUS.has(effect.type);
+    const magnitude = Number(
+      effect.value ?? effect.scorch ?? effect.debtPressure ?? effect.pactPressure
+        ?? effect.revealPressure ?? effect.debtBonus ?? effect.wardPressure
+        ?? effect.hexPressure ?? effect.chainPressure ?? effect.bargainPressure
+        ?? effect.contractPressure ?? effect.sympatheticPressure ?? effect.secretPressure ?? 1,
+    );
+    const bossScale = clamp(Number(effect.bossScale ?? 0.45), 0.25, 0.6);
+    const softened = !scorch && bossLike;
+    const baseValue = softened
+      ? Math.max(1, Math.round(magnitude * bossScale))
+      : Math.max(1, Math.round(magnitude));
+    const duration = clamp(effect.duration || 2, 1, 4);
+    const existing = (target.statuses || []).find((status) =>
+      status.type === effect.type && status.sourceUid === sourceUid);
+    const maxStacks = effect.type === "warlockLayeredHex"
+      ? clamp(Math.floor(effect.maxStacks || 2), 1, 2)
+      : 1;
+    const stacks = effect.type === "warlockLayeredHex"
+      ? Math.min(maxStacks, Math.max(1, Math.floor(existing?.stacks || 0) + 1))
+      : 1;
+    target.statuses = (target.statuses || []).filter((status) => !(
+      status.type === effect.type && status.sourceUid === sourceUid
+    ));
+    const applied = addStatus(target, {
+      ...effect,
+      value: Math.min(40, baseValue * stacks),
+      duration,
+      sourceUid,
+      stacks,
+      maxStacks,
+    });
+    if (!applied) {
+      cs.log.push(logEntry(`${target.name} rejects the bounded pact effect of ${sourceDef.name}.`, "status"));
+      return;
+    }
+    if (["warlockPactChain", "warlockBindingLinks"].includes(effect.type)
+        && target.side === "enemy" && !bossLike) {
+      target.distance = Math.min(MAX_DISTANCE, (target.distance || 0) + 1);
+    }
+    if (["warlockWhisperedTerms", "warlockSecretLeverage", "warlockOpenBargain"].includes(effect.type)
+        && Number.isFinite(Number(target.morale))) {
+      target.morale = Math.max(0, target.morale - clamp(Math.round(baseValue / 4), 1, bossLike ? 3 : 6));
+    }
+    cs.log.push(logEntry(`${caster.name}'s ${sourceDef.name} establishes ${softened ? "boss-softened " : ""}${scorch ? "pact scorch" : "source-owned pact pressure"} on ${target.name}${stacks > 1 ? ` (${stacks}/${maxStacks} layers)` : ""}.`, "status"));
+    return;
+  }
+  if (ARTIFICER_ENEMY_STATUS.has(effect.type)) {
+    if (!isNativeArtificerDevicecraft(sourceDef)) return;
+    if (ARTIFICER_PRESSURE_STATUS.has(effect.type) && hasStatus(target, "unstoppable")) {
+      cs.log.push(logEntry(`${target.name}'s unstoppable state defeats the bounded device pressure of ${sourceDef.name}.`, "status"));
+      return;
+    }
+    const bossLike = isBossScale(caster, target);
+    const sourceUid = combatantActionKey(caster);
+    const scorch = effect.type === "artificerSnapfire";
+    const magnitude = Number(
+      effect.value ?? effect.scorch ?? effect.movementPressure ?? effect.deviceDamageBonus
+        ?? effect.structurePressure ?? effect.devicePressure ?? effect.accuracyPenalty
+        ?? effect.armorPressure ?? 1,
+    );
+    const bossScale = clamp(Number(effect.bossScale ?? 0.45), 0.25, 0.6);
+    const softened = !scorch && bossLike;
+    const value = softened ? Math.max(1, Math.round(magnitude * bossScale)) : Math.max(1, Math.round(magnitude));
+    const duration = clamp(effect.duration || 2, 1, 4);
+    target.statuses = (target.statuses || []).filter((status) => !(
+      status.type === effect.type && status.sourceUid === sourceUid
+    ));
+    const applied = addStatus(target, { ...effect, value, duration, sourceUid });
+    if (!applied) {
+      cs.log.push(logEntry(`${target.name} defeats the bounded physical circumstances of ${sourceDef.name}.`, "status"));
+      return;
+    }
+    if (effect.type === "artificerTangleLine" && target.side === "enemy" && !bossLike) {
+      target.distance = Math.min(MAX_DISTANCE, (target.distance || 0) + 1);
+    }
+    cs.log.push(logEntry(`${caster.name}'s ${sourceDef.name} establishes ${softened ? "boss-softened " : ""}${scorch ? "prepared scorch" : "source-owned device pressure"} on ${target.name}.`, "status"));
+    return;
+  }
+  if (DRUID_ENEMY_STATUS.has(effect.type)) {
+    if (!isNativeDruidPrimalcraft(sourceDef)) return;
+    const bossLike = isBossScale(caster, target);
+    const magnitude = Number(
+      effect.value ?? effect.rootPressure ?? effect.decay ?? effect.accuracyPenalty
+        ?? effect.resolveOnDefeat ?? effect.movementPenalty ?? effect.scorch
+        ?? effect.decayAmplification ?? effect.actionPressure ?? effect.pushPressure
+        ?? effect.decayVulnerability ?? effect.stormCharge ?? effect.glarePressure ?? 1,
+    );
+    const isPressure = DRUID_PRESSURE_STATUS.has(effect.type);
+    const bossScale = clamp(Number(effect.bossScale ?? 0.45), 0.25, 0.6);
+    const value = isPressure && bossLike
+      ? Math.max(1, Math.round(magnitude * bossScale))
+      : Math.max(1, Math.round(magnitude));
+    const duration = clamp(effect.duration || 2, 1, 4);
+    const sourceUid = combatantActionKey(caster);
+    target.statuses = (target.statuses || []).filter((status) => !(
+      status.type === effect.type && status.sourceUid === sourceUid
+    ));
+    const applied = addStatus(target, {
+      ...effect,
+      value,
+      duration,
+      sourceUid,
+      resolveCap: effect.resolveCap,
+    });
+    if (!applied) {
+      cs.log.push(logEntry(`${target.name} resists the bounded natural pressure of ${sourceDef.name}.`, "status"));
+      return;
+    }
+    if (effect.type === "druidGaleShear" && target.side === "enemy" && !bossLike) {
+      target.distance = Math.min(MAX_DISTANCE, (target.distance || 0) + 1);
+    }
+    cs.log.push(logEntry(`${caster.name}'s ${sourceDef.name} establishes ${bossLike && isPressure ? "boss-softened " : ""}primal ${isPressure ? "pressure" : "decay"} on ${target.name}.`, "status"));
+    return;
+  }
+  if (PALADIN_PRESSURE_STATUS.has(effect.type)) {
+    if (!isNativePaladinOathcraft(sourceDef)) return;
+    const semantic = [
+      "paladinWitnessChallenge", "paladinCallToAccount", "paladinOfferQuarter", "paladinPeaceCommand",
+    ].includes(effect.type) || sourceDef.audible || sourceDef.requiresUnderstanding;
+    if (semantic && !canReceiveRogueSpeech(target)) {
+      cs.log.push(logEntry(`${target.name} cannot knowingly hear and understand ${sourceDef.name}; the oathcraft does not compel them.`, "status"));
+      return;
+    }
+    const anatomy = String(target.anatomy || target.form || "").toLowerCase();
+    if (effect.type === "paladinThresholdBlow" && (target.incorporeal || ["incorporeal", "mist", "swarm"].includes(anatomy))) {
+      cs.log.push(logEntry(`${target.name} offers no body or footing for the threshold check.`, "status"));
+      return;
+    }
+    const bossLike = isBossScale(caster, target);
+    const baseValue = clamp(
+      effect.value || effect.attention || effect.pressure || effect.truthPressure
+        || effect.surrenderPressure || effect.haltPressure || effect.morale || 12,
+      1,
+      30,
+    );
+    const value = bossLike ? clamp(Math.round(baseValue * 0.45), 2, 10) : baseValue;
+    const duration = bossLike ? 1 : clamp(effect.duration || 2, 1, 3);
+    const sourceUid = combatantActionKey(caster);
+    target.statuses = (target.statuses || []).filter((status) => !(
+      status.type === effect.type && status.sourceUid === sourceUid
+    ));
+    const applied = addStatus(target, { type: effect.type, value, duration, sourceUid });
+    if (!applied) {
+      cs.log.push(logEntry(`${target.name} keeps enough agency to defeat the oathbound pressure.`, "status"));
+      return;
+    }
+    if (["paladinOfferQuarter", "paladinPeaceCommand"].includes(effect.type)
+        && Number.isFinite(Number(target.morale))) {
+      target.morale = Math.max(0, target.morale - clamp(effect.morale || Math.round(value / 2), 1, bossLike ? 5 : 10));
+    }
+    if (effect.type === "paladinThresholdBlow" && target.side === "enemy") {
+      target.distance = Math.min(MAX_DISTANCE, (target.distance || 0) + (bossLike ? 0 : 1));
+    }
+    cs.log.push(logEntry(`${target.name} faces ${sourceDef.name} as bounded witnessed pressure, without compulsion or lost allegiance.`, "status"));
+    return;
+  }
+  if (BARD_PRESSURE_STATUS.has(effect.type)) {
+    const semantic = !!sourceDef?.bardRequiresUnderstanding;
+    const sonicPressure = sourceDef?.damageType === "sonic";
+    const eligible = semantic
+      ? canUnderstandBardPerformance(target)
+      : sonicPressure
+        ? !target.sonicImmune
+        : canPerceiveBardPerformance(target);
+    if (!eligible) {
+      cs.log.push(logEntry(`${target.name} cannot meaningfully receive ${sourceDef?.name || "the performance"}.`, "status"));
+      return;
+    }
+    const bossLike = isBossScale(caster, target);
+    const value = bossLike
+      ? clamp(Math.round((effect.value || 10) * 0.45), 2, 10)
+      : clamp(effect.value || 10, 3, 25);
+    const duration = bossLike ? 1 : clamp(effect.duration || 2, 1, 3);
+    // Native pressure refreshes its own line instead of stacking duplicate
+    // timing penalties into a pseudo stun-lock.
+    target.statuses = (target.statuses || []).filter((status) => status.type !== effect.type);
+    if (addStatus(target, { type: effect.type, value, duration, sourceUid: caster?.uid || null })) {
+      cs.log.push(logEntry(`${target.name} is pressured by ${sourceDef?.name || "the performance"} without losing agency or allegiance.`, "status"));
+    }
     return;
   }
   if (effect.type === "instantKill") {
@@ -687,6 +1850,10 @@ function enemyThreat(e) {
 
 function hasAbilityMetamagic(actor, def, metamagicId) {
   if (!actor || !def) return false;
+  // Metamagic belongs to cast spells only. Forged legacy state must never make
+  // a martial, innate, survival, social, or Bard performance action-free or
+  // otherwise rewrite it.
+  if (abilityCategoryOf(def) !== "spell") return false;
   const perAbility = actor.metamagicByAbilityId?.[def.id];
   if (Array.isArray(perAbility)) return perAbility.includes(metamagicId);
   // Backward-compatible combat snapshots predate per-spell profiles.
@@ -864,7 +2031,8 @@ export function initCombat(character, codex, enemies, opts = {}) {
     damageCap: cs.damageCap || 0, execute: cs.execute || 0, controlResist: cs.controlResist || 0,
     will: cs.will || 0, // willpower — Charm/Dominate save (mind+presence)
     healPower: cs.healPower || 0, dmgDefer: cs.dmgDefer || 0,
-    armor: cs.armor, armorClass: cs.armorClass || null, ward: cs.ward, dodge: cs.dodge,
+    armor: cs.armor, armorClass: cs.armorClass || null, ward: cs.ward,
+    sonicGuard: Math.max(0, Number(cs.sonicGuard || 0)), dodge: cs.dodge,
     accuracy: cs.accuracy, critChance: cs.critChance, critMult: cs.critMult,
     weapon: cs.weapon, speed: cs.speed, swiftChance: cs.swiftChance || 0, reloadLeft: 0,
     triggers: cs.triggers || {},
@@ -889,6 +2057,14 @@ export function initCombat(character, codex, enemies, opts = {}) {
     postureStrain: 0,
     postureDecayTurns: 0,
     barbarianFury: 0,
+    bardCadence: 0,
+    bardLastMotif: null,
+    rangerQuarryInsight: 0,
+    rangerQuarryUid: null,
+    paladinConviction: 0,
+    druidSeason: "spring",
+    warlockFavor: 0,
+    artificerDeviceCharges: 5,
     abilities, cooldowns: {}, statuses: [], side: "player",
   };
 
@@ -902,6 +2078,14 @@ export function initCombat(character, codex, enemies, opts = {}) {
     postureStrain: clamp(Math.floor(a.postureStrain || 0), 0, 3),
     postureDecayTurns: clamp(Math.floor(a.postureDecayTurns || 0), 0, 1),
     barbarianFury: 0,
+    bardCadence: 0,
+    bardLastMotif: null,
+    rangerQuarryInsight: 0,
+    rangerQuarryUid: null,
+    paladinConviction: 0,
+    druidSeason: "spring",
+    warlockFavor: 0,
+    artificerDeviceCharges: 5,
     speed: a.speed ?? 4, swiftChance: a.swiftChance || 0, reloadLeft: 0,
     procs: a.procs || a.triggers?.procs || [], block: 0, shield: 0, magicShield: 0, invuln: 0,
   }));
@@ -936,6 +2120,14 @@ export function initCombat(character, codex, enemies, opts = {}) {
     e.postureStrain = clamp(Math.floor(e.postureStrain || 0), 0, 3);
     e.postureDecayTurns = clamp(Math.floor(e.postureDecayTurns || 0), 0, 1);
     e.barbarianFury = 0;
+    e.bardCadence = 0;
+    e.bardLastMotif = null;
+    e.rangerQuarryInsight = 0;
+    e.rangerQuarryUid = null;
+    e.paladinConviction = 0;
+    e.druidSeason = "spring";
+    e.warlockFavor = 0;
+    e.artificerDeviceCharges = 5;
     e.speed = e.speed ?? 4; e.swiftChance = e.swiftChance || 0; e.reloadLeft = 0;
     // Engagement distance from the player. Most foes open a step out (melee must
     // close; ranged & reach weapons can already strike). An ambush starts closer.
@@ -1021,10 +2213,11 @@ const canAct = (c) => c && c.health > 0 && !c.resolved && !c._dead;
 const MAX_DISTANCE = 6;
 
 // The reach (melee) / range (ranged) of an action: an explicit ability range, a
-// medium range for spells, else the wielded weapon's reach/range.
+// medium range for spells and projected performances, else the wielded
+// weapon's reach/range.
 function abilityReach(actor, def) {
   if (def.range != null) return def.range;
-  if (abilityScaling(def) === "stat") return 3; // spells carry at medium range
+  if (["stat", "performance", "fieldcraft"].includes(abilityScaling(def))) return 3;
   const w = actor.weapon || {};
   return w.range || w.reach || 1;
 }
@@ -1363,6 +2556,8 @@ function escalateToLethal(cs, reason) {
   cs.log.push(logEntry(
     reason === "magic"
       ? "You work a spell — the room recoils; this is no brawl now."
+      : reason === "sonic"
+        ? "The performance turns into harmful force — this is no harmless brawl now."
       : "Steel is drawn — the brawl turns to a killing matter.", "system"));
 }
 
@@ -1430,7 +2625,8 @@ function applyAmbush(cs, side) {
 // Build the damage profile. Weapon-scaling techniques are built from the
 // attacker's weapon (+ a stat modifier that grows with the ability's tier);
 // stat-scaling spells are built from the attribute × tier, with a staff/wand
-// adding only a small bonus.
+// adding only a small bonus. Performance-scaled sonic techniques use Presence
+// and training without inheriting spell focus, metamagic, or spell surge.
 function attackProfile(attacker, def, tierId, isPlayer) {
   // Polymorph seals equipment, techniques, and spellcasting behind a harmless
   // lesser form. The creature can still nip or kick, but rank and gear cannot
@@ -1440,8 +2636,11 @@ function attackProfile(attacker, def, tierId, isPlayer) {
   }
   const scaling = abilityScaling(def);
   const order = tierInfo(tierId).order;
-  const surge = attacker.spellSurge ? 1.5 : 1; // Mind 30: ALL abilities hit half again as hard
+  // Spell Surge is a casting threshold, never a hidden multiplier for trained
+  // weapon craft, Bard performance, or racial anatomy.
+  const surge = attacker.spellSurge && abilityCategoryOf(def) === "spell" ? 1.5 : 1;
   const unseen = hasStatus(attacker, "greaterInvisibility") ? 1.25 : 1;
+  const seasonal = druidSeasonDamageMultiplier(attacker, def);
 
   if (scaling === "weapon" || def.damageType === "weapon") {
     const w = attacker.weapon || { min: 1, max: 2, type: "physical", pen: 0 };
@@ -1454,8 +2653,8 @@ function attackProfile(attacker, def, tierId, isPlayer) {
       ? 1 + clamp(attacker._warriorTempoSpent || 0, 0, 3) * 0.2
       : 1;
     return {
-      min: Math.max(1, Math.round((w.min * techMult + statMod) * surge * unseen * authoredMult * tempoMult)),
-      max: Math.max(1, Math.round((w.max * techMult + statMod) * surge * unseen * authoredMult * tempoMult)),
+      min: Math.max(1, Math.round((w.min * techMult + statMod) * surge * unseen * authoredMult * tempoMult * seasonal)),
+      max: Math.max(1, Math.round((w.max * techMult + statMod) * surge * unseen * authoredMult * tempoMult * seasonal)),
       type,
       pen: (w.pen || 0) + (def.pen || 0),
       critBonus: def.critBonus || 0,
@@ -1481,11 +2680,39 @@ function attackProfile(attacker, def, tierId, isPlayer) {
     }
     const transmuted = hasAbilityMetamagic(attacker, def, "transmuted-signature") && def.damageType === "magical";
     return {
-      min: Math.max(1, Math.round(def.dmg[0] * m * f * castBonus * surge * signatureMult * unseen) + focus),
-      max: Math.max(1, Math.round(def.dmg[1] * m * f * castBonus * surge * signatureMult * unseen) + focus),
+      min: Math.max(1, Math.round(def.dmg[0] * m * f * castBonus * surge * signatureMult * unseen * seasonal) + focus),
+      max: Math.max(1, Math.round(def.dmg[1] * m * f * castBonus * surge * signatureMult * unseen * seasonal) + focus),
       type: transmuted ? "physical" : def.damageType,
       pen: (def.pen || 0) + (hasAbilityMetamagic(attacker, def, "piercing-signature") ? 8 : 0),
       critBonus: def.critBonus || 0,
+    };
+  }
+  if (scaling === "performance") {
+    if (!def.dmg) return null;
+    const m = tierMult(tierId);
+    const f = def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
+    const trained = isPlayer ? 1 + (attacker.prof?.performance || 0) * 0.05 : 1;
+    return {
+      min: Math.max(1, Math.round(def.dmg[0] * m * f * trained * seasonal)),
+      max: Math.max(1, Math.round(def.dmg[1] * m * f * trained * seasonal)),
+      type: "sonic",
+      pen: def.pen || 0,
+      critBonus: def.critBonus || 0,
+      accuracyBonus: def.accuracyBonus || 0,
+    };
+  }
+  if (scaling === "fieldcraft") {
+    if (!def.dmg) return null;
+    const m = tierMult(tierId);
+    const f = def.scaleAttr && attacker.attrs ? attrFactor(attacker.attrs[def.scaleAttr]) : 1;
+    const trained = isPlayer ? 1 + clamp(attacker.prof?.awareness || 0, 0, 15) * 0.03 : 1;
+    return {
+      min: Math.max(1, Math.round(def.dmg[0] * m * f * trained * seasonal)),
+      max: Math.max(1, Math.round(def.dmg[1] * m * f * trained * seasonal)),
+      type: def.damageType || "physical",
+      pen: def.pen || 0,
+      critBonus: def.critBonus || 0,
+      accuracyBonus: def.accuracyBonus || 0,
     };
   }
   return null; // no direct damage
@@ -1522,12 +2749,84 @@ function resolveHit(attacker, defender, profile) {
   // Deadeye (dodgeIgnore) erases the defender's dodge so the strike can't be evaded.
   const acc = (attacker.accuracy || 0) + (profile.accuracyBonus || 0)
     + (hasStatus(attacker, "greaterInvisibility") ? 25 : 0) + sumStatus(attacker, "barbarianWarCry")
+    + clamp(sumStatus(attacker, "warlockOpenCovenant"), 0, 15)
+    + clamp(sumStatus(attacker, "artificerMasterworkArray") + sumStatus(attacker, "artificerOverclockServo"), 0, 25)
+    + clamp(sumStatus(attacker, "bardSteadyBeat") + sumStatus(attacker, "bardRisingTempo")
+      + sumStatus(attacker, "bardCallResponse") + sumStatus(attacker, "bardWarDrum")
+      + sumStatus(attacker, "bardLoreCallout") + sumStatus(attacker, "bardMarchingCadence")
+      + sumStatus(attacker, "bardBattleChronicle"), 0, 45)
     - sumStatus(attacker, "chill") - sumStatus(attacker, "barbarianGuardDisrupted")
-    - sumStatus(attacker, "levelDrain") - sumStatus(attacker, "monkBalanceChecked") - (attacker.darkPenalty || 0);
+    - sumStatus(attacker, "levelDrain") - sumStatus(attacker, "monkBalanceChecked")
+    - clamp(sumStatus(attacker, "bardCuttingVerse") + sumStatus(attacker, "bardDissonance")
+      + sumStatus(attacker, "bardSyncopation") + sumStatus(attacker, "bardCounterMelody")
+      + sumStatus(attacker, "bardGrandFinale") + sumStatus(attacker, "bardPointedSatire")
+      + sumStatus(attacker, "bardHecklersHook") + sumStatus(attacker, "bardChorusScorn")
+      + sumStatus(attacker, "bardHarmonicWeave"), 0, 60)
+    - clamp(sumStatus(attacker, "rangerCoveringShot") + sumStatus(attacker, "rangerCompanionSignal")
+      + sumStatus(attacker, "rangerPackCommand") + sumStatus(attacker, "rangerFalconStoop")
+      + sumStatus(attacker, "rangerKillZone"), 0, 45)
+    - clamp(sumStatus(attacker, "rogueFalseOpening") + sumStatus(attacker, "rogueSapBlow")
+      + sumStatus(attacker, "rogueKidneyShot") + sumStatus(attacker, "rogueBrazenFeint")
+      + sumStatus(attacker, "rogueConfidencePlay") + sumStatus(attacker, "rogueDirtyTrick")
+      + sumStatus(attacker, "rogueVenomWork"), 0, 45)
+    - clamp(sumStatus(attacker, "paladinMercifulArrest") + sumStatus(attacker, "paladinPeaceCommand"), 0, 30)
+    - clamp(sumStatus(attacker, "druidSirocco") + sumStatus(attacker, "druidSunwheel")
+      + sumStatus(attacker, "druidGreatYear"), 0, 45)
+    - clamp(sumStatus(attacker, "warlockFavorsRebuke") + sumStatus(attacker, "warlockPactApotheosis")
+      + sumStatus(attacker, "warlockPactChain") + sumStatus(attacker, "warlockBindingLinks")
+      + sumStatus(attacker, "warlockWitchMark") + sumStatus(attacker, "warlockLayeredHex")
+      + sumStatus(attacker, "warlockWhisperedTerms") + sumStatus(attacker, "warlockSecretLeverage")
+      + sumStatus(attacker, "warlockOpenBargain"), 0, 45)
+    - clamp(sumStatus(attacker, "artificerFlashPhial"), 0, 20)
+    - (attacker.darkPenalty || 0);
   const warriorFootwork = sumStatus(defender, "warriorPassingStep") + sumStatus(defender, "warriorTurningParry");
   const monkFootwork = sumStatus(defender, "monkYieldingGuard") + sumStatus(defender, "monkCrossingStep")
     + sumStatus(defender, "monkBurstStep") + sumStatus(defender, "monkReboundStep");
-  const dodge = ((defender.dodge || 0) + sumStatus(defender, "dodgeStack") + warriorFootwork + monkFootwork) * (1 - (attacker.dodgeIgnore || 0));
+  const bardFootwork = clamp(sumStatus(defender, "bardRisingTempo") + sumStatus(defender, "bardMarchingCadence"), 0, 30);
+  const rangerFootwork = clamp(sumStatus(defender, "rangerEvadingStep") + sumStatus(defender, "rangerSafePassage")
+    + sumStatus(defender, "rangerPathfinderStep") + sumStatus(defender, "rangerRunningShot"), 0, 35);
+  const rangerTerrainPenalty = clamp(sumStatus(defender, "rangerTrailCut") + sumStatus(defender, "rangerCripplingShot")
+    + sumStatus(defender, "rangerSetSnare") + sumStatus(defender, "rangerLayeredSnare"), 0, 35);
+  const rogueFootwork = clamp(sumStatus(defender, "rogueSlipLine") + sumStatus(defender, "rogueCrowdGhost"), 0, 35);
+  const rogueSourceUid = combatantActionKey(attacker);
+  const ownedRoguePressure = (...types) => (defender.statuses || [])
+    .filter((status) => status.sourceUid === rogueSourceUid && types.includes(status.type))
+    .reduce((total, status) => total + (status.value || 0), 0);
+  const rogueDodgePressure = clamp(ownedRoguePressure(
+    "rogueAssessMark", "rogueExploitGuard", "rogueHamstring", "rogueKillingMeasure",
+    "rogueFaultFinder", "rogueMasterKey", "roguePlannedCollapse",
+  ), 0, 35);
+  const ownedPaladinPressure = (...types) => (defender.statuses || [])
+    .filter((status) => status.sourceUid === rogueSourceUid && types.includes(status.type))
+    .reduce((total, status) => total + (status.value || 0), 0);
+  const paladinDodgePressure = clamp(ownedPaladinPressure(
+    "paladinJudgmentStroke", "paladinCallToAccount", "paladinThresholdBlow", "paladinVerdictEdge",
+  ), 0, 30);
+  const ownedWarlockPressure = (...types) => (defender.statuses || [])
+    .filter((status) => status.sourceUid === rogueSourceUid && types.includes(status.type))
+    .reduce((total, status) => total + (status.value || 0), 0);
+  const warlockDodgePressure = clamp(ownedWarlockPressure(
+    "warlockDebtMark", "warlockCovenantLash", "warlockCreditorsGaze", "warlockClaimDue",
+    "warlockWitchMark", "warlockLayeredHex", "warlockSympatheticToken",
+    "warlockPactChain", "warlockBindingLinks", "warlockDevilsDue",
+  ), 0, 30);
+  const druidRootPressure = clamp(
+    sumStatus(defender, "druidVerdantSpark") + sumStatus(defender, "druidFrostroot")
+      + sumStatus(defender, "druidGroveAwakening") + sumStatus(defender, "druidEntanglingThicket")
+      + sumStatus(defender, "druidGaleShear"),
+    0,
+    40,
+  );
+  const druidFormDodge = clamp(sumStatusField(
+    defender,
+    ["druidPredatorShape", "druidWolfAspect", "druidBearAspect"],
+    "reflexBonus",
+  ), 0, 24);
+  const artificerServoDodge = clamp(sumStatusField(defender, ["artificerOverclockServo"], "dodgeBonus"), 0, 12);
+  const dodge = Math.max(0, (defender.dodge || 0) + sumStatus(defender, "dodgeStack") + warriorFootwork
+    + monkFootwork + bardFootwork + rangerFootwork + rogueFootwork + druidFormDodge + artificerServoDodge
+    - rangerTerrainPenalty - rogueDodgePressure - paladinDodgePressure - druidRootPressure - warlockDodgePressure)
+    * (1 - (attacker.dodgeIgnore || 0));
   const hitChance = 100 - clamp(dodge - acc, 0, 90);
   if (rand100() > hitChance) {
     return { log: logEntry(`${attacker.name} attacks ${defender.name} — dodged.`, "miss"), dmg: 0, crit: false, dodged: true };
@@ -1536,28 +2835,61 @@ function resolveHit(attacker, defender, profile) {
   if (profile.eff != null) raw *= profile.eff;
   raw *= 1 + sumStatus(attacker, "rally") / 100
     + sumStatus(attacker, "barbarianAbandon") / 100
-    - (sumStatus(attacker, "weaken") + sumStatus(attacker, "levelDrain")) / 100;
+    + clamp(sumStatus(attacker, "bardWarDrum"), 0, 18) / 100
+    - (sumStatus(attacker, "weaken") + sumStatus(attacker, "levelDrain")
+      + clamp(sumStatus(attacker, "bardStingingRefrain") + sumStatus(attacker, "bardCounterMelody")
+        + sumStatus(attacker, "bardPointedSatire") + sumStatus(attacker, "bardChorusScorn"), 0, 45)
+      + clamp(sumStatus(attacker, "druidGreatYear"), 0, 20)) / 100;
+  if (profile.type === "physical") {
+    const formForce = clamp(Math.max(
+      sumStatusField(attacker, ["druidPredatorShape", "druidWolfAspect", "druidBearAspect"], "bodyBonus"),
+      sumStatusField(attacker, ["druidPredatorShape", "druidWolfAspect", "druidBearAspect"], "reflexBonus"),
+    ), 0, 24);
+    raw *= 1 + formForce / 100;
+    raw *= 1 + clamp(sumStatusField(attacker, ["artificerRunicEdge"], "physicalDamageBonus"), 0, 15) / 100;
+  }
 
   const challenge = (attacker.statuses || []).find((status) =>
     ["barbarianChallenged", "barbarianFoeCalled"].includes(status.type));
   if (challenge && defender.uid !== challenge.sourceUid) {
     raw *= 1 - clamp(challenge.value || 0, 0, 25) / 100;
   }
+  const witnessedChallenge = (attacker.statuses || []).find((status) =>
+    status.type === "paladinWitnessChallenge");
+  if (witnessedChallenge && defender.uid !== witnessedChallenge.sourceUid) {
+    raw *= 1 - clamp(witnessedChallenge.value || 0, 0, 20) / 100;
+  }
   if (profile.type === "physical") raw *= 1 + clamp(sumStatus(defender, "barbarianExposedGuard"), 0, 30) / 100;
 
-  const critChance = (attacker.critChance || 0) + (profile.critBonus || 0) + sumStatus(attacker, "focus");
+  const bardTimingCrit = clamp(Math.round((sumStatus(attacker, "bardCallResponse") + sumStatus(attacker, "bardBattleChronicle")) / 2), 0, 18);
+  const druidFormCrit = clamp(sumStatusField(attacker, ["druidPredatorShape", "druidWolfAspect", "druidBearAspect"], "critBonus"), 0, 12);
+  const critChance = (attacker.critChance || 0) + (profile.critBonus || 0) + sumStatus(attacker, "focus") + bardTimingCrit + druidFormCrit;
   const crit = rand100() <= critChance;
   if (crit) raw *= attacker.critMult || 1.5;
   if (hasStatus(attacker, "focus")) attacker.statuses = attacker.statuses.filter((s) => s.type !== "focus");
 
   // Vulnerable and Curse both amplify incoming damage.
-  raw *= 1 + (sumStatus(defender, "vulnerable") + sumStatus(defender, "curse")) / 100;
+  raw *= 1 + (sumStatus(defender, "vulnerable") + sumStatus(defender, "curse")
+    + clamp(sumStatus(defender, "rangerKillZone"), 0, 15)
+    + clamp(ownedRoguePressure("rogueFinishingAngle", "rogueHighWindow", "rogueFirstStrike"), 0, 15)
+    + clamp(sumStatus(defender, "warlockPactExposure"), 0, 25)) / 100;
   raw = Math.max(0, Math.round(raw));
 
   let mitig = 0;
   // Shatter (sundered armour) eats into physical mitigation while it lasts.
   if (profile.type === "physical") mitig = Math.max(0, (defender.armor || 0) + sumStatus(defender, "guard") - sumStatus(defender, "shatter") - sumStatus(defender, "barbarianGuardDisrupted") - (profile.pen || 0));
-  else if (profile.type === "magical") mitig = Math.max(0, (defender.ward || 0) - (profile.pen || 0));
+  else if (profile.type === "magical") mitig = Math.max(0, (defender.ward || 0)
+    + sumStatus(defender, "druidRimebark") + sumStatus(defender, "druidIronbarkRise")
+    + sumStatus(defender, "warlockOwedWard") + sumStatus(defender, "warlockBlackBargain")
+    - clamp(ownedWarlockPressure("warlockRuinousTerms"), 0, 20) - (profile.pen || 0));
+  else if (profile.type === "sonic") {
+    const baseAcousticGuard = Math.max(0, Number(defender.sonicGuard || 0) + Math.round((defender.armor || 0) * 0.25));
+    const fracture = clamp(sumStatus(defender, "bardSonicFracture") + sumStatus(defender, "bardHarmonicWeave"), 0, 50) / 100;
+    const acousticMitigation = Math.max(0, Math.round(baseAcousticGuard) - (profile.pen || 0));
+    mitig = defender.sonicImmune
+      ? raw
+      : Math.round(Math.min(Math.max(0, Math.round(raw * 0.85)), acousticMitigation) * (1 - fracture));
+  }
   // Flat % damage-reduction (Stoneskin / Godward), plus Bastion fortify while
   // badly wounded. Capped so it can never fully negate a blow.
   let dmg = Math.max(0, raw - mitig);
@@ -1607,7 +2939,7 @@ function resolveHit(attacker, defender, profile) {
   const nextHealth = defender.health - dmg;
   defender.health = (nextHealth <= 0 && lastStandHolds(defender)) ? 1 : Math.max(0, nextHealth);
 
-  const typeTag = profile.type === "true" ? " true" : profile.type === "magical" ? " magical" : "";
+  const typeTag = profile.type === "true" ? " true" : profile.type === "magical" ? " magical" : profile.type === "sonic" ? " sonic" : "";
   const critTag = crit ? " CRIT" : "";
   const absorption = [
     blockAbsorbed > 0 ? `${blockAbsorbed} Block` : "",
@@ -1665,6 +2997,12 @@ function dealHit(cs, attacker, target, profile, def, tier) {
   const nativeWarrior = isNativeWarriorTechnique(def);
   const nativeMonk = isNativeMonkTechnique(def);
   const nativeBarbarian = isNativeBarbarianTechnique(def);
+  const nativeRanger = isNativeRangerFieldcraft(def);
+  const nativeRogue = isNativeRogueSubterfuge(def);
+  const nativePaladin = isNativePaladinOathcraft(def);
+  const nativeDruid = isNativeDruidPrimalcraft(def);
+  const nativeWarlock = isNativeWarlockPactcraft(def);
+  const nativeArtificer = isNativeArtificerDevicecraft(def);
   const recentDamage = nativeBarbarian
     ? (attacker.statuses || []).find((status) => status.type === "barbarianRecentDamage")
     : null;
@@ -1731,7 +3069,81 @@ function dealHit(cs, attacker, target, profile, def, tier) {
     warriorProfile = { ...warriorProfile, accuracyBonus: (warriorProfile.accuracyBonus || 0) + clamp(weaponChange.value || 0, 0, 30) };
     attacker.statuses = (attacker.statuses || []).filter((status) => status !== weaponChange);
   }
-  const physicalWeaponAttack = warriorProfile.type === "physical" && abilityScaling(def) === "weapon";
+  let rangerProfile = warriorProfile;
+  if (nativeRanger && combatantActionKey(target) === attacker.rangerQuarryUid) {
+    const owned = (target.statuses || []).filter((status) => status.sourceUid === attacker.uid);
+    const ownedValue = (...types) => owned.filter((status) => types.includes(status.type))
+      .reduce((total, status) => total + (status.value || 0), 0);
+    const accuracyRead = clamp(ownedValue("rangerQuarrySign", "rangerPatientAim", "rangerReadMonster", "rangerKillZone"), 0, 35);
+    const penetrationRead = clamp(Math.round(ownedValue("rangerReadMonster", "rangerLayeredSnare", "rangerKillZone") / 5), 0, 8);
+    const patientCrit = clamp(Math.round(ownedValue("rangerPatientAim", "rangerDeadeyeBreath") / 2), 0, 20);
+    const relentless = clamp(sumStatus(attacker, "rangerRelentlessTrail"), 0, 20);
+    rangerProfile = {
+      ...rangerProfile,
+      accuracyBonus: (rangerProfile.accuracyBonus || 0) + accuracyRead + relentless,
+      pen: (rangerProfile.pen || 0) + penetrationRead,
+      critBonus: (rangerProfile.critBonus || 0) + patientCrit,
+    };
+  }
+  const rogueProfile = nativeRogue && rogueExploitCommitted(attacker, target, def)
+    ? {
+        ...rangerProfile,
+        accuracyBonus: (rangerProfile.accuracyBonus || 0) + 12,
+        pen: (rangerProfile.pen || 0) + clamp(def.rogueOpeningPen || 1, 0, 4),
+      }
+    : rangerProfile;
+  const accounted = nativePaladin && def.id === "paladin-verdict-edge"
+    ? (target.statuses || []).find((status) => status.type === "paladinCallToAccount"
+      && status.sourceUid === combatantActionKey(attacker))
+    : null;
+  const paladinProfile = accounted
+    ? {
+        ...rogueProfile,
+        accuracyBonus: (rogueProfile.accuracyBonus || 0) + clamp(accounted.value || 0, 5, 20),
+        pen: (rogueProfile.pen || 0) + 2,
+      }
+    : rogueProfile;
+  const druidDecayAction = nativeDruid && [
+    "druidLeafrot", "druidDecayMark", "druidMolderingWave", "druidReturnToSoil",
+  ].includes(def.effect?.type);
+  const druidDecayOpening = druidDecayAction
+    ? (target.statuses || []).filter((status) => status.sourceUid === combatantActionKey(attacker)
+      && ["druidDecayMark", "druidReturnToSoil"].includes(status.type))
+      .reduce((total, status) => total + (status.value || 0), 0)
+    : 0;
+  const druidProfile = druidDecayOpening > 0
+    ? {
+        ...paladinProfile,
+        min: Math.max(1, Math.round(paladinProfile.min * (1 + clamp(druidDecayOpening, 0, 35) / 100))),
+        max: Math.max(1, Math.round(paladinProfile.max * (1 + clamp(druidDecayOpening, 0, 35) / 100))),
+      }
+    : paladinProfile;
+  const warlockOwnedCondition = nativeWarlock && (
+    (def.warlockRequiresOwnDebtMark && warlockOwnStatus(attacker, target, "warlockDebtMark"))
+    || (def.warlockRequiresOwnHellfireCovenant && warlockOwnStatus(attacker, target, "warlockHellfireCovenant"))
+  );
+  const authoredPactBonus = Number(def.effect?.debtBonus ?? def.effect?.contractPressure ?? 0);
+  const pactBonus = warlockOwnedCondition ? clamp(authoredPactBonus, 0, 20) / 100 : 0;
+  const warlockProfile = pactBonus > 0
+    ? {
+        ...druidProfile,
+        min: Math.max(1, Math.round(druidProfile.min * (1 + pactBonus))),
+        max: Math.max(1, Math.round(druidProfile.max * (1 + pactBonus))),
+      }
+    : druidProfile;
+  const artificerNode = nativeArtificer
+    ? (target.statuses || []).find((status) => status.type === "artificerArcNode"
+      && status.sourceUid === combatantActionKey(attacker))
+    : null;
+  const artificerNodeBonus = artificerNode ? clamp(artificerNode.deviceDamageBonus || artificerNode.value || 0, 0, 15) / 100 : 0;
+  const artificerProfile = artificerNodeBonus > 0
+    ? {
+        ...warlockProfile,
+        min: Math.max(1, Math.round(warlockProfile.min * (1 + artificerNodeBonus))),
+        max: Math.max(1, Math.round(warlockProfile.max * (1 + artificerNodeBonus))),
+      }
+    : warlockProfile;
+  const physicalWeaponAttack = artificerProfile.type === "physical" && abilityScaling(def) === "weapon";
   const rangedWeapon = !!(attacker.weapon?.range || ["bow", "crossbow"].includes(attacker.weapon?.category));
   const physicalMeleeAttack = physicalWeaponAttack && !rangedWeapon;
   const monkParry = physicalMeleeAttack
@@ -1743,11 +3155,11 @@ function dealHit(cs, attacker, target, profile, def, tier) {
   const veteranReversal = physicalWeaponAttack && hasStatus(target, "warriorVeteranReversal");
   const resolvedWarriorProfile = veteranReversal
     ? {
-        ...warriorProfile,
-        min: Math.max(1, Math.round(warriorProfile.min * 0.6)),
-        max: Math.max(1, Math.round(warriorProfile.max * 0.6)),
+        ...artificerProfile,
+        min: Math.max(1, Math.round(artificerProfile.min * 0.6)),
+        max: Math.max(1, Math.round(artificerProfile.max * 0.6)),
       }
-    : warriorProfile;
+    : artificerProfile;
   const monkReactionReduction = Math.max(
     clamp((monkParry?.value || 0) / 100, 0, 0.4),
     clamp((monkAbsorb?.value || 0) / 100, 0, 0.5),
@@ -1759,14 +3171,77 @@ function dealHit(cs, attacker, target, profile, def, tier) {
         max: Math.max(1, Math.round(resolvedWarriorProfile.max * (1 - monkReactionReduction))),
       }
     : resolvedWarriorProfile;
+  const canopy = rangedWeapon
+    ? (target.statuses || []).reduce((best, status) => status.type === "druidLivingCanopy"
+      && (!best || (status.value || 0) > (best.value || 0)) ? status : best, null)
+    : null;
+  const canopyRate = canopy ? clamp((canopy.value || 0) / 100, 0.1, 0.3) : 0;
+  const canopyCap = canopy ? Math.max(1, Math.round((target.maxHealth || 1) * clamp(canopy.cap || 0.10, 0.05, 0.12))) : 0;
+  const canopyProfile = canopy
+    ? {
+        ...resolvedMonkProfile,
+        min: Math.max(1, resolvedMonkProfile.min - Math.min(canopyCap, Math.round(resolvedMonkProfile.min * canopyRate))),
+        max: Math.max(1, resolvedMonkProfile.max - Math.min(canopyCap, Math.round(resolvedMonkProfile.max * canopyRate))),
+      }
+    : resolvedMonkProfile;
+  const automaton = (target.statuses || []).reduce((best, status) => status.type === "artificerInterceptionAutomaton"
+    && (!best || (status.share || 0) > (best.share || 0)) ? status : best, null);
+  const barricade = rangedWeapon
+    ? (target.statuses || []).reduce((best, status) => status.type === "artificerDeployableBarricade"
+      && (!best || (status.projectileReduction || 0) > (best.projectileReduction || 0)) ? status : best, null)
+    : null;
+  const deviceReduction = Math.max(
+    clamp(Number(automaton?.share || 0), 0, 0.20),
+    clamp(Number(barricade?.projectileReduction || 0), 0, 0.15),
+  );
+  const deviceCap = automaton
+    ? Math.max(1, Math.round((target.maxHealth || 1) * clamp(Number(automaton.cap || 0.08), 0.03, 0.08)))
+    : barricade ? Math.max(1, Math.round((target.maxHealth || 1) * clamp(Number(barricade.cap || 0.08), 0.03, 0.08))) : 0;
+  const protectedProfile = deviceReduction > 0
+    ? {
+        ...canopyProfile,
+        min: Math.max(1, canopyProfile.min - Math.min(deviceCap, Math.round(canopyProfile.min * deviceReduction))),
+        max: Math.max(1, canopyProfile.max - Math.min(deviceCap, Math.round(canopyProfile.max * deviceReduction))),
+      }
+    : canopyProfile;
   const fearReduced = target.triggers?.dragonHeart && def && FEAR_ABILITY_IDS.has(def.id);
   const resolvedProfile = fearReduced
-    ? { ...resolvedMonkProfile, min: Math.max(1, Math.round(resolvedMonkProfile.min * 0.75)), max: Math.max(1, Math.round(resolvedMonkProfile.max * 0.75)) }
-    : resolvedMonkProfile;
+    ? { ...protectedProfile, min: Math.max(1, Math.round(protectedProfile.min * 0.75)), max: Math.max(1, Math.round(protectedProfile.max * 0.75)) }
+    : protectedProfile;
   const blockBefore = target.block || 0;
   const res = resolveHit(attacker, target, resolvedProfile);
   cs.log.push(res.log);
-  const dealt = before - target.health;
+  let dealt = before - target.health;
+  if (dealt > 0 && target.health > 0 && nativePaladin && def.paladinRadiantRider && isProfaneEntity(target)) {
+    const rider = typeof def.paladinRadiantRider === "object"
+      ? def.paladinRadiantRider
+      : { value: def.paladinRadiantRider };
+    const authored = Number(rider.value ?? rider.ratio ?? 0.25);
+    const rawRadiance = authored <= 1 ? Math.max(1, Math.round(dealt * clamp(authored, 0.1, 0.5))) : Math.max(1, Math.round(authored));
+    const capped = Math.min(rawRadiance, Math.max(1, Math.round((target.maxHealth || target.health || 1)
+      * clamp(Number(rider.cap ?? 0.08), 0.03, 0.08))));
+    const radiant = Math.max(0, capped - Math.max(0, target.ward || 0));
+    if (radiant > 0) {
+      target.health = Math.max(0, target.health - radiant);
+      cs.log.push(logEntry(`${attacker.name}'s witnessed oath adds ${radiant} ward-respecting radiance against ${target.name}'s profane nature.`, "hit"));
+      dealt = before - target.health;
+    } else {
+      cs.log.push(logEntry(`${target.name}'s ward turns aside the bounded oath-radiance.`, "status"));
+    }
+  }
+  if (dealt > 0) {
+    redirectThroughPaladinOathguard(cs, attacker, target, dealt);
+    dealt = before - target.health;
+  }
+  if (dealt > 0) {
+    redistributeWarlockSharedBurden(cs, attacker, target, dealt);
+    dealt = before - target.health;
+  }
+  if (nativePaladin && (def.nonlethal || def.effect?.nonlethal) && target.health <= 0) {
+    target.health = 1;
+    dealt = Math.max(0, before - target.health);
+    cs.log.push(logEntry(`${attacker.name} arrests the final force of ${def.name}; ${target.name} remains alive.`, "status"));
+  }
   const targetIsPlayer = target === cs.player;
   if (targetIsPlayer) addProf(cs, "evasion", XP.EVASION); // exercising evasion (even on a dodge)
   gainBarbarianFuryFromDamage(cs, attacker, target, dealt);
@@ -1805,24 +3280,36 @@ function dealHit(cs, attacker, target, profile, def, tier) {
     gainWarriorTempo(cs, target, { defensive: true });
     warriorCounterHit(cs, target, attacker, 0.65, "a veteran reversal");
   }
+  if (resolvedProfile.type === "physical" && blockBefore > (target.block || 0) && hasStatus(target, "paladinStandFast")) {
+    gainPaladinConviction(cs, target, attacker, 1);
+  }
 
   resolveMonkReaction();
 
   if (dealt > 0 && nativeWarrior && def.warriorSequenceTag && !def.warriorFinisher) {
     gainWarriorTempo(cs, attacker, { sequenceTag: def.warriorSequenceTag });
   }
-  if (dealt > 0 && nativeWarrior && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs);
+  if (dealt > 0 && target.health > 0 && nativeRanger && def.rangerQuarryInsightBuild) {
+    gainRangerQuarryInsight(cs, attacker, target, def);
+  }
+  if (dealt > 0 && target.health > 0 && nativeRogue && def.rogueOpeningBuild) {
+    gainRogueOpening(cs, attacker, target, def);
+  }
+  if (dealt > 0 && nativeRanger && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs, attacker);
+  if (dealt > 0 && nativeRanger && def.effect?.target === "self") applySelfEffect(attacker, def.effect, cs, attacker);
+  if (dealt > 0 && nativeWarrior && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs, attacker);
   if (!res.dodged && target.health > 0 && nativeMonk && def.monkPostureBuild) {
     gainMonkPosture(cs, attacker, target, def.monkPostureBuild);
   }
   if (!res.dodged && target.health > 0 && nativeMonk && postureSpent >= (def.monkPostureCost || 0)) {
     applyMonkControl(cs, attacker, target, def, postureSpent);
   }
-  if (dealt > 0 && nativeMonk && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs);
+  if (dealt > 0 && nativeMonk && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs, attacker);
   if (dealt > 0 && target.health > 0 && nativeBarbarian && def.barbarianControl) {
     applyBarbarianControl(cs, attacker, target, def);
   }
-  if (dealt > 0 && nativeBarbarian && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs);
+  if (dealt > 0 && nativeBarbarian && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs, attacker);
+  if (dealt > 0 && nativeRogue && def.selfEffect) applySelfEffect(attacker, def.selfEffect, cs, attacker);
 
   // Execute (Body 30): any landed hit on a foe already below the threshold
   // (pre-damage HP) is an instant kill. The threshold is checked against
@@ -2063,12 +3550,21 @@ function startOfTurn(cs, actor) {
 
 // ----- morale -----
 
+function bardMoraleResistance(combatant) {
+  return clamp(
+    sumStatus(combatant, "bardHearteningChorus") + sumStatus(combatant, "bardDefiantAnthem") + sumStatus(combatant, "bardOldBallad"),
+    0,
+    50,
+  ) / 100;
+}
+
 function onEnemyDamaged(e, dmg) {
   if (e.demeanor === "fanatic" || e.demeanor === "mindless") return;
   const cfg = DEMEANOR_CONFIG[e.demeanor] || DEMEANOR_CONFIG.wary;
   let loss = (dmg / Math.max(1, e.maxHealth)) * 55;
   if (e.health / e.maxHealth <= 0.25) loss += 10;
   if (cfg.proud) loss *= 0.6;
+  loss *= 1 - bardMoraleResistance(e);
   e.morale = Math.max(0, e.morale - loss);
 }
 function onEnemyControlled(e) {
@@ -2077,13 +3573,35 @@ function onEnemyControlled(e) {
   e.controlPressure = (e.controlPressure || 0) + 1;
   let loss = cfg.proud ? 3 : 6;
   if (e.demeanor === "cowardly") loss = 9;
+  loss *= 1 - bardMoraleResistance(e);
   e.morale = Math.max(0, e.morale - loss);
 }
 // Undying scrubs lingering harm on revive so the cheated-death moment isn't wasted
 // re-dying to leftover damage-over-time.
-const HARMFUL_STATUS = new Set(["bleed", "poison", "burn", "chill", "curse", "vulnerable", "weaken", "stun", "silence", "slow", "shatter", "geas", "polymorph", "levelDrain"]);
+const HARMFUL_STATUS = new Set(["bleed", "poison", "burn", "chill", "curse", "vulnerable", "weaken", "stun", "silence", "slow", "shatter", "geas", "polymorph", "levelDrain", "warlockPactExposure", ...BARD_PRESSURE_STATUS, ...RANGER_PRESSURE_STATUS, ...ROGUE_PRESSURE_STATUS, ...PALADIN_PRESSURE_STATUS, ...DRUID_ENEMY_STATUS, ...WARLOCK_ENEMY_STATUS, ...ARTIFICER_ENEMY_STATUS]);
 function cleanseHarm(c) {
   if (Array.isArray(c.statuses)) c.statuses = c.statuses.filter((s) => !HARMFUL_STATUS.has(s.type));
+}
+
+function collectDruidHarvest(cs, fallen) {
+  if (!cs || !fallen || fallen._druidHarvestCollected) return;
+  const marks = (fallen.statuses || []).filter((status) => status.type === "druidHarvestTide" && status.sourceUid);
+  for (const mark of marks) {
+    const druid = byUid(cs, mark.sourceUid);
+    if (!druid || druid.side === fallen.side || druid.health <= 0 || !isDruidCombatant(druid)) continue;
+    const cap = clamp(Math.round(mark.resolveCap || 6), 1, 8);
+    const already = clamp(Math.round(druid._druidHarvestResolve || 0), 0, cap);
+    const available = Math.max(0, cap - already);
+    const room = Number.isFinite(Number(druid.resolveMax))
+      ? Math.max(0, druid.resolveMax - (druid.resolve || 0))
+      : available;
+    const restored = Math.min(available, room, clamp(Math.round(mark.value || 3), 1, 4));
+    if (restored <= 0) continue;
+    druid.resolve = (druid.resolve || 0) + restored;
+    druid._druidHarvestResolve = already + restored;
+    cs.log.push(logEntry(`${druid.name} reclaims ${restored} Resolve from ${fallen.name}'s released natural energy.`, "status"));
+  }
+  fallen._druidHarvestCollected = true;
 }
 
 // A foe drops to 0. In a lethal fight that means death (lootable corpse); in a
@@ -2103,6 +3621,7 @@ function downEnemy(cs, e) {
     cs.log.push(logEntry(`${e.name} should be dead — and rises anyway.`, "enemy"));
     return;
   }
+  collectDruidHarvest(cs, e);
   // Cutting down a foe that had thrown down its arms is an execution, not a kill —
   // flag it so the aftermath can weigh the cold-bloodedness of it.
   const wasHelpless = e.resolved === "yielded";
@@ -2118,7 +3637,8 @@ function downEnemy(cs, e) {
   let lined = false;
   for (const s of cs.enemies) {
     if (s === e || s.health <= 0 || s.resolved) continue;
-    s.morale = Math.max(0, s.morale - (ALLY_LOSS[s.demeanor] ?? 12));
+    const allyLoss = (ALLY_LOSS[s.demeanor] ?? 12) * (1 - bardMoraleResistance(s));
+    s.morale = Math.max(0, s.morale - allyLoss);
     if (!lined && !["mindless", "fanatic", "feral"].includes(s.demeanor)) {
       const l = flavorLine("allyFell", s.demeanor, s.name);
       if (l) { cs.log.push(logEntry(l, "enemy")); lined = true; }
@@ -2128,6 +3648,7 @@ function downEnemy(cs, e) {
 // An allied companion drops to 0 — dead in a lethal fight, knocked out in a brawl.
 function downAlly(cs, a) {
   if (a._dead || a.resolved === "ko") return;
+  collectDruidHarvest(cs, a);
   if (cs.lethal) { a._dead = true; cs.log.push(logEntry(`${a.name} falls, slain.`, "enemy")); }
   else { a.resolved = "ko"; cs.log.push(logEntry(`${a.name} is knocked senseless.`, "system")); }
 }
@@ -2199,8 +3720,9 @@ function summonUndead(cs, actor) {
   return true;
 }
 
-function applySelfEffect(actor, effect, cs = null) {
+function applySelfEffect(actor, effect, cs = null, sourceActor = null) {
   if (!effect) return;
+  effect = druidSurgedEffect(sourceActor, effect);
   // `pctMax` heals/shields are a FRACTION of the target's max health, so support
   // stays meaningful at every scale (a flat +16 is noise next to a raid's HP).
   const val = effect.pctMax ? Math.max(1, Math.round((actor.maxHealth || 0) * (effect.value || 0))) : (effect.value || 0);
@@ -2245,6 +3767,375 @@ function applySelfEffect(actor, effect, cs = null) {
       if (cs) cs.log.push(logEntry(`${actor.name} is sheltered by patient living roots: ${restored} health and ${ward} shield.`, "status"));
       break;
     }
+    case "rangerFieldDressing": {
+      const beforeHealth = actor.health;
+      const beforeResolve = actor.resolve;
+      const beforeBleeds = (actor.statuses || []).filter((status) => status.type === "bleed").length;
+      actor.statuses = (actor.statuses || []).filter((status) => status.type !== "bleed");
+      addStatus(actor, {
+        type: "rangerFieldDressing",
+        value: clamp(effect.value || 35, 20, 50),
+        duration: clamp(effect.duration || 3, 1, 4),
+      });
+      let moraleRestored = 0;
+      if (Number.isFinite(Number(actor.morale)) && Number.isFinite(Number(actor.moraleMax))) {
+        const before = actor.morale;
+        actor.morale = Math.min(actor.moraleMax, actor.morale + clamp(effect.morale || 6, 1, 10));
+        moraleRestored = actor.morale - before;
+      }
+      // Explicitly preserve wounds and Resolve: this is pressure, cloth, splints,
+      // and calm hands, not healing magic or a second resource pool.
+      actor.health = beforeHealth;
+      if (beforeResolve != null) actor.resolve = beforeResolve;
+      if (cs) cs.log.push(logEntry(`${actor.name} is field-dressed${beforeBleeds ? `; ${beforeBleeds} active bleed${beforeBleeds === 1 ? " is" : "s are"} bound` : ""}${moraleRestored ? ` (+${moraleRestored} morale)` : ""}, without closing the wound.`, "status"));
+      break;
+    }
+    case "rangerEvadingStep": {
+      const steps = clamp(effect.steps || 1, 1, 1);
+      if (cs) {
+        if (actor.side === "enemy") actor.distance = Math.min(MAX_DISTANCE, (actor.distance || 0) + steps);
+        else for (const target of cs.enemies || []) target.distance = Math.min(MAX_DISTANCE, (target.distance || 0) + steps);
+      }
+      addStatus(actor, { type: "rangerEvadingStep", value: clamp(effect.value || effect.dodge || 18, 8, 25), duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    }
+    case "rangerRelentlessTrail":
+      addStatus(actor, { type: "rangerRelentlessTrail", value: clamp(effect.value || 14, 6, 20), duration: clamp(effect.duration || 3, 1, 4) });
+      break;
+    case "rangerSafePassage":
+      addStatus(actor, { type: "rangerSafePassage", value: clamp(effect.value || 16, 8, 24), duration: clamp(effect.duration || 2, 1, 3) });
+      break;
+    case "rangerRunningShot":
+      addStatus(actor, { type: "rangerRunningShot", value: clamp(effect.value || 20, 10, 28), duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    case "artificerFieldRefit":
+      applyArtificerRefit(cs, actor, effect);
+      break;
+    case "artificerGuardProjector":
+    case "artificerInscribedWard":
+    case "artificerLayeredSeal": {
+      const cap = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.cap || 0.10, 0.04, 0.12)));
+      const ward = Math.min(cap, clamp(Math.round(effect.ward || 8), 4, 16));
+      actor.magicShield = (actor.magicShield || 0) + ward;
+      addStatus(actor, { ...effect, value: ward, duration: clamp(effect.duration || 2, 1, 3), sourceUid: combatantActionKey(sourceActor || actor) });
+      break;
+    }
+    case "artificerCountermeasure":
+    case "artificerRestorativeAerosol": {
+      const removable = (actor.statuses || []).find((status) => HARMFUL_STATUS.has(status.type));
+      if (removable) actor.statuses = actor.statuses.filter((status) => status !== removable);
+      if (effect.ward) actor.magicShield = (actor.magicShield || 0) + clamp(Math.round(effect.ward), 1, 6);
+      if (effect.morale && Number.isFinite(Number(actor.morale)) && Number.isFinite(Number(actor.moraleMax))) {
+        actor.morale = Math.min(actor.moraleMax, actor.morale + clamp(Math.round(effect.morale), 1, 10));
+      }
+      addStatus(actor, { ...effect, value: removable ? 1 : 0, duration: clamp(effect.duration || 1, 1, 2), sourceUid: combatantActionKey(sourceActor || actor) });
+      break;
+    }
+    case "artificerAdaptivePlating":
+    case "artificerMasterworkArray": {
+      actor.block = (actor.block || 0) + clamp(Math.round(effect.block || 0), 0, 12);
+      actor.magicShield = (actor.magicShield || 0) + clamp(Math.round(effect.ward || 0), 0, 12);
+      addStatus(actor, { ...effect, value: clamp(Math.round(effect.accuracyBonus || 0), 0, 15), duration: clamp(effect.duration || 2, 1, 3), sourceUid: combatantActionKey(sourceActor || actor) });
+      break;
+    }
+    case "artificerClockworkSentinel":
+    case "artificerDeployableBarricade":
+    case "artificerBulwarkFrame": {
+      actor.block = (actor.block || 0) + clamp(Math.round(effect.block || 8), 4, 14);
+      addStatus(actor, { ...effect, value: clamp(Math.round(effect.block || 8), 4, 14), duration: clamp(effect.duration || 2, 1, 3), sourceUid: combatantActionKey(sourceActor || actor) });
+      break;
+    }
+    case "artificerRunicEdge":
+    case "artificerInterceptionAutomaton":
+    case "artificerOverclockServo":
+      addStatus(actor, { ...effect, value: clamp(Math.round(effect.value || effect.physicalDamageBonus || effect.accuracyBonus || (effect.share || 0) * 100), 1, 25), duration: clamp(effect.duration || 2, 1, 3), sourceUid: combatantActionKey(sourceActor || actor) });
+      break;
+    case "warlockOpenCovenant": {
+      const sourceUid = combatantActionKey(sourceActor || actor);
+      actor.statuses = (actor.statuses || []).filter((status) => !(
+        status.type === "warlockOpenCovenant" && status.sourceUid === sourceUid
+      ));
+      addStatus(actor, {
+        ...effect,
+        type: "warlockOpenCovenant",
+        value: clamp(Math.round(effect.accuracyBonus || effect.value || 10), 5, 15),
+        accuracyBonus: clamp(Math.round(effect.accuracyBonus || effect.value || 10), 5, 15),
+        duration: clamp(effect.duration || 2, 1, 3),
+        sourceUid,
+      });
+      break;
+    }
+    case "warlockOwedWard":
+    case "warlockBlackBargain": {
+      if (effect.type === "warlockBlackBargain" && actor.willing === false) {
+        if (cs) cs.log.push(logEntry(`${actor.name} refuses the offered Black Bargain without penalty.`, "status"));
+        break;
+      }
+      const sourceUid = combatantActionKey(sourceActor || actor);
+      const ward = clamp(Math.round(effect.ward || effect.value || 10), 4, 18);
+      const cap = clamp(Number(effect.cap ?? 0.10), 0.04, 0.10);
+      actor.statuses = (actor.statuses || []).filter((status) => !(
+        status.type === effect.type && status.sourceUid === sourceUid
+      ));
+      addStatus(actor, {
+        ...effect,
+        type: effect.type,
+        value: Math.min(ward, Math.max(1, Math.round((actor.maxHealth || 1) * cap))),
+        ward,
+        cap,
+        duration: clamp(effect.duration || 2, 1, 3),
+        sourceUid,
+      });
+      break;
+    }
+    case "warlockSharedBurden": {
+      if (actor.willing === false) {
+        if (cs) cs.log.push(logEntry(`${actor.name} declines Shared Burden; no pact link is formed.`, "status"));
+        break;
+      }
+      const sourceUid = combatantActionKey(sourceActor || actor);
+      const rawShare = Number(effect.share ?? effect.value ?? 0.20);
+      const share = clamp(Math.round(rawShare <= 1 ? rawShare * 100 : rawShare), 5, 20);
+      const cap = clamp(Number(effect.cap ?? 0.08), 0.03, 0.08);
+      actor.statuses = (actor.statuses || []).filter((status) => !(
+        status.type === "warlockSharedBurden" && status.sourceUid === sourceUid
+      ));
+      addStatus(actor, {
+        ...effect,
+        type: "warlockSharedBurden",
+        value: share,
+        share: rawShare,
+        cap,
+        duration: clamp(effect.duration || 2, 1, 3),
+        sourceUid,
+      });
+      break;
+    }
+    case "druidRimebark": {
+      const ward = clamp(Math.round(effect.ward || effect.value || 10), 4, 18);
+      addStatus(actor, {
+        type: "druidRimebark",
+        value: ward,
+        ward,
+        forcedMoveResistance: clamp(Math.round(effect.forcedMoveResistance || 20), 8, 30),
+        duration: clamp(effect.duration || 2, 1, 3),
+      });
+      if (cs) cs.log.push(logEntry(`${actor.name} takes on ${ward} temporary rimebark ward.`, "status"));
+      break;
+    }
+    case "druidSaprise": {
+      const nature = String(actor.race || actor.kind || "").toLowerCase();
+      if (actor.health <= 0 || actor._dead || ["undead", "construct"].includes(nature) || actor.living === false) break;
+      const authored = Math.max(1, Math.round(effect.regen || effect.value || 4));
+      const cap = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.cap || 0.08, 0.03, 0.12)));
+      const sourceUid = combatantActionKey(sourceActor);
+      const duration = clamp(effect.duration || 3, 1, 4);
+      const regen = Math.min(authored, cap);
+      addStatus(actor, { ...effect, type: "druidSaprise", value: regen, regen, cap: effect.cap, duration, sourceUid });
+      addStatus(actor, { type: "regen", value: regen, duration, sourceUid });
+      break;
+    }
+    case "druidLivingCanopy": {
+      const reduction = Number(effect.projectileReduction ?? effect.value ?? 0.25);
+      addStatus(actor, {
+        ...effect,
+        type: "druidLivingCanopy",
+        value: clamp(Math.round(reduction <= 1 ? reduction * 100 : reduction), 10, 30),
+        projectileReduction: reduction,
+        requiresPresentGrowth: effect.requiresPresentGrowth === true,
+        cap: clamp(effect.cap || 0.10, 0.05, 0.12),
+        duration: clamp(effect.duration || 3, 1, 3),
+        sourceUid: combatantActionKey(sourceActor),
+      });
+      break;
+    }
+    case "druidPredatorShape":
+    case "druidWolfAspect":
+    case "druidBearAspect": {
+      const bodyBonus = clamp(Math.round(effect.bodyBonus || 0), 0, 24);
+      const reflexBonus = clamp(Math.round(effect.reflexBonus || 0), 0, 24);
+      const critBonus = clamp(Math.round(effect.critBonus || 0), 0, 12);
+      const block = clamp(Math.round(effect.block || 0), 0, Math.max(1, Math.round((actor.maxHealth || 1) * 0.15)));
+      if (block) actor.block = (actor.block || 0) + block;
+      actor.statuses = (actor.statuses || []).filter((status) => ![
+        "druidPredatorShape", "druidWolfAspect", "druidBearAspect",
+      ].includes(status.type));
+      addStatus(actor, {
+        type: effect.type,
+        value: Math.max(bodyBonus, reflexBonus, 1),
+        bodyBonus,
+        reflexBonus,
+        critBonus,
+        block,
+        pursuitBonus: clamp(Math.round(effect.pursuitBonus || 0), 0, 20),
+        forcedMoveResistance: clamp(Math.round(effect.forcedMoveResistance || 0), 0, 30),
+        aspect: effect.aspect,
+        duration: clamp(effect.duration || 3, 1, 4),
+        sourceUid: combatantActionKey(sourceActor || actor),
+      });
+      if (cs) cs.log.push(logEntry(`${actor.name} reshapes only their own body into the ${effect.aspect || "wild"} aspect.`, "status"));
+      break;
+    }
+    case "druidIronbarkRise": {
+      const block = clamp(Math.round(effect.block || 10), 1, Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.cap || 0.12, 0.06, 0.15))));
+      const ward = clamp(Math.round(effect.ward || 8), 3, 15);
+      actor.block = (actor.block || 0) + block;
+      addStatus(actor, { type: "druidIronbarkRise", value: ward, duration: clamp(effect.duration || 2, 1, 3), sourceUid: combatantActionKey(sourceActor) });
+      break;
+    }
+    case "druidReclamationBloom": {
+      const nature = String(actor.race || actor.kind || "").toLowerCase();
+      if (actor.health <= 0 || actor._dead || ["undead", "construct"].includes(nature) || actor.living === false) break;
+      const healthCap = Math.max(1, Math.round((actor.maxHealth || 1) * clamp(effect.healthCap || 0.06, 0.03, 0.08)));
+      const beforeHealth = actor.health;
+      actor.health = Math.min(actor.maxHealth, actor.health + Math.min(Math.round(effect.restoreHealth || 5), healthCap));
+      const restoredHealth = actor.health - beforeHealth;
+      let restoredResolve = 0;
+      if (Number.isFinite(Number(actor.resolve)) && Number.isFinite(Number(actor.resolveMax))) {
+        const before = actor.resolve;
+        actor.resolve = Math.min(actor.resolveMax, actor.resolve + Math.min(Math.round(effect.restoreResolve || 2), Math.round(effect.resolveCap || 3)));
+        restoredResolve = actor.resolve - before;
+      }
+      if (cs && (restoredHealth || restoredResolve)) cs.log.push(logEntry(`${actor.name} reclaims decay into ${restoredHealth} health and ${restoredResolve} Resolve.`, "status"));
+      break;
+    }
+    case "paladinOathguard":
+    case "paladinBearTheBlow":
+    case "paladinLastWitness":
+    case "paladinOathIncarnate":
+    case "paladinShieldCovenant":
+    case "paladinRampartExchange":
+    case "paladinRedeemingIntercession":
+    case "paladinPilgrimAegis": {
+      const defaults = {
+        paladinOathguard: 30,
+        paladinBearTheBlow: 40,
+        paladinLastWitness: 55,
+        paladinOathIncarnate: 65,
+        paladinShieldCovenant: 35,
+        paladinRampartExchange: 50,
+        paladinRedeemingIntercession: 40,
+        paladinPilgrimAegis: 40,
+      };
+      if (actor?.interceptionLineBlocked || actor?.reachableForInterception === false) {
+        if (cs) cs.log.push(logEntry(`${sourceActor?.name || "The Paladin"} has no reachable physical interception line to ${actor.name}.`, "status"));
+        break;
+      }
+      const sourceUid = combatantActionKey(sourceActor || actor);
+      const rawShare = Number(effect.share ?? effect.value ?? defaults[effect.type]);
+      const share = clamp(Math.round(rawShare <= 1 ? rawShare * 100 : rawShare), 10, 65);
+      const cap = clamp(Number(effect.cap ?? 0.15), 0.08, 0.25);
+      const duration = clamp(effect.duration || 2, 1, 3);
+      actor.statuses = (actor.statuses || []).filter((status) => !(
+        status.type === "paladinOathguard" && status.sourceUid === sourceUid
+      ));
+      addStatus(actor, { type: "paladinOathguard", value: share, cap, duration, sourceUid });
+      if (effect.type !== "paladinOathguard") {
+        actor.statuses = (actor.statuses || []).filter((status) => !(
+          status.type === effect.type && status.sourceUid === sourceUid
+        ));
+        const ownValue = effect.fearSteadiness ?? effect.forcedMoveResistance ?? share;
+        addStatus(actor, { type: effect.type, value: clamp(Math.round(ownValue), 1, 65), duration, sourceUid });
+      }
+      const blockValue = Number(effect.block || 0);
+      if (blockValue > 0) {
+        const block = blockValue <= 1
+          ? Math.max(1, Math.round((actor.maxHealth || 1) * clamp(blockValue, 0, 0.2)))
+          : clamp(Math.round(blockValue), 1, Math.max(1, Math.round((actor.maxHealth || 1) * 0.2)));
+        actor.block = (actor.block || 0) + block;
+      }
+      if (effect.clearFear) {
+        actor.statuses = (actor.statuses || []).filter((status) => !["fear", "terrified", "dread"].includes(status.type));
+      }
+      if (cs && actor !== sourceActor) {
+        cs.log.push(logEntry(`${sourceActor?.name || "A Paladin"} places ${actor.name} under a source-owned Oathguard (${share}% bounded redirection).`, "status"));
+      }
+      break;
+    }
+    case "paladinStandFast": {
+      const blockValue = Number(effect.block ?? effect.value ?? 0.12);
+      const block = blockValue <= 1
+        ? Math.max(1, Math.round((actor.maxHealth || 1) * clamp(blockValue, 0.05, 0.2)))
+        : clamp(Math.round(blockValue), 1, Math.max(1, Math.round((actor.maxHealth || 1) * 0.2)));
+      actor.block = (actor.block || 0) + block;
+      actor.statuses = (actor.statuses || []).filter((status) => status.type !== "paladinStandFast");
+      addStatus(actor, { type: "paladinStandFast", value: 1, duration: clamp(effect.duration || 2, 1, 2) });
+      if (cs) cs.log.push(logEntry(`${actor.name} stands fast behind ${block} finite Block.`, "status"));
+      break;
+    }
+    case "paladinSteadfastWord": {
+      if (!canReceiveRogueSpeech(actor) || actor.willing === false) {
+        if (cs) cs.log.push(logEntry(`${actor.name} cannot willingly hear the steadfast oath.`, "status"));
+        break;
+      }
+      let restored = 0;
+      if (Number.isFinite(Number(actor.morale)) && Number.isFinite(Number(actor.moraleMax))) {
+        const before = actor.morale;
+        actor.morale = Math.min(actor.moraleMax, actor.morale + clamp(effect.morale || effect.value || 12, 4, 20));
+        restored = actor.morale - before;
+      }
+      addStatus(actor, { type: "paladinSteadfastWord", value: clamp(effect.fearSteadiness || effect.fearResist || 20, 8, 30), duration: clamp(effect.duration || 2, 1, 3) });
+      if (cs) cs.log.push(logEntry(`${actor.name} is steadied by the witnessed word${restored ? ` (+${restored} morale)` : ""}; no wounds close.`, "status"));
+      break;
+    }
+    case "paladinHoldTheLine": {
+      const authored = Number(effect.block || 10);
+      const block = authored <= 1
+        ? Math.max(1, Math.round((actor.maxHealth || 1) * clamp(authored, 0.05, 0.15)))
+        : clamp(Math.round(authored), 1, Math.max(1, Math.round((actor.maxHealth || 1) * 0.15)));
+      actor.block = (actor.block || 0) + block;
+      addStatus(actor, { type: "paladinHoldTheLine", value: clamp(effect.forcedMoveResistance || effect.value || 15, 5, 25), duration: clamp(effect.duration || 2, 1, 2) });
+      break;
+    }
+    case "paladinBeaconStance": {
+      if (actor.canSee === false || actor.blind || actor.canSeeSource === false) {
+        if (cs) cs.log.push(logEntry(`${actor.name} cannot see the planted oath-beacon.`, "status"));
+        break;
+      }
+      let restored = 0;
+      if (Number.isFinite(Number(actor.morale)) && Number.isFinite(Number(actor.moraleMax))) {
+        const before = actor.morale;
+        actor.morale = Math.min(actor.moraleMax, actor.morale + clamp(effect.morale || 8, 2, 15));
+        restored = actor.morale - before;
+      }
+      const blockRate = clamp(effect.block || 0, 0, 0.12);
+      if (blockRate) actor.block = (actor.block || 0) + Math.max(1, Math.round((actor.maxHealth || 1) * blockRate));
+      addStatus(actor, { type: effect.type, value: clamp(effect.value || effect.fearSteadiness || 18, 6, 28), duration: clamp(effect.duration || 2, 1, 3) });
+      if (cs && restored) cs.log.push(logEntry(`${actor.name} regains ${restored} morale in the visible oath-beacon.`, "status"));
+      break;
+    }
+    case "paladinBurdenTaken": {
+      const reduction = Number(effect.redirectedDamageReduction ?? effect.redirectReduction ?? effect.value ?? 0.25);
+      addStatus(actor, {
+        type: "paladinBurdenTaken",
+        value: clamp(Math.round(reduction <= 1 ? reduction * 100 : reduction), 10, 35),
+        cap: clamp(effect.cap || 0.12, 0.08, 0.2),
+        duration: clamp(effect.duration || 3, 1, 3),
+      });
+      break;
+    }
+    case "rogueSlipLine": {
+      if (cs) {
+        if (actor.side === "enemy") actor.distance = Math.min(MAX_DISTANCE, (actor.distance || 0) + 1);
+        else for (const target of cs.enemies || []) target.distance = Math.min(MAX_DISTANCE, (target.distance || 0) + 1);
+      }
+      addStatus(actor, {
+        type: "rogueSlipLine",
+        value: clamp(effect.value || 18, 8, 24),
+        duration: clamp(effect.duration || 2, 1, 2),
+      });
+      if (cs) cs.log.push(logEntry(`${actor.name} uses practiced footwork to leave the expected line without vanishing.`, "status"));
+      break;
+    }
+    case "rogueCrowdGhost": {
+      addStatus(actor, {
+        type: "rogueCrowdGhost",
+        value: clamp(effect.value || 22, 10, 28),
+        duration: clamp(effect.duration || 2, 1, 2),
+      });
+      if (cs) cs.log.push(logEntry(`${actor.name} folds into mundane bodies and cover while remaining physically present.`, "status"));
+      break;
+    }
     case "barbarianBaitBlow": {
       gainProvokedBarbarianFury(cs, actor);
       addStatus(actor, {
@@ -2281,7 +4172,7 @@ function applySelfEffect(actor, effect, cs = null) {
       break;
     }
     case "barbarianWarCry": {
-      const eligible = actor.health > 0 && actor.canHear !== false && !actor.deaf && !actor.unconscious && actor.demeanor !== "mindless";
+      const eligible = canPerceiveBardPerformance(actor);
       if (!eligible) {
         if (cs) cs.log.push(logEntry(`${actor.name} cannot receive the audible War Cry.`, "status"));
         break;
@@ -2294,6 +4185,35 @@ function applySelfEffect(actor, effect, cs = null) {
       }
       addStatus(actor, { type: "barbarianWarCry", value: clamp(Math.round((effect.value || 20) / 2), 5, 12), duration: clamp(effect.duration || 2, 1, 2) });
       if (cs) cs.log.push(logEntry(`${actor.name} is steadied by the physical War Cry${restored ? ` (+${restored} morale)` : ""}.`, "status"));
+      break;
+    }
+    case "bardSteadyBeat":
+    case "bardRisingTempo":
+    case "bardCallResponse":
+    case "bardHearteningChorus":
+    case "bardWarDrum":
+    case "bardLoreCallout":
+    case "bardMarchingCadence":
+    case "bardDefiantAnthem":
+    case "bardOldBallad":
+    case "bardBattleChronicle": {
+      if (!canPerceiveBardPerformance(actor, { willing: true })) {
+        if (cs) cs.log.push(logEntry(`${actor.name} cannot willingly perceive the performance.`, "status"));
+        break;
+      }
+      let restored = 0;
+      if (["bardHearteningChorus", "bardDefiantAnthem", "bardOldBallad"].includes(effect.type)
+          && Number.isFinite(Number(actor.morale)) && Number.isFinite(Number(actor.moraleMax))) {
+        const before = actor.morale;
+        actor.morale = Math.min(actor.moraleMax, actor.morale + clamp(effect.value || 20, 5, 30));
+        restored = actor.morale - before;
+      }
+      addStatus(actor, {
+        type: effect.type,
+        value: clamp(effect.value || 10, 3, 25),
+        duration: clamp(effect.duration || 2, 1, 3),
+      });
+      if (cs) cs.log.push(logEntry(`${actor.name} follows the trained performance${restored ? ` (+${restored} morale)` : ""}.`, "status"));
       break;
     }
     case "monkYieldingGuard": {
@@ -2461,21 +4381,42 @@ function applySelfEffect(actor, effect, cs = null) {
 // Usable abilities for an NPC (ally or enemy): off cooldown AND affordable on the
 // actor's resolve (spells drain resolve; martial techniques are gated by action
 // points + cooldown only — the same economy the player uses).
-function npcCandidates(actor, opponents = []) {
-  if (hasStatus(actor, "silence") || hasStatus(actor, "polymorph")) return []; // blocked foes fall back to basic attacks
+function npcCandidates(cs, actor, opponents = []) {
+  if (hasStatus(actor, "polymorph")) return []; // transformed foes fall back to basic attacks
   const out = [];
   for (const a of (actor.abilities || [])) {
     if ((actor.cooldowns?.[a.id] || 0) > 0) continue;
     const def = getAbilityDef(a.id);
     if (!def) continue;
-    if (hasStatus(actor, "antimagicField") && abilityCategoryOf(def) === "spell" && !def.innate) continue;
+    if (hasStatus(actor, "silence") && silenceBlocksAbility(def)) continue;
+    if (hasStatus(actor, "antimagicField") && isMagicalCastingDiscipline(def) && !def.innate) continue;
     if (actor.resolve != null && (def.resolveCost || 0) > actor.resolve) continue;
     if (!weaponReqMet(def, actor.weapon)) continue;
     if (!monkMobilityReqMet(actor, def)) continue;
     if (!barbarianEquipmentReqMet(actor, def)) continue;
+    if (!druidEnvironmentRequirementMet(cs, actor, def)) continue;
     if ((def.warriorTempoCost || 0) > (actor.martialTempo || 0)) continue;
     if ((def.barbarianFuryCost || 0) > (actor.barbarianFury || 0)) continue;
+    if ((def.bardCadenceCost || 0) > (actor.bardCadence || 0)) continue;
+    if (!paladinConvictionReady(actor, def)) continue;
+    if (!warlockFavorReady(actor, def)) continue;
+    if (!warlockPactPricePayable(actor, def)) continue;
+    if (!artificerChargesReady(actor, def)) continue;
+    if (!paladinPhysicalRequirementMet(cs, actor, def)) continue;
     if (def.monkPostureCost && !opponents.some((target) => canAct(target) && monkPostureReady(target, def, actor))) continue;
+    if (!rangerBeastRequirementMet(cs, actor, def)) continue;
+    if (def.rangerRequiresCurrentQuarry || def.rangerQuarryInsightCost) {
+      const quarry = rangerQuarryTarget(cs, actor);
+      if (!rangerQuarryReady(cs, actor, def.target === "enemy" ? quarry : null, def)) continue;
+    }
+    if (isNativeRogueSubterfuge(def)) {
+      if (!roguePhysicalRequirementMet(cs, actor, null, def) && def.target !== "enemy") continue;
+      if (def.target === "enemy" && !opponents.some((target) => rogueTargetEligible(cs, actor, target, def))) continue;
+    }
+    if (isNativePaladinOathcraft(def) && def.target === "enemy"
+        && !opponents.some((target) => paladinTargetEligible(actor, target, def))) continue;
+    if (isNativeWarlockPactcraft(def) && def.target === "enemy"
+        && !opponents.some((target) => warlockTargetEligible(cs, actor, target, def))) continue;
     if (def.healthThreshold != null && actor.health / Math.max(1, actor.maxHealth || 1) > def.healthThreshold) continue;
     if (def.effect?.type === "warriorSecondBreath" && actor._warriorSecondBreathUsed) continue;
     if (def.effect?.type === "warriorLastStand" && actor._warriorLastStandUsed) continue;
@@ -2491,7 +4432,7 @@ function npcCandidates(actor, opponents = []) {
 function npcPerform(cs, actor, opponents, opts = {}) {
   if ((actor.actionsLeft || 0) <= 0) return false;
   // A dominated actor gets allies:[] so it won't "support" the side it's now fighting.
-  let choice = opts.choice || chooseAction(actor, opponents, npcCandidates(actor, opponents), { allies: opts.allies ?? sideAllies(cs, actor) });
+  let choice = opts.choice || chooseAction(actor, opponents, npcCandidates(cs, actor, opponents), { allies: opts.allies ?? sideAllies(cs, actor) });
   // A stored deck intent may have been planned before Polymorph landed. Replace
   // that stale spell/technique with the transformed creature's feeble fallback.
   if (hasStatus(actor, "polymorph")) {
@@ -2512,7 +4453,107 @@ function npcPerform(cs, actor, opponents, opts = {}) {
       target,
     };
   }
-  if (!weaponReqMet(choice.def, actor.weapon) || !monkMobilityReqMet(actor, choice.def) || !barbarianEquipmentReqMet(actor, choice.def)) {
+  if ((choice.def?.bardCadenceCost || 0) > (actor.bardCadence || 0)) {
+    const target = opponents.find((entry) => canAct(entry)) || null;
+    choice = {
+      ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+      def: BASIC_ATTACK,
+      mode: "single",
+      target,
+    };
+  }
+  if (!paladinConvictionReady(actor, choice.def)) {
+    const target = opponents.find((entry) => canAct(entry)) || null;
+    choice = {
+      ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+      def: BASIC_ATTACK,
+      mode: "single",
+      target,
+    };
+  }
+  if (choice.def?.rangerRequiresCurrentQuarry || choice.def?.rangerQuarryInsightCost) {
+    const quarry = rangerQuarryTarget(cs, actor);
+    if (!rangerQuarryReady(cs, actor, choice.def.target === "enemy" ? quarry : null, choice.def)) {
+      const target = opponents.find((entry) => canAct(entry)) || null;
+      choice = {
+        ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+        def: BASIC_ATTACK,
+        mode: "single",
+        target,
+      };
+    } else if (choice.def.target === "enemy") {
+      choice = { ...choice, mode: "single", target: quarry };
+    }
+  }
+  if (isNativeRogueSubterfuge(choice.def)) {
+    if (choice.def.target === "enemy") {
+      const rogueTarget = rogueTargetEligible(cs, actor, choice.target, choice.def)
+        ? choice.target
+        : opponents.find((target) => rogueTargetEligible(cs, actor, target, choice.def));
+      if (rogueTarget) choice = { ...choice, mode: "single", target: rogueTarget };
+      else {
+        const target = opponents.find((entry) => canAct(entry)) || null;
+        choice = {
+          ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+          def: BASIC_ATTACK,
+          mode: "single",
+          target,
+        };
+      }
+    } else if (!roguePhysicalRequirementMet(cs, actor, null, choice.def)) {
+      const target = opponents.find((entry) => canAct(entry)) || null;
+      choice = {
+        ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+        def: BASIC_ATTACK,
+        mode: "single",
+        target,
+      };
+    }
+  }
+  if (isNativePaladinOathcraft(choice.def) && choice.def.target === "enemy") {
+    const oathTarget = paladinTargetEligible(actor, choice.target, choice.def)
+      ? choice.target
+      : opponents.find((target) => paladinTargetEligible(actor, target, choice.def));
+    if (oathTarget) choice = { ...choice, mode: "single", target: oathTarget };
+    else {
+      const target = opponents.find((entry) => canAct(entry)) || null;
+      choice = {
+        ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+        def: BASIC_ATTACK,
+        mode: "single",
+        target,
+      };
+    }
+  }
+  if (isNativeWarlockPactcraft(choice.def) && choice.def.target === "enemy") {
+    const pactTarget = warlockTargetEligible(cs, actor, choice.target, choice.def)
+      ? choice.target
+      : opponents.find((target) => warlockTargetEligible(cs, actor, target, choice.def));
+    if (pactTarget) choice = { ...choice, mode: "single", target: pactTarget };
+    else {
+      const target = opponents.find((entry) => canAct(entry)) || null;
+      choice = {
+        ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+        def: BASIC_ATTACK,
+        mode: "single",
+        target,
+      };
+    }
+  }
+  if (!paladinPhysicalRequirementMet(cs, actor, choice.def)) {
+    const target = opponents.find((entry) => canAct(entry)) || null;
+    choice = {
+      ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
+      def: BASIC_ATTACK,
+      mode: "single",
+      target,
+    };
+  }
+  if (!weaponReqMet(choice.def, actor.weapon) || !monkMobilityReqMet(actor, choice.def)
+      || !barbarianEquipmentReqMet(actor, choice.def) || !rangerBeastRequirementMet(cs, actor, choice.def)
+      || !druidEnvironmentRequirementMet(cs, actor, choice.def)
+      || !warlockFavorReady(actor, choice.def) || !warlockPactPricePayable(actor, choice.def)
+      || !artificerChargesReady(actor, choice.def)) {
     const target = opponents.find((entry) => canAct(entry)) || null;
     choice = {
       ability: { id: BASIC_ATTACK.id, tier: "common", def: BASIC_ATTACK },
@@ -2563,11 +4604,35 @@ function npcPerform(cs, actor, opponents, opts = {}) {
   }
   beginMonkAction(actor);
   beginBarbarianAction(actor);
+  beginRangerAction(actor);
+  beginRogueAction(actor);
+  beginPaladinAction(actor);
+  beginDruidAction(actor);
+  beginWarlockAction(actor);
+  beginArtificerAction(actor);
+  if (!consumeRogueOpening(cs, actor, def.target === "enemy" ? choice.target : null, def)) {
+    endMonkAction(actor);
+    endBarbarianAction(actor);
+    endRangerAction(actor);
+    endRogueAction(actor);
+    endPaladinAction(actor);
+    finishDruidAction(cs, actor, false);
+    endWarlockAction(actor);
+    endArtificerAction(actor);
+    return false;
+  }
   spendWarriorTempo(cs, actor, def);
   spendBarbarianFury(cs, actor, def);
+  spendBardCadence(cs, actor, def);
+  spendRangerQuarryInsight(cs, actor, def.target === "enemy" ? choice.target : null, def);
+  spendPaladinConviction(cs, actor, def);
+  spendWarlockFavor(cs, actor, def);
+  spendArtificerCharges(cs, actor, def);
   if (def.cooldown) actor.cooldowns[ability.id] = def.cooldown;
   if (actor.resolve != null) actor.resolve = Math.max(0, actor.resolve - (def.resolveCost || 0));
   actor.actionsLeft = (actor.actionsLeft || 1) - (def.actionCost || 1);
+  commitDruidAction(cs, actor, def);
+  payWarlockPactPrice(cs, actor, def);
   applyGeasBacklash(cs, actor, def);
   const sideKind = actor.side === "player" ? "player" : "enemy";
 
@@ -2580,18 +4645,24 @@ function npcPerform(cs, actor, opponents, opts = {}) {
   };
 
   if (mode === "self") {
-    applySelfEffect(actor, def.effect, cs);
+    applySelfEffect(actor, def.effect, cs, actor);
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
   } else if (mode === "all-allies") {
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
-    for (const al of sideAllies(cs, actor)) applySelfEffect(al, def.effect, cs);
+    for (const al of sideAllies(cs, actor)) applySelfEffect(al, def.effect, cs, actor);
   } else if (mode === "aoe") {
     cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
-    for (const t of opponents) if (t.health > 0 && !t.resolved && !t._dead) hitOne(t);
+    for (const t of opponents) {
+      if (t.health <= 0 || t.resolved || t._dead) continue;
+      for (let h = 0; h < (def.hits || 1); h++) {
+        if (t.health <= 0) break;
+        hitOne(t);
+      }
+    }
   } else {
     let target = choice.target;
     if (!target || target.health <= 0 || target.resolved || target._dead) target = opponents.find((o) => o.health > 0 && !o.resolved && !o._dead);
-    if (!target) { actor.actionsLeft = 0; endMonkAction(actor); endBarbarianAction(actor); return false; }
+    if (!target) { actor.actionsLeft = 0; endMonkAction(actor); endBarbarianAction(actor); endRangerAction(actor); endRogueAction(actor); endPaladinAction(actor); finishDruidAction(cs, actor, false); endWarlockAction(actor); endArtificerAction(actor); return false; }
     if (ability.id !== BASIC_ATTACK.id) cs.log.push(logEntry(`${actor.name} uses ${def.name}.`, sideKind));
     // Paired weapons add an extra light strike to the BASIC attack (twin blades).
     const hits = (def.hits || 1) + (ability.id === BASIC_ATTACK.id && actor.weapon?.paired ? 1 : 0);
@@ -2604,8 +4675,15 @@ function npcPerform(cs, actor, opponents, opts = {}) {
     if (t.side === "enemy") downEnemy(cs, t); else downAlly(cs, t);
   }
   delete actor._warriorTempoSpent;
+  completeBardPerformance(cs, actor, def);
+  finishDruidAction(cs, actor);
+  endWarlockAction(actor);
+  endArtificerAction(actor);
   endMonkAction(actor);
   endBarbarianAction(actor);
+  endRangerAction(actor);
+  endRogueAction(actor);
+  endPaladinAction(actor);
   return true;
 }
 
@@ -2663,7 +4741,7 @@ function planEnemyIntents(cs) {
     const actionCount = Math.max(1, sim.actionsPerTurn || 1);
     const opponents = playerSide(cs);
     for (let index = 0; index < actionCount; index += 1) {
-      const choice = chooseAction(sim, opponents, npcCandidates(sim, opponents), { allies: sideAllies(cs, enemy) });
+      const choice = chooseAction(sim, opponents, npcCandidates(cs, sim, opponents), { allies: sideAllies(cs, enemy) });
       const intent = intentForChoice(enemy, choice, `${cs.round || cs.turn}-${index}`);
       if (!choice || !intent) break;
       enemy.intents.push(intent);
@@ -2854,12 +4932,18 @@ function tickStatuses(c) {
   // latter is how a build chips down a huge-pool monster (Vyrnholt) it can't burst.
   let dot = 0;
   for (const s of (c.statuses || [])) {
-    if (!["bleed", "poison", "burn", "lingering"].includes(s.type)) continue;
-    dot += s.pctMax ? Math.max(1, Math.round(c.maxHealth * (s.value || 0))) : (s.value || 0);
+    if (!["bleed", "poison", "burn", "lingering", "rogueVenomWork", "druidLeafrot", "druidHighSummer", "druidMolderingWave", ...WARLOCK_SCORCH_STATUS, "artificerSnapfire"].includes(s.type)) continue;
+    let amount = s.pctMax ? Math.max(1, Math.round(c.maxHealth * (s.value || 0))) : (s.value || 0);
+    if (s.type === "bleed") {
+      const dressing = clamp(sumStatus(c, "rangerFieldDressing"), 0, 50) / 100;
+      amount = Math.max(0, Math.round(amount * (1 - dressing)));
+    }
+    if (s.type === "rogueVenomWork") amount = Math.max(1, Math.round(amount * 0.5));
+    dot += amount;
   }
   if (dot > 0) {
     c.health = Math.max(0, c.health - dot);
-    logs.push(logEntry(`${c.name} suffers ${dot} from bleed/poison/burn.`, "status"));
+    logs.push(logEntry(`${c.name} suffers ${dot} from bleeding, poison, burning, prepared toxin, primal decay, pact scorch, or a prepared device.`, "status"));
   }
   const healAmt = sumStatus(c, "regen");
   if (healAmt > 0 && c.health > 0 && !hasStatus(c, "poison")) {
@@ -2969,7 +5053,7 @@ function progressionUseAllowed(player, def, abilityId) {
   if (def.branchExclusive && !(player?.progressionBranchAbilityIds || []).includes(abilityId)) return false;
   if (def.progressionExclusive && !(player?.progressionAbilityIds || []).includes(abilityId)) return false;
   if (hasStatus(player, "polymorph") && abilityId !== BASIC_ATTACK.id && abilityId !== DEFEND.id) return false;
-  if (hasStatus(player, "antimagicField") && abilityCategoryOf(def) === "spell" && !def.innate) return false;
+  if (hasStatus(player, "antimagicField") && isMagicalCastingDiscipline(def) && !def.innate) return false;
   return true;
 }
 
@@ -2980,19 +5064,48 @@ export function abilityUsable(cs, abilityId) {
   const def = getAbilityDef(abilityId);
   if (!progressionUseAllowed(cs.player, def, abilityId)) return false;
   if ((cs.player.actionsLeft || 0) < effectiveActionCost(cs.player, def)) return false; // action points gate everything now
-  // Silenced: only the basic strike and brace remain — no learned abilities.
-  if (hasStatus(cs.player, "silence") && abilityId !== BASIC_ATTACK.id && abilityId !== "defend") return false;
+  if (hasStatus(cs.player, "silence") && abilityId !== BASIC_ATTACK.id && abilityId !== "defend"
+      && silenceBlocksAbility(def)) return false;
   if ((cs.player.cooldowns[abilityId] || 0) > 0) return false;
   if ((cs.player.resolve ?? 0) < playerResolveCost(cs, def)) return false;
   if (!weaponReqMet(def, cs.player.weapon)) return false;
   if (!monkMobilityReqMet(cs.player, def)) return false;
   if (!barbarianEquipmentReqMet(cs.player, def)) return false;
+  if (!druidEnvironmentRequirementMet(cs, cs.player, def)) return false;
+  if (!rangerBeastRequirementMet(cs, cs.player, def)) return false;
   if ((def.warriorTempoCost || 0) > (cs.player.martialTempo || 0)) return false;
   if ((def.barbarianFuryCost || 0) > (cs.player.barbarianFury || 0)) return false;
+  if ((def.bardCadenceCost || 0) > (cs.player.bardCadence || 0)) return false;
+  if (!paladinConvictionReady(cs.player, def)) return false;
+  if (!warlockFavorReady(cs.player, def)) return false;
+  if (!warlockPactPricePayable(cs.player, def)) return false;
+  if (!artificerChargesReady(cs.player, def)) return false;
+  if (!paladinPhysicalRequirementMet(cs, cs.player, def)) return false;
   if (def.monkPostureCost) {
     const selected = cs.enemies?.[cs.target];
     const target = playerTargetable(selected) ? selected : cs.enemies?.find((entry) => playerTargetable(entry));
     if (!monkPostureReady(target, def, cs.player)) return false;
+  }
+  if (def.rangerRequiresCurrentQuarry || def.rangerQuarryInsightCost) {
+    const selected = cs.enemies?.[cs.target];
+    const target = def.target === "enemy"
+      ? (playerTargetable(selected) ? selected : cs.enemies?.find((entry) => playerTargetable(entry)))
+      : null;
+    if (!rangerQuarryReady(cs, cs.player, target, def)) return false;
+  }
+  if (isNativeRogueSubterfuge(def)) {
+    if (def.target === "enemy") {
+      const selected = cs.enemies?.[cs.target];
+      if (!rogueTargetEligible(cs, cs.player, selected, def)) return false;
+    } else if (!roguePhysicalRequirementMet(cs, cs.player, null, def)) return false;
+  }
+  if (isNativePaladinOathcraft(def) && def.target === "enemy") {
+    const selected = cs.enemies?.[cs.target];
+    if (!paladinTargetEligible(cs.player, selected, def)) return false;
+  }
+  if (isNativeWarlockPactcraft(def) && def.target === "enemy") {
+    const selected = cs.enemies?.[cs.target];
+    if (!warlockTargetEligible(cs, cs.player, selected, def)) return false;
   }
   if (def.healthThreshold != null && cs.player.health / Math.max(1, cs.player.maxHealth || 1) > def.healthThreshold) return false;
   if (def.effect?.type === "warriorSecondBreath" && cs.player._warriorSecondBreathUsed) return false;
@@ -3017,16 +5130,44 @@ export function cardUsable(cs, cardUid, targetUid = null) {
   if (!weaponReqMet(def, cs.player.weapon)) return false;
   if (!monkMobilityReqMet(cs.player, def)) return false;
   if (!barbarianEquipmentReqMet(cs.player, def)) return false;
+  if (!druidEnvironmentRequirementMet(cs, cs.player, def)) return false;
+  if (!rangerBeastRequirementMet(cs, cs.player, def)) return false;
   if ((def.warriorTempoCost || 0) > (cs.player.martialTempo || 0)) return false;
   if ((def.barbarianFuryCost || 0) > (cs.player.barbarianFury || 0)) return false;
+  if ((def.bardCadenceCost || 0) > (cs.player.bardCadence || 0)) return false;
+  if (!paladinConvictionReady(cs.player, def)) return false;
+  if (!warlockFavorReady(cs.player, def)) return false;
+  if (!warlockPactPricePayable(cs.player, def)) return false;
+  if (!artificerChargesReady(cs.player, def)) return false;
+  if (!paladinPhysicalRequirementMet(cs, cs.player, def)) return false;
   if (def.monkPostureCost) {
     const index = cardTargetIndex(cs, card, targetUid);
     if (index < 0 || !monkPostureReady(cs.enemies[index], def, cs.player)) return false;
   }
+  if (def.rangerRequiresCurrentQuarry || def.rangerQuarryInsightCost) {
+    const index = def.target === "enemy" ? cardTargetIndex(cs, card, targetUid) : -1;
+    const target = index >= 0 ? cs.enemies[index] : null;
+    if (!rangerQuarryReady(cs, cs.player, target, def)) return false;
+  }
+  if (isNativeRogueSubterfuge(def)) {
+    if (def.target === "enemy") {
+      const index = cardTargetIndex(cs, card, targetUid);
+      if (index < 0 || !rogueTargetEligible(cs, cs.player, cs.enemies[index], def)) return false;
+    } else if (!roguePhysicalRequirementMet(cs, cs.player, null, def)) return false;
+  }
+  if (isNativePaladinOathcraft(def) && def.target === "enemy") {
+    const index = cardTargetIndex(cs, card, targetUid);
+    if (index < 0 || !paladinTargetEligible(cs.player, cs.enemies[index], def)) return false;
+  }
+  if (isNativeWarlockPactcraft(def) && def.target === "enemy") {
+    const index = cardTargetIndex(cs, card, targetUid);
+    if (index < 0 || !warlockTargetEligible(cs, cs.player, cs.enemies[index], def)) return false;
+  }
   if (def.healthThreshold != null && cs.player.health / Math.max(1, cs.player.maxHealth || 1) > def.healthThreshold) return false;
   if (def.effect?.type === "warriorSecondBreath" && cs.player._warriorSecondBreathUsed) return false;
   if (def.effect?.type === "warriorLastStand" && cs.player._warriorLastStandUsed) return false;
-  if (hasStatus(cs.player, "silence") && card.abilityId !== BASIC_ATTACK.id && card.abilityId !== DEFEND.id) return false;
+  if (hasStatus(cs.player, "silence") && card.abilityId !== BASIC_ATTACK.id && card.abilityId !== DEFEND.id
+      && silenceBlocksAbility(def)) return false;
   if (!["self", "all-enemies", "all-allies"].includes(card.target) && cardTargetIndex(cs, card, targetUid) < 0) return false;
   return true;
 }
@@ -3037,6 +5178,7 @@ export function playCard(cs0, cardUid, targetUid = null) {
   const def = getAbilityDef(card.abilityId);
   const targetIndex = cardTargetIndex(cs0, card, targetUid);
   const prepared = clone(cs0);
+  if (targetIndex >= 0) prepared.target = targetIndex;
   const energyBefore = prepared.player.energy || 0;
   const actionCost = effectiveActionCost(prepared.player, def);
   prepared.player.actionsLeft = Math.max(1, actionCost);
@@ -3061,13 +5203,36 @@ export function playCard(cs0, cardUid, targetUid = null) {
 
 export function playerAct(cs0, abilityId, targetIndex) {
   if (abilityId === TALK.id) return playerTalk(cs0, "surrender", targetIndex);
-  if (!abilityUsable(cs0, abilityId)) return cs0;
+  const usabilityState = targetIndex != null && playerTargetable(cs0.enemies?.[targetIndex])
+    ? { ...cs0, target: targetIndex }
+    : cs0;
+  if (!abilityUsable(usabilityState, abilityId)) return cs0;
   const cs = clone(cs0);
   const def = getAbilityDef(abilityId);
   const entry = cs.player.abilities.find((a) => a.id === abilityId);
   const tierId = entry.tier || "common";
   const scaling = abilityScaling(def);
   const targetMode = effectiveAbilityTarget(cs.player, def);
+  let rangerSpendTarget = null;
+  let rogueCommitTarget = null;
+  if (def.rangerRequiresCurrentQuarry || def.rangerQuarryInsightCost) {
+    if (def.target === "enemy") {
+      let quarryIndex = targetIndex;
+      if (quarryIndex == null || !playerTargetable(cs.enemies[quarryIndex])) quarryIndex = cs.target;
+      const selected = cs.enemies[quarryIndex];
+      rangerSpendTarget = playerTargetable(selected) ? selected : null;
+    }
+    if (!rangerQuarryReady(cs, cs.player, rangerSpendTarget, def)) return cs0;
+  }
+  if (isNativeRogueSubterfuge(def)) {
+    if (def.target === "enemy") {
+      let rogueIndex = targetIndex;
+      if (rogueIndex == null || !playerTargetable(cs.enemies[rogueIndex])) rogueIndex = cs.target;
+      const selected = cs.enemies[rogueIndex];
+      rogueCommitTarget = playerTargetable(selected) ? selected : null;
+      if (!rogueTargetEligible(cs, cs.player, rogueCommitTarget, def)) return cs0;
+    } else if (!roguePhysicalRequirementMet(cs, cs.player, null, def)) return cs0;
+  }
   if (def.monkPostureCost && targetMode === "enemy") {
     let postureIndex = targetIndex;
     if (postureIndex == null || !playerTargetable(cs.enemies[postureIndex])) {
@@ -3104,18 +5269,44 @@ export function playerAct(cs0, abilityId, targetIndex) {
   }
   beginMonkAction(cs.player);
   beginBarbarianAction(cs.player);
+  beginRangerAction(cs.player);
+  beginRogueAction(cs.player);
+  beginPaladinAction(cs.player);
+  beginDruidAction(cs.player);
+  beginWarlockAction(cs.player);
+  beginArtificerAction(cs.player);
+  if (!consumeRogueOpening(cs, cs.player, rogueCommitTarget, def)) {
+    endMonkAction(cs.player);
+    endBarbarianAction(cs.player);
+    endRangerAction(cs.player);
+    endRogueAction(cs.player);
+    endPaladinAction(cs.player);
+    finishDruidAction(cs, cs.player, false);
+    endWarlockAction(cs.player);
+    endArtificerAction(cs.player);
+    return cs0;
+  }
   // A spell or a real weapon technique is inherently a killing act — using one
   // in a brawl escalates it to lethal on its own (no separate Draw needed).
   const isSpell = scaling === "stat";
+  const isSonicTechnique = scaling === "performance" && !!def.dmg;
+  const isFieldcraftHarm = scaling === "fieldcraft" && !!def.dmg;
   const isWeaponTech = scaling === "weapon"
     && cs.player.weapon?.category !== "unarmed"
     && def.weaponReq?.some((category) => category !== "unarmed");
   // Innate racial powers (dragon breath, hellfire, etc.) aren't "witchcraft" — they
   // don't trigger the dread-of-magic reaction, though they still escalate a brawl.
   if (isSpell && !def.innate) cs.magicCast = true;
-  if (!cs.lethal && (isSpell || isWeaponTech)) escalateToLethal(cs, isSpell ? "magic" : "weapon");
+  if (!cs.lethal && (isSpell || isWeaponTech || isSonicTechnique || isFieldcraftHarm)) {
+    escalateToLethal(cs, isSpell ? "magic" : isSonicTechnique ? "sonic" : "weapon");
+  }
   spendWarriorTempo(cs, cs.player, def);
   spendBarbarianFury(cs, cs.player, def);
+  spendBardCadence(cs, cs.player, def);
+  spendRangerQuarryInsight(cs, cs.player, rangerSpendTarget, def);
+  spendPaladinConviction(cs, cs.player, def);
+  spendWarlockFavor(cs, cs.player, def);
+  spendArtificerCharges(cs, cs.player, def);
   cs.player.actionsLeft = (cs.player.actionsLeft || 0) - effectiveActionCost(cs.player, def); // action points gate actions
   // Spellcasting proficiency makes casting cheaper on Resolve — a capped %
   // discount that stretches the pool but never makes a spell free (see helper).
@@ -3123,10 +5314,16 @@ export function playerAct(cs0, abilityId, targetIndex) {
   cs.player.resolve = Math.max(0, (cs.player.resolve ?? 0) - resoCost);
   const cooldown = effectiveCooldown(cs.player, def);
   if (cooldown) cs.player.cooldowns[abilityId] = cooldown;
+  commitDruidAction(cs, cs.player, def);
+  payWarlockPactPrice(cs, cs.player, def);
   applyGeasBacklash(cs, cs.player, def);
 
   // Train the proficiency this action exercises (do-it-get-better).
-  if (def.dmg || def.damageType === "weapon") {
+  if (scaling === "performance") addProf(cs, "performance", XP.COMMAND);
+  else if (def.school === "fieldcraft") {
+    addProf(cs, "awareness", XP.AWARENESS);
+    if (scaling === "weapon") addProf(cs, weaponMasteryId(cs.player.weapon?.category), XP.WEAPON_HIT);
+  } else if (def.dmg || def.damageType === "weapon") {
     if (scaling === "stat") addProf(cs, "spellcasting", XP.SPELL_CAST);
     else if (scaling === "weapon") addProf(cs, weaponMasteryId(cs.player.weapon?.category), XP.WEAPON_HIT);
   }
@@ -3145,20 +5342,26 @@ export function playerAct(cs0, abilityId, targetIndex) {
   };
 
   if (targetMode === "self") {
-    applySelfEffect(cs.player, def.effect, cs);
+    applySelfEffect(cs.player, def.effect, cs, cs.player);
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
   } else if (targetMode === "all-allies") {
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
-    for (const al of sideAllies(cs, cs.player)) applySelfEffect(al, def.effect, cs);
+    for (const al of sideAllies(cs, cs.player)) applySelfEffect(al, def.effect, cs, cs.player);
   } else if (targetMode === "all-enemies") {
     cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
-    for (const e of cs.enemies) { if (e.health > 0 && !e.resolved) hitEnemy(e); }
+    for (const e of cs.enemies) {
+      if (e.health <= 0 || e.resolved) continue;
+      for (let h = 0; h < (def.hits || 1); h++) {
+        if (e.health <= 0) break;
+        hitEnemy(e);
+      }
+    }
   } else {
     let idx = targetIndex;
     if (idx == null || !playerTargetable(cs.enemies[idx])) {
       idx = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
     }
-    if (idx < 0) { endMonkAction(cs.player); endBarbarianAction(cs.player); return cs0; }
+    if (idx < 0) { endMonkAction(cs.player); endBarbarianAction(cs.player); endRangerAction(cs.player); endRogueAction(cs.player); endPaladinAction(cs.player); finishDruidAction(cs, cs.player, false); endWarlockAction(cs.player); endArtificerAction(cs.player); return cs0; }
     const target = cs.enemies[idx];
     if (abilityId !== BASIC_ATTACK.id) cs.log.push(logEntry(`${cs.player.name} uses ${def.name}.`, "player"));
     // Paired weapons add an extra light strike to the BASIC attack (twin blades).
@@ -3171,8 +5374,15 @@ export function playerAct(cs0, abilityId, targetIndex) {
   const firstAlive = cs.enemies.findIndex((e) => e.health > 0 && !e.resolved);
   if (firstAlive >= 0 && (cs.enemies[cs.target]?.health <= 0 || cs.enemies[cs.target]?.resolved)) cs.target = firstAlive;
   delete cs.player._warriorTempoSpent;
+  completeBardPerformance(cs, cs.player, def);
+  finishDruidAction(cs, cs.player);
+  endWarlockAction(cs.player);
+  endArtificerAction(cs.player);
   endMonkAction(cs.player);
   endBarbarianAction(cs.player);
+  endRangerAction(cs.player);
+  endRogueAction(cs.player);
+  endPaladinAction(cs.player);
   return checkCombatEnd(cs);
 }
 

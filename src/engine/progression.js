@@ -19,6 +19,7 @@ import {
   pendingProfessionChoices as pendingTrackChoices,
   pendingRacialBranchChoices,
   professionBranchChoices,
+  racialBranchChoices,
   progressionAtLevel,
   progressionXpForLevel,
   normalizeRacialBranchChoices,
@@ -208,6 +209,42 @@ function normalizeProfessionInput(input, fallback = {}) {
   };
 }
 
+function reachedProfessionBranchChoices(professionId, branchChoices, levels) {
+  const reached = {};
+  const normalized = normalizeBranchChoices(professionId, branchChoices);
+  for (const definition of professionBranchChoices(professionId)) {
+    if (definition.threshold > levels || !normalized[definition.id]) continue;
+    if (definition.parentChoiceId && reached[definition.parentChoiceId] !== definition.parentOptionId) continue;
+    reached[definition.id] = normalized[definition.id];
+  }
+  return reached;
+}
+
+function reachedRacialBranchChoices(raceId, branchChoices, levels) {
+  const reached = {};
+  const normalized = normalizeRacialBranchChoices(raceId, branchChoices);
+  for (const definition of racialBranchChoices(raceId)) {
+    if (definition.threshold > levels || !normalized[definition.id]) continue;
+    if (definition.parentChoiceId && reached[definition.parentChoiceId] !== definition.parentOptionId) continue;
+    reached[definition.id] = normalized[definition.id];
+  }
+  return reached;
+}
+
+function fitProfessionPlanToBudget(plan, budget) {
+  let remaining = Math.max(0, Math.min(PROFESSION_LEVEL_CAP, Math.floor(Number(budget) || 0)));
+  const fitted = [];
+  for (const entry of plan || []) {
+    if (!entry || remaining <= 0) break;
+    if (!canonicalProfessionId(entry.professionId || entry.profession)) continue;
+    const levels = Math.min(remaining, Math.max(0, Math.floor(Number(entry.levels) || 0)));
+    if (levels <= 0) continue;
+    fitted.push({ ...entry, levels });
+    remaining -= levels;
+  }
+  return fitted;
+}
+
 function flattenPaths(professions, racial) {
   return Object.assign({}, racial?.paths || {}, ...professions.map((track) => track.paths || {}));
 }
@@ -253,10 +290,15 @@ export function createProgression({
     ? Math.max(1, explicitProfessionTotal + Math.max(0, Number(explicitRacial) || 0))
     : boundedLevel(level);
   const targetRacial = Math.max(0, Math.min(RACIAL_LEVEL_CAP,
+    declaredTotal,
     explicitRacial == null ? Math.max(0, declaredTotal - PROFESSION_LEVEL_CAP) : Math.floor(Number(explicitRacial) || 0)));
   const targetProfession = professionLevels == null
-    ? Math.min(PROFESSION_LEVEL_CAP, declaredTotal - targetRacial)
-    : Math.max(0, Math.min(PROFESSION_LEVEL_CAP, Math.floor(Number(professionLevels) || 0)));
+    ? Math.max(0, Math.min(PROFESSION_LEVEL_CAP, declaredTotal - targetRacial))
+    : Math.max(0, Math.min(
+      PROFESSION_LEVEL_CAP,
+      declaredTotal - targetRacial,
+      Math.floor(Number(professionLevels) || 0),
+    ));
   if (explicitProfessionTotal > targetProfession) throw new Error(`Profession allocation ${explicitProfessionTotal} exceeds target ${targetProfession}`);
   let unallocated = targetProfession - explicitProfessionTotal;
   if (unallocated > 0) normalized[0].requestedLevels += unallocated;
@@ -264,27 +306,33 @@ export function createProgression({
   if (targetProfession + targetRacial > CHARACTER_LEVEL_CAP) throw new Error(`Character levels exceed ${CHARACTER_LEVEL_CAP}`);
 
   const builtTracks = normalized.map((track) => {
+    const reachedBranches = reachedProfessionBranchChoices(track.professionId, track.branchChoices, track.requestedLevels);
     const compiled = compileProfessionTrack(track.professionId, {
       specializationId: track.specializationId,
       choices: track.choices,
-      branchChoices: track.branchChoices,
+      branchChoices: reachedBranches,
     });
     return {
       professionId: track.professionId,
       specializationId: track.specializationId,
       paths: allocatedRanks(compiled, track.requestedLevels),
       choices: cloneChoices(track.choices),
-      branchChoices: { ...compiled.branchChoices },
+      branchChoices: { ...reachedBranches },
     };
   });
   const racialId = slug(racial?.raceId || raceId) || "human";
-  const racialCompiled = compileRacialTrack(racialId, { evolutionId: racial?.evolutionId, branchChoices: racial?.branchChoices, evolutionPath: racial?.evolutionPath });
+  const reachedRacialBranches = reachedRacialBranchChoices(
+    racialId,
+    normalizeRacialBranchChoices(racialId, racial?.branchChoices, racial?.evolutionPath),
+    targetRacial,
+  );
+  const racialCompiled = compileRacialTrack(racialId, { evolutionId: racial?.evolutionId, branchChoices: reachedRacialBranches });
   const builtRacial = {
     raceId: racialId,
     evolutionId: racial?.evolutionId || racialCompiled.evolutionId,
     paths: allocatedRanks(racialCompiled, targetRacial),
     choices: { ...(racial?.choices || {}) },
-    branchChoices: { ...racialCompiled.branchChoices },
+    branchChoices: { ...reachedRacialBranches },
   };
   const legacyXpLevel = typeof xp === "object"
     ? Math.max(progressionLevelFromXp(xp?.profession, PROFESSION_LEVEL_CAP), progressionLevelFromXp(xp?.racial, RACIAL_LEVEL_CAP))
@@ -470,11 +518,20 @@ export function normalizeCharacterProgression(character, {
       activeProfessionId: oldProgression.activeProfessionId,
     });
   } else {
-    const migratedRacial = racialLevels ?? Math.min(RACIAL_LEVEL_CAP, Math.max(oldRacialRanks(oldProgression), inferredLevel - PROFESSION_LEVEL_CAP));
+    const migratedRacial = Math.min(
+      inferredLevel,
+      RACIAL_LEVEL_CAP,
+      Math.max(0, Math.floor(Number(
+        racialLevels ?? Math.max(oldRacialRanks(oldProgression), inferredLevel - PROFESSION_LEVEL_CAP),
+      ) || 0)),
+    );
+    const fittedPlan = explicitPlan
+      ? fitProfessionPlanToBudget(explicitPlan, Math.min(PROFESSION_LEVEL_CAP, inferredLevel - migratedRacial))
+      : null;
     character.progression = createProgression({
       professionId, specializationId, raceId: character.race || "human", level: inferredLevel,
       racialLevels: migratedRacial,
-      professions: explicitPlan?.map((entry) => ({
+      professions: fittedPlan?.map((entry) => ({
         professionId: entry.professionId || entry.profession,
         specializationId: entry.specializationId || entry.specialization,
         levels: entry.levels,
