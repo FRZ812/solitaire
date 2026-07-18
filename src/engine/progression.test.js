@@ -23,6 +23,7 @@ import {
 } from "./progression.js";
 import { compileProfessionTrack, progressionXpForLevel } from "../data/progression-paths.js";
 import { professionTreeGraph, professionTreeStartNodeId } from "../data/profession-tree.js";
+import { ATTR_KEYS } from "../config.js";
 
 function shortestProfessionPath(graph, professionId, targetNodeId) {
   const startNodeId = professionTreeStartNodeId(professionId);
@@ -171,6 +172,13 @@ describe("progression v3 graph allocation", () => {
       ...lowRow.grants.map((grant) => grant.id),
     ]));
     expect(professionProgressionLevel(character)).toBe(3);
+
+    const aligned = normalizeCharacterProgression({ ...character, attributes: {} }, { alignAttributesToProgression: true });
+    const selectedRows = [fighter.levels[0], highRow, lowRow];
+    expect(aligned.attributes).toEqual(Object.fromEntries(ATTR_KEYS.map((key) => [
+      key,
+      1 + selectedRows.reduce((sum, row) => sum + (row.attributeGains?.[key] || 0), 0),
+    ])));
   });
 });
 

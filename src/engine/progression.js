@@ -548,18 +548,36 @@ function projectedAttributes(progression) {
     return compileCharacterProgression(progressionAllocations(progression)).finalAttributes;
   }
   if (hasFixedProfessionTree(progression)) {
-    const attributes = Object.fromEntries(ATTR_KEYS.map((key) => [key, 0]));
+    const attributes = Object.fromEntries(ATTR_KEYS.map((key) => [key, 1]));
+    let appliedLevel = 0;
     const applyRows = (rows) => {
-      for (const row of rows) for (const [key, amount] of Object.entries(row?.attributeGains || {})) {
-        attributes[key] = (attributes[key] || 0) + Math.max(0, Number(amount) || 0);
+      for (const row of rows) {
+        appliedLevel += 1;
+        for (const [key, amount] of Object.entries(row?.attributeGains || {})) {
+          attributes[key] = Math.min(
+            ATTRIBUTE_CAP,
+            attributeCeilingForLevel(appliedLevel),
+            (attributes[key] || 0) + Math.max(0, Number(amount) || 0),
+          );
+        }
       }
     };
-    for (const track of progression.professions) applyRows(allocatedProfessionRows(progression, track));
     const racialCompiled = compileRacialTrack(progression.racial.raceId, {
       evolutionId: progression.racial.evolutionId,
       branchChoices: progression.racial.branchChoices,
     });
     applyRows(racialCompiled.levels.slice(0, racialProgressionLevel(progression)));
+    const rowsByProfession = new Map(progression.professions.map((track) => [
+      track.professionId,
+      compileProfessionTrack(track.professionId, {
+        specializationId: track.specializationId,
+        choices: track.choices,
+        branchChoices: track.branchChoices,
+      }).levels,
+    ]));
+    applyRows(professionTreeEntries(progression).map((allocation) => (
+      rowsByProfession.get(allocation.professionId)?.[allocation.trackLevel - 1]
+    )).filter(Boolean));
     return attributes;
   }
   return compileCharacterProgression(progressionAllocations(progression)).finalAttributes;
