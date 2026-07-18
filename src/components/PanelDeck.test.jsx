@@ -217,10 +217,12 @@ describe("PanelDeck", () => {
       <PanelDeck state={state} user={null} initialPage="race" onClose={() => {}} handlers={{ onChooseProgression: () => {} }} />,
     );
 
-    expect(professionHtml).toContain("1 unspent point · core skills · specializations");
-    expect(professionHtml).toContain('aria-label="Level 10 — Martial Identity — available"');
-    expect(professionHtml).toContain("Invest 1 point in Warrior");
-    expect(professionHtml.match(/class="progression-tree__node/g)).toHaveLength(70);
+    expect(professionHtml).toContain("1 unspent point · 9 / 70 invested · unified skill tree");
+    expect(professionHtml).toContain("All professions · one connected constellation");
+    expect(professionHtml.match(/data-node-id=/g)).toHaveLength(2030);
+    expect(professionHtml.match(/data-start="true"/g)).toHaveLength(29);
+    expect(professionHtml).toContain('data-node-state="available"');
+    expect(professionHtml).toContain("Spend 1 point ·");
     expect(raceHtml).toContain("1 unspent point · lineage · evolution");
     expect(raceHtml).toContain('aria-label="Level 1 — Mortal Beginning — available"');
     expect(raceHtml).toContain("Invest 1 point in Human lineage");

@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { AUTHORED_WORLD_LEVELS, progressionLevel } from "../engine/progression.js";
+import { AUTHORED_WORLD_LEVELS, PROGRESSION_VERSION, progressionLevel } from "../engine/progression.js";
 import { attributeCeilingForLevel, compileCharacterProgression } from "./progression-paths.js";
 import { makeInitialState } from "./initial-state.js";
 
 const rankTotal = (paths = {}) => Object.values(paths).reduce((sum, rank) => sum + (Number(rank) || 0), 0);
 
 describe("fresh Codex progression", () => {
-  it("gives every Codex character a generalized profession and v2 rank ledger", () => {
+  it("gives every Codex character a generalized profession and current rank ledger", () => {
     const characters = makeInitialState().world.codex.characters;
 
     for (const character of Object.values(characters)) {
       expect(character.profession, character.id).toBeTruthy();
-      expect(character.progression, character.id).toMatchObject({ version: 2 });
+      expect(character.progression, character.id).toMatchObject({ version: PROGRESSION_VERSION });
       expect(character.progression.professions.length, character.id).toBeGreaterThan(0);
       expect(character.progression.racial, character.id).toBeTruthy();
       expect(progressionLevel(character), character.id).toBeGreaterThan(0);
