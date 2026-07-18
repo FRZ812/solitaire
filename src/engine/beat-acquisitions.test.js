@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../data/initial-state.js";
 import { applyAcquisitions } from "./beat-acquisitions.js";
-import { AUTHORED_MOUNT_LEVELS, progressionLevel } from "./progression.js";
+import { AUTHORED_MOUNT_LEVELS, PROGRESSION_VERSION, progressionLevel } from "./progression.js";
 import { maxResolveFor } from "./attributes.js";
 import { MOUNTS } from "../data/mounts.js";
 
@@ -21,7 +21,7 @@ function acquire(beat) {
 }
 
 function expectProgression(entry) {
-  expect(entry.progression).toMatchObject({ version: 2 });
+  expect(entry.progression).toMatchObject({ version: PROGRESSION_VERSION });
   expect(entry.progression.professions.length).toBeGreaterThan(0);
   expect(entry.progression.racial).toBeTruthy();
   expect(progressionLevel(entry)).toBeGreaterThan(0);

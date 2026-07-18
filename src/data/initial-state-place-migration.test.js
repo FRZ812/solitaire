@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { PROGRESSION_VERSION } from "../engine/progression.js";
 import { HANDCRAFTED } from "./handcrafted-map.js";
 import { makeInitialState, migrateCodex } from "./initial-state.js";
 
@@ -89,6 +90,6 @@ describe("unified capital migration", () => {
     expect(migrated.world).not.toHaveProperty("place");
     expect(migrated.world.codex).toBeUndefined();
     expect(migrated.character).toMatchObject({ id: "wanderer", kind: "player", profession: "farmer" });
-    expect(migrated.character.progression).toMatchObject({ version: 2, professionId: "farmer" });
+    expect(migrated.character.progression).toMatchObject({ version: PROGRESSION_VERSION, professionId: "farmer" });
   });
 });

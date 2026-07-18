@@ -1068,7 +1068,7 @@ export function Solitaire() {
   // Threshold decisions are resolved locally against the versioned ledger.
   // The narrator can describe the consequence later, but it can never choose a
   // school, specialization, signature spell, or metamagic for the player.
-  function handleProgressionChoice(professionId, choiceId, optionId) {
+  function handleProgressionChoice(professionId, choiceId, optionId, nodeId = null) {
     setState((current) => {
       const pending = pendingProgressionChoices(current.character).find((entry) => (
         entry.id === choiceId && (!professionId || entry.professionId === professionId)
@@ -1085,7 +1085,7 @@ export function Solitaire() {
       };
       let progression;
       if (pending.kind === "level-allocation") {
-        progression = resolveLevelAllocationChoice(character, { choiceId, optionId });
+        progression = resolveLevelAllocationChoice(character, { choiceId, optionId, nodeId });
       } else if (pending.kind === "branch") {
         progression = resolveProfessionChoice(character.progression, { professionId, choiceId, optionId });
       } else if (pending.kind === "racial-branch") {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attributeCeilingForLevel, progressionLevel } from "./progression.js";
+import { PROGRESSION_VERSION, attributeCeilingForLevel, progressionLevel } from "./progression.js";
 import { progressionAtLevel } from "../data/progression-paths.js";
 import { mergeDiscoveries } from "./discoveries.js";
 
@@ -25,7 +25,7 @@ describe("generated Codex character progression", () => {
 
     const warden = codex.characters["old-bridge-warden"];
     expect(progressionLevel(warden)).toBe(60);
-    expect(warden.progression).toMatchObject({ version: 2, professionId: "ranger", archetypeId: "river-sentinel" });
+    expect(warden.progression).toMatchObject({ version: PROGRESSION_VERSION, professionId: "ranger", archetypeId: "river-sentinel" });
     expect(Math.max(...Object.values(warden.attributes))).toBeLessThanOrEqual(attributeCeilingForLevel(60));
     expect(warden).not.toHaveProperty("level");
   });

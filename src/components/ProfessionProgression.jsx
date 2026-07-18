@@ -6,7 +6,14 @@ import * as progressionPaths from "../data/progression-paths.js";
 import { getAbilityDef } from "../data/abilities.js";
 import { METAMAGIC_FEATURES, PROGRESSION_FEATURES } from "../data/progression-features.js";
 import * as progressionEngine from "../engine/progression.js";
+import {
+  PROFESSION_TREE_NODE_COUNT,
+  availableProfessionTreeNodeIds,
+  professionTreeGraph,
+  professionTreeStartNodeId,
+} from "../data/profession-tree.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
+import { Icon } from "./Icon.jsx";
 import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 
 const PROFESSION_CAP = 70;
@@ -28,6 +35,7 @@ const professionProgressionLevel = progressionEngine.professionProgressionLevel 
 const racialProgressionLevel = progressionEngine.racialProgressionLevel || ((character) => Object.values(character?.progression?.racial?.paths || {}).reduce((sum, rank) => sum + (Number(rank) || 0), 0));
 const pendingLevelAllocations = progressionEngine.pendingLevelAllocations || (() => null);
 const pendingProgressionChoices = progressionEngine.pendingProgressionChoices || (() => []);
+const resolvedProfessionTreeState = progressionEngine.professionTreeState || (() => ({ startProfessionId: "wanderer", allocations: {} }));
 
 function titleCase(value) {
   return String(value || "")
@@ -305,6 +313,364 @@ function BranchTree({ profession, definitions, choices, pendingIds, onSelect, tr
   );
 }
 
+const UNIFIED_PROFESSION_GRAPH = professionTreeGraph();
+const MIN_PROFESSION_ZOOM = 0.085;
+const MAX_PROFESSION_ZOOM = 1.35;
+
+function clampProfessionZoom(value) {
+  return Math.max(MIN_PROFESSION_ZOOM, Math.min(MAX_PROFESSION_ZOOM, value));
+}
+
+function professionNodeDomId(nodeId) {
+  return `profession-tree-${String(nodeId).replace(/[^a-z0-9_-]+/gi, "-")}`;
+}
+
+function ProfessionTreeSearch({ searchIndex, selectedNodeId, onSelect }) {
+  const [query, setQuery] = useState("");
+  const searchOpen = query.trim().length >= 2;
+  const searchResults = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (needle.length < 2) return [];
+    return searchIndex.filter((entry) => entry.haystack.includes(needle)).slice(0, 8);
+  }, [query, searchIndex]);
+  return (
+    <>
+      <label className="unified-profession-tree__search">
+        <span>Find any profession or skill</span>
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          type="search"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={searchOpen}
+          aria-controls="profession-tree-search-results"
+          placeholder="Wizard, medicine, Perfect Hunt…"
+        />
+      </label>
+      <ul id="profession-tree-search-results" className="unified-profession-tree__search-results" role="listbox" hidden={!searchOpen}>
+        {searchResults.length > 0
+          ? searchResults.map(({ node, row }) => (
+            <li key={node.id}><button type="button" role="option" aria-selected={selectedNodeId === node.id} onClick={() => onSelect(node.id)}><strong>{PROFESSIONS[node.professionId]?.name}</strong><span>{row?.feature || `Route node ${node.trackLevel || node.localIndex + 1}`}</span></button></li>
+          ))
+          : <li className="is-empty" role="option" aria-disabled="true">No matching skills</li>}
+      </ul>
+    </>
+  );
+}
+
+export function UnifiedProfessionTree({ character, onChooseProgression }) {
+  const graph = UNIFIED_PROFESSION_GRAPH;
+  const viewportRef = useRef(null);
+  const worldRef = useRef(null);
+  const dragRef = useRef(null);
+  const suppressNodeClickRef = useRef(false);
+  const viewRef = useRef({ zoom: 0.12, x: 0, y: 0 });
+  const wheelCommitRef = useRef(null);
+  const initialProfessionId = character?.progression?.professionTree?.startProfessionId
+    || progressionPaths.canonicalProfessionId?.(character?.profession)
+    || "wanderer";
+  const treeState = resolvedProfessionTreeState(character);
+  const allocations = treeState.allocations || {};
+  const allocatedIds = useMemo(() => new Set(Object.keys(allocations)), [allocations]);
+  const frontierIds = useMemo(() => availableProfessionTreeNodeIds(treeState), [treeState]);
+  const tracks = Array.isArray(character?.progression?.professions) ? character.progression.professions : [];
+  const trackByProfession = useMemo(() => new Map(tracks.map((track) => [track.professionId, track])), [tracks]);
+  const compiledByProfession = useMemo(() => new Map(Object.keys(PROFESSIONS).map((professionId) => {
+    const track = trackByProfession.get(professionId);
+    return [professionId, compileProfessionTrack(professionId, {
+      specializationId: track?.specializationId,
+      choices: track?.choices,
+      branchChoices: track?.branchChoices,
+    })];
+  })), [trackByProfession]);
+  const branchDefinitionsByProfession = useMemo(() => new Map(Object.keys(PROFESSIONS).map((professionId) => [professionId, professionBranchChoices(professionId) || []])), []);
+  const allocationChoice = pendingLevelAllocations(character);
+  const blockingChoices = pendingProgressionChoices(character).filter((choice) => choice.kind !== "level-allocation");
+  const points = allocationChoice?.unspentLevels || 0;
+  const invested = professionProgressionLevel(character);
+  const startNodeId = professionTreeStartNodeId(treeState.startProfessionId || initialProfessionId);
+  const [selectedNodeId, setSelectedNodeId] = useState(() => (
+    points > 0 && !blockingChoices.length
+      ? frontierIds.values().next().value || startNodeId
+      : startNodeId
+  ));
+  const [view, setView] = useState({ zoom: 0.12, x: 0, y: 0 });
+
+  const searchIndex = useMemo(() => graph.nodes.map((node) => {
+    const profession = PROFESSIONS[node.professionId];
+    const row = compiledByProfession.get(node.professionId)?.levels?.[node.localIndex] || null;
+    const grantText = (row?.grants || row?.generalGrants || []).map((grant) => {
+      const details = grantDetails(grant);
+      return `${details.name} ${details.description}`;
+    }).join(" ");
+    const specializationText = (profession?.specializations || []).map((entry) => `${entry.name} ${entry.description || ""}`).join(" ");
+    const branchText = (branchDefinitionsByProfession.get(node.professionId) || []).filter((choice) => choice.threshold === node.localIndex + 1)
+      .flatMap((choice) => [choice.name, choice.description, ...(choice.options || []).flatMap((option) => [option.name, option.description])]).filter(Boolean).join(" ");
+    return {
+      node,
+      row,
+      haystack: `${profession?.name || node.professionId} ${profession?.role || ""} ${profession?.description || ""} ${specializationText} ${branchText} ${row?.feature || ""} ${row?.featureDescription || ""} ${grantText}`.toLowerCase(),
+    };
+  }), [branchDefinitionsByProfession, compiledByProfession, graph.nodes]);
+  const selectedNode = graph.nodeById.get(selectedNodeId) || graph.nodeById.get(startNodeId) || graph.nodes[0];
+  const selectedAllocation = allocations[selectedNode.id] || null;
+  const selectedTrackLevel = selectedNode.trackLevel || selectedNode.localIndex + 1;
+  const selectedRow = compiledByProfession.get(selectedNode.professionId)?.levels?.[Math.max(0, selectedTrackLevel - 1)] || null;
+  const selectedProfession = PROFESSIONS[selectedNode.professionId];
+  const selectedGateDefinitions = (branchDefinitionsByProfession.get(selectedNode.professionId) || []).filter((choice) => choice.threshold === selectedTrackLevel);
+  const selectedOption = allocationChoice?.options?.find((option) => option.professionId === selectedNode.professionId) || null;
+  const selectedState = selectedAllocation ? "owned" : frontierIds.has(selectedNode.id) ? (points > 0 && !blockingChoices.length ? "available" : "frontier") : "locked";
+  const canSpendSelected = selectedState === "available" && selectedOption?.availableNodeIds?.includes(selectedNode.id);
+
+  function applyView(nextView, commit = true) {
+    viewRef.current = nextView;
+    if (worldRef.current) worldRef.current.style.transform = `translate(${nextView.x}px, ${nextView.y}px) scale(${nextView.zoom})`;
+    if (commit) setView(nextView);
+  }
+
+  function fitTree() {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const zoom = clampProfessionZoom(Math.min(
+      (viewport.clientWidth - 28) / graph.size,
+      (viewport.clientHeight - 28) / graph.size,
+    ));
+    applyView({
+      zoom,
+      x: (viewport.clientWidth - (graph.size * zoom)) / 2,
+      y: (viewport.clientHeight - (graph.size * zoom)) / 2,
+    });
+  }
+
+  function centerOnNode(nodeId, preferredZoom = 1) {
+    const viewport = viewportRef.current;
+    const node = graph.nodeById.get(nodeId);
+    if (!viewport || !node) return;
+    const zoom = clampProfessionZoom(preferredZoom);
+    applyView({
+      zoom,
+      x: (viewport.clientWidth / 2) - (node.x * zoom),
+      y: (viewport.clientHeight / 2) - (node.y * zoom),
+    });
+  }
+
+  function focusNode(nodeId, preferredZoom = Math.max(0.9, view.zoom)) {
+    setSelectedNodeId(nodeId);
+    centerOnNode(nodeId, preferredZoom);
+    requestAnimationFrame(() => document.getElementById(professionNodeDomId(nodeId))?.focus());
+  }
+
+  function zoomAtCenter(multiplier) {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const currentView = viewRef.current;
+    const nextZoom = clampProfessionZoom(currentView.zoom * multiplier);
+    const centerX = viewport.clientWidth / 2;
+    const centerY = viewport.clientHeight / 2;
+    const ratio = nextZoom / currentView.zoom;
+    applyView({ zoom: nextZoom, x: centerX - ((centerX - currentView.x) * ratio), y: centerY - ((centerY - currentView.y) * ratio) });
+  }
+
+  useEffect(() => {
+    fitTree();
+  }, []);
+
+  useEffect(() => {
+    if (!graph.nodeById.has(selectedNodeId)) setSelectedNodeId(startNodeId);
+  }, [graph.nodeById, selectedNodeId, startNodeId]);
+
+  useEffect(() => {
+    viewRef.current = view;
+    return () => {
+      if (wheelCommitRef.current) clearTimeout(wheelCommitRef.current);
+    };
+  }, [view]);
+
+  function onPointerDown(event) {
+    if (event.button !== 0) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      view: viewRef.current,
+      captureTarget: event.currentTarget,
+      moved: false,
+    };
+    viewportRef.current?.classList.add("is-dragging");
+  }
+
+  function onPointerMove(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 4) drag.moved = true;
+    applyView({ ...drag.view, x: drag.view.x + event.clientX - drag.x, y: drag.view.y + event.clientY - drag.y }, false);
+  }
+
+  function finishPointer(event) {
+    const drag = dragRef.current;
+    if (drag?.pointerId !== event.pointerId) return;
+    drag.captureTarget?.releasePointerCapture?.(event.pointerId);
+    if (drag.moved) {
+      suppressNodeClickRef.current = true;
+      setTimeout(() => { suppressNodeClickRef.current = false; }, 0);
+    }
+    dragRef.current = null;
+    viewportRef.current?.classList.remove("is-dragging");
+    setView(viewRef.current);
+  }
+
+  function onWheel(event) {
+    event.preventDefault();
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const rect = viewport.getBoundingClientRect();
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+    const currentView = viewRef.current;
+    const nextZoom = clampProfessionZoom(currentView.zoom * (event.deltaY > 0 ? 0.86 : 1.16));
+    const ratio = nextZoom / currentView.zoom;
+    applyView({ zoom: nextZoom, x: pointerX - ((pointerX - currentView.x) * ratio), y: pointerY - ((pointerY - currentView.y) * ratio) }, false);
+    if (wheelCommitRef.current) clearTimeout(wheelCommitRef.current);
+    wheelCommitRef.current = setTimeout(() => setView(viewRef.current), 100);
+  }
+
+  function onNodeKeyDown(event, node) {
+    if (event.key === "Home") {
+      event.preventDefault();
+      focusNode(startNodeId, 1);
+      return;
+    }
+    const direction = {
+      ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+    }[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    const candidates = (graph.neighborIds.get(node.id) || []).map((nodeId) => graph.nodeById.get(nodeId)).filter(Boolean);
+    const matching = candidates.filter((candidate) => ((candidate.x - node.x) * direction[0]) + ((candidate.y - node.y) * direction[1]) > 0);
+    const next = (matching.length ? matching : candidates).sort((a, b) => {
+      const scoreA = ((a.x - node.x) * direction[0]) + ((a.y - node.y) * direction[1]);
+      const scoreB = ((b.x - node.x) * direction[0]) + ((b.y - node.y) * direction[1]);
+      return scoreB - scoreA;
+    })[0];
+    if (next) focusNode(next.id, viewRef.current.zoom);
+  }
+
+  return (
+    <section className="unified-profession-tree" aria-labelledby="unified-profession-tree-title">
+      <header className="unified-profession-tree__intro">
+        <div><small>All professions · one connected constellation</small><h2 id="unified-profession-tree-title">Unified profession skill tree</h2></div>
+        <div className="unified-profession-tree__budget"><strong>{points}</strong><span>Unspent</span><b>{invested} / {PROFESSION_CAP}</b></div>
+      </header>
+      <p className="unified-profession-tree__explanation">Your creation profession is your first owned crest. Follow any connected line, split into several directions, or cross interwoven profession boundaries to build a true multiclass route.</p>
+
+      <div className="unified-profession-tree__toolbar" aria-label="Profession tree controls">
+        <ProfessionTreeSearch searchIndex={searchIndex} selectedNodeId={selectedNodeId} onSelect={focusNode} />
+        <div className="unified-profession-tree__zoom-controls">
+          <button type="button" onClick={() => zoomAtCenter(0.82)} aria-label="Zoom out profession tree"><Icon name="zoomOut" size={15} /></button>
+          <output aria-label="Profession tree zoom">{Math.round(view.zoom * 100)}%</output>
+          <button type="button" onClick={() => zoomAtCenter(1.22)} aria-label="Zoom in profession tree"><Icon name="zoomIn" size={15} /></button>
+          <button type="button" onClick={fitTree}>Fit tree</button>
+          <button type="button" onClick={() => centerOnNode(startNodeId, 1)}>My start</button>
+        </div>
+      </div>
+
+      <div className="unified-profession-tree__legend" aria-hidden="true"><span className="is-owned">Owned route</span><span className="is-available">Spendable frontier</span><span className="is-locked">Unreached</span></div>
+      <p id="profession-tree-instructions" className="sr-only">Drag to pan and use the mouse wheel or zoom controls to zoom. Select a node to inspect it. Arrow keys move between connected nodes and Home returns to your starting profession.</p>
+      <div
+        ref={viewportRef}
+        className="unified-profession-tree__viewport"
+        role="region"
+        aria-label="Pan and zoom unified profession skill tree"
+        aria-describedby="profession-tree-instructions"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={finishPointer}
+        onPointerCancel={finishPointer}
+        onWheel={onWheel}
+      >
+        <div ref={worldRef} className="unified-profession-tree__world" style={{ width: graph.size, height: graph.size, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
+          <svg viewBox={`0 0 ${graph.size} ${graph.size}`} className="unified-profession-tree__edges" aria-hidden="true">
+            {graph.edges.map((edge) => {
+              const from = graph.nodeById.get(edge.from);
+              const to = graph.nodeById.get(edge.to);
+              const fromOwned = allocatedIds.has(edge.from);
+              const toOwned = allocatedIds.has(edge.to);
+              const available = (fromOwned && frontierIds.has(edge.to)) || (toOwned && frontierIds.has(edge.from));
+              return <line key={edge.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} data-edge-kind={edge.kind} className={fromOwned && toOwned ? "is-owned" : available ? "is-available" : "is-locked"} />;
+            })}
+          </svg>
+          <div className="unified-profession-tree__nodes">
+            {graph.nodes.map((node) => {
+              const allocation = allocations[node.id] || null;
+              const structurallyAvailable = frontierIds.has(node.id);
+              const spendable = structurallyAvailable && points > 0 && !blockingChoices.length;
+              const stateName = allocation ? "owned" : spendable ? "available" : structurallyAvailable ? "frontier" : "locked";
+              const previewLevel = node.trackLevel || node.localIndex + 1;
+              const row = compiledByProfession.get(node.professionId)?.levels?.[Math.max(0, previewLevel - 1)] || null;
+              const gateDefinitions = (branchDefinitionsByProfession.get(node.professionId) || []).filter((choice) => choice.threshold === previewLevel);
+              const milestone = previewLevel % 10 === 0 || (row?.grants || []).length > 1;
+              const profession = PROFESSIONS[node.professionId];
+              return (
+                <button
+                  id={professionNodeDomId(node.id)}
+                  key={node.id}
+                  type="button"
+                  className={`unified-profession-tree__node is-${stateName}${node.isStart ? " is-start" : ""}${milestone ? " is-milestone" : ""}${gateDefinitions.length ? " is-choice-gate" : ""}${selectedNode.id === node.id ? " is-selected" : ""}`}
+                  style={{ left: node.x, top: node.y, "--profession-hue": node.hue }}
+                  data-node-id={node.id}
+                  data-profession={node.professionId}
+                  data-node-state={stateName}
+                  data-start={node.isStart ? "true" : undefined}
+                  aria-label={`${profession?.name || node.professionId} — ${row?.feature || `route node ${previewLevel}`} — ${stateName}`}
+                  aria-pressed={selectedNode.id === node.id}
+                  tabIndex={selectedNode.id === node.id ? 0 : -1}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    onPointerDown(event);
+                  }}
+                  onClick={(event) => {
+                    if (suppressNodeClickRef.current) {
+                      event.preventDefault();
+                      return;
+                    }
+                    setSelectedNodeId(node.id);
+                  }}
+                  onKeyDown={(event) => onNodeKeyDown(event, node)}
+                >
+                  {node.isStart ? <><ProfessionIcon profession={node.professionId} size="tiny" decorative /><strong>{profession?.name || titleCase(node.professionId)}</strong></> : <span>{previewLevel}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <article className="unified-profession-tree__inspector" aria-live="polite" data-node-state={selectedState}>
+        <header>
+          <ProfessionIcon profession={selectedNode.professionId} size="small" decorative />
+          <div><small>{selectedProfession?.name || titleCase(selectedNode.professionId)} · {selectedNode.isStart ? "starting crest" : `route node ${selectedNode.localIndex + 1}`}</small><h3>{selectedRow?.feature || "Uncharted profession route"}</h3></div>
+          <span className={`is-${selectedState}`}>{titleCase(selectedState)}</span>
+        </header>
+        {selectedRow?.featureDescription && <p>{selectedRow.featureDescription}</p>}
+        <GrantList grants={selectedRow?.grants || selectedRow?.generalGrants || []} empty={<p className="progression-tree__empty">This node extends the route without a separate typed grant.</p>} />
+        {selectedGateDefinitions.length > 0 && <div className="unified-profession-tree__gate"><small>Specialization keystone</small><strong>{selectedGateDefinitions.map((choice) => choice.name).join(" · ")}</strong><span>{selectedGateDefinitions.flatMap((choice) => choice.options || []).map((option) => option.name || titleCase(option.id)).join(" · ")}</span></div>}
+        <div className="unified-profession-tree__specializations"><small>Specialization gates in this region</small><span>{(selectedProfession?.specializations || []).map((entry) => entry.name).join(" · ") || "General profession routes"}</span></div>
+        <footer>
+          {selectedAllocation ? <span>Point {selectedAllocation.order} · {selectedProfession?.name} node {selectedTrackLevel}</span>
+            : blockingChoices.length ? <span>Resolve <strong>{blockingChoices[0].name || titleCase(blockingChoices[0].id)}</strong> before spending another point.</span>
+              : !frontierIds.has(selectedNode.id) ? <span>Connect this node to your owned route before investing here.</span>
+                : points <= 0 ? <span>Earn another character level to spend on this frontier.</span>
+                  : null}
+          {canSpendSelected && <button type="button" onClick={() => onChooseProgression?.(selectedNode.professionId, allocationChoice.choiceId, selectedOption.optionId, selectedNode.id)}>Spend 1 point · {selectedProfession?.name} node {selectedTrackLevel}</button>}
+        </footer>
+      </article>
+      <PendingGrantChoices choices={blockingChoices} onSelect={(choice, optionId) => onChooseProgression?.(choice.professionId || null, choice.id || choice.choiceId, optionId)} />
+    </section>
+  );
+}
+
 function ProfessionCard({ profession, currentLevel = 0, currentSpecializations = [], onOpen }) {
   const names = (profession.specializations || []).map((entry) => entry.name);
   return (
@@ -505,15 +871,12 @@ export function ProfessionCatalog({ character, onChooseProgression, initialProfe
 
 export function ProfessionTreePage({ state, onChooseProgression }) {
   const character = state?.character;
-  const activeProfessionId = progressionPaths.canonicalProfessionId?.(character?.progression?.activeProfessionId || character?.profession)
-    || character?.progression?.activeProfessionId
-    || character?.profession
-    || null;
   const points = pendingLevelAllocations(character)?.unspentLevels || 0;
+  const invested = professionProgressionLevel(character);
   return (
     <DeckPage className="progression-tree-page progression-tree-page--profession">
-      <DeckPageHeader icon="progress" title="Profession" subtitle={`${points} unspent ${points === 1 ? "point" : "points"} · core skills · specializations`} />
-      <ProfessionCatalog character={character} onChooseProgression={onChooseProgression} initialProfessionId={activeProfessionId} />
+      <DeckPageHeader icon="progress" title="Profession" subtitle={`${points} unspent ${points === 1 ? "point" : "points"} · ${invested} / ${PROFESSION_CAP} invested · unified skill tree`} />
+      <UnifiedProfessionTree character={character} onChooseProgression={onChooseProgression} />
     </DeckPage>
   );
 }

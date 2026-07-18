@@ -14,6 +14,7 @@ import {
   allocatedProgressionLevel,
   createProgression,
   migrateProgressionState,
+  PROGRESSION_VERSION,
   professionProgressionLevel,
   progressionLevel,
   racialProgressionLevel,
@@ -52,8 +53,8 @@ function expectReachedBranches(character) {
   }
 }
 
-function expectValidLedger(character, { exact = true } = {}) {
-  expect(character.progression, character.id || character.name).toMatchObject({ version: 2 });
+function expectValidLedger(character, { exact = true, expectedVersion = PROGRESSION_VERSION } = {}) {
+  expect(character.progression, character.id || character.name).toMatchObject({ version: expectedVersion });
   expect(character.progression.professions.length, character.id || character.name).toBeGreaterThan(0);
   expect(character.progression.racial?.raceId, character.id || character.name).toBeTruthy();
   for (const track of character.progression.professions) {
@@ -73,7 +74,9 @@ function expectValidLedger(character, { exact = true } = {}) {
 
 describe("character progression assignment", () => {
   it("gives every campaign template and fresh Codex character a valid profession/race ledger", () => {
-    for (const template of CHARACTER_TEMPLATES) expectValidLedger({ id: template.id, ...template.setup });
+    for (const template of CHARACTER_TEMPLATES) {
+      expectValidLedger({ id: template.id, ...template.setup }, { expectedVersion: 2 });
+    }
     for (const character of Object.values(makeInitialState().world.codex.characters)) {
       expectValidLedger(character);
       expect(character, character.id).not.toHaveProperty("level");
@@ -150,7 +153,7 @@ describe("character progression assignment", () => {
     });
   });
 
-  it("repairs migrated v2 ledgers without changing their varied total level", () => {
+  it("repairs migrated ledgers without changing their varied total level", () => {
     const progression = createProgression({
       professionId: "wizard",
       raceId: "human",
