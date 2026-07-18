@@ -10,8 +10,6 @@ import {
   pendingLevelAllocations,
   pendingProgressionChoices,
   professionProgressionLevel,
-  professionTreeState,
-  availableProfessionTreeNodes,
   progressionEntitlements,
   progressionLevel,
   progressionSummary,
@@ -21,36 +19,16 @@ import {
   resolveRacialProgressionChoice,
   resolveProgressionGrantChoice,
 } from "./progression.js";
-import { compileProfessionTrack, progressionXpForLevel } from "../data/progression-paths.js";
-import { professionTreeGraph, professionTreeStartNodeId } from "../data/profession-tree.js";
-import { ATTR_KEYS } from "../config.js";
+import { PROFESSION_PROFILES, progressionXpForLevel } from "../data/progression-paths.js";
 
-function shortestProfessionPath(graph, professionId, targetNodeId) {
-  const startNodeId = professionTreeStartNodeId(professionId);
-  const queue = [[startNodeId]];
-  const visited = new Set([startNodeId]);
-  while (queue.length) {
-    const path = queue.shift();
-    const currentNodeId = path[path.length - 1];
-    if (currentNodeId === targetNodeId) return path;
-    for (const neighborId of graph.neighborIds.get(currentNodeId) || []) {
-      if (visited.has(neighborId) || graph.nodeById.get(neighborId)?.professionId !== professionId) continue;
-      visited.add(neighborId);
-      queue.push([...path, neighborId]);
-    }
-  }
-  throw new Error(`No ${professionId} path reaches ${targetNodeId}`);
-}
-
-describe("progression v3 graph allocation", () => {
+describe("progression v3 class allocation", () => {
   it("derives a 100 total from an independent 70/30 allocation", () => {
     const progression = createProgression({ professionId: "wizard", raceId: "vampire", level: 100 });
     expect(progression).toMatchObject({ version: PROGRESSION_VERSION, professionId: "wizard", racial: { raceId: "vampire" } });
     expect(professionProgressionLevel(progression)).toBe(70);
     expect(racialProgressionLevel(progression)).toBe(30);
     expect(progressionLevel(progression)).toBe(100);
-    expect(progression.professionTree.startProfessionId).toBe("wizard");
-    expect(Object.keys(progression.professionTree.allocations)).toHaveLength(70);
+    expect(progression).not.toHaveProperty("professionTree");
   });
 
   it("supports multiclass profession allocations", () => {
@@ -76,29 +54,7 @@ describe("progression v3 graph allocation", () => {
     expect(character).toMatchObject({ profession: "warlock", archetype: "demon-warlock" });
   });
 
-  it("starts at the chosen profession and exposes only its connected frontier", () => {
-    const progression = createProgression({ professionId: "fighter", level: 1 });
-    const state = professionTreeState(progression);
-    const available = availableProfessionTreeNodes(progression);
-    const availableIds = new Set(available.map((node) => node.id));
-
-    expect(Object.keys(state.allocations)).toEqual([professionTreeStartNodeId("fighter")]);
-    expect(available.filter((node) => node.professionId === "fighter")).toHaveLength(6);
-    expect(available.every((node) => !node.isStart)).toBe(true);
-    expect(availableIds).not.toContain(professionTreeStartNodeId("barbarian"));
-    expect(availableIds).not.toContain(professionTreeStartNodeId("ruler"));
-    expect(availableIds).not.toContain(professionTreeStartNodeId("wanderer"));
-    expect(availableIds).not.toContain(professionTreeStartNodeId("wizard"));
-
-    const character = { race: "human", profession: "fighter", attributes: {}, progression };
-    advanceProgression(character, progressionXpForLevel(2) - progressionXpForLevel(1));
-    expect(pendingLevelAllocations(character).options.map((option) => option.optionId)).toEqual([
-      "profession:fighter",
-      "racial:evolution",
-    ]);
-  });
-
-  it("rejects distant professions and nodes outside the connected frontier", () => {
+  it("offers every profession as a compact advance or multiclass choice", () => {
     const character = {
       race: "human",
       profession: "fighter",
@@ -107,78 +63,53 @@ describe("progression v3 graph allocation", () => {
     };
     advanceProgression(character, progressionXpForLevel(2) - progressionXpForLevel(1));
     const pending = pendingLevelAllocations(character);
+    const professionOptions = pending.options.filter((option) => option.track === "profession");
 
-    expect(() => resolveLevelAllocationChoice(character, {
+    expect(professionOptions).toHaveLength(Object.keys(PROFESSION_PROFILES).length);
+    expect(professionOptions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ optionId: "profession:fighter", name: "Advance Warrior", currentTrackLevel: 1 }),
+      expect.objectContaining({ optionId: "profession:wizard", name: "Enter Wizard", currentTrackLevel: 0 }),
+    ]));
+    expect(professionOptions.every((option) => !Object.prototype.hasOwnProperty.call(option, "availableNodeIds"))).toBe(true);
+
+    resolveLevelAllocationChoice(character, {
       choiceId: pending.choiceId,
       optionId: "profession:wizard",
-      nodeId: professionTreeStartNodeId("wizard"),
-    })).toThrow(/Invalid level allocation option/);
-    const distantFighterNode = professionTreeGraph().professionNodes.get("fighter").at(-1).id;
-    expect(() => resolveLevelAllocationChoice(character, {
-      choiceId: pending.choiceId,
-      optionId: "profession:fighter",
-      nodeId: distantFighterNode,
-    })).toThrow(/not on the connected frontier/);
+      specializationId: "battle-archmage",
+    });
+    expect(character.progression.professions.map((track) => [track.professionId, Object.values(track.paths).reduce((sum, rank) => sum + rank, 0)]))
+      .toEqual([["fighter", 1], ["wizard", 1]]);
+    expect(character.progression).toMatchObject({ activeProfessionId: "wizard", professionId: "wizard", archetypeId: "battle-archmage" });
+    expect(professionProgressionLevel(character)).toBe(2);
   });
 
-  it("uses each selected node's immutable rank and rewards instead of allocation order", () => {
+  it("advances the same profession by taking its next authored class level", () => {
     const character = {
       race: "human",
       profession: "fighter",
       attributes: {},
       progression: createProgression({ professionId: "fighter", level: 1 }),
     };
-    const fighterStart = professionTreeStartNodeId("fighter");
-    const graph = professionTreeGraph();
-    const branchNodes = graph.neighborIds.get(fighterStart)
-      .map((nodeId) => graph.nodeById.get(nodeId))
-      .filter((node) => node?.professionId === "fighter")
-      .sort((left, right) => left.trackLevel - right.trackLevel);
-    const lowNode = branchNodes[0];
-    const highNode = branchNodes[branchNodes.length - 1];
-    const fighter = compileProfessionTrack("fighter");
-    const lowRow = fighter.levels[lowNode.trackLevel - 1];
-    const highRow = fighter.levels[highNode.trackLevel - 1];
-    expect([lowRow.feature, highRow.feature]).toEqual(["Weapon Safety", "Edge Alignment"]);
-    advanceProgression(character, progressionXpForLevel(3) - progressionXpForLevel(1));
-
-    let pending = pendingLevelAllocations(character);
+    advanceProgression(character, progressionXpForLevel(2) - progressionXpForLevel(1));
+    const pending = pendingLevelAllocations(character);
     resolveLevelAllocationChoice(character, {
       choiceId: pending.choiceId,
       optionId: "profession:fighter",
-      nodeId: highNode.id,
     });
-    expect(progressionEntitlements(character).grants.map((grant) => grant.id)).toEqual(expect.arrayContaining(
-      highRow.grants.map((grant) => grant.id),
-    ));
-    expect(progressionEntitlements(character).grants.map((grant) => grant.id)).not.toEqual(expect.arrayContaining(
-      lowRow.grants.map((grant) => grant.id),
-    ));
+    expect(character.progression.professions).toHaveLength(1);
+    expect(professionProgressionLevel(character)).toBe(2);
+    expect(progressionEntitlements(character).grants.map((grant) => grant.level)).toEqual(expect.arrayContaining([1, 2]));
+  });
 
-    pending = pendingLevelAllocations(character);
-    resolveLevelAllocationChoice(character, {
-      choiceId: pending.choiceId,
-      optionId: "profession:fighter",
-      nodeId: lowNode.id,
-    });
-
-    expect(character.progression.professionTree.allocations).toMatchObject({
-      [highNode.id]: { professionId: "fighter", trackLevel: highNode.trackLevel, order: 2 },
-      [lowNode.id]: { professionId: "fighter", trackLevel: lowNode.trackLevel, order: 3 },
-    });
-    expect([highNode.trackLevel, lowNode.trackLevel]).toEqual([7, 2]);
-    expect(progressionEntitlements(character).grants.map((grant) => grant.id)).toEqual(expect.arrayContaining([
-      ...highRow.grants.map((grant) => grant.id),
-      ...lowRow.grants.map((grant) => grant.id),
-    ]));
-    expect(professionProgressionLevel(character)).toBe(3);
-
-    const aligned = normalizeCharacterProgression({ ...character, attributes: {} }, { alignAttributesToProgression: true });
-    const selectedRows = [fighter.levels[0], highRow, lowRow];
-    expect(aligned.attributes).toEqual(Object.fromEntries(ATTR_KEYS.map((key) => [
-      key,
-      1 + selectedRows.reduce((sum, row) => sum + (row.attributeGains?.[key] || 0), 0),
-    ])));
+  it("stops offering profession choices once the shared profession cap is full", () => {
+    const character = {
+      race: "human",
+      profession: "fighter",
+      attributes: {},
+      progression: createProgression({ professionId: "fighter", level: 70 }),
+    };
+    advanceProgression(character, progressionXpForLevel(71) - progressionXpForLevel(70));
+    expect(pendingLevelAllocations(character).options.map((option) => option.optionId)).toEqual(["racial:evolution"]);
   });
 });
 
@@ -495,57 +426,19 @@ describe("separate advancement", () => {
     expect(racialProgressionLevel(character)).toBe(1);
   });
 
-  it("crosses a profession boundary only after reaching an interwoven outer bridge", () => {
-    const graph = professionTreeGraph();
-    const bridge = graph.edges.find((edge) => {
-      if (edge.kind !== "profession-route") return false;
-      const professions = [graph.nodeById.get(edge.from)?.professionId, graph.nodeById.get(edge.to)?.professionId];
-      return professions.includes("fighter") && professions.includes("barbarian");
-    });
-    const fighterBoundaryNodeId = graph.nodeById.get(bridge.from).professionId === "fighter" ? bridge.from : bridge.to;
-    const barbarianBoundaryNodeId = bridge.from === fighterBoundaryNodeId ? bridge.to : bridge.from;
-    const fighterPath = shortestProfessionPath(graph, "fighter", fighterBoundaryNodeId);
-    const progression = createProgression({ professionId: "fighter", level: fighterPath.length, raceId: "human" });
-    progression.professionTree.allocations = Object.fromEntries(fighterPath.map((nodeId, index) => [nodeId, {
-      professionId: "fighter",
-      trackLevel: graph.nodeById.get(nodeId).trackLevel,
-      order: index + 1,
-    }]));
-    const character = { race: "human", profession: "fighter", attributes: {}, progression };
-
-    for (let pendingBranch = pendingProgressionChoices(character).find((choice) => choice.kind === "branch"); pendingBranch;
-      pendingBranch = pendingProgressionChoices(character).find((choice) => choice.kind === "branch")) {
-      resolveProfessionChoice(character, {
-        professionId: pendingBranch.professionId,
-        choiceId: pendingBranch.id,
-        optionId: pendingBranch.options[0].id,
-      });
-    }
-    advanceProgression(
-      character,
-      progressionXpForLevel(fighterPath.length + 1) - progressionXpForLevel(fighterPath.length),
-    );
+  it("can establish a new multiclass track with any earned profession level", () => {
+    const character = { race: "human", profession: "fighter", attributes: {}, progression: createProgression({ professionId: "fighter", level: 10 }) };
+    resolveProfessionChoice(character, { professionId: "fighter", choiceId: "warrior-specialization", optionId: "sellsword" });
+    advanceProgression(character, progressionXpForLevel(11) - progressionXpForLevel(10));
     const pending = pendingLevelAllocations(character);
-    const barbarian = pending.options.find((option) => option.optionId === "profession:barbarian");
-    expect(fighterBoundaryNodeId).not.toBe(professionTreeStartNodeId("fighter"));
-    expect(barbarianBoundaryNodeId).not.toBe(professionTreeStartNodeId("barbarian"));
-    expect(barbarian.availableNodeIds).toContain(barbarianBoundaryNodeId);
-    expect(barbarian.availableNodeIds).not.toContain(professionTreeStartNodeId("barbarian"));
-    expect(pending.options.map((option) => option.optionId)).not.toContain("profession:artisan");
     resolveLevelAllocationChoice(character, {
       choiceId: pending.choiceId,
-      optionId: "profession:barbarian",
-      specializationId: "reaver",
-      nodeId: barbarianBoundaryNodeId,
+      optionId: "profession:artisan",
+      specializationId: "blacksmith",
     });
-    expect(character.progression.professions.map((track) => track.professionId)).toEqual(["fighter", "barbarian"]);
-    expect(character.progression.professions.find((track) => track.professionId === "barbarian").specializationId).toBe("reaver");
-    expect(character.progression.professionTree.allocations[barbarianBoundaryNodeId]).toMatchObject({
-      professionId: "barbarian",
-      trackLevel: graph.nodeById.get(barbarianBoundaryNodeId).trackLevel,
-      order: fighterPath.length + 1,
-    });
-    expect(professionProgressionLevel(character)).toBe(fighterPath.length + 1);
+    expect(character.progression.professions.map((track) => track.professionId)).toEqual(["fighter", "artisan"]);
+    expect(character.progression.professions.find((track) => track.professionId === "artisan").specializationId).toBe("blacksmith");
+    expect(professionProgressionLevel(character)).toBe(11);
   });
 });
 
@@ -600,7 +493,7 @@ describe("migration", () => {
     expect(state.pools.codex[0].characters.pooled.progression.version).toBe(PROGRESSION_VERSION);
   });
 
-  it("preserves disconnected v2 multiclass islands in the shared tree ledger", () => {
+  it("preserves compact v2 multiclass tracks without rebuilding a graph", () => {
     const legacy = createProgression({
       level: 3,
       professions: [
@@ -610,19 +503,64 @@ describe("migration", () => {
       raceId: "human",
     });
     legacy.version = 2;
-    delete legacy.professionTree;
     const character = { race: "human", profession: "fighter", attributes: {}, progression: legacy };
 
     normalizeCharacterProgression(character);
 
     expect(character.progression.version).toBe(PROGRESSION_VERSION);
-    expect(character.progression.professionTree.allocations).toMatchObject({
-      [professionTreeStartNodeId("fighter")]: { professionId: "fighter", trackLevel: 1 },
-      [professionTreeStartNodeId("artisan")]: { professionId: "artisan", trackLevel: 1 },
+    expect(character.progression).not.toHaveProperty("professionTree");
+    expect(character.progression.professions.map((track) => [track.professionId, Object.values(track.paths).reduce((sum, rank) => sum + rank, 0)]))
+      .toEqual([["fighter", 2], ["artisan", 1]]);
+  });
+
+  it("collapses retired v3 graph allocations into class levels and prunes unreachable branch choices", () => {
+    const legacy = createProgression({
+      level: 12,
+      racialLevels: 1,
+      professions: [
+        {
+          profession: "fighter",
+          levels: 10,
+          choices: { saveMarker: "fighter-choice" },
+          branchChoices: { "warrior-specialization": "sellsword" },
+        },
+        { profession: "artisan", specialization: "blacksmith", levels: 1 },
+      ],
+      racial: { raceId: "vampire", levels: 1, choices: { saveMarker: "racial-choice" } },
+      activeProfessionId: "artisan",
     });
-    const availableProfessions = new Set(availableProfessionTreeNodes(character).map((node) => node.professionId));
-    expect(availableProfessions.has("fighter")).toBe(true);
-    expect(availableProfessions.has("artisan")).toBe(true);
+    const savedXp = legacy.xp;
+    legacy.professions[0].branchChoices["sellsword-method"] = "arsenal-adept";
+    legacy.professions[0].paths = {};
+    legacy.professionTree = {
+      version: 1,
+      startProfessionId: "fighter",
+      allocations: Object.fromEntries([
+        ...Array.from({ length: 10 }, (_, index) => [`retired-fighter-${index}`, { professionId: "fighter", trackLevel: index + 1, order: index + 1 }]),
+        ["retired-artisan-0", { professionId: "artisan", trackLevel: 1, order: 11 }],
+      ]),
+    };
+    const character = { race: "vampire", profession: "artisan", attributes: {}, progression: legacy };
+
+    normalizeCharacterProgression(character);
+
+    expect(character.progression).not.toHaveProperty("professionTree");
+    expect(character.progression).toMatchObject({
+      version: PROGRESSION_VERSION,
+      activeProfessionId: "artisan",
+      professionId: "artisan",
+      archetypeId: "blacksmith",
+      xp: savedXp,
+      racial: { raceId: "vampire", choices: { saveMarker: "racial-choice" } },
+    });
+    expect(character.progression.professions.map((track) => [track.professionId, Object.values(track.paths).reduce((sum, rank) => sum + rank, 0)]))
+      .toEqual([["fighter", 10], ["artisan", 1]]);
+    expect(character.progression.professions[0]).toMatchObject({
+      choices: { saveMarker: "fighter-choice" },
+      branchChoices: { "warrior-specialization": "sellsword" },
+    });
+    expect(professionProgressionLevel(character)).toBe(11);
+    expect(racialProgressionLevel(character)).toBe(1);
   });
 });
 

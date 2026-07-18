@@ -7,7 +7,7 @@ import { InventoryView } from "./InventoryView.jsx";
 import { ArsenalView } from "./ArsenalView.jsx";
 import { CodexView } from "./CodexView.jsx";
 import { SettingsView } from "./SettingsView.jsx";
-import { ProfessionTreePage, RaceTreePage } from "./ProfessionProgression.jsx";
+import { ProgressionPage } from "./ProfessionProgression.jsx";
 import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
 import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.webp";
 import { resolveCharacterPortrait } from "./character-portrait-assets.js";
@@ -20,21 +20,22 @@ import { canonicalProfessionId } from "../data/progression-paths.js";
 import { PROFESSIONS } from "../data/professions.js";
 
 // The unified character deck: Company · Character · Skills · Inventory ·
-// Profession · Race · Codex · Settings as peer pages of one
+// Progression · Codex · Settings as peer pages of one
 // portrait-led bottom sheet, opened from a single header button (defaults to
 // Character). Sections change only through the visible tabs so a horizontal
 // gesture never steals an ordinary scroll inside a page.
-const PAGES = ["party", "character", "abilities", "inventory", "profession", "race", "codex", "settings"];
+const PAGES = ["party", "character", "abilities", "inventory", "progression", "codex", "settings"];
 const progressionLevel = progressionEngine.progressionLevel;
-const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", profession: "Profession", race: "Race", codex: "Codex", settings: "Settings" };
-const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", profession: "progress", race: "world", codex: "codex", settings: "settings" };
+const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", progression: "Progression", codex: "Codex", settings: "Settings" };
+const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", progression: "progression", codex: "codex", settings: "settings" };
 
 export function shouldDismissPanel(pulled, velocity) {
   return pulled > 88 || (pulled > 18 && velocity > 0.55);
 }
 
 export function PanelDeck({ state, user, initialPage = "character", onClose, handlers }) {
-  const requestedPage = PAGES.indexOf(initialPage);
+  const requestedPageKey = initialPage === "profession" || initialPage === "race" ? "progression" : initialPage;
+  const requestedPage = PAGES.indexOf(requestedPageKey);
   const [page, setPage] = useState(requestedPage === -1 ? PAGES.indexOf("character") : requestedPage);
   const [inventoryTarget, setInventoryTarget] = useState("wanderer");
   const [dragging, setDragging] = useState(false);
@@ -235,11 +236,8 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 initialSelectedId={inventoryTarget}
               />
             )}
-            {activePage === "profession" && (
-              <ProfessionTreePage state={state} onChooseProgression={handlers.onChooseProgression} />
-            )}
-            {activePage === "race" && (
-              <RaceTreePage state={state} onChooseProgression={handlers.onChooseProgression} />
+            {activePage === "progression" && (
+              <ProgressionPage state={state} onChooseProgression={handlers.onChooseProgression} />
             )}
             {activePage === "codex" && (
               <CodexView
@@ -394,7 +392,7 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
           >
             <Icon name={PAGE_ICONS[key]} size={18} />
             <span>{LABELS[key]}</span>
-            {unspentPoints > 0 && (key === "profession" || key === "race") && <b className="dossier-hero__tab-badge" aria-label={`${unspentPoints} unspent progression points`}>{unspentPoints}</b>}
+            {unspentPoints > 0 && key === "progression" && <b className="dossier-hero__tab-badge" aria-label={`${unspentPoints} unspent progression ${unspentPoints === 1 ? "point" : "points"}`}>{unspentPoints}</b>}
           </button>
         ))}
       </div>

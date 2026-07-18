@@ -43,4 +43,42 @@ describe("InputBar", () => {
 
     expect(html).toContain('aria-label="Continue story without a new action"');
   });
+
+  it("keeps an earned advancement visible above chat and uses the generated icon", () => {
+    const html = renderToStaticMarkup(
+      <InputBar
+        value=""
+        onChange={() => {}}
+        onSubmit={() => {}}
+        onRun={() => {}}
+        loading={true}
+        advancementCount={2}
+        onOpenProgression={() => {}}
+      />,
+    );
+
+    expect(html).toContain('class="story-input__advancement"');
+    expect(html).toContain('aria-label="2 advancements ready. Open Progression."');
+    expect(html).toContain('data-game-icon="progression"');
+    expect(html).toContain("Open Progression");
+    expect(html).not.toContain('class="story-input__advancement" disabled');
+  });
+
+  it("continues prompting when a specialization or grant choice remains", () => {
+    const html = renderToStaticMarkup(
+      <InputBar
+        value=""
+        onChange={() => {}}
+        onSubmit={() => {}}
+        onRun={() => {}}
+        loading={false}
+        advancementNeedsChoice={true}
+        onOpenProgression={() => {}}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Finish advancement. Open Progression."');
+    expect(html).toContain("Finish advancement");
+    expect(html).not.toContain('<b aria-hidden="true">0</b>');
+  });
 });

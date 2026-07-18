@@ -27,12 +27,6 @@ import {
   slug,
 } from "../data/progression-paths.js";
 import { normalizeBranchChoices } from "../data/profession-branches.js";
-import {
-  availableProfessionTreeNodeIds,
-  normalizeProfessionTreeState,
-  professionTreeAllocationLevels,
-  professionTreeGraph,
-} from "../data/profession-tree.js";
 import { recomputeCarryCapacity, recomputeResolveMax, recomputeVitalityMax } from "./attributes.js";
 
 export const PROGRESSION_VERSION = 3;
@@ -86,49 +80,19 @@ function rankTotal(paths = {}, cap = CHARACTER_LEVEL_CAP) {
   return Math.max(0, Math.min(cap, Object.values(paths).reduce((sum, rank) => sum + Math.max(0, Math.floor(Number(rank) || 0)), 0)));
 }
 
-function hasFixedProfessionTree(progression) {
-  return progression?.version === PROGRESSION_VERSION
-    && progression.professionTree?.allocations
-    && typeof progression.professionTree.allocations === "object";
-}
-
-function professionTreeEntries(progression, professionId = null) {
-  if (!hasFixedProfessionTree(progression)) return [];
-  const canonical = professionId ? canonicalProfessionId(professionId) : null;
-  return Object.entries(progression.professionTree.allocations)
-    .map(([nodeId, allocation]) => ({ nodeId, ...allocation }))
-    .filter((allocation) => !canonical || allocation.professionId === canonical)
-    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0) || a.nodeId.localeCompare(b.nodeId));
-}
-
-function professionTrackPointCount(progression, professionId) {
-  if (hasFixedProfessionTree(progression)) return professionTreeEntries(progression, professionId).length;
+function retiredProfessionTreeLevel(progression, professionId) {
   const canonical = canonicalProfessionId(professionId);
-  const track = progression?.professions?.find((entry) => entry.professionId === canonical);
-  return rankTotal(track?.paths, PROFESSION_LEVEL_CAP);
+  if (!canonical || !progression?.professionTree?.allocations) return 0;
+  return Math.min(PROFESSION_LEVEL_CAP, Object.values(progression.professionTree.allocations).reduce((total, allocation) => (
+    canonicalProfessionId(allocation?.professionId) === canonical ? total + 1 : total
+  ), 0));
 }
 
-function allocatedProfessionRows(progression, track, compiled = null) {
-  const resolved = compiled || compileProfessionTrack(track.professionId, {
-    specializationId: track.specializationId,
-    choices: track.choices,
-    branchChoices: track.branchChoices,
-  });
-  if (!hasFixedProfessionTree(progression)) return resolved.levels.slice(0, rankTotal(track.paths, PROFESSION_LEVEL_CAP));
-  return professionTreeEntries(progression, track.professionId)
-    .map((allocation) => resolved.levels[Math.max(0, Math.floor(Number(allocation.trackLevel) || 1) - 1)])
-    .filter(Boolean);
-}
-
-function syncTrackCompatibilityPaths(progression, track) {
-  const levels = professionTrackPointCount(progression, track.professionId);
-  const compiled = compileProfessionTrack(track.professionId, {
-    specializationId: track.specializationId,
-    choices: track.choices,
-    branchChoices: track.branchChoices,
-  });
-  track.paths = allocatedRanks(compiled, levels);
-  return track;
+function persistedProfessionTrackLevel(progression, track) {
+  return Math.min(PROFESSION_LEVEL_CAP, Math.max(
+    rankTotal(track?.paths, PROFESSION_LEVEL_CAP),
+    retiredProfessionTreeLevel(progression, track?.professionId),
+  ));
 }
 
 function cloneChoices(choices = {}) {
@@ -192,11 +156,9 @@ function isStructuredProgression(progression) {
 export function professionProgressionLevel(value) {
   const progression = value?.progression || value;
   if (isStructuredProgression(progression)) {
-    if (hasFixedProfessionTree(progression)) return Math.min(PROFESSION_LEVEL_CAP, progression.professions.reduce(
-      (sum, track) => sum + professionTrackPointCount(progression, track.professionId),
-      0,
-    ));
-    return Math.min(PROFESSION_LEVEL_CAP, progression.professions.reduce((sum, track) => sum + rankTotal(track.paths, PROFESSION_LEVEL_CAP), 0));
+    return Math.min(PROFESSION_LEVEL_CAP, progression.professions.reduce((sum, track) => (
+      sum + persistedProfessionTrackLevel(progression, track)
+    ), 0));
   }
   if (!progression?.paths) return 0;
   return Math.min(PROFESSION_LEVEL_CAP, Object.entries(progression.paths).reduce((sum, [pathId, rank]) => {
@@ -278,18 +240,6 @@ function reachedProfessionBranchChoices(professionId, branchChoices, levels) {
   return reached;
 }
 
-function reachedProfessionNodeChoices(professionId, branchChoices, allocatedLevels) {
-  const reached = {};
-  const normalized = normalizeBranchChoices(professionId, branchChoices);
-  const owned = allocatedLevels instanceof Set ? allocatedLevels : new Set(allocatedLevels || []);
-  for (const definition of professionBranchChoices(professionId)) {
-    if (!owned.has(definition.threshold) || !normalized[definition.id]) continue;
-    if (definition.parentChoiceId && reached[definition.parentChoiceId] !== definition.parentOptionId) continue;
-    reached[definition.id] = normalized[definition.id];
-  }
-  return reached;
-}
-
 function reachedRacialBranchChoices(raceId, branchChoices, levels) {
   const reached = {};
   const normalized = normalizeRacialBranchChoices(raceId, branchChoices);
@@ -328,21 +278,31 @@ function syncCompatibility(progression) {
   return progression;
 }
 
-export function professionTreeState(value) {
-  const progression = value?.progression || value;
-  if (!isStructuredProgression(progression)) return normalizeProfessionTreeState();
-  return normalizeProfessionTreeState({
-    professionLevels: professionTreeAllocationLevels(progression.professions),
-    startProfessionId: progression.professionTree?.startProfessionId || progression.professions[0]?.professionId || progression.activeProfessionId,
-    state: progression.professionTree,
-    allowLegacyIslands: progression.version === 2,
+function restoreStructuredSaveChoices(progression, source) {
+  for (const track of progression.professions) {
+    const saved = source.professions.find((entry) => canonicalProfessionId(entry.professionId) === track.professionId);
+    if (!saved) continue;
+    const levels = persistedProfessionTrackLevel(source, saved);
+    track.branchChoices = { ...reachedProfessionBranchChoices(track.professionId, saved.branchChoices, levels) };
+    const compiled = compileProfessionTrack(track.professionId, {
+      specializationId: track.specializationId,
+      choices: track.choices,
+      branchChoices: track.branchChoices,
+    });
+    track.paths = allocatedRanks(compiled, levels);
+  }
+  const racialLevels = rankTotal(source.racial?.paths, RACIAL_LEVEL_CAP);
+  progression.racial.branchChoices = { ...reachedRacialBranchChoices(
+    progression.racial.raceId,
+    source.racial?.branchChoices,
+    racialLevels,
+  ) };
+  const racialCompiled = compileRacialTrack(progression.racial.raceId, {
+    evolutionId: progression.racial.evolutionId,
+    branchChoices: progression.racial.branchChoices,
   });
-}
-
-export function availableProfessionTreeNodes(value) {
-  const state = professionTreeState(value);
-  const graph = professionTreeGraph();
-  return [...availableProfessionTreeNodeIds(state)].map((nodeId) => graph.nodeById.get(nodeId)).filter(Boolean);
+  progression.racial.paths = allocatedRanks(racialCompiled, racialLevels);
+  return syncCompatibility(progression);
 }
 
 export function createProgression({
@@ -362,8 +322,6 @@ export function createProgression({
   metamagicIds = null,
   xp = null,
   activeProfessionId = null,
-  professionTree = null,
-  legacyProfessionTreeIslands = false,
 } = {}) {
   const sourceTracks = Array.isArray(professions) && professions.length
     ? professions
@@ -428,33 +386,13 @@ export function createProgression({
     : 0;
   const allocatedTotal = targetProfession + targetRacial;
   const resolvedXp = Math.max(progressionXpForLevel(allocatedTotal), progressionXpForLevel(legacyXpLevel), Math.floor(Number(xp) || 0));
-  const resolvedActiveProfessionId = canonicalProfessionId(activeProfessionId) || builtTracks[0]?.professionId || "wanderer";
-  const builtProfessionTree = normalizeProfessionTreeState({
-    professionLevels: professionTreeAllocationLevels(builtTracks),
-    startProfessionId: professionTree?.startProfessionId || builtTracks[0]?.professionId || resolvedActiveProfessionId,
-    state: professionTree,
-    allowLegacyIslands: legacyProfessionTreeIslands || (!professionTree && builtTracks.filter((track) => rankTotal(track.paths, PROFESSION_LEVEL_CAP) > 0).length > 1),
-  });
-  for (const [index, track] of builtTracks.entries()) {
-    const ownedLevels = new Set(Object.values(builtProfessionTree.allocations || {})
-      .filter((allocation) => allocation.professionId === track.professionId)
-      .map((allocation) => allocation.trackLevel));
-    track.branchChoices = reachedProfessionNodeChoices(track.professionId, normalized[index]?.branchChoices, ownedLevels);
-    const compiled = compileProfessionTrack(track.professionId, {
-      specializationId: track.specializationId,
-      choices: track.choices,
-      branchChoices: track.branchChoices,
-    });
-    track.paths = allocatedRanks(compiled, ownedLevels.size);
-  }
   return syncCompatibility({
     version: PROGRESSION_VERSION,
-    activeProfessionId: resolvedActiveProfessionId,
+    activeProfessionId: canonicalProfessionId(activeProfessionId) || builtTracks[0]?.professionId || "wanderer",
     xp: resolvedXp,
     unspentLevels: Math.max(0, progressionLevelFromXp(resolvedXp) - allocatedTotal),
     professions: builtTracks,
     racial: builtRacial,
-    professionTree: builtProfessionTree,
   });
 }
 
@@ -519,67 +457,14 @@ function progressionAllocations(progression) {
   return {
     professions: progression.professions.map((track) => ({
       professionId: track.professionId, specializationId: track.specializationId,
-      levels: rankTotal(track.paths, PROFESSION_LEVEL_CAP), choices: track.choices,
+      levels: persistedProfessionTrackLevel(progression, track), choices: track.choices,
       branchChoices: track.branchChoices,
     })),
     racial: { raceId: progression.racial.raceId, evolutionId: progression.racial.evolutionId, levels: rankTotal(progression.racial.paths, RACIAL_LEVEL_CAP), branchChoices: progression.racial.branchChoices },
   };
 }
 
-function hasOnlyPrefixProfessionRows(progression) {
-  if (!hasFixedProfessionTree(progression)) return false;
-  const trackedAllocations = progression.professions.reduce((total, track) => {
-    const levels = professionTreeEntries(progression, track.professionId)
-      .map((allocation) => Math.max(1, Math.floor(Number(allocation.trackLevel) || 1)))
-      .sort((a, b) => a - b);
-    if (!levels.every((level, index) => level === index + 1)) return Number.NaN;
-    return total + levels.length;
-  }, 0);
-  return Number.isFinite(trackedAllocations)
-    && trackedAllocations === Object.keys(progression.professionTree.allocations).length;
-}
-
 function projectedAttributes(progression) {
-  // Prefix-shaped allocations are the form produced by every pre-v3 save and
-  // authored character. Keep their projection byte-for-byte compatible with
-  // the established compiler; only genuinely freeform node paths need to sum
-  // their selected permanent rows directly.
-  if (hasOnlyPrefixProfessionRows(progression)) {
-    return compileCharacterProgression(progressionAllocations(progression)).finalAttributes;
-  }
-  if (hasFixedProfessionTree(progression)) {
-    const attributes = Object.fromEntries(ATTR_KEYS.map((key) => [key, 1]));
-    let appliedLevel = 0;
-    const applyRows = (rows) => {
-      for (const row of rows) {
-        appliedLevel += 1;
-        for (const [key, amount] of Object.entries(row?.attributeGains || {})) {
-          attributes[key] = Math.min(
-            ATTRIBUTE_CAP,
-            attributeCeilingForLevel(appliedLevel),
-            (attributes[key] || 0) + Math.max(0, Number(amount) || 0),
-          );
-        }
-      }
-    };
-    const racialCompiled = compileRacialTrack(progression.racial.raceId, {
-      evolutionId: progression.racial.evolutionId,
-      branchChoices: progression.racial.branchChoices,
-    });
-    applyRows(racialCompiled.levels.slice(0, racialProgressionLevel(progression)));
-    const rowsByProfession = new Map(progression.professions.map((track) => [
-      track.professionId,
-      compileProfessionTrack(track.professionId, {
-        specializationId: track.specializationId,
-        choices: track.choices,
-        branchChoices: track.branchChoices,
-      }).levels,
-    ]));
-    applyRows(professionTreeEntries(progression).map((allocation) => (
-      rowsByProfession.get(allocation.professionId)?.[allocation.trackLevel - 1]
-    )).filter(Boolean));
-    return attributes;
-  }
   return compileCharacterProgression(progressionAllocations(progression)).finalAttributes;
 }
 
@@ -630,23 +515,33 @@ function oldRacialRanks(progression) {
 }
 
 function cloneProgression(progression) {
+  const hasRetiredTree = Boolean(progression?.professionTree?.allocations);
+  const base = { ...progression };
+  delete base.professionTree;
   const cloned = {
-    ...progression,
+    ...base,
     version: PROGRESSION_VERSION,
     xp: Math.max(0, Number(progression.xp) || 0),
-    professions: progression.professions.map((track) => ({
-      ...track, paths: { ...(track.paths || {}) }, choices: cloneChoices(track.choices), branchChoices: { ...(track.branchChoices || {}) },
-    })),
+    professions: progression.professions.map((track) => {
+      const copied = {
+        ...track,
+        paths: { ...(track.paths || {}) },
+        choices: cloneChoices(track.choices),
+        branchChoices: { ...(track.branchChoices || {}) },
+      };
+      if (!hasRetiredTree) return copied;
+      const compiled = compileProfessionTrack(copied.professionId, {
+        specializationId: copied.specializationId,
+        choices: copied.choices,
+        branchChoices: copied.branchChoices,
+      });
+      copied.paths = allocatedRanks(compiled, persistedProfessionTrackLevel(progression, track));
+      return copied;
+    }),
     racial: { ...progression.racial, paths: { ...(progression.racial?.paths || {}) }, choices: { ...(progression.racial?.choices || {}) }, branchChoices: { ...(progression.racial?.branchChoices || {}) } },
     paths: { ...(progression.paths || {}) },
   };
-  cloned.professionTree = normalizeProfessionTreeState({
-    professionLevels: professionTreeAllocationLevels(cloned.professions),
-    startProfessionId: progression.professionTree?.startProfessionId || progression.professions[0]?.professionId || progression.activeProfessionId,
-    state: progression.professionTree,
-    allowLegacyIslands: progression.version === 2,
-  });
-  return cloned;
+  return syncCompatibility(cloned);
 }
 
 export function normalizeCharacterProgression(character, {
@@ -675,20 +570,18 @@ export function normalizeCharacterProgression(character, {
   const signatureSpellId = character.signatureSpell || character.signature_spell;
   const metamagicIds = character.metamagicIds || character.metamagic_ids;
   if (hadStructuredProgression && !explicitPlan && racialLevels == null && !signatureSpellId && !metamagicIds) {
-    character.progression = createProgression({
+    character.progression = restoreStructuredSaveChoices(createProgression({
       level: inferredLevel,
       professions: oldProgression.professions.map((track) => ({
         professionId: track.professionId, specializationId: track.specializationId,
-        levels: rankTotal(track.paths, PROFESSION_LEVEL_CAP), choices: track.choices,
+        levels: persistedProfessionTrackLevel(oldProgression, track), choices: track.choices,
         branchChoices: track.branchChoices,
       })),
       racial: { ...oldProgression.racial, levels: rankTotal(oldProgression.racial.paths, RACIAL_LEVEL_CAP), branchChoices: oldProgression.racial.branchChoices },
       racialLevels: rankTotal(oldProgression.racial.paths, RACIAL_LEVEL_CAP),
       xp: oldProgression.xp,
       activeProfessionId: oldProgression.activeProfessionId,
-      professionTree: oldProgression.professionTree,
-      legacyProfessionTreeIslands: oldProgression.version === 2,
-    });
+    }), oldProgression);
   } else {
     const migratedRacial = Math.min(
       inferredLevel,
@@ -775,18 +668,13 @@ function applyRowAttributes(character, row, totalLevel) {
 }
 
 function pendingBranchesForProgression(progression) {
-  const professionChoices = progression.professions.flatMap((track) => {
-    const ownedLevels = hasFixedProfessionTree(progression)
-      ? new Set(professionTreeEntries(progression, track.professionId).map((allocation) => allocation.trackLevel))
-      : null;
-    const pending = ownedLevels
-      ? professionBranchChoices(track.professionId).filter((definition) => {
-        if (!ownedLevels.has(definition.threshold) || track.branchChoices?.[definition.id]) return false;
-        return !definition.parentChoiceId || track.branchChoices?.[definition.parentChoiceId] === definition.parentOptionId;
-      })
-      : pendingTrackChoices({ professionId: track.professionId, paths: track.paths, branchChoices: track.branchChoices });
-    return pending.map((choice) => ({ ...choice, kind: "branch", professionId: track.professionId }));
-  });
+  const professionChoices = progression.professions.flatMap((track) => (
+    pendingTrackChoices({
+      professionId: track.professionId,
+      levels: persistedProfessionTrackLevel(progression, track),
+      branchChoices: track.branchChoices,
+    }).map((choice) => ({ ...choice, kind: "branch", professionId: track.professionId }))
+  ));
   const racialChoices = pendingRacialBranchChoices(
     progression.racial.raceId,
     racialProgressionLevel(progression),
@@ -809,7 +697,7 @@ export function pendingProgressionChoices(value) {
     const compiled = compileProfessionTrack(track.professionId, {
       specializationId: track.specializationId, choices: track.choices, branchChoices: track.branchChoices,
     });
-    for (const row of allocatedProfessionRows(progression, track, compiled)) {
+    for (const row of compiled.levels.slice(0, persistedProfessionTrackLevel(progression, track))) {
       // Branch rewards may themselves be bounded choices (for example a
       // Universalist Wizard adding one or two selected formulae). Scan the
       // complete row, while each grant id retains its own storage key.
@@ -847,12 +735,7 @@ export function pendingLevelAllocations(value) {
   const options = [];
   if (professionLevel < PROFESSION_LEVEL_CAP) {
     const existing = new Map(progression.professions.map((track) => [track.professionId, track]));
-    const availableByProfession = new Map();
-    for (const node of availableProfessionTreeNodes(progression)) {
-      if (!availableByProfession.has(node.professionId)) availableByProfession.set(node.professionId, []);
-      availableByProfession.get(node.professionId).push(node.id);
-    }
-    for (const [professionId, availableNodeIds] of availableByProfession) {
+    for (const professionId of Object.keys(PROFESSION_PROFILES)) {
       const track = existing.get(professionId);
       const professionName = PROFESSION_PROFILES[professionId]?.name || professionId;
       options.push(Object.freeze({
@@ -860,9 +743,8 @@ export function pendingLevelAllocations(value) {
         track: "profession",
         professionId,
         name: track ? `Advance ${professionName}` : `Enter ${professionName}`,
-        description: track ? `Claim one fixed skill on the connected ${professionName} frontier.` : `Cross into the ${professionName} region and begin a connected multiclass route.`,
-        currentTrackLevel: track ? professionTrackPointCount(progression, professionId) : 0,
-        availableNodeIds: Object.freeze([...availableNodeIds]),
+        description: track ? `Take the next ${professionName} level.` : `Begin a new ${professionName} multiclass.`,
+        currentTrackLevel: track ? persistedProfessionTrackLevel(progression, track) : 0,
       }));
     }
   }
@@ -896,9 +778,7 @@ export function resolveProfessionChoice(value, { professionId, choiceId, optionI
   const track = progression.professions.find((entry) => entry.professionId === canonical);
   if (!track) throw new Error(`Character has no ${canonical} profession track`);
   const definition = professionBranchChoices(canonical).find((entry) => entry.id === choiceId);
-  const branchReached = definition && (hasFixedProfessionTree(progression)
-    ? professionTreeEntries(progression, canonical).some((allocation) => allocation.trackLevel === definition.threshold)
-    : rankTotal(track.paths, PROFESSION_LEVEL_CAP) >= definition.threshold);
+  const branchReached = definition && persistedProfessionTrackLevel(progression, track) >= definition.threshold;
   if (!branchReached) throw new Error(`Branch choice ${choiceId} is not available`);
   if (definition.parentChoiceId && track.branchChoices[definition.parentChoiceId] !== definition.parentOptionId) throw new Error(`Branch choice ${choiceId} prerequisite is not met`);
   if (!definition.options.some((entry) => entry.id === optionId)) throw new Error(`Invalid option ${optionId} for ${choiceId}`);
@@ -996,7 +876,7 @@ export function advanceRacialProgression(character, xpGain) {
   return advanceProgression(character, xpGain);
 }
 
-function allocateOneLevel(value, option, specializationId = null, nodeId = null) {
+function allocateOneLevel(value, option, specializationId = null) {
   const character = value?.progression ? value : null;
   const progression = cloneProgression(character?.progression || value);
   const allocation = pendingLevelAllocations(progression);
@@ -1014,11 +894,6 @@ function allocateOneLevel(value, option, specializationId = null, nodeId = null)
   } else {
     if (professionProgressionLevel(progression) >= PROFESSION_LEVEL_CAP) throw new Error(`Profession progression is capped at ${PROFESSION_LEVEL_CAP}`);
     const professionId = canonicalProfessionId(option.professionId);
-    const selectedNodeId = nodeId || option.availableNodeIds?.[0];
-    const selectedNode = professionTreeGraph().nodeById.get(selectedNodeId);
-    if (!selectedNode || selectedNode.professionId !== professionId || !option.availableNodeIds?.includes(selectedNodeId)) {
-      throw new Error(`Profession node ${selectedNodeId || "unknown"} is not on the connected frontier`);
-    }
     let track = progression.professions.find((entry) => entry.professionId === professionId);
     if (!track) {
       track = { professionId, specializationId: specializationId ? slug(specializationId) : null, paths: {}, choices: {}, branchChoices: {} };
@@ -1027,12 +902,10 @@ function allocateOneLevel(value, option, specializationId = null, nodeId = null)
     const trackChoices = pendingBranchesForProgression(progression).filter((choice) => choice.professionId === professionId);
     if (trackChoices.length) throw new Error(`Resolve ${trackChoices[0].id} before advancing ${professionId}`);
     const compiled = compileProfessionTrack(professionId, { specializationId: track.specializationId, choices: track.choices, branchChoices: track.branchChoices });
-    const fixedTrackLevel = Math.max(1, Math.floor(Number(selectedNode.trackLevel) || selectedNode.localIndex + 1));
-    row = compiled.levels[fixedTrackLevel - 1];
+    const level = rankTotal(track.paths, PROFESSION_LEVEL_CAP);
+    row = compiled.levels[level];
     if (!row) throw new Error(`${professionId} cannot take another rank`);
-    const order = Object.values(progression.professionTree.allocations || {}).reduce((max, entry) => Math.max(max, Number(entry.order) || 0), 0) + 1;
-    progression.professionTree.allocations[selectedNodeId] = Object.freeze({ professionId, trackLevel: fixedTrackLevel, order });
-    syncTrackCompatibilityPaths(progression, track);
+    track.paths[row.pathId] = row.rank;
     progression.activeProfessionId = professionId;
   }
   syncCompatibility(progression);
@@ -1047,20 +920,20 @@ function allocateOneLevel(value, option, specializationId = null, nodeId = null)
   return progression;
 }
 
-export function resolveLevelAllocationChoice(value, { choiceId, optionId, specializationId = null, nodeId = null }) {
+export function resolveLevelAllocationChoice(value, { choiceId, optionId, specializationId = null }) {
   const progression = value?.progression || value;
   const pending = pendingLevelAllocations(progression);
   if (!pending || pending.choiceId !== choiceId) throw new Error(`Level allocation ${choiceId} is not pending`);
   const option = pending.options.find((entry) => entry.optionId === optionId);
   if (!option) throw new Error(`Invalid level allocation option ${optionId}`);
-  return allocateOneLevel(value, option, specializationId, nodeId);
+  return allocateOneLevel(value, option, specializationId);
 }
 
 export function resolveLevelAllocation(value, selection) {
   const pending = pendingLevelAllocations(value);
   if (!pending) throw new Error("No earned level is waiting for allocation");
   const optionId = selection.optionId || (selection.track === "racial" ? "racial:evolution" : `profession:${canonicalProfessionId(selection.professionId)}`);
-  return resolveLevelAllocationChoice(value, { choiceId: pending.choiceId, optionId, specializationId: selection.specializationId, nodeId: selection.nodeId });
+  return resolveLevelAllocationChoice(value, { choiceId: pending.choiceId, optionId, specializationId: selection.specializationId });
 }
 
 export function progressionGrants(value) {
@@ -1069,7 +942,7 @@ export function progressionGrants(value) {
   const grants = [];
   for (const track of progression.professions) {
     const compiled = compileProfessionTrack(track.professionId, { specializationId: track.specializationId, choices: track.choices, branchChoices: track.branchChoices });
-    for (const row of allocatedProfessionRows(progression, track, compiled)) {
+    for (const row of compiled.levels.slice(0, persistedProfessionTrackLevel(progression, track))) {
       for (const grant of row.grants) {
         grants.push({ ...grant, source: "profession", professionId: track.professionId, level: row.trackLevel, pathId: row.pathId });
         if (grant.type === "ability-choice") {
@@ -1151,7 +1024,7 @@ export function progressionSummary(character) {
     activeProfessionId: progression.activeProfessionId,
     professions: progression.professions.map((track) => ({
       professionId: track.professionId, specializationId: track.specializationId,
-      level: professionTrackPointCount(progression, track.professionId), paths: { ...track.paths },
+      level: persistedProfessionTrackLevel(progression, track), paths: { ...track.paths },
       choices: { ...track.choices }, branchChoices: { ...track.branchChoices },
       pendingChoices: pendingBranchesForProgression(progression).filter((choice) => choice.professionId === track.professionId),
     })),

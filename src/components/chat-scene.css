@@ -438,6 +438,30 @@
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--scene-accent) 30%, transparent), transparent);
 }
 
+.story-input__advancement {
+  width: min(100%, 360px);
+  min-height: 42px;
+  margin: 0 auto 6px;
+  padding: 5px 8px 5px 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(244, 232, 195, .92);
+  border: 1px solid color-mix(in srgb, var(--scene-highlight) 44%, transparent);
+  border-radius: 12px;
+  background: rgba(8, 28, 43, .94);
+  box-shadow: 0 8px 22px rgba(3, 13, 24, .32);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.story-input__advancement > span { min-width: 0; display: grid; gap: 2px; flex: 1; }
+.story-input__advancement strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.story-input__advancement small { color: rgba(191, 213, 214, .58); font-size: 7px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.story-input__advancement b { min-width: 24px; height: 24px; display: grid; place-items: center; color: #17160e; border-radius: 50%; background: #dec36e; font-size: 10px; }
+.story-input__advancement:hover,
+.story-input__advancement:focus-visible { border-color: color-mix(in srgb, var(--scene-highlight) 72%, transparent); outline: 2px solid color-mix(in srgb, var(--scene-highlight) 24%, transparent); outline-offset: 2px; }
+
 .story-input__composer {
   position: relative;
   display: grid;
