@@ -5,7 +5,7 @@ export const ATLAS_3D_FOV_DEG = 34;
 export const ATLAS_3D_PITCH_DEG = 38;
 export const ATLAS_3D_TERRAIN_STRIDE = 6;
 export const ATLAS_3D_CAMERA_COAST_INSET = ATLAS_3D_TERRAIN_STRIDE;
-export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v1";
+export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v2";
 export const ATLAS_3D_MAX_ZOOM = 26;
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -18,20 +18,49 @@ const CAMERA_MIN_CLEARANCE = 3;
 const TERRAIN_MAX_HEIGHT = 29.5;
 const TERRAIN_MIN_HEIGHT = -2.8;
 
-const TERRAIN_COLORS = Object.freeze({
-  indoor: 0x776653,
-  settlement: 0x9c8158,
-  street: 0xa58d65,
-  road: 0xb79359,
-  wall: 0x766d61,
-  plains: 0x586f43,
-  hills: 0x695039,
-  forest: 0x244d33,
-  marsh: 0x315b56,
-  mountains: 0x5c5958,
-  impassable: 0x394840,
-  water: 0x173e50,
-});
+// Per-realm biome palettes: each entry is [central, north, east, south, west].
+// Indices match REALM_INDICES below. Shared manmade terrain types (settlement,
+// street, road, wall, indoor) get mild biome tinting so settlements feel placed
+// in their climate rather than copy-pasted.
+const BIOME_PALETTES = Object.freeze([
+  // 0 — central: temperate Whitemarch heartlands
+  Object.freeze({
+    plains: 0x4e6835, hills: 0x5e4232, forest: 0x1e4228, marsh: 0x2a5048,
+    mountains: 0x504a48, impassable: 0x39483e, water: 0x173e50,
+    settlement: 0x9c8158, street: 0xa58d65, road: 0xb79359, wall: 0x766d61, indoor: 0x776653,
+  }),
+  // 1 — north: sub-arctic Frostcrown
+  Object.freeze({
+    plains: 0x687872, hills: 0x4a4e52, forest: 0x182a1c, marsh: 0x1e2e2e,
+    mountains: 0x8a9698, impassable: 0x2e3838, water: 0x102a38,
+    settlement: 0x8a7a68, street: 0x957f6a, road: 0xa08a6e, wall: 0x7a7870, indoor: 0x6a6060,
+  }),
+  // 2 — east: subtropical Sea of Reeds
+  Object.freeze({
+    plains: 0x4a6638, hills: 0x565030, forest: 0x1e4828, marsh: 0x2a5a4a,
+    mountains: 0x505050, impassable: 0x2e3c36, water: 0x124040,
+    settlement: 0x9a8060, street: 0xa58a65, road: 0xb08868, wall: 0x6e6858, indoor: 0x6a5e48,
+  }),
+  // 3 — south: arid Sunscar desert
+  Object.freeze({
+    plains: 0x887840, hills: 0x6e4e28, forest: 0x3a5020, marsh: 0x3a4a30,
+    mountains: 0x685840, impassable: 0x403830, water: 0x164048,
+    settlement: 0xa08850, street: 0xaa9055, road: 0xb89a5a, wall: 0x7a7258, indoor: 0x7a6848,
+  }),
+  // 4 — west: ancient Elderwood forest
+  Object.freeze({
+    plains: 0x3c5e30, hills: 0x3a3a20, forest: 0x142e1a, marsh: 0x1c3a2a,
+    mountains: 0x3c4040, impassable: 0x2a3028, water: 0x103038,
+    settlement: 0x8a7850, street: 0x907c58, road: 0xa0885a, wall: 0x686858, indoor: 0x686055,
+  }),
+]);
+
+const REALM_INDICES = Object.freeze({ central: 0, north: 1, east: 2, south: 3, west: 4 });
+
+function terrainColor(terrain, realmId) {
+  const palette = BIOME_PALETTES[REALM_INDICES[realmId] ?? 0];
+  return palette[terrain] ?? palette.plains;
+}
 const HEIGHT_CACHE = new Map();
 const TERRAIN_GRID_CACHE = new Map();
 const FIT_ZOOM_CACHE = new Map();
@@ -237,7 +266,7 @@ export function registerAtlas3dTerrainData(data) {
     || !(data.indices instanceof Uint32Array)
     || data.indices.length !== indexCount
     || !(data.trees instanceof Float32Array)
-    || data.trees.length % 6 !== 0) return false;
+    || data.trees.length % 7 !== 0) return false;
   const key = terrainGridKey(data.seed, data.stride);
   TERRAIN_GRID_CACHE.set(key, data);
   if (TERRAIN_GRID_CACHE.size > 4) TERRAIN_GRID_CACHE.delete(TERRAIN_GRID_CACHE.keys().next().value);
@@ -316,8 +345,12 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
       positions[index * 3 + 1] = height;
       positions[index * 3 + 2] = scene.z;
 
-      const base = TERRAIN_COLORS[sample.land ? sample.terrain : "water"] || TERRAIN_COLORS.plains;
-      const relief = sample.land ? (sample.elevation - 0.48) * 0.17 : (sample.elevation - 0.45) * 0.06;
+      // Biome-aware vertex color with per-vertex noise for micro-variation.
+      const colorVariance = (coordinateNoise(x, y, seed + 199) - 0.5) * 0.055;
+      const base = terrainColor(sample.land ? sample.terrain : "water", sample.realmId);
+      const relief = sample.land
+        ? (sample.elevation - 0.48) * 0.24 + colorVariance
+        : (sample.elevation - 0.45) * 0.08 + colorVariance * 0.4;
       const [red, green, blue] = colorChannels(base, relief);
       colors[index * 3] = red;
       colors[index * 3 + 1] = green;
@@ -338,6 +371,7 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
             0.72 + coordinateNoise(x, y, seed + tree * 11 + 3) * 0.8,
             coordinateNoise(x, y, seed + tree * 11 + 4) * Math.PI * 2,
             0.78 + coordinateNoise(x, y, seed + tree * 11 + 5) * 0.28,
+            REALM_INDICES[sample.realmId] ?? 0, // 7th float: realm index for biome-specific rendering
           );
         }
       }
