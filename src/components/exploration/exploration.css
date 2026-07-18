@@ -821,39 +821,27 @@
 .rpg-folio-overview small { color: rgba(191,213,214,.48); font-size: 6.5px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
 .rpg-folio-overview b { margin-top: 2px; overflow: hidden; color: #fff8e5; font: italic 500 20px/1 "Instrument Serif", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Finite, seed-backed continental survey — full-bleed tabletop atlas ----- */
+/* Finite, seed-backed continental survey — full-bleed atlas -------------- */
 .rpg-folio-page--atlas { height: 100%; min-height: 0; padding: 0; gap: 0; }
 
-.rpg-folio-map-chrome {
-  position: absolute;
-  z-index: 30;
-  top: 10px;
-  right: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.rpg-folio-map-chrome .rpg-folio-close { position: static; top: auto; right: auto; }
 .rpg-folio-map-journal {
-  min-height: 40px;
+  position: relative;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 13px;
+  padding: 5px 10px;
   color: rgba(244,232,195,.85);
-  border: 1px solid rgba(191,213,214,.24);
-  border-radius: 999px;
-  background: rgba(4,11,19,.8);
-  box-shadow: 0 6px 18px rgba(2,6,13,.4);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
   font-size: 8.5px;
   font-weight: 900;
   letter-spacing: .08em;
   text-transform: uppercase;
   cursor: pointer;
 }
-.rpg-folio-map-journal:hover { color: #fff8e5; border-color: rgba(231,185,94,.5); }
+.rpg-folio-map-journal:hover { color: #fff8e5; background: rgba(231,185,94,.1); }
 .rpg-folio-map-journal:focus-visible { outline: 2px solid #fff3c6; outline-offset: 2px; }
 .rpg-folio-map-journal b {
   min-width: 17px;
@@ -866,10 +854,8 @@
   background: #e7b95e;
   font-size: 8px;
 }
-.rpg-folio .world-atlas__topline { padding-right: 158px; }
 
 .world-atlas {
-  --atlas-standee: 0deg;
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
@@ -877,9 +863,8 @@
   overflow: hidden;
   background: #060d16;
 }
-.world-atlas.is-tilted { --atlas-standee: calc(var(--atlas-tilt, 0deg) * -1); }
 
-/* The stage is the whole viewport; every control floats over the table. */
+/* The stage is the whole chart viewport; its controls overlay the terrain. */
 .world-atlas__stage {
   position: relative;
   flex: 1 1 auto;
@@ -892,9 +877,8 @@
 }
 .world-atlas__stage:focus-visible { outline: 2px solid #fff3c6; outline-offset: -2px; }
 
-/* The scene leans the oversized map plane back like a campaign table. The
-   perspective and angle come from ATLAS_TILT via inline custom properties so
-   the CSS and the pointer math can never disagree. */
+/* One flat scene keeps the procedural terrain and its interactive overlays in
+   exact visual alignment across mouse, touch, and keyboard camera movement. */
 .world-atlas__scene {
   position: absolute;
   inset: 0;
@@ -904,27 +888,9 @@
   background: radial-gradient(ellipse at 50% 130%, #13293b, #050b13 74%);
 }
 .world-atlas__scene:active { cursor: grabbing; }
-.world-atlas.is-tilted .world-atlas__scene {
-  perspective: var(--atlas-perspective, 1250px);
-}
-.world-atlas__plane { position: absolute; transform-style: preserve-3d; }
-.world-atlas.is-tilted .world-atlas__plane { transform: rotateX(var(--atlas-tilt, 0deg)); }
+.world-atlas__plane { position: absolute; }
 .world-atlas__canvas { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; }
 .world-atlas__vector { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-
-/* Far-edge haze: a miniature-photography fade that sells the depth. */
-.world-atlas__horizon {
-  position: absolute;
-  z-index: 2;
-  inset: 0 0 auto;
-  height: 24%;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(4,10,18,.62), rgba(4,10,18,.16) 56%, transparent);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  mask-image: linear-gradient(180deg, #000 30%, transparent);
-  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent);
-}
 
 .world-atlas__coastline { fill: none; stroke: rgba(226,217,187,.42); stroke-width: 1.1; stroke-linejoin: round; filter: drop-shadow(0 1px rgba(18,31,35,.7)); }
 .world-atlas__river { fill: none; stroke: rgba(98,177,194,.72); stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px rgba(12,34,43,.75)); }
@@ -985,8 +951,7 @@
   white-space: nowrap;
 }
 
-/* Markers are tabletop standees: bottom-anchored on their hex and
-   counter-rotated so they stand upright on the leaned table. */
+/* Markers are bottom-anchored on their chart coordinates. */
 .world-atlas__marker-layer { position: absolute; z-index: 3; inset: 0; pointer-events: none; }
 .world-atlas__marker {
   position: absolute;
@@ -1002,9 +967,8 @@
   border-radius: 50%;
   background: rgba(42,34,25,.88);
   box-shadow: 0 4px 7px rgba(2,7,13,.72), 0 0 0 2px rgba(231,185,94,.09);
-  transform: translate(-50%, var(--marker-lift, 0px)) translateY(-100%) rotateX(var(--atlas-standee, 0deg)) scale(var(--marker-scale, 1));
+  transform: translate(-50%, var(--marker-lift, 0px)) translateY(-100%) scale(var(--marker-scale, 1));
   transform-origin: 50% 100%;
-  transform-style: preserve-3d;
   touch-action: manipulation;
   cursor: pointer;
   transition: border-color .18s ease, box-shadow .18s ease, filter .18s ease, transform .18s ease;
@@ -1021,10 +985,6 @@
   background: rgba(4,7,8,.58);
   filter: blur(1.4px);
   transform: translateX(-50%) skewX(-18deg);
-}
-.world-atlas.is-tilted .world-atlas__marker::after {
-  transform: translateX(-50%) skewX(-18deg) rotateX(var(--atlas-tilt, 0deg));
-  transform-origin: 50% 0;
 }
 .world-atlas__marker[hidden] { display: none; }
 .world-atlas__marker.is-legend { color: #e3d5ff; border-color: rgba(206,183,246,.86); background: rgba(47,35,67,.9); }
@@ -1088,7 +1048,7 @@
   width: 18px;
   height: 29px;
   filter: drop-shadow(2px 4px 2px rgba(2,7,13,.8));
-  transform: translate(-5px, -100%) rotateX(var(--atlas-standee, 0deg));
+  transform: translate(-5px, -100%);
   transform-origin: 5px 100%;
   pointer-events: none;
 }
@@ -1096,14 +1056,14 @@
 .world-atlas__point-pin > i { position: absolute; top: 1px; bottom: 1px; left: 4px; width: 2px; border-radius: 2px; background: linear-gradient(90deg, #5f4325, #f2d58c 48%, #6c4928); }
 .world-atlas__point-pin > b { position: absolute; top: 2px; left: 6px; width: 13px; height: 10px; clip-path: polygon(0 0, 100% 11%, 74% 52%, 100% 92%, 0 82%); background: linear-gradient(135deg, #fff0a9, #c99345 72%); box-shadow: inset 0 0 0 1px rgba(72,42,21,.5); }
 
-/* The party meeple stands on its hex like a boardgame pawn. */
+/* The party marker is bottom-anchored on its current chart coordinate. */
 .world-atlas__party {
   position: absolute;
   z-index: 7;
   pointer-events: none;
   display: grid;
   place-items: center;
-  transform: translate(-50%, -9px) translateY(-100%) rotateX(var(--atlas-standee, 0deg));
+  transform: translate(-50%, -9px) translateY(-100%);
   transform-origin: 50% 100%;
 }
 .world-atlas__party::before { content: ""; position: absolute; top: 21px; width: 23px; height: 7px; border-radius: 50%; background: rgba(4,7,8,.7); filter: blur(1.2px); transform: skewX(-20deg); }
@@ -1120,7 +1080,7 @@
   top: 0;
   right: 0;
   left: 0;
-  padding: 10px 12px 0;
+  padding: 10px max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px));
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -1155,7 +1115,7 @@
 .world-atlas__search-pill {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 40px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1177,7 +1137,7 @@
 .world-atlas__filter-pill {
   position: relative;
   flex: 0 0 auto;
-  min-height: 36px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1207,6 +1167,34 @@
   border-radius: 999px;
   background: #e7b95e;
   font-size: 8px;
+}
+.world-atlas__toolbar-actions {
+  flex: 0 0 auto;
+  padding-left: 4px;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border-left: 1px solid rgba(231,185,94,.2);
+}
+.world-atlas__toolbar-actions .rpg-folio-close {
+  position: static;
+  z-index: auto;
+  top: auto;
+  right: auto;
+  width: 44px;
+  height: auto;
+  min-height: 44px;
+  color: rgba(244,232,195,.82);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+}
+.world-atlas__toolbar-actions .rpg-folio-close:hover {
+  color: #fff8e5;
+  background: rgba(231,185,94,.1);
+  filter: none;
+  transform: none;
 }
 
 .world-atlas__filters {
@@ -1371,7 +1359,7 @@
 .world-atlas__search-results button em.is-sighted { color: #bfe9de; border-color: rgba(176,226,214,.42); }
 .world-atlas__search-results button em.is-legend { color: #d9c8f5; border-color: rgba(206,183,246,.42); }
 
-/* Right-hand rail: zoom, 2D/3D, and locate controls. */
+/* Right-hand rail: zoom and locate controls. */
 .world-atlas__map-controls {
   position: absolute;
   z-index: 18;
@@ -1411,7 +1399,6 @@
 .world-atlas__map-controls > div button:hover:not(:disabled) { color: #fff8e5; background: rgba(231,185,94,.16); }
 .world-atlas__map-controls > div button:disabled { opacity: .38; cursor: default; }
 .world-atlas__map-controls > div button:focus-visible { outline: 2px solid #fff3c6; outline-offset: 1px; }
-.world-atlas__dimension,
 .world-atlas__locate {
   min-height: 36px;
   display: inline-flex;
@@ -1429,11 +1416,7 @@
   text-transform: uppercase;
   cursor: pointer;
 }
-.world-atlas__dimension { min-width: 44px; }
-.world-atlas__dimension[aria-pressed="true"] { color: #1c1509; border-color: rgba(255,241,186,.72); background: linear-gradient(145deg, #eccf7f, #bb8d4a); }
-.world-atlas__dimension:hover,
 .world-atlas__locate:hover { border-color: rgba(231,185,94,.7); }
-.world-atlas__dimension:focus-visible,
 .world-atlas__locate:focus-visible { outline: 2px solid #fff3c6; outline-offset: 2px; }
 .world-atlas__locate i { color: rgba(231,185,94,.85); font: normal 12px/1 Georgia, serif; }
 .world-atlas__locate span { font-size: 8px; }
@@ -1477,16 +1460,16 @@
 
 /* Place card: the maps-app bottom sheet for the current selection. */
 .world-atlas__placecard {
+  isolation: isolate;
+  contain: paint;
   width: min(560px, 100%);
   margin: 0 auto;
   overflow: hidden;
   color: #f4e8c3;
   border: 1px solid rgba(231,185,94,.34);
   border-radius: 16px;
-  background: linear-gradient(180deg, rgba(27,35,32,.9), rgba(6,13,22,.96));
+  background: linear-gradient(180deg, #1a2321, #070f18);
   box-shadow: 0 16px 44px rgba(2,6,13,.62), inset 0 1px rgba(255,255,255,.05);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
 }
 .world-atlas__placecard.is-danger { border-color: rgba(220,121,92,.52); }
 .world-atlas__placecard-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
@@ -1543,6 +1526,7 @@
   border-top: 1px solid rgba(231,185,94,.16);
   overscroll-behavior: contain;
   touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: rgba(231,185,94,.3) transparent;
 }
@@ -1665,12 +1649,32 @@
   .rpg-folio-hero { min-height: 220px; flex-basis: 220px; }
   .rpg-folio-identity { bottom: 84px; }
   .rpg-folio-page { padding: 13px 14px 16px; gap: 11px; }
-  .rpg-folio-page--atlas { gap: 8px; }
+  .rpg-folio-page--atlas { padding: 0; gap: 0; }
   .rpg-folio-grid { grid-template-columns: 1fr; }
   .rpg-folio-card { min-height: 104px; }
-  .rpg-folio-map-chrome { top: max(9px, env(safe-area-inset-top, 0px)); right: 10px; }
-  .rpg-folio .world-atlas__topline { padding-right: 150px; }
   .world-atlas__chrome-top { padding-top: max(10px, env(safe-area-inset-top, 0px)); }
+}
+
+@media (max-width: 680px) {
+  .rpg-folio-map-journal { width: 44px; min-height: 44px; padding: 0; justify-content: center; }
+  .rpg-folio-map-journal > span { display: none; }
+  .rpg-folio-map-journal b { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; font-size: 6px; }
+  .world-atlas__chrome-top {
+    padding-right: max(8px, env(safe-area-inset-right, 0px));
+    padding-left: max(8px, env(safe-area-inset-left, 0px));
+    gap: 6px;
+  }
+  .world-atlas__topline { min-height: 44px; padding: 3px; gap: 2px; }
+  .world-atlas__title-chip { min-width: 0; flex: 1 1 auto; padding: 4px 8px; }
+  .world-atlas__title-chip small { display: none; }
+  .world-atlas__title-chip h3 { margin: 0; font-size: 16px; }
+  .world-atlas__search-pill,
+  .world-atlas__filter-pill { width: 44px; min-height: 44px; flex: 0 0 44px; padding: 0; justify-content: center; }
+  .world-atlas__search-pill span,
+  .world-atlas__filter-pill span { display: none; }
+  .world-atlas__filter-pill b { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; font-size: 6px; }
+  .world-atlas__toolbar-actions { padding-left: 2px; gap: 1px; }
+  .world-atlas__toolbar-actions .rpg-folio-close { width: 44px; min-height: 44px; }
 }
 
 @media (max-width: 520px) {
@@ -1701,24 +1705,12 @@
   .rpg-folio-tabs { right: 10px; bottom: 12px; left: 10px; width: auto; height: 54px; transform: none; }
   .rpg-folio-tabs button { padding-inline: 6px; gap: 5px; font-size: 9px; }
   .rpg-folio-page { padding: 11px 10px calc(env(safe-area-inset-bottom, 0px) + 12px); }
+  .rpg-folio-page--atlas { padding: 0; gap: 0; }
   .rpg-folio-overview { gap: 6px; }
   .rpg-folio-overview > div { padding: 8px 7px; gap: 6px; }
   .rpg-folio-overview > div > span { width: 28px; height: 28px; }
   .rpg-folio-overview small { font-size: 5.5px; letter-spacing: .1em; }
   .rpg-folio-overview b { font-size: 16px; }
-  .rpg-folio-map-journal { min-height: 38px; padding: 6px 10px; }
-  .rpg-folio-map-journal > span { display: none; }
-  .rpg-folio .world-atlas__topline { padding-right: 88px; }
-  .world-atlas__chrome-top { padding-inline: 8px; gap: 6px; }
-  .world-atlas__topline { min-height: 44px; padding: 3px; gap: 2px; }
-  .world-atlas__title-chip { min-width: 0; flex: 1 1 auto; padding: 4px 8px; }
-  .world-atlas__title-chip small { display: none; }
-  .world-atlas__title-chip h3 { font-size: 16px; margin: 0; }
-  .world-atlas__search-pill,
-  .world-atlas__filter-pill { width: 38px; min-height: 38px; flex: 0 0 38px; padding: 0; justify-content: center; }
-  .world-atlas__search-pill span,
-  .world-atlas__filter-pill span { display: none; }
-  .world-atlas__filter-pill b { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; font-size: 6px; }
   .world-atlas__filters { width: 100%; max-height: min(58dvh, 460px); padding: 11px; box-sizing: border-box; }
   .world-atlas__filters .world-atlas__chips { margin: 0; padding: 0; }
   .world-atlas__chips button { min-height: 36px; padding-inline: 10px; font-size: 9px; }
@@ -1727,7 +1719,6 @@
   .world-atlas__map-controls { right: 7px; gap: 2px; }
   .world-atlas__map-controls > div button { width: 36px; min-height: 36px; }
   .world-atlas__locate span { display: none; }
-  .world-atlas__dimension,
   .world-atlas__locate { min-width: 36px; min-height: 36px; padding-inline: 7px; }
   .world-atlas__marker { width: 18px; height: 18px; }
   .world-atlas__marker.has-poi-icon { --marker-scale: .86; }
