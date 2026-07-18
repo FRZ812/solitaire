@@ -159,7 +159,7 @@ describe("Barbarian profession independence", () => {
       [track("cleric", 4)],
       ALL_IDS.map((id) => ({ id, tier: "divine" })),
     );
-    expect(entitledIds(injected)).not.toEqual(expect.arrayContaining(ALL_IDS));
+    expect(entitledIds(injected).filter((id) => ALL_IDS.includes(id))).toEqual([]);
 
     const multiclass = character([track("cleric", 4), track("barbarian", 6)]);
     expect(entitledIds(multiclass)).toEqual(expect.arrayContaining([

@@ -106,7 +106,6 @@ import { InitialBackdrop } from "./components/InitialBackdrop.jsx";
 import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
-import { ProgressionChoiceModal } from "./components/ProgressionChoiceModal.jsx";
 import { Icon } from "./components/Icon.jsx";
 import { JourneyLoader, JourneyResumeOverlay } from "./components/JourneyLoader.jsx";
 import { advanceLiveNarrator, emptyLiveNarrator } from "./engine/live-narrator.js";
@@ -2298,10 +2297,6 @@ export function Solitaire() {
   const inLimbo = state.created === false;
   const showCreationHub = inLimbo && !creationEntered && !state.beats.some((b) => b.type === "player");
   const queuedPlayerCount = pendingPlayerBeats(state).length;
-  const pendingProgressionChoice = state.created !== false
-    ? (pendingProgressionChoices(state.character)[0] || null)
-    : null;
-
   return (
     <div className="game-shell" style={{
       backgroundColor: "var(--scene-deep)",
@@ -2551,13 +2546,6 @@ export function Solitaire() {
             onRest: (h) => { setDeckOpen(false); handleRest(h); },
             onBindRune: (id) => { setDeckOpen(false); setFusionRune(id); },
           }}
-        />
-      )}
-      {pendingProgressionChoice && (
-        <ProgressionChoiceModal
-          choice={pendingProgressionChoice}
-          busy={loading}
-          onChoose={(choiceId, optionId) => handleProgressionChoice(pendingProgressionChoice.professionId, choiceId, optionId)}
         />
       )}
       {fusionRune && (

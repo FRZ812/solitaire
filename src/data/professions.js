@@ -35,21 +35,23 @@ const PROFESSION_RECORDS = {
     ],
   },
   ranger: {
-    id: "ranger", name: "Ranger", role: "Wilderness", iconKey: "ranger",
-    description: "A wilderness specialist combining fieldcraft, pursuit, ranged weapons, and bonds with the wild.",
+    id: "ranger", name: "Ranger", role: "Fieldcraft", iconKey: "ranger",
+    description: "A wholly nonmagical field professional of tracking, terrain, pursuit, survival medicine, ranged precision, traps, ambush, and the handling of already-present trained animals.",
     specializations: [
-      specialization("far-walker", "Far-Walker", "A patient scout and hunter of distant trails."),
-      specialization("beast-warden", "Beast-Warden", "A ranger whose practice centres on animal bonds."),
-      specialization("dragon-hunter", "Dragon-Hunter", "A specialist in colossal and supernatural quarry."),
+      specialization("hunter", "Hunter", "Turns verified sign and observed behaviour into patient pursuit and bounded physical precision."),
+      specialization("trailblazer", "Trailblazer", "Reads difficult ground and makes practical routes through it without supernatural travel."),
+      specialization("beast-warden", "Beast Warden", "Trains, cares for, and coordinates mundane animal allies that are already present."),
+      specialization("trapper", "Trapper", "Builds physical restraints and ambush positions from tools, material, terrain, and preparation."),
     ],
   },
   rogue: {
-    id: "rogue", name: "Rogue", role: "Skirmisher", iconKey: "cutthroat",
-    description: "A specialist in leverage, stealth, infiltration, precision, and underworld practice.",
+    id: "rogue", name: "Rogue", role: "Subterfuge", iconKey: "cutthroat",
+    description: "A wholly mundane specialist in access, stealth, observation, legerdemain, feints, social misdirection, precision, poison handling, locks, escape, and structural sabotage.",
     specializations: [
-      specialization("cutthroat", "Cutthroat", "An opportunist who ends danger before it can answer."),
-      specialization("shadowblade", "Shadowblade", "An infiltrator who joins supernatural movement to precise violence."),
-      specialization("assassin", "Assassin", "A patient professional of concealment and decisive killing."),
+      specialization("infiltrator", "Infiltrator", "Crosses real architecture, routines, crowds, and access controls without supernatural concealment."),
+      specialization("scoundrel", "Scoundrel", "Uses nerve, plausible deception, social expectation, and close physical tricks without compulsion."),
+      specialization("assassin", "Assassin", "Prepares identity, approach, timing, anatomy, restraint, and escape for precise physical violence."),
+      specialization("saboteur", "Saboteur", "Exploits existing locks, mechanisms, supports, and structural faults without constructing arcane devices."),
     ],
   },
   cleric: {
@@ -61,11 +63,13 @@ const PROFESSION_RECORDS = {
     ],
   },
   paladin: {
-    id: "paladin", name: "Paladin", role: "Sacred warrior", iconKey: "champion-paladin",
-    description: "An oath-bound warrior whose conviction becomes protection, healing, and judgment.",
+    id: "paladin", name: "Paladin", role: "Oathbound protector", iconKey: "champion-paladin",
+    description: "A non-spell oathbound protector who earns Conviction only by actually bearing hostile harm for others, then spends it on accountable protection, truth, mercy, and guidance.",
     specializations: [
-      specialization("knight-errant", "Knight-Errant", "A wandering oath-bearer beyond any single banner."),
-      specialization("champion-paladin", "Champion Paladin", "A consecrated champion who shelters allies in battle."),
+      specialization("shield-oath", "Shield Oath", "Bears reachable physical harm for protected people through covenants, guard lines, and accountable defence."),
+      specialization("truth-oath", "Truth Oath", "Calls witnessed conduct to account without compelled confession or supernatural truth-reading."),
+      specialization("mercy-oath", "Mercy Oath", "Creates credible paths to surrender, custody, restitution, liberation, and return without erasing consequence."),
+      specialization("beacon-oath", "Beacon Oath", "Guides willing companions and communities through visible presence, signals, refuge, and maintained roads."),
     ],
   },
   wizard: {
@@ -88,17 +92,23 @@ const PROFESSION_RECORDS = {
   },
   warlock: {
     id: "warlock", name: "Warlock", role: "Pact caster", iconKey: "demon-warlock",
-    description: "A pact-bound caster defined by a patron, narrow themed magic, invocations, boons, and consequential bargains.",
+    description: "A narrow pact spellworker who earns fight-bound Favor only by paying real authored prices, then spends it through infernal covenants, witchcraft, binding chains, or brokered whispers.",
     specializations: [
-      specialization("demon-warlock", "Demon Warlock", "An infernal binder who masters every clause of a dangerous debt."),
-      specialization("witch", "Witch", "A local occultist of old bargains, curses, remedies, and names."),
-      specialization("fae-touched", "Fae-Touched", "A glamour-walker carrying the gifts and prices of a fae compact."),
+      specialization("demon-warlock", "Demon Warlock", "An infernal binder of hellfire, hierarchy, dangerous debt, and exact contract enforcement."),
+      specialization("witch", "Witch", "A local occultist of curses, remedies, names, tokens, thresholds, and old reciprocal bargains."),
+      specialization("chainbinder", "Chainbinder", "A keeper of binding links, seals, custody, shared burden, and accountable release."),
+      specialization("whisper-broker", "Whisper Broker", "A dealer in known secrets, spoken terms, reciprocal disclosure, silence, and pact exchange."),
     ],
   },
   druid: {
     id: "druid", name: "Druid", role: "Primal caster", iconKey: "beast-warden",
-    description: "A primal caster shaped by land, weather, beasts, seasons, and transformation.",
-    specializations: [specialization("circle-warden", "Circle Warden", "A keeper of a particular land, season, or wild covenant.")],
+    description: "A primal spellworker whose native actions turn through Spring, Summer, Autumn, and Winter while shaping living terrain, the Druid's own animal forms, weather, decay, and reclamation.",
+    specializations: [
+      specialization("circle-of-root", "Circle of Root", "A keeper of growth, soil, roots, living shelter, and terrain stewardship."),
+      specialization("circle-of-fang", "Circle of Fang", "A self-shapeshifter who practices coherent animal bodies without summoning or commanding creatures."),
+      specialization("circle-of-sky", "Circle of Sky", "A weather worker of wind, pressure, rain, lightning, sunlight, and seasonal heat."),
+      specialization("circle-of-cycle", "Circle of Cycle", "A keeper of decay, dormancy, carrion, fungi, nutrient return, and reclamation."),
+    ],
   },
   monk: {
     id: "monk", name: "Monk", role: "Hand-to-hand", iconKey: "duelist",
@@ -111,37 +121,56 @@ const PROFESSION_RECORDS = {
     ],
   },
   bard: {
-    id: "bard", name: "Bard", role: "Arcane support", iconKey: "courtier",
-    description: "A magical artist who shapes courage, memory, emotion, and story through performance.",
-    specializations: [specialization("lore-singer", "Lore Singer", "A keeper of magical histories and living songs.")],
+    id: "bard", name: "Bard", role: "Performance support", iconKey: "courtier",
+    description: "A strictly non-spell performer who alternates trained motifs into Cadence, then spends it on willing coordination, morale, social pressure, timing disruption, and bounded physical sound.",
+    specializations: [
+      specialization("war-singer", "War Singer", "Coordinates willing allies through drum, chant, shared breath, visible rhythm, and embodied courage."),
+      specialization("satirist", "Satirist", "Turns witnessed error, hypocrisy, reputation, language, and audience into precise social pressure."),
+      specialization("resonant-virtuoso", "Resonant Virtuoso", "Masters instruments, voice, acoustic direction, layered harmony, and bounded physical vibration."),
+      specialization("lorekeeper", "Lorekeeper", "Uses true remembered deeds and observed battle history to orient willing allies in the present."),
+    ],
   },
   artificer: {
-    id: "artificer", name: "Artificer", role: "Arcane craft", iconKey: "hedge-mage",
-    description: "An arcane maker who binds spells into tools, constructs, alchemy, and engineered wonders.",
+    id: "artificer", name: "Artificer", role: "Devicecraft", iconKey: "hedge-mage",
+    description: "A maker who designs, fabricates, tests, prepares, maintains, and retires finite devices. Artificer workings spend a personal prepared Charge reserve and are never spontaneous spells or free creatures.",
     specializations: [
-      specialization("runesmith", "Runesmith", "A maker of inscribed weapons, wards, and lasting enchantments."),
-      specialization("alchemist", "Alchemist", "A specialist in reagents, transformation, and prepared compounds."),
+      specialization("runesmith", "Runesmith", "Builds tested inscriptions into physical objects, interfaces, wards, and weapon fittings."),
+      specialization("alchemist", "Alchemist", "Prepares labelled compounds bounded by reagent, dose, container, route, timing, and cleanup."),
+      specialization("mechanist", "Mechanist", "Constructs limited mechanisms with explicit sensors, actuators, power, instructions, and failure states."),
+      specialization("siegewright", "Siegewright", "Designs portable fieldworks, barriers, launchers, and breach tools around real loads and terrain."),
     ],
   },
 
   // Civic, social, service, and productive professions. Their progression grants
   // real capabilities without assuming that competence must be combat-capable.
   innkeeper: {
-    id: "innkeeper", name: "Innkeeper", role: "Service", iconKey: "envoy", common: true,
-    description: "A host, business keeper, information broker, and steward of public sanctuary.",
-    specializations: [specialization("house-steward", "House Steward", "Builds a public room into sanctuary, network, and livelihood.")],
+    id: "innkeeper", name: "Innkeeper", role: "Hospitality", iconKey: "envoy", common: true,
+    description: "A grounded hospitality professional of shelter, provision, public rooms, staff, information custody, trade, and community refuge.",
+    specializations: [
+      specialization("hearthkeeper", "Hearthkeeper", "Builds safe lodging, rest, privacy, lawful refuge, and continuity around a physical house."),
+      specialization("publican", "Publican", "Stewards the public room as a place of service, boundaries, gathering, and local belonging."),
+      specialization("provisioner", "Provisioner", "Masters food, drink, cellar, kitchen, supply, fair measure, and responsible service."),
+      specialization("wayhouse-broker", "Wayhouse Broker", "Connects travellers, routes, verified local information, referrals, caravans, and linked houses."),
+    ],
   },
   farmer: {
     id: "farmer", name: "Farmer", role: "Husbandry", iconKey: "beast-warden", common: true,
-    description: "A cultivator of soil, stock, seasons, tools, and coordinated rural labour.",
-    specializations: [specialization("land-steward", "Land Steward", "Reads a living holding as one connected system.")],
+    description: "A grounded husbandry professional of soil, seed, crops, stock, orchards, water, labour, storage, welfare, and land recovery.",
+    specializations: [
+      specialization("field-cultivator", "Field Cultivator", "Builds annual crop systems through seed, soil, rotation, water, timing, and harvest."),
+      specialization("herd-keeper", "Herd Keeper", "Stewards domesticated animals through welfare, pasture, breeding, feed, shelter, and traceable care."),
+      specialization("orchard-keeper", "Orchard Keeper", "Works with perennial fruit, nuts, vines, grafts, groves, pollination, and long establishment."),
+      specialization("land-reclaimer", "Land Reclaimer", "Restores damaged soil, water, cover, habitat, and productive use through staged material practice."),
+    ],
   },
   merchant: {
     id: "merchant", name: "Merchant", role: "Trade", iconKey: "envoy", common: true,
-    description: "A professional of appraisal, supply, credit, logistics, negotiation, and market relationships.",
+    description: "A grounded trade professional of appraisal, measure, inventory, logistics, contracts, credit, risk, market access, and accountability.",
     specializations: [
-      specialization("peddler", "Peddler", "A road merchant of modest goods and resilient local networks."),
-      specialization("guild-factor", "Guild Factor", "A market operator working across institutions and nations."),
+      specialization("peddler", "Peddler", "Trades directly through local stalls, shops, roads, customer fit, small lots, and resilient relationships."),
+      specialization("caravan-factor", "Caravan Factor", "Coordinates cargo, carriers, routes, storage, customs, loss, and long-distance handoffs."),
+      specialization("guild-broker", "Guild Broker", "Works through specifications, tenders, contracts, wholesale lots, institutions, and negotiated supply."),
+      specialization("credit-steward", "Credit Steward", "Governs bounded commercial credit, debt records, liquidity, risk, hardship, and responsible finance."),
     ],
   },
   artisan: {

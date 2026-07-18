@@ -22,7 +22,6 @@ import { PROFESSIONS } from "../data/professions.js";
 import { descriptorFor } from "../data/attractiveness.js";
 import { resolveCharacterPortrait } from "./character-portrait-assets.js";
 import { ProfessionIcon } from "./ProfessionIcon.jsx";
-import { ProfessionCatalog } from "./ProfessionProgression.jsx";
 import { characterArchetype } from "../data/character-archetypes.js";
 import * as progressionEngine from "../engine/progression.js";
 import { canonicalProfessionId } from "../data/progression-paths.js";
@@ -60,7 +59,6 @@ function agingModeLabel(mode, ch) {
 const CODEX_TABS = [
   { key: "characters",  label: "Characters",  group: "lore",       column: 0, row: 0 },
   { key: "races",       label: "Races",       group: "lore",       column: 1, row: 0 },
-  { key: "professions", label: "Professions", group: "lore",       column: 2, row: 0 },
   { key: "items",       label: "Items",       group: "compendium", column: 0, row: 1 },
   { key: "abilities",   label: "Abilities",   group: "compendium", column: 1, row: 1 },
   { key: "passives",    label: "Passives",    group: "compendium", column: 2, row: 1 },
@@ -1083,7 +1081,7 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
   );
 }
 
-export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMount, onPortraitChange, onChooseProgression, embedded = false }) {
+export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMount, onPortraitChange, embedded = false }) {
   const codex = state.world.codex;
   const scryable = onScry && canScry(state);
   const partyIds = new Set(state.party || []);
@@ -1192,7 +1190,7 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
 
       <div className="codex-view__tabs" role="tablist" aria-label="Codex sections">
         {CODEX_TABS.map((tab, tabIndex) => {
-          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : tab.key === "professions" ? Object.keys(PROFESSIONS).length : Object.keys(codex[tab.key] || {}).length;
+          const count = tab.key === "items" ? CATALOG_ITEM_COUNT : tab.key === "abilities" ? ABILITY_CATALOG.length : tab.key === "passives" ? PASSIVES.length : tab.key === "glossary" ? GLOSSARY.length : tab.key === "conditions" ? Object.keys(CONDITIONS).length : Object.keys(codex[tab.key] || {}).length;
           const active = tab.key === activeTab;
           return (
             <button
@@ -1268,8 +1266,6 @@ export function CodexView({ state, onClose, onScry, onTrackCharacter, onRenameMo
               onRename={onRenameMount && selectedCharacter.kind === "mount" ? () => onRenameMount(selectedCharacter.id) : null}
             />
           </div>
-        ) : activeTab === "professions" ? (
-          <ProfessionCatalog character={state.character} onChooseProgression={onChooseProgression} />
         ) : activeTab === "items" ? (
           <ItemCatalog codex={codex} />
         ) : activeTab === "abilities" ? (

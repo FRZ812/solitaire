@@ -59,6 +59,7 @@
 
 import { resolvePoolForMind, carryCapacityFor } from "../engine/attributes.js";
 import { bodyWeightForRace } from "../engine/weight.js";
+import { normalizeCharacterProgression } from "../engine/progression.js";
 
 export const CAPTIVE_POOL = [
   { key: "harl",   name: "Harl of the Reeds",   gender: "male",   age: 35, agingMode: "mortal", race: "human", profession: "marsh-spearman", origin: "a marshland villager of the western marches, where the border-wars run hot", taken: "seized in a border raid by a western warlord and traded east, bargemaster to bargemaster, until the bond reached the Block", spirit: "sullen",   skills: "a steady spear-hand who knows the marsh tracks blind", attributes: { body: 3, reflex: 2, vigor: 3, mind: 1, wit: 3, presence: 1 }, appearance: { skin: "weather-darkened, freckled at the brow", hair: "lank brown, water-faded", eyes: "muddy green", build: "big-shouldered, heavy in the arms", facial_hair: "a short unkempt beard", marks: "chain-galls at the wrists, old reed-cuts down the forearms" }, base_appearance: "Big-shouldered and heavy in the arm. Weather-darkened skin, lank brown hair. Muddy-green eyes that stay on the gate. A short unkempt beard. Chain-galls at the wrists, reed-cuts down both forearms.", worn: ["rough-tunic", "coarse-trousers"], priceCp: 280, attractiveness: 5, desc: "Big-shouldered, slow to speak, eyes always on the gate. Watches who buys whom.", freedom_response: "war-displaced; refuses because his village is ash and his people scattered — there is no home for a freed body to return to, and his marsh-skills sell here or nowhere" },
@@ -101,7 +102,7 @@ export const SLAVE_LOW_OFFSCREEN_SALE_RATE = 0.5;
 export function bondedCodexEntry(captive) {
   const attrs = captive.attributes || { body: 3, reflex: 3, vigor: 3, mind: 3, wit: 3, presence: 3 };
   const race = captive.race || "human";
-  return {
+  const entry = {
     id: `bonded-${captive.key}`, // overwritten by beat.js with the day-stamped id
     kind: "bonded",
     name: captive.name,
@@ -140,4 +141,9 @@ export function bondedCodexEntry(captive) {
     relationship: 0,
     memories: [],
   };
+  return normalizeCharacterProgression(entry, {
+    convertLegacyAttributes: true,
+    enforceLevelAttributeScale: true,
+    alignAttributesToProgression: true,
+  });
 }

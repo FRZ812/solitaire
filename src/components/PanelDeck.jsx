@@ -7,6 +7,7 @@ import { InventoryView } from "./InventoryView.jsx";
 import { ArsenalView } from "./ArsenalView.jsx";
 import { CodexView } from "./CodexView.jsx";
 import { SettingsView } from "./SettingsView.jsx";
+import { ProfessionTreePage, RaceTreePage } from "./ProfessionProgression.jsx";
 import { useParallaxMotion } from "../hooks/useParallaxMotion.js";
 import dossierPortrait from "../assets/generated/character-dossier-wanderer-v1.webp";
 import { resolveCharacterPortrait } from "./character-portrait-assets.js";
@@ -19,14 +20,14 @@ import { canonicalProfessionId } from "../data/progression-paths.js";
 import { PROFESSIONS } from "../data/professions.js";
 
 // The unified character deck: Company · Character · Skills · Inventory ·
-// Codex · Settings as six pages of one
+// Profession · Race · Codex · Settings as peer pages of one
 // portrait-led bottom sheet, opened from a single header button (defaults to
 // Character). Sections change only through the visible tabs so a horizontal
 // gesture never steals an ordinary scroll inside a page.
-const PAGES = ["party", "character", "abilities", "inventory", "codex", "settings"];
+const PAGES = ["party", "character", "abilities", "inventory", "profession", "race", "codex", "settings"];
 const progressionLevel = progressionEngine.progressionLevel;
-const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", codex: "Codex", settings: "Settings" };
-const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", codex: "codex", settings: "settings" };
+const LABELS = { party: "Company", character: "Character", abilities: "Skills", inventory: "Inventory", profession: "Profession", race: "Race", codex: "Codex", settings: "Settings" };
+const PAGE_ICONS = { party: "company", character: "character", abilities: "abilities", inventory: "inventory", profession: "progress", race: "world", codex: "codex", settings: "settings" };
 
 export function shouldDismissPanel(pulled, velocity) {
   return pulled > 88 || (pulled > 18 && velocity > 0.55);
@@ -234,6 +235,12 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 initialSelectedId={inventoryTarget}
               />
             )}
+            {activePage === "profession" && (
+              <ProfessionTreePage state={state} onChooseProgression={handlers.onChooseProgression} />
+            )}
+            {activePage === "race" && (
+              <RaceTreePage state={state} onChooseProgression={handlers.onChooseProgression} />
+            )}
             {activePage === "codex" && (
               <CodexView
                 embedded
@@ -242,7 +249,6 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
                 onTrackCharacter={handlers.onTrackCharacter}
                 onRenameMount={handlers.onRenameMount}
                 onPortraitChange={handlers.onPortraitChange}
-                onChooseProgression={handlers.onChooseProgression}
               />
             )}
             {activePage === "settings" && (
@@ -288,6 +294,7 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
   const portraitOverride = portraitOverrideFor(state, PLAYER_PORTRAIT_ID);
   const portrait = resolveCharacterPortrait(identityRecord, dossierPortrait, portraitOverride);
   const customPortrait = !!portraitOverride;
+  const unspentPoints = progressionEngine.pendingLevelAllocations?.(character)?.unspentLevels || 0;
 
   async function onChoosePortrait(event) {
     const file = event.target.files?.[0];
@@ -387,6 +394,7 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
           >
             <Icon name={PAGE_ICONS[key]} size={18} />
             <span>{LABELS[key]}</span>
+            {unspentPoints > 0 && (key === "profession" || key === "race") && <b className="dossier-hero__tab-badge" aria-label={`${unspentPoints} unspent progression points`}>{unspentPoints}</b>}
           </button>
         ))}
       </div>

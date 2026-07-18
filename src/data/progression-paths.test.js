@@ -72,10 +72,25 @@ describe("progression v2 catalogs", () => {
     expect(canonicalProfessionId("Hedge Mage")).toBe("wizard");
     expect(canonicalProfessionId("Temple Arms")).toBe("monk");
     expect(canonicalProfessionId("Clan Champion")).toBe("barbarian");
+    expect(canonicalProfessionId("Resonant Virtuoso")).toBe("bard");
+    expect(canonicalProfessionId("Trailblazer")).toBe("ranger");
+    expect(canonicalProfessionId("Beast Warden")).toBe("ranger");
+    expect(canonicalProfessionId("Scoundrel")).toBe("rogue");
+    expect(canonicalProfessionId("Shadowblade")).toBe("rogue");
+    expect(canonicalProfessionId("Shield Oath")).toBe("paladin");
+    expect(canonicalProfessionId("Champion Paladin")).toBe("paladin");
     expect(canonicalProfessionIdentity("Enchanter Tyrant")).toEqual({ professionId: "wizard", specializationId: "enchanter-tyrant" });
     expect(canonicalProfessionIdentity("Open Hand")).toEqual({ professionId: "monk", specializationId: "open-hand" });
     expect(canonicalProfessionIdentity("Reaver")).toEqual({ professionId: "barbarian", specializationId: "reaver" });
     expect(canonicalProfessionIdentity("barbarian")).toEqual({ professionId: "barbarian", specializationId: null });
+    expect(canonicalProfessionIdentity("War Singer")).toEqual({ professionId: "bard", specializationId: "war-singer" });
+    expect(canonicalProfessionIdentity("bard")).toEqual({ professionId: "bard", specializationId: null });
+    expect(canonicalProfessionIdentity("Hunter")).toEqual({ professionId: "ranger", specializationId: "hunter" });
+    expect(canonicalProfessionIdentity("ranger")).toEqual({ professionId: "ranger", specializationId: null });
+    expect(canonicalProfessionIdentity("Saboteur")).toEqual({ professionId: "rogue", specializationId: "saboteur" });
+    expect(canonicalProfessionIdentity("rogue")).toEqual({ professionId: "rogue", specializationId: null });
+    expect(canonicalProfessionIdentity("Mercy Oath")).toEqual({ professionId: "paladin", specializationId: "mercy-oath" });
+    expect(canonicalProfessionIdentity("paladin")).toEqual({ professionId: "paladin", specializationId: null });
     expect(canonicalProfessionIdentity("monk")).toEqual({ professionId: "monk", specializationId: null });
     expect(canonicalProfessionIdentity("wizard")).toEqual({ professionId: "wizard", specializationId: null });
   });
@@ -472,6 +487,444 @@ describe("progression v2 catalogs", () => {
     }
   });
 
+  it("authors 70 unique Bard levels around alternating self-side four-count Cadence", () => {
+    const bard = compileProfessionTrack("bard");
+    const grantedAbilities = bard.levels.flatMap((row) => row.generalGrants)
+      .filter((grant) => grant.type === "ability").map((grant) => grant.id);
+    expect(bard.levels).toHaveLength(70);
+    expect(new Set(bard.levels.map((row) => row.feature)).size).toBe(70);
+    expect(bard.levels.every((row) => row.authoredContent && row.featureDescription)).toBe(true);
+    expect(bard.levels.every((row) => row.generalGrants.some((grant) => ["ability", "action", "passive"].includes(grant.type)))).toBe(true);
+    expect(grantedAbilities).toEqual([
+      "bard-clarion-note",
+      "bard-steady-beat",
+      "bard-cutting-verse",
+      "bard-rising-tempo",
+      "bard-dissonant-chord",
+      "bard-call-and-response",
+      "bard-stinging-refrain",
+      "bard-crescendo",
+      "bard-syncopated-break",
+      "bard-heartening-chorus",
+      "bard-counter-melody",
+      "bard-grand-finale",
+    ]);
+    expect(PROFESSION_PROFILES.bard).toMatchObject({ name: "Bard", domain: "performance", abilities: grantedAbilities });
+    expect(grantedAbilities.every((id) => id.startsWith("bard-"))).toBe(true);
+    expect(bard.levels[0].generalGrants).toContainEqual(expect.objectContaining({
+      id: "bard:cadence",
+      selfSide: true,
+      cadenceMax: 4,
+      cadenceBuildRule: "alternate-native-motif",
+      repeatingMotifBuilds: false,
+      resetsEachFight: true,
+    }));
+    expect(bard.levels[69].feature).toBe("Grand Finale");
+    expect(professionContentStatus("bard")).toBe("complete");
+  });
+
+  it("gives every Bard path its own L30 method and two L50 non-spell apexes", () => {
+    const branches = professionBranchChoices("bard");
+    const root = branches.find((entry) => entry.id === "bard-performance-path");
+    expect(root.options.map((option) => option.id)).toEqual([
+      "war-singer", "satirist", "resonant-virtuoso", "lorekeeper",
+    ]);
+    expect(branches).toHaveLength(13);
+    expect(branches.filter((entry) => entry.threshold === 30)).toHaveLength(4);
+    expect(branches.filter((entry) => entry.threshold === 50)).toHaveLength(8);
+    expect(Object.fromEntries(branches.filter((entry) => entry.threshold === 30).map((entry) => [entry.id, entry.options.map((option) => option.id)]))).toEqual({
+      "war-singer-method": ["drumline", "anthemist"],
+      "satirist-method": ["heckler", "chorus-of-scorn"],
+      "resonant-virtuoso-method": ["shattertone", "harmonic-weaver"],
+      "lorekeeper-method": ["balladeer", "battle-chronicler"],
+    });
+    for (const path of root.options) {
+      const method = branches.find((entry) => entry.threshold === 30
+        && entry.parentChoiceId === root.id && entry.parentOptionId === path.id);
+      expect(method, path.id).toBeTruthy();
+      expect(method.options, path.id).toHaveLength(2);
+      for (const option of method.options) {
+        const apex = branches.find((entry) => entry.threshold === 50
+          && entry.parentChoiceId === method.id && entry.parentOptionId === option.id);
+        expect(apex, `${path.id}/${option.id}`).toBeTruthy();
+        expect(apex.options, `${path.id}/${option.id}`).toHaveLength(2);
+        expect(apex.options.flatMap((entry) => entry.grants).some((grant) => grant.type === "ability"), apex.id).toBe(false);
+      }
+    }
+    const branchAbilities = branches.flatMap((entry) => entry.options)
+      .flatMap((option) => option.grants).filter((grant) => grant.type === "ability").map((grant) => grant.id);
+    expect(branchAbilities).toEqual([
+      "bard-war-drum", "bard-pointed-satire", "bard-resonant-pulse", "bard-lore-callout",
+      "bard-marching-cadence", "bard-defiant-anthem", "bard-hecklers-hook", "bard-chorus-of-scorn",
+      "bard-shattertone", "bard-harmonic-weave", "bard-old-ballad", "bard-battle-chronicle",
+    ]);
+    expect(new Set(branchAbilities).size).toBe(12);
+    expect(JSON.stringify(branches)).not.toMatch(/bardic college|college of lore|college of valour|world singer|spell virtuoso|broad magic/i);
+  });
+
+  it("gates Bard methods in sequence without spell, charm, rally, or foreign cards", () => {
+    expect(pendingProfessionChoices({ professionId: "bard", levels: 10, branchChoices: {} }).map((entry) => entry.id))
+      .toEqual(["bard-performance-path"]);
+    expect(pendingProfessionChoices({ professionId: "bard", levels: 30, branchChoices: {
+      "bard-performance-path": "war-singer",
+    } }).map((entry) => entry.id)).toEqual(["war-singer-method"]);
+    expect(pendingProfessionChoices({ professionId: "bard", levels: 50, branchChoices: {
+      "bard-performance-path": "war-singer", "war-singer-method": "drumline",
+    } }).map((entry) => entry.id)).toEqual(["drumline-apex"]);
+
+    const generalIds = new Set(compileProfessionTrack("bard").levels.flatMap((row) => row.generalGrants)
+      .filter((grant) => grant.type === "ability").map((grant) => grant.id));
+    const retired = new Set(["rallying-shout", "bless", "battle-hymn", "charm", "battle-focus"]);
+    expect(PROFESSION_PROFILES.bard.abilities.some((id) => retired.has(id))).toBe(false);
+    for (const definition of professionBranchChoices("bard")) for (const option of definition.options) {
+      for (const grant of option.grants.filter((entry) => entry.type === "ability")) {
+        expect(grant.id, `${definition.id}/${option.id}`).toMatch(/^bard-/);
+        expect(generalIds.has(grant.id), `${definition.id}/${option.id}/${grant.id}`).toBe(false);
+        expect(retired.has(grant.id), `${definition.id}/${option.id}/${grant.id}`).toBe(false);
+      }
+    }
+  });
+
+  it("authors 70 unique Ranger levels with target-bound Quarry Insight and noncombat fieldcraft at every rank", () => {
+    const ranger = compileProfessionTrack("ranger");
+    const grantedAbilities = ranger.levels.flatMap((row) => row.generalGrants)
+      .filter((grant) => grant.type === "ability").map((grant) => grant.id);
+    expect(ranger.levels).toHaveLength(70);
+    expect(new Set(ranger.levels.map((row) => row.feature)).size).toBe(70);
+    expect(ranger.levels.every((row) => row.authoredContent && row.featureDescription)).toBe(true);
+    expect(ranger.levels.every((row) => row.generalGrants.some((grant) => grant.noncombatBenefit === true))).toBe(true);
+    expect(grantedAbilities).toEqual([
+      "ranger-quarry-sign",
+      "ranger-ranging-shot",
+      "ranger-field-dressing",
+      "ranger-trail-cut",
+      "ranger-pinpoint-volley",
+      "ranger-evading-step",
+      "ranger-crippling-shot",
+      "ranger-pursuit-line",
+      "ranger-covering-shot",
+      "ranger-kill-window",
+      "ranger-relentless-trail",
+      "ranger-perfect-hunt",
+    ]);
+    expect(PROFESSION_PROFILES.ranger).toMatchObject({ name: "Ranger", domain: "fieldcraft", abilities: grantedAbilities });
+    expect(grantedAbilities.every((id) => id.startsWith("ranger-"))).toBe(true);
+    expect(ranger.levels[0].generalGrants).toContainEqual(expect.objectContaining({
+      id: "ranger:quarry-insight",
+      selfSide: true,
+      targetBound: true,
+      integerOnly: true,
+      quarryInsightMin: 0,
+      quarryInsightMax: 5,
+      differentQuarryResets: true,
+      buildRequiresSuccessfulSetupOrHit: true,
+      spenderRequiresCurrentQuarry: true,
+      spendOncePerAction: true,
+      resetsEachFight: true,
+    }));
+    expect(ranger.levels[69].feature).toBe("Perfect Hunt");
+    expect(professionContentStatus("ranger")).toBe("complete");
+  });
+
+  it("gives every Ranger practice its own L30 method and two L50 mundane apexes", () => {
+    const branches = professionBranchChoices("ranger");
+    const root = branches.find((entry) => entry.id === "ranger-field-practice");
+    expect(root.options.map((option) => option.id)).toEqual([
+      "hunter", "trailblazer", "beast-warden", "trapper",
+    ]);
+    expect(branches).toHaveLength(13);
+    expect(branches.filter((entry) => entry.threshold === 10)).toHaveLength(1);
+    expect(branches.filter((entry) => entry.threshold === 30)).toHaveLength(4);
+    expect(branches.filter((entry) => entry.threshold === 50)).toHaveLength(8);
+    expect(Object.fromEntries(branches.filter((entry) => entry.threshold === 30).map((entry) => [entry.id, entry.options.map((option) => option.id)]))).toEqual({
+      "hunter-method": ["monster-stalker", "deadeye"],
+      "trailblazer-method": ["pathfinder", "skirmisher"],
+      "beast-warden-method": ["packmaster", "falconer"],
+      "trapper-method": ["snarewright", "ambusher"],
+    });
+    for (const path of root.options) {
+      const method = branches.find((entry) => entry.threshold === 30
+        && entry.parentChoiceId === root.id && entry.parentOptionId === path.id);
+      expect(method, path.id).toBeTruthy();
+      expect(method.options, path.id).toHaveLength(2);
+      for (const option of method.options) {
+        const apex = branches.find((entry) => entry.threshold === 50
+          && entry.parentChoiceId === method.id && entry.parentOptionId === option.id);
+        expect(apex, `${path.id}/${option.id}`).toBeTruthy();
+        expect(apex.options, `${path.id}/${option.id}`).toHaveLength(2);
+        expect(apex.options.flatMap((entry) => entry.grants).some((grant) => grant.type === "ability"), apex.id).toBe(false);
+      }
+    }
+    const branchAbilities = branches.flatMap((entry) => entry.options)
+      .flatMap((option) => option.grants).filter((grant) => grant.type === "ability").map((grant) => grant.id);
+    expect(branchAbilities).toEqual([
+      "ranger-patient-aim", "ranger-pathfinder-step", "ranger-companion-signal", "ranger-set-snare",
+      "ranger-read-monster", "ranger-deadeye-breath", "ranger-safe-passage", "ranger-running-shot",
+      "ranger-pack-command", "ranger-falcon-stoop", "ranger-layered-snare", "ranger-kill-zone",
+    ]);
+    expect(new Set(branchAbilities).size).toBe(12);
+    const beastText = JSON.stringify(branches.filter((entry) => entry.id.includes("beast") || entry.id.includes("pack") || entry.id.includes("falcon")));
+    expect(beastText).toMatch(/already-present trained mundane animal/i);
+    expect(beastText).toMatch(/"summonsAnimal":false/);
+    expect(JSON.stringify(branches)).not.toMatch(/Ranger Conclave|Horizon Walker|Gloom Stalker|Fey Wanderer|Swarmkeeper/i);
+  });
+
+  it("gates Ranger methods in sequence without magical marks, borrowed cards, or legacy attacks", () => {
+    expect(pendingProfessionChoices({ professionId: "ranger", levels: 10, branchChoices: {} }).map((entry) => entry.id))
+      .toEqual(["ranger-field-practice"]);
+    expect(pendingProfessionChoices({ professionId: "ranger", levels: 30, branchChoices: {
+      "ranger-field-practice": "beast-warden",
+    } }).map((entry) => entry.id)).toEqual(["beast-warden-method"]);
+    expect(pendingProfessionChoices({ professionId: "ranger", levels: 50, branchChoices: {
+      "ranger-field-practice": "beast-warden", "beast-warden-method": "falconer",
+    } }).map((entry) => entry.id)).toEqual(["falconer-apex"]);
+
+    const generalIds = new Set(compileProfessionTrack("ranger").levels.flatMap((row) => row.generalGrants)
+      .filter((grant) => grant.type === "ability").map((grant) => grant.id));
+    const retired = new Set(["aimed-shot", "hamstring-shot", "snare", "twin-shot", "piercing-shot", "arrow-volley", "pinning-shot"]);
+    expect(PROFESSION_PROFILES.ranger.abilities.some((id) => retired.has(id))).toBe(false);
+    for (const definition of professionBranchChoices("ranger")) for (const option of definition.options) {
+      for (const grant of option.grants.filter((entry) => entry.type === "ability")) {
+        expect(grant.id, `${definition.id}/${option.id}`).toMatch(/^ranger-/);
+        expect(generalIds.has(grant.id), `${definition.id}/${option.id}/${grant.id}`).toBe(false);
+        expect(retired.has(grant.id), `${definition.id}/${option.id}/${grant.id}`).toBe(false);
+        expect(grant.id).not.toMatch(/^warrior-|^monk-|^barbarian-/);
+      }
+    }
+  });
+
+  it("authors 70 unique Rogue levels with source-owned boolean Opportunity Windows and noncombat utility at every rank", () => {
+    const rogue = compileProfessionTrack("rogue");
+    const grantedAbilities = rogue.levels.flatMap((row) => row.generalGrants)
+      .filter((grant) => grant.type === "ability").map((grant) => grant.id);
+    expect(rogue.levels).toHaveLength(70);
+    expect(new Set(rogue.levels.map((row) => row.feature)).size).toBe(70);
+    expect(rogue.levels.every((row) => row.authoredContent && row.featureDescription)).toBe(true);
+    expect(rogue.levels.every((row) => row.generalGrants.some((grant) => grant.noncombatBenefit === true))).toBe(true);
+    expect(grantedAbilities).toEqual([
+      "rogue-assess-mark",
+      "rogue-testing-cut",
+      "rogue-slip-the-line",
+      "rogue-false-opening",
+      "rogue-exploit-guard",
+      "rogue-sap-blow",
+      "rogue-concealed-shift",
+      "rogue-hamstring",
+      "rogue-switchback-feint",
+      "rogue-kidney-shot",
+      "rogue-finishing-angle",
+      "rogue-perfect-opportunity",
+    ]);
+    expect(PROFESSION_PROFILES.rogue).toMatchObject({ name: "Rogue", domain: "subterfuge", abilities: grantedAbilities });
+    expect(grantedAbilities.every((id) => id.startsWith("rogue-"))).toBe(true);
+    expect(rogue.levels[0].generalGrants).toContainEqual(expect.objectContaining({
+      id: "rogue:opportunity-window",
+      sourceOwned: true,
+      targetStatus: true,
+      booleanState: true,
+      nonNumeric: true,
+      stacks: false,
+      durationTurns: 2,
+      successfulNativeSetupOrHitOnly: true,
+      refreshesDuration: true,
+      multipleTargetsPerSource: true,
+      independentSources: true,
+      exploitRequiresMatchingSourceAndTarget: true,
+      consumesOnCommit: true,
+      consumeOncePerAction: true,
+      multiHitConsumesOnce: true,
+      transfers: false,
+      basicActionsCreate: false,
+      unrelatedActionsCreate: false,
+    }));
+    expect(rogue.levels[69].feature).toBe("Perfect Opportunity");
+    expect(professionContentStatus("rogue")).toBe("complete");
+  });
+
+  it("gives every Rogue practice its own L30 method and two L50 mundane capability apexes", () => {
+    const branches = professionBranchChoices("rogue");
+    const root = branches.find((entry) => entry.id === "rogue-practice");
+    expect(root.options.map((option) => option.id)).toEqual([
+      "infiltrator", "scoundrel", "assassin", "saboteur",
+    ]);
+    expect(branches).toHaveLength(13);
+    expect(branches.filter((entry) => entry.threshold === 10)).toHaveLength(1);
+    expect(branches.filter((entry) => entry.threshold === 30)).toHaveLength(4);
+    expect(branches.filter((entry) => entry.threshold === 50)).toHaveLength(8);
+    expect(Object.fromEntries(branches.filter((entry) => entry.threshold === 30).map((entry) => [entry.id, entry.options.map((option) => option.id)]))).toEqual({
+      "rogue-infiltrator-method": ["cat-burglar", "crowd-ghost"],
+      "rogue-scoundrel-method": ["confidence-artist", "dirty-fighter"],
+      "rogue-assassin-method": ["ambusher", "poisoner"],
+      "rogue-saboteur-method": ["locksmith", "wrecker"],
+    });
+    for (const path of root.options) {
+      const method = branches.find((entry) => entry.threshold === 30
+        && entry.parentChoiceId === root.id && entry.parentOptionId === path.id);
+      expect(method, path.id).toBeTruthy();
+      expect(method.options, path.id).toHaveLength(2);
+      for (const option of method.options) {
+        const apex = branches.find((entry) => entry.threshold === 50
+          && entry.parentChoiceId === method.id && entry.parentOptionId === option.id);
+        expect(apex, `${path.id}/${option.id}`).toBeTruthy();
+        expect(apex.options, `${path.id}/${option.id}`).toHaveLength(2);
+        expect(apex.options.flatMap((entry) => entry.grants).some((grant) => grant.type === "ability"), apex.id).toBe(false);
+      }
+    }
+    const branchAbilities = branches.flatMap((entry) => entry.options)
+      .flatMap((option) => option.grants).filter((grant) => grant.type === "ability").map((grant) => grant.id);
+    expect(branchAbilities).toEqual([
+      "rogue-silent-entry", "rogue-brazen-feint", "rogue-killing-measure", "rogue-fault-finder",
+      "rogue-high-window", "rogue-crowd-ghost", "rogue-confidence-play", "rogue-dirty-trick",
+      "rogue-first-strike", "rogue-venom-work", "rogue-master-key", "rogue-planned-collapse",
+    ]);
+    expect(new Set(branchAbilities).size).toBe(12);
+    expect(JSON.stringify(branches)).not.toMatch(/Roguish Practice|Underworld Mastery|Arcane Trickster|Soulknife|Phantom|Shadowblade/i);
+  });
+
+  it("gates Rogue methods in sequence without shadow magic, foreign resources, or retired generic cards", () => {
+    expect(pendingProfessionChoices({ professionId: "rogue", levels: 10, branchChoices: {} }).map((entry) => entry.id))
+      .toEqual(["rogue-practice"]);
+    expect(pendingProfessionChoices({ professionId: "rogue", levels: 30, branchChoices: {
+      "rogue-practice": "scoundrel",
+    } }).map((entry) => entry.id)).toEqual(["rogue-scoundrel-method"]);
+    expect(pendingProfessionChoices({ professionId: "rogue", levels: 50, branchChoices: {
+      "rogue-practice": "scoundrel", "rogue-scoundrel-method": "confidence-artist",
+    } }).map((entry) => entry.id)).toEqual(["rogue-confidence-artist-apex"]);
+
+    const generalIds = new Set(compileProfessionTrack("rogue").levels.flatMap((row) => row.generalGrants)
+      .filter((grant) => grant.type === "ability").map((grant) => grant.id));
+    const retired = new Set(["rapid-jabs", "feint", "venom-strike", "shadowstep", "disarming-strike", "execute", "lunge"]);
+    expect(PROFESSION_PROFILES.rogue.abilities.some((id) => retired.has(id))).toBe(false);
+    for (const definition of professionBranchChoices("rogue")) for (const option of definition.options) {
+      for (const grant of option.grants.filter((entry) => entry.type === "ability")) {
+        expect(grant.id, `${definition.id}/${option.id}`).toMatch(/^rogue-/);
+        expect(generalIds.has(grant.id), `${definition.id}/${option.id}/${grant.id}`).toBe(false);
+        expect(retired.has(grant.id), `${definition.id}/${option.id}/${grant.id}`).toBe(false);
+        expect(grant.id).not.toMatch(/^warrior-|^monk-|^barbarian-|^bard-|^ranger-/);
+      }
+    }
+  });
+
+  it("authors 70 unique Paladin levels with strict Conviction and concrete noncombat duty at every rank", () => {
+    const paladin = compileProfessionTrack("paladin");
+    const grantedAbilities = paladin.levels.flatMap((row) => row.generalGrants)
+      .filter((grant) => grant.type === "ability").map((grant) => grant.id);
+    expect(paladin.levels).toHaveLength(70);
+    expect(new Set(paladin.levels.map((row) => row.feature)).size).toBe(70);
+    expect(paladin.levels.every((row) => row.authoredContent && row.featureDescription)).toBe(true);
+    expect(paladin.levels.every((row) => row.generalGrants.some((grant) => grant.noncombatBenefit === true))).toBe(true);
+    expect(grantedAbilities).toEqual([
+      "paladin-oathguard",
+      "paladin-vowed-strike",
+      "paladin-stand-fast",
+      "paladin-challenge-of-witness",
+      "paladin-bear-the-blow",
+      "paladin-steadfast-word",
+      "paladin-judgment-stroke",
+      "paladin-hold-the-line",
+      "paladin-merciful-arrest",
+      "paladin-oathfire-edge",
+      "paladin-last-witness",
+      "paladin-oath-incarnate",
+    ]);
+    expect(PROFESSION_PROFILES.paladin).toMatchObject({ name: "Paladin", domain: "oathcraft", abilities: grantedAbilities });
+    expect(grantedAbilities.every((id) => id.startsWith("paladin-"))).toBe(true);
+    expect(paladin.levels[0].generalGrants).toContainEqual(expect.objectContaining({
+      id: "paladin:conviction",
+      selfSide: true,
+      integer: true,
+      min: 0,
+      max: 5,
+      resetEachFight: true,
+      earnedOnlyByNativeProtection: true,
+      oathguardInterceptsHostileDamageForAlly: true,
+      standFastAbsorbsRealHostileHit: true,
+      paladinConvictionOnIntercept: 1,
+      paladinConvictionOnAbsorb: 1,
+      requiresActualDamage: true,
+      attemptsBuild: false,
+      zeroDamageBuilds: false,
+      ordinaryDamageBuilds: false,
+      selfManufacturedDamageBuilds: false,
+      healingBuilds: false,
+      unrelatedActionsBuild: false,
+      oncePerHostileActionPerPaladin: true,
+      independentPaladins: true,
+      nativeOathcraftCommitSpendOnly: true,
+      spendsOnCommitEvenIfMissed: true,
+      multiHitSpendsOnce: true,
+      genericSpellcasting: false,
+      borrowedResource: false,
+    }));
+    expect(paladin.levels[69].feature).toBe("Oath Incarnate");
+    expect(professionContentStatus("paladin")).toBe("complete");
+  });
+
+  it("gives every Paladin oath two L30 offices and every office two card-free L50 apexes", () => {
+    const branches = professionBranchChoices("paladin");
+    const root = branches.find((entry) => entry.id === "paladin-oath");
+    expect(root.options.map((option) => option.id)).toEqual([
+      "shield-oath", "truth-oath", "mercy-oath", "beacon-oath",
+    ]);
+    expect(branches).toHaveLength(13);
+    expect(branches.reduce((sum, entry) => sum + entry.options.length, 0)).toBe(28);
+    expect(branches.filter((entry) => entry.threshold === 10)).toHaveLength(1);
+    expect(branches.filter((entry) => entry.threshold === 30)).toHaveLength(4);
+    expect(branches.filter((entry) => entry.threshold === 50)).toHaveLength(8);
+    expect(Object.fromEntries(branches.filter((entry) => entry.threshold === 30).map((entry) => [entry.id, entry.options.map((option) => option.id)]))).toEqual({
+      "paladin-shield-method": ["shieldbearer", "gatekeeper"],
+      "paladin-truth-method": ["inquisitor", "magistrate"],
+      "paladin-mercy-method": ["redeemer", "martyr"],
+      "paladin-beacon-method": ["dawnblade", "roadwarden"],
+    });
+    for (const oath of root.options) {
+      const office = branches.find((entry) => entry.threshold === 30
+        && entry.parentChoiceId === root.id && entry.parentOptionId === oath.id);
+      expect(office, oath.id).toBeTruthy();
+      expect(office.options, oath.id).toHaveLength(2);
+      for (const option of office.options) {
+        const apex = branches.find((entry) => entry.threshold === 50
+          && entry.parentChoiceId === office.id && entry.parentOptionId === option.id);
+        expect(apex, `${oath.id}/${option.id}`).toBeTruthy();
+        expect(apex.options, `${oath.id}/${option.id}`).toHaveLength(2);
+        expect(apex.options.flatMap((entry) => entry.grants).some((grant) => grant.type === "ability"), apex.id).toBe(false);
+      }
+    }
+    const branchAbilities = branches.flatMap((entry) => entry.options)
+      .flatMap((option) => option.grants).filter((grant) => grant.type === "ability").map((grant) => grant.id);
+    expect(branchAbilities).toEqual([
+      "paladin-shield-covenant", "paladin-call-to-account", "paladin-offer-quarter", "paladin-beacon-stance",
+      "paladin-rampart-exchange", "paladin-threshold-blow", "paladin-verdict-edge", "paladin-peace-command",
+      "paladin-redeeming-intercession", "paladin-burden-taken", "paladin-sunward-cut", "paladin-pilgrim-aegis",
+    ]);
+    expect(new Set(branchAbilities).size).toBe(12);
+    expect(JSON.stringify(branches)).not.toMatch(/Sacred Oath|Devotion|Vengeance|Consecrated Office|Holy Shield|Divine Avenger/i);
+  });
+
+  it("gates Paladin oaths in sequence without Cleric cards, Warrior resources, healing, smites, or legacy branches", () => {
+    expect(pendingProfessionChoices({ professionId: "paladin", levels: 10, branchChoices: {} }).map((entry) => entry.id))
+      .toEqual(["paladin-oath"]);
+    expect(pendingProfessionChoices({ professionId: "paladin", levels: 30, branchChoices: {
+      "paladin-oath": "truth-oath",
+    } }).map((entry) => entry.id)).toEqual(["paladin-truth-method"]);
+    expect(pendingProfessionChoices({ professionId: "paladin", levels: 50, branchChoices: {
+      "paladin-oath": "truth-oath", "paladin-truth-method": "inquisitor",
+    } }).map((entry) => entry.id)).toEqual(["paladin-inquisitor-apex"]);
+
+    const generalIds = new Set(compileProfessionTrack("paladin").levels.flatMap((row) => row.generalGrants)
+      .filter((grant) => grant.type === "ability").map((grant) => grant.id));
+    const retired = new Set(["power-strike", "smite", "heal", "shield-of-faith", "radiance", "bulwark-stance", "sanctuary", "judgment", "unbreakable-will"]);
+    expect(PROFESSION_PROFILES.paladin.abilities.some((id) => retired.has(id))).toBe(false);
+    for (const definition of professionBranchChoices("paladin")) for (const option of definition.options) {
+      for (const grant of option.grants.filter((entry) => entry.type === "ability")) {
+        expect(grant.id, `${definition.id}/${option.id}`).toMatch(/^paladin-/);
+        expect(generalIds.has(grant.id), `${definition.id}/${option.id}/${grant.id}`).toBe(false);
+        expect(retired.has(grant.id), `${definition.id}/${option.id}/${grant.id}`).toBe(false);
+        expect(grant.id).not.toMatch(/^cleric-|^warrior-|^monk-|^barbarian-|^bard-|^ranger-|^rogue-/);
+      }
+    }
+  });
+
   it("authors 70 unique Sorcerer rows with narrow spells and widening metamagic scope", () => {
     const wizard = compileProfessionTrack("wizard");
     const sorcerer = compileProfessionTrack("sorcerer");
@@ -532,6 +985,11 @@ describe("progression v2 catalogs", () => {
     expect(professionContentStatus("fighter")).toBe("complete");
     expect(professionContentStatus("monk")).toBe("complete");
     expect(professionContentStatus("barbarian")).toBe("complete");
+    expect(professionContentStatus("bard")).toBe("complete");
+    expect(professionContentStatus("ranger")).toBe("complete");
+    expect(professionContentStatus("rogue")).toBe("complete");
+    expect(professionContentStatus("paladin")).toBe("complete");
+    expect(professionContentStatus("druid")).toBe("complete");
   });
 
   it("lets a focused level-100 route naturally reach the expanded attribute apex", () => {

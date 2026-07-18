@@ -947,8 +947,8 @@
 
 .dossier-hero {
   position: relative;
-  height: clamp(372px, 49dvh, 440px);
-  min-height: 372px;
+  height: clamp(420px, 54dvh, 480px);
+  min-height: 420px;
   overflow: hidden;
   color: var(--game-parchment);
   background: #a9c8cf;
@@ -1026,7 +1026,7 @@
   position: absolute;
   z-index: 2;
   right: 24px;
-  bottom: 96px;
+  bottom: 130px;
   left: 24px;
   text-align: center;
   text-shadow: 0 2px 14px rgba(3, 7, 15, 0.82);
@@ -1091,10 +1091,11 @@
   right: 14px;
   bottom: 20px;
   left: 14px;
-  height: 58px;
+  height: 94px;
   padding: 4px;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   border: 1px solid rgba(244, 232, 195, 0.16);
   border-radius: 12px;
   background: rgba(5, 13, 23, 0.58);
@@ -1112,13 +1113,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 1px;
   color: rgba(244, 232, 195, 0.58);
   border: 0;
   background: transparent;
   font-family: "Alegreya", Georgia, serif;
   border-radius: 8px;
-  font-size: 9px;
+  font-size: 8px;
   cursor: pointer;
   transition: color 0.2s ease, background-color 0.2s ease;
 }
@@ -1147,6 +1148,24 @@
   border-radius: 3px;
   outline: 1px solid rgba(231, 185, 94, 0.58);
   outline-offset: -4px;
+}
+
+.dossier-hero__tab-badge {
+  position: absolute;
+  top: 3px;
+  right: 7px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  display: grid;
+  place-items: center;
+  color: #07101c;
+  border: 1px solid rgba(255, 244, 204, .72);
+  border-radius: 999px;
+  background: #efd67d;
+  box-shadow: 0 0 12px rgba(239, 214, 125, .46);
+  font: 900 7px/1 Arial, sans-serif;
+  box-sizing: border-box;
 }
 
 .dossier-hero__gesture {
@@ -3474,6 +3493,189 @@
 .profession-progress__level-meta { overflow: hidden; color: rgba(105, 185, 208, .62); font-size: 6px; font-weight: 900; letter-spacing: .06em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .profession-progress__level-list li > div > strong { color: rgba(244, 232, 195, .9); font-size: 9px; }
 .profession-progress__level-gains { color: rgba(231, 185, 94, .66); font-size: 7px; line-height: 1.3; }
+
+/* Dedicated profession/race constellations ------------------------------ */
+.progression-tree-page .profession-catalog,
+.progression-tree-page .profession-progress { padding-top: 0; }
+
+.progression-tree {
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(105, 185, 208, .16);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(105, 185, 208, .12), transparent 36%),
+    linear-gradient(180deg, rgba(8, 22, 37, .92), rgba(3, 10, 20, .94));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025), 0 12px 34px rgba(2, 7, 14, .2);
+}
+
+.profession-progress--racial .profession-progress__hero { grid-template-columns: minmax(0, 1fr) auto; }
+
+.progression-tree__heading { margin-bottom: 3px; }
+.progression-tree__guide { margin: 0 0 10px; color: rgba(191, 213, 214, .56); font-size: 9px; line-height: 1.4; }
+
+.progression-tree__viewport {
+  position: relative;
+  height: min(58dvh, 520px);
+  overflow: auto;
+  border: 1px solid rgba(191, 213, 214, .1);
+  border-radius: 11px;
+  background:
+    linear-gradient(rgba(105, 185, 208, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(105, 185, 208, .035) 1px, transparent 1px),
+    radial-gradient(circle, rgba(18, 43, 62, .9), rgba(3, 10, 19, .96) 68%);
+  background-size: 28px 28px, 28px 28px, auto;
+  scrollbar-color: rgba(105, 185, 208, .3) transparent;
+  overscroll-behavior: contain;
+}
+
+.progression-tree__viewport:focus-visible { outline: 2px solid rgba(231, 185, 94, .46); outline-offset: 2px; }
+
+.progression-tree__canvas {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+  background:
+    repeating-radial-gradient(circle at 50% 50%, transparent 0 51px, rgba(105, 185, 208, .055) 52px 53px),
+    radial-gradient(circle at 50% 50%, rgba(231, 185, 94, .08), transparent 13%);
+}
+
+.progression-tree__connections { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.progression-tree__connections line { stroke: rgba(92, 117, 128, .24); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.progression-tree__connections line.is-owned { stroke: rgba(105, 185, 208, .72); filter: drop-shadow(0 0 4px rgba(105, 185, 208, .46)); }
+.progression-tree__connections line.is-available { stroke: rgba(239, 214, 125, .92); stroke-dasharray: 4 4; filter: drop-shadow(0 0 5px rgba(239, 214, 125, .6)); }
+
+.progression-tree__core,
+.progression-tree__node {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.progression-tree__core {
+  top: 50%;
+  left: 50%;
+  width: 108px;
+  height: 108px;
+  padding: 20px 11px;
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  text-align: center;
+  border: 2px solid rgba(231, 185, 94, .62);
+  border-radius: 50%;
+  background: radial-gradient(circle, #1c4a60 0 30%, #0c2235 58%, #07101c 100%);
+  box-shadow: 0 0 0 8px rgba(231, 185, 94, .05), 0 0 42px rgba(105, 185, 208, .3), inset 0 0 18px rgba(231, 185, 94, .12);
+}
+
+.progression-tree__core::before,
+.progression-tree__core::after { position: absolute; inset: 8px; border: 1px solid rgba(231, 185, 94, .19); border-radius: 50%; content: ""; }
+.progression-tree__core::after { inset: 15px; border-style: dashed; }
+.progression-tree__core strong { color: #fff1b4; font: italic 500 22px/1 "Instrument Serif", Georgia, serif; letter-spacing: .05em; }
+.progression-tree__core span { overflow: hidden; color: rgba(191, 213, 214, .66); font-size: 7px; font-weight: 900; letter-spacing: .08em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+
+.progression-tree__node {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(111, 135, 145, .38);
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 30%, #263746, #09131f 70%);
+  box-shadow: 0 2px 8px rgba(2, 7, 14, .52), inset 0 1px rgba(255, 255, 255, .05);
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease, opacity .18s ease;
+}
+
+.progression-tree__node > span { color: rgba(191, 213, 214, .48); font: 800 8px/1 Arial, sans-serif; }
+.progression-tree__node.is-milestone { width: 40px; height: 40px; border-width: 2px; }
+.progression-tree__node.is-milestone::before { position: absolute; inset: 4px; border: 1px solid rgba(191, 213, 214, .16); border-radius: 50%; content: ""; }
+.progression-tree__node.is-owned { border-color: rgba(105, 185, 208, .8); background: radial-gradient(circle at 36% 30%, #69b9d0, #173c52 48%, #081725 76%); box-shadow: 0 0 13px rgba(105, 185, 208, .42), inset 0 1px rgba(255, 255, 255, .18); }
+.progression-tree__node.is-owned > span { color: #effcff; }
+.progression-tree__node.is-available { border-color: rgba(239, 214, 125, .94); background: radial-gradient(circle at 36% 30%, #f3df91, #876c2c 44%, #19170e 76%); box-shadow: 0 0 0 5px rgba(239, 214, 125, .08), 0 0 20px rgba(239, 214, 125, .62); animation: progression-node-pulse 1.8s ease-in-out infinite; }
+.progression-tree__node.is-available > span { color: #fff8df; }
+.progression-tree__node.is-locked { opacity: .62; }
+.progression-tree__node:hover,
+.progression-tree__node.is-selected { z-index: 3; border-color: #fff1b4; box-shadow: 0 0 0 4px rgba(231, 185, 94, .12), 0 0 20px rgba(231, 185, 94, .38); transform: translate(-50%, -50%) scale(1.13); }
+.progression-tree__node:focus-visible,
+.progression-tree__core:focus-visible { outline: 2px solid #fff1b4; outline-offset: 3px; }
+
+.progression-tree__inspector {
+  margin-top: 10px;
+  padding: 12px;
+  display: grid;
+  gap: 9px;
+  border: 1px solid rgba(231, 185, 94, .2);
+  border-radius: 11px;
+  background: linear-gradient(135deg, rgba(29, 70, 97, .34), rgba(4, 11, 20, .72));
+}
+
+.progression-tree__inspector > header { display: grid; gap: 3px; }
+.progression-tree__inspector > header > span { color: rgba(105, 185, 208, .72); font-size: 7px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.progression-tree__inspector > header > strong { color: #fff1c6; font: italic 500 20px/1 "Instrument Serif", Georgia, serif; }
+.progression-tree__inspector > header > p { margin: 2px 0 0; color: rgba(237, 228, 208, .66); font-size: 10px; line-height: 1.45; }
+.progression-tree__empty { margin: 0; color: rgba(191, 213, 214, .48); font-size: 9px; font-style: italic; }
+.progression-tree__investment { padding-top: 9px; border-top: 1px solid rgba(231, 185, 94, .12); }
+.progression-tree__investment > span { color: rgba(237, 228, 208, .62); font-size: 9px; line-height: 1.4; }
+.progression-tree__investment > button {
+  width: 100%;
+  min-height: 39px;
+  color: #17160e;
+  border: 1px solid rgba(255, 244, 204, .72);
+  border-radius: 9px;
+  background: linear-gradient(180deg, #efd67d, #c8a951);
+  box-shadow: 0 6px 18px rgba(200, 169, 81, .18), inset 0 1px rgba(255, 255, 255, .3);
+  font: 900 10px/1.1 "Alegreya", Georgia, serif;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.profession-progress__branches {
+  padding: 12px;
+  border: 1px solid rgba(163, 139, 201, .18);
+  border-radius: 12px;
+  background: radial-gradient(circle at 0 0, rgba(163, 139, 201, .1), transparent 38%), rgba(4, 11, 20, .42);
+}
+
+.profession-progress__branch-tree > li { position: relative; }
+.profession-progress__branch-tree > li::before {
+  position: absolute;
+  top: 18px;
+  left: calc(7px + var(--branch-depth, 0) * 16px);
+  width: 9px;
+  height: 9px;
+  border: 2px solid rgba(163, 139, 201, .64);
+  background: #0c1827;
+  box-shadow: 0 0 10px rgba(163, 139, 201, .32);
+  transform: rotate(45deg);
+  content: "";
+}
+.profession-progress__branch-tree > li > header { padding-left: calc(18px + var(--branch-depth, 0) * 16px); }
+.profession-progress__branch-tree > li > div { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-left: calc(var(--branch-depth, 0) * 16px); }
+.profession-progress__branch-tree > li > div > button { position: relative; min-height: 76px; border-radius: 13px 13px 13px 3px; }
+.profession-progress__branch-tree > li > div > button[aria-pressed="true"] { box-shadow: 0 0 18px rgba(231, 185, 94, .12), inset 0 0 0 1px rgba(231, 185, 94, .1); }
+
+.progression-tree__pending { display: grid; gap: 8px; }
+.progression-tree__pending > article { padding: 11px; border: 1px solid rgba(231, 185, 94, .24); border-radius: 11px; background: rgba(28, 39, 48, .42); }
+.progression-tree__pending article > header { display: grid; gap: 3px; }
+.progression-tree__pending article > header small { color: rgba(105, 185, 208, .7); font-size: 7px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.progression-tree__pending article > header strong { color: #fff1c6; font: italic 500 18px/1 "Instrument Serif", Georgia, serif; }
+.progression-tree__pending article > header p { margin: 0; color: rgba(237, 228, 208, .62); font-size: 9px; line-height: 1.4; }
+.progression-tree__pending article > div { margin-top: 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.progression-tree__pending article > div > button { padding: 9px; display: grid; gap: 4px; color: rgba(244, 232, 195, .84); border: 1px solid rgba(105, 185, 208, .18); border-radius: 9px; background: rgba(4, 11, 20, .5); font: inherit; text-align: left; cursor: pointer; }
+.progression-tree__pending article > div > button > strong { font-size: 10px; }
+.progression-tree__pending article > div > button > span { color: rgba(191, 213, 214, .58); font-size: 8px; line-height: 1.35; }
+.progression-tree__pending article > div > button:disabled { opacity: .58; cursor: default; }
+
+@keyframes progression-node-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(239, 214, 125, .07), 0 0 16px rgba(239, 214, 125, .44); }
+  50% { box-shadow: 0 0 0 8px rgba(239, 214, 125, .02), 0 0 25px rgba(239, 214, 125, .7); }
+}
 
 @media (max-width: 380px) {
   .profession-catalog__tools { grid-template-columns: 1fr; }

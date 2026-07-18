@@ -253,6 +253,78 @@ describe("separate advancement", () => {
     expect(professionProgressionLevel(character)).toBe(11);
   });
 
+  it("halts Bard advancement at performance-path thresholds until the non-spell branch is resolved", () => {
+    const character = {
+      race: "human", profession: "bard", attributes: {},
+      progression: createProgression({ professionId: "bard", level: 9 }),
+    };
+    advanceProgression(character, progressionXpForLevel(11) - progressionXpForLevel(9));
+    let pending = pendingLevelAllocations(character);
+    resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:bard" });
+    expect(pendingProgressionChoices(character)[0]).toMatchObject({ kind: "branch", id: "bard-performance-path" });
+    pending = pendingLevelAllocations(character);
+    expect(() => resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:bard" }))
+      .toThrow(/Resolve bard-performance-path/);
+    resolveProfessionChoice(character, { professionId: "bard", choiceId: "bard-performance-path", optionId: "war-singer" });
+    pending = pendingLevelAllocations(character);
+    resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:bard" });
+    expect(professionProgressionLevel(character)).toBe(11);
+  });
+
+  it("halts Ranger advancement at field-practice thresholds until the non-spell branch is resolved", () => {
+    const character = {
+      race: "human", profession: "ranger", attributes: {},
+      progression: createProgression({ professionId: "ranger", level: 9 }),
+    };
+    advanceProgression(character, progressionXpForLevel(11) - progressionXpForLevel(9));
+    let pending = pendingLevelAllocations(character);
+    resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:ranger" });
+    expect(pendingProgressionChoices(character)[0]).toMatchObject({ kind: "branch", id: "ranger-field-practice" });
+    pending = pendingLevelAllocations(character);
+    expect(() => resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:ranger" }))
+      .toThrow(/Resolve ranger-field-practice/);
+    resolveProfessionChoice(character, { professionId: "ranger", choiceId: "ranger-field-practice", optionId: "hunter" });
+    pending = pendingLevelAllocations(character);
+    resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:ranger" });
+    expect(professionProgressionLevel(character)).toBe(11);
+  });
+
+  it("halts Rogue advancement at practice thresholds until the mundane branch is resolved", () => {
+    const character = {
+      race: "human", profession: "rogue", attributes: {},
+      progression: createProgression({ professionId: "rogue", level: 9 }),
+    };
+    advanceProgression(character, progressionXpForLevel(11) - progressionXpForLevel(9));
+    let pending = pendingLevelAllocations(character);
+    resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:rogue" });
+    expect(pendingProgressionChoices(character)[0]).toMatchObject({ kind: "branch", id: "rogue-practice" });
+    pending = pendingLevelAllocations(character);
+    expect(() => resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:rogue" }))
+      .toThrow(/Resolve rogue-practice/);
+    resolveProfessionChoice(character, { professionId: "rogue", choiceId: "rogue-practice", optionId: "infiltrator" });
+    pending = pendingLevelAllocations(character);
+    resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:rogue" });
+    expect(professionProgressionLevel(character)).toBe(11);
+  });
+
+  it("halts Paladin advancement at the oath threshold until its non-spell protector path is resolved", () => {
+    const character = {
+      race: "human", profession: "paladin", attributes: {},
+      progression: createProgression({ professionId: "paladin", level: 9 }),
+    };
+    advanceProgression(character, progressionXpForLevel(11) - progressionXpForLevel(9));
+    let pending = pendingLevelAllocations(character);
+    resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:paladin" });
+    expect(pendingProgressionChoices(character)[0]).toMatchObject({ kind: "branch", id: "paladin-oath" });
+    pending = pendingLevelAllocations(character);
+    expect(() => resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:paladin" }))
+      .toThrow(/Resolve paladin-oath/);
+    resolveProfessionChoice(character, { professionId: "paladin", choiceId: "paladin-oath", optionId: "shield-oath" });
+    pending = pendingLevelAllocations(character);
+    resolveLevelAllocationChoice(character, { choiceId: pending.choiceId, optionId: "profession:paladin" });
+    expect(professionProgressionLevel(character)).toBe(11);
+  });
+
   it("profession XP advances only profession ranks", () => {
     const character = { race: "human", profession: "fighter", attributes: {}, progression: createProgression({ professionId: "fighter", level: 10 }) };
     resolveProfessionChoice(character, { professionId: "fighter", choiceId: "warrior-specialization", optionId: "sellsword" });
