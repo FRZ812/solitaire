@@ -76,12 +76,15 @@ describe("mobile map navigation markup", () => {
     );
 
     expect(html).toContain('class="rpg-folio-body rpg-folio-body--atlas"');
-    expect(html).toContain('class="world-atlas is-tilted"');
-    // The atlas is a full-bleed maps-app page: no hero banner, just floating
-    // chrome with the journal switch and the close control.
-    expect(html).toContain('class="rpg-folio-map-chrome"');
+    expect(html).toContain('class="world-atlas"');
+    // Journal and close now share the atlas toolbar instead of overlapping it
+    // as an independently positioned floating pill.
+    expect(html).toContain('class="world-atlas__toolbar-actions"');
+    expect(html).not.toContain('class="rpg-folio-map-chrome"');
     expect(html).toContain("Quest journal");
-    expect(html).toContain('aria-label="Close world atlas"');
+    expect(html).toContain('aria-label="Open quest journal, 0 active quests"');
+    expect(html).toContain('type="button" class="rpg-square-button rpg-folio-close" aria-label="Close world atlas"');
+    expect(html).not.toContain("Switch to the tabletop 3D view");
     expect(html).not.toContain("rpg-folio-hero");
     expect(html).not.toContain("atlas-folio-hero-v1.png");
     expect(html).not.toContain("quest-journal-folio-hero-v1.png");
@@ -105,6 +108,7 @@ describe("mobile map navigation markup", () => {
     );
 
     expect(html).toContain('class="rpg-folio-hero rpg-folio-hero--quests"');
+    expect(html).toContain('type="button" class="rpg-square-button rpg-folio-close" aria-label="Close quest journal"');
     expect(html).toContain("quest-journal-folio-hero-v1.png");
     expect(html).not.toContain("atlas-folio-hero-v1.png");
   });

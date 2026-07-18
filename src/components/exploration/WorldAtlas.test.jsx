@@ -9,7 +9,15 @@ import {
 import { makeInitialState } from "../../data/initial-state.js";
 import { sampleContinent, surveyAtlas } from "../../engine/world-generation.js";
 import { pathMinutes } from "../../engine/world.js";
-import { WorldAtlas, atlasWheelZoomAllowed, atlasWheelZoomFactor } from "./WorldAtlas.jsx";
+import {
+  WorldAtlas,
+  atlasKeyboardShortcutAllowed,
+  atlasRasterCoversViewport,
+  atlasRasterTransform,
+  atlasSelectionClickAllowed,
+  atlasWheelZoomAllowed,
+  atlasWheelZoomFactor,
+} from "./WorldAtlas.jsx";
 import {
   ATLAS_LANDMARKS,
   ATLAS_LAYERS,
@@ -102,6 +110,36 @@ describe("atlas camera", () => {
   it("leaves wheel events from atlas UI chrome to their own scrollers", () => {
     expect(atlasWheelZoomAllowed({ closest: () => ({}) })).toBe(false);
     expect(atlasWheelZoomAllowed({ closest: () => null })).toBe(true);
+  });
+
+  it("keeps the completed terrain frame aligned while a replacement is painting", () => {
+    const rendered = { x: 0, y: 0, zoom: 4 };
+    expect(atlasRasterTransform({ x: -10, y: 5, zoom: 4 }, rendered, VIEWPORT))
+      .toBe("matrix(1, 0, 0, 1, 40, -20)");
+    expect(atlasRasterTransform({ x: 0, y: 0, zoom: 8 }, rendered, VIEWPORT))
+      .toBe("matrix(2, 0, 0, 2, -480, -270)");
+  });
+
+  it("refreshes before an overscanned terrain frame can expose a blank edge", () => {
+    const plane = { width: 960, height: 540 };
+    const overscan = 128;
+    const raster = { width: plane.width + overscan * 2, height: plane.height + overscan * 2 };
+    const rendered = { x: 0, y: 0, zoom: 4 };
+    expect(atlasRasterCoversViewport(rendered, rendered, raster, plane, overscan, 48)).toBe(true);
+    expect(atlasRasterCoversViewport({ x: 25, y: 0, zoom: 4 }, rendered, raster, plane, overscan, 48)).toBe(false);
+    expect(atlasRasterCoversViewport({ x: 0, y: 0, zoom: 2 }, rendered, raster, plane, overscan)).toBe(false);
+    expect(atlasRasterCoversViewport({ x: 8, y: 0, zoom: 3.2 }, rendered, raster, plane, overscan)).toBe(false);
+  });
+
+  it("blocks a marker's pointer click after map movement without blocking keyboard activation", () => {
+    expect(atlasSelectionClickAllowed({ detail: 1 }, { suppressClick: true })).toBe(false);
+    expect(atlasSelectionClickAllowed({ detail: 0 }, { suppressClick: true })).toBe(true);
+    expect(atlasSelectionClickAllowed({ detail: 1 }, { suppressClick: false })).toBe(true);
+  });
+
+  it("leaves keyboard input inside the shared toolbar to its focused control", () => {
+    expect(atlasKeyboardShortcutAllowed({ closest: () => ({}) })).toBe(false);
+    expect(atlasKeyboardShortcutAllowed({ closest: () => null })).toBe(true);
   });
 });
 
@@ -239,10 +277,12 @@ describe("world atlas component", () => {
     expect(html).toContain(`>${CONTINENT.name}</h3>`);
     expect(html).toContain('role="application"');
     expect(html).toContain("Arrow keys pan");
-    // The tabletop 3D view is the default, with an accessible 2D switch.
-    expect(html).toContain('class="world-atlas is-tilted"');
+    // The atlas is a focused flat chart with no decorative perspective mode.
+    expect(html).toContain('class="world-atlas"');
     expect(html).toContain('class="world-atlas__plane"');
-    expect(html).toContain('aria-label="Switch to the flat chart view"');
+    expect(html).not.toContain("Switch to the flat chart view");
+    expect(html).not.toContain("Switch to the tabletop 3D view");
+    expect(html).not.toContain('class="world-atlas__dimension"');
     expect(html).toContain(`aria-label="Search ${ATLAS_LANDMARKS.length} charted places"`);
     expect(html).toContain(">Find a place</span>");
     expect(html.match(/class="world-atlas__marker /g)).toHaveLength(ATLAS_LANDMARKS.length);

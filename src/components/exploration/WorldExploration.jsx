@@ -530,10 +530,10 @@ function QuestJournalPage({ quests, current, onPick }) {
   );
 }
 
-function WorldAtlasPage({ state, origin, onPick }) {
+function WorldAtlasPage({ state, origin, onPick, toolbarActions }) {
   return (
     <div className="rpg-folio-page rpg-folio-page--atlas">
-      <WorldAtlas state={state} origin={origin} onPick={onPick} />
+      <WorldAtlas state={state} origin={origin} onPick={onPick} toolbarActions={toolbarActions} />
     </div>
   );
 }
@@ -544,6 +544,21 @@ export function AdventureFolio({ state, page, quests, landmarks, origin, onPage,
     { id: "quests", label: "Quest journal", icon: "journal", count: quests.length },
   ];
   const isAtlas = page !== "quests";
+  const atlasToolbarActions = isAtlas ? (
+    <>
+      <button
+        type="button"
+        className="rpg-folio-map-journal"
+        onClick={() => onPage("quests")}
+        aria-label={`Open quest journal, ${quests.length} active ${quests.length === 1 ? "quest" : "quests"}`}
+      >
+        <Icon name="journal" size={15} strokeWidth={1.5} />
+        <span>Quest journal</span>
+        <b aria-hidden="true">{quests.length}</b>
+      </button>
+      <button type="button" onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label="Close world atlas"><Icon name="close" size={20} /></button>
+    </>
+  ) : null;
   return (
     <div className="rpg-folio-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section
@@ -552,20 +567,9 @@ export function AdventureFolio({ state, page, quests, landmarks, origin, onPage,
         aria-modal="true"
         {...(isAtlas ? { "aria-label": "World Atlas" } : { "aria-labelledby": "rpg-folio-title" })}
       >
-        {isAtlas ? (
-          // The atlas reads like a maps app: the map owns the whole folio and
-          // the journal switch and close control float over it.
-          <div className="rpg-folio-map-chrome">
-            <button type="button" className="rpg-folio-map-journal" onClick={() => onPage("quests")}>
-              <Icon name="journal" size={15} strokeWidth={1.5} />
-              <span>Quest journal</span>
-              <b>{quests.length}</b>
-            </button>
-            <button onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label="Close world atlas"><Icon name="close" size={20} /></button>
-          </div>
-        ) : (
+        {!isAtlas && (
           <header className="rpg-folio-hero rpg-folio-hero--quests" style={{ "--folio-hero-art": `url(${questJournalFolioHero})` }}>
-            <button onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label="Close quest journal"><Icon name="close" size={20} /></button>
+            <button type="button" onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label="Close quest journal"><Icon name="close" size={20} /></button>
             <div className="rpg-folio-identity">
               <small>Wayfinder's folio</small>
               <h2 id="rpg-folio-title">Quest Journal</h2>
@@ -590,7 +594,7 @@ export function AdventureFolio({ state, page, quests, landmarks, origin, onPage,
         >
           {page === "quests"
             ? <QuestJournalPage quests={quests} current={origin} onPick={onPick} />
-            : <WorldAtlasPage state={state} origin={origin} onPick={onPick} />}
+            : <WorldAtlasPage state={state} origin={origin} onPick={onPick} toolbarActions={atlasToolbarActions} />}
         </div>
       </section>
     </div>

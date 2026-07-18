@@ -1105,6 +1105,18 @@
   box-sizing: border-box;
 }
 
+.dossier-hero__tabs[data-tab-count="7"] {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.dossier-hero__tabs[data-tab-count="7"] > button {
+  grid-column: span 3;
+}
+
+.dossier-hero__tabs[data-tab-count="7"] > button:nth-child(n + 5) {
+  grid-column: span 4;
+}
+
 .dossier-hero__tabs button {
   position: relative;
   min-width: 0;
@@ -2113,6 +2125,326 @@
 .codex-view__tabs [role="tab"][aria-selected="true"] .game-icon { filter: brightness(1.12) saturate(1.04) drop-shadow(0 2px 4px rgba(0,0,0,.38)); }
 .codex-view__tabs [role="tab"][aria-selected="true"] .codex-tab-icon { filter: saturate(1.03) brightness(1.12) drop-shadow(0 2px 5px rgba(0, 0, 0, .42)); transform: scale(1.03); }
 .codex-view__tabs [role="tab"][aria-selected="true"] > strong { color: rgba(244, 232, 195, 0.72); }
+
+.profession-glossary {
+  display: grid;
+  gap: 11px;
+  color: var(--game-parchment);
+}
+
+.profession-glossary__intro {
+  padding: 13px 14px;
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(191, 213, 214, .14);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(13, 34, 49, .8), rgba(7, 17, 28, .88));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .025);
+}
+
+.profession-glossary__intro small,
+.profession-glossary__hero small,
+.profession-glossary__section-title small,
+.profession-glossary__disclosure summary small {
+  color: rgba(231, 185, 94, .64);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.profession-glossary__intro h4,
+.profession-glossary__hero h4,
+.profession-glossary__section-title h4 {
+  margin: 1px 0 0;
+  color: #fff3d2;
+  font: italic 19px/1.05 "Instrument Serif", Georgia, serif;
+}
+
+.profession-glossary__intro p,
+.profession-glossary__hero p {
+  margin: 0;
+  color: rgba(191, 213, 214, .66);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.profession-glossary__search {
+  min-height: 38px;
+  padding: 0 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: rgba(231, 185, 94, .56);
+  border: 1px solid rgba(191, 213, 214, .13);
+  border-radius: 9px;
+  background: rgba(9, 25, 38, .6);
+}
+
+.profession-glossary__search > span {
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.profession-glossary__search input {
+  min-width: 0;
+  padding: 8px 0;
+  color: rgba(244, 232, 195, .88);
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.profession-glossary__search input::placeholder { color: rgba(191, 213, 214, .35); }
+.profession-glossary__search > b { color: rgba(231, 185, 94, .62); font-size: 8px; }
+
+.profession-glossary__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.profession-glossary__card {
+  min-width: 0;
+  min-height: 82px;
+  padding: 9px 8px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  color: inherit;
+  border: 1px solid rgba(191, 213, 214, .13);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(13, 34, 49, .78), rgba(7, 17, 28, .9));
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s ease, background-color .18s ease, transform .18s ease;
+}
+
+.profession-glossary__card:hover,
+.profession-glossary__card:focus-visible {
+  border-color: rgba(231, 185, 94, .4);
+  background: linear-gradient(145deg, rgba(29, 70, 97, .66), rgba(8, 23, 37, .94));
+  outline: 0;
+  transform: translateY(-1px);
+}
+
+.profession-glossary__card > span:not(.profession-icon) { min-width: 0; display: grid; gap: 1px; }
+.profession-glossary__card strong { overflow: hidden; color: #fff0c8; font: italic 13px/1.1 "Instrument Serif", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
+.profession-glossary__card small { overflow: hidden; color: rgba(231, 185, 94, .58); font-size: 7px; font-weight: 800; letter-spacing: .06em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.profession-glossary__card em {
+  margin-top: 2px;
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgba(191, 213, 214, .5);
+  font-size: 8px;
+  font-style: normal;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.profession-glossary__card > b { color: rgba(231, 185, 94, .44); font: 17px/1 Georgia, serif; }
+
+.profession-glossary__empty {
+  padding: 34px 16px;
+  color: rgba(191, 213, 214, .48);
+  border: 1px dashed rgba(191, 213, 214, .14);
+  border-radius: 11px;
+  font: italic 14px/1.4 "Instrument Serif", Georgia, serif;
+  text-align: center;
+}
+
+.profession-glossary--detail { scroll-margin-top: 8px; }
+
+.profession-glossary__back {
+  width: max-content;
+  min-height: 30px;
+  padding: 5px 10px 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(244, 232, 195, .74);
+  border: 1px solid rgba(231, 185, 94, .24);
+  border-radius: 999px;
+  background: rgba(9, 25, 38, .72);
+  font-family: inherit;
+  font-size: 7px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.profession-glossary__back:hover,
+.profession-glossary__back:focus-visible { color: #fff3d2; border-color: rgba(231, 185, 94, .48); outline: 0; }
+
+.profession-glossary__hero {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 13px;
+  border: 1px solid rgba(231, 185, 94, .22);
+  border-radius: 13px;
+  background:
+    radial-gradient(circle at 10% 10%, rgba(231, 185, 94, .11), transparent 32%),
+    linear-gradient(145deg, rgba(20, 46, 62, .88), rgba(7, 17, 28, .94));
+  box-shadow: 0 10px 24px rgba(3, 7, 15, .2), inset 0 1px rgba(255, 255, 255, .03);
+}
+.profession-glossary__hero > div { min-width: 0; }
+.profession-glossary__hero h4 { margin: 3px 0 5px; font-size: 25px; }
+.profession-glossary__hero p { color: rgba(244, 232, 195, .68); font-size: 11px; }
+
+.profession-glossary__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.profession-glossary__stats span {
+  min-height: 46px;
+  display: grid;
+  place-content: center;
+  color: rgba(191, 213, 214, .52);
+  border: 1px solid rgba(191, 213, 214, .12);
+  border-radius: 9px;
+  background: rgba(9, 25, 38, .58);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.profession-glossary__stats strong { color: #f0ca7e; font: italic 16px/1 "Instrument Serif", Georgia, serif; }
+
+.profession-glossary__section { display: grid; gap: 8px; }
+.profession-glossary__section-title { padding: 4px 2px 0; }
+.profession-glossary__section-title h4 { margin-top: 3px; font-size: 16px; }
+.profession-glossary__stages { display: grid; gap: 6px; }
+
+.profession-glossary__disclosure {
+  overflow: hidden;
+  border: 1px solid rgba(191, 213, 214, .13);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(13, 34, 49, .72), rgba(7, 17, 28, .88));
+}
+.profession-glossary__disclosure > summary {
+  min-height: 48px;
+  padding: 8px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  list-style: none;
+  cursor: pointer;
+}
+.profession-glossary__disclosure > summary::-webkit-details-marker,
+.profession-glossary__choice > summary::-webkit-details-marker { display: none; }
+.profession-glossary__disclosure > summary > span { min-width: 0; display: grid; gap: 2px; }
+.profession-glossary__disclosure > summary strong { overflow: hidden; color: rgba(244, 232, 195, .82); font: italic 14px/1.1 "Instrument Serif", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
+.profession-glossary__disclosure > summary > b {
+  min-width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: rgba(231, 185, 94, .64);
+  border: 1px solid rgba(231, 185, 94, .2);
+  border-radius: 50%;
+  font-size: 8px;
+}
+.profession-glossary__disclosure[open] { border-color: rgba(231, 185, 94, .27); }
+.profession-glossary__disclosure[open] > summary { background: rgba(29, 70, 97, .22); }
+.profession-glossary__disclosure > summary:focus-visible { outline: 2px solid rgba(231, 185, 94, .44); outline-offset: -2px; }
+
+.profession-glossary__levels {
+  padding: 0 8px 8px;
+  display: grid;
+  gap: 4px;
+}
+.profession-glossary__level {
+  padding: 7px 8px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  border-top: 1px solid rgba(191, 213, 214, .08);
+  background: rgba(4, 13, 23, .28);
+}
+.profession-glossary__level > em {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: #f0ca7e;
+  border: 1px solid rgba(231, 185, 94, .24);
+  border-radius: 50%;
+  font: italic 10px/1 "Instrument Serif", Georgia, serif;
+}
+.profession-glossary__level > div { min-width: 0; display: grid; gap: 2px; }
+.profession-glossary__level strong { color: rgba(244, 232, 195, .8); font-size: 9px; }
+.profession-glossary__level p { margin: 0; color: rgba(191, 213, 214, .55); font-size: 8px; line-height: 1.35; }
+.profession-glossary__level span { color: rgba(231, 185, 94, .52); font-size: 7px; line-height: 1.3; }
+
+.profession-glossary__choice-groups,
+.profession-glossary__specializations > div {
+  padding: 0 8px 8px;
+  display: grid;
+  gap: 7px;
+}
+.profession-glossary__choice-groups > section { display: grid; gap: 5px; }
+.profession-glossary__choice-groups h5 {
+  margin: 3px 2px 0;
+  color: rgba(231, 185, 94, .58);
+  font-size: 7px;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+.profession-glossary__choice {
+  border: 1px solid rgba(191, 213, 214, .1);
+  border-radius: 8px;
+  background: rgba(4, 13, 23, .3);
+}
+.profession-glossary__choice > summary {
+  min-height: 35px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(244, 232, 195, .75);
+  list-style: none;
+  font: italic 11px/1.2 "Instrument Serif", Georgia, serif;
+  cursor: pointer;
+}
+.profession-glossary__choice > summary b { color: rgba(231, 185, 94, .52); font-family: inherit; font-size: 7px; font-weight: 800; line-height: 1; }
+.profession-glossary__choice > p { margin: 0; padding: 0 8px 7px; color: rgba(191, 213, 214, .55); font-size: 8px; line-height: 1.4; }
+.profession-glossary__choice > div,
+.profession-glossary__specializations > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.profession-glossary__choice article,
+.profession-glossary__specializations article {
+  min-width: 0;
+  padding: 7px 8px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(191, 213, 214, .09);
+  border-radius: 7px;
+  background: rgba(9, 25, 38, .5);
+}
+.profession-glossary__choice article strong,
+.profession-glossary__specializations article strong { color: rgba(244, 232, 195, .78); font-size: 9px; }
+.profession-glossary__choice article span,
+.profession-glossary__specializations article span { color: rgba(191, 213, 214, .52); font-size: 8px; line-height: 1.35; }
+
+@media (max-width: 360px) {
+  .profession-glossary__grid { grid-template-columns: 1fr; }
+  .profession-glossary__choice > div,
+  .profession-glossary__specializations > div { grid-template-columns: 1fr; }
+}
 
 .codex-character-tools {
   padding: 10px 12px;
