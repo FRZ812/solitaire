@@ -1,10 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import mapAtlasUrl from "../../assets/generated/map-material-atlas.png";
-import tradePoiAtlasUrl from "../../assets/generated/icon-atlases/trade-poi-atlas-v1.png";
-import cityPoiAtlasUrl from "../../assets/generated/icon-atlases/city-poi-atlas-v1.png";
-import wildernessPoiAtlasUrl from "../../assets/generated/icon-atlases/wilderness-poi-atlas-v1.png";
 import { POI_ATLAS_CELL, poiIconMeta } from "../../data/poi-icons.js";
 import { marketPriceTierVisual } from "../../data/town.js";
+import { getCachedMapCanvasImages, preloadMapCanvasImages } from "./renderingPreload.js";
 import {
   ATLAS_CELLS,
   buildMapLayout,
@@ -19,12 +16,6 @@ const MATERIAL_FALLBACKS = {
   plaza: "#b8aa91", avenue: "#c5b89d", river: "#296c8c", roof: "#526d8d",
 };
 const RELIEF_MATERIALS = new Set(["mountains", "wall", "settlement", "roof", "indoor"]);
-const POI_ATLAS_URLS = Object.freeze({
-  trade: tradePoiAtlasUrl,
-  city: cityPoiAtlasUrl,
-  wilderness: wildernessPoiAtlasUrl,
-});
-
 function tracePolygon(context, polygon) {
   if (!polygon.length) return;
   context.beginPath();
@@ -355,58 +346,30 @@ function eventPoint(event, canvas) {
 }
 
 export function MapCanvas({ scene, onSelect, label, choices = [], selectedKey = "" }) {
+  const initialImagesRef = useRef(null);
+  if (!initialImagesRef.current) initialImagesRef.current = getCachedMapCanvasImages();
+  const initialImages = initialImagesRef.current;
   const hostRef = useRef(null);
   const canvasRef = useRef(null);
-  const atlasRef = useRef(null);
-  const poiAtlasesRef = useRef({});
+  const atlasRef = useRef(initialImages.material);
+  const poiAtlasesRef = useRef(initialImages.poi);
   const layoutRef = useRef({ entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 });
   const [viewport, setViewport] = useState({ width: 1, height: 1 });
-  const [atlasReady, setAtlasReady] = useState(false);
-  const [poiAtlasesReady, setPoiAtlasesReady] = useState(0);
+  const [atlasReady, setAtlasReady] = useState(Boolean(initialImages.material));
+  const [poiAtlasesReady, setPoiAtlasesReady] = useState(() => Object.values(initialImages.poi).filter(Boolean).length);
   const [hoverKey, setHoverKey] = useState("");
 
   useEffect(() => {
-    const image = new Image();
-    image.decoding = "async";
-    image.onload = () => {
-      atlasRef.current = image;
-      setAtlasReady(true);
-    };
-    image.onerror = () => {
-      atlasRef.current = null;
-      setAtlasReady(false);
-    };
-    image.src = mapAtlasUrl;
-    return () => {
-      image.onload = null;
-      image.onerror = null;
-    };
-  }, []);
-
-  useEffect(() => {
     let active = true;
-    const images = [];
-    for (const [atlasId, url] of Object.entries(POI_ATLAS_URLS)) {
-      const image = new Image();
-      images.push(image);
-      image.decoding = "async";
-      image.onload = () => {
-        if (!active) return;
-        poiAtlasesRef.current = { ...poiAtlasesRef.current, [atlasId]: image };
-        setPoiAtlasesReady((count) => count + 1);
-      };
-      image.onerror = () => {
-        if (!active) return;
-        setPoiAtlasesReady((count) => count + 1);
-      };
-      image.src = url;
-    }
+    preloadMapCanvasImages().then((images) => {
+      if (!active) return;
+      atlasRef.current = images.material;
+      poiAtlasesRef.current = images.poi;
+      setAtlasReady(Boolean(images.material));
+      setPoiAtlasesReady(Object.values(images.poi).filter(Boolean).length);
+    });
     return () => {
       active = false;
-      for (const image of images) {
-        image.onload = null;
-        image.onerror = null;
-      }
     };
   }, []);
 

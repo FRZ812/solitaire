@@ -9,17 +9,30 @@ import {
 import {
   ATLAS_3D_BOUNDS,
   ATLAS_3D_FOV_DEG,
-  ATLAS_3D_TERRAIN_STRIDE,
   atlas3dAxialToScene,
   atlas3dCameraFrame,
   atlas3dSceneToAxial,
   atlas3dTerrainHeightAt,
 } from "./worldAtlas3dModel.js";
+import { getWorldAtlas3dRuntime } from "./worldAtlas3dRuntime.js";
 
 const ROUTE_HEIGHT_BIAS = 0.72;
-const WATER_HORIZON_SIZE = 20000;
+// Keep the ocean beneath the entire perspective frustum. Plane geometry has a
+// fixed two-triangle cost, so a horizon-sized surface is no heavier than a
+// continent-sized one and avoids exposing a rectangular edge on tall screens.
+const WATER_PLANE_SIZE = 20_000;
+const MOBILE_RENDER_PIXEL_BUDGET = 900000;
+const DESKTOP_RENDER_PIXEL_BUDGET = 1800000;
 const heightCache = new Map();
 const useAtlas3dLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+function atlasRenderPixelRatio(width, height) {
+  const mobile = width < 720;
+  const dprCap = mobile ? 1.3 : 1.65;
+  const pixelBudget = mobile ? MOBILE_RENDER_PIXEL_BUDGET : DESKTOP_RENDER_PIXEL_BUDGET;
+  const budgetRatio = Math.sqrt(pixelBudget / Math.max(1, width * height));
+  return Math.max(1, Math.min(window.devicePixelRatio || 1, dprCap, budgetRatio));
+}
 
 function cachedHeight(coord, seed) {
   const key = `${seed}|${Math.round(coord.x * 10)},${Math.round(coord.y * 10)}`;
@@ -276,12 +289,15 @@ function createController(THREE, canvas, seed) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.86;
-  const initialPixelRatio = Math.min(window.devicePixelRatio || 1, window.innerWidth < 720 ? 1.35 : 1.8);
+  const initialPixelRatio = atlasRenderPixelRatio(
+    Math.max(1, canvas.clientWidth || window.innerWidth || 1),
+    Math.max(1, canvas.clientHeight || window.innerHeight || 1),
+  );
   renderer.setPixelRatio(initialPixelRatio);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0d2733);
-  scene.fog = new THREE.FogExp2(0x18343d, 0.00018);
+  scene.background = new THREE.Color(0x174452);
+  scene.fog = new THREE.FogExp2(0x214f5a, 0.00014);
   const camera = new THREE.PerspectiveCamera(ATLAS_3D_FOV_DEG, 1, 0.1, 6000);
   const queryCamera = new THREE.PerspectiveCamera(ATLAS_3D_FOV_DEG, 1, 0.1, 6000);
   const raycaster = new THREE.Raycaster();
@@ -294,12 +310,12 @@ function createController(THREE, canvas, seed) {
   fill.position.set(380, 260, -520);
   scene.add(fill);
 
-  const waterGeometry = new THREE.PlaneGeometry(WATER_HORIZON_SIZE, WATER_HORIZON_SIZE);
+  const waterGeometry = new THREE.PlaneGeometry(WATER_PLANE_SIZE, WATER_PLANE_SIZE);
   waterGeometry.rotateX(-Math.PI / 2);
-  const waterMaterial = new THREE.MeshStandardMaterial({
-    color: 0x103d4d,
-    roughness: 0.42,
-    metalness: 0.14,
+  const waterMaterial = new THREE.MeshBasicMaterial({
+    color: 0x318096,
+    side: THREE.DoubleSide,
+    toneMapped: false,
   });
   const water = new THREE.Mesh(waterGeometry, waterMaterial);
   water.position.set(
@@ -307,11 +323,13 @@ function createController(THREE, canvas, seed) {
     -1.55,
     (ATLAS_3D_BOUNDS.zmin + ATLAS_3D_BOUNDS.zmax) / 2,
   );
+  water.name = "atlas-sea";
   scene.add(water);
 
   let terrain = null;
   let vegetation = null;
-  let routes = createRouteGroup(THREE, seed, null);
+  let routes = new THREE.Group();
+  routes.name = "atlas-routes";
   let journey = new THREE.Group();
   let seenTrail = new THREE.Group();
   let renderWidth = 0;
@@ -342,7 +360,7 @@ function createController(THREE, canvas, seed) {
   function updateCamera(modelCamera, viewport) {
     const widthPx = Math.max(1, viewport.width);
     const heightPx = Math.max(1, viewport.height);
-    const nextPixelRatio = Math.min(window.devicePixelRatio || 1, widthPx < 720 ? 1.35 : 1.8);
+    const nextPixelRatio = atlasRenderPixelRatio(widthPx, heightPx);
     const sizeChanged = widthPx !== renderWidth || heightPx !== renderHeight;
     const pixelRatioChanged = nextPixelRatio !== renderPixelRatio;
     if (pixelRatioChanged) {
@@ -358,7 +376,7 @@ function createController(THREE, canvas, seed) {
     render();
   }
 
-  function setTerrain(data) {
+  function setTerrain(data, renderNow = true) {
     if (terrain) {
       scene.remove(terrain);
       disposeObject(terrain);
@@ -372,14 +390,12 @@ function createController(THREE, canvas, seed) {
     geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
     geometry.setAttribute("color", new THREE.BufferAttribute(data.colors, 3));
     geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
-    geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     const material = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.96,
       metalness: 0,
       flatShading: true,
-      side: THREE.DoubleSide,
     });
     terrain = new THREE.Mesh(geometry, material);
     terrain.name = "atlas-terrain";
@@ -421,32 +437,32 @@ function createController(THREE, canvas, seed) {
       vegetation.add(trunks, canopies);
     }
     scene.add(vegetation);
-    render();
+    if (renderNow) render();
   }
 
-  function updateRoutes(focusedRealmId) {
+  function updateRoutes(focusedRealmId, renderNow = true) {
     scene.remove(routes);
     disposeObject(routes);
     routes = createRouteGroup(THREE, seed, focusedRealmId);
     scene.add(routes);
-    render();
+    if (renderNow) render();
   }
 
-  function updateJourney(nextJourney, breaks) {
+  function updateJourney(nextJourney, breaks, renderNow = true) {
     scene.remove(journey);
     disposeObject(journey);
     journey = createJourneyGroup(THREE, seed, nextJourney, breaks);
     scene.add(journey);
-    render();
+    if (renderNow) render();
   }
 
-  function updateSeen(nextSeenKeys) {
+  function updateSeen(nextSeenKeys, renderNow = true) {
     scene.remove(seenTrail);
     disposeObject(seenTrail);
     seenTrail = createSeenTrail(THREE, nextSeenKeys, seed);
     scene.add(seenTrail);
     canvas.dataset.atlasSeenPoints = String(nextSeenKeys?.length || 0);
-    render();
+    if (renderNow) render();
   }
 
   function pick(point, viewport, modelCamera = null, includeWater = false) {
@@ -487,14 +503,14 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   journeyBreaks = [],
   seenKeys = [],
   onReady,
-  onFallback,
+  onError,
 }, ref) {
   const canvasRef = useRef(null);
   const controllerRef = useRef(null);
   const cameraRef = useRef(camera);
   const viewportRef = useRef(viewport);
   const readyRef = useRef(onReady);
-  const fallbackRef = useRef(onFallback);
+  const errorRef = useRef(onError);
   const focusRef = useRef(focusedRealmId);
   const journeyRef = useRef(journey);
   const breaksRef = useRef(journeyBreaks);
@@ -503,7 +519,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   cameraRef.current = camera;
   viewportRef.current = viewport;
   readyRef.current = onReady;
-  fallbackRef.current = onFallback;
+  errorRef.current = onError;
   focusRef.current = focusedRealmId;
   journeyRef.current = journey;
   breaksRef.current = journeyBreaks;
@@ -520,7 +536,6 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
 
   useEffect(() => {
     let disposed = false;
-    let worker = null;
     let controller = null;
     let contextLost = false;
     let terrainReady = false;
@@ -532,7 +547,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
     const handleLost = (event) => {
       event.preventDefault();
       contextLost = true;
-      fallbackRef.current?.("The 3D map paused after its graphics context was lost.");
+      errorRef.current?.("The graphics context was interrupted. The atlas will resume when it is restored.");
     };
     const handleRestored = () => {
       if (restoreFrame) cancelAnimationFrame(restoreFrame);
@@ -547,54 +562,32 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
 
     (async () => {
       try {
-        const THREE = await import("three");
+        const { THREE, terrain } = await getWorldAtlas3dRuntime(seed);
         if (disposed) return;
         controller = createController(THREE, canvas, seed);
         // Three registers its own context restoration handlers during renderer
-        // construction. Register ours afterward so the fallback is hidden only
-        // after Three has recreated GPU resources and a fresh frame is drawn.
+        // construction. Register ours afterward so readiness returns only after
+        // Three has recreated GPU resources and drawn a fresh frame.
         canvas.addEventListener("webglcontextlost", handleLost, false);
         canvas.addEventListener("webglcontextrestored", handleRestored, false);
         listenersAttached = true;
         controllerRef.current = controller;
+        // Static and dynamic geometry are attached without presenting partial
+        // frames. The camera update below publishes one complete first frame.
+        controller.setTerrain(terrain, false);
+        controller.updateRoutes(focusRef.current, false);
+        controller.updateJourney(journeyRef.current, breaksRef.current, false);
+        controller.updateSeen(seenRef.current, false);
+        terrainReady = true;
         controller.updateCamera(cameraRef.current, viewportRef.current);
-        controller.updateRoutes(focusRef.current);
-        controller.updateJourney(journeyRef.current, breaksRef.current);
-        controller.updateSeen(seenRef.current);
-
-        const publishTerrain = (terrain) => {
-          if (disposed) return;
-          controller.setTerrain(terrain);
-          terrainReady = true;
-          controller.updateCamera(cameraRef.current, viewportRef.current);
-          if (!contextLost) readyRef.current?.();
-        };
-
-        if (typeof Worker !== "undefined") {
-          worker = new Worker(new URL("./worldAtlasTerrain.worker.js", import.meta.url), { type: "module" });
-          worker.onmessage = (event) => {
-            const completedWorker = worker;
-            worker = null;
-            completedWorker?.terminate();
-            publishTerrain(event.data);
-          };
-          worker.onerror = () => {
-            worker?.terminate();
-            worker = null;
-            if (!disposed) fallbackRef.current?.("The 3D terrain worker could not finish; using the compatible chart.");
-          };
-          worker.postMessage({ seed, stride: ATLAS_3D_TERRAIN_STRIDE });
-        } else {
-          fallbackRef.current?.("This browser cannot prepare 3D terrain in the background; using the compatible chart.");
-        }
+        if (!contextLost) readyRef.current?.();
       } catch (error) {
-        if (!disposed) fallbackRef.current?.(error?.message || "The 3D map could not start.");
+        if (!disposed) errorRef.current?.(error?.message || "The 3D atlas could not start.");
       }
     })();
 
     return () => {
       disposed = true;
-      worker?.terminate();
       if (restoreFrame) cancelAnimationFrame(restoreFrame);
       controllerRef.current = null;
       controller?.dispose();

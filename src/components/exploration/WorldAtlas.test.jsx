@@ -12,8 +12,6 @@ import { pathMinutes } from "../../engine/world.js";
 import {
   WorldAtlas,
   atlasKeyboardShortcutAllowed,
-  atlasRasterCoversViewport,
-  atlasRasterTransform,
   atlasSelectionClickAllowed,
   atlasWheelZoomAllowed,
   atlasWheelZoomFactor,
@@ -21,25 +19,16 @@ import {
 import {
   ATLAS_LANDMARKS,
   ATLAS_LAYERS,
-  ATLAS_MAX_ZOOM,
-  atlasFitZoom,
   atlasLandmarkLayer,
   atlasLandmarkTypeLabel,
   atlasMarkerVisible,
   atlasRoutesForLandmark,
-  atlasScreenToWorld,
-  atlasWorldToScreen,
-  axialRound,
-  clampAtlasCamera,
   formatTravelDuration,
   journeyWaypoints,
   landmarkKnowledge,
   markerZoomTier,
   summarizeAtlasJourney,
-  zoomAtlasCamera,
 } from "./worldAtlasModel.js";
-
-const VIEWPORT = { width: 960, height: 540 };
 
 describe("atlas survey sampler", () => {
   it("stays terrain-identical to the full continental sample", () => {
@@ -64,37 +53,7 @@ describe("atlas survey sampler", () => {
   });
 });
 
-describe("atlas camera", () => {
-  it("keeps zoom between continent fit and the local maximum", () => {
-    const fit = atlasFitZoom(VIEWPORT);
-    expect(clampAtlasCamera({ x: 0, y: 0, zoom: 0.001 }, VIEWPORT).zoom).toBeCloseTo(fit, 5);
-    expect(clampAtlasCamera({ x: 0, y: 0, zoom: 999 }, VIEWPORT).zoom).toBe(ATLAS_MAX_ZOOM);
-  });
-
-  it("round-trips world and screen coordinates", () => {
-    const camera = clampAtlasCamera({ x: 10, y: -30, zoom: 4 }, VIEWPORT);
-    const coord = { x: 55, y: 10 };
-    const screen = atlasWorldToScreen(camera, VIEWPORT, coord);
-    const back = axialRound(...Object.values(atlasScreenToWorld(camera, VIEWPORT, screen)));
-    expect(back).toEqual(coord);
-  });
-
-  it("zooms toward an anchor so the ground under the cursor stays put", () => {
-    const camera = clampAtlasCamera({ x: 0, y: 0, zoom: 3 }, VIEWPORT);
-    const anchor = { x: 300, y: 200 };
-    const before = atlasScreenToWorld(camera, VIEWPORT, anchor);
-    const zoomed = zoomAtlasCamera(camera, VIEWPORT, 1.5, anchor);
-    const after = atlasScreenToWorld(zoomed, VIEWPORT, anchor);
-    expect(after.x).toBeCloseTo(before.x, 4);
-    expect(after.y).toBeCloseTo(before.y, 4);
-  });
-
-  it("clamps the camera center to the charted continent", () => {
-    const camera = clampAtlasCamera({ x: 99999, y: -99999, zoom: 6 }, VIEWPORT);
-    expect(camera.x).toBeLessThanOrEqual(1200);
-    expect(camera.y).toBeGreaterThanOrEqual(-800);
-  });
-
+describe("atlas interaction helpers", () => {
   it("turns smooth wheel deltas into proportional zoom instead of a full step per event", () => {
     expect(atlasWheelZoomFactor(-100)).toBeCloseTo(1.22, 6);
     expect(atlasWheelZoomFactor(100)).toBeCloseTo(1 / 1.22, 6);
@@ -106,25 +65,6 @@ describe("atlas camera", () => {
   it("leaves wheel events from atlas UI chrome to their own scrollers", () => {
     expect(atlasWheelZoomAllowed({ closest: () => ({}) })).toBe(false);
     expect(atlasWheelZoomAllowed({ closest: () => null })).toBe(true);
-  });
-
-  it("keeps the completed terrain frame aligned while a replacement is painting", () => {
-    const rendered = { x: 0, y: 0, zoom: 4 };
-    expect(atlasRasterTransform({ x: -10, y: 5, zoom: 4 }, rendered, VIEWPORT))
-      .toBe("matrix(1, 0, 0, 1, 40, -20)");
-    expect(atlasRasterTransform({ x: 0, y: 0, zoom: 8 }, rendered, VIEWPORT))
-      .toBe("matrix(2, 0, 0, 2, -480, -270)");
-  });
-
-  it("refreshes before an overscanned terrain frame can expose a blank edge", () => {
-    const plane = { width: 960, height: 540 };
-    const overscan = 128;
-    const raster = { width: plane.width + overscan * 2, height: plane.height + overscan * 2 };
-    const rendered = { x: 0, y: 0, zoom: 4 };
-    expect(atlasRasterCoversViewport(rendered, rendered, raster, plane, overscan, 48)).toBe(true);
-    expect(atlasRasterCoversViewport({ x: 25, y: 0, zoom: 4 }, rendered, raster, plane, overscan, 48)).toBe(false);
-    expect(atlasRasterCoversViewport({ x: 0, y: 0, zoom: 2 }, rendered, raster, plane, overscan)).toBe(false);
-    expect(atlasRasterCoversViewport({ x: 8, y: 0, zoom: 3.2 }, rendered, raster, plane, overscan)).toBe(false);
   });
 
   it("blocks a marker's pointer click after map movement without blocking keyboard activation", () => {
@@ -230,10 +170,16 @@ describe("world atlas component", () => {
     expect(html).toContain(`>${CONTINENT.name}</h3>`);
     expect(html).toContain('role="application"');
     expect(html).toContain("Arrow keys pan");
-    // The atlas is a focused flat chart with no decorative perspective mode.
+    // The atlas has one permanent 3D renderer and never mounts the retired
+    // raster/SVG chart while its terrain is preparing.
     expect(html).toContain('class="world-atlas"');
-    expect(html).toContain('class="world-atlas__plane"');
+    expect(html).toContain('class="world-atlas__plane is-3d"');
     expect(html).toContain('class="world-atlas__webgl"');
+    expect(html).toContain('class="world-atlas__scene-status"');
+    expect(html).toContain("Preparing persistent terrain");
+    expect(html).not.toContain('class="world-atlas__canvas"');
+    expect(html).not.toContain('class="world-atlas__vector"');
+    expect(html).not.toContain('class="world-atlas__coastline"');
     expect(html).not.toContain("Switch to the flat chart view");
     expect(html).not.toContain("Switch to the tabletop 3D view");
     expect(html).not.toContain('class="world-atlas__dimension"');
@@ -243,7 +189,7 @@ describe("world atlas component", () => {
     expect(html).toContain('aria-controls="world-atlas-filters"');
     expect(html).toContain(">Map filters</span>");
     expect(html).toContain("Center map on the party");
-    expect(html).toContain('aria-label="Fit the whole continent">116%</button>');
+    expect(html).toContain('aria-label="Fit the whole continent"');
     expect(html.match(/data-atlas-wheel-ignore="true"/g)).toHaveLength(3);
     expect(html).not.toContain('class="world-atlas__placecard');
     expect(html).not.toContain('class="world-atlas__compass-rose"');
@@ -275,7 +221,7 @@ describe("world atlas component", () => {
     expect(html).toContain("The Crown Road");
   });
 
-  it("lays a long journey out as a current march plus a muted continuation", () => {
+  it("passes a long journey to the 3D scene without resurrecting SVG route layers", () => {
     const state = makeInitialState();
     const tellmar = ATLAS_LANDMARKS.find((landmark) => landmark.id === "tellmar");
     const html = renderToStaticMarkup(
@@ -287,9 +233,10 @@ describe("world atlas component", () => {
       />,
     );
 
-    expect(html).toContain('class="world-atlas__journey-continuation"');
-    expect(html).toContain('class="world-atlas__journey"');
-    expect(html).toContain('class="world-atlas__leg-stop"');
+    expect(html).not.toContain('class="world-atlas__journey-continuation"');
+    expect(html).not.toContain('class="world-atlas__journey"');
+    expect(html).not.toContain('class="world-atlas__leg-stop"');
+    expect(html).not.toContain('class="world-atlas__vector"');
     expect(html).toContain("Route preview");
     expect(html).toContain("Set destination");
   });

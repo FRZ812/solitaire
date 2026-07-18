@@ -4,12 +4,12 @@ import { surveyAtlas } from "../../engine/world-generation.js";
 export const ATLAS_3D_FOV_DEG = 34;
 export const ATLAS_3D_PITCH_DEG = 38;
 export const ATLAS_3D_TERRAIN_STRIDE = 6;
+export const ATLAS_3D_CAMERA_COAST_INSET = ATLAS_3D_TERRAIN_STRIDE;
 export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v1";
+export const ATLAS_3D_MAX_ZOOM = 26;
 
 const DEG_TO_RAD = Math.PI / 180;
 const SQRT_THREE_OVER_TWO = Math.sqrt(3) / 2;
-const LEGACY_CAMERA_PITCH = 0.76;
-const CAMERA_MAX_ZOOM = 26;
 const FOV_TAN = Math.tan((ATLAS_3D_FOV_DEG * DEG_TO_RAD) / 2);
 const PITCH = ATLAS_3D_PITCH_DEG * DEG_TO_RAD;
 const PITCH_SIN = Math.sin(PITCH);
@@ -33,6 +33,7 @@ const TERRAIN_COLORS = Object.freeze({
   water: 0x173e50,
 });
 const HEIGHT_CACHE = new Map();
+const TERRAIN_GRID_CACHE = new Map();
 const FIT_ZOOM_CACHE = new Map();
 let lastCameraFrameKey = "";
 let lastCameraFrame = null;
@@ -41,45 +42,38 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-// The surrounding atlas UI still stores its center in the established 2D
-// camera coordinates so search, fit, and fallback share one state object.
-// Keep this tiny bridge local so the terrain worker never imports UI/game
-// modules (or their browser-only Supabase singleton).
-function legacyProjectAxial(x, y) {
-  return { x: x + y * 0.5, y: y * SQRT_THREE_OVER_TWO * LEGACY_CAMERA_PITCH };
-}
-
-const LEGACY_PROJECTED_BOUNDS = (() => {
-  const corners = [
-    legacyProjectAxial(CONTINENT.bounds.xmin, CONTINENT.bounds.ymin),
-    legacyProjectAxial(CONTINENT.bounds.xmin, CONTINENT.bounds.ymax),
-    legacyProjectAxial(CONTINENT.bounds.xmax, CONTINENT.bounds.ymin),
-    legacyProjectAxial(CONTINENT.bounds.xmax, CONTINENT.bounds.ymax),
-  ];
-  return {
-    xmin: Math.min(...corners.map((point) => point.x)),
-    xmax: Math.max(...corners.map((point) => point.x)),
-    ymin: Math.min(...corners.map((point) => point.y)),
-    ymax: Math.max(...corners.map((point) => point.y)),
-  };
-})();
-
-function clampAxis(center, viewLength, min, max) {
-  if (max - min <= viewLength) return (min + max) / 2;
-  const half = viewLength / 2;
-  return Math.min(max - half, Math.max(min + half, center));
+function clampCenter(center, footprint, boundMin, boundMax) {
+  // Keep the camera's zoom-scaled ground footprint inside the authoritative
+  // axial domain. Clamping axial axes independently avoids the empty corners
+  // introduced by bounding the sheared scene projection as a rectangle.
+  const paddedFootprint = footprint + ATLAS_3D_CAMERA_COAST_INSET * 2;
+  if (paddedFootprint >= boundMax - boundMin) return (boundMin + boundMax) / 2;
+  const half = paddedFootprint / 2;
+  return clamp(center, boundMin + half, boundMax - half);
 }
 
 function clampCamera(camera, viewport, seed = CONTINENT.seed) {
   const fit = atlas3dFitZoom(viewport, seed);
-  const zoom = clamp(camera.zoom, fit, CAMERA_MAX_ZOOM);
+  const zoom = clamp(camera.zoom, fit, ATLAS_3D_MAX_ZOOM);
   const visibleFraction = clamp(fit / zoom, 0, 1);
-  const viewWidth = (LEGACY_PROJECTED_BOUNDS.xmax - LEGACY_PROJECTED_BOUNDS.xmin) * visibleFraction;
-  const viewHeight = (LEGACY_PROJECTED_BOUNDS.ymax - LEGACY_PROJECTED_BOUNDS.ymin) * visibleFraction;
+  const footprint = {
+    x: (CONTINENT.bounds.xmax - CONTINENT.bounds.xmin) * visibleFraction,
+    y: (CONTINENT.bounds.ymax - CONTINENT.bounds.ymin) * visibleFraction,
+  };
   const clamped = {
     zoom,
-    x: clampAxis(camera.x, viewWidth, LEGACY_PROJECTED_BOUNDS.xmin, LEGACY_PROJECTED_BOUNDS.xmax),
-    y: clampAxis(camera.y, viewHeight, LEGACY_PROJECTED_BOUNDS.ymin, LEGACY_PROJECTED_BOUNDS.ymax),
+    x: clampCenter(
+      camera.x,
+      footprint.x,
+      CONTINENT.bounds.xmin,
+      CONTINENT.bounds.xmax,
+    ),
+    y: clampCenter(
+      camera.y,
+      footprint.y,
+      CONTINENT.bounds.ymin,
+      CONTINENT.bounds.ymax,
+    ),
   };
   return {
     ...clamped,
@@ -95,8 +89,8 @@ export function atlas3dFitZoom(viewport, seed = CONTINENT.seed) {
   const key = `${seed}|${width}x${height}`;
   if (FIT_ZOOM_CACHE.has(key)) return FIT_ZOOM_CACHE.get(key);
   const center = {
-    x: (LEGACY_PROJECTED_BOUNDS.xmin + LEGACY_PROJECTED_BOUNDS.xmax) / 2,
-    y: (LEGACY_PROJECTED_BOUNDS.ymin + LEGACY_PROJECTED_BOUNDS.ymax) / 2,
+    x: (CONTINENT.bounds.xmin + CONTINENT.bounds.xmax) / 2,
+    y: (CONTINENT.bounds.ymin + CONTINENT.bounds.ymax) / 2,
   };
   const corners = [
     { x: CONTINENT.bounds.xmin, y: CONTINENT.bounds.ymin },
@@ -119,8 +113,8 @@ export function atlas3dFitZoom(viewport, seed = CONTINENT.seed) {
   };
   let lower = 0.03;
   let upper = 1;
-  while (upper < CAMERA_MAX_ZOOM && fits(upper)) upper *= 2;
-  upper = Math.min(CAMERA_MAX_ZOOM, upper);
+  while (upper < ATLAS_3D_MAX_ZOOM && fits(upper)) upper *= 2;
+  upper = Math.min(ATLAS_3D_MAX_ZOOM, upper);
   for (let pass = 0; pass < 34; pass += 1) {
     const middle = (lower + upper) / 2;
     if (fits(middle)) lower = middle;
@@ -139,8 +133,8 @@ export function clampAtlas3dCamera(camera, viewport, seed = CONTINENT.seed) {
 export function fitAtlas3dCamera(camera, viewport, seed = CONTINENT.seed) {
   const fitted = {
     ...camera,
-    x: (LEGACY_PROJECTED_BOUNDS.xmin + LEGACY_PROJECTED_BOUNDS.xmax) / 2,
-    y: (LEGACY_PROJECTED_BOUNDS.ymin + LEGACY_PROJECTED_BOUNDS.ymax) / 2,
+    x: (CONTINENT.bounds.xmin + CONTINENT.bounds.xmax) / 2,
+    y: (CONTINENT.bounds.ymin + CONTINENT.bounds.ymax) / 2,
     zoom: atlas3dFitZoom(viewport, seed),
   };
   return clampCamera({
@@ -217,7 +211,37 @@ function axisCell(value, min, max, stride) {
   const cell = Math.min(cellCount - 1, Math.floor((clamped - min) / stride));
   const lower = min + cell * stride;
   const upper = Math.min(max, lower + stride);
-  return { lower, upper, mix: upper === lower ? 0 : (clamped - lower) / (upper - lower) };
+  return { index: cell, lower, upper, mix: upper === lower ? 0 : (clamped - lower) / (upper - lower) };
+}
+
+function terrainGridKey(seed, stride) {
+  return `${seed}|${stride}`;
+}
+
+export function registerAtlas3dTerrainData(data) {
+  const vertexCount = data?.columns * data?.rows;
+  const indexCount = (data?.columns - 1) * (data?.rows - 1) * 6;
+  if (!data
+    || data.version !== ATLAS_3D_RENDER_VERSION
+    || (typeof data.seed !== "string" && !Number.isFinite(data.seed))
+    || !Number.isFinite(data.stride)
+    || data.stride <= 0
+    || !Number.isInteger(data.columns)
+    || !Number.isInteger(data.rows)
+    || data.columns < 2
+    || data.rows < 2
+    || !(data.positions instanceof Float32Array)
+    || data.positions.length !== vertexCount * 3
+    || !(data.colors instanceof Float32Array)
+    || data.colors.length !== vertexCount * 3
+    || !(data.indices instanceof Uint32Array)
+    || data.indices.length !== indexCount
+    || !(data.trees instanceof Float32Array)
+    || data.trees.length % 6 !== 0) return false;
+  const key = terrainGridKey(data.seed, data.stride);
+  TERRAIN_GRID_CACHE.set(key, data);
+  if (TERRAIN_GRID_CACHE.size > 4) TERRAIN_GRID_CACHE.delete(TERRAIN_GRID_CACHE.keys().next().value);
+  return true;
 }
 
 // Routes, POIs, labels, and vegetation must sit on the rendered mesh rather
@@ -231,10 +255,24 @@ export function atlas3dTerrainHeightAt(
 ) {
   const xCell = axisCell(coord.x, CONTINENT.bounds.xmin, CONTINENT.bounds.xmax, stride);
   const yCell = axisCell(coord.y, CONTINENT.bounds.ymin, CONTINENT.bounds.ymax, stride);
-  const a = sampledTerrainHeight({ x: xCell.lower, y: yCell.lower }, seed);
-  const b = sampledTerrainHeight({ x: xCell.upper, y: yCell.lower }, seed);
-  const c = sampledTerrainHeight({ x: xCell.lower, y: yCell.upper }, seed);
-  const d = sampledTerrainHeight({ x: xCell.upper, y: yCell.upper }, seed);
+  const grid = TERRAIN_GRID_CACHE.get(terrainGridKey(seed, stride));
+  const heightAt = grid
+    ? (column, row) => grid.positions[(row * grid.columns + column) * 3 + 1]
+    : null;
+  const nextColumn = Math.min((grid?.columns || Infinity) - 1, xCell.index + 1);
+  const nextRow = Math.min((grid?.rows || Infinity) - 1, yCell.index + 1);
+  const a = heightAt
+    ? heightAt(xCell.index, yCell.index)
+    : sampledTerrainHeight({ x: xCell.lower, y: yCell.lower }, seed);
+  const b = heightAt
+    ? heightAt(nextColumn, yCell.index)
+    : sampledTerrainHeight({ x: xCell.upper, y: yCell.lower }, seed);
+  const c = heightAt
+    ? heightAt(xCell.index, nextRow)
+    : sampledTerrainHeight({ x: xCell.lower, y: yCell.upper }, seed);
+  const d = heightAt
+    ? heightAt(nextColumn, nextRow)
+    : sampledTerrainHeight({ x: xCell.upper, y: yCell.upper }, seed);
   const u = xCell.mix;
   const v = yCell.mix;
   return u + v <= 1
@@ -323,7 +361,7 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
     }
   }
 
-  return {
+  const terrain = {
     version: ATLAS_3D_RENDER_VERSION,
     seed,
     stride,
@@ -334,21 +372,21 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
     indices,
     trees: new Float32Array(trees),
   };
+  registerAtlas3dTerrainData(terrain);
+  return terrain;
 }
 
 function cameraTarget(camera) {
-  const axialY = camera.y / (SQRT_THREE_OVER_TWO * LEGACY_CAMERA_PITCH);
-  return atlas3dAxialToScene({ x: camera.x - axialY * 0.5, y: axialY });
+  return atlas3dAxialToScene(camera);
 }
 
 function cameraTerrainHeight(camera, seed = CONTINENT.seed) {
-  return atlas3dTerrainHeightAt(atlas3dSceneToAxial(cameraTarget(camera)), seed);
+  return atlas3dTerrainHeightAt(camera, seed);
 }
 
 function cameraForTarget(camera, target, viewport, seed = CONTINENT.seed) {
   const axial = atlas3dSceneToAxial(target);
-  const projected = legacyProjectAxial(axial.x, axial.y);
-  return clampCamera({ ...camera, x: projected.x, y: projected.y }, viewport, seed);
+  return clampCamera({ ...camera, x: axial.x, y: axial.y }, viewport, seed);
 }
 
 export function centerAtlas3dCamera(camera, viewport, coord, zoom = camera.zoom, seed = CONTINENT.seed) {
@@ -681,7 +719,7 @@ export function zoomAtlas3dCamera(
   pickGround = null,
 ) {
   const fit = atlas3dFitZoom(viewport, seed);
-  const zoom = clamp(camera.zoom * factor, fit, CAMERA_MAX_ZOOM);
+  const zoom = clamp(camera.zoom * factor, fit, ATLAS_3D_MAX_ZOOM);
   if (zoom === camera.zoom) return clampCamera(camera, viewport, seed);
   const point = anchor || { x: viewport.width / 2, y: viewport.height / 2 };
   const before = pickGround?.(camera, point)
