@@ -40,7 +40,6 @@ import {
   buildAtlasLandmarks,
   centerAtlasCamera,
   clampAtlasCamera,
-  initialAtlasSelection,
   journeyLegBreaks,
   landmarkKnowledge,
   panAtlasCamera,
@@ -84,6 +83,11 @@ const SAMPLE_CACHE = new Map();
 const SAMPLE_CACHE_LIMIT = 300000;
 const INITIAL_ATLAS_VIEWPORT = Object.freeze({ width: 960, height: 540 });
 const ATLAS_OPEN_ZOOM_RATIO = 1.16;
+const ATLAS_WHEEL_ZOOM_STEP = 1.22;
+const ATLAS_WHEEL_STEP_PIXELS = 100;
+const ATLAS_WHEEL_MAX_FRAME_DELTA = 240;
+const ATLAS_WHEEL_REFINE_DELAY = 110;
+const ATLAS_WHEEL_IGNORE_SELECTOR = "[data-atlas-wheel-ignore]";
 
 function cachedSurvey(x, y, seed) {
   const key = `${seed}|${x},${y}`;
@@ -129,6 +133,28 @@ function rasterStep(zoom) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+// Mouse wheels usually report roughly 100 CSS pixels per notch, while smooth
+// trackpads emit a stream of much smaller deltas. Mapping the delta onto the
+// old 1.22x wheel step keeps mouse behavior familiar without making every tiny
+// trackpad event a full zoom step.
+export function atlasWheelZoomFactor(deltaY, deltaMode = 0, pageSize = INITIAL_ATLAS_VIEWPORT.height) {
+  const pixels = deltaY * (deltaMode === 1 ? 32 : deltaMode === 2 ? Math.max(1, pageSize) : 1);
+  const bounded = clamp(pixels, -ATLAS_WHEEL_MAX_FRAME_DELTA, ATLAS_WHEEL_MAX_FRAME_DELTA);
+  return ATLAS_WHEEL_ZOOM_STEP ** (-bounded / ATLAS_WHEEL_STEP_PIXELS);
+}
+
+// The search, filters, map key, and place dossier live inside the stage. Their
+// wheel events bubble to the stage too, but scrolling map UI must never zoom
+// and repaint the terrain underneath it.
+export function atlasWheelZoomAllowed(target) {
+  const element = target?.nodeType === 1 ? target : target?.parentElement || target;
+  return !element?.closest?.(ATLAS_WHEEL_IGNORE_SELECTOR);
+}
+
+function sameCamera(a, b) {
+  return a.x === b.x && a.y === b.y && a.zoom === b.zoom;
 }
 
 function coordinateNoise(x, y) {
@@ -297,7 +323,7 @@ function svgPoints(camera, viewport, waypoints) {
 // until the next preview is ready, so cancelled camera passes never strand the
 // player on the deep-sea clear. The party's remembered trail (seen tiles) is
 // drawn over the finished raster.
-function paintAtlas({ canvas, camera, viewport, seed, seenKeys, token }) {
+function paintAtlas({ canvas, camera, viewport, seed, seenKeys, token, refineDelay = 0 }) {
   const ratio = typeof window !== "undefined"
     ? Math.max(1, Math.min(2, window.devicePixelRatio || 1))
     : 1;
@@ -452,7 +478,14 @@ function paintAtlas({ canvas, camera, viewport, seed, seenKeys, token }) {
     context.fillRect(0, 0, viewport.width, viewport.height);
     present();
   };
-  token.frame = requestAnimationFrame(paintChunk);
+  if (refineDelay > 0 && typeof setTimeout !== "undefined") {
+    token.timeout = setTimeout(() => {
+      token.timeout = 0;
+      if (!token.cancelled) token.frame = requestAnimationFrame(paintChunk);
+    }, refineDelay);
+  } else {
+    token.frame = requestAnimationFrame(paintChunk);
+  }
 }
 
 const TILT_STORAGE_KEY = "solitaire-atlas-view";
@@ -470,13 +503,14 @@ function stopStagePointer(event) {
   event.stopPropagation();
 }
 
-export function WorldAtlas({ state, origin, onPick }) {
+export function WorldAtlas({ state, origin, onPick, initialSelection = null }) {
   const seed = state?.world?.seed || CONTINENT.seed;
   const partyCoord = origin || state?.world?.currentTile || CONTINENT.start.coord;
   const stageRef = useRef(null);
   const canvasRef = useRef(null);
   const searchInputRef = useRef(null);
   const gestureRef = useRef({ pointers: new Map(), moved: false, dragDistance: 0, pinchDistance: 0 });
+  const wheelRef = useRef({ frame: 0, deltaY: 0, anchor: null, lastAt: null });
   const didInitialFitRef = useRef(false);
   const [viewport, setViewport] = useState(INITIAL_ATLAS_VIEWPORT);
   const [stageMeasured, setStageMeasured] = useState(false);
@@ -504,8 +538,11 @@ export function WorldAtlas({ state, origin, onPick }) {
   });
   const [visibleLayers, setVisibleLayers] = useState(() => new Set(ATLAS_LAYERS.map((layer) => layer.id)));
   const [focusedRealmId, setFocusedRealmId] = useState(null);
-  const [selection, setSelection] = useState(() => initialAtlasSelection(partyCoord));
+  // The party marker already communicates the opening position. Keep the map
+  // clear until the player intentionally asks about a destination.
+  const [selection, setSelection] = useState(initialSelection);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [detailExpanded, setDetailExpanded] = useState(false);
 
@@ -516,12 +553,14 @@ export function WorldAtlas({ state, origin, onPick }) {
   const questMarkers = useMemo(() => atlasQuestMarkers(state), [state]);
   const trackedCharacter = useMemo(() => trackedCharacterResult(state), [state]);
 
-  const selectedLandmark = selection.kind === "landmark"
+  const selectedLandmark = selection?.kind === "landmark"
     ? landmarks.find((landmark) => landmark.id === selection.id) || null
     : null;
-  const selectedCoord = selection.kind === "landmark"
+  const selectedCoord = selection?.kind === "landmark"
     ? selectedLandmark?.coord || null
-    : { x: selection.x, y: selection.y };
+    : selection
+    ? { x: selection.x, y: selection.y }
+    : null;
   const selectedSurvey = useMemo(
     () => (selectedCoord ? surveyAtlas(selectedCoord.x, selectedCoord.y, seed) : null),
     [selectedCoord?.x, selectedCoord?.y, seed],
@@ -530,7 +569,11 @@ export function WorldAtlas({ state, origin, onPick }) {
     () => (selectedCoord && state ? summarizeAtlasJourney(state, selectedCoord) : null),
     [state, selectedCoord?.x, selectedCoord?.y],
   );
-  const selectionKey = selection.kind === "landmark" ? selection.id : `${selection.x},${selection.y}`;
+  const selectionKey = !selection
+    ? ""
+    : selection.kind === "landmark"
+    ? selection.id
+    : `${selection.x},${selection.y}`;
 
   // Measure the stage.
   useEffect(() => {
@@ -585,16 +628,20 @@ export function WorldAtlas({ state, origin, onPick }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!stageMeasured || !canvas || typeof requestAnimationFrame === "undefined") return undefined;
-    const token = { cancelled: false, frame: 0 };
+    const token = { cancelled: false, frame: 0, timeout: 0 };
+    const now = Date.now();
+    const wheelIdleFor = wheelRef.current.lastAt == null ? Infinity : now - wheelRef.current.lastAt;
+    const refineDelay = Math.max(0, ATLAS_WHEEL_REFINE_DELAY - wheelIdleFor);
     // Defer the start one frame so measurement and initial-fit renders can
     // coalesce without clearing or beginning a painter that will be cancelled.
     token.frame = requestAnimationFrame(() => {
       token.frame = 0;
-      if (!token.cancelled) paintAtlas({ canvas, camera, viewport: planeViewport, seed, seenKeys, token });
+      if (!token.cancelled) paintAtlas({ canvas, camera, viewport: planeViewport, seed, seenKeys, token, refineDelay });
     });
     return () => {
       token.cancelled = true;
       if (token.frame) cancelAnimationFrame(token.frame);
+      if (token.timeout) clearTimeout(token.timeout);
     };
   }, [camera, planeViewport, seed, seenKeys, stageMeasured]);
 
@@ -604,6 +651,7 @@ export function WorldAtlas({ state, origin, onPick }) {
     const stage = stageRef.current;
     if (!stage) return undefined;
     const onWheel = (event) => {
+      if (!atlasWheelZoomAllowed(event.target) || event.deltaY === 0) return;
       event.preventDefault();
       const bounds = stage.getBoundingClientRect();
       const anchor = tiltScreenToPlane(
@@ -612,10 +660,33 @@ export function WorldAtlas({ state, origin, onPick }) {
         planeViewport,
         tilt,
       );
-      setCamera((current) => zoomAtlasCamera(current, planeViewport, event.deltaY < 0 ? 1.22 : 1 / 1.22, anchor));
+      const wheel = wheelRef.current;
+      wheel.deltaY += event.deltaY * (event.deltaMode === 1 ? 32 : event.deltaMode === 2 ? viewport.height : 1);
+      wheel.anchor = anchor;
+      wheel.lastAt = Date.now();
+      if (wheel.frame) return;
+      wheel.frame = requestAnimationFrame(() => {
+        wheel.frame = 0;
+        const deltaY = wheel.deltaY;
+        const nextAnchor = wheel.anchor;
+        wheel.deltaY = 0;
+        wheel.anchor = null;
+        if (deltaY === 0) return;
+        setCamera((current) => {
+          const next = zoomAtlasCamera(current, planeViewport, atlasWheelZoomFactor(deltaY), nextAnchor);
+          return sameCamera(current, next) ? current : next;
+        });
+      });
     };
     stage.addEventListener("wheel", onWheel, { passive: false });
-    return () => stage.removeEventListener("wheel", onWheel);
+    return () => {
+      stage.removeEventListener("wheel", onWheel);
+      const wheel = wheelRef.current;
+      if (wheel.frame) cancelAnimationFrame(wheel.frame);
+      wheel.frame = 0;
+      wheel.deltaY = 0;
+      wheel.anchor = null;
+    };
   }, [viewport, planeViewport, tilted]);
 
   // Pointer math runs in plane coordinates: a stage touch is projected through
@@ -698,6 +769,10 @@ export function WorldAtlas({ state, origin, onPick }) {
     else if (event.key === "-") setCamera((current) => zoomAtlasCamera(current, planeViewport, 1 / 1.25));
     else if (event.key === "0") setCamera((current) => clampAtlasCamera({ ...current, zoom: fit }, planeViewport));
     else if (event.key === "Home") setCamera((current) => centerAtlasCamera(current, planeViewport, partyCoord, Math.max(current.zoom, fit * 3)));
+    else if (event.key === "Escape" && (searchOpen || filtersOpen)) {
+      setSearchOpen(false);
+      setFiltersOpen(false);
+    }
     else return;
     event.preventDefault();
   }
@@ -711,6 +786,7 @@ export function WorldAtlas({ state, origin, onPick }) {
     const capital = landmarks.find((landmark) => landmark.capitalOfRealmId === realm.id || landmark.id === realm.capital.id);
     if (capital) setSelection({ kind: "landmark", id: capital.id });
     setCamera((current) => centerAtlasCamera(current, planeViewport, realm.center, Math.max(fit * 2.1, current.zoom)));
+    setFiltersOpen(false);
   }
 
   function toggleLayer(layerId) {
@@ -774,7 +850,7 @@ export function WorldAtlas({ state, origin, onPick }) {
       || (REALM_BY_ID[landmark.realmId]?.shortName || "").toLowerCase().includes(needle));
     return matches
       .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))
-      .slice(0, 40);
+      .slice(0, needle ? 40 : 8);
   }, [landmarks, query]);
 
   // ---- Derived presentation ----
@@ -838,6 +914,7 @@ export function WorldAtlas({ state, origin, onPick }) {
   const routeSummary = compactList(detailRoutes.map((route) => route.name), 4) || "No charted road";
   const seaLaneSummary = compactList(detailSeaLanes.map((lane) => lane.name), 3);
   const selectionIsParty = selectedCoord && selectedCoord.x === partyCoord.x && selectedCoord.y === partyCoord.y;
+  const activeFilterCount = (focusedRealmId ? 1 : 0) + (ATLAS_LAYERS.length - visibleLayers.size);
 
   return (
     <section
@@ -971,11 +1048,11 @@ export function WorldAtlas({ state, origin, onPick }) {
                   zoomRatio,
                   visibleLayers,
                   focusedRealmId,
-                  selectedLandmarkId: selection.kind === "landmark" ? selection.id : null,
+                  selectedLandmarkId: selection?.kind === "landmark" ? selection.id : null,
                 }) || !!landmark.quest;
                 const screen = atlasWorldToScreen(camera, planeViewport, landmark.coord);
                 const offstage = screen.x < -40 || screen.y < -40 || screen.x > planeViewport.width + 40 || screen.y > planeViewport.height + 40;
-                const selected = selection.kind === "landmark" && selection.id === landmark.id;
+                const selected = selection?.kind === "landmark" && selection.id === landmark.id;
                 const poiIconKey = poiIconKeyForLandmark(landmark);
                 return (
                   <button
@@ -1040,7 +1117,7 @@ export function WorldAtlas({ state, origin, onPick }) {
               })()}
             </div>
 
-            {selection.kind === "point" && (() => {
+            {selection?.kind === "point" && (() => {
               const screen = atlasWorldToScreen(camera, planeViewport, selectedCoord);
               return (
                 <span className="world-atlas__point-pin" style={{ left: `${screen.x}px`, top: `${screen.y}px` }} aria-hidden="true">
@@ -1063,7 +1140,7 @@ export function WorldAtlas({ state, origin, onPick }) {
 
         {tilted && <div className="world-atlas__horizon" aria-hidden="true" />}
 
-        <div className="world-atlas__chrome-top" onPointerDown={stopStagePointer}>
+        <div className="world-atlas__chrome-top" data-atlas-wheel-ignore="true" onPointerDown={stopStagePointer}>
           <div className="world-atlas__topline">
             <div className="world-atlas__title-chip">
               <small>Wayfinder's survey</small>
@@ -1072,39 +1149,94 @@ export function WorldAtlas({ state, origin, onPick }) {
             <button
               type="button"
               className="world-atlas__search-pill"
-              onClick={() => setSearchOpen((open) => !open)}
+              onClick={() => {
+                setSearchOpen((open) => !open);
+                setFiltersOpen(false);
+              }}
               aria-expanded={searchOpen}
               aria-controls="world-atlas-search"
+              aria-label={`Search ${landmarks.length} charted places`}
             >
               <i aria-hidden="true">⌕</i>
-              <span>Search {landmarks.length} charted places</span>
+              <span>Find a place</span>
+            </button>
+            <button
+              type="button"
+              className="world-atlas__filter-pill"
+              onClick={() => {
+                setFiltersOpen((open) => !open);
+                setSearchOpen(false);
+              }}
+              aria-expanded={filtersOpen}
+              aria-controls="world-atlas-filters"
+              aria-label={activeFilterCount > 0 ? `Map filters, ${activeFilterCount} active` : "Map filters"}
+            >
+              <i aria-hidden="true">☷</i>
+              <span>Map filters</span>
+              {activeFilterCount > 0 && <b aria-hidden="true">{activeFilterCount}</b>}
             </button>
           </div>
 
-          <nav className="world-atlas__chips world-atlas__chips--realms" aria-label="Five biome realms">
-            <button type="button" className="is-all-realms" aria-pressed={!focusedRealmId} onClick={() => setFocusedRealmId(null)}>
-              <i aria-hidden="true">◎</i><span>All lands</span>
-            </button>
-            {REALMS.map((realm) => (
-              <button
-                key={realm.id}
-                type="button"
-                className={`is-${realm.id}`}
-                aria-pressed={focusedRealmId === realm.id}
-                onClick={() => inspectRealm(realm)}
-              >
-                <i aria-hidden="true" /><span>{realm.shortName}</span>
-              </button>
-            ))}
-          </nav>
-
-          <div className="world-atlas__chips world-atlas__chips--layers" role="group" aria-label="Atlas marker layers">
-            {ATLAS_LAYERS.map((layer) => (
-              <button key={layer.id} type="button" aria-pressed={visibleLayers.has(layer.id)} onClick={() => toggleLayer(layer.id)}>
-                <i aria-hidden="true">{layer.glyph}</i><span>{layer.label}</span>
-              </button>
-            ))}
-          </div>
+          {filtersOpen && (
+            <aside id="world-atlas-filters" className="world-atlas__filters" aria-label="Map filters">
+              <header>
+                <span><small>Map display</small><b>Choose what earns attention</b></span>
+                <button type="button" onClick={() => setFiltersOpen(false)} aria-label="Close map filters">×</button>
+              </header>
+              <section>
+                <h4>Focus a realm</h4>
+                <nav className="world-atlas__chips world-atlas__chips--realms" aria-label="Five biome realms">
+                  <button
+                    type="button"
+                    className="is-all-realms"
+                    aria-pressed={!focusedRealmId}
+                    onClick={() => {
+                      setFocusedRealmId(null);
+                      setCamera((current) => clampAtlasCamera({ ...current, zoom: fit }, planeViewport));
+                      setFiltersOpen(false);
+                    }}
+                  >
+                    <i aria-hidden="true">◎</i><span>Whole continent</span>
+                  </button>
+                  {REALMS.map((realm) => (
+                    <button
+                      key={realm.id}
+                      type="button"
+                      className={`is-${realm.id}`}
+                      aria-pressed={focusedRealmId === realm.id}
+                      onClick={() => inspectRealm(realm)}
+                      aria-label={`Focus ${realm.shortName}`}
+                    >
+                      <i aria-hidden="true" /><span>{realm.shortName}</span>
+                    </button>
+                  ))}
+                </nav>
+              </section>
+              <section>
+                <h4>Show destinations</h4>
+                <div className="world-atlas__chips world-atlas__chips--layers" role="group" aria-label="Atlas marker layers">
+                  {ATLAS_LAYERS.map((layer) => (
+                    <button key={layer.id} type="button" aria-pressed={visibleLayers.has(layer.id)} onClick={() => toggleLayer(layer.id)}>
+                      <i aria-hidden="true">{layer.glyph}</i><span>{layer.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+              <section className="world-atlas__map-key">
+                <h4>Map key</h4>
+                <div>
+                  <span><i className="is-road" />Great road</span>
+                  <span><i className="is-sea-lane" />Sea passage</span>
+                  <span><i className="is-trail" />Travelled trail</span>
+                  <span><i className="is-journey" />Next leg</span>
+                  <span><i className="is-continuation" />Later legs</span>
+                  <span><i className="is-character" />Tracked character</span>
+                  <span><PoiTierMarker marketTier="royal" size={12} />Royal shop</span>
+                  <span><PoiTierMarker marketTier="mastercraft" size={12} />Mastercraft</span>
+                </div>
+              </section>
+            </aside>
+          )}
 
           {searchOpen && (
             <div id="world-atlas-search" className="world-atlas__search" role="search">
@@ -1148,7 +1280,7 @@ export function WorldAtlas({ state, origin, onPick }) {
           )}
         </div>
 
-        <div className="world-atlas__map-controls" onPointerDown={stopStagePointer}>
+        <div className="world-atlas__map-controls" data-atlas-wheel-ignore="true" onPointerDown={stopStagePointer}>
           <div role="group" aria-label="Map zoom controls">
             <button type="button" onClick={() => setCamera((current) => zoomAtlasCamera(current, planeViewport, 1.4))} disabled={camera.zoom >= ATLAS_MAX_ZOOM * 0.99} aria-label="Zoom map in">+</button>
             <button type="button" onClick={() => setCamera((current) => clampAtlasCamera({ ...current, zoom: fit }, planeViewport))} aria-label="Fit the whole continent">{Math.round(zoomRatio * 100)}%</button>
@@ -1173,29 +1305,12 @@ export function WorldAtlas({ state, origin, onPick }) {
           )}
         </div>
 
-        <div className="world-atlas__compass-rose" aria-hidden="true">
-          <span>N</span><i />
-        </div>
-
-        <div className="world-atlas__chrome-bottom">
+        <div className="world-atlas__chrome-bottom" data-atlas-wheel-ignore="true">
         <div className="world-atlas__foot" onPointerDown={stopStagePointer}>
           <div className="world-atlas__scale" role="img" aria-label={`View spans about ${kmAcross} kilometers; ${hexKilometers} kilometers per travel hex`}>
             <i aria-hidden="true" />
             <span>≈ {kmAcross.toLocaleString()} km across</span>
           </div>
-          <details className="world-atlas__legend">
-            <summary>Legend</summary>
-            <div>
-              <span><i className="is-road" />Great road</span>
-              <span><i className="is-sea-lane" />Sea passage</span>
-              <span><i className="is-trail" />Party trail</span>
-              <span><i className="is-journey" />Planned route</span>
-              <span><i className="is-character" />Tracked character</span>
-              <span><PoiTierMarker marketTier="royal" size={12} />Royal shop</span>
-              <span><PoiTierMarker marketTier="mastercraft" size={12} />Mastercraft</span>
-              <small>{REALMS.length} realms · {Object.keys(REGION_DEFINITIONS).length} named regions · {CONTINENT_ROUTES.length} charted roads · {CONTINENT_SEA_LANES.length} sea lanes · one coast-to-coast world map</small>
-            </div>
-          </details>
         </div>
 
         {selectedCoord && (
@@ -1216,9 +1331,9 @@ export function WorldAtlas({ state, origin, onPick }) {
                 <h4>{detailTitle}</h4>
                 {journey ? (
                   <span className="world-atlas__placecard-journey">
-                    <small>Journey laid out</small>
+                    <small>Route preview</small>
                     <b>{journey.kilometers.toLocaleString()} km · ≈{journey.duration}</b>
-                    <em className={journey.risk >= 40 ? "is-danger" : ""}>{journey.risk}% first-leg danger</em>
+                    <em className={journey.risk >= 40 ? "is-danger" : ""}>{journey.risk}% next-leg risk</em>
                   </span>
                 ) : (
                   <span className="world-atlas__placecard-journey is-blocked">
@@ -1234,12 +1349,13 @@ export function WorldAtlas({ state, origin, onPick }) {
                   aria-expanded={detailExpanded}
                   aria-controls="world-atlas-detail-body"
                 >
-                  {detailExpanded ? "Close dossier" : "Dossier"}
+                  {detailExpanded ? "Hide details" : "Details"}
                 </button>
-                <button type="button" className="world-atlas__chart" onClick={chartSelection} disabled={selectionIsParty}>
-                  <span>Set compass</span>
-                  <small>{journey ? `${journey.totalSteps} travel hex${journey.totalSteps === 1 ? "" : "es"} · ≈${journey.duration}` : "Known destination"}</small>
-                </button>
+                {!selectionIsParty && journey && (
+                  <button type="button" className="world-atlas__chart" onClick={chartSelection}>
+                    <span>Set destination</span>
+                  </button>
+                )}
               </div>
             </header>
 
@@ -1263,11 +1379,6 @@ export function WorldAtlas({ state, origin, onPick }) {
 
               {journey && (
                 <div className="world-atlas__journey-plan" aria-label={`Journey plan to ${detailTitle}`}>
-                  <div className="world-atlas__journey-stats">
-                    <span><small>Distance</small><b>{journey.totalSteps}</b><em>hexes · ≈{journey.kilometers.toLocaleString()} km</em></span>
-                    <span><small>March time</small><b>≈{journey.duration}</b><em>first leg {journey.legDuration}</em></span>
-                    <span className={journey.risk >= 40 ? "is-danger" : ""}><small>Leg danger</small><b>{journey.risk}%</b><em>{journey.arrived ? "single march" : `${Math.ceil(journey.totalSteps / Math.max(1, journey.legSteps))} legs`}</em></span>
-                  </div>
                   {journey.waypoints.length > 0 && (
                     <p className="world-atlas__journey-via">Via {journey.waypoints.map((waypoint) => waypoint.name).join(" · ")}</p>
                   )}

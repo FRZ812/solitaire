@@ -4,14 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CONTINENT,
   CONTINENT_ROUTES,
-  CONTINENT_SEA_LANES,
   LANDMARKS,
-  REALMS,
 } from "../../data/continent.js";
 import { makeInitialState } from "../../data/initial-state.js";
 import { sampleContinent, surveyAtlas } from "../../engine/world-generation.js";
 import { pathMinutes } from "../../engine/world.js";
-import { WorldAtlas } from "./WorldAtlas.jsx";
+import { WorldAtlas, atlasWheelZoomAllowed, atlasWheelZoomFactor } from "./WorldAtlas.jsx";
 import {
   ATLAS_LANDMARKS,
   ATLAS_LAYERS,
@@ -91,6 +89,19 @@ describe("atlas camera", () => {
     const camera = clampAtlasCamera({ x: 99999, y: -99999, zoom: 6 }, VIEWPORT);
     expect(camera.x).toBeLessThanOrEqual(1200);
     expect(camera.y).toBeGreaterThanOrEqual(-800);
+  });
+
+  it("turns smooth wheel deltas into proportional zoom instead of a full step per event", () => {
+    expect(atlasWheelZoomFactor(-100)).toBeCloseTo(1.22, 6);
+    expect(atlasWheelZoomFactor(100)).toBeCloseTo(1 / 1.22, 6);
+    expect(atlasWheelZoomFactor(-5)).toBeGreaterThan(1);
+    expect(atlasWheelZoomFactor(-5)).toBeLessThan(1.02);
+    expect(atlasWheelZoomFactor(0)).toBe(1);
+  });
+
+  it("leaves wheel events from atlas UI chrome to their own scrollers", () => {
+    expect(atlasWheelZoomAllowed({ closest: () => ({}) })).toBe(false);
+    expect(atlasWheelZoomAllowed({ closest: () => null })).toBe(true);
   });
 });
 
@@ -232,32 +243,39 @@ describe("world atlas component", () => {
     expect(html).toContain('class="world-atlas is-tilted"');
     expect(html).toContain('class="world-atlas__plane"');
     expect(html).toContain('aria-label="Switch to the flat chart view"');
-    expect(html).toContain("charted places");
+    expect(html).toContain(`aria-label="Search ${ATLAS_LANDMARKS.length} charted places"`);
+    expect(html).toContain(">Find a place</span>");
     expect(html.match(/class="world-atlas__marker /g)).toHaveLength(ATLAS_LANDMARKS.length);
-    expect(html).toContain('aria-label="Five biome realms"');
-    expect(html).toContain('aria-label="Atlas marker layers"');
+    expect(html).toContain('aria-controls="world-atlas-filters"');
+    expect(html).toContain(">Map filters</span>");
     expect(html).toContain("Center map on the party");
     expect(html).toContain('aria-label="Fit the whole continent">116%</button>');
-    expect(html).toContain(`${CONTINENT_SEA_LANES.length} sea lanes`);
-    for (const realm of REALMS) expect(html).toContain(realm.shortName);
-    for (const layer of ATLAS_LAYERS) expect(html).toContain(`>${layer.label}</span>`);
+    expect(html.match(/data-atlas-wheel-ignore="true"/g)).toHaveLength(3);
+    expect(html).not.toContain('class="world-atlas__placecard');
+    expect(html).not.toContain('class="world-atlas__compass-rose"');
 
     // The survey must not leak hidden generated site identities.
     expect(html).not.toContain("HIDDEN AUTHORED SITE");
     expect(html).not.toContain("site:");
   });
 
-  it("opens on the capital with lore detail and honest journey state", () => {
+  it("keeps the opening map clear and shows capital detail only after an intentional selection", () => {
     const state = makeInitialState();
     const html = renderToStaticMarkup(
-      <WorldAtlas state={state} origin={state.world.currentTile} onPick={vi.fn()} />,
+      <WorldAtlas
+        state={state}
+        origin={state.world.currentTile}
+        onPick={vi.fn()}
+        initialSelection={{ kind: "landmark", id: "whitemarch" }}
+      />,
     );
 
     expect(html).toContain('aria-label="Atlas entry for Whitemarch"');
     expect(html).toContain("Realm capital");
     expect(html).toContain("The Iron Concord");
     expect(html).toContain("Queen Aveline IV");
-    expect(html).toContain("Set compass");
+    expect(html).toContain("Details");
+    expect(html).not.toContain("Set destination");
     // The party starts in Whitemarch, so no journey is offered to it.
     expect(html).toContain("The party is already here.");
     expect(html).toContain("The Crown Road");
@@ -267,13 +285,36 @@ describe("world atlas component", () => {
     const state = makeInitialState();
     const tellmar = ATLAS_LANDMARKS.find((landmark) => landmark.id === "tellmar");
     const html = renderToStaticMarkup(
-      <WorldAtlas state={state} origin={tellmar.coord} onPick={vi.fn()} />,
+      <WorldAtlas
+        state={state}
+        origin={state.world.currentTile}
+        onPick={vi.fn()}
+        initialSelection={{ kind: "landmark", id: tellmar.id }}
+      />,
     );
 
     expect(html).toContain('class="world-atlas__journey-continuation"');
     expect(html).toContain('class="world-atlas__journey"');
     expect(html).toContain('class="world-atlas__leg-stop"');
-    expect(html).toContain("Journey laid out");
-    expect(html).toContain("Set compass");
+    expect(html).toContain("Route preview");
+    expect(html).toContain("Set destination");
+  });
+
+  it("does not offer an unreachable selection as a destination", () => {
+    const state = makeInitialState();
+    const seaPoint = { x: CONTINENT.bounds.xmin, y: CONTINENT.bounds.ymin };
+    expect(sampleContinent(seaPoint.x, seaPoint.y, CONTINENT.seed).land).toBe(false);
+
+    const html = renderToStaticMarkup(
+      <WorldAtlas
+        state={state}
+        origin={state.world.currentTile}
+        onPick={vi.fn()}
+        initialSelection={{ kind: "point", ...seaPoint }}
+      />,
+    );
+
+    expect(html).toContain("No ground route reaches this point");
+    expect(html).not.toContain("Set destination");
   });
 });
