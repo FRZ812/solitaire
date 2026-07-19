@@ -10,5 +10,8 @@ self.onmessage = (event) => {
     terrain.shore.buffer,
     terrain.indices.buffer,
     terrain.trees.buffer,
+    terrain.rocks.buffer,
+    terrain.fields.buffer,
+    terrain.environs.buffer,
   ]);
 };

@@ -6,13 +6,19 @@ import {
 } from "../../data/continent.js";
 import {
   atlasEastFloraVariant,
+  atlasPropDetailVisible,
   atlasWorldLightState,
   batchLandmarkMeshGroup,
+  createAtlasTerrainGeometry,
+  createEnvironsGroup,
+  createFieldGroup,
   createHotSprings,
   createLandmarkMeshGroup,
   createMountainClouds,
+  createRockGroup,
   createRibbonMesh,
   createInsetLake,
+  createVegetationGroup,
   REALM_SETTLEMENT_COLORS,
 } from "./WorldAtlas3DScene.jsx";
 import {
@@ -92,9 +98,14 @@ describe("WorldAtlas3DScene rendering helpers", () => {
     expect(TrackedCatmullRomCurve3.constructorCalls[0][2]).toBe("centripetal");
     expect(TrackedCatmullRomCurve3.sampleCalls).toEqual([200]);
     expect(position.count).toBe(402);
+    expect(mesh.geometry.getAttribute("uv").count).toBe(position.count);
+    expect(mesh.geometry.getAttribute("normal").count).toBe(position.count);
     expect(mesh.geometry.index.count).toBe(1_200);
     expect(mesh.renderOrder).toBe(1);
     expect(roadMesh.renderOrder).toBe(2);
+    expect(mesh.material).toBeInstanceOf(THREE.MeshStandardMaterial);
+    expect(mesh.receiveShadow).toBe(true);
+    expect(roadMesh.receiveShadow).toBe(true);
     expect(ribbonWidthAt(position, 0)).toBeCloseTo(1.4, 4);
     expect(ribbonWidthAt(position, 100)).toBeCloseTo(2.0, 4);
     expect(ribbonWidthAt(position, 200)).toBeCloseTo(2.6, 4);
@@ -105,6 +116,89 @@ describe("WorldAtlas3DScene rendering helpers", () => {
       z: (centerAt(position, 0).z + centerAt(position, 200).z) / 2,
     };
     expect(Math.hypot(halfway.x - straightHalfway.x, halfway.z - straightHalfway.z)).toBeGreaterThan(10);
+  });
+
+  it("binds normalized worker AO and shore data to the terrain geometry", () => {
+    const data = {
+      positions: new Float32Array([
+        0, 0, 0,
+        1, 0, 0,
+        0, 0, 1,
+        1, 0, 1,
+      ]),
+      colors: new Float32Array(12).fill(0.5),
+      ao: new Uint8Array([64, 128, 192, 255]),
+      shore: new Uint8Array([255, 192, 64, 0]),
+      indices: new Uint32Array([0, 2, 1, 1, 2, 3]),
+    };
+    const geometry = createAtlasTerrainGeometry(THREE, data);
+
+    expect(geometry.getAttribute("atlasAo").array).toBe(data.ao);
+    expect(geometry.getAttribute("atlasAo").normalized).toBe(true);
+    expect(geometry.getAttribute("shore").array).toBe(data.shore);
+    expect(geometry.getAttribute("shore").normalized).toBe(true);
+    expect(geometry.getAttribute("normal").count).toBe(4);
+    expect(geometry.getAttribute("uv").count).toBe(4);
+    expect(geometry.index.array).toBe(data.indices);
+  });
+
+  it("partitions deterministic species-aware tree instances into core and detail LODs", () => {
+    const treeData = new Float32Array([
+      10, 2, 10, 1, 0, 1, 0, 0,
+      20, 3, 20, 1, 0.2, 0.94, 0, 1,
+      30, 1, 30, 0.9, 0.4, 0.92, 3, 2,
+      40, 2, 40, 1.1, 0.6, 1, 2, 3,
+      50, 2, 50, 1.05, 0.8, 0.96, 2, 4,
+    ]);
+    const group = createVegetationGroup(THREE, treeData, CONTINENT.seed, { id: "high", propDensity: 1 });
+    const core = group.getObjectByName("atlas-vegetation-core");
+    const detail = group.getObjectByName("atlas-vegetation-detail");
+
+    expect(group.userData.treeCounts.total).toBe(5);
+    expect(group.userData.treeCounts.conifer).toBe(1);
+    expect(group.userData.treeCounts.broadleaf).toBe(1);
+    expect(group.userData.treeCounts.scrub).toBe(1);
+    expect(group.userData.treeCounts.cherry).toBe(1);
+    expect(group.userData.treeCounts.ginkgo).toBe(1);
+    expect(group.userData.treeCounts.core + group.userData.treeCounts.detail).toBe(5);
+    expect(group.userData.detailGroup).toBe(detail);
+    expect(detail.visible).toBe(false);
+    expect([...core.children, ...detail.children].every((child) => child.isInstancedMesh)).toBe(true);
+  });
+
+  it("uses hysteresis for prop detail and permanently suppresses it on low quality", () => {
+    expect(atlasPropDetailVisible(false, 2.19, "high")).toBe(false);
+    expect(atlasPropDetailVisible(false, 2.2, "high")).toBe(true);
+    expect(atlasPropDetailVisible(true, 1.81, "medium")).toBe(true);
+    expect(atlasPropDetailVisible(true, 1.8, "medium")).toBe(false);
+    expect(atlasPropDetailVisible(true, 5, "low")).toBe(false);
+  });
+
+  it("builds instanced rocks, furrowed fields, and settlement outskirts from worker records", () => {
+    const rocks = createRockGroup(THREE, new Float32Array([
+      1, 2, 3, 1, 0, 0,
+      4, 2, 6, 1.2, 0.4, 1,
+      8, 3, 9, 0.8, 0.8, 2,
+    ]), CONTINENT.seed, { propDensity: 1 });
+    const fields = createFieldGroup(THREE, new Float32Array([
+      5, 1, 7, 6, 3, 0.3, 2,
+    ]), CONTINENT.seed, { propDensity: 1 });
+    const environs = createEnvironsGroup(THREE, new Float32Array([
+      2, 1, 4, 1, 0.2, 0,
+      6, 1, 8, 1.2, 0.7, 1,
+    ]), CONTINENT.seed, { propDensity: 1 });
+
+    expect(rocks.userData.count).toBe(3);
+    expect(rocks.children).toHaveLength(3);
+    expect(rocks.children.every((child) => child.isInstancedMesh)).toBe(true);
+    expect(fields.userData.count).toBe(1);
+    expect(fields.children[0]).toBeInstanceOf(THREE.InstancedMesh);
+    expect(fields.children[0].material.map).toBeInstanceOf(THREE.DataTexture);
+    expect(fields.children[0].material.polygonOffset).toBe(true);
+    expect(fields.userData.disposables).toEqual([fields.children[0].material.map]);
+    expect(environs.userData.count).toBe(2);
+    expect(environs.children).toHaveLength(2);
+    expect(environs.children.every((child) => child.isInstancedMesh)).toBe(true);
   });
 
   it("builds deterministic irregular cloud clusters at the mountain cloud ceiling", () => {
@@ -124,29 +218,20 @@ describe("WorldAtlas3DScene rendering helpers", () => {
 
       expect(cloud).toBeInstanceOf(THREE.Mesh);
       expect(cloud.geometry.type).toBe("PlaneGeometry");
-      expect(cloud.geometry.getAttribute("position").count).toBe(4);
+      expect(cloud.geometry.getAttribute("position").count).toBe(20);
+      expect(cloud.geometry.parameters.widthSegments).toBe(4);
+      expect(cloud.geometry.parameters.heightSegments).toBe(3);
       expect(cloud.material).toBeInstanceOf(THREE.MeshBasicMaterial);
       expect(cloud.material.color.getHex()).toBe(0xe8eef2);
+      expect(cloud.material.map).toBeInstanceOf(THREE.DataTexture);
+      expect(cloud.material.map).toBe(first.userData.disposables[0]);
       expect(cloud.material.transparent).toBe(true);
-      expect(cloud.material.opacity).toBeGreaterThanOrEqual(0.35);
-      expect(cloud.material.opacity).toBeLessThanOrEqual(0.55);
+      expect(cloud.material.opacity).toBeGreaterThanOrEqual(0.075);
+      expect(cloud.material.opacity).toBeLessThanOrEqual(0.14);
+      expect(cloud.material.alphaTest).toBe(0.03);
       expect(cloud.material.side).toBe(THREE.DoubleSide);
       expect(cloud.material.depthWrite).toBe(false);
-      expect(cloud.position.y).toBeGreaterThanOrEqual(22);
-      expect(cloud.position.y).toBeLessThanOrEqual(28);
-
-      const position = cloud.geometry.getAttribute("position");
-      const halfWidth = cloud.geometry.parameters.width / 2;
-      const halfDepth = cloud.geometry.parameters.height / 2;
-      const displacements = [];
-      for (let vertex = 0; vertex < position.count; vertex += 1) {
-        displacements.push(
-          Math.abs(Math.abs(position.getX(vertex)) - halfWidth),
-          Math.abs(Math.abs(position.getZ(vertex)) - halfDepth),
-        );
-      }
-      expect(Math.max(...displacements)).toBeLessThanOrEqual(2.001);
-      expect(Math.max(...displacements)).toBeGreaterThan(0.05);
+      expect(cloud.position.y).toBeGreaterThan(25);
     }
 
     for (const count of clusterCounts.values()) {

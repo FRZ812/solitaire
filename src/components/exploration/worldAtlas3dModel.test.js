@@ -8,15 +8,24 @@ import {
 import { surveyAtlas } from "../../engine/world-generation.js";
 import {
   ATLAS_3D_CAMERA_COAST_INSET,
+  ATLAS_3D_ENVIRON_RECORD_STRIDE,
+  ATLAS_3D_FIELD_RECORD_STRIDE,
+  ATLAS_3D_FIT_PITCH_DEG,
+  ATLAS_3D_NEAR_PITCH_DEG,
   ATLAS_3D_RENDER_VERSION,
+  ATLAS_3D_ROCK_RECORD_STRIDE,
+  ATLAS_3D_TREE_RECORD_STRIDE,
+  ATLAS_3D_TREE_SPECIES,
   atlas3dActiveStride,
   atlas3dAxialToScene,
   atlas3dBaseTerrainHeight,
   atlas3dCameraFrame,
+  atlas3dDeclareActiveStride,
   atlas3dFitZoom,
   atlas3dHotSpringSurfaceHeight,
   atlas3dLakeSurfaceHeight,
   atlas3dProject,
+  atlas3dPitchFor,
   atlas3dSceneToAxial,
   atlas3dScreenToGround,
   atlas3dTerrainColor,
@@ -35,6 +44,17 @@ import {
 const VIEWPORT = { width: 960, height: 540 };
 
 describe("true 3D atlas spatial model", () => {
+  it("eases camera pitch monotonically from overview to close diorama", () => {
+    const fit = 0.45;
+    const degrees = [fit, fit * 2, fit * 7, 26].map((zoom) => (
+      atlas3dPitchFor(zoom, fit) * 180 / Math.PI
+    ));
+    expect(degrees[0]).toBeCloseTo(ATLAS_3D_FIT_PITCH_DEG, 8);
+    expect(degrees[1]).toBeGreaterThan(degrees[0]);
+    expect(degrees[2]).toBeGreaterThan(degrees[1]);
+    expect(degrees[3]).toBeCloseTo(ATLAS_3D_NEAR_PITCH_DEG, 8);
+  });
+
   it("raises continuous relief instead of fixed per-category steps", () => {
     const heightFor = (terrain, elevation) => (
       atlas3dTerrainHeight({ land: true, terrain, elevation })
@@ -43,10 +63,9 @@ describe("true 3D atlas spatial model", () => {
     expect(heightFor("mountains", 0.9)).toBeGreaterThan(heightFor("mountains", 0.7));
     expect(heightFor("mountains", 0.7)).toBeGreaterThan(heightFor("mountains", 0.5));
     expect(heightFor("hills", 0.7)).toBeGreaterThan(heightFor("hills", 0.45));
-    // …category pedestals stay far below the legacy fixed steps…
-    expect(heightFor("mountains", 0.5) - heightFor("plains", 0.5)).toBeGreaterThan(0);
-    expect(heightFor("mountains", 0.5) - heightFor("plains", 0.5)).toBeLessThan(8.5);
-    expect(heightFor("hills", 0.5) - heightFor("plains", 0.5)).toBeLessThan(2.6);
+    // …and the fixed category pedestals are gone entirely at their threshold.
+    expect(heightFor("mountains", 0.5) - heightFor("plains", 0.5)).toBe(0);
+    expect(heightFor("hills", 0.38) - heightFor("plains", 0.38)).toBe(0);
     // …and the terrain ceiling still clamps.
     expect(heightFor("mountains", 2)).toBe(42);
   });
@@ -71,6 +90,20 @@ describe("true 3D atlas spatial model", () => {
     expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1e-8);
     expect(heights[0]).toBeGreaterThan(3.5);
     expect(heights[0]).toBeLessThan(30);
+  });
+
+  it("does not cut frozen northern terrain across the eastern realm at y=-170", () => {
+    const sample = { land: true, realmId: "east", terrain: "plains", elevation: 0.52 };
+    const above = { x: 300, y: -169 };
+    const below = { x: 300, y: -170 };
+    const aboveHeight = atlas3dBaseTerrainHeight(sample, above);
+    const belowHeight = atlas3dBaseTerrainHeight(sample, below);
+    const aboveColor = atlas3dTerrainColor(sample, above, aboveHeight);
+    const belowColor = atlas3dTerrainColor(sample, below, belowHeight);
+
+    expect(Math.abs(aboveHeight - belowHeight)).toBeLessThan(0.5);
+    expect(Math.hypot(...aboveColor.map((channel, index) => channel - belowColor[index])))
+      .toBeLessThan(0.02);
   });
 
   it("recesses every authored lake and hot spring beneath its shared level surface", () => {
@@ -445,6 +478,9 @@ describe("true 3D atlas spatial model", () => {
     expect(first.shore).toEqual(second.shore);
     expect(first.indices).toEqual(second.indices);
     expect(first.trees).toEqual(second.trees);
+    expect(first.rocks).toEqual(second.rocks);
+    expect(first.fields).toEqual(second.fields);
+    expect(first.environs).toEqual(second.environs);
     expect(first.positions.length).toBe(first.rows * first.columns * 3);
     expect(first.coastal).toBeInstanceOf(Uint8Array);
     expect(first.coastal.length).toBe(first.rows * first.columns);
@@ -459,11 +495,26 @@ describe("true 3D atlas spatial model", () => {
     expect(first.shore.some((value) => value < 255)).toBe(true);
     expect(first.indices.length).toBe((first.rows - 1) * (first.columns - 1) * 6);
     expect(first.trees.length).toBeGreaterThan(0);
+    expect(first.trees.length % ATLAS_3D_TREE_RECORD_STRIDE).toBe(0);
+    const species = new Set();
+    for (let offset = 0; offset < first.trees.length; offset += ATLAS_3D_TREE_RECORD_STRIDE) {
+      species.add(first.trees[offset + 7]);
+    }
+    expect(species).toContain(ATLAS_3D_TREE_SPECIES.cherry);
+    expect(species).toContain(ATLAS_3D_TREE_SPECIES.ginkgo);
+    expect(first.rocks).toBeInstanceOf(Float32Array);
+    expect(first.rocks.length % ATLAS_3D_ROCK_RECORD_STRIDE).toBe(0);
+    expect(first.fields).toBeInstanceOf(Float32Array);
+    expect(first.fields.length % ATLAS_3D_FIELD_RECORD_STRIDE).toBe(0);
+    expect(first.fields.length).toBeGreaterThan(0);
+    expect(first.environs).toBeInstanceOf(Float32Array);
+    expect(first.environs.length % ATLAS_3D_ENVIRON_RECORD_STRIDE).toBe(0);
+    expect(first.environs.length).toBeGreaterThan(0);
     expect(Math.max(...first.positions.filter((_, index) => index % 3 === 1))).toBeGreaterThan(8);
     expect(Math.min(...first.positions.filter((_, index) => index % 3 === 1))).toBeLessThan(0);
   });
 
-  it("promotes only render-quality strides to a seed's active grid", () => {
+  it("activates only a render grid the scene explicitly declares", () => {
     const seed = "active-stride-test";
     expect(atlas3dActiveStride(seed)).toBe(4);
 
@@ -471,7 +522,8 @@ describe("true 3D atlas spatial model", () => {
     buildAtlas3dTerrainData(seed, 96);
     expect(atlas3dActiveStride(seed)).toBe(4);
 
-    // A refined render grid becomes the active surface for the seed.
+    // Registering a late refined grid cannot move overlays onto an unseen
+    // mesh; the scene promotes it only after the hot swap succeeds.
     const vertexCount = 4;
     expect(registerAtlas3dTerrainData({
       version: ATLAS_3D_RENDER_VERSION,
@@ -486,7 +538,12 @@ describe("true 3D atlas spatial model", () => {
       shore: new Uint8Array(vertexCount),
       indices: new Uint32Array(6),
       trees: new Float32Array(0),
+      rocks: new Float32Array(0),
+      fields: new Float32Array(0),
+      environs: new Float32Array(0),
     })).toBe(true);
+    expect(atlas3dActiveStride(seed)).toBe(4);
+    atlas3dDeclareActiveStride(seed, 2);
     expect(atlas3dActiveStride(seed)).toBe(2);
     expect(atlas3dActiveStride(CONTINENT.seed)).toBe(4);
   });

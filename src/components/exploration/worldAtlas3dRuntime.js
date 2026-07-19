@@ -7,6 +7,7 @@ import {
 
 const runtimePromises = new Map();
 const TERRAIN_WORKER_TIMEOUT_MS = 20_000;
+const FINE_TERRAIN_WORKER_TIMEOUT_MS = 45_000;
 
 function runtimeKey(seed, stride) {
   return `${ATLAS_3D_RENDER_VERSION}|${seed}|${stride}`;
@@ -46,7 +47,14 @@ function buildTerrainInWorker(seed, stride) {
       worker.onerror = fail;
       worker.onmessageerror = fail;
       worker.postMessage({ seed, stride });
-      timeoutId = setTimeout(fail, TERRAIN_WORKER_TIMEOUT_MS);
+      // The stride-2 refinement is intentionally progressive and takes about
+      // 17 seconds on the reference desktop. Give slower high-tier machines
+      // enough headroom without making the coarse first-paint worker wait
+      // longer when it genuinely stalls.
+      const timeoutMs = stride < ATLAS_3D_TERRAIN_STRIDE
+        ? FINE_TERRAIN_WORKER_TIMEOUT_MS
+        : TERRAIN_WORKER_TIMEOUT_MS;
+      timeoutId = setTimeout(fail, timeoutMs);
     } catch {
       fail();
     }

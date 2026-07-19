@@ -2,38 +2,58 @@ import {
   CONTINENT,
   CONTINENT_HOT_SPRINGS,
   CONTINENT_LAKES,
+  CONTINENT_ROUTES,
+  CONTINENT_WATERWAYS,
+  LANDMARKS,
   MOUNTAIN_SPINE,
   NORTHERN_RIDGES,
 } from "../../data/continent.js";
+import { WHITEMARCH_CAPITAL } from "../../data/whitemarch-capital.js";
 import { continentValueAt, surveyAtlas } from "../../engine/world-generation.js";
 
 export const ATLAS_3D_FOV_DEG = 34;
 export const ATLAS_3D_PITCH_DEG = 38;
+export const ATLAS_3D_FIT_PITCH_DEG = 32;
+export const ATLAS_3D_NEAR_PITCH_DEG = 50;
 export const ATLAS_3D_TERRAIN_STRIDE = 4;
 // Optional refinement grid swapped in by capable devices after first paint.
 export const ATLAS_3D_FINE_TERRAIN_STRIDE = 2;
 export const ATLAS_3D_CAMERA_COAST_INSET = ATLAS_3D_TERRAIN_STRIDE;
-export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v7";
+export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v9";
 export const ATLAS_3D_MAX_ZOOM = 26;
+export const ATLAS_3D_TREE_RECORD_STRIDE = 8;
+export const ATLAS_3D_ROCK_RECORD_STRIDE = 6;
+export const ATLAS_3D_FIELD_RECORD_STRIDE = 7;
+export const ATLAS_3D_ENVIRON_RECORD_STRIDE = 6;
+export const ATLAS_3D_TREE_SPECIES = Object.freeze({
+  conifer: 0,
+  broadleaf: 1,
+  scrub: 2,
+  cherry: 3,
+  ginkgo: 4,
+});
 
 // Deterministic noise streams (salts) used by the terrain model, all keyed by
 // the world seed. Every stream must be listed here so overhauls never collide:
 //   +43  woodland grove mask          +199 primary color variance
 //   +311 secondary color variance     +401 crag relief (fine ridged)
-//   +409 crag relief (broad ridged)   +419 lowland undulation
+//   +409 crag relief (broad ridged)   +419 category-border blend
 //   +421 snow-line edge break         +423 moisture hue drift
+//   +427 lowland undulation           +431 rock and scree placement
+//   +433 field placement              +439 settlement environs
 const SALT_CRAG_FINE = 401;
 const SALT_CRAG_BROAD = 409;
-const SALT_UNDULATION = 419;
+const SALT_CATEGORY_BORDER = 419;
 const SALT_SNOW_EDGE = 421;
 const SALT_MOISTURE = 423;
+const SALT_UNDULATION = 427;
+const SALT_ROCKS = 431;
+const SALT_FIELDS = 433;
+const SALT_ENVIRONS = 439;
 
 const DEG_TO_RAD = Math.PI / 180;
 const SQRT_THREE_OVER_TWO = Math.sqrt(3) / 2;
 const FOV_TAN = Math.tan((ATLAS_3D_FOV_DEG * DEG_TO_RAD) / 2);
-const PITCH = ATLAS_3D_PITCH_DEG * DEG_TO_RAD;
-const PITCH_SIN = Math.sin(PITCH);
-const PITCH_COS = Math.cos(PITCH);
 const CAMERA_MIN_CLEARANCE = 3;
 const TERRAIN_MAX_HEIGHT = 42;
 const TERRAIN_MIN_HEIGHT = -2.8;
@@ -42,6 +62,28 @@ const SNOW_CAP_COLOR = 0xd8ddd0;
 const COASTAL_SAND_COLOR = 0xb8a870;
 const FROZEN_SHELF_COLOR = 0x93a29f;
 const COASTAL_BAND_RADIUS = 3;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+const SETTLEMENT_PROP_KINDS = new Set(["settlement", "village", "town", "city", "fortress", "port"]);
+// Atlas-only anchors that are intentionally absent from the travel generator.
+// Keeping this small, data-only projection here prevents the terrain worker
+// from importing the full atlas UI/model graph (which reaches persistence and
+// Supabase code) merely to clear props around visible miniatures.
+const ATLAS_PROP_DETAIL_LANDMARKS = Object.freeze([
+  { id: WHITEMARCH_CAPITAL.id, kind: "city", capitalOfRealmId: "central", coord: WHITEMARCH_CAPITAL.center },
+  { id: "alderfield", kind: "village", coord: { x: -72, y: -20 } },
+  { id: "millcross", kind: "village", coord: { x: -38, y: 44 } },
+  { id: "whitewend-lea", kind: "village", coord: { x: -18, y: -48 } },
+  { id: "shepherds-rest", kind: "village", coord: { x: 24, y: 50 } },
+  { id: "barleywick", kind: "village", coord: { x: 62, y: -32 } },
+  { id: "bellmead", kind: "village", coord: { x: 76, y: 42 } },
+  { id: "bramble-pass-keep", kind: "fortress", coord: { x: -145, y: 30 } },
+  { id: "reedmarch-keep", kind: "fortress", coord: { x: 150, y: -20 } },
+  { id: "temple-still-waters", kind: "pagoda", coord: { x: 355, y: -60 } },
+  { id: "temple-reed-crane", kind: "pagoda", coord: { x: 430, y: 45 } },
+  { id: "mountain-hermitage", kind: "pagoda", coord: { x: 90, y: -140 } },
+  { id: "jade-porch", kind: "pagoda", coord: { x: 310, y: 110 } },
+]);
+const ATLAS_PROP_LANDMARKS = Object.freeze([...LANDMARKS, ...ATLAS_PROP_DETAIL_LANDMARKS]);
 const COASTAL_NEIGHBOR_OFFSETS = Object.freeze((() => {
   const offsets = [];
   for (let y = -COASTAL_BAND_RADIUS; y <= COASTAL_BAND_RADIUS; y += 1) {
@@ -112,6 +154,16 @@ function clamp(value, min, max) {
 function smoothstep(edge0, edge1, value) {
   const mix = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
   return mix * mix * (3 - 2 * mix);
+}
+
+export function atlas3dPitchFor(zoom, fitZoom) {
+  const safeFit = Math.max(0.001, Number(fitZoom) || 0.001);
+  const safeZoom = Math.max(safeFit, Number(zoom) || safeFit);
+  const maxRatio = Math.max(1.001, ATLAS_3D_MAX_ZOOM / safeFit);
+  const logProgress = clamp(Math.log(safeZoom / safeFit) / Math.log(maxRatio), 0, 1);
+  const eased = logProgress * logProgress * (3 - 2 * logProgress);
+  return (ATLAS_3D_FIT_PITCH_DEG
+    + (ATLAS_3D_NEAR_PITCH_DEG - ATLAS_3D_FIT_PITCH_DEG) * eased) * DEG_TO_RAD;
 }
 
 function clampCenter(center, footprint, boundMin, boundMax) {
@@ -194,6 +246,8 @@ export function atlas3dFitZoom(viewport, seed = CONTINENT.seed) {
   }
   const fit = lower * 0.995;
   FIT_ZOOM_CACHE.set(key, fit);
+  lastCameraFrameKey = "";
+  lastCameraFrame = null;
   if (FIT_ZOOM_CACHE.size > 40) FIT_ZOOM_CACHE.delete(FIT_ZOOM_CACHE.keys().next().value);
   return fit;
 }
@@ -358,62 +412,87 @@ function northernRidgeReliefWeightAt(coord) {
   return weight;
 }
 
-function terrainLiftFor(sample, coord) {
-  const frozenNorth = !!coord && (sample?.realmId === "north" || coord.y <= -170);
-  if (frozenNorth) {
-    // Frostcrown's generator intentionally classifies much of the far north as
-    // mountain biome. Treat that classification as climate/ground cover, then
-    // reserve the full vertical drama for the authored Spine and parallel
-    // ridges. This creates broad glacial shelves and readable valleys instead
-    // of turning every four-hex terrain cell into an equally sharp peak.
-    const ridgeWeight = Math.max(
-      mountainSpineReliefWeightAt(coord),
-      northernRidgeReliefWeightAt(coord),
-    );
-    const authoredRelief = ridgeWeight * ridgeWeight;
-    const continuousLift = 2.6 * smoothstep(0.48, 0.7, sample.elevation)
-      + 5.9 * smoothstep(0.68, 0.92, sample.elevation);
-    return continuousLift * (0.35 + authoredRelief * 0.65);
-  }
-
-  // Every other realm follows the same continuous philosophy: a small base
-  // pedestal keeps the category readable, and the rest of the relief tracks
-  // the underlying elevation field so ridgelines rise and fall smoothly
-  // instead of jumping a fixed step at every category border. The residual
-  // pedestal steps are dissolved by the grid-wide smoothing pass.
+function terrainLiftFor(sample, coord, terrainWeights = null, terrainWeightOffset = 0, northWeight = null) {
   const elevation = clamp(sample.elevation, 0, 1.4);
-  if (sample.terrain === "mountains") {
-    return 2.2
-      + 3.4 * smoothstep(0.46, 0.72, elevation)
-      + 4.6 * smoothstep(0.66, 0.96, elevation);
-  }
-  if (sample.terrain === "hills") {
-    return 0.9 + 1.7 * smoothstep(0.4, 0.74, elevation);
-  }
-  if (sample.terrain === "forest") {
-    return 0.65 * smoothstep(0.26, 0.58, elevation);
-  }
-  return 0;
+  const mountainWeight = terrainWeights
+    ? terrainWeights[terrainWeightOffset]
+    : sample.terrain === "mountains" ? 1 : 0;
+  const hillWeight = terrainWeights
+    ? terrainWeights[terrainWeightOffset + 1]
+    : sample.terrain === "hills" ? 1 : 0;
+  const forestWeight = terrainWeights
+    ? terrainWeights[terrainWeightOffset + 2]
+    : sample.terrain === "forest" ? 1 : 0;
+
+  // Category identity modulates smooth elevation curves instead of adding a
+  // fixed pedestal. During worker builds these weights are blurred over the
+  // sampled grid, producing a deterministic three-to-six-cell ramp at biome
+  // borders rather than the wall-like mountain/hill steps seen at close zoom.
+  const generalLift = mountainWeight * (
+    3.2 * smoothstep(0.5, 0.72, elevation)
+      + 5.3 * smoothstep(0.7, 0.95, elevation)
+  ) + hillWeight * 2.25 * smoothstep(0.38, 0.76, elevation)
+    + forestWeight * 0.65 * smoothstep(0.26, 0.58, elevation);
+
+  const resolvedNorthWeight = clamp(
+    Number.isFinite(northWeight) ? northWeight : sample?.realmId === "north" ? 1 : 0,
+    0,
+    1,
+  );
+  if (!coord || resolvedNorthWeight <= 0) return generalLift;
+
+  // Frostcrown's broad shelves reserve the full vertical drama for authored
+  // ridges. The climate weight is grid-blended; there is deliberately no raw
+  // latitude threshold, which previously cut a pale horizontal band through
+  // the eastern realm at y=-170.
+  const ridgeWeight = Math.max(
+    mountainSpineReliefWeightAt(coord),
+    northernRidgeReliefWeightAt(coord),
+  );
+  const authoredRelief = ridgeWeight * ridgeWeight;
+  const northernLift = (
+    2.6 * smoothstep(0.48, 0.7, elevation)
+      + 5.9 * smoothstep(0.68, 0.92, elevation)
+  ) * (0.35 + authoredRelief * 0.65);
+  return generalLift + (northernLift - generalLift) * resolvedNorthWeight;
 }
 
-export function atlas3dBaseTerrainHeight(sample, coord = null, seed = CONTINENT.seed) {
+export function atlas3dBaseTerrainHeight(
+  sample,
+  coord = null,
+  seed = CONTINENT.seed,
+  terrainWeights = null,
+  northWeight = null,
+  terrainWeightOffset = 0,
+) {
   if (!sample?.land) return -2.8;
-  const frozenNorth = !!coord && (sample.realmId === "north" || coord.y <= -170);
-  const ridgeWeight = frozenNorth
+  const resolvedNorthWeight = clamp(
+    Number.isFinite(northWeight) ? northWeight : sample.realmId === "north" ? 1 : 0,
+    0,
+    1,
+  );
+  const ridgeWeight = coord && resolvedNorthWeight > 0
     ? Math.max(mountainSpineReliefWeightAt(coord), northernRidgeReliefWeightAt(coord))
     : 1;
   const authoredRelief = ridgeWeight * ridgeWeight;
-  const reliefScale = frozenNorth ? 0.22 + authoredRelief * 0.78 : 1;
+  const northernReliefScale = 0.22 + authoredRelief * 0.78;
+  const reliefScale = 1 + (northernReliefScale - 1) * resolvedNorthWeight;
   const elevation = 0.16
     + (sample.elevation - 0.16) * reliefScale
     + northernRidgeElevationBoostAt(coord);
-  const terrainLift = terrainLiftFor(sample, coord);
+  const terrainLift = terrainLiftFor(
+    sample,
+    coord,
+    terrainWeights,
+    terrainWeightOffset,
+    resolvedNorthWeight,
+  );
   let height = (elevation - 0.16) * 28 + terrainLift;
   if (coord) {
     // Erosion-flavored detail: ridged octaves carve crags into uplands while a
     // broad, gentle undulation keeps lowland plains from reading as billiard
     // felt. Both fade out on frozen shelves so glacial plateaus stay serene.
-    const ruggedness = smoothstep(3.5, 12, height) * (frozenNorth ? 0.35 : 1);
+    const ruggedness = smoothstep(3.5, 12, height) * (1 - resolvedNorthWeight * 0.65);
     if (ruggedness > 0) {
       const cragFine = Math.abs(
         interpolatedCoordinateNoise(coord.x, coord.y, 7, seed + SALT_CRAG_FINE) * 2 - 1,
@@ -429,7 +508,7 @@ export function atlas3dBaseTerrainHeight(sample, coord = null, seed = CONTINENT.
       21,
       seed + SALT_UNDULATION,
     ) - 0.5;
-    height += undulation * (frozenNorth ? 0.4 : 1.1);
+    height += undulation * (1.1 - resolvedNorthWeight * 0.7);
   }
   return clamp(height, 0.4, TERRAIN_MAX_HEIGHT);
 }
@@ -589,17 +668,20 @@ export function registerAtlas3dTerrainData(data) {
     || !(data.indices instanceof Uint32Array)
     || data.indices.length !== indexCount
     || !(data.trees instanceof Float32Array)
-    || data.trees.length % 7 !== 0) return false;
+    || data.trees.length % ATLAS_3D_TREE_RECORD_STRIDE !== 0
+    || !(data.rocks instanceof Float32Array)
+    || data.rocks.length % ATLAS_3D_ROCK_RECORD_STRIDE !== 0
+    || !(data.fields instanceof Float32Array)
+    || data.fields.length % ATLAS_3D_FIELD_RECORD_STRIDE !== 0
+    || !(data.environs instanceof Float32Array)
+    || data.environs.length % ATLAS_3D_ENVIRON_RECORD_STRIDE !== 0) return false;
   const key = terrainGridKey(data.seed, data.stride);
   TERRAIN_GRID_CACHE.set(key, data);
   if (TERRAIN_GRID_CACHE.size > 4) TERRAIN_GRID_CACHE.delete(TERRAIN_GRID_CACHE.keys().next().value);
-  // Render-quality grids (the base stride or finer) become the seed's active
-  // surface so overlay heights, picking, and camera framing follow whichever
-  // mesh is actually on screen. Coarse diagnostic grids never take over, and
-  // the scene re-declares the stride whenever it swaps meshes.
-  if (data.stride <= ATLAS_3D_TERRAIN_STRIDE) {
-    PREFERRED_STRIDE.set(data.seed, data.stride);
-  }
+  // Registration only makes the payload available. The scene explicitly
+  // declares a stride when it actually swaps that mesh on screen; a late fine
+  // worker can therefore never move overlays onto a grid the player does not
+  // see (for example after High -> Medium or an unmount).
   return true;
 }
 
@@ -695,31 +777,37 @@ export function atlas3dTerrainColor(
   seed = CONTINENT.seed,
   coastal = false,
   slope = 0,
+  northWeight = null,
 ) {
   const mountain = sample?.terrain === "mountains";
-  const frozenShelf = sample?.land
-    && (sample.realmId === "north" || coord.y <= -170)
+  const frozenEligible = sample?.land
     && ["plains", "hills", "mountains", "impassable"].includes(sample.terrain);
+  const frozenWeight = frozenEligible
+    ? clamp(Number.isFinite(northWeight) ? northWeight : sample.realmId === "north" ? 1 : 0, 0, 1)
+    : 0;
   const primaryAmplitude = mountain ? 0.12 : 0.08;
   const secondaryAmplitude = mountain ? 0.06 : 0.04;
-  const colorVariance = frozenShelf
-    ? (interpolatedCoordinateNoise(coord.x, coord.y, 28, seed + 199) - 0.5) * 0.065
-      + (interpolatedCoordinateNoise(coord.x, coord.y, 11, seed + 311) - 0.5) * 0.025
-    : (coordinateNoise(coord.x, coord.y, seed + 199) - 0.5) * primaryAmplitude
-      + (coordinateNoise(coord.x * 2.3, coord.y * 2.3, seed + 311) - 0.5) * secondaryAmplitude;
+  const normalVariance = (coordinateNoise(coord.x, coord.y, seed + 199) - 0.5) * primaryAmplitude
+    + (coordinateNoise(coord.x * 2.3, coord.y * 2.3, seed + 311) - 0.5) * secondaryAmplitude;
+  const frozenVariance = (interpolatedCoordinateNoise(coord.x, coord.y, 28, seed + 199) - 0.5) * 0.065
+    + (interpolatedCoordinateNoise(coord.x, coord.y, 11, seed + 311) - 0.5) * 0.025;
+  const colorVariance = normalVariance + (frozenVariance - normalVariance) * frozenWeight;
   // The permanent snow line wanders deterministically and climbs on steep
   // faces (which shed snow), so caps read as weather rather than a contour.
   const snowLine = SNOW_CAP_HEIGHT
     + (interpolatedCoordinateNoise(coord.x, coord.y, 13, seed + SALT_SNOW_EDGE) - 0.5) * 4
     + clamp(slope, 0, 2) * 3.2;
-  const base = frozenShelf && height < snowLine
-    ? FROZEN_SHELF_COLOR
-    : terrainColor(sample?.land ? sample.terrain : "water", sample?.realmId);
-  const relief = sample?.land
-    ? (frozenShelf ? (height - 8) * 0.008 : (sample.elevation - 0.48) * 0.24) + colorVariance
+  const normalBase = terrainColor(sample?.land ? sample.terrain : "water", sample?.realmId);
+  const normalRelief = sample?.land
+    ? (sample.elevation - 0.48) * 0.24 + colorVariance
     : (sample.elevation - 0.45) * 0.08 + colorVariance * 0.4;
-  let channels = colorChannels(base, relief);
-  if (sample?.land && !frozenShelf) {
+  const frozenRelief = (height - 8) * 0.008 + colorVariance;
+  const normalChannels = colorChannels(normalBase, normalRelief);
+  const frozenChannels = colorChannels(FROZEN_SHELF_COLOR, frozenRelief);
+  let channels = normalChannels.map((channel, index) => (
+    channel + (frozenChannels[index] - channel) * frozenWeight
+  ));
+  if (sample?.land) {
     if (VEGETATED_TERRAINS.includes(sample.terrain)) {
       // Broad moisture drift: wetter stands read deeper and cooler, dry
       // stretches warm toward straw without introducing new palette entries.
@@ -729,10 +817,11 @@ export function atlas3dTerrainColor(
         26,
         seed + SALT_MOISTURE,
       ) - 0.5;
+      const moistureStrength = 1 - frozenWeight;
       channels = [
-        clamp(channels[0] * (1 - moisture * 0.16), 0, 1),
-        clamp(channels[1] * (1 + moisture * 0.07), 0, 1),
-        clamp(channels[2] * (1 - moisture * 0.1), 0, 1),
+        clamp(channels[0] * (1 - moisture * 0.16 * moistureStrength), 0, 1),
+        clamp(channels[1] * (1 + moisture * 0.07 * moistureStrength), 0, 1),
+        clamp(channels[2] * (1 - moisture * 0.1 * moistureStrength), 0, 1),
       ];
     }
     // High country desaturates toward stone before the snow takes over.
@@ -742,7 +831,7 @@ export function atlas3dTerrainColor(
       channels = channels.map((channel) => channel + (luma - channel) * stoneFade);
     }
     // Steep faces expose the realm's bedrock hue regardless of ground cover.
-    const rockWeight = smoothstep(0.55, 1.2, slope) * 0.5;
+    const rockWeight = smoothstep(0.55, 1.2, slope) * (0.5 - frozenWeight * 0.2);
     if (rockWeight > 0) {
       channels = blendColorChannels(
         channels,
@@ -763,7 +852,84 @@ export function atlas3dTerrainColor(
   return channels;
 }
 
-function smoothTerrainHeights(samples, xs, ys, baseHeights) {
+function blurLandField(samples, columns, rows, source, components, passes) {
+  const neighborOffsets = [
+    [-1, -1, 1], [0, -1, 2], [1, -1, 1],
+    [-1, 0, 2],                 [1, 0, 2],
+    [-1, 1, 1],  [0, 1, 2],  [1, 1, 1],
+  ];
+  let current = source;
+  for (let pass = 0; pass < passes; pass += 1) {
+    const next = current.slice();
+    for (let row = 1; row < rows - 1; row += 1) {
+      for (let column = 1; column < columns - 1; column += 1) {
+        const index = row * columns + column;
+        if (!samples[index]?.land) continue;
+        const offset = index * components;
+        let totalWeight = 4;
+        for (let component = 0; component < components; component += 1) {
+          next[offset + component] = current[offset + component] * 4;
+        }
+        for (const [dc, dr, weight] of neighborOffsets) {
+          const neighborIndex = (row + dr) * columns + column + dc;
+          if (!samples[neighborIndex]?.land) continue;
+          const neighborOffset = neighborIndex * components;
+          for (let component = 0; component < components; component += 1) {
+            next[offset + component] += current[neighborOffset + component] * weight;
+          }
+          totalWeight += weight;
+        }
+        for (let component = 0; component < components; component += 1) {
+          next[offset + component] /= totalWeight;
+        }
+      }
+    }
+    current = next;
+  }
+  return current;
+}
+
+function buildTerrainBlendFields(samples, xs, ys, seed) {
+  const columns = xs.length;
+  const rows = ys.length;
+  const terrainWeights = new Float32Array(samples.length * 3);
+  const northWeights = new Float32Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = samples[index];
+    if (!sample?.land) continue;
+    const offset = index * 3;
+    terrainWeights[offset] = sample.terrain === "mountains" ? 1 : 0;
+    terrainWeights[offset + 1] = sample.terrain === "hills" ? 1 : 0;
+    terrainWeights[offset + 2] = sample.terrain === "forest" ? 1 : 0;
+    northWeights[index] = sample.realmId === "north" ? 1 : 0;
+  }
+
+  const blurredTerrain = blurLandField(samples, columns, rows, terrainWeights, 3, 2);
+  const blurredNorth = blurLandField(samples, columns, rows, northWeights, 1, 3);
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const index = row * columns + column;
+      if (!samples[index]?.land) continue;
+      const offset = index * 3;
+      const coord = { x: xs[column], y: ys[row] };
+      const borderMix = 0.78 + interpolatedCoordinateNoise(
+        coord.x,
+        coord.y,
+        8,
+        seed + SALT_CATEGORY_BORDER,
+      ) * 0.22;
+      for (let component = 0; component < 3; component += 1) {
+        terrainWeights[offset + component] += (
+          blurredTerrain[offset + component] - terrainWeights[offset + component]
+        ) * borderMix;
+      }
+      northWeights[index] = clamp(blurredNorth[index], 0, 1);
+    }
+  }
+  return { terrainWeights, northWeights };
+}
+
+function smoothTerrainHeights(samples, xs, ys, baseHeights, northWeights = null) {
   let current = baseHeights;
   const neighborOffsets = [
     [-1, -1, 1], [0, -1, 2], [1, -1, 1],
@@ -788,8 +954,8 @@ function smoothTerrainHeights(samples, xs, ys, baseHeights) {
       // The frozen north relaxes hardest into broad glacial shelves. Other
       // realms smooth just enough to dissolve category pedestals while the
       // erosion octaves keep their uplands craggy.
-      const northern = sample.realmId === "north" || ys[row] <= -170;
-      blendStrength[index] = (northern ? 0.88 : 0.62) * (1 - preserveAuthoredRelief * 0.82);
+      const northern = northWeights ? northWeights[index] : sample.realmId === "north" ? 1 : 0;
+      blendStrength[index] = (0.62 + northern * 0.26) * (1 - preserveAuthoredRelief * 0.82);
     }
   }
 
@@ -831,22 +997,86 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
   const ao = new Uint8Array(vertexCount);
   const shore = new Uint8Array(vertexCount);
   const treeCandidates = [];
+  const rockCandidates = [];
   const samples = new Array(vertexCount);
   const baseHeights = new Float32Array(vertexCount);
   // Fine grids would blow past the fallback height cache's eviction limit and
   // force thrashing; the registered grid serves those lookups instead.
   const fillHeightCache = vertexCount <= 150000;
+  const propLandmarks = ATLAS_PROP_LANDMARKS.map((landmark) => ({
+    id: landmark.id,
+    center: atlas3dAxialToScene(landmark.coord),
+    clearance: landmark.capitalOfRealmId
+      ? 13
+      : landmark.kind === "city" || landmark.kind === "wonder"
+      ? 11
+      : ["town", "fortress", "castle", "port"].includes(landmark.kind)
+      ? 8
+      : ["village", "pagoda", "shrine", "temple", "sanctuary", "monastery"].includes(landmark.kind)
+      ? 6
+      : 4.5,
+  }));
+  const propCorridors = [...CONTINENT_ROUTES, ...CONTINENT_WATERWAYS].map((corridor) => ({
+    clearance: Math.max(
+      corridor.width || 0,
+      corridor.widthStart || 0,
+      corridor.widthEnd || 0,
+      corridor.kind === "regional-road" ? 1.2 : 1.9,
+    ) / 2 + 2.7,
+    waypoints: corridor.waypoints.map(atlas3dAxialToScene),
+  }));
+  const segmentDistance = (point, start, end) => {
+    const dx = end.x - start.x;
+    const dz = end.z - start.z;
+    const lengthSquared = dx * dx + dz * dz;
+    if (!lengthSquared) return Math.hypot(point.x - start.x, point.z - start.z);
+    const mix = clamp(
+      ((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSquared,
+      0,
+      1,
+    );
+    return Math.hypot(point.x - (start.x + dx * mix), point.z - (start.z + dz * mix));
+  };
+  const clearsPropFeatures = (coord, padding = 0, ignoredLandmarkId = null) => {
+    const scene = atlas3dAxialToScene(coord);
+    for (const landmark of propLandmarks) {
+      if (landmark.id === ignoredLandmarkId) continue;
+      if (Math.hypot(scene.x - landmark.center.x, scene.z - landmark.center.z)
+        < landmark.clearance + padding) return false;
+    }
+    for (const corridor of propCorridors) {
+      for (let index = 1; index < corridor.waypoints.length; index += 1) {
+        if (segmentDistance(scene, corridor.waypoints[index - 1], corridor.waypoints[index])
+          < corridor.clearance + padding) return false;
+      }
+    }
+    return true;
+  };
 
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
       const index = row * columns + column;
       const coord = { x: xs[column], y: ys[row] };
       samples[index] = surveyAtlas(coord.x, coord.y, seed);
-      baseHeights[index] = atlas3dBaseTerrainHeight(samples[index], coord, seed);
     }
   }
 
-  const smoothedHeights = smoothTerrainHeights(samples, xs, ys, baseHeights);
+  const { terrainWeights, northWeights } = buildTerrainBlendFields(samples, xs, ys, seed);
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const index = row * columns + column;
+      baseHeights[index] = atlas3dBaseTerrainHeight(
+        samples[index],
+        { x: xs[column], y: ys[row] },
+        seed,
+        terrainWeights,
+        northWeights[index],
+        index * 3,
+      );
+    }
+  }
+
+  const smoothedHeights = smoothTerrainHeights(samples, xs, ys, baseHeights, northWeights);
 
   const finalHeights = new Float32Array(vertexCount);
   for (let row = 0; row < rows; row += 1) {
@@ -985,33 +1215,146 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
         seed,
         coastal[index] === 1,
         slopes[index],
+        northWeights[index],
       );
       colors[index * 3] = red;
       colors[index * 3 + 1] = green;
       colors[index * 3 + 2] = blue;
 
-      if (sample.land && sample.terrain === "forest" && x % 4 === 0 && y % 4 === 0) {
-        // A low-frequency grove mask makes woodland read as authored stands
-        // and clearings. Fine noise then fills those stands densely enough to
-        // survive close mobile zoom without becoming a uniform tree carpet.
-        // Emission is pinned to the four-hex lattice so refined strides keep
-        // the same deterministic forest.
-        const grove = coordinateNoise(Math.floor(x / 24), Math.floor(y / 24), seed + 43);
+      if (sample.land && x % 4 === 0 && y % 4 === 0) {
+        // Forest records are emitted on a fixed four-hex lattice so coarse
+        // and refined terrain payloads describe the same authored groves.
+        // Golden-angle clusters remove the old grid cadence while retaining
+        // broad clearings and enough density to read as a miniature forest.
+        const grove = interpolatedCoordinateNoise(x, y, 26, seed + 43);
         const density = coordinateNoise(x, y, seed);
-        const count = grove > 0.34 && density > 0.2
-          ? 1 + (density > 0.78 ? 1 : 0)
-          : 0;
+        const habitatByTerrain = {
+          plains: { central: 0.16, north: 0.13, east: 0.21, south: 0.055, west: 0.17 },
+          hills: { central: 0.16, north: 0.19, east: 0.17, south: 0.075, west: 0.18 },
+          marsh: { central: 0.12, north: 0.08, east: 0.23, south: 0.035, west: 0.16 },
+          mountains: { central: 0.035, north: 0.085, east: 0.045, south: 0.02, west: 0.045 },
+          impassable: { central: 0.02, north: 0.055, east: 0.025, south: 0.012, west: 0.035 },
+        };
+        const forest = sample.terrain === "forest";
+        const habitat = habitatByTerrain[sample.terrain]?.[sample.realmId] || 0;
+        const fringeAcceptance = habitat * (0.58 + grove * 0.78);
+        const count = forest
+          ? (grove > 0.22 && density > 0.08
+            ? 4 + Math.floor(density * 5) + (grove > 0.76 ? 1 : 0)
+            : 0)
+          : (density < fringeAcceptance
+            ? 1 + (grove > 0.7 ? 1 : 0) + (density < fringeAcceptance * 0.22 ? 1 : 0)
+            : 0);
+        const phase = coordinateNoise(x, y, seed + 47) * Math.PI * 2;
         for (let tree = 0; tree < count; tree += 1) {
-          const jitterX = (coordinateNoise(x, y, seed + tree * 11 + 1) - 0.5) * 2.88;
-          const jitterY = (coordinateNoise(x, y, seed + tree * 11 + 2) - 0.5) * 2.88;
+          const radial = 0.38 + Math.sqrt((tree + 0.45) / Math.max(1, count)) * 3.05;
+          const angle = phase + tree * GOLDEN_ANGLE;
+          const jitterX = Math.cos(angle) * radial
+            + (coordinateNoise(x, y, seed + tree * 11 + 1) - 0.5) * 0.68;
+          const jitterY = Math.sin(angle) * radial
+            + (coordinateNoise(x, y, seed + tree * 11 + 2) - 0.5) * 0.68;
           const treeCoord = { x: x + jitterX, y: y + jitterY };
           if (atlas3dAuthoredWaterContains(treeCoord, 1.5)) continue;
+          if (!clearsPropFeatures(treeCoord)) continue;
+          const speciesNoise = coordinateNoise(x, y, seed + tree * 11 + 7);
+          const species = sample.realmId === "north"
+            ? 0
+            : sample.realmId === "south"
+            ? 2
+            : sample.realmId === "west"
+            ? (speciesNoise > 0.76 ? 0 : 1)
+            : (speciesNoise > 0.91 ? 0 : 1);
           treeCandidates.push({
             coord: treeCoord,
-            scale: 0.72 + coordinateNoise(x, y, seed + tree * 11 + 3) * 0.8,
+            scale: 0.62 + coordinateNoise(x, y, seed + tree * 11 + 3) * 0.7,
             rotation: coordinateNoise(x, y, seed + tree * 11 + 4) * Math.PI * 2,
             colorFactor: 0.78 + coordinateNoise(x, y, seed + tree * 11 + 5) * 0.28,
             realmIndex: REALM_INDICES[sample.realmId] ?? 0,
+            species,
+          });
+        }
+      }
+
+      if (sample.land && x % 4 === 0 && y % 4 === 0) {
+        const rockyTerrain = sample.terrain === "mountains" || sample.terrain === "hills";
+        const propensity = coordinateNoise(x, y, seed + SALT_ROCKS);
+        const threshold = sample.terrain === "mountains" ? 0.22 : 0.58;
+        const rockCluster = interpolatedCoordinateNoise(x, y, 18, seed + SALT_ROCKS + 4);
+        let propSlope = 0;
+        if (rockyTerrain && propensity > threshold && rockCluster > 0.28) {
+          const rawHeight = (sampleCoord) => atlas3dTerrainHeight(
+            surveyAtlas(sampleCoord.x, sampleCoord.y, seed),
+            sampleCoord,
+            seed,
+          );
+          propSlope = Math.hypot(
+            rawHeight({ x: x + 4, y }) - rawHeight({ x: x - 4, y }),
+            rawHeight({ x, y: y + 4 }) - rawHeight({ x, y: y - 4 }),
+          ) / 8;
+        }
+        if (rockyTerrain && propensity > threshold && rockCluster > 0.28
+          && (propSlope > 0.075 || (sample.terrain === "mountains" && sample.elevation > 0.76))) {
+          const count = 1 + (propensity > 0.78 ? 1 : 0) + (propensity > 0.92 ? 1 : 0);
+          for (let rock = 0; rock < count; rock += 1) {
+            const angle = propensity * Math.PI * 2 + rock * GOLDEN_ANGLE;
+            const radius = 0.5 + rock * 1.1;
+            const coord = {
+              x: x + Math.cos(angle) * radius,
+              y: y + Math.sin(angle) * radius,
+            };
+            if (atlas3dAuthoredWaterContains(coord, 1.2)) continue;
+            if (!clearsPropFeatures(coord, -1.2)) continue;
+            rockCandidates.push({
+              coord,
+              scale: 0.55 + coordinateNoise(x, y, seed + SALT_ROCKS + rock * 7 + 1) * 1.5,
+              rotation: coordinateNoise(x, y, seed + SALT_ROCKS + rock * 7 + 2) * Math.PI * 2,
+              variant: Math.min(2, Math.floor(coordinateNoise(
+                x,
+                y,
+                seed + SALT_ROCKS + rock * 7 + 3,
+              ) * 3)),
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // The Sea of Reeds is cultivated lowland rather than generic forest, so
+  // its signature cherry and ginkgo orchards are authored independently in
+  // the worker. Keeping them in the payload avoids thousands of main-thread
+  // height and clearance queries when the atlas opens.
+  const eastOrchards = [
+    { species: ATLAS_3D_TREE_SPECIES.cherry, bounds: { xmin: 300, xmax: 460, ymin: -150, ymax: 50 }, salt: 0 },
+    { species: ATLAS_3D_TREE_SPECIES.ginkgo, bounds: { xmin: 300, xmax: 470, ymin: 50, ymax: 180 }, salt: 97 },
+  ];
+  for (const orchard of eastOrchards) {
+    const { bounds } = orchard;
+    for (let y = bounds.ymin; y <= bounds.ymax; y += 8) {
+      for (let x = bounds.xmin; x <= bounds.xmax; x += 8) {
+        const patch = coordinateNoise(
+          Math.floor((x - bounds.xmin) / 30),
+          Math.floor((y - bounds.ymin) / 30),
+          seed + 811 + orchard.salt,
+        );
+        const detail = coordinateNoise(x, y, seed + 823 + orchard.salt);
+        if (patch <= 0.34 || detail <= 0.17) continue;
+        const count = 1 + (detail > 0.58 ? 1 : 0) + (detail > 0.86 ? 1 : 0);
+        for (let tree = 0; tree < count; tree += 1) {
+          const coord = {
+            x: x + (coordinateNoise(x, y, seed + 829 + tree * 11 + orchard.salt) - 0.5) * 7,
+            y: y + (coordinateNoise(y, x, seed + 839 + tree * 11 + orchard.salt) - 0.5) * 7,
+          };
+          const orchardSample = surveyAtlas(coord.x, coord.y, seed);
+          if (!orchardSample.land || atlas3dAuthoredWaterContains(coord, 1.5)) continue;
+          if (!clearsPropFeatures(coord)) continue;
+          treeCandidates.push({
+            coord,
+            scale: 0.88 + coordinateNoise(x, y, seed + 853 + tree * 13 + orchard.salt) * 0.64,
+            rotation: coordinateNoise(y, x, seed + 859 + tree * 13 + orchard.salt) * Math.PI * 2,
+            colorFactor: 0.9 + coordinateNoise(x, y, seed + 863 + tree * 13 + orchard.salt) * 0.16,
+            realmIndex: REALM_INDICES.east,
+            species: orchard.species,
           });
         }
       }
@@ -1087,13 +1430,16 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
     shore,
     indices,
     trees: new Float32Array(0),
+    rocks: new Float32Array(0),
+    fields: new Float32Array(0),
+    environs: new Float32Array(0),
   };
   registerAtlas3dTerrainData(terrain);
-  const trees = new Float32Array(treeCandidates.length * 7);
+  const trees = new Float32Array(treeCandidates.length * ATLAS_3D_TREE_RECORD_STRIDE);
   for (let index = 0; index < treeCandidates.length; index += 1) {
     const candidate = treeCandidates[index];
     const treeScene = atlas3dAxialToScene(candidate.coord);
-    const offset = index * 7;
+    const offset = index * ATLAS_3D_TREE_RECORD_STRIDE;
     trees[offset] = treeScene.x;
     trees[offset + 1] = atlas3dTerrainHeightAt(candidate.coord, seed, stride);
     trees[offset + 2] = treeScene.z;
@@ -1101,8 +1447,129 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
     trees[offset + 4] = candidate.rotation;
     trees[offset + 5] = candidate.colorFactor;
     trees[offset + 6] = candidate.realmIndex;
+    trees[offset + 7] = candidate.species;
+  }
+
+  const rocks = new Float32Array(rockCandidates.length * ATLAS_3D_ROCK_RECORD_STRIDE);
+  for (let index = 0; index < rockCandidates.length; index += 1) {
+    const candidate = rockCandidates[index];
+    const scene = atlas3dAxialToScene(candidate.coord);
+    const offset = index * ATLAS_3D_ROCK_RECORD_STRIDE;
+    rocks[offset] = scene.x;
+    rocks[offset + 1] = atlas3dTerrainHeightAt(candidate.coord, seed, stride);
+    rocks[offset + 2] = scene.z;
+    rocks[offset + 3] = candidate.scale;
+    rocks[offset + 4] = candidate.rotation;
+    rocks[offset + 5] = candidate.variant;
+  }
+
+  const fieldRecords = [];
+  const environRecords = [];
+  const settlementCounts = {
+    city: [24, 18],
+    town: [16, 12],
+    settlement: [13, 10],
+    village: [11, 8],
+    fortress: [9, 7],
+    port: [13, 10],
+  };
+  const insideDomain = (coord, inset = 2) => coord.x >= CONTINENT.bounds.xmin + inset
+    && coord.x <= CONTINENT.bounds.xmax - inset
+    && coord.y >= CONTINENT.bounds.ymin + inset
+    && coord.y <= CONTINENT.bounds.ymax - inset;
+  const buildSettlementCandidate = (landmark, index, salt, near, far) => {
+    const phase = coordinateNoise(landmark.coord.x, landmark.coord.y, seed + salt) * Math.PI * 2;
+    const angle = phase + index * GOLDEN_ANGLE;
+    const radialNoise = coordinateNoise(
+      landmark.coord.x + index,
+      landmark.coord.y - index,
+      seed + salt + 1,
+    );
+    const radius = near + (far - near) * Math.sqrt(radialNoise);
+    return {
+      x: landmark.coord.x + Math.cos(angle) * radius,
+      y: landmark.coord.y + Math.sin(angle) * radius,
+    };
+  };
+  const acceptablePropGround = (coord, allowedTerrains, maxRise, footprint = null) => {
+    if (!insideDomain(coord) || atlas3dAuthoredWaterContains(coord, 1.4)) return null;
+    const sample = surveyAtlas(coord.x, coord.y, seed);
+    if (!sample.land || !allowedTerrains.has(sample.terrain)) return null;
+    const height = atlas3dTerrainHeightAt(coord, seed, stride);
+    const comparisonHeight = atlas3dTerrainHeight(sample, coord, seed);
+    const sampleCoords = [{ x: coord.x + 2, y: coord.y }, { x: coord.x, y: coord.y + 2 }];
+    if (footprint) {
+      const center = atlas3dAxialToScene(coord);
+      const cosine = Math.cos(footprint.rotation);
+      const sine = Math.sin(footprint.rotation);
+      for (const [sideX, sideZ] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        const localX = sideX * footprint.width * 0.5;
+        const localZ = sideZ * footprint.depth * 0.5;
+        sampleCoords.push(atlas3dSceneToAxial({
+          x: center.x + localX * cosine - localZ * sine,
+          z: center.z + localX * sine + localZ * cosine,
+        }));
+      }
+    }
+    const sampledHeights = sampleCoords.map((sampleCoord) => (
+      atlas3dTerrainHeight(surveyAtlas(sampleCoord.x, sampleCoord.y, seed), sampleCoord, seed)
+    ));
+    if (Math.max(...sampledHeights.map((sampleHeight) => (
+      Math.abs(sampleHeight - comparisonHeight)
+    ))) > maxRise) return null;
+    return height;
+  };
+
+  const fieldTerrains = new Set(["plains", "hills", "forest"]);
+  const environTerrains = new Set(["plains", "hills", "forest", "marsh"]);
+
+  for (const landmark of ATLAS_PROP_LANDMARKS) {
+    if (!SETTLEMENT_PROP_KINDS.has(landmark.kind)) continue;
+    const [fieldCount, environCount] = settlementCounts[landmark.kind] || [6, 4];
+    for (let index = 0; index < fieldCount; index += 1) {
+      const coord = buildSettlementCandidate(landmark, index, SALT_FIELDS, 11, landmark.kind === "city" ? 30 : 24);
+      if (!clearsPropFeatures(coord, -2, landmark.id)) continue;
+      const scaleNoise = coordinateNoise(coord.x, coord.y, seed + SALT_FIELDS + 3);
+      const width = 3.4 + scaleNoise * 3.8;
+      const depth = 2.2 + coordinateNoise(coord.y, coord.x, seed + SALT_FIELDS + 5) * 2.8;
+      const rotation = coordinateNoise(coord.x, coord.y, seed + SALT_FIELDS + 7) * Math.PI;
+      const height = acceptablePropGround(coord, fieldTerrains, 1.05, { width, depth, rotation });
+      if (height == null) continue;
+      const scene = atlas3dAxialToScene(coord);
+      fieldRecords.push(
+        scene.x,
+        height + 0.12,
+        scene.z,
+        width,
+        depth,
+        rotation,
+        Math.min(2, Math.floor(coordinateNoise(coord.x, coord.y, seed + SALT_FIELDS + 9) * 3)),
+      );
+    }
+    for (let index = 0; index < environCount; index += 1) {
+      const coord = buildSettlementCandidate(landmark, index, SALT_ENVIRONS, 5.5, landmark.kind === "city" ? 14 : 11);
+      if (!clearsPropFeatures(coord, -1.5, landmark.id)) continue;
+      const height = acceptablePropGround(
+        coord,
+        environTerrains,
+        1.7,
+      );
+      if (height == null) continue;
+      const scene = atlas3dAxialToScene(coord);
+      environRecords.push(
+        scene.x,
+        height,
+        scene.z,
+        0.72 + coordinateNoise(coord.x, coord.y, seed + SALT_ENVIRONS + 3) * 0.72,
+        coordinateNoise(coord.y, coord.x, seed + SALT_ENVIRONS + 5) * Math.PI * 2,
+        Math.min(2, Math.floor(coordinateNoise(coord.x, coord.y, seed + SALT_ENVIRONS + 7) * 3)),
+      );
+    }
   }
   terrain.trees = trees;
+  terrain.rocks = rocks;
+  terrain.fields = new Float32Array(fieldRecords);
+  terrain.environs = new Float32Array(environRecords);
   registerAtlas3dTerrainData(terrain);
   return terrain;
 }
@@ -1137,19 +1604,27 @@ export function atlas3dCameraFrame(camera, viewport, seed = CONTINENT.seed) {
     ? clamp(camera.targetHeight, TERRAIN_MIN_HEIGHT, TERRAIN_MAX_HEIGHT)
     : cameraTerrainHeight(camera, seed);
   const target = { ...targetPlane, y: targetHeight };
+  const fitKey = `${seed}|${Math.max(1, viewport?.width || 1)}x${Math.max(1, viewport?.height || 1)}`;
+  const fitZoom = FIT_ZOOM_CACHE.get(fitKey) ?? camera.zoom;
+  const pitch = atlas3dPitchFor(camera.zoom, fitZoom);
+  const pitchSin = Math.sin(pitch);
+  const pitchCos = Math.cos(pitch);
   const height = Math.max(1, viewport?.height || 1);
   const requestedDistance = height / (2 * Math.max(0.001, camera.zoom) * FOV_TAN);
   const distance = Math.max(
     requestedDistance,
-    (TERRAIN_MAX_HEIGHT + CAMERA_MIN_CLEARANCE - target.y) / PITCH_COS,
+    (TERRAIN_MAX_HEIGHT + CAMERA_MIN_CLEARANCE - target.y) / pitchCos,
   );
   const frame = {
     target,
     distance,
+    pitch,
+    pitchSin,
+    pitchCos,
     position: {
       x: target.x,
-      y: target.y + distance * PITCH_COS,
-      z: target.z + distance * PITCH_SIN,
+      y: target.y + distance * pitchCos,
+      z: target.z + distance * pitchSin,
     },
   };
   lastCameraFrameKey = frameKey;
@@ -1165,9 +1640,9 @@ export function atlas3dProject(camera, viewport, coord, height = 0, seed = CONTI
     y: height - frame.position.y,
     z: scene.z - frame.position.z,
   };
-  const depth = -rel.y * PITCH_COS - rel.z * PITCH_SIN;
+  const depth = -rel.y * frame.pitchCos - rel.z * frame.pitchSin;
   if (depth <= 0.01) return { x: -10000, y: -10000, visible: false, depth };
-  const screenUp = rel.y * PITCH_SIN - rel.z * PITCH_COS;
+  const screenUp = rel.y * frame.pitchSin - rel.z * frame.pitchCos;
   const width = Math.max(1, viewport?.width || 1);
   const viewportHeight = Math.max(1, viewport?.height || 1);
   const aspect = width / viewportHeight;
@@ -1191,8 +1666,8 @@ export function atlas3dScreenToGround(camera, viewport, point, seed = CONTINENT.
   const aspect = width / height;
   const direction = {
     x: ndcX * FOV_TAN * aspect,
-    y: -PITCH_COS + ndcY * FOV_TAN * PITCH_SIN,
-    z: -PITCH_SIN - ndcY * FOV_TAN * PITCH_COS,
+    y: -frame.pitchCos + ndcY * FOV_TAN * frame.pitchSin,
+    z: -frame.pitchSin - ndcY * FOV_TAN * frame.pitchCos,
   };
   const length = Math.hypot(direction.x, direction.y, direction.z) || 1;
   direction.x /= length;
@@ -1250,7 +1725,9 @@ function anchorCameraOnGround(camera, viewport, ground, desiredScreen, seed) {
   const ndcX = desiredScreen.x / width * 2 - 1;
   const ndcY = 1 - desiredScreen.y / height * 2;
   const aspect = width / height;
-  const verticalDenominator = -PITCH_COS + PITCH_SIN * ndcY * FOV_TAN;
+  const anchorFrame = atlas3dCameraFrame(anchored, viewport, seed);
+  const verticalDenominator = -anchorFrame.pitchCos
+    + anchorFrame.pitchSin * ndcY * FOV_TAN;
 
   // Invert the perspective projection while holding the current target height
   // and camera distance fixed. Repeating that inexpensive solve lets the seed
@@ -1267,10 +1744,10 @@ function anchorCameraOnGround(camera, viewport, ground, desiredScreen, seed) {
       if (!Number.isFinite(depth) || depth <= 0.01) break;
       const screenUp = ndcY * depth * FOV_TAN;
       const relativeX = ndcX * depth * FOV_TAN * aspect;
-      const relativeZ = -PITCH_SIN * depth - PITCH_COS * screenUp;
+      const relativeZ = -frame.pitchSin * depth - frame.pitchCos * screenUp;
       const candidate = cameraForTarget(analytical, {
         x: groundScene.x - relativeX,
-        z: groundScene.z - frame.distance * PITCH_SIN - relativeZ,
+        z: groundScene.z - frame.distance * frame.pitchSin - relativeZ,
       }, viewport, seed);
       const candidateKey = `${candidate.x.toFixed(6)},${candidate.y.toFixed(6)}`;
       if (visited.has(candidateKey)) break;

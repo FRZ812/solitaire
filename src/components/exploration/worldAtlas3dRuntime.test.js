@@ -25,6 +25,9 @@ describe("3D atlas runtime preload", () => {
       shore: new Uint8Array(4),
       indices: new Uint32Array([0, 2, 1, 1, 2, 3]),
       trees: new Float32Array(),
+      rocks: new Float32Array(),
+      fields: new Float32Array(),
+      environs: new Float32Array(),
     };
     const workers = [];
     class FakeWorker {
@@ -83,6 +86,25 @@ describe("3D atlas runtime preload", () => {
 
     const pending = preloadWorldAtlas3d("runtime-worker-timeout-test", 960);
     await vi.advanceTimersByTimeAsync(20_000);
+    await expect(pending).rejects.toThrow("terrain worker could not start");
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it("gives the progressive stride-2 worker enough headroom without delaying coarse startup", async () => {
+    vi.useFakeTimers();
+    const terminate = vi.fn();
+    globalThis.Worker = class SilentFineWorker {
+      terminate = terminate;
+      postMessage() {}
+    };
+
+    const pending = preloadWorldAtlas3d("runtime-fine-timeout-test", 2);
+    let rejected = false;
+    pending.catch(() => { rejected = true; });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(rejected).toBe(false);
+    expect(terminate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(25_000);
     await expect(pending).rejects.toThrow("terrain worker could not start");
     expect(terminate).toHaveBeenCalledOnce();
   });
