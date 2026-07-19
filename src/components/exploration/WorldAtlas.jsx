@@ -803,6 +803,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
               journey={journey}
               journeyBreaks={journeyBreaks}
               seenKeys={seenKeys}
+              worldTime={state?.time}
               onReady={() => {
                 setSceneError("");
                 setSceneState("ready");

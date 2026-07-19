@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { CONTINENT, NORTHERN_RIDGES } from "../../data/continent.js";
+import {
+  CONTINENT,
+  CONTINENT_HOT_SPRINGS,
+  CONTINENT_LAKES,
+  NORTHERN_RIDGES,
+} from "../../data/continent.js";
 import { surveyAtlas } from "../../engine/world-generation.js";
 import {
   ATLAS_3D_CAMERA_COAST_INSET,
   ATLAS_3D_RENDER_VERSION,
   atlas3dAxialToScene,
+  atlas3dBaseTerrainHeight,
   atlas3dCameraFrame,
   atlas3dFitZoom,
+  atlas3dHotSpringSurfaceHeight,
+  atlas3dLakeSurfaceHeight,
   atlas3dProject,
   atlas3dSceneToAxial,
   atlas3dScreenToGround,
@@ -40,7 +48,49 @@ describe("true 3D atlas spatial model", () => {
     const sample = { land: true, terrain: "plains", elevation: 0.5 };
     expect(northernRidgeElevationBoostAt(coord)).toBeCloseTo(0.18, 8);
     expect(atlas3dTerrainHeight(sample, coord) - atlas3dTerrainHeight(sample))
-      .toBeCloseTo(0.18 * 28, 8);
+      .toBeGreaterThan(0.18 * 28);
+  });
+
+  it("uses continuous northern relief instead of terrain-category spikes", () => {
+    const coord = { x: 180, y: -350 };
+    const shared = { land: true, realmId: "north", elevation: 0.72 };
+    const heights = ["plains", "hills", "mountains", "forest"].map((terrain) => (
+      atlas3dTerrainHeight({ ...shared, terrain }, coord)
+    ));
+
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1e-8);
+    expect(heights[0]).toBeGreaterThan(3.5);
+    expect(heights[0]).toBeLessThan(30);
+  });
+
+  it("recesses every authored lake and hot spring beneath its shared level surface", () => {
+    for (const [feature, surfaceHeight] of [
+      ...CONTINENT_LAKES.map((lake) => [lake, atlas3dLakeSurfaceHeight(lake, CONTINENT.seed)]),
+      ...CONTINENT_HOT_SPRINGS.map((spring) => [spring, atlas3dHotSpringSurfaceHeight(spring, CONTINENT.seed)]),
+    ]) {
+      const centerScene = atlas3dAxialToScene(feature.center);
+      const centerSample = surveyAtlas(feature.center.x, feature.center.y, CONTINENT.seed);
+      expect(atlas3dTerrainHeight(centerSample, feature.center, CONTINENT.seed))
+        .toBeLessThan(surfaceHeight - 0.25);
+
+      for (let index = 0; index < 24; index += 1) {
+        const angle = index / 24 * Math.PI * 2;
+        const coord = atlas3dSceneToAxial({
+          x: centerScene.x + Math.cos(angle) * feature.radius * 0.95,
+          z: centerScene.z + Math.sin(angle) * feature.radius * 0.95,
+        });
+        const sample = surveyAtlas(coord.x, coord.y, CONTINENT.seed);
+        expect(atlas3dTerrainHeight(sample, coord, CONTINENT.seed)).toBeLessThan(surfaceHeight - 0.25);
+      }
+
+      const outside = atlas3dSceneToAxial({
+        x: centerScene.x + feature.radius + 20,
+        z: centerScene.z,
+      });
+      const outsideSample = surveyAtlas(outside.x, outside.y, CONTINENT.seed);
+      expect(atlas3dTerrainHeight(outsideSample, outside, CONTINENT.seed))
+        .toBeCloseTo(atlas3dBaseTerrainHeight(outsideSample, outside), 8);
+    }
   });
 
   it("applies deterministic snow-cap and sandy coastline color tiers", () => {

@@ -1,11 +1,17 @@
-import { CONTINENT, NORTHERN_RIDGES } from "../../data/continent.js";
+import {
+  CONTINENT,
+  CONTINENT_HOT_SPRINGS,
+  CONTINENT_LAKES,
+  MOUNTAIN_SPINE,
+  NORTHERN_RIDGES,
+} from "../../data/continent.js";
 import { continentValueAt, surveyAtlas } from "../../engine/world-generation.js";
 
 export const ATLAS_3D_FOV_DEG = 34;
 export const ATLAS_3D_PITCH_DEG = 38;
-export const ATLAS_3D_TERRAIN_STRIDE = 6;
+export const ATLAS_3D_TERRAIN_STRIDE = 4;
 export const ATLAS_3D_CAMERA_COAST_INSET = ATLAS_3D_TERRAIN_STRIDE;
-export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v3";
+export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v6";
 export const ATLAS_3D_MAX_ZOOM = 26;
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -20,6 +26,7 @@ const TERRAIN_MIN_HEIGHT = -2.8;
 const SNOW_CAP_HEIGHT = 30;
 const SNOW_CAP_COLOR = 0xd8ddd0;
 const COASTAL_SAND_COLOR = 0xb8a870;
+const FROZEN_SHELF_COLOR = 0x93a29f;
 const COASTAL_BAND_RADIUS = 3;
 const COASTAL_NEIGHBOR_OFFSETS = Object.freeze((() => {
   const offsets = [];
@@ -77,6 +84,7 @@ function terrainColor(terrain, realmId) {
   return palette[terrain] ?? palette.plains;
 }
 const HEIGHT_CACHE = new Map();
+const LAKE_SURFACE_HEIGHT_CACHE = new Map();
 const TERRAIN_GRID_CACHE = new Map();
 const FIT_ZOOM_CACHE = new Map();
 let lastCameraFrameKey = "";
@@ -84,6 +92,11 @@ let lastCameraFrame = null;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function smoothstep(edge0, edge1, value) {
+  const mix = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
+  return mix * mix * (3 - 2 * mix);
 }
 
 function clampCenter(center, footprint, boundMin, boundMax) {
@@ -200,6 +213,20 @@ export function coordinateNoise(x, y, salt = 0) {
   return ((value ^ (value >>> 16)) >>> 0) / 4294967295;
 }
 
+function interpolatedCoordinateNoise(x, y, cellSize, salt) {
+  const scaledX = x / cellSize;
+  const scaledY = y / cellSize;
+  const lowerX = Math.floor(scaledX);
+  const lowerY = Math.floor(scaledY);
+  const mixX = smoothstep(0, 1, scaledX - lowerX);
+  const mixY = smoothstep(0, 1, scaledY - lowerY);
+  const top = coordinateNoise(lowerX, lowerY, salt)
+    + (coordinateNoise(lowerX + 1, lowerY, salt) - coordinateNoise(lowerX, lowerY, salt)) * mixX;
+  const bottom = coordinateNoise(lowerX, lowerY + 1, salt)
+    + (coordinateNoise(lowerX + 1, lowerY + 1, salt) - coordinateNoise(lowerX, lowerY + 1, salt)) * mixX;
+  return top + (bottom - top) * mixY;
+}
+
 function axisSamples(min, max, stride) {
   const values = [];
   for (let value = min; value <= max; value += stride) values.push(value);
@@ -234,6 +261,19 @@ export function atlas3dSceneToAxial(point) {
   return { x: point.x - y * 0.5, y };
 }
 
+export function atlas3dWaterFeatureContains(coord, feature, padding = 0) {
+  if (!coord || !feature?.center) return false;
+  const point = atlas3dAxialToScene(coord);
+  const center = atlas3dAxialToScene(feature.center);
+  return Math.hypot(point.x - center.x, point.z - center.z) <= feature.radius + padding;
+}
+
+export function atlas3dAuthoredWaterContains(coord, padding = 0) {
+  return [...CONTINENT_LAKES, ...CONTINENT_HOT_SPRINGS].some((feature) => (
+    atlas3dWaterFeatureContains(coord, feature, padding)
+  ));
+}
+
 function distanceToSegment(point, start, end) {
   const dx = end.x - start.x;
   const dz = end.z - start.z;
@@ -250,10 +290,30 @@ function distanceToSegment(point, start, end) {
   );
 }
 
+const PROJECTED_MOUNTAIN_SPINE = Object.freeze(
+  MOUNTAIN_SPINE.waypoints.map((waypoint) => Object.freeze(atlas3dAxialToScene(waypoint))),
+);
 const PROJECTED_NORTHERN_RIDGES = Object.freeze((NORTHERN_RIDGES || []).map((ridge) => Object.freeze({
   ...ridge,
   waypoints: Object.freeze(ridge.waypoints.map((waypoint) => Object.freeze(atlas3dAxialToScene(waypoint)))),
 })));
+
+function projectedPathWeight(point, waypoints, width) {
+  let distance = Infinity;
+  for (let index = 1; index < waypoints.length; index += 1) {
+    distance = Math.min(distance, distanceToSegment(point, waypoints[index - 1], waypoints[index]));
+  }
+  return distance >= width ? 0 : 1 - distance / width;
+}
+
+export function mountainSpineReliefWeightAt(coord) {
+  if (!coord || !Number.isFinite(coord.x) || !Number.isFinite(coord.y)) return 0;
+  return projectedPathWeight(
+    atlas3dAxialToScene(coord),
+    PROJECTED_MOUNTAIN_SPINE,
+    MOUNTAIN_SPINE.width,
+  );
+}
 
 export function northernRidgeElevationBoostAt(coord) {
   if (!coord || !Number.isFinite(coord.x) || !Number.isFinite(coord.y)) return 0;
@@ -273,23 +333,168 @@ export function northernRidgeElevationBoostAt(coord) {
   return boost;
 }
 
-export function atlas3dTerrainHeight(sample, coord = null) {
+function northernRidgeReliefWeightAt(coord) {
+  if (!coord || !Number.isFinite(coord.x) || !Number.isFinite(coord.y)) return 0;
+  const point = atlas3dAxialToScene(coord);
+  let weight = 0;
+  for (const ridge of PROJECTED_NORTHERN_RIDGES) {
+    weight = Math.max(weight, projectedPathWeight(point, ridge.waypoints, ridge.width));
+  }
+  return weight;
+}
+
+function terrainLiftFor(sample, coord) {
+  const frozenNorth = !!coord && (sample?.realmId === "north" || coord.y <= -170);
+  if (!frozenNorth) {
+    return sample.terrain === "mountains"
+      ? 8.5
+      : sample.terrain === "hills"
+      ? 2.6
+      : sample.terrain === "forest"
+      ? 0.65
+      : 0;
+  }
+
+  // Frostcrown's generator intentionally classifies much of the far north as
+  // mountain biome. Treat that classification as climate/ground cover, then
+  // reserve the full vertical drama for the authored Spine and parallel
+  // ridges. This creates broad glacial shelves and readable valleys instead of
+  // turning every four-hex terrain cell into an equally sharp peak.
+  const ridgeWeight = Math.max(
+    mountainSpineReliefWeightAt(coord),
+    northernRidgeReliefWeightAt(coord),
+  );
+  const authoredRelief = ridgeWeight * ridgeWeight;
+  const continuousLift = 2.6 * smoothstep(0.48, 0.7, sample.elevation)
+    + 5.9 * smoothstep(0.68, 0.92, sample.elevation);
+  return continuousLift * (0.35 + authoredRelief * 0.65);
+}
+
+export function atlas3dBaseTerrainHeight(sample, coord = null) {
   if (!sample?.land) return -2.8;
-  const terrainLift = sample.terrain === "mountains"
-    ? 8.5
-    : sample.terrain === "hills"
-    ? 2.6
-    : sample.terrain === "forest"
-    ? 0.65
-    : 0;
-  const elevation = sample.elevation + northernRidgeElevationBoostAt(coord);
+  const frozenNorth = !!coord && (sample.realmId === "north" || coord.y <= -170);
+  const ridgeWeight = frozenNorth
+    ? Math.max(mountainSpineReliefWeightAt(coord), northernRidgeReliefWeightAt(coord))
+    : 1;
+  const authoredRelief = ridgeWeight * ridgeWeight;
+  const reliefScale = frozenNorth ? 0.22 + authoredRelief * 0.78 : 1;
+  const elevation = 0.16
+    + (sample.elevation - 0.16) * reliefScale
+    + northernRidgeElevationBoostAt(coord);
+  const terrainLift = terrainLiftFor(sample, coord);
   return clamp((elevation - 0.16) * 28 + terrainLift, 0.4, TERRAIN_MAX_HEIGHT);
 }
 
-function sampledTerrainHeight(coord, seed) {
-  const key = `${seed}|${coord.x},${coord.y}`;
+function lakeSurfaceCacheKey(lake, seed) {
+  return `${seed}|${lake.id || lake.name}|${lake.center.x},${lake.center.y}|${lake.radius}`;
+}
+
+export function atlas3dLakeSurfaceHeight(lake, seed = CONTINENT.seed) {
+  const key = lakeSurfaceCacheKey(lake, seed);
+  if (LAKE_SURFACE_HEIGHT_CACHE.has(key)) return LAKE_SURFACE_HEIGHT_CACHE.get(key);
+
+  const sampleCoords = [lake.center];
+  const centerScene = atlas3dAxialToScene(lake.center);
+  const shorelineRadius = Math.max(3, lake.radius + ATLAS_3D_TERRAIN_STRIDE * 1.6);
+  for (let index = 0; index < 16; index += 1) {
+    const angle = index / 16 * Math.PI * 2;
+    sampleCoords.push(atlas3dSceneToAxial({
+      x: centerScene.x + Math.cos(angle) * shorelineRadius,
+      z: centerScene.z + Math.sin(angle) * shorelineRadius,
+    }));
+  }
+  const heights = sampleCoords
+    .map((coord) => atlas3dBaseTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord))
+    .filter((height) => height > TERRAIN_MIN_HEIGHT + 0.1)
+    .sort((a, b) => a - b);
+  const centerHeight = atlas3dBaseTerrainHeight(
+    surveyAtlas(lake.center.x, lake.center.y, seed),
+    lake.center,
+  );
+  const lowerShore = heights[Math.floor(Math.max(0, heights.length - 1) * 0.3)] ?? centerHeight;
+  const surfaceHeight = clamp(Math.min(centerHeight, lowerShore) + 0.16, 0.52, TERRAIN_MAX_HEIGHT - 0.8);
+  LAKE_SURFACE_HEIGHT_CACHE.set(key, surfaceHeight);
+  if (LAKE_SURFACE_HEIGHT_CACHE.size > 96) {
+    LAKE_SURFACE_HEIGHT_CACHE.delete(LAKE_SURFACE_HEIGHT_CACHE.keys().next().value);
+  }
+  return surfaceHeight;
+}
+
+export function atlas3dHotSpringSurfaceHeight(spring, seed = CONTINENT.seed) {
+  const key = `${seed}|hot-spring|${spring.id || spring.name}|${spring.center.x},${spring.center.y}|${spring.radius}`;
+  if (LAKE_SURFACE_HEIGHT_CACHE.has(key)) return LAKE_SURFACE_HEIGHT_CACHE.get(key);
+  const centerScene = atlas3dAxialToScene(spring.center);
+  const sampleCoords = [spring.center];
+  const shorelineRadius = spring.radius + ATLAS_3D_TERRAIN_STRIDE * 1.35;
+  for (let index = 0; index < 12; index += 1) {
+    const angle = index / 12 * Math.PI * 2;
+    sampleCoords.push(atlas3dSceneToAxial({
+      x: centerScene.x + Math.cos(angle) * shorelineRadius,
+      z: centerScene.z + Math.sin(angle) * shorelineRadius,
+    }));
+  }
+  const heights = sampleCoords
+    .map((coord) => atlas3dBaseTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord))
+    .filter((height) => height > TERRAIN_MIN_HEIGHT + 0.1)
+    .sort((a, b) => a - b);
+  const centerHeight = atlas3dBaseTerrainHeight(
+    surveyAtlas(spring.center.x, spring.center.y, seed),
+    spring.center,
+  );
+  const lowerShore = heights[Math.floor(Math.max(0, heights.length - 1) * 0.3)] ?? centerHeight;
+  const surfaceHeight = clamp(Math.min(centerHeight, lowerShore) + 0.22, 0.58, TERRAIN_MAX_HEIGHT - 0.6);
+  LAKE_SURFACE_HEIGHT_CACHE.set(key, surfaceHeight);
+  return surfaceHeight;
+}
+
+function lakeBasinHeightAt(coord, height, seed) {
+  let result = height;
+  const point = atlas3dAxialToScene(coord);
+  for (const lake of CONTINENT_LAKES) {
+    const lakeCenter = atlas3dAxialToScene(lake.center);
+    const distance = Math.hypot(point.x - lakeCenter.x, point.z - lakeCenter.z);
+    const innerRadius = lake.radius * 1.05 + ATLAS_3D_TERRAIN_STRIDE * 1.2;
+    const outerRadius = innerRadius + ATLAS_3D_TERRAIN_STRIDE * 1.4;
+    if (distance >= outerRadius) continue;
+    const waterHeight = atlas3dLakeSurfaceHeight(lake, seed);
+    const bedHeight = waterHeight - 0.46;
+    if (distance <= innerRadius) {
+      result = bedHeight;
+      continue;
+    }
+    const linearMix = (distance - innerRadius) / Math.max(0.001, outerRadius - innerRadius);
+    const smoothMix = linearMix * linearMix * (3 - 2 * linearMix);
+    result = bedHeight + (result - bedHeight) * smoothMix;
+  }
+  for (const spring of CONTINENT_HOT_SPRINGS) {
+    const springCenter = atlas3dAxialToScene(spring.center);
+    const distance = Math.hypot(point.x - springCenter.x, point.z - springCenter.z);
+    const innerRadius = spring.radius * 1.08 + ATLAS_3D_TERRAIN_STRIDE * 1.15;
+    const outerRadius = innerRadius + ATLAS_3D_TERRAIN_STRIDE * 1.25;
+    if (distance >= outerRadius) continue;
+    const waterHeight = atlas3dHotSpringSurfaceHeight(spring, seed);
+    const bedHeight = waterHeight - 0.34;
+    if (distance <= innerRadius) {
+      result = bedHeight;
+      continue;
+    }
+    const linearMix = (distance - innerRadius) / Math.max(0.001, outerRadius - innerRadius);
+    const smoothMix = linearMix * linearMix * (3 - 2 * linearMix);
+    result = bedHeight + (result - bedHeight) * smoothMix;
+  }
+  return result;
+}
+
+export function atlas3dTerrainHeight(sample, coord = null, seed = CONTINENT.seed) {
+  const height = atlas3dBaseTerrainHeight(sample, coord);
+  if (!sample?.land || !coord) return height;
+  return lakeBasinHeightAt(coord, height, seed);
+}
+
+function sampledTerrainHeight(coord, seed, stride = ATLAS_3D_TERRAIN_STRIDE) {
+  const key = `${seed}|${stride}|${coord.x},${coord.y}`;
   if (HEIGHT_CACHE.has(key)) return HEIGHT_CACHE.get(key);
-  const height = atlas3dTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord);
+  const height = atlas3dTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord, seed);
   if (HEIGHT_CACHE.size >= 100000) HEIGHT_CACHE.clear();
   HEIGHT_CACHE.set(key, height);
   return height;
@@ -355,16 +560,16 @@ export function atlas3dTerrainHeightAt(
   const nextRow = Math.min((grid?.rows || Infinity) - 1, yCell.index + 1);
   const a = heightAt
     ? heightAt(xCell.index, yCell.index)
-    : sampledTerrainHeight({ x: xCell.lower, y: yCell.lower }, seed);
+    : sampledTerrainHeight({ x: xCell.lower, y: yCell.lower }, seed, stride);
   const b = heightAt
     ? heightAt(nextColumn, yCell.index)
-    : sampledTerrainHeight({ x: xCell.upper, y: yCell.lower }, seed);
+    : sampledTerrainHeight({ x: xCell.upper, y: yCell.lower }, seed, stride);
   const c = heightAt
     ? heightAt(xCell.index, nextRow)
-    : sampledTerrainHeight({ x: xCell.lower, y: yCell.upper }, seed);
+    : sampledTerrainHeight({ x: xCell.lower, y: yCell.upper }, seed, stride);
   const d = heightAt
     ? heightAt(nextColumn, nextRow)
-    : sampledTerrainHeight({ x: xCell.upper, y: yCell.upper }, seed);
+    : sampledTerrainHeight({ x: xCell.upper, y: yCell.upper }, seed, stride);
   const u = xCell.mix;
   const v = yCell.mix;
   return u + v <= 1
@@ -417,14 +622,21 @@ export function atlas3dTerrainColor(
   coastal = false,
 ) {
   const mountain = sample?.terrain === "mountains";
+  const frozenShelf = sample?.land
+    && (sample.realmId === "north" || coord.y <= -170)
+    && ["plains", "hills", "mountains", "impassable"].includes(sample.terrain);
   const primaryAmplitude = mountain ? 0.12 : 0.08;
   const secondaryAmplitude = mountain ? 0.06 : 0.04;
-  const colorVariance =
-    (coordinateNoise(coord.x, coord.y, seed + 199) - 0.5) * primaryAmplitude
-    + (coordinateNoise(coord.x * 2.3, coord.y * 2.3, seed + 311) - 0.5) * secondaryAmplitude;
-  const base = terrainColor(sample?.land ? sample.terrain : "water", sample?.realmId);
+  const colorVariance = frozenShelf
+    ? (interpolatedCoordinateNoise(coord.x, coord.y, 28, seed + 199) - 0.5) * 0.065
+      + (interpolatedCoordinateNoise(coord.x, coord.y, 11, seed + 311) - 0.5) * 0.025
+    : (coordinateNoise(coord.x, coord.y, seed + 199) - 0.5) * primaryAmplitude
+      + (coordinateNoise(coord.x * 2.3, coord.y * 2.3, seed + 311) - 0.5) * secondaryAmplitude;
+  const base = frozenShelf && height < SNOW_CAP_HEIGHT
+    ? FROZEN_SHELF_COLOR
+    : terrainColor(sample?.land ? sample.terrain : "water", sample?.realmId);
   const relief = sample?.land
-    ? (sample.elevation - 0.48) * 0.24 + colorVariance
+    ? (frozenShelf ? (height - 8) * 0.008 : (sample.elevation - 0.48) * 0.24) + colorVariance
     : (sample.elevation - 0.45) * 0.08 + colorVariance * 0.4;
   let channels = colorChannels(base, relief);
   if (coastal && sample?.land) {
@@ -438,6 +650,47 @@ export function atlas3dTerrainColor(
   return channels;
 }
 
+function smoothNorthernTerrainHeights(samples, xs, ys, baseHeights) {
+  let current = baseHeights;
+  const neighborOffsets = [
+    [-1, -1, 1], [0, -1, 2], [1, -1, 1],
+    [-1, 0, 2],                 [1, 0, 2],
+    [-1, 1, 1],  [0, 1, 2],  [1, 1, 1],
+  ];
+  for (let pass = 0; pass < 3; pass += 1) {
+    const next = current.slice();
+    for (let row = 1; row < ys.length - 1; row += 1) {
+      for (let column = 1; column < xs.length - 1; column += 1) {
+        const index = row * xs.length + column;
+        const sample = samples[index];
+        if (!sample?.land || (sample.realmId !== "north" && ys[row] > -170)) continue;
+        let weightedHeight = current[index] * 4;
+        let totalWeight = 4;
+        for (const [columnOffset, rowOffset, weight] of neighborOffsets) {
+          const neighborIndex = (row + rowOffset) * xs.length + column + columnOffset;
+          const neighborSample = samples[neighborIndex];
+          if (!neighborSample?.land || (neighborSample.realmId !== "north" && ys[row + rowOffset] > -170)) {
+            continue;
+          }
+          weightedHeight += current[neighborIndex] * weight;
+          totalWeight += weight;
+        }
+        const coord = { x: xs[column], y: ys[row] };
+        const ridgeWeight = Math.max(
+          mountainSpineReliefWeightAt(coord),
+          northernRidgeReliefWeightAt(coord),
+        );
+        const preserveAuthoredRelief = ridgeWeight * ridgeWeight;
+        const blend = 0.88 * (1 - preserveAuthoredRelief * 0.82);
+        const average = weightedHeight / totalWeight;
+        next[index] = current[index] + (average - current[index]) * blend;
+      }
+    }
+    current = next;
+  }
+  return current;
+}
+
 export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D_TERRAIN_STRIDE) {
   const xs = axisSamples(CONTINENT.bounds.xmin, CONTINENT.bounds.xmax, stride);
   const ys = axisSamples(CONTINENT.bounds.ymin, CONTINENT.bounds.ymax, stride);
@@ -445,15 +698,19 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
   const positions = new Float32Array(vertexCount * 3);
   const colors = new Float32Array(vertexCount * 3);
   const coastal = new Uint8Array(vertexCount);
-  const trees = [];
+  const treeCandidates = [];
   const samples = new Array(vertexCount);
+  const baseHeights = new Float32Array(vertexCount);
 
   for (let row = 0; row < ys.length; row += 1) {
     for (let column = 0; column < xs.length; column += 1) {
       const index = row * xs.length + column;
       samples[index] = surveyAtlas(xs[column], ys[row], seed);
+      baseHeights[index] = atlas3dBaseTerrainHeight(samples[index], { x: xs[column], y: ys[row] });
     }
   }
+
+  const smoothedHeights = smoothNorthernTerrainHeights(samples, xs, ys, baseHeights);
 
   for (let row = 0; row < ys.length; row += 1) {
     for (let column = 0; column < xs.length; column += 1) {
@@ -462,10 +719,12 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
       const index = row * xs.length + column;
       const sample = samples[index];
       const scene = atlas3dAxialToScene({ x, y });
-      const height = atlas3dTerrainHeight(sample, { x, y });
+      const height = sample.land
+        ? lakeBasinHeightAt({ x, y }, smoothedHeights[index], seed)
+        : TERRAIN_MIN_HEIGHT;
       const isCoastal = isCoastalGridVertex({ x, y }, sample, seed);
       coastal[index] = isCoastal ? 1 : 0;
-      HEIGHT_CACHE.set(`${seed}|${x},${y}`, height);
+      HEIGHT_CACHE.set(`${seed}|${stride}|${x},${y}`, height);
       positions[index * 3] = scene.x;
       positions[index * 3 + 1] = height;
       positions[index * 3 + 2] = scene.z;
@@ -484,22 +743,26 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
       colors[index * 3 + 2] = blue;
 
       if (sample.land && sample.terrain === "forest") {
+        // A low-frequency grove mask makes woodland read as authored stands
+        // and clearings. Fine noise then fills those stands densely enough to
+        // survive close mobile zoom without becoming a uniform tree carpet.
+        const grove = coordinateNoise(Math.floor(x / 24), Math.floor(y / 24), seed + 43);
         const density = coordinateNoise(x, y, seed);
-        const count = density > 0.94 ? 2 : density > 0.55 ? 1 : 0;
+        const count = grove > 0.34 && density > 0.2
+          ? 1 + (density > 0.78 ? 1 : 0)
+          : 0;
         for (let tree = 0; tree < count; tree += 1) {
           const jitterX = (coordinateNoise(x, y, seed + tree * 11 + 1) - 0.5) * stride * 0.72;
           const jitterY = (coordinateNoise(x, y, seed + tree * 11 + 2) - 0.5) * stride * 0.72;
           const treeCoord = { x: x + jitterX, y: y + jitterY };
-          const treeScene = atlas3dAxialToScene(treeCoord);
-          trees.push(
-            treeScene.x,
-            atlas3dTerrainHeightAt(treeCoord, seed, stride),
-            treeScene.z,
-            0.72 + coordinateNoise(x, y, seed + tree * 11 + 3) * 0.8,
-            coordinateNoise(x, y, seed + tree * 11 + 4) * Math.PI * 2,
-            0.78 + coordinateNoise(x, y, seed + tree * 11 + 5) * 0.28,
-            REALM_INDICES[sample.realmId] ?? 0, // 7th float: realm index for biome-specific rendering
-          );
+          if (atlas3dAuthoredWaterContains(treeCoord, 1.5)) continue;
+          treeCandidates.push({
+            coord: treeCoord,
+            scale: 0.72 + coordinateNoise(x, y, seed + tree * 11 + 3) * 0.8,
+            rotation: coordinateNoise(x, y, seed + tree * 11 + 4) * Math.PI * 2,
+            colorFactor: 0.78 + coordinateNoise(x, y, seed + tree * 11 + 5) * 0.28,
+            realmIndex: REALM_INDICES[sample.realmId] ?? 0,
+          });
         }
       }
     }
@@ -532,8 +795,23 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
     colors,
     coastal,
     indices,
-    trees: new Float32Array(trees),
+    trees: new Float32Array(0),
   };
+  registerAtlas3dTerrainData(terrain);
+  const trees = new Float32Array(treeCandidates.length * 7);
+  for (let index = 0; index < treeCandidates.length; index += 1) {
+    const candidate = treeCandidates[index];
+    const treeScene = atlas3dAxialToScene(candidate.coord);
+    const offset = index * 7;
+    trees[offset] = treeScene.x;
+    trees[offset + 1] = atlas3dTerrainHeightAt(candidate.coord, seed, stride);
+    trees[offset + 2] = treeScene.z;
+    trees[offset + 3] = candidate.scale;
+    trees[offset + 4] = candidate.rotation;
+    trees[offset + 5] = candidate.colorFactor;
+    trees[offset + 6] = candidate.realmIndex;
+  }
+  terrain.trees = trees;
   registerAtlas3dTerrainData(terrain);
   return terrain;
 }
