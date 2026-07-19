@@ -6,6 +6,7 @@ import {
 } from "../../data/continent.js";
 import {
   atlasEastFloraVariant,
+  atlasWorldLightState,
   batchLandmarkMeshGroup,
   createHotSprings,
   createLandmarkMeshGroup,
@@ -14,6 +15,10 @@ import {
   createInsetLake,
   REALM_SETTLEMENT_COLORS,
 } from "./WorldAtlas3DScene.jsx";
+import {
+  atlas3dHotSpringSurfaceHeight,
+  atlas3dLakeSurfaceHeight,
+} from "./worldAtlas3dModel.js";
 
 function ribbonWidthAt(position, sampleIndex) {
   const offset = sampleIndex * 6;
@@ -154,20 +159,26 @@ describe("WorldAtlas3DScene rendering helpers", () => {
     const group = createHotSprings(THREE, CONTINENT.seed);
 
     expect(group.name).toBe("atlas-hot-springs");
-    expect(group.children).toHaveLength(CONTINENT_HOT_SPRINGS.length * 2);
+    expect(group.children).toHaveLength(CONTINENT_HOT_SPRINGS.length * 3);
 
     for (const spring of CONTINENT_HOT_SPRINGS) {
       const pool = group.getObjectByName(`atlas-hot-spring-${spring.id}`);
+      const rim = group.getObjectByName(`atlas-hot-spring-rim-${spring.id}`);
       const steam = group.getObjectByName(`atlas-hot-spring-steam-${spring.id}`);
 
-      expect(pool.geometry.type).toBe("CircleGeometry");
-      expect(pool.geometry.parameters.radius).toBe(Math.max(1.5, spring.radius));
-      expect(pool.geometry.parameters.segments).toBe(24);
+      expect(pool.geometry.type).toBe("BufferGeometry");
+      expect(pool.geometry.getAttribute("position").count).toBe(29);
       expect(pool.material).toBeInstanceOf(THREE.MeshStandardMaterial);
-      expect(pool.material.color.getHex()).toBe(0x4dbcb0);
-      expect(pool.material.opacity).toBe(0.72);
+      expect(pool.material.color.getHex()).toBe(0x55d8c5);
+      expect(pool.material.opacity).toBe(0.92);
       expect(pool.material.transparent).toBe(true);
       expect(pool.material.depthWrite).toBe(false);
+      expect(pool.userData.irregularShoreline).toBe(true);
+      expect(pool.position.y).toBe(atlas3dHotSpringSurfaceHeight(spring, CONTINENT.seed));
+
+      expect(rim.geometry.type).toBe("BufferGeometry");
+      expect(rim.geometry.getAttribute("position").count).toBe(56);
+      expect(rim.material.color.getHex()).toBe(0x586052);
 
       expect(steam.geometry.type).toBe("PlaneGeometry");
       expect(steam.material).toBeInstanceOf(THREE.MeshBasicMaterial);
@@ -190,11 +201,20 @@ describe("WorldAtlas3DScene rendering helpers", () => {
     const localHeights = Array.from({ length: position.count }, (_, index) => position.getY(index));
 
     expect(mesh.name).toBe("atlas-lake-test-lake");
-    expect(mesh.geometry.type).toBe("CircleGeometry");
-    expect(mesh.material.color.getHex()).toBe(0x327c99);
+    expect(mesh.geometry.type).toBe("BufferGeometry");
+    expect(mesh.material.color.getHex()).toBe(0x1f7195);
     expect(mesh.material.depthWrite).toBe(false);
     expect(Math.max(...localHeights) - Math.min(...localHeights)).toBeLessThan(1e-7);
     expect(mesh.userData.waterHeight).toBe(mesh.position.y);
+    expect(mesh.position.y).toBe(atlas3dLakeSurfaceHeight(lake, CONTINENT.seed));
+    expect(mesh.userData.irregularShoreline).toBe(true);
+    const radii = Array.from({ length: position.count - 1 }, (_, index) => Math.hypot(
+      position.getX(index + 1),
+      position.getZ(index + 1),
+    ));
+    expect(Math.max(...radii) - Math.min(...radii)).toBeGreaterThan(0.1);
+    const shoreline = mesh.getObjectByName("atlas-lake-test-lake-shoreline");
+    expect(shoreline.geometry.getAttribute("position").count).toBe(72);
     expect(mesh.renderOrder).toBe(1);
   });
 
@@ -209,16 +229,16 @@ describe("WorldAtlas3DScene rendering helpers", () => {
     expect(geometryTypeCounts(pagoda)).toEqual({
       BoxGeometry: 4,
       CylinderGeometry: 4,
-      SphereGeometry: 13,
+      SphereGeometry: 16,
     });
-    expect(colorHexes(pagoda)).toEqual(new Set([0x887a6c, 0x2e2010, 0x2e2820, 0x8a7030]));
+    expect(colorHexes(pagoda)).toEqual(new Set([0x887a6c, 0x2e2010, 0x2e2820, 0x8a7030, 0x6d552d]));
     expect(pagoda.children.filter((child) => (
       child.geometry.type === "CylinderGeometry" && child.geometry.parameters.radialSegments === 4
     ))).toHaveLength(3);
 
     expect(village.userData.landmarkKind).toBe("village");
     expect(geometryTypeCounts(village)).toEqual({
-      BoxGeometry: 5,
+      BoxGeometry: 8,
       ConeGeometry: 2,
       CylinderGeometry: 3,
     });
@@ -245,6 +265,27 @@ describe("WorldAtlas3DScene rendering helpers", () => {
     expect(wonder.userData.landmarkKind).toBe("wonder");
     expect(wonderHeightRatio).toBeCloseTo(cityHeightRatio * 1.25, 8);
     expect(wonderHeightRatio).toBeGreaterThan(1.4);
+    expect(village.userData.miniatureScale).toBe(1.68);
+    expect(new THREE.Box3().setFromObject(village).getSize(new THREE.Vector3()).y).toBeGreaterThan(5);
+  });
+
+  it("derives longitude-aware daylight from the persistent campaign clock", () => {
+    const noon = atlasWorldLightState({ day: 1, hour: 12, minute: 0 }, { x: 0, y: 0 });
+    const fallback = atlasWorldLightState(null, { x: 0, y: 0 });
+    const west = atlasWorldLightState({ day: 1, hour: 12, minute: 0 }, { x: CONTINENT.bounds.xmin, y: 0 });
+    const east = atlasWorldLightState({ day: 1, hour: 12, minute: 0 }, { x: CONTINENT.bounds.xmax, y: 0 });
+    const dawn = atlasWorldLightState({ day: 1, hour: 6, minute: 0 }, { x: 0, y: 0 });
+    const dusk = atlasWorldLightState({ day: 1, hour: 20, minute: 0 }, { x: 0, y: 0 });
+    const night = atlasWorldLightState({ day: 1, hour: 2, minute: 0 }, { x: 0, y: 0 });
+
+    expect(noon.phase).toBe("day");
+    expect(noon.daylight).toBe(1);
+    expect(fallback.localHour).toBe(noon.localHour);
+    expect(east.localHour - west.localHour).toBeCloseTo(6, 8);
+    expect(dawn.phase).toBe("dawn");
+    expect(dusk.phase).toBe("dusk");
+    expect(night.phase).toBe("night");
+    expect(night.daylight).toBe(0);
   });
 
   it("gives settlements a realm-specific stone and roof palette", () => {

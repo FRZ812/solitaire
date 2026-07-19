@@ -11,8 +11,11 @@ import {
 import {
   ATLAS_3D_BOUNDS,
   ATLAS_3D_FOV_DEG,
+  atlas3dAuthoredWaterContains,
   atlas3dAxialToScene,
   atlas3dCameraFrame,
+  atlas3dHotSpringSurfaceHeight,
+  atlas3dLakeSurfaceHeight,
   atlas3dSceneToAxial,
   atlas3dTerrainHeightAt,
   coordinateNoise,
@@ -27,6 +30,7 @@ const ROUTE_HEIGHT_BIAS = 0.72;
 const WATER_PLANE_SIZE = 20_000;
 const MOBILE_RENDER_PIXEL_BUDGET = 900000;
 const DESKTOP_RENDER_PIXEL_BUDGET = 1800000;
+const ATLAS_TIMEZONE_SPAN_HOURS = 6;
 const heightCache = new Map();
 const useAtlas3dLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
@@ -43,8 +47,77 @@ const EAST_FLORA_MESHES = Object.freeze({
   }),
 });
 
+const PROJECTED_VEGETATION_CORRIDORS = Object.freeze([
+  ...CONTINENT_ROUTES,
+  ...CONTINENT_WATERWAYS,
+].map((corridor) => Object.freeze({
+  clearance: Math.max(
+    corridor.width || 0,
+    corridor.widthStart || 0,
+    corridor.widthEnd || 0,
+    corridor.kind === "regional-road" ? 1.2 : 1.9,
+  ) / 2 + 2.7,
+  waypoints: Object.freeze(corridor.waypoints.map((coord) => Object.freeze(atlas3dAxialToScene(coord)))),
+})));
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function smoothstep01(value) {
+  const mix = clamp01(value);
+  return mix * mix * (3 - 2 * mix);
+}
+
+function wrappedHour(value) {
+  return ((value % 24) + 24) % 24;
+}
+
+export function atlasWorldLightState(time, coord = { x: 0, y: 0 }) {
+  const hour = Number.isFinite(Number(time?.hour)) ? Number(time.hour) : 12;
+  const minute = Number.isFinite(Number(time?.minute)) ? Number(time.minute) : 0;
+  const day = Number.isFinite(Number(time?.day)) ? Math.max(1, Number(time.day)) : 1;
+  const width = CONTINENT.bounds.xmax - CONTINENT.bounds.xmin;
+  const centerX = (CONTINENT.bounds.xmin + CONTINENT.bounds.xmax) / 2;
+  const timezoneOffset = ((Number(coord?.x) || 0) - centerX) / width * ATLAS_TIMEZONE_SPAN_HOURS;
+  const localHour = wrappedHour(hour + minute / 60 + timezoneOffset);
+
+  // Central Avarra follows the engine's established 06:00–20:00 daylight
+  // contract. Latitude and the 360-day calendar then move each region's dawn
+  // and dusk by up to two hours over the year.
+  const calendarDay = ((269 + day - 1) % 360 + 360) % 360;
+  const seasonalTilt = Math.sin((calendarDay - 80) / 360 * Math.PI * 2);
+  const latitude = clamp01((-(Number(coord?.y) || 0) / 400 + 1) / 2) * 2 - 1;
+  const daylightShift = latitude * seasonalTilt * 4;
+  const sunrise = 6 - daylightShift / 2;
+  const sunset = 20 + daylightShift / 2;
+  const dawn = smoothstep01((localHour - (sunrise - 0.8)) / 1.45);
+  const dusk = 1 - smoothstep01((localHour - (sunset - 0.65)) / 1.45);
+  const daylight = clamp01(dawn * dusk);
+  const phase = daylight >= 0.82
+    ? "day"
+    : localHour >= sunrise - 1 && localHour < sunrise + 1.1
+    ? "dawn"
+    : localHour >= sunset - 1.1 && localHour < sunset + 1
+    ? "dusk"
+    : "night";
+  const sunProgress = clamp01((localHour - sunrise) / Math.max(1, sunset - sunrise));
+  const sunAltitude = daylight > 0 ? Math.sin(sunProgress * Math.PI) : -0.18;
+
+  return {
+    day,
+    daylight,
+    localHour,
+    phase,
+    sunrise,
+    sunset,
+    sunAltitude,
+    timezoneOffset,
+  };
+}
+
 function atlasRenderPixelRatio(width, height) {
-  const mobile = width < 720;
+  const mobile = Math.min(width, height) < 720;
   const dprCap = mobile ? 1.3 : 1.65;
   const pixelBudget = mobile ? MOBILE_RENDER_PIXEL_BUDGET : DESKTOP_RENDER_PIXEL_BUDGET;
   const budgetRatio = Math.sqrt(pixelBudget / Math.max(1, width * height));
@@ -58,6 +131,82 @@ function cachedHeight(coord, seed) {
   if (heightCache.size > 24000) heightCache.clear();
   heightCache.set(key, height);
   return height;
+}
+
+function irregularRadii(radius, segments, salt, variance = 0.12) {
+  const radii = [];
+  for (let index = 0; index < segments; index += 1) {
+    const previous = coordinateNoise(index - 1, segments, `${salt}:shore`);
+    const current = coordinateNoise(index, segments, `${salt}:shore`);
+    const next = coordinateNoise(index + 1, segments, `${salt}:shore`);
+    const smoothed = previous * 0.24 + current * 0.52 + next * 0.24;
+    radii.push(radius * (1 + (smoothed - 0.5) * variance * 2));
+  }
+  return radii;
+}
+
+function createHorizontalDiscGeometry(THREE, radii) {
+  const segments = radii.length;
+  const positions = new Float32Array((segments + 1) * 3);
+  const normals = new Float32Array((segments + 1) * 3);
+  const uvs = new Float32Array((segments + 1) * 2);
+  const indices = new Uint32Array(segments * 3);
+  normals[1] = 1;
+  uvs[0] = 0.5;
+  uvs[1] = 0.5;
+  const maxRadius = Math.max(...radii);
+  for (let index = 0; index < segments; index += 1) {
+    const angle = index / segments * Math.PI * 2;
+    const vertex = index + 1;
+    const x = Math.cos(angle) * radii[index];
+    const z = Math.sin(angle) * radii[index];
+    positions[vertex * 3] = x;
+    positions[vertex * 3 + 2] = z;
+    normals[vertex * 3 + 1] = 1;
+    uvs[vertex * 2] = 0.5 + x / maxRadius / 2;
+    uvs[vertex * 2 + 1] = 0.5 + z / maxRadius / 2;
+    indices[index * 3] = 0;
+    indices[index * 3 + 1] = vertex;
+    indices[index * 3 + 2] = (index + 1) % segments + 1;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function createHorizontalRingGeometry(THREE, innerRadii, outerRadii) {
+  const segments = innerRadii.length;
+  const positions = new Float32Array(segments * 2 * 3);
+  const normals = new Float32Array(segments * 2 * 3);
+  const indices = new Uint32Array(segments * 6);
+  for (let index = 0; index < segments; index += 1) {
+    const angle = index / segments * Math.PI * 2;
+    for (let edge = 0; edge < 2; edge += 1) {
+      const vertex = index * 2 + edge;
+      const radius = edge ? outerRadii[index] : innerRadii[index];
+      positions[vertex * 3] = Math.cos(angle) * radius;
+      positions[vertex * 3 + 2] = Math.sin(angle) * radius;
+      normals[vertex * 3 + 1] = 1;
+    }
+    const next = (index + 1) % segments;
+    const offset = index * 6;
+    indices[offset] = index * 2;
+    indices[offset + 1] = next * 2;
+    indices[offset + 2] = index * 2 + 1;
+    indices[offset + 3] = index * 2 + 1;
+    indices[offset + 4] = next * 2;
+    indices[offset + 5] = next * 2 + 1;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeBoundingSphere();
+  return geometry;
 }
 
 function thinPath(path, maxPoints = 320) {
@@ -211,39 +360,46 @@ function createRouteGroup(THREE, seed, focusedRealmId) {
 
 export function createInsetLake(THREE, lake, seed) {
   const center = atlas3dAxialToScene(lake.center);
-  const centerHeight = cachedHeight(lake.center, seed);
   const radius = Math.max(2, lake.radius * 0.9);
-  const geometry = new THREE.CircleGeometry(radius, 28);
-  geometry.rotateX(-Math.PI / 2);
-
-  // Water must remain level. Place the plane at the lower of the local center
-  // and first shoreline quartile so surrounding terrain naturally clips it
-  // into a basin instead of leaving a hovering disc or a blue terrain cone.
-  const shorelineHeights = [];
-  for (let sampleIndex = 0; sampleIndex < 28; sampleIndex += 1) {
-    const angle = sampleIndex / 28 * Math.PI * 2;
-    shorelineHeights.push(cachedHeight({
-      x: lake.center.x + Math.cos(angle) * radius,
-      y: lake.center.y + Math.sin(angle) * radius,
-    }, seed));
-  }
-  shorelineHeights.sort((a, b) => a - b);
-  const lowerShoreHeight = shorelineHeights[Math.floor(shorelineHeights.length * 0.25)];
-  const waterHeight = Math.min(centerHeight, lowerShoreHeight) + 0.18;
+  const salt = `${seed}:lake:${lake.id || lake.name}`;
+  const radii = irregularRadii(radius, 36, salt, 0.28);
+  const geometry = createHorizontalDiscGeometry(THREE, radii);
+  const waterHeight = atlas3dLakeSurfaceHeight(lake, seed);
 
   const material = new THREE.MeshStandardMaterial({
-    color: 0x327c99,
-    roughness: 0.48,
-    metalness: 0.08,
+    color: 0x1f7195,
+    emissive: 0x071f2b,
+    emissiveIntensity: 0.18,
+    roughness: 0.24,
+    metalness: 0.12,
     transparent: true,
-    opacity: 0.86,
+    opacity: 0.96,
     depthWrite: false,
   });
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = `atlas-lake-${lake.id || lake.name}`;
   mesh.position.set(center.x, waterHeight, center.z);
   mesh.userData.waterHeight = waterHeight;
+  mesh.userData.irregularShoreline = true;
   mesh.renderOrder = 1;
+
+  const innerRadii = radii.map((value) => value * 0.97);
+  const outerRadii = irregularRadii(Math.max(radius + 0.9, lake.radius + 0.45), 36, `${salt}:bank`, 0.2);
+  const shoreline = new THREE.Mesh(
+    createHorizontalRingGeometry(THREE, innerRadii, outerRadii),
+    new THREE.MeshStandardMaterial({
+      color: 0x8f8262,
+      roughness: 1,
+      metalness: 0,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    }),
+  );
+  shoreline.name = `${mesh.name}-shoreline`;
+  shoreline.position.y = -0.055;
+  shoreline.renderOrder = 1;
+  mesh.add(shoreline);
   return mesh;
 }
 
@@ -253,22 +409,40 @@ export function createHotSprings(THREE, seed) {
 
   for (const spring of CONTINENT_HOT_SPRINGS) {
     const center = atlas3dAxialToScene(spring.center);
-    const groundHeight = cachedHeight(spring.center, seed);
-    const poolGeometry = new THREE.CircleGeometry(Math.max(1.5, spring.radius), 24);
-    poolGeometry.rotateX(-Math.PI / 2);
+    const radius = Math.max(1.5, spring.radius);
+    const salt = `${seed}:spring:${spring.id || spring.name}`;
+    const radii = irregularRadii(radius, 28, salt, 0.16);
+    const poolGeometry = createHorizontalDiscGeometry(THREE, radii);
+    const poolHeight = atlas3dHotSpringSurfaceHeight(spring, seed);
     const poolMaterial = new THREE.MeshStandardMaterial({
-      color: 0x4dbcb0,
-      roughness: 0.34,
-      metalness: 0.04,
+      color: 0x55d8c5,
+      emissive: 0x123e38,
+      emissiveIntensity: 0.3,
+      roughness: 0.18,
+      metalness: 0.08,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.92,
       depthWrite: false,
     });
     const pool = new THREE.Mesh(poolGeometry, poolMaterial);
     pool.name = `atlas-hot-spring-${spring.id || spring.name}`;
-    pool.position.set(center.x, groundHeight + 0.9, center.z);
+    pool.position.set(center.x, poolHeight, center.z);
+    pool.userData.irregularShoreline = true;
     pool.renderOrder = 1;
     group.add(pool);
+
+    const springRim = new THREE.Mesh(
+      createHorizontalRingGeometry(
+        THREE,
+        radii.map((value) => value * 0.96),
+        irregularRadii(radius + 0.75, 28, `${salt}:rim`, 0.13),
+      ),
+      new THREE.MeshStandardMaterial({ color: 0x586052, roughness: 1, metalness: 0 }),
+    );
+    springRim.name = `atlas-hot-spring-rim-${spring.id || spring.name}`;
+    springRim.position.set(center.x, poolHeight - 0.06, center.z);
+    springRim.renderOrder = 1;
+    group.add(springRim);
 
     const steamGeometry = new THREE.PlaneGeometry(
       Math.max(2.4, spring.radius * 1.7),
@@ -285,7 +459,7 @@ export function createHotSprings(THREE, seed) {
     });
     const steam = new THREE.Mesh(steamGeometry, steamMaterial);
     steam.name = `atlas-hot-spring-steam-${spring.id || spring.name}`;
-    steam.position.set(center.x, groundHeight + 2.9, center.z);
+    steam.position.set(center.x, poolHeight + 2, center.z);
     steam.userData.billboard = true;
     steam.renderOrder = 3;
     group.add(steam);
@@ -463,6 +637,41 @@ const SETTLEMENT_LANDMARK_KINDS = new Set([
   "fort", "checkpoint", "port", "wonder",
 ]);
 
+function landmarkVegetationClearance(landmark) {
+  if (landmark.capitalOfRealmId) return 13;
+  if (landmark.kind === "city" || landmark.kind === "wonder") return 11;
+  if (["town", "fortress", "castle", "port"].includes(landmark.kind)) return 8;
+  if (["village", "pagoda", "shrine", "temple", "sanctuary", "monastery"].includes(landmark.kind)) return 6;
+  return 4.5;
+}
+
+function clearsAtlasLandmarks(record) {
+  return ATLAS_LANDMARKS.every((landmark) => {
+    const center = atlas3dAxialToScene(landmark.coord);
+    return Math.hypot(record.x - center.x, record.z - center.z) >= landmarkVegetationClearance(landmark);
+  });
+}
+
+function pointSegmentDistance(point, start, end) {
+  const dx = end.x - start.x;
+  const dz = end.z - start.z;
+  const lengthSquared = dx * dx + dz * dz;
+  if (!lengthSquared) return Math.hypot(point.x - start.x, point.z - start.z);
+  const mix = clamp01(((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSquared);
+  return Math.hypot(point.x - (start.x + dx * mix), point.z - (start.z + dz * mix));
+}
+
+function clearsAtlasCorridors(record) {
+  for (const corridor of PROJECTED_VEGETATION_CORRIDORS) {
+    for (let index = 1; index < corridor.waypoints.length; index += 1) {
+      if (pointSegmentDistance(record, corridor.waypoints[index - 1], corridor.waypoints[index]) < corridor.clearance) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 function insideBounds(coord, bounds) {
   return coord.x >= bounds.xmin && coord.x <= bounds.xmax
     && coord.y >= bounds.ymin && coord.y <= bounds.ymax;
@@ -475,7 +684,7 @@ export function atlasEastFloraVariant(coord, seed) {
   return "standard";
 }
 
-function createVegetationGroup(THREE, treeData, seed) {
+export function createVegetationGroup(THREE, treeData, seed) {
   const vegetation = new THREE.Group();
   vegetation.name = "atlas-vegetation";
   const treeCount = Math.floor(treeData.length / 7);
@@ -498,42 +707,59 @@ function createVegetationGroup(THREE, treeData, seed) {
   }
 
   // The eastern lowlands are predominantly marsh, terraces, and river plain,
-  // so the generic forest-only sampler can legitimately produce no candidates
-  // inside the authored blossom/ginkgo bands. Seed the regional flora directly
-  // on deterministic land points so its identity does not depend on a forest
-  // classifier intended for the rest of the continent.
+  // so seed authored groves independently of the generic forest classifier.
+  // A coarse patch mask establishes orchard-sized stands, while fine noise and
+  // two-to-three-tree clusters fill each stand without carpeting every field.
   for (const variant of ["cherry", "ginkgo"]) {
     const { bounds } = EAST_FLORA_MESHES[variant];
-    for (let y = bounds.ymin; y <= bounds.ymax; y += 14) {
-      for (let x = bounds.xmin; x <= bounds.xmax; x += 14) {
-        if (coordinateNoise(x, y, seed + 711) <= 0.72) continue;
-        const coord = {
-          x: x + (coordinateNoise(x, y, seed + 713) - 0.5) * 8,
-          y: y + (coordinateNoise(y, x, seed + 719) - 0.5) * 8,
-        };
-        const groundHeight = cachedHeight(coord, seed);
-        if (groundHeight <= 0) continue;
-        const scene = atlas3dAxialToScene(coord);
-        records[variant].push({
-          x: scene.x,
-          groundHeight,
-          z: scene.z,
-          scale: 0.82 + coordinateNoise(x, y, seed + 727) * 0.68,
-          rotation: coordinateNoise(y, x, seed + 733) * Math.PI * 2,
-          colorFactor: 0.9 + coordinateNoise(x, y, seed + 739) * 0.16,
-          realmIdx: 2,
-        });
+    const variantSalt = variant === "cherry" ? 0 : 97;
+    for (let y = bounds.ymin; y <= bounds.ymax; y += 8) {
+      for (let x = bounds.xmin; x <= bounds.xmax; x += 8) {
+        const patchX = Math.floor((x - bounds.xmin) / 30);
+        const patchY = Math.floor((y - bounds.ymin) / 30);
+        const patch = coordinateNoise(patchX, patchY, seed + 811 + variantSalt);
+        const detail = coordinateNoise(x, y, seed + 823 + variantSalt);
+        if (patch <= 0.34 || detail <= 0.17) continue;
+        const clusterCount = 1 + (detail > 0.58 ? 1 : 0) + (detail > 0.86 ? 1 : 0);
+        for (let cluster = 0; cluster < clusterCount; cluster += 1) {
+          const coord = {
+            x: x + (coordinateNoise(x, y, seed + 829 + cluster * 11 + variantSalt) - 0.5) * 7,
+            y: y + (coordinateNoise(y, x, seed + 839 + cluster * 11 + variantSalt) - 0.5) * 7,
+          };
+          if (atlas3dAuthoredWaterContains(coord, 1.5)) continue;
+          const groundHeight = cachedHeight(coord, seed);
+          if (groundHeight <= 0) continue;
+          const scene = atlas3dAxialToScene(coord);
+          if (records[variant].some((record) => Math.hypot(record.x - scene.x, record.z - scene.z) < 0.9)) {
+            continue;
+          }
+          records[variant].push({
+            x: scene.x,
+            groundHeight,
+            z: scene.z,
+            scale: 1.08 + coordinateNoise(x, y, seed + 853 + cluster * 13 + variantSalt) * 0.72,
+            rotation: coordinateNoise(y, x, seed + 859 + cluster * 13 + variantSalt) * Math.PI * 2,
+            colorFactor: 0.9 + coordinateNoise(x, y, seed + 863 + cluster * 13 + variantSalt) * 0.16,
+            realmIdx: 2,
+          });
+        }
       }
     }
+  }
+
+  for (const variant of Object.keys(records)) {
+    records[variant] = records[variant].filter((record) => (
+      clearsAtlasLandmarks(record) && clearsAtlasCorridors(record)
+    ));
   }
 
   const transform = new THREE.Object3D();
   const tint = new THREE.Color();
   if (records.standard.length > 0) {
-    const canopyGeometry = new THREE.ConeGeometry(2.05, 5.2, 5, 1);
-    canopyGeometry.translate(0, 2.6, 0);
-    const trunkGeometry = new THREE.CylinderGeometry(0.23, 0.35, 1.5, 5);
-    trunkGeometry.translate(0, 0.75, 0);
+    const canopyGeometry = new THREE.ConeGeometry(2.4, 6.1, 6, 2);
+    canopyGeometry.translate(0, 3.05, 0);
+    const trunkGeometry = new THREE.CylinderGeometry(0.26, 0.4, 1.9, 6);
+    trunkGeometry.translate(0, 0.95, 0);
     const canopyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.98, flatShading: true });
     const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
     const canopies = new THREE.InstancedMesh(canopyGeometry, canopyMaterial, records.standard.length);
@@ -607,19 +833,19 @@ function createVegetationGroup(THREE, treeData, seed) {
     eastFlora.add(trunks, ...canopyMeshes);
   }
 
-  const cherryCanopy = new THREE.SphereGeometry(0.9, 5, 4);
-  cherryCanopy.scale(1, 0.65, 1);
-  cherryCanopy.translate(0, 1.62, 0);
-  const cherryTrunk = new THREE.CylinderGeometry(0.08, 0.12, 1.1, 5);
-  cherryTrunk.translate(0, 0.55, 0);
+  const cherryCanopy = new THREE.SphereGeometry(1.55, 7, 5);
+  cherryCanopy.scale(1, 0.68, 1);
+  cherryCanopy.translate(0, 2.65, 0);
+  const cherryTrunk = new THREE.CylinderGeometry(0.13, 0.2, 2.1, 6);
+  cherryTrunk.translate(0, 1.05, 0);
   addEastFlora("cherry", [cherryCanopy], cherryTrunk);
 
-  const ginkgoLower = new THREE.ConeGeometry(0.7, 1.2, 5);
-  ginkgoLower.translate(0, 1.22, 0);
-  const ginkgoUpper = new THREE.ConeGeometry(0.7, 1.2, 5);
-  ginkgoUpper.translate(0, 1.86, 0);
-  const ginkgoTrunk = new THREE.CylinderGeometry(0.11, 0.17, 1.25, 5);
-  ginkgoTrunk.translate(0, 0.625, 0);
+  const ginkgoLower = new THREE.ConeGeometry(1.15, 1.85, 6);
+  ginkgoLower.translate(0, 1.95, 0);
+  const ginkgoUpper = new THREE.ConeGeometry(1.0, 1.65, 6);
+  ginkgoUpper.translate(0, 3.0, 0);
+  const ginkgoTrunk = new THREE.CylinderGeometry(0.16, 0.24, 2.25, 6);
+  ginkgoTrunk.translate(0, 1.125, 0);
   addEastFlora("ginkgo", [ginkgoLower, ginkgoUpper], ginkgoTrunk);
 
   vegetation.add(eastFlora);
@@ -638,12 +864,27 @@ export function createLandmarkMeshGroup(THREE, seed) {
   const matStone     = new THREE.MeshStandardMaterial({ color: 0x887a6c, roughness: 0.92, metalness: 0 });
   const matDarkStone = new THREE.MeshStandardMaterial({ color: 0x554a40, roughness: 0.92, metalness: 0 });
   const matRoof      = new THREE.MeshStandardMaterial({ color: 0x2e2820, roughness: 0.86, metalness: 0 });
-  const matGold      = new THREE.MeshStandardMaterial({ color: 0x9a8030, roughness: 0.62, metalness: 0.22 });
   const matIvory     = new THREE.MeshStandardMaterial({ color: 0xd0c8b0, roughness: 0.85, metalness: 0 });
   const matDock      = new THREE.MeshStandardMaterial({ color: 0x3a2c18, roughness: 0.95, metalness: 0 });
   const matMarket    = new THREE.MeshStandardMaterial({ color: 0xa89070, roughness: 1, metalness: 0, side: THREE.DoubleSide });
   const matPagodaWood = new THREE.MeshStandardMaterial({ color: 0x2e2010, roughness: 0.9, metalness: 0 });
   const matPagodaGold = new THREE.MeshStandardMaterial({ color: 0x8a7030, roughness: 0.62, metalness: 0.18 });
+  const matWindow = new THREE.MeshStandardMaterial({
+    color: 0x6d552d,
+    emissive: 0xffad48,
+    emissiveIntensity: 0,
+    roughness: 0.58,
+    metalness: 0.04,
+  });
+  matWindow.userData.atlasNightLight = true;
+  const matBeacon = new THREE.MeshStandardMaterial({
+    color: 0xd9ad50,
+    emissive: 0xffb238,
+    emissiveIntensity: 0,
+    roughness: 0.46,
+    metalness: 0.12,
+  });
+  matBeacon.userData.atlasNightLight = true;
   const realmMaterials = Object.fromEntries(Object.entries(REALM_SETTLEMENT_COLORS).map(([realmId, colors]) => [
     realmId,
     {
@@ -660,6 +901,10 @@ export function createLandmarkMeshGroup(THREE, seed) {
     return m;
   }
 
+  function addWindow(group, s, x, y, z, ry = 0) {
+    group.add(piece(new THREE.BoxGeometry(s * 0.34, s * 0.48, s * 0.1), matWindow, x, y, z, ry));
+  }
+
   function buildCity(s, towerHeightScale = 1) {
     const g = new THREE.Group();
     g.add(piece(new THREE.CylinderGeometry(s * 5, s * 5.5, s * 0.7, 8), matStone, 0, s * 0.35, 0));
@@ -673,6 +918,8 @@ export function createLandmarkMeshGroup(THREE, seed) {
     for (const [wx, wz, ry] of [[0, -2.8, 0], [0, 2.8, 0], [-2.8, 0, Math.PI / 2], [2.8, 0, Math.PI / 2]]) {
       g.add(piece(new THREE.BoxGeometry(s * 4.0, s * 2.0, s * 0.48), matDarkStone, wx * s, s * 2.4, wz * s, ry));
     }
+    for (const floor of [2.1, 3.5, 4.9, 6.1]) addWindow(g, s, 0, floor * s, -s * 1.23);
+    for (const tx of [-1, 1]) addWindow(g, s, tx * s * 2.8, s * 4.2, -s * 3.63);
     return g;
   }
 
@@ -687,6 +934,8 @@ export function createLandmarkMeshGroup(THREE, seed) {
       g.add(piece(new THREE.CylinderGeometry(s * 0.58, s * 0.68, towerHeight, 6), matDarkStone, tx * s * 2, towerHeight / 2, 0));
       g.add(piece(new THREE.ConeGeometry(s * 0.78, s * 2, 6), matRoof, tx * s * 2, towerHeight + s, 0));
     }
+    addWindow(g, s, 0, s * 2.35, -s * 1.03);
+    for (const tx of [-1, 1]) addWindow(g, s, tx * s * 2, s * 3.35, -s * 0.7);
     return g;
   }
 
@@ -698,6 +947,8 @@ export function createLandmarkMeshGroup(THREE, seed) {
       g.add(piece(new THREE.ConeGeometry(s * 0.82, s * 1.8, 6), matRoof, tx * s * 2.2, s * 7.8, 0));
     }
     g.add(piece(new THREE.BoxGeometry(s * 5, s * 0.55, s * 0.9), matDarkStone, 0, s * 6.2, 0));
+    addWindow(g, s, 0, s * 3.4, -s * 0.93);
+    for (const tx of [-1, 1]) addWindow(g, s, tx * s * 2.2, s * 4.1, -s * 0.73);
     return g;
   }
 
@@ -705,7 +956,7 @@ export function createLandmarkMeshGroup(THREE, seed) {
     const g = new THREE.Group();
     g.add(piece(new THREE.CylinderGeometry(s * 0.52, s * 0.72, s * 6.2, 8), matStone, 0, s * 3.1, 0));
     g.add(piece(new THREE.ConeGeometry(s * 0.78, s * 1.5, 8), matRoof, 0, s * 7.35, 0));
-    g.add(piece(new THREE.SphereGeometry(s * 0.42, 6, 4), matGold, 0, s * 6.4, 0));
+    g.add(piece(new THREE.SphereGeometry(s * 0.42, 6, 4), matBeacon, 0, s * 6.4, 0));
     g.add(piece(new THREE.BoxGeometry(s * 3.5, s * 0.32, s * 1.1), matDock, s * 1.5, s * 0.16, 0));
     return g;
   }
@@ -741,6 +992,9 @@ export function createLandmarkMeshGroup(THREE, seed) {
       g.add(piece(new THREE.CylinderGeometry(s * 0.08, s * 0.08, s * 0.4, 5), matDarkStone, (bx + 0.25) * s, s * 2.05, bz * s));
     }
     g.add(piece(new THREE.CylinderGeometry(s * 2.95, s * 2.95, s * 0.34, 18, 1, true), matDarkStone, 0, s * 0.17, 0));
+    addWindow(g, s, 0, s * 1.1, -s * 1.135);
+    addWindow(g, s, -s * 1.55, s * 0.78, s * 0.19);
+    addWindow(g, s, s * 1.55, s * 0.78, -s * 0.01);
     return g;
   }
 
@@ -765,6 +1019,7 @@ export function createLandmarkMeshGroup(THREE, seed) {
           tipZ * eaveRadius * 0.73,
         ));
       }
+      g.add(piece(new THREE.SphereGeometry(s * 0.13, 5, 3), matWindow, width * 0.34, eaveY - s * 0.34, -depth * 0.51));
       storyBase = eaveY + s * 0.24;
     }
     g.add(piece(new THREE.CylinderGeometry(s * 0.08, s * 0.11, s * 0.9, 6), matPagodaGold, 0, storyBase + s * 0.45, 0));
@@ -821,7 +1076,7 @@ export function createLandmarkMeshGroup(THREE, seed) {
                           meshGroup = buildShrine(baseScale * 0.65); break;
       case "pagoda":     meshGroup = buildPagoda(baseScale); break;
       case "wonder":     meshGroup = buildCity(baseScale * 1.08, 1.25); break;
-      case "village":    meshGroup = buildVillage(0.55 * 1.15); break;
+      case "village":    meshGroup = buildVillage(1.25); break;
       case "tower":      meshGroup = buildTower(0.65); break;
       case "ruin":       meshGroup = buildRuin(0.52); break;
       default:           continue;
@@ -830,9 +1085,10 @@ export function createLandmarkMeshGroup(THREE, seed) {
     const scenePos = atlas3dAxialToScene(coord);
     const groundHeight = atlas3dTerrainHeightAt(coord, seed);
     const scaleJitter = 0.85 + coordinateNoise(coord.x, coord.y, landmark.id) * 0.3;
-    meshGroup.scale.setScalar(scaleJitter);
+    meshGroup.scale.setScalar(scaleJitter * 1.68);
     meshGroup.name = `atlas-landmark-${landmark.id}`;
     meshGroup.userData.landmarkKind = kind;
+    meshGroup.userData.miniatureScale = 1.68;
     meshGroup.position.set(scenePos.x, groundHeight, scenePos.z);
     group.add(meshGroup);
   }
@@ -890,6 +1146,33 @@ export function batchLandmarkMeshGroup(THREE, sourceGroup) {
   return batched;
 }
 
+function createProceduralSurfaceTexture(THREE, seed, size = 128) {
+  const surface = document.createElement("canvas");
+  surface.width = size;
+  surface.height = size;
+  const context = surface.getContext("2d");
+  const image = context.createImageData(size, size);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const fine = coordinateNoise(x, y, `${seed}:surface:fine`);
+      const broad = coordinateNoise(Math.floor(x / 5), Math.floor(y / 5), `${seed}:surface:broad`);
+      const value = Math.round(72 + fine * 104 + broad * 58);
+      const offset = (y * size + x) * 4;
+      image.data[offset] = value;
+      image.data[offset + 1] = value;
+      image.data[offset + 2] = value;
+      image.data[offset + 3] = 255;
+    }
+  }
+  context.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(surface);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 function createController(THREE, canvas, seed) {
   const context = canvas.getContext("webgl2", {
     alpha: false,
@@ -916,7 +1199,8 @@ function createController(THREE, canvas, seed) {
   const queryCamera = new THREE.PerspectiveCamera(ATLAS_3D_FOV_DEG, 1, 0.1, 6000);
   const raycaster = new THREE.Raycaster();
 
-  scene.add(new THREE.HemisphereLight(0xd0e4e0, 0x201808, 1.5));
+  const hemisphere = new THREE.HemisphereLight(0xd0e4e0, 0x201808, 1.5);
+  scene.add(hemisphere);
   const sun = new THREE.DirectionalLight(0xffe8b0, 1.85);
   sun.position.set(-360, 580, 300);
   scene.add(sun);
@@ -927,12 +1211,19 @@ function createController(THREE, canvas, seed) {
   valleyBounce.position.set(0, -1, 0);
   scene.add(valleyBounce);
 
+  const terrainDetailTexture = createProceduralSurfaceTexture(THREE, `${seed}:terrain`);
+  terrainDetailTexture.repeat.set(72, 52);
+  const waterDetailTexture = createProceduralSurfaceTexture(THREE, `${seed}:water`, 96);
+  waterDetailTexture.repeat.set(220, 220);
+
   const waterGeometry = new THREE.PlaneGeometry(WATER_PLANE_SIZE, WATER_PLANE_SIZE);
   waterGeometry.rotateX(-Math.PI / 2);
   const waterMaterial = new THREE.MeshStandardMaterial({
     color: 0x1a5060,
-    roughness: 0.15,
+    roughness: 0.2,
     metalness: 0.12,
+    bumpMap: waterDetailTexture,
+    bumpScale: 0.32,
     side: THREE.DoubleSide,
   });
   const water = new THREE.Mesh(waterGeometry, waterMaterial);
@@ -956,7 +1247,108 @@ function createController(THREE, canvas, seed) {
   let renderWidth = 0;
   let renderHeight = 0;
   let renderPixelRatio = initialPixelRatio;
+  let currentWorldTime = { day: 1, hour: 12, minute: 0 };
+  let terrainLightKey = "";
   scene.add(routes, journey, seenTrail);
+
+  const atmosphereColors = {
+    daySky: new THREE.Color(0x0e2836),
+    nightSky: new THREE.Color(0x06101f),
+    dawnSky: new THREE.Color(0x51352f),
+    dayFog: new THREE.Color(0x1a3c4a),
+    nightFog: new THREE.Color(0x091827),
+    dawnFog: new THREE.Color(0x5b493f),
+    dayHemi: new THREE.Color(0xd0e4e0),
+    nightHemi: new THREE.Color(0x7894b8),
+    dayGround: new THREE.Color(0x201808),
+    nightGround: new THREE.Color(0x1d2940),
+    daySun: new THREE.Color(0xffe8b0),
+    dawnSun: new THREE.Color(0xff9a5a),
+    moonLight: new THREE.Color(0xa9c7e8),
+  };
+
+  function applyTerrainTimezones(force = false) {
+    if (!terrain?.geometry?.getAttribute("color")) return;
+    const key = `${currentWorldTime?.day || 1}|${currentWorldTime?.hour ?? 12}|${currentWorldTime?.minute || 0}`;
+    if (!force && key === terrainLightKey) return;
+    const colors = terrain.geometry.getAttribute("color");
+    const positions = terrain.geometry.getAttribute("position");
+    const baseColors = terrain.userData.baseColors;
+    if (!baseColors || baseColors.length !== colors.array.length) return;
+    for (let vertex = 0; vertex < positions.count; vertex += 1) {
+      const coord = atlas3dSceneToAxial({ x: positions.getX(vertex), z: positions.getZ(vertex) });
+      const light = atlasWorldLightState(currentWorldTime, coord);
+      const night = 1 - light.daylight;
+      const warmth = light.phase === "dawn" || light.phase === "dusk"
+        ? (1 - Math.abs(light.daylight - 0.48) / 0.48) * 0.09
+        : 0;
+      // Preserve enough albedo for moonlit miniature detail instead of letting
+      // two lighting passes collapse the landscape into a black silhouette.
+      const brightness = 0.58 + light.daylight * 0.42;
+      const offset = vertex * 3;
+      colors.array[offset] = Math.min(1, baseColors[offset] * brightness + warmth * 0.7 + night * 0.012);
+      colors.array[offset + 1] = Math.min(1, baseColors[offset + 1] * brightness + warmth * 0.28 + night * 0.035);
+      colors.array[offset + 2] = Math.min(1, baseColors[offset + 2] * brightness + night * 0.085);
+    }
+    colors.needsUpdate = true;
+    terrainLightKey = key;
+  }
+
+  function updateAtmosphere(modelCamera) {
+    const light = atlasWorldLightState(currentWorldTime, modelCamera || { x: 0, y: 0 });
+    const twilight = light.phase === "dawn" || light.phase === "dusk";
+    scene.background.copy(atmosphereColors.nightSky).lerp(atmosphereColors.daySky, light.daylight);
+    scene.fog.color.copy(atmosphereColors.nightFog).lerp(atmosphereColors.dayFog, light.daylight);
+    hemisphere.color.copy(atmosphereColors.nightHemi).lerp(atmosphereColors.dayHemi, light.daylight);
+    hemisphere.groundColor.copy(atmosphereColors.nightGround).lerp(atmosphereColors.dayGround, light.daylight);
+    if (twilight) {
+      scene.background.lerp(atmosphereColors.dawnSky, 0.22);
+      scene.fog.color.lerp(atmosphereColors.dawnFog, 0.18);
+    }
+    scene.fog.density = 0.0001 + light.daylight * 0.00006;
+    hemisphere.intensity = 1.05 + light.daylight * 0.45;
+    if (twilight) {
+      sun.color.copy(atmosphereColors.dawnSun);
+    } else {
+      sun.color.copy(atmosphereColors.moonLight).lerp(atmosphereColors.daySun, light.daylight);
+    }
+    sun.intensity = 0.38 + light.daylight * 1.47;
+    const sunAngle = light.localHour / 24 * Math.PI * 2;
+    sun.position.set(
+      Math.cos(sunAngle) * 560,
+      95 + light.sunAltitude * 540,
+      Math.sin(sunAngle) * 520,
+    );
+    fill.intensity = 0.46 - light.daylight * 0.04;
+    valleyBounce.intensity = 0.18 - light.daylight * 0.06;
+    renderer.toneMappingExposure = 0.9 + light.daylight * 0.02;
+
+    const emissiveIntensity = Math.max(0, 1 - light.daylight) * 2.6;
+    landmarks?.traverse?.((child) => {
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        if (material?.userData?.atlasNightLight) material.emissiveIntensity = emissiveIntensity;
+      }
+    });
+    canvas.dataset.atlasLightPhase = light.phase;
+    canvas.dataset.atlasLocalHour = light.localHour.toFixed(2);
+    canvas.dataset.atlasTimezoneOffset = light.timezoneOffset.toFixed(2);
+  }
+
+  function updateWorldTime(nextTime, modelCamera, renderNow = true) {
+    currentWorldTime = nextTime || { day: 1, hour: 12, minute: 0 };
+    applyTerrainTimezones();
+    updateAtmosphere(modelCamera);
+    const absoluteMinutes = (currentWorldTime.day || 1) * 1440
+      + (currentWorldTime.hour || 0) * 60
+      + (currentWorldTime.minute || 0);
+    waterDetailTexture.offset.set(
+      (absoluteMinutes * 0.000017) % 1,
+      (absoluteMinutes * 0.000011) % 1,
+    );
+    canvas.dataset.atlasTimezoneSpan = String(ATLAS_TIMEZONE_SPAN_HOURS);
+    if (renderNow) render();
+  }
 
   function render() {
     hotSprings?.traverse?.((child) => {
@@ -997,6 +1389,7 @@ function createController(THREE, canvas, seed) {
       renderHeight = heightPx;
     }
     configureCamera(camera, modelCamera, viewport);
+    updateAtmosphere(modelCamera);
     render();
   }
 
@@ -1021,17 +1414,30 @@ function createController(THREE, canvas, seed) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
     geometry.setAttribute("color", new THREE.BufferAttribute(data.colors, 3));
+    const uvs = new Float32Array(data.positions.length / 3 * 2);
+    for (let vertex = 0; vertex < data.positions.length / 3; vertex += 1) {
+      const x = data.positions[vertex * 3];
+      const z = data.positions[vertex * 3 + 2];
+      uvs[vertex * 2] = (x - ATLAS_3D_BOUNDS.xmin) / (ATLAS_3D_BOUNDS.xmax - ATLAS_3D_BOUNDS.xmin);
+      uvs[vertex * 2 + 1] = (z - ATLAS_3D_BOUNDS.zmin) / (ATLAS_3D_BOUNDS.zmax - ATLAS_3D_BOUNDS.zmin);
+    }
+    geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
     geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
     geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     const material = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.86,
+      roughness: 0.9,
       metalness: 0.02,
+      bumpMap: terrainDetailTexture,
+      bumpScale: 0.38,
     });
     terrain = new THREE.Mesh(geometry, material);
     terrain.name = "atlas-terrain";
+    terrain.userData.baseColors = new Float32Array(data.colors);
     scene.add(terrain);
+    terrainLightKey = "";
+    applyTerrainTimezones(true);
 
     mountainClouds = createMountainClouds(THREE, seed);
     scene.add(mountainClouds);
@@ -1054,6 +1460,7 @@ function createController(THREE, canvas, seed) {
     if (landmarks) { scene.remove(landmarks); disposeObject(landmarks); }
     landmarks = batchLandmarkMeshGroup(THREE, createLandmarkMeshGroup(THREE, seed));
     scene.add(landmarks);
+    updateAtmosphere({ x: 0, y: 0 });
     canvas.dataset.atlasLandmarkSourceMeshes = String(landmarks.userData.sourceMeshCount || 0);
     canvas.dataset.atlasLandmarkBatches = String(landmarks.userData.batchCount || 0);
 
@@ -1108,10 +1515,23 @@ function createController(THREE, canvas, seed) {
 
   function dispose() {
     disposeObject(scene);
+    terrainDetailTexture.dispose();
+    waterDetailTexture.dispose();
     renderer.dispose();
   }
 
-  return { renderer, updateCamera, updateJourney, updateRoutes, updateSeen, setTerrain, pick, render, dispose };
+  return {
+    renderer,
+    updateCamera,
+    updateJourney,
+    updateRoutes,
+    updateSeen,
+    updateWorldTime,
+    setTerrain,
+    pick,
+    render,
+    dispose,
+  };
 }
 
 export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
@@ -1122,6 +1542,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   journey = null,
   journeyBreaks = [],
   seenKeys = [],
+  worldTime = null,
   onReady,
   onError,
 }, ref) {
@@ -1135,6 +1556,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   const journeyRef = useRef(journey);
   const breaksRef = useRef(journeyBreaks);
   const seenRef = useRef(seenKeys);
+  const timeRef = useRef(worldTime);
 
   cameraRef.current = camera;
   viewportRef.current = viewport;
@@ -1144,6 +1566,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   journeyRef.current = journey;
   breaksRef.current = journeyBreaks;
   seenRef.current = seenKeys;
+  timeRef.current = worldTime;
 
   useImperativeHandle(ref, () => ({
     pick(point, modelCamera = null) {
@@ -1198,6 +1621,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
         controller.updateRoutes(focusRef.current, false);
         controller.updateJourney(journeyRef.current, breaksRef.current, false);
         controller.updateSeen(seenRef.current, false);
+        controller.updateWorldTime(timeRef.current, cameraRef.current, false);
         terrainReady = true;
         controller.updateCamera(cameraRef.current, viewportRef.current);
         if (!contextLost) readyRef.current?.();
@@ -1233,6 +1657,10 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   useEffect(() => {
     controllerRef.current?.updateSeen(seenKeys);
   }, [seenKeys]);
+
+  useEffect(() => {
+    controllerRef.current?.updateWorldTime(worldTime, cameraRef.current);
+  }, [worldTime?.day, worldTime?.hour, worldTime?.minute]);
 
   return <canvas ref={canvasRef} className="world-atlas__webgl" aria-hidden="true" />;
 });
