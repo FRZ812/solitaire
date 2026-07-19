@@ -4,6 +4,8 @@ import { makeInitialState } from "../../data/initial-state.js";
 import {
   ATLAS_LANDMARKS,
   ATLAS_OBLIQUE_PITCH,
+  atlasLandmarkLayer,
+  atlasLandmarkTypeLabel,
   initialAtlasSelection,
   journeyLegBreaks,
   projectAxial,
@@ -43,6 +45,53 @@ describe("world atlas initial selection", () => {
       x: 12345,
       y: -54321,
     });
+  });
+});
+
+describe("world atlas regional detail landmarks", () => {
+  const byId = Object.fromEntries(ATLAS_LANDMARKS.map((landmark) => [landmark.id, landmark]));
+
+  it("adds the authored realm landmarks without ambiguous marker coordinates", () => {
+    const coordKeys = ATLAS_LANDMARKS.map(({ coord }) => `${coord.x},${coord.y}`);
+
+    expect(new Set(ATLAS_LANDMARKS.map((landmark) => landmark.id)).size).toBe(ATLAS_LANDMARKS.length);
+    expect(new Set(coordKeys).size).toBe(ATLAS_LANDMARKS.length);
+    expect(byId["temple-still-waters"]).toMatchObject({ kind: "pagoda", realmId: "east", coord: { x: 355, y: -60 } });
+    expect(byId["temple-reed-crane"]).toMatchObject({ kind: "pagoda", realmId: "east", coord: { x: 430, y: 45 } });
+    expect(byId["mountain-hermitage"]).toMatchObject({ kind: "pagoda", realmId: "east", coord: { x: 90, y: -140 } });
+    expect(byId["jade-porch"]).toMatchObject({ kind: "pagoda", realmId: "east", coord: { x: 310, y: 110 } });
+    expect(byId["watchers-spire"]).toMatchObject({ kind: "tower", realmId: "north", coord: { x: 72, y: -310 } });
+    expect(byId["asalan-lighthouse"]).toMatchObject({ kind: "tower", realmId: "south" });
+  });
+
+  it("keeps regional marker taxonomy and exact selection behavior", () => {
+    expect(byId["caer-selenya"]).toMatchObject({ kind: "wonder", capitalOfRealmId: "west" });
+    expect(atlasLandmarkLayer(byId["caer-selenya"])).toBe("capitals");
+    expect(atlasLandmarkLayer(byId["temple-still-waters"])).toBe("sanctuaries");
+    expect(atlasLandmarkTypeLabel(byId["temple-still-waters"])).toBe("Pagoda");
+    expect(initialAtlasSelection(byId["asalan-lighthouse"].coord)).toEqual({
+      kind: "landmark",
+      id: "asalan-lighthouse",
+    });
+  });
+
+  it("fills every requested realm with the required landmark counts", () => {
+    const detailIds = new Set([
+      "temple-still-waters", "temple-reed-crane", "mountain-hermitage", "jade-porch",
+      "first-hearth-ruins", "oathless-hall", "pale-crown-barrows", "thawless-court", "watchers-spire",
+      "first-root-shrine", "rain-name-grove", "hollow-oak-covenant",
+      "dawn-cup-shrine", "zenith-house", "long-ray-temple", "namar-buried-city", "brassless-courts", "asalan-lighthouse",
+      "alderfield", "millcross", "whitewend-lea", "shepherds-rest", "barleywick", "bellmead", "bramble-pass-keep", "reedmarch-keep",
+    ]);
+    const details = ATLAS_LANDMARKS.filter((landmark) => detailIds.has(landmark.id));
+
+    expect(details).toHaveLength(26);
+    expect(details.filter(({ realmId, kind }) => realmId === "north" && kind === "ruin")).toHaveLength(4);
+    expect(details.filter(({ realmId, kind }) => realmId === "west" && kind === "shrine")).toHaveLength(3);
+    expect(details.filter(({ realmId, kind }) => realmId === "south" && kind === "shrine")).toHaveLength(3);
+    expect(details.filter(({ realmId, kind }) => realmId === "south" && kind === "ruin")).toHaveLength(2);
+    expect(details.filter(({ realmId, kind }) => realmId === "central" && kind === "village")).toHaveLength(6);
+    expect(details.filter(({ realmId, kind }) => realmId === "central" && kind === "fortress")).toHaveLength(2);
   });
 });
 

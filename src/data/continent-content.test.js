@@ -5,8 +5,12 @@ const {
   BORDER_CHECKPOINTS,
   COASTAL_FEATURES,
   CONTINENT,
+  CONTINENT_HOT_SPRINGS,
+  CONTINENT_LAKES,
   CONTINENT_ROUTES,
+  CONTINENT_WATERWAYS,
   LANDMARKS,
+  NORTHERN_RIDGES,
   PROVINCES,
   REALMS,
   REALM_FACTIONS,
@@ -17,6 +21,7 @@ const CONTINENT_SEA_LANES = ContinentData.CONTINENT_SEA_LANES || [];
 const coordKey = ({ x, y }) => `${x},${y}`;
 const hasFiniteCoord = (value) =>
   value && Number.isFinite(value.x) && Number.isFinite(value.y);
+const distanceBetween = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 function pointInsidePolygon(point, polygon) {
   let inside = false;
@@ -135,9 +140,16 @@ describe("expanded continent content contract", () => {
 
     expect(routeIds.size).toBe(CONTINENT_ROUTES.length);
     for (const route of CONTINENT_ROUTES) {
-      expect(route.waypoints.length, route.id).toBeGreaterThanOrEqual(2);
+      expect(route.waypoints.length, route.id).toBeGreaterThanOrEqual(12);
+      expect(route.waypoints.length, route.id).toBeLessThanOrEqual(20);
       expect(route.waypoints.every(hasFiniteCoord), route.id).toBe(true);
       expect(Array.isArray(route.checkpointIds), route.id).toBe(true);
+      if (route.kind === "regional-road") {
+        expect(route.width, route.id).toBe(1.2);
+      } else {
+        expect(route.kind, `${route.id} must retain the implicit great-road contract`).toBeUndefined();
+        expect(route.width, route.id).toBe(1.9);
+      }
       for (const checkpointId of route.checkpointIds) {
         const checkpoint = checkpointById.get(checkpointId);
         expect(checkpoint, `${route.id} -> ${checkpointId}`).toBeTruthy();
@@ -153,6 +165,87 @@ describe("expanded continent content contract", () => {
         expect(CONTINENT_ROUTES.find((route) => route.id === routeId)?.checkpointIds, checkpoint.id)
           .toContain(checkpoint.id);
       }
+    }
+  });
+
+  it("curves the four signature roads around water, passes, and river valleys", () => {
+    const routeById = new Map(CONTINENT_ROUTES.map((route) => [route.id, route]));
+    const waterwayById = new Map(CONTINENT_WATERWAYS.map((waterway) => [waterway.id, waterway]));
+    const lakeById = new Map(CONTINENT_LAKES.map((lake) => [lake.id, lake]));
+
+    const crownRoad = routeById.get("crown-road-east");
+    expect(Math.min(...crownRoad.waypoints.map((point) => distanceBetween(point, lakeById.get("mirror-lake").center))))
+      .toBeLessThanOrEqual(8);
+
+    const smokeRoadKeys = new Set(routeById.get("north-road").waypoints.map(coordKey));
+    const sharedWhitewendValleyPoints = waterwayById.get("whitewend").waypoints
+      .filter((point) => smokeRoadKeys.has(coordKey(point)));
+    expect(sharedWhitewendValleyPoints).toHaveLength(0);
+    for (const riverPoint of waterwayById.get("whitewend").waypoints.filter((point) => point.y <= -24)) {
+      const nearestRoadDistance = Math.min(...routeById.get("north-road").waypoints
+        .map((roadPoint) => distanceBetween(roadPoint, riverPoint)));
+      expect(nearestRoadDistance).toBeGreaterThanOrEqual(6);
+      expect(nearestRoadDistance).toBeLessThanOrEqual(16);
+    }
+
+    const saltRoad = routeById.get("south-road");
+    expect(Math.min(...saltRoad.waypoints.map((point) => distanceBetween(point, lakeById.get("heronmere").center))))
+      .toBeLessThanOrEqual(21);
+    expect(Math.min(...saltRoad.waypoints.map((point) => distanceBetween(point, lakeById.get("moonwell").center))))
+      .toBeLessThanOrEqual(7);
+
+    const sheepway = routeById.get("spine-road");
+    const northReedFinger = waterwayById.get("reed-fingers-north");
+    expect(Math.min(...sheepway.waypoints.flatMap((roadPoint) =>
+      northReedFinger.waypoints.map((riverPoint) => distanceBetween(roadPoint, riverPoint)))))
+      .toBeLessThanOrEqual(13);
+  });
+
+  it("authors ten source-to-mouth rivers, twelve lakes, and the eastern hot springs", () => {
+    expect(CONTINENT_WATERWAYS).toHaveLength(10);
+    expect(CONTINENT_LAKES).toHaveLength(12);
+    expect(CONTINENT_HOT_SPRINGS).toHaveLength(2);
+
+    expect(new Set(CONTINENT_WATERWAYS.map((waterway) => waterway.id)).size).toBe(10);
+    for (const waterway of CONTINENT_WATERWAYS) {
+      expect(waterway.waypoints.length, waterway.id).toBeGreaterThanOrEqual(4);
+      expect(waterway.waypoints.every(hasFiniteCoord), waterway.id).toBe(true);
+      expect(waterway.widthStart, waterway.id).toBe(1.4);
+      expect(waterway.widthEnd, waterway.id).toBe(2.6);
+      expect(waterway.widthEnd, waterway.id).toBeGreaterThan(waterway.widthStart);
+    }
+
+    const lakeNames = new Set(CONTINENT_LAKES.map((lake) => lake.name));
+    for (const name of [
+      "Frostmirror", "Ashpool", "Heronmere", "Tannic Sump", "Greenwater",
+      "Lotuspool", "Jadepond", "Shimmer Flats", "Moonwell", "Oasis al-Thar",
+    ]) {
+      expect(lakeNames, name).toContain(name);
+    }
+    for (const lake of CONTINENT_LAKES) {
+      expect(hasFiniteCoord(lake.center), lake.id).toBe(true);
+      expect(lake.radius, lake.id).toBeGreaterThan(0);
+    }
+
+    expect(CONTINENT_HOT_SPRINGS.map((spring) => spring.name))
+      .toEqual(["Jade Springs", "Misty Caldron"]);
+    for (const spring of CONTINENT_HOT_SPRINGS) {
+      expect(hasFiniteCoord(spring.center), spring.id).toBe(true);
+      expect(spring.center.x, spring.id).toBeGreaterThan(300);
+      expect(spring.radius, spring.id).toBeGreaterThan(0);
+    }
+  });
+
+  it("defines two lower Frostcrown ridges feeding the new northern rivers", () => {
+    expect(NORTHERN_RIDGES).toHaveLength(2);
+    expect(NORTHERN_RIDGES.map((ridge) => ridge.id))
+      .toEqual(["glasswater-ridge", "iceflow-ridge"]);
+    for (const ridge of NORTHERN_RIDGES) {
+      expect(ridge.elevationBoost, ridge.id).toBe(0.18);
+      expect(ridge.width, ridge.id).toBeGreaterThan(0);
+      expect(ridge.waypoints.length, ridge.id).toBeGreaterThanOrEqual(4);
+      expect(ridge.waypoints.every(hasFiniteCoord), ridge.id).toBe(true);
+      expect(ridge.waypoints.every((point) => point.y <= -220), ridge.id).toBe(true);
     }
   });
 

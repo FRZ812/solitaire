@@ -1,11 +1,11 @@
-import { CONTINENT } from "../../data/continent.js";
-import { surveyAtlas } from "../../engine/world-generation.js";
+import { CONTINENT, NORTHERN_RIDGES } from "../../data/continent.js";
+import { continentValueAt, surveyAtlas } from "../../engine/world-generation.js";
 
 export const ATLAS_3D_FOV_DEG = 34;
 export const ATLAS_3D_PITCH_DEG = 38;
 export const ATLAS_3D_TERRAIN_STRIDE = 6;
 export const ATLAS_3D_CAMERA_COAST_INSET = ATLAS_3D_TERRAIN_STRIDE;
-export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v2";
+export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v3";
 export const ATLAS_3D_MAX_ZOOM = 26;
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -15,8 +15,23 @@ const PITCH = ATLAS_3D_PITCH_DEG * DEG_TO_RAD;
 const PITCH_SIN = Math.sin(PITCH);
 const PITCH_COS = Math.cos(PITCH);
 const CAMERA_MIN_CLEARANCE = 3;
-const TERRAIN_MAX_HEIGHT = 29.5;
+const TERRAIN_MAX_HEIGHT = 42;
 const TERRAIN_MIN_HEIGHT = -2.8;
+const SNOW_CAP_HEIGHT = 30;
+const SNOW_CAP_COLOR = 0xd8ddd0;
+const COASTAL_SAND_COLOR = 0xb8a870;
+const COASTAL_BAND_RADIUS = 3;
+const COASTAL_NEIGHBOR_OFFSETS = Object.freeze((() => {
+  const offsets = [];
+  for (let y = -COASTAL_BAND_RADIUS; y <= COASTAL_BAND_RADIUS; y += 1) {
+    for (let x = -COASTAL_BAND_RADIUS; x <= COASTAL_BAND_RADIUS; x += 1) {
+      if (x === 0 && y === 0) continue;
+      const distance = (Math.abs(x) + Math.abs(y) + Math.abs(x + y)) / 2;
+      if (distance <= COASTAL_BAND_RADIUS) offsets.push(Object.freeze({ x, y }));
+    }
+  }
+  return offsets;
+})());
 
 // Per-realm biome palettes: each entry is [central, north, east, south, west].
 // Indices match REALM_INDICES below. Shared manmade terrain types (settlement,
@@ -32,7 +47,7 @@ const BIOME_PALETTES = Object.freeze([
   // 1 — north: sub-arctic Frostcrown
   Object.freeze({
     plains: 0x687872, hills: 0x4a4e52, forest: 0x182a1c, marsh: 0x1e2e2e,
-    mountains: 0x8a9698, impassable: 0x2e3838, water: 0x102a38,
+    mountains: 0xaab8b8, impassable: 0x2e3838, water: 0x102a38,
     settlement: 0x8a7a68, street: 0x957f6a, road: 0xa08a6e, wall: 0x7a7870, indoor: 0x6a6060,
   }),
   // 2 — east: subtropical Sea of Reeds
@@ -49,7 +64,7 @@ const BIOME_PALETTES = Object.freeze([
   }),
   // 4 — west: ancient Elderwood forest
   Object.freeze({
-    plains: 0x3c5e30, hills: 0x3a3a20, forest: 0x142e1a, marsh: 0x1c3a2a,
+    plains: 0x3c5e30, hills: 0x3a3a20, forest: 0x0f2212, marsh: 0x1c3a2a,
     mountains: 0x3c4040, impassable: 0x2a3028, water: 0x103038,
     settlement: 0x8a7850, street: 0x907c58, road: 0xa0885a, wall: 0x686858, indoor: 0x686055,
   }),
@@ -172,7 +187,7 @@ export function fitAtlas3dCamera(camera, viewport, seed = CONTINENT.seed) {
   }, viewport, seed);
 }
 
-function coordinateNoise(x, y, salt = 0) {
+export function coordinateNoise(x, y, salt = 0) {
   let saltValue = Number.isFinite(salt) ? salt | 0 : 2166136261;
   if (!Number.isFinite(salt)) {
     for (const character of String(salt)) {
@@ -201,6 +216,12 @@ function colorChannels(hex, light = 0) {
   ];
 }
 
+function blendColorChannels(channels, hex, weight) {
+  const target = colorChannels(hex);
+  const mix = clamp(weight, 0, 1);
+  return channels.map((channel, index) => channel + (target[index] - channel) * mix);
+}
+
 export function atlas3dAxialToScene(coord) {
   return {
     x: coord.x + coord.y * 0.5,
@@ -213,22 +234,62 @@ export function atlas3dSceneToAxial(point) {
   return { x: point.x - y * 0.5, y };
 }
 
-export function atlas3dTerrainHeight(sample) {
+function distanceToSegment(point, start, end) {
+  const dx = end.x - start.x;
+  const dz = end.z - start.z;
+  const lengthSquared = dx * dx + dz * dz;
+  if (!lengthSquared) return Math.hypot(point.x - start.x, point.z - start.z);
+  const progress = clamp(
+    ((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSquared,
+    0,
+    1,
+  );
+  return Math.hypot(
+    point.x - (start.x + dx * progress),
+    point.z - (start.z + dz * progress),
+  );
+}
+
+const PROJECTED_NORTHERN_RIDGES = Object.freeze((NORTHERN_RIDGES || []).map((ridge) => Object.freeze({
+  ...ridge,
+  waypoints: Object.freeze(ridge.waypoints.map((waypoint) => Object.freeze(atlas3dAxialToScene(waypoint)))),
+})));
+
+export function northernRidgeElevationBoostAt(coord) {
+  if (!coord || !Number.isFinite(coord.x) || !Number.isFinite(coord.y)) return 0;
+  const point = atlas3dAxialToScene(coord);
+  let boost = 0;
+  for (const ridge of PROJECTED_NORTHERN_RIDGES) {
+    let distance = Infinity;
+    for (let index = 1; index < ridge.waypoints.length; index += 1) {
+      distance = Math.min(
+        distance,
+        distanceToSegment(point, ridge.waypoints[index - 1], ridge.waypoints[index]),
+      );
+    }
+    if (distance >= ridge.width) continue;
+    boost = Math.max(boost, ridge.elevationBoost * (1 - distance / ridge.width));
+  }
+  return boost;
+}
+
+export function atlas3dTerrainHeight(sample, coord = null) {
   if (!sample?.land) return -2.8;
   const terrainLift = sample.terrain === "mountains"
-    ? 4.2
+    ? 8.5
     : sample.terrain === "hills"
-    ? 1.8
+    ? 2.6
     : sample.terrain === "forest"
     ? 0.65
     : 0;
-  return clamp((sample.elevation - 0.16) * 28 + terrainLift, 0.4, 29.5);
+  const elevation = sample.elevation + northernRidgeElevationBoostAt(coord);
+  return clamp((elevation - 0.16) * 28 + terrainLift, 0.4, TERRAIN_MAX_HEIGHT);
 }
 
 function sampledTerrainHeight(coord, seed) {
   const key = `${seed}|${coord.x},${coord.y}`;
   if (HEIGHT_CACHE.has(key)) return HEIGHT_CACHE.get(key);
-  const height = atlas3dTerrainHeight(surveyAtlas(coord.x, coord.y, seed));
+  const height = atlas3dTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord);
   if (HEIGHT_CACHE.size >= 100000) HEIGHT_CACHE.clear();
   HEIGHT_CACHE.set(key, height);
   return height;
@@ -263,6 +324,8 @@ export function registerAtlas3dTerrainData(data) {
     || data.positions.length !== vertexCount * 3
     || !(data.colors instanceof Float32Array)
     || data.colors.length !== vertexCount * 3
+    || !(data.coastal instanceof Uint8Array)
+    || data.coastal.length !== vertexCount
     || !(data.indices instanceof Uint32Array)
     || data.indices.length !== indexCount
     || !(data.trees instanceof Float32Array)
@@ -324,34 +387,98 @@ export const ATLAS_3D_BOUNDS = (() => {
   });
 })();
 
+function isCoastalGridVertex(coord, sample, seed) {
+  if (!sample?.land) return false;
+  // `sample.coast` is a cheap broad-phase test. The exact band is then
+  // resolved in authoritative axial world hexes, not terrain-grid cells (the
+  // render grid has a six-hex stride and would otherwise make this 18 hexes).
+  // Bounds can clip land before the survey's broad coast classifier sees open
+  // water, so edge vertices still need the exact three-hex check.
+  const nearDomainEdge = coord.x - CONTINENT.bounds.xmin <= COASTAL_BAND_RADIUS
+    || CONTINENT.bounds.xmax - coord.x <= COASTAL_BAND_RADIUS
+    || coord.y - CONTINENT.bounds.ymin <= COASTAL_BAND_RADIUS
+    || CONTINENT.bounds.ymax - coord.y <= COASTAL_BAND_RADIUS;
+  if (!sample.coast && !nearDomainEdge) return false;
+  for (const offset of COASTAL_NEIGHBOR_OFFSETS) {
+    const x = coord.x + offset.x;
+    const y = coord.y + offset.y;
+    if (x < CONTINENT.bounds.xmin || x > CONTINENT.bounds.xmax
+      || y < CONTINENT.bounds.ymin || y > CONTINENT.bounds.ymax
+      || continentValueAt(x, y, seed) <= 0) return true;
+  }
+  return false;
+}
+
+export function atlas3dTerrainColor(
+  sample,
+  coord,
+  height = atlas3dTerrainHeight(sample, coord),
+  seed = CONTINENT.seed,
+  coastal = false,
+) {
+  const mountain = sample?.terrain === "mountains";
+  const primaryAmplitude = mountain ? 0.12 : 0.08;
+  const secondaryAmplitude = mountain ? 0.06 : 0.04;
+  const colorVariance =
+    (coordinateNoise(coord.x, coord.y, seed + 199) - 0.5) * primaryAmplitude
+    + (coordinateNoise(coord.x * 2.3, coord.y * 2.3, seed + 311) - 0.5) * secondaryAmplitude;
+  const base = terrainColor(sample?.land ? sample.terrain : "water", sample?.realmId);
+  const relief = sample?.land
+    ? (sample.elevation - 0.48) * 0.24 + colorVariance
+    : (sample.elevation - 0.45) * 0.08 + colorVariance * 0.4;
+  let channels = colorChannels(base, relief);
+  if (coastal && sample?.land) {
+    channels = blendColorChannels(channels, COASTAL_SAND_COLOR, 0.4);
+  }
+  if (height > SNOW_CAP_HEIGHT) {
+    const snowWeight = 0.55
+      + clamp((height - SNOW_CAP_HEIGHT) / (TERRAIN_MAX_HEIGHT - SNOW_CAP_HEIGHT), 0, 1) * 0.35;
+    channels = blendColorChannels(channels, SNOW_CAP_COLOR, snowWeight);
+  }
+  return channels;
+}
+
 export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D_TERRAIN_STRIDE) {
   const xs = axisSamples(CONTINENT.bounds.xmin, CONTINENT.bounds.xmax, stride);
   const ys = axisSamples(CONTINENT.bounds.ymin, CONTINENT.bounds.ymax, stride);
   const vertexCount = xs.length * ys.length;
   const positions = new Float32Array(vertexCount * 3);
   const colors = new Float32Array(vertexCount * 3);
+  const coastal = new Uint8Array(vertexCount);
   const trees = [];
+  const samples = new Array(vertexCount);
+
+  for (let row = 0; row < ys.length; row += 1) {
+    for (let column = 0; column < xs.length; column += 1) {
+      const index = row * xs.length + column;
+      samples[index] = surveyAtlas(xs[column], ys[row], seed);
+    }
+  }
 
   for (let row = 0; row < ys.length; row += 1) {
     for (let column = 0; column < xs.length; column += 1) {
       const x = xs[column];
       const y = ys[row];
       const index = row * xs.length + column;
-      const sample = surveyAtlas(x, y, seed);
+      const sample = samples[index];
       const scene = atlas3dAxialToScene({ x, y });
-      const height = atlas3dTerrainHeight(sample);
+      const height = atlas3dTerrainHeight(sample, { x, y });
+      const isCoastal = isCoastalGridVertex({ x, y }, sample, seed);
+      coastal[index] = isCoastal ? 1 : 0;
       HEIGHT_CACHE.set(`${seed}|${x},${y}`, height);
       positions[index * 3] = scene.x;
       positions[index * 3 + 1] = height;
       positions[index * 3 + 2] = scene.z;
 
-      // Biome-aware vertex color with per-vertex noise for micro-variation.
-      const colorVariance = (coordinateNoise(x, y, seed + 199) - 0.5) * 0.055;
-      const base = terrainColor(sample.land ? sample.terrain : "water", sample.realmId);
-      const relief = sample.land
-        ? (sample.elevation - 0.48) * 0.24 + colorVariance
-        : (sample.elevation - 0.45) * 0.08 + colorVariance * 0.4;
-      const [red, green, blue] = colorChannels(base, relief);
+      // Biome-aware vertex color with two deterministic noise octaves, plus
+      // explicit coastline and permanent-snow tiers.
+      const [red, green, blue] = atlas3dTerrainColor(
+        sample,
+        { x, y },
+        height,
+        seed,
+        isCoastal,
+      );
       colors[index * 3] = red;
       colors[index * 3 + 1] = green;
       colors[index * 3 + 2] = blue;
@@ -403,6 +530,7 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
     rows: ys.length,
     positions,
     colors,
+    coastal,
     indices,
     trees: new Float32Array(trees),
   };

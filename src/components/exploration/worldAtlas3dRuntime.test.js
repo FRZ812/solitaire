@@ -20,6 +20,7 @@ describe("3D atlas runtime preload", () => {
       rows: 2,
       positions: new Float32Array(12),
       colors: new Float32Array(12),
+      coastal: new Uint8Array(4),
       indices: new Uint32Array([0, 2, 1, 1, 2, 3]),
       trees: new Float32Array(),
     };

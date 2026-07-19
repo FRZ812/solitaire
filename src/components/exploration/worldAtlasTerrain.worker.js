@@ -5,6 +5,7 @@ self.onmessage = (event) => {
   self.postMessage(terrain, [
     terrain.positions.buffer,
     terrain.colors.buffer,
+    terrain.coastal.buffer,
     terrain.indices.buffer,
     terrain.trees.buffer,
   ]);

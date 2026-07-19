@@ -27,6 +27,47 @@ export const ATLAS_OBLIQUE_PITCH = 0.76;
 
 const CENTRAL_REALM = REALMS.find((realm) => realm.id === "central") || REALMS[0];
 
+// Atlas-only detail markers make the continental view feel inhabited without
+// promoting every landmark into the close-range world generator. Coordinates
+// remain unique because exact coordinate identity drives marker selection.
+const ATLAS_DETAIL_LANDMARKS = Object.freeze([
+  // Sea of Reeds: isolated pagodas across the delta and mountain approaches.
+  { id: "temple-still-waters", name: "Temple of Still Waters", knowledge: "legend", kind: "pagoda", coord: { x: 355, y: -60 }, regionId: "iron-plateau", realmId: "east", provinceId: "starfall-uplands", factionId: "iron-plateau-marches", direction: "far north-east", description: "A dark-roofed pagoda reflected in a jade spring beneath the eastern escarpment." },
+  { id: "temple-reed-crane", name: "Temple of the Reed Crane", knowledge: "legend", kind: "pagoda", coord: { x: 430, y: 45 }, regionId: "tellmar-road", realmId: "east", provinceId: "tellmar-delta", factionId: "tellmar-banners", direction: "far east", description: "A solitary crane temple raised above the reed channels on weathered timber piles." },
+  { id: "mountain-hermitage", name: "Mountain Hermitage", knowledge: "legend", kind: "pagoda", coord: { x: 90, y: -140 }, regionId: "iron-plateau", realmId: "east", provinceId: "starfall-uplands", factionId: "iron-plateau-marches", routeIds: ["spine-road"], direction: "north-east", description: "Three narrow roofs cling to a high pass used by pilgrims crossing toward the Sea of Reeds." },
+  { id: "jade-porch", name: "The Jade Porch", knowledge: "legend", kind: "pagoda", coord: { x: 310, y: 110 }, regionId: "tellmar-road", realmId: "east", provinceId: "lotus-marches", factionId: "lotus-prefecture", routeIds: ["jade-causeway"], direction: "far east", description: "A green-tiled wayside temple overlooking the lotus roads and their floodgates." },
+
+  // Frostcrown: pre-Vyrgun settlements scattered beyond the surviving holds.
+  { id: "first-hearth-ruins", name: "The First Hearth Ruins", knowledge: "legend", kind: "ruin", role: "pre-vyrgun-settlement", coord: { x: -235, y: -325 }, regionId: "sundered-wastes", realmId: "north", provinceId: "sundered-snow", direction: "far north-west", description: "Roofless black-stone hearths from a settlement older than the Vyrgun tribute roads." },
+  { id: "oathless-hall", name: "Oathless Hall", knowledge: "legend", kind: "ruin", role: "pre-vyrgun-settlement", coord: { x: -120, y: -360 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "ember-lakes", direction: "far north-west", description: "A frozen communal hall whose carved benches name no dynasty known to northern chroniclers." },
+  { id: "pale-crown-barrows", name: "The Pale Crown Barrows", knowledge: "legend", kind: "ruin", role: "pre-vyrgun-settlement", coord: { x: 35, y: -385 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "rime-crown", direction: "far north", description: "A ring of ice-buried homes and barrows overlooking the Rimeward Sea." },
+  { id: "thawless-court", name: "The Thawless Court", knowledge: "legend", kind: "ruin", role: "pre-vyrgun-settlement", coord: { x: 175, y: -350 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "rime-crown", direction: "far north-east", description: "An abandoned terrace settlement locked beneath clear ice since before the Winter Crown." },
+  { id: "watchers-spire", name: "Watcher's Spire", knowledge: "legend", kind: "tower", role: "border-lookout", coord: { x: 72, y: -310 }, regionId: "drakeholt-peaks", realmId: "north", provinceId: "rime-crown", factionId: "vyrgun-drakekin", routeIds: ["aurora-way"], direction: "far north", description: "A narrow border lookout whose beacon watches the eastern glacier valleys." },
+
+  // Elderwood: old forest sanctuaries beyond the managed coppices.
+  { id: "first-root-shrine", name: "Shrine of the First Root", knowledge: "legend", kind: "shrine", role: "deep-forest-sanctuary", coord: { x: -340, y: 135 }, regionId: "witchwood-deep", realmId: "west", provinceId: "pale-boughs", factionId: "selenyan-covenant", direction: "far west", description: "A root-bound stone altar where path singers leave the first seed of every journey." },
+  { id: "rain-name-grove", name: "The Rain-Name Grove", knowledge: "legend", kind: "shrine", role: "deep-forest-sanctuary", coord: { x: -385, y: 205 }, regionId: "witchwood-deep", realmId: "west", provinceId: "selenyan-heart", factionId: "selenyan-covenant", routeIds: ["root-road"], direction: "far west", description: "An ancient grove where rain striking hollow trunks is read as the voices of green ancestors." },
+  { id: "hollow-oak-covenant", name: "Covenant of the Hollow Oak", knowledge: "legend", kind: "shrine", role: "deep-forest-sanctuary", coord: { x: -445, y: 165 }, regionId: "witchwood-deep", realmId: "west", provinceId: "selenyan-heart", factionId: "selenyan-covenant", direction: "far west", description: "A candlelit sanctuary inside an oak broad enough to shelter an entire grove council." },
+
+  // Sunscar: solar sanctuaries, buried cities, and the southern coast light.
+  { id: "dawn-cup-shrine", name: "Shrine of the Dawn Cup", knowledge: "legend", kind: "shrine", role: "solar-temple", coord: { x: -90, y: 275 }, regionId: "hollow-coast", realmId: "south", provinceId: "glass-desert", factionId: "asalan-sun-court", routeIds: ["dune-circuit"], direction: "far south-west", description: "A low solar temple whose polished basin catches the year's first sunrise." },
+  { id: "zenith-house", name: "The Zenith House", knowledge: "legend", kind: "shrine", role: "solar-temple", coord: { x: 175, y: 305 }, regionId: "hollow-coast", realmId: "south", provinceId: "nine-wells", factionId: "asalan-sun-court", routeIds: ["nine-wells-road"], direction: "far south-east", description: "A roofless sanctuary where noon shadows vanish from a ring of sun pillars." },
+  { id: "long-ray-temple", name: "Temple of the Long Ray", knowledge: "legend", kind: "shrine", role: "solar-temple", coord: { x: 80, y: 365 }, regionId: "hollow-coast", realmId: "south", provinceId: "saffron-coast", factionId: "qamarat-tideguild", routeIds: ["saffron-coast-road"], direction: "far south", description: "A blue-tiled solar temple marking the final light over the Saffron Sea." },
+  { id: "namar-buried-city", name: "The Buried City of Namar", knowledge: "legend", kind: "ruin", role: "pre-sunscari-city", coord: { x: -55, y: 300 }, regionId: "hollow-coast", realmId: "south", provinceId: "glass-desert", direction: "far south-west", description: "Wind-cleared avenues reveal a city whose wells predate every Sunscari water tablet." },
+  { id: "brassless-courts", name: "The Brassless Courts", knowledge: "legend", kind: "ruin", role: "pre-sunscari-city", coord: { x: 210, y: 360 }, regionId: "far-wild", realmId: "south", provinceId: "saffron-coast", direction: "far south-east", description: "The upper courts of a buried city emerge from the dunes without a trace of Sunscari brass." },
+  { id: "asalan-lighthouse", name: "Asalan Lighthouse", knowledge: "legend", kind: "tower", role: "coastal-lighthouse", coord: { x: 150, y: 380 }, regionId: "hollow-coast", realmId: "south", provinceId: "saffron-coast", factionId: "qamarat-tideguild", routeIds: ["saffron-coast-road"], direction: "far south", description: "A sun-mirrored lighthouse guiding southern shipping into Nine Wells Bay." },
+
+  // Whitemarch: close farming villages and paired keeps on the border roads.
+  { id: "alderfield", name: "Alderfield", knowledge: "rumor", kind: "village", role: "heartland-village", coord: { x: -72, y: -20 }, regionId: "tannic-wood", realmId: "central", provinceId: "crown-basin", factionId: "whitemarch-iron", direction: "north-west", description: "A mill village of alder sluices, barley plots, and Whitewend ferry sheds." },
+  { id: "millcross", name: "Millcross", knowledge: "rumor", kind: "village", role: "heartland-village", coord: { x: -38, y: 44 }, regionId: "bramblewych-reach", realmId: "central", provinceId: "bramble-downs", factionId: "whitemarch-iron", direction: "south-west", description: "Four windmills and a hedge court cluster around the crossing of two farm lanes." },
+  { id: "whitewend-lea", name: "Whitewend Lea", knowledge: "rumor", kind: "village", role: "heartland-village", coord: { x: -18, y: -48 }, regionId: "tannic-wood", realmId: "central", provinceId: "crown-basin", factionId: "whitemarch-iron", direction: "north", description: "A river-meadow village known for eel traps, linen bleaching, and public grazing rights." },
+  { id: "shepherds-rest", name: "Shepherd's Rest", knowledge: "rumor", kind: "village", role: "heartland-village", coord: { x: 24, y: 50 }, regionId: "spine-foothills", realmId: "central", provinceId: "stonebrook-uplands", factionId: "high-sheepway-guild", routeIds: ["spine-road"], direction: "south-east", description: "A slate-roofed sheep village where high-road drovers share a common fold." },
+  { id: "barleywick", name: "Barleywick", knowledge: "rumor", kind: "village", role: "heartland-village", coord: { x: 62, y: -32 }, regionId: "whitemarch-march", realmId: "central", provinceId: "crowsmoor-reach", factionId: "crowsmoor-wardens", direction: "north-east", description: "A prosperous grain village ringed by reeve stones and communal threshing floors." },
+  { id: "bellmead", name: "Bellmead", knowledge: "rumor", kind: "village", role: "heartland-village", coord: { x: 76, y: 42 }, regionId: "spine-foothills", realmId: "central", provinceId: "stonebrook-uplands", factionId: "high-sheepway-guild", direction: "south-east", description: "A meadow settlement whose road bell warns shepherds when caravans descend from the pass." },
+  { id: "bramble-pass-keep", name: "Bramble Pass Keep", knowledge: "rumor", kind: "fortress", role: "border-pass", coord: { x: -145, y: 30 }, regionId: "witchwood-deep", realmId: "central", provinceId: "bramble-downs", factionId: "whitemarch-iron", routeIds: ["bramble-road"], direction: "west", description: "A compact crown keep guarding the last open ground before Greenward's forest gate." },
+  { id: "reedmarch-keep", name: "Reedmarch Keep", knowledge: "rumor", kind: "fortress", role: "border-pass", coord: { x: 150, y: -20 }, regionId: "iron-plateau", realmId: "central", provinceId: "crowsmoor-reach", factionId: "whitemarch-iron", routeIds: ["crown-road-east", "spine-road"], direction: "east", description: "A road keep overlooking the converging approaches to Reedwatch and the eastern causeways." },
+]);
+
 // One marker per authored continental landmark, plus the capital collapsed to a
 // single entry. Whitemarch's internal wards stay in the close camera.
 export const ATLAS_LANDMARKS = Object.freeze([
@@ -44,10 +85,14 @@ export const ATLAS_LANDMARKS = Object.freeze([
   }),
   ...LANDMARKS.map((landmark) => {
     const tradeHouse = RARE_TRADE_HOUSES[landmark.id];
-    return tradeHouse
-      ? Object.freeze({ ...landmark, marketTier: tradeHouse.marketTier, tradeHouseId: tradeHouse.id })
+    const atlasLandmark = landmark.id === "caer-selenya"
+      ? { ...landmark, kind: "wonder" }
       : landmark;
+    return tradeHouse
+      ? Object.freeze({ ...atlasLandmark, marketTier: tradeHouse.marketTier, tradeHouseId: tradeHouse.id })
+      : atlasLandmark;
   }),
+  ...ATLAS_DETAIL_LANDMARKS,
 ]);
 
 export const ATLAS_LAYERS = Object.freeze([
@@ -61,7 +106,7 @@ export const ATLAS_LAYERS = Object.freeze([
 
 export const ATLAS_LANDMARK_GLYPHS = Object.freeze({
   city: "♜", fortress: "♜", fort: "♜", castle: "♜", checkpoint: "▣",
-  town: "⌂", village: "⌂", tower: "△", temple: "✦", shrine: "✦",
+  town: "⌂", village: "⌂", tower: "△", temple: "✦", pagoda: "✦", shrine: "✦",
   sanctuary: "✦", monastery: "✦", ruin: "⌁", wonder: "✧", landmark: "◆",
   lake: "◉", mountain: "▲", port: "⚓", road: "◇",
 });
@@ -69,7 +114,7 @@ export const ATLAS_LANDMARK_GLYPHS = Object.freeze({
 const LANDMARK_KIND_LABELS = Object.freeze({
   city: "City", fortress: "Fortress", fort: "Fort", castle: "Castle",
   checkpoint: "Military checkpoint", town: "Town", village: "Village",
-  settlement: "Settlement", temple: "Temple", shrine: "Shrine",
+  settlement: "Settlement", temple: "Temple", pagoda: "Pagoda", shrine: "Shrine",
   sanctuary: "Sanctuary", monastery: "Monastery", ruin: "Ruin",
   landmark: "Landmark", tower: "Tower", bridge: "Bridge", lake: "Lake",
   river: "River crossing", mountain: "Mountain", port: "Port",
@@ -81,7 +126,7 @@ export function atlasLandmarkLayer(landmark) {
   if (landmark.kind === "port") return "ports";
   if (landmark.role === "border-checkpoint" || ["fortress", "fort", "castle", "checkpoint"].includes(landmark.kind)) return "strongholds";
   if (["city", "town", "village", "settlement"].includes(landmark.kind)) return "settlements";
-  if (["temple", "shrine", "sanctuary", "monastery"].includes(landmark.kind)) return "sanctuaries";
+  if (["temple", "pagoda", "shrine", "sanctuary", "monastery"].includes(landmark.kind)) return "sanctuaries";
   return "lore";
 }
 
