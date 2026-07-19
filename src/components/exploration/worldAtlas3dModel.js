@@ -10,9 +10,23 @@ import { continentValueAt, surveyAtlas } from "../../engine/world-generation.js"
 export const ATLAS_3D_FOV_DEG = 34;
 export const ATLAS_3D_PITCH_DEG = 38;
 export const ATLAS_3D_TERRAIN_STRIDE = 4;
+// Optional refinement grid swapped in by capable devices after first paint.
+export const ATLAS_3D_FINE_TERRAIN_STRIDE = 2;
 export const ATLAS_3D_CAMERA_COAST_INSET = ATLAS_3D_TERRAIN_STRIDE;
-export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v6";
+export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v7";
 export const ATLAS_3D_MAX_ZOOM = 26;
+
+// Deterministic noise streams (salts) used by the terrain model, all keyed by
+// the world seed. Every stream must be listed here so overhauls never collide:
+//   +43  woodland grove mask          +199 primary color variance
+//   +311 secondary color variance     +401 crag relief (fine ridged)
+//   +409 crag relief (broad ridged)   +419 lowland undulation
+//   +421 snow-line edge break         +423 moisture hue drift
+const SALT_CRAG_FINE = 401;
+const SALT_CRAG_BROAD = 409;
+const SALT_UNDULATION = 419;
+const SALT_SNOW_EDGE = 421;
+const SALT_MOISTURE = 423;
 
 const DEG_TO_RAD = Math.PI / 180;
 const SQRT_THREE_OVER_TWO = Math.sqrt(3) / 2;
@@ -86,6 +100,7 @@ function terrainColor(terrain, realmId) {
 const HEIGHT_CACHE = new Map();
 const LAKE_SURFACE_HEIGHT_CACHE = new Map();
 const TERRAIN_GRID_CACHE = new Map();
+const PREFERRED_STRIDE = new Map();
 const FIT_ZOOM_CACHE = new Map();
 let lastCameraFrameKey = "";
 let lastCameraFrame = null;
@@ -345,32 +360,43 @@ function northernRidgeReliefWeightAt(coord) {
 
 function terrainLiftFor(sample, coord) {
   const frozenNorth = !!coord && (sample?.realmId === "north" || coord.y <= -170);
-  if (!frozenNorth) {
-    return sample.terrain === "mountains"
-      ? 8.5
-      : sample.terrain === "hills"
-      ? 2.6
-      : sample.terrain === "forest"
-      ? 0.65
-      : 0;
+  if (frozenNorth) {
+    // Frostcrown's generator intentionally classifies much of the far north as
+    // mountain biome. Treat that classification as climate/ground cover, then
+    // reserve the full vertical drama for the authored Spine and parallel
+    // ridges. This creates broad glacial shelves and readable valleys instead
+    // of turning every four-hex terrain cell into an equally sharp peak.
+    const ridgeWeight = Math.max(
+      mountainSpineReliefWeightAt(coord),
+      northernRidgeReliefWeightAt(coord),
+    );
+    const authoredRelief = ridgeWeight * ridgeWeight;
+    const continuousLift = 2.6 * smoothstep(0.48, 0.7, sample.elevation)
+      + 5.9 * smoothstep(0.68, 0.92, sample.elevation);
+    return continuousLift * (0.35 + authoredRelief * 0.65);
   }
 
-  // Frostcrown's generator intentionally classifies much of the far north as
-  // mountain biome. Treat that classification as climate/ground cover, then
-  // reserve the full vertical drama for the authored Spine and parallel
-  // ridges. This creates broad glacial shelves and readable valleys instead of
-  // turning every four-hex terrain cell into an equally sharp peak.
-  const ridgeWeight = Math.max(
-    mountainSpineReliefWeightAt(coord),
-    northernRidgeReliefWeightAt(coord),
-  );
-  const authoredRelief = ridgeWeight * ridgeWeight;
-  const continuousLift = 2.6 * smoothstep(0.48, 0.7, sample.elevation)
-    + 5.9 * smoothstep(0.68, 0.92, sample.elevation);
-  return continuousLift * (0.35 + authoredRelief * 0.65);
+  // Every other realm follows the same continuous philosophy: a small base
+  // pedestal keeps the category readable, and the rest of the relief tracks
+  // the underlying elevation field so ridgelines rise and fall smoothly
+  // instead of jumping a fixed step at every category border. The residual
+  // pedestal steps are dissolved by the grid-wide smoothing pass.
+  const elevation = clamp(sample.elevation, 0, 1.4);
+  if (sample.terrain === "mountains") {
+    return 2.2
+      + 3.4 * smoothstep(0.46, 0.72, elevation)
+      + 4.6 * smoothstep(0.66, 0.96, elevation);
+  }
+  if (sample.terrain === "hills") {
+    return 0.9 + 1.7 * smoothstep(0.4, 0.74, elevation);
+  }
+  if (sample.terrain === "forest") {
+    return 0.65 * smoothstep(0.26, 0.58, elevation);
+  }
+  return 0;
 }
 
-export function atlas3dBaseTerrainHeight(sample, coord = null) {
+export function atlas3dBaseTerrainHeight(sample, coord = null, seed = CONTINENT.seed) {
   if (!sample?.land) return -2.8;
   const frozenNorth = !!coord && (sample.realmId === "north" || coord.y <= -170);
   const ridgeWeight = frozenNorth
@@ -382,7 +408,30 @@ export function atlas3dBaseTerrainHeight(sample, coord = null) {
     + (sample.elevation - 0.16) * reliefScale
     + northernRidgeElevationBoostAt(coord);
   const terrainLift = terrainLiftFor(sample, coord);
-  return clamp((elevation - 0.16) * 28 + terrainLift, 0.4, TERRAIN_MAX_HEIGHT);
+  let height = (elevation - 0.16) * 28 + terrainLift;
+  if (coord) {
+    // Erosion-flavored detail: ridged octaves carve crags into uplands while a
+    // broad, gentle undulation keeps lowland plains from reading as billiard
+    // felt. Both fade out on frozen shelves so glacial plateaus stay serene.
+    const ruggedness = smoothstep(3.5, 12, height) * (frozenNorth ? 0.35 : 1);
+    if (ruggedness > 0) {
+      const cragFine = Math.abs(
+        interpolatedCoordinateNoise(coord.x, coord.y, 7, seed + SALT_CRAG_FINE) * 2 - 1,
+      );
+      const cragBroad = Math.abs(
+        interpolatedCoordinateNoise(coord.x, coord.y, 3, seed + SALT_CRAG_BROAD) * 2 - 1,
+      );
+      height += ((0.62 - cragFine) * 1.9 + (0.5 - cragBroad) * 0.7) * ruggedness;
+    }
+    const undulation = interpolatedCoordinateNoise(
+      coord.x,
+      coord.y,
+      21,
+      seed + SALT_UNDULATION,
+    ) - 0.5;
+    height += undulation * (frozenNorth ? 0.4 : 1.1);
+  }
+  return clamp(height, 0.4, TERRAIN_MAX_HEIGHT);
 }
 
 function lakeSurfaceCacheKey(lake, seed) {
@@ -404,12 +453,13 @@ export function atlas3dLakeSurfaceHeight(lake, seed = CONTINENT.seed) {
     }));
   }
   const heights = sampleCoords
-    .map((coord) => atlas3dBaseTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord))
+    .map((coord) => atlas3dBaseTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord, seed))
     .filter((height) => height > TERRAIN_MIN_HEIGHT + 0.1)
     .sort((a, b) => a - b);
   const centerHeight = atlas3dBaseTerrainHeight(
     surveyAtlas(lake.center.x, lake.center.y, seed),
     lake.center,
+    seed,
   );
   const lowerShore = heights[Math.floor(Math.max(0, heights.length - 1) * 0.3)] ?? centerHeight;
   const surfaceHeight = clamp(Math.min(centerHeight, lowerShore) + 0.16, 0.52, TERRAIN_MAX_HEIGHT - 0.8);
@@ -434,12 +484,13 @@ export function atlas3dHotSpringSurfaceHeight(spring, seed = CONTINENT.seed) {
     }));
   }
   const heights = sampleCoords
-    .map((coord) => atlas3dBaseTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord))
+    .map((coord) => atlas3dBaseTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord, seed))
     .filter((height) => height > TERRAIN_MIN_HEIGHT + 0.1)
     .sort((a, b) => a - b);
   const centerHeight = atlas3dBaseTerrainHeight(
     surveyAtlas(spring.center.x, spring.center.y, seed),
     spring.center,
+    seed,
   );
   const lowerShore = heights[Math.floor(Math.max(0, heights.length - 1) * 0.3)] ?? centerHeight;
   const surfaceHeight = clamp(Math.min(centerHeight, lowerShore) + 0.22, 0.58, TERRAIN_MAX_HEIGHT - 0.6);
@@ -486,12 +537,12 @@ function lakeBasinHeightAt(coord, height, seed) {
 }
 
 export function atlas3dTerrainHeight(sample, coord = null, seed = CONTINENT.seed) {
-  const height = atlas3dBaseTerrainHeight(sample, coord);
+  const height = atlas3dBaseTerrainHeight(sample, coord, seed);
   if (!sample?.land || !coord) return height;
   return lakeBasinHeightAt(coord, height, seed);
 }
 
-function sampledTerrainHeight(coord, seed, stride = ATLAS_3D_TERRAIN_STRIDE) {
+function sampledTerrainHeight(coord, seed, stride = atlas3dActiveStride(seed)) {
   const key = `${seed}|${stride}|${coord.x},${coord.y}`;
   if (HEIGHT_CACHE.has(key)) return HEIGHT_CACHE.get(key);
   const height = atlas3dTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord, seed);
@@ -531,6 +582,10 @@ export function registerAtlas3dTerrainData(data) {
     || data.colors.length !== vertexCount * 3
     || !(data.coastal instanceof Uint8Array)
     || data.coastal.length !== vertexCount
+    || !(data.ao instanceof Uint8Array)
+    || data.ao.length !== vertexCount
+    || !(data.shore instanceof Uint8Array)
+    || data.shore.length !== vertexCount
     || !(data.indices instanceof Uint32Array)
     || data.indices.length !== indexCount
     || !(data.trees instanceof Float32Array)
@@ -538,7 +593,24 @@ export function registerAtlas3dTerrainData(data) {
   const key = terrainGridKey(data.seed, data.stride);
   TERRAIN_GRID_CACHE.set(key, data);
   if (TERRAIN_GRID_CACHE.size > 4) TERRAIN_GRID_CACHE.delete(TERRAIN_GRID_CACHE.keys().next().value);
+  // Render-quality grids (the base stride or finer) become the seed's active
+  // surface so overlay heights, picking, and camera framing follow whichever
+  // mesh is actually on screen. Coarse diagnostic grids never take over, and
+  // the scene re-declares the stride whenever it swaps meshes.
+  if (data.stride <= ATLAS_3D_TERRAIN_STRIDE) {
+    PREFERRED_STRIDE.set(data.seed, data.stride);
+  }
   return true;
+}
+
+export function atlas3dActiveStride(seed = CONTINENT.seed) {
+  return PREFERRED_STRIDE.get(seed) ?? ATLAS_3D_TERRAIN_STRIDE;
+}
+
+export function atlas3dDeclareActiveStride(seed, stride) {
+  if (!Number.isFinite(stride) || stride > ATLAS_3D_TERRAIN_STRIDE) return;
+  if (!TERRAIN_GRID_CACHE.has(terrainGridKey(seed, stride))) return;
+  PREFERRED_STRIDE.set(seed, stride);
 }
 
 // Routes, POIs, labels, and vegetation must sit on the rendered mesh rather
@@ -548,7 +620,7 @@ export function registerAtlas3dTerrainData(data) {
 export function atlas3dTerrainHeightAt(
   coord,
   seed = CONTINENT.seed,
-  stride = ATLAS_3D_TERRAIN_STRIDE,
+  stride = atlas3dActiveStride(seed),
 ) {
   const xCell = axisCell(coord.x, CONTINENT.bounds.xmin, CONTINENT.bounds.xmax, stride);
   const yCell = axisCell(coord.y, CONTINENT.bounds.ymin, CONTINENT.bounds.ymax, stride);
@@ -614,12 +686,15 @@ function isCoastalGridVertex(coord, sample, seed) {
   return false;
 }
 
+const VEGETATED_TERRAINS = Object.freeze(["plains", "forest", "hills", "marsh"]);
+
 export function atlas3dTerrainColor(
   sample,
   coord,
   height = atlas3dTerrainHeight(sample, coord),
   seed = CONTINENT.seed,
   coastal = false,
+  slope = 0,
 ) {
   const mountain = sample?.terrain === "mountains";
   const frozenShelf = sample?.land
@@ -632,56 +707,107 @@ export function atlas3dTerrainColor(
       + (interpolatedCoordinateNoise(coord.x, coord.y, 11, seed + 311) - 0.5) * 0.025
     : (coordinateNoise(coord.x, coord.y, seed + 199) - 0.5) * primaryAmplitude
       + (coordinateNoise(coord.x * 2.3, coord.y * 2.3, seed + 311) - 0.5) * secondaryAmplitude;
-  const base = frozenShelf && height < SNOW_CAP_HEIGHT
+  // The permanent snow line wanders deterministically and climbs on steep
+  // faces (which shed snow), so caps read as weather rather than a contour.
+  const snowLine = SNOW_CAP_HEIGHT
+    + (interpolatedCoordinateNoise(coord.x, coord.y, 13, seed + SALT_SNOW_EDGE) - 0.5) * 4
+    + clamp(slope, 0, 2) * 3.2;
+  const base = frozenShelf && height < snowLine
     ? FROZEN_SHELF_COLOR
     : terrainColor(sample?.land ? sample.terrain : "water", sample?.realmId);
   const relief = sample?.land
     ? (frozenShelf ? (height - 8) * 0.008 : (sample.elevation - 0.48) * 0.24) + colorVariance
     : (sample.elevation - 0.45) * 0.08 + colorVariance * 0.4;
   let channels = colorChannels(base, relief);
+  if (sample?.land && !frozenShelf) {
+    if (VEGETATED_TERRAINS.includes(sample.terrain)) {
+      // Broad moisture drift: wetter stands read deeper and cooler, dry
+      // stretches warm toward straw without introducing new palette entries.
+      const moisture = interpolatedCoordinateNoise(
+        coord.x,
+        coord.y,
+        26,
+        seed + SALT_MOISTURE,
+      ) - 0.5;
+      channels = [
+        clamp(channels[0] * (1 - moisture * 0.16), 0, 1),
+        clamp(channels[1] * (1 + moisture * 0.07), 0, 1),
+        clamp(channels[2] * (1 - moisture * 0.1), 0, 1),
+      ];
+    }
+    // High country desaturates toward stone before the snow takes over.
+    const stoneFade = smoothstep(16, 32, height) * 0.22;
+    if (stoneFade > 0) {
+      const luma = channels[0] * 0.35 + channels[1] * 0.5 + channels[2] * 0.15;
+      channels = channels.map((channel) => channel + (luma - channel) * stoneFade);
+    }
+    // Steep faces expose the realm's bedrock hue regardless of ground cover.
+    const rockWeight = smoothstep(0.55, 1.2, slope) * 0.5;
+    if (rockWeight > 0) {
+      channels = blendColorChannels(
+        channels,
+        terrainColor("mountains", sample.realmId),
+        rockWeight,
+      );
+    }
+  }
   if (coastal && sample?.land) {
     channels = blendColorChannels(channels, COASTAL_SAND_COLOR, 0.4);
   }
-  if (height > SNOW_CAP_HEIGHT) {
-    const snowWeight = 0.55
-      + clamp((height - SNOW_CAP_HEIGHT) / (TERRAIN_MAX_HEIGHT - SNOW_CAP_HEIGHT), 0, 1) * 0.35;
+  const snowReach = smoothstep(snowLine - 1.4, snowLine + 2.4, height);
+  if (snowReach > 0) {
+    const snowWeight = snowReach * (0.5
+      + clamp((height - SNOW_CAP_HEIGHT) / (TERRAIN_MAX_HEIGHT - SNOW_CAP_HEIGHT), 0, 1) * 0.4);
     channels = blendColorChannels(channels, SNOW_CAP_COLOR, snowWeight);
   }
   return channels;
 }
 
-function smoothNorthernTerrainHeights(samples, xs, ys, baseHeights) {
+function smoothTerrainHeights(samples, xs, ys, baseHeights) {
   let current = baseHeights;
   const neighborOffsets = [
     [-1, -1, 1], [0, -1, 2], [1, -1, 1],
     [-1, 0, 2],                 [1, 0, 2],
     [-1, 1, 1],  [0, 1, 2],  [1, 1, 1],
   ];
+
+  // Ridge weights are pass-invariant; compute them once for the whole grid so
+  // the multi-pass relaxation below stays cheap at fine strides.
+  const blendStrength = new Float32Array(xs.length * ys.length);
+  for (let row = 1; row < ys.length - 1; row += 1) {
+    for (let column = 1; column < xs.length - 1; column += 1) {
+      const index = row * xs.length + column;
+      const sample = samples[index];
+      if (!sample?.land) continue;
+      const coord = { x: xs[column], y: ys[row] };
+      const ridgeWeight = Math.max(
+        mountainSpineReliefWeightAt(coord),
+        northernRidgeReliefWeightAt(coord),
+      );
+      const preserveAuthoredRelief = ridgeWeight * ridgeWeight;
+      // The frozen north relaxes hardest into broad glacial shelves. Other
+      // realms smooth just enough to dissolve category pedestals while the
+      // erosion octaves keep their uplands craggy.
+      const northern = sample.realmId === "north" || ys[row] <= -170;
+      blendStrength[index] = (northern ? 0.88 : 0.62) * (1 - preserveAuthoredRelief * 0.82);
+    }
+  }
+
   for (let pass = 0; pass < 3; pass += 1) {
     const next = current.slice();
     for (let row = 1; row < ys.length - 1; row += 1) {
       for (let column = 1; column < xs.length - 1; column += 1) {
         const index = row * xs.length + column;
-        const sample = samples[index];
-        if (!sample?.land || (sample.realmId !== "north" && ys[row] > -170)) continue;
+        const blend = blendStrength[index];
+        if (!blend) continue;
         let weightedHeight = current[index] * 4;
         let totalWeight = 4;
         for (const [columnOffset, rowOffset, weight] of neighborOffsets) {
           const neighborIndex = (row + rowOffset) * xs.length + column + columnOffset;
-          const neighborSample = samples[neighborIndex];
-          if (!neighborSample?.land || (neighborSample.realmId !== "north" && ys[row + rowOffset] > -170)) {
-            continue;
-          }
+          if (!samples[neighborIndex]?.land) continue;
           weightedHeight += current[neighborIndex] * weight;
           totalWeight += weight;
         }
-        const coord = { x: xs[column], y: ys[row] };
-        const ridgeWeight = Math.max(
-          mountainSpineReliefWeightAt(coord),
-          northernRidgeReliefWeightAt(coord),
-        );
-        const preserveAuthoredRelief = ridgeWeight * ridgeWeight;
-        const blend = 0.88 * (1 - preserveAuthoredRelief * 0.82);
         const average = weightedHeight / totalWeight;
         next[index] = current[index] + (average - current[index]) * blend;
       }
@@ -691,69 +817,193 @@ function smoothNorthernTerrainHeights(samples, xs, ys, baseHeights) {
   return current;
 }
 
+const SHORE_RANGE_CELLS = 12;
+
 export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D_TERRAIN_STRIDE) {
   const xs = axisSamples(CONTINENT.bounds.xmin, CONTINENT.bounds.xmax, stride);
   const ys = axisSamples(CONTINENT.bounds.ymin, CONTINENT.bounds.ymax, stride);
-  const vertexCount = xs.length * ys.length;
+  const columns = xs.length;
+  const rows = ys.length;
+  const vertexCount = columns * rows;
   const positions = new Float32Array(vertexCount * 3);
   const colors = new Float32Array(vertexCount * 3);
   const coastal = new Uint8Array(vertexCount);
+  const ao = new Uint8Array(vertexCount);
+  const shore = new Uint8Array(vertexCount);
   const treeCandidates = [];
   const samples = new Array(vertexCount);
   const baseHeights = new Float32Array(vertexCount);
+  // Fine grids would blow past the fallback height cache's eviction limit and
+  // force thrashing; the registered grid serves those lookups instead.
+  const fillHeightCache = vertexCount <= 150000;
 
-  for (let row = 0; row < ys.length; row += 1) {
-    for (let column = 0; column < xs.length; column += 1) {
-      const index = row * xs.length + column;
-      samples[index] = surveyAtlas(xs[column], ys[row], seed);
-      baseHeights[index] = atlas3dBaseTerrainHeight(samples[index], { x: xs[column], y: ys[row] });
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const index = row * columns + column;
+      const coord = { x: xs[column], y: ys[row] };
+      samples[index] = surveyAtlas(coord.x, coord.y, seed);
+      baseHeights[index] = atlas3dBaseTerrainHeight(samples[index], coord, seed);
     }
   }
 
-  const smoothedHeights = smoothNorthernTerrainHeights(samples, xs, ys, baseHeights);
+  const smoothedHeights = smoothTerrainHeights(samples, xs, ys, baseHeights);
 
-  for (let row = 0; row < ys.length; row += 1) {
-    for (let column = 0; column < xs.length; column += 1) {
+  const finalHeights = new Float32Array(vertexCount);
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
       const x = xs[column];
       const y = ys[row];
-      const index = row * xs.length + column;
+      const index = row * columns + column;
       const sample = samples[index];
       const scene = atlas3dAxialToScene({ x, y });
       const height = sample.land
         ? lakeBasinHeightAt({ x, y }, smoothedHeights[index], seed)
         : TERRAIN_MIN_HEIGHT;
+      finalHeights[index] = height;
       const isCoastal = isCoastalGridVertex({ x, y }, sample, seed);
       coastal[index] = isCoastal ? 1 : 0;
-      HEIGHT_CACHE.set(`${seed}|${stride}|${x},${y}`, height);
+      if (fillHeightCache) HEIGHT_CACHE.set(`${seed}|${stride}|${x},${y}`, height);
       positions[index * 3] = scene.x;
       positions[index * 3 + 1] = height;
       positions[index * 3 + 2] = scene.z;
+    }
+  }
 
-      // Biome-aware vertex color with two deterministic noise octaves, plus
-      // explicit coastline and permanent-snow tiers.
+  // Slope magnitude per vertex from central differences. Axial unit steps
+  // project to unit-length scene steps on both axes, so grid spacing is the
+  // stride on either axis.
+  const slopes = new Float32Array(vertexCount);
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const index = row * columns + column;
+      const left = finalHeights[row * columns + Math.max(0, column - 1)];
+      const right = finalHeights[row * columns + Math.min(columns - 1, column + 1)];
+      const up = finalHeights[Math.max(0, row - 1) * columns + column];
+      const down = finalHeights[Math.min(rows - 1, row + 1) * columns + column];
+      slopes[index] = Math.hypot(right - left, down - up) / (2 * stride);
+    }
+  }
+
+  // Horizon-sampled ambient occlusion over the final heightfield. Eight
+  // directions, six steps each: enough to settle valleys and tree lines into
+  // soft contact shadow without a screen-space pass. The two sheared axial
+  // diagonals are unit length; the other two stretch to √3.
+  const AO_DIRECTIONS = [
+    [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
+    [1, -1, 1], [-1, 1, 1], [1, 1, 1.732], [-1, -1, 1.732],
+  ];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const index = row * columns + column;
+      if (!samples[index]?.land) {
+        ao[index] = 255;
+        continue;
+      }
+      const height = finalHeights[index];
+      let occlusion = 0;
+      for (const [dc, dr, unit] of AO_DIRECTIONS) {
+        let maxTangent = 0;
+        for (let step = 1; step <= 6; step += 1) {
+          const c = column + dc * step;
+          const r = row + dr * step;
+          if (c < 0 || c >= columns || r < 0 || r >= rows) break;
+          const rise = finalHeights[r * columns + c] - height;
+          if (rise <= 0) continue;
+          const tangent = rise / (unit * step * stride);
+          if (tangent > maxTangent) maxTangent = tangent;
+        }
+        occlusion += clamp(maxTangent * 0.55, 0, 1);
+      }
+      ao[index] = Math.round((1 - (occlusion / AO_DIRECTIONS.length) * 0.75) * 255);
+    }
+  }
+
+  // Distance-to-water proximity via a two-pass chamfer transform (255 at the
+  // waterline fading to 0 a dozen cells inland). Authored lakes and springs
+  // seed it alongside the open sea.
+  const waterFeatures = [...CONTINENT_LAKES, ...CONTINENT_HOT_SPRINGS].map((feature) => ({
+    center: atlas3dAxialToScene(feature.center),
+    radius: feature.radius,
+  }));
+  const shoreDistance = new Float32Array(vertexCount).fill(SHORE_RANGE_CELLS);
+  for (let index = 0; index < vertexCount; index += 1) {
+    if (!samples[index]?.land) {
+      shoreDistance[index] = 0;
+      continue;
+    }
+    const sceneX = positions[index * 3];
+    const sceneZ = positions[index * 3 + 2];
+    for (const feature of waterFeatures) {
+      if (Math.hypot(sceneX - feature.center.x, sceneZ - feature.center.z) <= feature.radius) {
+        shoreDistance[index] = 0;
+        break;
+      }
+    }
+  }
+  const relaxShore = (index, neighborIndex, cost) => {
+    const candidate = shoreDistance[neighborIndex] + cost;
+    if (candidate < shoreDistance[index]) shoreDistance[index] = candidate;
+  };
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const index = row * columns + column;
+      if (column > 0) relaxShore(index, index - 1, 1);
+      if (row > 0) relaxShore(index, index - columns, 1);
+      if (row > 0 && column > 0) relaxShore(index, index - columns - 1, 1.4);
+      if (row > 0 && column < columns - 1) relaxShore(index, index - columns + 1, 1.4);
+    }
+  }
+  for (let row = rows - 1; row >= 0; row -= 1) {
+    for (let column = columns - 1; column >= 0; column -= 1) {
+      const index = row * columns + column;
+      if (column < columns - 1) relaxShore(index, index + 1, 1);
+      if (row < rows - 1) relaxShore(index, index + columns, 1);
+      if (row < rows - 1 && column < columns - 1) relaxShore(index, index + columns + 1, 1.4);
+      if (row < rows - 1 && column > 0) relaxShore(index, index + columns - 1, 1.4);
+    }
+  }
+  for (let index = 0; index < vertexCount; index += 1) {
+    shore[index] = Math.round(
+      255 * (1 - Math.min(shoreDistance[index], SHORE_RANGE_CELLS) / SHORE_RANGE_CELLS),
+    );
+  }
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const x = xs[column];
+      const y = ys[row];
+      const index = row * columns + column;
+      const sample = samples[index];
+      const height = finalHeights[index];
+
+      // Biome-aware vertex color with deterministic noise octaves, slope-aware
+      // bedrock exposure, and explicit coastline and permanent-snow tiers.
       const [red, green, blue] = atlas3dTerrainColor(
         sample,
         { x, y },
         height,
         seed,
-        isCoastal,
+        coastal[index] === 1,
+        slopes[index],
       );
       colors[index * 3] = red;
       colors[index * 3 + 1] = green;
       colors[index * 3 + 2] = blue;
 
-      if (sample.land && sample.terrain === "forest") {
+      if (sample.land && sample.terrain === "forest" && x % 4 === 0 && y % 4 === 0) {
         // A low-frequency grove mask makes woodland read as authored stands
         // and clearings. Fine noise then fills those stands densely enough to
         // survive close mobile zoom without becoming a uniform tree carpet.
+        // Emission is pinned to the four-hex lattice so refined strides keep
+        // the same deterministic forest.
         const grove = coordinateNoise(Math.floor(x / 24), Math.floor(y / 24), seed + 43);
         const density = coordinateNoise(x, y, seed);
         const count = grove > 0.34 && density > 0.2
           ? 1 + (density > 0.78 ? 1 : 0)
           : 0;
         for (let tree = 0; tree < count; tree += 1) {
-          const jitterX = (coordinateNoise(x, y, seed + tree * 11 + 1) - 0.5) * stride * 0.72;
-          const jitterY = (coordinateNoise(x, y, seed + tree * 11 + 2) - 0.5) * stride * 0.72;
+          const jitterX = (coordinateNoise(x, y, seed + tree * 11 + 1) - 0.5) * 2.88;
+          const jitterY = (coordinateNoise(x, y, seed + tree * 11 + 2) - 0.5) * 2.88;
           const treeCoord = { x: x + jitterX, y: y + jitterY };
           if (atlas3dAuthoredWaterContains(treeCoord, 1.5)) continue;
           treeCandidates.push({
@@ -766,6 +1016,45 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
         }
       }
     }
+  }
+
+  // One relaxation pass ramps palette colors across biome borders instead of
+  // leaving Gouraud-interpolated blobs, then baked occlusion settles in.
+  const blendedColors = colors.slice();
+  const BLUR_OFFSETS = [
+    [-1, -1, 1], [0, -1, 2], [1, -1, 1],
+    [-1, 0, 2],                 [1, 0, 2],
+    [-1, 1, 1],  [0, 1, 2],  [1, 1, 1],
+  ];
+  for (let row = 1; row < rows - 1; row += 1) {
+    for (let column = 1; column < columns - 1; column += 1) {
+      const index = row * columns + column;
+      if (!samples[index]?.land) continue;
+      let red = colors[index * 3] * 4;
+      let green = colors[index * 3 + 1] * 4;
+      let blue = colors[index * 3 + 2] * 4;
+      let totalWeight = 4;
+      for (const [dc, dr, weight] of BLUR_OFFSETS) {
+        const neighborIndex = (row + dr) * columns + column + dc;
+        if (!samples[neighborIndex]?.land) continue;
+        red += colors[neighborIndex * 3] * weight;
+        green += colors[neighborIndex * 3 + 1] * weight;
+        blue += colors[neighborIndex * 3 + 2] * weight;
+        totalWeight += weight;
+      }
+      const mix = 0.45;
+      blendedColors[index * 3] += (red / totalWeight - colors[index * 3]) * mix;
+      blendedColors[index * 3 + 1] += (green / totalWeight - colors[index * 3 + 1]) * mix;
+      blendedColors[index * 3 + 2] += (blue / totalWeight - colors[index * 3 + 2]) * mix;
+    }
+  }
+  for (let index = 0; index < vertexCount; index += 1) {
+    const occlusionFactor = samples[index]?.land
+      ? 0.66 + 0.34 * (ao[index] / 255)
+      : 1;
+    colors[index * 3] = blendedColors[index * 3] * occlusionFactor;
+    colors[index * 3 + 1] = blendedColors[index * 3 + 1] * occlusionFactor;
+    colors[index * 3 + 2] = blendedColors[index * 3 + 2] * occlusionFactor;
   }
 
   const indices = new Uint32Array((xs.length - 1) * (ys.length - 1) * 6);
@@ -794,6 +1083,8 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
     positions,
     colors,
     coastal,
+    ao,
+    shore,
     indices,
     trees: new Float32Array(0),
   };

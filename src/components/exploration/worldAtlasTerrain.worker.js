@@ -6,6 +6,8 @@ self.onmessage = (event) => {
     terrain.positions.buffer,
     terrain.colors.buffer,
     terrain.coastal.buffer,
+    terrain.ao.buffer,
+    terrain.shore.buffer,
     terrain.indices.buffer,
     terrain.trees.buffer,
   ]);

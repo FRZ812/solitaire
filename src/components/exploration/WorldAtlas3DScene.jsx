@@ -14,6 +14,7 @@ import {
   atlas3dAuthoredWaterContains,
   atlas3dAxialToScene,
   atlas3dCameraFrame,
+  atlas3dDeclareActiveStride,
   atlas3dHotSpringSurfaceHeight,
   atlas3dLakeSurfaceHeight,
   atlas3dSceneToAxial,
@@ -116,10 +117,11 @@ export function atlasWorldLightState(time, coord = { x: 0, y: 0 }) {
   };
 }
 
-function atlasRenderPixelRatio(width, height) {
+function atlasRenderPixelRatio(width, height, quality = null) {
   const mobile = Math.min(width, height) < 720;
-  const dprCap = mobile ? 1.3 : 1.65;
-  const pixelBudget = mobile ? MOBILE_RENDER_PIXEL_BUDGET : DESKTOP_RENDER_PIXEL_BUDGET;
+  const dprCap = quality?.dprCap ?? (mobile ? 1.3 : 1.65);
+  const pixelBudget = quality?.pixelBudget
+    ?? (mobile ? MOBILE_RENDER_PIXEL_BUDGET : DESKTOP_RENDER_PIXEL_BUDGET);
   const budgetRatio = Math.sqrt(pixelBudget / Math.max(1, width * height));
   return Math.max(1, Math.min(window.devicePixelRatio || 1, dprCap, budgetRatio));
 }
@@ -1173,7 +1175,7 @@ function createProceduralSurfaceTexture(THREE, seed, size = 128) {
   return texture;
 }
 
-function createController(THREE, canvas, seed) {
+function createController(THREE, canvas, seed, quality = null) {
   const context = canvas.getContext("webgl2", {
     alpha: false,
     antialias: true,
@@ -1189,8 +1191,10 @@ function createController(THREE, canvas, seed) {
   const initialPixelRatio = atlasRenderPixelRatio(
     Math.max(1, canvas.clientWidth || window.innerWidth || 1),
     Math.max(1, canvas.clientHeight || window.innerHeight || 1),
+    quality,
   );
   renderer.setPixelRatio(initialPixelRatio);
+  canvas.dataset.atlasQuality = quality?.id || "default";
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0e2836);
@@ -1376,7 +1380,7 @@ function createController(THREE, canvas, seed) {
   function updateCamera(modelCamera, viewport) {
     const widthPx = Math.max(1, viewport.width);
     const heightPx = Math.max(1, viewport.height);
-    const nextPixelRatio = atlasRenderPixelRatio(widthPx, heightPx);
+    const nextPixelRatio = atlasRenderPixelRatio(widthPx, heightPx, quality);
     const sizeChanged = widthPx !== renderWidth || heightPx !== renderHeight;
     const pixelRatioChanged = nextPixelRatio !== renderPixelRatio;
     if (pixelRatioChanged) {
@@ -1394,6 +1398,11 @@ function createController(THREE, canvas, seed) {
   }
 
   function setTerrain(data, renderNow = true) {
+    // A new grid (initial build or a refined-stride swap) becomes the active
+    // surface for every overlay/height consumer, invalidating heights that
+    // were memoized against the previous one.
+    atlas3dDeclareActiveStride(data.seed, data.stride);
+    heightCache.clear();
     if (terrain) {
       scene.remove(terrain);
       disposeObject(terrain);
@@ -1538,6 +1547,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   camera,
   viewport,
   seed = CONTINENT.seed,
+  quality = null,
   focusedRealmId = null,
   journey = null,
   journeyBreaks = [],
@@ -1545,6 +1555,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   worldTime = null,
   onReady,
   onError,
+  onRefined,
 }, ref) {
   const canvasRef = useRef(null);
   const controllerRef = useRef(null);
@@ -1552,6 +1563,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   const viewportRef = useRef(viewport);
   const readyRef = useRef(onReady);
   const errorRef = useRef(onError);
+  const refinedRef = useRef(onRefined);
   const focusRef = useRef(focusedRealmId);
   const journeyRef = useRef(journey);
   const breaksRef = useRef(journeyBreaks);
@@ -1562,6 +1574,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   viewportRef.current = viewport;
   readyRef.current = onReady;
   errorRef.current = onError;
+  refinedRef.current = onRefined;
   focusRef.current = focusedRealmId;
   journeyRef.current = journey;
   breaksRef.current = journeyBreaks;
@@ -1607,7 +1620,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
       try {
         const { THREE, terrain } = await getWorldAtlas3dRuntime(seed);
         if (disposed) return;
-        controller = createController(THREE, canvas, seed);
+        controller = createController(THREE, canvas, seed, quality);
         // Three registers its own context restoration handlers during renderer
         // construction. Register ours afterward so readiness returns only after
         // Three has recreated GPU resources and drawn a fresh frame.
@@ -1625,6 +1638,25 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
         terrainReady = true;
         controller.updateCamera(cameraRef.current, viewportRef.current);
         if (!contextLost) readyRef.current?.();
+
+        // Progressive refinement: capable tiers rebuild the terrain at the
+        // fine stride in the worker after first paint and hot-swap it in.
+        // Failure (worker timeout, weak device) leaves the coarse grid up.
+        const fineStride = quality?.terrainStride;
+        if (Number.isFinite(fineStride) && fineStride < terrain.stride) {
+          getWorldAtlas3dRuntime(seed, fineStride)
+            .then(({ terrain: refined }) => {
+              if (disposed || contextLost) return;
+              controller.setTerrain(refined, false);
+              controller.updateRoutes(focusRef.current, false);
+              controller.updateJourney(journeyRef.current, breaksRef.current, false);
+              controller.updateSeen(seenRef.current, false);
+              controller.updateWorldTime(timeRef.current, cameraRef.current, false);
+              controller.updateCamera(cameraRef.current, viewportRef.current);
+              refinedRef.current?.();
+            })
+            .catch(() => {});
+        }
       } catch (error) {
         if (!disposed) errorRef.current?.(error?.message || "The 3D atlas could not start.");
       }
@@ -1640,7 +1672,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
         canvas.removeEventListener("webglcontextrestored", handleRestored);
       }
     };
-  }, [seed]);
+  }, [seed, quality?.id]);
 
   useAtlas3dLayoutEffect(() => {
     controllerRef.current?.updateCamera(camera, viewport);

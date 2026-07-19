@@ -9,6 +9,7 @@ import { surveyAtlas } from "../../engine/world-generation.js";
 import {
   ATLAS_3D_CAMERA_COAST_INSET,
   ATLAS_3D_RENDER_VERSION,
+  atlas3dActiveStride,
   atlas3dAxialToScene,
   atlas3dBaseTerrainHeight,
   atlas3dCameraFrame,
@@ -34,21 +35,30 @@ import {
 const VIEWPORT = { width: 960, height: 540 };
 
 describe("true 3D atlas spatial model", () => {
-  it("raises mountain and hill relief beneath the expanded terrain ceiling", () => {
-    expect(atlas3dTerrainHeight({ land: true, terrain: "mountains", elevation: 0.5 }))
-      .toBeCloseTo((0.5 - 0.16) * 28 + 8.5, 8);
-    expect(atlas3dTerrainHeight({ land: true, terrain: "hills", elevation: 0.5 }))
-      .toBeCloseTo((0.5 - 0.16) * 28 + 2.6, 8);
-    expect(atlas3dTerrainHeight({ land: true, terrain: "mountains", elevation: 2 }))
-      .toBe(42);
+  it("raises continuous relief instead of fixed per-category steps", () => {
+    const heightFor = (terrain, elevation) => (
+      atlas3dTerrainHeight({ land: true, terrain, elevation })
+    );
+    // Relief tracks the elevation field continuously within each category…
+    expect(heightFor("mountains", 0.9)).toBeGreaterThan(heightFor("mountains", 0.7));
+    expect(heightFor("mountains", 0.7)).toBeGreaterThan(heightFor("mountains", 0.5));
+    expect(heightFor("hills", 0.7)).toBeGreaterThan(heightFor("hills", 0.45));
+    // …category pedestals stay far below the legacy fixed steps…
+    expect(heightFor("mountains", 0.5) - heightFor("plains", 0.5)).toBeGreaterThan(0);
+    expect(heightFor("mountains", 0.5) - heightFor("plains", 0.5)).toBeLessThan(8.5);
+    expect(heightFor("hills", 0.5) - heightFor("plains", 0.5)).toBeLessThan(2.6);
+    // …and the terrain ceiling still clamps.
+    expect(heightFor("mountains", 2)).toBe(42);
   });
 
   it("adds the authored northern ridge elevation without duplicating overlaps", () => {
     const coord = NORTHERN_RIDGES[0].waypoints[1];
     const sample = { land: true, terrain: "plains", elevation: 0.5 };
     expect(northernRidgeElevationBoostAt(coord)).toBeCloseTo(0.18, 8);
+    // The authored boost dominates the gap; deterministic erosion octaves
+    // jitter the exact figure by roughly a unit either way.
     expect(atlas3dTerrainHeight(sample, coord) - atlas3dTerrainHeight(sample))
-      .toBeGreaterThan(0.18 * 28);
+      .toBeGreaterThan(2.5);
   });
 
   it("uses continuous northern relief instead of terrain-category spikes", () => {
@@ -431,6 +441,8 @@ describe("true 3D atlas spatial model", () => {
     expect(first.positions).toEqual(second.positions);
     expect(first.colors).toEqual(second.colors);
     expect(first.coastal).toEqual(second.coastal);
+    expect(first.ao).toEqual(second.ao);
+    expect(first.shore).toEqual(second.shore);
     expect(first.indices).toEqual(second.indices);
     expect(first.trees).toEqual(second.trees);
     expect(first.positions.length).toBe(first.rows * first.columns * 3);
@@ -438,10 +450,45 @@ describe("true 3D atlas spatial model", () => {
     expect(first.coastal.length).toBe(first.rows * first.columns);
     expect(first.coastal.some((value) => value === 1)).toBe(true);
     expect(first.coastal.some((value) => value === 0)).toBe(true);
+    expect(first.ao).toBeInstanceOf(Uint8Array);
+    expect(first.ao.length).toBe(first.rows * first.columns);
+    expect(first.ao.every((value) => value > 0)).toBe(true);
+    expect(first.shore).toBeInstanceOf(Uint8Array);
+    expect(first.shore.length).toBe(first.rows * first.columns);
+    expect(first.shore.some((value) => value === 255)).toBe(true);
+    expect(first.shore.some((value) => value < 255)).toBe(true);
     expect(first.indices.length).toBe((first.rows - 1) * (first.columns - 1) * 6);
     expect(first.trees.length).toBeGreaterThan(0);
     expect(Math.max(...first.positions.filter((_, index) => index % 3 === 1))).toBeGreaterThan(8);
     expect(Math.min(...first.positions.filter((_, index) => index % 3 === 1))).toBeLessThan(0);
+  });
+
+  it("promotes only render-quality strides to a seed's active grid", () => {
+    const seed = "active-stride-test";
+    expect(atlas3dActiveStride(seed)).toBe(4);
+
+    // Coarse diagnostic grids must never take over overlay height lookups.
+    buildAtlas3dTerrainData(seed, 96);
+    expect(atlas3dActiveStride(seed)).toBe(4);
+
+    // A refined render grid becomes the active surface for the seed.
+    const vertexCount = 4;
+    expect(registerAtlas3dTerrainData({
+      version: ATLAS_3D_RENDER_VERSION,
+      seed,
+      stride: 2,
+      columns: 2,
+      rows: 2,
+      positions: new Float32Array(vertexCount * 3),
+      colors: new Float32Array(vertexCount * 3),
+      coastal: new Uint8Array(vertexCount),
+      ao: new Uint8Array(vertexCount),
+      shore: new Uint8Array(vertexCount),
+      indices: new Uint32Array(6),
+      trees: new Float32Array(0),
+    })).toBe(true);
+    expect(atlas3dActiveStride(seed)).toBe(2);
+    expect(atlas3dActiveStride(CONTINENT.seed)).toBe(4);
   });
 
   it("includes clipped domain-edge land in the exact three-hex coastline band", () => {
