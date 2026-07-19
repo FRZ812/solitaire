@@ -15,6 +15,7 @@ import {
   atlas3dTerrainHeightAt,
 } from "./worldAtlas3dModel.js";
 import { getWorldAtlas3dRuntime } from "./worldAtlas3dRuntime.js";
+import { ATLAS_LANDMARKS } from "./worldAtlasModel.js";
 
 const ROUTE_HEIGHT_BIAS = 0.72;
 // Keep the ocean beneath the entire perspective frustum. Plane geometry has a
@@ -276,6 +277,139 @@ function createJourneyGroup(THREE, seed, journey, breaks) {
   return group;
 }
 
+// Realm-indexed canopy/trunk colors and canopy shape multipliers [xz, y].
+const REALM_CANOPY_COLORS = [0x4a7a50, 0x1e2e1c, 0x2c5c30, 0x4a5824, 0x1a4422];
+const REALM_TRUNK_COLORS  = [0x4f3c29, 0x2e2820, 0x3c3020, 0x503a1c, 0x2e3018];
+const REALM_TREE_SHAPE    = [[1.0, 1.0], [0.6, 1.5], [1.3, 0.8], [0.8, 0.65], [1.4, 1.15]];
+
+function createLandmarkMeshGroup(THREE, seed) {
+  const group = new THREE.Group();
+  group.name = "atlas-landmarks";
+
+  const matStone     = new THREE.MeshStandardMaterial({ color: 0x887a6c, roughness: 0.92, metalness: 0 });
+  const matDarkStone = new THREE.MeshStandardMaterial({ color: 0x554a40, roughness: 0.92, metalness: 0 });
+  const matRoof      = new THREE.MeshStandardMaterial({ color: 0x2e2820, roughness: 0.86, metalness: 0 });
+  const matGold      = new THREE.MeshStandardMaterial({ color: 0x9a8030, roughness: 0.62, metalness: 0.22 });
+  const matIvory     = new THREE.MeshStandardMaterial({ color: 0xd0c8b0, roughness: 0.85, metalness: 0 });
+  const matDock      = new THREE.MeshStandardMaterial({ color: 0x3a2c18, roughness: 0.95, metalness: 0 });
+
+  function piece(geo, mat, x, y, z, ry = 0) {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    if (ry) m.rotation.y = ry;
+    return m;
+  }
+
+  function buildCity(s) {
+    const g = new THREE.Group();
+    g.add(piece(new THREE.CylinderGeometry(s * 5, s * 5.5, s * 0.7, 8), matStone, 0, s * 0.35, 0));
+    g.add(piece(new THREE.BoxGeometry(s * 2.4, s * 7, s * 2.4), matDarkStone, 0, s * 4.3, 0));
+    const offsets = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+    for (const [tx, tz] of offsets) {
+      g.add(piece(new THREE.CylinderGeometry(s * 0.72, s * 0.82, s * 8.2, 7), matStone, tx * s * 2.8, s * 4.1, tz * s * 2.8));
+      g.add(piece(new THREE.ConeGeometry(s * 0.94, s * 2.4, 7), matRoof, tx * s * 2.8, s * 9.5, tz * s * 2.8));
+    }
+    for (const [wx, wz, ry] of [[0, -2.8, 0], [0, 2.8, 0], [-2.8, 0, Math.PI / 2], [2.8, 0, Math.PI / 2]]) {
+      g.add(piece(new THREE.BoxGeometry(s * 4.0, s * 2.0, s * 0.48), matDarkStone, wx * s, s * 2.4, wz * s, ry));
+    }
+    return g;
+  }
+
+  function buildTown(s) {
+    const g = new THREE.Group();
+    g.add(piece(new THREE.BoxGeometry(s * 2, s * 4, s * 2), matStone, 0, s * 2, 0));
+    for (const tx of [-1, 1]) {
+      g.add(piece(new THREE.CylinderGeometry(s * 0.58, s * 0.68, s * 5.2, 6), matDarkStone, tx * s * 2, s * 2.6, 0));
+      g.add(piece(new THREE.ConeGeometry(s * 0.78, s * 2, 6), matRoof, tx * s * 2, s * 6.2, 0));
+    }
+    return g;
+  }
+
+  function buildFortress(s) {
+    const g = new THREE.Group();
+    g.add(piece(new THREE.BoxGeometry(s * 2, s * 6, s * 1.8), matDarkStone, 0, s * 3, 0));
+    for (const tx of [-1, 1]) {
+      g.add(piece(new THREE.CylinderGeometry(s * 0.62, s * 0.72, s * 7, 6), matStone, tx * s * 2.2, s * 3.5, 0));
+      g.add(piece(new THREE.ConeGeometry(s * 0.82, s * 1.8, 6), matRoof, tx * s * 2.2, s * 7.8, 0));
+    }
+    g.add(piece(new THREE.BoxGeometry(s * 5, s * 0.55, s * 0.9), matDarkStone, 0, s * 6.2, 0));
+    return g;
+  }
+
+  function buildPort(s) {
+    const g = new THREE.Group();
+    g.add(piece(new THREE.CylinderGeometry(s * 0.52, s * 0.72, s * 6.2, 8), matStone, 0, s * 3.1, 0));
+    g.add(piece(new THREE.ConeGeometry(s * 0.78, s * 1.5, 8), matRoof, 0, s * 7.35, 0));
+    g.add(piece(new THREE.SphereGeometry(s * 0.42, 6, 4), matGold, 0, s * 6.4, 0));
+    g.add(piece(new THREE.BoxGeometry(s * 3.5, s * 0.32, s * 1.1), matDock, s * 1.5, s * 0.16, 0));
+    return g;
+  }
+
+  function buildShrine(s) {
+    const g = new THREE.Group();
+    g.add(piece(new THREE.CylinderGeometry(s * 2.4, s * 2.4, s * 0.45, 8), matIvory, 0, s * 0.22, 0));
+    const dome = new THREE.SphereGeometry(s * 1.75, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
+    g.add(piece(dome, matIvory, 0, s * 0.45, 0));
+    for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      g.add(piece(new THREE.CylinderGeometry(s * 0.15, s * 0.17, s * 1.5, 6), matIvory, px * s * 1.6, s * 0.75, pz * s * 1.6));
+    }
+    return g;
+  }
+
+  function buildVillage(s) {
+    const g = new THREE.Group();
+    for (const [bx, bz] of [[-0.8, -0.5], [0.8, -0.3], [0, 0.8]]) {
+      g.add(piece(new THREE.BoxGeometry(s * 1.2, s * 1.6, s * 1.2), matStone, bx * s, s * 0.8, bz * s));
+    }
+    return g;
+  }
+
+  function buildTower(s) {
+    const g = new THREE.Group();
+    g.add(piece(new THREE.CylinderGeometry(s * 0.58, s * 0.72, s * 5.5, 7), matDarkStone, 0, s * 2.75, 0));
+    g.add(piece(new THREE.ConeGeometry(s * 0.82, s * 1.6, 7), matRoof, 0, s * 6.35, 0));
+    return g;
+  }
+
+  function buildRuin(s) {
+    const g = new THREE.Group();
+    g.add(piece(new THREE.CylinderGeometry(s * 0.38, s * 0.44, s * 2.4, 6), matDarkStone, -s, s * 1.2, 0));
+    g.add(piece(new THREE.CylinderGeometry(s * 0.33, s * 0.38, s * 1.4, 6), matDarkStone, s * 0.5, s * 0.7, s * 0.3));
+    return g;
+  }
+
+  for (const landmark of ATLAS_LANDMARKS) {
+    const { coord, kind, capitalOfRealmId } = landmark;
+    const baseScale = capitalOfRealmId ? 1.45 : 1.0;
+    let meshGroup;
+    switch (kind) {
+      case "city":       meshGroup = buildCity(baseScale); break;
+      case "town":       meshGroup = buildTown(baseScale * 0.8); break;
+      case "settlement": meshGroup = buildTown(baseScale * 0.65); break;
+      case "fortress":
+      case "castle":     meshGroup = buildFortress(baseScale * 0.85); break;
+      case "fort":
+      case "checkpoint": meshGroup = buildFortress(baseScale * 0.6); break;
+      case "port":       meshGroup = buildPort(baseScale * 0.78); break;
+      case "shrine":
+      case "temple":
+      case "sanctuary":
+      case "monastery":
+      case "wonder":     meshGroup = buildShrine(baseScale * 0.65); break;
+      case "village":    meshGroup = buildVillage(0.55); break;
+      case "tower":      meshGroup = buildTower(0.65); break;
+      case "ruin":       meshGroup = buildRuin(0.52); break;
+      default:           continue;
+    }
+    const scenePos = atlas3dAxialToScene(coord);
+    const groundHeight = atlas3dTerrainHeightAt(coord, seed);
+    meshGroup.position.set(scenePos.x, groundHeight, scenePos.z);
+    group.add(meshGroup);
+  }
+
+  return group;
+}
+
 function createController(THREE, canvas, seed) {
   const context = canvas.getContext("webgl2", {
     alpha: false,
@@ -296,26 +430,27 @@ function createController(THREE, canvas, seed) {
   renderer.setPixelRatio(initialPixelRatio);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x174452);
-  scene.fog = new THREE.FogExp2(0x214f5a, 0.00014);
+  scene.background = new THREE.Color(0x0e2836);
+  scene.fog = new THREE.FogExp2(0x1a3c4a, 0.00011);
   const camera = new THREE.PerspectiveCamera(ATLAS_3D_FOV_DEG, 1, 0.1, 6000);
   const queryCamera = new THREE.PerspectiveCamera(ATLAS_3D_FOV_DEG, 1, 0.1, 6000);
   const raycaster = new THREE.Raycaster();
 
-  scene.add(new THREE.HemisphereLight(0xcfe6e8, 0x20281d, 1.22));
-  const sun = new THREE.DirectionalLight(0xffd59a, 1.48);
-  sun.position.set(-420, 620, 360);
+  scene.add(new THREE.HemisphereLight(0xd0e4e0, 0x201808, 1.5));
+  const sun = new THREE.DirectionalLight(0xffe8b0, 1.85);
+  sun.position.set(-360, 580, 300);
   scene.add(sun);
-  const fill = new THREE.DirectionalLight(0x6ba7bf, 0.28);
-  fill.position.set(380, 260, -520);
+  const fill = new THREE.DirectionalLight(0x7ab8d4, 0.42);
+  fill.position.set(300, 220, -480);
   scene.add(fill);
 
   const waterGeometry = new THREE.PlaneGeometry(WATER_PLANE_SIZE, WATER_PLANE_SIZE);
   waterGeometry.rotateX(-Math.PI / 2);
-  const waterMaterial = new THREE.MeshBasicMaterial({
-    color: 0x318096,
+  const waterMaterial = new THREE.MeshStandardMaterial({
+    color: 0x1a5060,
+    roughness: 0.15,
+    metalness: 0.12,
     side: THREE.DoubleSide,
-    toneMapped: false,
   });
   const water = new THREE.Mesh(waterGeometry, waterMaterial);
   water.position.set(
@@ -328,6 +463,7 @@ function createController(THREE, canvas, seed) {
 
   let terrain = null;
   let vegetation = null;
+  let landmarks = null;
   let routes = new THREE.Group();
   routes.name = "atlas-routes";
   let journey = new THREE.Group();
@@ -390,18 +526,18 @@ function createController(THREE, canvas, seed) {
     geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
     geometry.setAttribute("color", new THREE.BufferAttribute(data.colors, 3));
     geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
+    geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     const material = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.96,
-      metalness: 0,
-      flatShading: true,
+      roughness: 0.86,
+      metalness: 0.02,
     });
     terrain = new THREE.Mesh(geometry, material);
     terrain.name = "atlas-terrain";
     scene.add(terrain);
 
-    const treeCount = Math.floor(data.trees.length / 6);
+    const treeCount = Math.floor(data.trees.length / 7);
     canvas.dataset.atlasTerrainVertices = String(data.positions.length / 3);
     canvas.dataset.atlasTrees = String(treeCount);
     vegetation = new THREE.Group();
@@ -411,32 +547,44 @@ function createController(THREE, canvas, seed) {
       canopyGeometry.translate(0, 2.6, 0);
       const trunkGeometry = new THREE.CylinderGeometry(0.23, 0.35, 1.5, 5);
       trunkGeometry.translate(0, 0.75, 0);
-      const canopyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
-      const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x4f3c29, roughness: 1, flatShading: true });
+      const canopyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.98, flatShading: true });
+      const trunkMaterial  = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
       const canopies = new THREE.InstancedMesh(canopyGeometry, canopyMaterial, treeCount);
-      const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, treeCount);
+      const trunks   = new THREE.InstancedMesh(trunkGeometry,  trunkMaterial,  treeCount);
       const transform = new THREE.Object3D();
       const tint = new THREE.Color();
       for (let index = 0; index < treeCount; index += 1) {
-        const offset = index * 6;
+        const offset = index * 7;
         const scale = data.trees[offset + 3];
+        const colorFactor = data.trees[offset + 5];
+        const realmIdx = Math.min(4, Math.max(0, Math.round(data.trees[offset + 6]) || 0));
+        const [shapeXZ, shapeY] = REALM_TREE_SHAPE[realmIdx];
         transform.position.set(data.trees[offset], data.trees[offset + 1] + 0.06, data.trees[offset + 2]);
         transform.rotation.set(0, data.trees[offset + 4], 0);
-        transform.scale.set(scale, scale * (0.92 + data.trees[offset + 5] * 0.12), scale);
+        transform.scale.set(scale * shapeXZ, scale * (0.92 + colorFactor * 0.12) * shapeY, scale * shapeXZ);
         transform.updateMatrix();
         canopies.setMatrixAt(index, transform.matrix);
         trunks.setMatrixAt(index, transform.matrix);
-        tint.set(0x4f8a5b).multiplyScalar(data.trees[offset + 5]);
+        tint.set(REALM_CANOPY_COLORS[realmIdx]).multiplyScalar(colorFactor);
         canopies.setColorAt(index, tint);
+        tint.set(REALM_TRUNK_COLORS[realmIdx]).multiplyScalar(0.85 + colorFactor * 0.18);
+        trunks.setColorAt(index, tint);
       }
       canopies.instanceMatrix.needsUpdate = true;
       trunks.instanceMatrix.needsUpdate = true;
       if (canopies.instanceColor) canopies.instanceColor.needsUpdate = true;
+      if (trunks.instanceColor)   trunks.instanceColor.needsUpdate = true;
       canopies.computeBoundingSphere();
       trunks.computeBoundingSphere();
       vegetation.add(trunks, canopies);
     }
     scene.add(vegetation);
+
+    // Landmark 3D meshes are created after terrain heights are cached.
+    if (landmarks) { scene.remove(landmarks); disposeObject(landmarks); }
+    landmarks = createLandmarkMeshGroup(THREE, seed);
+    scene.add(landmarks);
+
     if (renderNow) render();
   }
 
