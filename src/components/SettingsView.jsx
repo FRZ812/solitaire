@@ -7,7 +7,14 @@ import {
   NARRATOR_MEMORY_MODES,
   normalizeNarratorSettings,
 } from "../engine/narrator-settings.js";
-import { STORY_FONT_SCALES, getStoryFontScale, setStoryFontScale } from "../engine/preferences.js";
+import {
+  ATLAS_QUALITY_MODES,
+  STORY_FONT_SCALES,
+  getAtlasQuality,
+  getStoryFontScale,
+  setAtlasQuality,
+  setStoryFontScale,
+} from "../engine/preferences.js";
 import { DeckPage, DeckPageHeader } from "./DeckPage.jsx";
 import { Icon } from "./Icon.jsx";
 import "./settings.css";
@@ -285,15 +292,23 @@ function EmptyMemory({ text }) {
 
 function GeneralSettings({ user, onReset, onBackToCampaigns, onSignOut, onLinkEmail }) {
   const [fontScale, setFontScale] = useState(getStoryFontScale());
+  const [atlasQuality, setAtlasQualityState] = useState(getAtlasQuality());
   const [email, setEmail] = useState("");
   const [linkStatus, setLinkStatus] = useState("");
   const currentIndex = Math.max(0, STORY_FONT_SCALES.findIndex((scale) => scale.id === fontScale));
   const current = STORY_FONT_SCALES[currentIndex];
+  const currentQuality = ATLAS_QUALITY_MODES.find((mode) => mode.id === atlasQuality)
+    || ATLAS_QUALITY_MODES[0];
 
   function chooseScale(index) {
     const scale = STORY_FONT_SCALES[Math.max(0, Math.min(STORY_FONT_SCALES.length - 1, index))];
     setStoryFontScale(scale.id);
     setFontScale(scale.id);
+  }
+
+  function chooseAtlasQuality(id) {
+    setAtlasQuality(id);
+    setAtlasQualityState(id);
   }
 
   async function linkGuest(event) {
@@ -316,6 +331,30 @@ function GeneralSettings({ user, onReset, onBackToCampaigns, onSignOut, onLinkEm
           <button type="button" onClick={() => chooseScale(currentIndex - 1)} disabled={currentIndex === 0} aria-label="Decrease story text size"><Icon name="zoomOut" size={18} /></button>
           <div aria-live="polite"><strong>{current.label}</strong><span>Preview the story at this scale</span></div>
           <button type="button" onClick={() => chooseScale(currentIndex + 1)} disabled={currentIndex === STORY_FONT_SCALES.length - 1} aria-label="Increase story text size"><Icon name="zoomIn" size={18} /></button>
+        </div>
+      </section>
+
+      <section className="settings-card">
+        <div className="settings-card__heading">
+          <div><small>World atlas</small><h4>Map detail</h4></div>
+          <span>{currentQuality.label}</span>
+        </div>
+        <p className="settings-help">
+          Rendering quality for the 3D world atlas. Auto matches this device; a forced mode applies immediately, even to an open map.
+        </p>
+        <div className="memory-mode-grid" aria-label="Map detail modes">
+          {ATLAS_QUALITY_MODES.map((mode) => (
+            <button
+              key={mode.id}
+              type="button"
+              className={atlasQuality === mode.id ? "is-active" : ""}
+              aria-pressed={atlasQuality === mode.id}
+              onClick={() => chooseAtlasQuality(mode.id)}
+            >
+              <strong>{mode.label}</strong>
+              <span>{mode.description}</span>
+            </button>
+          ))}
         </div>
       </section>
 

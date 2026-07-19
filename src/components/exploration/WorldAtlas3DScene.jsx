@@ -10,16 +10,23 @@ import {
 } from "../../data/continent.js";
 import {
   ATLAS_3D_BOUNDS,
+  ATLAS_3D_TREE_RECORD_STRIDE,
+  ATLAS_3D_TREE_SPECIES,
   ATLAS_3D_FOV_DEG,
   atlas3dAuthoredWaterContains,
   atlas3dAxialToScene,
   atlas3dCameraFrame,
+  atlas3dDeclareActiveStride,
+  atlas3dFitZoom,
   atlas3dHotSpringSurfaceHeight,
   atlas3dLakeSurfaceHeight,
   atlas3dSceneToAxial,
+  atlas3dScreenToGround,
   atlas3dTerrainHeightAt,
   coordinateNoise,
 } from "./worldAtlas3dModel.js";
+import { createAtlasPostStack } from "./atlasPostStack.js";
+import { enhanceAtlasTerrainMaterial, setAtlasTerrainWorldTime } from "./atlasTerrainShader.js";
 import { getWorldAtlas3dRuntime } from "./worldAtlas3dRuntime.js";
 import { ATLAS_LANDMARKS } from "./worldAtlasModel.js";
 
@@ -47,19 +54,6 @@ const EAST_FLORA_MESHES = Object.freeze({
   }),
 });
 
-const PROJECTED_VEGETATION_CORRIDORS = Object.freeze([
-  ...CONTINENT_ROUTES,
-  ...CONTINENT_WATERWAYS,
-].map((corridor) => Object.freeze({
-  clearance: Math.max(
-    corridor.width || 0,
-    corridor.widthStart || 0,
-    corridor.widthEnd || 0,
-    corridor.kind === "regional-road" ? 1.2 : 1.9,
-  ) / 2 + 2.7,
-  waypoints: Object.freeze(corridor.waypoints.map((coord) => Object.freeze(atlas3dAxialToScene(coord)))),
-})));
-
 function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
@@ -67,6 +61,12 @@ function clamp01(value) {
 function smoothstep01(value) {
   const mix = clamp01(value);
   return mix * mix * (3 - 2 * mix);
+}
+
+export function atlasPropDetailVisible(currentlyVisible, zoomRatio, qualityId = "high") {
+  if (qualityId === "low") return false;
+  if (currentlyVisible) return zoomRatio > 1.8;
+  return zoomRatio >= 2.2;
 }
 
 function wrappedHour(value) {
@@ -116,10 +116,11 @@ export function atlasWorldLightState(time, coord = { x: 0, y: 0 }) {
   };
 }
 
-function atlasRenderPixelRatio(width, height) {
+function atlasRenderPixelRatio(width, height, quality = null) {
   const mobile = Math.min(width, height) < 720;
-  const dprCap = mobile ? 1.3 : 1.65;
-  const pixelBudget = mobile ? MOBILE_RENDER_PIXEL_BUDGET : DESKTOP_RENDER_PIXEL_BUDGET;
+  const dprCap = quality?.dprCap ?? (mobile ? 1.3 : 1.65);
+  const pixelBudget = quality?.pixelBudget
+    ?? (mobile ? MOBILE_RENDER_PIXEL_BUDGET : DESKTOP_RENDER_PIXEL_BUDGET);
   const budgetRatio = Math.sqrt(pixelBudget / Math.max(1, width * height));
   return Math.max(1, Math.min(window.devicePixelRatio || 1, dprCap, budgetRatio));
 }
@@ -225,6 +226,7 @@ function disposeObject(object) {
     if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose?.());
     else child.material?.dispose?.();
   });
+  for (const resource of object?.userData?.disposables || []) resource?.dispose?.();
 }
 
 export function createRibbonMesh(THREE, path, {
@@ -251,6 +253,7 @@ export function createRibbonMesh(THREE, path, {
     scene: point,
   }));
   const positions = new Float32Array(points.length * 2 * 3);
+  const uvs = new Float32Array(points.length * 2 * 2);
   const indices = new Uint32Array((points.length - 1) * 6);
 
   for (let index = 0; index < points.length; index += 1) {
@@ -278,6 +281,12 @@ export function createRibbonMesh(THREE, path, {
     positions[offset + 3] = center.x - normalX;
     positions[offset + 4] = rightHeight;
     positions[offset + 5] = center.z - normalZ;
+    const uvOffset = index * 4;
+    const distanceV = index / 9;
+    uvs[uvOffset] = 0;
+    uvs[uvOffset + 1] = distanceV;
+    uvs[uvOffset + 2] = 1;
+    uvs[uvOffset + 3] = distanceV;
   }
 
   for (let index = 0; index < points.length - 1; index += 1) {
@@ -293,10 +302,15 @@ export function createRibbonMesh(THREE, path, {
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute("atlasRibbonUv", new THREE.BufferAttribute(uvs, 2));
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeVertexNormals();
   geometry.computeBoundingSphere();
-  const material = new THREE.MeshBasicMaterial({
+  const material = new THREE.MeshStandardMaterial({
     color,
+    roughness: water ? 0.34 : 0.92,
+    metalness: water ? 0.08 : 0,
     transparent: opacity < 1,
     opacity,
     side: THREE.DoubleSide,
@@ -304,7 +318,39 @@ export function createRibbonMesh(THREE, path, {
     polygonOffset: true,
     polygonOffsetFactor: -2,
   });
+  const flowUniform = { value: 0 };
+  material.userData.atlasFlowUniform = flowUniform;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uAtlasFlow = flowUniform;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nattribute vec2 atlasRibbonUv;\nvarying vec2 vAtlasRibbonUv;",
+      )
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvAtlasRibbonUv = atlasRibbonUv;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nuniform float uAtlasFlow;\nvarying vec2 vAtlasRibbonUv;",
+      )
+      .replace("#include <color_fragment>", water
+        ? `#include <color_fragment>
+          float atlasFlow = sin((vAtlasRibbonUv.y - uAtlasFlow) * 5.4
+            + sin(vAtlasRibbonUv.y * 0.73) * 1.8);
+          float atlasBank = smoothstep(0.0, 0.18, vAtlasRibbonUv.x)
+            * smoothstep(0.0, 0.18, 1.0 - vAtlasRibbonUv.x);
+          diffuseColor.rgb *= 0.84 + atlasBank * 0.11 + atlasFlow * 0.035;`
+        : `#include <color_fragment>
+          float atlasRutA = smoothstep(0.12, 0.02, abs(vAtlasRibbonUv.x - 0.27));
+          float atlasRutB = smoothstep(0.12, 0.02, abs(vAtlasRibbonUv.x - 0.73));
+          float atlasEdge = smoothstep(0.0, 0.16, vAtlasRibbonUv.x)
+            * smoothstep(0.0, 0.16, 1.0 - vAtlasRibbonUv.x);
+          float atlasGrain = sin(vAtlasRibbonUv.y * 2.9 + vAtlasRibbonUv.x * 8.0) * 0.025;
+          diffuseColor.rgb *= 0.78 + atlasEdge * 0.24 - (atlasRutA + atlasRutB) * 0.12 + atlasGrain;`);
+  };
+  material.customProgramCacheKey = () => `atlas-ribbon-v2-${water ? "water" : "road"}`;
   const mesh = new THREE.Mesh(geometry, material);
+  mesh.receiveShadow = true;
   mesh.renderOrder = renderOrder;
   return mesh;
 }
@@ -337,7 +383,11 @@ function createRouteGroup(THREE, seed, focusedRealmId) {
       water: true,
       ocean: true,
     });
-    if (ribbon) group.add(ribbon);
+    if (ribbon) {
+      ribbon.name = `atlas-sea-lane-${lane.id}`;
+      ribbon.userData.atlasSeaLane = true;
+      group.add(ribbon);
+    }
   }
 
   for (const route of CONTINENT_ROUTES) {
@@ -381,6 +431,7 @@ export function createInsetLake(THREE, lake, seed) {
   mesh.position.set(center.x, waterHeight, center.z);
   mesh.userData.waterHeight = waterHeight;
   mesh.userData.irregularShoreline = true;
+  mesh.receiveShadow = true;
   mesh.renderOrder = 1;
 
   const innerRadii = radii.map((value) => value * 0.97);
@@ -398,6 +449,7 @@ export function createInsetLake(THREE, lake, seed) {
   );
   shoreline.name = `${mesh.name}-shoreline`;
   shoreline.position.y = -0.055;
+  shoreline.receiveShadow = true;
   shoreline.renderOrder = 1;
   mesh.add(shoreline);
   return mesh;
@@ -428,6 +480,7 @@ export function createHotSprings(THREE, seed) {
     pool.name = `atlas-hot-spring-${spring.id || spring.name}`;
     pool.position.set(center.x, poolHeight, center.z);
     pool.userData.irregularShoreline = true;
+    pool.receiveShadow = true;
     pool.renderOrder = 1;
     group.add(pool);
 
@@ -441,6 +494,7 @@ export function createHotSprings(THREE, seed) {
     );
     springRim.name = `atlas-hot-spring-rim-${spring.id || spring.name}`;
     springRim.position.set(center.x, poolHeight - 0.06, center.z);
+    springRim.receiveShadow = true;
     springRim.renderOrder = 1;
     group.add(springRim);
 
@@ -496,6 +550,28 @@ function mountainCloudClusters() {
 export function createMountainClouds(THREE, seed) {
   const group = new THREE.Group();
   group.name = "atlas-mountain-clouds";
+  const textureSize = 64;
+  const pixels = new Uint8Array(textureSize * textureSize * 4);
+  for (let y = 0; y < textureSize; y += 1) {
+    for (let x = 0; x < textureSize; x += 1) {
+      const nx = (x + 0.5) / textureSize * 2 - 1;
+      const ny = (y + 0.5) / textureSize * 2 - 1;
+      const radius = Math.hypot(nx * 0.86, ny * 1.12);
+      const edge = smoothstep01((1.03 - radius) / 0.42);
+      const billow = 0.68 + coordinateNoise(x, y, `${seed}:cloud-alpha`) * 0.32;
+      const offset = (y * textureSize + x) * 4;
+      pixels[offset] = 255;
+      pixels[offset + 1] = 255;
+      pixels[offset + 2] = 255;
+      pixels[offset + 3] = Math.round(255 * edge * billow);
+    }
+  }
+  const cloudTexture = new THREE.DataTexture(pixels, textureSize, textureSize, THREE.RGBAFormat);
+  cloudTexture.needsUpdate = true;
+  cloudTexture.generateMipmaps = true;
+  cloudTexture.magFilter = THREE.LinearFilter;
+  cloudTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  group.userData.disposables = [cloudTexture];
 
   for (const [clusterIndex, samples] of mountainCloudClusters().entries()) {
     const sampledPeaks = samples.map((coord) => ({ coord, height: cachedHeight(coord, seed) }));
@@ -517,28 +593,36 @@ export function createMountainClouds(THREE, seed) {
       const center = atlas3dAxialToScene(coord);
       const width = 11 + coordinateNoise(coord.x, coord.y, `${salt}:width`) * 13;
       const depth = 5 + coordinateNoise(coord.y, coord.x, `${salt}:depth`) * 8;
-      const geometry = new THREE.PlaneGeometry(width, depth, 1, 1);
+      const geometry = new THREE.PlaneGeometry(width, depth, 4, 3);
       const position = geometry.getAttribute("position");
       for (let vertex = 0; vertex < position.count; vertex += 1) {
-        const displacementX = (coordinateNoise(vertex, clusterIndex, `${salt}:vx`) - 0.5) * 4;
-        const displacementY = (coordinateNoise(vertex, patchIndex, `${salt}:vy`) - 0.5) * 4;
+        const displacementX = (coordinateNoise(vertex, clusterIndex, `${salt}:vx`) - 0.5) * 1.2;
+        const displacementY = (coordinateNoise(vertex, patchIndex, `${salt}:vy`) - 0.5) * 0.8;
         position.setXY(vertex, position.getX(vertex) + displacementX, position.getY(vertex) + displacementY);
       }
       position.needsUpdate = true;
       geometry.rotateX(-Math.PI / 2);
       geometry.computeBoundingSphere();
 
-      const opacity = 0.35 + coordinateNoise(coord.x, coord.y, `${salt}:opacity`) * 0.2;
+      const opacity = 0.075 + coordinateNoise(coord.x, coord.y, `${salt}:opacity`) * 0.065;
       const material = new THREE.MeshBasicMaterial({
         color: 0xe8eef2,
+        map: cloudTexture,
         transparent: true,
         opacity,
+        alphaTest: 0.03,
         side: THREE.DoubleSide,
         depthWrite: false,
       });
       const cloud = new THREE.Mesh(geometry, material);
       const altitudeNoise = coordinateNoise(coord.y, coord.x, `${salt}:altitude`);
-      const altitude = Math.max(22, Math.min(28, peak.height - 2 - altitudeNoise * 4));
+      // Keep every sheet above the sampled ridge crown. Seating the sheet
+      // inside the mountain lets the depth buffer cut it into bright,
+      // crystalline wedges when viewed at the close diorama pitch.
+      const altitude = Math.max(
+        peak.height + 2.25,
+        cachedHeight(coord, seed) + 3.25,
+      ) + altitudeNoise * 1.75;
       cloud.position.set(center.x, altitude, center.z);
       cloud.rotation.y = angle;
       cloud.name = `atlas-mountain-cloud-${clusterIndex}-${patchIndex}`;
@@ -620,9 +704,8 @@ function createJourneyGroup(THREE, seed, journey, breaks) {
 }
 
 // Realm-indexed canopy/trunk colors and canopy shape multipliers [xz, y].
-const REALM_CANOPY_COLORS = [0x4a7a50, 0x1e2e1c, 0x2c5c30, 0x4a5824, 0x1a4422];
-const REALM_TRUNK_COLORS  = [0x4f3c29, 0x2e2820, 0x3c3020, 0x503a1c, 0x2e3018];
-const REALM_TREE_SHAPE    = [[1.0, 1.0], [0.6, 1.5], [1.3, 0.8], [0.8, 0.65], [1.4, 1.15]];
+const REALM_CANOPY_COLORS = [0x4a7a50, 0x4d7252, 0x2c5c30, 0x4a5824, 0x1a4422];
+const REALM_TREE_SHAPE    = [[1.0, 1.0], [0.72, 1.25], [1.3, 0.8], [0.8, 0.65], [1.4, 1.15]];
 
 export const REALM_SETTLEMENT_COLORS = Object.freeze({
   central: { stone: 0x887a6c, darkStone: 0x554a40, roof: 0x2e2820 },
@@ -637,41 +720,6 @@ const SETTLEMENT_LANDMARK_KINDS = new Set([
   "fort", "checkpoint", "port", "wonder",
 ]);
 
-function landmarkVegetationClearance(landmark) {
-  if (landmark.capitalOfRealmId) return 13;
-  if (landmark.kind === "city" || landmark.kind === "wonder") return 11;
-  if (["town", "fortress", "castle", "port"].includes(landmark.kind)) return 8;
-  if (["village", "pagoda", "shrine", "temple", "sanctuary", "monastery"].includes(landmark.kind)) return 6;
-  return 4.5;
-}
-
-function clearsAtlasLandmarks(record) {
-  return ATLAS_LANDMARKS.every((landmark) => {
-    const center = atlas3dAxialToScene(landmark.coord);
-    return Math.hypot(record.x - center.x, record.z - center.z) >= landmarkVegetationClearance(landmark);
-  });
-}
-
-function pointSegmentDistance(point, start, end) {
-  const dx = end.x - start.x;
-  const dz = end.z - start.z;
-  const lengthSquared = dx * dx + dz * dz;
-  if (!lengthSquared) return Math.hypot(point.x - start.x, point.z - start.z);
-  const mix = clamp01(((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSquared);
-  return Math.hypot(point.x - (start.x + dx * mix), point.z - (start.z + dz * mix));
-}
-
-function clearsAtlasCorridors(record) {
-  for (const corridor of PROJECTED_VEGETATION_CORRIDORS) {
-    for (let index = 1; index < corridor.waypoints.length; index += 1) {
-      if (pointSegmentDistance(record, corridor.waypoints[index - 1], corridor.waypoints[index]) < corridor.clearance) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
 function insideBounds(coord, bounds) {
   return coord.x >= bounds.xmin && coord.x <= bounds.xmax
     && coord.y >= bounds.ymin && coord.y <= bounds.ymax;
@@ -684,18 +732,30 @@ export function atlasEastFloraVariant(coord, seed) {
   return "standard";
 }
 
-export function createVegetationGroup(THREE, treeData, seed) {
+export function createVegetationGroup(THREE, treeData, seed, quality = null) {
   const vegetation = new THREE.Group();
   vegetation.name = "atlas-vegetation";
-  const treeCount = Math.floor(treeData.length / 7);
-  const records = { standard: [], cherry: [], ginkgo: [] };
+  const treeCount = Math.floor(treeData.length / ATLAS_3D_TREE_RECORD_STRIDE);
+  const records = { conifer: [], broadleaf: [], scrub: [], cherry: [], ginkgo: [] };
+  const propDensity = quality?.propDensity ?? 1;
 
   for (let index = 0; index < treeCount; index += 1) {
-    const offset = index * 7;
+    const offset = index * ATLAS_3D_TREE_RECORD_STRIDE;
     const realmIdx = Math.min(4, Math.max(0, Math.round(treeData[offset + 6]) || 0));
-    const coord = atlas3dSceneToAxial({ x: treeData[offset], z: treeData[offset + 2] });
-    const variant = realmIdx === 2 ? atlasEastFloraVariant(coord, seed) : "standard";
-    records[variant].push({
+    const species = Math.min(
+      ATLAS_3D_TREE_SPECIES.ginkgo,
+      Math.max(ATLAS_3D_TREE_SPECIES.conifer, Math.round(treeData[offset + 7]) || 0),
+    );
+    const variant = species === ATLAS_3D_TREE_SPECIES.cherry
+      ? "cherry"
+      : species === ATLAS_3D_TREE_SPECIES.ginkgo
+      ? "ginkgo"
+      : species === ATLAS_3D_TREE_SPECIES.conifer
+      ? "conifer"
+      : species === ATLAS_3D_TREE_SPECIES.scrub
+      ? "scrub"
+      : "broadleaf";
+    const record = {
       x: treeData[offset],
       groundHeight: treeData[offset + 1],
       z: treeData[offset + 2],
@@ -703,167 +763,367 @@ export function createVegetationGroup(THREE, treeData, seed) {
       rotation: treeData[offset + 4],
       colorFactor: treeData[offset + 5],
       realmIdx,
-    });
+    };
+    if (coordinateNoise(record.x, record.z, seed + 907) <= propDensity) records[variant].push(record);
   }
 
-  // The eastern lowlands are predominantly marsh, terraces, and river plain,
-  // so seed authored groves independently of the generic forest classifier.
-  // A coarse patch mask establishes orchard-sized stands, while fine noise and
-  // two-to-three-tree clusters fill each stand without carpeting every field.
-  for (const variant of ["cherry", "ginkgo"]) {
-    const { bounds } = EAST_FLORA_MESHES[variant];
-    const variantSalt = variant === "cherry" ? 0 : 97;
-    for (let y = bounds.ymin; y <= bounds.ymax; y += 8) {
-      for (let x = bounds.xmin; x <= bounds.xmax; x += 8) {
-        const patchX = Math.floor((x - bounds.xmin) / 30);
-        const patchY = Math.floor((y - bounds.ymin) / 30);
-        const patch = coordinateNoise(patchX, patchY, seed + 811 + variantSalt);
-        const detail = coordinateNoise(x, y, seed + 823 + variantSalt);
-        if (patch <= 0.34 || detail <= 0.17) continue;
-        const clusterCount = 1 + (detail > 0.58 ? 1 : 0) + (detail > 0.86 ? 1 : 0);
-        for (let cluster = 0; cluster < clusterCount; cluster += 1) {
-          const coord = {
-            x: x + (coordinateNoise(x, y, seed + 829 + cluster * 11 + variantSalt) - 0.5) * 7,
-            y: y + (coordinateNoise(y, x, seed + 839 + cluster * 11 + variantSalt) - 0.5) * 7,
-          };
-          if (atlas3dAuthoredWaterContains(coord, 1.5)) continue;
-          const groundHeight = cachedHeight(coord, seed);
-          if (groundHeight <= 0) continue;
-          const scene = atlas3dAxialToScene(coord);
-          if (records[variant].some((record) => Math.hypot(record.x - scene.x, record.z - scene.z) < 0.9)) {
-            continue;
-          }
-          records[variant].push({
-            x: scene.x,
-            groundHeight,
-            z: scene.z,
-            scale: 1.08 + coordinateNoise(x, y, seed + 853 + cluster * 13 + variantSalt) * 0.72,
-            rotation: coordinateNoise(y, x, seed + 859 + cluster * 13 + variantSalt) * Math.PI * 2,
-            colorFactor: 0.9 + coordinateNoise(x, y, seed + 863 + cluster * 13 + variantSalt) * 0.16,
-            realmIdx: 2,
-          });
-        }
-      }
-    }
-  }
+  const core = new THREE.Group();
+  core.name = "atlas-vegetation-core";
+  const detail = new THREE.Group();
+  detail.name = "atlas-vegetation-detail";
+  detail.visible = false;
+  vegetation.add(core, detail);
 
-  for (const variant of Object.keys(records)) {
-    records[variant] = records[variant].filter((record) => (
-      clearsAtlasLandmarks(record) && clearsAtlasCorridors(record)
-    ));
-  }
+  const coniferLower = new THREE.ConeGeometry(1.75, 2.6, 7, 1);
+  coniferLower.translate(0, 2.05, 0);
+  const coniferMiddle = new THREE.ConeGeometry(1.42, 2.45, 7, 1);
+  coniferMiddle.translate(0, 3.15, 0);
+  const coniferUpper = new THREE.ConeGeometry(1.04, 2.2, 7, 1);
+  coniferUpper.translate(0, 4.18, 0);
+  const coniferTrunk = new THREE.CylinderGeometry(0.18, 0.28, 2.05, 6);
+  coniferTrunk.translate(0, 1.025, 0);
 
-  const transform = new THREE.Object3D();
-  const tint = new THREE.Color();
-  if (records.standard.length > 0) {
-    const canopyGeometry = new THREE.ConeGeometry(2.4, 6.1, 6, 2);
-    canopyGeometry.translate(0, 3.05, 0);
-    const trunkGeometry = new THREE.CylinderGeometry(0.26, 0.4, 1.9, 6);
-    trunkGeometry.translate(0, 0.95, 0);
-    const canopyMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.98, flatShading: true });
-    const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: true });
-    const canopies = new THREE.InstancedMesh(canopyGeometry, canopyMaterial, records.standard.length);
-    const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, records.standard.length);
-    canopies.name = "atlas-standard-tree-canopies";
-    trunks.name = "atlas-standard-tree-trunks";
+  const broadleafLeft = new THREE.SphereGeometry(1.2, 6, 4);
+  broadleafLeft.scale(1.05, 0.82, 0.98);
+  broadleafLeft.translate(-0.58, 2.8, 0.08);
+  const broadleafRight = broadleafLeft.clone();
+  broadleafRight.translate(1.12, 0.08, -0.18);
+  const broadleafCrown = new THREE.SphereGeometry(1.32, 6, 4);
+  broadleafCrown.scale(1.08, 0.84, 1.04);
+  broadleafCrown.translate(0, 3.65, 0);
+  const broadleafTrunk = new THREE.CylinderGeometry(0.17, 0.28, 2.2, 6);
+  broadleafTrunk.translate(0, 1.1, 0);
 
-    for (const [instance, record] of records.standard.entries()) {
-      const { realmIdx, scale, colorFactor } = record;
-      const [shapeXZ, shapeY] = REALM_TREE_SHAPE[realmIdx];
-      transform.position.set(record.x, record.groundHeight + 0.06, record.z);
-      transform.rotation.set(0, record.rotation, 0);
-      transform.scale.set(scale * shapeXZ, scale * (0.92 + colorFactor * 0.12) * shapeY, scale * shapeXZ);
-      transform.updateMatrix();
-      canopies.setMatrixAt(instance, transform.matrix);
-      trunks.setMatrixAt(instance, transform.matrix);
-      tint.set(REALM_CANOPY_COLORS[realmIdx]).multiplyScalar(colorFactor);
-      canopies.setColorAt(instance, tint);
-      tint.set(REALM_TRUNK_COLORS[realmIdx]).multiplyScalar(0.85 + colorFactor * 0.18);
-      trunks.setColorAt(instance, tint);
-    }
-    canopies.instanceMatrix.needsUpdate = true;
-    trunks.instanceMatrix.needsUpdate = true;
-    if (canopies.instanceColor) canopies.instanceColor.needsUpdate = true;
-    if (trunks.instanceColor) trunks.instanceColor.needsUpdate = true;
-    canopies.computeBoundingSphere();
-    trunks.computeBoundingSphere();
-    vegetation.add(trunks, canopies);
-  }
+  const scrubLeft = new THREE.SphereGeometry(1.08, 5, 3);
+  scrubLeft.scale(1.2, 0.55, 0.9);
+  scrubLeft.translate(-0.4, 1.45, 0);
+  const scrubRight = scrubLeft.clone();
+  scrubRight.translate(0.85, 0.16, 0.1);
+  const scrubTrunk = new THREE.CylinderGeometry(0.16, 0.25, 1.25, 5);
+  scrubTrunk.translate(0, 0.625, 0);
 
-  const eastFlora = new THREE.Group();
-  eastFlora.name = "atlas-east-flora";
-
-  function addEastFlora(variant, canopyGeometries, trunkGeometry) {
-    const variantRecords = records[variant];
-    if (variantRecords.length === 0) return;
-    const definition = EAST_FLORA_MESHES[variant];
-    const canopyMaterial = new THREE.MeshStandardMaterial({
-      color: definition.canopyColor,
-      roughness: 0.94,
-      flatShading: true,
-    });
-    const trunkMaterial = new THREE.MeshStandardMaterial({
-      color: definition.trunkColor,
-      roughness: 1,
-      flatShading: true,
-    });
-    const canopyMeshes = canopyGeometries.map((geometry, layer) => {
-      const mesh = new THREE.InstancedMesh(geometry, canopyMaterial, variantRecords.length);
-      mesh.name = `atlas-${variant}-canopies-${layer}`;
-      return mesh;
-    });
-    const trunks = new THREE.InstancedMesh(trunkGeometry, trunkMaterial, variantRecords.length);
-    trunks.name = `atlas-${variant}-trunks`;
-
-    for (const [instance, record] of variantRecords.entries()) {
-      const scale = record.scale * (0.96 + record.colorFactor * 0.12);
-      transform.position.set(record.x, record.groundHeight + 0.06, record.z);
-      transform.rotation.set(0, record.rotation, 0);
-      transform.scale.setScalar(scale);
-      transform.updateMatrix();
-      trunks.setMatrixAt(instance, transform.matrix);
-      for (const canopy of canopyMeshes) canopy.setMatrixAt(instance, transform.matrix);
-    }
-    trunks.instanceMatrix.needsUpdate = true;
-    trunks.computeBoundingSphere();
-    for (const canopy of canopyMeshes) {
-      canopy.instanceMatrix.needsUpdate = true;
-      canopy.computeBoundingSphere();
-    }
-    eastFlora.add(trunks, ...canopyMeshes);
-  }
-
-  const cherryCanopy = new THREE.SphereGeometry(1.55, 7, 5);
-  cherryCanopy.scale(1, 0.68, 1);
-  cherryCanopy.translate(0, 2.65, 0);
+  const cherryLeft = new THREE.SphereGeometry(1.12, 6, 4);
+  cherryLeft.scale(1.06, 0.68, 1);
+  cherryLeft.translate(-0.48, 2.55, 0);
+  const cherryRight = cherryLeft.clone();
+  cherryRight.translate(0.96, 0.06, 0.08);
+  const cherryCrown = new THREE.SphereGeometry(1.18, 6, 4);
+  cherryCrown.scale(1, 0.66, 1);
+  cherryCrown.translate(0, 3.15, 0);
   const cherryTrunk = new THREE.CylinderGeometry(0.13, 0.2, 2.1, 6);
   cherryTrunk.translate(0, 1.05, 0);
-  addEastFlora("cherry", [cherryCanopy], cherryTrunk);
 
-  const ginkgoLower = new THREE.ConeGeometry(1.15, 1.85, 6);
+  const ginkgoLower = new THREE.ConeGeometry(1.15, 1.85, 7);
   ginkgoLower.translate(0, 1.95, 0);
-  const ginkgoUpper = new THREE.ConeGeometry(1.0, 1.65, 6);
+  const ginkgoUpper = new THREE.ConeGeometry(1.0, 1.65, 7);
   ginkgoUpper.translate(0, 3.0, 0);
   const ginkgoTrunk = new THREE.CylinderGeometry(0.16, 0.24, 2.25, 6);
   ginkgoTrunk.translate(0, 1.125, 0);
-  addEastFlora("ginkgo", [ginkgoLower, ginkgoUpper], ginkgoTrunk);
 
-  vegetation.add(eastFlora);
+  const definitions = {
+    conifer: { canopies: [coniferLower, coniferMiddle, coniferUpper], trunk: coniferTrunk, canopy: null },
+    broadleaf: { canopies: [broadleafLeft, broadleafRight, broadleafCrown], trunk: broadleafTrunk, canopy: null },
+    scrub: { canopies: [scrubLeft, scrubRight], trunk: scrubTrunk, canopy: null },
+    cherry: { canopies: [cherryLeft, cherryRight, cherryCrown], trunk: cherryTrunk, canopy: 0xc98996 },
+    ginkgo: { canopies: [ginkgoLower, ginkgoUpper], trunk: ginkgoTrunk, canopy: 0xb79c32 },
+  };
+  const transform = new THREE.Object3D();
+  const tint = new THREE.Color();
+  const treeMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    roughness: 0.97,
+    flatShading: false,
+  });
+
+  function mergeTreeGeometry(definition) {
+    const pieces = [
+      { geometry: definition.trunk, color: [0.46, 0.36, 0.25] },
+      ...definition.canopies.map((geometry) => ({ geometry, color: [1, 1, 1] })),
+    ];
+    const prepared = pieces.map((piece) => {
+      const clone = piece.geometry.clone();
+      const geometry = clone.index ? clone.toNonIndexed() : clone;
+      if (geometry !== clone) clone.dispose();
+      return { ...piece, geometry };
+    });
+    const vertexCount = prepared.reduce((sum, piece) => (
+      sum + piece.geometry.getAttribute("position").count
+    ), 0);
+    const positions = new Float32Array(vertexCount * 3);
+    const normals = new Float32Array(vertexCount * 3);
+    const colors = new Float32Array(vertexCount * 3);
+    let vertexOffset = 0;
+    for (const piece of prepared) {
+      const position = piece.geometry.getAttribute("position");
+      const normal = piece.geometry.getAttribute("normal");
+      positions.set(position.array, vertexOffset * 3);
+      normals.set(normal.array, vertexOffset * 3);
+      for (let vertex = 0; vertex < position.count; vertex += 1) {
+        colors.set(piece.color, (vertexOffset + vertex) * 3);
+      }
+      vertexOffset += position.count;
+      piece.geometry.dispose();
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    return geometry;
+  }
+  for (const definition of Object.values(definitions)) {
+    definition.geometry = mergeTreeGeometry(definition);
+  }
+
+  function addTreeSet(parent, variant, variantRecords, suffix) {
+    if (variantRecords.length === 0) return;
+    const definition = definitions[variant];
+    const mesh = new THREE.InstancedMesh(definition.geometry, treeMaterial, variantRecords.length);
+    mesh.name = `atlas-${variant}-${suffix}-trees`;
+
+    for (const [instance, record] of variantRecords.entries()) {
+      const [shapeXZ, shapeY] = REALM_TREE_SHAPE[record.realmIdx];
+      const shapeScale = variant === "conifer"
+        ? [shapeXZ * 0.82, Math.max(1.05, shapeY)]
+        : variant === "scrub"
+        ? [shapeXZ * 0.95, Math.min(0.82, shapeY)]
+        : [Math.min(1.18, shapeXZ), Math.min(1.12, shapeY)];
+      transform.position.set(record.x, record.groundHeight + 0.05, record.z);
+      transform.rotation.set(0, record.rotation, 0);
+      transform.scale.set(
+        record.scale * shapeScale[0],
+        record.scale * (0.94 + record.colorFactor * 0.1) * shapeScale[1],
+        record.scale * shapeScale[0],
+      );
+      transform.updateMatrix();
+      mesh.setMatrixAt(instance, transform.matrix);
+      const colorFactor = variant === "conifer"
+        ? Math.max(0.92, record.colorFactor)
+        : record.colorFactor;
+      tint.set(definition.canopy ?? REALM_CANOPY_COLORS[record.realmIdx])
+        .multiplyScalar(colorFactor);
+      mesh.setColorAt(instance, tint);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.computeBoundingBox();
+    mesh.computeBoundingSphere();
+    parent.add(mesh);
+  }
+
+  let coreCount = 0;
+  let detailCount = 0;
+  for (const [variant, variantRecords] of Object.entries(records)) {
+    const coreRecords = [];
+    const detailRecords = [];
+    for (const record of variantRecords) {
+      if (coordinateNoise(record.x, record.z, seed + 919) < 0.34) coreRecords.push(record);
+      else detailRecords.push(record);
+    }
+    coreCount += coreRecords.length;
+    detailCount += detailRecords.length;
+    addTreeSet(core, variant, coreRecords, "core");
+    addTreeSet(detail, variant, detailRecords, "detail");
+  }
+
+  vegetation.userData.detailGroup = detail;
+  vegetation.userData.disposables = [
+    treeMaterial,
+    ...Object.values(definitions).map((definition) => definition.geometry),
+  ];
   vegetation.userData.treeCounts = {
-    total: records.standard.length + records.cherry.length + records.ginkgo.length,
+    total: Object.values(records).reduce((sum, entries) => sum + entries.length, 0),
+    core: coreCount,
+    detail: detailCount,
+    conifer: records.conifer.length,
+    broadleaf: records.broadleaf.length,
+    scrub: records.scrub.length,
     cherry: records.cherry.length,
     ginkgo: records.ginkgo.length,
   };
   return vegetation;
 }
 
+function propRecordIncluded(record, seed, salt, quality, floor = 0) {
+  const density = Math.max(floor, quality?.propDensity ?? 1);
+  return coordinateNoise(record.x, record.z, seed + salt) <= density;
+}
+
+export function createRockGroup(THREE, rockData, seed, quality = null) {
+  const group = new THREE.Group();
+  group.name = "atlas-rocks";
+  const variants = [[], [], []];
+  for (let offset = 0; offset + 5 < rockData.length; offset += 6) {
+    const record = {
+      x: rockData[offset], y: rockData[offset + 1], z: rockData[offset + 2],
+      scale: rockData[offset + 3], rotation: rockData[offset + 4],
+      variant: Math.min(2, Math.max(0, Math.round(rockData[offset + 5]) || 0)),
+    };
+    if (propRecordIncluded(record, seed, 941, quality, 0.38)) variants[record.variant].push(record);
+  }
+  const geometries = [
+    new THREE.DodecahedronGeometry(1, 0),
+    new THREE.IcosahedronGeometry(1, 0),
+    new THREE.DodecahedronGeometry(1, 0),
+  ];
+  geometries[1].scale(1.35, 0.55, 0.9);
+  geometries[2].scale(0.82, 1.35, 0.76);
+  const colors = [0x746e63, 0x877967, 0x5b5d59];
+  const transform = new THREE.Object3D();
+  for (let variant = 0; variant < variants.length; variant += 1) {
+    const records = variants[variant];
+    if (!records.length) continue;
+    const material = new THREE.MeshStandardMaterial({ color: colors[variant], roughness: 0.98, flatShading: true });
+    const mesh = new THREE.InstancedMesh(geometries[variant], material, records.length);
+    mesh.name = `atlas-rocks-${variant}`;
+    for (const [instance, record] of records.entries()) {
+      transform.position.set(record.x, record.y + record.scale * 0.32, record.z);
+      transform.rotation.set(0, record.rotation, 0);
+      transform.scale.set(record.scale, record.scale * 0.74, record.scale * 0.88);
+      transform.updateMatrix();
+      mesh.setMatrixAt(instance, transform.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    group.add(mesh);
+  }
+  group.userData.count = variants.reduce((sum, records) => sum + records.length, 0);
+  return group;
+}
+
+function createFieldTexture(THREE) {
+  const size = 32;
+  const pixels = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const offset = (y * size + x) * 4;
+      const furrow = x % 5 <= 1 ? 0.72 : 1;
+      const cross = y % 13 === 0 ? 0.88 : 1;
+      const value = Math.round(220 * furrow * cross);
+      pixels[offset] = value;
+      pixels[offset + 1] = value;
+      pixels[offset + 2] = value;
+      pixels[offset + 3] = 255;
+    }
+  }
+  const texture = new THREE.DataTexture(pixels, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  if (THREE.NoColorSpace) texture.colorSpace = THREE.NoColorSpace;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+export function createFieldGroup(THREE, fieldData, seed, quality = null) {
+  const group = new THREE.Group();
+  group.name = "atlas-fields";
+  const records = [];
+  for (let offset = 0; offset + 6 < fieldData.length; offset += 7) {
+    const record = {
+      x: fieldData[offset], y: fieldData[offset + 1], z: fieldData[offset + 2],
+      width: fieldData[offset + 3], depth: fieldData[offset + 4],
+      rotation: fieldData[offset + 5], tint: Math.min(2, Math.max(0, Math.round(fieldData[offset + 6]) || 0)),
+    };
+    if (propRecordIncluded(record, seed, 953, quality, 0.5)) records.push(record);
+  }
+  if (!records.length) {
+    group.userData.count = 0;
+    return group;
+  }
+  const texture = createFieldTexture(THREE);
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  geometry.rotateX(-Math.PI / 2);
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: texture,
+    roughness: 1,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+  });
+  const mesh = new THREE.InstancedMesh(geometry, material, records.length);
+  mesh.name = "atlas-field-patches";
+  const colors = [0x8f813d, 0x66753b, 0x9b6b36];
+  const transform = new THREE.Object3D();
+  const tint = new THREE.Color();
+  for (const [instance, record] of records.entries()) {
+    transform.position.set(record.x, record.y, record.z);
+    transform.rotation.set(0, record.rotation, 0);
+    transform.scale.set(record.width, 1, record.depth);
+    transform.updateMatrix();
+    mesh.setMatrixAt(instance, transform.matrix);
+    mesh.setColorAt(instance, tint.set(colors[record.tint]));
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  group.add(mesh);
+  group.userData.count = records.length;
+  group.userData.disposables = [texture];
+  return group;
+}
+
+export function createEnvironsGroup(THREE, environData, seed, quality = null) {
+  const group = new THREE.Group();
+  group.name = "atlas-settlement-environs";
+  const records = [];
+  for (let offset = 0; offset + 5 < environData.length; offset += 6) {
+    const record = {
+      x: environData[offset], y: environData[offset + 1], z: environData[offset + 2],
+      scale: environData[offset + 3], rotation: environData[offset + 4],
+      variant: Math.min(2, Math.max(0, Math.round(environData[offset + 5]) || 0)),
+    };
+    if (propRecordIncluded(record, seed, 967, quality, 0.48)) records.push(record);
+  }
+  if (!records.length) {
+    group.userData.count = 0;
+    return group;
+  }
+  const wallGeometry = new THREE.BoxGeometry(1.65, 1.2, 1.25);
+  wallGeometry.translate(0, 0.6, 0);
+  const roofGeometry = new THREE.ConeGeometry(1.18, 0.92, 4);
+  roofGeometry.rotateY(Math.PI / 4);
+  roofGeometry.translate(0, 1.66, 0);
+  const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.98, flatShading: true });
+  const roofMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.94, flatShading: true });
+  const walls = new THREE.InstancedMesh(wallGeometry, wallMaterial, records.length);
+  const roofs = new THREE.InstancedMesh(roofGeometry, roofMaterial, records.length);
+  walls.name = "atlas-environs-walls";
+  roofs.name = "atlas-environs-roofs";
+  const wallColors = [0x8b775d, 0x776b56, 0xa08258];
+  const roofColors = [0x4c3328, 0x343b31, 0x78422d];
+  const transform = new THREE.Object3D();
+  const tint = new THREE.Color();
+  for (const [instance, record] of records.entries()) {
+    const widthScale = record.variant === 1 ? 1.38 : record.variant === 2 ? 0.78 : 1;
+    transform.position.set(record.x, record.y + 0.04, record.z);
+    transform.rotation.set(0, record.rotation, 0);
+    transform.scale.set(record.scale * widthScale, record.scale, record.scale);
+    transform.updateMatrix();
+    walls.setMatrixAt(instance, transform.matrix);
+    roofs.setMatrixAt(instance, transform.matrix);
+    walls.setColorAt(instance, tint.set(wallColors[record.variant]));
+    roofs.setColorAt(instance, tint.set(roofColors[record.variant]));
+  }
+  for (const mesh of [walls, roofs]) {
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  }
+  group.add(walls, roofs);
+  group.userData.count = records.length;
+  return group;
+}
+
 export function createLandmarkMeshGroup(THREE, seed) {
   const group = new THREE.Group();
   group.name = "atlas-landmarks";
 
-  const matStone     = new THREE.MeshStandardMaterial({ color: 0x887a6c, roughness: 0.92, metalness: 0 });
-  const matDarkStone = new THREE.MeshStandardMaterial({ color: 0x554a40, roughness: 0.92, metalness: 0 });
-  const matRoof      = new THREE.MeshStandardMaterial({ color: 0x2e2820, roughness: 0.86, metalness: 0 });
+  const matStone     = new THREE.MeshStandardMaterial({ color: 0x887a6c, emissive: 0x887a6c, emissiveIntensity: 0.08, roughness: 0.92, metalness: 0 });
+  const matDarkStone = new THREE.MeshStandardMaterial({ color: 0x554a40, emissive: 0x554a40, emissiveIntensity: 0.2, roughness: 0.92, metalness: 0 });
+  const matRoof      = new THREE.MeshStandardMaterial({ color: 0x2e2820, emissive: 0x2e2820, emissiveIntensity: 0.28, roughness: 0.86, metalness: 0 });
   const matIvory     = new THREE.MeshStandardMaterial({ color: 0xd0c8b0, roughness: 0.85, metalness: 0 });
   const matDock      = new THREE.MeshStandardMaterial({ color: 0x3a2c18, roughness: 0.95, metalness: 0 });
   const matMarket    = new THREE.MeshStandardMaterial({ color: 0xa89070, roughness: 1, metalness: 0, side: THREE.DoubleSide });
@@ -888,9 +1148,9 @@ export function createLandmarkMeshGroup(THREE, seed) {
   const realmMaterials = Object.fromEntries(Object.entries(REALM_SETTLEMENT_COLORS).map(([realmId, colors]) => [
     realmId,
     {
-      stone: realmId === "central" ? matStone : new THREE.MeshStandardMaterial({ color: colors.stone, roughness: 0.92, metalness: 0 }),
-      darkStone: realmId === "central" ? matDarkStone : new THREE.MeshStandardMaterial({ color: colors.darkStone, roughness: 0.92, metalness: 0 }),
-      roof: realmId === "central" ? matRoof : new THREE.MeshStandardMaterial({ color: colors.roof, roughness: 0.86, metalness: 0 }),
+      stone: realmId === "central" ? matStone : new THREE.MeshStandardMaterial({ color: colors.stone, emissive: colors.stone, emissiveIntensity: 0.08, roughness: 0.92, metalness: 0 }),
+      darkStone: realmId === "central" ? matDarkStone : new THREE.MeshStandardMaterial({ color: colors.darkStone, emissive: colors.darkStone, emissiveIntensity: 0.2, roughness: 0.92, metalness: 0 }),
+      roof: realmId === "central" ? matRoof : new THREE.MeshStandardMaterial({ color: colors.roof, emissive: colors.roof, emissiveIntensity: 0.28, roughness: 0.86, metalness: 0 }),
     },
   ]));
 
@@ -1146,7 +1406,7 @@ export function batchLandmarkMeshGroup(THREE, sourceGroup) {
   return batched;
 }
 
-function createProceduralSurfaceTexture(THREE, seed, size = 128) {
+function createProceduralSurfaceTexture(THREE, seed, size = 256) {
   const surface = document.createElement("canvas");
   surface.width = size;
   surface.height = size;
@@ -1154,13 +1414,14 @@ function createProceduralSurfaceTexture(THREE, seed, size = 128) {
   const image = context.createImageData(size, size);
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
-      const fine = coordinateNoise(x, y, `${seed}:surface:fine`);
+      const fineR = coordinateNoise(x, y, `${seed}:surface:fine:r`);
+      const fineG = coordinateNoise(x, y, `${seed}:surface:fine:g`);
+      const fineB = coordinateNoise(x, y, `${seed}:surface:fine:b`);
       const broad = coordinateNoise(Math.floor(x / 5), Math.floor(y / 5), `${seed}:surface:broad`);
-      const value = Math.round(72 + fine * 104 + broad * 58);
       const offset = (y * size + x) * 4;
-      image.data[offset] = value;
-      image.data[offset + 1] = value;
-      image.data[offset + 2] = value;
+      image.data[offset] = Math.round(72 + fineR * 104 + broad * 58);
+      image.data[offset + 1] = Math.round(72 + fineG * 104 + broad * 58);
+      image.data[offset + 2] = Math.round(72 + fineB * 104 + broad * 58);
       image.data[offset + 3] = 255;
     }
   }
@@ -1168,12 +1429,34 @@ function createProceduralSurfaceTexture(THREE, seed, size = 128) {
   const texture = new THREE.CanvasTexture(surface);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
+  if (THREE.NoColorSpace) texture.colorSpace = THREE.NoColorSpace;
   texture.generateMipmaps = true;
   texture.needsUpdate = true;
   return texture;
 }
 
-function createController(THREE, canvas, seed) {
+export function createAtlasTerrainGeometry(THREE, data) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(data.colors, 3));
+  const vertexCount = data.positions.length / 3;
+  const uvs = new Float32Array(vertexCount * 2);
+  for (let vertex = 0; vertex < vertexCount; vertex += 1) {
+    const x = data.positions[vertex * 3];
+    const z = data.positions[vertex * 3 + 2];
+    uvs[vertex * 2] = (x - ATLAS_3D_BOUNDS.xmin) / (ATLAS_3D_BOUNDS.xmax - ATLAS_3D_BOUNDS.xmin);
+    uvs[vertex * 2 + 1] = (z - ATLAS_3D_BOUNDS.zmin) / (ATLAS_3D_BOUNDS.zmax - ATLAS_3D_BOUNDS.zmin);
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setAttribute("atlasAo", new THREE.BufferAttribute(data.ao, 1, true));
+  geometry.setAttribute("shore", new THREE.BufferAttribute(data.shore, 1, true));
+  geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function createController(THREE, canvas, seed, quality = null) {
   const context = canvas.getContext("webgl2", {
     alpha: false,
     antialias: true,
@@ -1189,8 +1472,10 @@ function createController(THREE, canvas, seed) {
   const initialPixelRatio = atlasRenderPixelRatio(
     Math.max(1, canvas.clientWidth || window.innerWidth || 1),
     Math.max(1, canvas.clientHeight || window.innerHeight || 1),
+    quality,
   );
   renderer.setPixelRatio(initialPixelRatio);
+  canvas.dataset.atlasQuality = quality?.id || "default";
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0e2836);
@@ -1199,17 +1484,41 @@ function createController(THREE, canvas, seed) {
   const queryCamera = new THREE.PerspectiveCamera(ATLAS_3D_FOV_DEG, 1, 0.1, 6000);
   const raycaster = new THREE.Raycaster();
 
-  const hemisphere = new THREE.HemisphereLight(0xd0e4e0, 0x201808, 1.5);
+  const hemisphere = new THREE.HemisphereLight(0xd0e4e0, 0x201808, 1.05);
   scene.add(hemisphere);
   const sun = new THREE.DirectionalLight(0xffe8b0, 1.85);
   sun.position.set(-360, 580, 300);
   scene.add(sun);
-  const fill = new THREE.DirectionalLight(0x7ab8d4, 0.42);
+  const fill = new THREE.DirectionalLight(0x7ab8d4, 0.26);
   fill.position.set(300, 220, -480);
   scene.add(fill);
-  const valleyBounce = new THREE.DirectionalLight(0x102828, 0.12);
+  const valleyBounce = new THREE.DirectionalLight(0x102828, 0.09);
   valleyBounce.position.set(0, -1, 0);
   scene.add(valleyBounce);
+
+  // Shadow-mapped sun (quality-gated). The ortho frustum is refitted to the
+  // visible ground footprint on every camera/atmosphere change, so the map
+  // budget is spent only where the player is actually looking.
+  const shadowMapSize = quality?.shadowMapSize || 0;
+  if (shadowMapSize > 0) {
+    renderer.shadowMap.enabled = true;
+    // PCFSoftShadowMap is deprecated in current Three releases. The standard
+    // PCF kernel is stable across WebGL2 implementations and our tightly fit
+    // frustum keeps its 1K/2K result crisp enough for the miniature props.
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
+    sun.shadow.bias = -0.00028;
+    sun.shadow.normalBias = 0.32;
+    sun.shadow.autoUpdate = false;
+    sun.shadow.needsUpdate = true;
+    scene.add(sun.target);
+  }
+  canvas.dataset.atlasShadowMap = String(shadowMapSize);
+
+  const postStack = createAtlasPostStack(THREE, renderer, scene, camera, quality?.postFx || "off");
+  canvas.dataset.atlasPostFx = postStack?.mode || "off";
+  renderer.info.autoReset = false;
 
   const terrainDetailTexture = createProceduralSurfaceTexture(THREE, `${seed}:terrain`);
   terrainDetailTexture.repeat.set(72, 52);
@@ -1233,10 +1542,14 @@ function createController(THREE, canvas, seed) {
     (ATLAS_3D_BOUNDS.zmin + ATLAS_3D_BOUNDS.zmax) / 2,
   );
   water.name = "atlas-sea";
+  water.receiveShadow = renderer.shadowMap.enabled;
   scene.add(water);
 
   let terrain = null;
   let vegetation = null;
+  let rocks = null;
+  let fields = null;
+  let environs = null;
   let landmarks = null;
   let mountainClouds = null;
   let hotSprings = null;
@@ -1248,7 +1561,20 @@ function createController(THREE, canvas, seed) {
   let renderHeight = 0;
   let renderPixelRatio = initialPixelRatio;
   let currentWorldTime = { day: 1, hour: 12, minute: 0 };
-  let terrainLightKey = "";
+  let waterBaseOffsetX = 0;
+  let waterBaseOffsetY = 0;
+  let terrainUniforms = null;
+  let lastModelCamera = null;
+  let lastViewport = null;
+  let lastRenderAt = 0;
+  let ambientFrame = 0;
+  let ambientLastTick = 0;
+  let ambientEnabled = false;
+  let ambientListenersAttached = false;
+  const reducedMotionQuery = typeof window !== "undefined"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : null;
+  const sunShadowDirection = new THREE.Vector3(0.4, 0.8, 0.45);
   scene.add(routes, journey, seenTrail);
 
   const atmosphereColors = {
@@ -1267,31 +1593,71 @@ function createController(THREE, canvas, seed) {
     moonLight: new THREE.Color(0xa9c7e8),
   };
 
-  function applyTerrainTimezones(force = false) {
-    if (!terrain?.geometry?.getAttribute("color")) return;
-    const key = `${currentWorldTime?.day || 1}|${currentWorldTime?.hour ?? 12}|${currentWorldTime?.minute || 0}`;
-    if (!force && key === terrainLightKey) return;
-    const colors = terrain.geometry.getAttribute("color");
-    const positions = terrain.geometry.getAttribute("position");
-    const baseColors = terrain.userData.baseColors;
-    if (!baseColors || baseColors.length !== colors.array.length) return;
-    for (let vertex = 0; vertex < positions.count; vertex += 1) {
-      const coord = atlas3dSceneToAxial({ x: positions.getX(vertex), z: positions.getZ(vertex) });
-      const light = atlasWorldLightState(currentWorldTime, coord);
-      const night = 1 - light.daylight;
-      const warmth = light.phase === "dawn" || light.phase === "dusk"
-        ? (1 - Math.abs(light.daylight - 0.48) / 0.48) * 0.09
-        : 0;
-      // Preserve enough albedo for moonlit miniature detail instead of letting
-      // two lighting passes collapse the landscape into a black silhouette.
-      const brightness = 0.58 + light.daylight * 0.42;
-      const offset = vertex * 3;
-      colors.array[offset] = Math.min(1, baseColors[offset] * brightness + warmth * 0.7 + night * 0.012);
-      colors.array[offset + 1] = Math.min(1, baseColors[offset + 1] * brightness + warmth * 0.28 + night * 0.035);
-      colors.array[offset + 2] = Math.min(1, baseColors[offset + 2] * brightness + night * 0.085);
+  // Keep the shadow frustum hugging the visible ground. Direction comes from
+  // the orbital position updateAtmosphere just set; the light is then
+  // re-anchored around the camera target so panning across the continent
+  // never walks out of the shadow volume.
+  function fitSunShadow() {
+    if (!sun.castShadow || !lastModelCamera || !lastViewport) return;
+    const frame = atlas3dCameraFrame(lastModelCamera, lastViewport, seed);
+    if (sun.position.lengthSq() > 1) sunShadowDirection.copy(sun.position).normalize();
+    sun.target.position.set(frame.target.x, frame.target.y, frame.target.z);
+    sun.position.copy(sun.target.position).addScaledVector(sunShadowDirection, 1100);
+    sun.updateMatrixWorld(true);
+    sun.target.updateMatrixWorld(true);
+    const shadowCamera = sun.shadow.camera;
+    sun.shadow.updateMatrices(sun);
+
+    // Project the actual visible terrain footprint into light space. A square
+    // viewport/zoom estimate wasted most of a 2K map on off-screen ocean at
+    // fit zoom and was still far too broad at 695%, leaving mushy shadows.
+    const screenSamples = [
+      [0, 0], [lastViewport.width / 2, 0], [lastViewport.width, 0],
+      [0, lastViewport.height / 2], [lastViewport.width / 2, lastViewport.height / 2],
+      [lastViewport.width, lastViewport.height / 2],
+      [0, lastViewport.height], [lastViewport.width / 2, lastViewport.height],
+      [lastViewport.width, lastViewport.height],
+    ];
+    const lightPoints = [];
+    for (const [x, y] of screenSamples) {
+      const ground = atlas3dScreenToGround(lastModelCamera, lastViewport, { x, y }, seed);
+      const sceneX = Math.max(ATLAS_3D_BOUNDS.xmin - 28, Math.min(ATLAS_3D_BOUNDS.xmax + 28, ground.scene.x));
+      const sceneZ = Math.max(ATLAS_3D_BOUNDS.zmin - 28, Math.min(ATLAS_3D_BOUNDS.zmax + 28, ground.scene.z));
+      const groundY = Number.isFinite(ground.height) ? ground.height : frame.target.y;
+      lightPoints.push(
+        new THREE.Vector3(sceneX, groundY - 5, sceneZ).applyMatrix4(shadowCamera.matrixWorldInverse),
+        new THREE.Vector3(sceneX, groundY + 58, sceneZ).applyMatrix4(shadowCamera.matrixWorldInverse),
+      );
     }
-    colors.needsUpdate = true;
-    terrainLightKey = key;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (const point of lightPoints) {
+      minX = Math.min(minX, point.x);
+      maxX = Math.max(maxX, point.x);
+      minY = Math.min(minY, point.y);
+      maxY = Math.max(maxY, point.y);
+      minZ = Math.min(minZ, point.z);
+      maxZ = Math.max(maxZ, point.z);
+    }
+    const spanX = Math.max(1, maxX - minX);
+    const spanY = Math.max(1, maxY - minY);
+    const paddingX = 14 + spanX * 0.035;
+    const paddingY = 14 + spanY * 0.035;
+    shadowCamera.left = minX - paddingX;
+    shadowCamera.right = maxX + paddingX;
+    shadowCamera.bottom = minY - paddingY;
+    shadowCamera.top = maxY + paddingY;
+    shadowCamera.near = Math.max(0.1, -maxZ - 45);
+    shadowCamera.far = Math.max(shadowCamera.near + 100, -minZ + 45);
+    shadowCamera.updateProjectionMatrix();
+    const worldUnitsPerTexel = Math.max(spanX, spanY) / Math.max(1, shadowMapSize);
+    sun.shadow.normalBias = Math.max(0.08, Math.min(0.72, worldUnitsPerTexel * 1.15));
+    if (sun.shadow.intensity > 0.001) sun.shadow.needsUpdate = true;
+    canvas.dataset.atlasShadowSpan = `${Math.round(spanX)}x${Math.round(spanY)}`;
   }
 
   function updateAtmosphere(modelCamera) {
@@ -1306,7 +1672,7 @@ function createController(THREE, canvas, seed) {
       scene.fog.color.lerp(atmosphereColors.dawnFog, 0.18);
     }
     scene.fog.density = 0.0001 + light.daylight * 0.00006;
-    hemisphere.intensity = 1.05 + light.daylight * 0.45;
+    hemisphere.intensity = 0.76 + light.daylight * 0.34;
     if (twilight) {
       sun.color.copy(atmosphereColors.dawnSun);
     } else {
@@ -1319,9 +1685,31 @@ function createController(THREE, canvas, seed) {
       95 + light.sunAltitude * 540,
       Math.sin(sunAngle) * 520,
     );
-    fill.intensity = 0.46 - light.daylight * 0.04;
-    valleyBounce.intensity = 0.18 - light.daylight * 0.06;
+    fill.intensity = 0.3 - light.daylight * 0.07;
+    valleyBounce.intensity = 0.11 - light.daylight * 0.03;
     renderer.toneMappingExposure = 0.9 + light.daylight * 0.02;
+    if (sun.castShadow) {
+      // Fade shadows out through dawn/dusk: grazing sun angles turn the whole
+      // map into acne and kilometre-long streaks, and the sun dips below the
+      // horizon at night where a shadow pass would light from beneath.
+      sun.shadow.intensity = clamp01((light.sunAltitude - 0.05) / 0.22);
+      if (sun.shadow.intensity > 0.001) {
+        fitSunShadow();
+      } else {
+        // Keep the moon/directional vector independent of the last daytime
+        // pan even when the expensive shadow-frustum fit is switched off.
+        if (lastModelCamera && lastViewport) {
+          const frame = atlas3dCameraFrame(lastModelCamera, lastViewport, seed);
+          if (sun.position.lengthSq() > 1) sunShadowDirection.copy(sun.position).normalize();
+          sun.target.position.set(frame.target.x, frame.target.y, frame.target.z);
+          sun.position.copy(sun.target.position).addScaledVector(sunShadowDirection, 1100);
+          sun.updateMatrixWorld(true);
+          sun.target.updateMatrixWorld(true);
+        }
+        sun.shadow.needsUpdate = false;
+      }
+      canvas.dataset.atlasShadowActive = sun.shadow.intensity > 0.001 ? "true" : "false";
+    }
 
     const emissiveIntensity = Math.max(0, 1 - light.daylight) * 2.6;
     landmarks?.traverse?.((child) => {
@@ -1337,15 +1725,14 @@ function createController(THREE, canvas, seed) {
 
   function updateWorldTime(nextTime, modelCamera, renderNow = true) {
     currentWorldTime = nextTime || { day: 1, hour: 12, minute: 0 };
-    applyTerrainTimezones();
+    setAtlasTerrainWorldTime(terrainUniforms, currentWorldTime);
     updateAtmosphere(modelCamera);
     const absoluteMinutes = (currentWorldTime.day || 1) * 1440
       + (currentWorldTime.hour || 0) * 60
       + (currentWorldTime.minute || 0);
-    waterDetailTexture.offset.set(
-      (absoluteMinutes * 0.000017) % 1,
-      (absoluteMinutes * 0.000011) % 1,
-    );
+    waterBaseOffsetX = (absoluteMinutes * 0.000017) % 1;
+    waterBaseOffsetY = (absoluteMinutes * 0.000011) % 1;
+    waterDetailTexture.offset.set(waterBaseOffsetX, waterBaseOffsetY);
     canvas.dataset.atlasTimezoneSpan = String(ATLAS_TIMEZONE_SPAN_HOURS);
     if (renderNow) render();
   }
@@ -1354,10 +1741,98 @@ function createController(THREE, canvas, seed) {
     hotSprings?.traverse?.((child) => {
       if (child.userData?.billboard) child.quaternion.copy(camera.quaternion);
     });
-    renderer.render(scene, camera);
+    // autoReset is off so the diagnostics aggregate every pass (shadow map,
+    // beauty, blur, composite) of this presented frame.
+    renderer.info.reset();
+    if (!postStack?.render()) renderer.render(scene, camera);
+    canvas.dataset.atlasPostFx = postStack?.activeMode?.() || "off";
     canvas.dataset.atlasRenderer = "webgl2";
     canvas.dataset.atlasDrawCalls = String(renderer.info.render.calls);
     canvas.dataset.atlasTriangles = String(renderer.info.render.triangles);
+    lastRenderAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+  }
+
+  function ambientAllowed() {
+    return ambientEnabled
+      && quality?.ambientFx !== "off"
+      && !reducedMotionQuery?.matches
+      && (typeof document === "undefined" || document.visibilityState === "visible");
+  }
+
+  function scheduleAmbient() {
+    if (ambientFrame || !ambientAllowed()) return;
+    ambientFrame = requestAnimationFrame(tickAmbient);
+  }
+
+  function tickAmbient(timestamp) {
+    ambientFrame = 0;
+    if (!ambientAllowed()) return;
+    if (timestamp - ambientLastTick < 33) {
+      scheduleAmbient();
+      return;
+    }
+    ambientLastTick = timestamp;
+    const seconds = timestamp / 1000;
+    if (terrainUniforms?.uCloudOffset && quality?.ambientFx === "full") {
+      terrainUniforms.uCloudOffset.value.set(seconds * 0.0022, seconds * 0.00135);
+      terrainUniforms.uCloudStrength.value = 0.14;
+    }
+    waterDetailTexture.offset.set(
+      (waterBaseOffsetX + seconds * 0.0026) % 1,
+      (waterBaseOffsetY + seconds * 0.0017) % 1,
+    );
+    routes.traverse((child) => {
+      const uniforms = child.material?.userData?.atlasFlowUniform;
+      if (uniforms) uniforms.value = seconds * 0.9;
+    });
+    hotSprings?.traverse?.((child) => {
+      if (!child.userData?.billboard) return;
+      child.material.opacity = 0.15 + Math.sin(seconds * 1.2 + child.position.x * 0.03) * 0.035;
+      const drift = 1 + Math.sin(seconds * 0.8 + child.position.z * 0.02) * 0.045;
+      child.scale.set(drift, 1 / drift, 1);
+    });
+    if (timestamp - lastRenderAt > 12) render();
+    scheduleAmbient();
+  }
+
+  function handleAmbientStateChange() {
+    if (ambientAllowed()) scheduleAmbient();
+    else if (ambientFrame) {
+      cancelAnimationFrame(ambientFrame);
+      ambientFrame = 0;
+    }
+    canvas.dataset.atlasAmbient = ambientAllowed() ? "running" : "paused";
+  }
+
+  function startAmbient() {
+    ambientEnabled = true;
+    if (!ambientListenersAttached) {
+      document.addEventListener("visibilitychange", handleAmbientStateChange);
+      if (reducedMotionQuery?.addEventListener) {
+        reducedMotionQuery.addEventListener("change", handleAmbientStateChange);
+      } else {
+        reducedMotionQuery?.addListener?.(handleAmbientStateChange);
+      }
+      ambientListenersAttached = true;
+    }
+    handleAmbientStateChange();
+  }
+
+  function stopAmbient() {
+    ambientEnabled = false;
+    if (ambientFrame) cancelAnimationFrame(ambientFrame);
+    ambientFrame = 0;
+    if (terrainUniforms?.uCloudStrength) terrainUniforms.uCloudStrength.value = 0;
+    if (ambientListenersAttached) {
+      document.removeEventListener("visibilitychange", handleAmbientStateChange);
+      if (reducedMotionQuery?.removeEventListener) {
+        reducedMotionQuery.removeEventListener("change", handleAmbientStateChange);
+      } else {
+        reducedMotionQuery?.removeListener?.(handleAmbientStateChange);
+      }
+      ambientListenersAttached = false;
+    }
+    canvas.dataset.atlasAmbient = "stopped";
   }
 
   function configureCamera(targetCamera, modelCamera, viewport) {
@@ -1376,7 +1851,9 @@ function createController(THREE, canvas, seed) {
   function updateCamera(modelCamera, viewport) {
     const widthPx = Math.max(1, viewport.width);
     const heightPx = Math.max(1, viewport.height);
-    const nextPixelRatio = atlasRenderPixelRatio(widthPx, heightPx);
+    lastModelCamera = modelCamera;
+    lastViewport = viewport;
+    const nextPixelRatio = atlasRenderPixelRatio(widthPx, heightPx, quality);
     const sizeChanged = widthPx !== renderWidth || heightPx !== renderHeight;
     const pixelRatioChanged = nextPixelRatio !== renderPixelRatio;
     if (pixelRatioChanged) {
@@ -1385,15 +1862,31 @@ function createController(THREE, canvas, seed) {
     }
     if (sizeChanged || pixelRatioChanged) {
       renderer.setSize(widthPx, heightPx, false);
+      postStack?.setSize(widthPx, heightPx, nextPixelRatio);
       renderWidth = widthPx;
       renderHeight = heightPx;
     }
     configureCamera(camera, modelCamera, viewport);
+    const zoomRatio = modelCamera.zoom / atlas3dFitZoom(viewport, seed);
+    postStack?.setZoomStrength(zoomRatio);
+    routes.children.forEach((child) => {
+      if (child.userData?.atlasSeaLane) child.visible = zoomRatio >= 1.35;
+    });
+    const detailGroup = vegetation?.userData?.detailGroup;
+    if (detailGroup) {
+      detailGroup.visible = atlasPropDetailVisible(detailGroup.visible, zoomRatio, quality?.id);
+      canvas.dataset.atlasPropDetail = detailGroup.visible ? "true" : "false";
+    }
     updateAtmosphere(modelCamera);
     render();
   }
 
   function setTerrain(data, renderNow = true) {
+    // A new grid (initial build or a refined-stride swap) becomes the active
+    // surface for every overlay/height consumer, invalidating heights that
+    // were memoized against the previous one.
+    atlas3dDeclareActiveStride(data.seed, data.stride);
+    heightCache.clear();
     if (terrain) {
       scene.remove(terrain);
       disposeObject(terrain);
@@ -1401,6 +1894,11 @@ function createController(THREE, canvas, seed) {
     if (vegetation) {
       scene.remove(vegetation);
       disposeObject(vegetation);
+    }
+    for (const group of [rocks, fields, environs]) {
+      if (!group) continue;
+      scene.remove(group);
+      disposeObject(group);
     }
     if (mountainClouds) {
       scene.remove(mountainClouds);
@@ -1411,20 +1909,7 @@ function createController(THREE, canvas, seed) {
       disposeObject(hotSprings);
     }
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
-    geometry.setAttribute("color", new THREE.BufferAttribute(data.colors, 3));
-    const uvs = new Float32Array(data.positions.length / 3 * 2);
-    for (let vertex = 0; vertex < data.positions.length / 3; vertex += 1) {
-      const x = data.positions[vertex * 3];
-      const z = data.positions[vertex * 3 + 2];
-      uvs[vertex * 2] = (x - ATLAS_3D_BOUNDS.xmin) / (ATLAS_3D_BOUNDS.xmax - ATLAS_3D_BOUNDS.xmin);
-      uvs[vertex * 2 + 1] = (z - ATLAS_3D_BOUNDS.zmin) / (ATLAS_3D_BOUNDS.zmax - ATLAS_3D_BOUNDS.zmin);
-    }
-    geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
-    geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
-    geometry.computeVertexNormals();
-    geometry.computeBoundingSphere();
+    const geometry = createAtlasTerrainGeometry(THREE, data);
     const material = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.9,
@@ -1432,12 +1917,13 @@ function createController(THREE, canvas, seed) {
       bumpMap: terrainDetailTexture,
       bumpScale: 0.38,
     });
+    terrainUniforms = enhanceAtlasTerrainMaterial(THREE, material, terrainDetailTexture, quality);
+    setAtlasTerrainWorldTime(terrainUniforms, currentWorldTime);
     terrain = new THREE.Mesh(geometry, material);
     terrain.name = "atlas-terrain";
-    terrain.userData.baseColors = new Float32Array(data.colors);
+    terrain.castShadow = renderer.shadowMap.enabled;
+    terrain.receiveShadow = renderer.shadowMap.enabled;
     scene.add(terrain);
-    terrainLightKey = "";
-    applyTerrainTimezones(true);
 
     mountainClouds = createMountainClouds(THREE, seed);
     scene.add(mountainClouds);
@@ -1448,17 +1934,62 @@ function createController(THREE, canvas, seed) {
     canvas.dataset.atlasHotSprings = String(CONTINENT_HOT_SPRINGS.length);
     canvas.dataset.atlasLakes = String(CONTINENT_LAKES.length);
 
-    vegetation = createVegetationGroup(THREE, data.trees, seed);
+    vegetation = createVegetationGroup(THREE, data.trees, seed, quality);
+    if (lastModelCamera && lastViewport) {
+      const zoomRatio = lastModelCamera.zoom / atlas3dFitZoom(lastViewport, seed);
+      vegetation.userData.detailGroup.visible = atlasPropDetailVisible(
+        false,
+        zoomRatio,
+        quality?.id,
+      );
+    }
+    if (renderer.shadowMap.enabled) {
+      vegetation.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = false;
+        }
+      });
+    }
     scene.add(vegetation);
+
+    rocks = createRockGroup(THREE, data.rocks, seed, quality);
+    rocks.traverse((child) => {
+      if (!child.isMesh) return;
+      child.castShadow = renderer.shadowMap.enabled;
+      child.receiveShadow = renderer.shadowMap.enabled;
+    });
+    fields = createFieldGroup(THREE, data.fields, seed, quality);
+    fields.traverse((child) => {
+      if (child.isMesh) child.receiveShadow = renderer.shadowMap.enabled;
+    });
+    environs = createEnvironsGroup(THREE, data.environs, seed, quality);
+    environs.traverse((child) => {
+      if (!child.isMesh) return;
+      child.castShadow = renderer.shadowMap.enabled;
+      child.receiveShadow = renderer.shadowMap.enabled;
+    });
+    scene.add(fields, rocks, environs);
     const treeCounts = vegetation.userData.treeCounts || {};
     canvas.dataset.atlasTerrainVertices = String(data.positions.length / 3);
     canvas.dataset.atlasTrees = String(treeCounts.total || 0);
     canvas.dataset.atlasCherryTrees = String(treeCounts.cherry || 0);
     canvas.dataset.atlasGinkgoTrees = String(treeCounts.ginkgo || 0);
+    canvas.dataset.atlasRocks = String(rocks.userData.count || 0);
+    canvas.dataset.atlasFields = String(fields.userData.count || 0);
+    canvas.dataset.atlasEnvirons = String(environs.userData.count || 0);
 
     // Landmark 3D meshes are created after terrain heights are cached.
     if (landmarks) { scene.remove(landmarks); disposeObject(landmarks); }
     landmarks = batchLandmarkMeshGroup(THREE, createLandmarkMeshGroup(THREE, seed));
+    if (renderer.shadowMap.enabled) {
+      landmarks.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+    }
     scene.add(landmarks);
     updateAtmosphere({ x: 0, y: 0 });
     canvas.dataset.atlasLandmarkSourceMeshes = String(landmarks.userData.sourceMeshCount || 0);
@@ -1513,8 +2044,16 @@ function createController(THREE, canvas, seed) {
     };
   }
 
+  function restore() {
+    postStack?.reset?.();
+    if (lastModelCamera && lastViewport) updateCamera(lastModelCamera, lastViewport);
+    else render();
+  }
+
   function dispose() {
+    stopAmbient();
     disposeObject(scene);
+    postStack?.dispose();
     terrainDetailTexture.dispose();
     waterDetailTexture.dispose();
     renderer.dispose();
@@ -1530,6 +2069,9 @@ function createController(THREE, canvas, seed) {
     setTerrain,
     pick,
     render,
+    startAmbient,
+    stopAmbient,
+    restore,
     dispose,
   };
 }
@@ -1538,6 +2080,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   camera,
   viewport,
   seed = CONTINENT.seed,
+  quality = null,
   focusedRealmId = null,
   journey = null,
   journeyBreaks = [],
@@ -1545,6 +2088,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   worldTime = null,
   onReady,
   onError,
+  onRefined,
 }, ref) {
   const canvasRef = useRef(null);
   const controllerRef = useRef(null);
@@ -1552,6 +2096,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   const viewportRef = useRef(viewport);
   const readyRef = useRef(onReady);
   const errorRef = useRef(onError);
+  const refinedRef = useRef(onRefined);
   const focusRef = useRef(focusedRealmId);
   const journeyRef = useRef(journey);
   const breaksRef = useRef(journeyBreaks);
@@ -1562,6 +2107,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
   viewportRef.current = viewport;
   readyRef.current = onReady;
   errorRef.current = onError;
+  refinedRef.current = onRefined;
   focusRef.current = focusedRealmId;
   journeyRef.current = journey;
   breaksRef.current = journeyBreaks;
@@ -1590,6 +2136,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
     const handleLost = (event) => {
       event.preventDefault();
       contextLost = true;
+      controller?.stopAmbient();
       errorRef.current?.("The graphics context was interrupted. The atlas will resume when it is restored.");
     };
     const handleRestored = () => {
@@ -1598,7 +2145,8 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
         restoreFrame = 0;
         if (disposed) return;
         contextLost = false;
-        controller?.render();
+        controller?.restore();
+        controller?.startAmbient();
         if (terrainReady) readyRef.current?.();
       });
     };
@@ -1607,7 +2155,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
       try {
         const { THREE, terrain } = await getWorldAtlas3dRuntime(seed);
         if (disposed) return;
-        controller = createController(THREE, canvas, seed);
+        controller = createController(THREE, canvas, seed, quality);
         // Three registers its own context restoration handlers during renderer
         // construction. Register ours afterward so readiness returns only after
         // Three has recreated GPU resources and drawn a fresh frame.
@@ -1624,7 +2172,27 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
         controller.updateWorldTime(timeRef.current, cameraRef.current, false);
         terrainReady = true;
         controller.updateCamera(cameraRef.current, viewportRef.current);
+        controller.startAmbient();
         if (!contextLost) readyRef.current?.();
+
+        // Progressive refinement: capable tiers rebuild the terrain at the
+        // fine stride in the worker after first paint and hot-swap it in.
+        // Failure (worker timeout, weak device) leaves the coarse grid up.
+        const fineStride = quality?.terrainStride;
+        if (Number.isFinite(fineStride) && fineStride < terrain.stride) {
+          getWorldAtlas3dRuntime(seed, fineStride)
+            .then(({ terrain: refined }) => {
+              if (disposed || contextLost) return;
+              controller.setTerrain(refined, false);
+              controller.updateRoutes(focusRef.current, false);
+              controller.updateJourney(journeyRef.current, breaksRef.current, false);
+              controller.updateSeen(seenRef.current, false);
+              controller.updateWorldTime(timeRef.current, cameraRef.current, false);
+              controller.updateCamera(cameraRef.current, viewportRef.current);
+              refinedRef.current?.();
+            })
+            .catch(() => {});
+        }
       } catch (error) {
         if (!disposed) errorRef.current?.(error?.message || "The 3D atlas could not start.");
       }
@@ -1640,7 +2208,7 @@ export const WorldAtlas3DScene = forwardRef(function WorldAtlas3DScene({
         canvas.removeEventListener("webglcontextrestored", handleRestored);
       }
     };
-  }, [seed]);
+  }, [seed, quality?.id]);
 
   useAtlas3dLayoutEffect(() => {
     controllerRef.current?.updateCamera(camera, viewport);

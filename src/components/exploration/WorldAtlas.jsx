@@ -18,6 +18,8 @@ import { TERRAINS } from "../../data/terrains.js";
 import { poiIconKeyForLandmark } from "../../data/poi-icons.js";
 import { PoiIcon, PoiTierMarker } from "../PoiIcon.jsx";
 import { LoadingDots } from "../primitives.jsx";
+import { ATLAS_QUALITY_EVENT, getAtlasQuality } from "../../engine/preferences.js";
+import { resolveAtlasQuality } from "./atlasQuality.js";
 import { WorldAtlas3DScene } from "./WorldAtlas3DScene.jsx";
 import {
   ATLAS_3D_MAX_ZOOM,
@@ -283,6 +285,27 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   const [query, setQuery] = useState("");
   const [sceneState, setSceneState] = useState("loading");
   const [sceneError, setSceneError] = useState("");
+  const [qualityMode, setQualityMode] = useState(getAtlasQuality);
+  // Bumped when the refined terrain grid swaps in so the HTML overlay
+  // re-projects markers against the new surface heights.
+  const [, setTerrainEpoch] = useState(0);
+  const quality = useMemo(() => resolveAtlasQuality(qualityMode), [qualityMode]);
+
+  useEffect(() => {
+    const applyQuality = (event) => setQualityMode(event?.detail || getAtlasQuality());
+    window.addEventListener(ATLAS_QUALITY_EVENT, applyQuality);
+    return () => window.removeEventListener(ATLAS_QUALITY_EVENT, applyQuality);
+  }, []);
+
+  // A resolved-tier change remounts the scene (key={quality.id}); surface the
+  // loading veil for that rebuild instead of freezing the last frame.
+  const qualityIdRef = useRef(quality.id);
+  useEffect(() => {
+    if (qualityIdRef.current === quality.id) return;
+    qualityIdRef.current = quality.id;
+    setSceneError("");
+    setSceneState("loading");
+  }, [quality.id]);
 
   const fit = atlas3dFitZoom(planeViewport, seed);
   const zoomRatio = camera.zoom / fit;
@@ -795,10 +818,12 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
             }}
           >
             <WorldAtlas3DScene
+              key={quality.id}
               ref={scene3dRef}
               camera={camera}
               viewport={planeViewport}
               seed={seed}
+              quality={quality}
               focusedRealmId={focusedRealmId}
               journey={journey}
               journeyBreaks={journeyBreaks}
@@ -812,6 +837,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
                 setSceneError(message || "The 3D atlas could not start.");
                 setSceneState("error");
               }}
+              onRefined={() => setTerrainEpoch((epoch) => epoch + 1)}
             />
             {sceneState !== "ready" && (
               <div className={`world-atlas__scene-status${sceneState === "error" ? " is-error" : ""}`} role="status" aria-live="polite">
