@@ -154,10 +154,40 @@ export const MOUNTAIN_SPINE = Object.freeze({
   ]),
   passes: Object.freeze([
     Object.freeze({ id: "drakespire-pass", name: "Drakespire Pass", coord: Object.freeze({ x: 48, y: -245 }), radius: 8, routeIds: Object.freeze(["north-road"]) }),
-    Object.freeze({ id: "heron-pass", name: "Heron Pass", coord: Object.freeze({ x: 135, y: 40 }), radius: 9, routeIds: Object.freeze(["star-road"]) }),
+    Object.freeze({ id: "heron-pass", name: "Heron Pass", coord: Object.freeze({ x: 135, y: 40 }), radius: 9, routeIds: Object.freeze(["crown-road-east", "star-road"]) }),
     Object.freeze({ id: "sunward-pass", name: "Sunward Pass", coord: Object.freeze({ x: -15, y: 170 }), radius: 10, routeIds: Object.freeze(["south-road"]) }),
   ]),
 });
+
+// Lower, broken ridges run parallel to the northern reach of the Avarran
+// Spine. Their snowmelt feeds the Glasswater and Iceflow headwaters without
+// turning the whole Frostcrown into one continuous impassable wall.
+export const NORTHERN_RIDGES = Object.freeze([
+  Object.freeze({
+    id: "glasswater-ridge",
+    name: "The Glasswater Ridge",
+    width: 26,
+    elevationBoost: 0.18,
+    waypoints: Object.freeze([
+      Object.freeze({ x: -270, y: -345 }),
+      Object.freeze({ x: -235, y: -305 }),
+      Object.freeze({ x: -205, y: -260 }),
+      Object.freeze({ x: -170, y: -220 }),
+    ]),
+  }),
+  Object.freeze({
+    id: "iceflow-ridge",
+    name: "The Iceflow Ridge",
+    width: 24,
+    elevationBoost: 0.18,
+    waypoints: Object.freeze([
+      Object.freeze({ x: -20, y: -390 }),
+      Object.freeze({ x: 8, y: -332 }),
+      Object.freeze({ x: 40, y: -290 }),
+      Object.freeze({ x: 72, y: -250 }),
+    ]),
+  }),
+]);
 
 export const REALM_CULTURES = Object.freeze([
   { id: "heartland-culture", realmId: "central", demonym: "Heartlander", languages: ["March Speech", "High Avarran"], values: ["public duty", "fair measure", "guest-right"], architecture: ["black-and-white masonry", "river brick", "slate market halls"], customs: ["weighing-day fairs", "iron oath coins", "lantern processions"], faiths: ["the Pale God", "river saints", "household ancestors"], settlementTypes: ["walled-city", "market-town", "river-village", "roadside-hospice"], encounterThemes: ["watch patrols", "merchant trains", "pilgrims", "tenant assemblies"], description: "A literate road culture shaped by Whitemarch law, river commerce, guild charters, and stubborn village custom." },
@@ -716,26 +746,215 @@ export const RARE_TRADE_HOUSES = Object.freeze({
 // generator. Wilderness between them remains generated and walkable; a road is
 // an advantage and a story corridor, not the only legal ground.
 export const CONTINENT_ROUTES = [
-  { id: "crown-road-east", name: "The Crown Road", realmIds: ["central", "east"], checkpointIds: ["reedwatch"], waypoints: [{ x: 0, y: 0 }, { x: 11, y: 2 }, { x: 55, y: 10 }, { x: 90, y: -5 }, { x: 175, y: -5 }, { x: 330, y: 145 }, { x: 418, y: 72 }, { x: 486, y: 94 }] },
-  { id: "tannic-road", name: "The Alder Road", realmIds: ["central", "north"], checkpointIds: ["wolfsnow-redoubt"], waypoints: [{ x: 0, y: 0 }, { x: -6, y: -7 }, { x: -55, y: -55 }, { x: -115, y: -96 }, { x: -132, y: -154 }, { x: -205, y: -260 }] },
-  { id: "spine-road", name: "The High Sheepway", realmIds: ["central", "east"], checkpointIds: ["reedwatch"], waypoints: [{ x: 0, y: 0 }, { x: 10, y: 3 }, { x: 42, y: 22 }, { x: 80, y: 60 }, { x: 105, y: 75 }, { x: 150, y: 115 }, { x: 175, y: -5 }, { x: 325, y: -110 }] },
-  { id: "bramble-road", name: "The Hedge Road", realmIds: ["central", "west"], checkpointIds: ["greenward-gate"], waypoints: [{ x: 0, y: 0 }, { x: -8, y: 13 }, { x: -70, y: 75 }, { x: -105, y: 75 }, { x: -170, y: 30 }, { x: -325, y: 55 }, { x: -350, y: 175 }, { x: -420, y: 150 }, { x: -474, y: 124 }] },
-  { id: "south-road", name: "The Salt Road", realmIds: ["central", "south"], checkpointIds: ["sunward-bastion"], waypoints: [{ x: 0, y: 0 }, { x: -3, y: 13 }, { x: -15, y: 170 }, { x: -30, y: 280 }, { x: 104, y: 294 }, { x: 134, y: 387 }] },
-  { id: "low-tide-way", name: "The Low-Tide Way", realmIds: ["south"], checkpointIds: [], waypoints: [{ x: 104, y: 294 }, { x: 24, y: 338 }, { x: 134, y: 387 }] },
-  { id: "north-road", name: "The Smoke Road", realmIds: ["central", "north"], checkpointIds: ["frostgate"], waypoints: [{ x: 0, y: 0 }, { x: 4, y: -13 }, { x: 5, y: -165 }, { x: 48, y: -245 }, { x: -55, y: -300 }, { x: 8, y: -332 }] },
-  { id: "star-road", name: "The Pilgrim's Iron Road", realmIds: ["central", "east"], checkpointIds: ["reedwatch"], waypoints: [{ x: 80, y: 60 }, { x: 135, y: 40 }, { x: 175, y: -5 }, { x: 325, y: -110 }, { x: 330, y: 145 }] },
-  { id: "aurora-way", name: "The Aurora Way", kind: "regional-road", realmIds: ["north"], checkpointIds: [], waypoints: [{ x: 8, y: -332 }, { x: 70, y: -365 }, { x: 120, y: -315 }, { x: 100, y: -250 }, { x: 48, y: -245 }], description: "A crown-maintained winter circuit linking Northstar's glacier holds to Drakespire." },
-  { id: "ember-road", name: "The Ember Road", kind: "regional-road", realmIds: ["north"], checkpointIds: [], waypoints: [{ x: -55, y: -300 }, { x: -100, y: -280 }, { x: -20, y: -275 }, { x: -30, y: -355 }, { x: 8, y: -332 }], description: "A hot-spring road marked by public braziers and emergency refuge halls." },
-  { id: "sundered-march", name: "The Sundered March", kind: "regional-road", realmIds: ["north"], checkpointIds: [], waypoints: [{ x: -205, y: -260 }, { x: -260, y: -220 }, { x: -150, y: -285 }, { x: -55, y: -300 }], description: "A hard military road binding captured north-western forts to the free hearths." },
-  { id: "jade-causeway", name: "The Jade Causeway", kind: "regional-road", realmIds: ["east"], checkpointIds: [], waypoints: [{ x: 175, y: -5 }, { x: 220, y: 20 }, { x: 270, y: 65 }, { x: 350, y: 115 }, { x: 330, y: 145 }, { x: 418, y: 72 }], description: "A raised flood road of stone locks, courier towers, and academy hostels." },
-  { id: "starfall-road", name: "The Starfall Road", kind: "regional-road", realmIds: ["east"], checkpointIds: [], waypoints: [{ x: 325, y: -110 }, { x: 250, y: -130 }, { x: 260, y: -70 }, { x: 220, y: 20 }], description: "The fortified upland road used by cavalry studs and meteor-iron caravans." },
-  { id: "lotus-circuit", name: "The Lotus Circuit", kind: "regional-road", realmIds: ["east"], checkpointIds: [], waypoints: [{ x: 418, y: 72 }, { x: 450, y: 30 }, { x: 390, y: 150 }, { x: 440, y: 125 }, { x: 486, y: 94 }], description: "A chain of levees, ferries, and tide roads around Tellmar's inhabited delta." },
-  { id: "nine-wells-road", name: "The Nine Wells Road", kind: "regional-road", realmIds: ["south"], checkpointIds: [], waypoints: [{ x: -15, y: 225 }, { x: 55, y: 250 }, { x: 104, y: 294 }, { x: 160, y: 270 }, { x: 180, y: 340 }, { x: 134, y: 387 }], description: "A royal caravan road supplied by nine protected wells and mirrored signal towers." },
-  { id: "dune-circuit", name: "The Dune Circuit", kind: "regional-road", realmIds: ["south"], checkpointIds: [], waypoints: [{ x: -15, y: 170 }, { x: -15, y: 225 }, { x: -80, y: 240 }, { x: -30, y: 280 }, { x: -100, y: 310 }], description: "A surveyed desert loop whose cairns are reset after every season of moving dunes." },
-  { id: "saffron-coast-road", name: "The Saffron Coast Road", kind: "regional-road", realmIds: ["south"], checkpointIds: [], waypoints: [{ x: 104, y: 294 }, { x: 70, y: 340 }, { x: 120, y: 330 }, { x: 134, y: 387 }], description: "A customs road connecting Asalan's gardens to the glass towns and southern harbor." },
-  { id: "greenway", name: "The Greenway", kind: "regional-road", realmIds: ["west"], checkpointIds: [], waypoints: [{ x: -170, y: 30 }, { x: -250, y: 30 }, { x: -300, y: 80 }, { x: -390, y: 80 }, { x: -420, y: 150 }], description: "A living road trained through the pale boughs from Greenward to the covenant capital." },
-  { id: "root-road", name: "The Root Road", kind: "regional-road", realmIds: ["west"], checkpointIds: [], waypoints: [{ x: -420, y: 150 }, { x: -300, y: 180 }, { x: -360, y: 220 }, { x: -400, y: 260 }, { x: -450, y: 200 }], description: "A deep-forest pilgrimage road linking covenant groves, buried ruins, and the western storm hospice." },
-  { id: "coppice-road", name: "The Coppice Road", kind: "regional-road", realmIds: ["west"], checkpointIds: [], waypoints: [{ x: -170, y: 30 }, { x: -220, y: 120 }, { x: -300, y: 180 }, { x: -420, y: 150 }], description: "A guild road through managed woodland, craft villages, and seasonal hunting moots." },
+  {
+    id: "crown-road-east", name: "The Crown Road", width: 1.9,
+    realmIds: ["central", "east"], checkpointIds: ["reedwatch"],
+    waypoints: [
+      { x: 0, y: 0 }, { x: 55, y: 10 }, { x: 72, y: 6 }, { x: 90, y: -5 },
+      { x: 100, y: 12 }, { x: 115, y: 30 }, { x: 135, y: 40 }, { x: 152, y: 22 },
+      { x: 170, y: 0 }, { x: 175, y: -5 }, { x: 190, y: -42 }, { x: 215, y: -10 },
+      { x: 252, y: 30 }, { x: 285, y: 74 }, { x: 310, y: 115 }, { x: 330, y: 145 },
+      { x: 358, y: 126 }, { x: 388, y: 96 }, { x: 418, y: 72 }, { x: 486, y: 94 },
+    ],
+  },
+  {
+    id: "tannic-road", name: "The Alder Road", width: 1.9,
+    realmIds: ["central", "north"], checkpointIds: ["wolfsnow-redoubt"],
+    waypoints: [
+      { x: 0, y: 0 }, { x: -6, y: -7 }, { x: -18, y: -20 }, { x: -34, y: -36 },
+      { x: -55, y: -55 }, { x: -75, y: -72 }, { x: -95, y: -84 }, { x: -115, y: -96 },
+      { x: -125, y: -122 }, { x: -132, y: -154 }, { x: -150, y: -185 },
+      { x: -170, y: -220 }, { x: -190, y: -245 }, { x: -205, y: -260 },
+    ],
+  },
+  {
+    id: "spine-road", name: "The High Sheepway", width: 1.9,
+    realmIds: ["central", "east"], checkpointIds: ["reedwatch"],
+    waypoints: [
+      { x: 0, y: 0 }, { x: 10, y: 3 }, { x: 42, y: 22 }, { x: 80, y: 60 },
+      { x: 105, y: 75 }, { x: 125, y: 90 }, { x: 150, y: 115 }, { x: 160, y: 90 },
+      { x: 168, y: 60 }, { x: 172, y: 25 }, { x: 175, y: -5 }, { x: 190, y: -20 },
+      { x: 210, y: -38 },
+      { x: 235, y: -56 }, { x: 260, y: -72 }, { x: 285, y: -88 },
+      { x: 305, y: -100 }, { x: 325, y: -110 },
+    ],
+  },
+  {
+    id: "bramble-road", name: "The Hedge Road", width: 1.9,
+    realmIds: ["central", "west"], checkpointIds: ["greenward-gate"],
+    waypoints: [
+      { x: 0, y: 0 }, { x: -8, y: 13 }, { x: -30, y: 38 }, { x: -50, y: 60 },
+      { x: -70, y: 75 }, { x: -88, y: 78 }, { x: -105, y: 75 }, { x: -130, y: 56 },
+      { x: -150, y: 38 }, { x: -170, y: 30 }, { x: -210, y: 34 }, { x: -260, y: 42 },
+      { x: -300, y: 50 }, { x: -325, y: 55 }, { x: -340, y: 90 }, { x: -350, y: 130 },
+      { x: -350, y: 175 }, { x: -385, y: 165 }, { x: -420, y: 150 }, { x: -474, y: 124 },
+    ],
+  },
+  {
+    id: "south-road", name: "The Salt Road", width: 1.9,
+    realmIds: ["central", "south"], checkpointIds: ["sunward-bastion"],
+    waypoints: [
+      { x: 0, y: 0 }, { x: -3, y: 13 }, { x: 48, y: 16 }, { x: 76, y: 28 },
+      { x: 104, y: 42 }, { x: 122, y: 55 }, { x: 116, y: 75 }, { x: 98, y: 95 },
+      { x: 72, y: 116 }, { x: 42, y: 135 }, { x: 10, y: 153 }, { x: -15, y: 170 },
+      { x: -40, y: 190 }, { x: -65, y: 210 }, { x: -76, y: 228 }, { x: -63, y: 250 },
+      { x: -30, y: 280 }, { x: 35, y: 290 }, { x: 104, y: 294 }, { x: 134, y: 387 },
+    ],
+  },
+  {
+    id: "low-tide-way", name: "The Low-Tide Way", kind: "regional-road", width: 1.2,
+    realmIds: ["south"], checkpointIds: [],
+    waypoints: [
+      { x: 104, y: 294 }, { x: 88, y: 301 }, { x: 70, y: 311 }, { x: 52, y: 322 },
+      { x: 36, y: 333 }, { x: 24, y: 338 }, { x: 33, y: 349 }, { x: 48, y: 360 },
+      { x: 66, y: 370 }, { x: 86, y: 378 }, { x: 110, y: 384 }, { x: 134, y: 387 },
+    ],
+  },
+  {
+    id: "north-road", name: "The Smoke Road", width: 1.9,
+    realmIds: ["central", "north"], checkpointIds: ["frostgate"],
+    waypoints: [
+      { x: 0, y: 0 }, { x: 4, y: -13 }, { x: 20, y: -24 }, { x: 24, y: -52 },
+      { x: 28, y: -82 }, { x: 35, y: -112 }, { x: 42, y: -145 }, { x: 5, y: -165 },
+      { x: 14, y: -183 }, { x: 30, y: -202 }, { x: 48, y: -224 }, { x: 48, y: -245 },
+      { x: 28, y: -263 }, { x: 5, y: -280 }, { x: -25, y: -294 }, { x: -55, y: -300 },
+      { x: -35, y: -314 }, { x: -12, y: -326 }, { x: 8, y: -332 },
+    ],
+  },
+  {
+    id: "star-road", name: "The Pilgrim's Iron Road", width: 1.9,
+    realmIds: ["central", "east"], checkpointIds: ["reedwatch"],
+    waypoints: [
+      { x: 80, y: 60 }, { x: 98, y: 56 }, { x: 118, y: 48 }, { x: 135, y: 40 },
+      { x: 150, y: 25 }, { x: 162, y: 8 }, { x: 175, y: -5 }, { x: 195, y: -22 },
+      { x: 220, y: -40 }, { x: 250, y: -60 }, { x: 280, y: -82 }, { x: 305, y: -100 },
+      { x: 325, y: -110 }, { x: 330, y: -60 }, { x: 332, y: 0 }, { x: 332, y: 70 },
+      { x: 330, y: 145 },
+    ],
+  },
+  {
+    id: "aurora-way", name: "The Aurora Way", kind: "regional-road", width: 1.2,
+    realmIds: ["north"], checkpointIds: [],
+    waypoints: [
+      { x: 8, y: -332 }, { x: 25, y: -345 }, { x: 48, y: -358 }, { x: 70, y: -365 },
+      { x: 92, y: -355 }, { x: 110, y: -338 }, { x: 120, y: -315 }, { x: 118, y: -290 },
+      { x: 108, y: -265 }, { x: 100, y: -250 }, { x: 75, y: -245 }, { x: 48, y: -245 },
+    ],
+    description: "A crown-maintained winter circuit linking Northstar's glacier holds to Drakespire.",
+  },
+  {
+    id: "ember-road", name: "The Ember Road", kind: "regional-road", width: 1.2,
+    realmIds: ["north"], checkpointIds: [],
+    waypoints: [
+      { x: -55, y: -300 }, { x: -78, y: -291 }, { x: -100, y: -280 }, { x: -73, y: -276 },
+      { x: -45, y: -274 }, { x: -20, y: -275 }, { x: -24, y: -300 }, { x: -27, y: -330 },
+      { x: -30, y: -355 }, { x: -12, y: -350 }, { x: -2, y: -340 }, { x: 8, y: -332 },
+    ],
+    description: "A hot-spring road marked by public braziers and emergency refuge halls.",
+  },
+  {
+    id: "sundered-march", name: "The Sundered March", kind: "regional-road", width: 1.2,
+    realmIds: ["north"], checkpointIds: [],
+    waypoints: [
+      { x: -205, y: -260 }, { x: -225, y: -245 }, { x: -245, y: -228 }, { x: -260, y: -220 },
+      { x: -245, y: -240 }, { x: -225, y: -260 }, { x: -200, y: -275 }, { x: -175, y: -284 },
+      { x: -150, y: -285 }, { x: -118, y: -288 }, { x: -86, y: -294 }, { x: -55, y: -300 },
+    ],
+    description: "A hard military road binding captured north-western forts to the free hearths.",
+  },
+  {
+    id: "jade-causeway", name: "The Jade Causeway", kind: "regional-road", width: 1.2,
+    realmIds: ["east"], checkpointIds: [],
+    waypoints: [
+      { x: 175, y: -5 }, { x: 190, y: 2 }, { x: 205, y: 10 }, { x: 220, y: 20 },
+      { x: 235, y: 35 }, { x: 252, y: 52 }, { x: 270, y: 65 }, { x: 292, y: 80 },
+      { x: 320, y: 98 }, { x: 350, y: 115 }, { x: 340, y: 132 }, { x: 330, y: 145 },
+      { x: 360, y: 120 }, { x: 390, y: 92 }, { x: 418, y: 72 },
+    ],
+    description: "A raised flood road of stone locks, courier towers, and academy hostels.",
+  },
+  {
+    id: "starfall-road", name: "The Starfall Road", kind: "regional-road", width: 1.2,
+    realmIds: ["east"], checkpointIds: [],
+    waypoints: [
+      { x: 325, y: -110 }, { x: 306, y: -116 }, { x: 286, y: -123 }, { x: 268, y: -128 },
+      { x: 250, y: -130 }, { x: 248, y: -112 }, { x: 252, y: -92 }, { x: 260, y: -70 },
+      { x: 252, y: -48 }, { x: 242, y: -25 }, { x: 230, y: -2 }, { x: 220, y: 20 },
+    ],
+    description: "The fortified upland road used by cavalry studs and meteor-iron caravans.",
+  },
+  {
+    id: "lotus-circuit", name: "The Lotus Circuit", kind: "regional-road", width: 1.2,
+    realmIds: ["east"], checkpointIds: [],
+    waypoints: [
+      { x: 418, y: 72 }, { x: 432, y: 55 }, { x: 450, y: 30 }, { x: 438, y: 58 },
+      { x: 420, y: 90 }, { x: 402, y: 122 }, { x: 390, y: 150 }, { x: 410, y: 145 },
+      { x: 430, y: 136 }, { x: 440, y: 125 }, { x: 458, y: 112 }, { x: 475, y: 102 },
+      { x: 486, y: 94 },
+    ],
+    description: "A chain of levees, ferries, and tide roads around Tellmar's inhabited delta.",
+  },
+  {
+    id: "nine-wells-road", name: "The Nine Wells Road", kind: "regional-road", width: 1.2,
+    realmIds: ["south"], checkpointIds: [],
+    waypoints: [
+      { x: -15, y: 225 }, { x: 5, y: 230 }, { x: 28, y: 238 }, { x: 55, y: 250 },
+      { x: 78, y: 267 }, { x: 104, y: 294 }, { x: 130, y: 285 }, { x: 160, y: 270 },
+      { x: 170, y: 295 }, { x: 178, y: 320 }, { x: 180, y: 340 }, { x: 165, y: 357 },
+      { x: 150, y: 374 }, { x: 134, y: 387 },
+    ],
+    description: "A royal caravan road supplied by nine protected wells and mirrored signal towers.",
+  },
+  {
+    id: "dune-circuit", name: "The Dune Circuit", kind: "regional-road", width: 1.2,
+    realmIds: ["south"], checkpointIds: [],
+    waypoints: [
+      { x: -15, y: 170 }, { x: -10, y: 188 }, { x: -12, y: 207 }, { x: -15, y: 225 },
+      { x: -35, y: 229 }, { x: -58, y: 234 }, { x: -80, y: 240 }, { x: -70, y: 252 },
+      { x: -52, y: 267 }, { x: -30, y: 280 }, { x: -60, y: 296 }, { x: -100, y: 310 },
+    ],
+    description: "A surveyed desert loop whose cairns are reset after every season of moving dunes.",
+  },
+  {
+    id: "saffron-coast-road", name: "The Saffron Coast Road", kind: "regional-road", width: 1.2,
+    realmIds: ["south"], checkpointIds: [],
+    waypoints: [
+      { x: 104, y: 294 }, { x: 92, y: 305 }, { x: 82, y: 318 }, { x: 70, y: 340 },
+      { x: 83, y: 338 }, { x: 98, y: 334 }, { x: 120, y: 330 }, { x: 125, y: 343 },
+      { x: 128, y: 356 }, { x: 130, y: 368 }, { x: 132, y: 379 }, { x: 134, y: 387 },
+    ],
+    description: "A customs road connecting Asalan's gardens to the glass towns and southern harbor.",
+  },
+  {
+    id: "greenway", name: "The Greenway", kind: "regional-road", width: 1.2,
+    realmIds: ["west"], checkpointIds: [],
+    waypoints: [
+      { x: -170, y: 30 }, { x: -195, y: 26 }, { x: -222, y: 27 }, { x: -250, y: 30 },
+      { x: -268, y: 47 }, { x: -285, y: 65 }, { x: -300, y: 80 }, { x: -330, y: 75 },
+      { x: -360, y: 74 }, { x: -390, y: 80 }, { x: -405, y: 110 }, { x: -420, y: 150 },
+    ],
+    description: "A living road trained through the pale boughs from Greenward to the covenant capital.",
+  },
+  {
+    id: "root-road", name: "The Root Road", kind: "regional-road", width: 1.2,
+    realmIds: ["west"], checkpointIds: [],
+    waypoints: [
+      { x: -420, y: 150 }, { x: -390, y: 158 }, { x: -355, y: 166 }, { x: -325, y: 174 },
+      { x: -300, y: 180 }, { x: -325, y: 198 }, { x: -360, y: 220 }, { x: -380, y: 242 },
+      { x: -400, y: 260 }, { x: -415, y: 242 }, { x: -430, y: 224 }, { x: -450, y: 200 },
+    ],
+    description: "A deep-forest pilgrimage road linking covenant groves, buried ruins, and the western storm hospice.",
+  },
+  {
+    id: "coppice-road", name: "The Coppice Road", kind: "regional-road", width: 1.2,
+    realmIds: ["west"], checkpointIds: [],
+    waypoints: [
+      { x: -170, y: 30 }, { x: -178, y: 52 }, { x: -188, y: 75 }, { x: -202, y: 98 },
+      { x: -220, y: 120 }, { x: -240, y: 138 }, { x: -265, y: 155 }, { x: -300, y: 180 },
+      { x: -335, y: 178 }, { x: -370, y: 170 }, { x: -400, y: 158 }, { x: -420, y: 150 },
+    ],
+    description: "A guild road through managed woodland, craft villages, and seasonal hunting moots.",
+  },
 ];
 
 // Coastal travel joins the three navigable faces of Avarra without turning the
@@ -750,15 +969,76 @@ export const CONTINENT_SEA_LANES = [
 // Named continental water is macro-authored so rivers remain continuous and
 // culturally meaningful. Smaller wet ground and coast shape are procedural.
 export const CONTINENT_WATERWAYS = [
-  { id: "whitewend", name: "The Whitewend", description: "The brown working river of the central basins.", waypoints: [{ x: 46, y: -218 }, { x: 31, y: -150 }, { x: 18, y: -82 }, { x: 12, y: -24 }, { x: 13, y: 34 }, { x: 28, y: 102 }, { x: 36, y: 184 }, { x: 42, y: 272 }] },
-  { id: "tannic", name: "The Tannic", description: "A dark alder-fed tributary carrying leaf stain out of the western woods.", waypoints: [{ x: -116, y: -132 }, { x: -82, y: -88 }, { x: -27, y: -34 }, { x: 12, y: -24 }] },
-  { id: "bannerflow", name: "The Bannerflow", description: "A broad eastern river dividing into lotus channels through the Sea of Reeds.", waypoints: [{ x: 238, y: -128 }, { x: 254, y: -54 }, { x: 286, y: 24 }, { x: 344, y: 74 }, { x: 412, y: 102 }, { x: 486, y: 94 }] },
-  { id: "saffron-wadi", name: "The Saffron Wadi", description: "A seasonal southern river linking the Nine Wells to the warm sea.", waypoints: [{ x: 22, y: 176 }, { x: 38, y: 225 }, { x: 72, y: 272 }, { x: 104, y: 294 }, { x: 134, y: 387 }] },
+  {
+    id: "whitewend", name: "The Whitewend", widthStart: 1.4, widthEnd: 2.6,
+    description: "The brown working river of the central basins.",
+    waypoints: [{ x: 46, y: -218 }, { x: 31, y: -150 }, { x: 18, y: -82 }, { x: 12, y: -24 }, { x: 13, y: 34 }, { x: 28, y: 102 }, { x: 36, y: 184 }, { x: 42, y: 272 }],
+  },
+  {
+    id: "tannic", name: "The Tannic", widthStart: 1.4, widthEnd: 2.6,
+    description: "A dark alder-fed tributary carrying leaf stain out of the western woods.",
+    waypoints: [{ x: -116, y: -132 }, { x: -82, y: -88 }, { x: -27, y: -34 }, { x: 12, y: -24 }],
+  },
+  {
+    id: "bannerflow", name: "The Bannerflow", widthStart: 1.4, widthEnd: 2.6,
+    description: "A broad eastern river dividing into lotus channels through the Sea of Reeds.",
+    waypoints: [{ x: 238, y: -128 }, { x: 254, y: -54 }, { x: 286, y: 24 }, { x: 344, y: 74 }, { x: 412, y: 102 }, { x: 486, y: 94 }],
+  },
+  {
+    id: "saffron-wadi", name: "The Saffron Wadi", widthStart: 1.4, widthEnd: 2.6,
+    description: "A seasonal southern river linking the Nine Wells to the warm sea.",
+    waypoints: [{ x: 22, y: 176 }, { x: 38, y: 225 }, { x: 72, y: 272 }, { x: 104, y: 294 }, { x: 134, y: 387 }],
+  },
+  {
+    id: "glasswater", name: "The Glasswater", widthStart: 1.4, widthEnd: 2.6,
+    description: "A bright snowmelt river descending from the north-western ridges into the central alder country.",
+    waypoints: [{ x: -205, y: -260 }, { x: -170, y: -190 }, { x: -132, y: -154 }, { x: -90, y: -80 }],
+  },
+  {
+    id: "iceflow", name: "The Iceflow", widthStart: 1.4, widthEnd: 2.6,
+    description: "A glacial blue river cutting south from Northstar's ice fields beside the eastern Frostcrown ridges.",
+    waypoints: [{ x: 8, y: -332 }, { x: 40, y: -290 }, { x: 72, y: -250 }, { x: 82, y: -170 }],
+  },
+  {
+    id: "reed-fingers-north", name: "Reed Fingers (north branch)", widthStart: 1.4, widthEnd: 2.6,
+    description: "The northern reed branch gathers plateau runoff before broadening into Tellmar's inhabited delta.",
+    waypoints: [{ x: 280, y: -100 }, { x: 325, y: -30 }, { x: 370, y: 40 }, { x: 418, y: 72 }],
+  },
+  {
+    id: "reed-fingers-south", name: "Reed Fingers (south branch)", widthStart: 1.4, widthEnd: 2.6,
+    description: "The southern reed branch winds out of lotus country and joins the lower delta beneath Tellmar's walls.",
+    waypoints: [{ x: 330, y: 145 }, { x: 350, y: 210 }, { x: 380, y: 130 }, { x: 418, y: 72 }],
+  },
+  {
+    id: "elderflow", name: "The Elderflow", widthStart: 1.4, widthEnd: 2.6,
+    description: "A tannin-dark woodland river flowing west through the covenant groves toward the Greenwater coast.",
+    waypoints: [{ x: -240, y: 40 }, { x: -290, y: 80 }, { x: -360, y: 120 }, { x: -420, y: 150 }],
+  },
+  {
+    id: "ember-wash", name: "The Ember Wash", widthStart: 1.4, widthEnd: 2.6,
+    description: "An intermittent desert wash carrying rare mountain storms down toward Asalan's irrigated basin.",
+    waypoints: [{ x: 210, y: 180 }, { x: 175, y: 210 }, { x: 140, y: 250 }, { x: 104, y: 294 }],
+  },
 ];
 
 export const CONTINENT_LAKES = [
   { id: "black-tarn", name: "Black Tarn", description: "Cold, peat-dark water under a low western sky.", center: { x: -115, y: -105 }, radius: 5 },
   { id: "mirror-lake", name: "Mirror Lake", description: "A high clear lake reflecting the Iron Plateau's fast weather.", center: { x: 190, y: -42 }, radius: 4 },
+  { id: "frostmirror", name: "Frostmirror", description: "A glacial lake whose blue ice reflects the broken northern ridges.", center: { x: -90, y: -260 }, radius: 7 },
+  { id: "ashpool", name: "Ashpool", description: "A small volcanic tarn cupped inside the mountain spine.", center: { x: 72, y: -180 }, radius: 4 },
+  { id: "heronmere", name: "Heronmere", description: "A clear pass lake where white herons gather below the high road.", center: { x: 135, y: 40 }, radius: 5 },
+  { id: "tannic-sump", name: "Tannic Sump", description: "A tea-dark marsh lake collecting the western heartland's alder water.", center: { x: -70, y: 75 }, radius: 4 },
+  { id: "greenwater-lake", name: "Greenwater", description: "A deep rain-fed harbor lake opening toward the Elderwood's western port.", center: { x: -340, y: 175 }, radius: 6 },
+  { id: "lotuspool", name: "Lotuspool", description: "A warm delta lake crowded with lotus islands and fishing skiffs.", center: { x: 390, y: 100 }, radius: 5 },
+  { id: "jadepond", name: "Jadepond", description: "A green highland pond below the eastern shrine roads.", center: { x: 340, y: -80 }, radius: 4 },
+  { id: "shimmer-flats", name: "Shimmer Flats", description: "A broad sheet of shallow salt water mirroring the southern sky.", center: { x: 55, y: 240 }, radius: 8 },
+  { id: "moonwell", name: "Moonwell", description: "A cold round spring lake at the southern toe of the mountain spine.", center: { x: -82, y: 226 }, radius: 3 },
+  { id: "oasis-al-thar", name: "Oasis al-Thar", description: "A palm-ringed desert lake sustaining caravans beyond Asalan's outer wells.", center: { x: 135, y: 320 }, radius: 5 },
+];
+
+export const CONTINENT_HOT_SPRINGS = [
+  { id: "jade-springs", name: "Jade Springs", center: { x: 380, y: -50 }, radius: 3 },
+  { id: "misty-caldron", name: "Misty Caldron", center: { x: 410, y: 20 }, radius: 2 },
 ];
 
 export function regionDefinition(id) {

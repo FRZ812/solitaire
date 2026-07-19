@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CONTINENT } from "../../data/continent.js";
+import { CONTINENT, NORTHERN_RIDGES } from "../../data/continent.js";
+import { surveyAtlas } from "../../engine/world-generation.js";
 import {
   ATLAS_3D_CAMERA_COAST_INSET,
   ATLAS_3D_RENDER_VERSION,
@@ -9,12 +10,15 @@ import {
   atlas3dProject,
   atlas3dSceneToAxial,
   atlas3dScreenToGround,
+  atlas3dTerrainColor,
+  atlas3dTerrainHeight,
   atlas3dTerrainHeightAt,
   buildAtlas3dTerrainData,
   centerAtlas3dCamera,
   clampAtlas3dCamera,
   fitAtlas3dCamera,
   panAtlas3dCamera,
+  northernRidgeElevationBoostAt,
   registerAtlas3dTerrainData,
   zoomAtlas3dCamera,
 } from "./worldAtlas3dModel.js";
@@ -22,6 +26,45 @@ import {
 const VIEWPORT = { width: 960, height: 540 };
 
 describe("true 3D atlas spatial model", () => {
+  it("raises mountain and hill relief beneath the expanded terrain ceiling", () => {
+    expect(atlas3dTerrainHeight({ land: true, terrain: "mountains", elevation: 0.5 }))
+      .toBeCloseTo((0.5 - 0.16) * 28 + 8.5, 8);
+    expect(atlas3dTerrainHeight({ land: true, terrain: "hills", elevation: 0.5 }))
+      .toBeCloseTo((0.5 - 0.16) * 28 + 2.6, 8);
+    expect(atlas3dTerrainHeight({ land: true, terrain: "mountains", elevation: 2 }))
+      .toBe(42);
+  });
+
+  it("adds the authored northern ridge elevation without duplicating overlaps", () => {
+    const coord = NORTHERN_RIDGES[0].waypoints[1];
+    const sample = { land: true, terrain: "plains", elevation: 0.5 };
+    expect(northernRidgeElevationBoostAt(coord)).toBeCloseTo(0.18, 8);
+    expect(atlas3dTerrainHeight(sample, coord) - atlas3dTerrainHeight(sample))
+      .toBeCloseTo(0.18 * 28, 8);
+  });
+
+  it("applies deterministic snow-cap and sandy coastline color tiers", () => {
+    const coord = { x: 24, y: -42 };
+    const mountain = { land: true, terrain: "mountains", elevation: 1, realmId: "north" };
+    const unsnowed = atlas3dTerrainColor(mountain, coord, 30, CONTINENT.seed);
+    const snowed = atlas3dTerrainColor(mountain, coord, 32, CONTINENT.seed);
+    const snowTarget = [0xd8 / 255, 0xdd / 255, 0xd0 / 255];
+    const distanceToSnow = (channels) => Math.hypot(
+      channels[0] - snowTarget[0],
+      channels[1] - snowTarget[1],
+      channels[2] - snowTarget[2],
+    );
+    expect(distanceToSnow(snowed)).toBeLessThan(distanceToSnow(unsnowed));
+
+    const plain = { land: true, terrain: "plains", elevation: 0.4, realmId: "central" };
+    const inland = atlas3dTerrainColor(plain, coord, 7, CONTINENT.seed, false);
+    const coast = atlas3dTerrainColor(plain, coord, 7, CONTINENT.seed, true);
+    const sandTarget = [0xb8 / 255, 0xa8 / 255, 0x70 / 255];
+    coast.forEach((channel, index) => {
+      expect(channel).toBeCloseTo(inland[index] * 0.6 + sandTarget[index] * 0.4, 8);
+    });
+  });
+
   it("round-trips the authoritative axial plane without the former CSS skew", () => {
     for (const coord of [
       { x: 0, y: 0 },
@@ -337,13 +380,36 @@ describe("true 3D atlas spatial model", () => {
     expect(first.version).toBe(ATLAS_3D_RENDER_VERSION);
     expect(first.positions).toEqual(second.positions);
     expect(first.colors).toEqual(second.colors);
+    expect(first.coastal).toEqual(second.coastal);
     expect(first.indices).toEqual(second.indices);
     expect(first.trees).toEqual(second.trees);
     expect(first.positions.length).toBe(first.rows * first.columns * 3);
+    expect(first.coastal).toBeInstanceOf(Uint8Array);
+    expect(first.coastal.length).toBe(first.rows * first.columns);
+    expect(first.coastal.some((value) => value === 1)).toBe(true);
+    expect(first.coastal.some((value) => value === 0)).toBe(true);
     expect(first.indices.length).toBe((first.rows - 1) * (first.columns - 1) * 6);
     expect(first.trees.length).toBeGreaterThan(0);
     expect(Math.max(...first.positions.filter((_, index) => index % 3 === 1))).toBeGreaterThan(8);
     expect(Math.min(...first.positions.filter((_, index) => index % 3 === 1))).toBeLessThan(0);
+  });
+
+  it("includes clipped domain-edge land in the exact three-hex coastline band", () => {
+    const terrain = buildAtlas3dTerrainData(CONTINENT.seed, 24);
+    const northernLandVertices = [];
+    for (let vertex = 0; vertex < terrain.positions.length / 3; vertex += 1) {
+      const coord = atlas3dSceneToAxial({
+        x: terrain.positions[vertex * 3],
+        z: terrain.positions[vertex * 3 + 2],
+      });
+      if (Math.abs(coord.y - CONTINENT.bounds.ymin) < 0.001
+        && surveyAtlas(coord.x, coord.y, CONTINENT.seed).land) {
+        northernLandVertices.push(vertex);
+      }
+    }
+
+    expect(northernLandVertices.length).toBeGreaterThan(0);
+    expect(northernLandVertices.every((vertex) => terrain.coastal[vertex] === 1)).toBe(true);
   });
 
   it("reuses the worker terrain grid for overlay heights on the UI thread", () => {
