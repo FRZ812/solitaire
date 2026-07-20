@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   CONTINENT,
   CONTINENT_HOT_SPRINGS,
+  LANDMARKS,
 } from "../../data/continent.js";
 import {
   atlasEastFloraVariant,
   atlasPropDetailVisible,
   atlasWorldLightState,
   batchLandmarkMeshGroup,
+  createAtlasChunkPropBatch,
   createAtlasTerrainGeometry,
   createEnvironsGroup,
   createFieldGroup,
@@ -20,11 +22,24 @@ import {
   createInsetLake,
   createVegetationGroup,
   REALM_SETTLEMENT_COLORS,
+  atlas3dStreamFailureDisposition,
+  atlas3dStreamingRect,
 } from "./WorldAtlas3DScene.jsx";
 import {
+  atlas3dChunkForAxial,
+  atlas3dCameraFrame,
+  atlas3dFitZoom,
   atlas3dHotSpringSurfaceHeight,
   atlas3dLakeSurfaceHeight,
+  atlas3dTerrainHeightAt,
+  atlas3dWindowFloor,
+  buildAtlas3dChunk,
+  clampAtlas3dCamera,
+  registerAtlas3dChunkHeights,
+  releaseAtlas3dChunkHeights,
 } from "./worldAtlas3dModel.js";
+import { desiredAtlasChunks } from "./atlasChunkStore.js";
+import { setDressingForChunk } from "../../engine/atlas-set-dressing.js";
 
 function ribbonWidthAt(position, sampleIndex) {
   const offset = sampleIndex * 6;
@@ -55,6 +70,29 @@ function colorHexes(group) {
 }
 
 describe("WorldAtlas3DScene rendering helpers", () => {
+  it("escalates non-cancellation stream failures after first paint", () => {
+    const error = new Error("chunk timed out");
+    expect(atlas3dStreamFailureDisposition(error, {
+      ready: true,
+      pendingCount: 4,
+      uploadCount: 2,
+    })).toBe("fatal");
+    expect(atlas3dStreamFailureDisposition(
+      Object.assign(new Error("cancelled"), { name: "AbortError" }),
+      { ready: true },
+    )).toBe("ignore");
+    expect(atlas3dStreamFailureDisposition(error, {
+      ready: false,
+      pendingCount: 1,
+      uploadCount: 0,
+    })).toBe("wait");
+    expect(atlas3dStreamFailureDisposition(error, {
+      ready: false,
+      pendingCount: 0,
+      uploadCount: 0,
+    })).toBe("startup");
+  });
+
   it("samples ribbons through a 200-division Catmull-Rom curve and widens rivers toward the mouth", () => {
     class TrackedCatmullRomCurve3 extends THREE.CatmullRomCurve3 {
       static constructorCalls = [];
@@ -140,6 +178,70 @@ describe("WorldAtlas3DScene rendering helpers", () => {
     expect(geometry.getAttribute("normal").count).toBe(4);
     expect(geometry.getAttribute("uv").count).toBe(4);
     expect(geometry.index.array).toBe(data.indices);
+  });
+
+  it("bounds the live 3D footprint and batches a deterministic chunk's props into one draw surface", () => {
+    for (const viewport of [
+      { width: 960, height: 540 },
+      { width: 390, height: 720 },
+    ]) {
+      const camera = clampAtlas3dCamera({
+        ...CONTINENT.start.coord,
+        zoom: atlas3dWindowFloor(viewport),
+      }, viewport);
+      const rect = atlas3dStreamingRect(camera, viewport);
+      const plan = desiredAtlasChunks({ rect, focus: camera, lod0Radius: 2 });
+      const frame = atlas3dCameraFrame(camera, viewport);
+
+      expect(camera.zoom / atlas3dFitZoom(viewport)).toBeGreaterThan(8);
+      expect(frame.visibleWidth).toBeLessThanOrEqual(128);
+      expect(rect.xmax - rect.xmin).toBeLessThanOrEqual(132);
+      expect(rect.ymax - rect.ymin).toBeLessThanOrEqual(132);
+      expect(plan.length).toBeLessThanOrEqual(64);
+    }
+
+    const center = atlas3dChunkForAxial(CONTINENT.start.coord);
+    const chunk = buildAtlas3dChunk(CONTINENT.seed, center.cx, center.cy, 0);
+    const props = createAtlasChunkPropBatch(THREE, chunk, CONTINENT.seed, {
+      id: "high",
+      propDensity: 1,
+      chunkPropCap: 120,
+    });
+
+    expect(props.userData.count).toBeLessThanOrEqual(120);
+    expect(props.children).toHaveLength(props.userData.count ? 1 : 0);
+    if (props.children.length) {
+      expect(props.children[0].isBatchedMesh).toBe(true);
+      expect(props.children[0].maxInstanceCount).toBe(props.userData.count);
+    }
+  });
+
+  it("seats generated LOD 1 dressing on the active displayed triangle surface", () => {
+    const chunk = buildAtlas3dChunk(CONTINENT.seed, 14, -14, 1);
+    const dressing = setDressingForChunk(CONTINENT.seed, chunk.cx, chunk.cy, { scatterCap: 8 });
+    expect(dressing).toHaveLength(1);
+    expect(registerAtlas3dChunkHeights(chunk)).toBe(true);
+    try {
+      const props = createAtlasChunkPropBatch(THREE, chunk, CONTINENT.seed, {
+        id: "high",
+        propDensity: 1,
+        chunkPropCap: 120,
+      });
+      const batch = props.getObjectByName("atlas-chunk-prop-batch");
+      const transform = new THREE.Matrix4();
+      const position = new THREE.Vector3();
+      batch.getMatrixAt(0, transform);
+      position.setFromMatrixPosition(transform);
+      const expectedOffset = dressing[0].kind === "bridge" ? 0.25 : 0.04;
+
+      expect(props.userData.dressingCount).toBe(1);
+      expect(position.y).toBeCloseTo(
+        atlas3dTerrainHeightAt(dressing[0], CONTINENT.seed) + expectedOffset,
+        5,
+      );
+    } finally {
+      releaseAtlas3dChunkHeights(chunk);
+    }
   });
 
   it("partitions deterministic species-aware tree instances into core and detail LODs", () => {
@@ -350,8 +452,30 @@ describe("WorldAtlas3DScene rendering helpers", () => {
     expect(wonder.userData.landmarkKind).toBe("wonder");
     expect(wonderHeightRatio).toBeCloseTo(cityHeightRatio * 1.25, 8);
     expect(wonderHeightRatio).toBeGreaterThan(1.4);
-    expect(village.userData.miniatureScale).toBe(1.68);
-    expect(new THREE.Box3().setFromObject(village).getSize(new THREE.Vector3()).y).toBeGreaterThan(5);
+    expect(village.userData.miniatureScale).toBe(0.92);
+    expect(new THREE.Box3().setFromObject(village).getSize(new THREE.Vector3()).y).toBeGreaterThan(3);
+  });
+
+  it("builds a streamed landmark only after its owning chunk provides the exact surface", () => {
+    const landmark = LANDMARKS.find((entry) => entry.id === "frostgate");
+    const owner = atlas3dChunkForAxial(landmark.coord);
+    const chunk = buildAtlas3dChunk(CONTINENT.seed, owner.cx, owner.cy, 0);
+    expect(registerAtlas3dChunkHeights(chunk)).toBe(true);
+    try {
+      const group = createLandmarkMeshGroup(
+        THREE,
+        CONTINENT.seed,
+        (entry) => entry.id === landmark.id,
+      );
+      expect(group.children).toHaveLength(1);
+      expect(group.children[0].name).toBe(`atlas-landmark-${landmark.id}`);
+      expect(group.children[0].position.y).toBeCloseTo(
+        atlas3dTerrainHeightAt(landmark.coord, CONTINENT.seed),
+        7,
+      );
+    } finally {
+      releaseAtlas3dChunkHeights(chunk);
+    }
   });
 
   it("derives longitude-aware daylight from the persistent campaign clock", () => {

@@ -16,11 +16,9 @@ import {
   ATLAS_3D_ROCK_RECORD_STRIDE,
   ATLAS_3D_TREE_RECORD_STRIDE,
   ATLAS_3D_TREE_SPECIES,
-  atlas3dActiveStride,
   atlas3dAxialToScene,
   atlas3dBaseTerrainHeight,
   atlas3dCameraFrame,
-  atlas3dDeclareActiveStride,
   atlas3dFitZoom,
   atlas3dHotSpringSurfaceHeight,
   atlas3dLakeSurfaceHeight,
@@ -31,13 +29,15 @@ import {
   atlas3dTerrainColor,
   atlas3dTerrainHeight,
   atlas3dTerrainHeightAt,
-  buildAtlas3dTerrainData,
+  atlas3dWindowFloor,
+  buildAtlas3dChunk,
   centerAtlas3dCamera,
   clampAtlas3dCamera,
   fitAtlas3dCamera,
   panAtlas3dCamera,
   northernRidgeElevationBoostAt,
-  registerAtlas3dTerrainData,
+  registerAtlas3dChunkHeights,
+  releaseAtlas3dChunkHeights,
   zoomAtlas3dCamera,
 } from "./worldAtlas3dModel.js";
 
@@ -323,7 +323,7 @@ describe("true 3D atlas spatial model", () => {
     expect(zoomed.targetHeight).toBeCloseTo(atlas3dCameraFrame(camera, VIEWPORT).target.y, 8);
   });
 
-  it("keeps a near-horizon water point fixed through a zoom-in", () => {
+  it("keeps an off-domain near-horizon zoom bounded to the authored camera domain", () => {
     const camera = { x: 244.64363027307945, y: -355.6353665783963, zoom: 9.246612178420586 };
     const anchor = { x: 652.7866018563509, y: 2.8576104808598757 };
     const scene = { x: 91.90460577283721, z: -358.65768135500707 };
@@ -336,8 +336,11 @@ describe("true 3D atlas spatial model", () => {
       CONTINENT.seed,
       () => ground,
     );
-    const after = atlas3dProject(zoomed, VIEWPORT, ground, ground.height, CONTINENT.seed);
-    expect(Math.hypot(after.x - anchor.x, after.y - anchor.y)).toBeLessThan(1);
+    expect(ground.y).toBeLessThan(CONTINENT.bounds.ymin);
+    expect(zoomed.x).toBeGreaterThanOrEqual(CONTINENT.bounds.xmin);
+    expect(zoomed.x).toBeLessThanOrEqual(CONTINENT.bounds.xmax);
+    expect(zoomed.y).toBeGreaterThanOrEqual(CONTINENT.bounds.ymin);
+    expect(zoomed.y).toBeLessThanOrEqual(CONTINENT.bounds.ymax);
     expect(zoomed.targetHeight).toBeCloseTo(atlas3dCameraFrame(camera, VIEWPORT).target.y, 8);
   });
 
@@ -385,11 +388,15 @@ describe("true 3D atlas spatial model", () => {
   });
 
   it("keeps an off-center coastal water point fixed through a downward drag", () => {
-    const camera = { x: 407.2133700658172, y: -283.195746052838, zoom: 3.5120515377199832 };
-    const anchor = { x: 702.8368930425495, y: 169.00848167017102 };
+    const camera = clampAtlas3dCamera({
+      x: 407.2133700658172,
+      y: -283.195746052838,
+      zoom: atlas3dWindowFloor(VIEWPORT) * 1.2,
+    }, VIEWPORT);
     const delta = { x: -4.101750068366528, y: 35.15628867549822 };
     const scene = { x: 335.6379863306885, z: -286.30047665070515 };
     const ground = { ...atlas3dSceneToAxial(scene), scene, height: -1.55 };
+    const anchor = atlas3dProject(camera, VIEWPORT, ground, ground.height, CONTINENT.seed);
     const panned = panAtlas3dCamera(
       camera,
       VIEWPORT,
@@ -405,25 +412,24 @@ describe("true 3D atlas spatial model", () => {
   });
 
   it("fits the perspective terrain inside the viewport", () => {
-    const terrain = buildAtlas3dTerrainData(CONTINENT.seed, 24);
     const camera = fitAtlas3dCamera({ x: 0, y: 0, zoom: 1 }, VIEWPORT, CONTINENT.seed);
     expect(camera.zoom).toBeCloseTo(atlas3dFitZoom(VIEWPORT, CONTINENT.seed), 8);
-    for (let vertex = 0; vertex < terrain.positions.length / 3; vertex += 1) {
-      const coord = atlas3dSceneToAxial({
-        x: terrain.positions[vertex * 3],
-        z: terrain.positions[vertex * 3 + 2],
-      });
-      const screen = atlas3dProject(
-        camera,
-        VIEWPORT,
-        coord,
-        terrain.positions[vertex * 3 + 1],
-        CONTINENT.seed,
-      );
-      expect(screen.x).toBeGreaterThanOrEqual(0);
-      expect(screen.x).toBeLessThanOrEqual(VIEWPORT.width);
-      expect(screen.y).toBeGreaterThanOrEqual(0);
-      expect(screen.y).toBeLessThanOrEqual(VIEWPORT.height);
+    const sampleAxis = (min, max, stride) => {
+      const values = [];
+      for (let value = min; value <= max; value += stride) values.push(value);
+      if (values.at(-1) !== max) values.push(max);
+      return values;
+    };
+    for (const y of sampleAxis(CONTINENT.bounds.ymin, CONTINENT.bounds.ymax, 24)) {
+      for (const x of sampleAxis(CONTINENT.bounds.xmin, CONTINENT.bounds.xmax, 24)) {
+        const coord = { x, y };
+        const height = atlas3dTerrainHeight(surveyAtlas(x, y, CONTINENT.seed), coord, CONTINENT.seed);
+        const screen = atlas3dProject(camera, VIEWPORT, coord, height, CONTINENT.seed);
+        expect(screen.x).toBeGreaterThanOrEqual(0);
+        expect(screen.x).toBeLessThanOrEqual(VIEWPORT.width);
+        expect(screen.y).toBeGreaterThanOrEqual(0);
+        expect(screen.y).toBeLessThanOrEqual(VIEWPORT.height);
+      }
     }
   });
 
@@ -467,94 +473,90 @@ describe("true 3D atlas spatial model", () => {
     expect(Math.abs(north.y - south.y)).toBeGreaterThan(100);
   });
 
-  it("builds deterministic terrain and vegetation buffers independent of any camera", () => {
-    const first = buildAtlas3dTerrainData(CONTINENT.seed, 96);
-    const second = buildAtlas3dTerrainData(CONTINENT.seed, 96);
-    expect(first.version).toBe(ATLAS_3D_RENDER_VERSION);
-    expect(first.positions).toEqual(second.positions);
-    expect(first.colors).toEqual(second.colors);
-    expect(first.coastal).toEqual(second.coastal);
-    expect(first.ao).toEqual(second.ao);
-    expect(first.shore).toEqual(second.shore);
-    expect(first.indices).toEqual(second.indices);
-    expect(first.trees).toEqual(second.trees);
-    expect(first.rocks).toEqual(second.rocks);
-    expect(first.fields).toEqual(second.fields);
-    expect(first.environs).toEqual(second.environs);
-    expect(first.positions.length).toBe(first.rows * first.columns * 3);
-    expect(first.coastal).toBeInstanceOf(Uint8Array);
-    expect(first.coastal.length).toBe(first.rows * first.columns);
-    expect(first.coastal.some((value) => value === 1)).toBe(true);
-    expect(first.coastal.some((value) => value === 0)).toBe(true);
-    expect(first.ao).toBeInstanceOf(Uint8Array);
-    expect(first.ao.length).toBe(first.rows * first.columns);
-    expect(first.ao.every((value) => value > 0)).toBe(true);
-    expect(first.shore).toBeInstanceOf(Uint8Array);
-    expect(first.shore.length).toBe(first.rows * first.columns);
-    expect(first.shore.some((value) => value === 255)).toBe(true);
-    expect(first.shore.some((value) => value < 255)).toBe(true);
-    expect(first.indices.length).toBe((first.rows - 1) * (first.columns - 1) * 6);
-    expect(first.trees.length).toBeGreaterThan(0);
-    expect(first.trees.length % ATLAS_3D_TREE_RECORD_STRIDE).toBe(0);
+  it("builds deterministic streamed chunk buffers independent of any camera", () => {
+    const coords = [[0, 0], [-1, -1], [4, 0]];
+    const first = coords.map(([cx, cy]) => buildAtlas3dChunk(CONTINENT.seed, cx, cy, 0));
+    const second = coords.map(([cx, cy]) => buildAtlas3dChunk(CONTINENT.seed, cx, cy, 0));
+
+    for (let index = 0; index < first.length; index += 1) {
+      const chunk = first[index];
+      const repeat = second[index];
+      expect(chunk.version).toBe(ATLAS_3D_RENDER_VERSION);
+      expect(chunk.empty).toBe(false);
+      expect(chunk.positions).toEqual(repeat.positions);
+      expect(chunk.colors).toEqual(repeat.colors);
+      expect(chunk.coastal).toEqual(repeat.coastal);
+      expect(chunk.ao).toEqual(repeat.ao);
+      expect(chunk.shore).toEqual(repeat.shore);
+      expect(chunk.indices).toEqual(repeat.indices);
+      expect(chunk.trees).toEqual(repeat.trees);
+      expect(chunk.rocks).toEqual(repeat.rocks);
+      expect(chunk.fields).toEqual(repeat.fields);
+      expect(chunk.environs).toEqual(repeat.environs);
+      expect(chunk.surfaceVertexCount).toBe(chunk.rows * chunk.columns);
+      expect(chunk.positions.length).toBe((chunk.surfaceVertexCount + chunk.skirtVertexCount) * 3);
+      expect(chunk.coastal).toBeInstanceOf(Uint8Array);
+      expect(chunk.coastal.length).toBe(chunk.positions.length / 3);
+      expect(chunk.ao).toBeInstanceOf(Uint8Array);
+      expect(chunk.ao.length).toBe(chunk.positions.length / 3);
+      expect(chunk.ao.every((value) => value > 0)).toBe(true);
+      expect(chunk.shore).toBeInstanceOf(Uint8Array);
+      expect(chunk.shore.length).toBe(chunk.positions.length / 3);
+      expect(chunk.indices.length).toBeGreaterThan((chunk.rows - 1) * (chunk.columns - 1) * 6);
+      expect(chunk.trees.length % ATLAS_3D_TREE_RECORD_STRIDE).toBe(0);
+      expect(chunk.rocks.length % ATLAS_3D_ROCK_RECORD_STRIDE).toBe(0);
+      expect(chunk.fields.length % ATLAS_3D_FIELD_RECORD_STRIDE).toBe(0);
+      expect(chunk.environs.length % ATLAS_3D_ENVIRON_RECORD_STRIDE).toBe(0);
+    }
+
     const species = new Set();
-    for (let offset = 0; offset < first.trees.length; offset += ATLAS_3D_TREE_RECORD_STRIDE) {
-      species.add(first.trees[offset + 7]);
+    for (const chunk of first) {
+      for (let offset = 0; offset < chunk.trees.length; offset += ATLAS_3D_TREE_RECORD_STRIDE) {
+        species.add(chunk.trees[offset + 7]);
+      }
     }
     expect(species).toContain(ATLAS_3D_TREE_SPECIES.cherry);
     expect(species).toContain(ATLAS_3D_TREE_SPECIES.ginkgo);
-    expect(first.rocks).toBeInstanceOf(Float32Array);
-    expect(first.rocks.length % ATLAS_3D_ROCK_RECORD_STRIDE).toBe(0);
-    expect(first.fields).toBeInstanceOf(Float32Array);
-    expect(first.fields.length % ATLAS_3D_FIELD_RECORD_STRIDE).toBe(0);
-    expect(first.fields.length).toBeGreaterThan(0);
-    expect(first.environs).toBeInstanceOf(Float32Array);
-    expect(first.environs.length % ATLAS_3D_ENVIRON_RECORD_STRIDE).toBe(0);
-    expect(first.environs.length).toBeGreaterThan(0);
-    expect(Math.max(...first.positions.filter((_, index) => index % 3 === 1))).toBeGreaterThan(8);
-    expect(Math.min(...first.positions.filter((_, index) => index % 3 === 1))).toBeLessThan(0);
+    expect(first.some((chunk) => chunk.rocks.length > 0)).toBe(true);
+    expect(first.some((chunk) => chunk.fields.length > 0)).toBe(true);
+    expect(first.some((chunk) => chunk.environs.length > 0)).toBe(true);
+    const heights = first.flatMap((chunk) => (
+      Array.from(chunk.positions).filter((_, component) => component % 3 === 1)
+    ));
+    expect(Math.max(...heights)).toBeGreaterThan(8);
+    expect(Math.min(...heights)).toBeLessThan(0);
   });
 
-  it("activates only a render grid the scene explicitly declares", () => {
-    const seed = "active-stride-test";
-    expect(atlas3dActiveStride(seed)).toBe(4);
+  it("activates overlay heights only when a streamed chunk is presented", () => {
+    const seed = 987654321;
+    const chunk = buildAtlas3dChunk(seed, 0, 0, 1);
+    const local = { x: 6, y: 8 };
+    const coord = { x: chunk.origin.x + local.x, y: chunk.origin.y + local.y };
+    const analyticHeight = atlas3dTerrainHeightAt(coord, seed);
+    const displayedHeight = 17.25;
+    const payload = {
+      ...chunk,
+      heights: chunk.heights.slice(),
+      positions: chunk.positions.slice(),
+    };
+    payload.heights[local.y * 25 + local.x] = displayedHeight;
+    const meshVertex = (local.y / chunk.stride) * chunk.columns + local.x / chunk.stride;
+    payload.positions[meshVertex * 3 + 1] = displayedHeight;
 
-    // Coarse diagnostic grids must never take over overlay height lookups.
-    buildAtlas3dTerrainData(seed, 96);
-    expect(atlas3dActiveStride(seed)).toBe(4);
-
-    // Registering a late refined grid cannot move overlays onto an unseen
-    // mesh; the scene promotes it only after the hot swap succeeds.
-    const vertexCount = 4;
-    expect(registerAtlas3dTerrainData({
-      version: ATLAS_3D_RENDER_VERSION,
-      seed,
-      stride: 2,
-      columns: 2,
-      rows: 2,
-      positions: new Float32Array(vertexCount * 3),
-      colors: new Float32Array(vertexCount * 3),
-      coastal: new Uint8Array(vertexCount),
-      ao: new Uint8Array(vertexCount),
-      shore: new Uint8Array(vertexCount),
-      indices: new Uint32Array(6),
-      trees: new Float32Array(0),
-      rocks: new Float32Array(0),
-      fields: new Float32Array(0),
-      environs: new Float32Array(0),
-    })).toBe(true);
-    expect(atlas3dActiveStride(seed)).toBe(4);
-    atlas3dDeclareActiveStride(seed, 2);
-    expect(atlas3dActiveStride(seed)).toBe(2);
-    expect(atlas3dActiveStride(CONTINENT.seed)).toBe(4);
+    expect(atlas3dTerrainHeightAt(coord, seed)).toBeCloseTo(analyticHeight, 8);
+    expect(registerAtlas3dChunkHeights(payload)).toBe(true);
+    expect(atlas3dTerrainHeightAt(coord, seed)).toBeCloseTo(displayedHeight, 5);
+    expect(releaseAtlas3dChunkHeights(payload)).toBe(true);
+    expect(atlas3dTerrainHeightAt(coord, seed)).toBeCloseTo(analyticHeight, 8);
   });
 
   it("includes clipped domain-edge land in the exact three-hex coastline band", () => {
-    const terrain = buildAtlas3dTerrainData(CONTINENT.seed, 24);
+    const chunk = buildAtlas3dChunk(CONTINENT.seed, -1, -17, 0);
     const northernLandVertices = [];
-    for (let vertex = 0; vertex < terrain.positions.length / 3; vertex += 1) {
+    for (let vertex = 0; vertex < chunk.surfaceVertexCount; vertex += 1) {
       const coord = atlas3dSceneToAxial({
-        x: terrain.positions[vertex * 3],
-        z: terrain.positions[vertex * 3 + 2],
+        x: chunk.positions[vertex * 3],
+        z: chunk.positions[vertex * 3 + 2],
       });
       if (Math.abs(coord.y - CONTINENT.bounds.ymin) < 0.001
         && surveyAtlas(coord.x, coord.y, CONTINENT.seed).land) {
@@ -563,57 +565,45 @@ describe("true 3D atlas spatial model", () => {
     }
 
     expect(northernLandVertices.length).toBeGreaterThan(0);
-    expect(northernLandVertices.every((vertex) => terrain.coastal[vertex] === 1)).toBe(true);
+    expect(northernLandVertices.every((vertex) => chunk.coastal[vertex] === 1)).toBe(true);
   });
 
-  it("reuses the worker terrain grid for overlay heights on the UI thread", () => {
-    const seed = 987654321;
-    const stride = 96;
-    const terrain = buildAtlas3dTerrainData(seed, stride);
-    const row = 2;
-    const column = 3;
-    const vertex = row * terrain.columns + column;
-    const scene = {
-      x: terrain.positions[vertex * 3],
-      z: terrain.positions[vertex * 3 + 2],
-    };
-    terrain.positions[vertex * 3 + 1] = 17.25;
-    expect(registerAtlas3dTerrainData(terrain)).toBe(true);
-    expect(atlas3dTerrainHeightAt(atlas3dSceneToAxial(scene), seed, stride)).toBeCloseTo(17.25, 5);
-  });
-
-  it("places overlays on the same piecewise-linear surface as the terrain mesh", () => {
-    const stride = 96;
-    const terrain = buildAtlas3dTerrainData(CONTINENT.seed, stride);
-    const row = Math.floor((terrain.rows - 1) / 2);
-    const column = Math.floor((terrain.columns - 1) / 2);
-    const heightAtVertex = (vertex) => terrain.positions[vertex * 3 + 1];
-    const aIndex = row * terrain.columns + column;
+  it("places overlays on the same piecewise-linear surface as the presented chunk", () => {
+    const chunk = buildAtlas3dChunk(CONTINENT.seed, 0, 0, 1);
+    const row = 4;
+    const column = 5;
+    const heightAtVertex = (vertex) => chunk.positions[vertex * 3 + 1];
+    const aIndex = row * chunk.columns + column;
     const bIndex = aIndex + 1;
-    const cIndex = aIndex + terrain.columns;
+    const cIndex = aIndex + chunk.columns;
     const dIndex = cIndex + 1;
     const a = atlas3dSceneToAxial({
-      x: terrain.positions[aIndex * 3],
-      z: terrain.positions[aIndex * 3 + 2],
+      x: chunk.positions[aIndex * 3],
+      z: chunk.positions[aIndex * 3 + 2],
     });
     const d = atlas3dSceneToAxial({
-      x: terrain.positions[dIndex * 3],
-      z: terrain.positions[dIndex * 3 + 2],
+      x: chunk.positions[dIndex * 3],
+      z: chunk.positions[dIndex * 3 + 2],
     });
 
-    for (const [u, v] of [[0.32, 0.41], [0.72, 0.63]]) {
-      const coord = {
-        x: a.x + (d.x - a.x) * u,
-        y: a.y + (d.y - a.y) * v,
-      };
-      const expected = u + v <= 1
-        ? heightAtVertex(aIndex)
-          + (heightAtVertex(bIndex) - heightAtVertex(aIndex)) * u
-          + (heightAtVertex(cIndex) - heightAtVertex(aIndex)) * v
-        : heightAtVertex(bIndex) * (1 - v)
-          + heightAtVertex(cIndex) * (1 - u)
-          + heightAtVertex(dIndex) * (u + v - 1);
-      expect(atlas3dTerrainHeightAt(coord, CONTINENT.seed, stride)).toBeCloseTo(expected, 5);
+    expect(registerAtlas3dChunkHeights(chunk)).toBe(true);
+    try {
+      for (const [u, v] of [[0.32, 0.41], [0.72, 0.63]]) {
+        const coord = {
+          x: a.x + (d.x - a.x) * u,
+          y: a.y + (d.y - a.y) * v,
+        };
+        const expected = u + v <= 1
+          ? heightAtVertex(aIndex)
+            + (heightAtVertex(bIndex) - heightAtVertex(aIndex)) * u
+            + (heightAtVertex(cIndex) - heightAtVertex(aIndex)) * v
+          : heightAtVertex(bIndex) * (1 - v)
+            + heightAtVertex(cIndex) * (1 - u)
+            + heightAtVertex(dIndex) * (u + v - 1);
+        expect(atlas3dTerrainHeightAt(coord, CONTINENT.seed)).toBeCloseTo(expected, 5);
+      }
+    } finally {
+      releaseAtlas3dChunkHeights(chunk);
     }
   });
 });

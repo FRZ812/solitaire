@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { ATLAS_QUALITY_TIERS, resolveAtlasQuality } from "./atlasQuality.js";
-import {
-  ATLAS_3D_FINE_TERRAIN_STRIDE,
-  ATLAS_3D_TERRAIN_STRIDE,
-} from "./worldAtlas3dModel.js";
 
 describe("atlas quality tiers", () => {
   it("forces the requested tier over any device signals", () => {
@@ -22,11 +18,24 @@ describe("atlas quality tiers", () => {
     expect(resolveAtlasQuality("bogus", { viewportMin: 1080, dpr: 1, cores: 8, memory: 8 }).id).toBe("high");
   });
 
-  it("keeps refinement strides consistent with the terrain model", () => {
-    expect(ATLAS_QUALITY_TIERS.high.terrainStride).toBe(ATLAS_3D_FINE_TERRAIN_STRIDE);
-    expect(ATLAS_QUALITY_TIERS.medium.terrainStride).toBe(ATLAS_3D_TERRAIN_STRIDE);
-    expect(ATLAS_QUALITY_TIERS.low.terrainStride).toBe(ATLAS_3D_TERRAIN_STRIDE);
-    expect(ATLAS_3D_FINE_TERRAIN_STRIDE).toBeLessThan(ATLAS_3D_TERRAIN_STRIDE);
+  it("uses chunk LOD rings and bounded resident caches instead of terrain strides", () => {
+    expect(ATLAS_QUALITY_TIERS.high).toMatchObject({
+      lod0Radius: 2,
+      chunkCacheSize: 96,
+      chunkPropCap: 320,
+    });
+    expect(ATLAS_QUALITY_TIERS.medium).toMatchObject({
+      lod0Radius: 1,
+      chunkCacheSize: 64,
+      chunkPropCap: 200,
+    });
+    expect(ATLAS_QUALITY_TIERS.low).toMatchObject({
+      lod0Radius: 0,
+      chunkCacheSize: 48,
+      chunkPropCap: 100,
+      proceduralOnly: true,
+    });
+    expect(Object.values(ATLAS_QUALITY_TIERS).every((tier) => !("terrainStride" in tier))).toBe(true);
   });
 
   it("only lowers render cost as tiers descend", () => {
@@ -36,5 +45,11 @@ describe("atlas quality tiers", () => {
     expect(ATLAS_QUALITY_TIERS.low.shadowMapSize).toBe(0);
     expect(ATLAS_QUALITY_TIERS.high.propDensity).toBeGreaterThan(ATLAS_QUALITY_TIERS.medium.propDensity);
     expect(ATLAS_QUALITY_TIERS.medium.propDensity).toBeGreaterThan(ATLAS_QUALITY_TIERS.low.propDensity);
+    expect(ATLAS_QUALITY_TIERS.high.lod0Radius).toBeGreaterThan(ATLAS_QUALITY_TIERS.medium.lod0Radius);
+    expect(ATLAS_QUALITY_TIERS.medium.lod0Radius).toBeGreaterThan(ATLAS_QUALITY_TIERS.low.lod0Radius);
+    expect(ATLAS_QUALITY_TIERS.high.chunkCacheSize).toBeGreaterThan(ATLAS_QUALITY_TIERS.medium.chunkCacheSize);
+    expect(ATLAS_QUALITY_TIERS.medium.chunkCacheSize).toBeGreaterThan(ATLAS_QUALITY_TIERS.low.chunkCacheSize);
+    expect(ATLAS_QUALITY_TIERS.high.chunkPropCap).toBeGreaterThan(ATLAS_QUALITY_TIERS.medium.chunkPropCap);
+    expect(ATLAS_QUALITY_TIERS.medium.chunkPropCap).toBeGreaterThan(ATLAS_QUALITY_TIERS.low.chunkPropCap);
   });
 });
