@@ -16,10 +16,10 @@ export const ATLAS_3D_PITCH_DEG = 38;
 export const ATLAS_3D_FIT_PITCH_DEG = 32;
 export const ATLAS_3D_NEAR_PITCH_DEG = 50;
 export const ATLAS_3D_TERRAIN_STRIDE = 4;
-// Optional refinement grid swapped in by capable devices after first paint.
-export const ATLAS_3D_FINE_TERRAIN_STRIDE = 2;
+export const ATLAS_3D_CHUNK_SIZE = CONTINENT.chunkSize;
+export const ATLAS_3D_WINDOW_SPAN = 128;
 export const ATLAS_3D_CAMERA_COAST_INSET = ATLAS_3D_TERRAIN_STRIDE;
-export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v9";
+export const ATLAS_3D_RENDER_VERSION = "atlas-terrain-3d-v10-chunked";
 export const ATLAS_3D_MAX_ZOOM = 26;
 export const ATLAS_3D_TREE_RECORD_STRIDE = 8;
 export const ATLAS_3D_ROCK_RECORD_STRIDE = 6;
@@ -141,11 +141,17 @@ function terrainColor(terrain, realmId) {
 }
 const HEIGHT_CACHE = new Map();
 const LAKE_SURFACE_HEIGHT_CACHE = new Map();
-const TERRAIN_GRID_CACHE = new Map();
-const PREFERRED_STRIDE = new Map();
+const TERRAIN_CHUNK_HEIGHTS = new Map();
+const TERRAIN_CHUNK_SURVEY_CACHE = new Map();
 const FIT_ZOOM_CACHE = new Map();
+const WINDOW_FLOOR_CACHE = new Map();
 let lastCameraFrameKey = "";
 let lastCameraFrame = null;
+
+function invalidateAtlas3dCameraFrame() {
+  lastCameraFrameKey = "";
+  lastCameraFrame = null;
+}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -154,6 +160,64 @@ function clamp(value, min, max) {
 function smoothstep(edge0, edge1, value) {
   const mix = clamp((value - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
   return mix * mix * (3 - 2 * mix);
+}
+
+function atlas3dSeedCacheKey(seed) {
+  return `${typeof seed}:${String(seed)}`;
+}
+
+function atlas3dChunkSurvey(x, y, seed) {
+  const key = `${atlas3dSeedCacheKey(seed)}|${x},${y}`;
+  if (TERRAIN_CHUNK_SURVEY_CACHE.has(key)) return TERRAIN_CHUNK_SURVEY_CACHE.get(key);
+  const sample = surveyAtlas(x, y, seed);
+  if (TERRAIN_CHUNK_SURVEY_CACHE.size >= 65536) {
+    TERRAIN_CHUNK_SURVEY_CACHE.delete(TERRAIN_CHUNK_SURVEY_CACHE.keys().next().value);
+  }
+  TERRAIN_CHUNK_SURVEY_CACHE.set(key, sample);
+  return sample;
+}
+
+function integerChunkCoordinate(value, label) {
+  const resolved = Number(value);
+  if (!Number.isInteger(resolved)) {
+    throw new TypeError(`${label} must be an integer chunk coordinate`);
+  }
+  return resolved;
+}
+
+export function atlas3dChunkKey(cx, cy) {
+  const coord = cx && typeof cx === "object" ? cx : { cx, cy };
+  return `${integerChunkCoordinate(coord.cx, "cx")},${integerChunkCoordinate(coord.cy, "cy")}`;
+}
+
+export function atlas3dChunkForAxial(coordOrX, maybeY) {
+  const coord = coordOrX && typeof coordOrX === "object"
+    ? coordOrX
+    : { x: coordOrX, y: maybeY };
+  if (!Number.isFinite(coord?.x) || !Number.isFinite(coord?.y)) {
+    throw new TypeError("atlas3dChunkForAxial requires finite axial coordinates");
+  }
+  return {
+    cx: Math.floor(coord.x / ATLAS_3D_CHUNK_SIZE),
+    cy: Math.floor(coord.y / ATLAS_3D_CHUNK_SIZE),
+  };
+}
+
+export function atlas3dChunkRect(cx, cy) {
+  const resolvedCx = integerChunkCoordinate(cx, "cx");
+  const resolvedCy = integerChunkCoordinate(cy, "cy");
+  const xmin = resolvedCx * ATLAS_3D_CHUNK_SIZE;
+  const ymin = resolvedCy * ATLAS_3D_CHUNK_SIZE;
+  return {
+    cx: resolvedCx,
+    cy: resolvedCy,
+    xmin,
+    xmax: xmin + ATLAS_3D_CHUNK_SIZE,
+    ymin,
+    ymax: ymin + ATLAS_3D_CHUNK_SIZE,
+    width: ATLAS_3D_CHUNK_SIZE,
+    height: ATLAS_3D_CHUNK_SIZE,
+  };
 }
 
 export function atlas3dPitchFor(zoom, fitZoom) {
@@ -176,9 +240,10 @@ function clampCenter(center, footprint, boundMin, boundMax) {
   return clamp(center, boundMin + half, boundMax - half);
 }
 
-function clampCamera(camera, viewport, seed = CONTINENT.seed) {
+function clampCamera(camera, viewport, seed = CONTINENT.seed, allowPaperFit = false) {
   const fit = atlas3dFitZoom(viewport, seed);
-  const zoom = clamp(camera.zoom, fit, ATLAS_3D_MAX_ZOOM);
+  const floor = allowPaperFit ? fit : atlas3dWindowFloor(viewport, seed);
+  const zoom = clamp(camera.zoom, floor, ATLAS_3D_MAX_ZOOM);
   const visibleFraction = clamp(fit / zoom, 0, 1);
   const footprint = {
     x: (CONTINENT.bounds.xmax - CONTINENT.bounds.xmin) * visibleFraction,
@@ -246,10 +311,75 @@ export function atlas3dFitZoom(viewport, seed = CONTINENT.seed) {
   }
   const fit = lower * 0.995;
   FIT_ZOOM_CACHE.set(key, fit);
-  lastCameraFrameKey = "";
-  lastCameraFrame = null;
+  invalidateAtlas3dCameraFrame();
   if (FIT_ZOOM_CACHE.size > 40) FIT_ZOOM_CACHE.delete(FIT_ZOOM_CACHE.keys().next().value);
   return fit;
+}
+
+// The 3D presentation is deliberately local. This is expressed as a multiple
+// of the authoritative continent fit so it remains stable across aspect ratios
+// while preserving the existing camera's zoom semantics. The widest axial
+// domain is the limiting axis for Avarra's 128-hex travel window.
+export function atlas3dWindowFloor(viewport, seed = CONTINENT.seed) {
+  const width = Math.max(1, viewport?.width || 1);
+  const height = Math.max(1, viewport?.height || 1);
+  const key = `${seed}|${width}x${height}`;
+  if (WINDOW_FLOOR_CACHE.has(key)) return WINDOW_FLOOR_CACHE.get(key);
+  const fit = atlas3dFitZoom(viewport, seed);
+  const center = {
+    x: (CONTINENT.bounds.xmin + CONTINENT.bounds.xmax) / 2,
+    y: (CONTINENT.bounds.ymin + CONTINENT.bounds.ymax) / 2,
+    targetHeight: 0,
+  };
+  // Perspective pitch makes a simple continent-span ratio substantially
+  // under-estimate the ground visible above the target. Solve against the
+  // actual camera rays instead, with a little terrain-relief safety margin so
+  // the worker's desired set remains below the tier cache at the 3D floor.
+  const footprintSpan = (zoom) => {
+    const frame = atlas3dCameraFrame({ ...center, zoom }, viewport, seed);
+    const coords = [];
+    for (const point of [
+      [0, 0], [width / 2, 0], [width, 0],
+      [0, height / 2], [width / 2, height / 2], [width, height / 2],
+      [0, height], [width / 2, height], [width, height],
+    ]) {
+      const ndcX = point[0] / width * 2 - 1;
+      const ndcY = 1 - point[1] / height * 2;
+      const aspect = width / height;
+      const direction = {
+        x: ndcX * FOV_TAN * aspect,
+        y: -frame.pitchCos + ndcY * FOV_TAN * frame.pitchSin,
+        z: -frame.pitchSin - ndcY * FOV_TAN * frame.pitchCos,
+      };
+      const length = Math.hypot(direction.x, direction.y, direction.z) || 1;
+      direction.x /= length;
+      direction.y /= length;
+      direction.z /= length;
+      const travel = (frame.target.y - frame.position.y) / direction.y;
+      coords.push(atlas3dSceneToAxial({
+        x: frame.position.x + direction.x * travel,
+        z: frame.position.z + direction.z * travel,
+      }));
+    }
+    return Math.max(
+      Math.max(...coords.map((coord) => coord.x)) - Math.min(...coords.map((coord) => coord.x)),
+      Math.max(...coords.map((coord) => coord.y)) - Math.min(...coords.map((coord) => coord.y)),
+    );
+  };
+  const targetSpan = ATLAS_3D_WINDOW_SPAN * 0.94;
+  let lower = Math.min(ATLAS_3D_MAX_ZOOM, fit * 8.6);
+  let upper = ATLAS_3D_MAX_ZOOM;
+  for (let pass = 0; pass < 28; pass += 1) {
+    const middle = (lower + upper) / 2;
+    if (footprintSpan(middle) > targetSpan) lower = middle;
+    else upper = middle;
+  }
+  const floor = clamp(upper, fit, ATLAS_3D_MAX_ZOOM);
+  WINDOW_FLOOR_CACHE.set(key, floor);
+  if (WINDOW_FLOOR_CACHE.size > 40) {
+    WINDOW_FLOOR_CACHE.delete(WINDOW_FLOOR_CACHE.keys().next().value);
+  }
+  return floor;
 }
 
 export function clampAtlas3dCamera(camera, viewport, seed = CONTINENT.seed) {
@@ -266,7 +396,7 @@ export function fitAtlas3dCamera(camera, viewport, seed = CONTINENT.seed) {
   return clampCamera({
     ...fitted,
     targetHeight: cameraTerrainHeight(fitted, seed),
-  }, viewport, seed);
+  }, viewport, seed, true);
 }
 
 export function coordinateNoise(x, y, salt = 0) {
@@ -294,13 +424,6 @@ function interpolatedCoordinateNoise(x, y, cellSize, salt) {
   const bottom = coordinateNoise(lowerX, lowerY + 1, salt)
     + (coordinateNoise(lowerX + 1, lowerY + 1, salt) - coordinateNoise(lowerX, lowerY + 1, salt)) * mixX;
   return top + (bottom - top) * mixY;
-}
-
-function axisSamples(min, max, stride) {
-  const values = [];
-  for (let value = min; value <= max; value += stride) values.push(value);
-  if (values.at(-1) !== max) values.push(max);
-  return values;
 }
 
 function colorChannels(hex, light = 0) {
@@ -357,6 +480,48 @@ function distanceToSegment(point, start, end) {
     point.x - (start.x + dx * progress),
     point.z - (start.z + dz * progress),
   );
+}
+
+const ATLAS_3D_PROP_LANDMARK_CLEARANCES = Object.freeze(ATLAS_PROP_LANDMARKS.map((landmark) => ({
+  id: landmark.id,
+  center: atlas3dAxialToScene(landmark.coord),
+  clearance: landmark.capitalOfRealmId
+    ? 13
+    : landmark.kind === "city" || landmark.kind === "wonder"
+    ? 11
+    : ["town", "fortress", "castle", "port"].includes(landmark.kind)
+    ? 8
+    : ["village", "pagoda", "shrine", "temple", "sanctuary", "monastery"].includes(landmark.kind)
+    ? 6
+    : 4.5,
+})));
+
+const ATLAS_3D_PROP_CORRIDORS = Object.freeze(
+  [...CONTINENT_ROUTES, ...CONTINENT_WATERWAYS].map((corridor) => ({
+    clearance: Math.max(
+      corridor.width || 0,
+      corridor.widthStart || 0,
+      corridor.widthEnd || 0,
+      corridor.kind === "regional-road" ? 1.2 : 1.9,
+    ) / 2 + 2.7,
+    waypoints: corridor.waypoints.map(atlas3dAxialToScene),
+  })),
+);
+
+function clearsAtlas3dPropFeatures(coord, padding = 0, ignoredLandmarkId = null) {
+  const scene = atlas3dAxialToScene(coord);
+  for (const landmark of ATLAS_3D_PROP_LANDMARK_CLEARANCES) {
+    if (landmark.id === ignoredLandmarkId) continue;
+    if (Math.hypot(scene.x - landmark.center.x, scene.z - landmark.center.z)
+      < landmark.clearance + padding) return false;
+  }
+  for (const corridor of ATLAS_3D_PROP_CORRIDORS) {
+    for (let index = 1; index < corridor.waypoints.length; index += 1) {
+      if (distanceToSegment(scene, corridor.waypoints[index - 1], corridor.waypoints[index])
+        < corridor.clearance + padding) return false;
+    }
+  }
+  return true;
 }
 
 const PROJECTED_MOUNTAIN_SPINE = Object.freeze(
@@ -621,8 +786,8 @@ export function atlas3dTerrainHeight(sample, coord = null, seed = CONTINENT.seed
   return lakeBasinHeightAt(coord, height, seed);
 }
 
-function sampledTerrainHeight(coord, seed, stride = atlas3dActiveStride(seed)) {
-  const key = `${seed}|${stride}|${coord.x},${coord.y}`;
+function sampledTerrainHeight(coord, seed) {
+  const key = `${atlas3dSeedCacheKey(seed)}|${coord.x},${coord.y}`;
   if (HEIGHT_CACHE.has(key)) return HEIGHT_CACHE.get(key);
   const height = atlas3dTerrainHeight(surveyAtlas(coord.x, coord.y, seed), coord, seed);
   if (HEIGHT_CACHE.size >= 100000) HEIGHT_CACHE.clear();
@@ -639,91 +804,151 @@ function axisCell(value, min, max, stride) {
   return { index: cell, lower, upper, mix: upper === lower ? 0 : (clamped - lower) / (upper - lower) };
 }
 
-function terrainGridKey(seed, stride) {
-  return `${seed}|${stride}`;
+function heightFromChunkLattice(
+  heights,
+  coord,
+  origin,
+  span = ATLAS_3D_CHUNK_SIZE,
+  stride = 1,
+) {
+  if (!(heights instanceof Float32Array)
+    || !Number.isFinite(coord?.x)
+    || !Number.isFinite(coord?.y)
+    || !Number.isInteger(stride)
+    || stride < 1
+    || span % stride !== 0
+    || coord.x < origin.x
+    || coord.x > origin.x + span
+    || coord.y < origin.y
+    || coord.y > origin.y + span) return null;
+  const latticeColumns = span + 1;
+  const localX = clamp(coord.x - origin.x, 0, span);
+  const localY = clamp(coord.y - origin.y, 0, span);
+  const cellCount = span / stride;
+  const cellColumn = Math.min(cellCount - 1, Math.floor(localX / stride));
+  const cellRow = Math.min(cellCount - 1, Math.floor(localY / stride));
+  const column = cellColumn * stride;
+  const row = cellRow * stride;
+  const u = (localX - column) / stride;
+  const v = (localY - row) / stride;
+  const a = heights[row * latticeColumns + column];
+  const b = heights[row * latticeColumns + column + stride];
+  const c = heights[(row + stride) * latticeColumns + column];
+  const d = heights[(row + stride) * latticeColumns + column + stride];
+  return u + v <= 1
+    ? a + (b - a) * u + (c - a) * v
+    : b * (1 - v) + c * (1 - u) + d * (u + v - 1);
 }
 
-export function registerAtlas3dTerrainData(data) {
-  const vertexCount = data?.columns * data?.rows;
-  const indexCount = (data?.columns - 1) * (data?.rows - 1) * 6;
+function registeredChunkHeightAt(coord, seed) {
+  if (!Number.isFinite(coord?.x) || !Number.isFinite(coord?.y)) return null;
+  const primary = atlas3dChunkForAxial(coord);
+  const boundaryX = Math.abs(coord.x / ATLAS_3D_CHUNK_SIZE
+    - Math.round(coord.x / ATLAS_3D_CHUNK_SIZE)) < 1e-9;
+  const boundaryY = Math.abs(coord.y / ATLAS_3D_CHUNK_SIZE
+    - Math.round(coord.y / ATLAS_3D_CHUNK_SIZE)) < 1e-9;
+  const chunkXs = boundaryX ? [primary.cx, primary.cx - 1] : [primary.cx];
+  const chunkYs = boundaryY ? [primary.cy, primary.cy - 1] : [primary.cy];
+  for (const cy of chunkYs) {
+    for (const cx of chunkXs) {
+      const chunk = TERRAIN_CHUNK_HEIGHTS.get(terrainChunkHeightKey(seed, cx, cy));
+      if (!chunk) continue;
+      const height = heightFromChunkLattice(
+        chunk.heights,
+        coord,
+        chunk.origin,
+        chunk.span,
+        chunk.stride,
+      );
+      if (height != null) return height;
+    }
+  }
+  return null;
+}
+
+function terrainChunkHeightKey(seed, cx, cy) {
+  return `${atlas3dSeedCacheKey(seed)}|${atlas3dChunkKey(cx, cy)}`;
+}
+
+// Presentation registry, not a worker/cache registry. Activate only the
+// payload whose mesh is currently displayed so overlays, routes, landmarks,
+// and picking helpers follow that mesh's actual LOD triangle surface.
+export function registerAtlas3dChunkHeights(data) {
+  const validSeed = typeof data?.seed === "string" || Number.isFinite(data?.seed);
   if (!data
     || data.version !== ATLAS_3D_RENDER_VERSION
-    || (typeof data.seed !== "string" && !Number.isFinite(data.seed))
-    || !Number.isFinite(data.stride)
-    || data.stride <= 0
-    || !Number.isInteger(data.columns)
-    || !Number.isInteger(data.rows)
-    || data.columns < 2
-    || data.rows < 2
-    || !(data.positions instanceof Float32Array)
-    || data.positions.length !== vertexCount * 3
-    || !(data.colors instanceof Float32Array)
-    || data.colors.length !== vertexCount * 3
-    || !(data.coastal instanceof Uint8Array)
-    || data.coastal.length !== vertexCount
-    || !(data.ao instanceof Uint8Array)
-    || data.ao.length !== vertexCount
-    || !(data.shore instanceof Uint8Array)
-    || data.shore.length !== vertexCount
-    || !(data.indices instanceof Uint32Array)
-    || data.indices.length !== indexCount
-    || !(data.trees instanceof Float32Array)
-    || data.trees.length % ATLAS_3D_TREE_RECORD_STRIDE !== 0
-    || !(data.rocks instanceof Float32Array)
-    || data.rocks.length % ATLAS_3D_ROCK_RECORD_STRIDE !== 0
-    || !(data.fields instanceof Float32Array)
-    || data.fields.length % ATLAS_3D_FIELD_RECORD_STRIDE !== 0
-    || !(data.environs instanceof Float32Array)
-    || data.environs.length % ATLAS_3D_ENVIRON_RECORD_STRIDE !== 0) return false;
-  const key = terrainGridKey(data.seed, data.stride);
-  TERRAIN_GRID_CACHE.set(key, data);
-  if (TERRAIN_GRID_CACHE.size > 4) TERRAIN_GRID_CACHE.delete(TERRAIN_GRID_CACHE.keys().next().value);
-  // Registration only makes the payload available. The scene explicitly
-  // declares a stride when it actually swaps that mesh on screen; a late fine
-  // worker can therefore never move overlays onto a grid the player does not
-  // see (for example after High -> Medium or an unmount).
+    || !validSeed
+    || !Number.isInteger(data.cx)
+    || !Number.isInteger(data.cy)
+    || data.span !== ATLAS_3D_CHUNK_SIZE
+    || ![1, 2].includes(data.stride)
+    || (data.lod != null && data.stride !== (data.lod === 0 ? 1 : data.lod === 1 ? 2 : NaN))
+    || data.span % data.stride !== 0) return false;
+
+  const key = terrainChunkHeightKey(data.seed, data.cx, data.cy);
+  if (data.empty) {
+    if (!(data.heights instanceof Float32Array) || data.heights.length !== 0) return false;
+    TERRAIN_CHUNK_HEIGHTS.delete(key);
+    invalidateAtlas3dCameraFrame();
+    return true;
+  }
+
+  const latticeSize = ATLAS_3D_CHUNK_SIZE + 1;
+  if (!(data.heights instanceof Float32Array)
+    || data.heights.length !== latticeSize * latticeSize) return false;
+  const rect = atlas3dChunkRect(data.cx, data.cy);
+  if (!data.origin
+    || data.origin.x !== rect.xmin
+    || data.origin.y !== rect.ymin) return false;
+  TERRAIN_CHUNK_HEIGHTS.set(key, {
+    seed: data.seed,
+    cx: data.cx,
+    cy: data.cy,
+    origin: data.origin,
+    span: data.span,
+    stride: data.stride,
+    heights: data.heights,
+  });
+  invalidateAtlas3dCameraFrame();
   return true;
 }
 
-export function atlas3dActiveStride(seed = CONTINENT.seed) {
-  return PREFERRED_STRIDE.get(seed) ?? ATLAS_3D_TERRAIN_STRIDE;
-}
-
-export function atlas3dDeclareActiveStride(seed, stride) {
-  if (!Number.isFinite(stride) || stride > ATLAS_3D_TERRAIN_STRIDE) return;
-  if (!TERRAIN_GRID_CACHE.has(terrainGridKey(seed, stride))) return;
-  PREFERRED_STRIDE.set(seed, stride);
+export function releaseAtlas3dChunkHeights(dataOrSeed, maybeCx, maybeCy) {
+  const data = dataOrSeed && typeof dataOrSeed === "object"
+    ? dataOrSeed
+    : { seed: dataOrSeed, cx: maybeCx, cy: maybeCy };
+  if ((typeof data.seed !== "string" && !Number.isFinite(data.seed))
+    || !Number.isInteger(data.cx)
+    || !Number.isInteger(data.cy)) return false;
+  const key = terrainChunkHeightKey(data.seed, data.cx, data.cy);
+  const registered = TERRAIN_CHUNK_HEIGHTS.get(key);
+  // A late disposal from an outgoing LOD must not unregister the replacement
+  // payload that was already painted for the same geographic chunk.
+  if (data.heights instanceof Float32Array
+    && registered
+    && registered.heights !== data.heights) return false;
+  const released = TERRAIN_CHUNK_HEIGHTS.delete(key);
+  if (released) invalidateAtlas3dCameraFrame();
+  return released;
 }
 
 // Routes, POIs, labels, and vegetation must sit on the rendered mesh rather
-// than on a separately sampled procedural surface. The terrain grid uses the
-// same diagonal in every cell (a-c-b / b-c-d), so this piecewise-linear sample
-// exactly matches the GPU triangles, including the shorter cells at the bounds.
+// than on a separately sampled procedural surface. When no streamed chunk is
+// displayed at a coordinate, preserve the stride-4 analytic fallback and its
+// triangle diagonal so camera and pre-stream projections stay stable.
 export function atlas3dTerrainHeightAt(
   coord,
   seed = CONTINENT.seed,
-  stride = atlas3dActiveStride(seed),
 ) {
+  const chunkHeight = registeredChunkHeightAt(coord, seed);
+  if (chunkHeight != null) return chunkHeight;
+  const stride = ATLAS_3D_TERRAIN_STRIDE;
   const xCell = axisCell(coord.x, CONTINENT.bounds.xmin, CONTINENT.bounds.xmax, stride);
   const yCell = axisCell(coord.y, CONTINENT.bounds.ymin, CONTINENT.bounds.ymax, stride);
-  const grid = TERRAIN_GRID_CACHE.get(terrainGridKey(seed, stride));
-  const heightAt = grid
-    ? (column, row) => grid.positions[(row * grid.columns + column) * 3 + 1]
-    : null;
-  const nextColumn = Math.min((grid?.columns || Infinity) - 1, xCell.index + 1);
-  const nextRow = Math.min((grid?.rows || Infinity) - 1, yCell.index + 1);
-  const a = heightAt
-    ? heightAt(xCell.index, yCell.index)
-    : sampledTerrainHeight({ x: xCell.lower, y: yCell.lower }, seed, stride);
-  const b = heightAt
-    ? heightAt(nextColumn, yCell.index)
-    : sampledTerrainHeight({ x: xCell.upper, y: yCell.lower }, seed, stride);
-  const c = heightAt
-    ? heightAt(xCell.index, nextRow)
-    : sampledTerrainHeight({ x: xCell.lower, y: yCell.upper }, seed, stride);
-  const d = heightAt
-    ? heightAt(nextColumn, nextRow)
-    : sampledTerrainHeight({ x: xCell.upper, y: yCell.upper }, seed, stride);
+  const a = sampledTerrainHeight({ x: xCell.lower, y: yCell.lower }, seed);
+  const b = sampledTerrainHeight({ x: xCell.upper, y: yCell.lower }, seed);
+  const c = sampledTerrainHeight({ x: xCell.lower, y: yCell.upper }, seed);
+  const d = sampledTerrainHeight({ x: xCell.upper, y: yCell.upper }, seed);
   const u = xCell.mix;
   const v = yCell.mix;
   return u + v <= 1
@@ -985,194 +1210,110 @@ function smoothTerrainHeights(samples, xs, ys, baseHeights, northWeights = null)
 
 const SHORE_RANGE_CELLS = 12;
 
-export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D_TERRAIN_STRIDE) {
-  const xs = axisSamples(CONTINENT.bounds.xmin, CONTINENT.bounds.xmax, stride);
-  const ys = axisSamples(CONTINENT.bounds.ymin, CONTINENT.bounds.ymax, stride);
-  const columns = xs.length;
-  const rows = ys.length;
-  const vertexCount = columns * rows;
-  const positions = new Float32Array(vertexCount * 3);
-  const colors = new Float32Array(vertexCount * 3);
-  const coastal = new Uint8Array(vertexCount);
-  const ao = new Uint8Array(vertexCount);
-  const shore = new Uint8Array(vertexCount);
-  const treeCandidates = [];
-  const rockCandidates = [];
-  const samples = new Array(vertexCount);
-  const baseHeights = new Float32Array(vertexCount);
-  // Fine grids would blow past the fallback height cache's eviction limit and
-  // force thrashing; the registered grid serves those lookups instead.
-  const fillHeightCache = vertexCount <= 150000;
-  const propLandmarks = ATLAS_PROP_LANDMARKS.map((landmark) => ({
-    id: landmark.id,
-    center: atlas3dAxialToScene(landmark.coord),
-    clearance: landmark.capitalOfRealmId
-      ? 13
-      : landmark.kind === "city" || landmark.kind === "wonder"
-      ? 11
-      : ["town", "fortress", "castle", "port"].includes(landmark.kind)
-      ? 8
-      : ["village", "pagoda", "shrine", "temple", "sanctuary", "monastery"].includes(landmark.kind)
-      ? 6
-      : 4.5,
-  }));
-  const propCorridors = [...CONTINENT_ROUTES, ...CONTINENT_WATERWAYS].map((corridor) => ({
-    clearance: Math.max(
-      corridor.width || 0,
-      corridor.widthStart || 0,
-      corridor.widthEnd || 0,
-      corridor.kind === "regional-road" ? 1.2 : 1.9,
-    ) / 2 + 2.7,
-    waypoints: corridor.waypoints.map(atlas3dAxialToScene),
-  }));
-  const segmentDistance = (point, start, end) => {
-    const dx = end.x - start.x;
-    const dz = end.z - start.z;
-    const lengthSquared = dx * dx + dz * dz;
-    if (!lengthSquared) return Math.hypot(point.x - start.x, point.z - start.z);
-    const mix = clamp(
-      ((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSquared,
-      0,
-      1,
-    );
-    return Math.hypot(point.x - (start.x + dx * mix), point.z - (start.z + dz * mix));
-  };
-  const clearsPropFeatures = (coord, padding = 0, ignoredLandmarkId = null) => {
-    const scene = atlas3dAxialToScene(coord);
-    for (const landmark of propLandmarks) {
-      if (landmark.id === ignoredLandmarkId) continue;
-      if (Math.hypot(scene.x - landmark.center.x, scene.z - landmark.center.z)
-        < landmark.clearance + padding) return false;
-    }
-    for (const corridor of propCorridors) {
-      for (let index = 1; index < corridor.waypoints.length; index += 1) {
-        if (segmentDistance(scene, corridor.waypoints[index - 1], corridor.waypoints[index])
-          < corridor.clearance + padding) return false;
-      }
-    }
-    return true;
-  };
+const ATLAS_3D_CHUNK_APRON = 12;
+const ATLAS_3D_CHUNK_SKIRT_DEPTH = 4;
+const ATLAS_3D_AO_DIRECTIONS = Object.freeze([
+  [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
+  [1, -1, 1], [-1, 1, 1], [1, 1, 1.732], [-1, -1, 1.732],
+]);
 
+function buildAtlas3dChunkFields(seed, rect) {
+  const apron = ATLAS_3D_CHUNK_APRON;
+  const sampleSpan = ATLAS_3D_CHUNK_SIZE + apron * 2;
+  const columns = sampleSpan + 1;
+  const rows = columns;
+  const xs = Array.from({ length: columns }, (_, index) => rect.xmin - apron + index);
+  const ys = Array.from({ length: rows }, (_, index) => rect.ymin - apron + index);
+  const samples = new Array(columns * rows);
+  let hasLand = false;
+  for (let row = 0; row <= ATLAS_3D_CHUNK_SIZE; row += 1) {
+    for (let column = 0; column <= ATLAS_3D_CHUNK_SIZE; column += 1) {
+      const sourceRow = apron + row;
+      const sourceColumn = apron + column;
+      const index = sourceRow * columns + sourceColumn;
+      const sample = atlas3dChunkSurvey(xs[sourceColumn], ys[sourceRow], seed);
+      samples[index] = sample;
+      if (sample.land) hasLand = true;
+    }
+  }
+  if (!hasLand) return { empty: true, apron, columns, rows, xs, ys, samples };
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
       const index = row * columns + column;
-      const coord = { x: xs[column], y: ys[row] };
-      samples[index] = surveyAtlas(coord.x, coord.y, seed);
+      if (!samples[index]) samples[index] = atlas3dChunkSurvey(xs[column], ys[row], seed);
     }
   }
 
   const { terrainWeights, northWeights } = buildTerrainBlendFields(samples, xs, ys, seed);
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      const index = row * columns + column;
-      baseHeights[index] = atlas3dBaseTerrainHeight(
-        samples[index],
-        { x: xs[column], y: ys[row] },
-        seed,
-        terrainWeights,
-        northWeights[index],
-        index * 3,
-      );
-    }
+  const baseHeights = new Float32Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) {
+    const row = Math.floor(index / columns);
+    const column = index - row * columns;
+    baseHeights[index] = atlas3dBaseTerrainHeight(
+      samples[index],
+      { x: xs[column], y: ys[row] },
+      seed,
+      terrainWeights,
+      northWeights[index],
+      index * 3,
+    );
   }
-
   const smoothedHeights = smoothTerrainHeights(samples, xs, ys, baseHeights, northWeights);
-
-  const finalHeights = new Float32Array(vertexCount);
+  const heights = new Float32Array(samples.length);
+  const coastal = new Uint8Array(samples.length);
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
-      const x = xs[column];
-      const y = ys[row];
       const index = row * columns + column;
-      const sample = samples[index];
-      const scene = atlas3dAxialToScene({ x, y });
-      const height = sample.land
-        ? lakeBasinHeightAt({ x, y }, smoothedHeights[index], seed)
+      const coord = { x: xs[column], y: ys[row] };
+      heights[index] = samples[index].land
+        ? lakeBasinHeightAt(coord, smoothedHeights[index], seed)
         : TERRAIN_MIN_HEIGHT;
-      finalHeights[index] = height;
-      const isCoastal = isCoastalGridVertex({ x, y }, sample, seed);
-      coastal[index] = isCoastal ? 1 : 0;
-      if (fillHeightCache) HEIGHT_CACHE.set(`${seed}|${stride}|${x},${y}`, height);
-      positions[index * 3] = scene.x;
-      positions[index * 3 + 1] = height;
-      positions[index * 3 + 2] = scene.z;
+      coastal[index] = isCoastalGridVertex(coord, samples[index], seed) ? 1 : 0;
     }
   }
 
-  // Slope magnitude per vertex from central differences. Axial unit steps
-  // project to unit-length scene steps on both axes, so grid spacing is the
-  // stride on either axis.
-  const slopes = new Float32Array(vertexCount);
+  const slopes = new Float32Array(samples.length);
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
       const index = row * columns + column;
-      const left = finalHeights[row * columns + Math.max(0, column - 1)];
-      const right = finalHeights[row * columns + Math.min(columns - 1, column + 1)];
-      const up = finalHeights[Math.max(0, row - 1) * columns + column];
-      const down = finalHeights[Math.min(rows - 1, row + 1) * columns + column];
-      slopes[index] = Math.hypot(right - left, down - up) / (2 * stride);
+      const left = heights[row * columns + Math.max(0, column - 1)];
+      const right = heights[row * columns + Math.min(columns - 1, column + 1)];
+      const up = heights[Math.max(0, row - 1) * columns + column];
+      const down = heights[Math.min(rows - 1, row + 1) * columns + column];
+      slopes[index] = Math.hypot(right - left, down - up) / 2;
     }
   }
 
-  // Horizon-sampled ambient occlusion over the final heightfield. Eight
-  // directions, six steps each: enough to settle valleys and tree lines into
-  // soft contact shadow without a screen-space pass. The two sheared axial
-  // diagonals are unit length; the other two stretch to √3.
-  const AO_DIRECTIONS = [
-    [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1],
-    [1, -1, 1], [-1, 1, 1], [1, 1, 1.732], [-1, -1, 1.732],
-  ];
+  const ao = new Uint8Array(samples.length);
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
       const index = row * columns + column;
-      if (!samples[index]?.land) {
+      if (!samples[index].land) {
         ao[index] = 255;
         continue;
       }
-      const height = finalHeights[index];
       let occlusion = 0;
-      for (const [dc, dr, unit] of AO_DIRECTIONS) {
+      for (const [dc, dr, unit] of ATLAS_3D_AO_DIRECTIONS) {
         let maxTangent = 0;
         for (let step = 1; step <= 6; step += 1) {
           const c = column + dc * step;
           const r = row + dr * step;
           if (c < 0 || c >= columns || r < 0 || r >= rows) break;
-          const rise = finalHeights[r * columns + c] - height;
-          if (rise <= 0) continue;
-          const tangent = rise / (unit * step * stride);
-          if (tangent > maxTangent) maxTangent = tangent;
+          const rise = heights[r * columns + c] - heights[index];
+          if (rise > 0) maxTangent = Math.max(maxTangent, rise / (unit * step));
         }
         occlusion += clamp(maxTangent * 0.55, 0, 1);
       }
-      ao[index] = Math.round((1 - (occlusion / AO_DIRECTIONS.length) * 0.75) * 255);
+      ao[index] = Math.round((1 - (occlusion / ATLAS_3D_AO_DIRECTIONS.length) * 0.75) * 255);
     }
   }
 
-  // Distance-to-water proximity via a two-pass chamfer transform (255 at the
-  // waterline fading to 0 a dozen cells inland). Authored lakes and springs
-  // seed it alongside the open sea.
-  const waterFeatures = [...CONTINENT_LAKES, ...CONTINENT_HOT_SPRINGS].map((feature) => ({
-    center: atlas3dAxialToScene(feature.center),
-    radius: feature.radius,
-  }));
-  const shoreDistance = new Float32Array(vertexCount).fill(SHORE_RANGE_CELLS);
-  for (let index = 0; index < vertexCount; index += 1) {
-    if (!samples[index]?.land) {
-      shoreDistance[index] = 0;
-      continue;
-    }
-    const sceneX = positions[index * 3];
-    const sceneZ = positions[index * 3 + 2];
-    for (const feature of waterFeatures) {
-      if (Math.hypot(sceneX - feature.center.x, sceneZ - feature.center.z) <= feature.radius) {
-        shoreDistance[index] = 0;
-        break;
-      }
-    }
+  const shoreDistance = new Float32Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) {
+    shoreDistance[index] = samples[index].land ? 255 : 0;
   }
   const relaxShore = (index, neighborIndex, cost) => {
-    const candidate = shoreDistance[neighborIndex] + cost;
-    if (candidate < shoreDistance[index]) shoreDistance[index] = candidate;
+    shoreDistance[index] = Math.min(shoreDistance[index], shoreDistance[neighborIndex] + cost);
   };
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
@@ -1192,164 +1333,336 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
       if (row < rows - 1 && column > 0) relaxShore(index, index + columns - 1, 1.4);
     }
   }
-  for (let index = 0; index < vertexCount; index += 1) {
+  const shore = new Uint8Array(samples.length);
+  for (let index = 0; index < samples.length; index += 1) {
     shore[index] = Math.round(
       255 * (1 - Math.min(shoreDistance[index], SHORE_RANGE_CELLS) / SHORE_RANGE_CELLS),
     );
   }
 
+  const rawColors = new Float32Array(samples.length * 3);
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
-      const x = xs[column];
-      const y = ys[row];
       const index = row * columns + column;
-      const sample = samples[index];
-      const height = finalHeights[index];
-
-      // Biome-aware vertex color with deterministic noise octaves, slope-aware
-      // bedrock exposure, and explicit coastline and permanent-snow tiers.
-      const [red, green, blue] = atlas3dTerrainColor(
-        sample,
-        { x, y },
-        height,
+      const color = atlas3dTerrainColor(
+        samples[index],
+        { x: xs[column], y: ys[row] },
+        heights[index],
         seed,
         coastal[index] === 1,
         slopes[index],
         northWeights[index],
       );
-      colors[index * 3] = red;
-      colors[index * 3 + 1] = green;
-      colors[index * 3 + 2] = blue;
+      rawColors.set(color, index * 3);
+    }
+  }
+  const colors = rawColors.slice();
+  const blurOffsets = [
+    [-1, -1, 1], [0, -1, 2], [1, -1, 1],
+    [-1, 0, 2],                 [1, 0, 2],
+    [-1, 1, 1],  [0, 1, 2],  [1, 1, 1],
+  ];
+  for (let row = 1; row < rows - 1; row += 1) {
+    for (let column = 1; column < columns - 1; column += 1) {
+      const index = row * columns + column;
+      if (!samples[index].land) continue;
+      const totals = [
+        rawColors[index * 3] * 4,
+        rawColors[index * 3 + 1] * 4,
+        rawColors[index * 3 + 2] * 4,
+      ];
+      let totalWeight = 4;
+      for (const [dc, dr, weight] of blurOffsets) {
+        const neighborIndex = (row + dr) * columns + column + dc;
+        if (!samples[neighborIndex].land) continue;
+        totals[0] += rawColors[neighborIndex * 3] * weight;
+        totals[1] += rawColors[neighborIndex * 3 + 1] * weight;
+        totals[2] += rawColors[neighborIndex * 3 + 2] * weight;
+        totalWeight += weight;
+      }
+      const occlusion = 0.66 + 0.34 * (ao[index] / 255);
+      for (let channel = 0; channel < 3; channel += 1) {
+        const blended = rawColors[index * 3 + channel]
+          + (totals[channel] / totalWeight - rawColors[index * 3 + channel]) * 0.45;
+        colors[index * 3 + channel] = blended * occlusion;
+      }
+    }
+  }
+  for (let index = 0; index < samples.length; index += 1) {
+    if (samples[index].land) continue;
+    colors[index * 3] = rawColors[index * 3];
+    colors[index * 3 + 1] = rawColors[index * 3 + 1];
+    colors[index * 3 + 2] = rawColors[index * 3 + 2];
+  }
 
-      if (sample.land && x % 4 === 0 && y % 4 === 0) {
-        // Forest records are emitted on a fixed four-hex lattice so coarse
-        // and refined terrain payloads describe the same authored groves.
-        // Golden-angle clusters remove the old grid cadence while retaining
-        // broad clearings and enough density to read as a miniature forest.
-        const grove = interpolatedCoordinateNoise(x, y, 26, seed + 43);
-        const density = coordinateNoise(x, y, seed);
-        const habitatByTerrain = {
-          plains: { central: 0.16, north: 0.13, east: 0.21, south: 0.055, west: 0.17 },
-          hills: { central: 0.16, north: 0.19, east: 0.17, south: 0.075, west: 0.18 },
-          marsh: { central: 0.12, north: 0.08, east: 0.23, south: 0.035, west: 0.16 },
-          mountains: { central: 0.035, north: 0.085, east: 0.045, south: 0.02, west: 0.045 },
-          impassable: { central: 0.02, north: 0.055, east: 0.025, south: 0.012, west: 0.035 },
+  return { empty: false, apron, columns, rows, xs, ys, samples, heights, colors, coastal, ao, shore };
+}
+
+function atlas3dChunkPerimeterIndices(columns) {
+  const result = [];
+  for (let column = 0; column < columns; column += 1) result.push(column);
+  for (let row = 1; row < columns; row += 1) result.push(row * columns + columns - 1);
+  for (let column = columns - 2; column >= 0; column -= 1) {
+    result.push((columns - 1) * columns + column);
+  }
+  for (let row = columns - 2; row > 0; row -= 1) result.push(row * columns);
+  return result;
+}
+
+function buildAtlas3dChunkMesh(fields, rect, lod) {
+  const step = lod === 1 ? 2 : 1;
+  const columns = ATLAS_3D_CHUNK_SIZE / step + 1;
+  const surfaceVertexCount = columns * columns;
+  const perimeter = atlas3dChunkPerimeterIndices(columns);
+  const vertexCount = surfaceVertexCount + perimeter.length;
+  const positions = new Float32Array(vertexCount * 3);
+  const colors = new Float32Array(vertexCount * 3);
+  const coastal = new Uint8Array(vertexCount);
+  const ao = new Uint8Array(vertexCount);
+  const shore = new Uint8Array(vertexCount);
+  for (let row = 0; row < columns; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const vertex = row * columns + column;
+      const sourceColumn = fields.apron + column * step;
+      const sourceRow = fields.apron + row * step;
+      const source = sourceRow * fields.columns + sourceColumn;
+      const coord = { x: rect.xmin + column * step, y: rect.ymin + row * step };
+      const scene = atlas3dAxialToScene(coord);
+      positions[vertex * 3] = scene.x;
+      positions[vertex * 3 + 1] = fields.heights[source];
+      positions[vertex * 3 + 2] = scene.z;
+      colors[vertex * 3] = fields.colors[source * 3];
+      colors[vertex * 3 + 1] = fields.colors[source * 3 + 1];
+      colors[vertex * 3 + 2] = fields.colors[source * 3 + 2];
+      coastal[vertex] = fields.coastal[source];
+      ao[vertex] = fields.ao[source];
+      shore[vertex] = fields.shore[source];
+    }
+  }
+  for (let index = 0; index < perimeter.length; index += 1) {
+    const surfaceVertex = perimeter[index];
+    const skirtVertex = surfaceVertexCount + index;
+    positions[skirtVertex * 3] = positions[surfaceVertex * 3];
+    positions[skirtVertex * 3 + 1] = positions[surfaceVertex * 3 + 1] - ATLAS_3D_CHUNK_SKIRT_DEPTH;
+    positions[skirtVertex * 3 + 2] = positions[surfaceVertex * 3 + 2];
+    colors[skirtVertex * 3] = colors[surfaceVertex * 3] * 0.72;
+    colors[skirtVertex * 3 + 1] = colors[surfaceVertex * 3 + 1] * 0.72;
+    colors[skirtVertex * 3 + 2] = colors[surfaceVertex * 3 + 2] * 0.72;
+    coastal[skirtVertex] = coastal[surfaceVertex];
+    ao[skirtVertex] = ao[surfaceVertex];
+    shore[skirtVertex] = shore[surfaceVertex];
+  }
+
+  const surfaceIndexCount = (columns - 1) * (columns - 1) * 6;
+  const skirtIndexCount = perimeter.length * 6;
+  const indices = new Uint32Array(surfaceIndexCount + skirtIndexCount);
+  let cursor = 0;
+  for (let row = 0; row < columns - 1; row += 1) {
+    for (let column = 0; column < columns - 1; column += 1) {
+      const a = row * columns + column;
+      const b = a + 1;
+      const c = a + columns;
+      const d = c + 1;
+      indices.set([a, c, b, b, c, d], cursor);
+      cursor += 6;
+    }
+  }
+  for (let index = 0; index < perimeter.length; index += 1) {
+    const next = (index + 1) % perimeter.length;
+    const surfaceA = perimeter[index];
+    const surfaceB = perimeter[next];
+    const skirtA = surfaceVertexCount + index;
+    const skirtB = surfaceVertexCount + next;
+    indices.set([surfaceA, skirtA, surfaceB, surfaceB, skirtA, skirtB], cursor);
+    cursor += 6;
+  }
+
+  return {
+    stride: step,
+    columns,
+    rows: columns,
+    surfaceVertexCount,
+    skirtVertexOffset: surfaceVertexCount,
+    skirtVertexCount: perimeter.length,
+    skirtDepth: ATLAS_3D_CHUNK_SKIRT_DEPTH,
+    positions,
+    colors,
+    coastal,
+    ao,
+    shore,
+    indices,
+  };
+}
+
+function atlas3dChunkOwnsCoord(rect, coord) {
+  return coord.x >= rect.xmin && coord.x < rect.xmax
+    && coord.y >= rect.ymin && coord.y < rect.ymax;
+}
+
+function latticeStartAtOrAfter(minimum, anchor, stride) {
+  return anchor + Math.ceil((minimum - anchor) / stride) * stride;
+}
+
+function buildAtlas3dChunkProps(seed, rect, heights, stride) {
+  const trees = [];
+  const rocks = [];
+  const fields = [];
+  const environs = [];
+  const heightAt = (coord) => heightFromChunkLattice(
+    heights,
+    coord,
+    { x: rect.xmin, y: rect.ymin },
+    ATLAS_3D_CHUNK_SIZE,
+    stride,
+  );
+  const acceptsOwnedLand = (coord) => (
+    atlas3dChunkOwnsCoord(rect, coord)
+    && atlas3dChunkSurvey(coord.x, coord.y, seed).land
+  );
+  const appendTree = (candidate) => {
+    if (!acceptsOwnedLand(candidate.coord)
+      || atlas3dAuthoredWaterContains(candidate.coord, 1.5)
+      || !clearsAtlas3dPropFeatures(candidate.coord)) return;
+    const height = heightAt(candidate.coord);
+    if (height == null) return;
+    const scene = atlas3dAxialToScene(candidate.coord);
+    trees.push(
+      scene.x,
+      height,
+      scene.z,
+      candidate.scale,
+      candidate.rotation,
+      candidate.colorFactor,
+      candidate.realmIndex,
+      candidate.species,
+    );
+  };
+  const appendRock = (candidate) => {
+    if (!acceptsOwnedLand(candidate.coord)
+      || atlas3dAuthoredWaterContains(candidate.coord, 1.2)
+      || !clearsAtlas3dPropFeatures(candidate.coord, -1.2)) return;
+    const height = heightAt(candidate.coord);
+    if (height == null) return;
+    const scene = atlas3dAxialToScene(candidate.coord);
+    rocks.push(
+      scene.x,
+      height,
+      scene.z,
+      candidate.scale,
+      candidate.rotation,
+      candidate.variant,
+    );
+  };
+
+  const habitatByTerrain = {
+    plains: { central: 0.16, north: 0.13, east: 0.21, south: 0.055, west: 0.17 },
+    hills: { central: 0.16, north: 0.19, east: 0.17, south: 0.075, west: 0.18 },
+    marsh: { central: 0.12, north: 0.08, east: 0.23, south: 0.035, west: 0.16 },
+    mountains: { central: 0.035, north: 0.085, east: 0.045, south: 0.02, west: 0.045 },
+    impassable: { central: 0.02, north: 0.055, east: 0.025, south: 0.012, west: 0.035 },
+  };
+  const anchorPadding = 5;
+  const startX = latticeStartAtOrAfter(rect.xmin - anchorPadding, 0, 4);
+  const startY = latticeStartAtOrAfter(rect.ymin - anchorPadding, 0, 4);
+  for (let y = startY; y < rect.ymax + anchorPadding; y += 4) {
+    for (let x = startX; x < rect.xmax + anchorPadding; x += 4) {
+      const sample = atlas3dChunkSurvey(x, y, seed);
+      if (!sample.land) continue;
+      const grove = interpolatedCoordinateNoise(x, y, 26, seed + 43);
+      const density = coordinateNoise(x, y, seed);
+      const forest = sample.terrain === "forest";
+      const habitat = habitatByTerrain[sample.terrain]?.[sample.realmId] || 0;
+      const fringeAcceptance = habitat * (0.58 + grove * 0.78);
+      const count = forest
+        ? (grove > 0.22 && density > 0.08
+          ? 4 + Math.floor(density * 5) + (grove > 0.76 ? 1 : 0)
+          : 0)
+        : (density < fringeAcceptance
+          ? 1 + (grove > 0.7 ? 1 : 0) + (density < fringeAcceptance * 0.22 ? 1 : 0)
+          : 0);
+      const phase = coordinateNoise(x, y, seed + 47) * Math.PI * 2;
+      for (let tree = 0; tree < count; tree += 1) {
+        const radial = 0.38 + Math.sqrt((tree + 0.45) / Math.max(1, count)) * 3.05;
+        const angle = phase + tree * GOLDEN_ANGLE;
+        const coord = {
+          x: x + Math.cos(angle) * radial
+            + (coordinateNoise(x, y, seed + tree * 11 + 1) - 0.5) * 0.68,
+          y: y + Math.sin(angle) * radial
+            + (coordinateNoise(x, y, seed + tree * 11 + 2) - 0.5) * 0.68,
         };
-        const forest = sample.terrain === "forest";
-        const habitat = habitatByTerrain[sample.terrain]?.[sample.realmId] || 0;
-        const fringeAcceptance = habitat * (0.58 + grove * 0.78);
-        const count = forest
-          ? (grove > 0.22 && density > 0.08
-            ? 4 + Math.floor(density * 5) + (grove > 0.76 ? 1 : 0)
-            : 0)
-          : (density < fringeAcceptance
-            ? 1 + (grove > 0.7 ? 1 : 0) + (density < fringeAcceptance * 0.22 ? 1 : 0)
-            : 0);
-        const phase = coordinateNoise(x, y, seed + 47) * Math.PI * 2;
-        for (let tree = 0; tree < count; tree += 1) {
-          const radial = 0.38 + Math.sqrt((tree + 0.45) / Math.max(1, count)) * 3.05;
-          const angle = phase + tree * GOLDEN_ANGLE;
-          const jitterX = Math.cos(angle) * radial
-            + (coordinateNoise(x, y, seed + tree * 11 + 1) - 0.5) * 0.68;
-          const jitterY = Math.sin(angle) * radial
-            + (coordinateNoise(x, y, seed + tree * 11 + 2) - 0.5) * 0.68;
-          const treeCoord = { x: x + jitterX, y: y + jitterY };
-          if (atlas3dAuthoredWaterContains(treeCoord, 1.5)) continue;
-          if (!clearsPropFeatures(treeCoord)) continue;
-          const speciesNoise = coordinateNoise(x, y, seed + tree * 11 + 7);
-          const species = sample.realmId === "north"
-            ? 0
+        const speciesNoise = coordinateNoise(x, y, seed + tree * 11 + 7);
+        appendTree({
+          coord,
+          scale: 0.62 + coordinateNoise(x, y, seed + tree * 11 + 3) * 0.7,
+          rotation: coordinateNoise(x, y, seed + tree * 11 + 4) * Math.PI * 2,
+          colorFactor: 0.78 + coordinateNoise(x, y, seed + tree * 11 + 5) * 0.28,
+          realmIndex: REALM_INDICES[sample.realmId] ?? 0,
+          species: sample.realmId === "north"
+            ? ATLAS_3D_TREE_SPECIES.conifer
             : sample.realmId === "south"
-            ? 2
+            ? ATLAS_3D_TREE_SPECIES.scrub
             : sample.realmId === "west"
-            ? (speciesNoise > 0.76 ? 0 : 1)
-            : (speciesNoise > 0.91 ? 0 : 1);
-          treeCandidates.push({
-            coord: treeCoord,
-            scale: 0.62 + coordinateNoise(x, y, seed + tree * 11 + 3) * 0.7,
-            rotation: coordinateNoise(x, y, seed + tree * 11 + 4) * Math.PI * 2,
-            colorFactor: 0.78 + coordinateNoise(x, y, seed + tree * 11 + 5) * 0.28,
-            realmIndex: REALM_INDICES[sample.realmId] ?? 0,
-            species,
-          });
-        }
+            ? (speciesNoise > 0.76 ? ATLAS_3D_TREE_SPECIES.conifer : ATLAS_3D_TREE_SPECIES.broadleaf)
+            : (speciesNoise > 0.91 ? ATLAS_3D_TREE_SPECIES.conifer : ATLAS_3D_TREE_SPECIES.broadleaf),
+        });
       }
 
-      if (sample.land && x % 4 === 0 && y % 4 === 0) {
-        const rockyTerrain = sample.terrain === "mountains" || sample.terrain === "hills";
-        const propensity = coordinateNoise(x, y, seed + SALT_ROCKS);
-        const threshold = sample.terrain === "mountains" ? 0.22 : 0.58;
-        const rockCluster = interpolatedCoordinateNoise(x, y, 18, seed + SALT_ROCKS + 4);
-        let propSlope = 0;
-        if (rockyTerrain && propensity > threshold && rockCluster > 0.28) {
-          const rawHeight = (sampleCoord) => atlas3dTerrainHeight(
-            surveyAtlas(sampleCoord.x, sampleCoord.y, seed),
-            sampleCoord,
-            seed,
-          );
-          propSlope = Math.hypot(
-            rawHeight({ x: x + 4, y }) - rawHeight({ x: x - 4, y }),
-            rawHeight({ x, y: y + 4 }) - rawHeight({ x, y: y - 4 }),
-          ) / 8;
-        }
-        if (rockyTerrain && propensity > threshold && rockCluster > 0.28
-          && (propSlope > 0.075 || (sample.terrain === "mountains" && sample.elevation > 0.76))) {
-          const count = 1 + (propensity > 0.78 ? 1 : 0) + (propensity > 0.92 ? 1 : 0);
-          for (let rock = 0; rock < count; rock += 1) {
-            const angle = propensity * Math.PI * 2 + rock * GOLDEN_ANGLE;
-            const radius = 0.5 + rock * 1.1;
-            const coord = {
-              x: x + Math.cos(angle) * radius,
-              y: y + Math.sin(angle) * radius,
-            };
-            if (atlas3dAuthoredWaterContains(coord, 1.2)) continue;
-            if (!clearsPropFeatures(coord, -1.2)) continue;
-            rockCandidates.push({
-              coord,
-              scale: 0.55 + coordinateNoise(x, y, seed + SALT_ROCKS + rock * 7 + 1) * 1.5,
-              rotation: coordinateNoise(x, y, seed + SALT_ROCKS + rock * 7 + 2) * Math.PI * 2,
-              variant: Math.min(2, Math.floor(coordinateNoise(
-                x,
-                y,
-                seed + SALT_ROCKS + rock * 7 + 3,
-              ) * 3)),
-            });
-          }
-        }
+      const rockyTerrain = sample.terrain === "mountains" || sample.terrain === "hills";
+      const propensity = coordinateNoise(x, y, seed + SALT_ROCKS);
+      const threshold = sample.terrain === "mountains" ? 0.22 : 0.58;
+      const rockCluster = interpolatedCoordinateNoise(x, y, 18, seed + SALT_ROCKS + 4);
+      if (!rockyTerrain || propensity <= threshold || rockCluster <= 0.28) continue;
+      const rawHeight = (coord) => atlas3dTerrainHeight(
+        atlas3dChunkSurvey(coord.x, coord.y, seed),
+        coord,
+        seed,
+      );
+      const propSlope = Math.hypot(
+        rawHeight({ x: x + 4, y }) - rawHeight({ x: x - 4, y }),
+        rawHeight({ x, y: y + 4 }) - rawHeight({ x, y: y - 4 }),
+      ) / 8;
+      if (propSlope <= 0.075 && !(sample.terrain === "mountains" && sample.elevation > 0.76)) continue;
+      const rockCount = 1 + (propensity > 0.78 ? 1 : 0) + (propensity > 0.92 ? 1 : 0);
+      for (let rock = 0; rock < rockCount; rock += 1) {
+        const angle = propensity * Math.PI * 2 + rock * GOLDEN_ANGLE;
+        const radius = 0.5 + rock * 1.1;
+        appendRock({
+          coord: { x: x + Math.cos(angle) * radius, y: y + Math.sin(angle) * radius },
+          scale: 0.55 + coordinateNoise(x, y, seed + SALT_ROCKS + rock * 7 + 1) * 1.5,
+          rotation: coordinateNoise(x, y, seed + SALT_ROCKS + rock * 7 + 2) * Math.PI * 2,
+          variant: Math.min(2, Math.floor(coordinateNoise(
+            x,
+            y,
+            seed + SALT_ROCKS + rock * 7 + 3,
+          ) * 3)),
+        });
       }
     }
   }
 
-  // The Sea of Reeds is cultivated lowland rather than generic forest, so
-  // its signature cherry and ginkgo orchards are authored independently in
-  // the worker. Keeping them in the payload avoids thousands of main-thread
-  // height and clearance queries when the atlas opens.
   const eastOrchards = [
     { species: ATLAS_3D_TREE_SPECIES.cherry, bounds: { xmin: 300, xmax: 460, ymin: -150, ymax: 50 }, salt: 0 },
     { species: ATLAS_3D_TREE_SPECIES.ginkgo, bounds: { xmin: 300, xmax: 470, ymin: 50, ymax: 180 }, salt: 97 },
   ];
   for (const orchard of eastOrchards) {
-    const { bounds } = orchard;
-    for (let y = bounds.ymin; y <= bounds.ymax; y += 8) {
-      for (let x = bounds.xmin; x <= bounds.xmax; x += 8) {
+    const xStart = latticeStartAtOrAfter(rect.xmin - 4, orchard.bounds.xmin, 8);
+    const yStart = latticeStartAtOrAfter(rect.ymin - 4, orchard.bounds.ymin, 8);
+    for (let y = yStart; y <= Math.min(orchard.bounds.ymax, rect.ymax + 4); y += 8) {
+      for (let x = xStart; x <= Math.min(orchard.bounds.xmax, rect.xmax + 4); x += 8) {
         const patch = coordinateNoise(
-          Math.floor((x - bounds.xmin) / 30),
-          Math.floor((y - bounds.ymin) / 30),
+          Math.floor((x - orchard.bounds.xmin) / 30),
+          Math.floor((y - orchard.bounds.ymin) / 30),
           seed + 811 + orchard.salt,
         );
         const detail = coordinateNoise(x, y, seed + 823 + orchard.salt);
         if (patch <= 0.34 || detail <= 0.17) continue;
         const count = 1 + (detail > 0.58 ? 1 : 0) + (detail > 0.86 ? 1 : 0);
         for (let tree = 0; tree < count; tree += 1) {
-          const coord = {
-            x: x + (coordinateNoise(x, y, seed + 829 + tree * 11 + orchard.salt) - 0.5) * 7,
-            y: y + (coordinateNoise(y, x, seed + 839 + tree * 11 + orchard.salt) - 0.5) * 7,
-          };
-          const orchardSample = surveyAtlas(coord.x, coord.y, seed);
-          if (!orchardSample.land || atlas3dAuthoredWaterContains(coord, 1.5)) continue;
-          if (!clearsPropFeatures(coord)) continue;
-          treeCandidates.push({
-            coord,
+          appendTree({
+            coord: {
+              x: x + (coordinateNoise(x, y, seed + 829 + tree * 11 + orchard.salt) - 0.5) * 7,
+              y: y + (coordinateNoise(y, x, seed + 839 + tree * 11 + orchard.salt) - 0.5) * 7,
+            },
             scale: 0.88 + coordinateNoise(x, y, seed + 853 + tree * 13 + orchard.salt) * 0.64,
             rotation: coordinateNoise(y, x, seed + 859 + tree * 13 + orchard.salt) * Math.PI * 2,
             colorFactor: 0.9 + coordinateNoise(x, y, seed + 863 + tree * 13 + orchard.salt) * 0.16,
@@ -1361,141 +1674,18 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
     }
   }
 
-  // One relaxation pass ramps palette colors across biome borders instead of
-  // leaving Gouraud-interpolated blobs, then baked occlusion settles in.
-  const blendedColors = colors.slice();
-  const BLUR_OFFSETS = [
-    [-1, -1, 1], [0, -1, 2], [1, -1, 1],
-    [-1, 0, 2],                 [1, 0, 2],
-    [-1, 1, 1],  [0, 1, 2],  [1, 1, 1],
-  ];
-  for (let row = 1; row < rows - 1; row += 1) {
-    for (let column = 1; column < columns - 1; column += 1) {
-      const index = row * columns + column;
-      if (!samples[index]?.land) continue;
-      let red = colors[index * 3] * 4;
-      let green = colors[index * 3 + 1] * 4;
-      let blue = colors[index * 3 + 2] * 4;
-      let totalWeight = 4;
-      for (const [dc, dr, weight] of BLUR_OFFSETS) {
-        const neighborIndex = (row + dr) * columns + column + dc;
-        if (!samples[neighborIndex]?.land) continue;
-        red += colors[neighborIndex * 3] * weight;
-        green += colors[neighborIndex * 3 + 1] * weight;
-        blue += colors[neighborIndex * 3 + 2] * weight;
-        totalWeight += weight;
-      }
-      const mix = 0.45;
-      blendedColors[index * 3] += (red / totalWeight - colors[index * 3]) * mix;
-      blendedColors[index * 3 + 1] += (green / totalWeight - colors[index * 3 + 1]) * mix;
-      blendedColors[index * 3 + 2] += (blue / totalWeight - colors[index * 3 + 2]) * mix;
-    }
-  }
-  for (let index = 0; index < vertexCount; index += 1) {
-    const occlusionFactor = samples[index]?.land
-      ? 0.66 + 0.34 * (ao[index] / 255)
-      : 1;
-    colors[index * 3] = blendedColors[index * 3] * occlusionFactor;
-    colors[index * 3 + 1] = blendedColors[index * 3 + 1] * occlusionFactor;
-    colors[index * 3 + 2] = blendedColors[index * 3 + 2] * occlusionFactor;
-  }
-
-  const indices = new Uint32Array((xs.length - 1) * (ys.length - 1) * 6);
-  let cursor = 0;
-  for (let row = 0; row < ys.length - 1; row += 1) {
-    for (let column = 0; column < xs.length - 1; column += 1) {
-      const a = row * xs.length + column;
-      const b = a + 1;
-      const c = a + xs.length;
-      const d = c + 1;
-      indices[cursor++] = a;
-      indices[cursor++] = c;
-      indices[cursor++] = b;
-      indices[cursor++] = b;
-      indices[cursor++] = c;
-      indices[cursor++] = d;
-    }
-  }
-
-  const terrain = {
-    version: ATLAS_3D_RENDER_VERSION,
-    seed,
-    stride,
-    columns: xs.length,
-    rows: ys.length,
-    positions,
-    colors,
-    coastal,
-    ao,
-    shore,
-    indices,
-    trees: new Float32Array(0),
-    rocks: new Float32Array(0),
-    fields: new Float32Array(0),
-    environs: new Float32Array(0),
-  };
-  registerAtlas3dTerrainData(terrain);
-  const trees = new Float32Array(treeCandidates.length * ATLAS_3D_TREE_RECORD_STRIDE);
-  for (let index = 0; index < treeCandidates.length; index += 1) {
-    const candidate = treeCandidates[index];
-    const treeScene = atlas3dAxialToScene(candidate.coord);
-    const offset = index * ATLAS_3D_TREE_RECORD_STRIDE;
-    trees[offset] = treeScene.x;
-    trees[offset + 1] = atlas3dTerrainHeightAt(candidate.coord, seed, stride);
-    trees[offset + 2] = treeScene.z;
-    trees[offset + 3] = candidate.scale;
-    trees[offset + 4] = candidate.rotation;
-    trees[offset + 5] = candidate.colorFactor;
-    trees[offset + 6] = candidate.realmIndex;
-    trees[offset + 7] = candidate.species;
-  }
-
-  const rocks = new Float32Array(rockCandidates.length * ATLAS_3D_ROCK_RECORD_STRIDE);
-  for (let index = 0; index < rockCandidates.length; index += 1) {
-    const candidate = rockCandidates[index];
-    const scene = atlas3dAxialToScene(candidate.coord);
-    const offset = index * ATLAS_3D_ROCK_RECORD_STRIDE;
-    rocks[offset] = scene.x;
-    rocks[offset + 1] = atlas3dTerrainHeightAt(candidate.coord, seed, stride);
-    rocks[offset + 2] = scene.z;
-    rocks[offset + 3] = candidate.scale;
-    rocks[offset + 4] = candidate.rotation;
-    rocks[offset + 5] = candidate.variant;
-  }
-
-  const fieldRecords = [];
-  const environRecords = [];
-  const settlementCounts = {
-    city: [24, 18],
-    town: [16, 12],
-    settlement: [13, 10],
-    village: [11, 8],
-    fortress: [9, 7],
-    port: [13, 10],
-  };
   const insideDomain = (coord, inset = 2) => coord.x >= CONTINENT.bounds.xmin + inset
     && coord.x <= CONTINENT.bounds.xmax - inset
     && coord.y >= CONTINENT.bounds.ymin + inset
     && coord.y <= CONTINENT.bounds.ymax - inset;
-  const buildSettlementCandidate = (landmark, index, salt, near, far) => {
-    const phase = coordinateNoise(landmark.coord.x, landmark.coord.y, seed + salt) * Math.PI * 2;
-    const angle = phase + index * GOLDEN_ANGLE;
-    const radialNoise = coordinateNoise(
-      landmark.coord.x + index,
-      landmark.coord.y - index,
-      seed + salt + 1,
-    );
-    const radius = near + (far - near) * Math.sqrt(radialNoise);
-    return {
-      x: landmark.coord.x + Math.cos(angle) * radius,
-      y: landmark.coord.y + Math.sin(angle) * radius,
-    };
-  };
-  const acceptablePropGround = (coord, allowedTerrains, maxRise, footprint = null) => {
-    if (!insideDomain(coord) || atlas3dAuthoredWaterContains(coord, 1.4)) return null;
-    const sample = surveyAtlas(coord.x, coord.y, seed);
+  const acceptableGround = (coord, allowedTerrains, maxRise, footprint = null) => {
+    if (!atlas3dChunkOwnsCoord(rect, coord)
+      || !insideDomain(coord)
+      || atlas3dAuthoredWaterContains(coord, 1.4)) return null;
+    const sample = atlas3dChunkSurvey(coord.x, coord.y, seed);
     if (!sample.land || !allowedTerrains.has(sample.terrain)) return null;
-    const height = atlas3dTerrainHeightAt(coord, seed, stride);
+    const height = heightAt(coord);
+    if (height == null) return null;
     const comparisonHeight = atlas3dTerrainHeight(sample, coord, seed);
     const sampleCoords = [{ x: coord.x + 2, y: coord.y }, { x: coord.x, y: coord.y + 2 }];
     if (footprint) {
@@ -1511,32 +1701,55 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
         }));
       }
     }
-    const sampledHeights = sampleCoords.map((sampleCoord) => (
-      atlas3dTerrainHeight(surveyAtlas(sampleCoord.x, sampleCoord.y, seed), sampleCoord, seed)
+    const sampleHeights = sampleCoords.map((sampleCoord) => (
+      atlas3dTerrainHeight(atlas3dChunkSurvey(sampleCoord.x, sampleCoord.y, seed), sampleCoord, seed)
     ));
-    if (Math.max(...sampledHeights.map((sampleHeight) => (
-      Math.abs(sampleHeight - comparisonHeight)
-    ))) > maxRise) return null;
+    if (Math.max(...sampleHeights.map((sampleHeight) => Math.abs(sampleHeight - comparisonHeight))) > maxRise) {
+      return null;
+    }
     return height;
   };
-
+  const settlementCounts = {
+    city: [24, 18], town: [16, 12], settlement: [13, 10], village: [11, 8],
+    fortress: [9, 7], port: [13, 10],
+  };
   const fieldTerrains = new Set(["plains", "hills", "forest"]);
   const environTerrains = new Set(["plains", "hills", "forest", "marsh"]);
-
+  const settlementCandidate = (landmark, index, salt, near, far) => {
+    const phase = coordinateNoise(landmark.coord.x, landmark.coord.y, seed + salt) * Math.PI * 2;
+    const angle = phase + index * GOLDEN_ANGLE;
+    const radiusNoise = coordinateNoise(
+      landmark.coord.x + index,
+      landmark.coord.y - index,
+      seed + salt + 1,
+    );
+    const radius = near + (far - near) * Math.sqrt(radiusNoise);
+    return {
+      x: landmark.coord.x + Math.cos(angle) * radius,
+      y: landmark.coord.y + Math.sin(angle) * radius,
+    };
+  };
   for (const landmark of ATLAS_PROP_LANDMARKS) {
     if (!SETTLEMENT_PROP_KINDS.has(landmark.kind)) continue;
     const [fieldCount, environCount] = settlementCounts[landmark.kind] || [6, 4];
     for (let index = 0; index < fieldCount; index += 1) {
-      const coord = buildSettlementCandidate(landmark, index, SALT_FIELDS, 11, landmark.kind === "city" ? 30 : 24);
-      if (!clearsPropFeatures(coord, -2, landmark.id)) continue;
+      const coord = settlementCandidate(
+        landmark,
+        index,
+        SALT_FIELDS,
+        11,
+        landmark.kind === "city" ? 30 : 24,
+      );
+      if (!atlas3dChunkOwnsCoord(rect, coord)
+        || !clearsAtlas3dPropFeatures(coord, -2, landmark.id)) continue;
       const scaleNoise = coordinateNoise(coord.x, coord.y, seed + SALT_FIELDS + 3);
       const width = 3.4 + scaleNoise * 3.8;
       const depth = 2.2 + coordinateNoise(coord.y, coord.x, seed + SALT_FIELDS + 5) * 2.8;
       const rotation = coordinateNoise(coord.x, coord.y, seed + SALT_FIELDS + 7) * Math.PI;
-      const height = acceptablePropGround(coord, fieldTerrains, 1.05, { width, depth, rotation });
+      const height = acceptableGround(coord, fieldTerrains, 1.05, { width, depth, rotation });
       if (height == null) continue;
       const scene = atlas3dAxialToScene(coord);
-      fieldRecords.push(
+      fields.push(
         scene.x,
         height + 0.12,
         scene.z,
@@ -1547,16 +1760,19 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
       );
     }
     for (let index = 0; index < environCount; index += 1) {
-      const coord = buildSettlementCandidate(landmark, index, SALT_ENVIRONS, 5.5, landmark.kind === "city" ? 14 : 11);
-      if (!clearsPropFeatures(coord, -1.5, landmark.id)) continue;
-      const height = acceptablePropGround(
-        coord,
-        environTerrains,
-        1.7,
+      const coord = settlementCandidate(
+        landmark,
+        index,
+        SALT_ENVIRONS,
+        5.5,
+        landmark.kind === "city" ? 14 : 11,
       );
+      if (!atlas3dChunkOwnsCoord(rect, coord)
+        || !clearsAtlas3dPropFeatures(coord, -1.5, landmark.id)) continue;
+      const height = acceptableGround(coord, environTerrains, 1.7);
       if (height == null) continue;
       const scene = atlas3dAxialToScene(coord);
-      environRecords.push(
+      environs.push(
         scene.x,
         height,
         scene.z,
@@ -1566,12 +1782,84 @@ export function buildAtlas3dTerrainData(seed = CONTINENT.seed, stride = ATLAS_3D
       );
     }
   }
-  terrain.trees = trees;
-  terrain.rocks = rocks;
-  terrain.fields = new Float32Array(fieldRecords);
-  terrain.environs = new Float32Array(environRecords);
-  registerAtlas3dTerrainData(terrain);
-  return terrain;
+
+  return {
+    trees: new Float32Array(trees),
+    rocks: new Float32Array(rocks),
+    fields: new Float32Array(fields),
+    environs: new Float32Array(environs),
+  };
+}
+
+function atlas3dBuildClock() {
+  return globalThis.performance?.now?.() ?? Date.now();
+}
+
+export function buildAtlas3dChunk(seed = CONTINENT.seed, cx, cy, lod = 0) {
+  if (typeof seed !== "string" && !Number.isFinite(seed)) {
+    throw new TypeError("atlas 3D chunks require a string or finite numeric seed");
+  }
+  const resolvedCx = integerChunkCoordinate(cx, "cx");
+  const resolvedCy = integerChunkCoordinate(cy, "cy");
+  if (lod !== 0 && lod !== 1) throw new RangeError("atlas 3D chunks support only LOD 0 or LOD 1");
+  const startedAt = atlas3dBuildClock();
+  const rect = atlas3dChunkRect(resolvedCx, resolvedCy);
+  const origin = { x: rect.xmin, y: rect.ymin };
+  const fields = buildAtlas3dChunkFields(seed, rect);
+  const coreColumns = ATLAS_3D_CHUNK_SIZE + 1;
+  if (fields.empty) {
+    return {
+      version: ATLAS_3D_RENDER_VERSION,
+      seed,
+      cx: resolvedCx,
+      cy: resolvedCy,
+      lod,
+      empty: true,
+      origin,
+      span: ATLAS_3D_CHUNK_SIZE,
+      stride: lod === 1 ? 2 : 1,
+      columns: 0,
+      rows: 0,
+      surfaceVertexCount: 0,
+      skirtVertexOffset: 0,
+      skirtVertexCount: 0,
+      skirtDepth: ATLAS_3D_CHUNK_SKIRT_DEPTH,
+      heights: new Float32Array(0),
+      positions: new Float32Array(0),
+      colors: new Float32Array(0),
+      coastal: new Uint8Array(0),
+      ao: new Uint8Array(0),
+      shore: new Uint8Array(0),
+      indices: new Uint32Array(0),
+      trees: new Float32Array(0),
+      rocks: new Float32Array(0),
+      fields: new Float32Array(0),
+      environs: new Float32Array(0),
+      buildMs: atlas3dBuildClock() - startedAt,
+    };
+  }
+
+  const heights = new Float32Array(coreColumns * coreColumns);
+  for (let row = 0; row < coreColumns; row += 1) {
+    const sourceOffset = (fields.apron + row) * fields.columns + fields.apron;
+    heights.set(fields.heights.subarray(sourceOffset, sourceOffset + coreColumns), row * coreColumns);
+  }
+  const mesh = buildAtlas3dChunkMesh(fields, rect, lod);
+  const props = buildAtlas3dChunkProps(seed, rect, heights, mesh.stride);
+  return {
+    version: ATLAS_3D_RENDER_VERSION,
+    seed,
+    cx: resolvedCx,
+    cy: resolvedCy,
+    lod,
+    empty: false,
+    origin,
+    span: ATLAS_3D_CHUNK_SIZE,
+    heights,
+    ...mesh,
+    ...props,
+    buildMs: atlas3dBuildClock() - startedAt,
+  };
 }
 
 function cameraTarget(camera) {
@@ -1610,17 +1898,41 @@ export function atlas3dCameraFrame(camera, viewport, seed = CONTINENT.seed) {
   const pitchSin = Math.sin(pitch);
   const pitchCos = Math.cos(pitch);
   const height = Math.max(1, viewport?.height || 1);
-  const requestedDistance = height / (2 * Math.max(0.001, camera.zoom) * FOV_TAN);
-  const distance = Math.max(
-    requestedDistance,
-    (TERRAIN_MAX_HEIGHT + CAMERA_MIN_CLEARANCE - target.y) / pitchCos,
-  );
+  const zoomRatio = camera.zoom / Math.max(0.001, fitZoom);
+  // Preserve the authored full-continent fit, then progressively tighten the
+  // physical camera dolly as control passes into the local diorama. Without
+  // this nonlinear handoff an 8.6x UI zoom still saw ~280 hexes, forcing the
+  // worker window to exceed every quality-tier cache.
+  const dioramaProgress = smoothstep(1, 8.6, zoomRatio);
+  const portraitBoost = Math.max(1, height / Math.max(1, viewport?.width || 1));
+  const maxDioramaBoost = 2.8 * portraitBoost;
+  const physicalZoom = camera.zoom * (1 + dioramaProgress * (maxDioramaBoost - 1));
+  const requestedDistance = height / (2 * Math.max(0.001, physicalZoom) * FOV_TAN);
+  // The full-continent camera stayed above the realm's single highest summit,
+  // imposing a fixed distance that made a 128-hex local window impossible.
+  // Clear only the terrain beneath this local camera position. A short fixed
+  // point solve accounts for moving backward onto a ridge at close zoom.
+  let distance = requestedDistance;
+  for (let pass = 0; pass < 4; pass += 1) {
+    const cameraGround = atlas3dSceneToAxial({
+      x: target.x,
+      z: target.z + distance * pitchSin,
+    });
+    const groundHeight = atlas3dTerrainHeightAt(cameraGround, seed);
+    distance = Math.max(
+      requestedDistance,
+      (groundHeight + CAMERA_MIN_CLEARANCE - target.y) / Math.max(0.001, pitchCos),
+    );
+  }
   const frame = {
     target,
     distance,
     pitch,
     pitchSin,
     pitchCos,
+    visibleHeight: 2 * distance * FOV_TAN,
+    visibleWidth: 2 * distance * FOV_TAN
+      * (Math.max(1, viewport?.width || 1) / height),
     position: {
       x: target.x,
       y: target.y + distance * pitchCos,

@@ -324,6 +324,15 @@ export function Solitaire() {
   const [manualCreation, setManualCreation] = useState(false);
   const [fusionRune, setFusionRune] = useState(null); // forge-rune id being bound in the fusion ritual
   const [mapOpen, setMapOpen] = useState(false);
+  // Ground travel is narrated and animated concurrently. Canonical world
+  // state still lands only through finishTravel; this object is transient UI
+  // state and is deliberately excluded from campaign persistence.
+  const [travelMarch, setTravelMarch] = useState(null);
+  const travelMarchWaitersRef = useRef(new Map());
+  // Async travel may outlive the campaign that launched it (sign-out, reset,
+  // opening another save). Every travel tail checks this generation before it
+  // is allowed to land the party or surface an encounter.
+  const travelLifecycleRef = useRef({ generation: 0 });
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
 
@@ -359,6 +368,42 @@ export function Solitaire() {
   const storyTouchYRef = useRef(null);
   const [storyFollowing, setStoryFollowing] = useState(true);
   const [storyAtBottom, setStoryAtBottom] = useState(true);
+
+  function captureTravelLifecycle(baseState = liveStateRef.current) {
+    return {
+      generation: travelLifecycleRef.current.generation,
+      campaignId: currentCampaignIdRef.current,
+      baseState,
+    };
+  }
+
+  function isTravelLifecycleCurrent(lifecycle) {
+    return !!lifecycle
+      && lifecycle.generation === travelLifecycleRef.current.generation
+      && lifecycle.campaignId === currentCampaignIdRef.current;
+  }
+
+  function cancelTravelLifecycle({ closeMap = true } = {}) {
+    travelLifecycleRef.current.generation += 1;
+    for (const waiter of travelMarchWaitersRef.current.values()) {
+      waiter.resolve?.("cancelled");
+    }
+    travelMarchWaitersRef.current.clear();
+    setTravelMarch(null);
+    setLiveNarrator(emptyLiveNarrator());
+    setPendingCombat(null);
+    setPendingEngage(null);
+    if (closeMap) setMapOpen(false);
+    setLoading(false);
+  }
+
+  useEffect(() => () => {
+    travelLifecycleRef.current.generation += 1;
+    for (const waiter of travelMarchWaitersRef.current.values()) {
+      waiter.resolve?.("cancelled");
+    }
+    travelMarchWaitersRef.current.clear();
+  }, []);
 
   function setStoryFollow(next) {
     storyFollowRef.current = next;
@@ -454,6 +499,7 @@ export function Solitaire() {
       if (!mounted) return;
       const nextUserId = u?.id ?? null;
       if (authUserIdRef.current !== nextUserId) {
+        cancelTravelLifecycle();
         authUserIdRef.current = nextUserId;
         resumeAttemptedForRef.current = null;
         setResumeChecked(false);
@@ -757,6 +803,7 @@ export function Solitaire() {
   // (not a snapshot) so callers from useEffect can flip cancellation atomically
   // when their cleanup fires.
   async function openCampaign(id, isCancelled = () => false, cachedSnapshot = null) {
+    cancelTravelLifecycle();
     setCampaignBusy(true);
     setHydrated(false);
     setCampaignError(null);
@@ -819,6 +866,7 @@ export function Solitaire() {
   }
 
   async function createCampaign(isCancelled = () => false) {
+    cancelTravelLifecycle();
     setCampaignBusy(true);
     setHydrated(false);
     setCampaignError(null);
@@ -864,6 +912,7 @@ export function Solitaire() {
 
   async function handleDeleteCampaign(id) {
     if (!(await askConfirm({ title: "Delete campaign", body: "Delete this campaign? This cannot be undone.", confirmLabel: "Delete", danger: true }))) return;
+    if (currentCampaignId === id) cancelTravelLifecycle();
     setCampaignError(null);
     try {
       await deleteCampaign(id);
@@ -893,6 +942,7 @@ export function Solitaire() {
   }
 
   async function handleBackToCampaigns() {
+    cancelTravelLifecycle();
     try {
       await flushActiveCampaign();
     } catch (e) {
@@ -909,6 +959,7 @@ export function Solitaire() {
   }
 
   async function handleSignOut() {
+    cancelTravelLifecycle();
     try {
       await flushActiveCampaign();
     } catch (e) {
@@ -964,10 +1015,11 @@ export function Solitaire() {
   // Narrator wrapper used by every turn site. The edge function emits both
   // reasoning and answer JSON chunks. advanceLiveNarrator projects only the
   // recoverable player-facing fields, and { reset } cleanly replaces retries.
-  function narrate(st, msg) {
+  function narrate(st, msg, isCurrent = () => true) {
     scrollStoryToLatest();
     setLiveNarrator(emptyLiveNarrator());
     return callNarrator(st, msg, (chunk) => {
+      if (!isCurrent()) return;
       setLiveNarrator((current) => advanceLiveNarrator(current, chunk));
     });
   }
@@ -1126,6 +1178,48 @@ export function Solitaire() {
     runNarratorTurn(retry.base, retry.message);
   }
 
+  function beginTravelMarch(travel) {
+    const id = `atlas-march-${Date.now()}-${travel.path.length}`;
+    let resolve;
+    const promise = new Promise((done) => { resolve = done; });
+    travelMarchWaitersRef.current.set(id, { promise, resolve });
+    setTravelMarch({
+      id,
+      path: travel.path.map((coord) => ({ x: coord.x, y: coord.y })),
+      minutes: travel.totalMins,
+      encounterAtEnd: travel.encounter || null,
+      visualDone: false,
+    });
+    return id;
+  }
+
+  function handleTravelMarchFinish(id) {
+    if (!id) return;
+    setTravelMarch((current) => (
+      current?.id === id ? { ...current, visualDone: true } : current
+    ));
+    travelMarchWaitersRef.current.get(id)?.resolve?.("finished");
+  }
+
+  async function waitForTravelMarch(id) {
+    const waiter = travelMarchWaitersRef.current.get(id);
+    if (!waiter) return "cancelled";
+    let timeoutId = 0;
+    const result = await Promise.race([
+      waiter.promise,
+      new Promise((resolve) => {
+        // The authored visual duration is capped at six seconds. This guard
+        // also releases combat if the atlas cannot mount or loses context.
+        timeoutId = setTimeout(() => resolve("timeout"), 7_000);
+      }),
+    ]);
+    if (timeoutId) clearTimeout(timeoutId);
+    if (travelMarchWaitersRef.current.get(id) === waiter) {
+      travelMarchWaitersRef.current.delete(id);
+    }
+    return result;
+  }
+
   async function handleTravel(dest, providedPath) {
     if (loading) return;
     const cur = state.world.currentTile;
@@ -1138,7 +1232,6 @@ export function Solitaire() {
       && providedPath[providedPath.length - 1]?.y === dest.y;
     const fullPath = previewIsCurrent ? providedPath : findWorldRoute(state, cur, dest);
     if (!fullPath || fullPath.length < 2) return;
-    setMapOpen(false);
     setReceipts({ tileKey: null, items: {} }); // leaving the scene ends refunds
     setError(null);
     setLoading(true);
@@ -1199,7 +1292,6 @@ export function Solitaire() {
 
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Travel from ${fromName} ${arrived ? "to" : "toward"} ${toName}${mountNote}.` };
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
-    setState(stateWithPlayer);
 
     const generatedSite = destTileFull.poi?.generated;
     const destDescription = isHidden
@@ -1234,21 +1326,167 @@ export function Solitaire() {
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     };
 
-    await finishTravel(stateWithPlayer, fullMsg, travel);
+    // Keep WorldExploration and its atlas mounted while narration starts. The
+    // party pin owns only this visual route; the simulation continues to own
+    // the authoritative arrival tile and save data.
+    const lifecycle = captureTravelLifecycle();
+    const marchId = beginTravelMarch(travel);
+
+    await finishTravel(stateWithPlayer, fullMsg, travel, marchId, lifecycle);
   }
 
   // Shared tail for every travel mode: ask the narrator, land via applyTravelArrival
   // (which reveals sight by travel.mode), record the turn, offer any fight.
-  async function finishTravel(stateWithPlayer, fullMsg, travel) {
+  function rebasePreparedTravelState(current, base, prepared) {
+    if (!base || !prepared) return prepared || current;
+
+    // Begin with the latest live state so pack/equipment changes, portraits,
+    // narrator settings, memories, and any other edits made while narration was
+    // in flight survive the arrival commit.
+    let character = current.character;
+    const resolveDelta = (prepared.character?.resolve ?? 0) - (base.character?.resolve ?? 0);
+    if (resolveDelta) {
+      character = {
+        ...character,
+        resolve: Math.max(0, (character?.resolve ?? 0) + resolveDelta),
+      };
+    }
+
+    // Flying can spend companion resolve or mount hunger/sleep before the
+    // narrated arrival. Reapply only those deterministic deltas to the latest
+    // codex rather than replacing concurrently edited inventories or worn kit.
+    const baseCharacters = base.world?.codex?.characters || {};
+    const preparedCharacters = prepared.world?.codex?.characters || {};
+    let characters = current.world?.codex?.characters || {};
+    let charactersTouched = false;
+    for (const [id, after] of Object.entries(preparedCharacters)) {
+      const before = baseCharacters[id];
+      const live = characters[id];
+      if (!before || !live) continue;
+      let rebased = live;
+      const companionResolveDelta = (after.resolve ?? 0) - (before.resolve ?? 0);
+      if (companionResolveDelta) {
+        rebased = { ...rebased, resolve: Math.max(0, (rebased.resolve ?? 0) + companionResolveDelta) };
+      }
+      const needDeltas = {};
+      for (const key of ["hunger", "thirst", "sleep"]) {
+        const delta = (after.needs?.[key] ?? before.needs?.[key] ?? 0)
+          - (before.needs?.[key] ?? 0);
+        if (delta) needDeltas[key] = delta;
+      }
+      if (Object.keys(needDeltas).length) {
+        const needs = { ...(rebased.needs || {}) };
+        for (const [key, delta] of Object.entries(needDeltas)) {
+          needs[key] = Math.max(0, Math.min(100, (needs[key] ?? 0) + delta));
+        }
+        rebased = { ...rebased, needs };
+      }
+      if (rebased !== live) {
+        if (!charactersTouched) characters = { ...characters };
+        characters[id] = rebased;
+        charactersTouched = true;
+      }
+    }
+
+    // Preserve the deterministic overflight sightings prepared for a flight,
+    // merging them into any tile deltas created while the request was pending.
+    const baseTiles = base.world?.tiles || {};
+    const preparedTiles = prepared.world?.tiles || {};
+    let tiles = current.world?.tiles || {};
+    let tilesTouched = false;
+    for (const [key, after] of Object.entries(preparedTiles)) {
+      const beforeSighting = baseTiles[key]?.aerialSighting;
+      const afterSighting = after?.aerialSighting;
+      if (!afterSighting || (
+        beforeSighting?.day === afterSighting.day
+        && beforeSighting?.hour === afterSighting.hour
+      )) continue;
+      if (!tilesTouched) tiles = { ...tiles };
+      tiles[key] = { ...(tiles[key] || {}), aerialSighting: { ...afterSighting } };
+      tilesTouched = true;
+    }
+
+    const codex = charactersTouched
+      ? { ...current.world.codex, characters }
+      : current.world.codex;
+    const world = (charactersTouched || tilesTouched)
+      ? { ...current.world, codex, tiles }
+      : current.world;
+    const preparedBeat = prepared.beats?.[prepared.beats.length - 1];
+    const beats = preparedBeat && !(current.beats || []).some((beat) => beat.id === preparedBeat.id)
+      ? [...(current.beats || []), preparedBeat]
+      : current.beats;
+
+    return { ...current, character, world, beats };
+  }
+
+  async function finishTravel(stateWithPlayer, fullMsg, travel, marchId = null, lifecycle = captureTravelLifecycle()) {
+    let travelBeat = null;
+    let narratorEncounter = null;
+    let failure = null;
     try {
-      const beat = await narrate(stateWithPlayer, fullMsg);
-      const next = applyTravelArrival(stateWithPlayer, beat, travel);
-      const landed = recordTurn(stateWithPlayer, fullMsg, next, { travel });
-      setState(landed);
-      if (travel.encounter && travel.encounter.posture === "hostile") setPendingCombat(travel.encounter);
+      const beat = await narrate(
+        stateWithPlayer,
+        fullMsg,
+        () => isTravelLifecycleCurrent(lifecycle),
+      );
+      if (!isTravelLifecycleCurrent(lifecycle)) return;
+      travelBeat = beat;
+      narratorEncounter = beat.start_combat || null;
     } catch (e) {
+      if (!isTravelLifecycleCurrent(lifecycle)) return;
+      failure = e;
+      // A retained atlas would cover the error banner. Leave the attempted
+      // player beat in the log, but never apply movement from a failed turn.
+      setState((current) => rebasePreparedTravelState(
+        current,
+        lifecycle.baseState,
+        stateWithPlayer,
+      ));
+      setMapOpen(false);
       setError(e.message || String(e));
+      // A synchronous narrator/config failure can beat React's first atlas
+      // march commit, so no mounted tween exists to release this waiter.
+      // Failed travel never lands; settle its visual gate immediately.
+      if (marchId) travelMarchWaitersRef.current.get(marchId)?.resolve?.("failed");
     } finally {
+      if (marchId) {
+        await waitForTravelMarch(marchId);
+      }
+      if (!isTravelLifecycleCurrent(lifecycle)) return;
+      setTravelMarch((current) => (current?.id === marchId ? null : current));
+      if (travelBeat && !failure) {
+        // Commit arrival only once narration and the visible march are both
+        // complete. This keeps the preview route stable under the walking pin.
+        setState((current) => {
+          if (!isTravelLifecycleCurrent(lifecycle)) return current;
+          const rebased = rebasePreparedTravelState(
+            current,
+            lifecycle.baseState,
+            stateWithPlayer,
+          );
+          const next = applyTravelArrival(rebased, travelBeat, travel);
+          const landed = recordTurn(rebased, fullMsg, next, { travel });
+          liveStateRef.current = landed;
+          return landed;
+        });
+        const hostileEncounter = travel.encounter?.posture === "hostile"
+          ? travel.encounter
+          : null;
+        if (hostileEncounter || narratorEncounter) {
+          // The deterministic route roll owns precedence. A narrator combat
+          // directive is used only when the route did not already halt on a
+          // hostile encounter, preventing two competing combat prompts.
+          setMapOpen(false);
+          if (hostileEncounter) {
+            setPendingEngage(null);
+            setPendingCombat(hostileEncounter);
+          } else {
+            setPendingCombat(null);
+            setPendingEngage({ dir: narratorEncounter });
+          }
+        }
+      }
       setLoading(false);
     }
   }
@@ -1374,7 +1612,6 @@ export function Solitaire() {
         : `Narrate the flight; after about an hour aloft ${lapseNote} — they have NOT reached ${toName}, and must take wing again to go on.`;
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: viaMount ? `Fly ${arrived ? "to" : "toward"} ${toName} on ${flightMount.name}.` : `Fly ${arrived ? "to" : "toward"} ${toName}${plan.casts > 1 ? " with the party" : ""}.` };
     const stateWithPlayer = { ...state, character: ch, world, beats: [...state.beats, playerBeat] };
-    setState(stateWithPlayer);
     const opener = viaMount
       ? `[PLAYER ACTION] You take to the air on ${flightMount.name}, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).`
       : `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).`;
@@ -1421,7 +1658,6 @@ export function Solitaire() {
     const ch = { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - spell.resolveCost) };
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: `${spell.name} to ${toName}.` };
     const stateWithPlayer = { ...state, character: ch, beats: [...state.beats, playerBeat] };
-    setState(stateWithPlayer);
     const msg = `[PLAYER ACTION] You work ${spell.name} and step through space, arriving at ${toName}${blind ? " — a place known only by repute, so you arrive without knowing what surrounds you" : ""}. No journey, no road between. It cost ${spell.resolveCost} resolve. Narrate the rush of arrival and what greets you. Use minutes_passed = 5.`;
     const travel = { fromName, toName, dest: { x: dest.x, y: dest.y }, path: [{ x: dest.x, y: dest.y }], totalMins: 5, encounter: null, mode: "teleport" };
     await finishTravel(stateWithPlayer, msg, travel);
@@ -1429,6 +1665,7 @@ export function Solitaire() {
 
   async function handleResetCampaign() {
     if (!(await askConfirm({ title: "Reset campaign", body: "Reset this campaign to the beginning? Your current progress here will be erased.", confirmLabel: "Reset", danger: true }))) return;
+    cancelTravelLifecycle();
     setState(makeInitialState());
     closeBeatMenu();
     setDeckOpen(false);
@@ -2568,6 +2805,8 @@ export function Solitaire() {
           state={state}
           onClose={() => setMapOpen(false)}
           onTravel={handleTravel}
+          travelMarch={travelMarch}
+          onTravelMarchFinish={handleTravelMarchFinish}
           onFly={handleFly}
           onTeleport={handleTeleport}
           onSeekCombat={handleSeekCombat}

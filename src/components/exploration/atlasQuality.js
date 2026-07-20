@@ -1,17 +1,15 @@
 // Quality tiers for the 3D world atlas. A tier is a frozen bundle of render
 // settings resolved once per atlas mount: either forced by the player's
-// "Map detail" preference or picked from coarse device signals. Tiers only
-// shape presentation (grid stride, shadows, effects, prop density, pixel
-// budgets) — terrain content stays deterministic and identical across tiers.
-import {
-  ATLAS_3D_FINE_TERRAIN_STRIDE,
-  ATLAS_3D_TERRAIN_STRIDE,
-} from "./worldAtlas3dModel.js";
+// "Map detail" preference or picked from coarse device signals. Terrain is
+// always generated from the same stride-one lattice; tiers only decide how
+// much of its LOD0 mesh and deterministic set dressing remain resident.
 
 export const ATLAS_QUALITY_TIERS = Object.freeze({
   high: Object.freeze({
     id: "high",
-    terrainStride: ATLAS_3D_FINE_TERRAIN_STRIDE,
+    lod0Radius: 2,
+    chunkCacheSize: 96,
+    chunkPropCap: 320,
     shadowMapSize: 2048,
     postFx: "full",
     ambientFx: "full",
@@ -21,7 +19,9 @@ export const ATLAS_QUALITY_TIERS = Object.freeze({
   }),
   medium: Object.freeze({
     id: "medium",
-    terrainStride: ATLAS_3D_TERRAIN_STRIDE,
+    lod0Radius: 1,
+    chunkCacheSize: 64,
+    chunkPropCap: 200,
     shadowMapSize: 1024,
     postFx: "grade",
     ambientFx: "water",
@@ -31,7 +31,10 @@ export const ATLAS_QUALITY_TIERS = Object.freeze({
   }),
   low: Object.freeze({
     id: "low",
-    terrainStride: ATLAS_3D_TERRAIN_STRIDE,
+    lod0Radius: 0,
+    chunkCacheSize: 48,
+    chunkPropCap: 100,
+    proceduralOnly: true,
     shadowMapSize: 0,
     postFx: "off",
     ambientFx: "off",

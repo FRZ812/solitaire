@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  atlasStartChunkRequests,
   getCachedMapCanvasImages,
   preloadMapCanvasImages,
+  warmAtlasStartChunks,
 } from "./renderingPreload.js";
 
 const originalImage = globalThis.Image;
@@ -44,5 +46,21 @@ describe("shared map rendering images", () => {
     expect(reopened.poi.trade).toBe(cached.poi.trade);
     expect(reopened.poi.city).toBe(cached.poi.city);
     expect(reopened.poi.wilderness).toBe(cached.poi.wilderness);
+  });
+});
+
+describe("3D atlas start-window warming", () => {
+  it("requests a prioritized 3x3 LOD0 neighborhood around the party", async () => {
+    const request = vi.fn((cx, cy, lod, priority) => Promise.resolve({ cx, cy, lod, priority }));
+    const planned = atlasStartChunkRequests({ x: 49, y: -25 });
+    const chunks = await warmAtlasStartChunks({ request }, { x: 49, y: -25 });
+
+    expect(planned).toHaveLength(9);
+    expect(planned[0]).toMatchObject({ cx: 2, cy: -2, lod: 0 });
+    expect(planned.every((entry) => entry.lod === 0)).toBe(true);
+    expect(new Set(planned.map((entry) => `${entry.cx},${entry.cy}`)).size).toBe(9);
+    expect(planned[0].priority).toBeGreaterThan(planned.at(-1).priority);
+    expect(request).toHaveBeenCalledTimes(9);
+    expect(chunks).toHaveLength(9);
   });
 });

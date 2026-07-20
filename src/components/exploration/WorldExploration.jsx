@@ -530,15 +530,43 @@ function QuestJournalPage({ quests, current, onPick }) {
   );
 }
 
-function WorldAtlasPage({ state, origin, onPick, toolbarActions }) {
+function WorldAtlasPage({
+  state,
+  origin,
+  onPick,
+  onTravel,
+  travelMarch,
+  onTravelMarchFinish,
+  toolbarActions,
+}) {
   return (
     <div className="rpg-folio-page rpg-folio-page--atlas">
-      <WorldAtlas state={state} origin={origin} onPick={onPick} toolbarActions={toolbarActions} />
+      <WorldAtlas
+        state={state}
+        origin={origin}
+        onPick={onPick}
+        onTravel={onTravel}
+        travelMarch={travelMarch}
+        onTravelMarchFinish={onTravelMarchFinish}
+        toolbarActions={toolbarActions}
+      />
     </div>
   );
 }
 
-export function AdventureFolio({ state, page, quests, landmarks, origin, onPage, onClose, onPick }) {
+export function AdventureFolio({
+  state,
+  page,
+  quests,
+  landmarks,
+  origin,
+  onPage,
+  onClose,
+  onPick,
+  onTravel,
+  travelMarch,
+  onTravelMarchFinish,
+}) {
   const tabs = [
     { id: "atlas", label: "World atlas", icon: "atlas", count: landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi)).length },
     { id: "quests", label: "Quest journal", icon: "journal", count: quests.length },
@@ -594,14 +622,34 @@ export function AdventureFolio({ state, page, quests, landmarks, origin, onPage,
         >
           {page === "quests"
             ? <QuestJournalPage quests={quests} current={origin} onPick={onPick} />
-            : <WorldAtlasPage state={state} origin={origin} onPick={onPick} toolbarActions={atlasToolbarActions} />}
+            : (
+              <WorldAtlasPage
+                state={state}
+                origin={origin}
+                onPick={onPick}
+                onTravel={onTravel}
+                travelMarch={travelMarch}
+                onTravelMarchFinish={onTravelMarchFinish}
+                toolbarActions={atlasToolbarActions}
+              />
+            )}
         </div>
       </section>
     </div>
   );
 }
 
-export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, onSeekCombat, loading }) {
+export function WorldExploration({
+  state,
+  onClose,
+  onTravel,
+  travelMarch = null,
+  onTravelMarchFinish,
+  onFly,
+  onTeleport,
+  onSeekCombat,
+  loading,
+}) {
   const [selected, setSelected] = useState(null);
   const [folioPage, setFolioPage] = useState(null);
   const [flyPanelDest, setFlyPanelDest] = useState(null);
@@ -646,7 +694,7 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
   useEffect(() => {
     if (!folioPage && !flyPanelDest) return undefined;
     const onKeyDown = (event) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented) return;
       if (flyPanelDest) setFlyPanelDest(null);
       else setFolioPage(null);
     };
@@ -664,14 +712,36 @@ export function WorldExploration({ state, onClose, onTravel, onFly, onTeleport, 
     else setFlyPanelDest(selected);
   }
 
+  function handleGroundTravel() {
+    if (!journey || loading) return;
+    // Ground travel is presented on the atlas even when it was confirmed from
+    // the local map. React keeps this folio mounted while App starts narration.
+    setFolioPage("atlas");
+    onTravel(selected, journey.fullPath);
+  }
+
   return (
     <div className={`exploration-shell rpg-exploration-shell ${currentCity ? "is-capital-map" : ""}`} style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
       <RpgHeader state={state} biome={currentBiome} tile={model.current.tile} onClose={onClose} onWayfinder={() => setFolioPage("atlas")} />
       <div className="rpg-exploration-body">
         <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onSeekCombat={onSeekCombat} loading={loading} night={hour < 6 || hour >= 20} city={currentCity} />
-        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={() => journey && !loading && onTravel(selected, journey.fullPath)} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
+        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={handleGroundTravel} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
       </div>
-      {folioPage && <AdventureFolio state={state} page={folioPage} quests={activeQuests} landmarks={model.landmarks} origin={model.origin} onPage={setFolioPage} onClose={() => setFolioPage(null)} onPick={pick} />}
+      {folioPage && (
+        <AdventureFolio
+          state={state}
+          page={folioPage}
+          quests={activeQuests}
+          landmarks={model.landmarks}
+          origin={model.origin}
+          onPage={setFolioPage}
+          onClose={() => setFolioPage(null)}
+          onPick={pick}
+          onTravel={onTravel}
+          travelMarch={travelMarch}
+          onTravelMarchFinish={onTravelMarchFinish}
+        />
+      )}
       {flyPanelDest && <AtlasFlyPanel plan={flyPlan} destination={selectedName} onCancel={() => setFlyPanelDest(null)} onConfirm={(assign) => { const destination = flyPanelDest; setFlyPanelDest(null); onFly(destination, assign); }} />}
     </div>
   );

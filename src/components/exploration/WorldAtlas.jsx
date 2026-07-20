@@ -21,15 +21,26 @@ import { LoadingDots } from "../primitives.jsx";
 import { ATLAS_QUALITY_EVENT, getAtlasQuality } from "../../engine/preferences.js";
 import { resolveAtlasQuality } from "./atlasQuality.js";
 import { WorldAtlas3DScene } from "./WorldAtlas3DScene.jsx";
+import { AtlasPaperMap } from "./AtlasPaperMap.jsx";
+import {
+  atlasPaperMarkerVisible,
+  atlasPaperWorldToScreen,
+  centerAtlasPaperCamera,
+  clampAtlasPaperCamera,
+  fitAtlasPaperCamera,
+  panAtlasPaperCamera,
+  zoomAtlasPaperCamera,
+} from "./atlasPaperMapModel.js";
+import { createAtlasTween } from "./atlasTween.js";
 import {
   ATLAS_3D_MAX_ZOOM,
-  atlas3dFitZoom,
+  atlas3dCameraFrame,
   atlas3dProject,
   atlas3dScreenToGround,
   atlas3dTerrainHeightAt,
+  atlas3dWindowFloor,
   centerAtlas3dCamera,
   clampAtlas3dCamera,
-  fitAtlas3dCamera,
   panAtlas3dCamera,
   zoomAtlas3dCamera,
 } from "./worldAtlas3dModel.js";
@@ -39,6 +50,7 @@ import {
   ATLAS_LAYERS,
   atlasLandmarkLayer,
   atlasLandmarkTypeLabel,
+  atlasFitZoom,
   atlasMarkerVisible,
   atlasQuestMarkers,
   atlasRoutesForLandmark,
@@ -69,10 +81,16 @@ const ATLAS_WHEEL_ZOOM_STEP = 1.22;
 const ATLAS_WHEEL_STEP_PIXELS = 100;
 const ATLAS_WHEEL_MAX_FRAME_DELTA = 240;
 const ATLAS_WHEEL_IGNORE_SELECTOR = "[data-atlas-wheel-ignore]";
+export const ATLAS_PAPER_ENTER_RATIO = 8;
+export const ATLAS_3D_ENTER_RATIO = 8.6;
 
 function atlasOpeningZoom(viewport, seed = CONTINENT.seed) {
   const portrait = viewport.height > viewport.width * 1.3;
-  return atlas3dFitZoom(viewport, seed) * (portrait ? 2.35 : ATLAS_OPEN_ZOOM_RATIO);
+  const localFloor = atlas3dWindowFloor(viewport, seed);
+  return Math.min(
+    ATLAS_3D_MAX_ZOOM,
+    Math.max(localFloor * (portrait ? 1.28 : ATLAS_OPEN_ZOOM_RATIO), localFloor),
+  );
 }
 
 function clamp(value, min, max) {
@@ -109,6 +127,68 @@ export function atlasKeyboardShortcutAllowed(target) {
   return !element?.closest?.("button, a, input, select, textarea, [contenteditable='true']");
 }
 
+export function atlasModeForZoom(currentMode, zoom, fitZoom, windowFloor = null) {
+  const ratio = zoom / Math.max(0.0001, fitZoom);
+  const threeEnterRatio = Number.isFinite(windowFloor)
+    ? Math.max(ATLAS_3D_ENTER_RATIO, windowFloor / Math.max(0.0001, fitZoom))
+    : ATLAS_3D_ENTER_RATIO;
+  if (currentMode === "paper") return ratio >= threeEnterRatio ? "3d" : "paper";
+  return ratio < ATLAS_PAPER_ENTER_RATIO ? "paper" : "3d";
+}
+
+export function atlasModeForScene(currentMode, sceneState, zoom, fitZoom, windowFloor = null) {
+  if (sceneState === "error") return "paper";
+  if (sceneState === "loading") return currentMode;
+  return atlasModeForZoom(currentMode, zoom, fitZoom, windowFloor);
+}
+
+export function atlasMarchDuration(path) {
+  const steps = Math.max(0, (path?.length || 0) - 1);
+  return Math.max(1_800, Math.min(6_000, steps * 120));
+}
+
+export function atlasMarchCoordAt(path, progress) {
+  if (!Array.isArray(path) || path.length === 0) return null;
+  if (path.length === 1) return { x: path[0].x, y: path[0].y };
+  const position = clamp(progress, 0, 1) * (path.length - 1);
+  const index = Math.min(path.length - 2, Math.floor(position));
+  const mix = Math.min(1, position - index);
+  return {
+    x: path[index].x + (path[index + 1].x - path[index].x) * mix,
+    y: path[index].y + (path[index + 1].y - path[index].y) * mix,
+  };
+}
+
+export function centerAtlasMarchCamera(camera, coord, {
+  viewport,
+  fitZoom,
+  windowFloor,
+  seed = CONTINENT.seed,
+  sceneState = "loading",
+} = {}) {
+  if (sceneState === "ready") {
+    const zoom = Math.max(
+      camera.zoom,
+      windowFloor * 1.12,
+      1.2,
+      fitZoom * ATLAS_3D_ENTER_RATIO,
+    );
+    return {
+      mode: "3d",
+      camera: centerAtlas3dCamera(camera, viewport, coord, zoom, seed),
+    };
+  }
+  const zoom = Math.min(camera.zoom, fitZoom * (ATLAS_PAPER_ENTER_RATIO - 0.5));
+  return {
+    mode: "paper",
+    camera: centerAtlasPaperCamera(camera, viewport, coord, zoom),
+  };
+}
+
+export function atlasDisplayedPartyCoord(marchCoord, partyCoord, visualDone = false) {
+  return !visualDone && marchCoord ? marchCoord : partyCoord;
+}
+
 function sameCamera(a, b) {
   return a.x === b.x
     && a.y === b.y
@@ -139,7 +219,7 @@ function stopStagePointer(event) {
   event.stopPropagation();
 }
 
-const AtlasPlaceCard = memo(function AtlasPlaceCard({ entry, onChart }) {
+const AtlasPlaceCard = memo(function AtlasPlaceCard({ entry, onChart, onTravel, travelDisabled = false }) {
   const [expanded, setExpanded] = useState(false);
   const {
     areaName,
@@ -208,6 +288,16 @@ const AtlasPlaceCard = memo(function AtlasPlaceCard({ entry, onChart }) {
               <span>Set destination</span>
             </button>
           )}
+          {!selectionIsParty && journey && onTravel && (
+            <button
+              type="button"
+              className="world-atlas__march"
+              onClick={onTravel}
+              disabled={travelDisabled}
+            >
+              <span>{travelDisabled ? "Marching…" : "March now"}</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -242,11 +332,26 @@ const AtlasPlaceCard = memo(function AtlasPlaceCard({ entry, onChart }) {
   );
 });
 
-export function WorldAtlas({ state, origin, onPick, initialSelection = null, toolbarActions = null }) {
+export function WorldAtlas({
+  state,
+  origin,
+  onPick,
+  onTravel = null,
+  travelMarch = null,
+  onTravelMarchFinish = null,
+  initialSelection = null,
+  toolbarActions = null,
+}) {
   const seed = state?.world?.seed || CONTINENT.seed;
   const partyCoord = origin || state?.world?.currentTile || CONTINENT.start.coord;
   const stageRef = useRef(null);
   const scene3dRef = useRef(null);
+  const paperMapRef = useRef(null);
+  const marchTweenRef = useRef(null);
+  const marchFollowRef = useRef(true);
+  const marchFinishRef = useRef(onTravelMarchFinish);
+  const marchRuntimeRef = useRef(null);
+  const sceneRecoveryModeRef = useRef(null);
   const searchInputRef = useRef(null);
   const gestureRef = useRef({
     pointers: new Map(),
@@ -275,6 +380,9 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       seed,
     );
   });
+  const [atlasMode, setAtlasMode] = useState("3d");
+  const [paperReady, setPaperReady] = useState(false);
+  const [marchCoord, setMarchCoord] = useState(null);
   const [visibleLayers, setVisibleLayers] = useState(() => new Set(ATLAS_LAYERS.map((layer) => layer.id)));
   const [focusedRealmId, setFocusedRealmId] = useState(null);
   // The party marker already communicates the opening position. Keep the map
@@ -286,10 +394,9 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   const [sceneState, setSceneState] = useState("loading");
   const [sceneError, setSceneError] = useState("");
   const [qualityMode, setQualityMode] = useState(getAtlasQuality);
-  // Bumped when the refined terrain grid swaps in so the HTML overlay
-  // re-projects markers against the new surface heights.
-  const [, setTerrainEpoch] = useState(0);
   const quality = useMemo(() => resolveAtlasQuality(qualityMode), [qualityMode]);
+
+  marchFinishRef.current = onTravelMarchFinish;
 
   useEffect(() => {
     const applyQuality = (event) => setQualityMode(event?.detail || getAtlasQuality());
@@ -307,7 +414,8 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     setSceneState("loading");
   }, [quality.id]);
 
-  const fit = atlas3dFitZoom(planeViewport, seed);
+  const fit = atlasFitZoom(planeViewport);
+  const windowFloor = atlas3dWindowFloor(planeViewport, seed);
   const zoomRatio = camera.zoom / fit;
   const hexKilometers = CONTINENT.hexKilometers || 6;
   const landmarks = useMemo(() => buildAtlasLandmarks(state, partyCoord), [state, partyCoord]);
@@ -318,16 +426,39 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   const questMarkers = useMemo(() => atlasQuestMarkers(state), [state]);
   const trackedCharacter = useMemo(() => trackedCharacterResult(state), [state]);
 
+  marchRuntimeRef.current = {
+    viewport: planeViewport,
+    fitZoom: fit,
+    windowFloor,
+    seed,
+    sceneState,
+  };
+
   function clampActiveCamera(current) {
-    return clampAtlas3dCamera(current, planeViewport, seed);
+    return atlasMode === "paper"
+      ? clampAtlasPaperCamera(current, planeViewport)
+      : clampAtlas3dCamera(current, planeViewport, seed);
   }
 
   function centerActiveCamera(current, coord, zoom = current.zoom) {
-    return centerAtlas3dCamera(current, planeViewport, coord, zoom, seed);
+    return sceneState === "ready"
+      && zoom >= Math.max(fit * ATLAS_3D_ENTER_RATIO, windowFloor)
+      ? centerAtlas3dCamera(current, planeViewport, coord, Math.max(zoom, windowFloor), seed)
+      : centerAtlasPaperCamera(current, planeViewport, coord, zoom);
   }
 
   function fitActiveCamera(current) {
-    return fitAtlas3dCamera(current, planeViewport, seed);
+    return fitAtlasPaperCamera(current, planeViewport);
+  }
+
+  function showPaperOverview() {
+    cancelMarchFollow();
+    setAtlasMode("paper");
+    setCamera((current) => fitActiveCamera(current));
+  }
+
+  function cancelMarchFollow() {
+    marchFollowRef.current = false;
   }
 
   const selectedLandmark = selection?.kind === "landmark"
@@ -380,12 +511,19 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     setCamera((current) => {
       if (!didInitialFitRef.current) {
         didInitialFitRef.current = true;
-        const openingRatio = atlasOpeningZoom(planeViewport, seed) / fit;
-        return centerActiveCamera(current, partyCoord, fit * openingRatio);
+        const openingZoom = atlasOpeningZoom(planeViewport, seed);
+        return centerAtlas3dCamera(current, planeViewport, partyCoord, openingZoom, seed);
       }
       return clampActiveCamera(current);
     });
-  }, [fit, seed, stageMeasured, planeViewport.width, planeViewport.height, partyCoord.x, partyCoord.y]);
+  }, [atlasMode, fit, seed, stageMeasured, planeViewport.width, planeViewport.height, partyCoord.x, partyCoord.y]);
+
+  useEffect(() => {
+    // Keep the intended presentation while chunks warm in the background.
+    // Forcing paper here loses the initial 3D intent because the opening zoom
+    // deliberately sits inside the hysteresis band.
+    setAtlasMode((current) => atlasModeForScene(current, sceneState, camera.zoom, fit, windowFloor));
+  }, [camera.zoom, fit, windowFloor, sceneState]);
 
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus();
@@ -393,6 +531,68 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
 
   const seenMap = state?.world?.seen;
   const seenKeys = useMemo(() => Object.keys(seenMap || {}), [seenMap]);
+
+  useEffect(() => {
+    const path = travelMarch?.path;
+    if (!travelMarch?.id || !Array.isArray(path) || path.length === 0) {
+      marchTweenRef.current?.cancel?.();
+      marchTweenRef.current = null;
+      setMarchCoord(null);
+      return undefined;
+    }
+
+    if (travelMarch.visualDone) {
+      setMarchCoord(null);
+      return undefined;
+    }
+
+    if (!stageMeasured) return undefined;
+
+    let settled = false;
+    const finish = (reason) => {
+      if (settled) return;
+      settled = true;
+      setMarchCoord(null);
+      marchFinishRef.current?.(travelMarch.id, { reason });
+    };
+    const prefersReducedMotion = typeof window !== "undefined"
+      && window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    marchFollowRef.current = true;
+    const startingMode = marchRuntimeRef.current?.sceneState === "ready" ? "3d" : "paper";
+    setAtlasMode(startingMode);
+    setCamera((current) => centerAtlasMarchCamera(
+      current,
+      path[0],
+      marchRuntimeRef.current,
+    ).camera);
+
+    const controller = createAtlasTween({
+      duration: atlasMarchDuration(path),
+      reducedMotion: prefersReducedMotion,
+      onUpdate(progress) {
+        const coord = atlasMarchCoordAt(path, progress);
+        if (!coord) return;
+        setMarchCoord(coord);
+        if (marchFollowRef.current) {
+          const mode = marchRuntimeRef.current?.sceneState === "ready" ? "3d" : "paper";
+          setAtlasMode(mode);
+          setCamera((current) => centerAtlasMarchCamera(
+            current,
+            coord,
+            marchRuntimeRef.current,
+          ).camera);
+        }
+      },
+      onFinish: ({ reason }) => finish(reason),
+    });
+    marchTweenRef.current = controller;
+
+    return () => {
+      controller.cancel();
+      if (marchTweenRef.current === controller) marchTweenRef.current = null;
+      finish("unmount");
+    };
+  }, [stageMeasured, travelMarch?.id, travelMarch?.visualDone]);
 
   function pickAtlas3dGround(modelCamera, point) {
     return scene3dRef.current?.pickGround(point, modelCamera) || null;
@@ -404,9 +604,11 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     const stage = stageRef.current;
     if (!stage) return undefined;
     const onWheel = (event) => {
-      if (sceneState !== "ready") return;
+      if (atlasMode === "3d" && sceneState !== "ready") return;
+      if (atlasMode === "paper" && !paperReady) return;
       if (!atlasWheelZoomAllowed(event.target) || event.deltaY === 0) return;
       event.preventDefault();
+      cancelMarchFollow();
       const bounds = stage.getBoundingClientRect();
       const anchor = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
       const wheel = wheelRef.current;
@@ -420,15 +622,26 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
         wheel.deltaY = 0;
         wheel.anchor = null;
         if (deltaY === 0) return;
+        const factor = atlasWheelZoomFactor(deltaY);
+        if (atlasMode === "3d" && factor < 1 && camera.zoom * factor < windowFloor * 1.01) {
+          setAtlasMode("paper");
+        } else if (sceneState === "ready" && atlasMode === "paper" && factor > 1 && camera.zoom * factor >= Math.max(fit * ATLAS_3D_ENTER_RATIO, windowFloor)) {
+          setAtlasMode("3d");
+        }
         setCamera((current) => {
-          const next = zoomAtlas3dCamera(
-            current,
-            planeViewport,
-            atlasWheelZoomFactor(deltaY),
-            nextAnchor,
-            seed,
-            pickAtlas3dGround,
-          );
+          const enterPaper = atlasMode === "3d"
+            && factor < 1
+            && current.zoom * factor < windowFloor * 1.01;
+          const next = atlasMode === "paper" || enterPaper
+            ? zoomAtlasPaperCamera(current, planeViewport, factor, nextAnchor)
+            : zoomAtlas3dCamera(
+              current,
+              planeViewport,
+              factor,
+              nextAnchor,
+              seed,
+              pickAtlas3dGround,
+            );
           return sameCamera(current, next) ? current : next;
         });
       });
@@ -442,13 +655,25 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       wheel.deltaY = 0;
       wheel.anchor = null;
     };
-  }, [viewport, planeViewport, sceneState, seed]);
+  }, [viewport, planeViewport, sceneState, paperReady, atlasMode, seed, windowFloor, fit, camera.zoom]);
 
   // Coalesce pointer camera updates to one React render per animation frame.
   // Raw mobile pointermove streams can be much faster than the display.
   function queueCameraOperations(operations) {
     const pending = cameraFrameRef.current;
     for (const operation of operations) {
+      if (operation.type === "zoom"
+        && atlasMode === "3d"
+        && operation.factor < 1
+        && camera.zoom * operation.factor < windowFloor * 1.01) {
+        setAtlasMode("paper");
+      } else if (sceneState === "ready"
+        && operation.type === "zoom"
+        && atlasMode === "paper"
+        && operation.factor > 1
+        && camera.zoom * operation.factor >= Math.max(fit * ATLAS_3D_ENTER_RATIO, windowFloor)) {
+        setAtlasMode("3d");
+      }
       const existing = pending.operations.find((item) => item.type === operation.type);
       if (operation.type === "pan" && existing) {
         existing.dx += operation.dx;
@@ -468,9 +693,16 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
         let next = current;
         for (const operation of queued) {
           if (operation.type === "zoom") {
-            next = zoomAtlas3dCamera(next, planeViewport, operation.factor, operation.anchor, seed, pickAtlas3dGround);
+            const enterPaper = atlasMode === "3d"
+              && operation.factor < 1
+              && next.zoom * operation.factor < windowFloor * 1.01;
+            next = atlasMode === "paper" || enterPaper
+              ? zoomAtlasPaperCamera(next, planeViewport, operation.factor, operation.anchor)
+              : zoomAtlas3dCamera(next, planeViewport, operation.factor, operation.anchor, seed, pickAtlas3dGround);
           } else if (operation.dx || operation.dy) {
-            next = panAtlas3dCamera(next, planeViewport, operation.dx, operation.dy, seed, pickAtlas3dGround, operation.anchor);
+            next = atlasMode === "paper"
+              ? panAtlasPaperCamera(next, planeViewport, operation.dx, operation.dy)
+              : panAtlas3dCamera(next, planeViewport, operation.dx, operation.dy, seed, pickAtlas3dGround, operation.anchor);
           }
         }
         return sameCamera(current, next) ? current : next;
@@ -496,7 +728,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   }
 
   function handlePointerDown(event) {
-    if (sceneState !== "ready") return;
+    if ((atlasMode === "3d" && sceneState !== "ready") || (atlasMode === "paper" && !paperReady)) return;
     const gesture = gestureRef.current;
     gesture.pointers.set(event.pointerId, planePoint(event));
     if (gesture.pointers.size === 1) {
@@ -532,6 +764,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       const dy = midpoint.y - beforeMidpoint.y;
       const factor = beforeDistance > 0 ? distance / beforeDistance : 1;
       if (Math.hypot(dx, dy) > 0.25 || Math.abs(distance - beforeDistance) > 0.5) {
+        cancelMarchFollow();
         gesture.moved = true;
         gesture.suppressClick = true;
         const operations = [];
@@ -548,6 +781,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     const dy = point.y - previous.y;
     gesture.dragDistance += Math.hypot(dx, dy);
     if (!gesture.moved && gesture.dragDistance < 4) return;
+    cancelMarchFollow();
     gesture.moved = true;
     gesture.suppressClick = true;
     queueCameraOperations([{ type: "pan", dx, dy, anchor: previous }]);
@@ -566,8 +800,11 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     if (gesture.startedOnInteractive || event.target.closest?.("button, a, input, select, textarea")) return;
     // A clean tap on open ground charts that coordinate.
     const point = planePoint(event);
-    const fractional = scene3dRef.current?.pick(point)
-      || atlas3dScreenToGround(camera, planeViewport, point, seed);
+    const fractional = atlasMode === "paper"
+      ? paperMapRef.current?.pickFractional(point, camera)
+      : (scene3dRef.current?.pick(point)
+        || atlas3dScreenToGround(camera, planeViewport, point, seed));
+    if (!fractional) return;
     const coord = axialRound(fractional.x, fractional.y);
     const sample = surveyAtlas(coord.x, coord.y, seed);
     if (!sample.land) return;
@@ -585,6 +822,11 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   }
 
   function handleKeyDown(event) {
+    if (travelMarch?.id && event.key === "Escape") {
+      marchTweenRef.current?.finish?.();
+      event.preventDefault();
+      return;
+    }
     if (!atlasKeyboardShortcutAllowed(event.target)) {
       if (event.key === "Escape" && (searchOpen || filtersOpen)) {
         setSearchOpen(false);
@@ -594,20 +836,28 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       return;
     }
     const pan = 72;
-    const panCamera = (current, dx, dy) => (
-      panAtlas3dCamera(current, planeViewport, dx, dy, seed, pickAtlas3dGround)
-    );
-    const zoomCamera = (current, factor) => (
-      zoomAtlas3dCamera(current, planeViewport, factor, null, seed, pickAtlas3dGround)
-    );
+    const panCamera = (current, dx, dy) => (atlasMode === "paper"
+      ? panAtlasPaperCamera(current, planeViewport, dx, dy)
+      : panAtlas3dCamera(current, planeViewport, dx, dy, seed, pickAtlas3dGround));
+    const zoomCamera = (current, factor) => {
+      const enterPaper = atlasMode === "3d"
+        && factor < 1
+        && current.zoom * factor < windowFloor * 1.01;
+      return atlasMode === "paper" || enterPaper
+        ? zoomAtlasPaperCamera(current, planeViewport, factor)
+        : zoomAtlas3dCamera(current, planeViewport, factor, null, seed, pickAtlas3dGround);
+    };
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "+", "=", "-", "0", "Home"].includes(event.key)) {
+      cancelMarchFollow();
+    }
     if (event.key === "ArrowLeft") setCamera((current) => panCamera(current, pan, 0));
     else if (event.key === "ArrowRight") setCamera((current) => panCamera(current, -pan, 0));
     else if (event.key === "ArrowUp") setCamera((current) => panCamera(current, 0, pan));
     else if (event.key === "ArrowDown") setCamera((current) => panCamera(current, 0, -pan));
     else if (event.key === "+" || event.key === "=") setCamera((current) => zoomCamera(current, 1.25));
     else if (event.key === "-") setCamera((current) => zoomCamera(current, 1 / 1.25));
-    else if (event.key === "0") setCamera((current) => fitActiveCamera(current));
-    else if (event.key === "Home") setCamera((current) => centerActiveCamera(current, partyCoord, Math.max(current.zoom, fit * 3)));
+    else if (event.key === "0") showPaperOverview();
+    else if (event.key === "Home") setCamera((current) => centerActiveCamera(current, partyCoord, Math.max(current.zoom, windowFloor * 1.12)));
     else if (event.key === "Escape" && (searchOpen || filtersOpen)) {
       setSearchOpen(false);
       setFiltersOpen(false);
@@ -638,19 +888,19 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
   }
 
   function centerOnParty() {
-    setCamera((current) => centerActiveCamera(current, partyCoord, Math.max(current.zoom, fit * 3)));
+    setCamera((current) => centerActiveCamera(current, partyCoord, Math.max(current.zoom, windowFloor * 1.12)));
   }
 
   function centerOnTrackedCharacter() {
     if (!trackedCharacter) return;
     const { x, y } = trackedCharacter.pos;
     setSelection({ kind: "point", x, y });
-    setCamera((current) => centerActiveCamera(current, { x, y }, Math.max(current.zoom, fit * 3)));
+    setCamera((current) => centerActiveCamera(current, { x, y }, Math.max(current.zoom, windowFloor * 1.12)));
   }
 
   function pickSearchResult(landmark) {
     setSelection({ kind: "landmark", id: landmark.id });
-    setCamera((current) => centerActiveCamera(current, landmark.coord, Math.max(current.zoom, fit * 3)));
+    setCamera((current) => centerActiveCamera(current, landmark.coord, Math.max(current.zoom, windowFloor * 1.12)));
     setSearchOpen(false);
     setQuery("");
   }
@@ -672,15 +922,23 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     left: (viewport.width - planeViewport.width) / 2,
     top: (viewport.height - planeViewport.height) / 2,
   };
-  const projectMapCoord = (coord, lift = 0) => (
-    atlas3dProject(camera, planeViewport, coord, atlas3dTerrainHeightAt(coord, seed) + lift, seed)
+  const projectMapCoord = (coord, lift = 0) => (atlasMode === "paper"
+    ? atlasPaperWorldToScreen(camera, planeViewport, coord)
+    : atlas3dProject(camera, planeViewport, coord, atlas3dTerrainHeightAt(coord, seed) + lift, seed));
+  const displayedPartyCoord = atlasDisplayedPartyCoord(
+    marchCoord,
+    partyCoord,
+    !!travelMarch?.visualDone,
   );
-  const partyScreen = projectMapCoord(partyCoord, 1.4);
+  const partyScreen = projectMapCoord(displayedPartyCoord, 1.4);
   const partyOffstage = partyScreen.x < -32
     || partyScreen.y < -32
     || partyScreen.x > planeViewport.width + 32
     || partyScreen.y > planeViewport.height + 32;
-  const kmAcross = Math.round((viewport.width / camera.zoom) * hexKilometers);
+  const visibleHexesAcross = atlasMode === "3d"
+    ? atlas3dCameraFrame(camera, planeViewport, seed).visibleWidth
+    : viewport.width / camera.zoom;
+  const kmAcross = Math.round(visibleHexesAcross * hexKilometers);
   const journeyBreaks = useMemo(
     () => (journey ? journeyLegBreaks(journey.fullPath, journey.legSteps) : []),
     [journey],
@@ -784,9 +1042,20 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
     });
   }, [detailEntry, onPick, state, trackedAtSelection, trackedCharacter]);
 
+  const travelSelection = useCallback(() => {
+    if (!detailEntry?.journey || !onTravel || travelMarch?.id) return;
+    onTravel({
+      x: detailEntry.coord.x,
+      y: detailEntry.coord.y,
+      ...(detailEntry.landmark?.name ? { name: detailEntry.landmark.name } : {}),
+    }, detailEntry.journey.fullPath);
+  }, [detailEntry, onTravel, travelMarch?.id]);
+
   const activeFilterCount = (focusedRealmId ? 1 : 0) + (ATLAS_LAYERS.length - visibleLayers.size);
   const zoomControlCamera = (current, factor) => (
-    zoomAtlas3dCamera(current, planeViewport, factor, null, seed, pickAtlas3dGround)
+    atlasMode === "paper" || (factor < 1 && current.zoom * factor < windowFloor * 1.01)
+      ? zoomAtlasPaperCamera(current, planeViewport, factor)
+      : zoomAtlas3dCamera(current, planeViewport, factor, null, seed, pickAtlas3dGround)
   );
 
   return (
@@ -799,7 +1068,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
         className="world-atlas__stage"
       role="application"
       aria-label={`Interactive map of ${CONTINENT.name}. Arrow keys pan, plus and minus zoom, zero fits the continent, Home returns to the party.`}
-      aria-busy={sceneState === "loading"}
+      aria-busy={(atlasMode === "3d" && sceneState === "loading") || (atlasMode === "paper" && !paperReady)}
       tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -809,7 +1078,8 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
       >
         <div className="world-atlas__scene">
           <div
-            className={`world-atlas__plane is-3d${sceneState === "ready" ? " is-ready" : ""}${sceneState === "error" ? " has-error" : ""}`}
+            className={`world-atlas__plane is-${atlasMode}${((atlasMode === "3d" && sceneState === "ready") || (atlasMode === "paper" && paperReady)) ? " is-ready" : ""}${sceneState === "error" ? " has-error" : ""}`}
+            data-atlas-mode={atlasMode}
             style={{
               width: `${planeViewport.width}px`,
               height: `${planeViewport.height}px`,
@@ -817,6 +1087,23 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
               top: `${planeOffset.top}px`,
             }}
           >
+            <AtlasPaperMap
+              ref={paperMapRef}
+              active={atlasMode === "paper"}
+              camera={camera}
+              viewport={planeViewport}
+              seed={seed}
+              landmarks={landmarks}
+              partyCoord={displayedPartyCoord}
+              journey={journey}
+              journeyBreaks={journeyBreaks}
+              selection={selection}
+              questMarkers={questMarkers}
+              visibleLayers={visibleLayers}
+              focusedRealmId={focusedRealmId}
+              className={atlasMode === "paper" ? "is-active" : ""}
+              onReady={() => setPaperReady(true)}
+            />
             <WorldAtlas3DScene
               key={quality.id}
               ref={scene3dRef}
@@ -829,17 +1116,28 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
               journeyBreaks={journeyBreaks}
               seenKeys={seenKeys}
               worldTime={state?.time}
-              onReady={() => {
+              active={sceneState === "loading" || atlasMode === "3d"}
+              corridor={travelMarch?.path || null}
+              onReady={(details) => {
                 setSceneError("");
                 setSceneState("ready");
+                if (details?.restored && sceneRecoveryModeRef.current) {
+                  setAtlasMode(sceneRecoveryModeRef.current);
+                  sceneRecoveryModeRef.current = null;
+                }
               }}
-              onError={(message) => {
+              onError={(message, details) => {
+                const recoverable = details?.recoverable === true;
+                sceneRecoveryModeRef.current = recoverable ? atlasMode : null;
                 setSceneError(message || "The 3D atlas could not start.");
                 setSceneState("error");
+                setAtlasMode("paper");
+                if (!recoverable) {
+                  setCamera((current) => fitAtlasPaperCamera(current, planeViewport));
+                }
               }}
-              onRefined={() => setTerrainEpoch((epoch) => epoch + 1)}
             />
-            {sceneState !== "ready" && (
+            {atlasMode === "3d" && sceneState !== "ready" && (
               <div className={`world-atlas__scene-status${sceneState === "error" ? " is-error" : ""}`} role="status" aria-live="polite">
                 {sceneState === "error" ? (
                   <>
@@ -854,6 +1152,26 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
                   </>
                 )}
               </div>
+            )}
+            {atlasMode === "paper" && !paperReady && (
+              <div className="world-atlas__scene-status" role="status" aria-live="polite">
+                <LoadingDots />
+                <strong>Unrolling the chart</strong>
+                <span>Inking roads and coastlines</span>
+              </div>
+            )}
+
+            {travelMarch?.id && !travelMarch.visualDone && (
+              <button
+                type="button"
+                className="world-atlas__march-skip"
+                data-atlas-wheel-ignore="true"
+                onPointerDown={stopStagePointer}
+                onClick={() => marchTweenRef.current?.finish?.()}
+              >
+                <span>Party marching</span>
+                <b>Skip</b>
+              </button>
             )}
 
             {showRealmLabels && (
@@ -915,20 +1233,13 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
             <div className="world-atlas__marker-layer" role="group" aria-label={`${landmarks.length} known landmarks`}>
               {landmarks.map((landmark) => {
                 const selected = selection?.kind === "landmark" && selection.id === landmark.id;
-                const priorityMarker = !!(
-                  landmark.capitalOfRealmId
-                  || landmark.kind === "port"
-                  || landmark.role === "border-checkpoint"
-                  || landmark.quest
-                  || selected
-                );
-                const compactDeclutter = planeViewport.width < 560 && zoomRatio < 2.8;
-                const visible = (atlasMarkerVisible(landmark, {
+                const visible = atlasPaperMarkerVisible(landmark, {
                   zoomRatio,
+                  viewportWidth: planeViewport.width,
                   visibleLayers,
                   focusedRealmId,
                   selectedLandmarkId: selection?.kind === "landmark" ? selection.id : null,
-                }) && (!compactDeclutter || priorityMarker)) || !!landmark.quest;
+                });
                 const screen = visible ? projectMapCoord(landmark.coord, 1.6) : { x: -10000, y: -10000 };
                 const offstage = !visible || screen.x < -40 || screen.y < -40 || screen.x > planeViewport.width + 40 || screen.y > planeViewport.height + 40;
                 const atParty = landmark.coord.x === partyCoord.x && landmark.coord.y === partyCoord.y;
@@ -1016,14 +1327,17 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
             <button
               type="button"
               hidden={partyOffstage}
-              className="world-atlas__party"
+              className={`world-atlas__party${travelMarch?.id ? " is-marching" : ""}`}
+              disabled={!!travelMarch?.id}
               style={{ left: `${partyScreen.x}px`, top: `${partyScreen.y}px` }}
               onClick={(event) => {
                 if (!atlasSelectionClickAllowed(event, gestureRef.current)) return;
                 if (partyLandmark) inspectLandmark(partyLandmark);
                 else setSelection({ kind: "point", x: partyCoord.x, y: partyCoord.y });
               }}
-              aria-label={partyLandmark
+              aria-label={travelMarch?.id
+                ? "Party marching along the selected route"
+                : partyLandmark
                 ? `Inspect ${partyLandmark.name} at your current position`
                 : `Inspect your current position on ${CONTINENT.name}`}
               aria-pressed={!!(
@@ -1033,7 +1347,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
               aria-controls="world-atlas-detail"
             >
               <i aria-hidden="true" />
-              <span aria-hidden="true">You</span>
+              <span aria-hidden="true">{travelMarch?.id ? "Marching" : "You"}</span>
             </button>
           </div>
         </div>
@@ -1091,7 +1405,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
                     aria-pressed={!focusedRealmId}
                     onClick={() => {
                       setFocusedRealmId(null);
-                      setCamera((current) => fitActiveCamera(current));
+                      showPaperOverview();
                       setFiltersOpen(false);
                     }}
                   >
@@ -1182,7 +1496,7 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
         <div className="world-atlas__map-controls" data-atlas-wheel-ignore="true" onPointerDown={stopStagePointer}>
           <div role="group" aria-label="Map zoom controls">
             <button type="button" onClick={() => setCamera((current) => zoomControlCamera(current, 1.4))} disabled={camera.zoom >= ATLAS_3D_MAX_ZOOM * 0.99} aria-label="Zoom map in">+</button>
-            <button type="button" onClick={() => setCamera((current) => fitActiveCamera(current))} aria-label="Fit the whole continent">{Math.round(zoomRatio * 100)}%</button>
+            <button type="button" onClick={showPaperOverview} aria-label="Fit the whole continent">{Math.round(zoomRatio * 100)}%</button>
             <button type="button" onClick={() => setCamera((current) => zoomControlCamera(current, 1 / 1.4))} disabled={camera.zoom <= fit * 1.01} aria-label="Zoom map out">−</button>
           </div>
           <button type="button" className="world-atlas__locate" onClick={centerOnParty} aria-label="Center map on the party">
@@ -1203,7 +1517,15 @@ export function WorldAtlas({ state, origin, onPick, initialSelection = null, too
           </div>
         </div>
 
-        {detailEntry && <AtlasPlaceCard key={detailEntry.selectionKey} entry={detailEntry} onChart={chartSelection} />}
+        {detailEntry && (
+          <AtlasPlaceCard
+            key={detailEntry.selectionKey}
+            entry={detailEntry}
+            onChart={chartSelection}
+            onTravel={onTravel ? travelSelection : null}
+            travelDisabled={!!travelMarch?.id}
+          />
+        )}
         </div>
       </div>
     </section>
