@@ -29,6 +29,7 @@ import {
   atlas3dTerrainColor,
   atlas3dTerrainHeight,
   atlas3dTerrainHeightAt,
+  atlas3dWhitewendSurfaceHeight,
   atlas3dWindowFloor,
   buildAtlas3dChunk,
   centerAtlas3dCamera,
@@ -639,5 +640,42 @@ describe("true 3D atlas spatial model", () => {
     // inside the walls sit much closer in height than raw erosion would allow.
     expect(Math.abs(heightAt(-2, 1) - heightAt(-6, 4))).toBeLessThan(1.5);
     expect(Math.abs(heightAt(0, 0) - heightAt(7, 0))).toBeLessThan(1.5);
+  });
+
+  it("tints city ground by ward character instead of generic lowland", () => {
+    const seed = CONTINENT.seed;
+    // District-tinted streets: the sooty Iron Quarter and the pale Noble Rise
+    // must not share the market's exact ground tone.
+    const ironColor = atlas3dTerrainColor(
+      { land: true, terrain: "settlement", elevation: 0.5, realmId: "central", city: true, cityDistrictId: "iron-quarter" },
+      { x: -7, y: -3 }, 1.5, seed,
+    );
+    const nobleColor = atlas3dTerrainColor(
+      { land: true, terrain: "settlement", elevation: 0.5, realmId: "central", city: true, cityDistrictId: "noble-rise" },
+      { x: 7, y: 0 }, 1.5, seed,
+    );
+    expect(ironColor).not.toEqual(nobleColor);
+    // City ground is a built/stone tone, distinctly warmer and lighter than
+    // wild forest floor.
+    const forestColor = atlas3dTerrainColor(
+      { land: true, terrain: "forest", elevation: 0.5, realmId: "central" },
+      { x: -2, y: 1 }, 1.5, seed,
+    );
+    const marketColor = atlas3dTerrainColor(
+      { land: true, terrain: "settlement", elevation: 0.5, realmId: "central", city: true, cityDistrictId: "grand-market" },
+      { x: -2, y: 1 }, 1.5, seed,
+    );
+    const luma = (c) => c[0] * 0.35 + c[1] * 0.5 + c[2] * 0.15;
+    expect(luma(marketColor)).toBeGreaterThan(luma(forestColor));
+  });
+
+  it("levels the Whitewend water surface between channel bed and street plateau", () => {
+    const surface = atlas3dWhitewendSurfaceHeight(CONTINENT.seed);
+    expect(Number.isFinite(surface)).toBe(true);
+    // Above the carved channel bed, below the ward plateau so the river reads
+    // as water sitting in its banks. Deterministic across calls.
+    expect(surface).toBeGreaterThan(0.35);
+    expect(surface).toBeLessThan(1.5);
+    expect(atlas3dWhitewendSurfaceHeight(CONTINENT.seed)).toBe(surface);
   });
 });

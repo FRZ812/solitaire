@@ -21,6 +21,8 @@ import {
   createRibbonMesh,
   createInsetLake,
   createVegetationGroup,
+  createWhitewendCityRiver,
+  whitewendCityWaterPath,
   REALM_SETTLEMENT_COLORS,
   atlas3dStreamFailureDisposition,
   atlas3dStreamingRect,
@@ -32,6 +34,7 @@ import {
   atlas3dHotSpringSurfaceHeight,
   atlas3dLakeSurfaceHeight,
   atlas3dTerrainHeightAt,
+  atlas3dWhitewendSurfaceHeight,
   atlas3dWindowFloor,
   buildAtlas3dChunk,
   clampAtlas3dCamera,
@@ -545,5 +548,28 @@ describe("WorldAtlas3DScene rendering helpers", () => {
       .toBe(atlasEastFloraVariant(cherryCoord, CONTINENT.seed));
     expect(atlasEastFloraVariant(ginkgoCoord, CONTINENT.seed))
       .toBe(atlasEastFloraVariant(ginkgoCoord, CONTINENT.seed));
+  });
+
+  it("lays the Whitewend city river as a flat water surface along the authored channel", () => {
+    const path = whitewendCityWaterPath();
+    expect(path).not.toBeNull();
+    // The authored city has a main channel plus the two tails.
+    expect(path.centerline.length).toBeGreaterThan(8);
+    expect(path.cellCount).toBeGreaterThan(path.centerline.length);
+
+    const river = createWhitewendCityRiver(THREE, CONTINENT.seed);
+    expect(river).not.toBeNull();
+    expect(river.children.length).toBeGreaterThanOrEqual(1);
+    const surface = atlas3dWhitewendSurfaceHeight(CONTINENT.seed);
+    // Every water vertex sits exactly on the shared flat water level.
+    river.traverse((child) => {
+      if (!child.isMesh) return;
+      const positions = child.geometry.getAttribute("position");
+      for (let index = 0; index < positions.count; index += 1) {
+        expect(positions.getY(index)).toBeCloseTo(surface, 5);
+      }
+    });
+    expect(river.userData.waterHeight).toBe(surface);
+    expect(river.userData.disposables.length).toBeGreaterThan(0);
   });
 });

@@ -26,8 +26,10 @@ import {
   atlas3dSceneToAxial,
   atlas3dScreenToGround,
   atlas3dTerrainHeightAt,
+  atlas3dWhitewendSurfaceHeight,
   coordinateNoise,
 } from "./worldAtlas3dModel.js";
+import { whitemarchTileAt } from "../../data/whitemarch-capital.js";
 import { createAtlasChunkStore } from "./atlasChunkStore.js";
 import { createAtlasPostStack } from "./atlasPostStack.js";
 import { enhanceAtlasTerrainMaterial, setAtlasTerrainWorldTime } from "./atlasTerrainShader.js";
@@ -358,6 +360,99 @@ export function createRibbonMesh(THREE, path, {
   mesh.receiveShadow = true;
   mesh.renderOrder = renderOrder;
   return mesh;
+}
+
+// Collect the authored Whitemarch water tiles as a flat water ribbon. The
+// continental Whitewend already renders as a terrain-following ribbon outside
+// the walls; this adds the in-city segment as a level surface that matches the
+// carved channel and reads as water held between the ward banks.
+export function whitewendCityWaterPath() {
+  const cells = [];
+  for (let x = -13; x <= 13; x += 1) {
+    for (let y = -13; y <= 13; y += 1) {
+      if (whitemarchTileAt(x, y)?.isWater) cells.push({ x, y });
+    }
+  }
+  if (cells.length < 2) return null;
+  // Order the cells along the river: the main channel runs down columns 4–5
+  // with two authored tails (northern culvert, eastern quay-channel). Sort by
+  // the dominant axis of travel so the ribbon doesn't zigzag across columns.
+  const byColumn = new Map();
+  for (const cell of cells) {
+    if (!byColumn.has(cell.x)) byColumn.set(cell.x, []);
+    byColumn.get(cell.x).push(cell);
+  }
+  const main = cells
+    .filter((cell) => cell.x === 4 || cell.x === 5)
+    .sort((a, b) => a.y - b.y);
+  const centerline = main.map((cell) => ({ x: cell.x, y: cell.y }));
+  // Extend with the northern culvert and eastern quay tails so both authored
+  // mouths carry water to the wall.
+  const north = cells
+    .filter((cell) => cell.y <= -9 && cell.x > 5)
+    .sort((a, b) => (a.x - b.x) || (a.y - b.y));
+  const east = cells
+    .filter((cell) => cell.y >= 1 && cell.x > 5)
+    .sort((a, b) => (a.x - b.x) || (b.y - a.y));
+  return { centerline, north, east, cellCount: cells.length, byColumn };
+}
+
+export function createWhitewendCityRiver(THREE, seed) {
+  const path = whitewendCityWaterPath();
+  if (!path) return null;
+  const waterHeight = atlas3dWhitewendSurfaceHeight(seed);
+  const group = new THREE.Group();
+  group.name = "atlas-whitewend-city-river";
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x2a6b7a,
+    emissive: 0x0a2430,
+    emissiveIntensity: 0.22,
+    roughness: 0.22,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.94,
+    depthWrite: false,
+  });
+  const buildFlatRibbon = (cells, width = 1.9) => {
+    if (!cells || cells.length < 2) return null;
+    const positions = [];
+    const indices = [];
+    for (let index = 0; index < cells.length; index += 1) {
+      const previous = cells[Math.max(0, index - 1)];
+      const next = cells[Math.min(cells.length - 1, index + 1)];
+      const prevScene = atlas3dAxialToScene(previous);
+      const nextScene = atlas3dAxialToScene(next);
+      const tangentX = nextScene.x - prevScene.x;
+      const tangentZ = nextScene.z - prevScene.z;
+      const length = Math.hypot(tangentX, tangentZ) || 1;
+      const normalX = (-tangentZ / length) * (width / 2);
+      const normalZ = (tangentX / length) * (width / 2);
+      const center = atlas3dAxialToScene(cells[index]);
+      positions.push(center.x + normalX, waterHeight, center.z + normalZ);
+      positions.push(center.x - normalX, waterHeight, center.z - normalZ);
+      if (index > 0) {
+        const vertex = index * 2;
+        indices.push(vertex - 2, vertex, vertex - 1, vertex - 1, vertex, vertex + 1);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = 1;
+    mesh.receiveShadow = true;
+    return mesh;
+  };
+  const main = buildFlatRibbon(path.centerline, 2.3);
+  if (main) group.add(main);
+  const north = buildFlatRibbon(path.north, 1.5);
+  if (north) group.add(north);
+  const east = buildFlatRibbon(path.east, 1.6);
+  if (east) group.add(east);
+  group.userData.waterHeight = waterHeight;
+  group.userData.disposables = [material];
+  return group;
 }
 
 function createRouteGroup(THREE, seed, focusedRealmId) {
@@ -1892,6 +1987,7 @@ function createController(
   });
   let mountainClouds = null;
   let hotSprings = null;
+  let whitewendCityRiver = null;
   let routes = new THREE.Group();
   routes.name = "atlas-routes";
   let journey = new THREE.Group();
@@ -1934,9 +2030,12 @@ function createController(
 
   mountainClouds = createMountainClouds(THREE, seed);
   hotSprings = createHotSprings(THREE, seed);
+  whitewendCityRiver = createWhitewendCityRiver(THREE, seed);
   scene.add(mountainClouds, hotSprings);
+  if (whitewendCityRiver) scene.add(whitewendCityRiver);
   canvas.dataset.atlasMountainClouds = String(mountainClouds.children.length);
   canvas.dataset.atlasHotSprings = String(CONTINENT_HOT_SPRINGS.length);
+  canvas.dataset.atlasWhitewendCityRiver = whitewendCityRiver ? "1" : "0";
   canvas.dataset.atlasLakes = String(CONTINENT_LAKES.length);
   canvas.dataset.atlasLandmarkSourceMeshes = "0";
   canvas.dataset.atlasLandmarkBatches = "0";

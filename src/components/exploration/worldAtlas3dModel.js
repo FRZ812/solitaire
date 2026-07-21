@@ -798,6 +798,34 @@ export function atlas3dHotSpringSurfaceHeight(spring, seed = CONTINENT.seed) {
   return surfaceHeight;
 }
 
+// The Whitewend is a linear city channel, not a radial lake, so its water
+// level is read directly off the authored profile: the riverbed is carved to
+// CITY_RIVERBED_HEIGHT and the surrounding wards plateau near 1.5. The water
+// surface sits just above the bed and comfortably below the street level so
+// the river reads as water held in its banks. Fully deterministic — the city
+// profile is seed-independent, so the same value serves worker and renderer.
+export function atlas3dWhitewendSurfaceHeight(seed = CONTINENT.seed) {
+  const key = `${seed}|whitewend-city-river`;
+  if (LAKE_SURFACE_HEIGHT_CACHE.has(key)) return LAKE_SURFACE_HEIGHT_CACHE.get(key);
+  // Sample a couple of ward bank tiles on either side of the channel and sit
+  // the water a touch above the bed, never above the lowest bank.
+  const bankHeights = [
+    { x: 2, y: -4 }, { x: 7, y: -4 }, { x: 2, y: 1 }, { x: 8, y: 1 },
+  ].map((coord) => atlas3dBaseTerrainHeight(
+    atlas3dCityOverlay(coord.x, coord.y, surveyAtlas(coord.x, coord.y, seed)),
+    coord,
+    seed,
+  ));
+  const lowestBank = Math.min(...bankHeights);
+  const surfaceHeight = clamp(
+    Math.max(CITY_RIVERBED_HEIGHT + 0.55, lowestBank - 0.35),
+    CITY_RIVERBED_HEIGHT + 0.1,
+    TERRAIN_MAX_HEIGHT - 0.8,
+  );
+  LAKE_SURFACE_HEIGHT_CACHE.set(key, surfaceHeight);
+  return surfaceHeight;
+}
+
 function lakeBasinHeightAt(coord, height, seed) {
   let result = height;
   const point = atlas3dAxialToScene(coord);
@@ -1051,6 +1079,24 @@ function isCoastalGridVertex(coord, sample, seed) {
 
 const VEGETATED_TERRAINS = Object.freeze(["plains", "forest", "hills", "marsh"]);
 
+// Per-district ground tints for the authored capital. These nudge the shared
+// "settlement" street color toward each ward's character so the districts read
+// as distinct neighborhoods from a diorama height, not one uniform slab.
+const CITY_DISTRICT_GROUND_TINT = Object.freeze({
+  "grand-market": 0xa8906a,   // worn warm paving of the commercial heart
+  "temple-steps": 0x9d8f78,   // pale swept stone
+  "low-wards": 0x8d7a5c,      // packed earth and patchwork
+  "chain-ward": 0x87795f,     // grey, austere
+  "guild-court": 0x9c8a66,    // prosperous dressed stone
+  "river-docks": 0x7d7159,    // damp wharf planks and mud
+  "crown-gate": 0x9a8a68,     // road-worn approach
+  "iron-quarter": 0x746553,   // soot and forge ash
+  "noble-rise": 0xa3977c,     // pale gravel and kept courts
+  "citadel-ward": 0x7e7668,   // military stone
+  "caravan-ward": 0x90805f,   // trampled yard
+  "outer-works": 0x847a63,    // forward-yard gravel
+});
+
 export function atlas3dTerrainColor(
   sample,
   coord,
@@ -1123,6 +1169,15 @@ export function atlas3dTerrainColor(
   }
   if (coastal && sample?.land) {
     channels = blendColorChannels(channels, COASTAL_SAND_COLOR, 0.4);
+  }
+  // Authored-city ground: pull the street color toward the ward's character
+  // tint so districts read as distinct neighborhoods. Applied before snow so
+  // a high citadel wall could still frost over (none does at city heights).
+  if (sample?.city && sample.land) {
+    const districtTint = CITY_DISTRICT_GROUND_TINT[sample.cityDistrictId];
+    if (districtTint != null && (sample.terrain === "settlement" || sample.terrain === "wall")) {
+      channels = blendColorChannels(channels, districtTint, 0.55);
+    }
   }
   const snowReach = smoothstep(snowLine - 1.4, snowLine + 2.4, height);
   if (snowReach > 0) {
