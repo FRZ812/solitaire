@@ -26,8 +26,11 @@ import {
   atlas3dSceneToAxial,
   atlas3dScreenToGround,
   atlas3dTerrainHeightAt,
+  atlas3dWhitewendSurfaceHeight,
   coordinateNoise,
 } from "./worldAtlas3dModel.js";
+import { WHITEMARCH_CAPITAL, whitemarchTileAt } from "../../data/whitemarch-capital.js";
+import { cityBuildingLayout, cityDressing, cityOutskirts } from "./atlasCityModel.js";
 import { createAtlasChunkStore } from "./atlasChunkStore.js";
 import { createAtlasPostStack } from "./atlasPostStack.js";
 import { enhanceAtlasTerrainMaterial, setAtlasTerrainWorldTime } from "./atlasTerrainShader.js";
@@ -358,6 +361,399 @@ export function createRibbonMesh(THREE, path, {
   mesh.receiveShadow = true;
   mesh.renderOrder = renderOrder;
   return mesh;
+}
+
+// Collect the authored Whitemarch water tiles as a flat water ribbon. The
+// continental Whitewend already renders as a terrain-following ribbon outside
+// the walls; this adds the in-city segment as a level surface that matches the
+// carved channel and reads as water held between the ward banks.
+export function whitewendCityWaterPath() {
+  const cells = [];
+  for (let x = -13; x <= 13; x += 1) {
+    for (let y = -13; y <= 13; y += 1) {
+      if (whitemarchTileAt(x, y)?.isWater) cells.push({ x, y });
+    }
+  }
+  if (cells.length < 2) return null;
+  // Order the cells along the river: the main channel runs down columns 4–5
+  // with two authored tails (northern culvert, eastern quay-channel). Sort by
+  // the dominant axis of travel so the ribbon doesn't zigzag across columns.
+  const byColumn = new Map();
+  for (const cell of cells) {
+    if (!byColumn.has(cell.x)) byColumn.set(cell.x, []);
+    byColumn.get(cell.x).push(cell);
+  }
+  const main = cells
+    .filter((cell) => cell.x === 4 || cell.x === 5)
+    .sort((a, b) => a.y - b.y);
+  const centerline = main.map((cell) => ({ x: cell.x, y: cell.y }));
+  // Extend with the northern culvert and eastern quay tails so both authored
+  // mouths carry water to the wall.
+  const north = cells
+    .filter((cell) => cell.y <= -9 && cell.x > 5)
+    .sort((a, b) => (a.x - b.x) || (a.y - b.y));
+  const east = cells
+    .filter((cell) => cell.y >= 1 && cell.x > 5)
+    .sort((a, b) => (a.x - b.x) || (b.y - a.y));
+  return { centerline, north, east, cellCount: cells.length, byColumn };
+}
+
+// Merged gabled-house geometry for the city wards: a box body with a prism
+// roof, ~20 triangles. Built once and instanced across every ward.
+function createCityHouseGeometry(THREE) {
+  const body = new THREE.BoxGeometry(0.52, 0.34, 0.46);
+  body.translate(0, 0.17, 0);
+  const roof = new THREE.CylinderGeometry(0.0001, 0.42, 0.26, 4, 1, false);
+  roof.rotateY(Math.PI / 4);
+  roof.scale(1, 1, 0.82);
+  roof.translate(0, 0.47, 0);
+  const chimney = new THREE.BoxGeometry(0.07, 0.18, 0.07);
+  chimney.translate(0.14, 0.5, 0.08);
+  return mergeGeometries(THREE, [body, roof, chimney]);
+}
+
+// Crenellated wall segment: a parapet block with two merlons, oriented along
+// the ring tangent by the layout's rotation.
+function createCityWallGeometry(THREE) {
+  const base = new THREE.BoxGeometry(1.9, 0.5, 0.42);
+  base.translate(0, 0.25, 0);
+  const merlonA = new THREE.BoxGeometry(0.3, 0.22, 0.46);
+  merlonA.translate(-0.6, 0.6, 0);
+  const merlonB = new THREE.BoxGeometry(0.3, 0.22, 0.46);
+  merlonB.translate(0.6, 0.6, 0);
+  return mergeGeometries(THREE, [base, merlonA, merlonB]);
+}
+
+// Minimal geometry merge (positions + normals + groups by material index) so a
+// house's body/roof/chimney or a wall's parts render as one instanced mesh.
+function mergeGeometries(THREE, geometries) {
+  let vertexCount = 0;
+  const nonIndexed = geometries.map((geometry) => {
+    const result = geometry.index ? geometry.toNonIndexed() : geometry;
+    vertexCount += result.getAttribute("position").count;
+    return result;
+  });
+  const positions = new Float32Array(vertexCount * 3);
+  const normals = new Float32Array(vertexCount * 3);
+  let offset = 0;
+  for (const geometry of nonIndexed) {
+    positions.set(geometry.getAttribute("position").array, offset * 3);
+    normals.set(geometry.getAttribute("normal").array, offset * 3);
+    offset += geometry.getAttribute("position").count;
+  }
+  const merged = new THREE.BufferGeometry();
+  merged.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  merged.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+  merged.computeBoundingSphere();
+  return merged;
+}
+
+// District roof colors for the instanced houses — warm variety per ward.
+const CITY_DISTRICT_ROOF_COLORS = Object.freeze({
+  "grand-market": 0x7a4a2e,
+  "temple-steps": 0x5c5648,
+  "low-wards": 0x6b4a2f,
+  "chain-ward": 0x4c443c,
+  "guild-court": 0x74502f,
+  "river-docks": 0x5d4630,
+  "crown-gate": 0x7c5230,
+  "iron-quarter": 0x54382a,
+  "noble-rise": 0x4a5568,
+  "citadel-ward": 0x3c3a38,
+  "caravan-ward": 0x6e5233,
+  "outer-works": 0x585043,
+});
+
+export function createWhitewendCityRiver(THREE, seed) {
+  const path = whitewendCityWaterPath();
+  if (!path) return null;
+  const waterHeight = atlas3dWhitewendSurfaceHeight(seed);
+  const group = new THREE.Group();
+  group.name = "atlas-whitewend-city-river";
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x2a6b7a,
+    emissive: 0x0a2430,
+    emissiveIntensity: 0.22,
+    roughness: 0.22,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.94,
+    depthWrite: false,
+  });
+  const buildFlatRibbon = (cells, width = 1.9) => {
+    if (!cells || cells.length < 2) return null;
+    const positions = [];
+    const indices = [];
+    for (let index = 0; index < cells.length; index += 1) {
+      const previous = cells[Math.max(0, index - 1)];
+      const next = cells[Math.min(cells.length - 1, index + 1)];
+      const prevScene = atlas3dAxialToScene(previous);
+      const nextScene = atlas3dAxialToScene(next);
+      const tangentX = nextScene.x - prevScene.x;
+      const tangentZ = nextScene.z - prevScene.z;
+      const length = Math.hypot(tangentX, tangentZ) || 1;
+      const normalX = (-tangentZ / length) * (width / 2);
+      const normalZ = (tangentX / length) * (width / 2);
+      const center = atlas3dAxialToScene(cells[index]);
+      positions.push(center.x + normalX, waterHeight, center.z + normalZ);
+      positions.push(center.x - normalX, waterHeight, center.z - normalZ);
+      if (index > 0) {
+        const vertex = index * 2;
+        indices.push(vertex - 2, vertex, vertex - 1, vertex - 1, vertex, vertex + 1);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = 1;
+    mesh.receiveShadow = true;
+    return mesh;
+  };
+  const main = buildFlatRibbon(path.centerline, 2.3);
+  if (main) group.add(main);
+  const north = buildFlatRibbon(path.north, 1.5);
+  if (north) group.add(north);
+  const east = buildFlatRibbon(path.east, 1.6);
+  if (east) group.add(east);
+  group.userData.waterHeight = waterHeight;
+  group.userData.disposables = [material];
+  return group;
+}
+
+// Build one bespoke civic centerpiece (palace, market, temple, watchtower,
+// fort, gatehouse) as a small Three.js group. These reuse the same visual
+// language as the continent's landmark miniatures but are placed from the
+// authored city layout rather than the generic landmark list.
+function buildCityCenterpiece(THREE, entry, materials) {
+  const { matStone, matDarkStone, matRoof, matIvory, matGold, matWindow } = materials;
+  const g = new THREE.Group();
+  const add = (geo, mat, x, y, z, ry = 0) => {
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    if (ry) mesh.rotation.y = ry;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    g.add(mesh);
+    return mesh;
+  };
+  switch (entry.kind) {
+    case "palace": {
+      add(new THREE.BoxGeometry(1.5, 0.7, 1.1), matDarkStone, 0, 0.35, 0);
+      add(new THREE.BoxGeometry(0.5, 1.5, 0.5), matStone, -0.55, 0.75, 0);
+      add(new THREE.BoxGeometry(0.5, 1.5, 0.5), matStone, 0.55, 0.75, 0);
+      add(new THREE.ConeGeometry(0.42, 0.5, 4), matRoof, -0.55, 1.75, 0, Math.PI / 4);
+      add(new THREE.ConeGeometry(0.42, 0.5, 4), matRoof, 0.55, 1.75, 0, Math.PI / 4);
+      add(new THREE.BoxGeometry(0.7, 0.9, 0.7), matStone, 0, 1.05, 0);
+      add(new THREE.ConeGeometry(0.55, 0.6, 4), matRoof, 0, 1.8, 0, Math.PI / 4);
+      break;
+    }
+    case "market": {
+      add(new THREE.CylinderGeometry(1.0, 1.0, 0.14, 10), matStone, 0, 0.07, 0);
+      add(new THREE.BoxGeometry(0.9, 0.5, 0.6), matIvory, 0, 0.4, 0);
+      add(new THREE.ConeGeometry(0.65, 0.45, 4), matRoof, 0, 0.85, 0, Math.PI / 4);
+      for (let stall = 0; stall < 5; stall += 1) {
+        const angle = stall / 5 * Math.PI * 2;
+        add(new THREE.BoxGeometry(0.22, 0.22, 0.22), stall % 2 ? matRoof : matGold,
+          Math.cos(angle) * 0.72, 0.2, Math.sin(angle) * 0.72, angle);
+      }
+      break;
+    }
+    case "temple": {
+      add(new THREE.CylinderGeometry(0.7, 0.78, 0.5, 8), matIvory, 0, 0.25, 0);
+      add(new THREE.ConeGeometry(0.6, 0.55, 8), matRoof, 0, 0.78, 0);
+      add(new THREE.SphereGeometry(0.12, 6, 5), matGold, 0, 1.12, 0);
+      break;
+    }
+    case "watchtower": {
+      add(new THREE.CylinderGeometry(0.28, 0.36, 1.7, 6), matDarkStone, 0, 0.85, 0);
+      add(new THREE.ConeGeometry(0.42, 0.6, 6), matRoof, 0, 2.0, 0);
+      break;
+    }
+    case "fort": {
+      add(new THREE.BoxGeometry(1.1, 0.55, 1.1), matDarkStone, 0, 0.28, 0);
+      for (const [cx, cz] of [[-0.45, -0.45], [0.45, -0.45], [-0.45, 0.45], [0.45, 0.45]]) {
+        add(new THREE.CylinderGeometry(0.16, 0.18, 0.8, 5), matStone, cx, 0.4, cz);
+        add(new THREE.ConeGeometry(0.2, 0.3, 5), matRoof, cx, 0.95, cz);
+      }
+      break;
+    }
+    case "gate":
+    default: {
+      add(new THREE.BoxGeometry(1.3, 0.6, 0.5), matStone, 0, 0.3, 0);
+      add(new THREE.CylinderGeometry(0.24, 0.28, 1.1, 6), matDarkStone, -0.55, 0.55, 0);
+      add(new THREE.CylinderGeometry(0.24, 0.28, 1.1, 6), matDarkStone, 0.55, 0.55, 0);
+      add(new THREE.ConeGeometry(0.3, 0.4, 6), matRoof, -0.55, 1.3, 0);
+      add(new THREE.ConeGeometry(0.3, 0.4, 6), matRoof, 0.55, 1.3, 0);
+      break;
+    }
+  }
+  return g;
+}
+
+// Assemble the full Whitemarch diorama as one static group: instanced ward
+// houses with district roof colors, an instanced crenellated wall ring, and
+// bespoke gatehouse + civic centerpieces seated on the terrain.
+export function createWhitemarchCity(THREE, seed, options = {}) {
+  const layout = cityBuildingLayout(seed, options);
+  const group = new THREE.Group();
+  group.name = "atlas-whitemarch-city";
+  const disposables = [];
+
+  const matWall = new THREE.MeshStandardMaterial({ color: 0x9b9284, roughness: 0.9, metalness: 0, flatShading: true });
+  const matHouseBody = new THREE.MeshStandardMaterial({ color: 0xb8a88e, roughness: 0.92, metalness: 0, flatShading: true });
+  disposables.push(matWall, matHouseBody);
+
+  // Instanced houses (roof color via per-instance color over the shared body
+  // material's white base tint is not possible with one material, so the body
+  // uses a neutral stone and the roof hue comes from per-instance color).
+  const houseGeometry = createCityHouseGeometry(THREE);
+  disposables.push(houseGeometry);
+  const houses = new THREE.InstancedMesh(houseGeometry, matHouseBody, layout.houses.length);
+  houses.name = "atlas-city-houses";
+  const transform = new THREE.Object3D();
+  const tint = new THREE.Color();
+  layout.houses.forEach((house, index) => {
+    const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: house.x, z: house.z }), seed);
+    transform.position.set(house.x, groundY - 0.02, house.z);
+    transform.rotation.set(0, house.rotation, 0);
+    transform.scale.setScalar(house.scale);
+    transform.updateMatrix();
+    houses.setMatrixAt(index, transform.matrix);
+    tint.set(CITY_DISTRICT_ROOF_COLORS[house.districtId] ?? 0x6b4a2f);
+    houses.setColorAt(index, tint);
+  });
+  houses.instanceMatrix.needsUpdate = true;
+  if (houses.instanceColor) houses.instanceColor.needsUpdate = true;
+  houses.castShadow = true;
+  houses.receiveShadow = true;
+  houses.computeBoundingSphere?.();
+  group.add(houses);
+
+  // Instanced wall ring.
+  const wallGeometry = createCityWallGeometry(THREE);
+  disposables.push(wallGeometry);
+  const walls = new THREE.InstancedMesh(wallGeometry, matWall, layout.walls.length);
+  walls.name = "atlas-city-walls";
+  layout.walls.forEach((segment, index) => {
+    const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: segment.x, z: segment.z }), seed);
+    transform.position.set(segment.x, groundY - 0.04, segment.z);
+    transform.rotation.set(0, -segment.rotation, 0);
+    transform.scale.setScalar(segment.scale);
+    transform.updateMatrix();
+    walls.setMatrixAt(index, transform.matrix);
+  });
+  walls.instanceMatrix.needsUpdate = true;
+  walls.castShadow = true;
+  walls.receiveShadow = true;
+  group.add(walls);
+
+  // Centerpieces: gatehouses on the ring, civic anchors in the wards.
+  const matStone = new THREE.MeshStandardMaterial({ color: 0x887a6c, roughness: 0.92, flatShading: true });
+  const matDarkStone = new THREE.MeshStandardMaterial({ color: 0x554a40, roughness: 0.92, flatShading: true });
+  const matRoof = new THREE.MeshStandardMaterial({ color: 0x3a3026, roughness: 0.86, flatShading: true });
+  const matIvory = new THREE.MeshStandardMaterial({ color: 0xd0c8b0, roughness: 0.85, flatShading: true });
+  const matGold = new THREE.MeshStandardMaterial({ color: 0xa08030, roughness: 0.6, metalness: 0.2, flatShading: true });
+  const matWindow = new THREE.MeshStandardMaterial({ color: 0x6d552d, emissive: 0xffad48, emissiveIntensity: 0 });
+  disposables.push(matStone, matDarkStone, matRoof, matIvory, matGold, matWindow);
+  const materials = { matStone, matDarkStone, matRoof, matIvory, matGold, matWindow };
+
+  for (const entry of [...layout.gatehouses, ...layout.centerpieces]) {
+    const piece = buildCityCenterpiece(THREE, entry, materials);
+    const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: entry.x, z: entry.z }), seed);
+    piece.position.set(entry.x, groundY - 0.02, entry.z);
+    piece.rotation.y = -entry.rotation;
+    piece.name = `atlas-city-${entry.kind}-${entry.id}`;
+    group.add(piece);
+  }
+
+  // City life dressing + the farmstead ring outside the gates. Stalls and
+  // banners are cheap meshes; smoke is soft additive sprites (skipped on low
+  // quality); farmsteads extend the diorama a short walk beyond the walls.
+  const dressing = cityDressing(seed);
+  const farmsteads = cityOutskirts(seed);
+  const propDensity = Number.isFinite(options.propDensity) ? options.propDensity : 1;
+
+  const matStallCanvas = new THREE.MeshStandardMaterial({ color: 0xb8542e, roughness: 0.9, flatShading: true, side: THREE.DoubleSide });
+  const matBanner = new THREE.MeshStandardMaterial({ color: 0x7a2a2a, roughness: 0.85, flatShading: true, side: THREE.DoubleSide });
+  const matFarm = new THREE.MeshStandardMaterial({ color: 0x9a7a4a, roughness: 0.95, flatShading: true });
+  const matFarmRoof = new THREE.MeshStandardMaterial({ color: 0x6a4a28, roughness: 0.9, flatShading: true });
+  disposables.push(matStallCanvas, matBanner, matFarm, matFarmRoof);
+
+  // Market stalls: a pole frame with a colored canvas canopy.
+  for (const stall of dressing.stalls) {
+    const stallGroup = new THREE.Group();
+    const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: stall.x, z: stall.z }), seed);
+    stallGroup.position.set(stall.x, groundY, stall.z);
+    stallGroup.rotation.y = -stall.rotation;
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.22), matFarm);
+    counter.position.y = 0.1;
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.04, 0.3), stall.variant === 1 ? matBanner : matStallCanvas);
+    canopy.position.y = 0.34;
+    canopy.rotation.z = 0.12;
+    stallGroup.add(counter, canopy);
+    stallGroup.name = "atlas-city-stall";
+    group.add(stallGroup);
+  }
+
+  // Gate banners: a vertical pennant above each gatehouse.
+  for (const banner of dressing.banners) {
+    const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: banner.x, z: banner.z }), seed);
+    const pennant = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.5), matBanner);
+    pennant.position.set(banner.x, groundY + 1.5, banner.z);
+    pennant.rotation.y = -banner.rotation;
+    pennant.name = "atlas-city-banner";
+    group.add(pennant);
+  }
+
+  // Chimney smoke: soft additive sprites above the working wards. High/medium
+  // tiers only — skipped entirely when density is throttled to the floor.
+  if (propDensity > 0.4) {
+    const smokeMaterial = new THREE.MeshBasicMaterial({
+      color: 0xdfe4e6, transparent: true, opacity: 0.16,
+      depthWrite: false, side: THREE.DoubleSide,
+    });
+    disposables.push(smokeMaterial);
+    const smokeGeometry = new THREE.PlaneGeometry(0.34, 0.6);
+    disposables.push(smokeGeometry);
+    for (const puff of dressing.smoke) {
+      const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: puff.x, z: puff.z }), seed);
+      const sprite = new THREE.Mesh(smokeGeometry, smokeMaterial);
+      sprite.position.set(puff.x, groundY + 0.7 + puff.phase * 0.3, puff.z);
+      sprite.userData.billboard = true;
+      sprite.name = "atlas-city-smoke";
+      group.add(sprite);
+    }
+  }
+
+  // Farmsteads outside the gates: a hall with a pitched roof and a small plot.
+  for (const farm of farmsteads) {
+    const farmGroup = new THREE.Group();
+    const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: farm.x, z: farm.z }), seed);
+    farmGroup.position.set(farm.x, groundY - 0.02, farm.z);
+    farmGroup.rotation.y = -farm.rotation;
+    farmGroup.scale.setScalar(farm.scale);
+    const hall = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.4, 0.5), matFarm);
+    hall.position.y = 0.2;
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.35, 4), matFarmRoof);
+    roof.rotation.y = Math.PI / 4;
+    roof.position.y = 0.58;
+    farmGroup.add(hall, roof);
+    if (farm.variant === 1) {
+      const barn = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.28, 0.3), matFarmRoof);
+      barn.position.set(0.55, 0.14, 0.2);
+      farmGroup.add(barn);
+    }
+    farmGroup.name = "atlas-city-farmstead";
+    group.add(farmGroup);
+  }
+
+  group.userData.farmsteadCount = farmsteads.length;
+  group.userData.houseCount = layout.houseCount;
+  group.userData.wallCount = layout.walls.length;
+  group.userData.disposables = disposables;
+  return group;
 }
 
 function createRouteGroup(THREE, seed, focusedRealmId) {
@@ -1323,6 +1719,10 @@ export function createLandmarkMeshGroup(THREE, seed, landmarkFilter = null) {
 
   for (const landmark of ATLAS_LANDMARKS) {
     if (landmarkFilter && !landmarkFilter(landmark)) continue;
+    // Whitemarch is no longer a single emblem — the authored capital renders as
+    // a full diorama (createWhitemarchCity). Skip its generic city miniature so
+    // the two never double-render at the origin.
+    if (landmark.id === WHITEMARCH_CAPITAL.id) continue;
     const { coord, kind, capitalOfRealmId } = landmark;
     const baseScale = capitalOfRealmId ? 1.45 : 1.0;
     let meshGroup;
@@ -1892,6 +2292,8 @@ function createController(
   });
   let mountainClouds = null;
   let hotSprings = null;
+  let whitewendCityRiver = null;
+  let whitemarchCity = null;
   let routes = new THREE.Group();
   routes.name = "atlas-routes";
   let journey = new THREE.Group();
@@ -1934,9 +2336,15 @@ function createController(
 
   mountainClouds = createMountainClouds(THREE, seed);
   hotSprings = createHotSprings(THREE, seed);
+  whitewendCityRiver = createWhitewendCityRiver(THREE, seed);
+  whitemarchCity = createWhitemarchCity(THREE, seed, { propDensity: quality?.propDensity ?? 1 });
   scene.add(mountainClouds, hotSprings);
+  if (whitewendCityRiver) scene.add(whitewendCityRiver);
+  if (whitemarchCity) scene.add(whitemarchCity);
   canvas.dataset.atlasMountainClouds = String(mountainClouds.children.length);
   canvas.dataset.atlasHotSprings = String(CONTINENT_HOT_SPRINGS.length);
+  canvas.dataset.atlasWhitewendCityRiver = whitewendCityRiver ? "1" : "0";
+  canvas.dataset.atlasWhitemarchCityHouses = whitemarchCity ? String(whitemarchCity.userData.houseCount) : "0";
   canvas.dataset.atlasLakes = String(CONTINENT_LAKES.length);
   canvas.dataset.atlasLandmarkSourceMeshes = "0";
   canvas.dataset.atlasLandmarkBatches = "0";

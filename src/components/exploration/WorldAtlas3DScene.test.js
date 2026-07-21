@@ -21,6 +21,9 @@ import {
   createRibbonMesh,
   createInsetLake,
   createVegetationGroup,
+  createWhitewendCityRiver,
+  createWhitemarchCity,
+  whitewendCityWaterPath,
   REALM_SETTLEMENT_COLORS,
   atlas3dStreamFailureDisposition,
   atlas3dStreamingRect,
@@ -32,6 +35,7 @@ import {
   atlas3dHotSpringSurfaceHeight,
   atlas3dLakeSurfaceHeight,
   atlas3dTerrainHeightAt,
+  atlas3dWhitewendSurfaceHeight,
   atlas3dWindowFloor,
   buildAtlas3dChunk,
   clampAtlas3dCamera,
@@ -545,5 +549,100 @@ describe("WorldAtlas3DScene rendering helpers", () => {
       .toBe(atlasEastFloraVariant(cherryCoord, CONTINENT.seed));
     expect(atlasEastFloraVariant(ginkgoCoord, CONTINENT.seed))
       .toBe(atlasEastFloraVariant(ginkgoCoord, CONTINENT.seed));
+  });
+
+  it("lays the Whitewend city river as a flat water surface along the authored channel", () => {
+    const path = whitewendCityWaterPath();
+    expect(path).not.toBeNull();
+    // The authored city has a main channel plus the two tails.
+    expect(path.centerline.length).toBeGreaterThan(8);
+    expect(path.cellCount).toBeGreaterThan(path.centerline.length);
+
+    const river = createWhitewendCityRiver(THREE, CONTINENT.seed);
+    expect(river).not.toBeNull();
+    expect(river.children.length).toBeGreaterThanOrEqual(1);
+    const surface = atlas3dWhitewendSurfaceHeight(CONTINENT.seed);
+    // Every water vertex sits exactly on the shared flat water level.
+    river.traverse((child) => {
+      if (!child.isMesh) return;
+      const positions = child.geometry.getAttribute("position");
+      for (let index = 0; index < positions.count; index += 1) {
+        expect(positions.getY(index)).toBeCloseTo(surface, 5);
+      }
+    });
+    expect(river.userData.waterHeight).toBe(surface);
+    expect(river.userData.disposables.length).toBeGreaterThan(0);
+  });
+
+  it("builds the Whitemarch city diorama: instanced houses, wall ring, gates, centerpieces", () => {
+    const city = createWhitemarchCity(THREE, CONTINENT.seed, { propDensity: 1 });
+    expect(city).not.toBeNull();
+    expect(city.name).toBe("atlas-whitemarch-city");
+
+    const houses = city.getObjectByName("atlas-city-houses");
+    const walls = city.getObjectByName("atlas-city-walls");
+    expect(houses?.isInstancedMesh).toBe(true);
+    expect(walls?.isInstancedMesh).toBe(true);
+    expect(houses.count).toBeGreaterThan(150);
+    expect(walls.count).toBeGreaterThanOrEqual(48);
+
+    // House instances carry district roof colors.
+    expect(houses.instanceColor).not.toBeNull();
+
+    // Centerpieces: 6 gatehouses plus palace, market, temples, watchtower, forts.
+    const gatehouses = [];
+    const centerpieces = [];
+    city.traverse((child) => {
+      if (child.name?.startsWith("atlas-city-gate-")) gatehouses.push(child.name);
+      if (/atlas-city-(palace|market|temple|watchtower|fort)-/.test(child.name || "")) centerpieces.push(child.name);
+    });
+    expect(gatehouses).toHaveLength(6);
+    expect(centerpieces.length).toBeGreaterThanOrEqual(6);
+    expect(centerpieces.some((name) => name.includes("palace"))).toBe(true);
+    expect(centerpieces.some((name) => name.includes("market"))).toBe(true);
+
+    // Houses sit near the city plateau height (not at world y=0).
+    const matrix = new THREE.Matrix4();
+    houses.getMatrixAt(0, matrix);
+    const position = new THREE.Vector3().setFromMatrixPosition(matrix);
+    expect(position.y).toBeGreaterThan(0.5);
+    expect(position.y).toBeLessThan(3);
+
+    expect(city.userData.disposables.length).toBeGreaterThan(0);
+  });
+
+  it("dresses the city with stalls, banners, smoke, and outlying farmsteads", () => {
+    const city = createWhitemarchCity(THREE, CONTINENT.seed, { propDensity: 1 });
+    let stalls = 0;
+    let banners = 0;
+    let smoke = 0;
+    let farmsteads = 0;
+    city.traverse((child) => {
+      if (child.name === "atlas-city-stall") stalls += 1;
+      if (child.name === "atlas-city-banner") banners += 1;
+      if (child.name === "atlas-city-smoke") smoke += 1;
+      if (child.name === "atlas-city-farmstead") farmsteads += 1;
+    });
+    expect(stalls).toBeGreaterThanOrEqual(6);
+    expect(banners).toBe(6);
+    expect(smoke).toBeGreaterThan(3);
+    expect(farmsteads).toBeGreaterThan(4);
+    expect(city.userData.farmsteadCount).toBeGreaterThan(4);
+
+    // On the lowest quality tier, smoke is skipped to hold the frame budget.
+    const lowCity = createWhitemarchCity(THREE, CONTINENT.seed, { propDensity: 0.3 });
+    let lowSmoke = 0;
+    lowCity.traverse((child) => { if (child.name === "atlas-city-smoke") lowSmoke += 1; });
+    expect(lowSmoke).toBe(0);
+  });
+
+  it("omits the old generic Whitemarch city emblem from the landmark group", () => {
+    const landmarks = createLandmarkMeshGroup(THREE, CONTINENT.seed);
+    expect(landmarks.getObjectByName(`atlas-landmark-${CONTINENT.capital?.id || "whitemarch"}`)).toBeUndefined();
+    expect(landmarks.getObjectByName("atlas-landmark-whitemarch")).toBeUndefined();
+    // Other continent cities still render.
+    let cityCount = 0;
+    landmarks.traverse((child) => { if (child.name?.startsWith("atlas-landmark-")) cityCount += 1; });
+    expect(cityCount).toBeGreaterThan(10);
   });
 });
