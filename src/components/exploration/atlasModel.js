@@ -96,23 +96,28 @@ function questAtKey(quests, key) {
   return quests.find((quest) => quest.loc && coordKey(quest.loc) === key) || null;
 }
 
-// The simulation remains an axial hex world, while the exploration screen
-// presents a compact, handheld-RPG camera. Each visible world cell is assigned
-// a stable square in that camera so the player can read terrain, routes, and
-// landmarks at a glance without exposing the underlying map-editor geometry.
-export function buildRpgViewport(state, origin = state.world.currentTile, activeQuests = null) {
-  const quests = activeQuests || (state.world.quests || []).filter((quest) => quest.status === "active");
-  const radiusX = Math.floor(RPG_VIEW_COLS / 2);
-  const radiusY = Math.floor(RPG_VIEW_ROWS / 2);
+// Build a camera window over the one authoritative axial world. Camera center
+// is intentionally independent from the party: panning never changes sight,
+// route authority, or the current marker.
+export function buildRpgViewport(state, options = {}) {
+  const party = state.world.currentTile;
+  const legacyCenter = Number.isFinite(options?.x) && Number.isFinite(options?.y) ? options : null;
+  const center = options?.center || legacyCenter || party;
+  const dimensions = options?.dimensions || { columns: RPG_VIEW_COLS, rows: RPG_VIEW_ROWS };
+  const columns = Math.max(3, Math.round(dimensions.columns) || RPG_VIEW_COLS);
+  const rows = Math.max(3, Math.round(dimensions.rows) || RPG_VIEW_ROWS);
+  const quests = options?.activeQuests || (state.world.quests || []).filter((quest) => quest.status === "active");
+  const radiusX = Math.floor(columns / 2);
+  const radiusY = Math.floor(rows / 2);
   const visibleRadius = sightRadius(state);
   const cells = [];
-  for (let row = 0; row < RPG_VIEW_ROWS; row++) {
-    for (let col = 0; col < RPG_VIEW_COLS; col++) {
-      const x = origin.x + col - radiusX;
-      const y = origin.y + row - radiusY;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < columns; col++) {
+      const x = center.x + col - radiusX;
+      const y = center.y + row - radiusY;
       const key = `${x},${y}`;
       const tile = getTile(state, x, y);
-      const visible = hexDistance(origin, { x, y }) <= visibleRadius;
+      const visible = hexDistance(party, { x, y }) <= visibleRadius;
       const seen = visible || isSeen(state, x, y);
       const visited = isVisited(state, x, y);
       cells.push({
@@ -123,7 +128,7 @@ export function buildRpgViewport(state, origin = state.world.currentTile, active
         explored: seen || visited,
         passable: isPassable(tile),
         quest: questAtKey(quests, key),
-        current: x === origin.x && y === origin.y,
+        current: x === party.x && y === party.y,
         screen: { x: col * 100 + 50, y: row * 100 + 50 },
       });
     }
@@ -152,12 +157,16 @@ function traceTrail(state, origin, direction, questKeys) {
 // Build a decision model rather than a render model. World coordinates remain
 // the simulation's source of truth, but the player sees trailheads, objectives,
 // and remembered landmarks instead of every cell in the axial grid.
-export function buildExplorationModel(state) {
+export function buildExplorationModel(state, options = {}) {
   const origin = state.world.currentTile;
   const currentTile = getTile(state, origin.x, origin.y);
   const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
   const questKeys = new Set(activeQuests.filter((quest) => quest.loc).map((quest) => coordKey(quest.loc)));
-  const viewport = buildRpgViewport(state, origin, activeQuests);
+  const viewport = buildRpgViewport(state, {
+    center: options.center || origin,
+    dimensions: options.dimensions,
+    activeQuests,
+  });
 
   const rawChoices = [];
   for (const direction of HEX_DIRECTIONS) {
