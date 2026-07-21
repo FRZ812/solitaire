@@ -611,6 +611,31 @@ describe("WorldAtlas3DScene rendering helpers", () => {
     expect(city.userData.disposables.length).toBeGreaterThan(0);
   });
 
+  it("dresses the city with stalls, banners, smoke, and outlying farmsteads", () => {
+    const city = createWhitemarchCity(THREE, CONTINENT.seed, { propDensity: 1 });
+    let stalls = 0;
+    let banners = 0;
+    let smoke = 0;
+    let farmsteads = 0;
+    city.traverse((child) => {
+      if (child.name === "atlas-city-stall") stalls += 1;
+      if (child.name === "atlas-city-banner") banners += 1;
+      if (child.name === "atlas-city-smoke") smoke += 1;
+      if (child.name === "atlas-city-farmstead") farmsteads += 1;
+    });
+    expect(stalls).toBeGreaterThanOrEqual(6);
+    expect(banners).toBe(6);
+    expect(smoke).toBeGreaterThan(3);
+    expect(farmsteads).toBeGreaterThan(4);
+    expect(city.userData.farmsteadCount).toBeGreaterThan(4);
+
+    // On the lowest quality tier, smoke is skipped to hold the frame budget.
+    const lowCity = createWhitemarchCity(THREE, CONTINENT.seed, { propDensity: 0.3 });
+    let lowSmoke = 0;
+    lowCity.traverse((child) => { if (child.name === "atlas-city-smoke") lowSmoke += 1; });
+    expect(lowSmoke).toBe(0);
+  });
+
   it("omits the old generic Whitemarch city emblem from the landmark group", () => {
     const landmarks = createLandmarkMeshGroup(THREE, CONTINENT.seed);
     expect(landmarks.getObjectByName(`atlas-landmark-${CONTINENT.capital?.id || "whitemarch"}`)).toBeUndefined();

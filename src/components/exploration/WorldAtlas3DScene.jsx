@@ -30,7 +30,7 @@ import {
   coordinateNoise,
 } from "./worldAtlas3dModel.js";
 import { WHITEMARCH_CAPITAL, whitemarchTileAt } from "../../data/whitemarch-capital.js";
-import { cityBuildingLayout } from "./atlasCityModel.js";
+import { cityBuildingLayout, cityDressing, cityOutskirts } from "./atlasCityModel.js";
 import { createAtlasChunkStore } from "./atlasChunkStore.js";
 import { createAtlasPostStack } from "./atlasPostStack.js";
 import { enhanceAtlasTerrainMaterial, setAtlasTerrainWorldTime } from "./atlasTerrainShader.js";
@@ -668,6 +668,88 @@ export function createWhitemarchCity(THREE, seed, options = {}) {
     group.add(piece);
   }
 
+  // City life dressing + the farmstead ring outside the gates. Stalls and
+  // banners are cheap meshes; smoke is soft additive sprites (skipped on low
+  // quality); farmsteads extend the diorama a short walk beyond the walls.
+  const dressing = cityDressing(seed);
+  const farmsteads = cityOutskirts(seed);
+  const propDensity = Number.isFinite(options.propDensity) ? options.propDensity : 1;
+
+  const matStallCanvas = new THREE.MeshStandardMaterial({ color: 0xb8542e, roughness: 0.9, flatShading: true, side: THREE.DoubleSide });
+  const matBanner = new THREE.MeshStandardMaterial({ color: 0x7a2a2a, roughness: 0.85, flatShading: true, side: THREE.DoubleSide });
+  const matFarm = new THREE.MeshStandardMaterial({ color: 0x9a7a4a, roughness: 0.95, flatShading: true });
+  const matFarmRoof = new THREE.MeshStandardMaterial({ color: 0x6a4a28, roughness: 0.9, flatShading: true });
+  disposables.push(matStallCanvas, matBanner, matFarm, matFarmRoof);
+
+  // Market stalls: a pole frame with a colored canvas canopy.
+  for (const stall of dressing.stalls) {
+    const stallGroup = new THREE.Group();
+    const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: stall.x, z: stall.z }), seed);
+    stallGroup.position.set(stall.x, groundY, stall.z);
+    stallGroup.rotation.y = -stall.rotation;
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.22), matFarm);
+    counter.position.y = 0.1;
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.04, 0.3), stall.variant === 1 ? matBanner : matStallCanvas);
+    canopy.position.y = 0.34;
+    canopy.rotation.z = 0.12;
+    stallGroup.add(counter, canopy);
+    stallGroup.name = "atlas-city-stall";
+    group.add(stallGroup);
+  }
+
+  // Gate banners: a vertical pennant above each gatehouse.
+  for (const banner of dressing.banners) {
+    const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: banner.x, z: banner.z }), seed);
+    const pennant = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.5), matBanner);
+    pennant.position.set(banner.x, groundY + 1.5, banner.z);
+    pennant.rotation.y = -banner.rotation;
+    pennant.name = "atlas-city-banner";
+    group.add(pennant);
+  }
+
+  // Chimney smoke: soft additive sprites above the working wards. High/medium
+  // tiers only — skipped entirely when density is throttled to the floor.
+  if (propDensity > 0.4) {
+    const smokeMaterial = new THREE.MeshBasicMaterial({
+      color: 0xdfe4e6, transparent: true, opacity: 0.16,
+      depthWrite: false, side: THREE.DoubleSide,
+    });
+    disposables.push(smokeMaterial);
+    const smokeGeometry = new THREE.PlaneGeometry(0.34, 0.6);
+    disposables.push(smokeGeometry);
+    for (const puff of dressing.smoke) {
+      const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: puff.x, z: puff.z }), seed);
+      const sprite = new THREE.Mesh(smokeGeometry, smokeMaterial);
+      sprite.position.set(puff.x, groundY + 0.7 + puff.phase * 0.3, puff.z);
+      sprite.userData.billboard = true;
+      sprite.name = "atlas-city-smoke";
+      group.add(sprite);
+    }
+  }
+
+  // Farmsteads outside the gates: a hall with a pitched roof and a small plot.
+  for (const farm of farmsteads) {
+    const farmGroup = new THREE.Group();
+    const groundY = atlas3dTerrainHeightAt(atlas3dSceneToAxial({ x: farm.x, z: farm.z }), seed);
+    farmGroup.position.set(farm.x, groundY - 0.02, farm.z);
+    farmGroup.rotation.y = -farm.rotation;
+    farmGroup.scale.setScalar(farm.scale);
+    const hall = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.4, 0.5), matFarm);
+    hall.position.y = 0.2;
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.35, 4), matFarmRoof);
+    roof.rotation.y = Math.PI / 4;
+    roof.position.y = 0.58;
+    farmGroup.add(hall, roof);
+    if (farm.variant === 1) {
+      const barn = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.28, 0.3), matFarmRoof);
+      barn.position.set(0.55, 0.14, 0.2);
+      farmGroup.add(barn);
+    }
+    farmGroup.name = "atlas-city-farmstead";
+    group.add(farmGroup);
+  }
+
+  group.userData.farmsteadCount = farmsteads.length;
   group.userData.houseCount = layout.houseCount;
   group.userData.wallCount = layout.walls.length;
   group.userData.disposables = disposables;

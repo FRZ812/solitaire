@@ -138,6 +138,77 @@ export function cityCenterpieces() {
   return result;
 }
 
+// Market-stall awnings in the Grand Market and gate banners on the ring — the
+// small colored accents that make a diorama read as lived-in. All deterministic.
+export function cityDressing(seed) {
+  const stalls = [];
+  // Grand Market stalls cluster around the square at the origin.
+  for (let index = 0; index < 8; index += 1) {
+    const angle = index / 8 * Math.PI * 2 + coordinateNoise(index, 0, `${seed}|stall`) * 0.6;
+    const radius = 1.15 + coordinateNoise(index, 1, `${seed}|stall-r`) * 0.5;
+    stalls.push({
+      kind: "stall",
+      x: Math.cos(angle) * radius,
+      z: Math.sin(angle) * radius,
+      rotation: angle + Math.PI / 2,
+      variant: index % 3,
+    });
+  }
+  // Banners above each gatehouse.
+  const banners = cityGatehouses().map((gate) => ({
+    kind: "banner",
+    x: gate.x, z: gate.z, rotation: gate.rotation, id: gate.id,
+  }));
+  // Chimney smoke anchors: a sparse deterministic subset of Low Wards /
+  // Iron Quarter house tiles, so the working wards breathe.
+  const smoke = [];
+  for (let x = -9; x <= 9; x += 1) {
+    for (let y = -9; y <= 9; y += 1) {
+      const tile = whitemarchTileAt(x, y);
+      if (!tile || tile.isWater || tile.isWall) continue;
+      if (!["low-wards", "iron-quarter", "river-docks"].includes(tile.districtId)) continue;
+      if (tile.poiType && tile.poiType !== "landmark") continue;
+      if (coordinateNoise(x, y, `${seed}|smoke`) > 0.24) continue;
+      const scene = atlas3dAxialToScene({ x, y });
+      smoke.push({
+        kind: "smoke",
+        x: scene.x + (coordinateNoise(x, y, `${seed}|smoke-x`) - 0.5) * 0.5,
+        z: scene.z + (coordinateNoise(x, y, `${seed}|smoke-z`) - 0.5) * 0.5,
+        phase: coordinateNoise(x, y, `${seed}|smoke-p`),
+      });
+    }
+  }
+  return { stalls, banners, smoke };
+}
+
+// Farmsteads and field plots immediately outside the gates, so the city's
+// surroundings invite a short walk. Placed on open plains just beyond the
+// wall, clustered near the six route mouths, deterministic per seed.
+export function cityOutskirts(seed) {
+  const farmsteads = [];
+  const mouths = WHITEMARCH_CAPITAL.routeMouths || [];
+  for (const mouth of mouths) {
+    for (let index = 0; index < 3; index += 1) {
+      const salt = `${seed}|farm|${mouth.id}|${index}`;
+      // Push well past the wall so most candidates clear the city footprint.
+      const spread = 4 + coordinateNoise(index, 0, salt) * 4;
+      const angle = coordinateNoise(index, 1, salt) * Math.PI * 2;
+      const x = mouth.coord.x + Math.round(Math.cos(angle) * spread);
+      const y = mouth.coord.y + Math.round(Math.sin(angle) * spread);
+      // Farmsteads must sit on open land outside the city footprint.
+      if (whitemarchTileAt(x, y)) continue;
+      const scene = atlas3dAxialToScene({ x, y });
+      farmsteads.push({
+        x: scene.x, z: scene.z,
+        rotation: coordinateNoise(x, y, salt) * Math.PI * 2,
+        scale: 0.85 + coordinateNoise(x, y, `${salt}|s`) * 0.4,
+        variant: index % 2,
+      });
+    }
+  }
+  return farmsteads;
+}
+
 // Aggregate the full city building layout once. The capital is small (radius
 // 12) and entirely static, so the scene builds a single city group at startup
 // rather than per-chunk batches — no border duplication, one instanced draw

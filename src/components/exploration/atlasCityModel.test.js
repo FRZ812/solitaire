@@ -3,8 +3,10 @@ import { CONTINENT } from "../../data/continent.js";
 import {
   cityBuildingLayout,
   cityCenterpieces,
+  cityDressing,
   cityGatehouses,
   cityHousesForTile,
+  cityOutskirts,
   cityWallSegments,
 } from "./atlasCityModel.js";
 
@@ -89,5 +91,34 @@ describe("Whitemarch city building layout", () => {
     const again = cityBuildingLayout(SEED, { propDensity: 1 });
     expect(again.houseCount).toBe(layout.houseCount);
     expect(again.houses[0]).toEqual(layout.houses[0]);
+  });
+
+  it("dresses the city with market stalls, gate banners, and chimney smoke", () => {
+    const dressing = cityDressing(SEED);
+    expect(dressing.stalls.length).toBeGreaterThanOrEqual(6);
+    expect(dressing.banners).toHaveLength(6);
+    expect(dressing.smoke.length).toBeGreaterThan(3);
+    // Stalls cluster near the square at the origin.
+    for (const stall of dressing.stalls) {
+      expect(Math.hypot(stall.x, stall.z)).toBeLessThan(2.5);
+    }
+    // Smoke stays inside the working wards (within the wall ring).
+    for (const puff of dressing.smoke) {
+      expect(Math.hypot(puff.x, puff.z)).toBeLessThan(11);
+    }
+    // Deterministic.
+    expect(cityDressing(SEED)).toEqual(dressing);
+  });
+
+  it("scatters farmsteads outside the gates on open land", () => {
+    const farmsteads = cityOutskirts(SEED);
+    expect(farmsteads.length).toBeGreaterThan(6);
+    for (const farm of farmsteads) {
+      // Outside the wall ring but not far from the city.
+      const radius = Math.hypot(farm.x, farm.z);
+      expect(radius).toBeGreaterThan(9.5);
+      expect(radius).toBeLessThan(22);
+    }
+    expect(cityOutskirts(SEED)).toEqual(farmsteads);
   });
 });
