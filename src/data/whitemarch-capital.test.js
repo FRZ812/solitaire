@@ -13,6 +13,7 @@ import {
   WHITEMARCH_LANDMARKS,
   WHITEMARCH_MAP_VERSION,
   compileWhitemarchCapital,
+  whitemarchTileAt,
 } from "./whitemarch-capital.js";
 
 const HEX_DIRECTIONS = [
@@ -178,6 +179,42 @@ describe("Whitemarch unified-capital compiler", () => {
     });
     expect(topLevel).toHaveLength(1);
     expect(topLevel[0][0]).toBe("0,0");
+  });
+
+  it("projects authored city tiles by axial coord for the 3D atlas, null outside", () => {
+    expect(whitemarchTileAt(0, 0)?.poiPart).toBe("grain-square");
+    expect(whitemarchTileAt(0, 0)?.terrain).toBe("settlement");
+    // Whitewend river band runs down columns 4–5 (rows -5,0,3 are bridges).
+    expect(whitemarchTileAt(4, -4)?.terrain).toBe("water");
+    expect(whitemarchTileAt(4, -4)?.isWater).toBe(true);
+    // Crown Gate at 8,2.
+    expect(whitemarchTileAt(8, 2)?.poiType).toBe("gate");
+    expect(whitemarchTileAt(8, 2)?.isGate).toBe(true);
+    // Wall ring at radius 10.
+    expect(whitemarchTileAt(0, 10)?.terrain).toBe("wall");
+    expect(whitemarchTileAt(0, 10)?.isWall).toBe(true);
+    // A bridge row across the Whitewend is road.
+    expect(whitemarchTileAt(4, 0)?.terrain).toBe("road");
+    expect(whitemarchTileAt(4, 0)?.isBridge).toBe(true);
+    // Outside the city radius and far away both read as no city tile.
+    expect(whitemarchTileAt(13, 0)).toBeNull();
+    expect(whitemarchTileAt(40, 40)).toBeNull();
+    expect(whitemarchTileAt(0, -13)).toBeNull();
+  });
+
+  it("keeps the projection deterministic and district-aware", () => {
+    const first = whitemarchTileAt(0, 0);
+    const second = whitemarchTileAt(0, 0);
+    expect(first).toBe(second); // same frozen projection object, not a copy
+    expect(first.districtId).toBe("grand-market");
+    // Every in-bounds tile resolves to a known district.
+    for (let x = -12; x <= 12; x += 1) {
+      for (let y = -12; y <= 12; y += 1) {
+        const tile = whitemarchTileAt(x, y);
+        if (!tile) continue;
+        expect(WHITEMARCH_CAPITAL.districts.some((d) => d.id === tile.districtId)).toBe(true);
+      }
+    }
   });
 
   it("wires every service to a building kind the current UI can actually open", () => {
