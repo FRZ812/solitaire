@@ -606,4 +606,38 @@ describe("true 3D atlas spatial model", () => {
       releaseAtlas3dChunkHeights(chunk);
     }
   });
+
+  it("sculpts the authored Whitemarch city into the city chunks' terrain", () => {
+    // The city (radius 12) spans chunks (-1,-1), (0,-1), (-1,0), (0,0); each
+    // chunk stores heights relative to its own origin at stride 1.
+    const chunks = [[0, 0], [-1, 0], [0, -1], [-1, -1]]
+      .map(([cx, cy]) => buildAtlas3dChunk(CONTINENT.seed, cx, cy, 0));
+    for (const chunk of chunks) expect(chunk.empty).toBe(false);
+    const heightAt = (x, y) => {
+      for (const chunk of chunks) {
+        const column = x - chunk.origin.x;
+        const row = y - chunk.origin.y;
+        if (column >= 0 && row >= 0 && column < chunk.columns && row < chunk.rows) {
+          return chunk.heights[row * chunk.columns + column];
+        }
+      }
+      throw new Error(`no city chunk covers ${x},${y}`);
+    };
+
+    // The Whitewend river carves a channel below the surrounding wards.
+    const riverBed = heightAt(4, -4);
+    const westBank = heightAt(2, -4);
+    const eastBank = heightAt(7, -4);
+    expect(riverBed).toBeLessThan(Math.min(westBank, eastBank) - 0.4);
+
+    // The wall ring at radius 10 stands above the wards immediately inside it.
+    expect(heightAt(0, 10)).toBeGreaterThan(heightAt(0, 8) + 0.3);
+    expect(heightAt(10, 0)).toBeGreaterThan(heightAt(8, 0) + 0.3);
+    expect(heightAt(-10, 0)).toBeGreaterThan(heightAt(-8, 0) + 0.3);
+
+    // Built-up wards are flattened toward a plateau: distant street tiles
+    // inside the walls sit much closer in height than raw erosion would allow.
+    expect(Math.abs(heightAt(-2, 1) - heightAt(-6, 4))).toBeLessThan(1.5);
+    expect(Math.abs(heightAt(0, 0) - heightAt(7, 0))).toBeLessThan(1.5);
+  });
 });

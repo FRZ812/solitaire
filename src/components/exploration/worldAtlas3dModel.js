@@ -8,7 +8,7 @@ import {
   MOUNTAIN_SPINE,
   NORTHERN_RIDGES,
 } from "../../data/continent.js";
-import { WHITEMARCH_CAPITAL } from "../../data/whitemarch-capital.js";
+import { WHITEMARCH_CAPITAL, whitemarchTileAt } from "../../data/whitemarch-capital.js";
 import { continentValueAt, surveyAtlas } from "../../engine/world-generation.js";
 
 export const ATLAS_3D_FOV_DEG = 34;
@@ -41,6 +41,7 @@ export const ATLAS_3D_TREE_SPECIES = Object.freeze({
 //   +421 snow-line edge break         +423 moisture hue drift
 //   +427 lowland undulation           +431 rock and scree placement
 //   +433 field placement              +439 settlement environs
+//   +443 city street plateau          +449 city roof jitter (Phase 3)
 const SALT_CRAG_FINE = 401;
 const SALT_CRAG_BROAD = 409;
 const SALT_CATEGORY_BORDER = 419;
@@ -50,6 +51,7 @@ const SALT_UNDULATION = 427;
 const SALT_ROCKS = 431;
 const SALT_FIELDS = 433;
 const SALT_ENVIRONS = 439;
+const SALT_CITY_PLATEAU = 443;
 
 const DEG_TO_RAD = Math.PI / 180;
 const SQRT_THREE_OVER_TWO = Math.sqrt(3) / 2;
@@ -57,6 +59,9 @@ const FOV_TAN = Math.tan((ATLAS_3D_FOV_DEG * DEG_TO_RAD) / 2);
 const CAMERA_MIN_CLEARANCE = 3;
 const TERRAIN_MAX_HEIGHT = 42;
 const TERRAIN_MIN_HEIGHT = -2.8;
+// The Whitewend's channel bed sits just below the city plateau — deep enough
+// to read as a river, shallow enough that its banks stay gentle for bridges.
+const CITY_RIVERBED_HEIGHT = 0.35;
 const SNOW_CAP_HEIGHT = 30;
 const SNOW_CAP_COLOR = 0xd8ddd0;
 const COASTAL_SAND_COLOR = 0xb8a870;
@@ -166,10 +171,38 @@ function atlas3dSeedCacheKey(seed) {
   return `${typeof seed}:${String(seed)}`;
 }
 
+// The authored Whitemarch capital is invisible to the procedural survey — the
+// generator only sees generic lowland near the origin. Overlay the authored
+// tiles so the 3D diorama sculpts the real city: the Whitewend channel, the
+// wall ring, and the built-up wards. City shaping must remain stable across
+// seeds, so the overlay is keyed by the authored map, not the world seed.
+function atlas3dCityOverlay(x, y, sample) {
+  const city = whitemarchTileAt(x, y);
+  if (!city) return sample;
+  if (city.isWater) {
+    return { ...sample, land: false, coast: false, terrain: "water", city: true, cityDistrictId: city.districtId };
+  }
+  const terrain = city.isWall
+    ? "wall"
+    : city.terrain === "plains"
+      ? "plains"
+      : "settlement";
+  return {
+    ...sample,
+    land: true,
+    coast: false,
+    terrain,
+    city: true,
+    cityWall: city.isWall === true,
+    cityBridge: city.isBridge === true,
+    cityDistrictId: city.districtId,
+  };
+}
+
 function atlas3dChunkSurvey(x, y, seed) {
   const key = `${atlas3dSeedCacheKey(seed)}|${x},${y}`;
   if (TERRAIN_CHUNK_SURVEY_CACHE.has(key)) return TERRAIN_CHUNK_SURVEY_CACHE.get(key);
-  const sample = surveyAtlas(x, y, seed);
+  const sample = atlas3dCityOverlay(x, y, surveyAtlas(x, y, seed));
   if (TERRAIN_CHUNK_SURVEY_CACHE.size >= 65536) {
     TERRAIN_CHUNK_SURVEY_CACHE.delete(TERRAIN_CHUNK_SURVEY_CACHE.keys().next().value);
   }
@@ -674,6 +707,29 @@ export function atlas3dBaseTerrainHeight(
       seed + SALT_UNDULATION,
     ) - 0.5;
     height += undulation * (1.1 - resolvedNorthWeight * 0.7);
+  }
+
+  // Authored-city shaping (Whitemarch). Applied after the generic relief so
+  // the capital reads as a placed diorama: flattened wards on a shared
+  // plateau, a raised wall berm, and the Whitewend channel. All city shaping
+  // is keyed by the authored map and seed-independent noise, so the city
+  // profile is identical in the worker and on the main thread.
+  if (sample?.city && coord) {
+    const districtHash = coordinateNoise(coord.x, coord.y, seed + SALT_CITY_PLATEAU);
+    if (sample.terrain === "wall") {
+      // A smooth berm the wall mesh stands on, rising above the inner wards.
+      // Strong enough that even gate-adjacent segments read over the plateau.
+      height = height * 0.3 + (3.7 + districtHash * 0.6) * 0.7;
+    } else if (sample.terrain === "settlement" || sample.cityBridge) {
+      // Built-up wards flatten toward a firm plateau with only a whisper of
+      // block-to-block variation, so instanced houses sit believably and the
+      // river channel reads clearly below the streets.
+      const plateau = 1.55 + districtHash * 0.22;
+      height = height * 0.06 + plateau * 0.94;
+    } else if (sample.terrain === "plains") {
+      // Gardens and the outer works keep soft parkland relief inside the city.
+      height = height * 0.4 + (1.3 + districtHash * 0.4) * 0.6;
+    }
   }
   return clamp(height, 0.4, TERRAIN_MAX_HEIGHT);
 }
@@ -1181,6 +1237,10 @@ function smoothTerrainHeights(samples, xs, ys, baseHeights, northWeights = null)
       // erosion octaves keep their uplands craggy.
       const northern = northWeights ? northWeights[index] : sample.realmId === "north" ? 1 : 0;
       blendStrength[index] = (0.62 + northern * 0.26) * (1 - preserveAuthoredRelief * 0.82);
+      // The city wall is a one-hex-wide authored ridge; the relaxation below
+      // would melt it into the wards on either side. Hold it near its berm
+      // height so the ring reads as a deliberate rampart, not a speed bump.
+      if (sample.cityWall) blendStrength[index] = 0.1;
     }
   }
 
@@ -1267,7 +1327,9 @@ function buildAtlas3dChunkFields(seed, rect) {
       const coord = { x: xs[column], y: ys[row] };
       heights[index] = samples[index].land
         ? lakeBasinHeightAt(coord, smoothedHeights[index], seed)
-        : TERRAIN_MIN_HEIGHT;
+        : samples[index].city
+          ? CITY_RIVERBED_HEIGHT
+          : TERRAIN_MIN_HEIGHT;
       coastal[index] = isCoastalGridVertex(coord, samples[index], seed) ? 1 : 0;
     }
   }
