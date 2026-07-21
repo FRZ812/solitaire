@@ -10,6 +10,7 @@ describe("OpenRouter narrator registry", () => {
     expect(NARRATOR_MODELS.map((model) => model.id)).toEqual([
       "deepseek/deepseek-v4-flash",
       "deepseek/deepseek-v4-pro",
+      "minimax/minimax-m3",
       "z-ai/glm-5.2",
       "openai/gpt-5.6-luna",
       "google/gemini-3.1-pro-preview",

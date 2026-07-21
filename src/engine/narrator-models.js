@@ -19,6 +19,7 @@ export const NARRATOR_EFFORTS = [
 export const NARRATOR_MODELS = [
   { id: "deepseek/deepseek-v4-flash",      label: "DeepSeek V4 Flash",    note: "fast reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
   { id: "deepseek/deepseek-v4-pro",        label: "DeepSeek V4 Pro",      note: "deep reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
+  { id: "minimax/minimax-m3",              label: "MiniMax M3",           note: "MiniMax reasoning", provider: "OpenRouter", efforts: ["high", "max"] },
   { id: "z-ai/glm-5.2",                     label: "GLM 5.2",             note: "Z.ai reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
   { id: "openai/gpt-5.6-luna",              label: "GPT-5.6 Luna",        note: "OpenAI",          provider: "OpenRouter", efforts: null },
   { id: "google/gemini-3.1-pro-preview",   label: "Gemini 3.1 Pro",       note: "Google",          provider: "OpenRouter", efforts: null },

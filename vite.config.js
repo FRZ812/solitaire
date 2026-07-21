@@ -26,4 +26,10 @@ export default defineConfig(({ command }) => ({
   build: {
     target: "es2020",
   },
+  test: {
+    // Several integration tests compile the full world map and run
+    // pathfinding across the entire continent; under parallel load the
+    // default 5s ceiling flakes. 15s gives comfortable headroom.
+    testTimeout: 15_000,
+  },
 }));

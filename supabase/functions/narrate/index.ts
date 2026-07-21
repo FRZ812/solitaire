@@ -14,12 +14,14 @@ const ALLOWED_MODELS = new Set([
   "google/gemini-3.1-pro-preview",
   "z-ai/glm-5.2",
   "openai/gpt-5.6-luna",
+  "minimax/minimax-m3",
 ]);
 
 const REASONING_MODELS = new Set([
   "deepseek/deepseek-v4-pro",
   "deepseek/deepseek-v4-flash",
   "z-ai/glm-5.2",
+  "minimax/minimax-m3",
 ]);
 
 // A real function-call tool (not a JSON response field) — this is the
