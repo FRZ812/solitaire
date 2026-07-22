@@ -13,7 +13,7 @@ import { HANDCRAFTED } from "../data/handcrafted-map.js";
 import { RUMORED } from "../data/rumored.js";
 import { FABLED_BY_COORD } from "../data/fabled.js";
 import { RIVER_BY_COORD } from "../data/rivers.js";
-import { CONTINENT, DEFAULT_WORLD_SEED } from "../data/continent.js";
+import { CONTINENT, DEFAULT_WORLD_SEED, WORLD_GENERATOR_VERSION } from "../data/continent.js";
 import { SIGHT_RADIUS, TRAVEL_BASE_MIN, FLY_MIN_PER_HEX } from "../config.js";
 import { poiFootprintName, poiPartName, poiPlaceName } from "./location.js";
 import { CONTINENT_ROUTE_CELLS, generateWorldTile } from "./world-generation.js";
@@ -120,7 +120,12 @@ export function squareToAxial(x, y) {
 }
 
 function generateTile(state, x, y) {
-  return generateWorldTile({ x, y, seed: state?.world?.seed || DEFAULT_WORLD_SEED });
+  return generateWorldTile({
+    x,
+    y,
+    seed: state?.world?.seed || DEFAULT_WORLD_SEED,
+    generatorVersion: state?.world?.generatorVersion ?? WORLD_GENERATOR_VERSION,
+  });
 }
 
 // Campaigns persist only discoveries and dynamic consequences for generated

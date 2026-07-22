@@ -26,13 +26,29 @@ const MODEL_FALLBACKS = new Map<string, string[]>([
   ["tencent/hy3:free", ["tencent/hy3"]],
 ]);
 
-const REASONING_MODELS = new Set([
-  "deepseek/deepseek-v4-pro",
-  "deepseek/deepseek-v4-flash",
-  "z-ai/glm-5.2",
+// These models expose reasoning but not a provider-supported effort selector.
+// Enable reasoning without sending an unsupported effort value.
+const REASONING_ENABLED_ONLY = new Set([
+  "poolside/laguna-s-2.1:free",
+  "poolside/laguna-s-2.1",
   "minimax/minimax-m3",
 ]);
 
+const REASONING_EFFORTS = new Map<string, string[]>([
+  ["tencent/hy3:free", ["low", "high"]],
+  ["tencent/hy3", ["low", "high"]],
+  ["deepseek/deepseek-v4-pro", ["high", "max"]],
+  ["deepseek/deepseek-v4-flash", ["high", "max"]],
+  ["z-ai/glm-5.2", ["high", "max"]],
+  ["x-ai/grok-4.5", ["low", "medium", "high"]],
+  ["moonshotai/kimi-k3", ["low", "high", "max"]],
+]);
+
+const OPENROUTER_EFFORT_ALIASES = new Map<string, Record<string, string>>([
+  ["deepseek/deepseek-v4-pro", { max: "xhigh" }],
+  ["deepseek/deepseek-v4-flash", { max: "xhigh" }],
+  ["z-ai/glm-5.2", { max: "xhigh" }],
+]);
 // A real function-call tool (not a JSON response field) — this is the
 // narrator's dedicated long-term memory, distinct from the rolling
 // apiHistory window (which drops old turns) and from the per-character
@@ -63,6 +79,7 @@ const MEMORY_TOOL = {
 const MAX_TOOL_ROUNDS = 3;
 
 type MemoryMode = "balanced" | "essential" | "manual";
+type ReasoningOptions = { enabled: boolean; effort?: string };
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -142,9 +159,12 @@ function selectedModels(model: string) {
 }
 
 function selectedReasoning(model: string, effort: unknown) {
-  if (!REASONING_MODELS.has(model)) return undefined;
-  if (effort !== "high" && effort !== "max") return undefined;
-  return { effort: effort === "max" ? "xhigh" : "high" };
+  if (REASONING_ENABLED_ONLY.has(model)) return { enabled: true };
+  const supported = REASONING_EFFORTS.get(model);
+  if (!supported) return undefined;
+  const selected = typeof effort === "string" && supported.includes(effort) ? effort : "high";
+  const mapped = OPENROUTER_EFFORT_ALIASES.get(model)?.[selected] || selected;
+  return { enabled: true, effort: mapped };
 }
 
 function toText(value: unknown): string {
@@ -240,7 +260,7 @@ async function pumpOpenRouterRound(
 function streamNarratorTurn(opts: {
   apiKey: string;
   models: string[];
-  reasoning?: { effort: string };
+  reasoning?: ReasoningOptions;
   messages: Array<Record<string, unknown>>;
   memoryMode: MemoryMode;
   existingMemories: string[];

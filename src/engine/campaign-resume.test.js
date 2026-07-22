@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { WORLD_GENERATOR_VERSION } from "../data/continent.js";
+import { migrateCodex } from "../data/initial-state.js";
 import {
   LAST_OPENED_KEY,
   clearCampaignResume,
+  prepareWarmCampaignState,
   readLastCampaignId,
   readResumeSnapshot,
   rememberLastCampaignId,
@@ -55,6 +58,19 @@ describe("campaign resume cache", () => {
     expect(shouldRecoverResumeSnapshot(dirty, "2026-07-17T10:00:00.000Z")).toBe(true);
     expect(shouldRecoverResumeSnapshot(dirty, "2026-07-17T10:02:00.000Z")).toBe(false);
     expect(shouldRecoverResumeSnapshot({ ...dirty, dirty: false }, "2026-07-17T10:00:00.000Z")).toBe(false);
+  });
+
+  it("ignores an unsupported warm snapshot so the server resume can continue", () => {
+    const unsupported = {
+      ...state,
+      world: {
+        ...state.world,
+        generatorVersion: WORLD_GENERATOR_VERSION + 1,
+      },
+    };
+
+    expect(prepareWarmCampaignState({ state: unsupported }, migrateCodex)).toBeNull();
+    expect(prepareWarmCampaignState({ state }, (value) => value)).toBe(state);
   });
 
   it("ignores malformed snapshots and clears all resume state", () => {

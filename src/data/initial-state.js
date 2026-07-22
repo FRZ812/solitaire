@@ -4,7 +4,12 @@ import { bodyWeightForRace } from "../engine/weight.js";
 import { carryCapacityFor, resolvePoolForMind, estimateAttributesFor } from "../engine/attributes.js";
 import { itemTemplate } from "./catalog.js";
 import { getBiome, BIOMES } from "./biomes.js";
-import { CONTINENT, DEFAULT_WORLD_SEED, WORLD_GENERATOR_VERSION } from "./continent.js";
+import {
+  CONTINENT,
+  DEFAULT_WORLD_SEED,
+  WORLD_GENERATOR_VERSION,
+  WORLD_GEOGRAPHY_VERSION,
+} from "./continent.js";
 import { PROFESSIONS } from "./professions.js";
 import { migratePortraitOverrides } from "../engine/portrait-overrides.js";
 import { playableRosterCharacters, withoutSelectedPlayableCharacter } from "./playable-roster.js";
@@ -113,7 +118,14 @@ function makeInitialSeen(start) {
   return seen;
 }
 
-export function makeInitialState() {
+export function campaignWorldSeed(identity = null) {
+  const supplied = String(identity || "").trim();
+  const generated = supplied || globalThis.crypto?.randomUUID?.()
+    || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${DEFAULT_WORLD_SEED}:campaign:${generated}`;
+}
+
+export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
   const start = { ...CONTINENT.start.coord };
   const startKey = `${start.x},${start.y}`;
   const state = {
@@ -158,7 +170,8 @@ export function makeInitialState() {
     time: { day: 3, hour: 13, minute: 30 },
     world: {
       continentId: CONTINENT.id,
-      seed: DEFAULT_WORLD_SEED,
+      seed: worldSeed,
+      geographyVersion: WORLD_GEOGRAPHY_VERSION,
       generatorVersion: WORLD_GENERATOR_VERSION,
       tiles: HANDCRAFTED[startKey] ? { [startKey]: HANDCRAFTED[startKey] } : {},
       currentTile: start,
@@ -905,6 +918,67 @@ export function makeInitialState() {
   return migrateProgressionState(state, { alignAuthoredAttributes: true });
 }
 
+export function makeNewCampaignState({ seedFactory = campaignWorldSeed } = {}) {
+  return makeInitialState({ worldSeed: seedFactory() });
+}
+
+export function resetCampaignState(currentState, { seedFactory = campaignWorldSeed } = {}) {
+  return makeInitialState({ worldSeed: currentState?.world?.seed || seedFactory() });
+}
+
+function compactProceduralTileForGeneratorMigration(tile) {
+  if (!tile || typeof tile !== "object") return tile;
+  const isGenerated = tile.procedural || tile.proceduralDelta;
+  if (!isGenerated) return tile;
+  const delta = { proceduralDelta: true, visited: true };
+  if (!tile.authoredFeatureId && tile.poi && tile.poi.type !== "hidden") delta.poi = tile.poi;
+  for (const field of ["status", "shop", "aerialSighting", "cache"]) {
+    if (tile[field] !== undefined) delta[field] = tile[field];
+  }
+  return delta;
+}
+
+function compactProceduralTileCollection(tiles) {
+  if (!tiles || typeof tiles !== "object" || Array.isArray(tiles)) return tiles;
+  return Object.fromEntries(Object.entries(tiles).map(([key, tile]) => [
+    key,
+    compactProceduralTileForGeneratorMigration(tile),
+  ]));
+}
+
+function supportedWorldVersions(world) {
+  const readVersion = (value, fallback, label) => {
+    if (value === undefined) return fallback;
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+      throw new RangeError(`Invalid world ${label} version: ${String(value)}.`);
+    }
+    return value;
+  };
+  const geographyVersion = readVersion(world.geographyVersion, 1, "geography");
+  const generatorVersion = readVersion(world.generatorVersion, 2, "generator");
+  if (geographyVersion > WORLD_GEOGRAPHY_VERSION || generatorVersion > WORLD_GENERATOR_VERSION) {
+    throw new RangeError(
+      `This campaign requires world geography ${geographyVersion} and generator ${generatorVersion}; update Solitaire before loading it.`,
+    );
+  }
+  return { geographyVersion, generatorVersion };
+}
+
+function migrateWorldVersions(world) {
+  const { geographyVersion, generatorVersion } = supportedWorldVersions(world);
+  const requiresRebase = geographyVersion < WORLD_GEOGRAPHY_VERSION
+    || generatorVersion < WORLD_GENERATOR_VERSION;
+  const tiles = requiresRebase
+    ? compactProceduralTileCollection(world.tiles || {})
+    : world.tiles;
+  return {
+    ...world,
+    ...(tiles ? { tiles } : {}),
+    geographyVersion: WORLD_GEOGRAPHY_VERSION,
+    generatorVersion: WORLD_GENERATOR_VERSION,
+  };
+}
+
 // Merge any codex entries that exist in the fresh initial state but are
 // missing from a loaded campaign — races, professions, named NPCs, etc.
 // added to initial-state.js after the campaign was created. The player's
@@ -924,7 +998,26 @@ export function migrateCodex(state) {
   next.narratorSettings = normalizeNarratorSettings(next.narratorSettings);
   if (!next.world.continentId) next.world.continentId = CONTINENT.id;
   if (!next.world.seed) next.world.seed = DEFAULT_WORLD_SEED;
-  if (!next.world.generatorVersion) next.world.generatorVersion = WORLD_GENERATOR_VERSION;
+  next.world = migrateWorldVersions(next.world);
+  if (Array.isArray(next.pools?.tiles)) {
+    next.pools.tiles = next.pools.tiles.map(compactProceduralTileCollection);
+  }
+  if (Array.isArray(next.turns)) {
+    next.turns = next.turns.map((turn) => {
+      if (!turn?.world) return turn;
+      supportedWorldVersions(turn.world);
+      return {
+        ...turn,
+        world: {
+          ...turn.world,
+          continentId: turn.world.continentId || next.world.continentId,
+          seed: turn.world.seed || next.world.seed,
+          geographyVersion: WORLD_GEOGRAPHY_VERSION,
+          generatorVersion: WORLD_GENERATOR_VERSION,
+        },
+      };
+    });
+  }
   // Location migration is independent of Codex hydration. Very old or
   // deliberately minimal saves may have no Codex, but must still leave the
   // retired place graph and rejoin the one world map.

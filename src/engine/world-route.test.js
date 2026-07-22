@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CONTINENT, DEFAULT_WORLD_SEED, LANDMARKS, REGION_DEFINITIONS } from "../data/continent.js";
+import {
+  CONTINENT,
+  CONTINENT_HOT_SPRINGS,
+  DEFAULT_WORLD_SEED,
+  LANDMARKS,
+  REGION_DEFINITIONS,
+} from "../data/continent.js";
 import {
   HANDCRAFTED,
   SEALED_STRUCTURES,
@@ -230,6 +236,30 @@ describe("generated continent integration", () => {
     } } }, mirecross.coord.x, mirecross.coord.y);
     expect(restored.poi.name).toBe(mirecross.name);
     expect(restored.poi.landmarkId).toBe(mirecross.id);
+  });
+
+  it("regenerates an authored hot spring instead of accepting a stale saved POI", () => {
+    const state = makeInitialState();
+    const spring = CONTINENT_HOT_SPRINGS[0];
+    const key = `${spring.center.x},${spring.center.y}`;
+    const canonical = getTile(state, spring.center.x, spring.center.y);
+    const delta = persistedTileDelta(canonical);
+
+    expect(canonical.authoredFeatureId).toBe(spring.id);
+    expect(delta).not.toHaveProperty("poi");
+
+    const restored = getTile({ ...state, world: { ...state.world, tiles: {
+      ...state.world.tiles,
+      [key]: {
+        ...delta,
+        poi: { type: "ruin", name: "Stale discovery", description: "Must not replace the spring." },
+      },
+    } } }, spring.center.x, spring.center.y);
+    expect(restored.poi).toMatchObject({
+      type: "hot-spring",
+      name: spring.name,
+      landmarkId: spring.id,
+    });
   });
 
   it("treats discovered in-bounds generated land as traversable and routable", () => {

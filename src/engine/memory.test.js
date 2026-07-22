@@ -34,7 +34,7 @@ describe("campaign memory bank", () => {
     const migrated = migrateCodex(old);
 
     expect(migrated.memories).toEqual(["one fact"]);
-    expect(migrated.narratorSettings).toEqual({ instructions: "", memoryMode: "balanced" });
+    expect(migrated.narratorSettings).toEqual({ instructions: "", memoryMode: "balanced", verbosity: "concise" });
     expect(normalizeMemoryBank(null)).toEqual([]);
   });
 });

@@ -2,7 +2,12 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 
 import { STORAGE_KEY, originLabel, SIGHT_RADIUS, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED, WORLD_MARCH_LIMIT } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
-import { makeInitialState, migrateCodex } from "./data/initial-state.js";
+import {
+  makeInitialState,
+  makeNewCampaignState,
+  migrateCodex,
+  resetCampaignState,
+} from "./data/initial-state.js";
 
 import { storeGet, storeDel } from "./engine/storage.js";
 import { callNarrator } from "./engine/api-supabase.js";
@@ -10,6 +15,7 @@ import { onAuthChange, signOut, linkEmail, isSubscribed } from "./engine/auth-su
 import { listCampaigns, loadCampaignRecord, saveCampaign, deleteCampaign, renameCampaign } from "./engine/campaigns-supabase.js";
 import {
   clearCampaignResume,
+  prepareWarmCampaignState,
   readLastCampaignId,
   readResumeSnapshot,
   rememberLastCampaignId,
@@ -783,16 +789,16 @@ export function Solitaire() {
       ? cachedSnapshot
       : null;
     let warmState = null;
-    if (warmSnapshot) {
-      // Paint the real last scene during the network check, but leave hydrated
-      // false so controls/autosave remain gated behind the resume overlay.
-      warmState = prepareCampaignState(warmSnapshot.state);
-      setState(warmState);
-      closeBeatMenu();
-      setCurrentCampaignId(id);
-      rememberLastCampaignId(id);
-    }
     try {
+      warmState = prepareWarmCampaignState(warmSnapshot, prepareCampaignState);
+      if (warmState) {
+        // Paint the real last scene during the network check, but leave hydrated
+        // false so controls/autosave remain gated behind the resume overlay.
+        setState(warmState);
+        closeBeatMenu();
+        setCurrentCampaignId(id);
+        rememberLastCampaignId(id);
+      }
       const loaded = await loadCampaignRecord(id);
       if (isCancelled()) return;
       if (!loaded) {
@@ -842,7 +848,7 @@ export function Solitaire() {
     setHydrated(false);
     setCampaignError(null);
     try {
-      const fresh = makeInitialState();
+      const fresh = makeNewCampaignState();
       const name = fresh.character?.name || "Untitled";
       const { id, updatedAt } = await saveCampaign(null, fresh, { name });
       if (isCancelled()) return;
@@ -1229,7 +1235,10 @@ export function Solitaire() {
       const terr = groundMount.moveProfile.terrain;
       const legTerrains = new Set();
       for (let i = 1; i < legPath.length; i++) legTerrains.add(getTile(state, legPath[i].x, legPath[i].y).terrain);
-      const handlesAll = terr === "any" || (Array.isArray(terr) && [...legTerrains].every((t) => terr.includes(t)));
+      const handlesAll = terr === "any" || (Array.isArray(terr) && [...legTerrains].every((terrain) => (
+        terr.includes(terrain)
+        || (terrain === "reedfield" && (terr.includes("plains") || terr.includes("marsh")))
+      )));
       const g = groundMount.moveProfile.ground || 1;
       if (handlesAll && g > 1) { mountMult = 1 / g; mountNote = ` astride ${groundMount.name}`; }
     }
@@ -1553,7 +1562,7 @@ export function Solitaire() {
   async function handleResetCampaign() {
     if (!(await askConfirm({ title: "Reset campaign", body: "Reset this campaign to the beginning? Your current progress here will be erased.", confirmLabel: "Reset", danger: true }))) return;
     cancelTravelLifecycle();
-    setState(makeInitialState());
+    setState((current) => resetCampaignState(current));
     closeBeatMenu();
     setDeckOpen(false);
   }

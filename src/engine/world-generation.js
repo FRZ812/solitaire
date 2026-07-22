@@ -9,8 +9,10 @@ import { hexDist, hexLine } from "../data/hex-math.js";
 import * as continentContent from "../data/continent.js";
 import {
   BORDER_CHECKPOINTS,
+  CAMPAIGN_MINOR_SITE_FEATURES,
   COASTAL_FEATURES,
   CONTINENT,
+  CONTINENT_HOT_SPRINGS,
   CONTINENT_LAKES,
   CONTINENT_ROUTES,
   CONTINENT_WATERWAYS,
@@ -22,6 +24,8 @@ import {
   REALMS,
   REGION_DEFINITIONS,
   SITE_ARCHETYPES,
+  WORLD_GEOGRAPHY_SEED,
+  WORLD_GEOGRAPHY_VERSION,
   WORLD_GENERATOR_VERSION,
   ecologyDefinition,
   realmDefinition,
@@ -97,6 +101,12 @@ function hashString(value) {
   return (h ^ (h >>> 16)) >>> 0;
 }
 
+function campaignSiteNamespace(seed) {
+  return [0, 1, 2, 3]
+    .map((lane) => hashString(`world:sites:campaign:${lane}:${String(seed)}`).toString(16).padStart(8, "0"))
+    .join("");
+}
+
 function mixCoordinate(seedHash, x, y, streamHash) {
   let h = seedHash ^ streamHash;
   h ^= Math.imul(x | 0, 0x45d9f3b);
@@ -114,40 +124,58 @@ export function worldRandom(seed = DEFAULT_WORLD_SEED, stream = "world", ...iden
   return mixCoordinate(seedHash, idHash, identity.length, hashString(stream)) / UINT32;
 }
 
-function coordRandom(seed, stream, x, y) {
-  return mixCoordinate(hashString(seed), x, y, hashString(`${WORLD_GENERATOR_VERSION}:${stream}`)) / UINT32;
+function coordRandom(seed, stream, x, y, version = WORLD_GENERATOR_VERSION) {
+  return mixCoordinate(hashString(seed), x, y, hashString(`${version}:${stream}`)) / UINT32;
 }
 
 function smoothstep(t) {
   return t * t * (3 - 2 * t);
 }
 
-function valueNoise(x, y, seed, stream) {
+function valueNoise(x, y, seed, stream, version = WORLD_GENERATOR_VERSION) {
   const x0 = Math.floor(x);
   const y0 = Math.floor(y);
   const fx = smoothstep(x - x0);
   const fy = smoothstep(y - y0);
-  const a = coordRandom(seed, stream, x0, y0);
-  const b = coordRandom(seed, stream, x0 + 1, y0);
-  const c = coordRandom(seed, stream, x0, y0 + 1);
-  const d = coordRandom(seed, stream, x0 + 1, y0 + 1);
+  const a = coordRandom(seed, stream, x0, y0, version);
+  const b = coordRandom(seed, stream, x0 + 1, y0, version);
+  const c = coordRandom(seed, stream, x0, y0 + 1, version);
+  const d = coordRandom(seed, stream, x0 + 1, y0 + 1, version);
   const north = a + (b - a) * fx;
   const south = c + (d - c) * fx;
   return north + (south - north) * fy;
 }
 
-function fbm(x, y, seed, stream, octaves = 4) {
+function fbm(x, y, seed, stream, octaves = 4, version = WORLD_GENERATOR_VERSION) {
   let total = 0;
   let amplitude = 1;
   let frequency = 1;
   let maximum = 0;
   for (let octave = 0; octave < octaves; octave++) {
-    total += valueNoise(x * frequency, y * frequency, seed, `${stream}:${octave}`) * amplitude;
+    total += valueNoise(x * frequency, y * frequency, seed, `${stream}:${octave}`, version) * amplitude;
     maximum += amplitude;
     frequency *= 2;
     amplitude *= 0.5;
   }
   return total / maximum;
+}
+
+function geographyCoordRandom(stream, x, y) {
+  return coordRandom(WORLD_GEOGRAPHY_SEED, stream, x, y, WORLD_GEOGRAPHY_VERSION);
+}
+
+function geographyWorldRandom(stream, ...identity) {
+  const seedHash = hashString(`${WORLD_GEOGRAPHY_SEED}:${WORLD_GEOGRAPHY_VERSION}:${stream}`);
+  const idHash = hashString(identity.join(":"));
+  return mixCoordinate(seedHash, idHash, identity.length, hashString(stream)) / UINT32;
+}
+
+function geographyValueNoise(x, y, stream) {
+  return valueNoise(x, y, WORLD_GEOGRAPHY_SEED, stream, WORLD_GEOGRAPHY_VERSION);
+}
+
+function geographyFbm(x, y, stream, octaves = 4) {
+  return fbm(x, y, WORLD_GEOGRAPHY_SEED, stream, octaves, WORLD_GEOGRAPHY_VERSION);
 }
 
 function axialProjection(x, y) {
@@ -218,7 +246,7 @@ function coastalCarveAt(x, y) {
   return carve;
 }
 
-function mountainSpineProfileAt(x, y, seed) {
+function mountainSpineProfileAt(x, y) {
   const point = axialProjection(x, y);
   let distance = Infinity;
   for (let index = 1; index < PROJECTED_MOUNTAIN_SPINE.length; index++) {
@@ -226,7 +254,7 @@ function mountainSpineProfileAt(x, y, seed) {
   }
   if (distance >= MOUNTAIN_SPINE.width) return { boost: 0, distance, pass: null };
 
-  const fracture = fbm(x * 0.021, y * 0.021, seed, "world:mountain-spine:fracture", 3);
+  const fracture = geographyFbm(x * 0.021, y * 0.021, "world:mountain-spine:fracture", 3);
   const continuity = fracture < 0.31 ? 0.16 : 0.58 + fracture * 0.42;
   let boost = MOUNTAIN_SPINE.elevationBoost * (1 - distance / MOUNTAIN_SPINE.width) * continuity;
   let activePass = null;
@@ -243,13 +271,13 @@ function mountainSpineProfileAt(x, y, seed) {
 // Positive is land, zero is shoreline, negative is ocean. A reviewed asymmetric
 // polygon establishes one principal landmass; deterministic low-frequency noise
 // roughens its headlands and named coves cut non-radial bays into three coasts.
-export function continentValueAt(x, y, seed = DEFAULT_WORLD_SEED) {
-  const cacheKey = `${seed}|${x}|${y}`;
+export function continentValueAt(x, y, _seed = DEFAULT_WORLD_SEED) {
+  const cacheKey = `${WORLD_GEOGRAPHY_VERSION}|${x}|${y}`;
   if (CONTINENT_VALUE_CACHE.has(cacheKey)) return CONTINENT_VALUE_CACHE.get(cacheKey);
   const point = axialProjection(x, y);
   const signedDistance = coastlineDistance(point) / 118;
-  const broad = (fbm(x * 0.0055, y * 0.0055, seed, "world:landform:headlands", 4) - 0.5) * 0.24;
-  const edge = (fbm(x * 0.016, y * 0.016, seed, "world:landform:coves", 3) - 0.5) * 0.09;
+  const broad = (geographyFbm(x * 0.0055, y * 0.0055, "world:landform:headlands", 4) - 0.5) * 0.24;
+  const edge = (geographyFbm(x * 0.016, y * 0.016, "world:landform:coves", 3) - 0.5) * 0.09;
   return rememberContinentValue(cacheKey, roundMetric(signedDistance + broad + edge - coastalCarveAt(x, y) + authoredLandBoost(x, y)));
 }
 
@@ -266,7 +294,7 @@ function inCityBounds(x, y, bounds) {
 // The atlas reads exactly five macro realms. Their borders are broad, warped
 // influence fields, not cardinal rectangles, so wilderness and roads cross
 // natural frontier zones while every coordinate still resolves deterministically.
-export function realmIdAt(x, y, seed = DEFAULT_WORLD_SEED) {
+export function realmIdAt(x, y, _seed = DEFAULT_WORLD_SEED) {
   const capital = REGION_DEFINITIONS.whitemarch;
   if (inCityBounds(x, y, capital.cityBounds)) return "central";
   const landmark = LANDMARK_BY_COORD.get(coordinateKey(x, y));
@@ -274,14 +302,20 @@ export function realmIdAt(x, y, seed = DEFAULT_WORLD_SEED) {
   const roadRealm = routeRealmAt(x, y);
   if (roadRealm) return roadRealm;
 
-  const warpX = (fbm(x * 0.005, y * 0.005, seed, "world:realms:x", 3) - 0.5) * 34;
-  const warpY = (fbm(x * 0.005, y * 0.005, seed, "world:realms:y", 3) - 0.5) * 34;
+  const warpX = (geographyFbm(x * 0.005, y * 0.005, "world:realms:x", 3) - 0.5) * 34;
+  const warpY = (geographyFbm(x * 0.005, y * 0.005, "world:realms:y", 3) - 0.5) * 34;
   let winner = "central";
   let best = Infinity;
   for (const realm of REALMS) {
-    const dx = (x + warpX - realm.center.x) / realm.influence.scaleX;
-    const dy = (y + warpY - realm.center.y) / realm.influence.scaleY;
-    const score = Math.sqrt(dx * dx + dy * dy);
+    const influenceSites = [
+      { ...realm.center, ...realm.influence },
+      ...(realm.influenceSites || []),
+    ];
+    const score = Math.min(...influenceSites.map((site) => {
+      const dx = (x + warpX - site.x) / site.scaleX;
+      const dy = (y + warpY - site.y) / site.scaleY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }));
     if (score < best) {
       best = score;
       winner = realm.id;
@@ -300,8 +334,8 @@ export function regionIdAt(x, y, seed = DEFAULT_WORLD_SEED) {
   if (landmark?.regionId) return landmark.regionId;
   const parentRealmId = realmIdAt(x, y, seed);
 
-  const warpX = (fbm(x * 0.007, y * 0.007, seed, "world:regions:x", 3) - 0.5) * 46;
-  const warpY = (fbm(x * 0.007, y * 0.007, seed, "world:regions:y", 3) - 0.5) * 46;
+  const warpX = (geographyFbm(x * 0.007, y * 0.007, "world:regions:x", 3) - 0.5) * 46;
+  const warpY = (geographyFbm(x * 0.007, y * 0.007, "world:regions:y", 3) - 0.5) * 46;
   const wx = x + warpX;
   const wy = y + warpY;
   let winner = "far-wild";
@@ -311,12 +345,13 @@ export function regionIdAt(x, y, seed = DEFAULT_WORLD_SEED) {
     // Stable legacy region ids now declare their macro parent. Restricting the
     // Voronoi contest prevents a central biome authority from bleeding across
     // the continent merely because it has a broad historical influence site.
-    if (region.parentRealmId && region.parentRealmId !== parentRealmId) continue;
+    const parentRealmIds = region.parentRealmIds || (region.parentRealmId ? [region.parentRealmId] : []);
+    if (parentRealmIds.length > 0 && !parentRealmIds.includes(parentRealmId)) continue;
     for (const site of region.sites) {
       const dx = (wx - site.x) / site.scaleX;
       const dy = (wy - site.y) / site.scaleY;
       const base = Math.sqrt(dx * dx + dy * dy);
-      const roughness = 0.94 + valueNoise(x * 0.018, y * 0.018, seed, `world:region-edge:${region.id}`) * 0.12;
+      const roughness = 0.94 + geographyValueNoise(x * 0.018, y * 0.018, `world:region-edge:${region.id}`) * 0.12;
       const score = base * roughness;
       if (score < best) {
         best = score;
@@ -327,17 +362,17 @@ export function regionIdAt(x, y, seed = DEFAULT_WORLD_SEED) {
   return winner;
 }
 
-function climateAt(x, y, regionId, realmId, seed) {
+function climateAt(x, y, regionId, realmId) {
   const p = axialProjection(x, y);
   const region = regionDefinition(regionId);
   const realm = realmDefinition(realmId);
-  const elevationNoise = fbm(x * 0.012, y * 0.012, seed, "world:elevation", 5);
-  const ruggedness = fbm(x * 0.031, y * 0.031, seed, "world:ruggedness", 3);
-  const moistureNoise = fbm(x * 0.009, y * 0.009, seed, "world:moisture", 4);
-  const temperatureNoise = fbm(x * 0.006, y * 0.006, seed, "world:temperature", 3);
-  const mountainSpine = mountainSpineProfileAt(x, y, seed);
+  const elevationNoise = geographyFbm(x * 0.012, y * 0.012, "world:elevation", 5);
+  const ruggedness = geographyFbm(x * 0.031, y * 0.031, "world:ruggedness", 3);
+  const moistureNoise = geographyFbm(x * 0.009, y * 0.009, "world:moisture", 4);
+  const temperatureNoise = geographyFbm(x * 0.006, y * 0.006, "world:temperature", 3);
+  const mountainSpine = mountainSpineProfileAt(x, y);
   const elevation = clamp(0.42 + (elevationNoise - 0.5) * 0.78 + (ruggedness - 0.5) * 0.16 + (region.climate.elevation || 0) * 0.45 + (realm.climate.elevation || 0) + mountainSpine.boost);
-  const coastMoisture = clamp(0.12 - Math.max(0, continentValueAt(x, y, seed)), 0, 0.12);
+  const coastMoisture = clamp(0.12 - Math.max(0, continentValueAt(x, y)), 0, 0.12);
   const moisture = clamp(0.50 + (moistureNoise - 0.5) * 0.74 + coastMoisture + (region.climate.moisture || 0) * 0.35 + (realm.climate.moisture || 0) - elevation * 0.08);
   const temperature = clamp(0.56 + (p.y / 345) * 0.18 + (temperatureNoise - 0.5) * 0.16 + (region.climate.temperature || 0) * 0.35 + (realm.climate.temperature || 0) - elevation * 0.08);
   return { elevation, moisture, temperature, ruggedness, mountainSpine };
@@ -346,6 +381,7 @@ function climateAt(x, y, regionId, realmId, seed) {
 function ecologyIdFor({ landValue, elevation, moisture, temperature, ruggedness }, region, realm) {
   if (landValue <= 0) return "open-sea";
   if (landValue < 0.065) return "tidal-coast";
+  if (region.ecologyId) return region.ecologyId;
 
   const terrain = {
     forest: (region.terrain?.forest || 0) * 0.35 + (realm.terrain?.forest || 0),
@@ -358,7 +394,12 @@ function ecologyIdFor({ landValue, elevation, moisture, temperature, ruggedness 
 
   if (realm.id === "north") return highland > 0.72 ? "alpine" : "snowfield";
   if (realm.id === "south") return highland > 0.67 ? "badlands" : "desert";
-  if (realm.id === "east" && highland < 0.70 && wetness > 0.48) return "reed-sea";
+  if (realm.id === "east") {
+    if (region.id === "iron-plateau") return highland > 0.58 ? "upland" : "grassland";
+    if (region.id === "far-wild" && highland > 0.62) return "upland";
+    if (region.id === "far-wild" && woodland > 0.78 && ruggedness > 0.48) return "woodland";
+    return "reed-sea";
+  }
   if (realm.id === "west") {
     if (highland > 0.72) return "upland";
     return woodland > 0.88 && ruggedness > 0.38 ? "oldgrowth" : "woodland";
@@ -375,10 +416,10 @@ function ecologyIdFor({ landValue, elevation, moisture, temperature, ruggedness 
   return "grassland";
 }
 
-function terrainForEcology(ecologyId, climate, region, realm, seed, x, y) {
+function terrainForEcology(ecologyId, climate, region, realm, _seed, x, y) {
   const ecology = ecologyDefinition(ecologyId);
   if (ecologyId === "open-sea") return "water";
-  const detail = coordRandom(seed, "world:terrain-detail", x, y);
+  const detail = geographyCoordRandom("world:terrain-detail", x, y);
   const hillBias = (region.terrain?.hills || 0) * 0.35 + (realm.terrain?.hills || 0);
   const marshBias = (region.terrain?.marsh || 0) * 0.35 + (realm.terrain?.marsh || 0);
   const forestBias = (region.terrain?.forest || 0) * 0.35 + (realm.terrain?.forest || 0);
@@ -394,7 +435,14 @@ function terrainForEcology(ecologyId, climate, region, realm, seed, x, y) {
   if (ecologyId === "tundra") return highland > 0.68 && detail < 0.46 ? "hills" : "plains";
   if (ecologyId === "snowfield") return highland > 0.66 && detail < 0.52 ? "hills" : (detail < 0.10 ? "forest" : "plains");
   if (ecologyId === "desert") return highland > 0.62 && detail < 0.38 ? "hills" : "plains";
-  if (ecologyId === "reed-sea") return detail < 0.12 ? "water" : (detail < 0.76 ? "marsh" : "plains");
+  if (ecologyId === "reed-sea") {
+    if (detail < 0.06) return "water";
+    if (detail < 0.13) return "marsh";
+    if (detail < 0.68) return "reedfield";
+    if (detail < 0.82) return "plains";
+    if (detail < 0.92) return "forest";
+    return "hills";
+  }
   if (ecologyId === "steppe") return highland > 0.64 && detail < 0.42 ? "hills" : "plains";
   if (wetness > 0.72 && detail < 0.20) return "marsh";
   if (woodland > 0.66 && detail < 0.22) return "forest";
@@ -502,7 +550,7 @@ export function provinceAt(x, y, realmId = null, regionId = null, seed = DEFAULT
   for (const province of candidates) {
     const anchor = province.anchor || realmDefinition(resolvedRealmId).center;
     const influence = province.influence || { scaleX: 120, scaleY: 100 };
-    const warp = (valueNoise(x * 0.011, y * 0.011, seed, `world:province:${province.id}`) - 0.5) * 14;
+    const warp = (geographyValueNoise(x * 0.011, y * 0.011, `world:province:${province.id}`) - 0.5) * 14;
     const dx = (x + warp - anchor.x) / (influence.scaleX || 1);
     const dy = (y - warp - anchor.y) / (influence.scaleY || 1);
     // Matching a stable ecology region is useful evidence, but province
@@ -576,7 +624,7 @@ function authoritySnapshot(realm, province, faction) {
   };
 }
 
-function selectAreaContent({ x, y, seed, region, realm, province, culture, economy, faction, name }) {
+function selectAreaContent({ x, y, region, realm, province, culture, economy, faction, name }) {
   const size = CONTINENT.chunkSize;
   const chunkX = Math.floor(x / size);
   const chunkY = Math.floor(y / size);
@@ -596,12 +644,12 @@ function selectAreaContent({ x, y, seed, region, realm, province, culture, econo
     economy?.tradeGoods || [],
     economy?.exports || [],
   ]);
-  const settlementType = pick(settlementPool, worldRandom(seed, "world:area:settlement", ...identity)) || "wayside-hamlet";
-  const encounterText = pick(encounterPool, worldRandom(seed, "world:area:encounter", ...identity)) || "local travellers";
-  const hazardText = pick(hazardPool, worldRandom(seed, "world:area:hazard", ...identity)) || "unmarked wilderness";
-  const threatText = pick(threatPool, worldRandom(seed, "world:area:threat", ...identity)) || hazardText;
-  const localResource = pick(resourcePool, worldRandom(seed, "world:area:resource", ...identity));
-  const tradeGood = pick(uniqueText([economy?.tradeGoods || [], economy?.exports || []]), worldRandom(seed, "world:area:trade", ...identity));
+  const settlementType = pick(settlementPool, geographyWorldRandom("world:area:settlement", ...identity)) || "wayside-hamlet";
+  const encounterText = pick(encounterPool, geographyWorldRandom("world:area:encounter", ...identity)) || "local travellers";
+  const hazardText = pick(hazardPool, geographyWorldRandom("world:area:hazard", ...identity)) || "unmarked wilderness";
+  const threatText = pick(threatPool, geographyWorldRandom("world:area:threat", ...identity)) || hazardText;
+  const localResource = pick(resourcePool, geographyWorldRandom("world:area:resource", ...identity));
+  const tradeGood = pick(uniqueText([economy?.tradeGoods || [], economy?.exports || []]), geographyWorldRandom("world:area:trade", ...identity));
   const authority = authoritySnapshot(realm, province, faction);
   const provinceName = province?.name || region.label || realm.name;
   const authorityName = authority.factionName || "local custom";
@@ -688,22 +736,23 @@ export function worldAreaAt(x, y, regionId = null, seed = DEFAULT_WORLD_SEED, re
   const size = CONTINENT.chunkSize;
   const chunkX = Math.floor(x / size);
   const chunkY = Math.floor(y / size);
-  const cacheKey = `${seed}|${resolvedRealmId}|${resolvedRegionId}|${chunkX}|${chunkY}`;
-  const cached = AREA_TEMPLATE_CACHE.get(cacheKey);
-  if (cached) return cloneArea(cached);
   const region = regionDefinition(resolvedRegionId);
   const realm = realmDefinition(resolvedRealmId);
   const province = provinceAt(x, y, resolvedRealmId, resolvedRegionId, seed);
+  const provinceId = province?.id || "unclaimed";
+  const cacheKey = `${WORLD_GEOGRAPHY_VERSION}|${resolvedRealmId}|${resolvedRegionId}|${provinceId}|${chunkX}|${chunkY}`;
+  const cached = AREA_TEMPLATE_CACHE.get(cacheKey);
+  if (cached) return cloneArea(cached);
   const culture = CULTURE_BY_REALM.get(resolvedRealmId) || null;
   const economy = ECONOMY_BY_REALM.get(resolvedRealmId) || null;
   const factionId = province?.authorityFactionId || region.authorityFactionId || region.authority?.factionId || realm.faction.id;
   const faction = factionFor(resolvedRealmId, factionId);
-  const prefix = pick(region.areas.prefixes, worldRandom(seed, "world:area-prefix", resolvedRegionId, chunkX, chunkY));
-  const noun = pick(region.areas.nouns, worldRandom(seed, "world:area-noun", resolvedRegionId, chunkX, chunkY));
+  const prefix = pick(region.areas.prefixes, geographyWorldRandom("world:area-prefix", resolvedRegionId, chunkX, chunkY));
+  const noun = pick(region.areas.nouns, geographyWorldRandom("world:area-noun", resolvedRegionId, chunkX, chunkY));
   const name = `${prefix} ${noun}`;
-  const content = selectAreaContent({ x, y, seed, region, realm, province, culture, economy, faction, name });
+  const content = selectAreaContent({ x, y, region, realm, province, culture, economy, faction, name });
   const area = {
-    id: `${resolvedRegionId}:${chunkX}:${chunkY}`,
+    id: `${resolvedRegionId}:${provinceId}:${chunkX}:${chunkY}`,
     name,
     chunk: { x: chunkX, y: chunkY },
     regionId: resolvedRegionId,
@@ -715,42 +764,88 @@ export function worldAreaAt(x, y, regionId = null, seed = DEFAULT_WORLD_SEED, re
   return cloneArea(area);
 }
 
-function featureFamily(kind) {
-  if (/city|village|town|freehold|settlement|hamlet|hold|oasis|harbor|port|stead|court/.test(kind)) return "settlement";
-  if (/camp|lodge|relay|jetty|caravanserai|inn/.test(kind)) return "camp";
-  if (/shrine|grove|chapel|witch-stone|standing-stones|memory-tree|waystone/.test(kind)) return "shrine";
-  if (/ruin|barrow|cairn|burial|abandoned|drowned|wreck|lost|unknown/.test(kind)) return "ruin";
-  if (/mine|quarry|saltworks|apiary|well|field|spring|peat/.test(kind)) return "resource";
-  if (/ferry|ford|crossing|milestone/.test(kind)) return "crossing";
-  if (/fort|watch|tower|war-camp|tribute|manor|signal/.test(kind)) return "fortification";
-  return "wonder";
+function campaignMinorSiteFeatures(terrain, route) {
+  return CAMPAIGN_MINOR_SITE_FEATURES
+    .filter((feature) => !feature.routeOnly || route)
+    .filter((feature) => !feature.terrains || feature.terrains.includes(terrain));
 }
 
-function winsGeneratedSiteSpacing(seed, x, y, roll, radius = 2) {
+const MAX_CAMPAIGN_SITE_SPACING = Math.max(
+  ...CAMPAIGN_MINOR_SITE_FEATURES.map((feature) => SITE_ARCHETYPES[feature.family].minimumSpacingHexes),
+);
+const MAX_CAMPAIGN_SITE_CHANCE = Math.max(
+  ...Object.values(REGION_DEFINITIONS).map((region) => region.poiChance * 1.35),
+);
+
+function eligibleMinorSiteCandidateAt({ x, y, seed, region, terrain, route, context, presenceRoll = null }) {
+  if (
+    terrain === "water"
+    || region.poiChance <= 0
+    || context?.landmarkId
+    || context?.checkpointId
+    || context?.portId
+    || context?.hotSpringDistance === 0
+  ) return null;
+  const chance = region.poiChance * (route ? 1.35 : 1);
+  const roll = presenceRoll ?? coordRandom(seed, "world:sites:presence", x, y);
+  if (roll >= chance) return null;
+  const feature = pick(campaignMinorSiteFeatures(terrain, route), coordRandom(seed, "world:sites:kind", x, y));
+  if (!feature) return null;
+  return {
+    feature,
+    roll,
+    spacing: SITE_ARCHETYPES[feature.family].minimumSpacingHexes,
+  };
+}
+
+// Pure pre-arbitration seam for acceptance checks and map tooling. Return only
+// immutable candidate metadata rather than leaking the internal feature object.
+export function minorSiteCandidateAt(x, y, seed = DEFAULT_WORLD_SEED) {
+  const candidate = eligibleMinorSiteCandidateAt(continentStaticContextAt(x, y, seed));
+  if (!candidate) return null;
+  return {
+    kind: candidate.feature.kind,
+    archetypeId: candidate.feature.family,
+    roll: candidate.roll,
+    minimumSpacingHexes: candidate.spacing,
+  };
+}
+
+function winsGeneratedSiteSpacing(seed, x, y, candidate) {
+  const radius = MAX_CAMPAIGN_SITE_SPACING - 1;
+  const currentKey = `${x},${y}`;
   for (let dq = -radius; dq <= radius; dq++) {
     const drLow = Math.max(-radius, -dq - radius);
     const drHigh = Math.min(radius, -dq + radius);
     for (let dr = drLow; dr <= drHigh; dr++) {
       if (dq === 0 && dr === 0) continue;
-      const nearbyRoll = coordRandom(seed, "world:sites:presence", x + dq, y + dr);
-      if (nearbyRoll < roll) return false;
+      const nearbyX = x + dq;
+      const nearbyY = y + dr;
+      const presenceRoll = coordRandom(seed, "world:sites:presence", nearbyX, nearbyY);
+      if (presenceRoll >= MAX_CAMPAIGN_SITE_CHANCE) continue;
+      const nearbyContext = continentStaticContextAt(nearbyX, nearbyY, seed);
+      const nearbyCandidate = eligibleMinorSiteCandidateAt({ ...nearbyContext, presenceRoll });
+      if (!nearbyCandidate) continue;
+      const distance = hexDist({ x, y }, { x: nearbyX, y: nearbyY });
+      if (distance >= Math.max(candidate.spacing, nearbyCandidate.spacing)) continue;
+      const nearbyKey = `${nearbyX},${nearbyY}`;
+      if (
+        nearbyCandidate.roll < candidate.roll
+        || (nearbyCandidate.roll === candidate.roll && nearbyKey < currentKey)
+      ) return false;
     }
   }
   return true;
 }
 
 function generatedSiteAt({ x, y, seed, region, realm, province, culture, ecology, area, terrain, route, context }) {
-  if (terrain === "water" || region.poiChance <= 0) return null;
-  const chance = region.poiChance * (route ? 1.35 : 1);
-  const roll = coordRandom(seed, "world:sites:presence", x, y);
-  if (roll >= chance) return null;
-  const culturalSettlements = uniqueText([province?.settlementTypes || [], culture?.settlementTypes || []]);
-  const pool = [...new Set([...(region.features || []), ...(ecology.features || []), ...culturalSettlements])];
-  const kind = pick(pool, coordRandom(seed, "world:sites:kind", x, y)) || "waystone";
-  const family = featureFamily(kind);
-  const archetype = SITE_ARCHETYPES[family] || SITE_ARCHETYPES.wonder;
-  if (!winsGeneratedSiteSpacing(seed, x, y, roll, archetype.minimumSpacingHexes - 1)) return null;
-  const siteId = `site:${WORLD_GENERATOR_VERSION}:${region.id}:${x}:${y}`;
+  const candidate = eligibleMinorSiteCandidateAt({ x, y, seed, region, terrain, route, context });
+  if (!candidate || !winsGeneratedSiteSpacing(seed, x, y, candidate)) return null;
+  const { feature } = candidate;
+  const { kind, family } = feature;
+  const archetype = SITE_ARCHETYPES[family];
+  const campaignKey = campaignSiteNamespace(seed);
+  const siteId = `site:${WORLD_GENERATOR_VERSION}:${campaignKey}:${region.id}:${x}:${y}`;
   const areaWord = area.name.split(" ")[0];
   const name = `${areaWord} ${titleFromSlug(kind)}`;
   const architecture = pick(uniqueText(culture?.architecture || []), coordRandom(seed, "world:sites:architecture", x, y));
@@ -885,6 +980,22 @@ export function waterwayAt(x, y) {
   return null;
 }
 
+export function hotSpringAt(x, y) {
+  for (const spring of CONTINENT_HOT_SPRINGS) {
+    const distance = hexDist({ x, y }, spring.center);
+    if (distance <= spring.radius) {
+      return {
+        id: spring.id,
+        name: spring.name,
+        description: spring.description,
+        kind: "hot-spring",
+        distance,
+      };
+    }
+  }
+  return null;
+}
+
 export function landmarkAt(x, y) {
   return LANDMARK_BY_COORD.get(coordinateKey(x, y)) || null;
 }
@@ -893,7 +1004,7 @@ export function checkpointAt(x, y) {
   return CHECKPOINT_BY_COORD.get(coordinateKey(x, y)) || null;
 }
 
-function locationContext({ landmark, route, checkpoint, port, seaLane, coastalFeature, mountainSpine, waterway, coast }) {
+function locationContext({ landmark, route, checkpoint, port, seaLane, coastalFeature, mountainSpine, waterway, hotSpring, coast }) {
   let kind = "wilderness";
   let description = "No maintained route governs the immediate wilderness.";
   let encounter = null;
@@ -909,6 +1020,11 @@ function locationContext({ landmark, route, checkpoint, port, seaLane, coastalFe
     description = `${port.name} joins the continental road network to ${coastalFeature?.name || "the open sea"}.`;
     encounter = "dockworkers, pilots, merchants, and customs crews";
     hazard = "tides, shoals, and congested harbor traffic";
+  } else if (hotSpring) {
+    kind = "hot-spring";
+    description = hotSpring.description;
+    encounter = "pilgrims, bathers, healers, and spring wardens";
+    hazard = "scalding pools and mineral-soft ground";
   } else if (mountainSpine?.pass) {
     kind = "mountain-pass";
     description = `${mountainSpine.pass.name} carries maintained travel through ${MOUNTAIN_SPINE.name}.`;
@@ -949,6 +1065,8 @@ function locationContext({ landmark, route, checkpoint, port, seaLane, coastalFe
     coastalFeatureId: coastalFeature?.id || null,
     mountainPassId: mountainSpine?.pass?.id || null,
     waterwayId: waterway?.id || null,
+    hotSpringId: hotSpring?.id || null,
+    hotSpringDistance: hotSpring?.distance ?? null,
     description,
     encounter,
     hazard,
@@ -961,14 +1079,15 @@ function locationContext({ landmark, route, checkpoint, port, seaLane, coastalFe
       coastalFeature ? `coast:${coastalFeature.id}` : null,
       mountainSpine?.pass ? `mountain-pass:${mountainSpine.pass.id}` : null,
       waterway ? `${waterway.kind}:${waterway.id}` : null,
+      hotSpring ? `hot-spring:${hotSpring.id}` : null,
     ]),
   };
 }
 
-function sampleContent(area, ecology, context, land, seed, x, y) {
+function sampleContent(area, ecology, context, land, x, y) {
   const ecologyEncounterSource = weightedPick(
     ecology.encounters || [],
-    worldRandom(seed, "world:content:ecology-encounter", ecology.id, x, y),
+    geographyWorldRandom("world:content:ecology-encounter", ecology.id, x, y),
   );
   const ecologyEncounter = ecologyEncounterSource ? {
     id: `encounter:${slugify(ecologyEncounterSource.kind || ecologyEncounterSource.desc)}`,
@@ -1019,8 +1138,7 @@ function sampleContent(area, ecology, context, land, seed, x, y) {
   };
 }
 
-// Full physical/cultural sample used by the tile generator and regional map.
-export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
+function continentStaticContextAt(x, y, seed = DEFAULT_WORLD_SEED) {
   const rawLandValue = continentValueAt(x, y, seed);
   const { xmin, xmax, ymin, ymax } = CONTINENT.bounds;
   const withinEnvelope = x >= xmin && x <= xmax && y >= ymin && y <= ymax;
@@ -1046,10 +1164,8 @@ export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
   const climate = climateAt(x, y, regionId, realmId, seed);
   const ecologyId = ecologyIdFor({ landValue, ...climate }, region, realm);
   const ecology = ecologyDefinition(ecologyId);
-  const area = worldAreaAt(x, y, regionId, seed, realmId);
-  const province = provinceById(area.province?.id) || provinceAt(x, y, realmId, regionId, seed);
-  const culture = CULTURE_BY_REALM.get(realmId) || null;
   const waterway = waterwayAt(x, y);
+  const hotSpring = hotSpringAt(x, y);
   const checkpoint = checkpointAt(x, y);
   let terrain = terrainForEcology(ecologyId, climate, region, realm, seed, x, y);
   let crossing = null;
@@ -1078,22 +1194,70 @@ export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
     coastalFeature,
     mountainSpine,
     waterway,
+    hotSpring,
     coast,
   });
-  const content = sampleContent(area, ecology, context, landValue > 0, seed, x, y);
-  const site = generatedSiteAt({
+  return {
     x,
     y,
     seed,
-    region,
+    landValue,
+    realmId,
     realm,
-    province,
-    culture,
+    regionId,
+    region,
+    climate,
+    ecologyId,
     ecology,
-    area,
+    coast,
     terrain,
     route,
+    checkpoint,
+    port,
+    coastalFeature,
+    seaLane,
+    waterway,
+    hotSpring,
+    crossing,
+    mountainSpine,
     context,
+  };
+}
+
+// Full physical/cultural sample used by the tile generator and regional map.
+export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
+  const staticContext = continentStaticContextAt(x, y, seed);
+  const {
+    landValue,
+    realmId,
+    realm,
+    regionId,
+    region,
+    climate,
+    ecologyId,
+    ecology,
+    coast,
+    terrain,
+    route,
+    checkpoint,
+    port,
+    coastalFeature,
+    seaLane,
+    waterway,
+    hotSpring,
+    crossing,
+    mountainSpine,
+    context,
+  } = staticContext;
+  const area = worldAreaAt(x, y, regionId, seed, realmId);
+  const province = provinceById(area.province?.id) || provinceAt(x, y, realmId, regionId, seed);
+  const culture = CULTURE_BY_REALM.get(realmId) || null;
+  const content = sampleContent(area, ecology, context, landValue > 0, x, y);
+  const site = generatedSiteAt({
+    ...staticContext,
+    province,
+    culture,
+    area,
   });
   return {
     generatorVersion: WORLD_GENERATOR_VERSION,
@@ -1137,6 +1301,7 @@ export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
     coastalFeature,
     seaLane,
     waterway,
+    hotSpring,
     crossing,
     resources: [...content.resources],
     tags: [...content.tags],
@@ -1144,10 +1309,28 @@ export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
   };
 }
 
-export function generateWorldTile({ x, y, seed = DEFAULT_WORLD_SEED } = {}) {
+export function generateWorldTile({
+  x,
+  y,
+  seed = DEFAULT_WORLD_SEED,
+  generatorVersion = WORLD_GENERATOR_VERSION,
+} = {}) {
+  if (generatorVersion !== WORLD_GENERATOR_VERSION) {
+    throw new RangeError(
+      `World generator version ${generatorVersion} must be migrated to ${WORLD_GENERATOR_VERSION} before generation.`,
+    );
+  }
   const sample = sampleContinent(x, y, seed);
   const landmark = landmarkAt(x, y);
   const rareTradeHouse = landmark ? RARE_TRADE_HOUSES[landmark.id] : null;
+  const authoredHotSpring = sample.hotSpring?.distance === 0 ? {
+    type: "hot-spring",
+    name: sample.hotSpring.name,
+    description: sample.hotSpring.description,
+    access: "public",
+    authored: true,
+    landmarkId: sample.hotSpring.id,
+  } : null;
   const poi = rareTradeHouse ? {
     type: rareTradeHouse.type,
     name: rareTradeHouse.name,
@@ -1162,7 +1345,7 @@ export function generateWorldTile({ x, y, seed = DEFAULT_WORLD_SEED } = {}) {
     service: rareTradeHouse.service,
     marketTier: rareTradeHouse.marketTier,
     landmarkId: landmark.id,
-  } : sample.site ? {
+  } : authoredHotSpring || (sample.site ? {
     type: "hidden",
     name: null,
     description: null,
@@ -1189,10 +1372,11 @@ export function generateWorldTile({ x, y, seed = DEFAULT_WORLD_SEED } = {}) {
       context: sample.site.context ? { ...sample.site.context, tags: [...sample.site.context.tags] } : null,
       tags: [...sample.site.tags],
     },
-  } : null;
+  } : null);
   return {
     terrain: rareTradeHouse ? "settlement" : sample.terrain,
     poi,
+    ...(authoredHotSpring ? { authoredFeatureId: sample.hotSpring.id } : {}),
     procedural: true,
     realmId: sample.realmId,
     macroBiome: sample.realm.biomeId,
@@ -1208,6 +1392,7 @@ export function generateWorldTile({ x, y, seed = DEFAULT_WORLD_SEED } = {}) {
     seaLane: sample.seaLane,
     mountainSpine: sample.mountainSpine,
     waterway: sample.waterway,
+    hotSpring: sample.hotSpring,
     crossing: sample.crossing,
     resources: sample.resources,
     worldgen: {

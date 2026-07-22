@@ -20,6 +20,7 @@ export const TERRAINS = {
   // is no separate "impassable wall" terrain anymore.
   wall:       { color: "#7a7569", label: "Wall",       speed: 0.5,  flavor: "stone wall",            dark: false },
   plains:     { color: "#C8C476", label: "Plains",     speed: 1.0,  flavor: "open grass",            dark: false },
+  reedfield:  { color: "#A7AE63", label: "Reed Fields", speed: 1.2, flavor: "tall dry reeds and irrigated paths", dark: false },
   hills:      { color: "#A07B4D", label: "Hills",      speed: 1.4,  flavor: "rolling slopes",        dark: false },
   forest:     { color: "#647037", label: "Forest",     speed: 1.5,  flavor: "dense wood",            dark: true  },
   marsh:      { color: "#6E7B6E", label: "Marsh",      speed: 1.8,  flavor: "wet ground",            dark: true  },

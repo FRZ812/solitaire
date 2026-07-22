@@ -1,7 +1,7 @@
 export const SQRT_3 = Math.sqrt(3);
 
 export const ATLAS_CELLS = Object.freeze({
-  plains: [0, 0], forest: [1, 0], hills: [2, 0], mountains: [3, 0],
+  plains: [0, 0], reedfield: [0, 0], forest: [1, 0], hills: [2, 0], mountains: [3, 0],
   road: [0, 1], water: [1, 1], marsh: [2, 1], impassable: [3, 1],
   settlement: [0, 2], street: [1, 2], wall: [2, 2], indoor: [3, 2],
   plaza: [0, 3], avenue: [1, 3], river: [2, 3], roof: [3, 3],

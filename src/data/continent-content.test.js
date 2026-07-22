@@ -3,6 +3,7 @@ import * as ContinentData from "./continent.js";
 
 const {
   BORDER_CHECKPOINTS,
+  CAMPAIGN_MINOR_SITE_FEATURES,
   COASTAL_FEATURES,
   CONTINENT,
   CONTINENT_HOT_SPRINGS,
@@ -15,6 +16,7 @@ const {
   RARE_TRADE_HOUSES,
   REALMS,
   REALM_FACTIONS,
+  REGION_DEFINITIONS,
 } = ContinentData;
 
 const CONTINENT_SEA_LANES = ContinentData.CONTINENT_SEA_LANES || [];
@@ -97,6 +99,58 @@ describe("expanded continent content contract", () => {
       for (const province of realmProvinces) {
         expect(province.governor?.name, province.id).toBeTruthy();
         expect(province.authorityFactionId, province.id).toBeTruthy();
+      }
+    }
+  });
+
+  it("anchors multiple cities and faction territories in every realm", () => {
+    const cityKinds = new Set(["capital", "city", "town"]);
+    for (const realm of REALMS) {
+      const cities = LANDMARKS.filter((landmark) => (
+        landmark.realmId === realm.id
+        && (landmark.capitalOfRealmId === realm.id || cityKinds.has(landmark.kind))
+      ));
+      const factions = REALM_FACTIONS.filter((faction) => faction.realmId === realm.id);
+      const territoryFactionIds = new Set(
+        PROVINCES.filter((province) => province.realmId === realm.id)
+          .map((province) => province.authorityFactionId),
+      );
+
+      expect(cities.length, `${realm.id} cities`).toBeGreaterThanOrEqual(2);
+      expect(factions.length, `${realm.id} factions`).toBeGreaterThanOrEqual(2);
+      expect(territoryFactionIds.size, `${realm.id} faction territories`).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("reviews the campaign-variable minor-site families carried by the atlas", () => {
+    const kinds = new Set(CAMPAIGN_MINOR_SITE_FEATURES.map((feature) => feature.kind));
+    expect([...kinds]).toEqual(expect.arrayContaining([
+      "woodland-clearing",
+      "monster-den",
+      "bandit-camp",
+      "roadside-inn",
+      "wayward-shrine",
+      "forgotten-ruin",
+      "frontier-fort",
+    ]));
+  });
+
+  it("assigns every biome region to an authored macro-realm boundary", () => {
+    const realmIds = new Set(REALMS.map((realm) => realm.id));
+    for (const region of Object.values(REGION_DEFINITIONS)) {
+      expect(region.parentRealmIds?.length, region.id).toBeGreaterThan(0);
+      expect(region.parentRealmIds.every((realmId) => realmIds.has(realmId)), region.id).toBe(true);
+    }
+    expect(REGION_DEFINITIONS["far-wild"].parentRealmIds).toEqual(["north", "east", "south", "west"]);
+  });
+
+  it("keeps authored landmarks and province regions inside their declared realm boundaries", () => {
+    for (const landmark of LANDMARKS.filter((entry) => entry.realmId && entry.regionId)) {
+      expect(REGION_DEFINITIONS[landmark.regionId].parentRealmIds, landmark.id).toContain(landmark.realmId);
+    }
+    for (const province of PROVINCES) {
+      for (const regionId of province.regionIds || []) {
+        expect(REGION_DEFINITIONS[regionId].parentRealmIds, `${province.id}:${regionId}`).toContain(province.realmId);
       }
     }
   });

@@ -68,6 +68,10 @@ describe("PanelDeck", () => {
 
     expect(html).toContain("Narrator · memory · campaign");
     expect(html).toContain("Direct the storyteller");
+    expect(html).toContain("Scene length");
+    expect(html).toContain("Concise &amp; dialogue");
+    expect(html).toContain("Balanced");
+    expect(html).toContain("Expansive");
     expect(html).toContain("Let companions disagree openly.");
     expect(html).toContain("Memory");
     expect(html).toContain("General");

@@ -18,7 +18,7 @@ import { dragPreviewOffset, pinchDistance, pinchZoomFactor } from "./mapGestures
 import { rebaseTravelMapDrag } from "./travelMapModel.js";
 
 const MATERIAL_FALLBACKS = {
-  plains: "#79a64a", forest: "#214f3d", hills: "#aa793f", mountains: "#7d8082",
+  plains: "#79a64a", reedfield: "#9da34f", forest: "#214f3d", hills: "#aa793f", mountains: "#7d8082",
   road: "#a98b5b", water: "#247a9c", marsh: "#496e5b", impassable: "#252a2b",
   settlement: "#a29175", street: "#ada08d", wall: "#8e8c84", indoor: "#6e5847",
   plaza: "#b8aa91", avenue: "#c5b89d", river: "#296c8c", roof: "#526d8d",
@@ -85,6 +85,10 @@ function drawTerrain(context, scene, entries, atlas) {
       );
     } else {
       context.fillStyle = MATERIAL_FALLBACKS[material] || MATERIAL_FALLBACKS.impassable;
+      context.fillRect(entry.bounds.minX, entry.bounds.minY, entry.bounds.width, entry.bounds.height);
+    }
+    if (material === "reedfield") {
+      context.fillStyle = "rgba(184, 158, 52, .18)";
       context.fillRect(entry.bounds.minX, entry.bounds.minY, entry.bounds.width, entry.bounds.height);
     }
     if (night) {

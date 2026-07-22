@@ -25,6 +25,7 @@ export const TERRAIN_VISUALS = {
   wall: { tint: "#a9a6a0", ink: "#fff0d0", glyph: "▥", motif: "masonry" },
   road: { tint: "#c49055", ink: "#ffedc4", glyph: "═", motif: "milestone" },
   plains: { tint: "#86a866", ink: "#f2f3ce", glyph: "〰", motif: "grass" },
+  reedfield: { tint: "#a5a758", ink: "#fff1bd", glyph: "〽", motif: "reed" },
   hills: { tint: "#ad875d", ink: "#f8e7c8", glyph: "⌒", motif: "contour" },
   forest: { tint: "#3f7e59", ink: "#eaf4d5", glyph: "♣", motif: "bough" },
   marsh: { tint: "#3d8a82", ink: "#e4f2e5", glyph: "≋", motif: "reeds" },
