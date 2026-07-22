@@ -56,6 +56,21 @@ describe("unified capital in the exploration map", () => {
     expect(byKey.get("0,0")).toMatchObject({ current: true, visible: true });
   });
 
+  it("enumerates a screen-aligned offset-row window instead of a skewed axial box", () => {
+    const state = makeInitialState();
+    const cells = buildRpgViewport(state, {
+      center: { x: 0, y: 0 },
+      dimensions: { columns: 15, rows: 15 },
+    });
+    const projectedX = (cell) => Math.sqrt(3) * (cell.x + cell.y * 0.5);
+    const leftEdge = cells.filter((cell) => cell.col === 0).map(projectedX);
+    const rightEdge = cells.filter((cell) => cell.col === 14).map(projectedX);
+
+    expect(Math.max(...leftEdge) - Math.min(...leftEdge)).toBeLessThanOrEqual(Math.sqrt(3) * 0.51);
+    expect(Math.max(...rightEdge) - Math.min(...rightEdge)).toBeLessThanOrEqual(Math.sqrt(3) * 0.51);
+    expect(cells.find((cell) => cell.col === 7 && cell.row === 7)).toMatchObject({ x: 0, y: 0 });
+  });
+
   it("builds the exploration decision model around the requested map camera", () => {
     const state = makeInitialState();
     const model = buildExplorationModel(state, {

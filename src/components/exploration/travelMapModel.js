@@ -13,16 +13,20 @@ export const TRAVEL_MAP_MIN_ZOOM = 0.6;
 export const TRAVEL_MAP_MAX_ZOOM = 1.8;
 export const REGION_SELECTOR_ZOOM_THRESHOLD = TRAVEL_MAP_MIN_ZOOM;
 
-// Cell count, not a render transform, drives map scale. This keeps Canvas work
-// bounded while allowing the camera to inspect far more than the old 11x9
-// party-locked window. Odd dimensions keep the camera coordinate centered.
+// Cell count, not a render transform, drives map scale. Rows establish the zoom
+// level; columns follow the measured Canvas aspect ratio so a desktop sidebar
+// or a portrait phone cannot force the projected map into a fixed shape. Odd
+// dimensions keep the camera coordinate centered.
 export function travelMapViewportDimensions(viewport = {}, zoom = 1) {
   const safeZoom = clamp(Number(zoom) || 1, TRAVEL_MAP_MIN_ZOOM, TRAVEL_MAP_MAX_ZOOM);
-  const portrait = Number(viewport.height) > Number(viewport.width) * 1.15;
-  const baseColumns = portrait ? 13 : 19;
+  const width = Math.max(1, Number(viewport.width) || 1);
+  const height = Math.max(1, Number(viewport.height) || 1);
+  const rows = odd(15 / safeZoom, 9, 31);
+  const projectedHeight = 1.5 * (rows - 1) + 2;
+  const columnsForAspect = (width / height) * projectedHeight / Math.sqrt(3);
   return {
-    columns: odd(baseColumns / safeZoom, 9, 39),
-    rows: odd(15 / safeZoom, 9, 31),
+    columns: odd(columnsForAspect, 7, 45),
+    rows,
   };
 }
 

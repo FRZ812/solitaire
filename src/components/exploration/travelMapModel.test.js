@@ -39,6 +39,14 @@ describe("unified hex travel map camera", () => {
     expect(portrait.rows).toBe(landscape.rows);
   });
 
+  it("derives the projected cell window from the measured canvas aspect ratio", () => {
+    const sidebarCanvas = travelMapViewportDimensions({ width: 840, height: 774 }, 1);
+    const zoomedOut = travelMapViewportDimensions({ width: 840, height: 774 }, 0.6);
+
+    expect(sidebarCanvas).toEqual({ columns: 15, rows: 15 });
+    expect(zoomedOut).toEqual({ columns: 25, rows: 25 });
+  });
+
   it("clamps normal zoom and requests the region selector only beyond the far limit", () => {
     expect(clampTravelMapZoom(99)).toBe(TRAVEL_MAP_MAX_ZOOM);
     expect(clampTravelMapZoom(0)).toBe(TRAVEL_MAP_MIN_ZOOM);

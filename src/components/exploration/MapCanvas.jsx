@@ -7,10 +7,12 @@ import {
   buildMapLayout,
   buildRouteSegments,
   findInteractiveEntry,
+  mapMarkerShowsTierDetail,
   mapPartyEntry,
   mapTrackedEntry,
+  selectMapMarkerEntries,
 } from "./mapGeometry.js";
-import { pinchDistance, pinchZoomFactor } from "./mapGestures.js";
+import { dragPreviewOffset, pinchDistance, pinchZoomFactor } from "./mapGestures.js";
 
 const MATERIAL_FALLBACKS = {
   plains: "#79a64a", forest: "#214f3d", hills: "#aa793f", mountains: "#7d8082",
@@ -185,7 +187,7 @@ function drawPoiTierMarker(context, x, y, markerRadius, marketTier) {
   context.restore();
 }
 
-function drawPoi(context, entry, poiAtlases) {
+function drawPoi(context, entry, poiAtlases, mode) {
   const size = Math.max(8, Math.min(19, entry.size * 0.33));
   const { x, y } = entry.center;
   const diamond = (offsetX, offsetY, radius, color) => {
@@ -202,7 +204,7 @@ function drawPoi(context, entry, poiAtlases) {
   const poiAtlas = icon ? poiAtlases?.[icon.atlas] : null;
   let markerRadius = size;
   if (icon && poiAtlas?.naturalWidth) {
-    const iconSize = Math.max(27, Math.min(48, entry.size * 0.82));
+    const iconSize = Math.max(14, Math.min(48, entry.size * 0.82));
     markerRadius = iconSize * 0.5;
     context.save();
     context.shadowColor = "rgba(1, 6, 16, .9)";
@@ -225,7 +227,9 @@ function drawPoi(context, entry, poiAtlases) {
     diamond(0, 0, size, entry.cell.marker_color || "#efb957");
     diamond(0, 0, size * 0.42, "#fff0b0");
   }
-  drawPoiTierMarker(context, x, y, markerRadius, entry.cell.poi_market_tier);
+  if (mapMarkerShowsTierDetail(entry.size, mode)) {
+    drawPoiTierMarker(context, x, y, markerRadius, entry.cell.poi_market_tier);
+  }
   if (entry.cell.quest) {
     context.font = `800 ${Math.max(11, Math.min(16, entry.size * 0.28))}px sans-serif`;
     context.textAlign = "center";
@@ -238,13 +242,12 @@ function drawPoi(context, entry, poiAtlases) {
   }
 }
 
-function drawMarkers(context, scene, entries, poiAtlases) {
-  for (const entry of entries) {
-    if (entry.cell.explored === false) continue;
-    if (entry.cell.poi_name && entry.key !== String(scene.current_key || "")) {
-      drawPoi(context, entry, poiAtlases);
-    }
-  }
+function drawMarkers(context, scene, layout, poiAtlases, width) {
+  const visibleMarkers = selectMapMarkerEntries(scene, layout.entries, {
+    width,
+    worldRadius: layout.worldRadius,
+  });
+  for (const entry of visibleMarkers) drawPoi(context, entry, poiAtlases, scene.mode);
 }
 
 function drawFog(context, scene, entries) {
@@ -373,7 +376,7 @@ function drawHover(context, entry) {
   context.stroke();
 }
 
-export function renderMap(context, scene, layout, atlas, poiAtlases, hoverKey, width, height) {
+export function renderMap(context, scene, layout, atlas, poiAtlases, hoverKey, width, height, dragPreview = { x: 0, y: 0 }) {
   context.clearRect(0, 0, width, height);
   const background = context.createRadialGradient(width * 0.5, height * 0.42, 0, width * 0.5, height * 0.5, Math.max(width, height) * 0.72);
   background.addColorStop(0, scene.night ? "#142d52" : "#255875");
@@ -381,17 +384,20 @@ export function renderMap(context, scene, layout, atlas, poiAtlases, hoverKey, w
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
 
+  context.save();
+  context.translate(Number(dragPreview.x) || 0, Number(dragPreview.y) || 0);
   drawTerrain(context, scene, layout.entries, atlas);
   const routeWidth = scene.mode === "world"
     ? Math.max(4, layout.worldRadius * 0.13)
     : Math.max(4, layout.cityCellSize * 0.1);
   strokeRoute(context, buildRouteSegments(scene.route, layout.centerByKey), routeWidth);
-  drawMarkers(context, scene, layout.entries, poiAtlases);
+  drawMarkers(context, scene, layout, poiAtlases, width);
   drawFog(context, scene, layout.entries);
   drawSelection(context, layout.entries.find((entry) => entry.key === String(scene.selected_key || "")));
   drawTrackedCharacter(context, mapTrackedEntry(layout, scene.tracked_character));
   drawPlayer(context, mapPartyEntry(layout, scene.current_key, scene.party_march));
   drawHover(context, layout.entries.find((entry) => entry.key === hoverKey));
+  context.restore();
 
   const vignette = context.createRadialGradient(width * 0.5, height * 0.46, Math.min(width, height) * 0.2, width * 0.5, height * 0.5, Math.max(width, height) * 0.7);
   vignette.addColorStop(0, "rgba(1, 6, 18, 0)");
@@ -409,7 +415,7 @@ function eventPoint(event, canvas) {
   };
 }
 
-export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [], selectedKey = "" }) {
+export function MapCanvas({ scene, onSelect, onPan, onZoom, onViewportChange, label, choices = [], selectedKey = "" }) {
   const initialImagesRef = useRef(null);
   if (!initialImagesRef.current) initialImagesRef.current = getCachedMapCanvasImages();
   const initialImages = initialImagesRef.current;
@@ -427,6 +433,7 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
   const [poiAtlasesReady, setPoiAtlasesReady] = useState(() => Object.values(initialImages.poi).filter(Boolean).length);
   const [hoverKey, setHoverKey] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [dragPreview, setDragPreview] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     let active = true;
@@ -450,6 +457,7 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
       const width = Math.max(1, Math.round(bounds.width));
       const height = Math.max(1, Math.round(bounds.height));
       setViewport((current) => current.width === width && current.height === height ? current : { width, height });
+      onViewportChange?.({ width, height });
     };
     measure();
     if (typeof ResizeObserver !== "undefined") {
@@ -459,7 +467,7 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
     }
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, []);
+  }, [onViewportChange]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -475,8 +483,8 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
     context.imageSmoothingQuality = "high";
     const layout = buildMapLayout(scene, viewport.width, viewport.height);
     layoutRef.current = layout;
-    renderMap(context, scene, layout, atlasRef.current, poiAtlasesRef.current, hoverKey, viewport.width, viewport.height);
-  }, [scene, viewport, atlasReady, poiAtlasesReady, hoverKey]);
+    renderMap(context, scene, layout, atlasRef.current, poiAtlasesRef.current, hoverKey, viewport.width, viewport.height, dragPreview);
+  }, [scene, viewport, atlasReady, poiAtlasesReady, hoverKey, dragPreview]);
 
   function entryAt(event) {
     const canvas = canvasRef.current;
@@ -499,6 +507,7 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
       suppressClickUntilRef.current = Date.now() + 350;
       setHoverKey("");
       setDragging(false);
+      setDragPreview({ x: 0, y: 0 });
       event.preventDefault();
       return;
     }
@@ -506,6 +515,7 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
     dragRef.current = { pointerId: event.pointerId, start: point, last: point, moved: false };
     setHoverKey("");
     setDragging(true);
+    setDragPreview({ x: 0, y: 0 });
   }
 
   function movePointer(event) {
@@ -532,6 +542,7 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
     }
     drag.last = point;
     if (Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6) drag.moved = true;
+    if (drag.moved) setDragPreview(dragPreviewOffset(drag.start, point));
   }
 
   function finishPan(event) {
@@ -542,6 +553,7 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
       dragRef.current = null;
       if (pointerPointsRef.current.size === 0) pinchRef.current = null;
       setDragging(false);
+      setDragPreview({ x: 0, y: 0 });
       return;
     }
 
@@ -552,11 +564,12 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
     const point = eventPoint(event, event.currentTarget);
     const moved = drag.moved || Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6;
     if (moved) {
-      onPan?.({ x: point.x - drag.start.x, y: point.y - drag.start.y }, layoutRef.current.worldRadius);
+      onPan?.(dragPreviewOffset(drag.start, point), layoutRef.current.worldRadius);
       suppressClickUntilRef.current = Date.now() + 350;
     }
     dragRef.current = null;
     setDragging(false);
+    setDragPreview({ x: 0, y: 0 });
   }
 
   function cancelPan(event) {
@@ -567,11 +580,13 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
       if (pointerPointsRef.current.size === 0) pinchRef.current = null;
       dragRef.current = null;
       setDragging(false);
+      setDragPreview({ x: 0, y: 0 });
       return;
     }
     if (dragRef.current?.pointerId !== event.pointerId) return;
     dragRef.current = null;
     setDragging(false);
+    setDragPreview({ x: 0, y: 0 });
   }
 
   function pick(event) {
