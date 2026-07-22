@@ -329,7 +329,8 @@ Deno.serve(async (request) => {
   if (!apiKey) return json({ error: "OPENROUTER_API_KEY is not configured" }, 500);
 
   const authorization = request.headers.get("Authorization");
-  const accessToken = authorization?.replace(/^Bearer\s+/i, "");
+  if (!authorization) return json({ error: "not authenticated" }, 401);
+  const accessToken = authorization.replace(/^Bearer\s+/i, "");
   if (!accessToken || accessToken === authorization) return json({ error: "not authenticated" }, 401);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");

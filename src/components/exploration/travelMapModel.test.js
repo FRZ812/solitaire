@@ -10,6 +10,7 @@ import {
   knownJourneyPreview,
   knownJourneyWaypoints,
   panTravelMapCamera,
+  presentedMarchDestination,
   startTravelMapMarch,
   travelMapMarchDuration,
   travelMapMarchFrame,
@@ -62,14 +63,25 @@ describe("unified hex travel map camera", () => {
 describe("hex travel march presentation", () => {
   const path = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }];
 
+  it("projects an active destination card to the presented march endpoint", () => {
+    const selected = { x: 8, y: -3 };
+    const halt = { x: 2, y: 0 };
+
+    expect(presentedMarchDestination(selected, { end: halt }, { id: "march-encounter" })).toEqual(halt);
+    expect(presentedMarchDestination(null, { end: halt }, { id: "march-remount" })).toEqual(halt);
+    expect(presentedMarchDestination(selected, { end: halt }, null)).toEqual(selected);
+    expect(presentedMarchDestination(selected, null, { id: "march-encounter" })).toBeNull();
+  });
+
   it("uses a readable bounded duration for a travel leg", () => {
     expect(travelMapMarchDuration([{ x: 0, y: 0 }])).toBe(1_800);
     expect(travelMapMarchDuration(path)).toBe(1_800);
     expect(travelMapMarchDuration(Array.from({ length: 40 }, (_, x) => ({ x, y: 0 })))).toBe(6_000);
   });
 
-  it("completes immediately without scheduling animation when reduced motion is requested", () => {
-    const schedule = vi.fn();
+  it("emits a reduced-motion final frame immediately but settles through a cancelable step", () => {
+    const scheduled = [];
+    const cancelled = [];
     const onFrame = vi.fn();
     const onFinish = vi.fn();
 
@@ -77,17 +89,43 @@ describe("hex travel march presentation", () => {
       id: "march-reduced",
       path,
       reducedMotion: true,
-      schedule,
+      schedule: (callback) => { scheduled.push(callback); return scheduled.length; },
+      cancel: (handle) => cancelled.push(handle),
       onFrame,
       onFinish,
     });
 
-    expect(schedule).not.toHaveBeenCalled();
     expect(onFrame).toHaveBeenCalledOnce();
     expect(onFrame.mock.calls[0][0]).toMatchObject({ coord: { x: 1, y: 1 }, mix: 1 });
-    expect(onFinish).toHaveBeenCalledOnce();
-    expect(onFinish).toHaveBeenCalledWith("march-reduced");
-    expect(stop).toEqual(expect.any(Function));
+    expect(onFinish).not.toHaveBeenCalled();
+    expect(scheduled).toHaveLength(1);
+
+    stop();
+    scheduled[0](0);
+    expect(cancelled).toEqual([1]);
+    expect(onFinish).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale reduced-motion callback during Strict Mode effect replay", () => {
+    const scheduled = [];
+    const finishes = [];
+    const setup = () => startTravelMapMarch({
+      id: "march-strict-replay",
+      path,
+      reducedMotion: true,
+      schedule: (callback) => { scheduled.push(callback); return scheduled.length; },
+      cancel: () => {},
+      onFrame: () => {},
+      onFinish: (id) => finishes.push(id),
+    });
+
+    const stopFirstSetup = setup();
+    stopFirstSetup();
+    setup();
+    scheduled[0](0);
+    scheduled[1](0);
+
+    expect(finishes).toEqual(["march-strict-replay"]);
   });
 
   it("interpolates the party between authoritative path hexes", () => {

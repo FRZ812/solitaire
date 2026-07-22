@@ -1,4 +1,5 @@
 import React from "react";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
@@ -40,6 +41,12 @@ describe("mobile map navigation markup", () => {
     expect(html).not.toContain("Map cursor controls");
     expect(html).not.toContain("Choose a destination");
     expect(html).not.toContain("rpg-trail-choices");
+  });
+
+  it("keeps fly and teleport actions at least 44 CSS pixels tall", () => {
+    const css = readFileSync(new URL("./exploration.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.rpg-magic-actions button\s*\{[^}]*min-height:\s*44px/s);
+    expect(css).toMatch(/\.rpg-exploration-shell:not\(\.place-shell\) \.rpg-magic-actions button\s*\{[^}]*min-height:\s*44px/s);
   });
 
   it("locks dismissal and navigation layers while the canonical travel gate is active", () => {

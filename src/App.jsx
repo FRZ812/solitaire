@@ -24,6 +24,7 @@ import {
 } from "./engine/timeline.js";
 import { withPortraitOverride } from "./engine/portrait-overrides.js";
 import { applyStoryFontScale } from "./engine/preferences.js";
+import { createTravelMarchWaiter } from "./engine/travel-lifecycle.js";
 import { normalizeMemoryBank } from "./engine/memory.js";
 import { normalizeNarratorSettings } from "./engine/narrator-settings.js";
 import { MEMORY_CAP } from "./engine/relationships.js";
@@ -1192,9 +1193,7 @@ export function Solitaire() {
 
   function beginTravelMarch(travel) {
     const id = `map-march-${Date.now()}-${travel.path.length}`;
-    let resolve;
-    const promise = new Promise((done) => { resolve = done; });
-    travelMarchWaitersRef.current.set(id, { promise, resolve });
+    travelMarchWaitersRef.current.set(id, createTravelMarchWaiter());
     setTravelMarch({
       id,
       path: travel.path.map((coord) => ({ x: coord.x, y: coord.y })),
@@ -1217,16 +1216,7 @@ export function Solitaire() {
   async function waitForTravelMarch(id) {
     const waiter = travelMarchWaitersRef.current.get(id);
     if (!waiter) return "cancelled";
-    let timeoutId = 0;
-    const result = await Promise.race([
-      waiter.promise,
-      new Promise((resolve) => {
-        // The authored visual duration is capped at six seconds. This guard
-        // also releases combat if the travel map cannot mount or loses context.
-        timeoutId = setTimeout(() => resolve("timeout"), 7_000);
-      }),
-    ]);
-    if (timeoutId) clearTimeout(timeoutId);
+    const result = await waiter.promise;
     if (travelMarchWaitersRef.current.get(id) === waiter) {
       travelMarchWaitersRef.current.delete(id);
     }
@@ -1434,6 +1424,9 @@ export function Solitaire() {
   }
 
   async function finishTravel(stateWithPlayer, fullMsg, travel, marchId = null, lifecycle = captureTravelLifecycle()) {
+    // Start observing the already-running visual fail-open gate before narration.
+    // Whichever side finishes first waits only for the remainder of the other.
+    const visualGate = marchId ? waitForTravelMarch(marchId) : Promise.resolve("not-needed");
     let travelBeat = null;
     let narratorEncounter = null;
     let failure = null;
@@ -1464,9 +1457,7 @@ export function Solitaire() {
       // Failed travel never lands; settle its visual gate immediately.
       if (marchId) travelMarchWaitersRef.current.get(marchId)?.resolve?.("failed");
     } finally {
-      if (marchId) {
-        await waitForTravelMarch(marchId);
-      }
+      await visualGate;
       if (travelLifecycleRef.current.controller === lifecycle.controller) {
         travelLifecycleRef.current.controller = null;
       }

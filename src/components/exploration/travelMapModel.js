@@ -155,6 +155,14 @@ export function panTravelMapCamera(camera, drag, worldRadius) {
   };
 }
 
+export function presentedMarchDestination(selected, presentedJourney, travelMarch) {
+  if (!travelMarch?.id) return selected || null;
+  const end = presentedJourney?.end;
+  return end && Number.isFinite(end.x) && Number.isFinite(end.y)
+    ? { x: end.x, y: end.y }
+    : null;
+}
+
 export function travelMapMarchDuration(path) {
   const steps = Math.max(0, (path?.length || 0) - 1);
   return Math.max(1_800, Math.min(6_000, steps * 320));
@@ -169,15 +177,25 @@ export function startTravelMapMarch({
   onFrame,
   onFinish,
 }) {
-  if (reducedMotion) {
-    onFrame?.(travelMapMarchFrame(path, 1));
-    onFinish?.(id);
-    return () => {};
-  }
-
   let stopped = false;
   let finished = false;
   let frameHandle = null;
+
+  if (reducedMotion) {
+    onFrame?.(travelMapMarchFrame(path, 1));
+    frameHandle = schedule(() => {
+      if (stopped || finished) return;
+      finished = true;
+      frameHandle = null;
+      onFinish?.(id);
+    });
+    return () => {
+      if (stopped || finished) return;
+      stopped = true;
+      if (frameHandle !== null) cancel(frameHandle);
+    };
+  }
+
   let startedAt = null;
   const duration = travelMapMarchDuration(path);
 

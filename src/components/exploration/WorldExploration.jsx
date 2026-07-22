@@ -41,6 +41,7 @@ import {
   knownJourneyPreview,
   knownJourneyWaypoints,
   panTravelMapCamera,
+  presentedMarchDestination,
   startTravelMapMarch,
   travelMapMarchFrame,
   travelMapViewportDimensions,
@@ -671,13 +672,6 @@ export function WorldExploration({
     [state, camera.x, camera.y, mapDimensions.columns, mapDimensions.rows],
   );
   const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
-  const selection = selected ? model.byKey.get(`${selected.x},${selected.y}`) || {
-    ...selected,
-    key: `${selected.x},${selected.y}`,
-    tile: getTile(state, selected.x, selected.y),
-    seen: isSeen(state, selected.x, selected.y),
-    visited: !!state.world.tiles?.[`${selected.x},${selected.y}`],
-  } : null;
   const journey = useMemo(
     () => planHexJourney(state, selected, WORLD_MARCH_LIMIT),
     [state, selected],
@@ -687,6 +681,14 @@ export function WorldExploration({
     () => knownJourneyPreview(state, mapJourney),
     [state, mapJourney],
   );
+  const presentedDestination = presentedMarchDestination(selected, presentedJourney, travelMarch);
+  const selection = presentedDestination ? model.byKey.get(`${presentedDestination.x},${presentedDestination.y}`) || {
+    ...presentedDestination,
+    key: `${presentedDestination.x},${presentedDestination.y}`,
+    tile: getTile(state, presentedDestination.x, presentedDestination.y),
+    seen: isSeen(state, presentedDestination.x, presentedDestination.y),
+    visited: !!state.world.tiles?.[`${presentedDestination.x},${presentedDestination.y}`],
+  } : null;
   const routeMinutes = presentedJourney ? pathMinutes(state, presentedJourney.legPath) : 0;
   const risk = presentedJourney ? pathRiskPercent(state, presentedJourney.legPath) : 0;
   const selectedName = selection ? nameForDestination(selection, model.origin) : currentLocationName(state);
@@ -696,10 +698,10 @@ export function WorldExploration({
   const teleSpells = spells.filter((spell) => spell.mode === "teleport");
   const flyPlan = flyMulticastPlan(state);
   const flightMount = playerFlightMount(state);
-  const distance = selected ? hexDistance(model.origin, selected) : 0;
-  const canFly = !!selected && !isSelf && !loading && !travelLocked && (flyPlan.casters.length > 0 || flightMount);
-  const teleOption = selected && !isSelf && !loading && !travelLocked
-    ? teleSpells.find((spell) => (isFinite(spell.range) ? (selection?.seen && distance <= spell.range) : isTeleportAnchor(state, selected.x, selected.y)))
+  const distance = selection ? hexDistance(model.origin, selection) : 0;
+  const canFly = !!selection && !isSelf && !loading && !travelLocked && (flyPlan.casters.length > 0 || flightMount);
+  const teleOption = selection && !isSelf && !loading && !travelLocked
+    ? teleSpells.find((spell) => (isFinite(spell.range) ? (selection.seen && distance <= spell.range) : isTeleportAnchor(state, selection.x, selection.y)))
     : null;
 
   const currentCoordinateBiome = getBiomeById(model.current.tile?.regionId) || getBiome(model.origin.x, model.origin.y, state.world.seed);
