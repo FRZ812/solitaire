@@ -9,12 +9,21 @@ const MAX_MEMORY_FACT_LENGTH = 600;
 const MAX_EXISTING_MEMORIES = 80;
 
 const ALLOWED_MODELS = new Set([
+  "poolside/laguna-s-2.1:free",
+  "poolside/laguna-s-2.1",
+  "tencent/hy3:free",
+  "tencent/hy3",
   "deepseek/deepseek-v4-pro",
   "deepseek/deepseek-v4-flash",
-  "google/gemini-3.1-pro-preview",
+  "moonshotai/kimi-k3",
   "z-ai/glm-5.2",
-  "openai/gpt-5.6-luna",
+  "x-ai/grok-4.5",
   "minimax/minimax-m3",
+]);
+
+const MODEL_FALLBACKS = new Map<string, string[]>([
+  ["poolside/laguna-s-2.1:free", ["poolside/laguna-s-2.1"]],
+  ["tencent/hy3:free", ["tencent/hy3"]],
 ]);
 
 const REASONING_MODELS = new Set([
@@ -128,6 +137,10 @@ function selectedModel(value: unknown) {
   return typeof value === "string" && ALLOWED_MODELS.has(value) ? value : DEFAULT_MODEL;
 }
 
+function selectedModels(model: string) {
+  return [model, ...(MODEL_FALLBACKS.get(model) || [])];
+}
+
 function selectedReasoning(model: string, effort: unknown) {
   if (!REASONING_MODELS.has(model)) return undefined;
   if (effort !== "high" && effort !== "max") return undefined;
@@ -226,7 +239,7 @@ async function pumpOpenRouterRound(
 // MAX_TOOL_ROUNDS so a pathological remember-only loop can't hang the request.
 function streamNarratorTurn(opts: {
   apiKey: string;
-  model: string;
+  models: string[];
   reasoning?: { effort: string };
   messages: Array<Record<string, unknown>>;
   memoryMode: MemoryMode;
@@ -249,7 +262,7 @@ function streamNarratorTurn(opts: {
               "X-Title": "Solitaire",
             },
             body: JSON.stringify({
-              model: opts.model,
+              models: opts.models,
               stream: true,
               max_tokens: MAX_OUTPUT_TOKENS,
               messages,
@@ -316,7 +329,8 @@ Deno.serve(async (request) => {
   if (!apiKey) return json({ error: "OPENROUTER_API_KEY is not configured" }, 500);
 
   const authorization = request.headers.get("Authorization");
-  const accessToken = authorization?.replace(/^Bearer\s+/i, "");
+  if (!authorization) return json({ error: "not authenticated" }, 401);
+  const accessToken = authorization.replace(/^Bearer\s+/i, "");
   if (!accessToken || accessToken === authorization) return json({ error: "not authenticated" }, 401);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -356,6 +370,7 @@ Deno.serve(async (request) => {
   }
 
   const model = selectedModel(payload.model);
+  const models = selectedModels(model);
   const reasoning = selectedReasoning(model, payload.reasoning_effort);
   const memoryMode = selectedMemoryMode(payload.memory_mode);
   const existingMemories = asExistingMemories(payload.existing_memories);
@@ -365,7 +380,7 @@ Deno.serve(async (request) => {
     { role: "user", content: `${stateContext}\n\n${userMessage}` },
   ];
 
-  return new Response(streamNarratorTurn({ apiKey, model, reasoning, messages, memoryMode, existingMemories }), {
+  return new Response(streamNarratorTurn({ apiKey, models, reasoning, messages, memoryMode, existingMemories }), {
     headers: {
       ...CORS_HEADERS,
       "Content-Type": "text/event-stream; charset=utf-8",

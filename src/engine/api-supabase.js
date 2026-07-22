@@ -15,8 +15,11 @@ import { storyTextLength } from "./narrative-sequence.js";
 import { prepareNarratorHistory } from "./narrator-history.js";
 import { normalizeNarratorSettings } from "./narrator-settings.js";
 import { mergeMemoryBank } from "./memory.js";
+import { withAbortTimeout } from "./request-timeout.js";
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/narrate`;
+export const NARRATOR_TURN_TIMEOUT_MS = 180_000;
+const NARRATOR_TIMEOUT_MESSAGE = "Narrator request timed out. Please retry.";
 
 // Retry hint prepended to userMsgRaw on attempt 1 when attempt 0's story
 // arrived truncated (mid-stream cut by the model's safety filter, not the
@@ -49,7 +52,27 @@ const RETRY_HINT_2 =
 // !response.ok errors are NEVER retried (auth/server, not truncation) on
 // attempt 0; on attempts 1/2 they're caught so we don't lose attempt 0's
 // partial result.
-export async function callNarrator(state, userMsgRaw, onProgress) {
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  throw new Error(signal.reason == null ? "Request cancelled." : String(signal.reason));
+}
+
+export function callNarrator(
+  state,
+  userMsgRaw,
+  onProgress,
+  { signal = null, timeoutMs = NARRATOR_TURN_TIMEOUT_MS } = {},
+) {
+  return withAbortTimeout(
+    (deadlineSignal) => callNarratorWithinDeadline(state, userMsgRaw, onProgress, deadlineSignal),
+    timeoutMs,
+    NARRATOR_TIMEOUT_MESSAGE,
+    signal,
+  );
+}
+
+async function callNarratorWithinDeadline(state, userMsgRaw, onProgress, signal) {
   const state_context = buildStateContext(state);
   const trimmedHistory = prepareNarratorHistory(state.apiHistory);
   const narratorSettings = normalizeNarratorSettings(state.narratorSettings);
@@ -59,7 +82,9 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
   const model = getNarratorModel();
   const reasoning_effort = getNarratorEffort();
 
+  throwIfAborted(signal);
   const { data: { session } } = await supabase.auth.getSession();
+  throwIfAborted(signal);
   if (!session?.access_token) throw new Error("not authenticated");
 
   // Attempt 0: original call. Any thrown error (auth, subscription, server)
@@ -67,7 +92,7 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
   const attempt0 = await runOneAttempt({
     session, state_context, history: trimmedHistory, userMsgRaw, onProgress, model, reasoning_effort,
     memory_mode: narratorSettings.memoryMode, existing_memories,
-  });
+  }, signal);
   if (!attempt0.result._truncated) return attempt0.result;
 
   // Attempt 1: hint retry. History is the SAME as attempt 0 — don't poison
@@ -80,9 +105,10 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
       userMsgRaw: `${RETRY_HINT_1}\n${userMsgRaw}`,
       canonicalUserMsg: userMsgRaw,
       onProgress, model, reasoning_effort, memory_mode: narratorSettings.memoryMode, existing_memories,
-    });
+    }, signal);
     if (!attempt1.result._truncated) return attempt1.result;
   } catch {
+    throwIfAborted(signal);
     // Network/server hiccup mid-retry — fall back to best of what we have.
     return attempt0.result;
   }
@@ -95,9 +121,10 @@ export async function callNarrator(state, userMsgRaw, onProgress) {
       userMsgRaw: `${RETRY_HINT_2}\n${userMsgRaw}`,
       canonicalUserMsg: userMsgRaw,
       onProgress, model, reasoning_effort, memory_mode: narratorSettings.memoryMode, existing_memories,
-    });
+    }, signal);
     if (!attempt2.result._truncated) return attempt2.result;
   } catch {
+    throwIfAborted(signal);
     // Pick best of what we have so far.
     return pickBest([attempt0.result, attempt1.result]);
   }
@@ -123,8 +150,17 @@ function pickBest(results) {
 
 // One round-trip to the narrate edge function. Returns the parsed beat
 // (with _truncated flag if salvaged) wrapped as { result }. Throws on
-// !response.ok or missing body — the caller decides whether to retry.
-async function runOneAttempt({ session, state_context, history, userMsgRaw, canonicalUserMsg = userMsgRaw, onProgress, model, reasoning_effort, memory_mode, existing_memories }) {
+// !response.ok or missing body — the caller decides whether to retry. Every
+// retry shares the outer turn deadline and cancellation signal.
+async function runOneAttempt(options, signal) {
+  throwIfAborted(signal);
+  return runOneAttemptWithinDeadline(options, signal);
+}
+
+async function runOneAttemptWithinDeadline(
+  { session, state_context, history, userMsgRaw, canonicalUserMsg = userMsgRaw, onProgress, model, reasoning_effort, memory_mode, existing_memories },
+  signal,
+) {
   // Mark a fresh attempt so any live-thinking UI clears the prior take.
   onProgress?.({ reset: true });
   const response = await fetch(FUNCTION_URL, {
@@ -144,6 +180,7 @@ async function runOneAttempt({ session, state_context, history, userMsgRaw, cano
       memory_mode,
       existing_memories,
     }),
+    signal,
   });
 
   if (!response.ok || !response.body) {

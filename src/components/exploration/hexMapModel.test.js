@@ -11,7 +11,7 @@ import {
   compileWhitemarchCapital,
 } from "../../data/whitemarch-capital.js";
 import { getTile } from "../../engine/world.js";
-import { buildExplorationModel, buildRpgViewport } from "./atlasModel.js";
+import { buildExplorationModel, buildRpgViewport } from "./hexMapModel.js";
 
 function keyOf(coord) {
   return `${coord.x},${coord.y}`;
@@ -29,7 +29,7 @@ function withCompiledCapital(run) {
   }
 }
 
-describe("unified capital in the exploration atlas", () => {
+describe("unified capital in the exploration map", () => {
   it("distinguishes current sight from remembered exploration", () => {
     const state = makeInitialState();
     state.world.seen = { "0,0": true, "2,0": true, "4,0": true };
@@ -38,6 +38,33 @@ describe("unified capital in the exploration atlas", () => {
 
     expect(byKey.get("2,0")).toMatchObject({ seen: true, visible: true, explored: true });
     expect(byKey.get("4,0")).toMatchObject({ seen: true, visible: false, explored: true });
+  });
+
+  it("pans the large viewport independently while sight remains centered on the party", () => {
+    const state = makeInitialState();
+    state.world.currentTile = { x: 0, y: 0 };
+    state.world.seen = { "6,0": true };
+
+    const cells = buildRpgViewport(state, {
+      center: { x: 6, y: 0 },
+      dimensions: { columns: 19, rows: 15 },
+    });
+    const byKey = new Map(cells.map((cell) => [cell.key, cell]));
+
+    expect(cells).toHaveLength(19 * 15);
+    expect(byKey.get("6,0")).toMatchObject({ current: false, visible: false, seen: true });
+    expect(byKey.get("0,0")).toMatchObject({ current: true, visible: true });
+  });
+
+  it("builds the exploration decision model around the requested map camera", () => {
+    const state = makeInitialState();
+    const model = buildExplorationModel(state, {
+      center: { x: 4, y: -2 },
+      dimensions: { columns: 19, rows: 15 },
+    });
+    expect(model.viewport).toHaveLength(19 * 15);
+    expect(model.viewport.some((cell) => cell.x === 4 && cell.y === -2)).toBe(true);
+    expect(model.origin).toEqual(state.world.currentTile);
   });
 
   it("collapses every internal Whitemarch POI into one capital landmark", () => {

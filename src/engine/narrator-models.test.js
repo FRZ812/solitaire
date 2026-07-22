@@ -8,12 +8,21 @@ describe("OpenRouter narrator registry", () => {
 
   it("offers the configured models in picker order", () => {
     expect(NARRATOR_MODELS.map((model) => model.id)).toEqual([
+      "poolside/laguna-s-2.1:free",
+      "tencent/hy3:free",
       "deepseek/deepseek-v4-flash",
       "deepseek/deepseek-v4-pro",
       "minimax/minimax-m3",
       "z-ai/glm-5.2",
-      "openai/gpt-5.6-luna",
-      "google/gemini-3.1-pro-preview",
+      "x-ai/grok-4.5",
+      "moonshotai/kimi-k3",
+    ]);
+  });
+
+  it("configures free models with their paid fallbacks", () => {
+    expect(NARRATOR_MODELS.slice(0, 2).map((model) => [model.id, model.fallback])).toEqual([
+      ["poolside/laguna-s-2.1:free", "poolside/laguna-s-2.1"],
+      ["tencent/hy3:free", "tencent/hy3"],
     ]);
   });
 

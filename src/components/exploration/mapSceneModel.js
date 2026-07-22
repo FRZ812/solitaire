@@ -24,16 +24,38 @@ function worldPoiIcon(cell, poiName = worldPoiName(cell)) {
   return poiIconKeyForTile(cell.tile, serviceIcon) || "";
 }
 
-export function buildWorldMapScene({ model, selection, journey, night = false }) {
+function renderTrackedCharacter(trackedCharacter, cells) {
+  const pos = trackedCharacter?.pos;
+  if (!Number.isFinite(pos?.x) || !Number.isFinite(pos?.y)) return null;
+  const exact = pos.exact === true;
+  const trackedCell = cells.find((cell) => cell.key === coordinateKey(pos));
+  if (exact && (!trackedCell || !wasExplored(trackedCell))) return null;
+  return {
+    id: String(trackedCharacter.id || ""),
+    name: String(trackedCharacter.name || "Tracked lead"),
+    pos: { x: pos.x, y: pos.y },
+    exact,
+    uncertainty_radius: exact ? 0 : Math.max(2, Number(pos.uncertaintyRadius) || 4),
+  };
+}
+
+export function buildWorldMapScene({ model, selection, journey, marchFrame = null, trackedCharacter = null, night = false }) {
+  const cells = model.viewport || [];
+  const exploredKeys = new Set(cells.filter(wasExplored).map((cell) => cell.key));
   return {
     version: 1,
     mode: "world",
     origin: { x: model.origin.x, y: model.origin.y },
     current_key: model.current.key,
     selected_key: selection?.key || "",
+    party_march: marchFrame,
+    tracked_character: renderTrackedCharacter(trackedCharacter, cells),
     night,
-    route: (journey?.legPath || []).map(coordinateKey),
-    cells: model.viewport.map((cell) => {
+    route: (journey?.legPath || []).map((point) => {
+      const key = coordinateKey(point);
+      return exploredKeys.has(key) ? key : null;
+    }),
+    cells: cells.map((cell) => {
       const explored = wasExplored(cell);
       const visible = !!cell.visible;
       const poiName = worldPoiName(cell, explored);

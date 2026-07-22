@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildMapLayout, buildRouteSegments, findInteractiveEntry, pointInPolygon } from "./mapGeometry.js";
+import {
+  buildMapLayout,
+  buildRouteSegments,
+  findInteractiveEntry,
+  mapMarchEntry,
+  mapPartyEntry,
+  mapTrackedEntry,
+  pointInPolygon,
+} from "./mapGeometry.js";
 
 describe("browser map geometry", () => {
   it("fits axial world cells into a pointy-top hex layout", () => {
@@ -43,5 +51,39 @@ describe("browser map geometry", () => {
       [{ x: 0, y: 0 }, { x: 1, y: 0 }],
       [{ x: 3, y: 0 }, { x: 4, y: 0 }],
     ]);
+  });
+
+  it("interpolates the rendered party marker between path hex centers", () => {
+    const layout = {
+      entries: [
+        { key: "0,0", center: { x: 100, y: 80 }, size: 30 },
+        { key: "1,0", center: { x: 160, y: 80 }, size: 30 },
+      ],
+      centerByKey: new Map([["0,0", { x: 100, y: 80 }], ["1,0", { x: 160, y: 80 }]]),
+    };
+    expect(mapMarchEntry(layout, { fromKey: "0,0", toKey: "1,0", mix: 0.25 })).toMatchObject({
+      center: { x: 115, y: 80 },
+      size: 30,
+    });
+  });
+
+  it("does not resurrect the canonical marker when an active march is off camera", () => {
+    const layout = {
+      entries: [{ key: "0,0", center: { x: 100, y: 80 }, size: 30 }],
+      centerByKey: new Map([["0,0", { x: 100, y: 80 }]]),
+    };
+    const offCameraMarch = { fromKey: "8,8", toKey: "9,8", mix: 0.5 };
+    expect(mapPartyEntry(layout, "0,0", offCameraMarch)).toBeNull();
+    expect(mapPartyEntry(layout, "0,0", null)?.key).toBe("0,0");
+  });
+
+  it("projects a tracked character only while their lead is inside the viewport", () => {
+    const layout = {
+      entries: [{ key: "4,-2", center: { x: 220, y: 140 }, size: 28 }],
+      centerByKey: new Map([["4,-2", { x: 220, y: 140 }]]),
+    };
+    const tracked = { id: "envoy", name: "Nadira", pos: { x: 4, y: -2 } };
+    expect(mapTrackedEntry(layout, tracked)).toMatchObject({ key: "4,-2", tracked });
+    expect(mapTrackedEntry(layout, { ...tracked, pos: { x: 40, y: -20 } })).toBeNull();
   });
 });
