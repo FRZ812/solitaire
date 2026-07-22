@@ -10,21 +10,24 @@
 // recognise them, so the client and server lists only need to agree loosely.
 
 // Thinking-effort levels exposed for models with a compatible OpenRouter
-// reasoning control. The edge function maps `max` to OpenRouter's `xhigh`.
+// reasoning control. The edge function maps model-specific aliases such as
+// `max` to the provider's accepted value (`xhigh` for DeepSeek/GLM).
 export const NARRATOR_EFFORTS = [
+  { id: "low",    label: "Low" },
+  { id: "medium", label: "Medium" },
   { id: "high", label: "High" },
   { id: "max",  label: "Max" },
 ];
 
 export const NARRATOR_MODELS = [
-  { id: "poolside/laguna-s-2.1:free",       label: "Laguna S 2.1 Free",  note: "Poolside · free tier", provider: "OpenRouter", efforts: null, fallback: "poolside/laguna-s-2.1" },
-  { id: "tencent/hy3:free",                  label: "HY3 Free",            note: "Tencent · free tier", provider: "OpenRouter", efforts: null, fallback: "tencent/hy3" },
-  { id: "deepseek/deepseek-v4-flash",      label: "DeepSeek V4 Flash",    note: "fast reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
-  { id: "deepseek/deepseek-v4-pro",        label: "DeepSeek V4 Pro",      note: "deep reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
-  { id: "minimax/minimax-m3",              label: "MiniMax M3",           note: "MiniMax reasoning", provider: "OpenRouter", efforts: ["high", "max"] },
-  { id: "z-ai/glm-5.2",                     label: "GLM 5.2",             note: "Z.ai reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
-  { id: "x-ai/grok-4.5",                    label: "Grok 4.5",            note: "xAI",             provider: "OpenRouter", efforts: null },
-  { id: "moonshotai/kimi-k3",              label: "Kimi K3",              note: "Moonshot AI",     provider: "OpenRouter", efforts: null },
+  { id: "poolside/laguna-s-2.1:free", label: "Laguna S 2.1", note: "Poolside", provider: "OpenRouter", efforts: null, fallback: "poolside/laguna-s-2.1" },
+  { id: "tencent/hy3:free",             label: "Hy3",         note: "Tencent", provider: "OpenRouter", efforts: ["low", "high"], fallback: "tencent/hy3" },
+  { id: "deepseek/deepseek-v4-flash",   label: "DeepSeek V4 Flash", note: "fast reasoning", provider: "OpenRouter", efforts: ["high", "max"] },
+  { id: "deepseek/deepseek-v4-pro",     label: "DeepSeek V4 Pro",   note: "deep reasoning", provider: "OpenRouter", efforts: ["high", "max"] },
+  { id: "minimax/minimax-m3",           label: "MiniMax M3",         note: "MiniMax reasoning", provider: "OpenRouter", efforts: null },
+  { id: "z-ai/glm-5.2",                 label: "GLM 5.2",             note: "Z.ai reasoning", provider: "OpenRouter", efforts: ["high", "max"] },
+  { id: "x-ai/grok-4.5",                label: "Grok 4.5",            note: "xAI", provider: "OpenRouter", efforts: ["low", "medium", "high"] },
+  { id: "moonshotai/kimi-k3",           label: "Kimi K3",             note: "Moonshot AI", provider: "OpenRouter", efforts: ["low", "high", "max"] },
 ];
 
 // Label for a model id, for display in the "Behind the veil" thinking drawer
@@ -35,10 +38,17 @@ export function narratorModelLabel(id) {
 }
 
 export const DEFAULT_NARRATOR_MODEL = "deepseek/deepseek-v4-pro";
-export const DEFAULT_NARRATOR_EFFORT = "max";
+export const DEFAULT_NARRATOR_EFFORT = "high";
 
 const MODEL_KEY  = "solitaire-narrator-model-v1";
-const EFFORT_KEY = "solitaire-narrator-effort-v1";
+const EFFORT_KEY = "solitaire-narrator-effort-v2";
+const NARRATOR_MODEL_ALIASES = {
+  "tencent/hy3": "tencent/hy3:free",
+};
+export function normalizeNarratorEffort(modelId, effort) {
+  const model = NARRATOR_MODELS.find((entry) => entry.id === modelId);
+  return model?.efforts?.includes(effort) ? effort : DEFAULT_NARRATOR_EFFORT;
+}
 
 // Sync reads so callNarrator can drop them straight into the request body
 // without an extra await. Each falls back to its default for an unknown value,
@@ -46,7 +56,8 @@ const EFFORT_KEY = "solitaire-narrator-effort-v1";
 export function getNarratorModel() {
   try {
     const v = localStorage.getItem(MODEL_KEY);
-    if (v && NARRATOR_MODELS.some((m) => m.id === v)) return v;
+    const migrated = NARRATOR_MODEL_ALIASES[v] || v;
+    if (migrated && NARRATOR_MODELS.some((m) => m.id === migrated)) return migrated;
   } catch {}
   return DEFAULT_NARRATOR_MODEL;
 }
@@ -55,10 +66,10 @@ export function setNarratorModel(id) {
   try { localStorage.setItem(MODEL_KEY, id); } catch {}
 }
 
-export function getNarratorEffort() {
+export function getNarratorEffort(modelId = getNarratorModel()) {
   try {
     const v = localStorage.getItem(EFFORT_KEY);
-    if (v && NARRATOR_EFFORTS.some((e) => e.id === v)) return v;
+    if (v && NARRATOR_EFFORTS.some((e) => e.id === v)) return normalizeNarratorEffort(modelId, v);
   } catch {}
   return DEFAULT_NARRATOR_EFFORT;
 }

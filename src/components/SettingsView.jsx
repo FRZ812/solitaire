@@ -5,6 +5,7 @@ import { mergeMemoryBank, normalizeMemoryBank } from "../engine/memory.js";
 import {
   NARRATOR_INSTRUCTION_LIMIT,
   NARRATOR_MEMORY_MODES,
+  NARRATOR_VERBOSITY_MODES,
   normalizeNarratorSettings,
 } from "../engine/narrator-settings.js";
 import {
@@ -23,8 +24,7 @@ const SECTIONS = [
 ];
 
 const STEERING_PRESETS = [
-  ["Concise", "Keep most story beats focused and concise while preserving atmosphere and consequence."],
-  ["Dialogue", "Favor characterful dialogue and let NPC voices carry more of each scene."],
+  ["Dialogue-heavy", "When characters are present, allow conversations to run longer and let distinct NPC voices carry the scene without narration between every line."],
   ["Slow burn", "Use patient pacing. Let tension, relationships, and discoveries develop over several turns."],
   ["Cinematic", "Favor vivid sensory staging, strong visual composition, and decisive scene endings."],
 ];
@@ -92,6 +92,8 @@ export function SettingsView({
 function NarratorInstructions({ settings, onSave }) {
   const [draft, setDraft] = useState(settings.instructions);
   const [saved, setSaved] = useState(false);
+  const activeVerbosity = NARRATOR_VERBOSITY_MODES.find((mode) => mode.id === settings.verbosity)
+    || NARRATOR_VERBOSITY_MODES[0];
 
   useEffect(() => setDraft(settings.instructions), [settings.instructions]);
 
@@ -112,8 +114,27 @@ function NarratorInstructions({ settings, onSave }) {
         <span>Campaign scoped</span>
       </div>
       <p className="settings-help">
-        Persistent creative direction is included with every narrator turn. It can steer voice, pacing, focus, and recurring behavior without changing hard game state.
+        Choose the normal scene length, then add optional creative direction. Every template reserves fuller prose for important moments instead of inflating every beat.
       </p>
+      <div className="settings-card__heading settings-card__heading--sub">
+        <div><small>Verbosity template</small><h4>Scene length</h4></div>
+        <span>{activeVerbosity.label}</span>
+      </div>
+      <div className="settings-option-grid" aria-label="Narrator verbosity templates">
+        {NARRATOR_VERBOSITY_MODES.map((mode) => (
+          <button
+            key={mode.id}
+            type="button"
+            className={settings.verbosity === mode.id ? "is-active" : ""}
+            aria-pressed={settings.verbosity === mode.id}
+            onClick={() => onSave({ ...settings, verbosity: mode.id })}
+          >
+            <strong>{mode.label}</strong>
+            <span>{mode.description}</span>
+          </button>
+        ))}
+      </div>
+      <div className="settings-custom-steering-label">Optional emphasis</div>
       <div className="settings-presets" aria-label="Narrator instruction presets">
         {STEERING_PRESETS.map(([label, text]) => (
           <button key={label} type="button" onClick={() => addPreset(text)}>+ {label}</button>

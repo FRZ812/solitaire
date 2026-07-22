@@ -7,6 +7,7 @@ import {
   NARRATOR_MODELS, NARRATOR_EFFORTS,
   getNarratorModel, setNarratorModel,
   getNarratorEffort, setNarratorEffort,
+  normalizeNarratorEffort,
   narratorModelLabel,
 } from "../engine/narrator-models.js";
 
@@ -435,10 +436,26 @@ function PickerLabel({ children }) {
 function NarratorPicker() {
   const [open, setOpen] = React.useState(false);
   const [model, setModel] = React.useState(getNarratorModel);
-  const [effort, setEffort] = React.useState(getNarratorEffort);
+  const [effort, setEffort] = React.useState(() => getNarratorEffort(model));
+  const pickerRef = React.useRef(null);
   const active = NARRATOR_MODELS.find((m) => m.id === model) || NARRATOR_MODELS[0];
 
-  function chooseModel(id) { setNarratorModel(id); setModel(id); }
+  React.useEffect(() => {
+    if (!open) return undefined;
+    function closeOnOutsidePointer(event) {
+      if (!pickerRef.current?.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+  }, [open]);
+
+  function chooseModel(id) {
+    const nextEffort = normalizeNarratorEffort(id, effort);
+    setNarratorModel(id);
+    setModel(id);
+    setNarratorEffort(nextEffort);
+    setEffort(nextEffort);
+  }
   function chooseEffort(id) { setNarratorEffort(id); setEffort(id); }
 
   const effortLabel = active.efforts
@@ -453,7 +470,7 @@ function NarratorPicker() {
     .join(" ");
 
   return (
-    <div className={`narrator-picker${open ? " is-open" : ""}`}>
+    <div ref={pickerRef} className={`narrator-picker${open ? " is-open" : ""}`}>
       {open && (
         <>
           {/* Click-away backdrop — closes the popover on any outside tap. */}
