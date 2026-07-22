@@ -109,12 +109,18 @@ export function buildRpgViewport(state, options = {}) {
   const quests = options?.activeQuests || (state.world.quests || []).filter((quest) => quest.status === "active");
   const radiusX = Math.floor(columns / 2);
   const radiusY = Math.floor(rows / 2);
+  const centerOffsetColumn = center.x + Math.floor(center.y / 2);
   const visibleRadius = sightRadius(state);
   const cells = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < columns; col++) {
-      const x = center.x + col - radiusX;
       const y = center.y + row - radiusY;
+      // Enumerate an offset-row screen rectangle, then convert each cell back
+      // into the authoritative axial coordinates used by simulation. A q/r
+      // rectangle projects as a parallelogram; offset rows keep the Canvas
+      // edges vertical while preserving every world lookup and route.
+      const offsetColumn = centerOffsetColumn + col - radiusX;
+      const x = offsetColumn - Math.floor(y / 2);
       const key = `${x},${y}`;
       const tile = getTile(state, x, y);
       const visible = hexDistance(party, { x, y }) <= visibleRadius;

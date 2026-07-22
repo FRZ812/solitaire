@@ -60,13 +60,33 @@ function buildWorldLayout(scene, width, height) {
   const padding = clamp(Math.min(width, height) * 0.025, 8, 20);
   const availableWidth = Math.max(1, width - padding * 2);
   const availableHeight = Math.max(1, height - padding * 2);
-  const worldRadius = Math.max(1, Math.min(
+  // A camera viewport should be covered, not contain the whole generated cell
+  // window as a floating island. Dimensions already track the Canvas aspect;
+  // using the larger scale clips at most the outer half-hex after odd rounding.
+  const worldRadius = Math.max(1, Math.max(
     availableWidth / Math.max(1, maxX - minX + SQRT_3),
     availableHeight / Math.max(1, maxY - minY + 2),
   ));
   const contentWidth = (maxX - minX + SQRT_3) * worldRadius;
   const contentHeight = (maxY - minY + 2) * worldRadius;
-  const offset = {
+  const indexed = cells.map((cell, index) => ({
+    index,
+    col: Number(cell.col),
+    row: Number(cell.row),
+  })).filter((cell) => Number.isFinite(cell.col) && Number.isFinite(cell.row));
+  const minCol = Math.min(...indexed.map((cell) => cell.col));
+  const maxCol = Math.max(...indexed.map((cell) => cell.col));
+  const minRow = Math.min(...indexed.map((cell) => cell.row));
+  const maxRow = Math.max(...indexed.map((cell) => cell.row));
+  const cameraIndex = indexed.find((cell) => (
+    cell.col === (minCol + maxCol) * 0.5
+    && cell.row === (minRow + maxRow) * 0.5
+  ))?.index;
+  const cameraCenter = cameraIndex == null ? null : rawCenters[cameraIndex];
+  const offset = cameraCenter ? {
+    x: width * 0.5 - cameraCenter.x * worldRadius,
+    y: height * 0.5 - cameraCenter.y * worldRadius,
+  } : {
     x: (width - contentWidth) * 0.5 + (-minX + SQRT_3 * 0.5) * worldRadius,
     y: (height - contentHeight) * 0.5 + (-minY + 1) * worldRadius,
   };
@@ -181,6 +201,63 @@ export function mapTrackedEntry(layout, tracked) {
   if (!tracked?.pos) return null;
   const entry = layout.entries.find((candidate) => candidate.key === `${tracked.pos.x},${tracked.pos.y}`);
   return entry ? { ...entry, tracked } : null;
+}
+
+const MARKET_TIER_PRIORITY = Object.freeze({
+  mastercraft: 6,
+  royal: 5,
+  noble: 4,
+  premium: 3,
+  standard: 2,
+  budget: 1,
+});
+
+function markerPriority(scene, entry) {
+  if (entry.key === String(scene?.selected_key || "")) return 10_000;
+  if (entry.cell.quest) return 9_000;
+  return (entry.cell.visible ? 1_000 : 0)
+    + (MARKET_TIER_PRIORITY[entry.cell.poi_market_tier] || 0);
+}
+
+// POI discovery and hit-testing remain untouched; this is render-only LOD.
+// When hexes become too small, retain explicit objectives and spatially thin
+// ordinary markers so a phone map remains readable rather than becoming a
+// stack of fixed-size icons.
+export function mapMarkerShowsTierDetail(markerSize, mode = "world") {
+  return mode === "city" || Number(markerSize) >= 18;
+}
+
+export function selectMapMarkerEntries(scene, entries, viewport = {}) {
+  const currentKey = String(scene?.current_key || "");
+  const candidates = (entries || []).filter((entry) => (
+    entry.cell.explored !== false
+    && entry.cell.poi_name
+    && entry.key !== currentKey
+  ));
+  const width = Math.max(1, Number(viewport.width) || 1);
+  const worldRadius = Math.max(0, Number(viewport.worldRadius) || 0);
+  const narrow = width <= 520;
+  if (scene?.mode === "city" || (!narrow && worldRadius >= 22)) return candidates;
+
+  const spacing = worldRadius < 12
+    ? (narrow ? 60 : 44)
+    : worldRadius < 18
+      ? (narrow ? 56 : 40)
+      : (narrow ? 36 : 32);
+  const ordered = [...candidates].sort((left, right) => (
+    markerPriority(scene, right) - markerPriority(scene, left)
+  ));
+  const selectedKey = String(scene?.selected_key || "");
+  const chosen = [];
+  for (const entry of ordered) {
+    const mandatory = entry.key === selectedKey || entry.cell.quest;
+    const overlaps = chosen.some((existing) => Math.hypot(
+      entry.center.x - existing.center.x,
+      entry.center.y - existing.center.y,
+    ) < spacing);
+    if (mandatory || !overlaps) chosen.push(entry);
+  }
+  return chosen;
 }
 
 export function buildRouteSegments(route, centerByKey) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../Icon.jsx";
 import { FLY_MIN_PER_HEX, FLY_TRAVEL_HEXES, WORLD_MARCH_LIMIT } from "../../config.js";
 import { TERRAINS } from "../../data/terrains.js";
@@ -363,7 +363,7 @@ export function MapLegend({ onClose, initialSection = "guide" }) {
   );
 }
 
-function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, camera, onPan, onZoom, onRecenter, onRecenterTracked, onPick, onSeekCombat, loading, interactionLocked = false, night, city }) {
+function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, camera, onPan, onZoom, onViewportChange, onRecenter, onRecenterTracked, onPick, onSeekCombat, loading, interactionLocked = false, night, city }) {
   const [legendOpen, setLegendOpen] = useState(false);
   const mapScene = useMemo(
     () => buildWorldMapScene({ model, selection, journey, marchFrame, trackedCharacter, night }),
@@ -389,6 +389,7 @@ function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, ca
           onSelect={interactionLocked ? undefined : selectMapCell}
           onPan={onPan}
           onZoom={onZoom}
+          onViewportChange={onViewportChange}
           label="Interactive world exploration map"
           choices={interactionLocked ? [] : accessibleCells}
           selectedKey={selection?.key}
@@ -647,11 +648,7 @@ export function WorldExploration({
   const [selected, setSelected] = useState(null);
   const [journalOpen, setJournalOpen] = useState(false);
   const [flyPanelDest, setFlyPanelDest] = useState(null);
-  const [mapViewport, setMapViewport] = useState(() => (
-    typeof window === "undefined"
-      ? { width: 1000, height: 700 }
-      : { width: window.innerWidth, height: window.innerHeight }
-  ));
+  const [mapViewport, setMapViewport] = useState({ width: 1000, height: 700 });
   const [reducedMotion, setReducedMotion] = useState(() => (
     typeof window !== "undefined"
       && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
@@ -663,6 +660,11 @@ export function WorldExploration({
   const finishMarchRef = useRef(onTravelMarchFinish);
   const lastPartyKeyRef = useRef(`${partyCoord.x},${partyCoord.y}`);
   finishMarchRef.current = onTravelMarchFinish;
+  const handleMapViewportChange = useCallback((next) => {
+    setMapViewport((current) => (
+      current.width === next.width && current.height === next.height ? current : next
+    ));
+  }, []);
   const mapDimensions = useMemo(
     () => travelMapViewportDimensions(mapViewport, camera.zoom),
     [mapViewport, camera.zoom],
@@ -715,11 +717,6 @@ export function WorldExploration({
   const focusVisual = biomeVisual(focusBiome.id);
   const hour = state.time?.hour ?? 12;
 
-  useEffect(() => {
-    const measure = () => setMapViewport({ width: window.innerWidth, height: window.innerHeight });
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, []);
 
   useEffect(() => {
     if (!window.matchMedia) return undefined;
@@ -886,6 +883,7 @@ export function WorldExploration({
           camera={camera}
           onPan={handleMapPan}
           onZoom={handleMapZoom}
+          onViewportChange={handleMapViewportChange}
           onRecenter={handleMapRecenter}
           onRecenterTracked={handleTrackedRecenter}
           onPick={pick}

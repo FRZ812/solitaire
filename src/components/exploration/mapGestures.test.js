@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { pinchDistance, pinchZoomFactor } from "./mapGestures.js";
+import { dragPreviewOffset, pinchDistance, pinchZoomFactor } from "./mapGestures.js";
 
 describe("travel map pointer gestures", () => {
+  it("maps pointer movement one-to-one into a live map preview", () => {
+    expect(dragPreviewOffset({ x: 120, y: 80 }, { x: 173, y: 41 })).toEqual({ x: 53, y: -39 });
+    expect(dragPreviewOffset(null, { x: 10, y: 20 })).toEqual({ x: 0, y: 0 });
+  });
+
   it("measures the distance between two active pointers", () => {
     expect(pinchDistance([{ x: 10, y: 20 }, { x: 40, y: 60 }])).toBe(50);
     expect(pinchDistance([{ x: 10, y: 20 }])).toBeNull();
