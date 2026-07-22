@@ -4,6 +4,9 @@ import {
   TRAVEL_MAP_MAX_ZOOM,
   TRAVEL_MAP_MIN_ZOOM,
   clampTravelMapZoom,
+  panTravelMapCamera,
+  startTravelMapMarch,
+  travelMapMarchDuration,
   travelMapMarchFrame,
   travelMapViewportDimensions,
   travelMapZoomStep,
@@ -41,10 +44,24 @@ describe("unified hex travel map camera", () => {
     const atEdge = travelMapZoomStep(REGION_SELECTOR_ZOOM_THRESHOLD, 0.8);
     expect(atEdge).toMatchObject({ zoom: TRAVEL_MAP_MIN_ZOOM, openRegionSelector: true });
   });
+
+  it("converts a dragged hex canvas into the opposite camera movement", () => {
+    const radius = 20;
+    expect(panTravelMapCamera({ x: 0, y: 0, zoom: 1 }, { x: -Math.sqrt(3) * radius, y: 0 }, radius))
+      .toMatchObject({ x: 1, y: 0, zoom: 1 });
+    expect(panTravelMapCamera({ x: 0, y: 0, zoom: 1 }, { x: -Math.sqrt(3) * 0.5 * radius, y: -1.5 * radius }, radius))
+      .toMatchObject({ x: 0, y: 1, zoom: 1 });
+  });
 });
 
 describe("hex travel march presentation", () => {
   const path = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }];
+
+  it("uses a readable bounded duration for a travel leg", () => {
+    expect(travelMapMarchDuration([{ x: 0, y: 0 }])).toBe(1_800);
+    expect(travelMapMarchDuration(path)).toBe(1_800);
+    expect(travelMapMarchDuration(Array.from({ length: 40 }, (_, x) => ({ x, y: 0 })))).toBe(6_000);
+  });
 
   it("interpolates the party between authoritative path hexes", () => {
     expect(travelMapMarchFrame(path, 0)).toMatchObject({ fromKey: "0,0", toKey: "1,0", mix: 0, coord: { x: 0, y: 0 } });
@@ -58,5 +75,47 @@ describe("hex travel march presentation", () => {
     expect(travelMapMarchFrame([{ x: 4, y: -2 }], 0.5)).toMatchObject({
       fromKey: "4,-2", toKey: "4,-2", mix: 0, coord: { x: 4, y: -2 },
     });
+  });
+
+  it("drives frames and finishes exactly once while retaining the final frame", () => {
+    const scheduled = [];
+    const frames = [];
+    const finishes = [];
+    startTravelMapMarch({
+      id: "march-1",
+      path,
+      schedule: (callback) => { scheduled.push(callback); return scheduled.length; },
+      cancel: () => {},
+      onFrame: (frame) => frames.push(frame),
+      onFinish: (id) => finishes.push(id),
+    });
+
+    scheduled.shift()(100);
+    scheduled.shift()(1_000);
+    scheduled.shift()(1_900);
+
+    expect(finishes).toEqual(["march-1"]);
+    expect(frames.at(-1)).toMatchObject({ coord: { x: 1, y: 1 }, mix: 1 });
+    expect(scheduled).toHaveLength(0);
+  });
+
+  it("cancels an in-flight ticker without reporting visual completion", () => {
+    const scheduled = [];
+    const cancelled = [];
+    const finishes = [];
+    const stop = startTravelMapMarch({
+      id: "march-2",
+      path,
+      schedule: (callback) => { scheduled.push(callback); return scheduled.length; },
+      cancel: (handle) => cancelled.push(handle),
+      onFrame: () => {},
+      onFinish: (id) => finishes.push(id),
+    });
+
+    stop();
+    scheduled[0](100);
+
+    expect(cancelled).toEqual([1]);
+    expect(finishes).toEqual([]);
   });
 });

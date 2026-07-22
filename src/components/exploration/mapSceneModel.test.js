@@ -56,4 +56,21 @@ describe("browser exploration scene contract", () => {
       poi_name: "Old Milepost",
     });
   });
+
+  it("carries an in-flight party frame without changing the authoritative current hex", () => {
+    const model = {
+      origin: { x: 0, y: 0 },
+      current: { key: "0,0" },
+      viewport: [
+        { key: "0,0", x: 0, y: 0, col: 0, row: 0, seen: true, visible: true, visited: true, passable: true, current: true, tile: { terrain: "road" } },
+        { key: "1,0", x: 1, y: 0, col: 1, row: 0, seen: true, visible: true, visited: false, passable: true, current: false, tile: { terrain: "road" } },
+      ],
+    };
+    const marchFrame = { fromKey: "0,0", toKey: "1,0", mix: 0.4, coord: { x: 0.4, y: 0 } };
+
+    const scene = buildWorldMapScene({ model, selection: null, journey: null, marchFrame });
+
+    expect(scene.current_key).toBe("0,0");
+    expect(scene.party_march).toEqual(marchFrame);
+  });
 });

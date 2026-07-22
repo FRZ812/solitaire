@@ -24,13 +24,14 @@ function worldPoiIcon(cell, poiName = worldPoiName(cell)) {
   return poiIconKeyForTile(cell.tile, serviceIcon) || "";
 }
 
-export function buildWorldMapScene({ model, selection, journey, night = false }) {
+export function buildWorldMapScene({ model, selection, journey, marchFrame = null, night = false }) {
   return {
     version: 1,
     mode: "world",
     origin: { x: model.origin.x, y: model.origin.y },
     current_key: model.current.key,
     selected_key: selection?.key || "",
+    party_march: marchFrame,
     night,
     route: (journey?.legPath || []).map(coordinateKey),
     cells: model.viewport.map((cell) => {

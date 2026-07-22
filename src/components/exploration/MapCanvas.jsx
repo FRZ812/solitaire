@@ -7,6 +7,7 @@ import {
   buildMapLayout,
   buildRouteSegments,
   findInteractiveEntry,
+  mapMarchEntry,
 } from "./mapGeometry.js";
 
 const MATERIAL_FALLBACKS = {
@@ -326,7 +327,8 @@ export function renderMap(context, scene, layout, atlas, poiAtlases, hoverKey, w
   drawMarkers(context, scene, layout.entries, poiAtlases);
   drawFog(context, scene, layout.entries);
   drawSelection(context, layout.entries.find((entry) => entry.key === String(scene.selected_key || "")));
-  drawPlayer(context, layout.entries.find((entry) => entry.key === String(scene.current_key || "")));
+  const marchingParty = mapMarchEntry(layout, scene.party_march);
+  drawPlayer(context, marchingParty || layout.entries.find((entry) => entry.key === String(scene.current_key || "")));
   drawHover(context, layout.entries.find((entry) => entry.key === hoverKey));
 
   const vignette = context.createRadialGradient(width * 0.5, height * 0.46, Math.min(width, height) * 0.2, width * 0.5, height * 0.5, Math.max(width, height) * 0.7);
@@ -345,7 +347,7 @@ function eventPoint(event, canvas) {
   };
 }
 
-export function MapCanvas({ scene, onSelect, label, choices = [], selectedKey = "" }) {
+export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [], selectedKey = "" }) {
   const initialImagesRef = useRef(null);
   if (!initialImagesRef.current) initialImagesRef.current = getCachedMapCanvasImages();
   const initialImages = initialImagesRef.current;
@@ -354,10 +356,13 @@ export function MapCanvas({ scene, onSelect, label, choices = [], selectedKey = 
   const atlasRef = useRef(initialImages.material);
   const poiAtlasesRef = useRef(initialImages.poi);
   const layoutRef = useRef({ entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 });
+  const dragRef = useRef(null);
+  const suppressClickRef = useRef(false);
   const [viewport, setViewport] = useState({ width: 1, height: 1 });
   const [atlasReady, setAtlasReady] = useState(Boolean(initialImages.material));
   const [poiAtlasesReady, setPoiAtlasesReady] = useState(() => Object.values(initialImages.poi).filter(Boolean).length);
   const [hoverKey, setHoverKey] = useState("");
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -415,13 +420,64 @@ export function MapCanvas({ scene, onSelect, label, choices = [], selectedKey = 
   }
 
   function updateHover(event) {
+    if (dragRef.current) return;
     const nextKey = entryAt(event)?.key || "";
     setHoverKey((current) => current === nextKey ? current : nextKey);
   }
 
+  function beginPan(event) {
+    if (!onPan) return;
+    const point = eventPoint(event, event.currentTarget);
+    dragRef.current = { pointerId: event.pointerId, start: point, last: point, moved: false };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setHoverKey("");
+    setDragging(true);
+  }
+
+  function movePointer(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      updateHover(event);
+      return;
+    }
+    const point = eventPoint(event, event.currentTarget);
+    drag.last = point;
+    if (Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6) drag.moved = true;
+  }
+
+  function finishPan(event) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const point = eventPoint(event, event.currentTarget);
+    const moved = drag.moved || Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6;
+    if (moved) {
+      onPan?.({ x: point.x - drag.start.x, y: point.y - drag.start.y }, layoutRef.current.worldRadius);
+    }
+    suppressClickRef.current = moved;
+    dragRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    setDragging(false);
+  }
+
+  function cancelPan(event) {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+  }
+
   function pick(event) {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
     const entry = entryAt(event);
     if (entry) onSelect?.(entry.key);
+  }
+
+  function zoom(event) {
+    if (!onZoom) return;
+    event.preventDefault();
+    onZoom(event.deltaY > 0 ? 0.84 : 1.19);
   }
 
   return (
@@ -430,9 +486,16 @@ export function MapCanvas({ scene, onSelect, label, choices = [], selectedKey = 
         ref={canvasRef}
         aria-hidden="true"
         onClick={pick}
-        onPointerMove={updateHover}
-        onPointerLeave={() => setHoverKey("")}
-        style={{ cursor: hoverKey ? "pointer" : "default" }}
+        onPointerDown={beginPan}
+        onPointerMove={movePointer}
+        onPointerUp={finishPan}
+        onPointerCancel={cancelPan}
+        onPointerLeave={(event) => {
+          if (!dragRef.current) setHoverKey("");
+          else movePointer(event);
+        }}
+        onWheel={zoom}
+        style={{ cursor: dragging ? "grabbing" : (onPan ? "grab" : (hoverKey ? "pointer" : "default")), touchAction: onPan ? "none" : "auto" }}
       />
       {choices.length > 0 && (
         <div className="map-canvas-accessibility" aria-label={`${label} destinations`}>

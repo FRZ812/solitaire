@@ -157,6 +157,21 @@ export function findInteractiveEntry(entries, point) {
   return null;
 }
 
+export function mapMarchEntry(layout, march) {
+  if (!march) return null;
+  const from = layout.entries.find((entry) => entry.key === String(march.fromKey || ""));
+  const to = layout.entries.find((entry) => entry.key === String(march.toKey || ""));
+  if (!from || !to) return null;
+  const mix = clamp(Number(march.mix) || 0, 0, 1);
+  return {
+    ...from,
+    center: {
+      x: from.center.x + (to.center.x - from.center.x) * mix,
+      y: from.center.y + (to.center.y - from.center.y) * mix,
+    },
+  };
+}
+
 export function buildRouteSegments(route, centerByKey) {
   const segments = [];
   let active = [];

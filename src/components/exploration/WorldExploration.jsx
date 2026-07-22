@@ -32,6 +32,13 @@ import { MapCanvas } from "./MapCanvas.jsx";
 import { WorldAtlas } from "./WorldAtlas.jsx";
 import { formatTravelDuration, journeyWaypoints } from "./worldAtlasModel.js";
 import { buildWorldMapScene } from "./mapSceneModel.js";
+import {
+  panTravelMapCamera,
+  startTravelMapMarch,
+  travelMapMarchFrame,
+  travelMapViewportDimensions,
+  travelMapZoomStep,
+} from "./travelMapModel.js";
 import partyArt from "../../assets/generated/scene-tellmar-road-v2.webp";
 import seekEncounterIcon from "../../assets/generated/ui-seek-encounter.png";
 import rewardArt from "../../assets/generated/scene-whitemarch-march-v2.webp";
@@ -324,9 +331,12 @@ export function MapLegend({ onClose, initialSection = "guide" }) {
   );
 }
 
-function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, night, city }) {
+function WorldGrid({ model, selection, journey, marchFrame, camera, onPan, onZoom, onRecenter, onPick, onSeekCombat, loading, night, city }) {
   const [legendOpen, setLegendOpen] = useState(false);
-  const mapScene = useMemo(() => buildWorldMapScene({ model, selection, journey, night }), [model, selection, journey, night]);
+  const mapScene = useMemo(
+    () => buildWorldMapScene({ model, selection, journey, marchFrame, night }),
+    [model, selection, journey, marchFrame, night],
+  );
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.explored && cell.passable && !cell.current)
     .map((cell) => ({
@@ -349,8 +359,15 @@ function WorldGrid({ model, selection, journey, onPick, onSeekCombat, loading, n
   return (
     <>
       <main className={`rpg-world-stage canvas-world-stage ${city ? "is-capital" : ""} ${night ? "is-night" : ""}`}>
-        <MapCanvas scene={mapScene} onSelect={selectMapCell} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
+        <MapCanvas scene={mapScene} onSelect={selectMapCell} onPan={onPan} onZoom={onZoom} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
         {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
+
+        <div className="rpg-map-camera-controls" data-travel-map-zoom={camera.zoom.toFixed(2)} aria-label="Travel map camera controls">
+          <button type="button" onClick={() => onZoom(1.19)} aria-label="Zoom travel map in" title="Zoom in">+</button>
+          <span>{Math.round(camera.zoom * 100)}%</span>
+          <button type="button" onClick={() => onZoom(0.84)} aria-label="Zoom travel map out" title="Zoom out">−</button>
+          <button type="button" onClick={onRecenter} aria-label="Return map camera to party" title="Return to party"><Icon name="compass" size={16} /></button>
+        </div>
 
         <button
           type="button"
@@ -650,10 +667,28 @@ export function WorldExploration({
   onSeekCombat,
   loading,
 }) {
+  const partyCoord = state.world.currentTile;
   const [selected, setSelected] = useState(null);
   const [folioPage, setFolioPage] = useState(null);
   const [flyPanelDest, setFlyPanelDest] = useState(null);
-  const model = useMemo(() => buildExplorationModel(state), [state]);
+  const [mapViewport, setMapViewport] = useState(() => (
+    typeof window === "undefined"
+      ? { width: 1000, height: 700 }
+      : { width: window.innerWidth, height: window.innerHeight }
+  ));
+  const [camera, setCamera] = useState(() => ({ x: partyCoord.x, y: partyCoord.y, zoom: 1 }));
+  const [marchFrame, setMarchFrame] = useState(null);
+  const finishMarchRef = useRef(onTravelMarchFinish);
+  const lastPartyKeyRef = useRef(`${partyCoord.x},${partyCoord.y}`);
+  finishMarchRef.current = onTravelMarchFinish;
+  const mapDimensions = useMemo(
+    () => travelMapViewportDimensions(mapViewport, camera.zoom),
+    [mapViewport, camera.zoom],
+  );
+  const model = useMemo(
+    () => buildExplorationModel(state, { center: camera, dimensions: mapDimensions }),
+    [state, camera.x, camera.y, mapDimensions.columns, mapDimensions.rows],
+  );
   const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
   const selection = selected ? model.byKey.get(`${selected.x},${selected.y}`) || {
     ...selected,
@@ -666,6 +701,9 @@ export function WorldExploration({
     () => planAtlasJourney(state, selected, WORLD_MARCH_LIMIT),
     [state, selected],
   );
+  const mapJourney = travelMarch?.path?.length
+    ? { ...(journey || {}), legPath: travelMarch.path }
+    : journey;
   const routeMinutes = journey ? pathMinutes(state, journey.legPath) : 0;
   const risk = journey ? pathRiskPercent(state, journey.legPath) : 0;
   const selectedName = selection ? nameForDestination(selection, model.origin) : currentLocationName(state);
@@ -692,6 +730,52 @@ export function WorldExploration({
   const hour = state.time?.hour ?? 12;
 
   useEffect(() => {
+    const measure = () => setMapViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  useEffect(() => {
+    const nextPartyKey = `${partyCoord.x},${partyCoord.y}`;
+    if (lastPartyKeyRef.current === nextPartyKey) return;
+    lastPartyKeyRef.current = nextPartyKey;
+    setCamera((current) => ({ ...current, x: partyCoord.x, y: partyCoord.y }));
+  }, [partyCoord.x, partyCoord.y]);
+
+  useEffect(() => {
+    if (!travelMarch?.id) {
+      setMarchFrame(null);
+      return undefined;
+    }
+    const path = travelMarch.path || [];
+    if (travelMarch.visualDone) {
+      const finalFrame = travelMapMarchFrame(path, 1);
+      setMarchFrame(finalFrame);
+      if (finalFrame) {
+        setCamera((current) => ({
+          ...current,
+          x: Math.round(finalFrame.coord.x),
+          y: Math.round(finalFrame.coord.y),
+        }));
+      }
+      return undefined;
+    }
+    let followedIndex = -1;
+    return startTravelMapMarch({
+      id: travelMarch.id,
+      path,
+      onFrame: (frame) => {
+        setMarchFrame(frame);
+        if (!frame || frame.index === followedIndex) return;
+        followedIndex = frame.index;
+        const follow = frame.mix >= 0.5 ? path[frame.index + 1] : path[frame.index];
+        if (follow) setCamera((current) => ({ ...current, x: follow.x, y: follow.y }));
+      },
+      onFinish: (id) => finishMarchRef.current?.(id),
+    });
+  }, [travelMarch?.id, travelMarch?.visualDone]);
+
+  useEffect(() => {
     if (!folioPage && !flyPanelDest) return undefined;
     const onKeyDown = (event) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
@@ -701,6 +785,21 @@ export function WorldExploration({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [flyPanelDest, folioPage]);
+
+  function handleMapPan(drag, worldRadius) {
+    setCamera((current) => panTravelMapCamera(current, drag, worldRadius));
+  }
+
+  function handleMapZoom(factor) {
+    setCamera((current) => {
+      const outcome = travelMapZoomStep(current.zoom, factor);
+      return { ...current, zoom: outcome.zoom };
+    });
+  }
+
+  function handleMapRecenter() {
+    setCamera((current) => ({ ...current, x: partyCoord.x, y: partyCoord.y }));
+  }
 
   function pick(destination) {
     setSelected({ x: destination.x, y: destination.y, ...(destination.name ? { name: destination.name } : {}) });
@@ -714,9 +813,6 @@ export function WorldExploration({
 
   function handleGroundTravel() {
     if (!journey || loading) return;
-    // Ground travel is presented on the atlas even when it was confirmed from
-    // the local map. React keeps this folio mounted while App starts narration.
-    setFolioPage("atlas");
     onTravel(selected, journey.fullPath);
   }
 
@@ -724,7 +820,21 @@ export function WorldExploration({
     <div className={`exploration-shell rpg-exploration-shell ${currentCity ? "is-capital-map" : ""}`} style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
       <RpgHeader state={state} biome={currentBiome} tile={model.current.tile} onClose={onClose} onWayfinder={() => setFolioPage("atlas")} />
       <div className="rpg-exploration-body">
-        <WorldGrid model={model} selection={selection} journey={journey} onPick={pick} onSeekCombat={onSeekCombat} loading={loading} night={hour < 6 || hour >= 20} city={currentCity} />
+        <WorldGrid
+          model={model}
+          selection={selection}
+          journey={mapJourney}
+          marchFrame={marchFrame}
+          camera={camera}
+          onPan={handleMapPan}
+          onZoom={handleMapZoom}
+          onRecenter={handleMapRecenter}
+          onPick={pick}
+          onSeekCombat={onSeekCombat}
+          loading={loading}
+          night={hour < 6 || hour >= 20}
+          city={currentCity}
+        />
         <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={handleGroundTravel} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
       </div>
       {folioPage && (

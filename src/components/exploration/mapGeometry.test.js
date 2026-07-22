@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMapLayout, buildRouteSegments, findInteractiveEntry, pointInPolygon } from "./mapGeometry.js";
+import { buildMapLayout, buildRouteSegments, findInteractiveEntry, mapMarchEntry, pointInPolygon } from "./mapGeometry.js";
 
 describe("browser map geometry", () => {
   it("fits axial world cells into a pointy-top hex layout", () => {
@@ -43,5 +43,19 @@ describe("browser map geometry", () => {
       [{ x: 0, y: 0 }, { x: 1, y: 0 }],
       [{ x: 3, y: 0 }, { x: 4, y: 0 }],
     ]);
+  });
+
+  it("interpolates the rendered party marker between path hex centers", () => {
+    const layout = {
+      entries: [
+        { key: "0,0", center: { x: 100, y: 80 }, size: 30 },
+        { key: "1,0", center: { x: 160, y: 80 }, size: 30 },
+      ],
+      centerByKey: new Map([["0,0", { x: 100, y: 80 }], ["1,0", { x: 160, y: 80 }]]),
+    };
+    expect(mapMarchEntry(layout, { fromKey: "0,0", toKey: "1,0", mix: 0.25 })).toMatchObject({
+      center: { x: 115, y: 80 },
+      size: 30,
+    });
   });
 });

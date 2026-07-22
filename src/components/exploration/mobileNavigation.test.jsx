@@ -29,6 +29,11 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain(">Grain Square</h1>");
     expect(html).not.toContain("Whitemarch —");
     expect(html).toContain('class="rpg-map-corner-controls"');
+    expect(html).toContain('class="rpg-map-camera-controls"');
+    expect(html).toContain('data-travel-map-zoom="1.00"');
+    expect(html).toContain('aria-label="Zoom travel map in"');
+    expect(html).toContain('aria-label="Zoom travel map out"');
+    expect(html).toContain('aria-label="Return map camera to party"');
     expect(html).toContain('aria-label="Open map legend"');
     expect(html).not.toContain('class="rpg-city-district-chip"');
     expect(html).not.toContain('class="rpg-poi-tier-legend"');

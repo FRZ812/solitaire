@@ -39,6 +39,75 @@ export function travelMapZoomStep(currentZoom, factor) {
   };
 }
 
+function axialRound(q, r) {
+  const x = q;
+  const z = r;
+  const y = -x - z;
+  let rx = Math.round(x);
+  let ry = Math.round(y);
+  let rz = Math.round(z);
+  const dx = Math.abs(rx - x);
+  const dy = Math.abs(ry - y);
+  const dz = Math.abs(rz - z);
+  if (dx > dy && dx > dz) rx = -ry - rz;
+  else if (dy > dz) ry = -rx - rz;
+  else rz = -rx - ry;
+  return { x: rx, y: rz };
+}
+
+export function panTravelMapCamera(camera, drag, worldRadius) {
+  const radius = Math.max(0.0001, Number(worldRadius) || 1);
+  const dr = -(Number(drag?.y) || 0) / (1.5 * radius);
+  const dq = -(Number(drag?.x) || 0) / (Math.sqrt(3) * radius) - dr * 0.5;
+  const delta = axialRound(dq, dr);
+  return {
+    ...camera,
+    x: (Number(camera?.x) || 0) + delta.x,
+    y: (Number(camera?.y) || 0) + delta.y,
+  };
+}
+
+export function travelMapMarchDuration(path) {
+  const steps = Math.max(0, (path?.length || 0) - 1);
+  return Math.max(1_800, Math.min(6_000, steps * 320));
+}
+
+export function startTravelMapMarch({
+  id,
+  path,
+  schedule = (callback) => globalThis.requestAnimationFrame(callback),
+  cancel = (handle) => globalThis.cancelAnimationFrame(handle),
+  onFrame,
+  onFinish,
+}) {
+  let stopped = false;
+  let finished = false;
+  let frameHandle = null;
+  let startedAt = null;
+  const duration = travelMapMarchDuration(path);
+
+  const tick = (timestamp) => {
+    if (stopped || finished) return;
+    if (startedAt === null) startedAt = Number(timestamp) || 0;
+    const progress = clamp(((Number(timestamp) || 0) - startedAt) / duration, 0, 1);
+    onFrame?.(travelMapMarchFrame(path, progress));
+    if (progress >= 1) {
+      finished = true;
+      frameHandle = null;
+      onFinish?.(id);
+      return;
+    }
+    frameHandle = schedule(tick);
+  };
+
+  frameHandle = schedule(tick);
+  return () => {
+    if (stopped || finished) return;
+    stopped = true;
+    if (frameHandle !== null) cancel(frameHandle);
+  };
+}
+
 const keyOf = (coord) => `${coord.x},${coord.y}`;
 
 export function travelMapMarchFrame(path, progress) {
