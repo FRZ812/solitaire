@@ -17,6 +17,7 @@ import { pathRiskPercent } from "../../engine/encounters.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "../../engine/fly.js";
 import { playerFlightMount } from "../../engine/riding.js";
 import { formatDate, formatTime } from "../../engine/time.js";
+import { realmIdAt } from "../../engine/world-generation.js";
 import { coinsToCopper, formatCopper } from "../../engine/economy.js";
 import { poiPartName, poiPlaceName } from "../../engine/location.js";
 import { MARKET_PRICE_TIERS } from "../../data/town.js";
@@ -29,6 +30,8 @@ import {
   planAtlasJourney,
 } from "./atlasModel.js";
 import { MapCanvas } from "./MapCanvas.jsx";
+import { RegionSelector } from "./RegionSelector.jsx";
+import { regionCameraTarget } from "./regionSelectorModel.js";
 import { WorldAtlas } from "./WorldAtlas.jsx";
 import { formatTravelDuration, journeyWaypoints } from "./worldAtlasModel.js";
 import { buildWorldMapScene } from "./mapSceneModel.js";
@@ -207,7 +210,7 @@ function biomeAt(destination, seed) {
   return id === "whitemarch" ? { ...coordinateBiome, id, name: "Whitemarch" } : coordinateBiome;
 }
 
-function RpgHeader({ state, biome, tile, onClose, onWayfinder }) {
+function RpgHeader({ state, biome, tile, onClose, onRegions, onJournal }) {
   const vitality = state.character.vitality ?? 0;
   const vitalityMax = Math.max(1, state.character.vitalityMax ?? vitality);
   const resolve = state.character.resolve ?? 0;
@@ -232,7 +235,10 @@ function RpgHeader({ state, biome, tile, onClose, onWayfinder }) {
         <div className="rpg-vital rpg-vital--mp" role="meter" aria-label="Resolve" aria-valuemin="0" aria-valuemax={resolveMaxDisplay} aria-valuenow={resolveDisplay}><span>RP</span><i aria-hidden="true"><b style={{ width: `${Math.min(100, resolve / resolveMax * 100)}%` }} /></i><strong>{resolveDisplay}/{resolveMaxDisplay}</strong></div>
         <div className="rpg-coin"><span>◆</span>{formatCopper(coin)}</div>
       </div>
-      <button onClick={onWayfinder} className="rpg-square-button" aria-label="Open world atlas"><Icon name="atlas" size={22} /></button>
+      <div className="rpg-map-header-actions">
+        <button type="button" className="rpg-square-button" onClick={onJournal} aria-label="Open quest journal"><Icon name="journal" size={21} /></button>
+        <button type="button" className="rpg-square-button" onClick={onRegions} aria-label="Open region selector"><Icon name="atlas" size={22} /></button>
+      </div>
     </header>
   );
 }
@@ -677,6 +683,8 @@ export function WorldExploration({
       : { width: window.innerWidth, height: window.innerHeight }
   ));
   const [camera, setCamera] = useState(() => ({ x: partyCoord.x, y: partyCoord.y, zoom: 1 }));
+  const [regionSelectorOpen, setRegionSelectorOpen] = useState(false);
+  const cameraHistoryRef = useRef({});
   const [marchFrame, setMarchFrame] = useState(null);
   const finishMarchRef = useRef(onTravelMarchFinish);
   const lastPartyKeyRef = useRef(`${partyCoord.x},${partyCoord.y}`);
@@ -790,11 +798,36 @@ export function WorldExploration({
     setCamera((current) => panTravelMapCamera(current, drag, worldRadius));
   }
 
+  function rememberCameraPosition(source = camera) {
+    const realmId = realmIdAt(Math.round(source.x), Math.round(source.y), state.world?.seed);
+    cameraHistoryRef.current = {
+      ...cameraHistoryRef.current,
+      [realmId]: { x: source.x, y: source.y, zoom: source.zoom },
+    };
+  }
+
+  function openRegionSelector() {
+    rememberCameraPosition();
+    setFolioPage(null);
+    setRegionSelectorOpen(true);
+  }
+
+  function openQuestJournal() {
+    setRegionSelectorOpen(false);
+    setFolioPage("quests");
+  }
+
   function handleMapZoom(factor) {
-    setCamera((current) => {
-      const outcome = travelMapZoomStep(current.zoom, factor);
-      return { ...current, zoom: outcome.zoom };
-    });
+    const outcome = travelMapZoomStep(camera.zoom, factor);
+    setCamera((current) => ({ ...current, zoom: outcome.zoom }));
+    if (outcome.openRegionSelector) openRegionSelector();
+  }
+
+  function handleRegionSelect(entry) {
+    rememberCameraPosition();
+    setCamera(regionCameraTarget(entry, cameraHistoryRef.current));
+    setSelected(null);
+    setRegionSelectorOpen(false);
   }
 
   function handleMapRecenter() {
@@ -818,7 +851,14 @@ export function WorldExploration({
 
   return (
     <div className={`exploration-shell rpg-exploration-shell ${currentCity ? "is-capital-map" : ""}`} style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
-      <RpgHeader state={state} biome={currentBiome} tile={model.current.tile} onClose={onClose} onWayfinder={() => setFolioPage("atlas")} />
+      <RpgHeader
+        state={state}
+        biome={currentBiome}
+        tile={model.current.tile}
+        onClose={onClose}
+        onRegions={openRegionSelector}
+        onJournal={openQuestJournal}
+      />
       <div className="rpg-exploration-body">
         <WorldGrid
           model={model}
@@ -837,6 +877,14 @@ export function WorldExploration({
         />
         <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={handleGroundTravel} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
       </div>
+      {regionSelectorOpen && (
+        <RegionSelector
+          state={state}
+          inspectedCoord={camera}
+          onSelect={handleRegionSelect}
+          onClose={() => setRegionSelectorOpen(false)}
+        />
+      )}
       {folioPage && (
         <AdventureFolio
           state={state}

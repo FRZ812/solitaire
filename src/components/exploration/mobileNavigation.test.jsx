@@ -22,8 +22,9 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain("Choose on the map");
     expect(html).toContain("Tap a tile");
     expect(html).toContain('aria-label="Look for trouble in the city"');
-    expect(html.match(/aria-label="Open world atlas"/g)).toHaveLength(1);
-    expect(html).not.toContain('aria-label="Open quest journal"');
+    expect(html.match(/aria-label="Open region selector"/g)).toHaveLength(1);
+    expect(html).not.toContain('aria-label="Open world atlas"');
+    expect(html).toContain('aria-label="Open quest journal"');
     expect(html).not.toContain('class="rpg-quickbar"');
     expect(html).toContain("Whitemarch · unified city map");
     expect(html).toContain(">Grain Square</h1>");
