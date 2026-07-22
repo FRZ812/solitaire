@@ -3,6 +3,8 @@ import {
   buildMapLayout,
   buildRouteSegments,
   findInteractiveEntry,
+  mapFogOpacity,
+  mapPoiIconSize,
   mapMarchEntry,
   mapMarkerShowsTierDetail,
   mapPartyEntry,
@@ -42,6 +44,16 @@ describe("browser map geometry", () => {
     expect(findInteractiveEntry(layout.entries, layout.entries[0].center)).toBeNull();
     expect(findInteractiveEntry(layout.entries, layout.entries[1].center)?.key).toBe("1,0");
     expect(pointInPolygon(layout.entries[1].center, layout.entries[1].polygon)).toBe(true);
+  });
+
+  it("keeps unknown terrain readable while distinguishing mapped and visible cells", () => {
+    expect(mapFogOpacity({ visible: true, explored: true }, false)).toBe(0);
+    const remembered = mapFogOpacity({ visible: false, explored: true }, false);
+    const unknown = mapFogOpacity({ visible: false, explored: false }, false);
+    expect(remembered).toBeGreaterThan(0);
+    expect(unknown).toBeGreaterThan(remembered);
+    expect(unknown).toBeLessThanOrEqual(0.5);
+    expect(mapFogOpacity({ visible: false, explored: false }, true)).toBeLessThanOrEqual(0.65);
   });
 
   it("breaks a route when an off-viewport waypoint is encountered", () => {
@@ -115,6 +127,47 @@ describe("browser map geometry", () => {
     expect(bounds.maxY).toBeGreaterThanOrEqual(754);
   });
 
+  it("keeps visible-window scale while overscan covers a held drag in every direction", () => {
+    const cellsFor = (columns, rows, visibleColumns = columns, visibleRows = rows) => {
+      const cells = [];
+      const overscanX = (columns - visibleColumns) / 2;
+      const overscanY = (rows - visibleRows) / 2;
+      for (let row = 0; row < rows; row += 1) {
+        const y = row - Math.floor(rows / 2);
+        for (let col = 0; col < columns; col += 1) {
+          const offsetColumn = col - Math.floor(columns / 2);
+          const x = offsetColumn - Math.floor(y / 2);
+          cells.push({
+            key: `${x},${y}`,
+            x,
+            y,
+            col,
+            row,
+            overscan: col < overscanX || col >= columns - overscanX || row < overscanY || row >= rows - overscanY,
+            interactive: true,
+          });
+        }
+      }
+      return cells;
+    };
+    const width = 840;
+    const height = 774;
+    const visibleLayout = buildMapLayout({ mode: "world", origin: { x: 0, y: 0 }, cells: cellsFor(15, 15) }, width, height);
+    const overscanLayout = buildMapLayout({ mode: "world", origin: { x: 0, y: 0 }, cells: cellsFor(21, 21, 15, 15) }, width, height);
+    const bounds = overscanLayout.entries.reduce((result, entry) => ({
+      minX: Math.min(result.minX, entry.bounds.minX),
+      minY: Math.min(result.minY, entry.bounds.minY),
+      maxX: Math.max(result.maxX, entry.bounds.maxX),
+      maxY: Math.max(result.maxY, entry.bounds.maxY),
+    }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+
+    expect(overscanLayout.worldRadius).toBeCloseTo(visibleLayout.worldRadius, 10);
+    expect(bounds.minX + 80).toBeLessThanOrEqual(0);
+    expect(bounds.maxX - 80).toBeGreaterThanOrEqual(width);
+    expect(bounds.minY + 60).toBeLessThanOrEqual(0);
+    expect(bounds.maxY - 60).toBeGreaterThanOrEqual(height);
+  });
+
   it("anchors the camera hex to the visual center across row parity", () => {
     const columns = 15;
     const rows = 15;
@@ -143,7 +196,7 @@ describe("browser map geometry", () => {
     }
   });
 
-  it("thins crowded low-detail markers while retaining selected and quest POIs", () => {
+  it("keeps every mapped POI visible on narrow screens while hiding unknown POIs", () => {
     const entries = Array.from({ length: 25 }, (_, index) => ({
       key: `poi-${index}`,
       center: { x: 120 + (index % 5) * 14, y: 120 + Math.floor(index / 5) * 14 },
@@ -153,6 +206,7 @@ describe("browser map geometry", () => {
         poi_name: `Place ${index}`,
         poi_market_tier: index % 3 === 0 ? "premium" : "standard",
         quest: index === 24,
+        explored: true,
         visible: index % 2 === 0,
       },
     }));
@@ -161,26 +215,26 @@ describe("browser map geometry", () => {
     expect(selectMapMarkerEntries(scene, entries, { width: 900, worldRadius: 28 }))
       .toHaveLength(entries.length);
 
-    const compact = selectMapMarkerEntries(scene, entries, { width: 390, worldRadius: 9 });
-    expect(compact.map((entry) => entry.key)).toEqual(expect.arrayContaining(["poi-0", "poi-24"]));
-    expect(compact.length).toBeLessThan(10);
+    const unknown = { key: "unknown", center: { x: 130, y: 130 }, cell: { explored: false, poi_name: "Secret place" } };
+    const compact = selectMapMarkerEntries(scene, [...entries, unknown], { width: 390, worldRadius: 9 });
+    expect(compact.map((entry) => entry.key)).toEqual(entries.map((entry) => entry.key));
     expect(mapMarkerShowsTierDetail(14.2)).toBe(false);
     expect(mapMarkerShowsTierDetail(18)).toBe(true);
     expect(mapMarkerShowsTierDetail(16.84, "city")).toBe(true);
+    expect(mapPoiIconSize(16, "world")).toBe(20);
+    expect(mapPoiIconSize(28, "world")).toBe(35);
+    expect(mapPoiIconSize(40, "world")).toBe(40);
+    expect(mapPoiIconSize(28, "city")).toBeCloseTo(29.4, 10);
+  });
 
-    const tiers = ["budget", "standard", "premium", "noble", "royal", "mastercraft"];
-    for (let index = 1; index < tiers.length; index += 1) {
-      const lower = tiers[index - 1];
-      const higher = tiers[index];
-      const tierPriority = selectMapMarkerEntries(
-        { current_key: "elsewhere" },
-        [
-          { key: lower, center: { x: 100, y: 100 }, cell: { explored: true, visible: true, poi_name: lower, poi_market_tier: lower } },
-          { key: higher, center: { x: 110, y: 100 }, cell: { explored: true, visible: true, poi_name: higher, poi_market_tier: higher } },
-        ],
-        { width: 390, worldRadius: 9 },
-      );
-      expect(tierPriority.map((entry) => entry.key)).toEqual([higher]);
-    }
+  it("keeps mapped overscan markers available as they enter the visible edge", () => {
+    const visible = { key: "visible", center: { x: 100, y: 100 }, cell: { explored: true, visible: true, poi_name: "Visible shop", poi_market_tier: "budget" } };
+    const overscan = { key: "overscan", center: { x: 110, y: 100 }, cell: { explored: true, visible: true, poi_name: "Offscreen shop", poi_market_tier: "mastercraft", overscan: true } };
+
+    expect(selectMapMarkerEntries(
+      { current_key: "elsewhere" },
+      [visible, overscan],
+      { width: 390, worldRadius: 9 },
+    ).map((entry) => entry.key)).toEqual(["visible", "overscan"]);
   });
 });

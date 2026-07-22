@@ -40,7 +40,7 @@ function renderTrackedCharacter(trackedCharacter, cells) {
 }
 
 export function buildWorldMapScene({ model, selection, journey, marchFrame = null, trackedCharacter = null, night = false }) {
-  const cells = model.viewport || [];
+  const cells = model.renderViewport || model.viewport || [];
   const exploredKeys = new Set(cells.filter(wasExplored).map((cell) => cell.key));
   return {
     version: 1,
@@ -65,15 +65,16 @@ export function buildWorldMapScene({ model, selection, journey, marchFrame = nul
         y: cell.y,
         col: cell.col,
         row: cell.row,
-        // Unknown geography is normalized before it reaches any renderer. Fog
-        // can never disclose a hidden road, river, or settlement.
-        terrain: explored ? (cell.tile?.terrain || "impassable") : "impassable",
+        overscan: !!cell.overscan,
+        // Base geography is public from the start; exploration still gates POIs,
+        // routes, entities, interaction, and the brighter mapped treatment.
+        terrain: cell.tile?.terrain || "impassable",
         explored,
         seen: !!cell.seen,
         visible,
         visibility: visible ? "visible" : (explored ? "remembered" : "unknown"),
         visited: !!cell.visited,
-        interactive: explored && !!cell.passable && !cell.current,
+        interactive: !cell.overscan && explored && !!cell.passable && !cell.current,
         poi_name: poiName,
         poi_icon: worldPoiIcon(cell, poiName),
         poi_market_tier: poiName ? (cell.tile?.poi?.marketTier || "") : "",

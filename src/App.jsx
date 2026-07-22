@@ -19,12 +19,25 @@ import {
 import { applyBeat } from "./engine/beat.js";
 import {
   deleteBeat, editBeat, narratorMessageForPendingPlayers, pendingPlayerBeats,
-  recordTurn, rewindToPlayerBeat, stateBeforeTurn, stateAfterTurn,
+  finalizeTurnCheckpoint, recordTurn, rewindToPlayerBeat, startTurnCheckpoint, stateBeforeTurn, stateAfterTurn,
   turnForBeatIndex, turnStartedAt,
 } from "./engine/timeline.js";
 import { withPortraitOverride } from "./engine/portrait-overrides.js";
 import { applyStoryFontScale } from "./engine/preferences.js";
-import { createTravelMarchWaiter } from "./engine/travel-lifecycle.js";
+import {
+  createTravelMarchWaiter,
+  isTravelLifecycleTokenCurrent,
+  settleTravelLifecycle,
+  travelHaltBeat,
+} from "./engine/travel-lifecycle.js";
+import {
+  applyTravelNarrationPresentation,
+  authoritativeTravelDiscovery,
+  prepareTravelSettlement,
+  publicTravelLocationName,
+  replayTravelSettlement,
+  travelDiscoveryFromRevealedTile,
+} from "./engine/travel-settlement.js";
 import { normalizeMemoryBank } from "./engine/memory.js";
 import { normalizeNarratorSettings } from "./engine/narrator-settings.js";
 import { MEMORY_CAP } from "./engine/relationships.js";
@@ -167,71 +180,6 @@ function invQtyMap(carried) {
   return m;
 }
 
-// Apply a travel narration to `base`: clamp the journey time, move the player to
-// the destination, expand sight along the whole route, and reveal any vista at
-// arrival. Shared by the live travel handler and the Rewrite path so a rewritten
-// journey still lands the player where they were headed (travel = the context
-// recorded with the turn: from/to names, dest coords, route path, minutes).
-function applyTravelArrival(base, beat, travel) {
-  const mins = travel.totalMins;
-  if (!beat.minutes_passed || Math.abs(beat.minutes_passed - mins) > mins * 0.5) {
-    beat.minutes_passed = mins;
-  }
-  let next = applyBeat(base, beat, {
-    travelFrom: travel.fromName,
-    travelTo: travel.toName,
-    travelToCoords: { x: travel.dest.x, y: travel.dest.y },
-  });
-  const path = travel.path || [];
-  // Reveal radius: flight takes in a wide view from the air; otherwise normal
-  // sight, shrunk by darkness (engine/light.js).
-  const r = travel.mode === "fly" ? FLY_REVEAL_RADIUS : sightRadius(next);
-  // Mark path tiles visited and refresh sight from each (flight reveals the whole
-  // corridor it crossed; walk reveals what the party trudged past).
-  if (path.length > 1) {
-    const newTiles = { ...next.world.tiles };
-    let newSeen = next.world.seen;
-    for (let i = 1; i < path.length; i++) {
-      const p = path[i];
-      const k = `${p.x},${p.y}`;
-      if (!newTiles[k]) newTiles[k] = persistedTileDelta(getTile(base, p.x, p.y));
-      newSeen = computeSightFromRadius(p.x, p.y, r, newSeen);
-    }
-    next = { ...next, world: { ...next.world, tiles: newTiles, seen: newSeen } };
-  }
-  // Vista: a high point reveals a wide hex — but only if you can actually see far
-  // (daylight/lantern/darkvision). In the dark the grand view is just more black.
-  const destTile = getTile(base, travel.dest.x, travel.dest.y);
-  if (destTile?.vistaRadius && destTile.vistaRadius > 0) {
-    const vr = r >= SIGHT_RADIUS ? destTile.vistaRadius : r;
-    const wider = computeSightFromRadius(travel.dest.x, travel.dest.y, vr, next.world.seen);
-    next = { ...next, world: { ...next.world, seen: wider } };
-  }
-
-  // Ancient-site cache: a forge-rune (the Fusion catalyst) lies at a few old
-  // places, claimed once on first arrival.
-  const cacheKey = `${travel.dest.x},${travel.dest.y}`;
-  const looted = next.world.lootedCaches || {};
-  const tmpl = destTile?.cache?.itemId ? itemTemplate(destTile.cache.itemId) : null;
-  if (tmpl && !looted[cacheKey]) {
-    const runeId = destTile.cache.itemId;
-    const carried = next.character.inventory.carried.map((c) => ({ ...c }));
-    const ex = carried.find((c) => c.itemId === runeId);
-    if (ex) ex.quantity += 1; else carried.push({ itemId: runeId, quantity: 1 });
-    const now = Date.now();
-    next = {
-      ...next,
-      beats: [
-        ...next.beats,
-        { id: `cache${now}`, type: "narration", content: `Among the old stones something waits, left for whoever should find it: a ${tmpl.name}. You take it.` },
-        { id: `cachei${now}`, type: "inventory_delta", lines: [`+1× ${tmpl.name}`] },
-      ],
-      character: { ...next.character, inventory: { ...next.character.inventory, carried } },
-      world: { ...next.world, codex: { ...next.world.codex, items: { ...next.world.codex.items, [runeId]: tmpl } }, lootedCaches: { ...looted, [cacheKey]: true } },
-    };
-  }
-  return next;
-}
 
 // One-shot migrator for legacy v10 single-save blobs (square odd-r offset coords).
 // Re-keys world.tiles + world.seen and bumps currentTile into axial space, then
@@ -330,6 +278,7 @@ export function Solitaire() {
   // state and is deliberately excluded from campaign persistence.
   const [travelMarch, setTravelMarch] = useState(null);
   const travelMarchWaitersRef = useRef(new Map());
+  const travelMarchSequenceRef = useRef(0);
   // Async travel may outlive the campaign that launched it (sign-out, reset,
   // opening another save). Every travel tail checks this generation before it
   // is allowed to land the party or surface an encounter.
@@ -373,6 +322,11 @@ export function Solitaire() {
   function captureTravelLifecycle(baseState = liveStateRef.current) {
     const controller = new AbortController();
     travelLifecycleRef.current.controller?.abort(new Error("Travel superseded."));
+    for (const waiter of travelMarchWaitersRef.current.values()) {
+      waiter.resolve?.("cancelled");
+    }
+    travelMarchWaitersRef.current.clear();
+    travelLifecycleRef.current.generation += 1;
     travelLifecycleRef.current.controller = controller;
     return {
       generation: travelLifecycleRef.current.generation,
@@ -383,9 +337,11 @@ export function Solitaire() {
   }
 
   function isTravelLifecycleCurrent(lifecycle) {
-    return !!lifecycle
-      && lifecycle.generation === travelLifecycleRef.current.generation
-      && lifecycle.campaignId === currentCampaignIdRef.current;
+    return isTravelLifecycleTokenCurrent(
+      lifecycle,
+      travelLifecycleRef.current.generation,
+      currentCampaignIdRef.current,
+    );
   }
 
   function abortActiveTravel(reason = "Travel cancelled.") {
@@ -394,7 +350,7 @@ export function Solitaire() {
     if (controller && !controller.signal.aborted) controller.abort(new Error(reason));
   }
 
-  function cancelTravelLifecycle({ closeMap = true } = {}) {
+  function cancelTravelLifecycle({ closeMap = true, preserveEncounter = false } = {}) {
     travelLifecycleRef.current.generation += 1;
     abortActiveTravel();
     for (const waiter of travelMarchWaitersRef.current.values()) {
@@ -403,8 +359,10 @@ export function Solitaire() {
     travelMarchWaitersRef.current.clear();
     setTravelMarch(null);
     setLiveNarrator(emptyLiveNarrator());
-    setPendingCombat(null);
-    setPendingEngage(null);
+    if (!preserveEncounter) {
+      setPendingCombat(null);
+      setPendingEngage(null);
+    }
     if (closeMap) setMapOpen(false);
     setLoading(false);
   }
@@ -1192,7 +1150,8 @@ export function Solitaire() {
   }
 
   function beginTravelMarch(travel) {
-    const id = `map-march-${Date.now()}-${travel.path.length}`;
+    travelMarchSequenceRef.current += 1;
+    const id = `map-march-${travelMarchSequenceRef.current}`;
     travelMarchWaitersRef.current.set(id, createTravelMarchWaiter());
     setTravelMarch({
       id,
@@ -1241,9 +1200,9 @@ export function Solitaire() {
     closeBeatMenu();
     const fromTile = getTile(state, cur.x, cur.y);
     const destTileFull = getTile(state, dest.x, dest.y);
-    const fromName = currentLocationName(state);
-    const toName = poiPlaceName(destTileFull.poi) || `${TERRAINS[destTileFull.terrain]?.label} (${dest.x},${dest.y})`;
+    const fromName = publicTravelLocationName(fromTile, cur);
     const destIsHidden = destTileFull.poi?.type === "hidden";
+    const toName = publicTravelLocationName(destTileFull, dest);
 
     // The party marches hex by hex along the route; an encounter is rolled at every
     // step and the FIRST one HALTS them at its tile. With no encounter they press on
@@ -1254,7 +1213,7 @@ export function Solitaire() {
     const legEnd = legPath[legPath.length - 1];
     const arrived = legEnd.x === dest.x && legEnd.y === dest.y;
     const legTile = getTile(state, legEnd.x, legEnd.y);
-    const legName = arrived ? toName : (poiPlaceName(legTile.poi) || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
+    const legName = arrived ? toName : publicTravelLocationName(legTile, legEnd);
     const isHidden = arrived && destIsHidden;
     const travelWp = activeWorldPassives(state.character, state.world.codex);
     // Slower going in the dark without light, and slower still when worn out.
@@ -1296,11 +1255,11 @@ export function Solitaire() {
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Travel from ${fromName} ${arrived ? "to" : "toward"} ${toName}${mountNote}.` };
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
 
-    const generatedSite = destTileFull.poi?.generated;
+    const discovery = authoritativeTravelDiscovery(legTile);
     const destDescription = isHidden
-      ? generatedSite
-        ? `HIDDEN AUTHORED SITE — reveal the deterministic site ${JSON.stringify(generatedSite.name)} (${generatedSite.poiType}): ${generatedSite.description} Set tile_discovery EXACTLY to ${JSON.stringify({ name: generatedSite.name, poi_type: generatedSite.poiType, description: generatedSite.description })}; phrase the discovery, but do not rename or replace its canonical identity.`
-        : "HIDDEN — reveal an event appropriate to the approved terrain content and set tile_discovery."
+      ? discovery
+        ? `HIDDEN AUTHORED SITE — the engine reveals ${JSON.stringify(discovery.name)} (${discovery.poi_type}): ${discovery.description}. Phrase the discovery, but do not rename or replace its canonical identity or emit mechanics for it.`
+        : "HIDDEN — the destination remains unidentified; narrate only the visible terrain without inventing or naming a site."
       : destTileFull.poi ? `known ${destTileFull.poi.type} (${poiPlaceName(destTileFull.poi) || destTileFull.poi.name})` : "open wilderness";
 
     let travelMsg;
@@ -1326,6 +1285,7 @@ export function Solitaire() {
       path: legPath.map((p) => ({ x: p.x, y: p.y })),
       totalMins: legMins,
       encounter: pathEnc ? pathEnc.encounter : null,
+      discovery,
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     };
 
@@ -1338,163 +1298,81 @@ export function Solitaire() {
     await finishTravel(stateWithPlayer, fullMsg, travel, marchId, lifecycle);
   }
 
-  // Shared tail for every travel mode: ask the narrator, land via applyTravelArrival
-  // (which reveals sight by travel.mode), record the turn, offer any fight.
-  function rebasePreparedTravelState(current, base, prepared) {
-    if (!base || !prepared) return prepared || current;
-
-    // Begin with the latest live state so pack/equipment changes, portraits,
-    // narrator settings, memories, and any other edits made while narration was
-    // in flight survive the arrival commit.
-    let character = current.character;
-    const resolveDelta = (prepared.character?.resolve ?? 0) - (base.character?.resolve ?? 0);
-    if (resolveDelta) {
-      character = {
-        ...character,
-        resolve: Math.max(0, (character?.resolve ?? 0) + resolveDelta),
-      };
-    }
-
-    // Flying can spend companion resolve or mount hunger/sleep before the
-    // narrated arrival. Reapply only those deterministic deltas to the latest
-    // codex rather than replacing concurrently edited inventories or worn kit.
-    const baseCharacters = base.world?.codex?.characters || {};
-    const preparedCharacters = prepared.world?.codex?.characters || {};
-    let characters = current.world?.codex?.characters || {};
-    let charactersTouched = false;
-    for (const [id, after] of Object.entries(preparedCharacters)) {
-      const before = baseCharacters[id];
-      const live = characters[id];
-      if (!before || !live) continue;
-      let rebased = live;
-      const companionResolveDelta = (after.resolve ?? 0) - (before.resolve ?? 0);
-      if (companionResolveDelta) {
-        rebased = { ...rebased, resolve: Math.max(0, (rebased.resolve ?? 0) + companionResolveDelta) };
-      }
-      const needDeltas = {};
-      for (const key of ["hunger", "thirst", "sleep"]) {
-        const delta = (after.needs?.[key] ?? before.needs?.[key] ?? 0)
-          - (before.needs?.[key] ?? 0);
-        if (delta) needDeltas[key] = delta;
-      }
-      if (Object.keys(needDeltas).length) {
-        const needs = { ...(rebased.needs || {}) };
-        for (const [key, delta] of Object.entries(needDeltas)) {
-          needs[key] = Math.max(0, Math.min(100, (needs[key] ?? 0) + delta));
-        }
-        rebased = { ...rebased, needs };
-      }
-      if (rebased !== live) {
-        if (!charactersTouched) characters = { ...characters };
-        characters[id] = rebased;
-        charactersTouched = true;
-      }
-    }
-
-    // Preserve the deterministic overflight sightings prepared for a flight,
-    // merging them into any tile deltas created while the request was pending.
-    const baseTiles = base.world?.tiles || {};
-    const preparedTiles = prepared.world?.tiles || {};
-    let tiles = current.world?.tiles || {};
-    let tilesTouched = false;
-    for (const [key, after] of Object.entries(preparedTiles)) {
-      const beforeSighting = baseTiles[key]?.aerialSighting;
-      const afterSighting = after?.aerialSighting;
-      if (!afterSighting || (
-        beforeSighting?.day === afterSighting.day
-        && beforeSighting?.hour === afterSighting.hour
-      )) continue;
-      if (!tilesTouched) tiles = { ...tiles };
-      tiles[key] = { ...(tiles[key] || {}), aerialSighting: { ...afterSighting } };
-      tilesTouched = true;
-    }
-
-    const codex = charactersTouched
-      ? { ...current.world.codex, characters }
-      : current.world.codex;
-    const world = (charactersTouched || tilesTouched)
-      ? { ...current.world, codex, tiles }
-      : current.world;
-    const preparedBeat = prepared.beats?.[prepared.beats.length - 1];
-    const beats = preparedBeat && !(current.beats || []).some((beat) => beat.id === preparedBeat.id)
-      ? [...(current.beats || []), preparedBeat]
-      : current.beats;
-
-    return { ...current, character, world, beats };
-  }
-
+  // Shared tail for every travel mode. Visual completion performs the one
+  // authoritative travel transaction; narration that finishes later can only
+  // append story/history and must never replay time, costs, survival, or movement.
   async function finishTravel(stateWithPlayer, fullMsg, travel, marchId = null, lifecycle = captureTravelLifecycle()) {
-    // Start observing the already-running visual fail-open gate before narration.
-    // Whichever side finishes first waits only for the remainder of the other.
     const visualGate = marchId ? waitForTravelMarch(marchId) : Promise.resolve("not-needed");
-    let travelBeat = null;
-    let narratorEncounter = null;
-    let failure = null;
+    const narration = Promise.resolve().then(() => narrate(
+      stateWithPlayer,
+      fullMsg,
+      () => isTravelLifecycleCurrent(lifecycle),
+      lifecycle.controller?.signal,
+    ));
+    const hostileEncounter = travel.encounter?.posture === "hostile"
+      ? travel.encounter
+      : null;
+    let checkpointBase = null;
+    let recordedTravel = travel;
+    let turnIndex = -1;
+
     try {
-      const beat = await narrate(
-        stateWithPlayer,
-        fullMsg,
-        () => isTravelLifecycleCurrent(lifecycle),
-        lifecycle.controller?.signal,
-      );
-      if (!isTravelLifecycleCurrent(lifecycle)) return;
-      travelBeat = beat;
-      narratorEncounter = beat.start_combat || null;
-    } catch (e) {
-      if (!isTravelLifecycleCurrent(lifecycle)) return;
-      failure = e;
-      // The retained map overlay would cover the error banner. Leave the attempted
-      // player beat in the log, but never apply movement from a failed turn.
-      setState((current) => rebasePreparedTravelState(
-        current,
-        lifecycle.baseState,
-        stateWithPlayer,
-      ));
-      setMapOpen(false);
-      setError(e.message || String(e));
-      // A synchronous narrator/config failure can beat React's first map
-      // march commit, so no mounted tween exists to release this waiter.
-      // Failed travel never lands; settle its visual gate immediately.
-      if (marchId) travelMarchWaitersRef.current.get(marchId)?.resolve?.("failed");
+      await settleTravelLifecycle({
+        visual: visualGate,
+        narration,
+        onArrival: () => {
+          if (!isTravelLifecycleCurrent(lifecycle)) return;
+          const settlement = prepareTravelSettlement(
+            liveStateRef.current,
+            lifecycle.baseState,
+            stateWithPlayer,
+            travel,
+          );
+          checkpointBase = settlement.checkpointBase;
+          recordedTravel = { ...travel, preparedDelta: settlement.preparedDelta };
+          const haltBeat = travelHaltBeat(
+            travel,
+            `travel-halt-${marchId || travelMarchSequenceRef.current}`,
+          );
+          const arrived = haltBeat && !(settlement.state.beats || []).some((beat) => beat.id === haltBeat.id)
+            ? { ...settlement.state, beats: [...(settlement.state.beats || []), haltBeat] }
+            : settlement.state;
+          const checkpointed = startTurnCheckpoint(checkpointBase, fullMsg, arrived, { travel: recordedTravel });
+          turnIndex = checkpointed.turns.length - 1;
+          liveStateRef.current = checkpointed;
+          setState(checkpointed);
+          setTravelMarch((current) => (current?.id === marchId ? null : current));
+          setMapOpen(false);
+          if (hostileEncounter) {
+            setPendingEngage(null);
+            setPendingCombat(hostileEncounter);
+          }
+        },
+        onNarration: (travelBeat) => {
+          if (!isTravelLifecycleCurrent(lifecycle) || turnIndex < 0) return;
+          const presented = applyTravelNarrationPresentation(liveStateRef.current, travelBeat);
+          const completed = finalizeTurnCheckpoint(presented, turnIndex);
+          liveStateRef.current = completed;
+          setState(completed);
+          // Any deterministic route encounter owns this stop, regardless of
+          // posture. Narrator-created combat is considered only on clear travel.
+          const narratorEncounter = travelBeat.start_combat || null;
+          if (!travel.encounter && narratorEncounter) {
+            setPendingCombat(null);
+            setPendingEngage({ dir: narratorEncounter });
+          }
+        },
+        onNarrationError: (error) => {
+          if (!isTravelLifecycleCurrent(lifecycle)) return;
+          setError(error.message || String(error));
+        },
+      });
     } finally {
-      await visualGate;
       if (travelLifecycleRef.current.controller === lifecycle.controller) {
         travelLifecycleRef.current.controller = null;
       }
       if (!isTravelLifecycleCurrent(lifecycle)) return;
       setTravelMarch((current) => (current?.id === marchId ? null : current));
-      if (travelBeat && !failure) {
-        // Commit arrival only once narration and the visible march are both
-        // complete. This keeps the preview route stable under the walking pin.
-        setState((current) => {
-          if (!isTravelLifecycleCurrent(lifecycle)) return current;
-          const rebased = rebasePreparedTravelState(
-            current,
-            lifecycle.baseState,
-            stateWithPlayer,
-          );
-          const next = applyTravelArrival(rebased, travelBeat, travel);
-          const landed = recordTurn(rebased, fullMsg, next, { travel });
-          liveStateRef.current = landed;
-          return landed;
-        });
-        const hostileEncounter = travel.encounter?.posture === "hostile"
-          ? travel.encounter
-          : null;
-        if (hostileEncounter || narratorEncounter) {
-          // The deterministic route roll owns precedence. A narrator combat
-          // directive is used only when the route did not already halt on a
-          // hostile encounter, preventing two competing combat prompts.
-          setMapOpen(false);
-          if (hostileEncounter) {
-            setPendingEngage(null);
-            setPendingCombat(hostileEncounter);
-          } else {
-            setPendingCombat(null);
-            setPendingEngage({ dir: narratorEncounter });
-          }
-        }
-      }
       setLoading(false);
     }
   }
@@ -1550,10 +1428,10 @@ export function Solitaire() {
     const legEnd = legPath[legPath.length - 1];
     const arrived = legEnd.x === dest.x && legEnd.y === dest.y;
     const legTile = getTile(state, legEnd.x, legEnd.y);
-    const fromName = currentLocationName(state);
+    const fromName = publicTravelLocationName(getTile(state, cur.x, cur.y), cur);
     const destTile = getTile(state, dest.x, dest.y);
-    const toName = poiPlaceName(destTile.poi) || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
-    const legName = arrived ? toName : (poiPlaceName(legTile.poi) || `${TERRAINS[legTile.terrain]?.label} (${legEnd.x},${legEnd.y})`);
+    const toName = publicTravelLocationName(destTile, dest);
+    const legName = arrived ? toName : publicTravelLocationName(legTile, legEnd);
     const mins = hastedFlightMinutes(flightMinutes(legPath), speedMult);
     setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
 
@@ -1594,7 +1472,7 @@ export function Solitaire() {
       const key = `${p.x},${p.y}`;
       if (!tilesTouched) { updatedTiles = { ...baseTiles }; tilesTouched = true; }
       updatedTiles[key] = persistedTileDelta(t, { aerialSighting: { day } });
-      const overflownName = poiPlaceName(t.poi);
+      const overflownName = t.poi?.type === "hidden" ? null : poiPlaceName(t.poi);
       if (overflownName && !overflownTowns.includes(overflownName)) overflownTowns.push(overflownName);
     }
 
@@ -1625,7 +1503,7 @@ export function Solitaire() {
       : `[PLAYER ACTION] You cast Fly and take to the air, sweeping ${arrived ? `to ${legName}` : `toward ${toName} as far as ${legName}`} — ${legPath.length - 1} hex(es), ${mins} min, high over the land (crossing water, wood, and crag alike).`;
     const costNote = viaMount ? "" : ` It cost ${plan.totalCost} resolve in total${plan.casts > 1 ? " (divided across the casters)" : ""}.`;
     const msg = `${opener}${modeNote}${townNote} ${endNote}${costNote} Use minutes_passed = ${mins}.`;
-    const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: aerial ? aerial.encounter : null, mode: "fly", mountId: viaMount ? flightMount.id : null, intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
+    const travel = { fromName, toName: legName, dest: { x: legEnd.x, y: legEnd.y }, path: legPath.map((p) => ({ x: p.x, y: p.y })), totalMins: mins, encounter: aerial ? aerial.encounter : null, mode: "fly", mountId: viaMount ? flightMount.id : null, discovery: authoritativeTravelDiscovery(legTile), intendedDest: arrived ? null : { x: dest.x, y: dest.y } };
     await finishTravel(stateWithPlayer, msg, travel);
   }
 
@@ -1658,16 +1536,17 @@ export function Solitaire() {
       setState({ ...state, beats: [...state.beats, { id: `tp${Date.now()}`, type: "narration", content: `You haven't the resolve to work ${spell.name}.` }] });
       return;
     }
-    const fromName = currentLocationName(state);
+    const cur = state.world.currentTile;
+    const fromName = publicTravelLocationName(getTile(state, cur.x, cur.y), cur);
     const destTile = getTile(state, dest.x, dest.y);
-    const toName = poiPlaceName(destTile.poi) || `${TERRAINS[destTile.terrain]?.label} (${dest.x},${dest.y})`;
+    const toName = publicTravelLocationName(destTile, dest);
     const blind = !isSeen(state, dest.x, dest.y); // gating to a rumored place you've never seen
     setMapOpen(false); setReceipts({ tileKey: null, items: {} }); setError(null); setLoading(true); closeBeatMenu();
     const ch = { ...state.character, resolve: Math.max(0, (state.character.resolve ?? 0) - spell.resolveCost) };
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: `${spell.name} to ${toName}.` };
     const stateWithPlayer = { ...state, character: ch, beats: [...state.beats, playerBeat] };
     const msg = `[PLAYER ACTION] You work ${spell.name} and step through space, arriving at ${toName}${blind ? " — a place known only by repute, so you arrive without knowing what surrounds you" : ""}. No journey, no road between. It cost ${spell.resolveCost} resolve. Narrate the rush of arrival and what greets you. Use minutes_passed = 5.`;
-    const travel = { fromName, toName, dest: { x: dest.x, y: dest.y }, path: [{ x: dest.x, y: dest.y }], totalMins: 5, encounter: null, mode: "teleport" };
+    const travel = { fromName, toName, dest: { x: dest.x, y: dest.y }, path: [{ x: dest.x, y: dest.y }], totalMins: 5, encounter: null, mode: "teleport", discovery: authoritativeTravelDiscovery(destTile) };
     await finishTravel(stateWithPlayer, msg, travel);
   }
 
@@ -2154,6 +2033,12 @@ export function Solitaire() {
     const feedback = rewriteText.trim();
     if (!menu || menu.kind !== "narrative" || menu.turnK < 0 || !feedback || loading) return;
     const cp = state.turns[menu.turnK];
+    const legacyTravelDiscovery = cp.travel && !cp.travel.discovery
+      ? travelDiscoveryFromRevealedTile(getTile(state, cp.travel.dest.x, cp.travel.dest.y))
+      : null;
+    const replayTravel = cp.travel && legacyTravelDiscovery
+      ? { ...cp.travel, discovery: legacyTravelDiscovery }
+      : cp.travel;
     closeBeatMenu();
     setError(null);
     setLoading(true);
@@ -2168,14 +2053,22 @@ export function Solitaire() {
       // Keep memory clean of the steer scaffolding so later turns don't treat the
       // rejected version as canon.
       beat._userMsg = cp.message;
-      // A travel turn re-lands the player at the destination (and re-reveals the
-      // route); any other turn just re-applies its beat.
-      const next = cp.travel
-        ? applyTravelArrival(base, beat, cp.travel)
-        : applyBeat(base, beat);
-      setState(recordTurn(base, cp.message, next, cp.travel ? { travel: cp.travel } : {}));
-      if (cp.travel?.encounter?.posture === "hostile") setPendingCombat(cp.travel.encounter);
-      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+      // A travel rewrite replays the same deterministic costs and settlement from
+      // the true departure checkpoint, then replaces only the narrator presentation.
+      let next;
+      if (replayTravel) {
+        const settled = replayTravelSettlement(base, replayTravel);
+        const haltBeat = travelHaltBeat(replayTravel, `travel-halt-rewrite-${Date.now()}`);
+        const halted = haltBeat
+          ? { ...settled, beats: [...settled.beats, haltBeat] }
+          : settled;
+        next = applyTravelNarrationPresentation(halted, beat);
+      } else {
+        next = applyBeat(base, beat);
+      }
+      setState(recordTurn(base, cp.message, next, replayTravel ? { travel: replayTravel } : {}));
+      if (replayTravel?.encounter?.posture === "hostile") setPendingCombat(replayTravel.encounter);
+      if (!replayTravel?.encounter && beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -2306,6 +2199,7 @@ export function Solitaire() {
 
   function handleFightPending() {
     if (!pendingCombat) return;
+    if (loading) cancelTravelLifecycle({ preserveEncounter: true });
     const region = regionHere(state);
     const enemies = generateEnemyGroup(pendingCombat.kind, { power: region.power, maxTier: region.enemyTier });
     // A carried flame in the dark gives you away — the foe gets the jump on you.
@@ -2317,6 +2211,7 @@ export function Solitaire() {
   // hidden in the dark (no flame). Logs the moment; never starts the fight.
   function handleSlipAway() {
     if (!pendingCombat) return;
+    if (loading) cancelTravelLifecycle({ preserveEncounter: true });
     setPendingCombat(null);
     if (isHidden(state)) {
       setState((s) => ({ ...s, beats: [...s.beats, { id: `slip${Date.now()}`, type: "narration", content: "Unseen in the dark, you hold still and let the danger pass — then melt away the other direction." }] }));
@@ -2325,7 +2220,7 @@ export function Solitaire() {
 
   // Begin combat the player has agreed to via the engage prompt.
   function handleEngage() {
-    if (!pendingEngage || combat) return;
+    if (loading || !pendingEngage || combat) return;
     const dir = pendingEngage.dir;
     setPendingEngage(null);
     startCombatFromDirective(dir, state);
@@ -2658,14 +2553,14 @@ export function Solitaire() {
                 {pendingEngage.dir?.note || "Blades are about to be drawn."}
               </div>
             </div>
-            <button onClick={handleEngage} style={{
+            <button onClick={handleEngage} disabled={loading} style={{
               padding: "9px 16px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
-              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+              border: "none", fontSize: "13px", fontWeight: 800, cursor: loading ? "wait" : "pointer", fontFamily: "inherit", flexShrink: 0, opacity: loading ? 0.55 : 1,
             }}>{pendingEngage.dir?.initiator === "enemy" ? "Defend" : "Engage"}</button>
             {pendingEngage.dir?.initiator !== "enemy" && (
-              <button onClick={() => setPendingEngage(null)} style={{
+              <button onClick={() => setPendingEngage(null)} disabled={loading} style={{
                 padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
-                border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+                border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: loading ? "wait" : "pointer", fontFamily: "inherit", flexShrink: 0, opacity: loading ? 0.55 : 1,
               }}>Hold</button>
             )}
           </div>

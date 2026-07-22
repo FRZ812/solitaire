@@ -31,10 +31,11 @@ describe("mobile map navigation markup", () => {
     expect(html).not.toContain("Whitemarch —");
     expect(html).toContain('class="rpg-map-corner-controls"');
     expect(html).toContain('class="rpg-map-camera-controls"');
-    expect(html).toContain('data-travel-map-zoom="1.00"');
-    expect(html).toContain('aria-label="Zoom travel map in"');
-    expect(html).toContain('aria-label="Zoom travel map out"');
+    expect(html).not.toContain('data-travel-map-zoom=');
+    expect(html).not.toContain('aria-label="Zoom travel map in"');
+    expect(html).not.toContain('aria-label="Zoom travel map out"');
     expect(html).toContain('aria-label="Return map camera to party"');
+    expect(html).not.toContain("Center map on tracked lead");
     expect(html).toContain('aria-label="Open map legend"');
     expect(html).not.toContain('class="rpg-city-district-chip"');
     expect(html).not.toContain('class="rpg-poi-tier-legend"');
@@ -133,6 +134,65 @@ describe("mobile map navigation markup", () => {
 
     expect(nameForDestination(destination, origin)).toBe("The Missing Courier");
     expect(nameForDestination({ ...destination, quest: null }, origin)).toBe("Uncharted destination");
+  });
+
+  it("does not derive a mapped hidden destination name from raw POI metadata", () => {
+    const origin = { x: 0, y: 0 };
+    const destination = {
+      x: 2,
+      y: 0,
+      seen: true,
+      visited: false,
+      tile: {
+        terrain: "forest",
+        poi: { type: "hidden", name: "Secret Shrine", description: "SECRET", districtName: "Hidden Ward", marketTier: "royal" },
+      },
+    };
+    expect(nameForDestination(destination, origin)).toBe("East Forest");
+  });
+
+  it("hides mapped hidden destination details and tier metadata", () => {
+    const state = makeInitialState();
+    const origin = state.world.currentTile;
+    const selection = {
+      x: origin.x + 1,
+      y: origin.y,
+      seen: true,
+      visited: true,
+      tile: {
+        terrain: "forest",
+        poi: { type: "hidden", name: "Secret Shrine", description: "SECRET DESCRIPTION", districtName: "Hidden Ward", marketTier: "royal" },
+      },
+    };
+    const html = renderToStaticMarkup(
+      <DestinationPanel
+        state={state}
+        model={{ origin, current: { tile: {} } }}
+        selection={selection}
+        selectedName={nameForDestination(selection, origin)}
+        journey={null}
+        canGroundTravel
+        routeMinutes={10}
+        risk={0}
+        focusBiome={{ name: "Whitemarch" }}
+        focusVisual={{ image: "safe.webp", accent: "#fff", mood: "Known map view" }}
+        onClear={vi.fn()}
+        onTravel={vi.fn()}
+        canFly={false}
+        teleOption={null}
+        onFly={vi.fn()}
+        onTeleport={vi.fn()}
+        flightMount={null}
+        flyPlan={{ totalCost: 0 }}
+        resolve={10}
+        loading={false}
+      />,
+    );
+    expect(html).toContain("East Forest");
+    expect(html).not.toContain("Secret Shrine");
+    expect(html).not.toContain("SECRET DESCRIPTION");
+    expect(html).not.toContain("Hidden Ward");
+    expect(html).not.toContain("Shop tier");
   });
 
   it("does not render hidden endpoint or route metrics in the destination panel", () => {

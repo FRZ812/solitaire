@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { HANDCRAFTED } from "../data/handcrafted-map.js";
 import { makeInitialState } from "../data/initial-state.js";
-import { CompactHeader } from "./CompactHeader.jsx";
+import { CompactHeader, compactLocation } from "./CompactHeader.jsx";
 
 describe("CompactHeader", () => {
   it("renders world time as an accessible analog clock", () => {
@@ -41,5 +41,25 @@ describe("CompactHeader", () => {
     expect(html).toContain('compact-header__title-text">The Iron Palace</span>');
     expect(html).not.toContain("Whitemarch — The Citadel Ward");
     expect(html).toMatch(/compact-header__place[\s\S]*Settlement[\s\S]*The Citadel Ward[\s\S]*Whitemarch/);
+  });
+
+  it("does not expose a hidden POI name at the current tile", () => {
+    expect(compactLocation({
+      terrain: "forest",
+      poi: {
+        type: "hidden",
+        name: "The Glass Cairn",
+        partName: "Inner Vault",
+        districtName: "Secret Precinct",
+      },
+    })).toEqual({ district: null, title: "Forest" });
+  });
+
+  it("still presents discovered public places", () => {
+    expect(compactLocation({
+      terrain: "settlement",
+      districtName: "Lantern Ward",
+      poi: { type: "tavern", name: "The Copper Cup" },
+    })).toMatchObject({ district: "Lantern Ward", title: "The Copper Cup" });
   });
 });

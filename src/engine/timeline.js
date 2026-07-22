@@ -17,25 +17,19 @@ function poolPush(pool, obj) {
   return { pool: [...pool, obj], idx: pool.length };
 }
 
-// Record a finished narrator turn. base = the state the beat was applied to,
-// message = the prompt that produced it, next = the result. extra.travel carries
-// the journey context (route, destination, encounter) so a rewritten travel turn
-// can re-land the player. Returns next with a checkpoint appended (or next
-// unchanged if the turn produced no rewritable text).
-export function recordTurn(base, message, next, extra = {}) {
-  const startLen = base.beats.length;
-  const turnBeats = next.beats.slice(startLen);
-  const textBeats = turnBeats.filter((b) => b.type === "narration" || b.type === "dialogue");
-  if (textBeats.length === 0) return next;
-  const prevText = textBeats
-    .map((b) => (b.type === "dialogue" ? `${b.name}: "${b.line}"` : b.content))
+function turnResponseText(beats) {
+  return beats
+    .filter((beat) => beat.type === "narration" || beat.type === "dialogue")
+    .map((beat) => (beat.type === "dialogue" ? `${beat.name}: "${beat.line}"` : beat.content))
     .join("\n\n");
+}
+
+// Persist a turn checkpoint even when narrator presentation has not arrived yet.
+// Travel uses this in the same state object that exposes canonical arrival, making
+// autosave, rejection, and post-arrival cancellation rewind-safe.
+export function startTurnCheckpoint(base, message, next, extra = {}) {
+  const startLen = base.beats.length;
   const p0 = next.pools || emptyPools();
-  // Heavy parts (codex/seen/tiles) are pooled by index; everything else light on
-  // world (currentTile, quests, lootedCaches, …) is snapshot inline by reference,
-  // so a rewind restores the whole world rather than silently dropping fields no
-  // one remembered to copy. These light fields are replaced wholesale (never
-  // mutated), so holding the pre-turn reference freezes them correctly.
   const { codex, seen, tiles, ...restWorld } = base.world;
   const c = poolPush(p0.codex, codex);
   const s = poolPush(p0.seen, seen);
@@ -46,7 +40,7 @@ export function recordTurn(base, message, next, extra = {}) {
     endLen: next.beats.length,
     historyLen: base.apiHistory.length,
     message,
-    prevText,
+    prevText: turnResponseText(next.beats.slice(startLen)),
     char: base.character,
     party: base.party,
     memories: base.memories,
@@ -55,6 +49,33 @@ export function recordTurn(base, message, next, extra = {}) {
   };
   if (extra.travel) checkpoint.travel = extra.travel;
   return { ...next, pools, turns: [...(next.turns || []), checkpoint] };
+}
+
+// Extend an already-persisted checkpoint after late narrator prose/history lands.
+// No new turn is appended; the atomic arrival checkpoint remains the authority.
+export function finalizeTurnCheckpoint(state, turnIndex) {
+  const turns = state.turns || [];
+  const checkpoint = turns[turnIndex];
+  if (!checkpoint) return state;
+  const updated = {
+    ...checkpoint,
+    endLen: state.beats.length,
+    prevText: turnResponseText(state.beats.slice(checkpoint.beatsLen)),
+  };
+  const nextTurns = [...turns];
+  nextTurns[turnIndex] = updated;
+  return { ...state, turns: nextTurns };
+}
+
+// Record a finished narrator turn. base = the state the beat was applied to,
+// message = the prompt that produced it, next = the result. extra.travel carries
+// the journey context (route, destination, encounter) so a rewritten travel turn
+// can re-land the player. Returns next with a checkpoint appended (or next
+// unchanged if the turn produced no rewritable text).
+export function recordTurn(base, message, next, extra = {}) {
+  const turnBeats = next.beats.slice(base.beats.length);
+  if (!turnResponseText(turnBeats)) return next;
+  return startTurnCheckpoint(base, message, next, extra);
 }
 
 // The checkpoint index whose beats span the log position `beatIndex`, or -1 if

@@ -11,8 +11,8 @@ function comparablePlaceName(value) {
   return String(value || "").toLowerCase().replace(/^the\s+/, "").trim();
 }
 
-function compactLocation(tile) {
-  const poi = tile?.poi;
+export function compactLocation(tile) {
+  const poi = tile?.poi?.type === "hidden" ? null : tile?.poi;
   const district = tile?.districtName || tile?.district || poi?.districtName || poi?.district || null;
   const footprint = poiFootprintName(poi);
   const localName = poiPlaceName(poi);

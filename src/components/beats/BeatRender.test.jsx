@@ -13,4 +13,22 @@ describe("BeatRender", () => {
     expect(html).not.toContain("beat-menu");
     expect(html).not.toContain("<button");
   });
+
+  it("renders an explicit travel-halted card for a route encounter", () => {
+    const html = renderToStaticMarkup(
+      <BeatRender beat={{
+        type: "travel_halt",
+        location: "Briar Ford",
+        encounterKind: "bandits",
+        posture: "hostile",
+        description: "Crossbows rise from the hedges.",
+      }} />,
+    );
+
+    expect(html).toContain("Travel halted");
+    expect(html).toContain("Briar Ford");
+    expect(html).toContain("bandits · hostile");
+    expect(html).toContain("Crossbows rise from the hedges.");
+    expect(html).toContain("beat-system--danger");
+  });
 });
