@@ -21,6 +21,7 @@ import { formatDate, formatTime } from "../../engine/time.js";
 import { realmIdAt } from "../../engine/world-generation.js";
 import { coinsToCopper, formatCopper } from "../../engine/economy.js";
 import { poiPartName, poiPlaceName } from "../../engine/location.js";
+import { publicLocationPresentation } from "../../engine/travel-settlement.js";
 import { MARKET_PRICE_TIERS } from "../../data/town.js";
 import { POI_LEGEND_GROUPS } from "../../data/poi-icons.js";
 import { PoiIcon, PoiTierMarker } from "../PoiIcon.jsx";
@@ -44,6 +45,7 @@ import {
   presentedMarchDestination,
   startTravelMapMarch,
   travelMapMarchFrame,
+  travelMapRenderDimensions,
   travelMapViewportDimensions,
   travelMapZoomStep,
 } from "./travelMapModel.js";
@@ -173,11 +175,7 @@ const MAP_GUIDE_ITEMS = Object.freeze([
 ]);
 
 function cityDistrict(tile) {
-  return tile?.districtName
-    || tile?.district
-    || tile?.poi?.districtName
-    || tile?.poi?.parentName
-    || null;
+  return publicLocationPresentation(tile).district;
 }
 
 function capitalName(tile) {
@@ -186,17 +184,15 @@ function capitalName(tile) {
 }
 
 function headerLocationName(tile) {
-  return poiPartName(tile?.poi)
-    || tile?.poi?.name
-    || poiPlaceName(tile?.poi)
-    || TERRAINS[tile?.terrain]?.label
-    || "Wilderness";
+  if (tile?.poi?.type === "hidden") return publicLocationPresentation(tile).title;
+  return poiPartName(tile?.poi) || publicLocationPresentation(tile).title;
 }
 
 export function nameForDestination(destination, origin) {
   const mapped = !!(destination?.seen || destination?.visited);
   if (!mapped) return destination?.quest?.title || "Uncharted destination";
-  const named = destination?.name || poiPlaceName(destination?.tile?.poi);
+  const presentation = publicLocationPresentation(destination?.tile, destination);
+  const named = presentation.hidden ? null : destination?.name || poiPlaceName(destination?.tile?.poi);
   if (named) return named;
   if (destination?.quest) return destination.quest.title;
   const terrain = TERRAINS[destination?.tile?.terrain]?.label || "Trail";
@@ -363,7 +359,7 @@ export function MapLegend({ onClose, initialSection = "guide" }) {
   );
 }
 
-function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, camera, onPan, onZoom, onViewportChange, onRecenter, onRecenterTracked, onPick, onSeekCombat, loading, interactionLocked = false, night, city }) {
+function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, onPan, onZoom, onViewportChange, onRecenter, onPick, onSeekCombat, loading, interactionLocked = false, night, city }) {
   const [legendOpen, setLegendOpen] = useState(false);
   const mapScene = useMemo(
     () => buildWorldMapScene({ model, selection, journey, marchFrame, trackedCharacter, night }),
@@ -396,22 +392,8 @@ function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, ca
         />
         {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 
-        <div className="rpg-map-camera-controls" data-travel-map-zoom={camera.zoom.toFixed(2)} aria-label="Travel map camera controls">
-          <button type="button" onClick={() => onZoom(1.19)} aria-label="Zoom travel map in" title="Zoom in">+</button>
-          <span>{Math.round(camera.zoom * 100)}%</span>
-          <button type="button" onClick={() => onZoom(0.84)} aria-label="Zoom travel map out" title="Zoom out">−</button>
+        <div className="rpg-map-camera-controls" aria-label="Travel map camera controls">
           <button type="button" onClick={onRecenter} aria-label="Return map camera to party" title="Return to party"><Icon name="compass" size={16} /></button>
-          {trackedCharacter && (
-            <button
-              type="button"
-              className="is-tracked-lead"
-              onClick={onRecenterTracked}
-              aria-label={`Center map on tracked lead for ${trackedCharacter.name}`}
-              title={`Track ${trackedCharacter.name}`}
-            >
-              <span aria-hidden="true">⌖</span>
-            </button>
-          )}
         </div>
 
         <button
@@ -460,13 +442,14 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
     [journey, state],
   );
   const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
+  const publicDestination = publicLocationPresentation(selection?.tile, selection);
   const description = destinationMapped
-    ? selection?.tile?.poi?.description || (selection ? TERRAINS[selection.tile?.terrain]?.flavor : null)
+    ? publicDestination.description
     : selection ? "The objective is known, but the ground around it remains uncharted." : null;
   const rewardTitle = selection?.quest ? "Quest reward" : selection?.visited ? "Known waypoint" : "Discovery ahead";
   const rewardValue = selection?.quest ? formatCopper(selection.quest.rewardCp || 0) : selection?.visited ? "Route recorded" : "New map entry";
-  const focusDistrict = destinationMapped ? cityDistrict(selection?.tile) : null;
-  const focusMarketTier = destinationMapped ? selection?.tile?.poi?.marketTier || null : null;
+  const focusDistrict = destinationMapped ? publicDestination.district : null;
+  const focusMarketTier = destinationMapped ? publicDestination.marketTier : null;
   const urbanRoute = destinationMapped && !!selection?.tile?.cityId && selection.tile.cityId === model.current.tile?.cityId;
   return (
     <section className={`rpg-command-panel ${selection ? "has-selection" : "is-awaiting-destination"}`}>
@@ -669,9 +652,13 @@ export function WorldExploration({
     () => travelMapViewportDimensions(mapViewport, camera.zoom),
     [mapViewport, camera.zoom],
   );
+  const renderDimensions = useMemo(
+    () => travelMapRenderDimensions(mapDimensions),
+    [mapDimensions.columns, mapDimensions.rows],
+  );
   const model = useMemo(
-    () => buildExplorationModel(state, { center: camera, dimensions: mapDimensions }),
-    [state, camera.x, camera.y, mapDimensions.columns, mapDimensions.rows],
+    () => buildExplorationModel(state, { center: camera, dimensions: mapDimensions, renderDimensions }),
+    [state, camera.x, camera.y, mapDimensions.columns, mapDimensions.rows, renderDimensions.columns, renderDimensions.rows],
   );
   const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
   const journey = useMemo(
@@ -831,15 +818,6 @@ export function WorldExploration({
     setCamera((current) => ({ ...current, x: partyCoord.x, y: partyCoord.y }));
   }
 
-  function handleTrackedRecenter() {
-    if (!trackedCharacter) return;
-    setCamera((current) => ({
-      ...current,
-      x: trackedCharacter.pos.x,
-      y: trackedCharacter.pos.y,
-      zoom: Math.max(current.zoom, 1),
-    }));
-  }
 
   function pick(destination) {
     if (travelLocked) return;
@@ -880,12 +858,11 @@ export function WorldExploration({
           journey={presentedJourney}
           marchFrame={marchFrame}
           trackedCharacter={trackedCharacter}
-          camera={camera}
           onPan={handleMapPan}
           onZoom={handleMapZoom}
           onViewportChange={handleMapViewportChange}
           onRecenter={handleMapRecenter}
-          onRecenterTracked={handleTrackedRecenter}
+
           onPick={pick}
           onSeekCombat={onSeekCombat}
           loading={loading}

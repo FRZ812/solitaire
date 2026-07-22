@@ -4,10 +4,12 @@ import { applyBeat } from "./beat.js";
 import {
   deleteBeat,
   editBeat,
+  finalizeTurnCheckpoint,
   narratorMessageForPendingPlayers,
   pendingPlayerBeats,
   recordTurn,
   rewindToPlayerBeat,
+  startTurnCheckpoint,
   turnStartedAt,
 } from "./timeline.js";
 
@@ -29,6 +31,41 @@ function completedTurn(playerLines = ["Wait here."]) {
 }
 
 describe("queued player messages and rewind", () => {
+  it("persists a rewindable checkpoint before narrator presentation exists", () => {
+    const initial = { ...makeInitialState(), created: true };
+    const playerBeat = { id: "p-travel", type: "player", content: "Travel east." };
+    const base = { ...initial, beats: [...initial.beats, playerBeat] };
+    const arrived = {
+      ...base,
+      time: { ...base.time, hour: base.time.hour + 2 },
+      world: { ...base.world, currentTile: { x: base.world.currentTile.x + 1, y: base.world.currentTile.y } },
+      beats: [...base.beats, { id: "travel-card", type: "travel", from: "West", to: "East" }],
+    };
+
+    const checkpointed = startTurnCheckpoint(base, "travel prompt", arrived, { travel: { dest: arrived.world.currentTile } });
+    expect(checkpointed.turns).toHaveLength(1);
+    const rewound = rewindToPlayerBeat(checkpointed, checkpointed.beats.findIndex((beat) => beat.id === playerBeat.id));
+    expect(rewound.time).toEqual(base.time);
+    expect(rewound.world.currentTile).toEqual(base.world.currentTile);
+    expect(rewound.beats.at(-1)).toEqual(playerBeat);
+  });
+
+  it("finalizes the atomic checkpoint without appending a duplicate turn", () => {
+    const { base } = completedTurn();
+    const arrived = startTurnCheckpoint(base, "travel prompt", {
+      ...base,
+      beats: [...base.beats, { id: "travel-card", type: "travel", from: "West", to: "East" }],
+    });
+    const narrated = {
+      ...arrived,
+      beats: [...arrived.beats, { id: "n-late", type: "narration", content: "The road ends." }],
+    };
+    const finalized = finalizeTurnCheckpoint(narrated, 0);
+    expect(finalized.turns).toHaveLength(1);
+    expect(finalized.turns[0].prevText).toContain("The road ends.");
+    expect(finalized.turns[0].endLen).toBe(finalized.beats.length);
+  });
+
   it("treats every queued player bubble as input to the completed turn", () => {
     const { recorded, playerBeats } = completedTurn(["Wait here.", "And bar the door."]);
     const indices = playerBeats.map((beat) => recorded.beats.findIndex((item) => item.id === beat.id));

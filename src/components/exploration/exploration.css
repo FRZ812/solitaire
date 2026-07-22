@@ -1013,18 +1013,6 @@
 .rpg-map-camera-controls button:hover { color: #fff1ae; border-color: rgba(231,185,94,.38); background: rgba(231,185,94,.12); }
 .rpg-map-camera-controls button:focus-visible,
 .region-selector button:focus-visible { outline: 2px solid #fff3c6; outline-offset: 2px; }
-.rpg-map-camera-controls button:nth-of-type(2) { font-size: 15px; }
-.rpg-map-camera-controls .is-tracked-lead { color: #e5aaff; border-left-color: rgba(216,139,255,.3); }
-.rpg-map-camera-controls .is-tracked-lead:hover { color: #f4d8ff; border-color: rgba(216,139,255,.48); background: rgba(180,85,226,.16); }
-.rpg-map-camera-controls > span {
-  min-width: 46px;
-  padding-inline: 5px;
-  color: rgba(191,225,224,.76);
-  text-align: center;
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: .08em;
-}
 
 .region-selector-backdrop {
   position: absolute;

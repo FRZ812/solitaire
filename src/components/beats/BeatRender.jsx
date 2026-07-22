@@ -96,6 +96,14 @@ export function BeatRender({ beat, onMenu }) {
     case "travel_card":
       return <SystemCard kicker="Trail marked"><div className="beat-system__prose">{beat.from} <span className="beat-arrow">→</span> {beat.to} <small>· {beat.mins} min</small></div></SystemCard>;
 
+    case "travel_halt":
+      return (
+        <SystemCard tone="danger" kicker="Travel halted" icon="alert">
+          <div className="beat-system__prose"><strong>{beat.location}</strong> <small>{beat.encounterKind} · {beat.posture}</small></div>
+          <div className="beat-system__line">{beat.description}</div>
+        </SystemCard>
+      );
+
     case "discovery":
       return (
         <SystemCard tone="success" kicker="Recorded" icon="sparkle"><ChipList>{beat.items.map((item, index) => <span key={index}><small>{item.kind.replace(/s$/, "")}</small>{item.name}</span>)}</ChipList></SystemCard>

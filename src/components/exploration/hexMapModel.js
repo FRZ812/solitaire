@@ -165,14 +165,21 @@ function traceTrail(state, origin, direction, questKeys) {
 // and remembered landmarks instead of every cell in the axial grid.
 export function buildExplorationModel(state, options = {}) {
   const origin = state.world.currentTile;
+  const center = options.center || origin;
   const currentTile = getTile(state, origin.x, origin.y);
   const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
   const questKeys = new Set(activeQuests.filter((quest) => quest.loc).map((quest) => coordKey(quest.loc)));
   const viewport = buildRpgViewport(state, {
-    center: options.center || origin,
+    center,
     dimensions: options.dimensions,
     activeQuests,
   });
+  const visibleKeys = new Set(viewport.map((cell) => cell.key));
+  const renderViewport = buildRpgViewport(state, {
+    center,
+    dimensions: options.renderDimensions || options.dimensions,
+    activeQuests,
+  }).map((cell) => ({ ...cell, overscan: !visibleKeys.has(cell.key) }));
 
   const rawChoices = [];
   for (const direction of HEX_DIRECTIONS) {
@@ -201,7 +208,7 @@ export function buildExplorationModel(state, options = {}) {
   for (const key of Object.keys(state.world.tiles || {})) keys.add(key);
   for (const key of questKeys) keys.add(key);
   for (const choice of choices) keys.add(choice.key);
-  for (const cell of viewport) keys.add(cell.key);
+  for (const cell of renderViewport) keys.add(cell.key);
   keys.add(coordKey(origin));
 
   const byKey = new Map();
@@ -276,6 +283,7 @@ export function buildExplorationModel(state, options = {}) {
     current: { key: coordKey(origin), ...origin, tile: currentTile, seen: true, visited: true },
     choices,
     viewport,
+    renderViewport,
     landmarks: sortedLandmarks,
     byKey,
   };

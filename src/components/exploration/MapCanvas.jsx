@@ -7,12 +7,15 @@ import {
   buildMapLayout,
   buildRouteSegments,
   findInteractiveEntry,
+  mapFogOpacity,
+  mapPoiIconSize,
   mapMarkerShowsTierDetail,
   mapPartyEntry,
   mapTrackedEntry,
   selectMapMarkerEntries,
 } from "./mapGeometry.js";
 import { dragPreviewOffset, pinchDistance, pinchZoomFactor } from "./mapGestures.js";
+import { rebaseTravelMapDrag } from "./travelMapModel.js";
 
 const MATERIAL_FALLBACKS = {
   plains: "#79a64a", forest: "#214f3d", hills: "#aa793f", mountains: "#7d8082",
@@ -188,7 +191,8 @@ function drawPoiTierMarker(context, x, y, markerRadius, marketTier) {
 }
 
 function drawPoi(context, entry, poiAtlases, mode) {
-  const size = Math.max(8, Math.min(19, entry.size * 0.33));
+  const iconSize = mapPoiIconSize(entry.size, mode);
+  const size = iconSize * 0.44;
   const { x, y } = entry.center;
   const diamond = (offsetX, offsetY, radius, color) => {
     context.beginPath();
@@ -202,10 +206,8 @@ function drawPoi(context, entry, poiAtlases, mode) {
   };
   const icon = poiIconMeta(entry.cell.poi_icon);
   const poiAtlas = icon ? poiAtlases?.[icon.atlas] : null;
-  let markerRadius = size;
+  let markerRadius = iconSize * 0.5;
   if (icon && poiAtlas?.naturalWidth) {
-    const iconSize = Math.max(14, Math.min(48, entry.size * 0.82));
-    markerRadius = iconSize * 0.5;
     context.save();
     context.shadowColor = "rgba(1, 6, 16, .9)";
     context.shadowBlur = Math.max(4, iconSize * 0.16);
@@ -252,18 +254,17 @@ function drawMarkers(context, scene, layout, poiAtlases, width) {
 
 function drawFog(context, scene, entries) {
   if (scene.mode !== "world") return;
-  // Three explicit states: visible terrain is clear, remembered terrain keeps
-  // its map detail beneath a dark fog layer, and unknown geography stays black.
+  // Three explicit states: visible terrain is clear, remembered terrain is
+  // lightly muted, and unknown terrain stays readable beneath a darker veil.
   // Per-cell fog keeps accumulated exploration authoritative as the camera
   // moves instead of re-covering remembered edge cells with a full-screen mask.
   for (const entry of entries) {
-    if (entry.cell.visible) continue;
+    const opacity = mapFogOpacity(entry.cell, scene.night);
+    if (opacity <= 0) continue;
     tracePolygon(context, entry.polygon);
-    if (entry.cell.explored) {
-      context.fillStyle = scene.night ? "rgba(2, 7, 28, .68)" : "rgba(3, 13, 25, .54)";
-    } else {
-      context.fillStyle = scene.night ? "rgba(2, 7, 28, .98)" : "rgba(3, 13, 25, .94)";
-    }
+    context.fillStyle = scene.night
+      ? `rgba(2, 7, 28, ${opacity})`
+      : `rgba(3, 13, 25, ${opacity})`;
     context.fill();
   }
 }
@@ -542,7 +543,15 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, onViewportChange, la
     }
     drag.last = point;
     if (Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6) drag.moved = true;
-    if (drag.moved) setDragPreview(dragPreviewOffset(drag.start, point));
+    if (drag.moved) {
+      const preview = dragPreviewOffset(drag.start, point);
+      const { commit, residual } = rebaseTravelMapDrag(preview, layoutRef.current.worldRadius);
+      if (commit.x !== 0 || commit.y !== 0) {
+        drag.start = { x: point.x - residual.x, y: point.y - residual.y };
+        onPan?.(commit, layoutRef.current.worldRadius);
+      }
+      setDragPreview(residual);
+    }
   }
 
   function finishPan(event) {
@@ -564,7 +573,8 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, onViewportChange, la
     const point = eventPoint(event, event.currentTarget);
     const moved = drag.moved || Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6;
     if (moved) {
-      onPan?.(dragPreviewOffset(drag.start, point), layoutRef.current.worldRadius);
+      const { commit } = rebaseTravelMapDrag(dragPreviewOffset(drag.start, point), layoutRef.current.worldRadius);
+      if (commit.x !== 0 || commit.y !== 0) onPan?.(commit, layoutRef.current.worldRadius);
       suppressClickUntilRef.current = Date.now() + 350;
     }
     dragRef.current = null;

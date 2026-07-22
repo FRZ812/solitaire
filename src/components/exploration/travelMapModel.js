@@ -11,6 +11,7 @@ const odd = (value, minimum, maximum) => {
 
 export const TRAVEL_MAP_MIN_ZOOM = 0.6;
 export const TRAVEL_MAP_MAX_ZOOM = 1.8;
+export const TRAVEL_MAP_OVERSCAN_CELLS = 3;
 export const REGION_SELECTOR_ZOOM_THRESHOLD = TRAVEL_MAP_MIN_ZOOM;
 
 // Cell count, not a render transform, drives map scale. Rows establish the zoom
@@ -27,6 +28,15 @@ export function travelMapViewportDimensions(viewport = {}, zoom = 1) {
   return {
     columns: odd(columnsForAspect, 7, 45),
     rows,
+  };
+}
+
+export function travelMapRenderDimensions(visibleDimensions = {}) {
+  const columns = Math.max(3, Math.round(Number(visibleDimensions.columns) || 3));
+  const rows = Math.max(3, Math.round(Number(visibleDimensions.rows) || 3));
+  return {
+    columns: columns + TRAVEL_MAP_OVERSCAN_CELLS * 2,
+    rows: rows + TRAVEL_MAP_OVERSCAN_CELLS * 2,
   };
 }
 
@@ -147,15 +157,38 @@ function axialRound(q, r) {
   return { x: rx, y: rz };
 }
 
-export function panTravelMapCamera(camera, drag, worldRadius) {
+function travelMapDragDelta(drag, worldRadius) {
   const radius = Math.max(0.0001, Number(worldRadius) || 1);
   const dr = -(Number(drag?.y) || 0) / (1.5 * radius);
   const dq = -(Number(drag?.x) || 0) / (Math.sqrt(3) * radius) - dr * 0.5;
-  const delta = axialRound(dq, dr);
+  return { radius, delta: axialRound(dq, dr) };
+}
+
+export function panTravelMapCamera(camera, drag, worldRadius) {
+  const { delta } = travelMapDragDelta(drag, worldRadius);
   return {
     ...camera,
     x: (Number(camera?.x) || 0) + delta.x,
     y: (Number(camera?.y) || 0) + delta.y,
+  };
+}
+
+export function rebaseTravelMapDrag(drag, worldRadius) {
+  const { radius, delta } = travelMapDragDelta(drag, worldRadius);
+  const source = {
+    x: Number(drag?.x) || 0,
+    y: Number(drag?.y) || 0,
+  };
+  const commit = {
+    x: -Math.sqrt(3) * radius * (delta.x + delta.y * 0.5) || 0,
+    y: -1.5 * radius * delta.y || 0,
+  };
+  return {
+    commit,
+    residual: {
+      x: source.x - commit.x || 0,
+      y: source.y - commit.y || 0,
+    },
   };
 }
 

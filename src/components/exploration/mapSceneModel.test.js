@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildWorldMapScene } from "./mapSceneModel.js";
 
 describe("browser exploration scene contract", () => {
-  it("does not disclose the real terrain of an unseen world cell", () => {
+  it("shows base terrain from the start without disclosing an unknown POI", () => {
     const model = {
       origin: { x: 0, y: 0 },
       current: { key: "0,0" },
@@ -13,7 +13,50 @@ describe("browser exploration scene contract", () => {
     };
     const scene = buildWorldMapScene({ model, selection: null, journey: null });
     expect(scene.cells[0]).toMatchObject({ explored: true, visible: true, visibility: "visible" });
-    expect(scene.cells[1]).toMatchObject({ terrain: "impassable", explored: false, seen: false, visible: false, visibility: "unknown", interactive: false, poi_name: "", poi_icon: "", poi_market_tier: "" });
+    expect(scene.cells[1]).toMatchObject({ terrain: "water", explored: false, seen: false, visible: false, visibility: "unknown", interactive: false, poi_name: "", poi_icon: "", poi_market_tier: "" });
+  });
+
+  it("serializes render-only overscan without expanding the decision viewport", () => {
+    const visible = { key: "0,0", x: 0, y: 0, col: 3, row: 3, seen: true, visible: true, visited: true, passable: true, current: true, tile: { terrain: "road" } };
+    const overscan = { key: "-3,-3", x: -2, y: -3, col: 0, row: 0, seen: false, visible: false, visited: false, passable: true, current: false, overscan: true, tile: { terrain: "forest" } };
+    const model = {
+      origin: { x: 0, y: 0 },
+      current: { key: "0,0" },
+      viewport: [visible],
+      renderViewport: [visible, overscan],
+    };
+
+    const scene = buildWorldMapScene({ model, selection: null, journey: null });
+
+    expect(model.viewport).toHaveLength(1);
+    expect(scene.cells).toHaveLength(2);
+    expect(scene.cells[1]).toMatchObject({ key: "-3,-3", terrain: "forest", overscan: true, poi_name: "" });
+  });
+
+  it("renders mapped overscan POIs without making render-only cells selectable", () => {
+    const visible = { key: "0,0", x: 0, y: 0, col: 3, row: 3, seen: true, visible: true, visited: true, passable: true, current: true, tile: { terrain: "road" } };
+    const overscan = {
+      key: "-3,-3", x: -2, y: -3, col: 0, row: 0,
+      seen: true, visible: false, visited: true, passable: true, current: false, overscan: true,
+      tile: { terrain: "forest", poi: { name: "Old Watchtower", type: "watchtower" } },
+    };
+    const scene = buildWorldMapScene({
+      model: {
+        origin: { x: 0, y: 0 },
+        current: { key: "0,0" },
+        viewport: [visible],
+        renderViewport: [visible, overscan],
+      },
+      selection: null,
+      journey: null,
+    });
+
+    expect(scene.cells[1]).toMatchObject({
+      key: "-3,-3",
+      overscan: true,
+      poi_name: "Old Watchtower",
+      interactive: false,
+    });
   });
 
   it("serializes explicit service and wilderness marker identities for Canvas rendering", () => {

@@ -35,11 +35,13 @@ export function applyWorldMovement({ state, beat, options, codex, character, new
     const tiles = { ...world.tiles };
     let finalTile = { ...arrivedTile };
     if (beat.tile_discovery && (finalTile.poi?.type === "hidden" || !finalTile.poi)) {
-      const generated = finalTile.poi?.generated;
+      const hiddenPoi = finalTile.poi?.type === "hidden" ? finalTile.poi : null;
+      const generated = hiddenPoi?.generated;
       finalTile = { ...finalTile, poi: {
+        ...(hiddenPoi || {}),
         type: generated?.poiType || beat.tile_discovery.poi_type || "landmark",
-        name: generated?.name || beat.tile_discovery.name || finalTile.poi?.name || null,
-        description: generated?.description || beat.tile_discovery.description || null,
+        name: generated?.name || beat.tile_discovery.name || hiddenPoi?.name || null,
+        description: generated?.description || beat.tile_discovery.description || hiddenPoi?.description || null,
         ...(generated?.id ? { siteId: generated.id, generated: true } : {}),
       } };
     }

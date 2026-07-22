@@ -11,9 +11,11 @@ import {
   knownJourneyWaypoints,
   panTravelMapCamera,
   presentedMarchDestination,
+  rebaseTravelMapDrag,
   startTravelMapMarch,
   travelMapMarchDuration,
   travelMapMarchFrame,
+  travelMapRenderDimensions,
   travelMapViewportDimensions,
   travelMapZoomStep,
 } from "./travelMapModel.js";
@@ -47,6 +49,12 @@ describe("unified hex travel map camera", () => {
     expect(zoomedOut).toEqual({ columns: 25, rows: 25 });
   });
 
+  it("adds three render-only overscan cells per edge without changing visible dimensions", () => {
+    const visible = { columns: 15, rows: 15 };
+    expect(travelMapRenderDimensions(visible)).toEqual({ columns: 21, rows: 21 });
+    expect(visible).toEqual({ columns: 15, rows: 15 });
+  });
+
   it("clamps normal zoom and requests the region selector only beyond the far limit", () => {
     expect(clampTravelMapZoom(99)).toBe(TRAVEL_MAP_MAX_ZOOM);
     expect(clampTravelMapZoom(0)).toBe(TRAVEL_MAP_MIN_ZOOM);
@@ -65,6 +73,22 @@ describe("unified hex travel map camera", () => {
       .toMatchObject({ x: 1, y: 0, zoom: 1 });
     expect(panTravelMapCamera({ x: 0, y: 0, zoom: 1 }, { x: -Math.sqrt(3) * 0.5 * radius, y: -1.5 * radius }, radius))
       .toMatchObject({ x: 0, y: 1, zoom: 1 });
+  });
+
+  it("rebases a held drag into camera commits while retaining only sub-hex preview", () => {
+    const radius = 20;
+    const horizontal = rebaseTravelMapDrag({ x: -40, y: 0 }, radius);
+    expect(horizontal.commit).toEqual({ x: -Math.sqrt(3) * radius, y: 0 });
+    expect(horizontal.residual.x).toBeCloseTo(-40 + Math.sqrt(3) * radius, 10);
+    expect(horizontal.residual.y).toBe(0);
+    expect(panTravelMapCamera({ x: 0, y: 0 }, horizontal.commit, radius)).toMatchObject({ x: 1, y: 0 });
+    expect(panTravelMapCamera({ x: 0, y: 0 }, horizontal.residual, radius)).toMatchObject({ x: 0, y: 0 });
+
+    const diagonalDrag = { x: -Math.sqrt(3) * radius * 0.5, y: -1.5 * radius };
+    expect(rebaseTravelMapDrag(diagonalDrag, radius)).toEqual({
+      commit: diagonalDrag,
+      residual: { x: 0, y: 0 },
+    });
   });
 });
 

@@ -76,8 +76,12 @@ describe("unified capital in the exploration map", () => {
     const model = buildExplorationModel(state, {
       center: { x: 4, y: -2 },
       dimensions: { columns: 19, rows: 15 },
+      renderDimensions: { columns: 25, rows: 21 },
     });
     expect(model.viewport).toHaveLength(19 * 15);
+    expect(model.renderViewport).toHaveLength(25 * 21);
+    expect(model.renderViewport.filter((cell) => !cell.overscan)).toHaveLength(19 * 15);
+    expect(model.renderViewport.find((cell) => cell.x === 4 && cell.y === -2)?.overscan).toBe(false);
     expect(model.viewport.some((cell) => cell.x === 4 && cell.y === -2)).toBe(true);
     expect(model.origin).toEqual(state.world.currentTile);
   });
