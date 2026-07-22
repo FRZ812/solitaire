@@ -15,6 +15,19 @@ export const SPAWN_TABLES = {
       { kind: "street-thief", weight: 4, posture: "hostile", desc: "a street thief testing the crowd for an unwatched purse" },
     ],
   },
+  reedfield: {
+    chance: 0.035,
+    entries: [
+      { kind: "reed-farmers",     weight: 22, posture: "friendly", desc: "reed farmers moving between irrigation banks with hooked knives and woven baskets" },
+      { kind: "lotus-warden",     weight: 16, posture: "neutral",  desc: "a lacquered warden watching the raised paths and water gates" },
+      { kind: "river-peddler",    weight: 14, posture: "friendly", desc: "a river peddler poling a shallow cart-boat through a field channel" },
+      { kind: "field-bandits",    weight: 12, posture: "hostile",  desc: "bandits lying flat beneath the reeds beside the path" },
+      { kind: "red-crowned-cranes", weight: 12, posture: "neutral", desc: "a pair of red-crowned cranes lifting slowly from the bright grass" },
+      { kind: "shrine-pilgrim",   weight: 10, posture: "friendly", desc: "a shrine pilgrim carrying paper charms beneath a broad reed hat" },
+      { kind: "reed-wolf",        weight: 8,  posture: "hostile",  desc: "a lean pale wolf shouldering silently through the tall reeds" },
+      { kind: "water-gate-spirit", weight: 6, posture: "neutral", desc: "a small masked spirit sitting atop an old irrigation gate" },
+    ],
+  },
   marsh: {
     chance: 0.05,
     entries: [

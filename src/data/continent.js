@@ -7,13 +7,17 @@
 
 import { WHITEMARCH_CAPITAL } from "./whitemarch-capital.js";
 
-export const WORLD_GENERATOR_VERSION = 2;
+export const WORLD_GENERATOR_VERSION = 3;
 export const DEFAULT_WORLD_SEED = "avarra-first-light";
+export const WORLD_GEOGRAPHY_VERSION = 2;
+export const WORLD_GEOGRAPHY_SEED = DEFAULT_WORLD_SEED;
 
 export const CONTINENT = {
   id: "avarra",
   name: "Avarra",
   seed: DEFAULT_WORLD_SEED,
+  geographySeed: WORLD_GEOGRAPHY_SEED,
+  geographyVersion: WORLD_GEOGRAPHY_VERSION,
   generatorVersion: WORLD_GENERATOR_VERSION,
   contentVersion: 4,
   hexKilometers: 6,
@@ -80,6 +84,9 @@ export const REALMS = Object.freeze([
     id: "north", direction: "north", name: "The Frostcrown",
     shortName: "Frostcrown", biomeId: "snow", biomeName: "Snowbound Wastes",
     center: Object.freeze({ x: 8, y: -332 }), influence: Object.freeze({ scaleX: 240, scaleY: 175 }),
+    influenceSites: Object.freeze([
+      Object.freeze({ x: -105, y: -135, scaleX: 115, scaleY: 95 }),
+    ]),
     capital: Object.freeze({ id: "northstar-castle", name: "Northstar", coord: Object.freeze({ x: 8, y: -332 }) }),
     faction: Object.freeze({ id: "vyrgun-drakekin", name: "The Vyrgun Crown" }),
     ruler: Object.freeze({ name: "High Queen Ysra Vyrgun", title: "Keeper of the Winter Crown" }),
@@ -94,9 +101,9 @@ export const REALMS = Object.freeze([
     capital: Object.freeze({ id: "tellmar", name: "Tellmar", coord: Object.freeze({ x: 418, y: 72 }) }),
     faction: Object.freeze({ id: "tellmar-banners", name: "The Hundred Banners" }),
     ruler: Object.freeze({ name: "Empress Shuyei Ren", title: "Mistress of Reeds and Tides" }),
-    climate: Object.freeze({ temperature: 0.10, moisture: 0.30, elevation: -0.12 }),
-    terrain: Object.freeze({ forest: 0.12, marsh: 0.30, hills: -0.16 }),
-    description: "Vast reed wetlands, terraced river valleys, tiled cities, shrine roads, banner clans, and bright eastern harbors.",
+    climate: Object.freeze({ temperature: 0.10, moisture: 0.18, elevation: -0.08 }),
+    terrain: Object.freeze({ forest: 0.14, marsh: 0.08, hills: 0.02 }),
+    description: "Lush reed fields, terraced river valleys, tiled cities, shrine roads, banner clans, and bright eastern harbors, with true marsh confined to deltas and flood basins.",
   }),
   Object.freeze({
     id: "south", direction: "south", name: "The Sunscar Expanse",
@@ -113,6 +120,9 @@ export const REALMS = Object.freeze([
     id: "west", direction: "west", name: "The Elderwood",
     shortName: "Elderwood", biomeId: "woodland", biomeName: "Great Western Woodland",
     center: Object.freeze({ x: -420, y: 150 }), influence: Object.freeze({ scaleX: 250, scaleY: 210 }),
+    influenceSites: Object.freeze([
+      Object.freeze({ x: -145, y: 62, scaleX: 64, scaleY: 90 }),
+    ]),
     capital: Object.freeze({ id: "caer-selenya", name: "Caer Selenya", coord: Object.freeze({ x: -420, y: 150 }) }),
     faction: Object.freeze({ id: "selenyan-covenant", name: "The Selenyan Covenant" }),
     ruler: Object.freeze({ name: "Queen Maerwynn Thorne", title: "Voice Beneath the Boughs" }),
@@ -253,12 +263,12 @@ export const PROVINCE_BY_ID = Object.freeze(Object.fromEntries(PROVINCES.map((pr
 // existing biome ids remain stable because saves, art, encounters, mounts, and
 // difficulty already refer to them.
 //
-// `climate` biases the shared continental fields. `terrain` nudges the ecology
-// classifier, so every established region materially changes its generated
-// ground instead of falling through to one generic wilderness profile.
+// `climate` biases the shared continental fields. `ecologyId` fixes each named
+// region's physical identity; `terrain` then nudges variation within it. The
+// cross-realm Far Wild intentionally retains macro-realm ecology fallbacks.
 export const REGION_DEFINITIONS = {
   whitemarch: {
-    id: "whitemarch", label: "Whitemarch Basin", faction: "whitemarch-iron",
+    id: "whitemarch", label: "Whitemarch Basin", faction: "whitemarch-iron", parentRealmIds: ["central"], ecologyId: "grassland",
     sites: [{
       x: 0,
       y: 0,
@@ -273,7 +283,7 @@ export const REGION_DEFINITIONS = {
     features: ["wardstone", "fairground", "quarry", "wayside-shrine"],
   },
   mire: {
-    id: "mire", label: "The Mire", faction: "crowsmoor-wardens",
+    id: "mire", label: "The Mire", faction: "crowsmoor-wardens", parentRealmIds: ["central"], ecologyId: "wetland",
     sites: [{ x: 4, y: 17, scaleX: 56, scaleY: 36 }],
     climate: { temperature: 0.03, moisture: 0.28, elevation: -0.24 },
     terrain: { forest: 0.02, marsh: 0.34, hills: -0.18 }, poiChance: 0.035,
@@ -281,7 +291,7 @@ export const REGION_DEFINITIONS = {
     features: ["peat-camp", "ferry", "drowned-shrine", "reed-village"],
   },
   "crowsmoor-reach": {
-    id: "crowsmoor-reach", label: "Crowsmoor Reach", faction: "crowsmoor-wardens",
+    id: "crowsmoor-reach", label: "Crowsmoor Reach", faction: "crowsmoor-wardens", parentRealmIds: ["central"], ecologyId: "grassland",
     sites: [{ x: 86, y: -2, scaleX: 72, scaleY: 48 }],
     climate: { temperature: 0.02, moisture: -0.04, elevation: -0.02 },
     terrain: { forest: -0.12, marsh: -0.08, hills: -0.04 }, poiChance: 0.027,
@@ -289,7 +299,7 @@ export const REGION_DEFINITIONS = {
     features: ["freehold", "watch-post", "shepherd-camp", "roadside-inn"],
   },
   "tannic-wood": {
-    id: "tannic-wood", label: "The Tannic Wood", faction: "wood-cult",
+    id: "tannic-wood", label: "The Tannic Wood", faction: "wood-cult", parentRealmIds: ["central"], ecologyId: "oldgrowth",
     sites: [{ x: -38, y: -52, scaleX: 68, scaleY: 62 }],
     climate: { temperature: -0.04, moisture: 0.18, elevation: 0 },
     terrain: { forest: 0.30, marsh: 0.05, hills: 0.02 }, poiChance: 0.025,
@@ -297,7 +307,7 @@ export const REGION_DEFINITIONS = {
     features: ["woodward-lodge", "root-ruin", "river-ford", "old-grove"],
   },
   "whitemarch-march": {
-    id: "whitemarch-march", label: "Whitemarch March", faction: "whitemarch-iron",
+    id: "whitemarch-march", label: "Whitemarch March", faction: "whitemarch-iron", parentRealmIds: ["central"], ecologyId: "grassland",
     sites: [{ x: 50, y: -58, scaleX: 78, scaleY: 60 }],
     climate: { temperature: -0.02, moisture: -0.05, elevation: 0.10 },
     terrain: { forest: -0.05, marsh: -0.12, hills: 0.14 }, poiChance: 0.024,
@@ -305,7 +315,7 @@ export const REGION_DEFINITIONS = {
     features: ["toll-fort", "quarry", "signal-tower", "fairground"],
   },
   "spine-foothills": {
-    id: "spine-foothills", label: "The Spine Foothills", faction: "spine-confederation",
+    id: "spine-foothills", label: "The Spine Foothills", faction: "spine-confederation", parentRealmIds: ["central"], ecologyId: "upland",
     sites: [{ x: 82, y: 72, scaleX: 92, scaleY: 78 }],
     climate: { temperature: -0.08, moisture: -0.02, elevation: 0.27 },
     terrain: { forest: -0.03, marsh: -0.22, hills: 0.30 }, poiChance: 0.028,
@@ -313,7 +323,7 @@ export const REGION_DEFINITIONS = {
     features: ["mine", "hill-shrine", "clan-camp", "dwarven-relay"],
   },
   "bramblewych-reach": {
-    id: "bramblewych-reach", label: "Bramblewych Reach", faction: "bramble-witches",
+    id: "bramblewych-reach", label: "Bramblewych Reach", faction: "bramble-witches", parentRealmIds: ["central", "west"], ecologyId: "woodland",
     sites: [{ x: -42, y: 68, scaleX: 76, scaleY: 68 }],
     climate: { temperature: 0.05, moisture: 0.14, elevation: -0.03 },
     terrain: { forest: 0.18, marsh: 0.10, hills: 0 }, poiChance: 0.028,
@@ -321,7 +331,7 @@ export const REGION_DEFINITIONS = {
     features: ["hedge-village", "witch-stone", "apiary", "abandoned-farm"],
   },
   bonemarsh: {
-    id: "bonemarsh", label: "The Bonemarsh", faction: "pale-hand",
+    id: "bonemarsh", label: "The Bonemarsh", faction: "pale-hand", parentRealmIds: ["central", "north"], ecologyId: "wetland",
     sites: [{ x: -105, y: -135, scaleX: 104, scaleY: 90 }],
     climate: { temperature: -0.15, moisture: 0.24, elevation: -0.18 },
     terrain: { forest: 0.02, marsh: 0.30, hills: -0.08 }, poiChance: 0.026,
@@ -329,7 +339,7 @@ export const REGION_DEFINITIONS = {
     features: ["barrow", "tarn-jetty", "bone-field", "hermit-cell"],
   },
   "sundered-wastes": {
-    id: "sundered-wastes", label: "The Sundered Wastes", faction: "sundered-crown",
+    id: "sundered-wastes", label: "The Sundered Wastes", faction: "sundered-crown", parentRealmIds: ["north"], ecologyId: "badlands",
     sites: [{ x: -245, y: -165, scaleX: 150, scaleY: 112 }],
     climate: { temperature: -0.08, moisture: -0.24, elevation: 0.14 },
     terrain: { forest: -0.26, marsh: -0.28, hills: 0.26 }, poiChance: 0.024,
@@ -337,7 +347,7 @@ export const REGION_DEFINITIONS = {
     features: ["fortress-ruin", "war-camp", "cairn-field", "ash-well"],
   },
   "drakeholt-peaks": {
-    id: "drakeholt-peaks", label: "The Drakeholt", faction: "vyrgun-drakekin",
+    id: "drakeholt-peaks", label: "The Drakeholt", faction: "vyrgun-drakekin", parentRealmIds: ["north"], ecologyId: "alpine",
     sites: [{ x: 18, y: -245, scaleX: 155, scaleY: 105 }],
     climate: { temperature: -0.32, moisture: -0.02, elevation: 0.38 },
     terrain: { forest: -0.12, marsh: -0.35, hills: 0.42 }, poiChance: 0.022,
@@ -345,7 +355,7 @@ export const REGION_DEFINITIONS = {
     features: ["tribute-town", "wyrm-roost", "ice-cave", "hunter-lodge"],
   },
   "iron-plateau": {
-    id: "iron-plateau", label: "The Iron Plateau", faction: "iron-plateau-marches",
+    id: "iron-plateau", label: "The Iron Plateau", faction: "iron-plateau-marches", parentRealmIds: ["east"], ecologyId: "grassland",
     sites: [{ x: 178, y: -28, scaleX: 145, scaleY: 96 }],
     climate: { temperature: 0.02, moisture: -0.18, elevation: 0.20 },
     terrain: { forest: -0.20, marsh: -0.28, hills: 0.22 }, poiChance: 0.022,
@@ -353,7 +363,7 @@ export const REGION_DEFINITIONS = {
     features: ["manor-fort", "horse-fair", "signal-tower", "stone-village"],
   },
   "tellmar-road": {
-    id: "tellmar-road", label: "The Tellmar Road", faction: "tellmar-banners",
+    id: "tellmar-road", label: "The Sea of Reeds", faction: "tellmar-banners", parentRealmIds: ["east"], ecologyId: "reed-sea",
     sites: [{ x: 315, y: 62, scaleX: 172, scaleY: 116 }],
     climate: { temperature: 0.11, moisture: -0.08, elevation: 0.01 },
     terrain: { forest: -0.08, marsh: -0.18, hills: 0.02 }, poiChance: 0.026,
@@ -361,7 +371,7 @@ export const REGION_DEFINITIONS = {
     features: ["caravanserai", "milestone-shrine", "banner-house", "market-town"],
   },
   "hollow-coast": {
-    id: "hollow-coast", label: "The Hollow Coast", faction: "tideless",
+    id: "hollow-coast", label: "The Sunscar Expanse", faction: "asalan-sun-court", parentRealmIds: ["south"], ecologyId: "desert",
     sites: [{ x: 35, y: 235, scaleX: 190, scaleY: 118 }],
     climate: { temperature: 0.20, moisture: 0.22, elevation: -0.20 },
     terrain: { forest: -0.02, marsh: 0.24, hills: -0.12 }, poiChance: 0.028,
@@ -369,7 +379,7 @@ export const REGION_DEFINITIONS = {
     features: ["tide-shrine", "fishing-village", "saltworks", "drowned-ruin"],
   },
   "witchwood-deep": {
-    id: "witchwood-deep", label: "The Witchwood Deep", faction: "bramble-witches",
+    id: "witchwood-deep", label: "The Elderwood", faction: "selenyan-covenant", parentRealmIds: ["west"], ecologyId: "oldgrowth",
     sites: [{ x: -145, y: 62, scaleX: 116, scaleY: 92 }],
     climate: { temperature: 0.02, moisture: 0.24, elevation: 0.02 },
     terrain: { forest: 0.38, marsh: 0.04, hills: 0.02 }, poiChance: 0.024,
@@ -377,7 +387,7 @@ export const REGION_DEFINITIONS = {
     features: ["memory-tree", "sylvan-outpost", "moss-ruin", "witch-path"],
   },
   "pale-steppe": {
-    id: "pale-steppe", label: "The Pale Steppe", faction: "free-folk",
+    id: "pale-steppe", label: "The Pale Steppe", faction: "free-folk", parentRealmIds: ["west"], ecologyId: "steppe",
     sites: [{ x: -305, y: 58, scaleX: 170, scaleY: 135 }],
     climate: { temperature: 0.05, moisture: -0.30, elevation: 0.02 },
     terrain: { forest: -0.32, marsh: -0.34, hills: 0.02 }, poiChance: 0.019,
@@ -385,7 +395,7 @@ export const REGION_DEFINITIONS = {
     features: ["nomad-camp", "standing-stones", "burial-mound", "deserted-well"],
   },
   "far-wild": {
-    id: "far-wild", label: "The Far Wild", faction: "free-folk",
+    id: "far-wild", label: "The Far Wild", faction: "free-folk", parentRealmIds: ["north", "east", "south", "west"],
     sites: [
       { x: -360, y: -120, scaleX: 165, scaleY: 130 },
       { x: -355, y: 245, scaleX: 165, scaleY: 125 },
@@ -486,7 +496,7 @@ export const ECOLOGIES = {
     encounters: [{ kind: "sunscar-caravan", weight: 8, posture: "friendly", desc: "a bright-awning caravan moving between guarded wells" }],
   },
   "reed-sea": {
-    id: "reed-sea", name: "Sea of Reeds", terrain: "marsh",
+    id: "reed-sea", name: "Sea of Reeds", terrain: "reedfield",
     description: "Reed oceans, lotus channels, raised causeways, terraced islands, and slow rivers leading to the Lantern Sea.",
     tags: ["reeds", "river", "monsoon"], resources: ["rice", "reeds", "freshwater-fish"],
     features: ["stilt-village", "moon-bridge", "river-shrine", "watch-pagoda"],
@@ -518,6 +528,30 @@ export const SITE_ARCHETYPES = {
     poiType: "camp",
     tags: ["temporary", "shelter"],
     description: "A used camp with work areas, shelter, and signs of the people who return to it.",
+  },
+  clearing: {
+    id: "clearing", minimumSpacingHexes: 3,
+    poiType: "landmark",
+    tags: ["open-ground", "shelter", "forage"],
+    description: "An open clearing in the surrounding growth, used by wildlife and travellers as a natural gathering place.",
+  },
+  den: {
+    id: "den", minimumSpacingHexes: 4,
+    poiType: "monster-den",
+    tags: ["lair", "hostile", "exploration"],
+    description: "A predator's established lair, marked by tracks, remains, and defended approaches.",
+  },
+  "bandit-camp": {
+    id: "bandit-camp", minimumSpacingHexes: 4,
+    poiType: "bandit-camp",
+    tags: ["outlaw", "hostile", "shelter"],
+    description: "A concealed outlaw camp positioned to watch travellers, settlements, or valuable traffic.",
+  },
+  "roadside-inn": {
+    id: "roadside-inn", minimumSpacingHexes: 5,
+    poiType: "inn",
+    tags: ["inhabited", "roadside", "shelter"],
+    description: "A licensed roadside inn offering beds, hot food, stable space, and local news to travellers.",
   },
   shrine: {
     id: "shrine", minimumSpacingHexes: 3,
@@ -556,6 +590,18 @@ export const SITE_ARCHETYPES = {
     description: "A rare natural or magical feature with observable signs and a history people argue about.",
   },
 };
+
+// Campaign seeds may rearrange these small discoveries, but never authored
+// biomes, waterways, roads, cities, province borders, or faction territories.
+export const CAMPAIGN_MINOR_SITE_FEATURES = Object.freeze([
+  Object.freeze({ kind: "woodland-clearing", family: "clearing", terrains: Object.freeze(["forest"]) }),
+  Object.freeze({ kind: "monster-den", family: "den", terrains: Object.freeze(["forest", "hills", "mountains", "marsh", "reedfield"]) }),
+  Object.freeze({ kind: "bandit-camp", family: "bandit-camp", terrains: Object.freeze(["plains", "forest", "hills", "mountains", "marsh", "reedfield", "road"]) }),
+  Object.freeze({ kind: "roadside-inn", family: "roadside-inn", routeOnly: true }),
+  Object.freeze({ kind: "wayward-shrine", family: "shrine" }),
+  Object.freeze({ kind: "forgotten-ruin", family: "ruin" }),
+  Object.freeze({ kind: "frontier-fort", family: "fortification" }),
+]);
 
 export const BORDER_CHECKPOINTS = Object.freeze([
   Object.freeze({
@@ -1037,8 +1083,8 @@ export const CONTINENT_LAKES = [
 ];
 
 export const CONTINENT_HOT_SPRINGS = [
-  { id: "jade-springs", name: "Jade Springs", center: { x: 380, y: -50 }, radius: 3 },
-  { id: "misty-caldron", name: "Misty Caldron", center: { x: 410, y: 20 }, radius: 2 },
+  { id: "jade-springs", name: "Jade Springs", description: "Warm mineral pools step through jade terraces below the eastern shrine road.", center: { x: 380, y: -50 }, radius: 3 },
+  { id: "misty-caldron", name: "Misty Caldron", description: "A steaming basin of pale pools and reed-screened bathing stones near Tellmar's upland approach.", center: { x: 410, y: 20 }, radius: 2 },
 ];
 
 export function regionDefinition(id) {

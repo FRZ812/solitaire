@@ -317,9 +317,13 @@ export const BIOMES = [
     faction: "tellmar-banners",
     description: "The immense eastern reed sea — lotus channels, rice terraces, shrine islands, tiled river towns, and raised roads leading to Tellmar and the Lantern Sea.",
     ...rect({ xmin: 61, xmax: 145, ymin: 8, ymax: 60 }),
-    terrainWeights: { marsh: 0.36, forest: 0.18, plains: 0.14, water: 0.12, road: 0.10, hills: 0.07, mountains: 0.03 },
+    terrainWeights: { reedfield: 0.36, forest: 0.15, plains: 0.14, water: 0.10, road: 0.10, hills: 0.08, marsh: 0.04, mountains: 0.03 },
     poiChance: 0.05,
     extraSpawns: {
+      reedfield: [
+        { kind: "banner-river-patrol", weight: 12, posture: "neutral", desc: "a lacquered patrol boat pacing a narrow channel through the reed fields" },
+        { kind: "reed-farmers", weight: 10, posture: "friendly", desc: "reed farmers carrying rice seedlings between terraced islands" },
+      ],
       road: [
         { kind: "tellmar-caravan",  weight: 14, posture: "friendly", desc: "a Tellmar-bound caravan with hired spears and three languages of haggling" },
         { kind: "banner-courier",   weight: 8,  posture: "neutral",  desc: "a courier wearing the colours of a Tellmar banner-house, riding fast" },

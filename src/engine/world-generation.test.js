@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as continentContent from "../data/continent.js";
 import {
   BORDER_CHECKPOINTS,
+  CAMPAIGN_MINOR_SITE_FEATURES,
   COASTAL_FEATURES,
   CONTINENT,
+  CONTINENT_HOT_SPRINGS,
   CONTINENT_ROUTES,
   CONTINENT_WATERWAYS,
   DEFAULT_WORLD_SEED,
@@ -23,12 +25,16 @@ import {
 } from "../data/continent.js";
 import { itemTemplate } from "../data/catalog.js";
 import { hexDist, hexLine } from "../data/hex-math.js";
+import { SPAWN_TABLES } from "../data/spawn-tables.js";
+import { TERRAINS } from "../data/terrains.js";
 import { BUILDINGS } from "../data/town.js";
 import {
   checkpointAt,
   continentValueAt,
   generateWorldTile,
+  hotSpringAt,
   isInsideContinent,
+  minorSiteCandidateAt,
   provinceAt,
   realmIdAt,
   regionIdAt,
@@ -83,6 +89,42 @@ function signatureFor(seed) {
       sample.site?.kind || null,
     ];
   });
+}
+
+function authoredGeographySignatureFor(seed) {
+  return FIXED_PROBES.map(({ x, y }) => {
+    const sample = sampleContinent(x, y, seed);
+    return [
+      x,
+      y,
+      sample.land,
+      sample.landValue,
+      sample.realmId,
+      sample.province?.id || null,
+      sample.content.authority.factionId,
+      sample.regionId,
+      sample.ecologyId,
+      sample.terrain,
+      sample.elevation,
+      sample.moisture,
+      sample.temperature,
+      sample.ruggedness,
+      sample.route?.id || null,
+      sample.waterway?.id || null,
+    ];
+  });
+}
+
+function generatedSiteSignatureFor(seed) {
+  const center = REGION_DEFINITIONS.mire.sites[0];
+  const sites = [];
+  for (let y = center.y - 24; y <= center.y + 24; y++) {
+    for (let x = center.x - 24; x <= center.x + 24; x++) {
+      const sample = sampleContinent(x, y, seed);
+      if (sample.regionId === "mire" && sample.site) sites.push([x, y, sample.site.kind]);
+    }
+  }
+  return sites;
 }
 
 function findGeneratedSite(center, radius, regionId) {
@@ -149,6 +191,92 @@ describe("continental world generation", () => {
         expect(hexDist(CONTINENT.start.coord, realm.center), realm.id).toBeGreaterThan(250);
         expect(LANDMARKS.some((landmark) => landmark.capitalOfRealmId === realm.id && landmark.id === realm.capital.id), realm.id).toBe(true);
       }
+    }
+  });
+
+  it("renders the Sea of Reeds as traversable reed country rather than a marsh carpet", () => {
+    const east = REALMS.find((realm) => realm.id === "east");
+    const counts = {};
+    let land = 0;
+    for (let y = east.center.y - 36; y <= east.center.y + 36; y++) {
+      for (let x = east.center.x - 36; x <= east.center.x + 36; x++) {
+        if (hexDist(east.center, { x, y }) > 36) continue;
+        const sample = sampleContinent(x, y, DEFAULT_WORLD_SEED);
+        if (!sample.land || sample.realmId !== "east") continue;
+        land++;
+        counts[sample.terrain] = (counts[sample.terrain] || 0) + 1;
+      }
+    }
+
+    expect(TERRAINS.reedfield).toMatchObject({ label: "Reed Fields" });
+    expect(TERRAINS.reedfield.speed).toBeLessThan(TERRAINS.water.speed);
+    expect(SPAWN_TABLES.reedfield?.entries.length).toBeGreaterThan(0);
+    expect(counts.reedfield / land).toBeGreaterThan(0.45);
+    expect((counts.marsh || 0) / land).toBeLessThan(0.2);
+    expect((counts.plains || 0) + (counts.forest || 0) + (counts.hills || 0)).toBeGreaterThan(0);
+  });
+
+  it("keeps authored landmarks and eastern hot springs static across campaign seeds", () => {
+    const seeds = [DEFAULT_WORLD_SEED, "avarra-another-age"];
+    for (const landmark of LANDMARKS) {
+      const samples = seeds.map((seed) => sampleContinent(landmark.coord.x, landmark.coord.y, seed));
+      expect(samples[1].realmId, landmark.id).toBe(samples[0].realmId);
+      expect(samples[1].province?.id, landmark.id).toBe(samples[0].province?.id);
+      expect(samples[1].regionId, landmark.id).toBe(samples[0].regionId);
+      expect(samples[1].site, `${landmark.id} cannot be occupied by campaign RNG`).toBeNull();
+      expect(samples[0].site, `${landmark.id} cannot be occupied by campaign RNG`).toBeNull();
+    }
+
+    for (const spring of CONTINENT_HOT_SPRINGS) {
+      expect(hotSpringAt(spring.center.x, spring.center.y)).toMatchObject({ id: spring.id, distance: 0 });
+      const tiles = seeds.map((seed) => generateWorldTile({ ...spring.center, seed }));
+      expect(tiles[0].poi).toMatchObject({ type: "hot-spring", name: spring.name });
+      expect(tiles[1].poi).toEqual(tiles[0].poi);
+      expect({
+        terrain: tiles[1].terrain,
+        realmId: tiles[1].realmId,
+        regionId: tiles[1].regionId,
+        ecology: tiles[1].ecology,
+      }).toEqual({
+        terrain: tiles[0].terrain,
+        realmId: tiles[0].realmId,
+        regionId: tiles[0].regionId,
+        ecology: tiles[0].ecology,
+      });
+    }
+  });
+
+  it("treats a hot spring's radius as influence while reserving authored POI ownership for its center", () => {
+    let influencedSite = null;
+
+    for (const spring of CONTINENT_HOT_SPRINGS) {
+      for (let seedIndex = 0; seedIndex < 64 && !influencedSite; seedIndex++) {
+        const seed = `hot-spring-influence:${spring.id}:${seedIndex}`;
+        for (let dq = -spring.radius; dq <= spring.radius && !influencedSite; dq++) {
+          const drLow = Math.max(-spring.radius, -dq - spring.radius);
+          const drHigh = Math.min(spring.radius, -dq + spring.radius);
+          for (let dr = drLow; dr <= drHigh; dr++) {
+            if (dq === 0 && dr === 0) continue;
+            const x = spring.center.x + dq;
+            const y = spring.center.y + dr;
+            const sample = sampleContinent(x, y, seed);
+            if (sample.site) influencedSite = { x, y, seed, sample };
+          }
+        }
+      }
+    }
+
+    expect(influencedSite).toBeTruthy();
+    expect(influencedSite.sample.hotSpring.distance).toBeGreaterThan(0);
+    expect(generateWorldTile(influencedSite)).toMatchObject({
+      poi: { type: "hidden", generated: { id: influencedSite.sample.site.id } },
+    });
+    expect(generateWorldTile(influencedSite).authoredFeatureId).toBeUndefined();
+    for (const spring of CONTINENT_HOT_SPRINGS) {
+      expect(generateWorldTile({ ...spring.center, seed: influencedSite.seed })).toMatchObject({
+        authoredFeatureId: spring.id,
+        poi: { type: "hot-spring", landmarkId: spring.id },
+      });
     }
   });
 
@@ -436,11 +564,78 @@ describe("continental world generation", () => {
     expect(JSON.parse(JSON.stringify(first))).toEqual(first);
   });
 
-  it("produces a materially different signature for a different seed", () => {
-    const baseline = signatureFor(DEFAULT_WORLD_SEED);
-    const alternate = signatureFor("avarra-another-age");
+  it("rejects an unsupported saved generator version instead of silently reinterpreting it", () => {
+    expect(() => generateWorldTile({ x: 18, y: -23, seed: DEFAULT_WORLD_SEED, generatorVersion: 2 }))
+      .toThrow(/generator version 2.*migrat/i);
+  });
 
-    expect(alternate).not.toEqual(baseline);
+  it("keeps authored geography fixed while varying only campaign minor sites", () => {
+    const baselineGeography = authoredGeographySignatureFor(DEFAULT_WORLD_SEED);
+    const alternateGeography = authoredGeographySignatureFor("avarra-another-age");
+    const baselineAreas = FIXED_PROBES.map(({ x, y }) => worldAreaAt(x, y, null, DEFAULT_WORLD_SEED));
+    const alternateAreas = FIXED_PROBES.map(({ x, y }) => worldAreaAt(x, y, null, "avarra-another-age"));
+    const baselineSites = generatedSiteSignatureFor(DEFAULT_WORLD_SEED);
+    const alternateSites = generatedSiteSignatureFor("avarra-another-age");
+
+    expect(alternateGeography).toEqual(baselineGeography);
+    expect(alternateAreas).toEqual(baselineAreas);
+    expect(baselineSites.length).toBeGreaterThan(5);
+    expect(alternateSites.length).toBeGreaterThan(5);
+    expect(alternateSites).not.toEqual(baselineSites);
+  });
+
+  it("keeps ecology encounter selection fixed when an ecology has multiple entries", () => {
+    const originalEncounters = ECOLOGIES.alpine.encounters;
+    ECOLOGIES.alpine.encounters = [
+      { kind: "static-a", weight: 1, posture: "neutral", desc: "Static encounter A" },
+      { kind: "static-b", weight: 1, posture: "neutral", desc: "Static encounter B" },
+    ];
+
+    try {
+      const baseline = sampleContinent(-190, -400, DEFAULT_WORLD_SEED).content.ecologyEncounter;
+      const alternate = sampleContinent(-190, -400, "avarra-another-age").content.ecologyEncounter;
+      expect(alternate).toEqual(baseline);
+    } finally {
+      ECOLOGIES.alpine.encounters = originalEncounters;
+    }
+  });
+
+  it("deep-compares complete cross-seed samples from fresh caches after removing only campaign fields", async () => {
+    const campaignVariableProbe = { x: -16, y: -7 };
+    const normalizeCampaignFields = ({ sample, tile }) => {
+      const normalized = JSON.parse(JSON.stringify({ sample, tile }));
+      normalized.sample.seed = null;
+      normalized.sample.site = null;
+      if (normalized.tile.poi?.type === "hidden" && normalized.tile.poi.generated?.id) {
+        normalized.tile.poi = null;
+      }
+      if (normalized.tile.poi === undefined) normalized.tile.poi = null;
+      return normalized;
+    };
+    const queryFresh = async (seed, points) => {
+      vi.resetModules();
+      const {
+        generateWorldTile: freshGenerateWorldTile,
+        sampleContinent: freshSampleContinent,
+      } = await import("./world-generation.js");
+      return Object.fromEntries(points.map(({ x, y }) => [
+        `${x},${y}`,
+        normalizeCampaignFields({
+          sample: freshSampleContinent(x, y, seed),
+          tile: freshGenerateWorldTile({ x, y, seed }),
+        }),
+      ]));
+    };
+
+    const points = [...FIXED_PROBES, campaignVariableProbe];
+    expect(sampleContinent(campaignVariableProbe.x, campaignVariableProbe.y, DEFAULT_WORLD_SEED).site).toBeNull();
+    expect(sampleContinent(campaignVariableProbe.x, campaignVariableProbe.y, "avarra-another-age").site)
+      .toMatchObject({ kind: "frontier-fort" });
+
+    const baseline = await queryFresh(DEFAULT_WORLD_SEED, points);
+    const alternate = await queryFresh("avarra-another-age", [...points].reverse());
+
+    expect(alternate).toEqual(baseline);
   });
 
   it("does not depend on coordinate query order", () => {
@@ -453,6 +648,28 @@ describe("continental world generation", () => {
       expect(sampleContinent(point.x, point.y, DEFAULT_WORLD_SEED), keyOf(point))
         .toEqual(forward.get(keyOf(point)));
     }
+  });
+
+  it("keeps province-aware area metadata independent of same-chunk query order", async () => {
+    const sunderedSnow = { x: -192, y: -400 };
+    const emberLakes = { x: -191, y: -400 };
+
+    async function queryAreas(points) {
+      vi.resetModules();
+      const { provinceAt: freshProvinceAt, worldAreaAt: freshWorldAreaAt } = await import("./world-generation.js");
+      return Object.fromEntries(points.map((point) => {
+        const province = freshProvinceAt(point.x, point.y);
+        const area = freshWorldAreaAt(point.x, point.y);
+        return [keyOf(point), { provinceId: province.id, area }];
+      }));
+    }
+
+    const forward = await queryAreas([sunderedSnow, emberLakes]);
+    const reverse = await queryAreas([emberLakes, sunderedSnow]);
+
+    expect(forward[keyOf(sunderedSnow)].area.province.id).toBe("sundered-snow");
+    expect(forward[keyOf(emberLakes)].area.province.id).toBe("ember-lakes");
+    expect(reverse).toEqual(forward);
   });
 
   it("has finite land and climate values and becomes ocean outside its declared bounds", () => {
@@ -511,6 +728,48 @@ describe("continental world generation", () => {
       expect(sample.land, landmark.id).toBe(true);
       expect(sample.regionId, landmark.id).toBe(landmark.regionId);
     }
+  });
+
+  it("honors the authored ecology identity of every named biome region", () => {
+    const expectedEcology = {
+      whitemarch: "grassland",
+      mire: "wetland",
+      "crowsmoor-reach": "grassland",
+      "tannic-wood": "oldgrowth",
+      "whitemarch-march": "grassland",
+      "spine-foothills": "upland",
+      "bramblewych-reach": "woodland",
+      bonemarsh: "wetland",
+      "sundered-wastes": "badlands",
+      "drakeholt-peaks": "alpine",
+      "iron-plateau": "grassland",
+      "tellmar-road": "reed-sea",
+      "hollow-coast": "desert",
+      "witchwood-deep": "oldgrowth",
+      "pale-steppe": "steppe",
+    };
+
+    for (const [regionId, ecologyId] of Object.entries(expectedEcology)) {
+      const anchor = REGION_DEFINITIONS[regionId].sites[0];
+      const sample = sampleContinent(anchor.x, anchor.y, "campaign-biome-probe");
+      expect(sample.regionId, regionId).toBe(regionId);
+      expect(sample.ecologyId, regionId).toBe(ecologyId);
+    }
+    expect(ECOLOGIES["reed-sea"].terrain).toBe("reedfield");
+  });
+
+  it("keeps every sampled biome inside its authored macro-realm", () => {
+    let sampledLand = 0;
+    for (let y = CONTINENT.bounds.ymin; y <= CONTINENT.bounds.ymax; y += 18) {
+      for (let x = CONTINENT.bounds.xmin; x <= CONTINENT.bounds.xmax; x += 18) {
+        const sample = sampleContinent(x, y, "campaign-boundary-probe");
+        if (!sample.land) continue;
+        sampledLand += 1;
+        expect(REGION_DEFINITIONS[sample.regionId].parentRealmIds, `${x},${y} ${sample.regionId}`)
+          .toContain(sample.realmId);
+      }
+    }
+    expect(sampledLand).toBeGreaterThan(500);
   });
 
   it("places the rare Royal and Mastercraft trade houses across the wider world as visitable endgame POIs", () => {
@@ -669,7 +928,7 @@ describe("continental world generation", () => {
     const archetype = SITE_ARCHETYPES[site.archetypeId];
     const tile = generateWorldTile({ x, y, seed: DEFAULT_WORLD_SEED });
 
-    expect(site.id).toBe(`site:${sample.generatorVersion}:${sample.regionId}:${x}:${y}`);
+    expect(site.id).toMatch(new RegExp(`^site:${sample.generatorVersion}:[0-9a-f]{32}:${sample.regionId}:${x}:${y}$`));
     expect(site.kind).toBeTruthy();
     expect(archetype).toBeTruthy();
     expect(archetype.id).toBe(site.archetypeId);
@@ -699,19 +958,77 @@ describe("continental world generation", () => {
     expect(JSON.parse(JSON.stringify(tile))).toEqual(tile);
   });
 
-  it("keeps generated sites at least three hexes apart without generation-order state", () => {
+  it("limits campaign-generated POIs to geographically valid minor-site families", () => {
+    const catalog = new Map(CAMPAIGN_MINOR_SITE_FEATURES.map((feature) => [feature.kind, feature]));
+    const foundFamilies = new Set();
+    let foundSites = 0;
+
+    for (const realm of REALMS) {
+      for (let y = realm.center.y - 54; y <= realm.center.y + 54; y += 2) {
+        for (let x = realm.center.x - 54; x <= realm.center.x + 54; x += 2) {
+          const sample = sampleContinent(x, y, `minor-sites:${realm.id}`);
+          if (!sample.site || sample.realmId !== realm.id) continue;
+          foundSites += 1;
+          foundFamilies.add(sample.site.archetypeId);
+          const feature = catalog.get(sample.site.kind);
+          expect(feature, `${sample.site.kind} at ${x},${y} is not approved campaign content`).toBeTruthy();
+          expect(sample.site.archetypeId, sample.site.kind).toBe(feature.family);
+          if (feature.routeOnly) expect(routeAt(x, y), `${sample.site.kind} at ${x},${y}`).toBeTruthy();
+          if (feature.terrains) expect(feature.terrains, `${sample.site.kind} at ${x},${y}`).toContain(sample.terrain);
+        }
+      }
+    }
+
+    expect(foundSites).toBeGreaterThan(12);
+    expect(foundFamilies.size).toBeGreaterThanOrEqual(4);
+
+    const catalogFixtures = {
+      "bandit-camp": { x: -55, y: -60, seed: "diagnostic:sites:central" },
+      "forgotten-ruin": { x: -27, y: -58, seed: "diagnostic:sites:central" },
+      "frontier-fort": { x: -24, y: -58, seed: "diagnostic:sites:central" },
+      "monster-den": { x: -43, y: -57, seed: "diagnostic:sites:central" },
+      "roadside-inn": { x: 18, y: -23, seed: "diagnostic:sites:central" },
+      "wayward-shrine": { x: 27, y: -57, seed: "diagnostic:sites:central" },
+      "woodland-clearing": { x: 6, y: -55, seed: "diagnostic:sites:central" },
+    };
+    expect(Object.keys(catalogFixtures).sort()).toEqual([...catalog.keys()].sort());
+    for (const [kind, fixture] of Object.entries(catalogFixtures)) {
+      expect(sampleContinent(fixture.x, fixture.y, fixture.seed).site?.kind, kind).toBe(kind);
+    }
+  });
+
+  it("does not let an ineligible neighboring candidate suppress a valid minor site", () => {
+    const seed = "eligibility-probe";
+    const sample = sampleContinent(-115, -111, seed);
+
+    expect(sample.land).toBe(true);
+    expect(sample.terrain).not.toBe("water");
+    expect(minorSiteCandidateAt(-115, -111, seed)).toBeTruthy();
+    expect(minorSiteCandidateAt(-112, -110, seed)).toBeNull();
+    expect(sampleContinent(-112, -110, seed).terrain).toBe("water");
+    expect(sample.site).toBeTruthy();
+  });
+
+  it("keeps generated sites at each archetype's declared spacing without generation-order state", () => {
     const center = REGION_DEFINITIONS.mire.sites[0];
     const sites = [];
     for (let y = center.y - 24; y <= center.y + 24; y++) {
       for (let x = center.x - 24; x <= center.x + 24; x++) {
-        if (sampleContinent(x, y, DEFAULT_WORLD_SEED).site) sites.push({ x, y });
+        const site = sampleContinent(x, y, DEFAULT_WORLD_SEED).site;
+        if (site) sites.push({ x, y, site });
       }
     }
 
     expect(sites.length).toBeGreaterThan(5);
+    expect(sites.some(({ site }) => SITE_ARCHETYPES[site.archetypeId].minimumSpacingHexes > 3)).toBe(true);
     for (let i = 0; i < sites.length; i++) {
       for (let j = i + 1; j < sites.length; j++) {
-        expect(hexDist(sites[i], sites[j]), `${keyOf(sites[i])} and ${keyOf(sites[j])}`).toBeGreaterThan(2);
+        const requiredSpacing = Math.max(
+          SITE_ARCHETYPES[sites[i].site.archetypeId].minimumSpacingHexes,
+          SITE_ARCHETYPES[sites[j].site.archetypeId].minimumSpacingHexes,
+        );
+        expect(hexDist(sites[i], sites[j]), `${keyOf(sites[i])} and ${keyOf(sites[j])}`)
+          .toBeGreaterThanOrEqual(requiredSpacing);
       }
     }
   });
