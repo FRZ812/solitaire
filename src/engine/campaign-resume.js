@@ -96,6 +96,17 @@ export function shouldRecoverResumeSnapshot(snapshot, serverUpdatedAt) {
   return snapshot.capturedAt > serverTime;
 }
 
+export function prepareWarmCampaignState(snapshot, prepareState) {
+  if (!snapshot) return null;
+  try {
+    return prepareState(snapshot.state) || null;
+  } catch {
+    // The server row remains authoritative. A stale cache written by a newer or
+    // malformed client must not block the network load or strand the busy UI.
+    return null;
+  }
+}
+
 export function clearCampaignResume(storage) {
   const target = browserStorage(storage);
   try { target?.removeItem(LAST_OPENED_KEY); } catch {}
