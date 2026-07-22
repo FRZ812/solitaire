@@ -172,6 +172,17 @@ export function mapMarchEntry(layout, march) {
   };
 }
 
+export function mapPartyEntry(layout, currentKey, march = null) {
+  if (march) return mapMarchEntry(layout, march);
+  return layout.entries.find((entry) => entry.key === String(currentKey || "")) || null;
+}
+
+export function mapTrackedEntry(layout, tracked) {
+  if (!tracked?.pos) return null;
+  const entry = layout.entries.find((candidate) => candidate.key === `${tracked.pos.x},${tracked.pos.y}`);
+  return entry ? { ...entry, tracked } : null;
+}
+
 export function buildRouteSegments(route, centerByKey) {
   const segments = [];
   let active = [];

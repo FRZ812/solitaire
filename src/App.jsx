@@ -57,7 +57,7 @@ import { buffTravelSpeedMult, hastedGroundMinutes, hastedFlightHexes, hastedFlig
 import { condNames, hasCondition, normalizeConditions } from "./data/conditions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
 import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, isOverloaded } from "./engine/riding.js";
-import { rollPathEncounter, rollAerialEncounter } from "./engine/encounters.js";
+import { rollPathEncounter, rollAerialEncounter, pathThroughEncounter } from "./engine/encounters.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome, getBiomeById } from "./data/biomes.js";
 import { ECOLOGIES } from "./data/continent.js";
@@ -332,7 +332,7 @@ export function Solitaire() {
   // Async travel may outlive the campaign that launched it (sign-out, reset,
   // opening another save). Every travel tail checks this generation before it
   // is allowed to land the party or surface an encounter.
-  const travelLifecycleRef = useRef({ generation: 0 });
+  const travelLifecycleRef = useRef({ generation: 0, controller: null });
   const [shopTile, setShopTile] = useState(null); // {x,y} of an open building, or null
   const [shopView, setShopView] = useState("trade"); // "trade" | "forge" within a building
 
@@ -370,10 +370,14 @@ export function Solitaire() {
   const [storyAtBottom, setStoryAtBottom] = useState(true);
 
   function captureTravelLifecycle(baseState = liveStateRef.current) {
+    const controller = new AbortController();
+    travelLifecycleRef.current.controller?.abort(new Error("Travel superseded."));
+    travelLifecycleRef.current.controller = controller;
     return {
       generation: travelLifecycleRef.current.generation,
       campaignId: currentCampaignIdRef.current,
       baseState,
+      controller,
     };
   }
 
@@ -383,8 +387,15 @@ export function Solitaire() {
       && lifecycle.campaignId === currentCampaignIdRef.current;
   }
 
+  function abortActiveTravel(reason = "Travel cancelled.") {
+    const controller = travelLifecycleRef.current.controller;
+    travelLifecycleRef.current.controller = null;
+    if (controller && !controller.signal.aborted) controller.abort(new Error(reason));
+  }
+
   function cancelTravelLifecycle({ closeMap = true } = {}) {
     travelLifecycleRef.current.generation += 1;
+    abortActiveTravel();
     for (const waiter of travelMarchWaitersRef.current.values()) {
       waiter.resolve?.("cancelled");
     }
@@ -399,6 +410,7 @@ export function Solitaire() {
 
   useEffect(() => () => {
     travelLifecycleRef.current.generation += 1;
+    abortActiveTravel("Travel abandoned because the application closed.");
     for (const waiter of travelMarchWaitersRef.current.values()) {
       waiter.resolve?.("cancelled");
     }
@@ -1015,13 +1027,13 @@ export function Solitaire() {
   // Narrator wrapper used by every turn site. The edge function emits both
   // reasoning and answer JSON chunks. advanceLiveNarrator projects only the
   // recoverable player-facing fields, and { reset } cleanly replaces retries.
-  function narrate(st, msg, isCurrent = () => true) {
+  function narrate(st, msg, isCurrent = () => true, signal = null) {
     scrollStoryToLatest();
     setLiveNarrator(emptyLiveNarrator());
     return callNarrator(st, msg, (chunk) => {
       if (!isCurrent()) return;
       setLiveNarrator((current) => advanceLiveNarrator(current, chunk));
-    });
+    }, { signal });
   }
 
   // Run a player-message turn against the narrator. On failure (dropped network,
@@ -1179,7 +1191,7 @@ export function Solitaire() {
   }
 
   function beginTravelMarch(travel) {
-    const id = `atlas-march-${Date.now()}-${travel.path.length}`;
+    const id = `map-march-${Date.now()}-${travel.path.length}`;
     let resolve;
     const promise = new Promise((done) => { resolve = done; });
     travelMarchWaitersRef.current.set(id, { promise, resolve });
@@ -1187,6 +1199,7 @@ export function Solitaire() {
       id,
       path: travel.path.map((coord) => ({ x: coord.x, y: coord.y })),
       minutes: travel.totalMins,
+      intendedDest: travel.intendedDest ? { ...travel.intendedDest } : null,
       encounterAtEnd: travel.encounter || null,
       visualDone: false,
     });
@@ -1209,7 +1222,7 @@ export function Solitaire() {
       waiter.promise,
       new Promise((resolve) => {
         // The authored visual duration is capped at six seconds. This guard
-        // also releases combat if the atlas cannot mount or loses context.
+        // also releases combat if the travel map cannot mount or loses context.
         timeoutId = setTimeout(() => resolve("timeout"), 7_000);
       }),
     ]);
@@ -1223,7 +1236,7 @@ export function Solitaire() {
   async function handleTravel(dest, providedPath) {
     if (loading) return;
     const cur = state.world.currentTile;
-    // The atlas and the engine share one authored-route plan. Reuse the exact
+    // The travel map and the engine share one authored-route plan. Reuse the exact
     // preview when it still starts here and ends at the chosen destination;
     // otherwise recompute through the same door-aware graph.
     const previewIsCurrent = Array.isArray(providedPath) && providedPath.length > 1
@@ -1247,7 +1260,7 @@ export function Solitaire() {
     // to the destination (or to the MARCH_MAX safety bound, then you tap to continue).
     let legPath = fullPath.slice(0, WORLD_MARCH_LIMIT + 1);
     const pathEnc = rollPathEncounter(state, legPath);
-    if (pathEnc) legPath = legPath.slice(0, pathEnc.atIndex + 1);
+    legPath = pathThroughEncounter(legPath, pathEnc);
     const legEnd = legPath[legPath.length - 1];
     const arrived = legEnd.x === dest.x && legEnd.y === dest.y;
     const legTile = getTile(state, legEnd.x, legEnd.y);
@@ -1326,7 +1339,7 @@ export function Solitaire() {
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     };
 
-    // Keep WorldExploration and its atlas mounted while narration starts. The
+    // Keep the authoritative travel map mounted while narration starts. The
     // party pin owns only this visual route; the simulation continues to own
     // the authoritative arrival tile and save data.
     const lifecycle = captureTravelLifecycle();
@@ -1429,6 +1442,7 @@ export function Solitaire() {
         stateWithPlayer,
         fullMsg,
         () => isTravelLifecycleCurrent(lifecycle),
+        lifecycle.controller?.signal,
       );
       if (!isTravelLifecycleCurrent(lifecycle)) return;
       travelBeat = beat;
@@ -1436,7 +1450,7 @@ export function Solitaire() {
     } catch (e) {
       if (!isTravelLifecycleCurrent(lifecycle)) return;
       failure = e;
-      // A retained atlas would cover the error banner. Leave the attempted
+      // The retained map overlay would cover the error banner. Leave the attempted
       // player beat in the log, but never apply movement from a failed turn.
       setState((current) => rebasePreparedTravelState(
         current,
@@ -1445,13 +1459,16 @@ export function Solitaire() {
       ));
       setMapOpen(false);
       setError(e.message || String(e));
-      // A synchronous narrator/config failure can beat React's first atlas
+      // A synchronous narrator/config failure can beat React's first map
       // march commit, so no mounted tween exists to release this waiter.
       // Failed travel never lands; settle its visual gate immediately.
       if (marchId) travelMarchWaitersRef.current.get(marchId)?.resolve?.("failed");
     } finally {
       if (marchId) {
         await waitForTravelMarch(marchId);
+      }
+      if (travelLifecycleRef.current.controller === lifecycle.controller) {
+        travelLifecycleRef.current.controller = null;
       }
       if (!isTravelLifecycleCurrent(lifecycle)) return;
       setTravelMarch((current) => (current?.id === marchId ? null : current));
@@ -2803,7 +2820,9 @@ export function Solitaire() {
       {mapOpen && (
         <WorldExploration
           state={state}
-          onClose={() => setMapOpen(false)}
+          onClose={() => {
+            if (!travelMarch?.id) setMapOpen(false);
+          }}
           onTravel={handleTravel}
           travelMarch={travelMarch}
           onTravelMarchFinish={handleTravelMarchFinish}

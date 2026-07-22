@@ -17,12 +17,14 @@ export const NARRATOR_EFFORTS = [
 ];
 
 export const NARRATOR_MODELS = [
+  { id: "poolside/laguna-s-2.1:free",       label: "Laguna S 2.1 Free",  note: "Poolside · free tier", provider: "OpenRouter", efforts: null, fallback: "poolside/laguna-s-2.1" },
+  { id: "tencent/hy3:free",                  label: "HY3 Free",            note: "Tencent · free tier", provider: "OpenRouter", efforts: null, fallback: "tencent/hy3" },
   { id: "deepseek/deepseek-v4-flash",      label: "DeepSeek V4 Flash",    note: "fast reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
   { id: "deepseek/deepseek-v4-pro",        label: "DeepSeek V4 Pro",      note: "deep reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
   { id: "minimax/minimax-m3",              label: "MiniMax M3",           note: "MiniMax reasoning", provider: "OpenRouter", efforts: ["high", "max"] },
   { id: "z-ai/glm-5.2",                     label: "GLM 5.2",             note: "Z.ai reasoning",  provider: "OpenRouter", efforts: ["high", "max"] },
-  { id: "openai/gpt-5.6-luna",              label: "GPT-5.6 Luna",        note: "OpenAI",          provider: "OpenRouter", efforts: null },
-  { id: "google/gemini-3.1-pro-preview",   label: "Gemini 3.1 Pro",       note: "Google",          provider: "OpenRouter", efforts: null },
+  { id: "x-ai/grok-4.5",                    label: "Grok 4.5",            note: "xAI",             provider: "OpenRouter", efforts: null },
+  { id: "moonshotai/kimi-k3",              label: "Kimi K3",              note: "Moonshot AI",     provider: "OpenRouter", efforts: null },
 ];
 
 // Label for a model id, for display in the "Behind the veil" thinking drawer

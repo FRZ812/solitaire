@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 import { biomeVisual } from "../../data/visual-assets.js";
 import { Icon } from "../Icon.jsx";
+import { useModalFocus } from "./modalFocus.js";
 import { buildRegionSelectorModel } from "./regionSelectorModel.js";
 
 const REALM_SIGILS = Object.freeze({
@@ -16,18 +17,11 @@ export function RegionSelector({ state, inspectedCoord, onSelect, onClose }) {
     () => buildRegionSelectorModel(state, { selectedCoord: inspectedCoord }),
     [state, inspectedCoord?.x, inspectedCoord?.y],
   );
-
-  useEffect(() => {
-    const closeOnEscape = (event) => {
-      if (event.key === "Escape" && !event.defaultPrevented) onClose?.();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  const dialogRef = useModalFocus(onClose);
 
   return (
     <div className="region-selector-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose?.()}>
-      <section className="region-selector" role="dialog" aria-modal="true" aria-label="World region selector">
+      <section ref={dialogRef} tabIndex={-1} className="region-selector" role="dialog" aria-modal="true" aria-label="World region selector">
         <header className="region-selector__header">
           <div>
             <span className="rpg-kicker">Avarra</span>

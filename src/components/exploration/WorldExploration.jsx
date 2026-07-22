@@ -14,6 +14,7 @@ import {
   pathMinutes,
 } from "../../engine/world.js";
 import { pathRiskPercent } from "../../engine/encounters.js";
+import { trackedCharacterResult } from "../../engine/positions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "../../engine/fly.js";
 import { playerFlightMount } from "../../engine/riding.js";
 import { formatDate, formatTime } from "../../engine/time.js";
@@ -27,15 +28,18 @@ import {
   TERRAIN_INK,
   buildExplorationModel,
   directionLabel,
-  planAtlasJourney,
-} from "./atlasModel.js";
+  planHexJourney,
+} from "./hexMapModel.js";
 import { MapCanvas } from "./MapCanvas.jsx";
+import { useModalFocus } from "./modalFocus.js";
 import { RegionSelector } from "./RegionSelector.jsx";
 import { regionCameraTarget } from "./regionSelectorModel.js";
-import { WorldAtlas } from "./WorldAtlas.jsx";
-import { formatTravelDuration, journeyWaypoints } from "./worldAtlasModel.js";
 import { buildWorldMapScene } from "./mapSceneModel.js";
 import {
+  activeMarchJourney,
+  formatTravelDuration,
+  knownJourneyPreview,
+  knownJourneyWaypoints,
   panTravelMapCamera,
   startTravelMapMarch,
   travelMapMarchFrame,
@@ -188,7 +192,9 @@ function headerLocationName(tile) {
     || "Wilderness";
 }
 
-function nameForDestination(destination, origin) {
+export function nameForDestination(destination, origin) {
+  const mapped = !!(destination?.seen || destination?.visited);
+  if (!mapped) return destination?.quest?.title || "Uncharted destination";
   const named = destination?.name || poiPlaceName(destination?.tile?.poi);
   if (named) return named;
   if (destination?.quest) return destination.quest.title;
@@ -210,7 +216,7 @@ function biomeAt(destination, seed) {
   return id === "whitemarch" ? { ...coordinateBiome, id, name: "Whitemarch" } : coordinateBiome;
 }
 
-function RpgHeader({ state, biome, tile, onClose, onRegions, onJournal }) {
+function RpgHeader({ state, biome, tile, onClose, onRegions, onJournal, travelLocked = false }) {
   const vitality = state.character.vitality ?? 0;
   const vitalityMax = Math.max(1, state.character.vitalityMax ?? vitality);
   const resolve = state.character.resolve ?? 0;
@@ -224,7 +230,13 @@ function RpgHeader({ state, biome, tile, onClose, onRegions, onJournal }) {
   const district = cityDistrict(tile);
   return (
     <header className="rpg-map-header">
-      <button onClick={onClose} className="rpg-square-button" aria-label="Return to story"><Icon name="back" size={21} /></button>
+      <button
+        onClick={onClose}
+        disabled={travelLocked}
+        className="rpg-square-button"
+        aria-label={travelLocked ? "Return to story unavailable while travel is in progress" : "Return to story"}
+        title={travelLocked ? "Finish the current journey before closing the map" : "Return to story"}
+      ><Icon name="back" size={21} /></button>
       <div className="rpg-location-lockup">
         <span>{city ? `${city} · unified city map` : `${biome.name} · overworld`}</span>
         <h1>{headerLocationName(tile)}</h1>
@@ -236,8 +248,20 @@ function RpgHeader({ state, biome, tile, onClose, onRegions, onJournal }) {
         <div className="rpg-coin"><span>◆</span>{formatCopper(coin)}</div>
       </div>
       <div className="rpg-map-header-actions">
-        <button type="button" className="rpg-square-button" onClick={onJournal} aria-label="Open quest journal"><Icon name="journal" size={21} /></button>
-        <button type="button" className="rpg-square-button" onClick={onRegions} aria-label="Open region selector"><Icon name="atlas" size={22} /></button>
+        <button
+          type="button"
+          className="rpg-square-button"
+          onClick={onJournal}
+          disabled={travelLocked}
+          aria-label={travelLocked ? "Quest journal unavailable while travel is in progress" : "Open quest journal"}
+        ><Icon name="journal" size={21} /></button>
+        <button
+          type="button"
+          className="rpg-square-button"
+          onClick={onRegions}
+          disabled={travelLocked}
+          aria-label={travelLocked ? "Region selector unavailable while travel is in progress" : "Open region selector"}
+        ><Icon name="atlas" size={22} /></button>
       </div>
     </header>
   );
@@ -246,6 +270,7 @@ function RpgHeader({ state, biome, tile, onClose, onRegions, onJournal }) {
 export function MapLegend({ onClose, initialSection = "guide" }) {
   const [sectionId, setSectionId] = useState(initialSection);
   const contentRef = useRef(null);
+  const dialogRef = useModalFocus(onClose);
   const poiGroup = POI_LEGEND_GROUPS.find((group) => group.id === sectionId) || null;
   const sections = [
     { id: "guide", label: "Map signs" },
@@ -261,7 +286,7 @@ export function MapLegend({ onClose, initialSection = "guide" }) {
   }, [sectionId]);
 
   return (
-    <section id="rpg-map-legend-dialog" className="rpg-map-legend-panel" role="dialog" aria-modal="true" aria-labelledby="rpg-map-legend-title" onMouseDown={(event) => event.stopPropagation()}>
+    <section ref={dialogRef} tabIndex={-1} id="rpg-map-legend-dialog" className="rpg-map-legend-panel" role="dialog" aria-modal="true" aria-labelledby="rpg-map-legend-title" onMouseDown={(event) => event.stopPropagation()}>
       <header className="rpg-map-legend-head">
         <div><small>Traveler's field guide</small><h2 id="rpg-map-legend-title">Map legend</h2><p>Read the signs before you march.</p></div>
         <button type="button" onClick={onClose} aria-label="Close map legend"><Icon name="x" size={17} /></button>
@@ -337,11 +362,11 @@ export function MapLegend({ onClose, initialSection = "guide" }) {
   );
 }
 
-function WorldGrid({ model, selection, journey, marchFrame, camera, onPan, onZoom, onRecenter, onPick, onSeekCombat, loading, night, city }) {
+function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, camera, onPan, onZoom, onRecenter, onRecenterTracked, onPick, onSeekCombat, loading, interactionLocked = false, night, city }) {
   const [legendOpen, setLegendOpen] = useState(false);
   const mapScene = useMemo(
-    () => buildWorldMapScene({ model, selection, journey, marchFrame, night }),
-    [model, selection, journey, marchFrame, night],
+    () => buildWorldMapScene({ model, selection, journey, marchFrame, trackedCharacter, night }),
+    [model, selection, journey, marchFrame, trackedCharacter, night],
   );
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.explored && cell.passable && !cell.current)
@@ -355,17 +380,18 @@ function WorldGrid({ model, selection, journey, marchFrame, camera, onPan, onZoo
     if (cell?.explored && cell.passable && !cell.current) onPick(cell);
   }
 
-  useEffect(() => {
-    if (!legendOpen) return undefined;
-    const onKeyDown = (event) => event.key === "Escape" && setLegendOpen(false);
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [legendOpen]);
-
   return (
     <>
       <main className={`rpg-world-stage canvas-world-stage ${city ? "is-capital" : ""} ${night ? "is-night" : ""}`}>
-        <MapCanvas scene={mapScene} onSelect={selectMapCell} onPan={onPan} onZoom={onZoom} label="Interactive world exploration map" choices={accessibleCells} selectedKey={selection?.key} />
+        <MapCanvas
+          scene={mapScene}
+          onSelect={interactionLocked ? undefined : selectMapCell}
+          onPan={onPan}
+          onZoom={onZoom}
+          label="Interactive world exploration map"
+          choices={interactionLocked ? [] : accessibleCells}
+          selectedKey={selection?.key}
+        />
         {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 
         <div className="rpg-map-camera-controls" data-travel-map-zoom={camera.zoom.toFixed(2)} aria-label="Travel map camera controls">
@@ -373,6 +399,17 @@ function WorldGrid({ model, selection, journey, marchFrame, camera, onPan, onZoo
           <span>{Math.round(camera.zoom * 100)}%</span>
           <button type="button" onClick={() => onZoom(0.84)} aria-label="Zoom travel map out" title="Zoom out">−</button>
           <button type="button" onClick={onRecenter} aria-label="Return map camera to party" title="Return to party"><Icon name="compass" size={16} /></button>
+          {trackedCharacter && (
+            <button
+              type="button"
+              className="is-tracked-lead"
+              onClick={onRecenterTracked}
+              aria-label={`Center map on tracked lead for ${trackedCharacter.name}`}
+              title={`Track ${trackedCharacter.name}`}
+            >
+              <span aria-hidden="true">⌖</span>
+            </button>
+          )}
         </div>
 
         <button
@@ -390,7 +427,7 @@ function WorldGrid({ model, selection, journey, marchFrame, camera, onPan, onZoo
           <div className="rpg-map-corner-controls">
             <button
               onClick={onSeekCombat}
-              disabled={loading}
+              disabled={loading || interactionLocked}
               className="rpg-wild-encounter"
               aria-label={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
               title={city ? "Look for trouble in the city" : "Seek a hostile encounter"}
@@ -411,18 +448,24 @@ function WorldGrid({ model, selection, journey, marchFrame, camera, onPan, onZoo
   );
 }
 
-function DestinationPanel({ state, model, selection, selectedName, journey, routeMinutes, risk, focusBiome, focusVisual, onClear, onTravel, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
+export function DestinationPanel({ state, model, selection, selectedName, journey, canGroundTravel, routeMinutes, risk, focusBiome, focusVisual, onClear, onTravel, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
   const distance = selection ? hexDistance(model.origin, selection) : 0;
-  // Named waypoints come from authored landmark data only — cheap lookups, no
-  // tile generation — so long continental previews stay responsive.
-  const journeyVia = useMemo(() => (journey ? journeyWaypoints(journey.fullPath, { cap: 4 }) : []), [journey]);
+  const destinationMapped = !!(selection?.seen || selection?.visited);
+  // Named waypoints come from authored landmark data only after their hexes are
+  // mapped; unknown route suffixes never reach this presentation component.
+  const journeyVia = useMemo(
+    () => (journey ? knownJourneyWaypoints(state, journey.legPath, { cap: 4 }) : []),
+    [journey, state],
+  );
   const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
-  const description = selection?.tile?.poi?.description || (selection ? TERRAINS[selection.tile?.terrain]?.flavor : null);
+  const description = destinationMapped
+    ? selection?.tile?.poi?.description || (selection ? TERRAINS[selection.tile?.terrain]?.flavor : null)
+    : selection ? "The objective is known, but the ground around it remains uncharted." : null;
   const rewardTitle = selection?.quest ? "Quest reward" : selection?.visited ? "Known waypoint" : "Discovery ahead";
-  const rewardValue = selection?.quest ? formatCopper(selection.quest.rewardCp || 0) : selection?.visited ? "Route recorded" : "New atlas entry";
-  const focusDistrict = cityDistrict(selection?.tile);
-  const focusMarketTier = selection?.tile?.poi?.marketTier || null;
-  const urbanRoute = !!selection?.tile?.cityId && selection.tile.cityId === model.current.tile?.cityId;
+  const rewardValue = selection?.quest ? formatCopper(selection.quest.rewardCp || 0) : selection?.visited ? "Route recorded" : "New map entry";
+  const focusDistrict = destinationMapped ? cityDistrict(selection?.tile) : null;
+  const focusMarketTier = destinationMapped ? selection?.tile?.poi?.marketTier || null : null;
+  const urbanRoute = destinationMapped && !!selection?.tile?.cityId && selection.tile.cityId === model.current.tile?.cityId;
   return (
     <section className={`rpg-command-panel ${selection ? "has-selection" : "is-awaiting-destination"}`}>
       <div className="rpg-party-card">
@@ -466,23 +509,35 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
 
             {journey ? (
               <>
-                <div className="rpg-route-stats">
-                  <div><small>{urbanRoute ? "Blocks" : "Steps"}</small><b>{journey.legSteps}</b><span>of {journey.totalSteps}</span></div>
-                  <div><small>Time</small><b>{formatTravelDuration(routeMinutes)}</b><span>this march</span></div>
-                  <div className={risk >= 40 ? "is-danger" : ""}><small>Danger</small><b>{risk}%</b><span>{dangerLabel(risk)}</span></div>
-                </div>
-                <div className="rpg-terrain-route">
-                  {journey.terrainLabels.map((terrain) => <span key={terrain.id} style={{ "--segment-color": TERRAIN_INK[terrain.id], "--segment-size": terrain.count }} title={`${terrain.label}: ${terrain.count} steps`}><i /><small>{terrain.label} ×{terrain.count}</small></span>)}
-                </div>
+                {journey.routeFullyMapped ? (
+                  <div className="rpg-route-stats">
+                    <div><small>{urbanRoute ? "Blocks" : "Steps"}</small><b>{journey.legSteps}</b><span>of {journey.totalSteps}</span></div>
+                    <div><small>Time</small><b>{formatTravelDuration(routeMinutes)}</b><span>this march</span></div>
+                    <div className={risk >= 40 ? "is-danger" : ""}><small>Danger</small><b>{risk}%</b><span>{dangerLabel(risk)}</span></div>
+                  </div>
+                ) : (
+                  <div className="rpg-route-stats is-uncharted">
+                    <div><small>Mapped</small><b>{journey.legSteps}</b><span>known steps</span></div>
+                    <div><small>Time</small><b>—</b><span>beyond the fog</span></div>
+                    <div><small>Danger</small><b>—</b><span>uncharted</span></div>
+                  </div>
+                )}
+                {journey.terrainLabels.length > 0 && (
+                  <div className="rpg-terrain-route">
+                    {journey.terrainLabels.map((terrain) => <span key={terrain.id} style={{ "--segment-color": TERRAIN_INK[terrain.id], "--segment-size": terrain.count }} title={`${terrain.label}: ${terrain.count} mapped steps`}><i /><small>{terrain.label} ×{terrain.count}</small></span>)}
+                  </div>
+                )}
                 {journeyVia.length > 0 && (
                   <p className="rpg-route-via">Via {journeyVia.map((waypoint) => waypoint.name).join(" · ")}</p>
                 )}
-                {!journey.arrived && (
+                {!journey.routeFullyMapped ? (
+                  <p className="rpg-leg-note">The mapped trail ends here. Travel time, danger, and terrain beyond the fog will be learned on the road.</p>
+                ) : !journey.arrived ? (
                   <p className="rpg-leg-note">
                     This march reaches {journey.legSteps} of {journey.totalSteps} steps before the party reassesses.
                     Full journey ≈ {formatTravelDuration(journey.legSteps > 0 ? Math.round(routeMinutes / journey.legSteps * journey.totalSteps) : routeMinutes)}.
                   </p>
-                )}
+                ) : null}
               </>
             ) : <div className="rpg-route-blocked">No ground route reaches this tile from here.</div>}
           </div>
@@ -494,10 +549,10 @@ function DestinationPanel({ state, model, selection, selectedName, journey, rout
           {canFly && <button onClick={onFly}>Fly · ~{Math.min(distance, FLY_TRAVEL_HEXES) * FLY_MIN_PER_HEX} min{flightMount ? ` · ${flightMount.name}` : ` · ${flyPlan.totalCost} RP`}</button>}
           {teleOption && <button onClick={() => resolve >= teleOption.resolveCost && onTeleport(teleOption)} disabled={resolve < teleOption.resolveCost}>{teleOption.name} · {teleOption.resolveCost} RP</button>}
         </div>}
-        <button onClick={onTravel} disabled={!journey || loading} className="rpg-travel-button">
+        <button onClick={onTravel} disabled={!canGroundTravel || loading} className="rpg-travel-button">
           <span aria-hidden="true">{loading ? "…" : "✓"}</span>
-          {!selection ? "Choose a destination" : isSelf ? "You are here" : !journey ? "Route unavailable" : journey.arrived ? `Travel to ${selectedName}` : `March toward ${selectedName}`}
-          <small>{journey ? `${risk}% danger` : ""}</small>
+          {!selection ? "Choose a destination" : isSelf ? "You are here" : !canGroundTravel ? "Route unavailable" : journey?.routeFullyMapped && journey.arrived ? `Travel to ${selectedName}` : `March toward ${selectedName}`}
+          <small>{journey?.routeFullyMapped ? `${risk}% danger` : canGroundTravel ? "uncharted route" : ""}</small>
         </button>
       </div>}
     </section>
@@ -553,109 +608,21 @@ function QuestJournalPage({ quests, current, onPick }) {
   );
 }
 
-function WorldAtlasPage({
-  state,
-  origin,
-  onPick,
-  onTravel,
-  travelMarch,
-  onTravelMarchFinish,
-  toolbarActions,
-}) {
-  return (
-    <div className="rpg-folio-page rpg-folio-page--atlas">
-      <WorldAtlas
-        state={state}
-        origin={origin}
-        onPick={onPick}
-        onTravel={onTravel}
-        travelMarch={travelMarch}
-        onTravelMarchFinish={onTravelMarchFinish}
-        toolbarActions={toolbarActions}
-      />
-    </div>
-  );
-}
-
-export function AdventureFolio({
-  state,
-  page,
-  quests,
-  landmarks,
-  origin,
-  onPage,
-  onClose,
-  onPick,
-  onTravel,
-  travelMarch,
-  onTravelMarchFinish,
-}) {
-  const tabs = [
-    { id: "atlas", label: "World atlas", icon: "atlas", count: landmarks.filter((landmark) => landmark.quest || landmark.name || poiPlaceName(landmark.tile?.poi)).length },
-    { id: "quests", label: "Quest journal", icon: "journal", count: quests.length },
-  ];
-  const isAtlas = page !== "quests";
-  const atlasToolbarActions = isAtlas ? (
-    <>
-      <button
-        type="button"
-        className="rpg-folio-map-journal"
-        onClick={() => onPage("quests")}
-        aria-label={`Open quest journal, ${quests.length} active ${quests.length === 1 ? "quest" : "quests"}`}
-      >
-        <Icon name="journal" size={15} strokeWidth={1.5} />
-        <span>Quest journal</span>
-        <b aria-hidden="true">{quests.length}</b>
-      </button>
-      <button type="button" onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label="Close world atlas"><Icon name="close" size={20} /></button>
-    </>
-  ) : null;
+export function AdventureFolio({ quests, origin, onClose, onPick }) {
+  const dialogRef = useModalFocus(onClose);
   return (
     <div className="rpg-folio-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section
-        className={`rpg-folio${isAtlas ? " rpg-folio--map" : ""}`}
-        role="dialog"
-        aria-modal="true"
-        {...(isAtlas ? { "aria-label": "World Atlas" } : { "aria-labelledby": "rpg-folio-title" })}
-      >
-        {!isAtlas && (
-          <header className="rpg-folio-hero rpg-folio-hero--quests" style={{ "--folio-hero-art": `url(${questJournalFolioHero})` }}>
-            <button type="button" onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label="Close quest journal"><Icon name="close" size={20} /></button>
-            <div className="rpg-folio-identity">
-              <small>Wayfinder's folio</small>
-              <h2 id="rpg-folio-title">Quest Journal</h2>
-              <p>Open obligations, promised rewards, and the next trail to follow.</p>
-            </div>
-            <div className="rpg-folio-tabs" role="tablist" aria-label="Folio sections">
-              {tabs.map((tab) => (
-                <button key={tab.id} id={`rpg-folio-tab-${tab.id}`} type="button" className={page === tab.id ? "is-active" : ""} onClick={() => onPage(tab.id)} role="tab" aria-selected={page === tab.id} aria-controls={`rpg-folio-panel-${tab.id}`}>
-                  <Icon name={tab.icon} size={16} strokeWidth={1.5} />
-                  <span>{tab.label}</span>
-                  <b>{tab.count}</b>
-                </button>
-              ))}
-            </div>
-          </header>
-        )}
-        <div
-          key={page}
-          id={`rpg-folio-panel-${page}`}
-          className={`rpg-folio-body rpg-folio-body--${page}`}
-          {...(isAtlas ? { "aria-label": "World Atlas" } : { role: "tabpanel", "aria-labelledby": `rpg-folio-tab-${page}` })}
-        >
-          {page === "quests"
-            ? <QuestJournalPage quests={quests} current={origin} onPick={onPick} />
-            : (
-              <WorldAtlasPage
-                state={state}
-                origin={origin}
-                onPick={onPick}
-                onTravel={onTravel}
-                travelMarch={travelMarch}
-                onTravelMarchFinish={onTravelMarchFinish}
-                toolbarActions={atlasToolbarActions}
-              />
-            )}
+      <section ref={dialogRef} tabIndex={-1} className="rpg-folio" role="dialog" aria-modal="true" aria-labelledby="rpg-folio-title">
+        <header className="rpg-folio-hero rpg-folio-hero--quests" style={{ "--folio-hero-art": `url(${questJournalFolioHero})` }}>
+          <button type="button" onClick={onClose} className="rpg-square-button rpg-folio-close" aria-label="Close quest journal"><Icon name="close" size={20} /></button>
+          <div className="rpg-folio-identity">
+            <small>Wayfinder's folio</small>
+            <h2 id="rpg-folio-title">Quest Journal</h2>
+            <p>Open obligations, promised rewards, and the next trail to follow.</p>
+          </div>
+        </header>
+        <div className="rpg-folio-body rpg-folio-body--quests" aria-label="Quest journal entries">
+          <QuestJournalPage quests={quests} current={origin} onPick={onPick} />
         </div>
       </section>
     </div>
@@ -674,13 +641,19 @@ export function WorldExploration({
   loading,
 }) {
   const partyCoord = state.world.currentTile;
+  const travelLocked = Boolean(travelMarch?.id);
+  const trackedCharacter = useMemo(() => trackedCharacterResult(state), [state]);
   const [selected, setSelected] = useState(null);
-  const [folioPage, setFolioPage] = useState(null);
+  const [journalOpen, setJournalOpen] = useState(false);
   const [flyPanelDest, setFlyPanelDest] = useState(null);
   const [mapViewport, setMapViewport] = useState(() => (
     typeof window === "undefined"
       ? { width: 1000, height: 700 }
       : { width: window.innerWidth, height: window.innerHeight }
+  ));
+  const [reducedMotion, setReducedMotion] = useState(() => (
+    typeof window !== "undefined"
+      && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
   ));
   const [camera, setCamera] = useState(() => ({ x: partyCoord.x, y: partyCoord.y, zoom: 1 }));
   const [regionSelectorOpen, setRegionSelectorOpen] = useState(false);
@@ -706,14 +679,16 @@ export function WorldExploration({
     visited: !!state.world.tiles?.[`${selected.x},${selected.y}`],
   } : null;
   const journey = useMemo(
-    () => planAtlasJourney(state, selected, WORLD_MARCH_LIMIT),
+    () => planHexJourney(state, selected, WORLD_MARCH_LIMIT),
     [state, selected],
   );
-  const mapJourney = travelMarch?.path?.length
-    ? { ...(journey || {}), legPath: travelMarch.path }
-    : journey;
-  const routeMinutes = journey ? pathMinutes(state, journey.legPath) : 0;
-  const risk = journey ? pathRiskPercent(state, journey.legPath) : 0;
+  const mapJourney = activeMarchJourney(journey, travelMarch);
+  const presentedJourney = useMemo(
+    () => knownJourneyPreview(state, mapJourney),
+    [state, mapJourney],
+  );
+  const routeMinutes = presentedJourney ? pathMinutes(state, presentedJourney.legPath) : 0;
+  const risk = presentedJourney ? pathRiskPercent(state, presentedJourney.legPath) : 0;
   const selectedName = selection ? nameForDestination(selection, model.origin) : currentLocationName(state);
   const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
 
@@ -722,8 +697,8 @@ export function WorldExploration({
   const flyPlan = flyMulticastPlan(state);
   const flightMount = playerFlightMount(state);
   const distance = selected ? hexDistance(model.origin, selected) : 0;
-  const canFly = !!selected && !isSelf && !loading && (flyPlan.casters.length > 0 || flightMount);
-  const teleOption = selected && !isSelf && !loading
+  const canFly = !!selected && !isSelf && !loading && !travelLocked && (flyPlan.casters.length > 0 || flightMount);
+  const teleOption = selected && !isSelf && !loading && !travelLocked
     ? teleSpells.find((spell) => (isFinite(spell.range) ? (selection?.seen && distance <= spell.range) : isTeleportAnchor(state, selected.x, selected.y)))
     : null;
 
@@ -732,7 +707,8 @@ export function WorldExploration({
   const currentBiome = currentBiomeId === "whitemarch" ? { ...currentCoordinateBiome, id: "whitemarch", name: "Whitemarch" } : currentCoordinateBiome;
   const currentVisual = biomeVisual(currentBiome.id);
   const currentCity = capitalName(model.current.tile);
-  const focusDestination = selection || model.current;
+  const destinationMapped = !!(selection?.seen || selection?.visited);
+  const focusDestination = selection && destinationMapped ? selection : model.current;
   const focusBiome = biomeAt(focusDestination, state.world.seed);
   const focusVisual = biomeVisual(focusBiome.id);
   const hour = state.time?.hour ?? 12;
@@ -741,6 +717,19 @@ export function WorldExploration({
     const measure = () => setMapViewport({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(preference.matches);
+    update();
+    if (preference.addEventListener) preference.addEventListener("change", update);
+    else preference.addListener?.(update);
+    return () => {
+      if (preference.removeEventListener) preference.removeEventListener("change", update);
+      else preference.removeListener?.(update);
+    };
   }, []);
 
   useEffect(() => {
@@ -772,6 +761,7 @@ export function WorldExploration({
     return startTravelMapMarch({
       id: travelMarch.id,
       path,
+      reducedMotion,
       onFrame: (frame) => {
         setMarchFrame(frame);
         if (!frame || frame.index === followedIndex) return;
@@ -781,18 +771,23 @@ export function WorldExploration({
       },
       onFinish: (id) => finishMarchRef.current?.(id),
     });
-  }, [travelMarch?.id, travelMarch?.visualDone]);
+  }, [travelMarch?.id, travelMarch?.visualDone, reducedMotion]);
 
   useEffect(() => {
-    if (!folioPage && !flyPanelDest) return undefined;
+    if (!travelLocked) return;
+    setRegionSelectorOpen(false);
+    setJournalOpen(false);
+    setFlyPanelDest(null);
+  }, [travelLocked]);
+
+  useEffect(() => {
+    if (!flyPanelDest) return undefined;
     const onKeyDown = (event) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (flyPanelDest) setFlyPanelDest(null);
-      else setFolioPage(null);
+      if (event.key === "Escape" && !event.defaultPrevented) setFlyPanelDest(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [flyPanelDest, folioPage]);
+  }, [flyPanelDest]);
 
   function handleMapPan(drag, worldRadius) {
     setCamera((current) => panTravelMapCamera(current, drag, worldRadius));
@@ -807,14 +802,16 @@ export function WorldExploration({
   }
 
   function openRegionSelector() {
+    if (travelLocked) return;
     rememberCameraPosition();
-    setFolioPage(null);
+    setJournalOpen(false);
     setRegionSelectorOpen(true);
   }
 
   function openQuestJournal() {
+    if (travelLocked) return;
     setRegionSelectorOpen(false);
-    setFolioPage("quests");
+    setJournalOpen(true);
   }
 
   function handleMapZoom(factor) {
@@ -824,6 +821,7 @@ export function WorldExploration({
   }
 
   function handleRegionSelect(entry) {
+    if (travelLocked) return;
     rememberCameraPosition();
     setCamera(regionCameraTarget(entry, cameraHistoryRef.current));
     setSelected(null);
@@ -834,23 +832,39 @@ export function WorldExploration({
     setCamera((current) => ({ ...current, x: partyCoord.x, y: partyCoord.y }));
   }
 
+  function handleTrackedRecenter() {
+    if (!trackedCharacter) return;
+    setCamera((current) => ({
+      ...current,
+      x: trackedCharacter.pos.x,
+      y: trackedCharacter.pos.y,
+      zoom: Math.max(current.zoom, 1),
+    }));
+  }
+
   function pick(destination) {
+    if (travelLocked) return;
     setSelected({ x: destination.x, y: destination.y, ...(destination.name ? { name: destination.name } : {}) });
-    setFolioPage(null);
+    setJournalOpen(false);
   }
 
   function handleFlySelection() {
+    if (travelLocked) return;
     if (flightMount || flyPlan.casts <= 1) onFly(selected);
     else setFlyPanelDest(selected);
   }
 
   function handleGroundTravel() {
-    if (!journey || loading) return;
+    if (!journey || loading || travelLocked) return;
     onTravel(selected, journey.fullPath);
   }
 
   return (
-    <div className={`exploration-shell rpg-exploration-shell ${currentCity ? "is-capital-map" : ""}`} style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}>
+    <div
+      className={`exploration-shell rpg-exploration-shell ${currentCity ? "is-capital-map" : ""}`}
+      data-travel-locked={travelLocked ? "true" : undefined}
+      style={{ "--rpg-accent": currentVisual.accent, "--rpg-primary": currentVisual.primary, "--rpg-deep": currentVisual.deep }}
+    >
       <RpgHeader
         state={state}
         biome={currentBiome}
@@ -858,24 +872,28 @@ export function WorldExploration({
         onClose={onClose}
         onRegions={openRegionSelector}
         onJournal={openQuestJournal}
+        travelLocked={travelLocked}
       />
       <div className="rpg-exploration-body">
         <WorldGrid
           model={model}
           selection={selection}
-          journey={mapJourney}
+          journey={presentedJourney}
           marchFrame={marchFrame}
+          trackedCharacter={trackedCharacter}
           camera={camera}
           onPan={handleMapPan}
           onZoom={handleMapZoom}
           onRecenter={handleMapRecenter}
+          onRecenterTracked={handleTrackedRecenter}
           onPick={pick}
           onSeekCombat={onSeekCombat}
           loading={loading}
+          interactionLocked={travelLocked}
           night={hour < 6 || hour >= 20}
           city={currentCity}
         />
-        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={handleGroundTravel} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading} />
+        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={handleGroundTravel} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
       </div>
       {regionSelectorOpen && (
         <RegionSelector
@@ -885,37 +903,30 @@ export function WorldExploration({
           onClose={() => setRegionSelectorOpen(false)}
         />
       )}
-      {folioPage && (
+      {journalOpen && (
         <AdventureFolio
-          state={state}
-          page={folioPage}
           quests={activeQuests}
-          landmarks={model.landmarks}
           origin={model.origin}
-          onPage={setFolioPage}
-          onClose={() => setFolioPage(null)}
+          onClose={() => setJournalOpen(false)}
           onPick={pick}
-          onTravel={onTravel}
-          travelMarch={travelMarch}
-          onTravelMarchFinish={onTravelMarchFinish}
         />
       )}
-      {flyPanelDest && <AtlasFlyPanel plan={flyPlan} destination={selectedName} onCancel={() => setFlyPanelDest(null)} onConfirm={(assign) => { const destination = flyPanelDest; setFlyPanelDest(null); onFly(destination, assign); }} />}
+      {flyPanelDest && <FlightAssignmentPanel plan={flyPlan} destination={selectedName} onCancel={() => setFlyPanelDest(null)} onConfirm={(assign) => { const destination = flyPanelDest; setFlyPanelDest(null); onFly(destination, assign); }} />}
     </div>
   );
 }
 
-function AtlasFlyPanel({ plan, destination, onCancel, onConfirm }) {
+function FlightAssignmentPanel({ plan, destination, onCancel, onConfirm }) {
   const [assign, setAssign] = useState(plan.autoAssign);
   const costs = assignmentCost(assign, plan.flyCost);
   const valid = assignmentValid(assign, plan.casters, plan.flyCost);
   return (
-    <div className="atlas-modal-backdrop" onClick={onCancel}>
-      <div className="atlas-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-label="Assign flight casters">
+    <div className="travel-modal-backdrop" onClick={onCancel}>
+      <div className="travel-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-label="Assign flight casters">
         <div className="rpg-overlay-head"><div><span className="rpg-kicker">Arcane passage</span><h2>Take wing</h2></div><button onClick={onCancel} className="rpg-square-button"><Icon name="x" size={13} color="#d7f5ff" /></button></div>
         <p>To {destination}. One casting bears one soul; choose who carries each traveller.</p>
-        {plan.passengers.map((passenger) => <label key={passenger.id} className="atlas-assign-row"><span>{passenger.name}{passenger.kind === "player" ? " (you)" : ""}</span><select value={assign[passenger.id] ?? ""} onChange={(event) => setAssign({ ...assign, [passenger.id]: event.target.value })}>{plan.casters.map((caster) => <option key={caster.id} value={caster.id}>flown by {caster.name}</option>)}</select></label>)}
-        <div className="atlas-caster-costs">{plan.casters.map((caster) => <span key={caster.id}>{caster.name}: {caster.resolve} → {caster.resolve - (costs[caster.id] || 0)}</span>)}</div>
+        {plan.passengers.map((passenger) => <label key={passenger.id} className="flight-assign-row"><span>{passenger.name}{passenger.kind === "player" ? " (you)" : ""}</span><select value={assign[passenger.id] ?? ""} onChange={(event) => setAssign({ ...assign, [passenger.id]: event.target.value })}>{plan.casters.map((caster) => <option key={caster.id} value={caster.id}>flown by {caster.name}</option>)}</select></label>)}
+        <div className="flight-caster-costs">{plan.casters.map((caster) => <span key={caster.id}>{caster.name}: {caster.resolve} → {caster.resolve - (costs[caster.id] || 0)}</span>)}</div>
         <button onClick={() => valid && onConfirm(assign)} disabled={!valid} className="rpg-travel-button rpg-travel-button--sky"><span aria-hidden="true">↑</span>{valid ? `Take wing · ${plan.totalCost} resolve` : "Not enough resolve"}</button>
       </div>
     </div>

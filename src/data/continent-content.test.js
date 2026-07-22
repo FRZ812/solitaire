@@ -12,6 +12,7 @@ const {
   LANDMARKS,
   NORTHERN_RIDGES,
   PROVINCES,
+  RARE_TRADE_HOUSES,
   REALMS,
   REALM_FACTIONS,
 } = ContinentData;
@@ -263,6 +264,14 @@ describe("expanded continent content contract", () => {
       expect(containingRoutes.some((route) => reachableRoutes.has(route.id)), `${place.id} is isolated`)
         .toBe(true);
     }
+  });
+
+  it("keeps rare trade-house tiers in their canonical destination registry", () => {
+    expect(RARE_TRADE_HOUSES["northstar-castle"])
+      .toMatchObject({ id: "aurora-armoury", marketTier: "royal" });
+    expect(RARE_TRADE_HOUSES["star-forge"])
+      .toMatchObject({ id: "falling-star-forge", marketTier: "mastercraft" });
+    expect(RARE_TRADE_HOUSES.whitemarch).toBeUndefined();
   });
 
   it("authors navigable sea lanes between valid ports with offshore geometry", () => {

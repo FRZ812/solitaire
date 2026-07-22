@@ -7,8 +7,10 @@ import {
   buildMapLayout,
   buildRouteSegments,
   findInteractiveEntry,
-  mapMarchEntry,
+  mapPartyEntry,
+  mapTrackedEntry,
 } from "./mapGeometry.js";
+import { pinchDistance, pinchZoomFactor } from "./mapGestures.js";
 
 const MATERIAL_FALLBACKS = {
   plains: "#79a64a", forest: "#214f3d", hills: "#aa793f", mountains: "#7d8082",
@@ -263,6 +265,66 @@ function drawFog(context, scene, entries) {
   }
 }
 
+function drawTrackedCharacter(context, entry) {
+  if (!entry) return;
+  const { x, y } = entry.center;
+  if (!entry.tracked.exact) {
+    const uncertainty = Math.max(2, entry.tracked.uncertainty_radius || 4);
+    const radius = Math.max(26, Math.min(86, entry.size * uncertainty * 0.72));
+    context.save();
+    context.translate(x, y);
+    context.fillStyle = "rgba(72, 33, 91, .13)";
+    context.strokeStyle = "rgba(216, 139, 255, .88)";
+    context.lineWidth = Math.max(2, entry.size * 0.06);
+    context.setLineDash([Math.max(5, entry.size * 0.2), Math.max(4, entry.size * 0.14)]);
+    context.beginPath();
+    context.arc(0, 0, radius, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+    context.setLineDash([]);
+    context.fillStyle = "#f4d8ff";
+    context.font = `700 ${Math.max(14, Math.min(22, entry.size * 0.44))}px Georgia, serif`;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText("?", 0, 0);
+    context.restore();
+    drawLabel(context, `${entry.tracked.name} · approximate area`, x, y + radius + entry.size * 0.3, entry.size);
+    return;
+  }
+
+  const radius = Math.max(9, Math.min(18, entry.size * 0.31));
+  context.save();
+  context.translate(x, y);
+  context.fillStyle = "rgba(4, 12, 29, .82)";
+  context.strokeStyle = "#d88bff";
+  context.lineWidth = Math.max(2, radius * 0.13);
+  context.beginPath();
+  context.arc(0, 0, radius, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  context.strokeStyle = "rgba(240, 190, 255, .92)";
+  context.beginPath();
+  context.moveTo(-radius * 1.5, 0);
+  context.lineTo(-radius * 0.55, 0);
+  context.moveTo(radius * 0.55, 0);
+  context.lineTo(radius * 1.5, 0);
+  context.moveTo(0, -radius * 1.5);
+  context.lineTo(0, -radius * 0.55);
+  context.moveTo(0, radius * 0.55);
+  context.lineTo(0, radius * 1.5);
+  context.stroke();
+  context.fillStyle = "#f4d8ff";
+  context.beginPath();
+  context.moveTo(0, -radius * 0.48);
+  context.lineTo(radius * 0.48, 0);
+  context.lineTo(0, radius * 0.48);
+  context.lineTo(-radius * 0.48, 0);
+  context.closePath();
+  context.fill();
+  context.restore();
+  drawLabel(context, entry.tracked.name, x, y + radius * 1.75, entry.size);
+}
+
 function drawPlayer(context, entry) {
   if (!entry) return;
   const radius = Math.max(10, Math.min(21, entry.size * 0.35));
@@ -327,8 +389,8 @@ export function renderMap(context, scene, layout, atlas, poiAtlases, hoverKey, w
   drawMarkers(context, scene, layout.entries, poiAtlases);
   drawFog(context, scene, layout.entries);
   drawSelection(context, layout.entries.find((entry) => entry.key === String(scene.selected_key || "")));
-  const marchingParty = mapMarchEntry(layout, scene.party_march);
-  drawPlayer(context, marchingParty || layout.entries.find((entry) => entry.key === String(scene.current_key || "")));
+  drawTrackedCharacter(context, mapTrackedEntry(layout, scene.tracked_character));
+  drawPlayer(context, mapPartyEntry(layout, scene.current_key, scene.party_march));
   drawHover(context, layout.entries.find((entry) => entry.key === hoverKey));
 
   const vignette = context.createRadialGradient(width * 0.5, height * 0.46, Math.min(width, height) * 0.2, width * 0.5, height * 0.5, Math.max(width, height) * 0.7);
@@ -357,7 +419,9 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
   const poiAtlasesRef = useRef(initialImages.poi);
   const layoutRef = useRef({ entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 });
   const dragRef = useRef(null);
-  const suppressClickRef = useRef(false);
+  const pointerPointsRef = useRef(new Map());
+  const pinchRef = useRef(null);
+  const suppressClickUntilRef = useRef(0);
   const [viewport, setViewport] = useState({ width: 1, height: 1 });
   const [atlasReady, setAtlasReady] = useState(Boolean(initialImages.material));
   const [poiAtlasesReady, setPoiAtlasesReady] = useState(() => Object.values(initialImages.poi).filter(Boolean).length);
@@ -426,50 +490,92 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, label, choices = [],
   }
 
   function beginPan(event) {
-    if (!onPan) return;
     const point = eventPoint(event, event.currentTarget);
-    dragRef.current = { pointerId: event.pointerId, start: point, last: point, moved: false };
+    pointerPointsRef.current.set(event.pointerId, point);
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    if (pointerPointsRef.current.size >= 2 && onZoom) {
+      pinchRef.current = { distance: pinchDistance([...pointerPointsRef.current.values()]) };
+      dragRef.current = null;
+      suppressClickUntilRef.current = Date.now() + 350;
+      setHoverKey("");
+      setDragging(false);
+      event.preventDefault();
+      return;
+    }
+    if (!onPan) return;
+    dragRef.current = { pointerId: event.pointerId, start: point, last: point, moved: false };
     setHoverKey("");
     setDragging(true);
   }
 
   function movePointer(event) {
+    const point = eventPoint(event, event.currentTarget);
+    if (pointerPointsRef.current.has(event.pointerId)) {
+      pointerPointsRef.current.set(event.pointerId, point);
+    }
+    if (pinchRef.current) {
+      const distance = pinchDistance([...pointerPointsRef.current.values()]);
+      if (distance != null) {
+        const factor = pinchZoomFactor(pinchRef.current.distance, distance);
+        if (Math.abs(factor - 1) > 0.005) onZoom?.(factor);
+        pinchRef.current.distance = distance;
+      }
+      suppressClickUntilRef.current = Date.now() + 350;
+      event.preventDefault();
+      return;
+    }
+
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) {
       updateHover(event);
       return;
     }
-    const point = eventPoint(event, event.currentTarget);
     drag.last = point;
     if (Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6) drag.moved = true;
   }
 
   function finishPan(event) {
+    if (pinchRef.current) {
+      pointerPointsRef.current.delete(event.pointerId);
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      suppressClickUntilRef.current = Date.now() + 350;
+      dragRef.current = null;
+      if (pointerPointsRef.current.size === 0) pinchRef.current = null;
+      setDragging(false);
+      return;
+    }
+
     const drag = dragRef.current;
+    pointerPointsRef.current.delete(event.pointerId);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
     if (!drag || drag.pointerId !== event.pointerId) return;
     const point = eventPoint(event, event.currentTarget);
     const moved = drag.moved || Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6;
     if (moved) {
       onPan?.({ x: point.x - drag.start.x, y: point.y - drag.start.y }, layoutRef.current.worldRadius);
+      suppressClickUntilRef.current = Date.now() + 350;
     }
-    suppressClickRef.current = moved;
     dragRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
     setDragging(false);
   }
 
   function cancelPan(event) {
+    pointerPointsRef.current.delete(event.pointerId);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (pinchRef.current) {
+      suppressClickUntilRef.current = Date.now() + 350;
+      if (pointerPointsRef.current.size === 0) pinchRef.current = null;
+      dragRef.current = null;
+      setDragging(false);
+      return;
+    }
     if (dragRef.current?.pointerId !== event.pointerId) return;
     dragRef.current = null;
     setDragging(false);
   }
 
   function pick(event) {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
-    }
+    if (Date.now() < suppressClickUntilRef.current) return;
     const entry = entryAt(event);
     if (entry) onSelect?.(entry.key);
   }

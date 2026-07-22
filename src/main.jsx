@@ -8,17 +8,12 @@ import { PwaDiagnostics } from "./components/PwaDiagnostics.jsx";
 import { MapEditor } from "./components/MapEditor.jsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { hydrateMap, subscribeToMapUpdates, onMapUpdate } from "./data/handcrafted-map.js";
-import { preloadGameRendering } from "./components/exploration/renderingPreload.js";
+import { preloadMapCanvasImages } from "./components/exploration/renderingPreload.js";
 
-// Begin fetching/decoding the shared rendering assets and building the 3D
-// terrain while the normal map/auth startup work is already in flight. This is
-// deliberately not awaited: first paint and sign-in stay responsive, while the
-// atlas is warm by the time a campaign menu can open it.
+// Warm the shared hex-map material and marker atlases without delaying startup.
+// Failures remain retryable when MapCanvas mounts.
 if (typeof window !== "undefined" && !window.location.hash.startsWith("#/edit")) {
-  preloadGameRendering().catch(() => {
-    // Rendering initialization retains its own retryable caches. A later atlas
-    // mount can retry without turning a best-effort warm-up into a boot error.
-  });
+  preloadMapCanvasImages().catch(() => {});
 }
 
 // Hash routing — `#/edit` swaps the main app for the handcrafted-map editor.

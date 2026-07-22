@@ -11,7 +11,7 @@ import {
   compileWhitemarchCapital,
 } from "../../data/whitemarch-capital.js";
 import { getTile } from "../../engine/world.js";
-import { buildExplorationModel, buildRpgViewport } from "./atlasModel.js";
+import { buildExplorationModel, buildRpgViewport } from "./hexMapModel.js";
 
 function keyOf(coord) {
   return `${coord.x},${coord.y}`;
@@ -29,7 +29,7 @@ function withCompiledCapital(run) {
   }
 }
 
-describe("unified capital in the exploration atlas", () => {
+describe("unified capital in the exploration map", () => {
   it("distinguishes current sight from remembered exploration", () => {
     const state = makeInitialState();
     state.world.seen = { "0,0": true, "2,0": true, "4,0": true };

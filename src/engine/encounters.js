@@ -77,6 +77,28 @@ export function rollPathEncounter(state, path) {
   return null;
 }
 
+// The route roll and every presentation layer share this one truncation rule:
+// movement, narration, the visible march, and eventual arrival all stop on the
+// first encounter tile. Invalid/stale encounter metadata never shortens a leg.
+export function pathThroughEncounter(path, pathEncounter) {
+  const route = Array.isArray(path) ? path : [];
+  const atIndex = pathEncounter?.atIndex;
+  const atTile = pathEncounter?.atTile;
+  const indexedTile = route[atIndex];
+  if (
+    !Number.isInteger(atIndex)
+    || atIndex < 1
+    || atIndex >= route.length
+    || !Number.isFinite(atTile?.x)
+    || !Number.isFinite(atTile?.y)
+    || indexedTile?.x !== atTile.x
+    || indexedTile?.y !== atTile.y
+  ) {
+    return route.slice();
+  }
+  return route.slice(0, atIndex + 1);
+}
+
 // Pick one aerial predator from the sky-ambush pool (weighted, all hostile).
 function pickAerial() {
   const total = AERIAL_SPAWNS.reduce((s, e) => s + e.weight, 0);

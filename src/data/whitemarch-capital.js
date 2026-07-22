@@ -429,34 +429,6 @@ function buildCapitalBlueprint() {
 
 const CAPITAL_BLUEPRINT = buildCapitalBlueprint();
 
-// A static, seed-independent projection of the authored capital for the 3D
-// world atlas. This module is intentionally cycle-free (continent.js imports
-// its metadata), so the atlas terrain model and its worker can read the city
-// layout without pulling in persistence, Supabase, or the full engine graph.
-// Each entry is a minimal frozen view of a compiled tile — never a mutable
-// reference into the blueprint.
-const CAPITAL_TILE_PROJECTION = new Map(Object.entries(CAPITAL_BLUEPRINT.tiles)
-  .map(([key, tile]) => [key, Object.freeze({
-    terrain: tile.terrain,
-    districtId: tile.districtId,
-    poiType: tile.poi?.type || null,
-    poiPart: tile.poi?.part || null,
-    isGate: tile.gateId != null || tile.poi?.type === "gate",
-    isBridge: tile.bridge === true,
-    isWater: tile.terrain === "water",
-    isWall: tile.terrain === "wall",
-  })]));
-
-/**
- * Authored Whitemarch tile at an axial coordinate, or null outside the city.
- * Pure and synchronous; identical in the main thread and the terrain worker.
- */
-export function whitemarchTileAt(x, y) {
-  if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
-  if (hexDistance({ x, y }) > CITY_RADIUS) return null;
-  return CAPITAL_TILE_PROJECTION.get(`${x},${y}`) || null;
-}
-
 export const WHITEMARCH_LANDMARKS = Object.freeze(
   Object.entries(CAPITAL_BLUEPRINT.tiles)
     .filter(([, tile]) => tile.poi?.name)

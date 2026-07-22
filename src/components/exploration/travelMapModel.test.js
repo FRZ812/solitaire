@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { makeInitialState } from "../../data/initial-state.js";
 import {
   REGION_SELECTOR_ZOOM_THRESHOLD,
   TRAVEL_MAP_MAX_ZOOM,
   TRAVEL_MAP_MIN_ZOOM,
+  activeMarchJourney,
   clampTravelMapZoom,
+  formatTravelDuration,
+  knownJourneyPreview,
+  knownJourneyWaypoints,
   panTravelMapCamera,
   startTravelMapMarch,
   travelMapMarchDuration,
@@ -63,6 +68,28 @@ describe("hex travel march presentation", () => {
     expect(travelMapMarchDuration(Array.from({ length: 40 }, (_, x) => ({ x, y: 0 })))).toBe(6_000);
   });
 
+  it("completes immediately without scheduling animation when reduced motion is requested", () => {
+    const schedule = vi.fn();
+    const onFrame = vi.fn();
+    const onFinish = vi.fn();
+
+    const stop = startTravelMapMarch({
+      id: "march-reduced",
+      path,
+      reducedMotion: true,
+      schedule,
+      onFrame,
+      onFinish,
+    });
+
+    expect(schedule).not.toHaveBeenCalled();
+    expect(onFrame).toHaveBeenCalledOnce();
+    expect(onFrame.mock.calls[0][0]).toMatchObject({ coord: { x: 1, y: 1 }, mix: 1 });
+    expect(onFinish).toHaveBeenCalledOnce();
+    expect(onFinish).toHaveBeenCalledWith("march-reduced");
+    expect(stop).toEqual(expect.any(Function));
+  });
+
   it("interpolates the party between authoritative path hexes", () => {
     expect(travelMapMarchFrame(path, 0)).toMatchObject({ fromKey: "0,0", toKey: "1,0", mix: 0, coord: { x: 0, y: 0 } });
     expect(travelMapMarchFrame(path, 0.25)).toMatchObject({ fromKey: "0,0", toKey: "1,0", mix: 0.5, coord: { x: 0.5, y: 0 } });
@@ -74,6 +101,20 @@ describe("hex travel march presentation", () => {
     expect(travelMapMarchFrame([], 0.5)).toBeNull();
     expect(travelMapMarchFrame([{ x: 4, y: -2 }], 0.5)).toMatchObject({
       fromKey: "4,-2", toKey: "4,-2", mix: 0, coord: { x: 4, y: -2 },
+    });
+  });
+
+  it("presents an encounter-truncated active march as a non-arrival leg", () => {
+    const full = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }];
+    const journey = { fullPath: full, legPath: full, end: full.at(-1), arrived: true, totalSteps: 3, legSteps: 3 };
+    const march = { path: full.slice(0, 3), intendedDest: full.at(-1), encounterAtEnd: { kind: "brigands" } };
+
+    expect(activeMarchJourney(journey, march)).toMatchObject({
+      legPath: full.slice(0, 3),
+      end: full[2],
+      arrived: false,
+      legSteps: 2,
+      totalSteps: 3,
     });
   });
 
@@ -117,5 +158,80 @@ describe("hex travel march presentation", () => {
 
     expect(cancelled).toEqual([1]);
     expect(finishes).toEqual([]);
+  });
+
+  it("formats travel durations without depending on the retired atlas", () => {
+    expect(formatTravelDuration(42)).toBe("42 min");
+    expect(formatTravelDuration(125)).toBe("2 h 5 min");
+    expect(formatTravelDuration(3_000)).toBe("2 d 2 h");
+  });
+
+  it("limits journey presentation to the contiguous mapped route prefix", () => {
+    const state = makeInitialState();
+    const origin = { ...state.world.currentTile };
+    const mapped = { x: origin.x + 1, y: origin.y };
+    const unknown = { x: origin.x + 2, y: origin.y };
+    const secret = { x: origin.x + 3, y: origin.y };
+    state.world.seen[`${mapped.x},${mapped.y}`] = true;
+    delete state.world.seen[`${unknown.x},${unknown.y}`];
+    delete state.world.seen[`${secret.x},${secret.y}`];
+    const journey = {
+      fullPath: [origin, mapped, unknown, secret],
+      legPath: [origin, mapped, unknown, secret],
+      end: secret,
+      arrived: true,
+      totalSteps: 3,
+      legSteps: 3,
+      terrainCounts: { road: 1, marsh: 1, mountains: 1 },
+      terrainLabels: [
+        { id: "road", count: 1, label: "Road" },
+        { id: "marsh", count: 1, label: "Marsh" },
+        { id: "mountains", count: 1, label: "Mountains" },
+      ],
+    };
+
+    const preview = knownJourneyPreview(state, journey);
+
+    expect(preview.legPath).toEqual([origin, mapped]);
+    expect(preview.routeFullyMapped).toBe(false);
+    expect(preview.totalSteps).toBeNull();
+    expect(preview.arrived).toBe(false);
+    expect(preview).not.toHaveProperty("fullPath");
+    expect(preview.terrainLabels).not.toEqual(journey.terrainLabels);
+    expect(JSON.stringify(preview)).not.toContain(`${unknown.x},${unknown.y}`);
+    expect(JSON.stringify(preview)).not.toContain("Marsh");
+    expect(JSON.stringify(preview)).not.toContain("Mountains");
+  });
+
+  it("retains exact journey metrics only when every presented hex is mapped", () => {
+    const state = makeInitialState();
+    const origin = { ...state.world.currentTile };
+    const end = { x: origin.x + 1, y: origin.y };
+    state.world.seen[`${end.x},${end.y}`] = true;
+    const journey = {
+      fullPath: [origin, end], legPath: [origin, end], end,
+      arrived: true, totalSteps: 1, legSteps: 1,
+      terrainCounts: { road: 1 },
+      terrainLabels: [{ id: "road", count: 1, label: "Road" }],
+    };
+
+    expect(knownJourneyPreview(state, journey)).toMatchObject({
+      legPath: [origin, end],
+      routeFullyMapped: true,
+      totalSteps: 1,
+      legSteps: 1,
+      arrived: true,
+    });
+  });
+
+  it("never reveals an authored waypoint until its hex is persistently mapped", () => {
+    const state = makeInitialState();
+    const pathWithTellmar = [{ x: 0, y: 0 }, { x: 418, y: 72 }, { x: 1, y: 0 }];
+
+    expect(knownJourneyWaypoints(state, pathWithTellmar)).toEqual([]);
+    state.world.seen["418,72"] = true;
+    expect(knownJourneyWaypoints(state, pathWithTellmar)).toEqual([
+      expect.objectContaining({ name: "Tellmar", index: 1 }),
+    ]);
   });
 });

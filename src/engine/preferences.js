@@ -35,32 +35,3 @@ export function applyStoryFontScale(id = getStoryFontScale()) {
   const scale = STORY_FONT_SCALES.find((s) => s.id === id) || STORY_FONT_SCALES.find((s) => s.id === DEFAULT_STORY_FONT_SCALE);
   document.documentElement.style.setProperty(FONT_SCALE_CSS_VAR, String(scale.value));
 }
-
-// 3D world atlas render quality. "auto" defers to device detection
-// (atlasQuality.js); the other modes force a tier. Changing the preference
-// fires ATLAS_QUALITY_EVENT so an open atlas can rebuild live.
-
-export const ATLAS_QUALITY_MODES = [
-  { id: "auto", label: "Auto", description: "Match this device's capability." },
-  { id: "high", label: "High", description: "Refined terrain, shadows, and full effects." },
-  { id: "medium", label: "Medium", description: "Balanced detail for phones and older laptops." },
-  { id: "low", label: "Low", description: "Simplest rendering for weak hardware." },
-];
-
-export const DEFAULT_ATLAS_QUALITY = "auto";
-export const ATLAS_QUALITY_EVENT = "solitaire:atlas-quality";
-
-const ATLAS_QUALITY_KEY = "solitaire-atlas-quality-v1";
-
-export function getAtlasQuality() {
-  try {
-    const v = localStorage.getItem(ATLAS_QUALITY_KEY);
-    if (v && ATLAS_QUALITY_MODES.some((mode) => mode.id === v)) return v;
-  } catch {}
-  return DEFAULT_ATLAS_QUALITY;
-}
-
-export function setAtlasQuality(id) {
-  try { localStorage.setItem(ATLAS_QUALITY_KEY, id); } catch {}
-  try { window.dispatchEvent(new CustomEvent(ATLAS_QUALITY_EVENT, { detail: id })); } catch {}
-}

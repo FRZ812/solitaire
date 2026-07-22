@@ -38,7 +38,7 @@ const LANDMARK_TYPES = new Set([
 const COMPASS_ORDER = ["north-west", "north", "north-east", "east", "south-east", "south", "south-west", "west"];
 const TRAIL_REACH = 4;
 const WHITEMARCH_CITY_ID = WHITEMARCH_CAPITAL.cityId || WHITEMARCH_CAPITAL.id;
-const WHITEMARCH_ATLAS_LANDMARK = WHITEMARCH_LANDMARKS.find((landmark) => (
+const WHITEMARCH_REGIONAL_LANDMARK = WHITEMARCH_LANDMARKS.find((landmark) => (
   landmark?.atlasLandmark
   || (landmark?.coord?.x === WHITEMARCH_CAPITAL.start.x
     && landmark?.coord?.y === WHITEMARCH_CAPITAL.start.y)
@@ -205,8 +205,8 @@ export function buildExplorationModel(state, options = {}) {
     if (!Number.isFinite(coord.x) || !Number.isFinite(coord.y)) continue;
     const tile = getTile(state, coord.x, coord.y);
     const knownBy = RUMORED[key] ? "reputation" : (FABLED_BY_COORD[key] ? "legend" : null);
-    // A named lake or other impassable feature still belongs in the atlas even
-    // though ground travel correctly stops at its shore.
+    // A named lake or other impassable feature still belongs in the regional map
+    // index even though ground travel correctly stops at its shore.
     if (!isPassable(tile) && !knownBy) continue;
     const seen = isSeen(state, coord.x, coord.y);
     const visited = isVisited(state, coord.x, coord.y);
@@ -219,8 +219,8 @@ export function buildExplorationModel(state, options = {}) {
     const knownName = name && tile.poi?.type !== "hidden" && (seen || visited || quest || knownBy);
     const isLandmark = knownName && (LANDMARK_TYPES.has(tile.poi?.type) || quest);
     const anchor = (seen || visited) && isTeleportAnchor(state, coord.x, coord.y);
-    // City POIs stay fully visible in the nearby RPG viewport, but the atlas
-    // index represents the entire capital with a single landmark instead of
+    // City POIs stay fully visible in the nearby RPG viewport, while the regional
+    // index represents the entire capital with one destination instead of
     // listing every market stall, gatehouse, chapel, and workshop.
     if (tile.cityId === WHITEMARCH_CITY_ID) continue;
     if ((isLandmark || quest || anchor) && distance > 0) {
@@ -228,7 +228,7 @@ export function buildExplorationModel(state, options = {}) {
     }
   }
 
-  const capitalCoord = WHITEMARCH_ATLAS_LANDMARK.coord || WHITEMARCH_CAPITAL.center || WHITEMARCH_CAPITAL.start;
+  const capitalCoord = WHITEMARCH_REGIONAL_LANDMARK.coord || WHITEMARCH_CAPITAL.center || WHITEMARCH_CAPITAL.start;
   const capitalKey = coordKey(capitalCoord);
   const capitalTile = getTile(state, capitalCoord.x, capitalCoord.y);
   const capitalSeen = isSeen(state, capitalCoord.x, capitalCoord.y);
@@ -275,7 +275,7 @@ export function buildExplorationModel(state, options = {}) {
   };
 }
 
-export function planAtlasJourney(state, destination, maxLeg = 48) {
+export function planHexJourney(state, destination, maxLeg = 48) {
   if (!destination) return null;
   const from = state.world.currentTile;
   if (from.x === destination.x && from.y === destination.y) return null;

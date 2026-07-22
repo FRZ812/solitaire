@@ -20,6 +20,7 @@ import {
   HEX_DIRECTIONS,
   isPassable,
   isTeleportAnchor,
+  pathMinutes,
   travelMinutes,
   persistedTileDelta,
 } from "./world.js";
@@ -189,6 +190,18 @@ describe("generated continent integration", () => {
       expect(route?.[0], id).toEqual(state.world.currentTile);
       expect(route?.at(-1), id).toEqual(destination.coord);
     }
+  });
+
+  it("keeps the Northstar campaign route at continental expedition scale", () => {
+    const state = makeInitialState();
+    const origin = { ...state.world.currentTile };
+    const northstar = LANDMARKS.find((landmark) => landmark.id === "northstar-castle");
+    const route = findWorldRoute(state, origin, northstar.coord);
+
+    expect(state.world.currentTile).toEqual(origin);
+    expect(route?.[0]).toEqual(origin);
+    expect(route?.at(-1)).toEqual(northstar.coord);
+    expect(pathMinutes(state, route)).toBeGreaterThanOrEqual(33_640);
   });
 
   it("keeps impassable natural landmarks out of blind teleport anchors", () => {
