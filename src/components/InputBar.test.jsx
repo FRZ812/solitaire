@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { InputBar } from "./primitives.jsx";
+import { InputBar, NarratorPickerPanel } from "./primitives.jsx";
 
 describe("InputBar", () => {
   it("shows one send action while the textarea contains a draft", () => {
@@ -80,5 +80,63 @@ describe("InputBar", () => {
     expect(html).toContain('aria-label="Finish advancement. Open Progression."');
     expect(html).toContain("Finish advancement");
     expect(html).not.toContain('<b aria-hidden="true">0</b>');
+  });
+
+  it("shows an explicit close action with useful price and intelligence columns", () => {
+    const html = renderToStaticMarkup(
+      <NarratorPickerPanel
+        model="deepseek/deepseek-v4-pro"
+        effort="high"
+        query=""
+        onQueryChange={() => {}}
+        onChooseModel={() => {}}
+        onChooseEffort={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Choose narrator model"');
+    expect(html).toContain('aria-label="Close narrator picker"');
+    expect(html).toContain("Narrator model");
+    expect(html).toContain("PRICE");
+    expect(html).toContain("INTELLIGENCE");
+    expect(html).toContain("Free primary");
+    expect(html).toContain("$0.09 / $0.18 fallback");
+    expect(html).toContain("$0.132 / $0.528");
+    expect(html).toContain("$0.14 / $0.28");
+    expect(html).toContain("$0.435 / $0.87");
+    expect(html).toContain("DeepSeek V4 Flash 0731");
+    expect(html).toContain("GLM level");
+    expect(html).toContain("Product guidance");
+    expect(html).toContain("Artificial Analysis");
+    expect(html).toContain("40.3");
+    expect(html).toContain("57.1");
+    expect(html).toContain("Unrated");
+
+    expect(html).not.toContain("narrator-picker__handle");
+    expect(html).not.toContain("narrator-picker__mode");
+    expect(html).not.toContain("narrator-picker__filters");
+    expect(html).not.toContain("narrator-picker__route-bar");
+    expect(html).not.toContain("narrator-picker__capability");
+    expect(html).not.toContain("OpenRouter");
+    expect(html).not.toContain("OPENAI ROUTE");
+    expect(html).not.toContain("REASONING</span>");
+  });
+
+  it("searches the narrator provider notes as well as model labels", () => {
+    const html = renderToStaticMarkup(
+      <NarratorPickerPanel
+        model="tencent/hy3"
+        effort="high"
+        query="Tencent"
+        onQueryChange={() => {}}
+        onChooseModel={() => {}}
+        onChooseEffort={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Hy3");
+    expect(html).not.toContain("DeepSeek V4 Pro");
   });
 });

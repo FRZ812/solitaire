@@ -5,6 +5,9 @@ import {
   NARRATOR_MODELS,
   getNarratorModel,
   normalizeNarratorEffort,
+  narratorModelIntelligenceLabel,
+  narratorModelIntelligenceSourceLabel,
+  narratorModelPriceLabel,
 } from "./narrator-models.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -22,6 +25,7 @@ describe("OpenRouter narrator registry", () => {
       "deepseek/deepseek-v4-flash",
       "deepseek/deepseek-v4-pro",
       "minimax/minimax-m3",
+      "deepseek/deepseek-v4-flash-0731",
       "z-ai/glm-5.2",
       "x-ai/grok-4.5",
       "openai/gpt-5.6-luna",
@@ -70,6 +74,22 @@ describe("OpenRouter narrator registry", () => {
     expect(hy3?.fallback).toBeUndefined();
   });
 
+  it("adds DeepSeek V4 Flash 0731 with exact price and explicitly sourced GLM-level guidance", () => {
+    const model = NARRATOR_MODELS.find((entry) => entry.id === "deepseek/deepseek-v4-flash-0731");
+    expect(model).toMatchObject({
+      label: "DeepSeek V4 Flash 0731",
+      note: "DeepSeek",
+      provider: "OpenRouter",
+      efforts: ["high", "max"],
+      price: { input: 0.14, output: 0.28 },
+      intelligence: null,
+      intelligenceGuidance: "GLM level",
+    });
+    expect(narratorModelPriceLabel(model)).toBe("$0.14 / $0.28");
+    expect(narratorModelIntelligenceLabel(model)).toBe("GLM level");
+    expect(narratorModelIntelligenceSourceLabel(model)).toBe("Product guidance");
+  });
+
   it("exposes the provider-supported reasoning levels with High as the default", () => {
     const byId = Object.fromEntries(NARRATOR_MODELS.map((model) => [model.id, model]));
     expect(byId["poolside/laguna-s-2.1:free"].efforts).toBeNull();
@@ -90,6 +110,36 @@ describe("OpenRouter narrator registry", () => {
     expect(NARRATOR_MODELS[0].label).toBe("Laguna S 2.1");
     expect(NARRATOR_MODELS[1].label).toBe("Qwen 3.7 Flash");
     expect(NARRATOR_MODELS[2].label).toBe("Hy3");
+  });
+
+  it("exposes sourced price and intelligence information instead of opaque bars", () => {
+    for (const model of NARRATOR_MODELS) {
+      expect(model.price).toMatchObject({ input: expect.any(Number), output: expect.any(Number) });
+      expect(model.price.input).toBeGreaterThanOrEqual(0);
+      expect(model.price.output).toBeGreaterThanOrEqual(0);
+      expect(model.intelligence == null || Number.isFinite(model.intelligence)).toBe(true);
+    }
+
+    const byId = Object.fromEntries(NARRATOR_MODELS.map((model) => [model.id, model]));
+    expect(byId["poolside/laguna-s-2.1:free"].fallbackPrice).toEqual({ input: 0.09, output: 0.18 });
+    expect(Object.fromEntries(NARRATOR_MODELS.map((model) => [model.id, narratorModelPriceLabel(model)]))).toEqual({
+      "poolside/laguna-s-2.1:free": "Free primary · $0.09 / $0.18 fallback",
+      "qwen/qwen3.7-flash": "$0.03 / $0.13",
+      "tencent/hy3": "$0.132 / $0.528",
+      "deepseek/deepseek-v4-flash": "$0.14 / $0.28",
+      "deepseek/deepseek-v4-pro": "$0.435 / $0.87",
+      "minimax/minimax-m3": "$0.30 / $1.20",
+      "deepseek/deepseek-v4-flash-0731": "$0.14 / $0.28",
+      "z-ai/glm-5.2": "$1.232 / $3.872",
+      "x-ai/grok-4.5": "$2.00 / $6.00",
+      "openai/gpt-5.6-luna": "$0.10 / $0.60",
+      "openai/gpt-5.6-terra": "$1.00 / $6.00",
+      "moonshotai/kimi-k3": "$3.00 / $15.00",
+    });
+    expect(narratorModelIntelligenceLabel(byId["qwen/qwen3.7-flash"])).toBe("Unrated");
+    expect(narratorModelIntelligenceLabel(byId["deepseek/deepseek-v4-flash"])).toBe("40.3");
+    expect(narratorModelIntelligenceLabel(byId["openai/gpt-5.6-terra"])).toBe("55.0");
+    expect(narratorModelIntelligenceLabel(byId["moonshotai/kimi-k3"])).toBe("57.1");
   });
 
   it("defaults to a selectable OpenRouter model", () => {

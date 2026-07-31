@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./Icon.jsx";
 import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens.js";
 import { condName, conditionMeta } from "../data/conditions.js";
@@ -9,8 +10,12 @@ import {
   getNarratorEffort, setNarratorEffort,
   normalizeNarratorEffort,
   narratorModelLabel,
+  narratorModelIntelligenceLabel,
+  narratorModelIntelligenceSourceLabel,
+  narratorModelPriceLabel,
 } from "../engine/narrator-models.js";
 import { formatTokenCount } from "./chatContextModel.js";
+import { useModalFocus } from "./exploration/modalFocus.js";
 
 // Short "time left" label for a timed condition (e.g. "2.5h", "12m").
 export function fmtRemaining(minutes) {
@@ -419,39 +424,144 @@ export function LiveThinking({ thinking }) {
 
 // ----- Input bar -----
 
-function modelCostMeta(model) {
-  if (model.id.endsWith(":free")) return { label: "FREE ROUTE", tone: "free" };
-  if (model.provider === "OpenAI") return { label: "OPENAI ROUTE", tone: "openai" };
-  return { label: "OPENROUTER ROUTE", tone: "provider" };
-}
+export function NarratorPickerPanel({
+  model,
+  effort,
+  query,
+  onQueryChange,
+  onChooseModel,
+  onChooseEffort,
+  onClose,
+}) {
+  const dialogRef = useModalFocus(onClose);
+  const active = NARRATOR_MODELS.find((entry) => entry.id === model) || NARRATOR_MODELS[0];
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleModels = NARRATOR_MODELS.filter((entry) => (
+    !normalizedQuery
+    || `${entry.label} ${entry.note || ""} ${entry.provider || ""} ${narratorModelIntelligenceLabel(entry)}`.toLowerCase().includes(normalizedQuery)
+  ));
 
-function ModelCapability({ model }) {
-  const activeSegments = model.efforts?.length ? Math.min(5, model.efforts.length + 1) : 2;
-  return (
-    <span className="narrator-picker__capability" aria-label={model.efforts?.length ? "Reasoning controls available" : "Standard narration route"}>
-      {[0, 1, 2, 3, 4].map((index) => <i key={index} className={index < activeSegments ? "is-on" : ""} />)}
-    </span>
+  const panel = (
+    <div className="narrator-picker__overlay">
+      <div className="narrator-picker__backdrop" onClick={onClose} aria-hidden="true" />
+      <section
+        ref={dialogRef}
+        className="narrator-picker__sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Choose narrator model"
+        aria-description="Exact base prices are input and output per million tokens. Intelligence uses the Artificial Analysis Intelligence Index where published; separately labeled product guidance is not an AA score."
+        tabIndex={-1}
+      >
+        <header className="narrator-picker__header">
+          <div>
+            <span>Storyteller</span>
+            <h2>Narrator model</h2>
+            <p>Exact base prices are input / output per 1M tokens. Intelligence uses AA scores or labeled product guidance.</p>
+          </div>
+          <button
+            type="button"
+            className="narrator-picker__close"
+            onClick={onClose}
+            aria-label="Close narrator picker"
+            data-modal-autofocus
+          >
+            <Icon name="x" size={18} />
+          </button>
+        </header>
+
+        <label className="narrator-picker__search">
+          <Icon name="zoomOut" size={16} />
+          <input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            placeholder="Search models…"
+            aria-label="Search narrator models"
+          />
+        </label>
+
+        <div className="narrator-picker__columns" aria-hidden="true">
+          <span>MODEL</span>
+          <span>PRICE <small>BASE · IN / OUT · 1M</small></span>
+          <span>INTELLIGENCE <small>SCORE / GUIDANCE</small></span>
+        </div>
+        <div className="narrator-picker__options">
+          {visibleModels.map((entry) => {
+            const selected = entry.id === model;
+            const price = narratorModelPriceLabel(entry);
+            const freePrimary = entry.price?.input === 0 && entry.price?.output === 0;
+            const fallbackPrice = entry.fallbackPrice
+              ? narratorModelPriceLabel({ price: entry.fallbackPrice })
+              : null;
+            const intelligence = narratorModelIntelligenceLabel(entry);
+            const intelligenceRated = Number.isFinite(entry.intelligence);
+            const intelligenceGuided = !intelligenceRated && !!entry.intelligenceGuidance;
+            const intelligenceSource = narratorModelIntelligenceSourceLabel(entry);
+            return (
+              <button
+                type="button"
+                className={`narrator-picker__option${selected ? " is-active" : ""}`}
+                key={entry.id}
+                onClick={() => onChooseModel(entry.id)}
+                aria-pressed={selected}
+                aria-label={`${entry.label}. ${price} per million tokens. ${intelligenceRated ? `${intelligence} Artificial Analysis Intelligence Index` : intelligenceGuided ? `${intelligence} product guidance; no Artificial Analysis score is published` : "No Artificial Analysis Intelligence Index"}.`}
+              >
+                <span className="narrator-picker__option-copy">
+                  <strong>{entry.label}</strong>
+                  {selected && <small>Selected</small>}
+                </span>
+                <span className="narrator-picker__price">
+                  <strong>{freePrimary ? "Free primary" : price}</strong>
+                  <small>{fallbackPrice ? `${fallbackPrice} fallback` : "input / output"}</small>
+                </span>
+                <span className={`narrator-picker__intelligence ${intelligenceRated ? "is-rated" : intelligenceGuided ? "is-guided" : "is-unrated"}`}>
+                  <strong>{intelligence}</strong>
+                  <small>{intelligenceSource}</small>
+                </span>
+              </button>
+            );
+          })}
+          {!visibleModels.length && <div className="narrator-picker__empty">No narrator models match that search.</div>}
+        </div>
+
+        {active.efforts && (
+          <div className="narrator-picker__effort-panel">
+            <span>Thinking effort for {active.label}</span>
+            <div className="narrator-picker__efforts">
+              {active.efforts.map((effortId) => {
+                const selected = effortId === effort;
+                const label = (NARRATOR_EFFORTS.find((entry) => entry.id === effortId) || {}).label ?? effortId;
+                return (
+                  <button
+                    type="button"
+                    key={effortId}
+                    className={`narrator-picker__effort${selected ? " is-active" : ""}`}
+                    onClick={() => onChooseEffort(effortId)}
+                    aria-pressed={selected}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
   );
+  if (typeof document === "undefined") return panel;
+  return createPortal(panel, document.body);
 }
 
-// The narrator switch that sits to the left of the composer. On mobile it opens
-// a focused bottom sheet so model selection feels like a first-class surface,
-// while keeping the persisted model/effort contract unchanged.
+// The narrator switch beside the composer persists the model and effort used
+// by the next turn. The panel mounts only while open so modal focus capture and
+// exact opener restoration remain reliable.
 function NarratorPicker() {
   const [open, setOpen] = React.useState(false);
   const [model, setModel] = React.useState(getNarratorModel);
   const [effort, setEffort] = React.useState(() => getNarratorEffort(model));
   const [query, setQuery] = React.useState("");
-  const [filter, setFilter] = React.useState("all");
-  const pickerRef = React.useRef(null);
-  const active = NARRATOR_MODELS.find((m) => m.id === model) || NARRATOR_MODELS[0];
-
-  React.useEffect(() => {
-    if (!open) return undefined;
-    const closeOnEscape = (event) => { if (event.key === "Escape") setOpen(false); };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [open]);
+  const active = NARRATOR_MODELS.find((entry) => entry.id === model) || NARRATOR_MODELS[0];
 
   function chooseModel(id) {
     const nextEffort = normalizeNarratorEffort(id, effort);
@@ -460,10 +570,14 @@ function NarratorPicker() {
     setNarratorEffort(nextEffort);
     setEffort(nextEffort);
   }
-  function chooseEffort(id) { setNarratorEffort(id); setEffort(id); }
+
+  function chooseEffort(id) {
+    setNarratorEffort(id);
+    setEffort(id);
+  }
 
   const effortLabel = active.efforts
-    ? ` · ${(NARRATOR_EFFORTS.find((e) => e.id === effort) || {}).label ?? effort}`
+    ? ` · ${(NARRATOR_EFFORTS.find((entry) => entry.id === effort) || {}).label ?? effort}`
     : "";
   const compactLabel = active.label
     .replace("DeepSeek", "DS")
@@ -472,82 +586,24 @@ function NarratorPicker() {
     .split(" ")
     .slice(0, 2)
     .join(" ");
-  const visibleModels = NARRATOR_MODELS.filter((entry) => {
-    const matchesQuery = !query.trim() || `${entry.label} ${entry.provider} ${entry.note}`.toLowerCase().includes(query.trim().toLowerCase());
-    const matchesFilter = filter === "all"
-      || (filter === "free" && entry.id.endsWith(":free"))
-      || (filter === "reasoning" && entry.efforts?.length);
-    return matchesQuery && matchesFilter;
-  });
 
   return (
-    <div ref={pickerRef} className={`narrator-picker${open ? " is-open" : ""}`}>
+    <div className={`narrator-picker${open ? " is-open" : ""}`}>
       {open && (
-        <div className="narrator-picker__overlay">
-          <button type="button" className="narrator-picker__backdrop" onClick={() => setOpen(false)} aria-label="Close narrator picker" />
-          <section className="narrator-picker__sheet" role="dialog" aria-modal="true" aria-label="Choose narrator model">
-            <div className="narrator-picker__handle" aria-hidden="true" />
-            <div className="narrator-picker__search-row">
-              <label className="narrator-picker__search">
-                <Icon name="zoomOut" size={16} />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search models…" aria-label="Search models" />
-              </label>
-              <div className="narrator-picker__mode" role="group" aria-label="Narrator modality">
-                <button type="button" className="is-active">Text</button>
-                <button type="button" disabled>Image</button>
-              </div>
-            </div>
-            <div className="narrator-picker__filters" role="group" aria-label="Filter narrator models">
-              {["all", "reasoning", "free"].map((id) => (
-                <button key={id} type="button" className={filter === id ? "is-active" : ""} onClick={() => setFilter(id)}>
-                  {id === "all" ? "All" : id === "reasoning" ? "Reasoning" : "Free"}
-                </button>
-              ))}
-              <span className="narrator-picker__sort"><Icon name="arrowUp" size={13} /> Smartest</span>
-            </div>
-            <div className="narrator-picker__columns" aria-hidden="true"><span>MODEL</span><span>ROUTE</span><span>REASONING</span></div>
-            <div className="narrator-picker__options">
-              {visibleModels.map((m) => {
-                const on = m.id === model;
-                const cost = modelCostMeta(m);
-                return (
-                  <button className={`narrator-picker__option${on ? " is-active" : ""}`} key={m.id} onClick={() => chooseModel(m.id)} aria-pressed={on}>
-                    <span className="narrator-picker__option-copy">
-                      <span className="narrator-picker__option-label">{m.label}<small>{m.provider}</small></span>
-                      <span className={`narrator-picker__cost narrator-picker__cost--${cost.tone}`}>{cost.label}</span>
-                      <span className="narrator-picker__option-note">{m.note || "Narration route"}</span>
-                    </span>
-                    <span className="narrator-picker__route-bar"><i className={`is-${cost.tone}`} /></span>
-                    <ModelCapability model={m} />
-                  </button>
-                );
-              })}
-              {!visibleModels.length && <div className="narrator-picker__empty">No models match this filter.</div>}
-            </div>
-            {active.efforts && (
-              <div className="narrator-picker__effort-panel">
-                <span>Thinking effort</span>
-                <div className="narrator-picker__efforts">
-                  {active.efforts.map((eid) => {
-                    const on = eid === effort;
-                    const lbl = (NARRATOR_EFFORTS.find((e) => e.id === eid) || {}).label ?? eid;
-                    return <button key={eid} className={`narrator-picker__effort${on ? " is-active" : ""}`} onClick={() => chooseEffort(eid)}>{lbl}</button>;
-                  })}
-                </div>
-              </div>
-            )}
-            <footer className="narrator-picker__footer">
-              <span className="narrator-picker__footer-icon"><Icon name="sparkle" size={17} /></span>
-              <span><strong>Local model routing</strong><small>Selection is saved for the next narrator turn.</small></span>
-              <span className="narrator-picker__footer-active">{active.label}</span>
-            </footer>
-          </section>
-        </div>
+        <NarratorPickerPanel
+          model={model}
+          effort={effort}
+          query={query}
+          onQueryChange={setQuery}
+          onChooseModel={chooseModel}
+          onChooseEffort={chooseEffort}
+          onClose={() => setOpen(false)}
+        />
       )}
       <button
         type="button"
         className="narrator-picker__trigger"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen((value) => !value)}
         title={`Narrator: ${active.label}${effortLabel}`}
         aria-label={`Narrator: ${active.label}${effortLabel}. Tap to change model or thinking effort.`}
       >

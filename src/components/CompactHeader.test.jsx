@@ -19,6 +19,19 @@ describe("CompactHeader", () => {
     expect(html).toContain("compact-header__title-track");
   });
 
+  it("keeps one character-deck opener and omits player identity from the HUD", () => {
+    const state = makeInitialState();
+    state.character.name = "A Name That Belongs In The Dossier";
+    const html = renderToStaticMarkup(
+      <CompactHeader state={state} onMap={() => {}} onOpenDeck={() => {}} />,
+    );
+
+    expect(html).not.toContain("compact-header__menu");
+    expect(html).not.toContain("compact-header__actor");
+    expect(html).not.toContain("A Name That Belongs In The Dossier");
+    expect(html.match(/Character, company, skills, inventory, and codex/g)).toHaveLength(1);
+  });
+
   it("keeps the local place in the title and moves its area hierarchy below it", () => {
     const html = renderToStaticMarkup(
       <CompactHeader state={makeInitialState()} onMap={() => {}} onOpenDeck={() => {}} />,

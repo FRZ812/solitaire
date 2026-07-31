@@ -35,12 +35,15 @@ describe("narrator model routing contract", () => {
     expect(edgeSource).toContain('"openai/gpt-5.6-terra"');
     expect(edgeSource).toContain('"z-ai/glm-5.2"');
     expect(edgeSource).toContain('"x-ai/grok-4.5"');
+    expect(edgeSource).toContain('"deepseek/deepseek-v4-flash-0731"');
   });
 
   it("keeps reasoning mappings for the legacy models too", () => {
     expect(edgeSource).toContain('["z-ai/glm-5.2", ["high", "max"]]');
     expect(edgeSource).toContain('["x-ai/grok-4.5", ["low", "medium", "high"]]');
     expect(edgeSource).toContain('["z-ai/glm-5.2", { max: "xhigh" }]');
+    expect(edgeSource).toContain('["deepseek/deepseek-v4-flash-0731", ["high", "max"]]');
+    expect(edgeSource).toContain('["deepseek/deepseek-v4-flash-0731", { max: "xhigh" }]');
   });
 
   it("constrains both GPT successors to OpenAI without provider fallbacks", () => {
