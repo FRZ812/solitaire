@@ -14,6 +14,7 @@ export function InstallPill() {
 
   return (
     <button
+      className="install-pill"
       onClick={promptInstall}
       aria-label="Install Solitaire as an app"
       style={{
@@ -26,6 +27,7 @@ export function InstallPill() {
         color: colors.parchment,
         border: `1px solid ${colors.gold}55`,
         borderRadius: "999px",
+        minHeight: "44px",
         padding: "10px 16px 10px 14px",
         fontFamily: "inherit",
         fontSize: "13px",

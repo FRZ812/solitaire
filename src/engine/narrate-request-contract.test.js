@@ -29,6 +29,34 @@ describe("narrator request size contract", () => {
   });
 });
 
+describe("narrator model routing contract", () => {
+  it("keeps GLM/Grok in the server allowlist alongside the OpenAI additions", () => {
+    expect(edgeSource).toContain('"openai/gpt-5.6-luna"');
+    expect(edgeSource).toContain('"openai/gpt-5.6-terra"');
+    expect(edgeSource).toContain('"z-ai/glm-5.2"');
+    expect(edgeSource).toContain('"x-ai/grok-4.5"');
+  });
+
+  it("keeps reasoning mappings for the legacy models too", () => {
+    expect(edgeSource).toContain('["z-ai/glm-5.2", ["high", "max"]]');
+    expect(edgeSource).toContain('["x-ai/grok-4.5", ["low", "medium", "high"]]');
+    expect(edgeSource).toContain('["z-ai/glm-5.2", { max: "xhigh" }]');
+  });
+
+  it("constrains both GPT successors to OpenAI without provider fallbacks", () => {
+    expect(edgeSource).toContain("const OPENAI_ONLY_MODELS = new Set");
+    expect(edgeSource).toContain('only: ["openai"]');
+    expect(edgeSource).toContain("allow_fallbacks: false");
+    expect(edgeSource).toContain("selectedProvider(opts.models[0])");
+  });
+
+  it("keeps reasoning enabled with the supported OpenAI effort levels", () => {
+    expect(edgeSource).toContain('["openai/gpt-5.6-luna", ["low", "medium", "high", "max"]]');
+    expect(edgeSource).toContain('["openai/gpt-5.6-terra", ["low", "medium", "high", "max"]]');
+  });
+});
+
+
 describe("narrator memory tool contract", () => {
   it("supports manual opt-out, parallel calls, and server-side duplicate suppression", () => {
     expect(edgeSource).toContain('const toolsEnabled = opts.memoryMode !== "manual"');

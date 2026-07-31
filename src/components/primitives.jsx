@@ -10,6 +10,7 @@ import {
   normalizeNarratorEffort,
   narratorModelLabel,
 } from "../engine/narrator-models.js";
+import { formatTokenCount } from "./chatContextModel.js";
 
 // Short "time left" label for a timed condition (e.g. "2.5h", "12m").
 export function fmtRemaining(minutes) {
@@ -418,35 +419,38 @@ export function LiveThinking({ thinking }) {
 
 // ----- Input bar -----
 
-// Small caps section label used inside the narrator popover.
-function PickerLabel({ children }) {
+function modelCostMeta(model) {
+  if (model.id.endsWith(":free")) return { label: "FREE ROUTE", tone: "free" };
+  if (model.provider === "OpenAI") return { label: "OPENAI ROUTE", tone: "openai" };
+  return { label: "OPENROUTER ROUTE", tone: "provider" };
+}
+
+function ModelCapability({ model }) {
+  const activeSegments = model.efforts?.length ? Math.min(5, model.efforts.length + 1) : 2;
   return (
-    <div style={{ ...metaStyle, fontSize: "8px", letterSpacing: "0.16em", color: "rgba(215,167,111,0.7)", padding: "6px 9px 5px" }}>
-      {children}
-    </div>
+    <span className="narrator-picker__capability" aria-label={model.efforts?.length ? "Reasoning controls available" : "Standard narration route"}>
+      {[0, 1, 2, 3, 4].map((index) => <i key={index} className={index < activeSegments ? "is-on" : ""} />)}
+    </span>
   );
 }
 
-// The narrator switch that sits to the left of the composer. A compact button
-// showing the active model; tap to open a popover and change the model and (for
-// reasoning-capable OpenRouter models) its reasoning effort on the fly. Self-contained:
-// it reads/writes the persisted choices directly (see engine/narrator-models.js),
-// which callNarrator picks up on the next turn. The popover stays open across
-// selections so both settings can be tweaked at once; an outside tap closes it.
+// The narrator switch that sits to the left of the composer. On mobile it opens
+// a focused bottom sheet so model selection feels like a first-class surface,
+// while keeping the persisted model/effort contract unchanged.
 function NarratorPicker() {
   const [open, setOpen] = React.useState(false);
   const [model, setModel] = React.useState(getNarratorModel);
   const [effort, setEffort] = React.useState(() => getNarratorEffort(model));
+  const [query, setQuery] = React.useState("");
+  const [filter, setFilter] = React.useState("all");
   const pickerRef = React.useRef(null);
   const active = NARRATOR_MODELS.find((m) => m.id === model) || NARRATOR_MODELS[0];
 
   React.useEffect(() => {
     if (!open) return undefined;
-    function closeOnOutsidePointer(event) {
-      if (!pickerRef.current?.contains(event.target)) setOpen(false);
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+    const closeOnEscape = (event) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
   }, [open]);
 
   function chooseModel(id) {
@@ -468,47 +472,77 @@ function NarratorPicker() {
     .split(" ")
     .slice(0, 2)
     .join(" ");
+  const visibleModels = NARRATOR_MODELS.filter((entry) => {
+    const matchesQuery = !query.trim() || `${entry.label} ${entry.provider} ${entry.note}`.toLowerCase().includes(query.trim().toLowerCase());
+    const matchesFilter = filter === "all"
+      || (filter === "free" && entry.id.endsWith(":free"))
+      || (filter === "reasoning" && entry.efforts?.length);
+    return matchesQuery && matchesFilter;
+  });
 
   return (
     <div ref={pickerRef} className={`narrator-picker${open ? " is-open" : ""}`}>
       {open && (
-        <>
-          {/* Click-away backdrop — closes the popover on any outside tap. */}
-          <div className="narrator-picker__backdrop" onClick={() => setOpen(false)} />
-          {/* Popover, anchored above the button (composer sits at screen bottom). */}
-          <div className="narrator-picker__popover">
-            <PickerLabel>Narrator</PickerLabel>
-            {NARRATOR_MODELS.map((m) => {
-              const on = m.id === model;
-              return (
-                <button className={`narrator-picker__option${on ? " is-active" : ""}`} key={m.id} onClick={() => chooseModel(m.id)} aria-pressed={on}>
-                  <span className="narrator-picker__dot" />
-                  <span className="narrator-picker__option-copy">
-                    <span className="narrator-picker__option-label">{m.label}</span>
-                    {m.note && <span className="narrator-picker__option-note">{m.note}</span>}
-                  </span>
+        <div className="narrator-picker__overlay">
+          <button type="button" className="narrator-picker__backdrop" onClick={() => setOpen(false)} aria-label="Close narrator picker" />
+          <section className="narrator-picker__sheet" role="dialog" aria-modal="true" aria-label="Choose narrator model">
+            <div className="narrator-picker__handle" aria-hidden="true" />
+            <div className="narrator-picker__search-row">
+              <label className="narrator-picker__search">
+                <Icon name="zoomOut" size={16} />
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search models…" aria-label="Search models" />
+              </label>
+              <div className="narrator-picker__mode" role="group" aria-label="Narrator modality">
+                <button type="button" className="is-active">Text</button>
+                <button type="button" disabled>Image</button>
+              </div>
+            </div>
+            <div className="narrator-picker__filters" role="group" aria-label="Filter narrator models">
+              {["all", "reasoning", "free"].map((id) => (
+                <button key={id} type="button" className={filter === id ? "is-active" : ""} onClick={() => setFilter(id)}>
+                  {id === "all" ? "All" : id === "reasoning" ? "Reasoning" : "Free"}
                 </button>
-              );
-            })}
-
-            {/* Thinking effort — only for models that expose it. */}
+              ))}
+              <span className="narrator-picker__sort"><Icon name="arrowUp" size={13} /> Smartest</span>
+            </div>
+            <div className="narrator-picker__columns" aria-hidden="true"><span>MODEL</span><span>ROUTE</span><span>REASONING</span></div>
+            <div className="narrator-picker__options">
+              {visibleModels.map((m) => {
+                const on = m.id === model;
+                const cost = modelCostMeta(m);
+                return (
+                  <button className={`narrator-picker__option${on ? " is-active" : ""}`} key={m.id} onClick={() => chooseModel(m.id)} aria-pressed={on}>
+                    <span className="narrator-picker__option-copy">
+                      <span className="narrator-picker__option-label">{m.label}<small>{m.provider}</small></span>
+                      <span className={`narrator-picker__cost narrator-picker__cost--${cost.tone}`}>{cost.label}</span>
+                      <span className="narrator-picker__option-note">{m.note || "Narration route"}</span>
+                    </span>
+                    <span className="narrator-picker__route-bar"><i className={`is-${cost.tone}`} /></span>
+                    <ModelCapability model={m} />
+                  </button>
+                );
+              })}
+              {!visibleModels.length && <div className="narrator-picker__empty">No models match this filter.</div>}
+            </div>
             {active.efforts && (
-              <>
-                <div className="narrator-picker__divider" />
-                <PickerLabel>Thinking effort</PickerLabel>
+              <div className="narrator-picker__effort-panel">
+                <span>Thinking effort</span>
                 <div className="narrator-picker__efforts">
                   {active.efforts.map((eid) => {
                     const on = eid === effort;
                     const lbl = (NARRATOR_EFFORTS.find((e) => e.id === eid) || {}).label ?? eid;
-                    return (
-                      <button key={eid} className={`narrator-picker__effort${on ? " is-active" : ""}`} onClick={() => chooseEffort(eid)}>{lbl}</button>
-                    );
+                    return <button key={eid} className={`narrator-picker__effort${on ? " is-active" : ""}`} onClick={() => chooseEffort(eid)}>{lbl}</button>;
                   })}
                 </div>
-              </>
+              </div>
             )}
-          </div>
-        </>
+            <footer className="narrator-picker__footer">
+              <span className="narrator-picker__footer-icon"><Icon name="sparkle" size={17} /></span>
+              <span><strong>Local model routing</strong><small>Selection is saved for the next narrator turn.</small></span>
+              <span className="narrator-picker__footer-active">{active.label}</span>
+            </footer>
+          </section>
+        </div>
       )}
       <button
         type="button"
@@ -527,6 +561,7 @@ function NarratorPicker() {
 export function InputBar({
   value, onChange, onSubmit, onRun, queuedCount = 0, loading,
   advancementCount = 0, advancementNeedsChoice = false, onOpenProgression,
+  contextTotalTokens = 0, onOpenContext,
 }) {
   const hasDraft = Boolean(value.trim());
   const actionLabel = hasDraft
@@ -569,6 +604,13 @@ export function InputBar({
           <Icon name="progression" size={25} />
           <span><strong>{advancementLabel}</strong><small>Open Progression</small></span>
           {advancementCount > 0 && <b aria-hidden="true">{advancementCount}</b>}
+        </button>
+      )}
+      {onOpenContext && (
+        <button type="button" className="story-input__context" onClick={onOpenContext} aria-label={`Open context preview. ${formatTokenCount(contextTotalTokens)} estimated tokens`}>
+          <span className="story-input__context-dot" aria-hidden="true" />
+          <span><strong>{formatTokenCount(contextTotalTokens)} tokens</strong><small>Context preview</small></span>
+          <Icon name="arrowUp" size={13} />
         </button>
       )}
       <div className="story-input__composer">

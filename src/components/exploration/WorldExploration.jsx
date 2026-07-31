@@ -230,7 +230,7 @@ function RpgHeader({ state, biome, tile, onClose, onRegions, onJournal, travelLo
       <button
         onClick={onClose}
         disabled={travelLocked}
-        className="rpg-square-button"
+        className="rpg-square-button rpg-map-back-button"
         aria-label={travelLocked ? "Return to story unavailable while travel is in progress" : "Return to story"}
         title={travelLocked ? "Finish the current journey before closing the map" : "Return to story"}
       ><Icon name="back" size={21} /></button>
@@ -392,13 +392,17 @@ function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, on
         />
         {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
 
-        <div className="rpg-map-camera-controls" aria-label="Travel map camera controls">
-          <button type="button" onClick={onRecenter} aria-label="Return map camera to party" title="Return to party"><Icon name="compass" size={16} /></button>
-        </div>
+        <button
+          type="button"
+          className="rpg-map-float-control rpg-map-camera-control"
+          onClick={onRecenter}
+          aria-label="Return map camera to party"
+          title="Return to party"
+        ><Icon name="compass" size={16} /></button>
 
         <button
           type="button"
-          className="rpg-map-legend-toggle"
+          className="rpg-map-float-control rpg-map-legend-toggle"
           onClick={() => setLegendOpen(true)}
           aria-label="Open map legend"
           aria-expanded={legendOpen}

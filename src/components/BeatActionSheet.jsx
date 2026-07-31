@@ -6,13 +6,14 @@ import { colors, radius } from "./tokens.js";
 // between the action menu, the rewrite (AI re-roll with a steer) editor, and the
 // manual edit editor. Rewrite/Rewind need a recorded turn; Edit always works.
 export function BeatActionSheet({
-  mode, kind = "narrative", canRewrite, canRewind, loading,
+  mode, kind = "narrative", canRewrite, canRewind, turnK = -1, loading,
   rewriteText, editText, onRewriteText, onEditText,
   onChooseRewrite, onChooseEdit, onRewind, onDelete,
   onSubmitRewrite, onSubmitEdit, onClose,
 }) {
   return (
     <div
+      className={`beat-action-sheet beat-action-sheet--${mode}`}
       onClick={onClose}
       style={{
         position: "absolute", inset: 0, zIndex: 50,
@@ -22,7 +23,7 @@ export function BeatActionSheet({
       }}
     >
       <div
-        className="fade-in"
+        className="beat-action-sheet__panel fade-in"
         onClick={(e) => e.stopPropagation()}
         style={{
           margin: "0 8px calc(env(safe-area-inset-bottom, 0px) + 8px)",
@@ -38,6 +39,7 @@ export function BeatActionSheet({
             kind={kind}
             canRewrite={canRewrite}
             canRewind={canRewind}
+            turnK={turnK}
             onChooseRewrite={onChooseRewrite}
             onChooseEdit={onChooseEdit}
             onRewind={onRewind}
@@ -76,49 +78,40 @@ export function BeatActionSheet({
   );
 }
 
-function Menu({ kind, canRewrite, canRewind, onChooseRewrite, onChooseEdit, onRewind, onDelete, onClose }) {
+function Menu({ kind, canRewrite, canRewind, turnK, onChooseRewrite, onChooseEdit, onRewind, onDelete, onClose }) {
   const isPlayer = kind === "player";
   return (
-    <>
-      <div style={{
-        fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase",
-        fontWeight: 800, color: "rgba(215,167,111,0.7)", marginBottom: "10px", textAlign: "center",
-      }}>{isPlayer ? "Your message" : "This moment"}</div>
+    <div className="beat-action-sheet__menu">
+      <div className="beat-action-sheet__menu-head"><span>TURN</span><strong>{turnK >= 0 ? turnK + 1 : "—"}</strong></div>
       {!isPlayer && (
         <Row icon="reset" label="Rewrite" sub="Re-roll with a steer" accent="#c9b3e8"
           disabled={!canRewrite} onClick={onChooseRewrite} />
       )}
       <Row icon="book" label="Edit" sub={isPlayer ? "Fix your words (story stays)" : "Change the text yourself"} accent={colors.parchment}
         onClick={onChooseEdit} />
-      {!isPlayer && (
-        <Row icon="x" label="Delete this bubble" sub="Remove just this line; keep the rest" accent="#d8a36f"
-          onClick={onDelete} />
-      )}
       <Row icon="arrowLeft" label="Rewind to here" sub="Keep this, drop everything after" accent="#fca5a5"
         disabled={!canRewind} onClick={onRewind} />
+      <Row icon="x" label="Delete" sub="Remove just this line; keep the rest" accent="#f36f79"
+        onClick={onDelete} danger />
       {!isPlayer && !canRewrite && (
-        <div style={{ fontSize: "10px", color: "rgba(215,167,111,0.5)", textAlign: "center", margin: "8px 4px 2px", lineHeight: 1.4 }}>
+        <div className="beat-action-sheet__note">
           Only recorded moments can be rewritten. You can still edit, delete, or rewind.
         </div>
       )}
       {!canRewind && (
-        <div style={{ fontSize: "10px", color: "rgba(215,167,111,0.5)", textAlign: "center", margin: "8px 4px 2px", lineHeight: 1.4 }}>
+        <div className="beat-action-sheet__note">
           Nothing comes after this yet — nothing to rewind.
         </div>
       )}
-      <button onClick={onClose} style={{
-        width: "100%", marginTop: "10px", padding: "11px", borderRadius: 12,
-        background: "transparent", color: "rgba(215,167,111,0.75)",
-        border: "1px solid rgba(215,167,111,0.2)", fontSize: "13px", fontWeight: 700,
-        cursor: "pointer", fontFamily: "inherit",
-      }}>Cancel</button>
-    </>
+      <button className="beat-action-sheet__cancel" onClick={onClose}>Cancel</button>
+    </div>
   );
 }
 
-function Row({ icon, label, sub, accent, disabled, onClick }) {
+function Row({ icon, label, sub, accent, disabled, onClick, danger = false }) {
   return (
     <button
+      className={`beat-action-sheet__row${danger ? " is-danger" : ""}`}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       style={{
@@ -138,6 +131,7 @@ function Row({ icon, label, sub, accent, disabled, onClick }) {
     </button>
   );
 }
+
 
 function Editor({ heading, accent, value, onChange, onSubmit, onCancel, loading, placeholder, submitLabel }) {
   const disabled = loading || !value.trim();

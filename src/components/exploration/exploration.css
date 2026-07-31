@@ -508,6 +508,7 @@
 
 .rpg-exploration-shell:not(.place-shell) .rpg-exploration-body { grid-template-columns: minmax(0, 1fr) minmax(332px, 360px); }
 .rpg-exploration-shell:not(.place-shell) .rpg-world-stage {
+  --map-chrome-inset: 16px;
   background:
     radial-gradient(circle at 50% 42%, rgba(48, 95, 110, .2), transparent 48%),
     #07131f;
@@ -979,39 +980,33 @@
   filter: saturate(.55);
 }
 
-.rpg-map-camera-controls {
+.rpg-map-float-control {
   position: absolute;
-  z-index: 22;
-  top: 12px;
-  left: 12px;
-  min-height: 40px;
-  padding: 4px;
-  display: flex;
+  z-index: 24;
+  top: var(--map-chrome-inset);
+  min-height: 44px;
+  padding: 0 11px;
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
-  color: #fdf2cf;
-  border: 1px solid rgba(231,185,94,.36);
-  border-radius: 12px;
-  background: rgba(4,15,30,.82);
-  box-shadow: 0 8px 24px rgba(2,7,17,.42), inset 0 1px rgba(255,255,255,.05);
-  backdrop-filter: blur(12px) saturate(1.08);
-  -webkit-backdrop-filter: blur(12px) saturate(1.08);
-}
-.rpg-map-camera-controls button {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  color: #fff6d8;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  font: 800 18px/1 system-ui, sans-serif;
+  justify-content: center;
+  gap: 6px;
+  color: rgba(244,232,195,.88);
+  border: 1px solid rgba(191,213,214,.2);
+  border-radius: 11px;
+  background: rgba(7,20,31,.86);
+  box-shadow: 0 8px 24px rgba(2,7,13,.32), inset 0 1px rgba(255,255,255,.05);
+  backdrop-filter: blur(10px) saturate(1.04);
+  -webkit-backdrop-filter: blur(10px) saturate(1.04);
   cursor: pointer;
+  transition-property: color, border-color, background-color, transform;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(.2,0,0,1);
 }
-.rpg-map-camera-controls button:hover { color: #fff1ae; border-color: rgba(231,185,94,.38); background: rgba(231,185,94,.12); }
-.rpg-map-camera-controls button:focus-visible,
+.rpg-map-float-control:hover { color: #fff1ae; border-color: rgba(231,185,94,.56); background: rgba(14,39,54,.94); }
+.rpg-map-float-control:active { transform: scale(.96); }
+.rpg-map-camera-control { left: var(--map-chrome-inset); width: 44px; }
+.rpg-map-legend-toggle { right: var(--map-chrome-inset); }
+.rpg-map-float-control:focus-visible,
 .region-selector button:focus-visible { outline: 2px solid #fff3c6; outline-offset: 2px; }
 
 .region-selector-backdrop {
@@ -1043,6 +1038,7 @@
 .region-selector__header {
   position: relative;
   z-index: 4;
+  box-sizing: border-box;
   min-height: 104px;
   padding: 20px 22px 15px;
   display: flex;
@@ -1054,6 +1050,7 @@
 }
 .region-selector__header h2 { margin: 4px 0 5px; color: #fff8e5; font: italic 500 clamp(28px, 4vw, 42px)/1 "Instrument Serif", Georgia, serif; }
 .region-selector__header p { max-width: 660px; margin: 0; color: rgba(191,213,214,.62); font: italic 13px/1.4 "Instrument Serif", Georgia, serif; }
+.region-selector__header > button { flex: 0 0 44px; align-self: center; }
 .region-selector__world {
   position: relative;
   min-height: 0;
@@ -1093,23 +1090,23 @@
 .region-selector__card[data-direction="south"] { grid-column: 2; grid-row: 3; clip-path: polygon(20% 0,80% 0,100% 22%,95% 100%,5% 100%,0 22%); }
 .region-selector__card[data-direction="west"] { grid-column: 1; grid-row: 2; clip-path: polygon(24% 0,100% 8%,92% 50%,100% 92%,24% 100%,0 82%,0 18%); }
 .region-selector__card:hover { z-index: 3; border-color: color-mix(in srgb, var(--region-accent, #e7b95e) 72%, white); filter: brightness(1.08); transform: translateY(-3px) scale(1.015); box-shadow: 0 18px 38px rgba(1,6,14,.5), 0 0 26px color-mix(in srgb, var(--region-accent, #e7b95e) 20%, transparent); }
-.region-selector__card.is-selected { border-color: var(--region-accent, #e7b95e); box-shadow: 0 14px 34px rgba(1,6,14,.48), inset 0 0 0 2px color-mix(in srgb, var(--region-accent, #e7b95e) 34%, transparent); }
-.region-selector__card.is-current::after { content: ""; position: absolute; z-index: 5; inset: 5px; pointer-events: none; border: 1px solid rgba(255,229,151,.7); border-radius: 13px; }
+.region-selector__card.is-selected { border-color: var(--region-accent, #e7b95e); box-shadow: 0 14px 34px rgba(1,6,14,.48), inset 0 0 0 1px color-mix(in srgb, var(--region-accent, #e7b95e) 28%, transparent); }
+.region-selector__card.is-current { border-color: color-mix(in srgb, var(--region-accent, #e7b95e) 86%, #fff1c2); }
 .region-selector__image,
 .region-selector__shade { position: absolute; inset: 0; }
 .region-selector__image { z-index: -2; background-image: var(--region-art); background-position: center; background-size: cover; filter: saturate(.9) contrast(1.05); transform: scale(1.04); }
 .region-selector__shade { z-index: -1; background: linear-gradient(90deg, rgba(3,10,18,.9), rgba(3,10,18,.42) 72%, rgba(3,10,18,.18)), linear-gradient(0deg, rgba(3,10,18,.7), transparent 60%); }
 .region-selector__card.is-unknown .region-selector__image { filter: grayscale(.8) saturate(.25) brightness(.48); }
 .region-selector__card.is-unknown .region-selector__shade { background: linear-gradient(110deg, rgba(3,9,17,.96), rgba(10,20,28,.72)); }
-.region-selector__sigil { position: absolute; top: 13px; right: 14px; z-index: 2; color: var(--region-accent, #e7b95e); opacity: .82; font: 500 29px/1 Georgia, serif; text-shadow: 0 3px 10px rgba(0,0,0,.65); }
-.region-selector__copy { height: 100%; padding: 13px 48px 12px 15px; display: flex; flex-direction: column; justify-content: center; }
+.region-selector__sigil { position: absolute; top: 11px; right: 12px; z-index: 2; width: 32px; height: 32px; display: grid; place-items: center; color: var(--region-accent, #e7b95e); opacity: .82; font: 500 25px/1 Georgia, serif; text-shadow: 0 3px 10px rgba(0,0,0,.65); }
+.region-selector__copy { box-sizing: border-box; height: 100%; padding: 13px 48px 12px 15px; display: flex; flex-direction: column; justify-content: flex-start; }
 .region-selector__copy small { color: var(--region-accent, #e7b95e); font-size: 7px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; }
 .region-selector__copy strong { margin: 3px 0 1px; overflow: hidden; color: #fff8e5; font: italic 500 clamp(17px, 2vw, 23px)/1.05 "Instrument Serif", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
 .region-selector__copy em { color: rgba(191,213,214,.58); font: italic 10px/1.15 "Instrument Serif", Georgia, serif; }
 .region-selector__copy > span { margin-top: 7px; overflow: hidden; display: -webkit-box; color: rgba(244,232,195,.64); font: 10px/1.35 system-ui, sans-serif; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .region-selector__copy b { margin-top: 6px; overflow: hidden; color: rgba(231,185,94,.82); font-size: 7px; letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; }
-.region-selector__copy > i { margin-top: 7px; color: rgba(142,200,199,.8); font: normal 800 7px/1 system-ui, sans-serif; letter-spacing: .09em; text-transform: uppercase; }
-.region-selector__footer { min-height: 54px; padding: 10px 20px; display: flex; align-items: center; gap: 18px; border-top: 1px solid rgba(191,213,214,.1); background: rgba(4,13,23,.82); }
+.region-selector__copy > i { margin-top: auto; padding-top: 7px; color: rgba(142,200,199,.8); font: normal 800 7px/1 system-ui, sans-serif; letter-spacing: .09em; text-transform: uppercase; }
+.region-selector__footer { box-sizing: border-box; min-height: 54px; padding: 10px 20px; display: flex; align-items: center; gap: 18px; border-top: 1px solid rgba(191,213,214,.1); background: rgba(4,13,23,.82); }
 .region-selector__footer > span { display: flex; align-items: center; gap: 6px; color: rgba(191,213,214,.62); font-size: 7px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 .region-selector__footer > span i { width: 8px; height: 8px; display: block; border-radius: 50%; background: #263a43; }
 .region-selector__footer > span i.is-current { background: #e7b95e; box-shadow: 0 0 8px rgba(231,185,94,.62); }
@@ -1120,10 +1117,14 @@
 @keyframes region-selector-enter { from { opacity: 0; transform: translateY(12px) scale(.985); } }
 
 @media (max-width: 819px) {
-  .rpg-exploration-shell:not(.place-shell) > .rpg-map-header { grid-template-columns: 44px minmax(0,1fr) auto; }
-  .rpg-exploration-shell:not(.place-shell) .rpg-map-header-actions { grid-column: 3; grid-row: 1; gap: 4px; }
+  .rpg-exploration-shell:not(.place-shell) > .rpg-map-header { grid-template-columns: 92px minmax(0, 1fr) 92px; }
+  .rpg-exploration-shell:not(.place-shell) .rpg-map-back-button { justify-self: start; }
+  .rpg-exploration-shell:not(.place-shell) .rpg-map-header-actions { width: 92px; grid-column: 3; grid-row: 1; justify-content: flex-end; gap: 4px; }
   .rpg-exploration-shell:not(.place-shell) .rpg-map-header-actions .rpg-square-button { width: 44px; height: 44px; }
-  .rpg-map-camera-controls { top: 15px; left: 15px; }
+  .rpg-exploration-shell:not(.place-shell) .rpg-world-stage { --map-chrome-inset: 10px; }
+  .rpg-map-legend-toggle { width: 44px; padding-inline: 0; }
+  .rpg-map-legend-toggle span { display: none; }
+  .rpg-exploration-shell:not(.place-shell) .rpg-map-corner-controls { right: var(--map-chrome-inset); bottom: var(--map-chrome-inset); }
   .region-selector-backdrop { padding: 0; }
   .region-selector { width: 100%; height: 100%; border: 0; border-radius: 0; }
   .region-selector__header { min-height: 102px; padding: calc(env(safe-area-inset-top, 0px) + 14px) max(13px, env(safe-area-inset-right, 0px)) 13px max(13px, env(safe-area-inset-left, 0px)); }
@@ -1137,15 +1138,18 @@
 }
 
 @media (max-width: 520px) {
+  .region-selector__footer { padding-inline: max(14px, env(safe-area-inset-left, 0px)) max(14px, env(safe-area-inset-right, 0px)); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .region-selector__footer > span { min-width: 0; justify-content: center; }
+  .region-selector__footer > span:first-child { justify-content: flex-start; }
+  .region-selector__footer > span:nth-child(3) { justify-content: flex-end; }
+  .region-selector__footer > small { display: none; }
   .rpg-exploration-shell:not(.place-shell) .rpg-map-header-actions .rpg-square-button { width: 44px; height: 44px; }
-  .rpg-map-camera-controls { top: 11px; left: 11px; }
   .region-selector__header { min-height: 88px; }
   .region-selector__header h2 { font-size: 29px; }
   .region-selector__header p { display: none; }
   .region-selector__card,
   .region-selector__card[data-direction] { min-height: 128px; }
   .region-selector__copy > span { -webkit-line-clamp: 1; }
-  .region-selector__footer > small { display: none; }
 }
 
 @media (max-height: 720px) and (max-width: 819px) {
