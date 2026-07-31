@@ -107,9 +107,14 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
 
   return (
     <header className="compact-header">
-      <div className="compact-header__date" title={`${date.dayOfMonth} ${date.monthName}, ${date.year}`}>
-        <span><b>{date.dayOfMonth}</b> {monthAbbr}</span>
-        <AnalogClock time={state.time} />
+      <div className="compact-header__left">
+        <button type="button" className="compact-header__menu" onClick={onOpenDeck} aria-label="Open campaign menu">
+          <Icon name="menu" size={21} />
+        </button>
+        <div className="compact-header__date" title={`${date.dayOfMonth} ${date.monthName}, ${date.year}`}>
+          <span><b>{date.dayOfMonth}</b> {monthAbbr}</span>
+          <AnalogClock time={state.time} />
+        </div>
       </div>
 
       <div className="compact-header__scene">
@@ -121,6 +126,10 @@ export function CompactHeader({ state, onMap, onOpenDeck }) {
               <span>{label}</span>
             </React.Fragment>
           ))}
+        </div>
+        <div className="compact-header__actor">
+          <span className="compact-header__actor-avatar" aria-hidden="true">{(state.character?.name || "W").trim().charAt(0).toUpperCase()}</span>
+          <span><strong>{state.character?.name || "Wanderer"}</strong><small>Storyteller active</small></span>
         </div>
       </div>
 

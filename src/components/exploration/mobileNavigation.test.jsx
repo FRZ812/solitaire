@@ -30,7 +30,9 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain(">Grain Square</h1>");
     expect(html).not.toContain("Whitemarch —");
     expect(html).toContain('class="rpg-map-corner-controls"');
-    expect(html).toContain('class="rpg-map-camera-controls"');
+    expect(html.match(/rpg-map-float-control/g)).toHaveLength(2);
+    expect(html).toContain('class="rpg-map-float-control rpg-map-camera-control"');
+    expect(html).toContain('class="rpg-map-float-control rpg-map-legend-toggle"');
     expect(html).not.toContain('data-travel-map-zoom=');
     expect(html).not.toContain('aria-label="Zoom travel map in"');
     expect(html).not.toContain('aria-label="Zoom travel map out"');
@@ -48,6 +50,15 @@ describe("mobile map navigation markup", () => {
     const css = readFileSync(new URL("./exploration.css", import.meta.url), "utf8");
     expect(css).toMatch(/\.rpg-magic-actions button\s*\{[^}]*min-height:\s*44px/s);
     expect(css).toMatch(/\.rpg-exploration-shell:not\(\.place-shell\) \.rpg-magic-actions button\s*\{[^}]*min-height:\s*44px/s);
+  });
+
+  it("uses mirrored mobile header rails and one shared anchor for map chrome", () => {
+    const css = readFileSync(new URL("./exploration.css", import.meta.url), "utf8");
+
+    expect(css).toMatch(/\.rpg-map-float-control\s*\{[^}]*top:\s*var\(--map-chrome-inset\)[^}]*min-height:\s*44px/s);
+    expect(css).toMatch(/\.rpg-map-camera-control\s*\{[^}]*left:\s*var\(--map-chrome-inset\)/s);
+    expect(css).toMatch(/\.rpg-map-legend-toggle\s*\{[^}]*right:\s*var\(--map-chrome-inset\)/s);
+    expect(css).toMatch(/@media \(max-width: 819px\)\s*\{[^}]*\.rpg-exploration-shell:not\(\.place-shell\) > \.rpg-map-header\s*\{[^}]*grid-template-columns:\s*92px minmax\(0,\s*1fr\) 92px/s);
   });
 
   it("locks dismissal and navigation layers while the canonical travel gate is active", () => {

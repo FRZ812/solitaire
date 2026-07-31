@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import { STORAGE_KEY, originLabel, SIGHT_RADIUS, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED, WORLD_MARCH_LIMIT } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
@@ -128,8 +128,11 @@ import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
+import { ChatContextPreview } from "./components/ChatContextPreview.jsx";
 import { JourneyLoader, JourneyResumeOverlay } from "./components/JourneyLoader.jsx";
 import { advanceLiveNarrator, emptyLiveNarrator } from "./engine/live-narrator.js";
+import { buildChatContextSections } from "./components/chatContextModel.js";
+import { getNarratorModel, narratorModelLabel } from "./engine/narrator-models.js";
 import { pinStoryToBottom, storyDistanceFromBottom, touchRequestsOlder, wheelRequestsOlder } from "./components/storyScroll.js";
 import "./components/chat-scene.css";
 
@@ -465,6 +468,7 @@ export function Solitaire() {
   const [beatMode, setBeatMode] = useState("menu"); // "menu" | "rewrite" | "edit"
   const [rewriteText, setRewriteText] = useState("");
   const [editText, setEditText] = useState("");
+  const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
 
   // ----- QoL preferences (story text size etc.) applied as CSS vars on mount -----
   useEffect(() => { applyStoryFontScale(); }, []);
@@ -2447,6 +2451,10 @@ export function Solitaire() {
   const inLimbo = state.created === false;
   const showCreationHub = inLimbo && !creationEntered && !state.beats.some((b) => b.type === "player");
   const queuedPlayerCount = pendingPlayerBeats(state).length;
+  const contextPreview = useMemo(
+    () => buildChatContextSections({ state, beats: state.beats, history: state.apiHistory }),
+    [state],
+  );
   const readyAdvancements = state.created === false ? 0 : (pendingLevelAllocations(state.character)?.unspentLevels || 0);
   const advancementNeedsChoice = state.created !== false && pendingProgressionChoices(state.character)
     .some((choice) => choice.kind !== "level-allocation");
@@ -2634,6 +2642,8 @@ export function Solitaire() {
           advancementCount={readyAdvancements}
           advancementNeedsChoice={advancementNeedsChoice}
           onOpenProgression={() => { setDeckPage("progression"); setDeckOpen(true); }}
+          contextTotalTokens={contextPreview.total}
+          onOpenContext={() => setContextPreviewOpen(true)}
         />
       </div>
 
@@ -2643,6 +2653,7 @@ export function Solitaire() {
           kind={beatMenu.kind}
           canRewrite={beatMenu.kind === "narrative" && beatMenu.turnK >= 0}
           canRewind={beatMenu.canRewind}
+          turnK={beatMenu.turnK}
           loading={loading}
           rewriteText={rewriteText}
           editText={editText}
@@ -2655,6 +2666,15 @@ export function Solitaire() {
           onSubmitRewrite={handleRewriteBeat}
           onSubmitEdit={handleEditBeat}
           onClose={closeBeatMenu}
+        />
+      )}
+
+      {contextPreviewOpen && (
+        <ChatContextPreview
+          preview={contextPreview}
+          state={state}
+          activeModel={narratorModelLabel(getNarratorModel())}
+          onClose={() => setContextPreviewOpen(false)}
         />
       )}
 
