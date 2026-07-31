@@ -15,6 +15,7 @@ const ALLOWED_MODELS = new Set([
   "tencent/hy3",
   "deepseek/deepseek-v4-pro",
   "deepseek/deepseek-v4-flash",
+  "deepseek/deepseek-v4-flash-0731",
   "moonshotai/kimi-k3",
   "z-ai/glm-5.2",
   "x-ai/grok-4.5",
@@ -48,6 +49,7 @@ const REASONING_EFFORTS = new Map<string, string[]>([
   ["tencent/hy3", ["low", "high"]],
   ["deepseek/deepseek-v4-pro", ["high", "max"]],
   ["deepseek/deepseek-v4-flash", ["high", "max"]],
+  ["deepseek/deepseek-v4-flash-0731", ["high", "max"]],
   ["z-ai/glm-5.2", ["high", "max"]],
   ["x-ai/grok-4.5", ["low", "medium", "high"]],
   ["openai/gpt-5.6-luna", ["low", "medium", "high", "max"]],
@@ -59,6 +61,7 @@ const OPENROUTER_EFFORT_ALIASES = new Map<string, Record<string, string>>([
   ["qwen/qwen3.7-flash", { max: "xhigh" }],
   ["deepseek/deepseek-v4-pro", { max: "xhigh" }],
   ["deepseek/deepseek-v4-flash", { max: "xhigh" }],
+  ["deepseek/deepseek-v4-flash-0731", { max: "xhigh" }],
   ["z-ai/glm-5.2", { max: "xhigh" }],
 ]);
 // A real function-call tool (not a JSON response field) — this is the
