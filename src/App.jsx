@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 
 import { STORAGE_KEY, originLabel, SIGHT_RADIUS, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED, WORLD_MARCH_LIMIT } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
@@ -2451,10 +2451,10 @@ export function Solitaire() {
   const inLimbo = state.created === false;
   const showCreationHub = inLimbo && !creationEntered && !state.beats.some((b) => b.type === "player");
   const queuedPlayerCount = pendingPlayerBeats(state).length;
-  const contextPreview = useMemo(
-    () => buildChatContextSections({ state, beats: state.beats, history: state.apiHistory }),
-    [state],
-  );
+  // This derived preview deliberately is not a hook: auth, subscription, title,
+  // campaign-list, and game-over screens all return above this point. Keeping a
+  // hook here would change Solitaire's hook count when a session opens (#310).
+  const contextPreview = buildChatContextSections({ state, beats: state.beats, history: state.apiHistory });
   const readyAdvancements = state.created === false ? 0 : (pendingLevelAllocations(state.character)?.unspentLevels || 0);
   const advancementNeedsChoice = state.created !== false && pendingProgressionChoices(state.character)
     .some((choice) => choice.kind !== "level-allocation");

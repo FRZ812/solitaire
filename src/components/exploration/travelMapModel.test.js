@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
 import {
-  REGION_SELECTOR_ZOOM_THRESHOLD,
+  WORLD_OVERVIEW_ZOOM_THRESHOLD,
   TRAVEL_MAP_MAX_ZOOM,
   TRAVEL_MAP_MIN_ZOOM,
   activeMarchJourney,
@@ -55,16 +55,16 @@ describe("unified hex travel map camera", () => {
     expect(visible).toEqual({ columns: 15, rows: 15 });
   });
 
-  it("clamps normal zoom and requests the region selector only beyond the far limit", () => {
+  it("clamps normal zoom and requests the world overview only beyond the far limit", () => {
     expect(clampTravelMapZoom(99)).toBe(TRAVEL_MAP_MAX_ZOOM);
     expect(clampTravelMapZoom(0)).toBe(TRAVEL_MAP_MIN_ZOOM);
 
     const ordinary = travelMapZoomStep(0.9, 0.8);
-    expect(ordinary.openRegionSelector).toBe(false);
+    expect(ordinary.openWorldOverview).toBe(false);
     expect(ordinary.zoom).toBeGreaterThanOrEqual(TRAVEL_MAP_MIN_ZOOM);
 
-    const atEdge = travelMapZoomStep(REGION_SELECTOR_ZOOM_THRESHOLD, 0.8);
-    expect(atEdge).toMatchObject({ zoom: TRAVEL_MAP_MIN_ZOOM, openRegionSelector: true });
+    const atEdge = travelMapZoomStep(WORLD_OVERVIEW_ZOOM_THRESHOLD, 0.8);
+    expect(atEdge).toMatchObject({ zoom: TRAVEL_MAP_MIN_ZOOM, openWorldOverview: true });
   });
 
   it("converts a dragged hex canvas into the opposite camera movement", () => {
