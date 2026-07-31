@@ -4,6 +4,7 @@ import {
   CONTINENT_HOT_SPRINGS,
   DEFAULT_WORLD_SEED,
   LANDMARKS,
+  RARE_TRADE_HOUSES,
   REGION_DEFINITIONS,
 } from "../data/continent.js";
 import {
@@ -14,6 +15,7 @@ import {
 } from "../data/handcrafted-map.js";
 import { buildHandcrafted } from "../data/handcrafted-pipeline.js";
 import { makeInitialState } from "../data/initial-state.js";
+import { BUILDINGS, buildingForTile } from "../data/town.js";
 import {
   WHITEMARCH_CAPITAL,
   compileWhitemarchCapital,
@@ -234,8 +236,46 @@ describe("generated continent integration", () => {
       ...state.world.tiles,
       [key]: { ...delta, poi: { type: "village", name: "Stale Mirecross" } },
     } } }, mirecross.coord.x, mirecross.coord.y);
-    expect(restored.poi.name).toBe(mirecross.name);
-    expect(restored.poi.landmarkId).toBe(mirecross.id);
+    expect(restored.poi).toMatchObject({
+      name: "The Causeway Contract Hall",
+      parentName: mirecross.name,
+      landmarkId: mirecross.id,
+      service: "inn",
+    });
+  });
+
+  it("keeps authored remote trade houses playable after landmark overlays", () => {
+    const state = makeInitialState();
+
+    for (const [landmarkId, house] of Object.entries(RARE_TRADE_HOUSES)) {
+      const landmark = LANDMARKS.find((candidate) => candidate.id === landmarkId);
+      const tile = getTile(state, landmark.coord.x, landmark.coord.y);
+
+      expect(tile.poi).toMatchObject({
+        part: house.id,
+        landmarkId,
+        parentName: landmark.name,
+        service: house.service,
+      });
+      expect(buildingForTile(tile)?.id).toBe(BUILDINGS[house.service].id);
+    }
+  });
+
+  it("opens Mirecross as a playable contract hub rather than a decorative village", () => {
+    const state = makeInitialState();
+    const mirecross = LANDMARKS.find((landmark) => landmark.id === "mirecross");
+    const tile = getTile(state, mirecross.coord.x, mirecross.coord.y);
+
+    expect(tile.poi).toMatchObject({
+      part: "causeway-contract-hall",
+      landmarkId: "mirecross",
+      parentName: "Mirecross",
+      service: "inn",
+    });
+    expect(buildingForTile(tile)).toMatchObject({
+      id: BUILDINGS.inn.id,
+      label: "The Causeway Contract Hall",
+    });
   });
 
   it("regenerates an authored hot spring instead of accepting a stale saved POI", () => {

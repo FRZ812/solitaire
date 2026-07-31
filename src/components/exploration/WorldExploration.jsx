@@ -18,7 +18,7 @@ import { trackedCharacterResult } from "../../engine/positions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "../../engine/fly.js";
 import { playerFlightMount } from "../../engine/riding.js";
 import { formatDate, formatTime } from "../../engine/time.js";
-import { realmIdAt } from "../../engine/world-generation.js";
+
 import { coinsToCopper, formatCopper } from "../../engine/economy.js";
 import { poiPartName, poiPlaceName } from "../../engine/location.js";
 import { publicLocationPresentation } from "../../engine/travel-settlement.js";
@@ -33,8 +33,7 @@ import {
 } from "./hexMapModel.js";
 import { MapCanvas } from "./MapCanvas.jsx";
 import { useModalFocus } from "./modalFocus.js";
-import { RegionSelector } from "./RegionSelector.jsx";
-import { regionCameraTarget } from "./regionSelectorModel.js";
+import { WorldOverview } from "./WorldOverview.jsx";
 import { buildWorldMapScene } from "./mapSceneModel.js";
 import {
   activeMarchJourney,
@@ -189,7 +188,11 @@ function headerLocationName(tile) {
 }
 
 export function nameForDestination(destination, origin) {
+  const atlasNamed = ["legend", "reputation", "charted"].includes(destination?.knownBy)
+    && typeof destination?.name === "string"
+    && destination.name.trim().length > 0;
   const mapped = !!(destination?.seen || destination?.visited);
+  if (atlasNamed) return destination.name;
   if (!mapped) return destination?.quest?.title || "Uncharted destination";
   const presentation = publicLocationPresentation(destination?.tile, destination);
   const named = presentation.hidden ? null : destination?.name || poiPlaceName(destination?.tile?.poi);
@@ -198,6 +201,19 @@ export function nameForDestination(destination, origin) {
   const terrain = TERRAINS[destination?.tile?.terrain]?.label || "Trail";
   const direction = directionLabel(origin, destination);
   return `${direction.charAt(0).toUpperCase()}${direction.slice(1).replace("-", " ")} ${terrain}`;
+}
+
+export function mergeOverviewDestination(localDestination, overviewHandoff) {
+  const next = { ...localDestination };
+  const knownBy = overviewHandoff?.knownBy;
+  const name = typeof overviewHandoff?.name === "string" ? overviewHandoff.name.trim() : "";
+  if (!["legend", "reputation", "charted"].includes(knownBy) || !name) return next;
+  next.name = name;
+  next.knownBy = knownBy;
+  if (typeof overviewHandoff.landmarkId === "string" && overviewHandoff.landmarkId) {
+    next.landmarkId = overviewHandoff.landmarkId;
+  }
+  return next;
 }
 
 function dangerLabel(risk) {
@@ -213,7 +229,7 @@ function biomeAt(destination, seed) {
   return id === "whitemarch" ? { ...coordinateBiome, id, name: "Whitemarch" } : coordinateBiome;
 }
 
-function RpgHeader({ state, biome, tile, onClose, onRegions, onJournal, travelLocked = false }) {
+function RpgHeader({ state, biome, tile, onClose, onOverview, onJournal, travelLocked = false }) {
   const vitality = state.character.vitality ?? 0;
   const vitalityMax = Math.max(1, state.character.vitalityMax ?? vitality);
   const resolve = state.character.resolve ?? 0;
@@ -255,9 +271,9 @@ function RpgHeader({ state, biome, tile, onClose, onRegions, onJournal, travelLo
         <button
           type="button"
           className="rpg-square-button"
-          onClick={onRegions}
+          onClick={onOverview}
           disabled={travelLocked}
-          aria-label={travelLocked ? "Region selector unavailable while travel is in progress" : "Open region selector"}
+          aria-label={travelLocked ? "World overview unavailable while travel is in progress" : "Open world overview"}
         ><Icon name="atlas" size={22} /></button>
       </div>
     </header>
@@ -641,8 +657,7 @@ export function WorldExploration({
       && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
   ));
   const [camera, setCamera] = useState(() => ({ x: partyCoord.x, y: partyCoord.y, zoom: 1 }));
-  const [regionSelectorOpen, setRegionSelectorOpen] = useState(false);
-  const cameraHistoryRef = useRef({});
+  const [worldOverviewOpen, setWorldOverviewOpen] = useState(false);
   const [marchFrame, setMarchFrame] = useState(null);
   const finishMarchRef = useRef(onTravelMarchFinish);
   const lastPartyKeyRef = useRef(`${partyCoord.x},${partyCoord.y}`);
@@ -675,13 +690,18 @@ export function WorldExploration({
     [state, mapJourney],
   );
   const presentedDestination = presentedMarchDestination(selected, presentedJourney, travelMarch);
-  const selection = presentedDestination ? model.byKey.get(`${presentedDestination.x},${presentedDestination.y}`) || {
-    ...presentedDestination,
-    key: `${presentedDestination.x},${presentedDestination.y}`,
-    tile: getTile(state, presentedDestination.x, presentedDestination.y),
-    seen: isSeen(state, presentedDestination.x, presentedDestination.y),
-    visited: !!state.world.tiles?.[`${presentedDestination.x},${presentedDestination.y}`],
-  } : null;
+  const selection = presentedDestination ? (() => {
+    const key = `${presentedDestination.x},${presentedDestination.y}`;
+    const { name: _name, knownBy: _knownBy, landmarkId: _landmarkId, ...safeDestination } = presentedDestination;
+    const localDestination = model.byKey.get(key) || {
+      ...safeDestination,
+      key,
+      tile: getTile(state, presentedDestination.x, presentedDestination.y),
+      seen: isSeen(state, presentedDestination.x, presentedDestination.y),
+      visited: !!state.world.tiles?.[key],
+    };
+    return mergeOverviewDestination(localDestination, presentedDestination);
+  })() : null;
   const routeMinutes = presentedJourney ? pathMinutes(state, presentedJourney.legPath) : 0;
   const risk = presentedJourney ? pathRiskPercent(state, presentedJourney.legPath) : 0;
   const selectedName = selection ? nameForDestination(selection, model.origin) : currentLocationName(state);
@@ -765,7 +785,7 @@ export function WorldExploration({
 
   useEffect(() => {
     if (!travelLocked) return;
-    setRegionSelectorOpen(false);
+    setWorldOverviewOpen(false);
     setJournalOpen(false);
     setFlyPanelDest(null);
   }, [travelLocked]);
@@ -783,39 +803,34 @@ export function WorldExploration({
     setCamera((current) => panTravelMapCamera(current, drag, worldRadius));
   }
 
-  function rememberCameraPosition(source = camera) {
-    const realmId = realmIdAt(Math.round(source.x), Math.round(source.y), state.world?.seed);
-    cameraHistoryRef.current = {
-      ...cameraHistoryRef.current,
-      [realmId]: { x: source.x, y: source.y, zoom: source.zoom },
-    };
-  }
-
-  function openRegionSelector() {
+  function openWorldOverview() {
     if (travelLocked) return;
-    rememberCameraPosition();
     setJournalOpen(false);
-    setRegionSelectorOpen(true);
+    setWorldOverviewOpen(true);
   }
 
   function openQuestJournal() {
     if (travelLocked) return;
-    setRegionSelectorOpen(false);
+    setWorldOverviewOpen(false);
     setJournalOpen(true);
   }
 
   function handleMapZoom(factor) {
     const outcome = travelMapZoomStep(camera.zoom, factor);
     setCamera((current) => ({ ...current, zoom: outcome.zoom }));
-    if (outcome.openRegionSelector) openRegionSelector();
+    if (outcome.openWorldOverview) openWorldOverview();
   }
 
-  function handleRegionSelect(entry) {
+  function handleWorldDestination(target) {
     if (travelLocked) return;
-    rememberCameraPosition();
-    setCamera(regionCameraTarget(entry, cameraHistoryRef.current));
-    setSelected(null);
-    setRegionSelectorOpen(false);
+    setCamera((current) => ({
+      ...current,
+      x: target.x,
+      y: target.y,
+      zoom: Math.max(current.zoom, 1),
+    }));
+    setSelected(target);
+    setWorldOverviewOpen(false);
   }
 
   function handleMapRecenter() {
@@ -825,7 +840,13 @@ export function WorldExploration({
 
   function pick(destination) {
     if (travelLocked) return;
-    setSelected({ x: destination.x, y: destination.y, ...(destination.name ? { name: destination.name } : {}) });
+    setSelected({
+      x: destination.x,
+      y: destination.y,
+      ...(destination.name ? { name: destination.name } : {}),
+      ...(destination.knownBy ? { knownBy: destination.knownBy } : {}),
+      ...(destination.landmarkId ? { landmarkId: destination.landmarkId } : {}),
+    });
     setJournalOpen(false);
   }
 
@@ -851,7 +872,7 @@ export function WorldExploration({
         biome={currentBiome}
         tile={model.current.tile}
         onClose={onClose}
-        onRegions={openRegionSelector}
+        onOverview={openWorldOverview}
         onJournal={openQuestJournal}
         travelLocked={travelLocked}
       />
@@ -876,13 +897,15 @@ export function WorldExploration({
         />
         <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={handleGroundTravel} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
       </div>
-      {regionSelectorOpen && (
-        <RegionSelector
-          state={state}
-          inspectedCoord={camera}
-          onSelect={handleRegionSelect}
-          onClose={() => setRegionSelectorOpen(false)}
-        />
+      {worldOverviewOpen && (
+        <div className="world-overview-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setWorldOverviewOpen(false)}>
+          <WorldOverview
+            state={state}
+            inspectedCoord={camera}
+            onSelect={handleWorldDestination}
+            onClose={() => setWorldOverviewOpen(false)}
+          />
+        </div>
       )}
       {journalOpen && (
         <AdventureFolio

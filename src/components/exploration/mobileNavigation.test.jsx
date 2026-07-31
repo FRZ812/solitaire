@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
-import { AdventureFolio, DestinationPanel, MapLegend, WorldExploration, nameForDestination } from "./WorldExploration.jsx";
+import { getTile } from "../../engine/world.js";
+import { AdventureFolio, DestinationPanel, MapLegend, WorldExploration, mergeOverviewDestination, nameForDestination } from "./WorldExploration.jsx";
+import { buildWorldOverviewModel, overviewDestinationTarget } from "./worldOverviewModel.js";
 
 describe("mobile map navigation markup", () => {
   it("uses direct map selection and a dedicated encounter action on the world map", () => {
@@ -22,8 +24,8 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain("Choose on the map");
     expect(html).toContain("Tap a tile");
     expect(html).toContain('aria-label="Look for trouble in the city"');
-    expect(html.match(/aria-label="Open region selector"/g)).toHaveLength(1);
-    expect(html).not.toContain('aria-label="Open world atlas"');
+    expect(html.match(/aria-label="Open world overview"/g)).toHaveLength(1);
+    expect(html).not.toContain('aria-label="Open region selector"');
     expect(html).toContain('aria-label="Open quest journal"');
     expect(html).not.toContain('class="rpg-quickbar"');
     expect(html).toContain("Whitemarch · unified city map");
@@ -85,7 +87,7 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain('data-travel-locked="true"');
     expect(html).toContain('aria-label="Return to story unavailable while travel is in progress"');
     expect(html).toContain('aria-label="Quest journal unavailable while travel is in progress"');
-    expect(html).toContain('aria-label="Region selector unavailable while travel is in progress"');
+    expect(html).toContain('aria-label="World overview unavailable while travel is in progress"');
     expect(html.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(4);
   });
 
@@ -147,6 +149,29 @@ describe("mobile map navigation markup", () => {
     expect(nameForDestination({ ...destination, quest: null }, origin)).toBe("Uncharted destination");
   });
 
+  it("preserves the validated overview handoff on the regional map without moving the party", () => {
+    const state = makeInitialState();
+    const before = { ...state.world.currentTile };
+    const starForge = buildWorldOverviewModel(state).places.find((place) => place.id === "star-forge");
+    const handoff = overviewDestinationTarget(starForge);
+    const local = {
+      x: handoff.x,
+      y: handoff.y,
+      seen: false,
+      visited: false,
+      tile: getTile(state, handoff.x, handoff.y),
+    };
+    const destination = mergeOverviewDestination(local, handoff);
+
+    expect(destination).toMatchObject({
+      name: "The Star-Forge",
+      knownBy: "legend",
+      landmarkId: "star-forge",
+    });
+    expect(nameForDestination(destination, before)).toBe("The Star-Forge");
+    expect(state.world.currentTile).toEqual(before);
+  });
+
   it("does not derive a mapped hidden destination name from raw POI metadata", () => {
     const origin = { x: 0, y: 0 };
     const destination = {
@@ -160,6 +185,24 @@ describe("mobile map navigation markup", () => {
       },
     };
     expect(nameForDestination(destination, origin)).toBe("East Forest");
+  });
+
+  it("rejects malformed atlas disclosure capabilities instead of failing open", () => {
+    const origin = { x: 0, y: 0 };
+    const raw = {
+      x: 90,
+      y: 40,
+      name: "LEAKED ATLAS NAME",
+      knownBy: "raw-poi",
+      landmarkId: "hidden-site",
+      seen: false,
+      visited: false,
+      tile: { terrain: "forest", poi: { name: "SECRET CANONICAL NAME", type: "hidden" } },
+    };
+
+    expect(nameForDestination(raw, origin)).toBe("Uncharted destination");
+    expect(mergeOverviewDestination({ x: raw.x, y: raw.y, tile: raw.tile }, raw))
+      .not.toMatchObject({ name: raw.name, knownBy: raw.knownBy, landmarkId: raw.landmarkId });
   });
 
   it("hides mapped hidden destination details and tier metadata", () => {
