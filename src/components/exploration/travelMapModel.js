@@ -12,7 +12,7 @@ const odd = (value, minimum, maximum) => {
 export const TRAVEL_MAP_MIN_ZOOM = 0.6;
 export const TRAVEL_MAP_MAX_ZOOM = 1.8;
 export const TRAVEL_MAP_OVERSCAN_CELLS = 3;
-export const REGION_SELECTOR_ZOOM_THRESHOLD = TRAVEL_MAP_MIN_ZOOM;
+export const WORLD_OVERVIEW_ZOOM_THRESHOLD = TRAVEL_MAP_MIN_ZOOM;
 
 // Cell count, not a render transform, drives map scale. Rows establish the zoom
 // level; columns follow the measured Canvas aspect ratio so a desktop sidebar
@@ -132,12 +132,12 @@ export function travelMapZoomStep(currentZoom, factor) {
   const current = clampTravelMapZoom(currentZoom);
   const multiplier = Number.isFinite(factor) && factor > 0 ? factor : 1;
   const requested = current * multiplier;
-  const openRegionSelector = multiplier < 1
-    && current <= REGION_SELECTOR_ZOOM_THRESHOLD
+  const openWorldOverview = multiplier < 1
+    && current <= WORLD_OVERVIEW_ZOOM_THRESHOLD
     && requested < TRAVEL_MAP_MIN_ZOOM;
   return {
     zoom: clampTravelMapZoom(requested),
-    openRegionSelector,
+    openWorldOverview,
   };
 }
 
