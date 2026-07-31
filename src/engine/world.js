@@ -29,11 +29,17 @@ function terrainForLandmarkKind(kind) {
 }
 
 function tileFromLandmark(landmark, generated) {
+  const servicePoi = generated.poi?.service ? generated.poi : null;
   return {
     ...generated,
     authoredFeatureId: landmark.id,
     terrain: terrainForLandmarkKind(landmark.kind) || generated.terrain,
-    poi: { type: landmark.kind, name: landmark.name, description: landmark.description, landmarkId: landmark.id },
+    poi: servicePoi || {
+      type: landmark.kind,
+      name: landmark.name,
+      description: landmark.description,
+      landmarkId: landmark.id,
+    },
   };
 }
 

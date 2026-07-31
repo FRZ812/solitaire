@@ -788,6 +788,19 @@ export const RARE_TRADE_HOUSES = Object.freeze({
   }),
 });
 
+// One mechanically complete arrival seam is expanded at a time. These entries
+// name a real existing building service rather than merely decorating the atlas.
+export const LANDMARK_DESTINATION_SERVICES = Object.freeze({
+  mirecross: Object.freeze({
+    id: "causeway-contract-hall",
+    name: "The Causeway Contract Hall",
+    type: "inn",
+    service: "inn",
+    activities: Object.freeze(["Contract board", "Paid work", "Hire travelers"]),
+    description: "Concord toll clerks post guarded-road contracts on one board while fenfolk crews and armed strangers wait beneath separate brass pegs.",
+  }),
+});
+
 // Major roads are authored macro intent, then rasterized to axial cells by the
 // generator. Wilderness between them remains generated and walkable; a road is
 // an advantage and a story corridor, not the only legal ground.

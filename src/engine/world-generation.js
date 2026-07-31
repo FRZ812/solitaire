@@ -18,6 +18,7 @@ import {
   CONTINENT_WATERWAYS,
   DEFAULT_WORLD_SEED,
   ECOLOGIES,
+  LANDMARK_DESTINATION_SERVICES,
   LANDMARKS,
   MOUNTAIN_SPINE,
   RARE_TRADE_HOUSES,
@@ -1322,7 +1323,9 @@ export function generateWorldTile({
   }
   const sample = sampleContinent(x, y, seed);
   const landmark = landmarkAt(x, y);
-  const rareTradeHouse = landmark ? RARE_TRADE_HOUSES[landmark.id] : null;
+  const destinationService = landmark
+    ? LANDMARK_DESTINATION_SERVICES[landmark.id] || RARE_TRADE_HOUSES[landmark.id]
+    : null;
   const authoredHotSpring = sample.hotSpring?.distance === 0 ? {
     type: "hot-spring",
     name: sample.hotSpring.name,
@@ -1331,19 +1334,19 @@ export function generateWorldTile({
     authored: true,
     landmarkId: sample.hotSpring.id,
   } : null;
-  const poi = rareTradeHouse ? {
-    type: rareTradeHouse.type,
-    name: rareTradeHouse.name,
-    description: rareTradeHouse.description,
+  const poi = destinationService ? {
+    type: destinationService.type,
+    name: destinationService.name,
+    description: destinationService.description,
     access: "public",
     area: landmark.realmId,
     areaName: sample.realm.name,
     parent: landmark.id,
     parentName: landmark.name,
-    part: rareTradeHouse.id,
-    partName: rareTradeHouse.name,
-    service: rareTradeHouse.service,
-    marketTier: rareTradeHouse.marketTier,
+    part: destinationService.id,
+    partName: destinationService.name,
+    service: destinationService.service,
+    marketTier: destinationService.marketTier,
     landmarkId: landmark.id,
   } : authoredHotSpring || (sample.site ? {
     type: "hidden",
@@ -1374,7 +1377,7 @@ export function generateWorldTile({
     },
   } : null);
   return {
-    terrain: rareTradeHouse ? "settlement" : sample.terrain,
+    terrain: destinationService ? "settlement" : sample.terrain,
     poi,
     ...(authoredHotSpring ? { authoredFeatureId: sample.hotSpring.id } : {}),
     procedural: true,
