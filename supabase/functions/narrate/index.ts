@@ -11,19 +11,28 @@ const MAX_EXISTING_MEMORIES = 80;
 const ALLOWED_MODELS = new Set([
   "poolside/laguna-s-2.1:free",
   "poolside/laguna-s-2.1",
-  "tencent/hy3:free",
+  "qwen/qwen3.7-flash",
   "tencent/hy3",
   "deepseek/deepseek-v4-pro",
   "deepseek/deepseek-v4-flash",
   "moonshotai/kimi-k3",
   "z-ai/glm-5.2",
   "x-ai/grok-4.5",
+  "openai/gpt-5.6-luna",
+  "openai/gpt-5.6-terra",
   "minimax/minimax-m3",
 ]);
 
 const MODEL_FALLBACKS = new Map<string, string[]>([
   ["poolside/laguna-s-2.1:free", ["poolside/laguna-s-2.1"]],
-  ["tencent/hy3:free", ["tencent/hy3"]],
+]);
+
+// These OpenAI models must never be load-balanced to another upstream
+// provider. OpenRouter's default routing can otherwise choose among multiple
+// providers for the same model family.
+const OPENAI_ONLY_MODELS = new Set([
+  "openai/gpt-5.6-luna",
+  "openai/gpt-5.6-terra",
 ]);
 
 // These models expose reasoning but not a provider-supported effort selector.
@@ -35,16 +44,19 @@ const REASONING_ENABLED_ONLY = new Set([
 ]);
 
 const REASONING_EFFORTS = new Map<string, string[]>([
-  ["tencent/hy3:free", ["low", "high"]],
+  ["qwen/qwen3.7-flash", ["low", "max"]],
   ["tencent/hy3", ["low", "high"]],
   ["deepseek/deepseek-v4-pro", ["high", "max"]],
   ["deepseek/deepseek-v4-flash", ["high", "max"]],
   ["z-ai/glm-5.2", ["high", "max"]],
   ["x-ai/grok-4.5", ["low", "medium", "high"]],
+  ["openai/gpt-5.6-luna", ["low", "medium", "high", "max"]],
+  ["openai/gpt-5.6-terra", ["low", "medium", "high", "max"]],
   ["moonshotai/kimi-k3", ["low", "high", "max"]],
 ]);
 
 const OPENROUTER_EFFORT_ALIASES = new Map<string, Record<string, string>>([
+  ["qwen/qwen3.7-flash", { max: "xhigh" }],
   ["deepseek/deepseek-v4-pro", { max: "xhigh" }],
   ["deepseek/deepseek-v4-flash", { max: "xhigh" }],
   ["z-ai/glm-5.2", { max: "xhigh" }],
@@ -156,6 +168,12 @@ function selectedModel(value: unknown) {
 
 function selectedModels(model: string) {
   return [model, ...(MODEL_FALLBACKS.get(model) || [])];
+}
+
+function selectedProvider(model: string) {
+  return OPENAI_ONLY_MODELS.has(model)
+    ? { only: ["openai"], allow_fallbacks: false }
+    : undefined;
 }
 
 function selectedReasoning(model: string, effort: unknown) {
@@ -274,6 +292,7 @@ function streamNarratorTurn(opts: {
       const toolsEnabled = opts.memoryMode !== "manual";
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+          const provider = selectedProvider(opts.models[0]);
           const upstream = await fetch(OPENROUTER_URL, {
             method: "POST",
             headers: {
@@ -283,6 +302,7 @@ function streamNarratorTurn(opts: {
             },
             body: JSON.stringify({
               models: opts.models,
+              ...(provider ? { provider } : {}),
               stream: true,
               max_tokens: MAX_OUTPUT_TOKENS,
               messages,
