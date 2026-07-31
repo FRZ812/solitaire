@@ -9,6 +9,7 @@ import {
   panWorldOverviewCamera,
   zoomWorldOverviewCamera,
 } from "./worldOverviewModel.js";
+import { useModalFocus } from "./modalFocus.js";
 
 const FIT_CAMERA = Object.freeze({
   x: WORLD_OVERVIEW_VIEWBOX.width / 2,
@@ -77,11 +78,13 @@ function knowledgeLabel(place) {
   return "Known by legend";
 }
 
-function markerClass(place, selected) {
+export function worldOverviewMarkerClass(place, selected, refined = false) {
   return [
     "world-overview__marker",
+    place.major ? "is-major" : "",
     place.current ? "is-current" : "",
     selected ? "is-selected" : "",
+    refined ? "is-refined" : "",
   ].filter(Boolean).join(" ");
 }
 
@@ -109,6 +112,7 @@ function initialSelection(model, inspectedCoord) {
 }
 
 export function WorldOverview({ state, inspectedCoord, onSelect, onClose }) {
+  const dialogRef = useModalFocus(onClose);
   const model = useMemo(() => buildWorldOverviewModel(state), [state]);
   const [camera, setCamera] = useState(FIT_CAMERA);
   const [selectedId, setSelectedId] = useState(() => initialSelection(model, inspectedCoord));
@@ -122,6 +126,7 @@ export function WorldOverview({ state, inspectedCoord, onSelect, onClose }) {
     || model.places.find((place) => place.current)
     || model.places[0];
   const normalizedQuery = query.trim().toLowerCase();
+  const refined = Boolean(normalizedQuery || filter !== "all");
   const visiblePlaces = model.places.filter((place) => {
     const categoryMatches = filter === "all" || place.category === filter;
     if (!categoryMatches) return false;
@@ -188,7 +193,6 @@ export function WorldOverview({ state, inspectedCoord, onSelect, onClose }) {
     else if (event.key === "+" || event.key === "=") setCamera((current) => zoomWorldOverviewCamera(current, 1.2));
     else if (event.key === "-") setCamera((current) => zoomWorldOverviewCamera(current, 1 / 1.2));
     else if (event.key === "0") setCamera(FIT_CAMERA);
-    else if (event.key === "Escape") onClose?.();
     else return;
     event.preventDefault();
   }
@@ -199,7 +203,7 @@ export function WorldOverview({ state, inspectedCoord, onSelect, onClose }) {
   }
 
   return (
-    <section className="world-overview" role="dialog" aria-modal="true" aria-labelledby="world-overview-title">
+    <section ref={dialogRef} className="world-overview" role="dialog" aria-modal="true" aria-labelledby="world-overview-title" tabIndex={-1}>
       <header className="world-overview__header">
         <div>
           <div className="world-overview__eyebrow">The known world</div>
@@ -213,6 +217,7 @@ export function WorldOverview({ state, inspectedCoord, onSelect, onClose }) {
         <label className="world-overview__search">
           <span>Find on map</span>
           <input
+            data-modal-autofocus
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -244,6 +249,7 @@ export function WorldOverview({ state, inspectedCoord, onSelect, onClose }) {
         <div
           ref={stageRef}
           className="world-overview__stage"
+          style={{ aspectRatio: `${WORLD_OVERVIEW_VIEWBOX.width} / ${WORLD_OVERVIEW_VIEWBOX.height}` }}
           role="application"
           aria-label="World overview of Avarra"
           tabIndex={0}
@@ -343,7 +349,7 @@ export function WorldOverview({ state, inspectedCoord, onSelect, onClose }) {
                 <button
                   key={place.id}
                   type="button"
-                  className={markerClass(place, isSelected)}
+                  className={worldOverviewMarkerClass(place, isSelected, refined)}
                   style={markerPosition(place.point, viewBox)}
                   data-world-place={place.id}
                   aria-label={`Inspect ${place.name} on the world map`}

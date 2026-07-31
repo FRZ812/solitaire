@@ -6,6 +6,7 @@ import {
   CONTINENT_ROUTES,
   CONTINENT_SEA_LANES,
   CONTINENT_WATERWAYS,
+  LANDMARK_DESTINATION_SERVICES,
   LANDMARKS,
   MOUNTAIN_SPINE,
   NORTHERN_RIDGES,
@@ -14,6 +15,8 @@ import {
   REALM_FACTIONS,
   REALMS,
 } from "../../data/continent.js";
+import { buildingForTile } from "../../data/town.js";
+import { getTile } from "../../engine/world.js";
 
 const SQRT_3_OVER_2 = Math.sqrt(3) / 2;
 const MAP_PADDING = 46;
@@ -92,27 +95,42 @@ function placeCategory(place) {
   return "wilds";
 }
 
-function placeInterests(place) {
-  const tradeHouse = RARE_TRADE_HOUSES[place.id];
-  const interests = [];
-  if (tradeHouse) {
-    interests.push(
-      tradeHouse.marketTier === "mastercraft" ? "Legendary craft" : "Royal trade",
-      "Rare equipment",
-    );
-  }
-  if (place.kind === "port") interests.push("Sea passage", "Foreign trade", "Dockside work");
-  else if (place.kind === "city") interests.push("Contracts", "Markets", "Court and factions");
-  else if (place.kind === "town") interests.push("Local work", "Trade", "Roadside rest");
-  else if (place.kind === "village") interests.push("Supplies", "Rumors", "Local troubles");
-  else if (place.kind === "fortress") interests.push("Bounties", "Military authority", "Border danger");
-  else if (place.kind === "ruin") interests.push("Delve", "Relics", "Ancient danger");
-  else if (place.kind === "wonder") interests.push("Survey", "Discovery", "Old lore");
-  else if (place.kind === "tower") interests.push("Research", "Audience", "Arcane lore");
-  else if (place.kind === "lake") interests.push("Survey", "Wilderness", "Local lore");
-  else if (SACRED_KINDS.has(place.kind)) interests.push("Pilgrimage", "Rites", "Shelter and lore");
-  else interests.push("Explore", "Local encounters");
-  return [...new Set(interests)].slice(0, 4);
+function resolvedServiceInterests(state, place) {
+  const service = LANDMARK_DESTINATION_SERVICES[place.id] || RARE_TRADE_HOUSES[place.id];
+  if (!service || !place.coord) return [];
+  const tile = getTile(state, place.coord.x, place.coord.y);
+  const building = buildingForTile(tile);
+  const resolvesDeclaredService = tile?.poi?.landmarkId === place.id
+    && tile.poi.service === service.service
+    && building?.locationId === service.id;
+  if (!resolvesDeclaredService) return [];
+  if (service.activities) return [...service.activities];
+  return [
+    service.marketTier === "mastercraft" ? "Legendary craft" : "Royal trade",
+    "Rare equipment",
+  ];
+}
+
+function placeFacts(place) {
+  if (place.kind === "hot-spring") return ["Thermal pools", "Mineral terraces", "Remote wilderness"];
+  if (place.kind === "port") return ["Coastal settlement", "Sea-lane terminus", "Harbor authority"];
+  if (place.kind === "city") return ["Regional capital", "Faction seat", "Road nexus"];
+  if (place.kind === "town") return ["Larger settlement", "Local authority", "Built approaches"];
+  if (place.kind === "village") return ["Small settlement", "Rural district", "Local authority"];
+  if (place.kind === "fortress") return ["Fortified site", "Military authority", "Border position"];
+  if (place.kind === "ruin") return ["Ancient ruins", "Abandoned works", "Unsettled ground"];
+  if (place.kind === "wonder") return ["Natural wonder", "Regional landmark", "Unsettled ground"];
+  if (place.kind === "tower") return ["Standing tower", "Elevated landmark", "Authored site"];
+  if (place.kind === "lake") return ["Inland water", "Natural landmark", "Remote shore"];
+  if (SACRED_KINDS.has(place.kind)) return ["Sacred site", "Regional faith", "Religious authority"];
+  return ["Named landmark", "Regional feature"];
+}
+
+function placeInterests(state, place) {
+  return [...new Set([
+    ...resolvedServiceInterests(state, place),
+    ...placeFacts(place),
+  ])].slice(0, 4);
 }
 
 function publicWhitemarchPlace() {
@@ -166,7 +184,7 @@ function placeEntry(state, place, routeById, provinceById, factionById, realmByI
     ...place,
     point: projectWorldOverviewCoord(place.coord),
     category: placeCategory(place),
-    interests: placeInterests(place),
+    interests: placeInterests(state, place),
     capital: !!place.capitalOfRealmId,
     major: !!place.capitalOfRealmId
       || place.kind === "port"
@@ -194,7 +212,16 @@ export function buildWorldOverviewModel(state) {
   const provinceById = new Map(PROVINCES.map((province) => [province.id, province]));
   const factionById = new Map(REALM_FACTIONS.map((faction) => [faction.id, faction]));
   const realmById = new Map(REALMS.map((realm) => [realm.id, realm]));
-  const places = [publicWhitemarchPlace(), ...LANDMARKS]
+  const hotSpringPlaces = CONTINENT_HOT_SPRINGS.map((spring) => ({
+    ...spring,
+    coord: spring.center,
+    kind: "hot-spring",
+    role: "natural-destination",
+    knowledge: "fabled",
+    realmId: "east",
+    provinceId: spring.id === "jade-springs" ? "starfall-uplands" : "tellmar-delta",
+  }));
+  const places = [publicWhitemarchPlace(), ...LANDMARKS, ...hotSpringPlaces]
     .filter((place, index, all) => all.findIndex((candidate) => candidate.id === place.id) === index)
     .map((place) => placeEntry(state, place, routeById, provinceById, factionById, realmById));
 
@@ -242,11 +269,12 @@ export function buildWorldOverviewModel(state) {
 
 export function overviewDestinationTarget(place) {
   if (!place?.coord || !Number.isFinite(place.coord.x) || !Number.isFinite(place.coord.y)) return null;
+  if (!["legend", "reputation", "charted"].includes(place.knownBy)) return null;
   return {
     x: place.coord.x,
     y: place.coord.y,
     name: place.name,
-    knownBy: place.knownBy || (place.knowledge === "rumor" ? "reputation" : "legend"),
+    knownBy: place.knownBy,
     landmarkId: place.id,
   };
 }

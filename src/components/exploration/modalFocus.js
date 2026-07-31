@@ -40,6 +40,37 @@ export function trapModalFocus(event, dialog) {
   return false;
 }
 
+export function activateModalFocus(dialog, onClose, options = {}) {
+  const documentTarget = options.documentTarget
+    || (typeof document !== "undefined" ? document : null);
+  const windowTarget = options.windowTarget
+    || (typeof window !== "undefined" ? window : null);
+  if (!dialog || !documentTarget || !windowTarget) return () => {};
+
+  // Capture before moving focus. Native React `autoFocus` runs during commit,
+  // before effects, and would otherwise replace the true opener here.
+  const opener = documentTarget.activeElement;
+  const initial = dialog.querySelector?.("[data-modal-autofocus]")
+    || modalFocusableElements(dialog)[0]
+    || dialog;
+  initial.focus?.();
+
+  const onKeyDown = (event) => {
+    if (event.key === "Escape" && !event.defaultPrevented) {
+      event.preventDefault();
+      event.stopPropagation?.();
+      onClose?.();
+      return;
+    }
+    trapModalFocus(event, dialog);
+  };
+  windowTarget.addEventListener("keydown", onKeyDown, true);
+  return () => {
+    windowTarget.removeEventListener("keydown", onKeyDown, true);
+    if (opener?.isConnected !== false) opener?.focus?.();
+  };
+}
+
 export function useModalFocus(onClose) {
   const dialogRef = useRef(null);
   const closeRef = useRef(onClose);
@@ -47,27 +78,7 @@ export function useModalFocus(onClose) {
 
   useEffect(() => {
     const dialog = dialogRef.current;
-    if (!dialog || typeof document === "undefined") return undefined;
-    const opener = document.activeElement;
-    const initial = dialog.querySelector?.("[autofocus]")
-      || modalFocusableElements(dialog)[0]
-      || dialog;
-    initial.focus?.();
-
-    const onKeyDown = (event) => {
-      if (event.key === "Escape" && !event.defaultPrevented) {
-        event.preventDefault();
-        event.stopPropagation?.();
-        closeRef.current?.();
-        return;
-      }
-      trapModalFocus(event, dialog);
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown, true);
-      if (opener?.isConnected !== false) opener?.focus?.();
-    };
+    return activateModalFocus(dialog, () => closeRef.current?.());
   }, []);
 
   return dialogRef;
