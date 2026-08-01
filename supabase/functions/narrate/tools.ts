@@ -27,8 +27,11 @@ type NarratorToolCall = {
 };
 
 function requiredText(value: unknown, label: string, maxLength: number) {
-  if (typeof value !== "string" || !value.trim() || value.length > maxLength) {
+  if (typeof value !== "string" || !value.trim()) {
     throw new Error(`invalid narrator skill ${label}`);
+  }
+  if (value.length > maxLength) {
+    throw new Error(`narrator skill ${label} is too large`);
   }
   return value.trim();
 }
@@ -63,6 +66,12 @@ export function asInstructionLibrary(value: unknown): InstructionSkill[] {
   });
 }
 
+// Server-first rolling deployments must continue serving older clients, whose
+// monolithic system prompt predates the separate narrator_skills field.
+export function asOptionalInstructionLibrary(value: unknown): InstructionSkill[] {
+  return value == null ? [] : asInstructionLibrary(value);
+}
+
 export function instructionToolFor(library: InstructionSkill[]) {
   return {
     type: "function",
@@ -95,7 +104,9 @@ function parseSkillIds(rawArguments: string | undefined) {
   try {
     const parsed = JSON.parse(rawArguments || "{}");
     if (!Array.isArray(parsed?.skill_ids)) return [];
-    return [...new Set(parsed.skill_ids.filter((id: unknown) => typeof id === "string"))]
+    return [...new Set(parsed.skill_ids.filter((id: unknown) => (
+      typeof id === "string" && SKILL_ID.test(id)
+    )))]
       .slice(0, MAX_SKILLS_PER_CALL) as string[];
   } catch {
     return [];

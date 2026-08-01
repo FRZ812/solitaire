@@ -254,6 +254,10 @@ async function accumulateAnthropicSSE(body, onProgress) {
           }
         } else if (evt.type === "memory_delta" && evt.fact) {
           memories.push(evt.fact);
+        } else if (evt.type === "narrator_round_reset") {
+          text = "";
+          thinking = "";
+          onProgress?.({ reset: true });
         }
       } catch {
         // skip malformed events

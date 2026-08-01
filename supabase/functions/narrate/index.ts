@@ -1,9 +1,9 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { streamProviderToolLoop } from "./provider-loop.ts";
 import { requestNarratorRound, selectedModel } from "./routing.ts";
 import {
-  asInstructionLibrary,
+  asOptionalInstructionLibrary,
   instructionToolFor,
-  INSTRUCTION_TOOL_NAME,
   resolveInstructionToolCall,
   type InstructionSkill,
 } from "./tools.ts";
@@ -114,94 +114,13 @@ function memoryToolFor(mode: MemoryMode) {
   };
 }
 
-function toText(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (!Array.isArray(value)) return "";
-  return value
-    .map((part) => typeof part === "object" && part && "text" in part ? String((part as { text?: unknown }).text || "") : "")
-    .join("");
-}
-
-function toAnthropicEvent(type: "text_delta" | "thinking_delta", value: string) {
-  if (!value) return "";
-  const delta = type === "text_delta" ? { type, text: value } : { type, thinking: value };
-  return `data: ${JSON.stringify({ type: "content_block_delta", delta })}\n\n`;
-}
-
 function toMemoryEvent(fact: string) {
   return `data: ${JSON.stringify({ type: "memory_delta", fact })}\n\n`;
 }
 
-type ToolCallAcc = { id: string; name: string; arguments: string };
 
-// Reads one OpenRouter SSE response to completion, forwarding text/thinking
-// deltas live onto `controller`, and accumulating any streamed tool_calls
-// (which arrive as fragments keyed by index — id/name on the first fragment,
-// arguments trickling in across subsequent ones). Returns what the round
-// produced so the caller can decide whether to loop for another round.
-async function pumpOpenRouterRound(
-  body: ReadableStream<Uint8Array>,
-  controller: ReadableStreamDefaultController<Uint8Array>,
-  encoder: TextEncoder,
-): Promise<{ text: string; toolCalls: ToolCallAcc[]; finishReason: string | null }> {
-  const decoder = new TextDecoder();
-  const reader = body.getReader();
-  let buffer = "";
-  let text = "";
-  let finishReason: string | null = null;
-  const toolCallsByIndex = new Map<number, ToolCallAcc>();
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.startsWith("data:")) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        try {
-          const chunk = JSON.parse(payload);
-          const choice = chunk?.choices?.[0] || {};
-          const delta = choice.delta || {};
-          if (choice.finish_reason) finishReason = choice.finish_reason;
-
-          const reasoning = toText(delta.reasoning ?? delta.reasoning_content);
-          const content = toText(delta.content);
-          text += content;
-          const thinkingEvent = toAnthropicEvent("thinking_delta", reasoning);
-          const textEvent = toAnthropicEvent("text_delta", content);
-          if (thinkingEvent) controller.enqueue(encoder.encode(thinkingEvent));
-          if (textEvent) controller.enqueue(encoder.encode(textEvent));
-
-          if (Array.isArray(delta.tool_calls)) {
-            for (const tc of delta.tool_calls) {
-              const index = typeof tc.index === "number" ? tc.index : 0;
-              const existing = toolCallsByIndex.get(index) || { id: "", name: "", arguments: "" };
-              if (tc.id) existing.id = tc.id;
-              if (tc.function?.name) existing.name = tc.function.name;
-              if (tc.function?.arguments) existing.arguments += tc.function.arguments;
-              toolCallsByIndex.set(index, existing);
-            }
-          }
-        } catch {
-          // Ignore malformed provider chunks; a later valid delta may still complete the beat.
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock?.();
-  }
-
-  return { text, toolCalls: [...toolCallsByIndex.values()], finishReason };
-}
-
-// Drives the full narrator turn: calls OpenRouter, resolves skill and memory
-// tools, appends their results, and loops so the model can finish narrating.
-
+// Drives the full narrator turn through the executable, unit-tested provider
+// loop. Skill and memory state live for exactly one narrator attempt.
 function streamNarratorTurn(opts: {
   apiKey: string;
   model: string;
@@ -211,84 +130,52 @@ function streamNarratorTurn(opts: {
   existingMemories: string[];
   instructionLibrary: InstructionSkill[];
 }) {
-  const encoder = new TextEncoder();
+  const knownMemoryKeys = new Set(opts.existingMemories.map(memoryFingerprint).filter(Boolean));
+  const loadedSkillIds = new Set<string>();
+  const tools = [
+    ...(opts.instructionLibrary.length ? [instructionToolFor(opts.instructionLibrary)] : []),
+    ...(opts.memoryMode === "manual" ? [] : [memoryToolFor(opts.memoryMode)]),
+  ];
 
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const messages = [...opts.messages];
-      const knownMemoryKeys = new Set(opts.existingMemories.map(memoryFingerprint).filter(Boolean));
-      const loadedSkillIds = new Set<string>();
-      const tools = [
-        ...(opts.instructionLibrary.length ? [instructionToolFor(opts.instructionLibrary)] : []),
-        ...(opts.memoryMode === "manual" ? [] : [memoryToolFor(opts.memoryMode)]),
-      ];
-      try {
-        for (let round = 0; round < MAX_PROVIDER_ROUNDS; round++) {
-          const upstream = await requestNarratorRound({
-            apiKey: opts.apiKey,
-            model: opts.model,
-            effort: opts.effort,
-            messages,
-            tools,
-            toolChoice: round === MAX_PROVIDER_ROUNDS - 1 ? "none" : "auto",
-          });
-
-          if (!upstream.ok || !upstream.body) {
-            const detail = (await upstream.text()).slice(0, 500);
-            console.error("OpenRouter narrator request failed", upstream.status, detail);
-            throw new Error("narrator provider request failed");
-          }
-
-          const { text, toolCalls, finishReason } = await pumpOpenRouterRound(upstream.body, controller, encoder);
-          const recognizedCalls = toolCalls.filter((tc) => (
-            tc.name === INSTRUCTION_TOOL_NAME
-            || (tc.name === "remember" && opts.memoryMode !== "manual")
-          ));
-
-          // No tool call this round (or none we recognize) — the model gave
-          // its final narrative answer, nothing more to loop for.
-          if (!recognizedCalls.length || finishReason !== "tool_calls") break;
-          messages.push({
-            role: "assistant",
-            content: text || null,
-            tool_calls: recognizedCalls.map((tc) => ({
-              id: tc.id,
-              type: "function",
-              function: { name: tc.name, arguments: tc.arguments },
-            })),
-          });
-          for (const tc of recognizedCalls) {
-            const instructionResult = resolveInstructionToolCall(
-              tc,
-              opts.instructionLibrary,
-              loadedSkillIds,
-            );
-            if (instructionResult.recognized) {
-              messages.push({
-                role: "tool",
-                tool_call_id: tc.id,
-                content: instructionResult.result,
-              });
-              continue;
-            }
-
-            let fact = "";
-            try { fact = normalizeMemoryFact(JSON.parse(tc.arguments || "{}").fact); } catch { /* malformed args — skip */ }
-            const key = memoryFingerprint(fact);
-            const isDuplicate = !!key && knownMemoryKeys.has(key);
-            if (fact && key && !isDuplicate) {
-              knownMemoryKeys.add(key);
-              controller.enqueue(encoder.encode(toMemoryEvent(fact)));
-            }
-            const result = !fact ? "ignored: no fact given" : isDuplicate ? "ignored: already recorded" : "recorded";
-            messages.push({ role: "tool", tool_call_id: tc.id, content: result });
-          }
-        }
-      } catch (error) {
-        controller.error(error);
-        return;
+  return streamProviderToolLoop({
+    requestRound: requestNarratorRound,
+    request: {
+      apiKey: opts.apiKey,
+      model: opts.model,
+      effort: opts.effort,
+    },
+    messages: opts.messages,
+    tools,
+    maxRounds: MAX_PROVIDER_ROUNDS,
+    resolveToolCall(toolCall) {
+      const instructionResult = resolveInstructionToolCall(
+        toolCall,
+        opts.instructionLibrary,
+        loadedSkillIds,
+      );
+      if (instructionResult.recognized) {
+        return { result: instructionResult.result };
       }
-      controller.close();
+      if (toolCall.name !== "remember" || opts.memoryMode === "manual") return null;
+
+      let fact = "";
+      try {
+        fact = normalizeMemoryFact(JSON.parse(toolCall.arguments || "{}").fact);
+      } catch {
+        // Malformed arguments produce a bounded tool result, never an event.
+      }
+      const key = memoryFingerprint(fact);
+      const isDuplicate = !!key && knownMemoryKeys.has(key);
+      if (fact && key && !isDuplicate) knownMemoryKeys.add(key);
+      const result = !fact
+        ? "ignored: no fact given"
+        : isDuplicate
+          ? "ignored: already recorded"
+          : "recorded";
+      return {
+        result,
+        ...(fact && key && !isDuplicate ? { events: [toMemoryEvent(fact)] } : {}),
+      };
     },
   });
 }
@@ -338,9 +225,7 @@ Deno.serve(async (request) => {
     stateContext = stringField(payload.state_context, "state_context");
     userMessage = stringField(payload.user_msg, "user_msg");
     systemPrompt = stringField(payload.system_prompt, "system_prompt", MAX_SYSTEM_PROMPT_LENGTH);
-    instructionLibrary = payload.narrator_skills == null
-      ? []
-      : asInstructionLibrary(payload.narrator_skills);
+    instructionLibrary = asOptionalInstructionLibrary(payload.narrator_skills);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "invalid request" }, 400);
   }

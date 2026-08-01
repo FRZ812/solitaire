@@ -109,4 +109,31 @@ describe("callNarrator lifecycle deadline", () => {
       content,
     }) => ({ id, label, trigger, content })));
   });
+
+  it("discards text from intermediate skill-tool rounds before parsing the final answer", async () => {
+    mocks.getSession.mockResolvedValue({ data: { session: { access_token: "test-token" } } });
+    mocks.extractJSON.mockReturnValue({ story: [{ type: "beat", text: "Final." }] });
+    const progress = vi.fn();
+    const finalJson = '{"story":[{"type":"beat","text":"Final."}]}';
+    const stream = [
+      'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"intermediate prose"}}',
+      'data: {"type":"narrator_round_reset"}',
+      `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: finalJson } })}`,
+      "",
+    ].join("\n\n");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    })));
+
+    await callNarrator({}, "attack", progress, { timeoutMs: 5_000 });
+
+    expect(mocks.extractJSON).toHaveBeenCalledWith(finalJson);
+    expect(progress.mock.calls.map(([chunk]) => chunk)).toEqual([
+      { reset: true },
+      { text: "intermediate prose" },
+      { reset: true },
+      { text: finalJson },
+    ]);
+  });
 });

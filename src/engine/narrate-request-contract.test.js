@@ -23,6 +23,10 @@ const edgeSource = readFileSync(
   new URL("../../supabase/functions/narrate/index.ts", import.meta.url),
   "utf8",
 );
+const providerLoopSource = readFileSync(
+  new URL("../../supabase/functions/narrate/provider-loop.ts", import.meta.url),
+  "utf8",
+);
 
 function numericConstant(name) {
   const match = edgeSource.match(new RegExp(`const\\s+${name}\\s*=\\s*([\\d_]+)`));
@@ -181,13 +185,14 @@ describe("narrator memory tool contract", () => {
 
 describe("narrator instruction tool contract", () => {
   it("keeps detailed skills outside initial messages and resolves them through tool results", () => {
-    expect(edgeSource).toContain("payload.narrator_skills == null");
-    expect(edgeSource).toContain("asInstructionLibrary(payload.narrator_skills)");
+    expect(edgeSource).toContain("asOptionalInstructionLibrary(payload.narrator_skills)");
     expect(edgeSource).toContain("instructionToolFor(opts.instructionLibrary)");
     expect(edgeSource).toContain("resolveInstructionToolCall");
     expect(edgeSource).toContain("loadedSkillIds");
-    expect(edgeSource).toContain('toolChoice: round === MAX_PROVIDER_ROUNDS - 1 ? "none" : "auto"');
-    expect(edgeSource).not.toContain("MAX_OUTPUT_TOKENS");
+    expect(edgeSource).toContain("streamProviderToolLoop");
+    expect(providerLoopSource).toContain("narrator_round_reset");
+    expect(providerLoopSource).toContain('toolChoice: finalRound ? "none" : "auto"');
+    expect(`${edgeSource}\n${providerLoopSource}`).not.toContain("MAX_OUTPUT_TOKENS");
     expect(edgeSource).not.toContain("content: instructionLibrary");
   });
 });
