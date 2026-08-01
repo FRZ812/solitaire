@@ -128,7 +128,6 @@ import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
-import { ChatContextPreview } from "./components/ChatContextPreview.jsx";
 import { JourneyLoader, JourneyResumeOverlay } from "./components/JourneyLoader.jsx";
 import { advanceLiveNarrator, emptyLiveNarrator } from "./engine/live-narrator.js";
 import { buildChatContextSections } from "./components/chatContextModel.js";
@@ -2454,7 +2453,7 @@ export function Solitaire() {
   // This derived preview deliberately is not a hook: auth, subscription, title,
   // campaign-list, and game-over screens all return above this point. Keeping a
   // hook here would change Solitaire's hook count when a session opens (#310).
-  const contextPreview = buildChatContextSections({ state, beats: state.beats, history: state.apiHistory });
+  const contextPreview = buildChatContextSections({ state, draft: input });
   const readyAdvancements = state.created === false ? 0 : (pendingLevelAllocations(state.character)?.unspentLevels || 0);
   const advancementNeedsChoice = state.created !== false && pendingProgressionChoices(state.character)
     .some((choice) => choice.kind !== "level-allocation");
@@ -2642,8 +2641,10 @@ export function Solitaire() {
           advancementCount={readyAdvancements}
           advancementNeedsChoice={advancementNeedsChoice}
           onOpenProgression={() => { setDeckPage("progression"); setDeckOpen(true); }}
-          contextTotalTokens={contextPreview.total}
-          onOpenContext={() => setContextPreviewOpen(true)}
+          contextPreview={contextPreview}
+          contextOpen={contextPreviewOpen}
+          activeModel={narratorModelLabel(getNarratorModel())}
+          onContextOpenChange={setContextPreviewOpen}
         />
       </div>
 
@@ -2669,14 +2670,6 @@ export function Solitaire() {
         />
       )}
 
-      {contextPreviewOpen && (
-        <ChatContextPreview
-          preview={contextPreview}
-          state={state}
-          activeModel={narratorModelLabel(getNarratorModel())}
-          onClose={() => setContextPreviewOpen(false)}
-        />
-      )}
 
       {showCreationHub && (
         <CreationHub

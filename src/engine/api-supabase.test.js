@@ -20,6 +20,7 @@ vi.mock("./narrator-settings.js", () => ({ normalizeNarratorSettings: () => ({ m
 vi.mock("./memory.js", () => ({ mergeMemoryBank: (_base, values = []) => values }));
 
 import { callNarrator } from "./api-supabase.js";
+import { NARRATOR_SKILLS } from "../narrator-instructions.js";
 
 describe("callNarrator lifecycle deadline", () => {
   beforeEach(() => {
@@ -87,5 +88,52 @@ describe("callNarrator lifecycle deadline", () => {
     await expect(pending).rejects.toThrow("campaign changed");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("ships the bounded instruction library for on-demand edge tool results", async () => {
+    mocks.getSession.mockResolvedValue({ data: { session: { access_token: "test-token" } } });
+    mocks.extractJSON.mockReturnValue({ story: [{ type: "beat", text: "Ready." }] });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      'data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n',
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await callNarrator({}, "look around", vi.fn(), { timeoutMs: 5_000 });
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(requestBody.narrator_skills).toEqual(NARRATOR_SKILLS.map(({
+      id,
+      label,
+      trigger,
+      content,
+    }) => ({ id, label, trigger, content })));
+  });
+
+  it("discards text from intermediate skill-tool rounds before parsing the final answer", async () => {
+    mocks.getSession.mockResolvedValue({ data: { session: { access_token: "test-token" } } });
+    mocks.extractJSON.mockReturnValue({ story: [{ type: "beat", text: "Final." }] });
+    const progress = vi.fn();
+    const finalJson = '{"story":[{"type":"beat","text":"Final."}]}';
+    const stream = [
+      'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"intermediate prose"}}',
+      'data: {"type":"narrator_round_reset"}',
+      `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: finalJson } })}`,
+      "",
+    ].join("\n\n");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream, {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    })));
+
+    await callNarrator({}, "attack", progress, { timeoutMs: 5_000 });
+
+    expect(mocks.extractJSON).toHaveBeenCalledWith(finalJson);
+    expect(progress.mock.calls.map(([chunk]) => chunk)).toEqual([
+      { reset: true },
+      { text: "intermediate prose" },
+      { reset: true },
+      { text: finalJson },
+    ]);
   });
 });

@@ -2,7 +2,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
-import { SYSTEM_PROMPT } from "../../system-prompt.js";
+import { NARRATOR_INSTRUCTION_CORPUS as SYSTEM_PROMPT } from "../../narrator-instructions.js";
 import { WorldOverview, worldOverviewMarkerClass } from "./WorldOverview.jsx";
 
 describe("far-above world overview", () => {
