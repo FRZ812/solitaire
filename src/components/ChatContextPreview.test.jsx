@@ -23,19 +23,25 @@ describe("ChatContextPreview", () => {
     );
 
     expect(html).toContain("Narrator context");
-    expect(html).toContain("Next turn context");
+    expect(html).toContain("Sent with next request");
     expect(html).toContain("14.2k");
-    expect(html).toContain("38.7k kept out of base context");
+    expect(html).toContain("38.7k kept out of the initial request");
+    expect(html).toContain("Available on demand");
+    expect(html).toContain("another provider round repeats the sent-now context");
     expect(html).toContain("World &amp; travel");
     expect(html).toContain("DeepSeek V4 Pro");
     expect(html).toContain('id="chat-context-inspector"');
     expect(html).toContain('role="region"');
+    expect(html).toContain('aria-labelledby="chat-context-preview-title"');
     expect(html).not.toContain('role="dialog"');
     expect(html).not.toContain('aria-modal="true"');
     expect(html).not.toContain("chat-context-preview-backdrop");
     expect(html).toContain("Core prompt");
     expect(html).toContain("Game context");
     expect(html).toContain("Recent story");
+    expect(html).toContain('role="img"');
+    expect(html).toContain('id="chat-context-row-system"');
+    expect(html).toContain('aria-controls="chat-context-section-system"');
 
     expect(html).not.toContain("Pinned Files");
     expect(html).not.toContain("Partial Files");

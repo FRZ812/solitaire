@@ -1,6 +1,7 @@
 import { SYSTEM_PROMPT } from "../system-prompt.js";
 import { buildStateContext } from "../engine/api.js";
 import { prepareNarratorHistory } from "../engine/narrator-history.js";
+import { normalizeNarratorSettings } from "../engine/narrator-settings.js";
 import { narratorMessageForPendingPlayers } from "../engine/timeline.js";
 import { NARRATOR_SKILLS } from "../narrator-instructions.js";
 
@@ -26,19 +27,54 @@ function safeStateContext(state) {
   }
 }
 
-function toolContext(state) {
+const MEMORY_TOOL_DESCRIPTION = "Permanently record a durable fact worth recalling long after this turn scrolls out of the conversation window — a promise made, a secret learned, an unresolved thread, a plot-critical detail. Call this whenever something happens that the story will need much later. Keep the fact short, self-contained, and in third person. Don't call it for anything trivial, already recorded, or already tracked elsewhere (inventory, quests, relationships).";
+
+function narratorToolSchemas(state) {
   const tools = [{
-    name: "load_narrator_skills",
-    description: "Load detailed rules only when a specialized turn needs them.",
-    allowed_skill_ids: NARRATOR_SKILLS.map(({ id }) => id),
+    type: "function",
+    function: {
+      name: "load_narrator_skills",
+      description: "Load detailed narrator rules before deciding a specialized turn. Use the skill catalog in the system prompt, request all relevant ids together, and load only what this turn needs.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          skill_ids: {
+            type: "array",
+            minItems: 1,
+            maxItems: 4,
+            uniqueItems: true,
+            items: { type: "string", enum: NARRATOR_SKILLS.map(({ id }) => id) },
+            description: "Detailed rule modules needed for this turn.",
+          },
+        },
+        required: ["skill_ids"],
+      },
+    },
   }];
-  if (state?.narratorSettings?.memoryMode !== "manual") {
+  const { memoryMode } = normalizeNarratorSettings(state?.narratorSettings);
+  if (memoryMode !== "manual") {
     tools.push({
-      name: "remember",
-      description: "Record a durable plot fact that must survive the rolling story window.",
+      type: "function",
+      function: {
+        name: "remember",
+        description: memoryMode === "essential"
+          ? `${MEMORY_TOOL_DESCRIPTION} ESSENTIAL-ONLY mode is active: use this only for a fact likely to matter many turns from now, and batch independent facts in parallel.`
+          : MEMORY_TOOL_DESCRIPTION,
+        parameters: {
+          type: "object",
+          properties: {
+            fact: {
+              type: "string",
+              description: "A concise, self-contained statement of the fact to remember (one or two sentences).",
+            },
+          },
+          required: ["fact"],
+        },
+      },
     });
   }
-  return JSON.stringify(tools);
+  return tools;
 }
 
 function nextAction(state, draft) {
@@ -53,7 +89,7 @@ function nextAction(state, draft) {
 
 export function buildChatContextSections({ state, draft = "" } = {}) {
   const stateContext = safeStateContext(state);
-  const preparedHistory = JSON.stringify(prepareNarratorHistory(state?.apiHistory));
+  const preparedHistory = prepareNarratorHistory(state?.apiHistory);
 
   const sections = [
     {
@@ -65,10 +101,10 @@ export function buildChatContextSections({ state, draft = "" } = {}) {
     },
     {
       id: "tools",
-      label: "TOOLS & SKILL INDEX",
+      label: "TOOL INTERFACES",
       color: "#3f9fd1",
-      description: "Function contracts and the lightweight on-demand skill catalog",
-      content: toolContext(state),
+      description: "Exact function schemas sent with the initial provider request; full skill modules are not included",
+      content: JSON.stringify(narratorToolSchemas(state)),
     },
     {
       id: "game",
@@ -82,7 +118,7 @@ export function buildChatContextSections({ state, draft = "" } = {}) {
       label: "RECENT STORY",
       color: "#d45b72",
       description: "The same bounded history prepared for the provider",
-      content: preparedHistory,
+      content: preparedHistory.length ? JSON.stringify(preparedHistory) : "",
     },
     {
       id: "action",

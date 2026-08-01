@@ -2644,7 +2644,7 @@ export function Solitaire() {
           contextPreview={contextPreview}
           contextOpen={contextPreviewOpen}
           activeModel={narratorModelLabel(getNarratorModel())}
-          onToggleContext={() => setContextPreviewOpen((open) => !open)}
+          onContextOpenChange={setContextPreviewOpen}
         />
       </div>
 

@@ -671,7 +671,7 @@ function NarratorPicker() {
 export function InputBar({
   value, onChange, onSubmit, onRun, queuedCount = 0, loading,
   advancementCount = 0, advancementNeedsChoice = false, onOpenProgression,
-  contextPreview = null, contextOpen = false, activeModel = "", onToggleContext,
+  contextPreview = null, contextOpen = false, activeModel = "", onToggleContext, onContextOpenChange,
 }) {
   const hasDraft = Boolean(value.trim());
   const actionLabel = hasDraft
@@ -685,7 +685,34 @@ export function InputBar({
       ? `Play ${queuedCount} queued message${queuedCount === 1 ? "" : "s"}`
       : "Continue story";
   const ref = React.useRef(null);
+  const rootRef = React.useRef(null);
+  const contextTriggerRef = React.useRef(null);
   const [focused, setFocused] = React.useState(false);
+  const setContextOpen = React.useCallback((nextOpen, { restoreFocus = false } = {}) => {
+    if (onContextOpenChange) onContextOpenChange(nextOpen);
+    else onToggleContext?.(nextOpen);
+    if (restoreFocus) contextTriggerRef.current?.focus();
+  }, [onContextOpenChange, onToggleContext]);
+
+  React.useEffect(() => {
+    if (!contextOpen || typeof document === "undefined") return undefined;
+    const onDocumentPointerDown = (event) => {
+      if (!rootRef.current?.contains(event.target)) setContextOpen(false);
+    };
+    const onDocumentKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      if (event.target?.closest?.('[role="dialog"][aria-modal="true"]')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setContextOpen(false, { restoreFocus: true });
+    };
+    document.addEventListener("pointerdown", onDocumentPointerDown, true);
+    document.addEventListener("keydown", onDocumentKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDocumentPointerDown, true);
+      document.removeEventListener("keydown", onDocumentKeyDown, true);
+    };
+  }, [contextOpen, setContextOpen]);
   // Grow the field with its content (up to a cap, then it scrolls), so a longer
   // action is easy to write and read back before sending.
   React.useEffect(() => {
@@ -699,7 +726,7 @@ export function InputBar({
     ? "Finish advancement"
     : `${advancementCount} advancement${advancementCount === 1 ? "" : "s"} ready`;
   return (
-    <div className={`story-input${focused ? " is-focused" : ""}${value.trim() ? " has-value" : ""}${queuedCount ? " has-queued" : ""}${loading ? " is-sending" : ""}`} style={{
+    <div ref={rootRef} className={`story-input${focused ? " is-focused" : ""}${value.trim() ? " has-value" : ""}${queuedCount ? " has-queued" : ""}${loading ? " is-sending" : ""}`} style={{
       padding: "10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px) 12px",
       background: "linear-gradient(180deg, rgba(7,25,40,0) 0%, rgba(7,25,40,0.48) 20%, rgba(7,25,40,0.84) 100%)",
       display: "block",
@@ -716,26 +743,20 @@ export function InputBar({
           {advancementCount > 0 && <b aria-hidden="true">{advancementCount}</b>}
         </button>
       )}
-      <div
-        className={`story-input__surface${contextOpen ? " is-context-open" : ""}`}
-        onKeyDown={(event) => {
-          if (contextOpen && event.key === "Escape" && onToggleContext) {
-            event.stopPropagation();
-            onToggleContext();
-          }
-        }}
-      >
-        {onToggleContext && contextPreview && (
+      <div className={`story-input__surface${contextOpen ? " is-context-open" : ""}`}>
+        {(onContextOpenChange || onToggleContext) && contextPreview && (
           <button
+            id="chat-context-trigger"
+            ref={contextTriggerRef}
             type="button"
             className="story-input__context"
-            onClick={onToggleContext}
+            onClick={() => setContextOpen(!contextOpen)}
             aria-label={`${contextOpen ? "Collapse" : "Expand"} context preview. ${formatTokenCount(contextPreview.total)} estimated tokens`}
             aria-expanded={contextOpen}
             aria-controls="chat-context-inspector"
           >
             <span className="story-input__context-dot" aria-hidden="true" />
-            <span><strong>{formatTokenCount(contextPreview.total)} tokens</strong><small>Next turn context</small></span>
+            <span><strong>{formatTokenCount(contextPreview.total)} estimated tokens</strong><small>Sent next request</small></span>
             <span className="story-input__context-arrow" aria-hidden="true"><Icon name="arrowUp" size={13} /></span>
           </button>
         )}

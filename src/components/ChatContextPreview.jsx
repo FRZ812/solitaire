@@ -3,7 +3,7 @@ import { formatTokenCount } from "./chatContextModel.js";
 
 function ContextLegend({ sections }) {
   return (
-    <div className="chat-context-preview__legend" aria-label="Context sections">
+    <div className="chat-context-preview__legend" aria-label="Sent-now context sections">
       {sections.map((section) => (
         <span key={section.id}>
           <i style={{ backgroundColor: section.color }} />
@@ -20,6 +20,7 @@ function ContextRows({ sections, expanded, onToggle }) {
       {sections.map((section) => (
         <div className={`chat-context-preview__row${expanded === section.id ? " is-expanded" : ""}`} key={section.id}>
           <button
+            id={`chat-context-row-${section.id}`}
             type="button"
             onClick={() => onToggle(expanded === section.id ? null : section.id)}
             aria-expanded={expanded === section.id}
@@ -30,9 +31,14 @@ function ContextRows({ sections, expanded, onToggle }) {
             <strong>{formatTokenCount(section.tokens)}</strong>
           </button>
           {expanded === section.id && (
-            <div className="chat-context-preview__detail" id={`chat-context-section-${section.id}`}>
+            <div
+              className="chat-context-preview__detail"
+              id={`chat-context-section-${section.id}`}
+              role="region"
+              aria-labelledby={`chat-context-row-${section.id}`}
+            >
               <span>{section.description}</span>
-              <pre>{section.content || "No additional detail in this section."}</pre>
+              <pre>{section.content || "No content is sent in this section for the next request."}</pre>
             </div>
           )}
         </div>
@@ -49,10 +55,13 @@ function DeferredSkills({ preview }) {
   return (
     <details className="chat-context-preview__skills">
       <summary>
-        <span><small>ON-DEMAND</small><strong>Narrator skills</strong></span>
-        <b>{skills.length} skills · {formatTokenCount(deferredTokens)}</b>
+        <span><small>Available on demand</small><strong>Narrator skill modules</strong></span>
+        <b>{skills.length} {skills.length === 1 ? "module" : "modules"} · {formatTokenCount(deferredTokens)}</b>
       </summary>
-      <p>{formatTokenCount(deferredTokens)} kept out of base context until the narrator loads a relevant skill.</p>
+      <p>
+        {formatTokenCount(deferredTokens)} kept out of the initial request. Loading one means another provider round repeats
+        the sent-now context; this is not an additive whole-turn estimate.
+      </p>
       {skills.length > 0 && (
         <div className="chat-context-preview__skill-list">
           {skills.map((skill) => (
@@ -82,20 +91,26 @@ export function ChatContextPreview({ preview, activeModel }) {
       <header className="chat-context-preview__header">
         <div className="chat-context-preview__heading">
           <span>Narrator context</span>
-          <h2 id="chat-context-preview-title">Next turn context</h2>
-          <p>{activeModel || "Default narrator"} · estimated before the next request</p>
+          <h2 id="chat-context-preview-title">Sent with next request</h2>
+          <p>{activeModel || "Default narrator"} · initial request estimate</p>
         </div>
         <div className="chat-context-preview__total" aria-label={`${formatTokenCount(total)} estimated tokens`}>
           <strong>{formatTokenCount(total)}</strong>
-          <span>base tokens</span>
+          <span>initial tokens</span>
         </div>
       </header>
 
       <div className="chat-context-preview__content">
         <div className="chat-context-preview__summary">
-          <p>Always-sent context is grouped below. Detailed narrator doctrine stays deferred until requested.</p>
-          <div className="chat-context-preview__bar" aria-label={`${formatTokenCount(total)} estimated context tokens`}>
-            {sections.map((section) => <i key={section.id} style={{ width: `${section.percent}%`, backgroundColor: section.color }} />)}
+          <p>Only the initial provider request is counted below. Full narrator skill modules stay deferred until a tool call.</p>
+          <div
+            className="chat-context-preview__bar"
+            role="img"
+            aria-label={`${formatTokenCount(total)} estimated tokens sent with the next request`}
+          >
+            {sections.filter((section) => section.tokens > 0).map((section) => (
+              <i key={section.id} style={{ flexGrow: section.tokens, backgroundColor: section.color }} />
+            ))}
           </div>
           <ContextLegend sections={sections} />
         </div>

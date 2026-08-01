@@ -43,5 +43,50 @@ describe("chat context preview model", () => {
       preview.availableSkills.reduce((sum, skill) => sum + skill.tokens, 0),
     );
     expect(preview.deferredTokens).toBeGreaterThan(0);
+    for (const skill of NARRATOR_SKILLS) {
+      expect(preview.sections.every((section) => !section.content.includes(skill.content))).toBe(true);
+    }
+  });
+
+  it("mirrors the exact initial tool interfaces without sending skill bodies", () => {
+    const state = makeInitialState();
+    state.narratorSettings = { memoryMode: "essential" };
+    const preview = buildChatContextSections({ state });
+    const tools = JSON.parse(preview.sections.find((section) => section.id === "tools").content);
+
+    expect(tools.map((tool) => tool.function.name)).toEqual(["load_narrator_skills", "remember"]);
+    expect(tools[0].function.parameters).toEqual({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        skill_ids: {
+          type: "array",
+          minItems: 1,
+          maxItems: 4,
+          uniqueItems: true,
+          items: { type: "string", enum: NARRATOR_SKILLS.map((skill) => skill.id) },
+          description: "Detailed rule modules needed for this turn.",
+        },
+      },
+      required: ["skill_ids"],
+    });
+    expect(tools[1].function.description).toContain("ESSENTIAL-ONLY mode is active");
+    expect(preview.sections[0].content).toContain("Available skills:");
+    expect(preview.sections[1].content).not.toContain(NARRATOR_SKILLS[0].content);
+
+    state.narratorSettings = { memoryMode: "manual" };
+    const manualTools = JSON.parse(
+      buildChatContextSections({ state }).sections.find((section) => section.id === "tools").content,
+    );
+    expect(manualTools.map((tool) => tool.function.name)).toEqual(["load_narrator_skills"]);
+  });
+
+  it("assigns zero rolling-history tokens when no history message is sent", () => {
+    const state = makeInitialState();
+    state.apiHistory = [];
+    const history = buildChatContextSections({ state }).sections.find((section) => section.id === "history");
+
+    expect(history.content).toBe("");
+    expect(history.tokens).toBe(0);
   });
 });
