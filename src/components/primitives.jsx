@@ -9,10 +9,12 @@ import {
   getNarratorModel, setNarratorModel,
   getNarratorEffort, setNarratorEffort,
   normalizeNarratorEffort,
+  narratorEffortDisplayLabel,
   narratorModelLabel,
   narratorModelIntelligenceLabel,
   narratorModelIntelligenceSourceLabel,
   narratorModelPriceLabel,
+  narratorModelPricingNote,
 } from "../engine/narrator-models.js";
 import { formatTokenCount } from "./chatContextModel.js";
 import { useModalFocus } from "./exploration/modalFocus.js";
@@ -435,6 +437,7 @@ export function NarratorPickerPanel({
 }) {
   const dialogRef = useModalFocus(onClose);
   const active = NARRATOR_MODELS.find((entry) => entry.id === model) || NARRATOR_MODELS[0];
+  const effortDisplay = narratorEffortDisplayLabel(active.id, effort);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleModels = NARRATOR_MODELS.filter((entry) => (
     !normalizedQuery
@@ -450,14 +453,14 @@ export function NarratorPickerPanel({
         role="dialog"
         aria-modal="true"
         aria-label="Choose narrator model"
-        aria-description="Exact base prices are input and output per million tokens. Intelligence uses the Artificial Analysis Intelligence Index where published; separately labeled product guidance is not an AA score."
+        aria-description="Exact OpenRouter floor prices are input, output, and cached input per million tokens. Intelligence uses the Artificial Analysis Intelligence Index where published. Thinking effort is under collapsed advanced settings."
         tabIndex={-1}
       >
         <header className="narrator-picker__header">
           <div>
             <span>Storyteller</span>
             <h2>Narrator model</h2>
-            <p>Exact base prices are input / output per 1M tokens. Intelligence uses AA scores or labeled product guidance.</p>
+            <p>Exact OpenRouter floor prices are input / output / cached input per 1M tokens; long-context overrides are shown inline.</p>
           </div>
           <button
             type="button"
@@ -482,17 +485,24 @@ export function NarratorPickerPanel({
 
         <div className="narrator-picker__columns" aria-hidden="true">
           <span>MODEL</span>
-          <span>PRICE <small>BASE · IN / OUT · 1M</small></span>
-          <span>INTELLIGENCE <small>SCORE / GUIDANCE</small></span>
+          <span>PRICE <small>FLOOR · IN / OUT · 1M</small></span>
+          <span>INTELLIGENCE <small>AA INDEX</small></span>
         </div>
         <div className="narrator-picker__options">
           {visibleModels.map((entry) => {
             const selected = entry.id === model;
             const price = narratorModelPriceLabel(entry);
+            const pricingNote = narratorModelPricingNote(entry);
             const freePrimary = entry.price?.input === 0 && entry.price?.output === 0;
             const fallbackPrice = entry.fallbackPrice
               ? narratorModelPriceLabel({ price: entry.fallbackPrice })
               : null;
+            const fallbackPricingNote = entry.fallbackPrice
+              ? narratorModelPricingNote({ price: entry.fallbackPrice })
+              : null;
+            const accessiblePricing = fallbackPrice
+              ? `Free primary: ${pricingNote}; paid fallback ${fallbackPrice}: ${fallbackPricingNote}`
+              : `${price} per million tokens; ${pricingNote}`;
             const intelligence = narratorModelIntelligenceLabel(entry);
             const intelligenceRated = Number.isFinite(entry.intelligence);
             const intelligenceGuided = !intelligenceRated && !!entry.intelligenceGuidance;
@@ -504,7 +514,7 @@ export function NarratorPickerPanel({
                 key={entry.id}
                 onClick={() => onChooseModel(entry.id)}
                 aria-pressed={selected}
-                aria-label={`${entry.label}. ${price} per million tokens. ${intelligenceRated ? `${intelligence} Artificial Analysis Intelligence Index` : intelligenceGuided ? `${intelligence} product guidance; no Artificial Analysis score is published` : "No Artificial Analysis Intelligence Index"}.`}
+                aria-label={`${entry.label}. ${accessiblePricing}. ${intelligenceRated ? `${intelligence} Artificial Analysis Intelligence Index` : intelligenceGuided ? `${intelligence} product guidance; no Artificial Analysis score is published` : "No Artificial Analysis Intelligence Index"}.`}
               >
                 <span className="narrator-picker__option-copy">
                   <strong>{entry.label}</strong>
@@ -512,7 +522,7 @@ export function NarratorPickerPanel({
                 </span>
                 <span className="narrator-picker__price">
                   <strong>{freePrimary ? "Free primary" : price}</strong>
-                  <small>{fallbackPrice ? `${fallbackPrice} fallback` : "input / output"}</small>
+                  <small>{fallbackPrice ? `${pricingNote} · ${fallbackPrice} fallback · ${fallbackPricingNote}` : pricingNote}</small>
                 </span>
                 <span className={`narrator-picker__intelligence ${intelligenceRated ? "is-rated" : intelligenceGuided ? "is-guided" : "is-unrated"}`}>
                   <strong>{intelligence}</strong>
@@ -524,28 +534,36 @@ export function NarratorPickerPanel({
           {!visibleModels.length && <div className="narrator-picker__empty">No narrator models match that search.</div>}
         </div>
 
-        {active.efforts && (
-          <div className="narrator-picker__effort-panel">
-            <span>Thinking effort for {active.label}</span>
-            <div className="narrator-picker__efforts">
-              {active.efforts.map((effortId) => {
-                const selected = effortId === effort;
-                const label = (NARRATOR_EFFORTS.find((entry) => entry.id === effortId) || {}).label ?? effortId;
-                return (
-                  <button
-                    type="button"
-                    key={effortId}
-                    className={`narrator-picker__effort${selected ? " is-active" : ""}`}
-                    onClick={() => onChooseEffort(effortId)}
-                    aria-pressed={selected}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
+        <details className="narrator-picker__effort-panel">
+          <summary>
+            <span>
+              <strong>Advanced settings</strong>
+              <small>Thinking effort for {active.label}</small>
+            </span>
+            <b>{effortDisplay}</b>
+          </summary>
+          <div className="narrator-picker__effort-content">
+            <input
+              className="narrator-picker__effort-slider"
+              type="range"
+              min="0"
+              max={NARRATOR_EFFORTS.length - 1}
+              step="1"
+              value={Math.max(0, NARRATOR_EFFORTS.findIndex((entry) => entry.id === effort))}
+              onChange={(event) => onChooseEffort(NARRATOR_EFFORTS[Number(event.target.value)].id)}
+              aria-label={`Thinking effort for ${active.label}`}
+              aria-valuetext={effortDisplay}
+            />
+            <div className="narrator-picker__effort-ticks" aria-hidden="true">
+              {NARRATOR_EFFORTS.map((effortEntry) => (
+                <span key={effortEntry.id} className={effortEntry.id === effort ? "is-active" : ""}>
+                  {effortEntry.label}
+                </span>
+              ))}
             </div>
+            <p>Unsupported tiers use the nearest available effort; token-budget models translate the same scale proportionally.</p>
           </div>
-        )}
+        </details>
       </section>
     </div>
   );
@@ -576,9 +594,7 @@ function NarratorPicker() {
     setEffort(id);
   }
 
-  const effortLabel = active.efforts
-    ? ` · ${(NARRATOR_EFFORTS.find((entry) => entry.id === effort) || {}).label ?? effort}`
-    : "";
+  const effortLabel = ` · ${narratorEffortDisplayLabel(active.id, effort)}`;
   const compactLabel = active.label
     .replace("DeepSeek", "DS")
     .replace("Gemini", "Gem")

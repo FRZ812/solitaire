@@ -1,6 +1,22 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SYSTEM_PROMPT } from "../system-prompt.js";
+import {
+  NARRATOR_EFFORTS,
+  NARRATOR_MODELS,
+  narratorTransportEffort,
+} from "./narrator-models.js";
+import {
+  DEFAULT_EFFORT,
+  DEFAULT_MODEL,
+  NARRATOR_MODEL_IDS,
+  requestNarratorRound,
+  selectedModel,
+  selectedModels,
+  selectedProvider,
+  selectedReasoning,
+  selectedServiceTier,
+} from "../../supabase/functions/narrate/routing.ts";
 
 const edgeSource = readFileSync(
   new URL("../../supabase/functions/narrate/index.ts", import.meta.url),
@@ -11,6 +27,15 @@ function numericConstant(name) {
   const match = edgeSource.match(new RegExp(`const\\s+${name}\\s*=\\s*([\\d_]+)`));
   expect(match, `${name} must be declared in the narrator Edge function`).not.toBeNull();
   return Number(match[1].replaceAll("_", ""));
+}
+
+function displayedPriceCeiling(model) {
+  const prices = [model.price, ...(model.price.overrides || [])];
+  if (model.fallbackPrice) prices.push(model.fallbackPrice);
+  return {
+    prompt: Math.max(...prices.map((price) => price.input)),
+    completion: Math.max(...prices.map((price) => price.output)),
+  };
 }
 
 describe("narrator request size contract", () => {
@@ -30,40 +55,102 @@ describe("narrator request size contract", () => {
 });
 
 describe("narrator model routing contract", () => {
-  it("keeps GLM/Grok in the server allowlist alongside the OpenAI additions", () => {
-    expect(edgeSource).toContain('"openai/gpt-5.6-luna"');
-    expect(edgeSource).toContain('"openai/gpt-5.6-terra"');
-    expect(edgeSource).toContain('"z-ai/glm-5.2"');
-    expect(edgeSource).toContain('"x-ai/grok-4.5"');
-    expect(edgeSource).toContain('"deepseek/deepseek-v4-flash-0731"');
+  it("executes with the same exact model registry as the client", () => {
+    expect(NARRATOR_MODEL_IDS).toEqual(NARRATOR_MODELS.map((model) => model.id));
+    expect(DEFAULT_MODEL).toBe("deepseek/deepseek-v4-flash-0731");
+    for (const retired of [
+      "deepseek/deepseek-v4-flash",
+      "deepseek/deepseek-v4-pro",
+      "qwen/qwen3.7-flash",
+      "tencent/hy3",
+    ]) {
+      expect(selectedModel(retired)).toBe(DEFAULT_MODEL);
+    }
   });
 
-  it("keeps reasoning mappings for the legacy models too", () => {
-    expect(edgeSource).toContain('["z-ai/glm-5.2", ["high", "max"]]');
-    expect(edgeSource).toContain('["x-ai/grok-4.5", ["low", "medium", "high"]]');
-    expect(edgeSource).toContain('["z-ai/glm-5.2", { max: "xhigh" }]');
-    expect(edgeSource).toContain('["deepseek/deepseek-v4-flash-0731", ["high", "max"]]');
-    expect(edgeSource).toContain('["deepseek/deepseek-v4-flash-0731", { max: "xhigh" }]');
+  it("executes the same universal effort mapping displayed by the client", () => {
+    expect(DEFAULT_EFFORT).toBe("max");
+    for (const model of NARRATOR_MODELS) {
+      for (const effort of NARRATOR_EFFORTS) {
+        expect(selectedReasoning(model.id, effort.id)).toEqual({
+          enabled: true,
+          effort: narratorTransportEffort(model.id, effort.id),
+        });
+      }
+      expect(selectedReasoning(model.id, "unsupported")).toEqual({
+        enabled: true,
+        effort: narratorTransportEffort(model.id, "max"),
+      });
+    }
   });
 
-  it("constrains both GPT successors to OpenAI without provider fallbacks", () => {
-    expect(edgeSource).toContain("const OPENAI_ONLY_MODELS = new Set");
-    expect(edgeSource).toContain('only: ["openai"]');
-    expect(edgeSource).toContain("allow_fallbacks: false");
-    expect(edgeSource).toContain("selectedProvider(opts.models[0])");
+  it("executes price-sorted routing under exact model-specific ceilings", () => {
+    for (const model of NARRATOR_MODELS) {
+      expect(selectedProvider(model.id)).toMatchObject({
+        sort: "price",
+        require_parameters: true,
+        allow_fallbacks: false,
+        max_price: displayedPriceCeiling(model),
+      });
+    }
+    expect(selectedProvider("minimax/minimax-m3").ignore).toEqual(["morph"]);
+    expect(selectedModels("poolside/laguna-s-2.1:free")).toEqual([
+      "poolside/laguna-s-2.1:free",
+      "poolside/laguna-s-2.1",
+    ]);
   });
 
-  it("keeps reasoning enabled with the supported OpenAI effort levels", () => {
-    expect(edgeSource).toContain('["openai/gpt-5.6-luna", ["low", "medium", "high", "max"]]');
-    expect(edgeSource).toContain('["openai/gpt-5.6-terra", ["low", "medium", "high", "max"]]');
+  it("executes OpenAI floor-priced models on the Flex service tier", () => {
+    expect(selectedServiceTier("openai/gpt-5.6-luna")).toBe("flex");
+    expect(selectedServiceTier("openai/gpt-5.6-terra")).toBe("flex");
+    expect(selectedServiceTier("deepseek/deepseek-v4-flash-0731")).toBeUndefined();
+  });
+
+  it("executes the exact manual and automatic OpenRouter request bodies", async () => {
+    const memoryTool = { type: "function", function: { name: "remember" } };
+    const fetcher = vi.fn(async () => ({ ok: true }));
+    const common = {
+      apiKey: "test-key",
+      model: "minimax/minimax-m3",
+      effort: "max",
+      messages: [{ role: "user", content: "Continue." }],
+      memoryTool,
+      maxTokens: 4000,
+      fetcher,
+    };
+    await requestNarratorRound({ ...common, toolsEnabled: false });
+    expect(fetcher).toHaveBeenCalledOnce();
+    const [url, init] = fetcher.mock.calls[0];
+    expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(init.headers.Authorization).toBe("Bearer test-key");
+    const manual = JSON.parse(init.body);
+    expect(manual).toMatchObject({
+      models: ["minimax/minimax-m3"],
+      provider: {
+        sort: "price",
+        require_parameters: true,
+        allow_fallbacks: false,
+        max_price: { prompt: 0.3, completion: 1.2 },
+        ignore: ["morph"],
+      },
+      reasoning: { enabled: true, effort: "max" },
+      tools: [memoryTool],
+      tool_choice: "none",
+    });
+    expect(manual).not.toHaveProperty("parallel_tool_calls");
+    fetcher.mockClear();
+    await requestNarratorRound({ ...common, model: "openai/gpt-5.6-luna", toolsEnabled: true });
+    const automatic = JSON.parse(fetcher.mock.calls[0][1].body);
+    expect(automatic).toMatchObject({
+      service_tier: "flex",
+      tool_choice: "auto",
+    });
   });
 });
 
 
 describe("narrator memory tool contract", () => {
-  it("supports manual opt-out, parallel calls, and server-side duplicate suppression", () => {
-    expect(edgeSource).toContain('const toolsEnabled = opts.memoryMode !== "manual"');
-    expect(edgeSource).toContain('parallel_tool_calls: true');
+  it("retains duplicate suppression and existing-memory input", () => {
     expect(edgeSource).toContain('"ignored: already recorded"');
     expect(edgeSource).toContain("existing_memories");
   });
