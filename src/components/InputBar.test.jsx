@@ -206,8 +206,12 @@ describe("InputBar", () => {
     expect(html).toContain("Narrator model");
     expect(html).toContain("PRICE");
     expect(html).toContain("INTELLIGENCE");
-    expect(html).toContain('aria-label="Sort narrator models"');
-    expect(html).toContain('<option value="price-asc" selected="">Price · low first</option>');
+    expect(html).toContain('aria-label="Sort narrator models: Price · low first"');
+    expect(html).toContain('aria-haspopup="listbox"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("Price · low first");
+    expect(html).not.toContain("<select");
+    expect(html).not.toContain("<option");
     expect(html).toContain('class="narrator-picker__column narrator-picker__column--price"');
     expect(html).toContain("Free primary");
     expect(html).toContain("$0.09 / $0.18 fallback");
@@ -250,6 +254,159 @@ describe("InputBar", () => {
     expect(html).not.toContain("OPENROUTER ROUTE");
     expect(html).not.toContain("OPENAI ROUTE");
     expect(html).not.toContain("REASONING</span>");
+  });
+
+  it("opens a complete custom sort menu, changes the order, and restores focus", async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    const changes = [];
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(
+      <NarratorPickerPanel
+        model="deepseek/deepseek-v4-flash-0731"
+        effort="max"
+        query=""
+        sort="intelligence-asc"
+        onQueryChange={() => {}}
+        onSortChange={(value) => changes.push(value)}
+        onChooseModel={() => {}}
+        onChooseEffort={() => {}}
+        onClose={() => {}}
+      />,
+    ));
+
+    const trigger = document.querySelector(".narrator-picker__sort-trigger");
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger.getAttribute("aria-label")).toBe("Sort narrator models: Intelligence · low first");
+    expect(trigger.textContent).toContain("Intelligence · low first");
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+
+    await act(async () => trigger.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const listbox = document.querySelector('[role="listbox"]');
+    const options = [...listbox.querySelectorAll('[role="option"]')];
+    expect(options.map((option) => option.textContent.trim())).toEqual([
+      "Intelligence · low first",
+      "Intelligence · high first",
+      "Price · low first",
+      "Price · high first",
+      "Name · A–Z",
+    ]);
+    expect(listbox.textContent).not.toContain("Recommended");
+
+    await act(async () => options[3].dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(changes).toEqual(["price-desc"]);
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    await act(async () => root.unmount());
+    host.remove();
+    delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("closes only the sort listbox on Escape and restores trigger focus", async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    const panelCloses = [];
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(
+      <NarratorPickerPanel
+        model="deepseek/deepseek-v4-flash-0731"
+        effort="max"
+        query=""
+        sort="intelligence-asc"
+        onQueryChange={() => {}}
+        onSortChange={() => {}}
+        onChooseModel={() => {}}
+        onChooseEffort={() => {}}
+        onClose={() => panelCloses.push(true)}
+      />,
+    ));
+
+    const trigger = document.querySelector(".narrator-picker__sort-trigger");
+    await act(async () => trigger.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () => new Promise((resolve) => requestAnimationFrame(resolve)));
+    const focusedOption = document.activeElement;
+    expect(focusedOption.getAttribute("role")).toBe("option");
+
+    await act(async () => focusedOption.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+    expect(panelCloses).toEqual([]);
+    expect(document.activeElement).toBe(trigger);
+
+    await act(async () => root.unmount());
+    host.remove();
+    delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("opens the sort listbox with ArrowUp focused on the last option", async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(
+      <NarratorPickerPanel
+        model="deepseek/deepseek-v4-flash-0731"
+        effort="max"
+        query=""
+        sort="intelligence-asc"
+        onQueryChange={() => {}}
+        onSortChange={() => {}}
+        onChooseModel={() => {}}
+        onChooseEffort={() => {}}
+        onClose={() => {}}
+      />,
+    ));
+
+    const trigger = document.querySelector(".narrator-picker__sort-trigger");
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })));
+    await act(async () => new Promise((resolve) => requestAnimationFrame(resolve)));
+
+    const options = [...document.querySelectorAll('[role="option"]')];
+    expect(document.activeElement).toBe(options.at(-1));
+    expect(document.activeElement.textContent).toContain("Name · A–Z");
+
+    await act(async () => root.unmount());
+    host.remove();
+    delete globalThis.IS_REACT_ACT_ENVIRONMENT;
+  });
+
+  it("supports arrow-key navigation and keyboard selection in the sort menu", async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    const changes = [];
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () => root.render(
+      <NarratorPickerPanel
+        model="deepseek/deepseek-v4-flash-0731"
+        effort="max"
+        query=""
+        sort="intelligence-asc"
+        onQueryChange={() => {}}
+        onSortChange={(value) => changes.push(value)}
+        onChooseModel={() => {}}
+        onChooseEffort={() => {}}
+        onClose={() => {}}
+      />,
+    ));
+
+    const trigger = document.querySelector(".narrator-picker__sort-trigger");
+    await act(async () => trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    await act(async () => new Promise((resolve) => requestAnimationFrame(resolve)));
+    expect(document.activeElement.textContent).toContain("Intelligence · low first");
+
+    await act(async () => document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+    expect(document.activeElement.textContent).toContain("Intelligence · high first");
+    await act(async () => document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(changes).toEqual(["intelligence-desc"]);
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+
+    await act(async () => root.unmount());
+    host.remove();
+    delete globalThis.IS_REACT_ACT_ENVIRONMENT;
   });
 
   it("searches the narrator provider notes as well as model labels", () => {

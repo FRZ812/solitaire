@@ -62,7 +62,11 @@ export function activateModalFocus(dialog, onClose, options = {}) {
   initial.focus?.();
 
   const onKeyDown = (event) => {
-    if (event.key === "Escape" && !event.defaultPrevented) {
+    if (
+      event.key === "Escape"
+      && !event.defaultPrevented
+      && !event.target?.closest?.("[data-modal-escape-boundary]")
+    ) {
       event.preventDefault();
       event.stopPropagation?.();
       onClose?.();

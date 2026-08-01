@@ -41,12 +41,14 @@ describe("OpenRouter narrator registry", () => {
   it("sorts a copied model list by intelligence, price, or name", () => {
     const original = NARRATOR_MODELS.map((model) => model.id);
     expect(NARRATOR_SORT_OPTIONS.map((option) => option.id)).toEqual([
-      "recommended",
-      "intelligence-desc",
       "intelligence-asc",
+      "intelligence-desc",
       "price-asc",
       "price-desc",
       "name-asc",
+    ]);
+    expect(sortNarratorModels(NARRATOR_MODELS, "intelligence-asc").map((model) => model.label)).toEqual([
+      "Laguna S 2.1", "MiniMax M3", "DeepSeek V4 Flash", "GLM 5.2", "GPT-5.6 Luna", "Grok 4.5", "GPT-5.6 Terra", "Kimi K3",
     ]);
     expect(sortNarratorModels(NARRATOR_MODELS, "intelligence-desc").map((model) => model.label)).toEqual([
       "Kimi K3", "GPT-5.6 Terra", "Grok 4.5", "GPT-5.6 Luna", "GLM 5.2", "DeepSeek V4 Flash", "MiniMax M3", "Laguna S 2.1",
