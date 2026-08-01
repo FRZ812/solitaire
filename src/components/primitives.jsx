@@ -5,7 +5,7 @@ import { colors, alert, shadow, radius, glass, fonts, metaStyle } from "./tokens
 import { condName, conditionMeta } from "../data/conditions.js";
 import { visibilityStatus } from "../engine/light.js";
 import {
-  NARRATOR_MODELS, NARRATOR_EFFORTS,
+  NARRATOR_MODELS, NARRATOR_EFFORTS, NARRATOR_SORT_OPTIONS,
   getNarratorModel, setNarratorModel,
   getNarratorEffort, setNarratorEffort,
   normalizeNarratorEffort,
@@ -15,8 +15,10 @@ import {
   narratorModelIntelligenceSourceLabel,
   narratorModelPriceLabel,
   narratorModelPricingNote,
+  sortNarratorModels,
 } from "../engine/narrator-models.js";
 import { formatTokenCount } from "./chatContextModel.js";
+import { ChatContextPreview } from "./ChatContextPreview.jsx";
 import { useModalFocus } from "./exploration/modalFocus.js";
 
 // Short "time left" label for a timed condition (e.g. "2.5h", "12m").
@@ -430,7 +432,9 @@ export function NarratorPickerPanel({
   model,
   effort,
   query,
+  sort = "recommended",
   onQueryChange,
+  onSortChange = () => {},
   onChooseModel,
   onChooseEffort,
   onClose,
@@ -438,11 +442,15 @@ export function NarratorPickerPanel({
   const dialogRef = useModalFocus(onClose);
   const active = NARRATOR_MODELS.find((entry) => entry.id === model) || NARRATOR_MODELS[0];
   const effortDisplay = narratorEffortDisplayLabel(active.id, effort);
+  const effortIndex = Math.max(0, NARRATOR_EFFORTS.findIndex((entry) => entry.id === effort));
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleModels = NARRATOR_MODELS.filter((entry) => (
-    !normalizedQuery
-    || `${entry.label} ${entry.note || ""} ${entry.provider || ""} ${narratorModelIntelligenceLabel(entry)}`.toLowerCase().includes(normalizedQuery)
-  ));
+  const visibleModels = sortNarratorModels(
+    NARRATOR_MODELS.filter((entry) => (
+      !normalizedQuery
+      || `${entry.label} ${entry.note || ""} ${entry.provider || ""} ${narratorModelIntelligenceLabel(entry)}`.toLowerCase().includes(normalizedQuery)
+    )),
+    sort,
+  );
 
   const panel = (
     <div className="narrator-picker__overlay">
@@ -453,14 +461,14 @@ export function NarratorPickerPanel({
         role="dialog"
         aria-modal="true"
         aria-label="Choose narrator model"
-        aria-description="Exact OpenRouter floor prices are input, output, and cached input per million tokens. Intelligence uses the Artificial Analysis Intelligence Index where published. Thinking effort is under collapsed advanced settings."
+        aria-description="OpenRouter prices are input and output per million tokens. Intelligence uses the Artificial Analysis Intelligence Index where published. Thinking effort is under collapsed advanced settings."
         tabIndex={-1}
       >
         <header className="narrator-picker__header">
           <div>
             <span>Storyteller</span>
             <h2>Narrator model</h2>
-            <p>Exact OpenRouter floor prices are input / output / cached input per 1M tokens; long-context overrides are shown inline.</p>
+            <p>OpenRouter prices are input / output per 1M tokens; long-context rates are shown inline.</p>
           </div>
           <button
             type="button"
@@ -473,20 +481,31 @@ export function NarratorPickerPanel({
           </button>
         </header>
 
-        <label className="narrator-picker__search">
-          <Icon name="zoomOut" size={16} />
-          <input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search models…"
-            aria-label="Search narrator models"
-          />
-        </label>
+        <div className="narrator-picker__toolbar">
+          <label className="narrator-picker__search">
+            <Icon name="zoomOut" size={16} />
+            <input
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              placeholder="Search models…"
+              aria-label="Search narrator models"
+            />
+          </label>
+          <label className="narrator-picker__sort">
+            <span>Sort by</span>
+            <select value={sort} onChange={(event) => onSortChange(event.target.value)} aria-label="Sort narrator models">
+              {NARRATOR_SORT_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+            <i aria-hidden="true">⌄</i>
+          </label>
+        </div>
 
         <div className="narrator-picker__columns" aria-hidden="true">
-          <span>MODEL</span>
-          <span>PRICE <small>FLOOR · IN / OUT · 1M</small></span>
-          <span>INTELLIGENCE <small>AA INDEX</small></span>
+          <span className="narrator-picker__column narrator-picker__column--model">MODEL</span>
+          <span className="narrator-picker__column narrator-picker__column--price">PRICE <small>INPUT / OUTPUT · $ / 1M</small></span>
+          <span className="narrator-picker__column narrator-picker__column--intelligence">INTELLIGENCE <small>AA INDEX</small></span>
         </div>
         <div className="narrator-picker__options">
           {visibleModels.map((entry) => {
@@ -500,6 +519,12 @@ export function NarratorPickerPanel({
             const fallbackPricingNote = entry.fallbackPrice
               ? narratorModelPricingNote({ price: entry.fallbackPrice })
               : null;
+            const visiblePricingNotes = [
+              fallbackPrice ? `${fallbackPrice} fallback` : null,
+              ...(entry.price?.overrides || []).map((override) => (
+                `${Math.round(override.minInputTokens / 1000)}K+ ${narratorModelPriceLabel({ price: override })}`
+              )),
+            ].filter(Boolean);
             const accessiblePricing = fallbackPrice
               ? `Free primary: ${pricingNote}; paid fallback ${fallbackPrice}: ${fallbackPricingNote}`
               : `${price} per million tokens; ${pricingNote}`;
@@ -522,7 +547,7 @@ export function NarratorPickerPanel({
                 </span>
                 <span className="narrator-picker__price">
                   <strong>{freePrimary ? "Free primary" : price}</strong>
-                  <small>{fallbackPrice ? `${pricingNote} · ${fallbackPrice} fallback · ${fallbackPricingNote}` : pricingNote}</small>
+                  {!!visiblePricingNotes.length && <small>{visiblePricingNotes.join(" · ")}</small>}
                 </span>
                 <span className={`narrator-picker__intelligence ${intelligenceRated ? "is-rated" : intelligenceGuided ? "is-guided" : "is-unrated"}`}>
                   <strong>{intelligence}</strong>
@@ -543,23 +568,33 @@ export function NarratorPickerPanel({
             <b>{effortDisplay}</b>
           </summary>
           <div className="narrator-picker__effort-content">
-            <input
-              className="narrator-picker__effort-slider"
-              type="range"
-              min="0"
-              max={NARRATOR_EFFORTS.length - 1}
-              step="1"
-              value={Math.max(0, NARRATOR_EFFORTS.findIndex((entry) => entry.id === effort))}
-              onChange={(event) => onChooseEffort(NARRATOR_EFFORTS[Number(event.target.value)].id)}
-              aria-label={`Thinking effort for ${active.label}`}
-              aria-valuetext={effortDisplay}
-            />
-            <div className="narrator-picker__effort-ticks" aria-hidden="true">
-              {NARRATOR_EFFORTS.map((effortEntry) => (
-                <span key={effortEntry.id} className={effortEntry.id === effort ? "is-active" : ""}>
-                  {effortEntry.label}
-                </span>
-              ))}
+            <div
+              className="narrator-picker__effort-control"
+              style={{ "--effort-progress": `${(effortIndex / (NARRATOR_EFFORTS.length - 1)) * 100}%` }}
+            >
+              <input
+                className="narrator-picker__effort-slider"
+                type="range"
+                min="0"
+                max={NARRATOR_EFFORTS.length - 1}
+                step="1"
+                value={effortIndex}
+                onChange={(event) => onChooseEffort(NARRATOR_EFFORTS[Number(event.target.value)].id)}
+                aria-label={`Thinking effort for ${active.label}`}
+                aria-valuetext={effortDisplay}
+              />
+              <div className="narrator-picker__effort-ticks" aria-hidden="true">
+                {NARRATOR_EFFORTS.map((effortEntry, index) => (
+                  <span
+                    key={effortEntry.id}
+                    className={effortEntry.id === effort ? "is-active" : ""}
+                    style={{ left: `${(index / (NARRATOR_EFFORTS.length - 1)) * 100}%` }}
+                  >
+                    <i />
+                    {effortEntry.label}
+                  </span>
+                ))}
+              </div>
             </div>
             <p>Unsupported tiers use the nearest available effort; token-budget models translate the same scale proportionally.</p>
           </div>
@@ -579,6 +614,7 @@ function NarratorPicker() {
   const [model, setModel] = React.useState(getNarratorModel);
   const [effort, setEffort] = React.useState(() => getNarratorEffort(model));
   const [query, setQuery] = React.useState("");
+  const [sort, setSort] = React.useState("recommended");
   const active = NARRATOR_MODELS.find((entry) => entry.id === model) || NARRATOR_MODELS[0];
 
   function chooseModel(id) {
@@ -610,7 +646,9 @@ function NarratorPicker() {
           model={model}
           effort={effort}
           query={query}
+          sort={sort}
           onQueryChange={setQuery}
+          onSortChange={setSort}
           onChooseModel={chooseModel}
           onChooseEffort={chooseEffort}
           onClose={() => setOpen(false)}
@@ -633,7 +671,7 @@ function NarratorPicker() {
 export function InputBar({
   value, onChange, onSubmit, onRun, queuedCount = 0, loading,
   advancementCount = 0, advancementNeedsChoice = false, onOpenProgression,
-  contextTotalTokens = 0, onOpenContext,
+  contextPreview = null, contextOpen = false, activeModel = "", onToggleContext,
 }) {
   const hasDraft = Boolean(value.trim());
   const actionLabel = hasDraft
@@ -678,55 +716,75 @@ export function InputBar({
           {advancementCount > 0 && <b aria-hidden="true">{advancementCount}</b>}
         </button>
       )}
-      {onOpenContext && (
-        <button type="button" className="story-input__context" onClick={onOpenContext} aria-label={`Open context preview. ${formatTokenCount(contextTotalTokens)} estimated tokens`}>
-          <span className="story-input__context-dot" aria-hidden="true" />
-          <span><strong>{formatTokenCount(contextTotalTokens)} tokens</strong><small>Context preview</small></span>
-          <Icon name="arrowUp" size={13} />
-        </button>
-      )}
-      <div className="story-input__composer">
-        <NarratorPicker />
-        <div className="story-input__bubble">
-          <textarea
-            className="story-input__field"
-            ref={ref}
-            rows={1}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            // Enter adds a new line; ⌘/Ctrl+Enter queues this message without
-            // starting the narrator. With an empty draft, the same control plays.
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!loading && hasDraft) onSubmit(); } }}
-            placeholder={loading ? "The narrator is answering…" : "Queue what you do…"}
+      <div
+        className={`story-input__surface${contextOpen ? " is-context-open" : ""}`}
+        onKeyDown={(event) => {
+          if (contextOpen && event.key === "Escape" && onToggleContext) {
+            event.stopPropagation();
+            onToggleContext();
+          }
+        }}
+      >
+        {onToggleContext && contextPreview && (
+          <button
+            type="button"
+            className="story-input__context"
+            onClick={onToggleContext}
+            aria-label={`${contextOpen ? "Collapse" : "Expand"} context preview. ${formatTokenCount(contextPreview.total)} estimated tokens`}
+            aria-expanded={contextOpen}
+            aria-controls="chat-context-inspector"
+          >
+            <span className="story-input__context-dot" aria-hidden="true" />
+            <span><strong>{formatTokenCount(contextPreview.total)} tokens</strong><small>Next turn context</small></span>
+            <span className="story-input__context-arrow" aria-hidden="true"><Icon name="arrowUp" size={13} /></span>
+          </button>
+        )}
+        {contextOpen && contextPreview && (
+          <ChatContextPreview preview={contextPreview} activeModel={activeModel} />
+        )}
+        <div className="story-input__composer">
+          <NarratorPicker />
+          <div className="story-input__bubble">
+            <textarea
+              className="story-input__field"
+              ref={ref}
+              rows={1}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              // Enter adds a new line; ⌘/Ctrl+Enter queues this message without
+              // starting the narrator. With an empty draft, the same control plays.
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (!loading && hasDraft) onSubmit(); } }}
+              placeholder={loading ? "The narrator is answering…" : "Queue what you do…"}
+              disabled={loading}
+              style={{
+                flex: 1, minHeight: "46px", maxHeight: "160px",
+                boxSizing: "border-box", resize: "none", overflowY: "auto",
+                padding: "12px 10px 11px", fontSize: "15px", lineHeight: 1.4, color: colors.parchment,
+                outline: "none", fontFamily: "inherit",
+              }}
+            />
+            <span className="story-input__hint">Ctrl ↵ to queue</span>
+          </div>
+          <button
+            type="button"
+            className={`story-input__action${hasDraft ? " is-send" : " is-play"}`}
+            onClick={hasDraft ? onSubmit : onRun}
             disabled={loading}
-            style={{
-              flex: 1, minHeight: "46px", maxHeight: "160px",
-              boxSizing: "border-box", resize: "none", overflowY: "auto",
-              padding: "12px 10px 11px", fontSize: "15px", lineHeight: 1.4, color: colors.parchment,
-              outline: "none", fontFamily: "inherit",
-            }}
-          />
-          <span className="story-input__hint">Ctrl ↵ to queue</span>
+            aria-label={actionLabel}
+            title={actionTitle}
+          >
+            {loading ? (
+              <span className="story-input__sending" aria-hidden="true"><i /><i /><i /></span>
+            ) : (
+              <>
+                <Icon name={hasDraft ? "send" : "play"} size={21} />
+                {!hasDraft && queuedCount > 0 && <span className="story-input__queued-count" aria-hidden="true">{queuedCount}</span>}
+              </>
+            )}
+          </button>
         </div>
-        <button
-          type="button"
-          className={`story-input__action${hasDraft ? " is-send" : " is-play"}`}
-          onClick={hasDraft ? onSubmit : onRun}
-          disabled={loading}
-          aria-label={actionLabel}
-          title={actionTitle}
-        >
-          {loading ? (
-            <span className="story-input__sending" aria-hidden="true"><i /><i /><i /></span>
-          ) : (
-            <>
-              <Icon name={hasDraft ? "send" : "play"} size={21} />
-              {!hasDraft && queuedCount > 0 && <span className="story-input__queued-count" aria-hidden="true">{queuedCount}</span>}
-            </>
-          )}
-        </button>
       </div>
     </div>
   );

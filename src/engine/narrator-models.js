@@ -29,11 +29,35 @@ export const NARRATOR_MODELS = [
   { id: "minimax/minimax-m3", label: "MiniMax M3", note: "MiniMax reasoning", provider: "OpenRouter floor", price: { input: 0.3, output: 1.2, cachedInput: 0.06 }, intelligence: 44.4 },
   { id: "deepseek/deepseek-v4-flash-0731", label: "DeepSeek V4 Flash", note: "DeepSeek", provider: "OpenRouter floor", price: { input: 0.09, output: 0.18, cachedInput: 0.018 }, intelligence: 49.9 },
   { id: "z-ai/glm-5.2", label: "GLM 5.2", note: "Z.ai reasoning", provider: "OpenRouter floor", price: { input: 0.72, output: 1.8, cachedInput: 0.12 }, intelligence: 51.1 },
-  { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", note: "OpenAI", provider: "OpenRouter floor", price: { input: 0.05, output: 0.3, cachedInput: 0.005, cacheWrite: 0.0625, overrides: [{ minInputTokens: 272000, input: 0.1, output: 0.45, cachedInput: 0.01, cacheWrite: 0.125 }] }, intelligence: 51.2 },
+  { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", note: "OpenAI", provider: "OpenRouter standard", price: { input: 0.1, output: 0.6, cachedInput: 0.01, cacheWrite: 0.125, overrides: [{ minInputTokens: 272000, input: 0.2, output: 0.9, cachedInput: 0.02, cacheWrite: 0.25 }] }, intelligence: 51.2 },
   { id: "x-ai/grok-4.5", label: "Grok 4.5", note: "xAI", provider: "OpenRouter floor", price: { input: 2, output: 6, cachedInput: 0.3, overrides: [{ minInputTokens: 200000, input: 4, output: 12, cachedInput: 0.6 }] }, intelligence: 53.8 },
-  { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", note: "OpenAI", provider: "OpenRouter floor", price: { input: 0.5, output: 3, cachedInput: 0.05, cacheWrite: 0.625, overrides: [{ minInputTokens: 272000, input: 1, output: 4.5, cachedInput: 0.1, cacheWrite: 1.25 }] }, intelligence: 55.0 },
+  { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", note: "OpenAI", provider: "OpenRouter standard", price: { input: 1, output: 6, cachedInput: 0.1, cacheWrite: 1.25, overrides: [{ minInputTokens: 272000, input: 2, output: 9, cachedInput: 0.2, cacheWrite: 2.5 }] }, intelligence: 55.0 },
   { id: "moonshotai/kimi-k3", label: "Kimi K3", note: "Moonshot AI", provider: "OpenRouter floor", price: { input: 2.9, output: 14, cachedInput: 0.29 }, intelligence: 57.1 },
 ];
+
+export const NARRATOR_SORT_OPTIONS = [
+  { id: "recommended", label: "Recommended" },
+  { id: "intelligence-desc", label: "Intelligence · high first" },
+  { id: "intelligence-asc", label: "Intelligence · low first" },
+  { id: "price-asc", label: "Price · low first" },
+  { id: "price-desc", label: "Price · high first" },
+  { id: "name-asc", label: "Name · A–Z" },
+];
+
+export function sortNarratorModels(models, sortId) {
+  const sorted = [...models];
+  const priceScore = (model) => (model.price?.input || 0) + (model.price?.output || 0);
+  if (sortId === "intelligence-desc") {
+    return sorted.sort((a, b) => (Number.isFinite(b.intelligence) ? b.intelligence : -Infinity) - (Number.isFinite(a.intelligence) ? a.intelligence : -Infinity));
+  }
+  if (sortId === "intelligence-asc") {
+    return sorted.sort((a, b) => (Number.isFinite(a.intelligence) ? a.intelligence : Infinity) - (Number.isFinite(b.intelligence) ? b.intelligence : Infinity));
+  }
+  if (sortId === "price-asc") return sorted.sort((a, b) => priceScore(a) - priceScore(b));
+  if (sortId === "price-desc") return sorted.sort((a, b) => priceScore(b) - priceScore(a));
+  if (sortId === "name-asc") return sorted.sort((a, b) => a.label.localeCompare(b.label));
+  return sorted;
+}
 
 function formatPricePerMillion(value) {
   return Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });

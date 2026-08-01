@@ -4,6 +4,43 @@ import { describe, expect, it } from "vitest";
 import { InputBar, NarratorPickerPanel } from "./primitives.jsx";
 
 describe("InputBar", () => {
+  it("integrates the expandable context inspector into the composer surface", () => {
+    const preview = {
+      total: 14_200,
+      deferredTokens: 38_700,
+      availableSkills: [],
+      sections: [
+        { id: "system", label: "Core prompt", description: "Compact rules", content: "Rules", tokens: 2_000, percent: 14, color: "#b667d8" },
+      ],
+    };
+    const html = renderToStaticMarkup(
+      <InputBar
+        value=""
+        onChange={() => {}}
+        onSubmit={() => {}}
+        onRun={() => {}}
+        loading={false}
+        contextPreview={preview}
+        contextOpen
+        activeModel="DeepSeek V4 Pro"
+        onToggleContext={() => {}}
+      />,
+    );
+
+    const surface = html.indexOf('class="story-input__surface is-context-open"');
+    const trigger = html.indexOf('class="story-input__context"');
+    const inspector = html.indexOf('id="chat-context-inspector"');
+    const composer = html.indexOf('class="story-input__composer"');
+    expect(surface).toBeGreaterThan(-1);
+    expect(trigger).toBeGreaterThan(surface);
+    expect(inspector).toBeGreaterThan(trigger);
+    expect(composer).toBeGreaterThan(inspector);
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('aria-controls="chat-context-inspector"');
+    expect(html).toContain("14.2k tokens");
+    expect(html).toContain("Next turn context");
+  });
+
   it("shows one send action while the textarea contains a draft", () => {
     const html = renderToStaticMarkup(
       <InputBar
@@ -88,7 +125,9 @@ describe("InputBar", () => {
         model="deepseek/deepseek-v4-flash-0731"
         effort="max"
         query=""
+        sort="price-asc"
         onQueryChange={() => {}}
+        onSortChange={() => {}}
         onChooseModel={() => {}}
         onChooseEffort={() => {}}
         onClose={() => {}}
@@ -100,16 +139,21 @@ describe("InputBar", () => {
     expect(html).toContain("Narrator model");
     expect(html).toContain("PRICE");
     expect(html).toContain("INTELLIGENCE");
+    expect(html).toContain('aria-label="Sort narrator models"');
+    expect(html).toContain('<option value="price-asc" selected="">Price · low first</option>');
+    expect(html).toContain('class="narrator-picker__column narrator-picker__column--price"');
     expect(html).toContain("Free primary");
     expect(html).toContain("$0.09 / $0.18 fallback");
-    expect(html).toContain("Cache unavailable");
-    expect(html).toContain("$0.018 cached input");
-    expect(html).toContain("$0.0625 cache write");
-    expect(html).toContain("272K+ $0.10 / $0.45");
+    expect(html).toContain("272K+ $0.20 / $0.90");
     expect(html).toContain("200K+ $4.00 / $12.00");
-    expect(html).toMatch(/aria-label="GPT-5\.6 Luna\.[^"]*\$0\.0625 cache write[^"]*272K\+ \$0\.10 \/ \$0\.45/);
-    expect(html).toMatch(/aria-label="GPT-5\.6 Terra\.[^"]*\$0\.625 cache write[^"]*272K\+ \$1\.00 \/ \$4\.50/);
+    expect(html).toMatch(/aria-label="GPT-5\.6 Luna\.[^"]*\$0\.125 cache write[^"]*272K\+ \$0\.20 \/ \$0\.90/);
+    expect(html).toMatch(/aria-label="GPT-5\.6 Terra\.[^"]*\$1\.25 cache write[^"]*272K\+ \$2\.00 \/ \$9\.00/);
     expect(html).toMatch(/aria-label="Grok 4\.5\.[^"]*200K\+ \$4\.00 \/ \$12\.00/);
+    const visiblePriceCells = [...html.matchAll(/<span class="narrator-picker__price">([\s\S]*?)<\/span>/g)]
+      .map((match) => match[1])
+      .join(" ");
+    expect(visiblePriceCells).not.toContain("cached input");
+    expect(visiblePriceCells).not.toContain("cache write");
     expect(html).toContain("$0.09 / $0.18");
     expect(html).toContain("$0.72 / $1.80");
     expect(html).toContain("DeepSeek V4 Flash");
@@ -125,6 +169,7 @@ describe("InputBar", () => {
     expect(html).toContain("Advanced settings");
     expect(html).toContain("Thinking effort");
     expect(html).toContain('type="range"');
+    expect(html).toContain('class="narrator-picker__effort-control" style="--effort-progress:100%"');
     expect(html).toContain('aria-valuetext="Max"');
     expect(html).toContain(">XHigh<");
     expect(html).toContain(">Max<");

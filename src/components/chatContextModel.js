@@ -1,5 +1,8 @@
 import { SYSTEM_PROMPT } from "../system-prompt.js";
 import { buildStateContext } from "../engine/api.js";
+import { prepareNarratorHistory } from "../engine/narrator-history.js";
+import { narratorMessageForPendingPlayers } from "../engine/timeline.js";
+import { NARRATOR_SKILLS } from "../narrator-instructions.js";
 
 const TOKEN_CHARS = 4;
 
@@ -23,67 +26,72 @@ function safeStateContext(state) {
   }
 }
 
-function beatText(beats) {
-  return (Array.isArray(beats) ? beats : []).map((beat) => {
-    if (!beat) return "";
-    if (beat.type === "dialogue") return `${beat.name || "Speaking"}: ${beat.line || ""}`;
-    if (Array.isArray(beat.lines)) return beat.lines.join("\n");
-    return beat.content || beat.text || "";
-  }).filter(Boolean).join("\n\n");
+function toolContext(state) {
+  const tools = [{
+    name: "load_narrator_skills",
+    description: "Load detailed rules only when a specialized turn needs them.",
+    allowed_skill_ids: NARRATOR_SKILLS.map(({ id }) => id),
+  }];
+  if (state?.narratorSettings?.memoryMode !== "manual") {
+    tools.push({
+      name: "remember",
+      description: "Record a durable plot fact that must survive the rolling story window.",
+    });
+  }
+  return JSON.stringify(tools);
 }
 
-export function buildChatContextSections({ state, beats = [], history = [] } = {}) {
+function nextAction(state, draft) {
+  if (!state) return "";
+  const content = typeof draft === "string" ? draft.trim() : "";
+  if (!content) return narratorMessageForPendingPlayers(state);
+  return narratorMessageForPendingPlayers({
+    ...state,
+    beats: [...(state.beats || []), { type: "player", content }],
+  });
+}
+
+export function buildChatContextSections({ state, draft = "" } = {}) {
   const stateContext = safeStateContext(state);
-  const conversation = [
-    ...(Array.isArray(history) ? history : []).map((entry) => `${entry?.role || "message"}: ${entry?.content || ""}`),
-    beatText(beats),
-  ].filter(Boolean).join("\n\n");
-  const instructions = [
-    state?.narratorSettings?.instructions,
-    ...(Array.isArray(state?.memories) ? state.memories : []),
-  ].filter(Boolean).join("\n");
-  const stateTail = state ? {
-    time: state.time,
-    currentTile: state.world?.currentTile,
-    party: state.party,
-    pendingChoices: state.pendingProgression,
-  } : null;
+  const preparedHistory = JSON.stringify(prepareNarratorHistory(state?.apiHistory));
 
   const sections = [
     {
-      id: "system-prompt",
-      label: "SYSTEM PROMPT",
-      color: "#c93e70",
-      description: "Narrator rules and world contracts",
+      id: "system",
+      label: "CORE PROMPT",
+      color: "#b667d8",
+      description: "Compact rules sent on every narrator request",
       content: SYSTEM_PROMPT,
     },
     {
-      id: "game-context",
+      id: "tools",
+      label: "TOOLS & SKILL INDEX",
+      color: "#3f9fd1",
+      description: "Function contracts and the lightweight on-demand skill catalog",
+      content: toolContext(state),
+    },
+    {
+      id: "game",
       label: "GAME CONTEXT",
-      color: "#14a6df",
-      description: "Current place, character, codex, and authored world context",
+      color: "#36b985",
+      description: "Current character, place, inventory, codex, memories, and authored world state",
       content: stateContext,
     },
     {
-      id: "conversation",
-      label: `CONVERSATION (${Array.isArray(beats) ? beats.length : 0} MESSAGES)`,
-      color: "#d64e72",
-      description: "Recent player and narrator turns",
-      content: conversation,
+      id: "history",
+      label: "RECENT STORY",
+      color: "#d45b72",
+      description: "The same bounded history prepared for the provider",
+      content: preparedHistory,
     },
     {
-      id: "instructions",
-      label: "INSTRUCTIONS",
-      color: "#bd79df",
-      description: "Campaign direction and durable memories",
-      content: instructions,
-    },
-    {
-      id: "game-state",
-      label: "GAME STATE (PER-TURN TAIL)",
-      color: "#8f928d",
-      description: "Small live-state slice used for this preview",
-      content: JSON.stringify(stateTail),
+      id: "action",
+      label: "NEXT ACTION",
+      color: "#a9a49a",
+      description: draft?.trim()
+        ? "Projected request if the current draft is queued"
+        : "Exact pending or continue-story message for the next run",
+      content: nextAction(state, draft),
     },
   ].map((section) => ({
     ...section,
@@ -91,8 +99,16 @@ export function buildChatContextSections({ state, beats = [], history = [] } = {
   }));
 
   const total = sections.reduce((sum, section) => sum + section.tokens, 0);
+  const availableSkills = NARRATOR_SKILLS.map(({ id, label, trigger, content }) => ({
+    id,
+    label,
+    trigger,
+    tokens: estimateTokens(content),
+  }));
   return {
     total,
+    deferredTokens: availableSkills.reduce((sum, skill) => sum + skill.tokens, 0),
+    availableSkills,
     sections: sections.map((section) => ({
       ...section,
       percent: total ? Math.round((section.tokens / total) * 1000) / 10 : 0,

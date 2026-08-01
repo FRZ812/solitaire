@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../data/initial-state.js";
-import { SYSTEM_PROMPT } from "../system-prompt.js";
+import { NARRATOR_INSTRUCTION_CORPUS as SYSTEM_PROMPT } from "../narrator-instructions.js";
 import { buildStateContext, summarizeProgressionAllocation } from "./api.js";
 import { applyBeat } from "./beat.js";
 import {

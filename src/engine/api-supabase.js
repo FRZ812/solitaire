@@ -16,14 +16,17 @@ import { prepareNarratorHistory } from "./narrator-history.js";
 import { normalizeNarratorSettings } from "./narrator-settings.js";
 import { mergeMemoryBank } from "./memory.js";
 import { withAbortTimeout } from "./request-timeout.js";
+import { NARRATOR_SKILLS } from "../narrator-instructions.js";
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/narrate`;
-export const NARRATOR_TURN_TIMEOUT_MS = 180_000;
+// Only abandon a genuinely dead connection. Narrator models may reason for a
+// long time, especially across on-demand skill rounds.
+export const NARRATOR_TURN_TIMEOUT_MS = 1_800_000;
 const NARRATOR_TIMEOUT_MESSAGE = "Narrator request timed out. Please retry.";
 
 // Retry hint prepended to userMsgRaw on attempt 1 when attempt 0's story
-// arrived truncated (mid-stream cut by the model's safety filter, not the
-// token budget — server-side limit is 64k). Nudges the model to be terser.
+// arrived truncated (for example, a mid-stream provider cut). Nudges the model
+// to be terser without imposing an output-token cap.
 const RETRY_HINT_1 =
   "[RETRY HINT: your previous response was cut short mid-stream; deliver this story sequence more concisely (target ≤ 300 player-facing words), same intent.]";
 
@@ -31,7 +34,7 @@ const RETRY_HINT_1 =
 // even tighter budget. The [PLAYER ACTION] input is procedurally generated
 // and unlikely to be the trigger, so both retries act on the output side.
 const RETRY_HINT_2 =
-  "[RETRY HINT 2: previous attempt still cut short. Paraphrase your intended story sequence in different words — terse (≤ 150 player-facing words), avoid graphic embellishment, preserve the core action. Output well-formed JSON within budget.]";
+  "[RETRY HINT 2: previous attempt still cut short. Paraphrase your intended story sequence in different words — terse (≤ 150 player-facing words), avoid graphic embellishment, preserve the core action. Output complete, well-formed JSON.]";
 
 // onProgress (optional): called with chunks as they stream in from the edge
 // function. `{ thinking }` chunks fire as the model emits its reasoning trace;
@@ -175,6 +178,7 @@ async function runOneAttemptWithinDeadline(
       user_msg: userMsgRaw,
       history,
       system_prompt: SYSTEM_PROMPT,
+      narrator_skills: NARRATOR_SKILLS,
       model,
       reasoning_effort,
       memory_mode,

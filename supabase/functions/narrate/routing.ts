@@ -26,9 +26,9 @@ const MODEL_PRICE_CEILINGS = new Map<string, { prompt: number; completion: numbe
   ["minimax/minimax-m3", { prompt: 0.3, completion: 1.2 }],
   ["deepseek/deepseek-v4-flash-0731", { prompt: 0.09, completion: 0.18 }],
   ["z-ai/glm-5.2", { prompt: 0.72, completion: 1.8 }],
-  ["openai/gpt-5.6-luna", { prompt: 0.1, completion: 0.45 }],
+  ["openai/gpt-5.6-luna", { prompt: 0.2, completion: 0.9 }],
   ["x-ai/grok-4.5", { prompt: 4, completion: 12 }],
-  ["openai/gpt-5.6-terra", { prompt: 1, completion: 4.5 }],
+  ["openai/gpt-5.6-terra", { prompt: 2, completion: 9 }],
   ["moonshotai/kimi-k3", { prompt: 2.9, completion: 14 }],
 ]);
 
@@ -37,10 +37,6 @@ const MODEL_PROVIDER_IGNORES = new Map<string, string[]>([
   ["minimax/minimax-m3", ["morph"]],
 ]);
 
-const FLEX_SERVICE_MODELS = new Set([
-  "openai/gpt-5.6-luna",
-  "openai/gpt-5.6-terra",
-]);
 
 const UNIVERSAL_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 const MODEL_EFFORT_VALUES = new Map<string, Record<string, string>>([
@@ -85,16 +81,18 @@ export function selectedReasoning(model: string, effort: unknown): ReasoningOpti
 }
 
 export function selectedServiceTier(model: string) {
-  return FLEX_SERVICE_MODELS.has(model) ? "flex" : undefined;
+  // Omit service_tier so OpenRouter keeps Luna and Terra on their standard
+  // endpoints rather than the separately discounted Flex tier.
+  void model;
+  return undefined;
 }
 
 type NarratorRequestOptions = {
   model: string;
   effort: unknown;
   messages: Array<Record<string, unknown>>;
-  memoryTool: Record<string, unknown>;
-  toolsEnabled: boolean;
-  maxTokens: number;
+  tools: Array<Record<string, unknown>>;
+  toolChoice: "auto" | "none";
 };
 
 export function buildNarratorRequest(opts: NarratorRequestOptions) {
@@ -105,10 +103,8 @@ export function buildNarratorRequest(opts: NarratorRequestOptions) {
     provider: selectedProvider(model),
     ...(serviceTier ? { service_tier: serviceTier } : {}),
     stream: true,
-    max_tokens: opts.maxTokens,
     messages: opts.messages,
-    tools: [opts.memoryTool],
-    tool_choice: opts.toolsEnabled ? "auto" : "none",
+    ...(opts.tools.length ? { tools: opts.tools, tool_choice: opts.toolChoice } : {}),
     reasoning: selectedReasoning(model, opts.effort),
   };
 }

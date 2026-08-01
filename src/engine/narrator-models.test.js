@@ -4,6 +4,7 @@ import {
   DEFAULT_NARRATOR_MODEL,
   NARRATOR_EFFORTS,
   NARRATOR_MODELS,
+  NARRATOR_SORT_OPTIONS,
   getNarratorEffort,
   getNarratorModel,
   normalizeNarratorEffort,
@@ -14,6 +15,7 @@ import {
   narratorModelIntelligenceSourceLabel,
   narratorModelPriceLabel,
   narratorModelPricingNote,
+  sortNarratorModels,
 } from "./narrator-models.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -36,7 +38,27 @@ describe("OpenRouter narrator registry", () => {
     ]);
   });
 
-  it("keeps every remaining model on the OpenRouter floor route", () => {
+  it("sorts a copied model list by intelligence, price, or name", () => {
+    const original = NARRATOR_MODELS.map((model) => model.id);
+    expect(NARRATOR_SORT_OPTIONS.map((option) => option.id)).toEqual([
+      "recommended",
+      "intelligence-desc",
+      "intelligence-asc",
+      "price-asc",
+      "price-desc",
+      "name-asc",
+    ]);
+    expect(sortNarratorModels(NARRATOR_MODELS, "intelligence-desc").map((model) => model.label)).toEqual([
+      "Kimi K3", "GPT-5.6 Terra", "Grok 4.5", "GPT-5.6 Luna", "GLM 5.2", "DeepSeek V4 Flash", "MiniMax M3", "Laguna S 2.1",
+    ]);
+    expect(sortNarratorModels(NARRATOR_MODELS, "price-asc").map((model) => model.label)).toEqual([
+      "Laguna S 2.1", "DeepSeek V4 Flash", "GPT-5.6 Luna", "MiniMax M3", "GLM 5.2", "GPT-5.6 Terra", "Grok 4.5", "Kimi K3",
+    ]);
+    expect(sortNarratorModels(NARRATOR_MODELS, "name-asc").map((model) => model.label)[0]).toBe("DeepSeek V4 Flash");
+    expect(NARRATOR_MODELS.map((model) => model.id)).toEqual(original);
+  });
+
+  it("uses standard OpenAI prices for Luna and Terra while other models keep their floor route", () => {
     const byId = Object.fromEntries(NARRATOR_MODELS.map((model) => [model.id, model]));
     expect(byId["z-ai/glm-5.2"]).toMatchObject({
       label: "GLM 5.2",
@@ -49,12 +71,12 @@ describe("OpenRouter narrator registry", () => {
     expect(byId["openai/gpt-5.6-luna"]).toMatchObject({
       label: "GPT-5.6 Luna",
       note: "OpenAI",
-      provider: "OpenRouter floor",
+      provider: "OpenRouter standard",
     });
     expect(byId["openai/gpt-5.6-terra"]).toMatchObject({
       label: "GPT-5.6 Terra",
       note: "OpenAI",
-      provider: "OpenRouter floor",
+      provider: "OpenRouter standard",
     });
     expect(byId["openai/gpt-5.6-luna"].fallback).toBeUndefined();
     expect(byId["openai/gpt-5.6-terra"].fallback).toBeUndefined();
@@ -129,8 +151,8 @@ describe("OpenRouter narrator registry", () => {
       "deepseek/deepseek-v4-flash-0731": "$0.09 / $0.18",
       "z-ai/glm-5.2": "$0.72 / $1.80",
       "x-ai/grok-4.5": "$2.00 / $6.00",
-      "openai/gpt-5.6-luna": "$0.05 / $0.30",
-      "openai/gpt-5.6-terra": "$0.50 / $3.00",
+      "openai/gpt-5.6-luna": "$0.10 / $0.60",
+      "openai/gpt-5.6-terra": "$1.00 / $6.00",
       "moonshotai/kimi-k3": "$2.90 / $14.00",
     });
     expect(Object.fromEntries(NARRATOR_MODELS.map((model) => [model.id, narratorModelCachePriceLabel(model)]))).toEqual({
@@ -139,8 +161,8 @@ describe("OpenRouter narrator registry", () => {
       "deepseek/deepseek-v4-flash-0731": "$0.018 cached input",
       "z-ai/glm-5.2": "$0.12 cached input",
       "x-ai/grok-4.5": "$0.30 cached input",
-      "openai/gpt-5.6-luna": "$0.005 cached input",
-      "openai/gpt-5.6-terra": "$0.05 cached input",
+      "openai/gpt-5.6-luna": "$0.01 cached input",
+      "openai/gpt-5.6-terra": "$0.10 cached input",
       "moonshotai/kimi-k3": "$0.29 cached input",
     });
     expect(narratorModelIntelligenceLabel(byId["poolside/laguna-s-2.1:free"])).toBe("Unrated");
@@ -148,13 +170,13 @@ describe("OpenRouter narrator registry", () => {
     expect(narratorModelIntelligenceLabel(byId["openai/gpt-5.6-terra"])).toBe("55.0");
     expect(narratorModelIntelligenceLabel(byId["moonshotai/kimi-k3"])).toBe("57.1");
     expect(narratorModelPricingNote(byId["openai/gpt-5.6-luna"])).toBe(
-      "$0.005 cached input · $0.0625 cache write · 272K+ $0.10 / $0.45 · $0.01 cached input · $0.125 cache write",
+      "$0.01 cached input · $0.125 cache write · 272K+ $0.20 / $0.90 · $0.02 cached input · $0.25 cache write",
     );
     expect(narratorModelPricingNote(byId["x-ai/grok-4.5"])).toBe(
       "$0.30 cached input · 200K+ $4.00 / $12.00 · $0.60 cached input",
     );
     expect(narratorModelPricingNote(byId["openai/gpt-5.6-terra"])).toBe(
-      "$0.05 cached input · $0.625 cache write · 272K+ $1.00 / $4.50 · $0.10 cached input · $1.25 cache write",
+      "$0.10 cached input · $1.25 cache write · 272K+ $2.00 / $9.00 · $0.20 cached input · $2.50 cache write",
     );
   });
 

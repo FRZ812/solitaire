@@ -8,7 +8,7 @@ import {
   canonicalProfessionIdentity,
   isBroadProfessionName,
 } from "../data/progression-paths.js";
-import { SYSTEM_PROMPT } from "../system-prompt.js";
+import { NARRATOR_INSTRUCTION_CORPUS as SYSTEM_PROMPT } from "../narrator-instructions.js";
 import { buildStateContext, summarizeProgressionAllocation } from "./api.js";
 import { sanitizeNarratorProgressionHints, sanitizeProfessionPlan } from "./discoveries.js";
 import { createProgression, normalizeCharacterProgression } from "./progression.js";

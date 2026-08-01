@@ -1,8 +1,16 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { requestNarratorRound, selectedModel } from "./routing.ts";
+import {
+  asInstructionLibrary,
+  instructionToolFor,
+  INSTRUCTION_TOOL_NAME,
+  resolveInstructionToolCall,
+  type InstructionSkill,
+} from "./tools.ts";
 
-const MAX_OUTPUT_TOKENS = 4000;
 const MAX_FIELD_LENGTH = 120_000;
+// Accept the retired monolith during a rolling Edge/client deployment. New
+// clients still send the compact prompt enforced in the browser contract.
 const MAX_SYSTEM_PROMPT_LENGTH = 200_000;
 const MAX_MEMORY_FACT_LENGTH = 600;
 const MAX_EXISTING_MEMORIES = 80;
@@ -31,10 +39,9 @@ const MEMORY_TOOL = {
   },
 };
 
-// Guards against a pathological loop where every round calls remember and
-// never produces narrative text — after this many rounds we stop asking and
-// let whatever streamed so far stand.
-const MAX_TOOL_ROUNDS = 3;
+// Bound provider round-trips without truncating model output. The final round
+// disables tools so every accepted turn has a chance to finish its JSON.
+const MAX_PROVIDER_ROUNDS = 5;
 
 type MemoryMode = "balanced" | "essential" | "manual";
 
@@ -192,20 +199,17 @@ async function pumpOpenRouterRound(
   return { text, toolCalls: [...toolCallsByIndex.values()], finishReason };
 }
 
-// Drives the full narrator turn: calls OpenRouter, and whenever the model
-// calls `remember`, emits a memory_delta event for the client, appends the
-// tool call + a synthetic tool result onto the message list, and loops for
-// another round so the model can continue narrating. Bounded by
-// MAX_TOOL_ROUNDS so a pathological remember-only loop can't hang the request.
-type OpenRouterApiKey = string;
+// Drives the full narrator turn: calls OpenRouter, resolves skill and memory
+// tools, appends their results, and loops so the model can finish narrating.
 
 function streamNarratorTurn(opts: {
-  apiKey: OpenRouterApiKey;
+  apiKey: string;
   model: string;
   effort: unknown;
   messages: Array<Record<string, unknown>>;
   memoryMode: MemoryMode;
   existingMemories: string[];
+  instructionLibrary: InstructionSkill[];
 }) {
   const encoder = new TextEncoder();
 
@@ -213,17 +217,20 @@ function streamNarratorTurn(opts: {
     async start(controller) {
       const messages = [...opts.messages];
       const knownMemoryKeys = new Set(opts.existingMemories.map(memoryFingerprint).filter(Boolean));
-      const toolsEnabled = opts.memoryMode !== "manual";
+      const loadedSkillIds = new Set<string>();
+      const tools = [
+        ...(opts.instructionLibrary.length ? [instructionToolFor(opts.instructionLibrary)] : []),
+        ...(opts.memoryMode === "manual" ? [] : [memoryToolFor(opts.memoryMode)]),
+      ];
       try {
-        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        for (let round = 0; round < MAX_PROVIDER_ROUNDS; round++) {
           const upstream = await requestNarratorRound({
             apiKey: opts.apiKey,
             model: opts.model,
             effort: opts.effort,
             messages,
-            memoryTool: memoryToolFor(opts.memoryMode),
-            toolsEnabled,
-            maxTokens: MAX_OUTPUT_TOKENS,
+            tools,
+            toolChoice: round === MAX_PROVIDER_ROUNDS - 1 ? "none" : "auto",
           });
 
           if (!upstream.ok || !upstream.body) {
@@ -233,21 +240,38 @@ function streamNarratorTurn(opts: {
           }
 
           const { text, toolCalls, finishReason } = await pumpOpenRouterRound(upstream.body, controller, encoder);
-          const rememberCalls = toolCalls.filter((tc) => tc.name === "remember");
+          const recognizedCalls = toolCalls.filter((tc) => (
+            tc.name === INSTRUCTION_TOOL_NAME
+            || (tc.name === "remember" && opts.memoryMode !== "manual")
+          ));
 
           // No tool call this round (or none we recognize) — the model gave
           // its final narrative answer, nothing more to loop for.
-          if (!rememberCalls.length || finishReason !== "tool_calls") break;
+          if (!recognizedCalls.length || finishReason !== "tool_calls") break;
           messages.push({
             role: "assistant",
             content: text || null,
-            tool_calls: rememberCalls.map((tc) => ({
+            tool_calls: recognizedCalls.map((tc) => ({
               id: tc.id,
               type: "function",
               function: { name: tc.name, arguments: tc.arguments },
             })),
           });
-          for (const tc of rememberCalls) {
+          for (const tc of recognizedCalls) {
+            const instructionResult = resolveInstructionToolCall(
+              tc,
+              opts.instructionLibrary,
+              loadedSkillIds,
+            );
+            if (instructionResult.recognized) {
+              messages.push({
+                role: "tool",
+                tool_call_id: tc.id,
+                content: instructionResult.result,
+              });
+              continue;
+            }
+
             let fact = "";
             try { fact = normalizeMemoryFact(JSON.parse(tc.arguments || "{}").fact); } catch { /* malformed args — skip */ }
             const key = memoryFingerprint(fact);
@@ -259,9 +283,6 @@ function streamNarratorTurn(opts: {
             const result = !fact ? "ignored: no fact given" : isDuplicate ? "ignored: already recorded" : "recorded";
             messages.push({ role: "tool", tool_call_id: tc.id, content: result });
           }
-          // Record calls made in the final budgeted round, then stop without
-          // opening a provider request that cannot be followed through.
-          if (round === MAX_TOOL_ROUNDS - 1) break;
         }
       } catch (error) {
         controller.error(error);
@@ -312,10 +333,14 @@ Deno.serve(async (request) => {
   let stateContext: string;
   let userMessage: string;
   let systemPrompt: string;
+  let instructionLibrary: InstructionSkill[];
   try {
     stateContext = stringField(payload.state_context, "state_context");
     userMessage = stringField(payload.user_msg, "user_msg");
     systemPrompt = stringField(payload.system_prompt, "system_prompt", MAX_SYSTEM_PROMPT_LENGTH);
+    instructionLibrary = payload.narrator_skills == null
+      ? []
+      : asInstructionLibrary(payload.narrator_skills);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "invalid request" }, 400);
   }
@@ -336,6 +361,7 @@ Deno.serve(async (request) => {
     messages,
     memoryMode,
     existingMemories,
+    instructionLibrary,
   }), {
     headers: {
       ...CORS_HEADERS,
