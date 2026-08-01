@@ -6,16 +6,22 @@ const FOCUSABLE_SELECTOR = [
   "input:not([disabled])",
   "select:not([disabled])",
   "textarea:not([disabled])",
+  "summary",
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
 export function modalFocusableElements(dialog) {
   if (!dialog?.querySelectorAll) return [];
   return [...dialog.querySelectorAll(FOCUSABLE_SELECTOR)].filter((element) => (
-    element?.getAttribute?.("aria-hidden") !== "true"
+    !element.disabled
+    && !element.hidden
+    && element.getAttribute?.("aria-hidden") !== "true"
+    && (() => {
+      const closedDetails = element.closest?.("details:not([open])");
+      return !closedDetails || closedDetails.querySelector?.(":scope > summary") === element;
+    })()
   ));
 }
-
 export function trapModalFocus(event, dialog) {
   if (event?.key !== "Tab" || !dialog) return false;
   const focusable = modalFocusableElements(dialog);

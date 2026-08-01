@@ -85,8 +85,8 @@ describe("InputBar", () => {
   it("shows an explicit close action with useful price and intelligence columns", () => {
     const html = renderToStaticMarkup(
       <NarratorPickerPanel
-        model="deepseek/deepseek-v4-pro"
-        effort="high"
+        model="deepseek/deepseek-v4-flash-0731"
+        effort="max"
         query=""
         onQueryChange={() => {}}
         onChooseModel={() => {}}
@@ -102,23 +102,40 @@ describe("InputBar", () => {
     expect(html).toContain("INTELLIGENCE");
     expect(html).toContain("Free primary");
     expect(html).toContain("$0.09 / $0.18 fallback");
-    expect(html).toContain("$0.132 / $0.528");
-    expect(html).toContain("$0.14 / $0.28");
-    expect(html).toContain("$0.435 / $0.87");
-    expect(html).toContain("DeepSeek V4 Flash 0731");
-    expect(html).toContain("GLM level");
-    expect(html).toContain("Product guidance");
+    expect(html).toContain("Cache unavailable");
+    expect(html).toContain("$0.018 cached input");
+    expect(html).toContain("$0.0625 cache write");
+    expect(html).toContain("272K+ $0.10 / $0.45");
+    expect(html).toContain("200K+ $4.00 / $12.00");
+    expect(html).toMatch(/aria-label="GPT-5\.6 Luna\.[^"]*\$0\.0625 cache write[^"]*272K\+ \$0\.10 \/ \$0\.45/);
+    expect(html).toMatch(/aria-label="GPT-5\.6 Terra\.[^"]*\$0\.625 cache write[^"]*272K\+ \$1\.00 \/ \$4\.50/);
+    expect(html).toMatch(/aria-label="Grok 4\.5\.[^"]*200K\+ \$4\.00 \/ \$12\.00/);
+    expect(html).toContain("$0.09 / $0.18");
+    expect(html).toContain("$0.72 / $1.80");
+    expect(html).toContain("DeepSeek V4 Flash");
+    expect(html).not.toContain("DeepSeek V4 Flash 0731");
+    expect(html).not.toContain("DeepSeek V4 Pro");
+    expect(html).not.toContain("Qwen 3.7 Flash");
+    expect(html).not.toContain(">Hy3<");
     expect(html).toContain("Artificial Analysis");
-    expect(html).toContain("40.3");
+    expect(html).toContain("49.9");
     expect(html).toContain("57.1");
     expect(html).toContain("Unrated");
+    expect(html).toContain('<details class="narrator-picker__effort-panel">');
+    expect(html).toContain("Advanced settings");
+    expect(html).toContain("Thinking effort");
+    expect(html).toContain('type="range"');
+    expect(html).toContain('aria-valuetext="Max"');
+    expect(html).toContain(">XHigh<");
+    expect(html).toContain(">Max<");
+    expect(html).toContain("token-budget models translate the same scale proportionally");
 
     expect(html).not.toContain("narrator-picker__handle");
     expect(html).not.toContain("narrator-picker__mode");
     expect(html).not.toContain("narrator-picker__filters");
     expect(html).not.toContain("narrator-picker__route-bar");
     expect(html).not.toContain("narrator-picker__capability");
-    expect(html).not.toContain("OpenRouter");
+    expect(html).not.toContain("OPENROUTER ROUTE");
     expect(html).not.toContain("OPENAI ROUTE");
     expect(html).not.toContain("REASONING</span>");
   });
@@ -126,9 +143,9 @@ describe("InputBar", () => {
   it("searches the narrator provider notes as well as model labels", () => {
     const html = renderToStaticMarkup(
       <NarratorPickerPanel
-        model="tencent/hy3"
-        effort="high"
-        query="Tencent"
+        model="moonshotai/kimi-k3"
+        effort="max"
+        query="Moonshot"
         onQueryChange={() => {}}
         onChooseModel={() => {}}
         onChooseEffort={() => {}}
@@ -136,7 +153,24 @@ describe("InputBar", () => {
       />,
     );
 
-    expect(html).toContain("Hy3");
-    expect(html).not.toContain("DeepSeek V4 Pro");
+    expect(html).toContain("Kimi K3");
+    expect(html).not.toContain("GLM 5.2");
+  });
+
+  it("discloses semantic effort fallback in visible and accessible picker text", () => {
+    const html = renderToStaticMarkup(
+      <NarratorPickerPanel
+        model="x-ai/grok-4.5"
+        effort="max"
+        query=""
+        onQueryChange={() => {}}
+        onChooseModel={() => {}}
+        onChooseEffort={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Max → High");
+    expect(html).toContain('aria-valuetext="Max → High"');
   });
 });

@@ -1,69 +1,12 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { requestNarratorRound, selectedModel } from "./routing.ts";
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_MODEL = "deepseek/deepseek-v4-pro";
 const MAX_OUTPUT_TOKENS = 4000;
 const MAX_FIELD_LENGTH = 120_000;
 const MAX_SYSTEM_PROMPT_LENGTH = 200_000;
 const MAX_MEMORY_FACT_LENGTH = 600;
 const MAX_EXISTING_MEMORIES = 80;
 
-const ALLOWED_MODELS = new Set([
-  "poolside/laguna-s-2.1:free",
-  "poolside/laguna-s-2.1",
-  "qwen/qwen3.7-flash",
-  "tencent/hy3",
-  "deepseek/deepseek-v4-pro",
-  "deepseek/deepseek-v4-flash",
-  "deepseek/deepseek-v4-flash-0731",
-  "moonshotai/kimi-k3",
-  "z-ai/glm-5.2",
-  "x-ai/grok-4.5",
-  "openai/gpt-5.6-luna",
-  "openai/gpt-5.6-terra",
-  "minimax/minimax-m3",
-]);
-
-const MODEL_FALLBACKS = new Map<string, string[]>([
-  ["poolside/laguna-s-2.1:free", ["poolside/laguna-s-2.1"]],
-]);
-
-// These OpenAI models must never be load-balanced to another upstream
-// provider. OpenRouter's default routing can otherwise choose among multiple
-// providers for the same model family.
-const OPENAI_ONLY_MODELS = new Set([
-  "openai/gpt-5.6-luna",
-  "openai/gpt-5.6-terra",
-]);
-
-// These models expose reasoning but not a provider-supported effort selector.
-// Enable reasoning without sending an unsupported effort value.
-const REASONING_ENABLED_ONLY = new Set([
-  "poolside/laguna-s-2.1:free",
-  "poolside/laguna-s-2.1",
-  "minimax/minimax-m3",
-]);
-
-const REASONING_EFFORTS = new Map<string, string[]>([
-  ["qwen/qwen3.7-flash", ["low", "max"]],
-  ["tencent/hy3", ["low", "high"]],
-  ["deepseek/deepseek-v4-pro", ["high", "max"]],
-  ["deepseek/deepseek-v4-flash", ["high", "max"]],
-  ["deepseek/deepseek-v4-flash-0731", ["high", "max"]],
-  ["z-ai/glm-5.2", ["high", "max"]],
-  ["x-ai/grok-4.5", ["low", "medium", "high"]],
-  ["openai/gpt-5.6-luna", ["low", "medium", "high", "max"]],
-  ["openai/gpt-5.6-terra", ["low", "medium", "high", "max"]],
-  ["moonshotai/kimi-k3", ["low", "high", "max"]],
-]);
-
-const OPENROUTER_EFFORT_ALIASES = new Map<string, Record<string, string>>([
-  ["qwen/qwen3.7-flash", { max: "xhigh" }],
-  ["deepseek/deepseek-v4-pro", { max: "xhigh" }],
-  ["deepseek/deepseek-v4-flash", { max: "xhigh" }],
-  ["deepseek/deepseek-v4-flash-0731", { max: "xhigh" }],
-  ["z-ai/glm-5.2", { max: "xhigh" }],
-]);
 // A real function-call tool (not a JSON response field) — this is the
 // narrator's dedicated long-term memory, distinct from the rolling
 // apiHistory window (which drops old turns) and from the per-character
@@ -94,7 +37,6 @@ const MEMORY_TOOL = {
 const MAX_TOOL_ROUNDS = 3;
 
 type MemoryMode = "balanced" | "essential" | "manual";
-type ReasoningOptions = { enabled: boolean; effort?: string };
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -163,29 +105,6 @@ function memoryToolFor(mode: MemoryMode) {
       description: `${MEMORY_TOOL.function.description} ESSENTIAL-ONLY mode is active: use this only for a fact likely to matter many turns from now, and batch independent facts in parallel.`,
     },
   };
-}
-
-function selectedModel(value: unknown) {
-  return typeof value === "string" && ALLOWED_MODELS.has(value) ? value : DEFAULT_MODEL;
-}
-
-function selectedModels(model: string) {
-  return [model, ...(MODEL_FALLBACKS.get(model) || [])];
-}
-
-function selectedProvider(model: string) {
-  return OPENAI_ONLY_MODELS.has(model)
-    ? { only: ["openai"], allow_fallbacks: false }
-    : undefined;
-}
-
-function selectedReasoning(model: string, effort: unknown) {
-  if (REASONING_ENABLED_ONLY.has(model)) return { enabled: true };
-  const supported = REASONING_EFFORTS.get(model);
-  if (!supported) return undefined;
-  const selected = typeof effort === "string" && supported.includes(effort) ? effort : "high";
-  const mapped = OPENROUTER_EFFORT_ALIASES.get(model)?.[selected] || selected;
-  return { enabled: true, effort: mapped };
 }
 
 function toText(value: unknown): string {
@@ -278,10 +197,12 @@ async function pumpOpenRouterRound(
 // tool call + a synthetic tool result onto the message list, and loops for
 // another round so the model can continue narrating. Bounded by
 // MAX_TOOL_ROUNDS so a pathological remember-only loop can't hang the request.
+type OpenRouterApiKey = string;
+
 function streamNarratorTurn(opts: {
-  apiKey: string;
-  models: string[];
-  reasoning?: ReasoningOptions;
+  apiKey: OpenRouterApiKey;
+  model: string;
+  effort: unknown;
   messages: Array<Record<string, unknown>>;
   memoryMode: MemoryMode;
   existingMemories: string[];
@@ -295,27 +216,14 @@ function streamNarratorTurn(opts: {
       const toolsEnabled = opts.memoryMode !== "manual";
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-          const provider = selectedProvider(opts.models[0]);
-          const upstream = await fetch(OPENROUTER_URL, {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${opts.apiKey}`,
-              "Content-Type": "application/json",
-              "X-Title": "Solitaire",
-            },
-            body: JSON.stringify({
-              models: opts.models,
-              ...(provider ? { provider } : {}),
-              stream: true,
-              max_tokens: MAX_OUTPUT_TOKENS,
-              messages,
-              ...(toolsEnabled ? {
-                tools: [memoryToolFor(opts.memoryMode)],
-                tool_choice: "auto",
-                parallel_tool_calls: true,
-              } : {}),
-              ...(opts.reasoning ? { reasoning: opts.reasoning } : {}),
-            }),
+          const upstream = await requestNarratorRound({
+            apiKey: opts.apiKey,
+            model: opts.model,
+            effort: opts.effort,
+            messages,
+            memoryTool: memoryToolFor(opts.memoryMode),
+            toolsEnabled,
+            maxTokens: MAX_OUTPUT_TOKENS,
           });
 
           if (!upstream.ok || !upstream.body) {
@@ -413,8 +321,6 @@ Deno.serve(async (request) => {
   }
 
   const model = selectedModel(payload.model);
-  const models = selectedModels(model);
-  const reasoning = selectedReasoning(model, payload.reasoning_effort);
   const memoryMode = selectedMemoryMode(payload.memory_mode);
   const existingMemories = asExistingMemories(payload.existing_memories);
   const messages = [
@@ -423,7 +329,14 @@ Deno.serve(async (request) => {
     { role: "user", content: `${stateContext}\n\n${userMessage}` },
   ];
 
-  return new Response(streamNarratorTurn({ apiKey, models, reasoning, messages, memoryMode, existingMemories }), {
+  return new Response(streamNarratorTurn({
+    apiKey,
+    model,
+    effort: payload.reasoning_effort,
+    messages,
+    memoryMode,
+    existingMemories,
+  }), {
     headers: {
       ...CORS_HEADERS,
       "Content-Type": "text/event-stream; charset=utf-8",

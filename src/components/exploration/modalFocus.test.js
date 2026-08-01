@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { activateModalFocus, trapModalFocus } from "./modalFocus.js";
+import { activateModalFocus, modalFocusableElements, trapModalFocus } from "./modalFocus.js";
 
 function keyEvent({ key = "Tab", shiftKey = false, target }) {
   return {
@@ -11,6 +11,26 @@ function keyEvent({ key = "Tab", shiftKey = false, target }) {
 }
 
 describe("modal focus containment", () => {
+  it("keeps a closed details summary in the focus loop and excludes its hidden controls", () => {
+    const summary = { disabled: false, hidden: false, getAttribute: () => null };
+    const closedDetails = { querySelector: () => summary };
+    summary.closest = () => closedDetails;
+    const hiddenSlider = {
+      disabled: false,
+      hidden: false,
+      getAttribute: () => null,
+      closest: () => closedDetails,
+    };
+    const dialog = {
+      querySelectorAll: vi.fn((selector) => (
+        selector.split(",").includes("summary") ? [summary, hiddenSlider] : [hiddenSlider]
+      )),
+    };
+
+    expect(modalFocusableElements(dialog)).toEqual([summary]);
+    expect(dialog.querySelectorAll).toHaveBeenCalledOnce();
+  });
+
   it("captures the exact opener before focusing the modal and restores it on cleanup", () => {
     let activeElement;
     const opener = { isConnected: true, focus: vi.fn(() => { activeElement = opener; }) };

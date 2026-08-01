@@ -2,12 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_NARRATOR_EFFORT,
   DEFAULT_NARRATOR_MODEL,
+  NARRATOR_EFFORTS,
   NARRATOR_MODELS,
+  getNarratorEffort,
   getNarratorModel,
   normalizeNarratorEffort,
+  narratorEffortDisplayLabel,
+  narratorTransportEffort,
+  narratorModelCachePriceLabel,
   narratorModelIntelligenceLabel,
   narratorModelIntelligenceSourceLabel,
   narratorModelPriceLabel,
+  narratorModelPricingNote,
 } from "./narrator-models.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -20,96 +26,90 @@ describe("OpenRouter narrator registry", () => {
   it("offers the configured models in picker order", () => {
     expect(NARRATOR_MODELS.map((model) => model.id)).toEqual([
       "poolside/laguna-s-2.1:free",
-      "qwen/qwen3.7-flash",
-      "tencent/hy3",
-      "deepseek/deepseek-v4-flash",
-      "deepseek/deepseek-v4-pro",
       "minimax/minimax-m3",
       "deepseek/deepseek-v4-flash-0731",
       "z-ai/glm-5.2",
-      "x-ai/grok-4.5",
       "openai/gpt-5.6-luna",
+      "x-ai/grok-4.5",
       "openai/gpt-5.6-terra",
       "moonshotai/kimi-k3",
     ]);
   });
 
-  it("keeps GLM and Grok while adding OpenAI-only GPT models", () => {
+  it("keeps every remaining model on the OpenRouter floor route", () => {
     const byId = Object.fromEntries(NARRATOR_MODELS.map((model) => [model.id, model]));
     expect(byId["z-ai/glm-5.2"]).toMatchObject({
       label: "GLM 5.2",
-      provider: "OpenRouter",
-      efforts: ["high", "max"],
+      provider: "OpenRouter floor",
     });
     expect(byId["x-ai/grok-4.5"]).toMatchObject({
       label: "Grok 4.5",
-      provider: "OpenRouter",
-      efforts: ["low", "medium", "high"],
+      provider: "OpenRouter floor",
     });
     expect(byId["openai/gpt-5.6-luna"]).toMatchObject({
       label: "GPT-5.6 Luna",
       note: "OpenAI",
-      provider: "OpenAI",
-      efforts: ["low", "medium", "high", "max"],
+      provider: "OpenRouter floor",
     });
     expect(byId["openai/gpt-5.6-terra"]).toMatchObject({
       label: "GPT-5.6 Terra",
       note: "OpenAI",
-      provider: "OpenAI",
-      efforts: ["low", "medium", "high", "max"],
+      provider: "OpenRouter floor",
     });
     expect(byId["openai/gpt-5.6-luna"].fallback).toBeUndefined();
     expect(byId["openai/gpt-5.6-terra"].fallback).toBeUndefined();
   });
 
   it("keeps the free Laguna S primary and its paid fallback", () => {
-    // The free Hy3 slot was retired by OpenRouter (404 as of 2026-07-29), so
-    // only Laguna S 2.1 retains the free-primary / paid-fallback pairing in
-    // the picker. Hy3 (paid) is now its own entry with no free variant.
     expect(NARRATOR_MODELS[0]).toMatchObject({
       id: "poolside/laguna-s-2.1:free",
       fallback: "poolside/laguna-s-2.1",
+      price: { input: 0, output: 0, cachedInput: null },
+      fallbackPrice: { input: 0.09, output: 0.18, cachedInput: 0.009 },
     });
-    const hy3 = NARRATOR_MODELS.find((m) => m.id === "tencent/hy3");
-    expect(hy3?.fallback).toBeUndefined();
   });
 
-  it("adds DeepSeek V4 Flash 0731 with exact price and explicitly sourced GLM-level guidance", () => {
+  it("makes the recalibrated 0731 release the only DeepSeek V4 Flash", () => {
     const model = NARRATOR_MODELS.find((entry) => entry.id === "deepseek/deepseek-v4-flash-0731");
     expect(model).toMatchObject({
-      label: "DeepSeek V4 Flash 0731",
+      label: "DeepSeek V4 Flash",
       note: "DeepSeek",
-      provider: "OpenRouter",
-      efforts: ["high", "max"],
-      price: { input: 0.14, output: 0.28 },
-      intelligence: null,
-      intelligenceGuidance: "GLM level",
+      provider: "OpenRouter floor",
+      price: { input: 0.09, output: 0.18, cachedInput: 0.018 },
+      intelligence: 49.9,
     });
-    expect(narratorModelPriceLabel(model)).toBe("$0.14 / $0.28");
-    expect(narratorModelIntelligenceLabel(model)).toBe("GLM level");
-    expect(narratorModelIntelligenceSourceLabel(model)).toBe("Product guidance");
+    expect(narratorModelPriceLabel(model)).toBe("$0.09 / $0.18");
+    expect(narratorModelCachePriceLabel(model)).toBe("$0.018 cached input");
+    expect(narratorModelIntelligenceLabel(model)).toBe("49.9");
+    expect(narratorModelIntelligenceSourceLabel(model)).toBe("AA index");
+    expect(NARRATOR_MODELS.some((entry) => entry.id === "deepseek/deepseek-v4-flash")).toBe(false);
+    expect(NARRATOR_MODELS.some((entry) => entry.id === "deepseek/deepseek-v4-pro")).toBe(false);
+    expect(NARRATOR_MODELS.some((entry) => entry.id === "tencent/hy3")).toBe(false);
+    expect(NARRATOR_MODELS.some((entry) => entry.id === "qwen/qwen3.7-flash")).toBe(false);
   });
 
-  it("exposes the provider-supported reasoning levels with High as the default", () => {
-    const byId = Object.fromEntries(NARRATOR_MODELS.map((model) => [model.id, model]));
-    expect(byId["poolside/laguna-s-2.1:free"].efforts).toBeNull();
-    expect(byId["qwen/qwen3.7-flash"].efforts).toEqual(["low", "high"]);
-    expect(byId["tencent/hy3"].efforts).toEqual(["low", "high"]);
-    expect(byId["openai/gpt-5.6-luna"].efforts).toEqual(["low", "medium", "high", "max"]);
-    expect(byId["openai/gpt-5.6-terra"].efforts).toEqual(["low", "medium", "high", "max"]);
-    expect(byId["moonshotai/kimi-k3"].efforts).toEqual(["low", "high", "max"]);
-    expect(byId["minimax/minimax-m3"].efforts).toBeNull();
-    expect(DEFAULT_NARRATOR_EFFORT).toBe("high");
+  it("offers one universal effort scale and defaults every model to Max", () => {
+    expect(NARRATOR_EFFORTS.map((entry) => entry.id)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(DEFAULT_NARRATOR_EFFORT).toBe("max");
+    expect(normalizeNarratorEffort("poolside/laguna-s-2.1:free", "xhigh")).toBe("xhigh");
     expect(normalizeNarratorEffort("openai/gpt-5.6-luna", "max")).toBe("max");
-    expect(normalizeNarratorEffort("openai/gpt-5.6-terra", "max")).toBe("max");
-    expect(normalizeNarratorEffort("moonshotai/kimi-k3", "max")).toBe("max");
+    expect(normalizeNarratorEffort("moonshotai/kimi-k3", "unsupported")).toBe("max");
+  });
+
+  it("exposes semantic-to-transport fallback labels without changing saved semantic effort", () => {
+    expect(narratorTransportEffort("x-ai/grok-4.5", "max")).toBe("high");
+    expect(narratorEffortDisplayLabel("x-ai/grok-4.5", "max")).toBe("Max → High");
+    expect(narratorTransportEffort("z-ai/glm-5.2", "max")).toBe("xhigh");
+    expect(narratorEffortDisplayLabel("z-ai/glm-5.2", "max")).toBe("Max → XHigh");
+    expect(narratorEffortDisplayLabel("openai/gpt-5.6-luna", "max")).toBe("Max");
+    expect(normalizeNarratorEffort("x-ai/grok-4.5", "max")).toBe("max");
   });
 
   it("does not put pricing in narrator labels", () => {
     expect(NARRATOR_MODELS.map((model) => model.label)).not.toContain("Free");
     expect(NARRATOR_MODELS[0].label).toBe("Laguna S 2.1");
-    expect(NARRATOR_MODELS[1].label).toBe("Qwen 3.7 Flash");
-    expect(NARRATOR_MODELS[2].label).toBe("Hy3");
+    expect(NARRATOR_MODELS[1].label).toBe("MiniMax M3");
+    expect(NARRATOR_MODELS[2].label).toBe("DeepSeek V4 Flash");
   });
 
   it("exposes sourced price and intelligence information instead of opaque bars", () => {
@@ -117,41 +117,70 @@ describe("OpenRouter narrator registry", () => {
       expect(model.price).toMatchObject({ input: expect.any(Number), output: expect.any(Number) });
       expect(model.price.input).toBeGreaterThanOrEqual(0);
       expect(model.price.output).toBeGreaterThanOrEqual(0);
+      expect(model.price.cachedInput === null || Number.isFinite(model.price.cachedInput)).toBe(true);
       expect(model.intelligence == null || Number.isFinite(model.intelligence)).toBe(true);
     }
 
     const byId = Object.fromEntries(NARRATOR_MODELS.map((model) => [model.id, model]));
-    expect(byId["poolside/laguna-s-2.1:free"].fallbackPrice).toEqual({ input: 0.09, output: 0.18 });
+    expect(byId["poolside/laguna-s-2.1:free"].fallbackPrice).toEqual({ input: 0.09, output: 0.18, cachedInput: 0.009 });
     expect(Object.fromEntries(NARRATOR_MODELS.map((model) => [model.id, narratorModelPriceLabel(model)]))).toEqual({
       "poolside/laguna-s-2.1:free": "Free primary · $0.09 / $0.18 fallback",
-      "qwen/qwen3.7-flash": "$0.03 / $0.13",
-      "tencent/hy3": "$0.132 / $0.528",
-      "deepseek/deepseek-v4-flash": "$0.14 / $0.28",
-      "deepseek/deepseek-v4-pro": "$0.435 / $0.87",
       "minimax/minimax-m3": "$0.30 / $1.20",
-      "deepseek/deepseek-v4-flash-0731": "$0.14 / $0.28",
-      "z-ai/glm-5.2": "$1.232 / $3.872",
+      "deepseek/deepseek-v4-flash-0731": "$0.09 / $0.18",
+      "z-ai/glm-5.2": "$0.72 / $1.80",
       "x-ai/grok-4.5": "$2.00 / $6.00",
-      "openai/gpt-5.6-luna": "$0.10 / $0.60",
-      "openai/gpt-5.6-terra": "$1.00 / $6.00",
-      "moonshotai/kimi-k3": "$3.00 / $15.00",
+      "openai/gpt-5.6-luna": "$0.05 / $0.30",
+      "openai/gpt-5.6-terra": "$0.50 / $3.00",
+      "moonshotai/kimi-k3": "$2.90 / $14.00",
     });
-    expect(narratorModelIntelligenceLabel(byId["qwen/qwen3.7-flash"])).toBe("Unrated");
-    expect(narratorModelIntelligenceLabel(byId["deepseek/deepseek-v4-flash"])).toBe("40.3");
+    expect(Object.fromEntries(NARRATOR_MODELS.map((model) => [model.id, narratorModelCachePriceLabel(model)]))).toEqual({
+      "poolside/laguna-s-2.1:free": "Cache unavailable",
+      "minimax/minimax-m3": "$0.06 cached input",
+      "deepseek/deepseek-v4-flash-0731": "$0.018 cached input",
+      "z-ai/glm-5.2": "$0.12 cached input",
+      "x-ai/grok-4.5": "$0.30 cached input",
+      "openai/gpt-5.6-luna": "$0.005 cached input",
+      "openai/gpt-5.6-terra": "$0.05 cached input",
+      "moonshotai/kimi-k3": "$0.29 cached input",
+    });
+    expect(narratorModelIntelligenceLabel(byId["poolside/laguna-s-2.1:free"])).toBe("Unrated");
+    expect(narratorModelIntelligenceLabel(byId["deepseek/deepseek-v4-flash-0731"])).toBe("49.9");
     expect(narratorModelIntelligenceLabel(byId["openai/gpt-5.6-terra"])).toBe("55.0");
     expect(narratorModelIntelligenceLabel(byId["moonshotai/kimi-k3"])).toBe("57.1");
+    expect(narratorModelPricingNote(byId["openai/gpt-5.6-luna"])).toBe(
+      "$0.005 cached input · $0.0625 cache write · 272K+ $0.10 / $0.45 · $0.01 cached input · $0.125 cache write",
+    );
+    expect(narratorModelPricingNote(byId["x-ai/grok-4.5"])).toBe(
+      "$0.30 cached input · 200K+ $4.00 / $12.00 · $0.60 cached input",
+    );
+    expect(narratorModelPricingNote(byId["openai/gpt-5.6-terra"])).toBe(
+      "$0.05 cached input · $0.625 cache write · 272K+ $1.00 / $4.50 · $0.10 cached input · $1.25 cache write",
+    );
   });
 
   it("defaults to a selectable OpenRouter model", () => {
+    expect(DEFAULT_NARRATOR_MODEL).toBe("deepseek/deepseek-v4-flash-0731");
     expect(NARRATOR_MODELS.some((model) => model.id === DEFAULT_NARRATOR_MODEL)).toBe(true);
   });
 
-  // The free Hy3 variant was retired by OpenRouter; users with the legacy
-  // `tencent/hy3:free` selection must now resolve to the paid Hy3 rather than
-  // routing to a dead id.
-  it("migrates a legacy saved free Hy3 selection to the paid Hy3", () => {
-    vi.stubGlobal("localStorage", { getItem: () => "tencent/hy3:free" });
-    expect(getNarratorModel()).toBe("tencent/hy3");
+  it("starts the universal advanced effort control at Max", () => {
+    const getItem = vi.fn(() => null);
+    vi.stubGlobal("localStorage", { getItem });
+    expect(getNarratorEffort()).toBe("max");
+    expect(getItem).toHaveBeenCalledWith("solitaire-narrator-effort-v3");
+  });
+
+  it("migrates every retired fast narrator selection to the current DeepSeek V4 Flash", () => {
+    for (const retired of [
+      "deepseek/deepseek-v4-flash",
+      "deepseek/deepseek-v4-pro",
+      "qwen/qwen3.7-flash",
+      "tencent/hy3",
+      "tencent/hy3:free",
+    ]) {
+      vi.stubGlobal("localStorage", { getItem: () => retired });
+      expect(getNarratorModel()).toBe("deepseek/deepseek-v4-flash-0731");
+    }
   });
 
   it("keeps saved GLM and Grok selections available", () => {
