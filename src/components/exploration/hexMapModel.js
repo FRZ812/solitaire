@@ -115,17 +115,30 @@ export function buildRpgViewport(state, options = {}) {
   const quests = options?.activeQuests || (state.world.quests || []).filter((quest) => quest.status === "active");
   const radiusX = Math.floor(columns / 2);
   const radiusY = Math.floor(rows / 2);
-  const centerOffsetColumn = center.x + Math.floor(center.y / 2);
+  // The sample lattice is anchored to the party and snapped to whole strides.
+  // Anchored to the camera instead, a one-hex pan shifted every sampled
+  // coordinate: at continental stride the ground changed content under the
+  // player — a wall one frame, open field the next — and no sample was ever
+  // reused between frames, so every pan regenerated the entire window. Snapping
+  // to the party keeps a given hex rendering identically however the camera
+  // moves, and keeps the party's own coordinate on the lattice so its cell is
+  // always drawn. At stride 1 this is the identity.
+  const snapToLattice = (value, anchor) => anchor + Math.round((value - anchor) / stride) * stride;
+  const anchorY = snapToLattice(center.y, party.y);
+  const anchorOffsetColumn = snapToLattice(
+    center.x + Math.floor(center.y / 2),
+    party.x + Math.floor(party.y / 2),
+  );
   const visibleRadius = sightRadius(state);
   const cells = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < columns; col++) {
-      const y = center.y + (row - radiusY) * stride;
+      const y = anchorY + (row - radiusY) * stride;
       // Enumerate an offset-row screen rectangle, then convert each cell back
       // into the authoritative axial coordinates used by simulation. A q/r
       // rectangle projects as a parallelogram; offset rows keep the Canvas
       // edges vertical while preserving every world lookup and route.
-      const offsetColumn = centerOffsetColumn + (col - radiusX) * stride;
+      const offsetColumn = anchorOffsetColumn + (col - radiusX) * stride;
       const x = offsetColumn - Math.floor(y / 2);
       const key = `${x},${y}`;
       const tile = getTile(state, x, y);

@@ -113,6 +113,39 @@ describe("unified capital in the exploration map", () => {
     }
   });
 
+  it("keeps a hex rendering identically no matter where the camera sits", () => {
+    const state = makeInitialState();
+    const dimensions = { columns: 15, rows: 15, stride: 28 };
+    const sample = (center) => new Map(
+      buildRpgViewport(state, { center, dimensions }).map((cell) => [cell.key, cell.tile.terrain]),
+    );
+
+    // Anchored to the camera, a one-hex pan shifted the whole sample lattice, so
+    // the same ground came back as a different hex every frame — the wall that
+    // appears and vanishes while panning. Panning must slide the window over
+    // fixed ground rather than resample it.
+    const before = sample({ x: 0, y: 0 });
+    const after = sample({ x: 1, y: 0 });
+    const shared = [...after.keys()].filter((key) => before.has(key));
+
+    expect(shared.length).toBeGreaterThan(after.size * 0.8);
+    for (const key of shared) expect(after.get(key), key).toBe(before.get(key));
+  });
+
+  it("keeps the party on the sample lattice so its own cell survives zooming out", () => {
+    const state = makeInitialState();
+    const party = state.world.currentTile;
+    for (const stride of [1, 2, 28]) {
+      const cells = buildRpgViewport(state, {
+        center: { x: party.x + 5, y: party.y - 3 },
+        dimensions: { columns: 15, rows: 15, stride },
+      });
+      const current = cells.filter((cell) => cell.current);
+      expect(current, `stride ${stride}`).toHaveLength(1);
+      expect(current[0]).toMatchObject({ x: party.x, y: party.y });
+    }
+  });
+
   it("builds the exploration decision model around the requested map camera", () => {
     const state = makeInitialState();
     const model = buildExplorationModel(state, {

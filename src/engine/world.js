@@ -166,23 +166,29 @@ export function persistedTileDelta(tile, overrides = {}) {
   return { ...delta, ...overrides };
 }
 
-export function getTile(state, x, y) {
-  const key = `${x},${y}`;
-  const visited = state.world.tiles[key];
-  // Authored content wins over a saved snapshot, so edits to the handcrafted map
-  // show up in games started before the change (a saved tile would otherwise
-  // shadow it forever). Carry over only the dynamic per-tile fields the game
-  // writes at runtime: narrator location status and generated shop stock.
-  if (HANDCRAFTED[key]) {
-    if (visited && (visited.status || visited.shop)) {
-      return {
-        ...HANDCRAFTED[key],
-        ...(visited.status ? { status: visited.status } : {}),
-        ...(visited.shop ? { shop: visited.shop } : {}),
-      };
-    }
-    return HANDCRAFTED[key];
+// Generated ground is a pure function of seed, generator version and coordinate,
+// but the map re-derives a whole viewport every time the camera moves one hex.
+// Without this the pan path runs the noise generator over every drawn cell per
+// frame, which is what made panning stutter. Only the canonical generated tile
+// is held here; per-save visited deltas are merged on top by `getTile`, so a
+// campaign's own discoveries stay authoritative.
+const GENERATED_TILE_LIMIT = 24_000;
+const generatedTiles = new Map();
+let generatedTileSignature = "";
+
+function canonicalGeneratedTile(state, x, y, key) {
+  const seed = state?.world?.seed || DEFAULT_WORLD_SEED;
+  const version = state?.world?.generatorVersion ?? WORLD_GENERATOR_VERSION;
+  // HANDCRAFTED is hydrated in place and can be swapped wholesale by the map
+  // editor; its size is the same change signal the corridor cache above uses.
+  const signature = `${seed}|${version}|${Object.keys(HANDCRAFTED).length}`;
+  if (signature !== generatedTileSignature) {
+    generatedTiles.clear();
+    generatedTileSignature = signature;
   }
+  const cached = generatedTiles.get(key);
+  if (cached) return cached;
+
   const generated = generateTile(state, x, y);
   let canonical = generated;
   // Rivers are continuous water-terrain features. Always water; POI carries
@@ -200,13 +206,37 @@ export function getTile(state, x, y) {
   // for cities/water; for ruins we keep whatever the surrounding procedural
   // generation produced so a barrow stays on its actual ground.
   const rumored = RUMORED[key];
-  if (rumored) {
-    canonical = tileFromLandmark(rumored, generated);
-  }
+  if (rumored) canonical = tileFromLandmark(rumored, generated);
   const fabled = FABLED_BY_COORD[key];
-  if (fabled) {
-    canonical = tileFromLandmark(fabled, generated);
+  if (fabled) canonical = tileFromLandmark(fabled, generated);
+
+  // Insertion-ordered eviction. A drawn frame is a few thousand cells, so the
+  // ceiling holds many screens' worth and a pan never evicts what it is showing.
+  if (generatedTiles.size >= GENERATED_TILE_LIMIT) {
+    generatedTiles.delete(generatedTiles.keys().next().value);
   }
+  generatedTiles.set(key, canonical);
+  return canonical;
+}
+
+export function getTile(state, x, y) {
+  const key = `${x},${y}`;
+  const visited = state.world.tiles[key];
+  // Authored content wins over a saved snapshot, so edits to the handcrafted map
+  // show up in games started before the change (a saved tile would otherwise
+  // shadow it forever). Carry over only the dynamic per-tile fields the game
+  // writes at runtime: narrator location status and generated shop stock.
+  if (HANDCRAFTED[key]) {
+    if (visited && (visited.status || visited.shop)) {
+      return {
+        ...HANDCRAFTED[key],
+        ...(visited.status ? { status: visited.status } : {}),
+        ...(visited.shop ? { shop: visited.shop } : {}),
+      };
+    }
+    return HANDCRAFTED[key];
+  }
+  const canonical = canonicalGeneratedTile(state, x, y, key);
   if (visited) {
     if (visited.procedural || visited.proceduralDelta || !visited.terrain) {
       return mergeProceduralDelta(canonical, visited);
