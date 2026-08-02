@@ -56,6 +56,10 @@ import questJournalFolioHero from "../../assets/generated/quest-journal-folio-he
 import "./exploration.css";
 
 const QUEST_TYPE_LABEL = { errand: "Errand", delivery: "Delivery", hunt: "Hunt", bounty: "Bounty" };
+// Hex scale: `travelMapLod(1)` samples every hex, so no ground is skipped while
+// the party is being watched walk it.
+const MARCH_ZOOM = 1;
+const MARCH_ZOOM_MS = 700;
 const POI_LEGEND_HELP = Object.freeze({
   trade: "Places that sell goods or provide a practical service. Their icon tells you the specialty; a lettered ring shows the market tier and expected stock quality.",
   city: "Civic, social, and landmark venues. These are usually places for access, information, work, recovery, or story interactions rather than ordinary shopping.",
@@ -390,7 +394,7 @@ export function MapLegend({ onClose, initialSection = "guide" }) {
   );
 }
 
-function WorldGrid({ state, model, selection, journey, marchFrame, trackedCharacter, onPan, onZoom, onViewportChange, onRecenter, onPick, onPickPlace, onSeekCombat, loading, interactionLocked = false, night, city }) {
+function WorldGrid({ state, model, selection, journey, marchFrame, marchCaption, trackedCharacter, onPan, onZoom, onViewportChange, onRecenter, onPick, onPickPlace, onSeekCombat, loading, interactionLocked = false, night, city }) {
   const [legendOpen, setLegendOpen] = useState(false);
   const mapScene = useMemo(
     () => buildWorldMapScene({ state, model, selection, journey, marchFrame, trackedCharacter, night }),
@@ -423,6 +427,14 @@ function WorldGrid({ state, model, selection, journey, marchFrame, trackedCharac
           selectedKey={selection?.key}
         />
         {selection && !model.viewport.some((cell) => cell.key === selection.key) && <div className="rpg-offscreen-target"><span>✦</span><b>Compass locked</b><small>{directionLabel(model.origin, selection).replace("-", " ")}</small></div>}
+
+        {marchCaption && (
+          <div className="rpg-march-caption" aria-live="polite">
+            <small>Step {marchCaption.step} of {marchCaption.total}</small>
+            <b>{marchCaption.terrain}</b>
+            {marchCaption.detail && <span>past {marchCaption.detail}</span>}
+          </div>
+        )}
 
         <button
           type="button"
@@ -468,7 +480,49 @@ function WorldGrid({ state, model, selection, journey, marchFrame, trackedCharac
   );
 }
 
-export function DestinationPanel({ state, model, selection, selectedName, journey, canGroundTravel, routeMinutes, risk, focusBiome, focusVisual, onClear, onTravel, onSetTravelPace, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
+// Shown where the destination preview normally sits, once a leg has been walked.
+// A staged journey stops on purpose, so the stop has to explain itself and hand
+// the next decision back rather than dropping the player into the chat.
+export function TravelHaltCard({ halt, onPressOn, onCamp, onDismiss, onLeave, loading }) {
+  const kicker = halt.arrived
+    ? "Arrival"
+    : LEG_BOUNDARIES[halt.boundaryKind]?.label || "The party halts";
+  return (
+    <div className="rpg-travel-halt" data-boundary={halt.boundaryKind} aria-live="polite">
+      <span className="rpg-kicker">{kicker}</span>
+      <h2>{halt.where}</h2>
+      {halt.arrived
+        ? <p className="rpg-travel-halt__reason">You have come the whole way.</p>
+        : <p className="rpg-travel-halt__reason">{halt.reason}</p>}
+
+      <div className="rpg-route-stats">
+        <div><small>Walked</small><b>{halt.hexes}</b><span>{halt.hexes === 1 ? "step" : "steps"}</span></div>
+        <div><small>Time</small><b>{formatTravelDuration(halt.minutes)}</b><span>on the road</span></div>
+        <div><small>{halt.arrived ? "Route" : "Still ahead"}</small><b>{halt.arrived ? "✓" : halt.remaining}</b><span>{halt.arrived ? "complete" : `to ${halt.destination}`}</span></div>
+      </div>
+
+      {halt.passed.length > 0 && (
+        <p className="rpg-travel-halt__passed">The way passed {halt.passed.slice(0, 4).join(", ")}.</p>
+      )}
+
+      <div className="rpg-travel-halt__actions">
+        {halt.intendedDest && (
+          <button type="button" className="rpg-travel-button" disabled={loading} onClick={() => onPressOn(halt.intendedDest)}>
+            <span aria-hidden="true">→</span>Press on toward {halt.destination}
+            <small>{halt.remaining} {halt.remaining === 1 ? "step" : "steps"} remain</small>
+          </button>
+        )}
+        {halt.boundaryKind === "nightfall" && (
+          <button type="button" className="rpg-halt-secondary" disabled={loading} onClick={onCamp}>Make camp until morning</button>
+        )}
+        <button type="button" className="rpg-halt-secondary" onClick={onDismiss}>Stay on the map</button>
+        <button type="button" className="rpg-halt-secondary" onClick={onLeave}>Back to the story</button>
+      </div>
+    </div>
+  );
+}
+
+export function DestinationPanel({ state, model, selection, selectedName, journey, canGroundTravel, routeMinutes, risk, focusBiome, focusVisual, halt, onHaltPressOn, onHaltCamp, onHaltDismiss, onHaltLeave, onClear, onTravel, onSetTravelPace, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
   const distance = selection ? hexDistance(model.origin, selection) : 0;
   const pace = travelPace(state.world.travelPace);
   const paceId = pace.id;
@@ -498,7 +552,16 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
       </div>
 
       <div className="rpg-command-scroll">
-        {!selection ? (
+        {halt ? (
+          <TravelHaltCard
+            halt={halt}
+            onPressOn={onHaltPressOn}
+            onCamp={onHaltCamp}
+            onDismiss={onHaltDismiss}
+            onLeave={onHaltLeave}
+            loading={loading}
+          />
+        ) : !selection ? (
           <div className="rpg-route-intro">
             <span className="rpg-kicker">Plan a journey</span>
             <h2>Choose on the map</h2>
@@ -595,7 +658,7 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
         )}
       </div>
 
-      {selection && <div className="rpg-command-actions">
+      {selection && !halt && <div className="rpg-command-actions">
         {(canFly || teleOption) && <div className="rpg-magic-actions">
           {canFly && <button onClick={onFly}>Fly · ~{Math.min(distance, FLY_TRAVEL_HEXES) * FLY_MIN_PER_HEX} min{flightMount ? ` · ${flightMount.name}` : ` · ${flyPlan.totalCost} RP`}</button>}
           {teleOption && <button onClick={() => resolve >= teleOption.resolveCost && onTeleport(teleOption)} disabled={resolve < teleOption.resolveCost}>{teleOption.name} · {teleOption.resolveCost} RP</button>}
@@ -686,6 +749,11 @@ export function WorldExploration({
   onTravel,
   travelMarch = null,
   onTravelMarchFinish,
+  travelHalt = null,
+  onHaltPressOn,
+  onHaltCamp,
+  onHaltDismiss,
+  onHaltLeave,
   onFly,
   onTeleport,
   onSeekCombat,
@@ -707,6 +775,9 @@ export function WorldExploration({
   const [marchFrame, setMarchFrame] = useState(null);
   const finishMarchRef = useRef(onTravelMarchFinish);
   const lastPartyKeyRef = useRef(`${partyCoord.x},${partyCoord.y}`);
+  // Read at march start only, so the zoom tween below does not restart itself.
+  const cameraZoomRef = useRef(camera.zoom);
+  cameraZoomRef.current = camera.zoom;
   finishMarchRef.current = onTravelMarchFinish;
   const handleMapViewportChange = useCallback((next) => {
     setMapViewport((current) => (
@@ -726,6 +797,23 @@ export function WorldExploration({
     [state, camera.x, camera.y, mapDimensions.columns, mapDimensions.rows, mapDimensions.stride, renderDimensions.columns, renderDimensions.rows],
   );
   const atlasWide = camera.zoom <= TRAVEL_MAP_MIN_ZOOM * 1.05;
+  // A hex-by-hex caption of ground the party is walking right now. Every field
+  // describes the tile they are standing on, so this reveals nothing ahead.
+  const marchStep = marchFrame && travelMarch?.id
+    ? Math.min((travelMarch.path?.length || 1) - 1, marchFrame.index + 1)
+    : -1;
+  const marchCaption = useMemo(() => {
+    const path = travelMarch?.path;
+    if (marchStep < 1 || !Array.isArray(path) || path.length < 2) return null;
+    const coord = path[marchStep];
+    const tile = getTile(state, coord.x, coord.y);
+    return {
+      step: marchStep,
+      total: path.length - 1,
+      terrain: TERRAINS[tile.terrain]?.label || tile.terrain,
+      detail: (tile.scenery || [])[0]?.label || "",
+    };
+  }, [state, travelMarch?.id, marchStep]);
   const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
   const journey = useMemo(
     () => planHexJourney(state, selected, WORLD_MARCH_LIMIT),
@@ -830,11 +918,41 @@ export function WorldExploration({
     });
   }, [travelMarch?.id, travelMarch?.visualDone, reducedMotion]);
 
+  // A march usually starts from wherever the camera was left, and at atlas scale
+  // the party is a dot crossing a blur — the walk is invisible. Come down to hex
+  // scale first, then the per-hex camera follow above is worth watching.
+  useEffect(() => {
+    if (!travelMarch?.id) return undefined;
+    const from = cameraZoomRef.current;
+    if (from >= MARCH_ZOOM) return undefined;
+    if (reducedMotion) {
+      setCamera((current) => ({ ...current, zoom: MARCH_ZOOM }));
+      return undefined;
+    }
+    let handle = null;
+    let startedAt = null;
+    const step = (timestamp) => {
+      if (startedAt === null) startedAt = timestamp;
+      const progress = Math.min(1, (timestamp - startedAt) / MARCH_ZOOM_MS);
+      // Zoom is a scale, so an even-looking approach is geometric, not linear.
+      setCamera((current) => ({ ...current, zoom: from * (MARCH_ZOOM / from) ** progress }));
+      handle = progress < 1 ? requestAnimationFrame(step) : null;
+    };
+    handle = requestAnimationFrame(step);
+    return () => { if (handle !== null) cancelAnimationFrame(handle); };
+  }, [travelMarch?.id, reducedMotion]);
+
   useEffect(() => {
     if (!travelLocked) return;
     setJournalOpen(false);
     setFlyPanelDest(null);
   }, [travelLocked]);
+
+  // Arriving leaves the old destination pin sitting on the tile the party now
+  // stands on, which reads as a route to nowhere behind the halt card.
+  useEffect(() => {
+    if (travelHalt?.arrived) setSelected(null);
+  }, [travelHalt]);
 
   useEffect(() => {
     if (!flyPanelDest) return undefined;
@@ -928,6 +1046,7 @@ export function WorldExploration({
           selection={selection}
           journey={presentedJourney}
           marchFrame={marchFrame}
+          marchCaption={marchCaption}
           trackedCharacter={trackedCharacter}
           onPan={handleMapPan}
           onZoom={handleMapZoom}
@@ -942,7 +1061,7 @@ export function WorldExploration({
           night={hour < 6 || hour >= 20}
           city={currentCity}
         />
-        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={handleGroundTravel} onSetTravelPace={onSetTravelPace} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
+        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} halt={travelLocked ? null : travelHalt} onHaltPressOn={onHaltPressOn} onHaltCamp={onHaltCamp} onHaltDismiss={onHaltDismiss} onHaltLeave={onHaltLeave} onClear={() => setSelected(null)} onTravel={handleGroundTravel} onSetTravelPace={onSetTravelPace} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
       </div>
       {journalOpen && (
         <AdventureFolio
