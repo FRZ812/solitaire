@@ -2,7 +2,7 @@ import { poiPlaceName } from "../../engine/location.js";
 import { buildingForService } from "../../data/town.js";
 import { poiIconKeyForTile } from "../../data/poi-icons.js";
 import { siteKnowledgeGrade } from "../../engine/world-sighting.js";
-import { ATLAS_ROUTES, ATLAS_WATERWAYS, buildAtlasPlaces } from "./mapAtlasModel.js";
+import { ATLAS_ROUTES, ATLAS_WALLS, ATLAS_WATERWAYS, buildAtlasPlaces } from "./mapAtlasModel.js";
 import { lodShowsPlace, lodShowsVectorRoutes, lodTier } from "./mapLod.js";
 
 function coordinateKey(point) {
@@ -71,7 +71,8 @@ export function buildWorldMapScene({ state, model, selection, journey, marchFram
     stride,
     tier,
     origin: { x: model.origin.x, y: model.origin.y },
-    ribbons: vector ? [...ATLAS_WATERWAYS, ...ATLAS_ROUTES] : [],
+    // Walls last, so a road reaching a gate passes under the wall rather than over it.
+    ribbons: vector ? [...ATLAS_WATERWAYS, ...ATLAS_ROUTES, ...ATLAS_WALLS] : [],
     places: vector && state
       ? buildAtlasPlaces(state).filter((place) => lodShowsPlace(tier, place))
       : [],

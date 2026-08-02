@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
 import { LANDMARKS } from "../../data/continent.js";
-import { ATLAS_ROUTES, ATLAS_WATERWAYS, buildAtlasPlaces } from "./mapAtlasModel.js";
+import { WHITEMARCH_CAPITAL, compileWhitemarchCapital } from "../../data/whitemarch-capital.js";
+import { ATLAS_ROUTES, ATLAS_WALLS, ATLAS_WATERWAYS, buildAtlasPlaces } from "./mapAtlasModel.js";
 
 describe("authored atlas places", () => {
   it("carries the places a sampled viewport would almost never land on", () => {
@@ -77,8 +78,61 @@ describe("authored ribbons", () => {
   });
 
   it("names only itself, so drawing base geography discloses no site", () => {
-    for (const ribbon of [...ATLAS_ROUTES, ...ATLAS_WATERWAYS]) {
+    for (const ribbon of [...ATLAS_ROUTES, ...ATLAS_WATERWAYS, ...ATLAS_WALLS]) {
       expect(Object.keys(ribbon).sort()).toEqual(["id", "kind", "name", "points", "width"]);
     }
+  });
+});
+
+describe("city walls", () => {
+  const hexDistance = (a, b) => (
+    Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs((a.x + a.y) - (b.x + b.y))
+  ) / 2;
+
+  it("closes as a hexagon whose corners are walked in order", () => {
+    const wall = ATLAS_WALLS.find((ribbon) => ribbon.id === "whitemarch-wall");
+    const radius = WHITEMARCH_CAPITAL.wallRadius;
+
+    expect(wall.kind).toBe("wall");
+    expect(wall.points).toHaveLength(7);
+    expect(wall.points[6]).toEqual(wall.points[0]);
+    for (const corner of wall.points) {
+      expect(hexDistance(corner, WHITEMARCH_CAPITAL.center)).toBe(radius);
+    }
+    // Corners listed out of order still close, but as a bowtie. Adjacent corners
+    // of a hexagon sit exactly one radius apart; skipped ones sit two.
+    for (let index = 0; index < 6; index += 1) {
+      expect(hexDistance(wall.points[index], wall.points[index + 1])).toBe(radius);
+    }
+  });
+
+  it("covers every hex the capital actually walls", () => {
+    const wall = ATLAS_WALLS.find((ribbon) => ribbon.id === "whitemarch-wall");
+    const onTheLine = new Set();
+    for (let index = 0; index < 6; index += 1) {
+      const from = wall.points[index];
+      const to = wall.points[index + 1];
+      const steps = hexDistance(from, to);
+      const step = { x: (to.x - from.x) / steps, y: (to.y - from.y) / steps };
+      for (let along = 0; along < steps; along += 1) {
+        onTheLine.add(`${from.x + step.x * along},${from.y + step.y * along}`);
+      }
+    }
+
+    // Gates and the Whitewend replace stretches of the wall, so the drawn ring is
+    // a superset — but no walled hex may fall outside the line that stands for it.
+    const walled = Object.entries(compileWhitemarchCapital().tiles)
+      .filter(([, tile]) => tile.terrain === "wall")
+      .map(([key]) => key);
+    expect(walled.length).toBeGreaterThan(40);
+    expect(walled.filter((key) => !onTheLine.has(key))).toEqual([]);
+  });
+
+  it("marks held seats so they read as more than a dot when their walls cannot", () => {
+    const places = buildAtlasPlaces(makeInitialState());
+
+    expect(places.find((place) => place.id === "whitemarch").fortified).toBe(true);
+    expect(places.find((place) => place.kind === "fortress").fortified).toBe(true);
+    expect(places.find((place) => place.kind === "lake").fortified).toBe(false);
   });
 });

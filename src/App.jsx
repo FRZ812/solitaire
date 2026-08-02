@@ -78,7 +78,7 @@ import { condNames, hasCondition, normalizeConditions } from "./data/conditions.
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
 import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, isOverloaded } from "./engine/riding.js";
 import { rollPathEncounter, rollAerialEncounter, pathThroughEncounter } from "./engine/encounters.js";
-import { describeLegStop, describePassage, planLeg, travelPace } from "./engine/expedition.js";
+import { describeLegStop, describePassage, planLeg, travelHaltSummary, travelPace } from "./engine/expedition.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome, getBiomeById } from "./data/biomes.js";
 import { ECOLOGIES } from "./data/continent.js";
@@ -286,6 +286,10 @@ export function Solitaire() {
   // state still lands only through finishTravel; this object is transient UI
   // state and is deliberately excluded from campaign persistence.
   const [travelMarch, setTravelMarch] = useState(null);
+  // Where the last leg ended and why, shown on the map itself. Arrival used to
+  // close the map, which put the player back in the chat at a hex they never
+  // chose to stop at; leaving the map is their decision now.
+  const [travelHalt, setTravelHalt] = useState(null);
   const travelMarchWaitersRef = useRef(new Map());
   const travelMarchSequenceRef = useRef(0);
   // Async travel may outlive the campaign that launched it (sign-out, reset,
@@ -367,6 +371,7 @@ export function Solitaire() {
     }
     travelMarchWaitersRef.current.clear();
     setTravelMarch(null);
+    setTravelHalt(null);
     setLiveNarrator(emptyLiveNarrator());
     if (!preserveEncounter) {
       setPendingCombat(null);
@@ -384,6 +389,13 @@ export function Solitaire() {
     }
     travelMarchWaitersRef.current.clear();
   }, []);
+
+  // A halt describes the leg just walked. Closing the map — by any route, not
+  // just the halt card's own button — ends that moment, so reopening later must
+  // not greet the player with a stale stop.
+  useEffect(() => {
+    if (!mapOpen) setTravelHalt(null);
+  }, [mapOpen]);
 
   function setStoryFollow(next) {
     storyFollowRef.current = next;
@@ -1206,6 +1218,7 @@ export function Solitaire() {
     if (!fullPath || fullPath.length < 2) return;
     setReceipts({ tileKey: null, items: {} }); // leaving the scene ends refunds
     setError(null);
+    setTravelHalt(null);
     setLoading(true);
     closeBeatMenu();
     const fromTile = getTile(state, cur.x, cur.y);
@@ -1314,16 +1327,33 @@ export function Solitaire() {
     // Keep the authoritative travel map mounted while narration starts. The
     // party pin owns only this visual route; the simulation continues to own
     // the authoritative arrival tile and save data.
+    const halt = travelHaltSummary({
+      leg,
+      legPath,
+      fullPathLength: fullPath.length,
+      arrived,
+      where: legName,
+      destination: toName,
+      hexes,
+      minutes: legMins,
+      encounter: pathEnc?.encounter || null,
+      intendedDest: arrived ? null : { x: dest.x, y: dest.y },
+    });
+
     const lifecycle = captureTravelLifecycle();
     const marchId = beginTravelMarch(travel);
 
-    await finishTravel(stateWithPlayer, fullMsg, travel, marchId, lifecycle);
+    await finishTravel(stateWithPlayer, fullMsg, travel, { marchId, lifecycle, halt });
   }
 
   // Shared tail for every travel mode. Visual completion performs the one
   // authoritative travel transaction; narration that finishes later can only
   // append story/history and must never replay time, costs, survival, or movement.
-  async function finishTravel(stateWithPlayer, fullMsg, travel, marchId = null, lifecycle = captureTravelLifecycle()) {
+  async function finishTravel(stateWithPlayer, fullMsg, travel, {
+    marchId = null,
+    lifecycle = captureTravelLifecycle(),
+    halt = null,
+  } = {}) {
     const visualGate = marchId ? waitForTravelMarch(marchId) : Promise.resolve("not-needed");
     const narration = Promise.resolve().then(() => narrate(
       stateWithPlayer,
@@ -1364,10 +1394,16 @@ export function Solitaire() {
           liveStateRef.current = checkpointed;
           setState(checkpointed);
           setTravelMarch((current) => (current?.id === marchId ? null : current));
-          setMapOpen(false);
           if (hostileEncounter) {
+            // The fight prompt lives in the chat column, so this one halt still
+            // has to pull the player out of the map — hiding a required
+            // decision behind an open map would be worse than the interruption.
+            setMapOpen(false);
+            setTravelHalt(null);
             setPendingEngage(null);
             setPendingCombat(hostileEncounter);
+          } else {
+            setTravelHalt(halt);
           }
         },
         onNarration: (travelBeat) => {
@@ -2753,6 +2789,11 @@ export function Solitaire() {
           onTravel={handleTravel}
           travelMarch={travelMarch}
           onTravelMarchFinish={handleTravelMarchFinish}
+          travelHalt={travelHalt}
+          onHaltPressOn={(intendedDest) => { setTravelHalt(null); handleTravel(intendedDest); }}
+          onHaltCamp={() => { setTravelHalt(null); handleRest(8); }}
+          onHaltDismiss={() => setTravelHalt(null)}
+          onHaltLeave={() => { setTravelHalt(null); setMapOpen(false); }}
           onFly={handleFly}
           onTeleport={handleTeleport}
           onSeekCombat={handleSeekCombat}

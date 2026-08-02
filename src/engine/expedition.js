@@ -208,3 +208,56 @@ export function describePassage(leg) {
     ? labels[0]
     : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
 }
+
+// `describeLegStop` above is a fragment the narrator brief drops mid-sentence;
+// the halt card needs a standalone line, which is a different grammar rather
+// than a different wording of the same one.
+function haltReason(leg, arrived, encounter) {
+  if (arrived) return "";
+  if (encounter) return "Something on the road stops the party here.";
+  const label = leg?.boundary?.label || "";
+  switch (leg?.boundary?.kind) {
+    case "waypoint": return `${label} is reason enough to halt.`;
+    case "crossing": return `The way meets the water at ${label}.`;
+    case "border": return `This is the edge of ${label}.`;
+    case "going": return `Beyond here the ground turns to ${label.toLowerCase()}.`;
+    case "nightfall": return "The light goes. This is as far as the day carries you.";
+    case "limit": return "This is as far as one march carries the party.";
+    default: return "The party halts here for now.";
+  }
+}
+
+// What the map shows once a leg is walked: where the party is standing, why the
+// leg ended there, and what is still ahead. Travel used to close the map on
+// arrival, so a leg that stopped short read as being dumped at a random hex.
+// Nothing here is new knowledge — every field describes ground already crossed.
+export function travelHaltSummary({
+  leg,
+  legPath,
+  fullPathLength,
+  arrived,
+  where,
+  destination,
+  hexes,
+  minutes,
+  encounter = null,
+  intendedDest = null,
+} = {}) {
+  const walked = Array.isArray(legPath) ? legPath.length : 0;
+  // An encounter cuts the leg short of its boundary, so the scenery the planned
+  // leg would have passed is ground the party never actually walked.
+  const walkedWholeLeg = !Array.isArray(leg?.path) || walked >= leg.path.length;
+  return {
+    arrived: !!arrived,
+    where: where || "the road",
+    destination: arrived ? null : destination || null,
+    hexes: Math.max(0, Number(hexes) || 0),
+    minutes: Math.max(0, Number(minutes) || 0),
+    remaining: arrived ? 0 : Math.max(0, (Number(fullPathLength) || walked) - walked),
+    boundaryKind: arrived ? "destination" : encounter ? "encounter" : leg?.boundary?.kind || "",
+    reason: haltReason(leg, arrived, encounter),
+    passed: walkedWholeLeg ? (leg?.passed || []).map((entry) => entry.label).filter(Boolean) : [],
+    posture: encounter?.posture || null,
+    intendedDest: arrived ? null : intendedDest,
+  };
+}

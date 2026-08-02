@@ -224,6 +224,27 @@
 .rpg-pace-picker button.is-active { color: #2c1d08; border-color: #fff0a1; background: linear-gradient(180deg, #ffe276, #d89632); font-weight: 700; }
 .rpg-route-blocked { padding: 10px; color: #ffada0; border: 1px solid rgba(240,110,98,.48); background: rgba(96,23,49,.35); font-size: 10px; }
 
+/* Where a walked leg ended, and the choice of what to do about it. This is the
+   panel's own content while it shows, so it carries its own actions rather than
+   sharing the destination footer. */
+.rpg-travel-halt { padding: 12px; border: 2px solid #d9a747; background: rgba(9,29,68,.72); box-shadow: inset 0 0 0 1px rgba(255,239,190,.18), 3px 4px 0 rgba(3,10,28,.6); }
+.rpg-travel-halt[data-boundary="destination"] { border-color: #ffe276; }
+.rpg-travel-halt[data-boundary="encounter"] { border-color: rgba(240,110,98,.7); }
+.rpg-travel-halt .rpg-kicker { color: #7fe4dc; }
+.rpg-travel-halt h2 { margin: 4px 0 7px; color: #fff7d6; font: 700 22px/1 'Alegreya', Georgia, serif; text-shadow: 2px 2px 0 #06122e; }
+.rpg-travel-halt__reason { margin: 0 0 12px; color: rgba(244,232,195,.8); font: 500 12px/1.45 'Alegreya', Georgia, serif; }
+.rpg-travel-halt__passed { margin: 10px 0 0; color: rgba(126,228,220,.66); font: italic 10px/1.35 'Alegreya', Georgia, serif; }
+.rpg-travel-halt__actions { margin-top: 12px; display: grid; gap: 6px; }
+.rpg-halt-secondary { min-height: 40px; padding: 8px; color: rgba(244,232,195,.72); border: 1px solid rgba(236,184,76,.34); background: rgba(7,24,61,.7); font: 700 10px 'Alegreya', Georgia, serif; letter-spacing: .06em; cursor: pointer; }
+.rpg-halt-secondary:hover:not(:disabled) { color: #fff4c5; border-color: rgba(236,184,76,.7); }
+.rpg-halt-secondary:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Hex-by-hex readout of the ground the party is crossing right now. */
+.rpg-march-caption { position: absolute; z-index: 18; bottom: 13px; left: 50%; padding: 6px 12px; text-align: center; border: 2px solid #dcad4b; background: rgba(7,28,69,.92); box-shadow: 2px 2px 0 #05122f; transform: translateX(-50%); pointer-events: none; }
+.rpg-march-caption small { display: block; color: rgba(127,228,220,.72); font-size: 7px; letter-spacing: .1em; text-transform: uppercase; }
+.rpg-march-caption b { display: block; margin-top: 2px; color: #fff4c5; font-size: 12px; }
+.rpg-march-caption span { display: block; color: rgba(244,232,195,.55); font: italic 9px 'Alegreya', Georgia, serif; }
+
 .rpg-command-actions { flex: 0 0 auto; padding: 8px 14px calc(env(safe-area-inset-bottom, 0px) + 13px); border-top: 1px solid rgba(230,177,71,.34); background: #07183d; }
 .rpg-magic-actions { margin-bottom: 7px; display: flex; gap: 6px; }
 .rpg-magic-actions button { min-width: 0; min-height: 44px; padding: 6px 8px; flex: 1; color: #bdeffd; border: 1px solid #5eb5d4; background: #0d3565; font-size: 8px; cursor: pointer; }

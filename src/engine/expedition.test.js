@@ -9,6 +9,7 @@ import {
   legTooShort,
   planExpedition,
   planLeg,
+  travelHaltSummary,
 } from "./expedition.js";
 
 // Far outside the handcrafted map, so a stored fixture tile is what `getTile`
@@ -174,5 +175,76 @@ describe("expedition legs", () => {
     }
     expect(plan.complete).toBe(true);
     expect(plan.legs[plan.legs.length - 1].end).toEqual({ x: -18, y: 4 });
+  });
+});
+
+describe("halt summary", () => {
+  const legAt = (kind, label) => ({
+    path: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }],
+    boundary: { kind, label },
+    passed: [{ kind: "bridge", label: "a plank bridge" }, { kind: "shrine", label: "a wayside shrine" }],
+  });
+
+  it("says why the leg ended and how much of the route is still ahead", () => {
+    const leg = legAt("nightfall", "Camp in the plains");
+    const halt = travelHaltSummary({
+      leg,
+      legPath: leg.path,
+      fullPathLength: 9,
+      arrived: false,
+      where: "an open field",
+      destination: "Falford",
+      hexes: 2,
+      minutes: 240,
+      intendedDest: { x: 8, y: 0 },
+    });
+
+    expect(halt.reason).toMatch(/light goes/i);
+    // 9 hexes of route, 3 of them walked (the start plus two steps).
+    expect(halt.remaining).toBe(6);
+    expect(halt.destination).toBe("Falford");
+    expect(halt.passed).toEqual(["a plank bridge", "a wayside shrine"]);
+  });
+
+  it("drops the destination and the remaining distance once the party arrives", () => {
+    const leg = legAt("destination", "Falford");
+    const halt = travelHaltSummary({
+      leg,
+      legPath: leg.path,
+      fullPathLength: 3,
+      arrived: true,
+      where: "Falford",
+      destination: "Falford",
+      hexes: 2,
+      minutes: 90,
+      intendedDest: { x: 2, y: 0 },
+    });
+
+    expect(halt.arrived).toBe(true);
+    expect(halt.reason).toBe("");
+    expect(halt.remaining).toBe(0);
+    expect(halt.destination).toBeNull();
+    expect(halt.intendedDest).toBeNull();
+  });
+
+  it("claims no scenery from ground an encounter kept the party from walking", () => {
+    const leg = legAt("waypoint", "Falford");
+    const halt = travelHaltSummary({
+      leg,
+      // The encounter halted them one hex into a three-hex leg.
+      legPath: leg.path.slice(0, 2),
+      fullPathLength: 9,
+      arrived: false,
+      where: "a stand of birches",
+      destination: "Falford",
+      hexes: 1,
+      minutes: 60,
+      encounter: { kind: "road-bandits", posture: "hostile" },
+    });
+
+    expect(halt.passed).toEqual([]);
+    expect(halt.boundaryKind).toBe("encounter");
+    expect(halt.reason).toMatch(/stops the party/i);
+    expect(halt.posture).toBe("hostile");
   });
 });

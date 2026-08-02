@@ -100,6 +100,50 @@ describe("map canvas render path", () => {
     expect(labels.length).toBeGreaterThan(0);
   });
 
+  it("keeps the capital walled once sampling would break the ring into dashes", () => {
+    const local = sceneAtZoom(1);
+    const region = sceneAtZoom(0.3);
+    expect(region.stride).toBeGreaterThan(1);
+
+    // At stride 1 the wall hexes are drawn as themselves, so an authored ring on
+    // top of them would be a second copy of the same line.
+    expect(local.ribbons.some((ribbon) => ribbon.kind === "wall")).toBe(false);
+    const wall = region.ribbons.find((ribbon) => ribbon.kind === "wall");
+    expect(wall).toBeTruthy();
+
+    // The ring only reads as a wall if it lands on the ground it stands for: the
+    // hex layer and the authored layer have to share one transform, stride and all.
+    const { layout } = render(region);
+    let checked = 0;
+    for (const corner of wall.points) {
+      const drawn = layout.centerByKey.get(`${corner.x},${corner.y}`);
+      if (!drawn) continue;
+      checked += 1;
+      expect(layout.project(corner).x).toBeCloseTo(drawn.x, 6);
+      expect(layout.project(corner).y).toBeCloseTo(drawn.y, 6);
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it("hands the wall over to the place marker before the ring becomes a blot", () => {
+    // A wall drawn at true scale eventually encloses less ground than the stroke
+    // drawing it. At that point the ring says nothing the marker does not, so it
+    // has to stop rather than sit under the marker as a smear.
+    const startsAWallRing = (scene) => {
+      const wall = scene.ribbons.find((ribbon) => ribbon.kind === "wall");
+      if (!wall) return false;
+      const layout = buildMapLayout(scene, 900, 600);
+      const head = layout.project(wall.points[0]);
+      const { ops } = render(scene);
+      return ops.some((op) => op.name === "moveTo"
+        && Math.abs(op.args[0] - head.x) < 0.001 && Math.abs(op.args[1] - head.y) < 0.001);
+    };
+
+    expect(startsAWallRing(sceneAtZoom(0.3))).toBe(true);
+    expect(startsAWallRing(sceneAtZoom(0.05))).toBe(true);
+    expect(startsAWallRing(sceneAtZoom(travelMapLod(0).zoom))).toBe(false);
+  });
+
   it("survives a scene with nothing in it rather than throwing at the caller", () => {
     const empty = { version: 1, mode: "world", stride: 1, tier: "local", origin: { x: 0, y: 0 }, cells: [], route: [] };
     const context = recordingContext();
