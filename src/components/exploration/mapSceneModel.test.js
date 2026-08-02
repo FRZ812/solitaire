@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { makeInitialState } from "../../data/initial-state.js";
 import { buildWorldMapScene } from "./mapSceneModel.js";
+
+const state = makeInitialState();
 
 describe("browser exploration scene contract", () => {
   it("shows base terrain from the start without disclosing an unknown POI", () => {
@@ -100,6 +103,54 @@ describe("browser exploration scene contract", () => {
     });
   });
 
+  it("grades a generated site by how much of it the party can honestly claim", () => {
+    const hidden = (key, x, distance, archetypeId, sighting) => ({
+      key, x, y: 0, col: x, row: 0,
+      seen: false, visible: false, visited: false, passable: true, current: false, distance,
+      tile: {
+        terrain: "plains",
+        poi: { type: "hidden", name: null, generated: { name: "Falford", archetypeId, sighting } },
+      },
+    });
+    const named = { range: 6, named: true, secret: false, mapIcon: "wild-village" };
+    const unnamed = { range: 5, named: false, secret: false, mapIcon: "wild-ruin" };
+    const secret = { range: 1, named: false, secret: true, mapIcon: "wild-bandit-camp" };
+    const model = {
+      origin: { x: 0, y: 0 },
+      current: { key: "0,0" },
+      viewport: [
+        hidden("1,0", 1, 3, "settlement", named),
+        hidden("2,0", 2, 3, "ruin", unnamed),
+        hidden("3,0", 3, 9, "ruin", unnamed),
+        hidden("4,0", 4, 1, "bandit-camp", secret),
+      ],
+    };
+
+    const scene = buildWorldMapScene({ model, selection: null, journey: null });
+
+    expect(scene.cells[0]).toMatchObject({ poi_knowledge: "rumoured", poi_name: "Falford", poi_icon: "wild-village" });
+    // A shape at range is drawn but stays anonymous.
+    expect(scene.cells[1]).toMatchObject({ poi_knowledge: "silhouette", poi_name: "", poi_icon: "wild-ruin" });
+    expect(scene.cells[2]).toMatchObject({ poi_knowledge: "", poi_name: "", poi_icon: "" });
+    expect(scene.cells[3]).toMatchObject({ poi_knowledge: "", poi_name: "", poi_icon: "" });
+  });
+
+  it("reports ambient scenery only for ground the party has mapped", () => {
+    const cell = (key, seen) => ({
+      key, x: 0, y: 0, col: 0, row: 0,
+      seen, visible: false, visited: false, passable: true, current: false,
+      tile: { terrain: "plains", scenery: [{ id: "s", kind: "hay-barn", label: "a hay barn", detail: "", tags: [] }] },
+    });
+    const scene = buildWorldMapScene({
+      model: { origin: { x: 0, y: 0 }, current: { key: "0,0" }, viewport: [cell("1,0", true), cell("2,0", false)] },
+      selection: null,
+      journey: null,
+    });
+
+    expect(scene.cells[0].scenery).toEqual(["a hay barn"]);
+    expect(scene.cells[1].scenery).toEqual([]);
+  });
+
   it("never serializes an unknown route coordinate into the Canvas scene", () => {
     const model = {
       origin: { x: 0, y: 0 },
@@ -178,5 +229,47 @@ describe("browser exploration scene contract", () => {
     });
 
     expect(scene.tracked_character).toBeNull();
+  });
+});
+
+describe("scene layers across the zoom tiers", () => {
+  const model = (stride) => ({
+    origin: { x: 0, y: 0 },
+    current: { key: "0,0" },
+    stride,
+    viewport: [
+      { key: "0,0", x: 0, y: 0, col: 0, row: 0, seen: true, visible: true, visited: true, passable: true, current: true, tile: { terrain: "road" } },
+    ],
+  });
+
+  it("reports the sampling stride and tier the renderer has to honour", () => {
+    expect(buildWorldMapScene({ state, model: model(1), selection: null, journey: null }))
+      .toMatchObject({ stride: 1, tier: "local" });
+    expect(buildWorldMapScene({ state, model: model(2), selection: null, journey: null }))
+      .toMatchObject({ stride: 2, tier: "region" });
+    expect(buildWorldMapScene({ state, model: model(28), selection: null, journey: null }))
+      .toMatchObject({ stride: 28, tier: "continent" });
+  });
+
+  it("swaps sampled hexes for authored geography once a road would break into dashes", () => {
+    const local = buildWorldMapScene({ state, model: model(1), selection: null, journey: null });
+    expect(local.ribbons).toEqual([]);
+    expect(local.places).toEqual([]);
+
+    const far = buildWorldMapScene({ state, model: model(28), selection: null, journey: null });
+    expect(far.ribbons.length).toBeGreaterThan(0);
+    expect(far.places.length).toBeGreaterThan(0);
+    // Only the places that give the continent its shape survive this far out.
+    expect(far.places.every((place) => place.major)).toBe(true);
+    const region = buildWorldMapScene({ state, model: model(2), selection: null, journey: null });
+    expect(region.places.length).toBeGreaterThan(far.places.length);
+  });
+
+  it("draws no authored places without a state to grade their knowledge against", () => {
+    // Grading is what keeps an unvisited place from being presented as charted,
+    // so a scene with nothing to grade against carries no places at all.
+    const scene = buildWorldMapScene({ model: model(28), selection: null, journey: null });
+    expect(scene.places).toEqual([]);
+    expect(scene.ribbons.length).toBeGreaterThan(0);
   });
 });

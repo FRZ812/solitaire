@@ -356,4 +356,31 @@ describe("expanded continent content contract", () => {
       ).toBe(true);
     }
   });
+
+  it("binds every authored site motif to an archetype and keeps the catalog reachable", () => {
+    const {
+      SITE_MOTIFS, SITE_ARCHETYPES, REGION_DEFINITIONS, ECOLOGIES, CAMPAIGN_MINOR_SITE_FEATURES,
+    } = ContinentData;
+    const fallbackKinds = new Set(CAMPAIGN_MINOR_SITE_FEATURES.map((feature) => feature.kind));
+    const named = new Set();
+    for (const region of Object.values(REGION_DEFINITIONS)) {
+      for (const slug of region.features || []) named.add(slug);
+    }
+    for (const ecology of Object.values(ECOLOGIES)) {
+      for (const slug of ecology.features || []) named.add(slug);
+    }
+
+    // A motif nothing names is dead content; a named slug with no motif silently
+    // falls back to generic sites. Both failure modes shipped once already.
+    for (const [slug, motif] of Object.entries(SITE_MOTIFS)) {
+      expect(SITE_ARCHETYPES[motif.family], slug).toBeTruthy();
+      expect(named.has(slug), `${slug} is not named by any region or ecology`).toBe(true);
+    }
+    for (const slug of named) {
+      expect(
+        SITE_MOTIFS[slug] || fallbackKinds.has(slug),
+        `${slug} is named but has no motif binding`,
+      ).toBeTruthy();
+    }
+  });
 });

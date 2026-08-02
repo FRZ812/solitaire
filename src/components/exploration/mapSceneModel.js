@@ -1,6 +1,9 @@
 import { poiPlaceName } from "../../engine/location.js";
 import { buildingForService } from "../../data/town.js";
 import { poiIconKeyForTile } from "../../data/poi-icons.js";
+import { siteKnowledgeGrade } from "../../engine/world-sighting.js";
+import { ATLAS_ROUTES, ATLAS_WATERWAYS, buildAtlasPlaces } from "./mapAtlasModel.js";
+import { lodShowsPlace, lodShowsVectorRoutes, lodTier } from "./mapLod.js";
 
 function coordinateKey(point) {
   return `${point.x},${point.y}`;
@@ -13,13 +16,27 @@ function wasExplored(cell) {
   return !!cell.explored || !!cell.visible || !!cell.seen || !!cell.visited;
 }
 
-function worldPoiName(cell, explored = wasExplored(cell)) {
-  if (!explored || cell.tile?.poi?.type === "hidden") return "";
-  return poiPlaceName(cell.tile?.poi) || "";
+// What the party can currently claim about a generated site it has not entered:
+// "rumoured" carries a name, "silhouette" only a shape, "" nothing at all.
+function worldSiteKnowledge(cell, explored = wasExplored(cell)) {
+  const poi = cell.tile?.poi;
+  if (!poi) return null;
+  if (poi.type !== "hidden") return explored ? { grade: "discovered" } : null;
+  const generated = poi.generated;
+  if (!generated) return null;
+  const grade = siteKnowledgeGrade(generated.sighting, { distance: cell.distance, explored });
+  return grade ? { grade, generated } : null;
 }
 
-function worldPoiIcon(cell, poiName = worldPoiName(cell)) {
-  if (!poiName) return "";
+function worldPoiName(cell, knowledge = worldSiteKnowledge(cell)) {
+  if (!knowledge) return "";
+  if (knowledge.grade === "discovered") return poiPlaceName(cell.tile?.poi) || "";
+  return knowledge.grade === "rumoured" ? (knowledge.generated.name || "") : "";
+}
+
+function worldPoiIcon(cell, knowledge = worldSiteKnowledge(cell)) {
+  if (!knowledge) return "";
+  if (knowledge.grade !== "discovered") return knowledge.generated.sighting?.mapIcon || "";
   const serviceIcon = buildingForService(cell.tile?.poi?.service)?.icon || null;
   return poiIconKeyForTile(cell.tile, serviceIcon) || "";
 }
@@ -39,13 +56,25 @@ function renderTrackedCharacter(trackedCharacter, cells) {
   };
 }
 
-export function buildWorldMapScene({ model, selection, journey, marchFrame = null, trackedCharacter = null, night = false }) {
+export function buildWorldMapScene({ state, model, selection, journey, marchFrame = null, trackedCharacter = null, night = false }) {
   const cells = model.renderViewport || model.viewport || [];
   const exploredKeys = new Set(cells.filter(wasExplored).map((cell) => cell.key));
+  const stride = Math.max(1, Math.round(model.stride) || 1);
+  const tier = lodTier(stride);
+  // Once hexes stop being individually legible, authored geography carries the
+  // map instead: continuous road and river ribbons in place of sampled road
+  // hexes, and named places that no sample would have landed on.
+  const vector = lodShowsVectorRoutes(tier);
   return {
     version: 1,
     mode: "world",
+    stride,
+    tier,
     origin: { x: model.origin.x, y: model.origin.y },
+    ribbons: vector ? [...ATLAS_WATERWAYS, ...ATLAS_ROUTES] : [],
+    places: vector && state
+      ? buildAtlasPlaces(state).filter((place) => lodShowsPlace(tier, place))
+      : [],
     current_key: model.current.key,
     selected_key: selection?.key || "",
     party_march: marchFrame,
@@ -58,7 +87,8 @@ export function buildWorldMapScene({ model, selection, journey, marchFrame = nul
     cells: cells.map((cell) => {
       const explored = wasExplored(cell);
       const visible = !!cell.visible;
-      const poiName = worldPoiName(cell, explored);
+      const knowledge = worldSiteKnowledge(cell, explored);
+      const poiName = worldPoiName(cell, knowledge);
       return {
         key: cell.key,
         x: cell.x,
@@ -75,9 +105,15 @@ export function buildWorldMapScene({ model, selection, journey, marchFrame = nul
         visibility: visible ? "visible" : (explored ? "remembered" : "unknown"),
         visited: !!cell.visited,
         interactive: !cell.overscan && explored && !!cell.passable && !cell.current,
+        // Ambient landscape detail. Carried on the scene so the hex inspector and
+        // the travel log have something true to say about ground that holds no
+        // site; the canvas does not draw it, since ambient density belongs with
+        // the zoom tiers rather than at one fixed scale.
+        scenery: explored ? (cell.tile?.scenery || []).map((entry) => entry.label) : [],
         poi_name: poiName,
-        poi_icon: worldPoiIcon(cell, poiName),
-        poi_market_tier: poiName ? (cell.tile?.poi?.marketTier || "") : "",
+        poi_icon: worldPoiIcon(cell, knowledge),
+        poi_knowledge: knowledge?.grade || "",
+        poi_market_tier: knowledge?.grade === "discovered" ? (cell.tile?.poi?.marketTier || "") : "",
         quest: !!cell.quest,
         marker_color: cell.quest ? "#f8d56a" : "#e9ae55",
       };

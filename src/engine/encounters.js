@@ -63,14 +63,16 @@ export function hostileProfile(tile, x, y) {
 // Walk the path (excluding the starting tile), roll each tile's encounter
 // independently, return the first hit. One beat per journey means at most one
 // encounter even if multiple rolls would have fired.
-export function rollPathEncounter(state, path) {
+// `riskMult` is the party's chosen pace: pressing hard covers ground but walks
+// into more, moving carefully costs time and finds less.
+export function rollPathEncounter(state, path, riskMult = 1) {
   if (!path || path.length < 2) return null;
   for (let i = 1; i < path.length; i++) {
     const p = path[i];
     const tile = getTile(state, p.x, p.y);
     // Gloomy terrain darkens earlier, so its night window (and danger) is wider.
     const gloomy = !!TERRAINS[tile.terrain]?.dark;
-    const mult = isNight(state.time, gloomy) ? NIGHT_ENCOUNTER_MULT : 1;
+    const mult = (isNight(state.time, gloomy) ? NIGHT_ENCOUNTER_MULT : 1) * riskMult;
     const enc = rollEncounter(tile, p.x, p.y, mult);
     if (enc) return { encounter: enc, atTile: p, atIndex: i };
   }

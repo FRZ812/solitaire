@@ -5,7 +5,10 @@
 // state. Authored and discovered overlays remain the responsibility of
 // engine/world.js.
 
-import { hexDist, hexLine } from "../data/hex-math.js";
+import { HEX_DIRS, hexDist, hexLine } from "../data/hex-math.js";
+import { worldSceneryAt } from "./world-scenery.js";
+import { siteNameFor } from "./toponymy.js";
+import { siteSighting } from "./world-sighting.js";
 import * as continentContent from "../data/continent.js";
 import {
   BORDER_CHECKPOINTS,
@@ -25,6 +28,7 @@ import {
   REALMS,
   REGION_DEFINITIONS,
   SITE_ARCHETYPES,
+  SITE_MOTIFS,
   WORLD_GEOGRAPHY_SEED,
   WORLD_GEOGRAPHY_VERSION,
   WORLD_GENERATOR_VERSION,
@@ -765,20 +769,67 @@ export function worldAreaAt(x, y, regionId = null, seed = DEFAULT_WORLD_SEED, re
   return cloneArea(area);
 }
 
-function campaignMinorSiteFeatures(terrain, route) {
-  return CAMPAIGN_MINOR_SITE_FEATURES
-    .filter((feature) => !feature.routeOnly || route)
-    .filter((feature) => !feature.terrains || feature.terrains.includes(terrain));
+// Region motifs outweigh ecology motifs, and both outweigh the universal
+// fallback list, so a place reads as its region first and its biome second
+// while lodging and danger stay available everywhere.
+const REGION_MOTIF_WEIGHT = 4;
+const ECOLOGY_MOTIF_WEIGHT = 2;
+const FALLBACK_FEATURE_WEIGHT = 1;
+
+const MOTIF_FEATURES = new Map(
+  Object.entries(SITE_MOTIFS).map(([kind, motif]) => [kind, Object.freeze({ kind, ...motif })]),
+);
+
+const SITE_FEATURE_POOLS = new Map();
+
+function addPoolFeature(pool, feature, weight) {
+  if (!feature) return;
+  const existing = pool.get(feature.kind);
+  if (existing) {
+    if (weight > existing.weight) existing.weight = weight;
+    return;
+  }
+  pool.set(feature.kind, { feature, weight });
+}
+
+// Ordered by kind so the pool a cell sees never depends on query order.
+function siteFeaturePool(region, ecology) {
+  const key = `${region?.id || "?"}:${ecology?.id || "?"}`;
+  const cached = SITE_FEATURE_POOLS.get(key);
+  if (cached) return cached;
+  const pool = new Map();
+  for (const slug of region?.features || []) {
+    addPoolFeature(pool, MOTIF_FEATURES.get(slug), REGION_MOTIF_WEIGHT);
+  }
+  for (const slug of ecology?.features || []) {
+    addPoolFeature(pool, MOTIF_FEATURES.get(slug), ECOLOGY_MOTIF_WEIGHT);
+  }
+  for (const feature of CAMPAIGN_MINOR_SITE_FEATURES) {
+    addPoolFeature(pool, feature, FALLBACK_FEATURE_WEIGHT);
+  }
+  const entries = Object.freeze(
+    [...pool.values()].sort((a, b) => (a.feature.kind < b.feature.kind ? -1 : 1)),
+  );
+  SITE_FEATURE_POOLS.set(key, entries);
+  return entries;
+}
+
+function campaignMinorSiteFeatures(region, ecology, terrain, route) {
+  return siteFeaturePool(region, ecology).filter(({ feature }) => (
+    (!feature.routeOnly || route)
+    && (!feature.terrains || feature.terrains.includes(terrain))
+  ));
 }
 
 const MAX_CAMPAIGN_SITE_SPACING = Math.max(
   ...CAMPAIGN_MINOR_SITE_FEATURES.map((feature) => SITE_ARCHETYPES[feature.family].minimumSpacingHexes),
+  ...[...MOTIF_FEATURES.values()].map((feature) => SITE_ARCHETYPES[feature.family].minimumSpacingHexes),
 );
 const MAX_CAMPAIGN_SITE_CHANCE = Math.max(
   ...Object.values(REGION_DEFINITIONS).map((region) => region.poiChance * 1.35),
 );
 
-function eligibleMinorSiteCandidateAt({ x, y, seed, region, terrain, route, context, presenceRoll = null }) {
+function eligibleMinorSiteCandidateAt({ x, y, seed, region, ecology, terrain, route, context, presenceRoll = null }) {
   if (
     terrain === "water"
     || region.poiChance <= 0
@@ -790,12 +841,15 @@ function eligibleMinorSiteCandidateAt({ x, y, seed, region, terrain, route, cont
   const chance = region.poiChance * (route ? 1.35 : 1);
   const roll = presenceRoll ?? coordRandom(seed, "world:sites:presence", x, y);
   if (roll >= chance) return null;
-  const feature = pick(campaignMinorSiteFeatures(terrain, route), coordRandom(seed, "world:sites:kind", x, y));
-  if (!feature) return null;
+  const entry = weightedPick(
+    campaignMinorSiteFeatures(region, ecology, terrain, route),
+    coordRandom(seed, "world:sites:kind", x, y),
+  );
+  if (!entry) return null;
   return {
-    feature,
+    feature: entry.feature,
     roll,
-    spacing: SITE_ARCHETYPES[feature.family].minimumSpacingHexes,
+    spacing: SITE_ARCHETYPES[entry.feature.family].minimumSpacingHexes,
   };
 }
 
@@ -840,27 +894,40 @@ function winsGeneratedSiteSpacing(seed, x, y, candidate) {
 }
 
 function generatedSiteAt({ x, y, seed, region, realm, province, culture, ecology, area, terrain, route, context }) {
-  const candidate = eligibleMinorSiteCandidateAt({ x, y, seed, region, terrain, route, context });
+  const candidate = eligibleMinorSiteCandidateAt({ x, y, seed, region, ecology, terrain, route, context });
   if (!candidate || !winsGeneratedSiteSpacing(seed, x, y, candidate)) return null;
   const { feature } = candidate;
   const { kind, family } = feature;
   const archetype = SITE_ARCHETYPES[family];
   const campaignKey = campaignSiteNamespace(seed);
   const siteId = `site:${WORLD_GENERATOR_VERSION}:${campaignKey}:${region.id}:${x}:${y}`;
-  const areaWord = area.name.split(" ")[0];
-  const name = `${areaWord} ${titleFromSlug(kind)}`;
+  const name = siteNameFor({
+    family,
+    kind,
+    region,
+    realmId: realm.id,
+    culture,
+    random: (stream) => coordRandom(seed, stream, x, y),
+  });
   const architecture = pick(uniqueText(culture?.architecture || []), coordRandom(seed, "world:sites:architecture", x, y));
+  // Culture entries are noun phrases of mixed number ("river brick", "slate
+  // market halls"), so they are set as an appositive rather than a subject.
   const culturalLine = architecture
-    ? `${architecture} marks it as ${culture?.demonym || realm.name} work.`
+    ? `${culture?.demonym || realm.name} work, ${architecture}.`
     : `Its customs and upkeep reflect ${province?.name || realm.name}.`;
-  const contextLine = context?.description || `It stands within ${area.name}.`;
+  // Wilderness context has one line for the whole continent, so naming the area
+  // says more than repeating it.
+  const contextLine = context?.kind && context.kind !== "wilderness" && context.description
+    ? context.description
+    : `It stands within ${area.name}.`;
   return {
     id: siteId,
     kind,
     archetypeId: family,
     poiType: archetype.poiType,
+    sighting: siteSighting({ family, terrain, route }),
     name,
-    description: `${archetype.description} ${culturalLine} ${contextLine}`,
+    description: `${feature.description || archetype.description} ${culturalLine} ${contextLine}`,
     realmId: realm.id,
     provinceId: province?.id || null,
     settlementType: family === "settlement" ? kind : area.settlementType,
@@ -1003,6 +1070,32 @@ export function landmarkAt(x, y) {
 
 export function checkpointAt(x, y) {
   return CHECKPOINT_BY_COORD.get(coordinateKey(x, y)) || null;
+}
+
+const INHABITED_LANDMARK_KINDS = new Set(["city", "town", "village", "port", "fortress", "monastery"]);
+const INHABITED_LANDMARKS = LANDMARKS.filter((landmark) => INHABITED_LANDMARK_KINDS.has(landmark.kind));
+
+// Which settled place this stretch of country belongs to. Roadside habitation
+// and waymarkers are measured from it, so a road always counts down to somewhere.
+export function nearestInhabitedLandmark(x, y, maxDistance = 12) {
+  let best = null;
+  for (const landmark of INHABITED_LANDMARKS) {
+    const distance = hexDist({ x, y }, landmark.coord);
+    if (distance > maxDistance) continue;
+    if (best && (distance > best.distance || (distance === best.distance && landmark.id > best.landmark.id))) continue;
+    best = { landmark, distance };
+  }
+  return best;
+}
+
+function hasWaterNeighbor(x, y, seed) {
+  for (const dir of HEX_DIRS) {
+    const nx = x + dir.x;
+    const ny = y + dir.y;
+    if (waterwayAt(nx, ny)) return true;
+    if (continentValueAt(nx, ny, seed) <= 0) return true;
+  }
+  return false;
 }
 
 function locationContext({ landmark, route, checkpoint, port, seaLane, coastalFeature, mountainSpine, waterway, hotSpring, coast }) {
@@ -1225,6 +1318,46 @@ function continentStaticContextAt(x, y, seed = DEFAULT_WORLD_SEED) {
   };
 }
 
+// Adjacency facts are resolved lazily because most scenery rules never ask for
+// them: a road tile never probes its shoreline, a wilderness tile never asks
+// which town it counts down to.
+function sceneryProbe(staticContext) {
+  const { x, y, seed } = staticContext;
+  let waterNeighbor;
+  let landmark;
+  return {
+    x,
+    y,
+    landValue: staticContext.landValue,
+    terrain: staticContext.terrain,
+    route: staticContext.route,
+    waterway: staticContext.waterway,
+    crossing: staticContext.crossing,
+    coast: staticContext.coast,
+    climate: staticContext.climate,
+    region: staticContext.region,
+    realm: staticContext.realm,
+    ecologyId: staticContext.ecologyId,
+    checkpoint: staticContext.checkpoint,
+    port: staticContext.port,
+    landmarkId: staticContext.context?.landmarkId || null,
+    // Scenery belongs to the land, not to a campaign. A bridge stands where the
+    // road crosses the river in every playthrough, so it is drawn from the
+    // geography seed rather than the campaign seed.
+    random: (stream) => coordRandom(WORLD_GEOGRAPHY_SEED, stream, x, y, WORLD_GEOGRAPHY_VERSION),
+    neighbors: {
+      get water() {
+        if (waterNeighbor === undefined) waterNeighbor = hasWaterNeighbor(x, y, seed);
+        return waterNeighbor;
+      },
+    },
+    get nearestLandmark() {
+      if (landmark === undefined) landmark = nearestInhabitedLandmark(x, y);
+      return landmark;
+    },
+  };
+}
+
 // Full physical/cultural sample used by the tile generator and regional map.
 export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
   const staticContext = continentStaticContextAt(x, y, seed);
@@ -1260,6 +1393,7 @@ export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
     culture,
     area,
   });
+  const scenery = worldSceneryAt(sceneryProbe(staticContext));
   return {
     generatorVersion: WORLD_GENERATOR_VERSION,
     seed,
@@ -1307,6 +1441,7 @@ export function sampleContinent(x, y, seed = DEFAULT_WORLD_SEED) {
     resources: [...content.resources],
     tags: [...content.tags],
     site,
+    scenery,
   };
 }
 
@@ -1357,6 +1492,7 @@ export function generateWorldTile({
       featureKind: sample.site.kind,
       archetypeId: sample.site.archetypeId,
       poiType: sample.site.poiType,
+      sighting: { ...sample.site.sighting },
       name: sample.site.name,
       description: sample.site.description,
       realmId: sample.site.realmId,
@@ -1397,6 +1533,7 @@ export function generateWorldTile({
     waterway: sample.waterway,
     hotSpring: sample.hotSpring,
     crossing: sample.crossing,
+    scenery: sample.scenery.map((detail) => ({ ...detail, tags: [...detail.tags] })),
     resources: sample.resources,
     worldgen: {
       version: sample.generatorVersion,

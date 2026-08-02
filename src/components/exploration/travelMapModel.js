@@ -1,33 +1,35 @@
 import { TERRAINS } from "../../data/terrains.js";
 import { landmarkAt } from "../../engine/world-generation.js";
 import { getTile, isSeen, isVisited } from "../../engine/world.js";
+import {
+  TRAVEL_MAP_MAX_ZOOM,
+  TRAVEL_MAP_MIN_ZOOM,
+  clampTravelMapZoom,
+  oddCount,
+  travelMapLod,
+} from "./mapLod.js";
 
 const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
-const odd = (value, minimum, maximum) => {
-  let next = clamp(Math.round(value), minimum, maximum);
-  if (next % 2 === 0) next += next < maximum ? 1 : -1;
-  return next;
-};
 
-export const TRAVEL_MAP_MIN_ZOOM = 0.6;
-export const TRAVEL_MAP_MAX_ZOOM = 1.8;
+export { TRAVEL_MAP_MAX_ZOOM, TRAVEL_MAP_MIN_ZOOM, clampTravelMapZoom };
 export const TRAVEL_MAP_OVERSCAN_CELLS = 3;
-export const WORLD_OVERVIEW_ZOOM_THRESHOLD = TRAVEL_MAP_MIN_ZOOM;
 
 // Cell count, not a render transform, drives map scale. Rows establish the zoom
 // level; columns follow the measured Canvas aspect ratio so a desktop sidebar
-// or a portrait phone cannot force the projected map into a fixed shape. Odd
-// dimensions keep the camera coordinate centered.
+// or a portrait phone cannot force the projected map into a fixed shape. Past
+// the row ceiling the window stops growing and `stride` takes over, which is
+// what keeps a continental view within a few thousand cells instead of the
+// million hexes it actually spans.
 export function travelMapViewportDimensions(viewport = {}, zoom = 1) {
-  const safeZoom = clamp(Number(zoom) || 1, TRAVEL_MAP_MIN_ZOOM, TRAVEL_MAP_MAX_ZOOM);
   const width = Math.max(1, Number(viewport.width) || 1);
   const height = Math.max(1, Number(viewport.height) || 1);
-  const rows = odd(15 / safeZoom, 9, 31);
+  const { rows, stride } = travelMapLod(zoom);
   const projectedHeight = 1.5 * (rows - 1) + 2;
   const columnsForAspect = (width / height) * projectedHeight / Math.sqrt(3);
   return {
-    columns: odd(columnsForAspect, 7, 45),
+    columns: oddCount(columnsForAspect, 7, 45),
     rows,
+    stride,
   };
 }
 
@@ -37,11 +39,8 @@ export function travelMapRenderDimensions(visibleDimensions = {}) {
   return {
     columns: columns + TRAVEL_MAP_OVERSCAN_CELLS * 2,
     rows: rows + TRAVEL_MAP_OVERSCAN_CELLS * 2,
+    stride: Math.max(1, Math.round(Number(visibleDimensions.stride) || 1)),
   };
-}
-
-export function clampTravelMapZoom(zoom) {
-  return clamp(Number(zoom) || TRAVEL_MAP_MIN_ZOOM, TRAVEL_MAP_MIN_ZOOM, TRAVEL_MAP_MAX_ZOOM);
 }
 
 export function formatTravelDuration(minutes) {
@@ -70,6 +69,31 @@ export function activeMarchJourney(journey, travelMarch) {
   };
 }
 
+// The staged legs the party can honestly foresee. A leg's boundary names the
+// place it ends at, so a leg may only be previewed once every hex it covers is
+// already on the party's map — otherwise the itinerary would name sites nobody
+// has seen. Scenery is carried as labels only, which the scene model already
+// treats as public for mapped ground.
+function knownLegs(state, journey) {
+  const path = journey?.fullPath;
+  if (!Array.isArray(journey?.legs) || !Array.isArray(path)) return [];
+  let mapped = 1;
+  while (mapped < path.length && (isSeen(state, path[mapped].x, path[mapped].y) || isVisited(state, path[mapped].x, path[mapped].y))) {
+    mapped += 1;
+  }
+  return journey.legs
+    .filter((leg) => leg.to < mapped)
+    .map((leg) => ({
+      index: leg.index,
+      steps: leg.steps,
+      minutes: leg.minutes,
+      arrived: leg.arrived,
+      boundaryKind: leg.boundary?.kind || "",
+      boundaryLabel: leg.boundary?.label || "",
+      passed: (leg.passed || []).map((entry) => entry.label).filter(Boolean),
+    }));
+}
+
 // Build a UI-only journey from the contiguous mapped prefix. The authoritative
 // route remains in the caller and is never copied here, so an inspection panel
 // or Canvas scene cannot become an oracle for unseen passability or terrain.
@@ -93,6 +117,7 @@ export function knownJourneyPreview(state, journey, legPath = journey?.legPath) 
   }
   const routeFullyMapped = mappedPath.length === legPath.length;
   return {
+    legs: knownLegs(state, journey),
     legPath: mappedPath,
     end: mappedPath.at(-1) || null,
     arrived: routeFullyMapped && !!journey.arrived,
@@ -131,14 +156,7 @@ export function knownJourneyWaypoints(state, path, { cap = 5, skipEndpoints = tr
 export function travelMapZoomStep(currentZoom, factor) {
   const current = clampTravelMapZoom(currentZoom);
   const multiplier = Number.isFinite(factor) && factor > 0 ? factor : 1;
-  const requested = current * multiplier;
-  const openWorldOverview = multiplier < 1
-    && current <= WORLD_OVERVIEW_ZOOM_THRESHOLD
-    && requested < TRAVEL_MAP_MIN_ZOOM;
-  return {
-    zoom: clampTravelMapZoom(requested),
-    openWorldOverview,
-  };
+  return { zoom: clampTravelMapZoom(current * multiplier) };
 }
 
 function axialRound(q, r) {

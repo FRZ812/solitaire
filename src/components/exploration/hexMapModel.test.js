@@ -11,7 +11,9 @@ import {
   compileWhitemarchCapital,
 } from "../../data/whitemarch-capital.js";
 import { getTile } from "../../engine/world.js";
-import { buildExplorationModel, buildRpgViewport } from "./hexMapModel.js";
+import { planLeg } from "../../engine/expedition.js";
+import { WORLD_MARCH_LIMIT } from "../../config.js";
+import { buildExplorationModel, buildRpgViewport, planHexJourney } from "./hexMapModel.js";
 
 function keyOf(coord) {
   return `${coord.x},${coord.y}`;
@@ -71,6 +73,46 @@ describe("unified capital in the exploration map", () => {
     expect(cells.find((cell) => cell.col === 7 && cell.row === 7)).toMatchObject({ x: 0, y: 0 });
   });
 
+  it("buys continental coverage with stride, not with more generated hexes", () => {
+    const state = makeInitialState();
+    state.world.currentTile = { x: 0, y: 0 };
+    const dimensions = { columns: 15, rows: 15 };
+    const local = buildRpgViewport(state, { center: { x: 0, y: 0 }, dimensions: { ...dimensions, stride: 1 } });
+    const far = buildRpgViewport(state, { center: { x: 0, y: 0 }, dimensions: { ...dimensions, stride: 28 } });
+
+    // Same number of `getTile` calls; each drawn hex simply stands for a 28 x 28
+    // patch of ground instead of one hex.
+    expect(far).toHaveLength(local.length);
+    const spanOf = (cells) => Math.max(...cells.map((cell) => cell.y)) - Math.min(...cells.map((cell) => cell.y));
+    expect(spanOf(far)).toBe(spanOf(local) * 28);
+    expect(far.find((cell) => cell.col === 7 && cell.row === 7)).toMatchObject({ x: 0, y: 0 });
+  });
+
+  it("keeps strided samples on a clean sub-lattice across row parity", () => {
+    const state = makeInitialState();
+    const stride = 28;
+    const cells = buildRpgViewport(state, {
+      center: { x: 0, y: 0 },
+      dimensions: { columns: 15, rows: 15, stride },
+    });
+
+    // The window is enumerated in offset rows and converted back with
+    // `x = offsetColumn - floor(y / 2)`. An even stride makes floor(y / 2)
+    // advance by exactly stride/2 per row, so every sample keeps the same
+    // column spacing rather than wobbling a hex every other row.
+    for (const row of new Set(cells.map((cell) => cell.row))) {
+      const inRow = cells.filter((cell) => cell.row === row).sort((a, b) => a.col - b.col);
+      const gaps = new Set(inRow.slice(1).map((cell, index) => cell.x - inRow[index].x));
+      expect([...gaps], `row ${row}`).toEqual([stride]);
+    }
+    const columnKeys = new Set(cells.map((cell) => cell.col));
+    for (const col of columnKeys) {
+      const inColumn = cells.filter((cell) => cell.col === col).sort((a, b) => a.row - b.row);
+      const gaps = new Set(inColumn.slice(1).map((cell, index) => cell.y - inColumn[index].y));
+      expect([...gaps], `column ${col}`).toEqual([stride]);
+    }
+  });
+
   it("builds the exploration decision model around the requested map camera", () => {
     const state = makeInitialState();
     const model = buildExplorationModel(state, {
@@ -84,6 +126,34 @@ describe("unified capital in the exploration map", () => {
     expect(model.renderViewport.find((cell) => cell.x === 4 && cell.y === -2)?.overscan).toBe(false);
     expect(model.viewport.some((cell) => cell.x === 4 && cell.y === -2)).toBe(true);
     expect(model.origin).toEqual(state.world.currentTile);
+  });
+
+  it("generates each drawn hex once, slicing the visible window out of the rendered one", () => {
+    const state = makeInitialState();
+    const model = buildExplorationModel(state, {
+      center: { x: 4, y: -2 },
+      dimensions: { columns: 19, rows: 15 },
+      renderDimensions: { columns: 25, rows: 21 },
+    });
+
+    // Identity, not equality: a second `buildRpgViewport` pass would run the
+    // generator over the whole window again, which dominated the frame cost.
+    const rendered = new Map(model.renderViewport.map((cell) => [cell.key, cell]));
+    for (const cell of model.viewport) expect(rendered.get(cell.key)).toBe(cell);
+    expect(model.viewport.every((cell) => cell.overscan === false)).toBe(true);
+  });
+
+  it("leaves strided samples out of the landmark index, which the atlas layer covers instead", () => {
+    const state = makeInitialState();
+    const dimensions = { columns: 15, rows: 15 };
+    const local = buildExplorationModel(state, { center: { x: 0, y: 0 }, dimensions: { ...dimensions, stride: 1 } });
+    const far = buildExplorationModel(state, { center: { x: 0, y: 0 }, dimensions: { ...dimensions, stride: 28 } });
+
+    // Sampled sites at stride are an arbitrary subset of what is out there, so
+    // naming them in the destination index would misrepresent the ground.
+    expect(far.landmarks.length).toBeLessThanOrEqual(local.landmarks.length);
+    // Authored knowledge still stands: the capital is indexed at any zoom.
+    expect(far.byKey.size).toBeGreaterThan(0);
   });
 
   it("collapses every internal Whitemarch POI into one capital landmark", () => {
@@ -113,6 +183,19 @@ describe("unified capital in the exploration map", () => {
         || capitalLandmarks[0].tile.poi?.atlasLandmark,
       ).toBeTruthy();
     });
+  });
+
+  it("previews the same leg the engine will walk, so the highlighted route is honest", () => {
+    const state = makeInitialState();
+    const from = state.world.currentTile;
+    const destination = { x: from.x + 14, y: from.y + 6 };
+
+    const journey = planHexJourney(state, destination, WORLD_MARCH_LIMIT);
+    const engineLeg = planLeg(state, journey.fullPath, 0, { maxSteps: WORLD_MARCH_LIMIT });
+
+    expect(journey.legPath).toEqual(engineLeg.path);
+    expect(journey.leg.boundary).toEqual(engineLeg.boundary);
+    expect(journey.legs[0].to).toBe(engineLeg.to);
   });
 
   it("keeps nearby named city locations in the local viewport", () => {

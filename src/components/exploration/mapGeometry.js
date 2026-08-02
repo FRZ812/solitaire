@@ -41,16 +41,32 @@ function entryFor(cell, center, polygon, size) {
   };
 }
 
+function emptyLayout() {
+  return {
+    entries: [],
+    centerByKey: new Map(),
+    worldRadius: 0,
+    cityCellSize: 0,
+    stride: 1,
+    project: () => ({ x: 0, y: 0 }),
+  };
+}
+
 function buildWorldLayout(scene, width, height) {
   const cells = Array.isArray(scene?.cells) ? scene.cells : [];
-  if (cells.length === 0) return { entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 };
+  if (cells.length === 0) return emptyLayout();
 
   const origin = scene.origin || { x: 0, y: 0 };
-  const rawCenters = cells.map((cell) => {
-    const q = Number(cell.x || 0) - Number(origin.x || 0);
-    const r = Number(cell.y || 0) - Number(origin.y || 0);
+  // Zoomed out the viewport samples every `stride`-th hex. Dividing by it puts
+  // the samples back on a unit lattice, so they tile edge-to-edge at the same
+  // on-screen radius and each hex simply stands for more ground.
+  const stride = Math.max(1, Number(scene.stride) || 1);
+  const projectRaw = (coord) => {
+    const q = (Number(coord.x || 0) - Number(origin.x || 0)) / stride;
+    const r = (Number(coord.y || 0) - Number(origin.y || 0)) / stride;
     return { x: SQRT_3 * (q + r * 0.5), y: 1.5 * r };
-  });
+  };
+  const rawCenters = cells.map(projectRaw);
   const scaleCenters = rawCenters.filter((_, index) => !cells[index].overscan);
   const fittedCenters = scaleCenters.length > 0 ? scaleCenters : rawCenters;
   const xs = fittedCenters.map((point) => point.x);
@@ -92,6 +108,10 @@ function buildWorldLayout(scene, width, height) {
     x: (width - contentWidth) * 0.5 + (-minX + SQRT_3 * 0.5) * worldRadius,
     y: (height - contentHeight) * 0.5 + (-minY + 1) * worldRadius,
   };
+  const project = (coord) => {
+    const raw = projectRaw(coord);
+    return { x: offset.x + raw.x * worldRadius, y: offset.y + raw.y * worldRadius };
+  };
   const centerByKey = new Map();
   const entries = cells.map((cell, index) => {
     const center = {
@@ -102,12 +122,12 @@ function buildWorldLayout(scene, width, height) {
     centerByKey.set(entry.key, center);
     return entry;
   });
-  return { entries, centerByKey, worldRadius, cityCellSize: 0 };
+  return { entries, centerByKey, worldRadius, cityCellSize: 0, stride, project };
 }
 
 function buildCityLayout(scene, width, height) {
   const cells = Array.isArray(scene?.cells) ? scene.cells : [];
-  if (cells.length === 0) return { entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 };
+  if (cells.length === 0) return emptyLayout();
 
   const columns = Math.max(1, Number(scene.columns || 11));
   const rows = Math.max(1, Number(scene.rows || 9));
@@ -137,7 +157,17 @@ function buildCityLayout(scene, width, height) {
     centerByKey.set(entry.key, center);
     return entry;
   });
-  return { entries, centerByKey, worldRadius: 0, cityCellSize };
+  return {
+    entries,
+    centerByKey,
+    worldRadius: 0,
+    cityCellSize,
+    stride: 1,
+    project: (coord) => ({
+      x: offset.x + (Number(coord.col || 0) + 0.5) * cityCellSize,
+      y: offset.y + (Number(coord.row || 0) + 0.5) * cityCellSize,
+    }),
+  };
 }
 
 export function buildMapLayout(scene, width, height) {
@@ -179,6 +209,47 @@ export function findInteractiveEntry(entries, point) {
   return null;
 }
 
+// Screen positions for the authored layers. These are placed by projection
+// rather than by sampling, which is the whole point: at continental stride a
+// sample almost never lands on the hex a landmark occupies.
+export function layoutAtlasPlaces(layout, places) {
+  if (!Array.isArray(places) || !layout.project) return [];
+  return places.map((place) => ({ ...place, point: layout.project(place) }));
+}
+
+export function layoutAtlasRibbons(layout, ribbons, width, height) {
+  if (!Array.isArray(ribbons) || !layout.project) return [];
+  const margin = Math.max(width, height);
+  const laid = [];
+  for (const ribbon of ribbons) {
+    const points = ribbon.points.map((point) => layout.project(point));
+    // A ribbon spanning the continent is mostly off-screen at close zoom; skip
+    // the ones with no chance of touching the canvas rather than stroking them.
+    const onScreen = points.some((point) => (
+      point.x > -margin && point.x < width + margin
+      && point.y > -margin && point.y < height + margin
+    ));
+    if (onScreen) laid.push({ ...ribbon, points });
+  }
+  return laid;
+}
+
+// Places sit on top of the hexes, so they are hit-tested first and by
+// proximity — a marker is a point of interest, not a polygon.
+export function findAtlasPlace(placeEntries, point, radius) {
+  const reach = Math.max(10, Number(radius) || 0);
+  let best = null;
+  let bestDistance = reach;
+  for (const place of placeEntries || []) {
+    const distance = Math.hypot(place.point.x - point.x, place.point.y - point.y);
+    if (distance <= bestDistance) {
+      best = place;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
 export function mapMarchEntry(layout, march) {
   if (!march) return null;
   const from = layout.entries.find((entry) => entry.key === String(march.fromKey || ""));
@@ -216,19 +287,30 @@ export function mapPoiIconSize(hexRadius, mode = "world") {
   return Math.max(18, Math.min(maximum, radius * scale));
 }
 
-export function mapFogOpacity(cell, night = false) {
+export function mapFogOpacity(cell, night = false, fogScale = 1) {
   if (cell?.visible) return 0;
-  if (cell?.explored) return night ? 0.34 : 0.22;
-  return night ? 0.6 : 0.46;
+  const scale = Math.max(0, Number(fogScale) || 0);
+  if (cell?.explored) return (night ? 0.34 : 0.22) * scale;
+  return (night ? 0.6 : 0.46) * scale;
 }
 
 export function selectMapMarkerEntries(scene, entries, viewport = {}) {
   const currentKey = String(scene?.current_key || "");
-  return (entries || []).filter((entry) => (
-    entry.cell.explored !== false
-    && entry.cell.poi_name
-    && entry.key !== currentKey
-  ));
+  const tier = scene?.tier || "local";
+  // Zoomed out, sampled hexes carry an arbitrary subset of the sites actually
+  // out there, so per-hex markers become noise; the authored places layer says
+  // what is worth naming at that scale instead.
+  if (tier === "continent") return [];
+  // A silhouette is a marker with no name yet, so presence — not naming —
+  // decides whether it is drawn. Sighted-at-range sites sit on ground the party
+  // has not explored, so the explored gate applies only to named places.
+  return (entries || []).filter((entry) => {
+    const { poi_name: name, poi_knowledge: knowledge, explored } = entry.cell;
+    if (entry.key === currentKey) return false;
+    if (tier !== "local") return knowledge === "discovered" && !!name;
+    if (knowledge && knowledge !== "discovered") return true;
+    return explored !== false && !!name;
+  });
 }
 
 export function buildRouteSegments(route, centerByKey) {

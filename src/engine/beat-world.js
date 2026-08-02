@@ -43,6 +43,9 @@ export function applyWorldMovement({ state, beat, options, codex, character, new
         name: generated?.name || beat.tile_discovery.name || hiddenPoi?.name || null,
         description: generated?.description || beat.tile_discovery.description || hiddenPoi?.description || null,
         ...(generated?.id ? { siteId: generated.id, generated: true } : {}),
+        // Four archetypes share the generic "landmark" poi type, which resolves
+        // to no icon; the sighting layer already knows the right one.
+        ...(generated?.sighting?.mapIcon ? { mapIcon: generated.sighting.mapIcon } : {}),
       } };
     }
     tiles[`${x},${y}`] = persistedTileDelta(finalTile);
