@@ -535,6 +535,126 @@ environment, so the atlas has been verified through tests and `vite build` only 
 never looked at. For a workstream whose entire premise is that the old overview
 was *"half baked and ugly"*, that is the significant open risk.
 
+#### Panning the strided lattice  *(complete)*
+
+Reported after the first live test: *"panning on the zoomed out rectangle grids
+feels clunky like it is moving on steps, like it is trying to auto correct or
+align at a certain close distance"*.
+
+`travelMapDragDelta` divided the pixel drag by `worldRadius` — the radius of a
+*drawn cell*, which stands for `stride` hexes — and handed the result to
+`panTravelMapCamera` as a **hex** delta. So a full cell of drag moved the camera
+one hex. WS6's lattice snapping then quantised the camera to whole strides, so
+nothing moved until the drag crossed `stride / 2` cells and the window jumped a
+whole cell: at stride 28, fourteen cells of dragging per visible step, with the
+sub-cell preview resetting to zero at every cell boundary in between. That reset
+against a stationary window is the "auto correct" the report describes.
+
+Two things were wrong. The delta needed scaling by `stride`, and it was rounding
+onto the wrong lattice: above stride 1 the stride is even, `floor(y / 2)` advances
+by exactly `S/2` per row, and the samples land squarely under each other rather
+than half-offset — a *rectangular* screen lattice, whose axes round independently.
+Cube rounding only applies at stride 1, where a drawn cell really is a hex. The
+basis a probe confirmed:
+
+| one drawn cell | camera delta |
+| --- | --- |
+| right | `(S, 0)` |
+| down | `(-S/2, S)` — not `(0, S)`, which moves diagonally |
+
+Both preserve lattice membership exactly, so the camera never needs correcting:
+`anchorY` shifts by whole strides, and `offsetColumn` by `S·Σcol` with the `-S/2`
+and the `+S/2` from `floor(y/2)` cancelling. `stride` now threads through
+`rebaseTravelMapDrag` / `panTravelMapCamera` and both `MapCanvas` drag sites; the
+`commit` pixels divide by it, keeping the round-trip exact so `residual` still
+supplies sub-cell smoothness. Verified at strides 1/2/4/10/28: one dragged cell
+moves the window exactly one cell, with zero residual.
+
+### WS7 — Travel that only stops for a reason  *(planned)*
+
+Live test: *"marching stops after 3 hex with options to stay on the map or go to
+chat. nope it should always stay on the map and keep moving unless something
+inherently needs to stop i.e fatigue, hunger/thirst, encounter with an npc on
+that specific hex that stops the party, a checkpoint etc, just any real
+meaningful stop, not a stop every certain distance."*
+
+**The measurement.** Three real routes out of Whitemarch, planned eight legs deep:
+
+```
+0,0 -> 20,12  (35 hexes)   leg0 steps=4 waypoint:Bonepicker Chapel
+                           leg1 steps=5 crossing:The Whitewend
+                           leg2 steps=3 waypoint:Sheep Gate
+                           leg3 steps=6 crossing:The Whitewend
+                           leg4 steps=2 crossing:The Whitewend
+0,0 -> -40,30 (49 hexes)   leg3 steps=3 border:Reed Crossing
+                           leg7 steps=1 going:Plains
+0,0 -> 60,-45 (73 hexes)   leg6 steps=2 border:Chalk Downs
+```
+
+Every named building in the capital, every touch of the river, and every county
+line is a full stop — a card, a confirmation, and an LLM narration turn. A 73-hex
+journey costs roughly fifteen of them.
+
+Two independent causes. `boundaryAt` treats geography as a reason to halt; and
+`legTooShort` cannot absorb those boundaries out on the continent, because at
+~100 min/hex a *single* hex already exceeds the 25%-of-a-day half of WS4's
+both-measures rule. `leg7 steps=1 min=202` is that failure exactly.
+
+**The decision.** A march runs until something real interrupts it. Camping is not
+an interruption — it happens inside the march.
+
+**7a — geography becomes passage.** `waypoint`, `crossing`, `border` and `going`
+move out of `boundaryAt` and into `collectPassed`, keeping their labels, so a leg
+still reports the chapel, the ford and the county line it went by. That is the
+purpose the module already claims. `boundaryAt`, `legTooShort` and
+`MIN_LEG_STEPS` are then unused and go.
+
+**7b — nightfall becomes a camp.** `planLeg` keeps scanning past `dayMinutes`,
+incrementing `leg.nights` and resetting the day clock at each crossing. `nights`
+reaches the narrator brief and the halt card ("four nights on the road").
+
+**7c — the march ends when the party cannot sustain it.** A new `supplies`
+boundary. `planLeg` runs the engine's own upkeep forward hex by hex —
+`depleteNeeds` + `autoConsume` against a cloned `character.inventory` and
+`world.codex.items` — and cuts at the first hex where hunger or thirst would fall
+to `Starving`/`Parched` with nothing in the pack to fix it. Reusing the real
+functions rather than approximating them is what stops the forecast and the beat
+tick disagreeing. `WORLD_MARCH_LIMIT` (48) stays as the bound that keeps the
+planner from walking the continent through the tile generator.
+
+> **Prerequisite this exposes.** `applySurvivalTick` drains needs by the beat's
+> full `minutes_passed` but runs `autoConsume` **once**. That is survivable for a
+> half-day leg and starves the party over a fourteen-day one, no matter how many
+> rations they carry. Long marches are not safe to ship until upkeep consumes per
+> day across a long beat.
+
+**7d — encounters stop being an automatic halt.** *"a dangerous encounter still
+party can attempt to escape and continue the journey with a probability chance
+depending on the enemy difficulty against the party. then i.e a traveling
+merchant, a option to stay or keep going still but without probably to being
+stopped."*
+
+`rollPathEncounter` returns the first hit of **any** posture and
+`pathThroughEncounter` truncates the march there — so a doe frozen mid-graze, a
+pair of cranes, or city pedestrians end an expedition. The 101 authored entries
+already carry `posture`, which is the axis this needs:
+
+| posture | effect on the march |
+| --- | --- |
+| `friendly` / `neutral` | never truncates. The march carries on; the event is offered as a choice the player may take (trade, talk, join a caravan) or ride past |
+| `hostile` | an evasion roll — party against `regionDifficulty(x, y, seed).level`. Evaded, the march continues and the near-miss is narrated; failed, it halts at that hex as now |
+
+Evasion is a balance number, so per project convention it gets a
+`scripts/*-sim.mjs` sweep rather than a guessed constant.
+
+**7e — more than danger and merchants.** *"needs multiple encounters that are
+interesting however, not just generic danger or merchant."* The content is
+already broad; what is thin is the set of *interactions*. Open — needs a
+taxonomy of travel events beyond fight/trade before it can be specified.
+
+**7f — the halt card keeps the player on the map.** "Back to the story" comes
+off the card; the map's own close already exists for leaving deliberately.
+
 ---
 
 ## 4. Verification

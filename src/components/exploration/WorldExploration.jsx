@@ -963,8 +963,8 @@ export function WorldExploration({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [flyPanelDest]);
 
-  function handleMapPan(drag, worldRadius) {
-    setCamera((current) => panTravelMapCamera(current, drag, worldRadius));
+  function handleMapPan(drag, worldRadius, stride) {
+    setCamera((current) => panTravelMapCamera(current, drag, worldRadius, stride));
   }
 
   // One map, one camera: the atlas is this map pulled all the way out, and the

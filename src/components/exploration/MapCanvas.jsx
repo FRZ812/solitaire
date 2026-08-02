@@ -578,7 +578,7 @@ export function MapCanvas({ scene, onSelect, onSelectPlace, onPan, onZoom, onVie
   const canvasRef = useRef(null);
   const atlasRef = useRef(initialImages.material);
   const poiAtlasesRef = useRef(initialImages.poi);
-  const layoutRef = useRef({ entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 });
+  const layoutRef = useRef({ entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0, stride: 1 });
   const placesRef = useRef([]);
   const dragRef = useRef(null);
   const pointerPointsRef = useRef(new Map());
@@ -713,10 +713,11 @@ export function MapCanvas({ scene, onSelect, onSelectPlace, onPan, onZoom, onVie
     if (Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6) drag.moved = true;
     if (drag.moved) {
       const preview = dragPreviewOffset(drag.start, point);
-      const { commit, residual } = rebaseTravelMapDrag(preview, layoutRef.current.worldRadius);
+      const { worldRadius, stride } = layoutRef.current;
+      const { commit, residual } = rebaseTravelMapDrag(preview, worldRadius, stride);
       if (commit.x !== 0 || commit.y !== 0) {
         drag.start = { x: point.x - residual.x, y: point.y - residual.y };
-        onPan?.(commit, layoutRef.current.worldRadius);
+        onPan?.(commit, worldRadius, stride);
       }
       setDragPreview(residual);
     }
@@ -741,8 +742,9 @@ export function MapCanvas({ scene, onSelect, onSelectPlace, onPan, onZoom, onVie
     const point = eventPoint(event, event.currentTarget);
     const moved = drag.moved || Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6;
     if (moved) {
-      const { commit } = rebaseTravelMapDrag(dragPreviewOffset(drag.start, point), layoutRef.current.worldRadius);
-      if (commit.x !== 0 || commit.y !== 0) onPan?.(commit, layoutRef.current.worldRadius);
+      const { worldRadius, stride } = layoutRef.current;
+      const { commit } = rebaseTravelMapDrag(dragPreviewOffset(drag.start, point), worldRadius, stride);
+      if (commit.x !== 0 || commit.y !== 0) onPan?.(commit, worldRadius, stride);
       suppressClickUntilRef.current = Date.now() + 350;
     }
     dragRef.current = null;
