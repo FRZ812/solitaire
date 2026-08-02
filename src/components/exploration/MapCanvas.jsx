@@ -152,7 +152,14 @@ function drawScenery(context, scene, entries) {
 const RIBBON_STYLE = {
   road: { core: "rgba(214, 178, 116, .92)", edge: "rgba(38, 26, 12, .55)", scale: 0.16 },
   river: { core: "rgba(96, 168, 205, .9)", edge: "rgba(9, 34, 52, .5)", scale: 0.2 },
+  wall: { core: "rgba(228, 222, 208, .95)", edge: "rgba(18, 16, 12, .62)", scale: 0.13 },
 };
+
+function ribbonSpan(ribbon) {
+  const xs = ribbon.points.map((point) => point.x);
+  const ys = ribbon.points.map((point) => point.y);
+  return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 0.5;
+}
 
 // Roads and rivers as continuous ribbons. A route is one hex wide, so under
 // sampling it would break into dashes; drawing the authored polyline instead
@@ -166,6 +173,10 @@ function drawRibbons(context, ribbons, radius) {
     for (const ribbon of ribbons) {
       const style = RIBBON_STYLE[ribbon.kind] || RIBBON_STYLE.road;
       const core = Math.max(1.1, radius * style.scale * ribbon.width);
+      // A wall encloses ground rather than leading somewhere, so it needs an
+      // inside to read as a wall. Once the ring is barely wider than the stroke
+      // drawing it, it is a blot, and the place marker carries the seat instead.
+      if (ribbon.kind === "wall" && ribbonSpan(ribbon) < core * 6) continue;
       context.lineWidth = pass === "edge" ? core + Math.max(1, radius * 0.06) : core;
       context.strokeStyle = style[pass];
       context.beginPath();
@@ -189,17 +200,34 @@ function drawAtlasPlaces(context, places, radius) {
   const size = Math.max(4.5, Math.min(11, radius * 0.42));
   for (const place of places) {
     const { x, y } = place.point;
+    const ink = place.knowledge === "charted" ? "#f3c96a" : "rgba(226, 214, 186, .9)";
+    const dot = place.major ? size : size * 0.72;
+    // Whitemarch's walls are drawn to scale with the rest of the ribbons, but a
+    // city is a few hexes wide and the continent is a thousand — past a certain
+    // remove no true-scale wall is legible. The ring is the symbol that carries
+    // "this place is held" once the wall itself is smaller than its own stroke.
+    const ring = place.fortified ? dot * 1.75 : 0;
     context.save();
     context.globalAlpha = PLACE_KNOWLEDGE_ALPHA[place.knowledge] ?? 0.5;
-    context.beginPath();
-    context.arc(x, y, place.major ? size : size * 0.72, 0, Math.PI * 2);
-    context.fillStyle = place.knowledge === "charted" ? "#f3c96a" : "rgba(226, 214, 186, .9)";
     context.strokeStyle = "rgba(6, 14, 28, .92)";
+    if (ring) {
+      context.beginPath();
+      context.arc(x, y, ring, 0, Math.PI * 2);
+      context.lineWidth = Math.max(2.4, size * 0.5);
+      context.stroke();
+      context.strokeStyle = ink;
+      context.lineWidth = Math.max(1, size * 0.22);
+      context.stroke();
+      context.strokeStyle = "rgba(6, 14, 28, .92)";
+    }
+    context.beginPath();
+    context.arc(x, y, dot, 0, Math.PI * 2);
+    context.fillStyle = ink;
     context.lineWidth = Math.max(1.2, size * 0.28);
     context.fill();
     context.stroke();
     if (place.major || place.knowledge === "charted") {
-      drawLabel(context, place.name, x, y + size * 1.5, Math.max(38, radius));
+      drawLabel(context, place.name, x, y + Math.max(size * 1.5, ring + size), Math.max(38, radius));
     }
     context.restore();
   }

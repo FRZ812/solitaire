@@ -110,6 +110,7 @@ export const WHITEMARCH_CAPITAL = Object.freeze({
   center: Object.freeze({ x: 0, y: 0 }),
   bounds: Object.freeze({ xmin: -CITY_RADIUS, xmax: CITY_RADIUS, ymin: -CITY_RADIUS, ymax: CITY_RADIUS }),
   radius: CITY_RADIUS,
+  wallRadius: WALL_RADIUS,
   districts: WHITEMARCH_DISTRICTS,
   gates: WHITEMARCH_GATES,
   routeMouths: WHITEMARCH_ROUTE_MOUTHS,

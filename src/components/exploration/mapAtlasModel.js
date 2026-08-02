@@ -17,11 +17,16 @@ import {
   LANDMARKS,
   REALMS,
 } from "../../data/continent.js";
+import { WHITEMARCH_CAPITAL } from "../../data/whitemarch-capital.js";
 import { isSeen, isVisited } from "../../engine/world.js";
 
 // Places that give the continent its shape, kept when everything else is too
 // small to read.
 const MAJOR_KINDS = new Set(["city", "port", "wonder", "fortress"]);
+// Seats with defences, which a map draws as a ring rather than a bare dot.
+// Whether the walls are stone, ice, or grown timber is the description's
+// business; at atlas scale the mark only has to say the place is held.
+const FORTIFIED_KINDS = new Set(["city", "fortress"]);
 
 function isMajor(place) {
   return !!place.capitalOfRealmId
@@ -70,6 +75,7 @@ export function buildAtlasPlaces(state) {
     x: place.coord.x,
     y: place.coord.y,
     major: isMajor(place),
+    fortified: FORTIFIED_KINDS.has(place.kind),
     knowledge: placeKnowledge(state, place),
   }));
 }
@@ -92,5 +98,25 @@ export const ATLAS_WATERWAYS = Object.freeze(CONTINENT_WATERWAYS.map((waterway) 
   width: waterway.widthEnd || 1.8,
   points: waterway.waypoints.map((point) => ({ x: point.x, y: point.y })),
 })));
+
+// The hexes at a fixed hex-distance from a centre form a hexagon, so a city wall
+// is exactly six corners and six straight edges — no sampling needed, and none
+// wanted: the wall is one hex thick, so every stride above 1 breaks it into a
+// dashed circle the same way it once broke the roads.
+function wallRing(center, radius) {
+  const corners = [
+    { x: radius, y: 0 }, { x: radius, y: -radius }, { x: 0, y: -radius },
+    { x: -radius, y: 0 }, { x: -radius, y: radius }, { x: 0, y: radius },
+  ].map((corner) => Object.freeze({ x: center.x + corner.x, y: center.y + corner.y }));
+  return Object.freeze([...corners, corners[0]]);
+}
+
+export const ATLAS_WALLS = Object.freeze([Object.freeze({
+  id: `${WHITEMARCH_CAPITAL.id}-wall`,
+  name: `${WHITEMARCH_CAPITAL.name} Wall`,
+  kind: "wall",
+  width: 1,
+  points: wallRing(WHITEMARCH_CAPITAL.center, WHITEMARCH_CAPITAL.wallRadius),
+})]);
 
 export const CONTINENT_HEX_KILOMETERS = CONTINENT.hexKilometers || 6;
