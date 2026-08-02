@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
 import {
-  WORLD_OVERVIEW_ZOOM_THRESHOLD,
   TRAVEL_MAP_MAX_ZOOM,
   TRAVEL_MAP_MIN_ZOOM,
   activeMarchJourney,
@@ -22,7 +21,8 @@ import {
 
 describe("unified hex travel map camera", () => {
   it("shows substantially more than the legacy 11 by 9 viewport at normal zoom", () => {
-    expect(travelMapViewportDimensions({ width: 1000, height: 700 }, 1)).toEqual({ columns: 19, rows: 15 });
+    expect(travelMapViewportDimensions({ width: 1000, height: 700 }, 1))
+      .toEqual({ columns: 19, rows: 15, stride: 1 });
   });
 
   it("expands the rendered hex window as the camera zooms out", () => {
@@ -45,26 +45,37 @@ describe("unified hex travel map camera", () => {
     const sidebarCanvas = travelMapViewportDimensions({ width: 840, height: 774 }, 1);
     const zoomedOut = travelMapViewportDimensions({ width: 840, height: 774 }, 0.6);
 
-    expect(sidebarCanvas).toEqual({ columns: 15, rows: 15 });
-    expect(zoomedOut).toEqual({ columns: 25, rows: 25 });
+    expect(sidebarCanvas).toEqual({ columns: 15, rows: 15, stride: 1 });
+    expect(zoomedOut).toEqual({ columns: 25, rows: 25, stride: 1 });
+  });
+
+  it("buys coverage past the row ceiling with stride instead of with more cells", () => {
+    const wide = travelMapViewportDimensions({ width: 1000, height: 700 }, 0.2);
+    const continental = travelMapViewportDimensions({ width: 1000, height: 700 }, TRAVEL_MAP_MIN_ZOOM);
+
+    expect(continental.rows).toBe(wide.rows);
+    expect(continental.columns).toBe(wide.columns);
+    expect(continental.stride).toBeGreaterThan(wide.stride);
+    // The whole point of the ceiling: a continental view enumerates no more hexes
+    // than a valley, so `getTile` runs the same number of times either way.
+    expect(continental.rows * continental.columns).toBe(wide.rows * wide.columns);
+    // Coverage has to actually reach the continent's 850-hex height.
+    expect(continental.rows * continental.stride).toBeGreaterThan(850);
   });
 
   it("adds three render-only overscan cells per edge without changing visible dimensions", () => {
-    const visible = { columns: 15, rows: 15 };
-    expect(travelMapRenderDimensions(visible)).toEqual({ columns: 21, rows: 21 });
-    expect(visible).toEqual({ columns: 15, rows: 15 });
+    const visible = { columns: 15, rows: 15, stride: 4 };
+    expect(travelMapRenderDimensions(visible)).toEqual({ columns: 21, rows: 21, stride: 4 });
+    expect(visible).toEqual({ columns: 15, rows: 15, stride: 4 });
   });
 
-  it("clamps normal zoom and requests the world overview only beyond the far limit", () => {
+  it("clamps zoom to the continuous range rather than handing off to a separate atlas", () => {
     expect(clampTravelMapZoom(99)).toBe(TRAVEL_MAP_MAX_ZOOM);
     expect(clampTravelMapZoom(0)).toBe(TRAVEL_MAP_MIN_ZOOM);
 
-    const ordinary = travelMapZoomStep(0.9, 0.8);
-    expect(ordinary.openWorldOverview).toBe(false);
-    expect(ordinary.zoom).toBeGreaterThanOrEqual(TRAVEL_MAP_MIN_ZOOM);
-
-    const atEdge = travelMapZoomStep(WORLD_OVERVIEW_ZOOM_THRESHOLD, 0.8);
-    expect(atEdge).toMatchObject({ zoom: TRAVEL_MAP_MIN_ZOOM, openWorldOverview: true });
+    expect(travelMapZoomStep(0.9, 0.8).zoom).toBeCloseTo(0.72, 10);
+    expect(travelMapZoomStep(TRAVEL_MAP_MIN_ZOOM, 0.8)).toEqual({ zoom: TRAVEL_MAP_MIN_ZOOM });
+    expect(travelMapZoomStep(TRAVEL_MAP_MAX_ZOOM, 1.25)).toEqual({ zoom: TRAVEL_MAP_MAX_ZOOM });
   });
 
   it("converts a dragged hex canvas into the opposite camera movement", () => {
@@ -234,6 +245,35 @@ describe("hex travel march presentation", () => {
     expect(formatTravelDuration(42)).toBe("42 min");
     expect(formatTravelDuration(125)).toBe("2 h 5 min");
     expect(formatTravelDuration(3_000)).toBe("2 d 2 h");
+  });
+
+  it("previews only the legs whose ground the party has already mapped", () => {
+    const state = makeInitialState();
+    const origin = { ...state.world.currentTile };
+    const path = [origin];
+    for (let i = 1; i <= 6; i += 1) path.push({ x: origin.x + i, y: origin.y });
+    // Mapped as far as the third hex; everything past it is still fog.
+    for (let i = 1; i <= 3; i += 1) state.world.seen[`${path[i].x},${path[i].y}`] = true;
+    for (let i = 4; i < path.length; i += 1) delete state.world.seen[`${path[i].x},${path[i].y}`];
+    const journey = {
+      fullPath: path,
+      legPath: path.slice(0, 4),
+      legs: [
+        { index: 0, from: 0, to: 3, steps: 3, minutes: 90, arrived: false, boundary: { kind: "crossing", label: "Mapped Ford" }, passed: [{ label: "a hay barn" }] },
+        { index: 1, from: 3, to: 6, steps: 3, minutes: 90, arrived: true, boundary: { kind: "destination", label: "Fogbound Keep" }, passed: [] },
+      ],
+      totalSteps: 6,
+      legSteps: 3,
+      terrainCounts: {},
+      terrainLabels: [],
+    };
+
+    const preview = knownJourneyPreview(state, journey);
+
+    expect(preview.legs).toHaveLength(1);
+    expect(preview.legs[0]).toMatchObject({ boundaryKind: "crossing", boundaryLabel: "Mapped Ford", passed: ["a hay barn"] });
+    // A leg that runs into the fog must not name where it would have ended.
+    expect(JSON.stringify(preview)).not.toContain("Fogbound Keep");
   });
 
   it("limits journey presentation to the contiguous mapped route prefix", () => {

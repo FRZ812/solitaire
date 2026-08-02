@@ -6,7 +6,10 @@ import {
   ATLAS_CELLS,
   buildMapLayout,
   buildRouteSegments,
+  findAtlasPlace,
   findInteractiveEntry,
+  layoutAtlasPlaces,
+  layoutAtlasRibbons,
   mapFogOpacity,
   mapPoiIconSize,
   mapMarkerShowsTierDetail,
@@ -14,6 +17,7 @@ import {
   mapTrackedEntry,
   selectMapMarkerEntries,
 } from "./mapGeometry.js";
+import { lodFogScale, lodShowsHexOutlines, lodShowsScenery } from "./mapLod.js";
 import { dragPreviewOffset, pinchDistance, pinchZoomFactor } from "./mapGestures.js";
 import { rebaseTravelMapDrag } from "./travelMapModel.js";
 
@@ -53,6 +57,10 @@ function materialFor(scene, cell) {
 
 function drawTerrain(context, scene, entries, atlas) {
   const night = !!scene.night;
+  // A hex outline drawn around a 28-hex sample is a lie about what the map
+  // knows. Dropping it lets terrain read as continuous masses, which is what a
+  // map at that scale should look like.
+  const outlines = lodShowsHexOutlines(scene.tier || "local");
   for (const entry of entries) {
     const material = materialFor(scene, entry.cell);
     if (RELIEF_MATERIALS.has(material)) {
@@ -101,10 +109,99 @@ function drawTerrain(context, scene, entries, atlas) {
     }
     context.restore();
 
+    if (!outlines) continue;
     tracePolygon(context, entry.polygon);
     context.strokeStyle = scene.mode === "city" ? "rgba(24, 28, 38, .3)" : "rgba(7, 24, 41, .42)";
     context.lineWidth = Math.max(0.7, entry.size * 0.025);
     context.stroke();
+  }
+}
+
+// Ambient landscape the party can see from the road — a barn, a milestone, a
+// wayside shrine. Deliberately unlabelled marks, not markers: they say the
+// country is lived in without pretending every one is a place to visit.
+function drawScenery(context, scene, entries) {
+  if (!lodShowsScenery(scene.tier || "local") || scene.mode !== "world") return;
+  for (const entry of entries) {
+    const count = entry.cell.scenery?.length || 0;
+    if (!count || !entry.cell.explored) continue;
+    const radius = Math.max(1.1, entry.size * 0.055);
+    const spread = entry.size * 0.36;
+    context.save();
+    context.fillStyle = "rgba(24, 18, 9, .5)";
+    context.strokeStyle = "rgba(247, 233, 191, .72)";
+    context.lineWidth = Math.max(0.6, radius * 0.5);
+    for (let index = 0; index < Math.min(3, count); index += 1) {
+      // Fixed offsets keyed off the hex, so a mark never jitters between frames.
+      const angle = ((entry.cell.x * 7 + entry.cell.y * 13 + index * 5) % 6) * (Math.PI / 3);
+      const x = entry.center.x + Math.cos(angle) * spread;
+      const y = entry.center.y + Math.sin(angle) * spread * 0.7;
+      context.beginPath();
+      context.moveTo(x, y - radius);
+      context.lineTo(x + radius, y);
+      context.lineTo(x, y + radius);
+      context.lineTo(x - radius, y);
+      context.closePath();
+      context.fill();
+      context.stroke();
+    }
+    context.restore();
+  }
+}
+
+const RIBBON_STYLE = {
+  road: { core: "rgba(214, 178, 116, .92)", edge: "rgba(38, 26, 12, .55)", scale: 0.16 },
+  river: { core: "rgba(96, 168, 205, .9)", edge: "rgba(9, 34, 52, .5)", scale: 0.2 },
+};
+
+// Roads and rivers as continuous ribbons. A route is one hex wide, so under
+// sampling it would break into dashes; drawing the authored polyline instead
+// keeps it whole and reads better than a hex-by-hex road ever did.
+function drawRibbons(context, ribbons, radius) {
+  if (!ribbons.length) return;
+  context.save();
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  for (const pass of ["edge", "core"]) {
+    for (const ribbon of ribbons) {
+      const style = RIBBON_STYLE[ribbon.kind] || RIBBON_STYLE.road;
+      const core = Math.max(1.1, radius * style.scale * ribbon.width);
+      context.lineWidth = pass === "edge" ? core + Math.max(1, radius * 0.06) : core;
+      context.strokeStyle = style[pass];
+      context.beginPath();
+      context.moveTo(ribbon.points[0].x, ribbon.points[0].y);
+      for (let index = 1; index < ribbon.points.length; index += 1) {
+        context.lineTo(ribbon.points[index].x, ribbon.points[index].y);
+      }
+      context.stroke();
+    }
+  }
+  context.restore();
+}
+
+const PLACE_KNOWLEDGE_ALPHA = { charted: 1, reputation: 0.66, legend: 0.42 };
+
+// Authored places, which is what the map has left to say once individual hexes
+// are too small to read. Reputation and legend are drawn faint but remain
+// selectable, so the party can still set out for somewhere it has never seen.
+function drawAtlasPlaces(context, places, radius) {
+  if (!places.length) return;
+  const size = Math.max(4.5, Math.min(11, radius * 0.42));
+  for (const place of places) {
+    const { x, y } = place.point;
+    context.save();
+    context.globalAlpha = PLACE_KNOWLEDGE_ALPHA[place.knowledge] ?? 0.5;
+    context.beginPath();
+    context.arc(x, y, place.major ? size : size * 0.72, 0, Math.PI * 2);
+    context.fillStyle = place.knowledge === "charted" ? "#f3c96a" : "rgba(226, 214, 186, .9)";
+    context.strokeStyle = "rgba(6, 14, 28, .92)";
+    context.lineWidth = Math.max(1.2, size * 0.28);
+    context.fill();
+    context.stroke();
+    if (place.major || place.knowledge === "charted") {
+      drawLabel(context, place.name, x, y + size * 1.5, Math.max(38, radius));
+    }
+    context.restore();
   }
 }
 
@@ -194,7 +291,24 @@ function drawPoiTierMarker(context, x, y, markerRadius, marketTier) {
   context.restore();
 }
 
+const POI_KNOWLEDGE_ALPHA = { rumoured: 0.72, silhouette: 0.48 };
+
 function drawPoi(context, entry, poiAtlases, mode) {
+  const knowledge = entry.cell.poi_knowledge;
+  const alpha = POI_KNOWLEDGE_ALPHA[knowledge];
+  if (alpha) {
+    // A place known only by its outline is drawn faint, so the map distinguishes
+    // what the party has stood in from what it has merely spotted.
+    context.save();
+    context.globalAlpha = alpha;
+    drawPoiMark(context, entry, poiAtlases, mode);
+    context.restore();
+    return;
+  }
+  drawPoiMark(context, entry, poiAtlases, mode);
+}
+
+function drawPoiMark(context, entry, poiAtlases, mode) {
   const iconSize = mapPoiIconSize(entry.size, mode);
   const size = iconSize * 0.44;
   const { x, y } = entry.center;
@@ -233,7 +347,7 @@ function drawPoi(context, entry, poiAtlases, mode) {
     diamond(0, 0, size, entry.cell.marker_color || "#efb957");
     diamond(0, 0, size * 0.42, "#fff0b0");
   }
-  if (mapMarkerShowsTierDetail(entry.size, mode)) {
+  if (!POI_KNOWLEDGE_ALPHA[entry.cell.poi_knowledge] && mapMarkerShowsTierDetail(entry.size, mode)) {
     drawPoiTierMarker(context, x, y, markerRadius, entry.cell.poi_market_tier);
   }
   if (entry.cell.quest) {
@@ -262,8 +376,13 @@ function drawFog(context, scene, entries) {
   // lightly muted, and unknown terrain stays readable beneath a darker veil.
   // Per-cell fog keeps accumulated exploration authoritative as the camera
   // moves instead of re-covering remembered edge cells with a full-screen mask.
+  //
+  // The veil thins as the map pulls back. Personal sight is the wrong lens for
+  // a continent: base geography is public, so far out this marks where the
+  // party has walked rather than hiding everywhere it has not.
+  const fogScale = lodFogScale(scene.tier || "local");
   for (const entry of entries) {
-    const opacity = mapFogOpacity(entry.cell, scene.night);
+    const opacity = mapFogOpacity(entry.cell, scene.night, fogScale);
     if (opacity <= 0) continue;
     tracePolygon(context, entry.polygon);
     context.fillStyle = scene.night
@@ -392,12 +511,15 @@ export function renderMap(context, scene, layout, atlas, poiAtlases, hoverKey, w
   context.save();
   context.translate(Number(dragPreview.x) || 0, Number(dragPreview.y) || 0);
   drawTerrain(context, scene, layout.entries, atlas);
+  drawScenery(context, scene, layout.entries);
+  drawRibbons(context, layoutAtlasRibbons(layout, scene.ribbons, width, height), layout.worldRadius);
   const routeWidth = scene.mode === "world"
     ? Math.max(4, layout.worldRadius * 0.13)
     : Math.max(4, layout.cityCellSize * 0.1);
   strokeRoute(context, buildRouteSegments(scene.route, layout.centerByKey), routeWidth);
   drawMarkers(context, scene, layout, poiAtlases, width);
   drawFog(context, scene, layout.entries);
+  drawAtlasPlaces(context, layoutAtlasPlaces(layout, scene.places), layout.worldRadius);
   drawSelection(context, layout.entries.find((entry) => entry.key === String(scene.selected_key || "")));
   drawTrackedCharacter(context, mapTrackedEntry(layout, scene.tracked_character));
   drawPlayer(context, mapPartyEntry(layout, scene.current_key, scene.party_march));
@@ -420,7 +542,7 @@ function eventPoint(event, canvas) {
   };
 }
 
-export function MapCanvas({ scene, onSelect, onPan, onZoom, onViewportChange, label, choices = [], selectedKey = "" }) {
+export function MapCanvas({ scene, onSelect, onSelectPlace, onPan, onZoom, onViewportChange, label, choices = [], selectedKey = "" }) {
   const initialImagesRef = useRef(null);
   if (!initialImagesRef.current) initialImagesRef.current = getCachedMapCanvasImages();
   const initialImages = initialImagesRef.current;
@@ -429,6 +551,7 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, onViewportChange, la
   const atlasRef = useRef(initialImages.material);
   const poiAtlasesRef = useRef(initialImages.poi);
   const layoutRef = useRef({ entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 });
+  const placesRef = useRef([]);
   const dragRef = useRef(null);
   const pointerPointsRef = useRef(new Map());
   const pinchRef = useRef(null);
@@ -488,12 +611,25 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, onViewportChange, la
     context.imageSmoothingQuality = "high";
     const layout = buildMapLayout(scene, viewport.width, viewport.height);
     layoutRef.current = layout;
+    placesRef.current = layoutAtlasPlaces(layout, scene.places);
     renderMap(context, scene, layout, atlasRef.current, poiAtlasesRef.current, hoverKey, viewport.width, viewport.height, dragPreview);
   }, [scene, viewport, atlasReady, poiAtlasesReady, hoverKey, dragPreview]);
 
   function entryAt(event) {
     const canvas = canvasRef.current;
     return canvas ? findInteractiveEntry(layoutRef.current.entries, eventPoint(event, canvas)) : null;
+  }
+
+  // Atlas places sit above the hexes and are the only thing worth clicking once
+  // a hex covers many kilometres, so they win the hit test.
+  function placeAt(event) {
+    const canvas = canvasRef.current;
+    if (!canvas || !placesRef.current.length) return null;
+    return findAtlasPlace(
+      placesRef.current,
+      eventPoint(event, canvas),
+      Math.max(14, layoutRef.current.worldRadius * 0.7),
+    );
   }
 
   function updateHover(event) {
@@ -605,6 +741,11 @@ export function MapCanvas({ scene, onSelect, onPan, onZoom, onViewportChange, la
 
   function pick(event) {
     if (Date.now() < suppressClickUntilRef.current) return;
+    const place = placeAt(event);
+    if (place) {
+      onSelectPlace?.(place);
+      return;
+    }
     const entry = entryAt(event);
     if (entry) onSelect?.(entry.key);
   }

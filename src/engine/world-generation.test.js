@@ -3,6 +3,7 @@ import * as continentContent from "../data/continent.js";
 import {
   BORDER_CHECKPOINTS,
   CAMPAIGN_MINOR_SITE_FEATURES,
+  SITE_MOTIFS,
   COASTAL_FEATURES,
   CONTINENT,
   CONTINENT_HOT_SPRINGS,
@@ -393,8 +394,13 @@ describe("continental world generation", () => {
       expect(site.travelHazard.label, realm.id).toBeTruthy();
       expect(site.authority.factionId, realm.id).toBe(sample.content.authority.factionId);
       expect(site.resources.length, realm.id).toBeGreaterThan(0);
-      expect(site.description.startsWith(archetype.description), realm.id).toBe(true);
-      expect(site.description.length, realm.id).toBeGreaterThan(archetype.description.length);
+      // A motif states what the place is; the archetype line is the fallback
+      // for kinds that carry no motif text of their own.
+      const opening = SITE_MOTIFS[site.kind]?.description
+        || CAMPAIGN_MINOR_SITE_FEATURES.find((feature) => feature.kind === site.kind)?.description
+        || archetype.description;
+      expect(site.description.startsWith(opening), realm.id).toBe(true);
+      expect(site.description.length, realm.id).toBeGreaterThan(opening.length);
       expect(site.tags, realm.id).toEqual(expect.arrayContaining([
         `realm:${realm.id}`,
         `province:${sample.province.id}`,
@@ -630,7 +636,7 @@ describe("continental world generation", () => {
     const points = [...FIXED_PROBES, campaignVariableProbe];
     expect(sampleContinent(campaignVariableProbe.x, campaignVariableProbe.y, DEFAULT_WORLD_SEED).site).toBeNull();
     expect(sampleContinent(campaignVariableProbe.x, campaignVariableProbe.y, "avarra-another-age").site)
-      .toMatchObject({ kind: "frontier-fort" });
+      .toMatchObject({ kind: "woodward-lodge" });
 
     const baseline = await queryFresh(DEFAULT_WORLD_SEED, points);
     const alternate = await queryFresh("avarra-another-age", [...points].reverse());
@@ -935,8 +941,11 @@ describe("continental world generation", () => {
     expect(archetype.minimumSpacingHexes).toBeGreaterThanOrEqual(3);
     expect(site.poiType).toBe(archetype.poiType);
     expect(site.name).toBeTruthy();
-    expect(site.description.startsWith(archetype.description)).toBe(true);
-    expect(site.description.length).toBeGreaterThan(archetype.description.length);
+    const opening = SITE_MOTIFS[site.kind]?.description
+      || CAMPAIGN_MINOR_SITE_FEATURES.find((feature) => feature.kind === site.kind)?.description
+      || archetype.description;
+    expect(site.description.startsWith(opening)).toBe(true);
+    expect(site.description.length).toBeGreaterThan(opening.length);
     expect(site.tags).toEqual(expect.arrayContaining(archetype.tags));
     expect(tile.poi).toMatchObject({
       type: "hidden",
@@ -959,8 +968,13 @@ describe("continental world generation", () => {
   });
 
   it("limits campaign-generated POIs to geographically valid minor-site families", () => {
-    const catalog = new Map(CAMPAIGN_MINOR_SITE_FEATURES.map((feature) => [feature.kind, feature]));
+    const catalog = new Map([
+      ...CAMPAIGN_MINOR_SITE_FEATURES.map((feature) => [feature.kind, feature]),
+      ...Object.entries(SITE_MOTIFS).map(([kind, motif]) => [kind, { kind, ...motif }]),
+    ]);
+    const fallbackKinds = new Set(CAMPAIGN_MINOR_SITE_FEATURES.map((feature) => feature.kind));
     const foundFamilies = new Set();
+    const foundKinds = new Set();
     let foundSites = 0;
 
     for (const realm of REALMS) {
@@ -970,6 +984,7 @@ describe("continental world generation", () => {
           if (!sample.site || sample.realmId !== realm.id) continue;
           foundSites += 1;
           foundFamilies.add(sample.site.archetypeId);
+          foundKinds.add(sample.site.kind);
           const feature = catalog.get(sample.site.kind);
           expect(feature, `${sample.site.kind} at ${x},${y} is not approved campaign content`).toBeTruthy();
           expect(sample.site.archetypeId, sample.site.kind).toBe(feature.family);
@@ -982,20 +997,15 @@ describe("continental world generation", () => {
     expect(foundSites).toBeGreaterThan(12);
     expect(foundFamilies.size).toBeGreaterThanOrEqual(4);
 
-    const catalogFixtures = {
-      "bandit-camp": { x: -55, y: -60, seed: "diagnostic:sites:central" },
-      "forgotten-ruin": { x: -27, y: -58, seed: "diagnostic:sites:central" },
-      "frontier-fort": { x: -24, y: -58, seed: "diagnostic:sites:central" },
-      "monster-den": { x: -43, y: -57, seed: "diagnostic:sites:central" },
-      "roadside-inn": { x: 18, y: -23, seed: "diagnostic:sites:central" },
-      "wayward-shrine": { x: 27, y: -57, seed: "diagnostic:sites:central" },
-      "woodland-clearing": { x: 6, y: -55, seed: "diagnostic:sites:central" },
-    };
-    expect(Object.keys(catalogFixtures).sort()).toEqual([...catalog.keys()].sort());
-    for (const [kind, fixture] of Object.entries(catalogFixtures)) {
-      expect(sampleContinent(fixture.x, fixture.y, fixture.seed).site?.kind, kind).toBe(kind);
-    }
-  });
+    // Regional and ecological motifs must actually reach the world. They were
+    // authored but unread for a long time, so proving the pool is not just the
+    // universal fallback list is the point of this assertion.
+    const motifKinds = [...foundKinds].filter((kind) => !fallbackKinds.has(kind));
+    expect(motifKinds.length, `only fallback kinds generated: ${[...foundKinds].join(", ")}`)
+      .toBeGreaterThan(4);
+    // Thousands of full continent samples per realm. It runs in ~1.5s alone but
+    // several times that when the suite saturates the CPU.
+  }, 30000);
 
   it("does not let an ineligible neighboring candidate suppress a valid minor site", () => {
     const seed = "eligibility-probe";

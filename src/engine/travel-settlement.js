@@ -6,21 +6,54 @@ import { mergeMemoryBank } from "./memory.js";
 import { storyFromResponse } from "./narrative-sequence.js";
 import { applyTravelPosition } from "./travel-position.js";
 import { getTile } from "./world.js";
+import { siteKnowledgeGrade } from "./world-sighting.js";
 
-export function publicLocationPresentation(tile, coord = null) {
+// What a site amounts to when it has only been made out at a distance. These
+// state what is visible from where the party stands; the site's own record
+// stays sealed until it is entered.
+const SIGHTED_SITES = Object.freeze({
+  settlement: Object.freeze({ title: "Rooftops in the distance", line: "Roofs and smoke sit low on the ground ahead." }),
+  camp: Object.freeze({ title: "A camp", line: "Canvas and a banked fire mark someone's stopping place." }),
+  clearing: Object.freeze({ title: "An opening", line: "The cover breaks into open ground." }),
+  "roadside-inn": Object.freeze({ title: "A roadside inn", line: "A long roof and a stable yard sit hard against the road." }),
+  shrine: Object.freeze({ title: "A shrine", line: "A small kept structure stands a little apart from the way." }),
+  ruin: Object.freeze({ title: "Ruins", line: "Broken walls stand clear of the ground around them." }),
+  resource: Object.freeze({ title: "Workings", line: "Cut ground, spoil heaps, and worn paths show work here." }),
+  crossing: Object.freeze({ title: "A crossing", line: "The way over the water is visible from here." }),
+  fortification: Object.freeze({ title: "A fortified work", line: "Walls and a tower hold the high ground." }),
+  wonder: Object.freeze({ title: "Something out of the ordinary", line: "Something stands in the open that belongs to no ordinary landscape." }),
+});
+
+// `sighting` is { distance, explored } from the map layer. Without it the tile
+// presents exactly as it did before graded knowledge existed.
+function sightedSite(tile, sighting) {
+  const generated = tile?.poi?.generated;
+  if (!generated || !sighting) return null;
+  const grade = siteKnowledgeGrade(generated.sighting, sighting);
+  const seen = SIGHTED_SITES[generated.archetypeId];
+  if (!grade || !seen) return null;
+  return { grade, title: grade === "rumoured" ? generated.name : seen.title, line: seen.line };
+}
+
+export function publicLocationPresentation(tile, coord = null, sighting = null) {
   const hidden = tile?.poi?.type === "hidden";
   const terrain = TERRAINS[tile?.terrain]?.label || "Wilderness";
   const placeName = hidden ? null : poiPlaceName(tile?.poi);
   const district = hidden
     ? null
     : tile?.districtName || tile?.district || tile?.poi?.districtName || tile?.poi?.parentName || null;
+  const sighted = hidden ? sightedSite(tile, sighting) : null;
+  const openName = placeName || sighted?.title;
   return {
     hidden,
+    sighted: sighted?.grade || null,
     terrain,
-    name: placeName || (coord ? `${terrain} (${coord.x},${coord.y})` : terrain),
-    title: placeName || terrain,
+    name: openName || (coord ? `${terrain} (${coord.x},${coord.y})` : terrain),
+    title: openName || terrain,
     district,
-    description: hidden ? (TERRAINS[tile?.terrain]?.flavor || null) : (tile?.poi?.description || TERRAINS[tile?.terrain]?.flavor || null),
+    description: hidden
+      ? (sighted?.line || TERRAINS[tile?.terrain]?.flavor || null)
+      : (tile?.poi?.description || TERRAINS[tile?.terrain]?.flavor || null),
     marketTier: hidden ? null : tile?.poi?.marketTier || null,
   };
 }

@@ -591,16 +591,128 @@ export const SITE_ARCHETYPES = {
   },
 };
 
+// Concrete motifs named by REGION_DEFINITIONS.features and ECOLOGIES.features.
+// Each entry binds a motif slug to the archetype that fixes its mechanical
+// identity and to the terrains that can plausibly carry it. A motif with no
+// `terrains` is allowed on any land terrain; `routeOnly` motifs require a road.
+// Region motifs outrank ecology motifs so the Mire reads as the Mire even where
+// its wetland ecology is shared with the Bonemarsh.
+// `description` states what the place is. It replaces the archetype's generic
+// line so a reed village and a freehold do not read identically, and it is the
+// factual ground narration is permitted to phrase but not contradict.
+export const SITE_MOTIFS = Object.freeze({
+  // Inhabited communities
+  "reed-village": Object.freeze({ family: "settlement", terrains: Object.freeze(["marsh", "reedfield"]), description: "Thatched houses stand on raised platforms of packed peat, linked by plank walks above the waterline." }),
+  freehold: Object.freeze({ family: "settlement", terrains: Object.freeze(["plains"]), description: "A cluster of landholding families work their own strips and answer to no lord nearer than the capital." }),
+  "hedge-village": Object.freeze({ family: "settlement", terrains: Object.freeze(["plains", "forest"]), description: "The houses sit inside a grown hedge thick enough to turn cattle, with one gap kept as a gate." }),
+  "tribute-town": Object.freeze({ family: "settlement", terrains: Object.freeze(["hills", "mountains"]), description: "A hill town that pays its dues in ore and wool, with a weighing floor at the centre and a tally house beside it." }),
+  "stone-village": Object.freeze({ family: "settlement", terrains: Object.freeze(["plains", "hills"]), description: "Every wall and roof here is cut stone, quarried close by and fitted without mortar." }),
+  "market-town": Object.freeze({ family: "settlement", terrains: Object.freeze(["plains", "road"]), description: "A chartered market square with a covered cross at its centre, busy on its day and quiet the rest of the week." }),
+  "fishing-village": Object.freeze({ family: "settlement", terrains: Object.freeze(["marsh", "plains"]), description: "Boats are drawn up along the bank and nets hang to dry between the houses on frames taller than the roofs." }),
+  "sylvan-outpost": Object.freeze({ family: "settlement", terrains: Object.freeze(["forest"]), description: "Timber halls are built into the standing trees rather than a clearing, so the settlement is invisible until entered." }),
+  "stilt-village": Object.freeze({ family: "settlement", terrains: Object.freeze(["reedfield", "marsh"]), description: "The whole village stands on driven piles above open water, reached by ladder and punt." }),
+  "banner-house": Object.freeze({ family: "settlement", terrains: Object.freeze(["plains", "reedfield", "road"]), description: "A sworn household holds this ground for its banner lord, with a hall, a muster yard, and tenants close by." }),
+
+  // Working and temporary camps
+  "peat-camp": Object.freeze({ family: "camp", terrains: Object.freeze(["marsh"]), description: "Cutters work the peat bank in summer from turf shelters, and the drying stacks stand in rows behind them." }),
+  "shepherd-camp": Object.freeze({ family: "camp", terrains: Object.freeze(["plains", "hills"]), description: "A seasonal camp on the grazing route, with a hurdled fold, a fire pit, and dogs that hear you first." }),
+  "clan-camp": Object.freeze({ family: "camp", terrains: Object.freeze(["hills", "mountains"]), description: "Hide tents are pitched in a ring around the clan's fire, with the herd held on the slope above." }),
+  "war-camp": Object.freeze({ family: "camp", terrains: Object.freeze(["plains", "hills"]), description: "A ditched and palisaded camp laid out in lanes, holding armed companies between one march and the next." }),
+  "nomad-camp": Object.freeze({ family: "camp", terrains: Object.freeze(["plains"]), description: "Round felt tents stand where the grazing is good this month, and will be somewhere else next month." }),
+  "lost-camp": Object.freeze({ family: "camp", description: "A camp still standing with its gear in place, left by people who did not come back for it." }),
+  "hunter-lodge": Object.freeze({ family: "camp", terrains: Object.freeze(["forest", "hills", "plains"]), description: "A low lodge used through the hunting season, with racks for hanging game and a smoking shed behind." }),
+  "charcoal-camp": Object.freeze({ family: "camp", terrains: Object.freeze(["forest"]), description: "Burners live beside their smouldering stacks for the length of each burn, sleeping in shelters of turf and bough." }),
+  "fishing-camp": Object.freeze({ family: "camp", terrains: Object.freeze(["marsh", "plains"]), description: "A working camp on the bank with drying racks, a salting barrel, and boats pulled clear of the water." }),
+  "woodward-lodge": Object.freeze({ family: "camp", terrains: Object.freeze(["forest"]), description: "The woodward keeps this lodge to watch the timber, mark the cutting, and know who is in the trees." }),
+  "hermit-cell": Object.freeze({ family: "camp", terrains: Object.freeze(["forest", "hills", "mountains", "marsh"]), description: "One person lives here alone by choice, in a cell of stone and turf with a garden and a water source." }),
+
+  // Open gathering ground
+  "old-grove": Object.freeze({ family: "clearing", terrains: Object.freeze(["forest"]), description: "Trees far older than the surrounding wood stand widely spaced over clear ground, and nothing has been cut here." }),
+  "hidden-grove": Object.freeze({ family: "clearing", terrains: Object.freeze(["forest"]), description: "A clearing screened on every side by thicket, reached through one gap that has to be known about." }),
+  fairground: Object.freeze({ family: "clearing", terrains: Object.freeze(["plains"]), description: "Open ground kept clear for the yearly fair, marked by post holes, a stone platform, and grass grazed short." }),
+  "horse-fair": Object.freeze({ family: "clearing", terrains: Object.freeze(["plains"]), description: "A long straight run of turf where horses are shown at speed, with pens and a judging stand at one end." }),
+
+  // Lairs
+  "wyrm-roost": Object.freeze({ family: "den", terrains: Object.freeze(["mountains", "hills"]), description: "A high ledge fouled with scale and bone, and the rock beneath it scorched in long streaks." }),
+  roost: Object.freeze({ family: "den", terrains: Object.freeze(["mountains", "hills"]), description: "Something large nests on the crag and hunts from it, and the ground below is littered with what it drops." }),
+  "ice-cave": Object.freeze({ family: "den", terrains: Object.freeze(["mountains", "hills"]), description: "A cave floored in old blue ice, warm enough at the back that something has chosen to den in it." }),
+
+  // Licensed road lodging
+  caravanserai: Object.freeze({ family: "roadside-inn", routeOnly: true, description: "A walled yard with stabling on all four sides, water, and rooms above, kept open for whole caravans at once." }),
+
+  // Places of observance
+  "wayside-shrine": Object.freeze({ family: "shrine", description: "A roofed niche at the roadside holding a figure, a ledge of offerings, and a stub of candle." }),
+  "drowned-shrine": Object.freeze({ family: "shrine", terrains: Object.freeze(["marsh", "reedfield"]), description: "The shrine stands in standing water to the height of its altar, still tended by people who wade to it." }),
+  "hill-shrine": Object.freeze({ family: "shrine", terrains: Object.freeze(["hills", "mountains"]), description: "A shrine on the crest, walled against the wind, sited so it can be seen from the whole valley." }),
+  "tide-shrine": Object.freeze({ family: "shrine", terrains: Object.freeze(["marsh", "plains"]), description: "A shrine reachable only between tides, with the water's height cut into the doorpost year by year." }),
+  "milestone-shrine": Object.freeze({ family: "shrine", terrains: Object.freeze(["road", "plains"]), description: "A shrine built onto the milestone itself, so travellers count distance and give thanks in one stop." }),
+  "high-shrine": Object.freeze({ family: "shrine", terrains: Object.freeze(["mountains"]), description: "A shrine at the top of a cut stair, above the treeline, hung with offerings that the wind has bleached." }),
+  "snowbound-shrine": Object.freeze({ family: "shrine", terrains: Object.freeze(["plains", "hills"]), description: "The shrine is built tall and narrow so its roof stays clear when the drifts close over everything else." }),
+  "dune-shrine": Object.freeze({ family: "shrine", terrains: Object.freeze(["plains"]), description: "A shrine half buried and dug out again each season, its threshold swept clean by whoever passes." }),
+  "river-shrine": Object.freeze({ family: "shrine", terrains: Object.freeze(["reedfield", "marsh", "plains"]), description: "A shrine at the water's edge where boats are blessed before a crossing and coins go into the current." }),
+  "witch-path": Object.freeze({ family: "shrine", terrains: Object.freeze(["forest", "marsh"]), description: "A marked path of pale stones leads off the road to a place local people visit and do not discuss." }),
+
+  // Abandoned works
+  "root-ruin": Object.freeze({ family: "ruin", terrains: Object.freeze(["forest"]), description: "Walls stand only where roots have gripped them, and the trees have taken the rest apart stone by stone." }),
+  "fortress-ruin": Object.freeze({ family: "ruin", terrains: Object.freeze(["hills", "plains", "mountains"]), description: "A curtain wall and one broken tower remain of a fortress that commanded this ground for someone." }),
+  "moss-ruin": Object.freeze({ family: "ruin", terrains: Object.freeze(["forest"]), description: "Every surface is under moss so deep the building reads as a set of green mounds until you touch it." }),
+  "drowned-ruin": Object.freeze({ family: "ruin", terrains: Object.freeze(["marsh", "plains"]), description: "Roof ridges and chimney stacks stand above still water where the ground gave way and the settlement went under." }),
+  "unknown-ruin": Object.freeze({ family: "ruin", description: "Worked stone in a plan nobody local can account for, in a style that matches nothing standing nearby." }),
+  "buried-ruin": Object.freeze({ family: "ruin", terrains: Object.freeze(["plains", "hills"]), description: "A doorhead and the top of a wall break the turf, with the rest of the building still under the field." }),
+  "abandoned-farm": Object.freeze({ family: "ruin", terrains: Object.freeze(["plains"]), description: "The steading stands roofless with its yard walls intact and its fields gone back to thorn." }),
+  "abandoned-mine": Object.freeze({ family: "ruin", terrains: Object.freeze(["hills", "mountains"]), description: "An adit is cut into the hillside above a spoil heap, timbered at the mouth and dark past that." }),
+  wreck: Object.freeze({ family: "ruin", terrains: Object.freeze(["marsh", "plains"]), description: "A ship's ribs stand out of the ground far from any water deep enough to have floated it." }),
+  barrow: Object.freeze({ family: "ruin", terrains: Object.freeze(["plains", "hills"]), description: "A long turfed mound with a kerb of set stones and a blocked entrance at the eastern end." }),
+  "burial-mound": Object.freeze({ family: "ruin", terrains: Object.freeze(["plains"]), description: "A round mound raised over someone who mattered, standing alone in worked country nobody ploughs." }),
+  "bone-field": Object.freeze({ family: "ruin", terrains: Object.freeze(["marsh", "plains"]), description: "Bones lie across open ground in the quantity of a battle, weathered white and never gathered up." }),
+  "cairn-field": Object.freeze({ family: "ruin", terrains: Object.freeze(["plains", "hills", "mountains"]), description: "Dozens of stone piles stand across the slope, each one raised over something, in no pattern that reads." }),
+
+  // Worked resources
+  quarry: Object.freeze({ family: "resource", terrains: Object.freeze(["hills", "mountains"]), description: "A working stone face with a crane, a sledge track, and squared blocks waiting to be moved." }),
+  mine: Object.freeze({ family: "resource", terrains: Object.freeze(["hills", "mountains"]), description: "A worked adit with a winding drum at the head, sorting floors outside, and a shift underground now." }),
+  apiary: Object.freeze({ family: "resource", terrains: Object.freeze(["plains", "forest"]), description: "Straw skeps stand in a sheltered row on a stone bench, with a smoker and veil left hanging beside them." }),
+  saltworks: Object.freeze({ family: "resource", terrains: Object.freeze(["marsh", "plains"]), description: "Shallow pans are cut and clay-lined to evaporate brine, with a boiling house and a salt store behind." }),
+  "ash-well": Object.freeze({ family: "resource", terrains: Object.freeze(["hills", "plains"]), description: "A deep well sunk through dry ground, its rope dark with use and its water reliable in a country where that is rare." }),
+  "deserted-well": Object.freeze({ family: "resource", terrains: Object.freeze(["plains"]), description: "A stone wellhead with the winding gear gone and the shaft open, standing where a settlement used to be." }),
+  "guarded-well": Object.freeze({ family: "resource", terrains: Object.freeze(["plains"]), description: "The well is walled, roofed, and watched, and the people watching it decide who draws from it." }),
+  "crystal-field": Object.freeze({ family: "resource", terrains: Object.freeze(["mountains", "hills", "plains"]), description: "Crystal breaks through the ground across a wide slope, worked over by pickers for the pieces worth carrying." }),
+
+  // Practical crossings
+  ferry: Object.freeze({ family: "crossing", terrains: Object.freeze(["marsh", "reedfield"]), description: "A flat ferry runs on a fixed rope between two landings, worked by a family who charge by the head." }),
+  "river-ford": Object.freeze({ family: "crossing", terrains: Object.freeze(["forest", "plains", "hills"]), description: "A gravel shallows wide enough to take carts, with depth stakes painted on both banks." }),
+  "tarn-jetty": Object.freeze({ family: "crossing", terrains: Object.freeze(["marsh"]), description: "A timber jetty runs out to water deep enough to float a boat, with a bell on a post at the shore end." }),
+  "moon-bridge": Object.freeze({ family: "crossing", terrains: Object.freeze(["reedfield", "marsh"]), description: "A steeply arched bridge of pale stone rises high enough for boats to pass beneath it fully rigged." }),
+
+  // Small defended works
+  "toll-fort": Object.freeze({ family: "fortification", terrains: Object.freeze(["road", "plains"]), description: "A small fort astride the road with a lowered bar, a tariff board, and a garrison that collects." }),
+  "watch-post": Object.freeze({ family: "fortification", terrains: Object.freeze(["hills", "plains"]), description: "A walled post on high ground holding a handful of soldiers whose work is to see and report." }),
+  "signal-tower": Object.freeze({ family: "fortification", terrains: Object.freeze(["hills", "plains", "mountains"]), description: "A tower built for line of sight to the next tower, with a beacon on the roof and fuel stacked below." }),
+  "manor-fort": Object.freeze({ family: "fortification", terrains: Object.freeze(["plains", "hills"]), description: "A fortified manor with a hall inside a curtain wall, farmed and defended by the same household." }),
+  "winter-watch": Object.freeze({ family: "fortification", terrains: Object.freeze(["plains", "hills"]), description: "A garrison built for the cold season, stocked to hold out until thaw and shuttered the rest of the year." }),
+  "watch-pagoda": Object.freeze({ family: "fortification", terrains: Object.freeze(["reedfield", "marsh"]), description: "A tiered timber tower on piles, each storey stepping in, giving sight over reed too tall to see across." }),
+  "dwarven-relay": Object.freeze({ family: "fortification", terrains: Object.freeze(["mountains", "hills"]), description: "A cut-stone relay station keyed into the mountainside, holding a road crew, a forge, and a sealed door." }),
+
+  // Standing curiosities
+  wardstone: Object.freeze({ family: "wonder", description: "A carved stone set to hold a boundary, its inscription maintained by whoever benefits from the boundary." }),
+  waystone: Object.freeze({ family: "wonder", description: "A standing stone cut with directions and distances, older than the road that now passes it." }),
+  "witch-stone": Object.freeze({ family: "wonder", terrains: Object.freeze(["plains", "forest", "marsh"]), description: "A stone with a natural hole worn through it, hung about with cloth and small offerings." }),
+  "standing-stones": Object.freeze({ family: "wonder", terrains: Object.freeze(["plains", "hills"]), description: "Stones set upright in a deliberate arrangement, aligned on something that no longer obviously matters." }),
+  "memory-tree": Object.freeze({ family: "wonder", terrains: Object.freeze(["forest"]), description: "One enormous tree hung with name-tokens, each left by a family for someone they intend to be remembered." }),
+  "hot-spring": Object.freeze({ family: "wonder", terrains: Object.freeze(["hills", "mountains", "plains"]), description: "Water comes up hot enough to steam in cold air, pooled behind a low wall built to hold it." }),
+});
+
 // Campaign seeds may rearrange these small discoveries, but never authored
 // biomes, waterways, roads, cities, province borders, or faction territories.
+// These remain available everywhere so danger and lodging never depend on a
+// region happening to name them; regional motifs above are layered on top.
 export const CAMPAIGN_MINOR_SITE_FEATURES = Object.freeze([
-  Object.freeze({ kind: "woodland-clearing", family: "clearing", terrains: Object.freeze(["forest"]) }),
-  Object.freeze({ kind: "monster-den", family: "den", terrains: Object.freeze(["forest", "hills", "mountains", "marsh", "reedfield"]) }),
-  Object.freeze({ kind: "bandit-camp", family: "bandit-camp", terrains: Object.freeze(["plains", "forest", "hills", "mountains", "marsh", "reedfield", "road"]) }),
-  Object.freeze({ kind: "roadside-inn", family: "roadside-inn", routeOnly: true }),
-  Object.freeze({ kind: "wayward-shrine", family: "shrine" }),
-  Object.freeze({ kind: "forgotten-ruin", family: "ruin" }),
-  Object.freeze({ kind: "frontier-fort", family: "fortification" }),
+  Object.freeze({ kind: "woodland-clearing", family: "clearing", terrains: Object.freeze(["forest"]), description: "Open ground in the trees, grazed short and ringed by the fire scars of everyone who has camped here." }),
+  Object.freeze({ kind: "monster-den", family: "den", terrains: Object.freeze(["forest", "hills", "mountains", "marsh", "reedfield"]), description: "A lair with a beaten approach, gnawed bone worked into the ground, and a smell that carries downwind." }),
+  Object.freeze({ kind: "bandit-camp", family: "bandit-camp", terrains: Object.freeze(["plains", "forest", "hills", "mountains", "marsh", "reedfield", "road"]), description: "A screened camp sited to watch the road without being seen from it, with a lookout and a way out behind." }),
+  Object.freeze({ kind: "roadside-inn", family: "roadside-inn", routeOnly: true, description: "An inn on the road with stabling, a common room, and beds let by the mattress rather than the room." }),
+  Object.freeze({ kind: "wayward-shrine", family: "shrine", description: "A small shrine kept by no one in particular and maintained anyway, its offerings replaced by passing strangers." }),
+  Object.freeze({ kind: "forgotten-ruin", family: "ruin", description: "Standing walls with the roof long gone, cleared of anything portable and left to the weather." }),
+  Object.freeze({ kind: "frontier-fort", family: "fortification", description: "A timber and earth fort holding a stretch of border, with a ditch, a gate tower, and a small garrison." }),
 ]);
 
 export const BORDER_CHECKPOINTS = Object.freeze([

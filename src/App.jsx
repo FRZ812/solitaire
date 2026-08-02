@@ -78,6 +78,7 @@ import { condNames, hasCondition, normalizeConditions } from "./data/conditions.
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
 import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, isOverloaded } from "./engine/riding.js";
 import { rollPathEncounter, rollAerialEncounter, pathThroughEncounter } from "./engine/encounters.js";
+import { describeLegStop, describePassage, planLeg, travelPace } from "./engine/expedition.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome, getBiomeById } from "./data/biomes.js";
 import { ECOLOGIES } from "./data/continent.js";
@@ -1213,12 +1214,18 @@ export function Solitaire() {
     const destIsHidden = destTileFull.poi?.type === "hidden";
     const toName = publicTravelLocationName(destTileFull, dest);
 
-    // The party marches hex by hex along the route; an encounter is rolled at every
-    // step and the FIRST one HALTS them at its tile. With no encounter they press on
-    // to the destination (or to the MARCH_MAX safety bound, then you tap to continue).
-    let legPath = fullPath.slice(0, WORLD_MARCH_LIMIT + 1);
-    const pathEnc = rollPathEncounter(state, legPath);
+    // The route is split into the legs a traveller would actually walk: a leg ends
+    // at a named place, a crossing, a border, where the going changes, or when the
+    // day runs out — never at a bare hex count. The party marches hex by hex along
+    // the leg; an encounter is rolled at every step and the FIRST one HALTS them at
+    // its tile, cutting the leg short of its boundary.
+    const pace = travelPace(state.world.travelPace);
+    const leg = planLeg(state, fullPath, 0, { maxSteps: WORLD_MARCH_LIMIT, pace: pace.id });
+    let legPath = leg.path;
+    const pathEnc = rollPathEncounter(state, legPath, pace.riskMult);
     legPath = pathThroughEncounter(legPath, pathEnc);
+    // What the leg passed is only true of ground actually walked.
+    const passage = legPath.length < leg.path.length ? "" : describePassage(leg);
     const legEnd = legPath[legPath.length - 1];
     const arrived = legEnd.x === dest.x && legEnd.y === dest.y;
     const legTile = getTile(state, legEnd.x, legEnd.y);
@@ -1263,6 +1270,9 @@ export function Solitaire() {
     }
     const terrainSummary = Object.entries(terrainCounts).map(([t, n]) => `${TERRAINS[t]?.label || t} ×${n}`).join(", ");
     const routeNote = hexes > 1 ? ` Route crosses: ${terrainSummary}.` : "";
+    // Ambient landscape the party went by, so a quiet leg still has something to
+    // narrate without inventing a site.
+    const passageNote = passage ? ` The way passes ${passage}.` : "";
 
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: `Travel from ${fromName} ${arrived ? "to" : "toward"} ${toName}${mountNote}.` };
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
@@ -1276,10 +1286,10 @@ export function Solitaire() {
 
     let travelMsg;
     if (arrived) {
-      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${legName} (${TERRAINS[legTile.terrain]?.label}). ${hexes} hex(es), ${legMins} min.${routeNote} Destination: ${destDescription}. Narrate the journey and ARRIVAL in one beat. Use minutes_passed = ${legMins}.`;
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${legName} (${TERRAINS[legTile.terrain]?.label}). ${hexes} hex(es), ${legMins} min.${routeNote}${passageNote} Destination: ${destDescription}. Narrate the journey and ARRIVAL in one beat. Use minutes_passed = ${legMins}.`;
     } else {
-      const why = pathEnc ? "where what follows stops you" : "as far as you press for now — the rest of the way still lies ahead";
-      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) toward ${toName}, getting as far as ${legName} (${TERRAINS[legTile.terrain]?.label}) — ${hexes} hex(es), ${legMins} min,${routeNote} ${why}. Narrate the journey ONLY up to ${legName} and STOP there — do NOT arrive at ${toName} (it is still ${fullPath.length - legPath.length} hex(es) on). Use minutes_passed = ${legMins}.`;
+      const why = pathEnc ? "where what follows stops you" : describeLegStop(leg);
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) toward ${toName}, getting as far as ${legName} (${TERRAINS[legTile.terrain]?.label}) — ${hexes} hex(es), ${legMins} min,${routeNote}${passageNote} ${why}. Narrate the journey ONLY up to ${legName} and STOP there — do NOT arrive at ${toName} (it is still ${fullPath.length - legPath.length} hex(es) on). Use minutes_passed = ${legMins}.`;
     }
 
     let encounterLine = "";
@@ -1756,6 +1766,15 @@ export function Solitaire() {
       if (!c) return cur;
       return { ...cur, world: { ...cur.world, codex: { ...cur.world.codex, characters: { ...cur.world.codex.characters, [id]: { ...c, name: chosen } } } } };
     });
+  }
+
+  // How hard the party marches. Free to change between legs; the engine reads it
+  // when planning the next leg and when rolling that leg's encounter.
+  function handleSetTravelPace(paceId) {
+    const pace = travelPace(paceId);
+    setState((cur) => (cur.world.travelPace === pace.id
+      ? cur
+      : { ...cur, world: { ...cur.world, travelPace: pace.id } }));
   }
 
   async function handlePortraitChange(characterId, portrait) {
@@ -2737,6 +2756,7 @@ export function Solitaire() {
           onFly={handleFly}
           onTeleport={handleTeleport}
           onSeekCombat={handleSeekCombat}
+          onSetTravelPace={handleSetTravelPace}
           loading={loading}
         />
       )}

@@ -14,6 +14,7 @@ import {
   pathMinutes,
 } from "../../engine/world.js";
 import { pathRiskPercent } from "../../engine/encounters.js";
+import { LEG_BOUNDARIES, TRAVEL_PACES, travelPace } from "../../engine/expedition.js";
 import { trackedCharacterResult } from "../../engine/positions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "../../engine/fly.js";
 import { playerFlightMount } from "../../engine/riding.js";
@@ -33,8 +34,8 @@ import {
 } from "./hexMapModel.js";
 import { MapCanvas } from "./MapCanvas.jsx";
 import { useModalFocus } from "./modalFocus.js";
-import { WorldOverview } from "./WorldOverview.jsx";
 import { buildWorldMapScene } from "./mapSceneModel.js";
+import { TRAVEL_MAP_MIN_ZOOM } from "./mapLod.js";
 import {
   activeMarchJourney,
   formatTravelDuration,
@@ -187,14 +188,25 @@ function headerLocationName(tile) {
   return poiPartName(tile?.poi) || publicLocationPresentation(tile).title;
 }
 
+function destinationSighting(destination, origin) {
+  if (!destination || !origin) return null;
+  return {
+    distance: hexDistance(origin, destination),
+    explored: !!(destination.seen || destination.visited),
+  };
+}
+
 export function nameForDestination(destination, origin) {
   const atlasNamed = ["legend", "reputation", "charted"].includes(destination?.knownBy)
     && typeof destination?.name === "string"
     && destination.name.trim().length > 0;
   const mapped = !!(destination?.seen || destination?.visited);
   if (atlasNamed) return destination.name;
+  const presentation = publicLocationPresentation(destination?.tile, destination, destinationSighting(destination, origin));
+  // A site made out at a distance names itself even on unmapped ground — being
+  // able to see a thing is the whole reason it is a destination.
+  if (presentation.sighted) return presentation.title;
   if (!mapped) return destination?.quest?.title || "Uncharted destination";
-  const presentation = publicLocationPresentation(destination?.tile, destination);
   const named = presentation.hidden ? null : destination?.name || poiPlaceName(destination?.tile?.poi);
   if (named) return named;
   if (destination?.quest) return destination.quest.title;
@@ -229,7 +241,7 @@ function biomeAt(destination, seed) {
   return id === "whitemarch" ? { ...coordinateBiome, id, name: "Whitemarch" } : coordinateBiome;
 }
 
-function RpgHeader({ state, biome, tile, onClose, onOverview, onJournal, travelLocked = false }) {
+function RpgHeader({ state, biome, tile, onClose, onOverview, atlasWide, onJournal, travelLocked = false }) {
   const vitality = state.character.vitality ?? 0;
   const vitalityMax = Math.max(1, state.character.vitalityMax ?? vitality);
   const resolve = state.character.resolve ?? 0;
@@ -273,7 +285,10 @@ function RpgHeader({ state, biome, tile, onClose, onOverview, onJournal, travelL
           className="rpg-square-button"
           onClick={onOverview}
           disabled={travelLocked}
-          aria-label={travelLocked ? "World overview unavailable while travel is in progress" : "Open world overview"}
+          aria-pressed={atlasWide}
+          aria-label={travelLocked
+            ? "World atlas unavailable while travel is in progress"
+            : (atlasWide ? "Return the map to the party" : "Pull the map out to the whole continent")}
         ><Icon name="atlas" size={22} /></button>
       </div>
     </header>
@@ -375,11 +390,11 @@ export function MapLegend({ onClose, initialSection = "guide" }) {
   );
 }
 
-function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, onPan, onZoom, onViewportChange, onRecenter, onPick, onSeekCombat, loading, interactionLocked = false, night, city }) {
+function WorldGrid({ state, model, selection, journey, marchFrame, trackedCharacter, onPan, onZoom, onViewportChange, onRecenter, onPick, onPickPlace, onSeekCombat, loading, interactionLocked = false, night, city }) {
   const [legendOpen, setLegendOpen] = useState(false);
   const mapScene = useMemo(
-    () => buildWorldMapScene({ model, selection, journey, marchFrame, trackedCharacter, night }),
-    [model, selection, journey, marchFrame, trackedCharacter, night],
+    () => buildWorldMapScene({ state, model, selection, journey, marchFrame, trackedCharacter, night }),
+    [state, model, selection, journey, marchFrame, trackedCharacter, night],
   );
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.explored && cell.passable && !cell.current)
@@ -399,6 +414,7 @@ function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, on
         <MapCanvas
           scene={mapScene}
           onSelect={interactionLocked ? undefined : selectMapCell}
+          onSelectPlace={interactionLocked ? undefined : onPickPlace}
           onPan={onPan}
           onZoom={onZoom}
           onViewportChange={onViewportChange}
@@ -452,8 +468,10 @@ function WorldGrid({ model, selection, journey, marchFrame, trackedCharacter, on
   );
 }
 
-export function DestinationPanel({ state, model, selection, selectedName, journey, canGroundTravel, routeMinutes, risk, focusBiome, focusVisual, onClear, onTravel, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
+export function DestinationPanel({ state, model, selection, selectedName, journey, canGroundTravel, routeMinutes, risk, focusBiome, focusVisual, onClear, onTravel, onSetTravelPace, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
   const distance = selection ? hexDistance(model.origin, selection) : 0;
+  const pace = travelPace(state.world.travelPace);
+  const paceId = pace.id;
   const destinationMapped = !!(selection?.seen || selection?.visited);
   // Named waypoints come from authored landmark data only after their hexes are
   // mapped; unknown route suffixes never reach this presentation component.
@@ -462,8 +480,8 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
     [journey, state],
   );
   const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
-  const publicDestination = publicLocationPresentation(selection?.tile, selection);
-  const description = destinationMapped
+  const publicDestination = publicLocationPresentation(selection?.tile, selection, destinationSighting(selection, model.origin));
+  const description = destinationMapped || publicDestination.sighted
     ? publicDestination.description
     : selection ? "The objective is known, but the ground around it remains uncharted." : null;
   const rewardTitle = selection?.quest ? "Quest reward" : selection?.visited ? "Known waypoint" : "Discovery ahead";
@@ -535,14 +553,42 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
                 {journeyVia.length > 0 && (
                   <p className="rpg-route-via">Via {journeyVia.map((waypoint) => waypoint.name).join(" · ")}</p>
                 )}
-                {!journey.routeFullyMapped ? (
-                  <p className="rpg-leg-note">The mapped trail ends here. Travel time, danger, and terrain beyond the fog will be learned on the road.</p>
-                ) : !journey.arrived ? (
-                  <p className="rpg-leg-note">
-                    This march reaches {journey.legSteps} of {journey.totalSteps} steps before the party reassesses.
-                    Full journey ≈ {formatTravelDuration(journey.legSteps > 0 ? Math.round(routeMinutes / journey.legSteps * journey.totalSteps) : routeMinutes)}.
-                  </p>
-                ) : null}
+                {journey.legs?.length > 0 && (
+                  <ol className="rpg-itinerary" aria-label="Stages of the journey">
+                    {journey.legs.map((leg) => (
+                      <li key={leg.index} className={leg.index === 0 ? "is-next" : ""}>
+                        <i data-boundary={leg.boundaryKind} aria-hidden="true" />
+                        <div>
+                          {/* The last stage is the destination, which the panel
+                              already names through the fog-safe presentation. */}
+                          <b>{leg.arrived ? selectedName : leg.boundaryLabel}</b>
+                          <small>{LEG_BOUNDARIES[leg.boundaryKind]?.label || ""}</small>
+                          {leg.passed.length > 0 && <span>Passing {leg.passed.slice(0, 3).join(", ")}</span>}
+                        </div>
+                        <em>{leg.steps} <small>{formatTravelDuration(leg.minutes)}</small></em>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+                <div className="rpg-pace-picker" role="group" aria-label="Marching pace">
+                  {Object.values(TRAVEL_PACES).map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={option.id === paceId ? "is-active" : ""}
+                      aria-pressed={option.id === paceId}
+                      title={option.note}
+                      onClick={() => onSetTravelPace(option.id)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="rpg-leg-note">
+                  {!journey.routeFullyMapped
+                    ? "The mapped trail ends here. Travel time, danger, and terrain beyond the fog will be learned on the road."
+                    : pace.note}
+                </p>
               </>
             ) : <div className="rpg-route-blocked">No ground route reaches this tile from here.</div>}
           </div>
@@ -643,6 +689,7 @@ export function WorldExploration({
   onFly,
   onTeleport,
   onSeekCombat,
+  onSetTravelPace,
   loading,
 }) {
   const partyCoord = state.world.currentTile;
@@ -657,7 +704,6 @@ export function WorldExploration({
       && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
   ));
   const [camera, setCamera] = useState(() => ({ x: partyCoord.x, y: partyCoord.y, zoom: 1 }));
-  const [worldOverviewOpen, setWorldOverviewOpen] = useState(false);
   const [marchFrame, setMarchFrame] = useState(null);
   const finishMarchRef = useRef(onTravelMarchFinish);
   const lastPartyKeyRef = useRef(`${partyCoord.x},${partyCoord.y}`);
@@ -673,12 +719,13 @@ export function WorldExploration({
   );
   const renderDimensions = useMemo(
     () => travelMapRenderDimensions(mapDimensions),
-    [mapDimensions.columns, mapDimensions.rows],
+    [mapDimensions.columns, mapDimensions.rows, mapDimensions.stride],
   );
   const model = useMemo(
     () => buildExplorationModel(state, { center: camera, dimensions: mapDimensions, renderDimensions }),
-    [state, camera.x, camera.y, mapDimensions.columns, mapDimensions.rows, renderDimensions.columns, renderDimensions.rows],
+    [state, camera.x, camera.y, mapDimensions.columns, mapDimensions.rows, mapDimensions.stride, renderDimensions.columns, renderDimensions.rows],
   );
+  const atlasWide = camera.zoom <= TRAVEL_MAP_MIN_ZOOM * 1.05;
   const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
   const journey = useMemo(
     () => planHexJourney(state, selected, WORLD_MARCH_LIMIT),
@@ -785,7 +832,6 @@ export function WorldExploration({
 
   useEffect(() => {
     if (!travelLocked) return;
-    setWorldOverviewOpen(false);
     setJournalOpen(false);
     setFlyPanelDest(null);
   }, [travelLocked]);
@@ -803,34 +849,32 @@ export function WorldExploration({
     setCamera((current) => panTravelMapCamera(current, drag, worldRadius));
   }
 
-  function openWorldOverview() {
+  // One map, one camera: the atlas is this map pulled all the way out, and the
+  // same button brings it back to the party.
+  function toggleAtlasView() {
     if (travelLocked) return;
     setJournalOpen(false);
-    setWorldOverviewOpen(true);
+    setCamera((current) => (atlasWide
+      ? { x: partyCoord.x, y: partyCoord.y, zoom: 1 }
+      : { ...current, zoom: TRAVEL_MAP_MIN_ZOOM }));
   }
 
   function openQuestJournal() {
     if (travelLocked) return;
-    setWorldOverviewOpen(false);
     setJournalOpen(true);
   }
 
   function handleMapZoom(factor) {
-    const outcome = travelMapZoomStep(camera.zoom, factor);
-    setCamera((current) => ({ ...current, zoom: outcome.zoom }));
-    if (outcome.openWorldOverview) openWorldOverview();
+    const { zoom } = travelMapZoomStep(camera.zoom, factor);
+    setCamera((current) => ({ ...current, zoom }));
   }
 
-  function handleWorldDestination(target) {
+  // An authored place picked off the atlas. It carries its own name and how the
+  // party knows it, so a destination can be somewhere never seen.
+  function handleAtlasPlace(place) {
     if (travelLocked) return;
-    setCamera((current) => ({
-      ...current,
-      x: target.x,
-      y: target.y,
-      zoom: Math.max(current.zoom, 1),
-    }));
-    setSelected(target);
-    setWorldOverviewOpen(false);
+    setSelected({ x: place.x, y: place.y, name: place.name, knownBy: place.knowledge, landmarkId: place.id });
+    setJournalOpen(false);
   }
 
   function handleMapRecenter() {
@@ -872,12 +916,14 @@ export function WorldExploration({
         biome={currentBiome}
         tile={model.current.tile}
         onClose={onClose}
-        onOverview={openWorldOverview}
+        onOverview={toggleAtlasView}
+        atlasWide={atlasWide}
         onJournal={openQuestJournal}
         travelLocked={travelLocked}
       />
       <div className="rpg-exploration-body">
         <WorldGrid
+          state={state}
           model={model}
           selection={selection}
           journey={presentedJourney}
@@ -889,24 +935,15 @@ export function WorldExploration({
           onRecenter={handleMapRecenter}
 
           onPick={pick}
+          onPickPlace={handleAtlasPlace}
           onSeekCombat={onSeekCombat}
           loading={loading}
           interactionLocked={travelLocked}
           night={hour < 6 || hour >= 20}
           city={currentCity}
         />
-        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={handleGroundTravel} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
+        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} onClear={() => setSelected(null)} onTravel={handleGroundTravel} onSetTravelPace={onSetTravelPace} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
       </div>
-      {worldOverviewOpen && (
-        <div className="world-overview-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setWorldOverviewOpen(false)}>
-          <WorldOverview
-            state={state}
-            inspectedCoord={camera}
-            onSelect={handleWorldDestination}
-            onClose={() => setWorldOverviewOpen(false)}
-          />
-        </div>
-      )}
       {journalOpen && (
         <AdventureFolio
           quests={activeQuests}

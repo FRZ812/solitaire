@@ -15,6 +15,7 @@ import {
   isVisited,
 } from "../../engine/world.js";
 import { sightRadius } from "../../engine/light.js";
+import { planExpedition } from "../../engine/expedition.js";
 
 export const TERRAIN_INK = {
   road: "#d0a765",
@@ -106,6 +107,11 @@ export function buildRpgViewport(state, options = {}) {
   const dimensions = options?.dimensions || { columns: RPG_VIEW_COLS, rows: RPG_VIEW_ROWS };
   const columns = Math.max(3, Math.round(dimensions.columns) || RPG_VIEW_COLS);
   const rows = Math.max(3, Math.round(dimensions.rows) || RPG_VIEW_ROWS);
+  // Zooming out samples every `stride`-th hex rather than enumerating more of
+  // them, so a continental view costs the same as a valley. Above 1 the stride
+  // must be even, or `floor(y / 2)` below advances unevenly and the samples
+  // wobble off the sub-lattice.
+  const stride = Math.max(1, Math.round(dimensions.stride) || 1);
   const quests = options?.activeQuests || (state.world.quests || []).filter((quest) => quest.status === "active");
   const radiusX = Math.floor(columns / 2);
   const radiusY = Math.floor(rows / 2);
@@ -114,20 +120,22 @@ export function buildRpgViewport(state, options = {}) {
   const cells = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < columns; col++) {
-      const y = center.y + row - radiusY;
+      const y = center.y + (row - radiusY) * stride;
       // Enumerate an offset-row screen rectangle, then convert each cell back
       // into the authoritative axial coordinates used by simulation. A q/r
       // rectangle projects as a parallelogram; offset rows keep the Canvas
       // edges vertical while preserving every world lookup and route.
-      const offsetColumn = centerOffsetColumn + col - radiusX;
+      const offsetColumn = centerOffsetColumn + (col - radiusX) * stride;
       const x = offsetColumn - Math.floor(y / 2);
       const key = `${x},${y}`;
       const tile = getTile(state, x, y);
-      const visible = hexDistance(party, { x, y }) <= visibleRadius;
+      const distance = hexDistance(party, { x, y });
+      const visible = distance <= visibleRadius;
       const seen = visible || isSeen(state, x, y);
       const visited = isVisited(state, x, y);
       cells.push({
         key, x, y, col, row, tile,
+        distance,
         seen,
         visible,
         visited,
@@ -169,17 +177,29 @@ export function buildExplorationModel(state, options = {}) {
   const currentTile = getTile(state, origin.x, origin.y);
   const activeQuests = (state.world.quests || []).filter((quest) => quest.status === "active");
   const questKeys = new Set(activeQuests.filter((quest) => quest.loc).map((quest) => coordKey(quest.loc)));
-  const viewport = buildRpgViewport(state, {
-    center,
-    dimensions: options.dimensions,
-    activeQuests,
-  });
-  const visibleKeys = new Set(viewport.map((cell) => cell.key));
+  // The visible window is the render window minus its overscan ring, so it is
+  // sliced out rather than generated a second time. Both are centred on the same
+  // cell and both dimensions are odd, which makes the inset exact.
+  const dimensions = options.dimensions || {};
+  const renderDimensions = options.renderDimensions || dimensions;
+  const stride = Math.max(1, Math.round(dimensions.stride) || 1);
   const renderViewport = buildRpgViewport(state, {
     center,
-    dimensions: options.renderDimensions || options.dimensions,
+    dimensions: renderDimensions,
     activeQuests,
-  }).map((cell) => ({ ...cell, overscan: !visibleKeys.has(cell.key) }));
+  });
+  const inset = (rendered, visible) => (Number.isFinite(visible) && Number.isFinite(rendered)
+    ? Math.max(0, Math.round((rendered - visible) / 2))
+    : 0);
+  const insetColumns = inset(renderDimensions.columns, dimensions.columns);
+  const insetRows = inset(renderDimensions.rows, dimensions.rows);
+  const lastColumn = Math.max(...renderViewport.map((cell) => cell.col));
+  const lastRow = Math.max(...renderViewport.map((cell) => cell.row));
+  for (const cell of renderViewport) {
+    cell.overscan = cell.col < insetColumns || cell.col > lastColumn - insetColumns
+      || cell.row < insetRows || cell.row > lastRow - insetRows;
+  }
+  const viewport = renderViewport.filter((cell) => !cell.overscan);
 
   const rawChoices = [];
   for (const direction of HEX_DIRECTIONS) {
@@ -208,15 +228,20 @@ export function buildExplorationModel(state, options = {}) {
   for (const key of Object.keys(state.world.tiles || {})) keys.add(key);
   for (const key of questKeys) keys.add(key);
   for (const choice of choices) keys.add(choice.key);
-  for (const cell of renderViewport) keys.add(cell.key);
+  // Zoomed out the viewport samples every stride-th hex, so its sites are an
+  // arbitrary subset of what is actually out there — the authored places layer
+  // is what names ground at that scale. Indexing them would also mean a second
+  // generator pass over every drawn cell, which is the bulk of a frame.
+  if (stride === 1) for (const cell of renderViewport) keys.add(cell.key);
   keys.add(coordKey(origin));
 
+  const cellByKey = new Map(renderViewport.map((cell) => [cell.key, cell.tile]));
   const byKey = new Map();
   const landmarks = [];
   for (const key of keys) {
     const coord = parseCoord(key);
     if (!Number.isFinite(coord.x) || !Number.isFinite(coord.y)) continue;
-    const tile = getTile(state, coord.x, coord.y);
+    const tile = cellByKey.get(key) || getTile(state, coord.x, coord.y);
     const knownBy = RUMORED[key] ? "reputation" : (FABLED_BY_COORD[key] ? "legend" : null);
     // A named lake or other impassable feature still belongs in the regional map
     // index even though ground travel correctly stops at its shore.
@@ -284,6 +309,7 @@ export function buildExplorationModel(state, options = {}) {
     choices,
     viewport,
     renderViewport,
+    stride,
     landmarks: sortedLandmarks,
     byKey,
   };
@@ -295,7 +321,10 @@ export function planHexJourney(state, destination, maxLeg = 48) {
   if (from.x === destination.x && from.y === destination.y) return null;
   const fullPath = findWorldRoute(state, from, destination);
   if (!fullPath || fullPath.length < 2) return null;
-  const legPath = fullPath.slice(0, maxLeg + 1);
+  // The preview must break the route exactly where the engine will, so the
+  // highlighted leg on the map is the ground the party actually walks.
+  const plan = planExpedition(state, fullPath, { maxSteps: maxLeg, pace: state.world.travelPace });
+  const legPath = plan.legs[0]?.path || fullPath.slice(0, maxLeg + 1);
   const end = legPath[legPath.length - 1];
   const terrainCounts = {};
   for (let i = 1; i < legPath.length; i++) {
@@ -306,6 +335,10 @@ export function planHexJourney(state, destination, maxLeg = 48) {
     fullPath,
     legPath,
     end,
+    // The staged plan: this leg plus the ones the party can already foresee.
+    legs: plan.legs,
+    leg: plan.legs[0] || null,
+    planComplete: plan.complete,
     arrived: end.x === destination.x && end.y === destination.y,
     totalSteps: fullPath.length - 1,
     legSteps: legPath.length - 1,

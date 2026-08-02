@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
 import { getTile } from "../../engine/world.js";
 import { AdventureFolio, DestinationPanel, MapLegend, WorldExploration, mergeOverviewDestination, nameForDestination } from "./WorldExploration.jsx";
-import { buildWorldOverviewModel, overviewDestinationTarget } from "./worldOverviewModel.js";
+import { buildAtlasPlaces } from "./mapAtlasModel.js";
 
 describe("mobile map navigation markup", () => {
   it("uses direct map selection and a dedicated encounter action on the world map", () => {
@@ -24,7 +24,11 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain("Choose on the map");
     expect(html).toContain("Tap a tile");
     expect(html).toContain('aria-label="Look for trouble in the city"');
-    expect(html.match(/aria-label="Open world overview"/g)).toHaveLength(1);
+    // One map, one camera: the atlas button pulls this map out rather than
+    // opening a second, separately drawn one.
+    expect(html.match(/aria-label="Pull the map out to the whole continent"/g)).toHaveLength(1);
+    expect(html).toContain('aria-pressed="false"');
+    expect(html).not.toContain('aria-label="Open world overview"');
     expect(html).not.toContain('aria-label="Open region selector"');
     expect(html).toContain('aria-label="Open quest journal"');
     expect(html).not.toContain('class="rpg-quickbar"');
@@ -87,7 +91,7 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain('data-travel-locked="true"');
     expect(html).toContain('aria-label="Return to story unavailable while travel is in progress"');
     expect(html).toContain('aria-label="Quest journal unavailable while travel is in progress"');
-    expect(html).toContain('aria-label="World overview unavailable while travel is in progress"');
+    expect(html).toContain('aria-label="World atlas unavailable while travel is in progress"');
     expect(html.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(4);
   });
 
@@ -149,11 +153,12 @@ describe("mobile map navigation markup", () => {
     expect(nameForDestination({ ...destination, quest: null }, origin)).toBe("Uncharted destination");
   });
 
-  it("preserves the validated overview handoff on the regional map without moving the party", () => {
+  it("preserves the validated atlas handoff on the same map without moving the party", () => {
     const state = makeInitialState();
     const before = { ...state.world.currentTile };
-    const starForge = buildWorldOverviewModel(state).places.find((place) => place.id === "star-forge");
-    const handoff = overviewDestinationTarget(starForge);
+    const starForge = buildAtlasPlaces(state).find((place) => place.id === "star-forge");
+    // What the canvas hands back when an atlas place is picked at continental zoom.
+    const handoff = { x: starForge.x, y: starForge.y, name: starForge.name, knownBy: starForge.knowledge, landmarkId: starForge.id };
     const local = {
       x: handoff.x,
       y: handoff.y,
@@ -247,6 +252,58 @@ describe("mobile map navigation markup", () => {
     expect(html).not.toContain("SECRET DESCRIPTION");
     expect(html).not.toContain("Hidden Ward");
     expect(html).not.toContain("Shop tier");
+  });
+
+  it("presents the journey as stages with a pace the player can set", () => {
+    const state = makeInitialState();
+    state.world.travelPace = "forced";
+    const origin = state.world.currentTile;
+    const selection = { x: origin.x + 6, y: origin.y, seen: true, visited: true, tile: { terrain: "plains" } };
+    const html = renderToStaticMarkup(
+      <DestinationPanel
+        state={state}
+        model={{ origin, current: { tile: {} } }}
+        selection={selection}
+        selectedName="Farhollow"
+        journey={{
+          legPath: [origin, selection],
+          legSteps: 6,
+          totalSteps: 6,
+          arrived: true,
+          terrainLabels: [],
+          routeFullyMapped: true,
+          legs: [
+            { index: 0, steps: 4, minutes: 120, arrived: false, boundaryKind: "crossing", boundaryLabel: "Whitewend Ford", passed: ["a hay barn"] },
+            { index: 1, steps: 2, minutes: 60, arrived: true, boundaryKind: "destination", boundaryLabel: "Farhollow", passed: [] },
+          ],
+        }}
+        canGroundTravel
+        routeMinutes={180}
+        risk={12}
+        focusBiome={{ name: "Whitemarch" }}
+        focusVisual={{ image: "safe.webp", accent: "#fff", mood: "Known map view" }}
+        onClear={vi.fn()}
+        onTravel={vi.fn()}
+        onSetTravelPace={vi.fn()}
+        canFly={false}
+        teleOption={null}
+        onFly={vi.fn()}
+        onTeleport={vi.fn()}
+        flightMount={null}
+        flyPlan={{ totalCost: 0 }}
+        resolve={10}
+        loading={false}
+      />,
+    );
+
+    expect(html).toContain("Whitewend Ford");
+    expect(html).toContain("A crossing");
+    expect(html).toContain("Passing a hay barn");
+    expect(html).toContain('data-boundary="crossing"');
+    // The chosen pace is the one shown as active.
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("Forced");
+    expect(html).toContain("Careful");
   });
 
   it("does not render hidden endpoint or route metrics in the destination panel", () => {
