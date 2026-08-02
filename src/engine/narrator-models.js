@@ -36,9 +36,8 @@ export const NARRATOR_MODELS = [
 ];
 
 export const NARRATOR_SORT_OPTIONS = [
-  { id: "recommended", label: "Recommended" },
-  { id: "intelligence-desc", label: "Intelligence · high first" },
   { id: "intelligence-asc", label: "Intelligence · low first" },
+  { id: "intelligence-desc", label: "Intelligence · high first" },
   { id: "price-asc", label: "Price · low first" },
   { id: "price-desc", label: "Price · high first" },
   { id: "name-asc", label: "Name · A–Z" },
@@ -51,7 +50,7 @@ export function sortNarratorModels(models, sortId) {
     return sorted.sort((a, b) => (Number.isFinite(b.intelligence) ? b.intelligence : -Infinity) - (Number.isFinite(a.intelligence) ? a.intelligence : -Infinity));
   }
   if (sortId === "intelligence-asc") {
-    return sorted.sort((a, b) => (Number.isFinite(a.intelligence) ? a.intelligence : Infinity) - (Number.isFinite(b.intelligence) ? b.intelligence : Infinity));
+    return sorted.sort((a, b) => (Number.isFinite(a.intelligence) ? a.intelligence : -Infinity) - (Number.isFinite(b.intelligence) ? b.intelligence : -Infinity));
   }
   if (sortId === "price-asc") return sorted.sort((a, b) => priceScore(a) - priceScore(b));
   if (sortId === "price-desc") return sorted.sort((a, b) => priceScore(b) - priceScore(a));

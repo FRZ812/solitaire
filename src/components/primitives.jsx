@@ -428,11 +428,130 @@ export function LiveThinking({ thinking }) {
 
 // ----- Input bar -----
 
+export function NarratorSortMenu({ value, onChange }) {
+  const rootRef = React.useRef(null);
+  const triggerRef = React.useRef(null);
+  const optionRefs = React.useRef([]);
+  const initialFocusIndexRef = React.useRef(0);
+  const [open, setOpen] = React.useState(false);
+  const listboxId = React.useId();
+  const selectedIndex = Math.max(0, NARRATOR_SORT_OPTIONS.findIndex((option) => option.id === value));
+  const selected = NARRATOR_SORT_OPTIONS[selectedIndex];
+
+  const close = React.useCallback((restoreFocus = false) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }, []);
+
+  React.useEffect(() => {
+    if (!open || typeof document === "undefined") return undefined;
+    const frame = requestAnimationFrame(() => optionRefs.current[initialFocusIndexRef.current]?.focus());
+    const onPointerDown = (event) => {
+      if (!rootRef.current?.contains(event.target)) close(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [close, open]);
+
+  function openMenu(initialFocusIndex = selectedIndex) {
+    initialFocusIndexRef.current = initialFocusIndex;
+    setOpen(true);
+  }
+
+  function choose(option) {
+    onChange(option.id);
+    close(true);
+  }
+
+  function onTriggerKeyDown(event) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const targetIndex = event.key === "ArrowUp" || event.key === "End"
+      ? NARRATOR_SORT_OPTIONS.length - 1
+      : event.key === "Home"
+        ? 0
+        : selectedIndex;
+    openMenu(targetIndex);
+  }
+
+  function onListboxKeyDown(event) {
+    const currentIndex = Math.max(0, optionRefs.current.indexOf(document.activeElement));
+    let nextIndex = currentIndex;
+    if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % NARRATOR_SORT_OPTIONS.length;
+    else if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + NARRATOR_SORT_OPTIONS.length) % NARRATOR_SORT_OPTIONS.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = NARRATOR_SORT_OPTIONS.length - 1;
+    else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      choose(NARRATOR_SORT_OPTIONS[currentIndex]);
+      return;
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+      return;
+    } else if (event.key === "Tab") {
+      close(false);
+      return;
+    } else return;
+    event.preventDefault();
+    optionRefs.current[nextIndex]?.focus();
+  }
+
+  return (
+    <div className={`narrator-picker__sort${open ? " is-open" : ""}`} ref={rootRef}>
+      <span>Sort by</span>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="narrator-picker__sort-trigger"
+        aria-label={`Sort narrator models: ${selected.label}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
+        onClick={() => (open ? close(false) : openMenu())}
+        onKeyDown={onTriggerKeyDown}
+      >
+        <strong>{selected.label}</strong>
+        <i aria-hidden="true">⌄</i>
+      </button>
+      {open && (
+        <div
+          id={listboxId}
+          className="narrator-picker__sort-menu"
+          role="listbox"
+          aria-label="Sort narrator models"
+          data-modal-escape-boundary
+          onKeyDown={onListboxKeyDown}
+        >
+          {NARRATOR_SORT_OPTIONS.map((option, index) => (
+            <button
+              key={option.id}
+              ref={(node) => { optionRefs.current[index] = node; }}
+              type="button"
+              className={`narrator-picker__sort-option${option.id === value ? " is-selected" : ""}`}
+              role="option"
+              aria-selected={option.id === value}
+              tabIndex={-1}
+              onClick={() => choose(option)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function NarratorPickerPanel({
   model,
   effort,
   query,
-  sort = "recommended",
+  sort = "intelligence-asc",
   onQueryChange,
   onSortChange = () => {},
   onChooseModel,
@@ -491,15 +610,7 @@ export function NarratorPickerPanel({
               aria-label="Search narrator models"
             />
           </label>
-          <label className="narrator-picker__sort">
-            <span>Sort by</span>
-            <select value={sort} onChange={(event) => onSortChange(event.target.value)} aria-label="Sort narrator models">
-              {NARRATOR_SORT_OPTIONS.map((option) => (
-                <option key={option.id} value={option.id}>{option.label}</option>
-              ))}
-            </select>
-            <i aria-hidden="true">⌄</i>
-          </label>
+          <NarratorSortMenu value={sort} onChange={onSortChange} />
         </div>
 
         <div className="narrator-picker__columns" aria-hidden="true">
@@ -614,7 +725,7 @@ function NarratorPicker() {
   const [model, setModel] = React.useState(getNarratorModel);
   const [effort, setEffort] = React.useState(() => getNarratorEffort(model));
   const [query, setQuery] = React.useState("");
-  const [sort, setSort] = React.useState("recommended");
+  const [sort, setSort] = React.useState("intelligence-asc");
   const active = NARRATOR_MODELS.find((entry) => entry.id === model) || NARRATOR_MODELS[0];
 
   function chooseModel(id) {
