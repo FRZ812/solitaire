@@ -17,6 +17,7 @@ import {
   mapTrackedEntry,
   selectMapMarkerEntries,
 } from "./mapGeometry.js";
+import { rgba } from "../../engine/daylight.js";
 import { lodFogScale, lodShowsHexOutlines, lodShowsScenery } from "./mapLod.js";
 import { dragPreviewOffset, pinchDistance, pinchZoomFactor } from "./mapGestures.js";
 import { rebaseTravelMapDrag } from "./travelMapModel.js";
@@ -56,7 +57,6 @@ function materialFor(scene, cell) {
 }
 
 function drawTerrain(context, scene, entries, atlas) {
-  const night = !!scene.night;
   // A hex outline drawn around a 28-hex sample is a lie about what the map
   // knows. Dropping it lets terrain read as continuous masses, which is what a
   // map at that scale should look like.
@@ -97,10 +97,6 @@ function drawTerrain(context, scene, entries, atlas) {
     }
     if (material === "reedfield") {
       context.fillStyle = "rgba(184, 158, 52, .18)";
-      context.fillRect(entry.bounds.minX, entry.bounds.minY, entry.bounds.width, entry.bounds.height);
-    }
-    if (night) {
-      context.fillStyle = "rgba(12, 27, 66, .42)";
       context.fillRect(entry.bounds.minX, entry.bounds.minY, entry.bounds.width, entry.bounds.height);
     }
     if (entry.cell.explored !== false) {
@@ -398,6 +394,70 @@ function drawMarkers(context, scene, layout, poiAtlases, width) {
   for (const entry of visibleMarkers) drawPoi(context, entry, poiAtlases, scene.mode);
 }
 
+// The whole day/night look, as two or three full-frame composites over ground
+// that has already been drawn. Multiply darkens toward the sky's own colour and
+// leaves terrain texture readable where a flat overlay would flatten it; screen
+// and soft-light put the low sun's warmth back on top.
+//
+// It is laid over terrain and ribbons but under the route, markers and the
+// party, so the map dims without any affordance becoming hard to read. Above
+// FULL_DAY the grade is empty and nothing is drawn at all, which is most of the
+// day — the common case costs one comparison.
+function drawSky(context, sky, width, height, offset) {
+  if (!sky || sky.shade <= 0) return;
+  context.save();
+  // Cancel the drag preview: the sky is fixed to the eye, not to the ground.
+  context.translate(-(Number(offset?.x) || 0), -(Number(offset?.y) || 0));
+
+  context.globalCompositeOperation = "multiply";
+  context.fillStyle = sky.shadeColor;
+  context.fillRect(0, 0, width, height);
+
+  if (sky.horizon > 0) {
+    // A sun this low comes from one side. East at dawn, west at dusk, so the
+    // two halves of a march never look like the same hour.
+    const source = sky.rising ? width : 0;
+    const rake = context.createLinearGradient(source, 0, width - source, 0);
+    rake.addColorStop(0, sky.horizonColor);
+    rake.addColorStop(1, rgba(sky.warmRgb, 0));
+    context.globalCompositeOperation = "screen";
+    context.fillStyle = rake;
+    context.fillRect(0, 0, width, height);
+  }
+
+  if (sky.warmth > 0) {
+    context.globalCompositeOperation = "soft-light";
+    context.fillStyle = sky.warmColor;
+    context.fillRect(0, 0, width, height);
+  }
+
+  context.restore();
+}
+
+// Built ground the party has actually seen — the only places with anyone in them
+// to light a lamp. Wild country simply goes dark, which is the point of carrying
+// a torch.
+const LAMPLIT_MATERIALS = new Set(["settlement", "street", "avenue", "plaza", "indoor", "roof"]);
+const LAMP_RGB = [255, 198, 112];
+
+function drawLamps(context, scene, entries) {
+  const lamps = scene.sky?.lamps || 0;
+  if (lamps <= 0) return;
+  context.save();
+  context.globalCompositeOperation = "lighter";
+  for (const entry of entries) {
+    if (!entry.cell.explored) continue;
+    if (!LAMPLIT_MATERIALS.has(materialFor(scene, entry.cell))) continue;
+    const radius = entry.size * 0.95;
+    const glow = context.createRadialGradient(entry.center.x, entry.center.y, 0, entry.center.x, entry.center.y, radius);
+    glow.addColorStop(0, rgba(LAMP_RGB, 0.3 * lamps));
+    glow.addColorStop(1, rgba(LAMP_RGB, 0));
+    context.fillStyle = glow;
+    context.fillRect(entry.center.x - radius, entry.center.y - radius, radius * 2, radius * 2);
+  }
+  context.restore();
+}
+
 function drawFog(context, scene, entries) {
   if (scene.mode !== "world") return;
   // Three explicit states: visible terrain is clear, remembered terrain is
@@ -531,7 +591,9 @@ function drawHover(context, entry) {
 export function renderMap(context, scene, layout, atlas, poiAtlases, hoverKey, width, height, dragPreview = { x: 0, y: 0 }) {
   context.clearRect(0, 0, width, height);
   const background = context.createRadialGradient(width * 0.5, height * 0.42, 0, width * 0.5, height * 0.5, Math.max(width, height) * 0.72);
-  background.addColorStop(0, scene.night ? "#142d52" : "#255875");
+  // Daylight, always: the void beyond the map takes the same grade the ground
+  // does, so there is one light model rather than two that have to agree.
+  background.addColorStop(0, "#255875");
   background.addColorStop(1, "#06152f");
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
@@ -541,6 +603,8 @@ export function renderMap(context, scene, layout, atlas, poiAtlases, hoverKey, w
   drawTerrain(context, scene, layout.entries, atlas);
   drawScenery(context, scene, layout.entries);
   drawRibbons(context, layoutAtlasRibbons(layout, scene.ribbons, width, height), layout.worldRadius);
+  drawSky(context, scene.sky, width, height, dragPreview);
+  drawLamps(context, scene, layout.entries);
   const routeWidth = scene.mode === "world"
     ? Math.max(4, layout.worldRadius * 0.13)
     : Math.max(4, layout.cityCellSize * 0.1);
@@ -578,7 +642,7 @@ export function MapCanvas({ scene, onSelect, onSelectPlace, onPan, onZoom, onVie
   const canvasRef = useRef(null);
   const atlasRef = useRef(initialImages.material);
   const poiAtlasesRef = useRef(initialImages.poi);
-  const layoutRef = useRef({ entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0 });
+  const layoutRef = useRef({ entries: [], centerByKey: new Map(), worldRadius: 0, cityCellSize: 0, stride: 1 });
   const placesRef = useRef([]);
   const dragRef = useRef(null);
   const pointerPointsRef = useRef(new Map());
@@ -713,10 +777,11 @@ export function MapCanvas({ scene, onSelect, onSelectPlace, onPan, onZoom, onVie
     if (Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6) drag.moved = true;
     if (drag.moved) {
       const preview = dragPreviewOffset(drag.start, point);
-      const { commit, residual } = rebaseTravelMapDrag(preview, layoutRef.current.worldRadius);
+      const { worldRadius, stride } = layoutRef.current;
+      const { commit, residual } = rebaseTravelMapDrag(preview, worldRadius, stride);
       if (commit.x !== 0 || commit.y !== 0) {
         drag.start = { x: point.x - residual.x, y: point.y - residual.y };
-        onPan?.(commit, layoutRef.current.worldRadius);
+        onPan?.(commit, worldRadius, stride);
       }
       setDragPreview(residual);
     }
@@ -741,8 +806,9 @@ export function MapCanvas({ scene, onSelect, onSelectPlace, onPan, onZoom, onVie
     const point = eventPoint(event, event.currentTarget);
     const moved = drag.moved || Math.hypot(point.x - drag.start.x, point.y - drag.start.y) > 6;
     if (moved) {
-      const { commit } = rebaseTravelMapDrag(dragPreviewOffset(drag.start, point), layoutRef.current.worldRadius);
-      if (commit.x !== 0 || commit.y !== 0) onPan?.(commit, layoutRef.current.worldRadius);
+      const { worldRadius, stride } = layoutRef.current;
+      const { commit } = rebaseTravelMapDrag(dragPreviewOffset(drag.start, point), worldRadius, stride);
+      if (commit.x !== 0 || commit.y !== 0) onPan?.(commit, worldRadius, stride);
       suppressClickUntilRef.current = Date.now() + 350;
     }
     dragRef.current = null;

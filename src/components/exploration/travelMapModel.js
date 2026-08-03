@@ -87,6 +87,7 @@ function knownLegs(state, journey) {
       index: leg.index,
       steps: leg.steps,
       minutes: leg.minutes,
+      nights: leg.nights || 0,
       arrived: leg.arrived,
       boundaryKind: leg.boundary?.kind || "",
       boundaryLabel: leg.boundary?.label || "",
@@ -175,15 +176,31 @@ function axialRound(q, r) {
   return { x: rx, y: rz };
 }
 
-function travelMapDragDelta(drag, worldRadius) {
+// Pixels dragged, in hexes of camera movement. `worldRadius` measures a drawn
+// cell, which stands for `stride` hexes, so the drag is worth `stride` times
+// what it looks like — read against the drawn radius alone the camera crawls one
+// hex per cell dragged while the sample lattice, quantised to whole strides,
+// sits still and then jumps a full cell once the rounding finally tips.
+//
+// Which lattice the drag rounds onto also changes with stride. At stride 1 a
+// drawn cell is a hex, so cube rounding picks the right neighbour. Above 1 the
+// stride is even, `floor(y / 2)` advances by exactly S/2 per row, and the
+// sampled rows land squarely under each other instead of half-offset — a
+// rectangular screen lattice, whose two axes round independently.
+function travelMapDragDelta(drag, worldRadius, stride = 1) {
   const radius = Math.max(0.0001, Number(worldRadius) || 1);
-  const dr = -(Number(drag?.y) || 0) / (1.5 * radius);
-  const dq = -(Number(drag?.x) || 0) / (Math.sqrt(3) * radius) - dr * 0.5;
-  return { radius, delta: axialRound(dq, dr) };
+  const step = Math.max(1, Math.round(Number(stride) || 1));
+  const down = -(Number(drag?.y) || 0) / (1.5 * radius);
+  const across = -(Number(drag?.x) || 0) / (Math.sqrt(3) * radius);
+  // Cells, as axial q/r: one cell down is one row and half a column back.
+  const cell = step === 1
+    ? axialRound(across - down * 0.5, down)
+    : { x: Math.round(across) - Math.round(down) * 0.5, y: Math.round(down) };
+  return { radius, step, delta: { x: cell.x * step, y: cell.y * step } };
 }
 
-export function panTravelMapCamera(camera, drag, worldRadius) {
-  const { delta } = travelMapDragDelta(drag, worldRadius);
+export function panTravelMapCamera(camera, drag, worldRadius, stride = 1) {
+  const { delta } = travelMapDragDelta(drag, worldRadius, stride);
   return {
     ...camera,
     x: (Number(camera?.x) || 0) + delta.x,
@@ -191,15 +208,15 @@ export function panTravelMapCamera(camera, drag, worldRadius) {
   };
 }
 
-export function rebaseTravelMapDrag(drag, worldRadius) {
-  const { radius, delta } = travelMapDragDelta(drag, worldRadius);
+export function rebaseTravelMapDrag(drag, worldRadius, stride = 1) {
+  const { radius, step, delta } = travelMapDragDelta(drag, worldRadius, stride);
   const source = {
     x: Number(drag?.x) || 0,
     y: Number(drag?.y) || 0,
   };
   const commit = {
-    x: -Math.sqrt(3) * radius * (delta.x + delta.y * 0.5) || 0,
-    y: -1.5 * radius * delta.y || 0,
+    x: -Math.sqrt(3) * radius * (delta.x + delta.y * 0.5) / step || 0,
+    y: -1.5 * radius * delta.y / step || 0,
   };
   return {
     commit,
@@ -280,11 +297,11 @@ const keyOf = (coord) => `${coord.x},${coord.y}`;
 
 export function travelMapMarchFrame(path, progress) {
   if (!Array.isArray(path) || path.length === 0) return null;
+  const normalized = clamp(Number(progress) || 0, 0, 1);
   if (path.length === 1) {
     const coord = { x: path[0].x, y: path[0].y };
-    return { coord, fromKey: keyOf(coord), toKey: keyOf(coord), mix: 0, index: 0 };
+    return { coord, fromKey: keyOf(coord), toKey: keyOf(coord), mix: 0, index: 0, progress: normalized };
   }
-  const normalized = clamp(Number(progress) || 0, 0, 1);
   const position = normalized * (path.length - 1);
   const index = Math.min(path.length - 2, Math.floor(position));
   const mix = normalized === 1 ? 1 : position - index;
@@ -299,5 +316,8 @@ export function travelMapMarchFrame(path, progress) {
     toKey: keyOf(to),
     mix,
     index,
+    // How far through the whole march this frame is, which is what the sky is
+    // lit by: `mix` only says where we are between two hexes.
+    progress: normalized,
   };
 }

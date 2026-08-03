@@ -535,6 +535,316 @@ environment, so the atlas has been verified through tests and `vite build` only 
 never looked at. For a workstream whose entire premise is that the old overview
 was *"half baked and ugly"*, that is the significant open risk.
 
+#### Panning the strided lattice  *(complete)*
+
+Reported after the first live test: *"panning on the zoomed out rectangle grids
+feels clunky like it is moving on steps, like it is trying to auto correct or
+align at a certain close distance"*.
+
+`travelMapDragDelta` divided the pixel drag by `worldRadius` — the radius of a
+*drawn cell*, which stands for `stride` hexes — and handed the result to
+`panTravelMapCamera` as a **hex** delta. So a full cell of drag moved the camera
+one hex. WS6's lattice snapping then quantised the camera to whole strides, so
+nothing moved until the drag crossed `stride / 2` cells and the window jumped a
+whole cell: at stride 28, fourteen cells of dragging per visible step, with the
+sub-cell preview resetting to zero at every cell boundary in between. That reset
+against a stationary window is the "auto correct" the report describes.
+
+Two things were wrong. The delta needed scaling by `stride`, and it was rounding
+onto the wrong lattice: above stride 1 the stride is even, `floor(y / 2)` advances
+by exactly `S/2` per row, and the samples land squarely under each other rather
+than half-offset — a *rectangular* screen lattice, whose axes round independently.
+Cube rounding only applies at stride 1, where a drawn cell really is a hex. The
+basis a probe confirmed:
+
+| one drawn cell | camera delta |
+| --- | --- |
+| right | `(S, 0)` |
+| down | `(-S/2, S)` — not `(0, S)`, which moves diagonally |
+
+Both preserve lattice membership exactly, so the camera never needs correcting:
+`anchorY` shifts by whole strides, and `offsetColumn` by `S·Σcol` with the `-S/2`
+and the `+S/2` from `floor(y/2)` cancelling. `stride` now threads through
+`rebaseTravelMapDrag` / `panTravelMapCamera` and both `MapCanvas` drag sites; the
+`commit` pixels divide by it, keeping the round-trip exact so `residual` still
+supplies sub-cell smoothness. Verified at strides 1/2/4/10/28: one dragged cell
+moves the window exactly one cell, with zero residual.
+
+### WS7 — Travel that only stops for a reason  *(7a–7c, 7f complete; 7d–7e planned)*
+
+Live test: *"marching stops after 3 hex with options to stay on the map or go to
+chat. nope it should always stay on the map and keep moving unless something
+inherently needs to stop i.e fatigue, hunger/thirst, encounter with an npc on
+that specific hex that stops the party, a checkpoint etc, just any real
+meaningful stop, not a stop every certain distance."*
+
+**The measurement.** Three real routes out of Whitemarch, planned eight legs deep:
+
+```
+0,0 -> 20,12  (35 hexes)   leg0 steps=4 waypoint:Bonepicker Chapel
+                           leg1 steps=5 crossing:The Whitewend
+                           leg2 steps=3 waypoint:Sheep Gate
+                           leg3 steps=6 crossing:The Whitewend
+                           leg4 steps=2 crossing:The Whitewend
+0,0 -> -40,30 (49 hexes)   leg3 steps=3 border:Reed Crossing
+                           leg7 steps=1 going:Plains
+0,0 -> 60,-45 (73 hexes)   leg6 steps=2 border:Chalk Downs
+```
+
+Every named building in the capital, every touch of the river, and every county
+line is a full stop — a card, a confirmation, and an LLM narration turn. A 73-hex
+journey costs roughly fifteen of them.
+
+Two independent causes. `boundaryAt` treats geography as a reason to halt; and
+`legTooShort` cannot absorb those boundaries out on the continent, because at
+~100 min/hex a *single* hex already exceeds the 25%-of-a-day half of WS4's
+both-measures rule. `leg7 steps=1 min=202` is that failure exactly.
+
+**The decision.** A march runs until something real interrupts it. Camping is not
+an interruption — it happens inside the march.
+
+**7a — geography becomes passage.** *(complete)* `waypoint`, `crossing`, `border`
+and `going` moved out of `boundaryAt` and into `collectPassed`, keeping their
+labels, so a leg still reports the chapel, the ford and the county line it went
+by. That is the purpose the module already claims. `boundaryAt`, `legTooShort`
+and `MIN_LEG_STEPS` were then unused and are gone. `LEG_BOUNDARIES` is down to
+four kinds: `destination`, `encounter`, `supplies`, `limit`.
+
+**7b — nightfall becomes a camp.** *(complete, one departure from the plan)* The
+plan had `planLeg` reset a day clock inside the scan. It does not: nights are a
+pure function of total march time, so `legCamps(marchMinutes, dayMinutes)` derives
+them at the end instead — nights, the rest minutes they cost the clock, and the
+sleep they give back at the same 12/hour as an explicit rest in `tools.js`.
+
+That matters because `planLeg`'s minutes are an *estimate*. `App.jsx` recomputes
+the leg with mount, haste, terrain and burden modifiers, so it calls `legCamps`
+again on the authoritative `legMins`; a mounted party camps fewer times over the
+same ground. `travel.totalMins` becomes `elapsedMinutes` (march + camps), and
+`deterministicTravelBeat` carries `needs_changes: { sleep: campSleep }`. That is
+the only beat `applyTravelArrival` receives on both the settle and replay paths,
+so camp sleep is engine-authoritative and narration cannot clobber it. Without
+it, a week on the road arrived with a party that had never slept.
+
+**7c — the march ends when the party cannot sustain it.** *(complete)* A new
+`supplies` boundary. `openLarder(state)` opens the pack once per *expedition* and
+`planLeg` carries it forward hex by hex through the engine's own upkeep, so
+consecutive legs share one pack rather than each setting out fully provisioned.
+Reusing the real functions rather than approximating them is what stops the
+forecast and the beat tick disagreeing. `WORLD_MARCH_LIMIT` (48) stays as the
+bound that keeps the planner from walking the continent through the tile
+generator, and is the `limit` boundary.
+
+Only *crossing into* `Starving`/`Parched` cuts the leg — mirroring the "need
+alerts fire only on crossing INTO a worse state" rule in `beat-tick.js`. A party
+that set out already starving has made that choice, and halting them for it every
+hex is the tedium this workstream removes. Sleep is never consulted: nights are
+camped, not rationed.
+
+> **Prerequisite this exposed — now fixed.** `applySurvivalTick` drained needs by
+> the beat's full `minutes_passed` but ran `autoConsume` **once**. Survivable for
+> a half-day leg; over a fourteen-day one it starved the party no matter how many
+> rations they carried. `sustain()` in `upkeep.js` now walks the span in hour
+> steps — deplete, then eat if that hour dipped a need under the threshold —
+> folding repeat meals into `×N` lines. `beat-tick.js` and `companionUpkeep` both
+> route through it, and it is the same function `planLeg` forecasts with.
+
+**7d — encounters stop being an automatic halt.** *"a dangerous encounter still
+party can attempt to escape and continue the journey with a probability chance
+depending on the enemy difficulty against the party. then i.e a traveling
+merchant, a option to stay or keep going still but without probably to being
+stopped."*
+
+`rollPathEncounter` returns the first hit of **any** posture and
+`pathThroughEncounter` truncates the march there — so a doe frozen mid-graze, a
+pair of cranes, or city pedestrians end an expedition. The 101 authored entries
+already carry `posture`, which is the axis this needs:
+
+| posture | effect on the march |
+| --- | --- |
+| `friendly` / `neutral` | never truncates. The march carries on; the event is offered as a choice the player may take (trade, talk, join a caravan) or ride past |
+| `hostile` | an evasion roll — party against `regionDifficulty(x, y, seed).level`. Evaded, the march continues and the near-miss is narrated; failed, it halts at that hex as now |
+
+Evasion is a balance number, so per project convention it gets a
+`scripts/*-sim.mjs` sweep rather than a guessed constant.
+
+**7e — more than danger and merchants.** *"needs multiple encounters that are
+interesting however, not just generic danger or merchant."* The content is
+already broad; what is thin is the set of *interactions*. Open — needs a
+taxonomy of travel events beyond fight/trade before it can be specified.
+
+**7f — the halt card keeps the player on the map.** *(complete)* "Back to the
+story" is off the card, and so is "Make camp until morning" — camping is not a
+decision any more, it is something the march already did. What is left is "Press
+on toward X" and "Stay on the map". The card gained a `Camped / N / nights` stat,
+and the itinerary appends `· N nights camped` to each stage.
+
+---
+
+### WS8 — A day the player can see  *(complete)*
+
+Live test: *"add in day and night cycle to the map perhaps using shaders so that
+players can feel the time as they travel instead of looking at the clock."*
+
+**What is there now.** One boolean. `WorldExploration.jsx:1060` computes
+`night={hour < 6 || hour >= 20}` and `MapCanvas` spends it in three places: a
+background gradient stop, a flat `rgba(12, 27, 66, .42)` fill inside every
+terrain cell's clip, and a slightly heavier fog opacity. So the map has exactly
+two appearances, 19:59 looks like noon, and 20:00 arrives as a hard cut.
+
+**Two separate failures, and the second is the one being asked about.**
+
+1. *The sky is binary.* Light has no shape — no golden hour, no dusk, no grey
+   before dawn.
+2. *The sky does not move while the party does.* `state.time` only advances when
+   the travel beat settles, and the march animation runs entirely **before** that.
+   A party that marches nine hours watches nine hours pass under a frozen sun,
+   then the map snaps. Nothing about the march communicates duration, which is
+   precisely the complaint.
+
+**8a — a continuous sun.** A new pure module `src/engine/daylight.js`:
+
+```js
+sunAltitude(minuteOfDay) -> -1 .. 1
+```
+
+Piecewise sine, zero-crossing at the civil boundaries: `sin(π·t)` across the day
+span, `-sin(π·t)` across the night span. Peaks `+1` at 13:00 (midpoint of the
+day) and `-1` at 01:00.
+
+The boundaries are **not new constants** — they are `NIGHT_END` (6) and
+`NIGHT_START` (20) imported from `engine/light.js`. This is load-bearing: light
+is a survival system (blind in the dark, beacon vs hidden, sight radius), so a
+map that looks like dusk while `isNight()` says the party is blind is a lie about
+a mechanic. Altitude `< 0` must be exactly `isNight(time)`.
+
+`skyGrade(altitude)` then returns the plain numbers the renderer needs —
+`{ shade, warmth, horizon, lamps }` — with the bands:
+
+| altitude | reads as |
+| --- | --- |
+| `≥ 0.35` | full day. No grade drawn at all, so noon costs nothing |
+| `0 .. 0.35` | golden hour, warming as it falls |
+| `-0.25 .. 0` | twilight — rose into violet, the horizon band at its strongest |
+| `< -0.25` | night, saturating to full blue by about `-0.6` |
+
+`lamps` rises as `shade` does and is what makes a settlement read as inhabited
+after dark instead of just dark (see 8d).
+
+**8b — the clock runs during the march.** The one change that makes travel feel
+long. `travelMapMarchFrame` already carries `progress`; the march gains a
+projected clock beside it, and the sky and the HUD both read that instead of
+`state.time` while a march is running.
+
+This is honest rather than decorative: `applyTravelArrival` forces
+`minutes_passed = travel.totalMins`, so the projected arrival time **is** the
+time the beat will settle to. The clock never snaps at the end.
+
+The problem it has to solve is multi-day legs. The march animation is 1.8–6 s
+(`travelMapMarchDuration`), and a fortnight's march interpolated linearly across
+it is fourteen sunrises in four seconds — a strobe, and a photosensitivity
+concern. So the sweep is bounded:
+
+```
+delta   = (arrivalMinuteOfDay - departMinuteOfDay + 1440) mod 1440
+swept   = elapsed <= 1440 ? elapsed : 1440 + delta
+```
+
+Under a day, the sky shows the real elapsed time. Over a day, it sweeps exactly
+one full cycle plus the remainder — so the player always sees at least one dusk
+and one dawn (the honest signal for "more than a day passed"), never more than
+two, and it always lands on the true arrival hour. `prefers-reduced-motion` is
+already read in this component and skips the sweep, cutting straight to arrival.
+
+**8c — the grade itself, and the shader question.** The request says "perhaps
+using shaders". Worth being precise about what that would buy:
+
+The map is one 2D canvas — terrain atlas blits, ribbon polylines, POI atlas
+sprites, text labels, and hit testing all built on it (`MapCanvas.jsx`,
+`mapGeometry.js`). Moving to WebGL means rewriting every one of those, and there
+is **no browser automation in this repo**, so the result could not be verified
+before shipping. That is a bad trade for a colour grade.
+
+But a colour grade is exactly what a day/night shader *does*, and canvas 2D has
+the same operators: `globalCompositeOperation` gives `multiply`, `screen`,
+`overlay` and `soft-light`. So the grade is two full-screen `fillRect`s —
+`multiply` with the shade colour, `screen` with the warm colour — plus a linear
+gradient band near the horizon at dawn and dusk. Same output, two draw calls,
+no rewrite, and testable through the existing recording-context harness in
+`mapCanvasRender.test.js`.
+
+Where it goes in `renderMap` matters. The pass sits **after** terrain, scenery
+and ribbons and **before** route, markers, fog, places and the player: the world
+takes the light, the UI furniture stays legible. That also deletes the per-cell
+night fill in `drawTerrain` — two `fillRect`s replace one per visible hex.
+
+> A real fragment shader is still available later without the rewrite: a second
+> WebGL canvas overlaid on the 2D one, drawing only the sky pass. It buys
+> nothing for a flat grade, and would only pay off for something animated —
+> drifting cloud shadows, heat shimmer, stars. Filed, not planned.
+
+**8d — lamps in the dark.** `light.js` already knows that built places keep
+their own light through the night (`city-lamps`, `street-lamps`, `watch-fires`,
+`campfires`). Once the grade is continuous, that knowledge is free to draw: at
+`lamps > 0`, settlement/street/plaza/roof cells get a warm additive pool
+*punched through* the shade rather than being flattened blue with everything
+else. A town at midnight then reads as a town at midnight, which is also the
+single clearest cue that time has moved.
+
+**Verification.** `daylight.js` is pure and gets real unit tests — the altitude
+curve, its zero-crossings agreeing with `isNight`, the grade bands, and the
+bounded sweep (a 3-day leg sweeps once, a 6-hour leg sweeps six hours, both land
+on the true arrival hour). The draw path is asserted through the existing
+recording context: noon emits no grade pass, midnight emits one, and the grade
+lands between the ribbon draw and the route draw. The *look* cannot be verified
+without a browser and will be called out as such rather than claimed.
+
+#### What shipped, and where it left the plan
+
+`src/engine/daylight.js` + `daylight.test.js` (13 tests), with the grade wired
+through `mapSceneModel.js` → `MapCanvas.jsx` and the projected clock through
+`WorldExploration.jsx`. Five departures worth recording:
+
+**The sign of the altitude is geometry, not the night predicate.** `sunAltitude`
+returns `-0` at exactly 20:00, and JS cannot order `-0 < 0`, so `altitude < 0`
+is *not* interchangeable with `isNight()` at the two crossings. The curve still
+touches zero exactly there — the boundaries are shared, which was the point —
+but `isNight` remains the single authority and the scene derives its `night`
+boolean from it rather than from the sign.
+
+**The bounded sweep is simpler than planned.** `delta = (arrive − depart + 1440)
+mod 1440` reduces to `wrapDay(elapsed)`: the departure minute cancels out
+entirely. So the rule is just `elapsed <= 1440 ? elapsed : 1440 + wrapDay(elapsed)`
+and `marchSweepMinutes` needs no departure argument at all.
+
+**A top-down map has no horizon, so the horizon band became a rake.** The plan
+called for a gradient band "near the horizon", which is a side-on idea. What
+reads correctly from above is a low sun coming from *one side* — so it is a
+horizontal gradient across the frame, warm at the source edge. Altitude alone
+cannot tell a sunrise from a sunset (the curve is symmetric), so `sunRising`
+was added to put the light in the east at dawn and the west at dusk. Two halves
+of a march no longer look like the same hour.
+
+**Three composite passes, not two.** `multiply` with the shade colour, `screen`
+with the rake, `soft-light` with the warmth. The rake drops out below the
+horizon, so deep night is two passes and full day is zero — the early return on
+`shade <= 0` means most of the day draws nothing at all. Asserted exactly that
+way in `mapCanvasRender.test.js`, which also gained a faithful save/restore of
+`globalCompositeOperation` in its recording context.
+
+**The palette lost its separate backdrop colour.** The grade covers the whole
+frame, so a night-tinted background gradient underneath it would be darkened
+twice by its own light model — muddy at dusk, near-black at midnight. The
+background is now always the daylight blue and takes the grade like everything
+else: one light model, applied in one place.
+
+**The HUD clock was deliberately left on `state.time`.** Running it off the
+projection too was considered and rejected: the sweep is capped at one cycle, so
+a fortnight's leg would show a day count that is short by twelve days. The header
+stays the authoritative clock and snaps to truth when the beat lands; the sky
+leads it only for the 1.8–6 s the animation runs, while the party is visibly
+walking. If this reads as a bug in play rather than as the map showing a journey
+in progress, the fix is to project `advanceTime` for legs under a day only.
+
 ---
 
 ## 4. Verification

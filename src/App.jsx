@@ -78,7 +78,7 @@ import { condNames, hasCondition, normalizeConditions } from "./data/conditions.
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
 import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, isOverloaded } from "./engine/riding.js";
 import { rollPathEncounter, rollAerialEncounter, pathThroughEncounter } from "./engine/encounters.js";
-import { describeLegStop, describePassage, planLeg, travelHaltSummary, travelPace } from "./engine/expedition.js";
+import { describeLegStop, describePassage, legCamps, planLeg, travelHaltSummary, travelPace } from "./engine/expedition.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome, getBiomeById } from "./data/biomes.js";
 import { ECOLOGIES } from "./data/continent.js";
@@ -1227,11 +1227,11 @@ export function Solitaire() {
     const destIsHidden = destTileFull.poi?.type === "hidden";
     const toName = publicTravelLocationName(destTileFull, dest);
 
-    // The route is split into the legs a traveller would actually walk: a leg ends
-    // at a named place, a crossing, a border, where the going changes, or when the
-    // day runs out — never at a bare hex count. The party marches hex by hex along
-    // the leg; an encounter is rolled at every step and the FIRST one HALTS them at
-    // its tile, cutting the leg short of its boundary.
+    // The route is split into the legs a traveller would actually walk. A leg runs
+    // until something really interrupts it — arrival, or empty packs — and camps
+    // through however many nights that takes; fords, borders and nightfall are
+    // walked past rather than stopped at. The party marches hex by hex along the
+    // leg, and an encounter that will not let them by cuts the leg at its tile.
     const pace = travelPace(state.world.travelPace);
     const leg = planLeg(state, fullPath, 0, { maxSteps: WORLD_MARCH_LIMIT, pace: pace.id });
     let legPath = leg.path;
@@ -1274,6 +1274,13 @@ export function Solitaire() {
     const legMins = hastedGroundMinutes(rawLegMins, speedMult);
     if (speedMult > 1) mountNote = mountNote ? `${mountNote}, hastened` : " hastened";
     const hexes = legPath.length - 1;
+    // Nights are counted off the authoritative leg time, not the planner's
+    // estimate, so a hastened or mounted march camps fewer times for the same
+    // ground. The clock the party lives through is the marching plus the camps.
+    const camps = legCamps(legMins, pace.dayMinutes);
+    const campNote = camps.nights
+      ? ` The party camps ${camps.nights === 1 ? "one night" : `${camps.nights} nights`} on the way.`
+      : "";
 
     // Terrain mix of this leg, for the narrator.
     const terrainCounts = {};
@@ -1299,10 +1306,10 @@ export function Solitaire() {
 
     let travelMsg;
     if (arrived) {
-      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${legName} (${TERRAINS[legTile.terrain]?.label}). ${hexes} hex(es), ${legMins} min.${routeNote}${passageNote} Destination: ${destDescription}. Narrate the journey and ARRIVAL in one beat. Use minutes_passed = ${legMins}.`;
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${legName} (${TERRAINS[legTile.terrain]?.label}). ${hexes} hex(es), ${legMins} min on the road.${routeNote}${passageNote}${campNote} Destination: ${destDescription}. Narrate the journey and ARRIVAL in one beat. Use minutes_passed = ${camps.elapsedMinutes}.`;
     } else {
       const why = pathEnc ? "where what follows stops you" : describeLegStop(leg);
-      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) toward ${toName}, getting as far as ${legName} (${TERRAINS[legTile.terrain]?.label}) — ${hexes} hex(es), ${legMins} min,${routeNote}${passageNote} ${why}. Narrate the journey ONLY up to ${legName} and STOP there — do NOT arrive at ${toName} (it is still ${fullPath.length - legPath.length} hex(es) on). Use minutes_passed = ${legMins}.`;
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) toward ${toName}, getting as far as ${legName} (${TERRAINS[legTile.terrain]?.label}) — ${hexes} hex(es), ${legMins} min on the road,${routeNote}${passageNote}${campNote} ${why}. Narrate the journey ONLY up to ${legName} and STOP there — do NOT arrive at ${toName} (it is still ${fullPath.length - legPath.length} hex(es) on). Use minutes_passed = ${camps.elapsedMinutes}.`;
     }
 
     let encounterLine = "";
@@ -1318,7 +1325,8 @@ export function Solitaire() {
       fromName, toName: legName,
       dest: { x: legEnd.x, y: legEnd.y },
       path: legPath.map((p) => ({ x: p.x, y: p.y })),
-      totalMins: legMins,
+      totalMins: camps.elapsedMinutes,
+      campSleep: camps.sleepGain,
       encounter: pathEnc ? pathEnc.encounter : null,
       discovery,
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
@@ -1336,6 +1344,7 @@ export function Solitaire() {
       destination: toName,
       hexes,
       minutes: legMins,
+      nights: camps.nights,
       encounter: pathEnc?.encounter || null,
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     });
@@ -2791,9 +2800,7 @@ export function Solitaire() {
           onTravelMarchFinish={handleTravelMarchFinish}
           travelHalt={travelHalt}
           onHaltPressOn={(intendedDest) => { setTravelHalt(null); handleTravel(intendedDest); }}
-          onHaltCamp={() => { setTravelHalt(null); handleRest(8); }}
           onHaltDismiss={() => setTravelHalt(null)}
-          onHaltLeave={() => { setTravelHalt(null); setMapOpen(false); }}
           onFly={handleFly}
           onTeleport={handleTeleport}
           onSeekCombat={handleSeekCombat}

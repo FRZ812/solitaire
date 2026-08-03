@@ -97,6 +97,10 @@ export function deterministicTravelBeat(state, travel) {
   const discovery = deterministicTravelDiscovery(state, travel);
   return {
     minutes_passed: travel.totalMins,
+    // A leg longer than a day's march is camped through, and the clock that
+    // `totalMins` advances already includes those nights. Without the sleep they
+    // bought, a week on the road would arrive with a party that never slept.
+    ...(travel.campSleep ? { needs_changes: { sleep: travel.campSleep } } : {}),
     ...(discovery ? { tile_discovery: discovery } : {}),
   };
 }

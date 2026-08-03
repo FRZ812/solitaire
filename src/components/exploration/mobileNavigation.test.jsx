@@ -273,8 +273,8 @@ describe("mobile map navigation markup", () => {
           terrainLabels: [],
           routeFullyMapped: true,
           legs: [
-            { index: 0, steps: 4, minutes: 120, arrived: false, boundaryKind: "crossing", boundaryLabel: "Whitewend Ford", passed: ["a hay barn"] },
-            { index: 1, steps: 2, minutes: 60, arrived: true, boundaryKind: "destination", boundaryLabel: "Farhollow", passed: [] },
+            { index: 0, steps: 4, minutes: 1200, nights: 2, arrived: false, boundaryKind: "limit", boundaryLabel: "Whitewend Ford", passed: ["a hay barn"] },
+            { index: 1, steps: 2, minutes: 60, nights: 0, arrived: true, boundaryKind: "destination", boundaryLabel: "Farhollow", passed: [] },
           ],
         }}
         canGroundTravel
@@ -297,9 +297,10 @@ describe("mobile map navigation markup", () => {
     );
 
     expect(html).toContain("Whitewend Ford");
-    expect(html).toContain("A crossing");
+    expect(html).toContain("As far as one march is planned");
+    expect(html).toContain("2 nights camped");
     expect(html).toContain("Passing a hay barn");
-    expect(html).toContain('data-boundary="crossing"');
+    expect(html).toContain('data-boundary="limit"');
     // The chosen pace is the one shown as active.
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain("Forced");

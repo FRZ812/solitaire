@@ -1,36 +1,44 @@
 // Splits a route into the legs a journey is actually made of.
 //
-// A march used to end at a fixed hex count, which meant the party stopped in the
-// middle of nothing and the only thing that could interrupt a journey was an
-// encounter. A leg instead ends where a traveller would stop: at a place worth
-// naming, at a river crossing, at a border, where the going changes, or when the
-// day runs out. What the party passed on the way is collected as it goes, so a
-// leg has something to say even when nothing happens.
+// A leg ends where a journey is really interrupted: at the destination, or when
+// the packs run dry. A ford, a border stone, a change of country, a shrine, the
+// fall of night — those are things a traveller walks past or sleeps through, so
+// they are collected as passage rather than allowed to cut the leg. Stopping the
+// party at each of them turned a fortnight on the road into a dozen prompts
+// about nothing, which is exactly the tedium travel is supposed to compress.
 //
-// Pure and bounded: it reads tiles through `getTile` and plans at most a few
-// legs ahead, so a continent-spanning route never generates the whole path.
+// Bounded: it reads tiles through `getTile` and plans at most a few legs ahead,
+// so a continent-spanning route never generates the whole path.
 
 import { TERRAINS } from "../data/terrains.js";
+import { getNeedConditions } from "./needs.js";
+import { sustain } from "./upkeep.js";
 import { getTile, travelMinutes } from "./world.js";
 import { siteKnowledgeGrade } from "./world-sighting.js";
 
-// A leg shorter than this is not a journey stage, it is a stumble. Boundaries
-// that fall inside it are absorbed into the leg rather than cutting it.
-//
-// The step count alone is not enough, because one hex means two very different
-// things: a handcrafted city hex is a street corner minutes away, a continental
-// hex is six kilometres and most of a morning. A step floor tuned for streets
-// would swallow every boundary on the continent and leave nothing but nightfall.
-// So a leg is only too short when it is short by BOTH measures.
-export const MIN_LEG_STEPS = 3;
-const MIN_LEG_DAY_SHARE = 0.25;
-
-export function legTooShort(steps, minutes, dayMinutes) {
-  return steps < MIN_LEG_STEPS && minutes < dayMinutes * MIN_LEG_DAY_SHARE;
-}
-// Eight hours of walking. Past this the party is making camp whatever the ground
-// looks like.
+// Eight hours of walking. Past this the party makes camp and goes on in the
+// morning — the day is a rhythm inside a leg, not the end of one.
 export const DAY_MARCH_MINUTES = 480;
+const FULL_DAY_MINUTES = 1440;
+// What a night in a bedroll gives back, matching the explicit rest in tools.js.
+const CAMP_SLEEP_PER_HOUR = 12;
+
+// A march of `marchMinutes` at this pace: the nights camped along the way, what
+// they cost the clock, and the sleep they give back. The party marches its day,
+// sleeps, and marches again, so a five-day leg is five days of world time rather
+// than forty hours with the nights quietly skipped.
+export function legCamps(marchMinutes, dayMinutes = DAY_MARCH_MINUTES) {
+  const day = Math.max(60, Number(dayMinutes) || DAY_MARCH_MINUTES);
+  const march = Math.max(0, Number(marchMinutes) || 0);
+  const nights = Math.max(0, Math.ceil(march / day) - 1);
+  const restMinutes = nights * Math.max(0, FULL_DAY_MINUTES - day);
+  return {
+    nights,
+    restMinutes,
+    elapsedMinutes: march + restMinutes,
+    sleepGain: Math.round(CAMP_SLEEP_PER_HOUR * (restMinutes / 60)),
+  };
+}
 
 // The one steerable decision a leg carries. Pace does not change how fast the
 // ground is crossed — a mile of marsh is a mile of marsh — it changes how long
@@ -55,17 +63,14 @@ export function travelPace(id) {
 }
 
 // Ground that changes how a journey is walked rather than merely what it looks
-// like. Crossing into or out of one of these is worth a stop.
+// like. Crossing into or out of one of these is worth remarking on.
 const HARD_GOING = new Set(["mountains", "marsh", "swamp", "jungle", "desert"]);
 
 export const LEG_BOUNDARIES = Object.freeze({
   destination: Object.freeze({ rank: 0, label: "Arrival" }),
-  waypoint: Object.freeze({ rank: 1, label: "A place on the way" }),
-  crossing: Object.freeze({ rank: 2, label: "A crossing" }),
-  border: Object.freeze({ rank: 3, label: "A change of country" }),
-  going: Object.freeze({ rank: 4, label: "The going changes" }),
-  nightfall: Object.freeze({ rank: 5, label: "The day runs out" }),
-  limit: Object.freeze({ rank: 6, label: "As far as the party presses" }),
+  encounter: Object.freeze({ rank: 1, label: "Something on the road" }),
+  supplies: Object.freeze({ rank: 2, label: "The packs run dry" }),
+  limit: Object.freeze({ rank: 3, label: "As far as one march is planned" }),
 });
 
 // A place the party would name when it got there. Authored POIs qualify once
@@ -88,67 +93,112 @@ function isCrossing(tile) {
   return !!tile?.crossing || !!(tile?.waterway && tile?.route);
 }
 
-function boundaryAt(tile, previousTile, legStart) {
-  const name = waypointName(tile);
-  if (name) return { kind: "waypoint", label: name };
+// Scenery, landmarks and sighted sites the party went past. This is what a leg
+// reports, and on most legs it is the whole of what happened.
+const PASSAGE_LIMIT = 10;
+const LANDMARK_KINDS = new Set(["waypoint", "crossing", "border", "going"]);
+
+function notePassed(passed, kind, label, detail) {
+  if (!label) return;
+  const landmark = LANDMARK_KINDS.has(kind);
+  // Scenery repeats — a hundred hay barns are one hay barn — so it dedupes by
+  // kind. A named ford is not the next named ford, so landmarks dedupe by label.
+  if (passed.some((seen) => (landmark ? seen.label === label : seen.kind === kind))) return;
+  if (passed.length >= PASSAGE_LIMIT) {
+    if (!landmark) return;
+    // For the one line this becomes, a named place outranks ambient scenery.
+    const ambient = passed.findIndex((seen) => !LANDMARK_KINDS.has(seen.kind));
+    if (ambient < 0) return;
+    passed.splice(ambient, 1);
+  }
+  passed.push(detail ? { kind, label, detail } : { kind, label });
+}
+
+function collectPassed(passed, tile, previousTile) {
+  notePassed(passed, "waypoint", waypointName(tile));
   if (isCrossing(tile) && !isCrossing(previousTile)) {
-    return { kind: "crossing", label: tile.waterway?.name || "a crossing" };
+    notePassed(passed, "crossing", tile.waterway?.name || "a crossing");
   }
-  if (tile.regionId && legStart.regionId && tile.regionId !== legStart.regionId) {
-    return { kind: "border", label: tile.area?.name || tile.province?.name || "new country" };
+  if (tile.regionId && previousTile?.regionId && tile.regionId !== previousTile.regionId) {
+    notePassed(passed, "border", tile.area?.name || tile.province?.name || "new country");
   }
-  if (HARD_GOING.has(tile.terrain) !== HARD_GOING.has(legStart.terrain)) {
-    return { kind: "going", label: TERRAINS[tile.terrain]?.label || tile.terrain };
+  if (HARD_GOING.has(tile.terrain) !== HARD_GOING.has(previousTile?.terrain)) {
+    notePassed(passed, "going", TERRAINS[tile.terrain]?.label || tile.terrain);
+  }
+  for (const entry of tile?.scenery || []) {
+    notePassed(passed, entry.kind, entry.label, entry.detail);
+  }
+}
+
+// The pack, carried forward with the party: rations and water go down hex by hex
+// as they eat and drink. A larder is a mutable cursor, so consecutive legs of one
+// expedition share a single pack rather than each setting out fully provisioned.
+export function openLarder(state) {
+  const needs = state?.character?.needs;
+  if (!needs) return null;
+  return {
+    inventory: state.character.inventory,
+    needs: { ...needs },
+    codexItems: state.world?.codex?.items,
+    spent: new Set(getNeedConditions(needs)),
+  };
+}
+
+// The one thing the ground itself cannot argue with. Returns the need that just
+// gave out, or null while the party is still provisioned.
+//
+// Only the CROSSING counts. A party that set out already starving has made that
+// choice, and halting them every hex over it would be the tedium this replaces.
+// Sleep is not consulted here — nights are camped, not rationed.
+const RUNS_DRY = Object.freeze([
+  Object.freeze({ condition: "Starving", need: "hunger", label: "Rations" }),
+  Object.freeze({ condition: "Parched", need: "thirst", label: "Water" }),
+]);
+
+function eatAlong(larder, minutes) {
+  if (!larder) return null;
+  const fed = sustain({
+    inventory: larder.inventory,
+    needs: larder.needs,
+    minutes,
+    codexItems: larder.codexItems,
+  });
+  larder.inventory = fed.inventory;
+  larder.needs = fed.needs;
+  const now = getNeedConditions(larder.needs);
+  for (const entry of RUNS_DRY) {
+    if (larder.spent.has(entry.condition) || !now.includes(entry.condition)) continue;
+    larder.spent.add(entry.condition);
+    return { kind: "supplies", need: entry.need, label: entry.label };
   }
   return null;
 }
 
-// Scenery and sighted sites the party went past. This is what a leg reports when
-// nothing happened, which is most legs.
-function collectPassed(passed, tile) {
-  for (const entry of tile?.scenery || []) {
-    if (passed.length >= 6) return;
-    if (!passed.some((seen) => seen.kind === entry.kind)) {
-      passed.push({ kind: entry.kind, label: entry.label, detail: entry.detail });
-    }
-  }
-}
-
 // Plans the next leg only. `from` is the index in `path` the party starts at.
-export function planLeg(state, path, from = 0, { maxSteps = 48, pace = "steady" } = {}) {
+export function planLeg(state, path, from = 0, { maxSteps = 48, pace = "steady", larder } = {}) {
   if (!Array.isArray(path) || from >= path.length - 1) return null;
-  const dayMinutes = travelPace(pace).dayMinutes;
+  const pack = larder === undefined ? openLarder(state) : larder;
   const startTile = getTile(state, path[from].x, path[from].y);
   const passed = [];
   let previousTile = startTile;
   let minutes = 0;
-  // The last index always yields a hard-cap boundary, so the scan is guaranteed
-  // to settle on or before it.
+  // The last index always yields a destination boundary, so the scan is
+  // guaranteed to settle on or before it.
   let to = path.length - 1;
   let boundary = null;
 
   for (let i = from + 1; i < path.length && !boundary; i++) {
     const tile = getTile(state, path[i].x, path[i].y);
-    const steps = i - from;
-    minutes += travelMinutes(previousTile, tile);
-    collectPassed(passed, tile);
+    const hexMinutes = travelMinutes(previousTile, tile);
+    minutes += hexMinutes;
+    collectPassed(passed, tile, previousTile);
+    const dry = eatAlong(pack, hexMinutes);
 
-    const candidate = i === path.length - 1
+    boundary = i === path.length - 1
       ? { kind: "destination", label: waypointName(tile) || TERRAINS[tile.terrain]?.label || "the destination" }
-      : minutes >= dayMinutes
-        ? { kind: "nightfall", label: `Camp in the ${(TERRAINS[tile.terrain]?.label || "open").toLowerCase()}` }
-        : steps >= maxSteps
-          ? { kind: "limit", label: TERRAINS[tile.terrain]?.label || "open ground" }
-          : boundaryAt(tile, previousTile, startTile);
-    const hardCap = candidate
-      && (candidate.kind === "destination" || candidate.kind === "nightfall" || candidate.kind === "limit");
-
-    // A boundary inside the minimum is passed over rather than taken, so the
-    // party does not stop three times inside one valley.
-    if (candidate && (hardCap || !legTooShort(steps, minutes, dayMinutes))) {
-      boundary = candidate;
-      to = i;
-    }
+      : dry
+        || (i - from >= maxSteps ? { kind: "limit", label: TERRAINS[tile.terrain]?.label || "open ground" } : null);
+    if (boundary) to = i;
     previousTile = tile;
   }
 
@@ -159,6 +209,7 @@ export function planLeg(state, path, from = 0, { maxSteps = 48, pace = "steady" 
     end: { x: path[to].x, y: path[to].y },
     steps: to - from,
     minutes,
+    nights: legCamps(minutes, travelPace(pace).dayMinutes).nights,
     boundary,
     arrived: to === path.length - 1,
     passed,
@@ -169,9 +220,10 @@ export function planLeg(state, path, from = 0, { maxSteps = 48, pace = "steady" 
 // continent through the tile generator.
 export function planExpedition(state, path, { maxSteps = 48, maxLegs = 4, pace = "steady" } = {}) {
   const legs = [];
+  const larder = openLarder(state);
   let cursor = 0;
   while (legs.length < maxLegs) {
-    const leg = planLeg(state, path, cursor, { maxSteps, pace });
+    const leg = planLeg(state, path, cursor, { maxSteps, pace, larder });
     if (!leg) break;
     legs.push({ ...leg, index: legs.length });
     if (leg.arrived) break;
@@ -188,15 +240,12 @@ export function planExpedition(state, path, { maxSteps = 48, maxLegs = 4, pace =
 // brief and the travel log. Only meaningful for a leg that did not arrive.
 export function describeLegStop(leg) {
   const boundary = leg?.boundary;
-  const label = boundary?.label || "";
-  switch (boundary?.kind) {
-    case "waypoint": return `where ${label} gives the party a reason to halt`;
-    case "crossing": return `at ${label}, where the way meets the water`;
-    case "border": return `at the edge of ${label}`;
-    case "going": return `where the ground turns to ${label.toLowerCase()}`;
-    case "nightfall": return "where the light goes and the party makes camp";
-    default: return "as far as the party presses for now — the rest of the way still lies ahead";
+  if (boundary?.kind === "supplies") {
+    return boundary.need === "thirst"
+      ? "where the last of the water goes and the party will not press on dry"
+      : "where the last of the rations go and the party will not press on empty";
   }
+  return "as far as this march was planned to carry them — the rest of the way still lies ahead";
 }
 
 // One line naming what the leg went past, for the narrator brief and the travel
@@ -215,16 +264,14 @@ export function describePassage(leg) {
 function haltReason(leg, arrived, encounter) {
   if (arrived) return "";
   if (encounter) return "Something on the road stops the party here.";
-  const label = leg?.boundary?.label || "";
-  switch (leg?.boundary?.kind) {
-    case "waypoint": return `${label} is reason enough to halt.`;
-    case "crossing": return `The way meets the water at ${label}.`;
-    case "border": return `This is the edge of ${label}.`;
-    case "going": return `Beyond here the ground turns to ${label.toLowerCase()}.`;
-    case "nightfall": return "The light goes. This is as far as the day carries you.";
-    case "limit": return "This is as far as one march carries the party.";
-    default: return "The party halts here for now.";
+  const boundary = leg?.boundary;
+  if (boundary?.kind === "supplies") {
+    return boundary.need === "thirst"
+      ? "The waterskins are empty. Going on from here means going on dry."
+      : "The rations are gone. Going on from here means going on hungry.";
   }
+  if (boundary?.kind === "limit") return "This is as far as one march was planned to carry the party.";
+  return "The party halts here for now.";
 }
 
 // What the map shows once a leg is walked: where the party is standing, why the
@@ -240,6 +287,7 @@ export function travelHaltSummary({
   destination,
   hexes,
   minutes,
+  nights = 0,
   encounter = null,
   intendedDest = null,
 } = {}) {
@@ -253,6 +301,7 @@ export function travelHaltSummary({
     destination: arrived ? null : destination || null,
     hexes: Math.max(0, Number(hexes) || 0),
     minutes: Math.max(0, Number(minutes) || 0),
+    nights: Math.max(0, Math.round(Number(nights) || 0)),
     remaining: arrived ? 0 : Math.max(0, (Number(fullPathLength) || walked) - walked),
     boundaryKind: arrived ? "destination" : encounter ? "encounter" : leg?.boundary?.kind || "",
     reason: haltReason(leg, arrived, encounter),

@@ -34,6 +34,7 @@ import {
 } from "./hexMapModel.js";
 import { MapCanvas } from "./MapCanvas.jsx";
 import { useModalFocus } from "./modalFocus.js";
+import { marchClockMinutes, minuteOfDay } from "../../engine/daylight.js";
 import { buildWorldMapScene } from "./mapSceneModel.js";
 import { TRAVEL_MAP_MIN_ZOOM } from "./mapLod.js";
 import {
@@ -394,12 +395,13 @@ export function MapLegend({ onClose, initialSection = "guide" }) {
   );
 }
 
-function WorldGrid({ state, model, selection, journey, marchFrame, marchCaption, trackedCharacter, onPan, onZoom, onViewportChange, onRecenter, onPick, onPickPlace, onSeekCombat, loading, interactionLocked = false, night, city }) {
+function WorldGrid({ state, model, selection, journey, marchFrame, marchCaption, trackedCharacter, onPan, onZoom, onViewportChange, onRecenter, onPick, onPickPlace, onSeekCombat, loading, interactionLocked = false, skyMinutes, city }) {
   const [legendOpen, setLegendOpen] = useState(false);
   const mapScene = useMemo(
-    () => buildWorldMapScene({ state, model, selection, journey, marchFrame, trackedCharacter, night }),
-    [state, model, selection, journey, marchFrame, trackedCharacter, night],
+    () => buildWorldMapScene({ state, model, selection, journey, marchFrame, trackedCharacter, skyMinutes }),
+    [state, model, selection, journey, marchFrame, trackedCharacter, skyMinutes],
   );
+  const night = mapScene.night;
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.explored && cell.passable && !cell.current)
     .map((cell) => ({
@@ -481,9 +483,10 @@ function WorldGrid({ state, model, selection, journey, marchFrame, marchCaption,
 }
 
 // Shown where the destination preview normally sits, once a leg has been walked.
-// A staged journey stops on purpose, so the stop has to explain itself and hand
-// the next decision back rather than dropping the player into the chat.
-export function TravelHaltCard({ halt, onPressOn, onCamp, onDismiss, onLeave, loading }) {
+// A march only stops for a reason, so the stop has to explain itself and hand the
+// next decision back. It never offers to leave: the player came here to travel,
+// and the map's own close is the way out if they want one.
+export function TravelHaltCard({ halt, onPressOn, onDismiss, loading }) {
   const kicker = halt.arrived
     ? "Arrival"
     : LEG_BOUNDARIES[halt.boundaryKind]?.label || "The party halts";
@@ -498,6 +501,9 @@ export function TravelHaltCard({ halt, onPressOn, onCamp, onDismiss, onLeave, lo
       <div className="rpg-route-stats">
         <div><small>Walked</small><b>{halt.hexes}</b><span>{halt.hexes === 1 ? "step" : "steps"}</span></div>
         <div><small>Time</small><b>{formatTravelDuration(halt.minutes)}</b><span>on the road</span></div>
+        {halt.nights > 0
+          ? <div><small>Camped</small><b>{halt.nights}</b><span>{halt.nights === 1 ? "night" : "nights"}</span></div>
+          : null}
         <div><small>{halt.arrived ? "Route" : "Still ahead"}</small><b>{halt.arrived ? "✓" : halt.remaining}</b><span>{halt.arrived ? "complete" : `to ${halt.destination}`}</span></div>
       </div>
 
@@ -512,17 +518,13 @@ export function TravelHaltCard({ halt, onPressOn, onCamp, onDismiss, onLeave, lo
             <small>{halt.remaining} {halt.remaining === 1 ? "step" : "steps"} remain</small>
           </button>
         )}
-        {halt.boundaryKind === "nightfall" && (
-          <button type="button" className="rpg-halt-secondary" disabled={loading} onClick={onCamp}>Make camp until morning</button>
-        )}
         <button type="button" className="rpg-halt-secondary" onClick={onDismiss}>Stay on the map</button>
-        <button type="button" className="rpg-halt-secondary" onClick={onLeave}>Back to the story</button>
       </div>
     </div>
   );
 }
 
-export function DestinationPanel({ state, model, selection, selectedName, journey, canGroundTravel, routeMinutes, risk, focusBiome, focusVisual, halt, onHaltPressOn, onHaltCamp, onHaltDismiss, onHaltLeave, onClear, onTravel, onSetTravelPace, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
+export function DestinationPanel({ state, model, selection, selectedName, journey, canGroundTravel, routeMinutes, risk, focusBiome, focusVisual, halt, onHaltPressOn, onHaltDismiss, onClear, onTravel, onSetTravelPace, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
   const distance = selection ? hexDistance(model.origin, selection) : 0;
   const pace = travelPace(state.world.travelPace);
   const paceId = pace.id;
@@ -556,9 +558,7 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
           <TravelHaltCard
             halt={halt}
             onPressOn={onHaltPressOn}
-            onCamp={onHaltCamp}
             onDismiss={onHaltDismiss}
-            onLeave={onHaltLeave}
             loading={loading}
           />
         ) : !selection ? (
@@ -625,7 +625,10 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
                           {/* The last stage is the destination, which the panel
                               already names through the fog-safe presentation. */}
                           <b>{leg.arrived ? selectedName : leg.boundaryLabel}</b>
-                          <small>{LEG_BOUNDARIES[leg.boundaryKind]?.label || ""}</small>
+                          <small>
+                            {LEG_BOUNDARIES[leg.boundaryKind]?.label || ""}
+                            {leg.nights > 0 ? ` · ${leg.nights} ${leg.nights === 1 ? "night" : "nights"} camped` : ""}
+                          </small>
                           {leg.passed.length > 0 && <span>Passing {leg.passed.slice(0, 3).join(", ")}</span>}
                         </div>
                         <em>{leg.steps} <small>{formatTravelDuration(leg.minutes)}</small></em>
@@ -751,9 +754,7 @@ export function WorldExploration({
   onTravelMarchFinish,
   travelHalt = null,
   onHaltPressOn,
-  onHaltCamp,
   onHaltDismiss,
-  onHaltLeave,
   onFly,
   onTeleport,
   onSeekCombat,
@@ -861,7 +862,13 @@ export function WorldExploration({
   const focusDestination = selection && destinationMapped ? selection : model.current;
   const focusBiome = biomeAt(focusDestination, state.world.seed);
   const focusVisual = biomeVisual(focusBiome.id);
-  const hour = state.time?.hour ?? 12;
+  // The map is lit by the party's own clock — except during a march, which runs
+  // before the travel beat settles, so `state.time` would hold the sun still for
+  // the whole of a nine-hour walk. Projecting it from the animation's progress
+  // is what lets the player see the day go rather than read it off the clock.
+  const skyMinutes = marchFrame && travelMarch?.id
+    ? marchClockMinutes(state.time, travelMarch.minutes, marchFrame.progress)
+    : minuteOfDay(state.time);
 
 
   useEffect(() => {
@@ -963,8 +970,8 @@ export function WorldExploration({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [flyPanelDest]);
 
-  function handleMapPan(drag, worldRadius) {
-    setCamera((current) => panTravelMapCamera(current, drag, worldRadius));
+  function handleMapPan(drag, worldRadius, stride) {
+    setCamera((current) => panTravelMapCamera(current, drag, worldRadius, stride));
   }
 
   // One map, one camera: the atlas is this map pulled all the way out, and the
@@ -1058,10 +1065,10 @@ export function WorldExploration({
           onSeekCombat={onSeekCombat}
           loading={loading}
           interactionLocked={travelLocked}
-          night={hour < 6 || hour >= 20}
+          skyMinutes={skyMinutes}
           city={currentCity}
         />
-        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} halt={travelLocked ? null : travelHalt} onHaltPressOn={onHaltPressOn} onHaltCamp={onHaltCamp} onHaltDismiss={onHaltDismiss} onHaltLeave={onHaltLeave} onClear={() => setSelected(null)} onTravel={handleGroundTravel} onSetTravelPace={onSetTravelPace} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
+        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} halt={travelLocked ? null : travelHalt} onHaltPressOn={onHaltPressOn} onHaltDismiss={onHaltDismiss} onClear={() => setSelected(null)} onTravel={handleGroundTravel} onSetTravelPace={onSetTravelPace} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
       </div>
       {journalOpen && (
         <AdventureFolio

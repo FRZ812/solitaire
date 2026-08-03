@@ -1,4 +1,6 @@
 import { poiPlaceName } from "../../engine/location.js";
+import { skyAt, wrapDay } from "../../engine/daylight.js";
+import { isNight } from "../../engine/light.js";
 import { buildingForService } from "../../data/town.js";
 import { poiIconKeyForTile } from "../../data/poi-icons.js";
 import { siteKnowledgeGrade } from "../../engine/world-sighting.js";
@@ -56,7 +58,9 @@ function renderTrackedCharacter(trackedCharacter, cells) {
   };
 }
 
-export function buildWorldMapScene({ state, model, selection, journey, marchFrame = null, trackedCharacter = null, night = false }) {
+const NOON_MINUTE = 12 * 60;
+
+export function buildWorldMapScene({ state, model, selection, journey, marchFrame = null, trackedCharacter = null, skyMinutes = NOON_MINUTE }) {
   const cells = model.renderViewport || model.viewport || [];
   const exploredKeys = new Set(cells.filter(wasExplored).map((cell) => cell.key));
   const stride = Math.max(1, Math.round(model.stride) || 1);
@@ -65,6 +69,9 @@ export function buildWorldMapScene({ state, model, selection, journey, marchFram
   // map instead: continuous road and river ribbons in place of sampled road
   // hexes, and named places that no sample would have landed on.
   const vector = lodShowsVectorRoutes(tier);
+  // The hour the map is lit by, which during a march is ahead of the clock the
+  // rest of the game reads: `state.time` only moves once the travel beat lands.
+  const lit = wrapDay(skyMinutes);
   return {
     version: 1,
     mode: "world",
@@ -80,7 +87,11 @@ export function buildWorldMapScene({ state, model, selection, journey, marchFram
     selected_key: selection?.key || "",
     party_march: marchFrame,
     tracked_character: renderTrackedCharacter(trackedCharacter, cells),
-    night,
+    sky_minutes: lit,
+    sky: skyAt(lit),
+    // Fog and the stage's own chrome still want the plain yes/no, and it comes
+    // from the survival layer so the veil can never disagree with the grade.
+    night: isNight({ hour: Math.floor(lit / 60) }),
     route: (journey?.legPath || []).map((point) => {
       const key = coordinateKey(point);
       return exploredKeys.has(key) ? key : null;

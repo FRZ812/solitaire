@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
+import { buildRpgViewport } from "./hexMapModel.js";
 import {
   TRAVEL_MAP_MAX_ZOOM,
   TRAVEL_MAP_MIN_ZOOM,
@@ -100,6 +101,70 @@ describe("unified hex travel map camera", () => {
       commit: diagonalDrag,
       residual: { x: 0, y: 0 },
     });
+  });
+
+  it("moves the camera a whole stride per drawn cell dragged at sampled zoom", () => {
+    const radius = 20;
+    for (const stride of [2, 4, 10, 28]) {
+      // A drawn cell stands for `stride` hexes. Read against the drawn radius
+      // alone the camera crawls one hex per cell dragged, while the lattice —
+      // quantised to whole strides — holds still and then jumps a full cell once
+      // the rounding tips. That stall and jump is the stepping being fixed here.
+      expect(panTravelMapCamera({ x: 0, y: 0 }, { x: -Math.sqrt(3) * radius, y: 0 }, radius, stride))
+        .toMatchObject({ x: stride, y: 0 });
+      // One row down is not (0, stride): that lands a cell diagonally away,
+      // because an even stride advances `floor(y / 2)` by exactly stride/2.
+      expect(panTravelMapCamera({ x: 0, y: 0 }, { x: 0, y: -1.5 * radius }, radius, stride))
+        .toMatchObject({ x: -stride / 2, y: stride });
+    }
+  });
+
+  it("spends a whole dragged cell at sampled zoom with nothing left to re-round", () => {
+    const radius = 20;
+    const stride = 10;
+    const drag = { x: -Math.sqrt(3) * radius, y: -1.5 * radius };
+    const { commit, residual } = rebaseTravelMapDrag(drag, radius, stride);
+
+    expect(commit.x).toBeCloseTo(drag.x, 10);
+    expect(commit.y).toBeCloseTo(drag.y, 10);
+    expect(residual).toEqual({ x: 0, y: 0 });
+    expect(panTravelMapCamera({ x: 0, y: 0 }, commit, radius, stride))
+      .toMatchObject({ x: stride / 2, y: stride });
+
+    // Under half a cell is not yet a step; it stays in the preview instead of
+    // being dropped, so the next fraction of a cell continues from where it was.
+    const partial = rebaseTravelMapDrag({ x: -Math.sqrt(3) * radius * 0.4, y: 0 }, radius, stride);
+    expect(partial.commit).toEqual({ x: 0, y: 0 });
+    expect(partial.residual.x).toBeCloseTo(-Math.sqrt(3) * radius * 0.4, 10);
+  });
+
+  it("shifts the sampled window by exactly the cells dragged, with no snap correction", () => {
+    const radius = 20;
+    const state = makeInitialState();
+    const party = state.world.currentTile;
+    const dimensions = travelMapViewportDimensions({ width: 900, height: 600 }, TRAVEL_MAP_MIN_ZOOM);
+    expect(dimensions.stride).toBeGreaterThan(1);
+
+    const windowFor = (drag) => {
+      const camera = panTravelMapCamera({ x: 0, y: 0 }, drag, radius, dimensions.stride);
+      return buildRpgViewport(state, {
+        center: { x: party.x + camera.x, y: party.y + camera.y },
+        dimensions,
+      });
+    };
+    const keyAt = (cells, col, row) => cells.find((cell) => cell.col === col && cell.row === row)?.key;
+    const col = Math.floor(dimensions.columns / 2);
+    const row = Math.floor(dimensions.rows / 2);
+
+    const still = windowFor({ x: 0, y: 0 });
+    expect(keyAt(still, col, row)).toBe(`${party.x},${party.y}`);
+    expect(keyAt(windowFor({ x: -Math.sqrt(3) * radius, y: 0 }), col, row))
+      .toBe(keyAt(still, col + 1, row));
+    expect(keyAt(windowFor({ x: 0, y: -1.5 * radius }), col, row))
+      .toBe(keyAt(still, col, row + 1));
+    // Three cells of drag is three cells of window, not one step and then a jump.
+    expect(keyAt(windowFor({ x: -Math.sqrt(3) * radius * 3, y: 0 }), col, row))
+      .toBe(keyAt(still, col + 3, row));
   });
 });
 

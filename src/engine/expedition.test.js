@@ -3,10 +3,9 @@ import { DEFAULT_WORLD_SEED, WORLD_GENERATOR_VERSION } from "../data/continent.j
 import { findWorldRoute } from "./world.js";
 import {
   DAY_MARCH_MINUTES,
-  MIN_LEG_STEPS,
   TRAVEL_PACES,
   describePassage,
-  legTooShort,
+  legCamps,
   planExpedition,
   planLeg,
   travelHaltSummary,
@@ -63,42 +62,17 @@ function named(name) {
 const plain = { terrain: "plains", regionId: "r" };
 
 describe("expedition legs", () => {
-  it("ends a leg at a place travellers name rather than at a hex count", () => {
+  it("walks past a place travellers name instead of halting the party there", () => {
     const { state, path } = straightPath(12, (i) => (i === 7 ? named("Falford") : plain));
 
     const leg = planLeg(state, path, 0, { maxSteps: 48 });
-    expect(leg.boundary.kind).toBe("waypoint");
-    expect(leg.boundary.label).toBe("Falford");
-    expect(leg.steps).toBe(7);
+    expect(leg.boundary.kind).toBe("destination");
+    expect(leg.steps).toBe(11);
+    // Falford is something the party went past and can mention, not a reason to stop.
+    expect(leg.passed).toContainEqual({ kind: "waypoint", label: "Falford" });
   });
 
-  it("absorbs a boundary that falls inside the minimum leg length", () => {
-    // Two named places: one too close to be a stage, one at a sensible distance.
-    const { state, path } = straightPath(12, (i) => {
-      if (i === 1) return named("Near Croft");
-      if (i === 6) return named("Farhollow");
-      return plain;
-    });
-
-    const leg = planLeg(state, path, 0, { maxSteps: 48 });
-    expect(MIN_LEG_STEPS).toBe(3);
-    expect(leg.boundary.label).toBe("Farhollow");
-    expect(leg.steps).toBe(6);
-  });
-
-  it("measures a too-short leg by both step count and clock, since a hex is not one size", () => {
-    // A city hex is a street corner: a couple of them is a stumble, not a stage.
-    expect(legTooShort(1, 12, DAY_MARCH_MINUTES)).toBe(true);
-    expect(legTooShort(2, 24, DAY_MARCH_MINUTES)).toBe(true);
-    expect(legTooShort(MIN_LEG_STEPS, 36, DAY_MARCH_MINUTES)).toBe(false);
-
-    // A continental hex is six kilometres and most of a morning. One of them is
-    // already a stage, so boundaries out here are never absorbed by step count.
-    expect(legTooShort(1, 144, DAY_MARCH_MINUTES)).toBe(false);
-    expect(legTooShort(2, 288, DAY_MARCH_MINUTES)).toBe(false);
-  });
-
-  it("always cuts at the hard caps regardless of the minimum", () => {
+  it("always cuts at the hard caps", () => {
     const { state, path } = straightPath(3, () => plain);
 
     const short = planLeg(state, path, 0, { maxSteps: 48 });
@@ -112,20 +86,18 @@ describe("expedition legs", () => {
     expect(capped.arrived).toBe(false);
   });
 
-  it("stops at a change of country and at a change of going", () => {
+  it("notes a change of country and a change of going without stopping for either", () => {
     const { state, path } = straightPath(14, (i) => {
       if (i >= 8) return { terrain: "plains", regionId: "east", area: { name: "Wind Vale" } };
       if (i >= 4) return { terrain: "mountains", regionId: "west" };
       return { terrain: "plains", regionId: "west" };
     });
 
-    const first = planLeg(state, path, 0, { maxSteps: 48 });
-    expect(first.boundary).toMatchObject({ kind: "going", label: "Mountains" });
-    expect(first.end).toEqual({ x: OX + 4, y: OY });
-
-    const second = planLeg(state, path, first.to, { maxSteps: 48 });
-    expect(second.boundary).toMatchObject({ kind: "border", label: "Wind Vale" });
-    expect(second.end).toEqual({ x: OX + 8, y: OY });
+    const leg = planLeg(state, path, 0, { maxSteps: 48 });
+    expect(leg.boundary.kind).toBe("destination");
+    expect(leg.end).toEqual({ x: OX + 13, y: OY });
+    expect(leg.passed).toContainEqual({ kind: "going", label: "Mountains" });
+    expect(leg.passed).toContainEqual({ kind: "border", label: "Wind Vale" });
   });
 
   it("reports what the party went past, without repeating a kind", () => {
@@ -142,20 +114,68 @@ describe("expedition legs", () => {
     expect(describePassage(leg)).toBe("a hay barn and a field shrine");
   });
 
-  it("lets pace decide how long the party stays on its feet, not how fast it walks", () => {
-    // Long enough that nightfall, not the destination, ends the leg.
+  it("lets pace decide how many nights are camped, not how fast the party walks", () => {
+    // Days of mountain ground, so the march is camped through several times.
     const { state, path } = straightPath(200, () => ({ terrain: "mountains", regionId: "r" }));
 
     const careful = planLeg(state, path, 0, { maxSteps: 999, pace: "careful" });
     const steady = planLeg(state, path, 0, { maxSteps: 999, pace: "steady" });
     const forced = planLeg(state, path, 0, { maxSteps: 999, pace: "forced" });
 
-    for (const leg of [careful, steady, forced]) expect(leg.boundary.kind).toBe("nightfall");
-    expect(careful.steps).toBeLessThan(steady.steps);
-    expect(forced.steps).toBeGreaterThan(steady.steps);
-    // Same ground costs the same time however it is walked.
-    expect(steady.minutes / steady.steps).toBeCloseTo(careful.minutes / careful.steps, 5);
+    // Nightfall is a camp inside the march now, so every pace still arrives.
+    for (const leg of [careful, steady, forced]) {
+      expect(leg.boundary.kind).toBe("destination");
+      expect(leg.steps).toBe(199);
+      // Same ground costs the same time however it is walked.
+      expect(leg.minutes).toBe(steady.minutes);
+    }
+    expect(careful.nights).toBeGreaterThan(steady.nights);
+    expect(forced.nights).toBeLessThan(steady.nights);
     expect(TRAVEL_PACES.forced.riskMult).toBeGreaterThan(TRAVEL_PACES.careful.riskMult);
+  });
+
+  it("stops for real when the packs run dry", () => {
+    // A mountain hex is half an hour, so hunger falls a point per hex walked.
+    const { state, path } = straightPath(30, () => ({ terrain: "mountains", regionId: "r" }));
+    state.character = { needs: { hunger: 14, thirst: 100, sleep: 100 }, inventory: { carried: [] } };
+
+    const leg = planLeg(state, path, 0, { maxSteps: 999 });
+    expect(leg.boundary).toMatchObject({ kind: "supplies", need: "hunger" });
+    expect(leg.steps).toBe(4);
+    expect(leg.arrived).toBe(false);
+  });
+
+  it("does not halt a party that set out hungry over the same empty pack", () => {
+    // Crossing into Starving is the interruption. Already being there is a choice
+    // the player made, and stopping them for it every hex is the tedium we removed.
+    const { state, path } = straightPath(30, () => ({ terrain: "mountains", regionId: "r" }));
+    state.character = { needs: { hunger: 4, thirst: 100, sleep: 100 }, inventory: { carried: [] } };
+
+    const leg = planLeg(state, path, 0, { maxSteps: 999 });
+    expect(leg.boundary.kind).toBe("destination");
+    expect(leg.arrived).toBe(true);
+  });
+
+  it("carries one pack across the legs of an expedition instead of restocking each time", () => {
+    const { state, path } = straightPath(30, () => ({ terrain: "mountains", regionId: "r" }));
+    state.character = { needs: { hunger: 14, thirst: 100, sleep: 100 }, inventory: { carried: [] } };
+
+    // Capped legs, so the supplies boundary has to survive a leg change to fire.
+    const plan = planExpedition(state, path, { maxSteps: 2, maxLegs: 4 });
+    expect(plan.legs[0].boundary.kind).toBe("limit");
+    expect(plan.legs[1].boundary).toMatchObject({ kind: "supplies", need: "hunger" });
+  });
+
+  it("counts the nights a march is camped through and the sleep they give back", () => {
+    expect(legCamps(DAY_MARCH_MINUTES)).toMatchObject({ nights: 0, restMinutes: 0, elapsedMinutes: 480 });
+    // One minute past a day's march is a second day, so one night in between.
+    expect(legCamps(DAY_MARCH_MINUTES + 1)).toMatchObject({ nights: 1, elapsedMinutes: 1441 });
+    expect(legCamps(DAY_MARCH_MINUTES * 3).nights).toBe(2);
+    // A shorter marching day means more nights over the same ground.
+    expect(legCamps(1440, TRAVEL_PACES.careful.dayMinutes).nights).toBe(3);
+    expect(legCamps(1440, TRAVEL_PACES.forced.dayMinutes).nights).toBe(2);
+    expect(legCamps(0)).toMatchObject({ nights: 0, elapsedMinutes: 0, sleepGain: 0 });
+    expect(legCamps(DAY_MARCH_MINUTES + 1).sleepGain).toBeGreaterThan(0);
   });
 
   it("plans a real continental route into staged legs that reach the destination", () => {
@@ -186,7 +206,7 @@ describe("halt summary", () => {
   });
 
   it("says why the leg ended and how much of the route is still ahead", () => {
-    const leg = legAt("nightfall", "Camp in the plains");
+    const leg = legAt("limit", "Plains");
     const halt = travelHaltSummary({
       leg,
       legPath: leg.path,
@@ -196,14 +216,26 @@ describe("halt summary", () => {
       destination: "Falford",
       hexes: 2,
       minutes: 240,
+      nights: 2,
       intendedDest: { x: 8, y: 0 },
     });
 
-    expect(halt.reason).toMatch(/light goes/i);
+    expect(halt.reason).toMatch(/as far as one march/i);
     // 9 hexes of route, 3 of them walked (the start plus two steps).
     expect(halt.remaining).toBe(6);
     expect(halt.destination).toBe("Falford");
+    expect(halt.nights).toBe(2);
     expect(halt.passed).toEqual(["a plank bridge", "a wayside shrine"]);
+  });
+
+  it("names the need that gave out when the packs ended the march", () => {
+    const leg = { ...legAt("supplies", "Water"), boundary: { kind: "supplies", need: "thirst", label: "Water" } };
+    const halt = travelHaltSummary({
+      leg, legPath: leg.path, fullPathLength: 9, arrived: false, where: "a dry ridge", hexes: 2, minutes: 240,
+    });
+
+    expect(halt.boundaryKind).toBe("supplies");
+    expect(halt.reason).toMatch(/waterskins are empty/i);
   });
 
   it("drops the destination and the remaining distance once the party arrives", () => {
@@ -228,7 +260,7 @@ describe("halt summary", () => {
   });
 
   it("claims no scenery from ground an encounter kept the party from walking", () => {
-    const leg = legAt("waypoint", "Falford");
+    const leg = legAt("limit", "Plains");
     const halt = travelHaltSummary({
       leg,
       // The encounter halted them one hex into a three-hex leg.
