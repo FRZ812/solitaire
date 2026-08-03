@@ -4,7 +4,10 @@ import { ECOLOGIES } from "../data/continent.js";
 import { regionDifficulty } from "../data/regions.js";
 import { getTile } from "./world.js";
 import { TERRAINS } from "../data/terrains.js";
-import { isNight } from "./light.js";
+import { DARK_FLEE_BONUS, isBeacon, isHidden, isNight } from "./light.js";
+import { isOverloaded, playerGroundMount } from "./riding.js";
+import { travelPace } from "./expedition.js";
+import { condNames } from "../data/conditions.js";
 import { AERIAL_MIN_LEVEL, AERIAL_CHANCE_PER_LEVEL } from "../config.js";
 
 // More things prowl after dark — night (and gloomy ground) raises the odds.
@@ -60,13 +63,82 @@ export function hostileProfile(tile, x, y) {
   return { chancePercent: Math.round(table.chance * 100), kinds: hostiles.slice(0, 3).map((e) => e.kind.replace(/-/g, " ")) };
 }
 
-// Walk the path (excluding the starting tile), roll each tile's encounter
-// independently, return the first hit. One beat per journey means at most one
-// encounter even if multiple rolls would have fired.
+// ---- getting by what is out there ----
+//
+// Meeting something on the road is not the same as being stopped by it. Only a
+// hostile that cannot be shaken ends a march; a doe, a peddler, or wolves the
+// party got clear of are things the leg went past.
+//
+// The opposition is the REGION, never the party's level: "there is no level
+// scaling, so the region you stand in decides how tough its foes and loot are"
+// (data/regions.js). The party's side of the roll is circumstance instead —
+// light, pace, mount, load, weariness — every one of which the player steers.
+//
+// Constants swept by scripts/travel-evasion-sim.mjs.
+export const EVADE_BASE = 96;
+export const EVADE_PER_BAND = 11;
+export const EVADE_FLOOR = 10;
+export const EVADE_CEIL = 95;
+// A ridden mount that actually has the legs for this ground.
+export const EVADE_MOUNTED = 12;
+export const EVADE_OVERBURDENED = -18;
+export const EVADE_EXHAUSTED = -15;
+export const EVADE_TIRED = -7;
+// Pace already buys ground with risk; here it buys quiet.
+const EVADE_BY_PACE = { careful: 10, steady: 0, forced: -12 };
+
+// How many things the party got by are worth reporting. A long leg through the
+// Wilds meets a handful, and neither the narrator brief nor the halt card can
+// carry a dozen.
+export const MET_LIMIT = 3;
+
+const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+// Percentage chance of getting clear of this encounter, before the roll.
+export function evasionChance(state, atTile, { pace = "steady" } = {}) {
+  const band = regionDifficulty(atTile.x, atTile.y, state?.world?.seed);
+  let chance = EVADE_BASE - (band.level || 1) * EVADE_PER_BAND;
+
+  // light.js has documented these two since it was written — unlit in the dark
+  // is "easier to slip past / flee", a carried flame "can't slip away" — and
+  // nothing outside combat has ever read them.
+  if (isHidden(state)) chance += DARK_FLEE_BONUS;
+  else if (isBeacon(state)) chance -= DARK_FLEE_BONUS;
+
+  chance += EVADE_BY_PACE[travelPace(pace).id] || 0;
+
+  const mount = playerGroundMount(state);
+  if (mount && !isOverloaded(mount, state)) chance += EVADE_MOUNTED;
+  if (state?.character?.overburdened) chance += EVADE_OVERBURDENED;
+
+  const conds = condNames(state?.character?.conditions);
+  if (conds.includes("Exhausted")) chance += EVADE_EXHAUSTED;
+  else if (conds.includes("Tired")) chance += EVADE_TIRED;
+
+  return clamp(Math.round(chance), EVADE_FLOOR, EVADE_CEIL);
+}
+
+// Does this encounter end the march? Friendly and neutral never do — they are
+// hailed, waved past, or never noticed. Hostiles get one roll to slip away.
+export function encounterHalts(state, encounter, atTile, options = {}) {
+  if (encounter?.posture !== "hostile") {
+    return { halts: false, outcome: "passed", chance: 0 };
+  }
+  const chance = evasionChance(state, atTile, options);
+  const evaded = Math.random() * 100 < chance;
+  return { halts: !evaded, outcome: evaded ? "evaded" : "blocked", chance };
+}
+
+// Walk the path (excluding the starting tile) and roll each tile's encounter
+// independently. Everything the party got by is collected; the walk ends at the
+// first hostile that would not let them past, which is the only thing here that
+// cuts a leg short.
+//
 // `riskMult` is the party's chosen pace: pressing hard covers ground but walks
 // into more, moving carefully costs time and finds less.
-export function rollPathEncounter(state, path, riskMult = 1) {
-  if (!path || path.length < 2) return null;
+export function rollPathEncounter(state, path, riskMult = 1, { pace = "steady" } = {}) {
+  const met = [];
+  if (!path || path.length < 2) return { halt: null, met };
   for (let i = 1; i < path.length; i++) {
     const p = path[i];
     const tile = getTile(state, p.x, p.y);
@@ -74,9 +146,13 @@ export function rollPathEncounter(state, path, riskMult = 1) {
     const gloomy = !!TERRAINS[tile.terrain]?.dark;
     const mult = (isNight(state.time, gloomy) ? NIGHT_ENCOUNTER_MULT : 1) * riskMult;
     const enc = rollEncounter(tile, p.x, p.y, mult);
-    if (enc) return { encounter: enc, atTile: p, atIndex: i };
+    if (!enc) continue;
+    const verdict = encounterHalts(state, enc, p, { pace });
+    const hit = { encounter: enc, atTile: p, atIndex: i, outcome: verdict.outcome };
+    if (verdict.halts) return { halt: hit, met };
+    if (met.length < MET_LIMIT) met.push(hit);
   }
-  return null;
+  return { halt: null, met };
 }
 
 // The route roll and every presentation layer share this one truncation rule:

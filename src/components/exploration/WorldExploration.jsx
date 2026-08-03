@@ -511,6 +511,12 @@ export function TravelHaltCard({ halt, onPressOn, onDismiss, loading }) {
         <p className="rpg-travel-halt__passed">The way passed {halt.passed.slice(0, 4).join(", ")}.</p>
       )}
 
+      {halt.met?.length > 0 && (
+        <p className="rpg-travel-halt__met">
+          {halt.met.map((hit) => `${hit.outcome === "evaded" ? "Shook off" : "Went by"} ${hit.kind.replace(/-/g, " ")}`).join(", ")}.
+        </p>
+      )}
+
       <div className="rpg-travel-halt__actions">
         {halt.intendedDest && (
           <button type="button" className="rpg-travel-button" disabled={loading} onClick={() => onPressOn(halt.intendedDest)}>

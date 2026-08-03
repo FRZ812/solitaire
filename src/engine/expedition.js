@@ -289,6 +289,7 @@ export function travelHaltSummary({
   minutes,
   nights = 0,
   encounter = null,
+  met = [],
   intendedDest = null,
 } = {}) {
   const walked = Array.isArray(legPath) ? legPath.length : 0;
@@ -307,6 +308,12 @@ export function travelHaltSummary({
     reason: haltReason(leg, arrived, encounter),
     passed: walkedWholeLeg ? (leg?.passed || []).map((entry) => entry.label).filter(Boolean) : [],
     posture: encounter?.posture || null,
+    // What the leg met and did not stop for. A near miss the player never hears
+    // about is a near miss that did not happen, and on a quiet leg the wolves
+    // that were shaken off are the most interesting thing there is to report.
+    met: (Array.isArray(met) ? met : [])
+      .filter((hit) => hit?.encounter?.kind)
+      .map((hit) => ({ kind: hit.encounter.kind, outcome: hit.outcome || "passed" })),
     intendedDest: arrived ? null : intendedDest,
   };
 }

@@ -279,4 +279,33 @@ describe("halt summary", () => {
     expect(halt.reason).toMatch(/stops the party/i);
     expect(halt.posture).toBe("hostile");
   });
+
+  it("reports the near misses, which on a quiet leg are the whole of what happened", () => {
+    const leg = legAt("destination", "Falford");
+    const halt = travelHaltSummary({
+      leg,
+      legPath: leg.path,
+      fullPathLength: 3,
+      arrived: true,
+      where: "Falford",
+      hexes: 2,
+      minutes: 90,
+      met: [
+        { encounter: { kind: "hunter", posture: "friendly" }, outcome: "passed" },
+        { encounter: { kind: "wolves", posture: "hostile" }, outcome: "evaded" },
+        { encounter: null, outcome: "passed" },
+      ],
+    });
+
+    expect(halt.met).toEqual([
+      { kind: "hunter", outcome: "passed" },
+      { kind: "wolves", outcome: "evaded" },
+    ]);
+  });
+
+  it("reports nothing met when the leg met nothing", () => {
+    const leg = legAt("destination", "Falford");
+    const quiet = travelHaltSummary({ leg, legPath: leg.path, fullPathLength: 3, arrived: true, where: "Falford", hexes: 2, minutes: 90 });
+    expect(quiet.met).toEqual([]);
+  });
 });

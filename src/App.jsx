@@ -1235,7 +1235,8 @@ export function Solitaire() {
     const pace = travelPace(state.world.travelPace);
     const leg = planLeg(state, fullPath, 0, { maxSteps: WORLD_MARCH_LIMIT, pace: pace.id });
     let legPath = leg.path;
-    const pathEnc = rollPathEncounter(state, legPath, pace.riskMult);
+    const road = rollPathEncounter(state, legPath, pace.riskMult, { pace: pace.id });
+    const pathEnc = road.halt;
     legPath = pathThroughEncounter(legPath, pathEnc);
     // What the leg passed is only true of ground actually walked.
     const passage = legPath.length < leg.path.length ? "" : describePassage(leg);
@@ -1316,6 +1317,15 @@ export function Solitaire() {
     if (pathEnc) {
       encounterLine = `\n\n[ENCOUNTER] kind: ${pathEnc.encounter.kind}; posture: ${pathEnc.encounter.posture}; flavor: "${pathEnc.encounter.desc}". This is what halts the party at ${legName} — weave it in as they reach there.`;
     }
+    // Everything the leg met and got past. Without this the narrator has no way
+    // to know a near miss happened; with it phrased as a halt, it would invent a
+    // stop the engine never made.
+    if (road.met.length) {
+      const met = road.met
+        .map((hit) => `${hit.encounter.kind} (${hit.encounter.posture}, ${hit.outcome}): "${hit.encounter.desc}"`)
+        .join("; ");
+      encounterLine += `\n\n[PASSED] The march went on through these — ${met}. None of them stopped the party: narrate them in passing, as moments along the way, and do NOT end the journey at any of them.`;
+    }
     const fullMsg = travelMsg + (mountNote ? ` The party rides${mountNote}.` : "") + encounterLine;
 
     // Recorded with the turn so a rewrite/rewind reproduces this exact leg: the
@@ -1328,6 +1338,7 @@ export function Solitaire() {
       totalMins: camps.elapsedMinutes,
       campSleep: camps.sleepGain,
       encounter: pathEnc ? pathEnc.encounter : null,
+      met: road.met.map((hit) => ({ encounter: hit.encounter, outcome: hit.outcome })),
       discovery,
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     };
@@ -1346,6 +1357,7 @@ export function Solitaire() {
       minutes: legMins,
       nights: camps.nights,
       encounter: pathEnc?.encounter || null,
+      met: road.met,
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     });
 

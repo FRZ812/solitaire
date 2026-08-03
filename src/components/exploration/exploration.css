@@ -234,6 +234,7 @@
 .rpg-travel-halt h2 { margin: 4px 0 7px; color: #fff7d6; font: 700 22px/1 'Alegreya', Georgia, serif; text-shadow: 2px 2px 0 #06122e; }
 .rpg-travel-halt__reason { margin: 0 0 12px; color: rgba(244,232,195,.8); font: 500 12px/1.45 'Alegreya', Georgia, serif; }
 .rpg-travel-halt__passed { margin: 10px 0 0; color: rgba(126,228,220,.66); font: italic 10px/1.35 'Alegreya', Georgia, serif; }
+.rpg-travel-halt__met { margin: 5px 0 0; color: rgba(236,184,76,.72); font: italic 10px/1.35 'Alegreya', Georgia, serif; }
 .rpg-travel-halt__actions { margin-top: 12px; display: grid; gap: 6px; }
 .rpg-halt-secondary { min-height: 40px; padding: 8px; color: rgba(244,232,195,.72); border: 1px solid rgba(236,184,76,.34); background: rgba(7,24,61,.7); font: 700 10px 'Alegreya', Georgia, serif; letter-spacing: .06em; cursor: pointer; }
 .rpg-halt-secondary:hover:not(:disabled) { color: #fff4c5; border-color: rgba(236,184,76,.7); }
