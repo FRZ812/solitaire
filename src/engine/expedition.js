@@ -69,6 +69,7 @@ const HARD_GOING = new Set(["mountains", "marsh", "swamp", "jungle", "desert"]);
 export const LEG_BOUNDARIES = Object.freeze({
   destination: Object.freeze({ rank: 0, label: "Arrival" }),
   encounter: Object.freeze({ rank: 1, label: "Something on the road" }),
+  "road-event": Object.freeze({ rank: 1, label: "The road is held" }),
   supplies: Object.freeze({ rank: 2, label: "The packs run dry" }),
   limit: Object.freeze({ rank: 3, label: "As far as one march is planned" }),
 });
@@ -261,9 +262,10 @@ export function describePassage(leg) {
 // `describeLegStop` above is a fragment the narrator brief drops mid-sentence;
 // the halt card needs a standalone line, which is a different grammar rather
 // than a different wording of the same one.
-function haltReason(leg, arrived, encounter) {
+function haltReason(leg, arrived, encounter, roadEvent) {
   if (arrived) return "";
   if (encounter) return "Something on the road stops the party here.";
+  if (roadEvent?.stops) return `The way on is held by ${roadEvent.label}.`;
   const boundary = leg?.boundary;
   if (boundary?.kind === "supplies") {
     return boundary.need === "thirst"
@@ -290,6 +292,7 @@ export function travelHaltSummary({
   nights = 0,
   encounter = null,
   met = [],
+  roadEvent = null,
   intendedDest = null,
 } = {}) {
   const walked = Array.isArray(legPath) ? legPath.length : 0;
@@ -304,10 +307,19 @@ export function travelHaltSummary({
     minutes: Math.max(0, Number(minutes) || 0),
     nights: Math.max(0, Math.round(Number(nights) || 0)),
     remaining: arrived ? 0 : Math.max(0, (Number(fullPathLength) || walked) - walked),
-    boundaryKind: arrived ? "destination" : encounter ? "encounter" : leg?.boundary?.kind || "",
-    reason: haltReason(leg, arrived, encounter),
+    boundaryKind: arrived ? "destination"
+      : encounter ? "encounter"
+        : roadEvent?.stops ? "road-event"
+          : leg?.boundary?.kind || "",
+    reason: haltReason(leg, arrived, encounter, roadEvent),
     passed: walkedWholeLeg ? (leg?.passed || []).map((entry) => entry.label).filter(Boolean) : [],
     posture: encounter?.posture || null,
+    // Who else was on this road. Unlike `met`, this is not a near miss — it is
+    // an open offer, and the card names it so the player can act on it in the
+    // story rather than only reading about it after the fact.
+    roadEvent: roadEvent?.label
+      ? { label: roadEvent.label, offer: roadEvent.offer || "news", stops: !!roadEvent.stops }
+      : null,
     // What the leg met and did not stop for. A near miss the player never hears
     // about is a near miss that did not happen, and on a quiet leg the wolves
     // that were shaken off are the most interesting thing there is to report.

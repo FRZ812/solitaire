@@ -78,6 +78,8 @@ import { condNames, hasCondition, normalizeConditions } from "./data/conditions.
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "./engine/fly.js";
 import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as dismountRider, isOverloaded } from "./engine/riding.js";
 import { rollPathEncounter, rollAerialEncounter, pathThroughEncounter } from "./engine/encounters.js";
+import { rollRoadEvent } from "./engine/road-events.js";
+import { ROAD_OFFERS } from "./data/road-events.js";
 import { describeLegStop, describePassage, legCamps, planLeg, travelHaltSummary, travelPace } from "./engine/expedition.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome, getBiomeById } from "./data/biomes.js";
@@ -1238,6 +1240,10 @@ export function Solitaire() {
     const road = rollPathEncounter(state, legPath, pace.riskMult, { pace: pace.id });
     const pathEnc = road.halt;
     legPath = pathThroughEncounter(legPath, pathEnc);
+    // Rolled on the ground actually walked, so an encounter that cut the leg
+    // short also cuts off the road ahead of it that the party never reached.
+    const roadEvent = rollRoadEvent(state, legPath);
+    if (roadEvent?.event.stops) legPath = pathThroughEncounter(legPath, roadEvent);
     // What the leg passed is only true of ground actually walked.
     const passage = legPath.length < leg.path.length ? "" : describePassage(leg);
     const legEnd = legPath[legPath.length - 1];
@@ -1309,7 +1315,9 @@ export function Solitaire() {
     if (arrived) {
       travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${legName} (${TERRAINS[legTile.terrain]?.label}). ${hexes} hex(es), ${legMins} min on the road.${routeNote}${passageNote}${campNote} Destination: ${destDescription}. Narrate the journey and ARRIVAL in one beat. Use minutes_passed = ${camps.elapsedMinutes}.`;
     } else {
-      const why = pathEnc ? "where what follows stops you" : describeLegStop(leg);
+      const why = pathEnc ? "where what follows stops you"
+        : roadEvent?.event.stops ? "where the road itself is closed to you by what follows"
+          : describeLegStop(leg);
       travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) toward ${toName}, getting as far as ${legName} (${TERRAINS[legTile.terrain]?.label}) — ${hexes} hex(es), ${legMins} min on the road,${routeNote}${passageNote}${campNote} ${why}. Narrate the journey ONLY up to ${legName} and STOP there — do NOT arrive at ${toName} (it is still ${fullPath.length - legPath.length} hex(es) on). Use minutes_passed = ${camps.elapsedMinutes}.`;
     }
 
@@ -1326,6 +1334,14 @@ export function Solitaire() {
         .join("; ");
       encounterLine += `\n\n[PASSED] The march went on through these — ${met}. None of them stopped the party: narrate them in passing, as moments along the way, and do NOT end the journey at any of them.`;
     }
+    // Who else was on this road and what they want. The offer is the point: it
+    // gives the player something to answer rather than something to read.
+    if (roadEvent) {
+      const { label, detail, offer, stops } = roadEvent.event;
+      encounterLine += `\n\n[ROAD] ${label} — ${detail} On offer: ${offer} (${ROAD_OFFERS[offer]}). ${stops
+        ? `The road does not open again until the party deals with this, so it is what ends the march at ${legName}.`
+        : "This does not stop the march. Narrate it as met along the way and leave the party room to answer it or ride on."}`;
+    }
     const fullMsg = travelMsg + (mountNote ? ` The party rides${mountNote}.` : "") + encounterLine;
 
     // Recorded with the turn so a rewrite/rewind reproduces this exact leg: the
@@ -1339,6 +1355,7 @@ export function Solitaire() {
       campSleep: camps.sleepGain,
       encounter: pathEnc ? pathEnc.encounter : null,
       met: road.met.map((hit) => ({ encounter: hit.encounter, outcome: hit.outcome })),
+      roadEvent: roadEvent ? roadEvent.event : null,
       discovery,
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     };
@@ -1358,6 +1375,7 @@ export function Solitaire() {
       nights: camps.nights,
       encounter: pathEnc?.encounter || null,
       met: road.met,
+      roadEvent: roadEvent?.event || null,
       intendedDest: arrived ? null : { x: dest.x, y: dest.y },
     });
 

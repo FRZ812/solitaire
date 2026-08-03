@@ -570,7 +570,7 @@ and the `+S/2` from `floor(y/2)` cancelling. `stride` now threads through
 supplies sub-cell smoothness. Verified at strides 1/2/4/10/28: one dragged cell
 moves the window exactly one cell, with zero residual.
 
-### WS7 — Travel that only stops for a reason  *(7a–7d, 7f complete; 7e planned)*
+### WS7 — Travel that only stops for a reason  *(complete)*
 
 Live test: *"marching stops after 3 hex with options to stay on the map or go to
 chat. nope it should always stay on the map and keep moving unless something
@@ -844,6 +844,49 @@ Which hexes are *eligible* is a pure function of the tile, so it is stable acros
 a rewind. The roll itself is not — like `travel.encounter`, the chosen event is
 recorded into `travel` so replaying a turn reproduces the same road rather than
 rolling a new one.
+
+##### What shipped, and where it left the plan
+
+44 events across the five kinds of ground — 9 road, 8 crossing, 9 settled, 8
+border, 10 wild — plus the five authored customs forts, which are checked rather
+than rolled for and now halt any march that crosses them. Two of the 44 close the
+road (`bridge-toll`, `levy-company`); everything else is met and passed.
+`roadEventChance` is `0.1 + 0.02/hex` to a `0.55` ceiling, so a four-hex errand
+carries something 18% of the time and a full march 55%.
+
+Four departures from the plan above:
+
+**`posture` was dropped from the entries.** The table specified both a posture and
+an `offer`; `offer` already carries the tone, and a second field would be one more
+thing to keep consistent across 44 entries for no gain the player can see.
+
+**Uniform placement had to be weighted.** The sim's first run showed real routes
+are 86% ordinary paving, so drawing the spot evenly would have fired the eight
+crossing events and eight border events about once in fifty legs — sixteen
+authored entries the player would effectively never read. `WHERE_WEIGHT`
+(`crossing` and `border` 4, `settled` and `wild` 2, `road` 1) fixes it: on a real
+leg, crossings are 13% of the hexes and 29% of the drawn events. This is also how
+anyone tells the story of a journey — the bridge gets a sentence, the twelfth mile
+of road does not.
+
+**Handcrafted ground is excluded outright, which the `where` table did not
+anticipate.** `nearestInhabitedLandmark` reads `LANDMARKS`, and realm capitals
+live in `REALMS[].capital` instead — so Whitemarch's own streets matched none of
+`route`, `waterway` or a nearby landmark and fell through to `wild`. The
+classifier was placing hermits' cells in the capital's market square. The fix is
+`!tile.procedural` (generated tiles set it; authored ones never do), which also
+covers every other handcrafted town for free, and it sits *after* the `checkpoint`
+check because a customs fort is authored ground and a site at once. Tiles with a
+`poi` are excluded for the same reason: arriving somewhere already narrates
+itself. Changing `nearestInhabitedLandmark` was the alternative and was rejected —
+it also drives roadside habitation and waymarkers in `world-scenery.js`, so
+widening it would have altered generated world content.
+
+**The sim had to sweep two families of route.** A march between named places
+rides the road nearly the whole way, so 40 landmark routes reported the ten
+wilderness events as starved at 0% — not because they are dead content but
+because nothing off-road was being sampled. `scripts/road-event-sim.mjs` now adds
+destinations picked from open country with no road and no site on them.
 
 **7f — the halt card keeps the player on the map.** *(complete)* "Back to the
 story" is off the card, and so is "Make camp until morning" — camping is not a
