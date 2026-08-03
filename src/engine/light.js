@@ -25,7 +25,10 @@ export const LANTERN_MINUTES = 240;    // a lantern on one oil ≈ four hours, f
 export const DARK_ACC_PENALTY = 25;    // accuracy lost fighting blind (tunable)
 export const DARK_FLEE_BONUS = 20;     // easier to vanish into the black
 
-const NIGHT_START = 20, NIGHT_END = 6; // open ground: night is 20:00–05:59
+// Exported because the map's day/night grade has to agree with them: a sky that
+// looks like dusk while `isNight` says the party is blind is a lie about a
+// mechanic (see engine/daylight.js).
+export const NIGHT_START = 20, NIGHT_END = 6; // open ground: night is 20:00–05:59
 const GLOOM_START = 18, GLOOM_END = 7; // under canopy / in the crags it comes earlier
 
 // Adventure interiors that are dark at any hour. Generic halls and throne

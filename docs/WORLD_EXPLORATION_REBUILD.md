@@ -680,6 +680,173 @@ and the itinerary appends `· N nights camped` to each stage.
 
 ---
 
+### WS8 — A day the player can see  *(complete)*
+
+Live test: *"add in day and night cycle to the map perhaps using shaders so that
+players can feel the time as they travel instead of looking at the clock."*
+
+**What is there now.** One boolean. `WorldExploration.jsx:1060` computes
+`night={hour < 6 || hour >= 20}` and `MapCanvas` spends it in three places: a
+background gradient stop, a flat `rgba(12, 27, 66, .42)` fill inside every
+terrain cell's clip, and a slightly heavier fog opacity. So the map has exactly
+two appearances, 19:59 looks like noon, and 20:00 arrives as a hard cut.
+
+**Two separate failures, and the second is the one being asked about.**
+
+1. *The sky is binary.* Light has no shape — no golden hour, no dusk, no grey
+   before dawn.
+2. *The sky does not move while the party does.* `state.time` only advances when
+   the travel beat settles, and the march animation runs entirely **before** that.
+   A party that marches nine hours watches nine hours pass under a frozen sun,
+   then the map snaps. Nothing about the march communicates duration, which is
+   precisely the complaint.
+
+**8a — a continuous sun.** A new pure module `src/engine/daylight.js`:
+
+```js
+sunAltitude(minuteOfDay) -> -1 .. 1
+```
+
+Piecewise sine, zero-crossing at the civil boundaries: `sin(π·t)` across the day
+span, `-sin(π·t)` across the night span. Peaks `+1` at 13:00 (midpoint of the
+day) and `-1` at 01:00.
+
+The boundaries are **not new constants** — they are `NIGHT_END` (6) and
+`NIGHT_START` (20) imported from `engine/light.js`. This is load-bearing: light
+is a survival system (blind in the dark, beacon vs hidden, sight radius), so a
+map that looks like dusk while `isNight()` says the party is blind is a lie about
+a mechanic. Altitude `< 0` must be exactly `isNight(time)`.
+
+`skyGrade(altitude)` then returns the plain numbers the renderer needs —
+`{ shade, warmth, horizon, lamps }` — with the bands:
+
+| altitude | reads as |
+| --- | --- |
+| `≥ 0.35` | full day. No grade drawn at all, so noon costs nothing |
+| `0 .. 0.35` | golden hour, warming as it falls |
+| `-0.25 .. 0` | twilight — rose into violet, the horizon band at its strongest |
+| `< -0.25` | night, saturating to full blue by about `-0.6` |
+
+`lamps` rises as `shade` does and is what makes a settlement read as inhabited
+after dark instead of just dark (see 8d).
+
+**8b — the clock runs during the march.** The one change that makes travel feel
+long. `travelMapMarchFrame` already carries `progress`; the march gains a
+projected clock beside it, and the sky and the HUD both read that instead of
+`state.time` while a march is running.
+
+This is honest rather than decorative: `applyTravelArrival` forces
+`minutes_passed = travel.totalMins`, so the projected arrival time **is** the
+time the beat will settle to. The clock never snaps at the end.
+
+The problem it has to solve is multi-day legs. The march animation is 1.8–6 s
+(`travelMapMarchDuration`), and a fortnight's march interpolated linearly across
+it is fourteen sunrises in four seconds — a strobe, and a photosensitivity
+concern. So the sweep is bounded:
+
+```
+delta   = (arrivalMinuteOfDay - departMinuteOfDay + 1440) mod 1440
+swept   = elapsed <= 1440 ? elapsed : 1440 + delta
+```
+
+Under a day, the sky shows the real elapsed time. Over a day, it sweeps exactly
+one full cycle plus the remainder — so the player always sees at least one dusk
+and one dawn (the honest signal for "more than a day passed"), never more than
+two, and it always lands on the true arrival hour. `prefers-reduced-motion` is
+already read in this component and skips the sweep, cutting straight to arrival.
+
+**8c — the grade itself, and the shader question.** The request says "perhaps
+using shaders". Worth being precise about what that would buy:
+
+The map is one 2D canvas — terrain atlas blits, ribbon polylines, POI atlas
+sprites, text labels, and hit testing all built on it (`MapCanvas.jsx`,
+`mapGeometry.js`). Moving to WebGL means rewriting every one of those, and there
+is **no browser automation in this repo**, so the result could not be verified
+before shipping. That is a bad trade for a colour grade.
+
+But a colour grade is exactly what a day/night shader *does*, and canvas 2D has
+the same operators: `globalCompositeOperation` gives `multiply`, `screen`,
+`overlay` and `soft-light`. So the grade is two full-screen `fillRect`s —
+`multiply` with the shade colour, `screen` with the warm colour — plus a linear
+gradient band near the horizon at dawn and dusk. Same output, two draw calls,
+no rewrite, and testable through the existing recording-context harness in
+`mapCanvasRender.test.js`.
+
+Where it goes in `renderMap` matters. The pass sits **after** terrain, scenery
+and ribbons and **before** route, markers, fog, places and the player: the world
+takes the light, the UI furniture stays legible. That also deletes the per-cell
+night fill in `drawTerrain` — two `fillRect`s replace one per visible hex.
+
+> A real fragment shader is still available later without the rewrite: a second
+> WebGL canvas overlaid on the 2D one, drawing only the sky pass. It buys
+> nothing for a flat grade, and would only pay off for something animated —
+> drifting cloud shadows, heat shimmer, stars. Filed, not planned.
+
+**8d — lamps in the dark.** `light.js` already knows that built places keep
+their own light through the night (`city-lamps`, `street-lamps`, `watch-fires`,
+`campfires`). Once the grade is continuous, that knowledge is free to draw: at
+`lamps > 0`, settlement/street/plaza/roof cells get a warm additive pool
+*punched through* the shade rather than being flattened blue with everything
+else. A town at midnight then reads as a town at midnight, which is also the
+single clearest cue that time has moved.
+
+**Verification.** `daylight.js` is pure and gets real unit tests — the altitude
+curve, its zero-crossings agreeing with `isNight`, the grade bands, and the
+bounded sweep (a 3-day leg sweeps once, a 6-hour leg sweeps six hours, both land
+on the true arrival hour). The draw path is asserted through the existing
+recording context: noon emits no grade pass, midnight emits one, and the grade
+lands between the ribbon draw and the route draw. The *look* cannot be verified
+without a browser and will be called out as such rather than claimed.
+
+#### What shipped, and where it left the plan
+
+`src/engine/daylight.js` + `daylight.test.js` (13 tests), with the grade wired
+through `mapSceneModel.js` → `MapCanvas.jsx` and the projected clock through
+`WorldExploration.jsx`. Five departures worth recording:
+
+**The sign of the altitude is geometry, not the night predicate.** `sunAltitude`
+returns `-0` at exactly 20:00, and JS cannot order `-0 < 0`, so `altitude < 0`
+is *not* interchangeable with `isNight()` at the two crossings. The curve still
+touches zero exactly there — the boundaries are shared, which was the point —
+but `isNight` remains the single authority and the scene derives its `night`
+boolean from it rather than from the sign.
+
+**The bounded sweep is simpler than planned.** `delta = (arrive − depart + 1440)
+mod 1440` reduces to `wrapDay(elapsed)`: the departure minute cancels out
+entirely. So the rule is just `elapsed <= 1440 ? elapsed : 1440 + wrapDay(elapsed)`
+and `marchSweepMinutes` needs no departure argument at all.
+
+**A top-down map has no horizon, so the horizon band became a rake.** The plan
+called for a gradient band "near the horizon", which is a side-on idea. What
+reads correctly from above is a low sun coming from *one side* — so it is a
+horizontal gradient across the frame, warm at the source edge. Altitude alone
+cannot tell a sunrise from a sunset (the curve is symmetric), so `sunRising`
+was added to put the light in the east at dawn and the west at dusk. Two halves
+of a march no longer look like the same hour.
+
+**Three composite passes, not two.** `multiply` with the shade colour, `screen`
+with the rake, `soft-light` with the warmth. The rake drops out below the
+horizon, so deep night is two passes and full day is zero — the early return on
+`shade <= 0` means most of the day draws nothing at all. Asserted exactly that
+way in `mapCanvasRender.test.js`, which also gained a faithful save/restore of
+`globalCompositeOperation` in its recording context.
+
+**The palette lost its separate backdrop colour.** The grade covers the whole
+frame, so a night-tinted background gradient underneath it would be darkened
+twice by its own light model — muddy at dusk, near-black at midnight. The
+background is now always the daylight blue and takes the grade like everything
+else: one light model, applied in one place.
+
+**The HUD clock was deliberately left on `state.time`.** Running it off the
+projection too was considered and rejected: the sweep is capped at one cycle, so
+a fortnight's leg would show a day count that is short by twelve days. The header
+stays the authoritative clock and snaps to truth when the beat lands; the sky
+leads it only for the 1.8–6 s the animation runs, while the party is visibly
+walking. If this reads as a bug in play rather than as the map showing a journey
+in progress, the fix is to project `advanceTime` for legs under a day only.
+
+---
+
 ## 4. Verification
 
 - `src/engine/world-generation.test.js` — determinism, chunk-order independence,

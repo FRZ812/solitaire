@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
+import { minuteOfDay } from "../../engine/daylight.js";
 import { buildExplorationModel } from "./hexMapModel.js";
 import { buildMapLayout } from "./mapGeometry.js";
 import { travelMapLod } from "./mapLod.js";
@@ -13,43 +14,72 @@ import { renderMap } from "./MapCanvas.jsx";
 function recordingContext() {
   const ops = [];
   const record = (name) => (...args) => { ops.push({ name, args }); };
-  return {
+  const stack = [];
+  const context = {
     ops,
     canvas: { width: 900, height: 600 },
+    globalCompositeOperation: "source-over",
     arc: record("arc"),
     beginPath: record("beginPath"),
     clearRect: record("clearRect"),
     clip: record("clip"),
     closePath: record("closePath"),
+    createLinearGradient: () => ({ addColorStop: record("addColorStop") }),
     createRadialGradient: () => ({ addColorStop: record("addColorStop") }),
     drawImage: record("drawImage"),
     ellipse: record("ellipse"),
     fill: record("fill"),
-    fillRect: record("fillRect"),
     fillText: (text, ...rest) => { ops.push({ name: "fillText", args: [text, ...rest] }); },
     lineTo: record("lineTo"),
     measureText: (text) => ({ width: String(text).length * 6 }),
     moveTo: record("moveTo"),
     quadraticCurveTo: record("quadraticCurveTo"),
-    restore: record("restore"),
-    save: record("save"),
     setLineDash: record("setLineDash"),
     setTransform: record("setTransform"),
     stroke: record("stroke"),
     strokeText: record("strokeText"),
     translate: record("translate"),
   };
+  // The composite mode is the whole of the day/night grade, so the fake has to
+  // carry it across save/restore the way a real context does.
+  context.save = (...args) => {
+    ops.push({ name: "save", args });
+    stack.push({ composite: context.globalCompositeOperation, fillStyle: context.fillStyle });
+  };
+  context.restore = (...args) => {
+    ops.push({ name: "restore", args });
+    const previous = stack.pop();
+    if (!previous) return;
+    context.globalCompositeOperation = previous.composite;
+    context.fillStyle = previous.fillStyle;
+  };
+  context.fillRect = (...args) => {
+    ops.push({
+      name: "fillRect",
+      args,
+      composite: context.globalCompositeOperation,
+      fillStyle: context.fillStyle,
+    });
+  };
+  return context;
 }
 
-function sceneAtZoom(zoom) {
+function sceneAtZoom(zoom, time = null) {
   const state = makeInitialState();
+  if (time) state.time = { ...state.time, ...time };
   const dimensions = travelMapViewportDimensions({ width: 900, height: 600 }, zoom);
   const model = buildExplorationModel(state, {
     center: state.world.currentTile,
     dimensions,
     renderDimensions: travelMapRenderDimensions(dimensions),
   });
-  return buildWorldMapScene({ state, model, selection: null, journey: null });
+  return buildWorldMapScene({
+    state,
+    model,
+    selection: null,
+    journey: null,
+    skyMinutes: time ? minuteOfDay(time) : undefined,
+  });
 }
 
 function render(scene) {
@@ -142,6 +172,53 @@ describe("map canvas render path", () => {
     expect(startsAWallRing(sceneAtZoom(0.3))).toBe(true);
     expect(startsAWallRing(sceneAtZoom(0.05))).toBe(true);
     expect(startsAWallRing(sceneAtZoom(travelMapLod(0).zoom))).toBe(false);
+  });
+
+  it("grades the map by the hour instead of drawing a night wash into every hex", () => {
+    const gradePasses = (scene) => render(scene).ops
+      .filter((op) => op.name === "fillRect" && op.composite !== "source-over" && op.composite !== "lighter");
+
+    // Most of the day the sun is simply up and the grade is skipped entirely, so
+    // the common case costs nothing beyond the check.
+    expect(gradePasses(sceneAtZoom(1, { hour: 12, minute: 0 }))).toHaveLength(0);
+
+    // Dusk is the busiest moment: the world darkens, a low sun rakes across it,
+    // and the warmth goes back on top.
+    const dusk = gradePasses(sceneAtZoom(1, { hour: 20, minute: 0 }));
+    expect(dusk.map((op) => op.composite)).toEqual(["multiply", "screen", "soft-light"]);
+
+    // Deep night has no horizon left to light, so the rake drops out.
+    const night = gradePasses(sceneAtZoom(1, { hour: 1, minute: 0 }));
+    expect(night.map((op) => op.composite)).toEqual(["multiply", "soft-light"]);
+    // One pass over the frame, not one wash per hex.
+    expect(night).toHaveLength(2);
+  });
+
+  it("lights the built ground once the sun is off it", () => {
+    const lampPools = (scene) => render(scene).ops
+      .filter((op) => op.name === "fillRect" && op.composite === "lighter");
+
+    const noon = sceneAtZoom(1, { hour: 12, minute: 0 });
+    const midnight = sceneAtZoom(1, { hour: 1, minute: 0 });
+    expect(noon.sky.lamps).toBe(0);
+    expect(midnight.sky.lamps).toBeCloseTo(1, 5);
+
+    // Only built ground the party has seen is lit, and only some of the party's
+    // own valley is built, so this is a subset of the frame rather than a wash.
+    const lit = midnight.cells.filter((cell) => cell.explored && cell.terrain === "settlement").length;
+    expect(lit).toBeGreaterThan(0);
+    expect(lampPools(noon)).toHaveLength(0);
+    expect(lampPools(midnight).length).toBeGreaterThan(0);
+    expect(lampPools(midnight).length).toBeLessThan(midnight.cells.length);
+  });
+
+  it("keeps the veil's yes-or-no in step with the grade it sits under", () => {
+    // Fog still wants a boolean, and it comes from the same clock the sky does,
+    // so the veil can never say night while the map is drawn at noon.
+    expect(sceneAtZoom(1, { hour: 12, minute: 0 }).night).toBe(false);
+    expect(sceneAtZoom(1, { hour: 19, minute: 59 }).night).toBe(false);
+    expect(sceneAtZoom(1, { hour: 20, minute: 0 }).night).toBe(true);
+    expect(sceneAtZoom(1, { hour: 1, minute: 0 }).night).toBe(true);
   });
 
   it("survives a scene with nothing in it rather than throwing at the caller", () => {

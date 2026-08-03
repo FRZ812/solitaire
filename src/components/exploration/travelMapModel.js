@@ -297,11 +297,11 @@ const keyOf = (coord) => `${coord.x},${coord.y}`;
 
 export function travelMapMarchFrame(path, progress) {
   if (!Array.isArray(path) || path.length === 0) return null;
+  const normalized = clamp(Number(progress) || 0, 0, 1);
   if (path.length === 1) {
     const coord = { x: path[0].x, y: path[0].y };
-    return { coord, fromKey: keyOf(coord), toKey: keyOf(coord), mix: 0, index: 0 };
+    return { coord, fromKey: keyOf(coord), toKey: keyOf(coord), mix: 0, index: 0, progress: normalized };
   }
-  const normalized = clamp(Number(progress) || 0, 0, 1);
   const position = normalized * (path.length - 1);
   const index = Math.min(path.length - 2, Math.floor(position));
   const mix = normalized === 1 ? 1 : position - index;
@@ -316,5 +316,8 @@ export function travelMapMarchFrame(path, progress) {
     toKey: keyOf(to),
     mix,
     index,
+    // How far through the whole march this frame is, which is what the sky is
+    // lit by: `mix` only says where we are between two hexes.
+    progress: normalized,
   };
 }

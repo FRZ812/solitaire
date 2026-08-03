@@ -34,6 +34,7 @@ import {
 } from "./hexMapModel.js";
 import { MapCanvas } from "./MapCanvas.jsx";
 import { useModalFocus } from "./modalFocus.js";
+import { marchClockMinutes, minuteOfDay } from "../../engine/daylight.js";
 import { buildWorldMapScene } from "./mapSceneModel.js";
 import { TRAVEL_MAP_MIN_ZOOM } from "./mapLod.js";
 import {
@@ -394,12 +395,13 @@ export function MapLegend({ onClose, initialSection = "guide" }) {
   );
 }
 
-function WorldGrid({ state, model, selection, journey, marchFrame, marchCaption, trackedCharacter, onPan, onZoom, onViewportChange, onRecenter, onPick, onPickPlace, onSeekCombat, loading, interactionLocked = false, night, city }) {
+function WorldGrid({ state, model, selection, journey, marchFrame, marchCaption, trackedCharacter, onPan, onZoom, onViewportChange, onRecenter, onPick, onPickPlace, onSeekCombat, loading, interactionLocked = false, skyMinutes, city }) {
   const [legendOpen, setLegendOpen] = useState(false);
   const mapScene = useMemo(
-    () => buildWorldMapScene({ state, model, selection, journey, marchFrame, trackedCharacter, night }),
-    [state, model, selection, journey, marchFrame, trackedCharacter, night],
+    () => buildWorldMapScene({ state, model, selection, journey, marchFrame, trackedCharacter, skyMinutes }),
+    [state, model, selection, journey, marchFrame, trackedCharacter, skyMinutes],
   );
+  const night = mapScene.night;
   const accessibleCells = useMemo(() => model.viewport
     .filter((cell) => cell.explored && cell.passable && !cell.current)
     .map((cell) => ({
@@ -860,7 +862,13 @@ export function WorldExploration({
   const focusDestination = selection && destinationMapped ? selection : model.current;
   const focusBiome = biomeAt(focusDestination, state.world.seed);
   const focusVisual = biomeVisual(focusBiome.id);
-  const hour = state.time?.hour ?? 12;
+  // The map is lit by the party's own clock — except during a march, which runs
+  // before the travel beat settles, so `state.time` would hold the sun still for
+  // the whole of a nine-hour walk. Projecting it from the animation's progress
+  // is what lets the player see the day go rather than read it off the clock.
+  const skyMinutes = marchFrame && travelMarch?.id
+    ? marchClockMinutes(state.time, travelMarch.minutes, marchFrame.progress)
+    : minuteOfDay(state.time);
 
 
   useEffect(() => {
@@ -1057,7 +1065,7 @@ export function WorldExploration({
           onSeekCombat={onSeekCombat}
           loading={loading}
           interactionLocked={travelLocked}
-          night={hour < 6 || hour >= 20}
+          skyMinutes={skyMinutes}
           city={currentCity}
         />
         <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} halt={travelLocked ? null : travelHalt} onHaltPressOn={onHaltPressOn} onHaltDismiss={onHaltDismiss} onClear={() => setSelected(null)} onTravel={handleGroundTravel} onSetTravelPace={onSetTravelPace} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
