@@ -4,15 +4,16 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it } from "vitest";
 import { DestinationPanel, TravelHaltCard } from "./WorldExploration.jsx";
 
-const NIGHTFALL = {
+const RAN_DRY = {
   arrived: false,
   where: "a stand of birches",
   destination: "Falford",
   hexes: 6,
   minutes: 430,
+  nights: 2,
   remaining: 11,
-  boundaryKind: "nightfall",
-  reason: "The light goes. This is as far as the day carries you.",
+  boundaryKind: "supplies",
+  reason: "The rations are gone. Going on from here means going on hungry.",
   passed: ["a plank bridge", "a wayside shrine"],
   posture: null,
   intendedDest: { x: 12, y: -3 },
@@ -37,63 +38,59 @@ async function mount(node) {
 
 describe("travel halt card", () => {
   it("says where the leg ended, why, and what it cost", async () => {
-    const view = await mount(<TravelHaltCard halt={NIGHTFALL} onPressOn={() => {}} onCamp={() => {}} onDismiss={() => {}} onLeave={() => {}} />);
+    const view = await mount(<TravelHaltCard halt={RAN_DRY} onPressOn={() => {}} onDismiss={() => {}} />);
 
     expect(view.host.querySelector("h2").textContent).toBe("a stand of birches");
-    expect(view.host.textContent).toContain("The day runs out");
-    expect(view.host.textContent).toContain("The light goes.");
+    expect(view.host.textContent).toContain("The packs run dry");
+    expect(view.host.textContent).toContain("The rations are gone.");
     expect(view.host.textContent).toContain("7 h 10 min");
+    // Nights camped are part of what the march cost, not a stop of their own.
+    expect(view.host.textContent).toContain("Camped");
+    expect(view.host.textContent).toContain("nights");
     expect(view.host.textContent).toContain("a plank bridge, a wayside shrine");
     await view.unmount();
   });
 
   it("hands the next decision back rather than taking it", async () => {
     const pressedOn = [];
-    const camps = [];
     const dismissals = [];
-    const departures = [];
     const view = await mount(
       <TravelHaltCard
-        halt={NIGHTFALL}
+        halt={RAN_DRY}
         onPressOn={(dest) => pressedOn.push(dest)}
-        onCamp={() => camps.push(true)}
         onDismiss={() => dismissals.push(true)}
-        onLeave={() => departures.push(true)}
       />,
     );
 
     await view.click(".rpg-travel-button");
     expect(pressedOn).toEqual([{ x: 12, y: -3 }]);
 
+    // The player came here to travel, so the only other way out is the map itself.
     const secondary = [...view.host.querySelectorAll(".rpg-halt-secondary")];
-    expect(secondary.map((button) => button.textContent)).toEqual([
-      "Make camp until morning",
-      "Stay on the map",
-      "Back to the story",
-    ]);
+    expect(secondary.map((button) => button.textContent)).toEqual(["Stay on the map"]);
     for (const button of secondary) {
       await act(async () => button.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     }
-    expect([camps.length, dismissals.length, departures.length]).toEqual([1, 1, 1]);
+    expect(dismissals.length).toBe(1);
     await view.unmount();
   });
 
   it("offers no onward march once the party has arrived", async () => {
     const arrived = {
-      ...NIGHTFALL,
+      ...RAN_DRY,
       arrived: true,
       where: "Falford",
       destination: null,
+      nights: 0,
       remaining: 0,
       boundaryKind: "destination",
       reason: "",
       intendedDest: null,
     };
-    const view = await mount(<TravelHaltCard halt={arrived} onPressOn={() => {}} onCamp={() => {}} onDismiss={() => {}} onLeave={() => {}} />);
+    const view = await mount(<TravelHaltCard halt={arrived} onPressOn={() => {}} onDismiss={() => {}} />);
 
     expect(view.host.querySelector(".rpg-travel-button")).toBeNull();
-    // Camp belongs to a leg cut short by the dark, not to reaching the door.
-    expect(view.host.textContent).not.toContain("Make camp");
+    expect(view.host.textContent).not.toContain("Camped");
     expect(view.host.textContent).toContain("Arrival");
     expect(view.host.textContent).toContain("You have come the whole way.");
     await view.unmount();
@@ -117,9 +114,7 @@ describe("travel halt card", () => {
         focusVisual={{ image: "", accent: "#fff", mood: "" }}
         halt={halt}
         onHaltPressOn={() => {}}
-        onHaltCamp={() => {}}
         onHaltDismiss={() => {}}
-        onHaltLeave={() => {}}
         onClear={() => {}}
         onTravel={() => {}}
         onSetTravelPace={() => {}}
@@ -139,7 +134,7 @@ describe("travel halt card", () => {
     expect(without.host.querySelector(".rpg-travel-halt")).toBeNull();
     await without.unmount();
 
-    const halted = await mount(panel(NIGHTFALL));
+    const halted = await mount(panel(RAN_DRY));
     expect(halted.host.querySelector(".rpg-travel-halt")).not.toBeNull();
     expect(halted.host.querySelector(".rpg-command-actions")).toBeNull();
     expect(halted.host.textContent).not.toContain("March toward");

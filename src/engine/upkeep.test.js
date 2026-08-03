@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { autoConsume, woundTick, companionUpkeep } from "./upkeep.js";
+import { autoConsume, sustain, woundTick, companionUpkeep } from "./upkeep.js";
 
 // Self-contained codex item defs so these tests don't depend on the live catalog.
 const ITEMS = {
@@ -35,6 +35,59 @@ describe("autoConsume", () => {
     const inv = { carried: [{ itemId: "ration", quantity: 2 }] };
     autoConsume(inv, { hunger: 10, thirst: 80, sleep: 80 }, ITEMS);
     expect(inv.carried[0].quantity).toBe(2); // original untouched
+  });
+});
+
+describe("sustain", () => {
+  const full = { hunger: 100, thirst: 100, sleep: 100 };
+  const packedFor = (days) => ({
+    carried: [
+      { itemId: "ration", quantity: days * 3 },
+      { itemId: "waterskin", quantity: 1, water: days * 6 },
+    ],
+  });
+
+  it("feeds a fortnight's march from a fortnight's rations", () => {
+    const days = 14;
+    const r = sustain({ inventory: packedFor(days), needs: full, minutes: days * 24 * 60, codexItems: ITEMS });
+
+    // The whole point: arriving fed, not starved, with the pack visibly lighter.
+    expect(r.needs.hunger).toBeGreaterThan(30);
+    expect(r.needs.thirst).toBeGreaterThan(30);
+    const rations = r.inventory.carried.find((c) => c.itemId === "ration");
+    expect(rations.quantity).toBeLessThan(days * 3);
+    expect(rations.quantity).toBeGreaterThan(0);
+  });
+
+  it("still starves a party that packed for a day and marched for ten", () => {
+    const r = sustain({ inventory: packedFor(1), needs: full, minutes: 10 * 24 * 60, codexItems: ITEMS });
+
+    expect(r.needs.hunger).toBe(0);
+    expect(r.needs.thirst).toBe(0);
+    expect(r.inventory.carried.some((c) => c.itemId === "ration")).toBe(false);
+  });
+
+  it("folds repeated meals into one counted line instead of a wall of them", () => {
+    const r = sustain({ inventory: packedFor(14), needs: full, minutes: 14 * 24 * 60, codexItems: ITEMS });
+
+    expect(r.lines.length).toBeLessThanOrEqual(2);
+    expect(r.lines.some((line) => /ate trail ration ×\d+/.test(line))).toBe(true);
+  });
+
+  it("matches a plain deplete-then-eat over a span short enough for one meal", () => {
+    const inventory = packedFor(1);
+    const needs = { hunger: 60, thirst: 60, sleep: 60 };
+    const stepped = sustain({ inventory, needs, minutes: 60, codexItems: ITEMS });
+    const once = autoConsume(inventory, { hunger: 58, thirst: 57, sleep: 57.5 }, ITEMS);
+
+    expect(stepped.needs).toEqual(once.needs);
+    expect(stepped.inventory).toEqual(once.inventory);
+  });
+
+  it("does nothing at all over no time", () => {
+    const inventory = packedFor(1);
+    expect(sustain({ inventory, needs: full, minutes: 0, codexItems: ITEMS }))
+      .toEqual({ inventory, needs: full, lines: [] });
   });
 });
 

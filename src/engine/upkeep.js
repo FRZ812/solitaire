@@ -118,6 +118,33 @@ export function autoConsumeMount(inventory, mount, needs, codexItems) {
   return { inventory: { ...inventory, carried }, needs: out, lines };
 }
 
+// A long span is not one meal. Needs drain by the whole elapsed time but the
+// pack was only ever opened once per beat, so a fortnight's march starved a
+// party carrying a month of rations. Walk the span in hour steps instead:
+// deplete, then eat if that hour dipped a need under the threshold.
+const SUSTAIN_STEP_MINUTES = 60;
+
+export function sustain({ inventory, needs, minutes, decayMult = 1, codexItems, who = "", mount = null }) {
+  const span = Math.max(0, Number(minutes) || 0);
+  let inv = inventory;
+  let out = needs;
+  const tally = new Map();
+  for (let done = 0; done < span; done += SUSTAIN_STEP_MINUTES) {
+    out = depleteNeeds(out, Math.min(SUSTAIN_STEP_MINUTES, span - done), decayMult);
+    const fed = mount
+      ? autoConsumeMount(inv, mount, out, codexItems)
+      : autoConsume(inv, out, codexItems, who);
+    inv = fed.inventory;
+    out = fed.needs;
+    for (const line of fed.lines) tally.set(line, (tally.get(line) || 0) + 1);
+  }
+  return {
+    inventory: inv,
+    needs: out,
+    lines: [...tally].map(([line, count]) => (count > 1 ? `${line} ×${count}` : line)),
+  };
+}
+
 // Wounds bite as the clock turns. Returns reduced vitality + a flavour line if it
 // ticked (the actual number is reported by the vitals_delta beat, not here).
 export function woundTick(vitality, conditions, minutes) {
@@ -149,12 +176,17 @@ export function companionUpkeep(party, codexCharacters, inventory, minutes, deca
     // A mount's endurance scales its own decay — a thrifty courser/camel drains
     // slower, a hungry carnivore faster (data/mounts.js needsDecayMult, <1 = hardy).
     const endure = c.kind === "mount" ? (c.needsDecayMult ?? 1) : 1;
-    const drained = depleteNeeds(baseNeeds, minutes, decayMult * endure);
     // Mounts eat their own feed (fodder/meat/livestock); everyone else eats from
     // the shared ration pack.
-    const fed = c.kind === "mount"
-      ? autoConsumeMount(inv, c, drained, codexItems)
-      : autoConsume(inv, drained, codexItems, c.name);
+    const fed = sustain({
+      inventory: inv,
+      needs: baseNeeds,
+      minutes,
+      decayMult: decayMult * endure,
+      codexItems,
+      who: c.name,
+      mount: c.kind === "mount" ? c : null,
+    });
     inv = fed.inventory;
     if (fed.lines.length) lines.push(...fed.lines);
     updated[id] = { ...c, needs: fed.needs };

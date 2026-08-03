@@ -9,7 +9,7 @@ import { activeWorldPassives, deriveCombatStats } from "./combat-stats.js";
 import { depleteNeeds, applyNeedsChanges, getNeedConditions, mergeConditions, getNeedAlertText } from "./needs.js";
 import { tickConditions, condNames, conditionMeta, polarityOf } from "../data/conditions.js";
 import { passiveHealVitality } from "./healing.js";
-import { autoConsume, woundTick, companionUpkeep } from "./upkeep.js";
+import { autoConsume, sustain, woundTick, companionUpkeep } from "./upkeep.js";
 import { buffCarryBonus, buffRideBonus } from "./buffs.js";
 import { recomputeCarryCapacity } from "./attributes.js";
 import { loadOf } from "./weight.js";
@@ -25,16 +25,29 @@ export function applySurvivalTick({ state, beat, character, codex, newBeats }) {
   const minutes = beat.minutes_passed || 0;
   const upkeepLines = [];
   const prevNeedConds = getNeedConditions(state.character.needs);
+  // Routine drift alone, kept as the baseline the body ledger measures against.
   const drained = depleteNeeds(state.character.needs, minutes, decayMult);
-  character.needs = applyNeedsChanges(drained, beat.needs_changes);
 
   // As time passes the party eats and drinks from the shared pack to hold off
-  // hunger/thirst — done BEFORE conditions so a fed character isn't marked Hungry.
+  // hunger/thirst — done BEFORE conditions so a fed character isn't marked Hungry,
+  // and meal by meal across the span so a long march spends real rations.
+  const fed = sustain({
+    inventory: character.inventory,
+    needs: state.character.needs,
+    minutes,
+    decayMult,
+    codexItems: codex.items,
+  });
+  character.inventory = fed.inventory;
+  character.needs = applyNeedsChanges(fed.needs, beat.needs_changes);
+  upkeepLines.push(...fed.lines);
+
+  // A narrator-driven drain lands after the last meal, so give it its own pass.
   if (minutes > 0) {
-    const fed = autoConsume(character.inventory, character.needs, codex.items, "");
-    character.inventory = fed.inventory;
-    character.needs = fed.needs;
-    upkeepLines.push(...fed.lines);
+    const topped = autoConsume(character.inventory, character.needs, codex.items, "");
+    character.inventory = topped.inventory;
+    character.needs = topped.needs;
+    upkeepLines.push(...topped.lines);
   }
 
   // Count timed buffs/debuffs down by the elapsed minutes (dropping any that ran

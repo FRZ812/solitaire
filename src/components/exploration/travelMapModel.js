@@ -87,6 +87,7 @@ function knownLegs(state, journey) {
       index: leg.index,
       steps: leg.steps,
       minutes: leg.minutes,
+      nights: leg.nights || 0,
       arrived: leg.arrived,
       boundaryKind: leg.boundary?.kind || "",
       boundaryLabel: leg.boundary?.label || "",

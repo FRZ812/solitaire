@@ -570,7 +570,7 @@ and the `+S/2` from `floor(y/2)` cancelling. `stride` now threads through
 supplies sub-cell smoothness. Verified at strides 1/2/4/10/28: one dragged cell
 moves the window exactly one cell, with zero residual.
 
-### WS7 — Travel that only stops for a reason  *(planned)*
+### WS7 — Travel that only stops for a reason  *(7a–7c, 7f complete; 7d–7e planned)*
 
 Live test: *"marching stops after 3 hex with options to stay on the map or go to
 chat. nope it should always stay on the map and keep moving unless something
@@ -603,30 +603,50 @@ both-measures rule. `leg7 steps=1 min=202` is that failure exactly.
 **The decision.** A march runs until something real interrupts it. Camping is not
 an interruption — it happens inside the march.
 
-**7a — geography becomes passage.** `waypoint`, `crossing`, `border` and `going`
-move out of `boundaryAt` and into `collectPassed`, keeping their labels, so a leg
-still reports the chapel, the ford and the county line it went by. That is the
-purpose the module already claims. `boundaryAt`, `legTooShort` and
-`MIN_LEG_STEPS` are then unused and go.
+**7a — geography becomes passage.** *(complete)* `waypoint`, `crossing`, `border`
+and `going` moved out of `boundaryAt` and into `collectPassed`, keeping their
+labels, so a leg still reports the chapel, the ford and the county line it went
+by. That is the purpose the module already claims. `boundaryAt`, `legTooShort`
+and `MIN_LEG_STEPS` were then unused and are gone. `LEG_BOUNDARIES` is down to
+four kinds: `destination`, `encounter`, `supplies`, `limit`.
 
-**7b — nightfall becomes a camp.** `planLeg` keeps scanning past `dayMinutes`,
-incrementing `leg.nights` and resetting the day clock at each crossing. `nights`
-reaches the narrator brief and the halt card ("four nights on the road").
+**7b — nightfall becomes a camp.** *(complete, one departure from the plan)* The
+plan had `planLeg` reset a day clock inside the scan. It does not: nights are a
+pure function of total march time, so `legCamps(marchMinutes, dayMinutes)` derives
+them at the end instead — nights, the rest minutes they cost the clock, and the
+sleep they give back at the same 12/hour as an explicit rest in `tools.js`.
 
-**7c — the march ends when the party cannot sustain it.** A new `supplies`
-boundary. `planLeg` runs the engine's own upkeep forward hex by hex —
-`depleteNeeds` + `autoConsume` against a cloned `character.inventory` and
-`world.codex.items` — and cuts at the first hex where hunger or thirst would fall
-to `Starving`/`Parched` with nothing in the pack to fix it. Reusing the real
-functions rather than approximating them is what stops the forecast and the beat
-tick disagreeing. `WORLD_MARCH_LIMIT` (48) stays as the bound that keeps the
-planner from walking the continent through the tile generator.
+That matters because `planLeg`'s minutes are an *estimate*. `App.jsx` recomputes
+the leg with mount, haste, terrain and burden modifiers, so it calls `legCamps`
+again on the authoritative `legMins`; a mounted party camps fewer times over the
+same ground. `travel.totalMins` becomes `elapsedMinutes` (march + camps), and
+`deterministicTravelBeat` carries `needs_changes: { sleep: campSleep }`. That is
+the only beat `applyTravelArrival` receives on both the settle and replay paths,
+so camp sleep is engine-authoritative and narration cannot clobber it. Without
+it, a week on the road arrived with a party that had never slept.
 
-> **Prerequisite this exposes.** `applySurvivalTick` drains needs by the beat's
-> full `minutes_passed` but runs `autoConsume` **once**. That is survivable for a
-> half-day leg and starves the party over a fourteen-day one, no matter how many
-> rations they carry. Long marches are not safe to ship until upkeep consumes per
-> day across a long beat.
+**7c — the march ends when the party cannot sustain it.** *(complete)* A new
+`supplies` boundary. `openLarder(state)` opens the pack once per *expedition* and
+`planLeg` carries it forward hex by hex through the engine's own upkeep, so
+consecutive legs share one pack rather than each setting out fully provisioned.
+Reusing the real functions rather than approximating them is what stops the
+forecast and the beat tick disagreeing. `WORLD_MARCH_LIMIT` (48) stays as the
+bound that keeps the planner from walking the continent through the tile
+generator, and is the `limit` boundary.
+
+Only *crossing into* `Starving`/`Parched` cuts the leg — mirroring the "need
+alerts fire only on crossing INTO a worse state" rule in `beat-tick.js`. A party
+that set out already starving has made that choice, and halting them for it every
+hex is the tedium this workstream removes. Sleep is never consulted: nights are
+camped, not rationed.
+
+> **Prerequisite this exposed — now fixed.** `applySurvivalTick` drained needs by
+> the beat's full `minutes_passed` but ran `autoConsume` **once**. Survivable for
+> a half-day leg; over a fourteen-day one it starved the party no matter how many
+> rations they carried. `sustain()` in `upkeep.js` now walks the span in hour
+> steps — deplete, then eat if that hour dipped a need under the threshold —
+> folding repeat meals into `×N` lines. `beat-tick.js` and `companionUpkeep` both
+> route through it, and it is the same function `planLeg` forecasts with.
 
 **7d — encounters stop being an automatic halt.** *"a dangerous encounter still
 party can attempt to escape and continue the journey with a probability chance
@@ -652,8 +672,11 @@ interesting however, not just generic danger or merchant."* The content is
 already broad; what is thin is the set of *interactions*. Open — needs a
 taxonomy of travel events beyond fight/trade before it can be specified.
 
-**7f — the halt card keeps the player on the map.** "Back to the story" comes
-off the card; the map's own close already exists for leaving deliberately.
+**7f — the halt card keeps the player on the map.** *(complete)* "Back to the
+story" is off the card, and so is "Make camp until morning" — camping is not a
+decision any more, it is something the march already did. What is left is "Press
+on toward X" and "Stay on the map". The card gained a `Camped / N / nights` stat,
+and the itinerary appends `· N nights camped` to each stage.
 
 ---
 
