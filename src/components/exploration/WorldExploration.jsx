@@ -15,6 +15,7 @@ import {
 } from "../../engine/world.js";
 import { pathRiskPercent } from "../../engine/encounters.js";
 import { LEG_BOUNDARIES, TRAVEL_PACES, travelPace } from "../../engine/expedition.js";
+import { ROAD_OFFERS } from "../../data/road-events.js";
 import { trackedCharacterResult } from "../../engine/positions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "../../engine/fly.js";
 import { playerFlightMount } from "../../engine/riding.js";
@@ -509,6 +510,19 @@ export function TravelHaltCard({ halt, onPressOn, onDismiss, loading }) {
 
       {halt.passed.length > 0 && (
         <p className="rpg-travel-halt__passed">The way passed {halt.passed.slice(0, 4).join(", ")}.</p>
+      )}
+
+      {halt.met?.length > 0 && (
+        <p className="rpg-travel-halt__met">
+          {halt.met.map((hit) => `${hit.outcome === "evaded" ? "Shook off" : "Went by"} ${hit.kind.replace(/-/g, " ")}`).join(", ")}.
+        </p>
+      )}
+
+      {halt.roadEvent && (
+        <p className="rpg-travel-halt__road" data-offer={halt.roadEvent.offer}>
+          <b>{halt.roadEvent.label}</b>
+          <span>{ROAD_OFFERS[halt.roadEvent.offer] || halt.roadEvent.offer}</span>
+        </p>
       )}
 
       <div className="rpg-travel-halt__actions">

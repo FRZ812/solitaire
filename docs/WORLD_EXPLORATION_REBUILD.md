@@ -570,7 +570,7 @@ and the `+S/2` from `floor(y/2)` cancelling. `stride` now threads through
 supplies sub-cell smoothness. Verified at strides 1/2/4/10/28: one dragged cell
 moves the window exactly one cell, with zero residual.
 
-### WS7 — Travel that only stops for a reason  *(7a–7c, 7f complete; 7d–7e planned)*
+### WS7 — Travel that only stops for a reason  *(complete)*
 
 Live test: *"marching stops after 3 hex with options to stay on the map or go to
 chat. nope it should always stay on the map and keep moving unless something
@@ -654,23 +654,239 @@ depending on the enemy difficulty against the party. then i.e a traveling
 merchant, a option to stay or keep going still but without probably to being
 stopped."*
 
-`rollPathEncounter` returns the first hit of **any** posture and
-`pathThroughEncounter` truncates the march there — so a doe frozen mid-graze, a
-pair of cranes, or city pedestrians end an expedition. The 101 authored entries
-already carry `posture`, which is the axis this needs:
+**What is there now.** `rollPathEncounter` walks the leg, rolls each hex, and
+returns the **first** hit of any posture; `pathThroughEncounter` truncates the
+leg at that hex. Of the 231 authored entries — 96 neutral, 75 friendly, 60
+hostile — 171 of them end an expedition simply by existing. A doe frozen
+mid-graze stops a fortnight's march.
 
-| posture | effect on the march |
-| --- | --- |
-| `friendly` / `neutral` | never truncates. The march carries on; the event is offered as a choice the player may take (trade, talk, join a caravan) or ride past |
-| `hostile` | an evasion roll — party against `regionDifficulty(x, y, seed).level`. Evaded, the march continues and the near-miss is narrated; failed, it halts at that hex as now |
+Posture is already consulted at the wiring point: `finishTravel` branches on it
+once (`App.jsx:1373`), sending hostile to the combat prompt and everything else
+to the halt card. It is simply not consulted early enough to decide whether the
+leg was cut at all.
 
-Evasion is a balance number, so per project convention it gets a
-`scripts/*-sim.mjs` sweep rather than a guessed constant.
+**The shape.** `rollPathEncounter` keeps walking, and reports what the leg met
+rather than the first thing on it:
+
+```js
+{
+  halt: { encounter, atTile, atIndex, outcome } | null,   // what actually stopped them
+  met:  [{ encounter, atTile, atIndex, outcome }, …],     // what they got by, in order
+}
+```
+
+| `outcome` | posture | what happened |
+| --- | --- | --- |
+| `passed` | friendly / neutral | hailed, waved past, or never noticed. The march does not slow |
+| `evaded` | hostile | seen, and got clear of. The near miss is narrated; the march goes on |
+| `blocked` | hostile | could not be shaken. **This** cuts the leg, exactly as every encounter does today |
+
+The scan stops at the first `blocked` and collects what came before it, capped
+(`MET_LIMIT = 3`) — a 48-hex leg through the Wilds rolls a handful, and neither
+the narrator brief nor the halt card can carry a dozen. `pathThroughEncounter`
+keeps its signature and is handed `result.halt`; `null` means the leg runs to its
+own boundary. `travel.encounter` stays the halt's encounter, so the combat path
+does not move.
+
+**The roll.** A pure function beside it:
+
+```js
+encounterHalts(state, encounter, atTile, { pace }) -> { halts, outcome, chance }
+```
+
+friendly/neutral return `{ halts: false, outcome: "passed", chance: 0 }` without
+rolling. Hostile rolls against
+
+```
+clamp(EVADE_BASE - band.level * EVADE_PER_BAND + modifiers, EVADE_FLOOR, EVADE_CEIL)
+```
+
+**The difficulty side is the region, not the party's level.** `data/regions.js`
+opens by saying so outright: *"there is no level scaling, so the region you stand
+in decides how tough its foes and loot are."* Making escape scale with character
+level would contradict the one axiom the world's difficulty is built on.
+`regionDifficulty(x, y, seed).level` (1 Settled … 6 Fabled) is the whole of the
+opposition.
+
+The party's side is therefore **circumstance** — every input is something the
+player steers:
+
+| modifier | source | why |
+| --- | --- | --- |
+| hidden in the dark | `isHidden(state)` → `DARK_FLEE_BONUS` | light.js already documents unlit-in-the-dark as "easier to slip past / flee". Reusing its constant rather than inventing a second one keeps the two systems from drifting |
+| carrying a flame | `isBeacon(state)` | same module: a beacon "can't slip away" |
+| pace | `TRAVEL_PACES[…]` | careful helps, forced hurts. Pace already buys ground with risk; this makes it buy *quiet* too |
+| mounted | `playerGroundMount` + `isOverloaded` | you can outrun a bog-hound — the same qualification the leg-time modifier already applies |
+| overburdened | `state.character.overburdened` | you cannot |
+| weariness | Exhausted / Tired | the same read `handleTravel` does for leg minutes |
+
+This is authored intent in light.js finally wired to travel: `isHidden` and
+`isBeacon` have said "slip past" and "can't slip away" since that module was
+written, and nothing outside combat has ever read them.
+
+**The constants come from a sweep, not a guess** — `scripts/travel-evasion-sim.mjs`,
+per the convention `boss-parity-sim.mjs` and the rest set. It runs representative
+legs ({4, 16, 48} hexes × six bands × three paces × lit/hidden) and reports the
+share of marches reaching their own boundary uninterrupted. Two things it has to
+satisfy:
+
+- **The tedium target.** A Settled or Borderlands leg gets through nearly always;
+  hostile country usually does not. If a band-1 road march is still being
+  stopped, the number is wrong and this workstream has not landed.
+- **Monotonicity, asserted rather than eyeballed.** careful ≥ steady ≥ forced;
+  hidden ≥ lit; band 1 ≥ … ≥ band 6; and a longer leg never gets through more
+  often than a shorter one over the same ground.
+
+`EVADE_BASE` and `EVADE_PER_BAND` are chosen to hit the first; the sim throws on
+the second.
+
+**What the narrator is told.** Today's brief says *"This is what halts the party
+at X"* for any posture. Left alone, a passed or evaded event would be narrated as
+a stop the engine never made. The `[ENCOUNTER]` line splits: the halt keeps its
+wording, and `met` becomes a `[PASSED]` line naming what the party went by and
+got clear of, marked explicitly as **not** interrupting the march.
+
+**What the player is shown.** `travelHaltSummary` carries the met events so the
+card can report them. A near miss the player never learns about is a near miss
+that did not happen — the wolves that were shaken off are the most interesting
+thing a quiet leg has to say.
+
+##### What shipped, and where it left the plan
+
+Constants the sweep settled on: `EVADE_BASE 96`, `EVADE_PER_BAND 11`, floor 10,
+ceiling 95 — giving Settled 85% down to Fabled 30% at a steady unlit pace by day.
+
+Three departures worth recording.
+
+**The sim's targets were reframed.** The plan described the tedium target in the
+abstract — "a Borderlands leg with two hostiles gets through". That framing set a
+number nothing in the game produces, and it failed at 54.8% against a guessed
+55%. Rather than nudge `EVADE_BASE` to rescue an invented benchmark, the sweep
+now measures **real** legs: `hostileShare(terrain)` weights each spawn table by
+weight rather than headcount, and `cutRate` compounds the per-hex encounter
+chance, that share, and the block chance over the leg's actual length. The
+targets became things the player can be pointed at — a day's march over settled
+plains is cut 3% of the time (want ≤15%), a 48-hex frontier forest leg 33% (want
+≤40%), the same leg in the Far Reaches 60% (want ≥55%). The constants never
+moved; only the question did.
+
+**Marching unlit at night turned out to be safer, not more dangerous.** The plan
+assumed `NIGHT_ENCOUNTER_MULT` (1.4×) would dominate. It does not:
+`DARK_FLEE_BONUS` (+20) outweighs it, so an unlit night march through band-3
+forest is cut 30% of the time against 43% by day. This is `isHidden`'s documented
+meaning working as written, and it is paid for elsewhere — a 1.3× slower leg, and
+blind if something does catch you. Carrying a torch at night is the worst of both
+at 71%. The sim asserts all three directions rather than the one that was
+expected.
+
+**`scripts/run-sim.mjs` had to be written before any sim could run.** Every
+world-touching sim has been broken under bare Node since `40b9ee7` (2026-05-27),
+when `supabase-client.js` entered the world import chain and started reading
+`import.meta.env` at module scope — a Vite construct Node has no notion of.
+`boss-parity-sim.mjs` fails identically. The fix loads the sim through Vite's
+SSR pipeline with the same throwaway credentials `vitest.config.js` already
+injects, rather than weakening the boot-time guard in `supabase-client.js`, which
+would only move a loud production failure to a late one.
+
+**Flight was left alone.** `rollAerialEncounter` keeps the old single-hit shape
+and its own truncation. There is no slipping past a wyvern on a straight line at
+altitude, and the halt-card path for flight has no `met` to report.
 
 **7e — more than danger and merchants.** *"needs multiple encounters that are
-interesting however, not just generic danger or merchant."* The content is
-already broad; what is thin is the set of *interactions*. Open — needs a
-taxonomy of travel events beyond fight/trade before it can be specified.
+interesting however, not just generic danger or merchant."*
+
+**Where the thinness actually is.** All 231 entries are the same object: a
+creature or a person, a posture, a line of flavour. The content is broad — a
+lotus warden, a masked spirit on an irrigation gate, a procession of pale folk in
+dim livery — but every one resolves the same two ways. Hostile means fight;
+anything else means the march stops and the narrator mentions it. What is missing
+is not more entries. It is a second **verb**.
+
+Meanwhile `world-scenery.js` already places the lived-in world by logic — bridges
+where a road meets a river, cottages banded by distance from the town they belong
+to, waystones counting down every third hex — from a `probe` that already knows
+`route`, `waterway`, `terrain`, `climate`, `nearestLandmark: { distance, landmark }`,
+`checkpoint` and `port`. Scenery answers *what is there*. Road events answer *who
+is there and what they want*, off the same facts. A parallel random table beside
+it would be the mystery box the world-texture rule rejects.
+
+**`src/data/road-events.js`.** Each entry carries a `where` predicate over the
+tile, a posture, an `offer`, and an optional `stops`:
+
+| `where` | reads | events |
+| --- | --- | --- |
+| `road` | `tile.route` | a roadwork gang re-laying stone · a funeral filling the lane · a broken-axled wagon · a drover's herd coming the other way |
+| `crossing` | `tile.waterway && tile.route` | a ferryman waiting on the far bank · a ford washed out after rain · a toll kept by the family that maintains the bridge |
+| `settled` | `nearestLandmark.distance <= 4` | a hiring fair spilling onto the verge · refugees walking the other way · a boundary dispute wanting a witness |
+| `border` | `regionId` changes at this step | a levy company marching out · a customs party working the verge |
+| `wild` | none of the above | a hunt somewhere off the path, horns only · a camp still warm · a lone rider who will not close |
+
+**`offer` is a small closed vocabulary** — `trade`, `aid`, `toll`, `news`, `join`,
+`stand-aside`, `search` — and it is the point of the workstream. It is what the
+brief hands the player: something to answer rather than something to read. Only
+`stops: true` halts the march.
+
+**The checkpoint the user named is already authored.** `BORDER_CHECKPOINTS` in
+`data/continent.js` puts five staffed customs forts on the roads with named
+garrisons and controlling factions, `checkpointAt(x, y)` resolves them, and the
+tile carries `checkpoint`. It is the one genuinely blocking road event the game
+already has, and travel has never read it. Wiring it is `stops: true` with no
+roll and no invented content.
+
+**One roll per leg, not one per hex.** Spawn tables roll per hex because they
+answer "who is out here". Road events answer "what happened on this journey", and
+per-hex would give a 48-hex march a dozen of them. So: walk the leg, collect
+every hex satisfying some `where`, roll once against a chance that rises with leg
+length to a ceiling, and place the event on a hex drawn from the eligible pool.
+Every long march gets roughly one piece of texture; no march gets a wall of it.
+
+Which hexes are *eligible* is a pure function of the tile, so it is stable across
+a rewind. The roll itself is not — like `travel.encounter`, the chosen event is
+recorded into `travel` so replaying a turn reproduces the same road rather than
+rolling a new one.
+
+##### What shipped, and where it left the plan
+
+44 events across the five kinds of ground — 9 road, 8 crossing, 9 settled, 8
+border, 10 wild — plus the five authored customs forts, which are checked rather
+than rolled for and now halt any march that crosses them. Two of the 44 close the
+road (`bridge-toll`, `levy-company`); everything else is met and passed.
+`roadEventChance` is `0.1 + 0.02/hex` to a `0.55` ceiling, so a four-hex errand
+carries something 18% of the time and a full march 55%.
+
+Four departures from the plan above:
+
+**`posture` was dropped from the entries.** The table specified both a posture and
+an `offer`; `offer` already carries the tone, and a second field would be one more
+thing to keep consistent across 44 entries for no gain the player can see.
+
+**Uniform placement had to be weighted.** The sim's first run showed real routes
+are 86% ordinary paving, so drawing the spot evenly would have fired the eight
+crossing events and eight border events about once in fifty legs — sixteen
+authored entries the player would effectively never read. `WHERE_WEIGHT`
+(`crossing` and `border` 4, `settled` and `wild` 2, `road` 1) fixes it: on a real
+leg, crossings are 13% of the hexes and 29% of the drawn events. This is also how
+anyone tells the story of a journey — the bridge gets a sentence, the twelfth mile
+of road does not.
+
+**Handcrafted ground is excluded outright, which the `where` table did not
+anticipate.** `nearestInhabitedLandmark` reads `LANDMARKS`, and realm capitals
+live in `REALMS[].capital` instead — so Whitemarch's own streets matched none of
+`route`, `waterway` or a nearby landmark and fell through to `wild`. The
+classifier was placing hermits' cells in the capital's market square. The fix is
+`!tile.procedural` (generated tiles set it; authored ones never do), which also
+covers every other handcrafted town for free, and it sits *after* the `checkpoint`
+check because a customs fort is authored ground and a site at once. Tiles with a
+`poi` are excluded for the same reason: arriving somewhere already narrates
+itself. Changing `nearestInhabitedLandmark` was the alternative and was rejected —
+it also drives roadside habitation and waymarkers in `world-scenery.js`, so
+widening it would have altered generated world content.
+
+**The sim had to sweep two families of route.** A march between named places
+rides the road nearly the whole way, so 40 landmark routes reported the ten
+wilderness events as starved at 0% — not because they are dead content but
+because nothing off-road was being sampled. `scripts/road-event-sim.mjs` now adds
+destinations picked from open country with no road and no site on them.
 
 **7f — the halt card keeps the player on the map.** *(complete)* "Back to the
 story" is off the card, and so is "Make camp until morning" — camping is not a
