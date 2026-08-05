@@ -9,12 +9,11 @@ import {
   currentLocationName,
   getTile,
   hexDistance,
-  isSeen,
   isTeleportAnchor,
   pathMinutes,
 } from "../../engine/world.js";
 import { pathRiskPercent } from "../../engine/encounters.js";
-import { LEG_BOUNDARIES, TRAVEL_PACES, travelPace } from "../../engine/expedition.js";
+import { LEG_BOUNDARIES } from "../../engine/expedition.js";
 import { ROAD_OFFERS } from "../../data/road-events.js";
 import { trackedCharacterResult } from "../../engine/positions.js";
 import { flyMulticastPlan, assignmentCost, assignmentValid } from "../../engine/fly.js";
@@ -194,25 +193,15 @@ function headerLocationName(tile) {
   return poiPartName(tile?.poi) || publicLocationPresentation(tile).title;
 }
 
-function destinationSighting(destination, origin) {
-  if (!destination || !origin) return null;
-  return {
-    distance: hexDistance(origin, destination),
-    explored: !!(destination.seen || destination.visited),
-  };
-}
-
 export function nameForDestination(destination, origin) {
   const atlasNamed = ["legend", "reputation", "charted"].includes(destination?.knownBy)
     && typeof destination?.name === "string"
     && destination.name.trim().length > 0;
-  const mapped = !!(destination?.seen || destination?.visited);
   if (atlasNamed) return destination.name;
-  const presentation = publicLocationPresentation(destination?.tile, destination, destinationSighting(destination, origin));
-  // A site made out at a distance names itself even on unmapped ground — being
-  // able to see a thing is the whole reason it is a destination.
+  const presentation = publicLocationPresentation(destination?.tile, destination);
+  // A charted site names itself — being able to point at a thing is the whole
+  // reason it is a destination.
   if (presentation.sighted) return presentation.title;
-  if (!mapped) return destination?.quest?.title || "Uncharted destination";
   const named = presentation.hidden ? null : destination?.name || poiPlaceName(destination?.tile?.poi);
   if (named) return named;
   if (destination?.quest) return destination.quest.title;
@@ -404,7 +393,7 @@ function WorldGrid({ state, model, selection, journey, marchFrame, marchCaption,
   );
   const night = mapScene.night;
   const accessibleCells = useMemo(() => model.viewport
-    .filter((cell) => cell.explored && cell.passable && !cell.current)
+    .filter((cell) => cell.passable && !cell.current)
     .map((cell) => ({
       key: cell.key,
       label: `${nameForDestination(cell, model.origin)}, ${directionLabel(model.origin, cell).replace("-", " ")}${cell.quest ? `, quest: ${cell.quest.title}` : ""}`,
@@ -412,7 +401,7 @@ function WorldGrid({ state, model, selection, journey, marchFrame, marchCaption,
 
   function selectMapCell(key) {
     const cell = model.viewport.find((candidate) => candidate.key === key);
-    if (cell?.explored && cell.passable && !cell.current) onPick(cell);
+    if (cell?.passable && !cell.current) onPick(cell);
   }
 
   return (
@@ -483,14 +472,32 @@ function WorldGrid({ state, model, selection, journey, marchFrame, marchCaption,
   );
 }
 
+// A full night down, matching the rest the bedroll offers everywhere else.
+const CAMP_HOURS = 8;
+
+// Which spent need a halt can put right where it stands. Only rest qualifies: a
+// night in a bedroll leaves the party hungrier and thirstier than it found them,
+// so empty packs stay a supply problem to be solved at a settlement rather than
+// something camping cures.
+const SPENT_NEEDS = Object.freeze({
+  sleep: Object.freeze({
+    action: "Make camp for the night",
+    note: `Bed down properly — ${CAMP_HOURS} hours, and a bedroll`,
+  }),
+});
+
 // Shown where the destination preview normally sits, once a leg has been walked.
 // A march only stops for a reason, so the stop has to explain itself and hand the
 // next decision back. It never offers to leave: the player came here to travel,
 // and the map's own close is the way out if they want one.
-export function TravelHaltCard({ halt, onPressOn, onDismiss, loading }) {
+export function TravelHaltCard({ halt, onPressOn, onMakeCamp, onDismiss, loading }) {
   const kicker = halt.arrived
     ? "Arrival"
     : LEG_BOUNDARIES[halt.boundaryKind]?.label || "The party halts";
+  // Bedding down is offered where the march ran the party out — and only there.
+  // A halt at swordpoint or at the edge of a planned march is not a place the
+  // game should be suggesting a nap, and once they have camped it is gone.
+  const camp = halt.spentNeed ? SPENT_NEEDS[halt.spentNeed] : null;
   return (
     <div className="rpg-travel-halt" data-boundary={halt.boundaryKind} aria-live="polite">
       <span className="rpg-kicker">{kicker}</span>
@@ -526,10 +533,16 @@ export function TravelHaltCard({ halt, onPressOn, onDismiss, loading }) {
       )}
 
       <div className="rpg-travel-halt__actions">
+        {camp && onMakeCamp && (
+          <button type="button" className="rpg-travel-button rpg-halt-camp" disabled={loading} onClick={() => onMakeCamp(CAMP_HOURS)}>
+            <span aria-hidden="true">☾</span>{camp.action}
+            <small>{halt.campBlocked || camp.note}</small>
+          </button>
+        )}
         {halt.intendedDest && (
-          <button type="button" className="rpg-travel-button" disabled={loading} onClick={() => onPressOn(halt.intendedDest)}>
-            <span aria-hidden="true">→</span>Press on toward {halt.destination}
-            <small>{halt.remaining} {halt.remaining === 1 ? "step" : "steps"} remain</small>
+          <button type="button" className={camp ? "rpg-halt-secondary" : "rpg-travel-button"} disabled={loading} onClick={() => onPressOn(halt.intendedDest)}>
+            {!camp && <span aria-hidden="true">→</span>}Press on toward {halt.destination}
+            {!camp && <small>{halt.remaining} {halt.remaining === 1 ? "step" : "steps"} remain</small>}
           </button>
         )}
         <button type="button" className="rpg-halt-secondary" onClick={onDismiss}>Stay on the map</button>
@@ -538,27 +551,22 @@ export function TravelHaltCard({ halt, onPressOn, onDismiss, loading }) {
   );
 }
 
-export function DestinationPanel({ state, model, selection, selectedName, journey, canGroundTravel, routeMinutes, risk, focusBiome, focusVisual, halt, onHaltPressOn, onHaltDismiss, onClear, onTravel, onSetTravelPace, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
+export function DestinationPanel({ state, model, selection, selectedName, journey, canGroundTravel, routeMinutes, risk, focusBiome, focusVisual, halt, onHaltPressOn, onHaltMakeCamp, onHaltDismiss, onClear, onTravel, canFly, teleOption, onFly, onTeleport, flightMount, flyPlan, resolve, loading }) {
   const distance = selection ? hexDistance(model.origin, selection) : 0;
-  const pace = travelPace(state.world.travelPace);
-  const paceId = pace.id;
-  const destinationMapped = !!(selection?.seen || selection?.visited);
-  // Named waypoints come from authored landmark data only after their hexes are
-  // mapped; unknown route suffixes never reach this presentation component.
+  // The whole route is charted, so the waypoints along it are simply the named
+  // landmarks it passes.
   const journeyVia = useMemo(
     () => (journey ? knownJourneyWaypoints(state, journey.legPath, { cap: 4 }) : []),
     [journey, state],
   );
   const isSelf = selection && selection.x === model.origin.x && selection.y === model.origin.y;
-  const publicDestination = publicLocationPresentation(selection?.tile, selection, destinationSighting(selection, model.origin));
-  const description = destinationMapped || publicDestination.sighted
-    ? publicDestination.description
-    : selection ? "The objective is known, but the ground around it remains uncharted." : null;
+  const publicDestination = publicLocationPresentation(selection?.tile, selection);
+  const description = publicDestination.description;
   const rewardTitle = selection?.quest ? "Quest reward" : selection?.visited ? "Known waypoint" : "Discovery ahead";
   const rewardValue = selection?.quest ? formatCopper(selection.quest.rewardCp || 0) : selection?.visited ? "Route recorded" : "New map entry";
-  const focusDistrict = destinationMapped ? publicDestination.district : null;
-  const focusMarketTier = destinationMapped ? publicDestination.marketTier : null;
-  const urbanRoute = destinationMapped && !!selection?.tile?.cityId && selection.tile.cityId === model.current.tile?.cityId;
+  const focusDistrict = publicDestination.district;
+  const focusMarketTier = publicDestination.marketTier;
+  const urbanRoute = !!selection?.tile?.cityId && selection.tile.cityId === model.current.tile?.cityId;
   return (
     <section className={`rpg-command-panel ${selection ? "has-selection" : "is-awaiting-destination"}`}>
       <div className="rpg-party-card">
@@ -572,6 +580,7 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
           <TravelHaltCard
             halt={halt}
             onPressOn={onHaltPressOn}
+            onMakeCamp={onHaltMakeCamp}
             onDismiss={onHaltDismiss}
             loading={loading}
           />
@@ -609,19 +618,11 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
 
             {journey ? (
               <>
-                {journey.routeFullyMapped ? (
-                  <div className="rpg-route-stats">
-                    <div><small>{urbanRoute ? "Blocks" : "Steps"}</small><b>{journey.legSteps}</b><span>of {journey.totalSteps}</span></div>
-                    <div><small>Time</small><b>{formatTravelDuration(routeMinutes)}</b><span>this march</span></div>
-                    <div className={risk >= 40 ? "is-danger" : ""}><small>Danger</small><b>{risk}%</b><span>{dangerLabel(risk)}</span></div>
-                  </div>
-                ) : (
-                  <div className="rpg-route-stats is-uncharted">
-                    <div><small>Mapped</small><b>{journey.legSteps}</b><span>known steps</span></div>
-                    <div><small>Time</small><b>—</b><span>beyond the fog</span></div>
-                    <div><small>Danger</small><b>—</b><span>uncharted</span></div>
-                  </div>
-                )}
+                <div className="rpg-route-stats">
+                  <div><small>{urbanRoute ? "Blocks" : "Steps"}</small><b>{journey.legSteps}</b><span>of {journey.totalSteps}</span></div>
+                  <div><small>Time</small><b>{formatTravelDuration(routeMinutes)}</b><span>this march</span></div>
+                  <div className={risk >= 40 ? "is-danger" : ""}><small>Danger</small><b>{risk}%</b><span>{dangerLabel(risk)}</span></div>
+                </div>
                 {journey.terrainLabels.length > 0 && (
                   <div className="rpg-terrain-route">
                     {journey.terrainLabels.map((terrain) => <span key={terrain.id} style={{ "--segment-color": TERRAIN_INK[terrain.id], "--segment-size": terrain.count }} title={`${terrain.label}: ${terrain.count} mapped steps`}><i /><small>{terrain.label} ×{terrain.count}</small></span>)}
@@ -650,24 +651,9 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
                     ))}
                   </ol>
                 )}
-                <div className="rpg-pace-picker" role="group" aria-label="Marching pace">
-                  {Object.values(TRAVEL_PACES).map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      className={option.id === paceId ? "is-active" : ""}
-                      aria-pressed={option.id === paceId}
-                      title={option.note}
-                      onClick={() => onSetTravelPace(option.id)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
                 <p className="rpg-leg-note">
-                  {!journey.routeFullyMapped
-                    ? "The mapped trail ends here. Travel time, danger, and terrain beyond the fog will be learned on the road."
-                    : pace.note}
+                  The party marches until something real stops them — arrival, trouble on the road,
+                  or the last of their rations, water, or strength.
                 </p>
               </>
             ) : <div className="rpg-route-blocked">No ground route reaches this tile from here.</div>}
@@ -682,8 +668,8 @@ export function DestinationPanel({ state, model, selection, selectedName, journe
         </div>}
         <button onClick={onTravel} disabled={!canGroundTravel || loading} className="rpg-travel-button">
           <span aria-hidden="true">{loading ? "…" : "✓"}</span>
-          {!selection ? "Choose a destination" : isSelf ? "You are here" : !canGroundTravel ? "Route unavailable" : journey?.routeFullyMapped && journey.arrived ? `Travel to ${selectedName}` : `March toward ${selectedName}`}
-          <small>{journey?.routeFullyMapped ? `${risk}% danger` : canGroundTravel ? "uncharted route" : ""}</small>
+          {!selection ? "Choose a destination" : isSelf ? "You are here" : !canGroundTravel ? "Route unavailable" : journey?.arrived ? `Travel to ${selectedName}` : `March toward ${selectedName}`}
+          <small>{canGroundTravel ? `${risk}% danger` : ""}</small>
         </button>
       </div>}
     </section>
@@ -772,7 +758,7 @@ export function WorldExploration({
   onFly,
   onTeleport,
   onSeekCombat,
-  onSetTravelPace,
+  onHaltMakeCamp,
   loading,
 }) {
   const partyCoord = state.world.currentTile;
@@ -847,7 +833,7 @@ export function WorldExploration({
       ...safeDestination,
       key,
       tile: getTile(state, presentedDestination.x, presentedDestination.y),
-      seen: isSeen(state, presentedDestination.x, presentedDestination.y),
+      seen: true,
       visited: !!state.world.tiles?.[key],
     };
     return mergeOverviewDestination(localDestination, presentedDestination);
@@ -872,8 +858,7 @@ export function WorldExploration({
   const currentBiome = currentBiomeId === "whitemarch" ? { ...currentCoordinateBiome, id: "whitemarch", name: "Whitemarch" } : currentCoordinateBiome;
   const currentVisual = biomeVisual(currentBiome.id);
   const currentCity = capitalName(model.current.tile);
-  const destinationMapped = !!(selection?.seen || selection?.visited);
-  const focusDestination = selection && destinationMapped ? selection : model.current;
+  const focusDestination = selection || model.current;
   const focusBiome = biomeAt(focusDestination, state.world.seed);
   const focusVisual = biomeVisual(focusBiome.id);
   // The map is lit by the party's own clock — except during a march, which runs
@@ -1082,7 +1067,7 @@ export function WorldExploration({
           skyMinutes={skyMinutes}
           city={currentCity}
         />
-        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} halt={travelLocked ? null : travelHalt} onHaltPressOn={onHaltPressOn} onHaltDismiss={onHaltDismiss} onClear={() => setSelected(null)} onTravel={handleGroundTravel} onSetTravelPace={onSetTravelPace} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
+        <DestinationPanel state={state} model={model} selection={selection} selectedName={selectedName} journey={presentedJourney} canGroundTravel={!!journey} routeMinutes={routeMinutes} risk={risk} focusBiome={focusBiome} focusVisual={focusVisual} halt={travelLocked ? null : travelHalt} onHaltPressOn={onHaltPressOn} onHaltMakeCamp={onHaltMakeCamp} onHaltDismiss={onHaltDismiss} onClear={() => setSelected(null)} onTravel={handleGroundTravel} canFly={canFly} teleOption={teleOption} onFly={handleFlySelection} onTeleport={(spell) => onTeleport(selected, spell.id)} flightMount={flightMount} flyPlan={flyPlan} resolve={state.character.resolve ?? 0} loading={loading || travelLocked} />
       </div>
       {journalOpen && (
         <AdventureFolio

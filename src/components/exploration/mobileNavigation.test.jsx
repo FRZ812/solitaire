@@ -138,19 +138,23 @@ describe("mobile map navigation markup", () => {
     expect(html).not.toContain("atlas-folio-hero-v1.png");
   });
 
-  it("does not derive an unseen destination name from canonical POI or terrain data", () => {
+  it("names a charted place by its name, and open ground by the quest sending you there", () => {
     const origin = { x: 0, y: 0 };
     const destination = {
       x: 8,
       y: -3,
-      seen: false,
       visited: false,
       quest: { title: "The Missing Courier" },
-      tile: { terrain: "marsh", poi: { name: "Secret Mire Temple", type: "temple" } },
+      tile: { terrain: "marsh", poi: { name: "Mirefoot Temple", type: "temple" } },
     };
 
-    expect(nameForDestination(destination, origin)).toBe("The Missing Courier");
-    expect(nameForDestination({ ...destination, quest: null }, origin)).toBe("Uncharted destination");
+    // A place with a name on the chart is called by it. The quest is flagged
+    // beside it rather than standing in for where the party is actually going.
+    expect(nameForDestination(destination, origin)).toBe("Mirefoot Temple");
+    expect(nameForDestination({ ...destination, quest: null }, origin)).toBe("Mirefoot Temple");
+    // Bare ground has nothing to be called, so the errand names it instead.
+    expect(nameForDestination({ ...destination, tile: { terrain: "marsh" } }, origin))
+      .toBe("The Missing Courier");
   });
 
   it("preserves the validated atlas handoff on the same map without moving the party", () => {
@@ -200,12 +204,17 @@ describe("mobile map navigation markup", () => {
       name: "LEAKED ATLAS NAME",
       knownBy: "raw-poi",
       landmarkId: "hidden-site",
-      seen: false,
       visited: false,
       tile: { terrain: "forest", poi: { name: "SECRET CANONICAL NAME", type: "hidden" } },
     };
 
-    expect(nameForDestination(raw, origin)).toBe("Uncharted destination");
+    // An unrecognised disclosure grade buys nothing. A hidden site still gives
+    // up neither the handoff's claimed name nor its own canonical one — it is
+    // described by where it lies and what it stands on, and nothing more.
+    const named = nameForDestination(raw, origin);
+    expect(named).not.toContain("LEAKED ATLAS NAME");
+    expect(named).not.toContain("SECRET CANONICAL NAME");
+    expect(named).toContain("Forest");
     expect(mergeOverviewDestination({ x: raw.x, y: raw.y, tile: raw.tile }, raw))
       .not.toMatchObject({ name: raw.name, knownBy: raw.knownBy, landmarkId: raw.landmarkId });
   });
@@ -254,11 +263,10 @@ describe("mobile map navigation markup", () => {
     expect(html).not.toContain("Shop tier");
   });
 
-  it("presents the journey as stages with a pace the player can set", () => {
+  it("presents the journey as the stages the march will actually be broken into", () => {
     const state = makeInitialState();
-    state.world.travelPace = "forced";
     const origin = state.world.currentTile;
-    const selection = { x: origin.x + 6, y: origin.y, seen: true, visited: true, tile: { terrain: "plains" } };
+    const selection = { x: origin.x + 6, y: origin.y, visited: true, tile: { terrain: "plains" } };
     const html = renderToStaticMarkup(
       <DestinationPanel
         state={state}
@@ -271,7 +279,6 @@ describe("mobile map navigation markup", () => {
           totalSteps: 6,
           arrived: true,
           terrainLabels: [],
-          routeFullyMapped: true,
           legs: [
             { index: 0, steps: 4, minutes: 1200, nights: 2, arrived: false, boundaryKind: "limit", boundaryLabel: "Whitewend Ford", passed: ["a hay barn"] },
             { index: 1, steps: 2, minutes: 60, nights: 0, arrived: true, boundaryKind: "destination", boundaryLabel: "Farhollow", passed: [] },
@@ -284,7 +291,6 @@ describe("mobile map navigation markup", () => {
         focusVisual={{ image: "safe.webp", accent: "#fff", mood: "Known map view" }}
         onClear={vi.fn()}
         onTravel={vi.fn()}
-        onSetTravelPace={vi.fn()}
         canFly={false}
         teleOption={null}
         onFly={vi.fn()}
@@ -301,24 +307,32 @@ describe("mobile map navigation markup", () => {
     expect(html).toContain("2 nights camped");
     expect(html).toContain("Passing a hay barn");
     expect(html).toContain('data-boundary="limit"');
-    // The chosen pace is the one shown as active.
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain("Forced");
-    expect(html).toContain("Careful");
+    // The retired pace control leaves nothing behind to set. What ends a march
+    // is the road and the party's own state, and the panel says so.
+    expect(html).not.toContain("rpg-pace-picker");
+    expect(html).not.toContain("Forced");
+    expect(html).not.toContain("Careful");
+    expect(html).toContain("until something real stops them");
   });
 
-  it("does not render hidden endpoint or route metrics in the destination panel", () => {
+  it("keeps a hidden endpoint's own record sealed even with the map fully charted", () => {
+    // Position is charted; the record is not. A site the party has never walked
+    // into gives up neither its canonical name, its description, nor its trade.
     const state = makeInitialState();
     const origin = state.world.currentTile;
     const selection = {
       x: origin.x + 8,
       y: origin.y - 3,
-      seen: false,
       visited: false,
       quest: { title: "The Missing Courier", rewardCp: 120 },
       tile: {
         terrain: "marsh",
-        poi: { name: "Secret Mire Temple", description: "SECRET CANONICAL DESCRIPTION", marketTier: "S" },
+        poi: {
+          type: "hidden",
+          name: "Secret Mire Temple",
+          description: "SECRET CANONICAL DESCRIPTION",
+          marketTier: "S",
+        },
       },
     };
     const html = renderToStaticMarkup(
@@ -327,7 +341,7 @@ describe("mobile map navigation markup", () => {
         model={{ origin, current: { tile: state.world.tiles[`${origin.x},${origin.y}`] } }}
         selection={selection}
         selectedName="The Missing Courier"
-        journey={{ legPath: [origin], legSteps: 0, totalSteps: null, arrived: false, terrainLabels: [], routeFullyMapped: false }}
+        journey={{ legPath: [origin], legSteps: 0, totalSteps: 0, arrived: false, terrainLabels: [], legs: [] }}
         canGroundTravel
         routeMinutes={9_999}
         risk={99}
@@ -346,13 +360,8 @@ describe("mobile map navigation markup", () => {
       />,
     );
 
-    expect(html).toContain("The mapped trail ends here");
-    expect(html).toContain("uncharted route");
     expect(html).not.toContain("Secret Mire Temple");
     expect(html).not.toContain("SECRET CANONICAL DESCRIPTION");
-    expect(html).not.toContain("Marsh");
-    expect(html).not.toContain("99%");
-    expect(html).not.toContain("6 d");
     expect(html).not.toContain("Shop tier");
   });
 

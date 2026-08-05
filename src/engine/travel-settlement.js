@@ -24,25 +24,26 @@ const SIGHTED_SITES = Object.freeze({
   wonder: Object.freeze({ title: "Something out of the ordinary", line: "Something stands in the open that belongs to no ordinary landscape." }),
 });
 
-// `sighting` is { distance, explored } from the map layer. Without it the tile
-// presents exactly as it did before graded knowledge existed.
-function sightedSite(tile, sighting) {
+// What a charted site says about itself from outside. A named place gives its
+// name; an unnamed one gives only what anyone would see standing off from it.
+// Either way the site's own record stays sealed until the party walks in.
+function sightedSite(tile) {
   const generated = tile?.poi?.generated;
-  if (!generated || !sighting) return null;
-  const grade = siteKnowledgeGrade(generated.sighting, sighting);
+  if (!generated) return null;
+  const grade = siteKnowledgeGrade(generated.sighting);
   const seen = SIGHTED_SITES[generated.archetypeId];
   if (!grade || !seen) return null;
   return { grade, title: grade === "rumoured" ? generated.name : seen.title, line: seen.line };
 }
 
-export function publicLocationPresentation(tile, coord = null, sighting = null) {
+export function publicLocationPresentation(tile, coord = null) {
   const hidden = tile?.poi?.type === "hidden";
   const terrain = TERRAINS[tile?.terrain]?.label || "Wilderness";
   const placeName = hidden ? null : poiPlaceName(tile?.poi);
   const district = hidden
     ? null
     : tile?.districtName || tile?.district || tile?.poi?.districtName || tile?.poi?.parentName || null;
-  const sighted = hidden ? sightedSite(tile, sighting) : null;
+  const sighted = hidden ? sightedSite(tile) : null;
   const openName = placeName || sighted?.title;
   return {
     hidden,
@@ -96,11 +97,10 @@ function deterministicTravelDiscovery(state, travel) {
 export function deterministicTravelBeat(state, travel) {
   const discovery = deterministicTravelDiscovery(state, travel);
   return {
+    // The whole clock the leg cost, marching and camped nights alike. Time
+    // passing is all it does: travel hands nothing back. Rest is something the
+    // party stops and takes, which is why a leg ends when they are spent.
     minutes_passed: travel.totalMins,
-    // A leg longer than a day's march is camped through, and the clock that
-    // `totalMins` advances already includes those nights. Without the sleep they
-    // bought, a week on the road would arrive with a party that never slept.
-    ...(travel.campSleep ? { needs_changes: { sleep: travel.campSleep } } : {}),
     ...(discovery ? { tile_discovery: discovery } : {}),
   };
 }

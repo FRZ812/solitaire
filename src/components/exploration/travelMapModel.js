@@ -1,6 +1,6 @@
 import { TERRAINS } from "../../data/terrains.js";
 import { landmarkAt } from "../../engine/world-generation.js";
-import { getTile, isSeen, isVisited } from "../../engine/world.js";
+import { getTile } from "../../engine/world.js";
 import {
   TRAVEL_MAP_MAX_ZOOM,
   TRAVEL_MAP_MIN_ZOOM,
@@ -69,73 +69,53 @@ export function activeMarchJourney(journey, travelMarch) {
   };
 }
 
-// The staged legs the party can honestly foresee. A leg's boundary names the
-// place it ends at, so a leg may only be previewed once every hex it covers is
-// already on the party's map — otherwise the itinerary would name sites nobody
-// has seen. Scenery is carried as labels only, which the scene model already
-// treats as public for mapped ground.
-function knownLegs(state, journey) {
-  const path = journey?.fullPath;
-  if (!Array.isArray(journey?.legs) || !Array.isArray(path)) return [];
-  let mapped = 1;
-  while (mapped < path.length && (isSeen(state, path[mapped].x, path[mapped].y) || isVisited(state, path[mapped].x, path[mapped].y))) {
-    mapped += 1;
-  }
-  return journey.legs
-    .filter((leg) => leg.to < mapped)
-    .map((leg) => ({
-      index: leg.index,
-      steps: leg.steps,
-      minutes: leg.minutes,
-      nights: leg.nights || 0,
-      arrived: leg.arrived,
-      boundaryKind: leg.boundary?.kind || "",
-      boundaryLabel: leg.boundary?.label || "",
-      passed: (leg.passed || []).map((entry) => entry.label).filter(Boolean),
-    }));
+// The staged legs of the journey, flattened for presentation. The route is
+// charted the whole way, so an itinerary can name every stage it plans rather
+// than stopping wherever the party's own footprints did.
+function journeyLegs(journey) {
+  if (!Array.isArray(journey?.legs)) return [];
+  return journey.legs.map((leg) => ({
+    index: leg.index,
+    steps: leg.steps,
+    minutes: leg.minutes,
+    nights: leg.nights || 0,
+    arrived: leg.arrived,
+    boundaryKind: leg.boundary?.kind || "",
+    boundaryLabel: leg.boundary?.label || "",
+    passed: (leg.passed || []).map((entry) => entry.label).filter(Boolean),
+  }));
 }
 
-// Build a UI-only journey from the contiguous mapped prefix. The authoritative
-// route remains in the caller and is never copied here, so an inspection panel
-// or Canvas scene cannot become an oracle for unseen passability or terrain.
+// Build a UI-only journey from the planned route. The authoritative route
+// remains in the caller and is never copied here; this is the shape the panel
+// and the Canvas scene read.
 export function knownJourneyPreview(state, journey, legPath = journey?.legPath) {
   if (!journey || !Array.isArray(legPath) || legPath.length === 0) return null;
-  const mappedPath = [];
-  for (let index = 0; index < legPath.length; index += 1) {
-    const coord = legPath[index];
-    const mapped = index === 0
-      || isSeen(state, coord.x, coord.y)
-      || isVisited(state, coord.x, coord.y);
-    if (!mapped) break;
-    mappedPath.push({ x: coord.x, y: coord.y });
-  }
+  const path = legPath.map((coord) => ({ x: coord.x, y: coord.y }));
 
   const terrainCounts = {};
-  for (let index = 1; index < mappedPath.length; index += 1) {
-    const coord = mappedPath[index];
+  for (let index = 1; index < path.length; index += 1) {
+    const coord = path[index];
     const terrain = getTile(state, coord.x, coord.y).terrain;
     terrainCounts[terrain] = (terrainCounts[terrain] || 0) + 1;
   }
-  const routeFullyMapped = mappedPath.length === legPath.length;
   return {
-    legs: knownLegs(state, journey),
-    legPath: mappedPath,
-    end: mappedPath.at(-1) || null,
-    arrived: routeFullyMapped && !!journey.arrived,
-    totalSteps: routeFullyMapped ? journey.totalSteps : null,
-    legSteps: Math.max(0, mappedPath.length - 1),
+    legs: journeyLegs(journey),
+    legPath: path,
+    end: path.at(-1) || null,
+    arrived: !!journey.arrived,
+    totalSteps: journey.totalSteps,
+    legSteps: Math.max(0, path.length - 1),
     terrainCounts,
     terrainLabels: Object.entries(terrainCounts).map(([id, count]) => ({
       id,
       count,
       label: TERRAINS[id]?.label || id,
     })),
-    routeFullyMapped,
   };
 }
 
-// Route summaries may name only places already persisted in the party's map.
-// Camera extent and path previews are presentation concerns, never discovery.
+// The named landmarks a route runs past, for the "Via …" line.
 export function knownJourneyWaypoints(state, path, { cap = 5, skipEndpoints = true } = {}) {
   if (!path || path.length < 2) return [];
   const names = [];
@@ -144,7 +124,6 @@ export function knownJourneyWaypoints(state, path, { cap = 5, skipEndpoints = tr
   const end = skipEndpoints ? path.length - 1 : path.length;
   for (let index = start; index < end; index += 1) {
     const cell = path[index];
-    if (!isSeen(state, cell.x, cell.y)) continue;
     const landmark = landmarkAt(cell.x, cell.y);
     if (!landmark || seenIds.has(landmark.id)) continue;
     seenIds.add(landmark.id);

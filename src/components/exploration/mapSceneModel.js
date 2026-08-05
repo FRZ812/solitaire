@@ -10,23 +10,23 @@ import { lodShowsPlace, lodShowsVectorRoutes, lodTier } from "./mapLod.js";
 function coordinateKey(point) {
   return `${point.x},${point.y}`;
 }
-function wasExplored(cell) {
-  // `seen` is the accumulated sight history, while `visited` is the durable
-  // record of hexes the party actually crossed. Treat either as mapped so a
-  // visited tile can never fall back under black fog if an older save has an
-  // incomplete sight set.
-  return !!cell.explored || !!cell.visible || !!cell.seen || !!cell.visited;
+// Hexes the party has actually stood on. The map is charted everywhere, so this
+// no longer decides what may be drawn — it is only the warm tint that makes the
+// atlas a record of where the journey has been.
+function wasWalked(cell) {
+  return !!cell.visited;
 }
 
-// What the party can currently claim about a generated site it has not entered:
-// "rumoured" carries a name, "silhouette" only a shape, "" nothing at all.
-function worldSiteKnowledge(cell, explored = wasExplored(cell)) {
+// What the party can claim about a site it has not entered: "rumoured" carries a
+// name, "silhouette" only a shape, "" nothing at all — which now means only the
+// places that keep themselves off the map.
+function worldSiteKnowledge(cell) {
   const poi = cell.tile?.poi;
   if (!poi) return null;
-  if (poi.type !== "hidden") return explored ? { grade: "discovered" } : null;
+  if (poi.type !== "hidden") return { grade: "discovered" };
   const generated = poi.generated;
   if (!generated) return null;
-  const grade = siteKnowledgeGrade(generated.sighting, { distance: cell.distance, explored });
+  const grade = siteKnowledgeGrade(generated.sighting);
   return grade ? { grade, generated } : null;
 }
 
@@ -47,8 +47,9 @@ function renderTrackedCharacter(trackedCharacter, cells) {
   const pos = trackedCharacter?.pos;
   if (!Number.isFinite(pos?.x) || !Number.isFinite(pos?.y)) return null;
   const exact = pos.exact === true;
-  const trackedCell = cells.find((cell) => cell.key === coordinateKey(pos));
-  if (exact && (!trackedCell || !wasExplored(trackedCell))) return null;
+  // An exact fix is drawn on the hex it names, so it needs that hex on screen.
+  // An uncertain one is a circle over open country and does not.
+  if (exact && !cells.some((cell) => cell.key === coordinateKey(pos))) return null;
   return {
     id: String(trackedCharacter.id || ""),
     name: String(trackedCharacter.name || "Tracked lead"),
@@ -62,7 +63,7 @@ const NOON_MINUTE = 12 * 60;
 
 export function buildWorldMapScene({ state, model, selection, journey, marchFrame = null, trackedCharacter = null, skyMinutes = NOON_MINUTE }) {
   const cells = model.renderViewport || model.viewport || [];
-  const exploredKeys = new Set(cells.filter(wasExplored).map((cell) => cell.key));
+  const cellKeys = new Set(cells.map((cell) => cell.key));
   const stride = Math.max(1, Math.round(model.stride) || 1);
   const tier = lodTier(stride);
   // Once hexes stop being individually legible, authored geography carries the
@@ -89,17 +90,21 @@ export function buildWorldMapScene({ state, model, selection, journey, marchFram
     tracked_character: renderTrackedCharacter(trackedCharacter, cells),
     sky_minutes: lit,
     sky: skyAt(lit),
-    // Fog and the stage's own chrome still want the plain yes/no, and it comes
-    // from the survival layer so the veil can never disagree with the grade.
+    // The stage's own chrome still wants the plain yes/no, and it comes from the
+    // survival layer so the sky can never disagree with the clock.
     night: isNight({ hour: Math.floor(lit / 60) }),
+    // The whole line the party intends to walk, including the part that runs off
+    // past anywhere they have been. Not knowing what is out there was never a
+    // reason to be unable to point at it: a course set for a town four days away
+    // is still a course, and drawing half of it made the map look broken.
+    // Segments break only where a hex falls outside the drawn window.
     route: (journey?.legPath || []).map((point) => {
       const key = coordinateKey(point);
-      return exploredKeys.has(key) ? key : null;
+      return cellKeys.has(key) ? key : null;
     }),
     cells: cells.map((cell) => {
-      const explored = wasExplored(cell);
-      const visible = !!cell.visible;
-      const knowledge = worldSiteKnowledge(cell, explored);
+      const walked = wasWalked(cell);
+      const knowledge = worldSiteKnowledge(cell);
       const poiName = worldPoiName(cell, knowledge);
       return {
         key: cell.key,
@@ -108,20 +113,20 @@ export function buildWorldMapScene({ state, model, selection, journey, marchFram
         col: cell.col,
         row: cell.row,
         overscan: !!cell.overscan,
-        // Base geography is public from the start; exploration still gates POIs,
-        // routes, entities, interaction, and the brighter mapped treatment.
+        // The continent is charted. Terrain, routes, sites and the scenery along
+        // them are all public; what the party has to earn is not the sight of a
+        // place but the visit to it, which is what `visited` still records.
         terrain: cell.tile?.terrain || "impassable",
-        explored,
-        seen: !!cell.seen,
-        visible,
-        visibility: visible ? "visible" : (explored ? "remembered" : "unknown"),
-        visited: !!cell.visited,
-        interactive: !cell.overscan && explored && !!cell.passable && !cell.current,
-        // Ambient landscape detail. Carried on the scene so the hex inspector and
-        // the travel log have something true to say about ground that holds no
-        // site; the canvas does not draw it, since ambient density belongs with
-        // the zoom tiers rather than at one fixed scale.
-        scenery: explored ? (cell.tile?.scenery || []).map((entry) => entry.label) : [],
+        explored: true,
+        seen: true,
+        visible: true,
+        visibility: walked ? "walked" : "charted",
+        visited: walked,
+        interactive: !cell.overscan && !!cell.passable && !cell.current,
+        // Ambient landscape detail: barns, milestones, fords, sheepfolds. This is
+        // what keeps open country from reading as empty, so it travels with every
+        // charted cell rather than only the ones already walked.
+        scenery: (cell.tile?.scenery || []).map((entry) => entry.label),
         poi_name: poiName,
         poi_icon: worldPoiIcon(cell, knowledge),
         poi_knowledge: knowledge?.grade || "",

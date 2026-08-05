@@ -6,7 +6,6 @@ import { getTile } from "./world.js";
 import { TERRAINS } from "../data/terrains.js";
 import { DARK_FLEE_BONUS, isBeacon, isHidden, isNight } from "./light.js";
 import { isOverloaded, playerGroundMount } from "./riding.js";
-import { travelPace } from "./expedition.js";
 import { condNames } from "../data/conditions.js";
 import { AERIAL_MIN_LEVEL, AERIAL_CHANCE_PER_LEVEL } from "../config.js";
 
@@ -72,7 +71,7 @@ export function hostileProfile(tile, x, y) {
 // The opposition is the REGION, never the party's level: "there is no level
 // scaling, so the region you stand in decides how tough its foes and loot are"
 // (data/regions.js). The party's side of the roll is circumstance instead —
-// light, pace, mount, load, weariness — every one of which the player steers.
+// light, mount, load, weariness — every one of which the player steers.
 //
 // Constants swept by scripts/travel-evasion-sim.mjs.
 export const EVADE_BASE = 96;
@@ -84,8 +83,6 @@ export const EVADE_MOUNTED = 12;
 export const EVADE_OVERBURDENED = -18;
 export const EVADE_EXHAUSTED = -15;
 export const EVADE_TIRED = -7;
-// Pace already buys ground with risk; here it buys quiet.
-const EVADE_BY_PACE = { careful: 10, steady: 0, forced: -12 };
 
 // How many things the party got by are worth reporting. A long leg through the
 // Wilds meets a handful, and neither the narrator brief nor the halt card can
@@ -95,7 +92,7 @@ export const MET_LIMIT = 3;
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
 // Percentage chance of getting clear of this encounter, before the roll.
-export function evasionChance(state, atTile, { pace = "steady" } = {}) {
+export function evasionChance(state, atTile) {
   const band = regionDifficulty(atTile.x, atTile.y, state?.world?.seed);
   let chance = EVADE_BASE - (band.level || 1) * EVADE_PER_BAND;
 
@@ -104,8 +101,6 @@ export function evasionChance(state, atTile, { pace = "steady" } = {}) {
   // nothing outside combat has ever read them.
   if (isHidden(state)) chance += DARK_FLEE_BONUS;
   else if (isBeacon(state)) chance -= DARK_FLEE_BONUS;
-
-  chance += EVADE_BY_PACE[travelPace(pace).id] || 0;
 
   const mount = playerGroundMount(state);
   if (mount && !isOverloaded(mount, state)) chance += EVADE_MOUNTED;
@@ -120,11 +115,11 @@ export function evasionChance(state, atTile, { pace = "steady" } = {}) {
 
 // Does this encounter end the march? Friendly and neutral never do — they are
 // hailed, waved past, or never noticed. Hostiles get one roll to slip away.
-export function encounterHalts(state, encounter, atTile, options = {}) {
+export function encounterHalts(state, encounter, atTile) {
   if (encounter?.posture !== "hostile") {
     return { halts: false, outcome: "passed", chance: 0 };
   }
-  const chance = evasionChance(state, atTile, options);
+  const chance = evasionChance(state, atTile);
   const evaded = Math.random() * 100 < chance;
   return { halts: !evaded, outcome: evaded ? "evaded" : "blocked", chance };
 }
@@ -136,7 +131,7 @@ export function encounterHalts(state, encounter, atTile, options = {}) {
 //
 // `riskMult` is the party's chosen pace: pressing hard covers ground but walks
 // into more, moving carefully costs time and finds less.
-export function rollPathEncounter(state, path, riskMult = 1, { pace = "steady" } = {}) {
+export function rollPathEncounter(state, path, riskMult = 1) {
   const met = [];
   if (!path || path.length < 2) return { halt: null, met };
   for (let i = 1; i < path.length; i++) {
@@ -147,7 +142,7 @@ export function rollPathEncounter(state, path, riskMult = 1, { pace = "steady" }
     const mult = (isNight(state.time, gloomy) ? NIGHT_ENCOUNTER_MULT : 1) * riskMult;
     const enc = rollEncounter(tile, p.x, p.y, mult);
     if (!enc) continue;
-    const verdict = encounterHalts(state, enc, p, { pace });
+    const verdict = encounterHalts(state, enc, p);
     const hit = { encounter: enc, atTile: p, atIndex: i, outcome: verdict.outcome };
     if (verdict.halts) return { halt: hit, met };
     if (met.length < MET_LIMIT) met.push(hit);

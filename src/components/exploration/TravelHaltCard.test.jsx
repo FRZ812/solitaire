@@ -41,7 +41,7 @@ describe("travel halt card", () => {
     const view = await mount(<TravelHaltCard halt={RAN_DRY} onPressOn={() => {}} onDismiss={() => {}} />);
 
     expect(view.host.querySelector("h2").textContent).toBe("a stand of birches");
-    expect(view.host.textContent).toContain("The packs run dry");
+    expect(view.host.textContent).toContain("The party is spent");
     expect(view.host.textContent).toContain("The rations are gone.");
     expect(view.host.textContent).toContain("7 h 10 min");
     // Nights camped are part of what the march cost, not a stop of their own.
@@ -75,6 +75,50 @@ describe("travel halt card", () => {
     await view.unmount();
   });
 
+  it("offers to bed down where the party has run out of rest, and nowhere else", async () => {
+    // The march never gives rest back, so a leg that ended in exhaustion has to
+    // hand the player the choice to take it. Anywhere else, offering a nap would
+    // be answering a question nobody asked.
+    const camps = [];
+    const spent = { ...RAN_DRY, spentNeed: "sleep", reason: "The party is spent." };
+    const view = await mount(
+      <TravelHaltCard halt={spent} onPressOn={() => {}} onMakeCamp={(hours) => camps.push(hours)} onDismiss={() => {}} />,
+    );
+
+    expect(view.host.textContent).toContain("Make camp for the night");
+    await view.click(".rpg-halt-camp");
+    expect(camps).toEqual([8]);
+    await view.unmount();
+
+    // With the map covering the chat, a refusal has to come back to the button
+    // that was pressed or the player sees nothing happen at all.
+    const noBedroll = await mount(
+      <TravelHaltCard
+        halt={{ ...spent, campBlocked: "You've no bedroll to make a proper rest." }}
+        onPressOn={() => {}}
+        onMakeCamp={() => {}}
+        onDismiss={() => {}}
+      />,
+    );
+    expect(noBedroll.host.querySelector(".rpg-halt-camp").textContent).toContain("no bedroll");
+    await noBedroll.unmount();
+
+    // Empty packs are a supply problem: sleeping on it leaves the party hungrier
+    // than it found them, so camping is not offered as a cure for it.
+    const hungry = await mount(
+      <TravelHaltCard halt={{ ...RAN_DRY, spentNeed: "hunger" }} onPressOn={() => {}} onMakeCamp={() => {}} onDismiss={() => {}} />,
+    );
+    expect(hungry.host.querySelector(".rpg-halt-camp")).toBeNull();
+    await hungry.unmount();
+
+    // And a halt at swordpoint is not a place to be suggesting a bedroll.
+    const held = await mount(
+      <TravelHaltCard halt={{ ...RAN_DRY, boundaryKind: "encounter", spentNeed: null }} onPressOn={() => {}} onMakeCamp={() => {}} onDismiss={() => {}} />,
+    );
+    expect(held.host.querySelector(".rpg-halt-camp")).toBeNull();
+    await held.unmount();
+  });
+
   it("offers no onward march once the party has arrived", async () => {
     const arrived = {
       ...RAN_DRY,
@@ -97,7 +141,7 @@ describe("travel halt card", () => {
   });
 
   it("takes over the command panel so the old destination cannot be re-committed", async () => {
-    const state = { character: { name: "Wren", race: "Human", resolve: 4 }, world: { travelPace: "steady" } };
+    const state = { character: { name: "Wren", race: "Human", resolve: 4 }, world: {} };
     const model = { origin: { x: 0, y: 0 }, current: { tile: {} }, byKey: new Map(), viewport: [] };
     const selection = { x: 4, y: 1, key: "4,1", seen: true, visited: false, tile: { terrain: "plains" } };
     const panel = (halt) => (

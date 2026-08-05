@@ -32,20 +32,22 @@ function withCompiledCapital(run) {
 }
 
 describe("unified capital in the exploration map", () => {
-  it("distinguishes current sight from remembered exploration", () => {
+  it("charts every drawn hex and records only where the party has walked", () => {
     const state = makeInitialState();
-    state.world.seen = { "0,0": true, "2,0": true, "4,0": true };
+    // A sparse sight record from an older save has nothing left to gate: the
+    // continent is charted, and `visited` is the one thing still earned.
+    state.world.seen = { "0,0": true };
+    state.world.tiles = { ...state.world.tiles, "2,0": { visited: true } };
 
     const byKey = new Map(buildRpgViewport(state).map((cell) => [cell.key, cell]));
 
-    expect(byKey.get("2,0")).toMatchObject({ seen: true, visible: true, explored: true });
-    expect(byKey.get("4,0")).toMatchObject({ seen: true, visible: false, explored: true });
+    expect(byKey.get("2,0")).toMatchObject({ seen: true, visible: true, explored: true, visited: true });
+    expect(byKey.get("4,0")).toMatchObject({ seen: true, visible: true, explored: true, visited: false });
   });
 
-  it("pans the large viewport independently while sight remains centered on the party", () => {
+  it("pans the large viewport independently of where the party stands", () => {
     const state = makeInitialState();
     state.world.currentTile = { x: 0, y: 0 };
-    state.world.seen = { "6,0": true };
 
     const cells = buildRpgViewport(state, {
       center: { x: 6, y: 0 },
@@ -54,8 +56,10 @@ describe("unified capital in the exploration map", () => {
     const byKey = new Map(cells.map((cell) => [cell.key, cell]));
 
     expect(cells).toHaveLength(19 * 15);
-    expect(byKey.get("6,0")).toMatchObject({ current: false, visible: false, seen: true });
-    expect(byKey.get("0,0")).toMatchObject({ current: true, visible: true });
+    // Panning moves the camera and nothing else — the party's own hex is still
+    // the one marked current, wherever the view has been dragged to.
+    expect(byKey.get("6,0")).toMatchObject({ current: false });
+    expect(byKey.get("0,0")).toMatchObject({ current: true });
   });
 
   it("enumerates a screen-aligned offset-row window instead of a skewed axial box", () => {

@@ -105,21 +105,22 @@ describe("what a march is actually stopped by", () => {
     expect(evasionChance(party({ night: true, lit: true }), HERE)).toBeLessThan(seen);
   });
 
-  it("costs the party for every circumstance it chose", () => {
+  it("costs the party for every circumstance it is in", () => {
+    // What the party is carrying and how spent it is decide whether it gets by.
+    // There is no pace dial in front of this any more — slipping past something
+    // is a consequence of the state the march has run them into.
     const plain = evasionChance(party(), HERE);
-    expect(evasionChance(party(), HERE, { pace: "careful" })).toBeGreaterThan(plain);
-    expect(evasionChance(party(), HERE, { pace: "forced" })).toBeLessThan(plain);
     expect(evasionChance(party({ overburdened: true }), HERE)).toBeLessThan(plain);
+    expect(evasionChance(party({ weary: "Tired" }), HERE)).toBeLessThan(plain);
     expect(evasionChance(party({ weary: "Exhausted" }), HERE))
       .toBeLessThan(evasionChance(party({ weary: "Tired" }), HERE));
   });
 
   it("never makes escape certain or impossible", () => {
-    const best = evasionChance(party({ night: true }), { x: 15, y: 0 }, { pace: "careful" });
+    const best = evasionChance(party({ night: true }), { x: 15, y: 0 });
     const worst = evasionChance(
       party({ night: true, lit: true, overburdened: true, weary: "Exhausted" }),
       { x: 165, y: 165 },
-      { pace: "forced" },
     );
     expect(best).toBe(EVADE_CEIL);
     expect(worst).toBe(EVADE_FLOOR);

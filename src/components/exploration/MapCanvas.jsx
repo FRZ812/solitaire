@@ -99,10 +99,10 @@ function drawTerrain(context, scene, entries, atlas) {
       context.fillStyle = "rgba(184, 158, 52, .18)";
       context.fillRect(entry.bounds.minX, entry.bounds.minY, entry.bounds.width, entry.bounds.height);
     }
-    if (entry.cell.explored !== false) {
-      context.fillStyle = entry.cell.visited ? "rgba(255, 230, 146, .035)" : "rgba(28, 112, 122, .075)";
-      context.fillRect(entry.bounds.minX, entry.bounds.minY, entry.bounds.width, entry.bounds.height);
-    }
+    // Ground the party has walked carries a faint warm wash, so the atlas is
+    // still a record of the journey even though none of it is hidden.
+    context.fillStyle = entry.cell.visited ? "rgba(255, 230, 146, .05)" : "rgba(28, 112, 122, .075)";
+    context.fillRect(entry.bounds.minX, entry.bounds.minY, entry.bounds.width, entry.bounds.height);
     context.restore();
 
     if (!outlines) continue;
@@ -120,7 +120,7 @@ function drawScenery(context, scene, entries) {
   if (!lodShowsScenery(scene.tier || "local") || scene.mode !== "world") return;
   for (const entry of entries) {
     const count = entry.cell.scenery?.length || 0;
-    if (!count || !entry.cell.explored) continue;
+    if (!count) continue;
     const radius = Math.max(1.1, entry.size * 0.055);
     const spread = entry.size * 0.36;
     context.save();
@@ -186,11 +186,14 @@ function drawRibbons(context, ribbons, radius) {
   context.restore();
 }
 
-const PLACE_KNOWLEDGE_ALPHA = { charted: 1, reputation: 0.66, legend: 0.42 };
+// Every place here is on the map; the grade says how the party knows of it, and
+// somewhere they have walked themselves reads brighter than somewhere they only
+// know by repute. Legend keeps the widest gap because a fabled place should look
+// like hearsay even on a good chart.
+const PLACE_KNOWLEDGE_ALPHA = { charted: 1, reputation: 0.86, legend: 0.66 };
 
 // Authored places, which is what the map has left to say once individual hexes
-// are too small to read. Reputation and legend are drawn faint but remain
-// selectable, so the party can still set out for somewhere it has never seen.
+// are too small to read.
 function drawAtlasPlaces(context, places, radius) {
   if (!places.length) return;
   const size = Math.max(4.5, Math.min(11, radius * 0.42));
@@ -222,7 +225,10 @@ function drawAtlasPlaces(context, places, radius) {
     context.lineWidth = Math.max(1.2, size * 0.28);
     context.fill();
     context.stroke();
-    if (place.major || place.knowledge === "charted") {
+    // A named place on a map has its name written next to it. Withholding the
+    // label until the party had been there left the continent reading as a
+    // scatter of anonymous dots.
+    if (place.name) {
       drawLabel(context, place.name, x, y + Math.max(size * 1.5, ring + size), Math.max(38, radius));
     }
     context.restore();
@@ -446,7 +452,6 @@ function drawLamps(context, scene, entries) {
   context.save();
   context.globalCompositeOperation = "lighter";
   for (const entry of entries) {
-    if (!entry.cell.explored) continue;
     if (!LAMPLIT_MATERIALS.has(materialFor(scene, entry.cell))) continue;
     const radius = entry.size * 0.95;
     const glow = context.createRadialGradient(entry.center.x, entry.center.y, 0, entry.center.x, entry.center.y, radius);
@@ -460,14 +465,10 @@ function drawLamps(context, scene, entries) {
 
 function drawFog(context, scene, entries) {
   if (scene.mode !== "world") return;
-  // Three explicit states: visible terrain is clear, remembered terrain is
-  // lightly muted, and unknown terrain stays readable beneath a darker veil.
-  // Per-cell fog keeps accumulated exploration authoritative as the camera
-  // moves instead of re-covering remembered edge cells with a full-screen mask.
-  //
-  // The veil thins as the map pulls back. Personal sight is the wrong lens for
-  // a continent: base geography is public, so far out this marks where the
-  // party has walked rather than hiding everywhere it has not.
+  // Nothing is hidden here any more — the continent is charted, and what is left
+  // is nightfall. After dark the whole drawn country dims by the same amount,
+  // which reads as the hour rather than as a wall around the party, and it
+  // thins as the map pulls back because a continent does not have one nightfall.
   const fogScale = lodFogScale(scene.tier || "local");
   for (const entry of entries) {
     const opacity = mapFogOpacity(entry.cell, scene.night, fogScale);
