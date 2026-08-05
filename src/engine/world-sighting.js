@@ -1,14 +1,21 @@
 // How much of a generated site the party can know before standing on it.
 //
-// A fort on a ridge is visible for a day's walk; a bandit camp is not visible
-// until you are in it. Between those the map should show *something* — a shape
-// at range, a name if travellers use one — so that travel has destinations
-// instead of blank ground that turns into a place on arrival.
+// The map is a map: a continent's forts, villages, shrines and workings are on
+// it because people have been charting them for centuries, not because this
+// particular party has walked within sight of them. What the party has not done
+// is *go* there, so a place it has never entered gives up its position and — if
+// travellers use one — its name, and nothing else. The rest is found by arriving.
 //
-// Pure and data-only: the caller supplies distance and sight history.
+// A bandit camp is the exception, and stays the exception: nobody charts the
+// people who would rather not be found. Those places are absent until entered,
+// which is what makes them an ambush rather than a marker.
+//
+// Pure and data-only: the caller supplies sight history.
 
-// `range` is in hexes from the party. `named` means locals and road traffic use
-// a name for the place, so it can appear on the map before the party arrives.
+// `named` means locals and road traffic use a name for the place, so the map
+// carries the name rather than only the symbol. `range` is retained because the
+// generator's site records are already seeded with it and the narrator brief
+// reads it when describing how far off something was first made out.
 // `secret` places stay off the map entirely until they are entered.
 const ARCHETYPE_SIGHTING = Object.freeze({
   fortification: Object.freeze({ range: 7, named: true }),
@@ -67,10 +74,10 @@ export function siteSighting({ family, terrain, route }) {
   };
 }
 
-// "" means the site has no place on the map yet.
-export function siteKnowledgeGrade(sighting, { distance = null, explored = false } = {}) {
+// "" means the site has no place on the map — which now only ever describes the
+// places that keep themselves off it. Everything else is charted ground: named
+// where travellers name it, a bare symbol where they do not.
+export function siteKnowledgeGrade(sighting) {
   if (!sighting || sighting.secret) return "";
-  const inRange = Number.isFinite(distance) && distance <= sighting.range;
-  if (!inRange && !explored) return "";
   return sighting.named ? "rumoured" : "silhouette";
 }

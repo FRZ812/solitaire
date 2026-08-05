@@ -5,18 +5,26 @@ import { buildWorldMapScene } from "./mapSceneModel.js";
 const state = makeInitialState();
 
 describe("browser exploration scene contract", () => {
-  it("shows base terrain from the start without disclosing an unknown POI", () => {
+  it("charts every drawn cell and marks the ones the party has walked", () => {
     const model = {
       origin: { x: 0, y: 0 },
       current: { key: "0,0" },
       viewport: [
-        { key: "0,0", x: 0, y: 0, col: 0, row: 0, seen: true, visible: true, visited: true, passable: true, current: true, tile: { terrain: "road" } },
-        { key: "1,0", x: 1, y: 0, col: 1, row: 0, seen: false, visible: false, visited: false, passable: true, current: false, tile: { terrain: "water", poi: { name: "Secret Port" } } },
+        { key: "0,0", x: 0, y: 0, col: 0, row: 0, visited: true, passable: true, current: true, tile: { terrain: "road" } },
+        { key: "1,0", x: 1, y: 0, col: 1, row: 0, visited: false, passable: true, current: false, tile: { terrain: "plains", poi: { name: "Harrowfield", type: "village" } } },
       ],
     };
     const scene = buildWorldMapScene({ model, selection: null, journey: null });
-    expect(scene.cells[0]).toMatchObject({ explored: true, visible: true, visibility: "visible" });
-    expect(scene.cells[1]).toMatchObject({ terrain: "water", explored: false, seen: false, visible: false, visibility: "unknown", interactive: false, poi_name: "", poi_icon: "", poi_market_tier: "" });
+    // Where the party has been is a record on the map, not a gate on it.
+    expect(scene.cells[0]).toMatchObject({ explored: true, visible: true, visibility: "walked", visited: true });
+    expect(scene.cells[1]).toMatchObject({
+      terrain: "plains",
+      explored: true,
+      visibility: "charted",
+      visited: false,
+      interactive: true,
+      poi_name: "Harrowfield",
+    });
   });
 
   it("serializes render-only overscan without expanding the decision viewport", () => {
@@ -73,40 +81,13 @@ describe("browser exploration scene contract", () => {
     };
     const scene = buildWorldMapScene({ model, selection: null, journey: null });
     expect(scene.cells[0]).toMatchObject({ poi_name: "Great Stable", poi_icon: "trade-stable", poi_market_tier: "standard" });
-    expect(scene.cells[1]).toMatchObject({ poi_name: "Knifetooth Camp", poi_icon: "wild-bandit-camp", poi_market_tier: "", visibility: "remembered" });
+    expect(scene.cells[1]).toMatchObject({ poi_name: "Knifetooth Camp", poi_icon: "wild-bandit-camp", poi_market_tier: "", visibility: "charted" });
   });
 
-  it("keeps a visited hex mapped even when an older sight record is incomplete", () => {
-    const model = {
-      origin: { x: 0, y: 0 },
-      current: { key: "0,0" },
-      viewport: [
-        {
-          key: "-1,0", x: -1, y: 0, col: 0, row: 0,
-          seen: false, visible: false, visited: true, passable: true, current: false,
-          tile: { terrain: "road", poi: { name: "Old Milepost", type: "landmark" } },
-        },
-      ],
-    };
-
-    const scene = buildWorldMapScene({ model, selection: null, journey: null });
-
-    expect(scene.cells[0]).toMatchObject({
-      terrain: "road",
-      explored: true,
-      seen: false,
-      visible: false,
-      visibility: "remembered",
-      visited: true,
-      interactive: true,
-      poi_name: "Old Milepost",
-    });
-  });
-
-  it("grades a generated site by how much of it the party can honestly claim", () => {
+  it("grades a generated site by whether travellers have a name for it", () => {
     const hidden = (key, x, distance, archetypeId, sighting) => ({
       key, x, y: 0, col: x, row: 0,
-      seen: false, visible: false, visited: false, passable: true, current: false, distance,
+      visited: false, passable: true, current: false, distance,
       tile: {
         terrain: "plains",
         poi: { type: "hidden", name: null, generated: { name: "Falford", archetypeId, sighting } },
@@ -121,6 +102,8 @@ describe("browser exploration scene contract", () => {
       viewport: [
         hidden("1,0", 1, 3, "settlement", named),
         hidden("2,0", 2, 3, "ruin", unnamed),
+        // Nine hexes off, far past any sighting range it was seeded with. It is
+        // on the chart all the same, because a chart is not a pair of eyes.
         hidden("3,0", 3, 9, "ruin", unnamed),
         hidden("4,0", 4, 1, "bandit-camp", secret),
       ],
@@ -129,16 +112,19 @@ describe("browser exploration scene contract", () => {
     const scene = buildWorldMapScene({ model, selection: null, journey: null });
 
     expect(scene.cells[0]).toMatchObject({ poi_knowledge: "rumoured", poi_name: "Falford", poi_icon: "wild-village" });
-    // A shape at range is drawn but stays anonymous.
+    // A charted shape is drawn but stays anonymous until somebody walks in.
     expect(scene.cells[1]).toMatchObject({ poi_knowledge: "silhouette", poi_name: "", poi_icon: "wild-ruin" });
-    expect(scene.cells[2]).toMatchObject({ poi_knowledge: "", poi_name: "", poi_icon: "" });
+    expect(scene.cells[2]).toMatchObject({ poi_knowledge: "silhouette", poi_name: "", poi_icon: "wild-ruin" });
+    // Only what hides itself stays off the map.
     expect(scene.cells[3]).toMatchObject({ poi_knowledge: "", poi_name: "", poi_icon: "" });
   });
 
-  it("reports ambient scenery only for ground the party has mapped", () => {
-    const cell = (key, seen) => ({
+  it("reports ambient scenery for every charted cell, walked or not", () => {
+    // Barns, milestones and fords are the whole reason open country does not read
+    // as empty, so they travel with the ground rather than with the footprints.
+    const cell = (key, visited) => ({
       key, x: 0, y: 0, col: 0, row: 0,
-      seen, visible: false, visited: false, passable: true, current: false,
+      visited, passable: true, current: false,
       tile: { terrain: "plains", scenery: [{ id: "s", kind: "hay-barn", label: "a hay barn", detail: "", tags: [] }] },
     });
     const scene = buildWorldMapScene({
@@ -148,25 +134,27 @@ describe("browser exploration scene contract", () => {
     });
 
     expect(scene.cells[0].scenery).toEqual(["a hay barn"]);
-    expect(scene.cells[1].scenery).toEqual([]);
+    expect(scene.cells[1].scenery).toEqual(["a hay barn"]);
   });
 
-  it("never serializes an unknown route coordinate into the Canvas scene", () => {
+  it("draws the whole intended route, breaking it only where it leaves the window", () => {
+    // A course set for somewhere the party has never been is still a course. The
+    // line stops only where the drawn window does, so the map cannot look as
+    // though the journey ends at the edge of the party's own footprints.
     const model = {
       origin: { x: 0, y: 0 },
       current: { key: "0,0" },
       viewport: [
-        { key: "0,0", x: 0, y: 0, seen: true, visible: true, visited: true, explored: true, tile: { terrain: "road" } },
-        { key: "1,0", x: 1, y: 0, seen: true, visible: false, visited: false, explored: true, tile: { terrain: "road" } },
-        { key: "2,0", x: 2, y: 0, seen: false, visible: false, visited: false, explored: false, tile: { terrain: "marsh" } },
+        { key: "0,0", x: 0, y: 0, visited: true, tile: { terrain: "road" } },
+        { key: "1,0", x: 1, y: 0, visited: false, tile: { terrain: "road" } },
+        { key: "2,0", x: 2, y: 0, visited: false, tile: { terrain: "marsh" } },
       ],
     };
-    const journey = { legPath: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }] };
+    const journey = { legPath: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 40, y: 0 }] };
 
     const scene = buildWorldMapScene({ model, selection: null, journey });
 
-    expect(scene.route).toEqual(["0,0", "1,0", null]);
-    expect(JSON.stringify(scene.route)).not.toContain("2,0");
+    expect(scene.route).toEqual(["0,0", "1,0", "2,0", null]);
   });
 
   it("carries an in-flight party frame without changing the authoritative current hex", () => {
@@ -212,12 +200,13 @@ describe("browser exploration scene contract", () => {
     expect(scene.tracked_character.character).toBeUndefined();
   });
 
-  it("does not draw an exact tracked position through unknown fog", () => {
+  it("does not draw an exact tracked position off the drawn window", () => {
+    // An exact fix is a pin on a hex, so it needs that hex on screen to sit on.
     const model = {
       origin: { x: 0, y: 0 },
       current: { key: "0,0" },
       viewport: [
-        { key: "4,-2", x: 4, y: -2, seen: false, visible: false, visited: false, explored: false, tile: { terrain: "forest" } },
+        { key: "0,0", x: 0, y: 0, visited: true, tile: { terrain: "forest" } },
       ],
     };
 

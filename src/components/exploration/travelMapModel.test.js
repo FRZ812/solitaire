@@ -312,20 +312,21 @@ describe("hex travel march presentation", () => {
     expect(formatTravelDuration(3_000)).toBe("2 d 2 h");
   });
 
-  it("previews only the legs whose ground the party has already mapped", () => {
+  it("previews every stage it plans, including the ones past where the party has been", () => {
     const state = makeInitialState();
     const origin = { ...state.world.currentTile };
     const path = [origin];
     for (let i = 1; i <= 6; i += 1) path.push({ x: origin.x + i, y: origin.y });
-    // Mapped as far as the third hex; everything past it is still fog.
-    for (let i = 1; i <= 3; i += 1) state.world.seen[`${path[i].x},${path[i].y}`] = true;
+    // Nothing past the third hex has ever been walked, and it makes no odds:
+    // an itinerary that stopped at the party's own footprints was the reason a
+    // journey to a town four days off looked like it ended in the middle.
     for (let i = 4; i < path.length; i += 1) delete state.world.seen[`${path[i].x},${path[i].y}`];
     const journey = {
       fullPath: path,
       legPath: path.slice(0, 4),
       legs: [
         { index: 0, from: 0, to: 3, steps: 3, minutes: 90, arrived: false, boundary: { kind: "crossing", label: "Mapped Ford" }, passed: [{ label: "a hay barn" }] },
-        { index: 1, from: 3, to: 6, steps: 3, minutes: 90, arrived: true, boundary: { kind: "destination", label: "Fogbound Keep" }, passed: [] },
+        { index: 1, from: 3, to: 6, steps: 3, minutes: 90, arrived: true, boundary: { kind: "destination", label: "Distant Keep" }, passed: [] },
       ],
       totalSteps: 6,
       legSteps: 3,
@@ -335,25 +336,22 @@ describe("hex travel march presentation", () => {
 
     const preview = knownJourneyPreview(state, journey);
 
-    expect(preview.legs).toHaveLength(1);
+    expect(preview.legs).toHaveLength(2);
     expect(preview.legs[0]).toMatchObject({ boundaryKind: "crossing", boundaryLabel: "Mapped Ford", passed: ["a hay barn"] });
-    // A leg that runs into the fog must not name where it would have ended.
-    expect(JSON.stringify(preview)).not.toContain("Fogbound Keep");
+    expect(preview.legs[1]).toMatchObject({ boundaryKind: "destination", boundaryLabel: "Distant Keep", arrived: true });
   });
 
-  it("limits journey presentation to the contiguous mapped route prefix", () => {
+  it("carries the whole planned route rather than a walked prefix of it", () => {
     const state = makeInitialState();
     const origin = { ...state.world.currentTile };
-    const mapped = { x: origin.x + 1, y: origin.y };
-    const unknown = { x: origin.x + 2, y: origin.y };
-    const secret = { x: origin.x + 3, y: origin.y };
-    state.world.seen[`${mapped.x},${mapped.y}`] = true;
-    delete state.world.seen[`${unknown.x},${unknown.y}`];
-    delete state.world.seen[`${secret.x},${secret.y}`];
+    const near = { x: origin.x + 1, y: origin.y };
+    const far = { x: origin.x + 2, y: origin.y };
+    const further = { x: origin.x + 3, y: origin.y };
+    for (const coord of [near, far, further]) delete state.world.seen[`${coord.x},${coord.y}`];
     const journey = {
-      fullPath: [origin, mapped, unknown, secret],
-      legPath: [origin, mapped, unknown, secret],
-      end: secret,
+      fullPath: [origin, near, far, further],
+      legPath: [origin, near, far, further],
+      end: further,
       arrived: true,
       totalSteps: 3,
       legSteps: 3,
@@ -367,22 +365,18 @@ describe("hex travel march presentation", () => {
 
     const preview = knownJourneyPreview(state, journey);
 
-    expect(preview.legPath).toEqual([origin, mapped]);
-    expect(preview.routeFullyMapped).toBe(false);
-    expect(preview.totalSteps).toBeNull();
-    expect(preview.arrived).toBe(false);
+    expect(preview.legPath).toEqual([origin, near, far, further]);
+    expect(preview.totalSteps).toBe(3);
+    expect(preview.legSteps).toBe(3);
+    expect(preview.arrived).toBe(true);
+    // The authoritative route stays with the caller; this is presentation only.
     expect(preview).not.toHaveProperty("fullPath");
-    expect(preview.terrainLabels).not.toEqual(journey.terrainLabels);
-    expect(JSON.stringify(preview)).not.toContain(`${unknown.x},${unknown.y}`);
-    expect(JSON.stringify(preview)).not.toContain("Marsh");
-    expect(JSON.stringify(preview)).not.toContain("Mountains");
   });
 
-  it("retains exact journey metrics only when every presented hex is mapped", () => {
+  it("reports the journey's own metrics straight through", () => {
     const state = makeInitialState();
     const origin = { ...state.world.currentTile };
     const end = { x: origin.x + 1, y: origin.y };
-    state.world.seen[`${end.x},${end.y}`] = true;
     const journey = {
       fullPath: [origin, end], legPath: [origin, end], end,
       arrived: true, totalSteps: 1, legSteps: 1,
@@ -392,19 +386,18 @@ describe("hex travel march presentation", () => {
 
     expect(knownJourneyPreview(state, journey)).toMatchObject({
       legPath: [origin, end],
-      routeFullyMapped: true,
       totalSteps: 1,
       legSteps: 1,
       arrived: true,
     });
   });
 
-  it("never reveals an authored waypoint until its hex is persistently mapped", () => {
+  it("names the authored landmarks a route runs past", () => {
     const state = makeInitialState();
     const pathWithTellmar = [{ x: 0, y: 0 }, { x: 418, y: 72 }, { x: 1, y: 0 }];
 
-    expect(knownJourneyWaypoints(state, pathWithTellmar)).toEqual([]);
-    state.world.seen["418,72"] = true;
+    // Tellmar is a city on a continent's chart. Whether this party has stood in
+    // it decides what they know of it, not whether the road going past is named.
     expect(knownJourneyWaypoints(state, pathWithTellmar)).toEqual([
       expect.objectContaining({ name: "Tellmar", index: 1 }),
     ]);

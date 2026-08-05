@@ -49,14 +49,18 @@ describe("browser map geometry", () => {
     expect(pointInPolygon(layout.entries[1].center, layout.entries[1].polygon)).toBe(true);
   });
 
-  it("keeps unknown terrain readable while distinguishing mapped and visible cells", () => {
-    expect(mapFogOpacity({ visible: true, explored: true }, false)).toBe(0);
-    const remembered = mapFogOpacity({ visible: false, explored: true }, false);
-    const unknown = mapFogOpacity({ visible: false, explored: false }, false);
-    expect(remembered).toBeGreaterThan(0);
-    expect(unknown).toBeGreaterThan(remembered);
-    expect(unknown).toBeLessThanOrEqual(0.5);
-    expect(mapFogOpacity({ visible: false, explored: false }, true)).toBeLessThanOrEqual(0.65);
+  it("veils nothing by day and dims the whole country together after dark", () => {
+    // No cell is hidden for not having been looked at, so by day every hex draws
+    // clear regardless of where the party has been.
+    for (const cell of [{ visited: true }, { visited: false }, {}]) {
+      expect(mapFogOpacity(cell, false)).toBe(0);
+    }
+    // Night is weather over a map, not a wall around the party: it falls on
+    // walked and unwalked ground by exactly the same amount.
+    const night = mapFogOpacity({ visited: false }, true);
+    expect(night).toBeGreaterThan(0);
+    expect(night).toBeLessThanOrEqual(0.3);
+    expect(mapFogOpacity({ visited: true }, true)).toBe(night);
   });
 
   it("breaks a route when an off-viewport waypoint is encountered", () => {
@@ -199,7 +203,7 @@ describe("browser map geometry", () => {
     }
   });
 
-  it("keeps every mapped POI visible on narrow screens while hiding unknown POIs", () => {
+  it("keeps every charted POI on screen however narrow the screen is", () => {
     const entries = Array.from({ length: 25 }, (_, index) => ({
       key: `poi-${index}`,
       center: { x: 120 + (index % 5) * 14, y: 120 + Math.floor(index / 5) * 14 },
@@ -209,8 +213,6 @@ describe("browser map geometry", () => {
         poi_name: `Place ${index}`,
         poi_market_tier: index % 3 === 0 ? "premium" : "standard",
         quest: index === 24,
-        explored: true,
-        visible: index % 2 === 0,
       },
     }));
     const scene = { current_key: "elsewhere", selected_key: "poi-0" };
@@ -218,8 +220,9 @@ describe("browser map geometry", () => {
     expect(selectMapMarkerEntries(scene, entries, { width: 900, worldRadius: 28 }))
       .toHaveLength(entries.length);
 
-    const unknown = { key: "unknown", center: { x: 130, y: 130 }, cell: { explored: false, poi_name: "Secret place" } };
-    const compact = selectMapMarkerEntries(scene, [...entries, unknown], { width: 390, worldRadius: 9 });
+    // A hex holding nothing chartable stays blank however much room there is.
+    const blank = { key: "blank", center: { x: 130, y: 130 }, cell: { poi_name: "", poi_knowledge: "" } };
+    const compact = selectMapMarkerEntries(scene, [...entries, blank], { width: 390, worldRadius: 9 });
     expect(compact.map((entry) => entry.key)).toEqual(entries.map((entry) => entry.key));
     expect(mapMarkerShowsTierDetail(14.2)).toBe(false);
     expect(mapMarkerShowsTierDetail(18)).toBe(true);
@@ -230,15 +233,16 @@ describe("browser map geometry", () => {
     expect(mapPoiIconSize(28, "city")).toBeCloseTo(29.4, 10);
   });
 
-  it("draws a site spotted at range even though its ground is unexplored", () => {
-    const silhouette = { key: "far-ruin", center: { x: 100, y: 100 }, cell: { explored: false, poi_name: "", poi_knowledge: "silhouette" } };
-    const rumoured = { key: "far-village", center: { x: 120, y: 100 }, cell: { explored: false, poi_name: "Falford", poi_knowledge: "rumoured" } };
-    const unknown = { key: "unknown", center: { x: 140, y: 100 }, cell: { explored: false, poi_name: "Secret place", poi_knowledge: "" } };
-    const here = { key: "here", center: { x: 160, y: 100 }, cell: { explored: true, poi_name: "", poi_knowledge: "silhouette" } };
+  it("draws a charted site on ground the party has never walked", () => {
+    const silhouette = { key: "far-ruin", center: { x: 100, y: 100 }, cell: { visited: false, poi_name: "", poi_knowledge: "silhouette" } };
+    const rumoured = { key: "far-village", center: { x: 120, y: 100 }, cell: { visited: false, poi_name: "Falford", poi_knowledge: "rumoured" } };
+    // Nothing chartable here — this is what a bandit camp's hex looks like.
+    const nothing = { key: "nothing", center: { x: 140, y: 100 }, cell: { visited: false, poi_name: "", poi_knowledge: "" } };
+    const here = { key: "here", center: { x: 160, y: 100 }, cell: { visited: true, poi_name: "", poi_knowledge: "silhouette" } };
 
     expect(selectMapMarkerEntries(
       { current_key: "here" },
-      [silhouette, rumoured, unknown, here],
+      [silhouette, rumoured, nothing, here],
       { width: 900, worldRadius: 28 },
     ).map((entry) => entry.key)).toEqual(["far-ruin", "far-village"]);
   });
@@ -308,12 +312,12 @@ describe("strided world layout", () => {
     expect(between.x).toBeCloseTo((layout.centerByKey.get("0,0").x + layout.centerByKey.get("28,0").x) / 2, 6);
   });
 
-  it("thins the fog wash with the zoom tier instead of veiling a whole continent", () => {
-    const unknown = { visible: false, explored: false };
-    expect(mapFogOpacity(unknown, false, 1)).toBeGreaterThan(mapFogOpacity(unknown, false, 0.38));
-    expect(mapFogOpacity(unknown, false, 0.38)).toBeGreaterThan(0);
-    // Sight still wins: standing in a hex clears it at any scale.
-    expect(mapFogOpacity({ visible: true }, true, 1)).toBe(0);
+  it("thins the night wash with the zoom tier, since a continent has many hours", () => {
+    const cell = { visited: false };
+    expect(mapFogOpacity(cell, true, 1)).toBeGreaterThan(mapFogOpacity(cell, true, 0.38));
+    expect(mapFogOpacity(cell, true, 0.38)).toBeGreaterThan(0);
+    // Daylight clears every scale outright.
+    expect(mapFogOpacity(cell, false, 1)).toBe(0);
   });
 });
 

@@ -287,11 +287,14 @@ export function mapPoiIconSize(hexRadius, mode = "world") {
   return Math.max(18, Math.min(maximum, radius * scale));
 }
 
+// The continent is charted, so nothing on the map is veiled for not having been
+// looked at. What is left is the night itself: after dark the whole visible
+// country dims together, which is weather over a map rather than a wall of dark
+// around the party.
 export function mapFogOpacity(cell, night = false, fogScale = 1) {
-  if (cell?.visible) return 0;
+  if (!night) return 0;
   const scale = Math.max(0, Number(fogScale) || 0);
-  if (cell?.explored) return (night ? 0.34 : 0.22) * scale;
-  return (night ? 0.6 : 0.46) * scale;
+  return 0.18 * scale;
 }
 
 export function selectMapMarkerEntries(scene, entries, viewport = {}) {
@@ -302,14 +305,14 @@ export function selectMapMarkerEntries(scene, entries, viewport = {}) {
   // what is worth naming at that scale instead.
   if (tier === "continent") return [];
   // A silhouette is a marker with no name yet, so presence — not naming —
-  // decides whether it is drawn. Sighted-at-range sites sit on ground the party
-  // has not explored, so the explored gate applies only to named places.
+  // decides whether it is drawn. Close in the map carries every charted site;
+  // pulled back it keeps only the places that have been walked into and named,
+  // because at that scale a field of anonymous shapes is just noise.
   return (entries || []).filter((entry) => {
-    const { poi_name: name, poi_knowledge: knowledge, explored } = entry.cell;
+    const { poi_name: name, poi_knowledge: knowledge } = entry.cell;
     if (entry.key === currentKey) return false;
     if (tier !== "local") return knowledge === "discovered" && !!name;
-    if (knowledge && knowledge !== "discovered") return true;
-    return explored !== false && !!name;
+    return !!knowledge || !!name;
   });
 }
 

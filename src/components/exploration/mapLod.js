@@ -66,9 +66,9 @@ export function lodShowsPlace(tier, place) {
   return !!place.major;
 }
 
-// Personal sight is the wrong lens for a continent. Base geography is public, so
-// far out the veil over unwalked ground thins to a wash and the atlas becomes a
-// record of where the party has been rather than a wall of dark.
+// How strongly nightfall dims the drawn country. One hour cannot be true of a
+// whole continent at once, so the further the map pulls back the less the dark
+// is allowed to say.
 export function lodFogScale(tier) {
   if (tier === "local") return 1;
   return tier === "region" ? 0.66 : 0.38;

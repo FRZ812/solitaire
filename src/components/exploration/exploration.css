@@ -219,9 +219,6 @@
 .rpg-itinerary em { color: #fff4c5; font-style: normal; font-size: 13px; text-align: right; }
 .rpg-itinerary em small { letter-spacing: 0; text-transform: none; }
 
-.rpg-pace-picker { margin-top: 10px; display: flex; gap: 4px; }
-.rpg-pace-picker button { min-width: 0; min-height: 36px; padding: 6px 4px; flex: 1; color: rgba(244,232,195,.62); border: 1px solid rgba(236,184,76,.3); background: rgba(9,29,68,.6); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
-.rpg-pace-picker button.is-active { color: #2c1d08; border-color: #fff0a1; background: linear-gradient(180deg, #ffe276, #d89632); font-weight: 700; }
 .rpg-route-blocked { padding: 10px; color: #ffada0; border: 1px solid rgba(240,110,98,.48); background: rgba(96,23,49,.35); font-size: 10px; }
 
 /* Where a walked leg ended, and the choice of what to do about it. This is the
@@ -246,6 +243,9 @@
 .rpg-halt-secondary { min-height: 40px; padding: 8px; color: rgba(244,232,195,.72); border: 1px solid rgba(236,184,76,.34); background: rgba(7,24,61,.7); font: 700 10px 'Alegreya', Georgia, serif; letter-spacing: .06em; cursor: pointer; }
 .rpg-halt-secondary:hover:not(:disabled) { color: #fff4c5; border-color: rgba(236,184,76,.7); }
 .rpg-halt-secondary:disabled { opacity: .4; cursor: not-allowed; }
+/* Bedding down reads cool against the warm "press on" button, so the tired
+   choice and the stubborn one are told apart before either is read. */
+.rpg-halt-camp { background: linear-gradient(180deg, #9fc0ef, #5f83bd); }
 
 /* Hex-by-hex readout of the ground the party is crossing right now. */
 .rpg-march-caption { position: absolute; z-index: 18; bottom: 13px; left: 50%; padding: 6px 12px; text-align: center; border: 2px solid #dcad4b; background: rgba(7,28,69,.92); box-shadow: 2px 2px 0 #05122f; transform: translateX(-50%); pointer-events: none; }
@@ -711,8 +711,6 @@
 .rpg-exploration-shell:not(.place-shell) .rpg-itinerary small { color: rgba(191,213,214,.5); font-size: 6.5px; letter-spacing: .14em; }
 .rpg-exploration-shell:not(.place-shell) .rpg-itinerary span { color: rgba(191,213,214,.5); font-size: 11px; }
 .rpg-exploration-shell:not(.place-shell) .rpg-itinerary em { color: #fff8e5; font: italic 500 16px/1 "Instrument Serif", Georgia, serif; }
-.rpg-exploration-shell:not(.place-shell) .rpg-pace-picker button { color: rgba(191,213,214,.72); border-color: rgba(142,200,199,.22); border-radius: 10px; background: rgba(24,69,80,.22); }
-.rpg-exploration-shell:not(.place-shell) .rpg-pace-picker button.is-active { color: #1e211c; border-color: rgba(255,231,162,.72); background: linear-gradient(180deg, #f5e2a8, #d9b96e); }
 .rpg-exploration-shell:not(.place-shell) .rpg-route-blocked { border-color: rgba(225,140,125,.26); border-radius: 11px; background: rgba(101,45,47,.2); }
 
 .rpg-exploration-shell:not(.place-shell) .rpg-command-actions {

@@ -10,11 +10,9 @@ import {
   getTile,
   hexDistance,
   isPassable,
-  isSeen,
   isTeleportAnchor,
   isVisited,
 } from "../../engine/world.js";
-import { sightRadius } from "../../engine/light.js";
 import { planExpedition } from "../../engine/expedition.js";
 
 export const TERRAIN_INK = {
@@ -129,7 +127,6 @@ export function buildRpgViewport(state, options = {}) {
     center.x + Math.floor(center.y / 2),
     party.x + Math.floor(party.y / 2),
   );
-  const visibleRadius = sightRadius(state);
   const cells = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < columns; col++) {
@@ -143,16 +140,17 @@ export function buildRpgViewport(state, options = {}) {
       const key = `${x},${y}`;
       const tile = getTile(state, x, y);
       const distance = hexDistance(party, { x, y });
-      const visible = distance <= visibleRadius;
-      const seen = visible || isSeen(state, x, y);
       const visited = isVisited(state, x, y);
       cells.push({
         key, x, y, col, row, tile,
         distance,
-        seen,
-        visible,
+        // The continent is charted. `visited` is the one thing still earned, and
+        // it is a record of where the party has been rather than a gate on what
+        // the map is allowed to show.
+        seen: true,
+        visible: true,
         visited,
-        explored: seen || visited,
+        explored: true,
         passable: isPassable(tile),
         quest: questAtKey(quests, key),
         current: x === party.x && y === party.y,
@@ -170,7 +168,7 @@ function traceTrail(state, origin, direction, questKeys) {
   for (let step = 0; step < TRAIL_REACH; step++) {
     const next = { x: cursor.x + direction.x, y: cursor.y + direction.y };
     const nextTile = getTile(state, next.x, next.y);
-    if (!isPassable(nextTile) || !isSeen(state, next.x, next.y)) break;
+    if (!isPassable(nextTile)) break;
     if (!edgeAllowed(cursorTile, cursor.x, cursor.y, nextTile, next.x, next.y)) break;
     path.push(next);
     cursor = next;
@@ -259,17 +257,16 @@ export function buildExplorationModel(state, options = {}) {
     // A named lake or other impassable feature still belongs in the regional map
     // index even though ground travel correctly stops at its shore.
     if (!isPassable(tile) && !knownBy) continue;
-    const seen = isSeen(state, coord.x, coord.y);
     const visited = isVisited(state, coord.x, coord.y);
     const quest = questAtKey(activeQuests, key);
     const distance = hexDistance(origin, coord);
     const name = tile.poi?.name;
-    const cell = { key, ...coord, tile, seen, visited, quest, distance, knownBy };
+    const cell = { key, ...coord, tile, seen: true, visited, quest, distance, knownBy };
     byKey.set(key, cell);
 
-    const knownName = name && tile.poi?.type !== "hidden" && (seen || visited || quest || knownBy);
+    const knownName = name && tile.poi?.type !== "hidden";
     const isLandmark = knownName && (LANDMARK_TYPES.has(tile.poi?.type) || quest);
-    const anchor = (seen || visited) && isTeleportAnchor(state, coord.x, coord.y);
+    const anchor = isTeleportAnchor(state, coord.x, coord.y);
     // City POIs stay fully visible in the nearby RPG viewport, while the regional
     // index represents the entire capital with one destination instead of
     // listing every market stall, gatehouse, chapel, and workshop.
@@ -282,26 +279,23 @@ export function buildExplorationModel(state, options = {}) {
   const capitalCoord = WHITEMARCH_REGIONAL_LANDMARK.coord || WHITEMARCH_CAPITAL.center || WHITEMARCH_CAPITAL.start;
   const capitalKey = coordKey(capitalCoord);
   const capitalTile = getTile(state, capitalCoord.x, capitalCoord.y);
-  const capitalSeen = isSeen(state, capitalCoord.x, capitalCoord.y);
-  const capitalVisited = isVisited(state, capitalCoord.x, capitalCoord.y);
-  if (capitalSeen || capitalVisited || capitalTile.cityId === WHITEMARCH_CITY_ID) {
-    const capitalDistance = hexDistance(origin, capitalCoord);
-    const capitalLandmark = {
-      key: capitalKey,
-      ...capitalCoord,
-      tile: capitalTile,
-      name: WHITEMARCH_CAPITAL.name,
-      seen: capitalSeen,
-      visited: capitalVisited,
-      quest: questAtKey(activeQuests, capitalKey),
-      distance: capitalDistance,
-      knownBy: null,
-      anchor: (capitalSeen || capitalVisited) && isTeleportAnchor(state, capitalCoord.x, capitalCoord.y),
-      capital: true,
-    };
-    landmarks.push(capitalLandmark);
-    byKey.set(capitalKey, { ...byKey.get(capitalKey), ...capitalLandmark });
-  }
+  // The capital is on every chart in the world; it is not a thing a party
+  // discovers. It stands in the index from the first turn.
+  const capitalLandmark = {
+    key: capitalKey,
+    ...capitalCoord,
+    tile: capitalTile,
+    name: WHITEMARCH_CAPITAL.name,
+    seen: true,
+    visited: isVisited(state, capitalCoord.x, capitalCoord.y),
+    quest: questAtKey(activeQuests, capitalKey),
+    distance: hexDistance(origin, capitalCoord),
+    knownBy: null,
+    anchor: isTeleportAnchor(state, capitalCoord.x, capitalCoord.y),
+    capital: true,
+  };
+  landmarks.push(capitalLandmark);
+  byKey.set(capitalKey, { ...byKey.get(capitalKey), ...capitalLandmark });
 
   const choiceByKey = new Map(choices.map((choice) => [choice.key, choice]));
   for (const choice of choices) byKey.set(choice.key, { ...byKey.get(choice.key), ...choice });
@@ -336,7 +330,7 @@ export function planHexJourney(state, destination, maxLeg = 48) {
   if (!fullPath || fullPath.length < 2) return null;
   // The preview must break the route exactly where the engine will, so the
   // highlighted leg on the map is the ground the party actually walks.
-  const plan = planExpedition(state, fullPath, { maxSteps: maxLeg, pace: state.world.travelPace });
+  const plan = planExpedition(state, fullPath, { maxSteps: maxLeg });
   const legPath = plan.legs[0]?.path || fullPath.slice(0, maxLeg + 1);
   const end = legPath[legPath.length - 1];
   const terrainCounts = {};

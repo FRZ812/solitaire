@@ -80,7 +80,7 @@ import { playerFlightMount, playerGroundMount, mount as mountRider, dismount as 
 import { rollPathEncounter, rollAerialEncounter, pathThroughEncounter } from "./engine/encounters.js";
 import { rollRoadEvent } from "./engine/road-events.js";
 import { ROAD_OFFERS } from "./data/road-events.js";
-import { describeLegStop, describePassage, legCamps, planLeg, travelHaltSummary, travelPace } from "./engine/expedition.js";
+import { describeLegStop, describePassage, legCamps, planLeg, travelHaltSummary } from "./engine/expedition.js";
 import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome, getBiomeById } from "./data/biomes.js";
 import { ECOLOGIES } from "./data/continent.js";
@@ -1230,14 +1230,14 @@ export function Solitaire() {
     const toName = publicTravelLocationName(destTileFull, dest);
 
     // The route is split into the legs a traveller would actually walk. A leg runs
-    // until something really interrupts it — arrival, or empty packs — and camps
-    // through however many nights that takes; fords, borders and nightfall are
-    // walked past rather than stopped at. The party marches hex by hex along the
-    // leg, and an encounter that will not let them by cuts the leg at its tile.
-    const pace = travelPace(state.world.travelPace);
-    const leg = planLeg(state, fullPath, 0, { maxSteps: WORLD_MARCH_LIMIT, pace: pace.id });
+    // until something really interrupts it — arrival, or the party running out of
+    // rations, water or rest — and camps through however many nights that takes;
+    // fords, borders and nightfall are walked past rather than stopped at. The
+    // party marches hex by hex along the leg, and an encounter that will not let
+    // them by cuts the leg at its tile.
+    const leg = planLeg(state, fullPath, 0, { maxSteps: WORLD_MARCH_LIMIT });
     let legPath = leg.path;
-    const road = rollPathEncounter(state, legPath, pace.riskMult, { pace: pace.id });
+    const road = rollPathEncounter(state, legPath);
     const pathEnc = road.halt;
     legPath = pathThroughEncounter(legPath, pathEnc);
     // Rolled on the ground actually walked, so an encounter that cut the leg
@@ -1284,7 +1284,7 @@ export function Solitaire() {
     // Nights are counted off the authoritative leg time, not the planner's
     // estimate, so a hastened or mounted march camps fewer times for the same
     // ground. The clock the party lives through is the marching plus the camps.
-    const camps = legCamps(legMins, pace.dayMinutes);
+    const camps = legCamps(legMins);
     const campNote = camps.nights
       ? ` The party camps ${camps.nights === 1 ? "one night" : `${camps.nights} nights`} on the way.`
       : "";
@@ -1352,7 +1352,6 @@ export function Solitaire() {
       dest: { x: legEnd.x, y: legEnd.y },
       path: legPath.map((p) => ({ x: p.x, y: p.y })),
       totalMins: camps.elapsedMinutes,
-      campSleep: camps.sleepGain,
       encounter: pathEnc ? pathEnc.encounter : null,
       met: road.met.map((hit) => ({ encounter: hit.encounter, outcome: hit.outcome })),
       roadEvent: roadEvent ? roadEvent.event : null,
@@ -1843,15 +1842,6 @@ export function Solitaire() {
     });
   }
 
-  // How hard the party marches. Free to change between legs; the engine reads it
-  // when planning the next leg and when rolling that leg's encounter.
-  function handleSetTravelPace(paceId) {
-    const pace = travelPace(paceId);
-    setState((cur) => (cur.world.travelPace === pace.id
-      ? cur
-      : { ...cur, world: { ...cur.world, travelPace: pace.id } }));
-  }
-
   async function handlePortraitChange(characterId, portrait) {
     const next = withPortraitOverride(liveStateRef.current, characterId, portrait);
     liveStateRef.current = next;
@@ -1913,6 +1903,25 @@ export function Solitaire() {
     }
     setDeckOpen(false);
     setState({ ...r.state, beats: [...r.state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.summary }] });
+  }
+
+  // Making camp where a march ran out. The road gives nothing back on its own,
+  // so this is the only thing that puts a spent party back on its feet — and it
+  // costs the night it takes, on the same clock everything else runs on. The map
+  // stays open: bedding down is part of the journey, not a trip back to camp.
+  function handleHaltMakeCamp(hours = 8) {
+    const r = applyRest(state, hours);
+    if (!r.ok) {
+      // A party with no bedroll cannot make camp, and the halt card is the only
+      // thing on screen — the narration beat behind the map would never be read,
+      // so the refusal goes back to where the button was pressed.
+      if (r.reason) setTravelHalt((current) => (current ? { ...current, campBlocked: r.reason } : current));
+      return;
+    }
+    setState({ ...r.state, beats: [...r.state.beats, { id: `camp${Date.now()}`, type: "narration", content: r.summary }] });
+    // The halt still names where the party stands and what lies ahead; what it
+    // must stop saying is that they are spent, because they no longer are.
+    setTravelHalt((current) => (current ? { ...current, spentNeed: null, campBlocked: null, camped: true } : current));
   }
 
   // ----- Tavern quest board: tasks, day-labour, recruiting -----
@@ -2834,7 +2843,7 @@ export function Solitaire() {
           onFly={handleFly}
           onTeleport={handleTeleport}
           onSeekCombat={handleSeekCombat}
-          onSetTravelPace={handleSetTravelPace}
+          onHaltMakeCamp={handleHaltMakeCamp}
           loading={loading}
         />
       )}

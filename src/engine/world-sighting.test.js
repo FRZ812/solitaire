@@ -14,20 +14,29 @@ describe("site sighting", () => {
     expect(siteSighting({ family: "bandit-camp", terrain: "plains", route: { id: "r" } }).named).toBe(false);
   });
 
-  it("keeps hostile lairs off the map even from an adjacent hex", () => {
-    const den = siteSighting({ family: "den", terrain: "hills" });
-    expect(siteKnowledgeGrade(den, { distance: 0, explored: true })).toBe("");
+  it("keeps hostile lairs off the map however close the party gets", () => {
+    // The one thing still hidden. Nobody charts the people who would rather not
+    // be found, which is what makes these an ambush rather than a marker.
+    expect(siteKnowledgeGrade(siteSighting({ family: "den", terrain: "hills" }))).toBe("");
+    expect(siteKnowledgeGrade(siteSighting({ family: "bandit-camp", terrain: "plains" }))).toBe("");
   });
 
-  it("grades a site by whether it is in range or already on the sight record", () => {
+  it("charts every other site regardless of how far off it is", () => {
+    // Distance is not a question the map asks any more: the continent has been
+    // surveyed for centuries, and this party's eyesight has nothing to do with it.
     const ruin = siteSighting({ family: "ruin", terrain: "plains" });
     expect(ruin.range).toBe(6);
-    expect(siteKnowledgeGrade(ruin, { distance: 6, explored: false })).toBe("silhouette");
-    expect(siteKnowledgeGrade(ruin, { distance: 7, explored: false })).toBe("");
-    // Ground the party has already crossed keeps its sites regardless of range.
-    expect(siteKnowledgeGrade(ruin, { distance: 40, explored: true })).toBe("silhouette");
+    expect(siteKnowledgeGrade(ruin)).toBe("silhouette");
 
     const village = siteSighting({ family: "settlement", terrain: "plains" });
-    expect(siteKnowledgeGrade(village, { distance: 3, explored: false })).toBe("rumoured");
+    expect(siteKnowledgeGrade(village)).toBe("rumoured");
+  });
+
+  it("gives up a name only where travellers use one", () => {
+    // The grade is about naming, not visibility. A ruin is a shape on the chart
+    // until somebody walks into it; a village has been called something for
+    // generations, so the map can say what.
+    expect(siteKnowledgeGrade(siteSighting({ family: "wonder", terrain: "hills" }))).toBe("silhouette");
+    expect(siteKnowledgeGrade(siteSighting({ family: "roadside-inn", terrain: "plains" }))).toBe("rumoured");
   });
 });

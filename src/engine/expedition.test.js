@@ -3,9 +3,10 @@ import { DEFAULT_WORLD_SEED, WORLD_GENERATOR_VERSION } from "../data/continent.j
 import { findWorldRoute } from "./world.js";
 import {
   DAY_MARCH_MINUTES,
-  TRAVEL_PACES,
+  describeLegStop,
   describePassage,
   legCamps,
+  openLarder,
   planExpedition,
   planLeg,
   travelHaltSummary,
@@ -114,24 +115,57 @@ describe("expedition legs", () => {
     expect(describePassage(leg)).toBe("a hay barn and a field shrine");
   });
 
-  it("lets pace decide how many nights are camped, not how fast the party walks", () => {
+  it("counts a night for every marching day the leg spans", () => {
     // Days of mountain ground, so the march is camped through several times.
     const { state, path } = straightPath(200, () => ({ terrain: "mountains", regionId: "r" }));
+    // Provisioned well enough that the ground, not the packs, decides the leg.
+    state.character = { needs: { hunger: 100, thirst: 100, sleep: 100 }, inventory: { carried: [] } };
 
-    const careful = planLeg(state, path, 0, { maxSteps: 999, pace: "careful" });
-    const steady = planLeg(state, path, 0, { maxSteps: 999, pace: "steady" });
-    const forced = planLeg(state, path, 0, { maxSteps: 999, pace: "forced" });
+    const leg = planLeg(state, path, 0, { maxSteps: 999 });
+    expect(leg.nights).toBe(Math.max(0, Math.ceil(leg.minutes / DAY_MARCH_MINUTES) - 1));
+    expect(leg.nights).toBeGreaterThan(0);
+  });
 
-    // Nightfall is a camp inside the march now, so every pace still arrives.
-    for (const leg of [careful, steady, forced]) {
-      expect(leg.boundary.kind).toBe("destination");
-      expect(leg.steps).toBe(199);
-      // Same ground costs the same time however it is walked.
-      expect(leg.minutes).toBe(steady.minutes);
-    }
-    expect(careful.nights).toBeGreaterThan(steady.nights);
-    expect(forced.nights).toBeLessThan(steady.nights);
-    expect(TRAVEL_PACES.forced.riskMult).toBeGreaterThan(TRAVEL_PACES.careful.riskMult);
+  it("halts a long march on the party's own strength, not on a clock", () => {
+    // Nothing is eaten, drunk or slept back on the road, so a march long enough
+    // runs somebody out of something. That is the only thing bounding a leg.
+    const { state, path } = straightPath(400, () => ({ terrain: "mountains", regionId: "r" }));
+    state.character = { needs: { hunger: 100, thirst: 100, sleep: 100 }, inventory: { carried: [] } };
+
+    const leg = planLeg(state, path, 0, { maxSteps: 999 });
+    expect(leg.boundary.kind).toBe("supplies");
+    expect(leg.arrived).toBe(false);
+  });
+
+  it("marches a hardier party further before anything gives out", () => {
+    // "Enduring" slows hunger, thirst and fatigue. Since the leg ends when one of
+    // the three gives out, that boon buys ground rather than a bigger number on a
+    // sheet — the whole of what the retired pace control was reaching for.
+    const ground = () => straightPath(400, () => ({ terrain: "mountains", regionId: "r" }));
+    const green = ground();
+    green.state.character = { needs: { hunger: 100, thirst: 100, sleep: 100 }, inventory: { carried: [] } };
+    const seasoned = ground();
+    seasoned.state.character = { needs: { hunger: 100, thirst: 100, sleep: 100 }, inventory: { carried: [] } };
+
+    const greenLeg = planLeg(green.state, green.path, 0, { maxSteps: 999 });
+    const seasonedLeg = planLeg(seasoned.state, seasoned.path, 0, {
+      maxSteps: 999,
+      larder: { ...openLarder(seasoned.state), decayMult: 0.5 },
+    });
+    expect(seasonedLeg.steps).toBeGreaterThan(greenLeg.steps);
+  });
+
+  it("ends a leg when the party has nothing left to walk on", () => {
+    // Sleep is never given back by travelling, so it runs out like anything else
+    // in the packs — and when it does, the leg is over and the halt is where the
+    // player gets to decide to lie down.
+    const { state, path } = straightPath(200, () => ({ terrain: "mountains", regionId: "r" }));
+    state.character = { needs: { hunger: 100, thirst: 100, sleep: 12 }, inventory: { carried: [] } };
+
+    const leg = planLeg(state, path, 0, { maxSteps: 999 });
+    expect(leg.boundary).toMatchObject({ kind: "supplies", need: "sleep" });
+    expect(leg.arrived).toBe(false);
+    expect(describeLegStop(leg)).toContain("days on the road");
   });
 
   it("stops for real when the packs run dry", () => {
@@ -148,7 +182,8 @@ describe("expedition legs", () => {
   it("does not halt a party that set out hungry over the same empty pack", () => {
     // Crossing into Starving is the interruption. Already being there is a choice
     // the player made, and stopping them for it every hex is the tedium we removed.
-    const { state, path } = straightPath(30, () => ({ terrain: "mountains", regionId: "r" }));
+    // Inside a single marching day, so hunger is the only thing under test.
+    const { state, path } = straightPath(15, () => ({ terrain: "mountains", regionId: "r" }));
     state.character = { needs: { hunger: 4, thirst: 100, sleep: 100 }, inventory: { carried: [] } };
 
     const leg = planLeg(state, path, 0, { maxSteps: 999 });
@@ -166,16 +201,17 @@ describe("expedition legs", () => {
     expect(plan.legs[1].boundary).toMatchObject({ kind: "supplies", need: "hunger" });
   });
 
-  it("counts the nights a march is camped through and the sleep they give back", () => {
+  it("counts the nights a march is camped through and gives nothing back for them", () => {
     expect(legCamps(DAY_MARCH_MINUTES)).toMatchObject({ nights: 0, restMinutes: 0, elapsedMinutes: 480 });
     // One minute past a day's march is a second day, so one night in between.
     expect(legCamps(DAY_MARCH_MINUTES + 1)).toMatchObject({ nights: 1, elapsedMinutes: 1441 });
     expect(legCamps(DAY_MARCH_MINUTES * 3).nights).toBe(2);
-    // A shorter marching day means more nights over the same ground.
-    expect(legCamps(1440, TRAVEL_PACES.careful.dayMinutes).nights).toBe(3);
-    expect(legCamps(1440, TRAVEL_PACES.forced.dayMinutes).nights).toBe(2);
-    expect(legCamps(0)).toMatchObject({ nights: 0, elapsedMinutes: 0, sleepGain: 0 });
-    expect(legCamps(DAY_MARCH_MINUTES + 1).sleepGain).toBeGreaterThan(0);
+    expect(legCamps(0)).toMatchObject({ nights: 0, elapsedMinutes: 0 });
+    // A night passed on the road is a night passed, not a night slept. Anything
+    // handed back here would make rest a refund instead of a decision.
+    for (const march of [0, DAY_MARCH_MINUTES + 1, DAY_MARCH_MINUTES * 5]) {
+      expect(legCamps(march).sleepGain).toBeUndefined();
+    }
   });
 
   it("plans a real continental route into staged legs that reach the destination", () => {
