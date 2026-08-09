@@ -1,3 +1,5 @@
+import { isJsonData } from "./json-data.js";
+import { isEncounterState } from "./model.js";
 import { nextInt } from "./rng.js";
 import { applyStatus, hasStatus, removeStatus } from "./statuses.js";
 import { getReferenceAction } from "../reference/actions.js";
@@ -285,6 +287,8 @@ function resolveEnemyTurn(state, events) {
 }
 
 export function resolveCommand(state, command) {
+  if (!isEncounterState(state)) return rejected(null, "invalid-encounter-state");
+  if (!isJsonData(command)) return rejected(state, "invalid-command");
   const reason = validate(state, command);
   if (reason) return rejected(state, reason);
 
