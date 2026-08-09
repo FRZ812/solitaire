@@ -11,4 +11,10 @@ export const REFERENCE_POLICY = Object.freeze({
     basicAttackVariance: Object.freeze({ min: 0, max: 2 }),
     evidence: "inferred",
   }),
+  defense: Object.freeze({
+    base: 3,
+    defenseStatMultiplier: 1,
+    expires: "after-next-enemy-intent",
+    evidence: "inferred",
+  }),
 });

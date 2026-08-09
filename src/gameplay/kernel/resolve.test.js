@@ -10,8 +10,8 @@ function fixture(seed = 104729) {
       name: "Arctic Knight",
       hp: 24,
       maxHp: 24,
-      stats: { attack: 4, defense: 0 },
-      actions: ["basic-attack"],
+      stats: { attack: 4, defense: 2 },
+      actions: ["basic-attack", "basic-defense"],
     },
     enemy: {
       id: "gatekeeper",
@@ -23,7 +23,7 @@ function fixture(seed = 104729) {
         id: "gatekeeper-strike",
         type: "attack",
         targetId: "player",
-        damage: { min: 3, max: 5 },
+        damage: { min: 8, max: 8 },
       },
     },
   });
@@ -34,6 +34,13 @@ const attack = Object.freeze({
   actorId: "player",
   actionId: "basic-attack",
   targetId: "gatekeeper",
+});
+
+const defend = Object.freeze({
+  type: "use-action",
+  actorId: "player",
+  actionId: "basic-defense",
+  targetId: "player",
 });
 
 describe("reference combat kernel", () => {
@@ -99,5 +106,79 @@ describe("reference combat kernel", () => {
       expect(actor.hp).toBeGreaterThanOrEqual(0);
       expect(actor.hp).toBeLessThanOrEqual(actor.maxHp);
     }
+  });
+
+  it("exposes intent before input and Defense mitigates that declared hit", () => {
+    const before = fixture(17);
+    expect(before.actors.gatekeeper.intent).toMatchObject({
+      id: "gatekeeper-strike",
+      type: "attack",
+      targetId: "player",
+      damage: { min: 8, max: 8 },
+    });
+
+    const attacked = resolveCommand(fixture(17), attack);
+    const defended = resolveCommand(fixture(17), defend);
+    const incoming = defended.events.findLast((event) => (
+      event.type === "damage-resolved" && event.targetId === "player"
+    ));
+
+    expect(defended.ok).toBe(true);
+    expect(defended.state.actors.player.hp).toBeGreaterThan(attacked.state.actors.player.hp);
+    expect(defended.state.actors.player.guard).toBe(0);
+    expect(incoming).toMatchObject({
+      sourceId: "gatekeeper",
+      targetId: "player",
+      rawAmount: 8,
+      guardSpent: 5,
+      amount: 3,
+    });
+    expect(defended.events.map((event) => event.type)).toEqual([
+      "action-used",
+      "defense-gained",
+      "intent-resolved",
+      "damage-resolved",
+      "intent-declared",
+    ]);
+  });
+
+  it("rejects core actions aimed at the wrong side without mutation", () => {
+    const before = fixture();
+
+    expect(resolveCommand(before, { ...attack, targetId: "player" })).toEqual({
+      ok: false,
+      reason: "invalid-target",
+      state: before,
+      events: [],
+    });
+    expect(resolveCommand(before, { ...defend, targetId: "gatekeeper" })).toEqual({
+      ok: false,
+      reason: "invalid-target",
+      state: before,
+      events: [],
+    });
+  });
+
+  it("expires unused Defense after the declared enemy intent resolves", () => {
+    const before = fixture(29);
+    before.actors.gatekeeper.intent.damage = { min: 2, max: 2 };
+    const result = resolveCommand(before, defend);
+
+    expect(result.ok).toBe(true);
+    expect(result.state.actors.player.hp).toBe(24);
+    expect(result.state.actors.player.guard).toBe(0);
+    expect(result.events.map((event) => event.type)).toEqual([
+      "action-used",
+      "defense-gained",
+      "intent-resolved",
+      "damage-resolved",
+      "defense-expired",
+      "intent-declared",
+    ]);
+    expect(result.events.find((event) => event.type === "defense-expired")).toMatchObject({
+      actorId: "player",
+      amount: 3,
+      reason: "enemy-intent-resolved",
+    });
   });
 });

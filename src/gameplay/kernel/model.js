@@ -18,6 +18,7 @@ function actor(input, side) {
     side,
     hp,
     maxHp,
+    guard: finiteNonNegative(input.guard ?? 0, "guard"),
     stats: {
       attack: finiteNonNegative(input.stats?.attack ?? 0, "attack"),
       defense: finiteNonNegative(input.stats?.defense ?? 0, "defense"),
