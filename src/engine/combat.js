@@ -31,6 +31,7 @@ import { normalizeSeed, shuffleSeeded } from "./combat-rng.js";
 import { rollLoot, lootCtx } from "./combat-loot.js";
 import { mechanicalAttributeValue } from "../data/attribute-tiers.js";
 import { progressionCombatEntitlements } from "./progression-abilities.js";
+import { archetypeForCharacter, archetypeById, staminaMaxFor, FALLBACK_ARCHETYPE_ID } from "../data/combat-archetypes.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
@@ -1996,6 +1997,63 @@ function applyMountedBonus(c, b) {
   c.mounted = true;
 }
 
+// ----- stamina: the defensive economy -----
+//
+// A third pool beside Vitality and Resolve. Guard and Evade spend it, and it
+// regenerates only partially each round — deliberately below the cheapest
+// defence its archetype can buy — so defending every round runs the pool down.
+// At zero a combatant is Staggered and the next hit lands full and crits.
+//
+// This is the tension the whole read depends on: you usually know the right
+// answer to a telegraph, and often cannot afford it. A pool that refilled each
+// round would make "always defend" free and the read decorative.
+//
+// Seeded on EVERY combatant regardless of which loop is running, so the deck
+// path and the round path produce identically-shaped state and a snapshot taken
+// under one loads under the other.
+function seedStamina(combatant, source) {
+  const record = archetypeForCharacter(source || combatant);
+  const vigor = Number(combatant?.attrs?.vigor ?? source?.attributes?.vigor ?? 0) || 0;
+  combatant.combatArchetypeId = record.id;
+  combatant.staminaMax = staminaMaxFor(record.id, vigor);
+  combatant.stamina = combatant.staminaMax;
+  combatant.staggered = false;
+  return combatant;
+}
+
+function staminaRegenFor(combatant) {
+  const record = archetypeById(combatant?.combatArchetypeId) || archetypeById(FALLBACK_ARCHETYPE_ID);
+  return record.stamina.regen;
+}
+
+/**
+ * Spend stamina. Returns whether it could be paid in full.
+ *
+ * Running dry is not a refusal — the action still happens, but the combatant is
+ * Staggered for it. Blocking the action instead would let a player sit at zero
+ * stamina taking no risk, which is the opposite of the intent.
+ */
+export function spendStamina(cs, actor, cost) {
+  if (!actor || !(cost > 0)) return true;
+  const available = Math.max(0, actor.stamina || 0);
+  actor.stamina = Math.max(0, available - cost);
+  if (available >= cost) return true;
+
+  // Could not pay in full. The action still happens — refusing it would let a
+  // combatant sit at zero stamina risking nothing, which inverts the intent.
+  // Instead the guard breaks, and the next hit lands on an open target.
+  if (!actor.staggered) {
+    actor.staggered = true;
+    cs.log.push(logEntry(
+      actor === cs.player
+        ? "Your guard breaks — you are out of breath and wide open."
+        : `${actor.name}'s guard breaks — spent, and wide open.`,
+      "status",
+    ));
+  }
+  return false;
+}
+
 export function initCombat(character, codex, enemies, opts = {}) {
   LOG_SEQ = 0;
   const cs = deriveCombatStats(character, codex);
@@ -2109,6 +2167,10 @@ export function initCombat(character, codex, enemies, opts = {}) {
   // Done after armour/ward are set so Guarded/Warded can scale off them.
   seedConditionStatuses(player, character.conditions);
 
+  // Stamina is seeded for every combatant on both loops (see seedStamina).
+  seedStamina(player, character);
+  for (const a of allies) seedStamina(a, a);
+
   const foes = clone(enemies);
   foes.forEach((e, i) => {
     e.uid = `e${i}`;
@@ -2136,6 +2198,7 @@ export function initCombat(character, codex, enemies, opts = {}) {
     e.distance = 0;
     e.procs = e.procs || e.triggers?.procs || [];
     e.block = e.block || 0; e.shield = e.shield || 0; e.magicShield = e.magicShield || 0; e.invuln = e.invuln || 0;
+    seedStamina(e, e);
   });
   // How outmatched are they? Lower the nerve of foes who can see they're outclassed.
   const pThreat = playerThreat(player) + allies.reduce((s, a) => s + enemyThreat(a), 0);
@@ -2195,9 +2258,29 @@ export function initCombat(character, codex, enemies, opts = {}) {
     loot: null,
     seed: normalizeSeed(opts.seed ?? `${character.name || "wanderer"}|${foes.map((e) => e.name).join("|")}`),
   };
-  combatState.deck = makeDeck(character, combatState.seed, entitlements);
+  // Which loop drives this fight.
+  //
+  // The deck is a five-line bolt-on: build a deck and the whole game routes
+  // through the card path, because `endTurn` dispatches on `cs.deck` existing.
+  // Skip it and control falls through to `advanceQueue` — a complete round loop
+  // (initiative, morale, flee, NPC turns, player handoff) that has been sitting
+  // unreachable in this file, not dead code.
+  //
+  // `loop: "round"` is opt-in while the round model is built and simulated.
+  // The deck stays the default so the shipped game keeps working and the suite
+  // stays green; Phase 4 flips it and deletes the card path.
+  combatState.loop = opts.loop === "round" ? "round" : "deck";
+  if (combatState.loop === "deck") {
+    combatState.deck = makeDeck(character, combatState.seed, entitlements);
+  }
   if (opts.ambush) applyAmbush(combatState, opts.ambush);
   if (TERMINAL_PHASES.has(combatState.phase)) return combatState;
+  if (combatState.loop === "round") {
+    rollInitiative(combatState);
+    combatState.orderIdx = 0;
+    planEnemyIntents(combatState);
+    return advanceQueue(combatState);
+  }
   const started = startPlayerDeckRound(combatState, { initial: true });
   return started.phase === "enemy" ? advanceDeckUntilPlayer(started) : started;
 }
@@ -2438,6 +2521,18 @@ function beginTurnFor(cs, actor, { deckMode = false } = {}) {
     const gained = actor.resolve - prevResolve;
     if (gained > 0) cs.log.push(logEntry(`${actor.name} recovers ${gained} resolve.`, "status"));
   }
+  // Stamina recovers a little each round — never enough to make defending free
+  // (archetype regen is always below the cheapest defence that archetype can
+  // buy; see combat-archetypes.test.js). Getting any back clears Stagger: you
+  // have your wind again, but you spent the pool that would have answered the
+  // next telegraph, and that is the cost you actually feel.
+  if (actor.staminaMax > 0) {
+    actor.stamina = Math.min(actor.staminaMax, (actor.stamina || 0) + staminaRegenFor(actor));
+    if (actor.stamina > 0 && actor.staggered) {
+      actor.staggered = false;
+      if (actor === cs.player) cs.log.push(logEntry("You catch your breath.", "status"));
+    }
+  }
   if (tr.turnRegen && actor.health > 0) {
     // turnRegen is a FRACTION of max health (scales with the wearer at every tier).
     const mended = gainHealth(actor, Math.max(1, Math.round(actor.maxHealth * tr.turnRegen)));
@@ -2489,7 +2584,12 @@ function advanceQueue(cs) {
     if (combatOver(cs)) return checkCombatEnd(cs);
     if (!cs.order || cs.orderIdx >= cs.order.length) {
       cs.turn += 1;
+      cs.round = cs.turn; // morale/result/intent code reads `round`; keep them in step
       rollInitiative(cs);
+      // Re-declare what every foe is about to do, before the player is asked to
+      // answer it. The deck path does this in startPlayerDeckRound; the round
+      // path does it here, so the telegraph is never stale by a round.
+      if (cs.loop === "round") planEnemyIntents(cs);
       cs.log.push(logEntry(`— Turn ${cs.turn} —`, "system"));
       maybeOfferCeasefire(cs);
       continue;
@@ -4687,6 +4787,37 @@ function npcPerform(cs, actor, opponents, opts = {}) {
   return true;
 }
 
+// A blow taking this much of the target's health in one strike reads as heavy —
+// the kind you get out of the way of rather than brace against.
+const HEAVY_TELEGRAPH_FRACTION = 0.35;
+
+/**
+ * Classify what an incoming action IS, so the player can choose a response.
+ *
+ * Returning null is deliberate and common: an ordinary swing has no forced
+ * answer, and either defence partly works. Only some actions want a specific
+ * response, and keeping tags rare is what lets a tagged one read as a warning
+ * instead of as noise on every enemy every round.
+ *
+ * KNOWN DATA GAP (measured in a browser against the live bestiary, 768 intents
+ * across 8 kinds x 4 tier caps): only `heavy` ever fires, on 3.5% of intents.
+ * `flurry`, `grapple`, and `unblockable` are unreachable because no current
+ * enemy action is multi-hit, stun-applying, or true-damage. The classifier below
+ * handles all four — see the unit tests — but until Phase 4 authors enemy
+ * actions that produce them, GUARD IS NEVER THE CORRECT ANSWER and half the
+ * read does not exist. Treat "every tag reachable from real bestiary data" as a
+ * Phase 4 acceptance gate, not a nice-to-have.
+ */
+export function telegraphFor(def, profile, hits, estimated, target) {
+  if (!profile) return null;                              // buffs and skills threaten nothing to answer
+  if (profile.type === "true") return "unblockable";      // ignores armour and ward alike
+  if (hits > 1) return "flurry";                          // many small blows — turn them one at a time
+  if (def?.effect?.type === "stun") return "grapple";     // a hold, not a hit
+  const maxHealth = Math.max(1, Number(target?.maxHealth) || 0);
+  if (estimated >= maxHealth * HEAVY_TELEGRAPH_FRACTION) return "heavy";
+  return null;
+}
+
 function intentForChoice(actor, choice, seq) {
   if (!choice) return null;
   const tier = choice.ability?.tier || actor.tier || "common";
@@ -4707,6 +4838,7 @@ function intentForChoice(actor, choice, seq) {
     damage: profile ? { min: profile.min, max: profile.max, type: profile.type, hits, estimated } : null,
     status: def.effect?.type || null,
     effect: def.effect ? { ...def.effect } : null,
+    telegraph: telegraphFor(def, profile, hits, estimated, choice.target),
   };
 }
 
@@ -4728,6 +4860,7 @@ function planEnemyIntents(cs) {
         kind: "pass",
         damage: null,
         status: null,
+        telegraph: null,
       };
       enemy.intent = pass;
       enemy.intents = [pass];
@@ -4751,6 +4884,42 @@ function planEnemyIntents(cs) {
     }
     enemy.intent = enemy.intents[0] || null;
   }
+  selectLeadTelegraph(cs);
+}
+
+/**
+ * Pick the ONE incoming action the player is being asked to read this round.
+ *
+ * With three or four foes you cannot show four wind-ups and ask for a single
+ * defensive response: either the round grows a decision per enemy, or the read
+ * becomes noise and the player stops looking. So one intent leads — the most
+ * dangerous tagged one — and the rest resolve as ambient pressure.
+ *
+ * A tagged intent always outranks an untagged one, because a tag is precisely
+ * the claim that this action wants a specific answer.
+ */
+function selectLeadTelegraph(cs) {
+  let lead = null;
+  let leadUid = null;
+  for (const enemy of cs.enemies) {
+    if (!canAct(enemy) || enemy.fleeing) continue;
+    for (const intent of enemy.intents || []) {
+      if (!intent || intent.kind === "pass") continue;
+      if (!betterLead(intent, lead)) continue;
+      lead = intent;
+      leadUid = enemy.uid;
+    }
+  }
+  cs.leadIntentId = lead?.id || null;
+  cs.leadIntentUid = leadUid;
+  cs.leadTelegraph = lead?.telegraph || null;
+}
+
+function betterLead(candidate, current) {
+  if (!current) return true;
+  const tagged = (i) => (i.telegraph ? 1 : 0);
+  if (tagged(candidate) !== tagged(current)) return tagged(candidate) > tagged(current);
+  return (candidate.damage?.estimated || 0) > (current.damage?.estimated || 0);
 }
 
 function choiceFromIntent(cs, actor, intent) {
