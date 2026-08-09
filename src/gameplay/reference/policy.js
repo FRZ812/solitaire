@@ -17,4 +17,10 @@ export const REFERENCE_POLICY = Object.freeze({
     expires: "after-next-enemy-intent",
     evidence: "inferred",
   }),
+  rewards: Object.freeze({
+    choiceCount: 3,
+    choiceCountEvidence: "observed",
+    freeRefreshCount: 1,
+    freeRefreshCountEvidence: "inferred",
+  }),
 });
