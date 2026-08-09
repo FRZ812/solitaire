@@ -1,5 +1,6 @@
 import { createRng } from "./rng.js";
 import { REFERENCE_POLICY } from "../reference/policy.js";
+import { createReferenceSkillState, MAX_SKILL_SLOTS } from "../reference/skills.js";
 
 function finiteNonNegative(value, label) {
   const number = Number(value);
@@ -12,6 +13,8 @@ function actor(input, side) {
   const maxHp = finiteNonNegative(input.maxHp, "max-hp");
   if (maxHp <= 0) throw new TypeError("invalid-max-hp");
   const hp = Math.min(maxHp, finiteNonNegative(input.hp, "hp"));
+  const skillIds = side === "player" ? [...(input.skills || [])] : [];
+  if (skillIds.length > MAX_SKILL_SLOTS) throw new TypeError("too-many-skills");
   return {
     id: input.id,
     name: input.name,
@@ -24,6 +27,8 @@ function actor(input, side) {
       defense: finiteNonNegative(input.stats?.defense ?? 0, "defense"),
     },
     actions: [...(input.actions || [])],
+    skills: skillIds.map(createReferenceSkillState),
+    statuses: JSON.parse(JSON.stringify(input.statuses || [])),
     ...(input.intent ? { intent: JSON.parse(JSON.stringify(input.intent)) } : {}),
   };
 }

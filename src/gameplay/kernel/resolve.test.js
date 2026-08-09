@@ -108,6 +108,14 @@ describe("reference combat kernel", () => {
     }
   });
 
+  it("keeps the canonical trace isolated from mutations to the returned event batch", () => {
+    const result = resolveCommand(fixture(), attack);
+
+    result.events[0].type = "tampered";
+
+    expect(result.state.events[0].type).toBe("action-used");
+  });
+
   it("exposes intent before input and Defense mitigates that declared hit", () => {
     const before = fixture(17);
     expect(before.actors.gatekeeper.intent).toMatchObject({
