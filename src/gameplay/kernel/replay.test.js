@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createEncounter } from "./model.js";
-import { gameplayChecksum, replayEncounter } from "./replay.js";
+import {
+  CHECKSUM_ALGORITHM,
+  MAX_REPLAY_COMMANDS,
+  REPLAY_RECEIPT_VERSION,
+  gameplayChecksum,
+  replayEncounter,
+} from "./replay.js";
 
 function encounter(seed = 31337) {
   return createEncounter({
@@ -55,11 +61,23 @@ describe("reference encounter replay", () => {
 
     expect(first).toEqual(repeated);
     expect(first.ok).toBe(true);
-    expect(first.checksum).toMatch(/^[0-9a-f]{16}$/);
+    expect(first).toMatchObject({
+      receiptVersion: REPLAY_RECEIPT_VERSION,
+      baselineVersion: initial.baselineVersion,
+      checksumAlgorithm: CHECKSUM_ALGORITHM,
+      commandCount: commands.length,
+    });
+    expect(first.initialStateChecksum).toBe("a7d10c5312bf4543");
+    expect(first.commandsChecksum).toBe("f4126bed83187c1d");
+    expect(first.checksum).toBe("f24fe7aaa3dd8b8f");
+    expect(first.state.rng.state).toBe(4169244090);
+    expect(first.state.actors.gatekeeper.hp).toBe(12);
     expect(first.state.events).toHaveLength(first.events.length);
     expect(initial).toEqual(before);
     expect(commands[0].skillId).toBe("emergency-evasion");
     expect(JSON.parse(JSON.stringify(first))).toEqual(first);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.state)).toBe(true);
   });
 
   it("stops atomically at a rejected command with a reproducible receipt", () => {
@@ -72,11 +90,57 @@ describe("reference encounter replay", () => {
     expect(rejected).toMatchObject({
       ok: false,
       reason: "invalid-command",
+      rejectedCommandIndex: 0,
       state: initial,
       events: [],
     });
     expect(rejected.checksum).toMatch(/^[0-9a-f]{16}$/);
-    expect(replayEncounter(encounter(), [{ type: "invalid-command", actorId: "player" }])).toEqual(rejected);
+    expect(replayEncounter(encounter(), [
+      { type: "invalid-command", actorId: "player" },
+      commands[1],
+    ])).toEqual(rejected);
+  });
+
+  it("binds distinct rejected command streams to distinct receipts", () => {
+    const first = replayEncounter(encounter(), [{ type: "bad-a", actorId: "player" }]);
+    const second = replayEncounter(encounter(), [{ type: "bad-b", actorId: "player" }]);
+
+    expect(first.commandsChecksum).not.toBe(second.commandsChecksum);
+    expect(first.checksum).not.toBe(second.checksum);
+  });
+
+  it("retains successful prefix events and identifies the rejected command index", () => {
+    const result = replayEncounter(encounter(), [
+      commands[0],
+      { type: "invalid-command", actorId: "player" },
+      commands[1],
+    ]);
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "invalid-command",
+      rejectedCommandIndex: 1,
+      commandCount: 3,
+    });
+    expect(result.events.map((event) => event.type)).toEqual([
+      "skill-used",
+      "skill-use-spent",
+      "status-applied",
+    ]);
+  });
+
+  it("rejects JSON-shaped data that is not a valid encounter snapshot", () => {
+    expect(() => replayEncounter({}, [])).toThrow("invalid-replay-input");
+    expect(() => replayEncounter([], [])).toThrow("invalid-replay-input");
+  });
+
+  it("caps replay command streams before resolving any command", () => {
+    const oversized = Array.from(
+      { length: MAX_REPLAY_COMMANDS + 1 },
+      () => ({ type: "invalid-command", actorId: "player" }),
+    );
+
+    expect(() => replayEncounter(encounter(), oversized)).toThrow("replay-command-limit-exceeded");
   });
 
   it("rejects accessor-backed replay input without executing the getter", () => {

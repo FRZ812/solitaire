@@ -58,6 +58,26 @@ describe("encounter model boundary", () => {
     });
   });
 
+  it("rejects actor key/id mismatches before a prototype key can be written", () => {
+    const invalid = JSON.parse(JSON.stringify(createEncounter(input())));
+    invalid.actors.gatekeeper.id = "__proto__";
+
+    try {
+      expect(isEncounterState(invalid)).toBe(false);
+      expect(resolveCommand(invalid, attack)).toEqual({
+        ok: false,
+        reason: "invalid-encounter-state",
+        state: null,
+        events: [],
+      });
+      expect(Object.prototype.hp).toBeUndefined();
+      expect(Object.prototype.guard).toBeUndefined();
+    } finally {
+      delete Object.prototype.hp;
+      delete Object.prototype.guard;
+    }
+  });
+
   it("rejects accessor-backed construction input without executing the getter", () => {
     const value = input();
     let getterCalls = 0;

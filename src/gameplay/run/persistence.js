@@ -1,9 +1,16 @@
-import { cloneJsonData, isJsonData } from "../kernel/json-data.js";
-import { gameplayChecksum } from "../kernel/replay.js";
+import { cloneJsonData } from "../kernel/json-data.js";
+import { CHECKSUM_ALGORITHM, gameplayChecksum } from "../kernel/replay.js";
 import { REFERENCE_POLICY } from "../reference/policy.js";
 
-const GAMEPLAY_SAVE_VERSION = 1;
-const SAVE_KEYS = Object.freeze(["baselineVersion", "checksum", "runState", "version"]);
+export const GAMEPLAY_SAVE_VERSION = 2;
+
+const SAVE_KEYS = Object.freeze([
+  "baselineVersion",
+  "fingerprint",
+  "fingerprintAlgorithm",
+  "runState",
+  "version",
+]);
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -21,32 +28,56 @@ function hasExactSaveShape(value) {
   return keys.length === SAVE_KEYS.length && keys.every((key, index) => key === SAVE_KEYS[index]);
 }
 
-function payload(version, baselineVersion, runState) {
-  return { version, baselineVersion, runState };
+function payload(version, baselineVersion, fingerprintAlgorithm, runState) {
+  return { version, baselineVersion, fingerprintAlgorithm, runState };
 }
 
 export function createGameplaySave(runState) {
-  if (!isJsonData(runState)) throw new TypeError("invalid-run-state");
-  const stableRunState = cloneJsonData(runState, "invalid-run-state");
-  const body = payload(GAMEPLAY_SAVE_VERSION, REFERENCE_POLICY.id, stableRunState);
+  let stableRunState;
+  try {
+    stableRunState = cloneJsonData(runState, "invalid-run-state");
+  } catch {
+    throw new TypeError("invalid-run-state");
+  }
+  const body = payload(
+    GAMEPLAY_SAVE_VERSION,
+    REFERENCE_POLICY.id,
+    CHECKSUM_ALGORITHM,
+    stableRunState,
+  );
   return deepFreeze({
     ...body,
-    checksum: gameplayChecksum(body),
+    fingerprint: gameplayChecksum(body),
   });
 }
 
 export function restoreGameplaySave(value) {
-  if (!isJsonData(value) || !hasExactSaveShape(value)) return rejected("invalid-gameplay-save");
-  if (value.version !== GAMEPLAY_SAVE_VERSION) return rejected("unsupported-gameplay-save-version");
-  if (value.baselineVersion !== REFERENCE_POLICY.id) return rejected("unsupported-gameplay-baseline");
-  if (typeof value.checksum !== "string") return rejected("invalid-gameplay-save");
-
-  const body = payload(value.version, value.baselineVersion, value.runState);
-  if (gameplayChecksum(body) !== value.checksum) {
-    return rejected("gameplay-save-checksum-mismatch");
+  let save;
+  try {
+    save = cloneJsonData(value, "invalid-gameplay-save");
+  } catch {
+    return rejected("invalid-gameplay-save");
   }
-  return deepFreeze({
-    ok: true,
-    state: cloneJsonData(value.runState, "invalid-gameplay-save"),
-  });
+  if (!hasExactSaveShape(save)) return rejected("invalid-gameplay-save");
+  if (save.version !== GAMEPLAY_SAVE_VERSION) {
+    return rejected("unsupported-gameplay-save-version");
+  }
+  if (save.baselineVersion !== REFERENCE_POLICY.id) {
+    return rejected("unsupported-gameplay-baseline");
+  }
+  if (save.fingerprintAlgorithm !== CHECKSUM_ALGORITHM) {
+    return rejected("unsupported-gameplay-fingerprint");
+  }
+  if (typeof save.fingerprint !== "string") return rejected("invalid-gameplay-save");
+
+  const body = payload(
+    save.version,
+    save.baselineVersion,
+    save.fingerprintAlgorithm,
+    save.runState,
+  );
+  if (gameplayChecksum(body) !== save.fingerprint) {
+    return rejected("gameplay-save-fingerprint-mismatch");
+  }
+  return deepFreeze({ ok: true, state: save.runState });
 }

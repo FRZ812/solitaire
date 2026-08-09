@@ -1,12 +1,18 @@
-import { isJsonData } from "./json-data.js";
+import { cloneJsonData } from "./json-data.js";
 import { isEncounterState } from "./model.js";
 import { nextInt } from "./rng.js";
 import { applyStatus, hasStatus, removeStatus } from "./statuses.js";
 import { getReferenceAction } from "../reference/actions.js";
 import { getReferenceSkill } from "../reference/skills.js";
 
-const clone = (value) => JSON.parse(JSON.stringify(value));
+const clone = (value) => cloneJsonData(value);
 const rejected = (state, reason) => ({ ok: false, reason, state, events: [] });
+
+function actorById(state, actorId) {
+  return typeof actorId === "string" && Object.hasOwn(state.actors, actorId)
+    ? state.actors[actorId]
+    : null;
+}
 
 function emit(state, events, event) {
   const record = {
@@ -85,13 +91,13 @@ function validate(state, command) {
   if (!command || !["use-action", "use-skill"].includes(command.type)) return "invalid-command";
   if (state.phase !== "player") return "not-player-phase";
   if (command.actorId !== state.playerId) return "invalid-actor";
-  const actor = state.actors[command.actorId];
+  const actor = actorById(state, command.actorId);
   if (!actor || actor.hp <= 0) return "invalid-actor";
 
   if (command.type === "use-action") {
     const action = actor.actions.includes(command.actionId) ? getReferenceAction(command.actionId) : null;
     if (!action) return "unknown-action";
-    return targetReason(action, actor, state.actors[command.targetId]);
+    return targetReason(action, actor, actorById(state, command.targetId));
   }
 
   const skillState = (actor.skills || []).find((entry) => entry.id === command.skillId);
@@ -99,7 +105,7 @@ function validate(state, command) {
   if (!skill) return "unknown-skill";
   if (skillState.cooldownRemaining > 0) return "skill-on-cooldown";
   if (skillState.usesRemaining === 0) return "skill-uses-exhausted";
-  return targetReason(skill, actor, state.actors[command.targetId]);
+  return targetReason(skill, actor, actorById(state, command.targetId));
 }
 
 function resolveAction(state, events, command) {
@@ -287,16 +293,27 @@ function resolveEnemyTurn(state, events) {
 }
 
 export function resolveCommand(state, command) {
-  if (!isEncounterState(state)) return rejected(null, "invalid-encounter-state");
-  if (!isJsonData(command)) return rejected(state, "invalid-command");
-  const reason = validate(state, command);
-  if (reason) return rejected(state, reason);
+  let next;
+  try {
+    next = cloneJsonData(state, "invalid-encounter-state");
+  } catch {
+    return rejected(null, "invalid-encounter-state");
+  }
+  if (!isEncounterState(next)) return rejected(null, "invalid-encounter-state");
 
-  const next = clone(state);
+  let request;
+  try {
+    request = cloneJsonData(command, "invalid-command");
+  } catch {
+    return rejected(next, "invalid-command");
+  }
+  const reason = validate(next, request);
+  if (reason) return rejected(next, reason);
+
   const events = [];
-  const consumesTurn = command.type === "use-action"
-    ? resolveAction(next, events, command)
-    : resolveSkill(next, events, command);
+  const consumesTurn = request.type === "use-action"
+    ? resolveAction(next, events, request)
+    : resolveSkill(next, events, request);
 
   if (consumesTurn) resolveEnemyTurn(next, events);
   return { ok: true, state: next, events };

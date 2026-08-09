@@ -74,6 +74,21 @@ describe("reference combat kernel", () => {
     expect(before.events).toEqual([]);
   });
 
+  it.each(["toString", "__proto__", "constructor"])(
+    "rejects inherited actor-map key %s as a target",
+    (targetId) => {
+      const state = fixture();
+      const result = resolveCommand(state, { ...attack, targetId });
+
+      expect(result).toEqual({
+        ok: false,
+        reason: "invalid-target",
+        state,
+        events: [],
+      });
+    },
+  );
+
   it("ends in victory without resolving the queued enemy intent when Attack is lethal", () => {
     const before = fixture();
     const fragile = {

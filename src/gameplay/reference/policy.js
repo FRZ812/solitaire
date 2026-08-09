@@ -18,9 +18,23 @@ export const REFERENCE_POLICY = Object.freeze({
     evidence: "inferred",
   }),
   rewards: Object.freeze({
+    schemaVersion: 1,
     choiceCount: 3,
     choiceCountEvidence: "observed",
     freeRefreshCount: 1,
     freeRefreshCountEvidence: "inferred",
+    selectionAlgorithm: "uniform-with-forced-refresh-change-v1",
+    selectionAlgorithmEvidence: "inferred-policy-gap",
+    weighting: null,
+    weightingEvidence: "unresolved",
+    eligibilityEvidence: "incomplete-catalogue",
+  }),
+  fusions: Object.freeze({
+    steelification: Object.freeze({
+      requirements: Object.freeze({ ironclad: 1, "force-field": 1 }),
+      thresholdEvidence: "inferred",
+      combatEffect: null,
+      combatEffectEvidence: "unresolved",
+    }),
   }),
 });

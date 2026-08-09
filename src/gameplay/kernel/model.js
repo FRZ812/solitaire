@@ -1,4 +1,4 @@
-import { cloneJsonData, isJsonData } from "./json-data.js";
+import { cloneJsonData } from "./json-data.js";
 import { createRng } from "./rng.js";
 import { getReferenceAction } from "../reference/actions.js";
 import { REFERENCE_POLICY } from "../reference/policy.js";
@@ -83,12 +83,13 @@ function validSkillState(skill, round) {
     ));
 }
 
-function validActor(value, side, round) {
+function validActor(value, expectedId, side, round) {
   return value
     && typeof value === "object"
     && !Array.isArray(value)
     && typeof value.id === "string"
     && value.id.length > 0
+    && value.id === expectedId
     && typeof value.name === "string"
     && value.name.length > 0
     && value.side === side
@@ -148,8 +149,8 @@ function validEvents(events, sequence, round) {
   ));
 }
 
-export function isEncounterState(state) {
-  if (!isJsonData(state) || !state || typeof state !== "object" || Array.isArray(state)) return false;
+function validEncounterSnapshot(state) {
+  if (!state || typeof state !== "object" || Array.isArray(state)) return false;
   if (
     state.version !== 1
     || state.baselineVersion !== REFERENCE_POLICY.id
@@ -174,18 +175,31 @@ export function isEncounterState(state) {
   if (
     Object.keys(state.actors).length !== expectedIds.size
     || Object.keys(state.actors).some((actorId) => !expectedIds.has(actorId))
-    || !validActor(state.actors[state.playerId], "player", state.round)
+    || !validActor(state.actors[state.playerId], state.playerId, "player", state.round)
   ) return false;
 
   return state.enemyIds.every((enemyId) => {
     const enemy = state.actors[enemyId];
-    return validActor(enemy, "enemy", state.round) && validIntent(enemy.intent, state.playerId);
+    return validActor(enemy, enemyId, "enemy", state.round) && validIntent(enemy.intent, state.playerId);
   });
 }
 
+export function isEncounterState(value) {
+  try {
+    return validEncounterSnapshot(cloneJsonData(value, "invalid-encounter-state"));
+  } catch {
+    return false;
+  }
+}
+
 export function createEncounter(input = {}) {
-  if (!isJsonData(input)) throw new TypeError("invalid-encounter-input");
-  const { seed, player, enemy } = input;
+  let request;
+  try {
+    request = cloneJsonData(input, "invalid-encounter-input");
+  } catch {
+    throw new TypeError("invalid-encounter-input");
+  }
+  const { seed, player, enemy } = request;
   if (typeof seed !== "string" && !(typeof seed === "number" && Number.isFinite(seed))) {
     throw new TypeError("invalid-encounter-seed");
   }

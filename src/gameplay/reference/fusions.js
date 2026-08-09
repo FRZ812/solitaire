@@ -1,3 +1,5 @@
+import { REFERENCE_POLICY } from "./policy.js";
+
 const KNIGHT_GUIDE_SOURCE = Object.freeze({
   confidence: "secondary",
   date: "2023-09-12",
@@ -8,8 +10,8 @@ const KNIGHT_GUIDE_SOURCE = Object.freeze({
 export const STEELIFICATION = Object.freeze({
   id: "steelification",
   name: "Steelification",
-  requirements: Object.freeze({ ironclad: 1, "force-field": 1 }),
-  thresholdConfidence: "inferred",
+  requirements: REFERENCE_POLICY.fusions.steelification.requirements,
+  thresholdConfidence: REFERENCE_POLICY.fusions.steelification.thresholdEvidence,
   evidence: KNIGHT_GUIDE_SOURCE,
 });
 

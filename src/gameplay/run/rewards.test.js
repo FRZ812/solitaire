@@ -1,162 +1,170 @@
 import { describe, expect, it } from "vitest";
-import { createRewardOffer, refreshRewardOffer, selectReward } from "./rewards.js";
+import { REFERENCE_POLICY } from "../reference/policy.js";
+import { getReferenceReward, referenceRewardIds } from "../reference/rewards.js";
+import {
+  REWARD_STATE_VERSION,
+  createRewardOffer,
+  isRewardState,
+  refreshRewardOffer,
+  selectReward,
+} from "./rewards.js";
 
-const candidates = Object.freeze([
-  Object.freeze({ id: "attack-1", kind: "stat", stat: "attack", amount: 1 }),
-  Object.freeze({ id: "defense-1", kind: "stat", stat: "defense", amount: 1 }),
-  Object.freeze({ id: "sleep-bomb", kind: "skill", skillId: "sleep-bomb" }),
-  Object.freeze({ id: "mithril-helm", kind: "item", itemId: "mithril-helm" }),
-  Object.freeze({ id: "ironclad-1", kind: "trait", traitId: "ironclad", levels: 1 }),
-]);
+const candidateIds = Object.freeze(referenceRewardIds());
 
-describe("deterministic reward offers", () => {
-  it("selects three unique serializable choices reproducibly from a seeded pool", () => {
-    const first = createRewardOffer({ seed: "act-1:1", candidates });
-    const repeated = createRewardOffer({ seed: "act-1:1", candidates });
+function create(seed = "act-1:reward-1") {
+  return createRewardOffer({
+    offerId: "act-1:step-1:reward",
+    seed,
+    candidateIds,
+  });
+}
+
+describe("deterministic reward drafting", () => {
+  it("pins the versioned offer, exact choices, and RNG cursor for a seed", () => {
+    const first = create();
+    const repeated = create();
 
     expect(first).toEqual(repeated);
-    expect(first.choices).toHaveLength(3);
-    expect(new Set(first.choices.map((choice) => choice.id)).size).toBe(3);
-    expect(first.refreshesRemaining).toBe(1);
-    expect(first.selected).toBe(null);
-    expect(JSON.parse(JSON.stringify(first))).toEqual(first);
+    expect(first).toMatchObject({
+      version: REWARD_STATE_VERSION,
+      baselineVersion: REFERENCE_POLICY.id,
+      offerId: "act-1:step-1:reward",
+      revision: 0,
+      refreshesUsed: 0,
+      refreshesRemaining: 1,
+      selectedRewardId: null,
+    });
+    expect(first.choices).toEqual([
+      "action:shield-bash-replacement",
+      "item:mithril-helm",
+      "action:shield-bash-upgrade",
+    ]);
+    expect(first.rng).toEqual({ algorithm: "mulberry32", state: 2303045535 });
+    expect(new Set(first.choices).size).toBe(3);
+    expect(isRewardState(first)).toBe(true);
     expect(Object.isFrozen(first)).toBe(true);
-    expect(candidates).toHaveLength(5);
+    expect(Object.isFrozen(first.choices)).toBe(true);
   });
 
-  it("rejects executable reward content instead of silently cloning callbacks", () => {
-    const executable = [
-      ...candidates.slice(0, 2),
-      { id: "scripted", kind: "skill", apply: () => "mutate-state" },
-    ];
+  it("owns its candidate IDs instead of retaining caller arrays", () => {
+    const mutable = [...candidateIds];
+    const state = createRewardOffer({ offerId: "offer-2", seed: 2, candidateIds: mutable });
 
-    expect(() => createRewardOffer({ seed: 1, candidates: executable })).toThrow(
-      "invalid-reward-candidate",
-    );
+    mutable[0] = "missing";
+
+    expect(state.candidateIds[0]).not.toBe("missing");
+    expect(isRewardState(state)).toBe(true);
   });
 
-  it("rejects accessor-backed reward content without executing the getter", () => {
-    let getterCalls = 0;
-    const candidate = { id: "accessor", kind: "stat" };
-    Object.defineProperty(candidate, "amount", {
-      enumerable: true,
-      get: () => { getterCalls += 1; return 1; },
+  it("uses the single policy refresh and guarantees a meaningfully different set", () => {
+    const initial = create(2);
+    const refreshed = refreshRewardOffer(initial, {
+      offerId: initial.offerId,
+      expectedRevision: 0,
     });
 
-    expect(() => createRewardOffer({
-      seed: 1,
-      candidates: [...candidates.slice(0, 2), candidate],
-    })).toThrow("invalid-reward-candidate");
-    expect(getterCalls).toBe(0);
-  });
+    expect(refreshed).toMatchObject({ ok: true, refreshed: true });
+    expect(refreshed.state).toMatchObject({ revision: 1, refreshesUsed: 1, refreshesRemaining: 0 });
+    expect(new Set(refreshed.state.choices)).not.toEqual(new Set(initial.choices));
+    expect(isRewardState(refreshed.state)).toBe(true);
 
-  it("rejects accessor-backed candidate arrays without executing the index getter", () => {
-    let getterCalls = 0;
-    const pool = [...candidates.slice(0, 3)];
-    Object.defineProperty(pool, "1", {
-      enumerable: true,
-      get: () => { getterCalls += 1; return candidates[1]; },
-    });
-
-    expect(() => createRewardOffer({ seed: 1, candidates: pool })).toThrow(
-      "invalid-reward-candidate",
-    );
-    expect(getterCalls).toBe(0);
-  });
-
-  it("enforces exactly three choices and one refresh for every reward offer", () => {
-    expect(() => createRewardOffer({ seed: 1, candidates, count: 2 })).toThrow(
-      "invalid-reward-count",
-    );
-    expect(() => createRewardOffer({ seed: 1, candidates, refreshes: 2 })).toThrow(
-      "invalid-refresh-count",
-    );
-  });
-
-  it("spends the single refresh reproducibly and rejects further refreshes atomically", () => {
-    const initial = createRewardOffer({ seed: "act-1:1", candidates });
-    const refreshed = refreshRewardOffer(initial);
-    const repeated = refreshRewardOffer(createRewardOffer({ seed: "act-1:1", candidates }));
-
-    expect(refreshed).toEqual(repeated);
-    expect(refreshed.ok).toBe(true);
-    expect(refreshed.state.refreshesRemaining).toBe(0);
-    expect(refreshed.state.choices).not.toEqual(initial.choices);
-    expect(new Set(refreshed.state.choices.map((choice) => choice.id)).size).toBe(3);
-
-    expect(refreshRewardOffer(refreshed.state)).toEqual({
+    expect(refreshRewardOffer(refreshed.state, {
+      offerId: initial.offerId,
+      expectedRevision: 1,
+    })).toEqual({
       ok: false,
-      reason: "reward-refresh-exhausted",
+      reason: "refresh-exhausted",
       state: refreshed.state,
     });
-
-    const restored = JSON.parse(JSON.stringify(refreshed.state));
-    const exhausted = refreshRewardOffer(restored);
-    restored.choices[0].id = "mutated-after-return";
-    expect(exhausted.state.choices[0].id).not.toBe("mutated-after-return");
-    expect(Object.isFrozen(exhausted.state)).toBe(true);
   });
 
-  it("selects an offered reward exactly once by stable ID", () => {
-    const offer = createRewardOffer({ seed: "act-1:1", candidates });
-    const rewardId = offer.choices[1].id;
-    const selected = selectReward(offer, rewardId);
+  it("selects a registry-backed reward and is serially idempotent on the committed successor", () => {
+    const state = create();
+    const command = {
+      offerId: state.offerId,
+      expectedRevision: state.revision,
+      rewardId: state.choices[1],
+    };
+    const first = selectReward(state, command);
+    const retry = selectReward(first.state, command);
 
-    expect(selected).toMatchObject({
+    expect(first).toMatchObject({
       ok: true,
       selected: true,
-      reward: offer.choices[1],
-      state: { selected: rewardId },
+      reward: getReferenceReward(command.rewardId),
+      state: { selectedRewardId: command.rewardId, revision: 1 },
     });
-    expect(selectReward(selected.state, rewardId)).toEqual({
+    expect(retry).toEqual({
       ok: true,
       selected: false,
-      reward: offer.choices[1],
-      state: selected.state,
-    });
-
-    const restored = JSON.parse(JSON.stringify(selected.state));
-    const retry = selectReward(restored, rewardId);
-    restored.choices[1].id = "mutated-input";
-    expect(retry.state.choices[1].id).toBe(rewardId);
-    expect(retry.reward.id).toBe(rewardId);
-    expect(retry.reward).not.toBe(retry.state.choices[1]);
-  });
-
-  it("locks the offer against refresh after a reward is selected", () => {
-    const offer = createRewardOffer({ seed: "act-1:1", candidates });
-    const selected = selectReward(offer, offer.choices[0].id);
-
-    expect(refreshRewardOffer(selected.state)).toEqual({
-      ok: false,
-      reason: "reward-already-selected",
-      state: selected.state,
+      reward: getReferenceReward(command.rewardId),
+      state: first.state,
     });
   });
 
-  it("rejects forged reward state without executing toJSON callbacks", () => {
-    const state = JSON.parse(JSON.stringify(createRewardOffer({ seed: 1, candidates })));
+  it("exposes offer/revision conflicts for atomic settlement by the owning run", () => {
+    const state = create();
+
+    expect(selectReward(state, {
+      offerId: "other-offer",
+      expectedRevision: 0,
+      rewardId: state.choices[0],
+    })).toEqual({ ok: false, reason: "reward-offer-mismatch", state });
+    expect(selectReward(state, {
+      offerId: state.offerId,
+      expectedRevision: 99,
+      rewardId: state.choices[0],
+    })).toEqual({ ok: false, reason: "stale-reward-offer", state });
+  });
+
+  it("rejects forged choices and restored refresh budgets that do not match seeded provenance", () => {
+    const initial = create();
+    const forgedChoices = JSON.parse(JSON.stringify(initial));
+    forgedChoices.choices = candidateIds.filter((id) => !initial.choices.includes(id)).slice(0, 3);
+
+    const refreshed = refreshRewardOffer(initial, {
+      offerId: initial.offerId,
+      expectedRevision: 0,
+    }).state;
+    const forgedBudget = JSON.parse(JSON.stringify(refreshed));
+    forgedBudget.refreshesRemaining = 1;
+
+    expect(isRewardState(forgedChoices)).toBe(false);
+    expect(isRewardState(forgedBudget)).toBe(false);
+    expect(selectReward(forgedChoices, {
+      offerId: initial.offerId,
+      expectedRevision: 0,
+      rewardId: forgedChoices.choices[0],
+    })).toEqual({ ok: false, reason: "invalid-reward-state", state: null });
+  });
+
+  it("round-trips then continues with the same deterministic refresh", () => {
+    const live = create("round-trip");
+    const restored = JSON.parse(JSON.stringify(live));
+    const command = { offerId: live.offerId, expectedRevision: 0 };
+
+    expect(refreshRewardOffer(restored, command)).toEqual(refreshRewardOffer(live, command));
+  });
+
+  it("rejects unknown candidate IDs and executable input without invoking callbacks", () => {
+    expect(() => createRewardOffer({
+      offerId: "bad-pool",
+      seed: 1,
+      candidateIds: [...candidateIds.slice(0, 3), "missing"],
+    })).toThrow("invalid-reward-candidates");
+
     let callbackCalls = 0;
-    state.choices[0].toJSON = () => { callbackCalls += 1; return { id: state.choices[0].id }; };
-
-    expect(selectReward(state, state.choices[0].id)).toEqual({
-      ok: false,
-      reason: "invalid-reward-state",
-      state: null,
-    });
-    expect(callbackCalls).toBe(0);
-    JSON.stringify(selectReward(state, state.choices[0].id));
+    const input = {
+      offerId: "bad-input",
+      seed: 1,
+      candidateIds: [...candidateIds],
+      toJSON: () => { callbackCalls += 1; return {}; },
+    };
+    expect(() => createRewardOffer(input)).toThrow("invalid-reward-offer-input");
     expect(callbackCalls).toBe(0);
   });
 
-  it("rejects selected state whose receipt is not in the offered choices", () => {
-    const state = JSON.parse(JSON.stringify(createRewardOffer({ seed: 1, candidates })));
-    state.selected = "not-offered";
-
-    expect(selectReward(state, "not-offered")).toEqual({
-      ok: false,
-      reason: "invalid-reward-state",
-      state: null,
-    });
+  it("distinguishes supplementary Unicode seeds", () => {
+    expect(create("act:😀").choices).not.toEqual(create("act:😁").choices);
   });
 });

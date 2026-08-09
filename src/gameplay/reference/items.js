@@ -12,7 +12,7 @@ export const MITHRIL_HELM = Object.freeze({
   traitGrants: Object.freeze({ swift: 1, anatomy: 1 }),
   grantConfidence: Object.freeze({
     labels: "observed",
-    magnitudes: "inferred-placeholder",
+    magnitudes: "observed",
   }),
   evidence: OFFICIAL_STORE_SOURCE,
 });

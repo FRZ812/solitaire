@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { REFERENCE_POLICY } from "../reference/policy.js";
-import { createGameplaySave, restoreGameplaySave } from "./persistence.js";
+import { CHECKSUM_ALGORITHM } from "../kernel/replay.js";
+import {
+  GAMEPLAY_SAVE_VERSION,
+  createGameplaySave,
+  restoreGameplaySave,
+} from "./persistence.js";
 
 function runState() {
   return {
@@ -20,17 +25,18 @@ function runState() {
 }
 
 describe("gameplay persistence envelope", () => {
-  it("round-trips an isolated JSON run state with a deterministic integrity receipt", () => {
+  it("round-trips an isolated JSON run state with an accidental-corruption fingerprint", () => {
     const source = runState();
     const save = createGameplaySave(source);
     const restored = restoreGameplaySave(JSON.parse(JSON.stringify(save)));
 
     expect(save).toMatchObject({
-      version: 1,
+      version: GAMEPLAY_SAVE_VERSION,
       baselineVersion: REFERENCE_POLICY.id,
+      fingerprintAlgorithm: CHECKSUM_ALGORITHM,
       runState: source,
     });
-    expect(save.checksum).toMatch(/^[0-9a-f]{16}$/);
+    expect(save.fingerprint).toMatch(/^[0-9a-f]{16}$/);
     expect(restored).toEqual({ ok: true, state: source });
     expect(Object.isFrozen(save)).toBe(true);
     expect(Object.isFrozen(save.runState)).toBe(true);
@@ -57,14 +63,15 @@ describe("gameplay persistence envelope", () => {
 
     expect(restoreGameplaySave(save)).toEqual({
       ok: false,
-      reason: "gameplay-save-checksum-mismatch",
+      reason: "gameplay-save-fingerprint-mismatch",
       state: null,
     });
   });
 
   it.each([
-    ["version", 2, "unsupported-gameplay-save-version"],
+    ["version", GAMEPLAY_SAVE_VERSION + 1, "unsupported-gameplay-save-version"],
     ["baselineVersion", "future-private-balance", "unsupported-gameplay-baseline"],
+    ["fingerprintAlgorithm", "unknown", "unsupported-gameplay-fingerprint"],
   ])("rejects unsupported %s explicitly", (field, value, reason) => {
     const save = JSON.parse(JSON.stringify(createGameplaySave(runState())));
     save[field] = value;
