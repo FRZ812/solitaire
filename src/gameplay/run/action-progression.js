@@ -86,6 +86,10 @@ export function createActionProgressionState() {
   return freezeState(BASIC_ATTACK.id, [], null);
 }
 
+export function isActionProgressionState(value) {
+  return canonicalState(value) !== null;
+}
+
 export function filterActionProgressionOffers(state, offerIds) {
   const canonical = canonicalState(state);
   const ids = denseDataArray(offerIds);

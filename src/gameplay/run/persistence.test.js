@@ -1,27 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { REFERENCE_POLICY } from "../reference/policy.js";
-import { CHECKSUM_ALGORITHM } from "../kernel/replay.js";
+import { CHECKSUM_ALGORITHM, gameplayChecksum } from "../kernel/replay.js";
 import {
   GAMEPLAY_SAVE_VERSION,
   createGameplaySave,
   restoreGameplaySave,
 } from "./persistence.js";
+import { createArcticKnightGatekeeperRun } from "./state.js";
 
 function runState() {
-  return {
-    version: 1,
+  return JSON.parse(JSON.stringify(createArcticKnightGatekeeperRun({
     runId: "run-arctic-1",
     seed: "campaign-17:run-1",
-    characterId: "arctic-knight",
-    phase: "encounter",
-    act: 1,
-    position: 1,
-    build: {
-      baseStats: { attack: 4, defense: 2 },
-      baseTraits: {},
-      items: [],
-    },
-  };
+  })));
 }
 
 describe("gameplay persistence envelope", () => {
@@ -64,6 +55,23 @@ describe("gameplay persistence envelope", () => {
     expect(restoreGameplaySave(save)).toEqual({
       ok: false,
       reason: "gameplay-save-fingerprint-mismatch",
+      state: null,
+    });
+  });
+
+  it("rejects a semantically forged run even when its public fingerprint is recomputed", () => {
+    const save = JSON.parse(JSON.stringify(createGameplaySave(runState())));
+    save.runState.phase = "reward";
+    save.fingerprint = gameplayChecksum({
+      version: save.version,
+      baselineVersion: save.baselineVersion,
+      fingerprintAlgorithm: save.fingerprintAlgorithm,
+      runState: save.runState,
+    });
+
+    expect(restoreGameplaySave(save)).toEqual({
+      ok: false,
+      reason: "invalid-gameplay-run-state",
       state: null,
     });
   });
