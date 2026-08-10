@@ -1,4 +1,5 @@
 import { cloneJsonData } from "./json-data.js";
+import { encounterIntentFromState, isIntentState } from "./intent.js";
 import { createRng } from "./rng.js";
 import { getReferenceAction } from "../reference/actions.js";
 import { REFERENCE_POLICY } from "../reference/policy.js";
@@ -47,6 +48,9 @@ function actor(input, side) {
     skills: skillIds.map(createReferenceSkillState),
     statuses: cloneJsonData(input.statuses || [], "invalid-statuses"),
     ...(input.intent ? { intent: cloneJsonData(input.intent, "invalid-enemy-intent") } : {}),
+    ...(input.intentState ? {
+      intentState: cloneJsonData(input.intentState, "invalid-intent-state"),
+    } : {}),
   };
 }
 
@@ -133,6 +137,18 @@ function validIntent(intent, playerId) {
     && intent.damage.max >= intent.damage.min;
 }
 
+function validIntentSchedule(actorValue, playerId) {
+  if (actorValue.intentState === undefined) return true;
+  if (!isIntentState(actorValue.intentState)) return false;
+  try {
+    return JSON.stringify(actorValue.intent) === JSON.stringify(
+      encounterIntentFromState(actorValue.intentState, playerId),
+    );
+  } catch {
+    return false;
+  }
+}
+
 function validEvents(events, sequence, round) {
   if (!Array.isArray(events) || !Number.isInteger(sequence) || sequence < 0) return false;
   if (events.length !== sequence) return false;
@@ -180,7 +196,9 @@ function validEncounterSnapshot(state) {
 
   return state.enemyIds.every((enemyId) => {
     const enemy = state.actors[enemyId];
-    return validActor(enemy, enemyId, "enemy", state.round) && validIntent(enemy.intent, state.playerId);
+    return validActor(enemy, enemyId, "enemy", state.round)
+      && validIntent(enemy.intent, state.playerId)
+      && validIntentSchedule(enemy, state.playerId);
   });
 }
 

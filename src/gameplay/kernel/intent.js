@@ -1,3 +1,4 @@
+import { cloneJsonData } from "./json-data.js";
 import { createRng, nextInt } from "./rng.js";
 import { getReferenceIntentPattern } from "../reference/enemies.js";
 
@@ -33,29 +34,59 @@ function declare(pattern, stepIndex, rng) {
   };
 }
 
-function isIntentState(state, pattern) {
-  const version = ownData(state, "version");
-  const patternId = ownData(state, "patternId");
-  const stepIndex = ownData(state, "stepIndex");
-  const rng = ownData(state, "rng");
-  const intent = ownData(state, "intent");
-  return version === 1
-    && patternId === pattern.id
-    && Number.isInteger(stepIndex)
-    && stepIndex >= 0
-    && stepIndex < pattern.steps.length
-    && ownData(rng, "algorithm") === "mulberry32"
-    && Number.isInteger(ownData(rng, "state"))
-    && ownData(rng, "state") >= 0
-    && ownData(rng, "state") <= 0xFFFFFFFF
-    && typeof ownData(intent, "id") === "string"
-    && ownData(intent, "type") === "attack"
-    && ownData(intent, "target") === "player"
-    && Number.isInteger(ownData(intent, "damage"))
-    && ownData(intent, "damage") >= 0;
+function validIntentSnapshot(state, pattern) {
+  return state
+    && typeof state === "object"
+    && !Array.isArray(state)
+    && state.version === 1
+    && state.patternId === pattern.id
+    && Number.isInteger(state.stepIndex)
+    && state.stepIndex >= 0
+    && state.stepIndex < pattern.steps.length
+    && state.rng?.algorithm === "mulberry32"
+    && Number.isInteger(state.rng?.state)
+    && state.rng.state >= 0
+    && state.rng.state <= 0xFFFFFFFF
+    && typeof state.intent?.id === "string"
+    && state.intent.type === "attack"
+    && state.intent.target === "player"
+    && Number.isInteger(state.intent.damage)
+    && state.intent.damage >= 0;
 }
 
-export function createIntentState({ seed, patternId } = {}) {
+function snapshotIntentState(value) {
+  try {
+    const state = cloneJsonData(value, "invalid-intent-state");
+    const pattern = getReferenceIntentPattern(state?.patternId);
+    return pattern && validIntentSnapshot(state, pattern) ? { state, pattern } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isIntentState(value) {
+  return snapshotIntentState(value) !== null;
+}
+
+export function encounterIntentFromState(value, targetId) {
+  const canonical = snapshotIntentState(value);
+  if (!canonical || typeof targetId !== "string" || targetId.length === 0) {
+    throw new TypeError("invalid-intent-state");
+  }
+  return Object.freeze({
+    id: canonical.state.intent.id,
+    type: canonical.state.intent.type,
+    targetId,
+    damage: Object.freeze({
+      min: canonical.state.intent.damage,
+      max: canonical.state.intent.damage,
+    }),
+  });
+}
+
+export function createIntentState(input = {}) {
+  const seed = ownData(input, "seed");
+  const patternId = ownData(input, "patternId");
   if (typeof seed !== "string" && !(typeof seed === "number" && Number.isFinite(seed))) {
     return { ok: false, reason: "invalid-intent-seed", state: null };
   }
@@ -68,14 +99,19 @@ export function createIntentState({ seed, patternId } = {}) {
   };
 }
 
-export function advanceIntent(state) {
-  const patternId = ownData(state, "patternId");
-  const pattern = getReferenceIntentPattern(patternId);
-  if (!pattern || !isIntentState(state, pattern)) {
-    return { ok: false, reason: "invalid-intent-state", state };
+export function advanceIntent(value) {
+  let snapshot;
+  try {
+    snapshot = cloneJsonData(value, "invalid-intent-state");
+  } catch {
+    return { ok: false, reason: "invalid-intent-state", state: null };
   }
-  const stepIndex = (ownData(state, "stepIndex") + 1) % pattern.steps.length;
-  const declaration = declare(pattern, stepIndex, ownData(state, "rng"));
+  const pattern = getReferenceIntentPattern(snapshot?.patternId);
+  if (!pattern || !validIntentSnapshot(snapshot, pattern)) {
+    return { ok: false, reason: "invalid-intent-state", state: snapshot };
+  }
+  const stepIndex = (snapshot.stepIndex + 1) % pattern.steps.length;
+  const declaration = declare(pattern, stepIndex, snapshot.rng);
   return {
     ok: true,
     state: freezeState(pattern.id, stepIndex, declaration.rng, declaration.intent),

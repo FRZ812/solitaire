@@ -71,7 +71,7 @@ describe("deterministic authored enemy intents", () => {
     expect(advanceIntent(accessor)).toEqual({
       ok: false,
       reason: "invalid-intent-state",
-      state: accessor,
+      state: null,
     });
     expect(getterCalls).toBe(0);
   });

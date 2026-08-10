@@ -1,4 +1,5 @@
 import { cloneJsonData } from "./json-data.js";
+import { advanceIntent, encounterIntentFromState } from "./intent.js";
 import { isEncounterState } from "./model.js";
 import { nextInt } from "./rng.js";
 import { applyStatus, hasStatus, removeStatus } from "./statuses.js";
@@ -281,14 +282,20 @@ function resolveEnemyTurn(state, events) {
   }
 
   tickCooldowns(state, events, actionRound);
+  if (enemy.intentState) {
+    const advanced = advanceIntent(enemy.intentState);
+    if (!advanced.ok) throw new TypeError("invalid-intent-state");
+    enemy.intentState = clone(advanced.state);
+    enemy.intent = clone(encounterIntentFromState(advanced.state, state.playerId));
+  }
   state.round += 1;
   state.phase = "player";
   emit(state, events, {
     type: "intent-declared",
     actorId: enemy.id,
-    intentId: intent.id,
-    targetId: intent.targetId,
-    intent: clone(intent),
+    intentId: enemy.intent.id,
+    targetId: enemy.intent.targetId,
+    intent: clone(enemy.intent),
   });
 }
 
