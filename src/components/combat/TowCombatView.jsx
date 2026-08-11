@@ -133,7 +133,12 @@ export function TowCombatView({
       <div className="production-combat__backdrop" aria-hidden="true" />
       <main className="production-combat__panel">
         <header className="production-combat__header">
-          <span className="production-combat__eyebrow">Round {encounter.round}</span>
+          <span className="production-combat__eyebrow">
+            Round {encounter.round}
+            {!terminal && encounter.turn.actionsRemaining > 1
+              ? ` · ${encounter.turn.actionsRemaining} actions`
+              : null}
+          </span>
           <h1 id="tow-combat-title">
             {terminal ? (encounter.phase === "victory" ? "Victory" : "Defeat") : "Combat"}
           </h1>
@@ -176,7 +181,7 @@ export function TowCombatView({
               {encounter.build.skills.map((skillState, index) => {
                 const definition = getSkill(skillState.id);
                 const legality = skillLegality(skillState, {
-                  turnAvailable: !encounter.turn.actionSpent,
+                  turnAvailable: encounter.turn.actionsRemaining > 0,
                 });
                 return (
                   <button

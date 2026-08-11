@@ -85,11 +85,20 @@ describe("bestiary enemies cross the bridge", () => {
     expect(actor.stats).toEqual({ attack: 5, defense: 3, critRate: 0, dodgeRate: 5 });
   });
 
-  it("turns a damage band into a light and a heavy attack", () => {
+  it("turns a damage band into a move set, including a multi-hit flurry", () => {
+    // Multi-hit has to reach live fights, because Steelskin, Thorn and Burn all behave
+    // differently against three small hits than against one heavy blow.
     expect(towEnemyFromBestiary(bandit).attacks).toEqual([
       { id: "road-bandit-jab", name: "Jab", hits: 1, damage: 3 },
-      { id: "road-bandit-swing", name: "Swing", hits: 1, damage: 7 },
+      { id: "road-bandit-swing", name: "Swing", hits: 1, damage: 5 },
+      { id: "road-bandit-heavy", name: "Heavy blow", hits: 1, damage: 7 },
+      { id: "road-bandit-flurry", name: "Flurry", hits: 2, damage: 2 },
     ]);
+  });
+
+  it("omits a flurry when the band is too narrow for one to threaten", () => {
+    const narrow = towEnemyFromBestiary({ ...bandit, weapon: { min: 4, max: 5 } });
+    expect(narrow.attacks.map((attack) => attack.hits)).toEqual([1, 1, 1]);
   });
 
   it("collapses a fixed-damage weapon to one attack", () => {

@@ -117,6 +117,28 @@ export function fireTraits(state) {
 // Creation
 // ---------------------------------------------------------------------------
 
+// How many turn-consuming actions the player gets this round.
+//
+// Haste "gains additional action during battle". Priority "performs a certain number of
+// actions before the enemy; if the enemy has Priority too, they cancel out" — so it is
+// the *net* against the enemy line, not a flat bonus, and an enemy with more Priority
+// than you simply cancels yours rather than stealing your turn.
+export function actionsForRound(state) {
+  const player = state.actors[state.playerId];
+  const haste = statusCount(player.statuses, "haste");
+  const playerPriority = statusCount(player.statuses, "priority");
+  const enemyPriority = state.enemyIds.reduce((most, enemyId) => {
+    const enemy = state.actors[enemyId];
+    if (enemy.hp <= 0) return most;
+    return Math.max(most, statusCount(enemy.statuses, "priority"));
+  }, 0);
+  return 1 + haste + Math.max(0, playerPriority - enemyPriority);
+}
+
+function withFreshTurn(state) {
+  return { ...state, turn: { actionsRemaining: actionsForRound(state) } };
+}
+
 function statOf(actor, scale) {
   if (scale === "attack") return actor.stats.attack + statusCount(actor.statuses, "strength")
     + statusCount(actor.statuses, "overload");
@@ -175,13 +197,15 @@ export function createTowEncounter({ seed, player, enemies, build } = {}) {
       ...enemyActors.map((enemy) => [enemy.id, enemy]),
     ]),
     build: { traits, skills, runes: [...(build?.runes || [])] },
-    turn: { actionSpent: false },
+    turn: { actionsRemaining: 1 },
     events: [],
   };
 
   // Combat-start traits land before the first player command, which is what makes
   // Intangible's 7 Invincible or Inferno's 80 Burn an opening rather than a turn-one play.
-  return fireTraits(base);
+  // The opening action count is read after they fire, so Flash's 6 Priority is worth
+  // something on round one rather than only from round two.
+  return withFreshTurn(fireTraits(base));
 }
 
 export function isTowEncounter(value) {
@@ -311,7 +335,7 @@ export function useSkill(state, skillId, targetId = null) {
   const index = state.build.skills.findIndex((entry) => entry.id === skillId);
   if (index < 0) return { ok: false, reason: "skill-not-held", state };
   const skillState = state.build.skills[index];
-  const legality = skillLegality(skillState, { turnAvailable: !state.turn.actionSpent });
+  const legality = skillLegality(skillState, { turnAvailable: state.turn.actionsRemaining > 0 });
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
 
   const definition = getSkill(skillId);
@@ -331,7 +355,9 @@ export function useSkill(state, skillId, targetId = null) {
     },
     turn: {
       ...state.turn,
-      actionSpent: state.turn.actionSpent || definition.consumesTurn,
+      actionsRemaining: definition.consumesTurn
+        ? Math.max(0, state.turn.actionsRemaining - 1)
+        : state.turn.actionsRemaining,
     },
   };
   next = applySkillEffects(next, skillId, skillState.rank, target);
@@ -421,14 +447,15 @@ export function endTurn(state) {
     ...next,
     actors: ticked,
     round: next.round + 1,
-    turn: { actionSpent: false },
     build: {
       ...next.build,
       skills: next.build.skills.map(tickSkillCooldown),
     },
   };
 
-  next = fireTraits(next);
+  // Cadence traits fire before the action count is read, so a Swift proc this round is
+  // an extra action this round rather than next.
+  next = withFreshTurn(fireTraits(next));
   return { ok: true, reason: null, state: settle(next) };
 }
 

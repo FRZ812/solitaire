@@ -97,7 +97,7 @@ describe("using skills", () => {
 
   it("spends the turn for a turn-consuming skill and refuses a second", () => {
     const first = useSkill(start(), "strike");
-    expect(first.state.turn.actionSpent).toBe(true);
+    expect(first.state.turn.actionsRemaining).toBe(0);
     expect(useSkill(first.state, "strike")).toMatchObject({ ok: false, reason: "turn-already-spent" });
   });
 
@@ -105,7 +105,7 @@ describe("using skills", () => {
     const state = start({ build: { skills: ["strike", "warcry"] } });
     const free = useSkill(state, "warcry");
     expect(free.ok).toBe(true);
-    expect(free.state.turn.actionSpent).toBe(false);
+    expect(free.state.turn.actionsRemaining).toBe(1);
     expect(statusCount(free.state.actors["arctic-knight"].statuses, "solidity")).toBe(3);
     expect(useSkill(free.state, "strike").ok).toBe(true);
   });
@@ -140,7 +140,7 @@ describe("ending the turn", () => {
     const result = endTurn(start());
     expect(result.ok).toBe(true);
     expect(result.state.round).toBe(2);
-    expect(result.state.turn.actionSpent).toBe(false);
+    expect(result.state.turn.actionsRemaining).toBe(1);
     expect(result.state.actors["arctic-knight"].hp).toBeLessThan(170);
   });
 
@@ -287,5 +287,71 @@ describe("determinism", () => {
       expect(entry.round).toBeGreaterThanOrEqual(1);
     });
     expect(isTowEncounter(state)).toBe(true);
+  });
+});
+
+describe("Priority and Haste", () => {
+  it("gives one action a round by default", () => {
+    expect(start().turn.actionsRemaining).toBe(1);
+  });
+
+  it("turns Haste into an extra action, spendable the same round", () => {
+    // Swift grants Haste; two stacks means three turn-consuming actions this round.
+    const state = start({ player: { ...knight(), statuses: [{ type: "haste", count: 2 }] } });
+    expect(state.turn.actionsRemaining).toBe(3);
+    let after = useSkill(state, "strike").state;
+    expect(after.turn.actionsRemaining).toBe(2);
+    after = useSkill(after, "strike").state;
+    after = useSkill(after, "strike").state;
+    expect(after.turn.actionsRemaining).toBe(0);
+    expect(useSkill(after, "strike")).toMatchObject({ ok: false, reason: "turn-already-spent" });
+    // Three strikes of 12 landed, not one.
+    expect(after.actors.gatekeeper.hp).toBe(190 - 36);
+  });
+
+  it("lets Priority act before the enemy", () => {
+    const state = start({ player: { ...knight(), statuses: [{ type: "priority", count: 3 }] } });
+    expect(state.turn.actionsRemaining).toBe(4);
+  });
+
+  it("cancels Priority against the enemy's own", () => {
+    // "If the enemy has Priority too, they cancel out each other."
+    const state = start({
+      player: { ...knight(), statuses: [{ type: "priority", count: 3 }] },
+      enemies: [foe({ statuses: [{ type: "priority", count: 2 }] })],
+    });
+    expect(state.turn.actionsRemaining).toBe(2);
+  });
+
+  it("never drops below one action when the enemy out-prioritises you", () => {
+    const state = start({
+      player: { ...knight(), statuses: [{ type: "priority", count: 1 }] },
+      enemies: [foe({ statuses: [{ type: "priority", count: 9 }] })],
+    });
+    expect(state.turn.actionsRemaining).toBe(1);
+  });
+
+  it("ignores the Priority of a foe that is already down", () => {
+    const state = start({
+      player: { ...knight(), statuses: [{ type: "priority", count: 2 }] },
+      enemies: [foe({ maxHp: 190, hp: 0, statuses: [{ type: "priority", count: 5 }] }),
+        foe({ id: "second", name: "Second" })],
+    });
+    expect(state.turn.actionsRemaining).toBe(3);
+  });
+
+  it("stacks Haste with net Priority", () => {
+    const state = start({
+      player: { ...knight(), statuses: [{ type: "haste", count: 1 }, { type: "priority", count: 2 }] },
+    });
+    expect(state.turn.actionsRemaining).toBe(4);
+  });
+
+  it("recomputes the count each round, after cadence traits fire", () => {
+    // Haste decays at end of turn, so the extra action is not permanent.
+    const state = start({ player: { ...knight(), statuses: [{ type: "haste", count: 1 }] } });
+    expect(state.turn.actionsRemaining).toBe(2);
+    const after = endTurn(useSkill(state, "strike").state).state;
+    expect(after.turn.actionsRemaining).toBe(1);
   });
 });

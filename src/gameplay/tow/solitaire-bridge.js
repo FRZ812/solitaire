@@ -109,13 +109,31 @@ export function towEnemyFromBestiary(enemy, { id } = {}) {
       dodgeRate: clampRate(enemy.dodge || 0),
     },
     statuses: createStatusStack(),
-    attacks: min === max
-      ? [{ id: `${actorId}-strike`, name: "Strike", hits: 1, damage: max }]
-      : [
-        { id: `${actorId}-jab`, name: "Jab", hits: 1, damage: min },
-        { id: `${actorId}-swing`, name: "Swing", hits: 1, damage: max },
-      ],
+    attacks: attackTableFor(actorId, min, max),
   };
+}
+
+// A damage band becomes a move set, not one averaged swing. Reference enemies read this
+// way — the Gatekeeper has six named attacks from 11 to 50 — and it is what puts multi-hit
+// in front of the player, where Steelskin, Thorn and Burn all behave differently to a
+// single heavy blow.
+function attackTableFor(actorId, min, max) {
+  if (min === max) {
+    return [{ id: `${actorId}-strike`, name: "Strike", hits: 1, damage: max }];
+  }
+  const mid = Math.max(min, Math.round((min + max) / 2));
+  const table = [
+    { id: `${actorId}-jab`, name: "Jab", hits: 1, damage: min },
+    { id: `${actorId}-swing`, name: "Swing", hits: 1, damage: mid },
+    { id: `${actorId}-heavy`, name: "Heavy blow", hits: 1, damage: max },
+  ];
+  // A flurry only exists where the band is wide enough for each hit to still land for
+  // something; below that it would read as a weaker single swing rather than a threat.
+  const flurryDamage = Math.round(min * 0.6);
+  if (flurryDamage >= 1 && max - min >= 2) {
+    table.push({ id: `${actorId}-flurry`, name: "Flurry", hits: 2, damage: flurryDamage });
+  }
+  return table;
 }
 
 /**
