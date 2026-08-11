@@ -13,6 +13,7 @@
 import { hexNeighbors, hexDistance } from "./world.js";
 import { makeRng } from "./town-gen.js";
 import { LANDMARKS } from "../data/continent.js";
+import { isLivingCharacter } from "./aging.js";
 
 const DRIFT_DAYS_PER_STEP = 2; // an off-map soul wanders ~one hex every couple of days
 const DRIFT_MAX_STEPS = 40;    // cap the walk (~80 days fully resolves); keeps it cheap
@@ -53,10 +54,6 @@ export function characterPosition(state, id) {
     x = next.x; y = next.y;
   }
   return { x, y, exact: false };
-}
-
-function isLivingCharacter(character) {
-  return character?.combatState?.status !== "dead" && character?.combatState?.health !== 0;
 }
 
 export function canTrackCharacter(state, id) {
@@ -148,7 +145,9 @@ export function nearestKnownPlace(state, x, y) {
 // The full scry reading for a character: their computed hex + nearest known place,
 // or null if they cannot be found (whereabouts never recorded).
 export function scryResult(state, id) {
+  const character = state.world.codex.characters?.[id];
+  if (!isLivingCharacter(character)) return null;
   const pos = characterPosition(state, id);
   if (!pos) return null;
-  return { id, name: state.world.codex.characters?.[id]?.name || id, pos, place: nearestKnownPlace(state, pos.x, pos.y) };
+  return { id, name: character.name || id, pos, place: nearestKnownPlace(state, pos.x, pos.y) };
 }

@@ -1,9 +1,12 @@
+// deno-lint-ignore no-import-prefix -- Supabase Edge resolves this pinned JSR import directly.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { streamProviderToolLoop } from "./provider-loop.ts";
 import { requestNarratorRound, selectedModel } from "./routing.ts";
+import { finalizeBoundedNarratorSSE, readBoundedJsonRequest } from "./transport-limits.ts";
 import {
   asOptionalInstructionLibrary,
   instructionToolFor,
+  prepareInstructionRouting,
   resolveInstructionToolCall,
   type InstructionSkill,
 } from "./tools.ts";
@@ -14,6 +17,8 @@ const MAX_FIELD_LENGTH = 120_000;
 const MAX_SYSTEM_PROMPT_LENGTH = 200_000;
 const MAX_MEMORY_FACT_LENGTH = 600;
 const MAX_EXISTING_MEMORIES = 80;
+const MAX_REQUEST_BYTES = 2_000_000;
+const MAX_STREAM_BYTES = 2_000_000;
 
 // A real function-call tool (not a JSON response field) — this is the
 // narrator's dedicated long-term memory, distinct from the rolling
@@ -129,9 +134,11 @@ function streamNarratorTurn(opts: {
   memoryMode: MemoryMode;
   existingMemories: string[];
   instructionLibrary: InstructionSkill[];
+  preloadedSkillIds: string[];
+  signal: AbortSignal;
 }) {
   const knownMemoryKeys = new Set(opts.existingMemories.map(memoryFingerprint).filter(Boolean));
-  const loadedSkillIds = new Set<string>();
+  const loadedSkillIds = new Set<string>(opts.preloadedSkillIds);
   const tools = [
     ...(opts.instructionLibrary.length ? [instructionToolFor(opts.instructionLibrary)] : []),
     ...(opts.memoryMode === "manual" ? [] : [memoryToolFor(opts.memoryMode)]),
@@ -147,6 +154,7 @@ function streamNarratorTurn(opts: {
     messages: opts.messages,
     tools,
     maxRounds: MAX_PROVIDER_ROUNDS,
+    signal: opts.signal,
     resolveToolCall(toolCall) {
       const instructionResult = resolveInstructionToolCall(
         toolCall,
@@ -212,20 +220,27 @@ Deno.serve(async (request) => {
 
   let payload: Record<string, unknown>;
   try {
-    payload = await request.json();
-  } catch {
-    return json({ error: "invalid JSON" }, 400);
+    payload = await readBoundedJsonRequest(request, MAX_REQUEST_BYTES);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "invalid JSON";
+    return json({ error: message === "Narrator request exceeded the byte limit." ? message : "invalid JSON" }, 400);
   }
 
   let stateContext: string;
   let userMessage: string;
   let systemPrompt: string;
   let instructionLibrary: InstructionSkill[];
+  let routing: ReturnType<typeof prepareInstructionRouting>;
   try {
     stateContext = stringField(payload.state_context, "state_context");
     userMessage = stringField(payload.user_msg, "user_msg");
     systemPrompt = stringField(payload.system_prompt, "system_prompt", MAX_SYSTEM_PROMPT_LENGTH);
     instructionLibrary = asOptionalInstructionLibrary(payload.narrator_skills);
+    routing = prepareInstructionRouting(
+      instructionLibrary,
+      payload.allowed_narrator_skills,
+      payload.required_narrator_skills,
+    );
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "invalid request" }, 400);
   }
@@ -234,20 +249,28 @@ Deno.serve(async (request) => {
   const memoryMode = selectedMemoryMode(payload.memory_mode);
   const existingMemories = asExistingMemories(payload.existing_memories);
   const messages = [
-    { role: "system", content: systemPrompt },
+    {
+      role: "system",
+      content: routing.preloadedContent
+        ? `${systemPrompt}\n\nENGINE-PRELOADED REQUIRED NARRATOR DOCTRINE\n${routing.preloadedContent}`
+        : systemPrompt,
+    },
     ...asHistory(payload.history),
     { role: "user", content: `${stateContext}\n\n${userMessage}` },
   ];
 
-  return new Response(streamNarratorTurn({
+  const providerStream = streamNarratorTurn({
     apiKey,
     model,
     effort: payload.reasoning_effort,
     messages,
     memoryMode,
     existingMemories,
-    instructionLibrary,
-  }), {
+    instructionLibrary: routing.instructionLibrary,
+    preloadedSkillIds: routing.preloadedSkillIds,
+    signal: request.signal,
+  });
+  return new Response(finalizeBoundedNarratorSSE(providerStream, MAX_STREAM_BYTES), {
     headers: {
       ...CORS_HEADERS,
       "Content-Type": "text/event-stream; charset=utf-8",

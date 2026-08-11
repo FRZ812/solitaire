@@ -39,7 +39,15 @@ function normalizeStoryItem(item) {
   if (item.type === "dialogue" || item.type === "dialog") {
     const name = typeof item.name === "string" ? item.name : "";
     const line = typeof item.line === "string" ? item.line : "";
-    return (name || line) ? { type: "dialogue", name, line } : null;
+    const speakerId = typeof item.speaker_id === "string"
+      ? item.speaker_id
+      : (typeof item.speakerId === "string" ? item.speakerId : "");
+    return (name || line) ? {
+      type: "dialogue",
+      ...(speakerId ? { speaker_id: speakerId } : {}),
+      name,
+      line,
+    } : null;
   }
   return null;
 }

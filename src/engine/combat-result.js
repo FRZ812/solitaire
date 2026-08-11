@@ -26,9 +26,20 @@ export function applyCombatResult(state, cs, context = {}) {
   const next = clone(state);
   const beats = [];
   const now = Date.now();
+  const permanentDeath = cs.phase === "defeat" && context.permanentDeath === true;
 
   next.character.vitality = clamp(Math.round(cs.player.health), 0, next.character.vitalityMax);
-  if (cs.phase === "defeat") next.character.vitality = Math.max(1, next.character.vitality);
+  if (cs.phase === "defeat" && !permanentDeath) {
+    next.character.vitality = Math.max(1, next.character.vitality);
+  }
+  if (permanentDeath) {
+    next.ended = {
+      cause: "fallen in battle",
+      foe: context.flavor || "a foe beyond their strength",
+      place: context.place || "an unknown place",
+      day: next.time?.day || null,
+    };
+  }
 
   // Proficiency XP earned this fight raises use-based mastery and feeds the
   // global character-level reserve. The player decides later whether each
@@ -98,7 +109,9 @@ export function applyCombatResult(state, cs, context = {}) {
   const loot = cs.loot;
   const deadCount = cs.enemies.filter((e) => e._dead).length;
   const hasSpoils = loot && deadCount > 0 && ((loot.items && loot.items.length) || loot.ability || loot.coins.silver || loot.coins.copper || loot.coins.gold);
-  next.pendingLoot = hasSpoils ? { ...loot, deadCount, flavor: context.flavor || cs.enemies[0]?.name || "the fallen" } : null;
+  next.pendingLoot = !permanentDeath && hasSpoils
+    ? { ...loot, deadCount, flavor: context.flavor || cs.enemies[0]?.name || "the fallen" }
+    : null;
 
   // Persist named foes' combat state so a re-fight continues from their wounds
   // (no full-HP reset) and a foe who yielded/died stays that way.
@@ -186,7 +199,15 @@ export function applyCombatResult(state, cs, context = {}) {
 
   // Hand the narrator a blow-by-blow account so the fight can be referenced
   // afterward (and so a [DEFEATED] follow-up knows exactly what happened).
-  next.apiHistory = [...(next.apiHistory || []), { role: "user", content: buildCombatRecap(cs, context) }];
+  const defeatOutcome = cs.phase === "defeat"
+    ? permanentDeath
+      ? "[DEFEAT OUTCOME — ENGINE SETTLED] Permanent combat death is already canonical. Narration cannot rescue, revise, or add mechanics."
+      : "[DEFEAT OUTCOME — ENGINE SETTLED] The player survives unconscious at this location with the vitality and conditions already recorded in canonical state. Inventory remains unchanged. No inventory or location change is authorized."
+    : "";
+  next.apiHistory = [...(next.apiHistory || []), {
+    role: "user",
+    content: [buildCombatRecap(cs, context), defeatOutcome].filter(Boolean).join("\n\n"),
+  }];
 
   next.beats = [...next.beats, ...beats];
   return next;

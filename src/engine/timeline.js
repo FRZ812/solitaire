@@ -24,6 +24,22 @@ function turnResponseText(beats) {
     .join("\n\n");
 }
 
+function restoreCheckpointContinuation(restored, checkpoint) {
+  const present = checkpoint?.narratorTurnContinuationPresent;
+  if (present === true || (present === undefined
+    && Object.prototype.hasOwnProperty.call(checkpoint || {}, "narratorTurnContinuation"))) {
+    return { ...restored, narratorTurnContinuation: checkpoint.narratorTurnContinuation };
+  }
+  if (present === false) {
+    const withoutContinuation = { ...restored };
+    delete withoutContinuation.narratorTurnContinuation;
+    return withoutContinuation;
+  }
+  // Legacy checkpoints did not capture continuation authority. Never inherit
+  // a later state's capability into an earlier reconstructed state.
+  return { ...restored, narratorTurnContinuation: null };
+}
+
 // Persist a turn checkpoint even when narrator presentation has not arrived yet.
 // Travel uses this in the same state object that exposes canonical arrival, making
 // autosave, rejection, and post-arrival cancellation rewind-safe.
@@ -44,10 +60,16 @@ export function startTurnCheckpoint(base, message, next, extra = {}) {
     char: base.character,
     party: base.party,
     memories: base.memories,
+    created: base.created,
     time: base.time,
     world: { codexIdx: c.idx, seenIdx: s.idx, tilesIdx: t.idx, ...restWorld },
+    narratorTurnContinuationPresent: Object.prototype.hasOwnProperty.call(base, "narratorTurnContinuation"),
   };
+  if (checkpoint.narratorTurnContinuationPresent) {
+    checkpoint.narratorTurnContinuation = base.narratorTurnContinuation;
+  }
   if (extra.travel) checkpoint.travel = extra.travel;
+  if (extra.policyOptions) checkpoint.policyOptions = extra.policyOptions;
   return { ...next, pools, turns: [...(next.turns || []), checkpoint] };
 }
 
@@ -157,17 +179,18 @@ export function stateBeforeTurn(state, k) {
     seen: state.pools.seen[seenIdx],
     tiles: state.pools.tiles[tilesIdx],
   };
-  return {
+  return restoreCheckpointContinuation({
     ...state,
     character: cp.char,
     party: cp.party ?? state.party,
     memories: cp.memories ?? state.memories,
+    created: typeof cp.created === "boolean" ? cp.created : state.created,
     time: cp.time,
     world,
     beats: state.beats.slice(0, cp.beatsLen),
     apiHistory: state.apiHistory.slice(0, cp.historyLen),
     turns: state.turns.slice(0, k),
-  };
+  }, cp);
 }
 
 // Reconstruct the state right AFTER turn k completed — keeping turn k's beats and
@@ -188,17 +211,18 @@ export function stateAfterTurn(state, k) {
     seen: state.pools.seen[seenIdx],
     tiles: state.pools.tiles[tilesIdx],
   };
-  return {
+  return restoreCheckpointContinuation({
     ...state,
     character: nextCp.char,
     party: nextCp.party ?? state.party,
     memories: nextCp.memories ?? state.memories,
+    created: typeof nextCp.created === "boolean" ? nextCp.created : state.created,
     time: nextCp.time,
     world,
     beats: state.beats.slice(0, cur.endLen),       // keep through turn k's last beat
     apiHistory: state.apiHistory.slice(0, nextCp.historyLen),
     turns: state.turns.slice(0, k + 1),
-  };
+  }, nextCp);
 }
 
 // Manually edit a beat's text in place, syncing the change into the model's
@@ -220,15 +244,14 @@ export function editBeat(state, beatId, newText) {
   for (let i = state.apiHistory.length - 1; i >= 0; i--) {
     const entry = state.apiHistory[i];
     if (entry.role !== role || typeof entry.content !== "string") continue;
-    if (!entry.content.includes(oldText)) continue;
     const patched = role === "user"
       ? entry.content.replace(oldText, newText) // player's words appear verbatim
       : patchRaw(entry.content, beat, oldText, newText, storyPosition);
     if (patched !== entry.content) {
       apiHistory = [...state.apiHistory];
       apiHistory[i] = { ...entry, content: patched };
+      break;
     }
-    break;
   }
   return { ...state, beats, apiHistory };
 }
@@ -250,13 +273,12 @@ export function deleteBeat(state, beatId) {
     for (let i = state.apiHistory.length - 1; i >= 0; i--) {
       const entry = state.apiHistory[i];
       if (entry.role !== "assistant" || typeof entry.content !== "string") continue;
-      if (text && !entry.content.includes(text)) continue;
       const patched = removeFromRaw(entry.content, beat, text, storyPosition);
       if (patched !== entry.content) {
         apiHistory = [...state.apiHistory];
         apiHistory[i] = { ...entry, content: patched };
+        break;
       }
-      break;
     }
   }
 
@@ -288,7 +310,7 @@ function removeFromRaw(raw, beat, text, storyPosition) {
     if (beat.type === "dialogue") {
       let arr = Array.isArray(obj.dialogues) ? obj.dialogues : (obj.dialogue ? [obj.dialogue] : []);
       const before = arr.length;
-      arr = arr.filter((d) => !(d && d.name === beat.name && d.line === text));
+      arr = arr.filter((d) => !(dialogueSpeakerMatches(d, beat) && d.line === text));
       if (arr.length !== before) {
         if (Array.isArray(obj.dialogues)) obj.dialogues = arr;
         else obj.dialogue = arr[0] || null;
@@ -322,7 +344,7 @@ function patchRaw(raw, beat, oldText, newText, storyPosition) {
       const arr = Array.isArray(obj.dialogues) ? obj.dialogues : (obj.dialogue ? [obj.dialogue] : []);
       let hit = false;
       for (const d of arr) {
-        if (d && d.name === beat.name && d.line === oldText) { d.line = newText; hit = true; break; }
+        if (dialogueSpeakerMatches(d, beat) && d.line === oldText) { d.line = newText; hit = true; break; }
       }
       if (hit) {
         if (Array.isArray(obj.dialogues)) obj.dialogues = arr;
@@ -351,11 +373,20 @@ function matchingStoryIndex(story, beat, text, preferred) {
     if (!item || typeof item !== "object") return false;
     if (beat.type === "dialogue") {
       return (item.type === "dialogue" || item.type === "dialog")
-        && item.name === beat.name && item.line === text;
+        && dialogueSpeakerMatches(item, beat) && item.line === text;
     }
     return (item.type === "beat" || item.type === "narration")
       && (item.text === text || item.content === text);
   };
   if (preferred >= 0 && preferred < story.length && matches(story[preferred])) return preferred;
   return story.findIndex(matches);
+}
+
+function dialogueSpeakerMatches(item, beat) {
+  if (!item || typeof item !== "object") return false;
+  const itemSpeakerId = item.speaker?.kind === "character"
+    ? item.speaker.id
+    : item.speakerId;
+  if (beat.speakerId && itemSpeakerId) return itemSpeakerId === beat.speakerId;
+  return item.name === beat.name;
 }

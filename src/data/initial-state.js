@@ -197,6 +197,18 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
             knows: [],
             bodyWeight: 14, ridingOn: null, riders: [],
           },
+          "threshold-voice": {
+            id: "threshold-voice",
+            kind: "npc",
+            name: "The Threshold Voice",
+            race: null,
+            profession: "limbo-guide",
+            age: null,
+            agingMode: "out-of-time",
+            description: "The patient, disembodied interviewer at the threshold between unbeing and Avarra.",
+            worn: [],
+            knows: [],
+          },
 
           // Every ready-made creation character also lives somewhere in Avarra.
           // Character creation removes the selected template's roster copy so

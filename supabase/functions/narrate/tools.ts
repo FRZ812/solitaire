@@ -72,6 +72,46 @@ export function asOptionalInstructionLibrary(value: unknown): InstructionSkill[]
   return value == null ? [] : asInstructionLibrary(value);
 }
 
+function asRouteSkillIds(value: unknown, label: string) {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length > MAX_SKILLS) {
+    throw new Error(`invalid ${label}`);
+  }
+  const ids = [...new Set(value.map((id) => (
+    typeof id === "string" && SKILL_ID.test(id) ? id : ""
+  )))];
+  if (ids.includes("")) throw new Error(`invalid ${label}`);
+  return ids;
+}
+
+function renderInstructionSkill(skill: InstructionSkill) {
+  return `<narrator-skill id="${skill.id}">\n${skill.content}\n</narrator-skill>`;
+}
+
+export function prepareInstructionRouting(
+  library: InstructionSkill[],
+  allowedValue: unknown,
+  requiredValue: unknown,
+) {
+  const byId = new Map(library.map((skill) => [skill.id, skill]));
+  const allowedIds = asRouteSkillIds(allowedValue, "allowed narrator skills");
+  const requiredIds = asRouteSkillIds(requiredValue, "required narrator skills") || [];
+  const instructionLibrary = allowedIds == null
+    ? library
+    : allowedIds.map((id) => byId.get(id)).filter((skill): skill is InstructionSkill => !!skill);
+  const allowedSet = new Set(instructionLibrary.map(({ id }) => id));
+  const preloaded = requiredIds.map((id) => {
+    const skill = byId.get(id);
+    if (!skill || !allowedSet.has(id)) throw new Error("required narrator skill is unavailable");
+    return skill;
+  });
+  return {
+    instructionLibrary,
+    preloadedSkillIds: preloaded.map(({ id }) => id),
+    preloadedContent: preloaded.map(renderInstructionSkill).join("\n\n"),
+  };
+}
+
 export function instructionToolFor(library: InstructionSkill[]) {
   return {
     type: "function",
@@ -143,7 +183,7 @@ export function resolveInstructionToolCall(
       continue;
     }
     loadedSkillIds.add(id);
-    results.push(`<narrator-skill id="${id}">\n${skill.content}\n</narrator-skill>`);
+    results.push(renderInstructionSkill(skill));
   }
 
   return {

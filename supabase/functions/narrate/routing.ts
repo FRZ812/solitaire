@@ -112,8 +112,17 @@ export function buildNarratorRequest(opts: NarratorRequestOptions) {
 export function requestNarratorRound(opts: NarratorRequestOptions & {
   apiKey: string;
   fetcher?: typeof fetch;
+  maxRequestBytes?: number;
+  signal?: AbortSignal;
 }) {
   const fetcher = opts.fetcher || fetch;
+  const body = JSON.stringify(buildNarratorRequest(opts));
+  const maxRequestBytes = Number.isFinite(opts.maxRequestBytes)
+    ? Math.max(1, Math.trunc(opts.maxRequestBytes as number))
+    : 2_000_000;
+  if (new TextEncoder().encode(body).byteLength > maxRequestBytes) {
+    throw new Error("Provider request exceeded the byte limit.");
+  }
   return fetcher(OPENROUTER_URL, {
     method: "POST",
     headers: {
@@ -121,6 +130,7 @@ export function requestNarratorRound(opts: NarratorRequestOptions & {
       "Content-Type": "application/json",
       "X-Title": "Solitaire",
     },
-    body: JSON.stringify(buildNarratorRequest(opts)),
+    body,
+    signal: opts.signal,
   });
 }

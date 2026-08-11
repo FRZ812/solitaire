@@ -1,28 +1,30 @@
 // Web-mode narrator call. Invokes the `narrate` Supabase Edge Function,
 // which gates on auth + the manual subscription allowlist (server-side),
-// calls OpenRouter, and re-emits the stream as Anthropic-style SSE
-// (content_block_delta / text_delta). The client buffers the whole stream
-// then parses JSON; the engine is unchanged.
+// calls OpenRouter, and re-emits the stream as Anthropic-style SSE. The client
+// buffers answer text, requires one exact JSON document, compiles it against
+// the captured turn contract, and only then returns it to the application.
 //
 // The system prompt is bundled in the web client (src/system-prompt.js) —
 // single source of truth, no mirror file on the function side.
 import { supabase } from "./supabase-client.js";
 import { buildStateContext } from "./api.js";
-import { extractJSON } from "./json.js";
 import { SYSTEM_PROMPT } from "../system-prompt.js";
 import { getNarratorModel, getNarratorEffort } from "./narrator-models.js";
-import { storyTextLength } from "./narrative-sequence.js";
 import { prepareNarratorHistory } from "./narrator-history.js";
 import { normalizeNarratorSettings } from "./narrator-settings.js";
 import { mergeMemoryBank } from "./memory.js";
 import { withAbortTimeout } from "./request-timeout.js";
 import { NARRATOR_SKILLS } from "../narrator-instructions.js";
+import { buildNarratorProjection, narratorTurnPolicy } from "./narrator-projection.js";
+import { compileNarratorCandidate } from "./narrator-turn-compiler.js";
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/narrate`;
 // Only abandon a genuinely dead connection. Narrator models may reason for a
 // long time, especially across on-demand skill rounds.
 export const NARRATOR_TURN_TIMEOUT_MS = 1_800_000;
 const NARRATOR_TIMEOUT_MESSAGE = "Narrator request timed out. Please retry.";
+const MAX_NARRATOR_REQUEST_BYTES = 2_000_000;
+const MAX_NARRATOR_RESPONSE_BYTES = 2_000_000;
 
 // Retry hint prepended to userMsgRaw on attempt 1 when attempt 0's story
 // arrived truncated (for example, a mid-stream provider cut). Nudges the model
@@ -36,47 +38,75 @@ const RETRY_HINT_1 =
 const RETRY_HINT_2 =
   "[RETRY HINT 2: previous attempt still cut short. Paraphrase your intended story sequence in different words — terse (≤ 150 player-facing words), avoid graphic embellishment, preserve the core action. Output complete, well-formed JSON.]";
 
-// onProgress (optional): called with chunks as they stream in from the edge
-// function. `{ thinking }` chunks fire as the model emits its reasoning trace;
-// `{ text }` chunks fire as the answer JSON streams. Both are partial —
-// concatenate to build the full string. A `{ reset: true }` chunk fires at the
-// start of every attempt, so a live-thinking UI can clear the previous take's
-// reasoning before a truncation-retry streams its own. The final narrator
-// beat is returned from this function after the stream completes.
-//
-// Retry policy on truncation: attempt 0 is the original call. If it parses
-// cleanly, return immediately. If it arrives truncated (extractJSON salvage
-// path or unparseable text), silently re-call with RETRY_HINT_1 prepended.
-// If that retry also truncates, call once more with RETRY_HINT_2. After at
-// most three calls per turn, return the best-of-three by player-facing story
-// length (tie-breaks favor the later attempt, since it was asked for the
-// tersest output). onProgress fires through ALL attempts — the user may
-// see a "second take" replace the first if they're watching the stream.
-// !response.ok errors are NEVER retried (auth/server, not truncation) on
-// attempt 0; on attempts 1/2 they're caught so we don't lose attempt 0's
-// partial result.
+// onProgress receives only non-story progress (`thinking`, `reset`, memory).
+// Candidate answer text remains private until strict parsing and compilation
+// succeed. Parse and contract failures receive at most two bounded repair
+// attempts; no rejected prose or partial candidate is returned.
 function throwIfAborted(signal) {
   if (!signal?.aborted) return;
   if (signal.reason instanceof Error) throw signal.reason;
   throw new Error(signal.reason == null ? "Request cancelled." : String(signal.reason));
 }
 
+function parseStrictNarratorCandidate(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeNarratorBytes(decoder, value, options) {
+  try {
+    return decoder.decode(value, options);
+  } catch {
+    throw new Error("Narrator stream contained invalid UTF-8.");
+  }
+}
+
 export function callNarrator(
   state,
   userMsgRaw,
   onProgress,
-  { signal = null, timeoutMs = NARRATOR_TURN_TIMEOUT_MS } = {},
+  {
+    signal = null,
+    timeoutMs = NARRATOR_TURN_TIMEOUT_MS,
+    projection = buildNarratorProjection(state),
+    turnPolicy = narratorTurnPolicy(userMsgRaw, state),
+    canonicalUserMsg = userMsgRaw,
+  } = {},
 ) {
   return withAbortTimeout(
-    (deadlineSignal) => callNarratorWithinDeadline(state, userMsgRaw, onProgress, deadlineSignal),
+    (deadlineSignal) => callNarratorWithinDeadline(
+      state,
+      userMsgRaw,
+      onProgress,
+      deadlineSignal,
+      projection,
+      turnPolicy,
+      canonicalUserMsg,
+    ),
     timeoutMs,
     NARRATOR_TIMEOUT_MESSAGE,
     signal,
   );
 }
 
-async function callNarratorWithinDeadline(state, userMsgRaw, onProgress, signal) {
-  const state_context = buildStateContext(state);
+async function callNarratorWithinDeadline(
+  state,
+  userMsgRaw,
+  onProgress,
+  signal,
+  projection,
+  turnPolicy,
+  canonicalUserMsg,
+) {
+  const state_context = [
+    buildStateContext(state),
+    projection.context,
+    `[TURN POLICY — id=${turnPolicy.id}; required narrator skills=${turnPolicy.requiredSkillIds.join(",") || "none"}; allowed effects=${turnPolicy.allowedEffects.join(",") || "none"}.]`,
+  ].join("\n");
   const trimmedHistory = prepareNarratorHistory(state.apiHistory);
   const narratorSettings = normalizeNarratorSettings(state.narratorSettings);
   const existing_memories = mergeMemoryBank([], state.memories);
@@ -90,82 +120,118 @@ async function callNarratorWithinDeadline(state, userMsgRaw, onProgress, signal)
   throwIfAborted(signal);
   if (!session?.access_token) throw new Error("not authenticated");
 
-  // Attempt 0: original call. Any thrown error (auth, subscription, server)
-  // propagates up — these aren't truncation and aren't worth retrying.
-  const attempt0 = await runOneAttempt({
-    session, state_context, history: trimmedHistory, userMsgRaw, onProgress, model, reasoning_effort,
-    memory_mode: narratorSettings.memoryMode, existing_memories,
-  }, signal);
-  if (!attempt0.result._truncated) return attempt0.result;
+  let violations = [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const retryHint = attempt === 0 ? "" : contractRetryHint(violations, attempt);
+    let response;
+    try {
+      response = await runOneAttempt({
+        session,
+        state_context,
+        history: trimmedHistory,
+        userMsgRaw: retryHint ? `${retryHint}\n${userMsgRaw}` : userMsgRaw,
+        canonicalUserMsg,
+        onProgress,
+        model,
+        reasoning_effort,
+        memory_mode: narratorSettings.memoryMode,
+        existing_memories,
+        required_narrator_skills: turnPolicy.requiredSkillIds,
+        allowed_narrator_skills: turnPolicy.allowedSkillIds,
+      }, signal);
+    } catch (error) {
+      throwIfAborted(signal);
+      if (attempt === 0) throw error;
+      throw new Error("Narrator repair request failed; no candidate was applied.");
+    }
 
-  // Attempt 1: hint retry. History is the SAME as attempt 0 — don't poison
-  // the next turn with the failed attempt's prefix. Errors fall back to
-  // attempt 0 so we don't lose its partial salvage.
-  let attempt1 = null;
-  try {
-    attempt1 = await runOneAttempt({
-      session, state_context, history: trimmedHistory,
-      userMsgRaw: `${RETRY_HINT_1}\n${userMsgRaw}`,
-      canonicalUserMsg: userMsgRaw,
-      onProgress, model, reasoning_effort, memory_mode: narratorSettings.memoryMode, existing_memories,
-    }, signal);
-    if (!attempt1.result._truncated) return attempt1.result;
-  } catch {
-    throwIfAborted(signal);
-    // Network/server hiccup mid-retry — fall back to best of what we have.
-    return attempt0.result;
+    if (!response.candidate) {
+      violations = [{ code: "PARSE_FAILED", path: "/", message: "Response was not complete JSON." }];
+      continue;
+    }
+    if (response.candidate._truncated) {
+      violations = [{ code: "TRUNCATED_RESPONSE", path: "/", message: "Response ended before the JSON contract completed." }];
+      continue;
+    }
+
+    const compiled = compileNarratorCandidate({
+      candidate: response.candidate,
+      projection,
+      turnPolicy,
+      metadata: {
+        raw: response.text,
+        thinking: response.thinking,
+        userMsg: response.userMsg,
+        model,
+        memories: response.memories,
+      },
+    });
+    if (!compiled.ok) {
+      violations = compiled.violations;
+      continue;
+    }
+    return compiled.turn;
   }
-
-  // Attempt 2: paraphrase retry. Same fallback discipline.
-  let attempt2 = null;
-  try {
-    attempt2 = await runOneAttempt({
-      session, state_context, history: trimmedHistory,
-      userMsgRaw: `${RETRY_HINT_2}\n${userMsgRaw}`,
-      canonicalUserMsg: userMsgRaw,
-      onProgress, model, reasoning_effort, memory_mode: narratorSettings.memoryMode, existing_memories,
-    }, signal);
-    if (!attempt2.result._truncated) return attempt2.result;
-  } catch {
-    throwIfAborted(signal);
-    // Pick best of what we have so far.
-    return pickBest([attempt0.result, attempt1.result]);
-  }
-
-  // All three truncated — return the best (longest story). On a tie,
-  // pickBest returns the LATER attempt (terser hint was honored).
-  return pickBest([attempt0.result, attempt1.result, attempt2.result]);
+  const detail = objectiveViolationDetails(violations);
+  throw new Error(`Narrator response violated the turn contract after 3 attempts: ${detail}`);
 }
 
-// Picks the attempt with the longest player-facing story. Ties go to the later
-// attempt in the array (later = stronger retry hint, so likelier to be the
-// version the model meant to land on).
-function pickBest(results) {
-  let best = results[0];
-  let bestLen = storyTextLength(best);
-  for (let i = 1; i < results.length; i++) {
-    const r = results[i];
-    const len = storyTextLength(r);
-    if (len >= bestLen) { best = r; bestLen = len; }
-  }
-  return best;
+function objectiveViolationDetails(violations) {
+  return violations.slice(0, 8).map(({ code, path }) => {
+    const safeCode = typeof code === "string" && /^[A-Z][A-Z0-9_]{0,47}$/.test(code)
+      ? code
+      : "CONTRACT_VIOLATION";
+    const safePath = typeof path === "string"
+      && path.length <= 160
+      && /^\/(?:[A-Za-z0-9_~-]+(?:\/|$))*$/.test(path)
+      ? path
+      : "/invalid-key";
+    return `${safeCode}:${safePath}`;
+  }).join(", ");
 }
 
-// One round-trip to the narrate edge function. Returns the parsed beat
-// (with _truncated flag if salvaged) wrapped as { result }. Throws on
-// !response.ok or missing body — the caller decides whether to retry. Every
-// retry shares the outer turn deadline and cancellation signal.
+function contractRetryHint(violations, attempt) {
+  const details = objectiveViolationDetails(violations);
+  const interrupted = violations.some(({ code }) => code === "PARSE_FAILED" || code === "TRUNCATED_RESPONSE");
+  const brevity = interrupted
+    ? (attempt === 1 ? RETRY_HINT_1 : RETRY_HINT_2)
+    : "[RETRY HINT: the previous candidate failed objective schema or capability validation. Return a fresh, complete JSON document using the exact current contract.]";
+  return `${brevity}\n[CONTRACT REPAIR: Return a completely new response using the exact current schema. Fix these objective violations: ${details}. Do not repeat rejected prose.]`;
+}
+
+// One round-trip to the narrate edge function. Throws on !response.ok or a
+// missing body. Every retry shares the outer turn deadline and cancellation.
 async function runOneAttempt(options, signal) {
   throwIfAborted(signal);
   return runOneAttemptWithinDeadline(options, signal);
 }
 
 async function runOneAttemptWithinDeadline(
-  { session, state_context, history, userMsgRaw, canonicalUserMsg = userMsgRaw, onProgress, model, reasoning_effort, memory_mode, existing_memories },
+  {
+    session, state_context, history, userMsgRaw, canonicalUserMsg = userMsgRaw, onProgress,
+    model, reasoning_effort, memory_mode, existing_memories, required_narrator_skills,
+    allowed_narrator_skills,
+  },
   signal,
 ) {
   // Mark a fresh attempt so any live-thinking UI clears the prior take.
   onProgress?.({ reset: true });
+  const requestBody = JSON.stringify({
+    state_context,
+    user_msg: userMsgRaw,
+    history,
+    system_prompt: SYSTEM_PROMPT,
+    narrator_skills: NARRATOR_SKILLS,
+    model,
+    reasoning_effort,
+    memory_mode,
+    existing_memories,
+    required_narrator_skills,
+    allowed_narrator_skills,
+  });
+  if (new TextEncoder().encode(requestBody).byteLength > MAX_NARRATOR_REQUEST_BYTES) {
+    throw new Error("Narrator request exceeded the byte limit.");
+  }
   const response = await fetch(FUNCTION_URL, {
     method: "POST",
     headers: {
@@ -173,62 +239,44 @@ async function runOneAttemptWithinDeadline(
       "Authorization": `Bearer ${session.access_token}`,
       "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({
-      state_context,
-      user_msg: userMsgRaw,
-      history,
-      system_prompt: SYSTEM_PROMPT,
-      narrator_skills: NARRATOR_SKILLS,
-      model,
-      reasoning_effort,
-      memory_mode,
-      existing_memories,
-    }),
+    body: requestBody,
     signal,
   });
 
   if (!response.ok || !response.body) {
-    const errText = await response.text().catch(() => "");
-    let parsed; try { parsed = JSON.parse(errText); } catch {}
-    const detail = parsed?.error || parsed?.detail || errText.slice(0, 200);
     // Surface gate states cleanly.
     if (response.status === 402) throw new Error("subscription required");
     if (response.status === 401) throw new Error("not authenticated");
-    throw new Error(`narrate ${response.status}: ${detail}`);
+    throw new Error(`narrate ${response.status}`);
   }
 
   const { text, thinking, memories } = await accumulateAnthropicSSE(response.body, onProgress);
   // Store only the action. The next request already carries a fresh state_context;
   // persisting it inside every history item multiplied payload and save size.
   const userMsg = canonicalUserMsg;
-  const parsed = extractJSON(text);
-  if (!parsed) {
-    // Total parse failure — treat as a truncation so the retry loop can try
-    // again; if all attempts fail this way we surface the raw text.
-    return {
-      result: {
-        story: [{ type: "beat", text: text || "(The narrator stumbles.)" }],
-        minutes_passed: 1,
-        _truncated: true,
-        _raw: text, _thinking: thinking, _userMsg: userMsg, _model: model, _memories: memories,
-      },
-    };
-  }
-  return { result: { ...parsed, _raw: text, _thinking: thinking, _userMsg: userMsg, _model: model, _memories: memories } };
+  const parsed = parseStrictNarratorCandidate(text);
+  return { candidate: parsed, text, thinking, userMsg, memories };
 }
 
 async function accumulateAnthropicSSE(body, onProgress) {
   const reader = body.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   let buffer = "";
   let text = "";
   let thinking = "";
   const memories = [];
+  let sawSuccessfulTerminalEvent = false;
+  let receivedBytes = 0;
 
-  while (true) {
+  try {
+    while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    receivedBytes += value.byteLength;
+    if (receivedBytes > MAX_NARRATOR_RESPONSE_BYTES) {
+      throw new Error("Narrator response exceeded the byte limit.");
+    }
+    buffer += decodeNarratorBytes(decoder, value, { stream: true });
 
     // Match both LF and CRLF event delimiters — the edge function emits LF,
     // but upstream providers sometimes leak CRLF and we want to stay tolerant.
@@ -236,33 +284,64 @@ async function accumulateAnthropicSSE(body, onProgress) {
     while ((m = buffer.match(/\r?\n\r?\n/))) {
       const rawEvent = buffer.slice(0, m.index);
       buffer = buffer.slice(m.index + m[0].length);
-      const dataPayload = rawEvent
-        .split(/\r?\n/)
-        .filter(l => l.startsWith("data:"))
+      const frameLines = rawEvent
+        .split(String.fromCharCode(10))
+        .map((line) => line.endsWith(String.fromCharCode(13)) ? line.slice(0, -1) : line);
+      if (frameLines.some((line) => !line.startsWith("data:"))) {
+        throw new Error("Narrator stream contained an invalid SSE frame.");
+      }
+      const dataPayload = frameLines
         .map(l => l.slice(5).trimStart())
         .join("\n");
       if (!dataPayload) continue;
+      let evt;
       try {
-        const evt = JSON.parse(dataPayload);
-        if (evt.type === "content_block_delta") {
-          if (evt.delta?.type === "text_delta") {
-            text += evt.delta.text;
-            onProgress?.({ text: evt.delta.text });
-          } else if (evt.delta?.type === "thinking_delta") {
-            thinking += evt.delta.thinking;
-            onProgress?.({ thinking: evt.delta.thinking });
-          }
-        } else if (evt.type === "memory_delta" && evt.fact) {
-          memories.push(evt.fact);
-        } else if (evt.type === "narrator_round_reset") {
-          text = "";
-          thinking = "";
-          onProgress?.({ reset: true });
-        }
+        evt = JSON.parse(dataPayload);
       } catch {
-        // skip malformed events
+        throw new Error("Narrator stream contained malformed JSON.");
+      }
+      if (sawSuccessfulTerminalEvent) {
+        throw new Error("Narrator stream continued after its terminal event.");
+      }
+      if (!evt || typeof evt !== "object" || Array.isArray(evt) || typeof evt.type !== "string") {
+        throw new Error("Narrator stream contained an invalid event shape.");
+      }
+      if (evt.type === "content_block_delta") {
+        if (evt.delta?.type === "text_delta" && typeof evt.delta.text === "string") {
+          text += evt.delta.text;
+        } else if (evt.delta?.type === "thinking_delta" && typeof evt.delta.thinking === "string") {
+          thinking += evt.delta.thinking;
+          onProgress?.({ thinking: evt.delta.thinking });
+        } else {
+          throw new Error("Narrator stream contained an invalid event shape.");
+        }
+      } else if (evt.type === "memory_delta" && evt.fact) {
+        memories.push(evt.fact);
+      } else if (evt.type === "narrator_round_reset") {
+        text = "";
+        thinking = "";
+        onProgress?.({ reset: true });
+      } else if (evt.type === "message_stop") {
+        sawSuccessfulTerminalEvent = true;
+      } else if (evt.type === "error") {
+        throw new Error("Narrator provider reported a stream error.");
+      } else {
+        throw new Error("Narrator stream contained an unexpected event type.");
       }
     }
   }
-  return { text, thinking, memories: mergeMemoryBank([], memories) };
+    buffer += decodeNarratorBytes(decoder);
+    if (buffer) {
+      throw new Error("Narrator stream ended with an unterminated frame.");
+    }
+    if (!sawSuccessfulTerminalEvent) {
+      throw new Error("Narrator stream ended without a successful terminal event.");
+    }
+    return { text, thinking, memories: mergeMemoryBank([], memories) };
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock?.();
+  }
 }

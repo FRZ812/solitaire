@@ -18,6 +18,23 @@ function openRouterStream(chunks) {
 }
 
 describe("narrator on-demand instruction tools", () => {
+  it("preloads required doctrine and limits optional retrieval to the turn route", async () => {
+    const { asInstructionLibrary, prepareInstructionRouting } = await import("../../supabase/functions/narrate/tools.ts");
+    const library = asInstructionLibrary(rawLibrary);
+
+    const routing = prepareInstructionRouting(
+      library,
+      ["world-and-travel"],
+      ["world-and-travel"],
+    );
+
+    expect(routing.instructionLibrary.map(({ id }) => id)).toEqual(["world-and-travel"]);
+    expect(routing.preloadedSkillIds).toEqual(["world-and-travel"]);
+    expect(routing.preloadedContent).toContain('<narrator-skill id="world-and-travel">');
+    expect(routing.preloadedContent).toContain("Detailed movement rules.");
+    expect(routing.preloadedContent).not.toContain("Detailed combat rules.");
+  });
+
   it("advertises only validated skill ids and loads requested doctrine once", async () => {
     expect(existsSync(moduleUrl), "the edge narrator tool module must exist").toBe(true);
     const {

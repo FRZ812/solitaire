@@ -150,6 +150,45 @@ describe("applyCombatResult / applyLoot (combat → campaign-state fold)", () =>
     expect(st.apiHistory).toHaveLength(0); // input untouched
   });
 
+  it("settles nonfatal defeat locally before narrator presentation", () => {
+    const st = campaignState();
+    st.world.currentTile = { x: 4, y: 7 };
+    st.character.inventory.carried = [{ itemId: "kept-blade", qty: 1 }];
+    const next = applyCombatResult(st, {
+      phase: "defeat",
+      player: { health: 0, maxHealth: 100, resolve: 0, statuses: [] },
+      enemies: [], allies: [], profGains: {}, loot: null, log: [], executedCount: 0,
+    }, { flavor: "the brigand" });
+
+    expect(next.character.vitality).toBe(1);
+    expect(next.character.inventory).toEqual(st.character.inventory);
+    expect(next.world.currentTile).toEqual({ x: 4, y: 7 });
+    expect(next.apiHistory[0].content).toContain("[DEFEAT OUTCOME — ENGINE SETTLED]");
+    expect(next.apiHistory[0].content).toContain("No inventory or location change is authorized");
+  });
+
+  it("commits permanent combat death before any narrator presentation", () => {
+    const st = campaignState();
+    const next = applyCombatResult(st, {
+      phase: "defeat",
+      player: { health: 0, maxHealth: 100, resolve: 0, statuses: [] },
+      enemies: [], allies: [], profGains: {}, loot: { items: [{ itemId: "spoils" }] }, log: [], executedCount: 0,
+    }, {
+      flavor: "the Ash Tyrant",
+      permanentDeath: true,
+      place: "Black Gate",
+    });
+
+    expect(next.character.vitality).toBe(0);
+    expect(next.pendingLoot).toBe(null);
+    expect(next.ended).toEqual({
+      cause: "fallen in battle",
+      foe: "the Ash Tyrant",
+      place: "Black Gate",
+      day: null,
+    });
+  });
+
   it("applyLoot adds canonical coin to the purse, conserving total value, and clears pendingLoot", () => {
     const st = campaignState(); // purse = 5cp
     const { state: after } = applyLoot(st, { items: [], coins: { gold: 0, silver: 3, copper: 7 }, ability: null });
