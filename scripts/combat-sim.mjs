@@ -16,6 +16,7 @@ import { COMPANIONS } from "../src/data/companions.js";
 import { aggregateCombatPassives, applyFusion, FUSIONS, PASSIVE_CAPS, RUNES } from "../src/data/passives.js";
 import { fusionOptionsForRune, applyFusionToItem } from "../src/engine/fusion.js";
 import { recomputeVitalityMax, recomputeResolveMax } from "../src/engine/attributes.js";
+import { simulateFight, greedyPolicy, skillDelta } from "./sim-harness.mjs";
 
 // Build a sim fighter on the live derived pools: HP from Vigor, the Mind-scaled
 // resolve pool (no per-turn regen now), started full.
@@ -26,7 +27,13 @@ function makeFighter(c) {
   return c;
 }
 
-const RUNS = Number(process.argv[2] || 2000);
+// Args are order-independent so `--loop=round 400` and `400 --loop=round` both work.
+const ARGV = process.argv.slice(2);
+const RUNS = Number(ARGV.find((a) => /^\d+$/.test(a)) || 2000);
+// Which combat model to measure. `deck` is what ships today; `round` is the
+// Tower-of-Winter loop being built. Running both against identical scenarios is
+// the only way to tell whether the new model is actually an improvement.
+const LOOP = (ARGV.find((a) => a.startsWith("--loop="))?.split("=")[1]) || "deck";
 
 // --- synthetic player loadouts (attributes + a weapon/armor in the codex) ---
 function makeCodex(weapon, armor) {
@@ -61,6 +68,29 @@ function midPlayer() {
 // fantastical but punishing — an average person should be ~40% to win a 1-v-1 vs a
 // lone bandit (bandits are slightly stronger), and ~0% against two. Everyone has to
 // prepare; ganging up is expected.
+//
+// !! THESE TARGETS ARE NOT MET. Baseline measured 2026-08-09, 400 runs/scenario,
+// after the harness was repaired (see runFight below — the previous numbers were
+// an artifact of a sim that acted once per turn and aborted fights mid-way):
+//
+//   avg vs 1 bandit      100%  (target ~40%)     solo vs 3 goblins   93%
+//   avg vs 2 bandits      10%  (target ~0%)      solo vs 4 bandits    4%
+//   solo vs 2 bandits    100%                    party vs 5 orcs      0%  (1.2 turns)
+//
+// The defect is not that a number is off — it is that there is NO GRADIENT.
+// Win rates run 100 / 100 / 93 / 4 / 0 with almost nothing in between, so an
+// encounter is decided before it is played. Three related findings:
+//
+//   1. Fights last 2-4 rounds and are usually settled in the first exchange.
+//   2. Build choice is inert: every archetype below wins 100% vs 6 epic
+//      orc-raiders. The comparison currently measures nothing.
+//   3. The action-economy lever is dead. `actionsPerTurn` is vestigial under the
+//      deck loop — energy (3) is the real cap — so "+1 action" and "+2 actions"
+//      produce 2.69 and 2.42 acts/turn against a 2.47 baseline. Extra actions
+//      buy nothing, the same way rollInitiative/advanceQueue are unreachable.
+//
+// The redesign's replacement anchors (see the plan) are a 65-75% baseline duel,
+// median 4-7 rounds, and a >=25pt skill delta between considered and random play.
 function avgPerson() {
   return makeFighter({
     name: "Average (Senna)",
@@ -90,53 +120,57 @@ function choosePlayerAction(cs) {
 
 const TERMINAL = new Set(["victory", "defeat", "resolved", "playerFled"]);
 
+// Delegates to the shared harness. The previous inline loop acted ONCE per turn
+// under a three-energy model and bailed out of the fight whenever the phase was
+// not "player" — so most of each turn was thrown away and aborted fights were
+// silently counted as neither win nor loss. That is why the calibration anchor
+// below read 15% against a stated target of 40%, and why several scenarios
+// reported a flat 0%.
 function runFight(makeEnemies, allyKeys, tierId, protag = midPlayer) {
   const allies = allyKeys.length ? buildAllies(allyKeys, tierId) : [];
-  let cs = initCombat(protag(), codex, makeEnemies(), { allies });
-  let guard = 0;
-  while (!TERMINAL.has(cs.phase) && guard++ < 300) {
-    if (cs.phase !== "player") break;
-    // No foe still fighting (the rest yielded or fled) → stand down (spare them).
-    if (canStandDown(cs)) { cs = playerStandDown(cs); break; }
-    const act = choosePlayerAction(cs);
-    if (act && abilityUsable(cs, act.abilityId)) {
-      cs = playerAct(cs, act.abilityId, act.targetIndex);
-      if (TERMINAL.has(cs.phase)) break;
-    }
-    cs = endTurn(cs);
-  }
-  return cs;
+  return simulateFight({
+    player: protag(), codex, enemies: makeEnemies(), allies, policy: greedyPolicy,
+    opts: { loop: LOOP },
+  });
 }
 
 function scenario(label, makeEnemies, allyKeys = [], tierId = "common", protag = midPlayer) {
-  let wins = 0, losses = 0, resolved = 0, fled = 0;
-  let turns = 0, hpSum = 0, yields = 0, foeCount = 0, allyDeaths = 0, allyCount = 0;
+  let wins = 0, losses = 0, resolved = 0, fled = 0, aborted = 0;
+  let turns = 0, hpSum = 0, acts = 0, yields = 0, foeCount = 0, allyDeaths = 0, allyCount = 0;
   for (let i = 0; i < RUNS; i++) {
-    const cs = runFight(makeEnemies, allyKeys, tierId, protag);
+    const run = runFight(makeEnemies, allyKeys, tierId, protag);
+    const cs = run.cs;
+    // A fight that never reached a terminal phase is a harness/engine failure,
+    // not a balance datum. Counting it as a loss is how the old numbers lied.
+    if (run.aborted) { aborted++; continue; }
     if (cs.phase === "victory") wins++;
     else if (cs.phase === "resolved") { resolved++; wins++; } // resolved = you stood, foes broke
     else if (cs.phase === "defeat") losses++;
     else if (cs.phase === "playerFled") fled++;
-    turns += cs.turn;
+    turns += run.rounds;
+    acts += run.acts / Math.max(1, run.rounds);
     hpSum += cs.player.health / cs.player.maxHealth;
     yields += cs.enemies.filter((e) => e.resolved === "yielded").length;
     foeCount += cs.enemies.length;
     allyCount += (cs.allies || []).length;
     allyDeaths += (cs.allies || []).filter((a) => a._dead).length;
   }
-  const pct = (n) => `${((n / RUNS) * 100).toFixed(0)}%`;
+  const scored = Math.max(1, RUNS - aborted);
+  const pct = (n) => `${((n / scored) * 100).toFixed(0)}%`;
   console.log(
     label.padEnd(34),
     `win ${pct(wins).padStart(4)}`,
     `lose ${pct(losses).padStart(4)}`,
-    `· turns ${(turns / RUNS).toFixed(1).padStart(4)}`,
-    `· endHP ${((hpSum / RUNS) * 100).toFixed(0).padStart(3)}%`,
+    `· turns ${(turns / scored).toFixed(1).padStart(4)}`,
+    `· acts/rd ${(acts / scored).toFixed(2)}`,
+    `· endHP ${((hpSum / scored) * 100).toFixed(0).padStart(3)}%`,
     `· yield ${foeCount ? ((yields / foeCount) * 100).toFixed(0) : 0}%`.padStart(9),
     allyCount ? `· allyDeath ${((allyDeaths / Math.max(1, allyCount)) * 100).toFixed(0)}%` : "",
+    aborted ? `  !! ${aborted} ABORTED` : "",
   );
 }
 
-console.log(`\n=== Combat simulation — ${RUNS} runs/scenario ===\n`);
+console.log(`\n=== Combat simulation — ${RUNS} runs/scenario · loop=${LOOP} ===\n`);
 console.log("CALIBRATION — average person (Senna); target: 1 bandit ~40%, 2 bandits ~0%");
 scenario("avg vs 1 bandit", () => generateEnemyGroup("bandits", { count: 1, maxTier: "common" }), [], "common", avgPerson);
 scenario("avg vs 2 bandits", () => generateEnemyGroup("bandits", { count: 2, maxTier: "common" }), [], "common", avgPerson);
@@ -154,6 +188,29 @@ scenario("party vs 4 bandits", () => generateEnemyGroup("bandits", { count: 4, m
 scenario("party vs 6 goblins", () => generateEnemyGroup("goblins", { count: 6, maxTier: "common" }), PARTY);
 scenario("party vs 2 ogres", () => generateEnemyGroup("ogre", { count: 2, maxTier: "common" }), PARTY);
 scenario("party vs 5 orc-raiders", () => generateEnemyGroup("orc-raiders", { count: 5, maxTier: "uncommon" }), PARTY, "uncommon");
+console.log("");
+
+// SKILL DELTA — the measurement this whole redesign is accountable to.
+//
+// Same character, same foes, considered play versus random legal play. If the
+// gap is small then outcomes are decided by dice rather than by decisions, and
+// no amount of tuning individual numbers fixes that. It is the direct
+// mechanical answer to the "success or failure came down to luck instead of
+// skill" criticism levelled at the game this design draws from.
+//
+// Target: >= 25 points. Measured on the deck loop it is expected to be POOR —
+// that is the finding, not a bug in the sim.
+console.log("SKILL DELTA — considered vs random play (target >=25pts)");
+const DELTA_RUNS = Math.min(RUNS, 300);
+const deltaFight = (kind, count, maxTier = "common") => () => ({
+  player: midPlayer(), codex,
+  enemies: generateEnemyGroup(kind, { count, maxTier }),
+  opts: { loop: LOOP },
+});
+skillDelta("solo vs 2 bandits", deltaFight("bandits", 2), DELTA_RUNS);
+skillDelta("solo vs 3 goblins", deltaFight("goblins", 3), DELTA_RUNS);
+skillDelta("solo vs 1 ogre", deltaFight("ogre", 1), DELTA_RUNS);
+skillDelta("solo vs 4 bandits", deltaFight("bandits", 4), DELTA_RUNS);
 console.log("");
 
 // ---------------------------------------------------------------------------
@@ -322,21 +379,7 @@ function affixCodex(weaponPassives = [], armorPassives = []) {
 // Run a fight where the player spends ALL action points each turn (so a swift
 // build actually gets to act several times). Returns the end state + action tally.
 function runFull(player, codex, makeEnemies) {
-  let cs = initCombat(player, codex, makeEnemies());
-  let guard = 0, acts = 0;
-  while (!TERMINAL.has(cs.phase) && guard++ < 400) {
-    if (cs.phase !== "player") break;
-    if (canStandDown(cs)) { cs = playerStandDown(cs); break; }
-    let acted = true;
-    while (acted && !TERMINAL.has(cs.phase)) {
-      const a = choosePlayerAction(cs);
-      if (a && abilityUsable(cs, a.abilityId)) { cs = playerAct(cs, a.abilityId, a.targetIndex); acts++; }
-      else acted = false;
-    }
-    if (TERMINAL.has(cs.phase)) break;
-    cs = endTurn(cs);
-  }
-  return { cs, acts };
+  return simulateFight({ player, codex, enemies: makeEnemies(), policy: greedyPolicy, opts: { loop: LOOP } });
 }
 
 function verify(label, player, codex, makeEnemies, runs = Math.min(RUNS, 1000)) {
@@ -355,7 +398,11 @@ function verify(label, player, codex, makeEnemies, runs = Math.min(RUNS, 1000)) 
   );
 }
 
-console.log("ToW SYSTEMS — action economy (acts/turn should be ~1 baseline, >1 swift)");
+// KNOWN BROKEN: this section was written for the pre-deck 1-AP model. Under the
+// deck loop energy caps the turn, so extra actions do not raise acts/turn —
+// baseline 2.47, +1 action 2.69, +2 actions 2.42. Kept as a regression marker
+// until the round loop makes the action economy load-bearing again.
+console.log("ToW SYSTEMS — action economy (BROKEN: energy caps the turn, not actionsPerTurn)");
 const FOUR_BANDITS = () => generateEnemyGroup("bandits", { count: 4, maxTier: "common" });
 verify("baseline (no affixes)", hero(), affixCodex(), FOUR_BANDITS);
 verify("swift (+1 action)", hero([{ id: "haste", tier: "common" }]), affixCodex([{ id: "quickened", tier: "epic" }]), FOUR_BANDITS);

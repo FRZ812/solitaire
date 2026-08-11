@@ -14,6 +14,7 @@ import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 import { generateEnemyGroup } from "../src/data/bestiary.js";
 import { ALL_ITEMS } from "../src/data/catalog.js";
 import { itemCombatStats } from "../src/engine/combat-stats.js";
+import { simulateFight, greedyPolicy } from "./sim-harness.mjs";
 
 const RUNS = Number(process.argv[2] || 1500);
 
@@ -69,36 +70,32 @@ function choosePlayerAction(cs) {
   return { abilityId: choice.ability.id, targetIndex };
 }
 
+// Delegates to the shared harness. The previous inline loop acted once per turn
+// and bailed out of the fight on a non-player phase, so item comparisons were
+// made on fights that were two thirds unplayed.
 function runFight(codex, makeEnemies) {
-  let cs = initCombat(midPlayer(), codex, makeEnemies());
-  let guard = 0;
-  while (!TERMINAL.has(cs.phase) && guard++ < 300) {
-    if (cs.phase !== "player") break;
-    const act = choosePlayerAction(cs);
-    if (act && abilityUsable(cs, act.abilityId)) {
-      cs = playerAct(cs, act.abilityId, act.targetIndex);
-      if (TERMINAL.has(cs.phase)) break;
-    }
-    cs = endTurn(cs);
-  }
-  return cs;
+  return simulateFight({ player: midPlayer(), codex, enemies: makeEnemies(), policy: greedyPolicy });
 }
 
 function measure(codex, makeEnemies) {
-  let wins = 0, turns = 0, hp = 0;
+  let wins = 0, turns = 0, hp = 0, aborted = 0;
   for (let i = 0; i < RUNS; i++) {
-    const cs = runFight(codex, makeEnemies);
+    const run = runFight(codex, makeEnemies);
+    if (run.aborted) { aborted++; continue; }
+    const cs = run.cs;
     if (cs.phase === "victory" || cs.phase === "resolved") wins++;
-    turns += cs.turn;
+    turns += run.rounds;
     hp += cs.player.health / cs.player.maxHealth;
   }
-  return { win: wins / RUNS, turns: turns / RUNS, endHP: hp / RUNS };
+  const scored = Math.max(1, RUNS - aborted);
+  if (aborted) console.log(`  !! ${aborted}/${RUNS} fights aborted — result is not trustworthy`);
+  return { win: wins / scored, turns: turns / scored, endHP: hp / scored };
 }
 
-// Time-to-kill (in turns) of an unarmoured / armoured dummy — the DPS readout.
+// Time-to-kill (in rounds) of an unarmoured / armoured dummy — the DPS readout.
 function ttk(codex, hp, armor) {
   let sum = 0;
-  for (let i = 0; i < RUNS; i++) sum += runFight(codex, () => makeDummy(hp, armor)).turn;
+  for (let i = 0; i < RUNS; i++) sum += runFight(codex, () => makeDummy(hp, armor)).rounds;
   return sum / RUNS;
 }
 

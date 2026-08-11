@@ -17,6 +17,7 @@ import { enemyFromNPC, allyFromCompanion } from "../src/data/bestiary.js";
 import { initCombat, playerAct, endTurn, abilityUsable } from "../src/engine/combat.js";
 import { deriveCombatStats } from "../src/engine/combat-stats.js";
 import { recomputeVitalityMax, recomputeResolveMax } from "../src/engine/attributes.js";
+import { simulateFight, greedyPolicy } from "./sim-harness.mjs";
 import { chooseAction } from "../src/engine/combat-ai.js";
 import { getAbilityDef, BASIC_ATTACK } from "../src/data/abilities.js";
 
@@ -184,43 +185,41 @@ function choosePlayerAction(cs) {
   return { abilityId: choice.ability.id, targetIndex };
 }
 
+// Delegates to the shared harness. The previous inline loop spent every action
+// correctly but bailed out of the fight on a non-player phase, leaving the state
+// non-terminal — which `scenario` then scored as a boss win.
 function runFight(makeBoss, allyCount, arch) {
   const allies = allyCount ? buildAllies(allyCount) : [];
-  let cs = initCombat(refPlayer(arch), refCodex(arch), [makeBoss()], { allies });
-  let guard = 0;
-  while (!TERMINAL.has(cs.phase) && guard++ < 600) {
-    if (cs.phase !== "player") break;
-    // spend every action point each turn
-    let acted = true;
-    while (acted && !TERMINAL.has(cs.phase)) {
-      const a = choosePlayerAction(cs);
-      if (a && abilityUsable(cs, a.abilityId)) cs = playerAct(cs, a.abilityId, a.targetIndex);
-      else acted = false;
-    }
-    if (TERMINAL.has(cs.phase)) break;
-    cs = endTurn(cs);
-  }
-  return cs;
+  return simulateFight({
+    player: refPlayer(arch), codex: refCodex(arch), enemies: [makeBoss()], allies,
+    policy: greedyPolicy, cap: 600,
+  });
 }
 
 function scenario(label, makeBoss, allyCount = 0, arch = "heavy") {
-  let pWin = 0, turns = 0, hp = 0, bossYield = 0;
+  let pWin = 0, turns = 0, hp = 0, bossYield = 0, aborted = 0;
   for (let i = 0; i < RUNS; i++) {
-    const cs = runFight(makeBoss, allyCount, arch);
+    const run = runFight(makeBoss, allyCount, arch);
+    // An unfinished fight is not a boss win — scoring it as one is how a stalled
+    // engine reads as a perfectly tuned encounter.
+    if (run.aborted) { aborted++; continue; }
+    const cs = run.cs;
     // The PLAYER prevailing (boss dead, fled, or yielded) counts as a player win.
     if (cs.phase === "victory" || cs.phase === "resolved") pWin++;
     if (cs.enemies.some((e) => e.resolved === "yielded" || e.resolved === "fled")) bossYield++;
-    turns += cs.turn;
+    turns += run.rounds;
     hp += cs.player.health / cs.player.maxHealth;
   }
-  const pct = (n) => `${((n / RUNS) * 100).toFixed(0)}%`.padStart(4);
+  const scored = Math.max(1, RUNS - aborted);
+  const pct = (n) => `${((n / scored) * 100).toFixed(0)}%`.padStart(4);
   console.log(
     "  " + label.padEnd(26),
     `playerWin ${pct(pWin)}`,
-    `· bossHardness ${pct(RUNS - pWin)}`,
-    `· turns ${(turns / RUNS).toFixed(1).padStart(4)}`,
-    `· playerEndHP ${((hp / RUNS) * 100).toFixed(0).padStart(3)}%`,
+    `· bossHardness ${pct(scored - pWin)}`,
+    `· turns ${(turns / scored).toFixed(1).padStart(4)}`,
+    `· playerEndHP ${((hp / scored) * 100).toFixed(0).padStart(3)}%`,
     `· bossBroke ${pct(bossYield)}`,
+    aborted ? `  !! ${aborted} ABORTED` : "",
   );
 }
 
