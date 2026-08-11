@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_BUILD_STAT,
   createBuild,
   deriveBuild,
   equipItem,
@@ -189,6 +190,20 @@ describe("reference build composition", () => {
       items: [{ instanceId: "helm-1", itemId: "mithril-helm" }],
     });
     expect(deriveBuild(equipped).stats.attack).toBe(4);
+  });
+
+  it("rejects unsafe or overflowing base-stat arithmetic atomically", () => {
+    expect(() => createBuild({ stats: { attack: Number.MAX_VALUE } })).toThrow(
+      "invalid-stat:attack",
+    );
+    const saturated = createBuild({ stats: { attack: MAX_BUILD_STAT } });
+
+    expect(grantBaseStat(saturated, { statId: "attack", amount: 1 })).toEqual({
+      ok: false,
+      reason: "stat-cap-exceeded",
+      build: saturated,
+    });
+    expect(deriveBuild(saturated).stats.attack).toBe(MAX_BUILD_STAT);
   });
 
   it("grants bounded reference trait levels without accepting unknown traits", () => {

@@ -1,4 +1,7 @@
-export const MAX_SKILL_SLOTS = 3;
+import { REFERENCE_POLICY } from "./policy.js";
+
+export const MAX_SKILL_SLOTS = REFERENCE_POLICY.skills.loadoutCapacity;
+export const MAX_SKILL_SLOTS_EVIDENCE = REFERENCE_POLICY.skills.loadoutCapacityEvidence;
 
 const COMMON_SKILL_SOURCE = Object.freeze({
   confidence: "secondary",

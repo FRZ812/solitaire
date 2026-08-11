@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import { STORAGE_KEY, originLabel, SIGHT_RADIUS, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED, WORLD_MARCH_LIMIT } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
@@ -101,9 +101,40 @@ import {
 } from "./engine/progression.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 import { poiPlaceName } from "./engine/location.js";
+import {
+  claimRunReward,
+  refreshRunReward,
+  resolveRunCommand,
+} from "./gameplay/run/state.js";
+import { REFERENCE_GAMEPLAY_PREVIEW_ENABLED } from "./gameplay/reference/release-gate.js";
+import {
+  closeReferenceGameplay,
+  openReferenceGameplay,
+  readReferenceGameplay,
+  startReferenceGatekeeperTrial,
+  transitionReferenceGameplay,
+} from "./gameplay/run/campaign-boundary.js";
+import { adaptNarratorCombatStart } from "./gameplay/production/combat-adapter.js";
+import {
+  readProductionCombatSession,
+  startProductionCombatSession,
+  transitionProductionCombatSession,
+} from "./gameplay/production/combat-session.js";
+import { settleProductionCombat } from "./gameplay/production/combat-settlement.js";
+import {
+  createPendingCombatHandoff,
+  readPendingCombatDirective,
+  readPendingCombatHandoff,
+} from "./gameplay/production/pending-directive.js";
+import {
+  createPendingTravelCombat,
+  readPendingTravelCombat,
+} from "./gameplay/production/pending-travel-combat.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
 import { CombatView } from "./components/combat/CombatView.jsx";
+import ProductionCombatView from "./components/combat/ProductionCombatView.jsx";
+import { ReferenceCombatView } from "./components/combat/ReferenceCombatView.jsx";
 import { VitalsStrip, InputBar, ErrorBanner } from "./components/primitives.jsx";
 import { LiveNarratorStream } from "./components/LiveNarratorStream.jsx";
 import { BeatActionSheet } from "./components/BeatActionSheet.jsx";
@@ -466,10 +497,142 @@ export function Solitaire() {
   // Combat: `combat` holds the active turn-state (null = not fighting);
   // `pendingCombat` is a hostile encounter offering a fight before it starts.
   const [combat, setCombat] = useState(null);
-  const [pendingCombat, setPendingCombat] = useState(null);
   const [pendingLoot, setPendingLoot] = useState(null); // spoils to deliberately Search
-  const [pendingEngage, setPendingEngage] = useState(null); // narrator start_combat awaiting the player's go-ahead
+  const [productionCombatFeedback, setProductionCombatFeedback] = useState(null);
+  const [referenceGameplayFeedback, setReferenceGameplayFeedback] = useState(null);
+  const [referencePersistenceFeedback, setReferencePersistenceFeedback] = useState(null);
   const combatCtxRef = useRef(null);
+  const referenceGameplaySave = state.referenceGameplaySave;
+  const referenceGameplayAttempt = state.referenceGameplayAttempt;
+  const referenceGameplayCampaignSeed = state.referenceGameplayCampaignSeed;
+  const referenceGameplayWorld = state.world;
+  const referenceGameplay = useMemo(
+    () => (REFERENCE_GAMEPLAY_PREVIEW_ENABLED
+      ? readReferenceGameplay(
+        {
+          referenceGameplaySave,
+          referenceGameplayAttempt,
+          referenceGameplayCampaignSeed,
+          world: referenceGameplayWorld,
+        },
+        { campaignId: currentCampaignId || "local-campaign" },
+      )
+      : { ok: false, reason: "reference-gameplay-preview-disabled", run: null }),
+    [
+      referenceGameplayAttempt,
+      referenceGameplayCampaignSeed,
+      referenceGameplaySave,
+      referenceGameplayWorld,
+      currentCampaignId,
+    ],
+  );
+  const referenceRun = referenceGameplay.ok ? referenceGameplay.run : null;
+  const referenceGameplayInvalid = referenceGameplaySave != null && !referenceGameplay.ok;
+  const referenceGameplayOpen = Boolean(
+    REFERENCE_GAMEPLAY_PREVIEW_ENABLED && referenceRun && state.referenceGameplayOpen !== false,
+  );
+  const activeProductionCombatSession = state.activeCombatSession;
+  const productionCombat = useMemo(() => {
+    if (activeProductionCombatSession == null) {
+      return { ok: false, reason: "no-active-production-combat", session: null };
+    }
+    const opened = readProductionCombatSession(activeProductionCombatSession);
+    if (!opened.ok) return opened;
+    if (currentCampaignId && opened.session.campaignId !== currentCampaignId) {
+      return { ok: false, reason: "production-combat-campaign-mismatch", session: null };
+    }
+    return opened;
+  }, [activeProductionCombatSession, currentCampaignId]);
+  const productionCombatSession = productionCombat.ok ? productionCombat.session : null;
+  const productionCombatInvalid = activeProductionCombatSession != null && !productionCombat.ok;
+  const pendingCombatDirectiveValue = state.pendingCombatDirective;
+  const pendingCombatDirective = useMemo(
+    () => (pendingCombatDirectiveValue == null
+      ? { ok: false, reason: "no-pending-combat-directive", handoff: null }
+      : readPendingCombatHandoff(pendingCombatDirectiveValue, {
+        campaignId: currentCampaignId || "local-campaign",
+        state,
+      })),
+    [pendingCombatDirectiveValue, currentCampaignId, state],
+  );
+  const pendingEngage = pendingCombatDirective.ok
+    ? { dir: pendingCombatDirective.handoff.directive }
+    : null;
+  const pendingCombatDirectiveInvalid = pendingCombatDirectiveValue != null
+    && !pendingCombatDirective.ok;
+  const pendingTravelCombatValue = state.pendingTravelCombat;
+  const pendingTravelCombat = useMemo(
+    () => (pendingTravelCombatValue == null
+      ? { ok: false, reason: "no-pending-travel-combat", pending: null }
+      : readPendingTravelCombat(pendingTravelCombatValue, {
+        campaignId: currentCampaignId || "local-campaign",
+        state,
+      })),
+    [pendingTravelCombatValue, currentCampaignId, state],
+  );
+  const pendingCombat = pendingTravelCombat.ok
+    ? { ...pendingTravelCombat.pending, posture: "hostile" }
+    : null;
+  const pendingTravelCombatInvalid = pendingTravelCombatValue != null && !pendingTravelCombat.ok;
+  const productionCombatOpen = Boolean(productionCombatSession || productionCombatInvalid);
+  const exclusiveGameplayOpen = referenceGameplayOpen || productionCombatOpen;
+  const referenceRunSettled = referenceRun?.status === "completed"
+    || referenceRun?.status === "defeated";
+  const referenceGameplayWasOpenRef = useRef(referenceGameplayOpen);
+  useEffect(() => {
+    const wasOpen = referenceGameplayWasOpenRef.current;
+    referenceGameplayWasOpenRef.current = referenceGameplayOpen;
+    if (!wasOpen || referenceGameplayOpen) return undefined;
+    const frame = requestAnimationFrame(() => {
+      document.querySelector("[data-reference-trial-return-focus]")?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [referenceGameplayOpen]);
+  useLayoutEffect(() => {
+    if (!exclusiveGameplayOpen) return undefined;
+    const ownedBackgrounds = new Map();
+    const claimBackground = (element) => {
+      if (!(element instanceof HTMLElement)
+        || element.classList.contains("reference-combat")
+        || element.classList.contains("production-combat")
+        || element.classList.contains("production-combat-recovery")
+        || ownedBackgrounds.has(element)) return;
+      ownedBackgrounds.set(element, {
+        hadInert: element.hasAttribute("inert"),
+        hadHidden: element.hasAttribute("hidden"),
+        ariaHidden: element.getAttribute("aria-hidden"),
+      });
+      element.setAttribute("inert", "");
+      element.setAttribute("hidden", "");
+      element.setAttribute("aria-hidden", "true");
+    };
+    const gameShell = document.querySelector(".game-shell");
+    if (gameShell) {
+      for (const child of gameShell.children) claimBackground(child);
+    }
+    const applicationRoot = gameShell?.closest("#root") || gameShell?.parentElement;
+    for (const child of document.body.children) {
+      if (child !== applicationRoot) claimBackground(child);
+    }
+    const globalSurfaces = document.querySelector("[data-app-global-surfaces]");
+    claimBackground(globalSurfaces);
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) claimBackground(node);
+      }
+    });
+    if (gameShell) observer.observe(gameShell, { childList: true });
+    observer.observe(document.body, { childList: true });
+    return () => {
+      observer.disconnect();
+      for (const [element, previous] of ownedBackgrounds) {
+        if (!previous.hadInert) element.removeAttribute("inert");
+        if (!previous.hadHidden) element.removeAttribute("hidden");
+        if (previous.ariaHidden === null) element.removeAttribute("aria-hidden");
+        else element.setAttribute("aria-hidden", previous.ariaHidden);
+      }
+    };
+  }, [exclusiveGameplayOpen]);
   // Pack + purse snapshot taken when a trader counter opens, so leaving it can
   // diff what was bought/sold and let the keeper react to the actual haul.
   const tradeStartRef = useRef(null);
@@ -656,16 +819,37 @@ export function Solitaire() {
     const dirty = snapshot !== lastSyncedStateRef.current;
     clearTimeout(resumeCacheTimerRef.current);
     resumeCacheTimerRef.current = setTimeout(() => {
-      writeResumeSnapshot({
+      const cached = writeResumeSnapshot({
         userId: user.id,
         campaignId: currentCampaignId,
         state: snapshot,
         dirty,
         serverUpdatedAt: lastServerUpdatedAtRef.current,
       });
+      if (REFERENCE_GAMEPLAY_PREVIEW_ENABLED && snapshot.referenceGameplaySave) {
+        setReferencePersistenceFeedback(cached
+          ? null
+          : "Browser recovery cache could not be updated. Progress is not durable until server autosave succeeds.");
+      }
     }, 250);
     return () => clearTimeout(resumeCacheTimerRef.current);
   }, [state, hydrated, currentCampaignId, user?.id]);
+
+  function recordSuccessfulCampaignSave({ id, userId, snapshot, updatedAt }) {
+    if (currentCampaignIdRef.current !== id || authUserIdRef.current !== userId) return null;
+    lastSyncedStateRef.current = snapshot;
+    lastServerUpdatedAtRef.current = updatedAt ?? lastServerUpdatedAtRef.current;
+    const latestState = liveStateRef.current;
+    const latestIsSavedSnapshot = latestState === snapshot;
+    const cached = writeResumeSnapshot({
+      userId,
+      campaignId: id,
+      state: latestState,
+      dirty: !latestIsSavedSnapshot,
+      serverUpdatedAt: lastServerUpdatedAtRef.current,
+    });
+    return { cached, latestIsSavedSnapshot, latestState };
+  }
 
   // Autosave used to fire a full Supabase write on EVERY state change — a write
   // storm where overlapping in-flight PUTs could also land out of order and
@@ -681,16 +865,19 @@ export function Solitaire() {
     saveTimerRef.current = setTimeout(() => {
       saveCampaign(id, snapshot)
         .then((result) => {
-          if (currentCampaignIdRef.current !== id || liveStateRef.current !== snapshot) return;
-          lastSyncedStateRef.current = snapshot;
-          lastServerUpdatedAtRef.current = result?.updatedAt ?? lastServerUpdatedAtRef.current;
-          writeResumeSnapshot({
+          const recorded = recordSuccessfulCampaignSave({
+            id,
             userId: user.id,
-            campaignId: id,
-            state: snapshot,
-            dirty: false,
-            serverUpdatedAt: lastServerUpdatedAtRef.current,
+            snapshot,
+            updatedAt: result?.updatedAt,
           });
+          if (REFERENCE_GAMEPLAY_PREVIEW_ENABLED && recorded?.latestState.referenceGameplaySave) {
+            setReferencePersistenceFeedback(recorded.cached
+              ? null
+              : recorded.latestIsSavedSnapshot
+                ? "Browser recovery cache could not be updated. Server autosave succeeded, but cold browser recovery is unavailable."
+                : "Browser recovery cache could not be rebased after an earlier autosave succeeded. Newer progress is not durable until its server autosave succeeds.");
+          }
         })
         .catch((e) => setCampaignError(`Save failed: ${e.message || e}`));
     }, 800);
@@ -702,17 +889,12 @@ export function Solitaire() {
     const id = currentCampaignId;
     clearTimeout(saveTimerRef.current);
     const result = await saveCampaign(id, snapshot);
-    if (currentCampaignIdRef.current === id && liveStateRef.current === snapshot) {
-      lastSyncedStateRef.current = snapshot;
-      lastServerUpdatedAtRef.current = result?.updatedAt ?? lastServerUpdatedAtRef.current;
-      writeResumeSnapshot({
-        userId: user.id,
-        campaignId: id,
-        state: snapshot,
-        dirty: false,
-        serverUpdatedAt: lastServerUpdatedAtRef.current,
-      });
-    }
+    recordSuccessfulCampaignSave({
+      id,
+      userId: user.id,
+      snapshot,
+      updatedAt: result?.updatedAt,
+    });
   }
 
   // A mobile OS can freeze or discard the web process without waiting for the
@@ -2160,7 +2342,7 @@ export function Solitaire() {
     setPendingEngage(null);
     setPendingCombat(null);
     setPendingLoot(null);
-    const base = stateBeforeTurn(state, menu.turnK);
+    const base = { ...stateBeforeTurn(state, menu.turnK), pendingCombatDirective: null };
     setState(base); // roll the rejected beat (and any later ones) out of the log + memory
     try {
       const directive = `\n\n[REWRITE — author's steer] The player is exercising author's privilege over your PREVIOUS narration of this exact moment and wants it taken in a different direction. Your previous version was:\n"""\n${cp.prevText}\n"""\nWrite a NEW version of this same moment from the same game state, fully honoring the player's steer: "${feedback}". This is how the player nudges the story toward turns it would not take on its own — a trope, a twist, a character's choice. Lean into it as far as the established world, characters, and state plausibly allow, and keep continuity with everything before this moment. Your output REPLACES the previous version; do not mention that it was rewritten.`;
@@ -2201,9 +2383,10 @@ export function Solitaire() {
     setPendingEngage(null);
     setPendingCombat(null);
     setPendingLoot(null);
-    setState(menu.kind === "player"
+    const rewound = menu.kind === "player"
       ? rewindToPlayerBeat(state, menu.index)
-      : stateAfterTurn(state, menu.turnK));
+      : stateAfterTurn(state, menu.turnK);
+    setState({ ...rewound, pendingCombatDirective: null });
   }
 
   // Manually edit the bubble's text in place (synced into the model's memory).
@@ -2224,13 +2407,218 @@ export function Solitaire() {
     closeBeatMenu();
   }
 
-  // ----- Combat handlers -----
+  // ----- Deterministic reference-run handlers -----
+
+  function commitReferenceGameplay(transition) {
+    const result = transitionReferenceGameplay(liveStateRef.current, transition, {
+      campaignId: currentCampaignId || "local-campaign",
+      previewEnabled: REFERENCE_GAMEPLAY_PREVIEW_ENABLED,
+    });
+    if (!result.ok) {
+      setReferenceGameplayFeedback(`Trial update rejected: ${result.reason}.`);
+      return result;
+    }
+    setReferenceGameplayFeedback(null);
+    setCampaignError(null);
+    liveStateRef.current = result.state;
+    setState(result.state);
+    return result;
+  }
+
+  function setPendingCombat(encounter) {
+    setState((current) => {
+      if (encounter == null && current.pendingTravelCombat == null) return current;
+      let pending = null;
+      if (encounter != null) {
+        const created = createPendingTravelCombat({
+          campaignId: currentCampaignId || "local-campaign",
+          state: current,
+          encounter,
+        });
+        if (!created.ok) {
+          queueMicrotask(() => setError(`Travel combat handoff rejected: ${created.reason}.`));
+          return current;
+        }
+        pending = created.pending;
+      }
+      const next = { ...current, pendingTravelCombat: pending };
+      liveStateRef.current = next;
+      return next;
+    });
+  }
+
+  function setPendingEngage(nextPending) {
+    const rawDirective = nextPending?.dir ?? null;
+    let ownedDirective = null;
+    if (rawDirective !== null) {
+      const opened = readPendingCombatDirective(rawDirective);
+      if (!opened.ok) {
+        setError(`Combat handoff rejected: ${opened.reason}.`);
+        return false;
+      }
+      ownedDirective = opened.directive;
+    }
+    setState((current) => {
+      if (ownedDirective === null && current.pendingCombatDirective == null) return current;
+      let handoff = null;
+      if (ownedDirective !== null) {
+        const created = createPendingCombatHandoff({
+          campaignId: currentCampaignId || "local-campaign",
+          state: current,
+          directive: ownedDirective,
+        });
+        if (!created.ok) {
+          queueMicrotask(() => setError(`Combat handoff rejected: ${created.reason}.`));
+          return current;
+        }
+        handoff = created.handoff;
+      }
+      const next = { ...current, pendingCombatDirective: handoff };
+      liveStateRef.current = next;
+      return next;
+    });
+    return true;
+  }
+
+  function handleStartReferenceTrial() {
+    if (!REFERENCE_GAMEPLAY_PREVIEW_ENABLED || loading || combat || referenceGameplayOpen || productionCombatOpen) return;
+    setMapOpen(false);
+    setDeckOpen(false);
+    setShopTile(null);
+    setPendingCombat(null);
+    setPendingEngage(null);
+    setPendingLoot(null);
+    setError(null);
+    setReferenceGameplayFeedback(null);
+    const referenceBase = { ...liveStateRef.current, pendingCombatDirective: null };
+    const result = startReferenceGatekeeperTrial(referenceBase, {
+      campaignId: currentCampaignId || "local-campaign",
+      previewEnabled: REFERENCE_GAMEPLAY_PREVIEW_ENABLED,
+      replaceInvalid: referenceGameplayInvalid,
+    });
+    if (!result.ok) {
+      setCampaignError(`Reference preview could not start: ${result.reason}.`);
+      return;
+    }
+    setCampaignError(null);
+    liveStateRef.current = result.state;
+    setState(result.state);
+  }
+
+  function handleOpenReferenceTrial() {
+    if (!REFERENCE_GAMEPLAY_PREVIEW_ENABLED || loading || combat || productionCombatOpen) return;
+    setError(null);
+    setReferenceGameplayFeedback(null);
+    setState((current) => openReferenceGameplay(current, {
+      campaignId: currentCampaignId || "local-campaign",
+      previewEnabled: REFERENCE_GAMEPLAY_PREVIEW_ENABLED,
+    }));
+  }
+
+  function handleReferenceCommand(command) {
+    commitReferenceGameplay((run) => resolveRunCommand(run, command));
+  }
+
+  function handleReferenceRefresh(request) {
+    commitReferenceGameplay((run) => refreshRunReward(run, request));
+  }
+
+  function handleReferenceClaim(request) {
+    commitReferenceGameplay((run) => claimRunReward(run, request));
+  }
+
+  function handleCloseReferenceTrial() {
+    setReferenceGameplayFeedback(null);
+    setState((current) => closeReferenceGameplay(current, {
+      campaignId: currentCampaignId || "local-campaign",
+    }));
+  }
+
+  function handleProductionCombatCommand(command) {
+    const opened = readProductionCombatSession(liveStateRef.current.activeCombatSession);
+    if (!opened.ok || opened.session.campaignId !== (currentCampaignId || "local-campaign")) {
+      setProductionCombatFeedback(`Combat update rejected: ${opened.reason || "production-combat-campaign-mismatch"}.`);
+      return;
+    }
+    const result = transitionProductionCombatSession(opened.session, command);
+    if (!result.ok) {
+      setProductionCombatFeedback(`Combat update rejected: ${result.reason}.`);
+      return;
+    }
+    const next = { ...liveStateRef.current, activeCombatSession: result.session };
+    setProductionCombatFeedback(null);
+    setCampaignError(null);
+    liveStateRef.current = next;
+    setState(next);
+  }
+
+  function handleProductionCombatSettlement() {
+    const result = settleProductionCombat(liveStateRef.current, {
+      campaignId: currentCampaignId || "local-campaign",
+    });
+    if (!result.ok) {
+      setProductionCombatFeedback(`Combat aftermath rejected: ${result.reason}.`);
+      return;
+    }
+    setProductionCombatFeedback(null);
+    setCampaignError(null);
+    liveStateRef.current = result.state;
+    setState(result.state);
+  }
+
+  function handleReplaceInvalidProductionCombat() {
+    if (!productionCombatInvalid) return;
+    const next = {
+      ...liveStateRef.current,
+      activeCombatSession: null,
+      beats: [
+        ...(liveStateRef.current.beats || []),
+        {
+          id: `production-combat-recovery:${liveStateRef.current.productionCombatSequence || 0}`,
+          type: "narration",
+          content: "The interrupted fight could not be reconstructed. Its invalid recovery record was discarded explicitly; no outcome was applied.",
+        },
+      ],
+    };
+    setProductionCombatFeedback(null);
+    liveStateRef.current = next;
+    setState(next);
+  }
+
+  function handleDiscardInvalidPendingCombat() {
+    if (!pendingCombatDirectiveInvalid) return;
+    const next = {
+      ...liveStateRef.current,
+      pendingCombatDirective: null,
+      beats: [
+        ...(liveStateRef.current.beats || []),
+        {
+          id: `pending-combat-recovery:${liveStateRef.current.productionCombatSequence || 0}`,
+          type: "narration",
+          content: "The malformed combat handoff was discarded explicitly; no combat outcome was applied.",
+        },
+      ],
+    };
+    setProductionCombatFeedback(null);
+    liveStateRef.current = next;
+    setState(next);
+  }
+
+  // ----- Legacy combat handlers (retained until parity gates pass) -----
 
   function startCombat(enemies, context, extraOpts = {}, st = state) {
     if (!enemies || enemies.length === 0) return;
+    if (st.pendingTravelCombat != null || st.pendingCombatDirective != null) {
+      const cleared = {
+        ...st,
+        pendingTravelCombat: null,
+        pendingCombatDirective: null,
+      };
+      liveStateRef.current = cleared;
+      setState(cleared);
+    }
     combatCtxRef.current = context || { flavor: enemies[0].name };
     setDeckOpen(false); setMapOpen(false); setShopTile(null);
-    setPendingCombat(null);
     closeBeatMenu();
     const region = regionHere(st);
     const wp = activeWorldPassives(st.character, st.world.codex);
@@ -2270,6 +2658,44 @@ export function Solitaire() {
     }));
   }
 
+  function tryStartProductionCombat({ enemies, directive, sourceKind, st }) {
+    // The Tower of Winter rebuild ships dark until a whole fight works on it. Until then
+    // the deterministic loop is a two-action placeholder, so letting it claim a live
+    // encounter would put a worse fight in front of the player than the one it replaces.
+    // Pending handoffs are still persisted either way — that part is a straight fix for
+    // an offered fight being lost on reload, and it is safe with the loop switched off.
+    if (!REFERENCE_GAMEPLAY_PREVIEW_ENABLED) return { status: "fallback", reason: "preview-disabled" };
+    const adapted = adaptNarratorCombatStart({
+      campaignId: currentCampaignId || "local-campaign",
+      state: st,
+      directive,
+      enemies,
+      sourceKind,
+    });
+    if (!adapted.ok) return { status: "fallback", reason: adapted.reason };
+    const started = startProductionCombatSession(adapted.input);
+    if (!started.ok) {
+      setError(`Deterministic combat could not start: ${started.reason}.`);
+      return { status: "rejected", reason: started.reason };
+    }
+    const next = {
+      ...st,
+      activeCombatSession: started.session,
+      pendingCombatDirective: null,
+      pendingTravelCombat: null,
+      productionCombatSequence: adapted.nextSequence,
+    };
+    setDeckOpen(false);
+    setMapOpen(false);
+    setShopTile(null);
+    closeBeatMenu();
+    setProductionCombatFeedback(null);
+    setError(null);
+    liveStateRef.current = next;
+    setState(next);
+    return { status: "started", reason: null };
+  }
+
   // Narrator-flagged combat: an explicit strike in the fiction (start_combat).
   // Built from the post-beat state `st` so a foe just added to the codex resolves.
   function startCombatFromDirective(dir, st) {
@@ -2282,6 +2708,13 @@ export function Solitaire() {
       else enemies.push(...generateEnemyGroup(f.kind || "bandits", { power: region.power, maxTier: f.tier || region.enemyTier, count: f.count, name: f.name }));
     }
     if (enemies.length === 0) return;
+    const production = tryStartProductionCombat({
+      enemies,
+      directive: dir,
+      sourceKind: "narrator",
+      st,
+    });
+    if (production.status !== "fallback") return;
     const ambush = dir.surprise ? (dir.initiator === "enemy" ? "enemy" : "player") : null;
     // Brawls (a barfight, "teach him a lesson") are bare-knuckle unless the
     // narrator flags it lethal; weapons can still be drawn mid-fight.
@@ -2315,11 +2748,32 @@ export function Solitaire() {
   function handleFightPending() {
     if (!pendingCombat) return;
     if (loading) cancelTravelLifecycle({ preserveEncounter: true });
-    const region = regionHere(state);
+    const current = liveStateRef.current;
+    const region = regionHere(current);
     const enemies = generateEnemyGroup(pendingCombat.kind, { power: region.power, maxTier: region.enemyTier });
     // A carried flame in the dark gives you away — the foe gets the jump on you.
-    const ambush = isBeacon(state) ? "enemy" : undefined;
-    startCombat(enemies, { flavor: pendingCombat.desc || groupFlavor(enemies) }, ambush ? { ambush } : {});
+    const ambush = isBeacon(current) ? "enemy" : undefined;
+    const note = pendingCombat.desc || groupFlavor(enemies);
+    const production = tryStartProductionCombat({
+      enemies,
+      directive: {
+        initiator: ambush ? "enemy" : "player",
+        surprise: Boolean(ambush),
+        lethal: true,
+        foes: [{
+          npc_id: null,
+          kind: pendingCombat.kind,
+          name: enemies.length === 1 ? enemies[0].name : null,
+          tier: null,
+          count: enemies.length,
+        }],
+        note,
+      },
+      sourceKind: "travel",
+      st: current,
+    });
+    if (production.status !== "fallback") return;
+    startCombat(enemies, { flavor: note }, ambush ? { ambush } : {}, current);
   }
 
   // Slip past a hostile travel encounter unseen — only reliable when you're
@@ -2335,10 +2789,12 @@ export function Solitaire() {
 
   // Begin combat the player has agreed to via the engage prompt.
   function handleEngage() {
-    if (loading || !pendingEngage || combat) return;
+    if (loading || !pendingEngage || combat || productionCombatOpen) return;
     const dir = pendingEngage.dir;
-    setPendingEngage(null);
-    startCombatFromDirective(dir, state);
+    const base = { ...liveStateRef.current, pendingCombatDirective: null };
+    liveStateRef.current = base;
+    setState(base);
+    startCombatFromDirective(dir, base);
   }
 
   async function handleResolveCombat() {
@@ -2563,7 +3019,7 @@ export function Solitaire() {
   return (
     <div className="game-shell" style={{
       backgroundColor: "var(--scene-deep)",
-      height: "100dvh", width: "100%", maxWidth: combat ? "1440px" : "640px", margin: "0 auto",
+      height: "100dvh", width: "100%", maxWidth: (combat || referenceGameplayOpen) ? "1440px" : "640px", margin: "0 auto",
       display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
       "--scene-primary": sceneVisual.primary,
       "--scene-accent": sceneVisual.accent,
@@ -2574,7 +3030,11 @@ export function Solitaire() {
           the HUD hidden; the real world shows the scene backdrop + full HUD. */}
       {state.created === false ? <InitialBackdrop /> : <SceneBackdrop state={state} />}
       {campaignBusy && <JourneyResumeOverlay />}
-      <div className="game-hud-layer">
+      <div
+        className="game-hud-layer"
+        inert={referenceGameplayOpen ? "" : undefined}
+        aria-hidden={referenceGameplayOpen ? true : undefined}
+      >
         {state.created !== false && (
           <div className="story-hud">
             <CompactHeader
@@ -2636,6 +3096,52 @@ export function Solitaire() {
             </button>
           )}
         </div>
+        {REFERENCE_GAMEPLAY_PREVIEW_ENABLED
+          && state.created !== false
+          && !loading
+          && !combat
+          && !referenceGameplayOpen
+          && !pendingCombat
+          && !pendingEngage
+          && !pendingLoot && (
+          <aside className="reference-trial-launcher" aria-label="Tower of Winter developer preview">
+            <div>
+              <span>Developer sandbox · disabled by default</span>
+              <strong>Winter Trial · The Gatekeeper</strong>
+              <small>Reference-only preview · not the production combat path</small>
+            </div>
+            {referenceGameplayInvalid ? (
+              <>
+                <div>
+                  <span>Reference trial save unavailable</span>
+                  <strong>Stored trial progress could not be restored</strong>
+                  <small>{referenceGameplay.reason}</small>
+                </div>
+                <button type="button" onClick={handleStartReferenceTrial}>Replace invalid save</button>
+              </>
+            ) : referenceRun ? (
+              <button
+                type="button"
+                data-reference-trial-return-focus
+                onClick={handleOpenReferenceTrial}
+              >
+                {referenceRunSettled ? "Review" : "Resume"}
+              </button>
+            ) : (
+              <button type="button" onClick={handleStartReferenceTrial}>Begin</button>
+            )}
+            {referenceRunSettled && (
+              <button type="button" className="reference-trial-launcher__secondary" onClick={handleStartReferenceTrial}>
+                New trial
+              </button>
+            )}
+            {referencePersistenceFeedback && (
+              <p className="reference-trial-launcher__feedback" role="alert">
+                {referencePersistenceFeedback}
+              </p>
+            )}
+          </aside>
+        )}
         {state.created !== false && pendingCombat && !combat && (
           <div className="fade-in" style={{
             margin: "0 12px 8px", padding: "11px 14px",
@@ -2655,6 +3161,29 @@ export function Solitaire() {
               padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
               border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
             }}>{isHidden(state) ? "Slip away" : "Avoid"}</button>
+          </div>
+        )}
+        {state.created !== false && pendingCombatDirectiveInvalid && !combat && (
+          <div className="pending-combat-recovery fade-in" role="alert" style={{
+            margin: "0 12px 8px", padding: "11px 14px",
+            backgroundColor: "rgba(35,15,15,0.82)", border: "1px solid rgba(239,68,68,0.5)",
+            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: "#fca5a5", marginBottom: "2px" }}>
+                Invalid combat handoff
+              </div>
+              <div style={{ fontSize: "13px", color: "#fde8e4", lineHeight: 1.35 }}>
+                The saved encounter cannot be trusted ({pendingCombatDirective.reason}). No combat has started.
+              </div>
+            </div>
+            <button type="button" onClick={handleDiscardInvalidPendingCombat} style={{
+              padding: "9px 12px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
+              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+            }}>
+              Discard invalid handoff
+            </button>
           </div>
         )}
         {state.created !== false && pendingEngage && !combat && (
@@ -2953,7 +3482,43 @@ export function Solitaire() {
         }
         return null;
       })()}
-      {combat && (
+      {productionCombatSession && (
+        <ProductionCombatView
+          session={productionCombatSession}
+          error={productionCombatFeedback || campaignError}
+          onCommand={handleProductionCombatCommand}
+          onSettle={handleProductionCombatSettlement}
+        />
+      )}
+      {productionCombatInvalid && (
+        <div
+          className="production-combat-recovery"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="production-combat-recovery-title"
+        >
+          <section>
+            <h1 id="production-combat-recovery-title">Combat recovery failed</h1>
+            <p role="alert">The saved fight was rejected: {productionCombat.reason}.</p>
+            <p>No victory, defeat, reward, injury, or named-foe outcome has been applied.</p>
+            <button type="button" onClick={handleReplaceInvalidProductionCombat}>
+              Discard invalid combat record
+            </button>
+          </section>
+        </div>
+      )}
+      {referenceGameplayOpen && referenceRun && !productionCombatOpen && (
+        <ReferenceCombatView
+          run={referenceRun}
+          feedback={referenceGameplayFeedback || campaignError || referencePersistenceFeedback}
+          returnFocusSelector="[data-reference-trial-return-focus]"
+          onCommand={handleReferenceCommand}
+          onRefresh={handleReferenceRefresh}
+          onClaim={handleReferenceClaim}
+          onExit={handleCloseReferenceTrial}
+        />
+      )}
+      {combat && !exclusiveGameplayOpen && (
         <CombatView
           combat={combat}
           onPlayCard={onCombatPlayCard}

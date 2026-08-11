@@ -6,13 +6,21 @@ import {
   createGameplaySave,
   restoreGameplaySave,
 } from "./persistence.js";
-import { createArcticKnightGatekeeperRun } from "./state.js";
+import { createArcticKnightGatekeeperRun, resolveRunCommand } from "./state.js";
 
 function runState() {
   return JSON.parse(JSON.stringify(createArcticKnightGatekeeperRun({
     runId: "run-arctic-1",
     seed: "campaign-17:run-1",
   })));
+}
+
+function reorderKeys(value) {
+  if (Array.isArray(value)) return value.map(reorderKeys);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).reverse().map(([key, nested]) => [key, reorderKeys(nested)]),
+  );
 }
 
 describe("gameplay persistence envelope", () => {
@@ -38,14 +46,60 @@ describe("gameplay persistence envelope", () => {
     const save = createGameplaySave(source);
     source.build.baseStats.attack = 999;
 
-    expect(save.runState.build.baseStats.attack).toBe(4);
+    expect(save.runState.build.baseStats.attack).toBe(8);
 
     const input = JSON.parse(JSON.stringify(save));
     const restored = restoreGameplaySave(input);
     input.runState.build.baseStats.attack = 500;
 
-    expect(restored.state.build.baseStats.attack).toBe(4);
+    expect(restored.state.build.baseStats.attack).toBe(8);
     expect(Object.isFrozen(restored.state)).toBe(true);
+  });
+
+  it("creates a save from an authoritative live run without replaying its whole history", () => {
+    let run = createArcticKnightGatekeeperRun({ runId: "save-budget", seed: 17 });
+    for (let index = 0; index < 50; index += 1) {
+      const result = resolveRunCommand(run, {
+        expectedRunSequence: run.sequence,
+        type: "use-action",
+        actorId: run.encounter.playerId,
+        actionId: "basic-defense",
+        targetId: run.encounter.playerId,
+      });
+      expect(result.ok).toBe(true);
+      run = result.state;
+    }
+
+    const startedAt = performance.now();
+    const save = createGameplaySave(run);
+
+    expect(performance.now() - startedAt).toBeLessThan(100);
+    expect(save.runState.sequence).toBe(50);
+  });
+
+  it("restores a serialized history in one interactive pass", () => {
+    let run = createArcticKnightGatekeeperRun({ runId: "restore-budget", seed: 23 });
+    for (let index = 0; index < 75; index += 1) {
+      const result = resolveRunCommand(run, {
+        expectedRunSequence: run.sequence,
+        type: "use-action",
+        actorId: run.encounter.playerId,
+        actionId: "basic-defense",
+        targetId: run.encounter.playerId,
+      });
+      expect(result.ok).toBe(true);
+      run = result.state;
+    }
+    const serialized = JSON.parse(JSON.stringify(createGameplaySave(run)));
+
+    const startedAt = performance.now();
+    const restored = restoreGameplaySave(serialized);
+
+    // Full-suite workers contend for the same CPU. This still leaves a wide
+    // margin below the prior ~1.7s whole-history replay regression while
+    // avoiding a scheduler-sensitive 250ms release gate.
+    expect(performance.now() - startedAt).toBeLessThan(500);
+    expect(restored).toMatchObject({ ok: true, state: { sequence: 75 } });
   });
 
   it("rejects a tampered run without returning attacker-controlled state", () => {
@@ -76,7 +130,38 @@ describe("gameplay persistence envelope", () => {
     });
   });
 
+  it("restores semantically identical saves after persistence reorders object keys", () => {
+    const save = createGameplaySave(runState());
+    const reordered = reorderKeys(JSON.parse(JSON.stringify(save)));
+
+    expect(restoreGameplaySave(reordered)).toEqual({ ok: true, state: save.runState });
+  });
+
   it.each([
+    ["enemy HP", (run) => { run.encounter.actors.gatekeeper.hp = 1; }],
+    ["encounter attack", (run) => {
+      run.encounter.actors[run.encounter.playerId].stats.attack = 1000;
+    }],
+    ["transition history", (run) => { run.history = [{}]; }],
+  ])("rejects recomputed snapshots with forged %s authority", (_label, forge) => {
+    const save = JSON.parse(JSON.stringify(createGameplaySave(runState())));
+    forge(save.runState);
+    save.fingerprint = gameplayChecksum({
+      version: save.version,
+      baselineVersion: save.baselineVersion,
+      fingerprintAlgorithm: save.fingerprintAlgorithm,
+      runState: save.runState,
+    });
+
+    expect(restoreGameplaySave(save)).toEqual({
+      ok: false,
+      reason: "invalid-gameplay-run-state",
+      state: null,
+    });
+  });
+
+  it.each([
+    ["version", 1, "unsupported-gameplay-save-version"],
     ["version", GAMEPLAY_SAVE_VERSION + 1, "unsupported-gameplay-save-version"],
     ["baselineVersion", "future-private-balance", "unsupported-gameplay-baseline"],
     ["fingerprintAlgorithm", "unknown", "unsupported-gameplay-fingerprint"],

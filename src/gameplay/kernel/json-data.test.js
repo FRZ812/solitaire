@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneJsonData, isJsonData } from "./json-data.js";
+import { cloneJsonData, equalJsonData, isJsonData } from "./json-data.js";
 
 describe("bounded JSON data snapshots", () => {
   it("clones own __proto__ data without mutating the clone or global prototype", () => {
@@ -48,5 +48,14 @@ describe("bounded JSON data snapshots", () => {
 
     expect(isJsonData(root)).toBe(false);
     expect(() => cloneJsonData(root)).toThrow("invalid-json-data");
+  });
+
+  it("compares JSON meaning independently of object key insertion order", () => {
+    expect(equalJsonData(
+      { currentStep: { id: "gatekeeper", kind: "boss", position: 12 } },
+      { currentStep: { position: 12, kind: "boss", id: "gatekeeper" } },
+    )).toBe(true);
+    expect(equalJsonData(["boss", 12], [12, "boss"])).toBe(false);
+    expect(equalJsonData({ value: 1 }, { value: 2 })).toBe(false);
   });
 });

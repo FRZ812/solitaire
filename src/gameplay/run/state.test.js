@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { getReferenceReward } from "../reference/rewards.js";
+import { getActionProgressionOffer } from "../reference/actions.js";
+import { getReferenceReward, REFERENCE_REWARDS } from "../reference/rewards.js";
+import { chooseActionProgressionOffer, createActionProgressionState } from "./action-progression.js";
+import { createBuild } from "./build.js";
+import { createRewardOffer } from "./rewards.js";
 import {
   claimRunReward,
   createArcticKnightGatekeeperRun,
   createArcticKnightRun,
+  draftReferenceRunRewardOffer,
   isReferenceRunState,
   refreshRunReward,
   resolveRunCommand,
@@ -19,10 +24,53 @@ function command(run, actionId, targetId = run.encounter.enemyIds[0]) {
   };
 }
 
-function oneHitVictory(run) {
-  const snapshot = JSON.parse(JSON.stringify(run));
-  snapshot.encounter.actors[snapshot.encounter.enemyIds[0]].hp = 1;
-  return snapshot;
+function skillCommand(run, skillId, targetId = run.encounter.playerId) {
+  return {
+    expectedRunSequence: run.sequence,
+    type: "use-skill",
+    actorId: run.encounter.playerId,
+    skillId,
+    targetId,
+  };
+}
+
+function playToReward(initial, { useEvasion = true } = {}) {
+  let run = initial;
+  let attacks = 0;
+  while (run.phase === "encounter" && attacks < 20) {
+    const evasion = run.encounter.actors[run.encounter.playerId].skills
+      .find(({ id }) => id === "emergency-evasion");
+    if (useEvasion && evasion.usesRemaining > 0) {
+      const prepared = resolveRunCommand(run, skillCommand(run, "emergency-evasion"));
+      if (!prepared.ok) throw new TypeError(prepared.reason);
+      run = prepared.state;
+    }
+    const attacked = resolveRunCommand(run, command(run, "basic-attack"));
+    if (!attacked.ok) throw new TypeError(attacked.reason);
+    run = attacked.state;
+    attacks += 1;
+  }
+  return { run, attacks };
+}
+
+function runOffering(rewardId) {
+  for (let seed = 0; seed < 100; seed += 1) {
+    let run = playToReward(createArcticKnightGatekeeperRun({
+      runId: `claim-${rewardId}-${seed}`,
+      seed,
+    })).run;
+    if (run.rewardOffer.choices.includes(rewardId)) return run;
+    const refreshed = refreshRunReward(run, {
+      offerId: run.rewardOffer.offerId,
+      expectedRevision: run.rewardOffer.revision,
+      expectedRunSequence: run.sequence,
+    });
+    if (refreshed.ok && refreshed.state.rewardOffer.choices.includes(rewardId)) {
+      run = refreshed.state;
+      return run;
+    }
+  }
+  throw new TypeError(`no-deterministic-offer:${rewardId}`);
 }
 
 describe("reference run state", () => {
@@ -30,7 +78,7 @@ describe("reference run state", () => {
     const run = createArcticKnightRun({ runId: "run-full", seed: "winter" });
 
     expect(run).toMatchObject({
-      version: 1,
+      version: 2,
       runId: "run-full",
       characterId: "arctic-knight",
       actId: "arctic-knight-act-1",
@@ -78,6 +126,32 @@ describe("reference run state", () => {
       "sleep-bomb",
     ]);
     expect(isReferenceRunState(first)).toBe(true);
+    expect(first.history).toEqual([]);
+  });
+
+  it("rejects oversized run lineage before constructing externally invalid state", () => {
+    expect(() => createArcticKnightGatekeeperRun({
+      runId: "r".repeat(257),
+      seed: 1447,
+    })).toThrow("invalid-run-id");
+    expect(() => createArcticKnightGatekeeperRun({
+      runId: "bounded-run",
+      seed: "s".repeat(257),
+    })).toThrow("invalid-run-seed");
+    expect(() => createArcticKnightGatekeeperRun({
+      runId: "bounded-run",
+      seed: Number.MAX_VALUE,
+    })).toThrow("invalid-run-seed");
+  });
+
+  it("can reach reward drafting from an untouched Gatekeeper run through legal commands", () => {
+    const { run, attacks } = playToReward(
+      createArcticKnightGatekeeperRun({ runId: "playable", seed: 1447 }),
+    );
+
+    expect(run).toMatchObject({ phase: "reward", status: "active" });
+    expect(run.player.hp).toBeGreaterThan(0);
+    expect(attacks).toBeLessThanOrEqual(8);
   });
 
   it("resolves commands through the kernel and advances authored intents immutably", () => {
@@ -104,35 +178,43 @@ describe("reference run state", () => {
     )).toMatchObject({ ok: false, reason: "stale-run-state" });
   });
 
-  it("settles defeat without opening a reward offer", () => {
-    const run = JSON.parse(JSON.stringify(
-      createArcticKnightGatekeeperRun({ runId: "defeat", seed: 4 }),
-    ));
-    run.player.hp = 1;
-    run.encounter.actors[run.encounter.playerId].hp = 1;
+  it("keeps repeated transitions within the interactive run-controller budget", () => {
+    let run = createArcticKnightGatekeeperRun({ runId: "interactive-budget", seed: 17 });
+    const startedAt = performance.now();
 
-    const result = resolveRunCommand(
-      run,
-      command(run, "basic-defense", run.encounter.playerId),
-    );
+    for (let index = 0; index < 50; index += 1) {
+      const result = resolveRunCommand(
+        run,
+        command(run, "basic-defense", run.encounter.playerId),
+      );
+      expect(result.ok).toBe(true);
+      run = result.state;
+    }
 
-    expect(result).toMatchObject({
-      ok: true,
-      state: {
-        status: "defeated",
-        phase: "complete",
-        rewardOffer: null,
-        player: { hp: 0 },
-      },
-    });
-    expect(isReferenceRunState(result.state)).toBe(true);
+    expect(performance.now() - startedAt).toBeLessThan(2_000);
+    expect(run.sequence).toBe(50);
+    expect(isReferenceRunState(run)).toBe(true);
   });
 
-  it("opens a deterministic authoritative reward offer after victory", () => {
-    const run = oneHitVictory(
-      createArcticKnightGatekeeperRun({ runId: "victory", seed: "reward-path" }),
+  it("settles defeat without opening a reward offer", () => {
+    const { run } = playToReward(
+      createArcticKnightGatekeeperRun({ runId: "defeat", seed: 5 }),
+      { useEvasion: false },
     );
-    const result = resolveRunCommand(run, command(run, "basic-attack"));
+
+    expect(run).toMatchObject({
+      status: "defeated",
+      phase: "complete",
+      rewardOffer: null,
+      player: { hp: 0 },
+    });
+    expect(isReferenceRunState(run)).toBe(true);
+  });
+
+  it("opens a deterministic provisional-baseline reward offer after victory", () => {
+    const result = { state: playToReward(
+      createArcticKnightGatekeeperRun({ runId: "victory", seed: "reward-path" }),
+    ).run, ok: true };
 
     expect(result.ok).toBe(true);
     expect(result.state).toMatchObject({
@@ -150,11 +232,34 @@ describe("reference run state", () => {
     expect(isReferenceRunState(result.state)).toBe(true);
   });
 
-  it("atomically applies one claimed reward and makes serial retries idempotent", () => {
-    const run = oneHitVictory(
+  it("returns an explicit content gap when fewer than four rewards remain eligible", () => {
+    const replaced = chooseActionProgressionOffer(
+      createActionProgressionState(),
+      "shield-bash-replacement",
+    ).state;
+    const exhaustedActions = chooseActionProgressionOffer(
+      replaced,
+      "shield-bash-upgrade",
+    ).state;
+    const result = draftReferenceRunRewardOffer({
+      runId: "exhausted",
+      seed: "exhausted-seed",
+      currentStep: { id: "exhausted-step" },
+      build: createBuild({ traits: { ironclad: 7, "force-field": 7 } }),
+      actionProgression: exhaustedActions,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "insufficient-reward-candidates",
+      candidateIds: ["action:shield-bash-upgrade", "item:mithril-helm"],
+    });
+  });
+
+  it("optimistically applies one claimed reward and makes serial retries idempotent", () => {
+    const rewardState = playToReward(
       createArcticKnightGatekeeperRun({ runId: "claim", seed: "reward-action" }),
-    );
-    const rewardState = resolveRunCommand(run, command(run, "basic-attack")).state;
+    ).run;
     const rewardId = rewardState.rewardOffer.choices.find(
       (candidateId) => getReferenceReward(candidateId)?.kind === "action",
     );
@@ -174,7 +279,7 @@ describe("reference run state", () => {
       applied: true,
       state: {
         status: "completed",
-        phase: "complete",
+        phase: "content-gap",
         completedStepIds: ["arctic-knight-act-1-gatekeeper"],
         rewardClaims: [{ offerId: claim.offerId, rewardId }],
       },
@@ -184,13 +289,57 @@ describe("reference run state", () => {
     );
     expect(retry).toMatchObject({ ok: true, applied: false, state: first.state });
     expect(isReferenceRunState(first.state)).toBe(true);
+
+    const missingAppliedEffect = JSON.parse(JSON.stringify(first.state));
+    missingAppliedEffect.actionProgression = rewardState.actionProgression;
+    expect(isReferenceRunState(missingAppliedEffect)).toBe(false);
   });
 
+  it.each(REFERENCE_REWARDS.map(({ id }) => id))(
+    "applies canonical reward %s and preserves a valid settled run",
+    (rewardId) => {
+      const rewardState = runOffering(rewardId);
+      const result = claimRunReward(rewardState, {
+        offerId: rewardState.rewardOffer.offerId,
+        expectedRevision: rewardState.rewardOffer.revision,
+        expectedRunSequence: rewardState.sequence,
+        rewardId,
+      });
+      const reward = getReferenceReward(rewardId);
+
+      expect(result).toMatchObject({
+        ok: true,
+        applied: true,
+        state: {
+          status: "completed",
+          phase: "content-gap",
+          completedStepIds: ["arctic-knight-act-1-gatekeeper"],
+        },
+      });
+      expect(isReferenceRunState(result.state)).toBe(true);
+      if (reward.kind === "item") {
+        expect(result.state.build.items.some(({ itemId }) => itemId === reward.itemId)).toBe(true);
+      } else if (reward.kind === "trait") {
+        expect(result.state.build.baseTraits[reward.traitId]).toBeGreaterThanOrEqual(reward.levels);
+      } else if (reward.kind === "action") {
+        const offer = getActionProgressionOffer(reward.actionOfferId);
+        if (offer.kind === "replacement") {
+          expect(result.state.actionProgression.actions.attack.actionId).toBe(offer.replacementActionId);
+        } else {
+          expect(result.state.actionProgression.actions.attack.upgrades).toContainEqual({
+            offerId: offer.id,
+            familyId: offer.familyId,
+            level: 1,
+          });
+        }
+      }
+    },
+  );
+
   it("binds refreshes to the current run offer revision", () => {
-    const run = oneHitVictory(
+    const rewardState = playToReward(
       createArcticKnightGatekeeperRun({ runId: "refresh", seed: "reward-refresh" }),
-    );
-    const rewardState = resolveRunCommand(run, command(run, "basic-attack")).state;
+    ).run;
     const request = {
       offerId: rewardState.rewardOffer.offerId,
       expectedRevision: 0,
@@ -224,5 +373,68 @@ describe("reference run state", () => {
       state: null,
       events: [],
     });
+  });
+
+  it.each([
+    ["enemy HP", (run) => { run.encounter.actors.gatekeeper.hp = 1; }],
+    ["derived attack", (run) => { run.encounter.actors[run.encounter.playerId].stats.attack = 1000; }],
+    ["authored scheduler", (run) => {
+      run.encounter.actors.gatekeeper.intentState = null;
+      run.encounter.actors.gatekeeper.intent = {
+        id: "forged-wait",
+        type: "attack",
+        targetId: run.encounter.playerId,
+        damage: { min: 0, max: 0 },
+      };
+    }],
+    ["mode ancestry", (run) => { run.mode = "full"; }],
+    ["completion prefix", (run) => { run.completedStepIds = [run.currentStep.id]; }],
+  ])("rejects unreachable %s authority copies", (_label, forge) => {
+    const run = JSON.parse(JSON.stringify(
+      createArcticKnightGatekeeperRun({ runId: "authority", seed: 99 }),
+    ));
+    forge(run);
+
+    expect(isReferenceRunState(run)).toBe(false);
+  });
+
+  it("binds reward lineage and refresh history to the owning run", () => {
+    const rewardRun = playToReward(
+      createArcticKnightGatekeeperRun({ runId: "reward-authority", seed: 22 }),
+    ).run;
+    const forgedSeed = JSON.parse(JSON.stringify(rewardRun));
+    forgedSeed.rewardOffer = createRewardOffer({
+      offerId: rewardRun.rewardOffer.offerId,
+      seed: "attacker-seed",
+      candidateIds: rewardRun.rewardOffer.candidateIds.slice(0, 4),
+    });
+    expect(isReferenceRunState(forgedSeed)).toBe(false);
+
+    const refreshed = refreshRunReward(rewardRun, {
+      offerId: rewardRun.rewardOffer.offerId,
+      expectedRevision: rewardRun.rewardOffer.revision,
+      expectedRunSequence: rewardRun.sequence,
+    }).state;
+    const reset = JSON.parse(JSON.stringify(refreshed));
+    reset.rewardOffer = rewardRun.rewardOffer;
+    expect(isReferenceRunState(reset)).toBe(false);
+  });
+
+  it("rejects fabricated claims where no reward offer was reached", () => {
+    const blocked = JSON.parse(JSON.stringify(
+      createArcticKnightRun({ runId: "no-offer", seed: 71 }),
+    ));
+    blocked.rewardClaims.push({
+      offerId: "no-offer:invented:reward",
+      rewardId: "item:mithril-helm",
+    });
+
+    expect(isReferenceRunState(blocked)).toBe(false);
+    expect(claimRunReward(blocked, {
+      offerId: "no-offer:invented:reward",
+      expectedRevision: 0,
+      expectedRunSequence: 0,
+      rewardId: "item:mithril-helm",
+    })).toMatchObject({ ok: false, reason: "invalid-run-state", state: null });
   });
 });

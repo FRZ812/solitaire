@@ -1,0 +1,237 @@
+import { describe, expect, it } from "vitest";
+import {
+  applyStatus,
+  createStatusStack,
+  decrementOnHit,
+  getStatusDefinition,
+  hasStatus,
+  isStatusStack,
+  MAX_STATUS_COUNT,
+  removeStatus,
+  statusCount,
+  statusTypes,
+  tickEndOfTurn,
+} from "./status-stack.js";
+
+describe("status definitions", () => {
+  it("carries the lifecycle the wiki records for each observed status", () => {
+    expect(getStatusDefinition("protection")).toMatchObject({
+      permanent: true,
+      decreaseWhenHit: true,
+      decreaseAtEndOfTurn: false,
+      removeAtEndOfTurn: false,
+    });
+    expect(getStatusDefinition("steelskin")).toMatchObject({
+      permanent: false,
+      decreaseWhenHit: true,
+    });
+    expect(getStatusDefinition("solidity")).toMatchObject({
+      decreaseAtEndOfTurn: true,
+      decreaseWhenHit: true,
+    });
+    expect(getStatusDefinition("guard")).toMatchObject({
+      decreaseAtEndOfTurn: true,
+      decreaseWhenHit: true,
+    });
+    expect(getStatusDefinition("overload")).toMatchObject({ removeAtEndOfTurn: true });
+    expect(getStatusDefinition("doom-atk")).toMatchObject({ removeAtEndOfTurn: true });
+    expect(getStatusDefinition("thorn")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("tenacity")).toMatchObject({ permanent: true });
+  });
+
+  it("marks undocumented lifecycles as a gap instead of inventing one", () => {
+    for (const type of ["poison", "cripple", "charge", "grow", "priority", "doom"]) {
+      const spec = getStatusDefinition(type);
+      expect(spec.lifecycleEvidence).toBe("gap");
+      expect(spec.permanent).toBe(false);
+      expect(spec.removeAtEndOfTurn).toBe(false);
+      expect(spec.decreaseAtEndOfTurn).toBe(false);
+      expect(spec.decreaseWhenHit).toBe(false);
+    }
+  });
+
+  it("rejects unknown status types", () => {
+    expect(getStatusDefinition("nonsense")).toBeNull();
+    expect(getStatusDefinition(null)).toBeNull();
+    expect(getStatusDefinition(42)).toBeNull();
+    expect(() => applyStatus(createStatusStack(), "nonsense", 1)).toThrow(/unknown-status/);
+  });
+
+  it("covers every status named in the evidence ledger", () => {
+    expect(statusTypes()).toEqual(expect.arrayContaining([
+      "protection", "steelskin", "evade", "haste", "doom-atk", "burn",
+      "unstoppable", "tenacity", "thorn", "lifesteal", "strength", "misfortune",
+      "poison", "cripple", "charge", "grow", "overload", "poison-atk", "weak",
+      "focus", "solidity", "guard", "sharpen", "eviscerate", "priority", "doom",
+    ]));
+  });
+});
+
+describe("applying statuses", () => {
+  it("accumulates repeat grants rather than replacing them", () => {
+    // Detection grants Thorn every 4 turns; the fourth grant must not erase the first three.
+    let stack = createStatusStack();
+    stack = applyStatus(stack, "thorn", 14);
+    stack = applyStatus(stack, "thorn", 14);
+    expect(statusCount(stack, "thorn")).toBe(28);
+  });
+
+  it("keeps one entry per type", () => {
+    let stack = applyStatus(createStatusStack(), "burn", 3);
+    stack = applyStatus(stack, "burn", 5);
+    expect(stack).toEqual([{ type: "burn", count: 8 }]);
+  });
+
+  it("does not mutate the stack it is given", () => {
+    const original = applyStatus(createStatusStack(), "steelskin", 4);
+    const snapshot = JSON.parse(JSON.stringify(original));
+    applyStatus(original, "steelskin", 9);
+    expect(original).toEqual(snapshot);
+  });
+
+  it("treats a zero grant as a no-op", () => {
+    expect(applyStatus(createStatusStack(), "burn", 0)).toEqual([]);
+    expect(statusCount(applyStatus(applyStatus(createStatusStack(), "burn", 2), "burn", 0), "burn")).toBe(2);
+  });
+
+  it("clamps at the maximum instead of overflowing", () => {
+    let stack = applyStatus(createStatusStack(), "grow", MAX_STATUS_COUNT);
+    stack = applyStatus(stack, "grow", 500);
+    expect(statusCount(stack, "grow")).toBe(MAX_STATUS_COUNT);
+  });
+
+  it("rejects counts that are not safe non-negative integers", () => {
+    const stack = createStatusStack();
+    for (const bad of [-1, 1.5, NaN, Infinity, "3", null, undefined, MAX_STATUS_COUNT + 1]) {
+      expect(() => applyStatus(stack, "burn", bad)).toThrow(/invalid-status-count/);
+    }
+  });
+});
+
+describe("reading statuses", () => {
+  it("reports absent statuses as zero, not undefined", () => {
+    expect(statusCount(createStatusStack(), "burn")).toBe(0);
+    expect(hasStatus(createStatusStack(), "burn")).toBe(false);
+    expect(statusCount(null, "burn")).toBe(0);
+  });
+
+  it("removes a status entirely", () => {
+    const stack = applyStatus(applyStatus(createStatusStack(), "burn", 4), "thorn", 2);
+    expect(removeStatus(stack, "burn")).toEqual([{ type: "thorn", count: 2 }]);
+  });
+});
+
+describe("decrementing on hit", () => {
+  it("spends only the statuses that decrease when hit", () => {
+    let stack = createStatusStack();
+    stack = applyStatus(stack, "steelskin", 4);
+    stack = applyStatus(stack, "burn", 80);
+    stack = applyStatus(stack, "protection", 21);
+    stack = applyStatus(stack, "thorn", 85);
+    stack = applyStatus(stack, "evade", 1);
+
+    const after = decrementOnHit(stack);
+    expect(statusCount(after, "steelskin")).toBe(3);
+    expect(statusCount(after, "burn")).toBe(79);
+    expect(statusCount(after, "protection")).toBe(20);
+    // Thorn is permanent and Evade only decays at end of turn.
+    expect(statusCount(after, "thorn")).toBe(85);
+    expect(statusCount(after, "evade")).toBe(1);
+  });
+
+  it("spends once per individual hit, so a multi-hit attack costs more", () => {
+    // Steelskin is applied to each individual hit, so a 3-hit attack ticks it three times.
+    const stack = applyStatus(createStatusStack(), "steelskin", 4);
+    let after = stack;
+    for (let hit = 0; hit < 3; hit += 1) after = decrementOnHit(after);
+    expect(statusCount(after, "steelskin")).toBe(1);
+  });
+
+  it("drops a status that reaches zero rather than leaving an empty stack", () => {
+    const stack = applyStatus(createStatusStack(), "steelskin", 1);
+    const after = decrementOnHit(stack);
+    expect(after).toEqual([]);
+    expect(hasStatus(after, "steelskin")).toBe(false);
+  });
+
+  it("never drives a count below zero", () => {
+    const stack = applyStatus(createStatusStack(), "burn", 2);
+    const after = decrementOnHit(stack, 10);
+    expect(after).toEqual([]);
+  });
+});
+
+describe("ticking at end of turn", () => {
+  it("removes remove-at-end-of-turn statuses outright, whatever the count", () => {
+    // Overload is temporary attack power, "lost at end of turn" — all of it, not one point.
+    let stack = applyStatus(createStatusStack(), "overload", 48);
+    stack = applyStatus(stack, "doom-atk", 25);
+    const after = tickEndOfTurn(stack);
+    expect(hasStatus(after, "overload")).toBe(false);
+    expect(hasStatus(after, "doom-atk")).toBe(false);
+  });
+
+  it("decrements decrease-at-end-of-turn statuses", () => {
+    let stack = applyStatus(createStatusStack(), "evade", 1);
+    stack = applyStatus(stack, "haste", 2);
+    stack = applyStatus(stack, "misfortune", 180);
+    stack = applyStatus(stack, "solidity", 10);
+    const after = tickEndOfTurn(stack);
+    expect(hasStatus(after, "evade")).toBe(false);
+    expect(statusCount(after, "haste")).toBe(1);
+    expect(statusCount(after, "misfortune")).toBe(179);
+    expect(statusCount(after, "solidity")).toBe(9);
+  });
+
+  it("leaves permanent and hit-only statuses untouched", () => {
+    let stack = applyStatus(createStatusStack(), "thorn", 85);
+    stack = applyStatus(stack, "tenacity", 25);
+    stack = applyStatus(stack, "protection", 21);
+    stack = applyStatus(stack, "steelskin", 13);
+    stack = applyStatus(stack, "burn", 80);
+    expect(tickEndOfTurn(stack)).toEqual(stack);
+  });
+
+  it("leaves gap-lifecycle statuses in place so the missing evidence stays visible", () => {
+    const stack = applyStatus(createStatusStack(), "poison", 10);
+    expect(tickEndOfTurn(stack)).toEqual(stack);
+    expect(decrementOnHit(stack)).toEqual(stack);
+  });
+
+  it("spends Solidity and Guard from whichever comes first", () => {
+    // Both decrease at end of turn AND when hit, so a turn in which you are hit once
+    // costs two points, not one.
+    let stack = applyStatus(createStatusStack(), "guard", 9);
+    stack = decrementOnHit(stack);
+    stack = tickEndOfTurn(stack);
+    expect(statusCount(stack, "guard")).toBe(7);
+  });
+});
+
+describe("stack validity", () => {
+  it("accepts stacks the module produces", () => {
+    let stack = createStatusStack();
+    stack = applyStatus(stack, "burn", 4);
+    stack = applyStatus(stack, "thorn", 2);
+    expect(isStatusStack(stack)).toBe(true);
+    expect(isStatusStack(createStatusStack())).toBe(true);
+  });
+
+  it("rejects malformed stacks", () => {
+    expect(isStatusStack(null)).toBe(false);
+    expect(isStatusStack({})).toBe(false);
+    expect(isStatusStack([{ type: "burn" }])).toBe(false);
+    expect(isStatusStack([{ type: "burn", count: 0 }])).toBe(false);
+    expect(isStatusStack([{ type: "burn", count: -1 }])).toBe(false);
+    expect(isStatusStack([{ type: "burn", count: 1.5 }])).toBe(false);
+    expect(isStatusStack([{ type: "nonsense", count: 1 }])).toBe(false);
+    expect(isStatusStack([{ type: "burn", count: 1, extra: true }])).toBe(false);
+    expect(isStatusStack([{ type: "burn", count: 1 }, { type: "burn", count: 2 }])).toBe(false);
+  });
+
+  it("survives a JSON round trip", () => {
+    let stack = applyStatus(createStatusStack(), "steelskin", 13);
+    stack = applyStatus(stack, "protection", 21);
+    expect(isStatusStack(JSON.parse(JSON.stringify(stack)))).toBe(true);
+  });
+});

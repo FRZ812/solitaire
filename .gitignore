@@ -28,7 +28,7 @@ scripts/whitemarch-backups/
 
 # Local agent attachments and planning scratch.
 .codex-remote-attachments/
-.hermes/plans/
+.hermes/
 .preview-root/
 
 # Godot editor/import caches left by retired engine spikes.

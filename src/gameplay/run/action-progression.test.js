@@ -7,6 +7,7 @@ import {
   SLAUGHTER,
 } from "../reference/actions.js";
 import {
+  MAX_ACTION_UPGRADE_LEVEL,
   chooseActionProgressionOffer,
   createActionProgressionState,
   filterActionProgressionOffers,
@@ -140,6 +141,22 @@ describe("action replacement progression", () => {
       events: [],
     });
     expect(filterActionProgressionOffers({}, ["shield-bash-upgrade"])).toEqual([]);
+  });
+
+  it("rejects an upgrade at its operational cap without reporting non-monotonic success", () => {
+    const saturated = JSON.parse(JSON.stringify(createActionProgressionState()));
+    saturated.actions.attack.upgrades.push({
+      offerId: "shield-bash-upgrade",
+      familyId: "shield-bash",
+      level: MAX_ACTION_UPGRADE_LEVEL,
+    });
+
+    expect(chooseActionProgressionOffer(saturated, "shield-bash-upgrade")).toMatchObject({
+      ok: false,
+      reason: "action-upgrade-limit-reached",
+      state: saturated,
+      events: [],
+    });
   });
 
   it("returns a stable rejection receipt that cannot alias hydrated input", () => {

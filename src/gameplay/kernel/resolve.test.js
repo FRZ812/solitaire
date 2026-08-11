@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createEncounter } from "./model.js";
+import { createEncounter, isEncounterState, MAX_ENCOUNTER_EVENTS } from "./model.js";
 import { resolveCommand } from "./resolve.js";
+import * as resolverModule from "./resolve.js";
 
 function fixture(seed = 104729) {
   return createEncounter({
@@ -44,6 +45,24 @@ const defend = Object.freeze({
 });
 
 describe("reference combat kernel", () => {
+  it("keeps mutable replay ownership inside an atomic sequence boundary", () => {
+    const before = fixture();
+    const snapshot = JSON.parse(JSON.stringify(before));
+
+    expect(resolverModule.resolveCommandForReplay).toBeUndefined();
+    expect(typeof resolverModule.replayCommandSequence).toBe("function");
+    expect(resolverModule.replayCommandSequence(before, [
+      defend,
+      { ...attack, targetId: "missing" },
+    ])).toEqual({
+      ok: false,
+      reason: "invalid-target",
+      state: null,
+      steps: [],
+    });
+    expect(before).toEqual(snapshot);
+  });
+
   it("resolves Attack and the declared enemy intent as one deterministic turn trace", () => {
     const first = resolveCommand(fixture(), attack);
     const replay = resolveCommand(fixture(), attack);
@@ -59,9 +78,10 @@ describe("reference combat kernel", () => {
       "damage-resolved",
       "intent-resolved",
       "damage-resolved",
+      "intent-consumed",
       "intent-declared",
     ]);
-    expect(first.events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5]);
+    expect(first.events.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(first.state.events).toEqual(first.events);
   });
 
@@ -72,6 +92,43 @@ describe("reference combat kernel", () => {
     expect(result).toEqual({ ok: false, reason: "invalid-target", state: before, events: [] });
     expect(before.actors.gatekeeper.hp).toBe(18);
     expect(before.events).toEqual([]);
+  });
+
+  it.each([
+    ["guard", (state) => { state.actors.player.guard = Number.MAX_SAFE_INTEGER; }],
+    ["round", (state) => { state.round = Number.MAX_SAFE_INTEGER; }],
+  ])("rejects a %s transition that would leave the validated numeric domain", (_label, prepare) => {
+    const before = fixture();
+    prepare(before);
+    expect(isEncounterState(before)).toBe(true);
+
+    const result = resolveCommand(before, defend);
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "invalid-encounter-transition",
+      state: before,
+      events: [],
+    });
+  });
+
+  it("reserves enough event capacity to reject a command without partial resolution", () => {
+    const before = fixture();
+    const eventCount = MAX_ENCOUNTER_EVENTS - 11;
+    before.events = Array.from({ length: eventCount }, (_, index) => ({
+      sequence: index + 1,
+      round: 1,
+      type: "test-history",
+    }));
+    before.sequence = eventCount;
+    expect(isEncounterState(before)).toBe(true);
+
+    expect(resolveCommand(before, defend)).toEqual({
+      ok: false,
+      reason: "encounter-event-limit-exceeded",
+      state: before,
+      events: [],
+    });
   });
 
   it.each(["toString", "__proto__", "constructor"])(
@@ -103,10 +160,32 @@ describe("reference combat kernel", () => {
     expect(result.ok).toBe(true);
     expect(result.state.phase).toBe("victory");
     expect(result.state.actors.gatekeeper.hp).toBe(0);
+    expect(result.state.actors.gatekeeper.intent).toBeNull();
+    expect(result.state.actors.gatekeeper.intentState).toBeNull();
     expect(result.state.actors.player.hp).toBe(24);
     expect(result.events.map((event) => event.type)).toEqual([
       "action-used",
       "damage-resolved",
+      "intent-cancelled",
+      "encounter-ended",
+    ]);
+  });
+
+  it("consumes the resolved intent before terminal defeat", () => {
+    const before = fixture();
+    before.actors.player.hp = 1;
+    const result = resolveCommand(before, defend);
+
+    expect(result.ok).toBe(true);
+    expect(result.state.phase).toBe("defeat");
+    expect(result.state.actors.gatekeeper.intent).toBeNull();
+    expect(result.state.actors.gatekeeper.intentState).toBeNull();
+    expect(result.events.map((event) => event.type)).toEqual([
+      "action-used",
+      "defense-gained",
+      "intent-resolved",
+      "damage-resolved",
+      "intent-consumed",
       "encounter-ended",
     ]);
   });
@@ -161,6 +240,7 @@ describe("reference combat kernel", () => {
       "defense-gained",
       "intent-resolved",
       "damage-resolved",
+      "intent-consumed",
       "intent-declared",
     ]);
   });
@@ -195,6 +275,7 @@ describe("reference combat kernel", () => {
       "defense-gained",
       "intent-resolved",
       "damage-resolved",
+      "intent-consumed",
       "defense-expired",
       "intent-declared",
     ]);

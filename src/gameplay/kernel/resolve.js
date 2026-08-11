@@ -1,13 +1,13 @@
 import { cloneJsonData } from "./json-data.js";
 import { advanceIntent, encounterIntentFromState } from "./intent.js";
-import { isEncounterState } from "./model.js";
+import { getEncounterAction, isEncounterState, MAX_ENCOUNTER_EVENTS } from "./model.js";
 import { nextInt } from "./rng.js";
 import { applyStatus, hasStatus, removeStatus } from "./statuses.js";
-import { getReferenceAction } from "../reference/actions.js";
 import { getReferenceSkill } from "../reference/skills.js";
 
 const clone = (value) => cloneJsonData(value);
 const rejected = (state, reason) => ({ ok: false, reason, state, events: [] });
+const MAX_EVENTS_PER_COMMAND = 12;
 
 function actorById(state, actorId) {
   return typeof actorId === "string" && Object.hasOwn(state.actors, actorId)
@@ -96,7 +96,9 @@ function validate(state, command) {
   if (!actor || actor.hp <= 0) return "invalid-actor";
 
   if (command.type === "use-action") {
-    const action = actor.actions.includes(command.actionId) ? getReferenceAction(command.actionId) : null;
+    const action = actor.actions.includes(command.actionId)
+      ? getEncounterAction(state, command.actionId)
+      : null;
     if (!action) return "unknown-action";
     return targetReason(action, actor, actorById(state, command.targetId));
   }
@@ -112,7 +114,7 @@ function validate(state, command) {
 function resolveAction(state, events, command) {
   const actor = state.actors[command.actorId];
   const target = state.actors[command.targetId];
-  const action = getReferenceAction(command.actionId);
+  const action = getEncounterAction(state, command.actionId);
 
   emit(state, events, {
     type: "action-used",
@@ -125,7 +127,11 @@ function resolveAction(state, events, command) {
   if (action.effect.type === "damage") {
     const variance = action.effect.variance;
     const base = actor.stats[action.effect.stat] * action.effect.multiplier;
-    const amount = rollDamage(state, base + variance.min, base + variance.max);
+    const rolled = rollDamage(state, base + variance.min, base + variance.max);
+    const mitigation = action.effect.mitigationStat
+      ? Math.max(0, target.stats[action.effect.mitigationStat] || 0)
+      : 0;
+    const amount = rolled > 0 ? Math.max(1, rolled - mitigation) : 0;
     applyDamage(state, events, {
       sourceId: actor.id,
       targetId: target.id,
@@ -231,6 +237,20 @@ function resolveEnemyTurn(state, events) {
     .map((enemyId) => state.actors[enemyId])
     .filter((enemy) => enemy.hp > 0);
   if (livingEnemies.length === 0) {
+    for (const enemyId of state.enemyIds) {
+      const enemy = state.actors[enemyId];
+      if (enemy.intent) {
+        emit(state, events, {
+          type: "intent-cancelled",
+          actorId: enemy.id,
+          intentId: enemy.intent.id,
+          targetId: enemy.intent.targetId,
+          reason: "enemy-defeated",
+        });
+      }
+      enemy.intent = null;
+      enemy.intentState = null;
+    }
     state.phase = "victory";
     emit(state, events, { type: "encounter-ended", outcome: "victory" });
     return;
@@ -240,6 +260,7 @@ function resolveEnemyTurn(state, events) {
   state.phase = "enemy";
   const enemy = livingEnemies[0];
   const intent = enemy.intent;
+  const intentState = enemy.intentState;
   if (hasStatus(enemy, "sleep")) {
     emit(state, events, {
       type: "intent-skipped",
@@ -264,6 +285,15 @@ function resolveEnemyTurn(state, events) {
     });
   }
 
+  emit(state, events, {
+    type: "intent-consumed",
+    actorId: enemy.id,
+    intentId: intent.id,
+    targetId: intent.targetId,
+  });
+  enemy.intent = null;
+  enemy.intentState = null;
+
   const player = state.actors[state.playerId];
   if (player.guard > 0) {
     const amount = player.guard;
@@ -282,11 +312,13 @@ function resolveEnemyTurn(state, events) {
   }
 
   tickCooldowns(state, events, actionRound);
-  if (enemy.intentState) {
-    const advanced = advanceIntent(enemy.intentState);
-    if (!advanced.ok) throw new TypeError("invalid-intent-state");
+  if (intentState) {
+    const advanced = advanceIntent(intentState);
+    if (!advanced.ok) throw new TypeError(advanced.reason);
     enemy.intentState = clone(advanced.state);
     enemy.intent = clone(encounterIntentFromState(advanced.state, state.playerId));
+  } else {
+    enemy.intent = clone(intent);
   }
   state.round += 1;
   state.phase = "player";
@@ -299,14 +331,18 @@ function resolveEnemyTurn(state, events) {
   });
 }
 
-export function resolveCommand(state, command) {
+function resolveCommandInternal(state, command, mutateForReplay = false) {
   let next;
-  try {
-    next = cloneJsonData(state, "invalid-encounter-state");
-  } catch {
-    return rejected(null, "invalid-encounter-state");
+  if (mutateForReplay) {
+    next = state;
+  } else {
+    try {
+      next = cloneJsonData(state, "invalid-encounter-state");
+    } catch {
+      return rejected(null, "invalid-encounter-state");
+    }
+    if (!isEncounterState(next)) return rejected(null, "invalid-encounter-state");
   }
-  if (!isEncounterState(next)) return rejected(null, "invalid-encounter-state");
 
   let request;
   try {
@@ -316,12 +352,65 @@ export function resolveCommand(state, command) {
   }
   const reason = validate(next, request);
   if (reason) return rejected(next, reason);
+  if (next.events.length > MAX_ENCOUNTER_EVENTS - MAX_EVENTS_PER_COMMAND) {
+    return rejected(next, "encounter-event-limit-exceeded");
+  }
 
+  const prior = mutateForReplay ? null : clone(next);
   const events = [];
-  const consumesTurn = request.type === "use-action"
-    ? resolveAction(next, events, request)
-    : resolveSkill(next, events, request);
-
-  if (consumesTurn) resolveEnemyTurn(next, events);
+  try {
+    const consumesTurn = request.type === "use-action"
+      ? resolveAction(next, events, request)
+      : resolveSkill(next, events, request);
+    if (consumesTurn) resolveEnemyTurn(next, events);
+  } catch (error) {
+    const reason = error instanceof TypeError
+      && error.message === "intent-declaration-limit-exceeded"
+      ? error.message
+      : "invalid-encounter-transition";
+    return rejected(prior, reason);
+  }
+  if (!mutateForReplay && !isEncounterState(next)) {
+    return rejected(prior, "invalid-encounter-transition");
+  }
   return { ok: true, state: next, events };
+}
+
+export function resolveCommand(state, command) {
+  return resolveCommandInternal(state, command);
+}
+
+// Replay owns one isolated clone for the entire command sequence. The mutable
+// single-command path never crosses the module boundary, and any rejection
+// discards all partial HP, event, cooldown, round, RNG, and intent changes.
+export function replayCommandSequence(state, commands) {
+  let next;
+  let requests;
+  try {
+    next = cloneJsonData(state, "invalid-encounter-state");
+    requests = cloneJsonData(commands, "invalid-command-sequence");
+  } catch {
+    return { ok: false, reason: "invalid-command-sequence", state: null, steps: [] };
+  }
+  if (!isEncounterState(next) || !Array.isArray(requests)) {
+    return { ok: false, reason: "invalid-command-sequence", state: null, steps: [] };
+  }
+
+  const steps = [];
+  for (const request of requests) {
+    const resolution = resolveCommandInternal(next, request, true);
+    if (!resolution.ok) {
+      return { ok: false, reason: resolution.reason, state: null, steps: [] };
+    }
+    const player = next.actors[next.playerId];
+    steps.push({
+      events: cloneJsonData(resolution.events),
+      phase: next.phase,
+      player: { hp: player.hp, maxHp: player.maxHp },
+    });
+  }
+  if (!isEncounterState(next)) {
+    return { ok: false, reason: "invalid-encounter-transition", state: null, steps: [] };
+  }
+  return { ok: true, reason: null, state: next, steps };
 }

@@ -1,11 +1,17 @@
 export const REFERENCE_POLICY = Object.freeze({
-  id: "tow-1.4.16-public-evidence-v1",
+  id: "tow-1.4.16-public-evidence-v2",
   turnOrder: Object.freeze([
     "declare-enemy-intent",
     "player-command",
     "resolve-enemy-intent",
     "declare-next-intent",
   ]),
+  turnOrderEvidence: "inferred-policy-gap",
+  intentVisibilityEvidence: "inferred-policy-gap",
+  skills: Object.freeze({
+    loadoutCapacity: 3,
+    loadoutCapacityEvidence: "inferred-policy-gap",
+  }),
   damage: Object.freeze({
     attackStatMultiplier: 1,
     basicAttackVariance: Object.freeze({ min: 0, max: 2 }),

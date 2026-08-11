@@ -67,9 +67,9 @@ describe("reference encounter replay", () => {
       checksumAlgorithm: CHECKSUM_ALGORITHM,
       commandCount: commands.length,
     });
-    expect(first.initialStateChecksum).toBe("a7d10c5312bf4543");
+    expect(first.initialStateChecksum).toBe("b50e4de3dac94d22");
     expect(first.commandsChecksum).toBe("f4126bed83187c1d");
-    expect(first.checksum).toBe("f24fe7aaa3dd8b8f");
+    expect(first.checksum).toBe("dcbbb764a479dbef");
     expect(first.state.rng.state).toBe(4169244090);
     expect(first.state.actors.gatekeeper.hp).toBe(12);
     expect(first.state.events).toHaveLength(first.events.length);

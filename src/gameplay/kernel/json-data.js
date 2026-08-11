@@ -113,3 +113,31 @@ export function cloneJsonData(value, reason = "invalid-json-data") {
     throw new TypeError(reason);
   }
 }
+
+function equalSnapshots(first, second) {
+  if (first === second) return true;
+  if (!first || !second || typeof first !== "object" || typeof second !== "object") {
+    return false;
+  }
+  if (Array.isArray(first) || Array.isArray(second)) {
+    return Array.isArray(first)
+      && Array.isArray(second)
+      && first.length === second.length
+      && first.every((value, index) => equalSnapshots(value, second[index]));
+  }
+  const firstKeys = Object.keys(first).sort();
+  const secondKeys = Object.keys(second).sort();
+  return firstKeys.length === secondKeys.length
+    && firstKeys.every((key, index) => (
+      key === secondKeys[index]
+      && equalSnapshots(first[key], second[key])
+    ));
+}
+
+export function equalJsonData(first, second) {
+  try {
+    return equalSnapshots(snapshotJsonData(first), snapshotJsonData(second));
+  } catch {
+    return false;
+  }
+}

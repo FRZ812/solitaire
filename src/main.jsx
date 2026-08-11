@@ -101,13 +101,15 @@ function Root() {
   return (
     <>
       <ErrorBoundary label="game"><Solitaire /></ErrorBoundary>
-      {/* Floating PWA install pill — only renders once Chrome fires
-          beforeinstallprompt. position: fixed so it floats over whatever
-          screen is active. */}
-      <InstallPill />
-      {/* In-page diagnostic panel. Visit /#pwa on the phone to see why
-          Chrome isn't classifying the site as installable. */}
-      <PwaDiagnostics />
+      <div data-app-global-surfaces>
+        {/* Floating PWA install pill — only renders once Chrome fires
+            beforeinstallprompt. position: fixed so it floats over whatever
+            screen is active. */}
+        <InstallPill />
+        {/* In-page diagnostic panel. Visit /#pwa on the phone to see why
+            Chrome isn't classifying the site as installable. */}
+        <PwaDiagnostics />
+      </div>
     </>
   );
 }

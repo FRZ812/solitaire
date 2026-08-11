@@ -4,6 +4,8 @@ import {
   getActionReplacementFamily,
 } from "../reference/actions.js";
 
+export const MAX_ACTION_UPGRADE_LEVEL = 1_000;
+
 function ownData(object, key) {
   if (!object || typeof object !== "object") return undefined;
   const descriptor = Object.getOwnPropertyDescriptor(object, key);
@@ -65,6 +67,7 @@ function canonicalState(state) {
       || offer.familyId !== familyId
       || !Number.isInteger(level)
       || level < 1
+      || level > MAX_ACTION_UPGRADE_LEVEL
       || seen.has(offerId)
     ) return null;
     seen.add(offerId);
@@ -139,6 +142,9 @@ export function chooseActionProgressionOffer(state, offerId) {
 
   const currentUpgrades = canonical.actions.attack.upgrades;
   const existing = currentUpgrades.find((upgrade) => upgrade.offerId === offer.id);
+  if (existing?.level === MAX_ACTION_UPGRADE_LEVEL) {
+    return rejected(canonical, "action-upgrade-limit-reached");
+  }
   const upgrades = existing
     ? currentUpgrades.map((upgrade) => (
       upgrade.offerId === offer.id

@@ -62,6 +62,7 @@ export function writeResumeSnapshot({
 }, storage) {
   if (!userId || !campaignId || !looksLikeCampaignState(state)) return false;
   const target = browserStorage(storage);
+  if (!target) return false;
   rememberLastCampaignId(campaignId, target);
   try {
     target?.setItem(RESUME_SNAPSHOT_KEY, JSON.stringify({

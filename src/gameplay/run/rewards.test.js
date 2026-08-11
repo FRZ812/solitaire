@@ -102,7 +102,7 @@ describe("deterministic reward drafting", () => {
     });
   });
 
-  it("exposes offer/revision conflicts for atomic settlement by the owning run", () => {
+  it("exposes offer/revision conflicts for optimistic local settlement", () => {
     const state = create();
 
     expect(selectReward(state, {

@@ -1,7 +1,7 @@
-import { cloneJsonData } from "../kernel/json-data.js";
+import { cloneJsonData, equalJsonData } from "../kernel/json-data.js";
 import { encounterIntentFromState, createIntentState } from "../kernel/intent.js";
 import { createEncounter, isEncounterState } from "../kernel/model.js";
-import { resolveCommand } from "../kernel/resolve.js";
+import { replayCommandSequence, resolveCommand } from "../kernel/resolve.js";
 import { TRAIT_LEVEL_CAP } from "../reference/abilities.js";
 import { ARCTIC_KNIGHT, createReferencePlayer } from "../reference/characters.js";
 import { ARCTIC_KNIGHT_ACT_1 } from "../reference/encounters.js";
@@ -29,7 +29,10 @@ import {
   selectReward,
 } from "./rewards.js";
 
-export const REFERENCE_RUN_STATE_VERSION = 1;
+export const REFERENCE_RUN_STATE_VERSION = 2;
+export const MAX_RUN_TRANSITIONS = 4096;
+export const MAX_RUN_ID_CODE_UNITS = 256;
+export const MAX_RUN_SEED_CODE_UNITS = 256;
 
 const RUN_KEYS = Object.freeze([
   "actId",
@@ -41,6 +44,7 @@ const RUN_KEYS = Object.freeze([
   "currentStep",
   "encounter",
   "events",
+  "history",
   "mode",
   "phase",
   "player",
@@ -57,6 +61,7 @@ const RUN_KEYS = Object.freeze([
 const MODES = new Set(["full", "gatekeeper-preview"]);
 const STATUSES = new Set(["active", "blocked", "completed", "defeated"]);
 const PHASES = new Set(["content-gap", "encounter", "reward", "complete"]);
+const authoritativeRuns = new WeakSet();
 
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
@@ -65,9 +70,21 @@ function deepFreeze(value) {
   return value;
 }
 
+function authoritativeRun(value) {
+  const frozen = deepFreeze(value);
+  authoritativeRuns.add(frozen);
+  return frozen;
+}
+
 function validSeed(seed) {
-  return (typeof seed === "string" && seed.length > 0)
-    || (typeof seed === "number" && Number.isFinite(seed));
+  return (typeof seed === "string" && seed.length > 0 && seed.length <= MAX_RUN_SEED_CODE_UNITS)
+    || Number.isSafeInteger(seed);
+}
+
+function validRunId(runId) {
+  return typeof runId === "string"
+    && runId.length > 0
+    && runId.length <= MAX_RUN_ID_CODE_UNITS;
 }
 
 function validEvents(events, sequence) {
@@ -83,6 +100,49 @@ function validEvents(events, sequence) {
       && typeof event.type === "string"
       && event.type.length > 0
     ));
+}
+
+function exactKeys(value, keys) {
+  return value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && equalJsonData(Object.keys(value).sort(), [...keys].sort());
+}
+
+function validHistoryCommand(entry) {
+  if (!exactKeys(entry, ["command", "type"])) return false;
+  const command = entry.command;
+  if (entry.type === "combat-command") {
+    const common = typeof command?.actorId === "string"
+      && typeof command?.targetId === "string";
+    if (!common) return false;
+    if (command.type === "use-action") {
+      return exactKeys(command, ["actionId", "actorId", "targetId", "type"])
+        && typeof command.actionId === "string";
+    }
+    return command.type === "use-skill"
+      && exactKeys(command, ["actorId", "skillId", "targetId", "type"])
+      && typeof command.skillId === "string";
+  }
+  if (entry.type === "reward-refresh") {
+    return exactKeys(command, ["expectedRevision", "offerId"])
+      && typeof command.offerId === "string"
+      && Number.isInteger(command.expectedRevision);
+  }
+  if (entry.type === "reward-claim") {
+    return exactKeys(command, ["expectedRevision", "offerId", "rewardId"])
+      && typeof command.offerId === "string"
+      && typeof command.rewardId === "string"
+      && Number.isInteger(command.expectedRevision);
+  }
+  return false;
+}
+
+function validHistory(history, sequence) {
+  return Array.isArray(history)
+    && history.length === sequence
+    && history.length <= MAX_RUN_TRANSITIONS
+    && history.every(validHistoryCommand);
 }
 
 function validClaims(claims) {
@@ -104,10 +164,16 @@ function validClaims(claims) {
 
 function phaseIsConsistent(state) {
   if (state.phase === "content-gap") {
-    return state.status === "blocked"
-      && state.currentStep.enemyId === null
-      && state.encounter === null
-      && state.rewardOffer === null;
+    if (state.currentStep.enemyId === null) {
+      return state.status === "blocked"
+        && state.rewardOffer === null
+        && state.encounter === null;
+    }
+    if (state.encounter?.phase !== "victory") return false;
+    if (state.status === "blocked") return state.rewardOffer === null;
+    return state.status === "completed"
+      && state.rewardOffer?.selectedRewardId !== null
+      && state.completedStepIds.includes(state.currentStep.id);
   }
   if (state.phase === "encounter") {
     return state.status === "active"
@@ -135,8 +201,7 @@ function validRunSnapshot(state) {
     || JSON.stringify(Object.keys(state).sort()) !== JSON.stringify(RUN_KEYS)
     || state.version !== REFERENCE_RUN_STATE_VERSION
     || state.baselineVersion !== REFERENCE_POLICY.id
-    || typeof state.runId !== "string"
-    || state.runId.length === 0
+    || !validRunId(state.runId)
     || !validSeed(state.seed)
     || state.characterId !== ARCTIC_KNIGHT.id
     || state.actId !== ARCTIC_KNIGHT_ACT_1.id
@@ -146,7 +211,7 @@ function validRunSnapshot(state) {
     || !Number.isInteger(state.stepIndex)
     || state.stepIndex < 0
     || state.stepIndex >= ARCTIC_KNIGHT_ACT_1.steps.length
-    || JSON.stringify(state.currentStep) !== JSON.stringify(ARCTIC_KNIGHT_ACT_1.steps[state.stepIndex])
+    || !equalJsonData(state.currentStep, ARCTIC_KNIGHT_ACT_1.steps[state.stepIndex])
     || !state.player
     || typeof state.player !== "object"
     || Array.isArray(state.player)
@@ -171,6 +236,7 @@ function validRunSnapshot(state) {
       ARCTIC_KNIGHT_ACT_1.steps.some((step) => step.id === stepId)
     ))
     || !validEvents(state.events, state.sequence)
+    || !validHistory(state.history, state.sequence)
   ) return false;
 
   if (state.mode === "gatekeeper-preview" && state.stepIndex !== ARCTIC_KNIGHT_ACT_1.steps.length - 1) {
@@ -178,11 +244,25 @@ function validRunSnapshot(state) {
   }
   if (state.encounter !== null) {
     const player = state.encounter.actors[state.encounter.playerId];
+    const enemyId = state.encounter.enemyIds[0];
+    const enemyActor = state.encounter.actors[enemyId];
+    const enemy = getReferenceEnemy(state.currentStep.enemyId);
+    const derived = deriveBuild(state.build);
+    const expectedActions = [currentAttackId(state.actionProgression), "basic-defense"];
+    const settledAfterReward = state.phase === "content-gap" && state.status === "completed";
     if (
       state.encounter.enemyIds.length !== 1
-      || state.encounter.enemyIds[0] !== state.currentStep.enemyId
+      || enemyId !== state.currentStep.enemyId
+      || !enemy
       || player.hp !== state.player.hp
       || player.maxHp !== state.player.maxHp
+      || (!settledAfterReward && !equalJsonData(player.stats, derived.stats))
+      || (!settledAfterReward && !equalJsonData(player.actions, expectedActions))
+      || !equalJsonData(player.skills.map(({ id }) => id), state.skillIds)
+      || enemyActor.name !== enemy.name
+      || enemyActor.maxHp !== enemy.maxHp
+      || (state.encounter.phase === "player"
+        && enemyActor.intentState?.patternId !== enemy.intentPatternId)
     ) return false;
   }
   if (state.rewardOffer !== null) {
@@ -196,10 +276,81 @@ function validRunSnapshot(state) {
   return phaseIsConsistent(state);
 }
 
+function replayRunHistory(state) {
+  const stepIndex = state.mode === "gatekeeper-preview"
+    ? ARCTIC_KNIGHT_ACT_1.steps.length - 1
+    : 0;
+  let expected;
+  try {
+    expected = cloneJsonData(
+      createRun({ runId: state.runId, seed: state.seed }, state.mode, stepIndex),
+    );
+  } catch {
+    return false;
+  }
+  let historyIndex = 0;
+  const combatEntries = [];
+  while (state.history[historyIndex]?.type === "combat-command") {
+    combatEntries.push(state.history[historyIndex]);
+    historyIndex += 1;
+  }
+  if (combatEntries.length > 0) {
+    if (expected.phase !== "encounter" || !expected.encounter) return false;
+    const replay = replayCommandSequence(
+      expected.encounter,
+      combatEntries.map((entry) => entry.command),
+    );
+    if (!replay.ok || replay.steps.length !== combatEntries.length) return false;
+    for (let index = 0; index < combatEntries.length; index += 1) {
+      const entry = combatEntries[index];
+      const step = replay.steps[index];
+      expected.player = step.player;
+      appendEvent(expected, {
+        type: "combat-command-resolved",
+        commandType: entry.command.type,
+        encounterEventCount: step.events.length,
+        outcome: step.phase === "victory"
+          ? "victory"
+          : step.phase === "defeat"
+            ? "defeat"
+            : null,
+      });
+      expected.history.push({
+        type: "combat-command",
+        command: cloneJsonData(entry.command),
+      });
+    }
+    expected.encounter = replay.state;
+    if (replay.state.phase === "victory") {
+      const drafted = draftReferenceRunRewardOffer(expected);
+      expected.phase = drafted.ok ? "reward" : "content-gap";
+      expected.status = drafted.ok ? "active" : "blocked";
+      expected.rewardOffer = drafted.ok ? drafted.state : null;
+    } else if (replay.state.phase === "defeat") {
+      expected.phase = "complete";
+      expected.status = "defeated";
+    }
+  }
+  for (; historyIndex < state.history.length; historyIndex += 1) {
+    const entry = state.history[historyIndex];
+    if (entry.type === "combat-command") return false;
+    const command = { ...cloneJsonData(entry.command), expectedRunSequence: expected.sequence };
+    const result = entry.type === "reward-refresh"
+      ? refreshRunRewardInternal(expected, command, true)
+      : claimRunRewardInternal(expected, command, true);
+    if (!result.ok) return false;
+    expected = result.state;
+  }
+  return validRunSnapshot(expected) && equalJsonData(expected, state);
+}
+
 function canonicalRun(value) {
+  if (value && typeof value === "object" && authoritativeRuns.has(value)) return value;
   try {
     const snapshot = cloneJsonData(value, "invalid-run-state");
-    return validRunSnapshot(snapshot) ? deepFreeze(snapshot) : null;
+    return validRunSnapshot(snapshot) && replayRunHistory(snapshot)
+      ? authoritativeRun(snapshot)
+      : null;
   } catch {
     return null;
   }
@@ -271,11 +422,35 @@ function rewardCandidateIds(runState) {
   });
 }
 
-function openRewardOffer(runState) {
-  return createRewardOffer({
-    offerId: `${runState.runId}:${runState.currentStep.id}:reward`,
-    seed: `${runState.seed}:${runState.currentStep.id}:reward`,
-    candidateIds: rewardCandidateIds(runState),
+export function draftReferenceRunRewardOffer(value) {
+  let runState;
+  try {
+    runState = cloneJsonData(value, "invalid-reward-context");
+  } catch {
+    return deepFreeze({ ok: false, reason: "invalid-reward-context", candidateIds: [] });
+  }
+  if (
+    !runState
+    || typeof runState !== "object"
+    || !validRunId(runState.runId)
+    || !validSeed(runState.seed)
+    || typeof runState.currentStep?.id !== "string"
+    || !isBuildState(runState.build)
+    || !isActionProgressionState(runState.actionProgression)
+  ) return deepFreeze({ ok: false, reason: "invalid-reward-context", candidateIds: [] });
+
+  const candidateIds = rewardCandidateIds(runState);
+  const minimum = REFERENCE_POLICY.rewards.choiceCount + 1;
+  if (candidateIds.length < minimum) {
+    return deepFreeze({ ok: false, reason: "insufficient-reward-candidates", candidateIds });
+  }
+  return deepFreeze({
+    ok: true,
+    state: createRewardOffer({
+      offerId: `${runState.runId}:${runState.currentStep.id}:reward`,
+      seed: `${runState.seed}:${runState.currentStep.id}:reward`,
+      candidateIds,
+    }),
   });
 }
 
@@ -291,18 +466,18 @@ function applyReward(runState, reward, offerId) {
       instanceId: `${offerId}:${reward.id}`,
       itemId: reward.itemId,
     });
-    return result.ok
+    return result.ok && result.applied
       ? { ok: true, actionProgression: runState.actionProgression, build: result.build, events: [] }
-      : { ok: false, reason: result.reason };
+      : { ok: false, reason: result.reason || "reward-no-longer-eligible" };
   }
   if (reward.kind === "trait") {
     const result = grantBaseTrait(runState.build, {
       traitId: reward.traitId,
       levels: reward.levels,
     });
-    return result.ok
+    return result.ok && result.applied
       ? { ok: true, actionProgression: runState.actionProgression, build: result.build, events: [] }
-      : { ok: false, reason: result.reason };
+      : { ok: false, reason: result.reason || "reward-no-longer-eligible" };
   }
   return { ok: false, reason: "unsupported-reward-kind" };
 }
@@ -317,7 +492,7 @@ function createRun(input, mode, stepIndex) {
   if (!request || typeof request !== "object" || Array.isArray(request)) {
     throw new TypeError("invalid-run-input");
   }
-  if (typeof request.runId !== "string" || request.runId.length === 0) {
+  if (!validRunId(request.runId)) {
     throw new TypeError("invalid-run-id");
   }
   if (!validSeed(request.seed)) throw new TypeError("invalid-run-seed");
@@ -347,14 +522,19 @@ function createRun(input, mode, stepIndex) {
     completedStepIds: [],
     sequence: 0,
     events: [],
+    history: [],
   };
   if (currentStep.enemyId !== null) run.encounter = encounterForStep(run, currentStep);
   if (!validRunSnapshot(run)) throw new TypeError("invalid-run-state");
-  return deepFreeze(run);
+  return authoritativeRun(run);
 }
 
 export function isReferenceRunState(value) {
   return canonicalRun(value) !== null;
+}
+
+export function canonicalizeReferenceRunState(value) {
+  return canonicalRun(value);
 }
 
 export function createArcticKnightRun(input = {}) {
@@ -365,7 +545,7 @@ export function createArcticKnightGatekeeperRun(input = {}) {
   return createRun(input, "gatekeeper-preview", ARCTIC_KNIGHT_ACT_1.steps.length - 1);
 }
 
-export function resolveRunCommand(value, command) {
+function resolveRunCommandInternal(value, command) {
   const state = canonicalRun(value);
   if (!state) return rejected("invalid-run-state");
   if (state.phase !== "encounter") return rejected("run-not-in-encounter", state);
@@ -396,23 +576,31 @@ export function resolveRunCommand(value, command) {
         ? "defeat"
         : null,
   });
+  next.history.push({ type: "combat-command", command: cloneJsonData(request) });
   if (resolution.state.phase === "victory") {
-    next.phase = "reward";
-    next.rewardOffer = openRewardOffer(next);
+    const drafted = draftReferenceRunRewardOffer(next);
+    next.phase = drafted.ok ? "reward" : "content-gap";
+    next.status = drafted.ok ? "active" : "blocked";
+    next.rewardOffer = drafted.ok ? drafted.state : null;
   } else if (resolution.state.phase === "defeat") {
     next.phase = "complete";
     next.status = "defeated";
   }
   if (!validRunSnapshot(next)) return rejected("invalid-run-transition", state);
-  return freezeReceipt({
+  const receipt = {
     ok: true,
-    state: deepFreeze(next),
+    state: authoritativeRun(next),
     events: cloneJsonData(resolution.events),
-  });
+  };
+  return freezeReceipt(receipt);
 }
 
-export function refreshRunReward(value, command) {
-  const state = canonicalRun(value);
+export function resolveRunCommand(value, command) {
+  return resolveRunCommandInternal(value, command);
+}
+
+function refreshRunRewardInternal(value, command, trusted = false) {
+  const state = trusted ? value : canonicalRun(value);
   if (!state) return rejected("invalid-run-state");
   if (state.phase !== "reward") return rejected("run-not-in-reward", state);
   let request;
@@ -427,20 +615,37 @@ export function refreshRunReward(value, command) {
   const refreshed = refreshRewardOffer(state.rewardOffer, request);
   if (!refreshed.ok) return rejected(refreshed.reason, state);
 
-  const next = cloneJsonData(state);
+  const next = trusted ? state : cloneJsonData(state);
   next.rewardOffer = refreshed.state;
   appendEvent(next, {
     type: "reward-refreshed",
     offerId: refreshed.state.offerId,
     revision: refreshed.state.revision,
   });
-  if (!validRunSnapshot(next)) return rejected("invalid-run-transition", state);
+  next.history.push({
+    type: "reward-refresh",
+    command: {
+      offerId: request.offerId,
+      expectedRevision: request.expectedRevision,
+    },
+  });
+  if (!trusted && !validRunSnapshot(next)) return rejected("invalid-run-transition", state);
   const event = next.events.at(-1);
-  return freezeReceipt({ ok: true, refreshed: true, state: deepFreeze(next), events: [event] });
+  const receipt = {
+    ok: true,
+    refreshed: true,
+    state: trusted ? next : authoritativeRun(next),
+    events: [event],
+  };
+  return trusted ? receipt : freezeReceipt(receipt);
 }
 
-export function claimRunReward(value, command) {
-  const state = canonicalRun(value);
+export function refreshRunReward(value, command) {
+  return refreshRunRewardInternal(value, command);
+}
+
+function claimRunRewardInternal(value, command, trusted = false) {
+  const state = trusted ? value : canonicalRun(value);
   if (!state) return rejected("invalid-run-state");
   let request;
   try {
@@ -469,27 +674,40 @@ export function claimRunReward(value, command) {
   const application = applyReward(state, selected.reward, selected.state.offerId);
   if (!application.ok) return rejected("reward-application-failed", state);
 
-  const next = cloneJsonData(state);
+  const next = trusted ? state : cloneJsonData(state);
   next.rewardOffer = selected.state;
   next.actionProgression = application.actionProgression;
   next.build = application.build;
   next.rewardClaims.push({ offerId: selected.state.offerId, rewardId: selected.reward.id });
   next.completedStepIds.push(next.currentStep.id);
   next.status = "completed";
-  next.phase = "complete";
+  next.phase = "content-gap";
   appendEvent(next, {
     type: "reward-claimed",
     offerId: selected.state.offerId,
     rewardId: selected.reward.id,
     rewardKind: selected.reward.kind,
   });
-  if (!validRunSnapshot(next)) return rejected("invalid-run-transition", state);
+  next.history.push({
+    type: "reward-claim",
+    command: {
+      offerId: request.offerId,
+      expectedRevision: request.expectedRevision,
+      rewardId: request.rewardId,
+    },
+  });
+  if (!trusted && !validRunSnapshot(next)) return rejected("invalid-run-transition", state);
   const event = next.events.at(-1);
-  return freezeReceipt({
+  const receipt = {
     ok: true,
     applied: true,
     reward: selected.reward,
-    state: deepFreeze(next),
+    state: trusted ? next : authoritativeRun(next),
     events: [...application.events, event],
-  });
+  };
+  return trusted ? receipt : freezeReceipt(receipt);
+}
+
+export function claimRunReward(value, command) {
+  return claimRunRewardInternal(value, command);
 }

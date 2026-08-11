@@ -129,6 +129,7 @@ describe("reference skill economy", () => {
       "cooldown-set",
       "status-applied",
       "intent-skipped",
+      "intent-consumed",
       "intent-declared",
     ]);
 

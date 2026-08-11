@@ -3,8 +3,10 @@ import { getReferenceItem } from "../reference/items.js";
 import { activeReferenceFusions } from "../reference/fusions.js";
 import { getReferenceTrait, TRAIT_LEVEL_CAP } from "../reference/abilities.js";
 
+export const MAX_BUILD_STAT = 1_000_000;
+
 function finiteNonNegative(value, label) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > MAX_BUILD_STAT) {
     throw new TypeError(`invalid-${label}`);
   }
   return value;
@@ -110,7 +112,11 @@ export function deriveBuild(build) {
   for (const instance of canonical.items) {
     const definition = getReferenceItem(instance.itemId);
     for (const [id, value] of Object.entries(definition.statGrants)) {
-      stats[id] = (stats[id] || 0) + value;
+      const next = (stats[id] || 0) + value;
+      if (!Number.isSafeInteger(next) || next > MAX_BUILD_STAT) {
+        throw new TypeError("invalid-build");
+      }
+      stats[id] = next;
     }
     for (const [id, value] of Object.entries(definition.traitGrants)) {
       traits[id] = Math.min(TRAIT_LEVEL_CAP, (traits[id] || 0) + value);
@@ -174,8 +180,13 @@ export function grantBaseStat(build, input = {}) {
   if (typeof statId !== "string" || statId.length === 0) {
     return mutationResult({ ok: false, reason: "invalid-stat-id", build: canonical });
   }
-  if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > MAX_BUILD_STAT) {
     return mutationResult({ ok: false, reason: "invalid-stat-grant", build: canonical });
+  }
+  const before = canonical.baseStats[statId] || 0;
+  const after = before + amount;
+  if (!Number.isSafeInteger(after) || after > MAX_BUILD_STAT) {
+    return mutationResult({ ok: false, reason: "stat-cap-exceeded", build: canonical });
   }
   return mutationResult({
     ok: true,
@@ -183,7 +194,7 @@ export function grantBaseStat(build, input = {}) {
     build: freezeBuild({
       baseStats: {
         ...canonical.baseStats,
-        [statId]: (canonical.baseStats[statId] || 0) + amount,
+        [statId]: after,
       },
       baseTraits: { ...canonical.baseTraits },
       items: canonical.items,

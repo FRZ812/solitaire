@@ -4,8 +4,39 @@ import {
   advanceIntent,
   createIntentState,
   encounterIntentFromState,
+  MAX_INTENT_DECLARATIONS,
 } from "./intent.js";
+import { createRng, nextInt } from "./rng.js";
 import { resolveCommand } from "./resolve.js";
+import { getReferenceIntentPattern } from "../reference/enemies.js";
+
+function intentStateAtLimit(seed = "intent-limit") {
+  const pattern = getReferenceIntentPattern("gatekeeper-reference-v1");
+  let rng = createRng(seed);
+  let intent = null;
+  for (let index = 0; index <= MAX_INTENT_DECLARATIONS; index += 1) {
+    const step = pattern.steps[index % pattern.steps.length];
+    const optionDraw = nextInt(rng, 0, step.options.length - 1);
+    const option = step.options[optionDraw.value];
+    const damageDraw = nextInt(optionDraw.rng, option.damage.min, option.damage.max);
+    rng = damageDraw.rng;
+    intent = {
+      id: option.id,
+      type: option.type,
+      target: option.target,
+      damage: damageDraw.value,
+    };
+  }
+  return {
+    version: 1,
+    patternId: pattern.id,
+    seed,
+    declarationIndex: MAX_INTENT_DECLARATIONS,
+    stepIndex: MAX_INTENT_DECLARATIONS % pattern.steps.length,
+    rng,
+    intent,
+  };
+}
 
 function scheduledEncounter(seed = "gatekeeper-run") {
   const intentState = createIntentState({
@@ -67,5 +98,44 @@ describe("authored intent scheduling in encounter resolution", () => {
     );
 
     expect(restored).toEqual(live);
+  });
+
+  it("rejects an exhausted declaration schedule before partially resolving a turn", () => {
+    const before = scheduledEncounter();
+    const intentState = intentStateAtLimit();
+    before.actors.gatekeeper.intentState = intentState;
+    before.actors.gatekeeper.intent = encounterIntentFromState(intentState, before.playerId);
+
+    expect(advanceIntent(intentState)).toMatchObject({
+      ok: false,
+      reason: "intent-declaration-limit-exceeded",
+    });
+    expect(resolveCommand(before, defend)).toEqual({
+      ok: false,
+      reason: "intent-declaration-limit-exceeded",
+      state: before,
+      events: [],
+    });
+  });
+
+  it("allows the final declaration to settle a terminal victory without inventing another intent", () => {
+    const before = scheduledEncounter();
+    const intentState = intentStateAtLimit();
+    before.actors.gatekeeper.hp = 1;
+    before.actors.gatekeeper.intentState = intentState;
+    before.actors.gatekeeper.intent = encounterIntentFromState(intentState, before.playerId);
+
+    const result = resolveCommand(before, {
+      type: "use-action",
+      actorId: "player",
+      actionId: "basic-attack",
+      targetId: "gatekeeper",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.state.phase).toBe("victory");
+    expect(result.state.actors.gatekeeper.intent).toBe(null);
+    expect(result.events.at(-1)).toMatchObject({ type: "encounter-ended", outcome: "victory" });
+    expect(before.actors.gatekeeper.hp).toBe(1);
   });
 });

@@ -1,7 +1,7 @@
 import { cloneJsonData } from "../kernel/json-data.js";
 import { CHECKSUM_ALGORITHM, gameplayChecksum } from "../kernel/replay.js";
 import { REFERENCE_POLICY } from "../reference/policy.js";
-import { isReferenceRunState } from "./state.js";
+import { canonicalizeReferenceRunState } from "./state.js";
 
 export const GAMEPLAY_SAVE_VERSION = 2;
 
@@ -34,15 +34,8 @@ function payload(version, baselineVersion, fingerprintAlgorithm, runState) {
 }
 
 export function createGameplaySave(runState) {
-  let stableRunState;
-  try {
-    stableRunState = cloneJsonData(runState, "invalid-run-state");
-  } catch {
-    throw new TypeError("invalid-run-state");
-  }
-  if (!isReferenceRunState(stableRunState)) {
-    throw new TypeError("invalid-gameplay-run-state");
-  }
+  const stableRunState = canonicalizeReferenceRunState(runState);
+  if (!stableRunState) throw new TypeError("invalid-run-state");
   const body = payload(
     GAMEPLAY_SAVE_VERSION,
     REFERENCE_POLICY.id,
@@ -83,8 +76,9 @@ export function restoreGameplaySave(value) {
   if (gameplayChecksum(body) !== save.fingerprint) {
     return rejected("gameplay-save-fingerprint-mismatch");
   }
-  if (!isReferenceRunState(save.runState)) {
+  const stableRunState = canonicalizeReferenceRunState(save.runState);
+  if (!stableRunState) {
     return rejected("invalid-gameplay-run-state");
   }
-  return deepFreeze({ ok: true, state: save.runState });
+  return deepFreeze({ ok: true, state: stableRunState });
 }

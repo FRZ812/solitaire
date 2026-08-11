@@ -24,7 +24,7 @@ export const ARCTIC_KNIGHT = deepFreeze({
   professionId: "arctic-knight",
   starting: {
     maxHp: 24,
-    stats: { attack: 4, defense: 2 },
+    stats: { attack: 8, defense: 2 },
     actions: ["basic-attack", "basic-defense"],
     skills: ["emergency-evasion", "sleep-bomb"],
   },
