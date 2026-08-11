@@ -20,6 +20,13 @@ import { makeRng } from "./town-gen.js";
 
 export const DAYS_PER_YEAR = 360;
 
+export function isLivingCharacter(character) {
+  return !!character
+    && character.deathDay == null
+    && character.combatState?.status !== "dead"
+    && character.combatState?.health !== 0;
+}
+
 // Whose year-counter does NOT advance. ageless = age frozen at moment of
 // turning/binding (vampire turned at 28 stays 28). out-of-time = entity
 // outside mortal years entirely (Demon-King, the Hag).

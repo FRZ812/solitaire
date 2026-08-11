@@ -197,6 +197,18 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
             knows: [],
             bodyWeight: 14, ridingOn: null, riders: [],
           },
+          "threshold-voice": {
+            id: "threshold-voice",
+            kind: "npc",
+            name: "The Threshold Voice",
+            race: null,
+            profession: "limbo-guide",
+            age: null,
+            agingMode: "out-of-time",
+            description: "The patient, disembodied interviewer at the threshold between unbeing and Avarra.",
+            worn: [],
+            knows: [],
+          },
 
           // Every ready-made creation character also lives somewhere in Avarra.
           // Character creation removes the selected template's roster copy so
@@ -898,6 +910,13 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
       },
     },
     party: [], // recruited companion ids (full people in world.codex.characters)
+    // The production deterministic combat sidecar is campaign-owned so an
+    // accepted encounter survives autosave, reload, and device handoff.
+    activeCombatSession: null,
+    pendingCombatDirective: null,
+    pendingTravelCombat: null,
+    productionCombatSequence: 0,
+    combatSettlementReceipts: [],
     portraitOverrides: {},
     created: false, // false until the opening character-creation interview finishes
     beats: [{
@@ -987,6 +1006,18 @@ function migrateWorldVersions(world) {
 export function migrateCodex(state) {
   if (!state?.world) return state;
   const next = JSON.parse(JSON.stringify(state));
+  if (next.activeCombatSession === undefined) next.activeCombatSession = null;
+  if (next.pendingCombatDirective === undefined) next.pendingCombatDirective = null;
+  if (next.pendingTravelCombat === undefined) next.pendingTravelCombat = null;
+  if (next.productionCombatSequence === undefined) next.productionCombatSequence = 0;
+  if (next.combatSettlementReceipts === undefined) next.combatSettlementReceipts = [];
+  if (
+    !Number.isSafeInteger(next.productionCombatSequence)
+    || next.productionCombatSequence < 0
+    || !Array.isArray(next.combatSettlementReceipts)
+  ) {
+    throw new RangeError("Invalid production combat campaign lineage.");
+  }
   migratePortraitOverrides(next);
   next.world = migrateLegacyWorldLocation(next.world);
   if (Array.isArray(next.turns)) {

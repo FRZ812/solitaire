@@ -277,7 +277,14 @@ export function applyTravelNarrationPresentation(state, beat) {
     };
     return item.type === "beat"
       ? { id: `n${stamp}-${index}`, type: "narration", content: item.text, ...shared }
-      : { id: `d${stamp}-${index}`, type: "dialogue", name: item.name, line: item.line, ...shared };
+      : {
+        id: `d${stamp}-${index}`,
+        type: "dialogue",
+        speakerId: item.speaker_id,
+        name: item.name,
+        line: item.line,
+        ...shared,
+      };
   });
   const apiHistory = [...(state.apiHistory || [])];
   if (beat._userMsg) apiHistory.push({ role: "user", content: beat._userMsg });

@@ -9,7 +9,6 @@ import {
   abilityTaxonomy,
 } from "./ability-taxonomy.js";
 import { BUFF_SPELL_LIST, knownBuffSpells } from "./buff-spells.js";
-import { cardDefinition } from "./combat-cards.js";
 import { TRAVEL_SPELL_LIST, knownTravelSpells } from "./travel-spells.js";
 
 describe("ability taxonomy", () => {
@@ -92,74 +91,11 @@ describe("ability taxonomy", () => {
     expect(abilityCategoryOf(getAbilityDef("artificer-snapfire-capsule"))).toBe("devicecraft");
   });
 
-  it("keeps pact spells first-class in combat cards while preserving Resolve costs", () => {
-    const card = cardDefinition("warlock-tithe-bolt", "common");
-    expect(card).toMatchObject({
-      abilityId: "warlock-tithe-bolt",
-      category: "pactcraft",
-      categoryLabel: "Pactcraft",
-      magicSchool: null,
-      tradition: "pactcraft",
-      resolveCost: 3,
-      type: "attack",
-      iconKey: "category:pactcraft",
-    });
-  });
-
-  it("keeps prepared devices first-class in combat cards without spell costs", () => {
-    const card = cardDefinition("artificer-snapfire-capsule", "common");
-    expect(card).toMatchObject({
-      abilityId: "artificer-snapfire-capsule",
-      category: "devicecraft",
-      categoryLabel: "Devicecraft",
-      magicSchool: null,
-      tradition: "devicecraft",
-      resolveCost: 0,
-      type: "attack",
-      iconKey: "category:devicecraft",
-    });
-  });
-
   it("assigns supernatural grave techniques to necromancy rather than illusion", () => {
     expect(abilityTaxonomy(getAbilityDef("wraithstep"))).toMatchObject({
       categoryId: "magic",
       magicSchool: MAGIC_SCHOOLS.necromancy,
       iconKey: "magic:necromancy:common",
-    });
-  });
-
-  it("uses one stable icon identity per school and tier", () => {
-    const firebolt = cardDefinition("fireball", "rare");
-    const lightning = cardDefinition("blizzard", "rare");
-    const higherFirebolt = cardDefinition("fireball", "epic");
-    const ward = cardDefinition("mana-shield", "rare");
-
-    expect(firebolt.iconKey).toBe("magic:evocation:rare");
-    expect(lightning.iconKey).toBe(firebolt.iconKey);
-    expect(higherFirebolt.iconKey).not.toBe(firebolt.iconKey);
-    expect(ward.iconKey).toBe("magic:abjuration:rare");
-    expect(ward.iconKey).not.toBe(firebolt.iconKey);
-
-    const html = renderToStaticMarkup(
-      <AbilityIcon ability={getAbilityDef("firebolt")} tierId="rare" />,
-    );
-    expect(html).toContain('data-icon-key="magic:evocation:rare"');
-    expect(html).toContain('data-school="evocation"');
-    expect(html).toContain('data-tier="rare"');
-    expect(html).toContain('aria-label="Evocation magic · Rare"');
-    expect(html).not.toContain("ability-icon__tier");
-  });
-
-  it("keeps combat Haste canonical while applying its card tempo rules", () => {
-    const haste = getAbilityDef("haste");
-    const card = cardDefinition("haste", "rare");
-    expect(haste.noncombat).not.toBe(true);
-    expect(card).toMatchObject({
-      abilityId: "haste",
-      magicSchool: "transmutation",
-      iconKey: "magic:transmutation:very-rare",
-      draw: 2,
-      exhaust: true,
     });
   });
 

@@ -10,6 +10,8 @@ import {
   recordTurn,
   rewindToPlayerBeat,
   startTurnCheckpoint,
+  stateAfterTurn,
+  stateBeforeTurn,
   turnStartedAt,
 } from "./timeline.js";
 
@@ -31,6 +33,73 @@ function completedTurn(playerLines = ["Wait here."]) {
 }
 
 describe("queued player messages and rewind", () => {
+  it("persists exact narrator policy options with a turn checkpoint", () => {
+    const { base } = completedTurn();
+    const policyOptions = {
+      route: "mount-negotiation",
+      effectConstraints: { buy_mount: { fields: { id: "ash-runner" } } },
+    };
+    const next = {
+      ...base,
+      beats: [...base.beats, { id: "n-policy", type: "narration", content: "The stabler names her price." }],
+    };
+
+    const checkpointed = recordTurn(base, "mount prompt", next, { policyOptions });
+
+    expect(checkpointed.turns[0].policyOptions).toEqual(policyOptions);
+  });
+
+  it("restores exact specialized continuation authority before and after a turn", () => {
+    const initial = { ...makeInitialState(), created: true };
+    const continuation = {
+      route: "mount-negotiation",
+      effectConstraints: { buy_mount: { fields: { id: "ash-runner" } } },
+    };
+    const firstBase = {
+      ...initial,
+      narratorTurnContinuation: continuation,
+      beats: [...initial.beats, { id: "p0", type: "player", content: "Ask the price." }],
+    };
+    const first = recordTurn(firstBase, "first", {
+      ...firstBase,
+      beats: [...firstBase.beats, { id: "n0", type: "narration", content: "The stabler answers." }],
+    });
+    const secondBase = {
+      ...first,
+      narratorTurnContinuation: continuation,
+      beats: [...first.beats, { id: "p1", type: "player", content: "Accept the price." }],
+    };
+    const completed = recordTurn(secondBase, "second", {
+      ...secondBase,
+      narratorTurnContinuation: null,
+      beats: [...secondBase.beats, { id: "n1", type: "narration", content: "The bargain closes." }],
+    });
+
+    expect(completed.turns[1]).toMatchObject({
+      narratorTurnContinuationPresent: true,
+      narratorTurnContinuation: continuation,
+    });
+    expect(stateBeforeTurn(completed, 1).narratorTurnContinuation).toEqual(continuation);
+    expect(stateAfterTurn(completed, 0).narratorTurnContinuation).toEqual(continuation);
+  });
+
+  it("does not inherit a later continuation when the checkpoint state had no continuation property", () => {
+    const initial = { ...makeInitialState(), created: true };
+    delete initial.narratorTurnContinuation;
+    const base = {
+      ...initial,
+      beats: [...initial.beats, { id: "p-none", type: "player", content: "Wait." }],
+    };
+    const recorded = recordTurn(base, "wait", {
+      ...base,
+      beats: [...base.beats, { id: "n-none", type: "narration", content: "Time passes." }],
+    });
+    const later = { ...recorded, narratorTurnContinuation: { route: "rights-negotiation" } };
+
+    expect(recorded.turns[0].narratorTurnContinuationPresent).toBe(false);
+    expect(stateBeforeTurn(later, 0)).not.toHaveProperty("narratorTurnContinuation");
+  });
+
   it("persists a rewindable checkpoint before narrator presentation exists", () => {
     const initial = { ...makeInitialState(), created: true };
     const playerBeat = { id: "p-travel", type: "player", content: "Travel east." };
@@ -82,6 +151,24 @@ describe("queued player messages and rewind", () => {
     expect(pendingPlayerBeats(rewound).map((beat) => beat.content)).toEqual(["Wait here."]);
     expect(rewound.beats.some((beat) => beat.content === "The keeper looks toward the door.")).toBe(false);
     expect(rewound.turns).toEqual([]);
+  });
+
+  it("restores the pre-creation phase when rewinding the character-creation turn", () => {
+    const initial = makeInitialState();
+    const playerBeat = { id: "p-create", type: "player", content: "My name is Mira." };
+    const base = { ...initial, beats: [...initial.beats, playerBeat] };
+    const completed = applyBeat(base, {
+      story: [{ type: "beat", text: "The name is entered into the record." }],
+      character_setup: { name: "Mira" },
+    });
+    const recorded = recordTurn(base, "[CHARACTER CREATION] My name is Mira.", completed);
+    const playerIndex = recorded.beats.findIndex((beat) => beat.id === playerBeat.id);
+
+    expect(recorded.created).toBe(true);
+    const rewound = rewindToPlayerBeat(recorded, playerIndex);
+    expect(rewound.created).toBe(false);
+    expect(rewound.character.name).toBe(initial.character.name);
+    expect(narratorMessageForPendingPlayers(rewound)).toBe("[CHARACTER CREATION] My name is Mira.");
   });
 
   it("restores a companion removed and marked dead by the narrator", () => {
@@ -153,5 +240,70 @@ describe("ordered story timeline editing", () => {
     const deleted = deleteBeat(edited, dialogue.id);
     const afterDelete = JSON.parse(deleted.apiHistory.findLast((entry) => entry.role === "assistant").content);
     expect(afterDelete.story.map((item) => item.type)).toEqual(["beat", "beat"]);
+  });
+
+  it("deletes v2 raw dialogue by canonical speaker id", () => {
+    const initial = { ...makeInitialState(), created: true };
+    const base = {
+      ...initial,
+      beats: [...initial.beats, { id: "p-v2", type: "player", content: "Ask the keeper." }],
+    };
+    const raw = {
+      contract_version: 2,
+      state_revision: "fixture-revision",
+      story: [
+        {
+          type: "dialogue",
+          speaker: { kind: "character", id: "keeper-canonical" },
+          line: "The north road is washed out.",
+        },
+      ],
+    };
+    const response = {
+      story: [{
+        type: "dialogue",
+        speakerId: "keeper-canonical",
+        name: "Keeper",
+        line: "The north road is washed out.",
+      }],
+      _raw: JSON.stringify(raw),
+      _userMsg: "Ask the keeper.",
+    };
+    const recorded = recordTurn(base, "Ask the keeper.", applyBeat(base, response));
+    const dialogue = recorded.beats.find((beat) => beat.speakerId === "keeper-canonical");
+
+    const deleted = deleteBeat(recorded, dialogue.id);
+    const history = JSON.parse(deleted.apiHistory.findLast((entry) => entry.role === "assistant").content);
+
+    expect(history.story).toEqual([]);
+  });
+
+  it("deletes dialogue whose raw JSON contains escaped quotes", () => {
+    const initial = { ...makeInitialState(), created: true };
+    const base = {
+      ...initial,
+      beats: [...initial.beats, { id: "p-quote", type: "player", content: "Ask again." }],
+    };
+    const line = 'The keeper says, "Wait here."';
+    const response = {
+      story: [{ type: "dialogue", speakerId: "keeper-canonical", name: "Keeper", line }],
+      _raw: JSON.stringify({
+        contract_version: 2,
+        state_revision: "fixture-revision",
+        story: [{
+          type: "dialogue",
+          speaker: { kind: "character", id: "keeper-canonical" },
+          line,
+        }],
+      }),
+      _userMsg: "Ask again.",
+    };
+    const recorded = recordTurn(base, "Ask again.", applyBeat(base, response));
+    const dialogue = recorded.beats.find((beat) => beat.speakerId === "keeper-canonical");
+
+    const deleted = deleteBeat(recorded, dialogue.id);
+    const history = JSON.parse(deleted.apiHistory.findLast((entry) => entry.role === "assistant").content);
+
+    expect(history.story).toEqual([]);
   });
 });

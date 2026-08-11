@@ -28,6 +28,14 @@ const state = {
 };
 
 describe("campaign resume cache", () => {
+  it("reports a failed write when browser storage is unavailable", () => {
+    expect(writeResumeSnapshot({
+      userId: "user-a",
+      campaignId: "campaign-1",
+      state,
+    }, null)).toBe(false);
+  });
+
   it("keeps the active campaign pointer and a user-scoped warm snapshot", () => {
     const storage = memoryStorage();
     expect(writeResumeSnapshot({

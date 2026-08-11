@@ -152,6 +152,20 @@ describe("canonical immediate travel settlement", () => {
 });
 
 describe("late travel narration", () => {
+  it("preserves canonical character identity in travel dialogue", () => {
+    const { base } = fixture({ minutes: 60 });
+    const narrated = applyTravelNarrationPresentation(base, {
+      story: [{ type: "dialogue", speakerId: "mara", name: "Mara Vale", line: "Keep pace." }],
+    });
+
+    expect(narrated.beats.at(-1)).toMatchObject({
+      type: "dialogue",
+      speakerId: "mara",
+      name: "Mara Vale",
+      line: "Keep pace.",
+    });
+  });
+
   it("adds presentation/history without replaying narrator mechanics", () => {
     const { base, prepared, travel } = fixture({ minutes: 60 });
     const { state: settled } = prepareTravelSettlement(base, base, prepared, travel);

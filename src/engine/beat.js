@@ -58,7 +58,14 @@ export function applyBeat(state, beat, options = {}) {
     if (item.type === "beat") {
       newBeats.push({ id: `n${storyStamp}-${index}`, type: "narration", content: item.text, ...shared });
     } else {
-      newBeats.push({ id: `d${storyStamp}-${index}`, type: "dialogue", name: item.name, line: item.line, ...shared });
+      newBeats.push({
+        id: `d${storyStamp}-${index}`,
+        type: "dialogue",
+        ...(item.speaker_id ? { speakerId: item.speaker_id } : {}),
+        name: item.name,
+        line: item.line,
+        ...shared,
+      });
     }
   }
 
@@ -262,5 +269,6 @@ export function applyBeat(state, beat, options = {}) {
   // the same fact more than once.
   const memories = mergeMemoryBank(state.memories, beat._memories);
 
-  return { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created, memories };
+  const nextState = { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created, memories };
+  return nextState;
 }

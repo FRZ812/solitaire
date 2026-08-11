@@ -16,7 +16,7 @@
 // creature does (naturalWeapon/naturalArmor/naturalWard/innatePassives/health/
 // actionsPerTurn/abilities — see the dragon NPC in initial-state.js), which
 // enemyFromNPC → allyFromCompanion (data/bestiary.js) already consume. A ridden
-// mount also lends its rider a `mountedBonus` in a fight (engine/combat.js).
+// mount also lends its rider a `mountedBonus` in a fight (the combat kernel).
 //
 // ACQUISITION: mundane mounts (`acquisition:"stable"`) are haggled for at a stable
 // (beat.buy_mount); exotic/flying ones are EARNED — tamed, quest-won, or

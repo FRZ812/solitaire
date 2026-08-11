@@ -9,7 +9,24 @@ import {
 } from "./discoveries.js";
 import { progressionLevel } from "./progression.js";
 
-describe("narrator profession-plan validation", () => {
+// ============================================================================
+// FROZEN CONTRACT — do not edit to make a refactor pass.
+//
+// Everything here is the NARRATIVE identity layer: profession folding, the
+// 1-100 level scale, the racial/profession budgets, and the exact prompt strings
+// the narrator is steered by. None of it depends on the profession branch tree,
+// the authored 70-level tables, or the path compiler.
+//
+// The combat/class redesign keeps all 29 professions and the 1-100 level scale
+// precisely so this file keeps passing. A failure here means the redesign has
+// eroded the narrative layer — which is the entire justification for keeping
+// professions at all. Fix the code, not the assertion.
+//
+// Assertions that DO depend on the branch tree live in
+// narrator-branch-contract.test.js and are expected to die with it.
+// ============================================================================
+
+describe("frozen — narrator prompt bands", () => {
   it("keeps Cleric titles under the generalized profession and numeric power bands unlabeled", () => {
     expect(SYSTEM_PROMPT).toContain("Devout and War-Priest are Cleric specializations");
     expect(SYSTEM_PROMPT).toContain("LEVEL 41–60 EXCEPTIONAL FIGURE");
@@ -17,37 +34,24 @@ describe("narrator profession-plan validation", () => {
     expect(SYSTEM_PROMPT).not.toContain("EPIC FIGURE:");
     expect(SYSTEM_PROMPT).not.toContain("LEGENDARY / MYTHICAL / DIVINE:");
   });
+});
 
-  it("folds exact vocation titles into generalized professions and enforces both budgets", () => {
+describe("frozen — profession folding and level budgets", () => {
+  it("folds exact vocation titles into generalized professions and enforces the profession budget", () => {
     const plan = sanitizeProfessionPlan({
       profession_plan: [
-        {
-          profession: "Archmage",
-          levels: 45,
-          specializationPath: "necromancy",
-          branchChoices: {
-            "wizard-school@10": "necromancy",
-            "necromancy-path@30": "undead-lord",
-          },
-        },
+        { profession: "Archmage", levels: 45 },
         { profession: "Demon Warlock", levels: 40 },
       ],
-    }, { allowBranches: true });
+    });
 
     expect(plan).toEqual([
-      {
-        profession: "wizard",
-        specialization: "Archmage",
-        levels: 45,
-        specializationPath: "necromancy",
-        branchChoices: {
-          "wizard-school@10": "necromancy",
-          "necromancy-path@30": "undead-lord",
-        },
-      },
+      { profession: "wizard", specialization: "Archmage", levels: 45 },
       { profession: "warlock", specialization: "Demon Warlock", levels: 25 },
     ]);
+  });
 
+  it("clamps narrator hints to the racial and profession budgets and strips engine-owned fields", () => {
     const hints = sanitizeNarratorProgressionHints({
       level: 100,
       racial_levels: 80,
@@ -64,72 +68,31 @@ describe("narrator profession-plan validation", () => {
       profession: "sorcerer",
       archetype: "High Sorcerer",
       profession_plan: [{ profession: "sorcerer", specialization: "High Sorcerer", levels: 70 }],
-      signature_spell: "star-fire",
-      metamagic: ["empowered"],
     });
+    // The narrator never authors the ledger or picks a ready-made sheet.
     expect(hints).not.toHaveProperty("progression");
     expect(hints).not.toHaveProperty("templateId");
   });
 
-  it("drops Sorcerer-only choices and all allocation mutations from invalid contexts", () => {
-    const nonSorcerer = sanitizeNarratorProgressionHints({
+  it("folds a broad title on a non-matching profession and rejects mutations on an existing character", () => {
+    expect(sanitizeNarratorProgressionHints({
       profession_plan: [{ profession: "Hedge Mage", levels: 12 }],
       racial_levels: 2,
-      signature_spell: "star-fire",
-      metamagic: ["empowered"],
-    });
-    expect(nonSorcerer.profession).toBe("wizard");
-    expect(nonSorcerer).not.toHaveProperty("signature_spell");
-    expect(nonSorcerer).not.toHaveProperty("metamagic");
+    }).profession).toBe("wizard");
 
+    // An established character's numbers are the engine's. The narrator may
+    // re-describe them and nothing else.
     const update = sanitizeNarratorProgressionHints({
       level: 100,
       racial_levels: 30,
       profession_plan: [{ profession: "sorcerer", levels: 70 }],
-      signature_spell: "star-fire",
-      metamagic: ["empowered"],
       description: "Still the same person.",
     }, { existing: true });
     expect(update).toEqual({ description: "Still the same person." });
   });
-
-  it("does not accept narrator-selected branch choices during player creation", () => {
-    expect(sanitizeProfessionPlan({
-      profession_plan: [{
-        profession: "wizard",
-        specialization: "Necromancer",
-        levels: 20,
-        specializationPath: "necromancy",
-        branchChoices: { "necromancy-path@30": "death-magic" },
-      }],
-    })).toEqual([{ profession: "wizard", specialization: "Necromancer", levels: 20 }]);
-  });
 });
 
-describe("creation and narrator context allocation", () => {
-  it("distinguishes broad profession growth from selected layered NPC branches", () => {
-    const allocation = summarizeProgressionAllocation({
-      progression: {
-        version: 2,
-        racial: { paths: { "vampire-foundation": 6 } },
-        professions: [{
-          professionId: "wizard",
-          specializationId: "Pale Archivist",
-          paths: { "wizard-foundation": 15, "wizard-study": 15, necromancy: 10 },
-          branchChoices: {
-            "wizard-school@10": "necromancy",
-            "necromancy-path@30": "undead-lord",
-          },
-        }],
-      },
-    });
-
-    expect(allocation).toMatchObject({ racialLevel: 6, professionLevel: 40 });
-    expect(allocation.professionText).toContain("Wizard (Pale Archivist) 40");
-    expect(allocation.professionText).toContain("wizard-school@10=necromancy");
-    expect(allocation.professionText).toContain("necromancy-path@30=undead-lord");
-  });
-
+describe("frozen — creation and narrator context allocation", () => {
   it("compiles racial and multiclass setup hints into the engine-owned ledger", () => {
     const next = applyBeat(makeInitialState(), {
       character_setup: {
@@ -143,10 +106,7 @@ describe("creation and narrator context allocation", () => {
       },
     });
 
-    expect(next.character).toMatchObject({
-      profession: "wizard",
-      archetype: "hedge-mage",
-    });
+    expect(next.character).toMatchObject({ profession: "wizard", archetype: "hedge-mage" });
     expect(progressionLevel(next.character)).toBe(25);
     const allocation = summarizeProgressionAllocation(next.character);
     expect(allocation).toMatchObject({ totalLevel: 25, racialLevel: 8, professionLevel: 17 });

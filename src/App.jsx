@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import { STORAGE_KEY, originLabel, SIGHT_RADIUS, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED, WORLD_MARCH_LIMIT } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
@@ -11,6 +11,8 @@ import {
 
 import { storeGet, storeDel } from "./engine/storage.js";
 import { callNarrator } from "./engine/api-supabase.js";
+import { buildNarratorProjection, narratorTurnPolicy } from "./engine/narrator-projection.js";
+import { specializedNarratorPolicyOptions } from "./engine/narrator-specialized-policy.js";
 import { onAuthChange, signOut, linkEmail, isSubscribed } from "./engine/auth-supabase.js";
 import { listCampaigns, loadCampaignRecord, saveCampaign, deleteCampaign, renameCampaign } from "./engine/campaigns-supabase.js";
 import {
@@ -22,7 +24,12 @@ import {
   shouldRecoverResumeSnapshot,
   writeResumeSnapshot,
 } from "./engine/campaign-resume.js";
-import { applyBeat } from "./engine/beat.js";
+import { applyBeat as applyEngineBeat } from "./engine/beat.js";
+import {
+  applyCompiledNarratorPresentation,
+  applyCompiledNarratorStoryPresentation,
+  applyCompiledNarratorTurn as applyBeat,
+} from "./engine/narrator-turn-application.js";
 import {
   deleteBeat, editBeat, narratorMessageForPendingPlayers, pendingPlayerBeats,
   finalizeTurnCheckpoint, recordTurn, rewindToPlayerBeat, startTurnCheckpoint, stateBeforeTurn, stateAfterTurn,
@@ -85,11 +92,14 @@ import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome, getBiomeById } from "./data/biomes.js";
 import { ECOLOGIES } from "./data/continent.js";
 import { biomeVisual, sceneBiomeId } from "./data/visual-assets.js";
-import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
+import { generateEnemyGroup, enemyFromNPC } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
-import { initCombat, playCard, setTarget, endPlayerTurn, playerFlee, playerStandDown, playerCeasefire } from "./engine/combat.js";
 import { hashSeed } from "./engine/combat-rng.js";
-import { applyCombatResult, applyLoot } from "./engine/combat-result.js";
+import { applyLoot, lootCtx, rollLoot } from "./engine/combat-loot.js";
+import { createTowEncounter, endTurn as towEndTurn, useSkill as towUseSkill } from "./gameplay/tow/encounter.js";
+import { towEnemyFromBestiary, towPlayerFromCharacter } from "./gameplay/tow/solitaire-bridge.js";
+import { towBuildForCharacter } from "./gameplay/tow/professions.js";
+import { settleTowEncounter } from "./gameplay/tow/settlement.js";
 import {
   pendingLevelAllocations,
   pendingProgressionChoices,
@@ -101,9 +111,40 @@ import {
 } from "./engine/progression.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
 import { poiPlaceName } from "./engine/location.js";
+import {
+  claimRunReward,
+  refreshRunReward,
+  resolveRunCommand,
+} from "./gameplay/run/state.js";
+import { REFERENCE_GAMEPLAY_PREVIEW_ENABLED } from "./gameplay/reference/release-gate.js";
+import {
+  closeReferenceGameplay,
+  openReferenceGameplay,
+  readReferenceGameplay,
+  startReferenceGatekeeperTrial,
+  transitionReferenceGameplay,
+} from "./gameplay/run/campaign-boundary.js";
+import { adaptNarratorCombatStart } from "./gameplay/production/combat-adapter.js";
+import {
+  readProductionCombatSession,
+  startProductionCombatSession,
+  transitionProductionCombatSession,
+} from "./gameplay/production/combat-session.js";
+import { settleProductionCombat } from "./gameplay/production/combat-settlement.js";
+import {
+  createPendingCombatHandoff,
+  readPendingCombatDirective,
+  readPendingCombatHandoff,
+} from "./gameplay/production/pending-directive.js";
+import {
+  createPendingTravelCombat,
+  readPendingTravelCombat,
+} from "./gameplay/production/pending-travel-combat.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
-import { CombatView } from "./components/combat/CombatView.jsx";
+import { TowCombatView } from "./components/combat/TowCombatView.jsx";
+import ProductionCombatView from "./components/combat/ProductionCombatView.jsx";
+import { ReferenceCombatView } from "./components/combat/ReferenceCombatView.jsx";
 import { VitalsStrip, InputBar, ErrorBanner } from "./components/primitives.jsx";
 import { LiveNarratorStream } from "./components/LiveNarratorStream.jsx";
 import { BeatActionSheet } from "./components/BeatActionSheet.jsx";
@@ -132,7 +173,7 @@ import { CreationHub } from "./components/CreationHub.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
 import { JourneyLoader, JourneyResumeOverlay } from "./components/JourneyLoader.jsx";
-import { advanceLiveNarrator, emptyLiveNarrator } from "./engine/live-narrator.js";
+import { emptyLiveNarrator } from "./engine/live-narrator.js";
 import { buildChatContextSections } from "./components/chatContextModel.js";
 import { getNarratorModel, narratorModelLabel } from "./engine/narrator-models.js";
 import { pinStoryToBottom, storyDistanceFromBottom, touchRequestsOlder, wheelRequestsOlder } from "./components/storyScroll.js";
@@ -163,6 +204,9 @@ function hostileEntriesHere(state) {
   return [...base.entries, ...regional, ...ecological].filter((e) => e.posture === "hostile");
 }
 function pickHostileKind(state) {
+  const cur = state.world.currentTile;
+  const tile = getTile(state, cur.x, cur.y);
+  if (tile.status?.depopulated) return null;
   const hostile = hostileEntriesHere(state);
   if (hostile.length === 0) return "bandits";
   const total = hostile.reduce((s, e) => s + e.weight, 0);
@@ -179,8 +223,10 @@ function groupFlavor(enemies) {
 // An "important" fight where death is allowed to be real and final: the toughest
 // foe is legendary-tier or above (the Demon King, a fabled beast, etc.). Ordinary
 // bandits/goblins never kill — they rob, abduct, or enslave instead.
-function isEpicEncounter(cs) {
-  return (cs.enemies || []).some((e) => tierOrder(e.tier) >= tierOrder("legendary"));
+// Tiers are a world concept, not a Tower of Winter one, so the encounter itself does not
+// carry them — the foes it was built from do, and they are kept alongside it.
+function isEpicEncounter(_encounter, context = {}) {
+  return (context.sources || []).some((e) => tierOrder(e.tier) >= tierOrder("legendary"));
 }
 
 // Snapshot a pack as { itemId: quantity } so two snapshots can be diffed into a
@@ -232,6 +278,112 @@ function prepareCampaignState(loaded) {
     if (companion && companion.resolveMax == null) recomputeResolveMax(companion);
   }
   return migrated;
+}
+
+// One ordinary narrator application seam for both the UI and regression tests.
+// The imported alias is intentionally the compiled-turn gate, never beat.js.
+export function applyNarratorTurnResult(base, message, turn, current = base, extra = {}) {
+  const applied = extra.policyOptions?.route === "combat-aftermath"
+    ? applyCompiledNarratorStoryPresentation(base, turn)
+    : applyBeat(base, turn, { acceptTerminalEffect: extra.acceptTerminalEffect === true });
+  const recorded = recordTurn(base, message, applied, extra);
+  return {
+    ...recorded,
+    // Portraits are save-level presentation, not fiction state. A valid request
+    // may land after an upload without rolling that upload back.
+    portraitOverrides: current.portraitOverrides || {},
+  };
+}
+
+export function narratorCombatHandoff(turn) {
+  const directive = turn?.start_combat;
+  if (!directive) return null;
+  return {
+    mode: directive.initiator === "player" ? "pending" : "immediate",
+    directive,
+  };
+}
+
+export function pendingEngageForNarratorTurn(turn) {
+  const handoff = narratorCombatHandoff(turn);
+  return handoff?.mode === "pending" ? handoff.directive : null;
+}
+
+const TERMINAL_EFFECT_BY_ROUTE = Object.freeze({
+  "mount-negotiation": ["buy_mount", "Confirm mount transaction"],
+  "recruitment-negotiation": ["recruit_companion", "Confirm recruitment"],
+  "party-departure": ["part_ways", "Confirm departure"],
+  "rights-negotiation": ["purchase_rights", "Confirm rights transaction"],
+  "captive-negotiation": ["purchase_captive", "Confirm captive transaction"],
+});
+
+export function narratorTerminalEffectConfirmation(policyOptions, turn) {
+  const [effect, title] = TERMINAL_EFFECT_BY_ROUTE[policyOptions?.route] || [];
+  const proposal = effect ? turn?.[effect] : null;
+  if (!proposal) return null;
+  const target = proposal.id || proposal.key;
+  const price = Number.isInteger(proposal.priceCp)
+    ? proposal.priceCp
+    : (Number.isInteger(proposal.agreedPriceCp) ? proposal.agreedPriceCp : null);
+  const settlement = typeof proposal.settlement === "string" ? proposal.settlement : null;
+  return {
+    title,
+    body: [
+      `Apply the proposed ${effect.replaceAll("_", " ")} for ${target}?`,
+      price == null ? null : `Exact price: ${price} copper.`,
+      settlement ? `Settlement: ${settlement}.` : null,
+    ].filter(Boolean).join(" "),
+    confirmLabel: "Accept",
+  };
+}
+
+function sameNarratorCommitState(base, current) {
+  if (!base || !current) return false;
+  const keys = new Set([...Object.keys(base), ...Object.keys(current)]);
+  for (const key of keys) {
+    // Portrait uploads are presentation-only and are explicitly merged at commit.
+    if (key === "portraitOverrides") continue;
+    if (!Object.is(base[key], current[key])) return false;
+  }
+  return true;
+}
+
+export function isNarratorRequestFresh({
+  request,
+  activeRequest,
+  currentCampaignId,
+  currentUserId,
+  currentState,
+  response,
+}) {
+  if (!request || activeRequest !== request) return false;
+  if (request.campaignId !== currentCampaignId || request.userId !== currentUserId) return false;
+  const responseRevision = response?._stateRevision ?? response?.state_revision;
+  if (responseRevision !== request.stateRevision) return false;
+  if (buildNarratorProjection(currentState).stateRevision !== request.stateRevision) return false;
+  return sameNarratorCommitState(request.baseState, currentState);
+}
+
+export function invalidateNarratorRequest(activeRequestRef, reason = "Narrator request cancelled.") {
+  const request = activeRequestRef.current;
+  // Drop identity first: even a transport that ignores AbortSignal can no longer
+  // commit or clear UI belonging to a later request.
+  activeRequestRef.current = null;
+  if (request?.controller && !request.controller.signal.aborted) {
+    request.controller.abort(new Error(reason));
+  }
+}
+
+function checkpointPolicyOptions(checkpoint) {
+  if (checkpoint?.policyOptions?.route) return checkpoint.policyOptions;
+  if (checkpoint?.travel) return { route: "travel-presentation" };
+  // Legacy checkpoints predate policyOptions. Their original engine-authored
+  // prompt can still recover specialized route + exact target constraints.
+  try {
+    return specializedNarratorPolicyOptions(checkpoint?.message);
+  } catch {
+    return {};
+  }
 }
 
 function CenteredLoader({ title, detail }) {
@@ -294,6 +446,10 @@ export function Solitaire() {
   const [travelHalt, setTravelHalt] = useState(null);
   const travelMarchWaitersRef = useRef(new Map());
   const travelMarchSequenceRef = useRef(0);
+  // Non-travel narrator calls use the same identity discipline as travel: only
+  // the active request for this exact user/campaign/base state may commit.
+  const narratorRequestSequenceRef = useRef(0);
+  const activeNarratorRequestRef = useRef(null);
   // Async travel may outlive the campaign that launched it (sign-out, reset,
   // opening another save). Every travel tail checks this generation before it
   // is allowed to land the party or surface an encounter.
@@ -383,7 +539,45 @@ export function Solitaire() {
     setLoading(false);
   }
 
+  function beginNarratorRequest(baseState) {
+    invalidateNarratorRequest(activeNarratorRequestRef, "Narrator request superseded.");
+    const controller = new AbortController();
+    narratorRequestSequenceRef.current += 1;
+    const request = {
+      id: narratorRequestSequenceRef.current,
+      campaignId: currentCampaignIdRef.current,
+      userId: authUserIdRef.current,
+      baseState,
+      stateRevision: buildNarratorProjection(baseState).stateRevision,
+      controller,
+    };
+    activeNarratorRequestRef.current = request;
+    return request;
+  }
+
+  function narratorRequestIsCurrent(request, response, currentState = liveStateRef.current) {
+    return isNarratorRequestFresh({
+      request,
+      activeRequest: activeNarratorRequestRef.current,
+      currentCampaignId: currentCampaignIdRef.current,
+      currentUserId: authUserIdRef.current,
+      currentState,
+      response,
+    });
+  }
+
+  function cancelNarratorRequest(reason = "Narrator request cancelled.") {
+    invalidateNarratorRequest(activeNarratorRequestRef, reason);
+    setLiveNarrator(emptyLiveNarrator());
+    setLoading(false);
+    setRetry(null);
+  }
+
   useEffect(() => () => {
+    invalidateNarratorRequest(
+      activeNarratorRequestRef,
+      "Narrator request abandoned because the application closed.",
+    );
     travelLifecycleRef.current.generation += 1;
     abortActiveTravel("Travel abandoned because the application closed.");
     for (const waiter of travelMarchWaitersRef.current.values()) {
@@ -466,10 +660,142 @@ export function Solitaire() {
   // Combat: `combat` holds the active turn-state (null = not fighting);
   // `pendingCombat` is a hostile encounter offering a fight before it starts.
   const [combat, setCombat] = useState(null);
-  const [pendingCombat, setPendingCombat] = useState(null);
   const [pendingLoot, setPendingLoot] = useState(null); // spoils to deliberately Search
-  const [pendingEngage, setPendingEngage] = useState(null); // narrator start_combat awaiting the player's go-ahead
+  const [productionCombatFeedback, setProductionCombatFeedback] = useState(null);
+  const [referenceGameplayFeedback, setReferenceGameplayFeedback] = useState(null);
+  const [referencePersistenceFeedback, setReferencePersistenceFeedback] = useState(null);
   const combatCtxRef = useRef(null);
+  const referenceGameplaySave = state.referenceGameplaySave;
+  const referenceGameplayAttempt = state.referenceGameplayAttempt;
+  const referenceGameplayCampaignSeed = state.referenceGameplayCampaignSeed;
+  const referenceGameplayWorld = state.world;
+  const referenceGameplay = useMemo(
+    () => (REFERENCE_GAMEPLAY_PREVIEW_ENABLED
+      ? readReferenceGameplay(
+        {
+          referenceGameplaySave,
+          referenceGameplayAttempt,
+          referenceGameplayCampaignSeed,
+          world: referenceGameplayWorld,
+        },
+        { campaignId: currentCampaignId || "local-campaign" },
+      )
+      : { ok: false, reason: "reference-gameplay-preview-disabled", run: null }),
+    [
+      referenceGameplayAttempt,
+      referenceGameplayCampaignSeed,
+      referenceGameplaySave,
+      referenceGameplayWorld,
+      currentCampaignId,
+    ],
+  );
+  const referenceRun = referenceGameplay.ok ? referenceGameplay.run : null;
+  const referenceGameplayInvalid = referenceGameplaySave != null && !referenceGameplay.ok;
+  const referenceGameplayOpen = Boolean(
+    REFERENCE_GAMEPLAY_PREVIEW_ENABLED && referenceRun && state.referenceGameplayOpen !== false,
+  );
+  const activeProductionCombatSession = state.activeCombatSession;
+  const productionCombat = useMemo(() => {
+    if (activeProductionCombatSession == null) {
+      return { ok: false, reason: "no-active-production-combat", session: null };
+    }
+    const opened = readProductionCombatSession(activeProductionCombatSession);
+    if (!opened.ok) return opened;
+    if (currentCampaignId && opened.session.campaignId !== currentCampaignId) {
+      return { ok: false, reason: "production-combat-campaign-mismatch", session: null };
+    }
+    return opened;
+  }, [activeProductionCombatSession, currentCampaignId]);
+  const productionCombatSession = productionCombat.ok ? productionCombat.session : null;
+  const productionCombatInvalid = activeProductionCombatSession != null && !productionCombat.ok;
+  const pendingCombatDirectiveValue = state.pendingCombatDirective;
+  const pendingCombatDirective = useMemo(
+    () => (pendingCombatDirectiveValue == null
+      ? { ok: false, reason: "no-pending-combat-directive", handoff: null }
+      : readPendingCombatHandoff(pendingCombatDirectiveValue, {
+        campaignId: currentCampaignId || "local-campaign",
+        state,
+      })),
+    [pendingCombatDirectiveValue, currentCampaignId, state],
+  );
+  const pendingEngage = pendingCombatDirective.ok
+    ? { dir: pendingCombatDirective.handoff.directive }
+    : null;
+  const pendingCombatDirectiveInvalid = pendingCombatDirectiveValue != null
+    && !pendingCombatDirective.ok;
+  const pendingTravelCombatValue = state.pendingTravelCombat;
+  const pendingTravelCombat = useMemo(
+    () => (pendingTravelCombatValue == null
+      ? { ok: false, reason: "no-pending-travel-combat", pending: null }
+      : readPendingTravelCombat(pendingTravelCombatValue, {
+        campaignId: currentCampaignId || "local-campaign",
+        state,
+      })),
+    [pendingTravelCombatValue, currentCampaignId, state],
+  );
+  const pendingCombat = pendingTravelCombat.ok
+    ? { ...pendingTravelCombat.pending, posture: "hostile" }
+    : null;
+  const pendingTravelCombatInvalid = pendingTravelCombatValue != null && !pendingTravelCombat.ok;
+  const productionCombatOpen = Boolean(productionCombatSession || productionCombatInvalid);
+  const exclusiveGameplayOpen = referenceGameplayOpen || productionCombatOpen;
+  const referenceRunSettled = referenceRun?.status === "completed"
+    || referenceRun?.status === "defeated";
+  const referenceGameplayWasOpenRef = useRef(referenceGameplayOpen);
+  useEffect(() => {
+    const wasOpen = referenceGameplayWasOpenRef.current;
+    referenceGameplayWasOpenRef.current = referenceGameplayOpen;
+    if (!wasOpen || referenceGameplayOpen) return undefined;
+    const frame = requestAnimationFrame(() => {
+      document.querySelector("[data-reference-trial-return-focus]")?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [referenceGameplayOpen]);
+  useLayoutEffect(() => {
+    if (!exclusiveGameplayOpen) return undefined;
+    const ownedBackgrounds = new Map();
+    const claimBackground = (element) => {
+      if (!(element instanceof HTMLElement)
+        || element.classList.contains("reference-combat")
+        || element.classList.contains("production-combat")
+        || element.classList.contains("production-combat-recovery")
+        || ownedBackgrounds.has(element)) return;
+      ownedBackgrounds.set(element, {
+        hadInert: element.hasAttribute("inert"),
+        hadHidden: element.hasAttribute("hidden"),
+        ariaHidden: element.getAttribute("aria-hidden"),
+      });
+      element.setAttribute("inert", "");
+      element.setAttribute("hidden", "");
+      element.setAttribute("aria-hidden", "true");
+    };
+    const gameShell = document.querySelector(".game-shell");
+    if (gameShell) {
+      for (const child of gameShell.children) claimBackground(child);
+    }
+    const applicationRoot = gameShell?.closest("#root") || gameShell?.parentElement;
+    for (const child of document.body.children) {
+      if (child !== applicationRoot) claimBackground(child);
+    }
+    const globalSurfaces = document.querySelector("[data-app-global-surfaces]");
+    claimBackground(globalSurfaces);
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) claimBackground(node);
+      }
+    });
+    if (gameShell) observer.observe(gameShell, { childList: true });
+    observer.observe(document.body, { childList: true });
+    return () => {
+      observer.disconnect();
+      for (const [element, previous] of ownedBackgrounds) {
+        if (!previous.hadInert) element.removeAttribute("inert");
+        if (!previous.hadHidden) element.removeAttribute("hidden");
+        if (previous.ariaHidden === null) element.removeAttribute("aria-hidden");
+        else element.setAttribute("aria-hidden", previous.ariaHidden);
+      }
+    };
+  }, [exclusiveGameplayOpen]);
   // Pack + purse snapshot taken when a trader counter opens, so leaving it can
   // diff what was bought/sold and let the keeper react to the actual haul.
   const tradeStartRef = useRef(null);
@@ -494,6 +820,7 @@ export function Solitaire() {
       if (!mounted) return;
       const nextUserId = u?.id ?? null;
       if (authUserIdRef.current !== nextUserId) {
+        cancelNarratorRequest("Narrator request cancelled because the signed-in user changed.");
         cancelTravelLifecycle();
         authUserIdRef.current = nextUserId;
         resumeAttemptedForRef.current = null;
@@ -656,16 +983,37 @@ export function Solitaire() {
     const dirty = snapshot !== lastSyncedStateRef.current;
     clearTimeout(resumeCacheTimerRef.current);
     resumeCacheTimerRef.current = setTimeout(() => {
-      writeResumeSnapshot({
+      const cached = writeResumeSnapshot({
         userId: user.id,
         campaignId: currentCampaignId,
         state: snapshot,
         dirty,
         serverUpdatedAt: lastServerUpdatedAtRef.current,
       });
+      if (REFERENCE_GAMEPLAY_PREVIEW_ENABLED && snapshot.referenceGameplaySave) {
+        setReferencePersistenceFeedback(cached
+          ? null
+          : "Browser recovery cache could not be updated. Progress is not durable until server autosave succeeds.");
+      }
     }, 250);
     return () => clearTimeout(resumeCacheTimerRef.current);
   }, [state, hydrated, currentCampaignId, user?.id]);
+
+  function recordSuccessfulCampaignSave({ id, userId, snapshot, updatedAt }) {
+    if (currentCampaignIdRef.current !== id || authUserIdRef.current !== userId) return null;
+    lastSyncedStateRef.current = snapshot;
+    lastServerUpdatedAtRef.current = updatedAt ?? lastServerUpdatedAtRef.current;
+    const latestState = liveStateRef.current;
+    const latestIsSavedSnapshot = latestState === snapshot;
+    const cached = writeResumeSnapshot({
+      userId,
+      campaignId: id,
+      state: latestState,
+      dirty: !latestIsSavedSnapshot,
+      serverUpdatedAt: lastServerUpdatedAtRef.current,
+    });
+    return { cached, latestIsSavedSnapshot, latestState };
+  }
 
   // Autosave used to fire a full Supabase write on EVERY state change — a write
   // storm where overlapping in-flight PUTs could also land out of order and
@@ -681,16 +1029,19 @@ export function Solitaire() {
     saveTimerRef.current = setTimeout(() => {
       saveCampaign(id, snapshot)
         .then((result) => {
-          if (currentCampaignIdRef.current !== id || liveStateRef.current !== snapshot) return;
-          lastSyncedStateRef.current = snapshot;
-          lastServerUpdatedAtRef.current = result?.updatedAt ?? lastServerUpdatedAtRef.current;
-          writeResumeSnapshot({
+          const recorded = recordSuccessfulCampaignSave({
+            id,
             userId: user.id,
-            campaignId: id,
-            state: snapshot,
-            dirty: false,
-            serverUpdatedAt: lastServerUpdatedAtRef.current,
+            snapshot,
+            updatedAt: result?.updatedAt,
           });
+          if (REFERENCE_GAMEPLAY_PREVIEW_ENABLED && recorded?.latestState.referenceGameplaySave) {
+            setReferencePersistenceFeedback(recorded.cached
+              ? null
+              : recorded.latestIsSavedSnapshot
+                ? "Browser recovery cache could not be updated. Server autosave succeeded, but cold browser recovery is unavailable."
+                : "Browser recovery cache could not be rebased after an earlier autosave succeeded. Newer progress is not durable until its server autosave succeeds.");
+          }
         })
         .catch((e) => setCampaignError(`Save failed: ${e.message || e}`));
     }, 800);
@@ -702,17 +1053,12 @@ export function Solitaire() {
     const id = currentCampaignId;
     clearTimeout(saveTimerRef.current);
     const result = await saveCampaign(id, snapshot);
-    if (currentCampaignIdRef.current === id && liveStateRef.current === snapshot) {
-      lastSyncedStateRef.current = snapshot;
-      lastServerUpdatedAtRef.current = result?.updatedAt ?? lastServerUpdatedAtRef.current;
-      writeResumeSnapshot({
-        userId: user.id,
-        campaignId: id,
-        state: snapshot,
-        dirty: false,
-        serverUpdatedAt: lastServerUpdatedAtRef.current,
-      });
-    }
+    recordSuccessfulCampaignSave({
+      id,
+      userId: user.id,
+      snapshot,
+      updatedAt: result?.updatedAt,
+    });
   }
 
   // A mobile OS can freeze or discard the web process without waiting for the
@@ -798,6 +1144,7 @@ export function Solitaire() {
   // (not a snapshot) so callers from useEffect can flip cancellation atomically
   // when their cleanup fires.
   async function openCampaign(id, isCancelled = () => false, cachedSnapshot = null) {
+    cancelNarratorRequest("Narrator request cancelled because the campaign changed.");
     cancelTravelLifecycle();
     setCampaignBusy(true);
     setHydrated(false);
@@ -861,6 +1208,7 @@ export function Solitaire() {
   }
 
   async function createCampaign(isCancelled = () => false) {
+    cancelNarratorRequest("Narrator request cancelled because a new campaign is opening.");
     cancelTravelLifecycle();
     setCampaignBusy(true);
     setHydrated(false);
@@ -907,7 +1255,10 @@ export function Solitaire() {
 
   async function handleDeleteCampaign(id) {
     if (!(await askConfirm({ title: "Delete campaign", body: "Delete this campaign? This cannot be undone.", confirmLabel: "Delete", danger: true }))) return;
-    if (currentCampaignId === id) cancelTravelLifecycle();
+    if (currentCampaignId === id) {
+      cancelNarratorRequest("Narrator request cancelled because the campaign was deleted.");
+      cancelTravelLifecycle();
+    }
     setCampaignError(null);
     try {
       await deleteCampaign(id);
@@ -937,6 +1288,7 @@ export function Solitaire() {
   }
 
   async function handleBackToCampaigns() {
+    cancelNarratorRequest("Narrator request cancelled while leaving the campaign.");
     cancelTravelLifecycle();
     try {
       await flushActiveCampaign();
@@ -954,6 +1306,7 @@ export function Solitaire() {
   }
 
   async function handleSignOut() {
+    cancelNarratorRequest("Narrator request cancelled during sign-out.");
     cancelTravelLifecycle();
     try {
       await flushActiveCampaign();
@@ -1007,43 +1360,121 @@ export function Solitaire() {
     await runNarratorTurn(state, message);
   }
 
-  // Narrator wrapper used by every turn site. The edge function emits both
-  // reasoning and answer JSON chunks. advanceLiveNarrator projects only the
-  // recoverable player-facing fields, and { reset } cleanly replaces retries.
-  function narrate(st, msg, isCurrent = () => true, signal = null) {
+  // Narrator wrapper used by every turn site. Capture one authoritative
+  // projection and engine-owned capability policy before any network work. Raw
+  // answer JSON stays private until the complete turn passes compilation.
+  function narrate(
+    st,
+    msg,
+    isCurrent = () => true,
+    signal = null,
+    policyOptions = {},
+    canonicalUserMsg = msg,
+  ) {
     scrollStoryToLatest();
     setLiveNarrator(emptyLiveNarrator());
-    return callNarrator(st, msg, (chunk) => {
-      if (!isCurrent()) return;
-      setLiveNarrator((current) => advanceLiveNarrator(current, chunk));
-    }, { signal });
+    const projection = buildNarratorProjection(st);
+    const turnPolicy = narratorTurnPolicy(msg, st, policyOptions);
+    return callNarrator(st, msg, undefined, {
+      signal,
+      projection,
+      turnPolicy,
+      canonicalUserMsg,
+    });
+  }
+
+  async function narrateSpecialized(st, msg, issuedPolicyOptions = null) {
+    const request = beginNarratorRequest(st);
+    const policyOptions = issuedPolicyOptions || specializedNarratorPolicyOptions(msg);
+    try {
+      const beat = await narrate(
+        st,
+        msg,
+        () => activeNarratorRequestRef.current === request,
+        request.controller.signal,
+        policyOptions,
+      );
+      let current = liveStateRef.current;
+      if (!narratorRequestIsCurrent(request, beat, current)) return { beat: null, policyOptions };
+      const confirmation = narratorTerminalEffectConfirmation(policyOptions, beat);
+      const acceptTerminalEffect = confirmation ? await askConfirm(confirmation) : false;
+      if (confirmation) {
+        current = liveStateRef.current;
+        if (!narratorRequestIsCurrent(request, beat, current)) return { beat: null, policyOptions };
+      }
+      const next = applyNarratorTurnResult(st, msg, beat, current, {
+        policyOptions,
+        acceptTerminalEffect,
+      });
+      liveStateRef.current = next;
+      setState(next);
+      return { beat, policyOptions, state: next };
+    } catch (error) {
+      if (!narratorRequestIsCurrent(
+        request,
+        { _stateRevision: request.stateRevision },
+        liveStateRef.current,
+      )) return { beat: null, policyOptions };
+      throw error;
+    } finally {
+      if (activeNarratorRequestRef.current === request) activeNarratorRequestRef.current = null;
+    }
   }
 
   // Run a player-message turn against the narrator. On failure (dropped network,
   // backgrounded app…) the message is preserved and stashed for a one-tap Retry —
   // the typed action is never lost.
   async function runNarratorTurn(base, message) {
+    const request = beginNarratorRequest(base);
+    const policyOptions = base.narratorTurnContinuation || {};
     setError(null);
     setLoading(true);
     try {
-      const beat = await narrate(base, message);
-      const next = applyBeat(base, beat);
-      const recorded = recordTurn(base, message, next);
-      setState((current) => {
-        // Portraits are save-level presentation, not fiction state. Preserve
-        // uploads made while this narrator request was in flight.
-        const merged = { ...recorded, portraitOverrides: current.portraitOverrides || {} };
-        liveStateRef.current = merged;
-        return merged;
+      const beat = await narrate(
+        base,
+        message,
+        () => activeNarratorRequestRef.current === request,
+        request.controller.signal,
+        policyOptions,
+      );
+      let current = liveStateRef.current;
+      if (!narratorRequestIsCurrent(request, beat, current)) return;
+      const confirmation = narratorTerminalEffectConfirmation(policyOptions, beat);
+      const acceptTerminalEffect = confirmation ? await askConfirm(confirmation) : false;
+      if (confirmation) {
+        current = liveStateRef.current;
+        if (!narratorRequestIsCurrent(request, beat, current)) return;
+      }
+      const next = applyNarratorTurnResult(base, message, beat, current, {
+        policyOptions,
+        acceptTerminalEffect,
       });
+      liveStateRef.current = next;
+      setState(next);
       setRetry(null);
       // An explicit strike in the fiction hands off to the turn-based engine.
-      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+      const combatHandoff = narratorCombatHandoff(beat);
+      if (combatHandoff?.mode === "immediate") {
+        setPendingEngage(null);
+        startCombatFromDirective(combatHandoff.directive, next);
+      } else if (combatHandoff) {
+        setPendingEngage({ dir: combatHandoff.directive });
+      }
     } catch (e) {
+      // Navigation, sign-out, reset, or any local state edit invalidates this
+      // request. Its abort/error belongs to the abandoned branch, not the UI now.
+      if (!narratorRequestIsCurrent(
+        request,
+        { _stateRevision: request.stateRevision },
+        liveStateRef.current,
+      )) return;
       setError(e.message || String(e));
       setRetry({ base, message });
     } finally {
-      setLoading(false);
+      if (activeNarratorRequestRef.current === request) {
+        activeNarratorRequestRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
@@ -1092,7 +1523,7 @@ export function Solitaire() {
     // that arrives the character INSIDE Whitemarch (the global start), weaving in
     // their backstory. (Templates' old verbatim Drowned-Rat openings were retired
     // when the map was rebuilt around the city — see the opener below.)
-    let built = applyBeat(state, beat); // created=true; identity, kit, and gear applied
+    let built = applyEngineBeat(state, beat); // created=true; identity, kit, and gear applied
     // Drop the limbo opening narration — a locally-built character skips the
     // interview entirely, so the log should begin with their arrival, not the
     // "you are a soul in the grey" intro.
@@ -1313,12 +1744,15 @@ export function Solitaire() {
 
     let travelMsg;
     if (arrived) {
-      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${legName} (${TERRAINS[legTile.terrain]?.label}). ${hexes} hex(es), ${legMins} min on the road.${routeNote}${passageNote}${campNote} Destination: ${destDescription}. Narrate the journey and ARRIVAL in one beat. Use minutes_passed = ${camps.elapsedMinutes}.`;
+      // Keeps the richer road context from the exploration work (passage, camps, and
+      // the engine's own reason for stopping) while adopting the narrator rework's
+      // contract: the engine has already settled travel time, so the model reports none.
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) to ${legName} (${TERRAINS[legTile.terrain]?.label}). ${hexes} hex(es), ${legMins} min on the road.${routeNote}${passageNote}${campNote} Destination: ${destDescription}. Narrate the journey and ARRIVAL in one beat. Time is already settled; emit minutes_passed = 0.`;
     } else {
       const why = pathEnc ? "where what follows stops you"
         : roadEvent?.event.stops ? "where the road itself is closed to you by what follows"
           : describeLegStop(leg);
-      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) toward ${toName}, getting as far as ${legName} (${TERRAINS[legTile.terrain]?.label}) — ${hexes} hex(es), ${legMins} min on the road,${routeNote}${passageNote}${campNote} ${why}. Narrate the journey ONLY up to ${legName} and STOP there — do NOT arrive at ${toName} (it is still ${fullPath.length - legPath.length} hex(es) on). Use minutes_passed = ${camps.elapsedMinutes}.`;
+      travelMsg = `[PLAYER ACTION] Travel from ${fromName} (${TERRAINS[fromTile.terrain]?.label}) toward ${toName}, getting as far as ${legName} (${TERRAINS[legTile.terrain]?.label}) — ${hexes} hex(es), ${legMins} min on the road,${routeNote}${passageNote}${campNote} ${why}. Narrate the journey ONLY up to ${legName} and STOP there — do NOT arrive at ${toName} (it is still ${fullPath.length - legPath.length} hex(es) on). Time is already settled; emit minutes_passed = 0.`;
     }
 
     let encounterLine = "";
@@ -1393,11 +1827,13 @@ export function Solitaire() {
     halt = null,
   } = {}) {
     const visualGate = marchId ? waitForTravelMarch(marchId) : Promise.resolve("not-needed");
+    const policyOptions = { route: "travel-presentation" };
     const narration = Promise.resolve().then(() => narrate(
       stateWithPlayer,
       fullMsg,
       () => isTravelLifecycleCurrent(lifecycle),
       lifecycle.controller?.signal,
+      policyOptions,
     ));
     const hostileEncounter = travel.encounter?.posture === "hostile"
       ? travel.encounter
@@ -1427,7 +1863,10 @@ export function Solitaire() {
           const arrived = haltBeat && !(settlement.state.beats || []).some((beat) => beat.id === haltBeat.id)
             ? { ...settlement.state, beats: [...(settlement.state.beats || []), haltBeat] }
             : settlement.state;
-          const checkpointed = startTurnCheckpoint(checkpointBase, fullMsg, arrived, { travel: recordedTravel });
+          const checkpointed = startTurnCheckpoint(checkpointBase, fullMsg, arrived, {
+            travel: recordedTravel,
+            policyOptions,
+          });
           turnIndex = checkpointed.turns.length - 1;
           liveStateRef.current = checkpointed;
           setState(checkpointed);
@@ -1446,17 +1885,16 @@ export function Solitaire() {
         },
         onNarration: (travelBeat) => {
           if (!isTravelLifecycleCurrent(lifecycle) || turnIndex < 0) return;
-          const presented = applyTravelNarrationPresentation(liveStateRef.current, travelBeat);
+          const presented = applyCompiledNarratorPresentation(
+            liveStateRef.current,
+            travelBeat,
+            applyTravelNarrationPresentation,
+            stateWithPlayer,
+          );
           const completed = finalizeTurnCheckpoint(presented, turnIndex);
           liveStateRef.current = completed;
           setState(completed);
-          // Any deterministic route encounter owns this stop, regardless of
-          // posture. Narrator-created combat is considered only on clear travel.
-          const narratorEncounter = travelBeat.start_combat || null;
-          if (!travel.encounter && narratorEncounter) {
-            setPendingCombat(null);
-            setPendingEngage({ dir: narratorEncounter });
-          }
+
         },
         onNarrationError: (error) => {
           if (!isTravelLifecycleCurrent(lifecycle)) return;
@@ -1648,6 +2086,7 @@ export function Solitaire() {
 
   async function handleResetCampaign() {
     if (!(await askConfirm({ title: "Reset campaign", body: "Reset this campaign to the beginning? Your current progress here will be erased.", confirmLabel: "Reset", danger: true }))) return;
+    cancelNarratorRequest("Narrator request cancelled because the campaign was reset.");
     cancelTravelLifecycle();
     setState((current) => resetCampaignState(current));
     closeBeatMenu();
@@ -1726,9 +2165,8 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[TRADE] You have just finished trading with ${building.keeper} at ${place} (${building.label}). ${ledger}. Narrate a SHORT closing exchange (1–3 sentences, you may include a line of the keeper's dialogue) in which ${building.keeper} reacts to THIS specific haul: name an item or two, read what the player seems to be planning or doing from what they took or unloaded, and respond in character — offer fitting help (e.g. a healer asking if you need a hand setting that splint), a knowing remark about the trade (a doctor? an alchemist? or did you rob an apothecary?), gratitude, or wary curiosity. The coin is already settled at the counter, so do NOT tally or change it, and do not invent items beyond those listed.`;
-      const beat = await narrate(stateWithPlayer, msg);
-      const next = applyBeat(stateWithPlayer, beat);
-      setState(recordTurn(stateWithPlayer, msg, next));
+      const { beat, policyOptions } = await narrateSpecialized(stateWithPlayer, msg);
+      if (!beat) return;
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -1817,9 +2255,8 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[APPROACH MOUNT] At ${place} the player looks to buy a ${tmpl.tier} ${tmpl.race} — a ${tmpl.name} (id: ${tmpl.id}): "${tmpl.desc}". The stabler's LISTED price is ${formatCopper(tmpl.priceCp || 0)}. The player has ${coins} on hand. Open the dealing in the stabler's voice per the [APPROACH MOUNT] doctrine — bring the beast out and show it, name the price, and haggle. Do NOT finalize on this beat; close it with buy_mount only when a settlement is reached — coin agreed and affordable, OR a non-coin path the fiction earns (a noble's writ accepted on credit, a ruse, a quiet theft, an in-kind trade); pass {settlement,settlementNote} when it isn't coin. The beast already has a name of the stabler's giving.`;
-      const beat = await narrate(stateWithPlayer, msg);
-      const next = applyBeat(stateWithPlayer, beat);
-      setState(recordTurn(stateWithPlayer, msg, next));
+      const { beat, policyOptions } = await narrateSpecialized(stateWithPlayer, msg);
+      if (!beat) return;
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -1960,9 +2397,8 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[APPROACH RECRUIT] At ${place} the player approaches ${tmpl.name} (id: ${tmpl.id}), a ${tmpl.race} ${tmpl.role} — "${tmpl.desc}" — who is posted as willing to take the road for ${tmpl.terms}. They are ${tmpl.choosiness}-choosiness about who they'll follow. The player's company right now reads as ${standing.descriptor}; its strongest qualities: ${standing.bestLine}. Weighing that, ${tmpl.name}'s likely reception is "${outlook}". This is a FIRST meeting: ${tmpl.name} does NOT know the player's name (a name given earlier to the innkeeper did not reach them) — they address the player by look, bearing, or role until the player offers it, and only learn it if the player actually gives it during this exchange. Open the conversation in ${tmpl.name}'s voice — size up the player and their band, state interest/terms/skepticism. Do NOT have them join yet; the player must talk them round across the exchange. Only set recruit_companion:{"id":"${tmpl.id}"} once they are GENUINELY won over by what the player says and shows — and a scornful, unimpressed prospect (a strong fighter eyeing a lone weakling) may refuse outright. Keep it grounded; let the player's words decide.`;
-      const beat = await narrate(stateWithPlayer, msg);
-      const next = applyBeat(stateWithPlayer, beat);
-      setState(recordTurn(stateWithPlayer, msg, next));
+      const { beat, policyOptions } = await narrateSpecialized(stateWithPlayer, msg);
+      if (!beat) return;
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -1990,9 +2426,8 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[PLAYER ACTION] [PART WAYS] You move to ${isMount ? `set ${name} loose` : `part ways with ${name}`}. Play the scene per the PARTING doctrine — voices in character, the party weighing in${isMount ? " (and likely objecting to abandoning a sound, paid-for beast — sell it instead?)" : ""}. Do NOT remove anyone yet unless it genuinely resolves now; the player may argue. Only set part_ways:{"id":"${id}"} once the parting is truly settled.`;
-      const beat = await narrate(stateWithPlayer, msg);
-      const next = applyBeat(stateWithPlayer, beat);
-      setState(recordTurn(stateWithPlayer, msg, next));
+      const { beat, policyOptions } = await narrateSpecialized(stateWithPlayer, msg);
+      if (!beat) return;
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -2023,10 +2458,9 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const near = res.place ? `${Math.round(res.place.dist)} hex(es) from ${res.place.name}` : `open, unmapped country at (${res.pos.x},${res.pos.y})`;
-      const msg = `[PLAYER ACTION] [SCRY] You work a scrying to seek ${res.name}. The vision finds them ${res.pos.exact ? "" : "roughly "}at hex (${res.pos.x},${res.pos.y}) — ${near}. Describe what shows in the glass: where ${res.name} is now, what they are about, who is near — true to what's known of them and that place. This is the ONLY way the player learns a character's whereabouts; reveal no more than the scrying shows. Use minutes_passed = 10.`;
-      const beat = await narrate(stateWithPlayer, msg);
-      const next = applyBeat(stateWithPlayer, beat);
-      setState(recordTurn(stateWithPlayer, msg, next));
+      const msg = `[PLAYER ACTION] [SCRY] (id: ${id}) You work a scrying to seek ${res.name}. The vision finds them ${res.pos.exact ? "" : "roughly "}at hex (${res.pos.x},${res.pos.y}) — ${near}. Describe what shows in the glass: where ${res.name} is now, what they are about, who is near — true to what's known of them and that place. This is the ONLY way the player learns a character's whereabouts; reveal no more than the scrying shows. Use minutes_passed = 10.`;
+      const { beat, policyOptions } = await narrateSpecialized(stateWithPlayer, msg);
+      if (!beat) return;
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -2072,9 +2506,8 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[INSPECT RIGHTS] At ${place} the player has walked up to the warden's desk to inspect the rights of ${p.name} (key: ${p.key}; ${p.gender}, age ${p.age}), held for ${p.crime} — ${p.desc}. The warden's asking is ${formatCopper(p.rightsCp)} (this is the OPENING price; the player has paid NOTHING yet). Open the scene: the prisoner stands in the cell or is fetched to the desk, the warden reads the charge, names the fee. Voice the prisoner sparingly during inspection — they don't speak unless addressed. The player chats in their own voice across multiple turns; the warden may lower the fee within reason, hold firm, or refuse the sale (rare). Only when the settlement is reached — coin agreed, OR a non-coin path the warden accepts in fiction (a noble's writ-of-deposit, a forged release-order, a bribe in kind, a quiet swap) — set purchase_rights:{"key":"${p.key}","agreedPriceCp":<final copper>,"settlement":"coin|writ|ruse|theft|gift|barter","settlementNote":"<one-line act; required for non-coin>"}; the engine takes coin only when settlement is coin, files the bonded codex entry with the settlement recorded, and adds the prisoner to the party. The consequence of a non-coin settlement (the writ called in, the forgery surfacing, a bribed keeper turning) is yours to play in later beats. If the player walks away without a deal, just narrate the close and emit nothing. Don't fabricate combat.`;
-      const beat = await narrate(stateWithPlayer, msg);
-      const next = applyBeat(stateWithPlayer, beat);
-      setState(recordTurn(stateWithPlayer, msg, next));
+      const { beat, policyOptions } = await narrateSpecialized(stateWithPlayer, msg);
+      if (!beat) return;
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -2104,9 +2537,8 @@ export function Solitaire() {
     setState(stateWithPlayer);
     try {
       const msg = `[INSPECT CAPTIVE] At ${place} the player has moved along the line to inspect ${c.name} (key: ${c.key}; ${c.gender}, age ${c.age}) — ${c.origin}, ${c.taken} (${c.desc}). They can ${c.skills}. Their spirit reads as ${c.spirit}. Their freedom_response cue, for if the player offers to free them: ${c.freedom_response}. The Chain Factor's asking bond is ${formatCopper(c.priceCp)} — this is the OPENING price; the player has paid NOTHING yet. Open the inspection scene: the captive stands counted on the platform, irons heated at the edge, the trader reads the slate and frames the four-factor appraisal (skills, appearance, rarity, age/condition). Voice the captive sparingly during inspection — they don't speak unless addressed. The player chats in their own voice across multiple turns; the trader may lower the bond within reason (his floor is a real one), hold firm, or refuse the sale (rare). The captive's freedom_response/refusal-doctrine stays in force for any actual offer of freedom. Only when the settlement is reached — coin agreed and the trader strikes the irons, OR a non-coin settlement the trader accepts (a noble's deposit-writ on credit, a forged seal, a ruse, a captive taken off the platform by force or sleight, an in-kind trade) per THE BLOCK doctrine — set purchase_captive:{"key":"${c.key}","agreedPriceCp":<final copper>,"settlement":"coin|writ|ruse|theft|gift|barter","settlementNote":"<one-line act-description; required for non-coin>"}; the engine takes coin only when settlement is coin, files the bonded codex entry with the settlement recorded, and adds the captive to the party — narrate the hand-off (irons struck, writ signed, captive falls in line, or whatever the act demands). The consequence of a non-coin settlement (the trader calling in the writ, an uncovered ruse souring the trader and Registry, the watch chasing a theft, a debt of service binding the player to a noble's house) is yours to play in later beats. If the player walks away without a deal, just narrate the close and emit nothing. Don't fabricate combat.`;
-      const beat = await narrate(stateWithPlayer, msg);
-      const next = applyBeat(stateWithPlayer, beat);
-      setState(recordTurn(stateWithPlayer, msg, next));
+      const { beat, policyOptions } = await narrateSpecialized(stateWithPlayer, msg);
+      if (!beat) return;
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -2160,14 +2592,23 @@ export function Solitaire() {
     setPendingEngage(null);
     setPendingCombat(null);
     setPendingLoot(null);
-    const base = stateBeforeTurn(state, menu.turnK);
+    // A rewrite rolls the turn back, so a combat handoff offered by the discarded beat
+    // must go with it, and the live ref has to follow the rollback.
+    const base = { ...stateBeforeTurn(state, menu.turnK), pendingCombatDirective: null };
+    liveStateRef.current = base;
     setState(base); // roll the rejected beat (and any later ones) out of the log + memory
+    const request = beginNarratorRequest(base);
     try {
       const directive = `\n\n[REWRITE — author's steer] The player is exercising author's privilege over your PREVIOUS narration of this exact moment and wants it taken in a different direction. Your previous version was:\n"""\n${cp.prevText}\n"""\nWrite a NEW version of this same moment from the same game state, fully honoring the player's steer: "${feedback}". This is how the player nudges the story toward turns it would not take on its own — a trope, a twist, a character's choice. Lean into it as far as the established world, characters, and state plausibly allow, and keep continuity with everything before this moment. Your output REPLACES the previous version; do not mention that it was rewritten.`;
-      const beat = await narrate(base, cp.message + directive);
-      // Keep memory clean of the steer scaffolding so later turns don't treat the
-      // rejected version as canon.
-      beat._userMsg = cp.message;
+      const rewritePolicyOptions = checkpointPolicyOptions(cp);
+      const beat = await narrate(
+        base,
+        cp.message + directive,
+        () => activeNarratorRequestRef.current === request,
+        request.controller.signal, rewritePolicyOptions, cp.message,
+      );
+      const current = liveStateRef.current;
+      if (!narratorRequestIsCurrent(request, beat, current)) return;
       // A travel rewrite replays the same deterministic costs and settlement from
       // the true departure checkpoint, then replaces only the narrator presentation.
       let next;
@@ -2177,17 +2618,30 @@ export function Solitaire() {
         const halted = haltBeat
           ? { ...settled, beats: [...settled.beats, haltBeat] }
           : settled;
-        next = applyTravelNarrationPresentation(halted, beat);
+        next = applyCompiledNarratorPresentation(halted, beat, applyTravelNarrationPresentation, base);
       } else {
         next = applyBeat(base, beat);
       }
-      setState(recordTurn(base, cp.message, next, replayTravel ? { travel: replayTravel } : {}));
+      const recorded = recordTurn(base, cp.message, next, {
+        ...(replayTravel ? { travel: replayTravel } : {}),
+        policyOptions: rewritePolicyOptions,
+      });
+      liveStateRef.current = recorded;
+      setState(recorded);
       if (replayTravel?.encounter?.posture === "hostile") setPendingCombat(replayTravel.encounter);
       if (!replayTravel?.encounter && beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
+      if (!narratorRequestIsCurrent(
+        request,
+        { _stateRevision: request.stateRevision },
+        liveStateRef.current,
+      )) return;
       setError(e.message || String(e));
     } finally {
-      setLoading(false);
+      if (activeNarratorRequestRef.current === request) {
+        activeNarratorRequestRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
@@ -2201,9 +2655,10 @@ export function Solitaire() {
     setPendingEngage(null);
     setPendingCombat(null);
     setPendingLoot(null);
-    setState(menu.kind === "player"
+    const rewound = menu.kind === "player"
       ? rewindToPlayerBeat(state, menu.index)
-      : stateAfterTurn(state, menu.turnK));
+      : stateAfterTurn(state, menu.turnK);
+    setState({ ...rewound, pendingCombatDirective: null });
   }
 
   // Manually edit the bubble's text in place (synced into the model's memory).
@@ -2224,50 +2679,291 @@ export function Solitaire() {
     closeBeatMenu();
   }
 
-  // ----- Combat handlers -----
+  // ----- Deterministic reference-run handlers -----
+
+  function commitReferenceGameplay(transition) {
+    const result = transitionReferenceGameplay(liveStateRef.current, transition, {
+      campaignId: currentCampaignId || "local-campaign",
+      previewEnabled: REFERENCE_GAMEPLAY_PREVIEW_ENABLED,
+    });
+    if (!result.ok) {
+      setReferenceGameplayFeedback(`Trial update rejected: ${result.reason}.`);
+      return result;
+    }
+    setReferenceGameplayFeedback(null);
+    setCampaignError(null);
+    liveStateRef.current = result.state;
+    setState(result.state);
+    return result;
+  }
+
+  function setPendingCombat(encounter) {
+    setState((current) => {
+      if (encounter == null && current.pendingTravelCombat == null) return current;
+      let pending = null;
+      if (encounter != null) {
+        const created = createPendingTravelCombat({
+          campaignId: currentCampaignId || "local-campaign",
+          state: current,
+          encounter,
+        });
+        if (!created.ok) {
+          queueMicrotask(() => setError(`Travel combat handoff rejected: ${created.reason}.`));
+          return current;
+        }
+        pending = created.pending;
+      }
+      const next = { ...current, pendingTravelCombat: pending };
+      liveStateRef.current = next;
+      return next;
+    });
+  }
+
+  function setPendingEngage(nextPending) {
+    const rawDirective = nextPending?.dir ?? null;
+    let ownedDirective = null;
+    if (rawDirective !== null) {
+      const opened = readPendingCombatDirective(rawDirective);
+      if (!opened.ok) {
+        setError(`Combat handoff rejected: ${opened.reason}.`);
+        return false;
+      }
+      ownedDirective = opened.directive;
+    }
+    setState((current) => {
+      if (ownedDirective === null && current.pendingCombatDirective == null) return current;
+      let handoff = null;
+      if (ownedDirective !== null) {
+        const created = createPendingCombatHandoff({
+          campaignId: currentCampaignId || "local-campaign",
+          state: current,
+          directive: ownedDirective,
+        });
+        if (!created.ok) {
+          queueMicrotask(() => setError(`Combat handoff rejected: ${created.reason}.`));
+          return current;
+        }
+        handoff = created.handoff;
+      }
+      const next = { ...current, pendingCombatDirective: handoff };
+      liveStateRef.current = next;
+      return next;
+    });
+    return true;
+  }
+
+  function handleStartReferenceTrial() {
+    if (!REFERENCE_GAMEPLAY_PREVIEW_ENABLED || loading || combat || referenceGameplayOpen || productionCombatOpen) return;
+    setMapOpen(false);
+    setDeckOpen(false);
+    setShopTile(null);
+    setPendingCombat(null);
+    setPendingEngage(null);
+    setPendingLoot(null);
+    setError(null);
+    setReferenceGameplayFeedback(null);
+    const referenceBase = { ...liveStateRef.current, pendingCombatDirective: null };
+    const result = startReferenceGatekeeperTrial(referenceBase, {
+      campaignId: currentCampaignId || "local-campaign",
+      previewEnabled: REFERENCE_GAMEPLAY_PREVIEW_ENABLED,
+      replaceInvalid: referenceGameplayInvalid,
+    });
+    if (!result.ok) {
+      setCampaignError(`Reference preview could not start: ${result.reason}.`);
+      return;
+    }
+    setCampaignError(null);
+    liveStateRef.current = result.state;
+    setState(result.state);
+  }
+
+  function handleOpenReferenceTrial() {
+    if (!REFERENCE_GAMEPLAY_PREVIEW_ENABLED || loading || combat || productionCombatOpen) return;
+    setError(null);
+    setReferenceGameplayFeedback(null);
+    setState((current) => openReferenceGameplay(current, {
+      campaignId: currentCampaignId || "local-campaign",
+      previewEnabled: REFERENCE_GAMEPLAY_PREVIEW_ENABLED,
+    }));
+  }
+
+  function handleReferenceCommand(command) {
+    commitReferenceGameplay((run) => resolveRunCommand(run, command));
+  }
+
+  function handleReferenceRefresh(request) {
+    commitReferenceGameplay((run) => refreshRunReward(run, request));
+  }
+
+  function handleReferenceClaim(request) {
+    commitReferenceGameplay((run) => claimRunReward(run, request));
+  }
+
+  function handleCloseReferenceTrial() {
+    setReferenceGameplayFeedback(null);
+    setState((current) => closeReferenceGameplay(current, {
+      campaignId: currentCampaignId || "local-campaign",
+    }));
+  }
+
+  function handleProductionCombatCommand(command) {
+    const opened = readProductionCombatSession(liveStateRef.current.activeCombatSession);
+    if (!opened.ok || opened.session.campaignId !== (currentCampaignId || "local-campaign")) {
+      setProductionCombatFeedback(`Combat update rejected: ${opened.reason || "production-combat-campaign-mismatch"}.`);
+      return;
+    }
+    const result = transitionProductionCombatSession(opened.session, command);
+    if (!result.ok) {
+      setProductionCombatFeedback(`Combat update rejected: ${result.reason}.`);
+      return;
+    }
+    const next = { ...liveStateRef.current, activeCombatSession: result.session };
+    setProductionCombatFeedback(null);
+    setCampaignError(null);
+    liveStateRef.current = next;
+    setState(next);
+  }
+
+  function handleProductionCombatSettlement() {
+    const result = settleProductionCombat(liveStateRef.current, {
+      campaignId: currentCampaignId || "local-campaign",
+    });
+    if (!result.ok) {
+      setProductionCombatFeedback(`Combat aftermath rejected: ${result.reason}.`);
+      return;
+    }
+    setProductionCombatFeedback(null);
+    setCampaignError(null);
+    liveStateRef.current = result.state;
+    setState(result.state);
+  }
+
+  function handleReplaceInvalidProductionCombat() {
+    if (!productionCombatInvalid) return;
+    const next = {
+      ...liveStateRef.current,
+      activeCombatSession: null,
+      beats: [
+        ...(liveStateRef.current.beats || []),
+        {
+          id: `production-combat-recovery:${liveStateRef.current.productionCombatSequence || 0}`,
+          type: "narration",
+          content: "The interrupted fight could not be reconstructed. Its invalid recovery record was discarded explicitly; no outcome was applied.",
+        },
+      ],
+    };
+    setProductionCombatFeedback(null);
+    liveStateRef.current = next;
+    setState(next);
+  }
+
+  function handleDiscardInvalidPendingCombat() {
+    if (!pendingCombatDirectiveInvalid) return;
+    const next = {
+      ...liveStateRef.current,
+      pendingCombatDirective: null,
+      beats: [
+        ...(liveStateRef.current.beats || []),
+        {
+          id: `pending-combat-recovery:${liveStateRef.current.productionCombatSequence || 0}`,
+          type: "narration",
+          content: "The malformed combat handoff was discarded explicitly; no combat outcome was applied.",
+        },
+      ],
+    };
+    setProductionCombatFeedback(null);
+    liveStateRef.current = next;
+    setState(next);
+  }
+
+  // ----- Legacy combat handlers (retained until parity gates pass) -----
 
   function startCombat(enemies, context, extraOpts = {}, st = state) {
     if (!enemies || enemies.length === 0) return;
-    combatCtxRef.current = context || { flavor: enemies[0].name };
+    if (st.pendingTravelCombat != null || st.pendingCombatDirective != null) {
+      const cleared = {
+        ...st,
+        pendingTravelCombat: null,
+        pendingCombatDirective: null,
+      };
+      liveStateRef.current = cleared;
+      setState(cleared);
+    }
     setDeckOpen(false); setMapOpen(false); setShopTile(null);
-    setPendingCombat(null);
     closeBeatMenu();
     const region = regionHere(st);
     const wp = activeWorldPassives(st.character, st.world.codex);
-    // Recruited companions keep their own level, attributes, and kit wherever
-    // they travel; moving into a harsher region must not silently restat them.
-    const allies = (st.party || [])
-      .map((id) => st.world.codex.characters?.[id])
-      .filter((c) => c && c.combatState?.status !== "dead")
-      .map((c) => allyFromCompanion(c, st.world.codex));
-    // Mounted-rider bonuses: a rider fights with their mount's charge under them.
-    // The mount is also an ally here; this is the lift its rider gets (engine/combat).
-    const chars = st.world.codex.characters || {};
-    const carrierBonus = (entry) => (entry?.ridingOn && chars[entry.ridingOn]?.mountedBonus) || null;
-    for (const a of allies) if (a.companionId) a._mountedBonus = carrierBonus(chars[a.companionId]);
-    const playerMountedBonus = carrierBonus(chars.wanderer);
-    setCombat(initCombat(st.character, st.world.codex, enemies, {
-      seed: hashSeed([
-        currentCampaignId || "local",
-        st.time?.day || 0,
-        st.time?.hour || 0,
-        st.time?.minute || 0,
-        st.world.currentTile?.x || 0,
-        st.world.currentTile?.y || 0,
-        st.turns?.length || st.beats?.length || 0,
-        context?.flavor || enemies.map((enemy) => enemy.name).join("/"),
-      ]),
-      playerMountedBonus,
-      maxLootTier: region.lootTier,
-      region: region.level,
-      ownedUniques: ownedUniqueIds(st),
-      coinBonus: wp.coinBonus || 0,
-      dark: inTheDark(st),
-      sunlight: locationLightStatus(st).source === "daylight",
-      weary: hasCondition(st.character.conditions, "Exhausted"),
-      allies,
-      ...extraOpts,
+    const seed = hashSeed([
+      currentCampaignId || "local",
+      st.time?.day || 0,
+      st.time?.hour || 0,
+      st.time?.minute || 0,
+      st.world.currentTile?.x || 0,
+      st.world.currentTile?.y || 0,
+      st.turns?.length || st.beats?.length || 0,
+      context?.flavor || enemies.map((enemy) => enemy.name).join("/"),
+    ]);
+    // The encounter carries only actors and a build; the spoils context and the codex
+    // identities of the foes stay out here, so the kernel never learns about regions,
+    // loot tiers or NPC ids.
+    const actorIds = enemies.map((_, index) => `foe-${index}`);
+    combatCtxRef.current = {
+      flavor: context?.flavor || enemies[0].name,
+      encounterId: `${currentCampaignId || "local"}:combat:${seed}`,
+      sources: enemies,
+      npcIds: Object.fromEntries(enemies.map((enemy, index) => [actorIds[index], enemy.npcId]).filter(([, id]) => id)),
+      lootOpts: {
+        maxLootTier: region.lootTier,
+        region: region.level,
+        owned: new Set(ownedUniqueIds(st)),
+        coinBonus: wp.coinBonus || 0,
+      },
+      lethal: extraOpts.lethal !== false,
+    };
+    setCombat(createTowEncounter({
+      seed,
+      player: towPlayerFromCharacter(st.character, st.world.codex, { id: "wanderer" }),
+      enemies: enemies.map((enemy, index) => towEnemyFromBestiary(enemy, { id: actorIds[index] })),
+      build: towBuildForCharacter(st.character),
     }));
+  }
+
+  function tryStartProductionCombat({ enemies, directive, sourceKind, st }) {
+    // The Tower of Winter rebuild ships dark until a whole fight works on it. Until then
+    // the deterministic loop is a two-action placeholder, so letting it claim a live
+    // encounter would put a worse fight in front of the player than the one it replaces.
+    // Pending handoffs are still persisted either way — that part is a straight fix for
+    // an offered fight being lost on reload, and it is safe with the loop switched off.
+    if (!REFERENCE_GAMEPLAY_PREVIEW_ENABLED) return { status: "fallback", reason: "preview-disabled" };
+    const adapted = adaptNarratorCombatStart({
+      campaignId: currentCampaignId || "local-campaign",
+      state: st,
+      directive,
+      enemies,
+      sourceKind,
+    });
+    if (!adapted.ok) return { status: "fallback", reason: adapted.reason };
+    const started = startProductionCombatSession(adapted.input);
+    if (!started.ok) {
+      setError(`Deterministic combat could not start: ${started.reason}.`);
+      return { status: "rejected", reason: started.reason };
+    }
+    const next = {
+      ...st,
+      activeCombatSession: started.session,
+      pendingCombatDirective: null,
+      pendingTravelCombat: null,
+      productionCombatSequence: adapted.nextSequence,
+    };
+    setDeckOpen(false);
+    setMapOpen(false);
+    setShopTile(null);
+    closeBeatMenu();
+    setProductionCombatFeedback(null);
+    setError(null);
+    liveStateRef.current = next;
+    setState(next);
+    return { status: "started", reason: null };
   }
 
   // Narrator-flagged combat: an explicit strike in the fiction (start_combat).
@@ -2282,15 +2978,22 @@ export function Solitaire() {
       else enemies.push(...generateEnemyGroup(f.kind || "bandits", { power: region.power, maxTier: f.tier || region.enemyTier, count: f.count, name: f.name }));
     }
     if (enemies.length === 0) return;
+    const production = tryStartProductionCombat({
+      enemies,
+      directive: dir,
+      sourceKind: "narrator",
+      st,
+    });
+    if (production.status !== "fallback") return;
     const ambush = dir.surprise ? (dir.initiator === "enemy" ? "enemy" : "player") : null;
     // Brawls (a barfight, "teach him a lesson") are bare-knuckle unless the
     // narrator flags it lethal; weapons can still be drawn mid-fight.
     startCombat(enemies, { flavor: dir.note || groupFlavor(enemies) }, { ambush, lethal: dir.lethal !== false }, st);
   }
 
-  // Looking for a fight goes through the narrator — it decides whether there's
-  // anyone worth fighting, or whether stirring trouble brings consequences.
-  // It may (or may not) hand off to the combat engine via start_combat.
+  // Looking for a fight is resolved by the engine first. The narrator renders the
+  // selected local foe (or the objective absence of one) but cannot swap targets
+  // or mint a start_combat directive after seeing provider-facing prose.
   async function handleSeekCombat() {
     if (loading || combat) return;
     setMapOpen(false);
@@ -2300,11 +3003,24 @@ export function Solitaire() {
     const stateWithPlayer = { ...state, beats: [...state.beats, playerBeat] };
     setState(stateWithPlayer);
     try {
-      const msg = `[PLAYER ACTION] You go looking for a fight here — sizing up who might be willing to cross blades.\n\n[SEEK COMBAT] The player is trying to pick a fight at this location. Decide naturally what it holds right now: a willing opponent (set start_combat), no one interested (start_combat null), or consequences for disturbing the peace (guards/patrons step in — start_combat against them). Respect this place's current state; do NOT invent an endless supply of enemies, and if it has already been cleared or emptied there is nothing to fight.`;
-      const beat = await narrate(stateWithPlayer, msg);
-      const next = applyBeat(stateWithPlayer, beat);
-      setState(recordTurn(stateWithPlayer, msg, next));
-      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+      const soughtKind = pickHostileKind(stateWithPlayer);
+      const verdict = soughtKind
+        ? `The engine selected a local ${soughtKind} encounter. Render signs of that exact threat and leave the decision to engage open.`
+        : "The engine found no eligible local foe because this place is empty or cleared. Render that absence and leave the moment open.";
+      const msg = `[PLAYER ACTION] You go looking for a fight here — sizing up who might be willing to cross blades.\n\n[SEEK COMBAT — ENGINE VERDICT] ${verdict} Do not emit start_combat; combat handoff is already engine-owned.`;
+      const { beat, policyOptions } = await narrateSpecialized(stateWithPlayer, msg);
+      if (!beat) return;
+      if (soughtKind) {
+        setPendingEngage({
+          dir: {
+            initiator: "player",
+            surprise: false,
+            lethal: true,
+            foes: [{ kind: soughtKind, count: 1 }],
+            note: `You find signs of ${soughtKind} nearby.`,
+          },
+        });
+      }
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -2315,11 +3031,32 @@ export function Solitaire() {
   function handleFightPending() {
     if (!pendingCombat) return;
     if (loading) cancelTravelLifecycle({ preserveEncounter: true });
-    const region = regionHere(state);
+    const current = liveStateRef.current;
+    const region = regionHere(current);
     const enemies = generateEnemyGroup(pendingCombat.kind, { power: region.power, maxTier: region.enemyTier });
     // A carried flame in the dark gives you away — the foe gets the jump on you.
-    const ambush = isBeacon(state) ? "enemy" : undefined;
-    startCombat(enemies, { flavor: pendingCombat.desc || groupFlavor(enemies) }, ambush ? { ambush } : {});
+    const ambush = isBeacon(current) ? "enemy" : undefined;
+    const note = pendingCombat.desc || groupFlavor(enemies);
+    const production = tryStartProductionCombat({
+      enemies,
+      directive: {
+        initiator: ambush ? "enemy" : "player",
+        surprise: Boolean(ambush),
+        lethal: true,
+        foes: [{
+          npc_id: null,
+          kind: pendingCombat.kind,
+          name: enemies.length === 1 ? enemies[0].name : null,
+          tier: null,
+          count: enemies.length,
+        }],
+        note,
+      },
+      sourceKind: "travel",
+      st: current,
+    });
+    if (production.status !== "fallback") return;
+    startCombat(enemies, { flavor: note }, ambush ? { ambush } : {}, current);
   }
 
   // Slip past a hostile travel encounter unseen — only reliable when you're
@@ -2335,56 +3072,71 @@ export function Solitaire() {
 
   // Begin combat the player has agreed to via the engage prompt.
   function handleEngage() {
-    if (loading || !pendingEngage || combat) return;
+    if (loading || !pendingEngage || combat || productionCombatOpen) return;
     const dir = pendingEngage.dir;
-    setPendingEngage(null);
-    startCombatFromDirective(dir, state);
+    const base = { ...liveStateRef.current, pendingCombatDirective: null };
+    liveStateRef.current = base;
+    setState(base);
+    startCombatFromDirective(dir, base);
   }
 
   async function handleResolveCombat() {
     if (!combat) return;
     const cs = combat;
     const ctx = combatCtxRef.current || {};
-    const next = applyCombatResult(state, cs, ctx);
-    // A defeat by a legendary-tier+ foe is a real, final death; any other defeat is
-    // a survivable scenario (robbed, abducted, enslaved…).
-    const epicDeath = cs.phase === "defeat" && isEpicEncounter(cs) && (cs.lethal || cs.escalated);
+    // A defeat by a legendary-tier+ foe is a real, final death; every other defeat is a
+    // survivable outcome the settlement records as wounds.
+    const epicDeath = cs.phase === "defeat" && isEpicEncounter(cs, ctx) && ctx.lethal !== false;
+    const place = currentLocationName(state);
+    const settled = settleTowEncounter(state, cs, {
+      encounterId: ctx.encounterId || `combat:${cs.round}:${cs.sequence}`,
+      proficiencyId: ctx.proficiencyId || null,
+      npcIds: ctx.npcIds || {},
+    });
+    if (!settled.ok && settled.reason !== "tow-encounter-already-settled") {
+      setError(`The fight could not be settled: ${settled.reason}.`);
+      return;
+    }
+    let next = settled.ok ? settled.state : state;
+    // Spoils are rolled from the foes that actually fell, and are never auto-taken —
+    // the player still chooses to search them.
+    if (cs.phase === "victory" && !epicDeath) {
+      const fallen = (ctx.sources || []).filter((_, index) => (
+        cs.actors[`foe-${index}`] && cs.actors[`foe-${index}`].hp <= 0
+      ));
+      if (fallen.length > 0) {
+        const manifest = rollLoot(fallen, ctx.lootOpts || {});
+        next = { ...next, pendingLoot: manifest };
+      }
+    }
+    liveStateRef.current = next;
     setState(next);
     setCombat(null);
     combatCtxRef.current = null;
-    // Spoils aren't auto-taken — offer a deliberate Search the fallen (never when dead).
-    if (!epicDeath && next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: cs.lethal });
+    if (!epicDeath && next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: ctx.lethal !== false });
 
     // The story always continues from the result, so the player can react.
     setError(null);
     setLoading(true);
     try {
-      const place = currentLocationName(next);
       let msg;
       if (epicDeath) {
-        msg = `[DEATH] You have fallen — slain by ${ctx.flavor || "a foe far beyond your strength"} at ${place}. This is the end of ${next.character.name || "the Wanderer"}'s story, and it must land like one: narrate a single, unflinching final passage — the killing blow given its full weight, what you did with your last breath, and the silence after. Make it heroic, terrible, and earned. This death is PERMANENT: offer no rescue, no miraculous reprieve, no "but somehow you survive." End the tale.`;
+        msg = `[DEATH — ENGINE SETTLED] Permanent death against ${ctx.flavor || "a foe far beyond the player's strength"} at ${place} is already canonical. Narrate one external, unflinching final scene from the combat report: the foe, the killing blow, witnesses, and the silence after. Do not invent player speech, a last voluntary action, intent, emotion, or internal conclusion. Do not rescue, revise, or apply mechanics.`;
       } else if (cs.phase === "defeat") {
         const wasLethal = cs.lethal || cs.escalated;
-        msg = `[DEFEATED] You were beaten ${wasLethal ? "down with weapons drawn" : "senseless in a bare-knuckle brawl"} by ${ctx.flavor || "your foe"} at ${place} and lost consciousness — you are NOT dead, and this is not where your story ends. Choose a fate that fits WHO beat you and WHERE, then narrate the player waking to face it: robbed of coin and goods (inventory_changes), beaten and thrown out, hauled to the watch or thrown in a cell, or abducted and moved elsewhere (tile_move) — dragged off by goblins to their warren, pressed into a labor gang or a ship's galley, sold to slavers, held for ransom, or left for dead in a ditch but breathing. ${wasLethal ? "Weapons were out, so the aftermath can be brutal — grave wounds, a maiming, waking somewhere far worse." : "It was only fists, so keep it a humbling, not a maiming."} Apply wounds as conditions, location_update if the place changed, and inventory_changes for what was taken. Death-and-reload is not the goal; the player survives to claw their way back.`;
+        msg = `[DEFEATED — ENGINE SETTLED] The engine-settled defeat is final: ${ctx.flavor || "the foe"} left the player unconscious at ${place}; the player survives there with canonical vitality and conditions already applied, while inventory and location remain unchanged. ${wasLethal ? "Weapons were drawn; render the grave wounds already recorded." : "It was a bare-knuckle defeat; keep the external aftermath restrained."} Narrate only the foe, witnesses, surroundings, and passage of the immediate moment. Do not invent player speech, consent, intent, emotion, waking action, or any mechanical consequence.`;
       } else {
         const result = cs.phase === "victory" ? "You won — every foe is slain or down."
           : cs.phase === "resolved" ? "The fight ended without a slaughter — see the report for each foe's fate (yielded / fled / knocked out)."
           : "You broke off and fled the fight.";
         msg = `[COMBAT OVER] ${result} At ${place}. Narrate the immediate aftermath STRICTLY from the [COMBAT REPORT] — name the actual foe(s) and their exact fates, the room's reaction, your state — then leave the moment open for the player to react. A foe that yielded is present, beaten, and at your mercy: refer to THEM by name; do NOT introduce or substitute a different character to take the foe's place. Do not restart combat.`;
       }
-      const beat = await narrate(next, msg);
-      const after = applyBeat(next, beat);
-      if (epicDeath) {
-        const ended = {
-          cause: "fallen in battle",
-          foe: ctx.flavor || "a foe beyond their strength",
-          place, day: after.time?.day || null,
-        };
-        setState({ ...recordTurn(next, msg, after), ended });
-      } else {
-        setState(recordTurn(next, msg, after));
-        if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
-      }
+      const policyOptions = {
+        route: "combat-aftermath",
+      };
+      const { beat } = await narrateSpecialized(next, msg, policyOptions);
+      if (!beat) return;
+      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -2400,15 +3152,16 @@ export function Solitaire() {
     if (!manifest || loading) return;
     setPendingLoot(null);
     const { state: looted, taken } = applyLoot(state, manifest);
+    liveStateRef.current = looted;
     setState(looted);
     setError(null);
     setLoading(true);
     try {
       const place = currentLocationName(looted);
       const msg = `[LOOTED] You take the time to search the ${manifest.deadCount > 1 ? `${manifest.deadCount} bodies` : "body"} and come away with: ${taken || "little of worth"}. This happens at ${place} and takes several minutes in plain sight. Narrate it, and adjudicate the fallout — rifling a corpse in a public, lawful place draws horror and the watch; in the wilds or a den, no one cares. Apply consequences (location_update, conditions, start_combat with guards, or tile_move) as fits.`;
-      const beat = await narrate(looted, msg);
-      const after = applyBeat(looted, beat);
-      setState(recordTurn(looted, msg, after));
+      const policyOptions = { route: "loot-fallout" };
+      const { beat } = await narrateSpecialized(looted, msg, policyOptions);
+      if (!beat) return;
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
       setError(e.message || String(e));
@@ -2417,12 +3170,13 @@ export function Solitaire() {
     }
   }
 
-  const onCombatPlayCard = (cardUid, targetUid) => setCombat((c) => (c ? playCard(c, cardUid, targetUid) : c));
-  const onCombatTarget = (uid) => setCombat((c) => (c ? setTarget(c, uid) : c));
-  const onCombatEndTurn = () => setCombat((c) => (c ? endPlayerTurn(c) : c));
-  const onCombatFlee = () => setCombat((c) => (c ? playerFlee(c) : c));
-  const onCombatStandDown = () => setCombat((c) => (c ? playerStandDown(c) : c));
-  const onCombatCeasefire = () => setCombat((c) => (c ? playerCeasefire(c) : c));
+  const onCombatUseSkill = (skillId, targetId) => setCombat((c) => {
+    if (!c) return c;
+    const used = towUseSkill(c, skillId, targetId);
+    if (!used.ok) return c;
+    return used.state;
+  });
+  const onCombatEndTurn = () => setCombat((c) => (c ? towEndTurn(c).state : c));
 
   // ----- Render flow -----
 
@@ -2563,7 +3317,7 @@ export function Solitaire() {
   return (
     <div className="game-shell" style={{
       backgroundColor: "var(--scene-deep)",
-      height: "100dvh", width: "100%", maxWidth: combat ? "1440px" : "640px", margin: "0 auto",
+      height: "100dvh", width: "100%", maxWidth: (combat || referenceGameplayOpen) ? "1440px" : "640px", margin: "0 auto",
       display: "flex", flexDirection: "column", position: "relative", overflow: "hidden",
       "--scene-primary": sceneVisual.primary,
       "--scene-accent": sceneVisual.accent,
@@ -2574,7 +3328,11 @@ export function Solitaire() {
           the HUD hidden; the real world shows the scene backdrop + full HUD. */}
       {state.created === false ? <InitialBackdrop /> : <SceneBackdrop state={state} />}
       {campaignBusy && <JourneyResumeOverlay />}
-      <div className="game-hud-layer">
+      <div
+        className="game-hud-layer"
+        inert={referenceGameplayOpen ? "" : undefined}
+        aria-hidden={referenceGameplayOpen ? true : undefined}
+      >
         {state.created !== false && (
           <div className="story-hud">
             <CompactHeader
@@ -2636,6 +3394,52 @@ export function Solitaire() {
             </button>
           )}
         </div>
+        {REFERENCE_GAMEPLAY_PREVIEW_ENABLED
+          && state.created !== false
+          && !loading
+          && !combat
+          && !referenceGameplayOpen
+          && !pendingCombat
+          && !pendingEngage
+          && !pendingLoot && (
+          <aside className="reference-trial-launcher" aria-label="Tower of Winter developer preview">
+            <div>
+              <span>Developer sandbox · disabled by default</span>
+              <strong>Winter Trial · The Gatekeeper</strong>
+              <small>Reference-only preview · not the production combat path</small>
+            </div>
+            {referenceGameplayInvalid ? (
+              <>
+                <div>
+                  <span>Reference trial save unavailable</span>
+                  <strong>Stored trial progress could not be restored</strong>
+                  <small>{referenceGameplay.reason}</small>
+                </div>
+                <button type="button" onClick={handleStartReferenceTrial}>Replace invalid save</button>
+              </>
+            ) : referenceRun ? (
+              <button
+                type="button"
+                data-reference-trial-return-focus
+                onClick={handleOpenReferenceTrial}
+              >
+                {referenceRunSettled ? "Review" : "Resume"}
+              </button>
+            ) : (
+              <button type="button" onClick={handleStartReferenceTrial}>Begin</button>
+            )}
+            {referenceRunSettled && (
+              <button type="button" className="reference-trial-launcher__secondary" onClick={handleStartReferenceTrial}>
+                New trial
+              </button>
+            )}
+            {referencePersistenceFeedback && (
+              <p className="reference-trial-launcher__feedback" role="alert">
+                {referencePersistenceFeedback}
+              </p>
+            )}
+          </aside>
+        )}
         {state.created !== false && pendingCombat && !combat && (
           <div className="fade-in" style={{
             margin: "0 12px 8px", padding: "11px 14px",
@@ -2655,6 +3459,29 @@ export function Solitaire() {
               padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
               border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
             }}>{isHidden(state) ? "Slip away" : "Avoid"}</button>
+          </div>
+        )}
+        {state.created !== false && pendingCombatDirectiveInvalid && !combat && (
+          <div className="pending-combat-recovery fade-in" role="alert" style={{
+            margin: "0 12px 8px", padding: "11px 14px",
+            backgroundColor: "rgba(35,15,15,0.82)", border: "1px solid rgba(239,68,68,0.5)",
+            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: "#fca5a5", marginBottom: "2px" }}>
+                Invalid combat handoff
+              </div>
+              <div style={{ fontSize: "13px", color: "#fde8e4", lineHeight: 1.35 }}>
+                The saved encounter cannot be trusted ({pendingCombatDirective.reason}). No combat has started.
+              </div>
+            </div>
+            <button type="button" onClick={handleDiscardInvalidPendingCombat} style={{
+              padding: "9px 12px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
+              border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+            }}>
+              Discard invalid handoff
+            </button>
           </div>
         )}
         {state.created !== false && pendingEngage && !combat && (
@@ -2953,16 +3780,49 @@ export function Solitaire() {
         }
         return null;
       })()}
-      {combat && (
-        <CombatView
-          combat={combat}
-          onPlayCard={onCombatPlayCard}
-          onSetTarget={onCombatTarget}
+      {productionCombatSession && (
+        <ProductionCombatView
+          session={productionCombatSession}
+          error={productionCombatFeedback || campaignError}
+          onCommand={handleProductionCombatCommand}
+          onSettle={handleProductionCombatSettlement}
+        />
+      )}
+      {productionCombatInvalid && (
+        <div
+          className="production-combat-recovery"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="production-combat-recovery-title"
+        >
+          <section>
+            <h1 id="production-combat-recovery-title">Combat recovery failed</h1>
+            <p role="alert">The saved fight was rejected: {productionCombat.reason}.</p>
+            <p>No victory, defeat, reward, injury, or named-foe outcome has been applied.</p>
+            <button type="button" onClick={handleReplaceInvalidProductionCombat}>
+              Discard invalid combat record
+            </button>
+          </section>
+        </div>
+      )}
+      {referenceGameplayOpen && referenceRun && !productionCombatOpen && (
+        <ReferenceCombatView
+          run={referenceRun}
+          feedback={referenceGameplayFeedback || campaignError || referencePersistenceFeedback}
+          returnFocusSelector="[data-reference-trial-return-focus]"
+          onCommand={handleReferenceCommand}
+          onRefresh={handleReferenceRefresh}
+          onClaim={handleReferenceClaim}
+          onExit={handleCloseReferenceTrial}
+        />
+      )}
+      {combat && !exclusiveGameplayOpen && (
+        <TowCombatView
+          encounter={combat}
+          note={combatCtxRef.current?.flavor}
+          onUseSkill={onCombatUseSkill}
           onEndTurn={onCombatEndTurn}
-          onFlee={onCombatFlee}
-          onStandDown={onCombatStandDown}
-          onCeasefire={onCombatCeasefire}
-          onResolve={handleResolveCombat}
+          onSettle={handleResolveCombat}
         />
       )}
       {confirmDialog && (

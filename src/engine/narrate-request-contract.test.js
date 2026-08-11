@@ -27,6 +27,11 @@ const providerLoopSource = readFileSync(
   new URL("../../supabase/functions/narrate/provider-loop.ts", import.meta.url),
   "utf8",
 );
+const appSource = readFileSync(new URL("../App.jsx", import.meta.url), "utf8");
+const specializedPolicySource = readFileSync(
+  new URL("./narrator-specialized-policy.js", import.meta.url),
+  "utf8",
+);
 
 function numericConstant(name) {
   const match = edgeSource.match(new RegExp(`const\\s+${name}\\s*=\\s*([\\d_]+)`));
@@ -56,6 +61,9 @@ describe("narrator request size contract", () => {
     expect(SYSTEM_PROMPT).toContain("start_combat");
     expect(SYSTEM_PROMPT).toContain('"tile_move":null|');
     expect(SYSTEM_PROMPT).toContain("Output ONLY the JSON object");
+    expect(SYSTEM_PROMPT).toContain("Never emit beat text");
+    expect(SYSTEM_PROMPT).toContain("The player id is forbidden as actor or target");
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain("A beat has no prose channel");
     expect(SYSTEM_PROMPT).not.toContain("STANDARD CONSUMPTION ANCHORS");
   });
 
@@ -184,6 +192,13 @@ describe("narrator memory tool contract", () => {
 });
 
 describe("narrator instruction tool contract", () => {
+  it("preloads engine-required doctrine before the first provider round", () => {
+    expect(edgeSource).toContain("prepareInstructionRouting");
+    expect(edgeSource).toContain("payload.required_narrator_skills");
+    expect(edgeSource).toContain("routing.preloadedContent");
+    expect(edgeSource).toContain("preloadedSkillIds");
+  });
+
   it("keeps detailed skills outside initial messages and resolves them through tool results", () => {
     expect(edgeSource).toContain("asOptionalInstructionLibrary(payload.narrator_skills)");
     expect(edgeSource).toContain("instructionToolFor(opts.instructionLibrary)");
@@ -197,11 +212,120 @@ describe("narrator instruction tool contract", () => {
   });
 });
 
+describe("narrator application trust boundary", () => {
+  it("captures one projection and turn policy before every application narrator request", () => {
+    expect(appSource).toContain("buildNarratorProjection");
+    expect(appSource).toContain("narratorTurnPolicy");
+    expect(appSource).toContain("const projection = buildNarratorProjection(st)");
+    expect(appSource).toContain("const turnPolicy = narratorTurnPolicy(msg, st, policyOptions)");
+    // Matched on whitespace-normalised source so wrapping the call across lines is not
+    // mistaken for dropping the trust boundary.
+    expect(appSource.replace(/\s+/g, " ")).toMatch(
+      /callNarrator\(st, msg, undefined, \{ signal, projection, turnPolicy, canonicalUserMsg,? \}\)/,
+    );
+  });
+
+  it("applies narrator results only through the compiled-turn gate", () => {
+    expect(appSource).toContain("applyCompiledNarratorTurn as applyBeat");
+    expect(appSource).toContain("applyCompiledNarratorPresentation");
+    expect(appSource).toContain("applyBeat as applyEngineBeat");
+    expect(appSource).toContain("applyNarratorTurnResult(base, message, beat");
+    expect(appSource).not.toContain("applyCompiledNarratorTurn(base, beat)");
+    expect(appSource).not.toContain('import { applyBeat } from "./engine/beat.js"');
+    expect(appSource).not.toMatch(/onNarration: \(travelBeat\)[\s\S]{0,220}?applyTravelNarrationPresentation\(/);
+  });
+
+  it("guards ordinary narrator commits with request, user, campaign, and state freshness", () => {
+    expect(appSource).toContain("const activeNarratorRequestRef = useRef(null)");
+    expect(appSource).toContain("isNarratorRequestFresh({");
+    expect(appSource).toContain("request.controller.signal");
+    expect(appSource).toMatch(/async function openCampaign[^]*?\{\s*cancelNarratorRequest\(/);
+    expect(appSource).toMatch(/async function createCampaign[^]*?\{\s*cancelNarratorRequest\(/);
+    expect(appSource).toMatch(/async function handleBackToCampaigns[^]*?\{\s*cancelNarratorRequest\(/);
+    expect(appSource).toMatch(/async function handleSignOut[^]*?\{\s*cancelNarratorRequest\(/);
+    expect(appSource).toMatch(/async function handleResetCampaign[^]*?\{[^]*?cancelNarratorRequest\(/);
+  });
+
+  it("guards every specialized narrator commit with the same request and state freshness", () => {
+    expect(appSource).toMatch(/async function narrateSpecialized\(st, msg[^]*?beginNarratorRequest\(st\)[^]*?narratorRequestIsCurrent\(/);
+    const sites = [...appSource.matchAll(/const \{ beat, policyOptions \} = await narrateSpecialized\([^;]+;/g)];
+    expect(sites.length).toBeGreaterThan(5);
+    for (const site of sites) {
+      expect(appSource.slice(site.index + site[0].length, site.index + site[0].length + 80))
+        .toContain("if (!beat) return;");
+    }
+    expect(appSource).toContain("narrateSpecialized(next, msg, policyOptions)");
+    expect(appSource).toContain("narrateSpecialized(looted, msg, policyOptions)");
+    expect(appSource).not.toContain("narrate(next, msg, () => true, null, policyOptions)");
+    expect(appSource).not.toContain("narrate(looted, msg, () => true, null, policyOptions)");
+  });
+
+  it("issues an explicit presentation-only policy for deterministic travel", () => {
+    expect(appSource).toContain('route: "travel-presentation"');
+    expect(appSource).not.toContain("allowStartCombat");
+    expect(appSource).not.toContain("const narratorEncounter = travelBeat.start_combat");
+    expect(appSource).toContain("Time is already settled; emit minutes_passed = 0.");
+    expect(appSource).not.toContain("Use minutes_passed = ${legMins}.");
+    expect(appSource).toMatch(/applyCompiledNarratorPresentation\(\s*liveStateRef\.current,\s*travelBeat,\s*applyTravelNarrationPresentation,\s*stateWithPlayer,/);
+    expect(appSource).toContain("const rewritePolicyOptions = checkpointPolicyOptions(cp)");
+    expect(appSource).toContain("beginNarratorRequest(base)");
+    expect(appSource).toContain("request.controller.signal, rewritePolicyOptions, cp.message");
+    expect(appSource).not.toContain("beat._userMsg = cp.message");
+    expect(appSource).toContain("policyOptions: rewritePolicyOptions");
+  });
+
+  it("issues route capabilities at every specialized narrator call site", () => {
+    for (const route of [
+      "mount-negotiation",
+      "recruitment-negotiation",
+      "party-departure",
+      "scry-presentation",
+      "rights-negotiation",
+      "captive-negotiation",
+      "combat-search-presentation",
+      "combat-aftermath",
+      "loot-fallout",
+    ]) {
+      expect(`${appSource}\n${specializedPolicySource}`).toContain(`"${route}"`);
+    }
+    expect(appSource).not.toContain("allowDefeatConsequences");
+    expect(appSource).toContain("[SCRY] (id: ${id})");
+  });
+
+  it("settles combat defeat and permanent death before presentation narration", () => {
+    expect(appSource).not.toContain("Choose a fate that fits WHO beat you and WHERE");
+    // The engine settles the fight before a word of it is narrated. The settlement moved
+    // from applyCombatResult to settleTowEncounter when the deck engine retired; the
+    // invariant — settle first, narrate second — is unchanged.
+    expect(appSource).toContain("settleTowEncounter(state, cs,");
+    expect(appSource).toContain("const epicDeath = cs.phase === \"defeat\"");
+    expect(appSource).toContain("The engine-settled defeat is final");
+    expect(appSource).not.toContain("const finalState = { ...narrated, ended }");
+  });
+
+  it("selects sought combat in the engine before asking the narrator to render it", () => {
+    expect(appSource).toContain("const soughtKind = pickHostileKind(stateWithPlayer)");
+    expect(appSource).toContain("foes: [{ kind: soughtKind, count: 1 }]");
+  });
+});
+
 describe("narrator party-removal contract", () => {
-  it("exposes a structured removal action for story-only companion deaths", () => {
-    expect(NARRATOR_INSTRUCTION_CORPUS).toContain('party_removals:[{"id":"<their listed id>","reason":"dead"}]');
+  // Companion fate used to be something narration could author: the corpus taught the
+  // model to emit party_removals whenever a story beat killed someone, which made the
+  // narrator an authority over roster state. It is engine-owned now — the schema keeps
+  // the field, but the model may only fill it from a fate the engine already settled.
+  it("keeps the removal field in the output schema", () => {
     expect(NARRATOR_INSTRUCTION_CORPUS).toContain('"party_removals": null OR [{"id":"current-party-member-id","reason":"dead|left"}]');
-    expect(NARRATOR_INSTRUCTION_CORPUS).toContain("repair that stale roster with the same removal");
+  });
+
+  it("forbids narration from authoring a companion's death or departure", () => {
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain("ENGINE-OWNED PARTY FATE");
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain(
+      "never declare a companion or mount dead, permanently departed, or removed merely through narration",
+    );
+    expect(NARRATOR_INSTRUCTION_CORPUS).toContain(
+      "party_removals remains null unless the current [NARRATOR CONTRACT] authorizes an exact canonical id",
+    );
   });
 });
 

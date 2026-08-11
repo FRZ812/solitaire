@@ -334,7 +334,7 @@ function weaponProfile(character, codex, eff) {
     acc: base.acc ?? fam.acc ?? 0,
     crit: fam.crit ?? 0, // weapon-family crit chance (daggers/finesse arms crit most)
     // PAIRED (twin/dual) weapons: a matched pair fought as one — the basic attack
-    // lands an EXTRA light strike (engine/combat.js). Each blade is lighter, so the
+    // lands an EXTRA light strike (the combat kernel). Each blade is lighter, so the
     // base damage stays low; the win is two crit-hungry hits, not one heavy one.
     paired: !!(weapon && (weapon.paired || weapon.combat?.paired || /\b(twin|paired|matched|dual)\b|pair of/i.test(weapon.name || ""))),
     silvered: !!(weapon && (weapon.silvered || /^silvered-/i.test(weapon.id || "") || /\bsilvered\b/i.test(weapon.name || ""))),
@@ -463,7 +463,7 @@ export function deriveCombatStats(character, codex) {
     damageCap: statMods.damageCap || 0,
     execute: clamp(statMods.execute || 0, 0, 0.5), // Body 30: finish foes below this share of max HP
     controlResist: clamp(statMods.controlResist || 0, 0, 0.6),
-    will: mind + presence, // willpower — feeds the Charm/Dominate save (engine/combat.js)
+    will: mind + presence, // willpower — feeds the Charm/Dominate save (the combat kernel)
     saveDC: statMods.saveDC || 0, // Mind threshold: raises how hard YOUR control magic is to resist
     // Healing amplification (all heals ×(1+healPower)) and damage deferral (a share
     // of each blow bleeds out over a few turns instead of landing at once).
