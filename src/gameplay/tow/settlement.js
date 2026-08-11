@@ -9,7 +9,7 @@
 
 import { normalizeConditions } from "../../data/conditions.js";
 import { XP } from "../../data/proficiencies.js";
-import { advanceProgression } from "../../engine/progression.js";
+import { advanceProgression, earnedLevelGrowthText } from "../../engine/progression.js";
 import { cloneJsonData } from "../kernel/json-data.js";
 
 export const MAX_TOW_SETTLEMENT_RECEIPTS = 256;
@@ -101,7 +101,11 @@ export function settleTowEncounter(state, encounter, context = {}) {
     character.proficiencies[id] = (character.proficiencies[id] || 0) + amount;
   }
   const progressionXp = Object.values(gains).reduce((sum, amount) => sum + amount, 0) * 10;
-  if (progressionXp > 0) advanceProgression(character, progressionXp);
+  // Earning a level has to say so. The old combat result emitted this growth beat, and a
+  // level that arrived silently would leave the player with unspent allocations and no
+  // idea they had them.
+  const progress = progressionXp > 0 ? advanceProgression(character, progressionXp) : null;
+  const growthText = progress ? earnedLevelGrowthText(progress) : null;
 
   // Every foe that maps to a codex character has its state written back, not just the
   // first — a group fight must not leave survivors silently untouched.
@@ -124,17 +128,21 @@ export function settleTowEncounter(state, encounter, context = {}) {
     };
     codexTouched = true;
   }
+  // The codex's projection of the player has to follow the character, whether or not any
+  // foe in this fight was a codex person — otherwise a level earned against nameless
+  // bandits leaves the projection stale.
+  const wanderer = characters.wanderer;
+  if (wanderer && character.progression) {
+    characters.wanderer = {
+      ...wanderer,
+      profession: character.profession,
+      archetype: character.archetype,
+      attributes: { ...(character.attributes || {}) },
+      progression: cloneJsonData(character.progression),
+    };
+    codexTouched = true;
+  }
   if (codexTouched) {
-    const wanderer = characters.wanderer;
-    if (wanderer && character.progression) {
-      characters.wanderer = {
-        ...wanderer,
-        profession: character.profession,
-        archetype: character.archetype,
-        attributes: { ...(character.attributes || {}) },
-        progression: cloneJsonData(character.progression),
-      };
-    }
     world = { ...state.world, codex: { ...state.world.codex, characters } };
   }
 
@@ -165,6 +173,9 @@ export function settleTowEncounter(state, encounter, context = {}) {
       beats: [
         ...(state.beats || []),
         { id: `tow-combat:${encounterId}:settled`, type: "narration", content },
+        ...(growthText
+          ? [{ id: `tow-combat:${encounterId}:growth`, type: "growth", text: growthText }]
+          : []),
       ],
     },
   };

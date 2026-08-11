@@ -4,7 +4,7 @@
 // tweaks, so a Rallied, Cursed, or Blessed character actually fights that way.
 //
 // This is a SNAPSHOT for the fight only — it does not change character.conditions
-// (applyCombatResult preserves those), so a wound carried in is still carried out.
+// (settlement preserves those), so a wound carried in is still carried out.
 // Combat statuses tick down in TURNS; the durations below are turn counts.
 
 import { condNames } from "../data/conditions.js";

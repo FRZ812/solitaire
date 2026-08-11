@@ -5,7 +5,8 @@ import { APPRENTICESHIP, SCHEMATICS } from "../data/schematics.js";
 import { applyForge, applyApprentice } from "./forge.js";
 import { applyDayLabour } from "./quests.js";
 import { applyTraining } from "./training.js";
-import { applyCombatResult } from "./combat-result.js";
+import { createTowEncounter, endTurn, useSkill } from "../gameplay/tow/encounter.js";
+import { settleTowEncounter } from "../gameplay/tow/settlement.js";
 import { applyBeat } from "./beat.js";
 import {
   allocatedProgressionLevel,
@@ -92,11 +93,26 @@ describe("non-combat progression sources", () => {
     const state = fundedState();
     const beforeEarned = progressionLevel(state.character);
     const beforeAllocated = allocatedProgressionLevel(state.character);
-    const next = applyCombatResult(state, {
-      phase: "victory",
-      player: { health: state.character.vitality, resolve: state.character.resolve, statuses: [] },
-      enemies: [], allies: [], profGains: { spellcasting: 60 }, loot: null, log: [], executedCount: 0,
+    // A long fight the player wins outright: proficiency is read off the encounter's own
+    // event log, so it takes real blows rather than a handed-in tally.
+    let encounter = createTowEncounter({
+      seed: "progression-source",
+      player: { id: "wanderer", name: "Wanderer", maxHp: 500, stats: { attack: 10, defense: 0, critRate: 0, dodgeRate: 0 } },
+      enemies: [{ id: "foe", name: "Foe", maxHp: 400, stats: { attack: 0, defense: 0, critRate: 0, dodgeRate: 0 } }],
+      build: { traits: {}, skills: ["strike"] },
     });
+    for (let turn = 0; turn < 100 && encounter.phase === "player"; turn += 1) {
+      encounter = useSkill(encounter, "strike").state;
+      if (encounter.phase !== "player") break;
+      encounter = endTurn(encounter).state;
+    }
+    expect(encounter.phase).toBe("victory");
+    const settled = settleTowEncounter(state, encounter, {
+      encounterId: "progression-source-fight",
+      proficiencyId: "spellcasting",
+    });
+    expect(settled.ok).toBe(true);
+    const next = settled.state;
 
     expectEarnedButUnallocated(next, beforeAllocated, beforeEarned);
     expectPlayerProjectionSynced(next);

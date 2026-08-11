@@ -9,7 +9,7 @@ import { rollUniques } from "../data/uniques.js";
 import { getAbilityDef, randomAbilityId } from "../data/abilities.js";
 import { rollItemPassives, RUNES } from "../data/passives.js";
 import { itemTemplate } from "../data/catalog.js";
-import { copperToCoins } from "./economy.js";
+import { coinsToCopper, copperToCoins } from "./economy.js";
 
 const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
 
@@ -131,4 +131,57 @@ export function rollLoot(sources, opts = {}) {
   // lower denomination and the narrator context reads true wealth.
   copper = Math.round(copper * (1 + coinBonus));
   return { coins: copperToCoins(copper), items, ability };
+}
+
+// Relocated from combat-result.js when the deck engine retired. Applying a spoils
+// manifest never depended on the resolver — only on state, economy and the catalogues —
+// so the search-the-fallen flow outlives the engine that used to generate the manifest.
+const clone = (x) => JSON.parse(JSON.stringify(x));
+
+export function applyLoot(state, manifest) {
+  const next = clone(state);
+  next.pendingLoot = null;
+  const beats = [];
+  const now = Date.now();
+  if (!manifest) return { state: { ...next, beats: [...next.beats] }, taken: "" };
+
+  next.world.codex.items = { ...next.world.codex.items };
+  const invLines = [];
+  const takenParts = [];
+  for (const it of (manifest.items || [])) {
+    if (it.entry) next.world.codex.items[it.itemId] = it.entry;
+    const existing = next.character.inventory.carried.find((c) => c.itemId === it.itemId);
+    if (existing) existing.quantity += it.quantity || 1;
+    else next.character.inventory.carried.push({ itemId: it.itemId, quantity: it.quantity || 1 });
+    invLines.push(`+${it.quantity || 1}× ${it.entry?.name || it.itemId}`);
+    takenParts.push(it.entry?.name || it.itemId);
+  }
+  // Add the spoils' coin to the purse in copper, then re-express canonically so
+  // the purse never accumulates >9 of a lower denomination (the manifest's coins
+  // are already canonical, coming from rollLoot → copperToCoins).
+  const coins = manifest.coins || {};
+  next.character.inventory.coins = copperToCoins(coinsToCopper(next.character.inventory.coins) + coinsToCopper(coins));
+  const coinParts = [];
+  if (coins.gold) coinParts.push(`+${coins.gold}gp`);
+  if (coins.silver) coinParts.push(`+${coins.silver}sp`);
+  if (coins.copper) coinParts.push(`+${coins.copper}cp`);
+  if (coinParts.length) { invLines.push(coinParts.join(", ")); takenParts.push(coinParts.join(", ")); }
+  if (invLines.length) beats.push({ id: `lt${now}`, type: "inventory_delta", lines: invLines });
+
+  if (manifest.ability) {
+    next.character.abilities = Array.isArray(next.character.abilities) ? [...next.character.abilities] : [];
+    next.character.abilities.push({ id: manifest.ability.id, tier: manifest.ability.tier });
+    const def = getAbilityDef(manifest.ability.id);
+    next.world.codex.skills = { ...next.world.codex.skills };
+    next.world.codex.skills[manifest.ability.id] = {
+      id: manifest.ability.id, name: `${manifest.ability.name} (${tierLabel(manifest.ability.tier)})`,
+      description: def?.desc || "A combat ability.", rating: tierInfo(manifest.ability.tier).order + 1,
+      combatAbility: true, tier: manifest.ability.tier,
+    };
+    beats.push({ id: `la${now}`, type: "discovery", items: [{ kind: "ability", name: `${manifest.ability.name} · ${tierLabel(manifest.ability.tier)}` }] });
+    takenParts.push(`the technique ${manifest.ability.name}`);
+  }
+
+  next.beats = [...next.beats, ...beats];
+  return { state: next, taken: takenParts.join(", ") };
 }

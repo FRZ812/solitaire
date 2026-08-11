@@ -294,8 +294,11 @@ describe("narrator application trust boundary", () => {
 
   it("settles combat defeat and permanent death before presentation narration", () => {
     expect(appSource).not.toContain("Choose a fate that fits WHO beat you and WHERE");
-    expect(appSource).toContain("permanentDeath: epicDeath");
-    expect(appSource).toContain("place,");
+    // The engine settles the fight before a word of it is narrated. The settlement moved
+    // from applyCombatResult to settleTowEncounter when the deck engine retired; the
+    // invariant — settle first, narrate second — is unchanged.
+    expect(appSource).toContain("settleTowEncounter(state, cs,");
+    expect(appSource).toContain("const epicDeath = cs.phase === \"defeat\"");
     expect(appSource).toContain("The engine-settled defeat is final");
     expect(appSource).not.toContain("const finalState = { ...narrated, ended }");
   });

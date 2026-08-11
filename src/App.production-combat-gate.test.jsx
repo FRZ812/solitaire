@@ -155,13 +155,14 @@ describe("with the Tower of Winter preview flag closed", () => {
     expect(mounted.textContent).toContain("A lone cutpurse blocks the road.");
   });
 
-  it("sends a travel fight to the legacy loop and allocates no production session", async () => {
+  it("runs a travel fight on the Tower of Winter kernel without a persisted session", async () => {
+    // The deck loop is gone. With the flag closed the fight still runs — on the new
+    // kernel, in-memory — it just does not allocate a persisted production session.
     const mounted = await mountCampaign();
     await click(await waitFor(() => [...mounted.querySelectorAll("button")]
       .find((button) => button.textContent === "Fight")));
 
-    await waitFor(() => mounted.querySelector(".deck-combat"));
-    expect(mounted.querySelector(".production-combat")).toBeNull();
+    await waitFor(() => mounted.querySelector(".tow-combat"));
 
     await waitFor(() => harness.serverState.pendingTravelCombat === null);
     expect(harness.serverState.activeCombatSession ?? null).toBe(null);

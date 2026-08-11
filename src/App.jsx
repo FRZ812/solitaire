@@ -92,11 +92,14 @@ import { SPAWN_TABLES } from "./data/spawn-tables.js";
 import { getBiome, getBiomeById } from "./data/biomes.js";
 import { ECOLOGIES } from "./data/continent.js";
 import { biomeVisual, sceneBiomeId } from "./data/visual-assets.js";
-import { generateEnemyGroup, enemyFromNPC, allyFromCompanion } from "./data/bestiary.js";
+import { generateEnemyGroup, enemyFromNPC } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
-import { initCombat, playCard, setTarget, endPlayerTurn, playerFlee, playerStandDown, playerCeasefire } from "./engine/combat.js";
 import { hashSeed } from "./engine/combat-rng.js";
-import { applyCombatResult, applyLoot } from "./engine/combat-result.js";
+import { applyLoot, lootCtx, rollLoot } from "./engine/combat-loot.js";
+import { createTowEncounter, endTurn as towEndTurn, useSkill as towUseSkill } from "./gameplay/tow/encounter.js";
+import { towEnemyFromBestiary, towPlayerFromCharacter } from "./gameplay/tow/solitaire-bridge.js";
+import { towBuildForCharacter } from "./gameplay/tow/professions.js";
+import { settleTowEncounter } from "./gameplay/tow/settlement.js";
 import {
   pendingLevelAllocations,
   pendingProgressionChoices,
@@ -139,7 +142,7 @@ import {
 } from "./gameplay/production/pending-travel-combat.js";
 
 import { CompactHeader } from "./components/CompactHeader.jsx";
-import { CombatView } from "./components/combat/CombatView.jsx";
+import { TowCombatView } from "./components/combat/TowCombatView.jsx";
 import ProductionCombatView from "./components/combat/ProductionCombatView.jsx";
 import { ReferenceCombatView } from "./components/combat/ReferenceCombatView.jsx";
 import { VitalsStrip, InputBar, ErrorBanner } from "./components/primitives.jsx";
@@ -220,8 +223,10 @@ function groupFlavor(enemies) {
 // An "important" fight where death is allowed to be real and final: the toughest
 // foe is legendary-tier or above (the Demon King, a fabled beast, etc.). Ordinary
 // bandits/goblins never kill — they rob, abduct, or enslave instead.
-function isEpicEncounter(cs) {
-  return (cs.enemies || []).some((e) => tierOrder(e.tier) >= tierOrder("legendary"));
+// Tiers are a world concept, not a Tower of Winter one, so the encounter itself does not
+// carry them — the foes it was built from do, and they are kept alongside it.
+function isEpicEncounter(_encounter, context = {}) {
+  return (context.sources || []).some((e) => tierOrder(e.tier) >= tierOrder("legendary"));
 }
 
 // Snapshot a pack as { itemId: quantity } so two snapshots can be diffed into a
@@ -2884,44 +2889,42 @@ export function Solitaire() {
       liveStateRef.current = cleared;
       setState(cleared);
     }
-    combatCtxRef.current = context || { flavor: enemies[0].name };
     setDeckOpen(false); setMapOpen(false); setShopTile(null);
     closeBeatMenu();
     const region = regionHere(st);
     const wp = activeWorldPassives(st.character, st.world.codex);
-    // Recruited companions keep their own level, attributes, and kit wherever
-    // they travel; moving into a harsher region must not silently restat them.
-    const allies = (st.party || [])
-      .map((id) => st.world.codex.characters?.[id])
-      .filter((c) => c && c.combatState?.status !== "dead")
-      .map((c) => allyFromCompanion(c, st.world.codex));
-    // Mounted-rider bonuses: a rider fights with their mount's charge under them.
-    // The mount is also an ally here; this is the lift its rider gets (engine/combat).
-    const chars = st.world.codex.characters || {};
-    const carrierBonus = (entry) => (entry?.ridingOn && chars[entry.ridingOn]?.mountedBonus) || null;
-    for (const a of allies) if (a.companionId) a._mountedBonus = carrierBonus(chars[a.companionId]);
-    const playerMountedBonus = carrierBonus(chars.wanderer);
-    setCombat(initCombat(st.character, st.world.codex, enemies, {
-      seed: hashSeed([
-        currentCampaignId || "local",
-        st.time?.day || 0,
-        st.time?.hour || 0,
-        st.time?.minute || 0,
-        st.world.currentTile?.x || 0,
-        st.world.currentTile?.y || 0,
-        st.turns?.length || st.beats?.length || 0,
-        context?.flavor || enemies.map((enemy) => enemy.name).join("/"),
-      ]),
-      playerMountedBonus,
-      maxLootTier: region.lootTier,
-      region: region.level,
-      ownedUniques: ownedUniqueIds(st),
-      coinBonus: wp.coinBonus || 0,
-      dark: inTheDark(st),
-      sunlight: locationLightStatus(st).source === "daylight",
-      weary: hasCondition(st.character.conditions, "Exhausted"),
-      allies,
-      ...extraOpts,
+    const seed = hashSeed([
+      currentCampaignId || "local",
+      st.time?.day || 0,
+      st.time?.hour || 0,
+      st.time?.minute || 0,
+      st.world.currentTile?.x || 0,
+      st.world.currentTile?.y || 0,
+      st.turns?.length || st.beats?.length || 0,
+      context?.flavor || enemies.map((enemy) => enemy.name).join("/"),
+    ]);
+    // The encounter carries only actors and a build; the spoils context and the codex
+    // identities of the foes stay out here, so the kernel never learns about regions,
+    // loot tiers or NPC ids.
+    const actorIds = enemies.map((_, index) => `foe-${index}`);
+    combatCtxRef.current = {
+      flavor: context?.flavor || enemies[0].name,
+      encounterId: `${currentCampaignId || "local"}:combat:${seed}`,
+      sources: enemies,
+      npcIds: Object.fromEntries(enemies.map((enemy, index) => [actorIds[index], enemy.npcId]).filter(([, id]) => id)),
+      lootOpts: {
+        maxLootTier: region.lootTier,
+        region: region.level,
+        owned: new Set(ownedUniqueIds(st)),
+        coinBonus: wp.coinBonus || 0,
+      },
+      lethal: extraOpts.lethal !== false,
+    };
+    setCombat(createTowEncounter({
+      seed,
+      player: towPlayerFromCharacter(st.character, st.world.codex, { id: "wanderer" }),
+      enemies: enemies.map((enemy, index) => towEnemyFromBestiary(enemy, { id: actorIds[index] })),
+      build: towBuildForCharacter(st.character),
     }));
   }
 
@@ -3081,21 +3084,36 @@ export function Solitaire() {
     if (!combat) return;
     const cs = combat;
     const ctx = combatCtxRef.current || {};
-    // A defeat by a legendary-tier+ foe is a real, final death; any other defeat is
-    // a deterministic survivable outcome settled by combat-result.js.
-    const epicDeath = cs.phase === "defeat" && isEpicEncounter(cs) && (cs.lethal || cs.escalated);
+    // A defeat by a legendary-tier+ foe is a real, final death; every other defeat is a
+    // survivable outcome the settlement records as wounds.
+    const epicDeath = cs.phase === "defeat" && isEpicEncounter(cs, ctx) && ctx.lethal !== false;
     const place = currentLocationName(state);
-    const next = applyCombatResult(state, cs, {
-      ...ctx,
-      permanentDeath: epicDeath,
-      place,
+    const settled = settleTowEncounter(state, cs, {
+      encounterId: ctx.encounterId || `combat:${cs.round}:${cs.sequence}`,
+      proficiencyId: ctx.proficiencyId || null,
+      npcIds: ctx.npcIds || {},
     });
+    if (!settled.ok && settled.reason !== "tow-encounter-already-settled") {
+      setError(`The fight could not be settled: ${settled.reason}.`);
+      return;
+    }
+    let next = settled.ok ? settled.state : state;
+    // Spoils are rolled from the foes that actually fell, and are never auto-taken —
+    // the player still chooses to search them.
+    if (cs.phase === "victory" && !epicDeath) {
+      const fallen = (ctx.sources || []).filter((_, index) => (
+        cs.actors[`foe-${index}`] && cs.actors[`foe-${index}`].hp <= 0
+      ));
+      if (fallen.length > 0) {
+        const manifest = rollLoot(fallen, ctx.lootOpts || {});
+        next = { ...next, pendingLoot: manifest };
+      }
+    }
     liveStateRef.current = next;
     setState(next);
     setCombat(null);
     combatCtxRef.current = null;
-    // Spoils aren't auto-taken — offer a deliberate Search the fallen (never when dead).
-    if (!epicDeath && next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: cs.lethal });
+    if (!epicDeath && next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: ctx.lethal !== false });
 
     // The story always continues from the result, so the player can react.
     setError(null);
@@ -3152,12 +3170,13 @@ export function Solitaire() {
     }
   }
 
-  const onCombatPlayCard = (cardUid, targetUid) => setCombat((c) => (c ? playCard(c, cardUid, targetUid) : c));
-  const onCombatTarget = (uid) => setCombat((c) => (c ? setTarget(c, uid) : c));
-  const onCombatEndTurn = () => setCombat((c) => (c ? endPlayerTurn(c) : c));
-  const onCombatFlee = () => setCombat((c) => (c ? playerFlee(c) : c));
-  const onCombatStandDown = () => setCombat((c) => (c ? playerStandDown(c) : c));
-  const onCombatCeasefire = () => setCombat((c) => (c ? playerCeasefire(c) : c));
+  const onCombatUseSkill = (skillId, targetId) => setCombat((c) => {
+    if (!c) return c;
+    const used = towUseSkill(c, skillId, targetId);
+    if (!used.ok) return c;
+    return used.state;
+  });
+  const onCombatEndTurn = () => setCombat((c) => (c ? towEndTurn(c).state : c));
 
   // ----- Render flow -----
 
@@ -3798,15 +3817,12 @@ export function Solitaire() {
         />
       )}
       {combat && !exclusiveGameplayOpen && (
-        <CombatView
-          combat={combat}
-          onPlayCard={onCombatPlayCard}
-          onSetTarget={onCombatTarget}
+        <TowCombatView
+          encounter={combat}
+          note={combatCtxRef.current?.flavor}
+          onUseSkill={onCombatUseSkill}
           onEndTurn={onCombatEndTurn}
-          onFlee={onCombatFlee}
-          onStandDown={onCombatStandDown}
-          onCeasefire={onCombatCeasefire}
-          onResolve={handleResolveCombat}
+          onSettle={handleResolveCombat}
         />
       )}
       {confirmDialog && (
