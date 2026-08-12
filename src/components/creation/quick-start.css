@@ -1,0 +1,203 @@
+/* Quick Start and the practice fight around it.
+   Kept in one file because they are one flow: pick, try, come back, commit. */
+
+.quick-start {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  color: #e8e2d4;
+}
+
+.quick-start__header h2 {
+  margin: 0 0 0.35rem;
+  font-family: "Instrument Serif", serif;
+  font-size: 1.6rem;
+  color: #f4e8c3;
+}
+
+.quick-start__header p {
+  margin: 0;
+  color: #bdc8bd;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.quick-start__choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.quick-start__choice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(215, 167, 111, 0.25);
+  border-radius: 12px;
+  background: transparent;
+  color: #cbd3ca;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.quick-start__choice.is-selected {
+  border-color: rgba(231, 185, 94, 0.75);
+  background: rgba(231, 185, 94, 0.12);
+  color: #f4e8c3;
+}
+
+.quick-start__choice strong { font-size: 0.95rem; }
+.quick-start__choice span { font-size: 0.78rem; color: #93a08f; }
+.quick-start__choice.is-selected span { color: #c9a96a; }
+
+/* The five facts. Deliberately a plain definition-style list: this is the part a player
+   reads to make the decision, so it must not compete with the buttons below it. */
+.quick-start__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem;
+  border-left: 3px solid rgba(231, 185, 94, 0.55);
+  background: rgba(20, 29, 29, 0.55);
+  border-radius: 0 12px 12px 0;
+}
+
+.quick-start__fact { display: flex; flex-direction: column; gap: 0.1rem; }
+
+.quick-start__fact-label {
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: #c9a96a;
+}
+
+.quick-start__fact-value { font-size: 0.9rem; line-height: 1.4; color: #e8e2d4; }
+
+.quick-start__scenario { display: flex; flex-direction: column; gap: 0.3rem; }
+
+.quick-start__scenario label {
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: #c9a96a;
+}
+
+.quick-start__scenario select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(215, 167, 111, 0.3);
+  border-radius: 10px;
+  background: rgba(7, 16, 28, 0.8);
+  color: #e8e2d4;
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.quick-start__alert {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid rgba(220, 113, 91, 0.55);
+  border-radius: 10px;
+  color: #fde8e4;
+  font-size: 0.86rem;
+}
+
+.quick-start__actions { display: flex; flex-wrap: wrap; gap: 0.55rem; }
+
+.quick-start__try,
+.quick-start__begin {
+  flex: 1 1 10rem;
+  padding: 0.8rem 1rem;
+  border-radius: 12px;
+  border: none;
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.quick-start__try {
+  background: transparent;
+  border: 1px solid rgba(231, 185, 94, 0.55);
+  color: #e7b95e;
+}
+
+.quick-start__begin { background: #e7b95e; color: #07101c; }
+
+.quick-start__try:disabled,
+.quick-start__begin:disabled { opacity: 0.55; cursor: wait; }
+
+.quick-start__other {
+  align-self: flex-start;
+  padding: 0.4rem 0;
+  border: none;
+  background: transparent;
+  color: rgba(215, 167, 111, 0.75);
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ----- Practice result ----- */
+
+.practice-fight--result,
+.practice-fight--failed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  color: #e8e2d4;
+}
+
+.practice-fight--result h2 {
+  margin: 0;
+  font-family: "Instrument Serif", serif;
+  font-size: 1.5rem;
+  color: #f4e8c3;
+}
+
+.practice-fight__summary { margin: 0; font-size: 0.95rem; line-height: 1.45; }
+
+.practice-fight__note { margin: 0; font-size: 0.85rem; color: #93a08f; }
+
+/* The reproduction receipt is for whoever has to diagnose a report later, so it is present
+   and legible but visually quiet. */
+.practice-fight__receipt {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.9rem;
+  margin: 0;
+  padding: 0.8rem 1rem;
+  border: 1px dashed rgba(215, 167, 111, 0.28);
+  border-radius: 12px;
+  font-size: 0.76rem;
+  color: #93a08f;
+}
+
+.practice-fight__receipt dt { font-weight: 700; color: #c9a96a; }
+.practice-fight__receipt dd { margin: 0; overflow-wrap: anywhere; }
+.practice-fight__receipt code { font-size: 0.74rem; }
+
+.practice-fight__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.practice-fight__actions button {
+  padding: 0.65rem 0.9rem;
+  border: 1px solid rgba(215, 167, 111, 0.35);
+  border-radius: 10px;
+  background: transparent;
+  color: #e7b95e;
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.practice-fight__actions button:last-child { border-color: transparent; color: rgba(215, 167, 111, 0.7); }
