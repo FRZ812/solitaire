@@ -84,10 +84,26 @@ describe("the Combat Lab cannot ship enabled", () => {
   });
 
   it("is not imported by anything on the production path", () => {
+    // The Lab may name itself; nothing else may name it. An import from App.jsx or any other
+    // shipped surface would put a fight-starting debug tool into the bundle.
     const importers = FILES.filter(({ path, source }) => (
-      !path.endsWith("lab-gate.js") && /CombatLab/.test(source)
+      !path.endsWith("lab-gate.js")
+      && !path.endsWith("CombatLab.jsx")
+      && /CombatLab/.test(source)
     ));
     expect(importers.map(({ path }) => path.replace(SRC, ""))).toEqual([]);
+  });
+
+  it("brings no narrator or storage dependency with it", () => {
+    const source = readFileSync(
+      new URL("../../components/combat/CombatLab.jsx", import.meta.url),
+      "utf8",
+    );
+    for (const forbidden of [
+      "supabase", "api-supabase", "campaign-resume", "localStorage", "narrateSpecialized",
+    ]) {
+      expect(source, forbidden).not.toContain(forbidden);
+    }
   });
 });
 

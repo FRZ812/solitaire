@@ -340,3 +340,125 @@
     transition: none;
   }
 }
+
+/* ----- Combat Lab (development builds only) ----- */
+
+.combat-lab {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  background: #07101c;
+  color: #cbd3ca;
+  font-size: 0.85rem;
+}
+
+.combat-lab__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid rgba(215, 167, 111, 0.25);
+}
+
+.combat-lab__bar label { display: flex; align-items: center; gap: 0.35rem; }
+
+.combat-lab__bar select,
+.combat-lab__bar input {
+  padding: 0.3rem 0.4rem;
+  border: 1px solid rgba(215, 167, 111, 0.3);
+  border-radius: 6px;
+  background: rgba(7, 16, 28, 0.9);
+  color: #e8e2d4;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.combat-lab__bar button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid rgba(215, 167, 111, 0.35);
+  border-radius: 8px;
+  background: transparent;
+  color: #e7b95e;
+  font: inherit;
+  cursor: pointer;
+}
+
+.combat-lab__alert { margin: 0.5rem 0.9rem; color: #fda4a4; }
+
+.combat-lab__panels { display: flex; flex: 1; min-height: 0; }
+
+.combat-lab__state {
+  flex: 0 0 26rem;
+  max-width: 40vw;
+  overflow: auto;
+  padding: 0.9rem;
+  border-right: 1px solid rgba(215, 167, 111, 0.2);
+}
+
+.combat-lab__state h3 {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #c9a96a;
+}
+
+.combat-lab__state dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 0.7rem;
+  margin: 0;
+}
+
+.combat-lab__state dt { color: #c9a96a; }
+.combat-lab__state dd { margin: 0; overflow-wrap: anywhere; }
+
+.combat-lab__intents,
+.combat-lab__commands,
+.combat-lab__events {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.combat-lab__chronicle {
+  margin: 0;
+  padding: 0.6rem;
+  border: 1px dashed rgba(215, 167, 111, 0.25);
+  border-radius: 8px;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.combat-lab__fixture { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+.combat-lab__fixture button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid rgba(215, 167, 111, 0.35);
+  border-radius: 8px;
+  background: transparent;
+  color: #e7b95e;
+  font: inherit;
+  cursor: pointer;
+}
+
+.combat-lab__fixture textarea {
+  flex: 1 1 100%;
+  padding: 0.4rem;
+  border: 1px solid rgba(215, 167, 111, 0.25);
+  border-radius: 8px;
+  background: rgba(7, 16, 28, 0.9);
+  color: #cbd3ca;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+}
+
+/* The Lab hosts the combat view inline rather than as a modal over the world. */
+.combat-lab .production-combat { position: relative; inset: auto; flex: 1; }
+.combat-lab .production-combat__backdrop { display: none; }
