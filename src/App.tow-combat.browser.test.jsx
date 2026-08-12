@@ -55,7 +55,7 @@ function cloneJson(value) {
 }
 
 /** A campaign standing in a brawl: nonlethal, one named foe bound to the codex. */
-function campaignInAFight({ lethalPolicy = "nonlethal", playerStakes = "survivable" } = {}) {
+function campaignInAFight({ lethalPolicy = "nonlethal", playerStakes = "survivable", enemies = null } = {}) {
   const state = makeInitialState();
   state.created = true;
   state.world.codex.characters["brigand-captain"] = {
@@ -72,7 +72,7 @@ function campaignInAFight({ lethalPolicy = "nonlethal", playerStakes = "survivab
       maxHp: 120,
       stats: { attack: 14, defense: 4, critRate: 0, dodgeRate: 0 },
     },
-    enemies: [{
+    enemies: enemies || [{
       id: "foe-0",
       name: "Brigand captain",
       maxHp: 30,
@@ -298,6 +298,34 @@ describe("readiness carries between fights", () => {
     const readiness = await waitFor(() => harness.serverState?.mechanics?.tow?.readiness);
     expect(readiness.block).toBeLessThan(30);
     expect(Object.hasOwn(readiness, "strike")).toBe(false);
+  });
+});
+
+describe("the telegraph reaches a screen reader too", () => {
+  it("names the coming attack in a targetable foe's accessible name", async () => {
+    // A foe card becomes a button once there is more than one of them, and a button's
+    // aria-label replaces everything inside it. Naming it "Target Wolf 1" would leave a
+    // screen-reader user with the one piece of information the whole telegraph exists to
+    // give them stripped out.
+    const twoFoes = [0, 1].map((index) => ({
+      id: `foe-${index}`,
+      name: `Brigand ${index + 1}`,
+      maxHp: 30,
+      stats: { attack: 4, defense: 0, critRate: 0, dodgeRate: 0 },
+      attacks: [{ id: `foe-${index}-jab`, name: "Jab", hits: 1, damage: 3 }],
+    }));
+    harness.serverState = campaignInAFight({ enemies: twoFoes });
+
+    const mounted = await mountCampaign();
+    const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
+    const targets = [...dialog.querySelectorAll(".production-combat__fighter--target")];
+    expect(targets.length).toBe(2);
+    for (const target of targets) {
+      const label = target.getAttribute("aria-label");
+      expect(label).toMatch(/^Target Brigand \d/);
+      expect(label).toContain("health");
+      expect(label).toContain("preparing Jab for 3 damage");
+    }
   });
 });
 

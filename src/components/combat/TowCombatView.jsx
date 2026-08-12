@@ -40,6 +40,25 @@ function StatusList({ actor }) {
   );
 }
 
+/**
+ * The accessible name for a targetable foe.
+ *
+ * A foe card is a button when there is more than one of them, and a button's aria-label
+ * replaces everything inside it — so naming it "Target Wolf 1" meant a screen-reader user
+ * heard the name and never the telegraph. The whole point of declaring an attack is that the
+ * player knows what is coming before they spend their turn; a player using a screen reader
+ * is owed the same information, in the same place.
+ */
+function targetLabel(actor, intent) {
+  const health = `${actor.hp} of ${actor.maxHp} health`;
+  if (actor.hp <= 0) return `${actor.name}, down`;
+  if (!intent) return `Target ${actor.name}, ${health}`;
+  const blow = intent.hits > 1
+    ? `${intent.hits} hits of ${intent.damage}`
+    : `${intent.damage} damage`;
+  return `Target ${actor.name}, ${health}, preparing ${intent.name} for ${blow}`;
+}
+
 function fighterBody(actor, label, intent = null) {
   return (
     <>
@@ -186,7 +205,7 @@ export function TowCombatView({
                   key={enemy.id}
                   type="button"
                   className={`production-combat__fighter production-combat__fighter--target${enemy.id === activeTarget ? " is-selected" : ""}`}
-                  aria-label={`Target ${enemy.name}`}
+                  aria-label={targetLabel(enemy, intents[enemy.id])}
                   aria-pressed={enemy.id === activeTarget}
                   disabled={enemy.hp <= 0}
                   onClick={() => setTargetId(enemy.id)}
