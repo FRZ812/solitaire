@@ -226,14 +226,15 @@ describe("what is not yet policed says so", () => {
       "assassination", "character_setup", "needs_changes", "memory_updates",
       "relationship_changes", "party_removals", "resolve_change", "part_ways",
       "recruit_companion", "buy_mount", "purchase_captive", "inventory_changes",
+      "tile_move", "tile_discovery", "location_update",
     ]) {
       expect(coverage.enforced, field).toContain(field);
     }
     // Precise rather than round: every field is enforced or has an entry saying why not, so
     // the two lists must together be the whole contract with nothing falling between them.
     expect(coverage.passThrough.sort()).toEqual(Object.keys(PASS_THROUGH_REASONS).sort());
-    expect(coverage.enforced.length).toBeGreaterThanOrEqual(20);
-    expect(coverage.fraction).toBeGreaterThan(0.7);
+    expect(coverage.enforced.length).toBeGreaterThanOrEqual(23);
+    expect(coverage.fraction).toBeGreaterThan(0.8);
   });
 });
 
@@ -397,6 +398,36 @@ describe("purchases, party and items", () => {
     expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ progression_focus: "martial" })), "progression_focus").reason)
       .toBe("unknown-progression-focus");
     expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ progression_focus: "racial" })), "progression_focus").status)
+      .toBe(INTENT_STATUS.APPLIED);
+  });
+});
+
+describe("the map", () => {
+  it("lets the player move somewhere the world is", () => {
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ tile_move: { x: 12, y: -30 } })), "tile_move").status)
+      .toBe(INTENT_STATUS.APPLIED);
+  });
+
+  it("refuses moving off the edge of the world", () => {
+    // The travel lifecycle owns what a journey costs; the gateway owns that the destination
+    // is somewhere the generator ever made.
+    const result = resolveNarratorIntents(campaign(), turnWith({ tile_move: { x: 99_999, y: 0 } }));
+    expect(receiptFor(result, "tile_move"))
+      .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "off-the-map" });
+    expect(result.turn.tile_move).toBe(null);
+  });
+
+  it("refuses revealing a place that does not exist", () => {
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ tile_discovery: { x: -99_999, y: 0 } })), "tile_discovery").reason)
+      .toBe("off-the-map");
+  });
+
+  it("refuses a location update with no name", () => {
+    // A named place becomes fact for every later prompt; an unnamed one says nothing while
+    // still overwriting where the player is.
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ location_update: { note: "somewhere" } })), "location_update").reason)
+      .toBe("location-without-a-name");
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ location_update: { name: "The Broken Wheel" } })), "location_update").status)
       .toBe(INTENT_STATUS.APPLIED);
   });
 });

@@ -26,6 +26,7 @@ import { CONDITIONS, condName } from "../../data/conditions.js";
 import { MEMORY_TEXT_LIMIT, cleanMemoryText } from "../../engine/memory.js";
 import { coinsToCopper } from "../../engine/economy.js";
 import { itemTemplate } from "../../data/catalog.js";
+import { CONTINENT } from "../../data/continent.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { NARRATOR_FIELD_INVENTORY, intentFields } from "./narrator-field-inventory.js";
 
@@ -84,6 +85,19 @@ function affordable(state, copper) {
 
 function inParty(state, id) {
   return (state?.party || []).includes(id);
+}
+
+/**
+ * Whether a coordinate is somewhere the world actually is.
+ *
+ * The continent's sampling bounds, not a rectangular wall — the shoreline is generated — but
+ * a coordinate outside them is not a place the generator ever made, and moving there would
+ * put the player on nothing.
+ */
+function onTheMap(coord) {
+  const { xmin, xmax, ymin, ymax } = CONTINENT.bounds;
+  return Number.isSafeInteger(coord?.x) && Number.isSafeInteger(coord?.y)
+    && coord.x >= xmin && coord.x <= xmax && coord.y >= ymin && coord.y <= ymax;
 }
 
 function refuse(reason, detail = {}) {
@@ -367,6 +381,38 @@ const ENFORCED = Object.freeze({
     if (invented.length > 0) return refuse("uncatalogued-item", { invented });
     return allow();
   },
+
+  /**
+   * Position is the input to encounters, travel time and region difficulty. The travel
+   * lifecycle owns what a journey costs; what the gateway owns is that the destination is
+   * somewhere the world actually is.
+   */
+  tile_move(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (!onTheMap(value)) return refuse("off-the-map", { asked: { x: value?.x, y: value?.y } });
+    return allow();
+  },
+
+  /** Same rule: the map cannot reveal a place the generator never made. */
+  tile_discovery(state, value) {
+    if (value === null || value === undefined) return allow();
+    const coord = value.coord ?? value;
+    if (!onTheMap(coord)) return refuse("off-the-map", { asked: { x: coord?.x, y: coord?.y } });
+    return allow();
+  },
+
+  /**
+   * A named place becomes fact for every later prompt and gates shops, rest legality and
+   * encounter tables. An unnamed one is a location update that says nothing.
+   */
+  location_update(state, value) {
+    if (value === null || value === undefined) return allow();
+    const name = value.name ?? value.place;
+    if (typeof name !== "string" || name.trim().length === 0) {
+      return refuse("location-without-a-name");
+    }
+    return allow();
+  },
 });
 
 /**
@@ -376,12 +422,6 @@ const ENFORCED = Object.freeze({
  * work; enumerating it is what makes the work reviewable.
  */
 export const PASS_THROUGH_REASONS = Object.freeze({
-  tile_discovery: "Map reveal rules live in the world generator; the owner has to read them "
-    + "rather than invent a second opinion about what is where.",
-  tile_move: "Travel cost is owned by the travel lifecycle, which already refuses illegal "
-    + "moves on its own path. Routing this through it is a larger change than a bound.",
-  location_update: "Named places and services come from the atlas; validating against it is "
-    + "a registry join rather than a rule.",
   discoveries: "Additive codex writes. Harmless in isolation, but they become fact for every "
     + "later prompt, so the owner is a content-validation concern.",
   knowledge_updates: "Gates options elsewhere; needs the knowledge registry to validate "
