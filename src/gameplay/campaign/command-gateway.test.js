@@ -202,10 +202,10 @@ describe("creation", () => {
 describe("what is not yet policed says so", () => {
   it("passes a field through and records it", () => {
     const result = resolveNarratorIntents(
-      campaign(), turnWith({ relationship_changes: [{ id: "hale", delta: 5 }] }),
+      campaign(), turnWith({ inventory_changes: { added: [{ id: "rope" }] } }),
     );
-    expect(receiptFor(result, "relationship_changes").status).toBe(INTENT_STATUS.PASSED_THROUGH);
-    expect(result.turn.relationship_changes).toBeTruthy();
+    expect(receiptFor(result, "inventory_changes").status).toBe(INTENT_STATUS.PASSED_THROUGH);
+    expect(result.turn.inventory_changes).toBeTruthy();
   });
 
   it("gives every pass-through a reason worth reading", () => {
@@ -223,10 +223,13 @@ describe("what is not yet policed says so", () => {
     // The fields most able to break the game are the ones enforced first.
     for (const field of [
       "minutes_passed", "vitality_change", "new_conditions", "attribute_changes",
-      "assassination", "character_setup",
+      "assassination", "character_setup", "needs_changes", "memory_updates",
+      "relationship_changes", "party_removals",
     ]) {
       expect(coverage.enforced, field).toContain(field);
     }
+    // Enforcement is now on most of what can break the game, and the rest says why not.
+    expect(coverage.fraction).toBeGreaterThan(0.35);
   });
 });
 
@@ -267,5 +270,52 @@ describe("receipts", () => {
 describe("the owner modes are the whole design", () => {
   it("has exactly two", () => {
     expect(Object.values(OWNER_MODE).sort()).toEqual(["enforced", "pass-through"]);
+  });
+});
+
+describe("the owners promoted from pass-through", () => {
+  it("lets a meal restore a real amount and refuses writing off the road", () => {
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ needs_changes: { hunger: 30 } })), "needs_changes").status)
+      .toBe(INTENT_STATUS.APPLIED);
+    const result = resolveNarratorIntents(campaign(), turnWith({ needs_changes: { hunger: 100 } }));
+    expect(receiptFor(result, "needs_changes"))
+      .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "need-delta-too-large" });
+    expect(result.turn.needs_changes).toBe(null);
+  });
+
+  it("refuses a need nobody tracks", () => {
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ needs_changes: { morale: 5 } })), "needs_changes").reason)
+      .toBe("unknown-need");
+  });
+
+  it("bounds how much of the memory bank one beat may claim", () => {
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ memory_updates: ["A thing happened."] })), "memory_updates").status)
+      .toBe(INTENT_STATUS.APPLIED);
+    const flood = resolveNarratorIntents(
+      campaign(), turnWith({ memory_updates: ["a", "b", "c", "d", "e", "f"] }),
+    );
+    expect(receiptFor(flood, "memory_updates").reason).toBe("too-many-memories");
+  });
+
+  it("refuses an empty memory rather than storing a blank", () => {
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ memory_updates: ["   "] })), "memory_updates").reason)
+      .toBe("empty-memory");
+  });
+
+  it("lets a conversation shift standing but not convert an enemy", () => {
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ relationship_changes: [{ id: "hale", delta: 8 }] })), "relationship_changes").status)
+      .toBe(INTENT_STATUS.APPLIED);
+    expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ relationship_changes: [{ id: "hale", delta: 90 }] })), "relationship_changes").reason)
+      .toBe("relationship-delta-too-large");
+  });
+
+  it("refuses removing a companion who was never in the party", () => {
+    const withParty = campaign({ party: ["hale"] });
+    expect(receiptFor(resolveNarratorIntents(withParty, turnWith({ party_removals: ["hale"] })), "party_removals").status)
+      .toBe(INTENT_STATUS.APPLIED);
+    const result = resolveNarratorIntents(withParty, turnWith({ party_removals: ["a-stranger"] }));
+    expect(receiptFor(result, "party_removals"))
+      .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "removing-someone-not-in-the-party" });
+    expect(result.turn.party_removals).toBe(null);
   });
 });

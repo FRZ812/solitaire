@@ -23,6 +23,7 @@
 // is a number anyone can read rather than a feeling.
 
 import { CONDITIONS, condName } from "../../data/conditions.js";
+import { MEMORY_TEXT_LIMIT, cleanMemoryText } from "../../engine/memory.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { NARRATOR_FIELD_INVENTORY, intentFields } from "./narrator-field-inventory.js";
 
@@ -52,6 +53,21 @@ export const MAX_NARRATED_MINUTES = 12 * 60;
 
 /** The most a single beat may move one attribute. Growth is a progression concern. */
 export const MAX_ATTRIBUTE_DELTA = 1;
+
+/**
+ * The most a needs value may move in one beat.
+ *
+ * The needs tick drains roughly two to three points an hour, so twelve hours of neglect is
+ * about thirty. A meal or a night's sleep restoring that much is right; a beat handing back
+ * a hundred is the travel economy being written off in a sentence.
+ */
+export const MAX_NEEDS_DELTA = 40;
+
+/** How many durable memories one beat may propose. */
+export const MAX_MEMORIES_PER_TURN = 4;
+
+/** How far one beat may move a single relationship. */
+export const MAX_RELATIONSHIP_DELTA = 20;
 
 function refuse(reason, detail = {}) {
   return { status: INTENT_STATUS.REFUSED, reason, ...detail };
@@ -154,6 +170,77 @@ const ENFORCED = Object.freeze({
     if (state?.created === true) return refuse("character-already-created");
     return allow();
   },
+
+  /**
+   * Hunger, thirst and sleep are drained by an authored tick at two to three points an hour.
+   * A beat that hands back a hundred writes off the travel economy in a sentence.
+   */
+  needs_changes(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (typeof value !== "object" || Array.isArray(value)) return refuse("needs-not-an-object");
+    for (const [need, delta] of Object.entries(value)) {
+      if (!["hunger", "thirst", "sleep"].includes(need)) return refuse("unknown-need", { need });
+      if (!Number.isFinite(delta)) return refuse("need-delta-not-a-number", { need });
+      if (Math.abs(delta) > MAX_NEEDS_DELTA) {
+        return refuse("need-delta-too-large", { need, asked: delta, limit: MAX_NEEDS_DELTA });
+      }
+    }
+    return allow();
+  },
+
+  /**
+   * Typed durable memory was already validated on the way in; the gateway turns that
+   * validation into a refusal rather than a silent filter, and bounds how much of the bank
+   * one beat may claim.
+   */
+  memory_updates(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (!Array.isArray(value)) return refuse("memories-not-a-list");
+    if (value.length > MAX_MEMORIES_PER_TURN) {
+      return refuse("too-many-memories", { asked: value.length, limit: MAX_MEMORIES_PER_TURN });
+    }
+    const empty = value.filter((entry) => !cleanMemoryText(entry));
+    if (empty.length > 0) return refuse("empty-memory");
+    const overlong = value.filter((entry) => typeof entry === "string" && entry.length > MEMORY_TEXT_LIMIT * 4);
+    if (overlong.length > 0) return refuse("memory-far-past-limit");
+    return allow();
+  },
+
+  /**
+   * Standing gates recruitment, prices and quest access. A beat may shift how someone feels;
+   * it may not turn an enemy into a devotee in one conversation.
+   */
+  relationship_changes(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (!Array.isArray(value)) return refuse("relationships-not-a-list");
+    for (const change of value) {
+      const delta = change?.delta ?? change?.change;
+      if (delta === undefined || delta === null) continue;
+      if (!Number.isFinite(delta)) return refuse("relationship-delta-not-a-number");
+      if (Math.abs(delta) > MAX_RELATIONSHIP_DELTA) {
+        return refuse("relationship-delta-too-large", {
+          asked: delta, limit: MAX_RELATIONSHIP_DELTA,
+        });
+      }
+    }
+    return allow();
+  },
+
+  /**
+   * Removing companions is consent-bearing, and a bulk removal must not become the way
+   * around the confirmation a single one needs. Naming someone who is not in the party is
+   * the shape a hallucinated companion takes.
+   */
+  party_removals(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (!Array.isArray(value)) return refuse("removals-not-a-list");
+    const party = new Set(state?.party || []);
+    const strangers = value
+      .map((entry) => (typeof entry === "string" ? entry : entry?.id))
+      .filter((id) => id && !party.has(id));
+    if (strangers.length > 0) return refuse("removing-someone-not-in-the-party", { strangers });
+    return allow();
+  },
 });
 
 /**
@@ -178,8 +265,6 @@ export const PASS_THROUGH_REASONS = Object.freeze({
     + "catalogue and the trade rules, both of which are their own surface.",
   knowledge_updates: "Gates options elsewhere; needs the knowledge registry to validate "
     + "against.",
-  needs_changes: "Hunger, thirst and sleep are owned by the needs tick, which already has "
-    + "authored rates. The owner should defer to it rather than duplicate them.",
   recruit_companion: "A companion is now an allied combat actor. The owner has to admit them "
     + "the way combat does, which is the party-admission work.",
   grant_mount: "Mounts change travel speed and carry capacity; the owner needs the mount "
@@ -191,13 +276,8 @@ export const PASS_THROUGH_REASONS = Object.freeze({
     + "bonded codex entry on top — three durable writes out of one narrated haggle.",
   part_ways: "Consent-bearing: removing a companion needs the player's confirmation against "
     + "current state, not a beat that says they wandered off.",
-  party_removals: "Bulk form of part_ways; must not become the way around its confirmation.",
   companion_gear: "Companion equipment is companion combat stats; needs the same catalogue "
     + "as inventory_changes.",
-  relationship_changes: "Standing gates recruitment, prices and quests. Needs the "
-    + "relationship model's own bounds.",
-  memory_updates: "Already validated by the typed memory channel. The gateway's job here is "
-    + "to turn that validation into a refusal rather than a filter.",
   progression_focus: "Narrow, but it steers growth; the owner is the progression system.",
   player_update: "Identity and appearance. Mostly narrative, but durable, so it wants the "
     + "same discipline once the shape of an identity owner is settled.",
