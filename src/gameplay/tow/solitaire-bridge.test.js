@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
 import { generateEnemyGroup } from "../../data/bestiary.js";
+import { deriveCombatStats } from "../../engine/combat-stats.js";
 import { isTowActor } from "../kernel/tow-actor.js";
 import { createTowEncounter, endTurn, useSkill } from "./encounter.js";
 import {
@@ -35,12 +36,28 @@ describe("characters cross the bridge", () => {
     }
   });
 
-  it("takes attack from the middle of the weapon band", () => {
+  it("takes attack from the weapon band plus the frame behind it", () => {
+    // A Tower of Winter skill scales off ATK alone, so ATK has to carry the whole of an
+    // actor's offence. The weapon band on its own left a starting character swinging for
+    // four against foes holding seventy health between them.
     const { codex } = world();
     const character = { ...world().character, name: "Test", vitality: 20, vitalityMax: 20 };
     const actor = towPlayerFromCharacter(character, codex);
-    expect(PROVISIONAL_BRIDGE_POLICY.attackFromWeapon).toBe("midpoint");
-    expect(actor.stats.attack).toBeGreaterThan(0);
+    expect(PROVISIONAL_BRIDGE_POLICY.attackFromWeapon).toBe("midpoint-plus-frame");
+    const stats = deriveCombatStats(character, codex);
+    const midpoint = Math.round((stats.weapon.min + stats.weapon.max) / 2);
+    expect(actor.stats.attack).toBeGreaterThan(midpoint);
+  });
+
+  it("never leaves the defensive half of a package worth nothing", () => {
+    // Block turns DEF into shield, so a character whose DEF is zero has an inert defensive
+    // kit. Solitaire's armour is legitimately zero for someone in cloth; Tower of Winter's
+    // DEF is a stat every actor carries.
+    const { character, codex } = world();
+    const unarmoured = towPlayerFromCharacter(character, codex);
+    expect(PROVISIONAL_BRIDGE_POLICY.defenseFloorFromAttack).toBe(true);
+    expect(unarmoured.stats.defense).toBeGreaterThan(0);
+    expect(unarmoured.stats.defense).toBeGreaterThanOrEqual(unarmoured.stats.attack);
   });
 
   it("does not arrive already wounded because gear raised the pool", () => {

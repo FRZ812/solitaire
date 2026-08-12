@@ -52,8 +52,25 @@ export const MAX_SIMULATED_ROUNDS = 200;
 export const GUARD_RULE = Object.freeze({
   compares: "damage-prevented-vs-damage-dealt",
   minimumCoverage: 0.6,
+  dangerHorizonRounds: 2,
   survivalOverride: true,
 });
+
+/**
+ * How close the end has to be before guarding beats racing.
+ *
+ * Prevention-beats-progress is the right comparison but it is not the whole rule, and the
+ * missing half showed up the moment shields became worth having: a guard that prevents
+ * fourteen against an attack that deals nine satisfies it *every round*, so the policy
+ * guarded every round, won eventually, and took thirty-seven rounds to do it. Surviving is
+ * not the same as winning, and a fight nobody can lose is still a fight nobody enjoys.
+ *
+ * Two rounds is the horizon. If the declared damage would not put the next round in doubt,
+ * the shield is not urgent and the fight is better ended sooner — because every extra round
+ * is another round of taking hits, and now another round of spending readiness that the
+ * next fight will miss.
+ */
+export const DANGER_HORIZON_ROUNDS = 2;
 
 /**
  * How much of the declared round a shield has to actually cover before guarding is worth an
@@ -233,7 +250,11 @@ export const intentAwarePolicy = Object.freeze({
       // above is moot.
       const lethal = incoming >= effectiveHp;
       const covers = shield >= incoming * SHIELD_COVERAGE;
-      if (lethal || (covers && prevented > progress)) {
+      // Not merely "is guarding worth more than attacking", but "is it worth more *and*
+      // needed". Without the second half the policy guards on every round it can afford to,
+      // and grinds out fights it should have finished.
+      const endangered = incoming * DANGER_HORIZON_ROUNDS >= effectiveHp;
+      if (lethal || (endangered && covers && prevented > progress)) {
         return { command: { type: "use-skill", skillId: bestGuard.id, targetId: targets[0] }, rng };
       }
     }
@@ -408,14 +429,14 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "lone-brigand",
     name: "A brigand on the road",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.64, randomWinRate: 0.33 }),
+    baseline: Object.freeze({ informedWinRate: 0.42, randomWinRate: 0.31 }),
     enemies: Object.freeze([foe("foe-0", "Brigand", 150, 18, moveSet("foe-0", 11, 18, 28))]),
   }),
   Object.freeze({
     id: "brigand-pair",
     name: "Two brigands",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.60, randomWinRate: 0.32 }),
+    baseline: Object.freeze({ informedWinRate: 0.92, randomWinRate: 0.32 }),
     enemies: Object.freeze([
       foe("foe-0", "Brigand", 68, 10, moveSet("foe-0", 7, 10, 15)),
       foe("foe-1", "Brigand", 68, 10, moveSet("foe-1", 7, 10, 15)),
@@ -425,7 +446,7 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "armoured-duelist",
     name: "An armoured duelist",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.59, randomWinRate: 0.28 }),
+    baseline: Object.freeze({ informedWinRate: 0.37, randomWinRate: 0.28 }),
     enemies: Object.freeze([{
       ...foe("foe-0", "Duelist", 152, 17, moveSet("foe-0", 11, 17, 27)),
       stats: { attack: 17, defense: 6, critRate: 6, dodgeRate: 8 },
@@ -435,7 +456,7 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "wolf-pack",
     name: "Three wolves",
     tier: "hard",
-    baseline: Object.freeze({ informedWinRate: 0.49, randomWinRate: 0.24 }),
+    baseline: Object.freeze({ informedWinRate: 0.81, randomWinRate: 0.24 }),
     enemies: Object.freeze([
       foe("foe-0", "Wolf", 40, 9, moveSet("foe-0", 6, 9, 13)),
       foe("foe-1", "Wolf", 40, 9, moveSet("foe-1", 6, 9, 13)),
@@ -459,10 +480,11 @@ export const ACCEPTANCE_TARGETS = Object.freeze({
   informedWinRateMin: 0.55,
   informedWinRateMax: 0.75,
   informedAdvantageMin: 0.20,
-  // Observed on the first recorded baseline: per-package medians ran 6–41 rounds across
-  // the fixture set. The bound is set from that measurement, as the plan requires, and the
-  // long tail on the single-foe fixtures is a known follow-up rather than a target.
-  medianRoundsMax: 45,
+  // Set from measurement, as the plan requires, and tightened once the bridge and the guard
+  // rule were fixed: per-package medians now run 6–18 rounds across the fixture set, where
+  // the first recorded baseline ran to 41. Twenty-five leaves room for balance movement
+  // while still catching a return of the forty-round grind.
+  medianRoundsMax: 25,
 });
 
 export function getStandardFixture(fixtureId) {
