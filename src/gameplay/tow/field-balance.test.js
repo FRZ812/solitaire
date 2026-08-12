@@ -10,7 +10,7 @@
 // round is a couple of clicks — doubly so now that skill uses carry between fights. A number
 // nobody checks is a number that drifts, so it is checked here.
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { generateEnemyGroup } from "../../data/bestiary.js";
 import { makeInitialState } from "../../data/initial-state.js";
 import { createTowEncounter, endTurn, useSkill } from "./encounter.js";
@@ -19,6 +19,27 @@ import { skillStatesForReadiness } from "./readiness.js";
 import { intentAwarePolicy, legalSkills } from "./simulation.js";
 import { towEnemyFromBestiary, towPlayerFromCharacter } from "./solitaire-bridge.js";
 import { createRng } from "../kernel/rng.js";
+
+// Bestiary generation draws on Math.random for group size, tier and stat spread, so a
+// measurement built on it would flake — and a balance gate that fails one run in twenty
+// teaches people to re-run it rather than read it. Seeding the global for the duration
+// keeps the real generation path in the test while making the numbers repeatable.
+let restoreRandom;
+
+beforeAll(() => {
+  let state = 0x9e3779b9;
+  restoreRandom = vi.spyOn(Math, "random").mockImplementation(() => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 0x100000000;
+  });
+});
+
+afterAll(() => {
+  restoreRandom?.mockRestore();
+});
 
 /** A real starting character, as the opening interview leaves them. */
 function fieldCharacter(profession) {
