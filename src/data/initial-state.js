@@ -925,6 +925,9 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
     // The Tower of Winter sidecar: the durable build, and the fight in progress. A fight
     // used to live in component state, so it lasted exactly as long as the tab did.
     mechanics: emptyMechanicsSidecar(),
+    // Prose the campaign owes and has not yet paid: settlement records the debt in the same
+    // commit as its receipt, so a crash between the two costs the scene and not the outcome.
+    presentationJobs: [],
     portraitOverrides: {},
     created: false, // false until the opening character-creation interview finishes
     beats: [{
@@ -1019,6 +1022,7 @@ export function migrateCodex(state) {
   if (next.pendingTravelCombat === undefined) next.pendingTravelCombat = null;
   if (next.productionCombatSequence === undefined) next.productionCombatSequence = 0;
   if (next.combatSettlementReceipts === undefined) next.combatSettlementReceipts = [];
+  if (!Array.isArray(next.presentationJobs)) next.presentationJobs = [];
   // Backfilled in two steps because a campaign can predate either the sidecar or just its
   // combat slot: the build migration shipped first and left the slot for this one.
   if (!hasMechanicsSidecar(next)) next.mechanics = emptyMechanicsSidecar();

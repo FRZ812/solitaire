@@ -254,7 +254,14 @@ describe("narrator application trust boundary", () => {
       expect(appSource.slice(site.index + site[0].length, site.index + site[0].length + 80))
         .toContain("if (!beat) return;");
     }
-    expect(appSource).toContain("narrateSpecialized(next, msg, policyOptions)");
+    // The aftermath call used to take the post-settlement state as a captured local. It now
+    // reads the live ref and the claimed job's own payload, which is strictly fresher: the
+    // scene is generated against the state as it stands when the call goes out, not as it
+    // stood when the fight ended — and, after a crash, against the state the resumed job is
+    // actually being paid from.
+    expect(appSource).toMatch(
+      /await narrateSpecialized\(\s*liveStateRef\.current,\s*claimed\.job\.payload\.message,/,
+    );
     expect(appSource).toContain("narrateSpecialized(looted, msg, policyOptions)");
     expect(appSource).not.toContain("narrate(next, msg, () => true, null, policyOptions)");
     expect(appSource).not.toContain("narrate(looted, msg, () => true, null, policyOptions)");

@@ -100,6 +100,13 @@ import { emptyMechanicsSidecar, hasMechanicsSidecar } from "./engine/campaign-mi
 import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admission.js";
 import { compileCharacterBootstrap } from "./gameplay/tow/character-bootstrap.js";
 import {
+  claimPresentation,
+  completePresentation,
+  enqueuePresentation,
+  releasePresentation,
+  requeueAbandonedPresentations,
+} from "./gameplay/campaign/presentation-outbox.js";
+import {
   buildCombatChronicle,
   chronicleSummary,
   renderCombatChronicle,
@@ -466,6 +473,9 @@ export function Solitaire() {
   const [startLane, setStartLane] = useState("quick");
   const [practiceDraft, setPracticeDraft] = useState(null);
   const [quickStartError, setQuickStartError] = useState(null);
+  // Who this tab is, for the presentation lease. Stable for the tab's lifetime so a claim it
+  // holds is recognisably its own, and a claim it left behind expires like anyone else's.
+  const presentationOwnerRef = useRef(`tab-${Math.random().toString(36).slice(2, 10)}`);
   const [manualCreation, setManualCreation] = useState(false);
   const [fusionRune, setFusionRune] = useState(null); // forge-rune id being bound in the fusion ritual
   const [mapOpen, setMapOpen] = useState(false);
@@ -722,6 +732,16 @@ export function Solitaire() {
     ? combatSession.encounter
     : null;
   const towCombatInvalid = storedTowCombat != null && !towCombat.ok;
+
+  // An owed scene is a fact about the campaign, not about this tab. Reading it off the queue
+  // rather than off component state is what makes the offer survive a reload — otherwise the
+  // job sits there, durable and invisible, with nothing to trigger it.
+  const owedPresentation = useMemo(
+    () => (state.presentationJobs || []).find(
+      (job) => job.status === "pending" || job.status === "failed",
+    ) ?? null,
+    [state.presentationJobs],
+  );
 
   const referenceGameplaySave = state.referenceGameplaySave;
   const referenceGameplayAttempt = state.referenceGameplayAttempt;
@@ -3436,8 +3456,43 @@ export function Solitaire() {
       },
     });
     const report = renderCombatChronicle(chronicle);
+
+    // The whole prompt is built before anything is committed, because it *is* the debt: the
+    // job carries the exact text a worker will send, so a scene resumed after a crash asks
+    // for the same thing the original attempt would have.
+    let msg;
+    if (epicDeath) {
+      msg = `${report}
+
+[DEATH — ENGINE SETTLED] Permanent death against ${flavor || "a foe far beyond the player's strength"} at ${place} is already canonical. Narrate one external, unflinching final scene from the combat report: the foe, the killing blow, witnesses, and the silence after. Do not invent player speech, a last voluntary action, intent, emotion, or internal conclusion. Do not rescue, revise, or apply mechanics.`;
+    } else if (cs.phase === "defeat") {
+      // Lethality lives on the admission, not on the encounter. Reading it off the
+      // encounter always yielded undefined, so every defeat was narrated as a
+      // bare-knuckle beating even when the fight was fought with drawn steel.
+      msg = `${report}
+
+[DEFEATED — ENGINE SETTLED] The engine-settled defeat is final: ${flavor || "the foe"} left the player unconscious at ${place}; the player survives there with canonical vitality and conditions already applied, while inventory and location remain unchanged. ${lethal ? "Weapons were drawn; render the grave wounds already recorded." : "It was a bare-knuckle defeat; keep the external aftermath restrained."} Narrate only the foe, witnesses, surroundings, and passage of the immediate moment. Do not invent player speech, consent, intent, emotion, waking action, or any mechanical consequence.`;
+    } else {
+      const outcomeLine = cs.phase === "victory" ? "You won — every foe is slain or down."
+        : "You broke off and fled the fight.";
+      msg = `${report}
+
+[COMBAT OVER] ${outcomeLine} At ${place}. Narrate the immediate aftermath STRICTLY from the [COMBAT REPORT] — name the actual foe(s) and their exact fates, the room's reaction, your state — then leave the moment open for the player to react. A foe that yielded is present, beaten, and at your mercy: refer to THEM by name; do NOT introduce or substitute a different character to take the foe's place. Do not restart combat.`;
+    }
+
+    // The scene is owed, and the debt is written down in the same commit as the receipt.
+    // A crash between settling and narrating now costs the prose and not the outcome: the
+    // next load finds the job and pays it.
+    const queued = enqueuePresentation(next.presentationJobs || [], {
+      kind: "combat-aftermath",
+      route: "combat-aftermath",
+      sourceReceiptId: session.sessionId,
+      stateRevision: next.beats?.length ?? 0,
+      payload: { message: msg, chronicleChecksum: chronicle?.checksum ?? null },
+    });
     next = {
       ...next,
+      presentationJobs: queued.queue,
       beats: [
         ...(next.beats || []),
         {
@@ -3452,69 +3507,92 @@ export function Solitaire() {
     setTowCombatFeedback(null);
     if (!epicDeath && next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal });
 
-    // The story always continues from the result, so the player can react.
+    // The story always continues from the result, so the player can react. The worker owns
+    // the call now: it claims the job first, so an interrupted attempt is recoverable rather
+    // than lost.
     setError(null);
+    await runPresentationWorker();
+  }
+
+  /**
+   * Pay one owed scene.
+   *
+   * Claims the job before calling anything, so an attempt that dies mid-flight leaves a
+   * claimed job with an expiring lease rather than a debt nobody knows about. On success the
+   * response is applied to the exact attempt that asked for it; on failure the job goes back
+   * to the queue with its error recorded, and the campaign still owns the settlement.
+   */
+  async function runPresentationWorker() {
+    if (loading) return;
+    const base = liveStateRef.current;
+    const now = Date.now();
+    const pending = requeueAbandonedPresentations(base.presentationJobs || [], now);
+    const job = pending.find((entry) => entry.status === "pending");
+    if (!job) return;
+
+    const claimed = claimPresentation(pending, job.id, { owner: presentationOwnerRef.current, now });
+    if (!claimed.ok) return;
+
+    const withClaim = { ...liveStateRef.current, presentationJobs: claimed.queue };
+    liveStateRef.current = withClaim;
+    setState(withClaim);
+    setPendingAftermath(null);
     setLoading(true);
-    // Held outside the try so a failed narration can be offered back as a retry.
-    let msg;
     try {
-      if (epicDeath) {
-        msg = `${report}
-
-[DEATH — ENGINE SETTLED] Permanent death against ${flavor || "a foe far beyond the player's strength"} at ${place} is already canonical. Narrate one external, unflinching final scene from the combat report: the foe, the killing blow, witnesses, and the silence after. Do not invent player speech, a last voluntary action, intent, emotion, or internal conclusion. Do not rescue, revise, or apply mechanics.`;
-      } else if (cs.phase === "defeat") {
-        // Lethality lives on the admission, not on the encounter. Reading it off the
-        // encounter always yielded undefined, so every defeat was narrated as a
-        // bare-knuckle beating even when the fight was fought with drawn steel.
-        msg = `${report}
-
-[DEFEATED — ENGINE SETTLED] The engine-settled defeat is final: ${flavor || "the foe"} left the player unconscious at ${place}; the player survives there with canonical vitality and conditions already applied, while inventory and location remain unchanged. ${lethal ? "Weapons were drawn; render the grave wounds already recorded." : "It was a bare-knuckle defeat; keep the external aftermath restrained."} Narrate only the foe, witnesses, surroundings, and passage of the immediate moment. Do not invent player speech, consent, intent, emotion, waking action, or any mechanical consequence.`;
-      } else {
-        const result = cs.phase === "victory" ? "You won — every foe is slain or down."
-          : cs.phase === "resolved" ? "The fight ended without a slaughter — see the report for each foe's fate (yielded / fled / knocked out)."
-          : "You broke off and fled the fight.";
-        msg = `${report}
-
-[COMBAT OVER] ${result} At ${place}. Narrate the immediate aftermath STRICTLY from the [COMBAT REPORT] — name the actual foe(s) and their exact fates, the room's reaction, your state — then leave the moment open for the player to react. A foe that yielded is present, beaten, and at your mercy: refer to THEM by name; do NOT introduce or substitute a different character to take the foe's place. Do not restart combat.`;
-      }
-      const policyOptions = {
-        route: "combat-aftermath",
-      };
-      const { beat } = await narrateSpecialized(next, msg, policyOptions);
-      setPendingAftermath(null);
-      if (!beat) return;
-      if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
+      const { beat } = await narrateSpecialized(
+        liveStateRef.current,
+        claimed.job.payload.message,
+        { route: claimed.job.route },
+      );
+      const done = completePresentation(liveStateRef.current.presentationJobs || [], {
+        jobId: claimed.job.id,
+        attemptId: claimed.job.attemptId,
+      });
+      const settledState = { ...liveStateRef.current, presentationJobs: done.queue };
+      liveStateRef.current = settledState;
+      setState(settledState);
+      if (beat?.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
-      // The settlement is already applied and the factual report is already in the story, so
-      // a failed narration costs prose and nothing else. Offering the retry here is what
-      // keeps that true: without it the fight would simply end without a scene, and the
-      // player would have no way to ask for one.
-      setPendingAftermath({ message: msg, reason: e.message || String(e) });
+      const released = releasePresentation(liveStateRef.current.presentationJobs || [], {
+        jobId: claimed.job.id,
+        attemptId: claimed.job.attemptId,
+        errorCode: "presentation-failed",
+      });
+      const failedState = { ...liveStateRef.current, presentationJobs: released.queue };
+      liveStateRef.current = failedState;
+      setState(failedState);
+      setPendingAftermath({ reason: e.message || String(e) });
       setError(null);
     } finally {
       setLoading(false);
     }
   }
 
-  /** Ask again for an aftermath scene that failed to arrive. Settlement is untouched. */
+  /** Ask again for a scene that failed to arrive. Settlement is untouched either way. */
   async function handleRetryAftermath() {
-    const pending = pendingAftermath;
-    if (!pending || loading) return;
+    if (loading) return;
     setPendingAftermath(null);
-    setError(null);
-    setLoading(true);
-    try {
-      const { beat } = await narrateSpecialized(
-        liveStateRef.current,
-        pending.message,
-        { route: "combat-aftermath" },
-      );
-      if (beat?.start_combat) setPendingEngage({ dir: beat.start_combat });
-    } catch (e) {
-      setPendingAftermath({ message: pending.message, reason: e.message || String(e) });
-    } finally {
-      setLoading(false);
-    }
+    await runPresentationWorker();
+  }
+
+  /**
+   * Decline the scene for good.
+   *
+   * The debt is durable, so declining has to clear it rather than hide the banner — a job
+   * left pending would offer itself again on the next load, which is nagging rather than
+   * resilience. The settlement and the factual Chronicle are untouched.
+   */
+  function handleDismissAftermath() {
+    setPendingAftermath(null);
+    const base = liveStateRef.current;
+    const next = {
+      ...base,
+      presentationJobs: (base.presentationJobs || []).filter(
+        (job) => job.status !== "pending" && job.status !== "failed",
+      ),
+    };
+    liveStateRef.current = next;
+    setState(next);
   }
 
   // Deliberately search the fallen: grant the spoils, then let the narrator
@@ -3898,7 +3976,7 @@ export function Solitaire() {
             </button>
           </div>
         )}
-        {state.created !== false && pendingAftermath && !combat && (
+        {state.created !== false && owedPresentation && !combat && (
           <div className="tow-aftermath-retry fade-in" role="status" style={{
             margin: "0 12px 8px", padding: "11px 14px",
             backgroundColor: "rgba(20,29,29,0.82)", border: "1px solid rgba(215,167,111,0.4)",
@@ -3911,7 +3989,7 @@ export function Solitaire() {
               </div>
               <div style={{ fontSize: "13px", color: "#e8e2d4", lineHeight: 1.35 }}>
                 The fight is settled and its outcome is recorded above — only the telling of it
-                failed ({pendingAftermath.reason}).
+                failed ({pendingAftermath?.reason || owedPresentation.lastErrorCode || "no reason recorded"}).
               </div>
             </div>
             <button type="button" onClick={handleRetryAftermath} disabled={loading} style={{
@@ -3920,7 +3998,7 @@ export function Solitaire() {
             }}>
               Tell it again
             </button>
-            <button type="button" onClick={() => setPendingAftermath(null)} disabled={loading} style={{
+            <button type="button" onClick={handleDismissAftermath} disabled={loading} style={{
               padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
               border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
             }}>

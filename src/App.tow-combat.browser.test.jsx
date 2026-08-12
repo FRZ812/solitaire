@@ -439,6 +439,58 @@ describe("an unreadable saved fight", () => {
   });
 });
 
+describe("the scene is owed even if the tab dies", () => {
+  async function settleWithFailingNarrator(mounted) {
+    const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
+    for (let round = 0; round < 8; round += 1) {
+      const strike = strikeButton(dialog);
+      if (!strike || dialog.querySelector(".production-combat__outcome")) break;
+      await click(strike);
+      if (dialog.querySelector(".production-combat__outcome")) break;
+      await click(endTurnButton(dialog));
+    }
+    await waitFor(() => dialog.querySelector(".production-combat__outcome"));
+    await click([...dialog.querySelectorAll(".production-combat__settle")]
+      .find((button) => !/end turn/i.test(button.textContent)));
+    return waitFor(() => {
+      const saved = harness.serverState.presentationJobs;
+      return saved?.length ? saved : null;
+    });
+  }
+
+  it("records the debt in the same commit as the settlement", async () => {
+    harness.narratorFails = true;
+    const jobs = await settleWithFailingNarrator(await mountCampaign());
+
+    // Settled, and the prose it owes is written down beside the receipt rather than living
+    // only in the call that just failed.
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].kind).toBe("combat-aftermath");
+    expect(jobs[0].sourceReceiptId).toBe("tow-browser-campaign:combat:1");
+    expect(jobs[0].payload.message).toContain("[COMBAT REPORT]");
+    // The attempt failed, so it is back in the queue with the reason recorded.
+    expect(jobs[0].status).toBe("pending");
+    expect(jobs[0].attempts).toBe(1);
+    expect(jobs[0].lastErrorCode).toBe("presentation-failed");
+  });
+
+  it("pays the debt on a later attempt without re-settling anything", async () => {
+    harness.narratorFails = true;
+    await settleWithFailingNarrator(await mountCampaign());
+
+    // A new tab, the provider working again: the outstanding job is paid.
+    harness.narratorFails = false;
+    await unmountCampaign();
+    const mounted = await mountCampaign();
+    const retry = await waitFor(() => mounted.querySelector(".tow-aftermath-retry"));
+    await click([...retry.querySelectorAll("button")].find((b) => /Tell it again/.test(b.textContent)));
+
+    await waitFor(() => harness.serverState.presentationJobs?.[0]?.status === "presented");
+    // Exactly one settlement throughout: paying for prose never re-settles a fight.
+    expect(harness.serverState.combatSettlementReceipts).toHaveLength(1);
+  });
+});
+
 describe("when the telling fails", () => {
   it("keeps the settlement, states the facts, and offers to try again", async () => {
     // The plan's stated failure path: if narration fails, show the factual result and a
