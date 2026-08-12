@@ -9,6 +9,7 @@
 
 import { deriveCombatStats } from "../../engine/combat-stats.js";
 import { createStatusStack } from "../kernel/status-stack.js";
+import { admitTowEncounter } from "./admission.js";
 
 export const PROVISIONAL_BRIDGE_POLICY = Object.freeze({
   // Tower of Winter actors have one attack number; Solitaire weapons have a damage band.
@@ -139,19 +140,16 @@ function attackTableFor(actorId, min, max) {
 /**
  * Whether a Solitaire encounter can run on the Tower of Winter kernel as it stands.
  *
- * This is deliberately narrower than "has enemies". Mechanics with no port yet — player
- * abilities, conditions, racial passives, companions — must keep their old behaviour
- * rather than being silently dropped on the floor by a kernel that cannot express them.
+ * This used to answer for itself, with its own list of what the kernel could not express.
+ * That made it a second source of truth beside the support matrix, and the two drifted the
+ * moment conditions gained adapters — one file said a wounded character could not fight
+ * while the other carried their wounds into the fight.
+ *
+ * So it delegates. `admitTowEncounter` decides, this reports the first objective blocker,
+ * and there is one answer to the question rather than two that agree by luck.
  */
 export function towEncounterSupport({ character, party, enemies } = {}) {
-  if (!Array.isArray(enemies) || enemies.length === 0) return { ok: false, reason: "no-enemies" };
-  if (Array.isArray(party) && party.length > 0) return { ok: false, reason: "unsupported-companions" };
-  if (character?.abilities?.length) return { ok: false, reason: "unsupported-player-abilities" };
-  if (character?.conditions?.length) return { ok: false, reason: "unsupported-player-conditions" };
-  if (character?.racialPassives?.length) return { ok: false, reason: "unsupported-racial-passives" };
-  const unsupported = enemies.find((enemy) => (
-    enemy?.abilities?.length || enemy?.statuses?.length || enemy?.procs?.length
-  ));
-  if (unsupported) return { ok: false, reason: "unsupported-enemy-mechanics" };
-  return { ok: true, reason: null };
+  const admission = admitTowEncounter({ character, party: party || [], enemies });
+  if (admission.supported) return { ok: true, reason: null };
+  return { ok: false, reason: admission.blockers[0].code };
 }

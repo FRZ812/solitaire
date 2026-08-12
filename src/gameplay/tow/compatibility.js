@@ -104,20 +104,31 @@ export const DOMAIN_RULES = Object.freeze({
   }),
   "player-ability": rule({
     domain: "player-ability",
-    support: SUPPORT.REFUSED,
+    support: SUPPORT.ABSENT,
     fidelity: FIDELITY.EXTENDED,
-    reason: "towEncounterSupport returns unsupported-player-abilities. The legacy ability "
-      + "catalogue has no port to the trait/skill model, and a fight that dropped a "
-      + "character's abilities would be an easier fight than the world described.",
-    source: "src/gameplay/tow/solitaire-bridge.js",
+    reason: "Superseded by the profession's Tower of Winter package, which is the combat "
+      + "identity by design rather than by omission. admitTowEncounter records each "
+      + "superseded ability by name, so the substitution is inspectable instead of silent; "
+      + "the ability stays fully real everywhere outside a fight.",
+    source: "src/gameplay/tow/admission.js",
+  }),
+  "racial-passive": rule({
+    domain: "racial-passive",
+    support: SUPPORT.ABSENT,
+    fidelity: FIDELITY.EXTENDED,
+    reason: "Racial passives are computed in progression code with no combat rule attached. "
+      + "admitTowEncounter records each one as superseded by the package rather than letting "
+      + "it disappear between the character sheet and the fight.",
+    source: "src/gameplay/tow/admission.js",
   }),
   condition: rule({
     domain: "condition",
-    support: SUPPORT.REFUSED,
+    support: SUPPORT.ADAPTED,
     fidelity: FIDELITY.EXTENDED,
-    reason: "towEncounterSupport returns unsupported-player-conditions. Conditions have no "
-      + "status-stack equivalent yet; several would materially change a fight.",
-    source: "src/gameplay/tow/solitaire-bridge.js",
+    reason: "Each authored condition maps to an opening Tower of Winter status, or is "
+      + "recorded as having no combat expression with a stated reason. A condition with no "
+      + "entry blocks admission, so a newly authored debuff cannot silently do nothing.",
+    source: "src/gameplay/tow/admission.js",
   }),
 });
 
@@ -203,15 +214,11 @@ export function capabilityInventory() {
 /** Domains this matrix does not yet enumerate, each with why. */
 export const UNCOVERED_DOMAINS = Object.freeze([
   Object.freeze({
-    domain: "racial-passive",
-    reason: "towEncounterSupport returns unsupported-racial-passives. There is no single "
-      + "catalogue export to enumerate from; the passives are computed per race in "
-      + "progression code, so enumeration is Phase 1 work alongside the build compiler.",
-  }),
-  Object.freeze({
     domain: "companion",
-    reason: "towEncounterSupport returns unsupported-companions. The kernel has no ally "
-      + "actor side, so no companion behaviour can be classified as supported yet.",
+    reason: "The kernel has no allied actor side, so no companion behaviour can be "
+      + "classified as supported yet. admitTowEncounter records each companion as not "
+      + "fielded and tells the player they held back, so the absence is a stated fact "
+      + "rather than a companion who simply fails to appear.",
   }),
   Object.freeze({
     domain: "enemy-mechanic",

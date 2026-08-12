@@ -83,6 +83,7 @@ const SESSION_KEYS = Object.freeze([
 ].sort());
 
 const CONTEXT_KEYS = Object.freeze([
+  "admission",
   "campaignRevision",
   "detectionFacts",
   "directiveId",
@@ -226,7 +227,17 @@ function isContext(value) {
     && value.lootPolicy.ownedUniqueIds.every((id) => typeof id === "string")
     && isLootSources(value.lootPolicy.sources)
     && exactKeys(value.rewardPolicy, ["proficiencyId"])
-    && optionalIdentifier(value.rewardPolicy.proficiencyId);
+    && optionalIdentifier(value.rewardPolicy.proficiencyId)
+    && exactKeys(value.admission, ["notes", "version"])
+    && Number.isSafeInteger(value.admission.version)
+    && Array.isArray(value.admission.notes)
+    && value.admission.notes.every((entry) => (
+      Boolean(entry)
+      && typeof entry === "object"
+      && !Array.isArray(entry)
+      && identifier(entry.disposition)
+      && identifier(entry.code)
+    ));
 }
 
 /**
@@ -281,6 +292,13 @@ export function towCombatContext(input = {}) {
       ),
     },
     rewardPolicy: { proficiencyId: input.rewardPolicy?.proficiencyId ?? null },
+    // What this fight decided not to carry, and why. Durable so that "the companion held
+    // back" and "the ability was superseded by the package" survive a reload as recorded
+    // facts rather than as things nobody wrote down.
+    admission: {
+      version: Number.isSafeInteger(input.admission?.version) ? input.admission.version : 1,
+      notes: [...(input.admission?.notes || [])],
+    },
   };
 }
 

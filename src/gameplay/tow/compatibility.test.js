@@ -18,6 +18,7 @@ import { fusionIds, traitIds } from "./traits.js";
 import { passiveSkillIds, skillIds } from "./skills.js";
 import { mappedProfessionIds } from "./professions.js";
 import { towEncounterSupport } from "./solitaire-bridge.js";
+import { admitTowEncounter } from "./admission.js";
 import {
   capabilityInventory,
   DOMAIN_RULES,
@@ -140,33 +141,72 @@ describe("the matrix stays honest about what it does not cover", () => {
   });
 });
 
-describe("a refused classification matches what admission actually does", () => {
+describe("a classification matches what admission actually does", () => {
+  // The matrix is only worth having if it describes the code. Rather than asserting a
+  // particular verdict, each of these checks that the classification and the behaviour say
+  // the same thing — so changing one without the other fails here, in either direction.
   const enemies = [{ name: "Foe" }];
 
-  it("refuses player abilities, as the ability domain claims", () => {
-    expect(DOMAIN_RULES["player-ability"].support).toBe(SUPPORT.REFUSED);
+  it("does not block on a capability it classifies as absent or adapted", () => {
+    const softDomains = ["player-ability", "racial-passive", "condition"];
+    for (const domain of softDomains) {
+      expect([SUPPORT.ABSENT, SUPPORT.ADAPTED]).toContain(DOMAIN_RULES[domain].support);
+    }
     const anyAbility = ABILITY_CATALOG[0].id;
-    expect(towEncounterSupport({ character: { abilities: [anyAbility] }, party: [], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-player-abilities" });
-  });
-
-  it("refuses conditions, as the condition domain claims", () => {
-    expect(DOMAIN_RULES.condition.support).toBe(SUPPORT.REFUSED);
     const anyCondition = Object.keys(CONDITIONS)[0];
     expect(towEncounterSupport({
-      character: { conditions: [{ name: anyCondition }] },
+      character: {
+        abilities: [anyAbility],
+        conditions: [{ name: anyCondition }],
+        racialPassives: ["darkvision"],
+      },
       party: [],
       enemies,
-    })).toMatchObject({ ok: false, reason: "unsupported-player-conditions" });
+    })).toEqual({ ok: true, reason: null });
   });
 
-  it("refuses the domains listed as uncovered for an admission reason", () => {
-    expect(towEncounterSupport({ character: { racialPassives: ["x"] }, party: [], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-racial-passives" });
-    expect(towEncounterSupport({ character: {}, party: ["ally"], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-companions" });
+  it("carries an adapted condition into the fight rather than merely allowing it", () => {
+    // "Adapted" is a claim that the capability arrives in a changed shape. If nothing
+    // arrived, the honest classification would be absent.
+    const admission = admitTowEncounter({
+      character: { conditions: ["Bleeding"] },
+      party: [],
+      enemies,
+    });
+    expect(DOMAIN_RULES.condition.support).toBe(SUPPORT.ADAPTED);
+    expect(admission.openingStatuses.length).toBeGreaterThan(0);
+  });
+
+  it("records every absent capability instead of letting it disappear", () => {
+    const admission = admitTowEncounter({
+      character: { abilities: [ABILITY_CATALOG[0].id], racialPassives: ["darkvision"] },
+      party: [],
+      enemies,
+    });
+    const recorded = admission.notes.map((entry) => entry.code);
+    expect(recorded).toContain("ability-superseded-by-package");
+    expect(recorded).toContain("racial-passive-superseded-by-package");
+  });
+
+  it("still refuses what genuinely cannot run, with an objective code", () => {
+    expect(towEncounterSupport({ character: {}, party: [], enemies: [] }))
+      .toMatchObject({ ok: false, reason: "no-enemies" });
     expect(towEncounterSupport({ character: {}, party: [], enemies: [{ abilities: ["roar"] }] }))
       .toMatchObject({ ok: false, reason: "unsupported-enemy-mechanics" });
+    expect(towEncounterSupport({
+      character: { conditions: ["Not An Authored Condition"] },
+      party: [],
+      enemies,
+    })).toMatchObject({ ok: false, reason: "unsupported-condition" });
+  });
+
+  it("names an uncovered domain that admission still declines to field", () => {
+    // Companions are the remaining honest gap: recorded, told to the player, not fielded.
+    const companion = UNCOVERED_DOMAINS.find((gap) => gap.domain === "companion");
+    expect(companion).toBeTruthy();
+    const admission = admitTowEncounter({ character: {}, party: [{ id: "ally" }], enemies });
+    expect(admission.supported).toBe(true);
+    expect(admission.notes.map((entry) => entry.code)).toContain("companion-not-admitted");
   });
 
   it("admits a plain fighter against plain foes", () => {

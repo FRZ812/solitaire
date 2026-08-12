@@ -97,6 +97,7 @@ import { regionDifficulty } from "./data/regions.js";
 import { hashSeed } from "./engine/combat-rng.js";
 import { applyLoot, lootCtx, rollLoot } from "./engine/combat-loot.js";
 import { emptyMechanicsSidecar, hasMechanicsSidecar } from "./engine/campaign-migration.js";
+import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admission.js";
 import { dispatchTowCommand } from "./gameplay/tow/commands.js";
 import { sealTowTerminalReceipt, worldFatesByParticipant } from "./gameplay/tow/outcomes.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
@@ -2936,11 +2937,26 @@ export function Solitaire() {
     // reload, which is the difference between settling this fight correctly and not at all.
     const actorIds = enemies.map((_, index) => `foe-${index}`);
     const lethal = extraOpts.lethal !== false;
+    // Nothing walks into a fight unaccounted for. Conditions become opening statuses, so a
+    // bleeding character bleeds; anything the encounter deliberately does not carry is
+    // recorded by name; and anything it genuinely cannot run stops the fight with a reason
+    // instead of quietly making the player stronger than the world described.
+    const admission = admitTowEncounter({
+      character: st.character,
+      party: st.party || [],
+      enemies,
+    });
+    if (!admission.supported) {
+      const reasons = admission.blockers.map((entry) => entry.code).join(", ");
+      setError(`This fight cannot be run yet: ${reasons}.`);
+      return;
+    }
+    const player = towPlayerFromCharacter(st.character, st.world.codex, { id: "wanderer" });
     const opened = createTowSession({
       sessionId: `${currentCampaignId || "local"}:combat:${seed}`,
       rootSeed: seed,
       mode: "campaign",
-      player: towPlayerFromCharacter(st.character, st.world.codex, { id: "wanderer" }),
+      player: { ...player, statuses: [...player.statuses, ...admission.openingStatuses] },
       enemies: enemies.map((enemy, index) => towEnemyFromBestiary(enemy, { id: actorIds[index] })),
       build: towBuildForCharacter(st.character),
       context: {
@@ -2977,13 +2993,28 @@ export function Solitaire() {
           }])),
         },
         rewardPolicy: { proficiencyId: null },
+        admission: { version: admission.version, notes: admission.notes },
       },
     });
     if (!opened.ok) {
       setError(`The fight could not start: ${opened.reason}.`);
       return;
     }
-    commitTowSession(opened.session);
+    const notice = admissionPlayerNotice(admission);
+    const committed = commitTowSession(opened.session);
+    // A companion who stays out of a fight is a fact the player should be told, not one
+    // they have to notice by counting who is swinging.
+    if (notice) {
+      const withNotice = {
+        ...committed,
+        beats: [
+          ...(committed.beats || []),
+          { id: `tow-combat:${opened.session.sessionId}:companions`, type: "narration", content: notice },
+        ],
+      };
+      liveStateRef.current = withNotice;
+      setState(withNotice);
+    }
   }
 
   // A malformed sidecar is worse than a missing one: the campaign migration replaces it,

@@ -129,20 +129,35 @@ describe("admission", () => {
       .toEqual({ ok: true, reason: null });
   });
 
-  it("refuses what the kernel cannot yet express, rather than dropping it", () => {
+  it("refuses what the kernel cannot express, rather than dropping it", () => {
     const enemies = [{ name: "Foe" }];
     expect(towEncounterSupport({ character: {}, party: [], enemies: [] }))
       .toMatchObject({ ok: false, reason: "no-enemies" });
-    expect(towEncounterSupport({ character: {}, party: ["ally"], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-companions" });
-    expect(towEncounterSupport({ character: { abilities: ["cleave"] }, party: [], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-player-abilities" });
-    expect(towEncounterSupport({ character: { conditions: [{ name: "Bleeding" }] }, party: [], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-player-conditions" });
-    expect(towEncounterSupport({ character: { racialPassives: ["darkvision"] }, party: [], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-racial-passives" });
     expect(towEncounterSupport({ character: {}, party: [], enemies: [{ abilities: ["roar"] }] }))
       .toMatchObject({ ok: false, reason: "unsupported-enemy-mechanics" });
+    // A condition nobody has decided about is the fail-closed case that stops a newly
+    // authored debuff from silently doing nothing.
+    expect(towEncounterSupport({
+      character: { conditions: [{ name: "Unclassified Affliction" }] },
+      party: [],
+      enemies,
+    })).toMatchObject({ ok: false, reason: "unsupported-condition" });
+  });
+
+  it("carries what it can adapt instead of refusing the whole fight", () => {
+    // Abilities, racial passives and companions no longer block. The package is the combat
+    // identity, and admission records each of them by name rather than dropping them in
+    // silence; conditions arrive as opening statuses. Delegating to admission is what keeps
+    // this file and that one from ever disagreeing about which is which.
+    expect(towEncounterSupport({
+      character: {
+        abilities: ["cleave"],
+        conditions: [{ name: "Bleeding" }],
+        racialPassives: ["darkvision"],
+      },
+      party: ["ally"],
+      enemies: [{ name: "Foe" }],
+    })).toEqual({ ok: true, reason: null });
   });
 
   it("admits a multi-enemy group, which the old adapter could not", () => {
@@ -157,8 +172,9 @@ describe("admission", () => {
 describe("a real Solitaire fight runs on the kernel end to end", () => {
   it("fights a generated bandit group to a terminal outcome", () => {
     const { character, codex } = world();
-    // A plain fighter: the kernel has no port for abilities, conditions or racial
-    // passives yet, and admission is meant to refuse them rather than drop them.
+    // A plain fighter, so this test measures the bridge rather than the adapters: abilities
+    // and racial passives are superseded by the package, and conditions arrive as opening
+    // statuses, all of which admission covers on its own.
     const plain = { ...character, abilities: [], conditions: [], racialPassives: [] };
     const group = generateEnemyGroup("bandits", { power: 2, maxTier: "common" });
 
