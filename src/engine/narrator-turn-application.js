@@ -1,4 +1,5 @@
 import { applyBeat } from "./beat.js";
+import { resolveNarratorIntents } from "../gameplay/campaign/command-gateway.js";
 import { consumeCompiledNarratorTurn } from "./narrator-turn-compiler.js";
 import { narratorStateRevision } from "./narrator-projection.js";
 import { storyFromResponse } from "./narrative-sequence.js";
@@ -65,16 +66,35 @@ export function applyCompiledNarratorTurn(
   turn,
   { acceptTerminalEffect = false } = {},
 ) {
-  const policy = consumeCompiledNarratorTurn(turn, narratorStateRevision(state), "apply");
+  const revision = narratorStateRevision(state);
+  const policy = consumeCompiledNarratorTurn(turn, revision, "apply");
+
+  // One door. Every mechanical field crosses the gateway before anything is applied, and a
+  // refused field is stripped here rather than complained about afterwards — which is what
+  // makes a refusal an actual refusal and not a note attached to a change that happened.
+  const governed = resolveNarratorIntents(state, turn, { stateRevision: revision });
+  const admitted = governed.turn;
+
   const terminalEffect = policy?.continuation?.terminalEffect;
-  const reducerTurn = terminalEffect && turn[terminalEffect] != null && !acceptTerminalEffect
-    ? { ...turn, [terminalEffect]: null }
-    : turn;
+  const reducerTurn = terminalEffect && admitted[terminalEffect] != null && !acceptTerminalEffect
+    ? { ...admitted, [terminalEffect]: null }
+    : admitted;
   const reduced = applyBeat(state, reducerTurn);
-  const settled = turn.assassination?.outcome === "killed"
-    ? applyAuthorizedAssassinationDeath(reduced, turn.assassination)
+  const settled = admitted.assassination?.outcome === "killed"
+    ? applyAuthorizedAssassinationDeath(reduced, admitted.assassination)
     : reduced;
-  return withNarratorContinuation(settled, turn, policy);
+  const continued = withNarratorContinuation(settled, admitted, policy);
+  // Refusals are recorded on the state so a player can be told their beat was trimmed, and
+  // so a support report has something to read.
+  return governed.refused
+    ? { ...continued, lastIntentRefusals: governed.refusals }
+    : withoutRefusals(continued);
+}
+
+function withoutRefusals(state) {
+  if (!("lastIntentRefusals" in state)) return state;
+  const { lastIntentRefusals: _cleared, ...rest } = state;
+  return rest;
 }
 
 export function applyCompiledNarratorPresentation(

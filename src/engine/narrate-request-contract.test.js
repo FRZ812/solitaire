@@ -340,6 +340,20 @@ describe("narrator application trust boundary", () => {
     }
   });
 
+  it("puts every narrator turn through one gateway before applying it", () => {
+    // The whole point of the gateway is that there is exactly one door. A second application
+    // path would be a second door, and the receipts would stop describing what happened.
+    const applicationSource = readFileSync(
+      new URL("./narrator-turn-application.js", import.meta.url),
+      "utf8",
+    );
+    expect(applicationSource).toContain("resolveNarratorIntents(state, turn,");
+    // The reducer sees the governed turn, never the raw one.
+    expect(applicationSource).toContain("const reduced = applyBeat(state, reducerTurn)");
+    expect(applicationSource).toMatch(/const admitted = governed\.turn/);
+    expect(applicationSource).not.toMatch(/applyBeat\(state,\s*turn\)/);
+  });
+
   it("selects sought combat in the engine before asking the narrator to render it", () => {
     expect(appSource).toContain("const soughtKind = pickHostileKind(stateWithPlayer)");
     expect(appSource).toContain("foes: [{ kind: soughtKind, count: 1 }]");

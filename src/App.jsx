@@ -100,6 +100,7 @@ import { emptyMechanicsSidecar, hasMechanicsSidecar } from "./engine/campaign-mi
 import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admission.js";
 import { compileCharacterBootstrap } from "./gameplay/tow/character-bootstrap.js";
 import { claimReward, compileRewardOffer, rerollRewardOffer, rewardSeedFor } from "./gameplay/tow/rewards.js";
+import { refusalNotice } from "./gameplay/campaign/command-gateway.js";
 import {
   claimPresentation,
   completePresentation,
@@ -4120,6 +4121,15 @@ export function Solitaire() {
                 Discard unreadable fight
               </button>
             )}
+          </div>
+        )}
+        {state.created !== false && state.lastIntentRefusals?.length > 0 && (
+          <div className="tow-intent-refusals fade-in" role="status" style={{
+            margin: "0 12px 8px", padding: "9px 14px",
+            backgroundColor: "rgba(35,25,15,0.75)", border: "1px solid rgba(215,167,111,0.35)",
+            borderRadius: 12, fontSize: "12px", color: "#e8dcc4", lineHeight: 1.4,
+          }}>
+            {refusalNotice(state.lastIntentRefusals)}
           </div>
         )}
         {state.created !== false && state.pendingReward && !combat && (
