@@ -5,6 +5,8 @@ import {
   MAX_NARRATED_MINUTES,
   OWNER_MODE,
   PASS_THROUGH_REASONS,
+  ROUTE_INTENT_ALLOWLISTS,
+  routeAllows,
   gatewayCoverage,
   refusalNotice,
   resolveNarratorIntents,
@@ -470,5 +472,60 @@ describe("what becomes fact for every later prompt", () => {
     expect(receiptFor(stranger, "knowledge_updates"))
       .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "knowledge-about-a-stranger" });
     expect(stranger.turn.knowledge_updates).toBe(null);
+  });
+});
+
+describe("what a route is even allowed to ask for", () => {
+  it("lets an aftermath narrator tell the story and change nothing", () => {
+    // The exit gate this exists for. The fight is settled, the Chronicle is written, and the
+    // prompt says not to apply mechanics — but saying it is instruction, and instruction is
+    // not enforcement. An empty allowlist makes it true.
+    const result = resolveNarratorIntents(
+      campaign(),
+      turnWith({ vitality_change: 5, minutes_passed: 10, new_conditions: ["Bleeding"] }),
+      { route: "combat-aftermath" },
+    );
+    for (const field of ["vitality_change", "minutes_passed", "new_conditions"]) {
+      expect(receiptFor(result, field), field)
+        .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "not-allowed-on-route" });
+      expect(result.turn[field], field).toBe(null);
+    }
+    expect(ROUTE_INTENT_ALLOWLISTS["combat-aftermath"]).toEqual([]);
+  });
+
+  it("refuses on scope before it ever asks whether the value was legal", () => {
+    // A perfectly legal five-minute passage is still refused on a route with no business
+    // moving the clock, and the reason says which of the two it was.
+    const result = resolveNarratorIntents(
+      campaign(), turnWith({ minutes_passed: 5 }), { route: "trade-presentation" },
+    );
+    expect(receiptFor(result, "minutes_passed").reason).toBe("not-allowed-on-route");
+  });
+
+  it("lets looting a body have consequences, because its prompt invites them", () => {
+    const result = resolveNarratorIntents(
+      campaign(),
+      turnWith({ new_conditions: ["Bleeding"], attribute_changes: { body: 1 } }),
+      { route: "loot-fallout" },
+    );
+    expect(receiptFor(result, "new_conditions").status).toBe(INTENT_STATUS.APPLIED);
+    // But only the consequences it invites; growth is not one of them.
+    expect(receiptFor(result, "attribute_changes").reason).toBe("not-allowed-on-route");
+  });
+
+  it("leaves the main story turn unconstrained", () => {
+    // Narrowing where the game is actually played belongs to the owners, not a blanket list.
+    expect(routeAllows(null, "minutes_passed")).toBe(true);
+    expect(routeAllows("some-unlisted-route", "vitality_change")).toBe(true);
+    const result = resolveNarratorIntents(campaign(), turnWith({ minutes_passed: 30 }));
+    expect(receiptFor(result, "minutes_passed").status).toBe(INTENT_STATUS.APPLIED);
+  });
+
+  it("names every constrained route deliberately", () => {
+    // A route appears here only when its scope has been read off its own prompt.
+    expect(Object.keys(ROUTE_INTENT_ALLOWLISTS).sort()).toEqual([
+      "combat-aftermath", "combat-search-presentation", "loot-fallout",
+      "scry-presentation", "trade-presentation",
+    ]);
   });
 });

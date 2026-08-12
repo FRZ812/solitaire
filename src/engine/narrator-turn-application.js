@@ -72,7 +72,12 @@ export function applyCompiledNarratorTurn(
   // One door. Every mechanical field crosses the gateway before anything is applied, and a
   // refused field is stripped here rather than complained about afterwards — which is what
   // makes a refusal an actual refusal and not a note attached to a change that happened.
-  const governed = resolveNarratorIntents(state, turn, { stateRevision: revision });
+  const governed = resolveNarratorIntents(state, turn, {
+    stateRevision: revision,
+    // The route decides what may even be asked for. A presentation route whose outcome the
+    // engine already committed has nothing left to raise.
+    route: policy?.id ?? null,
+  });
   const admitted = governed.turn;
 
   const terminalEffect = policy?.continuation?.terminalEffect;

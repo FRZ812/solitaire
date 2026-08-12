@@ -477,6 +477,41 @@ export const PASS_THROUGH_REASONS = Object.freeze({
     + "it as a gateway intent as well would give one decision two owners.",
 });
 
+/**
+ * What each route is allowed to ask for at all.
+ *
+ * Separate from the owners, and prior to them. An owner answers "is this a legal value";
+ * a route allowlist answers "is this route even in the business of asking". The aftermath
+ * narrator is the clearest case: the fight is already settled, the Chronicle is already
+ * written, and the prompt says in so many words not to apply mechanics — but saying it is
+ * instruction, and instruction is not enforcement. An empty list makes it true.
+ *
+ * A route absent from this table is unconstrained, which is the right default: the main
+ * story turn is where the game is actually played, and narrowing it belongs to the owners
+ * rather than to a blanket list. Only routes whose scope has been read off their own prompt
+ * appear here.
+ */
+export const ROUTE_INTENT_ALLOWLISTS = Object.freeze({
+  // Presentation of an outcome the engine has already committed. Nothing left to decide.
+  "combat-aftermath": Object.freeze([]),
+  "combat-search-presentation": Object.freeze([]),
+  "trade-presentation": Object.freeze([]),
+  "scry-presentation": Object.freeze([]),
+
+  // Looting a body happens somewhere, in front of someone, and the prompt explicitly invites
+  // the fallout: the watch arriving, a wound taken, a hurried departure.
+  "loot-fallout": Object.freeze([
+    "minutes_passed", "new_conditions", "location_update", "tile_move", "start_combat",
+    "relationship_changes",
+  ]),
+});
+
+/** Whether this route may raise this field at all. */
+export function routeAllows(route, field) {
+  const allowed = ROUTE_INTENT_ALLOWLISTS[route];
+  return allowed === undefined || allowed.includes(field);
+}
+
 function ownerFor(field) {
   if (Object.hasOwn(ENFORCED, field)) {
     return { mode: OWNER_MODE.ENFORCED, resolve: ENFORCED[field] };
@@ -506,9 +541,9 @@ export function gatewayCoverage() {
  *
  * @param {object} state campaign state the turn is being applied to
  * @param {object} turn the compiled narrator turn
- * @param {{stateRevision?: number}} context
+ * @param {{stateRevision?: number, route?: string}} context
  */
-export function resolveNarratorIntents(state, turn, { stateRevision = 0 } = {}) {
+export function resolveNarratorIntents(state, turn, { stateRevision = 0, route = null } = {}) {
   const receipts = [];
   let accepted = turn;
 
@@ -516,6 +551,14 @@ export function resolveNarratorIntents(state, turn, { stateRevision = 0 } = {}) 
     const present = turn?.[field] !== undefined && turn?.[field] !== null;
     if (!present) {
       receipts.push(receipt(field, INTENT_STATUS.ABSENT, null, stateRevision));
+      continue;
+    }
+    // Scope before legality: a route that has no business raising a field is refused
+    // whatever the value would have been.
+    if (route && !routeAllows(route, field)) {
+      if (accepted === turn) accepted = { ...turn };
+      accepted[field] = null;
+      receipts.push(receipt(field, INTENT_STATUS.REFUSED, "not-allowed-on-route", stateRevision, { route }));
       continue;
     }
     const owner = ownerFor(field);
