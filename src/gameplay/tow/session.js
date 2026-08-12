@@ -22,7 +22,7 @@
 // the loot stream noticing.
 
 import { cloneJsonData } from "../kernel/json-data.js";
-import { createRng } from "../kernel/rng.js";
+import { createRng, nextFloat } from "../kernel/rng.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { createTowEncounter, isTowEncounter } from "./encounter.js";
 
@@ -416,6 +416,49 @@ export function markTowSessionSettled(session, settlementId) {
     checksum: null,
   });
   return { ok: true, reason: null, session: settled, duplicate: false };
+}
+
+/**
+ * A stateful generator over one named stream, for code that expects `Math.random`.
+ *
+ * The loot roller and everything under it take a plain zero-argument function, so a seeded
+ * stream has to be adapted to that shape rather than the other way round — rewriting four
+ * data modules into the functional RNG would be a much larger change for the same result.
+ * The endpoint is readable afterwards, so what the settlement spent is recorded rather than
+ * inferred.
+ */
+export function streamSequencer(start) {
+  let current = { ...start };
+  return {
+    random() {
+      const draw = nextFloat(current);
+      current = draw.rng;
+      return draw.value;
+    },
+    endpoint() {
+      return { ...current };
+    },
+  };
+}
+
+/**
+ * Record what a settlement spent from a session-held stream.
+ *
+ * Only `loot` and `rewards` live on the session, and only settlement spends them, so this
+ * is the one place they move. Anything else touching them would show up immediately as a
+ * replay divergence.
+ */
+export function spendTowSessionStream(session, name, endpoint) {
+  if (!TOW_SESSION_STREAMS.includes(name)) {
+    return { ok: false, reason: "unknown-session-stream", session };
+  }
+  if (!isRngState(endpoint)) return { ok: false, reason: "invalid-stream-endpoint", session };
+  const next = sealTowSession({
+    ...session,
+    streams: { ...session.streams, [name]: { ...endpoint } },
+    checksum: null,
+  });
+  return { ok: true, reason: null, session: next };
 }
 
 export function isTowSession(value) {

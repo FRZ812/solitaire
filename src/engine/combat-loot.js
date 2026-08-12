@@ -11,7 +11,13 @@ import { rollItemPassives, RUNES } from "../data/passives.js";
 import { itemTemplate } from "../data/catalog.js";
 import { coinsToCopper, copperToCoins } from "./economy.js";
 
-const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+const randInt = (min, max, random) => min + Math.floor(random() * (max - min + 1));
+
+// A short readable suffix, drawn from the caller's generator rather than from
+// Math.random, so two runs of the same settlement mint the same instance ids.
+function idSuffix(random) {
+  return Math.floor(random() * 0x10000).toString(36).padStart(4, "0").slice(-4);
+}
 
 // Loot context lifted off the combat state (region ceiling, owned uniques, coin
 // bonus) — passed to rollLoot so the same roll can be reproduced from a snapshot.
@@ -43,11 +49,11 @@ const LOOT_TYPES = [
   { kind: "trinket",  slot: "ring",     nouns: ["Ring", "Band", "Signet"],                             combat: (m) => ({ ward: r(1 * m), dodge: r(0.8 * m) }) },
 ];
 
-function generateLootItem(tierId) {
-  const t = LOOT_TYPES[Math.floor(Math.random() * LOOT_TYPES.length)];
-  const noun = t.nouns[Math.floor(Math.random() * t.nouns.length)];
+function generateLootItem(tierId, random) {
+  const t = LOOT_TYPES[Math.floor(random() * LOOT_TYPES.length)];
+  const noun = t.nouns[Math.floor(random() * t.nouns.length)];
   const name = `${TIER_ADJ[tierId] || "Plain"} ${noun}`;
-  const id = `${tierId}-${noun.toLowerCase()}-${Math.random().toString(36).slice(2, 6)}`;
+  const id = `${tierId}-${noun.toLowerCase()}-${idSuffix(random)}`;
   return {
     id,
     entry: {
@@ -55,18 +61,21 @@ function generateLootItem(tierId) {
       appearance: `${tierLabel(tierId)}-grade ${noun.toLowerCase()}, taken in battle.`,
       description: `A ${tierLabel(tierId).toLowerCase()} ${noun.toLowerCase()} recovered from a foe.`,
       combat: t.combat(tierMult(tierId)),
-      passives: rollItemPassives(tierId, { luck: 0.1 }),
+      passives: rollItemPassives(tierId, { luck: 0.1, random }),
     },
   };
 }
 
 export function rollLoot(sources, opts = {}) {
-  const { maxLootTier = null, region = 1, owned = new Set(), coinBonus = 0 } = opts;
+  // `random` is injectable so a settlement can spend a named, recorded stream instead of a
+  // global generator. Defaulting to Math.random keeps every caller that has not been taught
+  // about streams behaving exactly as it did.
+  const { maxLootTier = null, region = 1, owned = new Set(), coinBonus = 0, random = Math.random } = opts;
   let copper = 0;
   let maxTier = "common";
   for (const e of sources) {
     const ord = tierInfo(e.tier).order;
-    copper += randInt(2, 8) * (1 + ord);
+    copper += randInt(2, 8, random) * (1 + ord);
     if (tierInfo(e.tier).order > tierInfo(maxTier).order) maxTier = e.tier;
     if (tierInfo(e.maxLootTier).order > tierInfo(maxTier).order) maxTier = e.maxLootTier;
   }
@@ -74,19 +83,19 @@ export function rollLoot(sources, opts = {}) {
   if (maxLootTier && tierInfo(maxTier).order > tierInfo(maxLootTier).order) maxTier = maxLootTier;
 
   const items = [];
-  if (sources.length > 0 && Math.random() < ITEM_DROP_CHANCE) {
-    const li = generateLootItem(rollTier(maxTier, 0.1));
+  if (sources.length > 0 && random() < ITEM_DROP_CHANCE) {
+    const li = generateLootItem(rollTier(maxTier, 0.1, random), random);
     items.push({ itemId: li.id, entry: li.entry, quantity: 1 });
   }
   let ability = null;
-  if (sources.length > 0 && Math.random() < ABILITY_DROP_CHANCE) {
-    const id = randomAbilityId();
+  if (sources.length > 0 && random() < ABILITY_DROP_CHANCE) {
+    const id = randomAbilityId(null, random);
     const def = getAbilityDef(id);
     // Floor-gated apex abilities only drop where the loot ceiling can support
     // their minimum grade — never as a weak low-tier copy; otherwise clamp up.
     const minOrd = def?.minTier ? tierInfo(def.minTier).order : 0;
     if (tierInfo(maxTier).order >= minOrd) {
-      let tier = rollTier(maxTier, 0.2);
+      let tier = rollTier(maxTier, 0.2, random);
       if (tierInfo(tier).order < minOrd) tier = def.minTier;
       ability = { id, tier, name: def?.name || id };
     }
@@ -95,21 +104,21 @@ export function rollLoot(sources, opts = {}) {
   // Named/unique drops from specific foe kinds + deep regions (never the random
   // pool). A unique ability supersedes the random one; a unique item is extra.
   if (sources.length > 0) {
-    const uniq = rollUniques({ kinds: sources.map((e) => e.kind), region, owned, mult: UNIQUE_DROP_CHANCE });
+    const uniq = rollUniques({ kinds: sources.map((e) => e.kind), region, owned, mult: UNIQUE_DROP_CHANCE, random });
     if (uniq.item) items.push(uniq.item);
     if (uniq.ability) ability = uniq.ability;
   }
 
   // Forge-runes (affix-Fusion catalyst) — rare trophies of the mighty: deep
   // regions, epic+ loot ceiling, low chance. Never bought; only earned.
-  if (sources.length > 0 && region >= RUNE_DROP_MIN_REGION && tierInfo(maxTier).order >= tierInfo("epic").order && Math.random() < RUNE_DROP_CHANCE) {
+  if (sources.length > 0 && region >= RUNE_DROP_MIN_REGION && tierInfo(maxTier).order >= tierInfo("epic").order && random() < RUNE_DROP_CHANCE) {
     const runeIds = Object.keys(RUNES).filter((id) => id !== "greater-rune-of-ascension");
-    const rune = RUNES[runeIds[Math.floor(Math.random() * runeIds.length)]];
+    const rune = RUNES[runeIds[Math.floor(random() * runeIds.length)]];
     items.push({ itemId: rune.id, entry: rune, quantity: 1 });
   }
   // The god-forged apex rune (divine-tier fusion catalyst) — only off divine-grade
   // kills, vanishingly rare. The reward for slaying the fabled.
-  if (sources.length > 0 && tierInfo(maxTier).order >= tierInfo("divine").order && Math.random() < RUNE_DROP_CHANCE * 0.4) {
+  if (sources.length > 0 && tierInfo(maxTier).order >= tierInfo("divine").order && random() < RUNE_DROP_CHANCE * 0.4) {
     const gr = RUNES["greater-rune-of-ascension"];
     items.push({ itemId: gr.id, entry: gr, quantity: 1 });
   }
@@ -121,7 +130,7 @@ export function rollLoot(sources, opts = {}) {
     for (const g of (e.gear || [])) {
       const baseItem = itemTemplate(g.id);
       if (!baseItem) continue;
-      const uid = `${g.id}-${Math.random().toString(36).slice(2, 6)}`;
+      const uid = `${g.id}-${idSuffix(random)}`;
       items.push({ itemId: uid, entry: { ...baseItem, id: uid, tier: g.tier || baseItem.tier || "common" }, quantity: 1 });
     }
   }

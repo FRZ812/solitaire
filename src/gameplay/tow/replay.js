@@ -185,21 +185,28 @@ export function verifyTowSession(session) {
   // two the session carries are compared independently, which is the point of splitting
   // them. A loot endpoint that moved during a fight would mean something spent the wrong
   // generator — a telegraph draw reaching into the spoils.
-  const expectedStreams = { ...session.streams };
-  const replayedStreams = {
-    // Nothing in a fight spends these, so a faithful replay leaves them at the seeds genesis
-    // derived. Deriving rather than copying is deliberate: copying them from the session
-    // would make this comparison vacuous.
-    loot: seedEndpoint(session, "loot"),
-    rewards: seedEndpoint(session, "rewards"),
-  };
-  const streamDiff = firstJsonDifference(expectedStreams, replayedStreams, "streams");
-  if (streamDiff) {
-    return {
-      ok: false,
-      reason: "replay-stream-divergence",
-      divergence: { reason: "replay-stream-divergence", commandSeq: lastSeq, commandId: lastId, ...streamDiff },
+  //
+  // Only up to settlement, though. Settlement is where the loot stream is legitimately
+  // spent, and replaying that spend means replaying the loot roll itself — a separate
+  // contract from replaying the fight. Until then, an unmoved endpoint is exactly what a
+  // faithful replay should find.
+  if (session.status !== "settled") {
+    const expectedStreams = { ...session.streams };
+    const replayedStreams = {
+      // Nothing in a fight spends these, so a faithful replay leaves them at the seeds
+      // genesis derived. Deriving rather than copying is deliberate: copying them from the
+      // session would make this comparison vacuous.
+      loot: seedEndpoint(session, "loot"),
+      rewards: seedEndpoint(session, "rewards"),
     };
+    const streamDiff = firstJsonDifference(expectedStreams, replayedStreams, "streams");
+    if (streamDiff) {
+      return {
+        ok: false,
+        reason: "replay-stream-divergence",
+        divergence: { reason: "replay-stream-divergence", commandSeq: lastSeq, commandId: lastId, ...streamDiff },
+      };
+    }
   }
 
   const expectedReceipt = session.terminalReceipt;

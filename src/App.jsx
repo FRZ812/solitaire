@@ -101,7 +101,12 @@ import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admissi
 import { dispatchTowCommand } from "./gameplay/tow/commands.js";
 import { sealTowTerminalReceipt, worldFatesByParticipant } from "./gameplay/tow/outcomes.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
-import { createTowSession, markTowSessionSettled } from "./gameplay/tow/session.js";
+import {
+  createTowSession,
+  markTowSessionSettled,
+  spendTowSessionStream,
+  streamSequencer,
+} from "./gameplay/tow/session.js";
 import { towEnemyFromBestiary, towPlayerFromCharacter } from "./gameplay/tow/solitaire-bridge.js";
 import { towBuildForCharacter } from "./gameplay/tow/professions.js";
 import { settleTowEncounter } from "./gameplay/tow/settlement.js";
@@ -3256,25 +3261,34 @@ export function Solitaire() {
     let next = settled.ok ? settled.state : state;
     // Spoils are rolled from the foes that actually fell, and are never auto-taken —
     // the player still chooses to search them.
+    //
+    // The roll spends the session's own named loot stream rather than a global generator,
+    // so the same fight yields the same spoils however many times it is settled, and what
+    // was spent is recorded on the session instead of being lost to Math.random.
+    let closing = session;
     if (cs.phase === "victory" && !epicDeath) {
       const fallen = cs.enemyIds
         .filter((enemyId) => cs.actors[enemyId].hp <= 0)
         .map((enemyId) => ctx.lootPolicy.sources[enemyId])
         .filter(Boolean);
       if (fallen.length > 0) {
+        const spoils = streamSequencer(session.streams.loot);
         const manifest = rollLoot(fallen, {
           maxLootTier: ctx.lootPolicy.maxLootTier,
           region: ctx.lootPolicy.region,
           owned: new Set(ctx.lootPolicy.ownedUniqueIds),
           coinBonus: ctx.lootPolicy.coinBonus,
+          random: spoils.random,
         });
+        const spent = spendTowSessionStream(closing, "loot", spoils.endpoint());
+        if (spent.ok) closing = spent.session;
         next = { ...next, pendingLoot: manifest };
       }
     }
     // The session stays in state, marked settled, so a reload between here and the
     // aftermath lands on a fight that is already decided and already folded in — the
     // settlement receipt refuses a second attempt either way.
-    const closed = markTowSessionSettled(session, session.sessionId);
+    const closed = markTowSessionSettled(closing, closing.sessionId);
     next = withTowCombat(
       // A permanent death ends the run before anything is narrated. Presentation renders a
       // fact that is already canonical; it never gets to decide one.

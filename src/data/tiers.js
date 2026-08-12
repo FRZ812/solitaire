@@ -32,12 +32,12 @@ export function tierOrder(id) { return tier(id).order; }
 
 // Weighted random tier, capped at maxTierId (inclusive). `luck` (0..1) nudges
 // the roll toward rarer tiers by inflating the high-end weights.
-export function rollTier(maxTierId = "legendary", luck = 0) {
+export function rollTier(maxTierId = "legendary", luck = 0, random = Math.random) {
   const cap = tierOrder(maxTierId);
   const pool = TIERS.filter((t) => t.order <= cap);
   const weights = pool.map((t) => t.weight * (1 + luck * t.order * 0.6));
   const total = weights.reduce((s, w) => s + w, 0);
-  let r = Math.random() * total;
+  let r = random() * total;
   for (let i = 0; i < pool.length; i++) {
     r -= weights[i];
     if (r <= 0) return pool[i].id;

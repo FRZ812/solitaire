@@ -115,19 +115,19 @@ function matches(drop, kinds, region) {
 // Roll the unique drops for one victory. `kinds` = defeated foe kinds, `region`
 // = difficulty band level, `owned` = ids the character already holds (no dupes),
 // `mult` = global chance multiplier. Returns at most one item and one ability.
-export function rollUniques({ kinds = [], region = 1, owned = new Set(), mult = 1 } = {}) {
-  const item = pickOne(UNIQUE_ITEMS.filter((u) => !owned.has(u.entry.id) && matches(u.drop, kinds, region)), (u) => u.drop.chance * mult);
-  const ability = pickOne(UNIQUE_ABILITIES.filter((a) => !owned.has(a.id) && matches(a.drop, kinds, region)), (a) => a.drop.chance * mult);
+export function rollUniques({ kinds = [], region = 1, owned = new Set(), mult = 1, random = Math.random } = {}) {
+  const item = pickOne(UNIQUE_ITEMS.filter((u) => !owned.has(u.entry.id) && matches(u.drop, kinds, region)), (u) => u.drop.chance * mult, random);
+  const ability = pickOne(UNIQUE_ABILITIES.filter((a) => !owned.has(a.id) && matches(a.drop, kinds, region)), (a) => a.drop.chance * mult, random);
   return {
     item: item ? { itemId: item.entry.id, entry: stripDropMeta(item.entry), quantity: 1 } : null,
     ability: ability ? { id: ability.id, tier: ability.tier || "legendary", name: ability.name } : null,
   };
 }
 
-function pickOne(candidates, chanceOf) {
+function pickOne(candidates, chanceOf, random = Math.random) {
   // Independent rolls; if several hit, take a random winner.
-  const hits = candidates.filter((c) => Math.random() < chanceOf(c));
+  const hits = candidates.filter((c) => random() < chanceOf(c));
   if (hits.length === 0) return null;
-  return hits[Math.floor(Math.random() * hits.length)];
+  return hits[Math.floor(random() * hits.length)];
 }
 function stripDropMeta(entry) { const { ...rest } = entry; return rest; }

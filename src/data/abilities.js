@@ -1577,11 +1577,11 @@ export function resolveLearned(entry) {
 }
 
 // Random LIBRARY ability id (never a unique), optionally filtered by school.
-export function randomAbilityId(schools = null) {
+export function randomAbilityId(schools = null, random = Math.random) {
   // Innate powers and specialization-exclusive workings are never taught or
   // dropped. The latter enter a kit only through a resolved progression choice.
   const base = ABILITY_LIBRARY.filter((a) => !a.innate && !a.branchExclusive && !a.progressionExclusive);
   const pool = schools ? base.filter((a) => schools.includes(a.school)) : base;
   if (pool.length === 0) return base[0].id;
-  return pool[Math.floor(Math.random() * pool.length)].id;
+  return pool[Math.floor(random() * pool.length)].id;
 }
