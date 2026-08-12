@@ -17,9 +17,12 @@ import {
   verifyMigrationReadBack,
 } from "./campaign-migration.js";
 
+// A campaign saved before the sidecar existed. A fresh initial state now ships with one,
+// so the fixture has to strip it back off to be the thing the migration is written for.
 function legacyCampaign() {
   const state = makeInitialState();
   state.created = true;
+  delete state.mechanics;
   return JSON.parse(JSON.stringify(state));
 }
 

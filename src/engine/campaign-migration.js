@@ -35,7 +35,21 @@ export function emptyMechanicsSidecar() {
     bootstrapId: null,
     bootstrapOrigin: null,
     build: null,
+    tow: emptyTowMechanics(),
   };
+}
+
+/**
+ * The Tower of Winter slot inside the sidecar, holding the durable combat session.
+ *
+ * It starts null and stays null through migration. A fight that was in progress under the
+ * old shape genuinely cannot be recovered — the encounter lived in React state and the
+ * context in a ref, and neither was ever written anywhere. Initialising this honestly to
+ * null is the only truthful option; inventing a session from a half-remembered fight would
+ * hand the player a fight that never happened.
+ */
+export function emptyTowMechanics() {
+  return { activeCombat: null };
 }
 
 export function hasMechanicsSidecar(state) {
@@ -46,6 +60,11 @@ export function hasMechanicsSidecar(state) {
     && !Array.isArray(sidecar)
     && sidecar.version === MECHANICS_SIDECAR_VERSION,
   );
+}
+
+function hasTowMechanics(state) {
+  const tow = state?.mechanics?.tow;
+  return Boolean(tow && typeof tow === "object" && !Array.isArray(tow) && "activeCombat" in tow);
 }
 
 /**
@@ -70,6 +89,9 @@ export function migrateCampaignState(state) {
   }
 
   if (!hasMechanicsSidecar(next)) next.mechanics = emptyMechanicsSidecar();
+  // Backfilled separately: a campaign already carrying a sidecar from the build migration
+  // still predates the combat slot, and would otherwise never gain one.
+  if (!hasTowMechanics(next)) next.mechanics = { ...next.mechanics, tow: emptyTowMechanics() };
 
   return { ok: true, reason: null, state: next };
 }

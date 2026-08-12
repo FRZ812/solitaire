@@ -15,7 +15,7 @@ import { cloneJsonData } from "../kernel/json-data.js";
 export const MAX_TOW_SETTLEMENT_RECEIPTS = 256;
 
 function rejected(reason, state, receipt = null) {
-  return { ok: false, reason, state, receipt };
+  return { ok: false, reason, state, receipt, duplicate: reason === "tow-encounter-already-settled" };
 }
 
 function ownedReceipt(value) {
@@ -46,15 +46,19 @@ function proficiencyGains(encounter, proficiencyId) {
  *
  * @param {object} state campaign state
  * @param {object} encounter a terminal TOW encounter
- * @param {{encounterId: string, proficiencyId?: string, npcIds?: Record<string,string>}} context
+ * @param {{encounterId: string, proficiencyId?: string, npcIds?: Record<string,string>,
+ *   lethal?: boolean, worldFates?: Record<string,"alive"|"dead">}} context
  *   `npcIds` maps encounter actor ids to codex character ids, for foes that are real people.
+ *   `worldFates` is the terminal receipt's per-participant verdict; where it names an actor
+ *   it decides that actor's fate, because a fight can be lethal for one person in it and
+ *   not for another.
  */
 export function settleTowEncounter(state, encounter, context = {}) {
   // Lethality belongs to the fiction that started the fight, not to the encounter — a
   // brawl and a duel to the death resolve identically on the kernel and differ only in
   // what zero health means afterwards. Defaulting to lethal keeps a caller that has not
   // been taught the distinction behaving as it always did.
-  const { encounterId, proficiencyId = null, npcIds = {}, lethal = true } = context;
+  const { encounterId, proficiencyId = null, npcIds = {}, lethal = true, worldFates = {} } = context;
   if (typeof encounterId !== "string" || encounterId.length === 0) {
     return rejected("invalid-encounter-id", state);
   }
@@ -129,9 +133,10 @@ export function settleTowEncounter(state, encounter, context = {}) {
         maxHealth: enemy.maxHp,
         // A foe beaten in a nonlethal fight is unconscious, not a corpse. Recording them
         // dead is unrecoverable: the codex loses a person the player deliberately spared,
-        // and they can never return.
+        // and they can never return. Where the terminal receipt named this person's fate,
+        // that is the answer; the blanket flag only stands in for callers that have none.
         status: enemy.hp <= 0
-          ? (lethal ? "dead" : "downed")
+          ? ((worldFates[enemyId] ? worldFates[enemyId] === "dead" : lethal) ? "dead" : "downed")
           : enemy.hp < enemy.maxHp ? "wounded" : "ok",
       },
     };

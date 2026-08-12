@@ -12,6 +12,11 @@ import {
 } from "./continent.js";
 import { PROFESSIONS } from "./professions.js";
 import { migratePortraitOverrides } from "../engine/portrait-overrides.js";
+import {
+  emptyMechanicsSidecar,
+  emptyTowMechanics,
+  hasMechanicsSidecar,
+} from "../engine/campaign-migration.js";
 import { playableRosterCharacters, withoutSelectedPlayableCharacter } from "./playable-roster.js";
 import { migrateProgressionState } from "../engine/progression.js";
 import { normalizeMemoryBank } from "../engine/memory.js";
@@ -917,6 +922,9 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
     pendingTravelCombat: null,
     productionCombatSequence: 0,
     combatSettlementReceipts: [],
+    // The Tower of Winter sidecar: the durable build, and the fight in progress. A fight
+    // used to live in component state, so it lasted exactly as long as the tab did.
+    mechanics: emptyMechanicsSidecar(),
     portraitOverrides: {},
     created: false, // false until the opening character-creation interview finishes
     beats: [{
@@ -1011,6 +1019,10 @@ export function migrateCodex(state) {
   if (next.pendingTravelCombat === undefined) next.pendingTravelCombat = null;
   if (next.productionCombatSequence === undefined) next.productionCombatSequence = 0;
   if (next.combatSettlementReceipts === undefined) next.combatSettlementReceipts = [];
+  // Backfilled in two steps because a campaign can predate either the sidecar or just its
+  // combat slot: the build migration shipped first and left the slot for this one.
+  if (!hasMechanicsSidecar(next)) next.mechanics = emptyMechanicsSidecar();
+  if (!next.mechanics.tow) next.mechanics = { ...next.mechanics, tow: emptyTowMechanics() };
   if (
     !Number.isSafeInteger(next.productionCombatSequence)
     || next.productionCombatSequence < 0

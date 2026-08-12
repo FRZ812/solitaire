@@ -1,0 +1,297 @@
+// The command boundary: the only way a fight changes.
+//
+// Before this, a click called the reducer and React kept whatever came back. That works
+// until two of them race — an autosave, a double-tap, a reload mid-turn — and then the same
+// swing lands twice, or a swing lands against a fight that has already moved on. Neither is
+// detectable after the fact, because nothing recorded which inputs the state was built from.
+//
+// So every accepted input is an identified, sequenced record:
+//
+//   validate  — is this command legal against *this* revision of the session?
+//   resolve   — run it, producing events and stream endpoints, touching nothing
+//   apply     — commit: append the command, bump the revision, reseal
+//
+// Two properties fall out and both matter for play. A command carrying an ID that has
+// already been accepted is a no-op that returns the original state, so the double-tap is
+// free. A command carrying a revision that is no longer current is refused, so the swing
+// against a stale fight cannot land.
+//
+// Resolution and application are still fused inside `encounter.js`: the reducer applies its
+// own events as it produces them. The boundary is named and enforced here — nothing else
+// may call the reducer — and the split lands inside the reducer when it is decomposed. What
+// is already true is that no state reaches the session except through this file, and every
+// byte of it is reproducible from the commands recorded alongside it.
+
+import { cloneJsonData } from "../kernel/json-data.js";
+import { gameplayChecksum } from "../kernel/replay.js";
+import { endTurn as encounterEndTurn, useSkill as encounterUseSkill } from "./encounter.js";
+import {
+  MAX_TOW_COMMANDS,
+  TOW_RULESET_ID,
+  sealTowSession,
+} from "./session.js";
+
+export const TOW_COMMAND_VERSION = 1;
+
+/**
+ * Every command type the session schema admits.
+ *
+ * `attempt-retreat` and `accept-surrender` are declared but not yet resolvable: neither has
+ * an authored rule, and the terminal resolver's `fled`/`yielded` states are reached in a
+ * later phase. They are listed rather than omitted so an attempt is refused with a reason a
+ * player can read, instead of falling through to "nothing happened".
+ */
+export const TOW_COMMAND_TYPES = Object.freeze([
+  "use-skill",
+  "end-turn",
+  "attempt-retreat",
+  "accept-surrender",
+]);
+
+const RESOLVABLE_COMMAND_TYPES = Object.freeze(["use-skill", "end-turn"]);
+
+const COMMAND_INPUT_KEYS = Object.freeze([
+  "actorId",
+  "expectedRevision",
+  "id",
+  "skillId",
+  "targetId",
+  "type",
+].sort());
+
+const MAX_IDENTIFIER_LENGTH = 256;
+
+function identifier(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= MAX_IDENTIFIER_LENGTH;
+}
+
+function refused(reason, session) {
+  return { ok: false, reason, session, command: null, events: [], duplicate: false };
+}
+
+/**
+ * Normalise a caller's command into the exact durable input shape.
+ *
+ * Unknown keys are dropped rather than carried: a command is a replay input, and an extra
+ * field that survives into the log is a field replay would have to reproduce.
+ */
+export function towCommand(input = {}) {
+  return {
+    id: input.id,
+    expectedRevision: input.expectedRevision,
+    type: input.type,
+    actorId: input.actorId ?? null,
+    skillId: input.skillId ?? null,
+    targetId: input.targetId ?? null,
+  };
+}
+
+function isCommandInput(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value).sort();
+  if (keys.length !== COMMAND_INPUT_KEYS.length) return false;
+  if (keys.some((key, index) => key !== COMMAND_INPUT_KEYS[index])) return false;
+  return identifier(value.id)
+    && TOW_COMMAND_TYPES.includes(value.type)
+    && Number.isSafeInteger(value.expectedRevision)
+    && value.expectedRevision >= 0
+    && (value.actorId === null || identifier(value.actorId))
+    && (value.skillId === null || identifier(value.skillId))
+    && (value.targetId === null || identifier(value.targetId));
+}
+
+/**
+ * Is this command legal against this exact revision of this session?
+ *
+ * Legality is decided here and nowhere else. A disabled button is a courtesy, not a rule —
+ * the same command arriving from a replay, a stale tab, or a test has to meet the same bar.
+ */
+export function validateTowCommand(session, command) {
+  if (!session || typeof session !== "object") return { ok: false, reason: "invalid-session" };
+  if (!isCommandInput(command)) return { ok: false, reason: "invalid-command" };
+
+  if (session.status === "settled") return { ok: false, reason: "session-settled" };
+  if (session.status === "terminal" || session.encounter.phase !== "player") {
+    return { ok: false, reason: "encounter-over" };
+  }
+  if (session.commands.some((entry) => entry.id === command.id)) {
+    return { ok: false, reason: "duplicate-command" };
+  }
+  if (command.expectedRevision !== session.revision) {
+    return { ok: false, reason: "stale-revision" };
+  }
+  if (session.commands.length >= MAX_TOW_COMMANDS) {
+    return { ok: false, reason: "command-limit-exceeded" };
+  }
+  // Phase 2 fields one commanding actor. An allied party is a later phase, and accepting a
+  // command for an actor the session has no model of would write a fight nobody can replay.
+  if (command.actorId !== null && command.actorId !== session.encounter.playerId) {
+    return { ok: false, reason: "unknown-actor" };
+  }
+  if (!RESOLVABLE_COMMAND_TYPES.includes(command.type)) {
+    if (command.type === "attempt-retreat" && session.context.retreatPolicy === "forbidden") {
+      return { ok: false, reason: "retreat-not-admitted" };
+    }
+    if (command.type === "accept-surrender") {
+      return { ok: false, reason: "no-surrender-offered" };
+    }
+    return { ok: false, reason: "unsupported-command-type" };
+  }
+  if (command.type === "use-skill" && !identifier(command.skillId)) {
+    return { ok: false, reason: "invalid-skill" };
+  }
+  return { ok: true, reason: null };
+}
+
+/**
+ * The canonical events one command produced.
+ *
+ * The encounter keeps its own append-only log; a command records the range it appended. So
+ * every event is attributable to the command that caused it without storing the log twice,
+ * and an event that belongs to no command — the combat-start traits that fire before the
+ * player has done anything — is honestly reported as such.
+ */
+export function towCommandEvents(session, command) {
+  return session.encounter.events
+    .slice(command.eventsFrom, command.eventsTo)
+    .map((entry) => ({
+      ...entry,
+      eventSequence: entry.sequence,
+      commandId: command.id,
+      rulesetId: session.rulesetId,
+    }));
+}
+
+/** Every event in the session, each stamped with the command that caused it. */
+export function towSessionEvents(session) {
+  const owner = new Map();
+  for (const command of session.commands) {
+    for (let at = command.eventsFrom; at < command.eventsTo; at += 1) owner.set(at, command.id);
+  }
+  return session.encounter.events.map((entry, index) => ({
+    ...entry,
+    eventSequence: entry.sequence,
+    commandId: owner.get(index) ?? null,
+    rulesetId: session.rulesetId,
+  }));
+}
+
+/**
+ * Run a validated command without committing anything.
+ *
+ * Returns the encounter the command would produce and the stream endpoints it would leave.
+ * On refusal nothing has moved — in particular no stream has advanced, which is what makes
+ * "an illegal command costs nothing" true rather than merely intended.
+ */
+export function resolveTowCommand(session, command) {
+  return resolveTowCommandOnEncounter(session.encounter, command);
+}
+
+/**
+ * The reducer call itself, against a bare encounter.
+ *
+ * Replay verification goes through this exact function rather than a parallel one, so a
+ * verified session is verified against the code that will actually run it — a second
+ * implementation could agree with the recording and still disagree with production.
+ */
+export function resolveTowCommandOnEncounter(before, command) {
+  let result;
+  if (command.type === "use-skill") {
+    result = encounterUseSkill(before, command.skillId, command.targetId);
+  } else if (command.type === "end-turn") {
+    result = encounterEndTurn(before);
+  } else {
+    return { ok: false, reason: "unsupported-command-type", encounter: before, streams: {} };
+  }
+  if (!result.ok) return { ok: false, reason: result.reason, encounter: before, streams: {} };
+
+  const after = result.state;
+  // Only streams that actually moved are recorded, so a command that spent no randomness
+  // does not look like one that did.
+  const streams = {};
+  if (after.rng.state !== before.rng.state) streams.combat = { ...after.rng };
+  return { ok: true, reason: null, encounter: after, streams };
+}
+
+/**
+ * Commit a resolution: append the command, bump the revision, reseal the session.
+ *
+ * The revision and the accepted-command count move together by construction. That is what
+ * lets `stale-revision` be trusted — there is no way to advance one without the other.
+ */
+export function applyTowResolution(session, command, resolution) {
+  const accepted = {
+    ...command,
+    seq: session.commands.length,
+    eventsFrom: session.encounter.sequence,
+    eventsTo: resolution.encounter.sequence,
+    streams: resolution.streams,
+    // The encounter's own hash after this command. Replay compares these in order, so a
+    // divergence is localised to the exact command that caused it rather than to the end.
+    stateChecksum: gameplayChecksum(resolution.encounter),
+  };
+  const terminal = resolution.encounter.phase !== "player";
+  return sealTowSession({
+    ...session,
+    status: terminal ? "terminal" : "active",
+    revision: session.revision + 1,
+    commands: [...session.commands, accepted],
+    encounter: resolution.encounter,
+    checksum: null,
+  });
+}
+
+/**
+ * The one entry point a fight changes through.
+ *
+ * @returns {{ok: boolean, reason: string|null, session: object, command: object|null,
+ *   events: Array<object>, duplicate: boolean}}
+ *   On refusal the session comes back untouched. On a duplicate the original session comes
+ *   back with the original command's events, so a retry is indistinguishable from the first
+ *   success — which is exactly what an interrupted save needs on resume.
+ */
+export function dispatchTowCommand(session, input) {
+  let command;
+  try {
+    command = cloneJsonData(towCommand(input), "invalid-command");
+  } catch {
+    return refused("invalid-command", session);
+  }
+  if (!isCommandInput(command)) return refused("invalid-command", session);
+
+  const prior = session?.commands?.find?.((entry) => entry.id === command.id);
+  if (prior) {
+    // Exactly-once. The command already landed; replaying it must not resolve it again, and
+    // must not report failure either — the caller's intent was satisfied.
+    return {
+      ok: true,
+      reason: null,
+      session,
+      command: prior,
+      events: towCommandEvents(session, prior),
+      duplicate: true,
+    };
+  }
+
+  const legal = validateTowCommand(session, command);
+  if (!legal.ok) return refused(legal.reason, session);
+
+  const resolution = resolveTowCommand(session, command);
+  if (!resolution.ok) return refused(resolution.reason, session);
+
+  const next = applyTowResolution(session, command, resolution);
+  const accepted = next.commands[next.commands.length - 1];
+  return {
+    ok: true,
+    reason: null,
+    session: next,
+    command: accepted,
+    events: towCommandEvents(next, accepted),
+    duplicate: false,
+  };
+}
+
+/** The ruleset a command log was accepted under; a replay under another is not a replay. */
+export function commandLogRulesetId(session) {
+  return session?.rulesetId ?? TOW_RULESET_ID;
+}

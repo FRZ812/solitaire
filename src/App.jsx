@@ -96,7 +96,11 @@ import { generateEnemyGroup, enemyFromNPC } from "./data/bestiary.js";
 import { regionDifficulty } from "./data/regions.js";
 import { hashSeed } from "./engine/combat-rng.js";
 import { applyLoot, lootCtx, rollLoot } from "./engine/combat-loot.js";
-import { createTowEncounter, endTurn as towEndTurn, useSkill as towUseSkill } from "./gameplay/tow/encounter.js";
+import { emptyMechanicsSidecar, hasMechanicsSidecar } from "./engine/campaign-migration.js";
+import { dispatchTowCommand } from "./gameplay/tow/commands.js";
+import { sealTowTerminalReceipt, worldFatesByParticipant } from "./gameplay/tow/outcomes.js";
+import { decodeTowSession } from "./gameplay/tow/persistence.js";
+import { createTowSession, markTowSessionSettled } from "./gameplay/tow/session.js";
 import { towEnemyFromBestiary, towPlayerFromCharacter } from "./gameplay/tow/solitaire-bridge.js";
 import { towBuildForCharacter } from "./gameplay/tow/professions.js";
 import { settleTowEncounter } from "./gameplay/tow/settlement.js";
@@ -657,14 +661,36 @@ export function Solitaire() {
     });
   }
 
-  // Combat: `combat` holds the active turn-state (null = not fighting);
-  // `pendingCombat` is a hostile encounter offering a fight before it starts.
-  const [combat, setCombat] = useState(null);
+  // Combat: the fight is durable campaign state, not component state. It used to be a
+  // `useState` for the encounter beside a `useRef` for its context, and both were gone the
+  // moment the page reloaded — the fight with them, and with the context the ability to
+  // settle the fight correctly at all. `pendingCombat` is still a hostile encounter
+  // offering a fight before one has been admitted.
   const [pendingLoot, setPendingLoot] = useState(null); // spoils to deliberately Search
   const [productionCombatFeedback, setProductionCombatFeedback] = useState(null);
   const [referenceGameplayFeedback, setReferenceGameplayFeedback] = useState(null);
   const [referencePersistenceFeedback, setReferencePersistenceFeedback] = useState(null);
-  const combatCtxRef = useRef(null);
+  const [towCombatFeedback, setTowCombatFeedback] = useState(null);
+
+  // The saved fight is decoded on every read rather than trusted. A payload that fails the
+  // codec becomes a visible, recoverable error — never a silent "no combat in progress",
+  // which to the player is indistinguishable from the engine eating their encounter.
+  const storedTowCombat = state.mechanics?.tow?.activeCombat ?? null;
+  const towCombat = useMemo(
+    () => (storedTowCombat == null
+      ? { ok: false, reason: "no-active-tow-combat", session: null }
+      : decodeTowSession(storedTowCombat)),
+    [storedTowCombat],
+  );
+  const combatSession = towCombat.ok ? towCombat.session : null;
+  // A settled session stays in state as the durable record that this fight is finished —
+  // that is what a reload between the last blow and the aftermath needs to land on — but it
+  // is no longer a fight, so nothing that asks "are we fighting" may see it.
+  const combat = combatSession && combatSession.status !== "settled"
+    ? combatSession.encounter
+    : null;
+  const towCombatInvalid = storedTowCombat != null && !towCombat.ok;
+
   const referenceGameplaySave = state.referenceGameplaySave;
   const referenceGameplayAttempt = state.referenceGameplayAttempt;
   const referenceGameplayCampaignSeed = state.referenceGameplayCampaignSeed;
@@ -1319,9 +1345,10 @@ export function Solitaire() {
     setHydrated(false);
     // Reset in-memory game state so the next account signed in on this browser
     // can't inherit the previous user's character/beats/apiHistory (and so the
-    // debounced autosave can't write user-A's state into user-B's campaign).
+    // debounced autosave can't write user-A's state into user-B's campaign). The fight
+    // goes with it, because the fight is part of that state now rather than beside it.
     setState(makeInitialState());
-    setCombat(null);
+    setTowCombatFeedback(null);
     lastSyncedStateRef.current = null;
     lastServerUpdatedAtRef.current = null;
     clearCampaignResume();
@@ -2903,29 +2930,102 @@ export function Solitaire() {
       st.turns?.length || st.beats?.length || 0,
       context?.flavor || enemies.map((enemy) => enemy.name).join("/"),
     ]);
-    // The encounter carries only actors and a build; the spoils context and the codex
-    // identities of the foes stay out here, so the kernel never learns about regions,
-    // loot tiers or NPC ids.
+    // The encounter still carries only actors and a build; the spoils context and the codex
+    // identities of the foes are the session's, so the kernel never learns about regions,
+    // loot tiers or NPC ids — and, unlike the ref they used to live in, they survive a
+    // reload, which is the difference between settling this fight correctly and not at all.
     const actorIds = enemies.map((_, index) => `foe-${index}`);
-    combatCtxRef.current = {
-      flavor: context?.flavor || enemies[0].name,
-      encounterId: `${currentCampaignId || "local"}:combat:${seed}`,
-      sources: enemies,
-      npcIds: Object.fromEntries(enemies.map((enemy, index) => [actorIds[index], enemy.npcId]).filter(([, id]) => id)),
-      lootOpts: {
-        maxLootTier: region.lootTier,
-        region: region.level,
-        owned: new Set(ownedUniqueIds(st)),
-        coinBonus: wp.coinBonus || 0,
-      },
-      lethal: extraOpts.lethal !== false,
-    };
-    setCombat(createTowEncounter({
-      seed,
+    const lethal = extraOpts.lethal !== false;
+    const opened = createTowSession({
+      sessionId: `${currentCampaignId || "local"}:combat:${seed}`,
+      rootSeed: seed,
+      mode: "campaign",
       player: towPlayerFromCharacter(st.character, st.world.codex, { id: "wanderer" }),
       enemies: enemies.map((enemy, index) => towEnemyFromBestiary(enemy, { id: actorIds[index] })),
       build: towBuildForCharacter(st.character),
-    }));
+      context: {
+        directiveId: context?.directiveId ?? null,
+        source: { kind: context?.sourceKind || "narrator", note: context?.flavor || enemies[0].name },
+        location: currentLocationName(st),
+        campaignRevision: st.turns?.length || st.beats?.length || 0,
+        participantBindings: Object.fromEntries(enemies.map((enemy, index) => [
+          actorIds[index],
+          { campaignEntityId: enemy.npcId ?? null, lethal: null },
+        ])),
+        hostilityFacts: {
+          initiator: extraOpts.ambush === "enemy" ? "enemy" : "player",
+          surprise: Boolean(extraOpts.ambush),
+        },
+        detectionFacts: { hidden: isHidden(st) },
+        lethalPolicy: lethal ? "lethal" : "nonlethal",
+        // Whether this fight can kill the player is decided here, before the first blow,
+        // and written into the admission. It used to be worked out at settlement from the
+        // foes' tiers — which meant the answer to "can I die here" was only available after
+        // dying, and could in principle have come out differently than when the player
+        // agreed to the fight.
+        playerStakes: lethal && isEpicEncounter(null, { sources: enemies }) ? "lethal" : "survivable",
+        retreatPolicy: "forbidden",
+        lootPolicy: {
+          maxLootTier: region.lootTier,
+          region: region.level,
+          coinBonus: wp.coinBonus || 0,
+          ownedUniqueIds: ownedUniqueIds(st),
+          sources: Object.fromEntries(enemies.map((enemy, index) => [actorIds[index], {
+            kind: enemy.kind ?? null,
+            maxLootTier: enemy.maxLootTier ?? null,
+            tier: enemy.tier ?? null,
+          }])),
+        },
+        rewardPolicy: { proficiencyId: null },
+      },
+    });
+    if (!opened.ok) {
+      setError(`The fight could not start: ${opened.reason}.`);
+      return;
+    }
+    commitTowSession(opened.session);
+  }
+
+  // A malformed sidecar is worse than a missing one: the campaign migration replaces it,
+  // and replacing it would take the fight with it. So the slot is always written onto a
+  // well-formed sidecar, whether or not this campaign has been migrated yet.
+  function withTowCombat(base, session) {
+    const sidecar = hasMechanicsSidecar(base) ? base.mechanics : emptyMechanicsSidecar();
+    return {
+      ...base,
+      mechanics: { ...sidecar, tow: { ...(sidecar.tow || {}), activeCombat: session } },
+    };
+  }
+
+  // Discarding an unreadable fight is the player's explicit act, never the engine's quiet
+  // one, and it says so in the story: an outcome nobody can reconstruct must not be applied,
+  // but the campaign should not pretend the encounter never happened either.
+  function handleDiscardInvalidTowCombat() {
+    if (!towCombatInvalid) return;
+    const base = liveStateRef.current;
+    const next = withTowCombat({
+      ...base,
+      beats: [
+        ...(base.beats || []),
+        {
+          id: `tow-combat-recovery:${base.beats?.length || 0}`,
+          type: "narration",
+          content: "The record of that fight could not be read back. It was discarded explicitly; no outcome, wound, or spoil was applied.",
+        },
+      ],
+    }, null);
+    setTowCombatFeedback(null);
+    liveStateRef.current = next;
+    setState(next);
+  }
+
+  /** Write a session into durable campaign state. The only path a fight is saved through. */
+  function commitTowSession(session) {
+    const next = withTowCombat(liveStateRef.current, session);
+    setTowCombatFeedback(null);
+    liveStateRef.current = next;
+    setState(next);
+    return next;
   }
 
   function tryStartProductionCombat({ enemies, directive, sourceKind, st }) {
@@ -2988,7 +3088,12 @@ export function Solitaire() {
     const ambush = dir.surprise ? (dir.initiator === "enemy" ? "enemy" : "player") : null;
     // Brawls (a barfight, "teach him a lesson") are bare-knuckle unless the
     // narrator flags it lethal; weapons can still be drawn mid-fight.
-    startCombat(enemies, { flavor: dir.note || groupFlavor(enemies) }, { ambush, lethal: dir.lethal !== false }, st);
+    startCombat(
+      enemies,
+      { flavor: dir.note || groupFlavor(enemies), sourceKind: "narrator" },
+      { ambush, lethal: dir.lethal !== false },
+      st,
+    );
   }
 
   // Looking for a fight is resolved by the engine first. The narrator renders the
@@ -3056,7 +3161,7 @@ export function Solitaire() {
       st: current,
     });
     if (production.status !== "fallback") return;
-    startCombat(enemies, { flavor: note }, ambush ? { ambush } : {}, current);
+    startCombat(enemies, { flavor: note, sourceKind: "travel" }, ambush ? { ambush } : {}, current);
   }
 
   // Slip past a hostile travel encounter unseen — only reliable when you're
@@ -3081,18 +3186,37 @@ export function Solitaire() {
   }
 
   async function handleResolveCombat() {
-    if (!combat) return;
-    const cs = combat;
-    const ctx = combatCtxRef.current || {};
-    // A defeat by a legendary-tier+ foe is a real, final death; every other defeat is a
-    // survivable outcome the settlement records as wounds.
-    const epicDeath = cs.phase === "defeat" && isEpicEncounter(cs, ctx) && ctx.lethal !== false;
-    const place = currentLocationName(state);
+    // Already settled means the campaign has this fight's outcome; running again would
+    // narrate a second aftermath for one fight.
+    if (!combatSession || combatSession.status === "settled") return;
+    const session = combatSession;
+    const cs = session.encounter;
+    const ctx = session.context;
+    const receipt = session.terminalReceipt || sealTowTerminalReceipt(session).session?.terminalReceipt;
+    if (!receipt) {
+      setTowCombatFeedback("The fight is not over yet.");
+      return;
+    }
+    // Whether this death is permanent was decided at admission and written into the
+    // receipt. It is read here, never re-derived — the player agreed to those stakes before
+    // the first blow, and nothing about how the fight went may change them afterwards.
+    const epicDeath = receipt.playerWorldFate === "dead";
+    const lethal = ctx.lethalPolicy !== "nonlethal";
+    const place = ctx.location || currentLocationName(state);
+    const flavor = ctx.source.note;
+    const npcIds = Object.fromEntries(
+      Object.entries(ctx.participantBindings)
+        .filter(([, binding]) => binding.campaignEntityId)
+        .map(([actorId, binding]) => [actorId, binding.campaignEntityId]),
+    );
     const settled = settleTowEncounter(state, cs, {
-      encounterId: ctx.encounterId || `combat:${cs.round}:${cs.sequence}`,
-      proficiencyId: ctx.proficiencyId || null,
-      npcIds: ctx.npcIds || {},
-      lethal: ctx.lethal !== false,
+      encounterId: session.sessionId,
+      proficiencyId: ctx.rewardPolicy.proficiencyId,
+      npcIds,
+      lethal,
+      // Per-participant fates win over the blanket flag: one duel inside a brawl can be
+      // real while the rest is fists, and the codex has to record each person correctly.
+      worldFates: worldFatesByParticipant(receipt),
     });
     if (!settled.ok && settled.reason !== "tow-encounter-already-settled") {
       setError(`The fight could not be settled: ${settled.reason}.`);
@@ -3102,19 +3226,34 @@ export function Solitaire() {
     // Spoils are rolled from the foes that actually fell, and are never auto-taken —
     // the player still chooses to search them.
     if (cs.phase === "victory" && !epicDeath) {
-      const fallen = (ctx.sources || []).filter((_, index) => (
-        cs.actors[`foe-${index}`] && cs.actors[`foe-${index}`].hp <= 0
-      ));
+      const fallen = cs.enemyIds
+        .filter((enemyId) => cs.actors[enemyId].hp <= 0)
+        .map((enemyId) => ctx.lootPolicy.sources[enemyId])
+        .filter(Boolean);
       if (fallen.length > 0) {
-        const manifest = rollLoot(fallen, ctx.lootOpts || {});
+        const manifest = rollLoot(fallen, {
+          maxLootTier: ctx.lootPolicy.maxLootTier,
+          region: ctx.lootPolicy.region,
+          owned: new Set(ctx.lootPolicy.ownedUniqueIds),
+          coinBonus: ctx.lootPolicy.coinBonus,
+        });
         next = { ...next, pendingLoot: manifest };
       }
     }
+    // The session stays in state, marked settled, so a reload between here and the
+    // aftermath lands on a fight that is already decided and already folded in — the
+    // settlement receipt refuses a second attempt either way.
+    const closed = markTowSessionSettled(session, session.sessionId);
+    next = withTowCombat(
+      // A permanent death ends the run before anything is narrated. Presentation renders a
+      // fact that is already canonical; it never gets to decide one.
+      epicDeath ? { ...next, ended: true } : next,
+      closed.ok ? closed.session : null,
+    );
     liveStateRef.current = next;
     setState(next);
-    setCombat(null);
-    combatCtxRef.current = null;
-    if (!epicDeath && next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal: ctx.lethal !== false });
+    setTowCombatFeedback(null);
+    if (!epicDeath && next.pendingLoot) setPendingLoot({ ...next.pendingLoot, lethal });
 
     // The story always continues from the result, so the player can react.
     setError(null);
@@ -3122,13 +3261,12 @@ export function Solitaire() {
     try {
       let msg;
       if (epicDeath) {
-        msg = `[DEATH — ENGINE SETTLED] Permanent death against ${ctx.flavor || "a foe far beyond the player's strength"} at ${place} is already canonical. Narrate one external, unflinching final scene from the combat report: the foe, the killing blow, witnesses, and the silence after. Do not invent player speech, a last voluntary action, intent, emotion, or internal conclusion. Do not rescue, revise, or apply mechanics.`;
+        msg = `[DEATH — ENGINE SETTLED] Permanent death against ${flavor || "a foe far beyond the player's strength"} at ${place} is already canonical. Narrate one external, unflinching final scene from the combat report: the foe, the killing blow, witnesses, and the silence after. Do not invent player speech, a last voluntary action, intent, emotion, or internal conclusion. Do not rescue, revise, or apply mechanics.`;
       } else if (cs.phase === "defeat") {
-        // Lethality lives on the combat context, not on the encounter. Reading it off the
+        // Lethality lives on the admission, not on the encounter. Reading it off the
         // encounter always yielded undefined, so every defeat was narrated as a
         // bare-knuckle beating even when the fight was fought with drawn steel.
-        const wasLethal = ctx.lethal !== false;
-        msg = `[DEFEATED — ENGINE SETTLED] The engine-settled defeat is final: ${ctx.flavor || "the foe"} left the player unconscious at ${place}; the player survives there with canonical vitality and conditions already applied, while inventory and location remain unchanged. ${wasLethal ? "Weapons were drawn; render the grave wounds already recorded." : "It was a bare-knuckle defeat; keep the external aftermath restrained."} Narrate only the foe, witnesses, surroundings, and passage of the immediate moment. Do not invent player speech, consent, intent, emotion, waking action, or any mechanical consequence.`;
+        msg = `[DEFEATED — ENGINE SETTLED] The engine-settled defeat is final: ${flavor || "the foe"} left the player unconscious at ${place}; the player survives there with canonical vitality and conditions already applied, while inventory and location remain unchanged. ${lethal ? "Weapons were drawn; render the grave wounds already recorded." : "It was a bare-knuckle defeat; keep the external aftermath restrained."} Narrate only the foe, witnesses, surroundings, and passage of the immediate moment. Do not invent player speech, consent, intent, emotion, waking action, or any mechanical consequence.`;
       } else {
         const result = cs.phase === "victory" ? "You won — every foe is slain or down."
           : cs.phase === "resolved" ? "The fight ended without a slaughter — see the report for each foe's fate (yielded / fled / knocked out)."
@@ -3174,13 +3312,48 @@ export function Solitaire() {
     }
   }
 
-  const onCombatUseSkill = (skillId, targetId) => setCombat((c) => {
-    if (!c) return c;
-    const used = towUseSkill(c, skillId, targetId);
-    if (!used.ok) return c;
-    return used.state;
+  // Every input the player gives a fight becomes an identified command against a known
+  // revision. The ID makes a double-tap free; the revision makes a swing at a fight that has
+  // already moved on impossible. Neither was true when a click called the reducer directly.
+  function dispatchCombatCommand(input) {
+    const current = decodeTowSession(liveStateRef.current.mechanics?.tow?.activeCombat ?? null);
+    if (!current.ok) {
+      setTowCombatFeedback(`The fight could not be read: ${current.reason}.`);
+      return;
+    }
+    const session = current.session;
+    // The ID is minted from the live session, not from the render this click came off. Two
+    // clicks landing in the same frame both read the committed revision, so neither is
+    // mistaken for a repeat of the other — and what stops a double-tap becoming two swings
+    // is the turn budget the encounter already enforces, not a dropped command.
+    const result = dispatchTowCommand(session, {
+      ...input,
+      id: [session.sessionId, session.revision, input.type, input.skillId]
+        .filter((part) => part !== null && part !== undefined)
+        .join(":"),
+      expectedRevision: session.revision,
+      actorId: session.encounter.playerId,
+    });
+    if (!result.ok) {
+      setTowCombatFeedback(`That move was refused: ${result.reason}.`);
+      return;
+    }
+    if (result.duplicate) return;
+    // A finished fight seals its verdict in the same commit that finishes it, so a reload
+    // between the last blow and the settlement lands on a decided fight rather than one
+    // that has to be judged again.
+    const sealed = result.session.encounter.phase === "player"
+      ? { ok: true, session: result.session }
+      : sealTowTerminalReceipt(result.session);
+    commitTowSession(sealed.ok ? sealed.session : result.session);
+  }
+
+  const onCombatUseSkill = (skillId, targetId) => dispatchCombatCommand({
+    type: "use-skill",
+    skillId,
+    targetId: targetId ?? null,
   });
-  const onCombatEndTurn = () => setCombat((c) => (c ? towEndTurn(c).state : c));
+  const onCombatEndTurn = () => dispatchCombatCommand({ type: "end-turn" });
 
   // ----- Render flow -----
 
@@ -3486,6 +3659,33 @@ export function Solitaire() {
             }}>
               Discard invalid handoff
             </button>
+          </div>
+        )}
+        {state.created !== false && (towCombatInvalid || towCombatFeedback) && !combat && (
+          <div className="tow-combat-recovery fade-in" role="alert" style={{
+            margin: "0 12px 8px", padding: "11px 14px",
+            backgroundColor: "rgba(35,15,15,0.82)", border: "1px solid rgba(239,68,68,0.5)",
+            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: "#fca5a5", marginBottom: "2px" }}>
+                {towCombatInvalid ? "Unreadable saved fight" : "Combat"}
+              </div>
+              <div style={{ fontSize: "13px", color: "#fde8e4", lineHeight: 1.35 }}>
+                {towCombatInvalid
+                  ? `The saved fight cannot be trusted (${towCombat.reason}). Nothing has been applied to the campaign.`
+                  : towCombatFeedback}
+              </div>
+            </div>
+            {towCombatInvalid && (
+              <button type="button" onClick={handleDiscardInvalidTowCombat} style={{
+                padding: "9px 12px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
+                border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+              }}>
+                Discard unreadable fight
+              </button>
+            )}
           </div>
         )}
         {state.created !== false && pendingEngage && !combat && (
@@ -3823,7 +4023,7 @@ export function Solitaire() {
       {combat && !exclusiveGameplayOpen && (
         <TowCombatView
           encounter={combat}
-          note={combatCtxRef.current?.flavor}
+          note={combatSession?.context?.source?.note}
           onUseSkill={onCombatUseSkill}
           onEndTurn={onCombatEndTurn}
           onSettle={handleResolveCombat}

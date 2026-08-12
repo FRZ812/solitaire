@@ -298,7 +298,12 @@ describe("narrator application trust boundary", () => {
     // from applyCombatResult to settleTowEncounter when the deck engine retired; the
     // invariant — settle first, narrate second — is unchanged.
     expect(appSource).toContain("settleTowEncounter(state, cs,");
-    expect(appSource).toContain("const epicDeath = cs.phase === \"defeat\"");
+    // Permanent death is read off the terminal receipt, which read it off the admission
+    // recorded before the first blow. It is never re-derived at settlement from how the
+    // fight happened to go — that would mean the answer to "can I die here" only existed
+    // after dying.
+    expect(appSource).toContain("const epicDeath = receipt.playerWorldFate === \"dead\"");
+    expect(appSource).not.toContain("isEpicEncounter(cs,");
     expect(appSource).toContain("The engine-settled defeat is final");
     expect(appSource).not.toContain("const finalState = { ...narrated, ended }");
   });
