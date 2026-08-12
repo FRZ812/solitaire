@@ -10,6 +10,53 @@
 
 const emptyPools = () => ({ codex: [], seen: [], tiles: [] });
 
+/**
+ * The mechanical facts a rewind must not be allowed to cross.
+ *
+ * A checkpoint restores the character, the world and the story, and deliberately does not
+ * restore settlement receipts, the durable build, or a permanent death — those are
+ * irreversible by design. That asymmetry is exactly the danger: rewinding the codex past a
+ * fight while its settlement receipt stays put would resurrect a foe the world still records
+ * as dead, and rewinding past a bootstrap would leave a character nobody compiled.
+ *
+ * So each checkpoint carries a seal of those facts, and a rewind is refused when the seal
+ * has moved. Presentation can still be rewritten from a locked receipt; the mechanic cannot
+ * be undone.
+ */
+export function mechanicsSeal(state) {
+  return {
+    settlements: (state?.combatSettlementReceipts || []).length,
+    bootstrapId: state?.mechanics?.bootstrapId ?? null,
+    ended: state?.ended === true,
+    // A fight still in progress is not itself irreversible, but its session id changing
+    // means one ended and another began between here and now.
+    activeCombatId: state?.mechanics?.tow?.activeCombat?.sessionId ?? null,
+  };
+}
+
+function sealsMatch(first, second) {
+  if (!first || !second) return false;
+  return first.settlements === second.settlements
+    && first.bootstrapId === second.bootstrapId
+    && first.ended === second.ended
+    && first.activeCombatId === second.activeCombatId;
+}
+
+/**
+ * Whether the story may be rewound to before turn `k`.
+ *
+ * Legacy checkpoints carry no seal. They predate combat being durable at all, so there is
+ * nothing they could be crossing; treating them as rewindable keeps old saves working
+ * without pretending they were checked.
+ */
+export function canRewindToTurn(state, k) {
+  const checkpoint = state?.turns?.[k];
+  if (!checkpoint) return { ok: false, reason: "unknown-turn" };
+  if (!checkpoint.mechanicsSeal) return { ok: true, reason: null };
+  if (sealsMatch(checkpoint.mechanicsSeal, mechanicsSeal(state))) return { ok: true, reason: null };
+  return { ok: false, reason: "crosses-irreversible-mechanics" };
+}
+
 // Reuse an existing pooled object when one is reference-identical, else append.
 function poolPush(pool, obj) {
   const idx = pool.indexOf(obj);
@@ -64,6 +111,8 @@ export function startTurnCheckpoint(base, message, next, extra = {}) {
     time: base.time,
     world: { codexIdx: c.idx, seenIdx: s.idx, tilesIdx: t.idx, ...restWorld },
     narratorTurnContinuationPresent: Object.prototype.hasOwnProperty.call(base, "narratorTurnContinuation"),
+    // What was mechanically true when this turn began. A later rewind compares against it.
+    mechanicsSeal: mechanicsSeal(base),
   };
   if (checkpoint.narratorTurnContinuationPresent) {
     checkpoint.narratorTurnContinuation = base.narratorTurnContinuation;

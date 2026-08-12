@@ -32,8 +32,8 @@ import {
 } from "./engine/narrator-turn-application.js";
 import {
   deleteBeat, editBeat, narratorMessageForPendingPlayers, pendingPlayerBeats,
-  finalizeTurnCheckpoint, recordTurn, rewindToPlayerBeat, startTurnCheckpoint, stateBeforeTurn, stateAfterTurn,
-  turnForBeatIndex, turnStartedAt,
+  canRewindToTurn, finalizeTurnCheckpoint, recordTurn, rewindToPlayerBeat, startTurnCheckpoint,
+  stateBeforeTurn, stateAfterTurn, turnForBeatIndex, turnStartedAt,
 } from "./engine/timeline.js";
 import { withPortraitOverride } from "./engine/portrait-overrides.js";
 import { applyStoryFontScale } from "./engine/preferences.js";
@@ -2667,6 +2667,15 @@ export function Solitaire() {
     const menu = beatMenu;
     const feedback = rewriteText.trim();
     if (!menu || menu.kind !== "narrative" || menu.turnK < 0 || !feedback || loading) return;
+    // A rewrite rolls the world back. It may not roll back across a settlement, a
+    // bootstrap, or a death: those are locked receipts, and reconstructing the codex past
+    // one would resurrect a foe the world still records as dead.
+    const rewindable = canRewindToTurn(state, menu.turnK);
+    if (!rewindable.ok) {
+      closeBeatMenu();
+      setError("That moment is behind something already settled — the story can be retold from here, but not taken back past it.");
+      return;
+    }
     const cp = state.turns[menu.turnK];
     const legacyTravelDiscovery = cp.travel && !cp.travel.discovery
       ? travelDiscoveryFromRevealedTile(getTile(state, cp.travel.dest.x, cp.travel.dest.y))
@@ -2739,6 +2748,15 @@ export function Solitaire() {
   function handleRewindBeat() {
     const menu = beatMenu;
     if (!menu || !menu.canRewind || loading) return;
+    // Same boundary as a rewrite: presentation may be replayed from a locked receipt, the
+    // mechanic behind it may not be undone.
+    const target = menu.kind === "player" ? turnForBeatIndex(state, menu.index) : menu.turnK;
+    const rewindable = canRewindToTurn(state, target);
+    if (!rewindable.ok) {
+      closeBeatMenu();
+      setError("That moment is behind something already settled — the story can be retold from here, but not taken back past it.");
+      return;
+    }
     closeBeatMenu();
     setPendingEngage(null);
     setPendingCombat(null);

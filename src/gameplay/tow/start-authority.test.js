@@ -44,11 +44,16 @@ describe("one applicator owns the start of a character", () => {
 
   it("is the only thing that writes a real bootstrap id", () => {
     // The value has to be captured rather than excluded with a lookahead: `\s*` backtracks
-    // to zero width, so `(?!null)` would happily pass on ` null`.
+    // to zero width, so `(?!null)` would happily pass on ` null`. Reading the id back — to
+    // seal a checkpoint against it, say — is not writing one, so an expression that mentions
+    // `bootstrapId` is a pass-through rather than a second applicator.
     const writers = FILES.filter(({ path, source }) => {
       if (path.endsWith("character-bootstrap.js")) return false;
-      const assignments = [...source.matchAll(/bootstrapId:\s*([A-Za-z0-9_.[\]]+)/g)];
-      return assignments.some(([, value]) => value !== "null");
+      const assignments = [...source.matchAll(/bootstrapId:\s*([^,\n}]+)/g)];
+      return assignments.some(([, raw]) => {
+        const value = raw.trim();
+        return value !== "null" && !value.includes("bootstrapId");
+      });
     });
     expect(writers.map(({ path }) => path.replace(SRC, ""))).toEqual([]);
   });
