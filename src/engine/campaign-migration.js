@@ -49,7 +49,7 @@ export function emptyMechanicsSidecar() {
  * hand the player a fight that never happened.
  */
 export function emptyTowMechanics() {
-  return { activeCombat: null };
+  return { activeCombat: null, readiness: {} };
 }
 
 export function hasMechanicsSidecar(state) {

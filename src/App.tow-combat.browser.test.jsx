@@ -273,6 +273,34 @@ describe("a fight survives a reload", () => {
   });
 });
 
+describe("readiness carries between fights", () => {
+  it("settles what the fight left back into the campaign", async () => {
+    const mounted = await mountCampaign();
+    const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
+
+    // Spend a limited-use skill, then finish the fight.
+    const guard = [...dialog.querySelectorAll(".production-combat__action")]
+      .find((button) => /block/i.test(button.textContent));
+    await click(guard);
+    for (let round = 0; round < 8; round += 1) {
+      const strike = strikeButton(dialog);
+      if (!strike || dialog.querySelector(".production-combat__outcome")) break;
+      await click(strike);
+      if (dialog.querySelector(".production-combat__outcome")) break;
+      await click(endTurnButton(dialog));
+    }
+    await waitFor(() => dialog.querySelector(".production-combat__outcome"));
+    const settle = [...dialog.querySelectorAll(".production-combat__settle")]
+      .find((button) => !/end turn/i.test(button.textContent));
+    await click(settle);
+
+    // The road gives nothing back on its own: what the fight spent is still spent.
+    const readiness = await waitFor(() => harness.serverState?.mechanics?.tow?.readiness);
+    expect(readiness.block).toBeLessThan(30);
+    expect(Object.hasOwn(readiness, "strike")).toBe(false);
+  });
+});
+
 describe("an unreadable saved fight", () => {
   it("says so and applies nothing until the player discards it", async () => {
     const corrupt = campaignInAFight();

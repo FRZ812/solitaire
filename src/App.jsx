@@ -102,6 +102,14 @@ import { dispatchTowCommand } from "./gameplay/tow/commands.js";
 import { sealTowTerminalReceipt, worldFatesByParticipant } from "./gameplay/tow/outcomes.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
 import {
+  emptyReadiness,
+  isReadiness,
+  pruneReadiness,
+  readinessFromEncounter,
+  restoreReadiness,
+  skillStatesForReadiness,
+} from "./gameplay/tow/readiness.js";
+import {
   createTowSession,
   markTowSessionSettled,
   spendTowSessionStream,
@@ -2372,7 +2380,12 @@ export function Solitaire() {
       return;
     }
     setDeckOpen(false);
-    setState({ ...r.state, beats: [...r.state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.summary }] });
+    // A rest the engine actually committed is the only thing that puts skill uses back.
+    // Opening the rest screen does not, and neither does a night the narrator described.
+    setState(withTowMechanics(
+      { ...r.state, beats: [...r.state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.summary }] },
+      { readiness: restoreReadiness() },
+    ));
   }
 
   // Making camp where a march ran out. The road gives nothing back on its own,
@@ -2388,7 +2401,10 @@ export function Solitaire() {
       if (r.reason) setTravelHalt((current) => (current ? { ...current, campBlocked: r.reason } : current));
       return;
     }
-    setState({ ...r.state, beats: [...r.state.beats, { id: `camp${Date.now()}`, type: "narration", content: r.summary }] });
+    setState(withTowMechanics(
+      { ...r.state, beats: [...r.state.beats, { id: `camp${Date.now()}`, type: "narration", content: r.summary }] },
+      { readiness: restoreReadiness() },
+    ));
     // The halt still names where the party stands and what lies ahead; what it
     // must stop saying is that they are spent, because they no longer are.
     setTravelHalt((current) => (current ? { ...current, spentNeed: null, campBlocked: null, camped: true } : current));
@@ -2957,13 +2973,21 @@ export function Solitaire() {
       return;
     }
     const player = towPlayerFromCharacter(st.character, st.world.codex, { id: "wanderer" });
+    // The fight opens with what the last one left. Readiness is baked into genesis, so a
+    // replay reproduces the fight as it was actually fought — including how spent the
+    // player was when it started.
+    const campaignBuild = towBuildForCharacter(st.character);
+    const readiness = towReadiness(st);
     const opened = createTowSession({
       sessionId: `${currentCampaignId || "local"}:combat:${seed}`,
       rootSeed: seed,
       mode: "campaign",
       player: { ...player, statuses: [...player.statuses, ...admission.openingStatuses] },
       enemies: enemies.map((enemy, index) => towEnemyFromBestiary(enemy, { id: actorIds[index] })),
-      build: towBuildForCharacter(st.character),
+      build: {
+        ...campaignBuild,
+        skills: skillStatesForReadiness(campaignBuild.skills, readiness),
+      },
       context: {
         directiveId: context?.directiveId ?? null,
         source: { kind: context?.sourceKind || "narrator", note: context?.flavor || enemies[0].name },
@@ -3025,12 +3049,22 @@ export function Solitaire() {
   // A malformed sidecar is worse than a missing one: the campaign migration replaces it,
   // and replacing it would take the fight with it. So the slot is always written onto a
   // well-formed sidecar, whether or not this campaign has been migrated yet.
-  function withTowCombat(base, session) {
+  function withTowMechanics(base, patch) {
     const sidecar = hasMechanicsSidecar(base) ? base.mechanics : emptyMechanicsSidecar();
     return {
       ...base,
-      mechanics: { ...sidecar, tow: { ...(sidecar.tow || {}), activeCombat: session } },
+      mechanics: { ...sidecar, tow: { ...(sidecar.tow || {}), ...patch } },
     };
+  }
+
+  function withTowCombat(base, session) {
+    return withTowMechanics(base, { activeCombat: session });
+  }
+
+  /** What the character has left to spend, or a full pack if nothing is recorded. */
+  function towReadiness(source) {
+    const stored = source?.mechanics?.tow?.readiness;
+    return isReadiness(stored) ? stored : emptyReadiness();
   }
 
   // Discarding an unreadable fight is the player's explicit act, never the engine's quiet
@@ -3289,11 +3323,16 @@ export function Solitaire() {
     // aftermath lands on a fight that is already decided and already folded in — the
     // settlement receipt refuses a second attempt either way.
     const closed = markTowSessionSettled(closing, closing.sessionId);
-    next = withTowCombat(
+    next = withTowMechanics(
       // A permanent death ends the run before anything is narrated. Presentation renders a
       // fact that is already canonical; it never gets to decide one.
       epicDeath ? { ...next, ended: true } : next,
-      closed.ok ? closed.session : null,
+      {
+        activeCombat: closed.ok ? closed.session : null,
+        // What the fight left is what the next one opens with. The road gives nothing back
+        // on its own — only a completed rest does.
+        readiness: pruneReadiness(readinessFromEncounter(cs), cs.build.skills),
+      },
     );
     liveStateRef.current = next;
     setState(next);
