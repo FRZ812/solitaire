@@ -207,9 +207,11 @@ export function resolveTowCommandOnEncounter(before, command) {
 
   const after = result.state;
   // Only streams that actually moved are recorded, so a command that spent no randomness
-  // does not look like one that did.
+  // does not look like one that did — and a telegraph advancing is visibly a different kind
+  // of spend from a damage roll.
   const streams = {};
   if (after.rng.state !== before.rng.state) streams.combat = { ...after.rng };
+  if (after.intentRng.state !== before.intentRng.state) streams.intent = { ...after.intentRng };
   return { ok: true, reason: null, encounter: after, streams };
 }
 

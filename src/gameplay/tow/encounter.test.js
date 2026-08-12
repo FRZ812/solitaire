@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { statusCount } from "../kernel/status-stack.js";
-import { createTowEncounter, endTurn, isTowEncounter, useSkill } from "./encounter.js";
+import {
+  createTowEncounter,
+  declaredIntents,
+  endTurn,
+  isTowEncounter,
+  useSkill,
+} from "./encounter.js";
 import { TRAIT_RANK_CAP } from "./traits.js";
 
 // The Arctic Knight as the wiki records them: 170 HP, 12 ATK, 13 DEF, 9% crit, 4% dodge,
@@ -353,5 +359,164 @@ describe("Priority and Haste", () => {
     expect(state.turn.actionsRemaining).toBe(2);
     const after = endTurn(useSkill(state, "strike").state).state;
     expect(after.turn.actionsRemaining).toBe(1);
+  });
+});
+
+describe("telegraphed enemy turns", () => {
+  // A foe with a real move set, so its declaration is a choice rather than a formality.
+  function brute(overrides = {}) {
+    return foe({
+      maxHp: 900,
+      stats: { attack: 9, defense: 0, critRate: 0, dodgeRate: 0 },
+      attacks: [
+        { id: "jab", name: "Jab", hits: 1, damage: 4 },
+        { id: "swing", name: "Swing", hits: 1, damage: 9 },
+        { id: "heavy", name: "Heavy blow", hits: 1, damage: 15 },
+      ],
+      ...overrides,
+    });
+  }
+
+  function tank(overrides = {}) {
+    return { ...knight(), maxHp: 4000, ...overrides };
+  }
+
+  it("declares before the player's first decision", () => {
+    // The whole point: information exists before the player spends a turn, so the decision
+    // can be better-informed than a guess.
+    const state = start({ player: tank(), enemies: [brute()] });
+    const declared = declaredIntents(state);
+    expect(declared).toHaveLength(1);
+    expect(declared[0]).toMatchObject({ enemyId: "gatekeeper", targetId: "arctic-knight" });
+    expect(state.events.some((event) => event.type === "intent-declared")).toBe(true);
+  });
+
+  it("swings exactly what it declared, every round", () => {
+    let state = start({ player: tank(), enemies: [brute()] });
+    for (let round = 0; round < 12; round += 1) {
+      const promised = declaredIntents(state)[0];
+      const after = endTurn(state);
+      expect(after.ok).toBe(true);
+      const swung = after.state.events.filter((event) => event.type === "enemy-attack").at(-1);
+      expect(swung.attackId).toBe(promised.attackId);
+      state = after.state;
+    }
+  });
+
+  it("shows the damage the attack brings, not the damage that will land", () => {
+    // Defence, crit and dodge are still live — that is the part the player's decision is
+    // supposed to influence.
+    const state = start({ player: tank(), enemies: [brute()] });
+    const declared = declaredIntents(state)[0];
+    const attack = state.enemyAttacks.gatekeeper.find((entry) => entry.id === declared.attackId);
+    expect(declared.damage).toBe(attack.damage);
+    expect(declared.hits).toBe(attack.hits);
+  });
+
+  it("draws declarations off the intent stream, never the combat stream", () => {
+    // This is what stops a schedule change rewriting a damage roll a saved fight recorded.
+    const state = start({ player: tank(), enemies: [brute()] });
+    const opened = createTowEncounter({
+      seed: "tow-encounter-test",
+      player: tank(),
+      enemies: [brute()],
+      build: { traits: {}, skills: ["strike", "block"] },
+    });
+    expect(state.rng).toEqual(opened.rng);
+    expect(state.intentRng).not.toEqual(state.rng);
+  });
+
+  it("holds a stunned foe's telegraph rather than erasing the attack", () => {
+    // INTENT_CONTROL_POLICY: control buys tempo. The blow the player was shown still lands,
+    // one round later, so the telegraph never turns out to have been a lie.
+    const state = start({
+      player: tank(),
+      enemies: [brute({ statuses: [{ type: "stun", count: 3 }] })],
+    });
+    const promised = declaredIntents(state)[0];
+    const after = endTurn(state).state;
+    expect(after.events.some((event) => event.type === "enemy-nullified")).toBe(true);
+    expect(declaredIntents(after)[0].attackId).toBe(promised.attackId);
+    expect(declaredIntents(after)[0].declarationIndex).toBe(promised.declarationIndex);
+  });
+
+  it("advances the rotation once a blow actually lands", () => {
+    const state = start({ player: tank(), enemies: [brute()] });
+    const before = state.intents.gatekeeper.declarationIndex;
+    const after = endTurn(state).state;
+    expect(after.intents.gatekeeper.declarationIndex).toBe(before + 1);
+  });
+
+  it("stops telegraphing for a foe that has fallen", () => {
+    const state = start({
+      player: tank(),
+      enemies: [brute({ maxHp: 1 }), brute({ id: "second", name: "Second" })],
+    });
+    expect(declaredIntents(state)).toHaveLength(2);
+    const after = endTurn(useSkill(state, "strike", "gatekeeper").state).state;
+    expect(after.actors.gatekeeper.hp).toBe(0);
+    expect(declaredIntents(after).map((intent) => intent.enemyId)).toEqual(["second"]);
+  });
+
+  it("declares for a whole group in stable order", () => {
+    const first = start({
+      player: tank(),
+      enemies: [brute(), brute({ id: "second", name: "Second" }), brute({ id: "third", name: "Third" })],
+    });
+    const second = start({
+      player: tank(),
+      enemies: [brute(), brute({ id: "second", name: "Second" }), brute({ id: "third", name: "Third" })],
+    });
+    expect(declaredIntents(first)).toEqual(declaredIntents(second));
+    expect(declaredIntents(first).map((intent) => intent.enemyId))
+      .toEqual(["gatekeeper", "second", "third"]);
+  });
+
+  it("takes an authored rotation over the generated one", () => {
+    const state = createTowEncounter({
+      seed: "tow-encounter-test",
+      player: tank(),
+      enemies: [brute()],
+      build: { traits: {}, skills: ["strike", "block"] },
+      intentSchedules: {
+        gatekeeper: { id: "gatekeeper-duel", steps: [{ id: "wind-up", attackIds: ["heavy"] }] },
+      },
+    });
+    expect(state.intents.gatekeeper.patternId).toBe("gatekeeper-duel");
+    expect(declaredIntents(state)[0].attackId).toBe("heavy");
+    // One step, one option: this foe only ever winds up the heavy blow.
+    expect(declaredIntents(endTurn(state).state)[0].attackId).toBe("heavy");
+  });
+
+  it("refuses an authored rotation it cannot read", () => {
+    expect(() => createTowEncounter({
+      seed: "tow-encounter-test",
+      player: tank(),
+      enemies: [brute()],
+      build: { traits: {}, skills: ["strike"] },
+      intentSchedules: { gatekeeper: { id: "broken" } },
+    })).toThrow("invalid-intent-schedules");
+  });
+
+  it("refuses to swing at all when a declaration and the attack table disagree", () => {
+    // Only reachable by tampering, but silently substituting a swing of the engine's own
+    // choosing would hide exactly the fault that matters.
+    const state = start({ player: tank(), enemies: [brute()] });
+    const desynced = {
+      ...state,
+      intents: { ...state.intents, gatekeeper: { ...state.intents.gatekeeper, attackId: "meteor" } },
+    };
+    const result = endTurn(desynced);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("intent-desync");
+    expect(result.state).toBe(desynced);
+  });
+
+  it("still fights a foe that has no attack table at all", () => {
+    const state = start({ player: tank(), enemies: [foe({ attacks: [] })] });
+    expect(declaredIntents(state)).toEqual([]);
+    const after = endTurn(state);
+    expect(after.ok).toBe(true);
+    expect(after.state.events.some((event) => event.type === "enemy-attack")).toBe(true);
   });
 });

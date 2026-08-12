@@ -181,15 +181,15 @@ export function verifyTowSession(session) {
     };
   }
 
-  // The combat stream lives on the encounter and has already been compared; the other three
-  // are compared independently, which is the point of splitting them. A loot endpoint that
-  // moved during combat would mean something spent the wrong generator.
+  // The combat and intent streams live on the encounter and have already been compared; the
+  // two the session carries are compared independently, which is the point of splitting
+  // them. A loot endpoint that moved during a fight would mean something spent the wrong
+  // generator — a telegraph draw reaching into the spoils.
   const expectedStreams = { ...session.streams };
   const replayedStreams = {
-    // Nothing in Phase 2 advances these during a fight, so a faithful replay leaves them at
-    // the seeds genesis derived. Deriving rather than copying is deliberate: copying them
-    // from the session would make this comparison vacuous.
-    intent: seedEndpoint(session, "intent"),
+    // Nothing in a fight spends these, so a faithful replay leaves them at the seeds genesis
+    // derived. Deriving rather than copying is deliberate: copying them from the session
+    // would make this comparison vacuous.
     loot: seedEndpoint(session, "loot"),
     rewards: seedEndpoint(session, "rewards"),
   };

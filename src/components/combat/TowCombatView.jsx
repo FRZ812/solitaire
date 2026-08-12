@@ -1,9 +1,32 @@
 import React, { useEffect, useRef, useState } from "react";
+import { declaredIntents } from "../../gameplay/tow/encounter.js";
 import { getSkill, skillLegality, usesPerAct, UNLIMITED_USES } from "../../gameplay/tow/skills.js";
 import "./production-combat.css";
 
 function percent(value, max) {
   return Math.max(0, Math.min(100, max > 0 ? (value / max) * 100 : 0));
+}
+
+/**
+ * What this foe has declared for the coming round.
+ *
+ * The point of the whole telegraph is that this is readable before the player spends their
+ * turn, so it says the attack's name, how many times it lands, and for how much — and stops
+ * there. Crit, dodge and the player's own defence are still live, which is the part their
+ * decision is meant to influence.
+ */
+function IntentLine({ intent }) {
+  if (!intent) return null;
+  const total = intent.hits > 1 ? ` (${intent.hits} × ${intent.damage})` : "";
+  return (
+    <p className="production-combat__intent">
+      <span className="production-combat__eyebrow">Next</span>
+      <strong>{intent.name}</strong>
+      <span>
+        {intent.hits > 1 ? `${intent.hits} hits${total}` : `${intent.damage} damage`}
+      </span>
+    </p>
+  );
 }
 
 function StatusList({ actor }) {
@@ -17,11 +40,12 @@ function StatusList({ actor }) {
   );
 }
 
-function fighterBody(actor, label) {
+function fighterBody(actor, label, intent = null) {
   return (
     <>
       <span className="production-combat__eyebrow">{label}</span>
       <h2>{actor.name}</h2>
+      <IntentLine intent={intent} />
       <div
         className="production-combat__health"
         role="meter"
@@ -71,6 +95,11 @@ export function TowCombatView({
   const living = enemies.filter((enemy) => enemy.hp > 0);
   const terminal = encounter.phase !== "player";
   const activeTarget = living.find((enemy) => enemy.id === targetId)?.id || living[0]?.id || null;
+  // Once the fight is over there is nothing coming, so the telegraphs go quiet rather than
+  // advertising a round that will never be played.
+  const intents = terminal
+    ? {}
+    : Object.fromEntries(declaredIntents(encounter).map((intent) => [intent.enemyId, intent]));
 
   useEffect(() => {
     restoreFocusRef.current = document.activeElement;
@@ -162,11 +191,11 @@ export function TowCombatView({
                   disabled={enemy.hp <= 0}
                   onClick={() => setTargetId(enemy.id)}
                 >
-                  {fighterBody(enemy, "Foe")}
+                  {fighterBody(enemy, "Foe", intents[enemy.id])}
                 </button>
               ) : (
                 <section key={enemy.id} className="production-combat__fighter" aria-label={`Foe: ${enemy.name}`}>
-                  {fighterBody(enemy, "Foe")}
+                  {fighterBody(enemy, "Foe", intents[enemy.id])}
                 </section>
               )
             ))}

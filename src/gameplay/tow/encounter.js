@@ -11,8 +11,18 @@
 import { cloneJsonData } from "../kernel/json-data.js";
 import { createRng, nextInt } from "../kernel/rng.js";
 import {
+  advanceTowIntent,
+  declareTowIntent,
+  defaultIntentSchedule,
+  intentSchedulesSnapshot,
+  isIntentSchedule,
+  isTowIntent,
+  resolveDeclaredAttack,
+} from "./intent.js";
+import {
   applyStatus,
   createStatusStack,
+  scaleStatus,
   statusCount,
   tickEndOfTurn,
 } from "../kernel/status-stack.js";
@@ -139,6 +149,17 @@ function withFreshTurn(state) {
   return { ...state, turn: { actionsRemaining: actionsForRound(state) } };
 }
 
+/**
+ * The value a skill scales off, including whatever statuses are currently lifting it.
+ *
+ * Exported because the simulation harness has to predict a skill's output to choose between
+ * skills, and a second copy of this arithmetic would let the policy and the resolver drift
+ * apart — at which point the harness would be measuring a fight nobody plays.
+ */
+export function actorScaleValue(actor, scale) {
+  return statOf(actor, scale);
+}
+
 function statOf(actor, scale) {
   if (scale === "attack") return actor.stats.attack + statusCount(actor.statuses, "strength")
     + statusCount(actor.statuses, "overload");
@@ -147,7 +168,7 @@ function statOf(actor, scale) {
   return 0;
 }
 
-export function createTowEncounter({ seed, player, enemies, build } = {}) {
+export function createTowEncounter({ seed, intentSeed, intentSchedules, player, enemies, build } = {}) {
   if (typeof seed !== "string" && !(typeof seed === "number" && Number.isFinite(seed))) {
     throw new TypeError("invalid-encounter-seed");
   }
@@ -183,15 +204,33 @@ export function createTowEncounter({ seed, player, enemies, build } = {}) {
     typeof entry === "string" ? createSkillState(entry) : { ...entry }
   ));
 
+  // Every foe gets a rotation over its own attack table. An authored schedule wins where one
+  // is supplied; otherwise the default generator derives one, so an arbitrary bestiary group
+  // telegraphs as readably as a named boss.
+  const authored = intentSchedulesSnapshot(intentSchedules);
+  if (intentSchedules !== undefined && authored === null) {
+    throw new TypeError("invalid-intent-schedules");
+  }
+  const schedules = {};
+  for (const enemy of enemyActors) {
+    const schedule = authored?.[enemy.id] ?? defaultIntentSchedule(enemy.id, enemyAttacks[enemy.id]);
+    if (schedule) schedules[enemy.id] = schedule;
+  }
+
   const base = {
     version: TOW_ENCOUNTER_VERSION,
     phase: "player",
     round: 1,
     sequence: 0,
     rng: createRng(seed),
+    // Declarations draw from their own stream, so adding a schedule step or a tie-break can
+    // never shift a damage roll that a saved fight already recorded.
+    intentRng: createRng(intentSeed ?? `${seed}::tow-stream::intent::v1`),
     playerId: playerActor.id,
     enemyIds: enemyActors.map((enemy) => enemy.id),
     enemyAttacks,
+    intentSchedules: schedules,
+    intents: {},
     actors: Object.fromEntries([
       [playerActor.id, playerActor],
       ...enemyActors.map((enemy) => [enemy.id, enemy]),
@@ -205,7 +244,119 @@ export function createTowEncounter({ seed, player, enemies, build } = {}) {
   // Intangible's 7 Invincible or Inferno's 80 Burn an opening rather than a turn-one play.
   // The opening action count is read after they fire, so Flash's 6 Priority is worth
   // something on round one rather than only from round two.
-  return withFreshTurn(fireTraits(base));
+  //
+  // The opening telegraph lands after them, so the first thing the player sees is a fight
+  // they can already read.
+  return declareRoundIntents(withFreshTurn(fireTraits(base)));
+}
+
+// ---------------------------------------------------------------------------
+// Telegraphs
+// ---------------------------------------------------------------------------
+
+/**
+ * Declare the coming round's attack for every living foe that does not already hold one.
+ *
+ * Enemies are walked in their stable encounter order off one shared intent stream, so a
+ * group's declarations are reproducible and a foe added to the middle of a line-up cannot
+ * silently re-roll the others.
+ */
+function declareRoundIntents(state) {
+  let next = state;
+  let rng = state.intentRng;
+  const intents = { ...state.intents };
+
+  for (const enemyId of state.enemyIds) {
+    const enemy = next.actors[enemyId];
+    const schedule = state.intentSchedules[enemyId];
+    // A foe with no attack table has nothing to telegraph, and a dead one has nothing left
+    // to say. Both drop their declaration rather than keeping a stale one.
+    if (!schedule || enemy.hp <= 0) {
+      delete intents[enemyId];
+      continue;
+    }
+    const held = intents[enemyId];
+    if (held && isTowIntent(held)) continue;
+    const declared = declareTowIntent({
+      schedule,
+      declarationIndex: 0,
+      targetId: state.playerId,
+      rng,
+    });
+    rng = declared.rng;
+    intents[enemyId] = declared.intent;
+    next = push(next, "intent-declared", {
+      enemyId,
+      attackId: declared.intent.attackId,
+      targetId: declared.intent.targetId,
+      declarationIndex: declared.intent.declarationIndex,
+    });
+  }
+  return { ...next, intentRng: rng, intents };
+}
+
+/** Move one foe's telegraph on to the next step of its rotation. */
+function advanceEnemyIntent(state, enemyId) {
+  const schedule = state.intentSchedules[enemyId];
+  const held = state.intents[enemyId];
+  if (!schedule || !held) return state;
+  const advanced = advanceTowIntent({
+    schedule,
+    intent: held,
+    targetId: state.playerId,
+    rng: state.intentRng,
+  });
+  const next = push(
+    { ...state, intentRng: advanced.rng, intents: { ...state.intents, [enemyId]: advanced.intent } },
+    "intent-declared",
+    {
+      enemyId,
+      attackId: advanced.intent.attackId,
+      targetId: advanced.intent.targetId,
+      declarationIndex: advanced.intent.declarationIndex,
+    },
+  );
+  return next;
+}
+
+/**
+ * What each living foe has declared, ready to show the player.
+ *
+ * Returns the attack's own name, hit count and damage — what the foe is bringing — and no
+ * roll that has not happened yet. Crit, dodge and the player's defence are still live.
+ */
+export function declaredIntents(state) {
+  return state.enemyIds
+    .filter((enemyId) => state.actors[enemyId].hp > 0 && state.intents[enemyId])
+    .map((enemyId) => {
+      const attack = resolveDeclaredAttack(state.intents[enemyId], state.enemyAttacks[enemyId]);
+      if (!attack) return null;
+      return {
+        enemyId,
+        attackId: attack.id,
+        name: attack.name,
+        hits: attack.hits,
+        damage: attack.damage,
+        targetId: state.intents[enemyId].targetId,
+      };
+    })
+    .filter(Boolean);
+}
+
+function isRngState(value) {
+  return Boolean(value)
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && value.algorithm === "mulberry32"
+    && Number.isInteger(value.state)
+    && value.state >= 0
+    && value.state <= 0xFFFFFFFF;
+}
+
+function isKeyedByEnemies(value, enemyIds, valid) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const known = new Set(enemyIds);
+  return Object.entries(value).every(([enemyId, entry]) => known.has(enemyId) && valid(entry));
 }
 
 export function isTowEncounter(value) {
@@ -216,6 +367,9 @@ export function isTowEncounter(value) {
   if (!Array.isArray(value.enemyIds) || value.enemyIds.length < 1) return false;
   if (!Array.isArray(value.events) || value.events.length !== value.sequence) return false;
   if (value.events.length > MAX_ENCOUNTER_EVENTS) return false;
+  if (!isRngState(value.rng) || !isRngState(value.intentRng)) return false;
+  if (!isKeyedByEnemies(value.intentSchedules, value.enemyIds, isIntentSchedule)) return false;
+  if (!isKeyedByEnemies(value.intents, value.enemyIds, isTowIntent)) return false;
   const actorIds = [value.playerId, ...value.enemyIds];
   if (new Set(actorIds).size !== actorIds.length) return false;
   if (Object.keys(value.actors).length !== actorIds.length) return false;
@@ -250,19 +404,41 @@ function isControlled(actor) {
     || statusCount(actor.statuses, "stun") > 0;
 }
 
+/**
+ * Every effect type the resolver can actually express.
+ *
+ * A skill whose effect is not on this list does nothing when used — it is transcribed into
+ * the catalogue and then silently ignored, which is the worst of both worlds: the player is
+ * offered it, spends a use and a turn on it, and gets no rules. A generated test walks the
+ * whole catalogue against this list so a newly transcribed effect fails loudly here rather
+ * than quietly in someone's fight.
+ */
+export const SUPPORTED_SKILL_EFFECT_TYPES = Object.freeze([
+  "damage",
+  "heal-lost-fraction",
+  "reduce-statuses",
+  "scaled-status",
+  "scaled-status-enemy-lost-hp",
+  "shield",
+  "status",
+]);
+
 function applySkillEffects(state, skillId, rank, targetId) {
   const definition = getSkill(skillId);
   let next = state;
   const playerId = next.playerId;
 
   definition.effects.forEach((effect, index) => {
-    const magnitude = effectMagnitude(skillId, index, rank);
+    // Asked for per branch rather than up front: not every effect carries a rank table, and
+    // demanding one from an effect that has none crashed the whole skill — which is how
+    // First Aid, a skill three professions ship with, threw the moment it was used.
+    const magnitude = () => effectMagnitude(skillId, index, rank);
     const player = next.actors[playerId];
 
     if (effect.type === "damage") {
       const target = next.actors[targetId];
       if (!target || target.hp <= 0) return;
-      const amount = Math.floor((statOf(player, effect.scale) * magnitude) / 100);
+      const amount = Math.floor((statOf(player, effect.scale) * magnitude()) / 100);
       const hit = resolveAttack({
         attacker: player,
         defender: target,
@@ -279,7 +455,7 @@ function applySkillEffects(state, skillId, rank, targetId) {
     }
 
     if (effect.type === "shield") {
-      const amount = Math.floor((statOf(player, effect.scale) * magnitude) / 100);
+      const amount = Math.floor((statOf(player, effect.scale) * magnitude()) / 100);
       next = {
         ...next,
         actors: { ...next.actors, [playerId]: { ...player, shield: player.shield + amount } },
@@ -288,10 +464,72 @@ function applySkillEffects(state, skillId, rank, targetId) {
       return;
     }
 
+    // First Aid heals a fraction of what has already been lost, so it is worth most to
+    // someone badly hurt and nearly nothing to someone barely scratched.
+    if (effect.type === "heal-lost-fraction") {
+      const lost = Math.max(0, player.maxHp - player.hp);
+      const amount = Math.floor((lost * magnitude()) / 100);
+      if (amount <= 0) return;
+      next = {
+        ...next,
+        actors: {
+          ...next.actors,
+          [playerId]: { ...player, hp: Math.min(player.maxHp, player.hp + amount) },
+        },
+      };
+      next = push(next, "skill-heal", { skillId, amount });
+      return;
+    }
+
+    // Cleaning a wound: bleed, burn and poison are scaled down rather than decremented, so
+    // it bites harder on a heavy stack than a light one.
+    if (effect.type === "reduce-statuses") {
+      const before = player.statuses;
+      const cleaned = effect.statuses.reduce(
+        (statuses, status) => scaleStatus(statuses, status, effect.toPercent),
+        before,
+      );
+      const removed = effect.statuses.reduce(
+        (total, status) => total + (statusCount(before, status) - statusCount(cleaned, status)),
+        0,
+      );
+      if (removed <= 0) return;
+      next = {
+        ...next,
+        actors: { ...next.actors, [playerId]: { ...player, statuses: cleaned } },
+      };
+      next = push(next, "skill-cleanse", { skillId, statuses: [...effect.statuses], removed });
+      return;
+    }
+
+    // Judge of Fate reads the target rather than the caster: the more a foe has already
+    // lost, the heavier the misfortune that lands on them.
+    if (effect.type === "scaled-status-enemy-lost-hp") {
+      const target = next.actors[targetId];
+      if (!target || target.hp <= 0) return;
+      const lost = Math.max(0, target.maxHp - target.hp);
+      const count = Math.floor((lost * magnitude()) / 100);
+      if (count <= 0) return;
+      next = {
+        ...next,
+        actors: {
+          ...next.actors,
+          [targetId]: { ...target, statuses: applyStatus(target.statuses, effect.status, count) },
+        },
+      };
+      next = push(next, "skill-status", {
+        skillId,
+        status: effect.status,
+        target: effect.target,
+        count,
+      });
+      return;
+    }
+
     if (effect.type === "status" || effect.type === "scaled-status") {
       const count = effect.type === "status"
-        ? magnitude
-        : Math.floor((statOf(player, effect.scale) * magnitude) / 100);
+        ? magnitude()
+        : Math.floor((statOf(player, effect.scale) * magnitude()) / 100);
       if (count <= 0) return;
       if (effect.target === "self") {
         next = {
@@ -389,6 +627,19 @@ function burnAndDoom(state, actorId) {
  */
 export function endTurn(state) {
   if (state.phase !== "player") return { ok: false, reason: "encounter-over", state };
+
+  // Every living foe's declaration is checked against its own attack table before a single
+  // blow lands. A telegraph the engine cannot honour means the recorded fight and the fight
+  // being played have come apart, and continuing would hide that at exactly the point it
+  // matters. Checking up front also means the refusal costs nothing: nothing has moved yet.
+  for (const enemyId of state.enemyIds) {
+    const enemy = state.actors[enemyId];
+    if (enemy.hp <= 0 || !state.intents[enemyId]) continue;
+    if (!resolveDeclaredAttack(state.intents[enemyId], state.enemyAttacks[enemyId] || [])) {
+      return { ok: false, reason: "intent-desync", state };
+    }
+  }
+
   let next = state;
 
   for (const enemyId of next.enemyIds) {
@@ -396,25 +647,25 @@ export function endTurn(state) {
     const enemy = next.actors[enemyId];
     if (enemy.hp <= 0) continue;
     if (isControlled(enemy)) {
+      // The intent is held, not spent: the blow it was winding up still lands, one round
+      // later. See INTENT_CONTROL_POLICY — control buys tempo rather than erasing the
+      // attack the player was shown.
       next = push(next, "enemy-nullified", { enemyId });
       continue;
     }
-    // Which of an enemy's attacks it chooses is not established by the evidence, so the
-    // pick is a seeded uniform draw and lives here as one obvious provisional decision
-    // rather than being spread through the loop.
+    // The foe swings what it declared. Which attack that is was decided at the start of the
+    // round, off the intent stream, and shown to the player before they spent their turn.
     const table = next.enemyAttacks?.[enemyId] || [];
-    let attack = { id: "basic", name: "Attack", hits: 1, damage: enemy.stats.attack };
-    let chooseRng = next.rng;
-    if (table.length > 0) {
-      const pick = nextInt(chooseRng, 0, table.length - 1);
-      chooseRng = pick.rng;
-      attack = table[pick.value];
-    }
+    const declared = next.intents[enemyId]
+      ? resolveDeclaredAttack(next.intents[enemyId], table)
+      : null;
+    const attack = declared
+      ?? { id: "basic", name: "Attack", hits: 1, damage: enemy.stats.attack };
     const resolved = resolveAttack({
       attacker: enemy,
       defender: next.actors[next.playerId],
       attack: { hits: attack.hits, damage: attack.damage },
-      rng: chooseRng,
+      rng: next.rng,
     });
     next = {
       ...next,
@@ -426,6 +677,9 @@ export function endTurn(state) {
       },
     };
     next = push(next, "enemy-attack", { enemyId, attackId: attack.id, hits: resolved.hits });
+    // Spent, so the next declaration is a new one. A foe that died mid-round drops its
+    // telegraph in the round-start pass rather than declaring from the grave.
+    if (declared) next = advanceEnemyIntent(next, enemyId);
     next = settle(next);
   }
 
@@ -454,8 +708,9 @@ export function endTurn(state) {
   };
 
   // Cadence traits fire before the action count is read, so a Swift proc this round is
-  // an extra action this round rather than next.
-  next = withFreshTurn(fireTraits(next));
+  // an extra action this round rather than next. The new round's telegraphs land last, so
+  // the player opens their turn already able to read the fight.
+  next = declareRoundIntents(withFreshTurn(fireTraits(next)));
   return { ok: true, reason: null, state: settle(next) };
 }
 

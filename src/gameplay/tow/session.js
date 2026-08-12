@@ -37,11 +37,14 @@ export const TOW_RNG_VERSION = "mulberry32-v1";
 /**
  * The named randomness streams, in a fixed order.
  *
- * `combat` drives the encounter itself and lives on `encounter.rng`. The other three are
- * held on the session until the phase that spends them: intent in the enemy turn, loot and
- * rewards at settlement.
+ * `combat` and `intent` drive the fight and live on the encounter, as `rng` and `intentRng`.
+ * `loot` and `rewards` are held on the session until settlement spends them. Each stream
+ * lives in exactly one place, so there is no second copy to drift.
  */
 export const TOW_RNG_STREAMS = Object.freeze(["combat", "intent", "loot", "rewards"]);
+
+/** The streams the session itself carries; the rest belong to the encounter. */
+export const TOW_SESSION_STREAMS = Object.freeze(["loot", "rewards"]);
 
 export const TOW_SESSION_MODES = Object.freeze(["campaign", "practice"]);
 export const TOW_SESSION_STATUSES = Object.freeze(["active", "terminal", "settled"]);
@@ -325,6 +328,12 @@ function isGenesis(value) {
 export function encounterFromGenesis(genesis) {
   return createTowEncounter({
     seed: genesis.seedManifest.combat,
+    intentSeed: genesis.seedManifest.intent,
+    // Authored rotations where a fixture supplies them; the default generator fills in the
+    // rest, so an arbitrary bestiary group telegraphs as readably as a named boss.
+    intentSchedules: Object.keys(genesis.intentSchedules).length > 0
+      ? genesis.intentSchedules
+      : undefined,
     player: genesis.playerSnapshot,
     enemies: genesis.enemySnapshots,
     build: genesis.effectiveBuild,
@@ -361,7 +370,7 @@ export function sealTowSession(session) {
 export function towStreamEndpoints(session) {
   return {
     combat: { ...session.encounter.rng },
-    intent: { ...session.streams.intent },
+    intent: { ...session.encounter.intentRng },
     loot: { ...session.streams.loot },
     rewards: { ...session.streams.rewards },
   };
@@ -406,8 +415,8 @@ export function isTowSession(value) {
   // forged revision cannot make a stale command look current.
   if (value.commands.length !== value.revision) return false;
   if (!isTowEncounter(value.encounter)) return false;
-  if (!exactKeys(value.streams, ["intent", "loot", "rewards"])) return false;
-  if (!["intent", "loot", "rewards"].every((name) => isRngState(value.streams[name]))) return false;
+  if (!exactKeys(value.streams, [...TOW_SESSION_STREAMS].sort())) return false;
+  if (!TOW_SESSION_STREAMS.every((name) => isRngState(value.streams[name]))) return false;
   if (!optionalIdentifier(value.settlementId)) return false;
   if (value.terminalReceipt !== null && typeof value.terminalReceipt !== "object") return false;
   if (typeof value.checksum !== "string") return false;
@@ -452,9 +461,10 @@ export function createTowSession(input = {}) {
         skills: build?.skills || [],
         runes: build?.runes || [],
       },
-      // Phase 3 fills this with per-enemy telegraph schedules. It is present and empty now
-      // so the codec shape does not change under sessions already in flight.
-      intentSchedules: {},
+      // Authored per-enemy telegraph rotations. Empty is the normal case: the encounter
+      // derives a default rotation from each foe's own attack table, and an authored one is
+      // for fixtures and named enemies whose pattern is part of their design.
+      intentSchedules: input.intentSchedules || {},
     }, "invalid-session-genesis");
   } catch {
     return rejected("invalid-session-genesis");
@@ -491,7 +501,6 @@ export function createTowSession(input = {}) {
     commands: [],
     encounter,
     streams: {
-      intent: createRng(genesis.seedManifest.intent),
       loot: createRng(genesis.seedManifest.loot),
       rewards: createRng(genesis.seedManifest.rewards),
     },

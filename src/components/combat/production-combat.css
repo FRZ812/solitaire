@@ -154,6 +154,27 @@
   background: rgba(178, 101, 80, 0.11);
 }
 
+/* The Tower of Winter view carries the telegraph inside each foe's own card rather than as
+   a standalone banner, so it sits tight under the name it belongs to. */
+.tow-combat .production-combat__intent {
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 0.35rem 0.55rem;
+  margin: 0.35rem 0 0.2rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.84rem;
+  line-height: 1.3;
+}
+
+.tow-combat .production-combat__intent strong {
+  color: #f0d6c6;
+}
+
+.tow-combat .production-combat__intent span:last-child {
+  color: #c0a293;
+}
+
 .production-combat__event,
 .production-combat__alert {
   min-height: 1.5rem;

@@ -70,6 +70,29 @@ describe("replaying from genesis", () => {
     expect(verifyTowSession(session).ok).toBe(true);
   });
 
+  it("reproduces the telegraph sequence and where the intent stream stopped", () => {
+    const session = play(open());
+    const replayed = replayTowCombatSession(session.genesis, session.commands);
+    const declarations = (events) => events
+      .filter((event) => event.type === "intent-declared")
+      .map((event) => [event.sequence, event.enemyId, event.attackId, event.declarationIndex]);
+    expect(declarations(replayed.encounter.events)).toEqual(declarations(session.encounter.events));
+    expect(declarations(session.encounter.events).length).toBeGreaterThan(1);
+    expect(replayed.encounter.intentRng).toEqual(session.encounter.intentRng);
+    expect(replayed.encounter.intents).toEqual(session.encounter.intents);
+  });
+
+  it("records the intent stream separately from the combat stream on each command", () => {
+    // A command that only ends the turn spends both; one that only strikes spends combat.
+    // Recording them apart is what makes "the telegraph did not touch the damage roll"
+    // checkable rather than asserted.
+    const session = play(open());
+    const ended = session.commands.find((command) => command.type === "end-turn");
+    const struck = session.commands.find((command) => command.type === "use-skill");
+    expect(Object.keys(ended.streams).sort()).toEqual(["combat", "intent"]);
+    expect(Object.keys(struck.streams)).toEqual(["combat"]);
+  });
+
   it("needs genesis; a command log alone proves nothing", () => {
     const session = play(open());
     const replayed = replayTowCombatSession({ ...session.genesis, seedManifest: null }, session.commands);

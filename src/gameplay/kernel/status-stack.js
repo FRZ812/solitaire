@@ -14,6 +14,32 @@ export const PROVISIONAL_DECREMENT = Object.freeze({
   evidence: "gap",
 });
 
+// The wiki names Sleep, Paralyze and Stun but never records how long they last. Leaving
+// them in the `gap` default — every flag false, so the stack persists untouched — turns out
+// not to be the safe reading it is for other statuses, because a control status that never
+// expires is not a cost or a tactic, it is an instant decision:
+//
+//   Mortal Blow deals 210% ATK and paralyzes *the user*. Under a permanent Paralyze that is
+//   not a drawback, it is a suicide button — the Barbarian package could not win a single
+//   simulated fight, because its best attack disabled it for the rest of the fight.
+//   Sleep Grenade is the same button pointed the other way: one use and a foe never acts
+//   again.
+//
+// Both readings are absurd, and they are absurd in opposite directions, which is decent
+// evidence that neither is what the source means. So control decays like every other
+// non-permanent stack until a capture settles it. This is provisional and marked as such;
+// it is not a claim about the wiki.
+export const PROVISIONAL_CONTROL_LIFECYCLE = Object.freeze({
+  types: Object.freeze(["paralyze", "sleep", "stun"]),
+  decreaseAtEndOfTurn: true,
+  evidence: "gap",
+});
+
+/** Whether this status is one of the documented departures from inert-by-default. */
+export function hasProvisionalControlLifecycle(type) {
+  return PROVISIONAL_CONTROL_LIFECYCLE.types.includes(type);
+}
+
 export const MAX_STATUS_COUNT = 1_000_000;
 
 function definition(id, { permanent = false, removeAtEndOfTurn = false, decreaseAtEndOfTurn = false, decreaseWhenHit = false, evidence = "observed" } = {}) {
@@ -63,9 +89,10 @@ const DEFINITIONS = Object.freeze({
   // effect is known while their lifecycle is not.
   conceal: definition("conceal", { evidence: "gap" }),
   invincible: definition("invincible", { evidence: "gap" }),
-  paralyze: definition("paralyze", { evidence: "gap" }),
-  sleep: definition("sleep", { evidence: "gap" }),
-  stun: definition("stun", { evidence: "gap" }),
+  // See PROVISIONAL_CONTROL_LIFECYCLE: decay is provisional, but permanence is provably wrong.
+  paralyze: definition("paralyze", { decreaseAtEndOfTurn: true, evidence: "gap" }),
+  sleep: definition("sleep", { decreaseAtEndOfTurn: true, evidence: "gap" }),
+  stun: definition("stun", { decreaseAtEndOfTurn: true, evidence: "gap" }),
   bleed: definition("bleed", { evidence: "gap" }),
   "bleed-atk": definition("bleed-atk", { evidence: "gap" }),
   lethargy: definition("lethargy", { evidence: "gap" }),
@@ -137,6 +164,24 @@ export function applyStatus(stack, type, count) {
 
 export function removeStatus(stack, type) {
   return normalize(stack).filter((entry) => entry.type !== type);
+}
+
+/**
+ * Cut a status down to a percentage of what it is.
+ *
+ * First Aid "reduces Bleed, Burn and Poison to 60%", which is a scale rather than a
+ * decrement — it has to bite harder on a heavy stack than a light one. Rounding down means
+ * the last point of a one-stack burn goes out, which is the reading that matches a skill
+ * whose whole job is to clean a wound.
+ */
+export function scaleStatus(stack, type, percent) {
+  if (!getStatusDefinition(type)) throw new TypeError(`unknown-status:${type}`);
+  if (!Number.isFinite(percent) || percent < 0) throw new TypeError("invalid-status-percent");
+  return normalize(stack)
+    .map((entry) => (entry.type === type
+      ? { type, count: Math.floor((entry.count * percent) / 100) }
+      : entry))
+    .filter((entry) => entry.count > 0);
 }
 
 function normalize(stack) {
