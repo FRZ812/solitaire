@@ -50,7 +50,11 @@ function proficiencyGains(encounter, proficiencyId) {
  *   `npcIds` maps encounter actor ids to codex character ids, for foes that are real people.
  */
 export function settleTowEncounter(state, encounter, context = {}) {
-  const { encounterId, proficiencyId = null, npcIds = {} } = context;
+  // Lethality belongs to the fiction that started the fight, not to the encounter — a
+  // brawl and a duel to the death resolve identically on the kernel and differ only in
+  // what zero health means afterwards. Defaulting to lethal keeps a caller that has not
+  // been taught the distinction behaving as it always did.
+  const { encounterId, proficiencyId = null, npcIds = {}, lethal = true } = context;
   if (typeof encounterId !== "string" || encounterId.length === 0) {
     return rejected("invalid-encounter-id", state);
   }
@@ -123,7 +127,12 @@ export function settleTowEncounter(state, encounter, context = {}) {
       combatState: {
         health: Math.max(0, Math.ceil(enemy.hp)),
         maxHealth: enemy.maxHp,
-        status: enemy.hp <= 0 ? "dead" : enemy.hp < enemy.maxHp ? "wounded" : "ok",
+        // A foe beaten in a nonlethal fight is unconscious, not a corpse. Recording them
+        // dead is unrecoverable: the codex loses a person the player deliberately spared,
+        // and they can never return.
+        status: enemy.hp <= 0
+          ? (lethal ? "dead" : "downed")
+          : enemy.hp < enemy.maxHp ? "wounded" : "ok",
       },
     };
     codexTouched = true;

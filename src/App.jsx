@@ -3092,6 +3092,7 @@ export function Solitaire() {
       encounterId: ctx.encounterId || `combat:${cs.round}:${cs.sequence}`,
       proficiencyId: ctx.proficiencyId || null,
       npcIds: ctx.npcIds || {},
+      lethal: ctx.lethal !== false,
     });
     if (!settled.ok && settled.reason !== "tow-encounter-already-settled") {
       setError(`The fight could not be settled: ${settled.reason}.`);
@@ -3123,7 +3124,10 @@ export function Solitaire() {
       if (epicDeath) {
         msg = `[DEATH — ENGINE SETTLED] Permanent death against ${ctx.flavor || "a foe far beyond the player's strength"} at ${place} is already canonical. Narrate one external, unflinching final scene from the combat report: the foe, the killing blow, witnesses, and the silence after. Do not invent player speech, a last voluntary action, intent, emotion, or internal conclusion. Do not rescue, revise, or apply mechanics.`;
       } else if (cs.phase === "defeat") {
-        const wasLethal = cs.lethal || cs.escalated;
+        // Lethality lives on the combat context, not on the encounter. Reading it off the
+        // encounter always yielded undefined, so every defeat was narrated as a
+        // bare-knuckle beating even when the fight was fought with drawn steel.
+        const wasLethal = ctx.lethal !== false;
         msg = `[DEFEATED — ENGINE SETTLED] The engine-settled defeat is final: ${ctx.flavor || "the foe"} left the player unconscious at ${place}; the player survives there with canonical vitality and conditions already applied, while inventory and location remain unchanged. ${wasLethal ? "Weapons were drawn; render the grave wounds already recorded." : "It was a bare-knuckle defeat; keep the external aftermath restrained."} Narrate only the foe, witnesses, surroundings, and passage of the immediate moment. Do not invent player speech, consent, intent, emotion, waking action, or any mechanical consequence.`;
       } else {
         const result = cs.phase === "victory" ? "You won — every foe is slain or down."
