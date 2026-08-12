@@ -8,6 +8,7 @@
 // single source of truth, no mirror file on the function side.
 import { supabase } from "./supabase-client.js";
 import { buildStateContext } from "./api.js";
+import { selectStateContext } from "./narrator/context-sections.js";
 import { SYSTEM_PROMPT } from "../system-prompt.js";
 import { getNarratorModel, getNarratorEffort } from "./narrator-models.js";
 import { prepareNarratorHistory } from "./narrator-history.js";
@@ -102,8 +103,15 @@ async function callNarratorWithinDeadline(
   turnPolicy,
   canonicalUserMsg,
 ) {
+  // Context is selected rather than appended wholesale. At the default budget every section
+  // fits and this is byte-identical to the old block — proven against real campaign states
+  // in context-sections.test.js — so what changes today is only that a campaign which grows
+  // past the budget drops whole sections by rank instead of overflowing.
+  const selectedContext = selectStateContext(buildStateContext(state), {
+    route: turnPolicy.id,
+  });
   const state_context = [
-    buildStateContext(state),
+    selectedContext.text,
     projection.context,
     `[TURN POLICY — id=${turnPolicy.id}; required narrator skills=${turnPolicy.requiredSkillIds.join(",") || "none"}; allowed effects=${turnPolicy.allowedEffects.join(",") || "none"}.]`,
   ].join("\n");

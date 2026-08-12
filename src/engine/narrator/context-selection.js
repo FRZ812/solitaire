@@ -57,9 +57,18 @@ export const RANK_WEIGHTS = Object.freeze({
   recency: 10,
 });
 
-function boundedText(value, limit = 2_000) {
-  const text = typeof value === "string" ? value.trim() : "";
-  return text.length > limit ? text.slice(0, limit) : text;
+/**
+ * A record above this is refused, never cut.
+ *
+ * The builder used to slice to fit, which is the same mistake the packer is careful not to
+ * make: a record truncated mid-fact reads as a complete fact about something else. Deciding
+ * what fits is the budget's job, and a record too large for any budget is a bug in whatever
+ * produced it — worth failing loudly rather than half-sending.
+ */
+export const MAX_RECORD_CHARS = 100_000;
+
+function boundedText(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 /**
@@ -79,7 +88,7 @@ export function contextRecord({
 }) {
   if (!id || !CONTEXT_TYPES.includes(type)) return null;
   const body = boundedText(text);
-  if (!body) return null;
+  if (!body || body.length > MAX_RECORD_CHARS) return null;
   return Object.freeze({
     version: NARRATOR_CONTEXT_VERSION,
     id,
@@ -120,14 +129,21 @@ export function scoreRecord(record, { subjectIds = [], route = null, revision = 
  * would make every narrator comparison meaningless — including the evaluation the plan wants
  * to run against it.
  *
+ * `preserveInputOrder` separates the two questions a packer answers. Rank decides *which*
+ * records survive the budget; input order decides what the result reads like. The section
+ * adapter needs both: drop by relevance, but emit in the order the prompt has always used,
+ * because the narrator has been trained against that shape.
+ *
  * @param {Array} candidates records from `buildNarratorContextCandidates`
- * @param {{budgetChars: number, route?: string, subjectIds?: string[], revision?: number}} options
+ * @param {{budgetChars: number, route?: string, subjectIds?: string[], revision?: number,
+ *   preserveInputOrder?: boolean}} options
  */
 export function selectNarratorContext(candidates, {
   budgetChars = 12_000,
   route = null,
   subjectIds = [],
   revision = 0,
+  preserveInputOrder = false,
 } = {}) {
   const valid = (candidates || []).filter(Boolean);
   const always = valid.filter((record) => ALWAYS_INCLUDED_TYPES.includes(record.type));
@@ -153,13 +169,17 @@ export function selectNarratorContext(candidates, {
     used += record.chars;
   }
 
+  const ordered = preserveInputOrder
+    ? valid.filter((record) => selected.includes(record))
+    : selected;
+
   return {
     version: NARRATOR_CONTEXT_VERSION,
     route,
-    selected,
+    selected: ordered,
     // Diagnostics, because a context that silently lost the thing the turn was about is a
     // bug nobody can see from the prose it produced.
-    selectedIds: selected.map((record) => record.id),
+    selectedIds: ordered.map((record) => record.id),
     droppedIds: dropped.map((record) => record.id),
     droppedCount: dropped.length,
     usedChars: used,
