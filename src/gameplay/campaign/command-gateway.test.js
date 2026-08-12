@@ -202,10 +202,10 @@ describe("creation", () => {
 describe("what is not yet policed says so", () => {
   it("passes a field through and records it", () => {
     const result = resolveNarratorIntents(
-      campaign(), turnWith({ inventory_changes: { added: [{ id: "rope" }] } }),
+      campaign(), turnWith({ discoveries: { places: ["A ruin"] } }),
     );
-    expect(receiptFor(result, "inventory_changes").status).toBe(INTENT_STATUS.PASSED_THROUGH);
-    expect(result.turn.inventory_changes).toBeTruthy();
+    expect(receiptFor(result, "discoveries").status).toBe(INTENT_STATUS.PASSED_THROUGH);
+    expect(result.turn.discoveries).toBeTruthy();
   });
 
   it("gives every pass-through a reason worth reading", () => {
@@ -224,12 +224,16 @@ describe("what is not yet policed says so", () => {
     for (const field of [
       "minutes_passed", "vitality_change", "new_conditions", "attribute_changes",
       "assassination", "character_setup", "needs_changes", "memory_updates",
-      "relationship_changes", "party_removals",
+      "relationship_changes", "party_removals", "resolve_change", "part_ways",
+      "recruit_companion", "buy_mount", "purchase_captive", "inventory_changes",
     ]) {
       expect(coverage.enforced, field).toContain(field);
     }
-    // Enforcement is now on most of what can break the game, and the rest says why not.
-    expect(coverage.fraction).toBeGreaterThan(0.35);
+    // Precise rather than round: every field is enforced or has an entry saying why not, so
+    // the two lists must together be the whole contract with nothing falling between them.
+    expect(coverage.passThrough.sort()).toEqual(Object.keys(PASS_THROUGH_REASONS).sort());
+    expect(coverage.enforced.length).toBeGreaterThanOrEqual(20);
+    expect(coverage.fraction).toBeGreaterThan(0.7);
   });
 });
 
@@ -317,5 +321,82 @@ describe("the owners promoted from pass-through", () => {
     expect(receiptFor(result, "party_removals"))
       .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "removing-someone-not-in-the-party" });
     expect(result.turn.party_removals).toBe(null);
+  });
+});
+
+describe("purchases, party and items", () => {
+  function rich(overrides = {}) {
+    return campaign({
+      character: {
+        vitality: 20, vitalityMax: 30, resolve: 4, resolveMax: 8,
+        attributes: { body: 2 },
+        inventory: { coins: { gold: 5 } },
+      },
+      party: ["hale"],
+      ...overrides,
+    });
+  }
+
+  it("lets the narrator haggle but not agree to money nobody has", () => {
+    // The negotiation is the narrator's job; a price the purse has never held is not.
+    const cheap = resolveNarratorIntents(rich(), turnWith({
+      buy_mount: { id: "pony", priceCp: 100, settlement: "coin" },
+    }));
+    expect(receiptFor(cheap, "buy_mount").status).toBe(INTENT_STATUS.APPLIED);
+
+    const dear = resolveNarratorIntents(rich(), turnWith({
+      buy_mount: { id: "pony", priceCp: 999_999, settlement: "coin" },
+    }));
+    expect(receiptFor(dear, "buy_mount"))
+      .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "cannot-afford" });
+    expect(dear.turn.buy_mount).toBe(null);
+  });
+
+  it("still allows a non-coin settlement the purse could never cover", () => {
+    // A writ, a ruse or a debt of service is exactly how the world lets a poor player buy
+    // someone's freedom. Only coin has to be in the purse.
+    const result = resolveNarratorIntents(rich(), turnWith({
+      purchase_captive: { key: "mara", agreedPriceCp: 999_999, settlement: "writ", settlementNote: "a noble's deposit" },
+    }));
+    expect(receiptFor(result, "purchase_captive").status).toBe(INTENT_STATUS.APPLIED);
+  });
+
+  it("refuses recruiting or parting with the wrong people", () => {
+    expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ recruit_companion: { id: "hale" } })), "recruit_companion").reason)
+      .toBe("already-in-the-party");
+    expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ part_ways: { id: "hale" } })), "part_ways").status)
+      .toBe(INTENT_STATUS.APPLIED);
+    expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ part_ways: { id: "ghost" } })), "part_ways").reason)
+      .toBe("parting-from-someone-not-in-the-party");
+  });
+
+  it("refuses an item nobody catalogued", () => {
+    // Items are combat stats through the bridge, so an invented id is an invented weapon.
+    const result = resolveNarratorIntents(rich(), turnWith({
+      inventory_changes: { added: [{ itemId: "sword-of-plot-convenience", quantity: 1 }] },
+    }));
+    expect(receiptFor(result, "inventory_changes"))
+      .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "uncatalogued-item" });
+  });
+
+  it("allows a loot-minted instance that carries its own entry", () => {
+    const result = resolveNarratorIntents(rich(), turnWith({
+      inventory_changes: { added: [{ itemId: "rare-blade-a1b2", quantity: 1, entry: { id: "rare-blade-a1b2", name: "Keen Blade" } }] },
+    }));
+    expect(receiptFor(result, "inventory_changes").status).toBe(INTENT_STATUS.APPLIED);
+  });
+
+  it("bounds the spendable pool like the health one", () => {
+    expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ resolve_change: 2 })), "resolve_change").status)
+      .toBe(INTENT_STATUS.APPLIED);
+    expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ resolve_change: 40 })), "resolve_change").reason)
+      .toBe("resolve-above-maximum");
+  });
+
+  it("refuses a growth steer the progression system does not understand", () => {
+    expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ progression_focus: "martial" })), "progression_focus").reason)
+      .toBe("unknown-progression-focus");
+    expect(receiptFor(resolveNarratorIntents(rich(), turnWith({ progression_focus: "racial" })), "progression_focus").status)
+      .toBe(INTENT_STATUS.APPLIED);
   });
 });

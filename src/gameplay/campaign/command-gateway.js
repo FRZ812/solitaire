@@ -24,6 +24,8 @@
 
 import { CONDITIONS, condName } from "../../data/conditions.js";
 import { MEMORY_TEXT_LIMIT, cleanMemoryText } from "../../engine/memory.js";
+import { coinsToCopper } from "../../engine/economy.js";
+import { itemTemplate } from "../../data/catalog.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import { NARRATOR_FIELD_INVENTORY, intentFields } from "./narrator-field-inventory.js";
 
@@ -68,6 +70,21 @@ export const MAX_MEMORIES_PER_TURN = 4;
 
 /** How far one beat may move a single relationship. */
 export const MAX_RELATIONSHIP_DELTA = 20;
+
+/**
+ * A purchase must be affordable.
+ *
+ * The narrator negotiates the price — that is its job, and a haggle it cannot lose is not a
+ * haggle. What it cannot do is agree to a number the purse has never held, because the
+ * reducer would then either refuse silently or drive the purse negative.
+ */
+function affordable(state, copper) {
+  return coinsToCopper(state?.character?.inventory?.coins || {}) >= copper;
+}
+
+function inParty(state, id) {
+  return (state?.party || []).includes(id);
+}
 
 function refuse(reason, detail = {}) {
   return { status: INTENT_STATUS.REFUSED, reason, ...detail };
@@ -241,6 +258,115 @@ const ENFORCED = Object.freeze({
     if (strangers.length > 0) return refuse("removing-someone-not-in-the-party", { strangers });
     return allow();
   },
+
+  /**
+   * The spendable pool, bounded like vitality. Same argument: a beat that refills it freely
+   * makes every rationed thing free.
+   */
+  resolve_change(state, value) {
+    if (value === null || value === undefined || value === 0) return allow();
+    if (!Number.isSafeInteger(value)) return refuse("resolve-not-an-integer");
+    const max = state?.character?.resolveMax ?? 0;
+    const current = state?.character?.resolve ?? 0;
+    if (value > 0 && current + value > max) {
+      return refuse("resolve-above-maximum", { max, current, asked: value });
+    }
+    if (value < 0 && Math.abs(value) > max) return refuse("resolve-loss-exceeds-pool", { max });
+    return allow();
+  },
+
+  /** Consent-bearing, and it must be someone who is actually travelling with the player. */
+  part_ways(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (!value.id) return refuse("part-ways-without-an-id");
+    if (!inParty(state, value.id)) {
+      return refuse("parting-from-someone-not-in-the-party", { id: value.id });
+    }
+    return allow();
+  },
+
+  /** Steers growth, and the only steer the progression system understands is racial. */
+  progression_focus(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (value !== "racial") return refuse("unknown-progression-focus", { asked: value });
+    return allow();
+  },
+
+  /**
+   * A companion who is already travelling with the player cannot be recruited again, and one
+   * bought on credit still has to be bought with money the purse has held.
+   */
+  recruit_companion(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (!value.id) return refuse("recruit-without-an-id");
+    if (inParty(state, value.id)) return refuse("already-in-the-party", { id: value.id });
+    return allow();
+  },
+
+  grant_mount(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (!value.id) return refuse("mount-without-an-id");
+    if (inParty(state, value.id)) return refuse("already-in-the-party", { id: value.id });
+    return allow();
+  },
+
+  buy_mount(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (!value.id) return refuse("mount-without-an-id");
+    if (inParty(state, value.id)) return refuse("already-in-the-party", { id: value.id });
+    if (value.settlement === "coin" && !affordable(state, value.priceCp ?? 0)) {
+      return refuse("cannot-afford", { asked: value.priceCp });
+    }
+    return allow();
+  },
+
+  purchase_captive(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (value.settlement === "coin" && !affordable(state, value.agreedPriceCp ?? 0)) {
+      return refuse("cannot-afford", { asked: value.agreedPriceCp });
+    }
+    return allow();
+  },
+
+  purchase_rights(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (value.settlement === "coin" && !affordable(state, value.agreedPriceCp ?? 0)) {
+      return refuse("cannot-afford", { asked: value.agreedPriceCp });
+    }
+    return allow();
+  },
+
+  /**
+   * Items are combat stats through the bridge, so an invented item id is an invented weapon.
+   * Loot-minted instances carry their own entry and are exempt; a bare id must be catalogued.
+   */
+  inventory_changes(state, value) {
+    if (value === null || value === undefined) return allow();
+    const invented = [];
+    for (const collection of ["added", "removed"]) {
+      for (const entry of value?.[collection] || []) {
+        if (!entry?.itemId || entry.entry) continue;
+        if (!itemTemplate(entry.itemId)) invented.push(entry.itemId);
+      }
+    }
+    if (invented.length > 0) return refuse("uncatalogued-item", { invented });
+    return allow();
+  },
+
+  /** Companion equipment is companion combat stats; the same catalogue rule applies. */
+  companion_gear(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (!Array.isArray(value)) return refuse("companion-gear-not-a-list");
+    const invented = [];
+    for (const entry of value) {
+      for (const slot of ["weapon", "armor", "offhand", "trinket"]) {
+        const itemId = entry?.[slot];
+        if (typeof itemId === "string" && itemId && !itemTemplate(itemId)) invented.push(itemId);
+      }
+    }
+    if (invented.length > 0) return refuse("uncatalogued-item", { invented });
+    return allow();
+  },
 });
 
 /**
@@ -250,9 +376,6 @@ const ENFORCED = Object.freeze({
  * work; enumerating it is what makes the work reviewable.
  */
 export const PASS_THROUGH_REASONS = Object.freeze({
-  resolve_change: "The Resolve pool is mid-redesign — the plan unifies it with Tower of "
-    + "Winter readiness only after a balance RFC — so a bound written now would be a bound "
-    + "written twice.",
   tile_discovery: "Map reveal rules live in the world generator; the owner has to read them "
     + "rather than invent a second opinion about what is where.",
   tile_move: "Travel cost is owned by the travel lifecycle, which already refuses illegal "
@@ -261,24 +384,8 @@ export const PASS_THROUGH_REASONS = Object.freeze({
     + "a registry join rather than a rule.",
   discoveries: "Additive codex writes. Harmless in isolation, but they become fact for every "
     + "later prompt, so the owner is a content-validation concern.",
-  inventory_changes: "Items are combat stats through the bridge. The owner needs the item "
-    + "catalogue and the trade rules, both of which are their own surface.",
   knowledge_updates: "Gates options elsewhere; needs the knowledge registry to validate "
     + "against.",
-  recruit_companion: "A companion is now an allied combat actor. The owner has to admit them "
-    + "the way combat does, which is the party-admission work.",
-  grant_mount: "Mounts change travel speed and carry capacity; the owner needs the mount "
-    + "registry.",
-  buy_mount: "As grant_mount, plus coin, so it needs the trade owner too.",
-  purchase_captive: "Consent-bearing and coin-moving; the plan wants an engine-rendered, "
-    + "revision-bound confirmation before it can commit.",
-  purchase_rights: "Consent-bearing and coin-moving, like purchase_captive, and it files a "
-    + "bonded codex entry on top — three durable writes out of one narrated haggle.",
-  part_ways: "Consent-bearing: removing a companion needs the player's confirmation against "
-    + "current state, not a beat that says they wandered off.",
-  companion_gear: "Companion equipment is companion combat stats; needs the same catalogue "
-    + "as inventory_changes.",
-  progression_focus: "Narrow, but it steers growth; the owner is the progression system.",
   player_update: "Identity and appearance. Mostly narrative, but durable, so it wants the "
     + "same discipline once the shape of an identity owner is settled.",
   start_combat: "Admission already projects and can refuse this on the combat path. Routing "
