@@ -98,6 +98,11 @@ import { hashSeed } from "./engine/combat-rng.js";
 import { applyLoot, lootCtx, rollLoot } from "./engine/combat-loot.js";
 import { emptyMechanicsSidecar, hasMechanicsSidecar } from "./engine/campaign-migration.js";
 import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admission.js";
+import {
+  buildCombatChronicle,
+  chronicleSummary,
+  renderCombatChronicle,
+} from "./gameplay/tow/chronicle.js";
 import { dispatchTowCommand } from "./gameplay/tow/commands.js";
 import { sealTowTerminalReceipt, worldFatesByParticipant } from "./gameplay/tow/outcomes.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
@@ -3366,6 +3371,28 @@ export function Solitaire() {
         readiness: pruneReadiness(readinessFromEncounter(cs), cs.build.skills),
       },
     );
+    // The report the aftermath prompt has always claimed to be narrating from. It is
+    // recorded as a beat before a word is generated, so the player is told exactly what
+    // happened whether or not any narration ever arrives.
+    const chronicle = buildCombatChronicle(session, receipt, {
+      settlementId: session.sessionId,
+      playerEndpoint: {
+        vitality: next.character?.vitality ?? null,
+        conditions: [...(next.character?.conditions || [])],
+      },
+    });
+    const report = renderCombatChronicle(chronicle);
+    next = {
+      ...next,
+      beats: [
+        ...(next.beats || []),
+        {
+          id: `tow-combat:${session.sessionId}:chronicle`,
+          type: "narration",
+          content: chronicleSummary(chronicle),
+        },
+      ],
+    };
     liveStateRef.current = next;
     setState(next);
     setTowCombatFeedback(null);
@@ -3377,17 +3404,23 @@ export function Solitaire() {
     try {
       let msg;
       if (epicDeath) {
-        msg = `[DEATH — ENGINE SETTLED] Permanent death against ${flavor || "a foe far beyond the player's strength"} at ${place} is already canonical. Narrate one external, unflinching final scene from the combat report: the foe, the killing blow, witnesses, and the silence after. Do not invent player speech, a last voluntary action, intent, emotion, or internal conclusion. Do not rescue, revise, or apply mechanics.`;
+        msg = `${report}
+
+[DEATH — ENGINE SETTLED] Permanent death against ${flavor || "a foe far beyond the player's strength"} at ${place} is already canonical. Narrate one external, unflinching final scene from the combat report: the foe, the killing blow, witnesses, and the silence after. Do not invent player speech, a last voluntary action, intent, emotion, or internal conclusion. Do not rescue, revise, or apply mechanics.`;
       } else if (cs.phase === "defeat") {
         // Lethality lives on the admission, not on the encounter. Reading it off the
         // encounter always yielded undefined, so every defeat was narrated as a
         // bare-knuckle beating even when the fight was fought with drawn steel.
-        msg = `[DEFEATED — ENGINE SETTLED] The engine-settled defeat is final: ${flavor || "the foe"} left the player unconscious at ${place}; the player survives there with canonical vitality and conditions already applied, while inventory and location remain unchanged. ${lethal ? "Weapons were drawn; render the grave wounds already recorded." : "It was a bare-knuckle defeat; keep the external aftermath restrained."} Narrate only the foe, witnesses, surroundings, and passage of the immediate moment. Do not invent player speech, consent, intent, emotion, waking action, or any mechanical consequence.`;
+        msg = `${report}
+
+[DEFEATED — ENGINE SETTLED] The engine-settled defeat is final: ${flavor || "the foe"} left the player unconscious at ${place}; the player survives there with canonical vitality and conditions already applied, while inventory and location remain unchanged. ${lethal ? "Weapons were drawn; render the grave wounds already recorded." : "It was a bare-knuckle defeat; keep the external aftermath restrained."} Narrate only the foe, witnesses, surroundings, and passage of the immediate moment. Do not invent player speech, consent, intent, emotion, waking action, or any mechanical consequence.`;
       } else {
         const result = cs.phase === "victory" ? "You won — every foe is slain or down."
           : cs.phase === "resolved" ? "The fight ended without a slaughter — see the report for each foe's fate (yielded / fled / knocked out)."
           : "You broke off and fled the fight.";
-        msg = `[COMBAT OVER] ${result} At ${place}. Narrate the immediate aftermath STRICTLY from the [COMBAT REPORT] — name the actual foe(s) and their exact fates, the room's reaction, your state — then leave the moment open for the player to react. A foe that yielded is present, beaten, and at your mercy: refer to THEM by name; do NOT introduce or substitute a different character to take the foe's place. Do not restart combat.`;
+        msg = `${report}
+
+[COMBAT OVER] ${result} At ${place}. Narrate the immediate aftermath STRICTLY from the [COMBAT REPORT] — name the actual foe(s) and their exact fates, the room's reaction, your state — then leave the moment open for the player to react. A foe that yielded is present, beaten, and at your mercy: refer to THEM by name; do NOT introduce or substitute a different character to take the foe's place. Do not restart combat.`;
       }
       const policyOptions = {
         route: "combat-aftermath",

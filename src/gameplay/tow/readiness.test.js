@@ -104,6 +104,59 @@ describe("settling a fight", () => {
   });
 });
 
+describe("the spend, settle, reload, rest cycle", () => {
+  // The whole point of readiness: the road gives nothing back, and only a night that the
+  // engine actually committed does. Each step below is one link in that chain, and the
+  // cycle has to be exact end to end or the scarcity is decorative.
+  it("survives a round trip through storage without moving", () => {
+    let state = fight(emptyReadiness());
+    state = useSkill(state, "block").state;
+    state = endTurn(state).state;
+    const settled = readinessFromEncounter(state);
+
+    // What a save actually does to it.
+    const stored = JSON.parse(JSON.stringify(settled));
+    expect(isReadiness(stored)).toBe(true);
+    expect(stored).toEqual(settled);
+
+    const resumed = fight(stored);
+    expect(resumed.build.skills.find((entry) => entry.id === "block").usesRemaining)
+      .toBe(usesPerAct("block", 1) - 1);
+  });
+
+  it("is exact across two fights and a rest", () => {
+    let first = fight(emptyReadiness());
+    for (let round = 0; round < 3; round += 1) {
+      first = useSkill(first, "block").state;
+      first = endTurn(first).state;
+    }
+    const afterFirst = readinessFromEncounter(first);
+    expect(afterFirst.block).toBe(usesPerAct("block", 1) - 3);
+
+    let second = fight(afterFirst);
+    second = useSkill(second, "block").state;
+    const afterSecond = readinessFromEncounter(second);
+    expect(afterSecond.block).toBe(usesPerAct("block", 1) - 4);
+
+    // A completed rest, and only then, puts it all back.
+    const rested = fight(restoreReadiness());
+    expect(rested.build.skills.find((entry) => entry.id === "block").usesRemaining)
+      .toBe(usesPerAct("block", 1));
+  });
+
+  it("cannot be refilled by anything short of a completed rest", () => {
+    // An interrupted camp, a rest screen opened and closed, a narrator describing a
+    // pleasant night — none of them produce a readiness map, so none of them can refill.
+    // The only value that restores is the one `restoreReadiness` returns.
+    const spent = { block: 2 };
+    expect(fight(spent).build.skills.find((entry) => entry.id === "block").usesRemaining).toBe(2);
+    expect(restoreReadiness()).toEqual(emptyReadiness());
+    // A partial or arbitrary map still cannot exceed the limit it came from.
+    expect(fight({ block: 999 }).build.skills.find((entry) => entry.id === "block").usesRemaining)
+      .toBe(usesPerAct("block", 1));
+  });
+});
+
 describe("getting it back", () => {
   it("comes back whole from a completed rest", () => {
     const state = fight(restoreReadiness());

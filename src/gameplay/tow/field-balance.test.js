@@ -93,7 +93,14 @@ function playOut(seed, profession, kind, seedIndex) {
 const PROFESSIONS = ["fighter", "wanderer", "cleric", "rogue"];
 const KINDS = ["bandits", "wolves"];
 
+// Computed lazily, on first use inside a test body. Building the runs in the describe body
+// would evaluate them during collection — before `beforeAll` installs the seeded generator —
+// so the seeding would silently never apply and the whole gate would go back to depending on
+// the dice. Memoised so every test reads the same set.
+let cachedRuns = null;
+
 function fieldRuns() {
+  if (cachedRuns) return cachedRuns;
   const runs = [];
   for (const profession of PROFESSIONS) {
     for (const kind of KINDS) {
@@ -102,6 +109,7 @@ function fieldRuns() {
       }
     }
   }
+  cachedRuns = runs;
   return runs;
 }
 
@@ -112,19 +120,20 @@ function median(values) {
 }
 
 describe("a real fight at the table", () => {
-  const runs = fieldRuns();
-
   it("reaches a decision rather than grinding to the safety limit", () => {
+    const runs = fieldRuns();
     expect(runs.every((run) => run.outcome !== "player")).toBe(true);
   });
 
   it("is long enough to make a decision matter", () => {
+    const runs = fieldRuns();
     // Under about three rounds there is no room to read a telegraph, spend a resource, or
     // change your mind — the fight resolves before it starts.
     expect(median(runs.map((run) => run.rounds))).toBeGreaterThanOrEqual(3);
   });
 
   it("is short enough not to become a clicking exercise", () => {
+    const runs = fieldRuns();
     // Every round is a couple of clicks, and skill uses now carry to the next fight, so a
     // long fight costs the player twice. This is the bound the fixture sweep flagged; if a
     // balance change pushes real fights past it, that is worth knowing at the time.
@@ -134,6 +143,7 @@ describe("a real fight at the table", () => {
   });
 
   it("leaves the road winnable for an ordinary traveller", () => {
+    const runs = fieldRuns();
     // Not every fight, and not by much — but a starting character meeting a common bandit
     // group on the road should not be walking into a reliable loss.
     const wins = runs.filter((run) => run.outcome === "victory").length;
@@ -141,6 +151,7 @@ describe("a real fight at the table", () => {
   });
 
   it("always leaves a capable actor something legal to do", () => {
+    const runs = fieldRuns();
     for (const run of runs) {
       if (run.state.phase !== "player") continue;
       if (run.state.turn.actionsRemaining <= 0) continue;

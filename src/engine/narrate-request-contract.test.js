@@ -308,6 +308,31 @@ describe("narrator application trust boundary", () => {
     expect(appSource).not.toContain("const finalState = { ...narrated, ended }");
   });
 
+  it("hands the narrator the combat report it is told to narrate from", () => {
+    // The aftermath prompt has always said "narrate STRICTLY from the [COMBAT REPORT]". For
+    // a long time no such report was built, so the model was instructed to be faithful to a
+    // document that did not exist — and had to invent the exact fates it was told to
+    // reproduce. Every aftermath message now carries the rendered Chronicle.
+    expect(appSource).toContain("const report = renderCombatChronicle(chronicle)");
+    const aftermathPrompts = appSource.match(/msg = `\$\{report\}/g) || [];
+    expect(aftermathPrompts.length).toBe(3);
+  });
+
+  it("restores readiness only from a rest the engine committed", () => {
+    // Not when a rest screen opens, not when a camp is interrupted, and not because a
+    // narrator described a pleasant night. Both restore sites sit behind an early return on
+    // a refused rest, and there are only two of them.
+    const restores = appSource.match(/readiness: restoreReadiness\(\)/g) || [];
+    expect(restores.length).toBe(2);
+    for (const handler of ["function handleRest(", "function handleHaltMakeCamp("]) {
+      const start = appSource.indexOf(handler);
+      expect(start).toBeGreaterThan(-1);
+      const body = appSource.slice(start, appSource.indexOf("restoreReadiness()", start));
+      expect(body).toContain("if (!r.ok)");
+      expect(body).toContain("return;");
+    }
+  });
+
   it("selects sought combat in the engine before asking the narrator to render it", () => {
     expect(appSource).toContain("const soughtKind = pickHostileKind(stateWithPlayer)");
     expect(appSource).toContain("foes: [{ kind: soughtKind, count: 1 }]");
