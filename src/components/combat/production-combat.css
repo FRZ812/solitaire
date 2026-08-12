@@ -154,6 +154,60 @@
   background: rgba(178, 101, 80, 0.11);
 }
 
+/* The player's side of the field: the protagonist, then whoever came with them. */
+.production-combat__side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+  flex: 1;
+}
+
+/* One command window covers the whole side, so the player picks whose action to spend. */
+.production-combat__commanders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.production-combat__commander {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid rgba(215, 167, 111, 0.28);
+  border-radius: 10px;
+  background: transparent;
+  color: #cbd3ca;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.production-combat__commander.is-selected {
+  border-color: rgba(215, 167, 111, 0.7);
+  background: rgba(215, 167, 111, 0.12);
+  color: #f0d6c6;
+}
+
+.production-combat__commander span {
+  font-size: 0.72rem;
+  color: #93a08f;
+}
+
+.production-combat__stand-down {
+  margin-bottom: 0.4rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid rgba(215, 167, 111, 0.25);
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(215, 167, 111, 0.75);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
 /* The Tower of Winter view carries the telegraph inside each foe's own card rather than as
    a standalone banner, so it sits tight under the name it belongs to. */
 .tow-combat .production-combat__intent {

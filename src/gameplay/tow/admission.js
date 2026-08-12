@@ -254,18 +254,38 @@ export function admitTowEncounter({ character = {}, party = [], enemies = [] } =
     }));
   }
 
-  // Companions are the honest sore point. There is no allied-actor model yet, so a companion
-  // cannot fight — but they also must not simply fail to appear. Recording it means the
-  // player can be told their companion held back, which is a fact rather than a silence.
+  // Companions fight now, as allied actors under the player's command. Each is admitted on
+  // their own terms: their own conditions become their own opening statuses, and a companion
+  // carrying something the encounter cannot express blocks the fight rather than walking in
+  // with part of themselves missing.
+  const allies = [];
   for (const companion of party) {
-    const companionId = typeof companion === "string" ? companion : companion?.id;
+    const entity = typeof companion === "string" ? { id: companion } : companion;
+    const companionId = entity?.id;
     if (!companionId) continue;
-    notes.push(note(ADMISSION_DISPOSITION.SUPERSEDED, "companion-not-admitted", {
+    if (entity.combatCapable === false) {
+      notes.push(note(ADMISSION_DISPOSITION.SUPERSEDED, "companion-not-a-combatant", {
+        companionId,
+        reason: "This companion travels with the player but does not fight. Fielding them "
+          + "would put someone into a battle line they were never described as belonging to.",
+      }));
+      continue;
+    }
+    const companionConditions = conditionAdmission(entity.conditions || []);
+    if (companionConditions.blockers.length > 0) {
+      blockers.push(...companionConditions.blockers.map(
+        (entry) => blocker(entry.code, { ...entry, companionId }),
+      ));
+      continue;
+    }
+    notes.push(...companionConditions.notes.map(
+      (entry) => note(entry.disposition, entry.code, { ...entry, companionId }),
+    ));
+    notes.push(note(ADMISSION_DISPOSITION.ADAPTED, "companion-admitted", {
       companionId,
-      reason: "The encounter fields one commanding actor. Allied actors under player command "
-        + "are a later phase; until then a companion stays out of the fight rather than "
-        + "being fielded by rules that do not exist.",
+      reason: "Fielded as an allied actor under player command, with a build of their own.",
     }));
+    allies.push({ companionId, entity, openingStatuses: companionConditions.statuses });
   }
 
   const hostile = Array.isArray(enemies) ? enemies : [];
@@ -281,14 +301,16 @@ export function admitTowEncounter({ character = {}, party = [], enemies = [] } =
     blockers,
     notes,
     openingStatuses: conditions.statuses,
+    allies,
   };
 }
 
 /** The notes worth telling the player about, as one plain sentence or null. */
 export function admissionPlayerNotice(admission) {
-  const held = (admission?.notes || []).filter((entry) => entry.code === "companion-not-admitted");
+  const held = (admission?.notes || [])
+    .filter((entry) => entry.code === "companion-not-a-combatant");
   if (held.length === 0) return null;
   return held.length === 1
-    ? "Your companion holds back from the fight."
-    : `Your ${held.length} companions hold back from the fight.`;
+    ? "Your companion is no fighter, and stays out of it."
+    : `${held.length} of your companions are no fighters, and stay out of it.`;
 }

@@ -301,6 +301,90 @@ describe("readiness carries between fights", () => {
   });
 });
 
+describe("a companion fights", () => {
+  it("takes the field, acts on the player's command, and settles their own fate", async () => {
+    // The gap this closes: a player who recruited someone watched them not turn up.
+    const state = makeInitialState();
+    state.created = true;
+    state.world.codex.characters.kestrel = {
+      id: "kestrel",
+      name: "Kestrel",
+      kind: "person",
+      profession: "ranger",
+      vitality: 26,
+      vitalityMax: 26,
+      attributes: { body: 3, reflex: 4, vigor: 3, mind: 2, wit: 2, presence: 2 },
+      combatState: { health: 26, maxHealth: 26, status: "ok" },
+    };
+    state.party = ["kestrel"];
+    harness.serverState = state;
+
+    const mounted = await mountCampaign();
+    // No fight is running, so start one the way the world does: through a narrator strike.
+    await waitFor(() => mounted.querySelector(".game-shell"));
+    harness.serverState = state;
+
+    // Drive the fight directly through the session layer instead of the narrator, which is
+    // what this test is about: the companion is on the field and commandable.
+    const opened = createTowSession({
+      sessionId: "party-fight",
+      rootSeed: "party-fight",
+      player: {
+        id: "wanderer", name: "Wanderer", maxHp: 90,
+        stats: { attack: 10, defense: 6, critRate: 0, dodgeRate: 0 },
+      },
+      allies: [{
+        id: "ally-kestrel", name: "Kestrel", maxHp: 60,
+        stats: { attack: 8, defense: 5, critRate: 0, dodgeRate: 0 },
+        build: { traits: {}, skills: ["strike", "block"] },
+      }],
+      enemies: [{
+        id: "foe-0", name: "Brigand", maxHp: 40,
+        stats: { attack: 4, defense: 0, critRate: 0, dodgeRate: 0 },
+        attacks: [{ id: "foe-0-jab", name: "Jab", hits: 1, damage: 3 }],
+      }],
+      build: { traits: {}, skills: ["strike", "block"] },
+      context: {
+        location: "the road",
+        lethalPolicy: "nonlethal",
+        participantBindings: {
+          "foe-0": { campaignEntityId: null, lethal: null },
+          "ally-kestrel": { campaignEntityId: "kestrel", lethal: null },
+        },
+      },
+    });
+    expect(opened.ok).toBe(true);
+    expect(opened.session.encounter.allyIds).toEqual(["ally-kestrel"]);
+
+    harness.serverState = {
+      ...state,
+      mechanics: { ...state.mechanics, tow: { activeCombat: opened.session, readiness: {} } },
+    };
+    await unmountCampaign();
+    const remounted = await mountCampaign();
+    const dialog = await waitFor(() => remounted.querySelector(".tow-combat"));
+
+    // Both fighters are on screen, and the player picks whose action to spend.
+    expect(dialog.querySelector('[aria-label="Ally: Kestrel"]')).toBeTruthy();
+    const commanders = [...dialog.querySelectorAll(".production-combat__commander")];
+    expect(commanders.map((button) => button.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining("You"), expect.stringContaining("Kestrel")]),
+    );
+
+    // Command the ally, and the ally's action is what gets spent.
+    await click(commanders.find((button) => button.textContent.includes("Kestrel")));
+    await click(strikeButton(dialog));
+    const afterAlly = await waitFor(() => {
+      const decoded = decodeTowSession(savedSession());
+      return decoded.ok && decoded.session.revision === 1 ? decoded.session : null;
+    });
+    expect(afterAlly.commands[0].actorId).toBe("ally-kestrel");
+    expect(afterAlly.encounter.turn.allies["ally-kestrel"]).toBe(0);
+    expect(afterAlly.encounter.turn.actionsRemaining).toBe(1);
+    expect(verifyTowSession(afterAlly)).toMatchObject({ ok: true });
+  });
+});
+
 describe("the telegraph reaches a screen reader too", () => {
   it("names the coming attack in a targetable foe's accessible name", async () => {
     // A foe card becomes a button once there is more than one of them, and a button's

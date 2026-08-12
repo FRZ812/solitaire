@@ -2962,9 +2962,15 @@ export function Solitaire() {
     // bleeding character bleeds; anything the encounter deliberately does not carry is
     // recorded by name; and anything it genuinely cannot run stops the fight with a reason
     // instead of quietly making the player stronger than the world described.
+    // Mounts carry you, they do not fight for you — the plan keeps them as support
+    // modifiers rather than actors — so only the people come to the battle line.
+    const companions = partyMembers(st).map((member) => ({
+      ...member,
+      combatCapable: member.kind !== "mount",
+    }));
     const admission = admitTowEncounter({
       character: st.character,
-      party: st.party || [],
+      party: companions,
       enemies,
     });
     if (!admission.supported) {
@@ -2978,11 +2984,29 @@ export function Solitaire() {
     // player was when it started.
     const campaignBuild = towBuildForCharacter(st.character);
     const readiness = towReadiness(st);
+    // Each admitted companion crosses the same bridge the player does and brings their own
+    // package, so an ally fights like themselves rather than like a copy of the protagonist.
+    let allies;
+    try {
+      allies = admission.allies.map(({ companionId, entity, openingStatuses }) => {
+        const actor = towPlayerFromCharacter(entity, st.world.codex, { id: `ally-${companionId}` });
+        const build = towBuildForCharacter(entity);
+        return {
+          ...actor,
+          statuses: [...actor.statuses, ...openingStatuses],
+          build: { ...build, skills: skillStatesForReadiness(build.skills, {}) },
+        };
+      });
+    } catch (error) {
+      setError(`A companion could not take the field: ${error?.message || error}.`);
+      return;
+    }
     const opened = createTowSession({
       sessionId: `${currentCampaignId || "local"}:combat:${seed}`,
       rootSeed: seed,
       mode: "campaign",
       player: { ...player, statuses: [...player.statuses, ...admission.openingStatuses] },
+      allies,
       enemies: enemies.map((enemy, index) => towEnemyFromBestiary(enemy, { id: actorIds[index] })),
       build: {
         ...campaignBuild,
@@ -2993,10 +3017,18 @@ export function Solitaire() {
         source: { kind: context?.sourceKind || "narrator", note: context?.flavor || enemies[0].name },
         location: currentLocationName(st),
         campaignRevision: st.turns?.length || st.beats?.length || 0,
-        participantBindings: Object.fromEntries(enemies.map((enemy, index) => [
-          actorIds[index],
-          { campaignEntityId: enemy.npcId ?? null, lethal: null },
-        ])),
+        participantBindings: Object.fromEntries([
+          ...enemies.map((enemy, index) => [
+            actorIds[index],
+            { campaignEntityId: enemy.npcId ?? null, lethal: null },
+          ]),
+          // Allies are bound to their codex entry the same way foes are, so a companion who
+          // falls is recorded against the person they actually are.
+          ...admission.allies.map(({ companionId }) => [
+            `ally-${companionId}`,
+            { campaignEntityId: companionId, lethal: null },
+          ]),
+        ]),
         hostilityFacts: {
           initiator: extraOpts.ambush === "enemy" ? "enemy" : "player",
           surprise: Boolean(extraOpts.ambush),
@@ -3410,13 +3442,14 @@ export function Solitaire() {
     // clicks landing in the same frame both read the committed revision, so neither is
     // mistaken for a repeat of the other — and what stops a double-tap becoming two swings
     // is the turn budget the encounter already enforces, not a dropped command.
+    const actorId = input.actorId ?? session.encounter.playerId;
     const result = dispatchTowCommand(session, {
       ...input,
-      id: [session.sessionId, session.revision, input.type, input.skillId]
+      id: [session.sessionId, session.revision, input.type, actorId, input.skillId]
         .filter((part) => part !== null && part !== undefined)
         .join(":"),
       expectedRevision: session.revision,
-      actorId: session.encounter.playerId,
+      actorId,
     });
     if (!result.ok) {
       setTowCombatFeedback(`That move was refused: ${result.reason}.`);
@@ -3432,12 +3465,17 @@ export function Solitaire() {
     commitTowSession(sealed.ok ? sealed.session : result.session);
   }
 
-  const onCombatUseSkill = (skillId, targetId) => dispatchCombatCommand({
+  const onCombatUseSkill = (skillId, targetId, actorId) => dispatchCombatCommand({
     type: "use-skill",
     skillId,
     targetId: targetId ?? null,
+    actorId: actorId ?? null,
   });
   const onCombatEndTurn = () => dispatchCombatCommand({ type: "end-turn" });
+  const onCombatStandDown = (actorId) => dispatchCombatCommand({
+    type: "stand-down",
+    actorId: actorId ?? null,
+  });
 
   // ----- Render flow -----
 
@@ -4110,6 +4148,7 @@ export function Solitaire() {
           note={combatSession?.context?.source?.note}
           onUseSkill={onCombatUseSkill}
           onEndTurn={onCombatEndTurn}
+          onStandDown={onCombatStandDown}
           onSettle={handleResolveCombat}
         />
       )}

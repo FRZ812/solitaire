@@ -41,14 +41,13 @@ export const TOW_WORLD_FATES = Object.freeze(["alive", "dead"]);
  * from the fight it claims to describe.
  */
 function lastHarmEvent(encounter, actorId) {
-  const isPlayer = actorId === encounter.playerId;
   for (let index = encounter.events.length - 1; index >= 0; index -= 1) {
     const entry = encounter.events[index];
     if (entry.type === "tick-damage" && entry.actorId === actorId) return entry;
     if (entry.type === "skill-damage" && entry.targetId === actorId) return entry;
-    // Enemy attacks name their attacker, not their target; in a fight with one commanding
-    // actor the target is always the player.
-    if (entry.type === "enemy-attack" && isPlayer) return entry;
+    // Enemy attacks name who they landed on, which with allies on the field is no longer
+    // always the protagonist.
+    if (entry.type === "enemy-attack" && entry.targetId === actorId) return entry;
   }
   return null;
 }
@@ -75,9 +74,14 @@ function outcomeFor(session, actorId) {
 
   const harm = lastHarmEvent(encounter, actorId);
   const isPlayer = actorId === encounter.playerId;
+  const isAlly = (encounter.allyIds || []).includes(actorId);
   // The player's stakes were set at admission; a foe's lethality can be set per participant,
   // which is what lets one duel inside a brawl be real while the rest is fists.
-  const lethal = isPlayer
+  //
+  // An ally follows the player's stakes rather than the foes' policy. Someone who walked
+  // into a fight the player could die in can die in it too; someone who came along to a
+  // brawl gets knocked out, the same as the person they came with.
+  const lethal = isPlayer || isAlly
     ? context.playerStakes === "lethal"
     : participantIsLethal(context, actorId);
 
@@ -93,9 +97,19 @@ function outcomeFor(session, actorId) {
   };
 }
 
-/** Every participant's fate, player first, then foes in their encounter order. */
+/**
+ * Every participant's fate: the player, then their allies, then the foes.
+ *
+ * An ally's fate is settled on its own terms, not inherited from how the fight went for the
+ * protagonist. A companion can fall in a fight the player wins, and the codex has to record
+ * that rather than a victory for everyone who was standing nearby.
+ */
 export function resolveParticipantOutcomes(session) {
-  const ids = [session.encounter.playerId, ...session.encounter.enemyIds];
+  const ids = [
+    session.encounter.playerId,
+    ...(session.encounter.allyIds || []),
+    ...session.encounter.enemyIds,
+  ];
   return ids.map((actorId) => outcomeFor(session, actorId));
 }
 

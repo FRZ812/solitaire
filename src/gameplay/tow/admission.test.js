@@ -144,26 +144,64 @@ describe("admitting an encounter", () => {
     expect(codes(admission.notes, "racial-passive-superseded-by-package")).toHaveLength(1);
   });
 
-  it("records a companion who is not fielded, and says so to the player", () => {
+  it("fields a companion as an allied actor", () => {
     const admission = admitTowEncounter({
       character: {},
       party: [{ id: "freed-captive" }],
       enemies: FOES,
     });
     expect(admission.supported).toBe(true);
-    const held = codes(admission.notes, "companion-not-admitted");
-    expect(held).toHaveLength(1);
-    expect(held[0].reason).toContain("Allied actors");
-    expect(admissionPlayerNotice(admission)).toBe("Your companion holds back from the fight.");
+    expect(codes(admission.notes, "companion-admitted")).toHaveLength(1);
+    expect(admission.allies.map((ally) => ally.companionId)).toEqual(["freed-captive"]);
+    // Nothing to warn about: they are in the fight.
+    expect(admissionPlayerNotice(admission)).toBe(null);
   });
 
-  it("counts more than one held-back companion", () => {
+  it("carries a companion's own wounds in with them", () => {
+    // An ally's conditions are theirs. Inheriting the protagonist's would field a copy of
+    // the player rather than the person who came along.
     const admission = admitTowEncounter({
-      character: {},
-      party: [{ id: "a" }, { id: "b" }],
+      character: { conditions: ["Blessed"] },
+      party: [{ id: "kestrel", conditions: ["Bleeding"] }],
       enemies: FOES,
     });
-    expect(admissionPlayerNotice(admission)).toBe("Your 2 companions hold back from the fight.");
+    expect(admission.openingStatuses).toEqual([{ type: "protection", count: 3 }]);
+    expect(admission.allies[0].openingStatuses).toEqual([{ type: "bleed", count: 4 }]);
+  });
+
+  it("blocks the fight when a companion carries something it cannot express", () => {
+    const admission = admitTowEncounter({
+      character: {},
+      party: [{ id: "kestrel", conditions: ["Unclassified Affliction"] }],
+      enemies: FOES,
+    });
+    expect(admission.supported).toBe(false);
+    expect(admission.blockers[0]).toMatchObject({
+      code: "unsupported-condition",
+      companionId: "kestrel",
+    });
+  });
+
+  it("leaves a non-combatant out, and says so", () => {
+    const admission = admitTowEncounter({
+      character: {},
+      party: [{ id: "scribe", combatCapable: false }],
+      enemies: FOES,
+    });
+    expect(admission.allies).toEqual([]);
+    expect(codes(admission.notes, "companion-not-a-combatant")).toHaveLength(1);
+    expect(admissionPlayerNotice(admission))
+      .toBe("Your companion is no fighter, and stays out of it.");
+  });
+
+  it("counts more than one non-combatant", () => {
+    const admission = admitTowEncounter({
+      character: {},
+      party: [{ id: "a", combatCapable: false }, { id: "b", combatCapable: false }],
+      enemies: FOES,
+    });
+    expect(admissionPlayerNotice(admission))
+      .toBe("2 of your companions are no fighters, and stay out of it.");
   });
 
   it("says nothing when there is nothing to say", () => {
@@ -188,6 +226,6 @@ describe("admitting an encounter", () => {
       ADMISSION_DISPOSITION.ADAPTED,
       ADMISSION_DISPOSITION.SUPERSEDED,
     ]);
-    expect(admission.notes).toHaveLength(5);
+    expect(admission.notes.every((entry) => entry.code && entry.disposition)).toBe(true);
   });
 });

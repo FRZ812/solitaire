@@ -200,13 +200,18 @@ describe("a classification matches what admission actually does", () => {
     })).toMatchObject({ ok: false, reason: "unsupported-condition" });
   });
 
-  it("names an uncovered domain that admission still declines to field", () => {
-    // Companions are the remaining honest gap: recorded, told to the player, not fielded.
-    const companion = UNCOVERED_DOMAINS.find((gap) => gap.domain === "companion");
-    expect(companion).toBeTruthy();
+  it("fields a companion now that the domain claims it can", () => {
+    expect(DOMAIN_RULES.companion.support).toBe(SUPPORT.ADAPTED);
     const admission = admitTowEncounter({ character: {}, party: [{ id: "ally" }], enemies });
     expect(admission.supported).toBe(true);
-    expect(admission.notes.map((entry) => entry.code)).toContain("companion-not-admitted");
+    expect(admission.notes.map((entry) => entry.code)).toContain("companion-admitted");
+    expect(admission.allies).toHaveLength(1);
+  });
+
+  it("still names the domains nothing can field yet", () => {
+    // Summons and mounts would be allied actors too, and the allied side now exists — but
+    // neither has an authored lifecycle, so neither may be fielded.
+    expect(UNCOVERED_DOMAINS.find((gap) => gap.domain === "summon")).toBeTruthy();
   });
 
   it("admits a plain fighter against plain foes", () => {

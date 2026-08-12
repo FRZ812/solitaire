@@ -99,6 +99,7 @@ const CONTEXT_KEYS = Object.freeze([
 ].sort());
 
 const GENESIS_KEYS = Object.freeze([
+  "allySnapshots",
   "effectiveBuild",
   "enemySnapshots",
   "intentSchedules",
@@ -328,6 +329,8 @@ function isGenesis(value) {
     && Array.isArray(value.enemySnapshots)
     && value.enemySnapshots.length >= 1
     && value.enemySnapshots.length < MAX_TOW_PARTICIPANTS
+    && Array.isArray(value.allySnapshots)
+    && value.allySnapshots.length < MAX_TOW_PARTICIPANTS
     && Boolean(value.effectiveBuild)
     && typeof value.effectiveBuild === "object"
     && !Array.isArray(value.effectiveBuild)
@@ -347,6 +350,7 @@ export function encounterFromGenesis(genesis) {
   return createTowEncounter({
     seed: genesis.seedManifest.combat,
     intentSeed: genesis.seedManifest.intent,
+    allies: genesis.allySnapshots,
     // Authored rotations where a fixture supplies them; the default generator fills in the
     // rest, so an arbitrary bestiary group telegraphs as readably as a named boss.
     intentSchedules: Object.keys(genesis.intentSchedules).length > 0
@@ -516,6 +520,10 @@ export function createTowSession(input = {}) {
       seedManifest: deriveSeedManifest(rootSeed),
       rngVersion: TOW_RNG_VERSION,
       playerSnapshot: player,
+      // Each ally carries their own actor line and their own build. Holding them in genesis
+      // is what lets a party fight replay exactly, down to which companion was already hurt
+      // when the first blow landed.
+      allySnapshots: input.allies || [],
       enemySnapshots: enemies,
       effectiveBuild: {
         traits: build?.traits || {},
@@ -544,7 +552,7 @@ export function createTowSession(input = {}) {
   // A binding that names no actor in the fight is a mistake worth failing on: it usually
   // means the codex ids and the actor ids were built from different lists, which would
   // quietly write the wrong NPC's death into the world at settlement.
-  const actorIds = new Set([encounter.playerId, ...encounter.enemyIds]);
+  const actorIds = new Set([encounter.playerId, ...encounter.allyIds, ...encounter.enemyIds]);
   const stray = Object.keys(context.participantBindings).find((id) => !actorIds.has(id));
   if (stray) return rejected("unknown-participant-binding");
   const strayLoot = Object.keys(context.lootPolicy.sources).find((id) => !actorIds.has(id));

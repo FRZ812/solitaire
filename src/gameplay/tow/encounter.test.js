@@ -5,6 +5,7 @@ import {
   declaredIntents,
   endTurn,
   isTowEncounter,
+  skipTurn,
   useSkill,
 } from "./encounter.js";
 import { TRAIT_RANK_CAP } from "./traits.js";
@@ -518,5 +519,160 @@ describe("telegraphed enemy turns", () => {
     const after = endTurn(state);
     expect(after.ok).toBe(true);
     expect(after.state.events.some((event) => event.type === "enemy-attack")).toBe(true);
+  });
+});
+
+describe("allies under player command", () => {
+  function ally(overrides = {}) {
+    return {
+      id: "kestrel",
+      name: "Kestrel",
+      maxHp: 120,
+      stats: { attack: 8, defense: 4, critRate: 0, dodgeRate: 0 },
+      build: { traits: {}, skills: ["strike", "block"] },
+      ...overrides,
+    };
+  }
+
+  function party(overrides = {}) {
+    return createTowEncounter({
+      seed: "party",
+      player: { ...knight(), maxHp: 400 },
+      allies: overrides.allies || [ally()],
+      enemies: overrides.enemies || [foe({
+        maxHp: 900,
+        stats: { attack: 6, defense: 0, critRate: 0, dodgeRate: 0 },
+        attacks: [{ id: "jab", name: "Jab", hits: 1, damage: 6 }],
+      })],
+      build: { traits: {}, skills: ["strike", "block"], ...overrides.build },
+    });
+  }
+
+  it("puts an ally on the field with a build of their own", () => {
+    // Never a copy of the protagonist's package: a companion fighting with the player's
+    // traits and skills would be a second protagonist wearing someone else's name.
+    const state = party({ allies: [ally({ build: { traits: { ironclad: 3 }, skills: ["strike"] } })] });
+    expect(state.allyIds).toEqual(["kestrel"]);
+    expect(state.actors.kestrel.side).toBe("player");
+    expect(state.allyBuilds.kestrel.skills.map((s) => s.id)).toEqual(["strike"]);
+    expect(state.build.skills.map((s) => s.id)).toEqual(["strike", "block"]);
+    expect(isTowEncounter(state)).toBe(true);
+  });
+
+  it("gives each actor their own action budget for the round", () => {
+    const state = party();
+    expect(state.turn.actionsRemaining).toBe(1);
+    expect(state.turn.allies).toEqual({ kestrel: 1 });
+    const acted = useSkill(state, "strike", "gatekeeper", "kestrel").state;
+    expect(acted.turn.allies.kestrel).toBe(0);
+    // Spending the ally's action leaves the player's untouched.
+    expect(acted.turn.actionsRemaining).toBe(1);
+  });
+
+  it("fires an ally's own traits, not the player's", () => {
+    const state = party({ allies: [ally({ build: { traits: { ironclad: 7 }, skills: ["strike"] } })] });
+    expect(statusCount(state.actors.kestrel.statuses, "steelskin")).toBe(13);
+    expect(statusCount(state.actors["arctic-knight"].statuses, "steelskin")).toBe(0);
+  });
+
+  it("scales an ally's skill off the ally", () => {
+    const state = party();
+    const before = state.actors.gatekeeper.hp;
+    const struck = useSkill(state, "strike", "gatekeeper", "kestrel").state;
+    // Kestrel's attack is 8; the knight's is 12. The damage has to be Kestrel's.
+    expect(before - struck.actors.gatekeeper.hp).toBe(8);
+  });
+
+  it("refuses a command for a foe or a stranger", () => {
+    const state = party();
+    expect(useSkill(state, "strike", null, "gatekeeper"))
+      .toMatchObject({ ok: false, reason: "unknown-actor" });
+    expect(useSkill(state, "strike", null, "nobody"))
+      .toMatchObject({ ok: false, reason: "unknown-actor" });
+  });
+
+  it("refuses a skill the ally does not hold, even when the player does", () => {
+    const state = party({ allies: [ally({ build: { traits: {}, skills: ["strike"] } })] });
+    expect(useSkill(state, "block", null, "kestrel"))
+      .toMatchObject({ ok: false, reason: "skill-not-held" });
+    expect(useSkill(state, "block", null, "arctic-knight").ok).toBe(true);
+  });
+
+  it("stands an ally down as an explicit command rather than hidden AI", () => {
+    const state = party();
+    const held = skipTurn(state, "kestrel");
+    expect(held.ok).toBe(true);
+    expect(held.state.turn.allies.kestrel).toBe(0);
+    expect(held.state.events.some((e) => e.type === "actor-stood-down" && e.actorId === "kestrel"))
+      .toBe(true);
+    expect(skipTurn(held.state, "kestrel")).toMatchObject({ ok: false, reason: "turn-already-spent" });
+  });
+
+  it("lets foes declare against anyone on the player's side", () => {
+    const state = party();
+    const declared = declaredIntents(state)[0];
+    expect([state.playerId, "kestrel"]).toContain(declared.targetId);
+    expect(declared.targetName).toBe(state.actors[declared.targetId].name);
+  });
+
+  it("strikes the next one standing when the declared target has already fallen", () => {
+    // A declared target is a statement of intent, not a promise the world holds still.
+    const state = party({ allies: [ally({ maxHp: 1 })] });
+    const forced = {
+      ...state,
+      actors: { ...state.actors, kestrel: { ...state.actors.kestrel, hp: 0 } },
+      intents: { ...state.intents, gatekeeper: { ...state.intents.gatekeeper, targetId: "kestrel" } },
+    };
+    const after = endTurn(forced).state;
+    const landed = after.events.filter((e) => e.type === "enemy-attack").at(-1);
+    expect(landed.targetId).toBe("arctic-knight");
+  });
+
+  it("keeps fighting when an ally falls, and ends when the player does", () => {
+    // An ally going down is a loss, not the end of the story.
+    const state = party({ allies: [ally({ maxHp: 1 })] });
+    const downed = {
+      ...state,
+      actors: { ...state.actors, kestrel: { ...state.actors.kestrel, hp: 0 } },
+    };
+    expect(endTurn(downed).state.phase).toBe("player");
+
+    const dead = {
+      ...state,
+      actors: { ...state.actors, "arctic-knight": { ...state.actors["arctic-knight"], hp: 0 } },
+    };
+    expect(endTurn(dead).state.phase).toBe("defeat");
+  });
+
+  it("ticks an ally's cooldowns alongside the player's", () => {
+    let state = party();
+    state = useSkill(state, "block", null, "kestrel").state;
+    const spent = state.allyBuilds.kestrel.skills.find((s) => s.id === "block").usesRemaining;
+    state = endTurn(state).state;
+    // The use is gone and the round moved on; the ally's build tracked both.
+    expect(state.allyBuilds.kestrel.skills.find((s) => s.id === "block").usesRemaining).toBe(spent);
+    expect(state.turn.allies.kestrel).toBe(1);
+  });
+
+  it("leaves a solo fight's randomness exactly where it was", () => {
+    // Adding a companion to the game must not rewrite a fight recorded without one, so a
+    // single-candidate target costs no draw at all.
+    const solo = createTowEncounter({
+      seed: "party",
+      player: { ...knight(), maxHp: 400 },
+      enemies: [foe({ maxHp: 900, stats: { attack: 6, defense: 0, critRate: 0, dodgeRate: 0 }, attacks: [{ id: "jab", name: "Jab", hits: 1, damage: 6 }] })],
+      build: { traits: {}, skills: ["strike", "block"] },
+    });
+    expect(solo.intentRng).toEqual(createTowEncounter({
+      seed: "party",
+      player: { ...knight(), maxHp: 400 },
+      allies: [],
+      enemies: [foe({ maxHp: 900, stats: { attack: 6, defense: 0, critRate: 0, dodgeRate: 0 }, attacks: [{ id: "jab", name: "Jab", hits: 1, damage: 6 }] })],
+      build: { traits: {}, skills: ["strike", "block"] },
+    }).intentRng);
+  });
+
+  it("refuses two actors sharing an id", () => {
+    expect(() => party({ allies: [ally({ id: "gatekeeper" })] })).toThrow("duplicate-actor-id");
   });
 });

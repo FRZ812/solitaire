@@ -116,14 +116,17 @@ export function settleTowEncounter(state, encounter, context = {}) {
   const growthText = progress ? earnedLevelGrowthText(progress) : null;
 
   // Every foe that maps to a codex character has its state written back, not just the
-  // first — a group fight must not leave survivors silently untouched.
+  // first — a group fight must not leave survivors silently untouched. Allies are written
+  // back on the same terms: a companion who fought is a person the world should show as
+  // having been in a fight, whether they walked away from it or not.
   let world = state.world;
   const characters = { ...(state.world?.codex?.characters || {}) };
   let codexTouched = false;
   const fallen = [];
-  for (const enemyId of encounter.enemyIds) {
+  for (const enemyId of [...encounter.enemyIds, ...(encounter.allyIds || [])]) {
     const enemy = encounter.actors[enemyId];
-    if (enemy.hp <= 0) fallen.push(enemy.name);
+    const isFoe = encounter.enemyIds.includes(enemyId);
+    if (isFoe && enemy.hp <= 0) fallen.push(enemy.name);
     const npcId = npcIds[enemyId];
     if (!npcId || !characters[npcId]) continue;
     characters[npcId] = {

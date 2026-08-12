@@ -24,7 +24,11 @@
 
 import { cloneJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
-import { endTurn as encounterEndTurn, useSkill as encounterUseSkill } from "./encounter.js";
+import {
+  endTurn as encounterEndTurn,
+  skipTurn as encounterSkipTurn,
+  useSkill as encounterUseSkill,
+} from "./encounter.js";
 import {
   MAX_TOW_COMMANDS,
   TOW_RULESET_ID,
@@ -44,11 +48,12 @@ export const TOW_COMMAND_VERSION = 1;
 export const TOW_COMMAND_TYPES = Object.freeze([
   "use-skill",
   "end-turn",
+  "stand-down",
   "attempt-retreat",
   "accept-surrender",
 ]);
 
-const RESOLVABLE_COMMAND_TYPES = Object.freeze(["use-skill", "end-turn"]);
+const RESOLVABLE_COMMAND_TYPES = Object.freeze(["use-skill", "end-turn", "stand-down"]);
 
 const COMMAND_INPUT_KEYS = Object.freeze([
   "actorId",
@@ -123,9 +128,11 @@ export function validateTowCommand(session, command) {
   if (session.commands.length >= MAX_TOW_COMMANDS) {
     return { ok: false, reason: "command-limit-exceeded" };
   }
-  // Phase 2 fields one commanding actor. An allied party is a later phase, and accepting a
-  // command for an actor the session has no model of would write a fight nobody can replay.
-  if (command.actorId !== null && command.actorId !== session.encounter.playerId) {
+  // One command window covers the whole player side: the protagonist and every ally under
+  // their command. Anyone else — a foe, or an actor the session has no model of — would
+  // write a fight nobody could replay.
+  const commandable = [session.encounter.playerId, ...(session.encounter.allyIds || [])];
+  if (command.actorId !== null && !commandable.includes(command.actorId)) {
     return { ok: false, reason: "unknown-actor" };
   }
   if (!RESOLVABLE_COMMAND_TYPES.includes(command.type)) {
@@ -195,9 +202,12 @@ export function resolveTowCommand(session, command) {
  * implementation could agree with the recording and still disagree with production.
  */
 export function resolveTowCommandOnEncounter(before, command) {
+  const actorId = command.actorId ?? before.playerId;
   let result;
   if (command.type === "use-skill") {
-    result = encounterUseSkill(before, command.skillId, command.targetId);
+    result = encounterUseSkill(before, command.skillId, command.targetId, actorId);
+  } else if (command.type === "stand-down") {
+    result = encounterSkipTurn(before, actorId);
   } else if (command.type === "end-turn") {
     result = encounterEndTurn(before);
   } else {

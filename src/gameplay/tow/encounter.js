@@ -87,40 +87,57 @@ function traitFiresThisRound(traitId, rank, round, rng) {
 export function fireTraits(state) {
   let next = state;
   let rng = state.rng;
-  for (const [traitId, rank] of Object.entries(state.build.traits)) {
-    const definition = getTrait(traitId);
-    if (!definition) continue;
-    const due = traitFiresThisRound(traitId, rank, next.round, rng);
-    rng = due.rng;
-    if (!due.fires) continue;
+  // Every actor on the player's side fires their own traits, in the same stable order they
+  // act in. An ally's Ironclad is theirs, not a copy of the protagonist's.
+  for (const ownerId of playerSideIds(state)) {
+    const build = buildFor(next, ownerId);
+    if (!build || next.actors[ownerId].hp <= 0) continue;
+    for (const [traitId, rank] of Object.entries(build.traits)) {
+      const definition = getTrait(traitId);
+      if (!definition) continue;
+      const due = traitFiresThisRound(traitId, rank, next.round, rng);
+      rng = due.rng;
+      if (!due.fires) continue;
 
-    const amount = traitValueAtRank(traitId, rank);
-    if (amount <= 0) continue;
-    const { kind, status } = definition.effect;
+      const amount = traitValueAtRank(traitId, rank);
+      if (amount <= 0) continue;
+      const { kind, status } = definition.effect;
 
-    if (kind === "grant-status") {
-      const player = next.actors[next.playerId];
-      next = {
-        ...next,
-        actors: {
-          ...next.actors,
-          [next.playerId]: { ...player, statuses: applyStatus(player.statuses, status, amount) },
-        },
-      };
-    } else {
-      const actors = { ...next.actors };
-      for (const enemyId of next.enemyIds) {
-        if (actors[enemyId].hp <= 0) continue;
-        actors[enemyId] = {
-          ...actors[enemyId],
-          statuses: applyStatus(actors[enemyId].statuses, status, amount),
+      if (kind === "grant-status") {
+        const owner = next.actors[ownerId];
+        next = {
+          ...next,
+          actors: {
+            ...next.actors,
+            [ownerId]: { ...owner, statuses: applyStatus(owner.statuses, status, amount) },
+          },
         };
+      } else {
+        const actors = { ...next.actors };
+        for (const enemyId of next.enemyIds) {
+          if (actors[enemyId].hp <= 0) continue;
+          actors[enemyId] = {
+            ...actors[enemyId],
+            statuses: applyStatus(actors[enemyId].statuses, status, amount),
+          };
+        }
+        next = { ...next, actors };
       }
-      next = { ...next, actors };
+      next = push(next, "trait-fired", { actorId: ownerId, traitId, rank, status, amount });
     }
-    next = push(next, "trait-fired", { traitId, rank, status, amount });
   }
   return { ...next, rng };
+}
+
+/** The player and every ally, in the order they act. */
+export function playerSideIds(state) {
+  return [state.playerId, ...(state.allyIds || [])];
+}
+
+/** Whichever build belongs to this actor: the player's, or one ally's own. */
+export function buildFor(state, actorId) {
+  if (actorId === state.playerId) return state.build;
+  return state.allyBuilds?.[actorId] || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,20 +150,28 @@ export function fireTraits(state) {
 // actions before the enemy; if the enemy has Priority too, they cancel out" — so it is
 // the *net* against the enemy line, not a flat bonus, and an enemy with more Priority
 // than you simply cancels yours rather than stealing your turn.
-export function actionsForRound(state) {
-  const player = state.actors[state.playerId];
-  const haste = statusCount(player.statuses, "haste");
-  const playerPriority = statusCount(player.statuses, "priority");
+export function actionsForRound(state, actorId = state.playerId) {
+  const actor = state.actors[actorId];
+  if (!actor || actor.hp <= 0) return 0;
+  const haste = statusCount(actor.statuses, "haste");
+  const ownPriority = statusCount(actor.statuses, "priority");
   const enemyPriority = state.enemyIds.reduce((most, enemyId) => {
     const enemy = state.actors[enemyId];
     if (enemy.hp <= 0) return most;
     return Math.max(most, statusCount(enemy.statuses, "priority"));
   }, 0);
-  return 1 + haste + Math.max(0, playerPriority - enemyPriority);
+  return 1 + haste + Math.max(0, ownPriority - enemyPriority);
 }
 
 function withFreshTurn(state) {
-  return { ...state, turn: { actionsRemaining: actionsForRound(state) } };
+  // The player's budget stays where every existing caller expects it; allies get their own
+  // beside it, so one round is one command window covering the whole side.
+  const allies = {};
+  for (const allyId of state.allyIds || []) allies[allyId] = actionsForRound(state, allyId);
+  return {
+    ...state,
+    turn: { actionsRemaining: actionsForRound(state, state.playerId), allies },
+  };
 }
 
 /**
@@ -168,13 +193,46 @@ function statOf(actor, scale) {
   return 0;
 }
 
-export function createTowEncounter({ seed, intentSeed, intentSchedules, player, enemies, build } = {}) {
+/** Validate and normalise one actor's traits, skills and runes. */
+function normalizeBuild(build) {
+  const traits = cloneJsonData(build?.traits || {}, "invalid-build-traits");
+  for (const [traitId, rank] of Object.entries(traits)) {
+    if (!getTrait(traitId)) throw new TypeError(`unknown-trait:${traitId}`);
+    if (!Number.isSafeInteger(rank) || rank < 1 || rank > 7) throw new TypeError("invalid-trait-rank");
+  }
+  const skills = (build?.skills || []).map((entry) => (
+    typeof entry === "string" ? createSkillState(entry) : { ...entry }
+  ));
+  return { traits, skills, runes: [...(build?.runes || [])] };
+}
+
+export function createTowEncounter({
+  seed,
+  intentSeed,
+  intentSchedules,
+  player,
+  enemies,
+  build,
+  allies = [],
+} = {}) {
   if (typeof seed !== "string" && !(typeof seed === "number" && Number.isFinite(seed))) {
     throw new TypeError("invalid-encounter-seed");
   }
   if (!Array.isArray(enemies) || enemies.length < 1) throw new TypeError("invalid-enemies");
+  if (!Array.isArray(allies)) throw new TypeError("invalid-allies");
 
   const playerActor = createTowActor({ ...player, side: "player" });
+
+  // An ally is a full actor with a build of their own — never a copy of the protagonist's
+  // package. A companion who fought with the player's traits and the player's skills would
+  // be a second protagonist wearing someone else's name.
+  const allyBuilds = {};
+  const allyActors = allies.map((ally) => {
+    const { build: allyBuild, ...actorFields } = ally;
+    const actor = createTowActor({ ...actorFields, side: "player" });
+    allyBuilds[actor.id] = normalizeBuild(allyBuild);
+    return actor;
+  });
   // An enemy's attack table lives beside the actor rather than on it: the Gatekeeper's
   // six named attacks are encounter content, while the actor stays the strict, validated
   // shape the damage resolver reads.
@@ -192,17 +250,14 @@ export function createTowEncounter({ seed, intentSeed, intentSchedules, player, 
     }));
     return actor;
   });
-  const ids = new Set([playerActor.id, ...enemyActors.map((enemy) => enemy.id)]);
-  if (ids.size !== enemyActors.length + 1) throw new TypeError("duplicate-actor-id");
+  const everyId = [
+    playerActor.id,
+    ...allyActors.map((ally) => ally.id),
+    ...enemyActors.map((enemy) => enemy.id),
+  ];
+  if (new Set(everyId).size !== everyId.length) throw new TypeError("duplicate-actor-id");
 
-  const traits = cloneJsonData(build?.traits || {}, "invalid-build-traits");
-  for (const [traitId, rank] of Object.entries(traits)) {
-    if (!getTrait(traitId)) throw new TypeError(`unknown-trait:${traitId}`);
-    if (!Number.isSafeInteger(rank) || rank < 1 || rank > 7) throw new TypeError("invalid-trait-rank");
-  }
-  const skills = (build?.skills || []).map((entry) => (
-    typeof entry === "string" ? createSkillState(entry) : { ...entry }
-  ));
+  const { traits, skills, runes } = normalizeBuild(build);
 
   // Every foe gets a rotation over its own attack table. An authored schedule wins where one
   // is supplied; otherwise the default generator derives one, so an arbitrary bestiary group
@@ -227,16 +282,19 @@ export function createTowEncounter({ seed, intentSeed, intentSchedules, player, 
     // never shift a damage roll that a saved fight already recorded.
     intentRng: createRng(intentSeed ?? `${seed}::tow-stream::intent::v1`),
     playerId: playerActor.id,
+    allyIds: allyActors.map((ally) => ally.id),
     enemyIds: enemyActors.map((enemy) => enemy.id),
     enemyAttacks,
     intentSchedules: schedules,
     intents: {},
     actors: Object.fromEntries([
       [playerActor.id, playerActor],
+      ...allyActors.map((ally) => [ally.id, ally]),
       ...enemyActors.map((enemy) => [enemy.id, enemy]),
     ]),
-    build: { traits, skills, runes: [...(build?.runes || [])] },
-    turn: { actionsRemaining: 1 },
+    build: { traits, skills, runes },
+    allyBuilds,
+    turn: { actionsRemaining: 1, allies: {} },
     events: [],
   };
 
@@ -281,6 +339,7 @@ function declareRoundIntents(state) {
       schedule,
       declarationIndex: 0,
       targetId: state.playerId,
+      targets: livingPlayerSide(next),
       rng,
     });
     rng = declared.rng;
@@ -304,6 +363,7 @@ function advanceEnemyIntent(state, enemyId) {
     schedule,
     intent: held,
     targetId: state.playerId,
+    targets: livingPlayerSide(state),
     rng: state.intentRng,
   });
   const next = push(
@@ -331,13 +391,19 @@ export function declaredIntents(state) {
     .map((enemyId) => {
       const attack = resolveDeclaredAttack(state.intents[enemyId], state.enemyAttacks[enemyId]);
       if (!attack) return null;
+      // The declared target may have fallen since; report who will actually take it, so the
+      // player is never shown a blow aimed at a body.
+      const standing = livingPlayerSide(state);
+      const declaredTarget = state.intents[enemyId].targetId;
+      const targetId = standing.includes(declaredTarget) ? declaredTarget : standing[0] ?? null;
       return {
         enemyId,
         attackId: attack.id,
         name: attack.name,
         hits: attack.hits,
         damage: attack.damage,
-        targetId: state.intents[enemyId].targetId,
+        targetId,
+        targetName: targetId ? state.actors[targetId].name : null,
       };
     })
     .filter(Boolean);
@@ -370,9 +436,18 @@ export function isTowEncounter(value) {
   if (!isRngState(value.rng) || !isRngState(value.intentRng)) return false;
   if (!isKeyedByEnemies(value.intentSchedules, value.enemyIds, isIntentSchedule)) return false;
   if (!isKeyedByEnemies(value.intents, value.enemyIds, isTowIntent)) return false;
-  const actorIds = [value.playerId, ...value.enemyIds];
+  if (!Array.isArray(value.allyIds)) return false;
+  // Every ally needs a build of their own, and no build may belong to nobody.
+  if (!value.allyBuilds || typeof value.allyBuilds !== "object" || Array.isArray(value.allyBuilds)) {
+    return false;
+  }
+  const allyKeys = Object.keys(value.allyBuilds);
+  if (allyKeys.length !== value.allyIds.length) return false;
+  if (!value.allyIds.every((id) => Array.isArray(value.allyBuilds[id]?.skills))) return false;
+  const actorIds = [value.playerId, ...value.allyIds, ...value.enemyIds];
   if (new Set(actorIds).size !== actorIds.length) return false;
   if (Object.keys(value.actors).length !== actorIds.length) return false;
+  if (value.allyIds.some((id) => value.actors[id]?.side !== "player")) return false;
   return actorIds.every((id) => isTowActor(value.actors[id]));
 }
 
@@ -384,6 +459,14 @@ function livingEnemies(state) {
   return state.enemyIds.filter((id) => state.actors[id].hp > 0);
 }
 
+/** Everyone on the player's side still standing — the foes' target pool. */
+function livingPlayerSide(state) {
+  return playerSideIds(state).filter((id) => state.actors[id]?.hp > 0);
+}
+
+// The fight ends when the protagonist falls, not when the last of their side does. An ally
+// going down is a fate that ally settles on their own; it is a loss, not the end of the
+// story, and continuing to swing over the player's body would be a different game.
 function terminalPhase(state) {
   if (state.actors[state.playerId].hp <= 0) return "defeat";
   if (livingEnemies(state).length === 0) return "victory";
@@ -423,10 +506,11 @@ export const SUPPORTED_SKILL_EFFECT_TYPES = Object.freeze([
   "status",
 ]);
 
-function applySkillEffects(state, skillId, rank, targetId) {
+function applySkillEffects(state, skillId, rank, targetId, actorId) {
   const definition = getSkill(skillId);
   let next = state;
-  const playerId = next.playerId;
+  // Whoever was commanded, not always the protagonist: an ally's Block shields the ally.
+  const playerId = actorId ?? next.playerId;
 
   definition.effects.forEach((effect, index) => {
     // Asked for per branch rather than up front: not every effect carries a rank table, and
@@ -450,7 +534,7 @@ function applySkillEffects(state, skillId, rank, targetId) {
         rng: hit.rng,
         actors: { ...next.actors, [playerId]: hit.attacker, [targetId]: hit.defender },
       };
-      next = push(next, "skill-damage", { skillId, targetId, amount, hits: hit.hits });
+      next = push(next, "skill-damage", { actorId: playerId, skillId, targetId, amount, hits: hit.hits });
       return;
     }
 
@@ -460,7 +544,7 @@ function applySkillEffects(state, skillId, rank, targetId) {
         ...next,
         actors: { ...next.actors, [playerId]: { ...player, shield: player.shield + amount } },
       };
-      next = push(next, "skill-shield", { skillId, amount });
+      next = push(next, "skill-shield", { actorId: playerId, skillId, amount });
       return;
     }
 
@@ -477,7 +561,7 @@ function applySkillEffects(state, skillId, rank, targetId) {
           [playerId]: { ...player, hp: Math.min(player.maxHp, player.hp + amount) },
         },
       };
-      next = push(next, "skill-heal", { skillId, amount });
+      next = push(next, "skill-heal", { actorId: playerId, skillId, amount });
       return;
     }
 
@@ -498,7 +582,7 @@ function applySkillEffects(state, skillId, rank, targetId) {
         ...next,
         actors: { ...next.actors, [playerId]: { ...player, statuses: cleaned } },
       };
-      next = push(next, "skill-cleanse", { skillId, statuses: [...effect.statuses], removed });
+      next = push(next, "skill-cleanse", { actorId: playerId, skillId, statuses: [...effect.statuses], removed });
       return;
     }
 
@@ -518,6 +602,7 @@ function applySkillEffects(state, skillId, rank, targetId) {
         },
       };
       next = push(next, "skill-status", {
+        actorId: playerId,
         skillId,
         status: effect.status,
         target: effect.target,
@@ -551,6 +636,7 @@ function applySkillEffects(state, skillId, rank, targetId) {
         };
       }
       next = push(next, "skill-status", {
+        actorId: playerId,
         skillId,
         status: effect.status,
         target: effect.target,
@@ -565,15 +651,19 @@ function applySkillEffects(state, skillId, rank, targetId) {
 /**
  * Use one of the player's skills. Turn-free skills leave the primary action open.
  */
-export function useSkill(state, skillId, targetId = null) {
+export function useSkill(state, skillId, targetId = null, actorId = state.playerId) {
   if (state.phase !== "player") return { ok: false, reason: "encounter-over", state };
-  const player = state.actors[state.playerId];
-  if (isControlled(player)) return { ok: false, reason: "action-nullified", state };
+  const actor = state.actors[actorId];
+  if (!actor || actor.side !== "player") return { ok: false, reason: "unknown-actor", state };
+  if (actor.hp <= 0) return { ok: false, reason: "actor-down", state };
+  if (isControlled(actor)) return { ok: false, reason: "action-nullified", state };
 
-  const index = state.build.skills.findIndex((entry) => entry.id === skillId);
+  const build = buildFor(state, actorId);
+  if (!build) return { ok: false, reason: "unknown-actor", state };
+  const index = build.skills.findIndex((entry) => entry.id === skillId);
   if (index < 0) return { ok: false, reason: "skill-not-held", state };
-  const skillState = state.build.skills[index];
-  const legality = skillLegality(skillState, { turnAvailable: state.turn.actionsRemaining > 0 });
+  const skillState = build.skills[index];
+  const legality = skillLegality(skillState, { turnAvailable: actionsLeftFor(state, actorId) > 0 });
   if (!legality.ok) return { ok: false, reason: legality.reason, state };
 
   const definition = getSkill(skillId);
@@ -585,21 +675,57 @@ export function useSkill(state, skillId, targetId = null) {
   const spent = spendSkill(skillState);
   if (!spent.ok) return { ok: false, reason: spent.reason, state };
 
-  let next = {
+  const spentSkills = build.skills.map((entry, at) => (at === index ? spent.state : entry));
+  let next = withBuild(state, actorId, { ...build, skills: spentSkills });
+  if (definition.consumesTurn) next = spendAction(next, actorId);
+  next = applySkillEffects(next, skillId, skillState.rank, target, actorId);
+  return { ok: true, reason: null, state: settle(next) };
+}
+
+/** How many actions this actor has left in the current command window. */
+export function actionsLeftFor(state, actorId) {
+  if (actorId === state.playerId) return state.turn.actionsRemaining;
+  return state.turn.allies?.[actorId] ?? 0;
+}
+
+function withBuild(state, actorId, build) {
+  if (actorId === state.playerId) return { ...state, build };
+  return { ...state, allyBuilds: { ...state.allyBuilds, [actorId]: build } };
+}
+
+function spendAction(state, actorId) {
+  if (actorId === state.playerId) {
+    return {
+      ...state,
+      turn: { ...state.turn, actionsRemaining: Math.max(0, state.turn.actionsRemaining - 1) },
+    };
+  }
+  return {
     ...state,
-    build: {
-      ...state.build,
-      skills: state.build.skills.map((entry, at) => (at === index ? spent.state : entry)),
-    },
     turn: {
       ...state.turn,
-      actionsRemaining: definition.consumesTurn
-        ? Math.max(0, state.turn.actionsRemaining - 1)
-        : state.turn.actionsRemaining,
+      allies: {
+        ...state.turn.allies,
+        [actorId]: Math.max(0, (state.turn.allies?.[actorId] ?? 0) - 1),
+      },
     },
   };
-  next = applySkillEffects(next, skillId, skillState.rank, target);
-  return { ok: true, reason: null, state: settle(next) };
+}
+
+/**
+ * Stand an actor down for the round without spending anything.
+ *
+ * Skipping an ally is an explicit command, never hidden AI. A companion who does nothing
+ * did nothing because the player decided so, and the command log says as much.
+ */
+export function skipTurn(state, actorId) {
+  if (state.phase !== "player") return { ok: false, reason: "encounter-over", state };
+  const actor = state.actors[actorId];
+  if (!actor || actor.side !== "player") return { ok: false, reason: "unknown-actor", state };
+  if (actionsLeftFor(state, actorId) <= 0) return { ok: false, reason: "turn-already-spent", state };
+  let next = state;
+  while (actionsLeftFor(next, actorId) > 0) next = spendAction(next, actorId);
+  return { ok: true, reason: null, state: push(next, "actor-stood-down", { actorId }) };
 }
 
 // ---------------------------------------------------------------------------
@@ -661,9 +787,16 @@ export function endTurn(state) {
       : null;
     const attack = declared
       ?? { id: "basic", name: "Attack", hits: 1, damage: enemy.stats.attack };
+    // The foe strikes whoever it named. If that actor has since gone down, the blow falls on
+    // the next one still standing rather than on a body — a declared target is a statement
+    // of intent, not a promise the world will hold still for it.
+    const standing = livingPlayerSide(next);
+    const declaredTarget = next.intents[enemyId]?.targetId;
+    const defenderId = standing.includes(declaredTarget) ? declaredTarget : standing[0];
+    if (!defenderId) break;
     const resolved = resolveAttack({
       attacker: enemy,
-      defender: next.actors[next.playerId],
+      defender: next.actors[defenderId],
       attack: { hits: attack.hits, damage: attack.damage },
       rng: next.rng,
     });
@@ -673,10 +806,15 @@ export function endTurn(state) {
       actors: {
         ...next.actors,
         [enemyId]: resolved.attacker,
-        [next.playerId]: resolved.defender,
+        [defenderId]: resolved.defender,
       },
     };
-    next = push(next, "enemy-attack", { enemyId, attackId: attack.id, hits: resolved.hits });
+    next = push(next, "enemy-attack", {
+      enemyId,
+      targetId: defenderId,
+      attackId: attack.id,
+      hits: resolved.hits,
+    });
     // Spent, so the next declaration is a new one. A foe that died mid-round drops its
     // telegraph in the round-start pass rather than declaring from the grave.
     if (declared) next = advanceEnemyIntent(next, enemyId);
@@ -686,7 +824,7 @@ export function endTurn(state) {
   if (next.phase !== "player") return { ok: true, reason: null, state: next };
 
   // Boundary ticks: damage-over-time first, then status decay, then cooldowns.
-  for (const actorId of [next.playerId, ...next.enemyIds]) {
+  for (const actorId of [...playerSideIds(next), ...next.enemyIds]) {
     if (next.actors[actorId].hp <= 0) continue;
     next = burnAndDoom(next, actorId);
   }
@@ -697,6 +835,11 @@ export function endTurn(state) {
   for (const actorId of Object.keys(ticked)) {
     ticked[actorId] = { ...ticked[actorId], statuses: tickEndOfTurn(ticked[actorId].statuses) };
   }
+  // Cooldowns tick for everyone who could have spent one, allies included.
+  const tickedAllyBuilds = {};
+  for (const [allyId, build] of Object.entries(next.allyBuilds || {})) {
+    tickedAllyBuilds[allyId] = { ...build, skills: build.skills.map(tickSkillCooldown) };
+  }
   next = {
     ...next,
     actors: ticked,
@@ -705,6 +848,7 @@ export function endTurn(state) {
       ...next.build,
       skills: next.build.skills.map(tickSkillCooldown),
     },
+    allyBuilds: tickedAllyBuilds,
   };
 
   // Cadence traits fire before the action count is read, so a Swift proc this round is

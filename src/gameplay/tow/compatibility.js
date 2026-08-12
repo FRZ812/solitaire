@@ -121,6 +121,16 @@ export const DOMAIN_RULES = Object.freeze({
       + "it disappear between the character sheet and the fight.",
     source: "src/gameplay/tow/admission.js",
   }),
+  companion: rule({
+    domain: "companion",
+    support: SUPPORT.ADAPTED,
+    fidelity: FIDELITY.EXTENDED,
+    reason: "A combat-capable companion is fielded as an allied Tower of Winter actor under "
+      + "player command, with a build and a fate of their own. Their conditions are admitted "
+      + "as their own opening statuses, and one carrying something the encounter cannot "
+      + "express blocks the fight rather than walking in with part of themselves missing.",
+    source: "src/gameplay/tow/admission.js",
+  }),
   condition: rule({
     domain: "condition",
     support: SUPPORT.ADAPTED,
@@ -214,11 +224,11 @@ export function capabilityInventory() {
 /** Domains this matrix does not yet enumerate, each with why. */
 export const UNCOVERED_DOMAINS = Object.freeze([
   Object.freeze({
-    domain: "companion",
-    reason: "The kernel has no allied actor side, so no companion behaviour can be "
-      + "classified as supported yet. admitTowEncounter records each companion as not "
-      + "fielded and tells the player they held back, so the absence is a stated fact "
-      + "rather than a companion who simply fails to appear.",
+    domain: "summon",
+    reason: "Summons would be temporary allied actors, and the allied side now exists — but "
+      + "a summon needs an authored lifecycle, command, targeting and settlement rule before "
+      + "one can be fielded, and none of the abilities that would create them are ported. "
+      + "Mounts are the same question and are support modifiers rather than actors.",
   }),
   Object.freeze({
     domain: "enemy-mechanic",

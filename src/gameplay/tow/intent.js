@@ -128,29 +128,50 @@ export function isTowIntent(value) {
  * The draw comes off the caller's stream, and the caller threads the advanced stream on to
  * the next enemy, so a group declares in one stable pass and a replay reproduces it.
  */
-export function declareTowIntent({ schedule, declarationIndex, targetId, rng }) {
+export function declareTowIntent({ schedule, declarationIndex, targetId, targets, rng }) {
   const stepIndex = declarationIndex % schedule.steps.length;
   const step = schedule.steps[stepIndex];
   const draw = nextInt(rng, 0, step.attackIds.length - 1);
+
+  // Who a foe is coming for is declared alongside what it is bringing, because with allies
+  // on the field "a heavy blow" is a different decision depending on whether it is aimed at
+  // the player or at the companion already down to their last few points.
+  //
+  // A single candidate costs no draw at all. That keeps a solo fight's stream identical to
+  // what it was before allies existed, so adding a companion to the game did not silently
+  // rewrite every fight recorded without one.
+  let targetRng = draw.rng;
+  let chosen = targetId ?? null;
+  if (Array.isArray(targets) && targets.length > 0) {
+    if (targets.length === 1) {
+      chosen = targets[0];
+    } else {
+      const pick = nextInt(targetRng, 0, targets.length - 1);
+      targetRng = pick.rng;
+      chosen = targets[pick.value];
+    }
+  }
+
   return {
-    rng: draw.rng,
+    rng: targetRng,
     intent: {
       version: TOW_INTENT_VERSION,
       patternId: schedule.id,
       declarationIndex,
       stepIndex,
       attackId: step.attackIds[draw.value],
-      targetId: targetId ?? null,
+      targetId: chosen,
     },
   };
 }
 
 /** The next declaration after this one, from the same schedule. */
-export function advanceTowIntent({ schedule, intent, targetId, rng }) {
+export function advanceTowIntent({ schedule, intent, targetId, targets, rng }) {
   return declareTowIntent({
     schedule,
     declarationIndex: intent.declarationIndex + 1,
     targetId,
+    targets,
     rng,
   });
 }
