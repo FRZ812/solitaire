@@ -73,6 +73,16 @@ export const MAX_MEMORIES_PER_TURN = 4;
 export const MAX_RELATIONSHIP_DELTA = 20;
 
 /**
+ * How many new world facts one beat may file per kind.
+ *
+ * The wire schema allows a hundred, which is a bound on payload size rather than on
+ * plausibility. A scene discovers a race, a couple of items, a spell — not a dozen. Every
+ * entry becomes fact for every later prompt, so the cost of a beat quietly filing an
+ * encyclopedia is paid on every turn that follows it.
+ */
+export const MAX_DISCOVERIES_PER_KIND = 12;
+
+/**
  * A purchase must be affordable.
  *
  * The narrator negotiates the price — that is its job, and a haggle it cannot lose is not a
@@ -413,6 +423,45 @@ const ENFORCED = Object.freeze({
     }
     return allow();
   },
+
+  /**
+   * Codex writes are additive and therefore look harmless, but each one becomes fact for
+   * every later prompt. Two things are refused: a beat filing an encyclopedia, and an item
+   * whose id shadows a catalogued one — which would let narrator-authored stats stand in
+   * for real gear everywhere the catalogue is read.
+   */
+  discoveries(state, value) {
+    if (value === null || value === undefined) return allow();
+    for (const [kind, entries] of Object.entries(value)) {
+      if (!Array.isArray(entries)) continue;
+      if (entries.length > MAX_DISCOVERIES_PER_KIND) {
+        return refuse("too-many-discoveries", {
+          kind, asked: entries.length, limit: MAX_DISCOVERIES_PER_KIND,
+        });
+      }
+    }
+    const shadowed = (value.items || [])
+      .map((entry) => entry?.id)
+      .filter((id) => typeof id === "string" && itemTemplate(id));
+    if (shadowed.length > 0) return refuse("discovery-shadows-catalogue-item", { shadowed });
+    return allow();
+  },
+
+  /**
+   * Knowledge is filed against a person. Filing it against someone the codex has never heard
+   * of is how a hallucinated character acquires a history that later prompts then read back
+   * as established.
+   */
+  knowledge_updates(state, value) {
+    if (value === null || value === undefined) return allow();
+    if (!Array.isArray(value)) return refuse("knowledge-not-a-list");
+    const known = state?.world?.codex?.characters || {};
+    const strangers = value
+      .map((entry) => entry?.id)
+      .filter((id) => id && !Object.hasOwn(known, id));
+    if (strangers.length > 0) return refuse("knowledge-about-a-stranger", { strangers });
+    return allow();
+  },
 });
 
 /**
@@ -422,10 +471,6 @@ const ENFORCED = Object.freeze({
  * work; enumerating it is what makes the work reviewable.
  */
 export const PASS_THROUGH_REASONS = Object.freeze({
-  discoveries: "Additive codex writes. Harmless in isolation, but they become fact for every "
-    + "later prompt, so the owner is a content-validation concern.",
-  knowledge_updates: "Gates options elsewhere; needs the knowledge registry to validate "
-    + "against.",
   player_update: "Identity and appearance. Mostly narrative, but durable, so it wants the "
     + "same discipline once the shape of an identity owner is settled.",
   start_combat: "Admission already projects and can refuse this on the combat path. Routing "

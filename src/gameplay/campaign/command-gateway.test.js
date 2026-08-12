@@ -202,10 +202,10 @@ describe("creation", () => {
 describe("what is not yet policed says so", () => {
   it("passes a field through and records it", () => {
     const result = resolveNarratorIntents(
-      campaign(), turnWith({ discoveries: { places: ["A ruin"] } }),
+      campaign(), turnWith({ player_update: { name: "A New Name" } }),
     );
-    expect(receiptFor(result, "discoveries").status).toBe(INTENT_STATUS.PASSED_THROUGH);
-    expect(result.turn.discoveries).toBeTruthy();
+    expect(receiptFor(result, "player_update").status).toBe(INTENT_STATUS.PASSED_THROUGH);
+    expect(result.turn.player_update).toBeTruthy();
   });
 
   it("gives every pass-through a reason worth reading", () => {
@@ -226,15 +226,15 @@ describe("what is not yet policed says so", () => {
       "assassination", "character_setup", "needs_changes", "memory_updates",
       "relationship_changes", "party_removals", "resolve_change", "part_ways",
       "recruit_companion", "buy_mount", "purchase_captive", "inventory_changes",
-      "tile_move", "tile_discovery", "location_update",
+      "tile_move", "tile_discovery", "location_update", "discoveries", "knowledge_updates",
     ]) {
       expect(coverage.enforced, field).toContain(field);
     }
     // Precise rather than round: every field is enforced or has an entry saying why not, so
     // the two lists must together be the whole contract with nothing falling between them.
     expect(coverage.passThrough.sort()).toEqual(Object.keys(PASS_THROUGH_REASONS).sort());
-    expect(coverage.enforced.length).toBeGreaterThanOrEqual(23);
-    expect(coverage.fraction).toBeGreaterThan(0.8);
+    expect(coverage.enforced.length).toBeGreaterThanOrEqual(25);
+    expect(coverage.fraction).toBeGreaterThan(0.9);
   });
 });
 
@@ -429,5 +429,46 @@ describe("the map", () => {
       .toBe("location-without-a-name");
     expect(receiptFor(resolveNarratorIntents(campaign(), turnWith({ location_update: { name: "The Broken Wheel" } })), "location_update").status)
       .toBe(INTENT_STATUS.APPLIED);
+  });
+});
+
+describe("what becomes fact for every later prompt", () => {
+  it("allows a scene's worth of discoveries and refuses an encyclopedia", () => {
+    const scene = resolveNarratorIntents(campaign(), turnWith({
+      discoveries: { races: [{ id: "fen-folk", name: "Fen Folk" }] },
+    }));
+    expect(receiptFor(scene, "discoveries").status).toBe(INTENT_STATUS.APPLIED);
+
+    const flood = resolveNarratorIntents(campaign(), turnWith({
+      discoveries: { races: Array.from({ length: 40 }, (_, i) => ({ id: `race-${i}` })) },
+    }));
+    expect(receiptFor(flood, "discoveries"))
+      .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "too-many-discoveries" });
+    expect(flood.turn.discoveries).toBe(null);
+  });
+
+  it("refuses a discovery that would shadow a catalogued item", () => {
+    // Otherwise narrator-authored stats stand in for real gear everywhere the catalogue is
+    // read, including the combat bridge.
+    const result = resolveNarratorIntents(campaign(), turnWith({
+      discoveries: { items: [{ id: "iron-dagger", name: "Iron Dagger" }] },
+    }));
+    expect(receiptFor(result, "discoveries"))
+      .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "discovery-shadows-catalogue-item" });
+  });
+
+  it("refuses filing knowledge about someone the codex has never heard of", () => {
+    // How a hallucinated character acquires a history that later prompts read back as fact.
+    const known = resolveNarratorIntents(campaign(), turnWith({
+      knowledge_updates: [{ id: "hale", adds: ["Owes the player a debt."] }],
+    }));
+    expect(receiptFor(known, "knowledge_updates").status).toBe(INTENT_STATUS.APPLIED);
+
+    const stranger = resolveNarratorIntents(campaign(), turnWith({
+      knowledge_updates: [{ id: "someone-invented", adds: ["Is secretly a king."] }],
+    }));
+    expect(receiptFor(stranger, "knowledge_updates"))
+      .toMatchObject({ status: INTENT_STATUS.REFUSED, reason: "knowledge-about-a-stranger" });
+    expect(stranger.turn.knowledge_updates).toBe(null);
   });
 });
