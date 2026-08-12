@@ -11,7 +11,7 @@ import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
 import { getSkill } from "../../gameplay/tow/skills.js";
 import { startingPackage } from "../../gameplay/tow/starting-packages.js";
 import { PracticeFight } from "./PracticeFight.jsx";
-import { FIELD_READY_PACKAGE_IDS, QuickStartLane, fieldReadyPackages } from "./QuickStartLane.jsx";
+import { FIELD_READY_TEMPLATE_IDS, QuickStartLane, fieldReadyStarts } from "./QuickStartLane.jsx";
 
 let root;
 let container;
@@ -43,19 +43,28 @@ async function click(element) {
 }
 
 describe("the field-ready cohort", () => {
-  it("offers exactly the six the plan names, and only ones that exist", () => {
-    const packages = fieldReadyPackages();
-    expect(packages).toHaveLength(6);
-    expect(packages.map((pkg) => pkg.professionId)).toEqual([...FIELD_READY_PACKAGE_IDS]);
+  it("offers exactly the six people the plan names", () => {
+    const starts = fieldReadyStarts();
+    expect(starts).toHaveLength(6);
+    expect(starts.map((entry) => entry.template.id)).toEqual([...FIELD_READY_TEMPLATE_IDS]);
+  });
+
+  it("keeps each one's authored identity and actual level", () => {
+    // Quick Start commits a person, not a normalised stand-in.
+    for (const entry of fieldReadyStarts()) {
+      expect(entry.template.label, entry.template.id).toBeTruthy();
+      expect(entry.level, entry.template.id).toBeGreaterThanOrEqual(1);
+      expect(entry.package.trait.rank).toBeGreaterThanOrEqual(1);
+    }
   });
 
   it("advertises only capabilities that are actually there", () => {
-    // A package appears here only when everything it starts with resolves. Advertising a
+    // A start appears here only when everything it begins with resolves. Advertising a
     // skill the catalogue has since lost would be offering a build that cannot be played.
-    for (const pkg of fieldReadyPackages()) {
-      expect(startingPackage(pkg.professionId), pkg.professionId).toBeTruthy();
-      for (const skill of pkg.skills) {
-        expect(getSkill(skill.id), `${pkg.professionId}:${skill.id}`).toBeTruthy();
+    for (const entry of fieldReadyStarts()) {
+      expect(startingPackage(entry.template.setup.profession), entry.template.id).toBeTruthy();
+      for (const skill of entry.package.skills) {
+        expect(getSkill(skill.id), `${entry.template.id}:${skill.id}`).toBeTruthy();
       }
     }
   });
@@ -80,13 +89,13 @@ describe("the lane itself", () => {
     expect(choices[0].getAttribute("aria-checked")).toBe("false");
   });
 
-  it("hands the chosen package and scenario to whoever is listening", async () => {
+  it("hands the chosen start and scenario to whoever is listening", async () => {
     const asked = [];
     const mounted = await render(
-      <QuickStartLane onPractice={(packageId, scenarioId) => asked.push([packageId, scenarioId])} />,
+      <QuickStartLane onPractice={(start, scenarioId) => asked.push([start.template.id, scenarioId])} />,
     );
     await click(mounted.querySelector(".quick-start__try"));
-    expect(asked).toEqual([[FIELD_READY_PACKAGE_IDS[0], PRACTICE_SCENARIOS[0].id]]);
+    expect(asked).toEqual([[FIELD_READY_TEMPLATE_IDS[0], PRACTICE_SCENARIOS[0].id]]);
   });
 
   it("offers begin and practice as separate, explicit actions", async () => {
@@ -103,8 +112,13 @@ describe("the lane itself", () => {
 
 describe("one click reaches a legal fight", () => {
   it("opens a real, commandable encounter for every field-ready package", async () => {
-    for (const packageId of FIELD_READY_PACKAGE_IDS) {
-      const compiled = compileCharacterBootstrap({ professionId: packageId, origin: "quick-start" });
+    for (const entry of fieldReadyStarts()) {
+      const packageId = entry.template.id;
+      const compiled = compileCharacterBootstrap({
+        professionId: entry.template.setup.profession,
+        level: entry.level,
+        origin: "quick-start",
+      });
       expect(compiled.ok, packageId).toBe(true);
 
       const mounted = await render(

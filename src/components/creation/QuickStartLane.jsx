@@ -14,31 +14,34 @@
 import "./quick-start.css";
 import React, { useMemo, useState } from "react";
 import { getSkill, usesPerAct, UNLIMITED_USES } from "../../gameplay/tow/skills.js";
-import { startingPackage, startingPackageIds } from "../../gameplay/tow/starting-packages.js";
+import { startingPackage } from "../../gameplay/tow/starting-packages.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
+import { CHARACTER_TEMPLATES } from "../../data/templates.js";
 
 /**
  * The six the plan names as the field-ready Quick Start cohort.
  *
- * Ordered from the most legible topology to the most demanding, because the first card is
- * the one preselected and it should be the one that explains itself fastest.
+ * These are authored people, not bare packages: each carries its own identity, origin and
+ * actual level, and Quick Start commits that person rather than a normalised stand-in.
+ * Sellsword leads because its Strike/Block/Ironclad topology is the most legible, and the
+ * first card is the one preselected.
  */
-export const FIELD_READY_PACKAGE_IDS = Object.freeze([
-  "fighter",
-  "paladin",
+export const FIELD_READY_TEMPLATE_IDS = Object.freeze([
+  "sellsword",
+  "knight-errant",
   "ranger",
-  "rogue",
-  "cleric",
-  "wizard",
+  "cutthroat",
+  "devout",
+  "hedge-mage",
 ]);
 
-const ROLE_BY_PACKAGE = Object.freeze({
-  fighter: "Front line",
-  paladin: "Shield",
+const ROLE_BY_TEMPLATE = Object.freeze({
+  sellsword: "Front line",
+  "knight-errant": "Shield",
   ranger: "Skirmisher",
-  rogue: "Killer",
-  cleric: "Sustainer",
-  wizard: "Artillery",
+  cutthroat: "Killer",
+  devout: "Sustainer",
+  "hedge-mage": "Artillery",
 });
 
 /**
@@ -64,11 +67,26 @@ function complexity(pkg) {
   return "Demanding";
 }
 
-export function fieldReadyPackages({ level = 1 } = {}) {
-  const known = new Set(startingPackageIds());
-  return FIELD_READY_PACKAGE_IDS
-    .filter((id) => known.has(id))
-    .map((id) => startingPackage(id, { level }))
+/** A template's actual authored level; practice scales by fixture, never by flattening people. */
+export function templateLevel(template) {
+  const paths = template.setup.progression?.paths || {};
+  return Object.values(paths).reduce((total, rank) => total + (Number(rank) || 0), 0) || 1;
+}
+
+/**
+ * The cohort, each template paired with the Tower of Winter package it will actually fight
+ * with. A template whose package cannot be resolved is dropped rather than offered, so
+ * losing support for something stops the advertisement instead of shipping it broken.
+ */
+export function fieldReadyStarts() {
+  return FIELD_READY_TEMPLATE_IDS
+    .map((id) => CHARACTER_TEMPLATES.find((template) => template.id === id))
+    .filter(Boolean)
+    .map((template) => {
+      const level = templateLevel(template);
+      const pkg = startingPackage(template.setup.profession, { level });
+      return pkg ? { template, package: pkg, level } : null;
+    })
     .filter(Boolean);
 }
 
@@ -82,20 +100,20 @@ function Fact({ label, children }) {
 }
 
 export function QuickStartLane({
-  level = 1,
   onPractice,
   onBegin,
   onOtherLanes,
   busy = false,
   error = null,
 }) {
-  const packages = useMemo(() => fieldReadyPackages({ level }), [level]);
-  const [selectedId, setSelectedId] = useState(packages[0]?.professionId ?? null);
+  const starts = useMemo(() => fieldReadyStarts(), []);
+  const [selectedId, setSelectedId] = useState(starts[0]?.template.id ?? null);
   const [scenarioId, setScenarioId] = useState(PRACTICE_SCENARIOS[0].id);
-  const selected = packages.find((pkg) => pkg.professionId === selectedId) || packages[0];
+  const start = starts.find((entry) => entry.template.id === selectedId) || starts[0];
 
-  if (!selected) return null;
+  if (!start) return null;
 
+  const selected = start.package;
   const trait = selected.trait;
   const scenario = PRACTICE_SCENARIOS.find((entry) => entry.id === scenarioId)
     || PRACTICE_SCENARIOS[0];
@@ -111,24 +129,24 @@ export function QuickStartLane({
       </header>
 
       <div className="quick-start__choices" role="radiogroup" aria-label="Starting package">
-        {packages.map((pkg) => (
+        {starts.map((entry) => (
           <button
-            key={pkg.professionId}
+            key={entry.template.id}
             type="button"
             role="radio"
-            aria-checked={pkg.professionId === selected.professionId}
-            className={`quick-start__choice${pkg.professionId === selected.professionId ? " is-selected" : ""}`}
-            onClick={() => setSelectedId(pkg.professionId)}
+            aria-checked={entry.template.id === start.template.id}
+            className={`quick-start__choice${entry.template.id === start.template.id ? " is-selected" : ""}`}
+            onClick={() => setSelectedId(entry.template.id)}
           >
-            <strong>{ROLE_BY_PACKAGE[pkg.professionId] || "Fighter"}</strong>
-            <span>{pkg.trait.name}</span>
+            <strong>{entry.template.label}</strong>
+            <span>{ROLE_BY_TEMPLATE[entry.template.id]} · {entry.package.trait.name}</span>
           </button>
         ))}
       </div>
 
       {/* The five facts the plan asks for, above anything else on the card. */}
       <div className="quick-start__facts" aria-live="polite">
-        <Fact label="Role">{ROLE_BY_PACKAGE[selected.professionId] || "Fighter"}</Fact>
+        <Fact label="Role">{ROLE_BY_TEMPLATE[start.template.id]} — {start.template.label}, level {start.level}</Fact>
         <Fact label="Opens with">
           {trait.name} at rank {trait.rank} — {trait.effect.status} on {trait.cadence.type.replace(/-/g, " ")}
         </Fact>
@@ -159,7 +177,7 @@ export function QuickStartLane({
           type="button"
           className="quick-start__try"
           disabled={busy}
-          onClick={() => onPractice?.(selected.professionId, scenario.id)}
+          onClick={() => onPractice?.(start, scenario.id)}
         >
           Test this build
         </button>
@@ -167,7 +185,7 @@ export function QuickStartLane({
           type="button"
           className="quick-start__begin"
           disabled={busy}
-          onClick={() => onBegin?.(selected.professionId)}
+          onClick={() => onBegin?.(start)}
         >
           Begin the journey
         </button>

@@ -98,6 +98,7 @@ import { hashSeed } from "./engine/combat-rng.js";
 import { applyLoot, lootCtx, rollLoot } from "./engine/combat-loot.js";
 import { emptyMechanicsSidecar, hasMechanicsSidecar } from "./engine/campaign-migration.js";
 import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admission.js";
+import { compileCharacterBootstrap } from "./gameplay/tow/character-bootstrap.js";
 import {
   buildCombatChronicle,
   chronicleSummary,
@@ -195,6 +196,8 @@ import { GameOverScreen } from "./components/GameOverScreen.jsx";
 import { InitialBackdrop } from "./components/InitialBackdrop.jsx";
 import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
 import { CreationHub } from "./components/CreationHub.jsx";
+import { QuickStartLane } from "./components/creation/QuickStartLane.jsx";
+import { PracticeFight } from "./components/creation/PracticeFight.jsx";
 import { ManualCreation } from "./components/ManualCreation.jsx";
 import { Icon } from "./components/Icon.jsx";
 import { JourneyLoader, JourneyResumeOverlay } from "./components/JourneyLoader.jsx";
@@ -458,6 +461,11 @@ export function Solitaire() {
   // campaign; `creationEntered` flips once the player chooses the freeform limbo
   // path; `manualCreation` opens the FRZKHRX full-manual builder (lives in limbo).
   const [creationEntered, setCreationEntered] = useState(false);
+  // Which start lane is showing, and the draft currently being tried. A practice draft is
+  // component state on purpose: it is disposable by design and must never reach a save.
+  const [startLane, setStartLane] = useState("quick");
+  const [practiceDraft, setPracticeDraft] = useState(null);
+  const [quickStartError, setQuickStartError] = useState(null);
   const [manualCreation, setManualCreation] = useState(false);
   const [fusionRune, setFusionRune] = useState(null); // forge-rune id being bound in the fusion ritual
   const [mapOpen, setMapOpen] = useState(false);
@@ -2936,6 +2944,26 @@ export function Solitaire() {
     setState(next);
   }
 
+  /**
+   * Try a Quick Start build before committing to it.
+   *
+   * Compiles the template through the one bootstrap compiler and hands the receipt to a
+   * practice fight. Nothing is written: no campaign, no draft mutation, no save.
+   */
+  function handleQuickStartPractice(start, scenarioId) {
+    const compiled = compileCharacterBootstrap({
+      professionId: start.template.setup.profession,
+      level: start.level,
+      origin: "quick-start",
+    });
+    if (!compiled.ok) {
+      setQuickStartError(`That build could not be compiled: ${compiled.reason}.`);
+      return;
+    }
+    setQuickStartError(null);
+    setPracticeDraft({ receipt: compiled.receipt, scenarioId });
+  }
+
   // ----- Legacy combat handlers (retained until parity gates pass) -----
 
   function startCombat(enemies, context, extraOpts = {}, st = state) {
@@ -4044,7 +4072,25 @@ export function Solitaire() {
       )}
 
 
-      {showCreationHub && (
+      {/* The start opens on Quick Start, because the fastest honest path into the game is a
+          build the player has already felt. The roster is one click away. */}
+      {showCreationHub && practiceDraft && (
+        <PracticeFight
+          receipt={practiceDraft.receipt}
+          scenarioId={practiceDraft.scenarioId}
+          onExit={() => setPracticeDraft(null)}
+        />
+      )}
+      {showCreationHub && !practiceDraft && startLane === "quick" && (
+        <QuickStartLane
+          busy={loading}
+          error={quickStartError}
+          onPractice={handleQuickStartPractice}
+          onBegin={(start) => applyCharacterSetup(start.template.setup)}
+          onOtherLanes={() => setStartLane("roster")}
+        />
+      )}
+      {showCreationHub && !practiceDraft && startLane === "roster" && (
         <CreationHub
           onPickTemplate={applyCharacterSetup}
           onCustom={() => setCreationEntered(true)}
