@@ -928,6 +928,9 @@ export function makeInitialState({ worldSeed = DEFAULT_WORLD_SEED } = {}) {
     // Prose the campaign owes and has not yet paid: settlement records the debt in the same
     // commit as its receipt, so a crash between the two costs the scene and not the outcome.
     presentationJobs: [],
+    // A reward earned and not yet chosen. Durable, so a win survives a reload with its
+    // offer intact rather than quietly evaporating.
+    pendingReward: null,
     portraitOverrides: {},
     created: false, // false until the opening character-creation interview finishes
     beats: [{
@@ -1023,6 +1026,7 @@ export function migrateCodex(state) {
   if (next.productionCombatSequence === undefined) next.productionCombatSequence = 0;
   if (next.combatSettlementReceipts === undefined) next.combatSettlementReceipts = [];
   if (!Array.isArray(next.presentationJobs)) next.presentationJobs = [];
+  if (next.pendingReward === undefined) next.pendingReward = null;
   // Backfilled in two steps because a campaign can predate either the sidecar or just its
   // combat slot: the build migration shipped first and left the slot for this one.
   if (!hasMechanicsSidecar(next)) next.mechanics = emptyMechanicsSidecar();

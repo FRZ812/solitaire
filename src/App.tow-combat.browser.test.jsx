@@ -14,6 +14,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { makeInitialState } from "./data/initial-state.js";
 import { LAST_OPENED_KEY, readResumeSnapshot } from "./engine/campaign-resume.js";
 import { createTowSession } from "./gameplay/tow/session.js";
+import { startingBuild } from "./gameplay/tow/build.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
 import { verifyTowSession } from "./gameplay/tow/replay.js";
 import { Solitaire } from "./App.jsx";
@@ -97,7 +98,13 @@ function campaignInAFight({ lethalPolicy = "nonlethal", playerStakes = "survivab
     },
   });
   if (!opened.ok) throw new Error(opened.reason);
-  state.mechanics = { ...state.mechanics, tow: { activeCombat: opened.session } };
+  // A reward is only offered to a character whose durable build exists to receive it.
+  state.mechanics = {
+    ...state.mechanics,
+    bootstrapId: "0123456789abcdef",
+    build: startingBuild("fighter", { level: 1 }),
+    tow: { activeCombat: opened.session },
+  };
   return state;
 }
 
@@ -436,6 +443,67 @@ describe("an unreadable saved fight", () => {
     await click([...alert.querySelectorAll("button")][0]);
     await waitFor(() => savedSession() === null);
     expect(harness.serverState.combatSettlementReceipts).toHaveLength(0);
+  });
+});
+
+describe("a win is worth something the build keeps", () => {
+  it("offers three choices, and taking one writes it into the durable build", async () => {
+    const mounted = await mountCampaign();
+    const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
+    for (let round = 0; round < 8; round += 1) {
+      const strike = strikeButton(dialog);
+      if (!strike || dialog.querySelector(".production-combat__outcome")) break;
+      await click(strike);
+      if (dialog.querySelector(".production-combat__outcome")) break;
+      await click(endTurnButton(dialog));
+    }
+    await waitFor(() => dialog.querySelector(".production-combat__outcome"));
+    await click([...dialog.querySelectorAll(".production-combat__settle")]
+      .find((button) => !/end turn/i.test(button.textContent)));
+
+    const panel = await waitFor(() => mounted.querySelector(".tow-reward"));
+    const choices = [...panel.querySelectorAll(".tow-reward__choice")];
+    expect(choices).toHaveLength(3);
+
+    // Wait for the offer to reach the *saved* state first. Polling for `=== null` before it
+    // has been saved returns immediately, and then everything after it reads a state from
+    // before the click.
+    await waitFor(() => harness.serverState.pendingReward);
+    const before = harness.serverState.mechanics.build;
+    await click(choices[0]);
+    await waitFor(() => harness.serverState.pendingReward === null);
+
+    // The build actually grew, and the offer is spent.
+    const after = harness.serverState.mechanics.build;
+    const grew = after.skills.length > before.skills.length
+      || Object.keys(after.traits).length > Object.keys(before.traits).length
+      || Object.entries(after.traits).some(([id, rank]) => rank > (before.traits[id] ?? 0));
+    expect(grew).toBe(true);
+    expect(mounted.querySelector(".tow-reward")).toBe(null);
+  });
+
+  it("keeps the offer across a reload rather than losing the win", async () => {
+    let mounted = await mountCampaign();
+    const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
+    for (let round = 0; round < 8; round += 1) {
+      const strike = strikeButton(dialog);
+      if (!strike || dialog.querySelector(".production-combat__outcome")) break;
+      await click(strike);
+      if (dialog.querySelector(".production-combat__outcome")) break;
+      await click(endTurnButton(dialog));
+    }
+    await waitFor(() => dialog.querySelector(".production-combat__outcome"));
+    await click([...dialog.querySelectorAll(".production-combat__settle")]
+      .find((button) => !/end turn/i.test(button.textContent)));
+    const offered = await waitFor(() => harness.serverState.pendingReward);
+
+    await unmountCampaign();
+    mounted = await mountCampaign();
+    const panel = await waitFor(() => mounted.querySelector(".tow-reward"));
+    // The same three, drawn from the same fight.
+    expect(harness.serverState.pendingReward.candidates.map((c) => c.id))
+      .toEqual(offered.candidates.map((c) => c.id));
+    expect(panel.querySelectorAll(".tow-reward__choice")).toHaveLength(3);
   });
 });
 

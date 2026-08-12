@@ -99,6 +99,7 @@ import { applyLoot, lootCtx, rollLoot } from "./engine/combat-loot.js";
 import { emptyMechanicsSidecar, hasMechanicsSidecar } from "./engine/campaign-migration.js";
 import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admission.js";
 import { compileCharacterBootstrap } from "./gameplay/tow/character-bootstrap.js";
+import { claimReward, compileRewardOffer, rerollRewardOffer, rewardSeedFor } from "./gameplay/tow/rewards.js";
 import {
   claimPresentation,
   completePresentation,
@@ -3441,6 +3442,24 @@ export function Solitaire() {
         next = { ...next, pendingLoot: manifest };
       }
     }
+    // A win the build keeps something from. The offer is drawn from the session's own
+    // reward stream, so the three choices are reproducible from the fight that earned them
+    // — and, like the spoils, what the draw spent is written back rather than forgotten.
+    let pendingReward = next.pendingReward ?? null;
+    if (cs.phase === "victory" && !epicDeath && next.mechanics?.build) {
+      const rewards = streamSequencer(closing.streams.rewards);
+      const seed = rewardSeedFor(closing.sessionId, closing.streams.rewards);
+      const compiled = compileRewardOffer(next.mechanics.build, {
+        sourceReceiptId: closing.sessionId,
+        seed,
+      });
+      // No eligible reward is a real state, not a failure: a build at every cap has earned
+      // being told so rather than being handed an empty offer.
+      if (compiled.ok) pendingReward = compiled.offer;
+      const spentRewards = spendTowSessionStream(closing, "rewards", rewards.endpoint());
+      if (spentRewards.ok) closing = spentRewards.session;
+    }
+
     // The session stays in state, marked settled, so a reload between here and the
     // aftermath lands on a fight that is already decided and already folded in — the
     // settlement receipt refuses a second attempt either way.
@@ -3448,7 +3467,7 @@ export function Solitaire() {
     next = withTowMechanics(
       // A permanent death ends the run before anything is narrated. Presentation renders a
       // fact that is already canonical; it never gets to decide one.
-      epicDeath ? { ...next, ended: true } : next,
+      epicDeath ? { ...next, ended: true, pendingReward } : { ...next, pendingReward },
       {
         activeCombat: closed.ok ? closed.session : null,
         // What the fight left is what the next one opens with. The road gives nothing back
@@ -3584,6 +3603,58 @@ export function Solitaire() {
     } finally {
       setLoading(false);
     }
+  }
+
+  /**
+   * Take one of the three, or spend the reroll.
+   *
+   * Both write through the reward module rather than editing the build here, so the engine
+   * rules — caps, slots, one claim per offer — hold whatever the UI does. A refusal is shown
+   * rather than swallowed: a reward the player thought they took and did not get is worse
+   * than one they were told they could not have.
+   */
+  function handleClaimReward(candidateId) {
+    const base = liveStateRef.current;
+    const offer = base.pendingReward;
+    if (!offer || !base.mechanics?.build) return;
+    const claimed = claimReward(base.mechanics.build, offer, candidateId);
+    if (!claimed.ok) {
+      setError(`That reward could not be taken: ${claimed.reason}.`);
+      return;
+    }
+    const next = {
+      ...base,
+      pendingReward: null,
+      mechanics: { ...base.mechanics, build: claimed.build },
+      beats: [
+        ...(base.beats || []),
+        {
+          id: `tow-reward:${offer.id}`,
+          type: "growth",
+          text: `You come away from that fight the better for it: ${
+            offer.candidates.find((entry) => entry.id === candidateId)?.name || candidateId
+          }.`,
+        },
+      ],
+    };
+    setError(null);
+    liveStateRef.current = next;
+    setState(next);
+  }
+
+  function handleRerollReward() {
+    const base = liveStateRef.current;
+    const offer = base.pendingReward;
+    if (!offer || !base.mechanics?.build) return;
+    const rerolled = rerollRewardOffer(base.mechanics.build, offer);
+    if (!rerolled.ok) {
+      setError(`That offer could not be rerolled: ${rerolled.reason}.`);
+      return;
+    }
+    const next = { ...base, pendingReward: rerolled.offer };
+    setError(null);
+    liveStateRef.current = next;
+    setState(next);
   }
 
   /** Ask again for a scene that failed to arrive. Settlement is untouched either way. */
@@ -4047,6 +4118,45 @@ export function Solitaire() {
                 border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
               }}>
                 Discard unreadable fight
+              </button>
+            )}
+          </div>
+        )}
+        {state.created !== false && state.pendingReward && !combat && (
+          <div className="tow-reward fade-in" role="group" aria-label="Reward" style={{
+            margin: "0 12px 8px", padding: "11px 14px",
+            backgroundColor: "rgba(20,29,29,0.85)", border: `1px solid ${colors.gold}55`,
+            borderRadius: 14, boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: colors.gold, marginBottom: "6px" }}>
+              What you take from it
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {state.pendingReward.candidates.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  className="tow-reward__choice"
+                  onClick={() => handleClaimReward(candidate.id)}
+                  style={{
+                    flex: "1 1 9rem", padding: "9px 12px", borderRadius: 12,
+                    backgroundColor: "transparent", color: colors.parchment,
+                    border: `1px solid ${colors.gold}55`, fontFamily: "inherit",
+                    fontSize: "13px", textAlign: "left", cursor: "pointer",
+                  }}
+                >
+                  <strong style={{ display: "block" }}>{candidate.name}</strong>
+                  <span style={{ fontSize: "11px", color: colors.parchmentMuted }}>{candidate.detail}</span>
+                </button>
+              ))}
+            </div>
+            {state.pendingReward.rerollsRemaining > 0 && (
+              <button type="button" onClick={handleRerollReward} style={{
+                marginTop: "6px", padding: "6px 0", border: "none", background: "transparent",
+                color: "rgba(215,167,111,0.75)", fontFamily: "inherit", fontSize: "12px",
+                textDecoration: "underline", cursor: "pointer",
+              }}>
+                Look again
               </button>
             )}
           </div>
