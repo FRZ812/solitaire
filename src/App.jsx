@@ -690,6 +690,9 @@ export function Solitaire() {
   const [referenceGameplayFeedback, setReferenceGameplayFeedback] = useState(null);
   const [referencePersistenceFeedback, setReferencePersistenceFeedback] = useState(null);
   const [towCombatFeedback, setTowCombatFeedback] = useState(null);
+  // An aftermath scene that failed to arrive. The settlement is already applied and the
+  // factual report is already in the story, so this costs prose and nothing else.
+  const [pendingAftermath, setPendingAftermath] = useState(null);
 
   // The saved fight is decoded on every read rather than trusted. A payload that fails the
   // codec becomes a visible, recoverable error — never a silent "no combat in progress",
@@ -3401,8 +3404,9 @@ export function Solitaire() {
     // The story always continues from the result, so the player can react.
     setError(null);
     setLoading(true);
+    // Held outside the try so a failed narration can be offered back as a retry.
+    let msg;
     try {
-      let msg;
       if (epicDeath) {
         msg = `${report}
 
@@ -3426,10 +3430,37 @@ export function Solitaire() {
         route: "combat-aftermath",
       };
       const { beat } = await narrateSpecialized(next, msg, policyOptions);
+      setPendingAftermath(null);
       if (!beat) return;
       if (beat.start_combat) setPendingEngage({ dir: beat.start_combat });
     } catch (e) {
-      setError(e.message || String(e));
+      // The settlement is already applied and the factual report is already in the story, so
+      // a failed narration costs prose and nothing else. Offering the retry here is what
+      // keeps that true: without it the fight would simply end without a scene, and the
+      // player would have no way to ask for one.
+      setPendingAftermath({ message: msg, reason: e.message || String(e) });
+      setError(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /** Ask again for an aftermath scene that failed to arrive. Settlement is untouched. */
+  async function handleRetryAftermath() {
+    const pending = pendingAftermath;
+    if (!pending || loading) return;
+    setPendingAftermath(null);
+    setError(null);
+    setLoading(true);
+    try {
+      const { beat } = await narrateSpecialized(
+        liveStateRef.current,
+        pending.message,
+        { route: "combat-aftermath" },
+      );
+      if (beat?.start_combat) setPendingEngage({ dir: beat.start_combat });
+    } catch (e) {
+      setPendingAftermath({ message: pending.message, reason: e.message || String(e) });
     } finally {
       setLoading(false);
     }
@@ -3813,6 +3844,36 @@ export function Solitaire() {
               border: "none", fontSize: "13px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
             }}>
               Discard invalid handoff
+            </button>
+          </div>
+        )}
+        {state.created !== false && pendingAftermath && !combat && (
+          <div className="tow-aftermath-retry fade-in" role="status" style={{
+            margin: "0 12px 8px", padding: "11px 14px",
+            backgroundColor: "rgba(20,29,29,0.82)", border: "1px solid rgba(215,167,111,0.4)",
+            borderRadius: 14, display: "flex", alignItems: "center", gap: "10px",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.35)",
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: "8px", letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 800, color: colors.gold, marginBottom: "2px" }}>
+                Aftermath unwritten
+              </div>
+              <div style={{ fontSize: "13px", color: "#e8e2d4", lineHeight: 1.35 }}>
+                The fight is settled and its outcome is recorded above — only the telling of it
+                failed ({pendingAftermath.reason}).
+              </div>
+            </div>
+            <button type="button" onClick={handleRetryAftermath} disabled={loading} style={{
+              padding: "9px 12px", borderRadius: 12, backgroundColor: colors.gold, color: colors.ink,
+              border: "none", fontSize: "13px", fontWeight: 800, cursor: loading ? "wait" : "pointer", fontFamily: "inherit", flexShrink: 0, opacity: loading ? 0.55 : 1,
+            }}>
+              Tell it again
+            </button>
+            <button type="button" onClick={() => setPendingAftermath(null)} disabled={loading} style={{
+              padding: "9px 12px", borderRadius: 12, backgroundColor: "transparent", color: "rgba(215,167,111,0.7)",
+              border: `1px solid rgba(215,167,111,0.25)`, fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", flexShrink: 0,
+            }}>
+              Leave it
             </button>
           </div>
         )}

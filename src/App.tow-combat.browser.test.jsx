@@ -20,16 +20,17 @@ import { Solitaire } from "./App.jsx";
 
 const harness = vi.hoisted(() => ({
   serverState: null,
+  narratorFails: false,
   saveCampaign: vi.fn(),
   loadCampaignRecord: vi.fn(),
   listCampaigns: vi.fn(),
 }));
 
 vi.mock("./engine/api-supabase.js", () => ({
-  callNarrator: vi.fn(async () => ({
-    story: [{ type: "beat", text: "The dust settles." }],
-    minutes_passed: 0,
-  })),
+  callNarrator: vi.fn(async () => {
+    if (harness.narratorFails) throw new Error("provider unavailable");
+    return { story: [{ type: "beat", text: "The dust settles." }], minutes_passed: 0 };
+  }),
 }));
 
 vi.mock("./engine/auth-supabase.js", () => ({
@@ -164,6 +165,7 @@ beforeEach(() => {
   localStorage.clear();
   localStorage.setItem(LAST_OPENED_KEY, "tow-browser-campaign");
   harness.serverState = campaignInAFight();
+  harness.narratorFails = false;
   harness.listCampaigns.mockReset().mockResolvedValue([
     { id: "tow-browser-campaign", name: "Tower campaign", schema_version: "v12" },
   ]);
@@ -260,7 +262,12 @@ describe("a fight survives a reload", () => {
 
     await click(settleButton);
     await waitFor(() => decodeTowSession(savedSession()).session?.status === "settled");
-    const receipts = await waitFor(() => harness.serverState.combatSettlementReceipts);
+    // An empty array is truthy, so the predicate has to look at the length or it returns
+    // before the settlement has been saved at all.
+    const receipts = await waitFor(() => {
+      const saved = harness.serverState.combatSettlementReceipts;
+      return saved?.length ? saved : null;
+    });
     expect(receipts).toHaveLength(1);
     expect(receipts[0].sessionId).toBe("tow-browser-campaign:combat:1");
 
@@ -429,5 +436,47 @@ describe("an unreadable saved fight", () => {
     await click([...alert.querySelectorAll("button")][0]);
     await waitFor(() => savedSession() === null);
     expect(harness.serverState.combatSettlementReceipts).toHaveLength(0);
+  });
+});
+
+describe("when the telling fails", () => {
+  it("keeps the settlement, states the facts, and offers to try again", async () => {
+    // The plan's stated failure path: if narration fails, show the factual result and a
+    // retry. The campaign continues to own the settlement either way.
+    harness.narratorFails = true;
+    const mounted = await mountCampaign();
+    const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
+
+    for (let round = 0; round < 8; round += 1) {
+      const strike = strikeButton(dialog);
+      if (!strike || dialog.querySelector(".production-combat__outcome")) break;
+      await click(strike);
+      if (dialog.querySelector(".production-combat__outcome")) break;
+      await click(endTurnButton(dialog));
+    }
+    await waitFor(() => dialog.querySelector(".production-combat__outcome"));
+    await click([...dialog.querySelectorAll(".production-combat__settle")]
+      .find((button) => !/end turn/i.test(button.textContent)));
+
+    // The fight settled even though no prose could be produced.
+    const receipts = await waitFor(() => {
+      const saved = harness.serverState.combatSettlementReceipts;
+      return saved?.length ? saved : null;
+    });
+    expect(receipts).toHaveLength(1);
+
+    // The factual outcome reached the story on its own.
+    const beats = harness.serverState.beats.map((beat) => beat.content).join("\n");
+    expect(beats).toContain("The fight is over.");
+
+    // And the player is offered the retry rather than left with an error.
+    const retry = await waitFor(() => mounted.querySelector(".tow-aftermath-retry"));
+    expect(retry.textContent).toContain("only the telling of it failed");
+
+    harness.narratorFails = false;
+    await click([...retry.querySelectorAll("button")].find((b) => /Tell it again/.test(b.textContent)));
+    await waitFor(() => !mounted.querySelector(".tow-aftermath-retry"));
+    // Still exactly one settlement: retrying prose cannot re-settle a fight.
+    expect(harness.serverState.combatSettlementReceipts).toHaveLength(1);
   });
 });
