@@ -273,6 +273,7 @@ async function accumulateAnthropicSSE(body, onProgress) {
   let text = "";
   let thinking = "";
   const memories = [];
+  const memoryProposals = [];
   let sawSuccessfulTerminalEvent = false;
   let receivedBytes = 0;
 
@@ -323,8 +324,14 @@ async function accumulateAnthropicSSE(body, onProgress) {
         } else {
           throw new Error("Narrator stream contained an invalid event shape.");
         }
-      } else if (evt.type === "memory_delta" && evt.fact) {
-        memories.push(evt.fact);
+      } else if (evt.type === "memory_delta" && (evt.proposal || evt.fact)) {
+        // The typed proposal is preferred; `fact` is the compatibility field a server-first
+        // rollout keeps for older clients, and it is the proposal's own text, so reading
+        // either gives the same sentence. Both are collected: the flat list keeps every
+        // existing consumer working while the typed bank grows underneath it.
+        if (evt.proposal && typeof evt.proposal === "object") memoryProposals.push(evt.proposal);
+        const fact = evt.proposal?.text ?? evt.fact;
+        if (typeof fact === "string" && fact) memories.push(fact);
       } else if (evt.type === "narrator_round_reset") {
         text = "";
         thinking = "";
@@ -345,7 +352,12 @@ async function accumulateAnthropicSSE(body, onProgress) {
     if (!sawSuccessfulTerminalEvent) {
       throw new Error("Narrator stream ended without a successful terminal event.");
     }
-    return { text, thinking, memories: mergeMemoryBank([], memories) };
+    return {
+      text,
+      thinking,
+      memories: mergeMemoryBank([], memories),
+      memoryProposals,
+    };
   } catch (error) {
     await reader.cancel(error).catch(() => {});
     throw error;
