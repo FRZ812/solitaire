@@ -65,15 +65,40 @@ export function skillStatesForReadiness(skills, readiness = {}) {
   });
 }
 
-/** What a finished fight leaves in the pack. */
-export function readinessFromEncounter(encounter) {
+function readinessFromSkills(skills) {
   const readiness = {};
-  for (const state of encounter?.build?.skills || []) {
+  for (const state of skills || []) {
     if (state.usesRemaining === UNLIMITED_USES) continue;
     if (!Number.isSafeInteger(state.usesRemaining)) continue;
     readiness[state.id] = Math.max(0, state.usesRemaining);
   }
   return readiness;
+}
+
+/** What a finished fight leaves in the player's pack. */
+export function readinessFromEncounter(encounter) {
+  return readinessFromSkills(encounter?.build?.skills);
+}
+
+/**
+ * What the fight left in each ally's pack, keyed by the actor id they fought under.
+ *
+ * A companion's readiness settles on its own terms, like the rest of their fate. Refilling
+ * them every fight while the player carried their depletion would make bringing someone
+ * along a way to launder the scarcity the whole model exists for.
+ */
+export function allyReadinessFromEncounter(encounter) {
+  const out = {};
+  for (const [allyId, build] of Object.entries(encounter?.allyBuilds || {})) {
+    out[allyId] = readinessFromSkills(build.skills);
+  }
+  return out;
+}
+
+/** Whether a stored map of per-companion readiness is usable. */
+export function isCompanionReadiness(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value).every(isReadiness);
 }
 
 /**

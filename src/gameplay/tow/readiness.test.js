@@ -3,7 +3,9 @@ import { createTowEncounter, endTurn, useSkill } from "./encounter.js";
 import { towBuildForCharacter } from "./professions.js";
 import { UNLIMITED_USES, usesPerAct } from "./skills.js";
 import {
+  allyReadinessFromEncounter,
   emptyReadiness,
+  isCompanionReadiness,
   isReadiness,
   pruneReadiness,
   readinessFromEncounter,
@@ -168,6 +170,65 @@ describe("getting it back", () => {
     // Otherwise a dropped and re-learned skill would return as depleted as it left.
     const pruned = pruneReadiness({ block: 2, warcry: 1 }, ["strike", "block"]);
     expect(pruned).toEqual({ block: 2 });
+  });
+});
+
+describe("a companion's own pack", () => {
+  function withAlly(playerReadiness, allyReadiness) {
+    return createTowEncounter({
+      seed: "ally-readiness",
+      player: {
+        id: "wanderer", name: "Wanderer", maxHp: 400,
+        stats: { attack: 12, defense: 9, critRate: 0, dodgeRate: 0 },
+      },
+      allies: [{
+        id: "ally-kestrel", name: "Kestrel", maxHp: 200,
+        stats: { attack: 8, defense: 6, critRate: 0, dodgeRate: 0 },
+        build: { traits: {}, skills: skillStatesForReadiness(["strike", "block"], allyReadiness) },
+      }],
+      enemies: [{
+        id: "foe-0", name: "Brigand", maxHp: 900,
+        stats: { attack: 2, defense: 0, critRate: 0, dodgeRate: 0 },
+        attacks: [{ id: "jab", name: "Jab", hits: 1, damage: 2 }],
+      }],
+      build: { traits: {}, skills: skillStatesForReadiness(LOADOUT, playerReadiness) },
+    });
+  }
+
+  it("settles separately from the player's", () => {
+    // Refilling allies every fight while the player carried their depletion would make
+    // bringing someone along a way to launder the scarcity the whole model exists for.
+    let state = withAlly(emptyReadiness(), emptyReadiness());
+    // One action each per round, so the ally's second guard needs a round to happen in.
+    state = useSkill(state, "block", null, "wanderer").state;
+    state = useSkill(state, "block", null, "ally-kestrel").state;
+    state = endTurn(state).state;
+    state = useSkill(state, "block", null, "ally-kestrel").state;
+
+    expect(readinessFromEncounter(state).block).toBe(usesPerAct("block", 1) - 1);
+    expect(allyReadinessFromEncounter(state)["ally-kestrel"].block)
+      .toBe(usesPerAct("block", 1) - 2);
+  });
+
+  it("opens an ally on what their own last fight left", () => {
+    const state = withAlly(emptyReadiness(), { block: 5 });
+    expect(state.allyBuilds["ally-kestrel"].skills.find((s) => s.id === "block").usesRemaining)
+      .toBe(5);
+    // The player is untouched by the ally's depletion.
+    expect(state.build.skills.find((s) => s.id === "block").usesRemaining)
+      .toBe(usesPerAct("block", 1));
+  });
+
+  it("validates a whole party's worth at once", () => {
+    expect(isCompanionReadiness({ kestrel: { block: 3 }, mara: {} })).toBe(true);
+    expect(isCompanionReadiness({ kestrel: { "not-a-skill": 1 } })).toBe(false);
+    expect(isCompanionReadiness({ kestrel: [] })).toBe(false);
+    expect(isCompanionReadiness(null)).toBe(false);
+    expect(isCompanionReadiness({})).toBe(true);
+  });
+
+  it("has nothing to say about a fight with no allies", () => {
+    expect(allyReadinessFromEncounter(fight(emptyReadiness()))).toEqual({});
   });
 });
 

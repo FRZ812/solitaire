@@ -107,7 +107,9 @@ import { dispatchTowCommand } from "./gameplay/tow/commands.js";
 import { sealTowTerminalReceipt, worldFatesByParticipant } from "./gameplay/tow/outcomes.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
 import {
+  allyReadinessFromEncounter,
   emptyReadiness,
+  isCompanionReadiness,
   isReadiness,
   pruneReadiness,
   readinessFromEncounter,
@@ -1371,6 +1373,7 @@ export function Solitaire() {
     // goes with it, because the fight is part of that state now rather than beside it.
     setState(makeInitialState());
     setTowCombatFeedback(null);
+    setPendingAftermath(null);
     lastSyncedStateRef.current = null;
     lastServerUpdatedAtRef.current = null;
     clearCampaignResume();
@@ -2392,7 +2395,7 @@ export function Solitaire() {
     // Opening the rest screen does not, and neither does a night the narrator described.
     setState(withTowMechanics(
       { ...r.state, beats: [...r.state.beats, { id: `rest${Date.now()}`, type: "narration", content: r.summary }] },
-      { readiness: restoreReadiness() },
+      { readiness: restoreReadiness(), companionReadiness: {} },
     ));
   }
 
@@ -2411,7 +2414,7 @@ export function Solitaire() {
     }
     setState(withTowMechanics(
       { ...r.state, beats: [...r.state.beats, { id: `camp${Date.now()}`, type: "narration", content: r.summary }] },
-      { readiness: restoreReadiness() },
+      { readiness: restoreReadiness(), companionReadiness: {} },
     ));
     // The halt still names where the party stands and what lies ahead; what it
     // must stop saying is that they are spent, because they no longer are.
@@ -2992,6 +2995,7 @@ export function Solitaire() {
     // player was when it started.
     const campaignBuild = towBuildForCharacter(st.character);
     const readiness = towReadiness(st);
+    const companionReadiness = towCompanionReadiness(st);
     // Each admitted companion crosses the same bridge the player does and brings their own
     // package, so an ally fights like themselves rather than like a copy of the protagonist.
     let allies;
@@ -3002,7 +3006,13 @@ export function Solitaire() {
         return {
           ...actor,
           statuses: [...actor.statuses, ...openingStatuses],
-          build: { ...build, skills: skillStatesForReadiness(build.skills, {}) },
+          // A companion opens with whatever their own last fight left them, exactly as the
+          // player does. Refilling allies every fight would make bringing someone along a
+          // way to launder the scarcity the whole model exists for.
+          build: {
+            ...build,
+            skills: skillStatesForReadiness(build.skills, companionReadiness[companionId] || {}),
+          },
         };
       });
     } catch (error) {
@@ -3105,6 +3115,12 @@ export function Solitaire() {
   function towReadiness(source) {
     const stored = source?.mechanics?.tow?.readiness;
     return isReadiness(stored) ? stored : emptyReadiness();
+  }
+
+  /** The same, per companion, keyed by their codex id. */
+  function towCompanionReadiness(source) {
+    const stored = source?.mechanics?.tow?.companionReadiness;
+    return isCompanionReadiness(stored) ? stored : {};
   }
 
   // Discarding an unreadable fight is the player's explicit act, never the engine's quiet
@@ -3372,6 +3388,13 @@ export function Solitaire() {
         // What the fight left is what the next one opens with. The road gives nothing back
         // on its own — only a completed rest does.
         readiness: pruneReadiness(readinessFromEncounter(cs), cs.build.skills),
+        companionReadiness: Object.fromEntries(
+          Object.entries(allyReadinessFromEncounter(cs)).map(([allyId, spent]) => [
+            // Stored against the companion, not the actor id the fight gave them.
+            allyId.replace(/^ally-/, ""),
+            pruneReadiness(spent, cs.allyBuilds[allyId].skills),
+          ]),
+        ),
       },
     );
     // The report the aftermath prompt has always claimed to be narrating from. It is
