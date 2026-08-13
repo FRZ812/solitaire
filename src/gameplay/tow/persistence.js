@@ -146,14 +146,21 @@ function receiptFailure(session) {
   if (!exactKeys(receipt, RECEIPT_KEYS)) return "invalid-terminal-receipt";
   if (receipt.sessionId !== session.sessionId) return "terminal-receipt-session-mismatch";
   if (receipt.rulesetId !== session.rulesetId) return "terminal-receipt-ruleset-mismatch";
-  if (!["victory", "defeat"].includes(receipt.reason)) return "invalid-terminal-receipt";
+  if (!["victory", "defeat", "retreated"].includes(receipt.reason)) return "invalid-terminal-receipt";
   if (receipt.reason !== session.encounter.phase) return "terminal-receipt-phase-mismatch";
+  if (receipt.reason === "retreated" && (receipt.winner !== null || receipt.loser !== null)) {
+    return "invalid-terminal-receipt";
+  }
   if (!TOW_WORLD_FATES.includes(receipt.playerWorldFate)) return "invalid-terminal-receipt";
   if (!Array.isArray(receipt.participants) || receipt.participants.length === 0) {
     return "invalid-terminal-receipt";
   }
 
-  const actorIds = new Set([session.encounter.playerId, ...session.encounter.enemyIds]);
+  const actorIds = new Set([
+    session.encounter.playerId,
+    ...(session.encounter.allyIds || []),
+    ...session.encounter.enemyIds,
+  ]);
   const seen = new Set();
   for (const outcome of receipt.participants) {
     if (!exactKeys(outcome, OUTCOME_KEYS)) return "invalid-participant-outcome";

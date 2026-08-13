@@ -62,7 +62,7 @@ export function settleTowEncounter(state, encounter, context = {}) {
   if (typeof encounterId !== "string" || encounterId.length === 0) {
     return rejected("invalid-encounter-id", state);
   }
-  if (!encounter || !["victory", "defeat"].includes(encounter.phase)) {
+  if (!encounter || !["victory", "defeat", "retreated"].includes(encounter.phase)) {
     return rejected("tow-encounter-not-terminal", state);
   }
 
@@ -178,7 +178,9 @@ export function settleTowEncounter(state, encounter, context = {}) {
 
   const content = encounter.phase === "victory"
     ? `${fallen.length === 1 ? fallen[0] : `${fallen.length} foes`} down. The fight is over.`
-    : "The fight goes against you. A last blow lands, and the world tips into black.";
+    : encounter.phase === "retreated"
+      ? "You break contact and lead the party clear. The fight ends without a victor."
+      : "The fight goes against you. A last blow lands, and the world tips into black.";
 
   return {
     ok: true,

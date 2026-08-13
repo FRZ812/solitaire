@@ -214,7 +214,7 @@ export function createPracticeSession(receipt, scenarioId = DEFAULT_PRACTICE_SCE
       // terminal resolver honest rather than relying on the mode flag.
       lethalPolicy: "nonlethal",
       playerStakes: "survivable",
-      retreatPolicy: "forbidden",
+      retreatPolicy: "allowed",
     },
   });
   if (!opened.ok) return rejected(opened.reason);

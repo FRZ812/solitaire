@@ -58,6 +58,22 @@ function outcomeFor(session, actorId) {
   const binding = context.participantBindings[actorId] || {};
   const campaignEntityId = binding.campaignEntityId ?? null;
   const finalStatuses = actor.statuses.map((entry) => ({ type: entry.type, count: entry.count }));
+  const isPlayer = actorId === encounter.playerId;
+  const isAlly = (encounter.allyIds || []).includes(actorId);
+
+  if (encounter.phase === "retreated" && actor.hp > 0 && (isPlayer || isAlly)) {
+    const retreat = [...encounter.events].reverse().find((entry) => entry.type === "retreat-attempt");
+    return {
+      participantId: actorId,
+      campaignEntityId,
+      combatState: "fled",
+      worldFate: "alive",
+      terminalCause: "retreat-attempt",
+      finalHp: actor.hp,
+      finalStatuses,
+      sourceEventId: retreat?.sequence ?? null,
+    };
+  }
 
   if (actor.hp > 0) {
     return {
@@ -73,8 +89,6 @@ function outcomeFor(session, actorId) {
   }
 
   const harm = lastHarmEvent(encounter, actorId);
-  const isPlayer = actorId === encounter.playerId;
-  const isAlly = (encounter.allyIds || []).includes(actorId);
   // The player's stakes were set at admission; a foe's lethality can be set per participant,
   // which is what lets one duel inside a brawl be real while the rest is fists.
   //
@@ -127,14 +141,15 @@ export function resolveTowTerminalReceipt(session) {
   const participants = resolveParticipantOutcomes(session);
   const playerOutcome = participants[0];
   const won = encounter.phase === "victory";
+  const retreated = encounter.phase === "retreated";
 
   return {
     version: TOW_TERMINAL_RECEIPT_VERSION,
     sessionId: session.sessionId,
     rulesetId: session.rulesetId,
     reason: encounter.phase,
-    winner: won ? "player" : "enemies",
-    loser: won ? "enemies" : "player",
+    winner: retreated ? null : won ? "player" : "enemies",
+    loser: retreated ? null : won ? "enemies" : "player",
     rounds: encounter.round,
     eventCount: encounter.sequence,
     // Hoisted so callers do not have to re-derive the one fact that ends a campaign.

@@ -188,4 +188,27 @@ describe("the terminal receipt", () => {
     expect(foe.terminalCause).toBe(null);
     expect(foe.sourceEventId).toBe(null);
   });
+
+  it("records a successful escape as fled with no winner or loser", () => {
+    const session = open({ retreatPolicy: "allowed" });
+    const escaped = {
+      ...session,
+      encounter: {
+        ...session.encounter,
+        phase: "retreated",
+        sequence: session.encounter.sequence + 2,
+        events: [
+          ...session.encounter.events,
+          { sequence: session.encounter.sequence + 1, round: 1, type: "retreat-attempt", actorId: "wanderer", succeeded: true },
+          { sequence: session.encounter.sequence + 2, round: 1, type: "retreated", actorId: "wanderer" },
+        ],
+      },
+    };
+    const receipt = resolveTowTerminalReceipt(escaped);
+    expect(receipt).toMatchObject({ reason: "retreated", winner: null, loser: null });
+    expect(receipt.participants.find((entry) => entry.participantId === "wanderer"))
+      .toMatchObject({ combatState: "fled", worldFate: "alive" });
+    expect(receipt.participants.find((entry) => entry.participantId === "foe-0"))
+      .toMatchObject({ combatState: "standing", worldFate: "alive" });
+  });
 });

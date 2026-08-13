@@ -133,6 +133,31 @@ describe("settling a defeat", () => {
   });
 });
 
+describe("settling a retreat", () => {
+  it("preserves current health, grants no wounds, and leaves standing foes unchanged", () => {
+    const before = campaign();
+    const encounter = createTowEncounter({
+      seed: "settlement-retreat",
+      player: player({ hp: 42 }),
+      enemies: [foe("brigand")],
+      build: { traits: {}, skills: ["strike"] },
+    });
+    const escaped = { ...encounter, phase: "retreated" };
+    const result = settleTowEncounter(before, escaped, {
+      encounterId: "retreat-1",
+      npcIds: { brigand: "brigand" },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.receipt).toMatchObject({ outcome: "retreated", fallen: 0 });
+    expect(result.state.character.vitality).toBe(
+      Math.min(before.character.vitalityMax, escaped.actors.wanderer.hp),
+    );
+    expect(result.state.character.conditions).toEqual(before.character.conditions);
+    expect(result.state.world.codex.characters.brigand.combatState.status).toBe("ok");
+    expect(result.state.beats.at(-1).content).toContain("without a victor");
+  });
+});
+
 describe("idempotence", () => {
   it("refuses a second settlement and hands back the original receipt", () => {
     const encounter = wonFight();

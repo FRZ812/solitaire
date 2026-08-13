@@ -5,9 +5,11 @@
 // in App so a disposable practice fight returns to the same character preview.
 
 import "./archetype-start.css";
+import "./character-select-polish.css";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import winterScene from "../../assets/generated/scene-whitemarch-v2.webp";
 import { resolveCharacterPortrait } from "../character-portrait-assets.js";
+import { resolvePlayerCombatCutout } from "../combat/tow-combat-art.js";
 import { Icon } from "../Icon.jsx";
 import { createSkillState, getSkill } from "../../gameplay/tow/skills.js";
 import { getFusion, getTrait } from "../../gameplay/tow/traits.js";
@@ -29,6 +31,23 @@ import {
 
 function portraitFor(entry) {
   return resolveCharacterPortrait({ portraitKey: entry?.character?.portraitKey });
+}
+
+function combatArtFor(entry) {
+  return resolvePlayerCombatCutout(entry?.character?.portraitKey, entry?.character) || portraitFor(entry);
+}
+
+function titleCase(value) {
+  return String(value || "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function characterKind(entry) {
+  const ancestry = entry?.character?.subrace
+    ? `${titleCase(entry.character.subrace)} ${titleCase(entry.character.race)}`
+    : titleCase(entry?.character?.race);
+  return [ancestry, entry?.name].filter(Boolean).join(" · ");
 }
 
 function updateDraft(current, patch) {
@@ -343,7 +362,7 @@ export function QuickStartLane({
   useEffect(() => setDetailsOpen(false), [selected.id]);
   useEffect(() => {
     if (!normalized.preview) return;
-    rootRef.current?.scrollTo?.({ top: 0, behavior: "auto" });
+    rootRef.current?.scrollTo?.({ top: 0, left: 0, behavior: "auto" });
   }, [normalized.preview, selected.id]);
 
   const change = (patch) => onDraftChange?.(updateDraft(normalized, patch));
@@ -375,9 +394,9 @@ export function QuickStartLane({
               </button>
             ) : <span />}
             <div>
-              <span>Begin a new journey</span>
-              <h1>Choose your character</h1>
-              <p>Eight complete lives. Each carries a fixed story, combat style, equipment, and fusions.</p>
+              <span>New journey</span>
+              <h1>Select a character</h1>
+              <p>Eight lives. One road north.</p>
             </div>
             <span aria-hidden="true" />
           </header>
@@ -388,24 +407,20 @@ export function QuickStartLane({
                 type="button"
                 role="option"
                 aria-selected="false"
+                aria-label={`${entry.character.name}, ${characterKind(entry)}`}
                 className="character-choice-card"
                 style={{ "--character-accent": entry.color }}
                 key={entry.id}
                 onClick={() => selectCharacter(entry, index, true)}
               >
-                <img src={portraitFor(entry)} alt="" />
+                <img className="character-choice-card__art" src={combatArtFor(entry)} alt="" />
                 <span className="character-choice-card__shade" />
                 <span className="character-choice-card__copy">
-                  <small>{entry.power} · {entry.name}</small>
                   <strong>{entry.character.name}</strong>
-                  <span>{entry.character.epithet}</span>
                 </span>
-                <span className="character-choice-card__open" aria-hidden="true"><ArrowIcon /></span>
               </button>
             ))}
           </div>
-
-          <p className="character-grid-view__hint">Select a portrait to preview the complete character.</p>
         </div>
       </section>
     );
@@ -425,55 +440,78 @@ export function QuickStartLane({
       <div className="character-preview">
         <header className="character-preview__nav">
           <button type="button" className="character-select__quiet-action" onClick={() => change({ preview: false })}>
-            <Icon name="arrowLeft" size={15} strokeWidth={1.7} /> All characters
+            <Icon name="arrowLeft" size={15} strokeWidth={1.7} /> Characters
           </button>
-          <span aria-hidden="true" />
+          <span aria-label={`Character ${selectedIndex + 1} of ${STARTING_ARCHETYPES.length}`}>
+            {String(selectedIndex + 1).padStart(2, "0")} / {String(STARTING_ARCHETYPES.length).padStart(2, "0")}
+          </span>
         </header>
 
         <main className="character-preview__stage">
-          <figure className="character-preview__portrait">
-            <img src={portraitFor(selected)} alt={`${selected.character.name}, ${selected.character.epithet}`} />
+          <figure
+            className="character-preview__portrait"
+            style={{ "--character-portrait": `url("${portraitFor(selected)}")` }}
+          >
+            <img
+              className="character-preview__cutout"
+              src={combatArtFor(selected)}
+              alt={`${selected.character.name}, ${selected.character.epithet}`}
+            />
             <span aria-hidden="true" />
           </figure>
 
           <div className="character-preview__copy">
-            <p className="character-preview__kind">{selected.name} · {selected.role}</p>
+            <p className="character-preview__kind">{characterKind(selected)}</p>
             <h1>{selected.character.name}</h1>
             <h2>{selected.character.epithet}</h2>
             <p className="character-preview__summary">{selected.character.summary}</p>
-            <div className="character-preview__trait">
-              <span>Starting trait</span>
-              <strong>{baseTrait?.name || Object.keys(selected.build.traits)[0]}</strong>
-              <small>Rank {Object.values(selected.build.traits)[0]}</small>
-            </div>
+            <div className="character-preview__kit">
+              <div
+                className="character-preview__trait"
+                aria-label={`Starting trait: ${baseTrait?.name || Object.keys(selected.build.traits)[0]}`}
+              >
+                <span aria-hidden="true">✦</span>
+                <strong>{baseTrait?.name || Object.keys(selected.build.traits)[0]}</strong>
+              </div>
 
-            <div className="character-preview__starting-actions" aria-label="Starting abilities">
-              {selected.build.skills.slice(0, 3).map((skillId) => {
-                const definition = getSkill(skillId);
-                if (!definition) return null;
-                const weapon = skillId === "strike" ? previewWeapon : null;
-                return (
-                  <button type="button" key={skillId} onClick={() => setDetailsOpen(true)} aria-label={`View ${resolveTowActionName(definition, weapon)} details`}>
-                    <img src={resolveTowAbilityArt(definition, weapon)} alt="" />
-                    <span>{resolveTowActionName(definition, weapon)}</span>
-                  </button>
-                );
-              })}
-              <button type="button" className="is-more" onClick={() => setDetailsOpen(true)}>
-                <Icon name="alert" size={16} strokeWidth={1.7} />
-                <span>Loadout</span>
-              </button>
+              <div className="character-preview__starting-actions" aria-label="Starting abilities">
+                {selected.build.skills.slice(0, 3).map((skillId) => {
+                  const definition = getSkill(skillId);
+                  if (!definition) return null;
+                  const weapon = skillId === "strike" ? previewWeapon : null;
+                  const actionName = resolveTowActionName(definition, weapon);
+                  return (
+                    <button
+                      type="button"
+                      key={skillId}
+                      title={actionName}
+                      onClick={() => setDetailsOpen(true)}
+                      aria-label={`View ${actionName} details`}
+                    >
+                      <img src={resolveTowAbilityArt(definition, weapon)} alt="" />
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  className="is-more"
+                  title="Full loadout"
+                  aria-label="Open full loadout"
+                  onClick={() => setDetailsOpen(true)}
+                >
+                  <Icon name="alert" size={16} strokeWidth={1.7} />
+                </button>
+              </div>
             </div>
 
             {error ? <p className="character-preview__alert" role="alert">{error}</p> : null}
 
             <div className="character-preview__actions">
               <button type="button" className="character-preview__details-button" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(true)}>
-                Details & practice
+                Details
               </button>
               <button type="button" className="character-preview__begin" disabled={busy} onClick={() => onBegin?.(normalized)}>
-                <span>Start journey</span>
-                <small>Enter Whitemarch</small>
+                <span>Begin journey</span>
                 <ArrowIcon />
               </button>
             </div>
@@ -499,7 +537,7 @@ export function QuickStartLane({
                   ref={(node) => { thumbnailRefs.current[index] = node; }}
                   onClick={() => selectCharacter(entry, index, true)}
                 >
-                  <img src={portraitFor(entry)} alt="" />
+                  <img src={combatArtFor(entry)} alt="" />
                 </button>
               );
             })}

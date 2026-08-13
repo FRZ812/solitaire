@@ -13,6 +13,7 @@ import {
 } from "../../gameplay/tow/starting-archetypes.js";
 import { PracticeFight } from "./PracticeFight.jsx";
 import { QuickStartLane } from "./QuickStartLane.jsx";
+import { resolvePlayerCombatCutout } from "../combat/tow-combat-art.js";
 
 let root;
 let container;
@@ -84,6 +85,11 @@ describe("the simple grid-to-preview flow", () => {
     const mounted = await render(<ControlledStart />);
     expect(mounted.querySelectorAll(".character-choice-card")).toHaveLength(STARTING_ARCHETYPES.length);
     expect(mounted.querySelectorAll(".character-choice-card img")).toHaveLength(STARTING_ARCHETYPES.length);
+    expect(mounted.querySelectorAll(".character-choice-card__copy strong")).toHaveLength(STARTING_ARCHETYPES.length);
+    STARTING_ARCHETYPES.forEach((entry, index) => {
+      expect(mounted.querySelectorAll(".character-choice-card__art")[index].getAttribute("src"))
+        .toBe(resolvePlayerCombatCutout(entry.character.portraitKey, entry.character));
+    });
     expect(mounted.querySelector(".character-preview")).toBeNull();
     expect(mounted.querySelector("input")).toBeNull();
     expect(mounted.querySelector("select")).toBeNull();
@@ -91,6 +97,8 @@ describe("the simple grid-to-preview flow", () => {
     expect(mounted.textContent).not.toContain("Starting fusions");
     expect(mounted.textContent).not.toContain("Choose a life, or forge your own");
     expect(mounted.textContent).not.toContain("Enter the limbo");
+    expect(mounted.textContent).not.toContain("Grounded");
+    expect(mounted.textContent).not.toContain("Heroic");
     expect(mounted.textContent).not.toMatch(/\bLevel\b/);
   });
 
@@ -108,6 +116,10 @@ describe("the simple grid-to-preview flow", () => {
     expect(preview.querySelectorAll(".character-preview__carousel [aria-checked=true]")).toHaveLength(1);
     expect(preview.querySelector(".character-preview__close")).toBeNull();
     expect(preview.querySelectorAll(".character-preview__starting-actions img").length).toBeGreaterThan(1);
+    expect(preview.querySelector(".character-preview__cutout").getAttribute("src"))
+      .toBe(resolvePlayerCombatCutout(STARTING_ARCHETYPES[3].character.portraitKey, STARTING_ARCHETYPES[3].character));
+    expect(preview.textContent).not.toContain("Starting trait");
+    expect(preview.textContent).not.toMatch(/\bRank\s+\d/);
     expect(mounted.textContent).not.toContain("Starting equipment");
   });
 

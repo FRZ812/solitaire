@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { statusCount } from "../kernel/status-stack.js";
 import {
+  attemptRetreat,
   createTowEncounter,
   declaredIntents,
   endTurn,
   isTowEncounter,
+  retreatOdds,
   skipTurn,
   useSkill,
 } from "./encounter.js";
@@ -165,6 +167,74 @@ describe("using skills", () => {
     const before = JSON.stringify(state);
     useSkill(state, "strike");
     expect(JSON.stringify(state)).toBe(before);
+  });
+});
+
+describe("retreat", () => {
+  it("compares the whole living party against the whole living enemy side", () => {
+    const solo = start();
+    const withAlly = createTowEncounter({
+      seed: "tow-retreat-party",
+      player: knight(),
+      allies: [{
+        id: "scout",
+        name: "Scout",
+        maxHp: 90,
+        stats: { attack: 9, defense: 4, critRate: 4, dodgeRate: 18 },
+        build: { traits: {}, skills: ["strike"] },
+      }],
+      enemies: [foe()],
+      build: { traits: {}, skills: ["strike"] },
+    });
+    expect(retreatOdds(withAlly).playerRating).toBeGreaterThan(retreatOdds(solo).playerRating);
+    expect(retreatOdds(withAlly).chancePercent).toBeGreaterThan(retreatOdds(solo).chancePercent);
+  });
+
+  it("is bounded and deterministic from the combat stream", () => {
+    const state = start();
+    const first = attemptRetreat(state);
+    const second = attemptRetreat(state);
+    expect(first).toEqual(second);
+    expect(retreatOdds(state).chancePercent).toBeGreaterThanOrEqual(10);
+    expect(retreatOdds(state).chancePercent).toBeLessThanOrEqual(90);
+    expect(first.state.events.at(-1).type).toMatch(/retreat/);
+  });
+
+  it("spends exactly one action on a failed attempt and preserves extra Haste actions", () => {
+    let seed = 0;
+    let result;
+    do {
+      const state = createTowEncounter({
+        seed: `failed-retreat-${seed}`,
+        player: knight({ statuses: [{ type: "haste", count: 1 }] }),
+        enemies: [foe({ maxHp: 900, stats: { attack: 80, defense: 40, critRate: 20, dodgeRate: 20 } })],
+        build: { traits: {}, skills: ["strike"] },
+      });
+      result = attemptRetreat(state);
+      seed += 1;
+    } while (result.state.phase !== "player" && seed < 200);
+    expect(result.state.phase).toBe("player");
+    expect(result.state.turn.actionsRemaining).toBe(1);
+    expect(result.state.events.findLast((event) => event.type === "retreat-attempt"))
+      .toMatchObject({ succeeded: false });
+  });
+
+  it("ends the encounter without a victor on success", () => {
+    let seed = 0;
+    let result;
+    do {
+      const state = createTowEncounter({
+        seed: `successful-retreat-${seed}`,
+        player: knight({ maxHp: 800, stats: { attack: 80, defense: 40, critRate: 20, dodgeRate: 30 } }),
+        enemies: [foe({ maxHp: 10, stats: { attack: 1, defense: 0, critRate: 0, dodgeRate: 0 } })],
+        build: { traits: {}, skills: ["strike"] },
+      });
+      result = attemptRetreat(state);
+      seed += 1;
+    } while (result.state.phase !== "retreated" && seed < 200);
+    expect(result.state.phase).toBe("retreated");
+    expect(result.state.actors.gatekeeper.hp).toBe(10);
+    expect(result.state.events.at(-1)).toMatchObject({ type: "retreated" });
   });
 });
 

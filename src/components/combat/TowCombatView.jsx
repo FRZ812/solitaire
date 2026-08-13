@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import battleScene from "../../assets/generated/scene-crowsmoor-v2.webp";
-import { declaredIntents } from "../../gameplay/tow/encounter.js";
+import { Icon } from "../Icon.jsx";
+import { declaredIntents, retreatOdds } from "../../gameplay/tow/encounter.js";
 import {
   effectMagnitude,
   getSkill,
@@ -12,6 +13,11 @@ import { normalizeWeaponPresentation } from "../../gameplay/tow/weapon-presentat
 import { weaponAttackSummary } from "../../gameplay/tow/weapon-techniques.js";
 import { resolveTowCombatArt } from "./tow-combat-art.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "./tow-combat-ability-art.js";
+import {
+  combatCueForEvent,
+  combatTempoReceipt,
+  recentCombatReceipts,
+} from "./tow-combat-feedback.js";
 import "./tow-combat.css";
 
 function percent(value, max) {
@@ -47,14 +53,13 @@ function actionKind(definition) {
   return definition.consumesTurn ? "technique" : "swift";
 }
 
-function AbilityArt({ src, name, className = "" }) {
+function AbilityArt({ src, className = "" }) {
   return (
     <span className={`tow-combat__ability-art ${className}`.trim()} aria-hidden="true">
       <img src={src} alt="" draggable="false" />
       <span className="tow-combat__ability-art-shade" />
       <span className="tow-combat__ability-art-frame" />
       <span className="tow-combat__ability-art-sheen" />
-      <span className="tow-combat__ability-art-name">{name}</span>
     </span>
   );
 }
@@ -107,7 +112,7 @@ function SkillDetails({
       aria-label={`${displayName} details`}
       data-testid="tow-skill-details"
     >
-      <AbilityArt src={art} name={displayName} className="tow-combat__skill-details-art" />
+      <AbilityArt src={art} className="tow-combat__skill-details-art" />
       <div className="tow-combat__skill-details-copy">
         <span>{definition.rarity} · rank {skillState.rank}</span>
         <strong>{displayName}</strong>
@@ -133,7 +138,6 @@ function CombatAction({
   skillState,
   weaponPresentation,
   legality,
-  limit,
   active,
   firstActionRef,
   onShowDetails,
@@ -203,12 +207,8 @@ function CombatAction({
         if (event.key === "Escape" && active) onHideDetails();
       }}
     >
-      <AbilityArt src={art} name={displayName} />
-      <span className="tow-combat__action-charge">
-        {limit !== UNLIMITED_USES ? `${skillState.usesRemaining}/${limit}` : "∞"}
-      </span>
-      {!definition.consumesTurn ? <span className="tow-combat__action-swift">Swift</span> : null}
-      {!legality.ok ? <span className="tow-combat__action-lock">{refusalText(legality.reason, skillState)}</span> : null}
+      <AbilityArt src={art} />
+      <span className="tow-combat__sr-only">{displayName}</span>
     </button>
   );
 }
@@ -272,13 +272,12 @@ function Vitals({ actor, enemy = false }) {
             style={{ width: `${percent(actor.shield, actor.maxHp)}%` }}
           />
         ) : null}
+        <span className="tow-combat__bar-value">
+          <strong>{actor.hp}</strong>
+          <span>/ {actor.maxHp}</span>
+          {actor.shield > 0 ? <em>+{actor.shield} ward</em> : null}
+        </span>
       </div>
-      <p className="tow-combat__hp">
-        <strong>{actor.hp}</strong>
-        <span>/ {actor.maxHp}</span>
-        {actor.shield > 0 ? <em>+{actor.shield} ward</em> : null}
-        {actor.hp <= 0 ? <em>down</em> : null}
-      </p>
     </div>
   );
 }
@@ -311,11 +310,71 @@ function actionsLeft(encounter, actorId) {
   return encounter.turn.allies?.[actorId] ?? 0;
 }
 
+function actorFeedbackClasses(actorId, cues) {
+  const classes = [];
+  if (cues.some((cue) => cue.attackerId === actorId && cue.targetId !== actorId)) {
+    classes.push("is-feedback-attacking");
+  }
+  for (const cue of cues) {
+    if (cue.targetId !== actorId) continue;
+    classes.push(`is-feedback-${cue.kind}`);
+  }
+  return [...new Set(classes)].join(" ");
+}
+
+function CombatEffects({ cues }) {
+  if (cues.length === 0) return null;
+  return (
+    <div className="tow-combat__effects" aria-hidden="true">
+      {cues.map((cue, index) => (
+        <span
+          key={`${cue.sequence}-${cue.kind}-${cue.targetId || index}`}
+          className={`tow-combat__effect tow-combat__effect--${cue.kind} tow-combat__effect--${cue.targetSide}`}
+          style={{ "--tow-effect-order": index }}
+        >
+          <i />
+          <b>{cue.label}</b>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function CombatRecord({ receipts, tempo, opening, expanded, onToggle }) {
+  const latest = receipts.at(-1) || tempo || opening;
+  if (!latest) return null;
+  const rows = [tempo, opening, ...receipts].filter(Boolean);
+  return (
+    <section className={`tow-combat__record${expanded ? " is-expanded" : ""}`} aria-label="Combat record">
+      <button
+        type="button"
+        className="tow-combat__record-summary"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <span>Latest</span>
+        <p aria-live="polite">{latest.text}</p>
+        <b>{expanded ? "Close" : "Details"}</b>
+      </button>
+      {expanded ? (
+        <ol className="tow-combat__record-list">
+          {rows.map((receipt, index) => (
+            <li key={`${receipt.sequence}-${index}`} data-kind={receipt.kind}>{receipt.text}</li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
+  );
+}
+
 export function TowCombatView({
   encounter,
   onUseSkill,
   onStandDown,
   onSettle,
+  onRetreat = null,
+  onEscape = null,
+  escapeLabel = "Leave fight",
   note,
   error,
   saveState = null,
@@ -328,9 +387,12 @@ export function TowCombatView({
   const firstActionRef = useRef(null);
   const settleRef = useRef(null);
   const restoreFocusRef = useRef(null);
+  const seenEventRef = useRef(encounter.sequence);
   const [targetId, setTargetId] = useState(null);
   const [commanderId, setCommanderId] = useState(null);
   const [inspectedSkillId, setInspectedSkillId] = useState(null);
+  const [recordExpanded, setRecordExpanded] = useState(false);
+  const [impactCues, setImpactCues] = useState([]);
 
   const player = encounter.actors[encounter.playerId];
   const allies = (encounter.allyIds || []).map((id) => encounter.actors[id]);
@@ -347,17 +409,26 @@ export function TowCombatView({
     || commandable.find((actor) => actor.id === commanderId)
     || commandable[0]
     || player;
+  const commanderPossessive = activeCommander.id === encounter.playerId
+    ? "your"
+    : `${activeCommander.name}'s`;
   const commanderBuild = activeCommander.id === encounter.playerId
     ? encounter.build
     : encounter.allyBuilds?.[activeCommander.id];
-  const suppliedWeapon = typeof weaponFor === "function" ? weaponFor(activeCommander) : null;
-  const commanderWeapon = normalizeWeaponPresentation({
-    ...suppliedWeapon,
-    ...(commanderBuild?.basicAttack ? {
-      activeFormId: commanderBuild.basicAttack.formId,
-      attackSnapshot: commanderBuild.basicAttack,
-    } : {}),
-  });
+  function weaponPresentationFor(actor) {
+    const actorBuild = actor.id === encounter.playerId
+      ? encounter.build
+      : encounter.allyBuilds?.[actor.id];
+    const supplied = typeof weaponFor === "function" ? weaponFor(actor) : null;
+    return normalizeWeaponPresentation({
+      ...supplied,
+      ...(actorBuild?.basicAttack ? {
+        activeFormId: actorBuild.basicAttack.formId,
+        attackSnapshot: actorBuild.basicAttack,
+      } : {}),
+    });
+  }
+  const commanderWeapon = weaponPresentationFor(activeCommander);
   const skillRows = (commanderBuild?.skills || []).map((skillState) => {
     const definition = getSkill(skillState.id);
     return {
@@ -378,6 +449,44 @@ export function TowCombatView({
   const incoming = declared.reduce((total, intent) => total + intent.hits * intent.damage, 0);
   const fallen = enemies.filter((enemy) => enemy.hp <= 0).length;
   const staged = enemies.find((enemy) => enemy.id === activeTarget) || enemies[0];
+  const retreat = terminal ? null : retreatOdds(encounter);
+  const receiptOptions = {
+    skillName: (event) => {
+      const actor = encounter.actors[event.actorId];
+      const definition = getSkill(event.skillId);
+      return resolveTowActionName(definition, actor ? weaponPresentationFor(actor) : commanderWeapon);
+    },
+  };
+  const receipts = recentCombatReceipts(encounter, receiptOptions);
+  const tempoReceipt = combatTempoReceipt(encounter, activeCommander.id);
+  const activeIntent = intents[staged?.id];
+  const openingReceipt = activeIntent ? {
+    sequence: `intent-${encounter.round}-${staged?.id}`,
+    kind: "intent",
+    text: `${staged.name} declares ${activeIntent.name}: ${activeIntent.hits > 1 ? `${activeIntent.hits} hits of ${activeIntent.damage}` : `${activeIntent.damage} damage`}. ${activeCommander.name} has ${actionsLeft(encounter, activeCommander.id)} action${actionsLeft(encounter, activeCommander.id) === 1 ? "" : "s"}.`,
+  } : null;
+  const swiftReceipt = (() => {
+    if (receipts.length === 0) return null;
+    const latestCommandEvents = encounter.events.filter((event) => (
+      event.sequence > Math.max(0, encounter.sequence - 8)
+    ));
+    const lastSkillEffect = [...latestCommandEvents].reverse().find((event) => (
+      event.skillId && ["skill-damage", "skill-shield", "skill-heal", "skill-cleanse", "skill-status"].includes(event.type)
+    ));
+    if (!lastSkillEffect) return null;
+    const build = lastSkillEffect.actorId === encounter.playerId
+      ? encounter.build
+      : encounter.allyBuilds?.[lastSkillEffect.actorId];
+    const definition = getSkill(lastSkillEffect.skillId);
+    if (definition.consumesTurn || !build?.skills?.some((skill) => skill.id === lastSkillEffect.skillId)) return null;
+    const actor = encounter.actors[lastSkillEffect.actorId];
+    const left = actionsLeft(encounter, lastSkillEffect.actorId);
+    return {
+      sequence: `swift-${lastSkillEffect.sequence}`,
+      kind: "swift",
+      text: `${actor.name}'s ${resolveTowActionName(definition, weaponPresentationFor(actor))} is Swift; ${left} action${left === 1 ? "" : "s"} kept.`,
+    };
+  })();
   function combatArt(actor) {
     const supplied = typeof artFor === "function" ? artFor(actor) : null;
     return supplied || resolveTowCombatArt(actor, {
@@ -418,7 +527,34 @@ export function TowCombatView({
     setInspectedSkillId(null);
   }, [activeCommander.id, encounter.round, terminal]);
 
+  useEffect(() => {
+    if (encounter.sequence <= seenEventRef.current) {
+      seenEventRef.current = encounter.sequence;
+      return undefined;
+    }
+    const nextCues = encounter.events
+      .filter((entry) => entry.sequence > seenEventRef.current)
+      .map((entry) => combatCueForEvent(encounter, entry))
+      .filter(Boolean)
+      .slice(-4);
+    seenEventRef.current = encounter.sequence;
+    if (nextCues.length === 0) return undefined;
+    setImpactCues(nextCues);
+    const clear = setTimeout(() => setImpactCues([]), 1050);
+    return () => clearTimeout(clear);
+  }, [encounter, encounter.sequence]);
+
   function keepFocusInside(event) {
+    if (event.key === "Escape") {
+      if (inspectedSkillId) {
+        event.preventDefault();
+        setInspectedSkillId(null);
+      } else if (onEscape) {
+        event.preventDefault();
+        onEscape();
+      }
+      return;
+    }
     if (event.key !== "Tab") return;
     const focusable = [...event.currentTarget.querySelectorAll(
       "button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex='-1'])",
@@ -480,6 +616,11 @@ export function TowCombatView({
 
       <main className="tow-combat__stage">
         <header className="tow-combat__header">
+          <h1 id="tow-combat-title" className="tow-combat__sr-only">
+            {terminal
+              ? encounter.phase === "victory" ? "Victory" : encounter.phase === "retreated" ? "Retreated" : "Defeat"
+              : `Combat, round ${encounter.round}`}
+          </h1>
           <p className="tow-combat__round">
             <span>Round</span>
             <strong>{encounter.round}</strong>
@@ -487,11 +628,29 @@ export function TowCombatView({
               <em>{activeCommander.id === encounter.playerId ? "Your move" : `${activeCommander.name}'s move`}</em>
             ) : null}
           </p>
-          <div className="tow-combat__heading">
-            <h1 id="tow-combat-title">
-              {terminal ? (encounter.phase === "victory" ? "Victory" : "Defeat") : "The clash"}
-            </h1>
-            {note ? <p>{note}</p> : null}
+          <p className="tow-combat__context">
+            {terminal
+              ? encounter.phase === "victory" ? "Victory" : encounter.phase === "retreated" ? "Retreated" : "Defeat"
+              : note}
+          </p>
+          <div className="tow-combat__header-controls">
+            {!terminal && onRetreat ? (
+              <button
+                type="button"
+                className="tow-combat__escape tow-combat__escape--retreat"
+                onClick={() => onRetreat(activeCommander.id)}
+                aria-label={`Attempt retreat. ${retreat.chancePercent}% chance. Spends ${commanderPossessive} action on failure.`}
+              >
+                <Icon name="arrowLeft" size={15} />
+                <span>Retreat · {retreat.chancePercent}%</span>
+              </button>
+            ) : null}
+            {onEscape ? (
+              <button type="button" className="tow-combat__escape" onClick={onEscape}>
+                <Icon name="x" size={15} />
+                <span>{escapeLabel}</span>
+              </button>
+            ) : null}
           </div>
         </header>
 
@@ -501,7 +660,7 @@ export function TowCombatView({
 
           {staged ? (
             <article
-              className={`tow-combat__threat${staged.hp <= 0 ? " is-down" : ""}`}
+              className={`tow-combat__threat${staged.hp <= 0 ? " is-down" : ""} ${actorFeedbackClasses(staged.id, impactCues)}`.trim()}
               aria-label={`Foe: ${staged.name}`}
             >
               <ArtFigure actor={staged} src={combatArt(staged)} side="foe" />
@@ -524,11 +683,20 @@ export function TowCombatView({
                   <strong>{incoming}</strong>
                 </p>
               ) : null}
+              <CombatRecord
+                receipts={swiftReceipt ? [...receipts, swiftReceipt] : receipts}
+                tempo={tempoReceipt}
+                opening={openingReceipt}
+                expanded={recordExpanded}
+                onToggle={() => setRecordExpanded((value) => !value)}
+              />
             </section>
           ) : null}
 
+          <CombatEffects cues={impactCues} />
+
           <article
-            className={`tow-combat__hero${player.hp <= 0 ? " is-down" : ""}`}
+            className={`tow-combat__hero${player.hp <= 0 ? " is-down" : ""} ${actorFeedbackClasses(player.id, impactCues)}`.trim()}
             aria-label={`You: ${player.name}`}
           >
             <ArtFigure actor={player} src={combatArt(player)} side="hero" />
@@ -588,7 +756,7 @@ export function TowCombatView({
             ) : null}
 
             <div className="tow-combat__actions" aria-label="Combat actions">
-              {skillRows.map(({ art, definition, displayName, legality, limit, skillState, weaponPresentation }, index) => (
+              {skillRows.map(({ art, definition, displayName, legality, skillState, weaponPresentation }, index) => (
                 <CombatAction
                   key={skillState.id}
                   firstActionRef={index === 0 ? firstActionRef : null}
@@ -598,7 +766,6 @@ export function TowCombatView({
                   skillState={skillState}
                   weaponPresentation={weaponPresentation}
                   legality={legality}
-                  limit={limit}
                   active={skillState.id === inspectedSkillId}
                   onShowDetails={() => setInspectedSkillId(skillState.id)}
                   onHideDetails={() => setInspectedSkillId(null)}
@@ -634,14 +801,31 @@ export function TowCombatView({
         ) : (
           <footer className="tow-combat__outcome production-combat__outcome" aria-live="assertive">
             <div className="tow-combat__outcome-heading">
-              <span>{encounter.phase === "victory" ? "The field is yours" : "The light leaves the field"}</span>
-              <strong>{encounter.phase === "victory" ? "Stand victorious" : "The fight is lost"}</strong>
+              <span>
+                {encounter.phase === "victory"
+                  ? "The field is yours"
+                  : encounter.phase === "retreated" ? "The party breaks contact" : "The light leaves the field"}
+              </span>
+              <strong>
+                {encounter.phase === "victory"
+                  ? "Stand victorious"
+                  : encounter.phase === "retreated" ? "You escaped" : "The fight is lost"}
+              </strong>
             </div>
             <dl className="tow-combat__tally">
               <div><dt>Rounds</dt><dd>{encounter.round}</dd></div>
               <div><dt>Foes down</dt><dd>{fallen}/{enemies.length}</dd></div>
               <div><dt>Health</dt><dd>{player.hp}/{player.maxHp}</dd></div>
             </dl>
+            <div className="tow-combat__outcome-record">
+              <CombatRecord
+                receipts={receipts}
+                tempo={null}
+                opening={null}
+                expanded={recordExpanded}
+                onToggle={() => setRecordExpanded((value) => !value)}
+              />
+            </div>
             <button
               ref={settleRef}
               type="button"

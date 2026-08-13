@@ -51,7 +51,11 @@ import {
 export const TOW_ENCOUNTER_VERSION = 1;
 export const MAX_ENCOUNTER_EVENTS = 20_000;
 
-const PHASES = new Set(["player", "victory", "defeat"]);
+const PHASES = new Set(["player", "victory", "defeat", "retreated"]);
+
+export const RETREAT_CHANCE_MIN = 10;
+export const RETREAT_CHANCE_MAX = 90;
+export const RETREAT_BASE_CHANCE = 50;
 
 function event(state, type, detail = {}) {
   return { sequence: state.sequence + 1, round: state.round, type, ...detail };
@@ -170,6 +174,48 @@ export function actionsForRound(state, actorId = state.playerId) {
     return Math.max(most, statusCount(enemy.statuses, "priority"));
   }, 0);
   return 1 + haste + Math.max(0, ownPriority - enemyPriority);
+}
+
+function actorRetreatRating(actor) {
+  if (!actor || actor.hp <= 0) return 0;
+  const healthRatio = actor.maxHp > 0 ? actor.hp / actor.maxHp : 0;
+  const base = (actor.maxHp * 0.2)
+    + (actor.stats.attack * 2)
+    + (actor.stats.defense * 2)
+    + actor.stats.dodgeRate
+    + (actor.stats.critRate * 0.5);
+  const tempo = (statusCount(actor.statuses, "haste") * 5)
+    + (statusCount(actor.statuses, "priority") * 3)
+    + (statusCount(actor.statuses, "evade") * 2);
+  return Math.max(1, Math.round((base + tempo) * (0.55 + (0.45 * healthRatio))));
+}
+
+function sideRetreatRating(state, actorIds) {
+  return actorIds.reduce(
+    (total, actorId) => total + actorRetreatRating(state.actors[actorId]),
+    0,
+  );
+}
+
+/** Party comparison behind the displayed retreat chance. Equal living sides sit at 50%. */
+export function retreatOdds(state) {
+  const playerRating = sideRetreatRating(state, playerSideIds(state));
+  const enemyRating = sideRetreatRating(state, state.enemyIds || []);
+  const combined = playerRating + enemyRating;
+  const modifier = combined > 0
+    ? Math.round((40 * (playerRating - enemyRating)) / combined)
+    : 0;
+  const chancePercent = Math.max(
+    RETREAT_CHANCE_MIN,
+    Math.min(RETREAT_CHANCE_MAX, RETREAT_BASE_CHANCE + modifier),
+  );
+  return {
+    baseChance: RETREAT_BASE_CHANCE,
+    modifier,
+    chancePercent,
+    playerRating,
+    enemyRating,
+  };
 }
 
 function withFreshTurn(state) {
@@ -773,6 +819,31 @@ function spendAction(state, actorId) {
       },
     },
   };
+}
+
+/** Spend one actor's action on one replay-safe, party-wide attempt to break contact. */
+export function attemptRetreat(state, actorId = state.playerId) {
+  if (state.phase !== "player") return { ok: false, reason: "encounter-over", state };
+  const actor = state.actors[actorId];
+  if (!actor || actor.side !== "player") return { ok: false, reason: "unknown-actor", state };
+  if (actor.hp <= 0) return { ok: false, reason: "actor-down", state };
+  if (isControlled(actor)) return { ok: false, reason: "action-nullified", state };
+  if (actionsLeftFor(state, actorId) <= 0) {
+    return { ok: false, reason: "turn-already-spent", state };
+  }
+
+  const odds = retreatOdds(state);
+  const rolled = nextInt(state.rng, 1, 100);
+  const succeeded = rolled.value <= odds.chancePercent;
+  let next = spendAction({ ...state, rng: rolled.rng }, actorId);
+  next = push(next, "retreat-attempt", {
+    actorId,
+    ...odds,
+    roll: rolled.value,
+    succeeded,
+  });
+  if (succeeded) next = push({ ...next, phase: "retreated" }, "retreated", { actorId });
+  return { ok: true, reason: null, state: next };
 }
 
 /**

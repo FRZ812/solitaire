@@ -254,14 +254,16 @@ describe("structured refusals", () => {
       .toBe("invalid-command");
   });
 
-  it("names retreat and surrender rather than letting them vanish", () => {
+  it("resolves retreat in every fight and still names unsupported surrender", () => {
     const session = open();
-    expect(dispatchTowCommand(session, {
+    const retreated = dispatchTowCommand(session, {
       id: "cmd-r",
       expectedRevision: 0,
       type: "attempt-retreat",
       actorId: "wanderer",
-    })).toMatchObject({ ok: false, reason: "retreat-not-admitted" });
+    });
+    expect(retreated.ok).toBe(true);
+    expect(retreated.events.some((event) => event.type === "retreat-attempt")).toBe(true);
 
     expect(dispatchTowCommand(session, {
       id: "cmd-s",
@@ -271,16 +273,13 @@ describe("structured refusals", () => {
     })).toMatchObject({ ok: false, reason: "no-surrender-offered" });
   });
 
-  it("says retreat is unsupported rather than forbidden once it is admitted", () => {
-    // Fail-closed either way, but the reason has to be the true one: an admitted retreat
-    // that no rule can resolve yet is a missing rule, not a denied permission.
-    const session = open({ context: { retreatPolicy: "allowed" } });
-    expect(dispatchTowCommand(session, {
-      id: "cmd-r",
-      expectedRevision: 0,
-      type: "attempt-retreat",
-      actorId: "wanderer",
-    })).toMatchObject({ ok: false, reason: "unsupported-command-type" });
+  it("replays a retreat command and records its combat-stream spend", () => {
+    const session = open({ context: { retreatPolicy: "forbidden" } });
+    const result = dispatchTowCommand(session, {
+      id: "cmd-r", expectedRevision: 0, type: "attempt-retreat", actorId: "wanderer",
+    });
+    expect(result.ok).toBe(true);
+    expect(result.command.streams).toHaveProperty("combat");
   });
 
   it("costs no randomness when it refuses", () => {
