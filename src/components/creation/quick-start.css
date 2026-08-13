@@ -164,17 +164,39 @@
   cursor: pointer;
 }
 
-/* ----- Practice result ----- */
+/* ----- Practice result -----
+
+   The fight itself is a fixed, full-screen overlay. The result screen replaces it in the
+   same instant, so it has to be one too — as a plain section it dropped into normal document
+   flow the moment the last blow landed, which put it somewhere off-screen behind the story
+   shell and disturbed the shell's own layout on the way past. The fight simply appeared to
+   end in nothing.
+
+   Same inset and stacking as .production-combat, deliberately: these two are one surface the
+   player never sees swap. */
 
 .practice-fight--result,
 .practice-fight--failed {
-  display: flex;
-  flex-direction: column;
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  display: grid;
+  place-items: center;
+  align-content: center;
   gap: 0.8rem;
-  max-width: 40rem;
-  margin: 0 auto;
-  padding: 1.25rem;
+  padding: clamp(0.75rem, 3vw, 2rem);
   color: #e8e2d4;
+  overflow: auto;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 50% 15%, rgba(116, 135, 117, 0.2), transparent 36rem),
+    linear-gradient(160deg, #0c100e 0%, #151a16 48%, #090b0a 100%);
+}
+
+/* The card inside the overlay keeps the old measure, so the reading width is unchanged. */
+.practice-fight--result > *,
+.practice-fight--failed > * {
+  width: min(100%, 40rem);
 }
 
 .practice-fight--result h2 {

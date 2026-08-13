@@ -51,7 +51,8 @@ describe("TOW starting item grants", () => {
 describe("one atomic archetype start", () => {
   it("creates the player, portrait, equipment, and durable build without limbo", () => {
     const state = makeInitialState();
-    const setup = characterSetupForArchetype({ archetypeId: "night-sovereign", visageId: "sunward", name: "Mira Vale" });
+    const archetype = getStartingArchetype("night-sovereign");
+    const setup = characterSetupForArchetype({ archetypeId: "night-sovereign" });
     const compiled = compileCharacterBootstrap({ archetypeId: "night-sovereign", origin: "archetype" });
     const applied = applyCharacterBootstrap(emptyMechanicsSidecar(), compiled.receipt);
     expect(applied.ok).toBe(true);
@@ -67,28 +68,38 @@ describe("one atomic archetype start", () => {
     expect(built.created).toBe(true);
     expect(built.character.attributes).toEqual(getStartingArchetype("night-sovereign").attributes);
     expect(built.character).toMatchObject({
-      name: "Mira Vale",
+      name: archetype.character.name,
       combatArchetypeId: "night-sovereign",
       progressionModel: "tow-archetype",
-      portraitKey: "template:devout",
+      portraitKey: archetype.character.portraitKey,
     });
-    expect(built.world.codex.characters.wanderer.portraitKey).toBe("template:devout");
+    expect(built.world.codex.characters.wanderer.portraitKey).toBe(archetype.character.portraitKey);
     expect(built.world.codex.characters.wanderer.worn).toEqual(worn);
     expect(built.mechanics.bootstrapOrigin).toBe("archetype");
     expect(built.mechanics.build).toEqual(compiled.receipt.build);
   });
 
-  it("never writes legacy authored names or template ids", () => {
+  it("locks every archetype to one complete authored identity", () => {
+    const names = new Set();
     for (const archetype of STARTING_ARCHETYPES) {
       const setup = characterSetupForArchetype({
         archetypeId: archetype.id,
-        visageId: archetype.portraitId,
+        // Old customizable draft fields are deliberately ignored.
+        visageId: "sunward",
         name: "Player Chosen",
       });
-      expect(setup.name).toBe("Player Chosen");
+      expect(setup.name).toBe(archetype.character.name);
+      expect(setup.portraitKey).toBe(archetype.character.portraitKey);
+      expect(setup.profile).toMatchObject({
+        source: "tow-authored-character-start",
+        characterId: archetype.character.id,
+        characterName: archetype.character.name,
+      });
       expect(setup).not.toHaveProperty("templateId");
       expect(setup.level).toBe(1);
       expect(setup.progressionModel).toBe("tow-archetype");
+      names.add(setup.name);
     }
+    expect(names.size).toBe(STARTING_ARCHETYPES.length);
   });
 });
