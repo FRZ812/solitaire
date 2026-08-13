@@ -11,7 +11,7 @@
 
 import { cloneJsonData } from "../kernel/json-data.js";
 import { getSkill, SKILL_SLOTS } from "./skills.js";
-import { getTrait, TRAIT_CAPACITY, TRAIT_RANK_CAP } from "./traits.js";
+import { getCombatTrait, getFusion, getTrait, TRAIT_CAPACITY, TRAIT_RANK_CAP } from "./traits.js";
 import { startingPackage } from "./starting-packages.js";
 import { traitRankForLevel } from "./professions.js";
 
@@ -40,10 +40,11 @@ export function createTowBuild({ professionId, traits = {}, skills = [], runes =
 
   const cleanTraits = {};
   for (const [traitId, rank] of Object.entries(cloneJsonData(traits, "invalid-build-traits"))) {
-    if (!getTrait(traitId)) throw new TypeError(`unknown-trait:${traitId}`);
+    if (!getCombatTrait(traitId)) throw new TypeError(`unknown-trait:${traitId}`);
     if (!Number.isSafeInteger(rank) || rank < 1 || rank > TRAIT_RANK_CAP) {
       throw new TypeError("invalid-trait-rank");
     }
+    if (getFusion(traitId) && rank !== TRAIT_RANK_CAP) throw new TypeError("invalid-fusion-rank");
     cleanTraits[traitId] = rank;
   }
   if (Object.keys(cleanTraits).length > TRAIT_CAPACITY) throw new TypeError("trait-capacity-exceeded");
@@ -98,10 +99,11 @@ export function isTowBuild(value) {
   if (!value.traits || typeof value.traits !== "object" || Array.isArray(value.traits)) return false;
   const traitIds = Object.keys(value.traits);
   if (traitIds.length > TRAIT_CAPACITY) return false;
-  if (!traitIds.every((id) => getTrait(id)
+  if (!traitIds.every((id) => getCombatTrait(id)
     && Number.isSafeInteger(value.traits[id])
     && value.traits[id] >= 1
-    && value.traits[id] <= TRAIT_RANK_CAP)) return false;
+    && value.traits[id] <= TRAIT_RANK_CAP
+    && (!getFusion(id) || value.traits[id] === TRAIT_RANK_CAP))) return false;
   if (!Array.isArray(value.skills) || value.skills.length > SKILL_SLOTS) return false;
   if (new Set(value.skills).size !== value.skills.length) return false;
   if (!value.skills.every((id) => getSkill(id)?.slot === "slotted")) return false;

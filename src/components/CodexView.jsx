@@ -1291,7 +1291,8 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
   const raceLabel = isCharacter ? (codex.races?.[entry.race]?.name || entry.race) : null;
   const callingLabel = archetype?.label || broadProfessionName;
   const identityCallingLabel = entry.kind === "mount" ? entry.species : callingLabel;
-  const totalProgressionLevel = isCharacter ? progressionLevel(entry) : 0;
+  const towArchetype = isCharacter && entry.progressionModel === "tow-archetype";
+  const totalProgressionLevel = isCharacter && !towArchetype ? progressionLevel(entry) : 0;
 
   const trunc = (s, n = 100) => { const t = (s || "").trim(); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
   const summaryText = trunc(entry.description || narrativeAppearance || "", isCharacter ? 138 : 100);
@@ -1384,7 +1385,7 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
             />
 
             <div className="codex-entry__detail-grid">
-              <CharacterDetailSection label="Profile" title="Identity and progression" className="is-wide">
+              <CharacterDetailSection label="Profile" title={towArchetype ? "Identity and combat build" : "Identity and progression"} className="is-wide">
                 <div className="codex-entry__identity-values">
                   <strong>{raceLabel}</strong>
                   {identityCallingLabel && <strong>{identityCallingLabel}</strong>}
@@ -1393,7 +1394,9 @@ export function CodexEntry({ entry, kind, codex, onScry, onTrack, isTracked = fa
                   <CharacterFact label="Origin" value={originLabel(entry.origin)} />
                   <CharacterFact label="Age" value={entry.age} />
                   <CharacterFact label="Gender" value={entry.gender} />
-                  <CharacterFact label="Level" value={totalProgressionLevel > 0 ? `${totalProgressionLevel}` : null} />
+                  {towArchetype
+                    ? <CharacterFact label="Power" value={entry.profile?.power || "Chosen"} />
+                    : <CharacterFact label="Level" value={totalProgressionLevel > 0 ? `${totalProgressionLevel}` : null} />}
                   <CharacterFact label="Bond" value={bondTier ? `${bondTier.label} ${(entry.relationship || 0) > 0 ? "+" : ""}${entry.relationship || 0}` : null} />
                   <CharacterFact
                     label="Aging"

@@ -144,6 +144,18 @@ describe("one bootstrap compiler", () => {
     }
   });
 
+  it("compiles the new level-free archetypes without accepting a power level input", () => {
+    const grounded = compileCharacterBootstrap({ archetypeId: "ironbound", origin: "archetype" });
+    const apex = compileCharacterBootstrap({ archetypeId: "wyrm-ascendant", origin: "archetype" });
+    expect(grounded.ok).toBe(true);
+    expect(apex.ok).toBe(true);
+    expect(grounded.receipt.archetypeId).toBe("ironbound");
+    expect(apex.receipt.archetypeId).toBe("wyrm-ascendant");
+    expect(grounded.receipt.build).not.toHaveProperty("level");
+    expect(apex.receipt.build).not.toHaveProperty("level");
+    expect(grounded.receipt.id).not.toBe(apex.receipt.id);
+  });
+
   it("derives receipt identity from content, so the same request compiles identically", () => {
     const a = compileCharacterBootstrap({ professionId: "rogue", level: 5, origin: "template" });
     const b = compileCharacterBootstrap({ professionId: "rogue", level: 5, origin: "template" });

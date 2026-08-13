@@ -37,9 +37,10 @@ describe("one applicator owns the start of a character", () => {
       !path.endsWith("character-bootstrap.js")
       && /applyCharacterBootstrap/.test(source)
     ));
-    // Nothing wires it yet — the start UI is the lane that will — but when something does,
-    // this test is where a second applicator would be caught.
-    expect(importers.map(({ path }) => path.replace(SRC, ""))).toEqual([]);
+    // App owns the sole atomic campaign transaction. The chooser and practice surface only
+    // emit drafts/receipts and cannot write campaign mechanics themselves.
+    expect(importers).toHaveLength(1);
+    expect(importers[0].path.replaceAll("/", "\\")).toMatch(/\\src\\App\.jsx$/);
   });
 
   it("is the only thing that writes a real bootstrap id", () => {

@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 //
-// Phase 4's start lane at the real App boundary. The component tests prove the lane works;
-// this proves it is actually wired to the game — that a fresh campaign opens on it, that one
-// click reaches a fight, and that trying a build writes nothing.
+// The character start at the real App boundary: legacy limbo saves recover into one
+// archetype chooser, practice remains disposable, and Begin commits the whole character in
+// one local transaction without a narrator dependency.
 
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeInitialState } from "./data/initial-state.js";
 import { LAST_OPENED_KEY } from "./engine/campaign-resume.js";
+import { STARTING_ARCHETYPES } from "./gameplay/tow/starting-archetypes.js";
 import { Solitaire } from "./App.jsx";
 
 const harness = vi.hoisted(() => ({
@@ -26,7 +27,7 @@ vi.mock("./engine/auth-supabase.js", () => ({
   isSubscribed: vi.fn(async () => true),
   linkEmail: vi.fn(async () => {}),
   onAuthChange: (listener) => {
-    queueMicrotask(() => listener({ id: "quick-start-user", email: "qs@example.test" }));
+    queueMicrotask(() => listener({ id: "archetype-start-user", email: "start@example.test" }));
     return () => {};
   },
   signOut: vi.fn(async () => {}),
@@ -57,12 +58,20 @@ async function waitFor(assertion, timeout = 5000) {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
   }
   if (lastError) throw lastError;
-  throw new Error("Timed out waiting for the start lane");
+  throw new Error("Timed out waiting for the character start");
 }
 
 async function click(element) {
   expect(element).toBeTruthy();
   await act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+}
+
+async function type(input, value) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+  await act(async () => {
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
 }
 
 let root;
@@ -81,14 +90,12 @@ beforeAll(() => {
   globalThis.requestAnimationFrame = (callback) => setTimeout(callback, 0);
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
 });
-
 beforeEach(() => {
   localStorage.clear();
-  localStorage.setItem(LAST_OPENED_KEY, "quick-start-campaign");
-  // A campaign in limbo: created:false, nothing spoken yet. This is the start screen.
+  localStorage.setItem(LAST_OPENED_KEY, "archetype-start-campaign");
   harness.serverState = makeInitialState();
   harness.listCampaigns.mockReset().mockResolvedValue([
-    { id: "quick-start-campaign", name: "New campaign", schema_version: "v12" },
+    { id: "archetype-start-campaign", name: "New campaign", schema_version: "v12" },
   ]);
   harness.loadCampaignRecord.mockReset().mockImplementation(async () => ({
     state: cloneJson(harness.serverState),
@@ -113,19 +120,18 @@ afterAll(() => {
   delete globalThis.IS_REACT_ACT_ENVIRONMENT;
 });
 
-describe("the start opens on Quick Start", () => {
-  it("shows the lane, its six people, and the five facts", async () => {
+describe("one new-campaign start", () => {
+  it("shows eight portrait archetypes and no legacy roster or limbo route", async () => {
     const mounted = await mount();
-    const lane = await waitFor(() => mounted.querySelector(".quick-start"));
-    expect(lane.getAttribute("role")).toBe("dialog");
-    expect(lane.getAttribute("aria-modal")).toBe("true");
+    const start = await waitFor(() => mounted.querySelector(".archetype-start"));
+    expect(start.getAttribute("role")).toBe("dialog");
+    expect(start.getAttribute("aria-modal")).toBe("true");
     expect(mounted.querySelector(".game-hud-layer").hasAttribute("inert")).toBe(true);
-    expect(mounted.querySelector(".game-hud-layer").getAttribute("aria-hidden")).toBe("true");
-    expect(lane.querySelectorAll(".quick-start__choice")).toHaveLength(6);
-    expect([...lane.querySelectorAll(".quick-start__fact-label")].map((n) => n.textContent))
-      .toEqual(["Role", "Opens with", "Your actions", "How rationed", "Attention"]);
-    // The roster is still there, one click away.
-    expect(lane.querySelector(".quick-start__other")).toBeTruthy();
+    expect(start.querySelectorAll(".archetype-card")).toHaveLength(STARTING_ARCHETYPES.length);
+    expect(start.querySelectorAll(".archetype-card img")).toHaveLength(STARTING_ARCHETYPES.length);
+    expect(start.textContent).not.toContain("Choose a life, or forge your own");
+    expect(start.textContent).not.toContain("Enter the limbo");
+    expect(start.textContent).not.toMatch(/\bLevel\b/);
   });
 
   it("recovers an older limbo save even when it already contains a player reply", async () => {
@@ -136,35 +142,50 @@ describe("the start opens on Quick Start", () => {
     });
 
     const mounted = await mount();
-    const lane = await waitFor(() => mounted.querySelector(".quick-start"));
-    expect(lane.getAttribute("aria-modal")).toBe("true");
-    expect(mounted.querySelector(".game-hud-layer").hasAttribute("inert")).toBe(true);
+    const start = await waitFor(() => mounted.querySelector(".archetype-start"));
+    expect(start.getAttribute("aria-modal")).toBe("true");
+    expect(start.textContent).not.toContain("My name is Wanderer.");
     expect(harness.serverState.created).toBe(false);
   });
 
-  it("reaches the roster lane without leaving the start", async () => {
+  it("commits name, face, gear, and durable build without returning to limbo", async () => {
     const mounted = await mount();
-    const lane = await waitFor(() => mounted.querySelector(".quick-start"));
-    await click(lane.querySelector(".quick-start__other"));
-    await waitFor(() => !mounted.querySelector(".quick-start"));
-    expect(mounted.textContent.length).toBeGreaterThan(0);
+    const start = await waitFor(() => mounted.querySelector(".archetype-start"));
+    const cards = [...start.querySelectorAll(".archetype-card")];
+    const faces = [...start.querySelectorAll(".archetype-start__faces button")];
+    await click(cards[3]);
+    await click(faces[4]);
+    await type(start.querySelector(".archetype-start__name input"), "Mira Vale");
+    await click(start.querySelector(".archetype-start__begin"));
+
+    await waitFor(() => !mounted.querySelector(".archetype-start"));
+    expect(mounted.textContent).toContain("Mira Vale enters Whitemarch");
+    expect(mounted.textContent).not.toContain("There is no floor");
+    await waitFor(() => harness.serverState.created === true);
+    expect(harness.serverState.character).toMatchObject({
+      name: "Mira Vale",
+      combatArchetypeId: STARTING_ARCHETYPES[3].id,
+      progressionModel: "tow-archetype",
+      portraitKey: "template:champion-paladin",
+    });
+    expect(harness.serverState.mechanics.bootstrapOrigin).toBe("archetype");
+    expect(harness.serverState.world.codex.characters.wanderer.worn.length).toBeGreaterThan(0);
   });
 });
 
-describe("one click from the start reaches a fight", () => {
-  it("opens a real, commandable encounter and writes nothing", async () => {
+describe("practice is reversible and writes nothing", () => {
+  it("opens a real commandable encounter without touching the campaign", async () => {
     const mounted = await mount();
-    const lane = await waitFor(() => mounted.querySelector(".quick-start"));
+    const start = await waitFor(() => mounted.querySelector(".archetype-start"));
     const savesBefore = harness.saveCampaign.mock.calls.length;
 
-    await click(lane.querySelector(".quick-start__try"));
+    await click(start.querySelector(".archetype-start__test"));
     const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
     expect(dialog.textContent).toContain("Nothing here is written down");
     const actions = [...dialog.querySelectorAll(".production-combat__action")]
       .filter((button) => !button.disabled);
     expect(actions.length).toBeGreaterThan(0);
 
-    // Spend a real action, and the campaign still has no character and no combat.
     await click(actions[0]);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
     expect(harness.serverState.created).toBe(false);
@@ -172,25 +193,31 @@ describe("one click from the start reaches a fight", () => {
     expect(harness.saveCampaign.mock.calls.length).toBe(savesBefore);
   });
 
-  it("comes back to the lane with the campaign untouched", async () => {
+  it("returns to the exact same archetype, face, and typed name", async () => {
     const mounted = await mount();
-    const lane = await waitFor(() => mounted.querySelector(".quick-start"));
+    const start = await waitFor(() => mounted.querySelector(".archetype-start"));
+    const cards = [...start.querySelectorAll(".archetype-card")];
+    const faces = [...start.querySelectorAll(".archetype-start__faces button")];
+    await click(cards[6]);
+    await click(faces[2]);
+    await type(start.querySelector(".archetype-start__name input"), "Ilyra");
     const before = JSON.stringify(harness.serverState);
 
-    await click(lane.querySelector(".quick-start__try"));
+    await click(start.querySelector(".archetype-start__test"));
     await waitFor(() => mounted.querySelector(".tow-combat"));
-
-    // Fight to the end, then leave.
-    for (let round = 0; round < 30 && mounted.querySelector(".tow-combat"); round += 1) {
+    for (let round = 0; round < 40 && mounted.querySelector(".tow-combat"); round += 1) {
       const action = [...mounted.querySelectorAll(".production-combat__action")]
         .find((button) => !button.disabled);
       if (!action) break;
       await click(action);
     }
     const result = await waitFor(() => mounted.querySelector(".practice-fight--result"));
-    await click([...result.querySelectorAll("button")].find((b) => /Back to your build/.test(b.textContent)));
+    await click([...result.querySelectorAll("button")].find((button) => /Back to your build/.test(button.textContent)));
 
-    await waitFor(() => mounted.querySelector(".quick-start"));
+    const restored = await waitFor(() => mounted.querySelector(".archetype-start"));
+    expect(restored.querySelector(".archetype-start__name input").value).toBe("Ilyra");
+    expect(restored.querySelectorAll(".archetype-card")[6].getAttribute("aria-checked")).toBe("true");
+    expect(restored.querySelectorAll(".archetype-start__faces button")[2].getAttribute("aria-checked")).toBe("true");
     expect(JSON.stringify(harness.serverState)).toBe(before);
   });
 });

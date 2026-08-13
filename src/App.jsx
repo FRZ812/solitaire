@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
-import { STORAGE_KEY, originLabel, SIGHT_RADIUS, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED, WORLD_MARCH_LIMIT } from "./config.js";
+import { STORAGE_KEY, SIGHT_RADIUS, FLY_TRAVEL_HEXES, FLY_REVEAL_RADIUS, OVERBURDENED_TRAVEL_MULT, MOUNT_FLIGHT_NEED_PER_HOUR, MOUNT_FLIGHT_MIN_NEED, WORLD_MARCH_LIMIT } from "./config.js";
 import { TERRAINS } from "./data/terrains.js";
 import {
   makeInitialState,
@@ -98,7 +98,8 @@ import { hashSeed } from "./engine/combat-rng.js";
 import { applyLoot, lootCtx, rollLoot } from "./engine/combat-loot.js";
 import { emptyMechanicsSidecar, hasMechanicsSidecar } from "./engine/campaign-migration.js";
 import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admission.js";
-import { compileCharacterBootstrap } from "./gameplay/tow/character-bootstrap.js";
+import { applyCharacterBootstrap, compileCharacterBootstrap } from "./gameplay/tow/character-bootstrap.js";
+import { isTowBuild } from "./gameplay/tow/build.js";
 import { claimReward, compileRewardOffer, rerollRewardOffer, rewardSeedFor } from "./gameplay/tow/rewards.js";
 import { refusalNotice } from "./gameplay/campaign/command-gateway.js";
 import {
@@ -134,6 +135,12 @@ import {
 } from "./gameplay/tow/session.js";
 import { towEnemyFromBestiary, towPlayerFromCharacter } from "./gameplay/tow/solitaire-bridge.js";
 import { towBuildForCharacter } from "./gameplay/tow/professions.js";
+import { effectiveTowBuild, wornItemIds } from "./gameplay/tow/start-items.js";
+import {
+  characterSetupForArchetype,
+  createDefaultArchetypeDraft,
+  getStartingArchetype,
+} from "./gameplay/tow/starting-archetypes.js";
 import { settleTowEncounter } from "./gameplay/tow/settlement.js";
 import {
   pendingLevelAllocations,
@@ -204,11 +211,8 @@ import { CampaignsList } from "./components/CampaignsList.jsx";
 import { GameOverScreen } from "./components/GameOverScreen.jsx";
 import { InitialBackdrop } from "./components/InitialBackdrop.jsx";
 import { SceneBackdrop } from "./components/SceneBackdrop.jsx";
-import { CreationHub } from "./components/CreationHub.jsx";
 import { QuickStartLane } from "./components/creation/QuickStartLane.jsx";
 import { PracticeFight } from "./components/creation/PracticeFight.jsx";
-import { ManualCreation } from "./components/ManualCreation.jsx";
-import { Icon } from "./components/Icon.jsx";
 import { JourneyLoader, JourneyResumeOverlay } from "./components/JourneyLoader.jsx";
 import { emptyLiveNarrator } from "./engine/live-narrator.js";
 import { buildChatContextSections } from "./components/chatContextModel.js";
@@ -466,19 +470,15 @@ export function Solitaire() {
   const [retry, setRetry] = useState(null);
   const [deckOpen, setDeckOpen] = useState(false);     // unified dossier deck
   const [deckPage, setDeckPage] = useState("character"); // which page it opens to
-  // Character creation UI: the hub (templates vs limbo) shows first on a fresh
-  // campaign; `creationEntered` flips once the player chooses the freeform limbo
-  // path; `manualCreation` opens the FRZKHRX full-manual builder (lives in limbo).
-  const [creationEntered, setCreationEntered] = useState(false);
-  // Which start lane is showing, and the draft currently being tried. A practice draft is
-  // component state on purpose: it is disposable by design and must never reach a save.
-  const [startLane, setStartLane] = useState("quick");
+  // One controlled character-start draft. It remains here while practice temporarily
+  // replaces the chooser, so returning from a fight preserves archetype, face, and name.
+  const [startDraft, setStartDraft] = useState(() => createDefaultArchetypeDraft());
+  // A practice receipt is disposable by design and must never reach campaign persistence.
   const [practiceDraft, setPracticeDraft] = useState(null);
   const [quickStartError, setQuickStartError] = useState(null);
   // Who this tab is, for the presentation lease. Stable for the tab's lifetime so a claim it
   // holds is recognisably its own, and a claim it left behind expires like anyone else's.
   const presentationOwnerRef = useRef(`tab-${Math.random().toString(36).slice(2, 10)}`);
-  const [manualCreation, setManualCreation] = useState(false);
   const [fusionRune, setFusionRune] = useState(null); // forge-rune id being bound in the fusion ritual
   const [mapOpen, setMapOpen] = useState(false);
   // Ground travel is narrated and animated concurrently. Canonical world
@@ -1226,6 +1226,9 @@ export function Solitaire() {
   async function openCampaign(id, isCancelled = () => false, cachedSnapshot = null) {
     cancelNarratorRequest("Narrator request cancelled because the campaign changed.");
     cancelTravelLifecycle();
+    setPracticeDraft(null);
+    setQuickStartError(null);
+    setStartDraft(createDefaultArchetypeDraft());
     setCampaignBusy(true);
     setHydrated(false);
     setCampaignError(null);
@@ -1301,6 +1304,9 @@ export function Solitaire() {
       lastSyncedStateRef.current = fresh;
       lastServerUpdatedAtRef.current = updatedAt;
       setState(fresh);
+      setPracticeDraft(null);
+      setQuickStartError(null);
+      setStartDraft(createDefaultArchetypeDraft());
       closeBeatMenu();
       setCurrentCampaignId(id);
       rememberLastCampaignId(id);
@@ -1376,6 +1382,9 @@ export function Solitaire() {
       setCampaignError(`Save failed: ${e.message || e}`);
     }
     setDeckOpen(false);
+    setPracticeDraft(null);
+    setQuickStartError(null);
+    setStartDraft(createDefaultArchetypeDraft());
     setCurrentCampaignId(null);
     setHydrated(false);
     lastSyncedStateRef.current = null;
@@ -1419,12 +1428,6 @@ export function Solitaire() {
   function handleSubmit() {
     const action = input.trim();
     if (!action || loading) return;
-    // The expert token opens the full-manual builder instead of chatting it out.
-    if (state.created === false && action.includes("FRZKHRX")) {
-      setInput("");
-      setManualCreation(true);
-      return;
-    }
     setInput("");
     setRetry(null);
     const playerBeat = { id: `p${Date.now()}`, type: "player", content: action };
@@ -1560,11 +1563,18 @@ export function Solitaire() {
     }
   }
 
-  // Build a character DETERMINISTICALLY from a menu/template spec (no LLM defines
-  // the sheet), then make a single narrator call only to narrate arriving in the
-  // world. Reuses the engine's character_setup + inventory/worn paths so a manual
-  // build is applied exactly like a narrator-finalized one.
-  async function applyCharacterSetup(setup) {
+  // Commit one deterministic identity + TOW bootstrap transaction. The arrival is local
+  // and immediate: a narrator outage can never return a finished character to limbo or
+  // leave a background-only frame at the start of a campaign.
+  function applyCharacterSetup(setup, bootstrapReceipt = null) {
+    const base = liveStateRef.current;
+    const appliedBootstrap = bootstrapReceipt
+      ? applyCharacterBootstrap(base.mechanics, bootstrapReceipt)
+      : { ok: true, mechanics: base.mechanics };
+    if (!appliedBootstrap.ok) {
+      setQuickStartError(`That beginning could not be committed: ${appliedBootstrap.reason}.`);
+      return false;
+    }
     const items = Array.isArray(setup.items) ? setup.items : [];
     const added = items
       .filter((i) => i?.itemId)
@@ -1591,6 +1601,8 @@ export function Solitaire() {
         signature_spell: setup.signature_spell ?? setup.signatureSpell ?? null,
         metamagic: setup.metamagic ?? setup.progressionChoices?.metamagic ?? null,
         origin: setup.origin, profession: setup.profession, archetype: setup.archetype || null, gender: setup.gender,
+        combatArchetypeId: setup.combatArchetypeId || null,
+        progressionModel: setup.progressionModel || null,
         age: setup.age, agingMode: setup.agingMode, lifespanMultiplier: setup.lifespanMultiplier,
         attractiveness: setup.attractiveness, appearance: setup.appearance,
         base_appearance: setup.base_appearance, knows: setup.knows || [],
@@ -1601,29 +1613,23 @@ export function Solitaire() {
       inventory_changes: Object.keys(inv).length ? inv : undefined,
       discoveries: Object.keys(discoveries).length ? discoveries : undefined,
     };
-    // Both template and custom builds open the same way: a single narrator call
-    // that arrives the character INSIDE Whitemarch (the global start), weaving in
-    // their backstory. (Templates' old verbatim Drowned-Rat openings were retired
-    // when the map was rebuilt around the city — see the opener below.)
-    let built = applyEngineBeat(state, beat); // created=true; identity, kit, and gear applied
-    // Drop the limbo opening narration — a locally-built character skips the
-    // interview entirely, so the log should begin with their arrival, not the
-    // "you are a soul in the grey" intro.
-    built = { ...built, beats: [] };
-    setManualCreation(false);
-    setCreationEntered(false);
-    setState(built); // flip out of limbo at once so the chooser can't flash back while the opening loads
-    const kindred = [setup.subrace, setup.race].filter(Boolean).join(" ");
-    const a = setup.appearance || {};
-    const looks = setup.base_appearance || [
-      setup.age, a.build && `${a.build} build`, a.skin && `${a.skin} skin`,
-      a.hair && `${a.hair} hair`, a.eyes && `${a.eyes} eyes`, a.facial_hair, a.marks,
-    ].filter(Boolean).join(", ");
-    const originStr = originLabel(setup.origin);
-    const backstory = [setup.backstory, ...(Array.isArray(setup.knows) ? setup.knows : [])].filter(Boolean).join(" ");
-    const calling = setup.archetype ? `${setup.archetype} ${setup.profession || "wanderer"}` : (setup.profession || "wanderer");
-    const opener = `[CHARACTER CREATION] The character is fully created and LOCKED — ${setup.name}, a ${kindred} ${calling}${originStr ? ` of ${originStr} origin` : ""}. Appearance (describe FAITHFULLY; do not contradict): ${looks || "as the player envisioned"}. Drive: ${setup.bond || "their own"}.${backstory ? ` Backstory to weave in: ${backstory}` : ""} Do NOT emit character_setup, do NOT change any values, and do NOT ask any questions. OPEN THE REAL SCENE: this is their FIRST appearance in the world — do NOT mention limbo or a grey threshold. Narrate THIS character arriving INSIDE the walled capital of Whitemarch, in the press and clamour of the Grand Market's Grain Square (the city's heart, behind the Great Wall), grounding the scene in who they are, their origin, and what (from the backstory) has brought them to the city, then proceed as a normal first beat.`;
-    await runNarratorTurn(built, opener);
+    const archetype = getStartingArchetype(setup.combatArchetypeId);
+    const arrival = {
+      id: `character-arrival:${bootstrapReceipt?.id || Date.now()}`,
+      type: "narration",
+      content: `${setup.name} enters Whitemarch through the press of the Grand Market, where Grain Square rings with cart wheels, hawkers, temple bells, and a hundred roads arguing over where they begin. ${archetype ? `The ${archetype.name} kit sits as it should: ${archetype.tagline}` : "Their chosen kit is settled and ready."}\n\nNo grey threshold waits behind them. The city is already moving, and the next choice is theirs.`,
+    };
+    let built = applyEngineBeat(base, beat);
+    built = {
+      ...built,
+      mechanics: appliedBootstrap.mechanics,
+      beats: [arrival],
+    };
+    liveStateRef.current = built;
+    setQuickStartError(null);
+    setPracticeDraft(null);
+    setState(built);
+    return true;
   }
 
   // Threshold decisions are resolved locally against the versioned ledger.
@@ -2171,6 +2177,9 @@ export function Solitaire() {
     cancelNarratorRequest("Narrator request cancelled because the campaign was reset.");
     cancelTravelLifecycle();
     setState((current) => resetCampaignState(current));
+    setPracticeDraft(null);
+    setQuickStartError(null);
+    setStartDraft(createDefaultArchetypeDraft());
     closeBeatMenu();
     setDeckOpen(false);
   }
@@ -2990,11 +2999,10 @@ export function Solitaire() {
    * Compiles the template through the one bootstrap compiler and hands the receipt to a
    * practice fight. Nothing is written: no campaign, no draft mutation, no save.
    */
-  function handleQuickStartPractice(start, scenarioId) {
+  function handleQuickStartPractice(draft, scenarioId) {
     const compiled = compileCharacterBootstrap({
-      professionId: start.template.setup.profession,
-      level: start.level,
-      origin: "quick-start",
+      archetypeId: draft.archetypeId,
+      origin: "archetype",
     });
     if (!compiled.ok) {
       setQuickStartError(`That build could not be compiled: ${compiled.reason}.`);
@@ -3002,6 +3010,23 @@ export function Solitaire() {
     }
     setQuickStartError(null);
     setPracticeDraft({ receipt: compiled.receipt, scenarioId });
+  }
+
+  function handleArchetypeBegin(draft) {
+    const setup = characterSetupForArchetype(draft);
+    if (!setup) {
+      setQuickStartError("Give this character a name before entering Whitemarch.");
+      return;
+    }
+    const compiled = compileCharacterBootstrap({
+      archetypeId: draft.archetypeId,
+      origin: "archetype",
+    });
+    if (!compiled.ok) {
+      setQuickStartError(`That archetype could not be compiled: ${compiled.reason}.`);
+      return;
+    }
+    applyCharacterSetup(setup, compiled.receipt);
   }
 
   // ----- Legacy combat handlers (retained until parity gates pass) -----
@@ -3061,7 +3086,16 @@ export function Solitaire() {
     // The fight opens with what the last one left. Readiness is baked into genesis, so a
     // replay reproduces the fight as it was actually fought — including how spent the
     // player was when it started.
-    const campaignBuild = towBuildForCharacter(st.character);
+    // New starts own a durable, level-free build. Older campaigns keep their broad-
+    // profession fallback until they are explicitly migrated. Worn equipment is folded in
+    // only here, so unequipping a relic removes its TOW trait or fusion immediately.
+    const durableBuild = isTowBuild(st.mechanics?.build)
+      ? st.mechanics.build
+      : towBuildForCharacter(st.character);
+    const campaignBuild = effectiveTowBuild(
+      durableBuild,
+      wornItemIds(st.character, st.world.codex),
+    );
     const readiness = towReadiness(st);
     const companionReadiness = towCompanionReadiness(st);
     // Each admitted companion crosses the same bridge the player does and brings their own
@@ -3882,18 +3916,20 @@ export function Solitaire() {
   // surfaces an "Enter" affordance to open its menu. Hidden during combat.
   const buildingHere = combat ? null : buildingForTile(standingTile());
   const buildingOpenNow = buildingHere ? isBuildingOpen(buildingHere, state.time.hour) : false;
-  // Every unfinished campaign returns to the deterministic start. Older limbo saves can
-  // already contain player beats, but those beats must not strand them in the retired
-  // narrator interview. The interview is reachable only after choosing it in this tab.
+  // Every unfinished campaign returns to the same deterministic archetype start. Legacy
+  // limbo beats may remain in an old save, but no route renders or resumes that interview.
   const inLimbo = state.created === false;
-  const showCreationHub = inLimbo && !creationEntered;
+  const showCreationHub = inLimbo;
   const queuedPlayerCount = pendingPlayerBeats(state).length;
   // This derived preview deliberately is not a hook: auth, subscription, title,
   // campaign-list, and game-over screens all return above this point. Keeping a
   // hook here would change Solitaire's hook count when a session opens (#310).
   const contextPreview = buildChatContextSections({ state, draft: input });
-  const readyAdvancements = state.created === false ? 0 : (pendingLevelAllocations(state.character)?.unspentLevels || 0);
-  const advancementNeedsChoice = state.created !== false && pendingProgressionChoices(state.character)
+  const usesTowArchetypeProgression = state.character?.progressionModel === "tow-archetype";
+  const readyAdvancements = state.created === false || usesTowArchetypeProgression
+    ? 0
+    : (pendingLevelAllocations(state.character)?.unspentLevels || 0);
+  const advancementNeedsChoice = state.created !== false && !usesTowArchetypeProgression && pendingProgressionChoices(state.character)
     .some((choice) => choice.kind !== "level-allocation");
   const gameSurfaceBlocked = referenceGameplayOpen || showCreationHub;
   return (
@@ -3923,19 +3959,6 @@ export function Solitaire() {
               onOpenDeck={() => { setDeckPage("character"); setDeckOpen(true); }}
             />
             <VitalsStrip state={state} onExtinguish={handleExtinguish} />
-          </div>
-        )}
-        {/* In the freeform limbo interview, keep a character-panel button so the
-            player can audit the (still-forming) sheet and leave without getting
-            stuck — the hub has its own controls, so it's hidden there. */}
-        {inLimbo && !showCreationHub && (
-          <div style={{ display: "flex", justifyContent: "flex-end", padding: "12px 14px 0" }}>
-            <button onClick={() => { setDeckPage("character"); setDeckOpen(true); }} aria-label="Character" style={{
-              width: "38px", height: "38px", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center",
-              backgroundColor: "rgba(20,29,29,0.6)", border: `1px solid rgba(215,167,111,0.35)`, cursor: "pointer",
-            }}>
-              <Icon name="character" size={21} />
-            </button>
           </div>
         )}
         <div className="story-log-frame">
@@ -4288,8 +4311,8 @@ export function Solitaire() {
       )}
 
 
-      {/* The start opens on Quick Start, because the fastest honest path into the game is a
-          build the player has already felt. The roster is one click away. */}
+      {/* One reversible start. Practice temporarily covers it; the controlled draft remains
+          in App, so returning restores the same mechanics, face, and name. */}
       {showCreationHub && practiceDraft && (
         <PracticeFight
           receipt={practiceDraft.receipt}
@@ -4297,29 +4320,15 @@ export function Solitaire() {
           onExit={() => setPracticeDraft(null)}
         />
       )}
-      {showCreationHub && !practiceDraft && startLane === "quick" && (
+      {showCreationHub && !practiceDraft && (
         <QuickStartLane
+          draft={startDraft}
+          onDraftChange={setStartDraft}
           busy={loading}
           error={quickStartError}
           onPractice={handleQuickStartPractice}
-          onBegin={(start) => applyCharacterSetup(start.template.setup)}
-          onOtherLanes={() => setStartLane("roster")}
-        />
-      )}
-      {showCreationHub && !practiceDraft && startLane === "roster" && (
-        <CreationHub
-          onPickTemplate={applyCharacterSetup}
-          onCustom={() => setCreationEntered(true)}
+          onBegin={handleArchetypeBegin}
           onQuit={handleBackToCampaigns}
-          busy={loading}
-        />
-      )}
-      {manualCreation && (
-        <ManualCreation
-          onBegin={applyCharacterSetup}
-          onCancel={() => setManualCreation(false)}
-          onQuit={() => { setManualCreation(false); handleBackToCampaigns(); }}
-          busy={loading}
         />
       )}
       {deckOpen && (

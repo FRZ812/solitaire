@@ -10,6 +10,7 @@
 import { deriveCombatStats } from "../../engine/combat-stats.js";
 import { createStatusStack } from "../kernel/status-stack.js";
 import { admitTowEncounter } from "./admission.js";
+import { towItemActorBonuses, wornItemIds } from "./start-items.js";
 
 export const PROVISIONAL_BRIDGE_POLICY = Object.freeze({
   // Tower of Winter actors have one attack number; Solitaire weapons have a damage band.
@@ -79,7 +80,8 @@ function nonNegativeInt(value) {
  */
 export function towPlayerFromCharacter(character, codex = {}, { id = "player" } = {}) {
   const stats = deriveCombatStats(character, codex);
-  const maxHp = positiveInt(stats.maxHealth);
+  const itemBonus = towItemActorBonuses(wornItemIds(character, codex));
+  const maxHp = positiveInt(stats.maxHealth + itemBonus.maxHp);
   // Current vitality carries over, lifted by whatever the gear adds above the base pool so
   // equipping armour does not read as arriving already wounded.
   const baseMaxHp = positiveInt(character.vitalityMax, maxHp);
@@ -89,7 +91,7 @@ export function towPlayerFromCharacter(character, codex = {}, { id = "player" } 
   // See PROVISIONAL_BRIDGE_POLICY.attackFromWeapon: the weapon's midpoint plus the frame
   // behind it, because a Tower of Winter skill scales off ATK alone.
   const frame = nonNegativeInt(stats.attrs?.body) + nonNegativeInt(stats.attrs?.reflex);
-  const attack = positiveInt((stats.weapon.min + stats.weapon.max) / 2) + frame;
+  const attack = positiveInt((stats.weapon.min + stats.weapon.max) / 2) + frame + itemBonus.attack;
   return {
     id,
     name: character.name || "Wanderer",
@@ -101,9 +103,9 @@ export function towPlayerFromCharacter(character, codex = {}, { id = "player" } 
       attack,
       // See PROVISIONAL_BRIDGE_POLICY.defenseFloorFromAttack: worn protection adds to a
       // floor set by the actor's own scale, so Block is never worth nothing.
-      defense: nonNegativeInt((stats.armor || 0) + (stats.ward || 0)) + attack,
-      critRate: clampRate(stats.critChance),
-      dodgeRate: clampRate(stats.dodge),
+      defense: nonNegativeInt((stats.armor || 0) + (stats.ward || 0)) + attack + itemBonus.defense,
+      critRate: clampRate(stats.critChance + itemBonus.critRate),
+      dodgeRate: clampRate(stats.dodge + itemBonus.dodgeRate),
     },
     statuses: createStatusStack(),
   };

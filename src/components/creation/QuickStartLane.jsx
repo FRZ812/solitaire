@@ -1,201 +1,252 @@
-// Quick Start: pick a way of fighting, try it, then go.
+// The single new-campaign start surface.
 //
-// The old creation hub asks a player to choose a combat identity from a description and
-// find out what it means twenty minutes later, in a fight they cannot leave. This lane puts
-// the five things that actually decide the choice above the fold — role, opening trait,
-// the actions you will be pressing, how rationed they are, and how much attention the build
-// wants — and then offers to let them go and use it.
-//
-// The field-ready set is a release cohort, not a list of favourites. A package appears here
-// only when every capability it starts with has an executable support entry, which is why
-// the component derives the list by asking rather than by holding a hand-written array: a
-// package that loses support stops being offered instead of silently shipping broken.
+// A combat archetype is not a legacy template person: mechanics, face, and name are three
+// independent choices. The whole draft is controlled by App so entering practice and coming
+// back cannot reset it.
 
-import "./quick-start.css";
+import "./archetype-start.css";
 import React, { useMemo, useState } from "react";
-import { getSkill, usesPerAct, UNLIMITED_USES } from "../../gameplay/tow/skills.js";
-import { startingPackage } from "../../gameplay/tow/starting-packages.js";
+import { resolveCharacterPortrait } from "../character-portrait-assets.js";
+import { getSkill } from "../../gameplay/tow/skills.js";
+import { getFusion, getTrait } from "../../gameplay/tow/traits.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
-import { CHARACTER_TEMPLATES } from "../../data/templates.js";
+import {
+  STARTING_ARCHETYPES,
+  STARTING_VISAGES,
+  archetypeFusionIds,
+  archetypeItemRows,
+  createDefaultArchetypeDraft,
+  getStartingArchetype,
+  getStartingVisage,
+  normalizeArchetypeDraft,
+} from "../../gameplay/tow/starting-archetypes.js";
 
-/**
- * The six the plan names as the field-ready Quick Start cohort.
- *
- * These are authored people, not bare packages: each carries its own identity, origin and
- * actual level, and Quick Start commits that person rather than a normalised stand-in.
- * Sellsword leads because its Strike/Block/Ironclad topology is the most legible, and the
- * first card is the one preselected.
- */
-export const FIELD_READY_TEMPLATE_IDS = Object.freeze([
-  "sellsword",
-  "knight-errant",
-  "ranger",
-  "cutthroat",
-  "devout",
-  "hedge-mage",
-]);
-
-const ROLE_BY_TEMPLATE = Object.freeze({
-  sellsword: "Front line",
-  "knight-errant": "Shield",
-  ranger: "Skirmisher",
-  cutthroat: "Killer",
-  devout: "Sustainer",
-  "hedge-mage": "Artillery",
-});
-
-/**
- * How rationed a package's actions are, in words.
- *
- * The number that matters to a player is not "thirty uses of Block" but "you will run out
- * of the good options before the day is over, and only a real night's rest gives them back".
- */
-function resourceCadence(pkg) {
-  const limited = pkg.skills.filter((skill) => usesPerAct(skill.id, 1) !== UNLIMITED_USES);
-  if (limited.length === 0) return "Nothing rationed — every action is always available.";
-  const total = limited.reduce((sum, skill) => sum + usesPerAct(skill.id, 1), 0);
-  return `${total} rationed uses across ${limited.length} action${limited.length === 1 ? "" : "s"}, back only after a full rest.`;
+function portraitFor(visage) {
+  return resolveCharacterPortrait({ portraitKey: visage?.portraitKey });
 }
 
-/** How much attention the build wants, derived from its own shape rather than asserted. */
-function complexity(pkg) {
-  const turnFree = pkg.skills.filter((skill) => !skill.consumesTurn).length;
-  const cooldowns = pkg.skills.filter((skill) => skill.cooldown > 0).length;
-  const score = pkg.skills.length + turnFree * 2 + cooldowns;
-  if (score <= 5) return "Straightforward";
-  if (score <= 8) return "Some upkeep";
-  return "Demanding";
+function updateDraft(current, patch) {
+  return normalizeArchetypeDraft({ ...current, ...patch });
 }
 
-/** A template's actual authored level; practice scales by fixture, never by flattening people. */
-export function templateLevel(template) {
-  const paths = template.setup.progression?.paths || {};
-  return Object.values(paths).reduce((total, rank) => total + (Number(rank) || 0), 0) || 1;
-}
-
-/**
- * The cohort, each template paired with the Tower of Winter package it will actually fight
- * with. A template whose package cannot be resolved is dropped rather than offered, so
- * losing support for something stops the advertisement instead of shipping it broken.
- */
-export function fieldReadyStarts() {
-  return FIELD_READY_TEMPLATE_IDS
-    .map((id) => CHARACTER_TEMPLATES.find((template) => template.id === id))
-    .filter(Boolean)
-    .map((template) => {
-      const level = templateLevel(template);
-      const pkg = startingPackage(template.setup.profession, { level });
-      return pkg ? { template, package: pkg, level } : null;
-    })
-    .filter(Boolean);
-}
-
-function Fact({ label, children }) {
-  return (
-    <div className="quick-start__fact">
-      <span className="quick-start__fact-label">{label}</span>
-      <span className="quick-start__fact-value">{children}</span>
-    </div>
-  );
+function DetailLabel({ children }) {
+  return <span className="archetype-start__label">{children}</span>;
 }
 
 export function QuickStartLane({
+  draft = createDefaultArchetypeDraft(),
+  onDraftChange,
   onPractice,
   onBegin,
-  onOtherLanes,
+  onQuit,
   busy = false,
   error = null,
 }) {
-  const starts = useMemo(() => fieldReadyStarts(), []);
-  const [selectedId, setSelectedId] = useState(starts[0]?.template.id ?? null);
+  const normalized = normalizeArchetypeDraft(draft);
+  const selected = getStartingArchetype(normalized.archetypeId) || STARTING_ARCHETYPES[0];
+  const visage = getStartingVisage(normalized.visageId) || STARTING_VISAGES[0];
   const [scenarioId, setScenarioId] = useState(PRACTICE_SCENARIOS[0].id);
-  const start = starts.find((entry) => entry.template.id === selectedId) || starts[0];
 
-  if (!start) return null;
+  const items = useMemo(() => archetypeItemRows(selected.id), [selected.id]);
+  const fusionIds = useMemo(() => archetypeFusionIds(selected.id), [selected.id]);
+  const baseTraitId = Object.keys(selected.build.traits)[0];
+  const baseTrait = getTrait(baseTraitId);
+  const skills = selected.build.skills.map((id) => getSkill(id)).filter(Boolean);
+  const canBegin = normalized.name.length > 0 && !busy;
 
-  const selected = start.package;
-  const trait = selected.trait;
-  const scenario = PRACTICE_SCENARIOS.find((entry) => entry.id === scenarioId)
-    || PRACTICE_SCENARIOS[0];
+  const change = (patch) => onDraftChange?.(updateDraft(normalized, patch));
 
   return (
-    <section className="quick-start" role="dialog" aria-modal="true" aria-label="Quick start">
-      <header className="quick-start__header">
-        <h2>Start fighting</h2>
-        <p>
-          Six ways of handling yourself, each ready to play. Try one before you commit to it —
-          the practice fight runs on the same rules as the real thing and changes nothing.
-        </p>
-      </header>
+    <section className="archetype-start" role="dialog" aria-modal="true" aria-label="Choose your beginning">
+      <div className="archetype-start__mist" aria-hidden="true" />
+      <div className="archetype-start__shell">
+        <header className="archetype-start__header">
+          <div>
+            <p className="archetype-start__eyebrow">A new soul enters Avarra</p>
+            <h1>Choose what you become</h1>
+            <p>
+              Pick a combat archetype, then make the person your own. Power comes from
+              equipment, passives, and forged fusions—not a character level.
+            </p>
+          </div>
+          {onQuit ? (
+            <button type="button" className="archetype-start__leave" onClick={onQuit}>
+              Back to journeys
+            </button>
+          ) : null}
+        </header>
 
-      <div className="quick-start__choices" role="radiogroup" aria-label="Starting package">
-        {starts.map((entry) => (
-          <button
-            key={entry.template.id}
-            type="button"
-            role="radio"
-            aria-checked={entry.template.id === start.template.id}
-            className={`quick-start__choice${entry.template.id === start.template.id ? " is-selected" : ""}`}
-            onClick={() => setSelectedId(entry.template.id)}
-          >
-            <strong>{entry.template.label}</strong>
-            <span>{ROLE_BY_TEMPLATE[entry.template.id]} · {entry.package.trait.name}</span>
-          </button>
-        ))}
+        <div className="archetype-start__layout">
+          <div className="archetype-start__catalog">
+            <div className="archetype-start__section-heading">
+              <div><span>01</span><h2>Choose your archetype</h2></div>
+              <p>Every path is complete and ready to test.</p>
+            </div>
+
+            <div className="archetype-start__cards" role="radiogroup" aria-label="Combat archetype">
+              {STARTING_ARCHETYPES.map((entry) => {
+                const portrait = portraitFor(getStartingVisage(entry.portraitId));
+                const active = entry.id === selected.id;
+                return (
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    key={entry.id}
+                    className={`archetype-card${active ? " is-selected" : ""}`}
+                    style={{ "--archetype-accent": entry.color }}
+                    onClick={() => change({ archetypeId: entry.id })}
+                  >
+                    {portrait ? <img src={portrait} alt="" /> : <span className="archetype-card__empty" />}
+                    <span className="archetype-card__shade" />
+                    <span className="archetype-card__copy">
+                      <span className="archetype-card__power">{entry.power}</span>
+                      <strong>{entry.name}</strong>
+                      <small>{entry.role}</small>
+                    </span>
+                    <span className="archetype-card__check" aria-hidden="true">✓</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <aside className="archetype-start__review" style={{ "--archetype-accent": selected.color }}>
+            <div className="archetype-start__hero">
+              {portraitFor(visage) ? <img src={portraitFor(visage)} alt={`Selected ${visage.label} appearance`} /> : null}
+              <div className="archetype-start__hero-shade" />
+              <div className="archetype-start__hero-copy">
+                <span>{selected.power} · {selected.role}</span>
+                <h2>{selected.name}</h2>
+                <p>{selected.tagline}</p>
+              </div>
+            </div>
+
+            <div className="archetype-start__review-body">
+              <div className="archetype-start__identity">
+                <div className="archetype-start__identity-heading">
+                  <div><span>02</span><h3>Name and face</h3></div>
+                  <small>Appearance never changes mechanics.</small>
+                </div>
+                <label className="archetype-start__name">
+                  <span>Your name</span>
+                  <input
+                    value={normalized.name}
+                    maxLength={48}
+                    autoComplete="off"
+                    placeholder="Name this character"
+                    onChange={(event) => change({ name: event.target.value })}
+                  />
+                </label>
+                <div className="archetype-start__faces" role="radiogroup" aria-label="Character appearance">
+                  {STARTING_VISAGES.map((entry) => {
+                    const portrait = portraitFor(entry);
+                    const active = entry.id === visage.id;
+                    return (
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        aria-label={entry.label}
+                        title={entry.label}
+                        className={active ? "is-selected" : ""}
+                        key={entry.id}
+                        onClick={() => change({ visageId: entry.id })}
+                      >
+                        {portrait ? <img src={portrait} alt="" /> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="archetype-start__mechanics">
+                <div className="archetype-start__playstyle">
+                  <DetailLabel>How it plays</DetailLabel>
+                  <p>{selected.playstyle}</p>
+                  <span className="archetype-start__attention">Attention · {selected.attention}</span>
+                </div>
+
+                <div className="archetype-start__loadout">
+                  <DetailLabel>Core actions</DetailLabel>
+                  <div className="archetype-start__chips">
+                    {skills.map((skill) => <span key={skill.id}>{skill.name}</span>)}
+                  </div>
+                </div>
+
+                <div className="archetype-start__trait">
+                  <DetailLabel>Innate passive</DetailLabel>
+                  <strong>{baseTrait?.name || baseTraitId}</strong>
+                  <p>{baseTrait?.effect?.status?.replace(/-/g, " ")} · {baseTrait?.cadence?.type?.replace(/-/g, " ")}</p>
+                </div>
+
+                <div className="archetype-start__relics">
+                  <div className="archetype-start__relic-heading">
+                    <DetailLabel>Starting equipment</DetailLabel>
+                    <span>{items.length} worn</span>
+                  </div>
+                  <div className="archetype-start__item-list">
+                    {items.map((item) => (
+                      <article key={item.id}>
+                        <div><strong>{item.name}</strong><span>{item.tier.replace(/-/g, " ")}</span></div>
+                        <p>{item.passive}</p>
+                      </article>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={`archetype-start__fusions${fusionIds.length ? " has-fusions" : ""}`}>
+                  <DetailLabel>Starting fusions</DetailLabel>
+                  {fusionIds.length ? (
+                    <div>
+                      {fusionIds.map((id) => {
+                        const fusion = getFusion(id);
+                        return <span key={id}>{fusion?.name || id}</span>;
+                      })}
+                    </div>
+                  ) : <p>None forged yet. This path earns them in play.</p>}
+                </div>
+              </div>
+
+              <div className="archetype-start__practice">
+                <label htmlFor="archetype-practice">Practice encounter</label>
+                <select
+                  id="archetype-practice"
+                  value={scenarioId}
+                  onChange={(event) => setScenarioId(event.target.value)}
+                >
+                  {PRACTICE_SCENARIOS.map((scenario) => (
+                    <option key={scenario.id} value={scenario.id}>{scenario.name} · {scenario.difficulty}</option>
+                  ))}
+                </select>
+              </div>
+
+              {error ? <p className="archetype-start__alert" role="alert">{error}</p> : null}
+
+              <div className="archetype-start__actions">
+                <button
+                  type="button"
+                  className="archetype-start__test"
+                  disabled={busy}
+                  onClick={() => onPractice?.(normalized, scenarioId)}
+                >
+                  Test this build
+                  <span>Disposable practice</span>
+                </button>
+                <button
+                  type="button"
+                  className="archetype-start__begin"
+                  disabled={!canBegin}
+                  onClick={() => onBegin?.(normalized)}
+                >
+                  Enter Whitemarch
+                  <span>{canBegin ? `as ${normalized.name}` : "Name required"}</span>
+                </button>
+              </div>
+            </div>
+          </aside>
+        </div>
       </div>
-
-      {/* The five facts the plan asks for, above anything else on the card. */}
-      <div className="quick-start__facts" aria-live="polite">
-        <Fact label="Role">{ROLE_BY_TEMPLATE[start.template.id]} — {start.template.label}, level {start.level}</Fact>
-        <Fact label="Opens with">
-          {trait.name} at rank {trait.rank} — {trait.effect.status} on {trait.cadence.type.replace(/-/g, " ")}
-        </Fact>
-        <Fact label="Your actions">
-          {selected.skills.map((skill) => getSkill(skill.id)?.name || skill.name).join(" · ")}
-        </Fact>
-        <Fact label="How rationed">{resourceCadence(selected)}</Fact>
-        <Fact label="Attention">{complexity(selected)}</Fact>
-      </div>
-
-      <div className="quick-start__scenario">
-        <label htmlFor="quick-start-scenario">Practice against</label>
-        <select
-          id="quick-start-scenario"
-          value={scenario.id}
-          onChange={(event) => setScenarioId(event.target.value)}
-        >
-          {PRACTICE_SCENARIOS.map((entry) => (
-            <option key={entry.id} value={entry.id}>{entry.name} — {entry.summary}</option>
-          ))}
-        </select>
-      </div>
-
-      {error ? <p className="quick-start__alert" role="alert">{error}</p> : null}
-
-      <div className="quick-start__actions">
-        <button
-          type="button"
-          className="quick-start__try"
-          disabled={busy}
-          onClick={() => onPractice?.(start, scenario.id)}
-        >
-          Test this build
-        </button>
-        <button
-          type="button"
-          className="quick-start__begin"
-          disabled={busy}
-          onClick={() => onBegin?.(start)}
-        >
-          Begin the journey
-        </button>
-      </div>
-
-      {onOtherLanes ? (
-        <button type="button" className="quick-start__other" onClick={onOtherLanes}>
-          Choose a life, or forge your own
-        </button>
-      ) : null}
     </section>
   );
 }

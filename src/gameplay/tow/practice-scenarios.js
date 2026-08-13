@@ -30,6 +30,8 @@ import { sealTowTerminalReceipt } from "./outcomes.js";
 import { skillStatesForReadiness } from "./readiness.js";
 import { verifyTowSession } from "./replay.js";
 import { TOW_RULESET_ID, createTowSession } from "./session.js";
+import { getStartingArchetype } from "./starting-archetypes.js";
+import { effectiveTowBuild, towItemActorBonuses } from "./start-items.js";
 
 export const PRACTICE_SCENARIO_VERSION = 1;
 export const MAX_PRACTICE_ATTEMPT = 4096;
@@ -102,9 +104,13 @@ export function getPracticeScenario(scenarioId) {
  */
 export function draftHash(receipt) {
   if (!isCharacterBootstrapReceipt(receipt)) return null;
+  const archetype = getStartingArchetype(receipt.archetypeId);
+  const itemIds = archetype?.gear || [];
   return gameplayChecksum({
+    archetypeId: receipt.archetypeId,
     professionId: receipt.professionId,
-    build: receipt.build,
+    build: effectiveTowBuild(receipt.build, itemIds),
+    itemIds,
   });
 }
 
@@ -146,11 +152,18 @@ export function derivePracticeSeed({
  * build is trying it.
  */
 export function practiceActor(receipt) {
+  const archetype = getStartingArchetype(receipt?.archetypeId);
+  const bonus = towItemActorBonuses(archetype?.gear || []);
   return {
     id: "wanderer",
     name: "You",
-    maxHp: 96,
-    stats: { attack: 12, defense: 12, critRate: 5, dodgeRate: 5 },
+    maxHp: 96 + bonus.maxHp,
+    stats: {
+      attack: 12 + bonus.attack,
+      defense: 12 + bonus.defense,
+      critRate: Math.min(100, 5 + bonus.critRate),
+      dodgeRate: Math.min(100, 5 + bonus.dodgeRate),
+    },
   };
 }
 
@@ -171,6 +184,8 @@ export function createPracticeSession(receipt, scenarioId = DEFAULT_PRACTICE_SCE
   if (!scenario) return rejected("unknown-practice-scenario");
 
   const hash = draftHash(receipt);
+  const archetype = getStartingArchetype(receipt.archetypeId);
+  const effectiveBuild = effectiveTowBuild(receipt.build, archetype?.gear || []);
   const seed = derivePracticeSeed({
     packageId: receipt.professionId,
     scenarioId: scenario.id,
@@ -189,8 +204,8 @@ export function createPracticeSession(receipt, scenarioId = DEFAULT_PRACTICE_SCE
     // Practice starts from the compiled build's own resources, full, because it is a fresh
     // expedition rather than a continuation of one.
     build: {
-      ...receipt.build,
-      skills: skillStatesForReadiness(receipt.build.skills, {}),
+      ...effectiveBuild,
+      skills: skillStatesForReadiness(effectiveBuild.skills, {}),
     },
     context: {
       source: { kind: "practice", note: scenario.name },

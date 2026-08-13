@@ -42,7 +42,7 @@ export function applyCreation({ beat, character, world, created }) {
     for (const key of [
       "archetype", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
       "attractiveness", "appearance", "base_appearance", "templateId", "portraitKey",
-      "profile",
+      "profile", "combatArchetypeId", "progressionModel",
     ]) {
       if (cs[key] != null) character[key] = cs[key];
     }
@@ -91,7 +91,11 @@ export function applyCreation({ beat, character, world, created }) {
     });
     character.archetype = archetype || character.progression.archetypeId;
     normalizeCharacterProgression(character, {
-      enforceLevelAttributeScale: true,
+      // A TOW archetype is deliberately level-free: its authored base attributes are part
+      // of the selected chassis, while gear/fusions supply the power band. The legacy
+      // progression record remains only as a world-system compatibility shell and must not
+      // shrink that chassis to the level-one envelope.
+      enforceLevelAttributeScale: cs.progressionModel !== "tow-archetype",
       preserveValidAttributeShape: true,
     });
     // Grant any starting abilities the concept calls for — martial techniques, or
@@ -160,6 +164,12 @@ export function applyCreation({ beat, character, world, created }) {
       ...((cs.templateId != null || w.templateId != null) ? { templateId: cs.templateId ?? w.templateId } : {}),
       ...((cs.portraitKey != null || w.portraitKey != null) ? { portraitKey: cs.portraitKey ?? w.portraitKey } : {}),
       ...((cs.profile != null || w.profile != null) ? { profile: cs.profile ?? w.profile } : {}),
+      ...((cs.combatArchetypeId != null || w.combatArchetypeId != null)
+        ? { combatArchetypeId: cs.combatArchetypeId ?? w.combatArchetypeId }
+        : {}),
+      ...((cs.progressionModel != null || w.progressionModel != null)
+        ? { progressionModel: cs.progressionModel ?? w.progressionModel }
+        : {}),
       attributes: character.attributes,
       // Dedup: a long (manual) creation may have already filed a self-fact via
       // knowledge_updates before the final sheet repeats it — don't list it twice.
