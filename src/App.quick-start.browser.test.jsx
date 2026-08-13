@@ -117,6 +117,10 @@ describe("the start opens on Quick Start", () => {
   it("shows the lane, its six people, and the five facts", async () => {
     const mounted = await mount();
     const lane = await waitFor(() => mounted.querySelector(".quick-start"));
+    expect(lane.getAttribute("role")).toBe("dialog");
+    expect(lane.getAttribute("aria-modal")).toBe("true");
+    expect(mounted.querySelector(".game-hud-layer").hasAttribute("inert")).toBe(true);
+    expect(mounted.querySelector(".game-hud-layer").getAttribute("aria-hidden")).toBe("true");
     expect(lane.querySelectorAll(".quick-start__choice")).toHaveLength(6);
     expect([...lane.querySelectorAll(".quick-start__fact-label")].map((n) => n.textContent))
       .toEqual(["Role", "Opens with", "Your actions", "How rationed", "Attention"]);

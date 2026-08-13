@@ -22,8 +22,9 @@ describe("Solitaire hook order", () => {
     const source = fs.readFileSync(appPath, "utf8");
     const rootSource = fs.readFileSync(mainPath, "utf8");
 
-    expect(source).toContain('inert={referenceGameplayOpen ? "" : undefined}');
-    expect(source).toContain("aria-hidden={referenceGameplayOpen ? true : undefined}");
+    expect(source).toContain("const gameSurfaceBlocked = referenceGameplayOpen || showCreationHub;");
+    expect(source).toContain('inert={gameSurfaceBlocked ? "" : undefined}');
+    expect(source).toContain("aria-hidden={gameSurfaceBlocked ? true : undefined}");
     expect(source).toContain('[data-app-global-surfaces]');
     expect(source).toContain("gameShell.children");
     expect(source).toContain("document.body.children");
