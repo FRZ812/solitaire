@@ -119,7 +119,7 @@ export function QuickStartLane({
     || PRACTICE_SCENARIOS[0];
 
   return (
-    <section className="quick-start" aria-label="Quick start">
+    <section className="quick-start" role="dialog" aria-modal="true" aria-label="Quick start">
       <header className="quick-start__header">
         <h2>Start fighting</h2>
         <p>

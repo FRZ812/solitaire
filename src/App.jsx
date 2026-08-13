@@ -3896,6 +3896,7 @@ export function Solitaire() {
   const readyAdvancements = state.created === false ? 0 : (pendingLevelAllocations(state.character)?.unspentLevels || 0);
   const advancementNeedsChoice = state.created !== false && pendingProgressionChoices(state.character)
     .some((choice) => choice.kind !== "level-allocation");
+  const gameSurfaceBlocked = referenceGameplayOpen || showCreationHub;
   return (
     <div className="game-shell" style={{
       backgroundColor: "var(--scene-deep)",
@@ -3912,8 +3913,8 @@ export function Solitaire() {
       {campaignBusy && <JourneyResumeOverlay />}
       <div
         className="game-hud-layer"
-        inert={referenceGameplayOpen ? "" : undefined}
-        aria-hidden={referenceGameplayOpen ? true : undefined}
+        inert={gameSurfaceBlocked ? "" : undefined}
+        aria-hidden={gameSurfaceBlocked ? true : undefined}
       >
         {state.created !== false && (
           <div className="story-hud">
