@@ -66,6 +66,41 @@ function boundedIdList(value: unknown, limit: number) {
 }
 
 /**
+ * The one shape from before this change that is still accepted, and only this one.
+ *
+ * The Edge deploys before the clients do. A browser still running the previous release ships
+ * a system prompt that tells the model to call `remember({fact})`, so refusing that shape
+ * would silently stop every live player's narrator from recording anything between the two
+ * deploys — a regression invisible until someone noticed their story had forgotten a promise.
+ *
+ * So `{fact}` is read, exactly and alone: any other legacy vocabulary still fails, and a
+ * `fact` mixed with typed fields is a confused call rather than an old one. It arrives as an
+ * event scoped to the campaign, which is honestly all a bare string ever said — it is about
+ * nobody in particular, and pretending otherwise would invent a subject the model never
+ * named.
+ *
+ * Delete this the release after every client speaks the typed shape. The absence test in
+ * edge-memory-wire.test.js is what will notice it lingering.
+ */
+function asLegacyMemoryProposal(raw: object) {
+  const keys = Object.keys(raw);
+  if (keys.length !== 1 || keys[0] !== "fact") return null;
+  const text = normalizeMemoryFact((raw as { fact?: unknown }).fact);
+  if (!text) return { error: "ignored: no fact given" };
+  return {
+    proposal: {
+      kind: "event",
+      subjectIds: ["campaign"],
+      scopeIds: ["campaign"],
+      text,
+      // Not `receipt`: nothing anchored this. `legacy-canonical` says what is true of it —
+      // it came through a channel that had no way to ask.
+      evidence: [{ kind: "legacy-canonical", id: "pre-typed-wire" }],
+    },
+  };
+}
+
+/**
  * Read the tool's arguments as a typed proposal, or say why not.
  *
  * Keys are checked rather than coerced: a stray `fact` or `content` is a previous vocabulary
@@ -82,6 +117,10 @@ export function asMemoryProposal(
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { error: "ignored: arguments were not an object" };
   }
+
+  const legacy = asLegacyMemoryProposal(raw);
+  if (legacy) return legacy;
+
   const stray = Object.keys(raw).filter((key) => !MEMORY_PROPOSAL_KEYS.has(key));
   if (stray.length > 0) {
     return {

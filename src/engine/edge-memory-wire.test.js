@@ -56,12 +56,13 @@ describe("reading a proposal", () => {
   });
 
   it("refuses the vocabulary it replaced", async () => {
-    // A stray `fact` or `content` is a previous shape arriving late. Accepting it quietly is
-    // how two vocabularies end up on one wire with nobody sure which is authoritative.
+    // A stray `content` or `relevance` is a previous shape arriving late. Accepting it
+    // quietly is how two vocabularies end up on one wire with nobody sure which is
+    // authoritative.
     const { asMemoryProposal } = await wire();
-    expect(asMemoryProposal({ fact: "The old shape." }).error).toContain("unknown field fact");
     expect(asMemoryProposal({ ...proposal(), content: "x" }).error).toContain("unknown field content");
     expect(asMemoryProposal({ ...proposal(), relevance: 5 }).error).toContain("unknown field relevance");
+    expect(asMemoryProposal({ ...proposal(), entities: ["hale"] }).error).toContain("unknown field entities");
   });
 
   it("names the field it got wrong, so the model can fix the next call", async () => {
@@ -273,14 +274,78 @@ describe("through the real provider loop", () => {
 
   it("streams nothing and explains itself for a malformed call", async () => {
     // The refusal reaches the model as its tool result; nothing reaches the client.
-    const { events, results } = await runTurn(JSON.stringify({ fact: "The old shape." }));
-    expect(results[0]).toContain("unknown field fact");
+    const { events, results } = await runTurn(JSON.stringify({
+      kind: "person", subject_ids: ["hale"], text: "A fact.", relevance: 9,
+    }));
+    expect(results[0]).toContain("unknown field relevance");
     expect(events.some((event) => event.type === "memory_delta")).toBe(false);
+  });
+
+  it("still records for a client that predates the typed shape", async () => {
+    // The deploy-safety property, end to end: the Edge ships first, and a browser on the
+    // previous release keeps recording memories until it catches up.
+    const { events, results } = await runTurn(JSON.stringify({
+      fact: "The ferryman owes the player passage.",
+    }));
+    expect(results).toEqual(["recorded"]);
+    const memory = events.find((event) => event.type === "memory_delta");
+    expect(memory.fact).toBe("The ferryman owes the player passage.");
+    expect(memory.proposal.kind).toBe("event");
+    expect(memory.proposal.evidence[0].kind).toBe("legacy-canonical");
   });
 
   it("streams nothing when the arguments are not JSON at all", async () => {
     const { events, results } = await runTurn("{not json");
     expect(results).toEqual(["ignored: arguments were not valid JSON"]);
     expect(events.some((event) => event.type === "memory_delta")).toBe(false);
+  });
+});
+
+describe("the one old shape still accepted, for the length of a deploy", () => {
+  // The Edge deploys before the clients do, and a browser on the previous release still tells
+  // the model to call remember({fact}). Refusing that would silently stop every live player's
+  // narrator recording anything between the two deploys.
+  it("reads a bare fact and scopes it honestly", async () => {
+    const { asMemoryProposal } = await wire();
+    const read = asMemoryProposal({ fact: "The ferryman owes the player passage." });
+    expect(read.error).toBeUndefined();
+    expect(read.proposal).toEqual({
+      kind: "event",
+      subjectIds: ["campaign"],
+      scopeIds: ["campaign"],
+      text: "The ferryman owes the player passage.",
+      // Not a receipt: nothing anchored it. The evidence kind says what is true of it.
+      evidence: [{ kind: "legacy-canonical", id: "pre-typed-wire" }],
+    });
+  });
+
+  it("does not invent a subject the model never named", async () => {
+    // A bare string is about nobody in particular, and saying otherwise would put words in
+    // the narrator's mouth.
+    const { asMemoryProposal } = await wire();
+    expect(asMemoryProposal({ fact: "Something happened." }).proposal.subjectIds)
+      .toEqual(["campaign"]);
+  });
+
+  it("refuses a bare fact with nothing in it", async () => {
+    const { asMemoryProposal } = await wire();
+    expect(asMemoryProposal({ fact: "   " }).error).toContain("no fact given");
+  });
+
+  it("accepts only that exact shape, never a confused mixture", async () => {
+    // `fact` beside typed fields is a muddled call, not an old one, and reading it as either
+    // would be a guess.
+    const { asMemoryProposal } = await wire();
+    expect(asMemoryProposal({ fact: "x", kind: "person" }).error).toContain("unknown field fact");
+    expect(asMemoryProposal({ ...proposal(), fact: "x" }).error).toContain("unknown field fact");
+  });
+
+  it("is offered to nobody: the tool asks only for the typed shape", async () => {
+    // Accepted on the way in, never advertised. A fresh client's model is never told `fact`
+    // exists, so the reader only ever serves browsers that predate this change.
+    const { MEMORY_TOOL } = await wire();
+    const params = MEMORY_TOOL.function.parameters;
+    expect(Object.keys(params.properties)).not.toContain("fact");
+    expect(JSON.stringify(params)).not.toContain("legacy-canonical");
   });
 });
