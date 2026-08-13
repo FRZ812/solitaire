@@ -20,8 +20,10 @@ import {
   createPracticeSession,
   practiceResult,
 } from "../../gameplay/tow/practice-scenarios.js";
+import { getStartingArchetype } from "../../gameplay/tow/starting-archetypes.js";
 
 export function PracticeFight({ receipt, scenarioId, onExit }) {
+  const playerPortraitKey = getStartingArchetype(receipt?.archetypeId)?.character?.portraitKey ?? null;
   const [attemptIndex, setAttemptIndex] = useState(0);
   const [practice, setPractice] = useState(
     () => createPracticeSession(receipt, scenarioId, 0),
@@ -109,6 +111,7 @@ export function PracticeFight({ receipt, scenarioId, onExit }) {
     <TowCombatView
       encounter={practice.session.encounter}
       note={`Practice — ${practice.scenario.name}. Nothing here is written down.`}
+      playerPortraitKey={playerPortraitKey}
       error={feedback}
       onUseSkill={(skillId, targetId, actorId) => dispatch({
         type: "use-skill", skillId, targetId: targetId ?? null, actorId: actorId ?? null,

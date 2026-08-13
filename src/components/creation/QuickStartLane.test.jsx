@@ -7,7 +7,6 @@ import { compileCharacterBootstrap } from "../../gameplay/tow/character-bootstra
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
 import {
   STARTING_ARCHETYPES,
-  STARTING_VISAGES,
   archetypeFusionIds,
   createDefaultArchetypeDraft,
   invalidStartingArchetypes,
@@ -44,12 +43,9 @@ async function click(element) {
   await act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 }
 
-async function type(input, value) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-  await act(async () => {
-    setter.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+async function keydown(element, key) {
+  expect(element).toBeTruthy();
+  await act(async () => element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
 }
 
 function ControlledStart(props) {
@@ -57,15 +53,20 @@ function ControlledStart(props) {
   return <QuickStartLane {...props} draft={draft} onDraftChange={setDraft} />;
 }
 
-describe("the level-free archetype catalogue", () => {
-  it("is complete, portrait-backed, and independent from legacy template people", () => {
+describe("the authored TOW character catalogue", () => {
+  it("is complete, unique, portrait-backed, and level-free", () => {
     expect(STARTING_ARCHETYPES).toHaveLength(8);
-    expect(STARTING_VISAGES).toHaveLength(8);
     expect(invalidStartingArchetypes()).toEqual([]);
+    expect(new Set(STARTING_ARCHETYPES.map((entry) => entry.character.name)).size).toBe(8);
     for (const entry of STARTING_ARCHETYPES) {
       expect(entry).not.toHaveProperty("level");
-      expect(entry).not.toHaveProperty("template");
       expect(entry.build).not.toHaveProperty("level");
+      expect(entry.character).toMatchObject({
+        id: expect.any(String),
+        name: expect.any(String),
+        epithet: expect.any(String),
+        portraitKey: expect.stringMatching(/^template:/),
+      });
       expect(entry.gear.length).toBeGreaterThan(0);
     }
   });
@@ -78,62 +79,104 @@ describe("the level-free archetype catalogue", () => {
   });
 });
 
-describe("the single start surface", () => {
-  it("shows portrait-led archetypes without exposing legacy roster or limbo routes", async () => {
+describe("the simple grid-to-preview flow", () => {
+  it("opens on a portrait grid without creation fields or expanded mechanics", async () => {
     const mounted = await render(<ControlledStart />);
-    expect(mounted.querySelectorAll(".archetype-card")).toHaveLength(STARTING_ARCHETYPES.length);
-    expect(mounted.querySelectorAll(".archetype-card img")).toHaveLength(STARTING_ARCHETYPES.length);
+    expect(mounted.querySelectorAll(".character-choice-card")).toHaveLength(STARTING_ARCHETYPES.length);
+    expect(mounted.querySelectorAll(".character-choice-card img")).toHaveLength(STARTING_ARCHETYPES.length);
+    expect(mounted.querySelector(".character-preview")).toBeNull();
+    expect(mounted.querySelector("input")).toBeNull();
+    expect(mounted.querySelector("select")).toBeNull();
+    expect(mounted.textContent).not.toContain("Starting equipment");
+    expect(mounted.textContent).not.toContain("Starting fusions");
     expect(mounted.textContent).not.toContain("Choose a life, or forge your own");
     expect(mounted.textContent).not.toContain("Enter the limbo");
     expect(mounted.textContent).not.toMatch(/\bLevel\b/);
-    expect(mounted.textContent).toContain("Starting equipment");
-    expect(mounted.textContent).toContain("Starting fusions");
   });
 
-  it("moves mechanics independently from the selected face", async () => {
+  it("turns a grid choice into a focused fixed-character preview and carousel", async () => {
     const mounted = await render(<ControlledStart />);
-    const cards = [...mounted.querySelectorAll(".archetype-card")];
-    const faces = [...mounted.querySelectorAll(".archetype-start__faces button")];
-    expect(cards.filter((node) => node.getAttribute("aria-checked") === "true")).toHaveLength(1);
-    expect(faces.filter((node) => node.getAttribute("aria-checked") === "true")).toHaveLength(1);
+    await click(mounted.querySelectorAll(".character-choice-card")[3]);
 
-    await click(cards[3]);
-    expect(cards[3].getAttribute("aria-checked")).toBe("true");
-    // A chosen appearance is retained when the combat archetype changes.
-    expect(faces[0].getAttribute("aria-checked")).toBe("true");
-
-    await click(faces[4]);
-    expect(faces[4].getAttribute("aria-checked")).toBe("true");
-    expect(cards[3].getAttribute("aria-checked")).toBe("true");
+    const preview = mounted.querySelector(".character-preview");
+    const character = STARTING_ARCHETYPES[3].character;
+    expect(preview).toBeTruthy();
+    expect(preview.querySelector("h1").textContent).toBe(character.name);
+    expect(preview.textContent).toContain(character.epithet);
+    expect(preview.querySelector("input")).toBeNull();
+    expect(preview.querySelectorAll(".character-preview__carousel [role=radio]")).toHaveLength(8);
+    expect(preview.querySelectorAll(".character-preview__carousel [aria-checked=true]")).toHaveLength(1);
+    expect(mounted.textContent).not.toContain("Starting equipment");
   });
 
-  it("requires the player's own name and never assigns a template name", async () => {
-    const begun = [];
-    const mounted = await render(<ControlledStart onBegin={(draft) => begun.push(draft)} />);
-    const begin = mounted.querySelector(".archetype-start__begin");
-    expect(begin.disabled).toBe(true);
-    expect(mounted.textContent).not.toContain("Bram Coltaine");
+  it("changes the whole authored identity from the side-scrolling carousel", async () => {
+    const mounted = await render(<ControlledStart />);
+    await click(mounted.querySelectorAll(".character-choice-card")[0]);
+    const carousel = mounted.querySelectorAll(".character-preview__carousel [role=radio]");
+    await click(carousel[6]);
 
-    await type(mounted.querySelector(".archetype-start__name input"), "Mira Vale");
-    expect(begin.disabled).toBe(false);
-    await click(begin);
-    expect(begun).toEqual([expect.objectContaining({ name: "Mira Vale", archetypeId: "ironbound" })]);
+    expect(mounted.querySelector(".character-preview__copy h1").textContent)
+      .toBe(STARTING_ARCHETYPES[6].character.name);
+    expect(carousel[6].getAttribute("aria-checked")).toBe("true");
+    expect(mounted.querySelector(".character-preview__portrait img").getAttribute("alt"))
+      .toContain(STARTING_ARCHETYPES[6].character.epithet);
   });
 
-  it("lets practice happen before identity is committed", async () => {
+  it("keeps loadout and practice controls behind an on-demand details drawer", async () => {
     const asked = [];
     const mounted = await render(
       <ControlledStart onPractice={(draft, scenarioId) => asked.push([draft, scenarioId])} />,
     );
-    await click(mounted.querySelector(".archetype-start__test"));
+    await click(mounted.querySelectorAll(".character-choice-card")[6]);
+    expect(mounted.querySelector(".character-details")).toBeNull();
+
+    await click(mounted.querySelector(".character-preview__details-button"));
+    const details = mounted.querySelector(".character-details");
+    expect(details).toBeTruthy();
+    expect(details.textContent).toContain("Starting equipment");
+    expect(details.textContent).toContain("Starting fusions");
+    expect(details.querySelector("select")).toBeNull();
+
+    const picker = details.querySelector("[role=combobox]");
+    await click(picker);
+    const options = details.querySelectorAll("[role=option]");
+    expect(options).toHaveLength(PRACTICE_SCENARIOS.length);
+    await click(options[1]);
+    expect(picker.textContent).toContain(PRACTICE_SCENARIOS[1].name);
+
+    await click(details.querySelector(".character-details__practice > button"));
     expect(asked).toEqual([[
-      expect.objectContaining({ archetypeId: STARTING_ARCHETYPES[0].id, name: "" }),
-      PRACTICE_SCENARIOS[0].id,
+      { archetypeId: STARTING_ARCHETYPES[6].id, preview: true },
+      PRACTICE_SCENARIOS[1].id,
     ]]);
+  });
+
+  it("supports keyboard selection in the custom practice opponent picker", async () => {
+    const mounted = await render(<ControlledStart />);
+    await click(mounted.querySelectorAll(".character-choice-card")[0]);
+    await click(mounted.querySelector(".character-preview__details-button"));
+    const picker = mounted.querySelector("[role=combobox]");
+
+    await keydown(picker, "ArrowDown");
+    expect(picker.getAttribute("aria-expanded")).toBe("true");
+    await keydown(picker, "ArrowDown");
+    await keydown(picker, "Enter");
+    expect(picker.getAttribute("aria-expanded")).toBe("false");
+    expect(picker.textContent).toContain(PRACTICE_SCENARIOS[1].name);
+  });
+
+  it("starts the selected authored character without asking for a name or face", async () => {
+    const begun = [];
+    const mounted = await render(<ControlledStart onBegin={(draft) => begun.push(draft)} />);
+    await click(mounted.querySelectorAll(".character-choice-card")[4]);
+    const begin = mounted.querySelector(".character-preview__begin");
+    expect(begin.disabled).toBe(false);
+    await click(begin);
+    expect(begun).toEqual([{ archetypeId: STARTING_ARCHETYPES[4].id, preview: true }]);
   });
 });
 
-describe("every advertised archetype reaches the production fight", () => {
+describe("every advertised character reaches the production fight", () => {
   it("opens a legal, commandable practice encounter", async () => {
     for (const entry of STARTING_ARCHETYPES) {
       const compiled = compileCharacterBootstrap({ archetypeId: entry.id, origin: "archetype" });
@@ -145,9 +188,10 @@ describe("every advertised archetype reaches the production fight", () => {
       );
       const dialog = mounted.querySelector(".tow-combat");
       expect(dialog, entry.id).toBeTruthy();
+      expect(dialog.textContent, entry.id).toContain(entry.character.name);
       expect([...dialog.querySelectorAll(".production-combat__action")]
         .some((button) => !button.disabled), entry.id).toBe(true);
-      expect(dialog.textContent, entry.id).toContain("Next");
+      expect(dialog.textContent, entry.id).toContain("Incoming");
 
       await act(async () => root.unmount());
       container.remove();

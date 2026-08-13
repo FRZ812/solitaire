@@ -1,57 +1,162 @@
 import React, { useEffect, useRef, useState } from "react";
+import battleScene from "../../assets/generated/scene-crowsmoor-v2.webp";
 import { declaredIntents } from "../../gameplay/tow/encounter.js";
 import { getSkill, skillLegality, usesPerAct, UNLIMITED_USES } from "../../gameplay/tow/skills.js";
-import "./production-combat.css";
+import { resolveTowCombatArt } from "./tow-combat-art.js";
+import "./tow-combat.css";
 
 function percent(value, max) {
   return Math.max(0, Math.min(100, max > 0 ? (value / max) * 100 : 0));
 }
 
-/**
- * What this foe has declared for the coming round.
- *
- * The point of the whole telegraph is that this is readable before the player spends their
- * turn, so it says the attack's name, how many times it lands, and for how much — and stops
- * there. Crit, dodge and the player's own defence are still live, which is the part their
- * decision is meant to influence.
- */
-function IntentLine({ intent }) {
-  if (!intent) return null;
-  const total = intent.hits > 1 ? ` (${intent.hits} × ${intent.damage})` : "";
+const REFUSALS = {
+  "on-cooldown": (skill) => `ready in ${skill.cooldownRemaining}`,
+  "no-uses-remaining": () => "spent",
+  "turn-already-spent": () => "no action left",
+  "invalid-skill-state": () => "unavailable",
+};
+
+function refusalText(reason, skillState) {
+  const render = REFUSALS[reason];
+  return render ? render(skillState) : "unavailable";
+}
+
+function monogram(name) {
+  return (String(name || "?").trim()[0] || "?").toUpperCase();
+}
+
+function actionKind(definition) {
+  const types = new Set((definition.effects || []).map((effect) => effect.type));
+  if (types.has("damage")) return "attack";
+  if (types.has("heal") || types.has("heal-lost-fraction")) return "recover";
+  if (types.has("shield")) return "guard";
+  if ((definition.effects || []).some((effect) => (
+    effect.target === "self" && ["guard", "evade", "invincible", "tenacity"].includes(effect.status)
+  ))) return "guard";
+  return definition.consumesTurn ? "technique" : "swift";
+}
+
+function ActionGlyph({ definition }) {
+  const kind = actionKind(definition);
   return (
-    <p className="production-combat__intent">
-      <span className="production-combat__eyebrow">Next</span>
-      <strong>{intent.name}</strong>
-      <span>
-        {intent.hits > 1 ? `${intent.hits} hits${total}` : `${intent.damage} damage`}
-      </span>
-    </p>
+    <span className={`tow-combat__action-glyph tow-combat__action-glyph--${kind}`} aria-hidden="true">
+      <svg viewBox="0 0 48 48" focusable="false">
+        {kind === "attack" ? (
+          <>
+            <path d="M13 35 35 13" />
+            <path d="m26 11 11 11M11 29l8 8" />
+            <path d="M10 38h11" />
+          </>
+        ) : null}
+        {kind === "guard" ? (
+          <>
+            <path d="M24 8 37 13v10c0 8-5 14-13 18-8-4-13-10-13-18V13l13-5Z" />
+            <path d="M24 14v20M17 21h14" />
+          </>
+        ) : null}
+        {kind === "recover" ? (
+          <>
+            <path d="M24 39S10 31 10 19c0-5 3-9 8-9 3 0 5 2 6 4 1-2 3-4 6-4 5 0 8 4 8 9 0 12-14 20-14 20Z" />
+            <path d="M17 24h14M24 17v14" />
+          </>
+        ) : null}
+        {kind === "technique" || kind === "swift" ? (
+          <>
+            <path d="m25 7-5 14h9l-7 20 16-24h-9l5-10" />
+            <path d="M11 15h7M9 23h7M12 31h6" />
+          </>
+        ) : null}
+      </svg>
+    </span>
   );
 }
 
-function StatusList({ actor }) {
+function ArtFigure({ actor, src, side }) {
+  return (
+    <div className={`tow-combat__art tow-combat__art--${side}${actor.hp <= 0 ? " is-down" : ""}`}>
+      {src ? (
+        <img className="tow-combat__art-image" src={src} alt="" aria-hidden="true" draggable="false" />
+      ) : (
+        <span className="tow-combat__art-monogram" aria-hidden="true">{monogram(actor.name)}</span>
+      )}
+      <span className="tow-combat__art-shadow" aria-hidden="true" />
+    </div>
+  );
+}
+
+function Telegraph({ intent }) {
+  if (!intent) return null;
+  return (
+    <div className="tow-combat__telegraph">
+      <span className="tow-combat__telegraph-kicker">Incoming</span>
+      <strong className="tow-combat__telegraph-name">{intent.name}</strong>
+      <span className="tow-combat__telegraph-damage">
+        <b>{intent.hits > 1 ? `${intent.hits} × ${intent.damage}` : intent.damage}</b>
+        <small>damage</small>
+      </span>
+    </div>
+  );
+}
+
+function Statuses({ actor }) {
   if (actor.statuses.length === 0) return null;
   return (
-    <ul className="production-combat__statuses" aria-label={`${actor.name} statuses`}>
+    <ul className="tow-combat__statuses" aria-label={`${actor.name} statuses`}>
       {actor.statuses.map((status) => (
-        <li key={status.type}>{status.type.replace(/-/g, " ")} <strong>{status.count}</strong></li>
+        <li key={status.type} className="tow-combat__status">
+          <span>{status.type.replace(/-/g, " ")}</span>
+          <strong>{status.count}</strong>
+        </li>
       ))}
     </ul>
   );
 }
 
-/**
- * The accessible name for a targetable foe.
- *
- * A foe card is a button when there is more than one of them, and a button's aria-label
- * replaces everything inside it — so naming it "Target Wolf 1" meant a screen-reader user
- * heard the name and never the telegraph. The whole point of declaring an attack is that the
- * player knows what is coming before they spend their turn; a player using a screen reader
- * is owed the same information, in the same place.
- */
+function Vitals({ actor, enemy = false }) {
+  return (
+    <div className={`tow-combat__vitals${enemy ? " tow-combat__vitals--enemy" : ""}`}>
+      <div
+        className="tow-combat__bar"
+        role="meter"
+        aria-label={`${actor.name} health`}
+        aria-valuemin="0"
+        aria-valuemax={actor.maxHp}
+        aria-valuenow={actor.hp}
+      >
+        <span className="tow-combat__bar-hp" style={{ width: `${percent(actor.hp, actor.maxHp)}%` }} />
+        {actor.shield > 0 ? (
+          <span
+            className="tow-combat__bar-shield"
+            style={{ width: `${percent(actor.shield, actor.maxHp)}%` }}
+          />
+        ) : null}
+      </div>
+      <p className="tow-combat__hp">
+        <strong>{actor.hp}</strong>
+        <span>/ {actor.maxHp}</span>
+        {actor.shield > 0 ? <em>+{actor.shield} ward</em> : null}
+        {actor.hp <= 0 ? <em>down</em> : null}
+      </p>
+    </div>
+  );
+}
+
+function CombatantPlate({ actor, role, enemy = false }) {
+  return (
+    <div className={`tow-combat__plate${enemy ? " tow-combat__plate--enemy" : " tow-combat__plate--hero"}`}>
+      <div className="tow-combat__identity">
+        <span>{role}</span>
+        <h2>{actor.name}</h2>
+      </div>
+      <Vitals actor={actor} enemy={enemy} />
+      <Statuses actor={actor} />
+    </div>
+  );
+}
+
 function targetLabel(actor, intent) {
-  const health = `${actor.hp} of ${actor.maxHp} health`;
   if (actor.hp <= 0) return `${actor.name}, down`;
+  const health = `${actor.hp} of ${actor.maxHp} health`;
   if (!intent) return `Target ${actor.name}, ${health}`;
   const blow = intent.hits > 1
     ? `${intent.hits} hits of ${intent.damage}`
@@ -59,43 +164,6 @@ function targetLabel(actor, intent) {
   return `Target ${actor.name}, ${health}, preparing ${intent.name} for ${blow}`;
 }
 
-function fighterBody(actor, label, intent = null) {
-  return (
-    <>
-      <span className="production-combat__eyebrow">{label}</span>
-      <h2>{actor.name}</h2>
-      <IntentLine intent={intent} />
-      <div
-        className="production-combat__health"
-        role="meter"
-        aria-label={`${actor.name} health`}
-        aria-valuemin="0"
-        aria-valuemax={actor.maxHp}
-        aria-valuenow={actor.hp}
-      >
-        <span style={{ width: `${percent(actor.hp, actor.maxHp)}%` }} />
-      </div>
-      <p className="production-combat__vital">
-        <strong>{actor.hp} / {actor.maxHp}</strong> HP
-        {actor.shield > 0 ? <span> · {actor.shield} shield</span> : null}
-        {actor.hp <= 0 ? <span> · down</span> : null}
-      </p>
-      <StatusList actor={actor} />
-    </>
-  );
-}
-
-function skillHint(skillState) {
-  const definition = getSkill(skillState.id);
-  const limit = usesPerAct(skillState.id, skillState.rank);
-  const parts = [];
-  if (limit !== UNLIMITED_USES) parts.push(`${skillState.usesRemaining}/${limit}`);
-  if (skillState.cooldownRemaining > 0) parts.push(`cd ${skillState.cooldownRemaining}`);
-  if (!definition.consumesTurn) parts.push("free");
-  return parts.join(" · ");
-}
-
-/** How many actions this actor has left in the current window. */
 function actionsLeft(encounter, actorId) {
   if (actorId === encounter.playerId) return encounter.turn.actionsRemaining;
   return encounter.turn.allies?.[actorId] ?? 0;
@@ -108,6 +176,10 @@ export function TowCombatView({
   onSettle,
   note,
   error,
+  saveState = null,
+  artFor = null,
+  playerPortraitKey = null,
+  sceneArt = battleScene,
   returnFocusSelector = ".story-input__field",
 }) {
   const firstActionRef = useRef(null);
@@ -118,13 +190,12 @@ export function TowCombatView({
 
   const player = encounter.actors[encounter.playerId];
   const allies = (encounter.allyIds || []).map((id) => encounter.actors[id]);
+  const playerSide = [player, ...allies];
   const enemies = encounter.enemyIds.map((id) => encounter.actors[id]);
   const living = enemies.filter((enemy) => enemy.hp > 0);
   const terminal = encounter.phase !== "player";
   const activeTarget = living.find((enemy) => enemy.id === targetId)?.id || living[0]?.id || null;
-  // One command window covers the whole side. The player picks whose action to spend, and
-  // an ally who does nothing did nothing because the player said so.
-  const commandable = [player, ...allies].filter((actor) => actor.hp > 0);
+  const commandable = playerSide.filter((actor) => actor.hp > 0);
   const activeCommander = commandable.find((actor) => (
     actor.id === commanderId && actionsLeft(encounter, actor.id) > 0
   ))
@@ -135,11 +206,18 @@ export function TowCombatView({
   const commanderBuild = activeCommander.id === encounter.playerId
     ? encounter.build
     : encounter.allyBuilds?.[activeCommander.id];
-  // Once the fight is over there is nothing coming, so the telegraphs go quiet rather than
-  // advertising a round that will never be played.
-  const intents = terminal
-    ? {}
-    : Object.fromEntries(declaredIntents(encounter).map((intent) => [intent.enemyId, intent]));
+  const declared = terminal ? [] : declaredIntents(encounter);
+  const intents = Object.fromEntries(declared.map((intent) => [intent.enemyId, intent]));
+  const incoming = declared.reduce((total, intent) => total + intent.hits * intent.damage, 0);
+  const fallen = enemies.filter((enemy) => enemy.hp <= 0).length;
+  const staged = enemies.find((enemy) => enemy.id === activeTarget) || enemies[0];
+  function combatArt(actor) {
+    const supplied = typeof artFor === "function" ? artFor(actor) : null;
+    return supplied || resolveTowCombatArt(actor, {
+      playerId: encounter.playerId,
+      playerPortraitKey,
+    });
+  }
 
   useEffect(() => {
     restoreFocusRef.current = document.activeElement;
@@ -190,136 +268,226 @@ export function TowCombatView({
     }
   }
 
+  function enemyToken(enemy) {
+    const targetable = !terminal && enemy.hp > 0;
+    const body = (
+      <>
+        <span className="tow-combat__foe-token-state" aria-hidden="true" />
+        <span className="tow-combat__foe-token-name">{enemy.name}</span>
+        <span className="tow-combat__foe-token-hp">{enemy.hp}/{enemy.maxHp}</span>
+      </>
+    );
+    return targetable ? (
+      <button
+        key={enemy.id}
+        type="button"
+        className="tow-combat__foe-token production-combat__fighter--target"
+        aria-label={targetLabel(enemy, intents[enemy.id])}
+        aria-pressed={enemy.id === activeTarget}
+        onClick={() => setTargetId(enemy.id)}
+      >
+        {body}
+      </button>
+    ) : (
+      <article key={enemy.id} className="tow-combat__foe-token is-down" aria-label={`Foe: ${enemy.name}`}>
+        {body}
+      </article>
+    );
+  }
+
   return (
     <div
-      className="production-combat tow-combat"
+      className={`tow-combat${terminal ? " is-terminal" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="tow-combat-title"
       tabIndex="-1"
       onKeyDown={keepFocusInside}
     >
-      <div className="production-combat__backdrop" aria-hidden="true" />
-      <main className="production-combat__panel">
-        <header className="production-combat__header">
-          <span className="production-combat__eyebrow">
-            Round {encounter.round}
-            {!terminal && encounter.turn.actionsRemaining > 1
-              ? ` · ${encounter.turn.actionsRemaining} actions`
-              : null}
-          </span>
-          <h1 id="tow-combat-title">
-            {terminal ? (encounter.phase === "victory" ? "Victory" : "Defeat") : "Combat"}
-          </h1>
-          {note ? <p>{note}</p> : null}
+      <img className="tow-combat__scene" src={sceneArt} alt="" aria-hidden="true" />
+      <div className="tow-combat__backdrop" aria-hidden="true" />
+
+      <main className="tow-combat__stage">
+        <header className="tow-combat__header">
+          <p className="tow-combat__round">
+            <span>Round</span>
+            <strong>{encounter.round}</strong>
+            {!terminal ? (
+              <em>{activeCommander.id === encounter.playerId ? "Your move" : `${activeCommander.name}'s move`}</em>
+            ) : null}
+          </p>
+          <div className="tow-combat__heading">
+            <h1 id="tow-combat-title">
+              {terminal ? (encounter.phase === "victory" ? "Victory" : "Defeat") : "The clash"}
+            </h1>
+            {note ? <p>{note}</p> : null}
+          </div>
         </header>
 
-        <div className="production-combat__fighters">
-          <div className="production-combat__side">
-            <section className="production-combat__fighter" aria-label={`You: ${player.name}`}>
-              {fighterBody(player, "You")}
-            </section>
-            {allies.map((ally) => (
-              <section
-                key={ally.id}
-                className="production-combat__fighter"
-                aria-label={`Ally: ${ally.name}`}
-              >
-                {fighterBody(ally, "Ally")}
-              </section>
-            ))}
-          </div>
-          <div className="production-combat__versus" aria-hidden="true">VS</div>
-          <div className="production-combat__foes">
-            {enemies.map((enemy) => (
-              living.length > 1 && !terminal ? (
-                <button
-                  key={enemy.id}
-                  type="button"
-                  className={`production-combat__fighter production-combat__fighter--target${enemy.id === activeTarget ? " is-selected" : ""}`}
-                  aria-label={targetLabel(enemy, intents[enemy.id])}
-                  aria-pressed={enemy.id === activeTarget}
-                  disabled={enemy.hp <= 0}
-                  onClick={() => setTargetId(enemy.id)}
-                >
-                  {fighterBody(enemy, "Foe", intents[enemy.id])}
-                </button>
-              ) : (
-                <section key={enemy.id} className="production-combat__fighter" aria-label={`Foe: ${enemy.name}`}>
-                  {fighterBody(enemy, "Foe", intents[enemy.id])}
-                </section>
-              )
-            ))}
-          </div>
-        </div>
+        <section className="tow-combat__battlefield" aria-label="Combatants">
+          <span className="tow-combat__battle-light tow-combat__battle-light--foe" aria-hidden="true" />
+          <span className="tow-combat__battle-light tow-combat__battle-light--hero" aria-hidden="true" />
 
-        {error ? <p className="production-combat__alert" role="alert">{error}</p> : null}
+          {staged ? (
+            <article
+              className={`tow-combat__threat${staged.hp <= 0 ? " is-down" : ""}`}
+              aria-label={`Foe: ${staged.name}`}
+            >
+              <ArtFigure actor={staged} src={combatArt(staged)} side="foe" />
+              <CombatantPlate actor={staged} role="Foe" enemy />
+            </article>
+          ) : null}
+
+          {enemies.length > 1 ? (
+            <section className="tow-combat__foe-rail" aria-label="Choose a foe">
+              {enemies.map(enemyToken)}
+            </section>
+          ) : null}
+
+          {!terminal ? (
+            <section className="tow-combat__exchange" aria-label="Incoming attack">
+              <Telegraph intent={intents[staged?.id]} />
+              {incoming > 0 ? (
+                <p className="tow-combat__incoming">
+                  <span>Total threat</span>
+                  <strong>{incoming}</strong>
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
+          <article
+            className={`tow-combat__hero${player.hp <= 0 ? " is-down" : ""}`}
+            aria-label={`You: ${player.name}`}
+          >
+            <ArtFigure actor={player} src={combatArt(player)} side="hero" />
+            <CombatantPlate
+              actor={player}
+              role="You"
+            />
+          </article>
+
+          {allies.length > 0 ? (
+            <section className="tow-combat__reserves" aria-label="Other allies">
+              {allies.map((actor) => (
+                <article
+                  key={actor.id}
+                  className={`tow-combat__reserve${actor.hp <= 0 ? " is-down" : ""}`}
+                  aria-label={actor.id === encounter.playerId ? `You: ${actor.name}` : `Ally: ${actor.name}`}
+                >
+                  <span>{actor.id === encounter.playerId ? "You" : actor.name}</span>
+                  <strong>{actor.hp}/{actor.maxHp}</strong>
+                </article>
+              ))}
+            </section>
+          ) : null}
+        </section>
+
+        {error ? <p className="tow-combat__alert" role="alert">{error}</p> : null}
 
         {!terminal ? (
-          <>
+          <footer className="tow-combat__command">
+            <div className="tow-combat__command-heading">
+              <div>
+                <span>Command</span>
+                <strong>Choose an action</strong>
+              </div>
+              <p>
+                <strong>{actionsLeft(encounter, activeCommander.id)}</strong>
+                <span>action{actionsLeft(encounter, activeCommander.id) === 1 ? "" : "s"}</span>
+              </p>
+            </div>
+
             {commandable.length > 1 ? (
-              <div className="production-combat__commanders" aria-label="Whose action to spend">
+              <div className="tow-combat__commanders" aria-label="Whose action to spend">
                 {commandable.map((actor) => (
                   <button
                     key={actor.id}
                     type="button"
-                    className={`production-combat__commander${actor.id === activeCommander.id ? " is-selected" : ""}`}
+                    className={`tow-combat__commander production-combat__commander${actor.id === activeCommander.id ? " is-selected" : ""}`}
                     aria-pressed={actor.id === activeCommander.id}
                     aria-label={`Act as ${actor.name}, ${actionsLeft(encounter, actor.id)} actions left`}
                     onClick={() => setCommanderId(actor.id)}
                   >
-                    <strong>{actor.id === encounter.playerId ? "You" : actor.name}</strong>
-                    <span>{actionsLeft(encounter, actor.id)} left</span>
+                    <span>{actor.id === encounter.playerId ? "You" : actor.name}</span>
+                    <strong>{actionsLeft(encounter, actor.id)}</strong>
                   </button>
                 ))}
               </div>
             ) : null}
-            <div className="production-combat__actions" aria-label="Combat actions">
+
+            <div className="tow-combat__actions" aria-label="Combat actions">
               {(commanderBuild?.skills || []).map((skillState, index) => {
                 const definition = getSkill(skillState.id);
                 const legality = skillLegality(skillState, {
                   turnAvailable: actionsLeft(encounter, activeCommander.id) > 0,
                 });
+                const limit = usesPerAct(skillState.id, skillState.rank);
                 return (
                   <button
                     key={skillState.id}
                     ref={index === 0 ? firstActionRef : null}
                     type="button"
-                    className="production-combat__action"
+                    className={`tow-combat__action production-combat__action tow-combat__action--${actionKind(definition)}`}
                     disabled={!legality.ok}
                     onClick={() => onUseSkill(skillState.id, activeTarget, activeCommander.id)}
                   >
-                    <strong>{definition.name}</strong>
-                    <span>{skillHint(skillState)}</span>
+                    <ActionGlyph definition={definition} />
+                    <span className="tow-combat__action-copy">
+                      <span className="tow-combat__action-name">{definition.name}</span>
+                      <span className="tow-combat__action-meta">
+                        {limit !== UNLIMITED_USES ? (
+                          <span>{skillState.usesRemaining}/{limit}</span>
+                        ) : <span>Ready</span>}
+                        {!definition.consumesTurn ? <em>Swift</em> : null}
+                      </span>
+                      {!legality.ok ? (
+                        <span className="tow-combat__action-why">
+                          {refusalText(legality.reason, skillState)}
+                        </span>
+                      ) : null}
+                    </span>
                   </button>
                 );
               })}
             </div>
-            {/* Standing an ally down is an explicit command, never hidden AI: a companion
-                who does nothing did nothing because the player decided so. */}
-            {commandable.length > 1 && actionsLeft(encounter, activeCommander.id) > 0 ? (
-              <button
-                type="button"
-                className="production-combat__stand-down"
-                onClick={() => onStandDown?.(activeCommander.id)}
-              >
-                {activeCommander.id === encounter.playerId
-                  ? "Hold your action"
-                  : `${activeCommander.name} holds`}
-              </button>
-            ) : null}
-          </>
+
+            <div className="tow-combat__command-foot">
+              {commandable.length > 1 && actionsLeft(encounter, activeCommander.id) > 0 ? (
+                <button
+                  type="button"
+                  className="tow-combat__hold"
+                  onClick={() => onStandDown?.(activeCommander.id)}
+                >
+                  {activeCommander.id === encounter.playerId
+                    ? "Stand down"
+                    : `${activeCommander.name} stands down`}
+                </button>
+              ) : <span />}
+              {saveState ? <p className="tow-combat__save">{saveState}</p> : null}
+            </div>
+          </footer>
         ) : (
-          <section className="production-combat__outcome" aria-live="assertive">
-            <p>
-              {encounter.phase === "victory"
-                ? "The last of them goes down."
-                : "A last blow lands, and the world tips into black."}
-            </p>
-            <button ref={settleRef} type="button" className="production-combat__settle" onClick={onSettle}>
+          <footer className="tow-combat__outcome production-combat__outcome" aria-live="assertive">
+            <div className="tow-combat__outcome-heading">
+              <span>{encounter.phase === "victory" ? "The field is yours" : "The light leaves the field"}</span>
+              <strong>{encounter.phase === "victory" ? "Stand victorious" : "The fight is lost"}</strong>
+            </div>
+            <dl className="tow-combat__tally">
+              <div><dt>Rounds</dt><dd>{encounter.round}</dd></div>
+              <div><dt>Foes down</dt><dd>{fallen}/{enemies.length}</dd></div>
+              <div><dt>Health</dt><dd>{player.hp}/{player.maxHp}</dd></div>
+            </dl>
+            <button
+              ref={settleRef}
+              type="button"
+              className="tow-combat__settle production-combat__settle"
+              onClick={onSettle}
+            >
               Apply aftermath
+              <span aria-hidden="true">→</span>
             </button>
-          </section>
+          </footer>
         )}
       </main>
     </div>

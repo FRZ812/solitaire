@@ -56,7 +56,7 @@ function foe(id, name, maxHp, attack, band) {
  * Instructional rather than trivial: each is meant to be won by someone reading the
  * telegraph and spending a guard at the right moment, and lost by someone mashing the
  * attack button. Scenarios scale by fixture, never by secretly normalising the person — the
- * template's authored level and identity go in untouched.
+ * authored character's fixed equipment and identity go in untouched.
  */
 export const PRACTICE_SCENARIOS = Object.freeze([
   Object.freeze({
@@ -156,7 +156,7 @@ export function practiceActor(receipt) {
   const bonus = towItemActorBonuses(archetype?.gear || []);
   return {
     id: "wanderer",
-    name: "You",
+    name: archetype?.character?.name || "You",
     maxHp: 96 + bonus.maxHp,
     stats: {
       attack: 12 + bonus.attack,

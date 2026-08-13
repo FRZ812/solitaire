@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
-// The character start at the real App boundary: legacy limbo saves recover into one
-// archetype chooser, practice remains disposable, and Begin commits the whole character in
-// one local transaction without a narrator dependency.
+// The authored-character start at the real App boundary: legacy limbo saves recover into
+// one portrait grid, practice remains disposable, and Begin commits the complete fixed
+// character in one local transaction without a narrator dependency.
 
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -66,14 +66,6 @@ async function click(element) {
   await act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 }
 
-async function type(input, value) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-  await act(async () => {
-    setter.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
 let root;
 let container;
 
@@ -121,14 +113,16 @@ afterAll(() => {
 });
 
 describe("one new-campaign start", () => {
-  it("shows eight portrait archetypes and no legacy roster or limbo route", async () => {
+  it("shows eight complete characters and no legacy roster or limbo route", async () => {
     const mounted = await mount();
     const start = await waitFor(() => mounted.querySelector(".archetype-start"));
     expect(start.getAttribute("role")).toBe("dialog");
     expect(start.getAttribute("aria-modal")).toBe("true");
     expect(mounted.querySelector(".game-hud-layer").hasAttribute("inert")).toBe(true);
-    expect(start.querySelectorAll(".archetype-card")).toHaveLength(STARTING_ARCHETYPES.length);
-    expect(start.querySelectorAll(".archetype-card img")).toHaveLength(STARTING_ARCHETYPES.length);
+    expect(start.querySelectorAll(".character-choice-card")).toHaveLength(STARTING_ARCHETYPES.length);
+    expect(start.querySelectorAll(".character-choice-card img")).toHaveLength(STARTING_ARCHETYPES.length);
+    expect(start.querySelector("input")).toBeNull();
+    expect(start.querySelector("select")).toBeNull();
     expect(start.textContent).not.toContain("Choose a life, or forge your own");
     expect(start.textContent).not.toContain("Enter the limbo");
     expect(start.textContent).not.toMatch(/\bLevel\b/);
@@ -148,25 +142,22 @@ describe("one new-campaign start", () => {
     expect(harness.serverState.created).toBe(false);
   });
 
-  it("commits name, face, gear, and durable build without returning to limbo", async () => {
+  it("commits the selected authored identity, gear, and durable build without returning to limbo", async () => {
     const mounted = await mount();
     const start = await waitFor(() => mounted.querySelector(".archetype-start"));
-    const cards = [...start.querySelectorAll(".archetype-card")];
-    const faces = [...start.querySelectorAll(".archetype-start__faces button")];
+    const cards = [...start.querySelectorAll(".character-choice-card")];
     await click(cards[3]);
-    await click(faces[4]);
-    await type(start.querySelector(".archetype-start__name input"), "Mira Vale");
-    await click(start.querySelector(".archetype-start__begin"));
+    await click(start.querySelector(".character-preview__begin"));
 
     await waitFor(() => !mounted.querySelector(".archetype-start"));
-    expect(mounted.textContent).toContain("Mira Vale enters Whitemarch");
+    expect(mounted.textContent).toContain(`${STARTING_ARCHETYPES[3].character.name} enters Whitemarch`);
     expect(mounted.textContent).not.toContain("There is no floor");
     await waitFor(() => harness.serverState.created === true);
     expect(harness.serverState.character).toMatchObject({
-      name: "Mira Vale",
+      name: STARTING_ARCHETYPES[3].character.name,
       combatArchetypeId: STARTING_ARCHETYPES[3].id,
       progressionModel: "tow-archetype",
-      portraitKey: "template:champion-paladin",
+      portraitKey: STARTING_ARCHETYPES[3].character.portraitKey,
     });
     expect(harness.serverState.mechanics.bootstrapOrigin).toBe("archetype");
     expect(harness.serverState.world.codex.characters.wanderer.worn.length).toBeGreaterThan(0);
@@ -179,7 +170,9 @@ describe("practice is reversible and writes nothing", () => {
     const start = await waitFor(() => mounted.querySelector(".archetype-start"));
     const savesBefore = harness.saveCampaign.mock.calls.length;
 
-    await click(start.querySelector(".archetype-start__test"));
+    await click(start.querySelectorAll(".character-choice-card")[0]);
+    await click(start.querySelector(".character-preview__details-button"));
+    await click(start.querySelector(".character-details__practice > button"));
     const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
     expect(dialog.textContent).toContain("Nothing here is written down");
     const actions = [...dialog.querySelectorAll(".production-combat__action")]
@@ -193,17 +186,15 @@ describe("practice is reversible and writes nothing", () => {
     expect(harness.saveCampaign.mock.calls.length).toBe(savesBefore);
   });
 
-  it("returns to the exact same archetype, face, and typed name", async () => {
+  it("returns to the exact same authored-character preview", async () => {
     const mounted = await mount();
     const start = await waitFor(() => mounted.querySelector(".archetype-start"));
-    const cards = [...start.querySelectorAll(".archetype-card")];
-    const faces = [...start.querySelectorAll(".archetype-start__faces button")];
+    const cards = [...start.querySelectorAll(".character-choice-card")];
     await click(cards[6]);
-    await click(faces[2]);
-    await type(start.querySelector(".archetype-start__name input"), "Ilyra");
     const before = JSON.stringify(harness.serverState);
 
-    await click(start.querySelector(".archetype-start__test"));
+    await click(start.querySelector(".character-preview__details-button"));
+    await click(start.querySelector(".character-details__practice > button"));
     await waitFor(() => mounted.querySelector(".tow-combat"));
     for (let round = 0; round < 40 && mounted.querySelector(".tow-combat"); round += 1) {
       const action = [...mounted.querySelectorAll(".production-combat__action")]
@@ -215,9 +206,12 @@ describe("practice is reversible and writes nothing", () => {
     await click([...result.querySelectorAll("button")].find((button) => /Back to your build/.test(button.textContent)));
 
     const restored = await waitFor(() => mounted.querySelector(".archetype-start"));
-    expect(restored.querySelector(".archetype-start__name input").value).toBe("Ilyra");
-    expect(restored.querySelectorAll(".archetype-card")[6].getAttribute("aria-checked")).toBe("true");
-    expect(restored.querySelectorAll(".archetype-start__faces button")[2].getAttribute("aria-checked")).toBe("true");
+    expect(restored.querySelector(".character-preview__copy h1").textContent)
+      .toBe(STARTING_ARCHETYPES[6].character.name);
+    expect(restored.querySelectorAll(".character-preview__carousel [role=radio]")[6].getAttribute("aria-checked"))
+      .toBe("true");
+    expect(restored.querySelector("input")).toBeNull();
+    expect(restored.querySelector("select")).toBeNull();
     expect(JSON.stringify(harness.serverState)).toBe(before);
   });
 });

@@ -1,0 +1,995 @@
+.tow-combat {
+  --tow-ink: #f5efe2;
+  --tow-muted: #a9b2ac;
+  --tow-faint: #71817c;
+  --tow-gold: #d8ae65;
+  --tow-gold-bright: #f1cf8b;
+  --tow-danger: #c95e52;
+  --tow-danger-bright: #ef8871;
+  --tow-vital: #b8c98c;
+  --tow-ward: #8cc5db;
+  --tow-night: #070b0d;
+  position: fixed;
+  inset: 0;
+  z-index: 10020;
+  overflow: auto;
+  overscroll-behavior: contain;
+  color: var(--tow-ink);
+  background: var(--tow-night);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  isolation: isolate;
+}
+
+.tow-combat *,
+.tow-combat *::before,
+.tow-combat *::after { box-sizing: border-box; }
+
+.tow-combat button { font: inherit; }
+
+.tow-combat__scene {
+  position: fixed;
+  z-index: -4;
+  inset: -3%;
+  width: 106%;
+  height: 106%;
+  object-fit: cover;
+  object-position: 50% 55%;
+  filter: saturate(0.38) brightness(0.26) contrast(1.14);
+  transform: scale(1.03);
+}
+
+.tow-combat__backdrop {
+  position: fixed;
+  z-index: -3;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 62% 50% at 50% 36%, rgba(104, 126, 118, 0.11), transparent 72%),
+    radial-gradient(ellipse 46% 60% at 82% 30%, rgba(141, 69, 59, 0.17), transparent 75%),
+    linear-gradient(180deg, rgba(4, 8, 11, 0.48), rgba(4, 8, 11, 0.28) 38%, rgba(4, 7, 9, 0.88) 84%, #05080a 100%);
+}
+
+.tow-combat__backdrop::before,
+.tow-combat__backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.tow-combat__backdrop::before {
+  opacity: 0.13;
+  background-image: repeating-linear-gradient(90deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 4px);
+  mix-blend-mode: soft-light;
+}
+
+.tow-combat__backdrop::after {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,0.62), transparent 19%, transparent 81%, rgba(0,0,0,0.62)),
+    radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,0.53) 100%);
+}
+
+.tow-combat__stage {
+  display: grid;
+  grid-template-rows: auto minmax(29rem, 1fr) auto;
+  width: min(100%, 96rem);
+  min-height: 100%;
+  margin: 0 auto;
+  padding:
+    max(0.9rem, env(safe-area-inset-top, 0px))
+    max(1rem, env(safe-area-inset-right, 0px))
+    max(1rem, env(safe-area-inset-bottom, 0px))
+    max(1rem, env(safe-area-inset-left, 0px));
+}
+
+/* Header: orientation only. The combatants own the scene. */
+
+.tow-combat__header {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1.2rem;
+  align-items: start;
+  min-height: 4.6rem;
+}
+
+.tow-combat__round {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0 0.45rem;
+  align-items: baseline;
+  margin: 0;
+  padding: 0.35rem 0;
+  color: var(--tow-muted);
+  text-transform: uppercase;
+}
+
+.tow-combat__round span {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.tow-combat__round strong {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: 1.65rem;
+  font-weight: 400;
+  color: var(--tow-ink);
+}
+
+.tow-combat__round em {
+  grid-column: 1 / -1;
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--tow-gold);
+}
+
+.tow-combat__heading {
+  justify-self: center;
+  max-width: 40rem;
+  text-align: center;
+}
+
+.tow-combat__heading h1 {
+  margin: 0;
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: clamp(1.55rem, 2.3vw, 2.4rem);
+  font-weight: 400;
+  line-height: 1;
+  color: #fff5df;
+  text-shadow: 0 0.12rem 1rem rgba(0, 0, 0, 0.8);
+}
+
+.tow-combat__heading p {
+  margin: 0.35rem 0 0;
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: 0.88rem;
+  font-style: italic;
+  color: rgba(231, 230, 218, 0.66);
+}
+
+/* Battlefield: deliberately asymmetrical, like an illustrated confrontation. */
+
+.tow-combat__battlefield {
+  position: relative;
+  z-index: 2;
+  min-height: 29rem;
+  overflow: hidden;
+}
+
+.tow-combat__battlefield::after {
+  content: "";
+  position: absolute;
+  z-index: 8;
+  right: 8%;
+  bottom: 2.5rem;
+  left: 8%;
+  height: 1px;
+  opacity: 0.26;
+  background: linear-gradient(90deg, transparent, var(--tow-gold), transparent);
+}
+
+.tow-combat__battle-light {
+  position: absolute;
+  z-index: 0;
+  width: 44rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  filter: blur(2rem);
+  opacity: 0.48;
+  pointer-events: none;
+}
+
+.tow-combat__battle-light--foe {
+  top: -14rem;
+  right: -12rem;
+  background: radial-gradient(circle, rgba(152, 66, 54, 0.34), transparent 67%);
+}
+
+.tow-combat__battle-light--hero {
+  bottom: -21rem;
+  left: -9rem;
+  background: radial-gradient(circle, rgba(93, 132, 122, 0.26), transparent 68%);
+}
+
+.tow-combat__threat,
+.tow-combat__hero {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.tow-combat__threat {
+  top: -1rem;
+  right: clamp(-4rem, -3vw, -1rem);
+  width: min(48vw, 42rem);
+  height: calc(100% + 1rem);
+}
+
+.tow-combat__hero {
+  bottom: -1rem;
+  left: clamp(-4rem, -3vw, -1rem);
+  width: min(49vw, 43rem);
+  height: calc(100% + 1rem);
+}
+
+.tow-combat__art {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.tow-combat__art-image {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  filter: drop-shadow(0 1.4rem 1.6rem rgba(0,0,0,0.66));
+}
+
+.tow-combat__art--foe .tow-combat__art-image {
+  object-position: 68% 15%;
+  transform: scale(1.09);
+  transform-origin: 70% 38%;
+}
+
+.tow-combat__art--hero .tow-combat__art-image {
+  object-position: 33% 100%;
+  transform: scale(1.08);
+  transform-origin: 28% 78%;
+}
+
+.tow-combat__art-monogram {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: clamp(10rem, 26vw, 24rem);
+  line-height: 1;
+  color: rgba(231, 218, 184, 0.09);
+  text-shadow: 0 0.15em 0.4em rgba(0,0,0,0.55);
+}
+
+.tow-combat__art-shadow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(4,7,8,0.42), transparent 38%);
+}
+
+.tow-combat__art.is-down,
+.tow-combat__threat.is-down,
+.tow-combat__hero.is-down {
+  filter: grayscale(0.82) brightness(0.58);
+}
+
+.tow-combat__plate {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(8rem, 18rem);
+  gap: 0.45rem 1.1rem;
+  align-items: end;
+  width: min(88%, 32rem);
+  padding: 0.8rem 1rem 0.85rem;
+  border: 1px solid rgba(220, 202, 161, 0.18);
+  border-radius: 0.85rem;
+  background:
+    linear-gradient(100deg, rgba(8, 13, 14, 0.89), rgba(9, 15, 16, 0.67) 74%, rgba(9, 15, 16, 0.28));
+  box-shadow: 0 0.8rem 2.2rem rgba(0,0,0,0.34), inset 0 1px rgba(255,255,255,0.035);
+  backdrop-filter: blur(9px);
+}
+
+.tow-combat__plate--enemy {
+  right: 0;
+  bottom: 1.25rem;
+  border-left-color: rgba(207, 89, 75, 0.6);
+}
+
+.tow-combat__plate--hero {
+  bottom: 0.75rem;
+  left: 0;
+  border-left-color: rgba(218, 178, 102, 0.63);
+}
+
+.tow-combat__identity span {
+  display: block;
+  margin-bottom: 0.17rem;
+  font-size: 0.55rem;
+  font-weight: 850;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tow-gold);
+}
+
+.tow-combat__plate--enemy .tow-combat__identity span { color: var(--tow-danger-bright); }
+
+.tow-combat__identity h2 {
+  margin: 0;
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: clamp(1.25rem, 2.4vw, 1.85rem);
+  font-weight: 400;
+  line-height: 1;
+  text-wrap: balance;
+  color: #fff3da;
+}
+
+.tow-combat__vitals {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  align-self: center;
+}
+
+.tow-combat__bar {
+  position: relative;
+  overflow: hidden;
+  height: 0.42rem;
+  border-radius: 99px;
+  background: rgba(0,0,0,0.62);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.07);
+}
+
+.tow-combat__bar-hp,
+.tow-combat__bar-shield {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 220ms ease-out;
+}
+
+.tow-combat__bar-hp { background: linear-gradient(90deg, #819c70, var(--tow-vital)); }
+.tow-combat__vitals--enemy .tow-combat__bar-hp { background: linear-gradient(90deg, #9f4139, #db6959); }
+.tow-combat__bar-shield { background: linear-gradient(90deg, #68a2bc, var(--tow-ward)); }
+
+.tow-combat__hp {
+  display: flex;
+  gap: 0.28rem;
+  align-items: baseline;
+  margin: 0;
+  font-size: 0.67rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--tow-muted);
+}
+
+.tow-combat__hp strong { font-size: 0.9rem; color: var(--tow-ink); }
+.tow-combat__hp em { margin-left: auto; font-style: normal; color: var(--tow-ward); }
+
+.tow-combat__statuses {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tow-combat__status {
+  display: inline-flex;
+  gap: 0.28rem;
+  align-items: center;
+  padding: 0.15rem 0.38rem;
+  border: 1px solid rgba(216, 174, 101, 0.25);
+  border-radius: 99px;
+  background: rgba(3, 8, 9, 0.54);
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #bcc8c0;
+}
+
+.tow-combat__status strong { color: var(--tow-gold-bright); }
+
+/* The declared blow occupies the negative space, not a full-width log panel. */
+
+.tow-combat__exchange {
+  position: absolute;
+  z-index: 12;
+  top: 40%;
+  left: 50%;
+  width: min(29vw, 21rem);
+  min-width: 16rem;
+  transform: translate(-50%, -50%);
+}
+
+.tow-combat__telegraph {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.15rem 0.9rem;
+  align-items: end;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(222, 111, 91, 0.34);
+  border-radius: 0.85rem;
+  background: linear-gradient(110deg, rgba(34, 14, 13, 0.84), rgba(7, 13, 14, 0.73));
+  box-shadow: 0 1rem 2.5rem rgba(0,0,0,0.35), inset 0 1px rgba(255,255,255,0.035);
+  backdrop-filter: blur(10px);
+}
+
+.tow-combat__telegraph-kicker {
+  grid-column: 1;
+  font-size: 0.55rem;
+  font-weight: 850;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--tow-danger-bright);
+}
+
+.tow-combat__telegraph-name {
+  grid-column: 1;
+  overflow: hidden;
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: clamp(1.1rem, 2vw, 1.45rem);
+  font-weight: 400;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ffe1d6;
+}
+
+.tow-combat__telegraph-damage {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.tow-combat__telegraph-damage b {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: 1.8rem;
+  font-weight: 400;
+  line-height: 0.95;
+  color: #ff9c88;
+}
+
+.tow-combat__telegraph-damage small {
+  margin-top: 0.16rem;
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: rgba(255, 193, 177, 0.58);
+}
+
+.tow-combat__incoming {
+  display: flex;
+  gap: 0.45rem;
+  justify-content: flex-end;
+  align-items: baseline;
+  margin: 0.4rem 0.85rem 0;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(231, 195, 184, 0.65);
+}
+
+.tow-combat__incoming strong {
+  font-size: 0.88rem;
+  color: var(--tow-danger-bright);
+}
+
+.tow-combat__foe-rail {
+  position: absolute;
+  z-index: 14;
+  top: 0.3rem;
+  right: 0;
+  display: flex;
+  gap: 0.4rem;
+  max-width: 46%;
+  overflow-x: auto;
+  padding: 0.15rem 0.2rem 0.3rem;
+  scrollbar-width: none;
+}
+
+.tow-combat__foe-rail::-webkit-scrollbar { display: none; }
+
+.tow-combat__foe-token {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 0.45rem auto auto;
+  gap: 0.35rem;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid rgba(222, 185, 141, 0.17);
+  border-radius: 99px;
+  background: rgba(6, 11, 13, 0.72);
+  color: var(--tow-muted);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.tow-combat__foe-token[aria-pressed="true"] {
+  border-color: rgba(232, 112, 93, 0.68);
+  background: rgba(53, 20, 17, 0.75);
+  color: #ffe8dc;
+  box-shadow: 0 0 0 1px rgba(232, 112, 93, 0.2);
+}
+
+.tow-combat__foe-token-state {
+  width: 0.38rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--tow-danger);
+  box-shadow: 0 0 0.65rem rgba(201, 94, 82, 0.6);
+}
+
+.tow-combat__foe-token-name { font-size: 0.66rem; font-weight: 750; white-space: nowrap; }
+.tow-combat__foe-token-hp { font-size: 0.6rem; font-variant-numeric: tabular-nums; color: var(--tow-faint); }
+.tow-combat__foe-token.is-down { opacity: 0.44; }
+
+.tow-combat__reserves {
+  position: absolute;
+  z-index: 14;
+  bottom: 0.25rem;
+  left: 0;
+  display: flex;
+  gap: 0.35rem;
+}
+
+.tow-combat__reserve {
+  display: flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  padding: 0.35rem 0.58rem;
+  border: 1px solid rgba(216,174,101,0.2);
+  border-radius: 99px;
+  background: rgba(6, 11, 13, 0.72);
+  font-size: 0.62rem;
+  color: var(--tow-muted);
+  backdrop-filter: blur(8px);
+}
+
+.tow-combat__reserve strong { font-variant-numeric: tabular-nums; color: var(--tow-gold); }
+.tow-combat__reserve.is-down { opacity: 0.45; }
+
+.tow-combat__alert {
+  position: relative;
+  z-index: 30;
+  margin: 0.4rem auto;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(220, 92, 75, 0.55);
+  border-radius: 0.7rem;
+  background: rgba(58, 20, 17, 0.86);
+  font-size: 0.76rem;
+  color: #ffe8e1;
+}
+
+/* Command deck: the only persistent surface with real density. */
+
+.tow-combat__command,
+.tow-combat__outcome {
+  position: relative;
+  z-index: 30;
+  align-self: end;
+  width: min(70rem, 100%);
+  margin: 0 auto;
+  border: 1px solid rgba(219, 191, 139, 0.2);
+  border-radius: 1.1rem;
+  background:
+    linear-gradient(180deg, rgba(14, 21, 22, 0.9), rgba(6, 10, 12, 0.96));
+  box-shadow: 0 -0.8rem 3rem rgba(0,0,0,0.36), inset 0 1px rgba(255,255,255,0.035);
+  backdrop-filter: blur(15px);
+}
+
+.tow-combat__command { padding: 0.75rem; }
+
+.tow-combat__command-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 1rem;
+  padding: 0 0.3rem 0.55rem;
+}
+
+.tow-combat__command-heading > div {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.tow-combat__command-heading span {
+  font-size: 0.53rem;
+  font-weight: 850;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tow-gold);
+}
+
+.tow-combat__command-heading > div strong {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: 1.18rem;
+  font-weight: 400;
+  color: var(--tow-ink);
+}
+
+.tow-combat__command-heading p {
+  display: flex;
+  gap: 0.3rem;
+  align-items: baseline;
+  margin: 0;
+}
+
+.tow-combat__command-heading p strong {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: 1.45rem;
+  font-weight: 400;
+  color: var(--tow-gold-bright);
+}
+
+.tow-combat__commanders {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding: 0 0.1rem 0.5rem;
+  scrollbar-width: none;
+}
+
+.tow-combat__commanders::-webkit-scrollbar { display: none; }
+
+.tow-combat__commander {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: baseline;
+  padding: 0.3rem 0.62rem;
+  border: 1px solid rgba(218,174,101,0.2);
+  border-radius: 99px;
+  background: rgba(4,9,10,0.44);
+  color: var(--tow-muted);
+  cursor: pointer;
+}
+
+.tow-combat__commander span { font-size: 0.66rem; font-weight: 720; }
+.tow-combat__commander strong { font-size: 0.65rem; color: var(--tow-gold); }
+
+.tow-combat__commander.is-selected {
+  border-color: rgba(230, 190, 112, 0.58);
+  color: #fff2d6;
+  background: rgba(90, 67, 29, 0.28);
+}
+
+.tow-combat__actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.6rem, 1fr));
+  gap: 0.42rem;
+}
+
+.tow-combat__action {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  min-height: 4rem;
+  padding: 0.48rem 0.58rem;
+  overflow: hidden;
+  border: 1px solid rgba(216, 174, 101, 0.27);
+  border-radius: 0.78rem;
+  background:
+    radial-gradient(circle at 20% 30%, rgba(208, 161, 79, 0.09), transparent 44%),
+    linear-gradient(145deg, rgba(30, 32, 25, 0.84), rgba(9, 14, 15, 0.8));
+  color: var(--tow-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, transform 100ms ease;
+}
+
+.tow-combat__action:hover:not(:disabled) {
+  border-color: rgba(239, 204, 135, 0.77);
+  background:
+    radial-gradient(circle at 20% 30%, rgba(232, 184, 95, 0.18), transparent 48%),
+    linear-gradient(145deg, rgba(48, 43, 29, 0.9), rgba(12, 18, 18, 0.84));
+}
+
+.tow-combat__action:active:not(:disabled) { transform: translateY(1px); }
+
+.tow-combat__action:disabled {
+  border-color: rgba(133, 151, 144, 0.14);
+  background: rgba(8,13,14,0.55);
+  color: rgba(195, 204, 197, 0.38);
+  cursor: not-allowed;
+}
+
+.tow-combat__action-glyph {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  aspect-ratio: 1;
+  border: 1px solid rgba(230, 190, 112, 0.32);
+  border-radius: 0.62rem;
+  background: rgba(2, 8, 9, 0.48);
+  color: var(--tow-gold-bright);
+  box-shadow: inset 0 0 1rem rgba(216,174,101,0.08);
+}
+
+.tow-combat__action--attack .tow-combat__action-glyph { color: #ed9277; border-color: rgba(218, 105, 82, 0.35); }
+.tow-combat__action--guard .tow-combat__action-glyph { color: #91c8ce; border-color: rgba(112, 174, 183, 0.35); }
+.tow-combat__action--recover .tow-combat__action-glyph { color: #b7cc8b; border-color: rgba(158, 184, 114, 0.35); }
+
+.tow-combat__action-glyph svg {
+  width: 1.55rem;
+  height: 1.55rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tow-combat__action-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.tow-combat__action-name {
+  overflow: hidden;
+  font-size: 0.76rem;
+  font-weight: 760;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tow-combat__action-meta {
+  display: flex;
+  gap: 0.36rem;
+  font-size: 0.52rem;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tow-faint);
+}
+
+.tow-combat__action-meta em { font-style: normal; color: #9bc4a9; }
+.tow-combat__action-why { font-size: 0.57rem; font-style: italic; color: rgba(225, 114, 92, 0.78); }
+
+.tow-combat__command-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  min-height: 1.2rem;
+  margin-top: 0.32rem;
+  padding: 0 0.25rem;
+}
+
+.tow-combat__hold {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.64rem;
+  color: rgba(216,174,101,0.75);
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+  cursor: pointer;
+}
+
+.tow-combat__save {
+  margin: 0;
+  font-size: 0.58rem;
+  color: var(--tow-faint);
+}
+
+/* Terminal state reuses the scene as an outcome illustration. */
+
+.tow-combat__outcome {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) auto minmax(12rem, 1fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+}
+
+.tow-combat__outcome-heading span {
+  display: block;
+  font-size: 0.55rem;
+  font-weight: 850;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--tow-gold);
+}
+
+.tow-combat__outcome-heading strong {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: 1.4rem;
+  font-weight: 400;
+}
+
+.tow-combat__tally {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 1.2rem;
+  margin: 0;
+}
+
+.tow-combat__tally div { text-align: center; }
+.tow-combat__tally dt { font-size: 0.5rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--tow-faint); }
+.tow-combat__tally dd { margin: 0.16rem 0 0; font-size: 0.85rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--tow-ink); }
+
+.tow-combat__settle {
+  justify-self: end;
+  display: inline-flex;
+  gap: 0.65rem;
+  justify-content: center;
+  align-items: center;
+  min-width: 11rem;
+  padding: 0.72rem 0.95rem;
+  border: 1px solid rgba(239, 207, 143, 0.58);
+  border-radius: 0.72rem;
+  background: linear-gradient(135deg, #bd8c3f, #e2b766);
+  color: #11110d;
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tow-combat__settle:hover { background: linear-gradient(135deg, #d39e48, #f0cc83); }
+
+.tow-combat :is(button, [tabindex]):focus-visible {
+  outline: 2px solid var(--tow-gold-bright);
+  outline-offset: 2px;
+}
+
+@media (max-width: 58rem) {
+  .tow-combat__stage {
+    grid-template-rows: auto minmax(25rem, 1fr) auto;
+    padding-inline: max(0.7rem, env(safe-area-inset-left, 0px));
+  }
+
+  .tow-combat__header { min-height: 3.8rem; }
+  .tow-combat__heading p { display: none; }
+  .tow-combat__battlefield { min-height: 25rem; }
+  .tow-combat__threat { width: 60vw; right: -11vw; }
+  .tow-combat__hero { width: 62vw; left: -12vw; }
+  .tow-combat__exchange { top: 39%; width: 14.5rem; min-width: 0; }
+  .tow-combat__plate { width: min(90%, 25rem); grid-template-columns: minmax(6rem, auto) minmax(7rem, 13rem); }
+  .tow-combat__identity h2 { font-size: 1.18rem; }
+  .tow-combat__foe-rail { max-width: 62%; }
+  .tow-combat__actions { grid-template-columns: repeat(auto-fit, minmax(8.4rem, 1fr)); }
+  .tow-combat__outcome { grid-template-columns: 1fr; }
+  .tow-combat__settle { justify-self: stretch; }
+}
+
+@media (max-width: 38rem) {
+  .tow-combat__stage {
+    display: flex;
+    flex-direction: column;
+    min-height: 100svh;
+    padding-top: max(0.55rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .tow-combat__header {
+    flex: 0 0 auto;
+    grid-template-columns: auto 1fr;
+    min-height: 3.2rem;
+  }
+
+  .tow-combat__heading { justify-self: end; text-align: right; }
+  .tow-combat__heading h1 { font-size: 1.35rem; }
+  .tow-combat__round strong { font-size: 1.35rem; }
+
+  .tow-combat__battlefield {
+    flex: 1 1 auto;
+    min-height: 23rem;
+    max-height: 54svh;
+  }
+
+  .tow-combat__threat {
+    top: -0.5rem;
+    right: -22vw;
+    width: 82vw;
+    height: 64%;
+  }
+
+  .tow-combat__hero {
+    bottom: -1rem;
+    left: -24vw;
+    width: 86vw;
+    height: 68%;
+  }
+
+  .tow-combat__art--foe .tow-combat__art-image { object-position: 58% 8%; transform: scale(1.12); }
+  .tow-combat__art--hero .tow-combat__art-image { object-position: 44% 100%; transform: scale(1.14); }
+
+  .tow-combat__plate {
+    width: min(82vw, 19rem);
+    grid-template-columns: minmax(5rem, auto) minmax(6.5rem, 1fr);
+    gap: 0.3rem 0.65rem;
+    padding: 0.55rem 0.65rem 0.6rem;
+    border-radius: 0.68rem;
+  }
+
+  .tow-combat__plate--enemy { right: 18vw; bottom: -0.45rem; }
+  .tow-combat__plate--hero { bottom: -0.1rem; left: 22vw; }
+  .tow-combat__identity span { font-size: 0.46rem; }
+  .tow-combat__identity h2 { font-size: 1rem; }
+  .tow-combat__hp { font-size: 0.57rem; }
+  .tow-combat__hp strong { font-size: 0.72rem; }
+  .tow-combat__statuses { display: none; }
+
+  .tow-combat__exchange {
+    top: 47%;
+    left: 50%;
+    width: min(76vw, 17rem);
+  }
+
+  .tow-combat__telegraph { padding: 0.58rem 0.65rem; }
+  .tow-combat__telegraph-name { font-size: 1.05rem; }
+  .tow-combat__telegraph-damage b { font-size: 1.4rem; }
+  .tow-combat__incoming { display: none; }
+
+  .tow-combat__foe-rail {
+    top: 0;
+    right: 0;
+    max-width: 74%;
+  }
+
+  .tow-combat__foe-token { grid-template-columns: 0.35rem auto; padding: 0.3rem 0.45rem; }
+  .tow-combat__foe-token-hp { display: none; }
+  .tow-combat__reserves { display: none; }
+
+  .tow-combat__command {
+    flex: 0 0 auto;
+    width: 100%;
+    padding: 0.55rem;
+    border-radius: 0.9rem;
+  }
+
+  .tow-combat__command-heading { padding-bottom: 0.4rem; }
+  .tow-combat__command-heading > div strong { font-size: 1rem; }
+  .tow-combat__command-heading p strong { font-size: 1.15rem; }
+  .tow-combat__actions {
+    display: flex;
+    gap: 0.38rem;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    padding-bottom: 0.15rem;
+  }
+  .tow-combat__actions::-webkit-scrollbar { display: none; }
+
+  .tow-combat__action {
+    flex: 0 0 9.15rem;
+    grid-template-columns: 2.15rem minmax(0, 1fr);
+    min-height: 3.65rem;
+    padding: 0.42rem;
+    scroll-snap-align: start;
+  }
+
+  .tow-combat__action-glyph { width: 2.15rem; }
+  .tow-combat__action-glyph svg { width: 1.35rem; height: 1.35rem; }
+  .tow-combat__action-name { font-size: 0.7rem; }
+  .tow-combat__command-foot { display: none; }
+
+  .tow-combat.is-terminal .tow-combat__battlefield { min-height: 33rem; max-height: none; }
+  .tow-combat__outcome { width: 100%; padding: 0.75rem; }
+  .tow-combat__tally { justify-content: space-between; }
+}
+
+@media (max-height: 46rem) and (min-width: 39rem) {
+  .tow-combat__stage { grid-template-rows: auto minmax(19rem, 1fr) auto; }
+  .tow-combat__header { min-height: 3rem; }
+  .tow-combat__battlefield { min-height: 19rem; }
+  .tow-combat__heading p { display: none; }
+  .tow-combat__command { padding: 0.55rem; }
+  .tow-combat__action { min-height: 3.4rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tow-combat *,
+  .tow-combat *::before,
+  .tow-combat *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+  }
+}

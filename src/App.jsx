@@ -3015,7 +3015,7 @@ export function Solitaire() {
   function handleArchetypeBegin(draft) {
     const setup = characterSetupForArchetype(draft);
     if (!setup) {
-      setQuickStartError("Give this character a name before entering Whitemarch.");
+      setQuickStartError("That character could not be prepared for Whitemarch.");
       return;
     }
     const compiled = compileCharacterBootstrap({
@@ -4311,8 +4311,8 @@ export function Solitaire() {
       )}
 
 
-      {/* One reversible start. Practice temporarily covers it; the controlled draft remains
-          in App, so returning restores the same mechanics, face, and name. */}
+      {/* One reversible authored-character start. Practice temporarily covers it; the
+          controlled draft remains in App, so returning restores the same preview. */}
       {showCreationHub && practiceDraft && (
         <PracticeFight
           receipt={practiceDraft.receipt}
@@ -4534,6 +4534,7 @@ export function Solitaire() {
         <TowCombatView
           encounter={combat}
           note={combatSession?.context?.source?.note}
+          playerPortraitKey={state.character?.portraitKey}
           onUseSkill={onCombatUseSkill}
           onStandDown={onCombatStandDown}
           onSettle={handleResolveCombat}
