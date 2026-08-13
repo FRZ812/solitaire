@@ -12,3 +12,25 @@ describe("Quick Start layout", () => {
     expect(shellRule).toContain("overflow-y: auto");
   });
 });
+
+describe("Practice result layout", () => {
+  it("owns the viewport the same way the fight it replaces does", () => {
+    // The fight is a fixed full-screen overlay and the result screen replaces it in the same
+    // instant. As a plain section it fell into normal document flow the moment the last blow
+    // landed — rendered off-screen behind the story shell, disturbing that shell's layout on
+    // the way past, so the fight appeared to end in nothing and the composer floated to
+    // mid-screen. Mounted but invisible is the worst of both: no error to find, and the
+    // player is simply stuck.
+    const rule = quickStartCss.match(/\.practice-fight--result,\s*\.practice-fight--failed\s*\{([^}]*)\}/)?.[1] || "";
+    expect(rule).toContain("position: fixed");
+    expect(rule).toContain("inset: 0");
+    expect(rule).toContain("overflow: auto");
+    // Same stacking as .production-combat, because these two are one surface to the player.
+    expect(rule).toContain("z-index: 10020");
+  });
+
+  it("keeps the reading width the card had before it became an overlay", () => {
+    const rule = quickStartCss.match(/\.practice-fight--result > \*,\s*\.practice-fight--failed > \*\s*\{([^}]*)\}/)?.[1] || "";
+    expect(rule).toContain("40rem");
+  });
+});
