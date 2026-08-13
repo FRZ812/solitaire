@@ -26,6 +26,7 @@ import { cloneJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import {
   actionsLeftFor,
+  attemptRetreat as encounterAttemptRetreat,
   endTurn as encounterEndTurn,
   playerSideIds,
   skipTurn as encounterSkipTurn,
@@ -42,10 +43,8 @@ export const TOW_COMMAND_VERSION = 1;
 /**
  * Every command type the session schema admits.
  *
- * `attempt-retreat` and `accept-surrender` are declared but not yet resolvable: neither has
- * an authored rule, and the terminal resolver's `fled`/`yielded` states are reached in a
- * later phase. They are listed rather than omitted so an attempt is refused with a reason a
- * player can read, instead of falling through to "nothing happened".
+ * Surrender is declared but not yet resolvable. Retreat is a first-class replayed command:
+ * its party comparison and roll live in the encounter.
  */
 export const TOW_COMMAND_TYPES = Object.freeze([
   "use-skill",
@@ -55,7 +54,12 @@ export const TOW_COMMAND_TYPES = Object.freeze([
   "accept-surrender",
 ]);
 
-const RESOLVABLE_COMMAND_TYPES = Object.freeze(["use-skill", "end-turn", "stand-down"]);
+const RESOLVABLE_COMMAND_TYPES = Object.freeze([
+  "use-skill",
+  "end-turn",
+  "stand-down",
+  "attempt-retreat",
+]);
 
 const COMMAND_INPUT_KEYS = Object.freeze([
   "actorId",
@@ -138,9 +142,6 @@ export function validateTowCommand(session, command) {
     return { ok: false, reason: "unknown-actor" };
   }
   if (!RESOLVABLE_COMMAND_TYPES.includes(command.type)) {
-    if (command.type === "attempt-retreat" && session.context.retreatPolicy === "forbidden") {
-      return { ok: false, reason: "retreat-not-admitted" };
-    }
     if (command.type === "accept-surrender") {
       return { ok: false, reason: "no-surrender-offered" };
     }
@@ -208,6 +209,8 @@ export function resolveTowCommandOnEncounter(before, command) {
   let result;
   if (command.type === "use-skill") {
     result = encounterUseSkill(before, command.skillId, command.targetId, actorId);
+  } else if (command.type === "attempt-retreat") {
+    result = encounterAttemptRetreat(before, actorId);
   } else if (command.type === "stand-down") {
     result = encounterSkipTurn(before, actorId);
   } else if (command.type === "end-turn") {
@@ -333,7 +336,7 @@ export function dispatchTowPlayerAction(session, input) {
   const primary = dispatchTowCommand(session, input);
   const canAutoAdvance = primary.ok
     && !primary.duplicate
-    && (primary.command?.type === "use-skill" || primary.command?.type === "stand-down")
+    && ["use-skill", "stand-down", "attempt-retreat"].includes(primary.command?.type)
     && playerSideIsSpent(primary.session.encounter);
 
   if (!canAutoAdvance) {

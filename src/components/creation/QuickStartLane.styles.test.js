@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const quickStartCss = readFileSync(new URL("./quick-start.css", import.meta.url), "utf8");
+const characterSelectCss = readFileSync(new URL("./character-select-polish.css", import.meta.url), "utf8");
 
 describe("Quick Start layout", () => {
   it("owns the viewport instead of shrinking the game HUD behind it", () => {
@@ -10,6 +11,12 @@ describe("Quick Start layout", () => {
     expect(shellRule).toContain("inset: 0");
     expect(shellRule).toContain("z-index: 60");
     expect(shellRule).toContain("overflow-y: auto");
+  });
+
+  it("keeps the padded character preview inside the viewport", () => {
+    const stageRule = characterSelectCss.match(/\.character-preview__stage\s*\{([^}]*)\}/)?.[1] || "";
+    expect(stageRule).toContain("box-sizing: border-box");
+    expect(stageRule).toContain("width: min(1280px, 100%)");
   });
 });
 

@@ -222,7 +222,12 @@ const STATE_WORDS = Object.freeze({
 export function renderCombatChronicle(chronicle) {
   if (!chronicle) return "";
   const lines = [];
-  lines.push(`[COMBAT REPORT] ${chronicle.outcome === "victory" ? "The player's side won" : "The player went down"} after ${chronicle.rounds} ${chronicle.rounds === 1 ? "round" : "rounds"} at ${chronicle.location || "an unnamed place"}.`);
+  const outcome = chronicle.outcome === "victory"
+    ? "The player's side won"
+    : chronicle.outcome === "retreated"
+      ? "The player's side broke contact; there was no victor"
+      : "The player went down";
+  lines.push(`[COMBAT REPORT] ${outcome} after ${chronicle.rounds} ${chronicle.rounds === 1 ? "round" : "rounds"} at ${chronicle.location || "an unnamed place"}.`);
   if (chronicle.cause) lines.push(`Cause: ${chronicle.cause}.`);
   lines.push(
     `Stakes: foes ${chronicle.stakes.lethalPolicy}; the player's life ${chronicle.stakes.playerStakes === "lethal" ? "was at risk" : "was not at risk"}.`,
@@ -268,6 +273,9 @@ export function chronicleSummary(chronicle) {
   const allies = chronicle.participants.filter(
     (row) => row.side === "ally" && row.combatState !== "standing",
   );
+  if (chronicle.outcome === "retreated") {
+    return `You broke contact after ${chronicle.rounds} ${chronicle.rounds === 1 ? "round" : "rounds"}. The fight ended without a victor.`;
+  }
   if (chronicle.outcome !== "victory") {
     return `You went down after ${chronicle.rounds} ${chronicle.rounds === 1 ? "round" : "rounds"}.`;
   }

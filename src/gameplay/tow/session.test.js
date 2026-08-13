@@ -158,7 +158,7 @@ describe("the admission's defaults", () => {
     const context = towCombatContext();
     expect(context.lethalPolicy).toBe("nonlethal");
     expect(context.playerStakes).toBe("survivable");
-    expect(context.retreatPolicy).toBe("forbidden");
+    expect(context.retreatPolicy).toBe("allowed");
   });
 
   it("lets a participant's own lethality override a mixed policy", () => {

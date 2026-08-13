@@ -257,6 +257,7 @@ export function CombatLab({ onExit }) {
             type: "use-skill", skillId, targetId: targetId ?? null, actorId: actorId ?? null,
           })}
           onStandDown={(actorId) => dispatch({ type: "stand-down", actorId: actorId ?? null })}
+          onRetreat={(actorId) => dispatch({ type: "attempt-retreat", actorId: actorId ?? null })}
           onSettle={() => {}}
         />
       </div>

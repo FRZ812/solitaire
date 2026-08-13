@@ -84,7 +84,11 @@ export function PracticeFight({ receipt, scenarioId, onExit }) {
   if (result) {
     return (
       <section className="practice-fight practice-fight--result" aria-label="Practice result">
-        <h2>{result.outcome === "victory" ? "You won that one" : "That one went against you"}</h2>
+        <h2>
+          {result.outcome === "victory"
+            ? "You won that one"
+            : result.outcome === "retreated" ? "You got clear" : "That one went against you"}
+        </h2>
         <p className="practice-fight__summary">{chronicleSummary(result.chronicle)}</p>
         <p className="practice-fight__note">
           Nothing here was written down. Your character is exactly as you left them.
@@ -117,6 +121,9 @@ export function PracticeFight({ receipt, scenarioId, onExit }) {
       playerPortraitKey={playerPortraitKey}
       weaponFor={() => weaponPresentation}
       error={feedback}
+      onEscape={onExit}
+      escapeLabel="Leave practice"
+      onRetreat={(actorId) => dispatch({ type: "attempt-retreat", actorId: actorId ?? null })}
       onUseSkill={(skillId, targetId, actorId) => dispatch({
         type: "use-skill", skillId, targetId: targetId ?? null, actorId: actorId ?? null,
       })}

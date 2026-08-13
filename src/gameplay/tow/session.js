@@ -244,9 +244,9 @@ function isContext(value) {
 /**
  * Fill a partial admission out to a complete, valid context.
  *
- * Every default here is the conservative one. Unstated lethality is a brawl, unstated stakes
- * are survivable, and an unstated retreat policy forbids it — a caller that has not been
- * taught a distinction cannot accidentally authorize a death by omission.
+ * Every default here is conservative around death: unstated lethality is a brawl and
+ * unstated stakes are survivable. Retreat is universal; the policy field stays in the
+ * admission so existing saved sessions retain their exact shape.
  */
 export function towCombatContext(input = {}) {
   const loot = input.lootPolicy || {};
@@ -276,7 +276,7 @@ export function towCombatContext(input = {}) {
     detectionFacts: { hidden: Boolean(input.detectionFacts?.hidden) },
     lethalPolicy: TOW_LETHAL_POLICIES.includes(input.lethalPolicy) ? input.lethalPolicy : "nonlethal",
     playerStakes: TOW_PLAYER_STAKES.includes(input.playerStakes) ? input.playerStakes : "survivable",
-    retreatPolicy: TOW_RETREAT_POLICIES.includes(input.retreatPolicy) ? input.retreatPolicy : "forbidden",
+    retreatPolicy: TOW_RETREAT_POLICIES.includes(input.retreatPolicy) ? input.retreatPolicy : "allowed",
     lootPolicy: {
       maxLootTier: typeof loot.maxLootTier === "string" || Number.isSafeInteger(loot.maxLootTier)
         ? loot.maxLootTier

@@ -3167,7 +3167,7 @@ export function Solitaire() {
         // dying, and could in principle have come out differently than when the player
         // agreed to the fight.
         playerStakes: lethal && isEpicEncounter(null, { sources: enemies }) ? "lethal" : "survivable",
-        retreatPolicy: "forbidden",
+        retreatPolicy: "allowed",
         lootPolicy: {
           maxLootTier: region.lootTier,
           region: region.level,
@@ -3551,8 +3551,9 @@ export function Solitaire() {
 
 [DEFEATED — ENGINE SETTLED] The engine-settled defeat is final: ${flavor || "the foe"} left the player unconscious at ${place}; the player survives there with canonical vitality and conditions already applied, while inventory and location remain unchanged. ${lethal ? "Weapons were drawn; render the grave wounds already recorded." : "It was a bare-knuckle defeat; keep the external aftermath restrained."} Narrate only the foe, witnesses, surroundings, and passage of the immediate moment. Do not invent player speech, consent, intent, emotion, waking action, or any mechanical consequence.`;
     } else {
-      const outcomeLine = cs.phase === "victory" ? "You won — every foe is slain or down."
-        : "You broke off and fled the fight.";
+      const outcomeLine = cs.phase === "victory"
+        ? "You won — every foe is slain or down."
+        : "You broke contact and escaped; the foes remain alive and the fight has no victor.";
       msg = `${report}
 
 [COMBAT OVER] ${outcomeLine} At ${place}. Narrate the immediate aftermath STRICTLY from the [COMBAT REPORT] — name the actual foe(s) and their exact fates, the room's reaction, your state — then leave the moment open for the player to react. A foe that yielded is present, beaten, and at your mercy: refer to THEM by name; do NOT introduce or substitute a different character to take the foe's place. Do not restart combat.`;
@@ -3796,6 +3797,10 @@ export function Solitaire() {
   });
   const onCombatStandDown = (actorId) => dispatchCombatCommand({
     type: "stand-down",
+    actorId: actorId ?? null,
+  });
+  const onCombatRetreat = (actorId) => dispatchCombatCommand({
+    type: "attempt-retreat",
     actorId: actorId ?? null,
   });
 
@@ -4551,6 +4556,7 @@ export function Solitaire() {
           }}
           onUseSkill={onCombatUseSkill}
           onStandDown={onCombatStandDown}
+          onRetreat={onCombatRetreat}
           onSettle={handleResolveCombat}
         />
       )}
