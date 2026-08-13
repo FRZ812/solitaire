@@ -104,7 +104,6 @@ function actionsLeft(encounter, actorId) {
 export function TowCombatView({
   encounter,
   onUseSkill,
-  onEndTurn,
   onStandDown,
   onSettle,
   note,
@@ -126,8 +125,11 @@ export function TowCombatView({
   // One command window covers the whole side. The player picks whose action to spend, and
   // an ally who does nothing did nothing because the player said so.
   const commandable = [player, ...allies].filter((actor) => actor.hp > 0);
-  const activeCommander = commandable.find((actor) => actor.id === commanderId)
+  const activeCommander = commandable.find((actor) => (
+    actor.id === commanderId && actionsLeft(encounter, actor.id) > 0
+  ))
     || commandable.find((actor) => actionsLeft(encounter, actor.id) > 0)
+    || commandable.find((actor) => actor.id === commanderId)
     || commandable[0]
     || player;
   const commanderBuild = activeCommander.id === encounter.playerId
@@ -306,9 +308,6 @@ export function TowCombatView({
                   : `${activeCommander.name} holds`}
               </button>
             ) : null}
-            <button type="button" className="production-combat__settle" onClick={onEndTurn}>
-              End turn
-            </button>
           </>
         ) : (
           <section className="production-combat__outcome" aria-live="assertive">

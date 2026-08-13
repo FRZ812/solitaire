@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   dispatchTowCommand,
+  dispatchTowPlayerAction,
   towCommandEvents,
   towSessionEvents,
   validateTowCommand,
@@ -16,7 +17,9 @@ function open(overrides = {}) {
       name: "Wanderer",
       maxHp: 170,
       stats: { attack: 12, defense: 13, critRate: 0, dodgeRate: 0 },
+      ...overrides.player,
     },
+    allies: overrides.allies || [],
     enemies: overrides.enemies || [{
       id: "foe-0",
       name: "Bandit",
@@ -29,6 +32,18 @@ function open(overrides = {}) {
   });
   if (!opened.ok) throw new Error(opened.reason);
   return opened.session;
+}
+
+function playerAction(session, input = {}) {
+  const type = input.type || "use-skill";
+  return dispatchTowPlayerAction(session, {
+    id: input.id || `player-${session.revision}`,
+    expectedRevision: session.revision,
+    type,
+    actorId: input.actorId ?? "wanderer",
+    skillId: type === "use-skill" ? (input.skillId ?? "strike") : null,
+    targetId: type === "use-skill" ? (input.targetId ?? "foe-0") : null,
+  });
 }
 
 function strike(session, id = "cmd-1", targetId = "foe-0") {
@@ -82,6 +97,88 @@ describe("accepting a command", () => {
     const before = JSON.stringify(session);
     strike(session);
     expect(JSON.stringify(session)).toBe(before);
+  });
+});
+
+describe("interactive turn advancement", () => {
+  it("answers an ordinary turn-consuming action automatically", () => {
+    const session = open();
+    const result = playerAction(session);
+
+    expect(result.ok).toBe(true);
+    expect(result.autoAdvanced).toBe(true);
+    expect(result.session.revision).toBe(2);
+    expect(result.session.commands.map((command) => command.type))
+      .toEqual(["use-skill", "end-turn"]);
+    expect(result.session.encounter.round).toBe(2);
+    expect(result.session.encounter.turn.actionsRemaining).toBe(1);
+  });
+
+  it("spends Haste actions before allowing the enemy to answer", () => {
+    let session = open({ player: { statuses: [{ type: "haste", count: 1 }] } });
+    expect(session.encounter.turn.actionsRemaining).toBe(2);
+
+    const first = playerAction(session, { id: "hasted-1" });
+    expect(first.ok).toBe(true);
+    expect(first.autoAdvanced).toBe(false);
+    expect(first.session.revision).toBe(1);
+    expect(first.session.encounter.round).toBe(1);
+    expect(first.session.encounter.turn.actionsRemaining).toBe(1);
+
+    session = first.session;
+    const second = playerAction(session, { id: "hasted-2" });
+    expect(second.ok).toBe(true);
+    expect(second.autoAdvanced).toBe(true);
+    expect(second.session.commands.map((command) => command.type))
+      .toEqual(["use-skill", "use-skill", "end-turn"]);
+    expect(second.session.encounter.round).toBe(2);
+  });
+
+  it("keeps the command window open after a free defensive action", () => {
+    const session = open({ build: { skills: ["strike", "emergency-evasion"] } });
+    const result = playerAction(session, {
+      id: "evade-free",
+      skillId: "emergency-evasion",
+      targetId: null,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.autoAdvanced).toBe(false);
+    expect(result.session.revision).toBe(1);
+    expect(result.session.commands.map((command) => command.type)).toEqual(["use-skill"]);
+    expect(result.session.encounter.round).toBe(1);
+    expect(result.session.encounter.turn.actionsRemaining).toBe(1);
+  });
+
+  it("waits for every living companion before advancing the enemy", () => {
+    const ally = {
+      id: "kestrel",
+      name: "Kestrel",
+      maxHp: 80,
+      stats: { attack: 8, defense: 5, critRate: 0, dodgeRate: 0 },
+      build: { traits: {}, skills: ["strike", "block"] },
+    };
+    let session = open({ allies: [ally] });
+
+    const protagonist = playerAction(session, { id: "party-player" });
+    expect(protagonist.ok).toBe(true);
+    expect(protagonist.autoAdvanced).toBe(false);
+    expect(protagonist.session.encounter.turn.actionsRemaining).toBe(0);
+    expect(protagonist.session.encounter.turn.allies.kestrel).toBe(1);
+
+    session = protagonist.session;
+    const allyHolds = playerAction(session, {
+      id: "party-ally-holds",
+      type: "stand-down",
+      actorId: "kestrel",
+      skillId: null,
+      targetId: null,
+    });
+    expect(allyHolds.ok).toBe(true);
+    expect(allyHolds.autoAdvanced).toBe(true);
+    expect(allyHolds.session.commands.map((command) => command.type))
+      .toEqual(["use-skill", "stand-down", "end-turn"]);
+    expect(allyHolds.session.encounter.round).toBe(2);
   });
 });
 

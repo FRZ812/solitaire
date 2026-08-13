@@ -13,7 +13,7 @@
 import "./quick-start.css";
 import React, { useCallback, useMemo, useState } from "react";
 import { TowCombatView } from "../combat/TowCombatView.jsx";
-import { dispatchTowCommand } from "../../gameplay/tow/commands.js";
+import { dispatchTowPlayerAction } from "../../gameplay/tow/commands.js";
 import { sealTowTerminalReceipt } from "../../gameplay/tow/outcomes.js";
 import { chronicleSummary } from "../../gameplay/tow/chronicle.js";
 import {
@@ -39,7 +39,7 @@ export function PracticeFight({ receipt, scenarioId, onExit }) {
       if (!current?.ok) return current;
       const session = current.session;
       const actorId = input.actorId ?? session.encounter.playerId;
-      const result = dispatchTowCommand(session, {
+      const result = dispatchTowPlayerAction(session, {
         ...input,
         id: [session.sessionId, session.revision, input.type, actorId, input.skillId]
           .filter((part) => part !== null && part !== undefined)
@@ -113,7 +113,6 @@ export function PracticeFight({ receipt, scenarioId, onExit }) {
       onUseSkill={(skillId, targetId, actorId) => dispatch({
         type: "use-skill", skillId, targetId: targetId ?? null, actorId: actorId ?? null,
       })}
-      onEndTurn={() => dispatch({ type: "end-turn" })}
       onStandDown={(actorId) => dispatch({ type: "stand-down", actorId: actorId ?? null })}
       onSettle={() => {}}
     />

@@ -157,11 +157,6 @@ function strikeButton(dialog) {
     .find((button) => /strike/i.test(button.textContent));
 }
 
-function endTurnButton(dialog) {
-  return [...dialog.querySelectorAll(".production-combat__settle")]
-    .find((button) => /end turn/i.test(button.textContent));
-}
-
 beforeAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   globalThis.requestAnimationFrame = (callback) => setTimeout(callback, 0);
@@ -201,6 +196,8 @@ describe("a fight survives a reload", () => {
     const mounted = await mountCampaign();
     const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
     expect(dialog.textContent).toContain("A brigand blocks the road.");
+    expect(dialog.textContent).not.toMatch(/end turn/i);
+    expect(dialog.querySelector(".production-combat__settle")).toBe(null);
     expect(decodeTowSession(savedSession()).session.revision).toBe(0);
   });
 
@@ -209,7 +206,6 @@ describe("a fight survives a reload", () => {
     let dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
 
     await click(strikeButton(dialog));
-    await click(endTurnButton(dialog));
     const beforeReload = await waitFor(() => {
       const decoded = decodeTowSession(savedSession());
       return decoded.ok && decoded.session.revision === 2 ? decoded.session : null;
@@ -239,14 +235,13 @@ describe("a fight survives a reload", () => {
     let dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
 
     // Strike until the captain is down. Thirty health against a fourteen-attack strike is
-    // three swings; end-turn between them so the foe gets to answer.
+    // three swings; each turn-consuming action lets the foe answer automatically.
     for (let round = 0; round < 8; round += 1) {
       const strike = strikeButton(dialog);
       if (!strike) break;
       await click(strike);
       const settle = dialog.querySelector(".production-combat__outcome");
       if (settle) break;
-      await click(endTurnButton(dialog));
     }
     await waitFor(() => dialog.querySelector(".production-combat__outcome"));
 
@@ -301,7 +296,6 @@ describe("readiness carries between fights", () => {
       if (!strike || dialog.querySelector(".production-combat__outcome")) break;
       await click(strike);
       if (dialog.querySelector(".production-combat__outcome")) break;
-      await click(endTurnButton(dialog));
     }
     await waitFor(() => dialog.querySelector(".production-combat__outcome"));
     const settle = [...dialog.querySelectorAll(".production-combat__settle")]
@@ -396,6 +390,20 @@ describe("a companion fights", () => {
     expect(afterAlly.encounter.turn.allies["ally-kestrel"]).toBe(0);
     expect(afterAlly.encounter.turn.actionsRemaining).toBe(1);
     expect(verifyTowSession(afterAlly)).toMatchObject({ ok: true });
+
+    // Once Kestrel has spent her action, control moves to the party member who can still
+    // act. Spending that last action advances the enemy without an End turn control.
+    const playerCommander = commanders.find((button) => button.textContent.includes("You"));
+    await waitFor(() => playerCommander.getAttribute("aria-pressed") === "true");
+    await click(strikeButton(dialog));
+    const afterSide = await waitFor(() => {
+      const decoded = decodeTowSession(savedSession());
+      return decoded.ok && decoded.session.revision === 3 ? decoded.session : null;
+    });
+    expect(afterSide.commands.map((command) => command.type))
+      .toEqual(["use-skill", "use-skill", "end-turn"]);
+    expect(afterSide.encounter.round).toBe(2);
+    expect(verifyTowSession(afterSide)).toMatchObject({ ok: true });
   });
 });
 
@@ -455,7 +463,6 @@ describe("a win is worth something the build keeps", () => {
       if (!strike || dialog.querySelector(".production-combat__outcome")) break;
       await click(strike);
       if (dialog.querySelector(".production-combat__outcome")) break;
-      await click(endTurnButton(dialog));
     }
     await waitFor(() => dialog.querySelector(".production-combat__outcome"));
     await click([...dialog.querySelectorAll(".production-combat__settle")]
@@ -490,7 +497,6 @@ describe("a win is worth something the build keeps", () => {
       if (!strike || dialog.querySelector(".production-combat__outcome")) break;
       await click(strike);
       if (dialog.querySelector(".production-combat__outcome")) break;
-      await click(endTurnButton(dialog));
     }
     await waitFor(() => dialog.querySelector(".production-combat__outcome"));
     await click([...dialog.querySelectorAll(".production-combat__settle")]
@@ -515,7 +521,6 @@ describe("the scene is owed even if the tab dies", () => {
       if (!strike || dialog.querySelector(".production-combat__outcome")) break;
       await click(strike);
       if (dialog.querySelector(".production-combat__outcome")) break;
-      await click(endTurnButton(dialog));
     }
     await waitFor(() => dialog.querySelector(".production-combat__outcome"));
     await click([...dialog.querySelectorAll(".production-combat__settle")]
@@ -572,7 +577,6 @@ describe("when the telling fails", () => {
       if (!strike || dialog.querySelector(".production-combat__outcome")) break;
       await click(strike);
       if (dialog.querySelector(".production-combat__outcome")) break;
-      await click(endTurnButton(dialog));
     }
     await waitFor(() => dialog.querySelector(".production-combat__outcome"));
     await click([...dialog.querySelectorAll(".production-combat__settle")]

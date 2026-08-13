@@ -153,11 +153,6 @@ describe("one click reaches a legal fight", () => {
         .find((button) => /strike/i.test(button.textContent) && !button.disabled);
       if (!strike) break;
       await click(strike);
-      if (!mounted.querySelector(".tow-combat")) break;
-      const endTurn = [...mounted.querySelectorAll(".production-combat__settle")]
-        .find((button) => /end turn/i.test(button.textContent));
-      if (!endTurn) break;
-      await click(endTurn);
     }
 
     const result = mounted.querySelector(".practice-fight--result");
@@ -181,9 +176,6 @@ describe("one click reaches a legal fight", () => {
         .find((button) => /strike/i.test(button.textContent) && !button.disabled);
       if (!strike) break;
       await click(strike);
-      const endTurn = [...mounted.querySelectorAll(".production-combat__settle")]
-        .find((button) => /end turn/i.test(button.textContent));
-      if (endTurn) await click(endTurn);
     }
 
     const before = mounted.querySelector(".practice-fight__receipt").textContent;
@@ -208,9 +200,6 @@ describe("one click reaches a legal fight", () => {
         .find((button) => !button.disabled);
       if (!strike) break;
       await click(strike);
-      const endTurn = [...mounted.querySelectorAll(".production-combat__settle")]
-        .find((button) => /end turn/i.test(button.textContent));
-      if (endTurn) await click(endTurn);
     }
     expect(JSON.stringify(compiled.receipt)).toBe(before);
   });
