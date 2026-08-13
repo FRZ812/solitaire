@@ -1,5 +1,6 @@
 import { SYSTEM_PROMPT } from "../system-prompt.js";
 import { buildStateContext } from "../engine/api.js";
+import { selectStateContext } from "../engine/narrator/context-sections.js";
 import { prepareNarratorHistory } from "../engine/narrator-history.js";
 import { normalizeNarratorSettings } from "../engine/narrator-settings.js";
 import { narratorMessageForPendingPlayers } from "../engine/timeline.js";
@@ -19,9 +20,11 @@ export function formatTokenCount(value) {
   return String(tokens);
 }
 
+// The preview has to show what is actually sent, so it selects the same way the request
+// does. A preview that rendered the unselected block would be reassuring and wrong.
 function safeStateContext(state) {
   try {
-    return state ? buildStateContext(state) : "";
+    return state ? selectStateContext(buildStateContext(state)).text : "";
   } catch {
     return "";
   }

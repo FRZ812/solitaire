@@ -1,4 +1,5 @@
 import { advanceTime, formatTime } from "./time.js";
+import { foldNarratorMemories } from "./narrator/memory-records.js";
 import { mergeDiscoveries, applyKnowledgeUpdates } from "./discoveries.js";
 import { applyInventoryChanges } from "./inventory.js";
 import { itemTemplate } from "../data/catalog.js";
@@ -268,7 +269,25 @@ export function applyBeat(state, beat, options = {}) {
   // campaign state. Provider retries and parallel tool calls can otherwise add
   // the same fact more than once.
   const memories = mergeMemoryBank(state.memories, beat._memories);
+  // The typed bank grows alongside the flat list rather than replacing it: every existing
+  // consumer keeps reading `memories`, while the bank gains what a string cannot carry —
+  // who a memory is about, whether it is a belief or something that happened, and enough
+  // structure to recognise a rephrasing as the same memory instead of a second one.
+  const memoryBank = foldNarratorMemories(state, beat._memoryProposals, {
+    revision: newBeats.length,
+  });
 
-  const nextState = { ...state, beats: newBeats, time: newTime, character, world, apiHistory: newHistory, party, created, memories };
+  const nextState = {
+    ...state,
+    beats: newBeats,
+    time: newTime,
+    character,
+    world,
+    apiHistory: newHistory,
+    party,
+    created,
+    memories,
+    memoryBank,
+  };
   return nextState;
 }

@@ -254,7 +254,14 @@ describe("narrator application trust boundary", () => {
       expect(appSource.slice(site.index + site[0].length, site.index + site[0].length + 80))
         .toContain("if (!beat) return;");
     }
-    expect(appSource).toContain("narrateSpecialized(next, msg, policyOptions)");
+    // The aftermath call used to take the post-settlement state as a captured local. It now
+    // reads the live ref and the claimed job's own payload, which is strictly fresher: the
+    // scene is generated against the state as it stands when the call goes out, not as it
+    // stood when the fight ended — and, after a crash, against the state the resumed job is
+    // actually being paid from.
+    expect(appSource).toMatch(
+      /await narrateSpecialized\(\s*liveStateRef\.current,\s*claimed\.job\.payload\.message,/,
+    );
     expect(appSource).toContain("narrateSpecialized(looted, msg, policyOptions)");
     expect(appSource).not.toContain("narrate(next, msg, () => true, null, policyOptions)");
     expect(appSource).not.toContain("narrate(looted, msg, () => true, null, policyOptions)");
@@ -298,9 +305,53 @@ describe("narrator application trust boundary", () => {
     // from applyCombatResult to settleTowEncounter when the deck engine retired; the
     // invariant — settle first, narrate second — is unchanged.
     expect(appSource).toContain("settleTowEncounter(state, cs,");
-    expect(appSource).toContain("const epicDeath = cs.phase === \"defeat\"");
+    // Permanent death is read off the terminal receipt, which read it off the admission
+    // recorded before the first blow. It is never re-derived at settlement from how the
+    // fight happened to go — that would mean the answer to "can I die here" only existed
+    // after dying.
+    expect(appSource).toContain("const epicDeath = receipt.playerWorldFate === \"dead\"");
+    expect(appSource).not.toContain("isEpicEncounter(cs,");
     expect(appSource).toContain("The engine-settled defeat is final");
     expect(appSource).not.toContain("const finalState = { ...narrated, ended }");
+  });
+
+  it("hands the narrator the combat report it is told to narrate from", () => {
+    // The aftermath prompt has always said "narrate STRICTLY from the [COMBAT REPORT]". For
+    // a long time no such report was built, so the model was instructed to be faithful to a
+    // document that did not exist — and had to invent the exact fates it was told to
+    // reproduce. Every aftermath message now carries the rendered Chronicle.
+    expect(appSource).toContain("const report = renderCombatChronicle(chronicle)");
+    const aftermathPrompts = appSource.match(/msg = `\$\{report\}/g) || [];
+    expect(aftermathPrompts.length).toBe(3);
+  });
+
+  it("restores readiness only from a rest the engine committed", () => {
+    // Not when a rest screen opens, not when a camp is interrupted, and not because a
+    // narrator described a pleasant night. Both restore sites sit behind an early return on
+    // a refused rest, and there are only two of them.
+    const restores = appSource.match(/readiness: restoreReadiness\(\)/g) || [];
+    expect(restores.length).toBe(2);
+    for (const handler of ["function handleRest(", "function handleHaltMakeCamp("]) {
+      const start = appSource.indexOf(handler);
+      expect(start).toBeGreaterThan(-1);
+      const body = appSource.slice(start, appSource.indexOf("restoreReadiness()", start));
+      expect(body).toContain("if (!r.ok)");
+      expect(body).toContain("return;");
+    }
+  });
+
+  it("puts every narrator turn through one gateway before applying it", () => {
+    // The whole point of the gateway is that there is exactly one door. A second application
+    // path would be a second door, and the receipts would stop describing what happened.
+    const applicationSource = readFileSync(
+      new URL("./narrator-turn-application.js", import.meta.url),
+      "utf8",
+    );
+    expect(applicationSource).toContain("resolveNarratorIntents(state, turn,");
+    // The reducer sees the governed turn, never the raw one.
+    expect(applicationSource).toContain("const reduced = applyBeat(state, reducerTurn)");
+    expect(applicationSource).toMatch(/const admitted = governed\.turn/);
+    expect(applicationSource).not.toMatch(/applyBeat\(state,\s*turn\)/);
   });
 
   it("selects sought combat in the engine before asking the narrator to render it", () => {

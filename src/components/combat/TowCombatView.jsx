@@ -1,9 +1,32 @@
 import React, { useEffect, useRef, useState } from "react";
+import { declaredIntents } from "../../gameplay/tow/encounter.js";
 import { getSkill, skillLegality, usesPerAct, UNLIMITED_USES } from "../../gameplay/tow/skills.js";
 import "./production-combat.css";
 
 function percent(value, max) {
   return Math.max(0, Math.min(100, max > 0 ? (value / max) * 100 : 0));
+}
+
+/**
+ * What this foe has declared for the coming round.
+ *
+ * The point of the whole telegraph is that this is readable before the player spends their
+ * turn, so it says the attack's name, how many times it lands, and for how much — and stops
+ * there. Crit, dodge and the player's own defence are still live, which is the part their
+ * decision is meant to influence.
+ */
+function IntentLine({ intent }) {
+  if (!intent) return null;
+  const total = intent.hits > 1 ? ` (${intent.hits} × ${intent.damage})` : "";
+  return (
+    <p className="production-combat__intent">
+      <span className="production-combat__eyebrow">Next</span>
+      <strong>{intent.name}</strong>
+      <span>
+        {intent.hits > 1 ? `${intent.hits} hits${total}` : `${intent.damage} damage`}
+      </span>
+    </p>
+  );
 }
 
 function StatusList({ actor }) {
@@ -17,11 +40,31 @@ function StatusList({ actor }) {
   );
 }
 
-function fighterBody(actor, label) {
+/**
+ * The accessible name for a targetable foe.
+ *
+ * A foe card is a button when there is more than one of them, and a button's aria-label
+ * replaces everything inside it — so naming it "Target Wolf 1" meant a screen-reader user
+ * heard the name and never the telegraph. The whole point of declaring an attack is that the
+ * player knows what is coming before they spend their turn; a player using a screen reader
+ * is owed the same information, in the same place.
+ */
+function targetLabel(actor, intent) {
+  const health = `${actor.hp} of ${actor.maxHp} health`;
+  if (actor.hp <= 0) return `${actor.name}, down`;
+  if (!intent) return `Target ${actor.name}, ${health}`;
+  const blow = intent.hits > 1
+    ? `${intent.hits} hits of ${intent.damage}`
+    : `${intent.damage} damage`;
+  return `Target ${actor.name}, ${health}, preparing ${intent.name} for ${blow}`;
+}
+
+function fighterBody(actor, label, intent = null) {
   return (
     <>
       <span className="production-combat__eyebrow">{label}</span>
       <h2>{actor.name}</h2>
+      <IntentLine intent={intent} />
       <div
         className="production-combat__health"
         role="meter"
@@ -52,10 +95,17 @@ function skillHint(skillState) {
   return parts.join(" · ");
 }
 
+/** How many actions this actor has left in the current window. */
+function actionsLeft(encounter, actorId) {
+  if (actorId === encounter.playerId) return encounter.turn.actionsRemaining;
+  return encounter.turn.allies?.[actorId] ?? 0;
+}
+
 export function TowCombatView({
   encounter,
   onUseSkill,
   onEndTurn,
+  onStandDown,
   onSettle,
   note,
   error,
@@ -65,12 +115,29 @@ export function TowCombatView({
   const settleRef = useRef(null);
   const restoreFocusRef = useRef(null);
   const [targetId, setTargetId] = useState(null);
+  const [commanderId, setCommanderId] = useState(null);
 
   const player = encounter.actors[encounter.playerId];
+  const allies = (encounter.allyIds || []).map((id) => encounter.actors[id]);
   const enemies = encounter.enemyIds.map((id) => encounter.actors[id]);
   const living = enemies.filter((enemy) => enemy.hp > 0);
   const terminal = encounter.phase !== "player";
   const activeTarget = living.find((enemy) => enemy.id === targetId)?.id || living[0]?.id || null;
+  // One command window covers the whole side. The player picks whose action to spend, and
+  // an ally who does nothing did nothing because the player said so.
+  const commandable = [player, ...allies].filter((actor) => actor.hp > 0);
+  const activeCommander = commandable.find((actor) => actor.id === commanderId)
+    || commandable.find((actor) => actionsLeft(encounter, actor.id) > 0)
+    || commandable[0]
+    || player;
+  const commanderBuild = activeCommander.id === encounter.playerId
+    ? encounter.build
+    : encounter.allyBuilds?.[activeCommander.id];
+  // Once the fight is over there is nothing coming, so the telegraphs go quiet rather than
+  // advertising a round that will never be played.
+  const intents = terminal
+    ? {}
+    : Object.fromEntries(declaredIntents(encounter).map((intent) => [intent.enemyId, intent]));
 
   useEffect(() => {
     restoreFocusRef.current = document.activeElement;
@@ -146,9 +213,20 @@ export function TowCombatView({
         </header>
 
         <div className="production-combat__fighters">
-          <section className="production-combat__fighter" aria-label={`You: ${player.name}`}>
-            {fighterBody(player, "You")}
-          </section>
+          <div className="production-combat__side">
+            <section className="production-combat__fighter" aria-label={`You: ${player.name}`}>
+              {fighterBody(player, "You")}
+            </section>
+            {allies.map((ally) => (
+              <section
+                key={ally.id}
+                className="production-combat__fighter"
+                aria-label={`Ally: ${ally.name}`}
+              >
+                {fighterBody(ally, "Ally")}
+              </section>
+            ))}
+          </div>
           <div className="production-combat__versus" aria-hidden="true">VS</div>
           <div className="production-combat__foes">
             {enemies.map((enemy) => (
@@ -157,16 +235,16 @@ export function TowCombatView({
                   key={enemy.id}
                   type="button"
                   className={`production-combat__fighter production-combat__fighter--target${enemy.id === activeTarget ? " is-selected" : ""}`}
-                  aria-label={`Target ${enemy.name}`}
+                  aria-label={targetLabel(enemy, intents[enemy.id])}
                   aria-pressed={enemy.id === activeTarget}
                   disabled={enemy.hp <= 0}
                   onClick={() => setTargetId(enemy.id)}
                 >
-                  {fighterBody(enemy, "Foe")}
+                  {fighterBody(enemy, "Foe", intents[enemy.id])}
                 </button>
               ) : (
                 <section key={enemy.id} className="production-combat__fighter" aria-label={`Foe: ${enemy.name}`}>
-                  {fighterBody(enemy, "Foe")}
+                  {fighterBody(enemy, "Foe", intents[enemy.id])}
                 </section>
               )
             ))}
@@ -177,11 +255,28 @@ export function TowCombatView({
 
         {!terminal ? (
           <>
+            {commandable.length > 1 ? (
+              <div className="production-combat__commanders" aria-label="Whose action to spend">
+                {commandable.map((actor) => (
+                  <button
+                    key={actor.id}
+                    type="button"
+                    className={`production-combat__commander${actor.id === activeCommander.id ? " is-selected" : ""}`}
+                    aria-pressed={actor.id === activeCommander.id}
+                    aria-label={`Act as ${actor.name}, ${actionsLeft(encounter, actor.id)} actions left`}
+                    onClick={() => setCommanderId(actor.id)}
+                  >
+                    <strong>{actor.id === encounter.playerId ? "You" : actor.name}</strong>
+                    <span>{actionsLeft(encounter, actor.id)} left</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div className="production-combat__actions" aria-label="Combat actions">
-              {encounter.build.skills.map((skillState, index) => {
+              {(commanderBuild?.skills || []).map((skillState, index) => {
                 const definition = getSkill(skillState.id);
                 const legality = skillLegality(skillState, {
-                  turnAvailable: encounter.turn.actionsRemaining > 0,
+                  turnAvailable: actionsLeft(encounter, activeCommander.id) > 0,
                 });
                 return (
                   <button
@@ -190,7 +285,7 @@ export function TowCombatView({
                     type="button"
                     className="production-combat__action"
                     disabled={!legality.ok}
-                    onClick={() => onUseSkill(skillState.id, activeTarget)}
+                    onClick={() => onUseSkill(skillState.id, activeTarget, activeCommander.id)}
                   >
                     <strong>{definition.name}</strong>
                     <span>{skillHint(skillState)}</span>
@@ -198,6 +293,19 @@ export function TowCombatView({
                 );
               })}
             </div>
+            {/* Standing an ally down is an explicit command, never hidden AI: a companion
+                who does nothing did nothing because the player decided so. */}
+            {commandable.length > 1 && actionsLeft(encounter, activeCommander.id) > 0 ? (
+              <button
+                type="button"
+                className="production-combat__stand-down"
+                onClick={() => onStandDown?.(activeCommander.id)}
+              >
+                {activeCommander.id === encounter.playerId
+                  ? "Hold your action"
+                  : `${activeCommander.name} holds`}
+              </button>
+            ) : null}
             <button type="button" className="production-combat__settle" onClick={onEndTurn}>
               End turn
             </button>

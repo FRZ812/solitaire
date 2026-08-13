@@ -244,18 +244,38 @@ describe("compiled narrator turn application", () => {
     expect(acceptedState).not.toHaveProperty("narratorTurnContinuation");
   });
 
-  it("does not persist unrestricted model-authored memory metadata", () => {
+  it("refuses a memory the model tried to author in its own response body", () => {
+    // The only channel a memory may arrive through is the `remember` tool, which the Edge
+    // validates before streaming. A field in the JSON body is the model writing straight to
+    // storage, and the unknown-key rule refuses it outright.
+    const state = { ...makeInitialState(), memories: ["An engine-authored fact."] };
+    expect(() => compileTurn(
+      state,
+      { id: "general-action", allowedEffects: [] },
+      { _memories: ["The player silently consents to the bargain."] },
+      null,
+    )).toThrow();
+  });
+
+  it("persists what the tool channel actually recorded", () => {
+    // This was broken and silent: the compiler never picked memories out of its metadata, so
+    // `beat._memories` was always undefined and every fact the `remember` tool recorded
+    // merged into nothing. The tool was writing to a channel that ended one object short of
+    // campaign state.
     const state = { ...makeInitialState(), memories: ["An engine-authored fact."] };
     const turn = compileTurn(
       state,
       { id: "general-action", allowedEffects: [] },
       {},
-      { memories: ["The player silently consents to the bargain."] },
+      { memories: ["The ferryman owes the player passage."] },
     );
 
     const next = applyCompiledNarratorTurn(state, turn);
 
-    expect(next.memories).toEqual(["An engine-authored fact."]);
+    expect(next.memories).toEqual([
+      "An engine-authored fact.",
+      "The ferryman owes the player passage.",
+    ]);
   });
 
   it("rejects uncompiled presentation before invoking its applicator", () => {
@@ -264,5 +284,89 @@ describe("compiled narrator turn application", () => {
     expect(() => applyCompiledNarratorPresentation({}, { story: [] }, applyPresentation))
       .toThrow("Refusing to present an uncompiled narrator turn.");
     expect(applyPresentation).not.toHaveBeenCalled();
+  });
+});
+
+describe("the typed memory bank", () => {
+  function proposal(overrides = {}) {
+    return {
+      kind: "person",
+      subjectIds: ["wanderer"],
+      scopeIds: ["campaign"],
+      text: "The wanderer never pays the toll twice.",
+      evidence: [{ kind: "turn", id: "turn-1" }],
+      ...overrides,
+    };
+  }
+
+  it("grows alongside the flat list rather than replacing it", () => {
+    // Every existing consumer keeps reading `memories`; the bank gains what a string cannot
+    // carry — who it is about, and whether it is a belief or something that happened.
+    const state = { ...makeInitialState(), memories: [] };
+    const turn = compileTurn(
+      state,
+      { id: "general-action", allowedEffects: [] },
+      {},
+      { memories: ["The wanderer never pays the toll twice."], memoryProposals: [proposal()] },
+    );
+
+    const next = applyCompiledNarratorTurn(state, turn);
+
+    expect(next.memories).toEqual(["The wanderer never pays the toll twice."]);
+    expect(next.memoryBank).toHaveLength(1);
+    expect(next.memoryBank[0]).toMatchObject({
+      kind: "person",
+      subjectIds: ["wanderer"],
+      status: "active",
+      pinned: false,
+    });
+  });
+
+  it("mints what the model is not allowed to choose", () => {
+    const state = { ...makeInitialState(), memories: [] };
+    const turn = compileTurn(
+      state,
+      { id: "general-action", allowedEffects: [] },
+      {},
+      // A proposal trying to set its own weight, permanence and identity.
+      { memoryProposals: [{ ...proposal(), salience: 100, pinned: true, id: "chosen" }] },
+    );
+
+    const record = applyCompiledNarratorTurn(state, turn).memoryBank[0];
+    expect(record.id).not.toBe("chosen");
+    expect(record.pinned).toBe(false);
+    expect(record.salience).toBeLessThan(100);
+  });
+
+  it("refuses a memory about someone the world has never heard of", () => {
+    // The same rule the gateway applies to knowledge_updates, wherever a name arrives.
+    const state = { ...makeInitialState(), memories: [] };
+    const turn = compileTurn(
+      state,
+      { id: "general-action", allowedEffects: [] },
+      {},
+      { memoryProposals: [proposal({ subjectIds: ["someone-invented"] })] },
+    );
+
+    expect(applyCompiledNarratorTurn(state, turn).memoryBank).toEqual([]);
+  });
+
+  it("types old string memories on first touch rather than in a migration pass", () => {
+    // A campaign that never records another memory never needs converting; one that does
+    // gets its history typed at the moment it first matters.
+    const state = { ...makeInitialState(), memories: ["The player burned the bridge."] };
+    const turn = compileTurn(
+      state,
+      { id: "general-action", allowedEffects: [] },
+      {},
+      { memoryProposals: [proposal()] },
+    );
+
+    const bank = applyCompiledNarratorTurn(state, turn).memoryBank;
+    const legacy = bank.find((entry) => entry.summary === "The player burned the bridge.");
+    expect(legacy.kind).toBe("event");
+    // Honest about provenance: trusted before there was a way to check is not the same as
+    // having been checked.
+    expect(legacy.evidence[0].kind).toBe("legacy-canonical");
   });
 });

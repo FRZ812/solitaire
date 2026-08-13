@@ -8,6 +8,7 @@
 // single source of truth, no mirror file on the function side.
 import { supabase } from "./supabase-client.js";
 import { buildStateContext } from "./api.js";
+import { selectStateContext } from "./narrator/context-sections.js";
 import { SYSTEM_PROMPT } from "../system-prompt.js";
 import { getNarratorModel, getNarratorEffort } from "./narrator-models.js";
 import { prepareNarratorHistory } from "./narrator-history.js";
@@ -102,8 +103,15 @@ async function callNarratorWithinDeadline(
   turnPolicy,
   canonicalUserMsg,
 ) {
+  // Context is selected rather than appended wholesale. At the default budget every section
+  // fits and this is byte-identical to the old block — proven against real campaign states
+  // in context-sections.test.js — so what changes today is only that a campaign which grows
+  // past the budget drops whole sections by rank instead of overflowing.
+  const selectedContext = selectStateContext(buildStateContext(state), {
+    route: turnPolicy.id,
+  });
   const state_context = [
-    buildStateContext(state),
+    selectedContext.text,
     projection.context,
     `[TURN POLICY — id=${turnPolicy.id}; required narrator skills=${turnPolicy.requiredSkillIds.join(",") || "none"}; allowed effects=${turnPolicy.allowedEffects.join(",") || "none"}.]`,
   ].join("\n");
@@ -265,6 +273,7 @@ async function accumulateAnthropicSSE(body, onProgress) {
   let text = "";
   let thinking = "";
   const memories = [];
+  const memoryProposals = [];
   let sawSuccessfulTerminalEvent = false;
   let receivedBytes = 0;
 
@@ -315,8 +324,14 @@ async function accumulateAnthropicSSE(body, onProgress) {
         } else {
           throw new Error("Narrator stream contained an invalid event shape.");
         }
-      } else if (evt.type === "memory_delta" && evt.fact) {
-        memories.push(evt.fact);
+      } else if (evt.type === "memory_delta" && (evt.proposal || evt.fact)) {
+        // The typed proposal is preferred; `fact` is the compatibility field a server-first
+        // rollout keeps for older clients, and it is the proposal's own text, so reading
+        // either gives the same sentence. Both are collected: the flat list keeps every
+        // existing consumer working while the typed bank grows underneath it.
+        if (evt.proposal && typeof evt.proposal === "object") memoryProposals.push(evt.proposal);
+        const fact = evt.proposal?.text ?? evt.fact;
+        if (typeof fact === "string" && fact) memories.push(fact);
       } else if (evt.type === "narrator_round_reset") {
         text = "";
         thinking = "";
@@ -337,7 +352,12 @@ async function accumulateAnthropicSSE(body, onProgress) {
     if (!sawSuccessfulTerminalEvent) {
       throw new Error("Narrator stream ended without a successful terminal event.");
     }
-    return { text, thinking, memories: mergeMemoryBank([], memories) };
+    return {
+      text,
+      thinking,
+      memories: mergeMemoryBank([], memories),
+      memoryProposals,
+    };
   } catch (error) {
     await reader.cancel(error).catch(() => {});
     throw error;

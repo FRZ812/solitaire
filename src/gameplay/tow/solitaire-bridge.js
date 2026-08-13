@@ -9,12 +9,26 @@
 
 import { deriveCombatStats } from "../../engine/combat-stats.js";
 import { createStatusStack } from "../kernel/status-stack.js";
+import { admitTowEncounter } from "./admission.js";
 
 export const PROVISIONAL_BRIDGE_POLICY = Object.freeze({
   // Tower of Winter actors have one attack number; Solitaire weapons have a damage band.
   // The midpoint keeps expected damage identical while the kernel's own variance and crit
   // supply the swing.
-  attackFromWeapon: "midpoint",
+  //
+  // The midpoint alone was not enough, and the shortfall was structural rather than a matter
+  // of taste. Tower of Winter skills scale off ATK as a percentage — Strike is "100% of ATK"
+  // — so ATK has to carry the whole of an actor's offence. Solitaire's old resolver added
+  // weapon dice *and* ability damage *and* attribute bonuses on top of each other, so its
+  // weapon band was only ever one term of several. Carrying just that term across left a
+  // starting character swinging for four against a common bandit pair holding seventy health
+  // between them: an eighteen-round race that a thirty-health character cannot finish.
+  //
+  // So the person swinging is part of the number, as they are in the reference actors. Body
+  // and Reflex are added to the band's midpoint. The contribution is flat, so it matters
+  // most to a barely-armed traveller and fades as real weapons take over — which is the
+  // right shape for it.
+  attackFromWeapon: "midpoint-plus-frame",
 
   // DEF in Tower of Winter is what Block turns into shield and what Tenacity raises. It is
   // not flat mitigation — Steelskin and Protection are. So armour and ward sum into DEF
@@ -23,6 +37,17 @@ export const PROVISIONAL_BRIDGE_POLICY = Object.freeze({
   // and it belongs here rather than inside the resolver.
   defenseFromArmourAndWard: "sum",
   armourGrantsOpeningSteelskin: false,
+
+  // Armour and ward alone are not enough, and the omission was not a balance question but a
+  // broken mapping. Solitaire's armour is a mitigation number that is legitimately zero for
+  // someone in cloth; Tower of Winter's DEF is a stat every actor carries — the Arctic
+  // Knight's 13 sits beside their ATK of 12. Mapping one onto the other directly produced a
+  // starting character with DEF 0, which meant Block granted a zero-point shield and the
+  // entire defensive half of every package did nothing at all.
+  //
+  // So DEF has a floor at the actor's own offensive scale, in the reference actors' shape,
+  // and worn armour adds on top. An unarmoured person still has a frame that takes a blow.
+  defenseFloorFromAttack: true,
 
   // Solitaire dodge is capped at 70 and crit at 100 upstream; both already sit inside the
   // kernel's 0..100 rate range, so they carry across unchanged.
@@ -61,6 +86,10 @@ export function towPlayerFromCharacter(character, codex = {}, { id = "player" } 
   const healthBonus = Math.max(0, maxHp - baseMaxHp);
   const hp = Math.max(0, Math.min(maxHp, Math.round(character.vitality ?? maxHp) + healthBonus));
 
+  // See PROVISIONAL_BRIDGE_POLICY.attackFromWeapon: the weapon's midpoint plus the frame
+  // behind it, because a Tower of Winter skill scales off ATK alone.
+  const frame = nonNegativeInt(stats.attrs?.body) + nonNegativeInt(stats.attrs?.reflex);
+  const attack = positiveInt((stats.weapon.min + stats.weapon.max) / 2) + frame;
   return {
     id,
     name: character.name || "Wanderer",
@@ -69,8 +98,10 @@ export function towPlayerFromCharacter(character, codex = {}, { id = "player" } 
     maxHp,
     shield: 0,
     stats: {
-      attack: positiveInt((stats.weapon.min + stats.weapon.max) / 2),
-      defense: nonNegativeInt((stats.armor || 0) + (stats.ward || 0)),
+      attack,
+      // See PROVISIONAL_BRIDGE_POLICY.defenseFloorFromAttack: worn protection adds to a
+      // floor set by the actor's own scale, so Block is never worth nothing.
+      defense: nonNegativeInt((stats.armor || 0) + (stats.ward || 0)) + attack,
       critRate: clampRate(stats.critChance),
       dodgeRate: clampRate(stats.dodge),
     },
@@ -139,19 +170,16 @@ function attackTableFor(actorId, min, max) {
 /**
  * Whether a Solitaire encounter can run on the Tower of Winter kernel as it stands.
  *
- * This is deliberately narrower than "has enemies". Mechanics with no port yet — player
- * abilities, conditions, racial passives, companions — must keep their old behaviour
- * rather than being silently dropped on the floor by a kernel that cannot express them.
+ * This used to answer for itself, with its own list of what the kernel could not express.
+ * That made it a second source of truth beside the support matrix, and the two drifted the
+ * moment conditions gained adapters — one file said a wounded character could not fight
+ * while the other carried their wounds into the fight.
+ *
+ * So it delegates. `admitTowEncounter` decides, this reports the first objective blocker,
+ * and there is one answer to the question rather than two that agree by luck.
  */
 export function towEncounterSupport({ character, party, enemies } = {}) {
-  if (!Array.isArray(enemies) || enemies.length === 0) return { ok: false, reason: "no-enemies" };
-  if (Array.isArray(party) && party.length > 0) return { ok: false, reason: "unsupported-companions" };
-  if (character?.abilities?.length) return { ok: false, reason: "unsupported-player-abilities" };
-  if (character?.conditions?.length) return { ok: false, reason: "unsupported-player-conditions" };
-  if (character?.racialPassives?.length) return { ok: false, reason: "unsupported-racial-passives" };
-  const unsupported = enemies.find((enemy) => (
-    enemy?.abilities?.length || enemy?.statuses?.length || enemy?.procs?.length
-  ));
-  if (unsupported) return { ok: false, reason: "unsupported-enemy-mechanics" };
-  return { ok: true, reason: null };
+  const admission = admitTowEncounter({ character, party: party || [], enemies });
+  if (admission.supported) return { ok: true, reason: null };
+  return { ok: false, reason: admission.blockers[0].code };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { makeInitialState } from "../../data/initial-state.js";
 import { generateEnemyGroup } from "../../data/bestiary.js";
+import { deriveCombatStats } from "../../engine/combat-stats.js";
 import { isTowActor } from "../kernel/tow-actor.js";
 import { createTowEncounter, endTurn, useSkill } from "./encounter.js";
 import {
@@ -35,12 +36,28 @@ describe("characters cross the bridge", () => {
     }
   });
 
-  it("takes attack from the middle of the weapon band", () => {
+  it("takes attack from the weapon band plus the frame behind it", () => {
+    // A Tower of Winter skill scales off ATK alone, so ATK has to carry the whole of an
+    // actor's offence. The weapon band on its own left a starting character swinging for
+    // four against foes holding seventy health between them.
     const { codex } = world();
     const character = { ...world().character, name: "Test", vitality: 20, vitalityMax: 20 };
     const actor = towPlayerFromCharacter(character, codex);
-    expect(PROVISIONAL_BRIDGE_POLICY.attackFromWeapon).toBe("midpoint");
-    expect(actor.stats.attack).toBeGreaterThan(0);
+    expect(PROVISIONAL_BRIDGE_POLICY.attackFromWeapon).toBe("midpoint-plus-frame");
+    const stats = deriveCombatStats(character, codex);
+    const midpoint = Math.round((stats.weapon.min + stats.weapon.max) / 2);
+    expect(actor.stats.attack).toBeGreaterThan(midpoint);
+  });
+
+  it("never leaves the defensive half of a package worth nothing", () => {
+    // Block turns DEF into shield, so a character whose DEF is zero has an inert defensive
+    // kit. Solitaire's armour is legitimately zero for someone in cloth; Tower of Winter's
+    // DEF is a stat every actor carries.
+    const { character, codex } = world();
+    const unarmoured = towPlayerFromCharacter(character, codex);
+    expect(PROVISIONAL_BRIDGE_POLICY.defenseFloorFromAttack).toBe(true);
+    expect(unarmoured.stats.defense).toBeGreaterThan(0);
+    expect(unarmoured.stats.defense).toBeGreaterThanOrEqual(unarmoured.stats.attack);
   });
 
   it("does not arrive already wounded because gear raised the pool", () => {
@@ -129,20 +146,35 @@ describe("admission", () => {
       .toEqual({ ok: true, reason: null });
   });
 
-  it("refuses what the kernel cannot yet express, rather than dropping it", () => {
+  it("refuses what the kernel cannot express, rather than dropping it", () => {
     const enemies = [{ name: "Foe" }];
     expect(towEncounterSupport({ character: {}, party: [], enemies: [] }))
       .toMatchObject({ ok: false, reason: "no-enemies" });
-    expect(towEncounterSupport({ character: {}, party: ["ally"], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-companions" });
-    expect(towEncounterSupport({ character: { abilities: ["cleave"] }, party: [], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-player-abilities" });
-    expect(towEncounterSupport({ character: { conditions: [{ name: "Bleeding" }] }, party: [], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-player-conditions" });
-    expect(towEncounterSupport({ character: { racialPassives: ["darkvision"] }, party: [], enemies }))
-      .toMatchObject({ ok: false, reason: "unsupported-racial-passives" });
     expect(towEncounterSupport({ character: {}, party: [], enemies: [{ abilities: ["roar"] }] }))
       .toMatchObject({ ok: false, reason: "unsupported-enemy-mechanics" });
+    // A condition nobody has decided about is the fail-closed case that stops a newly
+    // authored debuff from silently doing nothing.
+    expect(towEncounterSupport({
+      character: { conditions: [{ name: "Unclassified Affliction" }] },
+      party: [],
+      enemies,
+    })).toMatchObject({ ok: false, reason: "unsupported-condition" });
+  });
+
+  it("carries what it can adapt instead of refusing the whole fight", () => {
+    // Abilities, racial passives and companions no longer block. The package is the combat
+    // identity, and admission records each of them by name rather than dropping them in
+    // silence; conditions arrive as opening statuses. Delegating to admission is what keeps
+    // this file and that one from ever disagreeing about which is which.
+    expect(towEncounterSupport({
+      character: {
+        abilities: ["cleave"],
+        conditions: [{ name: "Bleeding" }],
+        racialPassives: ["darkvision"],
+      },
+      party: ["ally"],
+      enemies: [{ name: "Foe" }],
+    })).toEqual({ ok: true, reason: null });
   });
 
   it("admits a multi-enemy group, which the old adapter could not", () => {
@@ -157,8 +189,9 @@ describe("admission", () => {
 describe("a real Solitaire fight runs on the kernel end to end", () => {
   it("fights a generated bandit group to a terminal outcome", () => {
     const { character, codex } = world();
-    // A plain fighter: the kernel has no port for abilities, conditions or racial
-    // passives yet, and admission is meant to refuse them rather than drop them.
+    // A plain fighter, so this test measures the bridge rather than the adapters: abilities
+    // and racial passives are superseded by the package, and conditions arrive as opening
+    // statuses, all of which admission covers on its own.
     const plain = { ...character, abilities: [], conditions: [], racialPassives: [] };
     const group = generateEnemyGroup("bandits", { power: 2, maxTier: "common" });
 

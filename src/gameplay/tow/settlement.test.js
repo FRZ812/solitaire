@@ -182,3 +182,92 @@ describe("refusals", () => {
     expect(JSON.stringify(before)).toBe(snapshot);
   });
 });
+
+describe("lethality decides what zero health means", () => {
+  // A brawl and a duel to the death resolve identically on the kernel. They differ only
+  // in what the codex records afterwards, and recording a spared foe dead is
+  // unrecoverable — the player loses a person they deliberately chose not to kill.
+  function fightTo(hp, lethal) {
+    const state = makeInitialState();
+    state.created = true;
+    state.world.codex.characters["road-brigand"] = {
+      id: "road-brigand",
+      name: "Road brigand",
+      combatState: { health: 6, maxHealth: 6, status: "ok" },
+    };
+    const encounter = {
+      version: 1,
+      phase: "victory",
+      round: 3,
+      sequence: 0,
+      playerId: "wanderer",
+      enemyIds: ["foe"],
+      actors: {
+        wanderer: {
+          id: "wanderer", name: "Wanderer", side: "player", hp: 10, maxHp: 10,
+          shield: 0, stats: { attack: 3, defense: 1, critRate: 0, dodgeRate: 0 }, statuses: [],
+        },
+        foe: {
+          id: "foe", name: "Road brigand", side: "enemy", hp, maxHp: 6,
+          shield: 0, stats: { attack: 2, defense: 0, critRate: 0, dodgeRate: 0 }, statuses: [],
+        },
+      },
+      events: [],
+    };
+    return settleTowEncounter(state, encounter, {
+      encounterId: `lethality:${hp}:${lethal}`,
+      npcIds: { foe: "road-brigand" },
+      lethal,
+    });
+  }
+
+  it("records a killed foe dead when the fight was lethal", () => {
+    const settled = fightTo(0, true);
+    expect(settled.ok).toBe(true);
+    expect(settled.state.world.codex.characters["road-brigand"].combatState.status).toBe("dead");
+  });
+
+  it("records a beaten foe downed, not dead, when the fight was not lethal", () => {
+    const settled = fightTo(0, false);
+    expect(settled.ok).toBe(true);
+    const after = settled.state.world.codex.characters["road-brigand"].combatState;
+    expect(after.status).toBe("downed");
+    expect(after.status).not.toBe("dead");
+  });
+
+  it("still records a survivor as wounded either way", () => {
+    for (const lethal of [true, false]) {
+      const settled = fightTo(2, lethal);
+      expect(settled.state.world.codex.characters["road-brigand"].combatState.status)
+        .toBe("wounded");
+    }
+  });
+
+  it("defaults to lethal, so a caller that never learned the distinction is unchanged", () => {
+    const state = makeInitialState();
+    state.created = true;
+    state.world.codex.characters.foe = {
+      id: "foe", name: "Foe", combatState: { health: 4, maxHealth: 4, status: "ok" },
+    };
+    const encounter = {
+      version: 1, phase: "victory", round: 1, sequence: 0,
+      playerId: "wanderer", enemyIds: ["foe"],
+      actors: {
+        wanderer: {
+          id: "wanderer", name: "Wanderer", side: "player", hp: 9, maxHp: 9,
+          shield: 0, stats: { attack: 3, defense: 1, critRate: 0, dodgeRate: 0 }, statuses: [],
+        },
+        foe: {
+          id: "foe", name: "Foe", side: "enemy", hp: 0, maxHp: 4,
+          shield: 0, stats: { attack: 1, defense: 0, critRate: 0, dodgeRate: 0 }, statuses: [],
+        },
+      },
+      events: [],
+    };
+    const settled = settleTowEncounter(state, encounter, {
+      encounterId: "default-lethality",
+      npcIds: { foe: "foe" },
+    });
+    expect(settled.state.world.codex.characters.foe.combatState.status).toBe("dead");
+  });
+});

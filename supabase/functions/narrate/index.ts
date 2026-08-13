@@ -10,12 +10,18 @@ import {
   resolveInstructionToolCall,
   type InstructionSkill,
 } from "./tools.ts";
+import {
+  MEMORY_TOOL,
+  asMemoryProposal,
+  memoryFingerprint,
+  normalizeMemoryFact,
+  toMemoryEvent,
+} from "./memory-wire.ts";
 
 const MAX_FIELD_LENGTH = 120_000;
 // Accept the retired monolith during a rolling Edge/client deployment. New
 // clients still send the compact prompt enforced in the browser contract.
 const MAX_SYSTEM_PROMPT_LENGTH = 200_000;
-const MAX_MEMORY_FACT_LENGTH = 600;
 const MAX_EXISTING_MEMORIES = 80;
 const MAX_REQUEST_BYTES = 2_000_000;
 const MAX_STREAM_BYTES = 2_000_000;
@@ -29,20 +35,8 @@ const MAX_STREAM_BYTES = 2_000_000;
 // in state.memories, and re-injected into every future state_context
 // (see summarizeMemoryBank in src/engine/api.js) — so it survives long
 // after the turn it was recorded in has scrolled out of history.
-const MEMORY_TOOL = {
-  type: "function",
-  function: {
-    name: "remember",
-    description: "Permanently record a durable fact worth recalling long after this turn scrolls out of the conversation window — a promise made, a secret learned, an unresolved thread, a plot-critical detail. Call this whenever something happens that the story will need much later. Keep the fact short, self-contained, and in third person. Don't call it for anything trivial, already recorded, or already tracked elsewhere (inventory, quests, relationships).",
-    parameters: {
-      type: "object",
-      properties: {
-        fact: { type: "string", description: "A concise, self-contained statement of the fact to remember (one or two sentences)." },
-      },
-      required: ["fact"],
-    },
-  },
-};
+// Its schema, validation and event shape live in memory-wire.ts, so they can be tested
+// without importing this module and starting a server.
 
 // Bound provider round-trips without truncating model output. The final round
 // disables tools so every accepted turn has a chance to finish its JSON.
@@ -80,15 +74,7 @@ function asHistory(value: unknown) {
   });
 }
 
-function normalizeMemoryFact(value: unknown) {
-  return typeof value === "string"
-    ? value.replace(/\s+/g, " ").trim().slice(0, MAX_MEMORY_FACT_LENGTH)
-    : "";
-}
 
-function memoryFingerprint(value: unknown) {
-  return normalizeMemoryFact(value).normalize("NFKC").toLocaleLowerCase().replace(/[.!?]+$/g, "");
-}
 
 function asExistingMemories(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -119,9 +105,6 @@ function memoryToolFor(mode: MemoryMode) {
   };
 }
 
-function toMemoryEvent(fact: string) {
-  return `data: ${JSON.stringify({ type: "memory_delta", fact })}\n\n`;
-}
 
 
 // Drives the full narrator turn through the executable, unit-tested provider
@@ -166,23 +149,27 @@ function streamNarratorTurn(opts: {
       }
       if (toolCall.name !== "remember" || opts.memoryMode === "manual") return null;
 
-      let fact = "";
+      let parsed: unknown = null;
       try {
-        fact = normalizeMemoryFact(JSON.parse(toolCall.arguments || "{}").fact);
+        parsed = JSON.parse(toolCall.arguments || "{}");
       } catch {
         // Malformed arguments produce a bounded tool result, never an event.
+        return { result: "ignored: arguments were not valid JSON" };
       }
-      const key = memoryFingerprint(fact);
+      const read = asMemoryProposal(parsed);
+      if (!read.proposal) return { result: read.error as string };
+
+      const proposal = read.proposal;
+      // Deduplication stays on the text. A rephrasing of a fact already recorded is still
+      // the same fact; the typed fields say what a memory is *about*, and they should not
+      // turn two statements of one thing into two memories.
+      const key = memoryFingerprint(proposal.text);
       const isDuplicate = !!key && knownMemoryKeys.has(key);
-      if (fact && key && !isDuplicate) knownMemoryKeys.add(key);
-      const result = !fact
-        ? "ignored: no fact given"
-        : isDuplicate
-          ? "ignored: already recorded"
-          : "recorded";
+      if (key && !isDuplicate) knownMemoryKeys.add(key);
+      const result = isDuplicate ? "ignored: already recorded" : "recorded";
       return {
         result,
-        ...(fact && key && !isDuplicate ? { events: [toMemoryEvent(fact)] } : {}),
+        ...(key && !isDuplicate ? { events: [toMemoryEvent(proposal)] } : {}),
       };
     },
   });

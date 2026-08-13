@@ -390,19 +390,19 @@ export function passiveSlots(itemTierId) {
 
 // Roll an item's passives: one per slot, each at a tier ≤ the item's tier
 // (weighted toward lower), no duplicates. Optional scopeFilter limits the pool.
-export function rollItemPassives(itemTierId, { luck = 0, scopeFilter = null } = {}) {
+export function rollItemPassives(itemTierId, { luck = 0, scopeFilter = null, random = Math.random } = {}) {
   const slots = passiveSlots(itemTierId);
   const out = [];
   const used = new Set();
   for (let i = 0; i < slots; i++) {
-    const rolledTier = rollTier(itemTierId, luck);
+    const rolledTier = rollTier(itemTierId, luck, random);
     const pool = PASSIVES.filter((p) =>
       !used.has(p.id) &&
       !p.noRoll &&                              // fusion-only affixes never drop as loot
       o(p.minTier) <= o(rolledTier) &&
       (!scopeFilter || p.scope === scopeFilter));
     if (pool.length === 0) continue;
-    const pick = pool[Math.floor(Math.random() * pool.length)];
+    const pick = pool[Math.floor(random() * pool.length)];
     used.add(pick.id);
     out.push({ id: pick.id, tier: rolledTier });
   }

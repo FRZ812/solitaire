@@ -18,6 +18,13 @@ import {
   UNLIMITED_USES,
   usesPerAct,
 } from "./skills.js";
+import {
+  SUPPORTED_SKILL_EFFECT_TYPES,
+  createTowEncounter,
+  useSkill,
+} from "./encounter.js";
+import { towBuildForCharacter } from "./professions.js";
+import { startingPackageIds } from "./starting-packages.js";
 
 describe("the catalogue", () => {
   it("holds five slots, as the wiki records", () => {
@@ -281,5 +288,65 @@ describe("unslotted skills", () => {
     expect(passiveBonuses(["strike", "nonsense"]))
       .toEqual({ attack: 0, defense: 0, maxHp: 0, critRate: 0, dodgeRate: 0, maxHpPercent: 0 });
     expect(passiveBonuses(null).attack).toBe(0);
+  });
+});
+
+describe("every catalogue effect reaches the resolver", () => {
+  // A skill whose effect the resolver cannot express is worse than a missing skill: the
+  // player is offered it, spends a use and a turn, and gets nothing. First Aid shipped in
+  // three professions' packages while two of its effects were unimplemented — one of them
+  // crashed outright — and nothing caught it until a simulation ran the whole catalogue.
+  it("names an effect type the reducer actually implements", () => {
+    const unsupported = [];
+    for (const skillId of skillIds()) {
+      for (const effect of getSkill(skillId).effects) {
+        if (!SUPPORTED_SKILL_EFFECT_TYPES.includes(effect.type)) {
+          unsupported.push(`${skillId}:${effect.type}`);
+        }
+      }
+    }
+    expect(unsupported).toEqual([]);
+  });
+
+  it("carries a rank table wherever the resolver reads a magnitude", () => {
+    const scaled = ["damage", "shield", "status", "scaled-status", "heal-lost-fraction", "scaled-status-enemy-lost-hp"];
+    const missing = [];
+    for (const skillId of skillIds()) {
+      getSkill(skillId).effects.forEach((effect, index) => {
+        if (!scaled.includes(effect.type)) return;
+        if (!effect.percentByRank && !effect.countByRank) missing.push(`${skillId}[${index}]`);
+      });
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("can resolve every skill in every starting package without throwing", () => {
+    for (const packageId of startingPackageIds()) {
+      const build = towBuildForCharacter({ profession: packageId, level: 1 });
+      for (const skillId of build.skills) {
+        const state = createTowEncounter({
+          seed: `catalogue::${packageId}::${skillId}`,
+          player: {
+            id: "p",
+            name: "P",
+            maxHp: 100,
+            hp: 40,
+            statuses: [{ type: "bleed", count: 6 }, { type: "burn", count: 4 }],
+            stats: { attack: 12, defense: 9, critRate: 0, dodgeRate: 0 },
+          },
+          enemies: [{
+            id: "foe-0",
+            name: "Foe",
+            maxHp: 100,
+            hp: 55,
+            stats: { attack: 5, defense: 2, critRate: 0, dodgeRate: 0 },
+            attacks: [{ id: "jab", name: "Jab", hits: 1, damage: 4 }],
+          }],
+          build,
+        });
+        expect(() => useSkill(state, skillId, "foe-0")).not.toThrow();
+        expect(useSkill(state, skillId, "foe-0").ok).toBe(true);
+      }
+    }
   });
 });
