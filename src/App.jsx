@@ -152,6 +152,7 @@ import {
   resolveRacialProgressionChoice,
 } from "./engine/progression.js";
 import { activeWorldPassives } from "./engine/combat-stats.js";
+import { weaponPresentationForCharacter } from "./gameplay/tow/weapon-presentation.js";
 import { poiPlaceName } from "./engine/location.js";
 import {
   claimRunReward,
@@ -3095,6 +3096,7 @@ export function Solitaire() {
     const campaignBuild = effectiveTowBuild(
       durableBuild,
       wornItemIds(st.character, st.world.codex),
+      st.world.codex,
     );
     const readiness = towReadiness(st);
     const companionReadiness = towCompanionReadiness(st);
@@ -3104,7 +3106,11 @@ export function Solitaire() {
     try {
       allies = admission.allies.map(({ companionId, entity, openingStatuses }) => {
         const actor = towPlayerFromCharacter(entity, st.world.codex, { id: `ally-${companionId}` });
-        const build = towBuildForCharacter(entity);
+        const build = effectiveTowBuild(
+          towBuildForCharacter(entity),
+          wornItemIds(entity, st.world.codex),
+          st.world.codex,
+        );
         return {
           ...actor,
           statuses: [...actor.statuses, ...openingStatuses],
@@ -4535,6 +4541,14 @@ export function Solitaire() {
           encounter={combat}
           note={combatSession?.context?.source?.note}
           playerPortraitKey={state.character?.portraitKey}
+          weaponFor={(actor) => {
+            if (actor.id === combat.playerId) {
+              return weaponPresentationForCharacter(state.character, state.world.codex);
+            }
+            const companionId = combatSession?.context?.participantBindings?.[actor.id]?.campaignEntityId;
+            const companion = companionId ? state.world.codex.characters?.[companionId] : null;
+            return weaponPresentationForCharacter(companion, state.world.codex);
+          }}
           onUseSkill={onCombatUseSkill}
           onStandDown={onCombatStandDown}
           onSettle={handleResolveCombat}

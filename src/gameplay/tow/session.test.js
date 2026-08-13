@@ -13,6 +13,7 @@ import {
   towSessionChecksum,
   towStreamEndpoints,
 } from "./session.js";
+import { weaponAttackSnapshot, weaponTechniqueFromItemIds } from "./weapon-techniques.js";
 
 function player(overrides = {}) {
   return {
@@ -137,6 +138,18 @@ describe("genesis", () => {
 
   it("holds an empty intent schedule until the telegraph phase fills it", () => {
     expect(open().session.genesis.intentSchedules).toEqual({});
+  });
+
+  it("pins the equipped basic-attack form in replay genesis", () => {
+    const basicAttack = weaponAttackSnapshot(weaponTechniqueFromItemIds(
+      ["twin-daggers"],
+      {},
+      { formId: "threefold-cut" },
+    ));
+    const opened = open({ build: { basicAttack } });
+    expect(opened.ok).toBe(true);
+    expect(opened.session.genesis.effectiveBuild.basicAttack.formId).toBe("threefold-cut");
+    expect(encounterFromGenesis(opened.session.genesis).build.basicAttack).toEqual(basicAttack);
   });
 });
 

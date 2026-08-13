@@ -70,7 +70,7 @@
 
 .tow-combat__stage {
   display: grid;
-  grid-template-rows: auto minmax(29rem, 1fr) auto;
+  grid-template-rows: auto minmax(27rem, 1fr) auto;
   width: min(100%, 96rem);
   min-height: 100%;
   margin: 0 auto;
@@ -155,7 +155,7 @@
 .tow-combat__battlefield {
   position: relative;
   z-index: 2;
-  min-height: 29rem;
+  min-height: 27rem;
   overflow: hidden;
 }
 
@@ -654,108 +654,280 @@
 }
 
 .tow-combat__actions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9.6rem, 1fr));
-  gap: 0.42rem;
+  display: flex;
+  gap: 0.56rem;
+  justify-content: center;
+  overflow-x: auto;
+  padding: 0.1rem 0.2rem 0.25rem;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
 }
+
+.tow-combat__actions::-webkit-scrollbar { display: none; }
 
 .tow-combat__action {
   position: relative;
-  display: grid;
-  grid-template-columns: 2.4rem minmax(0, 1fr);
-  gap: 0.55rem;
-  align-items: center;
-  min-height: 4rem;
-  padding: 0.48rem 0.58rem;
-  overflow: hidden;
-  border: 1px solid rgba(216, 174, 101, 0.27);
-  border-radius: 0.78rem;
-  background:
-    radial-gradient(circle at 20% 30%, rgba(208, 161, 79, 0.09), transparent 44%),
-    linear-gradient(145deg, rgba(30, 32, 25, 0.84), rgba(9, 14, 15, 0.8));
-  color: var(--tow-ink);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease, transform 100ms ease;
-}
-
-.tow-combat__action:hover:not(:disabled) {
-  border-color: rgba(239, 204, 135, 0.77);
-  background:
-    radial-gradient(circle at 20% 30%, rgba(232, 184, 95, 0.18), transparent 48%),
-    linear-gradient(145deg, rgba(48, 43, 29, 0.9), rgba(12, 18, 18, 0.84));
-}
-
-.tow-combat__action:active:not(:disabled) { transform: translateY(1px); }
-
-.tow-combat__action:disabled {
-  border-color: rgba(133, 151, 144, 0.14);
-  background: rgba(8,13,14,0.55);
-  color: rgba(195, 204, 197, 0.38);
-  cursor: not-allowed;
-}
-
-.tow-combat__action-glyph {
-  display: grid;
-  place-items: center;
-  width: 2.4rem;
+  flex: 0 0 clamp(4.1rem, 7vw, 4.8rem);
+  width: clamp(4.1rem, 7vw, 4.8rem);
   aspect-ratio: 1;
-  border: 1px solid rgba(230, 190, 112, 0.32);
-  border-radius: 0.62rem;
-  background: rgba(2, 8, 9, 0.48);
-  color: var(--tow-gold-bright);
-  box-shadow: inset 0 0 1rem rgba(216,174,101,0.08);
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0.72rem;
+  background: transparent;
+  color: var(--tow-ink);
+  cursor: pointer;
+  scroll-snap-align: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 100ms ease, filter 140ms ease;
 }
 
-.tow-combat__action--attack .tow-combat__action-glyph { color: #ed9277; border-color: rgba(218, 105, 82, 0.35); }
-.tow-combat__action--guard .tow-combat__action-glyph { color: #91c8ce; border-color: rgba(112, 174, 183, 0.35); }
-.tow-combat__action--recover .tow-combat__action-glyph { color: #b7cc8b; border-color: rgba(158, 184, 114, 0.35); }
-
-.tow-combat__action-glyph svg {
-  width: 1.55rem;
-  height: 1.55rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+/* Five is the Tower skill cap. Keep a complete loadout visible on common desktop and
+   phone widths; only exceptionally narrow screens fall back to the same horizontal rail. */
+.tow-combat__actions:has(> :nth-child(5):last-child) .tow-combat__action {
+  flex-basis: clamp(3.6rem, 6vw, 4.45rem);
+  width: clamp(3.6rem, 6vw, 4.45rem);
 }
 
-.tow-combat__action-copy {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
+.tow-combat__action:hover:not(.is-unavailable) { transform: translateY(-2px); }
+.tow-combat__action:active:not(.is-unavailable) { transform: translateY(1px) scale(0.985); }
+.tow-combat__action.is-inspecting { transform: translateY(-2px); }
 
-.tow-combat__action-name {
+.tow-combat__action.is-unavailable { cursor: help; }
+.tow-combat__action.is-unavailable .tow-combat__ability-art { filter: grayscale(0.74) brightness(0.46); }
+.tow-combat__action.is-unavailable:hover .tow-combat__ability-art { filter: grayscale(0.58) brightness(0.6); }
+
+.tow-combat__ability-art {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  font-size: 0.76rem;
-  font-weight: 760;
-  line-height: 1.15;
+  border: 1px solid rgba(224, 193, 133, 0.5);
+  border-radius: 0.66rem;
+  background: #080d0f;
+  box-shadow:
+    0 0.35rem 0.9rem rgba(0,0,0,0.48),
+    inset 0 0 0 1px rgba(255,255,255,0.07),
+    inset 0 0 1.2rem rgba(0,0,0,0.14);
+  transition: border-color 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+}
+
+.tow-combat__action:hover .tow-combat__ability-art,
+.tow-combat__action.is-inspecting .tow-combat__ability-art {
+  border-color: rgba(255, 221, 157, 0.94);
+  box-shadow:
+    0 0.42rem 1.2rem rgba(0,0,0,0.52),
+    0 0 0 2px rgba(226, 183, 96, 0.24),
+    0 0 1.1rem rgba(216, 174, 101, 0.16);
+}
+
+.tow-combat__action--attack .tow-combat__ability-art { border-color: rgba(224, 132, 105, 0.6); }
+.tow-combat__action--guard .tow-combat__ability-art { border-color: rgba(126, 190, 202, 0.58); }
+.tow-combat__action--recover .tow-combat__ability-art { border-color: rgba(165, 198, 119, 0.58); }
+
+.tow-combat__ability-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.025);
+  user-select: none;
+}
+
+.tow-combat__ability-art-shade,
+.tow-combat__ability-art-frame,
+.tow-combat__ability-art-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tow-combat__ability-art-shade {
+  background:
+    linear-gradient(180deg, transparent 52%, rgba(1,4,5,0.35) 67%, rgba(1,4,5,0.94) 100%),
+    radial-gradient(circle at 50% 46%, transparent 45%, rgba(0,0,0,0.18) 100%);
+}
+
+.tow-combat__ability-art-frame {
+  inset: 3px;
+  border: 1px solid rgba(255, 244, 209, 0.13);
+  border-radius: 0.48rem;
+}
+
+.tow-combat__ability-art-sheen {
+  opacity: 0.34;
+  background: linear-gradient(125deg, rgba(255,255,255,0.16), transparent 25%, transparent 68%, rgba(255,209,130,0.08));
+}
+
+.tow-combat__ability-art-name {
+  position: absolute;
+  right: 0.22rem;
+  bottom: 0.25rem;
+  left: 0.22rem;
+  overflow: hidden;
+  font-size: clamp(0.47rem, 0.75vw, 0.58rem);
+  font-weight: 770;
+  line-height: 1.06;
+  letter-spacing: 0.01em;
+  color: #fff7e7;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px #000, 0 0 5px #000;
+}
+
+.tow-combat__action-charge,
+.tow-combat__action-swift {
+  position: absolute;
+  z-index: 4;
+  min-width: 1.15rem;
+  padding: 0.13rem 0.27rem;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 99px;
+  background: rgba(3,7,9,0.88);
+  box-shadow: 0 0.15rem 0.4rem rgba(0,0,0,0.52);
+  font-size: 0.49rem;
+  font-weight: 850;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+  color: #f6e4b8;
+}
+
+.tow-combat__action-charge { right: -0.18rem; bottom: -0.18rem; }
+.tow-combat__action-swift {
+  top: -0.2rem;
+  left: -0.2rem;
+  border-color: rgba(136,203,181,0.32);
+  background: rgba(10,48,40,0.94);
+  color: #bdedda;
+}
+
+.tow-combat__action-lock {
+  position: absolute;
+  z-index: 3;
+  right: 0.16rem;
+  bottom: 1.02rem;
+  left: 0.16rem;
+  overflow: hidden;
+  padding: 0.12rem 0.2rem;
+  border-radius: 0.2rem;
+  background: rgba(6,7,8,0.82);
+  font-size: 0.43rem;
+  font-weight: 750;
+  line-height: 1;
+  color: #dfb4a7;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tow-combat__action-meta {
-  display: flex;
-  gap: 0.36rem;
-  font-size: 0.52rem;
-  font-weight: 750;
-  letter-spacing: 0.1em;
+.tow-combat__action-hint {
+  margin: 0.26rem 0 0;
+  font-size: 0.5rem;
+  font-weight: 680;
+  letter-spacing: 0.08em;
+  text-align: center;
   text-transform: uppercase;
-  color: var(--tow-faint);
+  color: rgba(169,178,172,0.58);
 }
 
-.tow-combat__action-meta em { font-style: normal; color: #9bc4a9; }
-.tow-combat__action-why { font-size: 0.57rem; font-style: italic; color: rgba(225, 114, 92, 0.78); }
+.tow-combat__skill-details {
+  position: absolute;
+  z-index: 60;
+  right: 50%;
+  bottom: calc(100% + 0.6rem);
+  display: grid;
+  grid-template-columns: 5.4rem minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  width: min(35rem, calc(100vw - 1.4rem));
+  padding: 0.72rem;
+  transform: translateX(50%);
+  border: 1px solid rgba(223,191,129,0.34);
+  border-radius: 0.92rem;
+  background: linear-gradient(135deg, rgba(17,25,26,0.98), rgba(5,9,11,0.98));
+  box-shadow: 0 1.1rem 3rem rgba(0,0,0,0.58), inset 0 1px rgba(255,255,255,0.04);
+  backdrop-filter: blur(16px);
+}
+
+.tow-combat__skill-details::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 0.8rem;
+  height: 0.8rem;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border-right: 1px solid rgba(223,191,129,0.28);
+  border-bottom: 1px solid rgba(223,191,129,0.28);
+  background: #090e10;
+}
+
+.tow-combat__skill-details-art { width: 5.4rem; height: 5.4rem; }
+.tow-combat__skill-details-art .tow-combat__ability-art-name { display: none; }
+
+.tow-combat__skill-details-copy { min-width: 0; }
+.tow-combat__skill-details-copy > span {
+  display: block;
+  font-size: 0.51rem;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tow-gold);
+}
+.tow-combat__skill-details-copy > strong {
+  display: block;
+  margin-top: 0.1rem;
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: 1.4rem;
+  font-weight: 400;
+  color: #fff3dc;
+}
+.tow-combat__skill-details-copy > b {
+  display: block;
+  margin-top: 0.1rem;
+  overflow: hidden;
+  font-size: 0.58rem;
+  font-weight: 720;
+  color: #b8c6c1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tow-combat__skill-details-copy p {
+  margin: 0.34rem 0 0.25rem;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: #d8ddd7;
+}
+.tow-combat__skill-details-copy small { font-size: 0.56rem; color: #9ca9a5; }
+.tow-combat__skill-details-copy em {
+  display: block;
+  margin-top: 0.22rem;
+  font-size: 0.56rem;
+  font-style: normal;
+  color: #e39a87;
+}
+.tow-combat__skill-details > button {
+  align-self: start;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 50%;
+  background: rgba(255,255,255,0.04);
+  color: #c4cdc8;
+  cursor: pointer;
+}
 
 .tow-combat__command-foot {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   min-height: 1.2rem;
-  margin-top: 0.32rem;
+  margin-top: 0.18rem;
   padding: 0 0.25rem;
 }
 
@@ -853,16 +1025,19 @@
   .tow-combat__plate { width: min(90%, 25rem); grid-template-columns: minmax(6rem, auto) minmax(7rem, 13rem); }
   .tow-combat__identity h2 { font-size: 1.18rem; }
   .tow-combat__foe-rail { max-width: 62%; }
-  .tow-combat__actions { grid-template-columns: repeat(auto-fit, minmax(8.4rem, 1fr)); }
   .tow-combat__outcome { grid-template-columns: 1fr; }
   .tow-combat__settle { justify-self: stretch; }
 }
 
 @media (max-width: 38rem) {
+  .tow-combat { overflow: hidden; }
+
   .tow-combat__stage {
     display: flex;
     flex-direction: column;
+    height: 100svh;
     min-height: 100svh;
+    overflow: hidden;
     padding-top: max(0.55rem, env(safe-area-inset-top, 0px));
     padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
   }
@@ -879,37 +1054,49 @@
 
   .tow-combat__battlefield {
     flex: 1 1 auto;
-    min-height: 23rem;
-    max-height: 54svh;
+    min-height: 0;
+    max-height: none;
   }
 
   .tow-combat__threat {
-    top: -0.5rem;
-    right: -22vw;
-    width: 82vw;
-    height: 64%;
+    top: 0;
+    right: 0;
+    width: 100%;
+    height: 45%;
   }
 
   .tow-combat__hero {
-    bottom: -1rem;
-    left: -24vw;
-    width: 86vw;
-    height: 68%;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 47%;
   }
 
-  .tow-combat__art--foe .tow-combat__art-image { object-position: 58% 8%; transform: scale(1.12); }
-  .tow-combat__art--hero .tow-combat__art-image { object-position: 44% 100%; transform: scale(1.14); }
+  .tow-combat__threat .tow-combat__art {
+    right: -15%;
+    left: auto;
+    width: 82%;
+  }
+
+  .tow-combat__hero .tow-combat__art {
+    right: auto;
+    left: -17%;
+    width: 84%;
+  }
+
+  .tow-combat__art--foe .tow-combat__art-image { object-position: 58% 12%; transform: scale(1.05); }
+  .tow-combat__art--hero .tow-combat__art-image { object-position: 45% 100%; transform: scale(1.07); }
 
   .tow-combat__plate {
-    width: min(82vw, 19rem);
+    width: min(79vw, 19rem);
     grid-template-columns: minmax(5rem, auto) minmax(6.5rem, 1fr);
     gap: 0.3rem 0.65rem;
     padding: 0.55rem 0.65rem 0.6rem;
     border-radius: 0.68rem;
   }
 
-  .tow-combat__plate--enemy { right: 18vw; bottom: -0.45rem; }
-  .tow-combat__plate--hero { bottom: -0.1rem; left: 22vw; }
+  .tow-combat__plate--enemy { right: 0; bottom: 0; }
+  .tow-combat__plate--hero { bottom: 0; left: 0; }
   .tow-combat__identity span { font-size: 0.46rem; }
   .tow-combat__identity h2 { font-size: 1rem; }
   .tow-combat__hp { font-size: 0.57rem; }
@@ -917,9 +1104,9 @@
   .tow-combat__statuses { display: none; }
 
   .tow-combat__exchange {
-    top: 47%;
+    top: 51%;
     left: 50%;
-    width: min(76vw, 17rem);
+    width: min(72vw, 17rem);
   }
 
   .tow-combat__telegraph { padding: 0.58rem 0.65rem; }
@@ -940,37 +1127,55 @@
   .tow-combat__command {
     flex: 0 0 auto;
     width: 100%;
-    padding: 0.55rem;
+    padding: 0.48rem 0.5rem 0.38rem;
     border-radius: 0.9rem;
   }
 
-  .tow-combat__command-heading { padding-bottom: 0.4rem; }
-  .tow-combat__command-heading > div strong { font-size: 1rem; }
+  .tow-combat__command-heading { padding: 0 0.15rem 0.38rem; }
+  .tow-combat__command-heading > div strong { font-size: 0.96rem; }
   .tow-combat__command-heading p strong { font-size: 1.15rem; }
   .tow-combat__actions {
     display: flex;
-    gap: 0.38rem;
+    gap: 0.36rem;
+    justify-content: safe center;
     overflow-x: auto;
     scroll-snap-type: x proximity;
     scrollbar-width: none;
-    padding-bottom: 0.15rem;
+    padding: 0.15rem 0.1rem 0.28rem;
   }
   .tow-combat__actions::-webkit-scrollbar { display: none; }
 
   .tow-combat__action {
-    flex: 0 0 9.15rem;
-    grid-template-columns: 2.15rem minmax(0, 1fr);
-    min-height: 3.65rem;
-    padding: 0.42rem;
+    flex: 0 0 clamp(3.75rem, 17vw, 4.15rem);
+    width: clamp(3.75rem, 17vw, 4.15rem);
     scroll-snap-align: start;
   }
 
-  .tow-combat__action-glyph { width: 2.15rem; }
-  .tow-combat__action-glyph svg { width: 1.35rem; height: 1.35rem; }
-  .tow-combat__action-name { font-size: 0.7rem; }
+  .tow-combat__actions:has(> :nth-child(5):last-child) .tow-combat__action {
+    flex-basis: clamp(3.35rem, 15.5vw, 3.95rem);
+    width: clamp(3.35rem, 15.5vw, 3.95rem);
+  }
+
+  .tow-combat__ability-art-name { font-size: 0.47rem; }
+  .tow-combat__action-hint { margin-top: 0.12rem; font-size: 0.45rem; }
   .tow-combat__command-foot { display: none; }
 
-  .tow-combat.is-terminal .tow-combat__battlefield { min-height: 33rem; max-height: none; }
+  .tow-combat__skill-details {
+    grid-template-columns: 4.4rem minmax(0, 1fr) auto;
+    gap: 0.58rem;
+    bottom: calc(100% + 0.42rem);
+    width: min(32rem, calc(100vw - 1rem));
+    padding: 0.58rem;
+  }
+
+  .tow-combat__skill-details-art { width: 4.4rem; height: 4.4rem; }
+  .tow-combat__skill-details-copy > strong { font-size: 1.16rem; }
+  .tow-combat__skill-details-copy p { margin-top: 0.25rem; font-size: 0.61rem; }
+  .tow-combat__skill-details-copy small { font-size: 0.51rem; }
+
+  .tow-combat.is-terminal { overflow: auto; }
+  .tow-combat.is-terminal .tow-combat__stage { height: auto; min-height: 100svh; overflow: visible; }
+  .tow-combat.is-terminal .tow-combat__battlefield { flex: 0 0 34rem; min-height: 34rem; }
   .tow-combat__outcome { width: 100%; padding: 0.75rem; }
   .tow-combat__tally { justify-content: space-between; }
 }

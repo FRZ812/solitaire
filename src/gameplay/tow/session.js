@@ -529,6 +529,7 @@ export function createTowSession(input = {}) {
         traits: build?.traits || {},
         skills: build?.skills || [],
         runes: build?.runes || [],
+        ...(Object.hasOwn(build || {}, "basicAttack") ? { basicAttack: build.basicAttack || null } : {}),
       },
       // Authored per-enemy telegraph rotations. Empty is the normal case: the encounter
       // derives a default rotation from each foe's own attack table, and an authored one is

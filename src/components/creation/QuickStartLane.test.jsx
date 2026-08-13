@@ -106,6 +106,8 @@ describe("the simple grid-to-preview flow", () => {
     expect(preview.querySelector("input")).toBeNull();
     expect(preview.querySelectorAll(".character-preview__carousel [role=radio]")).toHaveLength(8);
     expect(preview.querySelectorAll(".character-preview__carousel [aria-checked=true]")).toHaveLength(1);
+    expect(preview.querySelector(".character-preview__close")).toBeNull();
+    expect(preview.querySelectorAll(".character-preview__starting-actions img").length).toBeGreaterThan(1);
     expect(mounted.textContent).not.toContain("Starting equipment");
   });
 
@@ -135,6 +137,12 @@ describe("the simple grid-to-preview flow", () => {
     expect(details).toBeTruthy();
     expect(details.textContent).toContain("Starting equipment");
     expect(details.textContent).toContain("Starting fusions");
+    expect(details.textContent).toContain("Starting abilities");
+    expect(details.textContent).toContain("Equipped now · ranks 1–6");
+    expect(details.textContent).toContain("Possible refinement");
+    expect(details.querySelectorAll(".starting-ability__art img")).toHaveLength(
+      STARTING_ARCHETYPES[6].build.skills.length,
+    );
     expect(details.querySelector("select")).toBeNull();
 
     const picker = details.querySelector("[role=combobox]");
@@ -190,7 +198,7 @@ describe("every advertised character reaches the production fight", () => {
       expect(dialog, entry.id).toBeTruthy();
       expect(dialog.textContent, entry.id).toContain(entry.character.name);
       expect([...dialog.querySelectorAll(".production-combat__action")]
-        .some((button) => !button.disabled), entry.id).toBe(true);
+        .some((button) => button.getAttribute("aria-disabled") !== "true"), entry.id).toBe(true);
       expect(dialog.textContent, entry.id).toContain("Incoming");
 
       await act(async () => root.unmount());
@@ -209,7 +217,7 @@ describe("every advertised character reaches the production fight", () => {
 
     for (let round = 0; round < 40 && mounted.querySelector(".tow-combat"); round += 1) {
       const action = [...mounted.querySelectorAll(".production-combat__action")]
-        .find((button) => !button.disabled);
+        .find((button) => button.getAttribute("aria-disabled") !== "true");
       if (!action) break;
       await click(action);
     }

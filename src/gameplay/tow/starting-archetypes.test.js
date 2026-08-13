@@ -27,11 +27,13 @@ describe("TOW starting item grants", () => {
     const effective = effectiveTowBuild(compiled.receipt.build, itemIds);
 
     expect(effective.traits.metalize).toBe(7);
+    expect(effective.basicAttack).toMatchObject({ formId: "dawnward-blow", name: "Dawnward Blow" });
     expect(towItemActorBonuses(itemIds)).toMatchObject({ attack: 4, maxHp: 20 });
     expect(JSON.stringify(compiled.receipt.build)).toBe(before);
 
     const unequipped = effectiveTowBuild(compiled.receipt.build, itemIds.filter((id) => id !== "dawnward-mace"));
     expect(unequipped.traits).not.toHaveProperty("metalize");
+    expect(unequipped.basicAttack.formId).toBe("unarmed-fundamental");
   });
 
   it("fires an item-granted fusion in the real encounter reducer", () => {
