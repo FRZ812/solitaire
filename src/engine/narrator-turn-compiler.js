@@ -1206,6 +1206,15 @@ export function compileNarratorCandidate({ candidate, projection, turnPolicy, me
     _userMsg: metadata.userMsg,
     _model: metadata.model,
     _reasoningDetails: metadata.reasoningDetails,
+    // Memories were passed in and never picked up here, so `beat._memories` was always
+    // undefined and every fact the `remember` tool recorded merged into nothing. The tool
+    // has been writing to a channel that ended at this object.
+    //
+    // They are minted only now, on a candidate that has passed every check above — which is
+    // what makes "a rejected turn persists nothing" true rather than hoped for: an attempt
+    // that fails validation returns above and never reaches this line.
+    _memories: metadata.memories,
+    _memoryProposals: metadata.memoryProposals,
   } : {};
   let materializedCandidate = candidate;
   if (assassination?.outcome === "detected-combat") {

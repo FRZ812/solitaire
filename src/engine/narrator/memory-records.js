@@ -327,3 +327,27 @@ export function retrieveMemories(bank, {
     .slice(0, limit)
     .map(({ entry }) => entry);
 }
+
+/**
+ * Grow a campaign's typed bank from a turn's accepted proposals.
+ *
+ * Old string memories are migrated on first touch rather than in a migration pass: a
+ * campaign that never records another memory never needs converting, and one that does gets
+ * its history typed at the moment it first matters.
+ *
+ * Subjects are checked against the codex, so a memory about someone the world has never
+ * heard of is refused here as it is at the gateway — the same rule, applied wherever a
+ * name arrives.
+ */
+export function foldNarratorMemories(state, proposals, { revision = 0 } = {}) {
+  const existing = Array.isArray(state?.memoryBank) && state.memoryBank.length > 0
+    ? state.memoryBank
+    : migrateLegacyMemories(state?.memories, { revision });
+  if (!proposals || proposals.length === 0) return existing;
+
+  const knownSubjectIds = [
+    ...Object.keys(state?.world?.codex?.characters || {}),
+    "campaign",
+  ];
+  return acceptMemoryProposals(existing, proposals, { revision, knownSubjectIds }).bank;
+}
