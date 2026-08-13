@@ -8,6 +8,7 @@
 import { itemTemplate } from "../../data/catalog.js";
 import { getSkill } from "./skills.js";
 import { getFusion, getTrait, TRAIT_CAPACITY, TRAIT_RANK_CAP } from "./traits.js";
+import { weaponAttackSnapshotFromItemIds } from "./weapon-techniques.js";
 
 const EMPTY_STATS = Object.freeze({ attack: 0, defense: 0, maxHp: 0, critRate: 0, dodgeRate: 0 });
 
@@ -160,7 +161,7 @@ function skillId(entry) {
  * Materialize item-granted traits, skills, and already-forged fusions for one encounter.
  * The durable build is never mutated and never stores these grants.
  */
-export function effectiveTowBuild(build = {}, itemIds = []) {
+export function effectiveTowBuild(build = {}, itemIds = [], codex = {}) {
   const traits = { ...(build.traits || {}) };
   const skills = Array.isArray(build.skills) ? build.skills.map((entry) => (
     typeof entry === "string" ? entry : { ...entry }
@@ -186,7 +187,14 @@ export function effectiveTowBuild(build = {}, itemIds = []) {
   if (Object.keys(traits).length > TRAIT_CAPACITY) {
     throw new TypeError("item-grants-exceed-trait-capacity");
   }
-  return { traits, skills, runes };
+  return {
+    traits,
+    skills,
+    runes,
+    // A fight snapshots only the active form. The weapon's other possible refinements stay
+    // in the item lineage and do not imply that the current attack must be replaced.
+    basicAttack: weaponAttackSnapshotFromItemIds(itemIds, codex),
+  };
 }
 
 /** Inspectable item rows for the character-start UI. */

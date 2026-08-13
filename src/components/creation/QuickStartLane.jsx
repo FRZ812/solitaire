@@ -8,9 +8,16 @@ import "./archetype-start.css";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import winterScene from "../../assets/generated/scene-whitemarch-v2.webp";
 import { resolveCharacterPortrait } from "../character-portrait-assets.js";
-import { getSkill } from "../../gameplay/tow/skills.js";
+import { Icon } from "../Icon.jsx";
+import { createSkillState, getSkill } from "../../gameplay/tow/skills.js";
 import { getFusion, getTrait } from "../../gameplay/tow/traits.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
+import {
+  weaponPresentationForForm,
+  weaponPresentationFromItemIds,
+} from "../../gameplay/tow/weapon-presentation.js";
+import { weaponAttackSummary } from "../../gameplay/tow/weapon-techniques.js";
+import { resolveTowAbilityArt, resolveTowActionName } from "../combat/tow-combat-ability-art.js";
 import {
   STARTING_ARCHETYPES,
   archetypeFusionIds,
@@ -33,6 +40,42 @@ function ArrowIcon({ direction = "right" }) {
     <svg aria-hidden="true" viewBox="0 0 20 20" className={`character-select__arrow-icon is-${direction}`}>
       <path d="M4 10h11M11 5l5 5-5 5" />
     </svg>
+  );
+}
+
+function nonStrikeSummary(definition, rank = 1) {
+  const readable = (definition.effects || []).map((effect, index) => {
+    const table = effect.percentByRank || effect.countByRank;
+    const amount = Array.isArray(table) ? table[Math.min(table.length - 1, Math.max(0, rank - 1))] : null;
+    if (effect.type === "damage") return `${amount}% ${effect.scale.toUpperCase()} damage`;
+    if (effect.type === "shield") return `${amount}% ${effect.scale.toUpperCase()} ward`;
+    if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
+    if (effect.type === "scaled-status") return `${amount}% ${effect.scale.toUpperCase()} ${effect.status}`;
+    if (effect.type === "status") return `${amount} ${effect.status}`;
+    if (effect.type === "reduce-statuses") return `Cleanse ${effect.statuses.join(", ")}`;
+    return effect.type.replace(/-/g, " ");
+  });
+  return readable.join(" · ") || "Passive combat effect";
+}
+
+function StartingAbilityCard({ definition, weaponPresentation = null, compact = false }) {
+  const state = createSkillState(definition.id, 1);
+  const name = resolveTowActionName(definition, weaponPresentation);
+  const summary = definition.id === "strike"
+    ? weaponAttackSummary(weaponPresentation?.attackSnapshot, state.rank)
+    : nonStrikeSummary(definition, state.rank);
+  return (
+    <article className={`starting-ability${compact ? " is-compact" : ""}`} data-skill-id={definition.id}>
+      <span className="starting-ability__art">
+        <img src={resolveTowAbilityArt(definition, weaponPresentation)} alt="" />
+        <span aria-hidden="true" />
+      </span>
+      <div>
+        <span>{definition.consumesTurn ? "Action" : "Swift · keeps action"}</span>
+        <strong>{name}</strong>
+        <p>{summary}</p>
+      </div>
+    </article>
   );
 }
 
@@ -149,6 +192,11 @@ function CharacterDetails({ selected, scenarioId, onScenarioChange, onPractice, 
   const baseTraitId = Object.keys(selected.build.traits)[0];
   const baseTrait = getTrait(baseTraitId);
   const skills = selected.build.skills.map((id) => getSkill(id)).filter(Boolean);
+  const weaponPresentation = useMemo(
+    () => weaponPresentationFromItemIds(selected.gear),
+    [selected.gear],
+  );
+  const refinements = weaponPresentation.forms.filter((entry) => entry.id !== weaponPresentation.activeFormId);
 
   return (
     <>
@@ -159,7 +207,9 @@ function CharacterDetails({ selected, scenarioId, onScenarioChange, onPractice, 
             <span>{selected.power} · {selected.name}</span>
             <h2>Character details</h2>
           </div>
-          <button type="button" className="character-details__close" aria-label="Close character details" onClick={onClose}>×</button>
+          <button type="button" className="character-details__close" aria-label="Close character details" onClick={onClose}>
+            <Icon name="x" size={16} strokeWidth={1.6} />
+          </button>
         </header>
 
         <div className="character-details__body">
@@ -174,16 +224,59 @@ function CharacterDetails({ selected, scenarioId, onScenarioChange, onPractice, 
             <small>Attention · {selected.attention}</small>
           </section>
 
-          <section className="character-details__split">
-            <div>
-              <span className="character-details__label">Core actions</span>
-              <div className="character-details__chips">
-                {skills.map((skill) => <span key={skill.id}>{skill.name}</span>)}
-              </div>
+          <section className="character-details__loadout">
+            <div className="character-details__section-heading">
+              <span className="character-details__label">Starting abilities</span>
+              <small>Exact combat loadout</small>
             </div>
+            <div className="starting-abilities">
+              {skills.map((skill) => (
+                <StartingAbilityCard
+                  key={skill.id}
+                  definition={skill}
+                  weaponPresentation={skill.id === "strike" ? weaponPresentation : null}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section className="character-details__refinements">
+            <div className="character-details__section-heading">
+              <span className="character-details__label">Basic attack lineage</span>
+              <small>Choices, not mandatory replacements</small>
+            </div>
+            <div className="weapon-lineage-current">
+              <span>Equipped now · ranks 1–6</span>
+              <strong>{weaponPresentation.actionName}</strong>
+              <p>{weaponPresentation.activeForm.description}</p>
+            </div>
+            {refinements.length ? (
+              <div className="weapon-refinements">
+                {refinements.map((form) => {
+                  const preview = weaponPresentationForForm(weaponPresentation, form.id);
+                  return (
+                    <article key={form.id}>
+                      <img src={resolveTowAbilityArt(getSkill("strike"), preview)} alt="" />
+                      <div>
+                        <span>Possible refinement · {form.role}</span>
+                        <strong>{form.name}</strong>
+                        <p>{weaponAttackSummary(preview.attackSnapshot, 1)}</p>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : null}
+          </section>
+
+          <section className="character-details__split">
             <div>
               <span className="character-details__label">Innate passive</span>
               <strong>{baseTrait?.name || baseTraitId}</strong>
+            </div>
+            <div>
+              <span className="character-details__label">Combat identity</span>
+              <strong>{weaponPresentation.weaponName}</strong>
             </div>
           </section>
 
@@ -242,6 +335,10 @@ export function QuickStartLane({
   const railRef = useRef(null);
   const thumbnailRefs = useRef([]);
   const baseTrait = getTrait(Object.keys(selected.build.traits)[0]);
+  const previewWeapon = useMemo(
+    () => weaponPresentationFromItemIds(selected.gear),
+    [selected.gear],
+  );
 
   useEffect(() => setDetailsOpen(false), [selected.id]);
   useEffect(() => {
@@ -274,7 +371,7 @@ export function QuickStartLane({
           <header className="character-grid-view__header">
             {onQuit ? (
               <button type="button" className="character-select__quiet-action" onClick={onQuit}>
-                <ArrowIcon direction="left" /> Journeys
+                <Icon name="arrowLeft" size={15} strokeWidth={1.7} /> Journeys
               </button>
             ) : <span />}
             <div>
@@ -328,10 +425,9 @@ export function QuickStartLane({
       <div className="character-preview">
         <header className="character-preview__nav">
           <button type="button" className="character-select__quiet-action" onClick={() => change({ preview: false })}>
-            <ArrowIcon direction="left" /> All characters
+            <Icon name="arrowLeft" size={15} strokeWidth={1.7} /> All characters
           </button>
-          <span>{selected.power} origin</span>
-          {onQuit ? <button type="button" className="character-preview__close" aria-label="Back to journeys" onClick={onQuit}>×</button> : <span />}
+          <span aria-hidden="true" />
         </header>
 
         <main className="character-preview__stage">
@@ -349,6 +445,24 @@ export function QuickStartLane({
               <span>Starting trait</span>
               <strong>{baseTrait?.name || Object.keys(selected.build.traits)[0]}</strong>
               <small>Rank {Object.values(selected.build.traits)[0]}</small>
+            </div>
+
+            <div className="character-preview__starting-actions" aria-label="Starting abilities">
+              {selected.build.skills.slice(0, 3).map((skillId) => {
+                const definition = getSkill(skillId);
+                if (!definition) return null;
+                const weapon = skillId === "strike" ? previewWeapon : null;
+                return (
+                  <button type="button" key={skillId} onClick={() => setDetailsOpen(true)} aria-label={`View ${resolveTowActionName(definition, weapon)} details`}>
+                    <img src={resolveTowAbilityArt(definition, weapon)} alt="" />
+                    <span>{resolveTowActionName(definition, weapon)}</span>
+                  </button>
+                );
+              })}
+              <button type="button" className="is-more" onClick={() => setDetailsOpen(true)}>
+                <Icon name="alert" size={16} strokeWidth={1.7} />
+                <span>Loadout</span>
+              </button>
             </div>
 
             {error ? <p className="character-preview__alert" role="alert">{error}</p> : null}
@@ -386,7 +500,6 @@ export function QuickStartLane({
                   onClick={() => selectCharacter(entry, index, true)}
                 >
                   <img src={portraitFor(entry)} alt="" />
-                  <span>{entry.character.name}</span>
                 </button>
               );
             })}

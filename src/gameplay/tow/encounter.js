@@ -42,6 +42,11 @@ import {
   combatTraitValueAtRank,
   getCombatTrait,
 } from "./traits.js";
+import {
+  isWeaponAttackSnapshot,
+  normalizeWeaponAttackSnapshot,
+  weaponAttackAtRank,
+} from "./weapon-techniques.js";
 
 export const TOW_ENCOUNTER_VERSION = 1;
 export const MAX_ENCOUNTER_EVENTS = 20_000;
@@ -207,7 +212,17 @@ function normalizeBuild(build) {
   const skills = (build?.skills || []).map((entry) => (
     typeof entry === "string" ? createSkillState(entry) : { ...entry }
   ));
-  return { traits, skills, runes: [...(build?.runes || [])] };
+  const hasBasicAttack = Object.hasOwn(build || {}, "basicAttack");
+  const basicAttack = build?.basicAttack == null
+    ? null
+    : normalizeWeaponAttackSnapshot(build.basicAttack);
+  if (build?.basicAttack != null && !basicAttack) throw new TypeError("invalid-basic-attack");
+  return {
+    traits,
+    skills,
+    runes: [...(build?.runes || [])],
+    ...(hasBasicAttack ? { basicAttack } : {}),
+  };
 }
 
 export function createTowEncounter({
@@ -261,7 +276,7 @@ export function createTowEncounter({
   ];
   if (new Set(everyId).size !== everyId.length) throw new TypeError("duplicate-actor-id");
 
-  const { traits, skills, runes } = normalizeBuild(build);
+  const playerBuild = normalizeBuild(build);
 
   // Every foe gets a rotation over its own attack table. An authored schedule wins where one
   // is supplied; otherwise the default generator derives one, so an arbitrary bestiary group
@@ -296,7 +311,7 @@ export function createTowEncounter({
       ...allyActors.map((ally) => [ally.id, ally]),
       ...enemyActors.map((enemy) => [enemy.id, enemy]),
     ]),
-    build: { traits, skills, runes },
+    build: playerBuild,
     allyBuilds,
     turn: { actionsRemaining: 1, allies: {} },
     events: [],
@@ -447,7 +462,11 @@ export function isTowEncounter(value) {
   }
   const allyKeys = Object.keys(value.allyBuilds);
   if (allyKeys.length !== value.allyIds.length) return false;
-  if (!value.allyIds.every((id) => Array.isArray(value.allyBuilds[id]?.skills))) return false;
+  if (!value.allyIds.every((id) => (
+    Array.isArray(value.allyBuilds[id]?.skills)
+    && (value.allyBuilds[id].basicAttack == null || isWeaponAttackSnapshot(value.allyBuilds[id].basicAttack))
+  ))) return false;
+  if (value.build?.basicAttack != null && !isWeaponAttackSnapshot(value.build?.basicAttack)) return false;
   const actorIds = [value.playerId, ...value.allyIds, ...value.enemyIds];
   if (new Set(actorIds).size !== actorIds.length) return false;
   if (Object.keys(value.actors).length !== actorIds.length) return false;
@@ -526,11 +545,16 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     if (effect.type === "damage") {
       const target = next.actors[targetId];
       if (!target || target.hp <= 0) return;
-      const amount = Math.floor((statOf(player, effect.scale) * magnitude()) / 100);
+      const weaponAttack = skillId === "strike"
+        ? weaponAttackAtRank(buildFor(next, playerId)?.basicAttack, rank)
+        : null;
+      const amount = Math.floor((statOf(player, effect.scale) * (
+        weaponAttack?.damagePercent ?? magnitude()
+      )) / 100);
       const hit = resolveAttack({
         attacker: player,
         defender: target,
-        attack: { hits: 1, damage: amount },
+        attack: { hits: weaponAttack?.hits ?? 1, damage: amount },
         rng: next.rng,
       });
       next = {
@@ -538,7 +562,42 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         rng: hit.rng,
         actors: { ...next.actors, [playerId]: hit.attacker, [targetId]: hit.defender },
       };
-      next = push(next, "skill-damage", { actorId: playerId, skillId, targetId, amount, hits: hit.hits });
+      next = push(next, "skill-damage", {
+        actorId: playerId,
+        skillId,
+        targetId,
+        amount,
+        hits: hit.hits,
+        ...(weaponAttack ? { basicAttackFormId: buildFor(next, playerId).basicAttack.formId } : {}),
+      });
+      // Weapon branches may bind one scaled status to the same basic attack. It resolves
+      // after all hits, making a double/triple form mechanically distinct from the optional
+      // single-hit debuff form while leaving the base attack free to rank up in place.
+      for (const statusEffect of weaponAttack?.statusEffects || []) {
+        const currentPlayer = next.actors[playerId];
+        const currentTarget = next.actors[targetId];
+        if (!currentTarget || currentTarget.hp <= 0) break;
+        const count = Math.floor((statOf(currentPlayer, statusEffect.scale) * statusEffect.percent) / 100);
+        if (count <= 0) continue;
+        next = {
+          ...next,
+          actors: {
+            ...next.actors,
+            [targetId]: {
+              ...currentTarget,
+              statuses: applyStatus(currentTarget.statuses, statusEffect.status, count),
+            },
+          },
+        };
+        next = push(next, "skill-status", {
+          actorId: playerId,
+          skillId,
+          status: statusEffect.status,
+          target: statusEffect.target,
+          count,
+          basicAttackFormId: buildFor(next, playerId).basicAttack.formId,
+        });
+      }
       return;
     }
 

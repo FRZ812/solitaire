@@ -9,6 +9,7 @@ import {
   useSkill,
 } from "./encounter.js";
 import { TRAIT_RANK_CAP } from "./traits.js";
+import { weaponAttackSnapshot, weaponTechniqueFromItemIds } from "./weapon-techniques.js";
 
 // The Arctic Knight as the wiki records them: 170 HP, 12 ATK, 13 DEF, 9% crit, 4% dodge,
 // starting trait Ironclad, starting skills Strike and Block. Crit and dodge are zeroed in
@@ -93,6 +94,31 @@ describe("using skills", () => {
     const result = useSkill(start(), "strike");
     expect(result.ok).toBe(true);
     expect(result.state.actors.gatekeeper.hp).toBe(178);
+  });
+
+  it("resolves an equipped paired attack as separate hits", () => {
+    const technique = weaponTechniqueFromItemIds(["twin-daggers"]);
+    const result = useSkill(start({
+      build: { basicAttack: weaponAttackSnapshot(technique) },
+    }), "strike");
+    const event = result.state.events.find((entry) => entry.type === "skill-damage");
+    expect(event.basicAttackFormId).toBe("twin-cut");
+    expect(event.hits).toHaveLength(2);
+    expect(result.state.actors.gatekeeper.hp).toBe(178);
+  });
+
+  it("lets a single-hit branch trade the flurry for a debuff", () => {
+    const technique = weaponTechniqueFromItemIds(
+      ["nightfang-dagger"],
+      {},
+      { formId: "silencing-cut" },
+    );
+    const result = useSkill(start({
+      build: { basicAttack: weaponAttackSnapshot(technique) },
+    }), "strike");
+    const damage = result.state.events.find((entry) => entry.type === "skill-damage");
+    expect(damage.hits).toHaveLength(1);
+    expect(statusCount(result.state.actors.gatekeeper.statuses, "lethargy")).toBe(3);
   });
 
   it("turns Block into shield from defence, not damage", () => {

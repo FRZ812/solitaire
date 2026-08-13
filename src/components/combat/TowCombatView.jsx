@@ -1,8 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
 import battleScene from "../../assets/generated/scene-crowsmoor-v2.webp";
 import { declaredIntents } from "../../gameplay/tow/encounter.js";
-import { getSkill, skillLegality, usesPerAct, UNLIMITED_USES } from "../../gameplay/tow/skills.js";
+import {
+  effectMagnitude,
+  getSkill,
+  skillLegality,
+  usesPerAct,
+  UNLIMITED_USES,
+} from "../../gameplay/tow/skills.js";
+import { normalizeWeaponPresentation } from "../../gameplay/tow/weapon-presentation.js";
+import { weaponAttackSummary } from "../../gameplay/tow/weapon-techniques.js";
 import { resolveTowCombatArt } from "./tow-combat-art.js";
+import { resolveTowAbilityArt, resolveTowActionName } from "./tow-combat-ability-art.js";
 import "./tow-combat.css";
 
 function percent(value, max) {
@@ -15,6 +24,8 @@ const REFUSALS = {
   "turn-already-spent": () => "no action left",
   "invalid-skill-state": () => "unavailable",
 };
+
+const HOLD_FOR_DETAILS_MS = 420;
 
 function refusalText(reason, skillState) {
   const render = REFUSALS[reason];
@@ -36,38 +47,169 @@ function actionKind(definition) {
   return definition.consumesTurn ? "technique" : "swift";
 }
 
-function ActionGlyph({ definition }) {
-  const kind = actionKind(definition);
+function AbilityArt({ src, name, className = "" }) {
   return (
-    <span className={`tow-combat__action-glyph tow-combat__action-glyph--${kind}`} aria-hidden="true">
-      <svg viewBox="0 0 48 48" focusable="false">
-        {kind === "attack" ? (
-          <>
-            <path d="M13 35 35 13" />
-            <path d="m26 11 11 11M11 29l8 8" />
-            <path d="M10 38h11" />
-          </>
-        ) : null}
-        {kind === "guard" ? (
-          <>
-            <path d="M24 8 37 13v10c0 8-5 14-13 18-8-4-13-10-13-18V13l13-5Z" />
-            <path d="M24 14v20M17 21h14" />
-          </>
-        ) : null}
-        {kind === "recover" ? (
-          <>
-            <path d="M24 39S10 31 10 19c0-5 3-9 8-9 3 0 5 2 6 4 1-2 3-4 6-4 5 0 8 4 8 9 0 12-14 20-14 20Z" />
-            <path d="M17 24h14M24 17v14" />
-          </>
-        ) : null}
-        {kind === "technique" || kind === "swift" ? (
-          <>
-            <path d="m25 7-5 14h9l-7 20 16-24h-9l5-10" />
-            <path d="M11 15h7M9 23h7M12 31h6" />
-          </>
-        ) : null}
-      </svg>
+    <span className={`tow-combat__ability-art ${className}`.trim()} aria-hidden="true">
+      <img src={src} alt="" draggable="false" />
+      <span className="tow-combat__ability-art-shade" />
+      <span className="tow-combat__ability-art-frame" />
+      <span className="tow-combat__ability-art-sheen" />
+      <span className="tow-combat__ability-art-name">{name}</span>
     </span>
+  );
+}
+
+function effectDetail(definition, effect, effectIndex, rank) {
+  const ranked = Array.isArray(effect.percentByRank) || Array.isArray(effect.countByRank);
+  const amount = ranked ? effectMagnitude(definition.id, effectIndex, rank) : null;
+  if (effect.type === "damage") return `${amount}% ${effect.scale} damage`;
+  if (effect.type === "shield") return `${amount}% ${effect.scale} ward`;
+  if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
+  if (effect.type === "scaled-status") {
+    return `${amount}% ${effect.scale} ${effect.status.replace(/-/g, " ")}`;
+  }
+  if (effect.type === "status") return `${amount} ${effect.status.replace(/-/g, " ")}`;
+  if (effect.type === "reduce-statuses") {
+    return `Reduce ${effect.statuses.join(", ")} to ${effect.toPercent}%`;
+  }
+  if (effect.type === "scaled-status-enemy-lost-hp") {
+    return `${amount}% of enemy lost health as ${effect.status.replace(/-/g, " ")}`;
+  }
+  return effect.type.replace(/-/g, " ");
+}
+
+export function towSkillDetail(definition, skillState, weaponPresentation = null) {
+  if (definition.id === "strike" && weaponPresentation?.attackSnapshot) {
+    return weaponAttackSummary(weaponPresentation.attackSnapshot, skillState.rank);
+  }
+  const effects = definition.effects.map((effect, index) => (
+    effectDetail(definition, effect, index, skillState.rank)
+  ));
+  if (definition.note) effects.push(definition.note.replace(/-/g, " "));
+  return effects.join(" · ") || "No immediate combat effect";
+}
+
+function SkillDetails({
+  definition,
+  displayName,
+  art,
+  weaponPresentation,
+  skillState,
+  legality,
+  limit,
+  onDismiss,
+}) {
+  return (
+    <aside
+      className={`tow-combat__skill-details tow-combat__skill-details--${actionKind(definition)}`}
+      role="dialog"
+      aria-modal="false"
+      aria-label={`${displayName} details`}
+      data-testid="tow-skill-details"
+    >
+      <AbilityArt src={art} name={displayName} className="tow-combat__skill-details-art" />
+      <div className="tow-combat__skill-details-copy">
+        <span>{definition.rarity} · rank {skillState.rank}</span>
+        <strong>{displayName}</strong>
+        {definition.id === "strike" ? (
+          <b>{weaponPresentation.weaponName} · {weaponPresentation.familyLabel}</b>
+        ) : null}
+        <p>{towSkillDetail(definition, skillState, weaponPresentation)}</p>
+        <small>
+          {definition.consumesTurn ? "Spends the action" : "Swift · keeps the action"}
+          {limit !== UNLIMITED_USES ? ` · ${skillState.usesRemaining}/${limit} uses` : " · always ready"}
+        </small>
+        {!legality.ok ? <em>{refusalText(legality.reason, skillState)}</em> : null}
+      </div>
+      <button type="button" onClick={onDismiss} aria-label="Close skill details">×</button>
+    </aside>
+  );
+}
+
+function CombatAction({
+  definition,
+  displayName,
+  art,
+  skillState,
+  weaponPresentation,
+  legality,
+  limit,
+  active,
+  firstActionRef,
+  onShowDetails,
+  onHideDetails,
+  onUse,
+}) {
+  const holdTimerRef = useRef(null);
+  const holdTargetRef = useRef(null);
+  const heldRef = useRef(false);
+
+  function cancelHold() {
+    if (holdTimerRef.current !== null) clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = null;
+    holdTargetRef.current?.removeAttribute("data-held");
+    holdTargetRef.current = null;
+  }
+
+  function beginHold(event) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    cancelHold();
+    heldRef.current = false;
+    holdTargetRef.current = event.currentTarget;
+    holdTimerRef.current = setTimeout(() => {
+      holdTimerRef.current = null;
+      heldRef.current = true;
+      onShowDetails();
+      holdTargetRef.current?.setAttribute("data-held", "true");
+    }, HOLD_FOR_DETAILS_MS);
+  }
+
+  function finishHold() {
+    if (!heldRef.current) cancelHold();
+  }
+
+  function useSkill(event) {
+    if (heldRef.current) {
+      heldRef.current = false;
+      event.preventDefault();
+      return;
+    }
+    if (legality.ok) onUse();
+    else onShowDetails();
+  }
+
+  useEffect(() => cancelHold, []);
+
+  return (
+    <button
+      ref={firstActionRef}
+      type="button"
+      className={`tow-combat__action production-combat__action tow-combat__action--${actionKind(definition)}${active ? " is-inspecting" : ""}${!legality.ok ? " is-unavailable" : ""}`}
+      aria-label={`${displayName}. ${towSkillDetail(definition, skillState, weaponPresentation)}. ${legality.ok ? "Tap to use; hold for details" : refusalText(legality.reason, skillState)}`}
+      aria-disabled={!legality.ok}
+      aria-expanded={active}
+      data-skill-id={definition.id}
+      onClick={useSkill}
+      onPointerDown={beginHold}
+      onPointerUp={finishHold}
+      onPointerCancel={finishHold}
+      onPointerLeave={finishHold}
+      onContextMenu={(event) => event.preventDefault()}
+      onKeyDown={(event) => {
+        if (event.key === "F1" || event.key.toLowerCase() === "i") {
+          event.preventDefault();
+          onShowDetails();
+        }
+        if (event.key === "Escape" && active) onHideDetails();
+      }}
+    >
+      <AbilityArt src={art} name={displayName} />
+      <span className="tow-combat__action-charge">
+        {limit !== UNLIMITED_USES ? `${skillState.usesRemaining}/${limit}` : "∞"}
+      </span>
+      {!definition.consumesTurn ? <span className="tow-combat__action-swift">Swift</span> : null}
+      {!legality.ok ? <span className="tow-combat__action-lock">{refusalText(legality.reason, skillState)}</span> : null}
+    </button>
   );
 }
 
@@ -178,6 +320,7 @@ export function TowCombatView({
   error,
   saveState = null,
   artFor = null,
+  weaponFor = null,
   playerPortraitKey = null,
   sceneArt = battleScene,
   returnFocusSelector = ".story-input__field",
@@ -187,6 +330,7 @@ export function TowCombatView({
   const restoreFocusRef = useRef(null);
   const [targetId, setTargetId] = useState(null);
   const [commanderId, setCommanderId] = useState(null);
+  const [inspectedSkillId, setInspectedSkillId] = useState(null);
 
   const player = encounter.actors[encounter.playerId];
   const allies = (encounter.allyIds || []).map((id) => encounter.actors[id]);
@@ -206,6 +350,29 @@ export function TowCombatView({
   const commanderBuild = activeCommander.id === encounter.playerId
     ? encounter.build
     : encounter.allyBuilds?.[activeCommander.id];
+  const suppliedWeapon = typeof weaponFor === "function" ? weaponFor(activeCommander) : null;
+  const commanderWeapon = normalizeWeaponPresentation({
+    ...suppliedWeapon,
+    ...(commanderBuild?.basicAttack ? {
+      activeFormId: commanderBuild.basicAttack.formId,
+      attackSnapshot: commanderBuild.basicAttack,
+    } : {}),
+  });
+  const skillRows = (commanderBuild?.skills || []).map((skillState) => {
+    const definition = getSkill(skillState.id);
+    return {
+      art: resolveTowAbilityArt(definition, commanderWeapon),
+      definition,
+      displayName: resolveTowActionName(definition, commanderWeapon),
+      legality: skillLegality(skillState, {
+        turnAvailable: actionsLeft(encounter, activeCommander.id) > 0,
+      }),
+      limit: usesPerAct(skillState.id, skillState.rank),
+      skillState,
+      weaponPresentation: commanderWeapon,
+    };
+  });
+  const inspectedSkill = skillRows.find(({ skillState }) => skillState.id === inspectedSkillId) || null;
   const declared = terminal ? [] : declaredIntents(encounter);
   const intents = Object.fromEntries(declared.map((intent) => [intent.enemyId, intent]));
   const incoming = declared.reduce((total, intent) => total + intent.hits * intent.damage, 0);
@@ -246,6 +413,10 @@ export function TowCombatView({
   useEffect(() => {
     (terminal ? settleRef.current : firstActionRef.current)?.focus();
   }, [terminal]);
+
+  useEffect(() => {
+    setInspectedSkillId(null);
+  }, [activeCommander.id, encounter.round, terminal]);
 
   function keepFocusInside(event) {
     if (event.key !== "Tab") return;
@@ -417,40 +588,33 @@ export function TowCombatView({
             ) : null}
 
             <div className="tow-combat__actions" aria-label="Combat actions">
-              {(commanderBuild?.skills || []).map((skillState, index) => {
-                const definition = getSkill(skillState.id);
-                const legality = skillLegality(skillState, {
-                  turnAvailable: actionsLeft(encounter, activeCommander.id) > 0,
-                });
-                const limit = usesPerAct(skillState.id, skillState.rank);
-                return (
-                  <button
-                    key={skillState.id}
-                    ref={index === 0 ? firstActionRef : null}
-                    type="button"
-                    className={`tow-combat__action production-combat__action tow-combat__action--${actionKind(definition)}`}
-                    disabled={!legality.ok}
-                    onClick={() => onUseSkill(skillState.id, activeTarget, activeCommander.id)}
-                  >
-                    <ActionGlyph definition={definition} />
-                    <span className="tow-combat__action-copy">
-                      <span className="tow-combat__action-name">{definition.name}</span>
-                      <span className="tow-combat__action-meta">
-                        {limit !== UNLIMITED_USES ? (
-                          <span>{skillState.usesRemaining}/{limit}</span>
-                        ) : <span>Ready</span>}
-                        {!definition.consumesTurn ? <em>Swift</em> : null}
-                      </span>
-                      {!legality.ok ? (
-                        <span className="tow-combat__action-why">
-                          {refusalText(legality.reason, skillState)}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                );
-              })}
+              {skillRows.map(({ art, definition, displayName, legality, limit, skillState, weaponPresentation }, index) => (
+                <CombatAction
+                  key={skillState.id}
+                  firstActionRef={index === 0 ? firstActionRef : null}
+                  definition={definition}
+                  displayName={displayName}
+                  art={art}
+                  skillState={skillState}
+                  weaponPresentation={weaponPresentation}
+                  legality={legality}
+                  limit={limit}
+                  active={skillState.id === inspectedSkillId}
+                  onShowDetails={() => setInspectedSkillId(skillState.id)}
+                  onHideDetails={() => setInspectedSkillId(null)}
+                  onUse={() => onUseSkill(skillState.id, activeTarget, activeCommander.id)}
+                />
+              ))}
             </div>
+
+            <p className="tow-combat__action-hint">Tap to use · hold for details</p>
+
+            {inspectedSkill ? (
+              <SkillDetails
+                {...inspectedSkill}
+                onDismiss={() => setInspectedSkillId(null)}
+              />
+            ) : null}
 
             <div className="tow-combat__command-foot">
               {commandable.length > 1 && actionsLeft(encounter, activeCommander.id) > 0 ? (

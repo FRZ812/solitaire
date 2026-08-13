@@ -6,7 +6,7 @@
 
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { dispatchTowCommand } from "../../gameplay/tow/commands.js";
 import { decodeTowSession } from "../../gameplay/tow/persistence.js";
 import { verifyTowSession } from "../../gameplay/tow/replay.js";
@@ -113,12 +113,35 @@ describe("the lab surface", () => {
     const mounted = await render(<CombatLab onExit={() => {}} />);
     expect(mounted.querySelector(".tow-combat")).toBeTruthy();
     const action = [...mounted.querySelectorAll(".production-combat__action")]
-      .find((button) => !button.disabled);
+      .find((button) => button.getAttribute("aria-disabled") !== "true");
     await act(async () => action.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     // The action and its automatic enemy advance both landed on the real session.
     const commands = [...mounted.querySelector(".combat-lab__commands").children];
     expect(commands).toHaveLength(2);
     expect(commands.map((entry) => entry.textContent))
       .toEqual([expect.stringContaining("use-skill"), expect.stringContaining("end-turn")]);
+  });
+
+  it("opens generated-art details on hold without firing the action", async () => {
+    vi.useFakeTimers();
+    try {
+      const mounted = await render(<CombatLab onExit={() => {}} />);
+      const action = mounted.querySelector(".production-combat__action");
+      expect(action.querySelector(".tow-combat__ability-art img")).toBeTruthy();
+
+      await act(async () => {
+        action.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+        vi.advanceTimersByTime(450);
+      });
+      expect(mounted.querySelector("[data-testid='tow-skill-details']")).toBeTruthy();
+
+      await act(async () => {
+        action.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }));
+        action.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+      });
+      expect([...mounted.querySelector(".combat-lab__commands").children]).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

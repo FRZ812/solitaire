@@ -176,7 +176,7 @@ describe("practice is reversible and writes nothing", () => {
     const dialog = await waitFor(() => mounted.querySelector(".tow-combat"));
     expect(dialog.textContent).toContain("Nothing here is written down");
     const actions = [...dialog.querySelectorAll(".production-combat__action")]
-      .filter((button) => !button.disabled);
+      .filter((button) => button.getAttribute("aria-disabled") !== "true");
     expect(actions.length).toBeGreaterThan(0);
 
     await click(actions[0]);
@@ -198,7 +198,7 @@ describe("practice is reversible and writes nothing", () => {
     await waitFor(() => mounted.querySelector(".tow-combat"));
     for (let round = 0; round < 40 && mounted.querySelector(".tow-combat"); round += 1) {
       const action = [...mounted.querySelectorAll(".production-combat__action")]
-        .find((button) => !button.disabled);
+        .find((button) => button.getAttribute("aria-disabled") !== "true");
       if (!action) break;
       await click(action);
     }
