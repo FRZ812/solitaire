@@ -37,7 +37,11 @@ import {
   tickSkillCooldown,
   UNLIMITED_USES,
 } from "./skills.js";
-import { getTrait, traitCadenceAtRank, traitValueAtRank } from "./traits.js";
+import {
+  combatTraitCadenceAtRank,
+  combatTraitValueAtRank,
+  getCombatTrait,
+} from "./traits.js";
 
 export const TOW_ENCOUNTER_VERSION = 1;
 export const MAX_ENCOUNTER_EVENTS = 20_000;
@@ -61,19 +65,19 @@ function push(state, type, detail) {
 // ---------------------------------------------------------------------------
 
 function traitFiresThisRound(traitId, rank, round, rng) {
-  const definition = getTrait(traitId);
-  const { cadence } = definition;
+  const definition = getCombatTrait(traitId);
+  const cadence = combatTraitCadenceAtRank(traitId, rank);
   if (cadence.type === "combat-start") return { fires: round === 1, rng };
   if (cadence.type === "every-turn") return { fires: true, rng };
   if (cadence.type === "every-n-turns") {
     return { fires: round % cadence.turns === 0, rng };
   }
   if (cadence.type === "every-n-turns-span") {
-    const scaled = traitCadenceAtRank(traitId, rank);
+    const scaled = combatTraitCadenceAtRank(traitId, rank);
     return { fires: scaled.turns > 0 && round % scaled.turns === 0, rng };
   }
   if (cadence.type === "every-turn-chance") {
-    const scaled = traitCadenceAtRank(traitId, rank);
+    const scaled = combatTraitCadenceAtRank(traitId, rank);
     const roll = nextInt(rng, 1, 100);
     return { fires: roll.value <= scaled.chancePercent, rng: roll.rng };
   }
@@ -93,13 +97,13 @@ export function fireTraits(state) {
     const build = buildFor(next, ownerId);
     if (!build || next.actors[ownerId].hp <= 0) continue;
     for (const [traitId, rank] of Object.entries(build.traits)) {
-      const definition = getTrait(traitId);
+      const definition = getCombatTrait(traitId);
       if (!definition) continue;
       const due = traitFiresThisRound(traitId, rank, next.round, rng);
       rng = due.rng;
       if (!due.fires) continue;
 
-      const amount = traitValueAtRank(traitId, rank);
+      const amount = combatTraitValueAtRank(traitId, rank);
       if (amount <= 0) continue;
       const { kind, status } = definition.effect;
 
@@ -197,7 +201,7 @@ function statOf(actor, scale) {
 function normalizeBuild(build) {
   const traits = cloneJsonData(build?.traits || {}, "invalid-build-traits");
   for (const [traitId, rank] of Object.entries(traits)) {
-    if (!getTrait(traitId)) throw new TypeError(`unknown-trait:${traitId}`);
+    if (!getCombatTrait(traitId)) throw new TypeError(`unknown-trait:${traitId}`);
     if (!Number.isSafeInteger(rank) || rank < 1 || rank > 7) throw new TypeError("invalid-trait-rank");
   }
   const skills = (build?.skills || []).map((entry) => (

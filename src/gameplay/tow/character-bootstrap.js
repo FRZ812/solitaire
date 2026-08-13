@@ -14,10 +14,11 @@
 import { gameplayChecksum } from "../kernel/replay.js";
 import { createTowBuild, isTowBuild, startingBuild } from "./build.js";
 import { FALLBACK_PROFESSION_ID, startingPackage } from "./starting-packages.js";
+import { getStartingArchetype } from "./starting-archetypes.js";
 
-export const CHARACTER_BOOTSTRAP_VERSION = 1;
-const RECEIPT_KEYS = Object.freeze(["build", "id", "origin", "professionId", "version"]);
-const ORIGINS = new Set(["template", "custom", "quick-start", "practice", "fixture"]);
+export const CHARACTER_BOOTSTRAP_VERSION = 2;
+const RECEIPT_KEYS = Object.freeze(["archetypeId", "build", "id", "origin", "professionId", "version"]);
+const ORIGINS = new Set(["archetype", "template", "custom", "quick-start", "practice", "fixture"]);
 
 function rejected(reason) {
   return { ok: false, reason, receipt: null };
@@ -26,27 +27,33 @@ function rejected(reason) {
 /**
  * Compile a bootstrap request into a receipt.
  *
- * @param {{professionId?: string, level?: number, origin?: string, build?: object}} request
+ * @param {{archetypeId?: string, professionId?: string, level?: number, origin?: string, build?: object}} request
  */
 export function compileCharacterBootstrap(request = {}) {
   const origin = request.origin ?? "custom";
   if (!ORIGINS.has(origin)) return rejected("invalid-bootstrap-origin");
+
+  const archetype = request.archetypeId == null ? null : getStartingArchetype(request.archetypeId);
+  if (request.archetypeId != null && !archetype) return rejected("unknown-starting-archetype");
 
   const level = request.level ?? 1;
   if (!Number.isSafeInteger(level) || level < 1 || level > 100) {
     return rejected("invalid-bootstrap-level");
   }
 
-  const professionId = typeof request.professionId === "string" && startingPackage(request.professionId)
-    ? request.professionId
-    : FALLBACK_PROFESSION_ID;
+  const professionId = archetype?.professionId || (
+    typeof request.professionId === "string" && startingPackage(request.professionId)
+      ? request.professionId
+      : FALLBACK_PROFESSION_ID
+  );
 
   let build;
   try {
+    const requestedBuild = archetype?.build || request.build;
     // An explicit build wins — that is how a fixture or a resumed draft pins an exact
     // loadout — but it is validated by the same constructor as a fresh one.
-    build = request.build
-      ? createTowBuild({ ...request.build, professionId })
+    build = requestedBuild
+      ? createTowBuild({ ...requestedBuild, professionId })
       : startingBuild(professionId, { level });
   } catch (error) {
     return rejected(String(error?.message || "invalid-bootstrap-build"));
@@ -55,7 +62,14 @@ export function compileCharacterBootstrap(request = {}) {
 
   // Identity is derived from content, so the same request always compiles to the same
   // receipt and a changed request never collides with the old one.
-  const id = gameplayChecksum({ version: CHARACTER_BOOTSTRAP_VERSION, origin, professionId, build });
+  const archetypeId = archetype?.id || null;
+  const id = gameplayChecksum({
+    version: CHARACTER_BOOTSTRAP_VERSION,
+    origin,
+    archetypeId,
+    professionId,
+    build,
+  });
 
   return {
     ok: true,
@@ -64,6 +78,7 @@ export function compileCharacterBootstrap(request = {}) {
       version: CHARACTER_BOOTSTRAP_VERSION,
       id,
       origin,
+      archetypeId,
       professionId,
       build: Object.freeze(build),
     }),
@@ -80,6 +95,7 @@ export function isCharacterBootstrapReceipt(value) {
     && typeof value.id === "string"
     && /^[0-9a-f]{16}$/.test(value.id)
     && ORIGINS.has(value.origin)
+    && (value.archetypeId === null || Boolean(getStartingArchetype(value.archetypeId)))
     && typeof value.professionId === "string"
     && isTowBuild(value.build);
 }

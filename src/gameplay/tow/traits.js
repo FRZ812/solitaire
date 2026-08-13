@@ -155,6 +155,11 @@ export function getFusion(fusionId) {
   return typeof fusionId === "string" && Object.hasOwn(FUSIONS, fusionId) ? FUSIONS[fusionId] : null;
 }
 
+/** A trait-like effect that may be a normal ranked trait or an already-forged fusion. */
+export function getCombatTrait(id) {
+  return getTrait(id) || getFusion(id);
+}
+
 export function traitIds() {
   return Object.keys(TRAITS);
 }
@@ -202,6 +207,31 @@ export function traitCadenceAtRank(traitId, rank) {
     return { type: "every-n-turns", turns: at(cadence.slowest, cadence.fastest) };
   }
   return null;
+}
+
+/**
+ * Resolve a normal trait or fusion through the same encounter interface. Fusions are always
+ * rank 7 and carry fixed effect magnitudes, while ordinary traits retain rank scaling.
+ */
+export function combatTraitValueAtRank(id, rank) {
+  const definition = getCombatTrait(id);
+  if (!definition) throw new TypeError(`unknown-trait:${id}`);
+  if (!isValidRank(rank)) throw new TypeError("invalid-trait-rank");
+  if (getFusion(id)) {
+    if (rank !== TRAIT_RANK_CAP) throw new TypeError("invalid-fusion-rank");
+    return definition.effect.max;
+  }
+  return traitValueAtRank(id, rank);
+}
+
+export function combatTraitCadenceAtRank(id, rank) {
+  const definition = getCombatTrait(id);
+  if (!definition) throw new TypeError(`unknown-trait:${id}`);
+  if (!isValidRank(rank)) throw new TypeError("invalid-trait-rank");
+  if (getFusion(id)) {
+    return definition.cadence || AT_START;
+  }
+  return traitCadenceAtRank(id, rank) || definition.cadence;
 }
 
 /**

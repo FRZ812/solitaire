@@ -34,9 +34,12 @@ export function shouldDismissPanel(pulled, velocity) {
 }
 
 export function PanelDeck({ state, user, initialPage = "character", onClose, handlers }) {
+  const pages = state.character?.progressionModel === "tow-archetype"
+    ? PAGES.filter((key) => key !== "progression")
+    : PAGES;
   const requestedPageKey = initialPage === "profession" || initialPage === "race" ? "progression" : initialPage;
-  const requestedPage = PAGES.indexOf(requestedPageKey);
-  const [page, setPage] = useState(requestedPage === -1 ? PAGES.indexOf("character") : requestedPage);
+  const requestedPage = pages.indexOf(requestedPageKey);
+  const [page, setPage] = useState(requestedPage === -1 ? pages.indexOf("character") : requestedPage);
   const [inventoryTarget, setInventoryTarget] = useState("wanderer");
   const [dragging, setDragging] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -160,7 +163,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
     writeDragY(0);
   }
 
-  const activePage = PAGES[page];
+  const activePage = pages[page];
 
   return (
     <div
@@ -201,6 +204,7 @@ export function PanelDeck({ state, user, initialPage = "character", onClose, han
         >
           <DossierHero
             state={state}
+            pages={pages}
             page={page}
             onSelectPage={selectPage}
             onPortraitChange={handlers?.onPortraitChange}
@@ -275,7 +279,7 @@ function labelize(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
+function DossierHero({ state, pages, page, onSelectPage, onPortraitChange }) {
   const motionRef = useParallaxMotion({ strength: 1.1 });
   const fileInput = useRef(null);
   const [portraitBusy, setPortraitBusy] = useState(false);
@@ -287,12 +291,13 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
   const professionId = canonicalProfessionId(identityRecord.profession) || identityRecord.profession;
   const professionLabel = PROFESSIONS[professionId]?.name || labelize(professionId);
   const archetype = characterArchetype(identityRecord);
+  const towArchetype = identityRecord.progressionModel === "tow-archetype";
   const level = Math.max(1, progressionLevel(identityRecord));
   const callingLabel = archetype?.label || professionLabel;
   const portraitOverride = portraitOverrideFor(state, PLAYER_PORTRAIT_ID);
   const portrait = resolveCharacterPortrait(identityRecord, dossierPortrait, portraitOverride);
   const customPortrait = !!portraitOverride;
-  const unspentPoints = progressionEngine.pendingLevelAllocations?.(character)?.unspentLevels || 0;
+  const unspentPoints = towArchetype ? 0 : (progressionEngine.pendingLevelAllocations?.(character)?.unspentLevels || 0);
 
   async function onChoosePortrait(event) {
     const file = event.target.files?.[0];
@@ -324,7 +329,7 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
   }
 
   function onTabKeyDown(event, index) {
-    const last = PAGES.length - 1;
+    const last = pages.length - 1;
     let next = null;
     if (event.key === "ArrowRight") next = index === last ? 0 : index + 1;
     if (event.key === "ArrowLeft") next = index === 0 ? last : index - 1;
@@ -333,7 +338,7 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
     if (next == null) return;
     event.preventDefault();
     onSelectPage(next);
-    requestAnimationFrame(() => document.getElementById(`deck-tab-${PAGES[next]}`)?.focus());
+    requestAnimationFrame(() => document.getElementById(`deck-tab-${pages[next]}`)?.focus());
   }
 
   return (
@@ -372,12 +377,14 @@ function DossierHero({ state, page, onSelectPage, onPortraitChange }) {
               {callingLabel && <strong className={archetype ? "is-archetype" : "is-profession"}>{callingLabel}</strong>}
             </>
           ) : <span>Wanderer</span>}
-          <strong className="is-level"><em>Level</em>{level}</strong>
+          {towArchetype
+            ? <strong className="is-level"><em>Power</em>{identityRecord.profile?.power || "Chosen"}</strong>
+            : <strong className="is-level"><em>Level</em>{level}</strong>}
         </div>
         {(identityRecord.bond || character.bond) && <p>{identityRecord.bond || character.bond}</p>}
       </div>
-      <div className="dossier-hero__tabs" data-tab-count={PAGES.length} role="tablist" aria-label="Dossier sections">
-        {PAGES.map((key, index) => (
+      <div className="dossier-hero__tabs" data-tab-count={pages.length} role="tablist" aria-label="Dossier sections">
+        {pages.map((key, index) => (
           <button
             key={key}
             id={`deck-tab-${key}`}

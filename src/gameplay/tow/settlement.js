@@ -112,7 +112,9 @@ export function settleTowEncounter(state, encounter, context = {}) {
   // Earning a level has to say so. The old combat result emitted this growth beat, and a
   // level that arrived silently would leave the player with unspent allocations and no
   // idea they had them.
-  const progress = progressionXp > 0 ? advanceProgression(character, progressionXp) : null;
+  const progress = progressionXp > 0 && character.progressionModel !== "tow-archetype"
+    ? advanceProgression(character, progressionXp)
+    : null;
   const growthText = progress ? earnedLevelGrowthText(progress) : null;
 
   // Every foe that maps to a codex character has its state written back, not just the

@@ -233,7 +233,7 @@ export function applyBeat(state, beat, options = {}) {
     created = cre.created;
   }
 
-  if (progressionXpGain > 0 && created !== false) {
+  if (progressionXpGain > 0 && created !== false && character.progressionModel !== "tow-archetype") {
     const progress = advanceProgression(character, progressionXpGain);
     if (progress.earnedLevels > 0) {
       newBeats.push({
