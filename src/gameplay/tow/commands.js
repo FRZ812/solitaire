@@ -25,7 +25,9 @@
 import { cloneJsonData } from "../kernel/json-data.js";
 import { gameplayChecksum } from "../kernel/replay.js";
 import {
+  actionsLeftFor,
   endTurn as encounterEndTurn,
+  playerSideIds,
   skipTurn as encounterSkipTurn,
   useSkill as encounterUseSkill,
 } from "./encounter.js";
@@ -300,6 +302,66 @@ export function dispatchTowCommand(session, input) {
     command: accepted,
     events: towCommandEvents(next, accepted),
     duplicate: false,
+  };
+}
+
+/**
+ * Whether the player side has spent every turn-consuming action in this command window.
+ *
+ * Free skills never lower this budget. Haste and net Priority increase it when the round is
+ * opened, so they are naturally spent before the enemy is allowed to answer. With allies,
+ * the window stays open until every living party member has either acted or stood down.
+ */
+function playerSideIsSpent(encounter) {
+  if (encounter.phase !== "player") return false;
+  const living = playerSideIds(encounter)
+    .filter((actorId) => encounter.actors[actorId]?.hp > 0);
+  return living.length > 0
+    && living.every((actorId) => actionsLeftFor(encounter, actorId) <= 0);
+}
+
+/**
+ * Dispatch one interactive player action, then advance the enemy automatically if that
+ * action exhausted the whole side's budget.
+ *
+ * The automatic advance is a real, deterministic `end-turn` command rather than hidden
+ * reducer work. That keeps the v1 log replayable and leaves old logs — where end-turn was a
+ * manual input — unchanged. Both pure dispatches are returned atomically to the caller: if
+ * the automatic command cannot be admitted, neither intermediate state is committed.
+ */
+export function dispatchTowPlayerAction(session, input) {
+  const primary = dispatchTowCommand(session, input);
+  const canAutoAdvance = primary.ok
+    && !primary.duplicate
+    && (primary.command?.type === "use-skill" || primary.command?.type === "stand-down")
+    && playerSideIsSpent(primary.session.encounter);
+
+  if (!canAutoAdvance) {
+    return { ...primary, autoAdvanced: false, autoCommand: null };
+  }
+
+  const automatic = dispatchTowCommand(primary.session, {
+    id: `auto-end:${primary.session.revision}`,
+    expectedRevision: primary.session.revision,
+    type: "end-turn",
+    actorId: null,
+    skillId: null,
+    targetId: null,
+  });
+  if (!automatic.ok) {
+    return {
+      ...refused(`auto-advance-${automatic.reason}`, session),
+      autoAdvanced: false,
+      autoCommand: null,
+    };
+  }
+
+  return {
+    ...primary,
+    session: automatic.session,
+    events: [...primary.events, ...automatic.events],
+    autoAdvanced: true,
+    autoCommand: automatic.command,
   };
 }
 

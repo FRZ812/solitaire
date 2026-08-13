@@ -36,8 +36,8 @@ describe("one way into a fight", () => {
   });
 
   it("dispatches every player action through the command boundary", () => {
-    expect(appSource).toContain("dispatchTowCommand(session, {");
-    expect(appSource.match(/dispatchTowCommand\(/g)).toHaveLength(1);
+    expect(appSource).toContain("dispatchTowPlayerAction(session, {");
+    expect(appSource.match(/dispatchTowPlayerAction\(/g)).toHaveLength(1);
   });
 });
 

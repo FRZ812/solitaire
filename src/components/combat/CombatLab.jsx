@@ -17,7 +17,7 @@
 import "./production-combat.css";
 import React, { useCallback, useMemo, useState } from "react";
 import { TowCombatView } from "./TowCombatView.jsx";
-import { dispatchTowCommand, towSessionEvents } from "../../gameplay/tow/commands.js";
+import { dispatchTowPlayerAction, towSessionEvents } from "../../gameplay/tow/commands.js";
 import { buildCombatChronicle, renderCombatChronicle } from "../../gameplay/tow/chronicle.js";
 import { compileCharacterBootstrap } from "../../gameplay/tow/character-bootstrap.js";
 import { declaredIntents } from "../../gameplay/tow/encounter.js";
@@ -90,7 +90,7 @@ export function CombatLab({ onExit }) {
       if (!current?.ok) return current;
       const session = current.session;
       const actorId = input.actorId ?? session.encounter.playerId;
-      const result = dispatchTowCommand(session, {
+      const result = dispatchTowPlayerAction(session, {
         ...input,
         id: [session.sessionId, session.revision, input.type, actorId, input.skillId]
           .filter((part) => part !== null && part !== undefined)
@@ -256,7 +256,6 @@ export function CombatLab({ onExit }) {
           onUseSkill={(skillId, targetId, actorId) => dispatch({
             type: "use-skill", skillId, targetId: targetId ?? null, actorId: actorId ?? null,
           })}
-          onEndTurn={() => dispatch({ type: "end-turn" })}
           onStandDown={(actorId) => dispatch({ type: "stand-down", actorId: actorId ?? null })}
           onSettle={() => {}}
         />

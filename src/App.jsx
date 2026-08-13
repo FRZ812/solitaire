@@ -113,7 +113,7 @@ import {
   chronicleSummary,
   renderCombatChronicle,
 } from "./gameplay/tow/chronicle.js";
-import { dispatchTowCommand } from "./gameplay/tow/commands.js";
+import { dispatchTowPlayerAction } from "./gameplay/tow/commands.js";
 import { sealTowTerminalReceipt, worldFatesByParticipant } from "./gameplay/tow/outcomes.js";
 import { decodeTowSession } from "./gameplay/tow/persistence.js";
 import {
@@ -3726,7 +3726,7 @@ export function Solitaire() {
     // mistaken for a repeat of the other — and what stops a double-tap becoming two swings
     // is the turn budget the encounter already enforces, not a dropped command.
     const actorId = input.actorId ?? session.encounter.playerId;
-    const result = dispatchTowCommand(session, {
+    const result = dispatchTowPlayerAction(session, {
       ...input,
       id: [session.sessionId, session.revision, input.type, actorId, input.skillId]
         .filter((part) => part !== null && part !== undefined)
@@ -3754,7 +3754,6 @@ export function Solitaire() {
     targetId: targetId ?? null,
     actorId: actorId ?? null,
   });
-  const onCombatEndTurn = () => dispatchCombatCommand({ type: "end-turn" });
   const onCombatStandDown = (actorId) => dispatchCombatCommand({
     type: "stand-down",
     actorId: actorId ?? null,
@@ -3883,11 +3882,11 @@ export function Solitaire() {
   // surfaces an "Enter" affordance to open its menu. Hidden during combat.
   const buildingHere = combat ? null : buildingForTile(standingTile());
   const buildingOpenNow = buildingHere ? isBuildingOpen(buildingHere, state.time.hour) : false;
-  // Creation hub: a fresh, untouched limbo shows the templates-vs-limbo chooser.
-  // Once the player picks the freeform path (creationEntered) or has already
-  // spoken a line, the normal limbo interview takes over.
+  // Every unfinished campaign returns to the deterministic start. Older limbo saves can
+  // already contain player beats, but those beats must not strand them in the retired
+  // narrator interview. The interview is reachable only after choosing it in this tab.
   const inLimbo = state.created === false;
-  const showCreationHub = inLimbo && !creationEntered && !state.beats.some((b) => b.type === "player");
+  const showCreationHub = inLimbo && !creationEntered;
   const queuedPlayerCount = pendingPlayerBeats(state).length;
   // This derived preview deliberately is not a hook: auth, subscription, title,
   // campaign-list, and game-over screens all return above this point. Keeping a
@@ -4527,7 +4526,6 @@ export function Solitaire() {
           encounter={combat}
           note={combatSession?.context?.source?.note}
           onUseSkill={onCombatUseSkill}
-          onEndTurn={onCombatEndTurn}
           onStandDown={onCombatStandDown}
           onSettle={handleResolveCombat}
         />

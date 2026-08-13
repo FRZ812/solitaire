@@ -128,6 +128,20 @@ describe("the start opens on Quick Start", () => {
     expect(lane.querySelector(".quick-start__other")).toBeTruthy();
   });
 
+  it("recovers an older limbo save even when it already contains a player reply", async () => {
+    harness.serverState.beats.push({
+      id: "legacy-player-reply",
+      type: "player",
+      content: "My name is Wanderer.",
+    });
+
+    const mounted = await mount();
+    const lane = await waitFor(() => mounted.querySelector(".quick-start"));
+    expect(lane.getAttribute("aria-modal")).toBe("true");
+    expect(mounted.querySelector(".game-hud-layer").hasAttribute("inert")).toBe(true);
+    expect(harness.serverState.created).toBe(false);
+  });
+
   it("reaches the roster lane without leaving the start", async () => {
     const mounted = await mount();
     const lane = await waitFor(() => mounted.querySelector(".quick-start"));
@@ -172,9 +186,6 @@ describe("one click from the start reaches a fight", () => {
         .find((button) => !button.disabled);
       if (!action) break;
       await click(action);
-      const endTurn = [...mounted.querySelectorAll(".production-combat__settle")]
-        .find((button) => /end turn/i.test(button.textContent));
-      if (endTurn) await click(endTurn);
     }
     const result = await waitFor(() => mounted.querySelector(".practice-fight--result"));
     await click([...result.querySelectorAll("button")].find((b) => /Back to your build/.test(b.textContent)));

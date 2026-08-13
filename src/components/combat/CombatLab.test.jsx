@@ -115,8 +115,10 @@ describe("the lab surface", () => {
     const action = [...mounted.querySelectorAll(".production-combat__action")]
       .find((button) => !button.disabled);
     await act(async () => action.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    // The command landed on the real session, so the revision moved.
-    expect(mounted.querySelector(".combat-lab__state").textContent).toContain("Revision");
-    expect(mounted.querySelector(".combat-lab__commands").children.length).toBe(1);
+    // The action and its automatic enemy advance both landed on the real session.
+    const commands = [...mounted.querySelector(".combat-lab__commands").children];
+    expect(commands).toHaveLength(2);
+    expect(commands.map((entry) => entry.textContent))
+      .toEqual([expect.stringContaining("use-skill"), expect.stringContaining("end-turn")]);
   });
 });
