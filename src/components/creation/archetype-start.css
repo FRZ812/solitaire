@@ -840,6 +840,12 @@
   position: relative;
 }
 
+.character-details__combat-style .character-details__section-heading > small {
+  max-width: 48%;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 .character-details__test-loadout .character-details__section-heading {
   align-items: flex-start;
 }
@@ -1467,6 +1473,18 @@
   background: color-mix(in srgb, var(--character-accent), rgba(9, 16, 19, 0.9) 90%);
 }
 
+.character-details__passives > .starting-trait {
+  margin-top: 10px;
+}
+
+.character-details__passives > .character-ability-library__group {
+  margin-top: 9px;
+}
+
+.starting-trait > div {
+  min-width: 0;
+}
+
 .starting-trait > span {
   display: grid;
   width: 32px;
@@ -1503,6 +1521,7 @@
   color: #8e9792;
   font-size: 0.55rem;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .shared-trait-library {

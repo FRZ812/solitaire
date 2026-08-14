@@ -68,55 +68,58 @@ function ArrowIcon({ direction = "right" }) {
   );
 }
 
-function nonStrikeSummary(definition, rank = 1) {
-  const readable = (definition.effects || []).map((effect, index) => {
-    const table = effect.percentByRank || effect.countByRank;
-    const amount = Array.isArray(table) ? table[Math.min(table.length - 1, Math.max(0, rank - 1))] : null;
-    if (effect.type === "damage") return `${amount}% ${effect.scale.toUpperCase()} damage`;
-    if (effect.type === "damage-enemy-lost-hp") return `${amount}% of enemy missing health`;
-    if (effect.type === "damage-self-lost-hp") return `${amount}% of own missing health`;
-    if (effect.type === "shield") return `${amount}% ${effect.scale.toUpperCase()} ward`;
-    if (effect.type === "heal") return `Restore ${amount}% ${effect.scale.toUpperCase()} health`;
-    if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
-    if (effect.type === "scaled-status") return `${amount}% ${effect.scale.toUpperCase()} ${effect.status}`;
-    if (effect.type === "status") return `${amount} ${effect.status}`;
-    if (effect.type === "reduce-statuses") return `${effect.target === "enemy" ? "Consume" : "Cleanse"} ${effect.statuses.join(", ")}`;
-    if (effect.type === "amplify-statuses") return `Raise ${effect.statuses.join(", ")} to ${amount}%`;
-    if (effect.type === "consume-status") return `Spend ${amount} ${effect.status}`;
-    return effect.type.replace(/-/g, " ");
-  });
-  return readable.join(" · ") || "Passive combat effect";
+function readableList(values = []) {
+  const labels = values.map(titleCase);
+  if (labels.length < 2) return labels[0] || "";
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
 }
 
-function StartingAbilityCard({ definition, compact = false, availability = null }) {
-  const state = createSkillState(definition.id, 1);
-  const name = resolveTowActionName(definition);
-  const summary = definition.description || nonStrikeSummary(definition, state.rank);
-  const typeLabel = CHARACTER_ABILITY_TYPE_LABELS[definition.abilityType]
-    || (definition.consumesTurn ? "Action" : "Swift");
-  return (
-    <article
-      className={`starting-ability${compact ? " is-compact" : ""}`}
-      data-skill-id={definition.id}
-      data-ability-type={definition.abilityType || undefined}
-    >
-      <span className="starting-ability__art">
-        <img src={resolveTowAbilityArt(definition)} alt="" />
-        <span aria-hidden="true" />
-      </span>
-      <div>
-        <span>{availability || typeLabel}{definition.consumesTurn ? "" : " · keeps action"}</span>
-        <strong>{name}</strong>
-        <p>{summary}</p>
-        {definition.source ? (
-          <small className="starting-ability__source">
-            {definition.source.fidelity === "direct" ? "Source mechanic" : "Source-guided remake"}
-            {` · ${definition.source.sourceName}`}
-          </small>
-        ) : null}
-      </div>
-    </article>
-  );
+function rankedEffectAmount(effect, rank) {
+  const table = effect.percentByRank || effect.countByRank;
+  if (!Array.isArray(table) || table.length === 0) return null;
+  return table[Math.min(table.length - 1, Math.max(0, rank - 1))];
+}
+
+function abilityMechanicalSummary(definition, rank = 1) {
+  const readable = (definition.effects || []).map((effect) => {
+    const amount = rankedEffectAmount(effect, rank);
+    const scale = ({ attack: "ATK", defense: "DEF", "max-hp": "MAX HP" })[effect.scale]
+      || String(effect.scale || "ATK").toUpperCase();
+    const status = titleCase(effect.status);
+    const statuses = readableList(effect.statuses);
+    const targetVerb = effect.target === "enemy" ? "Inflict" : "Gain";
+
+    if (effect.type === "damage") {
+      const hits = Math.max(1, effect.hits || 1);
+      return hits > 1
+        ? `${hits} hits at ${amount}% ${scale} damage each`
+        : `${amount}% ${scale} damage`;
+    }
+    if (effect.type === "damage-enemy-lost-hp") {
+      return `Damage equal to ${amount}% of enemy missing health`;
+    }
+    if (effect.type === "damage-self-lost-hp") {
+      return `Damage equal to ${amount}% of own missing health`;
+    }
+    if (effect.type === "shield") return `Gain Ward equal to ${amount}% ${scale}`;
+    if (effect.type === "heal") return `Restore ${amount}% ${scale} health`;
+    if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
+    if (effect.type === "scaled-status") return `${targetVerb} ${status} equal to ${amount}% ${scale}`;
+    if (effect.type === "scaled-status-enemy-lost-hp") {
+      return `Inflict ${status} equal to ${amount}% of enemy missing health`;
+    }
+    if (effect.type === "status") return `${targetVerb} ${amount} ${status}`;
+    if (effect.type === "reduce-statuses") {
+      if (effect.target === "enemy" && effect.toPercent === 0) return `Consume enemy ${statuses}`;
+      return `Reduce ${effect.target === "enemy" ? "enemy " : ""}${statuses} to ${effect.toPercent}%`;
+    }
+    if (effect.type === "amplify-statuses") return `Raise enemy ${statuses} to ${amount}%`;
+    if (effect.type === "consume-status") return `Spend ${amount} ${status}`;
+    return titleCase(effect.type);
+  });
+  if (definition.cooldown > 0) readable.push(`${definition.cooldown}-turn cooldown`);
+  return readable.join(" · ") || "No immediate combat effect";
 }
 
 function TraitCard({ definition, rank = 1, compact = false, availability = null }) {
@@ -133,24 +136,6 @@ function TraitCard({ definition, rank = 1, compact = false, availability = null 
         <p>{describeTraitAtRank(definition.id, rank)}</p>
       </div>
     </article>
-  );
-}
-
-function AbilityLibraryGroup({ label, abilities, availability }) {
-  return (
-    <details className="character-ability-library__group" open={abilities.length <= 3}>
-      <summary><span>{label}</span><small>{abilities.length}</small></summary>
-      <div className="general-ability-library">
-        {abilities.map((skill) => (
-          <StartingAbilityCard
-            key={skill.id}
-            definition={skill}
-            compact
-            availability={availability}
-          />
-        ))}
-      </div>
-    </details>
   );
 }
 
@@ -280,7 +265,7 @@ function AbilitySwapPicker({
   };
 
   if (!selected || !activeGroup) return null;
-  const selectedSummary = selected.description || nonStrikeSummary(selected);
+  const selectedSummary = abilityMechanicalSummary(selected);
 
   return (
     <div className="ability-swap-picker">
@@ -375,7 +360,7 @@ function AbilitySwapPicker({
                 const unavailableSlot = equippedSlot(skill.id);
                 const unavailable = unavailableSlot >= 0;
                 const current = skill.id === value;
-                const summary = skill.description || nonStrikeSummary(skill);
+                const summary = abilityMechanicalSummary(skill);
                 return (
                   <button
                     ref={(node) => { optionRefs.current[index] = node; }}
@@ -424,7 +409,7 @@ function AbilitySwapPicker({
   );
 }
 
-function PracticeLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
+function SelectLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
   const exclusiveAbilities = useMemo(() => characterAbilitiesFor(selected.id), [selected.id]);
   const basicOptions = useMemo(
     () => exclusiveAbilities.filter((skill) => skill.abilityType === "basic-attack"),
@@ -448,13 +433,13 @@ function PracticeLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
     <section className="character-details__test-loadout">
       <div className="character-details__section-heading">
         <div>
-          <span className="character-details__label">Practice loadout</span>
-          <p>Swap any legal ability for combat testing. Journey starts keep the authored kit above.</p>
+          <span className="character-details__label">Select loadout</span>
+          <p>Tap one of five slots to choose its ability for practice.</p>
         </div>
         <button type="button" disabled={!changed} onClick={onReset}>Reset kit</button>
       </div>
 
-      <div className="practice-loadout-editor" aria-label="Practice loadout">
+      <div className="practice-loadout-editor" aria-label="Selectable loadout">
         {skillIds.map((skillId, slotIndex) => {
           const fixedOptions = slotIndex === 0 ? basicOptions : defensiveOptions;
           const flexible = slotIndex >= 2;
@@ -502,7 +487,7 @@ function PracticeLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
         })}
       </div>
       <small className="practice-loadout-editor__note">
-        {changed ? "Modified test kit · nothing is saved" : "Authored starting kit selected · nothing is saved"}
+        {changed ? "Practice loadout modified · journey kit unchanged" : "Authored journey loadout · practice only"}
       </small>
     </section>
   );
@@ -633,21 +618,6 @@ function CharacterDetails({
   const baseTraitId = Object.keys(selected.build.traits)[0];
   const baseTrait = getTrait(baseTraitId);
   const baseTraitRank = selected.build.traits[baseTraitId];
-  const skills = selected.build.skills.map((id) => getSkill(id)).filter(Boolean);
-  const equippedIds = useMemo(() => new Set(selected.build.skills), [selected.build.skills]);
-  const futureExclusiveAbilities = useMemo(
-    () => characterAbilitiesFor(selected.id).filter((ability) => !equippedIds.has(ability.id)),
-    [equippedIds, selected.id],
-  );
-  const exclusiveGroups = useMemo(() => ({
-    basics: futureExclusiveAbilities.filter((ability) => ability.abilityType === "basic-attack"),
-    defenses: futureExclusiveAbilities.filter((ability) => ability.abilityType === "defensive"),
-    flexible: futureExclusiveAbilities.filter((ability) => ability.abilityType === "archetype"),
-  }), [futureExclusiveAbilities]);
-  const generalAbilities = useMemo(
-    () => generalAbilityIds().map((id) => getSkill(id)).filter(Boolean),
-    [],
-  );
   const sharedTraits = useMemo(
     () => traitIds()
       .map((id) => getTrait(id))
@@ -695,94 +665,30 @@ function CharacterDetails({
             ))}
           </section>
 
-          <section>
-            <span className="character-details__label">How {selected.character.name.split(" ")[0]} fights</span>
-            <p>{selected.playstyle}</p>
-            <small>Attention · {selected.attention}</small>
-          </section>
-
-          <section className="character-details__loadout">
+          <section className="character-details__combat-style">
             <div className="character-details__section-heading">
-              <span className="character-details__label">Starting abilities</span>
-              <small>5 active · no shared abilities equipped</small>
+              <span className="character-details__label">How {selected.character.name.split(" ")[0]} fights</span>
+              <small>{selected.role}</small>
             </div>
-            <div className="ability-slot-contract" aria-label="Five active ability slots">
-              <span><strong>1</strong> Basic attack <small>same-family replacement</small></span>
-              <span><strong>2</strong> Defensive <small>same-family replacement</small></span>
-              <span><strong>3–5</strong> Exclusive <small>flexible</small></span>
-            </div>
-            <div className="starting-abilities">
-              {skills.map((skill) => (
-                <StartingAbilityCard
-                  key={skill.id}
-                  definition={skill}
-                />
-              ))}
-            </div>
+            <p>{selected.playstyle}</p>
+            <small>Watch for · {selected.attention}</small>
           </section>
 
-          <PracticeLoadoutEditor
+          <SelectLoadoutEditor
             selected={selected}
             skillIds={testSkillIds}
             onSkillChange={onTestSkillChange}
             onReset={onResetTestSkills}
           />
 
-          <section className="character-details__ability-library">
-            <div className="character-details__section-heading">
-              <span className="character-details__label">Character ability library</span>
-              <small>{futureExclusiveAbilities.length} unequipped exclusives</small>
-            </div>
-            <p>
-              Basic Attack rewards replace only slot 1; Defensive rewards replace only slot
-              2. Every other character-exclusive reward can replace one of slots 3–5.
-            </p>
-            <div className="character-exclusive-library" aria-label={`${selected.character.name} abilities available later`}>
-              <AbilityLibraryGroup label="Basic Attack replacements" abilities={exclusiveGroups.basics} availability="Exclusive Basic · available later" />
-              <AbilityLibraryGroup label="Defensive replacements" abilities={exclusiveGroups.defenses} availability="Exclusive Defense · available later" />
-              <AbilityLibraryGroup label="Flexible exclusive abilities" abilities={exclusiveGroups.flexible} availability="Exclusive · slots 3–5" />
-            </div>
-          </section>
-
-          <section className="character-details__ability-library">
-            <div className="character-details__section-heading">
-              <span className="character-details__label">General ability library</span>
-              <small>{generalAbilities.length} shared replacements</small>
-            </div>
-            <p>General rewards are never equipped at the start and may replace only slots 3–5.</p>
-            <details className="character-ability-library__group">
-              <summary><span>View all General abilities</span><small>{generalAbilities.length}</small></summary>
-              <div className="general-ability-library" aria-label="General abilities available later">
-                {generalAbilities.map((skill) => (
-                  <StartingAbilityCard
-                    key={skill.id}
-                    definition={skill}
-                    compact
-                    availability="General · available later"
-                  />
-                ))}
-              </div>
-            </details>
-          </section>
-
           <section className="character-details__passives">
             <div className="character-details__section-heading">
-              <span className="character-details__label">Passive traits</span>
-              <small>10 maximum · 7 ranks each</small>
+              <span className="character-details__label">Passive trait</span>
+              <small>Innate · 7 ranks</small>
             </div>
             <TraitCard definition={baseTrait} rank={baseTraitRank} />
-            <div className="character-details__split">
-              <div>
-                <span className="character-details__label">Starting passive</span>
-                <strong>{baseTrait?.name || baseTraitId} · Rank {baseTraitRank}</strong>
-              </div>
-              <div>
-              <span className="character-details__label">Combat identity</span>
-              <strong>{selected.role}</strong>
-              </div>
-            </div>
             <details className="character-ability-library__group">
-              <summary><span>Shared and event trait pool</span><small>{sharedTraits.length}</small></summary>
+              <summary><span>Explore other traits</span><small>{sharedTraits.length}</small></summary>
               <div className="shared-trait-library" aria-label="Passive traits available later">
                 {sharedTraits.map((trait) => (
                   <TraitCard

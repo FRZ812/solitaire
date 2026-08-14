@@ -22,23 +22,36 @@ describe("authored combat VFX", () => {
     expect(new Set(Object.values(COMBAT_VFX_ASSETS)).size).toBe(13);
   });
 
-  it("gives every active ability its own generated signature over a raster VFX family", () => {
+  it("gives every active ability its own foreground VFX asset", () => {
     const visuals = skillIds().map((skillId) => combatVfxVariantForSkill(skillId));
     expect(visuals.filter((visual) => !visual)).toEqual([]);
-    expect(visuals.every((visual) => visual.asset.endsWith(".png"))).toBe(true);
+    expect(visuals.every((visual) => /\.(?:png|webp)$/.test(visual.asset))).toBe(true);
     expect(visuals.every((visual) => /\.(?:png|webp)$/.test(visual.signatureAsset))).toBe(true);
     expect(visuals.every((visual) => !visual.asset.includes("svg") && !visual.signatureAsset.includes("svg"))).toBe(true);
+    expect(visuals.every((visual) => ["ability", "dedicated"].includes(visual.assetSource))).toBe(true);
+    expect(new Set(visuals.map((visual) => visual.asset)).size).toBe(visuals.length);
     expect(new Set(visuals.map((visual) => visual.signatureAsset)).size).toBe(visuals.length);
   });
 
-  it("makes Whirlwind a wind-pressure signature without the shared slash decal", () => {
+  it("separates the Last Assassin execution impact from the multi-hit knife storm", () => {
+    const execution = combatVfxVariantForSkill("assassin-execution");
+    const storm = combatVfxVariantForSkill("assassin-storm-of-knives");
+    expect(execution.asset).toContain("assassin-execution-vfx-v1.png");
+    expect(storm.asset).toContain("assassin-storm-of-knives-vfx-v1.png");
+    expect(execution.asset).not.toBe(storm.asset);
+    expect(execution.motion).toBe("execution");
+    expect(storm.motion).toBe("volley");
+  });
+
+  it("makes Whirlwind a dedicated wind-pressure signature without a shared family decal", () => {
     const whirlwind = combatVfxVariantForSkill("north-king-whirlwind");
     expect(whirlwind).toMatchObject({
       family: "wind",
       variant: "north-king-whirlwind",
       motion: "cyclone",
     });
-    expect(whirlwind.asset).toBe(COMBAT_VFX_ASSETS.wind);
+    expect(whirlwind.asset).toContain("north-king-whirlwind-v1.webp");
+    expect(whirlwind.asset).not.toBe(COMBAT_VFX_ASSETS.wind);
     expect(whirlwind.asset).not.toBe(COMBAT_VFX_ASSETS.slash);
     expect(whirlwind.signatureAsset).toContain("north-king-whirlwind-v1.webp");
   });

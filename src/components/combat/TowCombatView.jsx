@@ -439,7 +439,7 @@ function StatusDetails({ actor, status, source, enemy = false, onDismiss }) {
   return (
     <aside
       id={statusPanelId(actor.id, status.type)}
-      className={`tow-combat__status-details${enemy ? " tow-combat__status-details--enemy" : ""}`}
+      className={`tow-combat__status-details${enemy ? " tow-combat__status-details--enemy tow-combat__status-details--intent-safe" : ""}`}
       data-tone={detail.tone}
       data-testid="tow-status-details"
       role="dialog"
@@ -681,6 +681,7 @@ function CombatEffects({ cues }) {
             data-action-index={cue.actionIndex ?? 0}
             data-effect-lane={lane}
             data-vfx-profile={profile.key || undefined}
+            data-vfx-source={cue.visual?.assetSource || "family"}
             style={{
               "--tow-effect-delay": `${cue.delayMs || 0}ms`,
               "--tow-effect-x": `${laneX}px`,

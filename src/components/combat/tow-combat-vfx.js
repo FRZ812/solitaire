@@ -11,6 +11,8 @@ import pierceAsset from "../../assets/generated/winter-tower/vfx/pierce-v1.png";
 import slashAsset from "../../assets/generated/winter-tower/vfx/slash-v1.png";
 import wardAsset from "../../assets/generated/winter-tower/vfx/ward-v1.png";
 import windAsset from "../../assets/generated/winter-tower/vfx/wind-v1.png";
+import assassinExecutionVfx from "../../assets/generated/winter-tower/vfx/abilities/assassin-execution-vfx-v1.png";
+import assassinStormOfKnivesVfx from "../../assets/generated/winter-tower/vfx/abilities/assassin-storm-of-knives-vfx-v1.png";
 
 import statusAfflictions from "../../assets/generated/winter-tower/status/afflictions-v1.png";
 import statusAttackModifiers from "../../assets/generated/winter-tower/status/attack-modifiers-v1.png";
@@ -40,6 +42,11 @@ export const COMBAT_VFX_ASSETS = Object.freeze({
   slash: slashAsset,
   ward: wardAsset,
   wind: windAsset,
+});
+
+const DEDICATED_ABILITY_VFX_ASSETS = Object.freeze({
+  "assassin-execution": assassinExecutionVfx,
+  "assassin-storm-of-knives": assassinStormOfKnivesVfx,
 });
 
 export const STATUS_ICON_ASSETS = Object.freeze({
@@ -83,9 +90,16 @@ function visualProfile(variant) {
 }
 
 function withAsset(spec, signatureAsset = null) {
+  const dedicatedAsset = DEDICATED_ABILITY_VFX_ASSETS[spec.variant] || null;
   return Object.freeze({
     ...spec,
-    asset: COMBAT_VFX_ASSETS[spec.family] || COMBAT_VFX_ASSETS.impact,
+    // A declared ability owns its foreground effect. Family decals remain fallbacks for
+    // anonymous attacks and statuses, never the shared face of two authored abilities.
+    asset: dedicatedAsset
+      || signatureAsset
+      || COMBAT_VFX_ASSETS[spec.family]
+      || COMBAT_VFX_ASSETS.impact,
+    assetSource: dedicatedAsset ? "dedicated" : signatureAsset ? "ability" : "family",
     signatureAsset,
     profile: visualProfile(spec.variant),
   });
