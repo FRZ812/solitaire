@@ -49,14 +49,6 @@ async function keydown(element, key) {
   await act(async () => element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
 }
 
-async function selectValue(element, value) {
-  expect(element).toBeTruthy();
-  await act(async () => {
-    element.value = value;
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-}
-
 function ControlledStart(props) {
   const [draft, setDraft] = useState(createDefaultArchetypeDraft());
   return <QuickStartLane {...props} draft={draft} onDraftChange={setDraft} />;
@@ -193,9 +185,11 @@ describe("the simple grid-to-preview flow", () => {
     expect(generalLibrary.querySelectorAll('[data-ability-type="general"]')).toHaveLength(18);
     expect(details.querySelector('[data-trait-id="necromancy"]')?.textContent)
       .toContain("Skeletons each turn");
-    expect(details.querySelectorAll('[aria-label="Practice loadout"] select')).toHaveLength(5);
+    const loadoutEditor = details.querySelector('[aria-label="Practice loadout"]');
+    expect(loadoutEditor.querySelectorAll(".ability-swap-picker__trigger")).toHaveLength(5);
+    expect(loadoutEditor.querySelector("select")).toBeNull();
 
-    const picker = details.querySelector("[role=combobox]");
+    const picker = details.querySelector('[role="combobox"][aria-label="Practice opponent"]');
     await click(picker);
     const options = details.querySelectorAll("[role=option]");
     expect(options).toHaveLength(PRACTICE_SCENARIOS.length);
@@ -213,7 +207,7 @@ describe("the simple grid-to-preview flow", () => {
     const mounted = await render(<ControlledStart />);
     await click(mounted.querySelectorAll(".character-choice-card")[0]);
     await click(mounted.querySelector(".character-preview__details-button"));
-    const picker = mounted.querySelector("[role=combobox]");
+    const picker = mounted.querySelector('[role="combobox"][aria-label="Practice opponent"]');
 
     await keydown(picker, "ArrowDown");
     expect(picker.getAttribute("aria-expanded")).toBe("true");
@@ -221,6 +215,34 @@ describe("the simple grid-to-preview flow", () => {
     await keydown(picker, "Enter");
     expect(picker.getAttribute("aria-expanded")).toBe("false");
     expect(picker.textContent).toContain(PRACTICE_SCENARIOS[1].name);
+  });
+
+  it("supports roving keyboard selection in the custom ability picker", async () => {
+    const mounted = await render(<ControlledStart />);
+    await click(mounted.querySelectorAll(".character-choice-card")[6]);
+    await click(mounted.querySelector(".character-preview__details-button"));
+    const editor = mounted.querySelector('[aria-label="Practice loadout"]');
+    const trigger = editor.querySelectorAll(".ability-swap-picker__trigger")[2];
+
+    await click(trigger);
+    let panel = document.querySelector(".ability-swap-picker__panel");
+    const current = panel.querySelector('[role="option"][aria-selected="true"]');
+    await keydown(current, "ArrowDown");
+    const next = panel.querySelector('[role="option"].is-active');
+    expect(next).not.toBe(current);
+    expect(next.getAttribute("aria-disabled")).toBe("false");
+    const nextName = next.querySelector(".ability-swap-picker__option-title strong").textContent;
+    await keydown(next, "Enter");
+
+    expect(document.querySelector(".ability-swap-picker__panel")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger.textContent).toContain(nextName);
+
+    await click(trigger);
+    panel = document.querySelector(".ability-swap-picker__panel");
+    await keydown(panel.querySelector('[role="option"].is-active'), "Escape");
+    expect(document.querySelector(".ability-swap-picker__panel")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("starts the selected authored character without asking for a name or face", async () => {
@@ -301,19 +323,40 @@ describe("every advertised character reaches the production fight", () => {
     await click(mounted.querySelector(".character-preview__details-button"));
 
     const editor = mounted.querySelector('[aria-label="Practice loadout"]');
-    let selects = editor.querySelectorAll("select");
-    expect(selects).toHaveLength(5);
-    expect(selects[0].options).toHaveLength(3);
-    expect(selects[1].options).toHaveLength(3);
-    expect(selects[2].options).toHaveLength(35);
+    let triggers = editor.querySelectorAll(".ability-swap-picker__trigger");
+    expect(triggers).toHaveLength(5);
+    expect(editor.querySelector("select")).toBeNull();
 
-    const replacementBasic = [...selects[0].options]
-      .find((option) => option.value !== selected.build.skills[0]).value;
-    await selectValue(selects[0], replacementBasic);
-    selects = editor.querySelectorAll("select");
-    await selectValue(selects[2], "penetration");
-    selects = editor.querySelectorAll("select");
-    expect(selects[3].querySelector('option[value="penetration"]').disabled).toBe(true);
+    await click(triggers[0]);
+    let panel = document.querySelector('.ability-swap-picker__panel[role="dialog"]');
+    let options = panel.querySelectorAll('[role="option"]');
+    expect(options).toHaveLength(3);
+    const replacementBasicOption = [...options]
+      .find((option) => option.dataset.skillId !== selected.build.skills[0]);
+    const replacementBasic = replacementBasicOption.dataset.skillId;
+    await click(replacementBasicOption);
+
+    triggers = editor.querySelectorAll(".ability-swap-picker__trigger");
+    await click(triggers[2]);
+    panel = document.querySelector('.ability-swap-picker__panel[role="dialog"]');
+    expect(panel.querySelector('[role="tab"][data-group-id="exclusive"]').getAttribute("aria-selected"))
+      .toBe("true");
+    expect(panel.querySelectorAll('[role="option"]')).toHaveLength(17);
+    await click(panel.querySelector('[role="tab"][data-group-id="general"]'));
+    options = panel.querySelectorAll('[role="option"]');
+    expect(options).toHaveLength(18);
+    await click(panel.querySelector('[role="option"][data-skill-id="penetration"]'));
+
+    triggers = editor.querySelectorAll(".ability-swap-picker__trigger");
+    expect(triggers[2].textContent).toContain("Penetration");
+    await click(triggers[3]);
+    panel = document.querySelector('.ability-swap-picker__panel[role="dialog"]');
+    await click(panel.querySelector('[role="tab"][data-group-id="general"]'));
+    const duplicate = panel.querySelector('[role="option"][data-skill-id="penetration"]');
+    expect(duplicate.getAttribute("aria-disabled")).toBe("true");
+    expect(duplicate.querySelector(".ability-swap-picker__availability").textContent).toBe("In slot 3");
+    await keydown(duplicate, "Escape");
+    expect(document.querySelector(".ability-swap-picker__panel")).toBeNull();
     expect(mounted.querySelector(".practice-loadout-editor__note").textContent)
       .toContain("Modified test kit");
 

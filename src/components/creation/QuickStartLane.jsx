@@ -7,6 +7,7 @@
 import "./archetype-start.css";
 import "./character-select-polish.css";
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import winterScene from "../../assets/generated/scene-whitemarch-v2.webp";
 import { resolveCharacterPortrait } from "../character-portrait-assets.js";
 import { resolvePlayerCombatCutout } from "../combat/tow-combat-art.js";
@@ -24,7 +25,7 @@ import {
 } from "../../gameplay/tow/traits.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "../combat/tow-combat-ability-art.js";
-import { useModalFocus } from "../exploration/modalFocus.js";
+import { trapModalFocus, useModalFocus } from "../exploration/modalFocus.js";
 import {
   STARTING_ARCHETYPES,
   archetypeFusionIds,
@@ -161,8 +162,269 @@ const PRACTICE_SLOT_LABELS = Object.freeze([
   "Flexible 3",
 ]);
 
+function abilityUsesLabel(definition) {
+  const uses = createSkillState(definition.id, 1).usesRemaining;
+  return uses == null ? "Unlimited" : `${uses} / act`;
+}
+
+function AbilitySwapPicker({
+  slotIndex,
+  slotLabel,
+  value,
+  groups,
+  skillIds,
+  accent,
+  onChange,
+}) {
+  const listboxId = useId();
+  const headingId = useId();
+  const triggerRef = useRef(null);
+  const panelRef = useRef(null);
+  const optionRefs = useRef([]);
+  const selected = getSkill(value);
+  const selectedGroup = groups.find((group) => group.options.some((skill) => skill.id === value))
+    || groups[0];
+  const [open, setOpen] = useState(false);
+  const [activeGroupId, setActiveGroupId] = useState(selectedGroup.id);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const activeGroup = groups.find((group) => group.id === activeGroupId) || groups[0];
+  const options = activeGroup?.options || [];
+
+  const equippedSlot = (skillId) => skillIds.findIndex(
+    (chosenId, chosenIndex) => chosenIndex !== slotIndex && chosenId === skillId,
+  );
+  const isUnavailable = (skillId) => equippedSlot(skillId) >= 0;
+  const firstAvailableIndex = (entries, preferred = -1) => {
+    if (preferred >= 0 && !isUnavailable(entries[preferred]?.id)) return preferred;
+    return Math.max(0, entries.findIndex((skill) => !isUnavailable(skill.id)));
+  };
+
+  const focusOption = (index) => {
+    setActiveIndex(index);
+    globalThis.requestAnimationFrame?.(() => optionRefs.current[index]?.focus());
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const preferred = options.findIndex((skill) => skill.id === value);
+    const nextIndex = firstAvailableIndex(options, preferred);
+    setActiveIndex(nextIndex);
+    const frame = globalThis.requestAnimationFrame?.(() => optionRefs.current[nextIndex]?.focus());
+    return () => globalThis.cancelAnimationFrame?.(frame);
+  // Opening or changing category should move focus into the visible option set.
+  // `value` is intentionally included so a chosen replacement receives the marker before close.
+  }, [activeGroupId, open, value]);
+
+  const openPicker = () => {
+    setActiveGroupId(selectedGroup.id);
+    setOpen(true);
+  };
+
+  const closePicker = ({ restoreFocus = true } = {}) => {
+    setOpen(false);
+    if (restoreFocus) globalThis.requestAnimationFrame?.(() => triggerRef.current?.focus());
+  };
+
+  const choose = (skill) => {
+    if (!skill || isUnavailable(skill.id)) return;
+    onChange(skill.id);
+    closePicker();
+  };
+
+  const moveActive = (direction) => {
+    if (!options.length) return;
+    let next = activeIndex;
+    for (let attempt = 0; attempt < options.length; attempt += 1) {
+      next = (next + direction + options.length) % options.length;
+      if (!isUnavailable(options[next].id)) {
+        focusOption(next);
+        return;
+      }
+    }
+  };
+
+  const onPanelKeyDown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closePicker();
+      return;
+    }
+    if (event.key === "Tab") {
+      trapModalFocus(event, panelRef.current);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveActive(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      const direction = event.key === "Home" ? 1 : -1;
+      const start = event.key === "Home" ? -1 : options.length;
+      let next = start;
+      for (let attempt = 0; attempt < options.length; attempt += 1) {
+        next += direction;
+        if (!isUnavailable(options[next]?.id)) {
+          focusOption(next);
+          break;
+        }
+      }
+      return;
+    }
+    if ((event.key === "Enter" || event.key === " ") && event.target?.getAttribute?.("role") === "option") {
+      event.preventDefault();
+      choose(options[activeIndex]);
+    }
+  };
+
+  if (!selected || !activeGroup) return null;
+  const selectedSummary = selected.description || nonStrikeSummary(selected);
+
+  return (
+    <div className="ability-swap-picker">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="ability-swap-picker__trigger"
+        role="combobox"
+        aria-label={`Practice slot ${slotIndex + 1}, ${slotLabel}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? `${listboxId}-panel` : undefined}
+        data-rarity={selected.rarity}
+        onClick={openPicker}
+      >
+        <span className="ability-swap-picker__trigger-art">
+          <img src={resolveTowAbilityArt(selected)} alt="" />
+        </span>
+        <span className="ability-swap-picker__trigger-copy">
+          <span className="ability-swap-picker__trigger-title">
+            <strong>{resolveTowActionName(selected)}</strong>
+            <small>{titleCase(selected.rarity)}</small>
+          </span>
+          <span className="ability-swap-picker__trigger-summary">{selectedSummary}</span>
+          <span className="ability-swap-picker__trigger-uses">
+            {abilityUsesLabel(selected)}{selected.consumesTurn ? "" : " · swift"}
+          </span>
+        </span>
+        <span className="ability-swap-picker__change" aria-hidden="true">
+          <small>Change</small>
+          <svg viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" /></svg>
+        </span>
+      </button>
+
+      {open && typeof document !== "undefined" ? createPortal((
+        <div
+          className="ability-swap-picker__overlay"
+          data-modal-escape-boundary
+          style={{ "--character-accent": accent }}
+          onKeyDown={onPanelKeyDown}
+        >
+          <div className="ability-swap-picker__backdrop" aria-hidden="true" onPointerDown={() => closePicker()} />
+          <section
+            ref={panelRef}
+            id={`${listboxId}-panel`}
+            className="ability-swap-picker__panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={headingId}
+          >
+            <header className="ability-swap-picker__header">
+              <div>
+                <span>Loadout slot {slotIndex + 1}</span>
+                <h3 id={headingId}>{slotLabel}</h3>
+                <p>{slotIndex < 2 ? "Choose a same-family replacement." : "Choose one exclusive or shared General ability."}</p>
+              </div>
+              <button type="button" aria-label="Close ability selector" onClick={() => closePicker()}>
+                <Icon name="x" size={17} strokeWidth={1.7} />
+              </button>
+            </header>
+
+            {groups.length > 1 ? (
+              <div className="ability-swap-picker__tabs" role="tablist" aria-label="Ability source">
+                {groups.map((group) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={group.id === activeGroup.id}
+                    className={group.id === activeGroup.id ? "is-active" : ""}
+                    data-group-id={group.id}
+                    key={group.id}
+                    onClick={() => setActiveGroupId(group.id)}
+                  >
+                    <span>{group.label}</span>
+                    <small>{group.options.length}</small>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="ability-swap-picker__single-group">
+                <span>{activeGroup.label}</span><small>{options.length} choices</small>
+              </div>
+            )}
+
+            <div
+              className="ability-swap-picker__list"
+              id={listboxId}
+              role="listbox"
+              aria-label={`Abilities for practice slot ${slotIndex + 1}`}
+            >
+              {options.map((skill, index) => {
+                const unavailableSlot = equippedSlot(skill.id);
+                const unavailable = unavailableSlot >= 0;
+                const current = skill.id === value;
+                const summary = skill.description || nonStrikeSummary(skill);
+                return (
+                  <button
+                    ref={(node) => { optionRefs.current[index] = node; }}
+                    type="button"
+                    role="option"
+                    aria-selected={current}
+                    aria-disabled={unavailable}
+                    tabIndex={index === activeIndex ? 0 : -1}
+                    className={`${index === activeIndex ? "is-active" : ""}${current ? " is-selected" : ""}${unavailable ? " is-unavailable" : ""}`}
+                    data-rarity={skill.rarity}
+                    data-skill-id={skill.id}
+                    key={skill.id}
+                    onFocus={() => !unavailable && setActiveIndex(index)}
+                    onPointerEnter={() => !unavailable && setActiveIndex(index)}
+                    onClick={() => choose(skill)}
+                  >
+                    <span className="ability-swap-picker__option-art">
+                      <img src={resolveTowAbilityArt(skill)} alt="" />
+                    </span>
+                    <span className="ability-swap-picker__option-copy">
+                      <span className="ability-swap-picker__option-title">
+                        <strong>{resolveTowActionName(skill)}</strong>
+                        <small>{titleCase(skill.rarity)}</small>
+                      </span>
+                      <span className="ability-swap-picker__option-summary">{summary}</span>
+                      <span className="ability-swap-picker__option-meta">
+                        {abilityUsesLabel(skill)}{skill.consumesTurn ? " · uses action" : " · swift action"}
+                      </span>
+                    </span>
+                    <span className="ability-swap-picker__availability">
+                      {current ? "Equipped" : unavailable ? `In slot ${unavailableSlot + 1}` : "Available"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <footer>
+              <span><i aria-hidden="true" /> Current loadout</span>
+              <small>{options.length} {activeGroup.label.toLowerCase()}</small>
+            </footer>
+          </section>
+        </div>
+      ), document.body) : null}
+    </div>
+  );
+}
+
 function PracticeLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
-  const fieldId = useId();
   const exclusiveAbilities = useMemo(() => characterAbilitiesFor(selected.id), [selected.id]);
   const basicOptions = useMemo(
     () => exclusiveAbilities.filter((skill) => skill.abilityType === "basic-attack"),
@@ -181,19 +443,6 @@ function PracticeLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
     [],
   );
   const changed = skillIds.some((id, index) => id !== selected.build.skills[index]);
-  const isChosenElsewhere = (skillId, slotIndex) => skillIds.some(
-    (chosenId, chosenIndex) => chosenIndex !== slotIndex && chosenId === skillId,
-  );
-
-  const renderOptions = (options, slotIndex) => options.map((skill) => (
-    <option
-      key={skill.id}
-      value={skill.id}
-      disabled={isChosenElsewhere(skill.id, slotIndex)}
-    >
-      {skill.name} · {titleCase(skill.rarity)}
-    </option>
-  ));
 
   return (
     <section className="character-details__test-loadout">
@@ -207,38 +456,47 @@ function PracticeLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
 
       <div className="practice-loadout-editor" aria-label="Practice loadout">
         {skillIds.map((skillId, slotIndex) => {
-          const definition = getSkill(skillId);
           const fixedOptions = slotIndex === 0 ? basicOptions : defensiveOptions;
           const flexible = slotIndex >= 2;
-          const selectId = `${fieldId}-slot-${slotIndex}`;
+          const groups = flexible ? [
+            {
+              id: "exclusive",
+              label: `${selected.character.name} exclusives`,
+              options: flexibleOptions,
+            },
+            {
+              id: "general",
+              label: "General abilities",
+              options: generalOptions,
+            },
+          ] : [{
+            id: slotIndex === 0 ? "basic" : "defensive",
+            label: slotIndex === 0
+              ? `${selected.character.name} Basic Attacks`
+              : `${selected.character.name} Defenses`,
+            options: fixedOptions,
+          }];
           return (
             <div
               className="practice-loadout-editor__slot"
               data-slot-index={slotIndex + 1}
               data-slot-role={flexible ? "flexible" : "fixed"}
-              key={`${slotIndex}-${skillId}`}
+              key={slotIndex}
             >
-              <img src={resolveTowAbilityArt(definition)} alt="" />
-              <label htmlFor={selectId}>
-                <span><strong>{slotIndex + 1}</strong> {PRACTICE_SLOT_LABELS[slotIndex]}</span>
-                <select
-                  id={selectId}
-                  aria-label={`Practice slot ${slotIndex + 1}, ${PRACTICE_SLOT_LABELS[slotIndex]}`}
-                  value={skillId}
-                  onChange={(event) => onSkillChange(slotIndex, event.target.value)}
-                >
-                  {flexible ? (
-                    <>
-                      <optgroup label={`${selected.character.name} exclusives`}>
-                        {renderOptions(flexibleOptions, slotIndex)}
-                      </optgroup>
-                      <optgroup label="General abilities">
-                        {renderOptions(generalOptions, slotIndex)}
-                      </optgroup>
-                    </>
-                  ) : renderOptions(fixedOptions, slotIndex)}
-                </select>
-              </label>
+              <span className="practice-loadout-editor__slot-label">
+                <strong>{String(slotIndex + 1).padStart(2, "0")}</strong>
+                <span>{PRACTICE_SLOT_LABELS[slotIndex]}</span>
+                <small>{flexible ? "Exclusive / General" : "Same family"}</small>
+              </span>
+              <AbilitySwapPicker
+                slotIndex={slotIndex}
+                slotLabel={PRACTICE_SLOT_LABELS[slotIndex]}
+                value={skillId}
+                groups={groups}
+                skillIds={skillIds}
+                accent={selected.color}
+                onChange={(nextSkillId) => onSkillChange(slotIndex, nextSkillId)}
+              />
             </div>
           );
         })}
