@@ -50,67 +50,27 @@ import skillMortalBlow from "../../assets/generated/combat-abilities/skill-morta
 import skillDefenceFallback from "../../assets/generated/combat-abilities/skill-defence-fallback.webp";
 import skillSwiftFallback from "../../assets/generated/combat-abilities/skill-swift-fallback.webp";
 import skillTechniqueFallback from "../../assets/generated/combat-abilities/skill-technique-fallback.webp";
+import skillDefensiveStance from "../../assets/generated/winter-tower/legacy-abilities/defensive-stance-v1.png";
+import skillParry from "../../assets/generated/winter-tower/legacy-abilities/parry-v1.png";
+import skillThreateningCry from "../../assets/generated/winter-tower/legacy-abilities/threatening-cry-v1.png";
+import skillGiantsSmash from "../../assets/generated/winter-tower/legacy-abilities/giants-smash-v1.png";
+import skillFistOfJustice from "../../assets/generated/winter-tower/legacy-abilities/fist-of-justice-v1.png";
+import skillRetaliation from "../../assets/generated/winter-tower/legacy-abilities/retaliation-v1.png";
+import skillIncineration from "../../assets/generated/winter-tower/legacy-abilities/incineration-v1.png";
+import skillRisingPower from "../../assets/generated/winter-tower/legacy-abilities/rising-power-v1.png";
+import skillShouting from "../../assets/generated/winter-tower/legacy-abilities/shouting-v1.png";
+import skillThirstForBlood from "../../assets/generated/winter-tower/legacy-abilities/thirst-for-blood-v1.png";
 import { characterAbilityIds } from "../../gameplay/tow/character-abilities.js";
-import { generalAbilityIds } from "../../gameplay/tow/skills.js";
-import { combatVfxVariantForSkill } from "./tow-combat-vfx.js";
+import { generalAbilityIds, getSkill } from "../../gameplay/tow/skills.js";
 
 const GENERATED_TOW_ABILITY_ART = import.meta.glob(
   "../../assets/generated/winter-tower/abilities/*.webp",
   { eager: true, import: "default" },
 );
 
-const FALLBACK_PALETTES = Object.freeze({
-  afflict: ["#2b1437", "#b56ce8"],
-  arcane: ["#171936", "#9f8cff"],
-  evade: ["#102d2d", "#8fe9dc"],
-  fire: ["#3b140d", "#ff7b35"],
-  frost: ["#102a35", "#9eeaff"],
-  gash: ["#3a101d", "#f05270"],
-  heal: ["#18301b", "#a7de7c"],
-  impact: ["#34230f", "#f3b95b"],
-  lightning: ["#10263a", "#72d9ff"],
-  pierce: ["#102733", "#83dff4"],
-  slash: ["#381812", "#ef725c"],
-  ward: ["#112b36", "#82d6ee"],
-});
-
-function abilityHash(value) {
-  let hash = 2166136261;
-  for (const character of value) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function proceduralTowAbilityArt(abilityId) {
-  const visual = combatVfxVariantForSkill(abilityId);
-  const [deep, accent] = FALLBACK_PALETTES[visual?.family] || FALLBACK_PALETTES.impact;
-  const hash = abilityHash(abilityId);
-  const tilt = (hash % 46) - 23;
-  const spokes = 5 + (hash % 5);
-  const runeInset = 72 + ((hash >>> 9) % 25);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" data-ability="${abilityId}">
-    <defs>
-      <radialGradient id="g" cx="50%" cy="42%" r="72%"><stop stop-color="${accent}" stop-opacity=".56"/><stop offset=".54" stop-color="${deep}"/><stop offset="1" stop-color="#05090b"/></radialGradient>
-      <filter id="b"><feGaussianBlur stdDeviation="7"/></filter>
-    </defs>
-    <rect width="256" height="256" fill="url(#g)"/>
-    <circle cx="128" cy="122" r="74" fill="none" stroke="${accent}" stroke-opacity=".24" stroke-width="3" stroke-dasharray="8 11" transform="rotate(${tilt} 128 122)"/>
-    <g transform="translate(128 122) rotate(${tilt})" stroke="${accent}" stroke-linecap="round">
-      ${Array.from({ length: spokes }, (_, index) => `<path d="M0 -20 L${Math.round(Math.sin((index / spokes) * Math.PI * 2) * 78)} ${Math.round(-Math.cos((index / spokes) * Math.PI * 2) * 78)}" stroke-opacity="${0.24 + (index % 3) * 0.13}" stroke-width="${3 + (index % 2) * 2}"/>`).join("")}
-    </g>
-    <circle cx="128" cy="122" r="34" fill="${accent}" fill-opacity=".18" filter="url(#b)"/>
-    <path d="M78 128 Q128 64 178 128 Q128 192 78 128Z" fill="none" stroke="${accent}" stroke-width="6"/>
-    <circle cx="128" cy="128" r="14" fill="${accent}"/>
-    <path d="M${runeInset} 216 Q128 ${184 + (hash % 17)} ${256 - runeInset} 216" fill="none" stroke="#fff4de" stroke-opacity=".72" stroke-width="5" stroke-linecap="round"/>
-  </svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
-
 function generatedTowAbilityArt(abilityId) {
   const key = `../../assets/generated/winter-tower/abilities/${abilityId}-v1.webp`;
-  return GENERATED_TOW_ABILITY_ART[key] || proceduralTowAbilityArt(abilityId);
+  return GENERATED_TOW_ABILITY_ART[key] || null;
 }
 
 const TOW_ABILITY_ART = Object.freeze(Object.fromEntries(
@@ -177,6 +137,16 @@ const SKILL_ART = Object.freeze({
   "shield-bash": skillShieldBash,
   "elixir-of-wrath": skillElixirOfWrath,
   "mortal-blow": skillMortalBlow,
+  "defensive-stance": skillDefensiveStance,
+  parry: skillParry,
+  "threatening-cry": skillThreateningCry,
+  "giants-smash": skillGiantsSmash,
+  "fist-of-justice": skillFistOfJustice,
+  retaliation: skillRetaliation,
+  incineration: skillIncineration,
+  "rising-power": skillRisingPower,
+  shouting: skillShouting,
+  "thirst-for-blood": skillThirstForBlood,
   "stone-skin-elixir": generatedTowAbilityArt("stone-skin-elixir"),
   "protection-scroll": generatedTowAbilityArt("protection-scroll"),
   "killing-instinct": generatedTowAbilityArt("killing-instinct"),
@@ -207,6 +177,31 @@ export function resolveTowAbilityArt(definition, weaponPresentation) {
   if (definition?.replaces === "block") return skillDefenceFallback;
   if (definition?.consumesTurn === false) return skillSwiftFallback;
   return skillTechniqueFallback;
+}
+
+const INTENT_FAMILY_WEAPON = Object.freeze({
+  afflict: "arcane",
+  arcane: "arcane",
+  evade: "dagger",
+  fire: "arcane",
+  frost: "arcane",
+  gash: "dagger",
+  heal: "arcane",
+  impact: "mace",
+  lightning: "arcane",
+  pierce: "spear",
+  slash: "sword",
+  ward: "mace",
+  wind: "sword",
+});
+
+/** Enemy declarations use the exact queued skill icon whenever the durable intent has one. */
+export function resolveTowIntentArt(intent, family = "impact") {
+  const abilityId = intent?.skillId || intent?.attackId;
+  const definition = abilityId ? getSkill(abilityId) : null;
+  if (definition) return resolveTowAbilityArt(definition, intent?.weaponPresentation);
+  if (intent?.attackId && ATTACK_FORM_ART[intent.attackId]) return ATTACK_FORM_ART[intent.attackId];
+  return FAMILY_ART[INTENT_FAMILY_WEAPON[family] || "unarmed"] || FAMILY_ART.unarmed;
 }
 
 export function resolveTowActionName(definition, weaponPresentation) {

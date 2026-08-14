@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
-  <defs><radialGradient id="life"><stop stop-color="#F2FFD7"/><stop offset=".35" stop-color="#9EEA72"/><stop offset="1" stop-color="#317E55" stop-opacity="0"/></radialGradient></defs>
-  <circle cx="128" cy="132" r="94" fill="url(#life)" opacity=".56"/>
-  <path d="M109 40H147V105H212V143H147V208H109V143H44V105H109V40Z" fill="#EEFFD1" stroke="#9CE97C" stroke-width="4"/>
-  <path d="M70 199C91 172 100 153 104 131M185 190C163 169 154 150 151 128" stroke="#D5FFB5" stroke-width="5" stroke-linecap="round"/>
-  <path d="M70 198C48 195 37 181 34 161C57 160 72 172 70 198ZM185 190C208 184 218 168 218 148C195 150 182 166 185 190Z" fill="#8CD46C"/>
-</svg>

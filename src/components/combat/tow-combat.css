@@ -550,14 +550,11 @@
   place-items: center;
   overflow: hidden;
   border-radius: 0.36rem;
-}
-
-.tow-combat__status-art img {
-  width: 132%;
-  height: 132%;
-  object-fit: contain;
-  opacity: 0.9;
-  filter: saturate(0.88) brightness(1.18);
+  background-image: var(--tow-status-icon);
+  background-position: var(--tow-status-icon-position, 0% 0%);
+  background-repeat: no-repeat;
+  background-size: var(--tow-status-icon-size, cover);
+  filter: saturate(0.96) brightness(1.08);
 }
 
 .tow-combat__status-art i {
@@ -618,10 +615,13 @@
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--tow-status-detail-accent) 54%, transparent);
   border-radius: 0.55rem;
-  background: rgba(2,6,8,0.78);
+  background-color: rgba(2,6,8,0.78);
+  background-image: var(--tow-status-icon);
+  background-position: var(--tow-status-icon-position, 0% 0%);
+  background-repeat: no-repeat;
+  background-size: var(--tow-status-icon-size, cover);
 }
 
-.tow-combat__status-details-art img { width: 135%; height: 135%; object-fit: contain; }
 .tow-combat__status-details-art i { position: absolute; inset: 0; box-shadow: inset 0 0 1rem rgba(0,0,0,0.62); }
 
 .tow-combat__status-details-copy { min-width: 0; }
@@ -704,7 +704,7 @@
   min-height: 3.4rem;
   aspect-ratio: 1 / 1;
   border: 1px solid color-mix(in srgb, var(--tow-intent-accent) 70%, #fff 15%);
-  border-radius: 50%;
+  border-radius: 0.62rem;
   background:
     radial-gradient(circle at 46% 38%, color-mix(in srgb, var(--tow-intent-accent) 22%, transparent), transparent 52%),
     rgba(5, 8, 10, 0.82);
@@ -721,12 +721,15 @@
   position: absolute;
   inset: -0.32rem;
   border: 1px solid color-mix(in srgb, var(--tow-intent-accent) 32%, transparent);
-  border-radius: 50%;
+  border-radius: 0.72rem;
   content: "";
 }
 
+.tow-combat__intent-sigil::before { transform: rotate(7deg); }
+
 .tow-combat__intent-sigil::after {
   inset: -0.56rem;
+  border-radius: 50%;
   border-style: dashed;
   opacity: 0.38;
   animation: tow-intent-turn 12s linear infinite;
@@ -735,19 +738,19 @@
 .tow-combat__intent-sigil img {
   position: absolute;
   z-index: 2;
-  inset: -9%;
-  width: 118%;
-  height: 118%;
-  object-fit: contain;
-  clip-path: circle(48% at 50% 50%);
-  filter: saturate(0.78) brightness(1.15);
+  inset: 0.16rem;
+  width: calc(100% - 0.32rem);
+  height: calc(100% - 0.32rem);
+  border-radius: 0.46rem;
+  object-fit: cover;
+  filter: saturate(1.03) brightness(1.08) contrast(1.04);
 }
 
 .tow-combat__intent-sigil i {
   position: absolute;
   z-index: 3;
   inset: 0.25rem;
-  border-radius: 50%;
+  border-radius: 0.46rem;
   box-shadow: inset 0 0 0.7rem color-mix(in srgb, var(--tow-intent-accent) 24%, transparent);
 }
 
@@ -1222,6 +1225,21 @@
   animation: tow-vfx-bloom 820ms cubic-bezier(.15,.82,.2,1) var(--tow-effect-delay, 0ms) both;
 }
 
+.tow-combat__effect-signature {
+  position: absolute;
+  inset: 5%;
+  z-index: 0;
+  width: 90%;
+  height: 90%;
+  object-fit: cover;
+  clip-path: circle(43% at 50% 50%);
+  mix-blend-mode: screen;
+  filter: saturate(1.18) contrast(1.12) drop-shadow(0 0 0.9rem var(--tow-effect-accent));
+  opacity: 0;
+  animation: tow-vfx-signature 920ms cubic-bezier(.14,.8,.18,1)
+    calc(var(--tow-effect-delay, 0ms) + var(--tow-signature-delay, 0ms)) both;
+}
+
 .tow-combat__effect-outcome {
   z-index: 2;
   inset: -1%;
@@ -1408,6 +1426,37 @@
   0% { opacity: 0; }
   8%, 72% { opacity: 1; }
   100% { opacity: 0; }
+}
+
+@keyframes tow-vfx-signature {
+  0% {
+    opacity: 0;
+    transform:
+      translate(var(--tow-signature-x, 0%), var(--tow-signature-y, 0%))
+      scale(calc(var(--tow-signature-scale, 1) * 0.34))
+      rotate(calc(var(--tow-signature-rotate, 0deg) - 9deg))
+      scaleX(var(--tow-signature-mirror, 1));
+    filter: blur(0.5rem) saturate(1.4) drop-shadow(0 0 0 var(--tow-effect-accent));
+  }
+  22% {
+    opacity: 0.68;
+    transform:
+      translate(var(--tow-signature-x, 0%), var(--tow-signature-y, 0%))
+      scale(var(--tow-signature-scale, 1))
+      rotate(var(--tow-signature-rotate, 0deg))
+      scaleX(var(--tow-signature-mirror, 1));
+    filter: blur(0) saturate(1.2) drop-shadow(0 0 1rem var(--tow-effect-accent));
+  }
+  60% { opacity: 0.34; }
+  100% {
+    opacity: 0;
+    transform:
+      translate(var(--tow-signature-x, 0%), var(--tow-signature-y, 0%))
+      scale(calc(var(--tow-signature-scale, 1) * 1.38))
+      rotate(calc(var(--tow-signature-rotate, 0deg) + 7deg))
+      scaleX(var(--tow-signature-mirror, 1));
+    filter: blur(0.16rem) saturate(0.88) drop-shadow(0 0 1.1rem var(--tow-effect-accent));
+  }
 }
 
 @keyframes tow-vfx-bloom {

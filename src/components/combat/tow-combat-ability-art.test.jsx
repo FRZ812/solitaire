@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generalAbilityIds, getSkill } from "../../gameplay/tow/skills.js";
+import { generalAbilityIds, getSkill, skillIds } from "../../gameplay/tow/skills.js";
 import { characterAbilityIds } from "../../gameplay/tow/character-abilities.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "./tow-combat-ability-art.js";
 import { weaponPresentationForForm, weaponPresentationFromItemIds } from "../../gameplay/tow/weapon-presentation.js";
@@ -48,5 +48,13 @@ describe("generated combat ability art", () => {
     expect(abilityIds).toHaveLength(18);
     expect(new Set(resolved).size).toBe(abilityIds.length);
     expect(resolved.every((art) => art.includes("-v1.webp"))).toBe(true);
+  });
+
+  it("gives the complete skill registry non-SVG, non-borrowed ability artwork", () => {
+    const abilityIds = skillIds();
+    const resolved = abilityIds.map((id) => resolveTowAbilityArt(getSkill(id)));
+    expect(resolved.every((art) => /\.(?:png|webp)$/.test(art))).toBe(true);
+    expect(resolved.every((art) => !art.includes("svg"))).toBe(true);
+    expect(new Set(resolved).size).toBe(abilityIds.length);
   });
 });

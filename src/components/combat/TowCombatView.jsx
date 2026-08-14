@@ -320,6 +320,7 @@ function IntentBadge({ intent, target, playerId }) {
       aria-label={`${intent.name}, ${outcome}, ${intent.target === "self" ? "used on self" : `targeting ${targetName}`}`}
       title={`${intent.name} · ${outcome} · ${targetText}`}
       data-testid="tow-enemy-intent"
+      data-ability-id={intent.skillId || intent.attackId || undefined}
     >
       <span className="tow-combat__intent-sigil" aria-hidden="true">
         <img src={visual.asset} alt="" />
@@ -343,6 +344,14 @@ function statusList(map) {
   return [...map.entries()]
     .filter(([, count]) => count > 0)
     .map(([type, count]) => ({ type, count }));
+}
+
+function statusIconStyle(visual) {
+  return {
+    "--tow-status-icon": `url("${visual.iconAsset || visual.asset}")`,
+    "--tow-status-icon-position": visual.iconPosition || "0% 0%",
+    "--tow-status-icon-size": visual.iconSize || "cover",
+  };
 }
 
 function Statuses({ actor, feedbackCues = [], selectedType = null, onToggle }) {
@@ -413,8 +422,7 @@ function Statuses({ actor, feedbackCues = [], selectedType = null, onToggle }) {
               title={`${detail.name} · ${detail.countLabel}`}
               onClick={() => onToggle?.(status.type)}
             >
-              <span className="tow-combat__status-art" aria-hidden="true">
-                <img src={detail.visual.asset} alt="" />
+              <span className="tow-combat__status-art" style={statusIconStyle(detail.visual)} aria-hidden="true">
                 <i />
               </span>
               <strong aria-hidden="true">{status.count}</strong>
@@ -438,8 +446,11 @@ function StatusDetails({ actor, status, source, enemy = false, onDismiss }) {
       aria-modal="false"
       aria-label={`${detail.name} status details`}
     >
-      <span className={`tow-combat__status-details-art tow-combat__status-details-art--${detail.visual.family}`} aria-hidden="true">
-        <img src={detail.visual.asset} alt="" />
+      <span
+        className={`tow-combat__status-details-art tow-combat__status-details-art--${detail.visual.family}`}
+        style={statusIconStyle(detail.visual)}
+        aria-hidden="true"
+      >
         <i />
       </span>
       <span className="tow-combat__status-details-copy">
@@ -659,6 +670,7 @@ function CombatEffects({ cues }) {
           .length;
         const laneX = [-38, 38, 0][lane % 3];
         const laneY = [0, -18, 14][lane % 3];
+        const profile = cue.visual?.profile || {};
         return (
           <span
             key={cue.id || `${cue.sequence}-${cue.kind}-${cue.targetId || index}`}
@@ -668,12 +680,22 @@ function CombatEffects({ cues }) {
             data-hit-count={cue.hitCount ?? 1}
             data-action-index={cue.actionIndex ?? 0}
             data-effect-lane={lane}
+            data-vfx-profile={profile.key || undefined}
             style={{
               "--tow-effect-delay": `${cue.delayMs || 0}ms`,
               "--tow-effect-x": `${laneX}px`,
               "--tow-effect-y": `${laneY}px`,
+              "--tow-signature-rotate": profile.rotate || "0deg",
+              "--tow-signature-scale": profile.scale || 1,
+              "--tow-signature-x": profile.x || "0%",
+              "--tow-signature-y": profile.y || "0%",
+              "--tow-signature-delay": profile.delay || "0ms",
+              "--tow-signature-mirror": profile.mirror || 1,
             }}
           >
+            {cue.visual?.signatureAsset && cue.visual.signatureAsset !== cue.visual.asset ? (
+              <img className="tow-combat__effect-signature" src={cue.visual.signatureAsset} alt="" />
+            ) : null}
             {cue.visual?.asset ? <img className="tow-combat__effect-asset" src={cue.visual.asset} alt="" /> : null}
             {cue.outcomeAsset && cue.outcomeAsset !== cue.visual?.asset ? (
               <img className="tow-combat__effect-outcome" src={cue.outcomeAsset} alt="" />

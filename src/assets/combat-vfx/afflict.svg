@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
-  <defs><radialGradient id="curse"><stop stop-color="#F8DFFF"/><stop offset=".35" stop-color="#B66BE7"/><stop offset="1" stop-color="#3F176A" stop-opacity="0"/></radialGradient></defs>
-  <circle cx="128" cy="128" r="103" fill="url(#curse)" opacity=".42"/>
-  <circle cx="128" cy="128" r="81" stroke="#E3A9FF" stroke-width="5" stroke-dasharray="14 9"/>
-  <path d="M128 38L145 92L200 72L163 116L214 143L157 143L169 201L128 162L87 201L99 143L42 143L93 116L56 72L111 92L128 38Z" stroke="#F4D6FF" stroke-width="4" stroke-linejoin="round"/>
-  <path d="M99 122C110 105 146 105 157 122C147 146 109 146 99 122Z" fill="#5D2788" stroke="#F4DBFF" stroke-width="4"/>
-  <circle cx="128" cy="124" r="10" fill="#FFF"/>
-</svg>
