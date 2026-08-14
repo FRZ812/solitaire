@@ -3,7 +3,8 @@ import { applyBeat } from "../../engine/beat.js";
 import { emptyMechanicsSidecar } from "../../engine/campaign-migration.js";
 import { makeInitialState } from "../../data/initial-state.js";
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./character-bootstrap.js";
-import { getSkill } from "./skills.js";
+import { characterAbilitiesFor } from "./character-abilities.js";
+import { generalAbilityIds, getSkill } from "./skills.js";
 import { practiceActor } from "./practice-scenarios.js";
 import {
   STARTING_ARCHETYPES,
@@ -11,6 +12,9 @@ import {
   characterSetupForArchetype,
   getStartingArchetype,
   invalidStartingArchetypes,
+  isArchetypePracticeLoadout,
+  normalizeArchetypeDraft,
+  practiceBuildForArchetypeDraft,
 } from "./starting-archetypes.js";
 import {
   effectiveTowBuild,
@@ -52,6 +56,63 @@ describe("source-roster starting grants", () => {
         dodgeRate: archetype.baseStats.dodgeRate + bonus.dodgeRate,
       });
     }
+  });
+});
+
+describe("disposable practice loadouts", () => {
+  it("accepts only the selected character's fixed actions and legal flexible replacements", () => {
+    const archetype = getStartingArchetype("last-assassin");
+    const exclusives = characterAbilitiesFor(archetype.id);
+    const basic = exclusives.find((skill) => skill.abilityType === "basic-attack"
+      && skill.id !== archetype.build.skills[0]);
+    const defensive = exclusives.find((skill) => skill.abilityType === "defensive"
+      && skill.id !== archetype.build.skills[1]);
+    const flexible = exclusives.filter((skill) => skill.abilityType === "archetype"
+      && !archetype.build.skills.includes(skill.id));
+    const testSkillIds = [
+      basic.id,
+      defensive.id,
+      flexible[0].id,
+      flexible[1].id,
+      generalAbilityIds()[0],
+    ];
+
+    expect(isArchetypePracticeLoadout(archetype.id, testSkillIds)).toBe(true);
+    expect(isArchetypePracticeLoadout(archetype.id, [
+      getStartingArchetype("arctic-knight").build.skills[0],
+      ...testSkillIds.slice(1),
+    ])).toBe(false);
+    expect(isArchetypePracticeLoadout(archetype.id, [
+      testSkillIds[0],
+      testSkillIds[1],
+      testSkillIds[2],
+      testSkillIds[2],
+      testSkillIds[4],
+    ])).toBe(false);
+  });
+
+  it("carries a valid override into practice without changing the authored journey kit", () => {
+    const archetype = getStartingArchetype("last-assassin");
+    const flexible = characterAbilitiesFor(archetype.id)
+      .filter((skill) => skill.abilityType === "archetype" && !archetype.build.skills.includes(skill.id));
+    const testSkillIds = [
+      ...archetype.build.skills.slice(0, 2),
+      flexible[0].id,
+      flexible[1].id,
+      generalAbilityIds()[0],
+    ];
+    const draft = normalizeArchetypeDraft({ archetypeId: archetype.id, preview: true, testSkillIds });
+    const practiceBuild = practiceBuildForArchetypeDraft(draft);
+
+    expect(draft.testSkillIds).toEqual(testSkillIds);
+    expect(practiceBuild.skills).toEqual(testSkillIds);
+    expect(archetype.build.skills).not.toEqual(testSkillIds);
+    expect(characterSetupForArchetype(draft).combatArchetypeId).toBe(archetype.id);
+    expect(normalizeArchetypeDraft({
+      archetypeId: "arctic-knight",
+      preview: true,
+      testSkillIds,
+    })).not.toHaveProperty("testSkillIds");
   });
 });
 

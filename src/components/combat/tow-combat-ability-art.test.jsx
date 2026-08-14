@@ -34,15 +34,12 @@ describe("generated combat ability art", () => {
     ]).size).toBe(3);
   });
 
-  it("plumbs all 276 character abilities to distinct generated art or stable placeholders", () => {
+  it("plumbs all 276 character abilities to distinct dedicated generated art", () => {
     const abilityIds = characterAbilityIds();
     const resolved = abilityIds.map((id) => resolveTowAbilityArt(getSkill(id)));
     expect(abilityIds).toHaveLength(276);
     expect(new Set(resolved).size).toBe(abilityIds.length);
-    expect(resolved.every((art) => (
-      art.includes("-v1.webp") || art.startsWith("data:image/svg+xml,")
-    ))).toBe(true);
-    expect(resolved.filter((art) => art.includes("-v1.webp")).length).toBeGreaterThanOrEqual(60);
+    expect(resolved.every((art) => art.includes("-v1.webp"))).toBe(true);
   });
 
   it("gives every shared replacement a distinct dedicated icon", () => {
@@ -50,6 +47,6 @@ describe("generated combat ability art", () => {
     const resolved = abilityIds.map((id) => resolveTowAbilityArt(getSkill(id)));
     expect(abilityIds).toHaveLength(18);
     expect(new Set(resolved).size).toBe(abilityIds.length);
-    for (const art of resolved) expect(art).not.toContain("fallback");
+    expect(resolved.every((art) => art.includes("-v1.webp"))).toBe(true);
   });
 });

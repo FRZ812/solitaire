@@ -51,6 +51,7 @@ import skillDefenceFallback from "../../assets/generated/combat-abilities/skill-
 import skillSwiftFallback from "../../assets/generated/combat-abilities/skill-swift-fallback.webp";
 import skillTechniqueFallback from "../../assets/generated/combat-abilities/skill-technique-fallback.webp";
 import { characterAbilityIds } from "../../gameplay/tow/character-abilities.js";
+import { generalAbilityIds } from "../../gameplay/tow/skills.js";
 import { combatVfxVariantForSkill } from "./tow-combat-vfx.js";
 
 const GENERATED_TOW_ABILITY_ART = import.meta.glob(
@@ -113,7 +114,8 @@ function generatedTowAbilityArt(abilityId) {
 }
 
 const TOW_ABILITY_ART = Object.freeze(Object.fromEntries(
-  characterAbilityIds().map((abilityId) => [abilityId, generatedTowAbilityArt(abilityId)]),
+  [...characterAbilityIds(), ...generalAbilityIds()]
+    .map((abilityId) => [abilityId, generatedTowAbilityArt(abilityId)]),
 ));
 
 const FAMILY_ART = Object.freeze({

@@ -49,6 +49,14 @@ async function keydown(element, key) {
   await act(async () => element.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
 }
 
+async function selectValue(element, value) {
+  expect(element).toBeTruthy();
+  await act(async () => {
+    element.value = value;
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 function ControlledStart(props) {
   const [draft, setDraft] = useState(createDefaultArchetypeDraft());
   return <QuickStartLane {...props} draft={draft} onDraftChange={setDraft} />;
@@ -185,7 +193,7 @@ describe("the simple grid-to-preview flow", () => {
     expect(generalLibrary.querySelectorAll('[data-ability-type="general"]')).toHaveLength(18);
     expect(details.querySelector('[data-trait-id="necromancy"]')?.textContent)
       .toContain("Skeletons each turn");
-    expect(details.querySelector("select")).toBeNull();
+    expect(details.querySelectorAll('[aria-label="Practice loadout"] select')).toHaveLength(5);
 
     const picker = details.querySelector("[role=combobox]");
     await click(picker);
@@ -277,5 +285,54 @@ describe("every advertised character reaches the production fight", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("swaps a legal five-action practice kit without changing the journey start", async () => {
+    const asked = [];
+    const begun = [];
+    const mounted = await render(
+      <ControlledStart
+        onPractice={(draft, scenarioId) => asked.push([draft, scenarioId])}
+        onBegin={(draft) => begun.push(draft)}
+      />,
+    );
+    const selected = STARTING_ARCHETYPES[5];
+    await click(mounted.querySelectorAll(".character-choice-card")[5]);
+    await click(mounted.querySelector(".character-preview__details-button"));
+
+    const editor = mounted.querySelector('[aria-label="Practice loadout"]');
+    let selects = editor.querySelectorAll("select");
+    expect(selects).toHaveLength(5);
+    expect(selects[0].options).toHaveLength(3);
+    expect(selects[1].options).toHaveLength(3);
+    expect(selects[2].options).toHaveLength(35);
+
+    const replacementBasic = [...selects[0].options]
+      .find((option) => option.value !== selected.build.skills[0]).value;
+    await selectValue(selects[0], replacementBasic);
+    selects = editor.querySelectorAll("select");
+    await selectValue(selects[2], "penetration");
+    selects = editor.querySelectorAll("select");
+    expect(selects[3].querySelector('option[value="penetration"]').disabled).toBe(true);
+    expect(mounted.querySelector(".practice-loadout-editor__note").textContent)
+      .toContain("Modified test kit");
+
+    const expectedTestSkills = [
+      replacementBasic,
+      selected.build.skills[1],
+      "penetration",
+      selected.build.skills[3],
+      selected.build.skills[4],
+    ];
+    await click(mounted.querySelector(".character-details__practice > button"));
+    expect(asked).toEqual([[{
+      archetypeId: selected.id,
+      preview: true,
+      testSkillIds: expectedTestSkills,
+    }, PRACTICE_SCENARIOS[0].id]]);
+
+    await click(mounted.querySelector(".character-details__close"));
+    await click(mounted.querySelector(".character-preview__begin"));
+    expect(begun).toEqual([{ archetypeId: selected.id, preview: true }]);
   });
 });
