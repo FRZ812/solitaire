@@ -175,6 +175,18 @@ const SKILL_ART = Object.freeze({
   "shield-bash": skillShieldBash,
   "elixir-of-wrath": skillElixirOfWrath,
   "mortal-blow": skillMortalBlow,
+  "stone-skin-elixir": generatedTowAbilityArt("stone-skin-elixir"),
+  "protection-scroll": generatedTowAbilityArt("protection-scroll"),
+  "killing-instinct": generatedTowAbilityArt("killing-instinct"),
+  "blade-of-curse": generatedTowAbilityArt("blade-of-curse"),
+  beastification: generatedTowAbilityArt("beastification"),
+  "super-speed": generatedTowAbilityArt("super-speed"),
+  "peace-declaration": generatedTowAbilityArt("peace-declaration"),
+  "urgent-guard": generatedTowAbilityArt("urgent-guard"),
+  "unbendable-will": generatedTowAbilityArt("unbendable-will"),
+  "sleep-grenade": generatedTowAbilityArt("sleep-grenade"),
+  "judge-of-fate": generatedTowAbilityArt("judge-of-fate"),
+  transcendence: generatedTowAbilityArt("transcendence"),
   ...TOW_ABILITY_ART,
 });
 

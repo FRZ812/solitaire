@@ -149,6 +149,8 @@ describe("combat feedback receipts", () => {
     ]);
     expect(cues[1].kicker).toBe("Critical");
     expect(cues[2].kicker).toBe("Ward holds");
+    expect(cues.map((cue) => cue.hpChange)).toEqual([-7, -12, 0, 0]);
+    expect(cues.map((cue) => cue.shieldChange)).toEqual([0, 0, -9, 0]);
     expect(cues.every((cue) => cue.hitCount === 4)).toBe(true);
     expect(cues.every((cue) => cue.visual.variant === "threefold-cut")).toBe(true);
   });
@@ -188,6 +190,8 @@ describe("combat feedback receipts", () => {
     ]);
 
     expect(timeline.map((cue) => cue.actionIndex)).toEqual([0, 0, 0, 1]);
+    expect(timeline.map((cue) => cue.declarationLabel))
+      .toEqual(["Flame Strike", "Flame Strike", "Flame Strike", "Swing"]);
     expect(timeline[2].delayMs).toBeGreaterThan(timeline[1].delayMs);
     expect(timeline[3].delayMs).toBeGreaterThan(timeline[2].delayMs);
     expect(timeline[3]).toMatchObject({ attackerId: "foe", targetId: "hero" });
@@ -305,5 +309,19 @@ describe("combat feedback receipts", () => {
       amount: 1,
       status: "weak",
     }).text).toBe("Your Ambush grants 1 Weak.");
+  });
+
+  it("names who an offensive trait placed its status on", () => {
+    const state = encounter();
+    expect(combatEventReceipt(state, {
+      sequence: 15,
+      type: "trait-fired",
+      actorId: "hero",
+      traitId: "ambush",
+      amount: 1,
+      status: "weak",
+      effectKind: "inflict-status",
+      targetIds: ["foe"],
+    }).text).toBe("Your Ambush inflicts 1 Weak on Duellist.");
   });
 });

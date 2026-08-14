@@ -13,6 +13,7 @@ number — it is either captured or the feature waits.
 - `wiki:arctic-knight` — <https://towerofwinter.fandom.com/wiki/Arctic_Knight>
 - `wiki:gatekeeper` — <https://towerofwinter.fandom.com/wiki/The_Gatekeeper>
 - `wiki:campaign` — <https://towerofwinter.fandom.com/wiki/Tower_of_Winter_(Campaign)>
+- `namu:general-abilities` — <https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91#s-11.1>
 
 Confidence tags: `observed` (stated outright by a source), `derived` (follows from two or
 more observed facts), `gap` (not established — must not be guessed).
@@ -229,7 +230,11 @@ Ranked values are quoted rank 1 → max.
 | Brutal Slash | Legendary | Deal (36/`gap`)% damage and inflict the same | 3 |
 | Incineration | Mythical | Damage = 110% of ATK, ignition = 110% of ATK, gain 2 Paralysis | 1 |
 
-### Common skill pool (`observed`, `wiki:skills`)
+### Legacy Fandom common-skill capture (`observed`, `wiki:skills`)
+
+This table records the earlier Fandom snapshot and remains useful for exact values and
+save compatibility. It is not the canonical replacement-pool membership list; that is
+the current Namu section 11.1 list immediately below.
 
 | Skill | Effect | Uses | Notes | Rarity |
 |---|---|---|---|---|
@@ -248,6 +253,20 @@ Ranked values are quoted rank 1 → max.
 | Transcendence | Gain 8 ATK, 8 DEF, 20% Focus | 1 | | Legendary |
 | Unbendable Will | Unstoppable +4 (ignores action-nullifying debuffs) | 4 | No turn cost | Rare |
 | Urgent Guard | Shield = 100% of DEF | 9 | No turn cost | Uncommon |
+
+### General active ability replacement pool (`observed` names, `namu:general-abilities`)
+
+The current Namu section 11.1 lists 18 General active abilities: Penetration, Rapid
+Cooling, Urgent Guard, Stone Skin Elixir, Protection Scroll, Elixir of Wrath, First Aid,
+Emergency Evasion, Sudden Blow, Unbendable Will, Killing Instinct, Sleep Grenade Toss,
+Blade of Curse, Beastification, Judge of Fate, Super Speed, Transcendence, and Peace
+Declaration.
+
+All 18 are plumbed as flexible reward abilities. A starting character equips none of
+them; a later General acquisition may replace one of the three character-exclusive
+slots but cannot replace the protected Basic Attack or Defensive slot. Older shared
+skill ids that are absent from this 18-entry source list remain loadable only for save
+compatibility and are not offered by the canonical General pool.
 
 ### Unslotted skills (`observed`, `wiki:skills`)
 

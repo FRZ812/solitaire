@@ -75,25 +75,25 @@ describe("inventory and arsenal atlas integration", () => {
     expect(html).toContain("<span>Spellcasting</span><strong>16</strong>");
   });
 
-  it("keeps a source character's real four-action Tower kit visible after creation", () => {
+  it("keeps a source character's real five-action Tower kit visible after creation", () => {
     const state = makeInitialState();
     state.character.progressionModel = "tow-archetype";
     state.mechanics = {
       ...state.mechanics,
       build: {
         traits: { ironclad: 3 },
-        skills: ["arctic-strike", "arctic-block", "arctic-deliberate-blow", "arctic-incineration"],
+        skills: ["arctic-strike", "arctic-block", "arctic-deliberate-blow", "arctic-incineration", "arctic-mortal-blow"],
         runes: [],
       },
     };
     const html = renderToStaticMarkup(<ArsenalView state={state} />);
     expect(html).toContain('aria-label="Tower combat kit"');
-    expect(html).toContain("Tower combat kit · 4");
+    expect(html).toContain("Tower combat kit · 5");
     expect(html).toContain("Basic attack");
     expect(html).toContain("Defensive");
-    expect(html).toContain("Special");
-    expect(html).toContain("Ultimate");
+    expect(html).toContain("Exclusive ability");
     expect(html).toContain("Incineration");
+    expect(html).toContain("Mortal Blow");
   });
 
   it("surfaces selected Sorcerer repertoire and authored utility modes", () => {

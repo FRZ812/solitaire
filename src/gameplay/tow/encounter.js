@@ -100,9 +100,11 @@ function traitFiresThisRound(traitId, rank, round, rng) {
 export function fireTraits(state) {
   let next = state;
   let rng = state.rng;
-  // Every actor on the player's side fires their own traits, in the same stable order they
-  // act in. An ally's Ironclad is theirs, not a copy of the protagonist's.
-  for (const ownerId of playerSideIds(state)) {
+  const appliedGroupPressure = new Set();
+  // Every built combatant fires their own traits, in stable side order. A foe's archetype
+  // is not a shallow attack table wearing a character portrait: its innate trait resolves
+  // through this same cadence and status machinery too.
+  for (const ownerId of [...playerSideIds(state), ...state.enemyIds]) {
     const build = buildFor(next, ownerId);
     if (!build || next.actors[ownerId].hp <= 0) continue;
     for (const [traitId, rank] of Object.entries(build.traits)) {
@@ -116,8 +118,18 @@ export function fireTraits(state) {
       if (amount <= 0) continue;
       const { kind, status } = definition.effect;
 
+      // Identical enemy auras are one tactical pressure, not N copies of the same passive.
+      // Self-granting traits still belong to every individual actor; only repeated hostile
+      // application is coalesced. Otherwise a routine pack of three matching archetypes can
+      // triple an every-turn debuff before the player receives a command window.
+      const pressureKey = `${next.actors[ownerId].side}:${traitId}`;
+      if (kind !== "grant-status" && appliedGroupPressure.has(pressureKey)) continue;
+      if (kind !== "grant-status") appliedGroupPressure.add(pressureKey);
+      const targetIds = [];
+
       if (kind === "grant-status") {
         const owner = next.actors[ownerId];
+        targetIds.push(ownerId);
         next = {
           ...next,
           actors: {
@@ -127,16 +139,28 @@ export function fireTraits(state) {
         };
       } else {
         const actors = { ...next.actors };
-        for (const enemyId of next.enemyIds) {
-          if (actors[enemyId].hp <= 0) continue;
-          actors[enemyId] = {
-            ...actors[enemyId],
-            statuses: applyStatus(actors[enemyId].statuses, status, amount),
+        const opposingIds = next.actors[ownerId].side === "enemy"
+          ? playerSideIds(next)
+          : next.enemyIds;
+        for (const targetId of opposingIds) {
+          if (actors[targetId].hp <= 0) continue;
+          targetIds.push(targetId);
+          actors[targetId] = {
+            ...actors[targetId],
+            statuses: applyStatus(actors[targetId].statuses, status, amount),
           };
         }
         next = { ...next, actors };
       }
-      next = push(next, "trait-fired", { actorId: ownerId, traitId, rank, status, amount });
+      next = push(next, "trait-fired", {
+        actorId: ownerId,
+        traitId,
+        rank,
+        status,
+        amount,
+        effectKind: kind,
+        targetIds,
+      });
     }
   }
   return { ...next, rng };
@@ -147,10 +171,10 @@ export function playerSideIds(state) {
   return [state.playerId, ...(state.allyIds || [])];
 }
 
-/** Whichever build belongs to this actor: the player's, or one ally's own. */
+/** Whichever build belongs to this actor, regardless of which side fields them. */
 export function buildFor(state, actorId) {
   if (actorId === state.playerId) return state.build;
-  return state.allyBuilds?.[actorId] || null;
+  return state.allyBuilds?.[actorId] || state.enemyBuilds?.[actorId] || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +295,84 @@ function normalizeBuild(build) {
   };
 }
 
+/**
+ * Priority granted during an open command window belongs to that window. Waiting until
+ * `withFreshTurn` made a Swift Priority ability leak one enemy attack before its tempo
+ * existed. Only the newly gained net Priority is added; hostile Priority still cancels it.
+ */
+function applyImmediatePriorityBudget(state, actorId, priorityBefore) {
+  const actor = state.actors[actorId];
+  if (state.phase !== "player" || actor?.side !== "player") return state;
+  const priorityAfter = statusCount(actor.statuses, "priority");
+  const enemyPriority = state.enemyIds.reduce((most, enemyId) => {
+    const enemy = state.actors[enemyId];
+    if (!enemy || enemy.hp <= 0) return most;
+    return Math.max(most, statusCount(enemy.statuses, "priority"));
+  }, 0);
+  const beforeNet = Math.max(0, priorityBefore - enemyPriority);
+  const afterNet = Math.max(0, priorityAfter - enemyPriority);
+  const gainedActions = Math.max(0, afterNet - beforeNet);
+  if (gainedActions <= 0) return state;
+  if (actorId === state.playerId) {
+    return {
+      ...state,
+      turn: {
+        ...state.turn,
+        actionsRemaining: state.turn.actionsRemaining + gainedActions,
+      },
+    };
+  }
+  return {
+    ...state,
+    turn: {
+      ...state.turn,
+      allies: {
+        ...state.turn.allies,
+        [actorId]: (state.turn.allies?.[actorId] ?? 0) + gainedActions,
+      },
+    },
+  };
+}
+
+function skillActionKind(definition) {
+  const effects = definition.effects || [];
+  if (effects.some((effect) => effect.type.startsWith("damage"))) return "damage";
+  if (effects.some((effect) => effect.type === "shield")) return "ward";
+  if (effects.some((effect) => effect.type.startsWith("heal") || effect.type === "reduce-statuses")) {
+    return "recover";
+  }
+  if (effects.some((effect) => effect.target === "enemy")) return "afflict";
+  return "boon";
+}
+
+/**
+ * Intent-compatible identity for one real skill.
+ *
+ * `enemyAttacks` remains the durable declaration table name for v1 replay compatibility,
+ * but new entries are projections of the same skill definitions and rank states the player
+ * uses. Resolution never trusts the preview numbers; it executes the skill itself.
+ */
+function skillActionEntry(actor, skillState) {
+  const definition = getSkill(skillState.id);
+  const damageIndex = definition.effects.findIndex((effect) => effect.type === "damage");
+  const damageEffect = damageIndex >= 0 ? definition.effects[damageIndex] : null;
+  const damage = damageEffect
+    ? Math.max(0, Math.floor(
+      (statOf(actor, damageEffect.scale) * effectMagnitude(definition.id, damageIndex, skillState.rank)) / 100,
+    ))
+    : 0;
+  const targetsEnemy = definition.effects.some((effect) => effect.target === "enemy");
+  return {
+    id: definition.id,
+    skillId: definition.id,
+    name: definition.name,
+    hits: damageEffect?.hits ?? 1,
+    damage,
+    kind: skillActionKind(definition),
+    target: targetsEnemy ? "enemy" : "self",
+  };
+}
+
 export function createTowEncounter({
   seed,
   intentSeed,
@@ -298,21 +400,35 @@ export function createTowEncounter({
     allyBuilds[actor.id] = normalizeBuild(allyBuild);
     return actor;
   });
-  // An enemy's attack table lives beside the actor rather than on it: the Gatekeeper's
-  // six named attacks are encounter content, while the actor stays the strict, validated
-  // shape the damage resolver reads.
+  // New foes bring a build just like player-side actors. `enemyAttacks` is retained as the
+  // v1 declaration index and as the legacy path for already-recorded fights; build-backed
+  // rows are derived from real skills and are never resolved as standalone damage records.
   const enemyAttacks = {};
+  const enemyBuilds = {};
+  const enemyArchetypes = {};
   const enemyActors = enemies.map((enemy) => {
-    const { attacks, ...actorFields } = enemy;
+    const {
+      attacks,
+      build: enemyBuild,
+      archetypeId = null,
+      ...actorFields
+    } = enemy;
     const actor = createTowActor({ ...actorFields, side: "enemy" });
-    enemyAttacks[actor.id] = (attacks || []).map((attack) => ({
-      id: attack.id || "attack",
-      name: attack.name || "Attack",
-      hits: Number.isSafeInteger(attack.hits) && attack.hits > 0 ? attack.hits : 1,
-      damage: Number.isSafeInteger(attack.damage) && attack.damage >= 0
-        ? attack.damage
-        : actor.stats.attack,
-    }));
+    if (enemyBuild) {
+      const normalized = normalizeBuild(enemyBuild);
+      enemyBuilds[actor.id] = normalized;
+      enemyArchetypes[actor.id] = typeof archetypeId === "string" ? archetypeId : null;
+      enemyAttacks[actor.id] = normalized.skills.map((skillState) => skillActionEntry(actor, skillState));
+    } else {
+      enemyAttacks[actor.id] = (attacks || []).map((attack) => ({
+        id: attack.id || "attack",
+        name: attack.name || "Attack",
+        hits: Number.isSafeInteger(attack.hits) && attack.hits > 0 ? attack.hits : 1,
+        damage: Number.isSafeInteger(attack.damage) && attack.damage >= 0
+          ? attack.damage
+          : actor.stats.attack,
+      }));
+    }
     return actor;
   });
   const everyId = [
@@ -324,9 +440,9 @@ export function createTowEncounter({
 
   const playerBuild = normalizeBuild(build);
 
-  // Every foe gets a rotation over its own attack table. An authored schedule wins where one
-  // is supplied; otherwise the default generator derives one, so an arbitrary bestiary group
-  // telegraphs as readably as a named boss.
+  // Every foe gets a rotation over its own action index. For new fights that index is a
+  // projection of real archetype skills; for v1 replay snapshots it can still be an immutable
+  // attack table. An authored schedule wins where one is supplied.
   const authored = intentSchedulesSnapshot(intentSchedules);
   if (intentSchedules !== undefined && authored === null) {
     throw new TypeError("invalid-intent-schedules");
@@ -350,6 +466,8 @@ export function createTowEncounter({
     allyIds: allyActors.map((ally) => ally.id),
     enemyIds: enemyActors.map((enemy) => enemy.id),
     enemyAttacks,
+    enemyBuilds,
+    enemyArchetypes,
     intentSchedules: schedules,
     intents: {},
     actors: Object.fromEntries([
@@ -377,6 +495,90 @@ export function createTowEncounter({
 // Telegraphs
 // ---------------------------------------------------------------------------
 
+function enemySkillState(state, enemyId, skillId) {
+  return state.enemyBuilds?.[enemyId]?.skills?.find((entry) => entry.id === skillId) || null;
+}
+
+function enemySkillUseful(state, enemyId, skillState) {
+  const definition = getSkill(skillState.id);
+  const actor = state.actors[enemyId];
+  const targets = livingPlayerSide(state).map((id) => state.actors[id]);
+  // Mythical techniques are conclusions, not openers. Rarity carries that escalation now;
+  // the five-slot model deliberately has no Special or Ultimate category.
+  if (definition.abilityType === "archetype"
+    && definition.rarity === "mythical"
+    && actor.hp > Math.ceil(actor.maxHp / 2)) return false;
+  return definition.effects.some((effect) => {
+    if (effect.type.startsWith("damage")) return targets.length > 0;
+    // Ward is a timed answer to an exposed state, not a resource to hoard forever. Without
+    // this gate a defensive archetype can spend every ready turn adding another full Block,
+    // making a nearly-defeated foe less vulnerable the longer the player pressures them.
+    if (effect.type === "shield") {
+      return actor.shield <= 0 && actor.hp <= Math.ceil(actor.maxHp * 0.6);
+    }
+    if (effect.type.startsWith("heal")) return actor.hp < actor.maxHp;
+    if (effect.type === "reduce-statuses") {
+      return effect.statuses.some((status) => statusCount(actor.statuses, status) > 0);
+    }
+    if (effect.type === "amplify-statuses") {
+      return targets.some((target) => effect.statuses.some((status) => statusCount(target.statuses, status) > 0));
+    }
+    if (effect.target === "self") return true;
+    if ((effect.type === "status" || effect.type === "scaled-status") && effect.status) {
+      return targets.some((target) => statusCount(target.statuses, effect.status) <= 0);
+    }
+    return targets.length > 0;
+  });
+}
+
+function enemySkillReserved(state, enemyId, skillState) {
+  const definition = getSkill(skillState.id);
+  if (definition.abilityType === "basic-attack") return false;
+  return Object.entries(state.intents || {}).some(([otherId, intent]) => {
+    if (otherId === enemyId || state.actors[otherId]?.hp <= 0) return false;
+    const promised = resolveDeclaredAttack(intent, state.enemyAttacks?.[otherId] || []);
+    const promisedDefinition = promised?.skillId ? getSkill(promised.skillId) : null;
+    // One signature move leads the enemy line in an exchange. The rest still act through
+    // their own basic abilities, but the player reads one guard/control/signature decision
+    // instead of a wall of unrelated techniques firing in lockstep.
+    return promisedDefinition && promisedDefinition.abilityType !== "basic-attack";
+  });
+}
+
+function availableEnemySchedule(state, enemyId) {
+  const schedule = state.intentSchedules[enemyId];
+  const build = state.enemyBuilds?.[enemyId];
+  if (!schedule || !build) return schedule;
+
+  const legal = build.skills.filter((skillState) => (
+    skillLegality(skillState, { turnAvailable: true }).ok
+    && !enemySkillReserved(state, enemyId, skillState)
+  ));
+  const useful = legal.filter((skillState) => enemySkillUseful(state, enemyId, skillState));
+  const ready = useful.length > 0 ? useful : legal;
+  if (ready.length === 0) return null;
+  const readyIds = new Set(ready.map((entry) => entry.id));
+  const fallback = [...readyIds];
+  return {
+    id: schedule.id,
+    steps: schedule.steps.map((step) => {
+      const filtered = step.attackIds.filter((id) => readyIds.has(id));
+      return { id: step.id, attackIds: filtered.length > 0 ? filtered : fallback };
+    }),
+  };
+}
+
+function targetEnemyIntent(state, enemyId, intent) {
+  const action = resolveDeclaredAttack(intent, state.enemyAttacks[enemyId] || []);
+  if (!action) return intent;
+  if (action.target === "self") return { ...intent, targetId: enemyId };
+  const standing = livingPlayerSide(state);
+  return {
+    ...intent,
+    targetId: standing.includes(intent.targetId) ? intent.targetId : standing[0] ?? null,
+  };
+}
+
 /**
  * Declare the coming round's attack for every living foe that does not already hold one.
  *
@@ -391,8 +593,8 @@ function declareRoundIntents(state) {
 
   for (const enemyId of state.enemyIds) {
     const enemy = next.actors[enemyId];
-    const schedule = state.intentSchedules[enemyId];
-    // A foe with no attack table has nothing to telegraph, and a dead one has nothing left
+    const schedule = availableEnemySchedule(next, enemyId);
+    // A foe with no action index has nothing to telegraph, and a dead one has nothing left
     // to say. Both drop their declaration rather than keeping a stale one.
     if (!schedule || enemy.hp <= 0) {
       delete intents[enemyId];
@@ -408,12 +610,16 @@ function declareRoundIntents(state) {
       rng,
     });
     rng = declared.rng;
-    intents[enemyId] = declared.intent;
-    next = push(next, "intent-declared", {
+    const intent = targetEnemyIntent(next, enemyId, declared.intent);
+    intents[enemyId] = intent;
+    // Make this promise visible while the rest of the line chooses. Signature abilities are
+    // coordinated across the group, so three identical foes do not all declare the same
+    // Deflect, stun or execution in mechanical lockstep.
+    next = push({ ...next, intents: { ...intents } }, "intent-declared", {
       enemyId,
-      attackId: declared.intent.attackId,
-      targetId: declared.intent.targetId,
-      declarationIndex: declared.intent.declarationIndex,
+      attackId: intent.attackId,
+      targetId: intent.targetId,
+      declarationIndex: intent.declarationIndex,
     });
   }
   return { ...next, intentRng: rng, intents };
@@ -421,9 +627,14 @@ function declareRoundIntents(state) {
 
 /** Move one foe's telegraph on to the next step of its rotation. */
 function advanceEnemyIntent(state, enemyId) {
-  const schedule = state.intentSchedules[enemyId];
+  const schedule = availableEnemySchedule(state, enemyId);
   const held = state.intents[enemyId];
-  if (!schedule || !held) return state;
+  if (!held) return state;
+  if (!schedule) {
+    const intents = { ...state.intents };
+    delete intents[enemyId];
+    return { ...state, intents };
+  }
   const advanced = advanceTowIntent({
     schedule,
     intent: held,
@@ -431,14 +642,15 @@ function advanceEnemyIntent(state, enemyId) {
     targets: livingPlayerSide(state),
     rng: state.intentRng,
   });
+  const intent = targetEnemyIntent(state, enemyId, advanced.intent);
   const next = push(
-    { ...state, intentRng: advanced.rng, intents: { ...state.intents, [enemyId]: advanced.intent } },
+    { ...state, intentRng: advanced.rng, intents: { ...state.intents, [enemyId]: intent } },
     "intent-declared",
     {
       enemyId,
-      attackId: advanced.intent.attackId,
-      targetId: advanced.intent.targetId,
-      declarationIndex: advanced.intent.declarationIndex,
+      attackId: intent.attackId,
+      targetId: intent.targetId,
+      declarationIndex: intent.declarationIndex,
     },
   );
   return next;
@@ -454,19 +666,28 @@ export function declaredIntents(state) {
   return state.enemyIds
     .filter((enemyId) => state.actors[enemyId].hp > 0 && state.intents[enemyId])
     .map((enemyId) => {
-      const attack = resolveDeclaredAttack(state.intents[enemyId], state.enemyAttacks[enemyId]);
+      const indexed = resolveDeclaredAttack(state.intents[enemyId], state.enemyAttacks[enemyId]);
+      const skillState = enemySkillState(state, enemyId, indexed?.skillId);
+      const attack = skillState
+        ? skillActionEntry(state.actors[enemyId], skillState)
+        : indexed;
       if (!attack) return null;
       // The declared target may have fallen since; report who will actually take it, so the
       // player is never shown a blow aimed at a body.
       const standing = livingPlayerSide(state);
       const declaredTarget = state.intents[enemyId].targetId;
-      const targetId = standing.includes(declaredTarget) ? declaredTarget : standing[0] ?? null;
+      const targetId = attack.target === "self"
+        ? enemyId
+        : standing.includes(declaredTarget) ? declaredTarget : standing[0] ?? null;
       return {
         enemyId,
         attackId: attack.id,
+        skillId: attack.skillId || null,
         name: attack.name,
         hits: attack.hits,
         damage: attack.damage,
+        kind: attack.kind || "damage",
+        target: attack.target || "enemy",
         targetId,
         targetName: targetId ? state.actors[targetId].name : null,
       };
@@ -512,11 +733,35 @@ export function isTowEncounter(value) {
     Array.isArray(value.allyBuilds[id]?.skills)
     && (value.allyBuilds[id].basicAttack == null || isWeaponAttackSnapshot(value.allyBuilds[id].basicAttack))
   ))) return false;
+  // Build-backed foes are optional so a saved v1 fight with a recorded legacy attack table
+  // remains loadable. Every new fight supplies these maps (possibly empty), and every entry
+  // must belong to a known enemy and carry the same normalized skill-state shape.
+  if (value.enemyBuilds !== undefined) {
+    if (!value.enemyBuilds || typeof value.enemyBuilds !== "object" || Array.isArray(value.enemyBuilds)) {
+      return false;
+    }
+    if (!Object.entries(value.enemyBuilds).every(([id, enemyBuild]) => (
+      value.enemyIds.includes(id)
+      && Array.isArray(enemyBuild?.skills)
+      && (enemyBuild.basicAttack == null || isWeaponAttackSnapshot(enemyBuild.basicAttack))
+    ))) return false;
+  }
+  if (value.enemyArchetypes !== undefined) {
+    if (!value.enemyArchetypes || typeof value.enemyArchetypes !== "object" || Array.isArray(value.enemyArchetypes)) {
+      return false;
+    }
+    if (!Object.entries(value.enemyArchetypes).every(([id, archetypeId]) => (
+      value.enemyIds.includes(id)
+      && Object.hasOwn(value.enemyBuilds || {}, id)
+      && (archetypeId === null || typeof archetypeId === "string")
+    ))) return false;
+  }
   if (value.build?.basicAttack != null && !isWeaponAttackSnapshot(value.build?.basicAttack)) return false;
   const actorIds = [value.playerId, ...value.allyIds, ...value.enemyIds];
   if (new Set(actorIds).size !== actorIds.length) return false;
   if (Object.keys(value.actors).length !== actorIds.length) return false;
   if (value.allyIds.some((id) => value.actors[id]?.side !== "player")) return false;
+  if (value.enemyIds.some((id) => value.actors[id]?.side !== "enemy")) return false;
   return actorIds.every((id) => isTowActor(value.actors[id]));
 }
 
@@ -644,6 +889,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
           skillId,
           status: statusEffect.status,
           target: statusEffect.target,
+          targetId,
           count,
           basicAttackFormId: buildFor(next, playerId).basicAttack.formId,
         });
@@ -798,6 +1044,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         skillId,
         status: effect.status,
         target: effect.target,
+        targetId,
         count,
       });
       return;
@@ -809,6 +1056,9 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         : Math.floor((statOf(player, effect.scale) * magnitude()) / 100);
       if (count <= 0) return;
       if (effect.target === "self") {
+        const priorityBefore = effect.status === "priority"
+          ? statusCount(player.statuses, "priority")
+          : 0;
         next = {
           ...next,
           actors: {
@@ -816,6 +1066,9 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
             [playerId]: { ...player, statuses: applyStatus(player.statuses, effect.status, count) },
           },
         };
+        if (effect.status === "priority") {
+          next = applyImmediatePriorityBudget(next, playerId, priorityBefore);
+        }
       } else {
         const target = next.actors[targetId];
         if (!target || target.hp <= 0) return;
@@ -832,6 +1085,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         skillId,
         status: effect.status,
         target: effect.target,
+        targetId: effect.target === "self" ? playerId : targetId,
         count,
       });
     }
@@ -964,6 +1218,28 @@ function burnAndDoom(state, actorId) {
   );
 }
 
+function useEnemySkill(state, enemyId, skillId, targetId) {
+  const build = state.enemyBuilds?.[enemyId];
+  const index = build?.skills.findIndex((entry) => entry.id === skillId) ?? -1;
+  if (index < 0) return { ok: false, reason: "skill-not-held", state };
+  const skillState = build.skills[index];
+  const legality = skillLegality(skillState, { turnAvailable: true });
+  if (!legality.ok) return { ok: false, reason: legality.reason, state };
+  const spent = spendSkill(skillState);
+  if (!spent.ok) return { ok: false, reason: spent.reason, state };
+
+  const skills = build.skills.map((entry, at) => (at === index ? spent.state : entry));
+  let next = {
+    ...state,
+    enemyBuilds: {
+      ...state.enemyBuilds,
+      [enemyId]: { ...build, skills },
+    },
+  };
+  next = applySkillEffects(next, skillId, skillState.rank, targetId, enemyId);
+  return { ok: true, reason: null, state: settle(next) };
+}
+
 /**
  * End the player's turn: every living enemy acts, then boundary statuses tick, then the
  * round advances and cadence traits fire.
@@ -971,14 +1247,20 @@ function burnAndDoom(state, actorId) {
 export function endTurn(state) {
   if (state.phase !== "player") return { ok: false, reason: "encounter-over", state };
 
-  // Every living foe's declaration is checked against its own attack table before a single
-  // blow lands. A telegraph the engine cannot honour means the recorded fight and the fight
+  // Every living foe's declaration is checked against its own action index before anything
+  // resolves. A telegraph the engine cannot honour means the recorded fight and the fight
   // being played have come apart, and continuing would hide that at exactly the point it
   // matters. Checking up front also means the refusal costs nothing: nothing has moved yet.
   for (const enemyId of state.enemyIds) {
     const enemy = state.actors[enemyId];
     if (enemy.hp <= 0 || !state.intents[enemyId]) continue;
-    if (!resolveDeclaredAttack(state.intents[enemyId], state.enemyAttacks[enemyId] || [])) {
+    const declared = resolveDeclaredAttack(state.intents[enemyId], state.enemyAttacks[enemyId] || []);
+    const skillState = declared?.skillId
+      ? enemySkillState(state, enemyId, declared.skillId)
+      : null;
+    if (!declared || (declared.skillId && (
+      !skillState || !skillLegality(skillState, { turnAvailable: true }).ok
+    ))) {
       return { ok: false, reason: "intent-desync", state };
     }
   }
@@ -996,12 +1278,34 @@ export function endTurn(state) {
       next = push(next, "enemy-nullified", { enemyId });
       continue;
     }
-    // The foe swings what it declared. Which attack that is was decided at the start of the
-    // round, off the intent stream, and shown to the player before they spent their turn.
+    // The foe performs what it declared. Build-backed foes resolve the exact same skill
+    // definition, rank, uses, cooldowns and effects a player with that archetype would use.
+    // Legacy saved fights continue through their immutable attack table below.
     const table = next.enemyAttacks?.[enemyId] || [];
     const declared = next.intents[enemyId]
       ? resolveDeclaredAttack(next.intents[enemyId], table)
       : null;
+    if (declared?.skillId && next.enemyBuilds?.[enemyId]) {
+      const standing = livingPlayerSide(next);
+      const declaredTarget = next.intents[enemyId]?.targetId;
+      const targetId = declared.target === "self"
+        ? enemyId
+        : standing.includes(declaredTarget) ? declaredTarget : standing[0];
+      if (!targetId) break;
+      const used = useEnemySkill(next, enemyId, declared.skillId, targetId);
+      if (!used.ok) return { ok: false, reason: "intent-desync", state };
+      // Advance from the declaration that was actually honoured. Resetting the cursor here
+      // would strand every archetype on only the first two entries in its five-skill kit.
+      // Availability is evaluated after spending the skill, so the new promise cannot select
+      // a depleted or cooling-down action.
+      next = advanceEnemyIntent(used.state, enemyId);
+      next = settle(next);
+      continue;
+    }
+    if (next.enemyBuilds?.[enemyId] && !declared) {
+      next = push(next, "enemy-waits", { enemyId, reason: "no-ready-skill" });
+      continue;
+    }
     const attack = declared
       ?? { id: "basic", name: "Attack", hits: 1, damage: enemy.stats.attack };
     // The foe strikes whoever it named. If that actor has since gone down, the blow falls on
@@ -1057,6 +1361,10 @@ export function endTurn(state) {
   for (const [allyId, build] of Object.entries(next.allyBuilds || {})) {
     tickedAllyBuilds[allyId] = { ...build, skills: build.skills.map(tickSkillCooldown) };
   }
+  const tickedEnemyBuilds = {};
+  for (const [enemyId, build] of Object.entries(next.enemyBuilds || {})) {
+    tickedEnemyBuilds[enemyId] = { ...build, skills: build.skills.map(tickSkillCooldown) };
+  }
   next = {
     ...next,
     actors: ticked,
@@ -1066,6 +1374,7 @@ export function endTurn(state) {
       skills: next.build.skills.map(tickSkillCooldown),
     },
     allyBuilds: tickedAllyBuilds,
+    enemyBuilds: tickedEnemyBuilds,
   };
 
   // Cadence traits fire before the action count is read, so a Swift proc this round is

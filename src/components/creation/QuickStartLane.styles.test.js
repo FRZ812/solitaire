@@ -28,9 +28,11 @@ describe("Quick Start layout", () => {
     expect(characterSelectCss).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.character-choice-grid\s*\{[\s\S]*?repeat\(2/);
   });
 
-  it("shows an explicit four-slot ability strip instead of an overflow affordance", () => {
+  it("shows the explicit five-slot strip and distinguishes flexible slots", () => {
     expect(characterSelectCss).toContain(".character-preview__ability-strip");
-    expect(characterSelectCss).toContain('[data-ability-type="ultimate"]');
+    expect(characterSelectCss).toContain('[data-slot-role="flexible"]');
+    expect(archetypeStartCss).toContain(".ability-slot-contract");
+    expect(archetypeStartCss).toContain(".general-ability-library");
   });
 
   it("lets the detail sheet scroll without collapsing its stat row", () => {

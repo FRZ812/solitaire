@@ -1,24 +1,29 @@
-// Dedicated four-action kits for the playable Tower of Winter roster.
+// Dedicated five-action kits for the playable Tower of Winter roster.
 //
 // These definitions are additive to the legacy skill catalogue: old saves and replay
-// receipts keep their original ids and semantics. Each kit translates one source action
-// into the project's explicit Basic Attack / Defensive / Special / Ultimate contract.
+// receipts keep their original ids and semantics. Each starting kit owns two protected
+// actions (Basic Attack and Defensive) plus three flexible archetype actions. Shared
+// General abilities can replace only those three flexible actions later in play.
 
 export const CHARACTER_ABILITY_TYPES = Object.freeze([
   "basic-attack",
   "defensive",
-  "special",
-  "ultimate",
+  "archetype",
+  "general",
 ]);
 
 export const CHARACTER_ABILITY_TYPE_LABELS = Object.freeze({
   "basic-attack": "Basic attack",
   defensive: "Defensive",
-  special: "Special",
-  ultimate: "Ultimate",
+  archetype: "Exclusive ability",
+  general: "General ability",
 });
 
+export const FIXED_CHARACTER_ABILITY_TYPES = Object.freeze(["basic-attack", "defensive"]);
+export const FLEXIBLE_CHARACTER_ABILITY_TYPES = Object.freeze(["archetype", "general"]);
+
 const WIKI_PAGE = "https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91/%EC%BA%90%EB%A6%AD%ED%84%B0";
+const OFFICIAL_CHANGELOG = "https://apps.apple.com/sg/app/tower-of-winter/id6449329520";
 
 const freezeTable = (values) => Object.freeze(values);
 
@@ -87,6 +92,7 @@ function skill(id, name, {
   consumesTurn = true,
   description,
   sourceName = name,
+  sourcePage = WIKI_PAGE,
   fidelity = "direct",
   sourceDetail,
 }) {
@@ -109,13 +115,13 @@ function skill(id, name, {
     exclusiveTo: characterId,
     description,
     source: Object.freeze({
-      page: WIKI_PAGE,
+      page: sourcePage,
       characterId,
       sourceName,
       fidelity,
       detail: sourceDetail || description,
     }),
-    note: fidelity === "adapted" ? "source-guided four-slot adaptation" : null,
+    note: fidelity === "adapted" ? "source-guided five-slot adaptation" : null,
     rankCount,
   });
 }
@@ -132,14 +138,19 @@ const definitions = [
     description: "Raise a shield worth 250% DEF.",
   }),
   skill("arctic-deliberate-blow", "Deliberate Blow", {
-    characterId: "arctic-knight", abilityType: "special", rarity: "rare", usesPerAct: 10,
+    characterId: "arctic-knight", abilityType: "archetype", rarity: "rare", usesPerAct: 10,
     effects: [damage("attack", [110, 135, 160, 185]), shield("defense", [110, 135, 160, 185])],
     description: "Deal 110% ATK damage and gain a 110% DEF shield.",
   }),
   skill("arctic-incineration", "Incineration", {
-    characterId: "arctic-knight", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1,
+    characterId: "arctic-knight", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
     effects: [damage("attack", [110]), scaledStatus("burn", "enemy", "attack", [110]), status("paralyze", "self", [2])],
     description: "Deal 110% ATK damage, inflict equal Burn, then suffer 2 Paralyze.",
+  }),
+  skill("arctic-mortal-blow", "Mortal Blow", {
+    characterId: "arctic-knight", abilityType: "archetype", rarity: "uncommon", usesPerAct: 3,
+    effects: [damage("attack", [210, 240, 270, 300, 330]), status("paralyze", "self", [1])],
+    description: "Commit to a 210% ATK blow, then remain Paralyzed until the next turn.",
   }),
 
   skill("demon-shoot", "Shoot", {
@@ -153,15 +164,22 @@ const definitions = [
     description: "Gain 1 Evade and a shield worth 220% DEF.",
   }),
   skill("demon-kick", "Kick", {
-    characterId: "demon-slayer", abilityType: "special", rarity: "rare", usesPerAct: 7,
+    characterId: "demon-slayer", abilityType: "archetype", rarity: "rare", usesPerAct: 7,
     effects: [damage("attack", [50]), status("stun", "enemy", [1])],
     description: "Deal 50% ATK damage and Stun the enemy for one turn.",
   }),
   skill("demon-arrow-rain", "Arrow Rain", {
-    characterId: "demon-slayer", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1,
+    characterId: "demon-slayer", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
     effects: [damage("attack", [52], { hits: 4 }), scaledStatus("poison", "enemy", "attack", [80])],
     description: "A four-hit barrage that rapidly builds Poison.", fidelity: "adapted",
     sourceDetail: "The source guide identifies Arrow Rain as the multi-hit core of Venom builds; hit power is normalized for this combat kernel.",
+  }),
+  skill("demon-trackers-net", "Tracker's Net", {
+    characterId: "demon-slayer", abilityType: "archetype", rarity: "rare", usesPerAct: 5, cooldown: 4,
+    effects: [status("paralyze", "enemy", [2]), status("vulnerable", "enemy", [4])],
+    description: "Pin the quarry for 2 turns and expose it to the next volley.", fidelity: "adapted",
+    sourcePage: OFFICIAL_CHANGELOG,
+    sourceDetail: "The official changelog names Tracker's Net as a Demon Slayer skill; restraint and exposure are recreated with this kernel's control statuses.",
   }),
 
   skill("clocktower-fire", "Fire", {
@@ -175,14 +193,19 @@ const definitions = [
     description: "Convert 125% DEF into Lethargy on the enemy.",
   }),
   skill("clocktower-missile-support", "Missile Support", {
-    characterId: "owner-of-clocktower", abilityType: "special", rarity: "legendary", usesPerAct: 2, consumesTurn: false,
+    characterId: "owner-of-clocktower", abilityType: "archetype", rarity: "legendary", usesPerAct: 2, consumesTurn: false,
     effects: [damage("attack", [200])],
     description: "Call remote missile support for 200% ATK damage without spending the main action.",
   }),
   skill("clocktower-redesign", "Redesign", {
-    characterId: "owner-of-clocktower", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
+    characterId: "owner-of-clocktower", abilityType: "archetype", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
     effects: [scaledStatus("tenacity", "self", "attack", [40]), scaledStatus("strength", "self", "defense", [40])],
     description: "Reconfigure: gain Tenacity equal to 40% ATK and Strength equal to 40% DEF.",
+  }),
+  skill("clocktower-improvement", "Improvement", {
+    characterId: "owner-of-clocktower", abilityType: "archetype", rarity: "rare", usesPerAct: 4, cooldown: 7, consumesTurn: false,
+    effects: [status("strength", "self", [4, 6, 8, 10]), status("tenacity", "self", [4, 6, 8, 10])],
+    description: "Tune the mechanism without spending the main action, gaining 4 Strength and 4 Tenacity.",
   }),
 
   skill("north-king-cleave", "Cleave", {
@@ -196,15 +219,22 @@ const definitions = [
     description: "Recover health equal to 185% DEF.",
   }),
   skill("north-king-whirlwind", "Whirlwind", {
-    characterId: "old-king-of-northland", abilityType: "special", rarity: "epic", usesPerAct: 6,
+    characterId: "old-king-of-northland", abilityType: "archetype", rarity: "epic", usesPerAct: 6,
     effects: [damage("attack", [52], { hits: 3 }), scaledStatus("lethargy", "enemy", "attack", [45])],
     description: "A three-hit axe storm that compounds the King's Lethargy pressure.", fidelity: "adapted",
     sourceDetail: "The source explicitly recommends Whirlwind for Valiancy's per-hit scaling; per-hit power is normalized here.",
   }),
   skill("north-king-earthquake", "Earthquake", {
-    characterId: "old-king-of-northland", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1,
+    characterId: "old-king-of-northland", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
     effects: [damage("attack", [400]), scaledStatus("lethargy", "enemy", "defense", [400])],
     description: "Shatter the ground for 400% ATK damage and Lethargy equal to 400% DEF.",
+  }),
+  skill("north-king-neutralizing-blow", "Neutralizing Blow", {
+    characterId: "old-king-of-northland", abilityType: "archetype", rarity: "rare", usesPerAct: 7,
+    effects: [damage("defense", [140]), scaledStatus("lethargy", "enemy", "defense", [140])],
+    description: "Meet a heavy attack with 140% DEF damage and equal Lethargy.", fidelity: "adapted",
+    sourceName: "무력화 공격",
+    sourceDetail: "The source guide identifies Neutralizing Blow as the Old King's answer to heavy attacks; its paired DEF damage and Lethargy are normalized here.",
   }),
 
   skill("sleepless-flame-strike", "Flame Strike", {
@@ -218,14 +248,21 @@ const definitions = [
     description: "Raise a fiery ward and scorch the attacker.", fidelity: "adapted",
   }),
   skill("sleepless-entangling-roots", "Entangling Roots", {
-    characterId: "sleepless-one", abilityType: "special", rarity: "legendary", usesPerAct: 4, cooldown: 4,
+    characterId: "sleepless-one", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, cooldown: 4,
     effects: [status("paralyze", "enemy", [2]), scaledStatus("poison", "enemy", "attack", [100])],
     description: "Bind the enemy for 2 turns and seed a heavy Poison.", fidelity: "adapted",
   }),
   skill("sleepless-high-speed-flight", "High-Speed Flight", {
-    characterId: "sleepless-one", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
+    characterId: "sleepless-one", abilityType: "archetype", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
     effects: [status("priority", "self", [4])],
     description: "Take to the air and gain 4 Priority.",
+  }),
+  skill("sleepless-fire-essence", "Fire Essence", {
+    characterId: "sleepless-one", abilityType: "archetype", rarity: "epic", usesPerAct: 4, cooldown: 6, consumesTurn: false,
+    effects: [status("strength", "self", [6]), status("overload", "self", [20])],
+    description: "Awaken the stored ember for 6 Strength and 20 Overload without spending the main action.", fidelity: "adapted",
+    sourcePage: OFFICIAL_CHANGELOG,
+    sourceDetail: "The official changelog names Fire Essence as a Sleepless One skill; its stored-fire power is recreated as a swift Strength and Overload setup.",
   }),
 
   skill("assassin-flurry", "Flurry", {
@@ -239,14 +276,21 @@ const definitions = [
     description: "Raise armor equal to 175% DEF, strongest into repeated hits.",
   }),
   skill("assassin-flash-bomb", "Flash Bomb", {
-    characterId: "last-assassin", abilityType: "special", rarity: "legendary", usesPerAct: 4, cooldown: 5,
+    characterId: "last-assassin", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, cooldown: 5,
     effects: [status("stun", "enemy", [2]), status("vulnerable", "enemy", [5])],
     description: "Blind the target for 2 turns and expose it to the finishing blow.", fidelity: "adapted",
   }),
   skill("assassin-execution", "Execution", {
-    characterId: "last-assassin", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1,
+    characterId: "last-assassin", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
     effects: [damage("attack", [100]), lostHealthDamage([45])],
     description: "Strike, then deal bonus damage equal to 45% of the enemy's missing health.", fidelity: "adapted",
+  }),
+  skill("assassin-storm-of-knives", "Storm of Knives", {
+    characterId: "last-assassin", abilityType: "archetype", rarity: "epic", usesPerAct: 5,
+    effects: [damage("attack", [42], { hits: 4 }), scaledStatus("bleed", "enemy", "attack", [60])],
+    description: "Cut four times in one sequence, then leave Bleed equal to 60% ATK.", fidelity: "adapted",
+    sourcePage: OFFICIAL_CHANGELOG,
+    sourceDetail: "The official changelog names Storm of Knife as a Last Assassin skill; its rapid sequence is normalized to four hits plus Bleed.",
   }),
 
   skill("witch-skull-throw", "Skull Throw", {
@@ -260,15 +304,21 @@ const definitions = [
     description: "Build a bone ward and preserve 4 Skeletons for the army.", fidelity: "adapted",
   }),
   skill("witch-skeleton-summon", "Skeleton Summon", {
-    characterId: "witch-of-eternity", abilityType: "special", rarity: "epic", usesPerAct: 6, consumesTurn: false,
+    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "epic", usesPerAct: 6, consumesTurn: false,
     effects: [status("skeleton", "self", [12])],
     description: "Raise 12 Skeletons without spending the main action.", fidelity: "adapted",
   }),
   skill("witch-all-out-attack", "All-Out Attack", {
-    characterId: "witch-of-eternity", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1,
+    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
     effects: [damage("attack", [280]), status("doom", "enemy", [100])],
     description: "Send the entire host forward in one ruinous assault.", fidelity: "adapted",
     sourceDetail: "The source describes an army-spending burst; this kernel recreation packages that payoff as damage plus Doom.",
+  }),
+  skill("witch-mirror-image", "Mirror Image", {
+    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "rare", usesPerAct: 4, cooldown: 6, consumesTurn: false,
+    effects: [status("evade", "self", [1]), status("skeleton", "self", [6])],
+    description: "Leave a grave-lit double behind: gain 1 Evade and preserve 6 Skeletons.", fidelity: "adapted",
+    sourceDetail: "The source documents a temporary duplicate that increases dodge and disappears when struck; one Evade recreates that single-hit image in this kernel.",
   }),
 
   skill("mage-magic-arrow", "Magic Arrow", {
@@ -282,14 +332,20 @@ const definitions = [
     description: "Conjure armor worth 200% DEF and gain 4 Protection.",
   }),
   skill("mage-flame-storm", "Flame Storm", {
-    characterId: "tenacious-mage", abilityType: "special", rarity: "epic", usesPerAct: 5,
+    characterId: "tenacious-mage", abilityType: "archetype", rarity: "epic", usesPerAct: 5,
     effects: [damage("attack", [45], { hits: 3 }), scaledStatus("burn", "enemy", "attack", [90])],
     description: "Three waves of flame followed by a deep Burn.", fidelity: "adapted",
   }),
   skill("mage-amplification", "Amplification", {
-    characterId: "tenacious-mage", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
+    characterId: "tenacious-mage", abilityType: "archetype", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
     effects: [scaledStatus("strength", "self", "attack", [50])],
     description: "Gain Strength equal to 50% of current ATK without spending the main action.",
+  }),
+  skill("mage-god-slaying-spear", "God-Slaying Spear", {
+    characterId: "tenacious-mage", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
+    effects: [damage("attack", [360]), status("paralyze", "self", [1])],
+    description: "Cast a 360% ATK spear through the target, then suffer 1 Paralyze from the strain.", fidelity: "adapted",
+    sourceDetail: "The source names God-Slaying Spear as a red capstone; its coefficient and recoil are normalized for the encounter kernel.",
   }),
 
   skill("priestess-crush", "Crush", {
@@ -303,14 +359,20 @@ const definitions = [
     description: "Pay the strain of faith to raise a fixed ward worth 25% maximum health.", fidelity: "adapted",
   }),
   skill("priestess-wrath-of-heaven", "Wrath of Heaven", {
-    characterId: "exiled-priestess", abilityType: "special", rarity: "legendary", usesPerAct: 4,
+    characterId: "exiled-priestess", abilityType: "archetype", rarity: "legendary", usesPerAct: 4,
     effects: [lostHealthDamage([100], "self")],
     description: "Deal damage equal to your own missing health.",
   }),
   skill("priestess-doom", "Doom", {
-    characterId: "exiled-priestess", abilityType: "ultimate", rarity: "mythical", usesPerAct: 3,
+    characterId: "exiled-priestess", abilityType: "archetype", rarity: "mythical", usesPerAct: 3,
     effects: [Object.freeze({ type: "amplify-statuses", target: "enemy", statuses: freezeTable(["burn", "poison", "bleed"]), percentByRank: freezeTable([160]) })],
     description: "Multiply the enemy's Burn, Poison, and Bleed stacks to 160%.",
+  }),
+  skill("priestess-immediate-judgment", "Immediate Judgment", {
+    characterId: "exiled-priestess", abilityType: "archetype", rarity: "mythical", usesPerAct: 2,
+    effects: [damage("defense", [260]), status("doom", "enemy", [80])],
+    description: "Pass sentence immediately for 260% DEF damage and 80 Doom.", fidelity: "adapted",
+    sourceDetail: "The source names Immediate Judgment as a Judgment-consuming finisher; its verdict is normalized as DEF damage plus Doom.",
   }),
 
   skill("blade-slash", "Slash", {
@@ -324,14 +386,21 @@ const definitions = [
     description: "Turn the sword into a 210% DEF ward with 2 Guard.", fidelity: "adapted",
   }),
   skill("blade-chi-liberation", "Chi Liberation", {
-    characterId: "wandering-blade", abilityType: "special", rarity: "legendary", usesPerAct: 4, consumesTurn: false,
+    characterId: "wandering-blade", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, consumesTurn: false,
     effects: [status("priority", "self", [2]), status("strength", "self", [5])],
     description: "Release stored breath for 2 Priority and 5 Strength.", fidelity: "adapted",
   }),
   skill("blade-one-flash", "One Flash", {
-    characterId: "wandering-blade", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1,
+    characterId: "wandering-blade", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
     effects: [damage("attack", [320]), status("priority", "self", [1])],
     description: "Cross the field in one decisive cut, then retain 1 Priority.", fidelity: "adapted",
+  }),
+  skill("blade-katana-dance", "Katana Dance", {
+    characterId: "wandering-blade", abilityType: "archetype", rarity: "epic", usesPerAct: 5,
+    effects: [damage("attack", [65], { hits: 3 }), status("initiative", "self", [40])],
+    description: "Trace three 65% ATK cuts and carry 40 Initiative into the next exchange.", fidelity: "adapted",
+    sourcePage: OFFICIAL_CHANGELOG,
+    sourceDetail: "The official changelog names Katana Dance as a Wandering Blade skill; its tempo identity is normalized to three hits and Initiative.",
   }),
 
   skill("vampire-claw", "Claw", {
@@ -346,14 +415,20 @@ const definitions = [
     sourceDetail: "The source documents a healing action scaling from both ATK and DEF; each contribution is normalized to 90% here.",
   }),
   skill("vampire-heart-destroyer", "Heart Destroyer", {
-    characterId: "desolate-vampire", abilityType: "special", rarity: "legendary", usesPerAct: 5,
+    characterId: "desolate-vampire", abilityType: "archetype", rarity: "legendary", usesPerAct: 5,
     effects: [damage("attack", [240]), scaledStatus("bleed", "enemy", "attack", [100])],
     description: "A major blood strike that leaves a deep Bleed.", fidelity: "adapted",
   }),
   skill("vampire-rampage", "Rampage", {
-    characterId: "desolate-vampire", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1,
+    characterId: "desolate-vampire", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
     effects: [status("lifesteal", "self", [24]), damage("attack", [48], { hits: 4 })],
     description: "Gain 24% Lifesteal and tear through the enemy four times.", fidelity: "adapted",
+  }),
+  skill("vampire-bloodflow-absorption", "Bloodflow Absorption", {
+    characterId: "desolate-vampire", abilityType: "archetype", rarity: "legendary", usesPerAct: 4,
+    effects: [damage("attack", [120]), heal("attack", [80])],
+    description: "Draw blood through the wound: deal 120% ATK damage and restore 80% ATK health.", fidelity: "adapted",
+    sourceDetail: "The source names Bloodflow Absorption as a blood-control sustain skill; damage and recovery are normalized here.",
   }),
 
   skill("automaton-bombardment", "Bombardment", {
@@ -367,14 +442,21 @@ const definitions = [
     description: "Recover 25% of missing health and restore a 100% DEF casing.", fidelity: "adapted",
   }),
   skill("automaton-emergency-cooling", "Emergency Cooling", {
-    characterId: "forsaken-automaton", abilityType: "special", rarity: "legendary", usesPerAct: 4, cooldown: 4, consumesTurn: false,
+    characterId: "forsaken-automaton", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, cooldown: 4, consumesTurn: false,
     effects: [Object.freeze({ type: "reduce-statuses", target: "self", statuses: freezeTable(["limp"]), toPercent: 25, percentByRank: freezeTable([75]) }), status("solidity", "self", [2])],
     description: "Vent heat, remove 75% of Limp, and gain 2 Solidity.", fidelity: "adapted",
   }),
   skill("automaton-fate-manipulator", "Fate Manipulator", {
-    characterId: "forsaken-automaton", abilityType: "ultimate", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
+    characterId: "forsaken-automaton", abilityType: "archetype", rarity: "mythical", usesPerAct: 1, consumesTurn: false,
     effects: [status("priority", "self", [3]), status("overload", "self", [50]), status("limp", "self", [12])],
     description: "Force the next sequence: gain 3 Priority and 50 Overload, but take 12 Limp.", fidelity: "adapted",
+  }),
+  skill("automaton-final-counter", "Final Counter", {
+    characterId: "forsaken-automaton", abilityType: "archetype", rarity: "legendary", usesPerAct: 3,
+    effects: [shield("defense", [180]), damage("defense", [180])],
+    description: "Brace the chassis for a 180% DEF ward and answer with 180% DEF damage.", fidelity: "adapted",
+    sourcePage: OFFICIAL_CHANGELOG,
+    sourceDetail: "The official changelog names Final Counter as a Forsaken Automaton skill; its reactive exchange is normalized as equal ward and damage.",
   }),
 ];
 

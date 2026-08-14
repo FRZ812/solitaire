@@ -290,8 +290,28 @@ export function admitTowEncounter({ character = {}, party = [], enemies = [] } =
 
   const hostile = Array.isArray(enemies) ? enemies : [];
   for (const enemy of hostile) {
-    if (enemy?.abilities?.length || enemy?.procs?.length) {
-      blockers.push(blocker("unsupported-enemy-mechanics", { enemyName: enemy.name || null }));
+    // Foes now cross the same archetype boundary as the player. Their legacy world-combat
+    // abilities and proc hooks remain real outside this encounter, while the selected Tower
+    // archetype supplies the trait and five abilities used here. Naming the replacement is
+    // still important: parity must not become another silent drop at admission.
+    const abilityIds = (enemy?.abilities || [])
+      .map((entry) => (typeof entry === "string" ? entry : entry?.id))
+      .filter(Boolean);
+    if (abilityIds.length > 0) {
+      notes.push(note(ADMISSION_DISPOSITION.SUPERSEDED, "enemy-abilities-superseded-by-archetype", {
+        enemyName: enemy.name || null,
+        abilityIds,
+        reason: "The foe uses a full Tower archetype loadout in this encounter, through the "
+          + "same trait, ability and status rules as the player.",
+      }));
+    }
+    if (enemy?.procs?.length) {
+      notes.push(note(ADMISSION_DISPOSITION.SUPERSEDED, "enemy-procs-superseded-by-archetype", {
+        enemyName: enemy.name || null,
+        procCount: enemy.procs.length,
+        reason: "World-combat proc hooks are replaced by the foe's Tower archetype trait "
+          + "and ability effects for this encounter.",
+      }));
     }
   }
 

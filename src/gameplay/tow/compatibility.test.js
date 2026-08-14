@@ -198,7 +198,7 @@ describe("a classification matches what admission actually does", () => {
     expect(towEncounterSupport({ character: {}, party: [], enemies: [] }))
       .toMatchObject({ ok: false, reason: "no-enemies" });
     expect(towEncounterSupport({ character: {}, party: [], enemies: [{ abilities: ["roar"] }] }))
-      .toMatchObject({ ok: false, reason: "unsupported-enemy-mechanics" });
+      .toEqual({ ok: true, reason: null });
     expect(towEncounterSupport({
       character: { conditions: ["Not An Authored Condition"] },
       party: [],
@@ -218,6 +218,7 @@ describe("a classification matches what admission actually does", () => {
     // Summons and mounts would be allied actors too, and the allied side now exists — but
     // neither has an authored lifecycle, so neither may be fielded.
     expect(UNCOVERED_DOMAINS.find((gap) => gap.domain === "summon")).toBeTruthy();
+    expect(UNCOVERED_DOMAINS.find((gap) => gap.domain === "enemy-mechanic")).toBeUndefined();
   });
 
   it("admits a plain fighter against plain foes", () => {

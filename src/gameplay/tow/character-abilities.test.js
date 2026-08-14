@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyStatus, createStatusStack, statusCount } from "../kernel/status-stack.js";
 import {
-  CHARACTER_ABILITY_TYPES,
   characterAbilityIds,
   getCharacterAbility,
 } from "./character-abilities.js";
@@ -48,16 +47,19 @@ function encounterFor(skillId, {
 }
 
 describe("source roster ability catalogue", () => {
-  it("contains 48 sourced, exclusive abilities in twelve complete four-slot kits", () => {
-    expect(characterAbilityIds()).toHaveLength(48);
+  it("contains 60 sourced, exclusive abilities in twelve complete five-slot kits", () => {
+    expect(characterAbilityIds()).toHaveLength(60);
     for (const archetype of STARTING_ARCHETYPES) {
       const definitions = archetype.build.skills.map((id) => getCharacterAbility(id));
-      expect(definitions).toHaveLength(4);
+      expect(definitions).toHaveLength(5);
       expect(new Set(definitions.map((definition) => definition.abilityType)))
-        .toEqual(new Set(CHARACTER_ABILITY_TYPES));
+        .toEqual(new Set(["basic-attack", "defensive", "archetype"]));
+      expect(definitions.filter((definition) => definition.abilityType === "basic-attack")).toHaveLength(1);
+      expect(definitions.filter((definition) => definition.abilityType === "defensive")).toHaveLength(1);
+      expect(definitions.filter((definition) => definition.abilityType === "archetype")).toHaveLength(3);
       for (const definition of definitions) {
         expect(definition.exclusiveTo).toBe(archetype.id);
-        expect(definition.source.page).toContain("namu.wiki");
+        expect(definition.source.page).toMatch(/^https:\/\/(?:namu\.wiki|apps\.apple\.com)\//);
         expect(definition.source.sourceName).toBeTruthy();
       }
     }

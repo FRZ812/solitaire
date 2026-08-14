@@ -109,17 +109,19 @@ describe("admitting an encounter", () => {
       .toMatchObject({ supported: false, blockers: [{ code: "no-enemies" }] });
   });
 
-  it("refuses a foe carrying mechanics the kernel cannot express", () => {
+  it("adapts a foe's legacy mechanics into the shared archetype combat language", () => {
     const admission = admitTowEncounter({
       character: {},
       party: [],
-      enemies: [{ name: "Wyrm", abilities: ["dragon-breath"] }],
+      enemies: [{ name: "Wyrm", abilities: ["dragon-breath"], procs: [{ id: "scorch" }] }],
     });
-    expect(admission.supported).toBe(false);
-    expect(admission.blockers[0]).toMatchObject({
-      code: "unsupported-enemy-mechanics",
+    expect(admission.supported).toBe(true);
+    expect(admission.blockers).toEqual([]);
+    expect(codes(admission.notes, "enemy-abilities-superseded-by-archetype")[0]).toMatchObject({
       enemyName: "Wyrm",
+      abilityIds: ["dragon-breath"],
     });
+    expect(codes(admission.notes, "enemy-procs-superseded-by-archetype")).toHaveLength(1);
   });
 
   it("records each superseded ability by name", () => {

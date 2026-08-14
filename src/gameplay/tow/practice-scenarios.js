@@ -33,20 +33,23 @@ import { TOW_RULESET_ID, createTowSession } from "./session.js";
 import { getStartingArchetype } from "./starting-archetypes.js";
 import { effectiveTowBuild, towItemActorBonuses } from "./start-items.js";
 
-export const PRACTICE_SCENARIO_VERSION = 1;
+export const PRACTICE_SCENARIO_VERSION = 2;
 export const MAX_PRACTICE_ATTEMPT = 4096;
 
-function foe(id, name, maxHp, attack, band) {
+function foe(id, name, maxHp, attack, archetypeId) {
+  const archetype = getStartingArchetype(archetypeId);
+  if (!archetype) throw new TypeError(`unknown-practice-archetype:${archetypeId}`);
   return Object.freeze({
     id,
     name,
     maxHp,
-    stats: { attack, defense: 0, critRate: 4, dodgeRate: 3 },
-    attacks: Object.freeze([
-      { id: `${id}-jab`, name: "Jab", hits: 1, damage: band[0] },
-      { id: `${id}-swing`, name: "Swing", hits: 1, damage: band[1] },
-      { id: `${id}-heavy`, name: "Heavy blow", hits: 1, damage: band[2] },
-    ]),
+    stats: { attack, defense: attack, critRate: 4, dodgeRate: 3 },
+    archetypeId,
+    build: Object.freeze({
+      traits: Object.freeze({ ...archetype.build.traits }),
+      skills: Object.freeze([...archetype.build.skills]),
+      runes: Object.freeze([...archetype.build.runes]),
+    }),
   });
 }
 
@@ -65,7 +68,7 @@ export const PRACTICE_SCENARIOS = Object.freeze([
     name: "The training yard",
     summary: "One opponent, no stakes. Room to see what your actions do.",
     difficulty: "gentle",
-    enemies: Object.freeze([foe("foe-0", "Sparring partner", 52, 8, [6, 9, 13])]),
+    enemies: Object.freeze([foe("foe-0", "Sparring partner", 52, 8, "arctic-knight")]),
   }),
   Object.freeze({
     id: "roadside-ambush",
@@ -74,8 +77,8 @@ export const PRACTICE_SCENARIOS = Object.freeze([
     summary: "Two of them, and neither waits their turn. Pick who falls first.",
     difficulty: "standard",
     enemies: Object.freeze([
-      foe("foe-0", "Waylayer", 34, 7, [5, 8, 11]),
-      foe("foe-1", "Waylayer", 34, 7, [5, 8, 11]),
+      foe("foe-0", "Waylayer", 34, 7, "last-assassin"),
+      foe("foe-1", "Waylayer", 34, 7, "demon-slayer"),
     ]),
   }),
   Object.freeze({
@@ -84,7 +87,7 @@ export const PRACTICE_SCENARIOS = Object.freeze([
     name: "The duellist",
     summary: "One opponent who hits hard enough that guarding the right round matters.",
     difficulty: "sharp",
-    enemies: Object.freeze([foe("foe-0", "Duellist", 74, 11, [8, 13, 21])]),
+    enemies: Object.freeze([foe("foe-0", "Duellist", 74, 11, "wandering-blade")]),
   }),
 ]);
 

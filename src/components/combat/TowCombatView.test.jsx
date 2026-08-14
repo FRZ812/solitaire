@@ -51,17 +51,52 @@ function viewElement(encounter, props = {}) {
 }
 
 describe("compact combat HUD", () => {
-  it("shows full-art abilities without labels, counts, infinity, or Swift badges", async () => {
+  it("keeps full-art abilities clean while showing finite uses at the lower right", async () => {
     const mounted = await renderView();
     const actions = [...mounted.querySelectorAll(".tow-combat__action")];
+    const strike = mounted.querySelector("[data-skill-id='strike']");
+    const block = mounted.querySelector("[data-skill-id='block']");
+    const evasion = mounted.querySelector("[data-skill-id='emergency-evasion']");
     expect(actions.length).toBeGreaterThan(1);
     expect(actions.every((action) => action.querySelector(".tow-combat__ability-art img"))).toBe(true);
     expect(mounted.querySelector(".tow-combat__ability-art-name")).toBeNull();
     expect(mounted.querySelector(".tow-combat__action-charge")).toBeNull();
     expect(mounted.querySelector(".tow-combat__action-swift")).toBeNull();
+    expect(strike.querySelector(".tow-combat__action-uses")).toBeNull();
+    expect(block.querySelector(".tow-combat__action-uses")?.textContent).toBe("30/30");
+    expect(evasion.querySelector(".tow-combat__action-uses")?.textContent).toBe("4/4");
+    expect(block.getAttribute("aria-label")).toMatch(/30 of 30 uses remaining/i);
     expect(actions.map((action) => action.textContent).join("")).not.toContain("∞");
     expect(actions.every((action) => action.querySelector(".tow-combat__sr-only")?.textContent)).toBe(true);
     expect(actions.every((action) => action.classList.contains("production-combat__action"))).toBe(true);
+  });
+
+  it("darkens a cooling skill and gives its centered cooldown precedence over uses", async () => {
+    const base = openLabSession({ packageId: "wizard", scenarioId: "training-yard" }).session.encounter;
+    const withRapidCooling = (cooldownRemaining) => ({
+      ...base,
+      build: {
+        ...base.build,
+        skills: base.build.skills.map((skill) => (
+          skill.id === "rapid-cooling"
+            ? { ...skill, usesRemaining: 4, cooldownRemaining }
+            : skill
+        )),
+      },
+    });
+
+    const mounted = await renderView({ encounter: withRapidCooling(2) });
+    let cooling = mounted.querySelector("[data-skill-id='rapid-cooling']");
+    expect(cooling.classList.contains("is-on-cooldown")).toBe(true);
+    expect(cooling.querySelector(".tow-combat__action-cooldown")?.textContent).toBe("2");
+    expect(cooling.querySelector(".tow-combat__action-uses")).toBeNull();
+    expect(cooling.getAttribute("aria-label")).toMatch(/Cooldown, 2 turns remaining/i);
+
+    await act(async () => root.render(viewElement(withRapidCooling(0))));
+    cooling = mounted.querySelector("[data-skill-id='rapid-cooling']");
+    expect(cooling.classList.contains("is-on-cooldown")).toBe(false);
+    expect(cooling.querySelector(".tow-combat__action-cooldown")).toBeNull();
+    expect(cooling.querySelector(".tow-combat__action-uses")?.textContent).toBe("4/5");
   });
 
   it("moves the incoming attack to one compact icon above the enemy", async () => {
@@ -74,7 +109,89 @@ describe("compact combat HUD", () => {
     expect(intent.querySelector(".tow-combat__intent-target")?.textContent).toMatch(/^→\s+/);
     expect(mounted.querySelector(".tow-combat__telegraph")).toBeNull();
     expect(mounted.querySelector(".tow-combat__incoming")).toBeNull();
-    expect(mounted.querySelector(".tow-combat__exchange")?.getAttribute("aria-label")).toBe("Combat record");
+    expect(mounted.querySelector(".tow-combat__exchange")).toBeNull();
+    expect(mounted.querySelector(".tow-combat__plate--hero .tow-combat__record-trigger")).toBeTruthy();
+  });
+
+  it("reads a defensive enemy declaration as ward on self instead of fake damage", async () => {
+    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const enemyId = base.enemyIds[0];
+    const block = base.enemyAttacks[enemyId].find((entry) => entry.skillId === "arctic-block");
+    const next = {
+      ...base,
+      intents: {
+        ...base.intents,
+        [enemyId]: { ...base.intents[enemyId], attackId: block.id, targetId: enemyId },
+      },
+    };
+    const mounted = await renderView({ encounter: next });
+    const intent = mounted.querySelector("[data-testid='tow-enemy-intent']");
+    expect(intent.getAttribute("aria-label")).toMatch(/Block, ward effect, used on self/i);
+    expect(intent.querySelector("strong").textContent).toBe("WARD");
+    expect(intent.querySelector(".tow-combat__intent-target").textContent).toBe("Self");
+  });
+
+  it("shows active statuses as tappable icon art with persistent mechanical details", async () => {
+    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    const sequence = base.sequence + 1;
+    const next = {
+      ...base,
+      sequence,
+      actors: {
+        ...base.actors,
+        [base.playerId]: {
+          ...base.actors[base.playerId],
+          statuses: [
+            { type: "initiative", count: 37 },
+            { type: "burn", count: 4 },
+          ],
+        },
+      },
+      events: [
+        ...base.events,
+        {
+          sequence,
+          type: "trait-fired",
+          actorId: base.playerId,
+          traitId: "gale",
+          status: "initiative",
+          amount: 37,
+        },
+      ],
+    };
+    const mounted = await renderView({ encounter: next });
+    const buttons = [...mounted.querySelectorAll(".tow-combat__plate--hero .tow-combat__status-button")];
+
+    expect(buttons).toHaveLength(2);
+    expect(buttons.every((button) => button.querySelector(".tow-combat__status-art img"))).toBe(true);
+    expect(buttons.map((button) => button.getAttribute("aria-label")))
+      .toEqual(expect.arrayContaining([
+        expect.stringMatching(/Initiative, 37 stacks/i),
+        expect.stringMatching(/Burn, 4 stacks/i),
+      ]));
+
+    const initiative = buttons.find((button) => /Initiative/.test(button.getAttribute("aria-label")));
+    await act(async () => initiative.click());
+    const detail = mounted.querySelector("[data-testid='tow-status-details']");
+    expect(detail).toBeTruthy();
+    expect(detail.textContent).toContain("Initiative");
+    expect(detail.textContent).toContain("100 Initiative converts into 1 Priority");
+    expect(detail.textContent).toContain("Your Gale grants 37 Initiative");
+    expect(initiative.getAttribute("aria-expanded")).toBe("true");
+
+    await act(async () => initiative.click());
+    expect(mounted.querySelector("[data-testid='tow-status-details']")).toBeNull();
+  });
+
+  it("moves readable receipts behind the compact combat-log icon", async () => {
+    const mounted = await renderView();
+    const trigger = mounted.querySelector(".tow-combat__plate--hero .tow-combat__record-trigger");
+    expect(trigger).toBeTruthy();
+    expect(mounted.querySelector(".tow-combat__record-list")).toBeNull();
+    await act(async () => trigger.click());
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(mounted.querySelector(".tow-combat__plate--hero .tow-combat__record-list")?.textContent.length)
+      .toBeGreaterThan(20);
   });
 
   it("renders every multi-hit contact in its own staggered effect lane", async () => {
@@ -110,6 +227,138 @@ describe("compact combat HUD", () => {
       .toEqual(["0ms", "155ms"]);
   });
 
+  it("drains health once per resolved hit instead of collapsing the total", async () => {
+    vi.useFakeTimers();
+    try {
+      const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+      const enemyId = base.enemyIds[0];
+      const startingHp = base.actors[enemyId].hp;
+      const mounted = await renderView({ encounter: base });
+      const sequence = base.sequence + 1;
+      const next = {
+        ...base,
+        sequence,
+        actors: {
+          ...base.actors,
+          [enemyId]: { ...base.actors[enemyId], hp: startingHp - 9 },
+        },
+        events: [
+          ...base.events,
+          {
+            sequence,
+            type: "skill-damage",
+            actorId: base.playerId,
+            targetId: enemyId,
+            skillId: "strike",
+            hits: [
+              { index: 0, damage: 4, toHp: 4, absorbed: 0, critical: false, dodged: false },
+              { index: 1, damage: 5, toHp: 5, absorbed: 0, critical: false, dodged: false },
+            ],
+          },
+        ],
+      };
+
+      await act(async () => root.render(viewElement(next)));
+      const meter = mounted.querySelector(".tow-combat__plate--enemy [role='meter']");
+      expect(meter.getAttribute("aria-valuenow")).toBe(String(startingHp));
+
+      await act(async () => vi.advanceTimersByTime(150));
+      expect(meter.getAttribute("aria-valuenow")).toBe(String(startingHp - 4));
+
+      await act(async () => vi.advanceTimersByTime(155));
+      expect(meter.getAttribute("aria-valuenow")).toBe(String(startingHp - 9));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("finishes a lethal action before revealing the combat outcome", async () => {
+    vi.useFakeTimers();
+    try {
+      const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+      const enemyId = base.enemyIds[0];
+      const startingHp = base.actors[enemyId].hp;
+      const firstHit = Math.min(4, startingHp);
+      const secondHit = startingHp - firstHit;
+      const mounted = await renderView({ encounter: base });
+      const sequence = base.sequence + 1;
+      const victory = {
+        ...base,
+        phase: "victory",
+        sequence,
+        actors: {
+          ...base.actors,
+          [enemyId]: { ...base.actors[enemyId], hp: 0 },
+        },
+        events: [
+          ...base.events,
+          {
+            sequence,
+            type: "skill-damage",
+            actorId: base.playerId,
+            targetId: enemyId,
+            skillId: "strike",
+            hits: [
+              { index: 0, damage: firstHit, toHp: firstHit, absorbed: 0, critical: false, dodged: false },
+              { index: 1, damage: secondHit, toHp: secondHit, absorbed: 0, critical: false, dodged: false },
+            ],
+          },
+        ],
+      };
+
+      await act(async () => root.render(viewElement(victory)));
+      const combat = mounted.querySelector(".tow-combat");
+      const threat = mounted.querySelector(".tow-combat__threat");
+      expect(combat.dataset.presentationPhase).toBe("resolution-hold");
+      expect(combat.getAttribute("aria-busy")).toBe("true");
+      expect(mounted.querySelector(".tow-combat__outcome")).toBeNull();
+      expect(mounted.querySelector(".tow-combat__command")).toBeTruthy();
+      expect(mounted.querySelectorAll(".tow-combat__effect")).toHaveLength(2);
+      expect(threat.classList.contains("is-down")).toBe(false);
+      expect([...mounted.querySelectorAll(".tow-combat__action")].every((button) => button.disabled)).toBe(true);
+
+      await act(async () => vi.advanceTimersByTime(1604));
+      expect(mounted.querySelector(".tow-combat__outcome")).toBeNull();
+      expect(threat.classList.contains("is-down")).toBe(false);
+
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(mounted.querySelector(".tow-combat__outcome")).toBeTruthy();
+      expect(mounted.querySelector(".tow-combat__threat").classList.contains("is-down")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("declares enemy actions with the same translucent icon-and-name language", async () => {
+    const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+    await renderView({ encounter: base });
+    const enemyId = base.enemyIds[0];
+    const attack = base.enemyAttacks[enemyId][0];
+    const sequence = base.sequence + 1;
+    const next = {
+      ...base,
+      sequence,
+      events: [
+        ...base.events,
+        {
+          sequence,
+          type: "enemy-attack",
+          enemyId,
+          targetId: base.playerId,
+          attackId: attack.id,
+          hits: [{ index: 0, damage: attack.damage, toHp: attack.damage, absorbed: 0, critical: false, dodged: false }],
+        },
+      ],
+    };
+    await act(async () => root.render(viewElement(next)));
+
+    const declaration = container.querySelector(".tow-combat__declaration--enemy");
+    expect(declaration).toBeTruthy();
+    expect(declaration.textContent).toContain(attack.name);
+    expect(declaration.querySelector(".tow-combat__declaration-sigil img")).toBeTruthy();
+    expect(container.querySelector(".tow-combat__action-beat-copy")).toBeNull();
+  });
+
   it("puts current and maximum health inside each health bar", async () => {
     const mounted = await renderView();
     const bars = [...mounted.querySelectorAll(".tow-combat__bar")];
@@ -135,13 +384,18 @@ describe("compact combat HUD", () => {
       expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
       expect(mounted.querySelector("[data-testid='tow-action-beat']")).toBeTruthy();
       expect(action.classList.contains("is-committed")).toBe(true);
-      expect([...mounted.querySelectorAll(".tow-combat__action")].every((button) => button.disabled)).toBe(true);
+      expect(action.disabled).toBe(false);
+      expect([...mounted.querySelectorAll(".tow-combat__action")]
+        .filter((button) => button !== action)
+        .every((button) => button.disabled)).toBe(true);
+      expect(mounted.querySelector("[data-testid='tow-action-beat']").textContent).not.toContain("Consequence");
+      expect(mounted.querySelector(".tow-combat__action-beat-copy")).toBeNull();
 
       await act(async () => vi.advanceTimersByTime(600));
       expect(onUseSkill).toHaveBeenCalledTimes(1);
       expect(onUseSkill).toHaveBeenCalledWith("strike", "foe-0", "wanderer");
       expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("resolve");
-      expect(mounted.querySelector("[data-testid='tow-action-beat']")?.textContent).toContain("Consequence");
+      expect(mounted.querySelector("[data-testid='tow-action-beat']")?.textContent).toMatch(/Strike|Slash/);
     } finally {
       vi.useRealTimers();
     }

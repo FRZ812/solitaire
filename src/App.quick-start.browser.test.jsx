@@ -71,6 +71,7 @@ async function click(element) {
 
 let root;
 let container;
+let originalMatchMedia;
 
 async function mount() {
   container = document.createElement("div");
@@ -84,6 +85,20 @@ beforeAll(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   globalThis.requestAnimationFrame = (callback) => setTimeout(callback, 0);
   globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+  // This test proves the campaign boundary, not the real-time duration of every combat beat.
+  // Exercise the product's accessible reduced-motion path so forty possible commands do not
+  // turn one reversibility assertion into a minute-long animation test.
+  originalMatchMedia = globalThis.matchMedia;
+  globalThis.matchMedia = (query) => ({
+    matches: query === "(prefers-reduced-motion: reduce)",
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  });
 });
 beforeEach(() => {
   localStorage.clear();
@@ -112,6 +127,8 @@ afterEach(async () => {
 
 afterAll(() => {
   vi.restoreAllMocks();
+  if (originalMatchMedia) globalThis.matchMedia = originalMatchMedia;
+  else delete globalThis.matchMedia;
   delete globalThis.IS_REACT_ACT_ENVIRONMENT;
 });
 
@@ -216,5 +233,5 @@ describe("practice is reversible and writes nothing", () => {
     expect(restored.querySelector("input")).toBeNull();
     expect(restored.querySelector("select")).toBeNull();
     expect(JSON.stringify(harness.serverState)).toBe(before);
-  });
+  }, 30_000);
 });

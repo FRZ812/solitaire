@@ -438,9 +438,9 @@
   white-space: nowrap;
 }
 
-.character-preview__ability-slot[data-ability-type="ultimate"] img {
+.character-preview__ability-slot[data-slot-role="flexible"] img {
   border-color: color-mix(in srgb, var(--character-accent), #f6d492 42%);
-  box-shadow: 0 7px 20px color-mix(in srgb, var(--character-accent), transparent 76%);
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--character-accent), transparent 82%);
 }
 
 .character-preview__ability-slot:hover img,
