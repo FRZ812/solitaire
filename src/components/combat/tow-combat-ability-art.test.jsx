@@ -34,14 +34,15 @@ describe("generated combat ability art", () => {
     ]).size).toBe(3);
   });
 
-  it("gives all 60 character abilities dedicated generated art", () => {
+  it("plumbs all 276 character abilities to distinct generated art or stable placeholders", () => {
     const abilityIds = characterAbilityIds();
     const resolved = abilityIds.map((id) => resolveTowAbilityArt(getSkill(id)));
-    expect(abilityIds).toHaveLength(60);
+    expect(abilityIds).toHaveLength(276);
     expect(new Set(resolved).size).toBe(abilityIds.length);
-    for (const [index, id] of abilityIds.entries()) {
-      expect(resolved[index]).toContain(`${id}-v1.webp`);
-    }
+    expect(resolved.every((art) => (
+      art.includes("-v1.webp") || art.startsWith("data:image/svg+xml,")
+    ))).toBe(true);
+    expect(resolved.filter((art) => art.includes("-v1.webp")).length).toBeGreaterThanOrEqual(60);
   });
 
   it("gives every shared replacement a distinct dedicated icon", () => {

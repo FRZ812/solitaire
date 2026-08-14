@@ -11,6 +11,7 @@ import {
   passiveSkillIds,
   refillForNewAct,
   restoreUses,
+  replacementSkillIds,
   replaceableSkillIds,
   skillIds,
   skillLegality,
@@ -283,6 +284,45 @@ describe("acquiring skills", () => {
       .toMatchObject({ ok: false, reason: "protected-ability-slot" });
     expect(acquireSkill(loadout, "first-aid", { replacingId: "arctic-block" }))
       .toMatchObject({ ok: false, reason: "protected-ability-slot" });
+  });
+
+  it("lets character alternatives replace only their matching authored family", () => {
+    const loadout = [
+      "arctic-strike",
+      "arctic-block",
+      "arctic-deliberate-blow",
+      "arctic-incineration",
+      "arctic-mortal-blow",
+    ].map((id) => createSkillState(id));
+
+    expect(replacementSkillIds(loadout, "arctic-shield-bash")).toEqual(["arctic-strike"]);
+    expect(replacementSkillIds(loadout, "arctic-defensive-stance")).toEqual(["arctic-block"]);
+
+    const attack = acquireSkill(loadout, "arctic-shield-bash");
+    expect(attack.ok).toBe(true);
+    expect(attack.loadout.map((entry) => entry.id)).toEqual([
+      "arctic-shield-bash",
+      "arctic-block",
+      "arctic-deliberate-blow",
+      "arctic-incineration",
+      "arctic-mortal-blow",
+    ]);
+
+    expect(acquireSkill(loadout, "arctic-defensive-stance", {
+      replacingId: "arctic-deliberate-blow",
+    })).toMatchObject({ ok: false, reason: "incompatible-ability-slot" });
+  });
+
+  it("refuses an exclusive ability authored for another character", () => {
+    const arcticLoadout = [
+      "arctic-strike",
+      "arctic-block",
+      "arctic-deliberate-blow",
+      "arctic-incineration",
+      "arctic-mortal-blow",
+    ].map((id) => createSkillState(id));
+    expect(acquireSkill(arcticLoadout, "assassin-mutilate"))
+      .toMatchObject({ ok: false, reason: "foreign-character-ability" });
   });
 
   it("refuses unslotted and unknown skills", () => {

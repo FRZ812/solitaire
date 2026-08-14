@@ -10,6 +10,7 @@ import evadeAsset from "../../assets/combat-vfx/evade.svg";
 import healAsset from "../../assets/combat-vfx/heal.svg";
 import afflictAsset from "../../assets/combat-vfx/afflict.svg";
 import frostAsset from "../../assets/combat-vfx/frost.svg";
+import { getSkill } from "../../gameplay/tow/skills.js";
 
 export const COMBAT_VFX_ASSETS = Object.freeze({
   afflict: afflictAsset,
@@ -470,6 +471,40 @@ function withAsset(spec) {
   return { ...spec, asset: bespokeVfxAsset(spec) };
 }
 
+function inferredSkillEffect(skillId) {
+  const definition = getSkill(skillId);
+  if (!definition) return null;
+  const effects = definition.effects || [];
+  const statusEffect = effects.find((entry) => entry.type === "status" || entry.type === "scaled-status");
+  const damageEffect = effects.find((entry) => entry.type === "damage" || entry.type === "lost-health-damage");
+  const hasShield = effects.some((entry) => entry.type === "shield");
+  const hasHeal = effects.some((entry) => entry.type === "heal" || entry.type === "heal-lost-fraction" || entry.type === "reduce-statuses");
+  const statusVisual = statusEffect && STATUS_EFFECTS[statusEffect.status];
+  const identity = `${skillId} ${definition.name || ""} ${statusEffect?.status || ""}`;
+
+  let family = statusVisual?.family || familyFromText(identity);
+  if (hasShield && !damageEffect) family = "ward";
+  else if (hasHeal && !damageEffect) family = "heal";
+
+  let motion = statusVisual?.motion || "balanced";
+  if (hasShield && damageEffect) motion = "counter";
+  else if (hasShield) motion = "shield";
+  else if (hasHeal && damageEffect) motion = "siphon";
+  else if (hasHeal) motion = "mend";
+  else if ((damageEffect?.hits || 1) >= 3) motion = family === "pierce" ? "volley" : "flurry";
+  else if ((damageEffect?.hits || 1) === 2) motion = "cross";
+  else if (definition.consumesTurn === false) motion = "aura";
+  else if (damageEffect && /execution|ultimate|final|doom|judgment|flash/i.test(identity)) motion = "execution";
+  else if (damageEffect && /smash|earthquake|crush|cannon|bomb/i.test(identity)) motion = "quake";
+  else if (damageEffect && family === "pierce") motion = "projectile";
+
+  return effect(family, skillId, motion);
+}
+
+function skillEffectFor(skillId) {
+  return SKILL_EFFECTS[skillId] || inferredSkillEffect(skillId);
+}
+
 function attackDefinition(encounter, event) {
   return encounter?.enemyAttacks?.[event.enemyId]?.find((entry) => entry.id === event.attackId) || null;
 }
@@ -506,7 +541,7 @@ export function combatVfxForEvent(encounter, event) {
     return withAsset(event.burn > 0 ? STATUS_EFFECTS.burn : STATUS_EFFECTS.doom);
   }
 
-  const skillVariant = event.skillId && SKILL_EFFECTS[event.skillId];
+  const skillVariant = event.skillId && skillEffectFor(event.skillId);
   if (event.type === "skill-shield") {
     return withAsset(effect("ward", `${slug(event.skillId, "ward")}-ward`, skillVariant?.motion || "brace"));
   }
@@ -531,6 +566,13 @@ export function combatVfxForEvent(encounter, event) {
   if (event.status && STATUS_EFFECTS[event.status]) return withAsset(STATUS_EFFECTS[event.status]);
 
   if (event.type === "enemy-nullified") return withAsset(effect("afflict", "enemy-interrupted", "snap"));
+  if (event.type === "actor-nullified") {
+    const control = event.controls?.[0];
+    return control && STATUS_EFFECTS[control]
+      ? withAsset(STATUS_EFFECTS[control])
+      : withAsset(effect("afflict", "command-nullified", "snap"));
+  }
+  if (event.type === "actor-preempted") return withAsset(STATUS_EFFECTS.priority);
   if (event.type === "retreat-attempt") return withAsset(effect(event.succeeded ? "evade" : "afflict", event.succeeded ? "retreat-escaped" : "retreat-cornered", event.succeeded ? "afterimage" : "bind"));
 
   const family = familyFromText(`${event.skillId || ""} ${event.attackId || ""}`);
@@ -538,7 +580,8 @@ export function combatVfxForEvent(encounter, event) {
 }
 
 export function combatVfxVariantForSkill(skillId) {
-  return SKILL_EFFECTS[skillId] ? withAsset(SKILL_EFFECTS[skillId]) : null;
+  const spec = skillEffectFor(skillId);
+  return spec ? withAsset(spec) : null;
 }
 
 export function combatVfxVariantForForm(formId) {

@@ -26,18 +26,18 @@ const STATUS_COPY = Object.freeze({
   guard: "Reduces damage from attacks by 50% while at least one stack remains.",
   sharpen: "Sharpen records increased offensive accuracy as a Count.",
   eviscerate: "Eviscerate records execution pressure as a Count.",
-  priority: "Grants actions before the enemy equal to the amount left after opposing Priority cancels it.",
+  priority: "Each net stack grants one extra action before the enemy after opposing Priority cancels it.",
   doom: "Deals fixed damage equal to its Count after the affected side acts, bypassing defence and ward.",
   invincible: "Prevents damage from attacks while at least one stack remains.",
   conceal: "Raises Dodge by 80% while at least one stack remains.",
-  sleep: "Nullifies actions unless Unstoppable is present.",
-  paralyze: "Nullifies actions unless Unstoppable is present.",
-  stun: "Nullifies actions unless Unstoppable is present.",
+  sleep: "Automatically forfeits one command window per stack unless Unstoppable is present.",
+  paralyze: "Automatically forfeits one command window per stack unless Unstoppable is present.",
+  stun: "Automatically forfeits one command window per stack unless Unstoppable is present.",
   bleed: "Bleed records damage-over-time pressure as a Count.",
   "bleed-atk": "Adds Bleed pressure to attacks according to its Count.",
   lethargy: "Lethargy is tracked as a harmful Count; its exact source rule is not yet evidenced.",
   "lethargy-atk": "Adds Lethargy pressure to attacks according to its Count.",
-  vulnerable: "Vulnerable records exposed defence as a Count.",
+  vulnerable: "Raises incoming attack damage by 1% per stack. For example, 12 Vulnerable means +12% damage received.",
   skeleton: "Skeleton records summoned support as a Count.",
   limp: "Limp records impaired movement as a Count.",
   berserk: "Raises attack damage and is spent by striking or being struck.",
@@ -58,7 +58,9 @@ function words(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function lifecycleText(definition) {
+function lifecycleText(definition, type) {
+  if (CONTROL.has(type)) return "Loses 1 stack only when it automatically forfeits a command window.";
+  if (type === "priority") return "A net stack is spent by each extra action it grants; opposing stacks remain cancelled.";
   if (!definition) return "Persists until a combat rule removes it.";
   const clauses = [];
   if (definition.permanent) clauses.push("Persists between turns");
@@ -88,7 +90,7 @@ export function towStatusPresentation(status) {
     count,
     countLabel: `${count} ${count === 1 ? "stack" : "stacks"}`,
     effect: STATUS_COPY[type] || `${words(type)} is tracked as a Count on this combatant.`,
-    lifecycle: lifecycleText(getStatusDefinition(type)),
+    lifecycle: lifecycleText(getStatusDefinition(type), type),
     name: words(type),
     tone,
     toneLabel: tone === "boon" ? "Boon" : tone === "control" ? "Control" : "Affliction",

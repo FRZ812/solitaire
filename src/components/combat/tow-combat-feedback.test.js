@@ -124,6 +124,48 @@ describe("combat feedback receipts", () => {
     })).toMatchObject({ kind: "evade", label: "Evaded", attackerId: "foe", targetId: "hero", targetSide: "player" });
   });
 
+  it("states exactly how much Vulnerable added to a hit", () => {
+    const receipt = combatEventReceipt(encounter(), {
+      sequence: 10,
+      type: "enemy-attack",
+      enemyId: "foe",
+      targetId: "hero",
+      attackId: "swing",
+      hits: [{
+        dodged: false,
+        critical: false,
+        rawDamage: 20,
+        vulnerableBonus: 5,
+        damage: 25,
+        prevented: 0,
+        absorbed: 0,
+        toHp: 25,
+        mitigation: { vulnerable: 25 },
+      }],
+    }).text;
+    expect(receipt).toContain("25 health lost");
+    expect(receipt).toContain("5 added by 25% Vulnerable");
+  });
+
+  it("records automatic control skips instead of an input refusal", () => {
+    const receipt = combatEventReceipt(encounter(), {
+      sequence: 11,
+      type: "actor-nullified",
+      actorId: "hero",
+      controls: ["stun"],
+      stacksSpent: 1,
+    });
+    expect(receipt).toMatchObject({ kind: "control" });
+    expect(receipt.text).toContain("automatically loses the command window to Stun");
+    expect(combatCuesForEvent(encounter(), {
+      sequence: 11,
+      type: "actor-nullified",
+      actorId: "hero",
+      controls: ["stun"],
+      stacksSpent: 1,
+    })[0]).toMatchObject({ label: "Turn skipped", targetId: "hero" });
+  });
+
   it("emits every resolved hit as its own staggered floating outcome", () => {
     const cues = combatCuesForEvent(encounter(), {
       sequence: 18,

@@ -37,6 +37,17 @@ function offerWithReplacement(target = fullArchetypeBuild()) {
   throw new Error("no-general-replacement-offer");
 }
 
+function offerWithSkill(target, predicate) {
+  for (let index = 0; index < 500; index += 1) {
+    const offer = offerFor(target, `catalogue-skill-seed-${index}`);
+    const choice = offer.candidates.find((candidate) => (
+      candidate.kind === "skill" && predicate(getSkill(candidate.id))
+    ));
+    if (choice) return { offer, choice };
+  }
+  throw new Error("no-matching-skill-offer");
+}
+
 describe("compiling an offer", () => {
   it("gives three distinct, well-formed choices", () => {
     const offer = offerFor();
@@ -81,16 +92,20 @@ describe("compiling an offer", () => {
     expect(held).toMatchObject({ reason: "skill-already-held" });
   });
 
-  it("keeps General abilities eligible when a five-slot roster build is full", () => {
+  it("offers General and same-character exclusive abilities, never foreign exclusives", () => {
     const target = fullArchetypeBuild();
-    const offer = offerWithReplacement(target);
-    const skills = offer.candidates.filter((candidate) => candidate.kind === "skill");
-    expect(skills.length).toBeGreaterThan(0);
-    for (const candidate of skills) {
-      expect(getSkill(candidate.id).abilityType).toBe("general");
-      expect(candidate.requiresReplacement).toBe(true);
-      expect(candidate.detail).toContain("replaces a flexible slot");
+    const seen = [];
+    for (let index = 0; index < 80; index += 1) {
+      const offer = offerFor(target, `roster-catalogue-${index}`);
+      for (const candidate of offer.candidates.filter((entry) => entry.kind === "skill")) {
+        const skill = getSkill(candidate.id);
+        seen.push(skill);
+        expect([null, "arctic-knight"]).toContain(skill.exclusiveTo);
+        expect(candidate.requiresReplacement).toBe(true);
+      }
     }
+    expect(seen.some((skill) => skill.abilityType === "general")).toBe(true);
+    expect(seen.some((skill) => skill.exclusiveTo === "arctic-knight")).toBe(true);
   });
 
   it("says so when there is genuinely nothing left to give", () => {
@@ -226,8 +241,7 @@ describe("claiming", () => {
 
   it("takes a shared reward by replacing only one of the three flexible abilities", () => {
     const target = fullArchetypeBuild();
-    const offer = offerWithReplacement(target);
-    const choice = offer.candidates.find((candidate) => candidate.kind === "skill");
+    const { offer, choice } = offerWithSkill(target, (skill) => skill.abilityType === "general");
 
     expect(claimReward(target, offer, choice.id))
       .toMatchObject({ ok: false, reason: "replacement-required" });
@@ -244,6 +258,23 @@ describe("claiming", () => {
     expect(claimed.build.skills).toContain(choice.id);
     expect(claimed.build.skills).not.toContain(replacedId);
     expect(claimed.provenance.replacedId).toBe(replacedId);
+  });
+
+  it("can offer and claim an alternate Basic Attack without moving the other four slots", () => {
+    const target = fullArchetypeBuild();
+    const { offer, choice } = offerWithSkill(
+      target,
+      (skill) => skill.exclusiveTo === "arctic-knight" && skill.abilityType === "basic-attack",
+    );
+
+    expect(choice.detail).toContain("replaces the Basic Attack slot");
+    expect(claimReward(target, offer, choice.id, { replacingId: target.skills[2] }))
+      .toMatchObject({ ok: false, reason: "incompatible-ability-slot" });
+
+    const claimed = claimReward(target, offer, choice.id, { replacingId: target.skills[0] });
+    expect(claimed.ok).toBe(true);
+    expect(claimed.build.skills[0]).toBe(choice.id);
+    expect(claimed.build.skills.slice(1)).toEqual(target.skills.slice(1));
   });
 
   it("refuses an offer it cannot read", () => {

@@ -107,6 +107,7 @@ describe("compact combat HUD", () => {
     expect(intent.querySelector(".tow-combat__intent-sigil img")).toBeTruthy();
     expect(intent.getAttribute("aria-label")).toMatch(/(?:damage|hits of).*targeting/i);
     expect(intent.querySelector(".tow-combat__intent-target")?.textContent).toMatch(/^→\s+/);
+    expect(intent.querySelector(".tow-combat__intent-name")?.textContent.length).toBeGreaterThan(0);
     expect(mounted.querySelector(".tow-combat__telegraph")).toBeNull();
     expect(mounted.querySelector(".tow-combat__incoming")).toBeNull();
     expect(mounted.querySelector(".tow-combat__exchange")).toBeNull();
@@ -359,6 +360,56 @@ describe("compact combat HUD", () => {
     expect(container.querySelector(".tow-combat__action-beat-copy")).toBeNull();
   });
 
+  it("uses authored ability artwork rather than VFX SVGs in the declaration plane", async () => {
+    vi.useFakeTimers();
+    try {
+      const mounted = await renderView();
+      const action = mounted.querySelector(".tow-combat__action");
+      const commandArt = action.querySelector(".tow-combat__ability-art img").getAttribute("src");
+      await act(async () => action.click());
+      const declarationArt = mounted
+        .querySelector("[data-testid='tow-action-beat'] .tow-combat__declaration-sigil img")
+        .getAttribute("src");
+      expect(declarationArt).toBe(commandArt);
+      expect(declarationArt).not.toContain("data:image/svg+xml");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows control in the rail and automatically forfeits the locked command", async () => {
+    vi.useFakeTimers();
+    try {
+      const base = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+      const controlled = {
+        ...base,
+        actors: {
+          ...base.actors,
+          [base.playerId]: {
+            ...base.actors[base.playerId],
+            statuses: [...base.actors[base.playerId].statuses, { type: "paralyze", count: 1 }],
+          },
+        },
+      };
+      const onStandDown = vi.fn();
+      const mounted = await renderView({ encounter: controlled, onStandDown });
+      expect(mounted.querySelector(".tow-combat__status-button[aria-label^='Paralyze']")).toBeTruthy();
+      expect(mounted.querySelector(".tow-combat__command").classList.contains("is-forced")).toBe(true);
+      expect(mounted.querySelector(".tow-combat__command-heading").textContent)
+        .toContain("Paralyze · turn forfeited");
+      expect(mounted.querySelector(".tow-combat__action-hint").textContent)
+        .toContain("No input needed");
+      expect(onStandDown).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTime(899));
+      expect(onStandDown).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(onStandDown).toHaveBeenCalledTimes(1);
+      expect(onStandDown).toHaveBeenCalledWith(base.playerId);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("puts current and maximum health inside each health bar", async () => {
     const mounted = await renderView();
     const bars = [...mounted.querySelectorAll(".tow-combat__bar")];
@@ -383,6 +434,9 @@ describe("compact combat HUD", () => {
       expect(onUseSkill).not.toHaveBeenCalled();
       expect(mounted.querySelector(".tow-combat").dataset.presentationPhase).toBe("windup");
       expect(mounted.querySelector("[data-testid='tow-action-beat']")).toBeTruthy();
+      expect(mounted.querySelector("[data-testid='tow-action-beat'] .tow-combat__declaration-sigil img")
+        .getAttribute("src"))
+        .toBe(action.querySelector(".tow-combat__ability-art img").getAttribute("src"));
       expect(action.classList.contains("is-committed")).toBe(true);
       expect(action.disabled).toBe(false);
       expect([...mounted.querySelectorAll(".tow-combat__action")]

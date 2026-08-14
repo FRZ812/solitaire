@@ -141,6 +141,30 @@ describe("mitigation", () => {
     expect(result.hits[0].damage).toBe(30);
   });
 
+  it("makes every Vulnerable stack add one percent incoming attack damage", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({
+        id: "def",
+        side: "player",
+        hp: 200,
+        maxHp: 200,
+        statuses: statuses(["vulnerable", 25]),
+      }),
+      attack: { hits: 1, damage: 80 },
+      rng: seed(),
+    });
+
+    expect(result.hits[0]).toMatchObject({
+      rawDamage: 80,
+      vulnerableBonus: 20,
+      damage: 100,
+      toHp: 100,
+      mitigation: { vulnerable: 25 },
+    });
+    expect(result.defender.hp).toBe(100);
+  });
+
   it("nullifies damage entirely while Invincible stands", () => {
     const result = resolveAttack({
       attacker: actor({ id: "atk" }),
@@ -231,6 +255,22 @@ describe("dodge and crit", () => {
     });
 
     expect(result.hits[0]).toMatchObject({ critical: true, damage: 40 });
+  });
+
+  it("turns each 100 Charge packet into one charged critical hit", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "mage", side: "player", critRate: 0, statuses: statuses(["charge", 100]) }),
+      defender: actor({ id: "def", side: "enemy", hp: 100, maxHp: 100 }),
+      attack: { hits: 2, damage: 20 },
+      rng: seed(),
+    });
+
+    expect(result.hits.map((hit) => ({ critical: hit.critical, damage: hit.damage, chargeSpent: hit.chargeSpent })))
+      .toEqual([
+        { critical: true, damage: 40, chargeSpent: 100 },
+        { critical: false, damage: 20, chargeSpent: 0 },
+      ]);
+    expect(statusCount(result.attacker.statuses, "charge")).toBe(0);
   });
 });
 

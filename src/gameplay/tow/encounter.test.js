@@ -5,6 +5,7 @@ import {
   createTowEncounter,
   declaredIntents,
   endTurn,
+  fireTraits,
   isTowEncounter,
   retreatOdds,
   skipTurn,
@@ -105,6 +106,35 @@ describe("starting an encounter", () => {
     expect(state.events.filter((entry) => (
       entry.type === "trait-fired" && entry.traitId === "ambush"
     ))).toHaveLength(1);
+  });
+
+  it("materializes all twelve roster passives at their sourced starting rank", () => {
+    const selfCases = [
+      ["ironclad", "steelskin", 4],
+      ["quickness", "priority", 1],
+      ["innovation", "strength", 6],
+      ["valiancy", "lethargy-atk", 5],
+      ["combo", "eviscerate", 3],
+      ["necromancy", "skeleton", 2],
+      ["judgment", "judgment", 5],
+      ["gale", "initiative-atk", 20],
+      ["bloodsuck", "lifesteal", 7],
+    ];
+    for (const [traitId, status, amount] of selfCases) {
+      const state = start({ build: { traits: { [traitId]: 3 } } });
+      expect(statusCount(state.actors["arctic-knight"].statuses, status), traitId).toBe(amount);
+    }
+
+    const ignition = start({ build: { traits: { ignition: 3 } } });
+    expect(statusCount(ignition.actors.gatekeeper.statuses, "burn")).toBe(10);
+
+    const overheat = start({ build: { traits: { overheat: 3 } } });
+    expect(statusCount(overheat.actors["arctic-knight"].statuses, "limp")).toBe(7);
+    expect(statusCount(overheat.actors.gatekeeper.statuses, "limp")).toBe(7);
+
+    const charging = start({ build: { traits: { charge: 3 } } });
+    const charged = fireTraits({ ...charging, round: 4 });
+    expect(statusCount(charged.actors["arctic-knight"].statuses, "charge")).toBe(100);
   });
 
   it("rejects malformed input", () => {
@@ -353,7 +383,106 @@ describe("ending the turn", () => {
     const state = start({ enemies: [foe({ statuses: [{ type: "sleep", count: 3 }] })] });
     const after = endTurn(state).state;
     expect(after.events.some((e) => e.type === "enemy-nullified")).toBe(true);
+    expect(statusCount(after.actors.gatekeeper.statuses, "sleep")).toBe(2);
     expect(after.actors["arctic-knight"].hp).toBe(170);
+  });
+
+  it("resolves innate on-hit passives per individual hit", () => {
+    const combo = useSkill(start({
+      build: { traits: { combo: 3 }, skills: ["assassin-mutilate"] },
+    }), "assassin-mutilate");
+    expect(statusCount(combo.state.actors.gatekeeper.statuses, "vulnerable")).toBe(9);
+
+    const valiancy = useSkill(start({
+      build: { traits: { valiancy: 3 }, skills: ["assassin-mutilate"] },
+    }), "assassin-mutilate");
+    expect(statusCount(valiancy.state.actors.gatekeeper.statuses, "lethargy")).toBe(15);
+
+    const gale = useSkill(start({
+      build: { traits: { gale: 7 }, skills: ["assassin-mutilate"] },
+    }), "assassin-mutilate");
+    expect(statusCount(gale.state.actors["arctic-knight"].statuses, "priority")).toBe(1);
+    expect(statusCount(gale.state.actors["arctic-knight"].statuses, "initiative")).toBe(20);
+
+    const judgment = useSkill(start({
+      build: { traits: { judgment: 3 }, skills: ["assassin-flurry"] },
+    }), "assassin-flurry");
+    const hit = judgment.state.events.find((event) => event.type === "skill-damage").hits[0];
+    expect(hit.judgmentDamage).toBe(5);
+    expect(statusCount(judgment.state.actors["arctic-knight"].statuses, "judgment")).toBe(0);
+  });
+
+  it("turns Necromancy, Bloodsuck, and Charge into combat outcomes", () => {
+    const skeletons = useSkill(start({
+      build: { traits: { necromancy: 3 }, skills: ["arctic-strike"] },
+    }), "arctic-strike");
+    expect(skeletons.state.events.find((event) => event.type === "skill-damage").amount).toBe(14);
+
+    const bloodsuck = useSkill(start({
+      player: { hp: 100 },
+      build: { traits: { bloodsuck: 3 }, skills: ["arctic-strike"] },
+    }), "arctic-strike");
+    expect(bloodsuck.state.actors["arctic-knight"].hp).toBe(101);
+
+    const charging = start({ build: { traits: { charge: 3 }, skills: ["arctic-strike"] } });
+    const charged = fireTraits({ ...charging, round: 4 });
+    const strike = useSkill(charged, "arctic-strike");
+    expect(strike.state.events.find((event) => event.type === "skill-damage").hits[0])
+      .toMatchObject({ critical: true, chargeSpent: 100 });
+  });
+
+  it("automatically spends control when the affected player window is skipped", () => {
+    const state = start({
+      player: { ...knight(), statuses: [{ type: "paralyze", count: 1 }] },
+    });
+    const skipped = skipTurn(state, state.playerId);
+    expect(skipped.ok).toBe(true);
+    expect(skipped.state.turn.actionsRemaining).toBe(0);
+    expect(statusCount(skipped.state.actors[state.playerId].statuses, "paralyze")).toBe(0);
+    expect(skipped.state.events).toContainEqual(expect.objectContaining({
+      type: "actor-nullified",
+      actorId: state.playerId,
+      controls: ["paralyze"],
+      stacksSpent: 1,
+    }));
+  });
+
+  it("enforces a controlled player forfeiture even when a caller hands the window over directly", () => {
+    const state = start({
+      player: { ...knight(), statuses: [{ type: "paralyze", count: 1 }] },
+    });
+    const after = endTurn(state).state;
+    expect(after.round).toBe(2);
+    expect(statusCount(after.actors[state.playerId].statuses, "paralyze")).toBe(0);
+    expect(after.events).toContainEqual(expect.objectContaining({
+      type: "actor-nullified",
+      actorId: state.playerId,
+      controls: ["paralyze"],
+    }));
+  });
+
+  it("keeps freshly inflicted Stun for the player's next command window", () => {
+    const state = createTowEncounter({
+      seed: "enemy-kick-control",
+      player: knight({ maxHp: 400 }),
+      enemies: [foe({
+        archetypeId: "demon-slayer",
+        build: { traits: {}, skills: ["demon-kick"], runes: [] },
+      })],
+      build: { traits: {}, skills: ["strike"], runes: [] },
+      intentSchedules: {
+        gatekeeper: { id: "kick-only", steps: [{ id: "kick", attackIds: ["demon-kick"] }] },
+      },
+    });
+    const after = endTurn(state).state;
+    expect(statusCount(after.actors[after.playerId].statuses, "stun")).toBe(1);
+    expect(after.turn.actionsRemaining).toBe(1);
+    expect(after.events).toContainEqual(expect.objectContaining({
+      type: "skill-status",
+      actorId: "gatekeeper",
+      targetId: after.playerId,
+      status: "stun",
+    }));
   });
 
   it("lets Unstoppable answer a control status", () => {
@@ -461,7 +590,29 @@ describe("Priority and Haste", () => {
 
     const firstAction = useSkill(flight.state, "strike");
     expect(firstAction.state.turn.actionsRemaining).toBe(4);
+    expect(statusCount(firstAction.state.actors[firstAction.state.playerId].statuses, "priority")).toBe(3);
     expect(firstAction.state.events.some((event) => event.type === "enemy-attack")).toBe(false);
+
+    let sequence = firstAction.state;
+    for (let action = 0; action < 3; action += 1) sequence = useSkill(sequence, "strike").state;
+    expect(sequence.turn.actionsRemaining).toBe(1);
+    expect(statusCount(sequence.actors[sequence.playerId].statuses, "priority")).toBe(0);
+  });
+
+  it("lets an enemy spend all four Priority actions before returning control", () => {
+    const state = start({
+      player: knight({ maxHp: 1000 }),
+      enemies: [foe({
+        maxHp: 900,
+        statuses: [{ type: "priority", count: 4 }],
+        attacks: [{ id: "tap", name: "Tap", hits: 1, damage: 2 }],
+      })],
+    });
+    const after = endTurn(state).state;
+    const attacks = after.events.filter((event) => event.type === "enemy-attack");
+    expect(attacks).toHaveLength(5);
+    expect(statusCount(after.actors.gatekeeper.statuses, "priority")).toBe(0);
+    expect(after.actors[after.playerId].hp).toBe(1000 - 10);
   });
 
   it("cancels Priority against the enemy's own", () => {
@@ -654,6 +805,42 @@ describe("telegraphed enemy turns", () => {
     expect(after.intents.gatekeeper.declarationIndex)
       .toBe(state.intents.gatekeeper.declarationIndex + 1);
     expect(after.events.some((entry) => entry.type === "enemy-attack")).toBe(false);
+  });
+
+  it("turns an enemy Chi Liberation into an immediate bounded sword sequence", () => {
+    const state = createTowEncounter({
+      seed: "enemy-chi-sequence",
+      player: tank(),
+      enemies: [blade()],
+      build: { traits: {}, skills: ["strike", "block"] },
+      intentSchedules: {
+        gatekeeper: {
+          id: "chi-then-cuts",
+          steps: [
+            { id: "release", attackIds: ["blade-chi-liberation"] },
+            { id: "cut-one", attackIds: ["blade-slash"] },
+            { id: "cut-two", attackIds: ["blade-slash"] },
+            { id: "cut-three", attackIds: ["blade-slash"] },
+          ],
+        },
+      },
+    });
+
+    const after = endTurn(state).state;
+    const chiEvents = after.events.filter((event) => event.skillId === "blade-chi-liberation");
+    const cuts = after.events.filter((event) => (
+      event.type === "skill-damage" && event.skillId === "blade-slash"
+    ));
+    const chiState = after.enemyBuilds.gatekeeper.skills
+      .find((skill) => skill.id === "blade-chi-liberation");
+
+    expect(chiEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "skill-status", status: "priority", count: 2 }),
+      expect.objectContaining({ type: "skill-status", status: "strength", count: 5 }),
+    ]));
+    expect(cuts).toHaveLength(3);
+    expect(statusCount(after.actors.gatekeeper.statuses, "priority")).toBe(0);
+    expect(chiState).toMatchObject({ usesRemaining: 3, cooldownRemaining: 3 });
   });
 
   it("holds a stunned foe's telegraph rather than erasing the attack", () => {

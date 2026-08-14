@@ -843,6 +843,144 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.character-exclusive-library {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.character-ability-library__group {
+  overflow: hidden;
+  border: 1px solid rgba(224, 211, 187, 0.12);
+  border-radius: 10px;
+  background: rgba(8, 14, 17, 0.52);
+}
+
+.character-ability-library__group > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 11px;
+  color: #d8d2c5;
+  font-size: 0.63rem;
+  font-weight: 760;
+  cursor: pointer;
+  list-style: none;
+}
+
+.character-ability-library__group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.character-ability-library__group > summary::before {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid color-mix(in srgb, var(--character-accent), #fff 22%);
+  content: "";
+  transition: transform 160ms ease;
+}
+
+.character-ability-library__group[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.character-ability-library__group > summary > span {
+  flex: 1;
+}
+
+.character-ability-library__group > summary small {
+  display: grid;
+  min-width: 24px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--character-accent), transparent 86%);
+  color: color-mix(in srgb, var(--character-accent), #fff 28%);
+  font-size: 0.54rem;
+}
+
+.character-ability-library__group > .general-ability-library,
+.character-ability-library__group > .shared-trait-library {
+  margin: 0;
+  padding: 0 8px 8px;
+}
+
+.starting-trait {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--character-accent), transparent 78%);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--character-accent), rgba(9, 16, 19, 0.9) 90%);
+}
+
+.starting-trait > span {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--character-accent), transparent 60%);
+  border-radius: 50%;
+  color: color-mix(in srgb, var(--character-accent), #fff 32%);
+}
+
+.starting-trait small,
+.starting-trait strong,
+.starting-trait p {
+  display: block;
+}
+
+.starting-trait small {
+  color: #9a8155;
+  font-size: 0.49rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.starting-trait strong {
+  margin-top: 3px;
+  color: #eee4d3;
+  font-family: Georgia, serif;
+  font-size: 0.76rem;
+}
+
+.starting-trait p {
+  margin-top: 4px;
+  color: #8e9792;
+  font-size: 0.55rem;
+  line-height: 1.45;
+}
+
+.shared-trait-library {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.starting-trait.is-compact {
+  grid-template-columns: 24px minmax(0, 1fr);
+  padding: 8px;
+}
+
+.starting-trait.is-compact > span {
+  width: 22px;
+  height: 22px;
+  font-size: 0.65rem;
+}
+
+.starting-trait.is-compact p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .starting-ability {
   display: grid;
   min-width: 0;
@@ -1426,6 +1564,7 @@
 
   .starting-abilities,
   .general-ability-library,
+  .shared-trait-library,
   .weapon-refinements {
     grid-template-columns: 1fr;
   }

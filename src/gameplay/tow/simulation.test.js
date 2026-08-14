@@ -218,4 +218,27 @@ describe("the informed policy actually reads the declarations", () => {
     expect(raced.command.type).toBe("use-skill");
     expect(classifySkill(raced.command.skillId).offensive).toBe(true);
   });
+
+  it("reserves a self-Paralyzing attack for a finishing blow", () => {
+    const enemy = STANDARD_FIXTURES[0].enemies[0];
+    const build = towBuildForCharacter({ profession: "barbarian" });
+    const healthy = createTowEncounter({
+      seed: "mortal-restraint",
+      player: standardPlayer(),
+      enemies: [{ ...enemy, maxHp: 400, hp: 400 }],
+      build,
+    });
+    expect(intentAwarePolicy.decide(healthy, { algorithm: "mulberry32", state: 1 }).command)
+      .toMatchObject({ type: "use-skill", skillId: "strike" });
+
+    const exposed = {
+      ...healthy,
+      actors: {
+        ...healthy.actors,
+        "foe-0": { ...healthy.actors["foe-0"], hp: 30 },
+      },
+    };
+    expect(intentAwarePolicy.decide(exposed, { algorithm: "mulberry32", state: 1 }).command)
+      .toMatchObject({ type: "use-skill", skillId: "mortal-blow" });
+  });
 });

@@ -474,12 +474,42 @@ export function isFlexibleAbility(definition) {
   return Boolean(definition && FLEXIBLE_CHARACTER_ABILITY_TYPES.includes(definition.abilityType));
 }
 
-/** Resolve the three slots a future General ability is allowed to replace. */
+export function abilityReplacementFamily(definition) {
+  if (!definition) return null;
+  if (definition.abilityType === "basic-attack") return "basic-attack";
+  if (definition.abilityType === "defensive") return "defensive";
+  if (isFlexibleAbility(definition)) return "flexible";
+  return null;
+}
+
+/** The authored character represented by a roster loadout, if it has one. */
+export function loadoutCharacterId(loadout) {
+  if (!Array.isArray(loadout)) return null;
+  const owners = new Set(loadout
+    .map((entry) => getSkill(typeof entry === "string" ? entry : entry?.id)?.exclusiveTo)
+    .filter(Boolean));
+  return owners.size === 1 ? [...owners][0] : null;
+}
+
+/** Resolve the slots one incoming action is contractually allowed to replace. */
+export function replacementSkillIds(loadout, incomingSkillOrId) {
+  if (!Array.isArray(loadout)) return [];
+  const incoming = typeof incomingSkillOrId === "string"
+    ? getSkill(incomingSkillOrId)
+    : incomingSkillOrId;
+  const family = abilityReplacementFamily(incoming);
+  if (!family) return [];
+  return loadout
+    .map((entry) => (typeof entry === "string" ? entry : entry?.id))
+    .filter((id) => abilityReplacementFamily(getSkill(id)) === family);
+}
+
+/** Backward-compatible shorthand for the three flexible slots. */
 export function replaceableSkillIds(loadout) {
   if (!Array.isArray(loadout)) return [];
   return loadout
     .map((entry) => (typeof entry === "string" ? entry : entry?.id))
-    .filter((id) => isFlexibleAbility(getSkill(id)));
+    .filter((id) => abilityReplacementFamily(getSkill(id)) === "flexible");
 }
 
 export function passiveSkillIds() {
@@ -627,6 +657,10 @@ export function acquireSkill(loadout, skillId, { replacingId = null } = {}) {
   if (!definition) return { ok: false, reason: "unknown-skill", loadout: null };
   if (definition.slot !== "slotted") return { ok: false, reason: "unslotted-skill", loadout: null };
   if (!Array.isArray(loadout)) return { ok: false, reason: "invalid-loadout", loadout: null };
+  const owner = loadoutCharacterId(loadout);
+  if (definition.exclusiveTo && owner && definition.exclusiveTo !== owner) {
+    return { ok: false, reason: "foreign-character-ability", loadout: null };
+  }
 
   const held = loadout.findIndex((entry) => entry.id === skillId);
   if (held >= 0) {
@@ -656,18 +690,40 @@ export function acquireSkill(loadout, skillId, { replacingId = null } = {}) {
     }
   }
 
+  // Character Basic Attack and Defensive alternatives replace only their own family,
+  // even while the loadout has fewer than five entries. They never consume a flexible slot.
+  const family = abilityReplacementFamily(definition);
+  if (family === "basic-attack" || family === "defensive") {
+    const compatible = replacementSkillIds(loadout, definition);
+    const replacement = replacingId || compatible[0] || null;
+    if (replacement) {
+      if (!compatible.includes(replacement)) {
+        return { ok: false, reason: "incompatible-ability-slot", loadout: null };
+      }
+      return {
+        ok: true,
+        reason: null,
+        upgraded: false,
+        loadout: loadout.map((entry) => (
+          entry.id === replacement ? createSkillState(skillId) : entry
+        )),
+      };
+    }
+  }
+
   if (loadout.length < SKILL_SLOTS) {
     return { ok: true, reason: null, upgraded: false, loadout: [...loadout, createSkillState(skillId)] };
   }
 
   if (replacingId === null) return { ok: false, reason: "loadout-full", loadout: null };
-  if (!isFlexibleAbility(definition)) {
-    return { ok: false, reason: "replacement-skill-not-flexible", loadout: null };
-  }
   const replaceAt = loadout.findIndex((entry) => entry.id === replacingId);
   if (replaceAt < 0) return { ok: false, reason: "unknown-replacement", loadout: null };
-  if (!isFlexibleAbility(getSkill(loadout[replaceAt].id))) {
-    return { ok: false, reason: "protected-ability-slot", loadout: null };
+  if (!replacementSkillIds(loadout, definition).includes(replacingId)) {
+    const replacedFamily = abilityReplacementFamily(getSkill(loadout[replaceAt].id));
+    const reason = family === "flexible" && replacedFamily !== "flexible"
+      ? "protected-ability-slot"
+      : "incompatible-ability-slot";
+    return { ok: false, reason, loadout: null };
   }
   return {
     ok: true,

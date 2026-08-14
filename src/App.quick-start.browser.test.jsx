@@ -65,7 +65,10 @@ async function click(element) {
   expect(element).toBeTruthy();
   await act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
   if (element.classList?.contains("production-combat__action")) {
-    await waitFor(() => !container?.querySelector("[data-testid='tow-action-beat']"), 3000);
+    await waitFor(() => {
+      const combat = container?.querySelector(".tow-combat");
+      return !combat || combat.getAttribute("aria-busy") !== "true";
+    }, 6000);
   }
 }
 
@@ -216,9 +219,22 @@ describe("practice is reversible and writes nothing", () => {
     await click(start.querySelector(".character-preview__details-button"));
     await click(start.querySelector(".character-details__practice > button"));
     await waitFor(() => mounted.querySelector(".tow-combat"));
-    for (let round = 0; round < 40 && mounted.querySelector(".tow-combat"); round += 1) {
-      const action = [...mounted.querySelectorAll(".production-combat__action")]
+    for (let round = 0; round < 80 && mounted.querySelector(".tow-combat"); round += 1) {
+      let action = [...mounted.querySelectorAll(".production-combat__action")]
         .find((button) => button.getAttribute("aria-disabled") !== "true");
+      if (!action) {
+        // Stun, Paralyze, Sleep and hostile Priority now advance without player input. Wait
+        // for that real scheduler command instead of treating a correctly locked deck as the
+        // end of the practice script.
+        await waitFor(() => (
+          mounted.querySelector(".practice-fight--result")
+          || [...mounted.querySelectorAll(".production-combat__action")]
+            .some((button) => button.getAttribute("aria-disabled") !== "true")
+        ), 3000);
+        if (mounted.querySelector(".practice-fight--result")) break;
+        action = [...mounted.querySelectorAll(".production-combat__action")]
+          .find((button) => button.getAttribute("aria-disabled") !== "true");
+      }
       if (!action) break;
       await click(action);
     }

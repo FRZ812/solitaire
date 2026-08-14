@@ -7,6 +7,7 @@ import {
   getTrait,
   hasTraitCapacity,
   isValidRank,
+  describeTraitAtRank,
   TRAIT_CAPACITY,
   TRAIT_RANK_CAP,
   traitCadenceAtRank,
@@ -53,10 +54,18 @@ describe("the catalogue", () => {
 });
 
 describe("rank scaling", () => {
-  it("reproduces the evenly-divided spans exactly", () => {
-    // Ironclad "Gain 1-13 Steelskin" over seven ranks.
+  it("uses the source's exact rank tables where they are available", () => {
     expect([1, 2, 3, 4, 5, 6, 7].map((rank) => traitValueAtRank("ironclad", rank)))
-      .toEqual([1, 3, 5, 7, 9, 11, 13]);
+      .toEqual([1, 2, 4, 5, 8, 9, 13]);
+    expect([1, 2, 3, 4, 5, 6, 7].map((rank) => traitValueAtRank("quickness", rank)))
+      .toEqual([0, 0, 1, 1, 2, 2, 3]);
+    expect([1, 2, 3, 4, 5, 6, 7].map((rank) => traitValueAtRank("gale", rank)))
+      .toEqual([10, 15, 20, 25, 30, 35, 40]);
+    expect([1, 2, 3, 4, 5, 6, 7].map((rank) => traitValueAtRank("overheat", rank)))
+      .toEqual([2, 4, 7, 9, 12, 14, 18]);
+  });
+
+  it("still interpolates traits whose source exposes endpoints only", () => {
     // Aegis "Gain 3-21 Protection".
     expect([1, 2, 3, 4, 5, 6, 7].map((rank) => traitValueAtRank("aegis", rank)))
       .toEqual([3, 6, 9, 12, 15, 18, 21]);
@@ -65,6 +74,13 @@ describe("rank scaling", () => {
       .toEqual([8, 20, 32, 44, 56, 68, 80]);
     // Luck "Inflict 18-180 Misfortune".
     expect([1, 7].map((rank) => traitValueAtRank("luck", rank))).toEqual([18, 180]);
+  });
+
+  it("describes each starting passive as an actual combat rule", () => {
+    expect(describeTraitAtRank("gale", 3)).toContain("20 Initiative per landed hit");
+    expect(describeTraitAtRank("necromancy", 3)).toContain("2 Skeletons each turn");
+    expect(describeTraitAtRank("judgment", 3)).toContain("5 Judgment each turn");
+    expect(describeTraitAtRank("overheat", 3)).toContain("both this character and every enemy");
   });
 
   it("anchors every trait to its evidenced endpoints", () => {
@@ -104,6 +120,8 @@ describe("cadence scaling", () => {
     // Charge: "Gain 100 Charge every 5-2 turns".
     expect(traitCadenceAtRank("charge", 1)).toEqual({ type: "every-n-turns", turns: 5 });
     expect(traitCadenceAtRank("charge", 7)).toEqual({ type: "every-n-turns", turns: 2 });
+    expect([1, 2, 3, 4, 5, 6, 7].map((rank) => traitCadenceAtRank("charge", rank).turns))
+      .toEqual([5, 5, 4, 4, 3, 3, 2]);
     expect(traitValueAtRank("charge", 1)).toBe(100);
   });
 

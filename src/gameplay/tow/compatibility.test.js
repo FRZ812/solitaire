@@ -119,7 +119,7 @@ describe("the matrix stays honest about what it does not cover", () => {
     }
   });
 
-  it("allows exactly one enumerated departure from inert-by-default, and says why", () => {
+  it("consumes control only when it actually forfeits a command window", () => {
     // Inert-by-default is the right rule and it stays the rule. Sleep, Paralyze and Stun are
     // the documented exception: a control status that never expires is not an unknown
     // lifecycle, it is a decided fight. Under permanence, Mortal Blow paralyses its own user
@@ -128,9 +128,11 @@ describe("the matrix stays honest about what it does not cover", () => {
     // keeps it a reviewed decision rather than drift.
     expect(PROVISIONAL_CONTROL_LIFECYCLE.types).toEqual(["paralyze", "sleep", "stun"]);
     expect(PROVISIONAL_CONTROL_LIFECYCLE.evidence).toBe("gap");
+    expect(PROVISIONAL_CONTROL_LIFECYCLE.consumeWhenCommandNullified).toBe(true);
+    expect(PROVISIONAL_CONTROL_LIFECYCLE.decreaseAtEndOfTurn).toBe(false);
     for (const type of PROVISIONAL_CONTROL_LIFECYCLE.types) {
       const definition = getStatusDefinition(type);
-      expect(definition.decreaseAtEndOfTurn).toBe(true);
+      expect(definition.decreaseAtEndOfTurn).toBe(false);
       expect(definition.permanent).toBe(false);
       expect(definition.lifecycleEvidence).toBe("gap");
     }
@@ -140,8 +142,11 @@ describe("the matrix stays honest about what it does not cover", () => {
     expect(exclusiveTraitIds().sort()).toEqual([
       "assassin",
       "combo",
+      "gale",
       "innovation",
       "judgment",
+      "necromancy",
+      "overheat",
       "valiancy",
     ]);
   });

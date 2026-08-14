@@ -11,12 +11,11 @@ import { getStatusDefinition } from "../kernel/status-stack.js";
 export const TRAIT_RANK_MIN = 1;
 export const TRAIT_RANK_CAP = 7;
 export const TRAIT_CAPACITY = 10;
+export const TRAIT_SOURCE_PAGE = "https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91/%ED%8A%B9%EC%84%B1";
 
-// The wiki gives the endpoints of each span but never the intermediate ranks. Straight
-// linear interpolation reproduces every span that divides evenly (Ironclad 1→13 gives
-// 1,3,5,7,9,11,13; Aegis 3→21 gives 3,6,9…21; Survival 8→80 gives 8,20,32…80), which is
-// good evidence for the shape, but the rounding on spans that do not divide evenly is
-// still a guess.
+// Exact per-rank tables are used whenever the source exposes them. The remaining traits
+// retain the older endpoint interpolation policy, kept explicit so inferred ranks never
+// masquerade as a directly transcribed value.
 export const PROVISIONAL_RANK_SCALING = Object.freeze({
   interpolation: "linear",
   rounding: "nearest",
@@ -41,6 +40,10 @@ const everyTurnsSpan = (slowest, fastest) => Object.freeze({
   slowest,
   fastest,
 });
+const everyTurnsTable = (turnsByRank) => Object.freeze({
+  type: "every-n-turns-table",
+  turnsByRank: Object.freeze([...turnsByRank]),
+});
 // "each turn with a 2-23% chance" — the chance is what the rank scales, not the amount.
 const chanceSpan = (min, max) => Object.freeze({ type: "every-turn-chance", min, max });
 
@@ -52,28 +55,41 @@ function trait(id, name, { effect, cadence = AT_START, exclusiveTo = null, sourc
     cadence,
     exclusiveTo,
     acquisition: source,
+    sourcePage: TRAIT_SOURCE_PAGE,
     rankCap: TRAIT_RANK_CAP,
   });
 }
 
 const TRAITS = Object.freeze(Object.fromEntries([
   trait("aegis", "Aegis", { effect: span("protection", 3, 21) }),
-  trait("ironclad", "Ironclad", { effect: span("steelskin", 1, 13) }),
+  trait("ironclad", "Ironclad", {
+    effect: span("steelskin", 1, 13, { values: Object.freeze([1, 2, 4, 5, 8, 9, 13]) }),
+  }),
   trait("agility", "Agility", { effect: span("evade", 1, 1), cadence: chanceSpan(2, 23) }),
   trait("swift", "Swift", { effect: span("haste", 1, 1), cadence: chanceSpan(2, 18) }),
   trait("destructor", "Destructor", { effect: span("doom-atk", 2, 25), source: "event-outcome" }),
-  trait("ignition", "Ignition", { effect: span("burn", 3, 25) }),
+  trait("ignition", "Ignition", {
+    effect: inflict("burn", 3, 25, { values: Object.freeze([3, 6, 10, 13, 17, 20, 25]) }),
+  }),
   trait("fortitude", "Fortitude", { effect: span("unstoppable", 2, 25) }),
   trait("detection", "Detection", { effect: span("thorn", 1, 14), cadence: everyTurns(4) }),
   trait("reflection", "Reflection", { effect: span("thorn", 2, 28) }),
-  trait("bloodsuck", "Bloodsuck", { effect: span("lifesteal", 3, 18, { unit: "percent" }) }),
+  trait("bloodsuck", "Bloodsuck", {
+    effect: span("lifesteal", 2, 18, {
+      unit: "percent",
+      values: Object.freeze([2, 4, 7, 9, 12, 14, 18]),
+    }),
+  }),
   trait("fury", "Fury", { effect: span("strength", 1, 10), cadence: everyTurns(4) }),
   trait("luck", "Luck", {
     effect: inflict("misfortune", 18, 180, { chancePercent: 75 }),
   }),
   trait("decay", "Decay", { effect: inflict("poison", 1, 10), cadence: everyTurns(3) }),
   trait("overwhelm", "Overwhelm", { effect: inflict("cripple", 1, 13) }),
-  trait("charge", "Charge", { effect: span("charge", 100, 100), cadence: everyTurnsSpan(5, 2) }),
+  trait("charge", "Charge", {
+    effect: span("charge", 100, 100),
+    cadence: everyTurnsTable([5, 5, 4, 4, 3, 3, 2]),
+  }),
   trait("shocker", "Shocker", {
     effect: inflict("paralyze", 1, 1),
     cadence: everyTurnsSpan(7, 4),
@@ -92,18 +108,41 @@ const TRAITS = Object.freeze(Object.fromEntries([
     source: "event-outcome",
   }),
   trait("accuracy", "Accuracy", { effect: span("sharpen", 5, 50) }),
-  trait("gale", "Gale", { effect: span("initiative", 1, 1), cadence: everyTurn() }),
-  trait("quickness", "Quickness", { effect: span("priority", 0, 3) }),
-  trait("necromancy", "Necromancy", { effect: span("skeleton", 1, 4), cadence: everyTurn() }),
-  trait("overheat", "Overheat", { effect: span("limp", 2, 18), cadence: everyTurn() }),
+  trait("gale", "Gale", {
+    effect: span("initiative-atk", 10, 40, {
+      values: Object.freeze([10, 15, 20, 25, 30, 35, 40]),
+    }),
+    exclusiveTo: "wandering-blade",
+  }),
+  trait("quickness", "Quickness", {
+    effect: span("priority", 0, 3, { values: Object.freeze([0, 0, 1, 1, 2, 2, 3]) }),
+  }),
+  trait("necromancy", "Necromancy", {
+    effect: span("skeleton", 1, 4, { values: Object.freeze([1, 1, 2, 2, 3, 3, 4]) }),
+    cadence: everyTurn(),
+    exclusiveTo: "witch-of-eternity",
+  }),
+  trait("overheat", "Overheat", {
+    effect: span("limp", 2, 18, {
+      values: Object.freeze([2, 4, 7, 9, 12, 14, 18]),
+      affectsOwnerAndOpponents: true,
+    }),
+    cadence: everyTurn(),
+    exclusiveTo: "forsaken-automaton",
+  }),
 
   // Character-exclusive.
   trait("valiancy", "Valiancy", {
-    effect: span("lethargy-atk", 1, 1),
+    effect: span("lethargy-atk", 1, 17, {
+      values: Object.freeze([1, 2, 5, 6, 10, 12, 17]),
+    }),
     exclusiveTo: "old-king-of-northland",
   }),
   trait("innovation", "Innovation", {
-    effect: span("strength", 3, 15),
+    effect: span("strength", 3, 15, {
+      values: Object.freeze([3, 6, 6, 10, 10, 15, 15]),
+      evenRankStatus: "tenacity",
+    }),
     exclusiveTo: "owner-of-clocktower",
   }),
   trait("assassin", "Assassin", {
@@ -111,12 +150,15 @@ const TRAITS = Object.freeze(Object.fromEntries([
     exclusiveTo: "last-assassin",
   }),
   trait("combo", "Combo", {
-    effect: inflict("vulnerable", 1, 7),
-    cadence: everyTurn(),
+    effect: span("eviscerate", 2, 5, {
+      values: Object.freeze([2, 2, 3, 3, 4, 4, 5]),
+    }),
     exclusiveTo: "last-assassin",
   }),
   trait("judgment", "Judgment", {
-    effect: span("judgment", 1, 7),
+    effect: span("judgment", 1, 17, {
+      values: Object.freeze([1, 2, 5, 6, 10, 12, 17]),
+    }),
     cadence: everyTurn(),
     exclusiveTo: "exiled-priestess",
   }),
@@ -193,7 +235,8 @@ export function traitValueAtRank(traitId, rank) {
   const definition = getTrait(traitId);
   if (!definition) throw new TypeError(`unknown-trait:${traitId}`);
   if (!isValidRank(rank)) throw new TypeError("invalid-trait-rank");
-  const { min, max } = definition.effect;
+  const { min, max, values } = definition.effect;
+  if (Array.isArray(values)) return values[rank - TRAIT_RANK_MIN];
   if (min === max) return min;
   const steps = TRAIT_RANK_CAP - TRAIT_RANK_MIN;
   return Math.round(min + ((max - min) * (rank - TRAIT_RANK_MIN)) / steps);
@@ -216,7 +259,75 @@ export function traitCadenceAtRank(traitId, rank) {
   if (cadence.type === "every-n-turns-span") {
     return { type: "every-n-turns", turns: at(cadence.slowest, cadence.fastest) };
   }
+  if (cadence.type === "every-n-turns-table") {
+    return { type: "every-n-turns", turns: cadence.turnsByRank[rank - TRAIT_RANK_MIN] };
+  }
   return null;
+}
+
+const STATUS_LABELS = Object.freeze({
+  steelskin: "flat attack-damage reduction per hit",
+  priority: "Priority actions before the enemy",
+  strength: "Strength",
+  tenacity: "Tenacity",
+  "lethargy-atk": "Lethargy inflicted per landed hit",
+  "initiative-atk": "Initiative gained per landed hit",
+  eviscerate: "Vulnerable inflicted per landed hit",
+  skeleton: "Skeletons summoned",
+  judgment: "Judgment gained",
+  lifesteal: "Lifesteal",
+  burn: "Burn inflicted",
+  charge: "Charge",
+  limp: "Limp",
+});
+
+/** Human-readable sourced mechanic for a trait at one concrete rank. */
+export function describeTraitAtRank(traitId, rank) {
+  const definition = getTrait(traitId);
+  if (!definition) return null;
+  const value = traitValueAtRank(traitId, rank);
+  if (traitId === "innovation") {
+    return `Rank ${rank}: gain ${value} ${rank % 2 === 0 ? "DEF (Tenacity)" : "ATK (Strength)"} at combat start; only the parity-selected stat applies.`;
+  }
+  if (traitId === "overheat") {
+    return `Rank ${rank}: both this character and every enemy gain ${value} Limp each turn, making both sides progressively more vulnerable.`;
+  }
+  if (traitId === "judgment") {
+    return `Rank ${rank}: gain ${value} Judgment each turn; the next damaging attack consumes it as defence-ignoring special damage.`;
+  }
+  if (traitId === "necromancy") {
+    return `Rank ${rank}: summon ${value} Skeletons each turn. Skeletons add attack and are lost when this character is hit.`;
+  }
+  if (traitId === "gale") {
+    return `Rank ${rank}: gain ${value} Initiative per landed hit; each 100 converts into 1 Priority.`;
+  }
+  if (traitId === "combo") {
+    return `Rank ${rank}: every landed hit adds ${value} Vulnerable, increasing later damage; multi-hit attacks apply it per hit.`;
+  }
+  if (traitId === "valiancy") {
+    return `Rank ${rank}: every landed hit inflicts ${value} Lethargy, weakening the enemy's attack pressure.`;
+  }
+  if (traitId === "bloodsuck") {
+    return `Rank ${rank}: restore ${value}% of direct damage dealt, with a minimum heal of 1 per damaging hit.`;
+  }
+  if (traitId === "ignition") {
+    return `Rank ${rank}: inflict ${value} Burn on every enemy when combat begins.`;
+  }
+  if (traitId === "charge") {
+    const cadence = combatTraitCadenceAtRank(traitId, rank);
+    return `Rank ${rank}: gain 100 Charge every ${cadence.turns} turns, guaranteeing the charged critical window.`;
+  }
+  const cadence = combatTraitCadenceAtRank(traitId, rank);
+  const status = STATUS_LABELS[definition.effect.status]
+    || definition.effect.status.replace(/-/g, " ");
+  const timing = cadence.type === "combat-start"
+    ? "at combat start"
+    : cadence.type === "every-turn"
+      ? "each turn"
+      : cadence.type === "every-n-turns"
+        ? `every ${cadence.turns} turns`
+        : cadence.type.replace(/-/g, " ");
+  return `Rank ${rank}: ${definition.effect.kind === "inflict-status" ? "inflict" : "gain"} ${value} ${status} ${timing}.`;
 }
 
 /**

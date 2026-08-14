@@ -131,7 +131,13 @@ async function click(element) {
   expect(element).toBeTruthy();
   await act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
   if (element.classList?.contains("production-combat__action")) {
-    await waitFor(() => !container?.querySelector("[data-testid='tow-action-beat']"), 3000);
+    // The command remains intentionally locked through its final hit/reaction cues, not
+    // merely through the declaration title. Waiting on the combat surface's authoritative
+    // busy state keeps the next synthetic click from landing on a still-disabled ability.
+    await waitFor(() => {
+      const combat = container?.querySelector(".tow-combat");
+      return !combat || combat.getAttribute("aria-busy") !== "true";
+    }, 6000);
   }
 }
 
