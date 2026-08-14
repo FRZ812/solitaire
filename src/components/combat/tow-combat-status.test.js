@@ -19,6 +19,19 @@ describe("combat status presentation", () => {
       .toBe("Removed at the end of the turn.");
   });
 
+  it("states every sourced damage-over-time rule without placeholder copy", () => {
+    expect(towStatusPresentation({ type: "burn", count: 5 })).toMatchObject({
+      effect: expect.stringContaining("holder's turn end"),
+      lifecycle: expect.stringContaining("every landed attack hit"),
+    });
+    expect(towStatusPresentation({ type: "poison", count: 3 }).lifecycle)
+      .toBe("Deals its current Count, then loses 1 stack at each holder turn end.");
+    expect(towStatusPresentation({ type: "bleed", count: 4 }).lifecycle)
+      .toContain("Persists unchanged between turns");
+    expect(towStatusPresentation({ type: "doom", count: 20 }).lifecycle)
+      .toContain("entire stack is removed");
+  });
+
   it("states exact control, Priority, and Vulnerable strategy rules", () => {
     expect(towStatusPresentation({ type: "stun", count: 1 })).toMatchObject({
       effect: expect.stringContaining("forfeits one command window per stack"),

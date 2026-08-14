@@ -100,6 +100,25 @@ describe("mitigation", () => {
     expect(result.defender.hp).toBe(85);
   });
 
+  it("spends one Burn for every landed hit even when Ward absorbs all damage", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({
+        id: "def",
+        side: "player",
+        hp: 100,
+        maxHp: 100,
+        shield: 100,
+        statuses: statuses(["burn", 5]),
+      }),
+      attack: { hits: 3, damage: 10 },
+      rng: seed(),
+    });
+
+    expect(result.hits.every((hit) => hit.toHp === 0)).toBe(true);
+    expect(statusCount(result.defender.statuses, "burn")).toBe(2);
+  });
+
   it("records the exact mitigation and avoidance evidence used by combat feedback", () => {
     const guarded = resolveAttack({
       attacker: actor({ id: "atk" }),
@@ -322,7 +341,7 @@ describe("dodge and crit", () => {
         hp: 100,
         maxHp: 100,
         dodgeRate: 100,
-        statuses: statuses(["steelskin", 4]),
+        statuses: statuses(["steelskin", 4], ["burn", 3]),
       }),
       attack: { hits: 2, damage: 30 },
       rng: seed(),
@@ -331,6 +350,7 @@ describe("dodge and crit", () => {
     expect(result.hits.every((hit) => hit.dodged)).toBe(true);
     expect(result.defender.hp).toBe(100);
     expect(statusCount(result.defender.statuses, "steelskin")).toBe(4);
+    expect(statusCount(result.defender.statuses, "burn")).toBe(3);
     expect(PROVISIONAL_DAMAGE_POLICY.dodgeSpendsOnHitStatuses).toBe(false);
   });
 

@@ -6,15 +6,15 @@ const STATUS_COPY = Object.freeze({
   steelskin: "Reduces every individual incoming hit by its Count.",
   evade: "Raises Dodge by 60% while at least one stack remains.",
   haste: "Adds one turn-consuming action per stack when the round's action budget is set.",
-  "doom-atk": "Each attack inflicts Doom equal to its Count; Doom resolves after the enemy acts.",
-  burn: "Deals fixed damage equal to its Count at the turn boundary, bypassing defence and ward.",
+  "doom-atk": "Each attack inflicts Doom equal to its Count; Doom resolves at the target's next turn end.",
+  burn: "Deals fixed damage equal to its Count at the holder's turn end, bypassing defence and ward.",
   unstoppable: "Prevents Sleep, Paralyze, and Stun from nullifying this combatant's action.",
   tenacity: "Adds its Count to Defence.",
   thorn: "Returns damage equal to its Count once for every incoming hit that resolves.",
   lifesteal: "Recovers health in proportion to damage dealt.",
   strength: "Adds its Count to Attack.",
   misfortune: "Deals damage equal to its Count at the beginning of the enemy turn.",
-  poison: "Poison is tracked as a harmful Count; its exact source rule is not yet evidenced.",
+  poison: "Deals fixed damage equal to its Count at the holder's turn end, bypassing defence and ward.",
   cripple: "Cripple is tracked as a harmful Count; its exact source rule is not yet evidenced.",
   charge: "Charge stores power as a Count for abilities that consume or transform it.",
   grow: "Grow records accumulating power as a Count.",
@@ -29,13 +29,13 @@ const STATUS_COPY = Object.freeze({
   sharpen: "Sharpen records increased offensive accuracy as a Count.",
   eviscerate: "Eviscerate records execution pressure as a Count.",
   priority: "Each net stack grants one extra action before the enemy after opposing Priority cancels it.",
-  doom: "Deals fixed damage equal to its Count after the affected side acts, bypassing defence and ward.",
+  doom: "Deals fixed damage equal to its Count at the holder's next turn end, bypassing defence and ward.",
   invincible: "Prevents damage from attacks while at least one stack remains.",
   conceal: "Raises Dodge by 80% while at least one stack remains.",
   sleep: "Automatically forfeits one command window per stack unless Unstoppable is present.",
   paralyze: "Automatically forfeits one command window per stack unless Unstoppable is present.",
   stun: "Automatically forfeits one command window per stack unless Unstoppable is present.",
-  bleed: "Bleed records damage-over-time pressure as a Count.",
+  bleed: "Deals fixed damage equal to its Count at every holder turn end, bypassing defence and ward.",
   "bleed-atk": "Adds Bleed pressure to attacks according to its Count.",
   lethargy: "Reduces Attack by its Count for this encounter; enough accumulated Lethargy can reduce an attack to 0.",
   "lethargy-atk": "Inflicts its Count as Lethargy on every landed hit, so multi-hit skills apply it separately.",
@@ -70,6 +70,10 @@ function lifecycleText(definition, type) {
   if (CONTROL.has(type)) return "Loses 1 stack only when it automatically forfeits a command window.";
   if (type === "priority") return "A net stack is spent by each extra action it grants; an unused stack also loses 1 at the turn boundary.";
   if (type === "berserk") return "The entire stack is spent when its holder lands a hit or is struck.";
+  if (type === "burn") return "Persists between turns; loses 1 stack for every landed attack hit received.";
+  if (type === "poison") return "Deals its current Count, then loses 1 stack at each holder turn end.";
+  if (type === "bleed") return "Persists unchanged between turns until another combat rule removes it.";
+  if (type === "doom") return "Deals its full Count at the holder's next turn end, then the entire stack is removed.";
   if (!definition) return "Persists until a combat rule removes it.";
   const clauses = [];
   if (definition.permanent) clauses.push("Persists between turns");

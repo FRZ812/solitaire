@@ -43,13 +43,24 @@ export function hasProvisionalControlLifecycle(type) {
 
 export const MAX_STATUS_COUNT = 1_000_000;
 
-function definition(id, { permanent = false, removeAtEndOfTurn = false, decreaseAtEndOfTurn = false, decreaseWhenHit = false, evidence = "observed" } = {}) {
+function definition(id, {
+  permanent = false,
+  removeAtEndOfTurn = false,
+  decreaseAtEndOfTurn = false,
+  decreaseWhenHit = false,
+  endOfTurnDamage = null,
+  evidence = "observed",
+} = {}) {
   return Object.freeze({
     id,
     permanent,
     removeAtEndOfTurn,
     decreaseAtEndOfTurn,
     decreaseWhenHit,
+    // Damage statuses resolve their payload and lifecycle atomically at the holder's own
+    // turn end. Keeping this separate from ordinary status decay prevents a freshly
+    // inflicted Doom from disappearing in the same hostile action window.
+    endOfTurnDamage,
     lifecycleEvidence: evidence,
   });
 }
@@ -63,7 +74,7 @@ const DEFINITIONS = Object.freeze({
   evade: definition("evade", { decreaseAtEndOfTurn: true }),
   haste: definition("haste", { decreaseAtEndOfTurn: true }),
   "doom-atk": definition("doom-atk", { removeAtEndOfTurn: true }),
-  burn: definition("burn", { decreaseWhenHit: true }),
+  burn: definition("burn", { permanent: true, decreaseWhenHit: true, endOfTurnDamage: "persist" }),
   tenacity: definition("tenacity", { permanent: true }),
   thorn: definition("thorn", { permanent: true }),
   misfortune: definition("misfortune", { removeAtEndOfTurn: true }),
@@ -82,7 +93,7 @@ const DEFINITIONS = Object.freeze({
   unstoppable: definition("unstoppable", { decreaseAtEndOfTurn: true }),
   lifesteal: definition("lifesteal", { permanent: true }),
   strength: definition("strength", { permanent: true }),
-  poison: definition("poison", { decreaseAtEndOfTurn: true }),
+  poison: definition("poison", { endOfTurnDamage: "decrease" }),
   cripple: definition("cripple", { permanent: true }),
   charge: definition("charge", { removeAtEndOfTurn: true }),
   grow: definition("grow", { permanent: true }),
@@ -92,7 +103,7 @@ const DEFINITIONS = Object.freeze({
   sharpen: definition("sharpen", { permanent: true }),
   eviscerate: definition("eviscerate", { permanent: true }),
   priority: definition("priority", { decreaseAtEndOfTurn: true }),
-  doom: definition("doom", { removeAtEndOfTurn: true }),
+  doom: definition("doom", { endOfTurnDamage: "remove" }),
 
   // Named by traits, fusions and skills but absent from the wiki's status table, so their
   // effect is known while their lifecycle is not.
@@ -106,7 +117,7 @@ const DEFINITIONS = Object.freeze({
   // outright. The hit resolver owns that full removal rather than a one-point decrement.
   sleep: definition("sleep", { evidence: "gap" }),
   stun: definition("stun", { evidence: "gap" }),
-  bleed: definition("bleed", { evidence: "gap" }),
+  bleed: definition("bleed", { permanent: true, endOfTurnDamage: "persist" }),
   "bleed-atk": definition("bleed-atk", { permanent: true }),
   // Lethargy is deliberate attrition, not a one-round visual tag. It lasts for the
   // encounter and stacks once per landed hit, allowing Valiancy + Whirlwind to suppress a
@@ -257,4 +268,24 @@ export function tickEndOfTurn(stack, amount = PROVISIONAL_DECREMENT.perTurn) {
     amount,
     (spec) => spec.removeAtEndOfTurn || spec.decreaseAtEndOfTurn,
   );
+}
+
+/**
+ * Applies the sourced lifecycle that follows damage at the holder's own turn end.
+ * Burn and Bleed remain, Poison loses one Count, and Doom is removed in full.
+ */
+export function tickEndOfTurnDamage(stack, amount = PROVISIONAL_DECREMENT.perTurn) {
+  if (!validCount(amount)) throw new TypeError("invalid-status-count");
+  const next = [];
+  for (const entry of normalize(stack)) {
+    const lifecycle = getStatusDefinition(entry.type).endOfTurnDamage;
+    if (lifecycle === "remove") continue;
+    if (lifecycle === "decrease") {
+      const remaining = entry.count - amount;
+      if (remaining > 0) next.push({ type: entry.type, count: remaining });
+      continue;
+    }
+    next.push(entry);
+  }
+  return next;
 }

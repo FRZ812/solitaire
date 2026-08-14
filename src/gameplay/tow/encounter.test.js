@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { statusCount } from "../kernel/status-stack.js";
+import { applyStatus, statusCount } from "../kernel/status-stack.js";
 import {
   attemptRetreat,
   createTowEncounter,
@@ -392,18 +392,88 @@ describe("ending the turn", () => {
     expect(statusCount(state.actors["arctic-knight"].statuses, "thorn")).toBe(14);
   });
 
-  it("burns for fixed damage that ignores defences, after the hit has spent a stack", () => {
+  it("burns for fixed damage at the holder's turn end, then loses one to the incoming hit", () => {
     const state = start({
       player: { ...knight(), statuses: [{ type: "burn", count: 5 }] },
     });
     const after = endTurn(state).state;
-    // Burn decreases when hit, so the enemy's swing spends one stack before the
-    // end-of-turn tick reads it: 5 becomes 4, and 4 lands as unmitigated damage.
-    expect(after.events.find((e) => e.type === "tick-damage")).toMatchObject({ burn: 4 });
-    // 23 from the swing plus 4 from Burn. Raw DEF is deliberately not flat mitigation —
+    // The player hands over their turn first, so Burn deals its current 5 before the foe
+    // swings. That landed hit then leaves 4 Burn waiting for the player's next turn end.
+    expect(after.events.find((e) => e.type === "tick-damage")).toMatchObject({ burn: 5 });
+    expect(statusCount(after.actors["arctic-knight"].statuses, "burn")).toBe(4);
+    // 5 from Burn plus 23 from the swing. Raw DEF is deliberately not flat mitigation —
     // the evidence has DEF feeding Block's shield and Tenacity, while Steelskin and
     // Protection are what reduce an incoming hit.
-    expect(after.actors["arctic-knight"].hp).toBe(170 - 23 - 4);
+    expect(after.actors["arctic-knight"].hp).toBe(170 - 5 - 23);
+  });
+
+  it("replicates persistent Burn and Bleed, decaying Poison, and one-turn Doom", () => {
+    const state = start({
+      player: {
+        ...knight(),
+        statuses: [
+          { type: "burn", count: 5 },
+          { type: "poison", count: 3 },
+          { type: "bleed", count: 4 },
+          { type: "doom", count: 6 },
+        ],
+      },
+      enemies: [foe({ statuses: [{ type: "stun", count: 5 }] })],
+    });
+
+    const first = endTurn(state).state;
+    expect(first.events.filter((event) => (
+      event.type === "tick-damage" && event.actorId === "arctic-knight"
+    )).at(-1)).toMatchObject({ burn: 5, poison: 3, bleed: 4, doom: 6 });
+    expect(first.actors["arctic-knight"].hp).toBe(170 - 18);
+    expect(statusCount(first.actors["arctic-knight"].statuses, "burn")).toBe(5);
+    expect(statusCount(first.actors["arctic-knight"].statuses, "poison")).toBe(2);
+    expect(statusCount(first.actors["arctic-knight"].statuses, "bleed")).toBe(4);
+    expect(statusCount(first.actors["arctic-knight"].statuses, "doom")).toBe(0);
+
+    const second = endTurn(first).state;
+    expect(second.events.filter((event) => (
+      event.type === "tick-damage" && event.actorId === "arctic-knight"
+    )).at(-1)).toMatchObject({ burn: 5, poison: 2, bleed: 4, doom: 0 });
+    expect(second.actors["arctic-knight"].hp).toBe(170 - 18 - 11);
+    expect(statusCount(second.actors["arctic-knight"].statuses, "burn")).toBe(5);
+    expect(statusCount(second.actors["arctic-knight"].statuses, "poison")).toBe(1);
+    expect(statusCount(second.actors["arctic-knight"].statuses, "bleed")).toBe(4);
+  });
+
+  it("holds newly inflicted Doom through the next player command window", () => {
+    const state = start({
+      enemies: [foe({
+        archetypeId: "witch-of-eternity",
+        build: { traits: {}, skills: ["witch-touch-of-the-dead"], runes: [] },
+      })],
+    });
+
+    const first = endTurn(state).state;
+    expect(first.actors["arctic-knight"].hp).toBe(170 - 17);
+    expect(statusCount(first.actors["arctic-knight"].statuses, "doom")).toBe(20);
+    expect(first.events.some((event) => (
+      event.type === "tick-damage"
+      && event.actorId === "arctic-knight"
+      && event.doom > 0
+    ))).toBe(false);
+
+    const waiting = {
+      ...first,
+      actors: {
+        ...first.actors,
+        gatekeeper: {
+          ...first.actors.gatekeeper,
+          statuses: applyStatus(first.actors.gatekeeper.statuses, "stun", 1),
+        },
+      },
+    };
+    const second = endTurn(waiting).state;
+    expect(second.actors["arctic-knight"].hp).toBe(170 - 17 - 20);
+    expect(statusCount(second.actors["arctic-knight"].statuses, "doom")).toBe(0);
+    expect(second.events.filter((event) => (
+      event.type === "tick-damage" && event.actorId === "arctic-knight"
+    )).at(-1)).toMatchObject({ doom: 20 });
   });
 
   it("decays end-of-turn statuses", () => {

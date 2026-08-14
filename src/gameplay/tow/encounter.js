@@ -26,6 +26,7 @@ import {
   scaleStatus,
   statusCount,
   tickEndOfTurn,
+  tickEndOfTurnDamage,
 } from "../kernel/status-stack.js";
 import { createTowActor, isTowActor } from "../kernel/tow-actor.js";
 import { resolveAttack } from "../kernel/tow-damage.js";
@@ -1589,6 +1590,18 @@ function boundaryStatusDamage(state, actorId, { onlyMisfortune = false, includeM
   );
 }
 
+function resolveActorTurnEnd(state, actorId, { includeMisfortune = false } = {}) {
+  const damaged = boundaryStatusDamage(state, actorId, { includeMisfortune });
+  const actor = damaged.actors[actorId];
+  return {
+    ...damaged,
+    actors: {
+      ...damaged.actors,
+      [actorId]: { ...actor, statuses: tickEndOfTurnDamage(actor.statuses) },
+    },
+  };
+}
+
 function useEnemySkill(state, enemyId, skillId, targetId) {
   const build = state.enemyBuilds?.[enemyId];
   const index = build?.skills.findIndex((entry) => entry.id === skillId) ?? -1;
@@ -1648,6 +1661,17 @@ export function endTurn(state) {
     const skipped = skipTurn(next, actorId);
     if (skipped.ok) next = skipped.state;
   }
+
+  // This call is the player side handing its command window over. Resolve every player-side
+  // holder's persistent wounds now, before the enemy can apply a new one. In particular, a
+  // Doom inflicted in the coming hostile window must survive through the next player window
+  // and cannot detonate immediately after the skill that inflicted it.
+  for (const actorId of playerSideIds(next)) {
+    if (next.actors[actorId].hp <= 0) continue;
+    next = resolveActorTurnEnd(next, actorId, { includeMisfortune: true });
+  }
+  next = settle(next);
+  if (next.phase !== "player") return { ok: true, reason: null, state: next };
 
   // Any hostile ward standing here already protected its owner throughout the player's
   // command window. Clear it before the foe can refresh or attack behind the same brace.
@@ -1784,6 +1808,14 @@ export function endTurn(state) {
       commandsResolved += 1;
       next = settle(next);
     }
+
+    // Each foe owns a distinct command window. Its wounds resolve after that window, before
+    // the next foe acts, so a fatal Bleed or Poison tick cannot leave a defeated combatant
+    // standing through the rest of the enemy line.
+    if (next.phase === "player" && next.actors[enemyId].hp > 0) {
+      next = resolveActorTurnEnd(next, enemyId);
+      next = settle(next);
+    }
   }
   // Player and ally wards have now met the entire hostile command window. Leftover points
   // are not banked into another round.
@@ -1791,20 +1823,8 @@ export function endTurn(state) {
 
   if (next.phase !== "player") return { ok: true, reason: null, state: next };
 
-  // Boundary ticks: damage-over-time first, then status decay, then cooldowns.
-  const playerIds = playerSideIds(next);
-  for (const actorId of [...playerIds, ...next.enemyIds]) {
-    if (next.actors[actorId].hp <= 0) continue;
-    next = boundaryStatusDamage(next, actorId, {
-      // Hostile Misfortune already resolved before that side's command. Player-side
-      // Misfortune was applied during the hostile window and resolves now, before the next
-      // player command.
-      includeMisfortune: playerIds.includes(actorId),
-    });
-  }
-  next = settle(next);
-  if (next.phase !== "player") return { ok: true, reason: null, state: next };
-
+  // Ordinary status decay remains the round-boundary pass. Damage statuses already applied
+  // their own source-specific lifecycle alongside their damage at each holder's turn end.
   const ticked = { ...next.actors };
   for (const actorId of Object.keys(ticked)) {
     ticked[actorId] = { ...ticked[actorId], statuses: tickEndOfTurn(ticked[actorId].statuses) };

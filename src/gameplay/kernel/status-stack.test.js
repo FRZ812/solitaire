@@ -11,6 +11,7 @@ import {
   statusCount,
   statusTypes,
   tickEndOfTurn,
+  tickEndOfTurnDamage,
 } from "./status-stack.js";
 
 describe("status definitions", () => {
@@ -39,8 +40,17 @@ describe("status definitions", () => {
     expect(getStatusDefinition("tenacity")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("lethargy")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("vulnerable")).toMatchObject({ decreaseWhenHit: true });
-    expect(getStatusDefinition("poison")).toMatchObject({ decreaseAtEndOfTurn: true });
-    expect(getStatusDefinition("doom")).toMatchObject({ removeAtEndOfTurn: true });
+    expect(getStatusDefinition("burn")).toMatchObject({
+      permanent: true,
+      decreaseWhenHit: true,
+      endOfTurnDamage: "persist",
+    });
+    expect(getStatusDefinition("poison")).toMatchObject({ endOfTurnDamage: "decrease" });
+    expect(getStatusDefinition("bleed")).toMatchObject({
+      permanent: true,
+      endOfTurnDamage: "persist",
+    });
+    expect(getStatusDefinition("doom")).toMatchObject({ endOfTurnDamage: "remove" });
     expect(getStatusDefinition("charge")).toMatchObject({ removeAtEndOfTurn: true });
     expect(getStatusDefinition("initiative")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("priority")).toMatchObject({ decreaseAtEndOfTurn: true });
@@ -57,7 +67,7 @@ describe("status definitions", () => {
   });
 
   it("marks undocumented lifecycles as a gap instead of inventing one", () => {
-    for (const type of ["bleed", "paralyze", "stun"]) {
+    for (const type of ["paralyze", "stun"]) {
       const spec = getStatusDefinition(type);
       expect(spec.lifecycleEvidence).toBe("gap");
       expect(spec.permanent).toBe(false);
@@ -194,13 +204,11 @@ describe("ticking at end of turn", () => {
     // Overload is temporary attack power, "lost at end of turn" — all of it, not one point.
     let stack = applyStatus(createStatusStack(), "overload", 48);
     stack = applyStatus(stack, "doom-atk", 25);
-    stack = applyStatus(stack, "doom", 40);
     stack = applyStatus(stack, "charge", 100);
     stack = applyStatus(stack, "misfortune", 180);
     const after = tickEndOfTurn(stack);
     expect(hasStatus(after, "overload")).toBe(false);
     expect(hasStatus(after, "doom-atk")).toBe(false);
-    expect(hasStatus(after, "doom")).toBe(false);
     expect(hasStatus(after, "charge")).toBe(false);
     expect(hasStatus(after, "misfortune")).toBe(false);
   });
@@ -208,13 +216,11 @@ describe("ticking at end of turn", () => {
   it("decrements decrease-at-end-of-turn statuses", () => {
     let stack = applyStatus(createStatusStack(), "evade", 1);
     stack = applyStatus(stack, "haste", 2);
-    stack = applyStatus(stack, "poison", 10);
     stack = applyStatus(stack, "solidity", 10);
     stack = applyStatus(stack, "priority", 3);
     const after = tickEndOfTurn(stack);
     expect(hasStatus(after, "evade")).toBe(false);
     expect(statusCount(after, "haste")).toBe(1);
-    expect(statusCount(after, "poison")).toBe(9);
     expect(statusCount(after, "solidity")).toBe(9);
     expect(statusCount(after, "priority")).toBe(2);
   });
@@ -243,7 +249,7 @@ describe("ticking at end of turn", () => {
     expect(tickEndOfTurn(stack)).toEqual(stack);
   });
 
-  it("leaves gap-lifecycle statuses in place so the missing evidence stays visible", () => {
+  it("leaves sourced persistent Bleed in place", () => {
     const stack = applyStatus(createStatusStack(), "bleed", 10);
     expect(tickEndOfTurn(stack)).toEqual(stack);
     expect(decrementOnHit(stack)).toEqual(stack);
@@ -256,6 +262,34 @@ describe("ticking at end of turn", () => {
     stack = decrementOnHit(stack);
     stack = tickEndOfTurn(stack);
     expect(statusCount(stack, "guard")).toBe(7);
+  });
+});
+
+describe("damage-status lifecycle at the holder's turn end", () => {
+  it("keeps Burn and Bleed, decreases Poison by one, and removes all Doom", () => {
+    let stack = applyStatus(createStatusStack(), "burn", 5);
+    stack = applyStatus(stack, "poison", 3);
+    stack = applyStatus(stack, "bleed", 4);
+    stack = applyStatus(stack, "doom", 40);
+    stack = applyStatus(stack, "thorn", 2);
+
+    const after = tickEndOfTurnDamage(stack);
+    expect(statusCount(after, "burn")).toBe(5);
+    expect(statusCount(after, "poison")).toBe(2);
+    expect(statusCount(after, "bleed")).toBe(4);
+    expect(statusCount(after, "doom")).toBe(0);
+    expect(statusCount(after, "thorn")).toBe(2);
+  });
+
+  it("drops Poison only after its Count-1 tick has resolved", () => {
+    const stack = applyStatus(createStatusStack(), "poison", 1);
+    expect(tickEndOfTurnDamage(stack)).toEqual([]);
+  });
+
+  it("does not let the generic round decay consume Poison or Doom early", () => {
+    let stack = applyStatus(createStatusStack(), "poison", 3);
+    stack = applyStatus(stack, "doom", 20);
+    expect(tickEndOfTurn(stack)).toEqual(stack);
   });
 });
 
