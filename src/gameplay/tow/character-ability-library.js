@@ -22,6 +22,7 @@ function ability(characterId, id, name, sourceName, abilityType, rarity, effects
     rarity,
     effects: freeze(effects.map((effect) => freeze(effect))),
     usesPerAct: options.usesPerAct ?? null,
+    usesPerActByRank: options.usesPerActByRank ?? null,
     cooldown: options.cooldown ?? 0,
     consumesTurn: options.consumesTurn !== false,
     description: options.description || null,
@@ -38,9 +39,14 @@ const scaledBoon = (status, scale, power) => ["scaled-status", status, "self", s
 const scaledBane = (status, scale, power) => ["scaled-status", status, "enemy", scale, power];
 const missingEnemy = (power) => ["lost-damage", "enemy", power];
 const missingSelf = (power) => ["lost-damage", "self", power];
-const cleanse = (statuses, toPercent = 0, target = "self") => ["cleanse", statuses, toPercent, target];
-const amplify = (statuses, percent) => ["amplify", statuses, percent];
+const cleanse = (statuses, toPercent = 0, target = "self", clearShield = false) => [
+  "cleanse", statuses, toPercent, target, clearShield,
+];
+const amplify = (statuses, percent, target = "enemy") => ["amplify", statuses, percent, target];
 const consume = (status, count = 1) => ["consume-status", status, count];
+const maxHpDamage = (percent) => ["max-hp-damage", percent];
+const delayedDamage = (damage, turns) => ["delayed-damage", damage, turns];
+const temporaryMaxHp = (amount, turns, fatal = false) => ["temporary-max-hp", amount, turns, fatal];
 
 const arctic = "arctic-knight";
 const demon = "demon-slayer";
@@ -181,23 +187,69 @@ export const EXTRA_CHARACTER_ABILITY_SPECS = freeze([
 
   // Witch of Eternity.
   ability(witch, "witch-attack", "Attack", "공격", "basic-attack", "common", [hit("attack", [100, 115, 130, 145, 160, 175])]),
-  ability(witch, "witch-vampiric-touch", "Vampiric Touch", "흡혈의 손길", "basic-attack", "uncommon", [hit("attack", [85, 100, 115, 130, 145]), heal("attack", [35, 40, 45, 50, 55])]),
+  ability(witch, "witch-vampiric-touch", "Vampiric Touch", "흡혈의 손길", "basic-attack", "uncommon", [hit("attack", [80, 90, 100, 110, 120]), heal("defense", [30, 40, 50, 60, 70])], {
+    description: "Deal 80% ATK damage and restore health equal to 30% DEF; both coefficients rise by 10% per rank.",
+  }),
   ability(witch, "witch-curse-of-aging", "Curse of Aging", "노화의 저주", "defensive", "uncommon", [bane("weak", [3, 4, 5, 6, 7]), ward("defense", [150, 175, 200, 225, 250])], { usesPerAct: 20 }),
   ability(witch, "witch-ghost-form", "Ghost Form", "유체화", "defensive", "uncommon", [boon("invincible", 1), boon("evade", 1)], { usesPerAct: 12, cooldown: 3 }),
   ability(witch, "witch-touch-of-the-dead", "Touch of the Dead", "망자의 손길", "archetype", "uncommon", [hit("attack", [75, 90, 105, 120, 135]), bane("doom", [20, 25, 30, 35, 40])], { usesPerAct: 7 }),
-  ability(witch, "witch-demons-sigil", "Demon's Sigil", "악마의 문장", "archetype", "uncommon", [boon("skeleton", [5, 7, 9, 11, 13]), boon("strength", [2, 3, 4, 5, 6])], { usesPerAct: 6, consumesTurn: false }),
-  ability(witch, "witch-battering-ram", "Battering Ram", "공성추", "archetype", "rare", [hit("defense", [145, 175, 205, 235]), bane("stun", 1)], { usesPerAct: 6 }),
-  ability(witch, "witch-void-monster", "Void Monster", "공허 괴물", "archetype", "rare", [bane("weak", [5, 7, 9, 11]), bane("doom", [35, 45, 55, 65])], { usesPerAct: 5 }),
-  ability(witch, "witch-nullification", "Nullification", "무효화", "archetype", "rare", [cleanse(["burn", "poison", "bleed", "weak", "lethargy", "vulnerable"], 0)], { usesPerAct: 5, consumesTurn: false }),
-  ability(witch, "witch-reapers-scythe", "Reaper's Scythe", "사신의 낫", "archetype", "rare", [hit("attack", [170, 205, 240, 275]), missingEnemy([10, 12, 14, 16])], { usesPerAct: 5 }),
-  ability(witch, "witch-proliferation", "Proliferation", "증식", "archetype", "epic", [boon("skeleton", [12, 16, 20])], { usesPerAct: 4, consumesTurn: false }),
+  ability(witch, "witch-demons-sigil", "Demon's Sigil", "악마의 문장", "archetype", "rare", [boon("evade", 1)], {
+    usesPerAct: 4,
+    consumesTurn: false,
+    description: "Gain 1 Evade, raising Dodge by 60%, without spending the main action.",
+  }),
+  ability(witch, "witch-battering-ram", "Battering Ram", "공성추", "archetype", "rare", [hit("attack", [250, 300, 350, 400]), bane("stun", 1)], {
+    usesPerAct: 3,
+    description: "Deal 250% ATK damage and inflict 1 Stun.",
+  }),
+  ability(witch, "witch-void-monster", "Void Monster", "공허 괴물", "archetype", "rare", [bane("void-monster", [12, 19, 26, 33])], {
+    usesPerAct: 6,
+    cooldown: 7,
+    description: "Summon a Void Monster that deals its Count as special damage every turn.",
+  }),
+  ability(witch, "witch-nullification", "Nullification", "무효화", "archetype", "rare", [cleanse([
+    "invincible", "charge", "overload", "thorn", "bone-shield", "poison-atk",
+  ], 0, "enemy", true)], {
+    usesPerAct: 3,
+    consumesTurn: false,
+    description: "Remove the enemy's Ward, Invincible, Charge, Overload, Thorn, Bone Shield, and Poison Attack.",
+  }),
+  ability(witch, "witch-reapers-scythe", "Reaper's Scythe", "사신의 낫", "archetype", "rare", [maxHpDamage([13, 13, 13, 13])], {
+    usesPerActByRank: [6, 8, 10, 12],
+    cooldown: 6,
+    description: "Deal damage equal to 13% of the enemy's maximum health; critical and Vulnerable modifiers apply.",
+  }),
+  ability(witch, "witch-proliferation", "Proliferation", "증식", "archetype", "rare", [amplify(["skeleton"], [150], "self")], {
+    usesPerAct: 3,
+    cooldown: 6,
+    consumesTurn: false,
+    description: "Multiply owned Skeletons to 150% without spending the main action.",
+  }),
   ability(witch, "witch-skeleton-defense", "Skeleton Defense Formation", "해골 방어진", "archetype", "epic", [ward("defense", [250, 300, 350]), boon("guard", [2, 3, 4])], { usesPerAct: 4 }),
-  ability(witch, "witch-forbidden-ritual", "Forbidden Ritual", "금지된 의식", "archetype", "epic", [missingSelf([80, 100, 120]), boon("skeleton", [10, 14, 18])], { usesPerAct: 4 }),
-  ability(witch, "witch-gate-underworld", "Gate of the Underworld", "명계의 문", "archetype", "legendary", [boon("skeleton", [25, 35]), bane("doom", [70, 100])], { usesPerAct: 3 }),
+  ability(witch, "witch-forbidden-ritual", "Forbidden Ritual", "금지된 의식", "archetype", "legendary", [temporaryMaxHp([333, 333], 4, true)], {
+    usesPerActByRank: [1, 2],
+    cooldown: 9,
+    description: "Increase maximum health by 333 for 4 turns, then die when the ritual expires.",
+  }),
+  ability(witch, "witch-gate-underworld", "Gate of the Underworld", "명계의 문", "archetype", "legendary", [boon("skeleton", [25, 35])], {
+    usesPerAct: 3,
+    description: "Open the underworld gate and add Skeletons to the host.",
+  }),
   ability(witch, "witch-human-wave-tactics", "Human-Wave Tactics", "인해 전술", "archetype", "legendary", [hit("attack", [38, 52], 5), boon("skeleton", [8, 12])], { usesPerAct: 3 }),
-  ability(witch, "witch-hellfire-spirit", "Hellfire Spirit", "지옥불 정령", "archetype", "legendary", [scaledBane("burn", "attack", [150, 210]), boon("skeleton", [8, 12])], { usesPerAct: 3 }),
-  ability(witch, "witch-bone-sphere", "Bone Sphere", "뼈의 구체", "archetype", "mythical", [ward("defense", [420, 520]), boon("thorn", [30, 45])], { usesPerAct: 2 }),
-  ability(witch, "witch-limited-life-sentence", "Limited-Life Sentence", "시한부 선고", "archetype", "mythical", [bane("doom", [180, 260]), bane("vulnerable", [12, 18])], { usesPerAct: 2, cooldown: 5 }),
+  ability(witch, "witch-hellfire-spirit", "Hellfire Spirit", "지옥불 정령", "archetype", "legendary", [bane("hellfire-spirit", [20, 40])], {
+    usesPerAct: 4,
+    cooldown: 9,
+    description: "Summon a Hellfire Spirit that deals its Count as special damage every turn.",
+  }),
+  ability(witch, "witch-bone-sphere", "Bone Sphere", "뼈의 구체", "archetype", "mythical", [hit("attack", [555])], {
+    usesPerAct: 2,
+    description: "Deal 555% ATK damage in one hit.",
+  }),
+  ability(witch, "witch-limited-life-sentence", "Limited-Life Sentence", "시한부 선고", "archetype", "mythical", [delayedDamage([666, 999], 13)], {
+    usesPerAct: 2,
+    cooldown: 15,
+    description: "Sentence the enemy to take 666 special damage after 13 turns.",
+  }),
 
   // Tenacious Mage.
   ability(mage, "mage-incinerate", "Incinerate", "불태우기", "basic-attack", "uncommon", [hit("attack", [82, 96, 110, 124, 138]), scaledBane("burn", "attack", [35, 40, 45, 50, 55])]),

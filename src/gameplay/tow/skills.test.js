@@ -40,6 +40,7 @@ describe("the catalogue", () => {
     for (const id of generalAbilityIds()) {
       expect(getSkill(id)).toMatchObject({ abilityType: "general", exclusiveTo: null });
       expect(getSkill(id).source.page).toContain("#s-11.1");
+      expect(getSkill(id).note).toBeNull();
     }
   });
 

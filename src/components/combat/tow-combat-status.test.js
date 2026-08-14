@@ -46,7 +46,7 @@ describe("combat status presentation", () => {
       expect(detail.effect.length, type).toBeGreaterThan(20);
       expect(detail.lifecycle.length, type).toBeGreaterThan(10);
       expect(detail.visual.asset, type).toMatch(/\.png$/);
-      expect(detail.visual.iconAsset, type).toMatch(/\.png$/);
+      expect(detail.visual.iconAsset, type).toMatch(/\.(?:png|webp)$/);
       expect(detail.visual.iconPosition, type).toMatch(/^(?:0|100)% (?:0|100)%$/);
       expect(detail.visual.asset, type).not.toContain("svg");
       icons.push(`${detail.visual.iconAsset}#${detail.visual.iconPosition}`);

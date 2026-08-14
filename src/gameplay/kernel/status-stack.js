@@ -70,6 +70,11 @@ const DEFINITIONS = Object.freeze({
   overload: definition("overload", { removeAtEndOfTurn: true }),
   solidity: definition("solidity", { decreaseAtEndOfTurn: true, decreaseWhenHit: true }),
   guard: definition("guard", { decreaseAtEndOfTurn: true, decreaseWhenHit: true }),
+  // Witch of Eternity source mechanics. Bone Shield is a 60% direct-damage reduction
+  // charge; Mirror Image is a smaller dodge window that can expire either by contact or
+  // at the turn boundary.
+  "bone-shield": definition("bone-shield", { decreaseWhenHit: true }),
+  "mirror-image": definition("mirror-image", { decreaseAtEndOfTurn: true, decreaseWhenHit: true }),
 
   // The English in-game trait text resolves several rows whose compact Namu lifecycle
   // cells are blank. "Permanent" here means for this encounter: actors themselves are
@@ -110,6 +115,13 @@ const DEFINITIONS = Object.freeze({
   "lethargy-atk": definition("lethargy-atk", { permanent: true }),
   vulnerable: definition("vulnerable", { decreaseWhenHit: true }),
   skeleton: definition("skeleton", { decreaseWhenHit: true }),
+  // Summoned spirits contribute their Count as special damage at each combat boundary.
+  "void-monster": definition("void-monster", { permanent: true }),
+  "hellfire-spirit": definition("hellfire-spirit", { permanent: true }),
+  // These counts are visible countdowns. Their payloads live in encounter scheduled
+  // effects so upgraded damage stays exact without encoding hidden data in a status Count.
+  "limited-life-sentence": definition("limited-life-sentence", { decreaseAtEndOfTurn: true }),
+  "forbidden-ritual": definition("forbidden-ritual", { decreaseAtEndOfTurn: true }),
   limp: definition("limp", { permanent: true }),
   // Berserk is a one-contact state: the damage resolver removes the whole amount when its
   // holder lands a hit or is struck. It cannot use the generic one-point hit decrement.

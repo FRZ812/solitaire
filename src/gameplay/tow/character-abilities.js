@@ -116,12 +116,13 @@ function catalogEffect(tuple) {
       statuses: freezeTable([...args[0]]),
       toPercent: args[1],
       percentByRank: asRankTable(100 - args[1]),
+      ...(args[3] === true ? { clearShield: true } : {}),
     });
   }
   if (kind === "amplify") {
     return Object.freeze({
       type: "amplify-statuses",
-      target: "enemy",
+      target: args[2] || "enemy",
       statuses: freezeTable([...args[0]]),
       percentByRank: asRankTable(args[1]),
     });
@@ -132,6 +133,30 @@ function catalogEffect(tuple) {
       target: "self",
       status: args[0],
       countByRank: asRankTable(args[1]),
+    });
+  }
+  if (kind === "max-hp-damage") {
+    return Object.freeze({
+      type: "damage-enemy-max-hp",
+      target: "enemy",
+      percentByRank: asRankTable(args[0]),
+    });
+  }
+  if (kind === "delayed-damage") {
+    return Object.freeze({
+      type: "delayed-damage",
+      target: "enemy",
+      countByRank: asRankTable(args[0]),
+      turns: args[1],
+    });
+  }
+  if (kind === "temporary-max-hp") {
+    return Object.freeze({
+      type: "temporary-max-hp",
+      target: "self",
+      countByRank: asRankTable(args[0]),
+      turns: args[1],
+      fatal: args[2] === true,
     });
   }
   throw new TypeError(`unknown-character-catalog-effect:${kind}`);
@@ -151,6 +176,9 @@ function catalogDescription(spec, effects) {
     if (effect.type === "scaled-status") return `${value}% ${effect.scale.toUpperCase()} ${effect.status}`;
     if (effect.type === "damage-enemy-lost-hp") return `${value}% of enemy missing health`;
     if (effect.type === "damage-self-lost-hp") return `${value}% of own missing health as damage`;
+    if (effect.type === "damage-enemy-max-hp") return `${value}% of enemy maximum health`;
+    if (effect.type === "delayed-damage") return `${value} damage after ${effect.turns} turns`;
+    if (effect.type === "temporary-max-hp") return `gain ${value} maximum health for ${effect.turns} turns${effect.fatal ? ", then die" : ""}`;
     if (effect.type === "reduce-statuses") return `reduce ${effect.statuses.join(", ")} on ${effect.target}`;
     if (effect.type === "amplify-statuses") return `amplify ${effect.statuses.join(", ")} to ${value}%`;
     if (effect.type === "consume-status") return `spend ${value} ${effect.status}`;
@@ -165,6 +193,7 @@ function skill(id, name, {
   rarity,
   effects,
   usesPerAct = null,
+  usesPerActByRank = null,
   cooldown = 0,
   consumesTurn = true,
   description,
@@ -173,10 +202,13 @@ function skill(id, name, {
   fidelity = "direct",
   sourceDetail,
 }) {
-  const rankCount = effects.reduce((highest, effect) => Math.max(
-    highest,
-    effect.percentByRank?.length || effect.countByRank?.length || 1,
-  ), 1);
+  const rankCount = Math.max(
+    usesPerActByRank?.length || 1,
+    effects.reduce((highest, effect) => Math.max(
+      highest,
+      effect.percentByRank?.length || effect.countByRank?.length || 1,
+    ), 1),
+  );
   return Object.freeze({
     id,
     name,
@@ -188,7 +220,7 @@ function skill(id, name, {
     consumesTurn,
     cooldown,
     usesPerAct,
-    usesPerActByRank: null,
+    usesPerActByRank: usesPerActByRank ? freezeTable(usesPerActByRank) : null,
     exclusiveTo: characterId,
     description,
     source: Object.freeze({
@@ -198,7 +230,9 @@ function skill(id, name, {
       fidelity,
       detail: sourceDetail || description,
     }),
-    note: fidelity === "adapted" ? "source-guided five-slot adaptation" : null,
+    // Fidelity remains available to tests and maintainers through `source`, but it is not
+    // a combat effect and should never be shown beside damage, Ward, or status mechanics.
+    note: null,
     rankCount,
   });
 }
@@ -385,26 +419,26 @@ const definitions = [
     description: "Hurl a hexed skull for 100% ATK damage.", fidelity: "adapted",
   }),
   skill("witch-bone-shield", "Bone Shield", {
-    characterId: "witch-of-eternity", abilityType: "defensive", rarity: "uncommon", usesPerAct: 24,
-    effects: [shield("defense", [150]), status("skeleton", "self", [4])],
-    description: "Build a bone ward and preserve 4 Skeletons for the army.", fidelity: "adapted",
+    characterId: "witch-of-eternity", abilityType: "defensive", rarity: "common", usesPerAct: 15,
+    effects: [status("bone-shield", "self", [1])],
+    description: "Reduce direct damage by 60%; each landed hit removes 1 Bone Shield.",
   }),
   skill("witch-skeleton-summon", "Skeleton Summon", {
-    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "epic", usesPerAct: 6, consumesTurn: false,
-    effects: [status("skeleton", "self", [12])],
-    description: "Raise 12 Skeletons without spending the main action.", fidelity: "adapted",
+    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "uncommon", usesPerAct: 5,
+    effects: [status("skeleton", "self", [12, 15, 18, 21, 24])],
+    description: "Spend the main action to raise 12 Skeletons; each rank adds 3.",
   }),
   skill("witch-all-out-attack", "All-Out Attack", {
-    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
-    effects: [damage("attack", [280]), status("doom", "enemy", [100])],
-    description: "Send the entire host forward in one ruinous assault.", fidelity: "adapted",
-    sourceDetail: "The source describes an army-spending burst; this kernel recreation packages that payoff as damage plus Doom.",
+    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "legendary", usesPerAct: 2, cooldown: 9,
+    effects: [damage("attack", [40], { hits: 5 })],
+    description: "Command five attacks, each dealing 40% ATK damage.",
+    sourceName: "총공격",
+    sourceDetail: "Five attacks at 40% ATK each, 2 uses per act, and a 9-turn cooldown.",
   }),
   skill("witch-mirror-image", "Mirror Image", {
-    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "rare", usesPerAct: 4, cooldown: 6, consumesTurn: false,
-    effects: [status("evade", "self", [1]), status("skeleton", "self", [6])],
-    description: "Leave a grave-lit double behind: gain 1 Evade and preserve 6 Skeletons.", fidelity: "adapted",
-    sourceDetail: "The source documents a temporary duplicate that increases dodge and disappears when struck; one Evade recreates that single-hit image in this kernel.",
+    characterId: "witch-of-eternity", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, consumesTurn: false,
+    effects: [status("mirror-image", "self", [1])],
+    description: "Create a Mirror Image that raises Dodge by 33% and vanishes when hit or when the turn ends.",
   }),
 
   skill("mage-magic-arrow", "Magic Arrow", {
@@ -546,6 +580,21 @@ const definitions = [
   }),
 ];
 
+const DIRECT_LIBRARY_SOURCE_IDS = new Set([
+  "witch-attack",
+  "witch-vampiric-touch",
+  "witch-demons-sigil",
+  "witch-battering-ram",
+  "witch-void-monster",
+  "witch-nullification",
+  "witch-reapers-scythe",
+  "witch-proliferation",
+  "witch-forbidden-ritual",
+  "witch-hellfire-spirit",
+  "witch-bone-sphere",
+  "witch-limited-life-sentence",
+]);
+
 const libraryDefinitions = EXTRA_CHARACTER_ABILITY_SPECS.map((spec) => {
   const effects = spec.effects.map(catalogEffect);
   return skill(spec.id, spec.name, {
@@ -554,13 +603,16 @@ const libraryDefinitions = EXTRA_CHARACTER_ABILITY_SPECS.map((spec) => {
     rarity: spec.rarity,
     effects,
     usesPerAct: spec.usesPerAct,
+    usesPerActByRank: spec.usesPerActByRank,
     cooldown: spec.cooldown,
     consumesTurn: spec.consumesTurn,
     description: spec.description || catalogDescription(spec, effects),
     sourceName: spec.sourceName,
     sourcePage: CHARACTER_LIBRARY_SOURCE,
-    fidelity: "adapted",
-    sourceDetail: `Listed for ${spec.characterId} in the source catalogue; recreated as ${catalogDescription(spec, effects)}`,
+    fidelity: DIRECT_LIBRARY_SOURCE_IDS.has(spec.id) ? "direct" : "adapted",
+    sourceDetail: DIRECT_LIBRARY_SOURCE_IDS.has(spec.id)
+      ? (spec.description || catalogDescription(spec, effects))
+      : `Listed for ${spec.characterId} in the source catalogue; recreated as ${catalogDescription(spec, effects)}`,
   });
 });
 

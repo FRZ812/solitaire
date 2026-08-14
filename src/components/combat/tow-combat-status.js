@@ -24,6 +24,8 @@ const STATUS_COPY = Object.freeze({
   focus: "Focus records offensive precision as a Count.",
   solidity: "Reduces damage from attacks by 30% while at least one stack remains.",
   guard: "Reduces damage from attacks by 50% while at least one stack remains.",
+  "bone-shield": "Reduces direct attack damage by 60% while at least one charge remains.",
+  "mirror-image": "Raises Dodge by 33% until the image is struck or the turn ends.",
   sharpen: "Sharpen records increased offensive accuracy as a Count.",
   eviscerate: "Eviscerate records execution pressure as a Count.",
   priority: "Each net stack grants one extra action before the enemy after opposing Priority cancels it.",
@@ -39,6 +41,10 @@ const STATUS_COPY = Object.freeze({
   "lethargy-atk": "Inflicts its Count as Lethargy on every landed hit, so multi-hit skills apply it separately.",
   vulnerable: "Raises the next landed hit's damage by 50%; each landed hit consumes 1 stack.",
   skeleton: "Skeleton records summoned support as a Count.",
+  "void-monster": "Deals special damage equal to its Count at every turn boundary, bypassing defence and ward.",
+  "hellfire-spirit": "Deals special damage equal to its Count at every turn boundary, bypassing defence and ward.",
+  "limited-life-sentence": "Counts down to a fixed burst of special damage recorded by the casting skill.",
+  "forbidden-ritual": "Temporarily marks increased maximum health; the caster dies when this countdown expires.",
   limp: "Limp records impaired movement as a Count.",
   berserk: "Raises attack damage and is spent by striking or being struck.",
   initiative: "Accumulates when attacking; every 100 Initiative converts into 1 Priority.",
@@ -47,7 +53,8 @@ const STATUS_COPY = Object.freeze({
 
 const AFFLICTIONS = new Set([
   "bleed", "burn", "cripple", "doom", "lethargy", "limp", "misfortune",
-  "paralyze", "poison", "sleep", "stun", "vulnerable", "weak",
+  "hellfire-spirit", "limited-life-sentence", "paralyze", "poison", "sleep", "stun",
+  "void-monster", "vulnerable", "weak",
 ]);
 
 const CONTROL = new Set(["paralyze", "sleep", "stun"]);
@@ -90,7 +97,9 @@ export function towStatusPresentation(status) {
   const tone = toneFor(type);
   return {
     count,
-    countLabel: `${count} ${count === 1 ? "stack" : "stacks"}`,
+    countLabel: ["forbidden-ritual", "limited-life-sentence"].includes(type)
+      ? `${count} ${count === 1 ? "turn" : "turns"}`
+      : `${count} ${count === 1 ? "stack" : "stacks"}`,
     effect: STATUS_COPY[type] || `${words(type)} is tracked as a Count on this combatant.`,
     lifecycle: lifecycleText(getStatusDefinition(type), type),
     name: words(type),

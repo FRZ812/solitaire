@@ -28,10 +28,12 @@ coefficient.
 - `fandom:statuses` — <https://towerofwinter.fandom.com/wiki/Statuses>
 - `official:changelog` — <https://apps.apple.com/sg/app/tower-of-winter/id6449329520>
 - `historical:values` — <https://gall.dcinside.com/mgallery/board/view/?id=tow&no=2268>
+- `historical:witch-skills` — <https://gall.dcinside.com/mgallery/board/view/?id=tow&no=3866>
 
-Fidelity labels: `direct` means the implemented name and numbers are documented;
-`adapted` means the documented identity or behavior is retained while its values are
-fitted to this combat kernel.
+Fidelity labels are internal audit metadata only: `direct` means the implemented name
+and numbers are documented; `adapted` means the documented identity or behavior is
+retained while its values are fitted to this combat kernel. They are never rendered as
+ability effects or player-facing notes.
 
 ## Complete roster and source chassis
 
@@ -60,7 +62,7 @@ fitted to this combat kernel.
 | Old King of Northland | Cleave — 100% ATK (`direct`) | Vitality — heal 185% DEF (`direct`) | Whirlwind — three-hit Lethargy pressure (`adapted`) | Earthquake — damage + Lethargy shockwave (`direct`) | Neutralizing Blow — DEF damage + Lethargy (`adapted`) |
 | Sleepless One | Flame Strike — attack + Burn (`adapted`) | Flame Curtain — ward + Burn (`adapted`) | Entangling Roots — bind + Poison (`adapted`) | High-Speed Flight — Priority 4 (`direct`) | Fire Essence — swift Strength + Overload (`adapted`) |
 | Last Assassin | Flurry — native two-hit attack (`direct`) | Deflect — 175% DEF ward (`direct`) | Flash Bomb — control + exposure (`adapted`) | Execution — missing-health finisher (`adapted`) | Storm of Knives — four hits + Bleed (`adapted`) |
-| Witch of Eternity | Skull Throw — 100% ATK (`adapted`) | Bone Shield — ward + Skeletons (`adapted`) | Skeleton Summon — swift Skeleton gain (`adapted`) | All-Out Attack — army burst + Doom (`adapted`) | Mirror Image — Evade + Skeleton preservation (`adapted`) |
+| Witch of Eternity | Attack — 100% ATK (`direct`) | Bone Shield — 60% direct-damage reduction, 15 uses (`direct`) | Skeleton Summon — gain 12 Skeletons, 5 uses, uses the action (`direct`) | All-Out Attack — 5 hits at 40% ATK, 2 uses, cooldown 9 (`direct`) | Mirror Image — +33% Dodge, lost on hit or turn end (`direct`) |
 | Tenacious Mage | Magic Arrow — 100% ATK (`adapted`) | Barrier — ward + Protection (`direct`) | Flame Storm — three-hit Burn spell (`adapted`) | Amplification — swift ATK-scaled Strength (`direct`) | God-Slaying Spear — 360% ATK, self-Paralyze (`adapted`) |
 | Exiled Priestess | Crush — attack + Judgment (`adapted`) | Holy Shield — maximum-HP ward (`adapted`) | Wrath of Heaven — own missing HP as damage (`direct`) | Doom — amplifies Burn, Poison, and Bleed (`direct`) | Immediate Judgment — DEF damage + Doom (`adapted`) |
 | Wandering Blade | Slash — attack + Initiative (`adapted`) | Blade Barrier — ward + Guard (`adapted`) | Chi Liberation — swift Priority + Strength (`adapted`) | One Flash — decisive strike + Priority (`adapted`) | Katana Dance — three hits + Initiative (`adapted`) |

@@ -154,6 +154,46 @@ describe("mitigation", () => {
     expect(result.hits[0].damage).toBe(30);
   });
 
+  it("applies the Witch's sourced Bone Shield reduction per landed hit", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({
+        id: "def",
+        side: "player",
+        hp: 200,
+        maxHp: 200,
+        statuses: statuses(["bone-shield", 2]),
+      }),
+      attack: { hits: 2, damage: 100 },
+      rng: seed(),
+    });
+
+    expect(PROVISIONAL_DAMAGE_POLICY.boneShieldDamageReductionPercent).toBe(60);
+    expect(result.hits.map((hit) => hit.damage)).toEqual([40, 40]);
+    expect(result.hits.every((hit) => hit.mitigation.boneShield)).toBe(true);
+    expect(statusCount(result.defender.statuses, "bone-shield")).toBe(0);
+  });
+
+  it("adds exactly 33 Dodge while Mirror Image remains", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({
+        id: "def",
+        side: "player",
+        dodgeRate: 67,
+        statuses: statuses(["mirror-image", 1]),
+      }),
+      attack: { hits: 1, damage: 100 },
+      rng: seed(),
+    });
+
+    expect(PROVISIONAL_DAMAGE_POLICY.mirrorImageDodgeBonus).toBe(33);
+    expect(result.hits[0]).toMatchObject({
+      dodged: true,
+      avoidance: { chance: 100, mirrorImage: true },
+    });
+  });
+
   it("makes Vulnerable expose one landed hit to fifty percent more damage", () => {
     const result = resolveAttack({
       attacker: actor({ id: "atk" }),

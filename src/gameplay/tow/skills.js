@@ -118,7 +118,8 @@ function sharedAbility(name, description, { fidelity = "direct", detail = descri
       fidelity,
       detail,
     },
-    note: fidelity === "adapted" ? "source-guided shared-ability adaptation" : null,
+    // Source fidelity is maintenance metadata, not part of the ability's combat effect.
+    note: null,
   };
 }
 

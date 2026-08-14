@@ -45,6 +45,15 @@ describe("status definitions", () => {
     expect(getStatusDefinition("initiative")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("priority")).toMatchObject({ decreaseAtEndOfTurn: true });
     expect(getStatusDefinition("berserk")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("bone-shield")).toMatchObject({ decreaseWhenHit: true });
+    expect(getStatusDefinition("mirror-image")).toMatchObject({
+      decreaseWhenHit: true,
+      decreaseAtEndOfTurn: true,
+    });
+    expect(getStatusDefinition("void-monster")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("hellfire-spirit")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("limited-life-sentence")).toMatchObject({ decreaseAtEndOfTurn: true });
+    expect(getStatusDefinition("forbidden-ritual")).toMatchObject({ decreaseAtEndOfTurn: true });
   });
 
   it("marks undocumented lifecycles as a gap instead of inventing one", () => {
@@ -71,6 +80,8 @@ describe("status definitions", () => {
       "unstoppable", "tenacity", "thorn", "lifesteal", "strength", "misfortune",
       "poison", "cripple", "charge", "grow", "overload", "poison-atk", "weak",
       "focus", "solidity", "guard", "sharpen", "eviscerate", "priority", "doom",
+      "bone-shield", "mirror-image", "void-monster", "hellfire-spirit",
+      "limited-life-sentence", "forbidden-ritual",
     ]));
   });
 });
@@ -155,6 +166,15 @@ describe("decrementing on hit", () => {
     expect(statusCount(after, "steelskin")).toBe(1);
   });
 
+  it("spends Bone Shield and Mirror Image only on landed contact", () => {
+    let stack = createStatusStack();
+    stack = applyStatus(stack, "bone-shield", 2);
+    stack = applyStatus(stack, "mirror-image", 1);
+    const after = decrementOnHit(stack);
+    expect(statusCount(after, "bone-shield")).toBe(1);
+    expect(statusCount(after, "mirror-image")).toBe(0);
+  });
+
   it("drops a status that reaches zero rather than leaving an empty stack", () => {
     const stack = applyStatus(createStatusStack(), "steelskin", 1);
     const after = decrementOnHit(stack);
@@ -197,6 +217,21 @@ describe("ticking at end of turn", () => {
     expect(statusCount(after, "poison")).toBe(9);
     expect(statusCount(after, "solidity")).toBe(9);
     expect(statusCount(after, "priority")).toBe(2);
+  });
+
+  it("ticks Witch countdowns and leaves summoned spirits in place", () => {
+    let stack = createStatusStack();
+    stack = applyStatus(stack, "limited-life-sentence", 13);
+    stack = applyStatus(stack, "forbidden-ritual", 4);
+    stack = applyStatus(stack, "mirror-image", 1);
+    stack = applyStatus(stack, "void-monster", 12);
+    stack = applyStatus(stack, "hellfire-spirit", 20);
+    const after = tickEndOfTurn(stack);
+    expect(statusCount(after, "limited-life-sentence")).toBe(12);
+    expect(statusCount(after, "forbidden-ritual")).toBe(3);
+    expect(statusCount(after, "mirror-image")).toBe(0);
+    expect(statusCount(after, "void-monster")).toBe(12);
+    expect(statusCount(after, "hellfire-spirit")).toBe(20);
   });
 
   it("leaves permanent and hit-only statuses untouched", () => {

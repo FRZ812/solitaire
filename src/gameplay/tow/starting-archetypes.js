@@ -206,7 +206,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
     id: "witch-of-eternity", name: "Bone Sovereign", role: "Army and burst", professionId: "warlock", traitId: "necromancy",
     skills: ["witch-attack", "witch-bone-shield", "witch-skeleton-summon", "witch-all-out-attack", "witch-mirror-image"],
     tagline: "Nothing is gone while the bones still answer.",
-    playstyle: "Accumulate Skeletons passively and actively, preserve the host behind Bone Shield, then commit the entire army to one overwhelming attack.",
+    playstyle: "Accumulate Skeletons passively and actively, weather pressure with Bone Shield, then direct five rapid attacks through the opening.",
     attention: "Medium", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 4, presence: 4 },
     baseStats: { maxHp: 150, attack: 10, defense: 15, critRate: 12, dodgeRate: 5 },
     gear: ["quarterstaff", "homespun-robe", "traveling-cloak"], color: "#8f769e",

@@ -102,6 +102,15 @@ function abilityMechanicalSummary(definition, rank = 1) {
     if (effect.type === "damage-self-lost-hp") {
       return `Damage equal to ${amount}% of own missing health`;
     }
+    if (effect.type === "damage-enemy-max-hp") {
+      return `Damage equal to ${amount}% of enemy maximum health`;
+    }
+    if (effect.type === "delayed-damage") {
+      return `Deal ${amount} special damage after ${effect.turns} turns`;
+    }
+    if (effect.type === "temporary-max-hp") {
+      return `Gain ${amount} maximum health for ${effect.turns} turns${effect.fatal ? ", then die" : ""}`;
+    }
     if (effect.type === "shield") return `Gain Ward equal to ${amount}% ${scale}`;
     if (effect.type === "heal") return `Restore ${amount}% ${scale} health`;
     if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
@@ -111,10 +120,16 @@ function abilityMechanicalSummary(definition, rank = 1) {
     }
     if (effect.type === "status") return `${targetVerb} ${amount} ${status}`;
     if (effect.type === "reduce-statuses") {
-      if (effect.target === "enemy" && effect.toPercent === 0) return `Consume enemy ${statuses}`;
+      if (effect.target === "enemy" && effect.toPercent === 0) {
+        return effect.clearShield
+          ? `Remove enemy Ward, ${statuses}`
+          : `Consume enemy ${statuses}`;
+      }
       return `Reduce ${effect.target === "enemy" ? "enemy " : ""}${statuses} to ${effect.toPercent}%`;
     }
-    if (effect.type === "amplify-statuses") return `Raise enemy ${statuses} to ${amount}%`;
+    if (effect.type === "amplify-statuses") {
+      return `Raise ${effect.target === "self" ? "own" : "enemy"} ${statuses} to ${amount}%`;
+    }
     if (effect.type === "consume-status") return `Spend ${amount} ${status}`;
     return titleCase(effect.type);
   });

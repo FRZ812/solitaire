@@ -29,6 +29,7 @@ export const PROVISIONAL_DAMAGE_POLICY = Object.freeze({
   // Observed: Evade "increases Dodge rate by 60%", Conceal "+80% Dodge". Not observed:
   // whether a count above 1 stacks the bonus or just buys more turns of it.
   evadeDodgeBonus: 60,
+  mirrorImageDodgeBonus: 33,
   concealDodgeBonus: 80,
   dodgeBonusStacksWithCount: false,
   dodgeBonusEvidence: "gap",
@@ -73,6 +74,11 @@ export const PROVISIONAL_DAMAGE_POLICY = Object.freeze({
   berserkDamagePerCountPercent: 1,
   berserkEvidence: "observed",
 
+  // Witch of Eternity's Bone Shield explicitly reduces direct damage by 60% while a
+  // charge remains. The charge lifecycle is owned by status-stack and resolves per hit.
+  boneShieldDamageReductionPercent: 60,
+  boneShieldEvidence: "observed",
+
   rounding: "floor",
   roundingEvidence: "gap",
 
@@ -99,6 +105,7 @@ function clampRate(value) {
 
 function dodgeChanceFor(defender) {
   const evade = statusCount(defender.statuses, "evade");
+  const mirrorImage = statusCount(defender.statuses, "mirror-image");
   const conceal = statusCount(defender.statuses, "conceal");
   const evadeBonus = evade > 0
     ? POLICY.evadeDodgeBonus * (POLICY.dodgeBonusStacksWithCount ? evade : 1)
@@ -106,13 +113,17 @@ function dodgeChanceFor(defender) {
   const concealBonus = conceal > 0
     ? POLICY.concealDodgeBonus * (POLICY.dodgeBonusStacksWithCount ? conceal : 1)
     : 0;
-  return clampRate(defender.stats.dodgeRate + evadeBonus + concealBonus);
+  const mirrorImageBonus = mirrorImage > 0 ? POLICY.mirrorImageDodgeBonus : 0;
+  return clampRate(defender.stats.dodgeRate + evadeBonus + concealBonus + mirrorImageBonus);
 }
 
 function percentMultiplierFor(defender) {
   let multiplier = 1;
   if (statusCount(defender.statuses, "guard") > 0) multiplier *= 0.5;
   if (statusCount(defender.statuses, "solidity") > 0) multiplier *= 0.7;
+  if (statusCount(defender.statuses, "bone-shield") > 0) {
+    multiplier *= 1 - (POLICY.boneShieldDamageReductionPercent / 100);
+  }
   return multiplier;
 }
 
@@ -137,6 +148,7 @@ function mitigationSnapshot(defender) {
     steelskin: statusCount(defender.statuses, "steelskin"),
     protection: statusCount(defender.statuses, "protection"),
     vulnerable: statusCount(defender.statuses, "vulnerable"),
+    boneShield: statusCount(defender.statuses, "bone-shield") > 0,
     limp: statusCount(defender.statuses, "limp"),
   };
 }
@@ -259,6 +271,7 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
       chance: dodgeChance,
       evade: statusCount(currentDefender.statuses, "evade") > 0,
       conceal: statusCount(currentDefender.statuses, "conceal") > 0,
+      mirrorImage: statusCount(currentDefender.statuses, "mirror-image") > 0,
     };
     const dodgeRoll = nextInt(currentRng, 1, 100);
     currentRng = dodgeRoll.rng;

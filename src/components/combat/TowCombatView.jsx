@@ -108,6 +108,11 @@ function effectDetail(definition, effect, effectIndex, rank) {
   if (effect.type === "damage") return `${amount}% ${effect.scale} damage${effect.hits > 1 ? ` × ${effect.hits} hits` : ""}`;
   if (effect.type === "damage-enemy-lost-hp") return `${amount}% of enemy missing health as damage`;
   if (effect.type === "damage-self-lost-hp") return `${amount}% of own missing health as damage`;
+  if (effect.type === "damage-enemy-max-hp") return `${amount}% of enemy maximum health as damage`;
+  if (effect.type === "delayed-damage") return `${amount} special damage after ${effect.turns} turns`;
+  if (effect.type === "temporary-max-hp") {
+    return `Gain ${amount} maximum health for ${effect.turns} turns${effect.fatal ? ", then die" : ""}`;
+  }
   if (effect.type === "shield") return `${amount}% ${effect.scale} ward`;
   if (effect.type === "heal") return `Restore ${amount}% ${effect.scale} health`;
   if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
@@ -116,10 +121,11 @@ function effectDetail(definition, effect, effectIndex, rank) {
   }
   if (effect.type === "status") return `${amount} ${effect.status.replace(/-/g, " ")}`;
   if (effect.type === "reduce-statuses") {
-    return `Reduce ${effect.statuses.join(", ")} to ${effect.toPercent}%`;
+    const ward = effect.clearShield ? "ward, " : "";
+    return `${effect.toPercent === 0 ? "Remove" : "Reduce"} ${ward}${effect.statuses.join(", ")}${effect.toPercent === 0 ? "" : ` to ${effect.toPercent}%`}`;
   }
   if (effect.type === "amplify-statuses") {
-    return `Raise ${effect.statuses.join(", ")} to ${amount}%`;
+    return `Raise ${effect.target === "self" ? "own " : "enemy "}${effect.statuses.join(", ")} to ${amount}%`;
   }
   if (effect.type === "scaled-status-enemy-lost-hp") {
     return `${amount}% of enemy lost health as ${effect.status.replace(/-/g, " ")}`;

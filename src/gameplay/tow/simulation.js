@@ -119,7 +119,7 @@ export function classifySkill(skillId) {
   return {
     offensive: definition.effects.some((effect) => (
       effect.target === "enemy"
-      && (effect.type === "damage" || effect.type.includes("status"))
+      && (effect.type.includes("damage") || effect.type.includes("status"))
     )),
     defensive: definition.abilityType === "defensive" || definition.effects.some((effect) => (
       effect.type === "shield"
@@ -153,16 +153,25 @@ export function projectedDamage(state, skillState, targetId) {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
       return total + Math.floor(((player.maxHp - player.hp) * magnitude) / 100);
     }
+    if (effect.type === "damage-enemy-max-hp") {
+      const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
+      return total + Math.floor((target.maxHp * magnitude) / 100);
+    }
+    if (effect.type === "delayed-damage") {
+      return total + effectMagnitude(skillState.id, index, skillState.rank);
+    }
     // Damage statuses resolve at the coming boundary. Count at least that first tick when
     // comparing a status attack with a direct strike; their later lifetime is intentionally
     // not assumed here.
     if (
       effect.target === "enemy"
-      && effect.type === "scaled-status"
-      && ["bleed", "burn", "doom", "misfortune", "poison"].includes(effect.status)
+      && ["scaled-status", "status"].includes(effect.type)
+      && ["bleed", "burn", "doom", "hellfire-spirit", "misfortune", "poison", "void-monster"].includes(effect.status)
     ) {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
-      return total + Math.floor((actorScaleValue(player, effect.scale) * magnitude) / 100);
+      return total + (effect.type === "scaled-status"
+        ? Math.floor((actorScaleValue(player, effect.scale) * magnitude) / 100)
+        : magnitude);
     }
     if (effect.type === "scaled-status-enemy-lost-hp") {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);

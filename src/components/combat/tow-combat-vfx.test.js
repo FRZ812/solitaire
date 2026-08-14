@@ -43,6 +43,22 @@ describe("authored combat VFX", () => {
     expect(storm.motion).toBe("volley");
   });
 
+  it("keeps each sourced Witch persistent effect on its own ability asset", () => {
+    const tickCases = [
+      [{ voidMonster: 12 }, "witch-void-monster-v1.webp"],
+      [{ hellfireSpirit: 20 }, "witch-hellfire-spirit-v1.webp"],
+      [{ delayedDamage: 666 }, "witch-limited-life-sentence-v1.webp"],
+      [{ forbiddenRitual: true }, "witch-forbidden-ritual-v1.webp"],
+    ];
+    const assets = tickCases.map(([detail, expected]) => {
+      const visual = combatVfxForEvent({}, { type: "tick-damage", ...detail });
+      expect(visual.asset).toContain(expected);
+      expect(visual.assetSource).toBe("ability");
+      return visual.asset;
+    });
+    expect(new Set(assets).size).toBe(assets.length);
+  });
+
   it("makes Whirlwind a dedicated wind-pressure signature without a shared family decal", () => {
     const whirlwind = combatVfxVariantForSkill("north-king-whirlwind");
     expect(whirlwind).toMatchObject({
@@ -60,7 +76,7 @@ describe("authored combat VFX", () => {
     for (const status of statusTypes()) {
       expect(combatVfxForStatus(status), status).toMatchObject({
         asset: expect.stringMatching(/\.png$/),
-        iconAsset: expect.stringMatching(/\.png$/),
+        iconAsset: expect.stringMatching(/\.(?:png|webp)$/),
         iconPosition: expect.stringMatching(/^(?:0|100)% (?:0|100)%$/),
         family: expect.any(String),
         variant: `status-${status}`,
