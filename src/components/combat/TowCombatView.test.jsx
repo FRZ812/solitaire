@@ -273,6 +273,72 @@ describe("compact combat HUD", () => {
     }
   });
 
+  it("spends Protection on each contact beat instead of after the whole ability", async () => {
+    vi.useFakeTimers();
+    try {
+      const opened = openLabSession({ packageId: "rogue", scenarioId: "training-yard" }).session.encounter;
+      const heroId = opened.playerId;
+      const enemyId = opened.enemyIds[0];
+      const base = {
+        ...opened,
+        actors: {
+          ...opened.actors,
+          [heroId]: { ...opened.actors[heroId], statuses: [{ type: "protection", count: 3 }] },
+        },
+      };
+      const mounted = await renderView({ encounter: base });
+      const sequence = base.sequence + 1;
+      const next = {
+        ...base,
+        sequence,
+        actors: {
+          ...base.actors,
+          [heroId]: { ...base.actors[heroId], statuses: [{ type: "protection", count: 1 }] },
+        },
+        events: [
+          ...base.events,
+          {
+            sequence,
+            type: "enemy-attack",
+            enemyId,
+            targetId: heroId,
+            attackId: base.enemyAttacks[enemyId][0].id,
+            hits: [
+              {
+                index: 0, damage: 4, toHp: 4, absorbed: 0, critical: false, dodged: false,
+                statusChanges: {
+                  attacker: [],
+                  defender: [{ type: "protection", before: 3, after: 2 }],
+                },
+              },
+              {
+                index: 1, damage: 5, toHp: 5, absorbed: 0, critical: false, dodged: false,
+                statusChanges: {
+                  attacker: [],
+                  defender: [{ type: "protection", before: 2, after: 1 }],
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      await act(async () => root.render(viewElement(next)));
+      const protectionCount = () => mounted
+        .querySelector(".tow-combat__plate--hero .tow-combat__status-button[aria-label^='Protection']")
+        ?.querySelector("strong")?.textContent;
+      expect(protectionCount()).toBe("3");
+
+      await act(async () => vi.advanceTimersByTime(150));
+      expect(protectionCount()).toBe("2");
+
+      await act(async () => vi.advanceTimersByTime(155));
+      expect(protectionCount()).toBe("1");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("finishes a lethal action before revealing the combat outcome", async () => {
     vi.useFakeTimers();
     try {

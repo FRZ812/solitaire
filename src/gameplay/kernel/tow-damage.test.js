@@ -71,6 +71,19 @@ describe("multi-hit resolution", () => {
     expect(result.defender.hp).toBe(0);
     expect(result.hits).toHaveLength(2);
   });
+
+  it("wakes a sleeping defender on the first landed hit", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({ id: "def", side: "player", statuses: statuses(["sleep", 3]) }),
+      attack: { hits: 2, damage: 10 },
+      rng: seed(),
+    });
+
+    expect(result.hits[0].sleepBroken).toBe(3);
+    expect(result.hits[1].sleepBroken).toBe(0);
+    expect(statusCount(result.defender.statuses, "sleep")).toBe(0);
+  });
 });
 
 describe("mitigation", () => {
@@ -106,7 +119,7 @@ describe("mitigation", () => {
       prevented: 10,
       damage: 0,
       toHp: 0,
-      mitigation: { guard: true, steelskin: true },
+      mitigation: { guard: true, steelskin: 20 },
     });
 
     const evaded = resolveAttack({
@@ -141,7 +154,7 @@ describe("mitigation", () => {
     expect(result.hits[0].damage).toBe(30);
   });
 
-  it("makes every Vulnerable stack add one percent incoming attack damage", () => {
+  it("makes Vulnerable expose one landed hit to fifty percent more damage", () => {
     const result = resolveAttack({
       attacker: actor({ id: "atk" }),
       defender: actor({
@@ -157,12 +170,14 @@ describe("mitigation", () => {
 
     expect(result.hits[0]).toMatchObject({
       rawDamage: 80,
-      vulnerableBonus: 20,
-      damage: 100,
-      toHp: 100,
+      vulnerableBonus: 40,
+      vulnerablePercent: 50,
+      damage: 120,
+      toHp: 120,
       mitigation: { vulnerable: 25 },
     });
-    expect(result.defender.hp).toBe(100);
+    expect(result.defender.hp).toBe(80);
+    expect(statusCount(result.defender.statuses, "vulnerable")).toBe(24);
   });
 
   it("nullifies damage entirely while Invincible stands", () => {
@@ -203,6 +218,57 @@ describe("mitigation", () => {
 
     expect(statusCount(result.defender.statuses, "guard")).toBe(7);
     expect(statusCount(result.defender.statuses, "solidity")).toBe(1);
+  });
+
+  it("re-evaluates and spends Protection on every individual hit", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({
+        id: "def",
+        side: "player",
+        hp: 100,
+        maxHp: 100,
+        statuses: statuses(["protection", 3]),
+      }),
+      attack: { hits: 2, damage: 10 },
+      rng: seed(),
+    });
+
+    expect(result.hits.map((hit) => hit.damage)).toEqual([7, 8]);
+    expect(result.hits.map((hit) => hit.mitigation.protection)).toEqual([3, 2]);
+    expect(result.hits.map((hit) => hit.statusChanges.defender)).toEqual([
+      [{ type: "protection", before: 3, after: 2 }],
+      [{ type: "protection", before: 2, after: 1 }],
+    ]);
+    expect(statusCount(result.defender.statuses, "protection")).toBe(1);
+  });
+
+  it("applies Berserk to one landed hit and removes it from either side on contact", () => {
+    const result = resolveAttack({
+      attacker: actor({ id: "atk", statuses: statuses(["berserk", 100]) }),
+      defender: actor({
+        id: "def",
+        side: "player",
+        hp: 100,
+        maxHp: 100,
+        statuses: statuses(["berserk", 100]),
+      }),
+      attack: { hits: 2, damage: 10 },
+      rng: seed(),
+    });
+
+    expect(result.hits.map((hit) => hit.damage)).toEqual([20, 10]);
+    expect(result.hits[0]).toMatchObject({
+      berserkBonus: 10,
+      berserkSpent: 100,
+      defenderBerserkSpent: 100,
+      statusChanges: {
+        attacker: [{ type: "berserk", before: 100, after: 0 }],
+        defender: [{ type: "berserk", before: 100, after: 0 }],
+      },
+    });
+    expect(statusCount(result.attacker.statuses, "berserk")).toBe(0);
+    expect(statusCount(result.defender.statuses, "berserk")).toBe(0);
   });
 });
 

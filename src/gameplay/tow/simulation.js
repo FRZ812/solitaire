@@ -17,6 +17,7 @@
 // mean changing how the harness picks a skill changes what damage the fight rolls.
 
 import { createRng, nextInt } from "../kernel/rng.js";
+import { getStatusDefinition, statusCount } from "../kernel/status-stack.js";
 import {
   actorScaleValue,
   createTowEncounter,
@@ -27,7 +28,7 @@ import {
 import { towBuildForCharacter } from "./professions.js";
 import { effectMagnitude, getSkill, skillLegality } from "./skills.js";
 
-export const TOW_SIMULATION_VERSION = 1;
+export const TOW_SIMULATION_VERSION = 2;
 
 /** A fight that has run this long has stopped being a fight; the run is recorded as a draw. */
 export const MAX_SIMULATED_ROUNDS = 200;
@@ -43,8 +44,8 @@ export const MAX_SIMULATED_ROUNDS = 200;
  *
  * What replaced it compares the two options in the same units. Attacking is worth the damage
  * it deals; guarding is worth the damage it actually prevents, which is the smaller of the
- * shield gained and the damage declared. Guard when prevention beats progress — and always
- * guard when the declared round would otherwise kill you, because nothing else matters then.
+ * shield gained and the damage declared. Guard when prevention beats progress — and use
+ * the survival override only when the ward actually changes a lethal result.
  *
  * Both halves need the telegraph. Without a declaration there is no `incoming` to compare
  * against, and the rule degenerates to "always attack".
@@ -109,22 +110,23 @@ export function legalSkills(state) {
 export function classifySkill(skillId) {
   const definition = getSkill(skillId);
   if (!definition) return { offensive: false, defensive: false, control: false };
-  if (definition.abilityType) {
-    return {
-      offensive: definition.abilityType !== "defensive",
-      defensive: definition.abilityType === "defensive",
-      control: definition.effects.some((effect) => effect.target === "enemy" && effect.type !== "damage"),
-    };
-  }
+  // `abilityType` describes the loadout slot, not tactical intent. A general ability can
+  // be a ward, heal, attack, or control effect, so classifying every general slot as
+  // offensive made the policy ignore Emergency Evasion and Urgent Guard entirely.
+  const control = definition.effects.some((effect) => (
+    effect.target === "enemy" && effect.type !== "damage"
+  ));
   return {
-    offensive: definition.effects.some((effect) => effect.type === "damage"),
-    defensive: definition.effects.some((effect) => (
+    offensive: definition.effects.some((effect) => (
+      effect.target === "enemy"
+      && (effect.type === "damage" || effect.type.includes("status"))
+    )),
+    defensive: definition.abilityType === "defensive" || definition.effects.some((effect) => (
       effect.type === "shield"
+      || effect.type.startsWith("heal")
       || (effect.target === "self" && ["guard", "steelskin", "protection", "solidity"].includes(effect.status))
     )),
-    control: definition.effects.some((effect) => (
-      effect.target === "enemy" && effect.type !== "damage"
-    )),
+    control,
   };
 }
 
@@ -151,6 +153,21 @@ export function projectedDamage(state, skillState, targetId) {
       const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
       return total + Math.floor(((player.maxHp - player.hp) * magnitude) / 100);
     }
+    // Damage statuses resolve at the coming boundary. Count at least that first tick when
+    // comparing a status attack with a direct strike; their later lifetime is intentionally
+    // not assumed here.
+    if (
+      effect.target === "enemy"
+      && effect.type === "scaled-status"
+      && ["bleed", "burn", "doom", "misfortune", "poison"].includes(effect.status)
+    ) {
+      const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
+      return total + Math.floor((actorScaleValue(player, effect.scale) * magnitude) / 100);
+    }
+    if (effect.type === "scaled-status-enemy-lost-hp") {
+      const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
+      return total + Math.floor(((target.maxHp - target.hp) * magnitude) / 100);
+    }
     if (effect.type !== "damage") return total;
     const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
     return total + Math.floor((actorScaleValue(player, effect.scale) * magnitude) / 100) * (effect.hits || 1);
@@ -176,6 +193,52 @@ export function projectedShield(state, skillState) {
 
 function livingEnemyIds(state) {
   return state.enemyIds.filter((id) => state.actors[id].hp > 0);
+}
+
+/** Immediate HP restored by one use, for policies comparing recovery with progress. */
+export function projectedRecovery(state, skillState) {
+  const definition = getSkill(skillState.id);
+  const player = state.actors[state.playerId];
+  if (!definition || !player) return 0;
+  return definition.effects.reduce((total, effect, index) => {
+    if (effect.type !== "heal-lost-fraction") return total;
+    const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
+    return total + Math.floor(((player.maxHp - player.hp) * magnitude) / 100);
+  }, 0);
+}
+
+function isFreshDefensiveSetup(state, skillState) {
+  const definition = getSkill(skillState.id);
+  const player = state.actors[state.playerId];
+  if (!definition || !player) return false;
+  return definition.effects.some((effect) => (
+    effect.target === "self"
+    && ["guard", "protection", "solidity", "steelskin"].includes(effect.status)
+    && statusCount(player.statuses, effect.status) <= 0
+  ));
+}
+
+function effectWouldChangeBoard(state, skillState, targetId) {
+  const definition = getSkill(skillState.id);
+  const player = state.actors[state.playerId];
+  const target = state.actors[targetId];
+  if (!definition || !player || !target) return false;
+  return definition.effects.some((effect, index) => {
+    if (effect.type === "damage" || effect.type.startsWith("damage-")) return true;
+    if (effect.type === "shield") return projectedShield(state, skillState) > player.shield;
+    if (effect.type.startsWith("heal")) return player.hp < player.maxHp;
+    if (!effect.type.includes("status")) return true;
+
+    if (effect.target === "enemy") {
+      // Lethargy is intentionally stackable until the target's current ATK reaches zero.
+      if (effect.status === "lethargy") return actorScaleValue(target, "attack") > 0;
+      return statusCount(target.statuses, effect.status) <= 0;
+    }
+    // Permanent encounter buffs are allowed to stack when their skill has multiple uses.
+    // Temporary evasion/guard-like statuses instead wait until the live stack is spent.
+    if (getStatusDefinition(effect.status)?.permanent) return true;
+    return statusCount(player.statuses, effect.status) <= 0;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +298,27 @@ export const intentAwarePolicy = Object.freeze({
 
     const offensive = options.filter((skillState) => classifySkill(skillState.id).offensive);
     const defensive = options.filter((skillState) => classifySkill(skillState.id).defensive);
+    const weakest = targets.reduce((lowest, id) => (
+      state.actors[id].hp < state.actors[lowest].hp ? id : lowest
+    ), targets[0]);
+
+    // A no-turn ability is an extra input inside this command window, not an alternative
+    // to the main action. Use direct free attacks first, then a free setup whose effect is
+    // not already active. The board-change check prevents permanent buffs and refreshed
+    // wards from being mindlessly stacked just because the command costs no turn.
+    const freeActions = options.filter((skillState) => {
+      const definition = getSkill(skillState.id);
+      return definition?.consumesTurn === false
+        && effectWouldChangeBoard(state, skillState, weakest);
+    });
+    if (freeActions.length > 0) {
+      const bestFree = freeActions.reduce((best, skillState) => (
+        projectedDamage(state, skillState, weakest) > projectedDamage(state, best, weakest)
+          ? skillState
+          : best
+      ), freeActions[0]);
+      return { command: { type: "use-skill", skillId: bestFree.id, targetId: weakest }, rng };
+    }
 
     // 1. A kill this round is a whole enemy's declared damage removed from the fight.
     for (const targetId of targets) {
@@ -249,9 +333,6 @@ export const intentAwarePolicy = Object.freeze({
 
     // The best attack available, and what it would be worth: press whoever is closest to
     // falling, so the group — and the damage it declares each round — shrinks fastest.
-    const weakest = targets.reduce((lowest, id) => (
-      state.actors[id].hp < state.actors[lowest].hp ? id : lowest
-    ), targets[0]);
     // A self-Paralyze is a real future action cost now. Keep Mortal Blow and similar skills
     // as finishers (the check above), but do not call them the best routine attack merely
     // because their coefficient is largest. An informed player would not repeatedly trade
@@ -269,23 +350,49 @@ export const intentAwarePolicy = Object.freeze({
 
     // 2. Guard when guarding is worth more than attacking — measured, not assumed.
     const player = state.actors[state.playerId];
-    const effectiveHp = player.hp + player.shield;
     const incoming = incomingDamage(state);
+
+    // A multi-window defensive status is setup, not Ward. Establish it once while the
+    // current declaration is survivable, then attack behind the remaining per-hit stacks.
+    // This distinction keeps Guard useful without letting the one-window shield pool bank.
+    const defensiveSetup = defensive.find((skillState) => isFreshDefensiveSetup(state, skillState));
+    if (defensiveSetup && incoming < player.hp + player.shield) {
+      return { command: { type: "use-skill", skillId: defensiveSetup.id, targetId: weakest }, rng };
+    }
+
+    const recovery = options
+      .map((skillState) => ({ skillState, amount: projectedRecovery(state, skillState) }))
+      .filter((entry) => entry.amount > 0)
+      .sort((first, second) => second.amount - first.amount)[0];
+    if (recovery) {
+      const lethalNow = incoming >= player.hp + player.shield;
+      const survivesAfterRecovery = incoming < player.hp + player.shield + recovery.amount;
+      if ((lethalNow && survivesAfterRecovery) || recovery.amount > progress) {
+        return {
+          command: { type: "use-skill", skillId: recovery.skillState.id, targetId: weakest },
+          rng,
+        };
+      }
+    }
+
     if (defensive.length > 0 && incoming > 0) {
       const bestGuard = defensive.reduce((strongest, skillState) => (
         projectedShield(state, skillState) > projectedShield(state, strongest) ? skillState : strongest
       ), defensive[0]);
-      const shield = projectedShield(state, bestGuard);
+      const shield = Math.max(player.shield, projectedShield(state, bestGuard));
       const prevented = Math.min(shield, incoming);
-      // Nothing outranks not dying: if the declared round ends the fight, the comparison
-      // above is moot.
-      const lethal = incoming >= effectiveHp;
+      // A ward only earns the survival override if it actually changes the outcome of this
+      // command window. Guarding a lethal 40-point blow with 20 Ward is still a loss, and
+      // repeating that futile action was the policy's old death spiral.
+      const lethalWithoutGuard = incoming >= player.hp + player.shield;
+      const survivesWithGuard = incoming < player.hp + shield;
+      const survivalOverride = lethalWithoutGuard && survivesWithGuard;
       const covers = shield >= incoming * SHIELD_COVERAGE;
       // Not merely "is guarding worth more than attacking", but "is it worth more *and*
       // needed". Without the second half the policy guards on every round it can afford to,
       // and grinds out fights it should have finished.
-      const endangered = incoming * DANGER_HORIZON_ROUNDS >= effectiveHp;
-      if (lethal || (endangered && covers && prevented > progress)) {
+      const endangered = incoming * DANGER_HORIZON_ROUNDS >= player.hp + player.shield;
+      if (survivalOverride || (endangered && covers && prevented > progress)) {
         return { command: { type: "use-skill", skillId: bestGuard.id, targetId: targets[0] }, rng };
       }
     }
@@ -460,14 +567,14 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "lone-brigand",
     name: "A brigand on the road",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.42, randomWinRate: 0.31 }),
+    baseline: Object.freeze({ informedWinRate: 0.79, randomWinRate: 0.23 }),
     enemies: Object.freeze([foe("foe-0", "Brigand", 150, 18, moveSet("foe-0", 11, 18, 28))]),
   }),
   Object.freeze({
     id: "brigand-pair",
     name: "Two brigands",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.92, randomWinRate: 0.32 }),
+    baseline: Object.freeze({ informedWinRate: 0.98, randomWinRate: 0.28 }),
     enemies: Object.freeze([
       foe("foe-0", "Brigand", 68, 10, moveSet("foe-0", 7, 10, 15)),
       foe("foe-1", "Brigand", 68, 10, moveSet("foe-1", 7, 10, 15)),
@@ -477,7 +584,7 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "armoured-duelist",
     name: "An armoured duelist",
     tier: "standard",
-    baseline: Object.freeze({ informedWinRate: 0.37, randomWinRate: 0.28 }),
+    baseline: Object.freeze({ informedWinRate: 0.72, randomWinRate: 0.20 }),
     enemies: Object.freeze([{
       ...foe("foe-0", "Duelist", 152, 17, moveSet("foe-0", 11, 17, 27)),
       stats: { attack: 17, defense: 6, critRate: 6, dodgeRate: 8 },
@@ -487,7 +594,7 @@ export const STANDARD_FIXTURES = Object.freeze([
     id: "wolf-pack",
     name: "Three wolves",
     tier: "hard",
-    baseline: Object.freeze({ informedWinRate: 0.81, randomWinRate: 0.24 }),
+    baseline: Object.freeze({ informedWinRate: 0.93, randomWinRate: 0.22 }),
     enemies: Object.freeze([
       foe("foe-0", "Wolf", 40, 9, moveSet("foe-0", 6, 9, 13)),
       foe("foe-1", "Wolf", 40, 9, moveSet("foe-1", 6, 9, 13)),
@@ -508,11 +615,11 @@ export const EQUAL_THREAT_FIXTURES = Object.freeze(
  * change that quietly relaxes its own acceptance test has not been reviewed.
  */
 export const ACCEPTANCE_TARGETS = Object.freeze({
-  // Measured at 0.538 after control became an actual forfeited command window rather than
-  // an end-of-round cosmetic tick. The lower edge records that deliberate difficulty move
-  // while the per-fixture and no-unwinnable-package gates below keep it from hiding a lockout.
-  informedWinRateMin: 0.53,
-  informedWinRateMax: 0.75,
+  // Re-measured at 0.833 after one-window wards replaced banked shields and the informed
+  // policy learned that no-turn abilities are extra inputs rather than substitutes for its
+  // main action. The per-fixture and no-lockout gates below keep the aggregate honest.
+  informedWinRateMin: 0.70,
+  informedWinRateMax: 0.90,
   informedAdvantageMin: 0.20,
   // Set from measurement, as the plan requires, and tightened once the bridge and the guard
   // rule were fixed: per-package medians now run 6–18 rounds across the fixture set, where

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTowEncounter } from "./encounter.js";
+import { createTowEncounter, useSkill } from "./encounter.js";
 import {
   ACCEPTANCE_TARGETS,
   EQUAL_THREAT_FIXTURES,
@@ -30,6 +30,20 @@ const SEEDS = seedSet("acceptance", 30);
 
 function sweep(policy, fixtures) {
   return simulateSweep({ packageIds: SAMPLE_PACKAGES, fixtures, policy, seeds: SEEDS });
+}
+
+function firstTurnSpendingDecision(opened) {
+  let state = opened;
+  for (let guard = 0; guard < 16; guard += 1) {
+    const decision = intentAwarePolicy.decide(state, { algorithm: "mulberry32", state: 1 });
+    if (decision.command.type !== "use-skill") return decision.command;
+    const actionsBefore = state.turn.actionsRemaining;
+    const used = useSkill(state, decision.command.skillId, decision.command.targetId);
+    expect(used.ok).toBe(true);
+    if (used.state.turn.actionsRemaining < actionsBefore) return decision.command;
+    state = used.state;
+  }
+  throw new Error("policy-did-not-spend-main-action");
 }
 
 describe("the harness is deterministic", () => {
@@ -197,8 +211,8 @@ describe("the informed policy actually reads the declarations", () => {
       build,
     });
     // The declared blow would end the fight outright, so survival outranks progress.
-    const guarded = intentAwarePolicy.decide(heavy, { algorithm: "mulberry32", state: 1 });
-    expect(guarded.command).toMatchObject({ type: "use-skill", skillId: "block" });
+    expect(firstTurnSpendingDecision(heavy))
+      .toMatchObject({ type: "use-skill", skillId: "block" });
 
     const light = createTowEncounter({
       seed: "race-me",
@@ -214,9 +228,9 @@ describe("the informed policy actually reads the declarations", () => {
     });
     // A one-point scratch is not worth an action: a shield that prevents one damage loses
     // to any attack at all, so the policy presses instead of guarding.
-    const raced = intentAwarePolicy.decide(light, { algorithm: "mulberry32", state: 1 });
-    expect(raced.command.type).toBe("use-skill");
-    expect(classifySkill(raced.command.skillId).offensive).toBe(true);
+    const raced = firstTurnSpendingDecision(light);
+    expect(raced.type).toBe("use-skill");
+    expect(classifySkill(raced.skillId).offensive).toBe(true);
   });
 
   it("reserves a self-Paralyzing attack for a finishing blow", () => {
@@ -228,17 +242,17 @@ describe("the informed policy actually reads the declarations", () => {
       enemies: [{ ...enemy, maxHp: 400, hp: 400 }],
       build,
     });
-    expect(intentAwarePolicy.decide(healthy, { algorithm: "mulberry32", state: 1 }).command)
+    expect(firstTurnSpendingDecision(healthy))
       .toMatchObject({ type: "use-skill", skillId: "strike" });
 
     const exposed = {
       ...healthy,
       actors: {
         ...healthy.actors,
-        "foe-0": { ...healthy.actors["foe-0"], hp: 30 },
+        "foe-0": { ...healthy.actors["foe-0"], hp: 50 },
       },
     };
-    expect(intentAwarePolicy.decide(exposed, { algorithm: "mulberry32", state: 1 }).command)
+    expect(firstTurnSpendingDecision(exposed))
       .toMatchObject({ type: "use-skill", skillId: "mortal-blow" });
   });
 });

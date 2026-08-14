@@ -545,6 +545,9 @@ export function combatVfxForEvent(encounter, event) {
   if (event.type === "skill-shield") {
     return withAsset(effect("ward", `${slug(event.skillId, "ward")}-ward`, skillVariant?.motion || "brace"));
   }
+  if (event.type === "ward-expired") {
+    return withAsset(effect("ward", "ward-expired", "shatter"));
+  }
   if (event.type === "skill-heal" || event.type === "skill-cleanse") {
     return withAsset(effect("heal", `${slug(event.skillId, "heal")}-heal`, skillVariant?.motion || "mend"));
   }

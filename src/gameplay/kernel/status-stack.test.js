@@ -37,10 +37,18 @@ describe("status definitions", () => {
     expect(getStatusDefinition("doom-atk")).toMatchObject({ removeAtEndOfTurn: true });
     expect(getStatusDefinition("thorn")).toMatchObject({ permanent: true });
     expect(getStatusDefinition("tenacity")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("lethargy")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("vulnerable")).toMatchObject({ decreaseWhenHit: true });
+    expect(getStatusDefinition("poison")).toMatchObject({ decreaseAtEndOfTurn: true });
+    expect(getStatusDefinition("doom")).toMatchObject({ removeAtEndOfTurn: true });
+    expect(getStatusDefinition("charge")).toMatchObject({ removeAtEndOfTurn: true });
+    expect(getStatusDefinition("initiative")).toMatchObject({ permanent: true });
+    expect(getStatusDefinition("priority")).toMatchObject({ decreaseAtEndOfTurn: true });
+    expect(getStatusDefinition("berserk")).toMatchObject({ permanent: true });
   });
 
   it("marks undocumented lifecycles as a gap instead of inventing one", () => {
-    for (const type of ["poison", "cripple", "charge", "grow", "priority", "doom"]) {
+    for (const type of ["bleed", "paralyze", "stun"]) {
       const spec = getStatusDefinition(type);
       expect(spec.lifecycleEvidence).toBe("gap");
       expect(spec.permanent).toBe(false);
@@ -166,21 +174,29 @@ describe("ticking at end of turn", () => {
     // Overload is temporary attack power, "lost at end of turn" — all of it, not one point.
     let stack = applyStatus(createStatusStack(), "overload", 48);
     stack = applyStatus(stack, "doom-atk", 25);
+    stack = applyStatus(stack, "doom", 40);
+    stack = applyStatus(stack, "charge", 100);
+    stack = applyStatus(stack, "misfortune", 180);
     const after = tickEndOfTurn(stack);
     expect(hasStatus(after, "overload")).toBe(false);
     expect(hasStatus(after, "doom-atk")).toBe(false);
+    expect(hasStatus(after, "doom")).toBe(false);
+    expect(hasStatus(after, "charge")).toBe(false);
+    expect(hasStatus(after, "misfortune")).toBe(false);
   });
 
   it("decrements decrease-at-end-of-turn statuses", () => {
     let stack = applyStatus(createStatusStack(), "evade", 1);
     stack = applyStatus(stack, "haste", 2);
-    stack = applyStatus(stack, "misfortune", 180);
+    stack = applyStatus(stack, "poison", 10);
     stack = applyStatus(stack, "solidity", 10);
+    stack = applyStatus(stack, "priority", 3);
     const after = tickEndOfTurn(stack);
     expect(hasStatus(after, "evade")).toBe(false);
     expect(statusCount(after, "haste")).toBe(1);
-    expect(statusCount(after, "misfortune")).toBe(179);
+    expect(statusCount(after, "poison")).toBe(9);
     expect(statusCount(after, "solidity")).toBe(9);
+    expect(statusCount(after, "priority")).toBe(2);
   });
 
   it("leaves permanent and hit-only statuses untouched", () => {
@@ -193,7 +209,7 @@ describe("ticking at end of turn", () => {
   });
 
   it("leaves gap-lifecycle statuses in place so the missing evidence stays visible", () => {
-    const stack = applyStatus(createStatusStack(), "poison", 10);
+    const stack = applyStatus(createStatusStack(), "bleed", 10);
     expect(tickEndOfTurn(stack)).toEqual(stack);
     expect(decrementOnHit(stack)).toEqual(stack);
   });

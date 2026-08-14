@@ -335,11 +335,70 @@ function IntentBadge({ intent, target, playerId }) {
   );
 }
 
-function Statuses({ actor, selectedType = null, onToggle }) {
-  if (actor.statuses.length === 0) return null;
+function statusMap(statuses) {
+  return new Map((statuses || []).map((status) => [status.type, status.count]));
+}
+
+function statusList(map) {
+  return [...map.entries()]
+    .filter(([, count]) => count > 0)
+    .map(([type, count]) => ({ type, count }));
+}
+
+function Statuses({ actor, feedbackCues = [], selectedType = null, onToggle }) {
+  const [presented, setPresented] = useState(() => actor.statuses.map((status) => ({ ...status })));
+
+  useEffect(() => {
+    const exact = actor.statuses.map((status) => ({ ...status }));
+    const timed = feedbackCues
+      .flatMap((cue) => (cue.statusChanges || [])
+        .filter((change) => change.actorId === actor.id)
+        .map((change) => ({ ...change, delayMs: cue.delayMs || 0 })))
+      .sort((left, right) => left.delayMs - right.delayMs);
+    if (timed.length === 0) {
+      setPresented(exact);
+      return undefined;
+    }
+
+    // The encounter is already authoritative and therefore carries the final stack. Walk
+    // the hit receipts backwards to reconstruct the pre-action rail, then replay each
+    // mutation at the same contact beat as HP and Ward.
+    const initial = statusMap(exact);
+    for (let index = timed.length - 1; index >= 0; index -= 1) {
+      const change = timed[index];
+      if (change.before > 0) initial.set(change.type, change.before);
+      else initial.delete(change.type);
+    }
+    setPresented(statusList(initial));
+
+    const grouped = new Map();
+    for (const change of timed) {
+      if (!grouped.has(change.delayMs)) grouped.set(change.delayMs, []);
+      grouped.get(change.delayMs).push(change);
+    }
+    const timers = [];
+    const current = new Map(initial);
+    for (const [delayMs, changes] of grouped) {
+      for (const change of changes) {
+        if (change.after > 0) current.set(change.type, change.after);
+        else current.delete(change.type);
+      }
+      const snapshot = statusList(current);
+      timers.push(setTimeout(
+        () => setPresented(snapshot),
+        Math.max(0, delayMs) + VITAL_CONTACT_OFFSET_MS,
+      ));
+    }
+    const settleDelay = Math.max(...timed.map((change) => change.delayMs))
+      + VITAL_CONTACT_OFFSET_MS + 1;
+    timers.push(setTimeout(() => setPresented(exact), settleDelay));
+    return () => timers.forEach(clearTimeout);
+  }, [actor.id, actor.statuses, feedbackCues]);
+
+  if (presented.length === 0) return null;
   return (
     <ul className="tow-combat__statuses" aria-label={`${actor.name} status effects`}>
-      {actor.statuses.map((status) => {
+      {presented.map((status) => {
         const detail = towStatusPresentation(status);
         const selected = status.type === selectedType;
         return (
@@ -497,7 +556,10 @@ function CombatantPlate({
 }) {
   const reactions = feedbackCues.filter((cue) => cue.targetId === actor.id);
   const selectedStatus = actor.statuses.find((status) => status.type === selectedStatusType) || null;
-  const hasTools = actor.statuses.length > 0 || record;
+  const hasStagedStatuses = feedbackCues.some((cue) => (
+    cue.statusChanges || []
+  ).some((change) => change.actorId === actor.id));
+  const hasTools = actor.statuses.length > 0 || hasStagedStatuses || record;
   return (
     <div className={`tow-combat__plate${enemy ? " tow-combat__plate--enemy" : " tow-combat__plate--hero"}`}>
       <div className="tow-combat__identity">
@@ -508,7 +570,12 @@ function CombatantPlate({
       {hasTools ? (
         <div className="tow-combat__status-tools">
           {record ? <CombatRecord {...record} compact /> : null}
-          <Statuses actor={actor} selectedType={selectedStatusType} onToggle={onToggleStatus} />
+          <Statuses
+            actor={actor}
+            feedbackCues={feedbackCues}
+            selectedType={selectedStatusType}
+            onToggle={onToggleStatus}
+          />
         </div>
       ) : null}
       {selectedStatus ? (

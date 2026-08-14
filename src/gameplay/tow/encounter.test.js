@@ -191,6 +191,17 @@ describe("using skills", () => {
     expect(result.state.actors.gatekeeper.hp).toBe(190);
   });
 
+  it("refreshes one ward instead of stacking defensive skills in the same window", () => {
+    const state = start({ build: { skills: ["urgent-guard", "block"] } });
+    const urgent = useSkill(state, "urgent-guard");
+    expect(urgent.state.actors["arctic-knight"].shield).toBe(13);
+
+    const blocked = useSkill(urgent.state, "block");
+    expect(blocked.state.actors["arctic-knight"].shield).toBe(32);
+    expect(blocked.state.events.filter((event) => event.type === "skill-shield").at(-1))
+      .toMatchObject({ amount: 19, ward: 32, before: 13, after: 32 });
+  });
+
   it("spends the turn for a turn-consuming skill and refuses a second", () => {
     const first = useSkill(start(), "strike");
     expect(first.state.turn.actionsRemaining).toBe(0);
@@ -308,13 +319,37 @@ describe("ending the turn", () => {
     expect(result.state.actors["arctic-knight"].hp).toBeLessThan(170);
   });
 
-  it("spends the shield before health", () => {
+  it("spends ward before health and expires any remainder after the hostile window", () => {
     const blocked = useSkill(start(), "block").state;
     const after = endTurn(blocked).state;
     const knightAfter = after.actors["arctic-knight"];
-    // 32 shield against a 23-damage swing leaves shield standing and health untouched.
+    // 32 ward absorbs the 23-damage swing, then the unused 9 expires instead of banking.
     expect(knightAfter.hp).toBe(170);
-    expect(knightAfter.shield).toBe(9);
+    expect(knightAfter.shield).toBe(0);
+    expect(after.events).toContainEqual(expect.objectContaining({
+      type: "ward-expired",
+      actorId: "arctic-knight",
+      amount: 9,
+      boundary: "enemy-window",
+    }));
+  });
+
+  it("resolves Misfortune before the affected enemy can take its command", () => {
+    const state = start({
+      enemies: [foe({
+        maxHp: 8,
+        hp: 8,
+        statuses: [{ type: "misfortune", count: 8 }],
+      })],
+    });
+    const after = endTurn(state).state;
+    expect(after.phase).toBe("victory");
+    expect(after.events).toContainEqual(expect.objectContaining({
+      type: "tick-damage",
+      actorId: "gatekeeper",
+      misfortune: 8,
+    }));
+    expect(after.events.some((event) => event.type === "enemy-attack")).toBe(false);
   });
 
   it("uses a multi-hit attack table, so mitigation is spent per hit", () => {
@@ -391,7 +426,8 @@ describe("ending the turn", () => {
     const combo = useSkill(start({
       build: { traits: { combo: 3 }, skills: ["assassin-mutilate"] },
     }), "assassin-mutilate");
-    expect(statusCount(combo.state.actors.gatekeeper.statuses, "vulnerable")).toBe(9);
+    // Each later hit consumes one existing Vulnerable before adding Combo's next 3.
+    expect(statusCount(combo.state.actors.gatekeeper.statuses, "vulnerable")).toBe(7);
 
     const valiancy = useSkill(start({
       build: { traits: { valiancy: 3 }, skills: ["assassin-mutilate"] },
@@ -410,6 +446,22 @@ describe("ending the turn", () => {
     const hit = judgment.state.events.find((event) => event.type === "skill-damage").hits[0];
     expect(hit.judgmentDamage).toBe(5);
     expect(statusCount(judgment.state.actors["arctic-knight"].statuses, "judgment")).toBe(0);
+  });
+
+  it("lets Whirlwind's separate Lethargy hits suppress a legacy foe to zero damage", () => {
+    const state = start({
+      build: { traits: { valiancy: TRAIT_RANK_CAP }, skills: ["north-king-whirlwind"] },
+    });
+    const used = useSkill(state, "north-king-whirlwind");
+    expect(statusCount(used.state.actors.gatekeeper.statuses, "lethargy")).toBeGreaterThan(23);
+
+    const after = endTurn(used.state).state;
+    const attack = after.events.find((event) => event.type === "enemy-attack");
+    expect(attack.hits.map((hit) => hit.damage)).toEqual([0]);
+    expect(after.actors["arctic-knight"].hp).toBe(170);
+    // Lethargy is encounter attrition; unlike ward, it is intentionally not discarded at
+    // the command boundary.
+    expect(statusCount(after.actors.gatekeeper.statuses, "lethargy")).toBeGreaterThan(23);
   });
 
   it("turns Necromancy, Bloodsuck, and Charge into combat outcomes", () => {
@@ -739,7 +791,7 @@ describe("telegraphed enemy turns", () => {
     const state = createTowEncounter({
       seed: "build-backed-ward",
       player: tank(),
-      enemies: [blade()],
+      enemies: [blade({ hp: 450 })],
       build: { traits: {}, skills: ["strike", "block"] },
       intentSchedules: {
         gatekeeper: {
@@ -771,6 +823,59 @@ describe("telegraphed enemy turns", () => {
     expect(after.enemyBuilds.gatekeeper.skills
       .find((entry) => entry.id === "blade-barrier").usesRemaining).toBe(beforeUses - 1);
     expect(after.events.some((entry) => entry.type === "enemy-attack")).toBe(false);
+  });
+
+  it("does not let a secondary boon make a healthy foe spam its ward skill", () => {
+    const state = createTowEncounter({
+      seed: "build-backed-ward-usefulness",
+      player: tank(),
+      enemies: [blade()],
+      build: { traits: {}, skills: ["strike", "block"] },
+      intentSchedules: {
+        gatekeeper: {
+          id: "blade-guard-or-cut",
+          steps: [{ id: "answer", attackIds: ["blade-barrier", "blade-slash"] }],
+        },
+      },
+    });
+
+    expect(state.actors.gatekeeper.hp).toBe(state.actors.gatekeeper.maxHp);
+    expect(declaredIntents(state)[0]).toMatchObject({
+      enemyId: "gatekeeper",
+      skillId: "blade-slash",
+      kind: "damage",
+    });
+  });
+
+  it("expires an enemy ward before its next command window instead of stacking another", () => {
+    const state = createTowEncounter({
+      seed: "build-backed-ward-lifecycle",
+      player: tank(),
+      enemies: [blade({ hp: 450 })],
+      build: { traits: {}, skills: ["strike", "block"] },
+      intentSchedules: {
+        gatekeeper: {
+          id: "blade-guard-loop",
+          steps: [{ id: "brace", attackIds: ["blade-barrier"] }],
+        },
+      },
+    });
+    const first = endTurn(state).state;
+    const firstWard = first.actors.gatekeeper.shield;
+    expect(firstWard).toBeGreaterThan(0);
+
+    // Do not touch the foe's ward during the player window. It must still expire before the
+    // foe gets another command; if the barrier is selected again, the result is one fresh
+    // brace with the same ceiling, never old + new.
+    const defended = useSkill(first, "block").state;
+    const second = endTurn(defended).state;
+    expect(second.events).toContainEqual(expect.objectContaining({
+      type: "ward-expired",
+      actorId: "gatekeeper",
+      amount: firstWard,
+      boundary: "player-window",
+    }));
+    expect(second.actors.gatekeeper.shield).toBeLessThanOrEqual(firstWard);
   });
 
   it("strikes with the exact authored ability it promised", () => {

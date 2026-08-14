@@ -136,6 +136,7 @@ describe("combat feedback receipts", () => {
         critical: false,
         rawDamage: 20,
         vulnerableBonus: 5,
+        vulnerablePercent: 50,
         damage: 25,
         prevented: 0,
         absorbed: 0,
@@ -144,7 +145,7 @@ describe("combat feedback receipts", () => {
       }],
     }).text;
     expect(receipt).toContain("25 health lost");
-    expect(receipt).toContain("5 added by 25% Vulnerable");
+    expect(receipt).toContain("5 added by 50% Vulnerable");
   });
 
   it("records automatic control skips instead of an input refusal", () => {
@@ -166,6 +167,25 @@ describe("combat feedback receipts", () => {
     })[0]).toMatchObject({ label: "Turn skipped", targetId: "hero" });
   });
 
+  it("names every boundary-damage status in its receipt", () => {
+    const event = {
+      sequence: 12,
+      type: "tick-damage",
+      actorId: "foe",
+      burn: 2,
+      doom: 3,
+      poison: 4,
+      bleed: 5,
+      misfortune: 6,
+    };
+    expect(combatEventReceipt(encounter(), event).text).toBe(
+      "Duellist loses 20 health to 2 Burn + 3 Doom + 4 Poison + 5 Bleed + 6 Misfortune; this bypasses defence and ward.",
+    );
+    const cues = combatCuesForEvent(encounter(), event);
+    expect(cues.map((cue) => cue.kicker)).toEqual(["Burn", "Doom", "Poison", "Bleed", "Misfortune"]);
+    expect(cues.map((cue) => cue.hpChange)).toEqual([-2, -3, -4, -5, -6]);
+  });
+
   it("emits every resolved hit as its own staggered floating outcome", () => {
     const cues = combatCuesForEvent(encounter(), {
       sequence: 18,
@@ -175,8 +195,14 @@ describe("combat feedback receipts", () => {
       skillId: "strike",
       basicAttackFormId: "threefold-cut",
       hits: [
-        { index: 0, dodged: false, critical: false, rawDamage: 7, damage: 7, toHp: 7 },
-        { index: 1, dodged: false, critical: true, rawDamage: 12, damage: 12, toHp: 12 },
+        {
+          index: 0, dodged: false, critical: false, rawDamage: 7, damage: 7, toHp: 7,
+          statusChanges: { attacker: [], defender: [{ type: "protection", before: 3, after: 2 }] },
+        },
+        {
+          index: 1, dodged: false, critical: true, rawDamage: 12, damage: 12, toHp: 12,
+          statusChanges: { attacker: [], defender: [{ type: "protection", before: 2, after: 1 }] },
+        },
         { index: 2, dodged: false, critical: false, rawDamage: 9, damage: 9, absorbed: 9, toHp: 0 },
         { index: 3, dodged: true, critical: false, rawDamage: 8, damage: 0, toHp: 0 },
       ],
@@ -195,6 +221,10 @@ describe("combat feedback receipts", () => {
     expect(cues.map((cue) => cue.shieldChange)).toEqual([0, 0, -9, 0]);
     expect(cues.every((cue) => cue.hitCount === 4)).toBe(true);
     expect(cues.every((cue) => cue.visual.variant === "threefold-cut")).toBe(true);
+    expect(cues.slice(0, 2).map((cue) => cue.statusChanges)).toEqual([
+      [{ actorId: "foe", type: "protection", before: 3, after: 2 }],
+      [{ actorId: "foe", type: "protection", before: 2, after: 1 }],
+    ]);
   });
 
   it("stages a skill consequence before the enemy counterattack", () => {
@@ -351,6 +381,24 @@ describe("combat feedback receipts", () => {
       amount: 1,
       status: "weak",
     }).text).toBe("Your Ambush grants 1 Weak.");
+  });
+
+  it("surfaces authoritative ward expiry as a negative shield cue", () => {
+    const event = {
+      sequence: 22,
+      type: "ward-expired",
+      actorId: "hero",
+      amount: 9,
+      boundary: "enemy-window",
+    };
+    expect(combatEventReceipt(encounter(), event).text).toContain("remaining 9 ward expires");
+    expect(combatCuesForEvent(encounter(), event)[0]).toMatchObject({
+      kind: "ward",
+      label: "-9",
+      kicker: "Ward expires",
+      shieldChange: -9,
+      targetId: "hero",
+    });
   });
 
   it("names who an offensive trait placed its status on", () => {
