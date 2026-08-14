@@ -35,9 +35,9 @@ const STATUS_COPY = Object.freeze({
   stun: "Automatically forfeits one command window per stack unless Unstoppable is present.",
   bleed: "Bleed records damage-over-time pressure as a Count.",
   "bleed-atk": "Adds Bleed pressure to attacks according to its Count.",
-  lethargy: "Lethargy is tracked as a harmful Count; its exact source rule is not yet evidenced.",
-  "lethargy-atk": "Adds Lethargy pressure to attacks according to its Count.",
-  vulnerable: "Raises incoming attack damage by 1% per stack. For example, 12 Vulnerable means +12% damage received.",
+  lethargy: "Reduces Attack by its Count for this encounter; enough accumulated Lethargy can reduce an attack to 0.",
+  "lethargy-atk": "Inflicts its Count as Lethargy on every landed hit, so multi-hit skills apply it separately.",
+  vulnerable: "Raises the next landed hit's damage by 50%; each landed hit consumes 1 stack.",
   skeleton: "Skeleton records summoned support as a Count.",
   limp: "Limp records impaired movement as a Count.",
   berserk: "Raises attack damage and is spent by striking or being struck.",
@@ -59,8 +59,10 @@ function words(value) {
 }
 
 function lifecycleText(definition, type) {
+  if (type === "sleep") return "Loses 1 stack when it forfeits a command window; any landed hit removes the entire stack.";
   if (CONTROL.has(type)) return "Loses 1 stack only when it automatically forfeits a command window.";
-  if (type === "priority") return "A net stack is spent by each extra action it grants; opposing stacks remain cancelled.";
+  if (type === "priority") return "A net stack is spent by each extra action it grants; an unused stack also loses 1 at the turn boundary.";
+  if (type === "berserk") return "The entire stack is spent when its holder lands a hit or is struck.";
   if (!definition) return "Persists until a combat rule removes it.";
   const clauses = [];
   if (definition.permanent) clauses.push("Persists between turns");

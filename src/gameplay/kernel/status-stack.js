@@ -66,47 +66,57 @@ const DEFINITIONS = Object.freeze({
   burn: definition("burn", { decreaseWhenHit: true }),
   tenacity: definition("tenacity", { permanent: true }),
   thorn: definition("thorn", { permanent: true }),
-  misfortune: definition("misfortune", { decreaseAtEndOfTurn: true }),
+  misfortune: definition("misfortune", { removeAtEndOfTurn: true }),
   overload: definition("overload", { removeAtEndOfTurn: true }),
   solidity: definition("solidity", { decreaseAtEndOfTurn: true, decreaseWhenHit: true }),
   guard: definition("guard", { decreaseAtEndOfTurn: true, decreaseWhenHit: true }),
 
-  unstoppable: definition("unstoppable", { evidence: "gap" }),
-  lifesteal: definition("lifesteal", { evidence: "gap" }),
-  strength: definition("strength", { evidence: "gap" }),
-  poison: definition("poison", { evidence: "gap" }),
-  cripple: definition("cripple", { evidence: "gap" }),
-  charge: definition("charge", { evidence: "gap" }),
-  grow: definition("grow", { evidence: "gap" }),
-  "poison-atk": definition("poison-atk", { evidence: "gap" }),
-  weak: definition("weak", { evidence: "gap" }),
-  focus: definition("focus", { evidence: "gap" }),
-  sharpen: definition("sharpen", { evidence: "gap" }),
-  eviscerate: definition("eviscerate", { evidence: "gap" }),
-  priority: definition("priority", { evidence: "gap" }),
-  doom: definition("doom", { evidence: "gap" }),
+  // The English in-game trait text resolves several rows whose compact Namu lifecycle
+  // cells are blank. "Permanent" here means for this encounter: actors themselves are
+  // encounter snapshots, so none of these leak into the campaign after settlement.
+  unstoppable: definition("unstoppable", { decreaseAtEndOfTurn: true }),
+  lifesteal: definition("lifesteal", { permanent: true }),
+  strength: definition("strength", { permanent: true }),
+  poison: definition("poison", { decreaseAtEndOfTurn: true }),
+  cripple: definition("cripple", { permanent: true }),
+  charge: definition("charge", { removeAtEndOfTurn: true }),
+  grow: definition("grow", { permanent: true }),
+  "poison-atk": definition("poison-atk", { permanent: true }),
+  weak: definition("weak", { decreaseWhenHit: true }),
+  focus: definition("focus", { permanent: true }),
+  sharpen: definition("sharpen", { permanent: true }),
+  eviscerate: definition("eviscerate", { permanent: true }),
+  priority: definition("priority", { decreaseAtEndOfTurn: true }),
+  doom: definition("doom", { removeAtEndOfTurn: true }),
 
   // Named by traits, fusions and skills but absent from the wiki's status table, so their
   // effect is known while their lifecycle is not.
-  conceal: definition("conceal", { evidence: "gap" }),
-  invincible: definition("invincible", { evidence: "gap" }),
+  conceal: definition("conceal", { decreaseAtEndOfTurn: true }),
+  invincible: definition("invincible", { decreaseAtEndOfTurn: true }),
   // See PROVISIONAL_CONTROL_LIFECYCLE: a stack is consumed by the command window it
   // actually nullifies. End-of-round decay erased freshly inflicted control before the
   // affected side ever received (and automatically lost) its next command.
   paralyze: definition("paralyze", { evidence: "gap" }),
+  // Sleep loses one turn when it nullifies a command, but any landed hit wakes the target
+  // outright. The hit resolver owns that full removal rather than a one-point decrement.
   sleep: definition("sleep", { evidence: "gap" }),
   stun: definition("stun", { evidence: "gap" }),
   bleed: definition("bleed", { evidence: "gap" }),
-  "bleed-atk": definition("bleed-atk", { evidence: "gap" }),
-  lethargy: definition("lethargy", { evidence: "gap" }),
-  "lethargy-atk": definition("lethargy-atk", { evidence: "gap" }),
-  vulnerable: definition("vulnerable", { evidence: "gap" }),
+  "bleed-atk": definition("bleed-atk", { permanent: true }),
+  // Lethargy is deliberate attrition, not a one-round visual tag. It lasts for the
+  // encounter and stacks once per landed hit, allowing Valiancy + Whirlwind to suppress a
+  // foe's ATK all the way to zero. This is intentionally unlike a temporary ward.
+  lethargy: definition("lethargy", { permanent: true }),
+  "lethargy-atk": definition("lethargy-atk", { permanent: true }),
+  vulnerable: definition("vulnerable", { decreaseWhenHit: true }),
   skeleton: definition("skeleton", { decreaseWhenHit: true }),
-  limp: definition("limp", { evidence: "gap" }),
-  berserk: definition("berserk", { evidence: "gap" }),
-  initiative: definition("initiative", { removeAtEndOfTurn: true }),
+  limp: definition("limp", { permanent: true }),
+  // Berserk is a one-contact state: the damage resolver removes the whole amount when its
+  // holder lands a hit or is struck. It cannot use the generic one-point hit decrement.
+  berserk: definition("berserk", { permanent: true }),
+  initiative: definition("initiative", { permanent: true }),
   "initiative-atk": definition("initiative-atk", { permanent: true }),
-  judgment: definition("judgment", { evidence: "gap" }),
+  judgment: definition("judgment", { permanent: true }),
 });
 
 export function getStatusDefinition(type) {

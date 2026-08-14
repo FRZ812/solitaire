@@ -1,6 +1,7 @@
 import { statusCount } from "../../gameplay/kernel/status-stack.js";
+import { PROVISIONAL_DAMAGE_POLICY } from "../../gameplay/kernel/tow-damage.js";
 import { getSkill } from "../../gameplay/tow/skills.js";
-import { COMBAT_VFX_ASSETS, combatVfxForEvent } from "./tow-combat-vfx.js";
+import { COMBAT_VFX_ASSETS, combatVfxForEvent, combatVfxForStatus } from "./tow-combat-vfx.js";
 
 const DEFENCE_LABELS = Object.freeze({
   invincible: "Invincible",
@@ -104,7 +105,8 @@ function hitTotals(hits = [], baseDamage = null) {
     totals.amplified += hit.vulnerableBonus || 0;
     totals.vulnerablePercent = Math.max(
       totals.vulnerablePercent,
-      Number(hit.mitigation?.vulnerable) || 0,
+      Number(hit.vulnerablePercent)
+        || (Number(hit.vulnerableBonus) > 0 ? PROVISIONAL_DAMAGE_POLICY.vulnerableDamagePercent : 0),
     );
     if (hit.dodged) totals.dodged += 1;
     else totals.landed += 1;
@@ -171,10 +173,21 @@ export function combatEventReceipt(encounter, event, options = {}) {
 
   const actor = actorName(encounter, event.actorId);
   if (event.type === "skill-shield") {
+    const established = Number.isFinite(event.ward) ? event.ward : event.amount;
+    const text = event.amount > 0
+      ? `${possessive(actor)} ${actionName(encounter, event, options)} raises ${event.amount} ward.`
+      : `${possessive(actor)} ${actionName(encounter, event, options)} refreshes the existing ${established} ward without stacking it.`;
     return {
       sequence: event.sequence,
       kind: "guard",
-      text: `${possessive(actor)} ${actionName(encounter, event, options)} raises ${event.amount} ward.`,
+      text,
+    };
+  }
+  if (event.type === "ward-expired") {
+    return {
+      sequence: event.sequence,
+      kind: "guard",
+      text: `${possessive(actor)} remaining ${event.amount} ward expires with the opposing command window.`,
     };
   }
   if (event.type === "skill-heal") {
@@ -249,13 +262,19 @@ export function combatEventReceipt(encounter, event, options = {}) {
     };
   }
   if (event.type === "tick-damage") {
-    const burn = event.burn || 0;
-    const doom = event.doom || 0;
-    const sources = [burn ? `${burn} Burn` : null, doom ? `${doom} Doom` : null].filter(Boolean);
+    const entries = [
+      ["Burn", event.burn || 0],
+      ["Doom", event.doom || 0],
+      ["Poison", event.poison || 0],
+      ["Bleed", event.bleed || 0],
+      ["Misfortune", event.misfortune || 0],
+    ];
+    const sources = entries.filter(([, amount]) => amount > 0);
+    const total = sources.reduce((sum, [, amount]) => sum + amount, 0);
     return {
       sequence: event.sequence,
       kind: "damage",
-      text: `${actor} loses ${burn + doom} health to ${sources.join(" + ")}; this bypasses defence and ward.`,
+      text: `${actor} loses ${total} health to ${sources.map(([name, amount]) => `${amount} ${name}`).join(" + ")}; this bypasses defence and ward.`,
     };
   }
   if (event.type === "actor-stood-down") {
@@ -346,6 +365,10 @@ function hitCue(encounter, event, hit, index, hitCount, visual) {
   const defences = activeDefences(hit);
   const raw = hit.rawDamage ?? hit.baseDamage ?? hit.damage ?? toHp + absorbed;
   const prevented = hit.prevented ?? Math.max(0, raw - (hit.damage || 0));
+  const statusChanges = [
+    ...(hit.statusChanges?.attacker || []).map((change) => ({ ...change, actorId: attackerId })),
+    ...(hit.statusChanges?.defender || []).map((change) => ({ ...change, actorId: targetId })),
+  ];
 
   let kind = hit.critical ? "critical" : "hit";
   let label = `-${toHp}`;
@@ -386,6 +409,7 @@ function hitCue(encounter, event, hit, index, hitCount, visual) {
     shieldChange: absorbed > 0 ? -absorbed : 0,
     absorbed,
     prevented,
+    statusChanges,
     guarded: prevented > 0 && !hit.dodged,
     skillId: event.skillId || null,
     attackId: event.attackId || null,
@@ -443,12 +467,22 @@ export function combatCuesForEvent(encounter, event) {
   }
 
   if (event.type === "skill-shield") {
+    const established = Number.isFinite(event.after) ? event.after : event.amount;
     return [simpleCue(encounter, event, {
       suffix: "ward",
       kind: "ward",
-      label: `+${event.amount}`,
-      kicker: "Ward",
+      label: event.amount > 0 ? `+${event.amount}` : `${established}`,
+      kicker: event.amount > 0 ? "Ward" : "Ward refreshed",
       shieldChange: event.amount,
+    })];
+  }
+  if (event.type === "ward-expired") {
+    return [simpleCue(encounter, event, {
+      suffix: "ward-expired",
+      kind: "ward",
+      label: `-${event.amount}`,
+      kicker: "Ward expires",
+      shieldChange: -event.amount,
     })];
   }
   if (event.type === "skill-heal") {
@@ -537,31 +571,20 @@ export function combatCuesForEvent(encounter, event) {
     })];
   }
   if (event.type === "tick-damage") {
-    const cues = [];
-    if (event.burn > 0) {
-      cues.push(simpleCue(encounter, event, {
-        suffix: "burn",
+    const cues = ["burn", "doom", "poison", "bleed", "misfortune"].flatMap((type) => {
+      const amount = event[type] || 0;
+      if (amount <= 0) return [];
+      return [simpleCue(encounter, event, {
+        suffix: type,
         kind: "hit",
-        label: `-${event.burn}`,
-        kicker: "Burn",
+        label: `-${amount}`,
+        kicker: words(type),
         attackerId: null,
         targetId: event.actorId,
-        hpChange: -event.burn,
-        visual: { family: "fire", variant: "status-burn", motion: "brand", asset: COMBAT_VFX_ASSETS.fire },
-      }));
-    }
-    if (event.doom > 0) {
-      cues.push(simpleCue(encounter, event, {
-        suffix: "doom",
-        kind: "hit",
-        label: `-${event.doom}`,
-        kicker: "Doom",
-        attackerId: null,
-        targetId: event.actorId,
-        hpChange: -event.doom,
-        visual: { family: "afflict", variant: "status-doom", motion: "void", asset: COMBAT_VFX_ASSETS.afflict },
-      }));
-    }
+        hpChange: -amount,
+        visual: combatVfxForStatus(type),
+      })];
+    });
     return cues.map((cue, index) => ({ ...cue, hitIndex: index, hitCount: cues.length, delayMs: index * 155 }));
   }
   return [];
@@ -612,7 +635,11 @@ function declarationLabel(encounter, event) {
       return words(event.skillId);
     }
   }
-  if (event.type === "tick-damage") return event.burn > 0 ? "Burn" : "Doom";
+  if (event.type === "tick-damage") {
+    const type = ["burn", "doom", "poison", "bleed", "misfortune"]
+      .find((candidate) => event[candidate] > 0);
+    return type ? words(type) : "Status damage";
+  }
   return words(event.type);
 }
 

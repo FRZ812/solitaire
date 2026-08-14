@@ -24,12 +24,18 @@ describe("combat status presentation", () => {
       effect: expect.stringContaining("forfeits one command window per stack"),
       lifecycle: expect.stringContaining("only when it automatically forfeits"),
     });
+    expect(towStatusPresentation({ type: "sleep", count: 3 }).lifecycle)
+      .toContain("any landed hit removes the entire stack");
     expect(towStatusPresentation({ type: "priority", count: 4 })).toMatchObject({
       effect: expect.stringContaining("Each net stack grants one extra action"),
       lifecycle: expect.stringContaining("spent by each extra action"),
     });
     expect(towStatusPresentation({ type: "vulnerable", count: 12 }).effect)
-      .toContain("12 Vulnerable means +12% damage received");
+      .toContain("50%");
+    expect(towStatusPresentation({ type: "lethargy-atk", count: 5 }).effect)
+      .toContain("every landed hit");
+    expect(towStatusPresentation({ type: "berserk", count: 100 }).lifecycle)
+      .toContain("entire stack is spent");
   });
 
   it("gives every kernel status readable copy and a transparent visual family", () => {

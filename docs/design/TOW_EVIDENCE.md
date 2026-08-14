@@ -14,6 +14,8 @@ number — it is either captured or the feature waits.
 - `wiki:gatekeeper` — <https://towerofwinter.fandom.com/wiki/The_Gatekeeper>
 - `wiki:campaign` — <https://towerofwinter.fandom.com/wiki/Tower_of_Winter_(Campaign)>
 - `namu:general-abilities` — <https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91#s-11.1>
+- `namu:traits` — <https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91/%ED%8A%B9%EC%84%B1>
+- `community:english-status-capture` — <https://docs.google.com/spreadsheets/d/13_DI2wHUsqMVt0BsJAyhXIixzUIvTikRNMBBtzgERhw/edit?usp=sharing>
 
 Confidence tags: `observed` (stated outright by a source), `derived` (follows from two or
 more observed facts), `gap` (not established — must not be guessed).
@@ -66,6 +68,12 @@ Any engine that collapses an attack into one damage number computes these wrong.
 
 `Block` grants shield equal to 250–500% of DEF. `Parry` grants 270–430% of ATK.
 `Urgent Guard` grants 100% of DEF. Shield absorbs before HP.
+
+Solitaire lifecycle (`adapted`, user-confirmed): Ward is a brace for the next opposing
+command window, not banked health. Multiple ward effects inside one ability combine into
+that ability's brace; using another ward ability in the same window refreshes to the larger
+pool rather than adding pools. Any remainder expires after the opposing window. Protection
+is intentionally different: it persists between turns and loses one stack per landed hit.
 
 ### Rarity (`observed`, `wiki:skills`)
 
@@ -135,6 +143,11 @@ status: *Permanent*, *Removed at end of turn*, *Decrease at end of turn*,
 Captured 2026-08-11 by reading the table cells directly out of the DOM. Flags below are
 `observed` unless noted.
 
+Lifecycle gaps were rechecked 2026-08-14 against the English in-game trait/status capture
+linked from the community preservation document. That capture resolves the persistent,
+end-of-turn, and per-hit rows recorded below; bespoke contact rules such as Sleep and
+Berserk remain explicit because they remove the whole stack rather than one Count.
+
 > **Reading a blank row.** A status with no flags is *undocumented on the wiki*, not
 > "has no lifecycle". Treat blanks as `gap` — several are almost certainly
 > battle-persistent stats (Lifesteal, Strength, Focus, Sharpen), but that is inference,
@@ -158,37 +171,37 @@ Lifecycle key: **Perm** = permanent · **EoT-rm** = removed at end of turn ·
 | Haste | Swift | Gains an additional action during battle (trait/status activations are not added) | **EoT−** |
 | DoomAtk | Destructor | Each individual attack inflicts Count Doom on the enemy; multiple hits in a round stack. Doom bypasses defences but takes effect **after the enemy acts** | **EoT-rm** |
 | Burn | Ignition | Deal fixed damage equal to Count | **Hit−** |
-| Unstoppable | Fortitude | Ignores action-nullifying debuffs (`wiki:skills`) | `gap` |
+| Unstoppable | Fortitude | Ignores action-nullifying debuffs (`wiki:skills`) | **EoT−** |
 | Tenacity | Fortitude | Increases DEF by Count; gained every 4 turns | **Perm** |
 | Thorn | Detection, Reflection | Damages the attacker when hit, once per hit | **Perm** |
-| Lifesteal | Bloodsuck | Recover HP in proportion to damage dealt | `gap` |
-| Strength | Fury, Rage | Raises attack | `gap` |
-| Misfortune | Luck | Deal Count damage at the beginning of the enemy turn | **EoT−** |
-| Poison | Decay | `gap` | `gap` |
-| Cripple | Overwhelm | `gap` | `gap` |
-| Charge | Charge | `gap` | `gap` |
-| Grow | Adaptation, Survival | `gap` | `gap` |
+| Lifesteal | Bloodsuck | Recover HP in proportion to damage dealt | **Perm** |
+| Strength | Fury, Rage | Raises attack | **Perm** |
+| Misfortune | Luck | Deal Count damage at the beginning of the enemy turn | **EoT-rm** |
+| Poison | Decay | Fixed boundary damage | **EoT−** |
+| Cripple | Overwhelm | Reduces ATK for the encounter | **Perm** |
+| Charge | Charge | Empowers the next landed hit | **EoT-rm** |
+| Grow | Adaptation, Survival | Accumulating combat growth | **Perm** |
 | Overload | Fatality | Gain temporary Count attack power, **lost at end of turn** | **EoT-rm** |
-| PoisonAtk | Venom | `gap` | `gap` |
-| Weak | Ambush | `gap` | `gap` |
-| Focus | Anatomy | `gap` | `gap` |
+| PoisonAtk | Venom | Inflicts Poison per landed hit | **Perm** |
+| Weak | Ambush | Reduces ATK while present | **Hit−** |
+| Focus | Anatomy | Raises offensive precision | **Perm** |
 | Solidity | Endurance | Reduces damage taken from attacks by **30%** | **EoT− + Hit−** |
 | Guard | Guardian | Reduces damage taken from attacks by **50%** | **EoT− + Hit−** |
-| Sharpen | Accuracy | `gap` | `gap` |
-| Eviscerate | Assassin | `gap` | `gap` |
-| Priority | Quickness, Gale | Act before the enemy; cancels against enemy Priority | `gap` |
-| Doom | — | Fixed Count damage, **ignores all defences** | `gap` |
-| Invincible | Intangible | Takes no damage from attacks | 7 turns (`observed`) |
-| Conceal | Rogue | +80% dodge | `gap` |
-| Sleep | Sleep Grenade | Nullifies actions, **negated by a hit** | 3 turns (`observed`) |
+| Sharpen | Accuracy | Raises offensive accuracy | **Perm** |
+| Eviscerate | Assassin | Inflicts Vulnerable per landed hit | **Perm** |
+| Priority | Quickness, Gale | Act before the enemy; cancels against enemy Priority | **EoT−**, and spent per extra action |
+| Doom | — | Fixed Count damage, **ignores all defences** | **EoT-rm** |
+| Invincible | Intangible | Takes no damage from attacks | **EoT−** (7-turn grant observed) |
+| Conceal | Rogue | +80% dodge | **EoT−** |
+| Sleep | Sleep Grenade | Nullifies actions; loses one per skipped command, but **any landed hit removes all Sleep** | bespoke (`observed`) |
 | Paralyze | Rapid Cooling, Mortal Blow | Nullifies actions | `gap` |
 | Bleed | Slaughter, Rupture | Damage over time | `gap` |
-| Lethargy | Shouting, Valiancy | `gap` | `gap` |
-| Vulnerable | Breakdown | `gap` | `gap` |
+| Lethargy | Shouting, Valiancy | Reduces ATK; repeated landed hits stack it and can reduce ATK to zero | **Perm** (`adapted`, user-confirmed target behaviour) |
+| Vulnerable | Breakdown | +50% damage to the next landed hit | **Hit−** |
 | Skeleton | Necromancy | `gap` | `gap` |
-| Limp | Overheat | `gap` | `gap` |
-| Berserk | Berserker | Raises attack damage; lost on hitting or being hit | `gap` |
-| Initiative | Gale | Accumulates on attacking; 100 converts to 1 Priority | `gap` |
+| Limp | Overheat | Accumulating impairment for the encounter | **Perm** |
+| Berserk | Berserker | Count% attack damage on one landed hit; entire stack is lost on hitting or being hit | bespoke (`observed`) |
+| Initiative | Gale | Accumulates on attacking; 100 converts to 1 Priority | **Perm** |
 
 ## Skills
 

@@ -199,6 +199,29 @@ export function buildFor(state, actorId) {
   return state.allyBuilds?.[actorId] || state.enemyBuilds?.[actorId] || null;
 }
 
+/**
+ * Ward is a brace for one opposing command window, not encounter-long armour.
+ *
+ * Player-side wards are raised before foes act and expire after that enemy window. Enemy
+ * wards are raised after the player's action and expire after the following player window,
+ * immediately before that enemy can act again. Keeping this boundary in the reducer makes
+ * the displayed pool and the damage resolver share one authoritative lifetime.
+ */
+function expireWards(state, actorIds, boundary) {
+  let next = state;
+  for (const actorId of actorIds) {
+    const actor = next.actors[actorId];
+    if (!actor || actor.shield <= 0) continue;
+    const amount = actor.shield;
+    next = {
+      ...next,
+      actors: { ...next.actors, [actorId]: { ...actor, shield: 0 } },
+    };
+    next = push(next, "ward-expired", { actorId, amount, boundary });
+  }
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Creation
 // ---------------------------------------------------------------------------
@@ -382,6 +405,14 @@ function normalizeBuild(build) {
     runes: [...(build?.runes || [])],
     ...(hasBasicAttack ? { basicAttack } : {}),
   };
+}
+
+// Legacy attack tables record damage directly rather than a skill scaling. They still have
+// to obey live ATK pressure: otherwise an Old King's per-hit Lethargy can zero a modern
+// build-backed foe but leaves an older saved foe mysteriously untouched.
+function authoredAttackDamage(actor, amount) {
+  const baseAttack = Math.max(1, actor.stats.attack);
+  return Math.max(0, Math.floor((amount * statOf(actor, "attack")) / baseAttack));
 }
 
 /**
@@ -597,14 +628,18 @@ function enemySkillUseful(state, enemyId, skillState) {
   if (definition.abilityType === "archetype"
     && definition.rarity === "mythical"
     && actor.hp > Math.ceil(actor.maxHp / 2)) return false;
+  // Treat a mixed defensive technique as one decision. Blade Barrier also grants Guard;
+  // letting that secondary boon bypass the Ward gate made a healthy foe choose the whole
+  // defensive action repeatedly. Ward is only a useful declaration when its owner is both
+  // exposed and actually needs the brace.
+  if (definition.effects.some((effect) => effect.type === "shield")
+    && (actor.shield > 0 || actor.hp > Math.ceil(actor.maxHp * 0.6))) return false;
   return definition.effects.some((effect) => {
     if (effect.type.startsWith("damage")) return targets.length > 0;
     // Ward is a timed answer to an exposed state, not a resource to hoard forever. Without
     // this gate a defensive archetype can spend every ready turn adding another full Block,
     // making a nearly-defeated foe less vulnerable the longer the player pressures them.
-    if (effect.type === "shield") {
-      return actor.shield <= 0 && actor.hp <= Math.ceil(actor.maxHp * 0.6);
-    }
+    if (effect.type === "shield") return true;
     if (effect.type.startsWith("heal")) return actor.hp < actor.maxHp;
     if (effect.type === "reduce-statuses") {
       return effect.statuses.some((status) => statusCount(actor.statuses, status) > 0);
@@ -916,6 +951,12 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
   let next = state;
   // Whoever was commanded, not always the protagonist: an ally's Block shields the ally.
   const playerId = actorId ?? next.playerId;
+  const shieldEffectIndexes = definition.effects
+    .map((effect, index) => (effect.type === "shield" ? index : -1))
+    .filter((index) => index >= 0);
+  const lastShieldEffectIndex = shieldEffectIndexes.at(-1) ?? -1;
+  const shieldBeforeSkill = next.actors[playerId]?.shield || 0;
+  let shieldRaisedBySkill = 0;
 
   definition.effects.forEach((effect, index) => {
     // Asked for per branch rather than up front: not every effect carries a rank table, and
@@ -987,11 +1028,24 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
 
     if (effect.type === "shield") {
       const amount = Math.floor((statOf(player, effect.scale) * magnitude()) / 100);
+      shieldRaisedBySkill += amount;
+      // A dual-source barrier (for example ATK + DEF) is one brace and sums inside this
+      // skill. A second skill in the same window refreshes the brace instead of adding a
+      // second permanent pool on top of it.
+      if (index !== lastShieldEffectIndex) return;
+      const shield = Math.max(shieldBeforeSkill, shieldRaisedBySkill);
       next = {
         ...next,
-        actors: { ...next.actors, [playerId]: { ...player, shield: player.shield + amount } },
+        actors: { ...next.actors, [playerId]: { ...player, shield } },
       };
-      next = push(next, "skill-shield", { actorId: playerId, skillId, amount });
+      next = push(next, "skill-shield", {
+        actorId: playerId,
+        skillId,
+        amount: Math.max(0, shield - shieldBeforeSkill),
+        ward: shieldRaisedBySkill,
+        before: shieldBeforeSkill,
+        after: shield,
+      });
       return;
     }
 
@@ -1348,16 +1402,16 @@ export function skipTurn(state, actorId) {
 // Ending the turn
 // ---------------------------------------------------------------------------
 
-function burnAndDoom(state, actorId) {
+function boundaryStatusDamage(state, actorId, { onlyMisfortune = false, includeMisfortune = true } = {}) {
   const actor = state.actors[actorId];
-  const burn = statusCount(actor.statuses, "burn");
-  const doom = statusCount(actor.statuses, "doom");
-  const poison = statusCount(actor.statuses, "poison");
-  const bleed = statusCount(actor.statuses, "bleed");
-  const misfortune = statusCount(actor.statuses, "misfortune");
+  const burn = onlyMisfortune ? 0 : statusCount(actor.statuses, "burn");
+  const doom = onlyMisfortune ? 0 : statusCount(actor.statuses, "doom");
+  const poison = onlyMisfortune ? 0 : statusCount(actor.statuses, "poison");
+  const bleed = onlyMisfortune ? 0 : statusCount(actor.statuses, "bleed");
+  const misfortune = includeMisfortune ? statusCount(actor.statuses, "misfortune") : 0;
   const total = burn + doom + poison + bleed + misfortune;
   if (total <= 0) return state;
-  // Both bypass defences outright.
+  // Boundary damage bypasses defences and Ward outright.
   const damaged = { ...actor, hp: Math.max(0, actor.hp - total) };
   return push(
     { ...state, actors: { ...state.actors, [actorId]: damaged } },
@@ -1425,6 +1479,19 @@ export function endTurn(state) {
     const skipped = skipTurn(next, actorId);
     if (skipped.ok) next = skipped.state;
   }
+
+  // Any hostile ward standing here already protected its owner throughout the player's
+  // command window. Clear it before the foe can refresh or attack behind the same brace.
+  next = expireWards(next, next.enemyIds, "player-window");
+
+  // Misfortune is explicitly beginning-of-enemy-turn damage. Resolve it before the foe's
+  // command so a fatal judgment prevents that command instead of landing after retaliation.
+  for (const enemyId of next.enemyIds) {
+    if (next.actors[enemyId].hp <= 0) continue;
+    next = boundaryStatusDamage(next, enemyId, { onlyMisfortune: true });
+  }
+  next = settle(next);
+  if (next.phase !== "player") return { ok: true, reason: null, state: next };
 
   for (const enemyId of next.enemyIds) {
     if (next.phase !== "player") break;
@@ -1520,7 +1587,7 @@ export function endTurn(state) {
       const resolved = resolveAttack({
         attacker: enemy,
         defender: next.actors[defenderId],
-        attack: { hits: attack.hits, damage: attack.damage },
+        attack: { hits: attack.hits, damage: authoredAttackDamage(enemy, attack.damage) },
         rng: next.rng,
       });
       next = {
@@ -1549,13 +1616,22 @@ export function endTurn(state) {
       next = settle(next);
     }
   }
+  // Player and ally wards have now met the entire hostile command window. Leftover points
+  // are not banked into another round.
+  next = expireWards(next, playerSideIds(next), "enemy-window");
 
   if (next.phase !== "player") return { ok: true, reason: null, state: next };
 
   // Boundary ticks: damage-over-time first, then status decay, then cooldowns.
-  for (const actorId of [...playerSideIds(next), ...next.enemyIds]) {
+  const playerIds = playerSideIds(next);
+  for (const actorId of [...playerIds, ...next.enemyIds]) {
     if (next.actors[actorId].hp <= 0) continue;
-    next = burnAndDoom(next, actorId);
+    next = boundaryStatusDamage(next, actorId, {
+      // Hostile Misfortune already resolved before that side's command. Player-side
+      // Misfortune was applied during the hostile window and resolves now, before the next
+      // player command.
+      includeMisfortune: playerIds.includes(actorId),
+    });
   }
   next = settle(next);
   if (next.phase !== "player") return { ok: true, reason: null, state: next };

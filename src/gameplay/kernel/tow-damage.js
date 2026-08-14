@@ -39,11 +39,11 @@ export const PROVISIONAL_DAMAGE_POLICY = Object.freeze({
   protectionMode: "flat-count",
   protectionModeEvidence: "gap",
 
-  // Vulnerable is a Count whose strategic value must be visible rather than an inert label.
-  // Each point raises attack damage received by one percent. The source establishes exposed
-  // defence but not the composition order, so this provisional rule is isolated here.
-  vulnerableDamagePerCountPercent: 1,
-  vulnerableEvidence: "gap",
+  // Vulnerable is a number of exposed hits, not a percentage magnitude: while any stack
+  // remains, an incoming landed hit deals 50% more damage and consumes one stack. Limp's
+  // exact multiplier remains unresolved and is deliberately kept out of this rule.
+  vulnerableDamagePercent: 50,
+  vulnerableEvidence: "observed",
 
   // Not observed: whether a dodged hit still spends on-hit statuses or provokes Thorn.
   dodgeSpendsOnHitStatuses: false,
@@ -67,6 +67,11 @@ export const PROVISIONAL_DAMAGE_POLICY = Object.freeze({
   chargeThreshold: 100,
   chargedHit: "guaranteed-critical",
   chargedHitEvidence: "adapted",
+
+  // Berserk's Count is its damage percentage for the one landed contact it survives.
+  // The status is then removed in full from an attacker who hit and a defender who was hit.
+  berserkDamagePerCountPercent: 1,
+  berserkEvidence: "observed",
 
   rounding: "floor",
   roundingEvidence: "gap",
@@ -121,8 +126,7 @@ function flatReductionFor(defender) {
 
 function vulnerableMultiplierFor(defender) {
   const vulnerable = statusCount(defender.statuses, "vulnerable");
-  const limp = statusCount(defender.statuses, "limp");
-  return 1 + (((vulnerable + limp) * POLICY.vulnerableDamagePerCountPercent) / 100);
+  return vulnerable > 0 ? 1 + (POLICY.vulnerableDamagePercent / 100) : 1;
 }
 
 function mitigationSnapshot(defender) {
@@ -130,11 +134,23 @@ function mitigationSnapshot(defender) {
     invincible: statusCount(defender.statuses, "invincible") > 0,
     guard: statusCount(defender.statuses, "guard") > 0,
     solidity: statusCount(defender.statuses, "solidity") > 0,
-    steelskin: statusCount(defender.statuses, "steelskin") > 0,
-    protection: statusCount(defender.statuses, "protection") > 0,
+    steelskin: statusCount(defender.statuses, "steelskin"),
+    protection: statusCount(defender.statuses, "protection"),
     vulnerable: statusCount(defender.statuses, "vulnerable"),
     limp: statusCount(defender.statuses, "limp"),
   };
+}
+
+function statusChanges(before, after) {
+  const types = new Set([
+    ...(before || []).map((entry) => entry.type),
+    ...(after || []).map((entry) => entry.type),
+  ]);
+  return [...types].flatMap((type) => {
+    const previous = statusCount(before, type);
+    const next = statusCount(after, type);
+    return previous === next ? [] : [{ type, before: previous, after: next }];
+  });
 }
 
 function applyOnHitPassives(attacker, defender, directDamage) {
@@ -269,18 +285,28 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
         absorbed: 0,
         toHp: 0,
         thorn: 0,
+        statusChanges: { attacker: [], defender: [] },
       });
       continue;
     }
 
     const critRoll = nextInt(currentRng, 1, 100);
     currentRng = critRoll.rng;
+    const attackerStatusesBefore = currentAttacker.statuses;
+    const defenderStatusesBefore = currentDefender.statuses;
     const chargeSpent = statusCount(currentAttacker.statuses, "charge") >= POLICY.chargeThreshold
       ? POLICY.chargeThreshold
       : 0;
     const critical = chargeSpent > 0 || critRoll.value <= currentAttacker.stats.critRate;
 
-    const rawDamage = attack.damage * (critical ? POLICY.critMultiplier : 1);
+    const beforeBerserk = attack.damage * (critical ? POLICY.critMultiplier : 1);
+    const attackerBerserk = statusCount(currentAttacker.statuses, "berserk");
+    const defenderBerserk = statusCount(currentDefender.statuses, "berserk");
+    const defenderSleep = statusCount(currentDefender.statuses, "sleep");
+    const rawDamage = Math.floor(
+      beforeBerserk * (1 + ((attackerBerserk * POLICY.berserkDamagePerCountPercent) / 100)),
+    );
+    const berserkBonus = Math.max(0, rawDamage - beforeBerserk);
     const mitigation = mitigationSnapshot(currentDefender);
     let damage = rawDamage;
     let vulnerableBonus = 0;
@@ -311,6 +337,24 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
       ...currentDefender,
       statuses: decrementOnHit(currentDefender.statuses),
     };
+    if (defenderBerserk > 0) {
+      currentDefender = {
+        ...currentDefender,
+        statuses: removeStatus(currentDefender.statuses, "berserk"),
+      };
+    }
+    if (defenderSleep > 0) {
+      currentDefender = {
+        ...currentDefender,
+        statuses: removeStatus(currentDefender.statuses, "sleep"),
+      };
+    }
+    if (attackerBerserk > 0) {
+      currentAttacker = {
+        ...currentAttacker,
+        statuses: removeStatus(currentAttacker.statuses, "berserk"),
+      };
+    }
     if (chargeSpent > 0) {
       currentAttacker = {
         ...currentAttacker,
@@ -322,13 +366,23 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
     currentAttacker = passive.attacker;
     currentDefender = passive.defender;
 
+    const perHitStatusChanges = {
+      attacker: statusChanges(attackerStatusesBefore, currentAttacker.statuses),
+      defender: statusChanges(defenderStatusesBefore, currentDefender.statuses),
+    };
+
     hits.push({
       index,
       dodged: false,
       critical,
       baseDamage: attack.damage,
       rawDamage,
+      berserkBonus,
+      berserkSpent: attackerBerserk,
+      defenderBerserkSpent: defenderBerserk,
+      sleepBroken: defenderSleep,
       vulnerableBonus,
+      vulnerablePercent: mitigation.vulnerable > 0 ? POLICY.vulnerableDamagePercent : 0,
       prevented: Math.max(0, rawDamage + vulnerableBonus - damage),
       mitigation,
       avoidance,
@@ -341,6 +395,7 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
       judgmentDamage: passive.judgmentDamage,
       lifestealHeal: passive.lifestealHeal,
       priorityGained: passive.priorityGained,
+      statusChanges: perHitStatusChanges,
     });
   }
 
