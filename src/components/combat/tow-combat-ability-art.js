@@ -88,8 +88,8 @@ function proceduralTowAbilityArt(abilityId) {
   const hash = abilityHash(abilityId);
   const tilt = (hash % 46) - 23;
   const spokes = 5 + (hash % 5);
-  const initials = abilityId.split("-").slice(-2).map((word) => word[0]).join("").toUpperCase();
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  const runeInset = 72 + ((hash >>> 9) % 25);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" data-ability="${abilityId}">
     <defs>
       <radialGradient id="g" cx="50%" cy="42%" r="72%"><stop stop-color="${accent}" stop-opacity=".56"/><stop offset=".54" stop-color="${deep}"/><stop offset="1" stop-color="#05090b"/></radialGradient>
       <filter id="b"><feGaussianBlur stdDeviation="7"/></filter>
@@ -102,7 +102,7 @@ function proceduralTowAbilityArt(abilityId) {
     <circle cx="128" cy="122" r="34" fill="${accent}" fill-opacity=".18" filter="url(#b)"/>
     <path d="M78 128 Q128 64 178 128 Q128 192 78 128Z" fill="none" stroke="${accent}" stroke-width="6"/>
     <circle cx="128" cy="128" r="14" fill="${accent}"/>
-    <text x="128" y="230" text-anchor="middle" fill="#fff4de" fill-opacity=".86" font-family="Georgia,serif" font-size="24" letter-spacing="5">${initials}</text>
+    <path d="M${runeInset} 216 Q128 ${184 + (hash % 17)} ${256 - runeInset} 216" fill="none" stroke="#fff4de" stroke-opacity=".72" stroke-width="5" stroke-linecap="round"/>
   </svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }

@@ -9,7 +9,13 @@
 // can always say which numbers were evidence and which were placeholder.
 
 import { nextInt } from "./rng.js";
-import { decrementOnHit, statusCount } from "./status-stack.js";
+import {
+  applyStatus,
+  consumeStatusCount,
+  decrementOnHit,
+  removeStatus,
+  statusCount,
+} from "./status-stack.js";
 
 export const PROVISIONAL_DAMAGE_POLICY = Object.freeze({
   // Crit *rate* is observed on every stat block. What a crit multiplies by is not.
@@ -33,6 +39,12 @@ export const PROVISIONAL_DAMAGE_POLICY = Object.freeze({
   protectionMode: "flat-count",
   protectionModeEvidence: "gap",
 
+  // Vulnerable is a Count whose strategic value must be visible rather than an inert label.
+  // Each point raises attack damage received by one percent. The source establishes exposed
+  // defence but not the composition order, so this provisional rule is isolated here.
+  vulnerableDamagePerCountPercent: 1,
+  vulnerableEvidence: "gap",
+
   // Not observed: whether a dodged hit still spends on-hit statuses or provokes Thorn.
   dodgeSpendsOnHitStatuses: false,
   dodgeProvokesThorn: false,
@@ -48,6 +60,14 @@ export const PROVISIONAL_DAMAGE_POLICY = Object.freeze({
   stopHitsOnDefeat: true,
   stopHitsOnDefeatEvidence: "gap",
 
+  // The source records Charge in 100-point packets but leaves the status-table effect
+  // blank. Solitaire makes that packet an explicit charged critical window: the next
+  // landed hit is critical and spends one packet. Keeping the threshold here makes the
+  // adaptation auditable instead of leaving the Tenacious Mage's innate trait inert.
+  chargeThreshold: 100,
+  chargedHit: "guaranteed-critical",
+  chargedHitEvidence: "adapted",
+
   rounding: "floor",
   roundingEvidence: "gap",
 
@@ -56,6 +76,7 @@ export const PROVISIONAL_DAMAGE_POLICY = Object.freeze({
     "crit-roll",
     "invincible-check",
     "percent-reduction",
+    "vulnerable-amplification",
     "flat-reduction",
     "shield-absorb",
     "hp-damage",
@@ -98,6 +119,12 @@ function flatReductionFor(defender) {
   return steelskin + protection;
 }
 
+function vulnerableMultiplierFor(defender) {
+  const vulnerable = statusCount(defender.statuses, "vulnerable");
+  const limp = statusCount(defender.statuses, "limp");
+  return 1 + (((vulnerable + limp) * POLICY.vulnerableDamagePerCountPercent) / 100);
+}
+
 function mitigationSnapshot(defender) {
   return {
     invincible: statusCount(defender.statuses, "invincible") > 0,
@@ -105,6 +132,69 @@ function mitigationSnapshot(defender) {
     solidity: statusCount(defender.statuses, "solidity") > 0,
     steelskin: statusCount(defender.statuses, "steelskin") > 0,
     protection: statusCount(defender.statuses, "protection") > 0,
+    vulnerable: statusCount(defender.statuses, "vulnerable"),
+    limp: statusCount(defender.statuses, "limp"),
+  };
+}
+
+function applyOnHitPassives(attacker, defender, directDamage) {
+  let nextAttacker = attacker;
+  let nextDefender = defender;
+  const applied = [];
+
+  for (const [attackStatus, targetStatus] of [
+    ["doom-atk", "doom"],
+    ["poison-atk", "poison"],
+    ["bleed-atk", "bleed"],
+    ["lethargy-atk", "lethargy"],
+    ["eviscerate", "vulnerable"],
+  ]) {
+    const count = statusCount(nextAttacker.statuses, attackStatus);
+    if (count <= 0) continue;
+    nextDefender = {
+      ...nextDefender,
+      statuses: applyStatus(nextDefender.statuses, targetStatus, count),
+    };
+    applied.push({ status: targetStatus, count });
+  }
+
+  let judgmentDamage = 0;
+  const judgment = statusCount(nextAttacker.statuses, "judgment");
+  if (judgment > 0) {
+    judgmentDamage = Math.min(nextDefender.hp, judgment);
+    nextDefender = { ...nextDefender, hp: nextDefender.hp - judgmentDamage };
+    nextAttacker = { ...nextAttacker, statuses: removeStatus(nextAttacker.statuses, "judgment") };
+  }
+
+  let lifestealHeal = 0;
+  const lifesteal = statusCount(nextAttacker.statuses, "lifesteal");
+  if (lifesteal > 0 && directDamage > 0 && nextAttacker.hp > 0) {
+    lifestealHeal = Math.max(1, Math.ceil((directDamage * lifesteal) / 100));
+    lifestealHeal = Math.min(lifestealHeal, nextAttacker.maxHp - nextAttacker.hp);
+    if (lifestealHeal > 0) {
+      nextAttacker = { ...nextAttacker, hp: nextAttacker.hp + lifestealHeal };
+    }
+  }
+
+  let priorityGained = 0;
+  const initiativePerHit = statusCount(nextAttacker.statuses, "initiative-atk");
+  if (initiativePerHit > 0) {
+    const initiative = statusCount(nextAttacker.statuses, "initiative") + initiativePerHit;
+    priorityGained = Math.floor(initiative / 100);
+    let statuses = removeStatus(nextAttacker.statuses, "initiative");
+    const remainder = initiative % 100;
+    if (remainder > 0) statuses = applyStatus(statuses, "initiative", remainder);
+    if (priorityGained > 0) statuses = applyStatus(statuses, "priority", priorityGained);
+    nextAttacker = { ...nextAttacker, statuses };
+  }
+
+  return {
+    attacker: nextAttacker,
+    defender: nextDefender,
+    applied,
+    judgmentDamage,
+    lifestealHeal,
+    priorityGained,
   };
 }
 
@@ -171,6 +261,7 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
         critical: false,
         baseDamage: attack.damage,
         rawDamage: attack.damage,
+        vulnerableBonus: 0,
         prevented: attack.damage,
         mitigation: {},
         avoidance,
@@ -184,15 +275,22 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
 
     const critRoll = nextInt(currentRng, 1, 100);
     currentRng = critRoll.rng;
-    const critical = critRoll.value <= currentAttacker.stats.critRate;
+    const chargeSpent = statusCount(currentAttacker.statuses, "charge") >= POLICY.chargeThreshold
+      ? POLICY.chargeThreshold
+      : 0;
+    const critical = chargeSpent > 0 || critRoll.value <= currentAttacker.stats.critRate;
 
     const rawDamage = attack.damage * (critical ? POLICY.critMultiplier : 1);
     const mitigation = mitigationSnapshot(currentDefender);
     let damage = rawDamage;
+    let vulnerableBonus = 0;
     if (statusCount(currentDefender.statuses, "invincible") > 0) {
       damage = 0;
     } else {
       damage = Math.floor(damage * percentMultiplierFor(currentDefender));
+      const beforeVulnerable = damage;
+      damage = Math.floor(damage * vulnerableMultiplierFor(currentDefender));
+      vulnerableBonus = Math.max(0, damage - beforeVulnerable);
       damage = Math.max(0, damage - flatReductionFor(currentDefender));
     }
 
@@ -213,6 +311,16 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
       ...currentDefender,
       statuses: decrementOnHit(currentDefender.statuses),
     };
+    if (chargeSpent > 0) {
+      currentAttacker = {
+        ...currentAttacker,
+        statuses: consumeStatusCount(currentAttacker.statuses, "charge", chargeSpent),
+      };
+    }
+
+    const passive = applyOnHitPassives(currentAttacker, currentDefender, damage);
+    currentAttacker = passive.attacker;
+    currentDefender = passive.defender;
 
     hits.push({
       index,
@@ -220,13 +328,19 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
       critical,
       baseDamage: attack.damage,
       rawDamage,
-      prevented: Math.max(0, rawDamage - damage),
+      vulnerableBonus,
+      prevented: Math.max(0, rawDamage + vulnerableBonus - damage),
       mitigation,
       avoidance,
       damage,
       absorbed: landed.absorbed,
       toHp: landed.toHp,
       thorn,
+      chargeSpent,
+      onHitStatuses: passive.applied,
+      judgmentDamage: passive.judgmentDamage,
+      lifestealHeal: passive.lifestealHeal,
+      priorityGained: passive.priorityGained,
     });
   }
 

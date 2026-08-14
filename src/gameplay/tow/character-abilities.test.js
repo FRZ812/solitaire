@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyStatus, createStatusStack, statusCount } from "../kernel/status-stack.js";
 import {
+  characterAbilitiesFor,
   characterAbilityIds,
   getCharacterAbility,
 } from "./character-abilities.js";
@@ -47,17 +48,22 @@ function encounterFor(skillId, {
 }
 
 describe("source roster ability catalogue", () => {
-  it("contains 60 sourced, exclusive abilities in twelve complete five-slot kits", () => {
-    expect(characterAbilityIds()).toHaveLength(60);
+  it("contains every 23-action character catalogue while equipping only five", () => {
+    expect(characterAbilityIds()).toHaveLength(276);
     for (const archetype of STARTING_ARCHETYPES) {
-      const definitions = archetype.build.skills.map((id) => getCharacterAbility(id));
-      expect(definitions).toHaveLength(5);
-      expect(new Set(definitions.map((definition) => definition.abilityType)))
+      const catalogue = characterAbilitiesFor(archetype.id);
+      const equipped = archetype.build.skills.map((id) => getCharacterAbility(id));
+      expect(catalogue).toHaveLength(23);
+      expect(catalogue.filter((definition) => definition.abilityType === "basic-attack")).toHaveLength(3);
+      expect(catalogue.filter((definition) => definition.abilityType === "defensive")).toHaveLength(3);
+      expect(catalogue.filter((definition) => definition.abilityType === "archetype")).toHaveLength(17);
+      expect(equipped).toHaveLength(5);
+      expect(new Set(equipped.map((definition) => definition.abilityType)))
         .toEqual(new Set(["basic-attack", "defensive", "archetype"]));
-      expect(definitions.filter((definition) => definition.abilityType === "basic-attack")).toHaveLength(1);
-      expect(definitions.filter((definition) => definition.abilityType === "defensive")).toHaveLength(1);
-      expect(definitions.filter((definition) => definition.abilityType === "archetype")).toHaveLength(3);
-      for (const definition of definitions) {
+      expect(equipped.filter((definition) => definition.abilityType === "basic-attack")).toHaveLength(1);
+      expect(equipped.filter((definition) => definition.abilityType === "defensive")).toHaveLength(1);
+      expect(equipped.filter((definition) => definition.abilityType === "archetype")).toHaveLength(3);
+      for (const definition of catalogue) {
         expect(definition.exclusiveTo).toBe(archetype.id);
         expect(definition.source.page).toMatch(/^https:\/\/(?:namu\.wiki|apps\.apple\.com)\//);
         expect(definition.source.sourceName).toBeTruthy();
@@ -71,12 +77,28 @@ describe("source roster ability catalogue", () => {
     expect(effects.every((effect) => supported.has(effect.type))).toBe(true);
   });
 
-  it("resolves the Assassin's missing-health execution payoff", () => {
-    const state = encounterFor("assassin-execution", { enemyHp: 200 });
+  it("resolves the Assassin's sourced Execution strike and consumes enemy wounds", () => {
+    let enemyStatuses = createStatusStack();
+    enemyStatuses = applyStatus(enemyStatuses, "burn", 10);
+    enemyStatuses = applyStatus(enemyStatuses, "poison", 20);
+    enemyStatuses = applyStatus(enemyStatuses, "bleed", 5);
+    const state = encounterFor("assassin-execution", { enemyHp: 200, enemyStatuses });
     const result = useSkill(state, "assassin-execution", "foe");
     expect(result.ok).toBe(true);
-    // 20 direct damage, then 45% of the target's original 200 missing health.
-    expect(result.state.actors.foe.hp).toBeLessThanOrEqual(90);
+    expect(result.state.actors.foe.hp).toBe(152);
+    expect(statusCount(result.state.actors.foe.statuses, "burn")).toBe(0);
+    expect(statusCount(result.state.actors.foe.statuses, "poison")).toBe(0);
+    expect(statusCount(result.state.actors.foe.statuses, "bleed")).toBe(0);
+  });
+
+  it("keeps all three Last Assassin basic forms mechanically distinct", () => {
+    const flurry = useSkill(encounterFor("assassin-flurry"), "assassin-flurry", "foe");
+    const mutilate = useSkill(encounterFor("assassin-mutilate"), "assassin-mutilate", "foe");
+    const hamstring = useSkill(encounterFor("assassin-hamstring-cut"), "assassin-hamstring-cut", "foe");
+    expect(flurry.state.events.find((event) => event.type === "skill-damage")?.hits).toHaveLength(2);
+    expect(mutilate.state.events.find((event) => event.type === "skill-damage")?.hits).toHaveLength(3);
+    expect(hamstring.state.events.find((event) => event.type === "skill-damage")?.hits).toHaveLength(1);
+    expect(statusCount(hamstring.state.actors.foe.statuses, "weak")).toBe(2);
   });
 
   it("resolves authored multi-hit actions as their full hit count", () => {

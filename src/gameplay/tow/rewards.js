@@ -21,7 +21,14 @@ import { gameplayChecksum } from "../kernel/replay.js";
 import { createRng, nextInt } from "../kernel/rng.js";
 import { acquireRune, acquireTrait } from "./build.js";
 import { TOW_RULESET_ID } from "./session.js";
-import { SKILL_SLOTS, getSkill, replaceableSkillIds, skillIds } from "./skills.js";
+import {
+  SKILL_SLOTS,
+  abilityReplacementFamily,
+  getSkill,
+  loadoutCharacterId,
+  replacementSkillIds,
+  skillIds,
+} from "./skills.js";
 import { TRAIT_CAPACITY, TRAIT_RANK_CAP, getTrait, traitIds } from "./traits.js";
 
 export const TOW_REWARD_VERSION = 1;
@@ -61,10 +68,13 @@ function identifier(value) {
  * already have all of it" are different answers, and only one of them is a bug.
  */
 function ineligibility(build, candidate) {
+  const characterId = loadoutCharacterId(build.skills);
   if (candidate.kind === "trait") {
     const trait = getTrait(candidate.id);
     if (!trait) return "unknown-trait";
-    if (trait.exclusiveTo) return "trait-exclusive-to-another-character";
+    if (trait.exclusiveTo && trait.exclusiveTo !== characterId) {
+      return "trait-exclusive-to-another-character";
+    }
     const held = build.traits[candidate.id];
     if (held !== undefined && held >= TRAIT_RANK_CAP) return "trait-at-rank-cap";
     if (held === undefined && Object.keys(build.traits).length >= TRAIT_CAPACITY) {
@@ -75,11 +85,14 @@ function ineligibility(build, candidate) {
   const skill = getSkill(candidate.id);
   if (!skill) return "unknown-skill";
   if (skill.slot !== "slotted") return "skill-has-no-slot";
-  if (skill.exclusiveTo) return "skill-exclusive-to-another-character";
+  if (skill.exclusiveTo && skill.exclusiveTo !== characterId) {
+    return "skill-exclusive-to-another-character";
+  }
   if (build.skills.includes(candidate.id)) return "skill-already-held";
   if (build.skills.length >= SKILL_SLOTS) {
-    if (skill.abilityType !== "general") return "loadout-full";
-    if (replaceableSkillIds(build.skills).length === 0) return "no-flexible-ability-slot";
+    if (replacementSkillIds(build.skills, skill).length === 0) {
+      return "no-compatible-ability-slot";
+    }
   }
   return null;
 }
@@ -110,13 +123,18 @@ function describe(candidate, build) {
   }
   const skill = getSkill(candidate.id);
   const requiresReplacement = build.skills.length >= SKILL_SLOTS;
+  const family = skill.abilityType === "basic-attack"
+    ? "Basic Attack"
+    : skill.abilityType === "defensive"
+      ? "Defensive"
+      : "flexible";
   return {
     kind: "skill",
     id: candidate.id,
     name: skill.name,
-    detail: `${skill.rarity} ${skill.abilityType === "general" ? "general ability" : "action"}${
+    detail: `${skill.rarity} ${skill.abilityType === "general" ? "general ability" : skill.exclusiveTo ? "exclusive ability" : "action"}${
       skill.consumesTurn ? "" : ", keeps action"
-    }${requiresReplacement ? " · replaces a flexible slot" : ""}`,
+    }${requiresReplacement ? ` · replaces the ${family} slot` : ""}`,
     requiresReplacement,
   };
 }
@@ -287,14 +305,16 @@ function acquireSkillReward(build, skillId, { replacingId = null } = {}) {
   if (build.skills.includes(skillId)) return { ok: false, reason: "skill-already-held", build: null };
   let skills;
   if (build.skills.length >= SKILL_SLOTS) {
-    if (definition.abilityType !== "general") {
-      return { ok: false, reason: "loadout-full", build: null };
-    }
     if (replacingId === null) return { ok: false, reason: "replacement-required", build: null };
     const replaceAt = build.skills.indexOf(replacingId);
     if (replaceAt < 0) return { ok: false, reason: "unknown-replacement", build: null };
-    if (!replaceableSkillIds(build.skills).includes(replacingId)) {
-      return { ok: false, reason: "protected-ability-slot", build: null };
+    if (!replacementSkillIds(build.skills, definition).includes(replacingId)) {
+      const incomingFamily = abilityReplacementFamily(definition);
+      const replacedFamily = abilityReplacementFamily(getSkill(replacingId));
+      const reason = incomingFamily === "flexible" && replacedFamily !== "flexible"
+        ? "protected-ability-slot"
+        : "incompatible-ability-slot";
+      return { ok: false, reason, build: null };
     }
     skills = build.skills.map((id, index) => (index === replaceAt ? skillId : id));
   } else {

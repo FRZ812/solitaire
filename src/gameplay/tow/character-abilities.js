@@ -5,6 +5,11 @@
 // actions (Basic Attack and Defensive) plus three flexible archetype actions. Shared
 // General abilities can replace only those three flexible actions later in play.
 
+import {
+  CHARACTER_LIBRARY_SOURCE,
+  EXTRA_CHARACTER_ABILITY_SPECS,
+} from "./character-ability-library.js";
+
 export const CHARACTER_ABILITY_TYPES = Object.freeze([
   "basic-attack",
   "defensive",
@@ -80,6 +85,78 @@ function lostHealthDamage(percentByRank, source = "enemy") {
     target: "enemy",
     percentByRank: freezeTable(percentByRank),
   });
+}
+
+const asRankTable = (value) => freezeTable(Array.isArray(value) ? [...value] : [value]);
+
+function catalogEffect(tuple) {
+  const [kind, ...args] = tuple;
+  if (kind === "damage") {
+    const [scale, power, hits = 1] = args;
+    return damage(scale, asRankTable(power), hits > 1 ? { hits } : {});
+  }
+  if (kind === "shield") return shield(args[0], asRankTable(args[1]));
+  if (kind === "heal") return heal(args[0], asRankTable(args[1]));
+  if (kind === "heal-lost") {
+    return Object.freeze({
+      type: "heal-lost-fraction",
+      target: "self",
+      percentByRank: asRankTable(args[0]),
+    });
+  }
+  if (kind === "status") return status(args[0], args[1], asRankTable(args[2]));
+  if (kind === "scaled-status") {
+    return scaledStatus(args[0], args[1], args[2], asRankTable(args[3]));
+  }
+  if (kind === "lost-damage") return lostHealthDamage(asRankTable(args[1]), args[0]);
+  if (kind === "cleanse") {
+    return Object.freeze({
+      type: "reduce-statuses",
+      target: args[2] || "self",
+      statuses: freezeTable([...args[0]]),
+      toPercent: args[1],
+      percentByRank: asRankTable(100 - args[1]),
+    });
+  }
+  if (kind === "amplify") {
+    return Object.freeze({
+      type: "amplify-statuses",
+      target: "enemy",
+      statuses: freezeTable([...args[0]]),
+      percentByRank: asRankTable(args[1]),
+    });
+  }
+  if (kind === "consume-status") {
+    return Object.freeze({
+      type: "consume-status",
+      target: "self",
+      status: args[0],
+      countByRank: asRankTable(args[1]),
+    });
+  }
+  throw new TypeError(`unknown-character-catalog-effect:${kind}`);
+}
+
+function catalogDescription(spec, effects) {
+  const parts = effects.map((effect) => {
+    const table = effect.percentByRank || effect.countByRank;
+    const value = table?.[0];
+    if (effect.type === "damage") {
+      return `${effect.hits || 1}${effect.hits > 1 ? " hits" : " hit"} at ${value}% ${effect.scale.toUpperCase()}`;
+    }
+    if (effect.type === "shield") return `${value}% ${effect.scale.toUpperCase()} ward`;
+    if (effect.type === "heal") return `restore ${value}% ${effect.scale.toUpperCase()} health`;
+    if (effect.type === "heal-lost-fraction") return `restore ${value}% of lost health`;
+    if (effect.type === "status") return `${value} ${effect.status} to ${effect.target}`;
+    if (effect.type === "scaled-status") return `${value}% ${effect.scale.toUpperCase()} ${effect.status}`;
+    if (effect.type === "damage-enemy-lost-hp") return `${value}% of enemy missing health`;
+    if (effect.type === "damage-self-lost-hp") return `${value}% of own missing health as damage`;
+    if (effect.type === "reduce-statuses") return `reduce ${effect.statuses.join(", ")} on ${effect.target}`;
+    if (effect.type === "amplify-statuses") return `amplify ${effect.statuses.join(", ")} to ${value}%`;
+    if (effect.type === "consume-status") return `spend ${value} ${effect.status}`;
+    return effect.type.replace(/-/g, " ");
+  });
+  return `${spec.name}: ${parts.join("; ")}.`;
 }
 
 function skill(id, name, {
@@ -229,12 +306,12 @@ const definitions = [
     effects: [damage("attack", [400]), scaledStatus("lethargy", "enemy", "defense", [400])],
     description: "Shatter the ground for 400% ATK damage and Lethargy equal to 400% DEF.",
   }),
-  skill("north-king-neutralizing-blow", "Neutralizing Blow", {
+  skill("north-king-neutralizing-blow", "Shattering Blow", {
     characterId: "old-king-of-northland", abilityType: "archetype", rarity: "rare", usesPerAct: 7,
     effects: [damage("defense", [140]), scaledStatus("lethargy", "enemy", "defense", [140])],
     description: "Meet a heavy attack with 140% DEF damage and equal Lethargy.", fidelity: "adapted",
-    sourceName: "무력화 공격",
-    sourceDetail: "The source guide identifies Neutralizing Blow as the Old King's answer to heavy attacks; its paired DEF damage and Lethargy are normalized here.",
+    sourceName: "파쇄격",
+    sourceDetail: "The source lists Shattering Blow for the Old King; its paired DEF damage and Lethargy are normalized here.",
   }),
 
   skill("sleepless-flame-strike", "Flame Strike", {
@@ -276,14 +353,23 @@ const definitions = [
     description: "Raise armor equal to 175% DEF, strongest into repeated hits.",
   }),
   skill("assassin-flash-bomb", "Flash Bomb", {
-    characterId: "last-assassin", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, cooldown: 5,
-    effects: [status("stun", "enemy", [2]), status("vulnerable", "enemy", [5])],
-    description: "Blind the target for 2 turns and expose it to the finishing blow.", fidelity: "adapted",
+    characterId: "last-assassin", abilityType: "archetype", rarity: "legendary", usesPerAct: 2, consumesTurn: false,
+    effects: [status("paralyze", "enemy", [2, 2])],
+    description: "Paralyze the target for 2 turns without spending the main action.",
   }),
   skill("assassin-execution", "Execution", {
-    characterId: "last-assassin", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
-    effects: [damage("attack", [100]), lostHealthDamage([45])],
-    description: "Strike, then deal bonus damage equal to 45% of the enemy's missing health.", fidelity: "adapted",
+    characterId: "last-assassin", abilityType: "archetype", rarity: "mythical", usesPerAct: 2,
+    effects: [
+      damage("attack", [240, 360]),
+      Object.freeze({
+        type: "reduce-statuses",
+        target: "enemy",
+        statuses: freezeTable(["burn", "poison", "bleed", "weak", "lethargy", "vulnerable", "cripple"]),
+        toPercent: 0,
+        percentByRank: freezeTable([100, 100]),
+      }),
+    ],
+    description: "Deal 240% ATK damage, then consume the enemy's negative statuses.",
   }),
   skill("assassin-storm-of-knives", "Storm of Knives", {
     characterId: "last-assassin", abilityType: "archetype", rarity: "epic", usesPerAct: 5,
@@ -386,9 +472,9 @@ const definitions = [
     description: "Turn the sword into a 210% DEF ward with 2 Guard.", fidelity: "adapted",
   }),
   skill("blade-chi-liberation", "Chi Liberation", {
-    characterId: "wandering-blade", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, consumesTurn: false,
+    characterId: "wandering-blade", abilityType: "archetype", rarity: "legendary", usesPerAct: 4, cooldown: 4, consumesTurn: false,
     effects: [status("priority", "self", [2]), status("strength", "self", [5])],
-    description: "Release stored breath for 2 Priority and 5 Strength.", fidelity: "adapted",
+    description: "Release stored breath for 2 Priority and 5 Strength, then recover for 4 turns.", fidelity: "adapted",
   }),
   skill("blade-one-flash", "One Flash", {
     characterId: "wandering-blade", abilityType: "archetype", rarity: "mythical", usesPerAct: 1,
@@ -460,8 +546,26 @@ const definitions = [
   }),
 ];
 
+const libraryDefinitions = EXTRA_CHARACTER_ABILITY_SPECS.map((spec) => {
+  const effects = spec.effects.map(catalogEffect);
+  return skill(spec.id, spec.name, {
+    characterId: spec.characterId,
+    abilityType: spec.abilityType,
+    rarity: spec.rarity,
+    effects,
+    usesPerAct: spec.usesPerAct,
+    cooldown: spec.cooldown,
+    consumesTurn: spec.consumesTurn,
+    description: spec.description || catalogDescription(spec, effects),
+    sourceName: spec.sourceName,
+    sourcePage: CHARACTER_LIBRARY_SOURCE,
+    fidelity: "adapted",
+    sourceDetail: `Listed for ${spec.characterId} in the source catalogue; recreated as ${catalogDescription(spec, effects)}`,
+  });
+});
+
 export const CHARACTER_ABILITIES = Object.freeze(Object.fromEntries(
-  definitions.map((definition) => [definition.id, definition]),
+  [...definitions, ...libraryDefinitions].map((definition) => [definition.id, definition]),
 ));
 
 export function getCharacterAbility(id) {
@@ -472,4 +576,10 @@ export function getCharacterAbility(id) {
 
 export function characterAbilityIds() {
   return Object.keys(CHARACTER_ABILITIES);
+}
+
+export function characterAbilitiesFor(characterId) {
+  return Object.values(CHARACTER_ABILITIES).filter(
+    (definition) => definition.exclusiveTo === characterId,
+  );
 }

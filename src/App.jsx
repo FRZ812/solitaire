@@ -101,7 +101,7 @@ import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admissi
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./gameplay/tow/character-bootstrap.js";
 import { isTowBuild } from "./gameplay/tow/build.js";
 import { claimReward, compileRewardOffer, rerollRewardOffer, rewardSeedFor } from "./gameplay/tow/rewards.js";
-import { getSkill, replaceableSkillIds, SKILL_SLOTS } from "./gameplay/tow/skills.js";
+import { getSkill, replacementSkillIds, SKILL_SLOTS } from "./gameplay/tow/skills.js";
 import { refusalNotice } from "./gameplay/campaign/command-gateway.js";
 import {
   claimPresentation,
@@ -3781,6 +3781,7 @@ export function Solitaire() {
       return;
     }
     if (result.duplicate) return;
+    setTowCombatFeedback(null);
     // A finished fight seals its verdict in the same commit that finishes it, so a reload
     // between the last blow and the settlement lands on a decided fight rather than one
     // that has to be judged again.
@@ -4179,7 +4180,10 @@ export function Solitaire() {
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
               {state.pendingReward.candidates.map((candidate) => {
                 const buildSkills = state.mechanics?.build?.skills || [];
-                const replacements = replaceableSkillIds(buildSkills);
+                const candidateSkill = candidate.kind === "skill" ? getSkill(candidate.id) : null;
+                const replacements = candidateSkill
+                  ? replacementSkillIds(buildSkills, candidateSkill)
+                  : [];
                 const requiresReplacement = candidate.kind === "skill"
                   && (candidate.requiresReplacement === true || buildSkills.length >= SKILL_SLOTS);
                 if (!requiresReplacement) {
@@ -4215,7 +4219,7 @@ export function Solitaire() {
                     <strong style={{ display: "block", fontSize: "13px" }}>{candidate.name}</strong>
                     <span style={{ display: "block", fontSize: "11px", color: colors.parchmentMuted }}>{candidate.detail}</span>
                     <span style={{ display: "block", marginTop: "7px", fontSize: "9px", letterSpacing: "0.1em", textTransform: "uppercase", color: colors.gold }}>
-                      Replace one flexible ability
+                      Replace the compatible equipped ability
                     </span>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "5px" }}>
                       {replacements.map((skillId) => (

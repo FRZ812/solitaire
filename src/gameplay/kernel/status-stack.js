@@ -31,7 +31,8 @@ export const PROVISIONAL_DECREMENT = Object.freeze({
 // it is not a claim about the wiki.
 export const PROVISIONAL_CONTROL_LIFECYCLE = Object.freeze({
   types: Object.freeze(["paralyze", "sleep", "stun"]),
-  decreaseAtEndOfTurn: true,
+  decreaseAtEndOfTurn: false,
+  consumeWhenCommandNullified: true,
   evidence: "gap",
 });
 
@@ -89,19 +90,22 @@ const DEFINITIONS = Object.freeze({
   // effect is known while their lifecycle is not.
   conceal: definition("conceal", { evidence: "gap" }),
   invincible: definition("invincible", { evidence: "gap" }),
-  // See PROVISIONAL_CONTROL_LIFECYCLE: decay is provisional, but permanence is provably wrong.
-  paralyze: definition("paralyze", { decreaseAtEndOfTurn: true, evidence: "gap" }),
-  sleep: definition("sleep", { decreaseAtEndOfTurn: true, evidence: "gap" }),
-  stun: definition("stun", { decreaseAtEndOfTurn: true, evidence: "gap" }),
+  // See PROVISIONAL_CONTROL_LIFECYCLE: a stack is consumed by the command window it
+  // actually nullifies. End-of-round decay erased freshly inflicted control before the
+  // affected side ever received (and automatically lost) its next command.
+  paralyze: definition("paralyze", { evidence: "gap" }),
+  sleep: definition("sleep", { evidence: "gap" }),
+  stun: definition("stun", { evidence: "gap" }),
   bleed: definition("bleed", { evidence: "gap" }),
   "bleed-atk": definition("bleed-atk", { evidence: "gap" }),
   lethargy: definition("lethargy", { evidence: "gap" }),
   "lethargy-atk": definition("lethargy-atk", { evidence: "gap" }),
   vulnerable: definition("vulnerable", { evidence: "gap" }),
-  skeleton: definition("skeleton", { evidence: "gap" }),
+  skeleton: definition("skeleton", { decreaseWhenHit: true }),
   limp: definition("limp", { evidence: "gap" }),
   berserk: definition("berserk", { evidence: "gap" }),
-  initiative: definition("initiative", { evidence: "gap" }),
+  initiative: definition("initiative", { removeAtEndOfTurn: true }),
+  "initiative-atk": definition("initiative-atk", { permanent: true }),
   judgment: definition("judgment", { evidence: "gap" }),
 });
 
@@ -164,6 +168,17 @@ export function applyStatus(stack, type, count) {
 
 export function removeStatus(stack, type) {
   return normalize(stack).filter((entry) => entry.type !== type);
+}
+
+/** Spend a concrete number of stacks without changing any other status. */
+export function consumeStatusCount(stack, type, amount = 1) {
+  if (!getStatusDefinition(type)) throw new TypeError(`unknown-status:${type}`);
+  if (!Number.isSafeInteger(amount) || amount < 0) throw new TypeError("invalid-status-count");
+  return normalize(stack)
+    .map((entry) => (entry.type === type
+      ? { ...entry, count: Math.max(0, entry.count - amount) }
+      : entry))
+    .filter((entry) => entry.count > 0);
 }
 
 /**

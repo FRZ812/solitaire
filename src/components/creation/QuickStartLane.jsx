@@ -11,9 +11,17 @@ import winterScene from "../../assets/generated/scene-whitemarch-v2.webp";
 import { resolveCharacterPortrait } from "../character-portrait-assets.js";
 import { resolvePlayerCombatCutout } from "../combat/tow-combat-art.js";
 import { Icon } from "../Icon.jsx";
-import { CHARACTER_ABILITY_TYPE_LABELS } from "../../gameplay/tow/character-abilities.js";
+import {
+  CHARACTER_ABILITY_TYPE_LABELS,
+  characterAbilitiesFor,
+} from "../../gameplay/tow/character-abilities.js";
 import { createSkillState, generalAbilityIds, getSkill } from "../../gameplay/tow/skills.js";
-import { getFusion, getTrait } from "../../gameplay/tow/traits.js";
+import {
+  describeTraitAtRank,
+  getFusion,
+  getTrait,
+  traitIds,
+} from "../../gameplay/tow/traits.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "../combat/tow-combat-ability-art.js";
 import { useModalFocus } from "../exploration/modalFocus.js";
@@ -71,8 +79,9 @@ function nonStrikeSummary(definition, rank = 1) {
     if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
     if (effect.type === "scaled-status") return `${amount}% ${effect.scale.toUpperCase()} ${effect.status}`;
     if (effect.type === "status") return `${amount} ${effect.status}`;
-    if (effect.type === "reduce-statuses") return `Cleanse ${effect.statuses.join(", ")}`;
+    if (effect.type === "reduce-statuses") return `${effect.target === "enemy" ? "Consume" : "Cleanse"} ${effect.statuses.join(", ")}`;
     if (effect.type === "amplify-statuses") return `Raise ${effect.statuses.join(", ")} to ${amount}%`;
+    if (effect.type === "consume-status") return `Spend ${amount} ${effect.status}`;
     return effect.type.replace(/-/g, " ");
   });
   return readable.join(" · ") || "Passive combat effect";
@@ -106,6 +115,41 @@ function StartingAbilityCard({ definition, compact = false, availability = null 
         ) : null}
       </div>
     </article>
+  );
+}
+
+function TraitCard({ definition, rank = 1, compact = false, availability = null }) {
+  if (!definition) return null;
+  return (
+    <article
+      className={`starting-trait${compact ? " is-compact" : ""}`}
+      data-trait-id={definition.id}
+    >
+      <span aria-hidden="true">✦</span>
+      <div>
+        <small>{availability || `Innate passive · Rank ${rank}`}</small>
+        <strong>{definition.name}</strong>
+        <p>{describeTraitAtRank(definition.id, rank)}</p>
+      </div>
+    </article>
+  );
+}
+
+function AbilityLibraryGroup({ label, abilities, availability }) {
+  return (
+    <details className="character-ability-library__group" open={abilities.length <= 3}>
+      <summary><span>{label}</span><small>{abilities.length}</small></summary>
+      <div className="general-ability-library">
+        {abilities.map((skill) => (
+          <StartingAbilityCard
+            key={skill.id}
+            definition={skill}
+            compact
+            availability={availability}
+          />
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -223,10 +267,27 @@ function CharacterDetails({ selected, scenarioId, onScenarioChange, onPractice, 
   const fusionIds = useMemo(() => archetypeFusionIds(selected.id), [selected.id]);
   const baseTraitId = Object.keys(selected.build.traits)[0];
   const baseTrait = getTrait(baseTraitId);
+  const baseTraitRank = selected.build.traits[baseTraitId];
   const skills = selected.build.skills.map((id) => getSkill(id)).filter(Boolean);
+  const equippedIds = useMemo(() => new Set(selected.build.skills), [selected.build.skills]);
+  const futureExclusiveAbilities = useMemo(
+    () => characterAbilitiesFor(selected.id).filter((ability) => !equippedIds.has(ability.id)),
+    [equippedIds, selected.id],
+  );
+  const exclusiveGroups = useMemo(() => ({
+    basics: futureExclusiveAbilities.filter((ability) => ability.abilityType === "basic-attack"),
+    defenses: futureExclusiveAbilities.filter((ability) => ability.abilityType === "defensive"),
+    flexible: futureExclusiveAbilities.filter((ability) => ability.abilityType === "archetype"),
+  }), [futureExclusiveAbilities]);
   const generalAbilities = useMemo(
     () => generalAbilityIds().map((id) => getSkill(id)).filter(Boolean),
     [],
+  );
+  const sharedTraits = useMemo(
+    () => traitIds()
+      .map((id) => getTrait(id))
+      .filter((trait) => trait && trait.id !== baseTraitId && trait.exclusiveTo === null),
+    [baseTraitId],
   );
 
   return (
@@ -281,8 +342,8 @@ function CharacterDetails({ selected, scenarioId, onScenarioChange, onPractice, 
               <small>5 active · no shared abilities equipped</small>
             </div>
             <div className="ability-slot-contract" aria-label="Five active ability slots">
-              <span><strong>1</strong> Basic attack <small>fixed</small></span>
-              <span><strong>2</strong> Defensive <small>fixed</small></span>
+              <span><strong>1</strong> Basic attack <small>same-family replacement</small></span>
+              <span><strong>2</strong> Defensive <small>same-family replacement</small></span>
               <span><strong>3–5</strong> Exclusive <small>flexible</small></span>
             </div>
             <div className="starting-abilities">
@@ -297,35 +358,70 @@ function CharacterDetails({ selected, scenarioId, onScenarioChange, onPractice, 
 
           <section className="character-details__ability-library">
             <div className="character-details__section-heading">
-              <span className="character-details__label">Future replacements</span>
-              <small>{generalAbilities.length} shared abilities</small>
+              <span className="character-details__label">Character ability library</span>
+              <small>{futureExclusiveAbilities.length} unequipped exclusives</small>
             </div>
             <p>
-              Rewards can replace any of slots 3–5 with a General ability. The Basic Attack
-              and Defensive slots stay protected, and every character begins with three
-              exclusive abilities instead of a shared one.
+              Basic Attack rewards replace only slot 1; Defensive rewards replace only slot
+              2. Every other character-exclusive reward can replace one of slots 3–5.
             </p>
-            <div className="general-ability-library" aria-label="General abilities available later">
-              {generalAbilities.map((skill) => (
-                <StartingAbilityCard
-                  key={skill.id}
-                  definition={skill}
-                  compact
-                  availability="General · available later"
-                />
-              ))}
+            <div className="character-exclusive-library" aria-label={`${selected.character.name} abilities available later`}>
+              <AbilityLibraryGroup label="Basic Attack replacements" abilities={exclusiveGroups.basics} availability="Exclusive Basic · available later" />
+              <AbilityLibraryGroup label="Defensive replacements" abilities={exclusiveGroups.defenses} availability="Exclusive Defense · available later" />
+              <AbilityLibraryGroup label="Flexible exclusive abilities" abilities={exclusiveGroups.flexible} availability="Exclusive · slots 3–5" />
             </div>
           </section>
 
-          <section className="character-details__split">
-            <div>
-              <span className="character-details__label">Innate passive</span>
-              <strong>{baseTrait?.name || baseTraitId}</strong>
+          <section className="character-details__ability-library">
+            <div className="character-details__section-heading">
+              <span className="character-details__label">General ability library</span>
+              <small>{generalAbilities.length} shared replacements</small>
             </div>
-            <div>
+            <p>General rewards are never equipped at the start and may replace only slots 3–5.</p>
+            <details className="character-ability-library__group">
+              <summary><span>View all General abilities</span><small>{generalAbilities.length}</small></summary>
+              <div className="general-ability-library" aria-label="General abilities available later">
+                {generalAbilities.map((skill) => (
+                  <StartingAbilityCard
+                    key={skill.id}
+                    definition={skill}
+                    compact
+                    availability="General · available later"
+                  />
+                ))}
+              </div>
+            </details>
+          </section>
+
+          <section className="character-details__passives">
+            <div className="character-details__section-heading">
+              <span className="character-details__label">Passive traits</span>
+              <small>10 maximum · 7 ranks each</small>
+            </div>
+            <TraitCard definition={baseTrait} rank={baseTraitRank} />
+            <div className="character-details__split">
+              <div>
+                <span className="character-details__label">Starting passive</span>
+                <strong>{baseTrait?.name || baseTraitId} · Rank {baseTraitRank}</strong>
+              </div>
+              <div>
               <span className="character-details__label">Combat identity</span>
               <strong>{selected.role}</strong>
+              </div>
             </div>
+            <details className="character-ability-library__group">
+              <summary><span>Shared and event trait pool</span><small>{sharedTraits.length}</small></summary>
+              <div className="shared-trait-library" aria-label="Passive traits available later">
+                {sharedTraits.map((trait) => (
+                  <TraitCard
+                    key={trait.id}
+                    definition={trait}
+                    compact
+                    availability="Passive · available later"
+                  />
+                ))}
+              </div>
+            </details>
           </section>
 
           <section>
@@ -385,6 +481,8 @@ export function QuickStartLane({
   const gridChoiceRefs = useRef([]);
   const wasPreviewRef = useRef(normalized.preview);
   const baseTrait = getTrait(Object.keys(selected.build.traits)[0]);
+  const previewTraitRank = selected.build.traits[baseTrait?.id] || 1;
+  const previewTraitSummary = baseTrait ? describeTraitAtRank(baseTrait.id, previewTraitRank) : "";
 
   useEffect(() => setDetailsOpen(false), [selected.id]);
   useEffect(() => {
@@ -511,10 +609,12 @@ export function QuickStartLane({
             <div className="character-preview__kit">
               <div
                 className="character-preview__trait"
-                aria-label={`Starting trait: ${baseTrait?.name || Object.keys(selected.build.traits)[0]}`}
+                aria-label={`Starting passive: ${baseTrait?.name || Object.keys(selected.build.traits)[0]}. ${previewTraitSummary}`}
+                title={previewTraitSummary}
               >
                 <span aria-hidden="true">✦</span>
                 <strong>{baseTrait?.name || Object.keys(selected.build.traits)[0]}</strong>
+                <small>Rank {previewTraitRank} passive</small>
               </div>
 
               <div className="character-preview__ability-strip" aria-label="Starting abilities">

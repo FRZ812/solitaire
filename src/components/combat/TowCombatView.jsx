@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import battleScene from "../../assets/generated/scene-crowsmoor-v2.webp";
 import { Icon } from "../Icon.jsx";
-import { declaredIntents, retreatOdds } from "../../gameplay/tow/encounter.js";
+import {
+  declaredIntents,
+  priorityAdvantageFor,
+  retreatOdds,
+} from "../../gameplay/tow/encounter.js";
 import { CHARACTER_ABILITY_TYPE_LABELS } from "../../gameplay/tow/character-abilities.js";
 import {
   effectMagnitude,
@@ -33,6 +37,8 @@ const REFUSALS = {
   "on-cooldown": (skill) => `ready in ${skill.cooldownRemaining}`,
   "no-uses-remaining": () => "spent",
   "turn-already-spent": () => "no action left",
+  "action-nullified": () => "control forfeits this turn automatically",
+  "priority-preempted": () => "enemy Priority resolves first",
   "invalid-skill-state": () => "unavailable",
 };
 
@@ -40,6 +46,8 @@ const HOLD_FOR_DETAILS_MS = 420;
 const CONTACT_REACTIONS = new Set(["block", "critical", "evade", "hit", "ward"]);
 const VITAL_CONTACT_OFFSET_MS = 150;
 const TERMINAL_REVEAL_PADDING_MS = 1450;
+const FORCED_WINDOW_READ_MS = 900;
+const CONTROL_STATUS_TYPES = Object.freeze(["stun", "paralyze", "sleep"]);
 
 function refusalText(reason, skillState) {
   const render = REFUSALS[reason];
@@ -48,6 +56,15 @@ function refusalText(reason, skillState) {
 
 function monogram(name) {
   return (String(name || "?").trim()[0] || "?").toUpperCase();
+}
+
+function activeControlFor(actor) {
+  if (!actor || actor.statuses.some((status) => status.type === "unstoppable" && status.count > 0)) {
+    return null;
+  }
+  return CONTROL_STATUS_TYPES
+    .map((type) => actor.statuses.find((status) => status.type === type && status.count > 0))
+    .find(Boolean) || null;
 }
 
 function domId(value) {
@@ -312,6 +329,7 @@ function IntentBadge({ intent, target, playerId }) {
       <span className="tow-combat__intent-target" aria-hidden="true">
         {intent.target === "self" ? "Self" : `→ ${target?.id === playerId ? "You" : targetName}`}
       </span>
+      <span className="tow-combat__intent-name" aria-hidden="true">{intent.name}</span>
       <span className="tow-combat__sr-only">Incoming: {intent.name}</span>
     </div>
   );
@@ -661,6 +679,7 @@ function CombatRecord({ receipts, tempo, opening, expanded, onToggle, compact = 
 function ActionDeclaration({
   label,
   visual,
+  art = null,
   actorName,
   side = "player",
   delayMs = 0,
@@ -680,7 +699,7 @@ function ActionDeclaration({
       aria-hidden={side === "enemy" ? "true" : undefined}
     >
       <span className="tow-combat__declaration-sigil" aria-hidden="true">
-        <img src={visual.asset} alt="" />
+        <img src={art || visual.asset} alt="" />
         <i />
       </span>
       <small aria-hidden="true">{side === "enemy" ? actorName : "Declared"}</small>
@@ -713,6 +732,7 @@ function CombatDeclarations({ beat, cues, encounter }) {
         <ActionDeclaration
           label={beat.displayName}
           visual={beat.choreography.visual}
+          art={beat.art}
           actorName={beat.actorName}
           durationMs={playerDeclarationDuration}
           testId="tow-action-beat"
@@ -723,6 +743,7 @@ function CombatDeclarations({ beat, cues, encounter }) {
           key={`enemy-declaration-${cue.actionIndex}-${cue.sequence}`}
           label={cue.declarationLabel}
           visual={cue.visual}
+          art={cue.skillId ? resolveTowAbilityArt(getSkill(cue.skillId), null) : null}
           actorName={actor.name}
           side="enemy"
           // The enemy answers after the committed action has had its own title beat. Their
@@ -760,6 +781,7 @@ export function TowCombatView({
   const authoritativePhaseRef = useRef(encounter.phase);
   const impactClearTimerRef = useRef(null);
   const terminalRevealTimerRef = useRef(null);
+  const forcedAdvanceRef = useRef(null);
   const [targetId, setTargetId] = useState(null);
   const [commanderId, setCommanderId] = useState(null);
   const [inspectedSkillId, setInspectedSkillId] = useState(null);
@@ -778,7 +800,7 @@ export function TowCombatView({
   const authoritativeTerminal = encounter.phase !== "player";
   const terminal = authoritativeTerminal && terminalRevealed;
   const terminalHold = authoritativeTerminal && !terminalRevealed;
-  const presentationLocked = Boolean(actionBeat) || terminalHold;
+  const presentationLocked = Boolean(actionBeat) || terminalHold || impactCues.length > 0;
   const activeTarget = living.find((enemy) => enemy.id === targetId)?.id || living[0]?.id || null;
   const commandable = playerSide.filter((actor) => actor.hp > 0);
   const activeCommander = commandable.find((actor) => (
@@ -788,6 +810,16 @@ export function TowCombatView({
     || commandable.find((actor) => actor.id === commanderId)
     || commandable[0]
     || player;
+  const activeControl = activeControlFor(activeCommander);
+  const hostilePriority = enemies.reduce(
+    (most, enemy) => Math.max(most, priorityAdvantageFor(encounter, enemy.id)),
+    0,
+  );
+  const forcedWindow = activeControl
+    ? { kind: "control", label: activeControl.type.replace(/\b\w/g, (letter) => letter.toUpperCase()) }
+    : hostilePriority > 0
+      ? { kind: "priority", label: `Enemy Priority ${hostilePriority}` }
+      : null;
   const stagedHero = playerSide.find((actor) => actor.id === actionBeat?.actorId)
     || activeCommander
     || player;
@@ -814,13 +846,16 @@ export function TowCombatView({
   const commanderWeapon = weaponPresentationFor(activeCommander);
   const skillRows = (commanderBuild?.skills || []).map((skillState) => {
     const definition = getSkill(skillState.id);
+    const legality = forcedWindow
+      ? { ok: false, reason: forcedWindow.kind === "control" ? "action-nullified" : "priority-preempted" }
+      : skillLegality(skillState, {
+        turnAvailable: actionsLeft(encounter, activeCommander.id) > 0,
+      });
     return {
       art: resolveTowAbilityArt(definition, commanderWeapon),
       definition,
       displayName: resolveTowActionName(definition, commanderWeapon),
-      legality: skillLegality(skillState, {
-        turnAvailable: actionsLeft(encounter, activeCommander.id) > 0,
-      }),
+      legality,
       limit: usesPerAct(skillState.id, skillState.rank),
       skillState,
       weaponPresentation: commanderWeapon,
@@ -1043,6 +1078,36 @@ export function TowCombatView({
     return undefined;
   }, [encounter, encounter.sequence]);
 
+  // A controlled or out-prioritised command window is presentation, never input. Keeping
+  // the authoritative Stand Down command means the skipped window remains replayable; the
+  // short read hold lets the status rail and declaration explain why before the enemy line
+  // advances on its own. The sequence key prevents Strict Mode or a harmless rerender from
+  // dispatching the same forced command twice.
+  useEffect(() => {
+    if (
+      terminal
+      || presentationLocked
+      || !forcedWindow
+      || actionsLeft(encounter, activeCommander.id) <= 0
+      || typeof onStandDown !== "function"
+    ) return undefined;
+    const key = `${encounter.sequence}:${activeCommander.id}:${forcedWindow.kind}`;
+    if (forcedAdvanceRef.current === key) return undefined;
+    const timer = setTimeout(() => {
+      forcedAdvanceRef.current = key;
+      onStandDown(activeCommander.id);
+    }, FORCED_WINDOW_READ_MS);
+    return () => clearTimeout(timer);
+  }, [
+    activeCommander.id,
+    encounter,
+    encounter.sequence,
+    forcedWindow?.kind,
+    onStandDown,
+    presentationLocked,
+    terminal,
+  ]);
+
   function keepFocusInside(event) {
     if (event.key === "Escape") {
       if (inspectedSkillId) {
@@ -1156,7 +1221,7 @@ export function TowCombatView({
                 type="button"
                 className="tow-combat__escape tow-combat__escape--retreat"
                 onClick={() => onRetreat(activeCommander.id)}
-                disabled={presentationLocked}
+                disabled={presentationLocked || Boolean(forcedWindow)}
                 aria-label={`Attempt retreat. ${retreat.chancePercent}% chance. Spends ${commanderPossessive} action on failure.`}
               >
                 <Icon name="arrowLeft" size={15} />
@@ -1263,15 +1328,24 @@ export function TowCombatView({
         {error ? <p className="tow-combat__alert" role="alert">{error}</p> : null}
 
         {!terminal ? (
-          <footer className={`tow-combat__command${presentationLocked ? " is-committed" : ""}`} aria-busy={presentationLocked}>
+          <footer
+            className={`tow-combat__command${presentationLocked ? " is-committed" : ""}${forcedWindow ? " is-forced" : ""}`}
+            aria-busy={presentationLocked || Boolean(forcedWindow)}
+          >
             <div className="tow-combat__command-heading">
               <div>
-                <span>{actionBeat ? actionBeat.phase === "windup" ? "Committed" : "Resolving" : stagedHero.id === encounter.playerId ? "Your command" : stagedHero.name}</span>
-                <strong>{actionBeat ? actionBeat.displayName : "Choose an action"}</strong>
+                <span>{actionBeat
+                  ? actionBeat.phase === "windup" ? "Committed" : "Resolving"
+                  : forcedWindow?.kind === "control" ? "Control takes hold"
+                    : forcedWindow?.kind === "priority" ? "Enemy moves first"
+                      : stagedHero.id === encounter.playerId ? "Your command" : stagedHero.name}</span>
+                <strong>{actionBeat
+                  ? actionBeat.displayName
+                  : forcedWindow ? `${forcedWindow.label} · turn forfeited` : "Choose an action"}</strong>
               </div>
               <p>
-                <strong>{actionsLeft(encounter, activeCommander.id)}</strong>
-                <span>action{actionsLeft(encounter, activeCommander.id) === 1 ? "" : "s"}</span>
+                <strong>{forcedWindow ? 0 : actionsLeft(encounter, activeCommander.id)}</strong>
+                <span>{forcedWindow ? "input" : `action${actionsLeft(encounter, activeCommander.id) === 1 ? "" : "s"}`}</span>
               </p>
             </div>
 
@@ -1284,7 +1358,7 @@ export function TowCombatView({
                     className={`tow-combat__commander production-combat__commander${actor.id === activeCommander.id ? " is-selected" : ""}`}
                     aria-pressed={actor.id === activeCommander.id}
                     aria-label={`Act as ${actor.name}, ${actionsLeft(encounter, actor.id)} actions left`}
-                    disabled={presentationLocked}
+                    disabled={presentationLocked || Boolean(forcedWindow)}
                     onClick={() => setCommanderId(actor.id)}
                   >
                     <span>{actor.id === encounter.playerId ? "You" : actor.name}</span>
@@ -1323,7 +1397,11 @@ export function TowCombatView({
             <p className="tow-combat__action-hint">
               {actionBeat
                 ? actionBeat.phase === "windup" ? "Commitment set · awaiting contact" : "Resolve · watch the exchange"
-                : "Tap to commit · hold for details"}
+                : forcedWindow?.kind === "control"
+                  ? "No input needed · the skipped command advances automatically"
+                  : forcedWindow?.kind === "priority"
+                    ? "No input needed · enemy Priority resolves automatically"
+                    : "Tap to commit · hold for details"}
             </p>
 
             {inspectedSkill ? (
@@ -1334,7 +1412,7 @@ export function TowCombatView({
             ) : null}
 
             <div className="tow-combat__command-foot">
-              {commandable.length > 1 && actionsLeft(encounter, activeCommander.id) > 0 ? (
+              {!forcedWindow && commandable.length > 1 && actionsLeft(encounter, activeCommander.id) > 0 ? (
                 <button
                   type="button"
                   className="tow-combat__hold"

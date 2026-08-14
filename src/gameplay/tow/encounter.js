@@ -22,6 +22,7 @@ import {
 import {
   applyStatus,
   createStatusStack,
+  removeStatus,
   scaleStatus,
   statusCount,
   tickEndOfTurn,
@@ -56,6 +57,9 @@ const PHASES = new Set(["player", "victory", "defeat", "retreated"]);
 export const RETREAT_CHANCE_MIN = 10;
 export const RETREAT_CHANCE_MAX = 90;
 export const RETREAT_BASE_CHANCE = 50;
+
+const CONTROL_STATUS_TYPES = Object.freeze(["stun", "paralyze", "sleep"]);
+const MAX_ENEMY_COMMANDS_PER_WINDOW = 96;
 
 function event(state, type, detail = {}) {
   return { sequence: state.sequence + 1, round: state.round, type, ...detail };
@@ -116,7 +120,10 @@ export function fireTraits(state) {
 
       const amount = combatTraitValueAtRank(traitId, rank);
       if (amount <= 0) continue;
-      const { kind, status } = definition.effect;
+      const { kind } = definition.effect;
+      const status = definition.effect.evenRankStatus && rank % 2 === 0
+        ? definition.effect.evenRankStatus
+        : definition.effect.status;
 
       // Identical enemy auras are one tactical pressure, not N copies of the same passive.
       // Self-granting traits still belong to every individual actor; only repeated hostile
@@ -127,7 +134,22 @@ export function fireTraits(state) {
       if (kind !== "grant-status") appliedGroupPressure.add(pressureKey);
       const targetIds = [];
 
-      if (kind === "grant-status") {
+      if (definition.effect.affectsOwnerAndOpponents) {
+        const actors = { ...next.actors };
+        const affectedIds = [
+          ownerId,
+          ...(next.actors[ownerId].side === "enemy" ? playerSideIds(next) : next.enemyIds),
+        ];
+        for (const targetId of affectedIds) {
+          if (!actors[targetId] || actors[targetId].hp <= 0) continue;
+          targetIds.push(targetId);
+          actors[targetId] = {
+            ...actors[targetId],
+            statuses: applyStatus(actors[targetId].statuses, status, amount),
+          };
+        }
+        next = { ...next, actors };
+      } else if (kind === "grant-status") {
         const owner = next.actors[ownerId];
         targetIds.push(ownerId);
         next = {
@@ -181,23 +203,84 @@ export function buildFor(state, actorId) {
 // Creation
 // ---------------------------------------------------------------------------
 
-// How many turn-consuming actions the player gets this round.
+// How many turn-consuming actions this combatant gets in its command window.
 //
 // Haste "gains additional action during battle". Priority "performs a certain number of
 // actions before the enemy; if the enemy has Priority too, they cancel out" — so it is
-// the *net* against the enemy line, not a flat bonus, and an enemy with more Priority
-// than you simply cancels yours rather than stealing your turn.
+// the *net* against the opposing line, not a flat bonus. Priority actions are spent before
+// the ordinary action; `spendAction` and the enemy resolver consume their matching stacks.
+function opposingPriority(state, actorId) {
+  const actor = state.actors[actorId];
+  if (!actor) return 0;
+  const opposingIds = actor.side === "enemy" ? playerSideIds(state) : state.enemyIds;
+  return opposingIds.reduce((most, opposingId) => {
+    const opposing = state.actors[opposingId];
+    if (!opposing || opposing.hp <= 0) return most;
+    return Math.max(most, statusCount(opposing.statuses, "priority"));
+  }, 0);
+}
+
+export function priorityAdvantageFor(state, actorId) {
+  const actor = state.actors[actorId];
+  if (!actor || actor.hp <= 0) return 0;
+  return Math.max(
+    0,
+    statusCount(actor.statuses, "priority") - opposingPriority(state, actorId),
+  );
+}
+
+function regularActionsFor(actor) {
+  return actor && actor.hp > 0 ? 1 + statusCount(actor.statuses, "haste") : 0;
+}
+
 export function actionsForRound(state, actorId = state.playerId) {
   const actor = state.actors[actorId];
   if (!actor || actor.hp <= 0) return 0;
-  const haste = statusCount(actor.statuses, "haste");
-  const ownPriority = statusCount(actor.statuses, "priority");
-  const enemyPriority = state.enemyIds.reduce((most, enemyId) => {
-    const enemy = state.actors[enemyId];
-    if (enemy.hp <= 0) return most;
-    return Math.max(most, statusCount(enemy.statuses, "priority"));
-  }, 0);
-  return 1 + haste + Math.max(0, ownPriority - enemyPriority);
+  return regularActionsFor(actor) + priorityAdvantageFor(state, actorId);
+}
+
+function consumeStatusCount(stack, type, amount = 1) {
+  const count = statusCount(stack, type);
+  if (count <= 0 || amount <= 0) return stack;
+  if (amount >= count) return removeStatus(stack, type);
+  return stack.map((entry) => (
+    entry.type === type ? { ...entry, count: entry.count - amount } : entry
+  ));
+}
+
+function consumeActorPriority(state, actorId, amount = 1) {
+  const actor = state.actors[actorId];
+  if (!actor || amount <= 0) return state;
+  const statuses = consumeStatusCount(actor.statuses, "priority", amount);
+  if (statuses === actor.statuses) return state;
+  return {
+    ...state,
+    actors: { ...state.actors, [actorId]: { ...actor, statuses } },
+  };
+}
+
+function activeControlStatuses(actor) {
+  if (!actor || statusCount(actor.statuses, "unstoppable") > 0) return [];
+  return CONTROL_STATUS_TYPES
+    .map((type) => ({ type, count: statusCount(actor.statuses, type) }))
+    .filter((entry) => entry.count > 0);
+}
+
+function consumeControlWindow(state, actorId) {
+  const actor = state.actors[actorId];
+  const controls = activeControlStatuses(actor);
+  if (controls.length === 0) return { state, controls };
+  const statuses = controls.reduce(
+    (stack, control) => consumeStatusCount(stack, control.type, 1),
+    actor.statuses,
+  );
+  return {
+    controls,
+    state: {
+      ...state,
+      actors: { ...state.actors, [actorId]: { ...actor, statuses } },
+    },
+  };
 }
 
 function actorRetreatRating(actor) {
@@ -265,8 +348,14 @@ export function actorScaleValue(actor, scale) {
 }
 
 function statOf(actor, scale) {
-  if (scale === "attack") return actor.stats.attack + statusCount(actor.statuses, "strength")
-    + statusCount(actor.statuses, "overload");
+  if (scale === "attack") return Math.max(0,
+    actor.stats.attack
+      + statusCount(actor.statuses, "strength")
+      + statusCount(actor.statuses, "overload")
+      + statusCount(actor.statuses, "skeleton")
+      - statusCount(actor.statuses, "weak")
+      - statusCount(actor.statuses, "lethargy")
+      - statusCount(actor.statuses, "cripple"));
   if (scale === "defense") return actor.stats.defense + statusCount(actor.statuses, "tenacity");
   if (scale === "max-hp") return actor.maxHp;
   return 0;
@@ -795,10 +884,7 @@ function settle(state) {
 
 // A control status nullifies the actor's action unless Unstoppable answers it.
 function isControlled(actor) {
-  if (statusCount(actor.statuses, "unstoppable") > 0) return false;
-  return statusCount(actor.statuses, "sleep") > 0
-    || statusCount(actor.statuses, "paralyze") > 0
-    || statusCount(actor.statuses, "stun") > 0;
+  return activeControlStatuses(actor).length > 0;
 }
 
 /**
@@ -812,6 +898,7 @@ function isControlled(actor) {
  */
 export const SUPPORTED_SKILL_EFFECT_TYPES = Object.freeze([
   "amplify-statuses",
+  "consume-status",
   "damage",
   "damage-enemy-lost-hp",
   "damage-self-lost-hp",
@@ -840,6 +927,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     if (effect.type === "damage") {
       const target = next.actors[targetId];
       if (!target || target.hp <= 0) return;
+      const priorityBefore = statusCount(player.statuses, "priority");
       const weaponAttack = skillId === "strike"
         ? weaponAttackAtRank(buildFor(next, playerId)?.basicAttack, rank)
         : null;
@@ -936,6 +1024,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
           [targetId]: { ...target, hp: target.hp - applied },
         },
       };
+      next = applyImmediatePriorityBudget(next, playerId, priorityBefore);
       next = push(next, "skill-damage", {
         actorId: playerId,
         skillId,
@@ -979,7 +1068,10 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
     // Cleaning a wound: bleed, burn and poison are scaled down rather than decremented, so
     // it bites harder on a heavy stack than a light one.
     if (effect.type === "reduce-statuses") {
-      const before = player.statuses;
+      const subjectId = effect.target === "enemy" ? targetId : playerId;
+      const subject = next.actors[subjectId];
+      if (!subject || subject.hp <= 0) return;
+      const before = subject.statuses;
       const cleaned = effect.statuses.reduce(
         (statuses, status) => scaleStatus(statuses, status, effect.toPercent),
         before,
@@ -991,9 +1083,33 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       if (removed <= 0) return;
       next = {
         ...next,
-        actors: { ...next.actors, [playerId]: { ...player, statuses: cleaned } },
+        actors: { ...next.actors, [subjectId]: { ...subject, statuses: cleaned } },
       };
-      next = push(next, "skill-cleanse", { actorId: playerId, skillId, statuses: [...effect.statuses], removed });
+      next = push(next, "skill-cleanse", {
+        actorId: playerId,
+        skillId,
+        targetId: subjectId,
+        statuses: [...effect.statuses],
+        removed,
+      });
+      return;
+    }
+
+    if (effect.type === "consume-status") {
+      const before = statusCount(player.statuses, effect.status);
+      if (before <= 0) return;
+      const spent = Math.min(before, magnitude());
+      const statuses = consumeStatusCount(player.statuses, effect.status, spent);
+      next = {
+        ...next,
+        actors: { ...next.actors, [playerId]: { ...player, statuses } },
+      };
+      next = push(next, "skill-status-spent", {
+        actorId: playerId,
+        skillId,
+        status: effect.status,
+        spent,
+      });
       return;
     }
 
@@ -1140,22 +1256,28 @@ function withBuild(state, actorId, build) {
 }
 
 function spendAction(state, actorId) {
+  const actor = state.actors[actorId];
+  const actionsBefore = actionsLeftFor(state, actorId);
+  const spendsPriority = actionsBefore > regularActionsFor(actor);
+  let next;
   if (actorId === state.playerId) {
-    return {
+    next = {
       ...state,
       turn: { ...state.turn, actionsRemaining: Math.max(0, state.turn.actionsRemaining - 1) },
     };
-  }
-  return {
-    ...state,
-    turn: {
-      ...state.turn,
-      allies: {
-        ...state.turn.allies,
-        [actorId]: Math.max(0, (state.turn.allies?.[actorId] ?? 0) - 1),
+  } else {
+    next = {
+      ...state,
+      turn: {
+        ...state.turn,
+        allies: {
+          ...state.turn.allies,
+          [actorId]: Math.max(0, (state.turn.allies?.[actorId] ?? 0) - 1),
+        },
       },
-    },
-  };
+    };
+  }
+  return spendsPriority ? consumeActorPriority(next, actorId) : next;
 }
 
 /** Spend one actor's action on one replay-safe, party-wide attempt to break contact. */
@@ -1196,6 +1318,29 @@ export function skipTurn(state, actorId) {
   if (actionsLeftFor(state, actorId) <= 0) return { ok: false, reason: "turn-already-spent", state };
   let next = state;
   while (actionsLeftFor(next, actorId) > 0) next = spendAction(next, actorId);
+  const consumed = consumeControlWindow(next, actorId);
+  if (consumed.controls.length > 0) {
+    return {
+      ok: true,
+      reason: null,
+      state: push(consumed.state, "actor-nullified", {
+        actorId,
+        controls: consumed.controls.map((entry) => entry.type),
+        stacksSpent: consumed.controls.length,
+      }),
+    };
+  }
+  const hostilePriority = state.enemyIds.reduce(
+    (most, enemyId) => Math.max(most, priorityAdvantageFor(state, enemyId)),
+    0,
+  );
+  if (hostilePriority > 0) {
+    return {
+      ok: true,
+      reason: null,
+      state: push(next, "actor-preempted", { actorId, hostilePriority }),
+    };
+  }
   return { ok: true, reason: null, state: push(next, "actor-stood-down", { actorId }) };
 }
 
@@ -1207,14 +1352,17 @@ function burnAndDoom(state, actorId) {
   const actor = state.actors[actorId];
   const burn = statusCount(actor.statuses, "burn");
   const doom = statusCount(actor.statuses, "doom");
-  const total = burn + doom;
+  const poison = statusCount(actor.statuses, "poison");
+  const bleed = statusCount(actor.statuses, "bleed");
+  const misfortune = statusCount(actor.statuses, "misfortune");
+  const total = burn + doom + poison + bleed + misfortune;
   if (total <= 0) return state;
   // Both bypass defences outright.
   const damaged = { ...actor, hp: Math.max(0, actor.hp - total) };
   return push(
     { ...state, actors: { ...state.actors, [actorId]: damaged } },
     "tick-damage",
-    { actorId, burn, doom },
+    { actorId, burn, doom, poison, bleed, misfortune },
   );
 }
 
@@ -1267,79 +1415,139 @@ export function endTurn(state) {
 
   let next = state;
 
+  // Control is a scheduler rule, not a UI convention.  A caller may hand the window over
+  // directly (the replay runner and deterministic balance harness both do), so consume the
+  // forfeited command here as well as through the explicit `skipTurn` command.  Only actors
+  // who still have an action are affected: self-control applied after an action (Mortal
+  // Blow, Incineration) belongs to the *next* command window and must not disappear early.
+  for (const actorId of playerSideIds(next)) {
+    if (actionsLeftFor(next, actorId) <= 0 || !isControlled(next.actors[actorId])) continue;
+    const skipped = skipTurn(next, actorId);
+    if (skipped.ok) next = skipped.state;
+  }
+
   for (const enemyId of next.enemyIds) {
     if (next.phase !== "player") break;
-    const enemy = next.actors[enemyId];
-    if (enemy.hp <= 0) continue;
-    if (isControlled(enemy)) {
-      // The intent is held, not spent: the blow it was winding up still lands, one round
-      // later. See INTENT_CONTROL_POLICY — control buys tempo rather than erasing the
-      // attack the player was shown.
-      next = push(next, "enemy-nullified", { enemyId });
-      continue;
-    }
-    // The foe performs what it declared. Build-backed foes resolve the exact same skill
-    // definition, rank, uses, cooldowns and effects a player with that archetype would use.
-    // Legacy saved fights continue through their immutable attack table below.
-    const table = next.enemyAttacks?.[enemyId] || [];
-    const declared = next.intents[enemyId]
-      ? resolveDeclaredAttack(next.intents[enemyId], table)
-      : null;
-    if (declared?.skillId && next.enemyBuilds?.[enemyId]) {
+    if (next.actors[enemyId].hp <= 0) continue;
+
+    // One enemy command window has ordinary actions from the base turn and Haste, plus a
+    // separate front-loaded Priority budget. Free actions spend neither. If a free setup
+    // grants Priority (Chi Liberation), its newly won actions join this same window before
+    // control can return to the player.
+    let regularRemaining = regularActionsFor(next.actors[enemyId]);
+    let priorityRemaining = priorityAdvantageFor(next, enemyId);
+    let commandsResolved = 0;
+
+    while (
+      next.phase === "player"
+      && next.actors[enemyId].hp > 0
+      && (regularRemaining > 0 || priorityRemaining > 0)
+    ) {
+      if (commandsResolved >= MAX_ENEMY_COMMANDS_PER_WINDOW) {
+        next = push(next, "enemy-waits", { enemyId, reason: "command-window-safety-limit" });
+        break;
+      }
+
+      const enemy = next.actors[enemyId];
+      if (isControlled(enemy)) {
+        // Control forfeits the whole actor window and consumes one stack of every active
+        // control family. The held telegraph remains the promise for its next legal window.
+        const consumed = consumeControlWindow(next, enemyId);
+        next = consumeActorPriority(consumed.state, enemyId, priorityRemaining);
+        next = push(next, "enemy-nullified", {
+          enemyId,
+          controls: consumed.controls.map((entry) => entry.type),
+          priorityLost: priorityRemaining,
+        });
+        regularRemaining = 0;
+        priorityRemaining = 0;
+        break;
+      }
+
+      // The foe performs what it declared. Build-backed foes resolve the exact same skill
+      // definition, rank, uses, cooldowns and effects a player with that archetype would use.
+      // Legacy saved fights continue through their immutable attack table below.
+      const table = next.enemyAttacks?.[enemyId] || [];
+      const declared = next.intents[enemyId]
+        ? resolveDeclaredAttack(next.intents[enemyId], table)
+        : null;
+      const spendingPriority = priorityRemaining > 0;
+
+      if (declared?.skillId && next.enemyBuilds?.[enemyId]) {
+        const standing = livingPlayerSide(next);
+        const declaredTarget = next.intents[enemyId]?.targetId;
+        const targetId = declared.target === "self"
+          ? enemyId
+          : standing.includes(declaredTarget) ? declaredTarget : standing[0];
+        if (!targetId) break;
+        const priorityBefore = priorityAdvantageFor(next, enemyId);
+        const used = useEnemySkill(next, enemyId, declared.skillId, targetId);
+        if (!used.ok) return { ok: false, reason: "intent-desync", state };
+        const priorityAfter = priorityAdvantageFor(used.state, enemyId);
+        priorityRemaining += Math.max(0, priorityAfter - priorityBefore);
+
+        // Advance from the declaration that was actually honoured. Availability is
+        // evaluated after spending it, so a cooling-down Chi Liberation cannot be selected
+        // repeatedly inside the newly-created Priority sequence.
+        next = advanceEnemyIntent(used.state, enemyId);
+        const definition = getSkill(declared.skillId);
+        if (definition.consumesTurn) {
+          if (spendingPriority) {
+            next = consumeActorPriority(next, enemyId);
+            priorityRemaining = Math.max(0, priorityRemaining - 1);
+          } else {
+            regularRemaining = Math.max(0, regularRemaining - 1);
+          }
+        }
+        commandsResolved += 1;
+        next = settle(next);
+        continue;
+      }
+
+      if (next.enemyBuilds?.[enemyId] && !declared) {
+        next = push(next, "enemy-waits", { enemyId, reason: "no-ready-skill" });
+        break;
+      }
+
+      const attack = declared
+        ?? { id: "basic", name: "Attack", hits: 1, damage: enemy.stats.attack };
+      // The foe strikes whoever it named. If that actor has since gone down, the blow falls
+      // on the next one still standing rather than on a body.
       const standing = livingPlayerSide(next);
       const declaredTarget = next.intents[enemyId]?.targetId;
-      const targetId = declared.target === "self"
-        ? enemyId
-        : standing.includes(declaredTarget) ? declaredTarget : standing[0];
-      if (!targetId) break;
-      const used = useEnemySkill(next, enemyId, declared.skillId, targetId);
-      if (!used.ok) return { ok: false, reason: "intent-desync", state };
-      // Advance from the declaration that was actually honoured. Resetting the cursor here
-      // would strand every archetype on only the first two entries in its five-skill kit.
-      // Availability is evaluated after spending the skill, so the new promise cannot select
-      // a depleted or cooling-down action.
-      next = advanceEnemyIntent(used.state, enemyId);
+      const defenderId = standing.includes(declaredTarget) ? declaredTarget : standing[0];
+      if (!defenderId) break;
+      const resolved = resolveAttack({
+        attacker: enemy,
+        defender: next.actors[defenderId],
+        attack: { hits: attack.hits, damage: attack.damage },
+        rng: next.rng,
+      });
+      next = {
+        ...next,
+        rng: resolved.rng,
+        actors: {
+          ...next.actors,
+          [enemyId]: resolved.attacker,
+          [defenderId]: resolved.defender,
+        },
+      };
+      next = push(next, "enemy-attack", {
+        enemyId,
+        targetId: defenderId,
+        attackId: attack.id,
+        hits: resolved.hits,
+      });
+      if (declared) next = advanceEnemyIntent(next, enemyId);
+      if (spendingPriority) {
+        next = consumeActorPriority(next, enemyId);
+        priorityRemaining = Math.max(0, priorityRemaining - 1);
+      } else {
+        regularRemaining = Math.max(0, regularRemaining - 1);
+      }
+      commandsResolved += 1;
       next = settle(next);
-      continue;
     }
-    if (next.enemyBuilds?.[enemyId] && !declared) {
-      next = push(next, "enemy-waits", { enemyId, reason: "no-ready-skill" });
-      continue;
-    }
-    const attack = declared
-      ?? { id: "basic", name: "Attack", hits: 1, damage: enemy.stats.attack };
-    // The foe strikes whoever it named. If that actor has since gone down, the blow falls on
-    // the next one still standing rather than on a body — a declared target is a statement
-    // of intent, not a promise the world will hold still for it.
-    const standing = livingPlayerSide(next);
-    const declaredTarget = next.intents[enemyId]?.targetId;
-    const defenderId = standing.includes(declaredTarget) ? declaredTarget : standing[0];
-    if (!defenderId) break;
-    const resolved = resolveAttack({
-      attacker: enemy,
-      defender: next.actors[defenderId],
-      attack: { hits: attack.hits, damage: attack.damage },
-      rng: next.rng,
-    });
-    next = {
-      ...next,
-      rng: resolved.rng,
-      actors: {
-        ...next.actors,
-        [enemyId]: resolved.attacker,
-        [defenderId]: resolved.defender,
-      },
-    };
-    next = push(next, "enemy-attack", {
-      enemyId,
-      targetId: defenderId,
-      attackId: attack.id,
-      hits: resolved.hits,
-    });
-    // Spent, so the next declaration is a new one. A foe that died mid-round drops its
-    // telegraph in the round-start pass rather than declaring from the grave.
-    if (declared) next = advanceEnemyIntent(next, enemyId);
-    next = settle(next);
   }
 
   if (next.phase !== "player") return { ok: true, reason: null, state: next };

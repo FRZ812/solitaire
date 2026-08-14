@@ -19,6 +19,19 @@ describe("combat status presentation", () => {
       .toBe("Removed at the end of the turn.");
   });
 
+  it("states exact control, Priority, and Vulnerable strategy rules", () => {
+    expect(towStatusPresentation({ type: "stun", count: 1 })).toMatchObject({
+      effect: expect.stringContaining("forfeits one command window per stack"),
+      lifecycle: expect.stringContaining("only when it automatically forfeits"),
+    });
+    expect(towStatusPresentation({ type: "priority", count: 4 })).toMatchObject({
+      effect: expect.stringContaining("Each net stack grants one extra action"),
+      lifecycle: expect.stringContaining("spent by each extra action"),
+    });
+    expect(towStatusPresentation({ type: "vulnerable", count: 12 }).effect)
+      .toContain("12 Vulnerable means +12% damage received");
+  });
+
   it("gives every kernel status readable copy and a transparent visual family", () => {
     for (const type of statusTypes()) {
       const detail = towStatusPresentation({ type, count: 1 });

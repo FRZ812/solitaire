@@ -173,10 +173,18 @@ describe("the simple grid-to-preview flow", () => {
     expect(details.querySelectorAll(".starting-abilities .starting-ability__art img")).toHaveLength(
       STARTING_ARCHETYPES[6].build.skills.length,
     );
-    expect(details.textContent).toContain("Future replacements");
+    expect(details.textContent).toContain("Character ability library");
+    expect(details.textContent).toContain("Passive traits");
     expect(details.textContent).toContain("no shared abilities equipped");
-    expect(details.querySelectorAll(".general-ability-library .starting-ability")).toHaveLength(18);
-    expect(details.querySelectorAll('.general-ability-library [data-ability-type="general"]')).toHaveLength(18);
+    expect(details.querySelectorAll(".character-exclusive-library .starting-ability")).toHaveLength(18);
+    expect(details.querySelectorAll('.character-exclusive-library [data-ability-type="basic-attack"]')).toHaveLength(2);
+    expect(details.querySelectorAll('.character-exclusive-library [data-ability-type="defensive"]')).toHaveLength(2);
+    expect(details.querySelectorAll('.character-exclusive-library [data-ability-type="archetype"]')).toHaveLength(14);
+    const generalLibrary = details.querySelector('[aria-label="General abilities available later"]');
+    expect(generalLibrary.querySelectorAll(".starting-ability")).toHaveLength(18);
+    expect(generalLibrary.querySelectorAll('[data-ability-type="general"]')).toHaveLength(18);
+    expect(details.querySelector('[data-trait-id="necromancy"]')?.textContent)
+      .toContain("Skeletons each turn");
     expect(details.querySelector("select")).toBeNull();
 
     const picker = details.querySelector("[role=combobox]");
@@ -251,11 +259,13 @@ describe("every advertised character reaches the production fight", () => {
         <PracticeFight receipt={compiled.receipt} scenarioId="training-yard" onExit={() => {}} />,
       );
 
-      for (let round = 0; round < 40 && mounted.querySelector(".tow-combat"); round += 1) {
+      for (let round = 0; round < 80 && mounted.querySelector(".tow-combat"); round += 1) {
         const action = [...mounted.querySelectorAll(".production-combat__action")]
           .find((button) => button.getAttribute("aria-disabled") !== "true");
-        if (!action) break;
-        await click(action);
+        // A control or hostile-Priority window intentionally has no commandable button.
+        // Advance its automatic stand-down timer instead of mistaking that presentation
+        // state for a deadlocked practice fight.
+        if (action) await click(action);
         await act(async () => vi.runAllTimersAsync());
       }
 

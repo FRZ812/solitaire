@@ -84,6 +84,8 @@ function hitTotals(hits = [], baseDamage = null) {
     absorbed: 0,
     toHp: 0,
     thorn: 0,
+    amplified: 0,
+    vulnerablePercent: 0,
     defences: new Set(),
   };
 
@@ -99,6 +101,11 @@ function hitTotals(hits = [], baseDamage = null) {
     totals.absorbed += hit.absorbed || 0;
     totals.toHp += hit.toHp || 0;
     totals.thorn += hit.thorn || 0;
+    totals.amplified += hit.vulnerableBonus || 0;
+    totals.vulnerablePercent = Math.max(
+      totals.vulnerablePercent,
+      Number(hit.mitigation?.vulnerable) || 0,
+    );
     if (hit.dodged) totals.dodged += 1;
     else totals.landed += 1;
     if (hit.critical) totals.critical += 1;
@@ -134,6 +141,9 @@ function damageReceipt(encounter, event, options) {
   const clauses = [];
   clauses.push(totals.toHp > 0 ? `${totals.toHp} health lost` : "no health lost");
   if (totals.absorbed > 0) clauses.push(`${totals.absorbed} absorbed by ward`);
+  if (totals.amplified > 0) {
+    clauses.push(`${totals.amplified} added by ${totals.vulnerablePercent}% Vulnerable`);
+  }
   if (totals.mitigated > 0) {
     const sources = [...totals.defences];
     clauses.push(`${totals.mitigated} reduced${sources.length ? ` by ${sources.join(" + ")}` : " by defence"}`);
@@ -222,6 +232,22 @@ export function combatEventReceipt(encounter, event, options = {}) {
       text: `${actorName(encounter, event.enemyId, "The foe")} cannot act while controlled; its declared attack is delayed, not erased.`,
     };
   }
+  if (event.type === "actor-nullified") {
+    const controls = event.controls?.map(words).join(" + ") || "Control";
+    const spent = event.stacksSpent || 1;
+    return {
+      sequence: event.sequence,
+      kind: "control",
+      text: `${actor} automatically loses the command window to ${controls}; ${spent} control stack${spent === 1 ? " is" : "s are"} spent.`,
+    };
+  }
+  if (event.type === "actor-preempted") {
+    return {
+      sequence: event.sequence,
+      kind: "tempo",
+      text: `${actor} is pre-empted by ${event.hostilePriority} enemy Priority; the enemy sequence resolves first.`,
+    };
+  }
   if (event.type === "tick-damage") {
     const burn = event.burn || 0;
     const doom = event.doom || 0;
@@ -282,7 +308,7 @@ export function combatTempoReceipt(encounter, actorId) {
     const net = Math.max(0, ownPriority - enemyPriority);
     if (net > 0) reasons.push(`Priority ${ownPriority} versus ${enemyPriority} grants ${net}`);
     else if (ownPriority > 0) reasons.push(`enemy Priority ${enemyPriority} cancels Priority ${ownPriority}`);
-    else reasons.push(`enemy Priority ${enemyPriority} cannot steal the base action`);
+    else reasons.push(`enemy Priority ${enemyPriority} resolves before this command window`);
   }
   return {
     sequence: `tempo-${encounter.round}-${actorId}`,
@@ -361,6 +387,8 @@ function hitCue(encounter, event, hit, index, hitCount, visual) {
     absorbed,
     prevented,
     guarded: prevented > 0 && !hit.dodged,
+    skillId: event.skillId || null,
+    attackId: event.attackId || null,
     visual,
     outcomeAsset: outcomeAsset(kind),
   };
@@ -392,6 +420,8 @@ function simpleCue(encounter, event, {
     delayMs: 0,
     hpChange,
     shieldChange,
+    skillId: event.skillId || null,
+    attackId: event.attackId || null,
     visual,
     outcomeAsset: null,
   };
@@ -475,6 +505,26 @@ export function combatCuesForEvent(encounter, event) {
       attackerId: null,
       targetId: event.enemyId,
       targetSide: "enemy",
+    })];
+  }
+  if (event.type === "actor-nullified") {
+    return [simpleCue(encounter, event, {
+      suffix: "command-nullified",
+      kind: "afflict",
+      label: "Turn skipped",
+      kicker: event.controls?.map(words).join(" + ") || "Controlled",
+      targetId: event.actorId,
+      targetSide: "player",
+    })];
+  }
+  if (event.type === "actor-preempted") {
+    return [simpleCue(encounter, event, {
+      suffix: "priority-preempted",
+      kind: "afflict",
+      label: "Pre-empted",
+      kicker: `${event.hostilePriority || 0} Priority`,
+      targetId: event.actorId,
+      targetSide: "player",
     })];
   }
   if (event.type === "retreat-attempt") {
