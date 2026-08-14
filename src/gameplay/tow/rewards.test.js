@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { startingBuild } from "./build.js";
+import { createTowBuild, startingBuild } from "./build.js";
 import {
   REWARD_CHOICE_COUNT,
   claimReward,
@@ -11,6 +11,7 @@ import {
   rewardSeedFor,
 } from "./rewards.js";
 import { SKILL_SLOTS, getSkill } from "./skills.js";
+import { getStartingArchetype } from "./starting-archetypes.js";
 import { TRAIT_RANK_CAP } from "./traits.js";
 
 function build() {
@@ -21,6 +22,19 @@ function offerFor(target = build(), seed = "combat-1::reward::7") {
   const compiled = compileRewardOffer(target, { sourceReceiptId: "combat-1", seed });
   if (!compiled.ok) throw new Error(compiled.reason);
   return compiled.offer;
+}
+
+function fullArchetypeBuild() {
+  const archetype = getStartingArchetype("arctic-knight");
+  return createTowBuild({ ...archetype.build, professionId: archetype.professionId });
+}
+
+function offerWithReplacement(target = fullArchetypeBuild()) {
+  for (let index = 0; index < 40; index += 1) {
+    const offer = offerFor(target, `replacement-seed-${index}`);
+    if (offer.candidates.some((candidate) => candidate.kind === "skill")) return offer;
+  }
+  throw new Error("no-general-replacement-offer");
 }
 
 describe("compiling an offer", () => {
@@ -65,6 +79,18 @@ describe("compiling an offer", () => {
     // rather than simply being absent.
     const held = offer.ineligible.find((entry) => entry.id === target.skills[0]);
     expect(held).toMatchObject({ reason: "skill-already-held" });
+  });
+
+  it("keeps General abilities eligible when a five-slot roster build is full", () => {
+    const target = fullArchetypeBuild();
+    const offer = offerWithReplacement(target);
+    const skills = offer.candidates.filter((candidate) => candidate.kind === "skill");
+    expect(skills.length).toBeGreaterThan(0);
+    for (const candidate of skills) {
+      expect(getSkill(candidate.id).abilityType).toBe("general");
+      expect(candidate.requiresReplacement).toBe(true);
+      expect(candidate.detail).toContain("replaces a flexible slot");
+    }
   });
 
   it("says so when there is genuinely nothing left to give", () => {
@@ -196,6 +222,28 @@ describe("claiming", () => {
     const alreadyTaken = { ...target, skills: [...target.skills, skillChoice.id] };
     expect(claimReward(alreadyTaken, offer, skillChoice.id))
       .toMatchObject({ ok: false, reason: "skill-already-held" });
+  });
+
+  it("takes a shared reward by replacing only one of the three flexible abilities", () => {
+    const target = fullArchetypeBuild();
+    const offer = offerWithReplacement(target);
+    const choice = offer.candidates.find((candidate) => candidate.kind === "skill");
+
+    expect(claimReward(target, offer, choice.id))
+      .toMatchObject({ ok: false, reason: "replacement-required" });
+    expect(claimReward(target, offer, choice.id, { replacingId: target.skills[0] }))
+      .toMatchObject({ ok: false, reason: "protected-ability-slot" });
+    expect(claimReward(target, offer, choice.id, { replacingId: target.skills[1] }))
+      .toMatchObject({ ok: false, reason: "protected-ability-slot" });
+
+    const replacedId = target.skills[2];
+    const claimed = claimReward(target, offer, choice.id, { replacingId: replacedId });
+    expect(claimed.ok).toBe(true);
+    expect(claimed.build.skills).toHaveLength(SKILL_SLOTS);
+    expect(claimed.build.skills.slice(0, 2)).toEqual(target.skills.slice(0, 2));
+    expect(claimed.build.skills).toContain(choice.id);
+    expect(claimed.build.skills).not.toContain(replacedId);
+    expect(claimed.provenance.replacedId).toBe(replacedId);
   });
 
   it("refuses an offer it cannot read", () => {

@@ -798,6 +798,51 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.ability-slot-contract {
+  display: grid;
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(224, 211, 187, 0.12);
+  border-radius: 9px;
+  background: rgba(8, 14, 17, 0.7);
+  grid-template-columns: 1fr 1fr 1.25fr;
+}
+
+.ability-slot-contract > span {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto 1fr;
+  gap: 2px 6px;
+  padding: 9px 10px;
+  border-right: 1px solid rgba(224, 211, 187, 0.1);
+  color: #d8d4ca;
+  font-size: 0.58rem;
+}
+
+.ability-slot-contract > span:last-child {
+  border-right: 0;
+}
+
+.ability-slot-contract strong {
+  color: color-mix(in srgb, var(--character-accent), #fff 30%);
+  font-size: 0.72rem;
+  grid-row: 1 / span 2;
+}
+
+.ability-slot-contract small {
+  color: #77817c;
+  font-size: 0.48rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.general-ability-library {
+  display: grid;
+  gap: 7px;
+  margin-top: 11px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .starting-ability {
   display: grid;
   min-width: 0;
@@ -808,6 +853,27 @@
   border: 1px solid rgba(224, 211, 187, 0.12);
   border-radius: 12px;
   background: rgba(14, 22, 26, 0.68);
+}
+
+.starting-ability.is-compact {
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px;
+}
+
+.starting-ability.is-compact .starting-ability__art {
+  width: 44px;
+}
+
+.starting-ability.is-compact strong {
+  font-size: 0.66rem;
+}
+
+.starting-ability.is-compact p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .starting-ability__art {
@@ -1359,8 +1425,22 @@
   }
 
   .starting-abilities,
+  .general-ability-library,
   .weapon-refinements {
     grid-template-columns: 1fr;
+  }
+
+  .ability-slot-contract {
+    grid-template-columns: 1fr;
+  }
+
+  .ability-slot-contract > span {
+    border-right: 0;
+    border-bottom: 1px solid rgba(224, 211, 187, 0.1);
+  }
+
+  .ability-slot-contract > span:last-child {
+    border-bottom: 0;
   }
 
   .character-details__practice > button {

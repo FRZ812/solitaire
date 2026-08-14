@@ -21,7 +21,7 @@ import { gameplayChecksum } from "../kernel/replay.js";
 import { createRng, nextInt } from "../kernel/rng.js";
 import { acquireRune, acquireTrait } from "./build.js";
 import { TOW_RULESET_ID } from "./session.js";
-import { SKILL_SLOTS, getSkill, skillIds } from "./skills.js";
+import { SKILL_SLOTS, getSkill, replaceableSkillIds, skillIds } from "./skills.js";
 import { TRAIT_CAPACITY, TRAIT_RANK_CAP, getTrait, traitIds } from "./traits.js";
 
 export const TOW_REWARD_VERSION = 1;
@@ -77,7 +77,10 @@ function ineligibility(build, candidate) {
   if (skill.slot !== "slotted") return "skill-has-no-slot";
   if (skill.exclusiveTo) return "skill-exclusive-to-another-character";
   if (build.skills.includes(candidate.id)) return "skill-already-held";
-  if (build.skills.length >= SKILL_SLOTS) return "loadout-full";
+  if (build.skills.length >= SKILL_SLOTS) {
+    if (skill.abilityType !== "general") return "loadout-full";
+    if (replaceableSkillIds(build.skills).length === 0) return "no-flexible-ability-slot";
+  }
   return null;
 }
 
@@ -95,7 +98,7 @@ export function rewardCandidates() {
   ];
 }
 
-function describe(candidate) {
+function describe(candidate, build) {
   if (candidate.kind === "trait") {
     const trait = getTrait(candidate.id);
     return {
@@ -106,11 +109,15 @@ function describe(candidate) {
     };
   }
   const skill = getSkill(candidate.id);
+  const requiresReplacement = build.skills.length >= SKILL_SLOTS;
   return {
     kind: "skill",
     id: candidate.id,
     name: skill.name,
-    detail: skill.consumesTurn ? `${skill.rarity} action` : `${skill.rarity} action, free`,
+    detail: `${skill.rarity} ${skill.abilityType === "general" ? "general ability" : "action"}${
+      skill.consumesTurn ? "" : ", keeps action"
+    }${requiresReplacement ? " · replaces a flexible slot" : ""}`,
+    requiresReplacement,
   };
 }
 
@@ -170,7 +177,7 @@ export function compileRewardOffer(build, { sourceReceiptId, seed, rerolls = 0 }
     rulesetId: TOW_RULESET_ID,
     sourceReceiptId,
     seed,
-    candidates: chosen.map(describe),
+    candidates: chosen.map((candidate) => describe(candidate, build)),
     // Only the reasons that would surprise someone: the full list of every skill in the game
     // they do not have room for is noise, not information.
     ineligible: ineligible.filter((entry) => entry.reason !== "skill-exclusive-to-another-character"
@@ -191,7 +198,9 @@ export function isRewardOffer(value) {
     && identifier(value.seed)
     && Array.isArray(value.candidates)
     && value.candidates.length > 0
-    && value.candidates.every((entry) => REWARD_KINDS.includes(entry.kind) && identifier(entry.id))
+    && value.candidates.every((entry) => REWARD_KINDS.includes(entry.kind)
+      && identifier(entry.id)
+      && (entry.requiresReplacement === undefined || typeof entry.requiresReplacement === "boolean"))
     && Array.isArray(value.ineligible)
     && Number.isSafeInteger(value.rerollsRemaining)
     && value.rerollsRemaining >= 0
@@ -233,7 +242,7 @@ export function rerollRewardOffer(build, offer) {
  * is what a double-tap or a resumed save needs. Claiming a *different* choice after one is
  * taken is refused rather than applied, because that is not a retry, it is a second reward.
  */
-export function claimReward(build, offer, candidateId) {
+export function claimReward(build, offer, candidateId, { replacingId = null } = {}) {
   if (!isRewardOffer(offer)) return { ok: false, reason: "invalid-reward-offer", build: null, offer };
   if (offer.claimedId) {
     return offer.claimedId === candidateId
@@ -250,7 +259,7 @@ export function claimReward(build, offer, candidateId) {
 
   const applied = candidate.kind === "trait"
     ? acquireTrait(build, candidate.id)
-    : acquireSkillReward(build, candidate.id);
+    : acquireSkillReward(build, candidate.id, { replacingId });
   if (!applied.ok) return { ok: false, reason: applied.reason, build: null, offer };
 
   return {
@@ -267,18 +276,33 @@ export function claimReward(build, offer, candidateId) {
       rulesetId: offer.rulesetId,
       kind: candidate.kind,
       id: candidate.id,
+      replacedId: candidate.kind === "skill" ? replacingId : null,
     },
   };
 }
 
-function acquireSkillReward(build, skillId) {
+function acquireSkillReward(build, skillId, { replacingId = null } = {}) {
   const definition = getSkill(skillId);
   if (!definition) return { ok: false, reason: "unknown-skill", build: null };
   if (build.skills.includes(skillId)) return { ok: false, reason: "skill-already-held", build: null };
-  if (build.skills.length >= SKILL_SLOTS) return { ok: false, reason: "loadout-full", build: null };
+  let skills;
+  if (build.skills.length >= SKILL_SLOTS) {
+    if (definition.abilityType !== "general") {
+      return { ok: false, reason: "loadout-full", build: null };
+    }
+    if (replacingId === null) return { ok: false, reason: "replacement-required", build: null };
+    const replaceAt = build.skills.indexOf(replacingId);
+    if (replaceAt < 0) return { ok: false, reason: "unknown-replacement", build: null };
+    if (!replaceableSkillIds(build.skills).includes(replacingId)) {
+      return { ok: false, reason: "protected-ability-slot", build: null };
+    }
+    skills = build.skills.map((id, index) => (index === replaceAt ? skillId : id));
+  } else {
+    skills = [...build.skills, skillId];
+  }
   let next;
   try {
-    next = cloneJsonData({ ...build, skills: [...build.skills, skillId] }, "invalid-build");
+    next = cloneJsonData({ ...build, skills }, "invalid-build");
   } catch {
     return { ok: false, reason: "invalid-build", build: null };
   }

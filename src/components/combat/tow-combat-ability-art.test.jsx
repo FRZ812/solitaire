@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSkill } from "../../gameplay/tow/skills.js";
+import { generalAbilityIds, getSkill } from "../../gameplay/tow/skills.js";
 import { characterAbilityIds } from "../../gameplay/tow/character-abilities.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "./tow-combat-ability-art.js";
 import { weaponPresentationForForm, weaponPresentationFromItemIds } from "../../gameplay/tow/weapon-presentation.js";
@@ -34,13 +34,21 @@ describe("generated combat ability art", () => {
     ]).size).toBe(3);
   });
 
-  it("gives all 48 character abilities dedicated generated art", () => {
+  it("gives all 60 character abilities dedicated generated art", () => {
     const abilityIds = characterAbilityIds();
     const resolved = abilityIds.map((id) => resolveTowAbilityArt(getSkill(id)));
-    expect(abilityIds).toHaveLength(48);
+    expect(abilityIds).toHaveLength(60);
     expect(new Set(resolved).size).toBe(abilityIds.length);
     for (const [index, id] of abilityIds.entries()) {
       expect(resolved[index]).toContain(`${id}-v1.webp`);
     }
+  });
+
+  it("gives every shared replacement a distinct dedicated icon", () => {
+    const abilityIds = generalAbilityIds();
+    const resolved = abilityIds.map((id) => resolveTowAbilityArt(getSkill(id)));
+    expect(abilityIds).toHaveLength(18);
+    expect(new Set(resolved).size).toBe(abilityIds.length);
+    for (const art of resolved) expect(art).not.toContain("fallback");
   });
 });

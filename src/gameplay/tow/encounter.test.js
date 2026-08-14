@@ -76,6 +76,37 @@ describe("starting an encounter", () => {
     expect(statusCount(state.actors.second.statuses, "weak")).toBe(4);
   });
 
+  it("fires a build-backed enemy's archetype trait against the player side", () => {
+    const state = start({
+      enemies: [foe({
+        archetypeId: "last-assassin",
+        build: { traits: { ambush: TRAIT_RANK_CAP }, skills: ["strike"], runes: [] },
+      })],
+    });
+    expect(statusCount(state.actors["arctic-knight"].statuses, "weak")).toBe(4);
+    expect(state.events).toContainEqual(expect.objectContaining({
+      type: "trait-fired",
+      actorId: "gatekeeper",
+      traitId: "ambush",
+      effectKind: "inflict-status",
+      targetIds: ["arctic-knight"],
+    }));
+  });
+
+  it("coalesces duplicate hostile trait pressure across a matching enemy line", () => {
+    const build = { traits: { ambush: TRAIT_RANK_CAP }, skills: ["strike"], runes: [] };
+    const state = start({
+      enemies: [
+        foe({ build }),
+        foe({ id: "second", name: "Second", build }),
+      ],
+    });
+    expect(statusCount(state.actors["arctic-knight"].statuses, "weak")).toBe(4);
+    expect(state.events.filter((entry) => (
+      entry.type === "trait-fired" && entry.traitId === "ambush"
+    ))).toHaveLength(1);
+  });
+
   it("rejects malformed input", () => {
     expect(() => createTowEncounter({ seed: 1, player: knight(), enemies: [] }))
       .toThrow(/invalid-enemies/);
@@ -417,6 +448,22 @@ describe("Priority and Haste", () => {
     expect(state.turn.actionsRemaining).toBe(4);
   });
 
+  it("applies High-Speed Flight Priority immediately before the enemy can answer", () => {
+    const state = start({
+      build: { skills: ["strike", "sleepless-high-speed-flight"] },
+    });
+    const flight = useSkill(state, "sleepless-high-speed-flight");
+
+    expect(flight.ok).toBe(true);
+    expect(statusCount(flight.state.actors[flight.state.playerId].statuses, "priority")).toBe(4);
+    expect(flight.state.turn.actionsRemaining).toBe(5);
+    expect(flight.state.events.some((event) => event.type === "enemy-attack")).toBe(false);
+
+    const firstAction = useSkill(flight.state, "strike");
+    expect(firstAction.state.turn.actionsRemaining).toBe(4);
+    expect(firstAction.state.events.some((event) => event.type === "enemy-attack")).toBe(false);
+  });
+
   it("cancels Priority against the enemy's own", () => {
     // "If the enemy has Priority too, they cancel out each other."
     const state = start({
@@ -478,6 +525,20 @@ describe("telegraphed enemy turns", () => {
     return { ...knight(), maxHp: 4000, ...overrides };
   }
 
+  function blade(overrides = {}) {
+    return foe({
+      maxHp: 900,
+      stats: { attack: 9, defense: 12, critRate: 0, dodgeRate: 0 },
+      archetypeId: "wandering-blade",
+      build: {
+        traits: { gale: 1 },
+        skills: ["blade-slash", "blade-barrier", "blade-chi-liberation", "blade-one-flash"],
+        runes: [],
+      },
+      ...overrides,
+    });
+  }
+
   it("declares before the player's first decision", () => {
     // The whole point: information exists before the player spends a turn, so the decision
     // can be better-informed than a guess.
@@ -521,6 +582,78 @@ describe("telegraphed enemy turns", () => {
     });
     expect(state.rng).toEqual(opened.rng);
     expect(state.intentRng).not.toEqual(state.rng);
+  });
+
+  it("declares and resolves a real defensive skill through the shared skill machinery", () => {
+    const state = createTowEncounter({
+      seed: "build-backed-ward",
+      player: tank(),
+      enemies: [blade()],
+      build: { traits: {}, skills: ["strike", "block"] },
+      intentSchedules: {
+        gatekeeper: {
+          id: "blade-guard",
+          steps: [{ id: "brace", attackIds: ["blade-barrier"] }],
+        },
+      },
+    });
+    expect(state.enemyArchetypes.gatekeeper).toBe("wandering-blade");
+    expect(declaredIntents(state)[0]).toMatchObject({
+      enemyId: "gatekeeper",
+      attackId: "blade-barrier",
+      skillId: "blade-barrier",
+      kind: "ward",
+      target: "self",
+      targetId: "gatekeeper",
+      damage: 0,
+    });
+
+    const beforeUses = state.enemyBuilds.gatekeeper.skills
+      .find((entry) => entry.id === "blade-barrier").usesRemaining;
+    const after = endTurn(state).state;
+    expect(after.events).toContainEqual(expect.objectContaining({
+      type: "skill-shield",
+      actorId: "gatekeeper",
+      skillId: "blade-barrier",
+    }));
+    expect(after.actors.gatekeeper.shield).toBeGreaterThan(0);
+    expect(after.enemyBuilds.gatekeeper.skills
+      .find((entry) => entry.id === "blade-barrier").usesRemaining).toBe(beforeUses - 1);
+    expect(after.events.some((entry) => entry.type === "enemy-attack")).toBe(false);
+  });
+
+  it("strikes with the exact authored ability it promised", () => {
+    const state = createTowEncounter({
+      seed: "build-backed-slash",
+      player: tank(),
+      enemies: [blade()],
+      build: { traits: {}, skills: ["strike", "block"] },
+      intentSchedules: {
+        gatekeeper: {
+          id: "blade-offence",
+          steps: [{ id: "cut", attackIds: ["blade-slash"] }],
+        },
+      },
+    });
+    const promised = declaredIntents(state)[0];
+    const after = endTurn(state).state;
+    expect(promised).toMatchObject({ skillId: "blade-slash", name: "Slash", kind: "damage" });
+    expect(after.events).toContainEqual(expect.objectContaining({
+      type: "skill-damage",
+      actorId: "gatekeeper",
+      targetId: "arctic-knight",
+      skillId: promised.skillId,
+    }));
+    expect(after.events).toContainEqual(expect.objectContaining({
+      type: "skill-status",
+      actorId: "gatekeeper",
+      targetId: "gatekeeper",
+      skillId: promised.skillId,
+      status: "initiative",
+    }));
+    expect(after.intents.gatekeeper.declarationIndex)
+      .toBe(state.intents.gatekeeper.declarationIndex + 1);
+    expect(after.events.some((entry) => entry.type === "enemy-attack")).toBe(false);
   });
 
   it("holds a stunned foe's telegraph rather than erasing the attack", () => {

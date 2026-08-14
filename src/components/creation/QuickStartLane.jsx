@@ -12,7 +12,7 @@ import { resolveCharacterPortrait } from "../character-portrait-assets.js";
 import { resolvePlayerCombatCutout } from "../combat/tow-combat-art.js";
 import { Icon } from "../Icon.jsx";
 import { CHARACTER_ABILITY_TYPE_LABELS } from "../../gameplay/tow/character-abilities.js";
-import { createSkillState, getSkill } from "../../gameplay/tow/skills.js";
+import { createSkillState, generalAbilityIds, getSkill } from "../../gameplay/tow/skills.js";
 import { getFusion, getTrait } from "../../gameplay/tow/traits.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "../combat/tow-combat-ability-art.js";
@@ -78,7 +78,7 @@ function nonStrikeSummary(definition, rank = 1) {
   return readable.join(" · ") || "Passive combat effect";
 }
 
-function StartingAbilityCard({ definition, compact = false }) {
+function StartingAbilityCard({ definition, compact = false, availability = null }) {
   const state = createSkillState(definition.id, 1);
   const name = resolveTowActionName(definition);
   const summary = definition.description || nonStrikeSummary(definition, state.rank);
@@ -95,7 +95,7 @@ function StartingAbilityCard({ definition, compact = false }) {
         <span aria-hidden="true" />
       </span>
       <div>
-        <span>{typeLabel}{definition.consumesTurn ? "" : " · keeps action"}</span>
+        <span>{availability || typeLabel}{definition.consumesTurn ? "" : " · keeps action"}</span>
         <strong>{name}</strong>
         <p>{summary}</p>
         {definition.source ? (
@@ -224,6 +224,10 @@ function CharacterDetails({ selected, scenarioId, onScenarioChange, onPractice, 
   const baseTraitId = Object.keys(selected.build.traits)[0];
   const baseTrait = getTrait(baseTraitId);
   const skills = selected.build.skills.map((id) => getSkill(id)).filter(Boolean);
+  const generalAbilities = useMemo(
+    () => generalAbilityIds().map((id) => getSkill(id)).filter(Boolean),
+    [],
+  );
 
   return (
     <>
@@ -274,13 +278,40 @@ function CharacterDetails({ selected, scenarioId, onScenarioChange, onPractice, 
           <section className="character-details__loadout">
             <div className="character-details__section-heading">
               <span className="character-details__label">Starting abilities</span>
-              <small>Exact combat loadout</small>
+              <small>5 active · no shared abilities equipped</small>
+            </div>
+            <div className="ability-slot-contract" aria-label="Five active ability slots">
+              <span><strong>1</strong> Basic attack <small>fixed</small></span>
+              <span><strong>2</strong> Defensive <small>fixed</small></span>
+              <span><strong>3–5</strong> Exclusive <small>flexible</small></span>
             </div>
             <div className="starting-abilities">
               {skills.map((skill) => (
                 <StartingAbilityCard
                   key={skill.id}
                   definition={skill}
+                />
+              ))}
+            </div>
+          </section>
+
+          <section className="character-details__ability-library">
+            <div className="character-details__section-heading">
+              <span className="character-details__label">Future replacements</span>
+              <small>{generalAbilities.length} shared abilities</small>
+            </div>
+            <p>
+              Rewards can replace any of slots 3–5 with a General ability. The Basic Attack
+              and Defensive slots stay protected, and every character begins with three
+              exclusive abilities instead of a shared one.
+            </p>
+            <div className="general-ability-library" aria-label="General abilities available later">
+              {generalAbilities.map((skill) => (
+                <StartingAbilityCard
+                  key={skill.id}
+                  definition={skill}
+                  compact
+                  availability="General · available later"
                 />
               ))}
             </div>
@@ -487,23 +518,26 @@ export function QuickStartLane({
               </div>
 
               <div className="character-preview__ability-strip" aria-label="Starting abilities">
-                {selected.build.skills.map((skillId) => {
+                {selected.build.skills.map((skillId, index) => {
                   const definition = getSkill(skillId);
                   if (!definition) return null;
                   const actionName = resolveTowActionName(definition);
                   const typeLabel = CHARACTER_ABILITY_TYPE_LABELS[definition.abilityType] || "Ability";
+                  const flexible = definition.abilityType === "archetype" || definition.abilityType === "general";
+                  const slotLabel = flexible ? `Flex ${index - 1}` : typeLabel;
                   return (
                     <button
                       type="button"
                       key={skillId}
                       className="character-preview__ability-slot"
                       data-ability-type={definition.abilityType}
-                      title={`${typeLabel}: ${actionName}`}
+                      data-slot-role={flexible ? "flexible" : "fixed"}
+                      title={`${flexible ? `${slotLabel} · ${typeLabel}` : typeLabel}: ${actionName}`}
                       onClick={() => setDetailsOpen(true)}
-                      aria-label={`View ${typeLabel} ability, ${actionName}`}
+                      aria-label={`View ${flexible ? `${slotLabel}, ${typeLabel}` : typeLabel} ability, ${actionName}`}
                     >
                       <img src={resolveTowAbilityArt(definition)} alt="" />
-                      <span>{typeLabel}</span>
+                      <span>{slotLabel}</span>
                     </button>
                   );
                 })}

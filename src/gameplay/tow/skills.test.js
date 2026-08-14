@@ -3,6 +3,7 @@ import {
   acquireSkill,
   createSkillState,
   effectMagnitude,
+  generalAbilityIds,
   getSkill,
   isSkillState,
   maxRankOf,
@@ -10,6 +11,7 @@ import {
   passiveSkillIds,
   refillForNewAct,
   restoreUses,
+  replaceableSkillIds,
   skillIds,
   skillLegality,
   SKILL_SLOTS,
@@ -29,6 +31,15 @@ import { startingPackageIds } from "./starting-packages.js";
 describe("the catalogue", () => {
   it("holds five slots, as the wiki records", () => {
     expect(SKILL_SLOTS).toBe(5);
+  });
+
+  it("registers all eighteen sourced General abilities without putting them in a starting kit", () => {
+    expect(generalAbilityIds()).toHaveLength(18);
+    expect(new Set(generalAbilityIds()).size).toBe(18);
+    for (const id of generalAbilityIds()) {
+      expect(getSkill(id)).toMatchObject({ abilityType: "general", exclusiveTo: null });
+      expect(getSkill(id).source.page).toContain("#s-11.1");
+    }
   });
 
   it("transcribes per-rank magnitudes verbatim rather than interpolating", () => {
@@ -253,6 +264,25 @@ describe("acquiring skills", () => {
 
     expect(acquireSkill(loadout, "first-aid", { replacingId: "not-held" }))
       .toMatchObject({ ok: false, reason: "unknown-replacement" });
+  });
+
+  it("protects basic and defensive slots while exposing three flexible slots", () => {
+    const loadout = [
+      "arctic-strike",
+      "arctic-block",
+      "arctic-deliberate-blow",
+      "arctic-incineration",
+      "arctic-mortal-blow",
+    ].map((id) => createSkillState(id));
+    expect(replaceableSkillIds(loadout)).toEqual([
+      "arctic-deliberate-blow",
+      "arctic-incineration",
+      "arctic-mortal-blow",
+    ]);
+    expect(acquireSkill(loadout, "first-aid", { replacingId: "arctic-strike" }))
+      .toMatchObject({ ok: false, reason: "protected-ability-slot" });
+    expect(acquireSkill(loadout, "first-aid", { replacingId: "arctic-block" }))
+      .toMatchObject({ ok: false, reason: "protected-ability-slot" });
   });
 
   it("refuses unslotted and unknown skills", () => {

@@ -3,7 +3,6 @@ import { applyBeat } from "../../engine/beat.js";
 import { emptyMechanicsSidecar } from "../../engine/campaign-migration.js";
 import { makeInitialState } from "../../data/initial-state.js";
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./character-bootstrap.js";
-import { CHARACTER_ABILITY_TYPES } from "./character-abilities.js";
 import { getSkill } from "./skills.js";
 import { practiceActor } from "./practice-scenarios.js";
 import {
@@ -25,7 +24,7 @@ describe("source-roster starting grants", () => {
     expect(invalidStartingArchetypes()).toEqual([]);
   });
 
-  it("derives item bonuses without mutating the four-action durable build", () => {
+  it("derives item bonuses without mutating the five-action durable build", () => {
     const archetype = getStartingArchetype("arctic-knight");
     const compiled = compileCharacterBootstrap({ archetypeId: archetype.id, origin: "archetype" });
     const before = JSON.stringify(compiled.receipt.build);
@@ -91,7 +90,7 @@ describe("one atomic source-character start", () => {
     expect(built.mechanics.build).toEqual(compiled.receipt.build);
   });
 
-  it("locks all twelve entries to complete identities and one of each action type", () => {
+  it("locks all twelve entries to complete identities and five-action source kits", () => {
     expect(STARTING_ARCHETYPES).toHaveLength(TOWER_ROSTER_SIZE);
     const names = new Set();
     for (const archetype of STARTING_ARCHETYPES) {
@@ -112,7 +111,10 @@ describe("one atomic source-character start", () => {
       expect(setup.level).toBe(1);
       expect(setup.progressionModel).toBe("tow-archetype");
       const types = archetype.build.skills.map((id) => getSkill(id).abilityType);
-      expect(new Set(types)).toEqual(new Set(CHARACTER_ABILITY_TYPES));
+      expect(types).toHaveLength(5);
+      expect(types.filter((type) => type === "basic-attack")).toHaveLength(1);
+      expect(types.filter((type) => type === "defensive")).toHaveLength(1);
+      expect(types.filter((type) => type === "archetype")).toHaveLength(3);
       names.add(setup.name);
     }
     expect(names.size).toBe(TOWER_ROSTER_SIZE);

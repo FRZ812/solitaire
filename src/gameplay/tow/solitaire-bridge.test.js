@@ -4,8 +4,10 @@ import { generateEnemyGroup } from "../../data/bestiary.js";
 import { deriveCombatStats } from "../../engine/combat-stats.js";
 import { isTowActor } from "../kernel/tow-actor.js";
 import { createTowEncounter, endTurn, useSkill } from "./encounter.js";
+import { getStartingArchetype } from "./starting-archetypes.js";
 import {
   PROVISIONAL_BRIDGE_POLICY,
+  towArchetypeForEnemy,
   towEncounterSupport,
   towEnemyFromBestiary,
   towPlayerFromCharacter,
@@ -109,34 +111,49 @@ describe("bestiary enemies cross the bridge", () => {
 
   it("produces a valid actor that keeps its current wound", () => {
     const actor = towEnemyFromBestiary(bandit);
-    const { attacks, ...actorOnly } = actor;
+    const { archetypeId, build, ...actorOnly } = actor;
     expect(isTowActor(actorOnly)).toBe(true);
     expect(actor.id).toBe("road-bandit");
     expect(actor.hp).toBe(18);
     expect(actor.maxHp).toBe(24);
     expect(actor.stats).toEqual({ attack: 5, defense: 3, critRate: 0, dodgeRate: 5 });
+    expect(archetypeId).toBe("arctic-knight");
+    expect(build).toEqual(getStartingArchetype(archetypeId).build);
   });
 
-  it("turns a damage band into a move set, including a multi-hit flurry", () => {
-    // Multi-hit has to reach live fights, because Steelskin, Thorn and Burn all behave
-    // differently against three small hits than against one heavy blow.
-    expect(towEnemyFromBestiary(bandit).attacks).toEqual([
-      { id: "road-bandit-jab", name: "Jab", hits: 1, damage: 3 },
-      { id: "road-bandit-swing", name: "Swing", hits: 1, damage: 5 },
-      { id: "road-bandit-heavy", name: "Heavy blow", hits: 1, damage: 7 },
-      { id: "road-bandit-flurry", name: "Flurry", hits: 2, damage: 2 },
+  it("equips the same complete archetype kit a playable character uses", () => {
+    const enemy = towEnemyFromBestiary({ ...bandit, profession: "rogue" });
+    const archetype = getStartingArchetype("last-assassin");
+    expect(towArchetypeForEnemy({ profession: "rogue" })).toBe(archetype);
+    expect(enemy.archetypeId).toBe(archetype.id);
+    expect(enemy.build).toEqual(archetype.build);
+    expect(enemy.build.skills).toEqual([
+      "assassin-flurry",
+      "assassin-deflect",
+      "assassin-flash-bomb",
+      "assassin-execution",
+      "assassin-storm-of-knives",
     ]);
+    expect(enemy).not.toHaveProperty("attacks");
   });
 
-  it("omits a flurry when the band is too narrow for one to threaten", () => {
-    const narrow = towEnemyFromBestiary({ ...bandit, weapon: { min: 4, max: 5 } });
-    expect(narrow.attacks.map((attack) => attack.hits)).toEqual([1, 1, 1]);
+  it("lets the world weapon set power without rewriting combat identity", () => {
+    const light = towEnemyFromBestiary({ ...bandit, weapon: { min: 1, max: 3 } });
+    const heavy = towEnemyFromBestiary({ ...bandit, weapon: { min: 8, max: 8 } });
+    expect(light.stats.attack).toBe(2);
+    expect(heavy.stats.attack).toBe(8);
+    expect(light.archetypeId).toBe(heavy.archetypeId);
+    expect(light.build).toEqual(heavy.build);
   });
 
-  it("collapses a fixed-damage weapon to one attack", () => {
-    const fixed = towEnemyFromBestiary({ ...bandit, weapon: { min: 5, max: 5 } });
-    expect(fixed.attacks).toHaveLength(1);
-    expect(fixed.attacks[0].damage).toBe(5);
+  it("unlocks the same five-slot kit by world threat tier", () => {
+    const archetype = getStartingArchetype("arctic-knight");
+    expect(towEnemyFromBestiary({ ...bandit, tier: "common" }).build.skills)
+      .toEqual(archetype.build.skills.slice(0, 2));
+    expect(towEnemyFromBestiary({ ...bandit, tier: "uncommon" }).build.skills)
+      .toEqual(archetype.build.skills.slice(0, 3));
+    expect(towEnemyFromBestiary({ ...bandit, tier: "rare" }).build.skills)
+      .toEqual(archetype.build.skills);
   });
 
   it("rejects an enemy with no usable identity", () => {
@@ -148,9 +165,12 @@ describe("bestiary enemies cross the bridge", () => {
     const group = generateEnemyGroup("bandits", { power: 3, maxTier: "common" });
     expect(group.length).toBeGreaterThan(0);
     group.forEach((enemy, index) => {
-      const { attacks, ...actorOnly } = towEnemyFromBestiary(enemy, { id: `foe-${index}` });
+      const { archetypeId, build, ...actorOnly } = towEnemyFromBestiary(enemy, { id: `foe-${index}` });
       expect(isTowActor(actorOnly)).toBe(true);
-      expect(attacks.length).toBeGreaterThan(0);
+      expect(getStartingArchetype(archetypeId)).toBeTruthy();
+      expect(build.skills.length).toBeGreaterThanOrEqual(2);
+      expect(build.skills).toEqual(getStartingArchetype(archetypeId).build.skills.slice(0, build.skills.length));
+      expect(build.traits).toEqual(getStartingArchetype(archetypeId).build.traits);
     });
   });
 });
@@ -165,8 +185,10 @@ describe("admission", () => {
     const enemies = [{ name: "Foe" }];
     expect(towEncounterSupport({ character: {}, party: [], enemies: [] }))
       .toMatchObject({ ok: false, reason: "no-enemies" });
+    // Bestiary ability labels select a shared archetype; they are no longer a second,
+    // partially-supported enemy-only action system.
     expect(towEncounterSupport({ character: {}, party: [], enemies: [{ abilities: ["roar"] }] }))
-      .toMatchObject({ ok: false, reason: "unsupported-enemy-mechanics" });
+      .toEqual({ ok: true, reason: null });
     // A condition nobody has decided about is the fail-closed case that stops a newly
     // authored debuff from silently doing nothing.
     expect(towEncounterSupport({
@@ -210,21 +232,12 @@ describe("a real Solitaire fight runs on the kernel end to end", () => {
     const plain = { ...character, abilities: [], conditions: [], racialPassives: [] };
     const group = generateEnemyGroup("bandits", { power: 2, maxTier: "common" });
 
-    // Real bestiary foes carry abilities the kernel has no port for yet. Admission must
-    // refuse them outright — a fight that silently dropped them would be a quieter,
-    // easier fight than the one the world described.
-    if (group.some((enemy) => enemy.abilities?.length)) {
-      expect(towEncounterSupport({ character: plain, party: [], enemies: group }))
-        .toMatchObject({ ok: false, reason: "unsupported-enemy-mechanics" });
-    }
-
-    const portable = group.map((enemy) => ({ ...enemy, abilities: [], statuses: [], procs: [] }));
-    expect(towEncounterSupport({ character: plain, party: [], enemies: portable }).ok).toBe(true);
+    expect(towEncounterSupport({ character: plain, party: [], enemies: group }).ok).toBe(true);
 
     let state = createTowEncounter({
       seed: "solitaire-bridge-fight",
       player: towPlayerFromCharacter(plain, codex, { id: "wanderer" }),
-      enemies: portable.map((enemy, index) => towEnemyFromBestiary(enemy, { id: `foe-${index}` })),
+      enemies: group.map((enemy, index) => towEnemyFromBestiary(enemy, { id: `foe-${index}` })),
       build: { traits: { ironclad: 4 }, skills: ["strike", "block"] },
     });
 
@@ -237,6 +250,9 @@ describe("a real Solitaire fight runs on the kernel end to end", () => {
 
     expect(["victory", "defeat"]).toContain(state.phase);
     expect(state.events.length).toBeGreaterThan(0);
-    expect(state.events.some((entry) => entry.type === "enemy-attack")).toBe(true);
+    expect(state.events.some((entry) => (
+      entry.actorId?.startsWith("foe-") && entry.type.startsWith("skill-")
+    ))).toBe(true);
+    expect(state.events.some((entry) => entry.type === "enemy-attack")).toBe(false);
   });
 });

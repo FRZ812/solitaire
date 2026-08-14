@@ -101,6 +101,7 @@ import { admitTowEncounter, admissionPlayerNotice } from "./gameplay/tow/admissi
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./gameplay/tow/character-bootstrap.js";
 import { isTowBuild } from "./gameplay/tow/build.js";
 import { claimReward, compileRewardOffer, rerollRewardOffer, rewardSeedFor } from "./gameplay/tow/rewards.js";
+import { getSkill, replaceableSkillIds, SKILL_SLOTS } from "./gameplay/tow/skills.js";
 import { refusalNotice } from "./gameplay/campaign/command-gateway.js";
 import {
   claimPresentation,
@@ -3655,11 +3656,11 @@ export function Solitaire() {
    * rather than swallowed: a reward the player thought they took and did not get is worse
    * than one they were told they could not have.
    */
-  function handleClaimReward(candidateId) {
+  function handleClaimReward(candidateId, replacingId = null) {
     const base = liveStateRef.current;
     const offer = base.pendingReward;
     if (!offer || !base.mechanics?.build) return;
-    const claimed = claimReward(base.mechanics.build, offer, candidateId);
+    const claimed = claimReward(base.mechanics.build, offer, candidateId, { replacingId });
     if (!claimed.ok) {
       setError(`That reward could not be taken: ${claimed.reason}.`);
       return;
@@ -4176,23 +4177,65 @@ export function Solitaire() {
               What you take from it
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-              {state.pendingReward.candidates.map((candidate) => (
-                <button
-                  key={candidate.id}
-                  type="button"
-                  className="tow-reward__choice"
-                  onClick={() => handleClaimReward(candidate.id)}
-                  style={{
-                    flex: "1 1 9rem", padding: "9px 12px", borderRadius: 12,
-                    backgroundColor: "transparent", color: colors.parchment,
-                    border: `1px solid ${colors.gold}55`, fontFamily: "inherit",
-                    fontSize: "13px", textAlign: "left", cursor: "pointer",
-                  }}
-                >
-                  <strong style={{ display: "block" }}>{candidate.name}</strong>
-                  <span style={{ fontSize: "11px", color: colors.parchmentMuted }}>{candidate.detail}</span>
-                </button>
-              ))}
+              {state.pendingReward.candidates.map((candidate) => {
+                const buildSkills = state.mechanics?.build?.skills || [];
+                const replacements = replaceableSkillIds(buildSkills);
+                const requiresReplacement = candidate.kind === "skill"
+                  && (candidate.requiresReplacement === true || buildSkills.length >= SKILL_SLOTS);
+                if (!requiresReplacement) {
+                  return (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      className="tow-reward__choice"
+                      onClick={() => handleClaimReward(candidate.id)}
+                      style={{
+                        flex: "1 1 9rem", padding: "9px 12px", borderRadius: 12,
+                        backgroundColor: "transparent", color: colors.parchment,
+                        border: `1px solid ${colors.gold}55`, fontFamily: "inherit",
+                        fontSize: "13px", textAlign: "left", cursor: "pointer",
+                      }}
+                    >
+                      <strong style={{ display: "block" }}>{candidate.name}</strong>
+                      <span style={{ fontSize: "11px", color: colors.parchmentMuted }}>{candidate.detail}</span>
+                    </button>
+                  );
+                }
+                return (
+                  <div
+                    key={candidate.id}
+                    className="tow-reward__replacement"
+                    role="group"
+                    aria-label={`Choose an ability for ${candidate.name} to replace`}
+                    style={{
+                      flex: "1 1 15rem", padding: "9px 12px", borderRadius: 12,
+                      border: `1px solid ${colors.gold}55`, color: colors.parchment,
+                    }}
+                  >
+                    <strong style={{ display: "block", fontSize: "13px" }}>{candidate.name}</strong>
+                    <span style={{ display: "block", fontSize: "11px", color: colors.parchmentMuted }}>{candidate.detail}</span>
+                    <span style={{ display: "block", marginTop: "7px", fontSize: "9px", letterSpacing: "0.1em", textTransform: "uppercase", color: colors.gold }}>
+                      Replace one flexible ability
+                    </span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "5px" }}>
+                      {replacements.map((skillId) => (
+                        <button
+                          key={skillId}
+                          type="button"
+                          onClick={() => handleClaimReward(candidate.id, skillId)}
+                          style={{
+                            padding: "6px 8px", borderRadius: 8, border: `1px solid ${colors.gold}44`,
+                            background: "rgba(215,167,111,0.08)", color: colors.parchment,
+                            fontFamily: "inherit", fontSize: "11px", cursor: "pointer",
+                          }}
+                        >
+                          {getSkill(skillId)?.name || skillId}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             {state.pendingReward.rerollsRemaining > 0 && (
               <button type="button" onClick={handleRerollReward} style={{

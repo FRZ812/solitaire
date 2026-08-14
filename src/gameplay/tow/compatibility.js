@@ -231,12 +231,6 @@ export const UNCOVERED_DOMAINS = Object.freeze([
       + "Mounts are the same question and are support modifiers rather than actors.",
   }),
   Object.freeze({
-    domain: "enemy-mechanic",
-    reason: "towEncounterSupport returns unsupported-enemy-mechanics for any foe carrying "
-      + "abilities, statuses or procs. Bestiary foes are generated rather than enumerated "
-      + "from a fixed id list, so coverage is per-encounter, not per-id.",
-  }),
-  Object.freeze({
     domain: "reward",
     reason: "No reward loop is wired to the live kernel yet; reward ids belong to the "
       + "preview stack and are classified when that loop is ported.",

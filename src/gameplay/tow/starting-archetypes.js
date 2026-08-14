@@ -1,10 +1,10 @@
 // The complete playable Tower of Winter roster, translated into Solitaire's authored
 // character-start contract. Selection chooses a whole person: source identity, base stats,
-// innate trait, four-action kit, portrait, equipment, and history travel together.
+// innate trait, five-action kit, portrait, equipment, and history travel together.
 
 import { itemTemplate } from "../../data/catalog.js";
-import { CHARACTER_ABILITY_TYPES } from "./character-abilities.js";
-import { getSkill } from "./skills.js";
+import { FIXED_CHARACTER_ABILITY_TYPES } from "./character-abilities.js";
+import { SKILL_SLOTS, getSkill } from "./skills.js";
 import { getFusion, getTrait } from "./traits.js";
 import { startingPackage } from "./starting-packages.js";
 import { describeTowItems, getTowStartItemGrant } from "./start-items.js";
@@ -97,7 +97,7 @@ function archetype({
 export const STARTING_ARCHETYPES = Object.freeze([
   archetype({
     id: "arctic-knight", name: "Shield Vanguard", role: "Ward and retaliation", professionId: "fighter", traitId: "ironclad",
-    skills: ["arctic-strike", "arctic-block", "arctic-deliberate-blow", "arctic-incineration"],
+    skills: ["arctic-strike", "arctic-block", "arctic-deliberate-blow", "arctic-incineration", "arctic-mortal-blow"],
     tagline: "Stand between the expedition and the end of the world.",
     playstyle: "The most forgiving front-line kit: absorb a declared attack, answer without surrendering defence, then accept Incineration's dangerous recoil to end a crisis.",
     attention: "Low", attributes: { body: 4, reflex: 3, vigor: 4, mind: 2, wit: 3, presence: 3 },
@@ -114,7 +114,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "demon-slayer", name: "Venom Hunter", role: "Ranged control", professionId: "ranger", traitId: "quickness",
-    skills: ["demon-shoot", "demon-evasion", "demon-kick", "demon-arrow-rain"],
+    skills: ["demon-shoot", "demon-evasion", "demon-kick", "demon-arrow-rain", "demon-trackers-net"],
     tagline: "Every monster leaves a trail. Every trail ends.",
     playstyle: "Open at range, deny a lethal turn with Evasion or Kick, then let Arrow Rain turn every on-hit poison effect into a storm.",
     attention: "Medium", attributes: { body: 2, reflex: 5, vigor: 3, mind: 2, wit: 4, presence: 3 },
@@ -132,7 +132,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "owner-of-clocktower", name: "Clockwork Savant", role: "Free-action controller", professionId: "artificer", traitId: "innovation",
-    skills: ["clocktower-fire", "clocktower-suppressive-shot", "clocktower-missile-support", "clocktower-redesign"],
+    skills: ["clocktower-fire", "clocktower-suppressive-shot", "clocktower-missile-support", "clocktower-redesign", "clocktower-improvement"],
     tagline: "A perfect design is merely the next failed design, corrected.",
     playstyle: "Suppress incoming pressure, layer a free missile strike over the main action, and Redesign ATK and DEF into exactly the buffs the next turn needs.",
     attention: "High", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 5, presence: 3 },
@@ -150,7 +150,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "old-king-of-northland", name: "Storm Tyrant", role: "Axe sustain", professionId: "barbarian", traitId: "valiancy",
-    skills: ["north-king-cleave", "north-king-vitality", "north-king-whirlwind", "north-king-earthquake"],
+    skills: ["north-king-cleave", "north-king-vitality", "north-king-whirlwind", "north-king-earthquake", "north-king-neutralizing-blow"],
     tagline: "A crown can be taken. A king's weight cannot.",
     playstyle: "Every repeated hit compounds Valiancy. Whirlwind erodes the foe, Vitality erases attrition, and Earthquake ends the argument with overwhelming scale.",
     attention: "Medium", attributes: { body: 5, reflex: 2, vigor: 4, mind: 2, wit: 3, presence: 5 },
@@ -168,9 +168,9 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "sleepless-one", name: "Ember Warden", role: "Burn attrition", professionId: "druid", traitId: "ignition",
-    skills: ["sleepless-flame-strike", "sleepless-flame-curtain", "sleepless-entangling-roots", "sleepless-high-speed-flight"],
+    skills: ["sleepless-flame-strike", "sleepless-flame-curtain", "sleepless-entangling-roots", "sleepless-high-speed-flight", "sleepless-fire-essence"],
     tagline: "Sleep belongs to creatures who believe morning is promised.",
-    playstyle: "Maintain a curtain of fire while roots cancel a dangerous tempo swing. High-Speed Flight converts one ultimate use into four Priority for a decisive sequence.",
+    playstyle: "Maintain a curtain of fire while roots cancel a dangerous tempo swing. High-Speed Flight converts one precious use into four Priority for a decisive sequence.",
     attention: "High", attributes: { body: 4, reflex: 3, vigor: 5, mind: 3, wit: 3, presence: 2 },
     baseStats: { maxHp: 190, attack: 12, defense: 15, critRate: 3, dodgeRate: 3 },
     gear: ["iron-spear", "leather-jerkin", "traveling-cloak", "marching-boots"], color: "#c45e3f",
@@ -186,7 +186,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "last-assassin", name: "Crumble Executioner", role: "Multi-hit finisher", professionId: "rogue", traitId: "combo",
-    skills: ["assassin-flurry", "assassin-deflect", "assassin-flash-bomb", "assassin-execution"],
+    skills: ["assassin-flurry", "assassin-deflect", "assassin-flash-bomb", "assassin-execution", "assassin-storm-of-knives"],
     tagline: "One opening is enough. Two blades make certain.",
     playstyle: "Flurry steadily exposes a target. Deflect answers multi-hit intent, Flash Bomb creates a safe opening, and Execution scales with the damage already done.",
     attention: "High", attributes: { body: 3, reflex: 5, vigor: 3, mind: 2, wit: 5, presence: 2 },
@@ -204,7 +204,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "witch-of-eternity", name: "Bone Sovereign", role: "Army and burst", professionId: "warlock", traitId: "necromancy",
-    skills: ["witch-skull-throw", "witch-bone-shield", "witch-skeleton-summon", "witch-all-out-attack"],
+    skills: ["witch-skull-throw", "witch-bone-shield", "witch-skeleton-summon", "witch-all-out-attack", "witch-mirror-image"],
     tagline: "Nothing is gone while the bones still answer.",
     playstyle: "Accumulate Skeletons passively and actively, preserve the host behind Bone Shield, then commit the entire army to one overwhelming attack.",
     attention: "Medium", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 4, presence: 4 },
@@ -222,7 +222,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "tenacious-mage", name: "Ruin Scholar", role: "Charge artillery", professionId: "wizard", traitId: "charge",
-    skills: ["mage-magic-arrow", "mage-barrier", "mage-flame-storm", "mage-amplification"],
+    skills: ["mage-magic-arrow", "mage-barrier", "mage-flame-storm", "mage-amplification", "mage-god-slaying-spear"],
     tagline: "A failed theorem is only a weapon whose conditions are not yet met.",
     playstyle: "Barrier buys time for Charge to mature. Flame Storm supplies attrition; Amplification converts the current ATK line into a turn of explosive scaling.",
     attention: "Medium", attributes: { body: 2, reflex: 3, vigor: 3, mind: 5, wit: 5, presence: 2 },
@@ -240,7 +240,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "exiled-priestess", name: "Judgment Martyr", role: "Missing-health verdict", professionId: "cleric", traitId: "judgment",
-    skills: ["priestess-crush", "priestess-holy-shield", "priestess-wrath-of-heaven", "priestess-doom"],
+    skills: ["priestess-crush", "priestess-holy-shield", "priestess-wrath-of-heaven", "priestess-doom", "priestess-immediate-judgment"],
     tagline: "If heaven will not answer, I will deliver the verdict myself.",
     playstyle: "Judgment builds naturally. Holy Shield lets the Priestess survive at a dangerous health line, Wrath weaponizes what is missing, and Doom magnifies every lingering wound.",
     attention: "High", attributes: { body: 4, reflex: 2, vigor: 4, mind: 3, wit: 2, presence: 5 },
@@ -258,7 +258,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "wandering-blade", name: "Gale Duelist", role: "Initiative tempo", professionId: "monk", traitId: "gale",
-    skills: ["blade-slash", "blade-barrier", "blade-chi-liberation", "blade-one-flash"],
+    skills: ["blade-slash", "blade-barrier", "blade-chi-liberation", "blade-one-flash", "blade-katana-dance"],
     tagline: "The road ends wherever the blade becomes still.",
     playstyle: "Slash and Gale build Initiative toward extra actions. Blade Barrier protects the tempo line, Chi Liberation accelerates it, and One Flash cashes it out.",
     attention: "Medium", attributes: { body: 3, reflex: 5, vigor: 3, mind: 3, wit: 4, presence: 3 },
@@ -276,7 +276,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "desolate-vampire", name: "Crimson Survivor", role: "Blood sustain", professionId: "rogue", traitId: "bloodsuck",
-    skills: ["vampire-claw", "vampire-blood-thirst", "vampire-heart-destroyer", "vampire-rampage"],
+    skills: ["vampire-claw", "vampire-blood-thirst", "vampire-heart-destroyer", "vampire-rampage", "vampire-bloodflow-absorption"],
     tagline: "Hunger is not a master. It is a debt I choose how to pay.",
     playstyle: "Every damaging action becomes sustain through Bloodsuck. Blood Thirst recovers without a target, Heart Destroyer opens a wound, and Rampage turns four hits into a violent recovery sequence.",
     attention: "Medium", attributes: { body: 4, reflex: 4, vigor: 4, mind: 3, wit: 4, presence: 4 },
@@ -294,7 +294,7 @@ export const STARTING_ARCHETYPES = Object.freeze([
   }),
   archetype({
     id: "forsaken-automaton", name: "Overheat Engine", role: "Risk artillery", professionId: "artificer", traitId: "overheat",
-    skills: ["automaton-bombardment", "automaton-repair", "automaton-emergency-cooling", "automaton-fate-manipulator"],
+    skills: ["automaton-bombardment", "automaton-repair", "automaton-emergency-cooling", "automaton-fate-manipulator", "automaton-final-counter"],
     tagline: "Directive lost. Purpose chosen.",
     playstyle: "Overheat makes both sides progressively more vulnerable. Repair holds the chassis together, Cooling vents the worst self-pressure, and Fate Manipulator buys an explosive action sequence at a severe cost.",
     attention: "High", attributes: { body: 5, reflex: 2, vigor: 5, mind: 4, wit: 3, presence: 1 },
@@ -373,7 +373,7 @@ export function characterSetupForArchetype(draft) {
       `I am ${character.name}, ${character.epithet}.`,
       character.history,
       `My source identity is ${character.sourceName}.`,
-      "My combat kit has one Basic Attack, Defensive, Special, and Ultimate ability.",
+      "My combat kit has one Basic Attack, one Defensive ability, and three exclusive flexible abilities.",
     ],
     profile: {
       source: "tow-authored-character-start",
@@ -388,7 +388,7 @@ export function characterSetupForArchetype(draft) {
       role: selected.role,
     },
     // World progression remains a compatibility shell. Combat power comes from the source
-    // base-stat chassis, the four-action build, and equipment rather than character level.
+    // base-stat chassis, the five-action build, and equipment rather than character level.
     level: 1,
   };
 }
@@ -420,12 +420,18 @@ export function invalidStartingArchetypes() {
       }
     }
     const skills = selected.build.skills.map((id) => getSkill(id));
-    if (skills.length !== CHARACTER_ABILITY_TYPES.length || skills.some((skill) => !skill)) {
-      invalid.push(`${selected.id}:invalid-four-ability-kit`);
+    if (skills.length !== SKILL_SLOTS || skills.some((skill) => !skill)) {
+      invalid.push(`${selected.id}:invalid-five-ability-kit`);
     } else {
-      const types = new Set(skills.map((skill) => skill.abilityType));
-      if (types.size !== CHARACTER_ABILITY_TYPES.length
-        || CHARACTER_ABILITY_TYPES.some((type) => !types.has(type))) {
+      const typeCounts = Object.fromEntries(FIXED_CHARACTER_ABILITY_TYPES.map((type) => [
+        type,
+        skills.filter((skill) => skill.abilityType === type).length,
+      ]));
+      const archetypeCount = skills.filter((skill) => skill.abilityType === "archetype").length;
+      const generalCount = skills.filter((skill) => skill.abilityType === "general").length;
+      if (FIXED_CHARACTER_ABILITY_TYPES.some((type) => typeCounts[type] !== 1)
+        || archetypeCount !== 3
+        || generalCount !== 0) {
         invalid.push(`${selected.id}:invalid-ability-types`);
       }
       for (const skill of skills) {

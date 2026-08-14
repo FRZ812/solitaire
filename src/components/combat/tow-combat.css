@@ -356,6 +356,7 @@
     linear-gradient(100deg, rgba(8, 13, 14, 0.89), rgba(9, 15, 16, 0.67) 74%, rgba(9, 15, 16, 0.28));
   box-shadow: 0 0.8rem 2.2rem rgba(0,0,0,0.34), inset 0 1px rgba(255,255,255,0.035);
   backdrop-filter: blur(9px);
+  pointer-events: auto;
 }
 
 .tow-combat__plate--enemy {
@@ -417,6 +418,10 @@
 
 .tow-combat__bar-hp { background: linear-gradient(90deg, #819c70, var(--tow-vital)); }
 .tow-combat__vitals--enemy .tow-combat__bar-hp { background: linear-gradient(90deg, #9f4139, #db6959); }
+.tow-combat__vitals.is-reacting .tow-combat__bar-hp,
+.tow-combat__vitals.is-reacting .tow-combat__bar-shield {
+  transition-duration: 140ms;
+}
 .tow-combat__bar-shield {
   right: 0;
   left: auto;
@@ -458,31 +463,219 @@
   color: #e7f8ff;
 }
 
-.tow-combat__statuses {
-  grid-column: 1 / -1;
+.tow-combat__status-tools {
+  position: absolute;
+  z-index: 18;
+  bottom: calc(100% + 0.36rem);
+  left: 0.15rem;
   display: flex;
-  gap: 0.3rem;
-  flex-wrap: wrap;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 0.38rem;
+  align-items: center;
+  max-width: min(30rem, calc(100vw - 2rem));
+  pointer-events: auto;
 }
+
+.tow-combat__plate--enemy .tow-combat__status-tools {
+  right: 0.15rem;
+  left: auto;
+  flex-direction: row-reverse;
+}
+
+.tow-combat__statuses {
+  display: flex;
+  flex: 0 1 auto;
+  gap: 0.3rem;
+  max-width: min(24rem, calc(100vw - 5rem));
+  margin: 0;
+  padding: 0.16rem;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+.tow-combat__statuses::-webkit-scrollbar { display: none; }
 
 .tow-combat__status {
-  display: inline-flex;
-  gap: 0.28rem;
-  align-items: center;
-  padding: 0.15rem 0.38rem;
-  border: 1px solid rgba(216, 174, 101, 0.25);
-  border-radius: 99px;
-  background: rgba(3, 8, 9, 0.54);
-  font-size: 0.55rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #bcc8c0;
+  flex: 0 0 auto;
+  display: block;
 }
 
-.tow-combat__status strong { color: var(--tow-gold-bright); }
+.tow-combat__status-button,
+.tow-combat__record-trigger {
+  --tow-status-accent: #d8ae65;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.45rem;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--tow-status-accent) 58%, transparent);
+  border-radius: 0.48rem;
+  background:
+    radial-gradient(circle at 45% 38%, color-mix(in srgb, var(--tow-status-accent) 18%, transparent), transparent 62%),
+    rgba(4, 9, 11, 0.88);
+  box-shadow:
+    inset 0 0 0 2px rgba(1,4,5,0.74),
+    0 0.35rem 0.8rem rgba(0,0,0,0.48),
+    0 0 0.65rem color-mix(in srgb, var(--tow-status-accent) 14%, transparent);
+  color: #f6e6c5;
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.tow-combat__status-button[aria-pressed="true"],
+.tow-combat__record-trigger[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--tow-status-accent) 86%, #fff 10%);
+  box-shadow:
+    inset 0 0 0 2px rgba(1,4,5,0.72),
+    0 0 0 2px color-mix(in srgb, var(--tow-status-accent) 25%, transparent),
+    0 0 1rem color-mix(in srgb, var(--tow-status-accent) 34%, transparent);
+}
+
+.tow-combat__status-button--afflict { --tow-status-accent: #aa79d7; }
+.tow-combat__status-button--arcane { --tow-status-accent: #a995f2; }
+.tow-combat__status-button--evade { --tow-status-accent: #75d7df; }
+.tow-combat__status-button--fire { --tow-status-accent: #ef8a50; }
+.tow-combat__status-button--gash { --tow-status-accent: #df6374; }
+.tow-combat__status-button--heal { --tow-status-accent: #8bcf9d; }
+.tow-combat__status-button--lightning { --tow-status-accent: #78cbe9; }
+.tow-combat__status-button--slash { --tow-status-accent: #e2d6bd; }
+.tow-combat__status-button--ward { --tow-status-accent: #89c5dc; }
+
+.tow-combat__status-art {
+  position: absolute;
+  inset: 0.1rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 0.36rem;
+}
+
+.tow-combat__status-art img {
+  width: 132%;
+  height: 132%;
+  object-fit: contain;
+  opacity: 0.9;
+  filter: saturate(0.88) brightness(1.18);
+}
+
+.tow-combat__status-art i {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 40%, transparent 20%, rgba(2,5,7,0.42) 100%);
+}
+
+.tow-combat__status-button > strong {
+  position: absolute;
+  z-index: 3;
+  right: -0.24rem;
+  bottom: -0.24rem;
+  display: grid;
+  place-items: center;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.18rem;
+  border: 1px solid color-mix(in srgb, var(--tow-status-accent) 66%, #fff 8%);
+  border-radius: 99px;
+  background: #081012;
+  box-shadow: 0 0.15rem 0.35rem rgba(0,0,0,0.7);
+  font-size: 0.55rem;
+  font-variant-numeric: tabular-nums;
+  color: #fff4dc;
+}
+
+.tow-combat__status-details {
+  --tow-status-detail-accent: #d8ae65;
+  position: absolute;
+  z-index: 32;
+  bottom: calc(100% + 3.35rem);
+  left: 0;
+  display: grid;
+  grid-template-columns: 3.8rem minmax(0, 1fr) auto;
+  gap: 0.62rem;
+  align-items: start;
+  width: min(24rem, calc(100vw - 1.5rem));
+  padding: 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--tow-status-detail-accent) 44%, transparent);
+  border-radius: 0.72rem;
+  background: linear-gradient(110deg, rgba(8,14,16,0.97), rgba(4,8,10,0.96));
+  box-shadow: 0 1rem 2.2rem rgba(0,0,0,0.58), inset 0 1px rgba(255,255,255,0.045);
+  color: var(--tow-ink);
+  backdrop-filter: blur(14px);
+}
+
+.tow-combat__status-details[data-tone="affliction"] { --tow-status-detail-accent: #c77b91; }
+.tow-combat__status-details[data-tone="control"] { --tow-status-detail-accent: #ad8bd8; }
+.tow-combat__status-details--enemy { right: 0; left: auto; }
+
+.tow-combat__status-details-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3.8rem;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--tow-status-detail-accent) 54%, transparent);
+  border-radius: 0.55rem;
+  background: rgba(2,6,8,0.78);
+}
+
+.tow-combat__status-details-art img { width: 135%; height: 135%; object-fit: contain; }
+.tow-combat__status-details-art i { position: absolute; inset: 0; box-shadow: inset 0 0 1rem rgba(0,0,0,0.62); }
+
+.tow-combat__status-details-copy { min-width: 0; }
+.tow-combat__status-details-copy > small {
+  display: block;
+  font-size: 0.48rem;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tow-status-detail-accent);
+}
+.tow-combat__status-details-copy > strong {
+  display: block;
+  margin-top: 0.08rem;
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: 1.22rem;
+  font-weight: 400;
+  color: #fff1d3;
+}
+.tow-combat__status-details-copy p {
+  margin: 0.24rem 0 0;
+  font-size: 0.61rem;
+  line-height: 1.38;
+  color: #d7dfda;
+}
+.tow-combat__status-details-copy > span {
+  display: block;
+  margin-top: 0.22rem;
+  font-size: 0.53rem;
+  line-height: 1.35;
+  color: #9fafaa;
+}
+.tow-combat__status-details-copy em {
+  display: block;
+  margin-top: 0.32rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid rgba(255,255,255,0.07);
+  font-size: 0.52rem;
+  font-style: normal;
+  line-height: 1.35;
+  color: #c9b88f;
+}
+.tow-combat__status-details > button {
+  display: grid;
+  place-items: center;
+  width: 1.65rem;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid rgba(223,202,164,0.18);
+  border-radius: 50%;
+  background: rgba(2,5,7,0.46);
+  color: #cbd1cb;
+  cursor: pointer;
+}
 
 /* Slay-the-Spire-like intent: one readable symbol above the foe, never a center panel. */
 
@@ -506,7 +699,10 @@
   display: grid;
   place-items: center;
   width: 3.4rem;
-  aspect-ratio: 1;
+  height: 3.4rem;
+  min-width: 3.4rem;
+  min-height: 3.4rem;
+  aspect-ratio: 1 / 1;
   border: 1px solid color-mix(in srgb, var(--tow-intent-accent) 70%, #fff 15%);
   border-radius: 50%;
   background:
@@ -537,11 +733,13 @@
 }
 
 .tow-combat__intent-sigil img {
-  position: relative;
+  position: absolute;
   z-index: 2;
+  inset: -9%;
   width: 118%;
   height: 118%;
   object-fit: contain;
+  clip-path: circle(48% at 50% 50%);
   filter: saturate(0.78) brightness(1.15);
 }
 
@@ -605,7 +803,99 @@
 @keyframes tow-intent-turn { to { transform: rotate(360deg); } }
 @keyframes tow-intent-pulse { 50% { opacity: 0.3; transform: scale(1.11); } }
 
-/* The optional receipt remains a single slim strip in the negative space. */
+/* Declarations use the playfield only as a brief title plane: no receipt wall. */
+
+.tow-combat__declarations {
+  position: absolute;
+  z-index: 12;
+  top: 50%;
+  left: 50%;
+  width: min(32rem, 82vw);
+  height: 8.5rem;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.tow-combat__declaration {
+  --tow-declaration-accent: #efcf8d;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  opacity: 0;
+  color: #fff3d8;
+  text-align: center;
+  text-shadow: 0 0.16rem 0.45rem #000, 0 0 1.2rem rgba(0,0,0,0.92);
+  animation: tow-action-declaration var(--tow-declaration-duration, 860ms) cubic-bezier(.18,.74,.2,1) var(--tow-declaration-delay, 0ms) both;
+}
+
+.tow-combat__declaration--enemy {
+  --tow-declaration-accent: #ee8b76;
+  color: #ffe4da;
+}
+
+.tow-combat__declaration-sigil {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 9rem;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  opacity: 0.42;
+  filter: drop-shadow(0 0 1.25rem color-mix(in srgb, var(--tow-declaration-accent) 34%, transparent));
+}
+
+.tow-combat__declaration-sigil img {
+  width: 138%;
+  height: 138%;
+  object-fit: contain;
+  filter: saturate(0.88) brightness(1.12);
+}
+
+.tow-combat__declaration-sigil i {
+  position: absolute;
+  inset: 14%;
+  border: 1px solid color-mix(in srgb, var(--tow-declaration-accent) 28%, transparent);
+  border-radius: 50%;
+  box-shadow: inset 0 0 1.4rem rgba(0,0,0,0.4), 0 0 1rem color-mix(in srgb, var(--tow-declaration-accent) 16%, transparent);
+}
+
+.tow-combat__declaration > small {
+  position: relative;
+  z-index: 2;
+  margin-bottom: 0.12rem;
+  font-size: 0.48rem;
+  font-weight: 850;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tow-declaration-accent);
+}
+
+.tow-combat__declaration > strong {
+  position: relative;
+  z-index: 2;
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: clamp(1.45rem, 3.4vw, 2.35rem);
+  font-weight: 400;
+  line-height: 1;
+}
+
+@keyframes tow-action-declaration {
+  0% { opacity: 0; transform: scale(0.82); filter: blur(0.2rem); }
+  16% { opacity: 1; transform: scale(1); filter: blur(0); }
+  68% { opacity: 1; transform: scale(1); filter: blur(0); }
+  100% { opacity: 0; transform: scale(1.08); filter: blur(0.08rem); }
+}
+
+@keyframes tow-action-declaration-reduced {
+  0%, 94% { opacity: 1; transform: none; filter: none; }
+  100% { opacity: 0; transform: none; filter: none; }
+}
+
+/* Legacy receipt anchoring remains for terminal summaries only. */
 
 .tow-combat__exchange {
   position: absolute;
@@ -622,6 +912,47 @@
 .tow-combat__record {
   position: relative;
   margin-top: 0;
+}
+
+.tow-combat__record--compact {
+  flex: 0 0 auto;
+}
+
+.tow-combat__record-trigger {
+  --tow-status-accent: #d8ae65;
+}
+
+.tow-combat__record-trigger .game-icon {
+  width: 1.55rem !important;
+  height: 1.55rem !important;
+  opacity: 0.9;
+  filter: saturate(0.78) brightness(1.16);
+}
+
+.tow-combat__record-trigger > b {
+  position: absolute;
+  right: -0.22rem;
+  bottom: -0.22rem;
+  display: grid;
+  place-items: center;
+  min-width: 1.02rem;
+  height: 1.02rem;
+  padding: 0 0.16rem;
+  border: 1px solid rgba(226,191,127,0.55);
+  border-radius: 99px;
+  background: #091012;
+  font-size: 0.51rem;
+  font-variant-numeric: tabular-nums;
+  color: #f5ddb0;
+}
+
+.tow-combat__record--compact .tow-combat__record-list {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 0.48rem);
+  left: 0;
+  width: min(22rem, calc(100vw - 1.5rem));
+  max-height: min(36vh, 15rem);
 }
 
 .tow-combat__record-summary {
@@ -731,6 +1062,7 @@
 .tow-combat__action-beat--pierce { --tow-beat-accent: #83dff4; }
 .tow-combat__action-beat--heal { --tow-beat-accent: #a7de7c; }
 .tow-combat__action-beat--ward { --tow-beat-accent: #82d6ee; }
+.tow-combat__action-beat--wind { --tow-beat-accent: #8ce1ce; }
 
 .tow-combat__action-beat-art {
   position: relative;
@@ -997,6 +1329,7 @@
 .tow-combat__effect--vfx-heal { --tow-effect-accent: #a8e37c; }
 .tow-combat__effect--vfx-afflict { --tow-effect-accent: #c080ec; }
 .tow-combat__effect--vfx-frost { --tow-effect-accent: #a2edff; }
+.tow-combat__effect--vfx-wind { --tow-effect-accent: #8ce1ce; }
 
 .tow-combat__effect--vfx-slash .tow-combat__effect-asset,
 .tow-combat__effect--vfx-gash .tow-combat__effect-asset { animation-name: tow-vfx-cut; }
@@ -1010,6 +1343,7 @@
 .tow-combat__effect--vfx-evade .tow-combat__effect-asset { animation-name: tow-vfx-evade; }
 .tow-combat__effect--vfx-heal .tow-combat__effect-asset { animation-name: tow-vfx-heal; }
 .tow-combat__effect--vfx-frost .tow-combat__effect-asset { animation-name: tow-vfx-frost; }
+.tow-combat__effect--vfx-wind .tow-combat__effect-asset { animation-name: tow-vfx-whirlwind; }
 
 /* Ability-specific motion identities: the data-vfx variant stays authored per skill/form,
    while these motion roles control the weight of its dedicated effect family. */
@@ -1038,7 +1372,7 @@
   height: 2.1rem;
   animation-duration: 900ms;
 }
-.tow-combat__effect--motion-cyclone .tow-combat__effect-asset { animation-name: tow-vfx-cyclone; }
+.tow-combat__effect--motion-cyclone .tow-combat__effect-asset { animation-name: tow-vfx-whirlwind; }
 .tow-combat__effect:is(.tow-combat__effect--motion-charge, .tow-combat__effect--motion-flash, .tow-combat__effect--motion-snap) .tow-combat__effect-asset {
   animation-duration: 610ms;
   filter: drop-shadow(0 0 1.15rem var(--tow-effect-accent)) brightness(1.28);
@@ -1064,11 +1398,11 @@
   100% { opacity: 0; transform: scale(calc(var(--tow-vfx-scale) * 1.35)) rotate(calc(var(--tow-vfx-rotate) + 5deg)); }
 }
 
-@keyframes tow-vfx-cyclone {
-  0% { opacity: 0; transform: rotate(-145deg) scale(0.28); filter: blur(0.5rem); }
-  24% { opacity: 1; transform: rotate(20deg) scale(1.05); filter: blur(0) drop-shadow(0 0 0.85rem var(--tow-effect-accent)); }
-  72% { opacity: 0.82; transform: rotate(210deg) scale(1.18); }
-  100% { opacity: 0; transform: rotate(330deg) scale(1.42); }
+@keyframes tow-vfx-whirlwind {
+  0% { opacity: 0; transform: translateY(16%) scale(0.42); filter: blur(0.55rem); }
+  24% { opacity: 1; transform: translateY(0) scale(0.96); filter: blur(0) drop-shadow(0 0 0.9rem var(--tow-effect-accent)); }
+  64% { opacity: 0.9; transform: translateY(-4%) scale(1.12); }
+  100% { opacity: 0; transform: translateY(-12%) scale(1.38); filter: blur(0.14rem) drop-shadow(0 0 1.15rem var(--tow-effect-accent)); }
 }
 
 @keyframes tow-vfx-cut {
@@ -1540,6 +1874,52 @@
 .tow-combat__action.is-unavailable .tow-combat__ability-art { filter: grayscale(0.74) brightness(0.46); }
 .tow-combat__action.is-unavailable:hover .tow-combat__ability-art { filter: grayscale(0.58) brightness(0.6); }
 
+/* Finite uses stay peripheral; cooldown is the immediate decision and takes the centre. */
+.tow-combat__action-uses {
+  position: absolute;
+  z-index: 6;
+  right: 0.18rem;
+  bottom: 0.18rem;
+  min-width: 1.82rem;
+  padding: 0.14rem 0.28rem;
+  border: 1px solid rgba(247, 218, 159, 0.52);
+  border-radius: 0.34rem;
+  background: rgba(3, 7, 9, 0.9);
+  box-shadow: 0 0.18rem 0.46rem rgba(0,0,0,0.64), inset 0 1px rgba(255,255,255,0.08);
+  color: #fff0cf;
+  font-size: clamp(0.52rem, 1.1vw, 0.62rem);
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: 0.015em;
+  text-align: center;
+  text-shadow: 0 1px 0.18rem #000;
+  pointer-events: none;
+}
+
+.tow-combat__action-cooldown {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 0.66rem;
+  background: radial-gradient(circle, rgba(3,8,10,0.14) 8%, rgba(3,8,10,0.54) 78%);
+  color: #fff1cf;
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: clamp(1.38rem, 2.7vw, 1.82rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 2px 0.3rem #000, 0 0 0.7rem rgba(231, 186, 101, 0.34);
+  pointer-events: none;
+}
+
+.tow-combat__action.is-on-cooldown .tow-combat__ability-art,
+.tow-combat__action.is-on-cooldown:hover .tow-combat__ability-art {
+  filter: grayscale(0.86) saturate(0.42) brightness(0.3);
+}
+
 .tow-combat__ability-art {
   position: relative;
   display: block;
@@ -1894,7 +2274,12 @@
     width: 3.55rem;
     transform: none;
   }
-  .tow-combat__intent-sigil { width: 2.95rem; }
+  .tow-combat__intent-sigil {
+    width: 2.95rem;
+    height: 2.95rem;
+    min-width: 2.95rem;
+    min-height: 2.95rem;
+  }
   .tow-combat__intent > strong { min-width: 2.15rem; font-size: 0.64rem; }
 
   .tow-combat__plate {
@@ -1913,7 +2298,40 @@
   .tow-combat__bar-value { font-size: 0.51rem; }
   .tow-combat__bar-value strong { font-size: 0.62rem; }
   .tow-combat__bar-value em { font-size: 0.43rem; }
-  .tow-combat__statuses { display: none; }
+
+  .tow-combat__status-tools {
+    bottom: calc(100% + 0.26rem);
+    left: 0.05rem;
+    gap: 0.25rem;
+    max-width: calc(100vw - 1.4rem);
+  }
+  .tow-combat__plate--enemy .tow-combat__status-tools { right: 0.05rem; left: auto; }
+  .tow-combat__statuses {
+    gap: 0.24rem;
+    max-width: calc(100vw - 4.5rem);
+    padding: 0.2rem 0.16rem 0.24rem;
+  }
+  .tow-combat__status-button,
+  .tow-combat__record-trigger { width: 2.35rem; }
+  .tow-combat__status-button > strong,
+  .tow-combat__record-trigger > b { min-width: 1rem; height: 1rem; font-size: 0.5rem; }
+  .tow-combat__status-details {
+    bottom: calc(100% + 3.12rem);
+    grid-template-columns: 3.25rem minmax(0, 1fr) auto;
+    gap: 0.52rem;
+    width: min(22rem, calc(100vw - 1.4rem));
+    padding: 0.54rem;
+  }
+  .tow-combat__status-details-art { width: 3.25rem; }
+  .tow-combat__status-details-copy > strong { font-size: 1.08rem; }
+  .tow-combat__status-details-copy p { font-size: 0.57rem; }
+  .tow-combat__status-details-copy > span,
+  .tow-combat__status-details-copy em { font-size: 0.49rem; }
+
+  .tow-combat__declarations { top: 50%; width: 84vw; height: 7rem; }
+  .tow-combat__declaration-sigil { width: 6.7rem; opacity: 0.38; }
+  .tow-combat__declaration > strong { font-size: 1.42rem; }
+  .tow-combat__declaration > small { font-size: 0.43rem; }
 
   .tow-combat__exchange {
     top: 51%;
@@ -1938,6 +2356,11 @@
   .tow-combat__record-summary { grid-template-columns: minmax(0, 1fr) auto; }
   .tow-combat__record-summary p { font-size: 0.54rem; }
   .tow-combat__record-list { right: -0.5rem; left: -0.5rem; max-height: 11rem; }
+  .tow-combat__record--compact .tow-combat__record-list {
+    right: auto;
+    left: 0;
+    width: min(21rem, calc(100vw - 1.4rem));
+  }
   .tow-combat__effect { width: 7.2rem; height: 7.2rem; }
   .tow-combat__effect--enemy { top: 18%; right: 13%; }
   .tow-combat__effect--player { bottom: 14%; left: 13%; }
@@ -2023,5 +2446,10 @@
     scroll-behavior: auto !important;
     transition-duration: 1ms !important;
     animation-duration: 1ms !important;
+  }
+
+  .tow-combat__declaration {
+    animation-name: tow-action-declaration-reduced !important;
+    animation-duration: var(--tow-declaration-duration, 860ms) !important;
   }
 }

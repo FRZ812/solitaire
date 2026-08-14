@@ -12,6 +12,7 @@ import {
   nextPracticeAttempt,
   practiceResult,
 } from "./practice-scenarios.js";
+import { getStartingArchetype } from "./starting-archetypes.js";
 import { startingPackageIds } from "./starting-packages.js";
 
 // The six the plan names as the field-ready Quick Start cohort, by the profession each maps
@@ -83,7 +84,7 @@ describe("the seed is derived, never drawn", () => {
     const seed = derivePracticeSeed(base);
     expect(derivePracticeSeed({ ...base, packageId: "wizard" })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, scenarioId: "the-duellist" })).not.toBe(seed);
-    expect(derivePracticeSeed({ ...base, scenarioVersion: 2 })).not.toBe(seed);
+    expect(derivePracticeSeed({ ...base, scenarioVersion: 3 })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, draftHash: "def" })).not.toBe(seed);
     expect(derivePracticeSeed({ ...base, attemptIndex: 1 })).not.toBe(seed);
   });
@@ -124,6 +125,35 @@ describe("opening a practice fight", () => {
       .toEqual(receipt.build.skills);
   });
 
+  it("gives every foe a playable archetype, trait and complete five-ability loadout", () => {
+    for (const scenario of PRACTICE_SCENARIOS) {
+      const encounter = createPracticeSession(receiptFor("fighter"), scenario.id).session.encounter;
+      for (const enemy of scenario.enemies) {
+        const archetype = getStartingArchetype(enemy.archetypeId);
+        expect(archetype).toBeTruthy();
+        expect(encounter.enemyArchetypes[enemy.id]).toBe(archetype.id);
+        expect(encounter.enemyBuilds[enemy.id].traits).toEqual(archetype.build.traits);
+        expect(encounter.enemyBuilds[enemy.id].skills.map((entry) => entry.id))
+          .toEqual(archetype.build.skills);
+        expect(encounter.enemyAttacks[enemy.id].map((entry) => entry.skillId))
+          .toEqual(archetype.build.skills);
+        expect(encounter.enemyAttacks[enemy.id].map((entry) => entry.name))
+          .not.toEqual(expect.arrayContaining(["Jab", "Swing", "Heavy blow"]));
+      }
+    }
+  });
+
+  it("lets the Duellist declare the Wandering Blade's authored kit", () => {
+    const encounter = createPracticeSession(receiptFor("rogue"), "the-duellist").session.encounter;
+    expect(encounter.enemyBuilds["foe-0"].skills.map((entry) => entry.id)).toEqual([
+      "blade-slash",
+      "blade-barrier",
+      "blade-chi-liberation",
+      "blade-one-flash",
+      "blade-katana-dance",
+    ]);
+  });
+
   it("refuses a scenario or a receipt it does not recognise", () => {
     expect(createPracticeSession(receiptFor("fighter"), "nowhere"))
       .toMatchObject({ ok: false, reason: "unknown-practice-scenario" });
@@ -161,8 +191,8 @@ describe("every field-ready package can complete practice", () => {
 describe("the result screen has everything needed to reproduce it", () => {
   it("shows scenario version, seed, both checksums and the replay verdict", () => {
     const result = practiceResult(playOut(createPracticeSession(receiptFor("fighter"))));
-    expect(result.scenarioVersion).toBe(1);
-    expect(result.seed).toContain("practice::solitaire-tow-v1::fighter@1::training-yard@1");
+    expect(result.scenarioVersion).toBe(2);
+    expect(result.seed).toContain("practice::solitaire-tow-v1::fighter@1::training-yard@2");
     expect(result.genesisChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.terminalChecksum).toMatch(/^[0-9a-f]{16}$/);
     expect(result.replayVerified).toBe(true);

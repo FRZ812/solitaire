@@ -108,7 +108,10 @@ function campaignInAFight({ lethalPolicy = "nonlethal", playerStakes = "survivab
   return state;
 }
 
-async function waitFor(assertion, timeout = 5000) {
+// Campaign boot performs real persistence and migration work. Under the full Vitest
+// cohort that can contend with other browser files, so keep this polling window
+// comfortably above the isolated boot time without slowing successful assertions.
+async function waitFor(assertion, timeout = 15000) {
   const deadline = Date.now() + timeout;
   let lastError;
   while (Date.now() < deadline) {

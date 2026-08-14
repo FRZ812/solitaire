@@ -10,9 +10,34 @@
 // Rank values are quoted verbatim from the wiki rather than interpolated: unlike traits,
 // every skill lists its per-rank magnitudes outright.
 
-import { characterAbilityIds, getCharacterAbility } from "./character-abilities.js";
+import {
+  FLEXIBLE_CHARACTER_ABILITY_TYPES,
+  characterAbilityIds,
+  getCharacterAbility,
+} from "./character-abilities.js";
 
 export const SKILL_SLOTS = 5;
+export const GENERAL_ACTIVE_SOURCE = "https://namu.wiki/w/%EA%B2%A8%EC%9A%B8%EC%9D%98%20%ED%83%91#s-11.1";
+export const GENERAL_ABILITY_IDS = Object.freeze([
+  "penetration",
+  "rapid-cooling",
+  "urgent-guard",
+  "stone-skin-elixir",
+  "protection-scroll",
+  "elixir-of-wrath",
+  "first-aid",
+  "emergency-evasion",
+  "sudden-blow",
+  "unbendable-will",
+  "killing-instinct",
+  "sleep-grenade",
+  "blade-of-curse",
+  "beastification",
+  "judge-of-fate",
+  "super-speed",
+  "transcendence",
+  "peace-declaration",
+]);
 export const RARITIES = Object.freeze([
   "common",
   "uncommon",
@@ -56,6 +81,9 @@ function skill(id, name, {
   usesPerAct = UNLIMITED_USES,
   usesPerActByRank = null,
   exclusiveTo = null,
+  abilityType = null,
+  description = null,
+  source = null,
   note = null,
 }) {
   const rankCount = usesPerActByRank?.length
@@ -72,9 +100,26 @@ function skill(id, name, {
     usesPerAct,
     usesPerActByRank: usesPerActByRank ? Object.freeze(usesPerActByRank) : null,
     exclusiveTo,
+    abilityType,
+    description,
+    source: source ? Object.freeze(source) : null,
     note,
     rankCount,
   });
+}
+
+function sharedAbility(name, description, { fidelity = "direct", detail = description } = {}) {
+  return {
+    abilityType: "general",
+    description,
+    source: {
+      page: GENERAL_ACTIVE_SOURCE,
+      sourceName: name,
+      fidelity,
+      detail,
+    },
+    note: fidelity === "adapted" ? "source-guided shared-ability adaptation" : null,
+  };
 }
 
 // Unslotted "skills" are immediate permanent stat increases that consume no slot.
@@ -208,12 +253,14 @@ const SKILLS = Object.freeze(Object.fromEntries([
     consumesTurn: false,
     usesPerAct: 4,
     effects: [status("evade", "self", [1])],
+    ...sharedAbility("Emergency Evasion", "Gain 1 Evade without spending the main action."),
   }),
   skill("elixir-of-wrath", "Elixir of Wrath", {
     rarity: "uncommon",
     consumesTurn: false,
     usesPerAct: 3,
     effects: [status("strength", "self", [6])],
+    ...sharedAbility("Elixir of Wrath", "Drink the elixir without spending the main action to gain 6 Strength."),
   }),
   skill("first-aid", "First Aid", {
     rarity: "uncommon",
@@ -227,6 +274,7 @@ const SKILLS = Object.freeze(Object.fromEntries([
         target: "self",
       }),
     ],
+    ...sharedAbility("First Aid", "Restore 24% of lost health and reduce Bleed, Burn, and Poison to 60%."),
   }),
   skill("impregnable", "Impregnable", {
     rarity: "legendary",
@@ -244,11 +292,13 @@ const SKILLS = Object.freeze(Object.fromEntries([
       target: "enemy",
       percentByRank: Object.freeze([30]),
     })],
+    ...sharedAbility("Judge of Fate", "Without spending the main action, inflict Misfortune equal to 30% of the enemy's missing health."),
   }),
   skill("penetration", "Penetration", {
     rarity: "uncommon",
     usesPerAct: 7,
     effects: [scaledStatus("doom", "enemy", "attack", [180])],
+    ...sharedAbility("Penetration", "Bypass ordinary protection with special damage pressure equal to 180% ATK."),
   }),
   skill("rapid-cooling", "Rapid Cooling", {
     rarity: "uncommon",
@@ -258,6 +308,7 @@ const SKILLS = Object.freeze(Object.fromEntries([
       status("paralyze", "enemy", [2]),
       status("solidity", "self", [1]),
     ],
+    ...sharedAbility("Rapid Cooling", "Inflict 2 Paralyze and gain 1 Solidity; cooldown 3."),
   }),
   skill("rising-power", "Rising Power", {
     rarity: "uncommon",
@@ -273,17 +324,19 @@ const SKILLS = Object.freeze(Object.fromEntries([
     usesPerAct: 7,
     effects: [scaledStatus("lethargy", "enemy", "attack", [60])],
   }),
-  skill("sleep-grenade", "Sleep Grenade", {
+  skill("sleep-grenade", "Sleep Grenade Toss", {
     rarity: "rare",
     cooldown: 6,
     usesPerAct: 4,
     effects: [status("sleep", "enemy", [3])],
+    ...sharedAbility("Sleep Grenade Toss", "Put the enemy to Sleep for 3 turns; taking a hit breaks the effect."),
   }),
   skill("sudden-blow", "Sudden Blow", {
     rarity: "rare",
     consumesTurn: false,
     usesPerAct: 6,
     effects: [damage("attack", [80])],
+    ...sharedAbility("Sudden Blow", "Deal 80% ATK damage without spending the main action."),
   }),
   skill("thirst-for-blood", "Thirst for Blood", {
     rarity: "rare",
@@ -300,18 +353,89 @@ const SKILLS = Object.freeze(Object.fromEntries([
       status("tenacity", "self", [8]),
       status("focus", "self", [20]),
     ],
+    ...sharedAbility("Transcendence", "Break mortal limits for 8 Strength, 8 Tenacity, and 20 Focus."),
   }),
   skill("unbendable-will", "Unbendable Will", {
     rarity: "rare",
     consumesTurn: false,
     usesPerAct: 4,
     effects: [status("unstoppable", "self", [4])],
+    ...sharedAbility("Unbendable Will", "Gain 4 Unstoppable without spending the main action."),
   }),
   skill("urgent-guard", "Urgent Guard", {
     rarity: "uncommon",
     consumesTurn: false,
     usesPerAct: 9,
     effects: [shield("defense", [100])],
+    ...sharedAbility("Urgent Guard", "Raise a 100% DEF ward without spending the main action."),
+  }),
+  skill("stone-skin-elixir", "Stone Skin Elixir", {
+    rarity: "uncommon",
+    consumesTurn: false,
+    usesPerAct: 3,
+    effects: [status("tenacity", "self", [6])],
+    ...sharedAbility("Stone Skin Elixir", "Harden the body with 6 Tenacity without spending the main action.", {
+      fidelity: "adapted",
+      detail: "The source documents an elixir that raises DEF; the amount is normalized as Tenacity in this kernel.",
+    }),
+  }),
+  skill("protection-scroll", "Protection Scroll", {
+    rarity: "rare",
+    consumesTurn: false,
+    cooldown: 6,
+    usesPerAct: 3,
+    effects: [status("protection", "self", [9])],
+    ...sharedAbility("Protection Scroll", "Unfurl a persistent 9 Protection force field without spending the main action.", {
+      fidelity: "adapted",
+      detail: "The source documents a free-action Force Field scroll; the field is represented by Protection stacks.",
+    }),
+  }),
+  skill("killing-instinct", "Killing Instinct", {
+    rarity: "rare",
+    consumesTurn: false,
+    usesPerAct: 3,
+    effects: [status("focus", "self", [25])],
+    ...sharedAbility("Killing Instinct", "Sharpen lethal focus by 25 without spending the main action.", {
+      fidelity: "adapted",
+      detail: "The source identifies Killing Instinct as a critical-focused buff; its capstone focus is normalized here.",
+    }),
+  }),
+  skill("blade-of-curse", "Blade of Curse", {
+    rarity: "rare",
+    usesPerAct: 4,
+    effects: [damage("attack", [140]), scaledStatus("doom", "enemy", "attack", [100])],
+    ...sharedAbility("Blade of Curse", "Strike for 140% ATK and leave Doom equal to 100% ATK.", {
+      fidelity: "adapted",
+      detail: "The source names the cursed shared blade; damage and curse pressure are normalized for this kernel.",
+    }),
+  }),
+  skill("beastification", "Beastification", {
+    rarity: "legendary",
+    consumesTurn: false,
+    cooldown: 8,
+    usesPerAct: 2,
+    effects: [status("strength", "self", [8]), status("lifesteal", "self", [14])],
+    ...sharedAbility("Beastification", "Assume a predatory form for 8 Strength and 14 Lifesteal without spending the main action.", {
+      fidelity: "adapted",
+      detail: "The source names a beast-form shared buff; its offensive and feeding identity is normalized here.",
+    }),
+  }),
+  skill("super-speed", "Super Speed", {
+    rarity: "legendary",
+    consumesTurn: false,
+    usesPerAct: 1,
+    effects: [status("haste", "self", [2])],
+    ...sharedAbility("Super Speed", "Gain 2 Haste without spending the main action."),
+  }),
+  skill("peace-declaration", "Peace Declaration", {
+    rarity: "mythical",
+    cooldown: 7,
+    usesPerAct: 2,
+    effects: [status("paralyze", "enemy", [1]), scaledStatus("lethargy", "enemy", "defense", [200])],
+    ...sharedAbility("Peace Declaration", "Break the enemy's will to fight with 1 Paralyze and Lethargy equal to 200% DEF.", {
+      fidelity: "adapted",
+      detail: "The source describes wide-area magic that removes the will to fight; control and Lethargy recreate that effect.",
+    }),
   }),
 ].map((entry) => [entry.id, entry])));
 
@@ -340,6 +464,22 @@ export function getSkill(skillId) {
 
 export function skillIds() {
   return [...Object.keys(SKILLS), ...characterAbilityIds()];
+}
+
+export function generalAbilityIds() {
+  return [...GENERAL_ABILITY_IDS];
+}
+
+export function isFlexibleAbility(definition) {
+  return Boolean(definition && FLEXIBLE_CHARACTER_ABILITY_TYPES.includes(definition.abilityType));
+}
+
+/** Resolve the three slots a future General ability is allowed to replace. */
+export function replaceableSkillIds(loadout) {
+  if (!Array.isArray(loadout)) return [];
+  return loadout
+    .map((entry) => (typeof entry === "string" ? entry : entry?.id))
+    .filter((id) => isFlexibleAbility(getSkill(id)));
 }
 
 export function passiveSkillIds() {
@@ -521,8 +661,14 @@ export function acquireSkill(loadout, skillId, { replacingId = null } = {}) {
   }
 
   if (replacingId === null) return { ok: false, reason: "loadout-full", loadout: null };
+  if (!isFlexibleAbility(definition)) {
+    return { ok: false, reason: "replacement-skill-not-flexible", loadout: null };
+  }
   const replaceAt = loadout.findIndex((entry) => entry.id === replacingId);
   if (replaceAt < 0) return { ok: false, reason: "unknown-replacement", loadout: null };
+  if (!isFlexibleAbility(getSkill(loadout[replaceAt].id))) {
+    return { ok: false, reason: "protected-ability-slot", loadout: null };
+  }
   return {
     ok: true,
     reason: null,

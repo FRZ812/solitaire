@@ -50,10 +50,9 @@ function fieldCharacter(profession) {
   };
 }
 
-/** Real bestiary foes, stripped only of the mechanics admission would refuse. */
+/** Real bestiary foes, including the authored abilities used to choose their Tower kit. */
 function fieldEnemies(kind, seedIndex) {
-  const group = generateEnemyGroup(kind, { power: 1 + (seedIndex % 3), maxTier: "common" });
-  return group.map((enemy) => ({ ...enemy, abilities: [], statuses: [], procs: [] }));
+  return generateEnemyGroup(kind, { power: 1 + (seedIndex % 3), maxTier: "common" });
 }
 
 function playOut(seed, profession, kind, seedIndex) {

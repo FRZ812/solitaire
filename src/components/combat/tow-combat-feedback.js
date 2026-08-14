@@ -200,10 +200,19 @@ export function combatEventReceipt(encounter, event, options = {}) {
     };
   }
   if (event.type === "trait-fired") {
+    const targetIds = Array.isArray(event.targetIds) ? event.targetIds : [];
+    const targetNames = targetIds.map((targetId) => actorName(encounter, targetId, "the target"));
+    const target = targetNames.length > 1
+      ? `${targetNames.slice(0, -1).join(", ")} and ${targetNames.at(-1)}`
+      : targetNames[0];
+    const inflicts = event.effectKind !== "grant-status"
+      && targetIds.some((targetId) => targetId !== event.actorId);
     return {
       sequence: event.sequence,
       kind: "trait",
-      text: `${possessive(actor)} ${words(event.traitId)} grants ${event.amount} ${words(event.status)}.`,
+      text: inflicts
+        ? `${possessive(actor)} ${words(event.traitId)} inflicts ${event.amount} ${words(event.status)} on ${target}.`
+        : `${possessive(actor)} ${words(event.traitId)} grants ${event.amount} ${words(event.status)}.`,
     };
   }
   if (event.type === "enemy-nullified") {
@@ -347,6 +356,8 @@ function hitCue(encounter, event, hit, index, hitCount, visual) {
     hitIndex: index,
     hitCount,
     delayMs: index * 155,
+    hpChange: toHp > 0 ? -toHp : 0,
+    shieldChange: absorbed > 0 ? -absorbed : 0,
     absorbed,
     prevented,
     guarded: prevented > 0 && !hit.dodged,
@@ -364,6 +375,8 @@ function simpleCue(encounter, event, {
   targetId = event.actorId,
   targetSide,
   visual = combatVfxForEvent(encounter, event),
+  hpChange = 0,
+  shieldChange = 0,
 }) {
   return {
     id: cueIdentity(event, suffix),
@@ -377,6 +390,8 @@ function simpleCue(encounter, event, {
     hitIndex: 0,
     hitCount: 1,
     delayMs: 0,
+    hpChange,
+    shieldChange,
     visual,
     outcomeAsset: null,
   };
@@ -403,6 +418,7 @@ export function combatCuesForEvent(encounter, event) {
       kind: "ward",
       label: `+${event.amount}`,
       kicker: "Ward",
+      shieldChange: event.amount,
     })];
   }
   if (event.type === "skill-heal") {
@@ -411,6 +427,7 @@ export function combatCuesForEvent(encounter, event) {
       kind: "heal",
       label: `+${event.amount}`,
       kicker: "Restored",
+      hpChange: event.amount,
     })];
   }
   if (event.type === "skill-cleanse") {
@@ -479,6 +496,7 @@ export function combatCuesForEvent(encounter, event) {
         kicker: "Burn",
         attackerId: null,
         targetId: event.actorId,
+        hpChange: -event.burn,
         visual: { family: "fire", variant: "status-burn", motion: "brand", asset: COMBAT_VFX_ASSETS.fire },
       }));
     }
@@ -490,6 +508,7 @@ export function combatCuesForEvent(encounter, event) {
         kicker: "Doom",
         attackerId: null,
         targetId: event.actorId,
+        hpChange: -event.doom,
         visual: { family: "afflict", variant: "status-doom", motion: "void", asset: COMBAT_VFX_ASSETS.afflict },
       }));
     }
@@ -534,6 +553,19 @@ function cueActionKey(event) {
   return `${event.type}:${event.sequence}`;
 }
 
+function declarationLabel(encounter, event) {
+  if (event.type === "enemy-attack") return enemyAttackName(encounter, event);
+  if (event.skillId) {
+    try {
+      return getSkill(event.skillId)?.name || words(event.skillId);
+    } catch {
+      return words(event.skillId);
+    }
+  }
+  if (event.type === "tick-damage") return event.burn > 0 ? "Burn" : "Doom";
+  return words(event.type);
+}
+
 /**
  * Lay authoritative events onto one presentation timeline. Consecutive effects from the
  * same skill stay in one beat; a counterattack starts only after the prior contact reads.
@@ -564,6 +596,7 @@ export function combatCueTimeline(encounter, events, { limit = 16 } = {}) {
     const staged = cues.map((cue) => ({
       ...cue,
       actionIndex,
+      declarationLabel: declarationLabel(encounter, event),
       delayMs: eventOffset + (cue.delayMs || 0),
     }));
     timeline.push(...staged);

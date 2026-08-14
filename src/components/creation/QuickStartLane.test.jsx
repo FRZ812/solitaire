@@ -69,7 +69,7 @@ describe("the authored TOW character catalogue", () => {
         portraitKey: expect.stringMatching(/^tow:/),
         sourceName: expect.any(String),
       });
-      expect(entry.build.skills).toHaveLength(4);
+      expect(entry.build.skills).toHaveLength(5);
       expect(entry.gear.length).toBeGreaterThan(0);
     }
   });
@@ -117,8 +117,10 @@ describe("the simple grid-to-preview flow", () => {
     expect(preview.querySelectorAll(".character-preview__carousel [role=radio]")).toHaveLength(TOWER_ROSTER_SIZE);
     expect(preview.querySelectorAll(".character-preview__carousel [aria-checked=true]")).toHaveLength(1);
     expect(preview.querySelector(".character-preview__close")).toBeNull();
-    expect(preview.querySelectorAll(".character-preview__ability-slot img")).toHaveLength(4);
-    expect(preview.querySelectorAll(".character-preview__ability-slot[data-ability-type]")).toHaveLength(4);
+    expect(preview.querySelectorAll(".character-preview__ability-slot img")).toHaveLength(5);
+    expect(preview.querySelectorAll(".character-preview__ability-slot[data-ability-type]")).toHaveLength(5);
+    expect(preview.querySelectorAll('.character-preview__ability-slot[data-slot-role="fixed"]')).toHaveLength(2);
+    expect(preview.querySelectorAll('.character-preview__ability-slot[data-slot-role="flexible"]')).toHaveLength(3);
     expect(preview.querySelector(".character-preview__cutout").getAttribute("src"))
       .toBe(resolvePlayerCombatCutout(STARTING_ARCHETYPES[3].character.portraitKey, STARTING_ARCHETYPES[3].character));
     expect(preview.textContent).not.toContain("Starting trait");
@@ -168,9 +170,13 @@ describe("the simple grid-to-preview flow", () => {
     expect(details.textContent).toContain("Source identity");
     expect(details.querySelectorAll(".character-details__stats > div")).toHaveLength(5);
     expect(details.textContent).not.toContain("Possible refinement");
-    expect(details.querySelectorAll(".starting-ability__art img")).toHaveLength(
+    expect(details.querySelectorAll(".starting-abilities .starting-ability__art img")).toHaveLength(
       STARTING_ARCHETYPES[6].build.skills.length,
     );
+    expect(details.textContent).toContain("Future replacements");
+    expect(details.textContent).toContain("no shared abilities equipped");
+    expect(details.querySelectorAll(".general-ability-library .starting-ability")).toHaveLength(18);
+    expect(details.querySelectorAll('.general-ability-library [data-ability-type="general"]')).toHaveLength(18);
     expect(details.querySelector("select")).toBeNull();
 
     const picker = details.querySelector("[role=combobox]");

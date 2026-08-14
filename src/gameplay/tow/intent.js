@@ -1,15 +1,15 @@
 // Telegraphed enemy turns: what a foe is about to do, shown before you decide.
 //
-// Until now a foe picked its attack with a uniform draw at the moment it swung. That makes
-// a fight unreadable in the strict sense: no information exists before the blow lands, so
+// Until now a foe picked its action with a uniform draw at the moment it resolved. That makes
+// a fight unreadable in the strict sense: no information exists before the action lands, so
 // no decision the player makes can be better-informed than a guess. Block and Strike are
 // then interchangeable, and a fight is a coin-flip with extra steps.
 //
-// A telegraph fixes that without making the fight easy. Each foe declares its next attack
-// at the start of the round, by name, with its hit count and damage. The player spends
-// their turn knowing exactly what is coming and decides what to do about it — guard the
-// heavy blow, race the flurry, ignore the jab. The uncertainty moves from "what will it do"
-// to "what should I do about it", which is the interesting question.
+// A telegraph fixes that without making the fight easy. Each foe declares its next ability
+// at the start of the round, by name and outcome: damage, ward, boon, recovery or affliction.
+// The player spends their turn knowing exactly what is coming and decides what to do about
+// it. The uncertainty moves from "what will it do" to "what should I do about it", which is
+// the interesting question.
 //
 // Two things keep this honest:
 //
@@ -17,7 +17,7 @@
 //   step or a tie-break cannot shift a damage roll, so a fight recorded yesterday replays
 //   the same way today.
 //
-//   Resolution re-derives the attack from the foe's own immutable attack table by ID and
+//   Resolution re-derives the ability from the foe's own immutable action index by ID and
 //   checks it against the declaration. A telegraph the engine does not honour is worse than
 //   no telegraph, because the player has been taught to trust it.
 
@@ -72,9 +72,9 @@ function exactKeys(value, keys) {
 }
 
 /**
- * Build a foe's default rotation from its own attack table.
+ * Build a foe's default rotation from its own action index.
  *
- * Each step offers two adjacent attacks rather than one, so the schedule cannot be memorised
+ * Each step offers two adjacent abilities rather than one, so the schedule cannot be memorised
  * into a script — the player still has to read each round's declaration. What they never
  * have to guess is what is coming *this* round; that is always shown.
  */

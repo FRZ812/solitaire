@@ -503,7 +503,8 @@ export function isTowSession(value) {
  * @param {string} input.sessionId stable across reloads; the settlement dedupe key
  * @param {string|number} input.rootSeed one seed; every stream is derived from it
  * @param {object} input.player actor input for the player
- * @param {Array<object>} input.enemies actor inputs for the foes, with attack tables
+ * @param {Array<object>} input.enemies actor inputs for the foes, normally with archetype builds;
+ * legacy replay snapshots may still carry attack tables
  * @param {object} input.build traits/skills/runes
  * @param {object} input.context the admission; see `towCombatContext`
  * @param {"campaign"|"practice"} [input.mode]
@@ -532,8 +533,8 @@ export function createTowSession(input = {}) {
         ...(Object.hasOwn(build || {}, "basicAttack") ? { basicAttack: build.basicAttack || null } : {}),
       },
       // Authored per-enemy telegraph rotations. Empty is the normal case: the encounter
-      // derives a default rotation from each foe's own attack table, and an authored one is
-      // for fixtures and named enemies whose pattern is part of their design.
+      // derives a default rotation from each foe's own ability loadout (or a legacy replay's
+      // immutable attack table), and an authored one is for named patterns and fixtures.
       intentSchedules: input.intentSchedules || {},
     }, "invalid-session-genesis");
   } catch {

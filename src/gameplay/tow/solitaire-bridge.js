@@ -10,6 +10,7 @@
 import { deriveCombatStats } from "../../engine/combat-stats.js";
 import { createStatusStack } from "../kernel/status-stack.js";
 import { admitTowEncounter } from "./admission.js";
+import { getStartingArchetype } from "./starting-archetypes.js";
 import { towItemActorBonuses, wornItemIds } from "./start-items.js";
 
 export const PROVISIONAL_BRIDGE_POLICY = Object.freeze({
@@ -56,6 +57,98 @@ export const PROVISIONAL_BRIDGE_POLICY = Object.freeze({
 
   evidence: "bridge-policy",
 });
+
+// Foes speak the same combat language as playable characters. World professions select
+// one of the authored Tower archetypes; identity and stats still belong to the world actor,
+// while the archetype supplies the trait and five-ability kit used inside the encounter.
+const ENEMY_ARCHETYPE_BY_PROFESSION = Object.freeze({
+  artificer: "owner-of-clocktower",
+  barbarian: "old-king-of-northland",
+  bard: "wandering-blade",
+  cleric: "exiled-priestess",
+  commander: "arctic-knight",
+  druid: "sleepless-one",
+  fighter: "arctic-knight",
+  monk: "wandering-blade",
+  paladin: "exiled-priestess",
+  ranger: "demon-slayer",
+  rogue: "last-assassin",
+  sorcerer: "sleepless-one",
+  warlock: "witch-of-eternity",
+  wizard: "tenacious-mage",
+});
+
+// World threat tier is the enemy-side progression gate over the same fixed five-slot kit:
+// common foes know the protected attack and defence, uncommon foes add one flexible skill,
+// and rare+ characters bring all three flexible skills. Named fixtures with no tier are
+// authored directly and therefore keep all five.
+const ENEMY_SKILL_COUNT_BY_TIER = Object.freeze({
+  common: 2,
+  uncommon: 3,
+  rare: 5,
+  "very-rare": 5,
+  epic: 5,
+  legendary: 5,
+  mythical: 5,
+  divine: 5,
+});
+
+function abilityIds(enemy) {
+  return (enemy?.abilities || [])
+    .map((entry) => (typeof entry === "string" ? entry : entry?.id))
+    .filter(Boolean);
+}
+
+/** Resolve the playable archetype whose combat kit a world enemy uses. */
+export function towArchetypeForEnemy(enemy = {}) {
+  const explicit = getStartingArchetype(enemy.towArchetypeId)
+    || getStartingArchetype(enemy.combatArchetypeId)
+    || getStartingArchetype(enemy.progression?.combatArchetypeId)
+    || getStartingArchetype(enemy.archetype);
+  if (explicit) return explicit;
+
+  const identity = `${enemy.name || ""} ${enemy.kind || ""} ${enemy.race || ""}`.toLowerCase();
+  const abilities = abilityIds(enemy).join(" ").toLowerCase();
+  const category = String(enemy.weapon?.category || "").toLowerCase();
+  if (/(automaton|construct|clockwork)/.test(identity)) return getStartingArchetype("forsaken-automaton");
+  if (/(undead|skeleton|wight|ghoul|thrall)/.test(identity)) return getStartingArchetype("witch-of-eternity");
+  if (/(fire|flame|burn)/.test(abilities)) return getStartingArchetype("sleepless-one");
+  if (/(poison|venom)/.test(abilities) || /(bow|crossbow)/.test(category)) {
+    return getStartingArchetype("demon-slayer");
+  }
+  if (/(rend|flurry|piercing-thrust)/.test(abilities)) return getStartingArchetype("last-assassin");
+  if (/(power-strike|shield-bash|guard)/.test(abilities)) return getStartingArchetype("arctic-knight");
+
+  const professionId = enemy.professionId
+    || enemy.progression?.activeProfessionId
+    || enemy.progression?.professionId
+    || enemy.profession;
+  const mapped = getStartingArchetype(ENEMY_ARCHETYPE_BY_PROFESSION[professionId]);
+  if (mapped) return mapped;
+
+  const body = Number(enemy.attrs?.body ?? enemy.attributes?.body ?? 0);
+  const reflex = Number(enemy.attrs?.reflex ?? enemy.attributes?.reflex ?? 0);
+  if (Number.isFinite(body) && Number.isFinite(reflex) && body >= reflex + 2) {
+    return getStartingArchetype("old-king-of-northland");
+  }
+  if (Number.isFinite(body) && Number.isFinite(reflex) && reflex > body) {
+    return getStartingArchetype("last-assassin");
+  }
+  return getStartingArchetype("arctic-knight");
+}
+
+function enemyTowBuild(enemy) {
+  const archetype = towArchetypeForEnemy(enemy);
+  const skillCount = ENEMY_SKILL_COUNT_BY_TIER[enemy?.tier] ?? archetype.build.skills.length;
+  return {
+    archetypeId: archetype.id,
+    build: {
+      traits: { ...archetype.build.traits },
+      skills: archetype.build.skills.slice(0, skillCount),
+      runes: [...archetype.build.runes],
+    },
+  };
+}
 
 function clampRate(value) {
   return Math.max(0, Math.min(100, Math.round(Number.isFinite(value) ? value : 0)));
@@ -137,11 +230,11 @@ export function towPlayerFromCharacter(character, codex = {}, { id = "player" } 
 }
 
 /**
- * Build a Tower of Winter enemy actor, with an attack table, from a bestiary entry.
+ * Build a Tower of Winter enemy actor from a bestiary entry.
  *
- * The band becomes a two-entry table rather than one averaged swing: a light, faster
- * attack and a heavy one. That is how the reference enemies read — the Gatekeeper has six
- * named attacks from 11 to 50 — and it gives the player something to answer.
+ * The world actor keeps their own health and stats, but their combat decisions now come
+ * from the same authored archetype, trait, skill-state, cooldown and status machinery used
+ * by the player. There is no parallel Jab/Swing/Heavy table for new fights.
  */
 export function towEnemyFromBestiary(enemy, { id } = {}) {
   if (!enemy || typeof enemy !== "object") throw new TypeError("invalid-enemy");
@@ -152,6 +245,8 @@ export function towEnemyFromBestiary(enemy, { id } = {}) {
   const hp = Math.max(0, Math.min(maxHp, positiveInt(enemy.health ?? maxHp)));
   const min = nonNegativeInt(enemy.weapon?.min);
   const max = Math.max(min, nonNegativeInt(enemy.weapon?.max));
+  const attack = positiveInt((min + max) / 2);
+  const identity = enemyTowBuild(enemy);
 
   return {
     id: actorId,
@@ -161,37 +256,17 @@ export function towEnemyFromBestiary(enemy, { id } = {}) {
     maxHp,
     shield: 0,
     stats: {
-      attack: positiveInt((min + max) / 2),
-      defense: nonNegativeInt((enemy.armor || 0) + (enemy.ward || 0)),
+      attack,
+      // A world foe's DEF is its authored protection rather than a second copy of offence.
+      // The one-point floor keeps defensive archetype abilities real for an unarmoured beast
+      // without turning every common enemy's Block into a player-scale wall.
+      defense: Math.max(1, nonNegativeInt((enemy.armor || 0) + (enemy.ward || 0))),
       critRate: clampRate(enemy.critChance || 0),
       dodgeRate: clampRate(enemy.dodge || 0),
     },
     statuses: createStatusStack(),
-    attacks: attackTableFor(actorId, min, max),
+    ...identity,
   };
-}
-
-// A damage band becomes a move set, not one averaged swing. Reference enemies read this
-// way — the Gatekeeper has six named attacks from 11 to 50 — and it is what puts multi-hit
-// in front of the player, where Steelskin, Thorn and Burn all behave differently to a
-// single heavy blow.
-function attackTableFor(actorId, min, max) {
-  if (min === max) {
-    return [{ id: `${actorId}-strike`, name: "Strike", hits: 1, damage: max }];
-  }
-  const mid = Math.max(min, Math.round((min + max) / 2));
-  const table = [
-    { id: `${actorId}-jab`, name: "Jab", hits: 1, damage: min },
-    { id: `${actorId}-swing`, name: "Swing", hits: 1, damage: mid },
-    { id: `${actorId}-heavy`, name: "Heavy blow", hits: 1, damage: max },
-  ];
-  // A flurry only exists where the band is wide enough for each hit to still land for
-  // something; below that it would read as a weaker single swing rather than a threat.
-  const flurryDamage = Math.round(min * 0.6);
-  if (flurryDamage >= 1 && max - min >= 2) {
-    table.push({ id: `${actorId}-flurry`, name: "Flurry", hits: 2, damage: flurryDamage });
-  }
-  return table;
 }
 
 /**
