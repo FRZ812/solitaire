@@ -81,6 +81,31 @@ function nonNegativeInt(value) {
 export function towPlayerFromCharacter(character, codex = {}, { id = "player" } = {}) {
   const stats = deriveCombatStats(character, codex);
   const itemBonus = towItemActorBonuses(wornItemIds(character, codex));
+  const sourceBase = character.progressionModel === "tow-archetype" && character.towBaseStats;
+  if (sourceBase
+    && Number.isFinite(sourceBase.maxHp)
+    && Number.isFinite(sourceBase.attack)
+    && Number.isFinite(sourceBase.defense)) {
+    const maxHp = positiveInt(sourceBase.maxHp + itemBonus.maxHp);
+    const vitalityMax = positiveInt(character.vitalityMax, maxHp);
+    const vitality = Math.max(0, Math.min(vitalityMax, Number(character.vitality ?? vitalityMax)));
+    const hp = Math.max(0, Math.min(maxHp, Math.round(maxHp * (vitality / vitalityMax))));
+    return {
+      id,
+      name: character.name || "Wanderer",
+      side: "player",
+      hp,
+      maxHp,
+      shield: 0,
+      stats: {
+        attack: positiveInt(sourceBase.attack + itemBonus.attack),
+        defense: nonNegativeInt(sourceBase.defense + itemBonus.defense),
+        critRate: clampRate(sourceBase.critRate + itemBonus.critRate),
+        dodgeRate: clampRate(sourceBase.dodgeRate + itemBonus.dodgeRate),
+      },
+      statuses: createStatusStack(),
+    };
+  }
   const maxHp = positiveInt(stats.maxHealth + itemBonus.maxHp);
   // Current vitality carries over, lifted by whatever the gear adds above the base pool so
   // equipping armour does not read as arriving already wounded.

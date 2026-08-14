@@ -18,10 +18,11 @@ import {
 
 describe("the catalogue", () => {
   it("carries every base trait the wiki lists", () => {
-    expect(traitIds()).toHaveLength(33);
+    expect(traitIds()).toHaveLength(35);
     for (const id of ["ironclad", "aegis", "agility", "swift", "detection", "reflection",
       "bloodsuck", "fury", "adaptation", "survival", "endurance", "guardian", "ambush",
-      "anatomy", "quickness", "gale", "necromancy", "overheat", "accuracy", "assassin"]) {
+      "anatomy", "quickness", "gale", "necromancy", "overheat", "accuracy", "assassin",
+      "combo", "judgment"]) {
       expect(getTrait(id)).not.toBeNull();
     }
   });
@@ -38,6 +39,8 @@ describe("the catalogue", () => {
   it("marks character-exclusive traits", () => {
     expect(getTrait("valiancy").exclusiveTo).toBe("old-king-of-northland");
     expect(getTrait("assassin").exclusiveTo).toBe("last-assassin");
+    expect(getTrait("combo").exclusiveTo).toBe("last-assassin");
+    expect(getTrait("judgment").exclusiveTo).toBe("exiled-priestess");
     expect(getTrait("innovation").exclusiveTo).toBe("owner-of-clocktower");
     expect(getTrait("ironclad").exclusiveTo).toBeNull();
   });

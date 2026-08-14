@@ -87,6 +87,42 @@ describe("mitigation", () => {
     expect(result.defender.hp).toBe(85);
   });
 
+  it("records the exact mitigation and avoidance evidence used by combat feedback", () => {
+    const guarded = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({
+        id: "def",
+        side: "player",
+        hp: 100,
+        maxHp: 100,
+        statuses: statuses(["guard", 3], ["steelskin", 20]),
+      }),
+      attack: { hits: 1, damage: 10 },
+      rng: seed(),
+    });
+    expect(guarded.hits[0]).toMatchObject({
+      baseDamage: 10,
+      rawDamage: 10,
+      prevented: 10,
+      damage: 0,
+      toHp: 0,
+      mitigation: { guard: true, steelskin: true },
+    });
+
+    const evaded = resolveAttack({
+      attacker: actor({ id: "atk" }),
+      defender: actor({ id: "def", side: "player", dodgeRate: 100, statuses: statuses(["evade", 1]) }),
+      attack: { hits: 1, damage: 12 },
+      rng: seed(),
+    });
+    expect(evaded.hits[0]).toMatchObject({
+      dodged: true,
+      rawDamage: 12,
+      prevented: 12,
+      avoidance: { chance: 100, evade: true, conceal: false },
+    });
+  });
+
   it("stacks Guard and Solidity multiplicatively before flat reduction", () => {
     // 100 -> Guard 50% -> 50 -> Solidity 30% -> 35 -> Steelskin 5 -> 30
     const result = resolveAttack({

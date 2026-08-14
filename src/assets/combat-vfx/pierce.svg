@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="shaft" x1="16" y1="160" x2="235" y2="96" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#66B9D7" stop-opacity="0"/>
+      <stop offset=".54" stop-color="#BDEBFA"/>
+      <stop offset=".86" stop-color="#FFF7DA"/>
+      <stop offset="1" stop-color="#FFF" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="burst"><stop stop-color="#FFF"/><stop offset=".3" stop-color="#8EEAFF"/><stop offset="1" stop-color="#4DAFD4" stop-opacity="0"/></radialGradient>
+  </defs>
+  <ellipse cx="202" cy="111" rx="47" ry="47" fill="url(#burst)" opacity=".42"/>
+  <path d="M13 170L232 89" stroke="url(#shaft)" stroke-width="8" stroke-linecap="round"/>
+  <path d="M21 156L230 92" stroke="#F5FFFF" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M199 80L235 89L211 119" stroke="#FFF8DA" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="204" cy="103" r="28" stroke="#A7E8F7" stroke-width="3" stroke-dasharray="8 8" opacity=".68"/>
+  <path d="M202 58V82M245 104H222M228 72L213 88M230 137L215 119" stroke="#C7F5FF" stroke-width="3" stroke-linecap="round"/>
+</svg>

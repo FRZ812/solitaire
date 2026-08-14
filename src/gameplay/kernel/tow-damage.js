@@ -98,6 +98,16 @@ function flatReductionFor(defender) {
   return steelskin + protection;
 }
 
+function mitigationSnapshot(defender) {
+  return {
+    invincible: statusCount(defender.statuses, "invincible") > 0,
+    guard: statusCount(defender.statuses, "guard") > 0,
+    solidity: statusCount(defender.statuses, "solidity") > 0,
+    steelskin: statusCount(defender.statuses, "steelskin") > 0,
+    protection: statusCount(defender.statuses, "protection") > 0,
+  };
+}
+
 // Damage lands on the shield first and only spills into HP once the shield is gone.
 function applyDamage(actor, amount) {
   if (amount <= 0) return { actor, absorbed: 0, toHp: 0 };
@@ -138,9 +148,15 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
   for (let index = 0; index < attack.hits; index += 1) {
     if (POLICY.stopHitsOnDefeat && (currentDefender.hp <= 0 || currentAttacker.hp <= 0)) break;
 
+    const dodgeChance = dodgeChanceFor(currentDefender);
+    const avoidance = {
+      chance: dodgeChance,
+      evade: statusCount(currentDefender.statuses, "evade") > 0,
+      conceal: statusCount(currentDefender.statuses, "conceal") > 0,
+    };
     const dodgeRoll = nextInt(currentRng, 1, 100);
     currentRng = dodgeRoll.rng;
-    const dodged = dodgeRoll.value <= dodgeChanceFor(currentDefender);
+    const dodged = dodgeRoll.value <= dodgeChance;
 
     if (dodged) {
       if (POLICY.dodgeSpendsOnHitStatuses) {
@@ -149,7 +165,20 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
           statuses: decrementOnHit(currentDefender.statuses),
         };
       }
-      hits.push({ index, dodged: true, critical: false, damage: 0, absorbed: 0, toHp: 0, thorn: 0 });
+      hits.push({
+        index,
+        dodged: true,
+        critical: false,
+        baseDamage: attack.damage,
+        rawDamage: attack.damage,
+        prevented: attack.damage,
+        mitigation: {},
+        avoidance,
+        damage: 0,
+        absorbed: 0,
+        toHp: 0,
+        thorn: 0,
+      });
       continue;
     }
 
@@ -157,7 +186,9 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
     currentRng = critRoll.rng;
     const critical = critRoll.value <= currentAttacker.stats.critRate;
 
-    let damage = attack.damage * (critical ? POLICY.critMultiplier : 1);
+    const rawDamage = attack.damage * (critical ? POLICY.critMultiplier : 1);
+    const mitigation = mitigationSnapshot(currentDefender);
+    let damage = rawDamage;
     if (statusCount(currentDefender.statuses, "invincible") > 0) {
       damage = 0;
     } else {
@@ -187,6 +218,11 @@ export function resolveAttack({ attacker, defender, attack, rng } = {}) {
       index,
       dodged: false,
       critical,
+      baseDamage: attack.damage,
+      rawDamage,
+      prevented: Math.max(0, rawDamage - damage),
+      mitigation,
+      avoidance,
       damage,
       absorbed: landed.absorbed,
       toHp: landed.toHp,

@@ -64,6 +64,9 @@ async function waitFor(assertion, timeout = 5000) {
 async function click(element) {
   expect(element).toBeTruthy();
   await act(async () => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  if (element.classList?.contains("production-combat__action")) {
+    await waitFor(() => !container?.querySelector("[data-testid='tow-action-beat']"), 3000);
+  }
 }
 
 let root;

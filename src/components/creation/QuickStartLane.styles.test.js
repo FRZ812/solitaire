@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const quickStartCss = readFileSync(new URL("./quick-start.css", import.meta.url), "utf8");
 const characterSelectCss = readFileSync(new URL("./character-select-polish.css", import.meta.url), "utf8");
+const archetypeStartCss = readFileSync(new URL("./archetype-start.css", import.meta.url), "utf8");
 
 describe("Quick Start layout", () => {
   it("owns the viewport instead of shrinking the game HUD behind it", () => {
@@ -17,6 +18,24 @@ describe("Quick Start layout", () => {
     const stageRule = characterSelectCss.match(/\.character-preview__stage\s*\{([^}]*)\}/)?.[1] || "";
     expect(stageRule).toContain("box-sizing: border-box");
     expect(stageRule).toContain("width: min(1280px, 100%)");
+  });
+
+  it("lays the twelve-character source roster out as posters with a two-column mobile fallback", () => {
+    const gridRule = characterSelectCss.match(/\.character-choice-grid\s*\{([^}]*)\}/)?.[1] || "";
+    const cardRule = characterSelectCss.match(/\.character-choice-card\s*\{([^}]*)\}/)?.[1] || "";
+    expect(gridRule).toContain("repeat(6");
+    expect(cardRule).toContain("aspect-ratio: 3 / 4");
+    expect(characterSelectCss).toMatch(/@media \(max-width: 700px\)[\s\S]*?\.character-choice-grid\s*\{[\s\S]*?repeat\(2/);
+  });
+
+  it("shows an explicit four-slot ability strip instead of an overflow affordance", () => {
+    expect(characterSelectCss).toContain(".character-preview__ability-strip");
+    expect(characterSelectCss).toContain('[data-ability-type="ultimate"]');
+  });
+
+  it("lets the detail sheet scroll without collapsing its stat row", () => {
+    const sectionRule = archetypeStartCss.match(/\.character-details__body > section\s*\{([^}]*)\}/)?.[1] || "";
+    expect(sectionRule).toContain("flex: 0 0 auto");
   });
 });
 

@@ -137,7 +137,13 @@ describe("the matrix stays honest about what it does not cover", () => {
   });
 
   it("names the traits restricted to one authored character", () => {
-    expect(exclusiveTraitIds().sort()).toEqual(["assassin", "innovation", "valiancy"]);
+    expect(exclusiveTraitIds().sort()).toEqual([
+      "assassin",
+      "combo",
+      "innovation",
+      "judgment",
+      "valiancy",
+    ]);
   });
 });
 

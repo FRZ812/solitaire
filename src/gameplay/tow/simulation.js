@@ -107,6 +107,13 @@ export function legalSkills(state) {
 export function classifySkill(skillId) {
   const definition = getSkill(skillId);
   if (!definition) return { offensive: false, defensive: false, control: false };
+  if (definition.abilityType) {
+    return {
+      offensive: definition.abilityType !== "defensive",
+      defensive: definition.abilityType === "defensive",
+      control: definition.effects.some((effect) => effect.target === "enemy" && effect.type !== "damage"),
+    };
+  }
   return {
     offensive: definition.effects.some((effect) => effect.type === "damage"),
     defensive: definition.effects.some((effect) => (
@@ -126,9 +133,17 @@ export function projectedDamage(state, skillState, targetId) {
   const target = state.actors[targetId];
   if (!definition || !target) return 0;
   return definition.effects.reduce((total, effect, index) => {
+    if (effect.type === "damage-enemy-lost-hp") {
+      const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
+      return total + Math.floor(((target.maxHp - target.hp) * magnitude) / 100);
+    }
+    if (effect.type === "damage-self-lost-hp") {
+      const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
+      return total + Math.floor(((player.maxHp - player.hp) * magnitude) / 100);
+    }
     if (effect.type !== "damage") return total;
     const magnitude = effectMagnitude(skillState.id, index, skillState.rank);
-    return total + Math.floor((actorScaleValue(player, effect.scale) * magnitude) / 100);
+    return total + Math.floor((actorScaleValue(player, effect.scale) * magnitude) / 100) * (effect.hits || 1);
   }, 0);
 }
 

@@ -110,16 +110,23 @@ describe("the lab surface", () => {
   });
 
   it("drives the production combat view rather than a resolver of its own", async () => {
-    const mounted = await render(<CombatLab onExit={() => {}} />);
-    expect(mounted.querySelector(".tow-combat")).toBeTruthy();
-    const action = [...mounted.querySelectorAll(".production-combat__action")]
-      .find((button) => button.getAttribute("aria-disabled") !== "true");
-    await act(async () => action.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-    // The action and its automatic enemy advance both landed on the real session.
-    const commands = [...mounted.querySelector(".combat-lab__commands").children];
-    expect(commands).toHaveLength(2);
-    expect(commands.map((entry) => entry.textContent))
-      .toEqual([expect.stringContaining("use-skill"), expect.stringContaining("end-turn")]);
+    vi.useFakeTimers();
+    try {
+      const mounted = await render(<CombatLab onExit={() => {}} />);
+      expect(mounted.querySelector(".tow-combat")).toBeTruthy();
+      const action = [...mounted.querySelectorAll(".production-combat__action")]
+        .find((button) => button.getAttribute("aria-disabled") !== "true");
+      await act(async () => action.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      expect(mounted.querySelector("[data-testid='tow-action-beat']")).toBeTruthy();
+      await act(async () => vi.advanceTimersByTime(600));
+      // The action and its automatic enemy advance both landed on the real session.
+      const commands = [...mounted.querySelector(".combat-lab__commands").children];
+      expect(commands).toHaveLength(2);
+      expect(commands.map((entry) => entry.textContent))
+        .toEqual([expect.stringContaining("use-skill"), expect.stringContaining("end-turn")]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("opens generated-art details on hold without firing the action", async () => {

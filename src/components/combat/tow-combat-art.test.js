@@ -25,8 +25,29 @@ describe("Tower combat art", () => {
     }
   });
 
+  it("maps every Tower of Winter character to its own generated cutout", () => {
+    const characterIds = [
+      "arctic-knight",
+      "demon-slayer",
+      "owner-of-clocktower",
+      "old-king-of-northland",
+      "sleepless-one",
+      "last-assassin",
+      "witch-of-eternity",
+      "tenacious-mage",
+      "exiled-priestess",
+      "wandering-blade",
+      "desolate-vampire",
+      "forsaken-automaton",
+    ];
+    const resolved = characterIds.map((id) => resolvePlayerCombatCutout(`tow:${id}`));
+    expect(resolved).toEqual(characterIds.map((id) => TOW_COMBAT_CUTOUTS[id]));
+    expect(new Set(resolved).size).toBe(characterIds.length);
+  });
+
   it("recognises template keys without leaking their storage prefix", () => {
     expect(combatPortraitTemplateId("template:cutthroat")).toBe("cutthroat");
+    expect(combatPortraitTemplateId("tow:arctic-knight")).toBe("arctic-knight");
     expect(combatPortraitTemplateId("ranger")).toBe("ranger");
     expect(combatPortraitTemplateId(null)).toBe(null);
   });

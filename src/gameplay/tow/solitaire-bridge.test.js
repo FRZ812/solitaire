@@ -78,6 +78,21 @@ describe("characters cross the bridge", () => {
     const { character, codex } = world();
     expect(towPlayerFromCharacter(character, codex, { id: "wanderer" }).id).toBe("wanderer");
   });
+
+  it("preserves the selected source roster chassis in campaign fights", () => {
+    const { character, codex } = world();
+    const sourceCharacter = {
+      ...character,
+      name: "Arctic Knight",
+      progressionModel: "tow-archetype",
+      towBaseStats: { maxHp: 170, attack: 12, defense: 13, critRate: 9, dodgeRate: 4 },
+      vitality: character.vitalityMax,
+    };
+    const actor = towPlayerFromCharacter(sourceCharacter, codex);
+    expect(actor.hp).toBe(actor.maxHp);
+    expect(actor.maxHp).toBe(170);
+    expect(actor.stats).toEqual({ attack: 12, defense: 13, critRate: 9, dodgeRate: 4 });
+  });
 });
 
 describe("bestiary enemies cross the bridge", () => {

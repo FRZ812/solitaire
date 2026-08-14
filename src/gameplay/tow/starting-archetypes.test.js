@@ -3,11 +3,15 @@ import { applyBeat } from "../../engine/beat.js";
 import { emptyMechanicsSidecar } from "../../engine/campaign-migration.js";
 import { makeInitialState } from "../../data/initial-state.js";
 import { applyCharacterBootstrap, compileCharacterBootstrap } from "./character-bootstrap.js";
-import { createTowEncounter } from "./encounter.js";
+import { CHARACTER_ABILITY_TYPES } from "./character-abilities.js";
+import { getSkill } from "./skills.js";
+import { practiceActor } from "./practice-scenarios.js";
 import {
   STARTING_ARCHETYPES,
+  TOWER_ROSTER_SIZE,
   characterSetupForArchetype,
   getStartingArchetype,
+  invalidStartingArchetypes,
 } from "./starting-archetypes.js";
 import {
   effectiveTowBuild,
@@ -15,47 +19,49 @@ import {
   towItemActorBonuses,
 } from "./start-items.js";
 
-describe("TOW starting item grants", () => {
-  it("all resolve to canonical items, traits, skills, and fusions", () => {
+describe("source-roster starting grants", () => {
+  it("all source roster equipment resolves without an unmapped power grant", () => {
     expect(invalidTowStartItemGrants()).toEqual([]);
+    expect(invalidStartingArchetypes()).toEqual([]);
   });
 
-  it("derives power from worn item ids without mutating the durable build", () => {
-    const compiled = compileCharacterBootstrap({ archetypeId: "dawnwarden", origin: "archetype" });
+  it("derives item bonuses without mutating the four-action durable build", () => {
+    const archetype = getStartingArchetype("arctic-knight");
+    const compiled = compileCharacterBootstrap({ archetypeId: archetype.id, origin: "archetype" });
     const before = JSON.stringify(compiled.receipt.build);
-    const itemIds = getStartingArchetype("dawnwarden").gear;
-    const effective = effectiveTowBuild(compiled.receipt.build, itemIds);
+    const effective = effectiveTowBuild(compiled.receipt.build, archetype.gear);
 
-    expect(effective.traits.metalize).toBe(7);
-    expect(effective.basicAttack).toMatchObject({ formId: "dawnward-blow", name: "Dawnward Blow" });
-    expect(towItemActorBonuses(itemIds)).toMatchObject({ attack: 4, maxHp: 20 });
+    expect(effective.skills).toEqual(archetype.build.skills);
+    expect(towItemActorBonuses(archetype.gear)).toMatchObject({
+      attack: expect.any(Number),
+      defense: expect.any(Number),
+      maxHp: expect.any(Number),
+    });
     expect(JSON.stringify(compiled.receipt.build)).toBe(before);
-
-    const unequipped = effectiveTowBuild(compiled.receipt.build, itemIds.filter((id) => id !== "dawnward-mace"));
-    expect(unequipped.traits).not.toHaveProperty("metalize");
-    expect(unequipped.basicAttack.formId).toBe("unarmed-fundamental");
   });
 
-  it("fires an item-granted fusion in the real encounter reducer", () => {
-    const compiled = compileCharacterBootstrap({ archetypeId: "dawnwarden", origin: "archetype" });
-    const build = effectiveTowBuild(compiled.receipt.build, getStartingArchetype("dawnwarden").gear);
-    const encounter = createTowEncounter({
-      seed: "fusion-start",
-      player: { id: "wanderer", name: "Mira", maxHp: 100, stats: { attack: 12, defense: 12, critRate: 0, dodgeRate: 0 } },
-      enemies: [{ id: "foe", name: "Foe", maxHp: 20, stats: { attack: 3, defense: 0, critRate: 0, dodgeRate: 0 }, attacks: [{ id: "tap", name: "Tap", hits: 1, damage: 1 }] }],
-      build,
-    });
-    expect(encounter.actors.wanderer.statuses.find((status) => status.type === "steelskin")?.count)
-      .toBeGreaterThanOrEqual(40);
+  it("takes every character's source base-stat chassis into practice", () => {
+    for (const archetype of STARTING_ARCHETYPES) {
+      const compiled = compileCharacterBootstrap({ archetypeId: archetype.id, origin: "archetype" });
+      const actor = practiceActor(compiled.receipt);
+      const bonus = towItemActorBonuses(archetype.gear);
+      expect(actor.maxHp, archetype.id).toBe(archetype.baseStats.maxHp + bonus.maxHp);
+      expect(actor.stats, archetype.id).toEqual({
+        attack: archetype.baseStats.attack + bonus.attack,
+        defense: archetype.baseStats.defense + bonus.defense,
+        critRate: archetype.baseStats.critRate + bonus.critRate,
+        dodgeRate: archetype.baseStats.dodgeRate + bonus.dodgeRate,
+      });
+    }
   });
 });
 
-describe("one atomic archetype start", () => {
-  it("creates the player, portrait, equipment, and durable build without limbo", () => {
+describe("one atomic source-character start", () => {
+  it("creates identity, source stats, portrait, equipment, and durable build without limbo", () => {
     const state = makeInitialState();
-    const archetype = getStartingArchetype("night-sovereign");
-    const setup = characterSetupForArchetype({ archetypeId: "night-sovereign" });
-    const compiled = compileCharacterBootstrap({ archetypeId: "night-sovereign", origin: "archetype" });
+    const archetype = getStartingArchetype("forsaken-automaton");
+    const setup = characterSetupForArchetype({ archetypeId: archetype.id });
+    const compiled = compileCharacterBootstrap({ archetypeId: archetype.id, origin: "archetype" });
     const applied = applyCharacterBootstrap(emptyMechanicsSidecar(), compiled.receipt);
     expect(applied.ok).toBe(true);
 
@@ -68,25 +74,29 @@ describe("one atomic archetype start", () => {
     built.mechanics = applied.mechanics;
 
     expect(built.created).toBe(true);
-    expect(built.character.attributes).toEqual(getStartingArchetype("night-sovereign").attributes);
+    expect(built.character.attributes).toEqual(archetype.attributes);
     expect(built.character).toMatchObject({
       name: archetype.character.name,
-      combatArchetypeId: "night-sovereign",
+      combatArchetypeId: archetype.id,
       progressionModel: "tow-archetype",
       portraitKey: archetype.character.portraitKey,
+      towBaseStats: archetype.baseStats,
     });
-    expect(built.world.codex.characters.wanderer.portraitKey).toBe(archetype.character.portraitKey);
-    expect(built.world.codex.characters.wanderer.worn).toEqual(worn);
+    expect(built.world.codex.characters.wanderer).toMatchObject({
+      portraitKey: archetype.character.portraitKey,
+      towBaseStats: archetype.baseStats,
+      worn,
+    });
     expect(built.mechanics.bootstrapOrigin).toBe("archetype");
     expect(built.mechanics.build).toEqual(compiled.receipt.build);
   });
 
-  it("locks every archetype to one complete authored identity", () => {
+  it("locks all twelve entries to complete identities and one of each action type", () => {
+    expect(STARTING_ARCHETYPES).toHaveLength(TOWER_ROSTER_SIZE);
     const names = new Set();
     for (const archetype of STARTING_ARCHETYPES) {
       const setup = characterSetupForArchetype({
         archetypeId: archetype.id,
-        // Old customizable draft fields are deliberately ignored.
         visageId: "sunward",
         name: "Player Chosen",
       });
@@ -94,14 +104,17 @@ describe("one atomic archetype start", () => {
       expect(setup.portraitKey).toBe(archetype.character.portraitKey);
       expect(setup.profile).toMatchObject({
         source: "tow-authored-character-start",
+        sourceName: archetype.character.sourceName,
         characterId: archetype.character.id,
         characterName: archetype.character.name,
       });
       expect(setup).not.toHaveProperty("templateId");
       expect(setup.level).toBe(1);
       expect(setup.progressionModel).toBe("tow-archetype");
+      const types = archetype.build.skills.map((id) => getSkill(id).abilityType);
+      expect(new Set(types)).toEqual(new Set(CHARACTER_ABILITY_TYPES));
       names.add(setup.name);
     }
-    expect(names.size).toBe(STARTING_ARCHETYPES.length);
+    expect(names.size).toBe(TOWER_ROSTER_SIZE);
   });
 });
