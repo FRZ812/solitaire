@@ -141,6 +141,7 @@ import {
   characterSetupForArchetype,
   createDefaultArchetypeDraft,
   getStartingArchetype,
+  practiceBuildForArchetypeDraft,
 } from "./gameplay/tow/starting-archetypes.js";
 import { settleTowEncounter } from "./gameplay/tow/settlement.js";
 import {
@@ -3005,6 +3006,7 @@ export function Solitaire() {
     const compiled = compileCharacterBootstrap({
       archetypeId: draft.archetypeId,
       origin: "archetype",
+      build: practiceBuildForArchetypeDraft(draft),
     });
     if (!compiled.ok) {
       setQuickStartError(`That build could not be compiled: ${compiled.reason}.`);

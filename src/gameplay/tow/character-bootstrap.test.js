@@ -20,6 +20,7 @@ import {
   compileCharacterBootstrap,
   isCharacterBootstrapReceipt,
 } from "./character-bootstrap.js";
+import { getStartingArchetype } from "./starting-archetypes.js";
 
 describe("starting packages are inspectable before play", () => {
   it("gives every profession a well-formed package", () => {
@@ -188,6 +189,24 @@ describe("one bootstrap compiler", () => {
     });
     expect(compiled.receipt.build.traits).toEqual({ swift: 3 });
     expect(compiled.receipt.build.skills).toEqual(["strike", "warcry"]);
+  });
+
+  it("lets a validated practice build override an archetype's authored skills", () => {
+    const archetype = getStartingArchetype("arctic-knight");
+    const skills = [
+      ...archetype.build.skills.slice(0, 2),
+      "penetration",
+      ...archetype.build.skills.slice(3),
+    ];
+    const compiled = compileCharacterBootstrap({
+      archetypeId: archetype.id,
+      origin: "practice",
+      build: { ...archetype.build, skills },
+    });
+
+    expect(compiled.ok).toBe(true);
+    expect(compiled.receipt.archetypeId).toBe(archetype.id);
+    expect(compiled.receipt.build.skills).toEqual(skills);
   });
 });
 

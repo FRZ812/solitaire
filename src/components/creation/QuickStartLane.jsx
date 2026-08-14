@@ -153,6 +153,103 @@ function AbilityLibraryGroup({ label, abilities, availability }) {
   );
 }
 
+const PRACTICE_SLOT_LABELS = Object.freeze([
+  "Basic attack",
+  "Defensive",
+  "Flexible 1",
+  "Flexible 2",
+  "Flexible 3",
+]);
+
+function PracticeLoadoutEditor({ selected, skillIds, onSkillChange, onReset }) {
+  const fieldId = useId();
+  const exclusiveAbilities = useMemo(() => characterAbilitiesFor(selected.id), [selected.id]);
+  const basicOptions = useMemo(
+    () => exclusiveAbilities.filter((skill) => skill.abilityType === "basic-attack"),
+    [exclusiveAbilities],
+  );
+  const defensiveOptions = useMemo(
+    () => exclusiveAbilities.filter((skill) => skill.abilityType === "defensive"),
+    [exclusiveAbilities],
+  );
+  const flexibleOptions = useMemo(
+    () => exclusiveAbilities.filter((skill) => skill.abilityType === "archetype"),
+    [exclusiveAbilities],
+  );
+  const generalOptions = useMemo(
+    () => generalAbilityIds().map((id) => getSkill(id)).filter(Boolean),
+    [],
+  );
+  const changed = skillIds.some((id, index) => id !== selected.build.skills[index]);
+  const isChosenElsewhere = (skillId, slotIndex) => skillIds.some(
+    (chosenId, chosenIndex) => chosenIndex !== slotIndex && chosenId === skillId,
+  );
+
+  const renderOptions = (options, slotIndex) => options.map((skill) => (
+    <option
+      key={skill.id}
+      value={skill.id}
+      disabled={isChosenElsewhere(skill.id, slotIndex)}
+    >
+      {skill.name} · {titleCase(skill.rarity)}
+    </option>
+  ));
+
+  return (
+    <section className="character-details__test-loadout">
+      <div className="character-details__section-heading">
+        <div>
+          <span className="character-details__label">Practice loadout</span>
+          <p>Swap any legal ability for combat testing. Journey starts keep the authored kit above.</p>
+        </div>
+        <button type="button" disabled={!changed} onClick={onReset}>Reset kit</button>
+      </div>
+
+      <div className="practice-loadout-editor" aria-label="Practice loadout">
+        {skillIds.map((skillId, slotIndex) => {
+          const definition = getSkill(skillId);
+          const fixedOptions = slotIndex === 0 ? basicOptions : defensiveOptions;
+          const flexible = slotIndex >= 2;
+          const selectId = `${fieldId}-slot-${slotIndex}`;
+          return (
+            <div
+              className="practice-loadout-editor__slot"
+              data-slot-index={slotIndex + 1}
+              data-slot-role={flexible ? "flexible" : "fixed"}
+              key={`${slotIndex}-${skillId}`}
+            >
+              <img src={resolveTowAbilityArt(definition)} alt="" />
+              <label htmlFor={selectId}>
+                <span><strong>{slotIndex + 1}</strong> {PRACTICE_SLOT_LABELS[slotIndex]}</span>
+                <select
+                  id={selectId}
+                  aria-label={`Practice slot ${slotIndex + 1}, ${PRACTICE_SLOT_LABELS[slotIndex]}`}
+                  value={skillId}
+                  onChange={(event) => onSkillChange(slotIndex, event.target.value)}
+                >
+                  {flexible ? (
+                    <>
+                      <optgroup label={`${selected.character.name} exclusives`}>
+                        {renderOptions(flexibleOptions, slotIndex)}
+                      </optgroup>
+                      <optgroup label="General abilities">
+                        {renderOptions(generalOptions, slotIndex)}
+                      </optgroup>
+                    </>
+                  ) : renderOptions(fixedOptions, slotIndex)}
+                </select>
+              </label>
+            </div>
+          );
+        })}
+      </div>
+      <small className="practice-loadout-editor__note">
+        {changed ? "Modified test kit · nothing is saved" : "Authored starting kit selected · nothing is saved"}
+      </small>
+    </section>
+  );
+}
+
 function ScenarioPicker({ value, onChange }) {
   const listboxId = useId();
   const rootRef = useRef(null);
@@ -260,7 +357,17 @@ function ScenarioPicker({ value, onChange }) {
   );
 }
 
-function CharacterDetails({ selected, scenarioId, onScenarioChange, onPractice, onClose, busy }) {
+function CharacterDetails({
+  selected,
+  testSkillIds,
+  onTestSkillChange,
+  onResetTestSkills,
+  scenarioId,
+  onScenarioChange,
+  onPractice,
+  onClose,
+  busy,
+}) {
   const headingId = useId();
   const dialogRef = useModalFocus(onClose);
   const items = useMemo(() => archetypeItemRows(selected.id), [selected.id]);
@@ -355,6 +462,13 @@ function CharacterDetails({ selected, scenarioId, onScenarioChange, onPractice, 
               ))}
             </div>
           </section>
+
+          <PracticeLoadoutEditor
+            selected={selected}
+            skillIds={testSkillIds}
+            onSkillChange={onTestSkillChange}
+            onReset={onResetTestSkills}
+          />
 
           <section className="character-details__ability-library">
             <div className="character-details__section-heading">
@@ -483,6 +597,7 @@ export function QuickStartLane({
   const baseTrait = getTrait(Object.keys(selected.build.traits)[0]);
   const previewTraitRank = selected.build.traits[baseTrait?.id] || 1;
   const previewTraitSummary = baseTrait ? describeTraitAtRank(baseTrait.id, previewTraitRank) : "";
+  const testSkillIds = normalized.testSkillIds || selected.build.skills;
 
   useEffect(() => setDetailsOpen(false), [selected.id]);
   useEffect(() => {
@@ -498,6 +613,12 @@ export function QuickStartLane({
   }, [normalized.preview, selected.id]);
 
   const change = (patch) => onDraftChange?.(updateDraft(normalized, patch));
+  const changeTestSkill = (slotIndex, skillId) => {
+    const nextSkillIds = [...testSkillIds];
+    if (nextSkillIds.some((selectedId, index) => index !== slotIndex && selectedId === skillId)) return;
+    nextSkillIds[slotIndex] = skillId;
+    change({ testSkillIds: nextSkillIds });
+  };
   const focusCarouselChoice = (index) => {
     const node = thumbnailRefs.current[index];
     if (!node?.scrollIntoView) return;
@@ -650,7 +771,12 @@ export function QuickStartLane({
               <button type="button" className="character-preview__details-button" aria-expanded={detailsOpen} onClick={() => setDetailsOpen(true)}>
                 Details
               </button>
-              <button type="button" className="character-preview__begin" disabled={busy} onClick={() => onBegin?.(normalized)}>
+              <button
+                type="button"
+                className="character-preview__begin"
+                disabled={busy}
+                onClick={() => onBegin?.({ archetypeId: normalized.archetypeId, preview: normalized.preview })}
+              >
                 <span>Begin journey</span>
                 <ArrowIcon />
               </button>
@@ -708,6 +834,9 @@ export function QuickStartLane({
       {detailsOpen ? (
         <CharacterDetails
           selected={selected}
+          testSkillIds={testSkillIds}
+          onTestSkillChange={changeTestSkill}
+          onResetTestSkills={() => change({ testSkillIds: null })}
           scenarioId={scenarioId}
           onScenarioChange={setScenarioId}
           onPractice={() => onPractice?.(normalized, scenarioId)}

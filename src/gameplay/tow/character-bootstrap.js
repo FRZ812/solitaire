@@ -49,7 +49,7 @@ export function compileCharacterBootstrap(request = {}) {
 
   let build;
   try {
-    const requestedBuild = archetype?.build || request.build;
+    const requestedBuild = request.build || archetype?.build;
     // An explicit build wins — that is how a fixture or a resumed draft pins an exact
     // loadout — but it is validated by the same constructor as a fresh one.
     build = requestedBuild

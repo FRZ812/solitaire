@@ -322,9 +322,46 @@ export function createDefaultArchetypeDraft() {
   return { archetypeId: STARTING_ARCHETYPES[0].id, preview: false };
 }
 
+export function isArchetypePracticeLoadout(archetypeId, skillIds) {
+  const selected = getStartingArchetype(archetypeId);
+  if (!selected || !Array.isArray(skillIds) || skillIds.length !== SKILL_SLOTS) return false;
+  if (new Set(skillIds).size !== SKILL_SLOTS) return false;
+
+  const skills = skillIds.map((id) => getSkill(id));
+  if (skills.some((skill) => !skill || skill.slot !== "slotted")) return false;
+  const ownedFixedAbility = (skill, abilityType) => (
+    skill.abilityType === abilityType && skill.exclusiveTo === selected.id
+  );
+  const legalFlexibleAbility = (skill) => (
+    (skill.abilityType === "archetype" && skill.exclusiveTo === selected.id)
+    || (skill.abilityType === "general" && skill.exclusiveTo === null)
+  );
+
+  return ownedFixedAbility(skills[0], "basic-attack")
+    && ownedFixedAbility(skills[1], "defensive")
+    && skills.slice(2).every(legalFlexibleAbility);
+}
+
 export function normalizeArchetypeDraft(input = {}) {
   const selected = getStartingArchetype(input.archetypeId) || STARTING_ARCHETYPES[0];
-  return { archetypeId: selected.id, preview: input.preview === true };
+  const normalized = { archetypeId: selected.id, preview: input.preview === true };
+  if (isArchetypePracticeLoadout(selected.id, input.testSkillIds)
+    && input.testSkillIds.some((id, index) => id !== selected.build.skills[index])) {
+    normalized.testSkillIds = [...input.testSkillIds];
+  }
+  return normalized;
+}
+
+export function practiceBuildForArchetypeDraft(draft) {
+  const normalized = normalizeArchetypeDraft(draft);
+  const selected = getStartingArchetype(normalized.archetypeId);
+  if (!selected) return null;
+  return {
+    ...selected.build,
+    traits: { ...selected.build.traits },
+    skills: [...(normalized.testSkillIds || selected.build.skills)],
+    runes: [...selected.build.runes],
+  };
 }
 
 export function archetypeItemRows(archetypeId) {
