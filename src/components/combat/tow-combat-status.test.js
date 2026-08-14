@@ -38,13 +38,19 @@ describe("combat status presentation", () => {
       .toContain("entire stack is spent");
   });
 
-  it("gives every kernel status readable copy and a transparent visual family", () => {
+  it("gives every kernel status readable copy, raster VFX, and dedicated generated icon cells", () => {
+    const icons = [];
     for (const type of statusTypes()) {
       const detail = towStatusPresentation({ type, count: 1 });
       expect(detail.name.length, type).toBeGreaterThan(0);
       expect(detail.effect.length, type).toBeGreaterThan(20);
       expect(detail.lifecycle.length, type).toBeGreaterThan(10);
-      expect(detail.visual.asset, type).toMatch(/^(?:data:image\/svg\+xml|.*\.svg(?:$|\?))/);
+      expect(detail.visual.asset, type).toMatch(/\.png$/);
+      expect(detail.visual.iconAsset, type).toMatch(/\.png$/);
+      expect(detail.visual.iconPosition, type).toMatch(/^(?:0|100)% (?:0|100)%$/);
+      expect(detail.visual.asset, type).not.toContain("svg");
+      icons.push(`${detail.visual.iconAsset}#${detail.visual.iconPosition}`);
     }
+    expect(new Set(icons).size).toBe(icons.length);
   });
 });

@@ -1,16 +1,30 @@
-import slashAsset from "../../assets/combat-vfx/slash.svg";
-import pierceAsset from "../../assets/combat-vfx/pierce.svg";
-import impactAsset from "../../assets/combat-vfx/impact.svg";
-import gashAsset from "../../assets/combat-vfx/gash.svg";
-import fireAsset from "../../assets/combat-vfx/fire.svg";
-import lightningAsset from "../../assets/combat-vfx/lightning.svg";
-import arcaneAsset from "../../assets/combat-vfx/arcane.svg";
-import wardAsset from "../../assets/combat-vfx/ward.svg";
-import evadeAsset from "../../assets/combat-vfx/evade.svg";
-import healAsset from "../../assets/combat-vfx/heal.svg";
-import afflictAsset from "../../assets/combat-vfx/afflict.svg";
-import frostAsset from "../../assets/combat-vfx/frost.svg";
+import afflictAsset from "../../assets/generated/winter-tower/vfx/afflict-v1.png";
+import arcaneAsset from "../../assets/generated/winter-tower/vfx/arcane-v1.png";
+import evadeAsset from "../../assets/generated/winter-tower/vfx/evade-v1.png";
+import fireAsset from "../../assets/generated/winter-tower/vfx/fire-v1.png";
+import frostAsset from "../../assets/generated/winter-tower/vfx/frost-v1.png";
+import gashAsset from "../../assets/generated/winter-tower/vfx/gash-v1.png";
+import healAsset from "../../assets/generated/winter-tower/vfx/heal-v1.png";
+import impactAsset from "../../assets/generated/winter-tower/vfx/impact-v1.png";
+import lightningAsset from "../../assets/generated/winter-tower/vfx/lightning-v1.png";
+import pierceAsset from "../../assets/generated/winter-tower/vfx/pierce-v1.png";
+import slashAsset from "../../assets/generated/winter-tower/vfx/slash-v1.png";
+import wardAsset from "../../assets/generated/winter-tower/vfx/ward-v1.png";
+import windAsset from "../../assets/generated/winter-tower/vfx/wind-v1.png";
+
+import statusAfflictions from "../../assets/generated/winter-tower/status/afflictions-v1.png";
+import statusAttackModifiers from "../../assets/generated/winter-tower/status/attack-modifiers-v1.png";
+import statusControl from "../../assets/generated/winter-tower/status/control-v1.png";
+import statusDebilitation from "../../assets/generated/winter-tower/status/debilitation-v1.png";
+import statusDefense from "../../assets/generated/winter-tower/status/defense-v1.png";
+import statusOffense from "../../assets/generated/winter-tower/status/offense-v1.png";
+import statusResolve from "../../assets/generated/winter-tower/status/resolve-v1.png";
+import statusResources from "../../assets/generated/winter-tower/status/resources-v1.png";
+import statusSummonExecution from "../../assets/generated/winter-tower/status/summon-execution-v1.png";
+import statusSustain from "../../assets/generated/winter-tower/status/sustain-v1.png";
+import statusTempo from "../../assets/generated/winter-tower/status/tempo-v1.png";
 import { getSkill } from "../../gameplay/tow/skills.js";
+import { resolveTowAbilityArt, resolveTowIntentArt } from "./tow-combat-ability-art.js";
 
 export const COMBAT_VFX_ASSETS = Object.freeze({
   afflict: afflictAsset,
@@ -25,83 +39,28 @@ export const COMBAT_VFX_ASSETS = Object.freeze({
   pierce: pierceAsset,
   slash: slashAsset,
   ward: wardAsset,
+  wind: windAsset,
+});
+
+export const STATUS_ICON_ASSETS = Object.freeze({
+  afflictions: statusAfflictions,
+  "attack-modifiers": statusAttackModifiers,
+  control: statusControl,
+  debilitation: statusDebilitation,
+  defense: statusDefense,
+  offense: statusOffense,
+  resolve: statusResolve,
+  resources: statusResources,
+  "summon-execution": statusSummonExecution,
+  sustain: statusSustain,
+  tempo: statusTempo,
 });
 
 function effect(family, variant, motion = "balanced") {
   return Object.freeze({ family, variant, motion });
 }
 
-const VFX_PALETTES = Object.freeze({
-  afflict: ["#6f3a97", "#d8a5ff", "#3a154f"],
-  arcane: ["#7e70ef", "#e2ddff", "#242153"],
-  evade: ["#55bbaa", "#d1fff5", "#123e3a"],
-  fire: ["#f05b22", "#ffe08e", "#60180d"],
-  frost: ["#65cce7", "#e5fbff", "#174150"],
-  gash: ["#d93458", "#ffb2bd", "#5e1024"],
-  heal: ["#80bc58", "#e4ffc3", "#25481d"],
-  impact: ["#e4a53f", "#fff0ad", "#5c3511"],
-  lightning: ["#4fc8ef", "#e9fbff", "#153f64"],
-  pierce: ["#5ec7df", "#ddfaff", "#173e4b"],
-  slash: ["#e0503c", "#ffd2bb", "#61190f"],
-  ward: ["#63bdd7", "#ddf8ff", "#174656"],
-  wind: ["#72c7b4", "#f0fff8", "#1e514a"],
-});
-
-const MOTION_MOTIFS = Object.freeze({
-  afterimage: "afterimage",
-  ascend: "sigil",
-  aura: "flame",
-  balanced: "blade",
-  barrage: "volley",
-  bind: "bind",
-  bleed: "blade",
-  bolt: "projectile",
-  brace: "shield",
-  brand: "flame",
-  charge: "storm",
-  counter: "shield",
-  cross: "flurry",
-  curtain: "shield",
-  cyclone: "whirlwind",
-  execution: "execution",
-  fate: "sigil",
-  flash: "storm",
-  flurry: "flurry",
-  fork: "volley",
-  fortress: "shield",
-  heavy: "rupture",
-  inferno: "flame",
-  mend: "sustain",
-  measured: "blade",
-  multi: "flurry",
-  peal: "rupture",
-  pin: "projectile",
-  projectile: "projectile",
-  quake: "rupture",
-  radiant: "storm",
-  rally: "shield",
-  rapid: "flurry",
-  rolling: "whirlwind",
-  shadow: "afterimage",
-  "shadow-flurry": "flurry",
-  shield: "shield",
-  shout: "bind",
-  silence: "sigil",
-  siphon: "sustain",
-  smoke: "bind",
-  snap: "storm",
-  summon: "sigil",
-  thrust: "projectile",
-  unyielding: "shield",
-  urgent: "shield",
-  void: "sigil",
-  volley: "volley",
-  weapon: "blade",
-});
-
-const bespokeVfxCache = new Map();
-
-function vfxHash(value) {
+function visualHash(value) {
   let hash = 2166136261;
   for (const character of String(value || "effect")) {
     hash ^= character.charCodeAt(0);
@@ -110,163 +69,61 @@ function vfxHash(value) {
   return hash >>> 0;
 }
 
-function familyMotif(family) {
-  if (family === "fire") return "flame";
-  if (family === "lightning" || family === "frost") return "storm";
-  if (family === "ward") return "shield";
-  if (family === "heal") return "sustain";
-  if (family === "afflict" || family === "arcane") return "sigil";
-  if (family === "pierce") return "projectile";
-  if (family === "wind") return "whirlwind";
-  return "blade";
+function visualProfile(variant) {
+  const hash = visualHash(variant);
+  return Object.freeze({
+    key: `vfx-${hash.toString(36)}`,
+    rotate: `${(hash % 31) - 15}deg`,
+    scale: (0.9 + ((hash >>> 5) % 19) / 100).toFixed(2),
+    x: `${((hash >>> 10) % 17) - 8}%`,
+    y: `${((hash >>> 15) % 15) - 7}%`,
+    delay: `${(hash >>> 20) % 90}ms`,
+    mirror: hash % 2 === 0 ? 1 : -1,
+  });
 }
 
-function variantRune(hash) {
-  const left = 74 + (hash % 19);
-  const peak = 47 + ((hash >>> 4) % 30);
-  const right = 176 - ((hash >>> 9) % 17);
-  const trough = 178 + ((hash >>> 14) % 25);
-  return `M${left} 156 Q112 ${peak} 132 119 T${right} 88 Q150 146 118 ${trough}`;
+function withAsset(spec, signatureAsset = null) {
+  return Object.freeze({
+    ...spec,
+    asset: COMBAT_VFX_ASSETS[spec.family] || COMBAT_VFX_ASSETS.impact,
+    signatureAsset,
+    profile: visualProfile(spec.variant),
+  });
 }
 
-function vfxMotifMarkup(motif, hash) {
-  const tilt = (hash % 31) - 15;
-  const drift = ((hash >>> 7) % 17) - 8;
-  const dash = 7 + ((hash >>> 13) % 9);
-  const rotate = `rotate(${tilt} 128 128)`;
-
-  if (motif === "whirlwind") {
-    return `<g fill="none" stroke-linecap="round" transform="${rotate}">
-      <path d="M31 116 C43 51 139 23 207 70 C232 87 239 112 222 135" stroke="url(#accent)" stroke-width="11"/>
-      <path d="M221 147 C195 213 96 231 40 178 C19 158 17 132 34 109" stroke="url(#light)" stroke-width="7" stroke-opacity=".82"/>
-      <path d="M69 143 C75 104 122 78 164 91 C187 98 199 116 191 136" stroke="url(#accent)" stroke-width="6" stroke-opacity=".72"/>
-      <path d="M42 94 L27 121 L61 115 M215 165 L231 139 L197 145" stroke="currentColor" stroke-width="5"/>
-      <ellipse cx="128" cy="130" rx="93" ry="61" stroke="currentColor" stroke-width="2" stroke-dasharray="${dash} 14" stroke-opacity=".48"/>
-    </g>`;
+function safeSkill(skillId) {
+  if (!skillId) return null;
+  try {
+    return getSkill(skillId);
+  } catch {
+    return null;
   }
-  if (motif === "rupture") {
-    return `<g fill="none" stroke-linecap="round" stroke-linejoin="round" transform="${rotate}">
-      <path d="M29 170 L79 146 L105 154 L129 113 L151 148 L184 132 L229 166" stroke="url(#accent)" stroke-width="12"/>
-      <path d="M128 114 L116 74 L139 32 M105 154 L78 190 L66 222 M151 148 L181 185 L204 205" stroke="url(#light)" stroke-width="6"/>
-      <path d="M45 178 Q128 211 215 174" stroke="currentColor" stroke-width="3" stroke-dasharray="${dash} 11" stroke-opacity=".55"/>
-    </g>`;
-  }
-  if (motif === "execution") {
-    return `<g fill="none" stroke-linecap="round" transform="${rotate}">
-      <path d="M164 18 L119 119 L92 235" stroke="url(#light)" stroke-width="16"/>
-      <path d="M185 38 L129 126 L69 194" stroke="url(#accent)" stroke-width="7"/>
-      <path d="M60 73 L190 184" stroke="currentColor" stroke-width="4" stroke-dasharray="${dash} 12" stroke-opacity=".58"/>
-    </g>`;
-  }
-  if (motif === "flurry") {
-    return `<g fill="none" stroke-linecap="round" transform="${rotate}">
-      <path d="M34 174 Q104 77 222 62" stroke="url(#accent)" stroke-width="9"/>
-      <path d="M39 91 Q131 158 219 181" stroke="url(#light)" stroke-width="7"/>
-      <path d="M68 213 Q126 111 192 37" stroke="currentColor" stroke-width="4" stroke-dasharray="${dash} 10" stroke-opacity=".62"/>
-      <path d="M${55 + drift} 145 Q128 126 ${205 - drift} 119" stroke="currentColor" stroke-width="3" stroke-opacity=".44"/>
-    </g>`;
-  }
-  if (motif === "projectile") {
-    return `<g fill="none" stroke-linecap="round" stroke-linejoin="round" transform="${rotate}">
-      <path d="M24 183 Q90 142 199 76" stroke="url(#accent)" stroke-width="10"/>
-      <path d="M179 61 L226 57 L207 101" stroke="url(#light)" stroke-width="9"/>
-      <path d="M33 204 Q101 154 190 104" stroke="currentColor" stroke-width="4" stroke-dasharray="${dash} 13" stroke-opacity=".55"/>
-    </g>`;
-  }
-  if (motif === "volley") {
-    return `<g fill="none" stroke-linecap="round" transform="${rotate}">
-      <path d="M25 183 L183 63 M52 211 L211 91 M18 137 L151 37" stroke="url(#accent)" stroke-width="7"/>
-      <path d="M174 52 L207 46 L196 79 M202 81 L235 74 L223 108 M143 28 L176 20 L164 54" stroke="url(#light)" stroke-width="5"/>
-      <circle cx="128" cy="128" r="81" stroke="currentColor" stroke-width="2" stroke-dasharray="${dash} 15" stroke-opacity=".4"/>
-    </g>`;
-  }
-  if (motif === "shield") {
-    return `<g fill="none" stroke-linejoin="round" transform="${rotate}">
-      <path d="M128 25 L210 58 L196 151 Q181 207 128 231 Q75 207 60 151 L46 58 Z" stroke="url(#accent)" stroke-width="10"/>
-      <path d="M128 52 L179 72 L170 145 Q158 181 128 199 Q98 181 86 145 L77 72 Z" stroke="url(#light)" stroke-width="5" stroke-dasharray="${dash} 9"/>
-      <path d="M70 141 Q128 105 187 141" stroke="currentColor" stroke-width="4" stroke-opacity=".5"/>
-    </g>`;
-  }
-  if (motif === "flame") {
-    return `<g fill="none" stroke-linecap="round" transform="${rotate}">
-      <path d="M132 229 C66 212 48 164 80 120 C98 95 101 69 91 31 C143 62 160 95 149 126 C175 109 191 91 193 72 C228 128 215 202 132 229Z" fill="url(#soft)" stroke="url(#accent)" stroke-width="8"/>
-      <path d="M128 199 C100 181 99 151 118 129 C132 113 137 96 132 78 C166 112 171 165 128 199Z" stroke="url(#light)" stroke-width="6"/>
-    </g>`;
-  }
-  if (motif === "storm") {
-    return `<g fill="none" stroke-linecap="round" stroke-linejoin="round" transform="${rotate}">
-      <path d="M145 18 L78 126 L124 119 L101 238 L190 101 L141 111 Z" fill="url(#soft)" stroke="url(#light)" stroke-width="8"/>
-      <path d="M44 90 L77 105 M180 166 L220 183 M42 172 L79 157 M181 73 L217 50" stroke="url(#accent)" stroke-width="6"/>
-      <circle cx="130" cy="128" r="91" stroke="currentColor" stroke-width="2" stroke-dasharray="${dash} 13" stroke-opacity=".42"/>
-    </g>`;
-  }
-  if (motif === "sigil") {
-    return `<g fill="none" stroke-linejoin="round" transform="${rotate}">
-      <circle cx="128" cy="128" r="91" stroke="url(#accent)" stroke-width="7" stroke-dasharray="${dash} 10"/>
-      <path d="M128 34 L207 174 L49 174 Z M128 58 L178 159 L78 159 Z" stroke="url(#light)" stroke-width="5"/>
-      <path d="${variantRune(hash)}" stroke="currentColor" stroke-width="5" stroke-linecap="round" opacity=".7"/>
-      <circle cx="128" cy="128" r="19" fill="url(#soft)" stroke="currentColor" stroke-width="3"/>
-    </g>`;
-  }
-  if (motif === "bind") {
-    return `<g fill="none" stroke-linecap="round" transform="${rotate}">
-      <path d="M38 211 C92 173 49 116 103 91 C145 72 116 39 151 20 M217 218 C165 184 209 127 155 101 C113 81 145 48 108 29" stroke="url(#accent)" stroke-width="9"/>
-      <path d="M43 142 C81 122 99 150 128 128 C158 105 178 136 216 113 M47 176 C88 148 107 182 139 153 C162 132 183 157 213 146" stroke="url(#light)" stroke-width="5"/>
-      <path d="${variantRune(hash)}" stroke="currentColor" stroke-width="3" stroke-dasharray="${dash} 8" opacity=".55"/>
-    </g>`;
-  }
-  if (motif === "sustain") {
-    return `<g fill="none" stroke-linecap="round" transform="${rotate}">
-      <path d="M128 225 C66 181 43 148 54 104 C63 69 102 59 128 91 C154 59 193 69 202 104 C213 148 190 181 128 225Z" fill="url(#soft)" stroke="url(#accent)" stroke-width="8"/>
-      <path d="M128 70 V180 M73 125 H183" stroke="url(#light)" stroke-width="8"/>
-      <circle cx="128" cy="126" r="82" stroke="currentColor" stroke-width="2" stroke-dasharray="${dash} 14" stroke-opacity=".42"/>
-    </g>`;
-  }
-  if (motif === "afterimage") {
-    return `<g fill="none" stroke-linecap="round" transform="${rotate}">
-      <path d="M204 39 C151 57 120 85 106 126 C93 165 67 193 25 214" stroke="url(#light)" stroke-width="11"/>
-      <path d="M229 68 C167 84 139 109 126 145 C115 176 91 202 55 226" stroke="url(#accent)" stroke-width="7" stroke-dasharray="${dash} 11"/>
-      <path d="M186 29 L218 34 L203 61 M35 192 L24 221 L57 215" stroke="currentColor" stroke-width="5" opacity=".55"/>
-    </g>`;
-  }
-  return `<g fill="none" stroke-linecap="round" transform="${rotate}">
-    <path d="M33 190 Q112 71 224 48" stroke="url(#accent)" stroke-width="12"/>
-    <path d="M47 211 Q124 99 207 72" stroke="url(#light)" stroke-width="6"/>
-    <path d="${variantRune(hash)}" stroke="currentColor" stroke-width="4" stroke-dasharray="${dash} 9" opacity=".52"/>
-  </g>`;
 }
 
-/**
- * Every authored variant resolves to its own transparent SVG asset. The family supplies
- * colour language, the motion supplies silhouette, and the stable id changes the internal
- * rune/geometry. That keeps two earned skills from collapsing back to the same slash decal.
- */
-function bespokeVfxAsset(spec) {
-  const key = `${spec.family}:${spec.motion}:${spec.variant}`;
-  if (bespokeVfxCache.has(key)) return bespokeVfxCache.get(key);
-  const [accent, light, deep] = VFX_PALETTES[spec.family] || VFX_PALETTES.impact;
-  const hash = vfxHash(key);
-  const motif = MOTION_MOTIFS[spec.motion] || familyMotif(spec.family);
-  const signaturePoints = hash.toString(16).padStart(8, "0").split("")
-    .map((digit, index) => `${31 + (index * 28)},${231 - (Number.parseInt(digit, 16) * 2.2)}`)
-    .join(" ");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" color="${light}" data-variant="${spec.variant}">
-    <defs>
-      <linearGradient id="accent" x1="0" y1="1" x2="1" y2="0"><stop stop-color="${deep}" stop-opacity=".08"/><stop offset=".5" stop-color="${accent}"/><stop offset="1" stop-color="${light}"/></linearGradient>
-      <linearGradient id="light" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${light}"/><stop offset="1" stop-color="${accent}" stop-opacity=".28"/></linearGradient>
-      <radialGradient id="soft"><stop stop-color="${light}" stop-opacity=".34"/><stop offset="1" stop-color="${accent}" stop-opacity=".03"/></radialGradient>
-    </defs>
-    ${vfxMotifMarkup(motif, hash)}
-    <polyline points="${signaturePoints}" fill="none" stroke="${light}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity=".32"/>
-  </svg>`;
-  const asset = `data:image/svg+xml,${encodeURIComponent(svg)}`;
-  bespokeVfxCache.set(key, asset);
-  return asset;
+function signatureForSkill(skillId, weaponPresentation = null) {
+  const definition = safeSkill(skillId);
+  return definition ? resolveTowAbilityArt(definition, weaponPresentation) : null;
 }
 
-// Each authored ability receives its own stable variant. Families provide a dedicated
-// transparent effect asset; the motion modifier changes timing, scale, colour treatment,
-// and impact behaviour without putting opaque square card art over the battlefield.
+function familyForForm(formId) {
+  const value = String(formId || "");
+  if (/(arrow|bow|volley|pinning)/.test(value)) return "bow";
+  if (/(dagger|nightfang|shadow|silencing)/.test(value)) return "dagger";
+  if (/(mace|dawnward|pealing|sunbreak)/.test(value)) return "mace";
+  if (/(staff|bolt|cinder|arcane)/.test(value)) return "arcane";
+  if (/(spear|thrust)/.test(value)) return "spear";
+  if (/(axe)/.test(value)) return "axe";
+  if (/(unarmed)/.test(value)) return "unarmed";
+  return "sword";
+}
+
+function signatureForForm(formId) {
+  return resolveTowAbilityArt(safeSkill("strike"), {
+    activeFormId: formId,
+    family: familyForForm(formId),
+  });
+}
+
 const SKILL_EFFECTS = Object.freeze({
   strike: effect("impact", "strike", "weapon"),
   "shield-bash": effect("impact", "shield-bash", "shield"),
@@ -305,8 +162,6 @@ const SKILL_EFFECTS = Object.freeze({
   "super-speed": effect("evade", "super-speed", "afterimage"),
   "peace-declaration": effect("afflict", "peace-declaration", "silence"),
 
-  // Five-action kits for the authored Tower of Winter roster: two fixed actions and
-  // three flexible character-exclusive or General ability slots.
   "arctic-strike": effect("slash", "arctic-strike", "measured"),
   "arctic-block": effect("ward", "arctic-block", "brace"),
   "arctic-deliberate-blow": effect("impact", "arctic-deliberate-blow", "heavy"),
@@ -444,10 +299,65 @@ const STATUS_EFFECTS = Object.freeze({
   unstoppable: effect("ward", "status-unstoppable", "unyielding"),
   weak: effect("afflict", "status-weak", "bind"),
   initiative: effect("evade", "status-initiative", "rapid"),
+  "initiative-atk": effect("evade", "status-initiative-atk", "rapid"),
   judgment: effect("lightning", "status-judgment", "radiant"),
   limp: effect("afflict", "status-limp", "bind"),
   skeleton: effect("arcane", "status-skeleton", "summon"),
   vulnerable: effect("afflict", "status-vulnerable", "bind"),
+});
+
+function icon(asset, column, row) {
+  return Object.freeze({
+    iconAsset: asset,
+    iconPosition: `${column * 100}% ${row * 100}%`,
+    iconSize: "200% 200%",
+  });
+}
+
+const STATUS_ICONS = Object.freeze({
+  protection: icon(statusDefense, 0, 0),
+  steelskin: icon(statusDefense, 1, 0),
+  guard: icon(statusDefense, 0, 1),
+  solidity: icon(statusDefense, 1, 1),
+  evade: icon(statusTempo, 0, 0),
+  haste: icon(statusTempo, 1, 0),
+  swift: icon(statusTempo, 0, 1),
+  priority: icon(statusTempo, 1, 1),
+  burn: icon(statusAfflictions, 0, 0),
+  poison: icon(statusAfflictions, 1, 0),
+  bleed: icon(statusAfflictions, 0, 1),
+  doom: icon(statusAfflictions, 1, 1),
+  lethargy: icon(statusDebilitation, 0, 0),
+  weak: icon(statusDebilitation, 1, 0),
+  cripple: icon(statusDebilitation, 0, 1),
+  vulnerable: icon(statusDebilitation, 1, 1),
+  paralyze: icon(statusControl, 0, 0),
+  stun: icon(statusControl, 1, 0),
+  sleep: icon(statusControl, 0, 1),
+  limp: icon(statusControl, 1, 1),
+  strength: icon(statusOffense, 0, 0),
+  berserk: icon(statusOffense, 1, 0),
+  focus: icon(statusOffense, 0, 1),
+  sharpen: icon(statusOffense, 1, 1),
+  tenacity: icon(statusResolve, 0, 0),
+  unstoppable: icon(statusResolve, 1, 0),
+  invincible: icon(statusResolve, 0, 1),
+  thorn: icon(statusResolve, 1, 1),
+  lifesteal: icon(statusSustain, 0, 0),
+  grow: icon(statusSustain, 1, 0),
+  conceal: icon(statusSustain, 0, 1),
+  misfortune: icon(statusSustain, 1, 1),
+  overload: icon(statusResources, 0, 0),
+  charge: icon(statusResources, 1, 0),
+  initiative: icon(statusResources, 0, 1),
+  judgment: icon(statusResources, 1, 1),
+  "poison-atk": icon(statusAttackModifiers, 0, 0),
+  "bleed-atk": icon(statusAttackModifiers, 1, 0),
+  "doom-atk": icon(statusAttackModifiers, 0, 1),
+  "lethargy-atk": icon(statusAttackModifiers, 1, 1),
+  skeleton: icon(statusSummonExecution, 0, 0),
+  eviscerate: icon(statusSummonExecution, 1, 0),
+  "initiative-atk": icon(statusSummonExecution, 0, 1),
 });
 
 function slug(value, fallback = "unknown") {
@@ -467,12 +377,8 @@ function familyFromText(value) {
   return "slash";
 }
 
-function withAsset(spec) {
-  return { ...spec, asset: bespokeVfxAsset(spec) };
-}
-
 function inferredSkillEffect(skillId) {
-  const definition = getSkill(skillId);
+  const definition = safeSkill(skillId);
   if (!definition) return null;
   const effects = definition.effects || [];
   const statusEffect = effects.find((entry) => entry.type === "status" || entry.type === "scaled-status");
@@ -516,14 +422,28 @@ function activeFormId(encounter, event) {
 }
 
 export function combatVfxForIntent(intent) {
-  if (!intent) return withAsset(effect("impact", "intent-attack", "balanced"));
-  const family = familyFromText(`${intent.attackId || ""} ${intent.name || ""}`);
-  return withAsset(effect(family, `intent-${slug(intent.attackId || intent.name, "attack")}`, intent.hits > 1 ? "multi" : "balanced"));
+  const skillVisual = intent?.skillId ? skillEffectFor(intent.skillId) : null;
+  let family = skillVisual?.family || familyFromText(`${intent?.attackId || ""} ${intent?.name || ""}`);
+  if (intent?.kind === "ward") family = "ward";
+  else if (intent?.kind === "recover") family = "heal";
+  else if (intent?.kind === "afflict" && !skillVisual) family = "afflict";
+  const spec = effect(
+    family,
+    `intent-${slug(intent?.skillId || intent?.attackId || intent?.name, "attack")}`,
+    skillVisual?.motion || (intent?.hits > 1 ? "multi" : "balanced"),
+  );
+  return Object.freeze({
+    ...spec,
+    asset: resolveTowIntentArt(intent, family),
+    vfxAsset: COMBAT_VFX_ASSETS[family] || COMBAT_VFX_ASSETS.impact,
+    profile: visualProfile(spec.variant),
+  });
 }
 
 export function combatVfxForStatus(status) {
   const spec = STATUS_EFFECTS[status] || effect("afflict", `status-${slug(status, "unknown")}`, "balanced");
-  return withAsset(spec);
+  const iconVisual = STATUS_ICONS[status] || STATUS_ICONS.doom;
+  return Object.freeze({ ...withAsset(spec), ...iconVisual });
 }
 
 /** Resolve only presentation metadata from the authoritative event; mechanics stay in the kernel. */
@@ -532,24 +452,37 @@ export function combatVfxForEvent(encounter, event) {
 
   if (event.type === "enemy-attack") {
     const attack = attackDefinition(encounter, event);
+    const skillVisual = attack?.skillId ? skillEffectFor(attack.skillId) : null;
     const identity = `${event.attackId || ""} ${attack?.name || ""}`;
-    const family = familyFromText(identity);
-    return withAsset(effect(family, `enemy-${slug(event.attackId, "attack")}`, (event.hits?.length || attack?.hits || 1) > 1 ? "multi" : "heavy"));
+    const family = skillVisual?.family || familyFromText(identity);
+    const spec = effect(
+      family,
+      `enemy-${slug(event.attackId, "attack")}`,
+      skillVisual?.motion || ((event.hits?.length || attack?.hits || 1) > 1 ? "multi" : "heavy"),
+    );
+    const signature = resolveTowIntentArt({
+      attackId: event.attackId,
+      skillId: attack?.skillId,
+      name: attack?.name,
+    }, family);
+    return withAsset(spec, signature);
   }
 
   if (event.type === "tick-damage") {
-    return withAsset(event.burn > 0 ? STATUS_EFFECTS.burn : STATUS_EFFECTS.doom);
+    const type = event.burn > 0 ? "burn" : event.doom > 0 ? "doom" : event.poison > 0 ? "poison" : event.bleed > 0 ? "bleed" : "misfortune";
+    return combatVfxForStatus(type);
   }
 
   const skillVariant = event.skillId && skillEffectFor(event.skillId);
+  const signature = signatureForSkill(event.skillId);
   if (event.type === "skill-shield") {
-    return withAsset(effect("ward", `${slug(event.skillId, "ward")}-ward`, skillVariant?.motion || "brace"));
+    return withAsset(effect("ward", `${slug(event.skillId, "ward")}-ward`, skillVariant?.motion || "brace"), signature);
   }
   if (event.type === "ward-expired") {
     return withAsset(effect("ward", "ward-expired", "shatter"));
   }
   if (event.type === "skill-heal" || event.type === "skill-cleanse") {
-    return withAsset(effect("heal", `${slug(event.skillId, "heal")}-heal`, skillVariant?.motion || "mend"));
+    return withAsset(effect("heal", `${slug(event.skillId, "heal")}-heal`, skillVariant?.motion || "mend"), signature);
   }
   if (event.type === "skill-status" && event.status && STATUS_EFFECTS[event.status]) {
     const statusVariant = STATUS_EFFECTS[event.status];
@@ -557,36 +490,36 @@ export function combatVfxForEvent(encounter, event) {
       statusVariant.family,
       `${slug(event.skillId, "skill")}-${slug(event.status, "status")}`,
       statusVariant.motion,
-    ));
+    ), signature);
   }
   if (event.type === "skill-status-amplified") {
-    return withAsset(effect("afflict", `${slug(event.skillId, "skill")}-amplified`, "void"));
+    return withAsset(effect("afflict", `${slug(event.skillId, "skill")}-amplified`, "void"), signature);
   }
 
   const formId = event.skillId === "strike" ? activeFormId(encounter, event) : null;
-  if (formId && FORM_EFFECTS[formId]) return withAsset(FORM_EFFECTS[formId]);
-  if (skillVariant) return withAsset(skillVariant);
-  if (event.status && STATUS_EFFECTS[event.status]) return withAsset(STATUS_EFFECTS[event.status]);
+  if (formId && FORM_EFFECTS[formId]) return withAsset(FORM_EFFECTS[formId], signatureForForm(formId));
+  if (skillVariant) return withAsset(skillVariant, signature);
+  if (event.status && STATUS_EFFECTS[event.status]) return combatVfxForStatus(event.status);
 
   if (event.type === "enemy-nullified") return withAsset(effect("afflict", "enemy-interrupted", "snap"));
   if (event.type === "actor-nullified") {
     const control = event.controls?.[0];
     return control && STATUS_EFFECTS[control]
-      ? withAsset(STATUS_EFFECTS[control])
+      ? combatVfxForStatus(control)
       : withAsset(effect("afflict", "command-nullified", "snap"));
   }
-  if (event.type === "actor-preempted") return withAsset(STATUS_EFFECTS.priority);
+  if (event.type === "actor-preempted") return combatVfxForStatus("priority");
   if (event.type === "retreat-attempt") return withAsset(effect(event.succeeded ? "evade" : "afflict", event.succeeded ? "retreat-escaped" : "retreat-cornered", event.succeeded ? "afterimage" : "bind"));
 
   const family = familyFromText(`${event.skillId || ""} ${event.attackId || ""}`);
-  return withAsset(effect(family, `event-${slug(event.skillId || event.attackId || event.type)}`, "balanced"));
+  return withAsset(effect(family, `event-${slug(event.skillId || event.attackId || event.type)}`, "balanced"), signature);
 }
 
 export function combatVfxVariantForSkill(skillId) {
   const spec = skillEffectFor(skillId);
-  return spec ? withAsset(spec) : null;
+  return spec ? withAsset(spec, signatureForSkill(skillId)) : null;
 }
 
 export function combatVfxVariantForForm(formId) {
-  return FORM_EFFECTS[formId] ? withAsset(FORM_EFFECTS[formId]) : null;
+  return FORM_EFFECTS[formId] ? withAsset(FORM_EFFECTS[formId], signatureForForm(formId)) : null;
 }

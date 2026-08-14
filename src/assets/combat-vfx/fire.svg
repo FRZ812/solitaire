@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
-  <defs>
-    <radialGradient id="heat" cx="0" cy="0" r="1" gradientTransform="translate(128 164) rotate(90) scale(95 91)" gradientUnits="userSpaceOnUse"><stop stop-color="#FFF7A1"/><stop offset=".28" stop-color="#FFB322"/><stop offset=".62" stop-color="#F14818"/><stop offset="1" stop-color="#7C1022" stop-opacity="0"/></radialGradient>
-  </defs>
-  <ellipse cx="128" cy="168" rx="94" ry="78" fill="url(#heat)" opacity=".72"/>
-  <path d="M125 229C75 218 53 188 59 151C63 126 78 111 91 91C97 112 106 121 116 124C111 91 126 60 161 25C156 62 185 77 194 111C206 157 187 212 139 229C149 210 151 187 136 170C129 190 115 202 101 204C110 175 99 158 83 147C78 181 93 214 125 229Z" fill="#FF4C1E"/>
-  <path d="M128 224C104 215 95 198 99 178C103 158 118 149 128 130C131 151 148 158 151 176C155 196 146 216 128 224Z" fill="#FFF1A0"/>
-  <path d="M51 107C61 95 67 82 65 67M198 87C207 75 211 63 207 49M43 165C33 157 27 148 28 137" stroke="#FFB43B" stroke-width="5" stroke-linecap="round" opacity=".75"/>
-</svg>

@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
-  <defs><filter id="glow" x="-60%" y="-30%" width="220%" height="160%"><feGaussianBlur stdDeviation="8"/></filter></defs>
-  <path d="M146 13L75 129H124L102 243L190 105H140L179 13Z" fill="#3AA8FF" opacity=".55" filter="url(#glow)"/>
-  <path d="M145 12L76 129H124L103 243L189 104H141L179 12Z" fill="#E6FBFF" stroke="#6ED7FF" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M78 66L49 91L76 103L43 134M194 70L219 94L197 105L229 130M166 178L196 191L176 205L203 221" stroke="#A5EEFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

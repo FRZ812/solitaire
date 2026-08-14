@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { openLabSession } from "./CombatLab.jsx";
 import { TowCombatView } from "./TowCombatView.jsx";
+import { resolveTowAbilityArt } from "./tow-combat-ability-art.js";
+import { getSkill } from "../../gameplay/tow/skills.js";
 
 let root;
 let container;
@@ -104,7 +106,11 @@ describe("compact combat HUD", () => {
     const intent = mounted.querySelector("[data-testid='tow-enemy-intent']");
     expect(intent).toBeTruthy();
     expect(intent.closest(".tow-combat__threat")).toBeTruthy();
-    expect(intent.querySelector(".tow-combat__intent-sigil img")).toBeTruthy();
+    const intentArt = intent.querySelector(".tow-combat__intent-sigil img");
+    expect(intentArt).toBeTruthy();
+    const abilityId = intent.getAttribute("data-ability-id");
+    expect(intentArt.getAttribute("src")).toBe(resolveTowAbilityArt(getSkill(abilityId)));
+    expect(intentArt.getAttribute("src")).not.toContain("svg");
     expect(intent.getAttribute("aria-label")).toMatch(/(?:damage|hits of).*targeting/i);
     expect(intent.querySelector(".tow-combat__intent-target")?.textContent).toMatch(/^→\s+/);
     expect(intent.querySelector(".tow-combat__intent-name")?.textContent.length).toBeGreaterThan(0);
@@ -164,7 +170,12 @@ describe("compact combat HUD", () => {
     const buttons = [...mounted.querySelectorAll(".tow-combat__plate--hero .tow-combat__status-button")];
 
     expect(buttons).toHaveLength(2);
-    expect(buttons.every((button) => button.querySelector(".tow-combat__status-art img"))).toBe(true);
+    expect(buttons.every((button) => {
+      const art = button.querySelector(".tow-combat__status-art");
+      return art
+        && art.style.getPropertyValue("--tow-status-icon").includes(".png")
+        && /^(?:0|100)% (?:0|100)%$/.test(art.style.getPropertyValue("--tow-status-icon-position"));
+    })).toBe(true);
     expect(buttons.map((button) => button.getAttribute("aria-label")))
       .toEqual(expect.arrayContaining([
         expect.stringMatching(/Initiative, 37 stacks/i),
