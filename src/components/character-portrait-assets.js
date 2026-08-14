@@ -25,6 +25,18 @@ import undyingChampion from "../assets/generated/character-portraits/undying-cha
 import demonWarlock from "../assets/generated/character-portraits/demon-warlock-grounded-v3.webp";
 import dragonAscendant from "../assets/generated/character-portraits/dragon-ascendant-grounded-v3.webp";
 import enchanterTyrant from "../assets/generated/character-portraits/enchanter-tyrant-grounded-v3.webp";
+import arcticKnight from "../assets/generated/winter-tower/characters/arctic-knight-cutout-v1.png";
+import demonSlayer from "../assets/generated/winter-tower/characters/demon-slayer-cutout-v1.png";
+import ownerOfClocktower from "../assets/generated/winter-tower/characters/owner-of-clocktower-cutout-v1.png";
+import oldKingOfNorthland from "../assets/generated/winter-tower/characters/old-king-of-northland-cutout-v1.png";
+import sleeplessOne from "../assets/generated/winter-tower/characters/sleepless-one-cutout-v1.png";
+import lastAssassin from "../assets/generated/winter-tower/characters/last-assassin-cutout-v1.png";
+import witchOfEternity from "../assets/generated/winter-tower/characters/witch-of-eternity-cutout-v1.png";
+import tenaciousMage from "../assets/generated/winter-tower/characters/tenacious-mage-cutout-v1.png";
+import exiledPriestess from "../assets/generated/winter-tower/characters/exiled-priestess-cutout-v1.png";
+import wanderingBlade from "../assets/generated/winter-tower/characters/wandering-blade-cutout-v1.png";
+import desolateVampire from "../assets/generated/winter-tower/characters/desolate-vampire-cutout-v1.png";
+import forsakenAutomaton from "../assets/generated/winter-tower/characters/forsaken-automaton-cutout-v1.png";
 
 export const CHARACTER_PORTRAITS = Object.freeze({
   sellsword, reaver, ranger, cutthroat, devout,
@@ -50,11 +62,23 @@ export const CHARACTER_PORTRAITS = Object.freeze({
   "demon-warlock": demonWarlock,
   "dragon-ascendant": dragonAscendant,
   "enchanter-tyrant": enchanterTyrant,
+  "arctic-knight": arcticKnight,
+  "demon-slayer": demonSlayer,
+  "owner-of-clocktower": ownerOfClocktower,
+  "old-king-of-northland": oldKingOfNorthland,
+  "sleepless-one": sleeplessOne,
+  "last-assassin": lastAssassin,
+  "witch-of-eternity": witchOfEternity,
+  "tenacious-mage": tenaciousMage,
+  "exiled-priestess": exiledPriestess,
+  "wandering-blade": wanderingBlade,
+  "desolate-vampire": desolateVampire,
+  "forsaken-automaton": forsakenAutomaton,
 });
 
 export function portraitTemplateId(record = {}) {
   const key = record.portraitKey || record.templateId;
-  return typeof key === "string" ? key.replace(/^template:/, "") : null;
+  return typeof key === "string" ? key.replace(/^(?:template|tow):/, "") : null;
 }
 
 export function resolveCharacterPortrait(record = {}, fallback = null, override = null) {

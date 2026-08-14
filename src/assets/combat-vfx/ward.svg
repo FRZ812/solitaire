@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs><radialGradient id="aegis"><stop stop-color="#E8FBFF" stop-opacity=".15"/><stop offset=".7" stop-color="#67CCE9" stop-opacity=".22"/><stop offset="1" stop-color="#3D91C1" stop-opacity="0"/></radialGradient></defs>
+  <circle cx="128" cy="128" r="111" fill="url(#aegis)"/>
+  <path d="M128 25L205 53V118C205 168 177 207 128 231C79 207 51 168 51 118V53L128 25Z" fill="#6BC9E6" fill-opacity=".17" stroke="#C8F3FF" stroke-width="7"/>
+  <path d="M128 48L181 67V119C181 154 163 181 128 201C93 181 75 154 75 119V67L128 48Z" stroke="#6FD7F1" stroke-width="4" stroke-dasharray="13 8"/>
+  <path d="M128 66V182M91 124H165" stroke="#E9FCFF" stroke-width="5" stroke-linecap="round" opacity=".82"/>
+</svg>

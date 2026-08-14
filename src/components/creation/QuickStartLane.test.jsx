@@ -2,12 +2,12 @@
 
 import React, { act, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { compileCharacterBootstrap } from "../../gameplay/tow/character-bootstrap.js";
 import { PRACTICE_SCENARIOS } from "../../gameplay/tow/practice-scenarios.js";
 import {
   STARTING_ARCHETYPES,
-  archetypeFusionIds,
+  TOWER_ROSTER_SIZE,
   createDefaultArchetypeDraft,
   invalidStartingArchetypes,
 } from "../../gameplay/tow/starting-archetypes.js";
@@ -56,9 +56,9 @@ function ControlledStart(props) {
 
 describe("the authored TOW character catalogue", () => {
   it("is complete, unique, portrait-backed, and level-free", () => {
-    expect(STARTING_ARCHETYPES).toHaveLength(8);
+    expect(STARTING_ARCHETYPES).toHaveLength(TOWER_ROSTER_SIZE);
     expect(invalidStartingArchetypes()).toEqual([]);
-    expect(new Set(STARTING_ARCHETYPES.map((entry) => entry.character.name)).size).toBe(8);
+    expect(new Set(STARTING_ARCHETYPES.map((entry) => entry.character.name)).size).toBe(TOWER_ROSTER_SIZE);
     for (const entry of STARTING_ARCHETYPES) {
       expect(entry).not.toHaveProperty("level");
       expect(entry.build).not.toHaveProperty("level");
@@ -66,17 +66,19 @@ describe("the authored TOW character catalogue", () => {
         id: expect.any(String),
         name: expect.any(String),
         epithet: expect.any(String),
-        portraitKey: expect.stringMatching(/^template:/),
+        portraitKey: expect.stringMatching(/^tow:/),
+        sourceName: expect.any(String),
       });
+      expect(entry.build.skills).toHaveLength(4);
       expect(entry.gear.length).toBeGreaterThan(0);
     }
   });
 
-  it("keeps visible power differences in equipment and starting fusions", () => {
-    const grounded = STARTING_ARCHETYPES.filter((entry) => entry.power === "Grounded");
-    const apex = STARTING_ARCHETYPES.find((entry) => entry.power === "Ascendant");
-    expect(grounded.length).toBeGreaterThan(1);
-    expect(archetypeFusionIds(apex.id).length).toBeGreaterThan(archetypeFusionIds(grounded[0].id).length);
+  it("keeps visible source stat and mechanic differences on the fixed templates", () => {
+    expect(new Set(STARTING_ARCHETYPES.map((entry) => entry.baseStats.maxHp)).size).toBeGreaterThan(4);
+    expect(new Set(STARTING_ARCHETYPES.map((entry) => Object.keys(entry.build.traits)[0])).size)
+      .toBe(TOWER_ROSTER_SIZE);
+    expect(STARTING_ARCHETYPES.every((entry) => entry.source.page.includes("namu.wiki"))).toBe(true);
   });
 });
 
@@ -112,10 +114,11 @@ describe("the simple grid-to-preview flow", () => {
     expect(preview.querySelector("h1").textContent).toBe(character.name);
     expect(preview.textContent).toContain(character.epithet);
     expect(preview.querySelector("input")).toBeNull();
-    expect(preview.querySelectorAll(".character-preview__carousel [role=radio]")).toHaveLength(8);
+    expect(preview.querySelectorAll(".character-preview__carousel [role=radio]")).toHaveLength(TOWER_ROSTER_SIZE);
     expect(preview.querySelectorAll(".character-preview__carousel [aria-checked=true]")).toHaveLength(1);
     expect(preview.querySelector(".character-preview__close")).toBeNull();
-    expect(preview.querySelectorAll(".character-preview__starting-actions img").length).toBeGreaterThan(1);
+    expect(preview.querySelectorAll(".character-preview__ability-slot img")).toHaveLength(4);
+    expect(preview.querySelectorAll(".character-preview__ability-slot[data-ability-type]")).toHaveLength(4);
     expect(preview.querySelector(".character-preview__cutout").getAttribute("src"))
       .toBe(resolvePlayerCombatCutout(STARTING_ARCHETYPES[3].character.portraitKey, STARTING_ARCHETYPES[3].character));
     expect(preview.textContent).not.toContain("Starting trait");
@@ -136,6 +139,18 @@ describe("the simple grid-to-preview flow", () => {
       .toContain(STARTING_ARCHETYPES[6].character.epithet);
   });
 
+  it("supports roving keyboard navigation across all twelve carousel portraits", async () => {
+    const mounted = await render(<ControlledStart />);
+    await click(mounted.querySelectorAll(".character-choice-card")[0]);
+    const carousel = mounted.querySelectorAll(".character-preview__carousel [role=radio]");
+    expect(carousel[0].tabIndex).toBe(0);
+    expect(carousel[1].tabIndex).toBe(-1);
+    await keydown(carousel[0], "ArrowRight");
+    expect(mounted.querySelector(".character-preview__copy h1").textContent)
+      .toBe(STARTING_ARCHETYPES[1].character.name);
+    expect(mounted.querySelectorAll(".character-preview__carousel [role=radio]")[1].tabIndex).toBe(0);
+  });
+
   it("keeps loadout and practice controls behind an on-demand details drawer", async () => {
     const asked = [];
     const mounted = await render(
@@ -150,8 +165,9 @@ describe("the simple grid-to-preview flow", () => {
     expect(details.textContent).toContain("Starting equipment");
     expect(details.textContent).toContain("Starting fusions");
     expect(details.textContent).toContain("Starting abilities");
-    expect(details.textContent).toContain("Equipped now · ranks 1–6");
-    expect(details.textContent).toContain("Possible refinement");
+    expect(details.textContent).toContain("Source identity");
+    expect(details.querySelectorAll(".character-details__stats > div")).toHaveLength(5);
+    expect(details.textContent).not.toContain("Possible refinement");
     expect(details.querySelectorAll(".starting-ability__art img")).toHaveLength(
       STARTING_ARCHETYPES[6].build.skills.length,
     );
@@ -221,23 +237,29 @@ describe("every advertised character reaches the production fight", () => {
   });
 
   it("plays out with a reproducible receipt and leaves the draft untouched", async () => {
-    const compiled = compileCharacterBootstrap({ archetypeId: "ironbound", origin: "archetype" });
-    const before = JSON.stringify(compiled.receipt);
-    const mounted = await render(
-      <PracticeFight receipt={compiled.receipt} scenarioId="training-yard" onExit={() => {}} />,
-    );
+    vi.useFakeTimers();
+    try {
+      const compiled = compileCharacterBootstrap({ archetypeId: "arctic-knight", origin: "archetype" });
+      const before = JSON.stringify(compiled.receipt);
+      const mounted = await render(
+        <PracticeFight receipt={compiled.receipt} scenarioId="training-yard" onExit={() => {}} />,
+      );
 
-    for (let round = 0; round < 40 && mounted.querySelector(".tow-combat"); round += 1) {
-      const action = [...mounted.querySelectorAll(".production-combat__action")]
-        .find((button) => button.getAttribute("aria-disabled") !== "true");
-      if (!action) break;
-      await click(action);
+      for (let round = 0; round < 40 && mounted.querySelector(".tow-combat"); round += 1) {
+        const action = [...mounted.querySelectorAll(".production-combat__action")]
+          .find((button) => button.getAttribute("aria-disabled") !== "true");
+        if (!action) break;
+        await click(action);
+        await act(async () => vi.runAllTimersAsync());
+      }
+
+      const result = mounted.querySelector(".practice-fight--result");
+      expect(result).toBeTruthy();
+      expect(result.querySelector(".practice-fight__receipt").textContent).toContain("verified");
+      expect(result.textContent).toContain("Nothing here was written down");
+      expect(JSON.stringify(compiled.receipt)).toBe(before);
+    } finally {
+      vi.useRealTimers();
     }
-
-    const result = mounted.querySelector(".practice-fight--result");
-    expect(result).toBeTruthy();
-    expect(result.querySelector(".practice-fight__receipt").textContent).toContain("verified");
-    expect(result.textContent).toContain("Nothing here was written down");
-    expect(JSON.stringify(compiled.receipt)).toBe(before);
   });
 });

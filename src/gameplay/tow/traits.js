@@ -110,6 +110,16 @@ const TRAITS = Object.freeze(Object.fromEntries([
     effect: span("eviscerate", 2, 5),
     exclusiveTo: "last-assassin",
   }),
+  trait("combo", "Combo", {
+    effect: inflict("vulnerable", 1, 7),
+    cadence: everyTurn(),
+    exclusiveTo: "last-assassin",
+  }),
+  trait("judgment", "Judgment", {
+    effect: span("judgment", 1, 7),
+    cadence: everyTurn(),
+    exclusiveTo: "exiled-priestess",
+  }),
 ].map((entry) => [entry.id, entry])));
 
 function fusion(id, name, components, rune, effect, extra = {}) {

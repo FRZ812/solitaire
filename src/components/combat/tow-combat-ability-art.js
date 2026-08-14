@@ -50,6 +50,71 @@ import skillMortalBlow from "../../assets/generated/combat-abilities/skill-morta
 import skillDefenceFallback from "../../assets/generated/combat-abilities/skill-defence-fallback.webp";
 import skillSwiftFallback from "../../assets/generated/combat-abilities/skill-swift-fallback.webp";
 import skillTechniqueFallback from "../../assets/generated/combat-abilities/skill-technique-fallback.webp";
+import { characterAbilityIds } from "../../gameplay/tow/character-abilities.js";
+import { combatVfxVariantForSkill } from "./tow-combat-vfx.js";
+
+const GENERATED_TOW_ABILITY_ART = import.meta.glob(
+  "../../assets/generated/winter-tower/abilities/*.webp",
+  { eager: true, import: "default" },
+);
+
+const FALLBACK_PALETTES = Object.freeze({
+  afflict: ["#2b1437", "#b56ce8"],
+  arcane: ["#171936", "#9f8cff"],
+  evade: ["#102d2d", "#8fe9dc"],
+  fire: ["#3b140d", "#ff7b35"],
+  frost: ["#102a35", "#9eeaff"],
+  gash: ["#3a101d", "#f05270"],
+  heal: ["#18301b", "#a7de7c"],
+  impact: ["#34230f", "#f3b95b"],
+  lightning: ["#10263a", "#72d9ff"],
+  pierce: ["#102733", "#83dff4"],
+  slash: ["#381812", "#ef725c"],
+  ward: ["#112b36", "#82d6ee"],
+});
+
+function abilityHash(value) {
+  let hash = 2166136261;
+  for (const character of value) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function proceduralTowAbilityArt(abilityId) {
+  const visual = combatVfxVariantForSkill(abilityId);
+  const [deep, accent] = FALLBACK_PALETTES[visual?.family] || FALLBACK_PALETTES.impact;
+  const hash = abilityHash(abilityId);
+  const tilt = (hash % 46) - 23;
+  const spokes = 5 + (hash % 5);
+  const initials = abilityId.split("-").slice(-2).map((word) => word[0]).join("").toUpperCase();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+    <defs>
+      <radialGradient id="g" cx="50%" cy="42%" r="72%"><stop stop-color="${accent}" stop-opacity=".56"/><stop offset=".54" stop-color="${deep}"/><stop offset="1" stop-color="#05090b"/></radialGradient>
+      <filter id="b"><feGaussianBlur stdDeviation="7"/></filter>
+    </defs>
+    <rect width="256" height="256" fill="url(#g)"/>
+    <circle cx="128" cy="122" r="74" fill="none" stroke="${accent}" stroke-opacity=".24" stroke-width="3" stroke-dasharray="8 11" transform="rotate(${tilt} 128 122)"/>
+    <g transform="translate(128 122) rotate(${tilt})" stroke="${accent}" stroke-linecap="round">
+      ${Array.from({ length: spokes }, (_, index) => `<path d="M0 -20 L${Math.round(Math.sin((index / spokes) * Math.PI * 2) * 78)} ${Math.round(-Math.cos((index / spokes) * Math.PI * 2) * 78)}" stroke-opacity="${0.24 + (index % 3) * 0.13}" stroke-width="${3 + (index % 2) * 2}"/>`).join("")}
+    </g>
+    <circle cx="128" cy="122" r="34" fill="${accent}" fill-opacity=".18" filter="url(#b)"/>
+    <path d="M78 128 Q128 64 178 128 Q128 192 78 128Z" fill="none" stroke="${accent}" stroke-width="6"/>
+    <circle cx="128" cy="128" r="14" fill="${accent}"/>
+    <text x="128" y="230" text-anchor="middle" fill="#fff4de" fill-opacity=".86" font-family="Georgia,serif" font-size="24" letter-spacing="5">${initials}</text>
+  </svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+function generatedTowAbilityArt(abilityId) {
+  const key = `../../assets/generated/winter-tower/abilities/${abilityId}-v1.webp`;
+  return GENERATED_TOW_ABILITY_ART[key] || proceduralTowAbilityArt(abilityId);
+}
+
+const TOW_ABILITY_ART = Object.freeze(Object.fromEntries(
+  characterAbilityIds().map((abilityId) => [abilityId, generatedTowAbilityArt(abilityId)]),
+));
 
 const FAMILY_ART = Object.freeze({
   dagger: weaponDagger,
@@ -110,6 +175,7 @@ const SKILL_ART = Object.freeze({
   "shield-bash": skillShieldBash,
   "elixir-of-wrath": skillElixirOfWrath,
   "mortal-blow": skillMortalBlow,
+  ...TOW_ABILITY_ART,
 });
 
 /**

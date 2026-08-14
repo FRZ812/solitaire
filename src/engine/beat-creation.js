@@ -42,7 +42,7 @@ export function applyCreation({ beat, character, world, created }) {
     for (const key of [
       "archetype", "origin", "gender", "age", "agingMode", "lifespanMultiplier",
       "attractiveness", "appearance", "base_appearance", "templateId", "portraitKey",
-      "profile", "combatArchetypeId", "progressionModel",
+      "profile", "combatArchetypeId", "progressionModel", "towBaseStats",
     ]) {
       if (cs[key] != null) character[key] = cs[key];
     }
@@ -169,6 +169,9 @@ export function applyCreation({ beat, character, world, created }) {
         : {}),
       ...((cs.progressionModel != null || w.progressionModel != null)
         ? { progressionModel: cs.progressionModel ?? w.progressionModel }
+        : {}),
+      ...((cs.towBaseStats != null || w.towBaseStats != null)
+        ? { towBaseStats: cs.towBaseStats ?? w.towBaseStats }
         : {}),
       attributes: character.attributes,
       // Dedup: a long (manual) creation may have already filed a self-fact via

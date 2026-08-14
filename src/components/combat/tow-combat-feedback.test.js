@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   combatCueForEvent,
+  combatCueTimeline,
+  combatCuesForEvent,
   combatEventReceipt,
   combatTempoReceipt,
   recentCombatReceipts,
@@ -119,7 +121,135 @@ describe("combat feedback receipts", () => {
     expect(combatCueForEvent(state, {
       sequence: 2, type: "enemy-attack", enemyId: "foe", targetId: "hero",
       hits: [{ dodged: true, rawDamage: 13, damage: 0, toHp: 0 }],
-    })).toMatchObject({ kind: "dodge", attackerId: "foe", targetId: "hero", targetSide: "player" });
+    })).toMatchObject({ kind: "evade", label: "Evaded", attackerId: "foe", targetId: "hero", targetSide: "player" });
+  });
+
+  it("emits every resolved hit as its own staggered floating outcome", () => {
+    const cues = combatCuesForEvent(encounter(), {
+      sequence: 18,
+      type: "skill-damage",
+      actorId: "hero",
+      targetId: "foe",
+      skillId: "strike",
+      basicAttackFormId: "threefold-cut",
+      hits: [
+        { index: 0, dodged: false, critical: false, rawDamage: 7, damage: 7, toHp: 7 },
+        { index: 1, dodged: false, critical: true, rawDamage: 12, damage: 12, toHp: 12 },
+        { index: 2, dodged: false, critical: false, rawDamage: 9, damage: 9, absorbed: 9, toHp: 0 },
+        { index: 3, dodged: true, critical: false, rawDamage: 8, damage: 0, toHp: 0 },
+      ],
+    });
+
+    expect(cues).toHaveLength(4);
+    expect(cues.map(({ id, delayMs, label, kind }) => ({ id, delayMs, label, kind }))).toEqual([
+      { id: "18-hit-0", delayMs: 0, label: "-7", kind: "hit" },
+      { id: "18-hit-1", delayMs: 155, label: "-12", kind: "critical" },
+      { id: "18-hit-2", delayMs: 310, label: "0", kind: "ward" },
+      { id: "18-hit-3", delayMs: 465, label: "Evaded", kind: "evade" },
+    ]);
+    expect(cues[1].kicker).toBe("Critical");
+    expect(cues[2].kicker).toBe("Ward holds");
+    expect(cues.every((cue) => cue.hitCount === 4)).toBe(true);
+    expect(cues.every((cue) => cue.visual.variant === "threefold-cut")).toBe(true);
+  });
+
+  it("stages a skill consequence before the enemy counterattack", () => {
+    const state = encounter();
+    const timeline = combatCueTimeline(state, [
+      {
+        sequence: 30,
+        type: "skill-damage",
+        actorId: "hero",
+        targetId: "foe",
+        skillId: "sleepless-flame-strike",
+        hits: [
+          { index: 0, dodged: false, critical: false, rawDamage: 8, damage: 8, toHp: 8 },
+          { index: 1, dodged: false, critical: false, rawDamage: 6, damage: 6, toHp: 6 },
+        ],
+      },
+      {
+        sequence: 31,
+        type: "skill-status",
+        actorId: "hero",
+        targetId: "foe",
+        target: "enemy",
+        skillId: "sleepless-flame-strike",
+        status: "burn",
+        count: 4,
+      },
+      {
+        sequence: 32,
+        type: "enemy-attack",
+        enemyId: "foe",
+        targetId: "hero",
+        attackId: "swing",
+        hits: [{ index: 0, dodged: false, critical: false, rawDamage: 13, damage: 13, toHp: 13 }],
+      },
+    ]);
+
+    expect(timeline.map((cue) => cue.actionIndex)).toEqual([0, 0, 0, 1]);
+    expect(timeline[2].delayMs).toBeGreaterThan(timeline[1].delayMs);
+    expect(timeline[3].delayMs).toBeGreaterThan(timeline[2].delayMs);
+    expect(timeline[3]).toMatchObject({ attackerId: "foe", targetId: "hero" });
+  });
+
+  it("floats zero and names the defence when a hit is fully blocked", () => {
+    const [cue] = combatCuesForEvent(encounter(), {
+      sequence: 19,
+      type: "enemy-attack",
+      enemyId: "foe",
+      targetId: "hero",
+      attackId: "swing",
+      hits: [{
+        index: 0,
+        dodged: false,
+        critical: false,
+        rawDamage: 13,
+        prevented: 13,
+        mitigation: { guard: true },
+        damage: 0,
+        absorbed: 0,
+        toHp: 0,
+      }],
+    });
+    expect(cue).toMatchObject({ kind: "block", label: "0", kicker: "Guard", prevented: 13 });
+  });
+
+  it("keeps count-only saved damage events readable and animatable", () => {
+    const event = {
+      sequence: 20,
+      type: "skill-damage",
+      actorId: "hero",
+      targetId: "foe",
+      skillId: "strike",
+      amount: 5,
+      hits: 2,
+    };
+    expect(combatEventReceipt(encounter(), event).text)
+      .toContain("lands 2 of 2 hits on Duellist: 10 health lost");
+    expect(combatCuesForEvent(encounter(), event).map((cue) => cue.label))
+      .toEqual(["-5", "-5"]);
+  });
+
+  it("surfaces status amplification as its own hostile effect", () => {
+    const event = {
+      sequence: 21,
+      type: "skill-status-amplified",
+      actorId: "hero",
+      targetId: "foe",
+      skillId: "priestess-doom",
+      statuses: ["burn", "poison", "bleed"],
+      gained: 8,
+    };
+    expect(combatEventReceipt(encounter(), event).text)
+      .toContain("amplifies Duellist's Burn / Poison / Bleed by 8 stacks");
+    expect(combatCuesForEvent(encounter(), event)[0]).toMatchObject({
+      kind: "afflict",
+      label: "Amplified",
+      kicker: "+8",
+      targetSide: "enemy",
+      visual: { family: "afflict", variant: "priestess-doom-amplified" },
+    });
   });
 
   it("keeps only recent meaningful events", () => {

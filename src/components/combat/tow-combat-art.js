@@ -8,6 +8,18 @@ import oathforged from "../../assets/generated/combat-cutouts/oathforged-cutout-
 import raiderFoe from "../../assets/generated/combat-cutouts/raider-foe-cutout-v1.webp";
 import wildstrider from "../../assets/generated/combat-cutouts/wildstrider-cutout-v1.webp";
 import wyrmAscendant from "../../assets/generated/combat-cutouts/wyrm-ascendant-cutout-v1.webp";
+import arcticKnight from "../../assets/generated/winter-tower/characters/arctic-knight-cutout-v1.png";
+import demonSlayer from "../../assets/generated/winter-tower/characters/demon-slayer-cutout-v1.png";
+import ownerOfClocktower from "../../assets/generated/winter-tower/characters/owner-of-clocktower-cutout-v1.png";
+import oldKingOfNorthland from "../../assets/generated/winter-tower/characters/old-king-of-northland-cutout-v1.png";
+import sleeplessOne from "../../assets/generated/winter-tower/characters/sleepless-one-cutout-v1.png";
+import lastAssassin from "../../assets/generated/winter-tower/characters/last-assassin-cutout-v1.png";
+import witchOfEternity from "../../assets/generated/winter-tower/characters/witch-of-eternity-cutout-v1.png";
+import tenaciousMage from "../../assets/generated/winter-tower/characters/tenacious-mage-cutout-v1.png";
+import exiledPriestess from "../../assets/generated/winter-tower/characters/exiled-priestess-cutout-v1.png";
+import wanderingBlade from "../../assets/generated/winter-tower/characters/wandering-blade-cutout-v1.png";
+import desolateVampire from "../../assets/generated/winter-tower/characters/desolate-vampire-cutout-v1.png";
+import forsakenAutomaton from "../../assets/generated/winter-tower/characters/forsaken-automaton-cutout-v1.png";
 
 export const TOW_COMBAT_CUTOUTS = Object.freeze({
   ironbound,
@@ -20,6 +32,18 @@ export const TOW_COMBAT_CUTOUTS = Object.freeze({
   "wyrm-ascendant": wyrmAscendant,
   "duellist-foe": duellistFoe,
   "raider-foe": raiderFoe,
+  "arctic-knight": arcticKnight,
+  "demon-slayer": demonSlayer,
+  "owner-of-clocktower": ownerOfClocktower,
+  "old-king-of-northland": oldKingOfNorthland,
+  "sleepless-one": sleeplessOne,
+  "last-assassin": lastAssassin,
+  "witch-of-eternity": witchOfEternity,
+  "tenacious-mage": tenaciousMage,
+  "exiled-priestess": exiledPriestess,
+  "wandering-blade": wanderingBlade,
+  "desolate-vampire": desolateVampire,
+  "forsaken-automaton": forsakenAutomaton,
 });
 
 const CUTOUT_BY_TEMPLATE = Object.freeze({
@@ -33,6 +57,18 @@ const CUTOUT_BY_TEMPLATE = Object.freeze({
   "dragon-ascendant": wyrmAscendant,
   "knight-errant": duellistFoe,
   reaver: raiderFoe,
+  "arctic-knight": arcticKnight,
+  "demon-slayer": demonSlayer,
+  "owner-of-clocktower": ownerOfClocktower,
+  "old-king-of-northland": oldKingOfNorthland,
+  "sleepless-one": sleeplessOne,
+  "last-assassin": lastAssassin,
+  "witch-of-eternity": witchOfEternity,
+  "tenacious-mage": tenaciousMage,
+  "exiled-priestess": exiledPriestess,
+  "wandering-blade": wanderingBlade,
+  "desolate-vampire": desolateVampire,
+  "forsaken-automaton": forsakenAutomaton,
 });
 
 const CUTOUT_BY_AUTHORED_NAME = Object.freeze({
@@ -44,6 +80,18 @@ const CUTOUT_BY_AUTHORED_NAME = Object.freeze({
   "caldra vey": oathforged,
   "sable ren": nightSovereign,
   vaeraxa: wyrmAscendant,
+  "arctic knight": arcticKnight,
+  "demon slayer": demonSlayer,
+  "owner of clocktower": ownerOfClocktower,
+  "old king of northland": oldKingOfNorthland,
+  "sleepless one": sleeplessOne,
+  "last assassin": lastAssassin,
+  "witch of eternity": witchOfEternity,
+  "tenacious mage": tenaciousMage,
+  "exiled priestess": exiledPriestess,
+  "wandering blade": wanderingBlade,
+  "desolate vampire": desolateVampire,
+  "forsaken automaton": forsakenAutomaton,
 });
 
 const KNIGHT_FOE = /\b(duell?ist|sparring|knight|gatekeeper|guard|captain|soldier)\b/i;
@@ -51,7 +99,7 @@ const RAIDER_FOE = /\b(waylayer|brigand|bandit|raider|reaver|cutpurse|ogre)\b/i;
 
 export function combatPortraitTemplateId(portraitKey) {
   if (typeof portraitKey !== "string") return null;
-  const normalized = portraitKey.trim().replace(/^template:/, "");
+  const normalized = portraitKey.trim().replace(/^(?:template|tow):/, "");
   return normalized || null;
 }
 

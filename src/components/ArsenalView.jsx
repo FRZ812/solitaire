@@ -11,6 +11,9 @@ import { condNames } from "../data/conditions.js";
 import { ATTR_LABELS } from "../config.js";
 import { abilityTaxonomy } from "../data/ability-taxonomy.js";
 import { progressionNarrativeProjection } from "../engine/progression-abilities.js";
+import { CHARACTER_ABILITY_TYPE_LABELS } from "../gameplay/tow/character-abilities.js";
+import { getSkill } from "../gameplay/tow/skills.js";
+import { resolveTowAbilityArt } from "./combat/tow-combat-ability-art.js";
 
 const CORE = new Set(["basic-attack", "defend", "talk"]);
 
@@ -94,6 +97,28 @@ function AbilityCard({ ability, definition, variant = "technique" }) {
   );
 }
 
+function TowRosterAbilityCard({ definition }) {
+  const [open, setOpen] = useState(false);
+  const label = CHARACTER_ABILITY_TYPE_LABELS[definition.abilityType] || "Combat ability";
+  return (
+    <button
+      type="button"
+      className={`tow-arsenal-card${open ? " is-open" : ""}`}
+      data-ability-type={definition.abilityType}
+      onClick={() => setOpen((value) => !value)}
+      aria-expanded={open}
+    >
+      <img src={resolveTowAbilityArt(definition)} alt="" />
+      <span>
+        <small>{label} · {definition.rarity}</small>
+        <strong>{definition.name}</strong>
+        {open ? <p>{definition.description}</p> : null}
+      </span>
+      <em aria-hidden="true">{open ? "−" : "+"}</em>
+    </button>
+  );
+}
+
 function SpellCard({ spell, kind, active, affordable, onCast }) {
   const canCastHere = kind === "boon" && onCast;
   const iconTier = spell.tier || spell.minTier || "common";
@@ -135,6 +160,11 @@ export function ArsenalView({ state, onCastBuff }) {
   const character = state.character;
   const [abilityFilter, setAbilityFilter] = useState("all");
   const progressionProjection = progressionNarrativeProjection(character);
+  const towRosterAbilities = character.progressionModel === "tow-archetype"
+    ? (state.mechanics?.build?.skills || [])
+      .map((entry) => getSkill(typeof entry === "string" ? entry : entry?.id))
+      .filter((definition) => definition?.abilityType)
+    : [];
   const projectedCharacter = { ...character, abilities: progressionProjection.abilities };
   const { techniques, performances, fieldcraft, subterfuge, oathcraft, primalcraft, pactcraft, devicecraft, spells: combatSpells } = arsenalAbilityGroups(character, progressionProjection);
   const trainedAbilities = [...techniques, ...performances, ...fieldcraft, ...subterfuge, ...oathcraft, ...primalcraft, ...pactcraft, ...devicecraft]
@@ -179,6 +209,17 @@ export function ArsenalView({ state, onCastBuff }) {
   return (
     <DeckPage className="arsenal-view">
       <DeckPageHeader icon="abilities" title="Skills" subtitle="Techniques · performances · fieldcraft · subterfuge · oathcraft · primal arts · pact arts · devices · spells · proficiencies" />
+
+      {towRosterAbilities.length > 0 ? (
+        <section className="tow-arsenal" aria-label="Tower combat kit">
+          <SectionHeader>Tower combat kit · {towRosterAbilities.length}</SectionHeader>
+          <div className="tow-arsenal__list">
+            {towRosterAbilities.map((definition) => (
+              <TowRosterAbilityCard key={definition.id} definition={definition} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section>
         <SectionHeader>Techniques, performances, fieldcraft, subterfuge, oathcraft, primal arts, pact arts, devices &amp; core actions · {visibleAbilities.length}</SectionHeader>

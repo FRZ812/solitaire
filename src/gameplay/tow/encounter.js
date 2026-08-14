@@ -566,7 +566,11 @@ function isControlled(actor) {
  * than quietly in someone's fight.
  */
 export const SUPPORTED_SKILL_EFFECT_TYPES = Object.freeze([
+  "amplify-statuses",
   "damage",
+  "damage-enemy-lost-hp",
+  "damage-self-lost-hp",
+  "heal",
   "heal-lost-fraction",
   "reduce-statuses",
   "scaled-status",
@@ -600,7 +604,7 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       const hit = resolveAttack({
         attacker: player,
         defender: target,
-        attack: { hits: weaponAttack?.hits ?? 1, damage: amount },
+        attack: { hits: weaponAttack?.hits ?? effect.hits ?? 1, damage: amount },
         rng: next.rng,
       });
       next = {
@@ -657,6 +661,58 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
       return;
     }
 
+    if (effect.type === "heal") {
+      const amount = Math.floor((statOf(player, effect.scale) * magnitude()) / 100);
+      if (amount <= 0 || player.hp >= player.maxHp) return;
+      next = {
+        ...next,
+        actors: {
+          ...next.actors,
+          [playerId]: { ...player, hp: Math.min(player.maxHp, player.hp + amount) },
+        },
+      };
+      next = push(next, "skill-heal", { actorId: playerId, skillId, amount });
+      return;
+    }
+
+    if (effect.type === "damage-enemy-lost-hp" || effect.type === "damage-self-lost-hp") {
+      const target = next.actors[targetId];
+      if (!target || target.hp <= 0) return;
+      const source = effect.type === "damage-self-lost-hp" ? player : target;
+      const lost = Math.max(0, source.maxHp - source.hp);
+      const amount = Math.floor((lost * magnitude()) / 100);
+      if (amount <= 0) return;
+      const applied = Math.min(target.hp, amount);
+      next = {
+        ...next,
+        actors: {
+          ...next.actors,
+          [targetId]: { ...target, hp: target.hp - applied },
+        },
+      };
+      next = push(next, "skill-damage", {
+        actorId: playerId,
+        skillId,
+        targetId,
+        amount: applied,
+        hits: [{
+          index: 0,
+          dodged: false,
+          critical: false,
+          baseDamage: amount,
+          rawDamage: amount,
+          prevented: 0,
+          mitigation: {},
+          avoidance: {},
+          damage: applied,
+          absorbed: 0,
+          toHp: applied,
+          thorn: 0,
+        }],
+      });
+      return;
+    }
+
     // First Aid heals a fraction of what has already been lost, so it is worth most to
     // someone badly hurt and nearly nothing to someone barely scratched.
     if (effect.type === "heal-lost-fraction") {
@@ -692,6 +748,33 @@ function applySkillEffects(state, skillId, rank, targetId, actorId) {
         actors: { ...next.actors, [playerId]: { ...player, statuses: cleaned } },
       };
       next = push(next, "skill-cleanse", { actorId: playerId, skillId, statuses: [...effect.statuses], removed });
+      return;
+    }
+
+    if (effect.type === "amplify-statuses") {
+      const target = next.actors[targetId];
+      if (!target || target.hp <= 0) return;
+      const amplified = effect.statuses.reduce(
+        (statuses, status) => scaleStatus(statuses, status, magnitude()),
+        target.statuses,
+      );
+      const gained = effect.statuses.reduce(
+        (total, status) => total + Math.max(0, statusCount(amplified, status) - statusCount(target.statuses, status)),
+        0,
+      );
+      if (gained <= 0) return;
+      next = {
+        ...next,
+        actors: { ...next.actors, [targetId]: { ...target, statuses: amplified } },
+      };
+      next = push(next, "skill-status-amplified", {
+        actorId: playerId,
+        skillId,
+        targetId,
+        statuses: [...effect.statuses],
+        percent: magnitude(),
+        gained,
+      });
       return;
     }
 

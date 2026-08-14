@@ -147,22 +147,28 @@ export function derivePracticeSeed({
 /**
  * The actor a package brings to a practice fight.
  *
- * Held fixed across packages so a player comparing two of them is comparing the packages
- * rather than a stat line, and so a scenario's difficulty means the same thing whichever
- * build is trying it.
+ * The source roster brings an authored stat chassis. Practice must exercise that exact
+ * chassis or the selector would advertise one character and test a different one.
  */
 export function practiceActor(receipt) {
   const archetype = getStartingArchetype(receipt?.archetypeId);
   const bonus = towItemActorBonuses(archetype?.gear || []);
+  const base = archetype?.baseStats || {
+    maxHp: 96,
+    attack: 12,
+    defense: 12,
+    critRate: 5,
+    dodgeRate: 5,
+  };
   return {
     id: "wanderer",
     name: archetype?.character?.name || "You",
-    maxHp: 96 + bonus.maxHp,
+    maxHp: base.maxHp + bonus.maxHp,
     stats: {
-      attack: 12 + bonus.attack,
-      defense: 12 + bonus.defense,
-      critRate: Math.min(100, 5 + bonus.critRate),
-      dodgeRate: Math.min(100, 5 + bonus.dodgeRate),
+      attack: base.attack + bonus.attack,
+      defense: base.defense + bonus.defense,
+      critRate: Math.min(100, base.critRate + bonus.critRate),
+      dodgeRate: Math.min(100, base.dodgeRate + bonus.dodgeRate),
     },
   };
 }

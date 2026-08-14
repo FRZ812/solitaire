@@ -10,6 +10,8 @@
 // Rank values are quoted verbatim from the wiki rather than interpolated: unlike traits,
 // every skill lists its per-rank magnitudes outright.
 
+import { characterAbilityIds, getCharacterAbility } from "./character-abilities.js";
+
 export const SKILL_SLOTS = 5;
 export const RARITIES = Object.freeze([
   "common",
@@ -330,12 +332,14 @@ const PASSIVES = Object.freeze(Object.fromEntries([
 
 export function getSkill(skillId) {
   if (typeof skillId !== "string") return null;
+  const characterAbility = getCharacterAbility(skillId);
+  if (characterAbility) return characterAbility;
   if (Object.hasOwn(SKILLS, skillId)) return SKILLS[skillId];
   return Object.hasOwn(PASSIVES, skillId) ? PASSIVES[skillId] : null;
 }
 
 export function skillIds() {
-  return Object.keys(SKILLS);
+  return [...Object.keys(SKILLS), ...characterAbilityIds()];
 }
 
 export function passiveSkillIds() {

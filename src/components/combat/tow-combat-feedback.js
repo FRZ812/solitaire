@@ -1,5 +1,6 @@
 import { statusCount } from "../../gameplay/kernel/status-stack.js";
 import { getSkill } from "../../gameplay/tow/skills.js";
+import { COMBAT_VFX_ASSETS, combatVfxForEvent } from "./tow-combat-vfx.js";
 
 const DEFENCE_LABELS = Object.freeze({
   invincible: "Invincible",
@@ -13,7 +14,10 @@ const DEFENSIVE_STATUSES = new Set([
   "guard", "invincible", "protection", "solidity", "steelskin", "tenacity", "thorn",
 ]);
 const EVASIVE_STATUSES = new Set(["conceal", "evade"]);
-const EMPOWERING_STATUSES = new Set(["haste", "overload", "priority", "strength", "swift"]);
+const EMPOWERING_STATUSES = new Set([
+  "charge", "focus", "haste", "initiative", "judgment", "lifesteal", "overload",
+  "priority", "skeleton", "strength", "swift",
+]);
 
 function words(value) {
   return String(value || "unknown")
@@ -46,9 +50,30 @@ function enemyAttackName(encounter, event) {
   return attack?.name || words(event.attackId || "attack");
 }
 
+function resolvedHits(hits, baseDamage = null) {
+  if (Array.isArray(hits)) return hits;
+  if (!Number.isSafeInteger(hits) || hits <= 0) return [];
+  const damage = Number.isFinite(baseDamage) ? baseDamage : 0;
+  return Array.from({ length: hits }, (_, index) => ({
+    index,
+    dodged: false,
+    critical: false,
+    baseDamage: damage,
+    rawDamage: damage,
+    prevented: 0,
+    mitigation: {},
+    avoidance: {},
+    damage,
+    absorbed: 0,
+    toHp: damage,
+    thorn: 0,
+  }));
+}
+
 function hitTotals(hits = [], baseDamage = null) {
+  const rows = resolvedHits(hits, baseDamage);
   const totals = {
-    attempted: hits.length,
+    attempted: rows.length,
     landed: 0,
     dodged: 0,
     critical: 0,
@@ -62,7 +87,7 @@ function hitTotals(hits = [], baseDamage = null) {
     defences: new Set(),
   };
 
-  for (const hit of hits) {
+  for (const hit of rows) {
     const raw = hit.rawDamage
       ?? hit.baseDamage
       ?? (Number.isFinite(baseDamage) ? baseDamage * (hit.critical ? 2 : 1) : hit.damage ?? 0);
@@ -165,6 +190,15 @@ export function combatEventReceipt(encounter, event, options = {}) {
       text: `${actionName(encounter, event, options)} gives ${target} ${event.count} ${words(event.status)}.`,
     };
   }
+  if (event.type === "skill-status-amplified") {
+    const target = actorName(encounter, event.targetId, "the target");
+    const statuses = event.statuses?.map(words).join(" / ") || "harmful effects";
+    return {
+      sequence: event.sequence,
+      kind: "status",
+      text: `${possessive(actor)} ${actionName(encounter, event, options)} amplifies ${target}'s ${statuses} by ${event.gained || 0} stacks.`,
+    };
+  }
   if (event.type === "trait-fired") {
     return {
       sequence: event.sequence,
@@ -248,76 +282,298 @@ export function combatTempoReceipt(encounter, actorId) {
   };
 }
 
-/** Map authoritative events to short-lived art feedback; no mechanics are re-simulated. */
-export function combatCueForEvent(encounter, event) {
-  if (!event) return null;
+function effectSide(encounter, targetId, fallback = "enemy") {
+  return encounter?.actors?.[targetId]?.side || fallback;
+}
+
+function activeDefences(hit) {
+  return Object.entries(DEFENCE_LABELS)
+    .filter(([key]) => hit?.mitigation?.[key])
+    .map(([, label]) => label);
+}
+
+function cueIdentity(event, suffix) {
+  return `${event.sequence}-${suffix}`;
+}
+
+function outcomeAsset(kind) {
+  if (kind === "evade") return COMBAT_VFX_ASSETS.evade;
+  if (kind === "ward" || kind === "block") return COMBAT_VFX_ASSETS.ward;
+  return null;
+}
+
+function hitCue(encounter, event, hit, index, hitCount, visual) {
+  const enemyAttack = event.type === "enemy-attack";
+  const attackerId = enemyAttack ? event.enemyId : event.actorId;
+  const targetId = event.targetId;
+  const toHp = hit.toHp || 0;
+  const absorbed = hit.absorbed || 0;
+  const defences = activeDefences(hit);
+  const raw = hit.rawDamage ?? hit.baseDamage ?? hit.damage ?? toHp + absorbed;
+  const prevented = hit.prevented ?? Math.max(0, raw - (hit.damage || 0));
+
+  let kind = hit.critical ? "critical" : "hit";
+  let label = `-${toHp}`;
+  let kicker = hit.critical ? "Critical" : null;
+  if (hit.dodged) {
+    kind = "evade";
+    label = "Evaded";
+    kicker = null;
+  } else if (toHp <= 0 && absorbed > 0) {
+    kind = "ward";
+    label = "0";
+    kicker = "Ward holds";
+  } else if (toHp <= 0) {
+    kind = "block";
+    label = "0";
+    kicker = defences.join(" + ") || "Blocked";
+  } else if (absorbed > 0) {
+    kicker = hit.critical ? "Critical · Ward breaks" : "Ward breaks";
+  } else if (prevented > 0) {
+    kicker = hit.critical
+      ? `Critical · ${defences.join(" + ") || "Guarded"}`
+      : defences.join(" + ") || "Guarded";
+  }
+
+  return {
+    id: cueIdentity(event, `hit-${hit.index ?? index}`),
+    sequence: event.sequence,
+    kind,
+    label,
+    kicker,
+    attackerId,
+    targetId,
+    targetSide: effectSide(encounter, targetId),
+    hitIndex: index,
+    hitCount,
+    delayMs: index * 155,
+    absorbed,
+    prevented,
+    guarded: prevented > 0 && !hit.dodged,
+    visual,
+    outcomeAsset: outcomeAsset(kind),
+  };
+}
+
+function simpleCue(encounter, event, {
+  suffix,
+  kind,
+  label,
+  kicker = null,
+  attackerId = event.actorId,
+  targetId = event.actorId,
+  targetSide,
+  visual = combatVfxForEvent(encounter, event),
+}) {
+  return {
+    id: cueIdentity(event, suffix),
+    sequence: event.sequence,
+    kind,
+    label,
+    kicker,
+    attackerId,
+    targetId,
+    targetSide: targetSide || effectSide(encounter, targetId, "player"),
+    hitIndex: 0,
+    hitCount: 1,
+    delayMs: 0,
+    visual,
+    outcomeAsset: null,
+  };
+}
+
+/**
+ * Map authoritative events to short-lived art feedback. Damage events deliberately return
+ * one cue per resolved hit so a flurry cannot collapse into one aggregate animation.
+ */
+export function combatCuesForEvent(encounter, event) {
+  if (!event) return [];
   if (event.type === "skill-damage" || event.type === "enemy-attack") {
-    const enemyAttack = event.type === "enemy-attack";
-    const enemyDefinition = enemyAttack
+    const visual = combatVfxForEvent(encounter, event);
+    const enemyDefinition = event.type === "enemy-attack"
       ? encounter?.enemyAttacks?.[event.enemyId]?.find((entry) => entry.id === event.attackId)
       : null;
-    const totals = hitTotals(event.hits, enemyAttack ? enemyDefinition?.damage : event.amount);
-    let kind = "guard";
-    let label = "Deflected";
-    if (totals.attempted > 0 && totals.dodged === totals.attempted) {
-      kind = "dodge";
-      label = "Dodged";
-    } else if (totals.toHp > 0) {
-      kind = totals.critical > 0 ? "critical" : "hit";
-      label = totals.critical > 0 ? "Critical" : `-${totals.toHp}`;
-    } else if (totals.absorbed > 0) {
-      kind = "guard";
-      label = "Ward holds";
-    }
-    return {
-      sequence: event.sequence,
-      kind,
-      label,
-      attackerId: enemyAttack ? event.enemyId : event.actorId,
-      targetId: event.targetId,
-      targetSide: encounter?.actors?.[event.targetId]?.side || "enemy",
-    };
+    const hits = resolvedHits(event.hits, event.type === "enemy-attack" ? enemyDefinition?.damage : event.amount);
+    return hits.map((hit, index) => hitCue(encounter, event, hit, index, hits.length, visual));
   }
+
   if (event.type === "skill-shield") {
-    return { sequence: event.sequence, kind: "guard", label: "Ward", attackerId: event.actorId, targetId: event.actorId, targetSide: "player" };
+    return [simpleCue(encounter, event, {
+      suffix: "ward",
+      kind: "ward",
+      label: `+${event.amount}`,
+      kicker: "Ward",
+    })];
   }
   if (event.type === "skill-heal") {
-    return { sequence: event.sequence, kind: "heal", label: `+${event.amount}`, attackerId: event.actorId, targetId: event.actorId, targetSide: "player" };
+    return [simpleCue(encounter, event, {
+      suffix: "heal",
+      kind: "heal",
+      label: `+${event.amount}`,
+      kicker: "Restored",
+    })];
+  }
+  if (event.type === "skill-cleanse") {
+    return [simpleCue(encounter, event, {
+      suffix: "cleanse",
+      kind: "heal",
+      label: "Cleanse",
+      kicker: `${event.removed || 0} removed`,
+    })];
   }
   if (event.type === "skill-status") {
     const targetId = targetForStatus(event);
     const status = event.status;
     const kind = EVASIVE_STATUSES.has(status)
-      ? "dodge"
+      ? "evade"
       : DEFENSIVE_STATUSES.has(status)
         ? "guard"
         : EMPOWERING_STATUSES.has(status)
           ? "empower"
           : "afflict";
-    return {
-      sequence: event.sequence,
+    return [simpleCue(encounter, event, {
+      suffix: `status-${status}`,
       kind,
       label: words(status),
-      attackerId: event.actorId,
+      kicker: event.count > 0 ? `+${event.count}` : null,
       targetId,
-      targetSide: encounter?.actors?.[targetId]?.side || (event.target === "enemy" ? "enemy" : "player"),
-    };
+      targetSide: effectSide(encounter, targetId, event.target === "enemy" ? "enemy" : "player"),
+    })];
+  }
+  if (event.type === "skill-status-amplified") {
+    return [simpleCue(encounter, event, {
+      suffix: "status-amplified",
+      kind: "afflict",
+      label: "Amplified",
+      kicker: event.gained > 0 ? `+${event.gained}` : null,
+      targetId: event.targetId,
+      targetSide: effectSide(encounter, event.targetId, "enemy"),
+    })];
   }
   if (event.type === "enemy-nullified") {
-    return { sequence: event.sequence, kind: "afflict", label: "Interrupted", attackerId: null, targetId: event.enemyId, targetSide: "enemy" };
+    return [simpleCue(encounter, event, {
+      suffix: "interrupted",
+      kind: "afflict",
+      label: "Interrupted",
+      attackerId: null,
+      targetId: event.enemyId,
+      targetSide: "enemy",
+    })];
   }
   if (event.type === "retreat-attempt") {
-    return {
-      sequence: event.sequence,
-      kind: event.succeeded ? "dodge" : "afflict",
+    return [simpleCue(encounter, event, {
+      suffix: event.succeeded ? "escaped" : "cornered",
+      kind: event.succeeded ? "evade" : "afflict",
       label: event.succeeded ? "Escaped" : "Cornered",
-      attackerId: event.actorId,
       targetId: event.actorId,
       targetSide: "player",
-    };
+    })];
   }
   if (event.type === "tick-damage") {
-    return { sequence: event.sequence, kind: "hit", label: `-${(event.burn || 0) + (event.doom || 0)}`, attackerId: null, targetId: event.actorId, targetSide: encounter?.actors?.[event.actorId]?.side || "player" };
+    const cues = [];
+    if (event.burn > 0) {
+      cues.push(simpleCue(encounter, event, {
+        suffix: "burn",
+        kind: "hit",
+        label: `-${event.burn}`,
+        kicker: "Burn",
+        attackerId: null,
+        targetId: event.actorId,
+        visual: { family: "fire", variant: "status-burn", motion: "brand", asset: COMBAT_VFX_ASSETS.fire },
+      }));
+    }
+    if (event.doom > 0) {
+      cues.push(simpleCue(encounter, event, {
+        suffix: "doom",
+        kind: "hit",
+        label: `-${event.doom}`,
+        kicker: "Doom",
+        attackerId: null,
+        targetId: event.actorId,
+        visual: { family: "afflict", variant: "status-doom", motion: "void", asset: COMBAT_VFX_ASSETS.afflict },
+      }));
+    }
+    return cues.map((cue, index) => ({ ...cue, hitIndex: index, hitCount: cues.length, delayMs: index * 155 }));
   }
-  return null;
+  return [];
+}
+
+const SAME_ACTION_EFFECT_GAP_MS = 105;
+
+const EXCHANGE_GAPS = Object.freeze({
+  afterimage: 280,
+  barrage: 390,
+  brace: 440,
+  counter: 420,
+  cyclone: 420,
+  execution: 560,
+  flurry: 360,
+  fortress: 470,
+  heavy: 540,
+  inferno: 520,
+  mend: 430,
+  multi: 360,
+  projectile: 340,
+  quake: 580,
+  rapid: 290,
+  radiant: 460,
+  snap: 300,
+  volley: 390,
+});
+
+function exchangeGap(motion) {
+  return EXCHANGE_GAPS[motion] || 400;
+}
+
+function cueActionKey(event) {
+  if (event.type === "enemy-attack") {
+    return `enemy:${event.enemyId || "enemy"}:${event.attackId || event.sequence}`;
+  }
+  if (event.skillId) return `skill:${event.actorId || "actor"}:${event.skillId}`;
+  if (event.type === "tick-damage") return `tick:${event.actorId || "actor"}`;
+  return `${event.type}:${event.sequence}`;
+}
+
+/**
+ * Lay authoritative events onto one presentation timeline. Consecutive effects from the
+ * same skill stay in one beat; a counterattack starts only after the prior contact reads.
+ */
+export function combatCueTimeline(encounter, events, { limit = 16 } = {}) {
+  const timeline = [];
+  let actionKey = null;
+  let actionIndex = -1;
+  let groupEnd = 0;
+  let groupMotion = "balanced";
+
+  for (const event of events || []) {
+    const cues = combatCuesForEvent(encounter, event);
+    if (cues.length === 0) continue;
+    const nextKey = cueActionKey(event);
+    const sameAction = nextKey === actionKey;
+    let eventOffset;
+
+    if (sameAction) {
+      eventOffset = groupEnd + SAME_ACTION_EFFECT_GAP_MS;
+    } else {
+      eventOffset = timeline.length === 0 ? 0 : groupEnd + exchangeGap(groupMotion);
+      actionKey = nextKey;
+      actionIndex += 1;
+      groupMotion = cues[0]?.visual?.motion || "balanced";
+    }
+
+    const staged = cues.map((cue) => ({
+      ...cue,
+      actionIndex,
+      delayMs: eventOffset + (cue.delayMs || 0),
+    }));
+    timeline.push(...staged);
+    groupEnd = Math.max(groupEnd, ...staged.map((cue) => cue.delayMs));
+  }
+
+  return timeline.slice(-limit);
+}
+
+/** Backwards-compatible single-cue view for code that does not render hit sequences. */
+export function combatCueForEvent(encounter, event) {
+  return combatCuesForEvent(encounter, event)[0] || null;
 }

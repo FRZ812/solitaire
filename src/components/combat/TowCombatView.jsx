@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import battleScene from "../../assets/generated/scene-crowsmoor-v2.webp";
 import { Icon } from "../Icon.jsx";
 import { declaredIntents, retreatOdds } from "../../gameplay/tow/encounter.js";
+import { CHARACTER_ABILITY_TYPE_LABELS } from "../../gameplay/tow/character-abilities.js";
 import {
   effectMagnitude,
   getSkill,
@@ -14,10 +15,12 @@ import { weaponAttackSummary } from "../../gameplay/tow/weapon-techniques.js";
 import { resolveTowCombatArt } from "./tow-combat-art.js";
 import { resolveTowAbilityArt, resolveTowActionName } from "./tow-combat-ability-art.js";
 import {
-  combatCueForEvent,
+  combatCueTimeline,
   combatTempoReceipt,
   recentCombatReceipts,
 } from "./tow-combat-feedback.js";
+import { combatVfxForIntent } from "./tow-combat-vfx.js";
+import { combatChoreographyForAction } from "./tow-combat-choreography.js";
 import "./tow-combat.css";
 
 function percent(value, max) {
@@ -32,6 +35,7 @@ const REFUSALS = {
 };
 
 const HOLD_FOR_DETAILS_MS = 420;
+const CONTACT_REACTIONS = new Set(["block", "critical", "evade", "hit", "ward"]);
 
 function refusalText(reason, skillState) {
   const render = REFUSALS[reason];
@@ -43,6 +47,10 @@ function monogram(name) {
 }
 
 function actionKind(definition) {
+  if (definition.abilityType === "basic-attack") return "attack";
+  if (definition.abilityType === "defensive") return "guard";
+  if (definition.abilityType === "ultimate") return "ultimate";
+  if (definition.abilityType === "special") return definition.consumesTurn ? "technique" : "swift";
   const types = new Set((definition.effects || []).map((effect) => effect.type));
   if (types.has("damage")) return "attack";
   if (types.has("heal") || types.has("heal-lost-fraction")) return "recover";
@@ -67,8 +75,11 @@ function AbilityArt({ src, className = "" }) {
 function effectDetail(definition, effect, effectIndex, rank) {
   const ranked = Array.isArray(effect.percentByRank) || Array.isArray(effect.countByRank);
   const amount = ranked ? effectMagnitude(definition.id, effectIndex, rank) : null;
-  if (effect.type === "damage") return `${amount}% ${effect.scale} damage`;
+  if (effect.type === "damage") return `${amount}% ${effect.scale} damage${effect.hits > 1 ? ` × ${effect.hits} hits` : ""}`;
+  if (effect.type === "damage-enemy-lost-hp") return `${amount}% of enemy missing health as damage`;
+  if (effect.type === "damage-self-lost-hp") return `${amount}% of own missing health as damage`;
   if (effect.type === "shield") return `${amount}% ${effect.scale} ward`;
+  if (effect.type === "heal") return `Restore ${amount}% ${effect.scale} health`;
   if (effect.type === "heal-lost-fraction") return `Restore ${amount}% of lost health`;
   if (effect.type === "scaled-status") {
     return `${amount}% ${effect.scale} ${effect.status.replace(/-/g, " ")}`;
@@ -76,6 +87,9 @@ function effectDetail(definition, effect, effectIndex, rank) {
   if (effect.type === "status") return `${amount} ${effect.status.replace(/-/g, " ")}`;
   if (effect.type === "reduce-statuses") {
     return `Reduce ${effect.statuses.join(", ")} to ${effect.toPercent}%`;
+  }
+  if (effect.type === "amplify-statuses") {
+    return `Raise ${effect.statuses.join(", ")} to ${amount}%`;
   }
   if (effect.type === "scaled-status-enemy-lost-hp") {
     return `${amount}% of enemy lost health as ${effect.status.replace(/-/g, " ")}`;
@@ -114,7 +128,7 @@ function SkillDetails({
     >
       <AbilityArt src={art} className="tow-combat__skill-details-art" />
       <div className="tow-combat__skill-details-copy">
-        <span>{definition.rarity} · rank {skillState.rank}</span>
+        <span>{CHARACTER_ABILITY_TYPE_LABELS[definition.abilityType] || definition.rarity} · {definition.rarity} · rank {skillState.rank}</span>
         <strong>{displayName}</strong>
         {definition.id === "strike" ? (
           <b>{weaponPresentation.weaponName} · {weaponPresentation.familyLabel}</b>
@@ -139,6 +153,8 @@ function CombatAction({
   weaponPresentation,
   legality,
   active,
+  busy,
+  committed,
   firstActionRef,
   onShowDetails,
   onHideDetails,
@@ -156,6 +172,7 @@ function CombatAction({
   }
 
   function beginHold(event) {
+    if (busy) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
     cancelHold();
     heldRef.current = false;
@@ -188,10 +205,11 @@ function CombatAction({
     <button
       ref={firstActionRef}
       type="button"
-      className={`tow-combat__action production-combat__action tow-combat__action--${actionKind(definition)}${active ? " is-inspecting" : ""}${!legality.ok ? " is-unavailable" : ""}`}
+      className={`tow-combat__action production-combat__action tow-combat__action--${actionKind(definition)}${active ? " is-inspecting" : ""}${committed ? " is-committed" : ""}${!legality.ok ? " is-unavailable" : ""}`}
       aria-label={`${displayName}. ${towSkillDetail(definition, skillState, weaponPresentation)}. ${legality.ok ? "Tap to use; hold for details" : refusalText(legality.reason, skillState)}`}
-      aria-disabled={!legality.ok}
+      aria-disabled={busy || !legality.ok}
       aria-expanded={active}
+      disabled={busy}
       data-skill-id={definition.id}
       onClick={useSkill}
       onPointerDown={beginHold}
@@ -216,26 +234,38 @@ function CombatAction({
 function ArtFigure({ actor, src, side }) {
   return (
     <div className={`tow-combat__art tow-combat__art--${side}${actor.hp <= 0 ? " is-down" : ""}`}>
-      {src ? (
-        <img className="tow-combat__art-image" src={src} alt="" aria-hidden="true" draggable="false" />
-      ) : (
-        <span className="tow-combat__art-monogram" aria-hidden="true">{monogram(actor.name)}</span>
-      )}
-      <span className="tow-combat__art-shadow" aria-hidden="true" />
+      <span className="tow-combat__art-reaction">
+        {src ? (
+          <img className="tow-combat__art-image" src={src} alt="" aria-hidden="true" draggable="false" />
+        ) : (
+          <span className="tow-combat__art-monogram" aria-hidden="true">{monogram(actor.name)}</span>
+        )}
+        <span className="tow-combat__art-shadow" aria-hidden="true" />
+      </span>
     </div>
   );
 }
 
-function Telegraph({ intent }) {
+function IntentBadge({ intent, target, playerId }) {
   if (!intent) return null;
+  const visual = combatVfxForIntent(intent);
+  const damage = intent.hits > 1 ? `${intent.hits}×${intent.damage}` : intent.damage;
+  const targetName = target?.name || intent.targetName || "your party";
   return (
-    <div className="tow-combat__telegraph">
-      <span className="tow-combat__telegraph-kicker">Incoming</span>
-      <strong className="tow-combat__telegraph-name">{intent.name}</strong>
-      <span className="tow-combat__telegraph-damage">
-        <b>{intent.hits > 1 ? `${intent.hits} × ${intent.damage}` : intent.damage}</b>
-        <small>damage</small>
+    <div
+      className={`tow-combat__intent tow-combat__intent--${visual.family}${intent.hits > 1 ? " is-multi" : ""}`}
+      role="img"
+      aria-label={`${intent.name}, ${intent.hits > 1 ? `${intent.hits} hits of ${intent.damage}` : `${intent.damage} damage`}, targeting ${targetName}`}
+      title={`${intent.name} · ${damage} damage · ${targetName}`}
+      data-testid="tow-enemy-intent"
+    >
+      <span className="tow-combat__intent-sigil" aria-hidden="true">
+        <img src={visual.asset} alt="" />
+        <i />
       </span>
+      <strong aria-hidden="true">{damage}</strong>
+      <span className="tow-combat__intent-target" aria-hidden="true">→ {target?.id === playerId ? "You" : targetName}</span>
+      <span className="tow-combat__sr-only">Incoming: {intent.name}</span>
     </div>
   );
 }
@@ -254,42 +284,61 @@ function Statuses({ actor }) {
   );
 }
 
-function Vitals({ actor, enemy = false }) {
+function Vitals({ actor, enemy = false, feedbackDelay = 0, reacting = false }) {
+  const [presented, setPresented] = useState({ hp: actor.hp, maxHp: actor.maxHp, shield: actor.shield });
+
+  useEffect(() => {
+    const delay = Math.max(0, feedbackDelay);
+    const update = setTimeout(() => setPresented({
+      hp: actor.hp,
+      maxHp: actor.maxHp,
+      shield: actor.shield,
+    }), delay);
+    return () => clearTimeout(update);
+  }, [actor.hp, actor.maxHp, actor.shield, feedbackDelay]);
+
   return (
-    <div className={`tow-combat__vitals${enemy ? " tow-combat__vitals--enemy" : ""}`}>
+    <div
+      className={`tow-combat__vitals${enemy ? " tow-combat__vitals--enemy" : ""}${reacting ? " is-reacting" : ""}`}
+      style={{ "--tow-vitals-delay": `${feedbackDelay}ms` }}
+    >
       <div
         className="tow-combat__bar"
         role="meter"
         aria-label={`${actor.name} health`}
         aria-valuemin="0"
-        aria-valuemax={actor.maxHp}
-        aria-valuenow={actor.hp}
+        aria-valuemax={presented.maxHp}
+        aria-valuenow={presented.hp}
       >
-        <span className="tow-combat__bar-hp" style={{ width: `${percent(actor.hp, actor.maxHp)}%` }} />
-        {actor.shield > 0 ? (
+        <span className="tow-combat__bar-hp" style={{ width: `${percent(presented.hp, presented.maxHp)}%` }} />
+        {presented.shield > 0 ? (
           <span
             className="tow-combat__bar-shield"
-            style={{ width: `${percent(actor.shield, actor.maxHp)}%` }}
+            style={{ width: `${percent(presented.shield, presented.maxHp)}%` }}
           />
         ) : null}
         <span className="tow-combat__bar-value">
-          <strong>{actor.hp}</strong>
-          <span>/ {actor.maxHp}</span>
-          {actor.shield > 0 ? <em>+{actor.shield} ward</em> : null}
+          <strong>{presented.hp}</strong>
+          <span>/ {presented.maxHp}</span>
+          {presented.shield > 0 ? <em>+{presented.shield} ward</em> : null}
         </span>
       </div>
     </div>
   );
 }
 
-function CombatantPlate({ actor, role, enemy = false }) {
+function CombatantPlate({ actor, role, enemy = false, feedbackCues = [] }) {
+  const reactions = feedbackCues.filter((cue) => cue.targetId === actor.id);
+  const feedbackDelay = reactions.length > 0
+    ? Math.max(...reactions.map((cue) => cue.delayMs || 0))
+    : 0;
   return (
     <div className={`tow-combat__plate${enemy ? " tow-combat__plate--enemy" : " tow-combat__plate--hero"}`}>
       <div className="tow-combat__identity">
         <span>{role}</span>
         <h2>{actor.name}</h2>
       </div>
-      <Vitals actor={actor} enemy={enemy} />
+      <Vitals actor={actor} enemy={enemy} feedbackDelay={feedbackDelay} reacting={reactions.length > 0} />
       <Statuses actor={actor} />
     </div>
   );
@@ -318,24 +367,64 @@ function actorFeedbackClasses(actorId, cues) {
   for (const cue of cues) {
     if (cue.targetId !== actorId) continue;
     classes.push(`is-feedback-${cue.kind}`);
+    if (cue.visual?.family) classes.push(`is-feedback-vfx-${cue.visual.family}`);
+  }
+  if (cues.filter((cue) => cue.targetId === actorId && CONTACT_REACTIONS.has(cue.kind)).length > 1) {
+    classes.push("is-feedback-multi-hit");
   }
   return [...new Set(classes)].join(" ");
+}
+
+function actorFeedbackStyle(actorId, cues) {
+  const attacks = cues.filter((cue) => cue.attackerId === actorId && cue.targetId !== actorId);
+  const reactions = cues.filter((cue) => cue.targetId === actorId);
+  const contacts = reactions.filter((cue) => CONTACT_REACTIONS.has(cue.kind));
+  return {
+    "--tow-attack-delay": `${attacks.length ? Math.min(...attacks.map((cue) => cue.delayMs || 0)) : 0}ms`,
+    "--tow-reaction-delay": `${reactions.length ? Math.min(...reactions.map((cue) => cue.delayMs || 0)) : 0}ms`,
+    "--tow-reaction-count": Math.max(1, contacts.length),
+  };
 }
 
 function CombatEffects({ cues }) {
   if (cues.length === 0) return null;
   return (
     <div className="tow-combat__effects" aria-hidden="true">
-      {cues.map((cue, index) => (
-        <span
-          key={`${cue.sequence}-${cue.kind}-${cue.targetId || index}`}
-          className={`tow-combat__effect tow-combat__effect--${cue.kind} tow-combat__effect--${cue.targetSide}`}
-          style={{ "--tow-effect-order": index }}
-        >
-          <i />
-          <b>{cue.label}</b>
-        </span>
-      ))}
+      {cues.map((cue, index) => {
+        const lane = cues
+          .slice(0, index)
+          .filter((priorCue) => priorCue.targetSide === cue.targetSide)
+          .length;
+        const laneX = [-38, 38, 0][lane % 3];
+        const laneY = [0, -18, 14][lane % 3];
+        return (
+          <span
+            key={cue.id || `${cue.sequence}-${cue.kind}-${cue.targetId || index}`}
+            className={`tow-combat__effect tow-combat__effect--${cue.kind} tow-combat__effect--${cue.targetSide} tow-combat__effect--vfx-${cue.visual?.family || "impact"} tow-combat__effect--motion-${cue.visual?.motion || "balanced"}`}
+            data-vfx-variant={cue.visual?.variant || "unknown"}
+            data-hit-index={cue.hitIndex ?? 0}
+            data-hit-count={cue.hitCount ?? 1}
+            data-action-index={cue.actionIndex ?? 0}
+            data-effect-lane={lane}
+            style={{
+              "--tow-effect-delay": `${cue.delayMs || 0}ms`,
+              "--tow-effect-x": `${laneX}px`,
+              "--tow-effect-y": `${laneY}px`,
+            }}
+          >
+            {cue.visual?.asset ? <img className="tow-combat__effect-asset" src={cue.visual.asset} alt="" /> : null}
+            {cue.outcomeAsset && cue.outcomeAsset !== cue.visual?.asset ? (
+              <img className="tow-combat__effect-outcome" src={cue.outcomeAsset} alt="" />
+            ) : null}
+            <span className="tow-combat__effect-particles"><i /><i /><i /></span>
+            <b>
+              {cue.kicker ? <small>{cue.kicker}</small> : null}
+              <span>{cue.label}</span>
+            </b>
+            {(cue.hitCount || 1) > 1 ? <em>{(cue.hitIndex || 0) + 1}/{cue.hitCount}</em> : null}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -367,6 +456,35 @@ function CombatRecord({ receipts, tempo, opening, expanded, onToggle }) {
   );
 }
 
+function ActionBeat({ beat, receipt }) {
+  const resolving = beat.phase === "resolve";
+  return (
+    <section
+      className={`tow-combat__action-beat tow-combat__action-beat--${beat.choreography.visual.family}`}
+      data-motion={beat.choreography.visual.motion}
+      data-testid="tow-action-beat"
+      aria-live="assertive"
+    >
+      <span className="tow-combat__action-beat-art" aria-hidden="true">
+        <img src={beat.art} alt="" />
+        <i><img src={beat.choreography.visual.asset} alt="" /></i>
+      </span>
+      <span className="tow-combat__action-beat-copy">
+        <small>{resolving ? "Consequence" : beat.choreography.paceLabel}</small>
+        <strong>{beat.displayName}</strong>
+        <span>
+          {resolving && receipt
+            ? receipt.text
+            : `${beat.actorName} ${beat.choreography.windupVerb} ${beat.targetName}.`}
+        </span>
+      </span>
+      <span className={`tow-combat__cadence${resolving ? " is-resolving" : ""}`} aria-hidden="true">
+        <i /><i /><i />
+      </span>
+    </section>
+  );
+}
+
 export function TowCombatView({
   encounter,
   onUseSkill,
@@ -393,6 +511,8 @@ export function TowCombatView({
   const [inspectedSkillId, setInspectedSkillId] = useState(null);
   const [recordExpanded, setRecordExpanded] = useState(false);
   const [impactCues, setImpactCues] = useState([]);
+  const [actionBeat, setActionBeat] = useState(null);
+  const actionTimersRef = useRef({ commit: null, release: null });
 
   const player = encounter.actors[encounter.playerId];
   const allies = (encounter.allyIds || []).map((id) => encounter.actors[id]);
@@ -409,6 +529,10 @@ export function TowCombatView({
     || commandable.find((actor) => actor.id === commanderId)
     || commandable[0]
     || player;
+  const stagedHero = playerSide.find((actor) => actor.id === actionBeat?.actorId)
+    || activeCommander
+    || player;
+  const reserves = playerSide.filter((actor) => actor.id !== stagedHero.id);
   const commanderPossessive = activeCommander.id === encounter.playerId
     ? "your"
     : `${activeCommander.name}'s`;
@@ -446,7 +570,6 @@ export function TowCombatView({
   const inspectedSkill = skillRows.find(({ skillState }) => skillState.id === inspectedSkillId) || null;
   const declared = terminal ? [] : declaredIntents(encounter);
   const intents = Object.fromEntries(declared.map((intent) => [intent.enemyId, intent]));
-  const incoming = declared.reduce((total, intent) => total + intent.hits * intent.damage, 0);
   const fallen = enemies.filter((enemy) => enemy.hp <= 0).length;
   const staged = enemies.find((enemy) => enemy.id === activeTarget) || enemies[0];
   const retreat = terminal ? null : retreatOdds(encounter);
@@ -463,7 +586,7 @@ export function TowCombatView({
   const openingReceipt = activeIntent ? {
     sequence: `intent-${encounter.round}-${staged?.id}`,
     kind: "intent",
-    text: `${staged.name} declares ${activeIntent.name}: ${activeIntent.hits > 1 ? `${activeIntent.hits} hits of ${activeIntent.damage}` : `${activeIntent.damage} damage`}. ${activeCommander.name} has ${actionsLeft(encounter, activeCommander.id)} action${actionsLeft(encounter, activeCommander.id) === 1 ? "" : "s"}.`,
+    text: `${staged.name} declares ${activeIntent.name} against ${encounter.actors[activeIntent.targetId]?.name || activeIntent.targetName || "the party"}: ${activeIntent.hits > 1 ? `${activeIntent.hits} hits of ${activeIntent.damage}` : `${activeIntent.damage} damage`}. ${activeCommander.name} has ${actionsLeft(encounter, activeCommander.id)} action${actionsLeft(encounter, activeCommander.id) === 1 ? "" : "s"}.`,
   } : null;
   const swiftReceipt = (() => {
     if (receipts.length === 0) return null;
@@ -487,12 +610,83 @@ export function TowCombatView({
       text: `${actor.name}'s ${resolveTowActionName(definition, weaponPresentationFor(actor))} is Swift; ${left} action${left === 1 ? "" : "s"} kept.`,
     };
   })();
+  const actionBeatReceipt = (() => {
+    if (!actionBeat || encounter.sequence <= actionBeat.sequence) return null;
+    const actionEvents = encounter.events.filter((event) => (
+      event.sequence > actionBeat.sequence
+      && event.actorId === actionBeat.actorId
+      && event.skillId === actionBeat.skillId
+    ));
+    const primary = actionEvents.find((event) => event.type === "skill-damage")
+      || actionEvents.find((event) => [
+        "skill-shield",
+        "skill-heal",
+        "skill-cleanse",
+        "skill-status",
+        "skill-status-amplified",
+      ].includes(event.type));
+    return receipts.find((receipt) => receipt.sequence === primary?.sequence)
+      || swiftReceipt
+      || receipts.at(-1)
+      || null;
+  })();
   function combatArt(actor) {
     const supplied = typeof artFor === "function" ? artFor(actor) : null;
     return supplied || resolveTowCombatArt(actor, {
       playerId: encounter.playerId,
       playerPortraitKey,
     });
+  }
+
+  function clearActionTimer(name) {
+    if (actionTimersRef.current[name] !== null) clearTimeout(actionTimersRef.current[name]);
+    actionTimersRef.current[name] = null;
+  }
+
+  function releaseActionBeat() {
+    clearActionTimer("release");
+    setActionBeat(null);
+  }
+
+  function queueSkillAction(row) {
+    if (actionBeat || !row.legality.ok) return;
+    const reducedMotion = typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const choreography = combatChoreographyForAction(
+      row.definition,
+      row.weaponPresentation,
+      { reducedMotion },
+    );
+    const target = choreography.target === "enemy"
+      ? encounter.actors[activeTarget]
+      : activeCommander;
+    const beat = {
+      actorId: activeCommander.id,
+      actorName: activeCommander.id === encounter.playerId ? "You" : activeCommander.name,
+      art: row.art,
+      choreography,
+      displayName: row.displayName,
+      phase: "windup",
+      sequence: encounter.sequence,
+      skillId: row.skillState.id,
+      targetId: target?.id || activeTarget,
+      targetName: target?.id === activeCommander.id ? "the stance" : target?.name || "the target",
+    };
+    setInspectedSkillId(null);
+    setRecordExpanded(false);
+    setActionBeat(beat);
+    clearActionTimer("commit");
+    actionTimersRef.current.commit = setTimeout(() => {
+      actionTimersRef.current.commit = null;
+      try {
+        onUseSkill(row.skillState.id, activeTarget, activeCommander.id);
+      } finally {
+        setActionBeat((current) => current ? { ...current, phase: "resolve" } : current);
+        clearActionTimer("release");
+        actionTimersRef.current.release = setTimeout(releaseActionBeat, choreography.recoveryMs);
+      }
+    }, choreography.windupMs);
   }
 
   useEffect(() => {
@@ -519,6 +713,11 @@ export function TowCombatView({
     };
   }, [returnFocusSelector]);
 
+  useEffect(() => () => {
+    clearActionTimer("commit");
+    clearActionTimer("release");
+  }, []);
+
   useEffect(() => {
     (terminal ? settleRef.current : firstActionRef.current)?.focus();
   }, [terminal]);
@@ -532,20 +731,29 @@ export function TowCombatView({
       seenEventRef.current = encounter.sequence;
       return undefined;
     }
-    const nextCues = encounter.events
-      .filter((entry) => entry.sequence > seenEventRef.current)
-      .map((entry) => combatCueForEvent(encounter, entry))
-      .filter(Boolean)
-      .slice(-4);
+    const nextCues = combatCueTimeline(
+      encounter,
+      encounter.events.filter((entry) => entry.sequence > seenEventRef.current),
+    );
     seenEventRef.current = encounter.sequence;
     if (nextCues.length === 0) return undefined;
     setImpactCues(nextCues);
-    const clear = setTimeout(() => setImpactCues([]), 1050);
+    const finalDelay = Math.max(0, ...nextCues.map((cue) => cue.delayMs || 0));
+    const clear = setTimeout(() => setImpactCues([]), finalDelay + 1450);
+    if (actionBeat) {
+      setActionBeat((current) => current ? { ...current, phase: "resolve" } : current);
+      clearActionTimer("release");
+      actionTimersRef.current.release = setTimeout(releaseActionBeat, finalDelay + 1050);
+    }
     return () => clearTimeout(clear);
   }, [encounter, encounter.sequence]);
 
   function keepFocusInside(event) {
     if (event.key === "Escape") {
+      if (actionBeat) {
+        event.preventDefault();
+        return;
+      }
       if (inspectedSkillId) {
         event.preventDefault();
         setInspectedSkillId(null);
@@ -591,6 +799,7 @@ export function TowCombatView({
         className="tow-combat__foe-token production-combat__fighter--target"
         aria-label={targetLabel(enemy, intents[enemy.id])}
         aria-pressed={enemy.id === activeTarget}
+        disabled={Boolean(actionBeat)}
         onClick={() => setTargetId(enemy.id)}
       >
         {body}
@@ -604,11 +813,14 @@ export function TowCombatView({
 
   return (
     <div
-      className={`tow-combat${terminal ? " is-terminal" : ""}`}
+      className={`tow-combat${terminal ? " is-terminal" : ""}${actionBeat ? " is-presenting-action" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="tow-combat-title"
       tabIndex="-1"
+      aria-busy={Boolean(actionBeat)}
+      data-presentation-phase={actionBeat?.phase || "ready"}
+      data-action-motion={actionBeat?.choreography.visual.motion || undefined}
       onKeyDown={keepFocusInside}
     >
       <img className="tow-combat__scene" src={sceneArt} alt="" aria-hidden="true" />
@@ -625,7 +837,9 @@ export function TowCombatView({
             <span>Round</span>
             <strong>{encounter.round}</strong>
             {!terminal ? (
-              <em>{activeCommander.id === encounter.playerId ? "Your move" : `${activeCommander.name}'s move`}</em>
+              <em>{actionBeat
+                ? actionBeat.phase === "windup" ? "Action committed" : "Reading the exchange"
+                : activeCommander.id === encounter.playerId ? "Your move" : `${activeCommander.name}'s move`}</em>
             ) : null}
           </p>
           <p className="tow-combat__context">
@@ -639,6 +853,7 @@ export function TowCombatView({
                 type="button"
                 className="tow-combat__escape tow-combat__escape--retreat"
                 onClick={() => onRetreat(activeCommander.id)}
+                disabled={Boolean(actionBeat)}
                 aria-label={`Attempt retreat. ${retreat.chancePercent}% chance. Spends ${commanderPossessive} action on failure.`}
               >
                 <Icon name="arrowLeft" size={15} />
@@ -646,7 +861,7 @@ export function TowCombatView({
               </button>
             ) : null}
             {onEscape ? (
-              <button type="button" className="tow-combat__escape" onClick={onEscape}>
+              <button type="button" className="tow-combat__escape" onClick={onEscape} disabled={Boolean(actionBeat)}>
                 <Icon name="x" size={15} />
                 <span>{escapeLabel}</span>
               </button>
@@ -660,11 +875,13 @@ export function TowCombatView({
 
           {staged ? (
             <article
-              className={`tow-combat__threat${staged.hp <= 0 ? " is-down" : ""} ${actorFeedbackClasses(staged.id, impactCues)}`.trim()}
+              className={`tow-combat__threat${staged.hp <= 0 ? " is-down" : ""}${actionBeat?.targetId === staged.id ? " is-action-targeted" : ""} ${actorFeedbackClasses(staged.id, impactCues)}`.trim()}
+              style={actorFeedbackStyle(staged.id, impactCues)}
               aria-label={`Foe: ${staged.name}`}
             >
               <ArtFigure actor={staged} src={combatArt(staged)} side="foe" />
-              <CombatantPlate actor={staged} role="Foe" enemy />
+              {!terminal ? <IntentBadge intent={intents[staged.id]} target={encounter.actors[intents[staged.id]?.targetId]} playerId={encounter.playerId} /> : null}
+              <CombatantPlate actor={staged} role={actionBeat?.targetId === staged.id ? "Marked foe" : "Foe"} enemy feedbackCues={impactCues} />
             </article>
           ) : null}
 
@@ -674,15 +891,17 @@ export function TowCombatView({
             </section>
           ) : null}
 
-          {!terminal ? (
-            <section className="tow-combat__exchange" aria-label="Incoming attack">
-              <Telegraph intent={intents[staged?.id]} />
-              {incoming > 0 ? (
-                <p className="tow-combat__incoming">
-                  <span>Total threat</span>
-                  <strong>{incoming}</strong>
-                </p>
-              ) : null}
+          {!terminal && actionBeat ? (
+            <section className="tow-combat__exchange" aria-label="Resolving action">
+              <ActionBeat
+                beat={actionBeat}
+                receipt={actionBeatReceipt}
+              />
+            </section>
+          ) : null}
+
+          {!terminal && !actionBeat ? (
+            <section className="tow-combat__exchange" aria-label="Combat record">
               <CombatRecord
                 receipts={swiftReceipt ? [...receipts, swiftReceipt] : receipts}
                 tempo={tempoReceipt}
@@ -696,22 +915,29 @@ export function TowCombatView({
           <CombatEffects cues={impactCues} />
 
           <article
-            className={`tow-combat__hero${player.hp <= 0 ? " is-down" : ""} ${actorFeedbackClasses(player.id, impactCues)}`.trim()}
-            aria-label={`You: ${player.name}`}
+            className={`tow-combat__hero${stagedHero.hp <= 0 ? " is-down" : ""}${actionBeat?.actorId === stagedHero.id && actionBeat.phase === "windup" ? ` is-action-windup is-action-motion-${actionBeat.choreography.visual.motion}` : ""} ${actorFeedbackClasses(stagedHero.id, impactCues)}`.trim()}
+            style={{
+              ...actorFeedbackStyle(stagedHero.id, impactCues),
+              "--tow-action-windup": `${actionBeat?.choreography.windupMs || 0}ms`,
+            }}
+            aria-label={stagedHero.id === encounter.playerId ? `You: ${stagedHero.name}` : `Ally: ${stagedHero.name}`}
           >
-            <ArtFigure actor={player} src={combatArt(player)} side="hero" />
+            <ArtFigure actor={stagedHero} src={combatArt(stagedHero)} side="hero" />
             <CombatantPlate
-              actor={player}
-              role="You"
+              key={stagedHero.id}
+              actor={stagedHero}
+              role={stagedHero.id === encounter.playerId ? "You" : "Ally acting"}
+              feedbackCues={impactCues}
             />
           </article>
 
-          {allies.length > 0 ? (
+          {reserves.length > 0 ? (
             <section className="tow-combat__reserves" aria-label="Other allies">
-              {allies.map((actor) => (
+              {reserves.map((actor) => (
                 <article
                   key={actor.id}
-                  className={`tow-combat__reserve${actor.hp <= 0 ? " is-down" : ""}`}
+                  className={`tow-combat__reserve${actor.hp <= 0 ? " is-down" : ""} ${actorFeedbackClasses(actor.id, impactCues)}`.trim()}
+                  style={actorFeedbackStyle(actor.id, impactCues)}
                   aria-label={actor.id === encounter.playerId ? `You: ${actor.name}` : `Ally: ${actor.name}`}
                 >
                   <span>{actor.id === encounter.playerId ? "You" : actor.name}</span>
@@ -725,11 +951,11 @@ export function TowCombatView({
         {error ? <p className="tow-combat__alert" role="alert">{error}</p> : null}
 
         {!terminal ? (
-          <footer className="tow-combat__command">
+          <footer className={`tow-combat__command${actionBeat ? " is-committed" : ""}`} aria-busy={Boolean(actionBeat)}>
             <div className="tow-combat__command-heading">
               <div>
-                <span>Command</span>
-                <strong>Choose an action</strong>
+                <span>{actionBeat ? actionBeat.phase === "windup" ? "Committed" : "Resolving" : stagedHero.id === encounter.playerId ? "Your command" : stagedHero.name}</span>
+                <strong>{actionBeat ? actionBeat.displayName : "Choose an action"}</strong>
               </div>
               <p>
                 <strong>{actionsLeft(encounter, activeCommander.id)}</strong>
@@ -746,6 +972,7 @@ export function TowCombatView({
                     className={`tow-combat__commander production-combat__commander${actor.id === activeCommander.id ? " is-selected" : ""}`}
                     aria-pressed={actor.id === activeCommander.id}
                     aria-label={`Act as ${actor.name}, ${actionsLeft(encounter, actor.id)} actions left`}
+                    disabled={Boolean(actionBeat)}
                     onClick={() => setCommanderId(actor.id)}
                   >
                     <span>{actor.id === encounter.playerId ? "You" : actor.name}</span>
@@ -756,25 +983,31 @@ export function TowCombatView({
             ) : null}
 
             <div className="tow-combat__actions" aria-label="Combat actions">
-              {skillRows.map(({ art, definition, displayName, legality, skillState, weaponPresentation }, index) => (
+              {skillRows.map((row, index) => (
                 <CombatAction
-                  key={skillState.id}
+                  key={row.skillState.id}
                   firstActionRef={index === 0 ? firstActionRef : null}
-                  definition={definition}
-                  displayName={displayName}
-                  art={art}
-                  skillState={skillState}
-                  weaponPresentation={weaponPresentation}
-                  legality={legality}
-                  active={skillState.id === inspectedSkillId}
-                  onShowDetails={() => setInspectedSkillId(skillState.id)}
+                  definition={row.definition}
+                  displayName={row.displayName}
+                  art={row.art}
+                  skillState={row.skillState}
+                  weaponPresentation={row.weaponPresentation}
+                  legality={row.legality}
+                  active={row.skillState.id === inspectedSkillId}
+                  busy={Boolean(actionBeat)}
+                  committed={row.skillState.id === actionBeat?.skillId}
+                  onShowDetails={() => setInspectedSkillId(row.skillState.id)}
                   onHideDetails={() => setInspectedSkillId(null)}
-                  onUse={() => onUseSkill(skillState.id, activeTarget, activeCommander.id)}
+                  onUse={() => queueSkillAction(row)}
                 />
               ))}
             </div>
 
-            <p className="tow-combat__action-hint">Tap to use · hold for details</p>
+            <p className="tow-combat__action-hint">
+              {actionBeat
+                ? actionBeat.phase === "windup" ? "Commitment set · awaiting contact" : "Resolve · read the consequence"
+                : "Tap to commit · hold for details"}
+            </p>
 
             {inspectedSkill ? (
               <SkillDetails
@@ -788,6 +1021,7 @@ export function TowCombatView({
                 <button
                   type="button"
                   className="tow-combat__hold"
+                  disabled={Boolean(actionBeat)}
                   onClick={() => onStandDown?.(activeCommander.id)}
                 >
                   {activeCommander.id === encounter.playerId

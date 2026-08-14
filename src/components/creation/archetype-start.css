@@ -716,6 +716,7 @@
 }
 
 .character-details__body > section {
+  flex: 0 0 auto;
   padding: 16px 0;
   border-bottom: 1px solid rgba(228, 216, 193, 0.09);
 }
