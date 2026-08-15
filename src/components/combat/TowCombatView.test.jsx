@@ -576,7 +576,10 @@ describe("compact combat HUD", () => {
         action.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
         vi.advanceTimersByTime(450);
       });
-      expect(mounted.querySelector("[data-testid='tow-skill-details']")).toBeTruthy();
+      const details = mounted.querySelector("[data-testid='tow-skill-details']");
+      expect(details).toBeTruthy();
+      expect(details.textContent).toContain("Common");
+      expect(details.textContent).not.toMatch(/rank\s+\d|\d\s*\/\s*\d/i);
       await act(async () => mounted.querySelector(".tow-combat").dispatchEvent(
         new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }),
       ));

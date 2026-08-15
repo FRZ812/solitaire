@@ -40,10 +40,10 @@ describe("Quick Start layout", () => {
     expect(sectionRule).toContain("flex: 0 0 auto");
   });
 
-  it("keeps practice rank controls visible and gives their mobile confirmation a full row", () => {
-    const rankRule = archetypeStartCss.match(/\.ability-swap-picker__rank-bar\s*\{([^}]*)\}/)?.[1] || "";
-    expect(rankRule).toContain("flex: 0 0 auto");
-    expect(rankRule).toContain("grid-template-columns");
+  it("keeps practice rarity controls visible and gives their mobile confirmation a full row", () => {
+    const rarityRule = archetypeStartCss.match(/\.ability-swap-picker__rarity-bar\s*\{([^}]*)\}/)?.[1] || "";
+    expect(rarityRule).toContain("flex: 0 0 auto");
+    expect(rarityRule).toContain("grid-template-columns");
     expect(archetypeStartCss).toMatch(/@media \(max-width: 390px\)[\s\S]*?\.ability-swap-picker__confirm\s*\{[\s\S]*?grid-column: 1 \/ -1/);
   });
 });

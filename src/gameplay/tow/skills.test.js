@@ -15,6 +15,9 @@ import {
   replaceableSkillIds,
   skillIds,
   skillLegality,
+  skillRankForRarity,
+  skillRarityAtRank,
+  skillRarityChoices,
   SKILL_SLOTS,
   spendSkill,
   tickSkillCooldown,
@@ -42,6 +45,18 @@ describe("the catalogue", () => {
       expect(getSkill(id).source.page).toContain("#s-11.1");
       expect(getSkill(id).note).toBeNull();
     }
+  });
+
+  it("presents sourced upgrade rows as rarity promotions rather than numeric ranks", () => {
+    expect(skillRarityChoices("assassin-flurry")).toEqual([
+      "common", "uncommon", "rare", "epic", "legendary", "mythical",
+    ]);
+    expect(skillRarityAtRank("assassin-flurry", 5)).toBe("legendary");
+    expect(skillRankForRarity("assassin-flurry", "legendary")).toBe(5);
+    expect(skillRarityChoices("assassin-execution")).toEqual(["legendary", "mythical"]);
+    expect(skillRarityAtRank("assassin-execution", 2)).toBe("mythical");
+    expect(skillRarityChoices("assassin-shadow-strike")).toEqual(["mythical"]);
+    expect(() => skillRankForRarity("assassin-execution", "rare")).toThrow(/invalid-skill-rarity/);
   });
 
   it("transcribes per-rank magnitudes verbatim rather than interpolating", () => {
